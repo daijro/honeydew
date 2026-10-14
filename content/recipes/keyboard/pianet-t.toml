@@ -1,0 +1,288 @@
+# Preserve the source key/velocity ranges and tuning; layers have different sample roots.
+# Basic sampled voice: source release noises, gain/start/end controls and ARIA envelopes are omitted.
+id = "keys-pianet-t"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/Pianet T.dwp"
+source = "greg-sullivan-epianos"
+channels = "auto"
+tail = { floor_db = -60, fade_ms = 400, max_s = 6 }
+release = 0.35
+gain = "normalize"
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/29_F1_P.flac"
+root = 29
+lokey = 29
+hikey = 30
+lovel = 1
+hivel = 82
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/33_A1_P.flac"
+root = 33
+lokey = 31
+hikey = 34
+lovel = 1
+hivel = 82
+tune = -5
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/37_C#2_P.flac"
+root = 37
+lokey = 35
+hikey = 38
+lovel = 1
+hivel = 82
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/41_F2_P.flac"
+root = 41
+lokey = 39
+hikey = 42
+lovel = 1
+hivel = 82
+tune = -3
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/45_A2_P.flac"
+root = 45
+lokey = 43
+hikey = 46
+lovel = 1
+hivel = 82
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/49_C#3_P.flac"
+root = 49
+lokey = 47
+hikey = 50
+lovel = 1
+hivel = 82
+tune = -2
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/52_E3_P.flac"
+root = 52
+lokey = 51
+hikey = 54
+lovel = 1
+hivel = 82
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/57_A3_P.flac"
+root = 57
+lokey = 55
+hikey = 58
+lovel = 1
+hivel = 82
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/61_C#4_P.flac"
+root = 61
+lokey = 59
+hikey = 62
+lovel = 1
+hivel = 82
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/65_F4_P.flac"
+root = 65
+lokey = 63
+hikey = 66
+lovel = 1
+hivel = 82
+tune = -3
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/69_A4_P.flac"
+root = 69
+lokey = 67
+hikey = 70
+lovel = 1
+hivel = 82
+tune = -1
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/73_C#5_P.flac"
+root = 73
+lokey = 71
+hikey = 74
+lovel = 1
+hivel = 82
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/77_F5_P.flac"
+root = 77
+lokey = 75
+hikey = 78
+lovel = 1
+hivel = 82
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/81_A5_P.flac"
+root = 81
+lokey = 79
+hikey = 82
+lovel = 1
+hivel = 82
+tune = -2
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/85_C#6_P.flac"
+root = 85
+lokey = 83
+hikey = 86
+lovel = 1
+hivel = 82
+tune = -4
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/88_E6_P.flac"
+root = 88
+lokey = 87
+hikey = 88
+lovel = 1
+hivel = 82
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/29_F1_FF.flac"
+root = 29
+lokey = 29
+hikey = 30
+lovel = 83
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/33_A1_FF.flac"
+root = 33
+lokey = 31
+hikey = 34
+lovel = 83
+hivel = 127
+tune = -5
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/37_C#2_FF.flac"
+root = 37
+lokey = 35
+hikey = 38
+lovel = 83
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/41_F2_FF.flac"
+root = 41
+lokey = 39
+hikey = 42
+lovel = 83
+hivel = 127
+tune = -1
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/45_A2_FF.flac"
+root = 45
+lokey = 43
+hikey = 46
+lovel = 83
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/47_B2_FF.flac"
+root = 47
+lokey = 47
+hikey = 48
+lovel = 83
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/49_C#3_FF.flac"
+root = 49
+lokey = 49
+hikey = 50
+lovel = 83
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/53_F3_FF.flac"
+root = 53
+lokey = 51
+hikey = 54
+lovel = 83
+hivel = 127
+tune = -3
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/57_A3_FF.flac"
+root = 57
+lokey = 55
+hikey = 58
+lovel = 83
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/61_C#4_FF.flac"
+root = 61
+lokey = 59
+hikey = 62
+lovel = 83
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/65_F4_FF.flac"
+root = 65
+lokey = 63
+hikey = 66
+lovel = 83
+hivel = 127
+tune = -3
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/69_A4_FF.flac"
+root = 69
+lokey = 67
+hikey = 70
+lovel = 83
+hivel = 127
+tune = -1
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/73_C#5_FF.flac"
+root = 73
+lokey = 71
+hikey = 74
+lovel = 83
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/77_F5_FF.flac"
+root = 77
+lokey = 75
+hikey = 78
+lovel = 83
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/81_A5_FF.flac"
+root = 81
+lokey = 79
+hikey = 82
+lovel = 83
+hivel = 127
+tune = -2
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/85_C#6_FF.flac"
+root = 85
+lokey = 83
+hikey = 86
+lovel = 83
+hivel = 127
+tune = -4
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Pianet T/Samples/88_E6_FF.flac"
+root = 88
+lokey = 87
+hikey = 88
+lovel = 83
+hivel = 127

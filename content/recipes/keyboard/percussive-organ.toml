@@ -1,0 +1,10 @@
+# FreePats setBfree percussive voice: the first, right-channel region at each root, centered in mono.
+# Preserve its source loops; the separate left recordings have different loop starts.
+id = "organ-percussive"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/Percussive Organ.dwp"
+source = "freepats-electric-organs"
+sfz = "unpacked/PercussiveOrganEmulation-SFZ-20190715/PercussiveOrganEmulation-SFZ-20190715/PercussiveOrganEmulation-20190715.sfz"
+channels = "mono"
+release = 0.35
+gain = "normalize"

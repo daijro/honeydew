@@ -1,0 +1,87 @@
+# Iowa stereo ff recordings; source octaves are standard. Measured intonation is corrected per zone.
+# Pizzicato uses the reliably pitched register; upper keys transpose the last usable sample.
+id = "iowa-pizzicato-double-bass"
+kind = "program"
+path = "Presets/DW Sampler/Orchestral/Pizzicato Double Bass (Iowa).dwp"
+source = "iowa-strings"
+channels = "stereo"
+gain = "normalize"
+release = 0.25
+tail = { floor_db = -55, fade_ms = 60, max_s = 6.0 }
+
+[[zone]]
+file = "wav/Bass.pizz.ff.sulC.C1.stereo.wav"
+root = 24
+lokey = 0
+hikey = 25
+tune = 1.0
+
+[[zone]]
+file = "wav/Bass.pizz.ff.sulC.Eb1.stereo.wav"
+root = 27
+lokey = 26
+hikey = 28
+tune = -11.0
+
+[[zone]]
+file = "wav/Bass.pizz.ff.sulE.Gb1.stereo.wav"
+root = 30
+lokey = 29
+hikey = 31
+tune = 30.0
+
+[[zone]]
+file = "wav/Bass.pizz.ff.sulA.A1.stereo.wav"
+root = 33
+lokey = 32
+hikey = 34
+tune = -15.0
+
+[[zone]]
+file = "wav/Bass.pizz.ff.sulA.C2.stereo.wav"
+root = 36
+lokey = 35
+hikey = 37
+tune = -0.0
+
+[[zone]]
+file = "wav/Bass.pizz.ff.sulD.Eb2.stereo.wav"
+root = 39
+lokey = 38
+hikey = 40
+tune = -5.5
+
+[[zone]]
+file = "wav/Bass.pizz.ff.sulD.Gb2.stereo.wav"
+root = 42
+lokey = 41
+hikey = 43
+tune = 17.0
+
+[[zone]]
+file = "wav/Bass.pizz.ff.sulG.A2.stereo.wav"
+root = 45
+lokey = 44
+hikey = 46
+tune = -7.0
+
+[[zone]]
+file = "wav/Bass.pizz.ff.sulG.C3.stereo.wav"
+root = 48
+lokey = 47
+hikey = 49
+tune = -0.0
+
+[[zone]]
+file = "wav/Bass.pizz.ff.sulG.Eb3.stereo.wav"
+root = 51
+lokey = 50
+hikey = 52
+tune = -24.0
+
+[[zone]]
+file = "wav/Bass.pizz.ff.sulG.Gb3.stereo.wav"
+root = 54
+lokey = 53
+hikey = 127
+tune = -2.5

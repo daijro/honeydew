@@ -1,0 +1,730 @@
+# Offline render of emily_chords.sfz; original overlapping voices, pan, delay and velocity splits.
+# Preparation: content/recipes/guitar/prepare-emily.py. Fixed random choice; natural sample decay.
+id = "guitar-emily-power-chords"
+kind = "program"
+path = "Presets/DW Sampler/Guitar/Emilyguitar Power Chords.dwp"
+source = "karoryfer-emilyguitar-rendered"
+channels = "stereo"
+tail = { floor_db = -60, fade_ms = 30 }
+release = 0.25
+gain = "normalize"
+
+[[zone]]
+file = "power-chords-36-v1.wav"
+root = 36
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-36-v2.wav"
+root = 36
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-36-v3.wav"
+root = 36
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-36-v4.wav"
+root = 36
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-37-v1.wav"
+root = 37
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-37-v2.wav"
+root = 37
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-37-v3.wav"
+root = 37
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-37-v4.wav"
+root = 37
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-38-v1.wav"
+root = 38
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-38-v2.wav"
+root = 38
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-38-v3.wav"
+root = 38
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-38-v4.wav"
+root = 38
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-39-v1.wav"
+root = 39
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-39-v2.wav"
+root = 39
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-39-v3.wav"
+root = 39
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-39-v4.wav"
+root = 39
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-40-v1.wav"
+root = 40
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-40-v2.wav"
+root = 40
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-40-v3.wav"
+root = 40
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-40-v4.wav"
+root = 40
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-41-v1.wav"
+root = 41
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-41-v2.wav"
+root = 41
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-41-v3.wav"
+root = 41
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-41-v4.wav"
+root = 41
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-42-v1.wav"
+root = 42
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-42-v2.wav"
+root = 42
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-42-v3.wav"
+root = 42
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-42-v4.wav"
+root = 42
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-43-v1.wav"
+root = 43
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-43-v2.wav"
+root = 43
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-43-v3.wav"
+root = 43
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-43-v4.wav"
+root = 43
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-44-v1.wav"
+root = 44
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-44-v2.wav"
+root = 44
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-44-v3.wav"
+root = 44
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-44-v4.wav"
+root = 44
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-45-v1.wav"
+root = 45
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-45-v2.wav"
+root = 45
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-45-v3.wav"
+root = 45
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-45-v4.wav"
+root = 45
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-46-v1.wav"
+root = 46
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-46-v2.wav"
+root = 46
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-46-v3.wav"
+root = 46
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-46-v4.wav"
+root = 46
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-47-v1.wav"
+root = 47
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-47-v2.wav"
+root = 47
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-47-v3.wav"
+root = 47
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-47-v4.wav"
+root = 47
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-48-v1.wav"
+root = 48
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-48-v2.wav"
+root = 48
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-48-v3.wav"
+root = 48
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-48-v4.wav"
+root = 48
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-49-v1.wav"
+root = 49
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-49-v2.wav"
+root = 49
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-49-v3.wav"
+root = 49
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-49-v4.wav"
+root = 49
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-50-v1.wav"
+root = 50
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-50-v2.wav"
+root = 50
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-50-v3.wav"
+root = 50
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-50-v4.wav"
+root = 50
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-51-v1.wav"
+root = 51
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-51-v2.wav"
+root = 51
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-51-v3.wav"
+root = 51
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-51-v4.wav"
+root = 51
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-52-v1.wav"
+root = 52
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-52-v2.wav"
+root = 52
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-52-v3.wav"
+root = 52
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-52-v4.wav"
+root = 52
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-53-v1.wav"
+root = 53
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-53-v2.wav"
+root = 53
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-53-v3.wav"
+root = 53
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-53-v4.wav"
+root = 53
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-54-v1.wav"
+root = 54
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-54-v2.wav"
+root = 54
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-54-v3.wav"
+root = 54
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-54-v4.wav"
+root = 54
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-55-v1.wav"
+root = 55
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-55-v2.wav"
+root = 55
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-55-v3.wav"
+root = 55
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-55-v4.wav"
+root = 55
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-56-v1.wav"
+root = 56
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-56-v2.wav"
+root = 56
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-56-v3.wav"
+root = 56
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-56-v4.wav"
+root = 56
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-57-v1.wav"
+root = 57
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-57-v2.wav"
+root = 57
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-57-v3.wav"
+root = 57
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-57-v4.wav"
+root = 57
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-58-v1.wav"
+root = 58
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-58-v2.wav"
+root = 58
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-58-v3.wav"
+root = 58
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-58-v4.wav"
+root = 58
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-59-v1.wav"
+root = 59
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-59-v2.wav"
+root = 59
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-59-v3.wav"
+root = 59
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-59-v4.wav"
+root = 59
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-60-v1.wav"
+root = 60
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-60-v2.wav"
+root = 60
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-60-v3.wav"
+root = 60
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-60-v4.wav"
+root = 60
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-61-v1.wav"
+root = 61
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-61-v2.wav"
+root = 61
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-61-v3.wav"
+root = 61
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-61-v4.wav"
+root = 61
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-62-v1.wav"
+root = 62
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-62-v2.wav"
+root = 62
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-62-v3.wav"
+root = 62
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-62-v4.wav"
+root = 62
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-63-v1.wav"
+root = 63
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-63-v2.wav"
+root = 63
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-63-v3.wav"
+root = 63
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-63-v4.wav"
+root = 63
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-64-v1.wav"
+root = 64
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-64-v2.wav"
+root = 64
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-64-v3.wav"
+root = 64
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-64-v4.wav"
+root = 64
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "power-chords-65-v1.wav"
+root = 65
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "power-chords-65-v2.wav"
+root = 65
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "power-chords-65-v3.wav"
+root = 65
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "power-chords-65-v4.wav"
+root = 65
+lovel = 121
+hivel = 127

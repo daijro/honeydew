@@ -41,15 +41,14 @@ const DENY_WORDS: [&str; 10] = [
 /// The same, matched with spaces and punctuation removed.
 const DENY_RUNS: [&str; 5] = ["imageline", "flstudio", "tr808", "tr909", "tb303"];
 
-/// A source's licence and hosts: CC0, PD-declared, MIT with a notice file, or CC-BY with a credit line; nothing from
-/// a banned host.
+/// Allowlisted source licences, required notices/credits, and no banned hosts.
 pub fn licence(s: &Source) -> Result<(), String> {
     match s.spdx.as_str() {
         "CC0-1.0" | "LicenseRef-PD-declared" => {}
-        "MIT" if s.notice.is_none() => {
-            return Err(format!("{}: MIT needs a `notice` file", s.folder));
+        "MIT" | "LicenseRef-Iowa-MIS" if s.notice.is_none() => {
+            return Err(format!("{}: {} needs a `notice` file", s.folder, s.spdx));
         }
-        "MIT" => {}
+        "MIT" | "LicenseRef-Iowa-MIS" => {}
         "CC-BY-3.0" | "CC-BY-4.0" if s.credit.is_none() => {
             return Err(format!("{}: {} needs a `credit` line", s.folder, s.spdx));
         }
@@ -251,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn licence_gate_takes_cc0_pd_mit_with_notice_and_credited_cc_by_only() {
+    fn licence_gate_requires_notices_and_attribution_for_allowed_sources() {
         for ok in [
             source("CC0-1.0", false, false),
             source("LicenseRef-PD-declared", false, false),
@@ -259,6 +258,8 @@ mod tests {
             assert_eq!(licence(&ok), Ok(()));
         }
         assert_eq!(licence(&source("MIT", false, true)), Ok(()));
+        assert_eq!(licence(&source("LicenseRef-Iowa-MIS", true, true)), Ok(()));
+        assert!(licence(&source("LicenseRef-Iowa-MIS", true, false)).is_err());
         assert!(
             licence(&source("MIT", false, false)).is_err(),
             "MIT without its notice"

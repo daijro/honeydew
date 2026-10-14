@@ -1,0 +1,584 @@
+# SG-style guitar with flatwound strings. Four recorded velocity layers and original key/velocity ranges; deterministic first random take. Release noises remain in the upstream source.
+id = "guitar-emily"
+kind = "program"
+path = "Presets/DW Sampler/Guitar/Emilyguitar.dwp"
+source = "karoryfer-emilyguitar"
+tail = { floor_db = -60, fade_ms = 30 }
+release = 0.25
+gain = "normalize"
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/db2_p_rr1.wav"
+root = 37
+lokey = 33
+hikey = 38
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/db2_mp_rr1.wav"
+root = 37
+lokey = 33
+hikey = 38
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/db2_mf_rr1.wav"
+root = 37
+lokey = 33
+hikey = 38
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/db2_f_rr1.wav"
+root = 37
+lokey = 33
+hikey = 38
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/e2_p_rr1.wav"
+root = 40
+lokey = 39
+hikey = 40
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/e2_mp_rr1.wav"
+root = 40
+lokey = 39
+hikey = 40
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/e2_mf_rr1.wav"
+root = 40
+lokey = 39
+hikey = 40
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/e2_f_rr1.wav"
+root = 40
+lokey = 39
+hikey = 40
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb2_p_rr1.wav"
+root = 42
+lokey = 41
+hikey = 43
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb2_mp_rr1.wav"
+root = 42
+lokey = 41
+hikey = 43
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb2_mf_rr1.wav"
+root = 42
+lokey = 41
+hikey = 43
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb2_f_rr1.wav"
+root = 42
+lokey = 41
+hikey = 43
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a2_p_rr1.wav"
+root = 45
+lokey = 44
+hikey = 46
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a2_mp_rr1.wav"
+root = 45
+lokey = 44
+hikey = 46
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a2_mf_rr1.wav"
+root = 45
+lokey = 44
+hikey = 46
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a2_f_rr1.wav"
+root = 45
+lokey = 44
+hikey = 46
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c3_p_rr1.wav"
+root = 48
+lokey = 47
+hikey = 49
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c3_mp_rr1.wav"
+root = 48
+lokey = 47
+hikey = 49
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c3_mf_rr1.wav"
+root = 48
+lokey = 47
+hikey = 49
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c3_f_rr1.wav"
+root = 48
+lokey = 47
+hikey = 49
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/eb3_p_rr1.wav"
+root = 51
+lokey = 50
+hikey = 52
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/eb3_mp_rr1.wav"
+root = 51
+lokey = 50
+hikey = 52
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/eb3_mf_rr1.wav"
+root = 51
+lokey = 50
+hikey = 52
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/eb3_f_rr1.wav"
+root = 51
+lokey = 50
+hikey = 52
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb3_p_rr1.wav"
+root = 54
+lokey = 53
+hikey = 55
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb3_mp_rr1.wav"
+root = 54
+lokey = 53
+hikey = 55
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb3_mf_rr1.wav"
+root = 54
+lokey = 53
+hikey = 55
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb3_f_rr1.wav"
+root = 54
+lokey = 53
+hikey = 55
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a3_p_rr1.wav"
+root = 57
+lokey = 56
+hikey = 58
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a3_mp_rr1.wav"
+root = 57
+lokey = 56
+hikey = 58
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a3_mf_rr1.wav"
+root = 57
+lokey = 56
+hikey = 58
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a3_f_rr1.wav"
+root = 57
+lokey = 56
+hikey = 58
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c4_p_rr1.wav"
+root = 60
+lokey = 59
+hikey = 61
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c4_mp_rr1.wav"
+root = 60
+lokey = 59
+hikey = 61
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c4_mf_rr1.wav"
+root = 60
+lokey = 59
+hikey = 61
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c4_f_rr1.wav"
+root = 60
+lokey = 59
+hikey = 61
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/eb4_p_rr1.wav"
+root = 63
+lokey = 62
+hikey = 64
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/eb4_mp_rr1.wav"
+root = 63
+lokey = 62
+hikey = 64
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/eb4_mf_rr1.wav"
+root = 63
+lokey = 62
+hikey = 64
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/eb4_f_rr1.wav"
+root = 63
+lokey = 62
+hikey = 64
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb4_p_rr1.wav"
+root = 66
+lokey = 65
+hikey = 67
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb4_mp_rr1.wav"
+root = 66
+lokey = 65
+hikey = 67
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb4_mf_rr1.wav"
+root = 66
+lokey = 65
+hikey = 67
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb4_f_rr1.wav"
+root = 66
+lokey = 65
+hikey = 67
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a4_p_rr1.wav"
+root = 69
+lokey = 68
+hikey = 70
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a4_mp_rr1.wav"
+root = 69
+lokey = 68
+hikey = 70
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a4_mf_rr1.wav"
+root = 69
+lokey = 68
+hikey = 70
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a4_f_rr1.wav"
+root = 69
+lokey = 68
+hikey = 70
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c5_p_rr1.wav"
+root = 72
+lokey = 71
+hikey = 73
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c5_mp_rr1.wav"
+root = 72
+lokey = 71
+hikey = 73
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c5_mf_rr1.wav"
+root = 72
+lokey = 71
+hikey = 73
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c5_f_rr1.wav"
+root = 72
+lokey = 71
+hikey = 73
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/eb5_p_rr1.wav"
+root = 75
+lokey = 74
+hikey = 76
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/eb5_mp_rr1.wav"
+root = 75
+lokey = 74
+hikey = 76
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/eb5_mf_rr1.wav"
+root = 75
+lokey = 74
+hikey = 76
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/eb5_f_rr1.wav"
+root = 75
+lokey = 74
+hikey = 76
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb5_p_rr1.wav"
+root = 78
+lokey = 77
+hikey = 79
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb5_mp_rr1.wav"
+root = 78
+lokey = 77
+hikey = 79
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb5_mf_rr1.wav"
+root = 78
+lokey = 77
+hikey = 79
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/gb5_f_rr1.wav"
+root = 78
+lokey = 77
+hikey = 79
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a5_p_rr1.wav"
+root = 81
+lokey = 80
+hikey = 82
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a5_mp_rr1.wav"
+root = 81
+lokey = 80
+hikey = 82
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a5_mf_rr1.wav"
+root = 81
+lokey = 80
+hikey = 82
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/a5_f_rr1.wav"
+root = 81
+lokey = 80
+hikey = 82
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c6_p_rr1.wav"
+root = 84
+lokey = 83
+hikey = 84
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c6_mp_rr1.wav"
+root = 84
+lokey = 83
+hikey = 84
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c6_mf_rr1.wav"
+root = 84
+lokey = 83
+hikey = 84
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/c6_f_rr1.wav"
+root = 84
+lokey = 83
+hikey = 84
+lovel = 121
+hivel = 127
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/d6_p_rr1.wav"
+root = 86
+lokey = 85
+hikey = 89
+lovel = 0
+hivel = 40
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/d6_mp_rr1.wav"
+root = 86
+lokey = 85
+hikey = 89
+lovel = 41
+hivel = 80
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/d6_mf_rr1.wav"
+root = 86
+lokey = 85
+hikey = 89
+lovel = 81
+hivel = 120
+
+[[zone]]
+file = "unpacked/karoryfer.emilyguitar-master/notes/d6_f_rr1.wav"
+root = 86
+lokey = 85
+hikey = 89
+lovel = 121
+hivel = 127

@@ -1,0 +1,384 @@
+# Karoryfer green hollowbody, staccato. Source MIDI keys and velocity splits, first round robin; all sampled roots.
+id = "guitar-green-stac"
+kind = "program"
+path = "Presets/DW Sampler/Guitar/Green Guitar Staccato.dwp"
+source = "karoryfer-black-and-green-guitars-release"
+tail = { floor_db = -60, fade_ms = 30 }
+release = 0.25
+gain = "normalize"
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_e3_rr1.wav"
+root = 40
+lokey = 40
+hikey = 40
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_f3_rr1.wav"
+root = 41
+lokey = 41
+hikey = 41
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_gb3_rr1.wav"
+root = 42
+lokey = 42
+hikey = 42
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_g3_rr1.wav"
+root = 43
+lokey = 43
+hikey = 43
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_ab3_rr1.wav"
+root = 44
+lokey = 44
+hikey = 44
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_a3_rr1.wav"
+root = 45
+lokey = 45
+hikey = 45
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_bb3_rr1.wav"
+root = 46
+lokey = 46
+hikey = 46
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_b3_rr1.wav"
+root = 47
+lokey = 47
+hikey = 47
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_c4_rr1.wav"
+root = 48
+lokey = 48
+hikey = 48
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_db4_rr1.wav"
+root = 49
+lokey = 49
+hikey = 49
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_d4_rr1.wav"
+root = 50
+lokey = 50
+hikey = 50
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_eb4_rr1.wav"
+root = 51
+lokey = 51
+hikey = 51
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_e4_rr1.wav"
+root = 52
+lokey = 52
+hikey = 52
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_f4_rr1.wav"
+root = 53
+lokey = 53
+hikey = 53
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_gb4_rr1.wav"
+root = 54
+lokey = 54
+hikey = 54
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_g4_rr1.wav"
+root = 55
+lokey = 55
+hikey = 55
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_ab4_rr1.wav"
+root = 56
+lokey = 56
+hikey = 56
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_a4_rr1.wav"
+root = 57
+lokey = 57
+hikey = 57
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_bb4_rr1.wav"
+root = 58
+lokey = 58
+hikey = 58
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_b4_rr1.wav"
+root = 59
+lokey = 59
+hikey = 59
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_c5_rr1.wav"
+root = 60
+lokey = 60
+hikey = 60
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_db5_rr1.wav"
+root = 61
+lokey = 61
+hikey = 61
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_d5_rr1.wav"
+root = 62
+lokey = 62
+hikey = 62
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_eb5_rr1.wav"
+root = 63
+lokey = 63
+hikey = 63
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_e5_rr1.wav"
+root = 64
+lokey = 64
+hikey = 64
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_f5_rr1.wav"
+root = 65
+lokey = 65
+hikey = 65
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_gb5_rr1.wav"
+root = 66
+lokey = 66
+hikey = 66
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_g5_rr1.wav"
+root = 67
+lokey = 67
+hikey = 67
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_ab5_rr1.wav"
+root = 68
+lokey = 68
+hikey = 68
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_a5_rr1.wav"
+root = 69
+lokey = 69
+hikey = 69
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_bb5_rr1.wav"
+root = 70
+lokey = 70
+hikey = 70
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_b5_rr1.wav"
+root = 71
+lokey = 71
+hikey = 71
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_c6_rr1.wav"
+root = 72
+lokey = 72
+hikey = 72
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_db6_rr1.wav"
+root = 73
+lokey = 73
+hikey = 73
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_d6_rr1.wav"
+root = 74
+lokey = 74
+hikey = 74
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_eb6_rr1.wav"
+root = 75
+lokey = 75
+hikey = 75
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_e6_rr1.wav"
+root = 76
+lokey = 76
+hikey = 76
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_f6_rr1.wav"
+root = 77
+lokey = 77
+hikey = 77
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_gb6_rr1.wav"
+root = 78
+lokey = 78
+hikey = 78
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_g6_rr1.wav"
+root = 79
+lokey = 79
+hikey = 79
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_ab6_rr1.wav"
+root = 80
+lokey = 80
+hikey = 80
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_a6_rr1.wav"
+root = 81
+lokey = 81
+hikey = 81
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_bb6_rr1.wav"
+root = 82
+lokey = 82
+hikey = 82
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_b6_rr1.wav"
+root = 83
+lokey = 83
+hikey = 83
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_c7_rr1.wav"
+root = 84
+lokey = 84
+hikey = 84
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_db7_rr1.wav"
+root = 85
+lokey = 85
+hikey = 85
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/Samples/green/stac/staccato_d7_rr1.wav"
+root = 86
+lokey = 86
+hikey = 86
+lovel = 0
+hivel = 127

@@ -208,6 +208,28 @@ fn a_program_maps_keys_and_layers_and_keeps_its_sources_loops_at_44_1_khz() {
             zone((72, 67, 80, 64, 127), "C5 v2.flac", (2, 882, 970)),
         ]
     );
+    assert!(
+        honeydew_audio::dwp::read(&members[0].1)
+            .unwrap()
+            .iter()
+            .all(|d| d.zone.floats[0] == 0.0)
+    );
+    let padded: Recipe = toml::from_str(&format!("{text}attack = 0.15\n")).unwrap();
+    let (padded, _) = stages::program(&padded, &mut Inputs::new(&root, "", true)).unwrap();
+    assert!(
+        honeydew_audio::dwp::read(&padded[0].1)
+            .unwrap()
+            .iter()
+            .all(|d| d.zone.floats[0] == 0.15)
+    );
+    for attack in ["-0.1", "1.1", "nan"] {
+        let bad: Recipe = toml::from_str(&format!("{text}attack = {attack}\n")).unwrap();
+        assert!(
+            stages::program(&bad, &mut Inputs::new(&root, "", true))
+                .unwrap_err()
+                .contains("attack must be finite and in 0..=1")
+        );
+    }
     // The loudest sample peaks at −6 dBFS, and is cut at its loop's end.
     let loud = honeydew_audio::sample::decode(&members[1].1).unwrap();
     let peak = loud.left.iter().fold(0f32, |p, x| p.max(x.abs()));

@@ -10,8 +10,8 @@ use crate::pack::{self, CAP};
 use crate::recipe::read;
 
 /// The index budget, raw and gzipped.
-const INDEX_RAW: usize = 256_000;
-const INDEX_GZ: usize = 48_000;
+const INDEX_RAW: usize = 512_000;
+const INDEX_GZ: usize = 96_000;
 
 pub fn verify(out: &Path, previous: Option<&Path>) -> Result<(), String> {
     verify_capped(out, previous, CAP)

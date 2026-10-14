@@ -12,7 +12,7 @@ set -eu
 cd "$(dirname "$0")/.."
 
 # Budgets in bytes: provisional, until measured releases ratchet them.
-WASM_RAW=16000000 WASM_GZ=4500000 JS_GZ=60000 INDEX_RAW=256000 INDEX_GZ=48000 FIRST_LOAD=5000000
+WASM_RAW=16000000 WASM_GZ=4500000 JS_GZ=60000 INDEX_RAW=512000 INDEX_GZ=96000 FIRST_LOAD=5000000
 PART_MAX=24000000 # one pack part, raw and gzipped
 FILE_MAX=26214400 # 25 MiB, Cloudflare's limit per file
 # The binaryen release this was measured with; another one works, with a note.

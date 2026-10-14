@@ -1,0 +1,13 @@
+# String Cyborgs: one recorded oscillator voice, with its original embedded WAV loop exposed in a prepared SFZ.
+# This sampler program does not reproduce the upstream synth presets, filters, unison or modulation.
+# Prepared mappings correct the measured octave; source WAVs are copied byte-for-byte.
+id = "pad-blackheart-bowed-cello"
+kind = "program"
+path = "Presets/DW Sampler/Pad/Blackheart Bowed Cello Texture.dwp"
+source = "karoryfer-string-cyborgs-prepared"
+sfz = "blackheart.sfz"
+channels = "auto"
+# An 82 ms attack prevents the recorded oscillator's mid-wave start from clicking.
+attack = 0.3
+release = 0.7
+gain = "normalize"

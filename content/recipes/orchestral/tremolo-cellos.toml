@@ -1,0 +1,212 @@
+# VSCO 2 CE: tremolo cellos, all recorded sample points and the first round robin.
+# Measured pitch requires transpose 12; retain both dynamics.
+# The file trem_B2_v2 sounds B2 (123 Hz), matching trem_B1_v1; its root corrects that filename.
+# A pitch with only one recorded dynamic uses it across velocity, avoiding distant-layer pitch stretching.
+id = "strings-tremolo-cellos"
+kind = "program"
+path = "Presets/DW Sampler/Orchestral/Tremolo Cellos.dwp"
+source = "vsco2-ce"
+channels = "auto"
+loop = { find = true, min_s = 1.5, crossfade_ms = 150, keep_s = 4.0 }
+release = 0.4
+gain = "normalize"
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_E1_v1_1.wav"
+root = 40
+lokey = 39
+hikey = 41
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_G1_v1_1.wav"
+root = 43
+lokey = 42
+hikey = 45
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_B1_v1_1.wav"
+root = 47
+lokey = 46
+hikey = 48
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_D2_v1_1.wav"
+root = 50
+lokey = 49
+hikey = 51
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_F2_v1_1.wav"
+root = 53
+lokey = 52
+hikey = 55
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_A2_v1_1.wav"
+root = 57
+lokey = 56
+hikey = 58
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_C3_v1_1.wav"
+root = 60
+lokey = 59
+hikey = 62
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_E3_v1_1.wav"
+root = 64
+lokey = 63
+hikey = 65
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_G3_v1_1.wav"
+root = 67
+lokey = 66
+hikey = 69
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_B3_v1_1.wav"
+root = 71
+lokey = 70
+hikey = 72
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_D4_v1_1.wav"
+root = 74
+lokey = 73
+hikey = 75
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_F4_v1_1.wav"
+root = 77
+lokey = 76
+hikey = 127
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_C1_v2_1.wav"
+root = 36
+lokey = 0
+hikey = 38
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_E1_v2_1.wav"
+root = 40
+lokey = 39
+hikey = 41
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_G1_v2_1.wav"
+root = 43
+lokey = 42
+hikey = 45
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_B2_v2_1.wav"
+root = 47
+lokey = 46
+hikey = 48
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_D2_v2_1.wav"
+root = 50
+lokey = 49
+hikey = 51
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_F2_v2_1.wav"
+root = 53
+lokey = 52
+hikey = 55
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_A2_v2_1.wav"
+root = 57
+lokey = 56
+hikey = 58
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_C3_v2_1.wav"
+root = 60
+lokey = 59
+hikey = 62
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_E3_v2_1.wav"
+root = 64
+lokey = 63
+hikey = 65
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_G3_v2_1.wav"
+root = 67
+lokey = 66
+hikey = 69
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_B3_v2_1.wav"
+root = 71
+lokey = 70
+hikey = 72
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_D4_v2_1.wav"
+root = 74
+lokey = 73
+hikey = 75
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Strings/Cello Section/trem/trem_F4_v2_1.wav"
+root = 77
+lokey = 76
+hikey = 127
+lovel = 64
+hivel = 127

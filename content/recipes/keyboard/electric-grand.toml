@@ -1,0 +1,658 @@
+# Preserve the source key/velocity ranges and tuning; layers have different sample roots.
+# Basic sampled voice: source release noises, gain/start/end controls and ARIA envelopes are omitted.
+id = "keys-electric-grand"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/Electric Grand.dwp"
+source = "greg-sullivan-epianos"
+channels = "auto"
+tail = { floor_db = -60, fade_ms = 400, max_s = 6 }
+release = 0.35
+gain = "normalize"
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/027-D#1-PP.flac"
+root = 27
+lokey = 21
+hikey = 30
+lovel = 1
+hivel = 49
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/034-A#1-PP.flac"
+root = 34
+lokey = 31
+hikey = 37
+lovel = 1
+hivel = 49
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/042-F#2-PP.flac"
+root = 42
+lokey = 38
+hikey = 45
+lovel = 1
+hivel = 49
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/050-D3-PP.flac"
+root = 50
+lokey = 46
+hikey = 53
+lovel = 1
+hivel = 49
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/057-A3-PP.flac"
+root = 57
+lokey = 54
+hikey = 59
+lovel = 1
+hivel = 49
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/063-D#4-PP.flac"
+root = 63
+lokey = 60
+hikey = 63
+lovel = 1
+hivel = 49
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/065-F4-PP.flac"
+root = 65
+lokey = 64
+hikey = 66
+lovel = 1
+hivel = 49
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/068-G#4-PP.flac"
+root = 68
+lokey = 67
+hikey = 69
+lovel = 1
+hivel = 49
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/072-C5-PP.flac"
+root = 72
+lokey = 70
+hikey = 75
+lovel = 1
+hivel = 49
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/080-G#5-PP.flac"
+root = 80
+lokey = 76
+hikey = 82
+lovel = 1
+hivel = 49
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/085-C#6-PP.flac"
+root = 85
+lokey = 83
+hikey = 87
+lovel = 1
+hivel = 49
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/091-G6-PP.flac"
+root = 91
+lokey = 88
+hikey = 93
+lovel = 1
+hivel = 49
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/097-C#7-PP.flac"
+root = 97
+lokey = 94
+hikey = 99
+lovel = 1
+hivel = 49
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/102-F#7-PP.flac"
+root = 102
+lokey = 100
+hikey = 104
+lovel = 1
+hivel = 49
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/107-B7-PP.flac"
+root = 107
+lokey = 105
+hikey = 108
+lovel = 1
+hivel = 49
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/027-D#1-MP.flac"
+root = 27
+lokey = 21
+hikey = 30
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/034-A#1-MP.flac"
+root = 34
+lokey = 31
+hikey = 37
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/042-F#2-MP.flac"
+root = 42
+lokey = 38
+hikey = 43
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/046-A#2-MP.flac"
+root = 46
+lokey = 44
+hikey = 47
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/050-D3-MP.flac"
+root = 50
+lokey = 48
+hikey = 51
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/053-F3-MP.flac"
+root = 53
+lokey = 52
+hikey = 54
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/057-A3-MP.flac"
+root = 57
+lokey = 55
+hikey = 58
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/060-C4-MP.flac"
+root = 60
+lokey = 59
+hikey = 61
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/063-D#4-MP.flac"
+root = 63
+lokey = 62
+hikey = 63
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/065-F4-MP.flac"
+root = 65
+lokey = 64
+hikey = 66
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/068-G#4-MP.flac"
+root = 68
+lokey = 67
+hikey = 69
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/072-C5-MP.flac"
+root = 72
+lokey = 70
+hikey = 73
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/076-E5-MP.flac"
+root = 76
+lokey = 74
+hikey = 77
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/080-G#5-MP.flac"
+root = 80
+lokey = 78
+hikey = 80
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/082-A#5-MP.flac"
+root = 82
+lokey = 81
+hikey = 83
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/085-C#6-MP.flac"
+root = 85
+lokey = 84
+hikey = 86
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/088-E6-MP.flac"
+root = 88
+lokey = 87
+hikey = 89
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/091-G6-MP.flac"
+root = 91
+lokey = 90
+hikey = 92
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/095-B6-MP.flac"
+root = 95
+lokey = 93
+hikey = 95
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/097-C#7-MP.flac"
+root = 97
+lokey = 96
+hikey = 99
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/102-F#7-MP.flac"
+root = 102
+lokey = 100
+hikey = 104
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/107-B7-MP.flac"
+root = 107
+lokey = 105
+hikey = 108
+lovel = 50
+hivel = 81
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/027-D#1-F.flac"
+root = 27
+lokey = 21
+hikey = 30
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/035-B1-F.flac"
+root = 35
+lokey = 31
+hikey = 38
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/042-F#2-F.flac"
+root = 42
+lokey = 39
+hikey = 43
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/046-A#2-F.flac"
+root = 46
+lokey = 44
+hikey = 47
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/050-D3-F.flac"
+root = 50
+lokey = 48
+hikey = 51
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/053-F3-F.flac"
+root = 53
+lokey = 52
+hikey = 54
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/057-A3-F.flac"
+root = 57
+lokey = 55
+hikey = 58
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/060-C4-F.flac"
+root = 60
+lokey = 59
+hikey = 61
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/063-D#4-F.flac"
+root = 63
+lokey = 62
+hikey = 63
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/065-F4-F.flac"
+root = 65
+lokey = 64
+hikey = 66
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/068-G#4-F.flac"
+root = 68
+lokey = 67
+hikey = 69
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/072-C5-F.flac"
+root = 72
+lokey = 70
+hikey = 73
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/076-E5-F.flac"
+root = 76
+lokey = 74
+hikey = 77
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/080-G#5-F.flac"
+root = 80
+lokey = 78
+hikey = 80
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/082-A#5-F.flac"
+root = 82
+lokey = 81
+hikey = 83
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/085-C#6-F.flac"
+root = 85
+lokey = 84
+hikey = 86
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/088-E6-F.flac"
+root = 88
+lokey = 87
+hikey = 89
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/091-G6-F.flac"
+root = 91
+lokey = 90
+hikey = 92
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/095-B6-F.flac"
+root = 95
+lokey = 93
+hikey = 95
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/097-C#7-F.flac"
+root = 97
+lokey = 96
+hikey = 99
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/102-F#7-F.flac"
+root = 102
+lokey = 100
+hikey = 104
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/107-B7-F.flac"
+root = 107
+lokey = 105
+hikey = 108
+lovel = 82
+hivel = 103
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/027-D#1-FF.flac"
+root = 27
+lokey = 21
+hikey = 30
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/035-B1-FF.flac"
+root = 35
+lokey = 31
+hikey = 38
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/042-F#2-FF.flac"
+root = 42
+lokey = 39
+hikey = 43
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/046-A#2-FF.flac"
+root = 46
+lokey = 44
+hikey = 47
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/050-D3-FF.flac"
+root = 50
+lokey = 48
+hikey = 51
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/053-F3-FF.flac"
+root = 53
+lokey = 52
+hikey = 54
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/057-A3-FF.flac"
+root = 57
+lokey = 55
+hikey = 58
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/060-C4-FF.flac"
+root = 60
+lokey = 59
+hikey = 61
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/063-D#4-FF.flac"
+root = 63
+lokey = 62
+hikey = 63
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/065-F4-FF.flac"
+root = 65
+lokey = 64
+hikey = 66
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/068-G#4-FF.flac"
+root = 68
+lokey = 67
+hikey = 69
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/072-C5-FF.flac"
+root = 72
+lokey = 70
+hikey = 73
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/076-E5-FF.flac"
+root = 76
+lokey = 74
+hikey = 77
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/080-G#5-FF.flac"
+root = 80
+lokey = 78
+hikey = 80
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/082-A#5-FF.flac"
+root = 82
+lokey = 81
+hikey = 83
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/085-C#6-FF.flac"
+root = 85
+lokey = 84
+hikey = 86
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/088-E6-FF.flac"
+root = 88
+lokey = 87
+hikey = 89
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/091-G6-FF.flac"
+root = 91
+lokey = 90
+hikey = 92
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/095-B6-FF.flac"
+root = 95
+lokey = 93
+hikey = 95
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/097-C#7-FF.flac"
+root = 97
+lokey = 96
+hikey = 99
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/102-F#7-FF.flac"
+root = 102
+lokey = 100
+hikey = 104
+lovel = 104
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/CP80/Samples/107-B7-FF.flac"
+root = 107
+lokey = 105
+hikey = 108
+lovel = 104
+hivel = 127

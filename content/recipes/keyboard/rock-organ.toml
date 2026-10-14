@@ -1,0 +1,10 @@
+# FreePats setBfree rock voice: the first, right-channel region at each root, centered in mono.
+# Preserve its source loops; the separate left recordings have different loop starts.
+id = "organ-rock"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/Rock Organ.dwp"
+source = "freepats-electric-organs"
+sfz = "unpacked/RockOrganEmulation-SFZ-20190715/RockOrganEmulation-SFZ-20190715/RockOrganEmulation-20190715.sfz"
+channels = "mono"
+release = 0.35
+gain = "normalize"

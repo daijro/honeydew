@@ -1,0 +1,13 @@
+# VSCO 2 CE: concert harp (vsco 2 ce), all recorded sample points and the first round robin.
+# These harp names use standard octaves. Each pitch has one recorded dynamic (mp, mf or f).
+id = "strings-harp-vsco"
+kind = "program"
+path = "Presets/DW Sampler/Orchestral/Concert Harp (VSCO 2 CE).dwp"
+source = "vsco2-ce"
+files = "unpacked/VSCO-2-CE-master/Strings/Harp/KSHarp_{note}_{layer}.wav"
+layers = ["mp", "mf", "f"]
+transpose = 0
+channels = "auto"
+tail = { floor_db = -55, fade_ms = 300, max_s = 6.0 }
+release = 0.6
+gain = "normalize"

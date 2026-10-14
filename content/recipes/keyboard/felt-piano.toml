@@ -1,0 +1,13 @@
+# Meta's felt-damped upright: all four dynamics and one sample point per minor third, A0-C8.
+# The SFZ supplies MIDI roots for its As/Cs/etc. filenames; velocity layers use the documented quarter splits.
+id = "keys-felt-piano"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/Felt Piano.dwp"
+source = "meta-piano"
+sfz = "unpacked/meta-piano.sfz"
+velocity_layers = [1, 2, 3, 4]
+keys = { every = 3, from = 21, to = 108 }
+channels = "auto"
+tail = { floor_db = -60, fade_ms = 400, max_s = 6 }
+release = 0.035
+gain = "normalize"

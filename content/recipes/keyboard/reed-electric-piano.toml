@@ -1,0 +1,428 @@
+# Preserve the source key/velocity ranges and tuning; layers have different sample roots.
+# Basic sampled voice: source release noises, gain/start/end controls and ARIA envelopes are omitted.
+id = "keys-reed-electric-piano"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/Reed Electric Piano.dwp"
+source = "greg-sullivan-epianos"
+channels = "auto"
+tail = { floor_db = -60, fade_ms = 400, max_s = 6 }
+release = 0.35
+gain = "normalize"
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/a1pp.flac"
+root = 33
+lokey = 33
+hikey = 38
+lovel = 1
+hivel = 37
+tune = -5
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/ab2pp.flac"
+root = 44
+lokey = 39
+hikey = 47
+lovel = 1
+hivel = 37
+tune = -8
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/eb3pp.flac"
+root = 51
+lokey = 48
+hikey = 53
+lovel = 1
+hivel = 37
+tune = -10
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/ab3pp.flac"
+root = 56
+lokey = 54
+hikey = 59
+lovel = 1
+hivel = 37
+tune = -12
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/db4pp.flac"
+root = 61
+lokey = 60
+hikey = 62
+lovel = 1
+hivel = 37
+tune = -2
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/g4pp.flac"
+root = 67
+lokey = 63
+hikey = 68
+lovel = 1
+hivel = 37
+tune = -2
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/db5pp.flac"
+root = 73
+lokey = 69
+hikey = 74
+lovel = 1
+hivel = 37
+tune = -5
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/g5mp.flac"
+root = 79
+lokey = 75
+hikey = 80
+lovel = 1
+hivel = 37
+tune = -8
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/db6mp.flac"
+root = 85
+lokey = 81
+hikey = 89
+lovel = 1
+hivel = 37
+tune = 6
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/ab6mp.flac"
+root = 92
+lokey = 90
+hikey = 96
+lovel = 1
+hivel = 37
+tune = 2
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/a1mp.flac"
+root = 33
+lokey = 33
+hikey = 35
+lovel = 38
+hivel = 65
+tune = -5
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/e2mp.flac"
+root = 40
+lokey = 36
+hikey = 41
+lovel = 38
+hivel = 65
+tune = -4
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/a2mp.flac"
+root = 45
+lokey = 42
+hikey = 47
+lovel = 38
+hivel = 65
+tune = -2
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/eb3mp.flac"
+root = 51
+lokey = 48
+hikey = 53
+lovel = 38
+hivel = 65
+tune = -9
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/ab3mp.flac"
+root = 56
+lokey = 54
+hikey = 59
+lovel = 38
+hivel = 65
+tune = -8
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/db4mp.flac"
+root = 61
+lokey = 60
+hikey = 62
+lovel = 38
+hivel = 65
+tune = 4
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/gb4mp.flac"
+root = 66
+lokey = 63
+hikey = 68
+lovel = 38
+hivel = 65
+tune = 7
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/b4mp.flac"
+root = 71
+lokey = 69
+hikey = 71
+lovel = 38
+hivel = 65
+tune = -5
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/db5mp.flac"
+root = 73
+lokey = 72
+hikey = 74
+lovel = 38
+hivel = 65
+tune = 3
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/g5mp.flac"
+root = 79
+lokey = 75
+hikey = 80
+lovel = 38
+hivel = 65
+tune = -8
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/db6mp.flac"
+root = 85
+lokey = 81
+hikey = 89
+lovel = 38
+hivel = 65
+tune = 6
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/ab6mp.flac"
+root = 92
+lokey = 90
+hikey = 96
+lovel = 38
+hivel = 65
+tune = 2
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/a1f.flac"
+root = 33
+lokey = 33
+hikey = 35
+lovel = 66
+hivel = 89
+tune = -5
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/c2f.flac"
+root = 36
+lokey = 36
+hikey = 38
+lovel = 66
+hivel = 89
+tune = -7
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/f2f.flac"
+root = 41
+lokey = 39
+hikey = 44
+lovel = 66
+hivel = 89
+tune = -6
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/b2f.flac"
+root = 47
+lokey = 45
+hikey = 50
+lovel = 66
+hivel = 89
+tune = -8
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/e3f.flac"
+root = 52
+lokey = 51
+hikey = 53
+lovel = 66
+hivel = 89
+tune = -4
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/ab3f.flac"
+root = 56
+lokey = 54
+hikey = 59
+lovel = 66
+hivel = 89
+tune = -11
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/db4f.flac"
+root = 61
+lokey = 60
+hikey = 65
+lovel = 66
+hivel = 89
+tune = -2
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/ab4f.flac"
+root = 68
+lokey = 66
+hikey = 71
+lovel = 66
+hivel = 89
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/db5f.flac"
+root = 73
+lokey = 72
+hikey = 77
+lovel = 66
+hivel = 89
+tune = 3
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/g5f.flac"
+root = 79
+lokey = 78
+hikey = 80
+lovel = 66
+hivel = 89
+tune = -7
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/db6f.flac"
+root = 85
+lokey = 81
+hikey = 89
+lovel = 66
+hivel = 89
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/ab6f.flac"
+root = 92
+lokey = 90
+hikey = 96
+lovel = 66
+hivel = 89
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/a1ff.flac"
+root = 33
+lokey = 33
+hikey = 35
+lovel = 90
+hivel = 127
+tune = -5
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/c2ff.flac"
+root = 36
+lokey = 36
+hikey = 38
+lovel = 90
+hivel = 127
+tune = -7
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/f2ff.flac"
+root = 41
+lokey = 39
+hikey = 44
+lovel = 90
+hivel = 127
+tune = -6
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/b2ff.flac"
+root = 47
+lokey = 45
+hikey = 50
+lovel = 90
+hivel = 127
+tune = -8
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/e3ff.flac"
+root = 52
+lokey = 51
+hikey = 53
+lovel = 90
+hivel = 127
+tune = -2
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/ab3ff.flac"
+root = 56
+lokey = 54
+hikey = 59
+lovel = 90
+hivel = 127
+tune = -8
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/db4ff.flac"
+root = 61
+lokey = 60
+hikey = 62
+lovel = 90
+hivel = 127
+tune = 2
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/e4ff.flac"
+root = 64
+lokey = 63
+hikey = 65
+lovel = 90
+hivel = 127
+tune = -3
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/g4ff.flac"
+root = 67
+lokey = 66
+hikey = 68
+lovel = 90
+hivel = 127
+tune = 3
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/db5ff.flac"
+root = 73
+lokey = 69
+hikey = 77
+lovel = 90
+hivel = 127
+tune = -1
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/g5ff.flac"
+root = 79
+lokey = 78
+hikey = 80
+lovel = 90
+hivel = 127
+tune = -7
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/db6f.flac"
+root = 85
+lokey = 81
+hikey = 89
+lovel = 90
+hivel = 127
+
+[[zone]]
+file = "unpacked/GregSullivan.E-Pianos/Wurlitzer EP200/Samples/ab6f.flac"
+root = 92
+lokey = 90
+hikey = 96
+lovel = 90
+hivel = 127

@@ -1,0 +1,12 @@
+# VCSL French harpsichord, normal stop and first take, one point per major third.
+id = "keys-french-harpsichord"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/French Harpsichord.dwp"
+source = "vcsl"
+files = "unpacked/VCSL-master/Chordophones/Zithers/Harpsichord, French/Sustains/Harpsi2_Normal_{note}_rr{rr}_Main.wav"
+transpose = 12
+keys = { every = 4 }
+channels = "auto"
+tail = { floor_db = -60, fade_ms = 300, max_s = 4 }
+release = 0.3
+gain = "normalize"

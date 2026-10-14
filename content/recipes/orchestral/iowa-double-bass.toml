@@ -1,0 +1,122 @@
+# Iowa stereo ff recordings; source octaves are standard. Measured intonation is corrected per zone.
+# Pizzicato uses the reliably pitched register; upper keys transpose the last usable sample.
+id = "iowa-double-bass"
+kind = "program"
+path = "Presets/DW Sampler/Orchestral/Double Bass (Iowa).dwp"
+source = "iowa-strings"
+channels = "stereo"
+gain = "normalize"
+release = 0.35
+loop = { find = true, min_s = 0.4, crossfade_ms = 70, keep_s = 1.4 }
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulC.C1.stereo.wav"
+root = 24
+lokey = 0
+hikey = 25
+tune = 0.5
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulC.Eb1.stereo.wav"
+root = 27
+lokey = 26
+hikey = 28
+tune = -10.0
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulE.Gb1.stereo.wav"
+root = 30
+lokey = 29
+hikey = 31
+tune = 12.0
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulA.A1.stereo.wav"
+root = 33
+lokey = 32
+hikey = 34
+tune = -11.0
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulA.C2.stereo.wav"
+root = 36
+lokey = 35
+hikey = 37
+tune = 34.5
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulD.Eb2.stereo.wav"
+root = 39
+lokey = 38
+hikey = 40
+tune = 2.5
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulD.Gb2.stereo.wav"
+root = 42
+lokey = 41
+hikey = 43
+tune = 25.0
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulG.A2.stereo.wav"
+root = 45
+lokey = 44
+hikey = 46
+tune = 34.0
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulG.C3.stereo.wav"
+root = 48
+lokey = 47
+hikey = 49
+tune = 27.0
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulG.Eb3.stereo.wav"
+root = 51
+lokey = 50
+hikey = 52
+tune = 19.0
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulG.Gb3.stereo.wav"
+root = 54
+lokey = 53
+hikey = 55
+tune = 3.5
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulG.A3.stereo.wav"
+root = 57
+lokey = 56
+hikey = 58
+tune = 51.0
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulG.C4.stereo.wav"
+root = 60
+lokey = 59
+hikey = 61
+tune = 59.5
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulG.Eb4.stereo.wav"
+root = 63
+lokey = 62
+hikey = 64
+tune = 29.5
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulG.Gb4.stereo.wav"
+root = 66
+lokey = 65
+hikey = 66
+tune = 32.0
+
+[[zone]]
+file = "wav/Bass.arco.ff.sulG.G4.stereo.wav"
+root = 67
+lokey = 67
+hikey = 127
+tune = 39.0

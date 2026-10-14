@@ -373,7 +373,7 @@
   "folder": "karoryfer-black-and-green-guitars",
   "title": "Black and Green Guitars",
   "page": "https://github.com/sfzinstruments/karoryfer.black-and-green-guitars",
-  "author": "Karoryfer Samples",
+  "author": "Karoryfer Samples; guitar recordings by Brian Wood",
   "spdx": "CC0-1.0",
   "archives": [
    {
@@ -385,7 +385,8 @@
   ],
   "retrieved": "2026-10-14",
   "attrib": "no",
-  "notes": ""
+  "notes": "Publisher free-samples page declares all these libraries CC0, including older archives with less permissive notices. Verified 2026-10-14. This GitHub source ZIP has CRLF conversion inside WAV bytes; new guitar recipes use the intact official release in karoryfer-black-and-green-guitars-release instead.",
+  "license_evidence": "https://shop.karoryfer.com/pages/free-samples"
  },
  {
   "folder": "karoryfer-body-percussion",
@@ -445,7 +446,7 @@
   "folder": "karoryfer-emilyguitar",
   "title": "Emilyguitar",
   "page": "https://github.com/sfzinstruments/karoryfer.emilyguitar",
-  "author": "Karoryfer Samples",
+  "author": "Karoryfer Samples (D. Smolken)",
   "spdx": "CC0-1.0",
   "archives": [
    {
@@ -457,7 +458,14 @@
   ],
   "retrieved": "2026-10-14",
   "attrib": "no",
-  "notes": ""
+  "notes": "Publisher free-samples page declares all these libraries CC0, including older archives with less permissive notices. Verified 2026-10-14.",
+  "license_evidence": "https://shop.karoryfer.com/pages/free-samples",
+  "mappings": [
+   {
+    "file": "unpacked/karoryfer.emilyguitar-master/emily_basic.sfz",
+    "sha256": "6374cae8516592aa50c0bc00de431b9e4ab45d5a8af66ddddc183a3945e907f0"
+   }
+  ]
  },
  {
   "folder": "karoryfer-fashionbass",
@@ -550,6 +558,24 @@
   "notes": "Upright bass."
  },
  {
+  "folder": "karoryfer-sneakybass",
+  "title": "Karoryfer Sneakybass",
+  "page": "https://github.com/sfzinstruments/karoryfer.sneakybass",
+  "author": "Karoryfer Samples (Drogomir Smolken)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.sneakybass/releases/download/v1.000/Sneakybass_v1.000.zip",
+    "sha256": "df57ef935f2d006d83f898f615893cd2e9f93d00d01fb03921c54cd6dd5014dd",
+    "bytes": 340462855,
+    "git_commit": "cc1a67e5c913678b85eaad1a3b5cb180d3be3e2d"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Official download linked by https://shop.karoryfer.com/pages/free-sneakybass. Archive readme explicitly states CC-0; https://shop.karoryfer.com/pages/free-samples also confirms CC0 for all free sample libraries. Pluck, ghost, mute, fingering noise and release noise are separate sampler programs; automatic release triggers, unison and modulation are not reproduced."
+ },
+ {
   "folder": "karoryfer-string-cyborgs",
   "title": "String Cyborgs",
   "page": "https://github.com/sfzinstruments/karoryfer.string-cyborgs",
@@ -565,7 +591,25 @@
   ],
   "retrieved": "2026-10-14",
   "attrib": "no",
-  "notes": ""
+  "notes": "CC0 relicensing confirmed by https://shop.karoryfer.com/pages/free-samples on 2026-10-14, including older archives. The sampler bundles single oscillator string textures for Zinc, Blackheart and Ironface, not reproductions of the upstream subtractive synth presets."
+ },
+ {
+  "folder": "karoryfer-string-cyborgs-prepared",
+  "title": "String Cyborgs sampler textures",
+  "page": "https://github.com/sfzinstruments/karoryfer.string-cyborgs",
+  "author": "Karoryfer Samples; sampler maps by Honeydew contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.string-cyborgs/archive/refs/heads/master.zip",
+    "sha256": "b2b007ccaf62ca512506ea0523ffca6acf2c3154a9ce73ce6e257245c0781458",
+    "bytes": 63777408,
+    "git_commit": "f2238b3e36ae64c6383356221dc89c9c476c7b11"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Prepared 2026-10-14 from the pinned karoryfer-string-cyborgs source. WAV files copied byte-for-byte; four minimal SFZ maps expose original smpl loop points and correct measured pitch mappings. PREPARE.py and PREPARATION.json record preparation logic plus original/derived SHA256 hashes. Original archive URL/hash/commit retained as upstream provenance. Official https://shop.karoryfer.com/pages/free-samples confirms CC0 relicensing of older free-library downloads. No upstream synth preset reproduction is claimed."
  },
  {
   "folder": "karoryfer-swagbass",
@@ -947,7 +991,7 @@
   ],
   "retrieved": "2026-10-14",
   "attrib": "no",
-  "notes": "Full tree incl. \"Miscellania Raw\" and \"VSCO 1 Percussion\". Bundle plan keeps one sustain + one short per section."
+  "notes": "Full tree incl. \"Miscellania Raw\" and \"VSCO 1 Percussion\". Strings include every available bowed/plucked articulation and the separate harp; filenames use different octave conventions by instrument and articulation, checked against recorded pitch."
  },
  {
   "folder": "honeydew",
@@ -956,5 +1000,850 @@
   "author": "The Honeydew contributors",
   "spdx": "CC0-1.0",
   "notes": "Synthesized at build time by tools/content-build/src/procedural from content/recipes/procedural; no source files."
+ },
+ {
+  "folder": "iowa-strings",
+  "title": "University of Iowa Musical Instrument Samples — Strings",
+  "page": "https://theremin.music.uiowa.edu/MIS.html",
+  "author": "Lawrence Fritts and the University of Iowa Electronic Music Studios",
+  "spdx": "LicenseRef-Iowa-MIS",
+  "notice": "LICENSE.txt",
+  "credit": "Stereo ff violin, viola, cello and double bass recordings, arco and pizzicato. Honeydew selects, retunes, resamples and loops/shortens recordings; no endorsement is implied.",
+  "archives": [
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulG.G3.stereo.aif",
+    "sha256": "57e40d4b85e9d9b57956a991e8a99eb769a6a1bbf160780819464e30e044186f",
+    "bytes": 1131298
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulG.Bb3.stereo.aif",
+    "sha256": "4f22ebf570f0e90a10ab531615f5e85f651797f6a5ea37e3d8a3b917a7cadd02",
+    "bytes": 545824
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulG.Db4.stereo.aif",
+    "sha256": "4f7403687c6567807e2df2ab1147bc90a01147df73f626207c3ae6c18b5216b6",
+    "bytes": 613702
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulD.E4.stereo.aif",
+    "sha256": "9d330bdb4dc79319ca5785c90cd02f5acf604b4654281e539953fce0687ffd7d",
+    "bytes": 763924
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulD.G4.stereo.aif",
+    "sha256": "6ddb0171f0e9e5bd7c69abaaf016ff4849d7e0f7d3f3d65bdcdbbc8634823b2f",
+    "bytes": 719500
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulA.Bb4.stereo.aif",
+    "sha256": "c07a8f6867f293a68f2f36b18f82884217598246e01148c20420965fa93eaaf1",
+    "bytes": 694312
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulA.Db5.stereo.aif",
+    "sha256": "78c40848d0b6060ff6522578da98b8bf9b6729b0a3244f4f08e98c89f2d2d29a",
+    "bytes": 721420
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.E5.stereo.aif",
+    "sha256": "8ab79362114dce87d756aeee428fc46a8f2358b7ce27927420f601a2b9341456",
+    "bytes": 634924
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.G5.stereo.aif",
+    "sha256": "3e5a4baf1f14245919fd75e06c63ac61208491e3986a633123cc343a5aae408c",
+    "bytes": 541582
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.Bb5.stereo.aif",
+    "sha256": "974b9fc0073d2387cc95f64bf857960d9fd405da476b1c25164634f2ea9322a8",
+    "bytes": 335818
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.Db6.stereo.aif",
+    "sha256": "e26a417ed8919119176eb4ec26b54b676c64c1a9f3e6f6903bac93b522d678ff",
+    "bytes": 980686
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.E6.stereo.aif",
+    "sha256": "ccaa015ee819974445e20a594e0ec0d2d0c7f7f99154ab2787722072d6a64c08",
+    "bytes": 864016
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.G6.stereo.aif",
+    "sha256": "0ab0b71362bd95b06eeb339c61ad8f7dcbd3abcf0e0a2f923107dc6ae4f5ae8a",
+    "bytes": 802498
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.Bb6.stereo.aif",
+    "sha256": "d26417fa7d0d4a24edefad16e10398c24abfe16a114de5e7d4bf13071a5a0068",
+    "bytes": 878866
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.Db7.stereo.aif",
+    "sha256": "8093825e420c25438425f7db49d97930445826951b09e7c6855761d381837dc9",
+    "bytes": 252022
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.E7.stereo.aif",
+    "sha256": "3c4f5a9050e223e0fa71876e4e1bb4ce64851a6558328c21d4a532f853b53225",
+    "bytes": 370816
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulG.G3.stereo.aif",
+    "sha256": "56a5a43db6a9333823cd96b016d02e9dac703ac3fcbb20510817ef1110dfb77f",
+    "bytes": 823714
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulG.Bb3.stereo.aif",
+    "sha256": "23f9f94c5cffc6d9cdc1e29b8b07a1e4d77da437863a5b9f5e9e38ca1bfb5b09",
+    "bytes": 467338
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulG.Db4.stereo.aif",
+    "sha256": "4d5891a122d0bc108d451451a84ca8db8fe422626b9fdd800cf0962418e792b7",
+    "bytes": 475816
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulD.E4.stereo.aif",
+    "sha256": "494164070b9ad578e191d76e402c7c0d984638836d008c15bd7b3e37051174cf",
+    "bytes": 438700
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulD.G4.stereo.aif",
+    "sha256": "e2c6df48f8e0bdf24b4d624ccbd3b84f5f12283dce64e937e6cd0bb2466da63d",
+    "bytes": 439756
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulA.Bb4.stereo.aif",
+    "sha256": "6a76feeeed9c9a504abf9374b77a71e44deda6162cd4d2b83bd26ee8540911db",
+    "bytes": 598858
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulA.Db5.stereo.aif",
+    "sha256": "de02320a3ca7a5bad329714ecf64d0ad793aa5c7ed181ff728d02789321a45a5",
+    "bytes": 484300
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.E5.stereo.aif",
+    "sha256": "242010836921243b83b26b88585af000a858b684ae91df737944da993334ceee",
+    "bytes": 482188
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.G5.stereo.aif",
+    "sha256": "f5a8a252e1b25930aefe39ba3529787ecf7ad4e73fb340b8927b40c0b03f580d",
+    "bytes": 126220
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.Bb5.stereo.aif",
+    "sha256": "71ae64df9ba09407e28b6afadef6c58403f66325cac96660636feee671f67c00",
+    "bytes": 123340
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.Db6.stereo.aif",
+    "sha256": "5fb2fbc75b6e79eae4e8ba602b502fdf47da5be09e1e1d9640fd0cfbab27cfef",
+    "bytes": 128140
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.E6.stereo.aif",
+    "sha256": "2e9db4468d7c77a8272bc06101c96882e23d5361c99a4c4dc7eaf852b3f59145",
+    "bytes": 115468
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.G6.stereo.aif",
+    "sha256": "93b0d0b99163989e1ef0cade938abfdd92afc5fa377234f732c960d5fab3c37b",
+    "bytes": 75532
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.Bb6.stereo.aif",
+    "sha256": "752e96cb5c3c1a4ad14484bf364696799e0ab406881258b45a601fc642f4cf12",
+    "bytes": 79756
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.Db7.stereo.aif",
+    "sha256": "75c11c8e0c8495f3bdb34922a64bf04223ccbe3d9b97c53486d335faa82bb0ce",
+    "bytes": 74380
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.E7.stereo.aif",
+    "sha256": "a8a4e0a33754aaeacc1558ccbc17eee3549005e62b06173521a500aa28861f69",
+    "bytes": 70732
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulC.C3.stereo.aif",
+    "sha256": "c3c3cf1433dba22757b4490a9c89c78629c81c8ef57f7f8cfe665654cc6695da",
+    "bytes": 1182208
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulC.Eb3.stereo.aif",
+    "sha256": "5a5da578d29111384b7fd8668d7a6086fd2210c860fa303f65dc48c0747633ee",
+    "bytes": 876742
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulC.Gb3.stereo.aif",
+    "sha256": "5248dac143480e4dec42922a7a407fc8b448fa7ad11a46fe342731e05e2e3bca",
+    "bytes": 995536
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulG.A3.stereo.aif",
+    "sha256": "3fd07865f5c81c721a838374a78414d2fb829908315ab6fe7b20744f71372e9b",
+    "bytes": 1124938
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulG.C4.stereo.aif",
+    "sha256": "3ffd93b4c5e06d2824323cadf978555be41f75fe278d8a3afda701a309ff6621",
+    "bytes": 1595860
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulD.Eb4.stereo.aif",
+    "sha256": "29b8346d9084b735609d6cad461d0457d16ef9d5bf9c0e395b52288dd5aa6232",
+    "bytes": 1044328
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulD.Gb4.stereo.aif",
+    "sha256": "8999b0b5d4fa27a7efdfece5ae50df174650e245234b71490d0f810f6f1f7ac5",
+    "bytes": 1052812
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.A4.stereo.aif",
+    "sha256": "b4ddcf959f1869260e501d4246ff50c94093bf539474cf39a5dde9379e053534",
+    "bytes": 1231000
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.C5.stereo.aif",
+    "sha256": "c85bae689c2effee6cce76fc6ae1a30a9b93bec1be64c410136eceda079a71ed",
+    "bytes": 1498276
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.Eb5.stereo.aif",
+    "sha256": "a4aa0d7c02ce66cb0f1978670bbab870574d998361f96c3d5ba2b21a1cc36948",
+    "bytes": 645520
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.Gb5.stereo.aif",
+    "sha256": "db4874554d482396c3cd6e69199b66d1ab103cc8e4335cf535912c75e6cb501c",
+    "bytes": 726136
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.A5.stereo.aif",
+    "sha256": "7e42480bf9fbb5d1c41300b7e649adff9d45a0922f565e857579e3294e1a6a93",
+    "bytes": 955234
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.C6.stereo.aif",
+    "sha256": "7e668dd45208d7a054988f8fc100ba1a59c16da487cea07973bbfe4bc0ee0f7b",
+    "bytes": 679468
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.Eb6.stereo.aif",
+    "sha256": "2f1af38061d8738b812369c6aec1be0c4a05ae8e1c70df547770ef60c7e3e3c5",
+    "bytes": 819466
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.Gb6.stereo.aif",
+    "sha256": "1f914de3c93204c38dbe32d204b17765f5c1218ea6036d93045d9a592c538924",
+    "bytes": 738862
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.A6.stereo.aif",
+    "sha256": "14648abcd93038410c069e8362638cdfbcecfb3528c625163c235b1cc0825e2e",
+    "bytes": 692194
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulC.C3.stereo.aif",
+    "sha256": "33dbe02e98ef0dbb7dc3fd3fadd990b9ae347194abbe6964318ae5e5082e787f",
+    "bytes": 1404946
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulC.Eb3.stereo.aif",
+    "sha256": "7272140a53830b05adbbdce31fc8f6359a1bb7dd19d8f56c9a6cd3f781594a65",
+    "bytes": 467332
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulC.Gb3.stereo.aif",
+    "sha256": "3e10ccce3daaceb85ee5cc2ff79ece0e59b6b9b9c2df453fd8d0b47d05de1f45",
+    "bytes": 530974
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulG.A3.stereo.aif",
+    "sha256": "2a621f2a570d2b68f2de209b1655417fb821b4cf30b916d05141e11e7e1a216a",
+    "bytes": 535216
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulG.C4.stereo.aif",
+    "sha256": "8c787fcebf731fe8ed284acec08a0a7c1018540ac0572b787e2c9569440c0d7f",
+    "bytes": 575518
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulD.Eb4.stereo.aif",
+    "sha256": "f96f1f00cbbfeac54641a082aa84b20d368aa476c3d884e823164cf5269dd6d9",
+    "bytes": 450364
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulD.Gb4.stereo.aif",
+    "sha256": "1cccd39f92128a7ba3751df69d67c72a9e7304d4bddd047c45eccc11b526eca1",
+    "bytes": 501274
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.A4.stereo.aif",
+    "sha256": "785229189f0f620192f5415d9b0b26a1310115cd1cf208b54c5bd8b471d15c73",
+    "bytes": 976444
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.C5.stereo.aif",
+    "sha256": "f9ed235fe9b85296585a8341cfa5f05d86aa9009a2b9a31f9a250e9991fa7eeb",
+    "bytes": 781282
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.Eb5.stereo.aif",
+    "sha256": "da2e990cd0f025d9165a206f174f9bb35c83cc8ecd7148010b8265cc8d57645b",
+    "bytes": 670978
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.Gb5.stereo.aif",
+    "sha256": "5a908cd59ea15406ab120fe04bd99e43550ddb5ffd80be30d478e032ff8ee824",
+    "bytes": 577642
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.A5.stereo.aif",
+    "sha256": "9c65e5757d9bda2ca7519478f17027f6a6b74813edaa2543ba999996b8ae93b2",
+    "bytes": 662494
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.C6.stereo.aif",
+    "sha256": "6bb610279844cab9082c5cff750154964aa4d4f8bb7e66d21e366466371c4b20",
+    "bytes": 518248
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.Eb6.stereo.aif",
+    "sha256": "925d8ff9fdabf73f83ec0f7fad74a25c1d709ccc43c78dccbcd33227de7f423e",
+    "bytes": 518248
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.Gb6.stereo.aif",
+    "sha256": "02d1305db1c460d28f90bb9521c620102ac3e69b33bb569fc8f8f62e2847819f",
+    "bytes": 637036
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.A6.stereo.aif",
+    "sha256": "51b9ca173ecc5d33bd3dd3f39568aac53ed56776822d1695487b46abb8c0362e",
+    "bytes": 654010
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulC.C2.stereo.aif",
+    "sha256": "56798a31bfb79a784baba213e9cffd9ad1565b8bc7f3ce08b557a82f432d6725",
+    "bytes": 1960720
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulC.Eb2.stereo.aif",
+    "sha256": "e90f835a9a9f3a9c26a0d0a9e96d9bb0de94ae0b7dcfa5ef94a2a9a4896aa678",
+    "bytes": 1409188
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulC.Gb2.stereo.aif",
+    "sha256": "6c23be304c3d28b5a4774dfd192714648a6319f639fb08d9800c063f11649880",
+    "bytes": 1264936
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulG.A2.stereo.aif",
+    "sha256": "ee43ca13d652e50be72f037579972277062a1d6012aa76e80beaac3d69a8d446",
+    "bytes": 1655254
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulG.C3.stereo.aif",
+    "sha256": "5b0531e76f14d50c77a16efe40ec27d3fcf0184b2c4991e6fd1eca1f9bb62f47",
+    "bytes": 1392220
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulD.Eb3.stereo.aif",
+    "sha256": "bb36efe02fb2f2054324ba2fd11a7e6979d0186ec1a08985b55846314d9b5e49",
+    "bytes": 1099480
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulD.Gb3.stereo.aif",
+    "sha256": "55638503bd5fb77c109af53028b6b2abad6619f0ca8ea527e113645c3e75ed06",
+    "bytes": 942502
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.A3.stereo.aif",
+    "sha256": "b697c7610dcd80c9958781909b5c7cca4c8850586e80a1c55e8b2892000c534c",
+    "bytes": 1549192
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.C4.stereo.aif",
+    "sha256": "b8d068ad2c79ececa30bd446f3bbe6542fafb5504ec33a36302e2ba88dc5a5e6",
+    "bytes": 1352968
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.Eb4.stereo.aif",
+    "sha256": "cb3b33fc95f69c2e506e9edc1ca9f080ec516b1a9bb944c38ce23dc0047d33e7",
+    "bytes": 1086748
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.Gb4.stereo.aif",
+    "sha256": "bc60af1084de4767194d53d2ee996808253fdf2e0c3c7b0bafcd31852edb239c",
+    "bytes": 972202
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.A4.stereo.aif",
+    "sha256": "21886a202c1afc15a74ba9d709eeca2a41b14275bef2ab58af6ff7caa28d6775",
+    "bytes": 1226752
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.C5.stereo.aif",
+    "sha256": "46c7f2fa1233e11b0af34f92881155adb4957c53e8e934f6714b189f64d0ab94",
+    "bytes": 827956
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.Eb5.stereo.aif",
+    "sha256": "3ecccfdd4e3893ea58b94760deefb60e177155e9f166abbd161323c2ab51c2c8",
+    "bytes": 900076
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.Gb5.stereo.aif",
+    "sha256": "2583b3b5374c6c48fcd7f429f8bb3909e87d5b707d291240f1fbce77db2e59ca",
+    "bytes": 764320
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.A5.stereo.aif",
+    "sha256": "bea6a39ea3596df086766d4c21e01250650d6e7855491638a4141c070e25140c",
+    "bytes": 708106
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulC.C2.stereo.aif",
+    "sha256": "5424133b9a1ca4143cb84c833c00bd236498934eb94ed4e204b9f6f69738c51e",
+    "bytes": 963718
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulC.Eb2.stereo.aif",
+    "sha256": "7f13a0aacc5a860d1d44c4477bf026f18d5301c339d147d81644f3e95b4679b4",
+    "bytes": 603094
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulC.Gb2.stereo.aif",
+    "sha256": "d7133053b3ae0ee627d490f0aea3e82377c562f563ce36b0f128b27f5c2288d9",
+    "bytes": 494908
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulG.A2.stereo.aif",
+    "sha256": "3d49b8d8560637dc92a4610ae5dd9663c30fd6a0526eb25d9134edd94b9ab681",
+    "bytes": 696436
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulG.C3.stereo.aif",
+    "sha256": "b9fd4768b1e6bb78b43f6341544ae5292a3afedc0ba5ac8d993c1ea5c7cfcf92",
+    "bytes": 840682
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulD.Eb3.stereo.aif",
+    "sha256": "42739eb98c35a5dde5356d36f55bd9ca20a89b711e2d16f3aff85a15547b529e",
+    "bytes": 467332
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulD.Gb3.stereo.aif",
+    "sha256": "87391ce6c3e7f34fcafd033f0f5be11b07ae4bf31c7b87c03fee6b8b912d1a42",
+    "bytes": 637036
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.A3.stereo.aif",
+    "sha256": "d50a238556ef57d0a7c166771a84bdbee766dd8e25a26dcfe9ccbbc2cfe94c05",
+    "bytes": 1010386
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.C4.stereo.aif",
+    "sha256": "9588f8990cec25ccbce1d725de387d9c171b8e5ba2f2e664e34191fb38e31de6",
+    "bytes": 603094
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.Eb4.stereo.aif",
+    "sha256": "70879adbd903de02da9957079d5dc812e68a908aef10de8fa0d073fac4d6d984",
+    "bytes": 611584
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.Gb4.stereo.aif",
+    "sha256": "a47215f8540f9914b65514395e409605faf9a26a6a56e44225be107a4f518760",
+    "bytes": 467332
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.A4.stereo.aif",
+    "sha256": "449b3a7925928b50db5fb9197711c16a706a816f76becf834797952da75e8793",
+    "bytes": 620068
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.C5.stereo.aif",
+    "sha256": "c2c8bf1996d88c8caeb55a346f60a251c1b8d62f8b430af4fb6d19e280d359d6",
+    "bytes": 365512
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.Eb5.stereo.aif",
+    "sha256": "69948bb6418d46346ec04903f7f3c6086d9eb07dc3aea7f3e4f1463958d702ff",
+    "bytes": 335818
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.Gb5.stereo.aif",
+    "sha256": "55fb78502ed6763099ead5b083f3aebd52d58b7ea02d88fdb9ad8e40edf3dbf1",
+    "bytes": 365512
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.A5.stereo.aif",
+    "sha256": "e808ad8d5d7b68cd8bdb82e8f1d0f8dcaeea49ddfc4b599098fc4ad58353e488",
+    "bytes": 658246
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulC.C1.stereo.aif",
+    "sha256": "4cb18629ead44ff8c1dabe0d39a5c1f4394b3e6058a17f5a3d0b9610cc0fbad2",
+    "bytes": 1463278
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulC.Eb1.stereo.aif",
+    "sha256": "3ded4aa2d1c6cc5918b2f234f92e2ac91087a1a98da8dd609e4062ca656e4bcf",
+    "bytes": 1243726
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulE.Gb1.stereo.aif",
+    "sha256": "d3a8db31876e8c7ead047935ddfbace0a2c71d126b34956fc0f185ba96fb0206",
+    "bytes": 924412
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulA.A1.stereo.aif",
+    "sha256": "d9dc02b6374e8d7b9c49b0cba92515f38551fbaad6612345bc14b6925ba8f59c",
+    "bytes": 1821388
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulA.C2.stereo.aif",
+    "sha256": "d4573359904e9cf1e411ff97ec35ce0d94423f8ccaf5aeb5c16e5b35c59ee30e",
+    "bytes": 987334
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulD.Eb2.stereo.aif",
+    "sha256": "77e8b3648bd25464ef8cd0b5d0bead306e775b2691d333a2dd97038f39553a36",
+    "bytes": 1327666
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulD.Gb2.stereo.aif",
+    "sha256": "8dd868d78be7a7dbc47eca507e581f055a3f3672623773dbe546e142cd1f8cf4",
+    "bytes": 1138912
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.A2.stereo.aif",
+    "sha256": "25cc0b5b323cd84339a9a3f46dd00fef12e582f108e5d7f126871382f3fff35c",
+    "bytes": 1762378
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.C3.stereo.aif",
+    "sha256": "ce3d3837b834c23247d5fee885ec0d437a0488c992b19db797fa9b8989332b6b",
+    "bytes": 1047394
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.Eb3.stereo.aif",
+    "sha256": "7cc2bc6e44e95d9fc0b07d167811b22651f3d13daeefcc7995c0ba9ff0df426a",
+    "bytes": 1156066
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.Gb3.stereo.aif",
+    "sha256": "2a5880637c107af4ce1af19de4cc5d49588478eca7d9f957abaf7dc38fa76729",
+    "bytes": 1064548
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.A3.stereo.aif",
+    "sha256": "670df491438b892a13a90c328797d8426bb02b3561762cf50e3e2be5710b1746",
+    "bytes": 1053112
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.C4.stereo.aif",
+    "sha256": "8e6cd7bceeb4d37db408949b0dfa08b3e6013ec992df78b30f884bf76ec7e7ca",
+    "bytes": 870076
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.Eb4.stereo.aif",
+    "sha256": "0f4e6d7de4ea7d9fcdb03656f844e52139460660b67ef537754908ca444b473f",
+    "bytes": 749956
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.Gb4.stereo.aif",
+    "sha256": "a984b637dd59804c221b1f6181f3505db66a6d0d9a0d0678d17334cb588ae3bd",
+    "bytes": 987328
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.G4.stereo.aif",
+    "sha256": "ff981bc17a675bdbdd75776757685035180c5750e4e63f6e8333beb750316144",
+    "bytes": 724216
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulC.C1.stereo.aif",
+    "sha256": "42b0ce57ad0a551595e2bfb253f9b67c04458babd1e0935652383adf277f9258",
+    "bytes": 1911094
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulC.Eb1.stereo.aif",
+    "sha256": "cfa792ad7a1626a2d625a32e24d5a6d06431480d6c1e85ae2e42c9491f53b2af",
+    "bytes": 1504978
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulE.Gb1.stereo.aif",
+    "sha256": "1abe859c93aaa8d68ebc43d0d0cb5b5949b27bee1cc00a3ae0fb717893871fb3",
+    "bytes": 1333384
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulA.A1.stereo.aif",
+    "sha256": "178ad88c9c36823c6fca75df195405691abd714990b3226d3daa44e9e81ecf0a",
+    "bytes": 2403004
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulA.C2.stereo.aif",
+    "sha256": "10be6a3dce95168057d8a0c9defa1939ffe0f696d04c52c46b7e42daf74894be",
+    "bytes": 1190386
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulD.Eb2.stereo.aif",
+    "sha256": "7bea7bb64287a0942fbd5e410916006af93757a249124a37f48c1e98fe7265e1",
+    "bytes": 1693738
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulD.Gb2.stereo.aif",
+    "sha256": "a91de4b4a2df37cadc8d32181d0552994f2954f97462a75435e9cbf0c81a4b17",
+    "bytes": 1487818
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.A2.stereo.aif",
+    "sha256": "2509228f22256c76f63483b8d5d85d1e6392cdfb20736a2f09c968f28565600c",
+    "bytes": 1499260
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.C3.stereo.aif",
+    "sha256": "b9641d565fb086a742c9750cba153491e2169ed62a848363f97ef3fe70068491",
+    "bytes": 1376284
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.Eb3.stereo.aif",
+    "sha256": "7b422575fa67ee61a5a7d03e15c2957faf6ab769f19a98871476e6c3b08c40e5",
+    "bytes": 1396300
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.Gb3.stereo.aif",
+    "sha256": "f5501367ffe2c65019aef024ed00c556d0497e9a51657d2d4eebac248e515f06",
+    "bytes": 1150348
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.A3.stereo.aif",
+    "sha256": "a71e738f56c947b660e65f0faebe0a2d14ea8176af98c07f5c9c337dd057a216",
+    "bytes": 841474
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.C4.stereo.aif",
+    "sha256": "a58a10e6990dec2bafdb646e7c3d5b11d7e77553df13e0e344663fd2098dfa5b",
+    "bytes": 875794
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.Eb4.stereo.aif",
+    "sha256": "e4388efe58d1d4a15ab07c12e27aca00c5fdfea9db2bbc39a644840f576b19e1",
+    "bytes": 647002
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.Gb4.stereo.aif",
+    "sha256": "3ac3631ce1567547241ee38f92d067191e7f3558ce2400b878765ea94b04b9d0",
+    "bytes": 483982
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.G4.stereo.aif",
+    "sha256": "3d3ade65f1ac806944d63c4be39da896ccfd7a752bc29d213ba12b41d8548c94",
+    "bytes": 576928
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "courtesy",
+  "notes": "Official unrestricted-use grant retained in LICENSE.txt. Individual stereo AIFF recordings linked from the 2012 string pages, downloaded 2026-10-14; recordings are 44.1 kHz. Source filenames are preserved in originals/, converted losslessly to wav/<same stem>.wav using ffmpeg -nostdin -v error -i INPUT.aif -map_metadata -1 -c:a pcm_s24le OUTPUT.wav. Bowed and plucked programs are single ff layers sampled every three semitones. Per-zone tune corrects measured source intonation. High pizzicato notes with unstable/incorrect pitches are omitted: violin above E5, viola above A5, cello above A4, bass above G3; adjacent zones cover their keyboard range. Bowed violin omits Db7 and E7 because their short takes lack useful sustains; the Bb6 zone covers higher notes."
+ },
+ {
+  "folder": "greg-sullivan-epianos",
+  "title": "Greg Sullivan's E-Pianos",
+  "page": "https://github.com/sfzinstruments/GregSullivan.E-Pianos",
+  "author": "Greg Sullivan; SFZ mapping by kinwie",
+  "spdx": "CC-BY-3.0",
+  "archives": [
+   {
+    "url": "https://codeload.github.com/sfzinstruments/GregSullivan.E-Pianos/zip/8c3e581acda3594b553948ff0222d4f84a698376",
+    "sha256": "c36a5c9092688b9419d7d3ab330d9b317856c3752c3696bdc7e0b65dd4d79bdf",
+    "bytes": 19263422,
+    "git_commit": "8c3e581acda3594b553948ff0222d4f84a698376"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "yes",
+  "credit": "Greg Sullivan: Yamaha CP80 Electric Grand Piano, Hohner Pianet T (type 2), Wurlitzer EP200 Electric Piano; SFZ mapping and fixes by kinwie. Licensed under Creative Commons Attribution 3.0 Unported, https://creativecommons.org/licenses/by/3.0/. Source: https://github.com/sfzinstruments/GregSullivan.E-Pianos. Honeydew adaptations: neutral preset names, DW Sampler mapping, resampling and 16-bit FLAC encoding, gain normalization, trimmed decays and note-off envelopes; upstream release samples, per-region gain/start/end controls and ARIA controls are not reproduced. No endorsement is implied.",
+  "notice": "unpacked/GregSullivan.E-Pianos/LICENSE",
+  "notes": "Author permission and CC BY 3.0 declaration are in the pinned upstream README.md. All three sampled instruments are included; no upstream scripts run."
+ },
+ {
+  "folder": "meta-piano",
+  "title": "Meta Piano",
+  "page": "https://github.com/facebookincubator/Meta-open-sound/releases/tag/meta-piano-v1.0.0",
+  "author": "Meta Platforms, Inc., Creative Audio team",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/facebookincubator/Meta-open-sound/releases/download/meta-piano-v1.0.0/meta-open-sound-meta-piano-wav.zip",
+    "sha256": "ee9023dbde849ecab393a098aa0cfbd6f2ef48d4a096b9c08808b72fc913f70e",
+    "bytes": 752311261,
+    "git_commit": "e2ff154845994fe4135becc4d5b857c19f172784"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notice": "LICENSE",
+  "notes": "Meta Piano v1.0.0: 88-key felt-damped upright, four velocity layers. Source WAV archive includes SFZ and SHA256SUMS. Honeydew keeps all four dynamics at one point per minor third with 6 s tails; no velocity crossfade or random pitch/amplitude."
+ },
+ {
+  "folder": "meta-steel-guitar",
+  "title": "Meta Steel Guitar",
+  "page": "https://github.com/facebookincubator/Meta-open-sound",
+  "author": "Meta Creative Audio, Meta Platforms, Inc.",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/facebookincubator/Meta-open-sound/releases/download/meta-steel-guitar-v1.0.0/meta-open-sound-meta-steel-guitar-wav.zip",
+    "sha256": "caaa8a9c07217f4a82d1dfd9f5657c286155464b66bf4dd27797811c2558a909",
+    "bytes": 663385210,
+    "git_commit": "e2ff154845994fe4135becc4d5b857c19f172784"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "license_evidence": "https://github.com/facebookincubator/Meta-open-sound/blob/e2ff154845994fe4135becc4d5b857c19f172784/LICENSE",
+  "notes": "Official WAV release, 24-bit 48 kHz; upstream SFZ map and all string-specific recordings retained in raw sources.",
+  "mappings": [
+   {
+    "file": "unpacked/meta-steel-guitar.sfz",
+    "sha256": "34d987fc7645329a19dcef947f90a12e3600dce414baf50fdecf379b31315c88"
+   }
+  ]
+ },
+ {
+  "folder": "meta-nylon-guitar",
+  "title": "Meta Nylon Guitar",
+  "page": "https://github.com/facebookincubator/Meta-open-sound",
+  "author": "Meta Creative Audio, Meta Platforms, Inc.",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/facebookincubator/Meta-open-sound/releases/download/meta-nylon-guitar-v1.0.0/meta-open-sound-meta-nylon-guitar-wav.zip",
+    "sha256": "e7fa168b97a72ecc1257917f85cb524fe7c2e1f098dfdcaf8f5c0e29cabe768e",
+    "bytes": 423127309,
+    "git_commit": "e2ff154845994fe4135becc4d5b857c19f172784"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "license_evidence": "https://github.com/facebookincubator/Meta-open-sound/blob/e2ff154845994fe4135becc4d5b857c19f172784/LICENSE",
+  "notes": "Official WAV release, 24-bit 48 kHz; upstream SFZ map and all string-specific recordings retained in raw sources.",
+  "mappings": [
+   {
+    "file": "unpacked/meta-nylon-guitar.sfz",
+    "sha256": "114450c95e3ed948101b7d277c66bc0d5c674c9ada904978222496b1e71ac144"
+   }
+  ]
+ },
+ {
+  "folder": "karoryfer-shinyguitar",
+  "title": "Shinyguitar",
+  "page": "https://github.com/sfzinstruments/karoryfer.shinyguitar",
+  "author": "Karoryfer Samples (D. Smolken)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.shinyguitar/releases/download/v1.002/Karoryfer.Shinyguitar.v1.002.zip",
+    "sha256": "23cf4030cbf9ce9e2c84d7cbb1c022fbca124bfff0ad118a14eda7cf6c921d7b",
+    "bytes": 368411844,
+    "git_commit": "57243cca85277dbcc120ce17c6178032f93c80f3"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "license_evidence": "https://shop.karoryfer.com/pages/free-samples",
+  "notes": "Official free-shinyguitar page links this GitHub release. Publisher free-samples page declares CC0 for older downloads too; release contains legacy CC-BY text. Mic and pickup recordings, 24-bit 44.1 kHz.",
+  "mappings": [
+   {
+    "file": "unpacked/Shinyguitar/Programs/acoustic_one.sfz",
+    "sha256": "31ca13b9f33c6cdbf2c561e30fd4af58e31b73176d1a02f50bf680ad18b24e91"
+   },
+   {
+    "file": "unpacked/Shinyguitar/Programs/electric_one.sfz",
+    "sha256": "09b6b85e0428d1a78a6f199ec9ee0561758a37df364eaa6bc18c118a1fce05da"
+   }
+  ]
+ },
+ {
+  "folder": "karoryfer-emilyguitar-rendered",
+  "title": "Emilyguitar voiced renders",
+  "page": "https://github.com/sfzinstruments/karoryfer.emilyguitar",
+  "author": "Karoryfer Samples (D. Smolken); offline preparation by Honeydew contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.emilyguitar/archive/refs/heads/master.zip",
+    "sha256": "b791ca234a4a31417633836ec52e7f7ed5ed00c72d439d14254acfe54340be62",
+    "bytes": 103488295,
+    "git_commit": "b4920dc662fd9cad6dcaccdeecffdd91c8725d8c"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "license_evidence": "https://shop.karoryfer.com/pages/free-samples",
+  "notes": "Derived from the pinned karoryfer-emilyguitar source with content/recipes/guitar/prepare-emily.py. Three/five voice and power/minor/major chord programs, including wide variants. Preserves source pitch, pan, note delays, four velocity layers and natural decay. Random take is fixed at zero; release/noise performance controls are not rendered. PROVENANCE.json pins original SFZ/WAV inputs, preparation script, tool versions and derived WAV hashes.",
+  "preparation": {
+   "script": "content/recipes/guitar/prepare-emily.py",
+   "sha256": "94afcae3521ef0ac27fa2934b5317609198e762270a68b5f9165779328e07570",
+   "provenance_sha256": "59e8b9451dce4938eb5b667dc65836a24bd1d861505c3245b210033d88663f99",
+   "numpy": "2.4.2",
+   "scipy": "1.17.1",
+   "wav_count": 1108
+  }
+ },
+ {
+  "folder": "karoryfer-black-and-green-guitars-release",
+  "title": "Black and Green Guitars",
+  "page": "https://github.com/sfzinstruments/karoryfer.black-and-green-guitars",
+  "author": "Karoryfer Samples; guitar recordings by Brian Wood",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.black-and-green-guitars/releases/download/v1.000/Karoryfer_Black_And_Green_Guitars_1000.zip",
+    "sha256": "ba95221d32fb6386c5d0a0799b93904fd55520aca017c5f121da290075c140c0",
+    "bytes": 481838512,
+    "release": "v1.000",
+    "git_commit": "f3cf516cbe50b2d6019c7c8fafec4251e2fa29c9"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "license_evidence": "https://shop.karoryfer.com/pages/free-samples",
+  "notes": "Official v1.000 release with intact WAV bytes, verified RIFF sizes and every WAV header. The older GitHub source ZIP has CRLF-converted audio and is not used. Source pitch/velocity mappings retained; first round robin. Feedback entry contains the recorded noise components; ARIA sine feedback is not rendered.",
+  "mappings": [
+   {
+    "file": "unpacked/Programs/modules/maps_black/ord.sfz",
+    "sha256": "4ea3aebcf2981ebeb35a3c3e5b52029e7672953bf44685f667a7fae457526316"
+   },
+   {
+    "file": "unpacked/Programs/modules/maps_black/stac.sfz",
+    "sha256": "73e9a29d8b19a0f1270f82063e7edef89cf20e938494f53e96dff819539964b8"
+   },
+   {
+    "file": "unpacked/Programs/modules/maps_black/btb.sfz",
+    "sha256": "3fb0ed4a858d71cf3c558b47408a8cfb8dbc3aa2598cc6906d6808d02098760e"
+   },
+   {
+    "file": "unpacked/Programs/modules/maps_green/ord.sfz",
+    "sha256": "585e3967e5df7ba8150ddbee5f1cc1e02d8f87437872a2d3eb0930ed122f167a"
+   },
+   {
+    "file": "unpacked/Programs/modules/maps_green/stac.sfz",
+    "sha256": "979e8033587891a9a1f3a7a0ad62d7493bf71318ad2c591480bc54080fdbcf5d"
+   },
+   {
+    "file": "unpacked/Programs/modules/maps_green/hammer.sfz",
+    "sha256": "75026cdb01f63a61d8a8bb15a25697e4000107d14f8561749588d8f41bc4f44f"
+   }
+  ]
  }
 ]

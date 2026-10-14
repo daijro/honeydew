@@ -71,6 +71,10 @@ struct Point {
 /// unevenly). `[[zone]]`s keep their own keys and velocities.
 pub fn program(r: &Recipe, inputs: &mut Inputs) -> Result<(Members, usize), String> {
     let id = &r.id;
+    let attack = r.attack.unwrap_or(0.0);
+    if !(0.0..=1.0).contains(&attack) {
+        return Err(format!("{id}: attack must be finite and in 0..=1"));
+    }
     let rr = u32::from(r.round_robin.unwrap_or(1));
     let (from, to) = r
         .keys
@@ -236,7 +240,7 @@ pub fn program(r: &Recipe, inputs: &mut Inputs) -> Result<(Members, usize), Stri
                     loop_mode,
                     loop_start,
                     loop_end,
-                    floats: [0.0, 1.0, 1.0, release],
+                    floats: [attack, 1.0, 1.0, release],
                     ..Zone::default()
                 };
                 let frames = z.audio[0].len() as u32;

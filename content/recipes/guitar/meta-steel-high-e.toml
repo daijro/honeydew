@@ -1,0 +1,513 @@
+# Meta reference SFZ channel 7. All recorded pitches and three dynamic layers; source velocity splits retained.
+id = "guitar-meta-steel-high-e"
+kind = "program"
+path = "Presets/DW Sampler/Guitar/Steel Guitar High E String (Meta).dwp"
+source = "meta-steel-guitar"
+tail = { floor_db = -60, fade_ms = 30 }
+release = 0.4
+gain = "normalize"
+channels = "stereo"
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_E4_01.wav"
+root = 64
+lokey = 64
+hikey = 64
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_E4_01.wav"
+root = 64
+lokey = 64
+hikey = 64
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_E4_01.wav"
+root = 64
+lokey = 64
+hikey = 64
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_F4_01.wav"
+root = 65
+lokey = 65
+hikey = 65
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_F4_01.wav"
+root = 65
+lokey = 65
+hikey = 65
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_F4_01.wav"
+root = 65
+lokey = 65
+hikey = 65
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_Fs4_01.wav"
+root = 66
+lokey = 66
+hikey = 66
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_Fs4_01.wav"
+root = 66
+lokey = 66
+hikey = 66
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_Fs4_01.wav"
+root = 66
+lokey = 66
+hikey = 66
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_G4_01.wav"
+root = 67
+lokey = 67
+hikey = 67
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_G4_01.wav"
+root = 67
+lokey = 67
+hikey = 67
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_G4_01.wav"
+root = 67
+lokey = 67
+hikey = 67
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_Gs4_01.wav"
+root = 68
+lokey = 68
+hikey = 68
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_Gs4_01.wav"
+root = 68
+lokey = 68
+hikey = 68
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_Gs4_01.wav"
+root = 68
+lokey = 68
+hikey = 68
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_A4_01.wav"
+root = 69
+lokey = 69
+hikey = 69
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_A4_01.wav"
+root = 69
+lokey = 69
+hikey = 69
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_A4_01.wav"
+root = 69
+lokey = 69
+hikey = 69
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_As4_01.wav"
+root = 70
+lokey = 70
+hikey = 70
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_As4_01.wav"
+root = 70
+lokey = 70
+hikey = 70
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_As4_01.wav"
+root = 70
+lokey = 70
+hikey = 70
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_B4_01.wav"
+root = 71
+lokey = 71
+hikey = 71
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_B4_01.wav"
+root = 71
+lokey = 71
+hikey = 71
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_B4_01.wav"
+root = 71
+lokey = 71
+hikey = 71
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_C5_01.wav"
+root = 72
+lokey = 72
+hikey = 72
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_C5_01.wav"
+root = 72
+lokey = 72
+hikey = 72
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_C5_01.wav"
+root = 72
+lokey = 72
+hikey = 72
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_Cs5_01.wav"
+root = 73
+lokey = 73
+hikey = 73
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_Cs5_01.wav"
+root = 73
+lokey = 73
+hikey = 73
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_Cs5_01.wav"
+root = 73
+lokey = 73
+hikey = 73
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_D5_01.wav"
+root = 74
+lokey = 74
+hikey = 74
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_D5_01.wav"
+root = 74
+lokey = 74
+hikey = 74
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_D5_01.wav"
+root = 74
+lokey = 74
+hikey = 74
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_Ds5_01.wav"
+root = 75
+lokey = 75
+hikey = 75
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_Ds5_01.wav"
+root = 75
+lokey = 75
+hikey = 75
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_Ds5_01.wav"
+root = 75
+lokey = 75
+hikey = 75
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_E5_01.wav"
+root = 76
+lokey = 76
+hikey = 76
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_E5_01.wav"
+root = 76
+lokey = 76
+hikey = 76
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_E5_01.wav"
+root = 76
+lokey = 76
+hikey = 76
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_F5_01.wav"
+root = 77
+lokey = 77
+hikey = 77
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_F5_01.wav"
+root = 77
+lokey = 77
+hikey = 77
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_F5_01.wav"
+root = 77
+lokey = 77
+hikey = 77
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_Fs5_01.wav"
+root = 78
+lokey = 78
+hikey = 78
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_Fs5_01.wav"
+root = 78
+lokey = 78
+hikey = 78
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_Fs5_01.wav"
+root = 78
+lokey = 78
+hikey = 78
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_G5_01.wav"
+root = 79
+lokey = 79
+hikey = 79
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_G5_01.wav"
+root = 79
+lokey = 79
+hikey = 79
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_G5_01.wav"
+root = 79
+lokey = 79
+hikey = 79
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_Gs5_01.wav"
+root = 80
+lokey = 80
+hikey = 80
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_Gs5_01.wav"
+root = 80
+lokey = 80
+hikey = 80
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_Gs5_01.wav"
+root = 80
+lokey = 80
+hikey = 80
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_A5_01.wav"
+root = 81
+lokey = 81
+hikey = 81
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_A5_01.wav"
+root = 81
+lokey = 81
+hikey = 81
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_A5_01.wav"
+root = 81
+lokey = 81
+hikey = 81
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_As5_01.wav"
+root = 82
+lokey = 82
+hikey = 82
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_As5_01.wav"
+root = 82
+lokey = 82
+hikey = 82
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_As5_01.wav"
+root = 82
+lokey = 82
+hikey = 82
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_B5_01.wav"
+root = 83
+lokey = 83
+hikey = 83
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_B5_01.wav"
+root = 83
+lokey = 83
+hikey = 83
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_B5_01.wav"
+root = 83
+lokey = 83
+hikey = 83
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel01_C6_01.wav"
+root = 84
+lokey = 84
+hikey = 84
+lovel = 0
+hivel = 48
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel02_C6_01.wav"
+root = 84
+lokey = 84
+hikey = 84
+lovel = 49
+hivel = 96
+
+[[zone]]
+file = "unpacked/INSGuitarSteel_StringHighE_Vel03_C6_01.wav"
+root = 84
+lokey = 84
+hikey = 84
+lovel = 97
+hivel = 127

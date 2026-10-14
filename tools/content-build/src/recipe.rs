@@ -21,7 +21,7 @@ pub struct Source {
     pub archives: Vec<Archive>,
     /// The credit line the credits screen shows. Required for CC-BY.
     pub credit: Option<String>,
-    /// The licence notice CREDITS.txt carries in full, relative to the folder. Required for MIT.
+    /// The licence notice CREDITS.txt carries in full, relative to the folder. Required for MIT and Iowa MIS.
     pub notice: Option<String>,
 }
 
@@ -71,6 +71,8 @@ pub struct Recipe {
     /// `auto` (mono when side < −40 dB re mid), `mono` or `stereo`.
     pub channels: Option<String>,
     pub tail: Option<Tail>,
+    /// DW attack float (zone floats #1), 0..=1; default 0 for existing programs.
+    pub attack: Option<f32>,
     /// DW release float (zone floats #4).
     pub release: Option<f32>,
     pub lite: Option<Lite>,

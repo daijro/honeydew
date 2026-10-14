@@ -1,0 +1,21 @@
+# Recorded background and microphonic feedback only; upstream pitched feedback uses an SFZ sine generator.
+id = "guitar-black-green-feedback"
+kind = "samples"
+path = "Samples/Guitar Feedback/"
+source = "karoryfer-black-and-green-guitars-release"
+
+[[sample]]
+name = "Black Guitar Background Feedback"
+file = "unpacked/Samples/black/fb/fb_bkg.wav"
+
+[[sample]]
+name = "Black Guitar Microphonic Feedback"
+file = "unpacked/Samples/black/fb/fb_micro.wav"
+
+[[sample]]
+name = "Green Guitar Background Feedback"
+file = "unpacked/Samples/green/fb/fb_bkg.wav"
+
+[[sample]]
+name = "Green Guitar Microphonic Feedback"
+file = "unpacked/Samples/green/fb/fb_micro.wav"

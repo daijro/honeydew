@@ -328,7 +328,7 @@ fn credit(s: &Source) -> Credit {
     }
 }
 
-/// Every credited source, with the full notice text a licence (MIT) requires.
+/// Every credited source, with any required licence notice text.
 fn credits_txt(
     index: &Index,
     sources: &BTreeMap<String, Source>,

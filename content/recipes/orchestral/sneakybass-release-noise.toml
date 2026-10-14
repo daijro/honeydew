@@ -1,0 +1,14 @@
+# Quiet double-bass pizzicato source, central voice and first round robin, with the SFZ's per-note tuning.
+# Its C2 file sounds C1, so lower the SFZ mapping an octave. Noise programs are played on note-on.
+# shortcut: automatic release triggers and unison are unavailable; use the separate noise programs when needed.
+id = "strings-sneakybass-release-noise"
+kind = "program"
+path = "Presets/DW Sampler/Orchestral/Sneakybass Release Noise.dwp"
+source = "karoryfer-sneakybass"
+sfz = "unpacked/Sneakybass/Programs/06-sneakybass_release_noise.sfz"
+transpose = -12
+cc = { "100" = 0, "105" = 0, "107" = 0 }
+channels = "auto"
+tail = { floor_db = -55, fade_ms = 100, max_s = 2.0 }
+release = 0.2
+gain = "normalize"

@@ -1,0 +1,94 @@
+# Iowa stereo ff recordings; source octaves are standard. Measured intonation is corrected per zone.
+# Pizzicato uses the reliably pitched register; upper keys transpose the last usable sample.
+id = "iowa-pizzicato-solo-cello"
+kind = "program"
+path = "Presets/DW Sampler/Orchestral/Pizzicato Solo Cello (Iowa).dwp"
+source = "iowa-strings"
+channels = "stereo"
+gain = "normalize"
+release = 0.25
+tail = { floor_db = -55, fade_ms = 60, max_s = 6.0 }
+
+[[zone]]
+file = "wav/Cello.pizz.ff.sulC.C2.stereo.wav"
+root = 36
+lokey = 0
+hikey = 37
+tune = -7.5
+
+[[zone]]
+file = "wav/Cello.pizz.ff.sulC.Eb2.stereo.wav"
+root = 39
+lokey = 38
+hikey = 40
+tune = 11.5
+
+[[zone]]
+file = "wav/Cello.pizz.ff.sulC.Gb2.stereo.wav"
+root = 42
+lokey = 41
+hikey = 43
+tune = -3.5
+
+[[zone]]
+file = "wav/Cello.pizz.ff.sulG.A2.stereo.wav"
+root = 45
+lokey = 44
+hikey = 46
+tune = -9.5
+
+[[zone]]
+file = "wav/Cello.pizz.ff.sulG.C3.stereo.wav"
+root = 48
+lokey = 47
+hikey = 49
+tune = -16.5
+
+[[zone]]
+file = "wav/Cello.pizz.ff.sulD.Eb3.stereo.wav"
+root = 51
+lokey = 50
+hikey = 52
+tune = -0.5
+
+[[zone]]
+file = "wav/Cello.pizz.ff.sulD.Gb3.stereo.wav"
+root = 54
+lokey = 53
+hikey = 55
+tune = -35.5
+
+[[zone]]
+file = "wav/Cello.pizz.ff.sulA.A3.stereo.wav"
+root = 57
+lokey = 56
+hikey = 58
+tune = -9.5
+
+[[zone]]
+file = "wav/Cello.pizz.ff.sulA.C4.stereo.wav"
+root = 60
+lokey = 59
+hikey = 61
+tune = -12.0
+
+[[zone]]
+file = "wav/Cello.pizz.ff.sulA.Eb4.stereo.wav"
+root = 63
+lokey = 62
+hikey = 64
+tune = -3.5
+
+[[zone]]
+file = "wav/Cello.pizz.ff.sulA.Gb4.stereo.wav"
+root = 66
+lokey = 65
+hikey = 67
+tune = -32.0
+
+[[zone]]
+file = "wav/Cello.pizz.ff.sulA.A4.stereo.wav"
+root = 69
+lokey = 68
+hikey = 127
+tune = -56.5
