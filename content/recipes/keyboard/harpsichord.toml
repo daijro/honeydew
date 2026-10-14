@@ -1,0 +1,14 @@
+# A harpsichord: VCSL's English kit harpsichord on its normal 8' stop (one dynamic, as the instrument has), every other
+# point of its whole-tone grid (a major third apart), stereo, each sample cut at −60 dB re its peak or at 4 s with a
+# 0.3 s fade.
+id = "keys-harpsichord"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/Harpsichord.dwp"
+source = "vcsl"
+files = "unpacked/VCSL-master/Chordophones/Zithers/Harpsichord, English/Sustains/Normal/ZuckermannKitHarpsi_Normal_Sus_{note}_rr{rr}.wav"
+transpose = 12
+keys = { every = 4 }
+channels = "auto"
+tail = { floor_db = -60, fade_ms = 300, max_s = 4 }
+release = 0.3
+gain = "normalize"

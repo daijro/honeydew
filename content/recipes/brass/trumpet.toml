@@ -1,0 +1,13 @@
+# A trumpet: VSCO 2 CE's straight sustain, both layers (p, f), one point per minor third or more, folded to mono (its
+# side sits 6–14 dB under its mid), each cut to 2.5 s with a found loop.
+id = "brass-trumpet"
+kind = "program"
+path = "Presets/DW Sampler/Brass/Trumpet.dwp"
+source = "vsco2-ce"
+files = "unpacked/VSCO-2-CE-master/Brass/Trumpet/sus/Sum_SHTrumpet_sus_{note}_v{layer}_rr{rr}.wav"
+transpose = 12
+keys = { every = 3 }
+channels = "mono"
+loop = { find = true, min_s = 1.0, crossfade_ms = 100, keep_s = 2.5 }
+release = 0.3
+gain = "normalize"

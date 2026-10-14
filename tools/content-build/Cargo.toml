@@ -1,0 +1,40 @@
+# The bundled-content build tool: recipes + raw sources -> `content-out/` packs, index.json
+# and CREDITS.txt. Its own workspace (as `tools/wasm-smoke`), so the app's lock and gates stay untouched. Never share a
+# CARGO_TARGET_DIR with the root workspace: both build `honeydew` from the same path, and the mixed artifacts fail with
+# "multiple versions of serde_core".
+#
+#   cargo run --release -- check
+#   cargo run --release -- build --sources ../../../content-sources --out ../../content-out
+#   cargo run --release -- verify --out ../../content-out
+[package]
+name = "content-build"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-or-later"
+
+[workspace]
+
+[dependencies]
+# `content::bundle` (the index schema the app reads) and the code-made Built-in names verify guards.
+honeydew = { path = "../.." }
+honeydew-audio = { path = "../../crates/audio" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.152"
+# Both already in the app's tree (`zip.rs`): gzip's deflate and CRC-32.
+miniz_oxide = "0.9"
+crc32fast = "1"
+# Tool-only: recipes and part hashes.
+toml = { version = "0.9", default-features = false, features = ["parse", "serde", "std"] }
+sha2 = "0.10"
+
+# The split test gzips 24 MB parts: deflate and the hash at opt-level 0 would take most of a minute.
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+
+[profile.dev.package.sha2]
+opt-level = 3
+
+# The procedural tests render every sound and take its 4× oversampled peak: minutes at opt-level 0.
+[profile.dev.package.content-build]
+opt-level = 3

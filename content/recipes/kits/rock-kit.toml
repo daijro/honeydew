@@ -1,0 +1,115 @@
+# A rock kit: Karoryfer's Big Rusty Drums, one strong (not the hardest) hit per pad, its close mic and overheads
+# premixed at the source's own default mic balance (the kick adds a little overhead). Each pad peaks at −1 dBFS and is
+# cut at −60 dB re its peak or 5 s; Level and Pan follow the code-made kits' mix (`src/content/kits.rs`).
+id = "kit-rock"
+kind = "kit"
+path = "Drumsets/Rock Kit.tmpl"
+source = "karoryfer-big-rusty-drums"
+tail = { floor_db = -60, fade_ms = 300, max_s = 5 }
+
+[[pad]]
+name = "Kick"
+level_db = -7
+mix = [
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/kick_24/kick/kick/k_vl12_rr1.flac" },
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/kick_24/kick/oh/k_vl12_rr1.flac", gain_db = -12 },
+]
+
+[[pad]]
+name = "Snare"
+level_db = -8.5
+mix = [
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/snare_14/center/btm/sn_center_vl8_rr1.flac" },
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/snare_14/center/top/sn_center_vl8_rr1.flac", gain_db = -8 },
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/snare_14/center/oh/sn_center_vl8_rr1.flac", gain_db = -4.4 },
+]
+
+[[pad]]
+name = "Side Stick"
+level_db = -11
+pan = -0.08
+mix = [
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/snare_14/sidestick/btm/sn_ss_vl3_rr1.flac" },
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/snare_14/sidestick/top/sn_ss_vl3_rr1.flac", gain_db = -8 },
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/snare_14/sidestick/oh/sn_ss_vl3_rr1.flac", gain_db = -4.4 },
+]
+
+[[pad]]
+name = "Closed Hat"
+level_db = -13
+pan = 0.24
+mix = [
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/hihat_14/tc/cl/ht_tc_vl6_rr1.flac" },
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/hihat_14/tc/oh/ht_tc_vl6_rr1.flac" },
+]
+
+[[pad]]
+name = "Pedal Hat"
+level_db = -14
+pan = 0.24
+mix = [
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/hihat_14/chik/cl/ht_chik_vl4_rr1.flac" },
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/hihat_14/chik/oh/ht_chik_vl4_rr1.flac" },
+]
+
+[[pad]]
+name = "Open Hat"
+level_db = -12
+pan = 0.24
+mix = [
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/hihat_14/open/cl/ht_open_vl5_rr1.flac" },
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/hihat_14/open/oh/ht_open_vl5_rr1.flac" },
+]
+
+[[pad]]
+name = "Low Tom"
+level_db = -9
+pan = -0.24
+mix = [
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/tom_18/center/cl/t18_vl6_rr1.flac" },
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/tom_18/center/oh/t18_vl6_rr1.flac", gain_db = -3.1 },
+]
+
+[[pad]]
+name = "Mid Tom"
+level_db = -9
+mix = [
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/tom_15/center/cl/t15_vl6_rr1.flac" },
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/tom_15/center/oh/t15_vl6_rr1.flac", gain_db = -3.1 },
+]
+
+[[pad]]
+name = "High Tom"
+level_db = -9
+pan = 0.24
+mix = [
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/tom_14/center/cl/t14_vl5_rr1.flac" },
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/tom_14/center/oh/t14_vl5_rr1.flac", gain_db = -3.1 },
+]
+
+[[pad]]
+name = "Ride"
+level_db = -13
+pan = 0.32
+mix = [
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/ride_22/rd/cl/rd_vl8_rr1.flac", gain_db = -8 },
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/ride_22/rd/oh/rd_vl8_rr1.flac" },
+]
+
+[[pad]]
+name = "Ride Bell"
+level_db = -13
+pan = 0.32
+mix = [
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/ride_22/bl/cl/rd_bl_vl3_rr1.flac", gain_db = -8 },
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/ride_22/bl/oh/rd_bl_vl3_rr1.flac" },
+]
+
+[[pad]]
+name = "Crash"
+level_db = -12
+pan = -0.28
+mix = [
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/crash_17/cr/cl/cr_vl4_rr1.flac", gain_db = -8 },
+  { file = "unpacked/karoryfer.big-rusty-drums-main/Samples/crash_17/cr/oh/cr_vl4_rr1.flac" },
+]

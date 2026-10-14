@@ -1,0 +1,13 @@
+# A tuba: Karoryfer's War Tuba, solo polyphonic program, its sustain articulation (keyswitch 26) on the condenser mic,
+# one layer, one point per minor third, each
+# cut to 2.5 s with a found loop.
+id = "brass-low"
+kind = "program"
+path = "Presets/DW Sampler/Brass/Low Brass.dwp"
+source = "karoryfer-war-tuba"
+sfz = "unpacked/karoryfer.war-tuba-master/Programs/2-solo-poly.sfz"
+keyswitch = 26
+keys = { every = 3, to = 55 }
+loop = { find = true, min_s = 1.0, crossfade_ms = 100, keep_s = 2.5 }
+release = 0.3
+gain = "even"

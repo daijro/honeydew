@@ -1,0 +1,14 @@
+# A solo cello, bowed: Karoryfer x bigcat's cello, arco sustain, layers 2 and 4 of 4 (mp, f), first bow direction, one
+# point per minor third, each cut to 2.5 s with a found loop. Its SFZ maps each note an octave below its pitch (open
+# C sounds 65 Hz on key 24), so it moves up an octave; the harmonics noises above the range are left out.
+id = "strings-cello"
+kind = "program"
+path = "Presets/DW Sampler/Strings/Cello.dwp"
+source = "karoryfer-bigcat-cello"
+sfz = "unpacked/karoryfer-bigcat.cello-master/Programs/vc_arco_sus_map.sfz"
+transpose = 12
+keys = { every = 3, to = 84 }
+velocity_layers = [2, 4]
+loop = { find = true, min_s = 1.0, crossfade_ms = 100, keep_s = 2.5 }
+release = 0.4
+gain = "normalize"

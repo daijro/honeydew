@@ -1,0 +1,9 @@
+# A drawbar organ: FreePats' setBfree renders, one per major third, mono. The renders swell and dip with a rotary
+# speaker about once a second, so each keeps the source's own 3–4 s loop: a short found loop would cycle that too fast.
+id = "organ-drawbar"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/Drawbar Organ.dwp"
+source = "freepats-electric-organs"
+sfz = "unpacked/DrawbarOrganEmulation-SFZ-20190712/DrawbarOrganEmulation-SFZ-20190712/DrawbarOrganEmulation-20190712.sfz"
+release = 0.35
+gain = "normalize"

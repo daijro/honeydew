@@ -1,0 +1,27 @@
+# Honeydew on Cloudflare (Workers static assets or Pages), which reads `_headers` from the site root: tools/web-dist.sh
+# copies it into dist/, the site (README "Web").
+# Cloudflare compresses HTML, JS and JSON itself, but doesn't send a stored .gz with Content-Encoding (Workers static
+# assets; Pages is undocumented). So the wasm and the packs are fetched as their .gz and gunzipped in the browser
+# (index.html's loader, the content loader), and a .gz needs no header here. Types come from the extension.
+
+# Trunk's wasm and JS, and the packs, are named by their content: cache them for good.
+/*.wasm
+  Cache-Control: public, max-age=31536000, immutable
+/*.wasm.gz
+  Cache-Control: public, max-age=31536000, immutable
+/*.js
+  Cache-Control: public, max-age=31536000, immutable
+/*.js.gz
+  Cache-Control: public, max-age=31536000, immutable
+/content/p/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The rest keeps its name across releases: revalidate.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/content/index.json
+  Cache-Control: no-cache
+/content/CREDITS.txt
+  Cache-Control: no-cache

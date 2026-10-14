@@ -1,0 +1,21 @@
+[package]
+name = "honeydew-audio"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+cpal = { version = "0.16.0", features = ["wasm-bindgen"] }
+crossbeam-channel = "0.5.17"
+# MPL-2.0, pure Rust, wasm-clean. FLAC: bundled `.wav` assets are mostly FLAC streams. MP3 and Vorbis
+# for user samples; Ogg pages are read by `sample.rs`, so symphonia's `ogg` reader is not built.
+symphonia = { version = "0.5.5", default-features = false, features = ["flac", "mp3", "vorbis"] }
+# MP3 export. rusty_mp3 1.0.0 (Apache-2.0, pure Rust, no dependencies), vendored because its `MP3_*` debug
+# environment knobs change the encoder's output; the vendored copy reads none (see its Cargo.toml). Notice in
+# THIRD_PARTY_NOTICES.md.
+rusty_mp3 = { path = "../../vendor/rusty_mp3", version = "=1.0.0" }
+# Ogg Vorbis export. zvidlib-vorbis-encoder 0.5.0 (MIT; a port of Xiph libvorbis 1.3.7, BSD-3) pins
+# zvidlib-core and zvidlib-vorbis-syntax at =0.5.0; ogg 0.8.0 (BSD-3) muxes its packets. Notices in
+# THIRD_PARTY_NOTICES.md.
+zvidlib-vorbis-encoder = "=0.5.0"
+ogg = "=0.8.0"

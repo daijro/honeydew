@@ -1,0 +1,24 @@
+# Risers, downlifters and Shepard rises, stereo.
+id = "proc-risers"
+kind = "samples"
+path = "Samples/Risers/"
+source = "honeydew"
+render = "riser"
+variant = [
+  { name = "Noise Riser 2s", length = 2.0, from = 400.0, to = 10000.0, q = 3.0 },
+  { name = "Noise Riser 4s", length = 4.0 },
+  { name = "Noise Riser 8s", length = 8.0, from = 200.0, to = 12000.0, q = 5.0 },
+  { name = "Resonant Riser 4s", length = 4.0, from = 250.0, to = 7000.0, q = 9.0 },
+  { name = "Saw Riser 2s", length = 2.0, saw = 0.8, from = 500.0, to = 8000.0, q = 2.0 },
+  { name = "Saw Riser 4s", length = 4.0, saw = 0.7, pitch_from = 55.0, q = 2.5 },
+  { name = "Saw Riser 8s", length = 8.0, saw = 0.6, pitch_from = 55.0, pitch_to = 1760.0, q = 3.0 },
+  { name = "Hybrid Riser 4s", length = 4.0, saw = 0.4, pitch_from = 220.0, pitch_to = 1760.0, q = 4.0 },
+  { name = "Noise Downlifter 2s", render = "downlifter", length = 2.0 },
+  { name = "Noise Downlifter 4s", render = "downlifter", length = 4.0, from = 10000.0, to = 150.0 },
+  { name = "Saw Downlifter 2s", render = "downlifter", length = 2.0, saw = 0.7, q = 2.0 },
+  { name = "Resonant Downlifter 3s", render = "downlifter", q = 8.0 },
+  { name = "Shepard Rise 6s", render = "shepard" },
+  { name = "Shepard Rise Fast 4s", render = "shepard", length = 4.0, rate = 1.0 },
+  { name = "Shepard Rise Slow 8s", render = "shepard", length = 8.0, rate = 0.25 },
+  { name = "Shepard Fall 6s", render = "shepard", rate = -0.5 },
+]

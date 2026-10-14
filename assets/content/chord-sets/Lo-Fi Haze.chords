@@ -1,0 +1,74 @@
+{
+    "chords": [
+        {
+            "baseNote": 5,
+            "extensions": [
+                11
+            ],
+            "octave": 3,
+            "quality": 0
+        },
+        {
+            "baseNote": 4,
+            "extensions": [
+                10
+            ],
+            "octave": 3,
+            "quality": 1
+        },
+        {
+            "baseNote": 2,
+            "extensions": [
+                10,
+                14
+            ],
+            "octave": 3,
+            "quality": 1
+        },
+        {
+            "baseNote": 0,
+            "extensions": [
+                11,
+                14
+            ],
+            "octave": 3,
+            "quality": 0
+        },
+        {
+            "baseNote": 9,
+            "extensions": [
+                10,
+                17
+            ],
+            "octave": 3,
+            "quality": 1
+        },
+        {
+            "baseNote": 2,
+            "extensions": [
+                10,
+                14,
+                17
+            ],
+            "octave": 4,
+            "quality": 1
+        },
+        {
+            "baseNote": 7,
+            "extensions": [
+                10
+            ],
+            "octave": 3,
+            "quality": 0
+        },
+        {
+            "baseNote": 0,
+            "extensions": [
+                11
+            ],
+            "octave": 4,
+            "quality": 0
+        }
+    ],
+    "rootNote": 0
+}

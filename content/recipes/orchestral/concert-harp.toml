@@ -1,0 +1,11 @@
+# A concert harp: FreePats' Concert Harp (Versilian samples), both layers (mf, f), one point per major third, each cut
+# at −50 dB re its peak or 3.5 s.
+id = "harp-concert"
+kind = "program"
+path = "Presets/DW Sampler/Orchestral/Concert Harp.dwp"
+source = "freepats-concert-harp"
+sfz = "unpacked/ConcertHarp-SFZ+FLAC-20200702/ConcertHarp-SFZ+FLAC-20200702/ConcertHarp-20200702.sfz"
+keys = { every = 4 }
+tail = { floor_db = -50, fade_ms = 300, max_s = 3.5 }
+release = 0.5
+gain = "normalize"

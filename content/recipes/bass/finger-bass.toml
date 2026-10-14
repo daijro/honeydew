@@ -1,0 +1,14 @@
+# A fingered electric bass: Karoryfer's Growlybass, clean program, its p and f layers (2 and 3 of 4), first round
+# robin, every point of its minor-third grid but the scrape noises. Its SFZ maps each note an octave above its pitch
+# (the low E sounds 41 Hz on key 40), so it moves down an octave to play at pitch. Mono, cut at −50 dB or 3 s.
+id = "bass-finger"
+kind = "program"
+path = "Presets/DW Sampler/Bass/Finger Bass.dwp"
+source = "karoryfer-growlybass"
+sfz = "unpacked/karoryfer.growlybass-master/growlybass_clean.sfz"
+transpose = -12
+keys = { every = 3, to = 64 }
+velocity_layers = [2, 3]
+tail = { floor_db = -50, fade_ms = 200, max_s = 3 }
+release = 0.25
+gain = "normalize"

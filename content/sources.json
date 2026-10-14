@@ -1,0 +1,960 @@
+[
+ {
+  "folder": "akwf-free",
+  "title": "Adventure Kid Waveforms (AKWF-FREE)",
+  "page": "https://github.com/KristofferKarlAxelEkstrand/AKWF-FREE",
+  "author": "Kristoffer Ekstrand (Adventure Kid)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/KristofferKarlAxelEkstrand/AKWF-FREE/archive/refs/heads/main.zip",
+    "sha256": "b891fefd866693f74ece0756a8230f6b0bb7339583d978366abc8a0470207d79",
+    "bytes": 846912586,
+    "git_commit": "8de90bf94376670947369e69de0af6b9fbd19286"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Current repo LICENSE.md is CC0 1.0 (older downloads were CC BY 3.0; use this copy). AKWF--<synth> folders are AKWF converted to those synths' formats. Tree contains 1 .py and 2 .sh helper scripts (not run, not for bundling)."
+ },
+ {
+  "folder": "freepats-bass-guitar-yr",
+  "title": "FreePats Bass Guitar YR",
+  "page": "https://freepats.zenvoid.org/ElectricGuitar/clean-electric-bass.html",
+  "author": "Andrea Biasior (via FreePats)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/electric-bass-YR/releases/download/2019-09-30/PickedBassYR-SFZ+FLAC-20190930.7z",
+    "sha256": "aa7650fc206a7ed83ecafa36a24572e1f4ea041938182b981bf111b99e1b8e85",
+    "bytes": 2819607
+   },
+   {
+    "url": "https://github.com/freepats/electric-bass-YR/releases/download/2019-09-30/FingerBassYR-SFZ+FLAC-20190930.7z",
+    "sha256": "36f87ec9eb086ef25050312522aacf71213c582f46989e0c5a12681304596587",
+    "bytes": 3252347
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Picked and Finger variants, SFZ+FLAC (2019-09-30)."
+ },
+ {
+  "folder": "freepats-church-organ",
+  "title": "FreePats Church Organ Emulation",
+  "page": "https://freepats.zenvoid.org/Organ/pipe-organ.html",
+  "author": "Roberto (FreePats)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://freepats.zenvoid.org/Organ/ChurchOrganEmulation/ChurchOrganEmulation-SFZ-20190924.tar.xz",
+    "sha256": "1f0b70a2c2af14cdf051ef2d256b3bb652e7d64c0fdc8bed06642ad2af916db9",
+    "bytes": 13033856
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Church Organ Emulation (Aeolus render), SFZ+WAV. No small build offered."
+ },
+ {
+  "folder": "freepats-concert-harp",
+  "title": "FreePats Concert Harp",
+  "page": "https://freepats.zenvoid.org/OrchestralStrings/harp.html",
+  "author": "Versilian Studios samples, assembled by Roberto (FreePats)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://freepats.zenvoid.org/OrchestralStrings/ConcertHarp/ConcertHarp-SFZ+FLAC-20200702.tar.gz",
+    "sha256": "7d3a77e4e9501d733a032cb7d93bc7567f47e4078325328efe7b45fb03ac48ad",
+    "bytes": 5039283
+   },
+   {
+    "url": "https://freepats.zenvoid.org/OrchestralStrings/ConcertHarp/ConcertHarp-small-SFZ+FLAC-20200702.tar.gz",
+    "sha256": "4444c00317ab0e5ccb2b3f5454da29c68be9ba3e35bce9535fee4e5f452fc56e",
+    "bytes": 2602719
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Full (2 vl) and small SFZ+FLAC (2020-07-02). Built from VCSL. Harp photo on the page is CC BY-NC (not fetched)."
+ },
+ {
+  "folder": "freepats-electric-organs",
+  "title": "FreePats Electric Organ Emulations",
+  "page": "https://freepats.zenvoid.org/Organ/electric-organ.html",
+  "author": "Roberto (FreePats); Strix SoundFont Team (percussive, rock)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://freepats.zenvoid.org/Organ/DrawbarOrganEmulation/DrawbarOrganEmulation-SFZ-20190712.tar.xz",
+    "sha256": "e2da18b0a4d13be7020037e18e4a719387433357e7603d0773990e794dcf5d0f",
+    "bytes": 6042972
+   },
+   {
+    "url": "https://freepats.zenvoid.org/Organ/PercussiveOrganEmulation/PercussiveOrganEmulation-SFZ-20190715.tar.xz",
+    "sha256": "c4841f2e7f352692cf14a85a96bd1f40a9ea7a9e2a9ce3512606885d000978c8",
+    "bytes": 12423412
+   },
+   {
+    "url": "https://freepats.zenvoid.org/Organ/RockOrganEmulation/RockOrganEmulation-SFZ-20190715.tar.xz",
+    "sha256": "07321d9498dc31982c44ea9483919df3f426e3d392a15bb2947b0e3fe247f718",
+    "bytes": 12576272
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Drawbar, Percussive and Rock organ emulations (setBfree renders). Only SFZ+WAV and SF2 offered; SFZ+WAV fetched. No small build offered."
+ },
+ {
+  "folder": "freepats-fm-pianos",
+  "title": "FreePats FM Pianos",
+  "page": "https://freepats.zenvoid.org/ElectricPiano/synthesized-piano.html",
+  "author": "FreePats project (roberto@zenvoid.org) and contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/fm-piano1/releases/download/2019-09-16/FM-Piano1-SFZ+FLAC-20190916.7z",
+    "sha256": "fa308cead617211b29f500db2f962f34e18c9cd55a94ae9176e1d63babeab083",
+    "bytes": 24932509
+   },
+   {
+    "url": "https://github.com/freepats/fm-piano2/releases/download/2016-11-12/FM-Piano2-SFZ+FLAC-20161112.7z",
+    "sha256": "4e11a442fa9b6b5322e5dfa4eb24abdfc8713bb9a7ec33c99baab1f92967aaaa",
+    "bytes": 9080973
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "FM Piano #1 and #2 (Hexter DX7 renders), SFZ+FLAC. No small build offered."
+ },
+ {
+  "folder": "freepats-fsbs-clean-guitars",
+  "title": "FreePats FSBS Clean Guitars",
+  "page": "https://freepats.zenvoid.org/ElectricGuitar/clean-electric-guitar.html",
+  "author": "FreePats project (roberto@zenvoid.org) and contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/electric-guitar-FSBS-clean/releases/download/2026-08-07/EGuitarFSBS-clean-SFZ+FLAC-20260807.7z",
+    "sha256": "a929a3cbfc8289e325be56dab49f5fd560bbc3995c40b69f8f05caee380e8be3",
+    "bytes": 123736791
+   },
+   {
+    "url": "https://github.com/freepats/electric-guitar-FSBS-clean/releases/download/2026-08-07/EGuitarFSBS-clean-bridge-small-SFZ+FLAC-20260807.7z",
+    "sha256": "07c8cdf94dc9b4875ff6c43e51440d84f939a45530060c0761093a56d4a1f032",
+    "bytes": 3096261
+   },
+   {
+    "url": "https://github.com/freepats/electric-guitar-FSBS-jazz/releases/download/2026-08-07/EGuitarFSBS-jazz-SFZ+FLAC-20260807.7z",
+    "sha256": "c584f2e176575ba78c2ae8f45e04309badd0c912e654582880dba3146715c688",
+    "bytes": 65919794
+   },
+   {
+    "url": "https://github.com/freepats/electric-guitar-FSBS-jazz/releases/download/2026-08-07/EGuitarFSBS-jazz-bridge-small-SFZ+FLAC-20260807.7z",
+    "sha256": "750dd41e4273a2717c0260c5b795c912611175dd61aa3b57fb7c5e2d10d8de75",
+    "bytes": 2479995
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "FSBS Clean #1 and Clean #2 (Jazz), full + bridge-small SFZ+FLAC (2026-08-07). Direct and distorted variants not fetched."
+ },
+ {
+  "folder": "freepats-old-piano-fb",
+  "title": "FreePats Old Piano FB",
+  "page": "https://freepats.zenvoid.org/Piano/honky-tonk-piano.html",
+  "author": "FreePats project (roberto@zenvoid.org) and contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/old-piano-FB/releases/download/2020-04-01/PianoFB-SFZ+FLAC-20200401.7z",
+    "sha256": "da35c93967c421b17f7219c12a37830ffd2b19f54f8a0a71203fc6161b079b45",
+    "bytes": 35745634
+   },
+   {
+    "url": "https://github.com/freepats/old-piano-FB/releases/download/2020-04-01/PianoFB-small-SFZ+FLAC-20200401.7z",
+    "sha256": "a64989e97383bd98ade08519363a73bf9d1991a13253327f527e1db7b9428545",
+    "bytes": 6506014
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Full and small SFZ+FLAC builds (2020-04-01). Honky-tonk."
+ },
+ {
+  "folder": "freepats-spanish-classical-guitar",
+  "title": "FreePats Spanish Classical Guitar",
+  "page": "https://freepats.zenvoid.org/Guitar/acoustic-guitar.html",
+  "author": "Roberto (FreePats)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://freepats.zenvoid.org/Guitar/SpanishClassicalGuitar/SpanishClassicalGuitar-SFZ+FLAC-20190618.7z",
+    "sha256": "903916921a21662d2237ade7f0e98e55de93cb7b86da219e4e10f4ad385b8f5e",
+    "bytes": 4713892
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "SFZ+FLAC. No small build offered."
+ },
+ {
+  "folder": "freepats-synth-bass",
+  "title": "FreePats Synth Bass",
+  "page": "https://freepats.zenvoid.org/Synthesizer/synth-bass.html",
+  "author": "FreePats project (roberto@zenvoid.org) and contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/lately-bass/releases/download/2024-04-09/LatelyBass-SFZ+FLAC-20240409.7z",
+    "sha256": "3cb6d4081b39cea265011a21f05a424fc72845abfd17d7409ac16acc7122a3e0",
+    "bytes": 1181315
+   },
+   {
+    "url": "https://github.com/freepats/synth-bass-1/releases/download/2019-07-23/SynthBass1-SFZ+FLAC-20190723.7z",
+    "sha256": "b3988a78286292200d7fa8d2bbe708a80bb02b28d519f8a7d0c66df7e894f07b",
+    "bytes": 748547
+   },
+   {
+    "url": "https://github.com/freepats/synth-bass-2/releases/download/2021-04-05/SynthBass2-SFZ+FLAC-20210405.7z",
+    "sha256": "3a04fc728197b746d5e82a5ced27bddc57f52db5e5bb5426a07ef14771b2ee4f",
+    "bytes": 2682779
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Lately Bass, Synth Bass #1, Synth Bass #2; SFZ+FLAC. Report prefers Synth Bass #1 (ZynAddSubFX) over the DX7/TX81Z emulations."
+ },
+ {
+  "folder": "freepats-synth-lead",
+  "title": "FreePats Synth Lead",
+  "page": "https://freepats.zenvoid.org/Synthesizer/synth-lead.html",
+  "author": "FreePats project (roberto@zenvoid.org) and contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/synth-bass-lead/releases/download/2020-05-22/SynthBassLead-SFZ+FLAC-20200522.7z",
+    "sha256": "9fd3c113a49902d644167193f421e10fb0c4a35d20cdaa7d8d8d1aebdfd00e8d",
+    "bytes": 3996491
+   },
+   {
+    "url": "https://github.com/freepats/synth-fifths/releases/download/2020-05-19/SynthFifths-SFZ+FLAC-20200519.7z",
+    "sha256": "891660964a4450d32d54b1b96af8004b2a64627cb96598fd9e17d2152be53b10",
+    "bytes": 7928831
+   },
+   {
+    "url": "https://github.com/freepats/synth-square/releases/download/2020-05-12/SynthSquare-SFZ+FLAC-20200512.7z",
+    "sha256": "0d9fba485b3f542d3730a242f213174febc791598fd62ddad144c05d5bb8aa4c",
+    "bytes": 7276902
+   },
+   {
+    "url": "https://github.com/freepats/synth-calliope/releases/download/2020-05-12/SynthCalliope-SFZ+FLAC-20200512.7z",
+    "sha256": "d2fcdee900cf0e19379180e70a1c86c670fdf406d8b4f099c601e3ace2938246",
+    "bytes": 3673604
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Synth Bass & Lead, Fifths, Square, Calliope; SFZ+FLAC (Surge/ZynAddSubFX renders)."
+ },
+ {
+  "folder": "freepats-synth-pad",
+  "title": "FreePats Synth Pad",
+  "page": "https://freepats.zenvoid.org/Synthesizer/synth-pad.html",
+  "author": "FreePats project (roberto@zenvoid.org) and contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/synth-pad-choir/releases/download/2020-05-16/SynthPadChoir-SFZ+FLAC-20200516.7z",
+    "sha256": "703ef30fad4861f85b319f8d549fbeeb0af0860929165c7066410dcbb03da0a3",
+    "bytes": 6815491
+   },
+   {
+    "url": "https://github.com/freepats/sweep-pad/releases/download/2019-08-13/SweepPad-SFZ+FLAC-20190813.7z",
+    "sha256": "b0b3f334dd89d90507142da76f129a6e43369dda92c1a02f4fcdf7af13b05d49",
+    "bytes": 2990559
+   },
+   {
+    "url": "https://github.com/freepats/new-age/releases/download/2019-07-30/NewAge-SFZ+FLAC-20190730.7z",
+    "sha256": "355c686eecaac4d9857a8aecf9962eee7bb6d69bd48c55608f47185da63f5d9e",
+    "bytes": 4480005
+   },
+   {
+    "url": "https://github.com/freepats/synth-pad-bowed/releases/download/2019-07-19/SynthPadBowed-SFZ+FLAC-20190719.7z",
+    "sha256": "6e746986d3dbdcddd2f4ce711882fde1fa16de5a59902b3aec530302281b328c",
+    "bytes": 11906083
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Synth Pad Choir (choir stopgap), Sweep Pad, New Age, Synth Pad Bowed; SFZ+FLAC."
+ },
+ {
+  "folder": "freepats-ukulele",
+  "title": "FreePats Ukulele",
+  "page": "https://freepats.zenvoid.org/GuitarFamily/ukulele.html",
+  "author": "Mateusz Dabrowski (via FreePats)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/ukulele1/releases/download/2026-08-11/Ukulele-SFZ+FLAC-20260811.7z",
+    "sha256": "d71b66382687175dca8aad53cad3290f6b418d48b6a2c0722af58b372f054bf4",
+    "bytes": 2402413
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "SFZ+FLAC (2026-08-11)."
+ },
+ {
+  "folder": "freepats-upright-piano-kw",
+  "title": "FreePats Upright Piano KW",
+  "page": "https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html",
+  "author": "Gonzalo and Roberto (FreePats)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://freepats.zenvoid.org/Piano/UprightPianoKW/UprightPianoKW-SFZ+FLAC-20220221.7z",
+    "sha256": "3a66da3b25a2fd9499d90bcf09f1aee4431825796e249361b48af59b1201e703",
+    "bytes": 33294287
+   },
+   {
+    "url": "https://freepats.zenvoid.org/Piano/UprightPianoKW/UprightPianoKW-small-SFZ+FLAC-20190703.7z",
+    "sha256": "e346ef198fcda0694fc66ddb80c2db2a1c700e96e3a1801930e3cebfed37047f",
+    "bytes": 3092715
+   },
+   {
+    "url": "https://freepats.zenvoid.org/Piano/UprightPianoKW/UprightPianoKW-small-bright-SFZ+FLAC-20190703.7z",
+    "sha256": "590f8900aec595a4ad6037c373623837bd34d111ab07251fda4a5c704ffa6742",
+    "bytes": 3299501
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Full (2022-02-21), small and small-bright (2019-07-03) SFZ+FLAC builds. Same page also lists YDP Grand (CC BY 3.0) and Salamander (CC BY 3.0 on that page): not fetched from here."
+ },
+ {
+  "folder": "karoryfer-big-rusty-drums",
+  "title": "Big Rusty Drums",
+  "page": "https://github.com/sfzinstruments/karoryfer.big-rusty-drums",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.big-rusty-drums/archive/refs/heads/main.zip",
+    "sha256": "702070b3ddf92c5081ea015c2e5e18cf84b95779bb1eea75010a730571e1c6fe",
+    "bytes": 619051786,
+    "git_commit": "f07ce00df34a46b6b08375be56fe116cf15782bc"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-bigcat-cello",
+  "title": "Bigcat Cello",
+  "page": "https://github.com/sfzinstruments/karoryfer-bigcat.cello",
+  "author": "Karoryfer Lecolds x bigcat instruments (cellist Kamila Borowiak)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer-bigcat.cello/archive/refs/heads/master.zip",
+    "sha256": "75a3a72700f5c53744620a68f99f9aa299215e0036fcc68ef2283db79b7eba7e",
+    "bytes": 132619913,
+    "git_commit": "6fd75fbfc1dbb3109bf26220ba1adea46188a18b"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "LICENSE is CC0. The Kontakt .nki/.nkc/.nkr files embed Robert D. Villwock's WIPS scripts, which have their own terms (readme.txt): do not bundle those; use the samples + SFZ only."
+ },
+ {
+  "folder": "karoryfer-black-and-green-guitars",
+  "title": "Black and Green Guitars",
+  "page": "https://github.com/sfzinstruments/karoryfer.black-and-green-guitars",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.black-and-green-guitars/archive/refs/heads/main.zip",
+    "sha256": "aa28846a3d9c2f957cc9eceef2d0bc948506a58d0647a1122176f4d269f07219",
+    "bytes": 483678758,
+    "git_commit": "b3b3249d37dc977a1a297bd2dc053e6d9b6b805c"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-body-percussion",
+  "title": "Body Percussion",
+  "page": "https://github.com/sfzinstruments/body_percussion",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/body_percussion/archive/refs/heads/main.zip",
+    "sha256": "7f060c01468adfc69acee742238d7d17cd00fd2e4ce1d14a851b1eab3a1fd368",
+    "bytes": 39103737,
+    "git_commit": "4ac9d8966679c648b62fa10a188179e186b97f24"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-caveman-cosmonaut",
+  "title": "Caveman Cosmonaut",
+  "page": "https://github.com/sfzinstruments/karoryfer.caveman-cosmonaut",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.caveman-cosmonaut/archive/refs/heads/master.zip",
+    "sha256": "764e78b5fd302e51e193241736fcc20c4fb1cb8192f25c8c0893a8ae5c7994a2",
+    "bytes": 97567588,
+    "git_commit": "9de9bcfcbc6d2b20bea5c1116cd07a310febc339"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-cowsynth",
+  "title": "Cowsynth",
+  "page": "https://github.com/sfzinstruments/karoryfer.cowsynth",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.cowsynth/archive/refs/heads/master.zip",
+    "sha256": "3b53271f49738c0a650e5648e790e3eed9b96a2bea72126f4525f3527f073b50",
+    "bytes": 14075105,
+    "git_commit": "5a5b5afc2dabbe54cf9d75ab64711ce01862b42c"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-emilyguitar",
+  "title": "Emilyguitar",
+  "page": "https://github.com/sfzinstruments/karoryfer.emilyguitar",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.emilyguitar/archive/refs/heads/master.zip",
+    "sha256": "b791ca234a4a31417633836ec52e7f7ed5ed00c72d439d14254acfe54340be62",
+    "bytes": 103488295,
+    "git_commit": "b4920dc662fd9cad6dcaccdeecffdd91c8725d8c"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-fashionbass",
+  "title": "Fashionbass",
+  "page": "https://github.com/sfzinstruments/karoryfer.fashionbass",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.fashionbass/archive/refs/heads/master.zip",
+    "sha256": "65808defc8ca0d890a68bbec6103a1b68c5ccf7c58799152d5d10edb81f754bf",
+    "bytes": 316345516,
+    "git_commit": "0703973b300a6bacb837602be9b588ab64732a72"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-frankensnare",
+  "title": "Frankensnare",
+  "page": "https://github.com/sfzinstruments/karoryfer.frankensnare",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.frankensnare/archive/refs/heads/main.zip",
+    "sha256": "82a326f1e00a568912ecdd340b78721403c8f0f4f207095f1026c8ad2a7fc4eb",
+    "bytes": 365695273,
+    "git_commit": "9151c2d79fcbb73c65d63f78918d4ba7abc91a81"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-growlybass",
+  "title": "Growlybass",
+  "page": "https://github.com/sfzinstruments/karoryfer.growlybass",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.growlybass/archive/refs/heads/master.zip",
+    "sha256": "d2e8ade81aa106ace25b14bf511996b99561adb3d76014ac7003c9bd90e4ea61",
+    "bytes": 167466900,
+    "git_commit": "4f483268fc66b5a6d5781d421c0d11b8d08d3fc6"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-hat-with-the-phat",
+  "title": "The Hat With The Phat",
+  "page": "https://github.com/sfzinstruments/Karoryfer.TheHatWithThePhat",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/Karoryfer.TheHatWithThePhat/archive/refs/heads/master.zip",
+    "sha256": "7c72854bfe4dfe5fde31d5175f159ae940d637d967fe9a4fb9c94be81391ef8b",
+    "bytes": 665660421,
+    "git_commit": "afa76f2c9c88e2e27d72a0c2216b1eae3c47b835"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-meatbass",
+  "title": "Meatbass",
+  "page": "https://github.com/sfzinstruments/karoryfer.meatbass",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.meatbass/archive/refs/heads/master.zip",
+    "sha256": "034092bc32bbdeedce24b600d949f06ee1a6be22e22bfa02e3a2a31b6cbc5062",
+    "bytes": 255436373,
+    "git_commit": "ac9e859564bda286ab5ec672d00ff1aa2fef2895"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Upright bass."
+ },
+ {
+  "folder": "karoryfer-string-cyborgs",
+  "title": "String Cyborgs",
+  "page": "https://github.com/sfzinstruments/karoryfer.string-cyborgs",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.string-cyborgs/archive/refs/heads/master.zip",
+    "sha256": "b2b007ccaf62ca512506ea0523ffca6acf2c3154a9ce73ce6e257245c0781458",
+    "bytes": 63777408,
+    "git_commit": "f2238b3e36ae64c6383356221dc89c9c476c7b11"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-swagbass",
+  "title": "Swagbass",
+  "page": "https://github.com/sfzinstruments/karoryfer.swagbass",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.swagbass/archive/refs/heads/master.zip",
+    "sha256": "dc457a0934b24b7e1e51b38239b634e7aba089bab101274f7d1e9c72590dace8",
+    "bytes": 144589973,
+    "git_commit": "9d10fcae71af1975988ddecd5af1c95d372c7355"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-swirly-drums",
+  "title": "Swirly Drums",
+  "page": "https://github.com/sfzinstruments/karoryfer.swirly-drums",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.swirly-drums/archive/refs/heads/main.zip",
+    "sha256": "e8f3deb3c14aee5d5ec91441769ae10e35b09f36d5ff579bf4a957da670869e7",
+    "bytes": 861219082,
+    "git_commit": "c40dafe0011cb2e54c0c220ff0fa308a11fc60f5"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Repo also contains Kontakt files (.nki/.nkc/.nkr); not needed for bundling, leave them out."
+ },
+ {
+  "folder": "karoryfer-unruly-drums",
+  "title": "Unruly Drums",
+  "page": "https://github.com/sfzinstruments/karoryfer.unruly-drums",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.unruly-drums/archive/refs/heads/main.zip",
+    "sha256": "4fc73b1864ca6fb8037aca0cc8d1089f97b4c90199d5c52c43a99a6108f9d0b1",
+    "bytes": 676229034,
+    "git_commit": "9bf75c2a1392f190cd1c264645653629f0b3a097"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-war-tuba",
+  "title": "War Tuba",
+  "page": "https://github.com/sfzinstruments/karoryfer.war-tuba",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.war-tuba/archive/refs/heads/master.zip",
+    "sha256": "b75e71d6f2567f2be9de9f45f3632854fc1f794031eb78cea448b11cfcdd04b6",
+    "bytes": 109185020,
+    "git_commit": "5b62dd6ef6b00281bb734769e44a63f5e013018a"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "kenney-casino-audio",
+  "title": "Casino Audio",
+  "page": "https://kenney.nl/assets/casino-audio",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/casino-audio/2472606a04-1721639069/kenney_casino-audio.zip",
+    "sha256": "f36250766ac5bc378c13708ddf12a23a8e54a3251f8d482c7536e51b5dbafa18",
+    "bytes": 876839
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "kenney-digital-audio",
+  "title": "Digital Audio",
+  "page": "https://kenney.nl/assets/digital-audio",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/digital-audio/216eac4753-1677590265/kenney_digital-audio.zip",
+    "sha256": "24e6ce28b76a6d8c89cff4d331e0965ff5c3de8a73c612028e9d363cc64e4f06",
+    "bytes": 990367
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "kenney-impact-sounds",
+  "title": "Impact Sounds",
+  "page": "https://kenney.nl/assets/impact-sounds",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip",
+    "sha256": "029d734af1582474edf3a694d1b0cebc97c1c152f2f39fa34d4c2bafc5de77f8",
+    "bytes": 800850
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "kenney-interface-sounds",
+  "title": "Interface Sounds",
+  "page": "https://kenney.nl/assets/interface-sounds",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+    "sha256": "f2193d072726d6758a5f7871b2dcc54dcce0d5c35c6f0a62f92549b327c81232",
+    "bytes": 834536
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "kenney-music-jingles",
+  "title": "Music Jingles",
+  "page": "https://kenney.nl/assets/music-jingles",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/music-jingles/f37e530b9e-1677590399/kenney_music-jingles.zip",
+    "sha256": "b729ba57959bd58793d2c5cafa348aaf2655d354f3da35ec4729e03ec77197b8",
+    "bytes": 1239525
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "kenney-rpg-audio",
+  "title": "RPG Audio",
+  "page": "https://kenney.nl/assets/rpg-audio",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/rpg-audio/8e99002d76-1677590336/kenney_rpg-audio.zip",
+    "sha256": "6dbeaf8544da958d8f2adcb4a4a4b76c1ade34a05f8ab9edccd327da7375f38b",
+    "bytes": 964837
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "kenney-sci-fi-sounds",
+  "title": "Sci-fi Sounds",
+  "page": "https://kenney.nl/assets/sci-fi-sounds",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/sci-fi-sounds/6b296f9ecf-1677589334/kenney_sci-fi-sounds.zip",
+    "sha256": "119340f351a5098ad814f78719438c0da355a9ce8a4c8a3af6a8d48aa3d49e04",
+    "bytes": 5875104
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "kenney-ui-audio",
+  "title": "UI Audio",
+  "page": "https://kenney.nl/assets/ui-audio",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/ui-audio/490d233f68-1677590494/kenney_ui-audio.zip",
+    "sha256": "946fc23a63d535d693eb31b2eabb80c8c28d6351e2186b344ceb71b2cb1d5eb6",
+    "bytes": 411949
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "musescore-general",
+  "title": "MuseScore_General",
+  "page": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/",
+  "author": "S. Christian Collins; FluidR3 by Frank Wen; FluidR3Mono by Michael Cowgill; MuseScore",
+  "spdx": "MIT",
+  "archives": [
+   {
+    "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General.sf2",
+    "sha256": "ee51d2c4b1525e70f19a45909c4fd7a2e26d91d115fa89dbf5a6bc413d8b9bf3",
+    "bytes": 215614036
+   },
+   {
+    "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General.sf3",
+    "sha256": "5b85b6c2c61d10b2b91cddd41efcce7b25cd31c8271d511c73afafbef20b6fa3",
+    "bytes": 39900972
+   },
+   {
+    "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General_License.md",
+    "sha256": "5ad8d737e13c7f01f5b9674872a82a92b4ba253603e8ed14b9db12293550b4b9",
+    "bytes": 3419
+   },
+   {
+    "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General_Readme.md",
+    "sha256": "e4ee85d097cda49a7926ea73e59ea8b7bb90d6ad715f82d20c6bfddf5dcfeb4c",
+    "bytes": 5161
+   },
+   {
+    "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General_Changelog.md",
+    "sha256": "19fbda185cbe1492d2525b13ba882ad20fcdbbfa739622bc9edcaa899c46cdb4",
+    "bytes": 15697
+   },
+   {
+    "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General_Sample_Sources.csv",
+    "sha256": "cbec757614fa47d2ba71a2f1276bf010918261d94987cfb678352e9755e9bdd4",
+    "bytes": 12817
+   },
+   {
+    "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/VERSION",
+    "sha256": "1f930dd1f133c1f97a94fe3acb8db34372cf4c01ffdb2b3ff4ca72f9494121e9",
+    "bytes": 6
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "yes (MIT notice + acknowledgements; not owed by songs)",
+  "notes": "SF2 (215.6 MB) and SF3 (39.9 MB), v0.2.0, plus License/Readme/Changelog/Sample_Sources.csv. Licence requires the acknowledgements and copyright notices in any derivative. Per-preset sample credits in the CSV; check individual presets before shipping.",
+  "credit": "Full notice in CREDITS.txt.",
+  "notice": "unpacked/MuseScore_General_License.md"
+ },
+ {
+  "folder": "oga-512-sfx-8bit",
+  "title": "512 Sound Effects (8-bit style)",
+  "page": "https://opengameart.org/content/512-sound-effects-8-bit-style",
+  "author": "SubspaceAudio (Juhani Junkala)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://opengameart.org/sites/default/files/The%20Essential%20Retro%20Video%20Game%20Sound%20Effects%20Collection%20%5B512%20sounds%5D.zip",
+    "sha256": "6d4519229c6e2c9e09502cd4967940052f68664140549a467615b56bdfd1d031",
+    "bytes": 20582855
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "\"The Essential Retro Video Game Sound Effects Collection [512 sounds]\". OGA licence field: CC0."
+ },
+ {
+  "folder": "osiris-piano",
+  "title": "Osiris Piano",
+  "page": "https://shop.karoryfer.com/pages/free-osiris-piano",
+  "author": "Karoryfer Samples x Versilian Studios",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/Osiris_Piano/releases/download/v0.925/Osiris_Piano_0925.zip",
+    "sha256": "54ef210b671ea38c4e77291714b5376af28f35803f7c1338737d0f402de02768",
+    "bytes": 458671376
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Free page links a direct GitHub release (sfzinstruments/Osiris_Piano v0.925), no account needed. Soft Yamaha C2; beta."
+ },
+ {
+  "folder": "salamander-grand-v3",
+  "title": "Salamander Grand Piano V3",
+  "page": "https://archive.org/details/SalamanderGrandPianoV3",
+  "author": "Alexander Holm",
+  "spdx": "LicenseRef-PD-declared",
+  "archives": [
+   {
+    "url": "https://archive.org/download/SalamanderGrandPianoV3/SalamanderGrandPianoV3_44.1khz16bit.tar.bz2",
+    "sha256": "fe595c7722b70860e6377f82948d1c0cfcf27ecebf500dc79534408a78a62892",
+    "bytes": 488713261
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no (credit recommended)",
+  "notes": "Author declared all his sampled instruments public domain on 2022-03-04 (rytmenpinne.wordpress.com/2022/03/04/good-news-everyone/). archive.org metadata and the bundled README still say CC BY 3.0. Report: credit Alexander Holm anyway. 44.1 kHz/16-bit WAV set; 48/24 and Ogg builds not fetched.",
+  "credit": "Declared public domain by the author on 2022-03-04; credited by request."
+ },
+ {
+  "folder": "splendid-grand",
+  "title": "Splendid Grand Piano",
+  "page": "https://github.com/sfzinstruments/SplendidGrandPiano",
+  "author": "AKAI Professional (samples); SFZ by sfzinstruments",
+  "spdx": "LicenseRef-PD-declared",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/SplendidGrandPiano/archive/refs/heads/master.zip",
+    "sha256": "343c4cfd51fa8397ec911255e1407b8bc9b87c0dd264db75f17c2609cd458b52",
+    "bytes": 74508517,
+    "git_commit": "1c595d827b7fd7f0be3134aaed0f90b3662a09cf"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Report: public domain per an AKAI rep, relayed secondhand by S. Christian Collins (MuseScore_General_Sample_Sources.csv: \"Original License: Public Domain (confirmed via AKAI rep.)\"). Repo has no LICENSE file; README.md says \"Public Domain samples by AKAI ... released as public domain in early 2000\" and asks that redistributed derivatives of the SFZ note they derive from it. Counsel should confirm.",
+  "credit": "Samples released to the public domain by AKAI; mapping derived from the sfzinstruments SFZ."
+ },
+ {
+  "folder": "vcsl",
+  "title": "Versilian Community Sample Library",
+  "page": "https://github.com/sgossner/VCSL",
+  "author": "Versilian Studios LLC (Sam Gossner)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sgossner/VCSL/archive/refs/heads/master.zip",
+    "sha256": "7c70ced412948dde51adee384312dfaf7874a44098fc5f2d90c220f00ae75775",
+    "bytes": 4047196001,
+    "git_commit": "c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "README: usable for anything incl. commercial software, no credit required; Pipe Organ credit encouraged. Also has TX81Z Clavisynth/FM piano."
+ },
+ {
+  "folder": "virtuosity-drums",
+  "title": "Virtuosity Drums",
+  "page": "https://github.com/sfzinstruments/virtuosity_drums",
+  "author": "Versilian Studios x Karoryfer Samples (drummer Austin McMahon)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/virtuosity_drums/archive/refs/heads/master.zip",
+    "sha256": "afec253a346cda59b25612e06f4596fb4266db11ebe5778dd917d373a3358117",
+    "bytes": 1226406520,
+    "git_commit": "9f04cf9a734527edfbb0a4eee1f674e45bbf71bc"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Beta 0.924; 6 mics; 17 auxiliary percussion instruments."
+ },
+ {
+  "folder": "vsco2-ce",
+  "title": "VSCO 2 Community Edition",
+  "page": "https://github.com/sgossner/VSCO-2-CE",
+  "author": "Versilian Studios LLC (Sam Gossner)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sgossner/VSCO-2-CE/archive/refs/heads/master.zip",
+    "sha256": "aa94aaf77fadd5f893654eab905ac3df218c3037a6a2ab6f1b587d4d573bea38",
+    "bytes": 2297539442,
+    "git_commit": "440300901dfe9275fd84e0b7763af1f8443ae62e"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Full tree incl. \"Miscellania Raw\" and \"VSCO 1 Percussion\". Bundle plan keeps one sustain + one short per section."
+ },
+ {
+  "folder": "honeydew",
+  "title": "Honeydew procedural sounds",
+  "page": "",
+  "author": "The Honeydew contributors",
+  "spdx": "CC0-1.0",
+  "notes": "Synthesized at build time by tools/content-build/src/procedural from content/recipes/procedural; no source files."
+ }
+]

@@ -1,0 +1,22 @@
+# The wasm runtime check of the encoders: a dependency-free raw-wasm
+# module that runs them for real under node, which `cargo check` cannot (a clock or thread trap compiles cleanly).
+# Its own workspace, so the root's `crates/*` glob and gates leave it alone.
+#
+#   cargo build --release --target wasm32-unknown-unknown
+#   node run.mjs
+[package]
+name = "wasm-smoke"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rusty_mp3 = { path = "../../vendor/rusty_mp3" }
+# The versions `crates/audio` pins.
+zvidlib-vorbis-encoder = "=0.5.0"
+ogg = "=0.8.0"

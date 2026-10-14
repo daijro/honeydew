@@ -1,0 +1,113 @@
+# Percussion one-shots for the sample pickers: hand drums and small percussion from the Versilian Community Sample
+# Library (stereo pairs), Virtuosity Drums' vibraslap (close mic) and Karoryfer's Body Percussion (two claps and a snap;
+# its other sounds are WAVE_FORMAT_EXTENSIBLE files the app's decoder refuses). Each peaks at −1 dBFS and is cut at
+# −60 dB re its peak (3 s at most) with a 30 ms fade.
+id = "percussion"
+kind = "samples"
+path = "Samples/Percussion/"
+source = "vcsl"
+tail = { floor_db = -60, fade_ms = 30, max_s = 3 }
+
+[[sample]]
+name = "Bongo High"
+file = "unpacked/VCSL-master/Membranophones/Struck Membranophones/Bongos/BongoH_Hit1_v2_rr1_Mid.wav"
+
+[[sample]]
+name = "Bongo Low"
+file = "unpacked/VCSL-master/Membranophones/Struck Membranophones/Bongos/BongoL_Hit1_v2_rr1_Mid.wav"
+
+[[sample]]
+name = "Conga"
+file = "unpacked/VCSL-master/Membranophones/Struck Membranophones/Conga/Conga_HitN_v2_rr1_Sum.wav"
+
+[[sample]]
+name = "Tumba"
+file = "unpacked/VCSL-master/Membranophones/Struck Membranophones/Conga/Tumba_HitN_v3_rr1_Sum.wav"
+
+[[sample]]
+name = "Darbuka"
+file = "unpacked/VCSL-master/Membranophones/Struck Membranophones/Darbuka/Darbuka_1_hit_vl2_rr1.wav"
+
+[[sample]]
+name = "Frame Drum"
+file = "unpacked/VCSL-master/Membranophones/Struck Membranophones/Frame Drum/HDrumL_Hit_v3_rr1_Sum.wav"
+
+[[sample]]
+name = "Cajon Kick"
+file = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Cajon/Cajon_hit1_f_rr1.wav"
+
+[[sample]]
+name = "Cajon Slap"
+file = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Cajon/Cajon_hit2_f_rr1.wav"
+
+[[sample]]
+name = "Cowbell"
+file = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Cowbells/Cowbell1_Normal_v3_rr1_Mid.wav"
+
+[[sample]]
+name = "Claves"
+file = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Claves/Claves1_Hit_v2_rr1_Mid.wav"
+
+[[sample]]
+name = "Woodblock"
+file = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Woodblock/wood_click_f_rr1.wav"
+
+[[sample]]
+name = "Slit Drum"
+file = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Slit Drum/LogDrumHi_MedM_v2_rr1_Sum.wav"
+
+[[sample]]
+name = "Shaker"
+file = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Shaker, Large/LShaker_Hit_rr1_Mid.wav"
+
+[[sample]]
+name = "Cabasa"
+file = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Cabasa/Cabasa1_Hit_rr1_Mid.wav"
+
+[[sample]]
+name = "Tambourine"
+file = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Tambourine 1/Tamb1_Hit_v2_rr1_Mid.wav"
+
+[[sample]]
+name = "Guiro"
+file = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Guiro/Guiro_Hit_rr1_Mid.wav"
+
+[[sample]]
+name = "Sleigh Bells"
+file = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Sleigh Bells/Sleighbells_Hit_rr1_Mid.wav"
+
+[[sample]]
+name = "Slapstick"
+file = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Slapstick/slapstick_rr1.wav"
+
+[[sample]]
+name = "Anvil"
+file = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Anvil/Anvil_Hit1_v2_rr1_Mid.wav"
+
+[[sample]]
+name = "Brake Drum"
+file = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Brake Drum/BrakeDrum1_Hammer_v2_rr1_Mid.wav"
+
+[[sample]]
+name = "Vibraslap"
+source = "virtuosity-drums"
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/vibraslap/Vibraslap1_1_Hit_71_127_rr1_Close.wav"
+
+[[sample]]
+name = "Hand Clap"
+source = "karoryfer-body-percussion"
+file = "unpacked/body_percussion-main/Samples/body/handclap_vl2_rr1.wav"
+
+[[sample]]
+name = "Finger Snap"
+source = "karoryfer-body-percussion"
+file = "unpacked/body_percussion-main/Samples/body/snap_r_rr1.wav"
+
+[[sample]]
+name = "Finger Clap"
+source = "karoryfer-body-percussion"
+file = "unpacked/body_percussion-main/Samples/body/fingerclap_vl2_rr1.wav"
+
+[[sample]]
+name = "Quinto"
+file = "unpacked/VCSL-master/Membranophones/Struck Membranophones/Conga/Quinto_HitN_v2_rr1_Sum.wav"

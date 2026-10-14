@@ -1,0 +1,127 @@
+# 3x Osc custom shapes: 30 single cycles (600 frames, mono 16-bit) from Adventure Kid's AKWF-FREE, renamed to our own
+# names. They join the six code-made shapes (`builtin_shapes`), which are our own designs; none of these names clash.
+# Converted to FLAC whole, with no trim, peaking at −1 dBFS.
+id = "shapes"
+kind = "samples"
+path = "Shapes/"
+source = "akwf-free"
+
+[[sample]]
+name = "Cello"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_cello/AKWF_cello_0001.wav"
+
+[[sample]]
+name = "Violin"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_violin/AKWF_violin_0001.wav"
+
+[[sample]]
+name = "Clarinet"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_clarinett/AKWF_clarinett_0001.wav"
+
+[[sample]]
+name = "Oboe"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_oboe/AKWF_oboe_0001.wav"
+
+[[sample]]
+name = "Flute"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_flute/AKWF_flute_0001.wav"
+
+[[sample]]
+name = "Alto Sax"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_altosax/AKWF_altosax_0001.wav"
+
+[[sample]]
+name = "Clavi"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_clavinet/AKWF_clavinet_0001.wav"
+
+[[sample]]
+name = "E-Piano"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_epiano/AKWF_epiano_0001.wav"
+
+[[sample]]
+name = "Piano"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_piano/AKWF_piano_0001.wav"
+
+[[sample]]
+name = "Organ"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_eorgan/AKWF_eorgan_0001.wav"
+
+[[sample]]
+name = "Organ Bright"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_eorgan/AKWF_eorgan_0100.wav"
+
+[[sample]]
+name = "Guitar"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_aguitar/AKWF_aguitar_0001.wav"
+
+[[sample]]
+name = "Electric Guitar"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_eguitar/AKWF_eguitar_0001.wav"
+
+[[sample]]
+name = "Electric Bass"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_ebass/AKWF_ebass_0001.wav"
+
+[[sample]]
+name = "Upright Bass"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_dbass/AKWF_dbass_0001.wav"
+
+[[sample]]
+name = "Voice"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_hvoice/AKWF_hvoice_0001.wav"
+
+[[sample]]
+name = "Voice Breathy"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_hvoice/AKWF_hvoice_0050.wav"
+
+[[sample]]
+name = "FM Bell"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_fmsynth/AKWF_fmsynth_0001.wav"
+
+[[sample]]
+name = "FM Metal"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_fmsynth/AKWF_fmsynth_0050.wav"
+
+[[sample]]
+name = "Chip"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_oscchip/AKWF_oscchip_0001.wav"
+
+[[sample]]
+name = "Chip Saw"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_vgamebasic/AKWF_vgsaw_0001.wav"
+
+[[sample]]
+name = "Bitcrushed"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_bitreduced/AKWF_bitreduced_0001.wav"
+
+[[sample]]
+name = "Distorted"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_distorted/AKWF_distorted_0001.wav"
+
+[[sample]]
+name = "Overtone"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_overtone/AKWF_overtone_0001.wav"
+
+[[sample]]
+name = "Granular"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_granular/AKWF_granular_0001.wav"
+
+[[sample]]
+name = "Hand Drawn"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_hdrawn/AKWF_hdrawn_0001.wav"
+
+[[sample]]
+name = "Theremin"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_theremin/AKWF_tannerin_0001.wav"
+
+[[sample]]
+name = "Pluck"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_pluckalgo/AKWF_pluckalgo_0001.wav"
+
+[[sample]]
+name = "Saw Bright"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_bw_sawbright/AKWF_bsaw_0001.wav"
+
+[[sample]]
+name = "Sine Harmonics"
+file = "unpacked/AKWF-FREE-main/AKWF/AKWF_sinharm/AKWF_sinharm_0005.wav"

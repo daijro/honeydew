@@ -1,0 +1,10 @@
+# A filter-sweep pad: FreePats' Sweep Pad, one point per tritone, each keeping the source's own 7 s loop (the sweep
+# lives across it; a short found loop would cut it).
+id = "pad-sweep"
+kind = "program"
+path = "Presets/DW Sampler/Pad/Sweep Pad.dwp"
+source = "freepats-synth-pad"
+sfz = "unpacked/SweepPad-SFZ+FLAC-20190813/SweepPad SFZ+FLAC-20190813/SweepPad 20190813.sfz"
+keys = { every = 6 }
+release = 0.7
+gain = "normalize"

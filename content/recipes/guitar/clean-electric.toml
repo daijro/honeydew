@@ -1,0 +1,11 @@
+# A clean electric guitar: FreePats' FSBS Clean #1 on its bridge pickup, both of its velocity layers (soft, hard) at
+# every point of its 3–4 semitone grid, first round robin, resampled from 48 kHz, each cut at −50 dB re its peak or 4 s.
+id = "guitar-clean-electric"
+kind = "program"
+path = "Presets/DW Sampler/Guitar/Clean Electric.dwp"
+source = "freepats-fsbs-clean-guitars"
+sfz = "unpacked/EGuitarFSBS-clean-SFZ+FLAC-20260807/EGuitarFSBS-clean SFZ+FLAC-20260807/EGuitarFSBS-clean bridge 20260807.sfz"
+keys = { every = 3 }
+tail = { floor_db = -50, fade_ms = 300, max_s = 4 }
+release = 0.4
+gain = "normalize"

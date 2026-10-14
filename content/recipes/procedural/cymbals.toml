@@ -1,0 +1,11 @@
+id = "proc-cymbals"
+kind = "samples"
+path = "Samples/Electronic Cymbals/"
+source = "honeydew"
+render = "cymbal"
+variant = [
+  { name = "Crash Bright", tone = 7500.0, decay = 1.0 },
+  { name = "Crash Dark", tune = 220.0, tone = 5000.0, decay = 1.2 },
+  { name = "Ride Ping", tune = 380.0, tone = 5500.0, q = 2.0, decay = 0.8, noise = 0.1 },
+  { name = "Splash", tone = 8000.0, decay = 0.35 },
+]

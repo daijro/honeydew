@@ -1,0 +1,13 @@
+id = "proc-clap"
+kind = "samples"
+path = "Samples/Electronic Clap/"
+source = "honeydew"
+render = "clap"
+variant = [
+  { name = "Clap Tight", tone = 1300.0, q = 1.6, decay = 0.09, spread = 0.009, bursts = 3 },
+  { name = "Clap Wide", tone = 1000.0, q = 1.2, decay = 0.2, spread = 0.014, bursts = 4 },
+  { name = "Clap Room", tone = 900.0, q = 1.0, decay = 0.4, spread = 0.012, bursts = 4 },
+  { name = "Clap Short", tone = 1500.0, q = 2.0, decay = 0.05, spread = 0.008, bursts = 3 },
+  { name = "Clap Dark", tone = 700.0, q = 1.4, decay = 0.16, spread = 0.011, bursts = 4 },
+  { name = "Clap Bright", tone = 2200.0, q = 1.2, decay = 0.14, spread = 0.01, bursts = 5 },
+]

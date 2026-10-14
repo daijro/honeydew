@@ -1,0 +1,135 @@
+# A jazz kit: Virtuosity Drums (48 kHz, resampled), one mid-strong hit per pad, its kick mic, snare mic and overheads
+# summed at unity, as the source's basic kit plays them (bleed on). Each pad peaks at −1 dBFS and is cut at −60 dB re
+# its peak or 4 s, with a 400 ms fade; Level and Pan follow the Rock Kit's mix.
+id = "kit-jazz"
+kind = "kit"
+path = "Drumsets/Jazz Kit.tmpl"
+source = "virtuosity-drums"
+tail = { floor_db = -60, fade_ms = 400, max_s = 4 }
+
+[[pad]]
+name = "Kick"
+level_db = -7
+mix = [
+  { file = "unpacked/virtuosity_drums-master/Samples/kickmic/kick/kickmic_kick_snon_vl3_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/snaremic/kick/snaremic_kick_snon_vl3_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/oh/kick/oh_kick_snon_vl3_rr1.flac" },
+]
+
+[[pad]]
+name = "Snare"
+level_db = -8.5
+mix = [
+  { file = "unpacked/virtuosity_drums-master/Samples/kickmic/snare/kickmic_snare_center_vl28.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/snaremic/snare/snaremic_snare_center_vl28.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/oh/snare/oh_snare_center_vl28.flac" },
+]
+
+[[pad]]
+name = "Rimshot"
+level_db = -9.5
+mix = [
+  { file = "unpacked/virtuosity_drums-master/Samples/kickmic/snare/kickmic_snare_rimshot_vl9.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/snaremic/snare/snaremic_snare_rimshot_vl9.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/oh/snare/oh_snare_rimshot_vl9.flac" },
+]
+
+[[pad]]
+name = "Side Stick"
+level_db = -11
+pan = -0.08
+mix = [
+  { file = "unpacked/virtuosity_drums-master/Samples/kickmic/snare/kickmic_snare_crossstick_vl12.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/snaremic/snare/snaremic_snare_crossstick_vl12.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/oh/snare/oh_snare_crossstick_vl12.flac" },
+]
+
+[[pad]]
+name = "Closed Hat"
+level_db = -13
+pan = 0.24
+mix = [
+  { file = "unpacked/virtuosity_drums-master/Samples/kickmic/hh/kickmic_hh_closed_vl3_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/snaremic/hh/snaremic_hh_closed_vl3_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/oh/hh/oh_hh_closed_vl3_rr1.flac" },
+]
+
+[[pad]]
+name = "Pedal Hat"
+level_db = -14
+pan = 0.24
+mix = [
+  { file = "unpacked/virtuosity_drums-master/Samples/kickmic/hh/kickmic_hh_pedal_vl2_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/snaremic/hh/snaremic_hh_pedal_vl2_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/oh/hh/oh_hh_pedal_vl2_rr1.flac" },
+]
+
+[[pad]]
+name = "Open Hat"
+level_db = -12
+pan = 0.24
+mix = [
+  { file = "unpacked/virtuosity_drums-master/Samples/kickmic/hh/kickmic_hh_open_vl3_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/snaremic/hh/snaremic_hh_open_vl3_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/oh/hh/oh_hh_open_vl3_rr1.flac" },
+]
+
+[[pad]]
+name = "Low Tom"
+level_db = -9
+pan = -0.24
+mix = [
+  { file = "unpacked/virtuosity_drums-master/Samples/kickmic/ltom/kickmic_ltom_center_vl12.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/snaremic/ltom/snaremic_ltom_center_vl12.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/oh/ltom/oh_ltom_center_vl12.flac" },
+]
+
+[[pad]]
+name = "High Tom"
+level_db = -9
+pan = 0.24
+mix = [
+  { file = "unpacked/virtuosity_drums-master/Samples/kickmic/htom/kickmic_htom_center_vl12.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/snaremic/htom/snaremic_htom_center_vl12.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/oh/htom/oh_htom_center_vl12.flac" },
+]
+
+[[pad]]
+name = "Ride"
+level_db = -13
+pan = 0.32
+mix = [
+  { file = "unpacked/virtuosity_drums-master/Samples/kickmic/ride/kickmic_ride_ride_vl2_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/snaremic/ride/snaremic_ride_ride_vl2_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/oh/ride/oh_ride_ride_vl2_rr1.flac" },
+]
+
+[[pad]]
+name = "Ride Bell"
+level_db = -13
+pan = 0.32
+mix = [
+  { file = "unpacked/virtuosity_drums-master/Samples/kickmic/ride/kickmic_ride_bell_vl2_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/snaremic/ride/snaremic_ride_bell_vl2_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/oh/ride/oh_ride_bell_vl2_rr1.flac" },
+]
+
+[[pad]]
+name = "Flat Ride"
+level_db = -13
+pan = -0.32
+mix = [
+  { file = "unpacked/virtuosity_drums-master/Samples/kickmic/flatride/kickmic_flatride_ride_vl2_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/snaremic/flatride/snaremic_flatride_ride_vl2_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/oh/flatride/oh_flatride_ride_vl2_rr1.flac" },
+]
+
+[[pad]]
+name = "Crash"
+level_db = -12
+pan = -0.28
+mix = [
+  { file = "unpacked/virtuosity_drums-master/Samples/kickmic/crash/kickmic_crash_crash_vl2_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/snaremic/crash/snaremic_crash_crash_vl2_rr1.flac" },
+  { file = "unpacked/virtuosity_drums-master/Samples/oh/crash/oh_crash_crash_vl2_rr1.flac" },
+]

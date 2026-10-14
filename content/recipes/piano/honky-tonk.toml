@@ -1,0 +1,13 @@
+# A honky-tonk piano: FreePats' Old Piano FB (a historic player piano, Zoom H1n stereo), its one velocity layer at a
+# point every minor third of its near-chromatic grid, stereo, each sample cut at −60 dB re its peak or at 6 s with a
+# 0.4 s fade.
+id = "piano-honky-tonk"
+kind = "program"
+path = "Presets/DW Sampler/Piano/Honky-Tonk.dwp"
+source = "freepats-old-piano-fb"
+sfz = "unpacked/PianoFB-SFZ+FLAC-20200401/PianoFB SFZ+FLAC-20200401/PianoFB 20200401.sfz"
+keys = { every = 3 }
+channels = "auto"
+tail = { floor_db = -60, fade_ms = 400, max_s = 6 }
+release = 0.45
+gain = "normalize"

@@ -1,0 +1,14 @@
+# The upright piano: FreePats' Upright KW (a Kawai upright in a living room, Zoom H1 stereo), both of its velocity
+# layers on its own minor-third grid (points the loud layer lacks, A2 and C4, give way to their neighbours), stereo,
+# each sample cut at −60 dB re its peak or at 6 s with a 0.4 s fade. The bass notes keep the source's own sustain loops.
+id = "piano-upright"
+kind = "program"
+path = "Presets/DW Sampler/Piano/Upright Piano.dwp"
+source = "freepats-upright-piano-kw"
+sfz = "unpacked/UprightPianoKW-SFZ+FLAC-20220221/UprightPianoKW-SFZ+FLAC-20220221/UprightPianoKW-20220221.sfz"
+keys = { every = 3, from = 21, to = 108 }
+velocity_layers = [1, 2]
+channels = "auto"
+tail = { floor_db = -60, fade_ms = 400, max_s = 6 }
+release = 0.45
+gain = "normalize"

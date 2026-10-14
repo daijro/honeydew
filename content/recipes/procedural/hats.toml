@@ -1,0 +1,15 @@
+id = "proc-hats"
+kind = "samples"
+path = "Samples/Electronic Hats/"
+source = "honeydew"
+render = "hat"
+variant = [
+  { name = "Closed Hat Tight", decay = 0.03 },
+  { name = "Closed Hat Bright", tone = 10500.0, decay = 0.045 },
+  { name = "Closed Hat Dark", tune = 280.0, tone = 6500.0, decay = 0.05 },
+  { name = "Closed Hat Noisy", noise = 0.6, decay = 0.04 },
+  { name = "Open Hat Short", decay = 0.18 },
+  { name = "Open Hat Long", decay = 0.4 },
+  { name = "Open Hat Dark", tone = 7000.0, decay = 0.3 },
+  { name = "Pedal Hat", tone = 6500.0, q = 1.5, decay = 0.022 },
+]

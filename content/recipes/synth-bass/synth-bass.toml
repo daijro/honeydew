@@ -1,0 +1,11 @@
+# A synth bass: FreePats' Synth Bass #1 (a ZynAddSubFX patch), one point per major third, each cut to 2 s with a found
+# loop.
+id = "bass-synth"
+kind = "program"
+path = "Presets/DW Sampler/Synth Bass/Synth Bass.dwp"
+source = "freepats-synth-bass"
+sfz = "unpacked/SynthBass1-SFZ+FLAC-20190723/SynthBass1 SFZ+FLAC-20190723/SynthBass1 20190723.sfz"
+keys = { every = 4 }
+loop = { find = true, min_s = 0.8, crossfade_ms = 50, keep_s = 2.0 }
+release = 0.2
+gain = "normalize"

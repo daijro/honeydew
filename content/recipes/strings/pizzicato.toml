@@ -1,0 +1,12 @@
+# A violin section, plucked: VSCO 2 CE's violin ensemble pizzicato, both layers (p, f), first round robin, one point
+# per minor third or more, each cut at −50 dB re its peak or 1.5 s.
+id = "strings-pizzicato"
+kind = "program"
+path = "Presets/DW Sampler/Strings/Pizzicato.dwp"
+source = "vsco2-ce"
+files = "unpacked/VSCO-2-CE-master/Strings/Violin Section/Pizz/VlnEns_Pizz_{note}_v{layer}_rr{rr}.wav"
+transpose = 12
+keys = { every = 3 }
+tail = { floor_db = -50, fade_ms = 100, max_s = 1.5 }
+release = 0.3
+gain = "even"

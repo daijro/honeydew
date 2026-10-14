@@ -1,0 +1,15 @@
+# The web build (README "Web"). Release builds go through tools/web-dist.sh, which runs wasm-opt itself after Trunk.
+
+[build]
+# Relative URLs, so the site also works from a sub-folder (a release zip installed under another site's path).
+public_url = "./"
+# The loader in index.html fetches `<name>.wasm.gz`, so that is what to preload, not the plain .wasm. No SRI hashes:
+# web-dist.sh rewrites the wasm (wasm-opt) after Trunk would have hashed it.
+pattern_preload = '<link rel="modulepreload" href="{base}{js}" crossorigin="{crossorigin}"><link rel="preload" href="{base}{wasm}.gz" as="fetch" crossorigin="{crossorigin}">'
+
+# `trunk serve` has no /content/: it forwards it to a static server on the built packs, started beside it with
+#   python3 -m http.server 8081 --bind 127.0.0.1 --directory content-out
+# Without one, /content/ fails and the app runs without bundled content.
+[[proxy]]
+rewrite = "/content/"
+backend = "http://127.0.0.1:8081/"

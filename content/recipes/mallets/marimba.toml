@@ -1,0 +1,13 @@
+# A marimba: VCSL's, all 10 of its points, its med and loud hits (the soft ones sit 35–45 dB under, near the noise),
+# stereo, unlooped, each cut at −60 dB re its peak or at 3 s with a 0.3 s fade.
+id = "mallets-marimba"
+kind = "program"
+path = "Presets/DW Sampler/Mallets/Marimba.dwp"
+source = "vcsl"
+files = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Marimba/Marimba_hit_Outrigger_{note}_{layer}_{rr}.wav"
+layers = ["med", "loud"]
+transpose = 12
+channels = "auto"
+tail = { floor_db = -60, fade_ms = 300, max_s = 3 }
+release = 0.3
+gain = "normalize"

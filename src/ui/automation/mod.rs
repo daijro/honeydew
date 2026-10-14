@@ -1,0 +1,1080 @@
+//! The automation editor: the control points of one automation clip, on the frame [`geom`] lays out. It edits only the
+//! current lane's target (key = param + 1); there is no parameter selector.
+//!
+//! **Drawing**: 1 `background`; 2 the grid in `controlFill`; 3 five 1 px `background` lines at value
+//! top − 0.5 px + V·{0, ¼, ½, ¾, 1}; 4 the piano roll's vertical marks; 5 black α 0.15 over the value area past the
+//! loop end; 6 a 1 px `menuFill` line at the target's init value v, y = top + V·(1 − v) − 0.5 px; 7 the curve (1.5 px
+//! lines; nothing left of the first point, a level line from the last to the right edge), then the points
+//! (radius 0.2 U). A segment is `text` when either end is selected, a point when it is; else the channel colour. The
+//! value axis left of the grid: N = 5 ticks from V ≥ 3 U, else 3, labelled `100 … 0` in the channel colour.
+//!
+//! **Gestures** (the shared law, [`gesture::is_long`] and [`gesture::left_calm`]): a tap (released within 300 ms,
+//! moved ≤ 0.5 U) on empty grid creates a point, or only clears a shown selection; a press on a point (the nearest
+//! within 1.25 U) drags it, or the whole selection when it lands inside the showing selection's touch frame; released
+//! without movement it is a tap, which selects the point, or only deselects when a selection showed at the touch-down,
+//! or after more than 300 ms a long press, which shows the touch-down's selection without toggling. On empty grid a
+//! long press (300 ms within 0.5 U) is the marquee ([`Marquee`]): its square grows while held, a 3 U square stays on
+//! the finger after (selecting nothing there; let go so it is the `Paste` button when the clipboard holds points), and
+//! a drag makes it the rectangle to the finger, whose points are the selection live; Shift (the selection modifier)
+//! drags one at once. With two or more points selected, the band right of the selection box inside its touch frame is
+//! the right-edge handle, which scales. Each gesture is one final edit at its release, only when the points changed;
+//! meanwhile only the drawing follows the finger. A move's release (as the piano roll's) leaves the moved points
+//! selected with the floating row hidden, a quiet selection whose frame and handle take no touch (a tap on empty grid
+//! still only clears it): a tap on a point then selects it with the row, and a long press, a box, a paste or a key
+//! shows a selection again.
+//!
+//! - b (bar marks, the `Bar` snap, the clip's loop rule) is [`TimeSig::bar_beats`], TDIV byte 1; the zoom limits take
+//!   d, byte 0 ([`geom::zoom_limits`]).
+//! - The ruler row is the other editors' (`timeline::ruler`, its range and region menu, the playhead) over the
+//!   `background` rect of draw step 1; its range is the song's play loop, every op but `Duplicate` clears it.
+//! - The playhead is the song tick less the clip's origin, wrapped modulo the loop, so it always shows; `Copy/Move to
+//!   playhead` use it.
+//! - Lines are snapped to whole device pixels; vertical marks span the grid, the five lines and the init line its
+//!   width. The selection guides go under the curve, the marquee (the step view's box) over it.
+//! - The touch frame (the box grown by 1.25 U) is the selection the floating row is placed over and re-shown by; the
+//!   right-edge handle is the part of it right of the box (checked before the points); neither is drawn. The row hides
+//!   while a point or the handle is held and from a completed long press on.
+//! - The view is the scroller's ([`scroller`]): one finger scrolls the time on the ruler band only (a drag on empty
+//!   grid moves nothing), two zoom it there; the wheel zooms it over the ruler and the grid, as does a trackpad pinch
+//!   over the grid.
+//! - Created and pasted points pop in; every point of a drag (or scale) grows while it lasts and wobbles at its
+//!   release; animations are keyed by the point's tick and value.
+//! - The `Paste` button hides at any other press; it pastes at its centre's beat.
+//! - Continuous scrolling turns the time ruler's long press and range drags off; a tap still moves the playhead, which
+//!   the app turns into a stop while playing. A drag's beats come from the view as it is each frame, so a held point
+//!   stays on the beat under the finger while the view moves.
+//! - The saved view is kept per clip key (channel, lane, clip id) in memory: the app re-keys it when tracks move
+//!   ([`AutomationEditor::rekey`]), and a view whose clip is gone goes.
+
+pub mod geom;
+
+use std::collections::HashMap;
+use std::f32::consts::TAU;
+
+use eframe::egui::{
+    self, Align2, Color32, Id, Painter, Pos2, Rangef, Rect, Response, Sense, Stroke, Ui, Vec2, pos2,
+};
+
+use crate::metrics::{FontSize, Metrics};
+use crate::song::points::{self, LAST_ROW, Point, PointKey};
+use crate::song::{Clip, LaneKind, PPQ, Song, TimeSig};
+use crate::theme::channel_color;
+use crate::ui::clips::{
+    FloatingRow, GridView, Marquee, Selection, TimeAxis, hold_square, paint_marquee,
+};
+use crate::ui::drum_grid::edit::{MARK_GAP, marks};
+use crate::ui::edit_keys::{self, EditKey};
+use crate::ui::piano_roll::notes::{auto_grid, snap_round};
+use crate::ui::piano_roll::{Snap, SnapMode};
+use crate::ui::popup::{self, PopupItem};
+use crate::ui::preview::ClipKey;
+use crate::ui::region::{self, RegionOp, TimeRange};
+use crate::ui::scroller::{self, Axis, Scroller, X};
+use crate::ui::step_seq::pop_in;
+use crate::ui::timeline::{self, KnobGesture, PlayheadKnob, RangeRuler, RangeSelect, vline_px};
+use crate::ui::widgets::{self, SnapTouch, truncated};
+use crate::ui::{UiCtx, gesture, pinch_press, primary_down_live};
+use geom::{Frame, HIT_R, View};
+
+const KEY: PointKey = PointKey::Automation;
+
+/// An edit's points and the selection that goes with them.
+type Edit = (Vec<Point>, Vec<bool>);
+/// A point's radius (U) and the curve's width (device pixels).
+const POINT_R: f32 = 0.2;
+const LINE_PX: f32 = 1.5;
+/// Past the loop end: black at α 0.15.
+const PAST_END: u8 = 38;
+/// The animations' a ← 0.6·a per 60 Hz frame; while dragged it stops at 0.01.
+const ANIM_RATE: f32 = 0.6;
+const DRAG_FLOOR: f32 = 0.01;
+/// The floating buttons over a selection.
+const OPS: [&str; 2] = ["Copy", "Delete"];
+/// The `Paste` button's side (U).
+const PASTE: f32 = 1.5;
+/// The axis labels keep this many tail characters when truncated.
+const LABEL_K: usize = 5;
+
+fn id() -> Id {
+    Id::new("automation_editor")
+}
+
+/// The app-wide automation clipboard: (beat, value/max) pairs in egui's memory, so it outlives songs and views and is
+/// never saved. The audio editor's envelope lanes share it.
+pub fn clipboard(ctx: &egui::Context) -> Vec<(f64, f64)> {
+    ctx.data(|d| d.get_temp(id().with("clipboard")))
+        .unwrap_or_default()
+}
+
+pub fn set_clipboard(ctx: &egui::Context, points: Vec<(f64, f64)>) {
+    ctx.data_mut(|d| d.insert_temp(id().with("clipboard"), points));
+}
+
+/// The points a marquee selects: those its region (the grid-clamped box, a point until dragged) touches.
+fn marquee_sel(marquee: Marquee, f: &Frame, ax: TimeAxis, pts: &[Point]) -> Vec<bool> {
+    let r = marquee.region(f.grid);
+    let ticks = [ax.tick(r.left()), ax.tick(r.right())];
+    let rows = [f.row_at(r.top()), f.row_at(r.bottom())];
+    points::marquee(pts, ticks, rows, KEY.max())
+}
+
+/// A new point's radius scale (pop-in): 1.0515·sin(1.885·(1 − a)).
+pub(crate) fn pop_scale(a: f32) -> f32 {
+    1.0515 * (1.885 * (1.0 - a)).sin()
+}
+
+/// A dragged point's radius scale: 2 − 0.6a, a floored at 0.01 (it grows to about 2×).
+pub(crate) fn drag_scale(a: f32) -> f32 {
+    2.0 - 0.6 * a.max(DRAG_FLOOR)
+}
+
+/// A released point's radius scale (wobble): 1 + (1 − a)·sin(2π·(1 − a)).
+pub(crate) fn wobble_scale(a: f32) -> f32 {
+    1.0 + (1.0 - a) * (TAU * (1.0 - a)).sin()
+}
+
+/// The `Paste` button for a long press at `finger`: a 1.5 U square centred on its x and on the middle of the row under
+/// it (rows 0…126).
+pub(crate) fn paste_rect(f: &Frame, finger: Pos2, m: &Metrics) -> Rect {
+    let r = f.row_at(finger.y).floor().clamp(0.0, LAST_ROW);
+    Rect::from_center_size(pos2(finger.x, f.row_y(r + 0.5)), Vec2::splat(m.u(PASTE)))
+}
+
+/// What the host lends the editor for a frame.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Options {
+    /// The transport's song tick.
+    pub playhead: u64,
+    /// How far past `playhead` the playhead is drawn ([`crate::audio_link::AudioLink::playhead_lead`]): the line, the
+    /// disc and follow playhead only, never an edit.
+    pub lead: u64,
+    pub playing: bool,
+    /// REC is armed: the playhead disc shows the record icon.
+    pub armed: bool,
+    /// Preview plays this clip.
+    pub previewing: bool,
+    /// The pointer is over an overlay: the wheel and zoom are not the editor's.
+    pub covered: bool,
+    /// The setting `Continuous scrolling during playback`.
+    pub continuous: bool,
+}
+
+/// What a frame did.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Output {
+    /// The song changed: one final edit (an undo step). The play loop alone is no edit.
+    pub edited: bool,
+    /// A ruler tap: the playhead goes to this song tick.
+    pub seek: Option<u64>,
+    /// A tap on the playhead knob: the transport plays.
+    pub play: bool,
+    /// The playhead knob's drop: seek to this song tick, playing or stopped, as the playlist's knob does.
+    pub dropped: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Anim {
+    Pop,
+    Wobble,
+}
+
+#[derive(Clone, Debug, Default)]
+enum Gesture {
+    #[default]
+    Idle,
+    /// Down on empty grid at `origin` since input time `since`: a tap, a pan or a long press.
+    Press {
+        origin: Pos2,
+        since: f64,
+    },
+    Pan,
+    /// The marquee from a long press, or at once with Shift: its selection is live; let go without a drag it is the
+    /// `Paste` button.
+    Box(Marquee),
+    Drag(Drag),
+}
+
+/// A point (or the right-edge handle) held: the points as they were, recomputed from the finger every frame.
+#[derive(Clone, Debug)]
+struct Drag {
+    /// The right-edge handle: a scale.
+    scale: bool,
+    origin: Pos2,
+    /// The content tick under the press: the view may move under the finger (continuous scrolling).
+    origin_tick: f64,
+    since: f64,
+    orig: Vec<Point>,
+    sel: Vec<bool>,
+    /// A selection showed at the touch-down: a tap deselects.
+    shown: bool,
+    /// The finger left the tap's 0.5 U.
+    armed: bool,
+}
+
+/// The editor's state, one for every channel's automation editor.
+#[derive(Default)]
+pub struct AutomationEditor {
+    /// Snap on, mode `Auto`, when the editor starts.
+    pub snap: Snap,
+    /// Each clip's view, by (channel, lane, clip id).
+    pub(crate) views: HashMap<(usize, usize, u32), View>,
+    /// The clip the selection belongs to and its points as the editor last left them: anything else (another clip, an
+    /// undo) drops the selection and any gesture.
+    seen: Option<(ClipKey, Vec<Point>)>,
+    /// One flag per point.
+    sel: Vec<bool>,
+    /// The selection is quiet: kept, its floating row hidden, as a move's release leaves it (module docs).
+    quiet: bool,
+    gesture: Gesture,
+    region: RangeSelect,
+    /// The playhead knob on the ruler.
+    knob: PlayheadKnob,
+    row: FloatingRow,
+    snap_menu: bool,
+    /// The `Paste` button shows, for a long press here.
+    paste: Option<Pos2>,
+    anims: Vec<(Point, Anim, f64)>,
+    /// When the press on the ruler began, while continuous scrolling keeps its range off.
+    ruler_press: f64,
+    /// The grid cursor (content tick, value row): where the last touched point was touched, where the keymap's
+    /// `paste` and `open` act ([`Self::keys`]); `None` before any: tick 0 on the middle row.
+    cursor: Option<(f64, f64)>,
+    /// The view's scroll and zoom controller.
+    scroller: Scroller,
+}
+
+/// The clip `key` names, on an automation lane.
+fn clip_of(song: &Song, key: ClipKey) -> Option<&Clip> {
+    let lane = song.channels.get(key.channel)?.lanes.get(key.lane)?;
+    key.clip(song).filter(|_| lane.kind == LaneKind::Automation)
+}
+
+fn clip_mut(song: &mut Song, key: ClipKey) -> Option<&mut Clip> {
+    let lane = song
+        .channels
+        .get_mut(key.channel)?
+        .lanes
+        .get_mut(key.lane)?;
+    lane.clips.iter_mut().find(|c| c.id == key.id)
+}
+
+/// `w` device pixels thick across `xs`, centred on `y` (on whole pixels).
+fn hline(painter: &Painter, xs: Rangef, y: f32, w: f32, color: Color32, m: &Metrics) {
+    let px = 1.0 / m.ppp();
+    let top = m.round_px(y - w * px / 2.0);
+    painter.rect_filled(Rect::from_x_y_ranges(xs, top..=top + w * px), 0.0, color);
+}
+
+/// The selected points' box on screen, from the points' drawn centres.
+fn sel_box(pts: &[Point], sel: &[bool], at: impl Fn(&Point) -> Pos2) -> Option<Rect> {
+    let mut chosen = pts.iter().zip(sel).filter(|(_, s)| **s).map(|(p, _)| at(p));
+    let first = chosen.next()?;
+    Some(chosen.fold(Rect::from_min_max(first, first), |r, p| {
+        r.union(Rect::from_min_max(p, p))
+    }))
+}
+
+impl AutomationEditor {
+    /// The editor stops showing with a touch it will not see end (`app::left_view`): the touch ends as a pinch's
+    /// does, changing nothing; a drag's preview goes with it.
+    pub(crate) fn end_touch(&mut self) {
+        self.gesture = Gesture::Idle;
+    }
+
+    /// Follows every clip's view and the selection's clip to `track(channel, lane)` after channels or tracks moved;
+    /// what was on a gone track goes.
+    pub(crate) fn rekey(&mut self, track: &dyn Fn(usize, usize) -> Option<(usize, usize)>) {
+        let views = std::mem::take(&mut self.views).into_iter();
+        let moved = |((c, l, id), v)| track(c, l).map(|(c, l)| ((c, l, id), v));
+        self.views = views.filter_map(moved).collect();
+        self.seen = (self.seen.take()).and_then(|(k, pts)| {
+            let (channel, lane) = track(k.channel, k.lane)?;
+            Some((ClipKey { channel, lane, ..k }, pts))
+        });
+    }
+
+    /// Draws the clip `key` of `song` (an automation lane's) in `rect` and takes its gestures, editing `song` in place.
+    /// Draws nothing when there is no such clip.
+    pub fn show(
+        &mut self,
+        ui: &mut Ui,
+        cx: &UiCtx,
+        rect: Rect,
+        song: &mut Song,
+        key: ClipKey,
+        opts: &Options,
+    ) -> Output {
+        let mut out = Output::default();
+        let sig = song.time_sig;
+        let b = sig.bar_beats();
+        let Some(clip) = clip_of(song, key) else {
+            return out;
+        };
+        let (m, u) = (cx.m, cx.m.u(1.0));
+        let max = KEY.max();
+        let mut pts = points::points(clip, KEY);
+        let (mut loop_beats, origin) = (clip.loop_len_beats, region::clip_origin(Some(clip)));
+        let now = ui.input(|i| i.time);
+
+        // The selection follows the clip; an outside change drops it.
+        if (self.seen.as_ref()).is_none_or(|(k, p)| *k != key || *p != pts) {
+            if self.seen.as_ref().is_some_and(|(k, _)| *k != key) {
+                // Another clip: a fling of the last one's view stops.
+                self.scroller = Scroller::default();
+            }
+            self.seen = Some((key, pts.clone()));
+            self.sel = vec![false; pts.len()];
+            self.gesture = Gesture::Idle;
+            self.paste = None;
+        }
+
+        // The view: the clip's saved one, the wheel and zoom, continuous scrolling. Views of gone clips go.
+        (self.views)
+            .retain(|&(channel, lane, id), _| ClipKey { channel, lane, id }.clip(song).is_some());
+        let f = Frame::new(rect, m);
+        let vkey = (key.channel, key.lane, key.id);
+        let mut view = (self.views.get(&vkey).copied())
+            .unwrap_or_else(|| View::initial(pts.first().map(|p| p.tick), u));
+        // The scroller (no y): one finger scrolls the time on the ruler band only, two zoom it there; the wheel zooms
+        // it over the ruler and the grid, where a trackpad pinch zooms it too. Continuous scrolling keeps the playhead
+        // a quarter in, one finger scrolling no time.
+        let playhead = geom::playhead(
+            opts.playhead as f64 - origin as f64,
+            loop_beats * f64::from(PPQ),
+        );
+        let drawn = geom::playhead(
+            (opts.playhead + opts.lead) as f64 - origin as f64,
+            loop_beats * f64::from(PPQ),
+        );
+        let mut axes = [geom::axis(view, u, sig, loop_beats, f.grid), Axis::OFF];
+        let was = axes[X];
+        let follow = opts.continuous && opts.playing && loop_beats > axes[X].span();
+        let options = scroller::Options {
+            covered: opts.covered,
+            follow,
+        };
+        let zones = geom::zones(&f);
+        let report = (self.scroller).update(ui, id().with("scroll"), u, &zones, &mut axes, options);
+        if follow {
+            scroller::follow(&mut axes[X], drawn / f64::from(PPQ));
+        }
+        view = geom::take(view, was, axes[X]);
+        let ax = view.axis(f.grid.left());
+        let snap = self.snap.active(auto_grid(ax.beat_w, u, sig), sig);
+
+        // The gestures.
+        let grid = ui.interact(f.grid, id().with("grid"), Sense::click_and_drag());
+        crate::ui::focus::register(ui, grid.id, grid.rect, crate::ui::focus::Kind::Container);
+        let edit = self.input(ui, &grid, &f, ax, &pts, snap, m, now);
+        // A release's edit shows at once.
+        if let Some((new, sel)) = edit {
+            out.edited = self.commit(song, key, new, sel, b);
+            let clip = clip_of(song, key).expect("committed to it");
+            (pts, loop_beats) = (points::points(clip, KEY), clip.loop_len_beats);
+        }
+        let loop_ticks = loop_beats * f64::from(PPQ);
+        let mut edit = None;
+        self.views.insert(vkey, view);
+
+        // What shows: a drag's points follow the finger; the song changes at its release.
+        let pos = ui.input(|i| i.pointer.interact_pos());
+        let (shown_pts, shown_sel) = match (&self.gesture, pos) {
+            (Gesture::Drag(d), Some(p)) if d.armed => self.dragged(d, p, &f, ax, snap),
+            _ => None,
+        }
+        .unwrap_or_else(|| (pts.clone(), self.sel.clone()));
+        let at = |q: &Point| pos2(ax.x(q.tick.into()), f.point_y(q.value, max));
+        let sbox = sel_box(&shown_pts, &shown_sel, at);
+        let handle = self.handle(&shown_pts, &shown_sel, sbox, m);
+
+        let ch = &song.channels[key.channel];
+        let color = channel_color(ch.hue, cx.theme).to_color32();
+        let init = (ch.lanes[key.lane].target).and_then(|t| ch.param(t));
+        self.paint(
+            ui,
+            cx,
+            &f,
+            ax,
+            (&shown_pts, &shown_sel),
+            sbox,
+            (color, init),
+            (sig, loop_ticks),
+            now,
+        );
+
+        // The floating row over the selection, the `Paste` button.
+        // Hidden while a point is held, and by a long press or its marquee.
+        let hidden = self.quiet || matches!(self.gesture, Gesture::Drag(_) | Gesture::Box(_));
+        let handles: Vec<Rect> = handle.into_iter().collect();
+        let one_row = {
+            let mut rows = (shown_pts.iter().zip(&shown_sel))
+                .filter(|(_, s)| **s)
+                .map(|(p, _)| p.value);
+            rows.next().is_some_and(|v| rows.all(|w| w == v))
+        };
+        let selection = (sbox.filter(|_| !hidden)).map(|r| Selection {
+            rect: r.expand(m.u(HIT_R)),
+            one_row,
+            handles: &handles,
+        });
+        let grid_view = GridView {
+            grid: f.grid,
+            map: [ax.origin, f.value.top(), ax.beat_w, f.value.height()],
+        };
+        self.row.covered = opts.covered;
+        if let Some((i, _)) = self
+            .row
+            .show(ui, "automation_button", selection, grid_view, &OPS, cx)
+        {
+            match i {
+                0 => set_clipboard(ui.ctx(), points::copy(&pts, &self.sel, max)),
+                _ => {
+                    let keep = (pts.iter().zip(&self.sel)).filter(|(_, s)| !**s);
+                    let keep: Vec<Point> = keep.map(|(p, _)| *p).collect();
+                    let n = keep.len();
+                    edit = Some((keep, vec![false; n]));
+                }
+            }
+            ui.ctx().request_repaint();
+        }
+        if let Some(new) = self.paste_button(ui, cx, &f, ax, &pts, snap, now) {
+            (edit, self.quiet) = (Some(new), false);
+        }
+
+        // The ruler, its range and region menu, and the playhead.
+        let ruler = ui.painter_at(f.time);
+        timeline::ruler(&ruler, f.time, f.time, ax.origin, ax.beat_w, sig, cx);
+        let ruler_at = RangeRuler {
+            strip: f.time,
+            axis: ax,
+            grid: snap,
+            sig,
+            ink: color,
+            range: TimeRange::in_clip(song.play_loop, origin),
+            playhead: Some(playhead),
+        };
+        if report.scrolled[X] || report.zoomed[X] {
+            self.region.view_moved();
+        }
+        let picked = self
+            .region
+            .show(ui, id().with("region"), &ruler_at, false, cx);
+        // A ruler press waiting for its long press is the scroller's too, until its range starts.
+        if self.region.pending() {
+            self.scroller.claim();
+        } else if self.region.dragging() {
+            self.scroller.yield_touch();
+        }
+        let mut tap = None;
+        if follow {
+            // Over the ruler, so that it takes no long press or range drag meanwhile; a tap still moves the playhead.
+            let off = ui.interact(f.time, id().with("ruler off"), Sense::click_and_drag());
+            if off.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed()) {
+                self.ruler_press = now;
+            }
+            if off.clicked()
+                && !gesture::is_long(now - self.ruler_press)
+                && let Some(p) = off.interact_pointer_pos()
+            {
+                tap = Some(snap_round(ax.tick(p.x).max(0.0), snap) as u32);
+            }
+        }
+        if let Some(range) = picked.range {
+            song.play_loop = range.and_then(|r| r.song_loop(origin));
+        }
+        if let Some(tick) = picked.playhead.or(tap) {
+            out.seek = Some(region::seek_tick(clip_of(song, key), tick, opts.previewing));
+        }
+        if let Some((op, range)) = picked.pick {
+            if !op.keeps_loop() {
+                song.play_loop = None;
+            }
+            let mut new = pts.clone();
+            region_op(&mut new, op, range, playhead as u32, loop_ticks as u32);
+            if new != pts {
+                let n = new.len();
+                edit = Some((new, vec![false; n]));
+            }
+        }
+        // Clipped at the value column's right edge: at beat 0 the line's left half shows in the t gap. While the knob
+        // is dragged, the line and the disc follow the finger.
+        let line = ui.painter_at(f.grid.with_min_x(f.column.right()));
+        let x = (self.knob).line_x(ui, m, &ruler_at, loop_ticks - 1.0, ax.x(drawn));
+        self.snap_button(ui, f.snap, cx);
+        // After the Snap button, which the disc overhangs at beat 0 (the disc on top), and whose touches the knob takes
+        // there while it shows, as the playlist's.
+        timeline::playhead_line(&line, f.grid, x, cx);
+        self.knob.armed = opts.armed;
+        let shown = timeline::knob_shown(opts.playing, self.row.showing());
+        match (self.knob).show(ui, id().with("knob"), f.time, x, shown, cx) {
+            Some(KnobGesture::Tap) => out.play = true,
+            Some(KnobGesture::Drop(x)) => {
+                let tick = self.knob.drop_tick(ui, &ruler_at, loop_ticks - 1.0, x) as u32;
+                out.dropped = Some(region::seek_tick(clip_of(song, key), tick, opts.previewing));
+            }
+            None => {}
+        }
+        self.snap_menu(ui, f.snap, cx);
+        // After the menus, which take Escape first.
+        if let Some(new) = self.keys(ui, &pts, snap, now) {
+            edit = Some(new);
+        }
+
+        if let Some((new, sel)) = edit {
+            out.edited |= self.commit(song, key, new, sel, b);
+        }
+        out
+    }
+
+    /// The keymap's editing actions while the grid holds the keyboard (`ui/edit_keys.rs`), on the selected points as
+    /// the floating row's: `copy` fills the [`clipboard`], `cut` too, `cut` and `delete` remove the selection, `paste`
+    /// lands the clipboard at the cursor's beat as the `Paste` button does, `open` adds a point at the cursor as a tap
+    /// would (`Add point`), `close` deselects; `selectAll` is the piano roll's only. Returns the edit; each action
+    /// hides the floating row and the `Paste` button. No editing action during a touch.
+    #[allow(clippy::too_many_arguments)]
+    fn keys(&mut self, ui: &Ui, pts: &[Point], snap: Option<f64>, now: f64) -> Option<Edit> {
+        let ctx = ui.ctx();
+        if !matches!(self.gesture, Gesture::Idle) {
+            return None;
+        }
+        let k = edit_keys::take(ctx)?;
+        self.row.hide();
+        // A key shows the selection again, as before a move left it quiet.
+        (self.paste, self.quiet) = (None, false);
+        ctx.request_repaint();
+        let max = KEY.max();
+        let chosen = self.sel.contains(&true);
+        if matches!(k, EditKey::Copy | EditKey::Cut) && chosen {
+            set_clipboard(ctx, points::copy(pts, &self.sel, max));
+        }
+        let (tick, row) = self.cursor.unwrap_or((0.0, LAST_ROW / 2.0));
+        let edit = match k {
+            EditKey::Close => {
+                self.sel.fill(false);
+                return None;
+            }
+            EditKey::Copy | EditKey::SelectAll => return None,
+            EditKey::Cut | EditKey::Delete if chosen => {
+                let keep = (pts.iter().zip(&self.sel)).filter(|(_, s)| !**s);
+                let keep: Vec<Point> = keep.map(|(p, _)| *p).collect();
+                let n = keep.len();
+                return Some((keep, vec![false; n]));
+            }
+            EditKey::Cut | EditKey::Delete => return None,
+            EditKey::Paste => {
+                let clipboard = clipboard(ctx);
+                if clipboard.is_empty() {
+                    return None;
+                }
+                points::paste(pts, &clipboard, tick, snap, max)
+            }
+            EditKey::Open => points::create(pts, tick, row, snap, max),
+        };
+        self.pop(&edit.0, &edit.1, now);
+        Some(edit)
+    }
+
+    /// Taps, presses, long presses and drags on the grid (module docs). Returns the edit a release made and the pan.
+    #[allow(clippy::too_many_arguments)]
+    fn input(
+        &mut self,
+        ui: &Ui,
+        grid: &Response,
+        f: &Frame,
+        ax: TimeAxis,
+        pts: &[Point],
+        snap: Option<f64>,
+        m: &Metrics,
+        now: f64,
+    ) -> Option<Edit> {
+        let max = KEY.max();
+        let down = primary_down_live(ui, grid.id);
+        // A second finger makes a pinch, which only zooms: it ends any gesture, changing nothing. So does a press held
+        // over a focus loss, which is up and stale (`primary_down_live`): no tap, drop or `Paste`.
+        let stale = !down && ui.input(|i| i.pointer.primary_down());
+        if pinch_press(ui, grid.id) || stale {
+            self.gesture = Gesture::Idle;
+            return None;
+        }
+        let (pressed, pos, shift) = ui.input(|i| {
+            let p = &i.pointer;
+            (p.primary_pressed(), p.interact_pos(), i.modifiers.shift)
+        });
+        // Shift, or the keymap's `editorSelect` (Ctrl/Cmd held).
+        let shift = shift || crate::keymap::held(ui.ctx(), "editorSelect");
+        let u = m.u(1.0);
+        let moved = |o: Pos2| gesture::left_calm(o, pos, u);
+        self.quiet &= self.sel.contains(&true);
+        if grid.is_pointer_button_down_on() {
+            // A long press needs a frame once its time has passed.
+            ui.ctx().request_repaint();
+        }
+
+        if pressed
+            && grid.is_pointer_button_down_on()
+            && let Some(p) = pos
+        {
+            self.paste = None;
+            let target = (!shift).then(|| self.target(f, ax, pts, p, m)).flatten();
+            // The showing selection's touch frame (the box grown by the hit radius): a touch inside acts on it whole.
+            // A quiet selection is not showing.
+            let at = |q: &Point| pos2(ax.x(q.tick.into()), f.point_y(q.value, max));
+            let frame = sel_box(pts, &self.sel, at).map(|b| b.expand(m.u(HIT_R)));
+            let shown = self.sel.contains(&true) && !self.quiet;
+            let inside = shown && frame.is_some_and(|r| r.contains(p));
+            let drag = |scale, sel: &[bool]| {
+                Gesture::Drag(Drag {
+                    scale,
+                    origin: p,
+                    origin_tick: ax.tick(p.x),
+                    since: now,
+                    orig: pts.to_vec(),
+                    sel: sel.to_vec(),
+                    shown: shown && !scale,
+                    armed: false,
+                })
+            };
+            self.gesture = match target {
+                _ if shift => Gesture::Box(Marquee::at(p, true)),
+                Some((i, scale)) => {
+                    // The point becomes the cursor target.
+                    self.cursor = Some((ax.tick(p.x).max(0.0), f.row_at(p.y)));
+                    if !scale && !self.sel[i] && !inside {
+                        // Touched: it becomes the selection.
+                        self.sel = (0..pts.len()).map(|j| j == i).collect();
+                    }
+                    drag(scale, &self.sel)
+                }
+                None if inside => drag(false, &self.sel),
+                None => Gesture::Press {
+                    origin: p,
+                    since: now,
+                },
+            };
+        }
+
+        let mut edit = None;
+        match std::mem::take(&mut self.gesture) {
+            Gesture::Press { origin, since } => {
+                let held = gesture::is_long(now - since);
+                self.gesture = if held && down {
+                    // The marquee, following the finger from now on: what it touches is the selection (under the
+                    // finger: nothing on empty grid).
+                    let mut marquee = Marquee::at(origin, false);
+                    marquee.follow(pos, u);
+                    (self.sel, self.quiet) = (marquee_sel(marquee, f, ax, pts), false);
+                    Gesture::Box(marquee)
+                } else if moved(origin) {
+                    // A drag: no tap and no marquee, and nothing scrolls here (the touch x zone is the ruler band).
+                    Gesture::Pan
+                } else if !down {
+                    if held {
+                        // Released in the frame the long press came due.
+                        self.long_released(ui, origin);
+                    } else if self.sel.contains(&true) {
+                        // A tap: a shown (or quiet) selection only clears; else a new point, selected.
+                        self.sel.fill(false);
+                    } else {
+                        let (new, sel) =
+                            points::create(pts, ax.tick(origin.x), f.row_at(origin.y), snap, max);
+                        self.pop(&new, &sel, now);
+                        edit = Some((new, sel));
+                    }
+                    Gesture::Idle
+                } else {
+                    // Its square grows while held.
+                    ui.ctx().request_repaint();
+                    Gesture::Press { origin, since }
+                };
+            }
+            Gesture::Pan if down => self.gesture = Gesture::Pan,
+            Gesture::Box(mut marquee) => {
+                // Live: the points the box touches are the selection, every frame.
+                marquee.follow(pos, u);
+                (self.sel, self.quiet) = (marquee_sel(marquee, f, ax, pts), false);
+                if down {
+                    self.gesture = Gesture::Box(marquee);
+                } else if !marquee.dragged {
+                    self.long_released(ui, marquee.from);
+                }
+            }
+            Gesture::Drag(mut d) => {
+                d.armed |= moved(d.origin);
+                if down {
+                    self.gesture = Gesture::Drag(d);
+                } else {
+                    // A move's release leaves its selection quiet; a tap, a long press or a scale shows it.
+                    self.quiet = d.armed && !d.scale;
+                    let result = match pos {
+                        Some(p) if d.armed => self.dragged(&d, p, f, ax, snap),
+                        _ => None,
+                    };
+                    match result {
+                        Some((new, sel)) => {
+                            self.wobble(&new, &sel, now);
+                            edit = Some((new, sel));
+                        }
+                        None => {
+                            self.wobble(&d.orig, &d.sel, now);
+                            // A tap while a selection showed deselects it; else the point alone (out of a quiet
+                            // selection too) is the selection. A long press only shows the touch-down's selection.
+                            if !d.armed && !d.scale && !gesture::is_long(now - d.since) {
+                                let point = f.hit(ax, pts, max, d.origin, m).filter(|_| !d.shown);
+                                self.sel = (0..pts.len()).map(|j| Some(j) == point).collect();
+                            }
+                        }
+                    }
+                }
+            }
+            Gesture::Pan | Gesture::Idle => {}
+        }
+        edit
+    }
+
+    /// A long press let go in place: the `Paste` button when the clipboard holds points.
+    fn long_released(&mut self, ui: &Ui, origin: Pos2) {
+        if !clipboard(ui.ctx()).is_empty() {
+            self.paste = Some(origin);
+        }
+    }
+
+    /// What a press at `p` holds: (the right-edge handle, its point's index) first, else (the nearest point, false).
+    fn target(
+        &self,
+        f: &Frame,
+        ax: TimeAxis,
+        pts: &[Point],
+        p: Pos2,
+        m: &Metrics,
+    ) -> Option<(usize, bool)> {
+        let at = |q: &Point| pos2(ax.x(q.tick.into()), f.point_y(q.value, KEY.max()));
+        let sbox = sel_box(pts, &self.sel, at);
+        // A quiet selection's handle takes no touch.
+        if let Some(h) = self.handle(pts, &self.sel, sbox, m).filter(|_| !self.quiet)
+            && h.contains(p)
+        {
+            let i = self.sel.iter().position(|s| *s)?;
+            return Some((i, true));
+        }
+        f.hit(ax, pts, KEY.max(), p, m).map(|i| (i, false))
+    }
+
+    /// The right-edge handle: with ≥ 2 selected points spanning some time, the touch frame right of the box.
+    fn handle(&self, pts: &[Point], sel: &[bool], sbox: Option<Rect>, m: &Metrics) -> Option<Rect> {
+        let count = sel.iter().filter(|s| **s).count();
+        let ticks = || {
+            pts.iter()
+                .zip(sel)
+                .filter(|(_, s)| **s)
+                .map(|(p, _)| p.tick)
+        };
+        let wide = ticks().min() != ticks().max();
+        let r = sbox.filter(|_| count >= 2 && wide)?;
+        let frame = r.expand(m.u(HIT_R));
+        Some(Rect::from_x_y_ranges(
+            r.right()..=frame.right(),
+            frame.y_range(),
+        ))
+    }
+
+    /// A drag's points and selection with the finger at `p`, `None` when they did not change.
+    fn dragged(
+        &self,
+        d: &Drag,
+        p: Pos2,
+        f: &Frame,
+        ax: TimeAxis,
+        snap: Option<f64>,
+    ) -> Option<Edit> {
+        // In beats from the view as it is now.
+        let dt = ax.tick(p.x) - d.origin_tick;
+        if d.scale {
+            points::scaled(&d.orig, &d.sel, dt, snap)
+        } else {
+            let dr = f.row_at(p.y) - f.row_at(d.origin.y);
+            points::moved(&d.orig, &d.sel, dt, dr, snap, KEY.max())
+        }
+    }
+
+    fn pop(&mut self, pts: &[Point], sel: &[bool], now: f64) {
+        self.animate(pts, sel, Anim::Pop, now);
+    }
+
+    fn wobble(&mut self, pts: &[Point], sel: &[bool], now: f64) {
+        self.animate(pts, sel, Anim::Wobble, now);
+    }
+
+    fn animate(&mut self, pts: &[Point], sel: &[bool], anim: Anim, now: f64) {
+        let chosen = pts.iter().zip(sel).filter(|(_, s)| **s);
+        self.anims.extend(chosen.map(|(p, _)| (*p, anim, now)));
+    }
+
+    /// The radius scale of `p` (selected: `selected`) now.
+    fn scale(&self, p: &Point, selected: bool, now: f64) -> f32 {
+        if let Gesture::Drag(d) = &self.gesture
+            && selected
+        {
+            return drag_scale(pop_in(ANIM_RATE, now - d.since));
+        }
+        match self.anims.iter().rev().find(|a| a.0 == *p) {
+            Some(&(_, Anim::Pop, t)) => {
+                let a = pop_in(ANIM_RATE, now - t);
+                if a > 0.0 { pop_scale(a) } else { 1.0 }
+            }
+            Some(&(_, Anim::Wobble, t)) => wobble_scale(pop_in(ANIM_RATE, now - t)),
+            None => 1.0,
+        }
+    }
+
+    /// Draw steps 1–7, the value axis, the selection guides and the marquee (module docs).
+    #[allow(clippy::too_many_arguments)]
+    fn paint(
+        &mut self,
+        ui: &Ui,
+        cx: &UiCtx,
+        f: &Frame,
+        ax: TimeAxis,
+        (pts, sel): (&[Point], &[bool]),
+        sbox: Option<Rect>,
+        (color, init): (Color32, Option<f32>),
+        (sig, loop_ticks): (TimeSig, f64),
+        now: f64,
+    ) {
+        let (c, m) = (&cx.theme.colors, cx.m);
+        let px = 1.0 / m.ppp();
+        let (bg, text) = (c.background.to_color32(), c.text.to_color32());
+        let (grid, value) = (f.grid, f.value);
+        // 1, 2.
+        let painter = ui.painter_at(f.ruler.union(f.column).union(grid));
+        painter.rect_filled(painter.clip_rect(), 0.0, bg);
+        painter.rect_filled(grid, 0.0, c.control_fill.to_color32());
+        let gp = ui.painter_at(grid);
+        // A line of w px down the grid starts ⌊w/2⌋ px left of its x (the drum grid's marks).
+        let vline = |x: f32, w: f32, color| {
+            let x = m.round_px(x) - (w / 2.0).floor() * px;
+            vline_px(&gp, x, grid.y_range(), w, color, m);
+        };
+        // 3.
+        for i in 0..5 {
+            let y = value.top() - 0.5 * px + value.height() * i as f32 / 4.0;
+            hline(&gp, grid.x_range(), y, 1.0, bg, m);
+        }
+        // 4.
+        let (t0, t1) = (ax.tick(grid.left()), ax.tick(grid.right()));
+        for (tick, w) in marks(t0, t1, ax.beat_w, m.u(1.0), sig, MARK_GAP) {
+            vline(ax.x(tick), w, bg);
+        }
+        // 5.
+        let end = ax.x(loop_ticks).max(grid.left());
+        if end < grid.right() {
+            let past = Rect::from_x_y_ranges(end..=grid.right(), value.y_range());
+            gp.rect_filled(past, 0.0, Color32::from_black_alpha(PAST_END));
+        }
+        // 6.
+        if let Some(v) = init {
+            let y = value.top() + value.height() * (1.0 - v) - 0.5 * px;
+            hline(&gp, grid.x_range(), y, 1.0, c.menu_fill.to_color32(), m);
+        }
+        // The selection guides: left and top, right and bottom too once the box is wider or taller than 1 px.
+        if let Some(r) = sbox {
+            vline(r.left(), 1.0, text);
+            hline(&gp, grid.x_range(), r.top(), 1.0, text, m);
+            if r.width() > px {
+                vline(r.right(), 1.0, text);
+            }
+            if r.height() > px {
+                hline(&gp, grid.x_range(), r.bottom(), 1.0, text, m);
+            }
+        }
+        // 7.
+        let at = |q: &Point| pos2(ax.x(q.tick.into()), f.point_y(q.value, KEY.max()));
+        let stroke = |on: bool| Stroke::new(LINE_PX * px, if on { text } else { color });
+        for (i, w) in pts.windows(2).enumerate() {
+            let (a, z) = (at(&w[0]), at(&w[1]));
+            if z.x >= grid.left() && a.x <= grid.right() {
+                gp.line_segment([a, z], stroke(sel[i] || sel[i + 1]));
+            }
+        }
+        if let Some(last) = pts.last() {
+            let a = at(last);
+            let from = pos2(a.x.max(grid.left()), a.y);
+            gp.line_segment([from, pos2(grid.right(), a.y)], stroke(sel[pts.len() - 1]));
+        }
+        self.anims.retain(|a| pop_in(ANIM_RATE, now - a.2) > 0.0);
+        let mut moving = !self.anims.is_empty();
+        let r = m.u(POINT_R);
+        for (q, &s) in pts.iter().zip(sel) {
+            let p = at(q);
+            if (grid.left() - r..=grid.right() + r).contains(&p.x) {
+                gp.circle_filled(p, r * self.scale(q, s, now), if s { text } else { color });
+            }
+        }
+        if let Gesture::Drag(d) = &self.gesture {
+            moving |= pop_in(ANIM_RATE, now - d.since) > DRAG_FLOOR;
+        }
+        if moving {
+            ui.ctx().request_repaint();
+        }
+        // The marquee: a square growing while a touch is held on empty grid, then the box.
+        let marquee = match self.gesture {
+            Gesture::Press { origin, since } => hold_square(origin, m.u(1.0), now - since),
+            Gesture::Box(marquee) => Some(marquee.drawn(m.u(1.0))),
+            _ => None,
+        };
+        if let Some(rect) = marquee {
+            paint_marquee(&gp, rect, cx);
+        }
+
+        // The value axis: `background`, ticks and labels in the channel colour.
+        painter.rect_filled(f.axis, 0.0, bg);
+        let font = m.font_id(FontSize::Pt8);
+        for t in f.axis_ticks(m) {
+            hline(&painter, t.line, t.y, 2.0, color, m);
+            truncated(
+                &painter,
+                t.text,
+                Align2::CENTER_CENTER,
+                &t.label,
+                font.clone(),
+                color,
+                LABEL_K,
+            );
+        }
+    }
+
+    /// The `Paste` button while it shows: a `menuFill` square labelled `Paste` in `text` (the region `+` button's
+    /// slots). Returns the paste a tap on it made.
+    #[allow(clippy::too_many_arguments)]
+    fn paste_button(
+        &mut self,
+        ui: &mut Ui,
+        cx: &UiCtx,
+        f: &Frame,
+        ax: TimeAxis,
+        pts: &[Point],
+        snap: Option<f64>,
+        now: f64,
+    ) -> Option<Edit> {
+        let finger = self.paste?;
+        let clipboard = clipboard(ui.ctx());
+        if clipboard.is_empty() {
+            self.paste = None;
+            return None;
+        }
+        let (c, m) = (&cx.theme.colors, cx.m);
+        let rect = paste_rect(f, finger, m);
+        let response = ui.interact(rect, id().with("paste"), Sense::click_and_drag());
+        ui.painter()
+            .rect_filled(rect, 0.0, c.menu_fill.to_color32());
+        let font = m.font_id(FontSize::Pt12);
+        (ui.painter()).text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            "Paste",
+            font,
+            c.text.to_color32(),
+        );
+        if response.clicked() {
+            self.paste = None;
+            let (new, sel) =
+                points::paste(pts, &clipboard, ax.tick(rect.center().x), snap, KEY.max());
+            self.pop(&new, &sel, now);
+            return Some((new, sel));
+        }
+        if ui.input(|i| i.pointer.any_pressed()) && !response.is_pointer_button_down_on() {
+            self.paste = None;
+        }
+        None
+    }
+
+    /// The Snap button in `cell` ([`widgets::snap_button`]): a tap toggles snap, a long press or a right click opens
+    /// the snap menu.
+    fn snap_button(&mut self, ui: &mut Ui, cell: Rect, cx: &UiCtx) {
+        match widgets::snap_button(ui, id().with("snap"), cell, self.snap.on, cx) {
+            Some(SnapTouch::Menu) => self.snap_menu = true,
+            Some(SnapTouch::Toggle) => self.snap.on = !self.snap.on,
+            None => {}
+        }
+    }
+
+    /// The snap menu while open: one column, the current mode highlighted; a pick sets it and turns snap on.
+    fn snap_menu(&mut self, ui: &Ui, cell: Rect, cx: &UiCtx) {
+        if !self.snap_menu {
+            return;
+        }
+        let ctx = ui.ctx();
+        let items: Vec<PopupItem<SnapMode>> = (SnapMode::ALL.iter().enumerate())
+            .map(|(row, &mode)| PopupItem {
+                current: mode == self.snap.mode,
+                ..PopupItem::new(mode, 0, row, mode.label())
+            })
+            .collect();
+        let result = popup::show(
+            ctx,
+            id().with("snap menu"),
+            cell.center(),
+            ctx.content_rect(),
+            &items,
+            cx,
+        );
+        if let Some(mode) = result.selected {
+            self.snap = Snap { on: true, mode };
+        }
+        if result.close {
+            self.snap_menu = false;
+            ctx.request_repaint();
+        }
+    }
+
+    /// Makes `new` the clip's points and fits its loop: one final edit when the clip changed. The selection is `sel`.
+    fn commit(
+        &mut self,
+        song: &mut Song,
+        key: ClipKey,
+        new: Vec<Point>,
+        sel: Vec<bool>,
+        b: u32,
+    ) -> bool {
+        let Some(clip) = clip_mut(song, key) else {
+            return false;
+        };
+        let before = clip.clone();
+        points::set_points(clip, KEY, new);
+        clip.fit_loop(b);
+        let now = points::points(clip, KEY);
+        self.sel = if sel.len() == now.len() {
+            sel
+        } else {
+            vec![false; now.len()]
+        };
+        self.seen = Some((key, now));
+        *clip != before
+    }
+}
+
+/// The region menu's `op` on `pts` (the current key only) for `range`, the playhead at content tick `p` and the loop
+/// ending at `loop_end`.
+fn region_op(pts: &mut Vec<Point>, op: RegionOp, range: TimeRange, p: u32, loop_end: u32) {
+    let (s, e) = (range.start, range.end);
+    match op {
+        RegionOp::InsertSpace => points::insert_space(pts, s, e),
+        RegionOp::Duplicate => points::duplicate(pts, s, e),
+        RegionOp::CopyToPlayhead | RegionOp::MoveToPlayhead => {
+            points::to_playhead(pts, s, e, p, op == RegionOp::MoveToPlayhead);
+        }
+        RegionOp::Delete => points::delete(pts, s, e),
+        RegionOp::DeleteSpace => points::delete_space(pts, s, e),
+        RegionOp::Trim => points::trim(pts, s, e, loop_end),
+        RegionOp::Deselect
+        | RegionOp::SnapToScale
+        | RegionOp::GuessScale
+        | RegionOp::InsertSilence
+        | RegionOp::Clear
+        | RegionOp::Normalize
+        | RegionOp::FadeIn
+        | RegionOp::FadeOut => {}
+    }
+}
+
+#[cfg(test)]
+mod tests;

@@ -1,0 +1,85 @@
+[package]
+name = "honeydew"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[workspace]
+# The root package is a member as the workspace root. Listing it as "." would make every path below it an explicit
+# member and defeat `exclude` (cargo matches members by path prefix).
+members = ["crates/*"]
+# Vendored third-party crates (`vendor/rusty_mp3`) are path dependencies, not members: their own lints and
+# tests stay theirs.
+exclude = ["vendor"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Not named `honeydew`, so that on wasm32 Trunk can tell the cdylib (`data-target-name="honeydew"`) from this bin.
+[[bin]]
+name = "honeydew-native"
+path = "src/main.rs"
+
+[dependencies]
+honeydew-audio = { path = "crates/audio" }
+eframe = "0.33.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.152"
+# Already in the tree through eframe (its `image` reads PNGs): decodes the user's imported icon sheet.
+png = "0.18.1"
+# The ZIP codec (`zip.rs`). Both are already in the tree through eframe (image -> png -> flate2), on native and
+# wasm32, so they add no package: deflate/inflate and the CRC-32 of the container.
+miniz_oxide = "0.9"
+crc32fast = "1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2.129"
+wasm-bindgen-futures = "0.4.79"
+web-sys = { version = "0.3.106", features = ["Window", "Storage", "BeforeUnloadEvent", "Document", "HtmlCanvasElement", "KeyboardEvent", "AddEventListenerOptions", "console", "HtmlInputElement", "HtmlAnchorElement", "FileList", "File", "Blob", "Url", "Navigator", "MidiAccess", "MidiInput", "MidiInputMap", "MidiMessageEvent", "MidiPort", "MidiPortDeviceState"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rfd = "0.17.2"
+# Already in the tree through eframe's egui-winit, which opens links with it. `hardened`: only http(s) URLs open, never
+# a song link that fails to parse as a local file path (the PROJECT tab's `Open`).
+webbrowser = { version = "1.2.4", features = ["hardened"] }
+# M11 J2: MIDI input over ALSA (cpal's `alsa 0.9`), CoreMIDI and WinMM. 0.10.4 is the last 0.10.x, on `alsa ^0.9`.
+midir = "=0.10.4"
+
+# Built for speed (owner decision); the web build adds `[profile.web]` below, and wasm-opt -O3 (tools/web-dist.sh).
+# Not `panic = "abort"`: wasm32 aborts already, and on native it would turn off `sample.rs::guarded`, which turns a
+# decoder's panic into `Malformed`.
+[profile.release]
+opt-level = 3
+strip = "debuginfo"
+
+# The web build's release profile (index.html `data-cargo-profile-release`): fat LTO and one codegen unit on top, which
+# only the wasm pays for in build time.
+[profile.web]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+
+# Hostile samples must not panic in dev builds either (E6). symphonia's FLAC decoder subtracts a file's wasted-bits
+# count unchecked (bundle-flac decoder.rs:339) and then debug-asserts a bit width (core io/bit.rs); release wraps and
+# returns an error. These make dev and test builds behave as release does.
+[profile.dev.package.symphonia-bundle-flac]
+overflow-checks = false
+debug-assertions = false
+
+[profile.dev.package.symphonia-core]
+overflow-checks = false
+debug-assertions = false
+
+# symphonia's MP3 reader subtracts a LAME tag's delay and padding from the Xing frame count unchecked
+# (bundle-mp3 demuxer.rs:128); release wraps and skips the end trim.
+[profile.dev.package.symphonia-bundle-mp3]
+overflow-checks = false
+
+# The MP3 encoder at opt-level 0 runs below real time (a 10 s stereo encode took ~17 s), so dev builds and tests
+# optimise it.
+[profile.dev.package.rusty_mp3]
+opt-level = 3
+
+# The Vorbis encoder at opt-level 0 runs at about 3x real time; dev builds and tests optimise it too.
+[profile.dev.package.zvidlib-vorbis-encoder]
+opt-level = 3

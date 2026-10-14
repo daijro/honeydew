@@ -1,0 +1,15 @@
+id = "proc-snare"
+kind = "samples"
+path = "Samples/Electronic Snare/"
+source = "honeydew"
+render = "snare"
+variant = [
+  { name = "Snare Tight", tune = 200.0, decay = 0.05, snappy = 0.6, rattle = 0.09, tone = 5500.0 },
+  { name = "Snare Bright", tune = 230.0, decay = 0.05, snappy = 0.9, rattle = 0.12, tone = 7500.0 },
+  { name = "Snare Fat", tune = 165.0, decay = 0.11, snappy = 0.6, rattle = 0.18, tone = 4000.0, drive = 2.0 },
+  { name = "Snare Long", tune = 180.0, decay = 0.09, snappy = 0.8, rattle = 0.3, tone = 5000.0 },
+  { name = "Snare Noise", tune = 190.0, decay = 0.03, snappy = 1.5, rattle = 0.16, tone = 6000.0 },
+  { name = "Snare Low", tune = 140.0, decay = 0.12, snappy = 0.5, rattle = 0.15, tone = 3500.0 },
+  { name = "Snare Crack", tune = 260.0, decay = 0.04, snappy = 1.0, rattle = 0.07, tone = 8000.0, drive = 3.0 },
+  { name = "Snare Soft", tune = 175.0, decay = 0.08, snappy = 0.4, rattle = 0.2, tone = 3000.0 },
+]

@@ -1,0 +1,11 @@
+# A bright, bell-edged pad: FreePats' New Age, one point per tritone, each cut to 5 s with a found loop of at least 3 s
+# (the source's own 5 s loops join with a kink on some notes).
+id = "pad-shimmer"
+kind = "program"
+path = "Presets/DW Sampler/Pad/Shimmer Pad.dwp"
+source = "freepats-synth-pad"
+sfz = "unpacked/NewAge-SFZ+FLAC-20190730/NewAge SFZ+FLAC-20190730/NewAge 20190730.sfz"
+keys = { every = 6 }
+loop = { find = true, min_s = 3.0, crossfade_ms = 200, keep_s = 5.0 }
+release = 0.8
+gain = "normalize"

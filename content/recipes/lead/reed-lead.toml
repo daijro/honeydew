@@ -1,0 +1,13 @@
+# A reedy organ lead: Karoryfer's Caveman Cosmonaut, the transistor organ's trompette register on its own (oscillator 1
+# set to it by CC 18, the bass oscillator and oscillators 2 and 3 off; no filter or envelope), one point per minor
+# third, each cut to 2 s with a found loop.
+id = "lead-reed"
+kind = "program"
+path = "Presets/DW Sampler/Lead/Reed Lead.dwp"
+source = "karoryfer-caveman-cosmonaut"
+sfz = "unpacked/karoryfer.caveman-cosmonaut-master/Programs/main.sfz"
+cc = { 16 = 0, 18 = 45, 20 = 0, 22 = 0 }
+keys = { every = 3 }
+loop = { find = true, min_s = 0.8, crossfade_ms = 60, keep_s = 2.0 }
+release = 0.3
+gain = "normalize"

@@ -1,0 +1,12 @@
+# A plucked upright bass: Karoryfer's Meatbass, pizzicato, layers 2 and 4 of 4, first round robin, every point of its
+# minor-third grid up to its top note (the plucks and slides mapped above it are left out). Mono, cut at −50 dB re its peak or 3 s.
+id = "bass-upright"
+kind = "program"
+path = "Presets/DW Sampler/Bass/Upright Bass.dwp"
+source = "karoryfer-meatbass"
+sfz = "unpacked/karoryfer.meatbass-master/Programs/pizz_basic.sfz"
+keys = { every = 3, to = 66 }
+velocity_layers = [2, 4]
+tail = { floor_db = -50, fade_ms = 200, max_s = 3 }
+release = 0.25
+gain = "normalize"

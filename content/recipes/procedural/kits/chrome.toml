@@ -1,0 +1,85 @@
+# An electronic kit whose pads are synthesized: hard and driven, metallic.
+id = "kit-chrome"
+kind = "kit"
+path = "Drumsets/Chrome Kit.tmpl"
+source = "honeydew"
+
+[[pad]]
+name = "Kick"
+level_db = -7
+render = "kick"
+params = { tune = 50.0, decay = 0.45, drive = 4.0, sub = 0.5, click = 0.5 }
+
+[[pad]]
+name = "Hard Kick"
+level_db = -7
+render = "kick"
+params = { tune = 58.0, decay = 0.35, drive = 8.0, sub = 0.4, click = 0.8, noise = 0.2 }
+
+[[pad]]
+name = "Snare"
+level_db = -8.5
+render = "snare"
+params = { tune = 260.0, decay = 0.04, snappy = 1.0, rattle = 0.07, tone = 8000.0, drive = 3.0 }
+
+[[pad]]
+name = "Clap"
+level_db = -10
+pan = -0.08
+render = "clap"
+params = { tone = 2200.0, decay = 0.14, bursts = 5 }
+
+[[pad]]
+name = "Closed Hat"
+level_db = -13
+pan = 0.24
+render = "hat"
+params = { tone = 10500.0, decay = 0.045 }
+
+[[pad]]
+name = "Open Hat"
+level_db = -12
+pan = 0.24
+render = "hat"
+params = { tone = 10500.0, decay = 0.35 }
+
+[[pad]]
+name = "Ride"
+level_db = -13
+pan = 0.32
+render = "cymbal"
+params = { tune = 380.0, tone = 5500.0, q = 2.0, decay = 0.8, noise = 0.1 }
+
+[[pad]]
+name = "Crash"
+level_db = -12
+pan = -0.28
+render = "cymbal"
+params = { tone = 7500.0, decay = 1.0 }
+
+[[pad]]
+name = "Low Tom"
+level_db = -9
+pan = -0.24
+render = "tom"
+params = { tune = 90.0, decay = 0.25, drive = 3.0 }
+
+[[pad]]
+name = "High Tom"
+level_db = -9
+pan = 0.24
+render = "tom"
+params = { tune = 170.0, decay = 0.18, drive = 3.0 }
+
+[[pad]]
+name = "Rim"
+level_db = -11
+pan = -0.16
+render = "rim"
+params = { tune = 2300.0, decay = 0.01, click = 0.8 }
+
+[[pad]]
+name = "Impact"
+level_db = -11
+render = "impact"
+params = { tune = 55.0, decay = 0.35, noise = 0.8 }

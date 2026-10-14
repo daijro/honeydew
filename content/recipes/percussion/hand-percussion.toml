@@ -1,0 +1,230 @@
+# Hand percussion as a DW Sampler program: Virtuosity Drums' auxiliary percussion on its own General MIDI keys 60–84
+# (bongos, congas, agogos, cabasa, shaker, whistles, guiros, claves, triangles, jingle bell, bell tree), close mic
+# only, round robin 1, every source velocity layer (1–4 a key). Its snare-mic program maps nothing else in that span.
+# One-shots cut at −60 dB re their peak (3 s at most); the loudest peaks at −6 dBFS; a 1.3 s release lets short notes
+# ring out.
+id = "hand-percussion"
+kind = "program"
+path = "Presets/DW Sampler/Percussion/Hand Percussion.dwp"
+source = "virtuosity-drums"
+tail = { floor_db = -60, fade_ms = 30, max_s = 3 }
+gain = "normalize"
+release = 0.6
+
+# Explicit root-only zones keep unmapped GM keys silent. Velocity bands match the previous program.
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/bongoh/BongoH_Hit1_v1_rr1_Close.wav"
+root = 60
+lovel = 0
+hivel = 41
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/bongoh/BongoH_Hit1_v2_rr1_Close.wav"
+root = 60
+lovel = 42
+hivel = 84
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/bongoh/BongoH_Hit1_v3_rr1_Close.wav"
+root = 60
+lovel = 85
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/bongol/BongoL_Hit1_v1_rr1_Close.wav"
+root = 61
+lovel = 0
+hivel = 41
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/bongol/BongoL_Hit1_v2_rr1_Close.wav"
+root = 61
+lovel = 42
+hivel = 84
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/bongol/BongoL_Hit1_v3_rr1_Close.wav"
+root = 61
+lovel = 85
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/conga/Conga_17_HitHM1_1_70_rr1_Close.wav"
+root = 62
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/conga/Conga_17_HitHM1_71_127_rr1_Close.wav"
+root = 62
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/conga/Conga_22_HitN_1_50_rr1_Close.wav"
+root = 63
+lovel = 0
+hivel = 41
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/conga/Conga_22_HitN_51_100_rr1_Close.wav"
+root = 63
+lovel = 42
+hivel = 84
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/conga/Conga_22_HitN_101_127_rr1_Close.wav"
+root = 63
+lovel = 85
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/tumba/Tumba_24_HitN_1_40_rr1_Close.wav"
+root = 64
+lovel = 0
+hivel = 31
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/tumba/Tumba_24_HitN_41_70_rr1_Close.wav"
+root = 64
+lovel = 32
+hivel = 63
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/tumba/Tumba_24_HitN_71_100_rr1_Close.wav"
+root = 64
+lovel = 64
+hivel = 95
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/tumba/Tumba_24_HitN_101_127_rr1_Close.wav"
+root = 64
+lovel = 96
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/agogo/Agogo_High_v1_rr1_Close.wav"
+root = 67
+lovel = 0
+hivel = 41
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/agogo/Agogo_High_v2_rr1_Close.wav"
+root = 67
+lovel = 42
+hivel = 84
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/agogo/Agogo_High_v3_rr1_Close.wav"
+root = 67
+lovel = 85
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/agogo/Agogo_Low_v1_rr1_Close.wav"
+root = 68
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/agogo/Agogo_Low_v2_rr1_Close.wav"
+root = 68
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/cabasa/Cabasa1_Rub_v1_rr1_Close.wav"
+root = 69
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/cabasa/Cabasa1_Rub_v2_rr1_Close.wav"
+root = 69
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/shaker/LShaker_Shake1U_rr1_Close.wav"
+root = 70
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/whistle/Close_BallWhistle_Short-001.wav"
+root = 71
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/whistle/Close_BallWhistle_Long-001.wav"
+root = 72
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/guiro/Guiro_Med_rr1_Close.wav"
+root = 73
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/guiro/Guiro_Fast_rr1_Close.wav"
+root = 74
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/claves/Claves1_Hit_v1_rr1_Close.wav"
+root = 75
+lovel = 0
+hivel = 41
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/claves/Claves1_Hit_v2_rr1_Close.wav"
+root = 75
+lovel = 42
+hivel = 84
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/claves/Claves1_Hit_v3_rr1_Close.wav"
+root = 75
+lovel = 85
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/triangle/Triangle1_HitM_v1_rr1_Close.wav"
+root = 80
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/triangle/Triangle1_Hit_v1_rr1_Close.wav"
+root = 81
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/triangle/Triangle1_Hit_v2_rr1_Close.wav"
+root = 81
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/shaker/LShaker_Shake1D_rr1_Close.wav"
+root = 82
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/sleighbells/Sleighbells_Hit_rr1_Close.wav"
+root = 83
+lovel = 0
+hivel = 127
+
+[[zone]]
+file = "unpacked/virtuosity_drums-master/Samples/perc/close/belltree/BellTree_Stroke_rr1_Close.wav"
+root = 84
+lovel = 0
+hivel = 127

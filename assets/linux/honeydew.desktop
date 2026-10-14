@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Honeydew
+Comment=Make music: patterns, a piano roll, a mixer and effects
+Exec=honeydew-native %F
+Icon=honeydew
+Terminal=false
+Categories=AudioVideo;Audio;Midi;Sequencer;
+StartupWMClass=honeydew

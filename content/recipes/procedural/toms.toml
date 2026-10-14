@@ -1,0 +1,13 @@
+id = "proc-toms"
+kind = "samples"
+path = "Samples/Electronic Toms/"
+source = "honeydew"
+render = "tom"
+variant = [
+  { name = "Tom Low", tune = 85.0 },
+  { name = "Tom Mid", tune = 120.0 },
+  { name = "Tom High", tune = 170.0 },
+  { name = "Tom Low Boom", tune = 70.0, bend = 2.0, decay = 0.45, noise = 0.05 },
+  { name = "Tom High Snap", tune = 210.0, decay = 0.15, click = 0.4 },
+  { name = "Tom Zap", tune = 110.0, bend = 3.5, sweep = 0.12, decay = 0.3, noise = 0.0 },
+]

@@ -1,0 +1,26 @@
+# Synthesized kicks (tools/content-build/src/procedural): a tune × decay × click grid, three thin and three heavy.
+id = "proc-kick"
+kind = "samples"
+path = "Samples/Electronic Kick/"
+source = "honeydew"
+render = "kick"
+variant = [
+  { name = "Kick F1 Short", tune = 43.65, decay = 0.18 },
+  { name = "Kick F1 Short Click", tune = 43.65, decay = 0.18, click = 0.5 },
+  { name = "Kick F1 Long", tune = 43.65, decay = 0.45 },
+  { name = "Kick F1 Long Click", tune = 43.65, decay = 0.45, click = 0.5 },
+  { name = "Kick A1 Short", tune = 55.0, decay = 0.18 },
+  { name = "Kick A1 Short Click", tune = 55.0, decay = 0.18, click = 0.5 },
+  { name = "Kick A1 Long", tune = 55.0, decay = 0.45 },
+  { name = "Kick A1 Long Click", tune = 55.0, decay = 0.45, click = 0.5 },
+  { name = "Kick C2 Short", tune = 65.41, decay = 0.18 },
+  { name = "Kick C2 Short Click", tune = 65.41, decay = 0.18, click = 0.5 },
+  { name = "Kick C2 Long", tune = 65.41, decay = 0.45 },
+  { name = "Kick C2 Long Click", tune = 65.41, decay = 0.45, click = 0.5 },
+  { name = "Thin Kick Tight", tune = 62.0, bend = 2.5, sweep = 0.012, decay = 0.07 },
+  { name = "Thin Kick Soft", tune = 52.0, bend = 2.0, sweep = 0.02, decay = 0.12 },
+  { name = "Thin Kick Knock", tune = 75.0, bend = 3.0, sweep = 0.008, decay = 0.06, click = 0.2 },
+  { name = "Heavy Kick Drive", tune = 50.0, decay = 0.45, drive = 4.0, sub = 0.5, click = 0.5 },
+  { name = "Heavy Kick Sub", tune = 46.0, hold = 0.08, decay = 0.6, drive = 2.5, sub = 0.8 },
+  { name = "Heavy Kick Grit", tune = 58.0, decay = 0.35, drive = 8.0, sub = 0.4, click = 0.8, noise = 0.2 },
+]
