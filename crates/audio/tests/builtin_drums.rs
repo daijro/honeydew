@@ -206,17 +206,20 @@ fn hash(samples: &[f32]) -> u64 {
         })
 }
 
-/// Pinned before the voices became recipes: the default kit stays bit-identical, so saved songs sound the same. The
-/// voices use the platform's `sin`/`exp`/`tanh`, so the exact bits hold on this target only; the portable check is
-/// [`the_default_kit_keeps_its_samples`].
+/// Pins the default voices from before they became recipes. Kick accepts the verified glibc 2.39 and 2.44 `tanhf`
+/// outputs; native math can differ even on the same target. The portable check is [`the_default_kit_keeps_its_samples`].
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 #[test]
 fn the_default_kit_is_bit_identical() {
     let hashes: Vec<u64> = PADS.iter().map(|pad| hash(&mono(pad))).collect();
+    assert!(
+        [0x54e2_f46e_d851_6685, 0xb12b_13b4_0b48_3b88].contains(&hashes[0]),
+        "unexpected Kick hash: {:#018x}",
+        hashes[0]
+    );
     assert_eq!(
-        hashes,
+        hashes[1..],
         [
-            0xb12b_13b4_0b48_3b88, // Kick
             0xe43d_a116_2539_b337, // Snare
             0x516e_0c02_98f4_bd4d, // Clap
             0x6641_ac02_3a62_b036, // Closed Hat
