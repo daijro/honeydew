@@ -77,6 +77,4 @@ jobs:
       - run: tools/web-dist.sh --zip
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            target/honeydew-web-*.zip
-            target/honeydew-sounds.zip
+          files: target/honeydew-web-*.zip

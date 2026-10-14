@@ -51,10 +51,6 @@ For desktop, download and extract the app for your operating system from
 in `content/` and appears in the pickers automatically. Keep that folder beside `honeydew-native` or
 `honeydew-native.exe`. No separate download or import step is needed.
 
-The web release includes the sound library and loads sounds as you use them. GitHub Actions assembles the tracked
-`honeydew-sounds.zip.*` parts and includes the sounds in every desktop package and the web build. The release also
-offers `honeydew-sounds.zip` separately for updating an existing installation.
-
 | Source | Author | Licence |
 |---|---|---|
 | [Adventure Kid Waveforms (AKWF-FREE)](https://github.com/KristofferKarlAxelEkstrand/AKWF-FREE) | Kristoffer Ekstrand (Adventure Kid) | CC0 |
@@ -110,7 +106,7 @@ tools/release-content.sh 0.1.1
 ```
 
 Commit the updated `honeydew-sounds.zip.*` parts with the content changes. Add `--web` to also build the web ZIP
-locally. Tagged releases build and upload both archives automatically; no manual release upload is needed.
+locally. Tagged releases include the sounds in every desktop and web download; no manual release upload is needed.
 
 Web (development):
 

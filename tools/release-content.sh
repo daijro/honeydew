@@ -29,4 +29,4 @@ if [ "${2:-}" = --web ]; then
     files+=("${CARGO_TARGET_DIR:-target}/honeydew-web-$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1).zip")
 fi
 ls -lh "${files[@]}"
-echo "Commit honeydew-sounds.zip.* with the content changes; tagged releases upload the sounds automatically."
+echo "Commit honeydew-sounds.zip.* with the content changes; tagged releases include them in every app download."
