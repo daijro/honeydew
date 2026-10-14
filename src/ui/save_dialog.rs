@@ -364,7 +364,8 @@ impl SaveDialog {
             .min_size(l.field.size())
             .horizontal_align(Align::Center)
             .vertical_align(Align::Center);
-        let field = ui.put(l.field, field);
+        let mut field = ui.put(l.field, field);
+        crate::android_text::edit(&mut field, &mut self.name, usize::MAX);
         if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
             action = self.save();
         } else if ui.memory(|mem| mem.focused().is_none()) {

@@ -1294,17 +1294,17 @@ mod component {
         // no slide at first).
         let mut rig = Rig::new(vec![]);
         rig.tap(at(100.0, 70));
-        // Auto snap at 64 points a beat is a step (32 ticks): 100 → 96.
-        assert_eq!(spans(rig.events()), [(96, 128.0, 70)]);
+        // At 64 points a beat, visible grid lines are half a beat apart: 100 → 64.
+        assert_eq!(spans(rig.events()), [(64, 128.0, 70)]);
         assert_eq!(looks(rig.events()), [(204, 127, false)]);
         assert_eq!(rig.roll.selected, [false]);
         assert_eq!(rig.all, [QUIET]);
         assert_eq!(rig.sounds, [(70, Some(1.0))]);
         rig.frame_after(0.2, vec![]);
         assert_eq!(rig.sounds, [(70, Some(1.0)), (70, None)]);
-        // The cell it hits, not the nearest line: 113 → 96.
+        // The cell it hits, not the nearest line: 113 → 64.
         rig.tap(at(113.0, 66));
-        assert!(spans(rig.events()).contains(&(96, 128.0, 66)));
+        assert!(spans(rig.events()).contains(&(64, 128.0, 66)));
         // The remembered note, its length never under an eighth of the unit.
         rig.roll.remembered = Remembered {
             len: 2.0,
@@ -1313,7 +1313,7 @@ mod component {
             slide: true,
         };
         rig.tap(at(300.0, 62));
-        assert_eq!(spans(rig.events())[2], (288, 4.0, 62));
+        assert_eq!(spans(rig.events())[2], (256, 8.0, 62));
         assert_eq!(looks(rig.events())[2], (90, 30, true));
     }
 
@@ -1338,7 +1338,7 @@ mod component {
         (rig.song.key_root, rig.song.key_scale) = (0, scale_to_stored(major));
         // C# between C and D: the lower one.
         rig.tap(at(100.0, 61));
-        assert_eq!(spans(rig.events()), [(96, 128.0, 60)]);
+        assert_eq!(spans(rig.events()), [(64, 128.0, 60)]);
         assert_eq!(rig.sounds, [(60, Some(1.0))]);
     }
 
@@ -1352,6 +1352,50 @@ mod component {
         assert_eq!(rig.events().len(), 1);
         rig.tap(at(400.0, 66));
         assert_eq!(rig.events().len(), 2);
+    }
+
+    #[test]
+    fn an_empty_tap_after_a_move_creates_a_note_without_a_deselection_tap() {
+        let mut rig = Rig::new(vec![n(128, 64.0, 70)]);
+        rig.drag(at(140.0, 70), at(268.0, 70));
+        assert!(rig.roll.quiet);
+        assert_eq!(rig.roll.selected, [true]);
+        assert!(!rig.roll.row.showing());
+        rig.tap(at(400.0, 66));
+        assert_eq!(spans(rig.events()), [(256, 64.0, 70), (384, 64.0, 66)]);
+        assert_eq!(rig.roll.selected, [false, false]);
+    }
+
+    #[test]
+    fn a_hidden_menu_does_not_consume_empty_taps_inside_or_outside_a_selection_frame() {
+        for tick in [200.0, 600.0] {
+            let mut rig = Rig::new(vec![n(128, 64.0, 70), n(384, 64.0, 62)]);
+            // Keyboard selection keeps the handles, with its floating menu hidden.
+            rig.key(egui::Key::A, CMD);
+            assert_eq!(rig.roll.selected, [true, true]);
+            assert!(!rig.roll.row.showing());
+            rig.tap(at(tick, 66));
+            assert_eq!(rig.events().len(), 3, "tick {tick}");
+            assert!(!rig.roll.selected.contains(&true));
+        }
+    }
+
+    #[test]
+    fn new_notes_follow_visible_grid_cells_across_zoom_and_triplets() {
+        for (beat_u, subdivision, tick, start) in [
+            (2.0, 4, 128.0, 128),
+            (1.0, 4, 113.0, 0),
+            (4.0, 4, 113.0, 96),
+            (2.0, 3, 80.0, 43),
+        ] {
+            let mut rig = Rig::new(vec![]);
+            rig.roll.beat_u = beat_u;
+            rig.song.time_sig.subdivision = subdivision;
+            rig.frame(vec![]);
+            let g = rig.roll.geom(GRID.min, 32.0);
+            rig.tap(pos2(g.x(tick), g.y(66) + g.row_h / 2.0));
+            assert_eq!(spans(rig.events()), [(start, 128.0, 66)]);
+        }
     }
 
     #[test]
@@ -3544,6 +3588,17 @@ mod component {
         rig.key(egui::Key::Enter, Modifiers::NONE);
         assert_eq!((done(&rig), rig.last.contains(&QUIET)), (0, true));
         assert_eq!(spans(rig.events()), [(0, 128.0, 60), (512, 64.0, 67)]);
+    }
+
+    #[test]
+    fn enter_checks_the_same_floored_visible_cell_that_it_creates_in() {
+        for (occupied, expected) in [(64, 1), (128, 2)] {
+            let mut rig = Rig::new(vec![n(occupied, 32.0, 60)]);
+            rig.roll.cursor = (113.0, 60);
+            rig.key(egui::Key::Enter, Modifiers::NONE);
+            assert_eq!(rig.events().len(), expected);
+            assert_eq!(spans(rig.events())[0].0, 64);
+        }
     }
 
     #[test]

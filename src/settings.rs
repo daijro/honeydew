@@ -295,7 +295,11 @@ pub fn storage() -> Option<Box<dyn eframe::Storage>> {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        config_dir(|key| std::env::var_os(key)).map(|dir| open_storage(&dir))
+        #[cfg(target_os = "android")]
+        let dir = crate::android::data_dir();
+        #[cfg(not(target_os = "android"))]
+        let dir = config_dir(|key| std::env::var_os(key));
+        dir.map(|dir| open_storage(&dir))
     }
 }
 
@@ -314,7 +318,7 @@ fn open_storage(dir: &std::path::Path) -> Box<dyn eframe::Storage> {
 
 /// The user's config directory, from the environment variables `var` reads: `XDG_CONFIG_HOME`, else `APPDATA`, else
 /// `HOME/.config`. Unset, empty and relative values are skipped (the XDG spec ignores a relative `XDG_CONFIG_HOME`).
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 fn config_dir(var: impl Fn(&str) -> Option<std::ffi::OsString>) -> Option<std::path::PathBuf> {
     // ponytail: ~/.config on macOS too, rather than ~/Library/Application Support.
     let path = |key| {

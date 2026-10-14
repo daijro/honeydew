@@ -1434,7 +1434,11 @@ impl HoneydewApp {
             if armed && !cfg!(target_arch = "wasm32") {
                 self.navigate(Nav::Open(Overlay::Message {
                     tag: INPUT_TAG,
-                    lines: vec![MIC_PERMISSION.into()],
+                    lines: vec![if cfg!(target_os = "android") {
+                        "Audio recording is not available in this Android preview.".into()
+                    } else {
+                        MIC_PERMISSION.into()
+                    }],
                     confirm: None,
                     extra: None,
                 }));
@@ -1669,7 +1673,11 @@ fn setup_context(ctx: &egui::Context) {
 
 impl eframe::App for HoneydewApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        #[cfg(target_os = "android")]
+        crate::android_text::begin_frame(ctx);
         self.frame(ctx, open_device);
+        #[cfg(target_os = "android")]
+        crate::android_text::end_frame(ctx);
     }
 
     /// The settings not flushed yet (a drag's, or a failed flush's) get a last try (native only: the web has no exit).

@@ -25,6 +25,12 @@ fn a_knob_moves_0_24_of_the_range_per_inch_dragged_up_at_any_density() {
         assert_eq!(Law::Knob(1.0).delta(vec2(INCH, 0.0), &m), 0.0);
         // A sensitivity s scales it: the drum strip's `Start` (s = 0.5) moves 0.12 per inch.
         assert!(near(Law::Knob(0.5).delta(vec2(0.0, -INCH), &m), 0.12));
+        // Android reports physical DPI independently of its logical pixels per point and UI scale.
+        for scale in [0, DEFAULT_UI_SCALE_INDEX, 3] {
+            let m = Metrics::from_display_dpi(ppp, scale, f32::INFINITY, Some(384.0));
+            let inch = m.dpi() / ppp;
+            assert!(near(Law::Knob(1.0).delta(vec2(0.0, -inch), &m), 0.24));
+        }
     }
     let mut rig = Rig::new(Kind::Knob, 0.25);
     rig.drag(&[vec2(0.0, -10.0), vec2(0.0, -INCH)]);

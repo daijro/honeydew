@@ -78,6 +78,8 @@ pub struct Metrics {
     u_px: f32,
     /// egui's `pixels_per_point`.
     ppp: f32,
+    /// The density used for this frame's layout and physical knob travel.
+    dpi: f32,
 }
 
 impl Metrics {
@@ -95,12 +97,30 @@ impl Metrics {
 
     /// `surface_w_px` is the drawing surface width in device pixels.
     fn on_surface(ppp: f32, scale_index: usize, surface_w_px: f32) -> Self {
-        let dpi = BASE_DPI * ppp * DESKTOP_DPI_BOOST;
+        #[cfg(target_os = "android")]
+        let display_dpi = Some(crate::android::display_dpi());
+        #[cfg(not(target_os = "android"))]
+        let display_dpi = None;
+        Self::from_display_dpi(ppp, scale_index, surface_w_px, display_dpi)
+    }
+
+    /// A frame's reported physical display density, if the platform supplies one.
+    pub(crate) fn from_display_dpi(
+        ppp: f32,
+        scale_index: usize,
+        surface_w_px: f32,
+        display_dpi: Option<f32>,
+    ) -> Self {
+        // Android's logical density is not its physical xdpi; only the fallback uses the desktop estimate.
+        let dpi = display_dpi
+            .filter(|dpi| dpi.is_finite() && *dpi > 0.0)
+            .unwrap_or(BASE_DPI * ppp * DESKTOP_DPI_BOOST);
         let u_px = ui_unit_px(dpi, scale_index, surface_w_px);
         Self {
             u: u_px / ppp,
             u_px,
             ppp,
+            dpi,
         }
     }
 
@@ -121,7 +141,7 @@ impl Metrics {
 
     /// The DPI the app is given, in device pixels per inch: the one `U` is made from.
     pub fn dpi(&self) -> f32 {
-        BASE_DPI * self.ppp * DESKTOP_DPI_BOOST
+        self.dpi
     }
 
     /// `v` points on the nearest whole device pixel.
@@ -234,11 +254,37 @@ mod tests {
     }
 
     #[test]
+    fn physical_dpi_keeps_manual_scale_and_rejects_invalid_reports() {
+        let (ppp, dpi) = (2.625, 384.0);
+        for index in 0..UI_SCALE_FACTORS.len() {
+            let m = Metrics::from_display_dpi(ppp, index, WIDE, Some(dpi));
+            assert_eq!(m.u_px(), ui_unit_px(dpi, index, WIDE));
+            assert_eq!(m.dpi(), dpi);
+            assert_eq!(m.ppp(), ppp);
+        }
+        for dpi in [
+            None,
+            Some(0.0),
+            Some(-1.0),
+            Some(f32::NAN),
+            Some(f32::INFINITY),
+        ] {
+            let m = Metrics::from_display_dpi(ppp, 1, WIDE, dpi);
+            assert_eq!(m.dpi(), 504.0);
+            assert_eq!(m.u_px(), 84.0);
+        }
+        let narrow = Metrics::from_display_dpi(ppp, 1, 300.0, Some(dpi));
+        assert_eq!(narrow.u_px(), 16.0);
+        assert_eq!(narrow.dpi(), dpi);
+    }
+
+    #[test]
     fn font_pixel_sizes_are_floor_u_times_points_over_16() {
         let at = |u_px: f32, ppp: f32| Metrics {
             u: u_px / ppp,
             u_px,
             ppp,
+            dpi: u_px * 6.0,
         };
         assert_eq!(at(80.0, 1.0).font_id(FontSize::Pt10).size, 50.0);
         assert_eq!(at(85.0, 1.0).font_id(FontSize::Pt8).size, 42.0);

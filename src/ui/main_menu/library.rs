@@ -459,7 +459,16 @@ impl SongLibrary for MemoryLibrary {
 ///
 /// The app's folder named after its former name ([`crate::LEGACY_APP_NAME`]) becomes this one the first time
 /// ([`crate::migrate_legacy_dir_once`]). `None` when the home or app-data folder is unknown or not an absolute path.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(target_os = "android")]
+pub fn songs_dir() -> Option<PathBuf> {
+    Some(
+        crate::android::data_dir()?
+            .join(crate::APP_NAME)
+            .join(SONGS_FOLDER),
+    )
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 pub fn songs_dir() -> Option<PathBuf> {
     #[cfg(not(test))]
     let migrate = crate::migrate_legacy_dir_once;
@@ -471,7 +480,7 @@ pub fn songs_dir() -> Option<PathBuf> {
 
 /// [`songs_dir`] with the environment variables `var` reads, the app's folder of its former name becoming the new one
 /// through `migrate` (old, new).
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 fn songs_dir_from(
     var: impl Fn(&str) -> Option<std::ffi::OsString>,
     migrate: fn(&Path, &Path) -> PathBuf,

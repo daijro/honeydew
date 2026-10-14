@@ -2028,13 +2028,14 @@ fn name_prompt(
             visuals.text_cursor.stroke.color = ink;
             visuals.selection.bg_fill = ink.gamma_multiply(0.3);
             visuals.selection.stroke.color = ink;
-            let edit = egui::TextEdit::singleline(text)
+            let edit = egui::TextEdit::singleline(&mut *text)
                 .id(id.with("field"))
                 .frame(false)
                 .text_color(ink)
                 .font(m.font_id(FontSize::Pt10))
                 .desired_width(field.width());
-            let response = ui.put(field, edit);
+            let mut response = ui.put(field, edit);
+            crate::android_text::edit(&mut response, text, usize::MAX);
             if response.lost_focus() {
                 result.close = true;
                 if ui.input(|i| i.key_pressed(Key::Enter)) {

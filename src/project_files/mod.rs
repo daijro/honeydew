@@ -1063,9 +1063,8 @@ impl ProjectFiles {
         let Some(name) = self.typed_name(name, "flm") else {
             return false;
         };
-        // The desktop's dialog asks before it replaces a file. The web has none: a song the session keeps under the
-        // name stays, and this one takes a free `name (n)`.
-        let name = match self.copies {
+        // Without a system save dialog (web and Android), keep other songs under the name and take a free name.
+        let name = match self.copies || cfg!(target_os = "android") {
             true => {
                 let dir = self.dir.as_deref().unwrap_or(Path::new(""));
                 self.free_name(Some(dir), &name, "flm", self.path.as_deref())

@@ -7,6 +7,7 @@ use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 
 use eframe::egui::Context;
 
+#[cfg(any(not(target_os = "android"), test))]
 use super::MidiMsg;
 
 /// The menu item that opens no device.
@@ -89,6 +90,7 @@ fn chosen(choice: &MidiChoice, ports: &[String]) -> Vec<usize> {
 
 /// Connects each of a choice's ports ([`chosen`]), skipping the ones that fail. An error only when a named device
 /// is missing, or when ports were tried and none connected (no ports for `Any` is no error).
+#[cfg(any(not(target_os = "android"), test))]
 fn connect_each<C>(
     choice: &MidiChoice,
     ports: &[String],
@@ -253,6 +255,7 @@ impl MidiLink {
 
 /// Hands one message from a device callback to the link, and wakes the UI. Only what [`MidiMsg::parse`] reads is
 /// kept: system messages (SysEx, clock, active sensing), poly pressure and malformed bytes are skipped.
+#[cfg(any(not(target_os = "android"), test))]
 fn forward(bytes: &[u8], tx: &SyncSender<Vec<u8>>, ctx: Option<&Context>) {
     // ponytail: a full queue (an app that stopped drawing frames) drops new messages; a ring that keeps the newest
     // if that ever matters.
@@ -265,7 +268,7 @@ fn forward(bytes: &[u8], tx: &SyncSender<Vec<u8>>, ctx: Option<&Context>) {
 }
 
 /// `midir`: `Any` connects every port, `Named` the first port of that device.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 mod backend {
     use std::any::Any;
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -824,5 +827,23 @@ mod tests {
         link.tick(10.0);
         assert_eq!(fake.lists.get(), lists);
         assert_eq!(fake.calls.get(), 0);
+    }
+}
+
+// shortcut: this preview has no Android MIDI service bridge; enable the menu when one is available.
+#[cfg(target_os = "android")]
+mod backend {
+    use super::*;
+
+    pub fn lister() -> impl FnMut() -> Vec<String> {
+        Vec::new
+    }
+
+    pub fn open(
+        _: &MidiChoice,
+        _: SyncSender<Vec<u8>>,
+        _: Option<Context>,
+    ) -> Result<Box<dyn Any>, String> {
+        Ok(Box::new(()))
     }
 }

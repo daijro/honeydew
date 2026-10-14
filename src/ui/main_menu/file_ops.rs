@@ -662,7 +662,7 @@ pub fn rename(
 
 /// `Export` on the desktop. One song: the system's save dialog, which asks before it replaces a file. Anything
 /// else: a folder to copy into, under free names.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 pub fn export(lib: &mut dyn SongLibrary, entries: &[SongEntry]) -> Done {
     if let [e] = entries
         && !e.is_folder
@@ -690,7 +690,7 @@ pub fn export(lib: &mut dyn SongLibrary, entries: &[SongEntry]) -> Done {
     Ok(())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 fn export_into(lib: &mut dyn SongLibrary, entries: &[SongEntry], dir: &Path) -> Done {
     for e in entries {
         let to = free_path(lib, dir, raw_name(e), e.is_folder);
@@ -770,7 +770,7 @@ fn strip_ext<'a>(name: &'a str, ext: &str) -> &'a str {
 }
 
 /// The system's file manager, as `Show in %s...` names it. `None` on the web, which has none.
-pub const FILE_MANAGER: Option<&str> = if cfg!(target_arch = "wasm32") {
+pub const FILE_MANAGER: Option<&str> = if cfg!(any(target_arch = "wasm32", target_os = "android")) {
     None
 } else if cfg!(windows) {
     Some("Explorer")
@@ -2928,4 +2928,9 @@ mod tests {
         assert_eq!(cmd.get_args().collect::<Vec<_>>(), ["/s/My Songs"]);
         assert_eq!(FILE_MANAGER, Some("file browser"));
     }
+}
+
+#[cfg(target_os = "android")]
+pub fn export(_: &mut dyn SongLibrary, _: &[SongEntry]) -> Done {
+    Err("External file export is not available in this Android preview.".into())
 }

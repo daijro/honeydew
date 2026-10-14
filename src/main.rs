@@ -17,11 +17,20 @@ fn main() -> eframe::Result {
             .with_icon(eframe::icon_data::from_png_bytes(icon).expect("our icon is a PNG")),
         ..Default::default()
     };
-    eframe::run_native(
+    let result = eframe::run_native(
         honeydew::APP_NAME,
         options,
         Box::new(|cc| Ok(Box::new(honeydew::app::HoneydewApp::new(cc)))),
-    )
+    );
+    #[cfg(target_os = "windows")]
+    if let Err(error) = &result {
+        rfd::MessageDialog::new()
+            .set_title(format!("{} could not start", honeydew::APP_NAME))
+            .set_description(error.to_string())
+            .set_level(rfd::MessageLevel::Error)
+            .show();
+    }
+    result
 }
 
 // The wasm32 bin target still has to compile; the real web entry point is in `lib.rs`.

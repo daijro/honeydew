@@ -25,8 +25,8 @@ fn handles(rig: &Rig, area: Rect) -> usize {
 
 /// The sequence on the item at `from` in `area`, whose selection draws `n` handles: dragged to `to` and let go, it
 /// shows no floating row and no handle; a tap on it shows both, a second tap deselects it, and a long press shows both
-/// again. Dragged back, a tap on `empty` grid only deselects it, adding none of the editor's `items`, so the
-/// next one adds one. Each is checked two frames on, the playlist's handles popping in from nothing on the first.
+/// again. Dragged back, an empty tap adds a piano note immediately; the other editors first deselect, then add.
+/// Each is checked two frames on, the playlist's handles popping in from nothing on the first.
 fn drag_then_tap(
     rig: &mut Rig,
     editor: &str,
@@ -64,15 +64,24 @@ fn drag_then_tap(
     let count = items(rig);
     rig.click(empty);
     let tapped = (shown(rig), items(rig));
-    assert_eq!(tapped, ((false, 0), count), "{editor}: an empty tap");
+    let added = usize::from(editor == "piano roll");
+    assert_eq!(
+        tapped,
+        ((false, 0), count + added),
+        "{editor}: an empty tap"
+    );
     rig.click(empty);
     rig.frame(vec![]);
-    assert_eq!(items(rig), count + 1, "{editor}: deselected, the next adds");
+    assert_eq!(
+        items(rig),
+        count + 1,
+        "{editor}: one new item after two taps"
+    );
 }
 
 #[test]
 fn a_dragged_item_keeps_its_row_and_handles_hidden_until_a_tap_in_every_editor() {
-    // The piano roll: a tap adds a note on the step nearest it (up to 8 points right of it), a beat (64 points) long.
+    // The piano roll: a tap adds a note at the visible cell's start, a beat (64 points) long.
     let mut rig = Rig::with_drums_and_synth();
     rig.edit(2);
     rig.slide_split();

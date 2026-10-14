@@ -337,7 +337,10 @@ impl PresetPicker {
 
     /// Offers `Import` down the left edge, after the other buttons, when `import` ([`PickerAction::Import`]).
     pub fn with_import(self, import: bool) -> Self {
-        Self { import, ..self }
+        Self {
+            import: import && !cfg!(target_os = "android"),
+            ..self
+        }
     }
 
     /// Opens the folders from the root down to the file `path`'s, as taps on them would, and makes it the pick, its row
@@ -807,7 +810,8 @@ impl PresetPicker {
             in_trash: self.in_trash(),
             paste: self.actions.can_paste(),
             // The web downloads each file: a folder cannot be.
-            export: cfg!(not(target_arch = "wasm32")) || picked.iter().all(|e| !e.is_folder),
+            export: !cfg!(target_os = "android")
+                && (cfg!(not(target_arch = "wasm32")) || picked.iter().all(|e| !e.is_folder)),
             reveal: FILE_MANAGER,
             ..MenuState::default()
         }

@@ -1,0 +1,63 @@
+plugins {
+    id 'com.android.application' version '8.13.2'
+}
+
+def version = (file('../../Cargo.toml').text =~ /(?m)^version = "(\d+)\.(\d+)\.(\d+)"$/)[0]
+def (major, minor, patch) = version[1..3].collect { it.toInteger() }
+assert minor < 1000 && patch < 1000
+layout.buildDirectory = file(System.getenv('HONEYDEW_ANDROID_BUILD_DIR') ?: '../../target/android')
+
+android {
+    namespace = 'dev.daijro.honeydew'
+    compileSdk = 36
+    buildToolsVersion = '36.0.0'
+    ndkVersion = '28.0.13004108'
+
+    defaultConfig {
+        applicationId = 'dev.daijro.honeydew'
+        minSdk = 26
+        targetSdk = 36
+        versionCode = major * 1000000 + minor * 1000 + patch
+        versionName = "${major}.${minor}.${patch}"
+        resValue 'string', 'app_name', 'Honeydew'
+        ndk { abiFilters 'arm64-v8a' }
+    }
+
+    signingConfigs {
+        debug {
+            storeFile = rootProject.file('debug.keystore')
+        }
+        release {
+            storeFile = file(System.getenv('ANDROID_KEYSTORE_FILE') ?: 'missing-release-keystore.jks')
+            storePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
+            keyAlias = System.getenv('ANDROID_KEY_ALIAS')
+            keyPassword = System.getenv('ANDROID_KEY_PASSWORD')
+        }
+    }
+    buildTypes {
+        debug {
+            applicationIdSuffix = '.debug'
+            versionNameSuffix = '-debug'
+            resValue 'string', 'app_name', 'Honeydew Debug'
+        }
+        release { signingConfig = signingConfigs.release }
+    }
+
+    sourceSets.main {
+        assets.srcDirs = [layout.buildDirectory.dir('assets')]
+        jniLibs.srcDirs = [layout.buildDirectory.dir('jniLibs')]
+    }
+    androidResources { noCompress += ['tar'] }
+    packaging { jniLibs { useLegacyPackaging = false } }
+}
+
+tasks.register('verifyNativeInputs') {
+    doLast {
+        for (path in ['assets/content/index.json', 'jniLibs/arm64-v8a/libhoneydew.so']) {
+            if (!layout.buildDirectory.file(path).get().asFile.isFile()) {
+                throw new GradleException("Missing ${path}; build with tools/android-dist.sh")
+            }
+        }
+    }
+}
+tasks.named('preBuild').configure { dependsOn 'verifyNativeInputs' }

@@ -2,4 +2,10 @@
 /dist
 .superpowers/
 content-out/
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+*.jks
+*.keystore
 /docs/

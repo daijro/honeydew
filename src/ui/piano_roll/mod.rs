@@ -21,7 +21,7 @@
 //!   second tap deselects: a tap never deletes a note.
 //! - Long press on a note: the touch-down's selection shows its handles and floating row; it never toggles. There is no
 //!   slider, and no ≥ 2-note scale handle.
-//! - Empty grid: a tap only deselects a showing selection, else adds a note ([`Remembered`]); a long press is the
+//! - Empty grid: a tap dismisses a visible floating menu, else clears the selection and adds a note ([`Remembered`]); a long press is the
 //!   marquee ([`clips::Marquee`]): a square grows on the touch-down point while held, a 3 U square stays on the finger
 //!   after 300 ms (selecting what lies under the finger: nothing there), and a drag beyond 0.5 U (or Shift at once)
 //!   makes it the rectangle to the finger, whose notes (touching counts) are the selection live. Lifted without a drag
@@ -33,9 +33,8 @@
 //!   above).
 //! - A move's release is neither a tap nor a long press, so it brings up no floating row: the moved notes stay selected
 //!   with their handles and floating row hidden, a *quiet* selection, until a tap on a note (which selects that note),
-//!   a long press, a box, a right click, a paste or a key shows one again. Its frame and handles take no touch, but it
-//!   still counts as a selection showing for a tap on empty grid, which only deselects it (adding a note there by
-//!   accident is the worse failure). A resize's release shows the handles again.
+//!   a long press, a box, a right click, a paste or a key shows one again. Its frame and handles take no touch, and an
+//!   empty-grid tap clears it and creates a note. A resize's release shows the handles again.
 //! - Sound: touching or tapping a note is silent. A new note sounds at velocity 1 for 150 ms; while a selection one key
 //!   tall is dragged, each key change stops the old key and plays the new one at velocity 0.7, until the release
 //!   ([`PianoRollAction::Note`]).
@@ -45,7 +44,8 @@
 //! the grid.
 //!
 //! A new note: key = the row's, snapped to the project scale (an identity while it is Chromatic); start = the tick
-//! rounded to the snap unit (unrounded with snap off), ≥ 0; length = max(L, unit/8, or 1/128 beat with snap off);
+//! floored to the snap unit (the visible grid spacing in Auto, unrounded with snap off), ≥ 0;
+//! length = max(L, unit/8, or 1/128 beat with snap off);
 //! velocity V, pan P, slide S; not selected. (L, V, P, S) is the [`Remembered`] note.
 //!
 //! A roll edits its clip only: without one (no id, or an id that is gone) it edits nothing and makes no clip (the app
@@ -97,7 +97,7 @@ use crate::theme::{Rgba, channel_color};
 use crate::ui::automation::geom;
 use crate::ui::clips::{self, TimeAxis};
 use crate::ui::dialog;
-use crate::ui::drum_grid::edit::{MARK_GAP, marks};
+use crate::ui::drum_grid::edit::{MARK_GAP, mark_spacing, marks};
 use crate::ui::edit_keys::{self, EditKey};
 use crate::ui::graph_lane::{self, GraphLane, Prop};
 use crate::ui::keyboard::octave_label;
@@ -302,6 +302,8 @@ struct Edit {
     since: f64,
     shown: bool,
     prior: Vec<bool>,
+    /// An empty gap inside the selection can still drag the group, but a tap adds a note if its menu was hidden.
+    create_on_tap: bool,
     orig: Vec<Event>,
     orig_sel: Vec<bool>,
     orig_loop: f64,
@@ -921,6 +923,10 @@ impl PianoRoll {
         let sig = song.time_sig;
         let snap = self.snap.active(auto_grid(g.beat_w, u, sig), sig);
         let min_len = snap.map_or(1.0, |unit| unit / 8.0);
+        let create_snap = self
+            .snap
+            .active(mark_spacing(g.beat_w, u, sig, MARK_GAP), sig);
+        let create_min_len = create_snap.map_or(1.0, |unit| unit / 8.0);
         let (held, pressed, pos, now) = ui.input(|i| {
             (
                 i.pointer.primary_down(),
@@ -1014,11 +1020,19 @@ impl PianoRoll {
                 self.gesture = if self.scroller.left_calm().unwrap_or_else(|| moved(origin)) {
                     Gesture::Pan
                 } else if up {
-                    if stale {
-                    } else if shown {
+                    if !stale {
                         self.selected.fill(false);
-                    } else {
-                        self.add_note(&g, song, origin, snap, min_len, now, actions);
+                        if !shown {
+                            self.add_note(
+                                &g,
+                                song,
+                                origin,
+                                create_snap,
+                                create_min_len,
+                                now,
+                                actions,
+                            );
+                        }
                     }
                     Gesture::Idle
                 } else {
@@ -1053,7 +1067,24 @@ impl PianoRoll {
                     self.drag(&mut edit, delta, &g, snap, song, actions);
                 }
                 if up {
-                    self.release(edit, &g, now, min_len, song, actions);
+                    if edit.create_on_tap
+                        && !edit.armed
+                        && !stale
+                        && !gesture::is_long(now - edit.since)
+                    {
+                        self.selected.fill(false);
+                        self.add_note(
+                            &g,
+                            song,
+                            edit.origin,
+                            create_snap,
+                            create_min_len,
+                            now,
+                            actions,
+                        );
+                    } else {
+                        self.release(edit, &g, now, min_len, song, actions);
+                    }
                 } else {
                     self.gesture = Gesture::Edit(edit);
                 }
@@ -1098,12 +1129,10 @@ impl PianoRoll {
             _ => match self.selected.iter().position(|s| *s) {
                 Some(first) if inside => (false, first),
                 _ => {
-                    // A quiet selection counts as showing here: the tap only deselects (module docs).
-                    let shown = self.selected.contains(&true);
                     return Gesture::Press {
                         origin: at,
                         since: now,
-                        shown,
+                        shown: self.row.showing(),
                     };
                 }
             },
@@ -1117,6 +1146,7 @@ impl PianoRoll {
             since: now,
             shown,
             prior,
+            create_on_tap: matches!(hit, Some(Hit::Empty { .. })) && !self.row.showing(),
             orig: events.to_vec(),
             orig_sel: self.selected.clone(),
             orig_loop,
@@ -1307,10 +1337,14 @@ impl PianoRoll {
         match key {
             EditKey::Close => self.selected.fill(false),
             EditKey::Open => {
+                let snap = self
+                    .snap
+                    .active(mark_spacing(g.beat_w, u, sig, MARK_GAP), sig);
+                let min_len = snap.map_or(1.0, |unit| unit / 8.0);
                 let (tick, key) = self.cursor;
                 // Only on an empty cell, as the step view's: a note of the key it would take over its start is one.
                 let (root, mask) = project_scale(song);
-                let (start, key_on) = (snap_round(tick, snap).max(0.0), snap_key(key, root, mask));
+                let (start, key_on) = (snap_floor(tick, snap).max(0.0), snap_key(key, root, mask));
                 let over = |(pos, len, k): (f64, f64, u8)| {
                     k == key_on && pos <= start && start < pos + len
                 };

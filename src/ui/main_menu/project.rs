@@ -512,11 +512,12 @@ impl ProjectTab {
                 }
                 field.set_right(field.right() - d - m.u(GAP));
             }
-            let edit = TextEdit::singleline(value)
+            let edit = TextEdit::singleline(&mut *value)
                 .id(id.with(name))
                 .char_limit(limit)
                 .interactive(!locked);
-            text_field(ui, cx, field, "Click to edit", edit);
+            let mut response = text_field(ui, cx, field, "Click to edit", edit);
+            crate::android_text::edit(&mut response, value, limit);
             // The field counts characters; the file counts bytes.
             value.truncate(value.floor_char_boundary(limit));
             band(GAP);

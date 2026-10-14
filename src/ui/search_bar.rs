@@ -311,7 +311,7 @@ impl SearchBar {
             .vertical_align(Align::Center)
             // Enter does nothing: there is no commit step.
             .return_key(None);
-        let response = ui
+        let mut response = ui
             .scope(|ui| {
                 let v = ui.visuals_mut();
                 let ink = if caret { text } else { Color32::TRANSPARENT };
@@ -322,6 +322,7 @@ impl SearchBar {
                 ui.put(rect, edit)
             })
             .inner;
+        crate::android_text::edit(&mut response, &mut self.text, TEXT_LIMIT);
         if take {
             response.request_focus();
         }

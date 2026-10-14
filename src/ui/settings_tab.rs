@@ -142,7 +142,14 @@ const ROWS: [Row; 36] = {
     use Kind::*;
     [
         row("MIDI:", Header),
-        row("Input device:", MidiDropdown),
+        row(
+            "Input device:",
+            if cfg!(target_os = "android") {
+                FixedDropdown("Not available")
+            } else {
+                MidiDropdown
+            },
+        ),
         row("MIDI driver:", FixedDropdown("Standard")),
         row("Scan Bluetooth MIDI Devices", Scan),
         row("Audio:", Header),
@@ -397,7 +404,7 @@ impl SettingsTab {
                 if latency && s.latency_compensation == Some(false) {
                     let at = right(CALIBRATE_W, BUTTON_H);
                     let b = Button::new(id.with("calibrate"), at, "Calibrate", false, colors);
-                    self.calibrate |= button(ui, cx, &b, true).clicked();
+                    self.calibrate |= button(ui, cx, &b, !cfg!(target_os = "android")).clicked();
                 }
                 let (on, field) = match row.kind {
                     Kind::Toggle(field) => (*field(s), Some(field)),
@@ -513,7 +520,7 @@ impl SettingsTab {
                     size,
                     text,
                 );
-                let native = cfg!(not(target_arch = "wasm32"));
+                let native = cfg!(all(not(target_arch = "wasm32"), not(target_os = "android")));
                 if light_button(ui, button_rect, OPEN_FOLDER, native) {
                     self.reveal = true;
                 }

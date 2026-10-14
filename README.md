@@ -103,11 +103,11 @@ The sound library is stored in 90 MB archive parts to stay below GitHub's per-fi
 raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.1.2
+tools/release-content.sh 0.1.3
 ```
 
 Commit the updated `honeydew-sounds.zip.*` parts with the content changes. Add `--web` to also build the web ZIP
-locally. Tagged releases include the sounds in every desktop and web download; no manual release upload is needed.
+locally. Tagged releases include the sounds in every desktop, Android and web download; no manual release upload is needed.
 
 Web (development):
 
@@ -144,6 +144,58 @@ To test the web build with the bundled sounds locally:
 python3 -m http.server 8081 --bind 127.0.0.1 --directory content-out &
 trunk serve
 ```
+
+## Android APK
+
+The Android build targets 64-bit ARM devices running Android 8 or later. The APK includes the sound library and
+uses landscape orientation, rotating to either landscape side with the device.
+This first port supports playback and songs saved inside the app. Microphone recording, MIDI devices and
+Android file import/export are not available yet. Uninstalling the app removes its saved songs.
+
+Building on Linux or macOS needs Java 21, Android SDK platform 36, Build Tools 36.0.0, NDK 28.0.13004108,
+Python 3 and `unzip`. Set `ANDROID_HOME` to your SDK directory, then install the Rust tools:
+
+```sh
+rustup target add aarch64-linux-android
+```
+
+```sh
+cargo install cargo-ndk --version 4.1.2 --locked
+```
+
+```sh
+tools/android-dist.sh
+```
+
+The script downloads the pinned Gradle version, builds Rust, bundles the tracked sounds and verifies the APK's
+signature, alignment and sound-pack hashes. It writes `target/honeydew-android-<version>-arm64-debug.apk`, or uses
+`CARGO_TARGET_DIR` when set. The development app is named Honeydew Debug and uses `dev.daijro.honeydew.debug`,
+separate from release installs. Its signing key stays in the ignored `android/debug.keystore`, outside build output,
+so `cargo clean` and changing `CARGO_TARGET_DIR` keep debug updates compatible. Keep this file when moving the
+checkout. On the first build, an existing key in the selected target directory is copied here automatically.
+
+### Android release signing
+
+Use one signing key for every release so Android can install updates without removing saved songs.
+Keep the keystore and passwords backed up outside this repository. For a local release, set
+`ANDROID_KEYSTORE_FILE`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`, then run:
+
+```sh
+tools/android-dist.sh --release
+```
+
+Before publishing an Android release, configure these GitHub Actions repository secrets:
+
+| Secret | Value |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | The release keystore encoded as base64 |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
+| `ANDROID_KEY_ALIAS` | Signing key alias |
+| `ANDROID_KEY_PASSWORD` | Signing key password |
+
+The tagged release workflow builds and uploads `honeydew-android-<version>-arm64.apk`. Missing signing secrets
+fail the Android job; it never publishes a debug-signed or unsigned APK. See Android's
+[app-signing guide](https://developer.android.com/studio/publish/app-signing) for creating and protecting a key.
 
 ## Desktop icon (Linux)
 

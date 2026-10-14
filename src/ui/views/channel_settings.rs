@@ -83,7 +83,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut AppCtx, channel: usize, name: &mut Stri
             visuals.text_cursor.stroke.color = text;
             visuals.selection.bg_fill = c.accent.to_color32().gamma_multiply(0.5);
             visuals.selection.stroke.color = text;
-            let edit = TextEdit::singleline(name)
+            let edit = TextEdit::singleline(&mut *name)
                 .id(id.with("name"))
                 .hint_text("Enter Channel Name")
                 .frame(false)
@@ -93,7 +93,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut AppCtx, channel: usize, name: &mut Stri
                 .desired_width(f32::INFINITY)
                 .min_size(field.size())
                 .vertical_align(Align::Center);
-            let response = ui.put(field, edit);
+            let mut response = ui.put(field, edit);
+            crate::android_text::edit(&mut response, name, usize::MAX);
             if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                 close = true;
             } else if ui.memory(|mem| mem.focused().is_none()) {

@@ -1,12 +1,15 @@
-//! Desktop: the system's file dialogs (`rfd`) and `std::fs`.
+//! Disk saves and, on desktop, system file dialogs (`rfd`).
+//! Android saves into its private library; external import/export awaits a document-provider bridge.
 
+#[cfg(not(target_os = "android"))]
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(target_os = "android"))]
+use std::path::PathBuf;
 
-use super::{
-    FileEvent, FileProvider, MAX_FILE_BYTES, OPEN_FAILED, READ_FAILED, SAVE_FAILED, UNKNOWN_TYPE,
-    accepts, read_file_limited,
-};
+use super::{FileEvent, FileProvider, SAVE_FAILED};
+#[cfg(not(target_os = "android"))]
+use super::{MAX_FILE_BYTES, OPEN_FAILED, READ_FAILED, UNKNOWN_TYPE, accepts, read_file_limited};
 
 #[derive(Default)]
 pub struct NativeFiles {
@@ -16,6 +19,7 @@ pub struct NativeFiles {
 // ponytail: the dialogs block the UI thread while open (one frozen frame); rfd's AsyncFileDialog on a task if the
 // app must keep drawing (audio runs on its own thread either way).
 impl FileProvider for NativeFiles {
+    #[cfg(not(target_os = "android"))]
     fn open(&mut self, accept: &'static [&'static str]) {
         let Some(path) = rfd::FileDialog::new()
             .add_filter("Supported files", &dialog_extensions(accept))
@@ -26,32 +30,45 @@ impl FileProvider for NativeFiles {
         self.event = Some(open_path(path, accept));
     }
 
+    #[cfg(target_os = "android")]
+    fn open(&mut self, _: &'static [&'static str]) {
+        self.event = Some(FileEvent::Failed(
+            super::OPEN_FAILED,
+            "External file import is not available in this Android preview.".into(),
+        ));
+    }
+
     fn save(&mut self, path: &Path, ask: bool, bytes: Vec<u8>) {
-        let filter = save_filter(path);
-        let path: PathBuf = if ask {
-            let mut dialog = rfd::FileDialog::new();
-            if let Some((label, ext)) = &filter {
-                dialog = dialog.add_filter(label, &[ext]);
-            }
-            if let Some(name) = path.file_name() {
-                dialog = dialog.set_file_name(name.to_string_lossy());
-            }
-            if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-                // The songs folder, where the first save starts, may not exist yet.
-                let _ = std::fs::create_dir_all(dir);
-                if dir.is_dir() {
-                    dialog = dialog.set_directory(dir);
+        #[cfg(target_os = "android")]
+        let (path, _) = (path.to_owned(), ask);
+        #[cfg(not(target_os = "android"))]
+        let path = {
+            let filter = save_filter(path);
+            if ask {
+                let mut dialog = rfd::FileDialog::new();
+                if let Some((label, ext)) = &filter {
+                    dialog = dialog.add_filter(label, &[ext]);
                 }
+                if let Some(name) = path.file_name() {
+                    dialog = dialog.set_file_name(name.to_string_lossy());
+                }
+                if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+                    // The songs folder, where the first save starts, may not exist yet.
+                    let _ = std::fs::create_dir_all(dir);
+                    if dir.is_dir() {
+                        dialog = dialog.set_directory(dir);
+                    }
+                }
+                let Some(chosen) = dialog.save_file() else {
+                    return;
+                };
+                match &filter {
+                    Some((_, ext)) => with_extension(chosen, ext),
+                    None => chosen,
+                }
+            } else {
+                path.to_owned()
             }
-            let Some(chosen) = dialog.save_file() else {
-                return;
-            };
-            match &filter {
-                Some((_, ext)) => with_extension(chosen, ext),
-                None => chosen,
-            }
-        } else {
-            path.to_owned()
         };
         // A save may be the first into its folder (the songs folder of a fresh install, a render's stem folder),
         // which nothing makes before.
@@ -78,6 +95,7 @@ impl FileProvider for NativeFiles {
 
 /// `accept` for the open dialog: each extension and its upper-case form, because GTK's patterns are case-sensitive
 /// (`Tune.MID` would not be offered by `mid`). [`accepts`] still checks the picked file case-insensitively.
+#[cfg(not(target_os = "android"))]
 fn dialog_extensions(accept: &[&str]) -> Vec<String> {
     accept
         .iter()
@@ -86,6 +104,7 @@ fn dialog_extensions(accept: &[&str]) -> Vec<String> {
 }
 
 /// Reads the picked file, if its type is one of `accept`.
+#[cfg(not(target_os = "android"))]
 fn open_path(path: PathBuf, accept: &[&str]) -> FileEvent {
     if !accepts(&path, accept) {
         return FileEvent::Failed(UNKNOWN_TYPE, path.display().to_string());
@@ -98,6 +117,7 @@ fn open_path(path: PathBuf, accept: &[&str]) -> FileEvent {
 
 /// The save dialog's filter for a save suggested as `path`: its label and its extension (lower case). None for a
 /// name with no extension.
+#[cfg(not(target_os = "android"))]
 fn save_filter(path: &Path) -> Option<(String, String)> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     let label = match ext.as_str() {
@@ -109,6 +129,7 @@ fn save_filter(path: &Path) -> Option<(String, String)> {
 
 /// The path the save dialog returned, with `.ext` added unless it ends in `.ext` (any case): a name edited to
 /// `Beat v1.3` is `Beat v1.3.flm`, not a file of type "3".
+#[cfg(not(target_os = "android"))]
 fn with_extension(path: PathBuf, ext: &str) -> PathBuf {
     if path
         .extension()
@@ -123,6 +144,7 @@ fn with_extension(path: PathBuf, ext: &str) -> PathBuf {
 }
 
 /// The whole file, up to [`MAX_FILE_BYTES`]. Errors carry the popup title.
+#[cfg(not(target_os = "android"))]
 fn read(path: &Path) -> Result<Vec<u8>, (&'static str, String)> {
     let file = File::open(path).map_err(|e| (OPEN_FAILED, e.to_string()))?;
     read_file_limited(file, MAX_FILE_BYTES).map_err(|e| (READ_FAILED, e))

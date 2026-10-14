@@ -814,7 +814,8 @@ impl SidePanel {
                         .desired_width(field.width())
                         .min_size(field.size())
                         .vertical_align(Align::Center);
-                    let response = ui.put(field, edit);
+                    let mut response = ui.put(field, edit);
+                    crate::android_text::edit(&mut response, &mut prompt.text, NAME_LIMIT);
                     if std::mem::take(&mut prompt.focus) {
                         response.request_focus();
                     }

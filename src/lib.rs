@@ -1,5 +1,8 @@
 //! Honeydew: an open-source app inspired by a mobile DAW's workflow.
 
+#[cfg(target_os = "android")]
+mod android;
+mod android_text;
 pub mod app;
 pub mod audio_bridge;
 pub mod audio_engine;

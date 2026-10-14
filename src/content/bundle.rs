@@ -145,6 +145,17 @@ fn base(entry: &IndexEntry) -> &str {
     }
 }
 
+/// The same bounded member read for disk packs and Android APK assets.
+fn read_member(mut reader: impl Read + Seek, offset: u64, len: u64) -> Option<Vec<u8>> {
+    if len > MAX_FILE_BYTES {
+        return None;
+    }
+    reader.seek(SeekFrom::Start(offset)).ok()?;
+    let mut bytes = Vec::new();
+    reader.take(len).read_to_end(&mut bytes).ok()?;
+    (bytes.len() as u64 == len).then_some(bytes)
+}
+
 /// The bundled content at a content dir, or on the web in the parts the loader downloaded ([`super::web`]): its index,
 /// and where each member is.
 pub struct Bundle {
@@ -199,7 +210,7 @@ impl Bundle {
     /// `$HONEYDEW_CONTENT_DIR`, `<exe dir>/content` and `<exe dir>/../share/honeydew/content` (macOS
     /// `../Resources/content`). Never in unit tests, which build their own. On the web, the one [`install`]ed.
     pub fn find() -> Option<Self> {
-        if cfg!(target_arch = "wasm32") {
+        if cfg!(any(target_arch = "wasm32", target_os = "android")) {
             return INSTALLED.lock().ok()?.take();
         }
         if cfg!(test) {
@@ -238,6 +249,12 @@ impl Bundle {
         if member.3 > MAX_FILE_BYTES {
             return None;
         }
+        #[cfg(target_os = "android")]
+        if self.dir.is_none() {
+            let Member(_, part, offset, len) = member;
+            let asset = crate::android::asset(&format!("content/{}", entry.parts[*part].file))?;
+            return read_member(asset, *offset, *len);
+        }
         let Some(dir) = &self.dir else {
             let program = Some(member.0.as_str()) == entry.path.rsplit('/').next();
             let lite = (entry.lite.as_ref()).filter(|_| program && !super::web::all_in(entry));
@@ -246,16 +263,20 @@ impl Bundle {
             return super::web::slice(&entry.parts[*part].file, *offset, *len);
         };
         let Member(_, part, offset, len) = member;
-        let mut file = regular(&dir.join(&entry.parts[*part].file))?;
-        file.seek(SeekFrom::Start(*offset)).ok()?;
-        let mut bytes = Vec::new();
-        file.take(*len).read_to_end(&mut bytes).ok()?;
-        (bytes.len() as u64 == *len).then_some(bytes)
+        read_member(regular(&dir.join(&entry.parts[*part].file))?, *offset, *len)
     }
 
     /// `CREDITS.txt` beside the index: the full licence notices the credits screen shows. `None` without a readable
     /// one.
     pub fn notices(&self) -> Option<String> {
+        #[cfg(target_os = "android")]
+        if self.dir.is_none() {
+            return String::from_utf8(crate::android::asset_bytes(
+                "content/CREDITS.txt",
+                MAX_INDEX_BYTES,
+            )?)
+            .ok();
+        }
         let mut text = String::new();
         let file = regular(&self.dir.as_ref()?.join("CREDITS.txt"))?;
         (file.take(MAX_INDEX_BYTES as u64).read_to_string(&mut text)).ok()?;
@@ -351,5 +372,20 @@ pub(crate) mod tests {
         }
         let big = format!("{good}{}", " ".repeat(MAX_INDEX_BYTES));
         assert!(Index::parse(big.as_bytes()).is_none());
+    }
+}
+
+#[cfg(test)]
+mod member_read_tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn disk_and_apk_members_are_bounded_and_never_return_partial_samples() {
+        let data = || Cursor::new(b"headerSAMPLEpadding");
+        assert_eq!(read_member(data(), 6, 6).as_deref(), Some(&b"SAMPLE"[..]));
+        assert!(read_member(data(), 6, 40).is_none());
+        assert!(read_member(data(), 100, 1).is_none());
+        assert!(read_member(data(), 0, MAX_FILE_BYTES + 1).is_none());
     }
 }

@@ -74,7 +74,11 @@ pub fn track_menu(song: &Song, channel: usize, lane: usize) -> Vec<PopupItem<Tra
     let kind_items: &[(TrackOp, &'static str, bool)] = match primary {
         _ if !generator => &[],
         LaneKind::Notes => &[
-            (ImportMidi, "Import MIDI Tracks", true),
+            (
+                ImportMidi,
+                "Import MIDI Tracks",
+                !cfg!(target_os = "android"),
+            ),
             (SaveMidi, "Save as MIDI", true),
             (AddTrack, "Add Track", true),
         ],

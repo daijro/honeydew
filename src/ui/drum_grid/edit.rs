@@ -40,12 +40,8 @@ pub fn marks(t0: f64, t1: f64, beat_w: f32, u: f32, sig: TimeSig, gap: f32) -> V
     if beat_w.is_nan() || beat_w <= 0.0 {
         return Vec::new();
     }
-    let gap = gap * u;
     let b = u64::from(sig.bar_beats());
-    // Marks per beat at the finest level far enough apart, or bars only (every b-th beat).
-    let (per_beat, every) = (mark_levels(sig.steps_per_beat()).into_iter().rev())
-        .find(|&k| beat_w / k as f32 >= gap)
-        .map_or((1, b), |k| (u64::from(k), 1));
+    let (per_beat, every) = mark_level(beat_w, u, sig, gap);
     let unit = BEAT / per_beat as f64;
     let first = ((t0.max(0.0) / unit).ceil() as u64).next_multiple_of(every);
     (first..)
@@ -63,6 +59,19 @@ pub fn marks(t0: f64, t1: f64, beat_w: f32, u: f32, sig: TimeSig, gap: f32) -> V
             (t, w)
         })
         .collect()
+}
+
+/// The distance in ticks between the visible grid lines.
+pub fn mark_spacing(beat_w: f32, u: f32, sig: TimeSig, gap: f32) -> f64 {
+    let (per_beat, every) = mark_level(beat_w, u, sig, gap);
+    BEAT / per_beat as f64 * every as f64
+}
+
+fn mark_level(beat_w: f32, u: f32, sig: TimeSig, gap: f32) -> (u64, u64) {
+    // Marks per beat at the finest level far enough apart, or bars only (every b-th beat).
+    (mark_levels(sig.steps_per_beat()).into_iter().rev())
+        .find(|&k| beat_w / k as f32 >= gap * u)
+        .map_or((1, u64::from(sig.bar_beats())), |k| (u64::from(k), 1))
 }
 
 /// Marks per beat at each level, coarsest first: 1, then the beat split by `d`'s prime factors (smallest first),

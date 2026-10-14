@@ -382,7 +382,10 @@ impl SongsTab {
             if circle_button(
                 ui,
                 cx,
-                &Circle::new(id.with(("big", i)), at, m.u(BIG_D), name),
+                &Circle {
+                    enabled: !cfg!(target_os = "android") || i != 2,
+                    ..Circle::new(id.with(("big", i)), at, m.u(BIG_D), name)
+                },
             ) {
                 match act {
                     Some(act) => action = Some(act),
@@ -470,7 +473,8 @@ impl SongsTab {
             let edit = TextEdit::singleline(&mut prompt.text)
                 .id(field_id)
                 .char_limit(TEXT_LIMIT);
-            let response = text_field(ui, cx, field, title, edit);
+            let mut response = text_field(ui, cx, field, title, edit);
+            crate::android_text::edit(&mut response, &mut prompt.text, TEXT_LIMIT);
             if std::mem::take(&mut prompt.focus) {
                 response.request_focus();
             }
@@ -629,8 +633,9 @@ impl SongsTab {
                         archive: matches!(&picked[..], [e] if e.is_archive()),
                         in_trash,
                         paste: self.actions.can_paste(),
-                        export: cfg!(not(target_arch = "wasm32"))
-                            || picked.iter().all(|e| !e.is_folder),
+                        export: !cfg!(target_os = "android")
+                            && (cfg!(not(target_arch = "wasm32"))
+                                || picked.iter().all(|e| !e.is_folder)),
                         reveal: FILE_MANAGER,
                         // Original content (`Demo Songs`): what would change it is dimmed.
                         locked_folder: (self.open_dir(library))
