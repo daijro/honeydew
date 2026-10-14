@@ -43,6 +43,12 @@ jobs:
           bin=target/${{ matrix.target }}/release
           ext=; [ "$RUNNER_OS" = Windows ] && ext=.exe
           cp "$bin/honeydew-native$ext" "$bin/honeydew-import$ext" README.md LICENSE "$dir/"
+          cat honeydew-sounds.zip.[0-9][0-9][0-9] > target/honeydew-sounds.zip
+          if [ "$RUNNER_OS" = Windows ]; then
+            7z x target/honeydew-sounds.zip "-o$dir" >/dev/null
+          else
+            unzip -q target/honeydew-sounds.zip -d "$dir"
+          fi
           if [ "$RUNNER_OS" = Linux ]; then
             cp -R assets/linux tools/install-desktop-entry.sh "$dir/"
             tar czf "$dir.tar.gz" "$dir"
@@ -53,7 +59,7 @@ jobs:
           fi
       - uses: softprops/action-gh-release@v2
         with:
-          files: honeydew-*.*z*
+          files: honeydew-${{ github.ref_name }}-*.*z*
 
   web:
     runs-on: ubuntu-latest
@@ -71,4 +77,6 @@ jobs:
       - run: tools/web-dist.sh --zip
       - uses: softprops/action-gh-release@v2
         with:
-          files: target/honeydew-web-*.zip
+          files: |
+            target/honeydew-web-*.zip
+            target/honeydew-sounds.zip

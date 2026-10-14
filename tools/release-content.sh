@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Builds the bundled sounds and packs them for a GitHub release: target/honeydew-content-<version>.zip, a `content/`
-# folder that desktop users unzip next to honeydew-native. With --web, also rebuilds the web zip with the sounds
-# inside (needs trunk and wasm-opt).
+# Builds target/honeydew-sounds.zip, a `content/` folder that desktop users unzip next to honeydew-native, and
+# splits it into tracked honeydew-sounds.zip.* parts for release CI. With --web, also rebuilds the web zip with
+# the sounds inside (needs trunk, wasm-opt and unzip).
 #
 #   tools/release-content.sh <version> [--web]
 #
@@ -17,13 +17,16 @@ cargo run --release -q -- verify --out ../../content-out
 cd "$root"
 pkg=target/release-content
 rm -rf "$pkg" && mkdir -p "$pkg" && cp -R content-out "$pkg/content"
-rm -f "target/honeydew-content-$v.zip"
-(cd "$pkg" && zip -qr0 "../honeydew-content-$v.zip" content)
+rm -f target/honeydew-sounds.zip
+(cd "$pkg" && zip -qr0 ../honeydew-sounds.zip content)
+split -b 90000000 -d -a 3 target/honeydew-sounds.zip "$pkg/honeydew-sounds.zip."
+rm -f honeydew-sounds.zip.[0-9][0-9][0-9]
+mv "$pkg"/honeydew-sounds.zip.[0-9][0-9][0-9] .
 rm -rf "$pkg"
-files=("target/honeydew-content-$v.zip")
+files=(target/honeydew-sounds.zip)
 if [ "${2:-}" = --web ]; then
     tools/web-dist.sh --zip
     files+=("${CARGO_TARGET_DIR:-target}/honeydew-web-$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1).zip")
 fi
 ls -lh "${files[@]}"
-echo "upload: gh release upload v$v ${files[*]} --clobber"
+echo "Commit honeydew-sounds.zip.* with the content changes; tagged releases upload the sounds automatically."

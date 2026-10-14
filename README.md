@@ -46,12 +46,14 @@ Image-Line.
 Honeydew bundles instruments, drum kits, one-shots, effects, loops and waveforms from these sources.
 The app's SETTINGS → Sound credits screen includes the full notices.
 
-For desktop, download the app for your operating system and `honeydew-content-0.1.0.zip` from
-[Releases](https://github.com/daijro/honeydew/releases/latest). Extract the app, then extract the content zip into the
-same folder: `content/` must sit beside `honeydew-native` or `honeydew-native.exe`. Restart Honeydew and the sounds
-appear in the pickers automatically. No import step is needed.
+For desktop, download and extract the app for your operating system from
+[Releases](https://github.com/daijro/honeydew/releases/latest). The sound library is included beside the executable
+in `content/` and appears in the pickers automatically. Keep that folder beside `honeydew-native` or
+`honeydew-native.exe`. No separate download or import step is needed.
 
-The web release includes the sound library and loads sounds as you use them.
+The web release includes the sound library and loads sounds as you use them. GitHub Actions assembles the tracked
+`honeydew-sounds.zip.*` parts and includes the sounds in every desktop package and the web build. The release also
+offers `honeydew-sounds.zip` separately for updating an existing installation.
 
 | Source | Author | Licence |
 |---|---|---|
@@ -100,6 +102,16 @@ Desktop:
 cargo run --release
 ```
 
+The sound library is stored in 90 MB archive parts to stay below GitHub's per-file limit. To rebuild it from the
+raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
+
+```sh
+tools/release-content.sh 0.1.1
+```
+
+Commit the updated `honeydew-sounds.zip.*` parts with the content changes. Add `--web` to also build the web ZIP
+locally. Tagged releases build and upload both archives automatically; no manual release upload is needed.
+
 Web (development):
 
 ```sh
@@ -119,7 +131,8 @@ tools/web-dist.sh --check  # check an existing build's files and sizes
 tools/web-dist.sh --zip    # also write target/honeydew-web-<version>.zip
 ```
 
-It needs Trunk and binaryen's `wasm-opt` (or set `WASM_OPT`).
+It needs Trunk, binaryen's `wasm-opt` (or set `WASM_OPT`) and `unzip`. It assembles the tracked sound archive parts
+into `target/honeydew-sounds.zip` and includes their contents in the site.
 
 - Release builds use `opt-level = 3`, fat LTO, SIMD and `wasm-opt -O3`.
 - Supported browsers: Chrome 96, Firefox 113, Safari 16.4 or later. Older browsers see a notice.

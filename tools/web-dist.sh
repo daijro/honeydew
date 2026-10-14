@@ -1,13 +1,13 @@
 #!/bin/sh
 # The web release (README "Web"): the whole site in dist/.
 #   tools/web-dist.sh          trunk build --release, wasm-opt -O3, a gzip copy (`<file>.gz`) beside the app's wasm, JS
-#                              and HTML, then content-out/ copied in as content/ as it is, then --check
+#                              and HTML, then honeydew-sounds.zip.* unpacked into content/, then --check
 #   tools/web-dist.sh --zip    the same, then the release zip: target/honeydew-web-<version>.zip (or under
 #                              $CARGO_TARGET_DIR), dist/ in one honeydew-web-<version>/ folder
 #   tools/web-dist.sh --check  no build: prints the size table, and fails when a budget is over, an app file's .gz is
 #                              missing or stale, a pack part is over 24,000,000 bytes or any file over 25 MiB
-# Needs trunk and wasm-opt (binaryen; or set $WASM_OPT). content-out/ is tools/content-build's output, packs, their
-# .gz and the index included: this script neither builds nor recompresses it.
+# Needs trunk, wasm-opt (binaryen; or set $WASM_OPT) and unzip. The tracked sound archive parts contain the packs,
+# their .gz files and the index: this script neither builds nor recompresses the sounds.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -44,7 +44,9 @@ build() {
     # hosts without gzip.
     app_files | xargs -r gzip -9 -k -n -f
     cp deploy/_headers dist/
-    if [ -d content-out ]; then cp -R content-out dist/content; fi
+    mkdir -p target
+    cat honeydew-sounds.zip.[0-9][0-9][0-9] > target/honeydew-sounds.zip
+    unzip -q target/honeydew-sounds.zip -d dist
 }
 
 fail=0
