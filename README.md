@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/branding/honeydew.svg" width="160" alt="Honeydew logo"></p>
 <h1 align="center">Honeydew</h1>
 <p align="center">An open-source, clean-room reimplementation of FL Studio Mobile, rebuilt in pure Rust.</p>
-<p align="center">It runs natively on the desktop and in the browser (wasm).</p>
+<p align="center">It runs natively on Windows, Linux, MacOS, Android, and in the browser.</p>
 
 <p align="center"><img src="assets/screenshots/01-playlist-sampler.webp" width="100%" alt="The playlist and a sampler's rack, playing the demo song Edwan - Permich - Tropical"></p>
 <p align="center"><img src="assets/screenshots/02-playlist-supersaw.webp" width="100%" alt="The playlist and a synth's rack, playing the demo song Parrik - Initiated"></p>
