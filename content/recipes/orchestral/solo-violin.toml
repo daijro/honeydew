@@ -1,0 +1,14 @@
+# VSCO 2 CE. A single violin, bowed with vibrato: both recorded dynamics, all fifteen roots, with room for the soft layer
+# to swell before its sustain loop.
+# This Arco Vib recording uses standard note names: C5 sounds about 523 Hz, so no transpose.
+id = "strings-solo-violin"
+kind = "program"
+path = "Presets/DW Sampler/Orchestral/Solo Violin.dwp"
+source = "vsco2-ce"
+files = "unpacked/VSCO-2-CE-master/Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_{note}_{layer}.wav"
+layers = ["p", "f"]
+velocity_layers = [1, 2]
+channels = "auto"
+loop = { find = true, min_s = 1.0, crossfade_ms = 100, keep_s = 4.0 }
+release = 0.35
+gain = "normalize"

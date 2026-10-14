@@ -17,7 +17,7 @@
 //!   `Lead`, `Pad`, `Synth`; Transistor Bass none, so `Bass`. `Pluck` is no Original Content folder and no rename takes
 //!   it: it stays ours. Our categories: Bass, Bells, Keyboard, Lead, Pad, Pluck, Synth. Our DW programs are bundled
 //!   content, `Presets/DW Sampler/<Category>/<Name>.dwp`, indexed as any DW source; their
-//!   folders add Piano, Guitar, Strings, Brass, Woodwinds, Choir, Mallets and Orchestral.
+//!   Piano joins Keyboard and Strings joins Orchestral; the others add Guitar, Brass, Woodwinds, Choir and Mallets.
 //! - The path a category's presets are in byte order of is the virtual `<Category>/<Name>` (the one duplicates are
 //!   told by), so the instruments mix in name order.
 //! - Index order: the Original Content's sources before ours (ours gives way, as in the module pickers), each group by
@@ -81,7 +81,8 @@ pub struct Category {
 pub fn category(type_id: u16, folder: &str) -> Option<&str> {
     let renamed = match (type_id, folder) {
         (_, "Factory") => return None,
-        (DW_SAMPLER, "Synth Key") => "Keyboard",
+        (DW_SAMPLER, "Piano" | "Synth Key") => "Keyboard",
+        (DW_SAMPLER, "Strings") => "Orchestral",
         (DW_SAMPLER, "Synth Lead") => "Lead",
         (DW_SAMPLER, "Synth Pad") => "Pad",
         (DW_SAMPLER, "Synth Bass") => "Bass",
@@ -317,26 +318,44 @@ mod tests {
             ("B/Keys/Twin.flms", b"\x99FLS\r\n\x1a\n".to_vec()),
             ("B/Keys/Solo.flms", b"\x99FLS\r\n\x1a\n".to_vec()),
             ("C/Low.flmpst", preset(TRANSISTOR_BASS)),
+            ("D/Piano/Grand Piano.dwp", b"DwPr".to_vec()),
+            ("D/Keyboard/Electric Piano.dwp", b"DwPr".to_vec()),
+            ("D/Strings/Cello.dwp", b"DwPr".to_vec()),
+            ("D/Orchestral/Concert Harp.dwp", b"DwPr".to_vec()),
         ]);
         let at = |rel: &str| Path::new(BUILT_IN).join(rel);
         let sources = [
             (GMSYNTH, at("A")),
             (MINISYNTH, at("B")),
             (TRANSISTOR_BASS, at("C")),
+            (DW_SAMPLER, at("D")),
         ];
         let categories = index(&library, &sources);
-        assert_eq!(names(&categories), ["Bass", "Keyboard"]);
+        assert_eq!(names(&categories), ["Bass", "Keyboard", "Orchestral"]);
         let keyboard: Vec<(&str, PathBuf)> = (categories[1].items.iter())
             .map(|e| (e.name.as_str(), e.path.clone()))
             .collect();
         assert_eq!(
             keyboard,
             [
+                ("Electric Piano", at("D/Keyboard/Electric Piano.dwp")),
+                ("Grand Piano", at("D/Piano/Grand Piano.dwp")),
                 ("Solo", at("B/Keys/Solo.flms")),
                 ("Twin", at("A/Keys/Twin.flmpst")),
             ]
         );
         assert_eq!(categories[0].items[0].path, at("C/Low.flmpst"));
+        assert_eq!(
+            categories[2]
+                .items
+                .iter()
+                .map(|e| e.path.clone())
+                .collect::<Vec<_>>(),
+            [
+                at("D/Strings/Cello.dwp"),
+                at("D/Orchestral/Concert Harp.dwp")
+            ]
+        );
     }
 
     #[test]

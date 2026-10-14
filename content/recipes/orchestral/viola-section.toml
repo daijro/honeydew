@@ -1,0 +1,14 @@
+# VSCO 2 CE. A bowed viola ensemble with vibrato: both dynamics and all thirteen roots, with time for its slow onset.
+# Its C2 recording sounds C3; the +12 offset preserves the recorded pitch.
+id = "strings-viola-section"
+kind = "program"
+path = "Presets/DW Sampler/Orchestral/Viola Section.dwp"
+source = "vsco2-ce"
+files = "unpacked/VSCO-2-CE-master/Strings/Viola Section/susvib/ViolaEns_susvib_{note}_v{layer}_{rr}.wav"
+layers = ["1", "2"]
+transpose = 12
+velocity_layers = [1, 2]
+channels = "auto"
+loop = { find = true, min_s = 1.2, crossfade_ms = 120, keep_s = 3.5 }
+release = 0.4
+gain = "normalize"

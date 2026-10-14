@@ -1,4 +1,4 @@
-//! The keyboard's state per channel: the keys the engine sounds at the current channel's input light at T = 0.2, and
+//! The keyboard's state per channel: the keys the engine sounds at the current channel's input light at T = 0.7, and
 //! each channel's piano scroll and zoom come back when it is current again.
 
 use super::editor_wiring::EDITOR_TOP;
@@ -57,7 +57,7 @@ fn song_playback_lights_the_current_channels_keys_until_their_note_off() {
     rig.tap_play();
     rig.render_beats(1.0);
     assert_eq!(rig.app.key_input().sounding, 1 << 60);
-    assert_eq!(rig.app.key_input().notes, 0, "no live key: T = 0.2");
+    assert_eq!(rig.app.key_input().notes, 0, "no live key: T = 0.7");
     // Another channel's notes light its own keys only.
     rig.app.selected_channel = 2;
     assert_eq!(rig.app.key_input().sounding, 1 << 67);
@@ -77,7 +77,7 @@ fn stop_clears_every_key_the_song_sounds() {
     assert_eq!(rig.app.key_input().sounding, 0);
 }
 
-/// A tap on the roll's key column previews its key: it lights at T = 0.2 (no live key holds it) until it lifts.
+/// A tap on the roll's key column previews its key: it lights at T = 0.7 (no live key holds it) until it lifts.
 #[test]
 fn a_piano_roll_preview_lights_its_key_until_it_lifts() {
     let mut rig = Rig::with_synth();

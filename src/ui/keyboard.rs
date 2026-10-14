@@ -33,7 +33,7 @@ pub struct KeyInput {
     /// are live input: held, T = 1, in every row that shows them.
     pub notes: u128,
     /// The notes sounding at the channel's input from note events (bit k = MIDI k): song playback, previews (the
-    /// engine's [`honeydew_audio::device::AudioRenderer::sounding`]). T = 0.2; held, T = 1 wins.
+    /// engine's [`honeydew_audio::device::AudioRenderer::sounding`]). T = 0.7; held, T = 1 wins.
     pub sounding: u128,
     /// The channel's key range (low, high): with the scale test, what "in range" means. `None`: every key.
     pub range: Option<(u8, u8)>,
@@ -306,7 +306,7 @@ struct Held {
 /// and lifted within the frame is a tap. Both rows play the same way and return together: one live input. Keys held or
 /// tapped, and the channel's notes on ([`KeyInput::notes`]), turn `channel` (the selected channel's colour) by the
 /// press law ([`press_tick`]), in every row that shows them; the notes that only sound ([`KeyInput::sounding`]) aim at
-/// 0.2 of the way. A focus loss lets go of every finger (the lift may never come), and so does a frame without the
+/// 0.7 of the way. A focus loss lets go of every finger (the lift may never come), and so does a frame without the
 /// keyboard (it never sees the lift). `settings` give the labels; `input` how touches play, and with kind 1's key-lock
 /// ([`KeyInput::all_white`]) the scale's layout. The drawing is [`paint`]'s. The keys are clipped to R's left and right
 /// edges only (never over the wheels; overflow below is drawn); a row with no height is not drawn.
@@ -371,12 +371,12 @@ pub fn keyboard(
     ui.data_mut(|d| d.insert_temp(state, (pass, held)));
 
     // Each note's press amount p, one draw on: live input, the fingers' keys and the channel's notes on (typed,
-    // touched, MIDI), is held (T = 1); a note that only sounds at the channel's input, T = 0.2.
+    // touched, MIDI), is held (T = 1); a note that only sounds at the channel's input, T = 0.7.
     let held =
         (played.held.iter().chain(&played.tapped)).fold(input.notes, |bits, p| bits | 1 << p.0);
     let target = |midi: u8| match (held >> midi & 1, input.sounding >> midi & 1) {
         (1, _) => 1.0,
-        (_, 1) => 0.2,
+        (_, 1) => 0.7,
         _ => 0.0,
     };
     let press_id = response.id.with("press");
@@ -406,7 +406,7 @@ pub fn let_go(ctx: &egui::Context) {
     ctx.data_mut(|d| d.remove::<(u64, Vec<Held>)>(state));
 }
 
-/// Paints the `rows`, each key at its `press` amount p, every colour c as mix(c) = `channel`·p + c·(1 − p). Each row's
+/// Paints the `rows`, each key at its `press` amount p, each fill c as mix(c) = `channel`·p + c·(1 − p). Each row's
 /// rect is filled with `controlFill`; on a row 0.5 U tall or more, first every white key (step 1 in A, step 2 in B, the
 /// separators in `background`), then the black keys (step 1 in A; step 2 while in range or its note is `sounding`, bit
 /// k = MIDI k, T > 0) and every label, in ascending key order. A is the channel colour on a root key, else B:
@@ -419,7 +419,7 @@ pub fn let_go(ctx: &egui::Context) {
 ///   the channel's key range ([`KeyInput::range`]).
 /// - Labels, 12 pt shrunk to fit and placed centre-bottom: a root's [`key_name`] with its octave always; any other
 ///   key's name while key names are on, it is in range, and it is not a black key under Chromatic. In
-///   `blackKeyDisabled` on a white root and other black keys, else `whiteKeyDisabled`.
+///   `blackKeyDisabled` on a white root and other black keys, else `whiteKeyDisabled`; labels keep that ink as the key lights.
 /// - Not drawn: the grab inset (m = 0: nothing grabs the keys; the bar's scroll gesture is not built) and the range
 ///   borders of `showRangeIndexLabels`.
 #[allow(clippy::too_many_arguments)]
@@ -502,15 +502,7 @@ fn paint(
             if root || named {
                 let text = key_name(midi, root, settings.middle_c_is_c4);
                 let at = label / ppp;
-                widgets::shrink(
-                    painter,
-                    m,
-                    at,
-                    Align2::CENTER_BOTTOM,
-                    &text,
-                    12,
-                    mix(color, midi),
-                );
+                widgets::shrink(painter, m, at, Align2::CENTER_BOTTOM, &text, 12, color);
             }
         }
     }
@@ -1659,9 +1651,9 @@ mod tests {
         assert!(near(press_tick(0.9, 1.0), 0.99));
         assert!(near(press_tick(1.0, 0.0), 0.825));
         assert!(near(press_tick(0.825, 0.0), 0.825 * 0.825));
-        // Song playback's 0.2: up at 0.9, down at 0.175.
-        assert!(near(press_tick(0.0, 0.2), 0.18));
-        assert!(near(press_tick(1.0, 0.2), 1.0 - 0.175 * 0.8));
+        // Song playback's 0.7: up at 0.9, down at 0.175.
+        assert!(near(press_tick(0.0, 0.7), 0.63));
+        assert!(near(press_tick(1.0, 0.7), 1.0 - 0.175 * 0.3));
         // Within 0.001 it lands (the frames stop).
         assert_eq!(press_tick(0.9995, 1.0), 1.0);
         assert_eq!(press_tick(0.0005, 0.0), 0.0);
@@ -1865,10 +1857,10 @@ mod tests {
         assert_eq!(top_fill(&shapes, e4), Some(mix(0.9 * 0.825)));
     }
 
-    /// A note that only sounds ([`KeyInput::sounding`]: song playback, a preview) aims at T = 0.2; one held live aims
+    /// A note that only sounds ([`KeyInput::sounding`]: song playback, a preview) aims at T = 0.7; one held live aims
     /// at 1, which wins.
     #[test]
-    fn a_sounding_note_lights_at_0_2_and_a_live_note_at_1_wins() {
+    fn a_sounding_note_lights_at_0_7_and_a_live_note_at_1_wins() {
         let white = theme_by_id(0).colors.white_key.to_color32();
         let mix = |p: f32| white.lerp_to_gamma(Color32::WHITE, p);
         let e4 = pos2(5.0 * U, 450.0);
@@ -1876,11 +1868,11 @@ mod tests {
             sounding: 1 << 52,
             ..PLAY
         };
-        // Its first draw: p = 0.9 · 0.2; the next, 0.18 + 0.9 · 0.02.
+        // Its first draw: p = 0.9 · 0.7; the next, 0.63 + 0.9 · 0.07.
         let shapes = drawn(sounding, &Settings::default(), vec![]);
-        assert_eq!(top_fill(&shapes, e4), Some(mix(0.18)));
+        assert_eq!(top_fill(&shapes, e4), Some(mix(0.63)));
         let shapes = drawn(sounding, &Settings::default(), vec![vec![]]);
-        assert_eq!(top_fill(&shapes, e4), Some(mix(0.198)));
+        assert_eq!(top_fill(&shapes, e4), Some(mix(0.693)));
         let held = KeyInput {
             notes: 1 << 52,
             ..sounding
@@ -1890,7 +1882,7 @@ mod tests {
     }
 
     /// The engine's keys reach the keyboard only on drawn frames: it asks for them while any note sounds, though the
-    /// key has long reached T = 0.2, so the note-off shows.
+    /// key has long reached T = 0.7, so the note-off shows.
     #[test]
     fn the_keyboard_asks_for_frames_while_a_note_sounds() {
         let input = KeyInput {

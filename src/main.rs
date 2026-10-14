@@ -1,5 +1,7 @@
 //! Native entry point. The web build starts from `lib.rs` instead.
 
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result {
     let icon = include_bytes!("../assets/branding/honeydew-256.png");

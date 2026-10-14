@@ -1,0 +1,11 @@
+# MuseScore_General's Tine Electric Piano, the sampled FluidR3Mono instrument (MIT).
+# Render at its thirteen sample roots through the SoundFont Player, preserving the patch's tone and decay.
+id = "keys-electric-piano"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/Electric Piano.dwp"
+source = "musescore-general"
+sf2 = { file = "unpacked/MuseScore_General.sf2", preset = 4, keys = [24, 31, 36, 40, 48, 55, 60, 67, 72, 79, 84, 91, 96] }
+channels = "mono"
+tail = { floor_db = -60, fade_ms = 400, max_s = 6 }
+release = 0.35
+gain = "normalize"

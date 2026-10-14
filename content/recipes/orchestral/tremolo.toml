@@ -1,0 +1,14 @@
+# VSCO 2 CE. A violin ensemble playing recorded tremolo, both dynamics. The long loop keeps several bow strokes.
+# Its G2 recording sounds G3. F#3 has only one dynamic and gives way to its neighbors.
+id = "strings-tremolo"
+kind = "program"
+path = "Presets/DW Sampler/Orchestral/Tremolo Strings.dwp"
+source = "vsco2-ce"
+files = "unpacked/VSCO-2-CE-master/Strings/Violin Section/Trem/VlnEns_Trem_{note}_v{layer}.wav"
+layers = ["1", "2"]
+transpose = 12
+velocity_layers = [1, 2]
+channels = "auto"
+loop = { find = true, min_s = 1.5, crossfade_ms = 150, keep_s = 4.0 }
+release = 0.4
+gain = "normalize"
