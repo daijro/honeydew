@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      android_tag:
+        description: Existing release tag whose Android APK should be rebuilt
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -14,6 +20,7 @@ env:
 
 jobs:
   desktop:
+    if: github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
@@ -62,6 +69,7 @@ jobs:
           files: honeydew-${{ github.ref_name }}-*.*z*
 
   web:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -83,6 +91,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.android_tag || github.ref }}
       - name: Prepare signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -109,6 +119,8 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
       - uses: gradle/actions/setup-gradle@v4
       - name: Android build tools
         run: |
@@ -126,5 +138,6 @@ jobs:
         run: rm -f "$RUNNER_TEMP/honeydew-release.jks"
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.android_tag || github.ref_name }}
           files: target/honeydew-android-*-arm64.apk
           fail_on_unmatched_files: true
