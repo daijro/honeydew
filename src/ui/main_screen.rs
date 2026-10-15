@@ -416,6 +416,8 @@ pub struct MainScreen {
     grabbed: panel_resize::Grabbed,
     /// The piano's scroll and zoom, which the scroll zone moves; both rows share it.
     pub(crate) keys_view: keyboard::KeyView,
+    /// Initial centering waits until the piano has a visible viewport.
+    keys_initialized: bool,
     /// Each channel's last piano view, by channel id, and the channel whose view `keys_view` is ([`Self::keys_for`]).
     keys_views: std::collections::HashMap<i32, keyboard::KeyView>,
     keys_owner: Option<i32>,
@@ -1282,9 +1284,16 @@ impl MainScreen {
                 actions.sample_row = sample_row::show(ui, cx, regions.keyboard, ink, row);
             }
             None => {
+                let rect = piano_rect(regions.keyboard, shown, cx.m);
+                if !self.keys_initialized && rect.is_positive() {
+                    let middle_c = keyboard::slots(0..=59, None) + 0.5;
+                    self.keys_view.left =
+                        middle_c - rect.width() / (2.0 * cx.m.u(self.keys_view.white_w));
+                    self.keys_initialized = true;
+                }
                 // The second row shows over a panel taller than 5 U.
                 let piano = keyboard::Piano {
-                    rect: piano_rect(regions.keyboard, shown, cx.m),
+                    rect,
                     two_rows: keyboard::second_row(
                         input.piano,
                         input.settings.show_two_rows,
@@ -4238,12 +4247,12 @@ mod tests {
         let first = radii(&shown);
         assert_eq!(first.len(), 5, "{first:?}");
         assert!(first.iter().all(|&r| r < 1.0), "{first:?}");
-        // 0.1 s on (6 frames at 60 Hz): past full size; then 20 points (1.25 U).
+        // 0.1 s on (6 frames at 60 Hz): past full size; then radius 22.4 points (diameter 1.4 U).
         let next = radii(&rig.frame(vec![]));
-        assert!(next.iter().all(|&r| r > 20.0), "{next:?}");
+        assert!(next.iter().all(|&r| r > 22.4), "{next:?}");
         let settled = radii(&rig.frame(vec![]));
         assert!(
-            settled.iter().all(|&r| (r - 20.0).abs() < 1e-3),
+            settled.iter().all(|&r| (r - 22.4).abs() < 1e-3),
             "{settled:?}"
         );
     }

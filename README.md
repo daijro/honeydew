@@ -107,14 +107,14 @@ Desktop:
 cargo run --release
 ```
 
-The sound library is stored in 90 MB archive parts to stay below GitHub's per-file limit. To rebuild it from the
+The sound library is stored in `sounds/` as 90 MB archive parts to stay below GitHub's per-file limit. To rebuild it from the
 raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.1.4
+tools/release-content.sh 0.1.5
 ```
 
-Commit the updated `honeydew-sounds.zip.*` parts with the content changes. Add `--web` to also build the web ZIP
+Commit the updated `sounds/honeydew-sounds.zip.*` parts with the content changes. Add `--web` to also build the web ZIP
 locally. Tagged releases include the sounds in every desktop, Android and web download; no manual release upload is needed.
 
 Web (development):
@@ -136,7 +136,7 @@ tools/web-dist.sh --check  # check an existing build's files and sizes
 tools/web-dist.sh --zip    # also write target/honeydew-web-<version>.zip
 ```
 
-It needs Trunk, binaryen's `wasm-opt` (or set `WASM_OPT`) and `unzip`. It assembles the tracked sound archive parts
+It needs Trunk, binaryen's `wasm-opt` (or set `WASM_OPT`) and `unzip`. It assembles the tracked archive parts in `sounds/`
 into `target/honeydew-sounds.zip` and includes their contents in the site.
 
 - Release builds use `opt-level = 3`, fat LTO, SIMD and `wasm-opt -O3`.

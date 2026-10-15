@@ -208,6 +208,8 @@ pub struct PresetPicker {
     factory: Vec<PathBuf>,
     /// The root's factory rows, one listing per factory folder, read once; `None` reads them again.
     factory_listing: Option<Vec<Vec<SongEntry>>>,
+    /// Display category paths and the real factory folders they merge; preset paths stay unchanged.
+    factory_groups: Vec<(PathBuf, Vec<PathBuf>)>,
     /// The folders opened from the root, `My Files` (or `Recently Deleted`) first; empty at the root.
     folders: Vec<SongEntry>,
     /// The open folder's rows, read once; `None` reads them again (at the root: whether the bin is there).
@@ -262,6 +264,7 @@ impl PresetPicker {
             extra: None,
             factory: Vec::new(),
             factory_listing: None,
+            factory_groups: Vec::new(),
             folders: Vec::new(),
             listing: None,
             panel: SidePanel::default(),
@@ -355,7 +358,12 @@ impl PresetPicker {
                 Item::Entry(e) if e.is_folder => Some(e.clone()),
                 _ => None,
             });
-            let next = rows.filter(|f| inside(path, &f.path, FOLD_CASE));
+            let next = rows.filter(|f| {
+                inside(path, &f.path, FOLD_CASE)
+                    || self.factory_groups.iter().any(|(shown, sources)| {
+                        *shown == f.path && sources.iter().any(|p| inside(path, p, FOLD_CASE))
+                    })
+            });
             let Some(next) = next.max_by_key(|f| f.path.components().count()) else {
                 break;
             };
@@ -850,7 +858,14 @@ impl PresetPicker {
             None => (&self.exts[..], self.module_type),
         };
         let factory = self.factory.iter().any(|d| folder.starts_with(d));
-        let mut rows = read(library, folder, exts, module_type, factory);
+        let group = self.factory_groups.iter().find(|(path, _)| path == folder);
+        let mut rows = match group {
+            Some((_, sources)) => sources
+                .iter()
+                .flat_map(|path| read(library, path, exts, module_type, factory))
+                .collect(),
+            None => read(library, folder, exts, module_type, factory),
+        };
         if self.categories.is_some() {
             let instrument = |e: &SongEntry| {
                 let preset =
@@ -937,6 +952,32 @@ impl PresetPicker {
     fn read_factory(&mut self, library: &dyn SongLibrary) {
         let read = |folder: &PathBuf| read(library, folder, &self.exts, self.module_type, true);
         let mut listings: Vec<Vec<SongEntry>> = self.factory.iter().map(read).collect();
+        self.factory_groups.clear();
+        if self.module_type == Some(1) {
+            for (root, listing) in self.factory.iter().zip(&mut listings) {
+                let mut merged = Vec::new();
+                for mut entry in std::mem::take(listing) {
+                    if entry.is_folder {
+                        let source = entry.path.clone();
+                        entry.name = categories::category(1, &entry.name)
+                            .unwrap_or(&entry.name)
+                            .to_owned();
+                        entry.path = root.join(&entry.name);
+                        if let Some((_, sources)) = self
+                            .factory_groups
+                            .iter_mut()
+                            .find(|(path, _)| *path == entry.path)
+                        {
+                            sources.push(source);
+                            continue;
+                        }
+                        self.factory_groups.push((entry.path.clone(), vec![source]));
+                    }
+                    merged.push(entry);
+                }
+                *listing = merged;
+            }
+        }
         let theirs: Vec<(bool, String)> = (listings.iter().flatten())
             .filter(|e| !content::is_factory(&e.path))
             .map(|e| (e.is_folder, e.name.clone()))
@@ -1213,7 +1254,7 @@ fn read(
     let entries = library.list(Some(folder)).unwrap_or_default();
     // The `.dwp` files' stems, listed or not, before `keep` names the files by their stems.
     let dwps: Vec<String> = (entries.iter())
-        .map(|e| Path::new(&e.name))
+        .map(|e| e.path.as_path())
         .filter(|name| (name.extension()).is_some_and(|x| x.eq_ignore_ascii_case(DWP_EXT)))
         .filter_map(|name| Some(name.file_stem()?.to_string_lossy().to_lowercase()))
         .collect();
@@ -1243,7 +1284,7 @@ fn read(
     let programs: Vec<String> = match hide_samples {
         true => (listed.iter())
             .filter(|e| !e.is_folder && !audio(e))
-            .map(|e| e.name.to_lowercase())
+            .filter_map(|e| Some(e.path.file_stem()?.to_string_lossy().to_lowercase()))
             .collect(),
         false => dwps,
     };

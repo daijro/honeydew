@@ -8,6 +8,53 @@ use crate::ui::keyboard::KeyView;
 use eframe::egui::Rect;
 use honeydew_audio::device::AudioRenderer;
 
+#[test]
+fn the_keyboard_starts_with_middle_c_centered_and_keeps_manual_scroll() {
+    for (width, scale, wheels) in [(480.0, 0, false), (1170.0, 1, true), (2048.0, 2, false)] {
+        let mut rig = Rig::new();
+        rig.app.main_screen = MainScreen::default();
+        rig.app.settings.ui_scale_index = scale;
+        rig.app.settings.show_wheels = wheels;
+        rig.app
+            .add_bare_channel(ChannelKind::Synth(SynthKind::MiniSynth), 0);
+        let draw = |rig: &mut Rig| {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(width, 540.0))),
+                ..Default::default()
+            };
+            rig.out = rig.ctx.run(raw, |ctx| rig.app.frame(ctx, |_, _| None));
+        };
+        draw(&mut rig);
+        // Outside a frame, read_response returns the preceding pass's geometry.
+        draw(&mut rig);
+        let rect = rig
+            .ctx
+            .read_response(egui::Id::new("keyboard"))
+            .unwrap()
+            .rect;
+        let m = Metrics::new(&rig.ctx, scale);
+        let keys = crate::ui::keyboard::keyboard_keys(
+            rect.width(),
+            m.u(1.0),
+            rig.app.main_screen.keys_view,
+            0..=119,
+            None,
+        );
+        let middle_c = keys.iter().find(|k| k.midi == 60).unwrap().rect(rect);
+        assert!(
+            (middle_c.center().x - rect.center().x).abs() < 0.01,
+            "width {width}, scale {scale}, wheels {wheels}: rect {rect:?}, key {middle_c:?}, view {:?}, U {}",
+            rig.app.main_screen.keys_view,
+            m.u(1.0),
+        );
+
+        rig.app.main_screen.keys_view.left -= 3.0;
+        let scrolled = rig.app.main_screen.keys_view;
+        draw(&mut rig);
+        assert_eq!(rig.app.main_screen.keys_view, scrolled);
+    }
+}
+
 /// Two MiniSynth channels (1 and 2), the audio started, channel 1 selected: channel 1 plays MIDI 60 and channel 2
 /// MIDI 67, each for two beats from beat 0 (120 BPM).
 fn two_synths() -> Rig {

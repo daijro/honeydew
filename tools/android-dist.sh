@@ -32,7 +32,7 @@ export CARGO_TARGET_DIR=$(cd "${CARGO_TARGET_DIR:-target}" && pwd)
 export HONEYDEW_ANDROID_BUILD_DIR=$CARGO_TARGET_DIR/android
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-4}
 mkdir -p "$HONEYDEW_ANDROID_BUILD_DIR/assets" "$HONEYDEW_ANDROID_BUILD_DIR/jniLibs"
-cat honeydew-sounds.zip.[0-9][0-9][0-9] > "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip"
+cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip"
 # The .gz siblings are for web servers; Android reads the raw packs directly from its APK.
 rm -rf "$HONEYDEW_ANDROID_BUILD_DIR/assets/content"
 unzip -q "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip" 'content/*' -x '*.gz' -d "$HONEYDEW_ANDROID_BUILD_DIR/assets"

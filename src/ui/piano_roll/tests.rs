@@ -1828,7 +1828,7 @@ mod component {
     }
 
     /// The first note's rect in the roll's current view, and where the shared rule puts the floating row over it
-    /// with the finger at `finger` (at U = 32 a 4-button row is 224 × 48, m 6.4).
+    /// with the finger at `finger` (at U = 32 a 4-button row is 204.8 × 48, m 6.4).
     fn shared_row(rig: &Rig, finger: Pos2) -> (Rect, Option<Rect>) {
         let g = rig.roll.geom(GRID.min, 32.0);
         let e = &rig.events()[0];
@@ -1842,7 +1842,7 @@ mod component {
         };
         (
             rect,
-            place_row(&sel, finger, GRID, vec2(224.0, 48.0), 6.4, 1.0),
+            place_row(&sel, finger, GRID, vec2(204.8, 48.0), 6.4, 1.0),
         )
     }
 
@@ -1909,13 +1909,13 @@ mod component {
                 "above" => assert_eq!(row.bottom(), note.top() - 6.4, "key {key}"),
                 _ => assert_eq!(row.top(), note.bottom() + 6.4, "key {key}"),
             }
-            // The labels sit in the row's 56-point slots, left to right.
+            // The labels sit in the row's 51.2-point slots, left to right.
             for (i, label) in ["Copy", "Delete", "Snap", "More..."]
                 .into_iter()
                 .enumerate()
             {
                 let at = rig.text(label).unwrap();
-                let slot = pos2(row.left() + 28.0 + 56.0 * i as f32, row.center().y);
+                let slot = pos2(row.left() + 25.6 + 51.2 * i as f32, row.center().y);
                 assert!(
                     (at - slot).length() < 1.0,
                     "{label} at {at:?}, not {slot:?}"

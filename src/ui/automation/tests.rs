@@ -630,7 +630,7 @@ fn a_tapped_point_shows_its_guides_and_copy_delete_and_another_tap_deselects() {
     let row = rig.ed.row.rect().expect("the row");
     assert!(close(row.top(), frame_top - 6.4 - 48.0, 1e-3), "{row:?}");
     assert!(close(row.center().x, GRID_X + 256.0, 0.5), "{row:?}");
-    assert_eq!(row.width(), 2.0 * 1.75 * 32.0);
+    assert!(close(row.width(), 2.0 * 1.6 * 32.0, 1e-3));
     // A held point hides the row at once; the release is a tap that deselects.
     rig.press(touch(pts[1]));
     assert_eq!(rig.ed.row.rect(), None);

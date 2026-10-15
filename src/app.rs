@@ -2466,6 +2466,9 @@ mod tests {
             };
             // Lets egui learn the widget rects before the first press.
             rig.frame(vec![]);
+            // Fixed-coordinate input fixtures start at MIDI 48; startup centering has its own test.
+            rig.app.main_screen.keys_view = crate::ui::keyboard::KeyView::default();
+            rig.frame(vec![]);
             rig.pin_playlist();
             rig
         }

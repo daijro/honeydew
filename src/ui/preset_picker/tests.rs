@@ -726,6 +726,65 @@ fn a_dw_programs_sample_folder_is_left_out() {
     assert_eq!(names(&picker, ""), ["Other", "Gen Guitar"]);
 }
 
+#[test]
+fn dw_factory_categories_merge_without_changing_preset_paths() {
+    for root in [
+        "<built-in>/Presets/DW Sampler",
+        "Content/DirectWave Samples",
+    ] {
+        let paths: Vec<String> = [
+            "",
+            "Keyboard/",
+            "Keyboard/Electric Piano.dwp",
+            "Piano/",
+            "Piano/Upright Piano.dwp",
+            "Piano/Upright Piano/",
+            "Piano/Upright Piano/C4.wav",
+            "Piano/Vintage/",
+            "Piano/Vintage/Stage Piano.dwp",
+            "Orchestral/",
+            "Orchestral/Concert Harp.dwp",
+            "Strings/",
+            "Strings/Cello.dwp",
+        ]
+        .map(|rel| format!("{root}/{rel}"))
+        .into();
+        let lib = library(&paths.iter().map(String::as_str).collect::<Vec<_>>());
+        let picker = PresetPicker::new("DW Sampler", None, PRESET_EXT, true)
+            .of_exts(&[PRESET_EXT, "dwp", "wav"])
+            .of_type(1)
+            .with_factory([PathBuf::from(root)]);
+        let mut rig = Rig::with(picker, lib);
+        assert_eq!(
+            names(&rig.picker, ""),
+            [MY_FILES, DEFAULT, "Keyboard", "Orchestral"]
+        );
+        rig.click_text("Keyboard");
+        assert_eq!(
+            names(&rig.picker, ""),
+            ["Vintage", "Electric Piano", "Upright Piano"]
+        );
+        assert_eq!(
+            rig.click_text("Upright Piano"),
+            Some(PickerAction::Pick(
+                format!("{root}/Piano/Upright Piano.dwp").into()
+            ))
+        );
+        rig.back();
+        rig.click_text("Orchestral");
+        assert_eq!(names(&rig.picker, ""), ["Concert Harp", "Cello"]);
+        rig.back();
+        rig.search("Stage");
+        assert!(rig.shows("Keyboard/Vintage"));
+        assert_eq!(
+            rig.click_text("Stage Piano"),
+            Some(PickerAction::Pick(
+                format!("{root}/Piano/Vintage/Stage Piano.dwp").into()
+            ))
+        );
+    }
+}
+
 /// The DW Sampler's picker (its presets, programs and audio files; any module type, as these files are only names)
 /// over the factory bank `Bank`, with `my_files` as the user's folder.
 fn dw_bank(my_files: Option<&str>) -> PresetPicker {

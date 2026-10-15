@@ -63,7 +63,7 @@ fn every_editor_hides_its_floating_row_on_a_zoom_and_shows_it_again_on_the_selec
 #[test]
 fn the_playlists_row_waits_at_the_grids_right_edge_while_the_selected_copy_is_past_it() {
     // Horizontally off-screen, the row is held at the viewport edge (x = … right edge − W). The
-    // grid is x 48..1170; a beat is 38.4 points; the 5-button row is 280 wide (56 a button), its buttons 40 across.
+    // grid is x 48..1170; a beat is 38.4 points; the 5-button row is 256 wide (51.2 a button), its buttons 44.8 across.
     let mut rig = Rig::with_drums_and_synth();
     rig.app.song.channels[1].lanes[0].add_clip(24 * crate::song::PPQ, 4.0);
     rig.frame(vec![]);
@@ -71,10 +71,10 @@ fn the_playlists_row_waits_at_the_grids_right_edge_while_the_selected_copy_is_pa
     rig.click(pos2(1000.0, header(1).y));
     rig.frame(vec![]);
     let copy = egui::Id::new(("clip_button", 0_usize));
-    let row_left = |rig: &Rig| (rig.ctx.read_response(copy)).map(|r| r.rect.center().x - 28.0);
+    let row_left = |rig: &Rig| (rig.ctx.read_response(copy)).map(|r| r.rect.center().x - 25.6);
     assert_eq!(
         row_left(&rig),
-        Some(1000.0 - 140.0),
+        Some(1000.0 - 128.0),
         "centred on the finger"
     );
     // Copy puts the copy right after the clip and selects it: beat 28 (still partly in view), then beat 32
@@ -90,7 +90,7 @@ fn the_playlists_row_waits_at_the_grids_right_edge_while_the_selected_copy_is_pa
     rig.frame(vec![]);
     assert_eq!(
         row_left(&rig),
-        Some(1170.0 - 280.0),
+        Some(1170.0 - 256.0),
         "held at the right edge"
     );
 }

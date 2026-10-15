@@ -2649,7 +2649,7 @@ fn the_selection_stays_with_its_clip() {
 #[test]
 fn the_floating_row_hides_on_a_scroll_or_zoom_and_a_tap_on_the_selection_brings_it_back() {
     // The same rule as the playlist and the piano roll: the shared placement, hidden by any scroll or zoom, back after
-    // a release on the selection. At U = 32: a 2-button row is 112 × 48, m 6.4.
+    // a release on the selection. At U = 32: a 2-button row is 102.4 × 48, m 6.4.
     let shared = |rig: &Rig, cell: (usize, usize), finger: Pos2| {
         let l = rig.layout();
         let sel = Selection {
@@ -2657,7 +2657,7 @@ fn the_floating_row_hides_on_a_scroll_or_zoom_and_a_tap_on_the_selection_brings_
             one_row: true,
             handles: &[],
         };
-        place_row(&sel, finger, l.grid(), vec2(112.0, 48.0), 6.4, 1.0)
+        place_row(&sel, finger, l.grid(), vec2(102.4, 48.0), 6.4, 1.0)
     };
     let mut rig = Rig::new(pattern());
     rig.kit = twelve();
@@ -2707,7 +2707,7 @@ fn the_floating_row_of_a_box_selection_shows_at_its_release() {
         one_row: false,
         handles: &[],
     };
-    let want = place_row(&sel, to, l.grid(), vec2(112.0, 48.0), 6.4, 1.0);
+    let want = place_row(&sel, to, l.grid(), vec2(102.4, 48.0), 6.4, 1.0);
     assert!(want.is_some());
     assert_eq!(rig.view.row.rect(), want);
 }

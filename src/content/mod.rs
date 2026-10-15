@@ -155,13 +155,19 @@ impl SongLibrary for Factory {
             let (name, is_folder) = rest
                 .split_once('/')
                 .map_or((rest, false), |(f, _)| (f, true));
+            let path = folder.join(name);
             if !rows
                 .iter()
-                .any(|r| r.is_folder == is_folder && r.name == name)
+                .any(|r| r.is_folder == is_folder && r.path == path)
             {
+                let display = self
+                    .bundle
+                    .as_ref()
+                    .filter(|_| !is_folder)
+                    .and_then(|bundle| bundle.display_name(&entry.rel));
                 rows.push(SongEntry {
-                    name: name.into(),
-                    path: folder.join(name),
+                    name: display.unwrap_or_else(|| name.into()),
+                    path,
                     is_folder,
                     recency: 0,
                 });

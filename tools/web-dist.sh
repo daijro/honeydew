@@ -1,7 +1,7 @@
 #!/bin/sh
 # The web release (README "Web"): the whole site in dist/.
 #   tools/web-dist.sh          trunk build --release, wasm-opt -O3, a gzip copy (`<file>.gz`) beside the app's wasm, JS
-#                              and HTML, then honeydew-sounds.zip.* unpacked into content/, then --check
+#                              and HTML, then sounds/honeydew-sounds.zip.* unpacked into content/, then --check
 #   tools/web-dist.sh --zip    the same, then the release zip: target/honeydew-web-<version>.zip (or under
 #                              $CARGO_TARGET_DIR), dist/ in one honeydew-web-<version>/ folder
 #   tools/web-dist.sh --check  no build: prints the size table, and fails when a budget is over, an app file's .gz is
@@ -45,7 +45,7 @@ build() {
     app_files | xargs -r gzip -9 -k -n -f
     cp deploy/_headers dist/
     mkdir -p target
-    cat honeydew-sounds.zip.[0-9][0-9][0-9] > target/honeydew-sounds.zip
+    cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > target/honeydew-sounds.zip
     unzip -q target/honeydew-sounds.zip -d dist
 }
 

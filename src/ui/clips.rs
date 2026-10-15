@@ -149,12 +149,10 @@ const RIM_ALPHA: f32 = 0.3;
 const PULSE: [f32; 3] = [0.15, 0.05, 0.0125];
 /// The handles' pop-in: a ← 0.6·a per frame.
 const HANDLE_RATE: f32 = 0.6;
-/// The floating buttons: light bubbles, each centred in its share of the row (the row is B = 1.5 U high and W = 1.75 U
-/// × the button count wide, m = 0.2 U from the selection). They keep the transport's round-button 1.25 U, each centred
-/// in its 1.75 U slot.
-const BUTTON_D: f32 = 1.25;
+/// Floating-menu bubbles have a 0.2 U gap, with room for their pop-in animation.
+const BUTTON_D: f32 = 1.4;
 const ROW_B: f32 = 1.5;
-const ROW_SLOT: f32 = 1.75;
+const ROW_SLOT: f32 = 1.6;
 const ROW_M: f32 = 0.2;
 /// The `+Clip` button's side.
 const PLUS: f32 = 1.5;

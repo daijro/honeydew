@@ -50,7 +50,7 @@ jobs:
           bin=target/${{ matrix.target }}/release
           ext=; [ "$RUNNER_OS" = Windows ] && ext=.exe
           cp "$bin/honeydew-native$ext" "$bin/honeydew-import$ext" README.md LICENSE "$dir/"
-          cat honeydew-sounds.zip.[0-9][0-9][0-9] > target/honeydew-sounds.zip
+          cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > target/honeydew-sounds.zip
           if [ "$RUNNER_OS" = Windows ]; then
             7z x target/honeydew-sounds.zip "-o$dir" >/dev/null
           else

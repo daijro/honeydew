@@ -73,6 +73,121 @@ fn the_folders_come_from_the_entry_paths_and_files_list_in_index_order() {
 }
 
 #[test]
+fn duplicate_program_names_show_each_source_without_changing_paths() {
+    use crate::ui::preset_picker::{PresetPicker, categories};
+    use bundle::{Credit, Index, IndexEntry, Kind, Member, Part};
+
+    let root = "Presets/DW Sampler";
+    let programs = [
+        ("Orchestral/Solo Violin.dwp", "vsco2-ce"),
+        ("Orchestral/Solo Violin (Iowa).dwp", "iowa-strings"),
+        ("Strings/Solo Violin (VCSL).dwp", "vcsl"),
+        ("Orchestral/Solo Violin (Vibrato).dwp", "vsco2-ce"),
+        ("Keyboard/Solo Violin.dwp", "vcsl"),
+    ];
+    let entries = programs
+        .iter()
+        .enumerate()
+        .map(|(i, (path, source))| IndexEntry {
+            id: format!("program-{i}"),
+            kind: Kind::Program,
+            path: format!("{root}/{path}"),
+            license: "CC0-1.0".into(),
+            credits: vec![(*source).into()],
+            decoded: 0,
+            lite: None,
+            parts: vec![Part {
+                file: format!("p/{i:016x}.tar"),
+                bytes: 4,
+                sha256: String::new(),
+            }],
+            members: vec![Member(path.rsplit('/').next().unwrap().into(), 0, 0, 4)],
+        })
+        .collect();
+    let credits = [
+        ("vsco2-ce", "VSCO 2 Community Edition"),
+        (
+            "iowa-strings",
+            "University of Iowa Musical Instrument Samples",
+        ),
+        ("vcsl", "Versilian Community Sample Library"),
+    ]
+    .map(|(id, title)| {
+        (
+            id.into(),
+            Credit {
+                title: title.into(),
+                author: String::new(),
+                license: "CC0-1.0".into(),
+                url: None,
+                note: None,
+            },
+        )
+    })
+    .into();
+    let index = Index {
+        schema: bundle::SCHEMA,
+        release: "test".into(),
+        aliases: Default::default(),
+        credits,
+        entries,
+    };
+    // Listing needs only the index, even before any pack has downloaded.
+    let factory = Factory::new(vec![Entry::new(
+        "Presets/DW Sampler/Orchestral/Solo Violin/C4.wav",
+        Vec::new,
+    )])
+    .with_bundle(Bundle::new(index, None));
+    let picker = || {
+        PresetPicker::new("DW Sampler", None, "dwp", true)
+            .of_type(1)
+            .with_factory([at(root)])
+    };
+    let mut dw = picker();
+    let mut names = dw.names_in(&factory, &["Orchestral"]);
+    names.sort();
+    let expected = [
+        "Solo Violin (Iowa)",
+        "Solo Violin (VCSL)",
+        "Solo Violin (VSCO 2 CE)",
+        "Solo Violin (Vibrato)",
+    ];
+    assert_eq!(names, expected);
+    let indexed = categories::index(&factory, &[(1, at(root))]);
+    let orchestral = indexed
+        .iter()
+        .find(|c| c.folder.name == "Orchestral")
+        .unwrap();
+    assert_eq!(
+        orchestral
+            .items
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(picker().names_in(&factory, &["Keyboard"]), ["Solo Violin"]);
+    for (path, name) in programs[..3].iter().map(|(path, _)| *path).zip([
+        "Solo Violin (VSCO 2 CE)",
+        "Solo Violin (Iowa)",
+        "Solo Violin (VCSL)",
+    ]) {
+        let rel = format!("{root}/{path}");
+        assert_eq!(dw.path_of(name), Some(at(&rel)));
+        assert_eq!(
+            factory
+                .bundle
+                .as_ref()
+                .unwrap()
+                .entry_of(&rel)
+                .unwrap()
+                .path,
+            rel
+        );
+    }
+}
+
+#[test]
 fn a_read_runs_the_generator_and_a_missing_path_is_not_found() {
     let runs = Arc::new(AtomicUsize::new(0));
     let counted = runs.clone();

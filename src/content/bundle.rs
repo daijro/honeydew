@@ -117,6 +117,36 @@ impl Index {
         let aliases_ok = (index.aliases.iter()).all(|(old, new)| safe(old) && safe(new));
         (index.schema == SCHEMA && entries_ok && aliases_ok).then_some(index)
     }
+
+    /// A program's displayed category, base name and credited source. Only a matching source suffix is stripped.
+    fn program_name<'a>(&self, entry: &'a IndexEntry) -> Option<(&'a str, &'a str, String)> {
+        if entry.kind != Kind::Program {
+            return None;
+        }
+        let (folder, file) = entry
+            .path
+            .strip_prefix("Presets/DW Sampler/")?
+            .rsplit_once('/')?;
+        let category = crate::ui::preset_picker::categories::category(1, folder)?;
+        let stem = Path::new(file).file_stem()?.to_str()?;
+        let sources: Option<Vec<_>> = entry
+            .credits
+            .iter()
+            .map(|id| match id.as_str() {
+                "vsco2-ce" => Some("VSCO 2 CE"),
+                "vcsl" => Some("VCSL"),
+                "iowa-strings" => Some("Iowa"),
+                "meta-nylon-guitar" | "meta-steel-guitar" => Some("Meta"),
+                _ => self.credits.get(id).map(|credit| credit.title.as_str()),
+            })
+            .collect();
+        let source = sources?.join(", ");
+        if source.is_empty() {
+            return None;
+        }
+        let suffix = format!(" ({source})");
+        Some((category, stem.strip_suffix(&suffix).unwrap_or(stem), source))
+    }
 }
 
 /// `name` is a plain relative `/`-separated path that stays in its folder.
@@ -239,6 +269,29 @@ impl Bundle {
     /// The entry that holds `rel`, below `Built-in/` (aliases applied).
     pub fn entry_of(&self, rel: &str) -> Option<&IndexEntry> {
         self.member(rel).map(|(entry, _)| entry)
+    }
+
+    /// A colliding program's display filename, including its source; its stored path and pack members never change.
+    pub(super) fn display_name(&self, rel: &str) -> Option<String> {
+        let entry = self.entry_of(rel)?;
+        if entry.path != rel {
+            return None;
+        }
+        let (category, name, source) = self.index.program_name(entry)?;
+        let duplicate = self
+            .index
+            .entries
+            .iter()
+            .filter(|e| e.path != entry.path)
+            .any(|e| {
+                self.index
+                    .program_name(e)
+                    .is_some_and(|(other_category, other_name, _)| {
+                        category == other_category && name == other_name
+                    })
+            });
+        let ext = Path::new(rel).extension()?.to_str()?;
+        duplicate.then(|| format!("{name} ({source}).{ext}"))
     }
 
     /// The bytes of the member at `rel`, below `Built-in/` (aliases applied), read from its part. `None` when no member
