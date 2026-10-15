@@ -22,11 +22,9 @@
 //! - Long press on a note: the touch-down's selection shows its handles and floating row; it never toggles. There is no
 //!   slider, and no ≥ 2-note scale handle.
 //! - Empty grid: a tap dismisses a visible floating menu, else clears the selection and adds a note ([`Remembered`]); a long press is the
-//!   marquee ([`clips::Marquee`]): a square grows on the touch-down point while held, a 3 U square stays on the finger
-//!   after 300 ms (selecting what lies under the finger: nothing there), and a drag beyond 0.5 U (or Shift at once)
-//!   makes it the rectangle to the finger, whose notes (touching counts) are the selection live. Lifted without a drag
-//!   it is `Paste` while the [`note_clipboard`] holds notes: the shared `Paste` button on the finger's x and its row's
-//!   middle ([`step_seq::paste_button`]), whose tap pastes there and which any other press hides.
+//!   marquee ([`clips::Marquee`]): after 300 ms, dragging beyond 0.5 U makes a selection rectangle.
+//!   While held still, copied notes offer one `Paste` bubble at the finger ([`step_seq::paste_button`]).
+//!   A later tap pastes there; dragging or another press hides it.
 //!   Out of the calm zone on either axis (each its own 0.5 U) the touch is the scroller's ([`scroller`]): it scrolls,
 //!   never a tap or a marquee. Two fingers zoom; the wheel zooms or scrolls by zone (`Self::scroll`).
 //! - A right click on a note makes it the selection with its handles and floating row; on empty grid it is `Paste` (as
@@ -602,7 +600,7 @@ impl PianoRoll {
                 ui.ctx().request_repaint();
                 clips::hold_square(origin, u, now - since)
             }
-            Gesture::Box(marquee) => Some(marquee.drawn(u)),
+            Gesture::Box(marquee) if marquee.dragged => Some(marquee.drawn(u)),
             _ => None,
         };
         if let Some(rect) = marquee {
@@ -741,6 +739,7 @@ impl PianoRoll {
     /// key stops, and a move or paint that reported an edit closes it with a final one, the notes where they are.
     /// With what an earlier end left unreported ([`Self::open`]).
     fn end_touch(&mut self) -> Vec<PianoRollAction> {
+        self.paste = None;
         let mut actions = std::mem::take(&mut self.pending);
         // The clip's events as the roll last left them.
         let seen = std::mem::take(&mut self.seen);
@@ -939,10 +938,13 @@ impl PianoRoll {
         // A press held over a focus loss is up (see `primary_down_live`): it ends the gesture as a release, and
         // starts or moves nothing while it lasts.
         let down = primary_down_live(ui, response.id);
-        let stale = held && !down;
+        let stale = held && !down || ui.input(|i| !i.focused || crate::ui::focus_lost(i));
         let pos = pos.filter(|_| !stale);
         let moved = |o: Pos2| gesture::left_calm(o, pos, u);
         let multi = ui.input(|i| i.multi_touch().is_some());
+        if multi || stale {
+            self.paste = None;
+        }
         // A second finger makes a pinch, which only zooms: it ends a one-finger gesture, putting back what it moved
         // and the selection its touch-down made, and starts none (not even a tap) until the lift.
         if multi && let Gesture::Edit(edit) = std::mem::replace(&mut self.gesture, Gesture::Pan) {
@@ -1050,12 +1052,12 @@ impl PianoRoll {
                 let events = self.clip(song).map_or(&[][..], |c| &c.events).to_vec();
                 self.selected = in_box(&g, &events, marquee.region(grid));
                 self.quiet = false;
-                // A marquee sets no remembered note. Lifted where it was held, it is
-                // `Paste` while notes are copied; not when a focus loss lifted it.
+                // A stationary hold offers Paste while notes are copied.
+                self.paste =
+                    (!stale && !multi && !marquee.dragged && !note_clipboard(ui.ctx()).is_empty())
+                        .then_some(marquee.from);
                 if !up {
                     self.gesture = Gesture::Box(marquee);
-                } else if !stale && !marquee.dragged && !note_clipboard(ui.ctx()).is_empty() {
-                    self.paste = Some(marquee.to);
                 }
             }
             Gesture::Edit(mut edit) => {
@@ -1384,12 +1386,10 @@ impl PianoRoll {
         }
     }
 
-    /// The `Paste` button while it shows ([`step_seq::paste_button`]: a 1.5 U square on the finger's x and its row's
-    /// middle). Its tap pastes the [`note_clipboard`] there ([`Self::paste`], from the button's centre on its row);
-    /// any other press hides it.
+    /// One Paste bubble at the held position; a later tap pastes the note clipboard there.
     fn paste_button(
         &mut self,
-        ui: &egui::Ui,
+        ui: &mut egui::Ui,
         id: Id,
         g: &Geom,
         song: &mut Song,
@@ -1400,8 +1400,11 @@ impl PianoRoll {
             self.paste = None;
             return;
         };
-        let row = Rangef::new(g.y(key), g.y(key) + g.row_h);
-        let (rect, tap) = step_seq::paste_button(ui, cx, id.with("paste"), finger, row);
+        if note_clipboard(ui.ctx()).is_empty() {
+            self.paste = None;
+            return;
+        }
+        let (rect, tap) = step_seq::paste_button(ui, cx, id.with("paste"), finger);
         if tap.is_some() {
             self.paste = None;
         }
@@ -1655,7 +1658,10 @@ impl PianoRoll {
             .filter(|h| h.intersects(grid))
             .collect();
         // A quiet selection has no row, which a release on it brings back neither.
-        let rects = notes.iter().map(|n| n.1).filter(|_| !self.quiet);
+        let rects = notes
+            .iter()
+            .map(|n| n.1)
+            .filter(|_| !self.quiet && self.paste.is_none());
         let sel = rects.reduce(Rect::union).map(|rect| {
             let keys = notes.iter().filter_map(|(e, _)| note(e)).map(|n| n.2);
             clips::Selection {
@@ -1679,7 +1685,17 @@ impl PianoRoll {
         let before = clip.events.clone();
         let sel = &mut self.selected;
         match FLOATING[i] {
-            "Copy" => duplicate_selected(&mut clip.events, sel, grid_ticks),
+            "Copy" => {
+                let copied = clip
+                    .events
+                    .iter()
+                    .zip(sel.iter())
+                    .filter(|(e, s)| **s && note(e).is_some())
+                    .map(|(e, _)| *e)
+                    .collect();
+                set_note_clipboard(ui.ctx(), copied);
+                duplicate_selected(&mut clip.events, sel, grid_ticks);
+            }
             "Delete" => {
                 remove_selected(&mut clip.events, sel);
             }

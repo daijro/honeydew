@@ -2324,7 +2324,7 @@ fn a_long_press_then_a_drag_boxes_the_hits_without_scrolling() {
 }
 
 #[test]
-fn a_long_press_on_an_empty_step_is_a_3_u_square_and_its_drag_selects_live() {
+fn a_stationary_hold_on_an_empty_step_has_no_marquee_until_dragged() {
     // The marquee, with the mouse held 0.35 s.
     let mut rig = Rig::new(pattern());
     let from = rig.cell(1, 1);
@@ -2339,7 +2339,7 @@ fn a_long_press_on_an_empty_step_is_a_3_u_square_and_its_drag_selects_live() {
             _ => false,
         })
     };
-    assert!(square(&rig, 96.0));
+    assert!(!square(&rig, 96.0));
     assert_eq!(rig.selection(), []);
     let to = rig.cell(2, 5);
     rig.frame(vec![egui::Event::PointerMoved(to)]);
@@ -2557,19 +2557,13 @@ fn copy_fills_the_hit_clipboard_and_a_long_press_or_right_click_on_an_empty_step
         .collect();
     assert_eq!(hit_clipboard(&rig.ctx), copied);
     rig.hold(empty);
+    assert!(
+        rig.text_at("Paste").is_some(),
+        "Paste appears before lifting"
+    );
     rig.release(empty);
     let paste = rig.text_at("Paste").expect("the Paste button");
-    // A 1.5 U square centred on the finger's x and on the middle of its row.
-    let button = rig.rects(theme_by_id(0).colors.menu_fill.to_color32());
-    let want = pos2(empty.x, rig.layout().cell(3, 8).center().y);
-    let square = |r: &&Rect| (r.width() - 48.0).abs() < 1e-3 && (r.height() - 48.0).abs() < 1e-3;
-    assert!(
-        button
-            .iter()
-            .filter(square)
-            .any(|r| r.center().distance(want) < 1e-3),
-        "{button:?}"
-    );
+    assert!(paste.distance(empty) < 2.0);
     rig.click(paste);
     let hits = copied.clone();
     assert_eq!(

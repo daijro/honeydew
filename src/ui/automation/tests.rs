@@ -539,6 +539,7 @@ fn snap_off_creates_on_the_finger_tick_and_a_long_press_without_a_clipboard_does
     rig.tap(pos2(24.0, 24.0));
     assert!(!rig.ed.snap.on);
     rig.hold(pos2(GRID_X + 70.0, TOP + 20.0));
+    assert_eq!(rig.text_at("Paste"), None);
     rig.release(pos2(GRID_X + 70.0, TOP + 20.0));
     assert_eq!((rig.points(), rig.edits), (vec![], 0));
     assert_eq!(rig.text_at("Paste"), None);
@@ -679,20 +680,21 @@ fn copy_fills_the_clipboard_and_delete_removes_the_selection_in_one_edit() {
 #[test]
 fn a_long_press_shows_paste_where_the_finger_is_and_paste_lands_the_earliest_point_on_the_snapped_beat()
  {
-    let (_, text, menu, _) = colors();
     let mut rig = Rig::new(&[p(0, 0)]);
     set_clipboard(&rig.ctx, vec![(1.0, 0.5), (1.5, 1.0)]);
     let finger = pos2(300.0, 250.0);
     rig.hold(finger);
-    rig.release(finger);
-    // A 1.5 U `menuFill` square, centred on the finger's x and on the middle of row 93, labelled in `text`.
-    let button = Rect::from_center_size(pos2(300.0, TOP + 93.5 * 2.0), Vec2::splat(48.0));
-    assert!(rig.rects(menu).contains(&button), "{:?}", rig.rects(menu));
-    let label = rig.text_at("Paste").expect("Paste");
-    assert!(close(label.x, 300.0, 1.0) && close(label.y, button.center().y, 2.0));
-    assert!(rig.texts(text).iter().any(|t| t.0 == "Paste"));
+    assert!(
+        rig.text_at("Paste").is_some(),
+        "Paste appears before release"
+    );
+    assert!(rig.discs().iter().any(|d| d.0 == finger));
+    assert_eq!(rig.points(), [p(0, 0)]);
     assert_eq!(rig.edits, 0);
-    rig.tap(button.center());
+    rig.release(finger);
+    assert_eq!(rig.points(), [p(0, 0)], "the original lift does not paste");
+    assert_eq!(rig.edits, 0);
+    rig.tap(finger);
     // Tick 250 snaps to 256; the second keeps its half beat; values × 65534.
     assert_eq!(rig.points(), [p(0, 0), p(256, 32767), p(320, MAX)]);
     assert_eq!((rig.selected(), rig.edits), (vec![false, true, true], 1));
@@ -703,14 +705,39 @@ fn a_long_press_shows_paste_where_the_finger_is_and_paste_lands_the_earliest_poi
     assert!(rig.text_at("Paste").is_some());
     rig.tap(pos2(900.0, 300.0));
     assert_eq!(rig.text_at("Paste"), None);
+    // An emptied clipboard and a second finger both dismiss a held bubble.
+    let edits = rig.edits;
+    rig.hold(finger);
+    set_clipboard(&rig.ctx, Vec::new());
+    rig.frame(vec![]);
+    assert_eq!(rig.text_at("Paste"), None);
+    rig.release(finger);
+    set_clipboard(&rig.ctx, vec![(0.0, 0.5)]);
+    rig.hold(finger);
+    let touches = [finger, finger + vec2(100.0, 50.0)]
+        .into_iter()
+        .enumerate()
+        .map(|(i, pos)| egui::Event::Touch {
+            device_id: egui::TouchDeviceId(1),
+            id: egui::TouchId(i as u64),
+            phase: egui::TouchPhase::Start,
+            pos,
+            force: None,
+        });
+    rig.frame(touches.collect());
+    assert_eq!(rig.text_at("Paste"), None);
+    assert_eq!(rig.edits, edits);
 }
 
 #[test]
 fn a_long_press_that_moves_draws_a_marquee_and_the_right_edge_handle_scales() {
     let pts = [p(0, 0), p(128, 32767), p(256, 32767), p(448, MAX)];
     let mut rig = Rig::new(&pts);
+    set_clipboard(&rig.ctx, vec![(0.0, 0.5)]);
     rig.hold(pos2(150.0, 150.0));
+    assert!(rig.text_at("Paste").is_some());
     rig.move_to(pos2(250.0, 200.0));
+    assert_eq!(rig.text_at("Paste"), None);
     rig.move_to(pos2(330.0, 230.0));
     // The selection is live: already before the lift.
     assert_eq!(rig.selected(), [false, true, true, false]);
@@ -826,25 +853,6 @@ fn the_playhead_is_the_song_position_wrapped_modulo_the_loop() {
         .find(|r| r.width() == 4.0 && r.center().x == GRID_X + 100.0)
         .expect("the playhead line");
     assert!(line.top() < TOP && line.bottom() > TOP + V, "{line:?}");
-}
-
-#[test]
-fn the_paste_button_and_continuous_follow_are_placed_by_their_laws() {
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
-    let f = Frame::new(RECT, &m);
-    // The row under the finger, and its middle.
-    for y in [TOP + 37.0, TOP + 37.9] {
-        assert_eq!(
-            paste_rect(&f, pos2(300.0, y), &m),
-            Rect::from_center_size(pos2(300.0, TOP + 37.0), Vec2::splat(48.0))
-        );
-    }
-    // Above the value area: row 0; below it: row 126.
-    assert_eq!(paste_rect(&f, pos2(300.0, 50.0), &m).center().y, TOP + 1.0);
-    assert_eq!(
-        paste_rect(&f, pos2(300.0, 333.0), &m).center().y,
-        TOP + 253.0
-    );
 }
 
 // Edge cases.
@@ -1301,7 +1309,9 @@ fn a_press_held_over_a_focus_loss_adds_no_point_moves_none_and_shows_no_paste() 
     let mut rig = Rig::new(&[]);
     set_clipboard(&rig.ctx, vec![(0.0, 0.5)]);
     rig.hold(at);
+    assert!(rig.text_at("Paste").is_some());
     lost(&mut rig);
+    assert_eq!(rig.text_at("Paste"), None);
     rig.release(at);
     assert_eq!(rig.text_at("Paste"), None);
     assert_eq!(rig.edits, 0);

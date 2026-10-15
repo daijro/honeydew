@@ -956,6 +956,10 @@ fn copy_fills_the_hit_clipboard_and_a_long_press_on_empty_grid_pastes_it_at_the_
     rig.click(rig.text_at("Copy").unwrap());
     assert_eq!(hit_clipboard(&rig.ctx), [drum(1, 64, 32.0)]);
     rig.hold(empty);
+    assert!(
+        rig.text_at("Paste").is_some(),
+        "Paste appears before lifting"
+    );
     rig.release(empty);
     let paste = rig.text_at("Paste").expect("the Paste button");
     rig.click(paste);
@@ -1062,7 +1066,7 @@ fn a_new_hit_takes_the_length_a_lone_hit_was_resized_to() {
 }
 
 #[test]
-fn a_mouse_hold_on_empty_grid_shows_the_3_u_square_and_a_drag_selects_live() {
+fn a_stationary_hold_on_empty_grid_has_no_marquee_until_dragged() {
     // The marquee, the mouse held 0.35 s: no egui drag start needed.
     let hits = [drum(0, 0, 32.0), drum(1, 64, 32.0), drum(2, 256, 32.0)];
     let mut rig = Rig::new(notes_lane(&hits));
@@ -1077,7 +1081,7 @@ fn a_mouse_hold_on_empty_grid_shows_the_3_u_square_and_a_drag_selects_live() {
         })
         .collect();
     assert!(
-        squares.iter().any(|r| (r.width() - 96.0).abs() < 0.5),
+        !squares.iter().any(|r| (r.width() - 96.0).abs() < 0.5),
         "{squares:?}"
     );
     assert_eq!(rig.selected(), [false; 3]);

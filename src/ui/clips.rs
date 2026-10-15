@@ -150,7 +150,7 @@ const PULSE: [f32; 3] = [0.15, 0.05, 0.0125];
 /// The handles' pop-in: a ← 0.6·a per frame.
 const HANDLE_RATE: f32 = 0.6;
 /// Floating-menu bubbles have a 0.2 U gap, with room for their pop-in animation.
-const BUTTON_D: f32 = 1.4;
+pub(crate) const BUTTON_D: f32 = 1.4;
 const ROW_B: f32 = 1.5;
 const ROW_SLOT: f32 = 1.6;
 const ROW_M: f32 = 0.2;
@@ -279,8 +279,8 @@ pub struct Clips {
     touch: Option<Touch>,
     /// The `+Clip` button on track (channel, lane), centred on this tick.
     plus: Option<(usize, usize, f64)>,
-    /// The `Paste` button on track (channel, lane), centred on this tick.
-    paste: Option<(usize, usize, f64)>,
+    /// The Paste bubble on track (channel, lane), at this tick and screen y.
+    paste: Option<(usize, usize, f64, f32)>,
     /// Several clips a marquee selected (none of them `selected`): one selection box with its handles, one floating row
     /// over them all.
     pub(crate) group: Vec<ClipRef>,
@@ -443,8 +443,11 @@ impl Clips {
         });
         // Every frame, for its latch: a press held over a focus loss is up, and decides nothing.
         let down = primary_down_live(ui, Id::new("clip_touch"));
-        let stale = held && !down;
+        let stale = held && !down || ui.input(|i| !i.focused || crate::ui::focus_lost(i));
         let multi = ui.input(|i| i.multi_touch().is_some());
+        if multi || stale || self.clipboard.is_empty() {
+            self.paste = None;
+        }
         // A move's release leaves its selection quiet (module docs); a pinch puts the clips back as they were.
         if !down && !multi && self.drag.as_ref().is_some_and(|d| d.part == Part::Body) {
             self.quiet = true;
@@ -463,7 +466,7 @@ impl Clips {
                 && !self.clipboard.is_empty()
                 && let Some(p) = tap.interact_pointer_pos()
             {
-                self.paste = Some((channel, lane, axis.tick(p.x)));
+                self.paste = Some((channel, lane, axis.tick(p.x), p.y));
             }
         }
 
@@ -621,6 +624,11 @@ impl Clips {
             }
         }
         let plus = self.plus_button(ui, app, rows, axis, snap, bar, pressed);
+        if self.marquee.is_some_and(|marquee| {
+            marquee.dragged || crate::ui::gesture::left_calm(marquee.from, pos, m.u(1.0))
+        }) {
+            self.paste = None;
+        }
         let paste = self.paste_button(ui, app, rows, axis, snap, pressed);
         if plus || paste {
             landed = None;
@@ -701,16 +709,19 @@ impl Clips {
             let region = marquee.region(grid);
             let touched = (blocks.iter()).filter(|(_, rect)| rect.intersects(region));
             self.set_selection(touched.map(|&(r, _)| r).collect());
-            paint_marquee(&painter, marquee.drawn(m.u(1.0)), &app.cx);
-            // Let go without a drag it is `Paste` on the finger's track, while clips are copied; not when a pinch or a
-            // focus loss ended it.
-            if down && !multi {
-                self.marquee = Some(marquee);
-            } else if !(multi || stale || marquee.dragged || self.clipboard.is_empty())
+            if marquee.dragged {
+                paint_marquee(&painter, marquee.drawn(m.u(1.0)), &app.cx);
+            }
+            self.paste = None;
+            if !(multi || stale || marquee.dragged || self.clipboard.is_empty())
                 && let Some(&(channel, lane, _)) =
-                    rows.iter().find(|r| r.2.y_range().contains(marquee.to.y))
+                    rows.iter().find(|r| r.2.y_range().contains(marquee.from.y))
             {
-                self.paste = Some((channel, lane, axis.tick(marquee.to.x)));
+                self.paste = Some((channel, lane, axis.tick(marquee.from.x), marquee.from.y));
+                ui.ctx().request_repaint();
+            }
+            if down && !multi && !stale {
+                self.marquee = Some(marquee);
             }
         }
         // The floating row over the selected clip or the group, also one scrolled out sideways (the row waits at the
@@ -741,7 +752,7 @@ impl Clips {
         };
         // A quiet selection has no row, which a release on it brings back neither.
         let sel = target
-            .filter(|_| !self.quiet)
+            .filter(|_| !self.quiet && self.paste.is_none())
             .map(|(_, rect, _)| Selection {
                 rect,
                 one_row,
@@ -848,7 +859,8 @@ impl Clips {
             .filter_map(map)
             .collect();
         self.plus = (self.plus).and_then(|(c, l, tick)| track(c, l).map(|(c, l)| (c, l, tick)));
-        self.paste = (self.paste).and_then(|(c, l, tick)| track(c, l).map(|(c, l)| (c, l, tick)));
+        self.paste =
+            (self.paste).and_then(|(c, l, tick, y)| track(c, l).map(|(c, l)| (c, l, tick, y)));
         self.cursor = (self.cursor).and_then(|(tick, (c, l))| track(c, l).map(|t| (tick, t)));
         // A clip whose track is gone goes from the clipboard.
         let kept = std::mem::take(&mut self.clipboard).into_iter();
@@ -903,11 +915,7 @@ impl Clips {
         ctx.request_repaint();
         let targets = self.targets();
         if matches!(k, EditKey::Copy | EditKey::Cut) && !targets.is_empty() {
-            let copied = (targets.iter()).filter_map(|&r| {
-                let kind = app.song.channels.get(r.channel)?.lanes.get(r.lane)?.kind;
-                Some((r, kind, find(app.song, r)?.clone()))
-            });
-            self.clipboard = copied.collect();
+            self.copy_selection(app.song);
         }
         let (tick, (channel, lane)) = self.cursor.unwrap_or((0.0, self.current_track(app)));
         match k {
@@ -1087,7 +1095,7 @@ impl Clips {
     }
 
     /// The `+Clip` button while it shows: a 1.5 U square centred on the tap's x and its row's centre line, a `menuFill`
-    /// square labelled `+Clip` in `text` (the automation editor's `Paste` look). Pressing it adds a clip on that track
+    /// square labelled `+Clip` in `text`. Pressing it adds a clip on that track
     /// at the snap line nearest its centre ([`add_clip`]) and makes it the current, selected clip; any other press
     /// hides it. Returns whether the press was on it.
     #[allow(clippy::too_many_arguments)]
@@ -1133,8 +1141,7 @@ impl Clips {
         on
     }
 
-    /// The `Paste` button while it shows ([`step_seq::paste_button`]: a 1.5 U square on its tick's x and its track
-    /// row's middle): its tap pastes the clip clipboard there ([`paste_clips`]), one final edit, the copies selected;
+    /// One Paste bubble at the held position. Its tap pastes the clip clipboard there, selecting the copies;
     /// any other press hides it, as does a track that went. Whether this frame's press is on it.
     fn paste_button(
         &mut self,
@@ -1145,16 +1152,15 @@ impl Clips {
         snap: f64,
         pressed: bool,
     ) -> bool {
-        let Some((channel, lane, tick)) = self.paste else {
+        let Some((channel, lane, tick, y)) = self.paste else {
             return false;
         };
-        let Some(&(.., row)) = rows.iter().find(|r| (r.0, r.1) == (channel, lane)) else {
+        if !rows.iter().any(|r| (r.0, r.1) == (channel, lane)) {
             self.paste = None;
             return false;
-        };
-        let finger = pos2(axis.x(tick), row.center().y);
-        let (rect, tap) =
-            step_seq::paste_button(ui, &app.cx, Id::new("clip_paste"), finger, row.y_range());
+        }
+        let finger = pos2(axis.x(tick), y);
+        let (rect, tap) = step_seq::paste_button(ui, &app.cx, Id::new("clip_paste"), finger);
         if tap.is_some() {
             self.paste = None;
         }
@@ -1423,12 +1429,24 @@ impl Clips {
         true
     }
 
+    fn copy_selection(&mut self, song: &Song) {
+        self.clipboard = self
+            .targets()
+            .iter()
+            .filter_map(|&r| {
+                let kind = song.channels.get(r.channel)?.lanes.get(r.lane)?.kind;
+                Some((r, kind, find(song, r)?.clone()))
+            })
+            .collect();
+    }
+
     /// Floating button `i`, at `center`, clicked over the selected clip or the group.
     fn act(&mut self, app: &mut AppCtx, i: usize, center: Pos2, snap: f64) -> Option<Nav> {
         let targets = self.targets();
         let &first = targets.first()?;
         match OPS[i].0 {
             ClipOp::Copy => {
+                self.copy_selection(app.song);
                 let copies = copy_clips(app.song, &targets, snap);
                 self.set_selection(copies);
                 app.song_edited(true);

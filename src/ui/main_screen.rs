@@ -4183,7 +4183,7 @@ mod tests {
         );
         rig.frame(vec![]);
         let f = rig.frame(vec![]);
-        assert!(squares(&f, from).iter().any(|w| (w - 96.0).abs() < 0.5));
+        assert!(!squares(&f, from).iter().any(|w| (w - 96.0).abs() < 0.5));
         assert_eq!(rig.screen.clips.selected, None);
         // Dragged into the MiniSynth's clip: the rectangle touches both clips, the selection already.
         let to = CLIP;
@@ -6529,9 +6529,7 @@ mod tests {
 
     #[test]
     fn a_long_press_on_empty_space_or_a_right_click_shows_paste_while_clips_are_copied() {
-        // A long press on empty space or a secondary tap on empty grid: a 1.5 U square on the finger's x and its row's
-        // middle.
-        use egui::{Key, Modifiers};
+        // A stationary hold or right click offers one round Paste bubble at the finger.
         let mut rig = Rig::new(song_with_a_clip());
         rig.long_press(EMPTY_2);
         assert_eq!(rig.paste(), None, "nothing copied");
@@ -6539,18 +6537,28 @@ mod tests {
         assert_eq!(rig.paste(), None, "nothing copied");
         // The clip copied, then deselected.
         rig.click(CLIP);
-        assert_eq!(rig.key(Key::C, Modifiers::COMMAND), None);
-        rig.click(EMPTY_2);
+        rig.frame(vec![]);
+        rig.click_id(Id::new(("clip_button", 0_usize)));
+        rig.click(EMPTY_2 + vec2(BEAT_PT, 0.0));
         assert_eq!(rig.screen.clips.selected, None);
-        rig.long_press(EMPTY_2);
+        let held_at = EMPTY_2 + vec2(BEAT_PT, 10.0);
+        rig.frames(vec![
+            vec![egui::Event::PointerMoved(held_at)],
+            vec![button(held_at, true)],
+            vec![],
+            vec![],
+            vec![],
+        ]);
+        assert!(rig.paste().is_some(), "Paste appears before lifting");
+        rig.frame(vec![button(held_at, false)]);
         let paste = rig.paste().expect("the Paste button");
         // The row's rect is y 176 … 239.
-        assert_eq!(paste, Rect::from_center_size(EMPTY_2, Vec2::splat(48.0)));
+        assert_eq!(paste, Rect::from_center_size(held_at, Vec2::splat(44.8)));
         // Its tap pastes the clip on that track at the beat under it: one final edit, the copy selected.
         assert_eq!(rig.click(paste.center()).0, Some(SongEdit::Final));
-        assert_eq!(rig.starts(2), [(1, 512), (2, 1536)]);
+        assert_eq!(rig.starts(2), [(1, 512), (2, 1024), (3, 1664)]);
         let pasted = ClipRef {
-            id: 2,
+            id: 3,
             ..SYNTH_CLIP
         };
         assert_eq!(rig.screen.clips.selected, Some(pasted));
@@ -6573,9 +6581,14 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            vec![egui::Event::PointerMoved(far + vec2(60.0, 0.0))],
-            vec![button(far + vec2(60.0, 0.0), false)],
         ]);
+        let moved = rig.frame(vec![egui::Event::PointerMoved(far + vec2(60.0, 0.0))]);
+        assert!(
+            !moved.shapes.iter().any(|s| matches!(&s.shape,
+            egui::Shape::Text(t) if t.galley.text() == "Paste")),
+            "drag hides Paste in the same frame"
+        );
+        rig.frame(vec![button(far + vec2(60.0, 0.0), false)]);
         assert_eq!(rig.paste(), None);
         rig.frames(vec![
             vec![egui::Event::PointerMoved(far)],

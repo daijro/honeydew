@@ -270,7 +270,7 @@ fn the_menu_is_at_most_20_u_wide_on_the_right_with_the_tab_row_under_the_header(
 fn the_header_names_the_app_and_its_version_and_the_tabs_run_in_order() {
     let rig = Rig::new(Tab::Songs);
     let panel = shell_layout(Rect::from_min_size(Pos2::ZERO, SIZE.into()), &m()).panel;
-    for text in [APP_NAME, "Version 0.1.5", "Help", "Quit"] {
+    for text in [APP_NAME, "Version 0.1.6", "Help", "Quit"] {
         assert!(panel.contains_rect(rig.find(text)), "{text}");
     }
     let xs: Vec<f32> = Tab::ALL

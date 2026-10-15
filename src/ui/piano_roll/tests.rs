@@ -1801,6 +1801,10 @@ mod component {
         rig.select(vec![true]);
         let copy = rig.text("Copy").unwrap();
         rig.tap(copy);
+        assert_eq!(
+            spans(&super::super::note_clipboard(&rig.ctx)),
+            [(128, 64.0, 70)]
+        );
         assert_eq!(spans(rig.events()), [(128, 64.0, 70), (192, 64.0, 70)]);
         assert_eq!(rig.roll.selected, [false, true]);
         assert_eq!(rig.all, [DONE]);
@@ -2384,9 +2388,9 @@ mod component {
             "{:?}",
             rig.rects
         );
-        // Past 300 ms: 3 U; it selects what lies under the finger, nothing here.
+        // Past 300 ms: no marquee until dragged, and nothing selected.
         rig.frame_after(0.15, vec![]);
-        assert!(square_at(&rig, from, 96.0));
+        assert!(!square_at(&rig, from, 96.0));
         assert_eq!(rig.roll.selected, [false; 3]);
         // A drag: the rectangle to the finger, whose notes are the selection before the lift.
         let to = at(300.0, 67);
@@ -3783,15 +3787,13 @@ mod component {
         assert_eq!(rig.text("Paste"), None, "nothing copied");
         copy_two(&rig);
         rig.hold(finger);
+        assert!(rig.text("Paste").is_some(), "Paste appears before lifting");
+        assert_eq!(spans(rig.events()), [(0, 64.0, 60)]);
         rig.release(finger);
         rig.frame(vec![]);
-        // A 1.5 U square on the finger's x and its row's middle.
+        // A single Paste bubble remains at the hold location until tapped.
         let paste = rig.text("Paste").expect("the Paste button");
         assert!((paste - finger).length() < 2.0, "{paste:?}");
-        assert!(
-            rig.rects
-                .contains(&Rect::from_center_size(finger, Vec2::splat(48.0)))
-        );
         // Its tap lands the earliest note on the button's cell, the other at its offsets: one final edit, selected.
         rig.all.clear();
         rig.tap(paste);
@@ -3803,6 +3805,22 @@ mod component {
         assert_eq!(rig.all, [DONE]);
         rig.frame(vec![]);
         assert_eq!(rig.text("Paste"), None);
+    }
+
+    #[test]
+    fn small_hold_jitter_keeps_only_the_paste_bubble() {
+        let mut rig = Rig::new(vec![n(128, 64.0, 66)]);
+        copy_two(&rig);
+        rig.hold(at(120.0, 66));
+        rig.frame(vec![In::PointerMoved(at(132.0, 66))]);
+        rig.release(at(132.0, 66));
+        rig.frame(vec![]);
+        assert!(rig.text("Paste").is_some());
+        for label in ["Copy", "Delete", "Snap", "More..."] {
+            assert_eq!(rig.text(label), None, "{label} must not accompany Paste");
+        }
+        assert_eq!(spans(rig.events()), [(128, 64.0, 66)]);
+        assert!(rig.all.is_empty());
     }
 
     #[test]
@@ -3833,14 +3851,28 @@ mod component {
 
     #[test]
     fn a_long_press_held_over_a_focus_loss_shows_no_paste() {
-        let mut rig = Rig::new(vec![]);
-        copy_two(&rig);
-        rig.hold(at(384.0, 66));
-        rig.frame(vec![In::WindowFocused(false)]);
-        rig.frame(vec![In::WindowFocused(true)]);
-        rig.release(at(384.0, 66));
-        rig.frame(vec![]);
-        assert_eq!(rig.text("Paste"), None);
+        for release_with_focus_loss in [false, true] {
+            let mut rig = Rig::new(vec![]);
+            copy_two(&rig);
+            let at = at(384.0, 66);
+            rig.hold(at);
+            assert!(rig.text("Paste").is_some());
+            let mut events = vec![In::WindowFocused(false)];
+            if release_with_focus_loss {
+                events.push(In::PointerButton {
+                    pos: at,
+                    button: PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Modifiers::NONE,
+                });
+            }
+            rig.frame(events);
+            assert_eq!(rig.text("Paste"), None);
+            rig.frame(vec![In::WindowFocused(true)]);
+            rig.release(at);
+            rig.frame(vec![]);
+            assert_eq!(rig.text("Paste"), None);
+        }
     }
 }
 

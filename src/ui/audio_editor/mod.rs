@@ -56,13 +56,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
 use eframe::egui::{
-    self, Align2, Color32, Id, Mesh, Painter, Pos2, Rangef, Rect, Response, Sense, Stroke, Ui,
-    Vec2, pos2,
+    self, Color32, Id, Mesh, Painter, Pos2, Rangef, Rect, Response, Sense, Stroke, Ui, Vec2, pos2,
 };
 use honeydew_audio::sample::SampleData;
 use honeydew_audio::sample_edit::{peaks, speed_ratio};
 
-use crate::metrics::{FontSize, Metrics};
+use crate::metrics::Metrics;
 use crate::sample_cache::Waveform;
 use crate::song::points::{self, Point, PointKey};
 use crate::song::{Channel, Clip, LaneKind, PPQ, SamplerSlot, Song};
@@ -93,8 +92,6 @@ const PAST_LOOP_ALPHA: f32 = 0.15;
 /// Points (U) and curve lines (device px).
 const POINT_R: f32 = 0.2;
 const LINE_PX: f32 = 1.5;
-/// The `Paste` button's side, U.
-const PASTE_U: f32 = 1.5;
 /// The right-edge handle: diameter, and its offset right of the box, U.
 const SCALE_D: f32 = 0.6;
 const SCALE_OFF: f32 = 1.0;
@@ -422,7 +419,7 @@ enum Gesture {
     Pan {
         last: Pos2,
     },
-    /// A long press that has not moved: `Paste` on release.
+    /// A stationary long press offers Paste while held.
     Hold {
         at: Pos2,
     },
@@ -513,8 +510,8 @@ pub struct AudioEditor {
     seen: Option<(At, usize, Vec<Point>)>,
     gesture: Gesture,
     anim: Option<(Anim, f64)>,
-    /// The `Paste` button and the tick it pastes at.
-    paste: Option<(Rect, f64)>,
+    /// The held position of the Paste button and the tick it pastes at.
+    paste: Option<(Pos2, f64)>,
     row: FloatingRow,
     region: RangeSelect,
     /// The playhead knob on the ruler.
@@ -545,6 +542,7 @@ impl AudioEditor {
     /// does, changing nothing; a drag's preview (the points' or the stretch handle's length) goes with it.
     pub(crate) fn end_touch(&mut self) {
         self.gesture = Gesture::Idle;
+        self.paste = None;
         (self.stretch.len, self.stretch.origin, self.stretch.pressed) = (None, None, None);
     }
 
@@ -965,8 +963,9 @@ impl AudioEditor {
         // A pinch only zooms; a press held over a focus loss is up and stale (`primary_down_live`): either ends the
         // gesture with no tap, drop or `Paste`.
         let stale = !down && ui.input(|i| i.pointer.primary_down());
-        if multi || stale {
+        if multi || stale || ui.input(|i| !i.focused || crate::ui::focus_lost(i)) {
             self.gesture = Gesture::Idle;
+            self.paste = None;
             return None;
         }
         self.quiet &= self.sel.contains(&true);
@@ -1029,6 +1028,13 @@ impl AudioEditor {
                 self.gesture = g;
             }
         }
+        match self.gesture {
+            Gesture::Hold { at } => {
+                self.paste = (!clipboard(ui.ctx()).is_empty()).then_some((at, axis.tick(at.x)));
+            }
+            Gesture::Marquee { .. } => self.paste = None,
+            _ => {}
+        }
         if down {
             return None;
         }
@@ -1048,12 +1054,7 @@ impl AudioEditor {
                 Some((new, sel, Anim::Pop))
             }
             Gesture::Hold { at } => {
-                if !clipboard(ui.ctx()).is_empty() {
-                    let r = f.row_at(at.y).floor().clamp(0.0, points::LAST_ROW);
-                    let centre = pos2(at.x, f.row_y(r + 0.5));
-                    let button = Rect::from_center_size(centre, Vec2::splat(m.u(PASTE_U)));
-                    self.paste = Some((button, axis.tick(at.x)));
-                }
+                self.paste = (!clipboard(ui.ctx()).is_empty()).then_some((at, axis.tick(at.x)));
                 None
             }
             Gesture::Marquee { from, to } => {
@@ -1266,11 +1267,13 @@ impl AudioEditor {
         // The row floats over the touch frame (the box grown by 1.25 U, as the automation editor's), so a release
         // anywhere a touch binds the selection re-shows it.
         // A quiet selection has no row, which a release on it brings back neither.
-        let sel = bx.filter(|_| !boxing && !self.quiet).map(|rect| Selection {
-            rect: rect.expand(cx.m.u(HIT_R)),
-            one_row: rect.height() < row_h,
-            handles: &handles,
-        });
+        let sel = bx
+            .filter(|_| !boxing && !self.quiet && self.paste.is_none())
+            .map(|rect| Selection {
+                rect: rect.expand(cx.m.u(HIT_R)),
+                one_row: rect.height() < row_h,
+                handles: &handles,
+            });
         let view = GridView {
             grid: f.grid,
             map: [axis.origin, f.value.top(), axis.beat_w, f.value.height()],
@@ -1291,7 +1294,7 @@ impl AudioEditor {
         Some((kept, vec![false; n]))
     }
 
-    /// The `Paste` button while shown: a 1.5 U `menuFill` square with `Paste` in `text`; a tap pastes there.
+    /// The shared round Paste button; a separate tap commits the clipboard.
     fn paste_button(
         &mut self,
         ui: &mut Ui,
@@ -1301,25 +1304,16 @@ impl AudioEditor {
         snap: Option<f64>,
     ) -> Option<(Vec<Point>, Vec<bool>)> {
         let copied = clipboard(ui.ctx());
-        let (rect, tick) = self.paste.filter(|_| !copied.is_empty())?;
-        let c = &cx.theme.colors;
-        // It senses drags too, so a press on it never reaches the grid under it.
-        let id = Id::new("audio_editor").with("paste");
-        let response = ui.interact(rect, id, Sense::click_and_drag());
-        ui.painter()
-            .rect_filled(rect, 0.0, c.menu_fill.to_color32());
-        ui.painter().text(
-            rect.center(),
-            Align2::CENTER_CENTER,
-            "Paste",
-            cx.m.font_id(FontSize::Pt10),
-            c.text.to_color32(),
-        );
-        if !response.clicked() {
+        if copied.is_empty() {
+            self.paste = None;
             return None;
         }
+        let (finger, tick) = self.paste?;
+        let id = Id::new("audio_editor").with("paste");
+        let (_, tap) = crate::ui::step_seq::paste_button(ui, cx, id, finger);
+        let tap = tap?;
         self.paste = None;
-        Some(points::paste(pts, &copied, tick, snap, max))
+        tap.then(|| points::paste(pts, &copied, tick, snap, max))
     }
 
     /// The Snap button in `cell` ([`widgets::snap_button`]): a tap toggles snap, a long press or a right click opens

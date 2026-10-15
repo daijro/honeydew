@@ -52,8 +52,8 @@
 //!   Hit-testing uses [start, start + length] (no minimum touch width). A long press on empty grid without dragging
 //!   shows the Paste button when the clipboard is set. As in the automation editor, the floating `Copy` also stores the
 //!   copied hits in the drum editors' clipboard ([`step_seq::hit_clipboard`], shared with step mode); while it is set,
-//!   the long press lifted in place and a right click on empty grid show the `Paste` button (a 1.5 U square on the
-//!   finger's x and its row's middle), which any other press hides. Its tap lands the earliest copied hit on the
+//!   a stationary long press and a right click on empty grid show one round `Paste` bubble at the finger,
+//!   which dragging or another press hides. Its tap lands the earliest copied hit on the
 //!   nearest snap unit under it, the others at their offsets with their pads and lengths, in one final edit
 //!   ([`edit::paste`]); they are the selection (a lone one is remembered).
 //! - **Remembered values (both drum modes).** Whenever exactly one hit becomes the selection (touched, tapped or pasted
@@ -399,7 +399,7 @@ impl DrumGridView {
                 ui.ctx().request_repaint();
                 hold_square(origin, u, now - since)
             }
-            Gesture::Box(marquee) => Some(marquee.drawn(u)),
+            Gesture::Box(marquee) if marquee.dragged => Some(marquee.drawn(u)),
             _ => None,
         };
         if let Some(rect) = marquee {
@@ -416,10 +416,11 @@ impl DrumGridView {
                 quiet: false,
             });
         }
+        if step_seq::hit_clipboard(ui.ctx()).is_empty() {
+            self.paste = None;
+        }
         if let Some(finger) = self.paste {
-            let top = l.row_top() + place.row(finger.y).unwrap_or(0) as f32 * l.pitch;
-            let band = Rangef::new(top, top + l.pitch);
-            let (rect, tap) = step_seq::paste_button(ui, cx, id().with("paste"), finger, band);
+            let (rect, tap) = step_seq::paste_button(ui, cx, id().with("paste"), finger);
             let hits = step_seq::hit_clipboard(ui.ctx());
             if tap.is_some() {
                 self.paste = None;
@@ -672,12 +673,15 @@ impl DrumGridView {
         });
         // A press held over a focus loss is up: it ends the gesture as a release, and starts nothing.
         let down = primary_down_live(ui, grid.id);
-        let stale = held && !down;
+        let stale = held && !down || ui.input(|i| !i.focused || crate::ui::focus_lost(i));
         let pos = pos.filter(|_| !stale);
         let moved = |o: Pos2| gesture::left_calm(o, pos, place.u);
         let multi = ui.input(|i| i.multi_touch().is_some());
         let mut action = None;
         let clipboard = || !step_seq::hit_clipboard(ui.ctx()).is_empty();
+        if multi || stale {
+            self.paste = None;
+        }
         if pressed && grid.is_pointer_button_down_on() {
             self.paste = None;
         }
@@ -825,10 +829,10 @@ impl DrumGridView {
                 // Live: what the box touches is the selection, every frame.
                 marquee.follow(pos, place.u);
                 (self.sel, self.quiet) = (place.in_box(events, marquee.region(grid.rect)), false);
+                self.paste =
+                    (!stale && !multi && !marquee.dragged && clipboard()).then_some(marquee.from);
                 if !up {
                     self.gesture = Gesture::Box(marquee);
-                } else if !marquee.dragged && clipboard() {
-                    self.paste = Some(marquee.from);
                 }
             }
             Gesture::Edit(mut edit) => {
@@ -1026,7 +1030,7 @@ impl DrumGridView {
         // A quiet selection has no row, which a release on it brings back neither.
         let sel = (chosen.iter().filter_map(|e| place.rect(e)))
             .reduce(Rect::union)
-            .filter(|_| !boxing && !self.quiet)
+            .filter(|_| !boxing && !self.quiet && self.paste.is_none())
             .map(|rect| Selection {
                 rect,
                 one_row: pads().min() == pads().max(),

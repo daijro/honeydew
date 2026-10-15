@@ -630,6 +630,7 @@ fn a_long_press_marquees_and_copy_then_paste_adds_the_points() {
     for _ in 0..20 {
         rig.run(vec![]);
     }
+    assert!(rig.ed.paste.is_none(), "an empty clipboard offers no Paste");
     let to = pos2(400.0, 320.0);
     rig.run(vec![egui::Event::PointerMoved(to)]);
     rig.button(to, false);
@@ -656,12 +657,16 @@ fn a_long_press_marquees_and_copy_then_paste_adds_the_points() {
     for _ in 0..20 {
         rig.run(vec![]);
     }
+    assert!(rig.ed.paste.is_some(), "Paste appears before release");
+    assert!(
+        rig.shapes
+            .iter()
+            .any(|s| matches!(&s.shape, Shape::Circle(c) if c.center == at))
+    );
+    assert_eq!(rig.take(), []);
     rig.button(at, false);
-    rig.take();
-    let paste = rig.ed.paste.expect("the Paste button").0;
-    assert_eq!(paste.size(), Vec2::splat(48.0));
-    assert_eq!(paste.center().x, 572.0);
-    rig.click(paste.center());
+    assert_eq!(rig.take(), [], "the original lift does not paste");
+    rig.click(at);
     // Tick 522 snaps to 512.
     let (want, _) = points::paste(&pts, &copied, 522.0, snap(), 65535);
     assert_eq!(want[2].tick, 512);
@@ -672,6 +677,31 @@ fn a_long_press_marquees_and_copy_then_paste_adds_the_points() {
             points: want
         }]
     );
+    // A held bubble disappears when the gesture becomes a marquee, loses focus, pinches, or loses its clipboard.
+    for cancel in 0..4 {
+        let mut rig = Rig::new(song(), None);
+        set_clipboard(&rig.off.ctx, vec![(0.0, 0.5)]);
+        rig.run(vec![egui::Event::PointerMoved(at)]);
+        rig.button(at, true);
+        for _ in 0..20 {
+            rig.run(vec![]);
+        }
+        assert!(rig.ed.paste.is_some());
+        match cancel {
+            0 => rig.run(vec![egui::Event::PointerMoved(at + vec2(100.0, 50.0))]),
+            1 => rig.run(vec![egui::Event::WindowFocused(false)]),
+            2 => {
+                rig.touch(1, egui::TouchPhase::Start, at);
+                rig.touch(2, egui::TouchPhase::Start, at + vec2(100.0, 50.0));
+            }
+            _ => {
+                set_clipboard(&rig.off.ctx, Vec::new());
+                rig.run(vec![]);
+            }
+        }
+        assert!(rig.ed.paste.is_none(), "cancel {cancel}");
+        assert_eq!(rig.take(), [], "cancel {cancel}");
+    }
 }
 
 #[test]
@@ -1396,7 +1426,7 @@ fn a_copy_in_the_automation_editor_pastes_in_an_envelope_lane_and_back() {
 
     // The audio editor's VOL lane: a long press shows `Paste`; its tap pastes the copied point (full scale kept).
     both.tap(true, pos2(572.0, 200.0), true);
-    let paste = both.audio.paste.expect("Paste").0.center();
+    let paste = both.audio.paste.expect("Paste").0;
     both.tap(true, paste, false);
     let (vol, _) = points::paste(&[], &copied, 522.0, snap(), 65535);
     assert_eq!(
@@ -1426,9 +1456,7 @@ fn a_copy_in_the_automation_editor_pastes_in_an_envelope_lane_and_back() {
     assert_eq!(copied, [(4.0, 32768.0 / 65535.0)]);
     let finger = pos2(50.0 + 384.0, 300.0);
     both.tap(false, finger, true);
-    let m = metrics();
-    let button = automation::paste_rect(&f, finger, &m);
-    both.tap(false, button.center(), false);
+    both.tap(false, finger, false);
     let (want, _) = points::paste(&auto, &copied, 384.0, snap(), 65534);
     assert_eq!(
         want[2],

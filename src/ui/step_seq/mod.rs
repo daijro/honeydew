@@ -36,7 +36,7 @@
 //!   long press on a hit that then moves boxes too.
 //! - A right click on a hit makes it the selection; on an empty step it is `Paste` (below).
 //! - `Paste` (as the automation editor's): the floating `Copy` also stores the copied hits in the drum editors'
-//!   clipboard ([`hit_clipboard`], shared with the free grid); while it is set, a long press lifted in place or a
+//!   clipboard ([`hit_clipboard`], shared with the free grid); while it is set, a stationary long press or a
 //!   right click on an empty step shows the `Paste` button, which any other press hides. Its tap lands the
 //!   clipboard's first step on the step under it, the others keeping their pads and distances in steps, in one final
 //!   edit ([`StepAction::PasteSteps`]); the pasted hits are the selection.
@@ -105,7 +105,7 @@ use eframe::egui::text::{CCursor, CCursorRange};
 use eframe::egui::text_edit::TextEditState;
 use eframe::egui::{
     self, Align2, Area, Color32, Context, Id, Key, Order, Painter, Pos2, Rangef, Rect, Response,
-    Sense, Ui, Vec2, pos2, vec2,
+    Sense, Ui, pos2, vec2,
 };
 
 use crate::icons::{self, IconId};
@@ -177,8 +177,6 @@ const DELETE_PROMPT: &str = "Delete drum sample? (no undo)";
 /// The `Set Name` prompt's title (`New sample name` is the audio clip's).
 const RENAME_TITLE: &str = "Set Name";
 const MIDI_PROMPT: &str = "Press a key on your MIDI controller to route it to the drum sample";
-/// The `Paste` button's side, in U.
-const PASTE: f32 = 1.5;
 
 fn id() -> Id {
     Id::new("step_seq")
@@ -196,32 +194,20 @@ pub(crate) fn set_hit_clipboard(ctx: &Context, hits: Vec<Event>) {
     ctx.data_mut(|d| d.insert_temp(Id::new("drum_hit_clipboard"), hits));
 }
 
-/// The `Paste` button for a press at `finger` whose row band is `row` (a 1.5 U square labelled `Paste`, centred on the
-/// finger's x and on the middle of the row under it; the automation editor's look, `menuFill` with the label in
-/// `text`). `Some(true)` when tapped, `Some(false)` when a press lands anywhere else (it
-/// hides), `None` meanwhile.
-pub(crate) fn paste_button(
-    ui: &Ui,
-    cx: &UiCtx,
-    id: Id,
-    finger: Pos2,
-    row: Rangef,
-) -> (Rect, Option<bool>) {
-    let (c, m) = (&cx.theme.colors, cx.m);
-    let rect = Rect::from_center_size(pos2(finger.x, row.center()), Vec2::splat(m.u(PASTE)));
-    let response = ui.interact(rect, id, Sense::click_and_drag());
-    ui.painter()
-        .rect_filled(rect, 0.0, c.menu_fill.to_color32());
-    let font = m.font_id(FontSize::Pt12);
-    let ink = c.text.to_color32();
-    (ui.painter()).text(rect.center(), Align2::CENTER_CENTER, "Paste", font, ink);
-    let elsewhere = ui.input(|i| i.pointer.any_pressed()) && !response.is_pointer_button_down_on();
+/// One Paste bubble at the held position. Only a later click activates it; another press dismisses it.
+pub(crate) fn paste_button(ui: &mut Ui, cx: &UiCtx, id: Id, finger: Pos2) -> (Rect, Option<bool>) {
+    let d = cx.m.u(crate::ui::clips::BUTTON_D);
+    let font = crate::ui::clips::label_font(ui.ctx(), cx.m, d, &["Paste"]);
+    let response =
+        crate::ui::buttons::bubble_button(ui, id, finger, d, 1.0, "Paste", font, &cx.theme.colors);
+    let elsewhere =
+        ui.input(|i| i.pointer.any_pressed()) && !response.response.is_pointer_button_down_on();
     let tap = if response.clicked() {
         Some(true)
     } else {
         elsewhere.then_some(false)
     };
-    (rect, tap)
+    (response.rect(), tap)
 }
 
 /// What the step view reads from the drum kit, by pad index (= the drum event's `pad`, = the row).
@@ -1014,7 +1000,7 @@ impl StepSeqView {
 
         // The marquee: a square growing while a touch is held on an empty step, then the box.
         let marquee = match (self.boxing, self.touch) {
-            (Some(marquee), _) => Some(marquee.drawn(l.u)),
+            (Some(marquee), _) if marquee.dragged => Some(marquee.drawn(l.u)),
             (None, Some(t)) if t.on.is_none() => {
                 ui.ctx().request_repaint();
                 hold_square(t.origin, l.u, now - t.since)
@@ -1028,7 +1014,7 @@ impl StepSeqView {
         let sel = (self.selection.iter())
             .map(|&(pad, step)| l.cell(usize::from(pad), step))
             .reduce(Rect::union)
-            .filter(|_| self.boxing.is_none())
+            .filter(|_| self.boxing.is_none() && self.paste.is_none())
             .map(|rect| Selection {
                 rect,
                 // Sorted by pad first: one pad iff the first and the last share it.
@@ -1054,10 +1040,11 @@ impl StepSeqView {
                 _ => StepAction::DeleteSteps { cells },
             });
         }
+        if hit_clipboard(ui.ctx()).is_empty() {
+            self.paste = None;
+        }
         if let Some(finger) = self.paste {
-            let (row, _) = l.cell_at(finger);
-            let band = l.cell(row, 0).y_range();
-            let (rect, tap) = paste_button(ui, cx, id().with("paste"), finger, band);
+            let (rect, tap) = paste_button(ui, cx, id().with("paste"), finger);
             if tap.is_some() {
                 self.paste = None;
             }
@@ -1393,12 +1380,12 @@ impl StepSeqView {
         // A press held over a focus loss is up (see `primary_down_live`): it ends the touch or the box as a release, and
         // starts nothing.
         let down = primary_down_live(ui, grid.id);
-        let stale = held && !down;
+        let stale = held && !down || ui.input(|i| !i.focused || crate::ui::focus_lost(i));
         let pos = pos.filter(|_| !stale);
         // Two fingers are a pinch: no box and no tap.
         let pinch = ui.input(|i| i.multi_touch().is_some());
-        if pinch {
-            (self.boxing, self.touch) = (None, None);
+        if pinch || stale {
+            (self.boxing, self.touch, self.paste) = (None, None, None);
         }
         let cell = |p: Option<Pos2>| p.and_then(|p| l.hit(p)).map(|(row, s)| (row as u8, s));
         let clipboard = || !hit_clipboard(ui.ctx()).is_empty();
@@ -1503,11 +1490,9 @@ impl StepSeqView {
             let cells = (r0.min(r1)..=r0.max(r1))
                 .flat_map(|row| (s0.min(s1)..=s0.max(s1)).map(move |s| (row as u8, s)));
             self.selection = cells.filter(|&c| is_hit(c)).collect();
+            self.paste =
+                (!marquee.dragged && !stale && !pinch && clipboard()).then_some(marquee.from);
             if !down {
-                // Lifted in place: `Paste`, while the clipboard is set.
-                if !marquee.dragged && clipboard() {
-                    self.paste = Some(marquee.from);
-                }
                 self.boxing = None;
             }
         }

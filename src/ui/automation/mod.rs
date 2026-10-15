@@ -13,10 +13,9 @@
 //! within 1.25 U) drags it, or the whole selection when it lands inside the showing selection's touch frame; released
 //! without movement it is a tap, which selects the point, or only deselects when a selection showed at the touch-down,
 //! or after more than 300 ms a long press, which shows the touch-down's selection without toggling. On empty grid a
-//! long press (300 ms within 0.5 U) is the marquee ([`Marquee`]): its square grows while held, a 3 U square stays on
-//! the finger after (selecting nothing there; let go so it is the `Paste` button when the clipboard holds points), and
-//! a drag makes it the rectangle to the finger, whose points are the selection live; Shift (the selection modifier)
-//! drags one at once. With two or more points selected, the band right of the selection box inside its touch frame is
+//! long press (300 ms within 0.5 U) offers a round `Paste` button at the finger when the clipboard holds points;
+//! dragging from there makes a marquee ([`Marquee`]) whose points are the selection live. Shift (the selection
+//! modifier) starts one at once. With two or more points selected, the band right of the selection box inside its touch frame is
 //! the right-edge handle, which scales. Each gesture is one final edit at its release, only when the points changed;
 //! meanwhile only the drawing follows the finger. A move's release (as the piano roll's) leaves the moved points
 //! selected with the floating row hidden, a quiet selection whose frame and handle take no touch (a tap on empty grid
@@ -52,7 +51,7 @@ use std::collections::HashMap;
 use std::f32::consts::TAU;
 
 use eframe::egui::{
-    self, Align2, Color32, Id, Painter, Pos2, Rangef, Rect, Response, Sense, Stroke, Ui, Vec2, pos2,
+    self, Align2, Color32, Id, Painter, Pos2, Rangef, Rect, Response, Sense, Stroke, Ui, pos2,
 };
 
 use crate::metrics::{FontSize, Metrics};
@@ -90,8 +89,6 @@ const ANIM_RATE: f32 = 0.6;
 const DRAG_FLOOR: f32 = 0.01;
 /// The floating buttons over a selection.
 const OPS: [&str; 2] = ["Copy", "Delete"];
-/// The `Paste` button's side (U).
-const PASTE: f32 = 1.5;
 /// The axis labels keep this many tail characters when truncated.
 const LABEL_K: usize = 5;
 
@@ -131,13 +128,6 @@ pub(crate) fn drag_scale(a: f32) -> f32 {
 /// A released point's radius scale (wobble): 1 + (1 − a)·sin(2π·(1 − a)).
 pub(crate) fn wobble_scale(a: f32) -> f32 {
     1.0 + (1.0 - a) * (TAU * (1.0 - a)).sin()
-}
-
-/// The `Paste` button for a long press at `finger`: a 1.5 U square centred on its x and on the middle of the row under
-/// it (rows 0…126).
-pub(crate) fn paste_rect(f: &Frame, finger: Pos2, m: &Metrics) -> Rect {
-    let r = f.row_at(finger.y).floor().clamp(0.0, LAST_ROW);
-    Rect::from_center_size(pos2(finger.x, f.row_y(r + 0.5)), Vec2::splat(m.u(PASTE)))
 }
 
 /// What the host lends the editor for a frame.
@@ -188,8 +178,7 @@ enum Gesture {
         since: f64,
     },
     Pan,
-    /// The marquee from a long press, or at once with Shift: its selection is live; let go without a drag it is the
-    /// `Paste` button.
+    /// The marquee from a long press, or at once with Shift: its selection is live; a stationary hold offers Paste.
     Box(Marquee),
     Drag(Drag),
 }
@@ -279,6 +268,7 @@ impl AutomationEditor {
     /// does, changing nothing; a drag's preview goes with it.
     pub(crate) fn end_touch(&mut self) {
         self.gesture = Gesture::Idle;
+        self.paste = None;
     }
 
     /// Follows every clip's view and the selection's clip to `track(channel, lane)` after channels or tracks moved;
@@ -404,7 +394,9 @@ impl AutomationEditor {
 
         // The floating row over the selection, the `Paste` button.
         // Hidden while a point is held, and by a long press or its marquee.
-        let hidden = self.quiet || matches!(self.gesture, Gesture::Drag(_) | Gesture::Box(_));
+        let hidden = self.quiet
+            || self.paste.is_some()
+            || matches!(self.gesture, Gesture::Drag(_) | Gesture::Box(_));
         let handles: Vec<Rect> = handle.into_iter().collect();
         let one_row = {
             let mut rows = (shown_pts.iter().zip(&shown_sel))
@@ -437,7 +429,7 @@ impl AutomationEditor {
             }
             ui.ctx().request_repaint();
         }
-        if let Some(new) = self.paste_button(ui, cx, &f, ax, &pts, snap, now) {
+        if let Some(new) = self.paste_button(ui, cx, ax, &pts, snap, now) {
             (edit, self.quiet) = (Some(new), false);
         }
 
@@ -592,8 +584,10 @@ impl AutomationEditor {
         // A second finger makes a pinch, which only zooms: it ends any gesture, changing nothing. So does a press held
         // over a focus loss, which is up and stale (`primary_down_live`): no tap, drop or `Paste`.
         let stale = !down && ui.input(|i| i.pointer.primary_down());
-        if pinch_press(ui, grid.id) || stale {
+        if pinch_press(ui, grid.id) || stale || ui.input(|i| !i.focused || crate::ui::focus_lost(i))
+        {
             self.gesture = Gesture::Idle;
+            self.paste = None;
             return None;
         }
         let (pressed, pos, shift) = ui.input(|i| {
@@ -663,6 +657,9 @@ impl AutomationEditor {
                     let mut marquee = Marquee::at(origin, false);
                     marquee.follow(pos, u);
                     (self.sel, self.quiet) = (marquee_sel(marquee, f, ax, pts), false);
+                    if !marquee.dragged {
+                        self.offer_paste(ui, origin);
+                    }
                     Gesture::Box(marquee)
                 } else if moved(origin) {
                     // A drag: no tap and no marquee, and nothing scrolls here (the touch x zone is the ruler band).
@@ -670,7 +667,7 @@ impl AutomationEditor {
                 } else if !down {
                     if held {
                         // Released in the frame the long press came due.
-                        self.long_released(ui, origin);
+                        self.offer_paste(ui, origin);
                     } else if self.sel.contains(&true) {
                         // A tap: a shown (or quiet) selection only clears; else a new point, selected.
                         self.sel.fill(false);
@@ -692,10 +689,13 @@ impl AutomationEditor {
                 // Live: the points the box touches are the selection, every frame.
                 marquee.follow(pos, u);
                 (self.sel, self.quiet) = (marquee_sel(marquee, f, ax, pts), false);
+                if marquee.dragged {
+                    self.paste = None;
+                } else {
+                    self.offer_paste(ui, marquee.from);
+                }
                 if down {
                     self.gesture = Gesture::Box(marquee);
-                } else if !marquee.dragged {
-                    self.long_released(ui, marquee.from);
                 }
             }
             Gesture::Drag(mut d) => {
@@ -731,11 +731,9 @@ impl AutomationEditor {
         edit
     }
 
-    /// A long press let go in place: the `Paste` button when the clipboard holds points.
-    fn long_released(&mut self, ui: &Ui, origin: Pos2) {
-        if !clipboard(ui.ctx()).is_empty() {
-            self.paste = Some(origin);
-        }
+    /// A stationary long press offers Paste while the clipboard holds points.
+    fn offer_paste(&mut self, ui: &Ui, origin: Pos2) {
+        self.paste = (!clipboard(ui.ctx()).is_empty()).then_some(origin);
     }
 
     /// What a press at `p` holds: (the right-edge handle, its point's index) first, else (the nearest point, false).
@@ -918,7 +916,7 @@ impl AutomationEditor {
         // The marquee: a square growing while a touch is held on empty grid, then the box.
         let marquee = match self.gesture {
             Gesture::Press { origin, since } => hold_square(origin, m.u(1.0), now - since),
-            Gesture::Box(marquee) => Some(marquee.drawn(m.u(1.0))),
+            Gesture::Box(marquee) if marquee.dragged => Some(marquee.drawn(m.u(1.0))),
             _ => None,
         };
         if let Some(rect) = marquee {
@@ -942,14 +940,11 @@ impl AutomationEditor {
         }
     }
 
-    /// The `Paste` button while it shows: a `menuFill` square labelled `Paste` in `text` (the region `+` button's
-    /// slots). Returns the paste a tap on it made.
-    #[allow(clippy::too_many_arguments)]
+    /// The shared round Paste button; a separate tap commits the clipboard.
     fn paste_button(
         &mut self,
         ui: &mut Ui,
         cx: &UiCtx,
-        f: &Frame,
         ax: TimeAxis,
         pts: &[Point],
         snap: Option<f64>,
@@ -961,28 +956,14 @@ impl AutomationEditor {
             self.paste = None;
             return None;
         }
-        let (c, m) = (&cx.theme.colors, cx.m);
-        let rect = paste_rect(f, finger, m);
-        let response = ui.interact(rect, id().with("paste"), Sense::click_and_drag());
-        ui.painter()
-            .rect_filled(rect, 0.0, c.menu_fill.to_color32());
-        let font = m.font_id(FontSize::Pt12);
-        (ui.painter()).text(
-            rect.center(),
-            Align2::CENTER_CENTER,
-            "Paste",
-            font,
-            c.text.to_color32(),
-        );
-        if response.clicked() {
-            self.paste = None;
+        let (rect, tap) = crate::ui::step_seq::paste_button(ui, cx, id().with("paste"), finger);
+        let tap = tap?;
+        self.paste = None;
+        if tap {
             let (new, sel) =
                 points::paste(pts, &clipboard, ax.tick(rect.center().x), snap, KEY.max());
             self.pop(&new, &sel, now);
             return Some((new, sel));
-        }
-        if ui.input(|i| i.pointer.any_pressed()) && !response.is_pointer_button_down_on() {
-            self.paste = None;
         }
         None
     }
