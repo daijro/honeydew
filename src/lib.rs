@@ -7,6 +7,8 @@ pub mod app;
 pub mod audio_bridge;
 pub mod audio_engine;
 pub mod audio_link;
+#[cfg(any(target_arch = "wasm32", test))]
+pub mod collaboration;
 pub mod content;
 pub mod flm;
 pub mod fonts;
@@ -146,6 +148,7 @@ async fn run_web() -> Result<(), wasm_bindgen::JsValue> {
             Box::new(|cc| Ok(Box::new(app::HoneydewApp::new(cc)))),
         )
         .await?;
+    app::live::web::attach(&runner)?;
     // eframe leaves most keys their browser action too (Ctrl+= zooms the page, Ctrl+F finds, Ctrl+K and F6 go to the
     // address bar): a key the keymap binds is the app's alone (`keymap.rs`, "Web").
     runner.add_event_listener(

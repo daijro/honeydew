@@ -49,6 +49,9 @@ mod tracks;
 mod typed;
 // A song load on the web waits for its bundled sounds.
 mod bundle_wait;
+// Live editing in a Playground session (web only).
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) mod live;
 
 /// How long a flash (`Saved!`) shows.
 const FLASH_SECS: f64 = 1.5;
@@ -546,6 +549,10 @@ impl HoneydewApp {
     /// (no edit), and the audio gets it as an edit's. An active drag is cancelled, or its next frame would apply its
     /// edit again. It sets the song-changed flag.
     fn step(&mut self, ctx: &egui::Context, step: Step, tick: u64) {
+        #[cfg(any(target_arch = "wasm32", test))]
+        if live::undo(matches!(step, Step::Redo)) {
+            return;
+        }
         // What the step keeps.
         self.params_moved = false;
         self.history.sync(&self.song);
@@ -2268,6 +2275,9 @@ impl HoneydewApp {
         if self.current_channel() != was_current {
             self.rack_follows(ctx);
         }
+        // After every edit of the frame.
+        #[cfg(any(target_arch = "wasm32", test))]
+        self.live_frame(ctx, tick);
         // The focus cursor, over everything.
         focus::end_frame(ctx, &self.theme);
         self.keep_settings(ctx);
@@ -2313,6 +2323,7 @@ mod tests {
     mod new_channel;
     mod new_song;
     mod new_template;
+    mod peer_live;
     mod performance_monitor;
     mod picker_rules;
     mod preview;
