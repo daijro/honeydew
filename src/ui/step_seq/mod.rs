@@ -990,6 +990,8 @@ impl StepSeqView {
         let line = painter.with_clip_rect(painter.clip_rect().intersect(column));
         let span = Rect::from_x_y_ranges(l.grid().x_range(), l.top..=bottom);
         timeline::playhead_line(&line, span, line_x, cx);
+        #[cfg(any(target_arch = "wasm32", test))]
+        crate::app::live::steps(ui, cx, song, (&l, sig), key, &self.selection, self.covered);
         // Row headers: pad name over sample name, and the long press's row menu.
         let heads = (&mut self.selected, &mut self.press, &mut self.fold);
         if let Some((row, at)) =
@@ -2242,7 +2244,7 @@ impl Layout {
 
     /// Step `step`'s cell in row `row`: x0 = x0 + step·step_w, x1 = x0 + step_w − 1 px; y0 = row top, y1 = row top +
     /// pitch − 1 px.
-    fn cell(&self, row: usize, step: usize) -> Rect {
+    pub(crate) fn cell(&self, row: usize, step: usize) -> Rect {
         Rect::from_x_y_ranges(
             self.span(self.x0, self.step_w, step),
             self.span(self.row_top(), self.pitch, row),

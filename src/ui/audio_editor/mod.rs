@@ -742,6 +742,41 @@ impl AudioEditor {
         if let Some(w) = wave.filter(|_| synced) {
             self.paint_stretch(ui, cx, &f, axis.x(w.end() * f64::from(PPQ)), now);
         }
+        #[cfg(any(target_arch = "wasm32", test))]
+        crate::app::live::points(
+            ui,
+            cx,
+            song,
+            (
+                "audio",
+                &crate::app::live::Plot {
+                    frame: &f,
+                    axis,
+                    key,
+                    radius: m.u(POINT_R),
+                    line: line_w,
+                },
+                at,
+            ),
+            (
+                (&shown.0, &shown.1),
+                match &self.gesture {
+                    Gesture::Points(Move {
+                        orig,
+                        sel,
+                        preview: Some(_),
+                        ..
+                    }) => Some((&orig[..], &sel[..])),
+                    _ => None,
+                },
+            ),
+            (
+                TimeRange::in_clip(song.play_loop, origin)
+                    .map(|r| (f64::from(r.start), f64::from(r.end))),
+                (self.stretch.len.and(wave)).map(|w| w.end() * f64::from(PPQ)),
+            ),
+            t.covered,
+        );
 
         // The ruler, its range and region menu, and the playhead.
         let rp = ui.painter_at(f.time);

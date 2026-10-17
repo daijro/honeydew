@@ -391,6 +391,32 @@ impl AutomationEditor {
             (sig, loop_ticks),
             now,
         );
+        #[cfg(any(target_arch = "wasm32", test))]
+        crate::app::live::points(
+            ui,
+            cx,
+            song,
+            (
+                "automation",
+                &crate::app::live::Plot {
+                    frame: &f,
+                    axis: ax,
+                    key: KEY,
+                    radius: m.u(POINT_R),
+                    line: LINE_PX / m.ppp(),
+                },
+                (key.channel, key.lane, key.id),
+            ),
+            (
+                (&shown_pts, &shown_sel),
+                match &self.gesture {
+                    Gesture::Drag(d) if d.armed => Some((&d.orig[..], &d.sel[..])),
+                    _ => None,
+                },
+            ),
+            (None, None),
+            opts.covered,
+        );
 
         // The floating row over the selection, the `Paste` button.
         // Hidden while a point is held, and by a long press or its marquee.

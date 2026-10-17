@@ -4,6 +4,7 @@
 use super::*;
 use crate::app::live;
 use crate::collaboration::{Conflict, checkpoint};
+use crate::song::points::{self, PointKey};
 use std::{cell::RefCell, rc::Rc};
 
 /// Disconnects when the test ends: the connection is the thread's, and a test thread may run others after it.
@@ -223,6 +224,30 @@ fn marks(rig: &Rig, color: egui::Color32) -> (Vec<Pos2>, Vec<egui::Rect>, Vec<eg
     (tips, outlines, ghosts)
 }
 
+/// The last frame's point marks in `color`: the centres of outlined dots and ghost dots, and the strokes' points.
+fn dots(rig: &Rig, color: egui::Color32) -> (Vec<Pos2>, Vec<Pos2>, Vec<Vec<Pos2>>) {
+    let stroke = egui::epaint::ColorMode::Solid(color.gamma_multiply(live::STROKE));
+    let (mut outlines, mut ghosts, mut strokes) = (Vec::new(), Vec::new(), Vec::new());
+    for s in &rig.out.shapes {
+        match &s.shape {
+            egui::Shape::Circle(c) if c.stroke.color == color => outlines.push(c.center),
+            egui::Shape::Circle(c) if c.fill == color.gamma_multiply(live::GHOST) => {
+                ghosts.push(c.center)
+            }
+            egui::Shape::Path(p) if !p.closed && p.stroke.color == stroke => {
+                strokes.push(p.points.clone())
+            }
+            _ => {}
+        }
+    }
+    (outlines, ghosts, strokes)
+}
+
+/// The shell's list of the others: Bob alone, sharing `state`.
+fn only_bob(state: serde_json::Value) -> serde_json::Value {
+    serde_json::json!([{ "id": "b", "name": "Bob", "color": "#e6194b", "state": state }])
+}
+
 #[test]
 fn presence_is_in_song_terms_and_shows_the_others_through_this_view() {
     let (mut rig, _, _session) = connected();
@@ -290,5 +315,104 @@ fn presence_is_in_song_terms_and_shows_the_others_through_this_view() {
     assert!(
         ghosts.len() == 1 && (ghosts[0].min - to.min).length() < 1.0,
         "{ghosts:?} {to:?} {mine}"
+    );
+
+    // The drum editor's steps on a clip with hits on steps 0 and 4 of pad 0: Bob, selecting both and dragging the first
+    // to step 2, has them outlined on their cells and its ghost on step 2's, halfway between.
+    let mut rig = Rig::with_drums_and_synth();
+    let step = crate::song::PPQ / 4;
+    let hit = |pos| crate::song::Event::Drum {
+        pos,
+        len_beats: 0.25,
+        pad: 0,
+        velocity: 200,
+        pan: 127,
+        value: 0x7FFF,
+        repeat: 0,
+    };
+    rig.app.song.channels[1].lanes[0].add_clip(0, 4.0).events = vec![hit(0), hit(4 * step)];
+    rig.app.navigate(Nav::Edit(1));
+    rig.slide_split();
+    let id = rig.app.song.channels[1].id;
+    live::show_presence(&only_bob(serde_json::json!({
+        "view": "drums",
+        "clip": [id, 0, 1],
+        "notes": [[0, 0], [4 * step, 0]],
+        "drag_notes": [[2 * step, 0, f64::from(step)]],
+    })));
+    rig.frame(vec![]);
+    let (_, outlines, ghosts) = marks(&rig, bob);
+    assert_eq!(
+        (outlines.len(), ghosts.len()),
+        (2, 1),
+        "{outlines:?} {ghosts:?}"
+    );
+    let half = (outlines[0].center() + outlines[1].center().to_vec2()) / 2.0;
+    assert!(
+        (ghosts[0].center() - half).length() < 1.0,
+        "{ghosts:?} {outlines:?}"
+    );
+
+    // The automation editor (the master's clip) and the audio editor's volume envelope (an Audio Clip's), each with
+    // points at beats 0 and 2: Bob, dragging the selected first one to beat 1, has it outlined, its ghost at beat 1 and
+    // the curve he redraws from there to the second point as a stroke.
+    let mut rig = Rig::new();
+    rig.app.add_channel(ChannelKind::AudioClip, 0);
+    for (channel, view, key) in [
+        (0, "automation", PointKey::Automation),
+        (1, "audio", PointKey::Envelope(0)),
+    ] {
+        let clip = rig.app.song.channels[channel].lanes[0].add_clip(0, 4.0);
+        let at = |tick| points::Point { tick, value: 20000 };
+        points::set_points(clip, key, vec![at(0), at(2 * crate::song::PPQ)]);
+        let first = points::points(clip, key)[0];
+        let (lane, id) = (0, 1);
+        rig.app
+            .navigate(Nav::EditClip(ClipKey { channel, lane, id }));
+        rig.slide_split();
+        live::show_presence(&only_bob(serde_json::json!({
+            "view": view,
+            "clip": [rig.app.song.channels[channel].id, 0, 1],
+            "points": [[first.tick, first.value]],
+            "drag_points": [[crate::song::PPQ, first.value]],
+            "env": (view == "audio").then_some(0),
+        })));
+        rig.frame(vec![]);
+        let (outlines, ghosts, strokes) = dots(&rig, bob);
+        assert!(
+            outlines.len() == 1 && ghosts.len() == 1 && strokes.len() == 1,
+            "{view} {outlines:?} {ghosts:?} {strokes:?}"
+        );
+        let (ghost, line) = (ghosts[0], &strokes[0]);
+        let half = (outlines[0] + line[1].to_vec2()) / 2.0;
+        assert!(
+            line.len() == 2 && (line[0] - ghost).length() < 1.0 && (ghost - half).length() < 1.0,
+            "{view} {outlines:?} {ghosts:?} {strokes:?}"
+        );
+    }
+
+    // The mixer: Bob, holding the Audio Clip's fader half way, has his pointer on its strip and the level he is setting
+    // tagged under his name.
+    rig.app.navigate(Nav::Show(View::Mixer));
+    rig.slide_split();
+    let id = rig.app.song.channels[1].id;
+    live::show_presence(&only_bob(serde_json::json!({
+        "view": "mixer",
+        "pointer": { "tick": 0.5, "track": [id, 0], "y": 0.5 },
+        "param": [id, 0, 0.5],
+    })));
+    rig.frame(vec![]);
+    let text = |t: &str| {
+        (rig.out.shapes.iter()).find_map(|s| match &s.shape {
+            egui::Shape::Text(x) if x.galley.text() == t => Some(x.pos),
+            _ => None,
+        })
+    };
+    let level = crate::params::CHANNEL_PARAMS[0].display_text(0.5);
+    let (name, value) = (text("Bob"), text(&level));
+    assert!(
+        name.zip(value)
+            .is_some_and(|(n, v)| v.y > n.y && (v.x - n.x).abs() < 1.0),
+        "{level} {name:?} {value:?}"
     );
 }

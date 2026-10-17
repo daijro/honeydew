@@ -387,6 +387,22 @@ impl DrumGridView {
         let painter = ui.painter().clone();
         let prop = graph_lane::DRUM_PROPS[self.graph.item.min(graph_lane::drum_items(false) - 1)];
         self.paint_grid(&painter, &l, &place, events, (color, prop), sig, cx, now);
+        #[cfg(any(target_arch = "wasm32", test))]
+        crate::app::live::drum_grid(
+            ui,
+            cx,
+            song,
+            (&l, &place),
+            key,
+            (
+                &self.sel,
+                match &self.gesture {
+                    Gesture::Edit(e) if e.reported => Some((&e.orig[..], &e.which[..])),
+                    _ => None,
+                },
+            ),
+            self.covered,
+        );
         let heads = (&mut self.current, &mut self.press, &mut self.fold);
         if let Some((row, at)) =
             step_seq::row_headers(ui, &painter, cx, id(), &l, pads, &self.levels, ink, heads)

@@ -240,6 +240,15 @@ pub fn show(
             }
         }
     }
+    #[cfg(any(target_arch = "wasm32", test))]
+    crate::app::live::mixer(
+        &ui,
+        cx,
+        song,
+        (rect, unit, state.scroll),
+        base,
+        state.covered,
+    );
     changes
 }
 
