@@ -593,6 +593,16 @@ impl PianoRoll {
         // The playhead line's slot: over the notes, under their handles, the marquee and the floating row.
         let line_slot = grid_painter.add(egui::Shape::Noop);
         self.paint_handles(&grid_painter, &g, events, cx);
+        #[cfg(any(target_arch = "wasm32", test))]
+        crate::app::live::piano_roll(
+            ui,
+            cx,
+            song,
+            (grid, &g),
+            (self.channel, self.lane, self.clip_id),
+            &self.selected,
+            opts.covered,
+        );
         // The marquee: a square growing while a touch is held on empty grid, then the box.
         let now = ui.input(|i| i.time);
         let marquee = match self.gesture {

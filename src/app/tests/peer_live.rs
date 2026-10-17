@@ -205,3 +205,62 @@ fn a_channel_added_on_each_side_keeps_the_shared_rack_order() {
     apply(&mut bob, &bobs, &alices);
     assert!(checkpoint::encode(&bob.app.song).unwrap() == alices);
 }
+
+/// The last frame's marks in `color`: arrow tips (a filled path's first point) and outlines (stroked rects).
+fn marks(rig: &Rig, color: egui::Color32) -> (Vec<Pos2>, Vec<egui::Rect>) {
+    let (mut tips, mut outlines) = (Vec::new(), Vec::new());
+    for s in &rig.out.shapes {
+        match &s.shape {
+            egui::Shape::Path(p) if p.fill == color => tips.push(p.points[0]),
+            egui::Shape::Rect(r) if r.stroke.color == color => outlines.push(r.rect),
+            _ => {}
+        }
+    }
+    (tips, outlines)
+}
+
+#[test]
+fn presence_is_in_song_terms_and_shows_the_others_through_this_view() {
+    let (mut rig, _, _session) = connected();
+    let id = rig.app.song.channels[1].id;
+    rig.app.song.channels[1].lanes[0].add_clip(0, 16.0);
+    let clip = crate::ui::clips::ClipRef {
+        channel: 1,
+        lane: 0,
+        id: 1,
+    };
+    rig.app.main_screen.clips.selected = Some(clip);
+    let at = lane(1);
+    rig.frame(vec![egui::Event::PointerMoved(at)]);
+    let mine = serde_json::to_value(rig.app.live_presence()).unwrap();
+    assert_eq!(mine["view"], "playlist");
+    assert_eq!(mine["pointer"]["track"], serde_json::json!([id, 0]));
+    assert_eq!(mine["clips"], serde_json::json!([[id, 0, 1]]));
+
+    // The others as the shell lists them. Bob shares this state: his arrow is where this person points, his outline
+    // on the clip's row. A bad colour, a tick that is no integer, unknown ids: nothing, and no panic.
+    let far =
+        serde_json::json!({ "view": "playlist", "pointer": { "tick": 1e300, "track": [id, 0] } });
+    let gone = serde_json::json!({
+        "view": "playlist",
+        "pointer": { "tick": 0, "track": [id + 99, 0] },
+        "clips": [[id, 7, 1], [id, 0, 99]],
+    });
+    live::show_presence(&serde_json::json!([
+        { "id": "b", "name": "Bob", "color": "#e6194b", "state": mine },
+        { "id": "c", "name": "Cy", "color": "blue", "state": mine },
+        { "id": "d", "name": "Dee", "color": "#000001", "state": far },
+        { "id": "e", "name": "Eve", "color": "#000002", "state": gone },
+    ]));
+    rig.frame(vec![]);
+    let (tips, outlines) = marks(&rig, egui::Color32::from_rgb(0xe6, 0x19, 0x4b));
+    assert!(tips.len() == 1 && (tips[0] - at).length() < 1.0, "{tips:?}");
+    assert!(
+        outlines.len() == 1 && (outlines[0].top() - 3.5 * U).abs() < 1.0,
+        "{outlines:?}"
+    );
+    for other in [1, 2] {
+        let (tips, outlines) = marks(&rig, egui::Color32::from_rgb(0, 0, other));
+        assert!(tips.is_empty() && outlines.is_empty());
+    }
+}

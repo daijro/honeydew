@@ -655,6 +655,8 @@ impl MainScreen {
         {
             actions.nav = Some(nav);
         }
+        #[cfg(any(target_arch = "wasm32", test))]
+        crate::app::live::playlist(ui, &cx, app.song, (grid, &lanes, axis), app.covered);
         // Children get the touch first: a held header, a marquee (or the hold that starts one) takes it from the
         // scroller; a ruler press waiting for its long press leaves it the scroller's until a range starts.
         if self.header_busy || self.clips.busy(ui.input(|i| i.time)) {
