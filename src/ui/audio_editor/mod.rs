@@ -526,6 +526,19 @@ pub struct AudioEditor {
 }
 
 impl AudioEditor {
+    /// Another person's change came into the song: the selection follows the envelope's points
+    /// ([`crate::app::live::follow`]), and the change is no outside change that drops it.
+    #[cfg(any(target_arch = "wasm32", test))]
+    pub(crate) fn follow(&mut self, song: &Song) {
+        let Some((at, lane, seen)) = &mut self.seen else {
+            return;
+        };
+        let key = PointKey::Envelope(*lane as i16);
+        let pts = find(song, *at).map_or_else(Vec::new, |(_, c)| points::points(c, key));
+        self.sel = crate::app::live::follow(seen, &self.sel, &pts, |p| p.tick);
+        *seen = pts;
+    }
+
     /// Follows every clip's view and the selection's clip to `track(channel, lane)` after channels or tracks moved;
     /// what was on a gone track goes (as [`crate::ui::automation::AutomationEditor::rekey`]).
     pub(crate) fn rekey(&mut self, track: &dyn Fn(usize, usize) -> Option<(usize, usize)>) {

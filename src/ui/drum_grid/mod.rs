@@ -254,6 +254,20 @@ pub struct DrumGridView {
 }
 
 impl DrumGridView {
+    /// Another person's change came into the song: the selection follows its hits ([`crate::app::live::follow`]), and
+    /// the change is no outside change that drops it.
+    #[cfg(any(target_arch = "wasm32", test))]
+    pub(crate) fn follow(&mut self, song: &Song) {
+        let Some(((channel, lane, id), seen)) = &mut self.seen else {
+            return;
+        };
+        let clip = (song.channels.get(*channel)).and_then(|c| c.lanes.get(*lane));
+        let clip = clip.and_then(|l| l.clips.iter().find(|c| Some(c.id) == *id));
+        let events = clip.map_or(&[][..], |c| &c.events);
+        self.sel = crate::app::live::follow(seen, &self.sel, events, Event::pos);
+        *seen = events.to_vec();
+    }
+
     /// Paints the view over `ui`'s rect from the drum lane `lane` of `song.channels[channel]` and its clip `clip`, by id
     /// (an empty grid while the lane has no such clip). Draws nothing when there is no such drum lane. New hits take
     /// `remembered`, which selections and graph edits update.

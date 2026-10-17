@@ -301,6 +301,13 @@ impl HoneydewApp {
         self.history.amend(&before, &self.song);
         self.files.song_changed();
         self.rekey(&shifts);
+        // The editors' selections follow their notes, hits and points into the changed clip ([`follow`]).
+        for roll in self.slots.piano_roll.rolls.values_mut() {
+            roll.follow(&self.song);
+        }
+        self.slots.drum_editor.grid.follow(&self.song);
+        self.slots.automation_editor.editor.follow(&self.song);
+        self.slots.audio_editor.editor.follow(&self.song);
         let ids = &self.channel_ids;
         let gone = |id: i32| before.channels.iter().any(|c| c.id == id) && !ids.contains(&id);
         self.main_screen.forget_keys_views(gone);
@@ -309,6 +316,31 @@ impl HoneydewApp {
         self.rebuild_as(tick, Handover::Undo);
         Ok(replaced)
     }
+}
+
+/// An editor's selection, a flag for each of the items it last saw (`old`), carried over a remote change to the items
+/// now there (`new`): each selected item to an equal one at its place (`at`, by which both are sorted), copy for copy.
+/// One the change moved, changed or removed drops out.
+pub(crate) fn follow<T: PartialEq>(
+    old: &[T],
+    sel: &[bool],
+    new: &[T],
+    at: impl Fn(&T) -> u32,
+) -> Vec<bool> {
+    let mut out = vec![false; new.len()];
+    let mut from = 0;
+    for (x, _) in old.iter().zip(sel).filter(|(_, s)| **s) {
+        while from < new.len() && at(&new[from]) < at(x) {
+            from += 1;
+        }
+        let same = (from..new.len())
+            .take_while(|&i| at(&new[i]) == at(x))
+            .find(|&i| !out[i] && new[i] == *x);
+        if let Some(i) = same {
+            out[i] = true;
+        }
+    }
+    out
 }
 
 /// Where a person is, for the others in the session: the view shown (`playlist`, `piano`, `drums`, `automation`,
@@ -1221,7 +1253,7 @@ const ARROW: [(f32, f32); 7] = [
 ];
 /// A ghost's fill and edge, and a stroke under way: its person's colour at these opacities.
 pub(crate) const GHOST: f32 = 0.28;
-const GHOST_EDGE: f32 = 0.85;
+pub(crate) const GHOST_EDGE: f32 = 0.85;
 pub(crate) const STROKE: f32 = 0.7;
 
 /// White or near-black, whichever reads on `color`: near-black once its relative luminance passes 0.55.
@@ -1246,7 +1278,11 @@ fn paint(painter: &egui::Painter, m: &Metrics, all: &[(Color32, &str, Marks)]) {
     let cut = |rect: Rect| Some(rect.intersect(near)).filter(|r| r.is_positive());
     for (color, _, marks) in all {
         let fill = color.gamma_multiply(GHOST);
-        let edge = Stroke::new(1.5 * k, color.gamma_multiply(GHOST_EDGE));
+        // Never under 1.5 device pixels, so a dark colour's ghost keeps its edge on the dark grid at any UI scale.
+        let edge = Stroke::new(
+            (1.5 * k).max(1.5 / m.ppp()),
+            color.gamma_multiply(GHOST_EDGE),
+        );
         for &ghost in &marks.ghosts {
             match ghost {
                 Mark::Box(rect) => {

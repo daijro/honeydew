@@ -264,6 +264,18 @@ fn sel_box(pts: &[Point], sel: &[bool], at: impl Fn(&Point) -> Pos2) -> Option<R
 }
 
 impl AutomationEditor {
+    /// Another person's change came into the song: the selection follows its points ([`crate::app::live::follow`]),
+    /// and the change is no outside change that drops it.
+    #[cfg(any(target_arch = "wasm32", test))]
+    pub(crate) fn follow(&mut self, song: &Song) {
+        let Some((key, seen)) = &mut self.seen else {
+            return;
+        };
+        let pts = clip_of(song, *key).map_or_else(Vec::new, |c| points::points(c, KEY));
+        self.sel = crate::app::live::follow(seen, &self.sel, &pts, |p| p.tick);
+        *seen = pts;
+    }
+
     /// The editor stops showing with a touch it will not see end (`app::left_view`): the touch ends as a pinch's
     /// does, changing nothing; a drag's preview goes with it.
     pub(crate) fn end_touch(&mut self) {

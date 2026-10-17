@@ -183,12 +183,13 @@ pub fn merge(base: &Song, current: &Song, edited: &Song) -> Result<Song, Conflic
     fields!(Song, b, c, e, out, "song";
         title, tempo_bpm, time_sig, key_root, key_scale, play_loop, master_below; channels, file);
     out.file = merge_file(&b.file, &c.file, &e.file)?;
+    let bar = out.time_sig.bar_beats();
     out.channels = keyed(
         &b.channels,
         &c.channels,
         &e.channels,
         |ch| ch.id,
-        merge_channel,
+        |b, c, e, path| merge_channel(b, c, e, path, bar),
         "channels",
         true,
     )?;
@@ -276,7 +277,13 @@ fn merge_file(
     Ok(out)
 }
 
-fn merge_channel(b: &Channel, c: &Channel, e: &Channel, path: &str) -> Result<Channel, Conflict> {
+fn merge_channel(
+    b: &Channel,
+    c: &Channel,
+    e: &Channel,
+    path: &str,
+    bar: u32,
+) -> Result<Channel, Conflict> {
     if b.file.guid != c.file.guid || b.file.guid != e.file.guid {
         return choose(b, c, e, path);
     }
@@ -358,13 +365,13 @@ fn merge_channel(b: &Channel, c: &Channel, e: &Channel, path: &str) -> Result<Ch
             .zip(&c.lanes)
             .zip(&e.lanes)
             .enumerate()
-            .map(|(i, ((b, c), e))| merge_lane(b, c, e, &format!("{path}.track[{i}]")))
+            .map(|(i, ((b, c), e))| merge_lane(b, c, e, &format!("{path}.track[{i}]"), bar))
             .collect::<Result<_, _>>()?;
     }
     Ok(out)
 }
 
-fn merge_lane(b: &Lane, c: &Lane, e: &Lane, path: &str) -> Result<Lane, Conflict> {
+fn merge_lane(b: &Lane, c: &Lane, e: &Lane, path: &str, bar: u32) -> Result<Lane, Conflict> {
     let mut out = c.clone();
     fields!(Lane, b, c, e, out, path; kind, target, label, swing, grid, file; clips, last_clip_id);
     out.last_clip_id = b.last_clip_id.max(c.last_clip_id).max(e.last_clip_id);
@@ -373,13 +380,91 @@ fn merge_lane(b: &Lane, c: &Lane, e: &Lane, path: &str) -> Result<Lane, Conflict
         &c.clips,
         &e.clips,
         |clip| clip.id,
-        choose,
+        |b, c, e, path| merge_clip(b, c, e, path, bar),
         &format!("{path}.clips"),
         false,
     )?;
     // Clip order follows positions in FLM; moving separate clips must not become competing reorders.
     out.clips.sort_by_key(|clip| clip.start_tick);
     Ok(out)
+}
+
+/// A clip field by field, and its events item by item when both sides changed them ([`merge_events`]); the loop then
+/// fits the merged content (`bar` beats a bar), as every editor's edit fits it.
+fn merge_clip(b: &Clip, c: &Clip, e: &Clip, path: &str, bar: u32) -> Result<Clip, Conflict> {
+    let mut out = c.clone();
+    fields!(Clip, b, c, e, out, path;
+        id, start_tick, visible_len_beats, offset_beats, muted, file; events, loop_len_beats);
+    if b.events == c.events || b.events == e.events {
+        out.events = choose(&b.events, &c.events, &e.events, path)?;
+        out.loop_len_beats = choose(
+            &b.loop_len_beats,
+            &c.loop_len_beats,
+            &e.loop_len_beats,
+            path,
+        )?;
+    } else {
+        out.events = merge_events(b, c, e, &format!("{path}.events"))?;
+        out.fit_loop(bar);
+    }
+    Ok(out)
+}
+
+/// Events have no identity, so an item is a value: the n-th copy of an exact event. A moved or changed note is its
+/// old value removed and a new one added. Each side's additions and removals apply; a value both sides add or remove
+/// (one note changed two ways, or deleted by both) is a conflict, as [`choose`] has it. The steps between automation
+/// and envelope points are derived ([`points::set_points`]): a curve whose points the merge changed gets them rebuilt.
+fn merge_events(b: &Clip, c: &Clip, e: &Clip, path: &str) -> Result<Vec<Event>, Conflict> {
+    use points::PointKey;
+    use std::collections::BTreeMap;
+    // An automation or envelope point's curve, and whether the event is a step between points.
+    let curve = |x: &Event| match *x {
+        Event::Automation { control, .. } => Some((PointKey::Automation, !control)),
+        Event::Envelope {
+            env_param, control, ..
+        } => Some((PointKey::Envelope(env_param), !control)),
+        _ => None,
+    };
+    let step = |x: &&Event| curve(x).is_some_and(|(_, step)| step);
+    // Exact values: Debug prints each float so that it reads back to the same bits.
+    let value = |x: &Event| format!("{x:?}");
+    let mut counts = BTreeMap::<String, [usize; 3]>::new();
+    for (side, clip) in [b, c, e].into_iter().enumerate() {
+        for x in clip.events.iter().filter(|x| !step(x)) {
+            counts.entry(value(x)).or_default()[side] += 1;
+        }
+    }
+    let mut left = BTreeMap::new();
+    for (v, [nb, nc, ne]) in counts {
+        left.insert(v, choose(&nb, &nc, &ne, path)?);
+    }
+    // Current's copies of each value in order, then edited's new ones; and current's steps, for now.
+    let mut out = c.clone();
+    out.events = (c.events.iter().chain(&e.events))
+        .filter(|x| !step(x))
+        .filter(|x| {
+            let n = left.get_mut(&value(x)).expect("counted");
+            let keep = *n > 0;
+            *n -= usize::from(keep);
+            keep
+        })
+        .chain(c.events.iter().filter(step))
+        .copied()
+        .collect();
+    out.events.sort_by_key(Event::pos);
+    let (all, mut curves) = ([b, c, e].map(|clip| &clip.events), Vec::new());
+    for (k, _) in all.into_iter().flatten().filter_map(curve) {
+        if !curves.contains(&k) {
+            curves.push(k);
+        }
+    }
+    for k in curves {
+        let pts = points::points(&out, k);
+        if pts != points::points(c, k) {
+            points::set_points(&mut out, k, pts);
+        }
+    }
+    Ok(out.events)
 }
 
 fn validate(song: &Song) -> Result<(), Conflict> {
@@ -582,6 +667,61 @@ mod tests {
             merge(&base, &both, &alice).is_err(),
             "equal values do not prove authorship; only the journal can deduplicate an operation"
         );
+    }
+
+    #[test]
+    fn edits_inside_one_clip_merge_note_by_note_and_one_note_changed_two_ways_conflicts() {
+        let note = |pos, key, velocity| Event::Note {
+            pos,
+            len_beats: 1.0,
+            key,
+            velocity,
+            pan: 127,
+            slide: false,
+        };
+        let mut base = song();
+        base.channels[1].lanes[0].clips[0].events = [60, 64, 67].map(|k| note(0, k, 204)).into();
+        let edit = |change: &dyn Fn(&mut Vec<Event>)| {
+            let mut s = base.clone();
+            let events = &mut s.channels[1].lanes[0].clips[0].events;
+            change(events);
+            events.sort_by_key(Event::pos);
+            s
+        };
+        let notes = |s: &Song| {
+            let mut n = s.channels[1].lanes[0].clips[0].events.clone();
+            n.sort_by_key(|e| format!("{e:?}"));
+            n
+        };
+        let tap_a = |ev: &mut Vec<Event>| ev.push(note(128, 72, 204));
+        let tap_b = |ev: &mut Vec<Event>| ev.push(note(256, 74, 204));
+        let move_e = |ev: &mut Vec<Event>| ev[1] = note(0, 65, 204);
+        let drag_chord = |ev: &mut Vec<Event>| {
+            for (i, k) in [62, 66, 69].into_iter().enumerate() {
+                ev[i] = note(384, k, 204);
+            }
+        };
+        // Two taps at once; a tap made while Alice's edit to the chord waited; a tap during Bob's chord drag.
+        type Change<'a> = &'a dyn Fn(&mut Vec<Event>);
+        let probes: [(Change, Change); 3] =
+            [(&tap_a, &tap_b), (&move_e, &tap_b), (&drag_chord, &tap_a)];
+        for (i, (a, b)) in probes.into_iter().enumerate() {
+            let want = notes(&edit(&|ev| {
+                a(ev);
+                b(ev);
+            }));
+            let (a, b) = (edit(a), edit(b));
+            assert_eq!(notes(&merge(&base, &a, &b).unwrap()), want, "probe {i}");
+            assert_eq!(
+                notes(&merge(&base, &b, &a).unwrap()),
+                want,
+                "probe {i} reversed"
+            );
+        }
+        let softer = edit(&|ev| ev[1] = note(0, 64, 100));
+        let moved = edit(&move_e);
+        assert!(merge(&base, &softer, &moved).is_err());
+        assert!(merge(&base, &moved, &softer).is_err());
     }
 
     #[test]

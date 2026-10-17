@@ -727,6 +727,15 @@ impl PianoRoll {
         actions
     }
 
+    /// Another person's change came into the song: the selection follows its notes ([`crate::app::live::follow`]), and
+    /// the change is no outside change that drops it.
+    #[cfg(any(target_arch = "wasm32", test))]
+    pub(crate) fn follow(&mut self, song: &Song) {
+        let events = self.clip(song).map_or(&[][..], |c| &c.events);
+        self.selected = crate::app::live::follow(&self.seen, &self.selected, events, Event::pos);
+        self.seen = events.to_vec();
+    }
+
     /// The roll goes (the view left it, `app::left_view`) with a touch it will not see end ([`Self::end_touch`]); the
     /// key the key column holds and a new note's sound stop now.
     pub(crate) fn hide(&mut self) -> Vec<PianoRollAction> {

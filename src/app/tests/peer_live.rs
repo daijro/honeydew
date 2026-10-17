@@ -95,6 +95,52 @@ fn a_conflicting_remote_change_leaves_the_song_as_it_is() {
 }
 
 #[test]
+fn another_persons_edit_to_the_clip_keeps_the_note_selection() {
+    let (mut rig, _, _session) = connected();
+    let note = |pos, key| crate::song::Event::Note {
+        pos,
+        len_beats: 1.0,
+        key,
+        velocity: 204,
+        pan: 127,
+        slide: false,
+    };
+    let chord = vec![note(0, 60), note(0, 64), note(0, 67)];
+    rig.app.song.channels[1].lanes[0].add_clip(0, 4.0).events = chord;
+    let (channel, lane, id) = (1, 0, 1);
+    rig.app
+        .navigate(Nav::EditClip(ClipKey { channel, lane, id }));
+    rig.slide_split();
+    rig.frame(key_tap(egui::Key::A, egui::Modifiers::COMMAND));
+    rig.frame(vec![]);
+    let selected =
+        |rig: &Rig| serde_json::to_value(rig.app.live_presence()).unwrap()["notes"].clone();
+    assert_eq!(
+        selected(&rig),
+        serde_json::json!([[0, 60], [0, 64], [0, 67]])
+    );
+    // Alice adds a note to the clip: Bob's chord stays selected. She then moves its E: that note drops out.
+    let mut base = checkpoint::encode(&rig.app.song).unwrap();
+    for (change, left) in [
+        (None, serde_json::json!([[0, 60], [0, 64], [0, 67]])),
+        (Some(note(0, 65)), serde_json::json!([[0, 60], [0, 67]])),
+    ] {
+        let mut alice = checkpoint::decode(&base).unwrap();
+        let events = &mut alice.channels[1].lanes[0].clips[0].events;
+        match change {
+            None => events.push(note(256, 72)),
+            Some(moved) => events[1] = moved,
+        }
+        let edited = checkpoint::encode(&alice).unwrap();
+        apply(&mut rig, &base, &edited);
+        rig.frame(vec![]);
+        assert_eq!(rig.app.song.channels[1].lanes[0].clips[0].events.len(), 4);
+        assert_eq!(selected(&rig), left);
+        base = edited;
+    }
+}
+
+#[test]
 fn only_shared_changes_are_reported_and_undo_goes_to_the_session() {
     let (mut rig, _, _session) = connected();
     let reported = live::changes();
@@ -215,7 +261,12 @@ fn marks(rig: &Rig, color: egui::Color32) -> (Vec<Pos2>, Vec<egui::Rect>, Vec<eg
         match &s.shape {
             egui::Shape::Path(p) if p.fill == color => tips.push(p.points[0]),
             egui::Shape::Rect(r) if r.stroke.color == color => outlines.push(r.rect),
-            egui::Shape::Rect(r) if r.fill == color.gamma_multiply(live::GHOST) => {
+            // A ghost: the fill, and the edge that keeps a dark colour's readable.
+            egui::Shape::Rect(r)
+                if r.fill == color.gamma_multiply(live::GHOST)
+                    && r.stroke.color == color.gamma_multiply(live::GHOST_EDGE)
+                    && r.stroke.width >= 1.5 =>
+            {
                 ghosts.push(r.rect)
             }
             _ => {}
