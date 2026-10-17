@@ -1414,6 +1414,20 @@ impl Clips {
         true
     }
 
+    /// The clips a drag under way has edited, each as the drag found it and where it is now (a clip moved to another
+    /// track has another [`ClipRef`] there). Empty until the drag edits.
+    #[cfg(any(target_arch = "wasm32", test))]
+    pub(crate) fn dragging(&self) -> Vec<(ClipRef, ClipRef)> {
+        let Some(drag) = self.drag.as_ref().filter(|d| d.edited) else {
+            return Vec::new();
+        };
+        let now = drag.clips.iter().map(|c| c.0);
+        match &drag.before {
+            Some((found, _)) => found.iter().copied().zip(now).collect(),
+            None => now.map(|r| (r, r)).collect(),
+        }
+    }
+
     /// The playlist goes under a drag it will not see end (`app::left_view`: the mixer shows): the drag ends as its
     /// release would, the clips where it last left them. Whether that is a final edit to make.
     pub(crate) fn end_drag(
@@ -1684,7 +1698,7 @@ fn lane_mut(song: &mut Song, channel: usize, lane: usize) -> Option<&mut Lane> {
     song.channels.get_mut(channel)?.lanes.get_mut(lane)
 }
 
-fn find(song: &Song, r: ClipRef) -> Option<&Clip> {
+pub(crate) fn find(song: &Song, r: ClipRef) -> Option<&Clip> {
     let lane = song.channels.get(r.channel)?.lanes.get(r.lane)?;
     lane.clips.iter().find(|c| c.id == r.id)
 }

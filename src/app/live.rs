@@ -8,9 +8,10 @@ use crate::collaboration::{Conflict, checkpoint, keep_local, merge, shared};
 use crate::flm::chunk::{ContentPath, ContentRoot};
 use crate::project_files::MAX_FILE_BYTES;
 use crate::sample_cache::SampleKey;
-use crate::song::Event;
-use crate::ui::clips::{ClipRef, TimeAxis, clip_rect};
-use crate::ui::piano_roll::notes::Geom;
+use crate::song::{Event, PPQ};
+use crate::ui::clips::{ClipRef, TimeAxis, clip_rect, find};
+use crate::ui::main_screen::track_rows;
+use crate::ui::piano_roll::notes::{Geom, TOP_KEY, note};
 use egui::{Color32, Pos2, Rect, Shape, Stroke, StrokeKind, pos2, vec2};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -39,8 +40,8 @@ struct Live {
     changes: u64,
     /// A sample arrived: the next quiet frame rebuilds the engine, which decodes it.
     reload: bool,
-    /// This person's pointer and note selection as the editors drawn this frame leave them, and as the last frame
-    /// left them: what [`HoneydewApp::live_presence`] reads.
+    /// This person's pointer and notes (selected, dragged) as the editors drawn this frame leave them, and as the last
+    /// frame left them: what [`HoneydewApp::live_presence`] reads.
     drawn: Mine,
     mine: Mine,
     /// The others in the session, as the shell last listed them.
@@ -306,8 +307,10 @@ impl HoneydewApp {
 
 /// Where a person is, for the others in the session: the view shown (`playlist`, `piano`, `drums`, `automation`,
 /// `audio`, `mixer`); the clip a clip editor edits; the pointer while it is over the playlist or the piano roll; the
-/// playlist's selected clips (unless the mixer covers the playlist) and the piano roll's selected notes. All in the
-/// song's terms (channel ids, lanes, clip ids, ticks, keys), so each person draws it through their own zoom and scroll.
+/// playlist's selected clips (unless the mixer covers the playlist) and the piano roll's selected notes; and a drag
+/// under way in either, where it has the dragged clips or notes so far (the song changes only when it ends: meanwhile
+/// `clips` and `notes` name them where they were). All in the song's terms (channel ids, lanes, clip ids, ticks, keys),
+/// so each person draws it through their own zoom and scroll.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Presence {
     view: String,
@@ -321,38 +324,114 @@ pub(crate) struct Presence {
     /// (content tick, key) of each note.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     notes: Vec<(u32, u8)>,
+    /// (channel id, lane, start tick, length in ticks) of each dragged clip.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    drag_clips: Vec<(i32, usize, u32, f64)>,
+    /// (content tick, key, length in ticks) of each dragged note.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    drag_notes: Vec<(u32, u8, f64)>,
 }
 
-/// The pointer: a song tick on a playlist track (channel id, lane), or a content tick on a key row of the piano roll.
+/// The pointer: a song tick on a playlist track (channel id, lane), or a content tick on a key row of the piano roll,
+/// and `y` how far down that row (0 its top, 1 its bottom; its middle when missing). Ticks may be fractional.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Pointer {
-    tick: i64,
+    tick: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     track: Option<(i32, usize)>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     key: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    y: Option<f64>,
 }
 
 #[derive(Default)]
 struct Mine {
     pointer: Option<Pointer>,
     notes: Vec<(u32, u8)>,
+    drag_notes: Vec<(u32, u8, f64)>,
 }
 
-/// Another person, as [`show_presence`] keeps them.
+/// Another person, as [`show_presence`] keeps them, with their marks as the playlist and the piano roll last drew them.
 struct Peer {
+    id: String,
     name: String,
     color: Color32,
     state: Presence,
+    on_playlist: Shown,
+    on_roll: Shown,
 }
 
-/// The most selected clips, or notes, a presence carries.
+/// A person's moving marks as a view last drew them, eased toward their latest state: the pointer (tick, row) and the
+/// ghosts of a drag (tick, row, length in ticks). A row is a track's index in the track list, or a key's row from the
+/// top, plus the fraction down it.
+#[derive(Default)]
+struct Shown {
+    pointer: Option<[f64; 2]>,
+    ghosts: Vec<[f64; 3]>,
+}
+
+/// How long the others' marks take to go most (1 - 1/e) of the way to where they last were, in seconds.
+const EASE: f64 = 0.08;
+
+impl Shown {
+    /// `dt` seconds on toward `pointer` and `ghosts`; `px`: points a tick and a row. A first sight, another set of
+    /// ghosts or a jump of more than `far` points goes at once. Whether a mark is still on its way.
+    fn step(
+        &mut self,
+        (pointer, ghosts): (Option<[f64; 2]>, Vec<[f64; 3]>),
+        dt: f32,
+        px: [f64; 2],
+        far: f64,
+    ) -> bool {
+        let k = 1.0 - (-f64::from(dt.clamp(0.0, 0.1)) / EASE).exp();
+        let mut moving = false;
+        match (&mut self.pointer, pointer) {
+            (Some(s), Some(t)) => moving |= ease(s, t, k, px, far),
+            (s, t) => *s = t,
+        }
+        if self.ghosts.len() == ghosts.len() {
+            for (s, t) in self.ghosts.iter_mut().zip(ghosts) {
+                moving |= ease(s, t, k, [px[0], px[1], px[0]], far);
+            }
+        } else {
+            self.ghosts = ghosts;
+        }
+        moving
+    }
+}
+
+/// `s` moved `k` of the way to `t`, all of it after a jump of more than `far` points or once under half a point remains
+/// (`px`: points a unit of each part). Whether it is still on its way.
+fn ease<const N: usize>(s: &mut [f64; N], t: [f64; N], k: f64, px: [f64; N], far: f64) -> bool {
+    let off = |s: &[f64; N]| {
+        (s.iter().zip(t).zip(px))
+            .map(|((s, t), px)| ((t - s) * px).abs())
+            .fold(0.0, f64::max)
+    };
+    if off(s) > far {
+        *s = t;
+    }
+    for (s, t) in s.iter_mut().zip(t) {
+        *s += (t - *s) * k;
+    }
+    let moving = off(s) >= 0.5;
+    if !moving {
+        *s = t;
+    }
+    moving
+}
+
+/// The most selected clips, or notes, a presence carries; the same for dragged ones.
 const MAX_SELECTED: usize = 50;
 /// The most characters of a name tag.
 const MAX_NAME: usize = 24;
+/// A ghost's fill: its person's colour at this opacity.
+pub(crate) const GHOST: f32 = 0.35;
 
 /// The shell's list of the others (`[{ id, name, color: "#rrggbb", state }]`), each time it changes; empty at the end.
-/// It comes from other people: an entry that does not parse is skipped.
+/// It comes from other people: an entry that does not parse is skipped. A person still in the same view and clip keeps
+/// their marks where they were drawn, to ease on from there.
 pub(crate) fn show_presence(others: &serde_json::Value) {
     let peer = |v: &serde_json::Value| {
         let hex = v["color"].as_str()?.strip_prefix('#')?;
@@ -360,21 +439,40 @@ pub(crate) fn show_presence(others: &serde_json::Value) {
         let mut state: Presence = serde_json::from_value(v["state"].clone()).ok()?;
         state.clips.truncate(MAX_SELECTED);
         state.notes.truncate(MAX_SELECTED);
-        Some(Peer {
-            name: v["name"]
+        state.drag_clips.truncate(MAX_SELECTED);
+        state.drag_notes.truncate(MAX_SELECTED);
+        let text = |key: &str, max: usize| {
+            v[key]
                 .as_str()
                 .unwrap_or_default()
                 .chars()
-                .take(MAX_NAME)
-                .collect(),
+                .take(max)
+                .collect()
+        };
+        Some(Peer {
+            id: text("id", 64),
+            name: text("name", MAX_NAME),
             color: Color32::from_rgb(channel(0)?, channel(2)?, channel(4)?),
             state,
+            on_playlist: Shown::default(),
+            on_roll: Shown::default(),
         })
     };
-    let others = (others.as_array().into_iter().flatten())
+    let mut others: Vec<Peer> = (others.as_array().into_iter().flatten())
         .filter_map(peer)
         .collect();
     LIVE.with_borrow_mut(|live| {
+        for peer in &mut others {
+            let same = |o: &&mut Peer| {
+                o.id == peer.id
+                    && o.state.view == peer.state.view
+                    && o.state.clip == peer.state.clip
+            };
+            if let Some(old) = live.others.iter_mut().find(same) {
+                peer.on_playlist = std::mem::take(&mut old.on_playlist);
+                peer.on_roll = std::mem::take(&mut old.on_roll);
+            }
+        }
         live.others = others;
         #[cfg(target_arch = "wasm32")]
         if let Some(ctx) = &live.ctx {
@@ -383,9 +481,24 @@ pub(crate) fn show_presence(others: &serde_json::Value) {
     });
 }
 
-/// A remote tick, unless it is too far off to draw.
-fn tick(t: i64) -> Option<f64> {
-    (t.unsigned_abs() <= u64::from(u32::MAX)).then_some(t as f64)
+/// A remote tick or length, unless it is no number or too far off to draw.
+fn tick(t: f64) -> Option<f64> {
+    (t.abs() <= f64::from(u32::MAX)).then_some(t)
+}
+
+/// A remote fraction down a row: its middle when missing or off.
+fn down(y: Option<f64>) -> f64 {
+    y.filter(|y| (0.0..=1.0).contains(y)).unwrap_or(0.5)
+}
+
+/// `x` in hundredths: finer than a point at any zoom, and short in JSON.
+fn fine(x: f64) -> f64 {
+    (x * 100.0).round() / 100.0
+}
+
+/// `d` points down a row `h` tall, as a fraction of it in thousandths.
+fn fraction(d: f32, h: f32) -> f64 {
+    (f64::from(d / h).clamp(0.0, 1.0) * 1000.0).round() / 1000.0
 }
 
 /// The pointer at `at` over playlist `rows` ((channel, lane, row rect) as drawn) on time `axis`.
@@ -395,71 +508,83 @@ fn playlist_pointer(
     axis: TimeAxis,
     at: Pos2,
 ) -> Option<Pointer> {
-    let &(channel, lane, _) = rows.iter().find(|r| r.2.y_range().contains(at.y))?;
-    let track = Some((song.channels.get(channel)?.id, lane));
-    let tick = axis.tick(at.x).round() as i64;
+    let &(channel, lane, rect) = rows.iter().find(|r| r.2.y_range().contains(at.y))?;
     Some(Pointer {
-        tick,
-        track,
+        tick: fine(axis.tick(at.x)),
+        track: Some((song.channels.get(channel)?.id, lane)),
         key: None,
+        y: Some(fraction(at.y - rect.top(), rect.height())),
     })
 }
 
-/// Where `state` shows on this playlist: its pointer's tip, and its selected clips' blocks ([`clip_rect`]). What does not
-/// resolve, or lies on a track scrolled out of `rows`, is left out.
-fn playlist_marks(
+/// Where `state`'s pointer and drag are among the playlist's `tracks` ((channel, lane) in track-list order), in
+/// [`Shown`]'s terms. What does not resolve is left out.
+fn playlist_targets(
+    song: &Song,
+    tracks: &[(usize, usize)],
+    state: &Presence,
+) -> (Option<[f64; 2]>, Vec<[f64; 3]>) {
+    let row = |(id, lane): (i32, usize)| {
+        let channel = song.channels.iter().position(|c| c.id == id)?;
+        Some(tracks.iter().position(|&t| t == (channel, lane))? as f64)
+    };
+    let pointer = (state.pointer).and_then(|p| Some([tick(p.tick)?, row(p.track?)? + down(p.y)]));
+    let ghosts = (state.drag_clips.iter())
+        .filter_map(|&(id, lane, start, len)| {
+            Some([f64::from(start), row((id, lane))?, tick(len)?.max(0.0)])
+        })
+        .collect();
+    (pointer, ghosts)
+}
+
+/// The blocks of `state`'s selected clips on this playlist ([`clip_rect`]). What does not resolve, or lies on a track
+/// scrolled out of `rows`, is left out.
+fn playlist_outlines(
     song: &Song,
     rows: &[(usize, usize, Rect)],
     axis: TimeAxis,
     state: &Presence,
-) -> (Option<Pos2>, Vec<Rect>) {
-    let row = |(id, lane): (i32, usize)| {
-        let channel = song.channels.iter().position(|c| c.id == id)?;
-        let &(.., rect) = rows.iter().find(|r| (r.0, r.1) == (channel, lane))?;
-        Some((channel, rect))
-    };
-    let pointer = state.pointer.and_then(|p| {
-        let (_, rect) = row(p.track?)?;
-        Some(pos2(axis.x(tick(p.tick)?), rect.center().y))
-    });
-    let clips = (state.clips.iter())
+) -> Vec<Rect> {
+    (state.clips.iter())
         .filter_map(|&(id, lane, clip)| {
-            let (channel, rect) = row((id, lane))?;
-            let clip = song.channels[channel]
-                .lanes
-                .get(lane)?
-                .clips
-                .iter()
-                .find(|c| c.id == clip)?;
+            let channel = song.channels.iter().position(|c| c.id == id)?;
+            let &(.., rect) = rows.iter().find(|r| (r.0, r.1) == (channel, lane))?;
+            let lane = song.channels[channel].lanes.get(lane)?;
+            let clip = lane.clips.iter().find(|c| c.id == clip)?;
             Some(clip_rect(clip, rect, axis))
         })
-        .collect();
-    (pointer, clips)
+        .collect()
 }
 
 /// The pointer at `at` over the piano roll's `grid`, on geometry `g`.
 fn roll_pointer(g: &Geom, at: Pos2) -> Option<Pointer> {
-    let key = Some(g.key(at.y)?);
+    let key = g.key(at.y)?;
     Some(Pointer {
-        tick: g.tick(at.x).round() as i64,
+        tick: fine(g.tick(at.x)),
         track: None,
-        key,
+        key: Some(key),
+        y: Some(fraction(at.y - g.y(key), g.row_h)),
     })
 }
 
-/// Where `state` shows on a piano roll of clip `events` on geometry `g`: its pointer's tip, and its selected notes.
-fn roll_marks(g: &Geom, events: &[Event], state: &Presence) -> (Option<Pos2>, Vec<Rect>) {
-    let pointer = state.pointer.and_then(|p| {
-        let key = p.key.filter(|&k| k <= 127)?;
-        Some(pos2(g.x(tick(p.tick)?), g.y(key) + g.row_h / 2.0))
-    });
-    let notes = (state.notes.iter())
+/// Where `state`'s pointer and drag are on a piano roll, in [`Shown`]'s terms. Keys out of range are left out.
+fn roll_targets(state: &Presence) -> (Option<[f64; 2]>, Vec<[f64; 3]>) {
+    let row = |key: u8| (key <= TOP_KEY).then(|| f64::from(TOP_KEY - key));
+    let pointer = (state.pointer).and_then(|p| Some([tick(p.tick)?, row(p.key?)? + down(p.y)]));
+    let ghosts = (state.drag_notes.iter())
+        .filter_map(|&(pos, key, len)| Some([f64::from(pos), row(key)?, tick(len)?.max(0.0)]))
+        .collect();
+    (pointer, ghosts)
+}
+
+/// `state`'s selected notes among clip `events`, on geometry `g`; notes that are gone are left out.
+fn roll_outlines(g: &Geom, events: &[Event], state: &Presence) -> Vec<Rect> {
+    (state.notes.iter())
         .filter_map(|&(pos, key)| {
             let note = |e: &&Event| matches!(**e, Event::Note { pos: p, key: k, .. } if (p, k) == (pos, key));
             g.note_rect(events.iter().find(note)?)
         })
-        .collect();
-    (pointer, notes)
+        .collect()
 }
 
 /// The hovered point over `area`, while nothing covers it and it is inside what `ui` shows.
@@ -468,8 +593,14 @@ fn hovered(ui: &egui::Ui, area: Rect, covered: bool) -> Option<Pos2> {
     (!covered && area.contains(at) && ui.clip_rect().contains(at)).then_some(at)
 }
 
+/// The frame's time step, and the jump in points past which the others' marks in `grid` go at once.
+fn pace(ui: &egui::Ui, grid: Rect) -> (f32, f64) {
+    let far = f64::from(grid.width().max(grid.height()));
+    (ui.input(|i| i.stable_dt), far)
+}
+
 /// The playlist's presence, after its clips: this person's pointer over its `grid` (on `rows`, as drawn on `axis`), and
-/// the others' pointers and selected clips. Nothing while not connected.
+/// the others' pointers, selected clips and drags. Nothing while not connected.
 pub(crate) fn playlist(
     ui: &egui::Ui,
     cx: &UiCtx,
@@ -486,28 +617,57 @@ pub(crate) fn playlist(
         {
             live.drawn.pointer = Some(p);
         }
+        if live.others.is_empty() {
+            return;
+        }
+        let tracks: Vec<_> = (track_rows(song).iter())
+            .map(|t| (t.channel, t.lane))
+            .collect();
+        // Row `v` (a track's index plus the fraction down it), moved down that fraction, while its track shows.
+        let row = |v: f64| {
+            let i = v.floor().clamp(0.0, tracks.len().saturating_sub(1) as f64);
+            let &(channel, lane) = tracks.get(i as usize)?;
+            let &(.., rect) = rows.iter().find(|r| (r.0, r.1) == (channel, lane))?;
+            Some(rect.translate(vec2(0.0, (v - i) as f32 * rect.height())))
+        };
+        let row_h = rows.first().map_or(1.0, |r| r.2.height());
+        let px = [f64::from(axis.beat_w) / f64::from(PPQ), f64::from(row_h)];
+        let (dt, far) = pace(ui, grid);
         let painter = ui.painter_at(grid);
-        for peer in live.others.iter().filter(|p| p.state.view != "mixer") {
-            paint(
-                &painter,
-                cx,
-                peer,
-                playlist_marks(song, rows, axis, &peer.state),
-            );
+        let mut moving = false;
+        for peer in live.others.iter_mut().filter(|p| p.state.view != "mixer") {
+            let targets = playlist_targets(song, &tracks, &peer.state);
+            moving |= peer.on_playlist.step(targets, dt, px, far);
+            let shown = &peer.on_playlist;
+            let tip = (shown.pointer).and_then(|[t, v]| Some(pos2(axis.x(t), row(v)?.top())));
+            let ghosts = (shown.ghosts.iter())
+                .filter_map(|&[t, v, len]| {
+                    let x = axis.x(t)..=axis.x(t + len);
+                    Some(Rect::from_x_y_ranges(x, row(v)?.y_range()))
+                })
+                .collect();
+            let outlines = playlist_outlines(song, rows, axis, &peer.state);
+            paint(&painter, cx, peer, (tip, outlines, ghosts));
+        }
+        if moving {
+            ui.ctx().request_repaint();
         }
     });
 }
 
-/// The piano roll's presence, after its notes: this person's pointer over its `grid` (on geometry `g`) and selected
-/// notes, and the pointers and selected notes of the others in a piano roll on the same clip. `roll`: the channel, lane
-/// and clip it edits.
+/// A note move or resize under way: the clip's events as it found them, and which of them it changes.
+pub(crate) type NoteDrag<'a> = (&'a [Event], &'a [bool]);
+
+/// The piano roll's presence, after its notes: this person's pointer over its `grid` (on geometry `g`), selected notes
+/// and the move or resize under way, if any; and the pointers, selected notes and drags of the others in a piano roll
+/// on the same clip. `roll`: the channel, lane and clip it edits.
 pub(crate) fn piano_roll(
     ui: &egui::Ui,
     cx: &UiCtx,
     song: &Song,
     (grid, g): (Rect, &Geom),
     roll: (usize, usize, Option<u32>),
-    selected: &[bool],
+    (selected, drag): (&[bool], Option<NoteDrag>),
     covered: bool,
 ) {
     let (channel, lane, Some(id)) = roll else {
@@ -518,7 +678,7 @@ pub(crate) fn piano_roll(
     else {
         return;
     };
-    let shown = (song.channels[channel].id, lane, id);
+    let editing = (song.channels[channel].id, lane, id);
     LIVE.with_borrow_mut(|live| {
         if !live.connected {
             return;
@@ -526,38 +686,68 @@ pub(crate) fn piano_roll(
         if let Some(p) = hovered(ui, grid, covered).and_then(|at| roll_pointer(g, at)) {
             live.drawn.pointer = Some(p);
         }
-        live.drawn.notes = (clip.events.iter().zip(selected))
-            .filter(|(_, s)| **s)
-            .filter_map(|(e, _)| match *e {
-                Event::Note { pos, key, .. } => Some((pos, key)),
-                _ => None,
-            })
-            .take(MAX_SELECTED)
-            .collect();
+        let notes = |events: &[Event], which: &[bool]| -> Vec<(u32, u8, f64)> {
+            (events.iter().zip(which))
+                .filter(|(_, s)| **s)
+                .filter_map(|(e, _)| {
+                    let (pos, len, key) = note(e)?;
+                    Some((pos as u32, key, fine(len)))
+                })
+                .take(MAX_SELECTED)
+                .collect()
+        };
+        let now = notes(&clip.events, selected);
+        let at = |notes: &[(u32, u8, f64)]| notes.iter().map(|n| (n.0, n.1)).collect();
+        // A drag's notes are where it found them in the song the others have, and where it has them so far.
+        (live.drawn.notes, live.drawn.drag_notes) = match drag {
+            Some((found, which)) => (at(&notes(found, which)), now),
+            None => (at(&now), Vec::new()),
+        };
+        let here = |s: &Presence| s.view == "piano" && s.clip == Some(editing);
+        let px = [f64::from(g.beat_w) / f64::from(PPQ), f64::from(g.row_h)];
+        let (dt, far) = pace(ui, grid);
+        let y = |v: f64| g.origin.y + v as f32 * g.row_h;
         let painter = ui.painter_at(grid);
-        let here = |s: &Presence| s.view == "piano" && s.clip == Some(shown);
-        for peer in live.others.iter().filter(|p| here(&p.state)) {
-            paint(&painter, cx, peer, roll_marks(g, &clip.events, &peer.state));
+        let mut moving = false;
+        for peer in live.others.iter_mut().filter(|p| here(&p.state)) {
+            moving |= peer.on_roll.step(roll_targets(&peer.state), dt, px, far);
+            let shown = &peer.on_roll;
+            let tip = shown.pointer.map(|[t, v]| pos2(g.x(t), y(v)));
+            let ghosts = (shown.ghosts.iter())
+                .map(|&[t, v, len]| {
+                    Rect::from_min_max(pos2(g.x(t), y(v)), pos2(g.x(t + len), y(v) + g.row_h))
+                })
+                .collect();
+            let outlines = roll_outlines(g, &clip.events, &peer.state);
+            paint(&painter, cx, peer, (tip, outlines, ghosts));
+        }
+        if moving {
+            ui.ctx().request_repaint();
         }
     });
 }
 
-/// A person's marks in their colour: outlines around their selection, then their pointer, an arrow with a name tag.
+/// A person's marks in their colour: the ghosts of their drag where it has the items so far, outlines around their
+/// selection, then their pointer, an arrow with a name tag.
 fn paint(
     painter: &egui::Painter,
     cx: &UiCtx,
     peer: &Peer,
-    (pointer, outlines): (Option<Pos2>, Vec<Rect>),
+    (pointer, outlines, ghosts): (Option<Pos2>, Vec<Rect>, Vec<Rect>),
 ) {
     let m = cx.m;
     let shown = painter.clip_rect();
+    // Cut to what shows (a remote clip may reach far past it), keeping its edges there.
+    let cut =
+        |rect: Rect| Some(rect.intersect(shown.expand(4.0 * m.t()))).filter(|r| r.is_positive());
+    let edge = Stroke::new(m.t(), peer.color.gamma_multiply(0.8));
+    for rect in ghosts.into_iter().filter_map(cut) {
+        let fill = peer.color.gamma_multiply(GHOST);
+        painter.rect(rect, 0.0, fill, edge, StrokeKind::Inside);
+    }
     let stroke = Stroke::new(2.0 * m.t(), peer.color);
-    for rect in outlines {
-        // Cut to what shows (a remote clip may reach far past it), keeping its edges there.
-        let rect = rect.intersect(shown.expand(4.0 * m.t()));
-        if rect.is_positive() {
-            painter.rect_stroke(rect, 0.0, stroke, StrokeKind::Outside);
-        }
+    for rect in outlines.into_iter().filter_map(cut) {
+        painter.rect_stroke(rect, 0.0, stroke, StrokeKind::Outside);
     }
     let Some(tip) = pointer.filter(|p| shown.contains(*p)) else {
         return;
@@ -598,6 +788,14 @@ impl HoneydewApp {
             true => screen.selected.into_iter().collect(),
             false => screen.group.clone(),
         };
+        let drag = screen.dragging();
+        // A drag's clips are where it found them in the song the others have.
+        let found = |r: ClipRef| drag.iter().find(|d| d.1 == r).map_or(r, |d| d.0);
+        let dragged = |&(_, r): &(ClipRef, ClipRef)| {
+            let c = find(&self.song, r)?;
+            let len = fine(c.visible_ticks());
+            Some((id(r.channel)?, r.lane, c.start_tick, len))
+        };
         LIVE.with_borrow(|live| Presence {
             view: match view {
                 View::Playlist => "playlist",
@@ -614,14 +812,18 @@ impl HoneydewApp {
             pointer: live.mine.pointer,
             clips: match view {
                 View::Mixer => Vec::new(),
-                _ => selected
-                    .into_iter()
+                _ => (selected.into_iter().map(found))
                     .filter_map(clip)
                     .take(MAX_SELECTED)
                     .collect(),
             },
             notes: match view {
                 View::PianoRoll(_) => live.mine.notes.clone(),
+                _ => Vec::new(),
+            },
+            drag_clips: drag.iter().filter_map(dragged).take(MAX_SELECTED).collect(),
+            drag_notes: match view {
+                View::PianoRoll(_) => live.mine.drag_notes.clone(),
                 _ => Vec::new(),
             },
         })

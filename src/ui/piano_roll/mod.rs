@@ -600,7 +600,13 @@ impl PianoRoll {
             song,
             (grid, &g),
             (self.channel, self.lane, self.clip_id),
-            &self.selected,
+            (
+                &self.selected,
+                match &self.gesture {
+                    Gesture::Edit(e) if e.reported => Some((&e.orig[..], &e.which[..])),
+                    _ => None,
+                },
+            ),
             opts.covered,
         );
         // The marquee: a square growing while a touch is held on empty grid, then the box.

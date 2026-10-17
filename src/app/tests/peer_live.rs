@@ -206,17 +206,21 @@ fn a_channel_added_on_each_side_keeps_the_shared_rack_order() {
     assert!(checkpoint::encode(&bob.app.song).unwrap() == alices);
 }
 
-/// The last frame's marks in `color`: arrow tips (a filled path's first point) and outlines (stroked rects).
-fn marks(rig: &Rig, color: egui::Color32) -> (Vec<Pos2>, Vec<egui::Rect>) {
-    let (mut tips, mut outlines) = (Vec::new(), Vec::new());
+/// The last frame's marks in `color`: arrow tips (a filled path's first point), outlines (stroked rects) and ghosts
+/// (rects filled translucent).
+fn marks(rig: &Rig, color: egui::Color32) -> (Vec<Pos2>, Vec<egui::Rect>, Vec<egui::Rect>) {
+    let (mut tips, mut outlines, mut ghosts) = (Vec::new(), Vec::new(), Vec::new());
     for s in &rig.out.shapes {
         match &s.shape {
             egui::Shape::Path(p) if p.fill == color => tips.push(p.points[0]),
             egui::Shape::Rect(r) if r.stroke.color == color => outlines.push(r.rect),
+            egui::Shape::Rect(r) if r.fill == color.gamma_multiply(live::GHOST) => {
+                ghosts.push(r.rect)
+            }
             _ => {}
         }
     }
-    (tips, outlines)
+    (tips, outlines, ghosts)
 }
 
 #[test]
@@ -230,11 +234,14 @@ fn presence_is_in_song_terms_and_shows_the_others_through_this_view() {
         id: 1,
     };
     rig.app.main_screen.clips.selected = Some(clip);
-    let at = lane(1);
+    // Half a U below the row's middle: the pointer is shared as that far down the row, not as the row.
+    let at = lane(1) + vec2(0.0, 0.5 * U);
     rig.frame(vec![egui::Event::PointerMoved(at)]);
     let mine = serde_json::to_value(rig.app.live_presence()).unwrap();
     assert_eq!(mine["view"], "playlist");
     assert_eq!(mine["pointer"]["track"], serde_json::json!([id, 0]));
+    let y = mine["pointer"]["y"].as_f64().unwrap();
+    assert!((y - 0.76).abs() < 0.02, "{y}");
     assert_eq!(mine["clips"], serde_json::json!([[id, 0, 1]]));
 
     // The others as the shell lists them. Bob shares this state: his arrow is where this person points, his outline
@@ -253,14 +260,35 @@ fn presence_is_in_song_terms_and_shows_the_others_through_this_view() {
         { "id": "e", "name": "Eve", "color": "#000002", "state": gone },
     ]));
     rig.frame(vec![]);
-    let (tips, outlines) = marks(&rig, egui::Color32::from_rgb(0xe6, 0x19, 0x4b));
+    let bob = egui::Color32::from_rgb(0xe6, 0x19, 0x4b);
+    let (tips, outlines, _) = marks(&rig, bob);
     assert!(tips.len() == 1 && (tips[0] - at).length() < 1.0, "{tips:?}");
     assert!(
         outlines.len() == 1 && (outlines[0].top() - 3.5 * U).abs() < 1.0,
         "{outlines:?}"
     );
     for other in [1, 2] {
-        let (tips, outlines) = marks(&rig, egui::Color32::from_rgb(0, 0, other));
+        let (tips, outlines, _) = marks(&rig, egui::Color32::from_rgb(0, 0, other));
         assert!(tips.is_empty() && outlines.is_empty());
     }
+
+    // Mid-drag (held past a tap, then 2 U on, not let go), the presence still names the clip where it was and has it
+    // where the drag has it so far: two beats on (snapped; the clip is 16 beats long). Bob's ghost of it shows there.
+    rig.press(at);
+    for _ in 0..3 {
+        rig.frame(vec![]);
+    }
+    rig.drag_to(at + vec2(2.0 * U, 0.0));
+    let mine = serde_json::to_value(rig.app.live_presence()).unwrap();
+    assert_eq!(mine["clips"], serde_json::json!([[id, 0, 1]]));
+    live::show_presence(
+        &serde_json::json!([{ "id": "b", "name": "Bob", "color": "#e6194b", "state": mine }]),
+    );
+    rig.frame(vec![]);
+    let (_, _, ghosts) = marks(&rig, bob);
+    let to = outlines[0].translate(vec2(outlines[0].width() / 8.0, 0.0));
+    assert!(
+        ghosts.len() == 1 && (ghosts[0].min - to.min).length() < 1.0,
+        "{ghosts:?} {to:?} {mine}"
+    );
 }
