@@ -111,7 +111,7 @@ The sound library is stored in `sounds/` as 90 MB archive parts to stay below Gi
 raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.1.7
+tools/release-content.sh 0.1.8
 ```
 
 Commit the updated `sounds/honeydew-sounds.zip.*` parts with the content changes. Add `--web` to also build the web ZIP
