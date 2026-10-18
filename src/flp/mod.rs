@@ -12,6 +12,7 @@ pub mod error;
 pub mod event;
 pub mod export;
 pub mod import;
+pub mod wrapper;
 
 pub use check::check_alignment;
 pub use container::{Chunk, ChunkBody, FlpFile, Header, Tag};

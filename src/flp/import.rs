@@ -25,6 +25,7 @@ use super::event::EventReader;
 use super::{Event, Value, id};
 use crate::content::Factory;
 use crate::smf::gm;
+use crate::song::plugin::{PLUGIN_EFFECT, PLUGIN_INSTRUMENT, PluginRef};
 use crate::song::points::{self, Point, PointKey};
 use crate::song::{
     AutomationTarget, Event as SongEvent, Lane, LaneKind, PPQ, Song, SynthKind, TimeSig,
@@ -243,6 +244,8 @@ struct Item {
 struct Effect {
     insert: i32,
     name: String,
+    /// A wrapped third-party plugin's wrapper state ([`super::wrapper`]).
+    wrapper: Option<Vec<u8>>,
 }
 
 /// What the event stream holds.
@@ -375,10 +378,14 @@ impl Project {
                                     }
                                     _ => None,
                                 };
+                                let wrapper = (plugin.name == super::wrapper::WRAPPER)
+                                    .then(|| plugin.state.clone())
+                                    .flatten();
                                 let name = name.or(plugin.display).unwrap_or(plugin.name);
                                 p.effects.push(Effect {
                                     insert: plugin.insert.unwrap_or(insert),
                                     name,
+                                    wrapper,
                                 });
                             }
                         }
@@ -493,6 +500,12 @@ impl FlChannel {
             .unwrap_or_else(|| "Sampler".into())
     }
 
+    /// The third-party plugin a wrapper channel hosts, with its state ([`super::wrapper`]).
+    fn wrapped(&self) -> Option<PluginRef> {
+        (self.plugin == super::wrapper::WRAPPER).then_some(())?;
+        super::wrapper::decode(self.state.as_deref()?)
+    }
+
     /// The plugin's name: a VST's from its wrapper state, else the internal one; `None` for none.
     fn plugin_name(&self) -> Option<String> {
         let wrapped =
@@ -514,6 +527,16 @@ impl FlChannel {
             Some(2) => !self.plugin.is_empty(),
             _ => false,
         }
+    }
+}
+
+/// Adds a module of `type_id` hosting `plugin` to channel `index`'s rack, after what it holds: its params come from the
+/// plugin once it runs (`plugins::adopt_params`).
+fn plugin_module(song: &mut Song, index: usize, type_id: u16, plugin: PluginRef) {
+    let rack = &mut song.channels[index].rack;
+    let id = rack.add(type_id);
+    if let Some(module) = rack.get_mut(id) {
+        module.file.plugin = Some(Box::new(plugin));
     }
 }
 
@@ -866,6 +889,11 @@ impl Build<'_> {
                 _ if ch.plugin.eq_ignore_ascii_case("3x Osc") => {
                     three_osc(self.song, i, ch, &project.version)
                 }
+                // A third-party plugin that is installed here plays itself, from its saved state.
+                _ if (ch.wrapped()).is_some_and(|p| crate::plugins::installed(&p)) => {
+                    let plugin = ch.wrapped().expect("checked");
+                    plugin_module(self.song, i, PLUGIN_INSTRUMENT, plugin);
+                }
                 _ => {
                     let plugin = ch.plugin_name().unwrap_or_default();
                     let loaded = gm::stand_in(self.song, i, &[&name, &plugin], factory);
@@ -909,6 +937,14 @@ impl Build<'_> {
                 .collect();
             let where_ = names.join(", ");
             for effect in project.effects.iter().filter(|e| e.insert == insert) {
+                // A third-party plugin that is installed here runs itself, from its saved state.
+                let wrapped = effect.wrapper.as_deref().and_then(super::wrapper::decode);
+                if let Some(plugin) = wrapped.filter(crate::plugins::installed) {
+                    for &c in &channels {
+                        plugin_module(self.song, c, PLUGIN_EFFECT, plugin.clone());
+                    }
+                    continue;
+                }
                 match effect_of(&effect.name) {
                     Some((type_id, ours)) => {
                         for &c in &channels {

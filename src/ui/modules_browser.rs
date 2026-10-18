@@ -55,6 +55,18 @@ pub enum Entry {
     Synth(SynthKind),
     /// An effect or note effect, by type id.
     Module(u16),
+    /// An installed third-party plugin (desktop): an instrument is addable only into a channel that takes instruments.
+    Plugin(PluginEntry),
+}
+
+/// An installed plugin as the list shows it ([`crate::plugins::available`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PluginEntry {
+    /// `format:id`.
+    pub uid: &'static str,
+    /// Its name and format, `Name (VST3)`.
+    pub name: &'static str,
+    pub instrument: bool,
 }
 
 impl Entry {
@@ -64,8 +76,33 @@ impl Entry {
             Self::RackPreset => "Rack Preset",
             Self::Synth(kind) => kind.label(),
             Self::Module(id) => params::module_spec(id).map_or("", |s| s.display_name),
+            Self::Plugin(plugin) => plugin.name,
         }
     }
+}
+
+/// The sections of the installed plugins, after [`SECTIONS`]: instruments, then effects.
+fn plugin_sections() -> [(&'static str, Vec<Entry>); 2] {
+    use crate::song::plugin::intern;
+    let (mut instruments, mut effects) = (Vec::new(), Vec::new());
+    for plugin in crate::plugins::available() {
+        let instrument = plugin.kind == crate::plugins::PluginKind::Instrument;
+        let entry = Entry::Plugin(PluginEntry {
+            uid: intern(&plugin.uid),
+            name: intern(&format!("{} ({})", plugin.name, plugin.format)),
+            instrument,
+        });
+        if instrument {
+            &mut instruments
+        } else {
+            &mut effects
+        }
+        .push(entry);
+    }
+    [
+        ("PLUGIN INSTRUMENTS", instruments),
+        ("PLUGIN EFFECTS", effects),
+    ]
 }
 
 /// A row of the list: a section header (upper case, on a darker band) or an entry.
@@ -174,6 +211,7 @@ impl Entry {
             Self::Paste | Self::RackPreset => (0, 0),
             Self::Synth(kind) => (1, kind.type_id()),
             Self::Module(id) => (2, id),
+            Self::Plugin(plugin) => (if plugin.instrument { 1 } else { 2 }, u16::MAX),
         }
     }
 }
@@ -183,8 +221,10 @@ impl Entry {
 pub fn rows(query: &str, sort: ModuleOrdering) -> Vec<Row> {
     let query = query.to_lowercase();
     let hit = |e: &&Entry| e.name().to_lowercase().contains(&query);
+    let plugins = plugin_sections();
     if sort != ModuleOrdering::Category {
         let entries = SECTIONS.iter().flat_map(|(_, entries)| entries.iter());
+        let entries = entries.chain(plugins.iter().flat_map(|(_, entries)| entries));
         let mut entries: Vec<Entry> = entries.filter(hit).copied().collect();
         let key = |e: &Entry| match sort {
             ModuleOrdering::TopLevel => e.top_level(),
@@ -194,7 +234,10 @@ pub fn rows(query: &str, sort: ModuleOrdering) -> Vec<Row> {
         return entries.into_iter().map(Row::Item).collect();
     }
     let mut rows = Vec::new();
-    for (header, entries) in SECTIONS {
+    let plugins = plugins
+        .iter()
+        .map(|(header, entries)| (Some(*header), &entries[..]));
+    for (header, entries) in SECTIONS.into_iter().chain(plugins) {
         let mut hits = entries.iter().filter(hit).map(|&e| Row::Item(e)).peekable();
         if let (Some(header), Some(_)) = (header, hits.peek()) {
             rows.push(Row::Section(header));
@@ -242,6 +285,28 @@ pub fn add_module(rack: &mut Rack, type_id: u16, at: InsertAt) -> i32 {
         }
     });
     rack.insert(index, type_id)
+}
+
+/// Adds a module hosting plugin `uid` at `at`, where [`add_module`] would add a module, started on the channel with id
+/// `channel_id` ([`crate::plugins::add`]); its instance id, or why the plugin did not start (the rack unchanged).
+pub fn add_plugin(
+    rack: &mut Rack,
+    channel_id: i32,
+    uid: &str,
+    at: InsertAt,
+) -> Result<i32, String> {
+    let end = rack.modules.len();
+    let (index, replaced) = match at {
+        InsertAt::End => (end, None),
+        InsertAt::Above(id) => (rack.index_of(id).unwrap_or(end), None),
+        InsertAt::Below(id) => (rack.index_of(id).map_or(end, |i| i + 1), None),
+        InsertAt::Replace(id) => (rack.index_of(id).unwrap_or(end), Some(id)),
+    };
+    let added = crate::plugins::add(rack, channel_id, uid, index)?;
+    if let Some(id) = replaced {
+        rack.remove(id);
+    }
+    Ok(added)
 }
 
 /// Adds a copy of `module` (a clipboard or rack preset module) at `at`, where [`add_module`] would add its type, with a
@@ -311,6 +376,8 @@ pub enum BrowserAction {
     Close,
     /// An instrument, effect or note effect, by type id; add it with [`add_module`].
     Pick(u16),
+    /// An installed plugin, by `format:id`; add it with [`add_plugin`].
+    Plugin(&'static str),
     /// `Paste`: add the clipboard's modules with [`crate::ui::rack::paste`].
     Paste,
     /// `Rack Preset`: open the rack preset picker in the browser's place, for the same insert point.
@@ -325,6 +392,9 @@ impl Entry {
             Self::RackPreset => Some(BrowserAction::RackPreset),
             Self::Synth(kind) => instruments.then_some(BrowserAction::Pick(kind.type_id())),
             Self::Module(id) => Some(BrowserAction::Pick(id)),
+            Self::Plugin(plugin) => {
+                (instruments || !plugin.instrument).then_some(BrowserAction::Plugin(plugin.uid))
+            }
         }
     }
 }

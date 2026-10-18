@@ -111,14 +111,15 @@ pub fn param(song: &Song, channel: usize, target: AutomationTarget) -> Option<Pa
             )
         }
         id => {
-            let module = module_spec(ch.rack.get(id)?.type_id)?;
+            let instance = ch.rack.get(id)?;
+            let module = module_spec(instance.type_id)?;
             let spec = match index {
-                Ok(i) => *module.params.get(i)?,
+                Ok(i) => instance.param_spec(i)?,
                 // −1, −2, −3: Post Gain, Mix, Wet Pan.
                 Err(_) => *COMMON_PARAMS.get(usize::try_from(-1 - target.param).ok()?)?,
             };
             let note = module.role == Role::NoteEffect;
-            (module.display_name, spec, spec.default, note)
+            (instance.title(), spec, spec.default, note)
         }
     };
     if !supported(target, Some(&spec)) {

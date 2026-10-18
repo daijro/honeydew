@@ -369,6 +369,82 @@ fn delete_track_deletes_an_empty_track_and_asks_after_emptying_one() {
 }
 
 #[test]
+fn a_playlist_delete_asks_to_delete_what_it_emptied_in_its_own_undo_step() {
+    // Drums and MiniSynth one clip each, Instrument one on each of three tracks.
+    let mut rig = Rig::with_drums_and_synth();
+    rig.app.add_bare_channel(ChannelKind::Instrument, 0);
+    let ch = &mut rig.app.song.channels[3];
+    ch.add_lane(LaneKind::Notes);
+    ch.add_lane(LaneKind::Notes);
+    let mut clip = |channel: usize, lane: usize| {
+        let id = rig.app.song.channels[channel].lanes[lane]
+            .add_clip(0, 4.0)
+            .id;
+        ClipRef { channel, lane, id }
+    };
+    let (drums, synth) = (clip(1, 0), clip(2, 0));
+    let (first, second, third) = (clip(3, 0), clip(3, 1), clip(3, 2));
+    rig.app.song_edited(SongEdit::Final, 0);
+    let all = ["MASTER", "Drums", "MiniSynth", "Instrument"];
+    let delete = |rig: &mut Rig, group: Vec<ClipRef>| {
+        rig.app.main_screen.clips.group = group;
+        rig.frame(key_tap(egui::Key::Delete, egui::Modifiers::NONE));
+        rig.frame(vec![]);
+    };
+    let clips = |rig: &Rig| -> Vec<usize> {
+        let lanes = rig.app.song.channels.iter().flat_map(|c| &c.lanes);
+        lanes.map(|l| l.clips.len()).collect()
+    };
+    // One selection over two channels empties both: one question names them, and its yes is in the delete's step.
+    delete(&mut rig, vec![drums, synth]);
+    assert_eq!(
+        rig.message(),
+        [
+            "Delete the 2 empty channels too?",
+            "\"Drums\", \"MiniSynth\""
+        ]
+    );
+    rig.answer(true);
+    assert_eq!(names(&rig), ["MASTER", "Instrument"]);
+    rig.frame(undo());
+    assert_eq!(
+        (names(&rig), clips(&rig)),
+        (all.map(String::from).to_vec(), vec![0, 1, 1, 1, 1, 1])
+    );
+    // A channel and two tracks of another (never the track a clip is left on): Keep keeps the delete alone.
+    delete(&mut rig, vec![drums, second, third]);
+    assert_eq!(
+        rig.message(),
+        ["Delete the channel \"Drums\" and remove 2 empty lanes too?"]
+    );
+    rig.answer(false);
+    assert_eq!(
+        (names(&rig).len(), clips(&rig)),
+        (4, vec![0, 0, 1, 1, 0, 0])
+    );
+    rig.frame(undo());
+    assert_eq!(clips(&rig), [0, 1, 1, 1, 1, 1]);
+    // Live, the delete waits for the answer: delete and yes are one change, one step of the session's undo.
+    struct Session;
+    impl Drop for Session {
+        fn drop(&mut self) {
+            crate::app::live::disconnect();
+        }
+    }
+    let _session = Session;
+    crate::app::live::connect();
+    rig.frame(vec![]);
+    let reported = crate::app::live::changes();
+    delete(&mut rig, vec![second, third]);
+    assert_eq!(rig.message(), ["Remove the 2 empty lanes too?"]);
+    assert_eq!(crate::app::live::changes(), reported);
+    rig.answer(true);
+    assert_eq!(lanes(&rig, 3), [LaneKind::Notes]);
+    assert_eq!(rig.app.song.channels[3].lanes[0].clips[0].id, first.id);
+    assert_eq!(crate::app::live::changes(), reported + 1);
+}
+
+#[test]
 fn channel_settings_renames_and_recolours_the_channel_one_undo_step_each() {
     let mut rig = Rig::with_drums_and_synth();
     rig.track_menu(2, SETTINGS);

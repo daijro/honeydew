@@ -114,7 +114,8 @@ impl AudioPlayback {
         else {
             return;
         };
-        for entry in &mut ours.effects {
+        // An external effect is not swapped: what runs on is outside both engines, which wrap it alike.
+        for entry in ours.effects.iter_mut().filter(|e| !e.effect.is_external()) {
             let same = |other: &&mut EffectInstance| {
                 other.id == entry.id && other.effect.type_id() == entry.effect.type_id()
             };

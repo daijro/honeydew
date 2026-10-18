@@ -1390,6 +1390,8 @@ pub(crate) fn read_file_limited(file: std::fs::File, max: u64) -> Result<Vec<u8>
 /// `song` as a save writes it, titled `title` (HEAD @8 is the file name): stamped now, the Tuners' inputs off.
 fn stamped(song: &Song, title: String) -> Song {
     let mut stamped = song.clone();
+    // The plugins' states as they are now (the song holds them as added or read).
+    crate::plugins::store_states(&mut stamped);
     stamped.stamp_save(&now());
     stamped.title = title;
     tuner_inputs_off(&mut stamped);

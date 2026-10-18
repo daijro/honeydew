@@ -1,0 +1,16 @@
+[package]
+name = "os-vst3"
+description = "Lemon Studio's VST3 plugin host"
+version = "0.0.1"
+# vst3-sys' COM macros generate 2021-edition code.
+edition = "2021"
+license = "GPL-3.0-or-later"
+publish = false
+
+[dependencies]
+# Same source as nih-plug's (already in Cargo.lock): GPLv3 bindings of the public VST3 interfaces.
+# Honeydew: pinned to the commit Lemon Studio's Cargo.lock has for branch `fix/drop-box-from-raw`.
+vst3-sys = { git = "https://github.com/robbert-vdh/vst3-sys.git", rev = "b3ff4d775940f5b476b9d1cca02a90e07e1922a2" }
+libloading = "0.8"
+os-engine = { path = "../os-engine" }
+os-host = { path = "../os-host" }

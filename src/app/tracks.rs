@@ -12,7 +12,7 @@ use super::HoneydewApp;
 use crate::project_files::{MESSAGE_TAG, PresetSource};
 use crate::smf::{self, import::ImportOpts};
 use crate::song::{Channel, ChannelKind, DrumGrid, DrumKit, Lane, LaneKind, SamplerSlot, Song};
-use crate::ui::clips::ClipRef;
+use crate::ui::clips::{ClipRef, Emptied};
 use crate::ui::preview::ClipKey;
 use crate::ui::rack::PresetTarget;
 use crate::ui::track_menu::TrackOp;
@@ -20,25 +20,63 @@ use crate::ui::views::{self, Nav, Overlay, SongEdit, View};
 
 const DELETE_CHANNEL_TAG: &str = "delete channel";
 const DELETE_TRACK_TAG: &str = "delete empty tracks";
+const EMPTIED_TAG: &str = "delete emptied";
+/// The channel names the question lists, then `and N more`.
+const LISTED: usize = 4;
 
 /// A question the track menu asked, until it is answered. The channel is named by its id, which no index shift
 /// changes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Asked {
     /// `Delete channel?` (or the FX channel's question): yes deletes it.
     DeleteChannel(i32),
     /// `Delete empty tracks?`, asked once the track's clips are gone: yes deletes the track too.
     DeleteTrack { channel: i32, lane: usize },
+    /// What a playlist `Delete` left empty, asked after its step: yes deletes it into that step. By index: any change
+    /// of the channels or tracks drops the question ([`HoneydewApp::rekey`]).
+    Emptied(Emptied),
 }
 
 impl Asked {
     /// Its message's tag.
-    fn tag(self) -> &'static str {
+    fn tag(&self) -> &'static str {
         match self {
             Self::DeleteChannel(_) => DELETE_CHANNEL_TAG,
             Self::DeleteTrack { .. } => DELETE_TRACK_TAG,
+            Self::Emptied(_) => EMPTIED_TAG,
         }
     }
+}
+
+/// The question for `names`, the emptied channels, and `lanes` emptied tracks; the channel names listed when several,
+/// up to [`LISTED`].
+fn emptied_question(names: &[&str], lanes: usize) -> Vec<String> {
+    let channels = match names {
+        [] => String::new(),
+        [name] => format!("the channel \"{name}\""),
+        _ => format!("the {} empty channels", names.len()),
+    };
+    let tracks = match lanes {
+        1 => "1 empty lane".to_owned(),
+        n => format!("{n} empty lanes"),
+    };
+    let question = match (names.is_empty(), lanes) {
+        (false, 0) => format!("Delete {channels} too?"),
+        (true, 1) => "Remove the empty lane too?".to_owned(),
+        (true, _) => format!("Remove the {tracks} too?"),
+        (false, _) => format!("Delete {channels} and remove {tracks} too?"),
+    };
+    let mut lines = vec![question];
+    if names.len() > 1 {
+        let mut list: Vec<String> = (names.iter().take(LISTED))
+            .map(|n| format!("\"{n}\""))
+            .collect();
+        if names.len() > LISTED {
+            list.push(format!("and {} more", names.len() - LISTED));
+        }
+        lines.push(list.join(", "));
+    }
+    lines
 }
 
 /// A track inserted or deleted at `lane` of channel `channel` (its index after the change).
@@ -525,13 +563,15 @@ impl HoneydewApp {
 
     /// Acts on the answer to the track menu's question, once it comes; anything but yes leaves the song alone.
     pub(super) fn answered(&mut self, tick: u64) {
-        let Some(asked) = self.asked else {
+        let Some(tag) = self.asked.as_ref().map(Asked::tag) else {
             return;
         };
-        let Some(yes) = self.nav.take_answer(asked.tag()) else {
+        let Some(yes) = self.nav.take_answer(tag) else {
             return;
         };
-        self.asked = None;
+        let Some(asked) = self.asked.take() else {
+            return;
+        };
         let index = |id: i32| self.song.channels.iter().position(|c| c.id == id);
         match asked {
             Asked::DeleteChannel(id) => {
@@ -549,7 +589,66 @@ impl HoneydewApp {
                     self.delete_track(channel, lane, tick);
                 }
             }
+            Asked::Emptied(e) if yes => self.delete_emptied(&e, tick),
+            Asked::Emptied(_) => {}
         }
+    }
+
+    /// After the frame's edit: what a playlist `Delete` left empty ([`crate::ui::clips::emptied`]) asks whether it goes
+    /// too, `Delete` / `Keep`. Until the answer, a live session waits to share the delete (`live_quiet`), so that a yes
+    /// makes one change with it, one step of the session's undo.
+    pub(super) fn ask_emptied(&mut self) {
+        let Some(e) = self.main_screen.clips.emptied.take() else {
+            return;
+        };
+        let names: Vec<&str> = (e.channels.iter())
+            .filter_map(|&c| Some(self.song.channels.get(c)?.name.as_str()))
+            .collect();
+        let lines = emptied_question(&names, e.lanes.len());
+        let yes = if names.is_empty() { "Remove" } else { "Delete" };
+        self.asked = Some(Asked::Emptied(e));
+        self.navigate(Nav::Open(Overlay::Message {
+            tag: EMPTIED_TAG,
+            lines,
+            confirm: Some((yes.into(), "Keep".into())),
+            extra: None,
+        }));
+    }
+
+    /// The yes to [`Self::ask_emptied`]: deletes what is still empty (an undo under the question may have brought clips
+    /// back) into the delete's undo step ([`crate::history::History::amend`]), so that one undo brings back the clips
+    /// and their channels and tracks; the audio gets it as an edit's.
+    // ponytail: amends whatever step is last; a step pushed under the modal question (none can be today) would take it.
+    fn delete_emptied(&mut self, e: &Emptied, tick: u64) {
+        let before = self.song.clone();
+        let empty = |l: &Lane| l.clips.is_empty();
+        let song = &mut self.song;
+        for &(c, l) in e.lanes.iter().rev() {
+            if let Some(ch) = song.channels.get_mut(c)
+                && ch.lanes.len() > 1
+                && ch.lanes.get(l).is_some_and(empty)
+            {
+                ch.lanes.remove(l);
+            }
+        }
+        for &c in e.channels.iter().rev() {
+            if song
+                .channels
+                .get(c)
+                .is_some_and(|ch| ch.lanes.iter().all(empty))
+            {
+                song.delete_channel(c);
+            }
+        }
+        if self.song == before {
+            return;
+        }
+        let shifts = lane_shifts(&before, &self.song);
+        self.rekey(&shifts);
+        self.count_time();
+        self.history.amend(&before, &self.song);
+        self.files.song_changed();
+        self.rebuild_as(tick, crate::audio_link::Handover::Edit);
     }
 
     /// The current channel, by index and id: a change of either, over a frame, is another current channel. `Insert
@@ -592,7 +691,7 @@ impl HoneydewApp {
         self.channel_ids = ids;
         // A header drag's order names the channels as they were: it ends.
         self.main_screen.cancel_hold();
-        if let Some(tag) = self.asked.take().map(Asked::tag) {
+        if let Some(tag) = self.asked.take().as_ref().map(Asked::tag) {
             (self.nav.overlays)
                 .retain(|o| !matches!(o, Overlay::Message { tag: t, .. } if *t == tag));
         }

@@ -34,7 +34,8 @@ use crate::metrics::{FontSize, Metrics};
 use crate::project_files::ProjectFiles;
 use crate::sample_cache::{self, SampleCache, Waveform};
 use crate::song::{
-    Channel, Clip, DrumGrid, Event, Lane, LaneKind, MAX_PLAYS_A_PIXEL, PPQ, Song, TimeSig,
+    Channel, ChannelKind, Clip, DrumGrid, Event, Lane, LaneKind, MAX_PLAYS_A_PIXEL, PPQ, Song,
+    TimeSig,
 };
 use crate::theme::{Rgba, Theme, ThemeColors, channel_color};
 use crate::ui::audio_editor::{
@@ -308,6 +309,44 @@ pub struct Clips {
     /// Whether the playlist's scroller has the touch and it left its calm zone (on either axis, 0.5 U each); `None`
     /// when the scroller has no such touch. A touch on empty lane space decides by it. The host sets it each frame.
     pub(crate) left_calm: Option<bool>,
+    /// What the last `Delete` left empty, for the app to ask about after the frame ([`emptied`]).
+    pub(crate) emptied: Option<Emptied>,
+}
+
+/// The channels and tracks a playlist `Delete` left with no clip, by index: the app asks whether they go too.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Emptied {
+    pub channels: Vec<usize>,
+    /// (channel, lane), of channels that stay.
+    pub lanes: Vec<(usize, usize)>,
+}
+
+/// What deleting the clips `targets` (gone from `song` now) left empty. A channel with no clip left on any track, never
+/// the master or a send; else each track of a target clip left with none, all but the first when every track of the
+/// channel is (a channel keeps one). `None` when nothing.
+pub(crate) fn emptied(song: &Song, targets: &[ClipRef]) -> Option<Emptied> {
+    let mut e = Emptied::default();
+    for (c, ch) in song.channels.iter().enumerate() {
+        let mut lanes: Vec<usize> = (targets.iter())
+            .filter(|r| r.channel == c && ch.lanes.get(r.lane).is_some_and(|l| l.clips.is_empty()))
+            .map(|r| r.lane)
+            .collect();
+        lanes.sort_unstable();
+        lanes.dedup();
+        if lanes.is_empty() {
+            continue;
+        }
+        let kept = c == 0 || ch.kind == ChannelKind::EffectTrack;
+        if !kept && ch.lanes.iter().all(|l| l.clips.is_empty()) {
+            e.channels.push(c);
+            continue;
+        }
+        if lanes.len() == ch.lanes.len() {
+            lanes.remove(0);
+        }
+        e.lanes.extend(lanes.into_iter().map(|l| (c, l)));
+    }
+    (!e.channels.is_empty() || !e.lanes.is_empty()).then_some(e)
 }
 
 /// What a touch-down landed on: a clip (by its body or a handle of the selected one), a track's empty space, or the
@@ -922,13 +961,11 @@ impl Clips {
             EditKey::Close => self.deselect(),
             EditKey::Copy | EditKey::SelectAll => {}
             EditKey::Cut | EditKey::Delete if !targets.is_empty() => {
-                for r in targets {
-                    if let Some(lane) = lane_mut(app.song, r.channel, r.lane) {
-                        delete_clip(lane, r.id);
-                    }
+                self.delete(app, &targets);
+                // A cut's clips are to paste: the question would drop them from the clipboard with their tracks.
+                if k == EditKey::Cut {
+                    self.emptied = None;
                 }
-                self.deselect();
-                app.song_edited(true);
             }
             EditKey::Cut | EditKey::Delete => {}
             EditKey::Paste => {
@@ -1443,6 +1480,18 @@ impl Clips {
         true
     }
 
+    /// Deletes the clips `targets` and deselects, one final edit, noting what that left empty ([`emptied`]).
+    fn delete(&mut self, app: &mut AppCtx, targets: &[ClipRef]) {
+        for r in targets {
+            if let Some(lane) = lane_mut(app.song, r.channel, r.lane) {
+                delete_clip(lane, r.id);
+            }
+        }
+        self.deselect();
+        self.emptied = emptied(app.song, targets);
+        app.song_edited(true);
+    }
+
     fn copy_selection(&mut self, song: &Song) {
         self.clipboard = self
             .targets()
@@ -1465,15 +1514,7 @@ impl Clips {
                 self.set_selection(copies);
                 app.song_edited(true);
             }
-            ClipOp::Delete => {
-                for r in targets {
-                    if let Some(lane) = lane_mut(app.song, r.channel, r.lane) {
-                        delete_clip(lane, r.id);
-                    }
-                }
-                self.deselect();
-                app.song_edited(true);
-            }
+            ClipOp::Delete => self.delete(app, &targets),
             ClipOp::Snap => {
                 let mut changed = false;
                 for r in targets {

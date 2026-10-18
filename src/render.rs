@@ -372,8 +372,10 @@ fn engine(
     rate: u32,
     start: f64,
 ) -> Result<SongAudioEngine, RenderError> {
-    let mut engine =
-        SongAudioEngine::with_samples(song, rate as f32, samples).map_err(RenderError::Build)?;
+    // Its plugins are instances of its own, rendering offline from the live ones' state.
+    let built =
+        crate::plugins::rendering(|| SongAudioEngine::with_samples(song, rate as f32, samples));
+    let mut engine = built.map_err(RenderError::Build)?;
     engine.set_loop(None);
     engine.play_past_song_end();
     engine.seek(start as u64);

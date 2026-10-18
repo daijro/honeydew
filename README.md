@@ -111,7 +111,7 @@ The sound library is stored in `sounds/` as 90 MB archive parts to stay below Gi
 raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.1.9
+tools/release-content.sh 0.2.0
 ```
 
 Commit the updated `sounds/honeydew-sounds.zip.*` parts with the content changes. Add `--web` to also build the web ZIP
@@ -205,6 +205,33 @@ The tagged release workflow builds and uploads `honeydew-android-<version>-arm64
 fail the Android job; it never publishes a debug-signed or unsigned APK. See Android's
 [app-signing guide](https://developer.android.com/studio/publish/app-signing) for creating and protecting a key.
 
+## Plugins (desktop)
+
+The desktop app hosts third-party VST3, VST2 and CLAP plugins, as instruments and as effects. They are listed in the
+Modules browser under PLUGIN INSTRUMENTS and PLUGIN EFFECTS. A plugin's own editor opens when you add it, and the card's
+`Editor` button opens and closes it again; its params are sliders on the card and can be automated, and a project saves
+each plugin with its state.
+
+- **Where plugins are found.** On Linux: `~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3`, `~/.vst`,
+  `/usr/lib/vst`, `/usr/local/lib/vst` (or `VST_PATH`), `~/.clap`, `/usr/lib/clap`, `/usr/local/lib/clap` (and
+  `CLAP_PATH`), plus the yabridge folders `~/.vst3/yabridge`, `~/.vst/yabridge` and `~/.clap/yabridge`. On Windows and
+  macOS, the standard VST3, VST2 and CLAP folders. SETTINGS → Plugins adds folders of your own, and `Rescan` scans
+  every plugin file again. Each file is loaded in a process of its own while it is scanned, so a broken plugin cannot
+  take the app down.
+- **Windows plugins on Linux.** Install [yabridge](https://github.com/robbert-vdh/yabridge) or its fork
+  [vstbridge](https://github.com/rations/vstbridge) with Wine, and let it bridge your Windows plugins: it puts Linux
+  VST2 and VST3 files in `~/.vst/yabridge` and `~/.vst3/yabridge`, which Honeydew loads like any Linux plugin.
+- **FL Studio Mobile.** A plugin module is saved where FL Studio Mobile skips it: the project still opens there,
+  without the plugin. The web app and Android keep a project's plugins (and their settings) but cannot play them.
+- **FL Studio projects.** Opening an `.flp` loads each wrapped plugin that is installed here with its saved state (an
+  instrument channel's, and a mixer insert's effects); one that is not plays a stand-in. Saving as `.flp` writes each
+  plugin instrument as a wrapper channel with its state.
+- **Limits.** Editor windows open on Linux only (X11, or XWayland under Wayland); on Windows and macOS the card's sliders
+  are the plugin's controls. On Linux a plugin that crashes while playing takes the app down with it. A plugin's latency
+  is shown on its card but not compensated.
+
+The plugin hosting is Lemon Studio's (<https://github.com/ItsAlphaNeon/Lemon-Studio>, GPL-3.0-or-later).
+
 ## Desktop icon (Linux)
 
 Wayland only shows an app's icon if a desktop entry is installed. To install it:
@@ -276,6 +303,9 @@ FL Studio project (`.flp`) container code: from [Lemon Studio](https://github.co
 ItsAlphaNeon, GPL-3.0-or-later; see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 Font: Open Sans SemiCondensed SemiBold, SIL Open Font License 1.1 ([`assets/fonts/OFL.txt`](assets/fonts/OFL.txt)).
+
+Plugin hosting: Lemon Studio's VST3, VST2 and CLAP hosts (<https://github.com/ItsAlphaNeon/Lemon-Studio>,
+GPL-3.0-or-later, by ItsAlphaNeon), vendored in `vendor/lemon-studio`; see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 The icon is a derivative of "Melon" by afitrose. It is licensed as Free for commercial use WITH ATTRIBUTION.
 

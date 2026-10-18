@@ -142,6 +142,7 @@ pub fn show(
     // `Input device:` lists the app's MIDI ports and asks it for a rescan each time it opens.
     settings.set_midi_ports(app.midi_devices);
     settings.content = app.files.content_dir();
+    settings.plugins = cfg!(plugin_host);
     state.menu.set_factory(app.files.factory);
     let action = state.menu.show(
         ui,
@@ -154,6 +155,7 @@ pub fn show(
     if settings.take_credits() {
         nav = Some(Nav::Open(Overlay::Credits));
     }
+    plugin_folders(settings.take_plugin_action(), app.settings);
     let action = action.or(answered);
     *tab = state.menu.tab;
 
@@ -300,6 +302,31 @@ fn message(tag: &'static str, lines: Vec<String>, yes: &str, no: &str) -> Nav {
         confirm: Some((yes.into(), no.into())),
         extra: None,
     })
+}
+
+/// A plugin row's tap in SETTINGS: `Add folder` picks a folder (the system's dialog) and scans it; `Rescan` scans every
+/// plugin file again; forgotten folders scan again without them.
+fn plugin_folders(
+    action: Option<crate::ui::settings_tab::PluginAction>,
+    settings: &mut crate::settings::Settings,
+) {
+    use crate::ui::settings_tab::PluginAction;
+    let Some(action) = action else { return };
+    let all = match action {
+        PluginAction::Rescan => true,
+        PluginAction::Forgot => false,
+        PluginAction::AddFolder => {
+            #[cfg(plugin_host)]
+            if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                let dir = dir.display().to_string();
+                if !settings.plugin_folders.contains(&dir) {
+                    settings.plugin_folders.push(dir);
+                }
+            }
+            false
+        }
+    };
+    crate::plugins::rescan_folders(&settings.plugin_folders, all);
 }
 
 #[cfg(test)]

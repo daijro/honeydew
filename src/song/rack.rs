@@ -51,6 +51,31 @@ pub struct ModuleInstance {
 }
 
 impl ModuleInstance {
+    /// The name its card and its automation labels show: a plugin module's plugin name, else the registry's display
+    /// name ("" for an unknown type).
+    pub fn title(&self) -> &str {
+        match &self.file.plugin {
+            Some(plugin) if super::plugin::is_plugin(self.type_id) => &plugin.name,
+            _ => params::module_spec(self.type_id).map_or("", |spec| spec.display_name),
+        }
+    }
+
+    /// Param `index`'s spec: the registry's, or on a plugin module Enable and then the plugin's params, by their names
+    /// (a plain continuous law: the plugin itself has the value texts).
+    pub fn param_spec(&self, index: usize) -> Option<params::ParamSpec> {
+        let spec = params::module_spec(self.type_id)?;
+        if let Some(param) = spec.params.get(index) {
+            return Some(*param);
+        }
+        let plugin =
+            (self.file.plugin.as_ref()).filter(|_| super::plugin::is_plugin(self.type_id))?;
+        let param = plugin.params.get(index.checked_sub(1)?)?;
+        Some(params::ParamSpec::plain(
+            super::plugin::intern(&param.name),
+            param.default,
+        ))
+    }
+
     /// A module with every param at its registry default.
     pub fn new(type_id: u16, instance_id: i32) -> Self {
         let params = params::module_spec(type_id)

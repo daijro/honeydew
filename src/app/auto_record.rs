@@ -179,9 +179,7 @@ pub(crate) fn spec(ch: &Channel, target: AutomationTarget) -> Option<ParamSpec> 
         0 => *params::CHANNEL_PARAMS.get(index.ok()?)?,
         id if id < 0 => *params::DRUM_SLOT_PARAMS.get(index.ok()?)?,
         id => match index {
-            Ok(i) => *params::module_spec(ch.rack.get(id)?.type_id)?
-                .params
-                .get(i)?,
+            Ok(i) => ch.rack.get(id)?.param_spec(i)?,
             // −1, −2, −3: Post Gain, Mix, Wet Pan.
             Err(_) => *params::COMMON_PARAMS.get(usize::try_from(-1 - target.param).ok()?)?,
         },

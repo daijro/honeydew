@@ -22,6 +22,40 @@ pub struct SongAudioBridge {
     pub audio: AudioPlayback,
 }
 
+/// A plugin effect module (desktop only), where its plugin runs: else it is left out and the sound passes.
+fn add_plugin_effect(
+    audio: &mut AudioPlayback,
+    song: &Song,
+    channel_index: usize,
+    module: &crate::song::ModuleInstance,
+    sample_rate: f32,
+) -> Result<(), SongAudioError> {
+    let channel = &song.channels[channel_index];
+    let bar = song.time_sig.bar_beats();
+    let Some(plugin) = crate::plugins::effect(channel, module, sample_rate, bar) else {
+        return Ok(());
+    };
+    let (params, block) = (module.params.len(), PLUGIN_BLOCK);
+    let mut effect = AudioEffect::external(module.type_id, sample_rate, plugin, params, block)
+        .map_err(SongAudioError::Effect)?;
+    for (index, value) in module.params.iter().copied().enumerate() {
+        effect
+            .set_parameter(index, value)
+            .map_err(SongAudioError::Effect)?;
+    }
+    for (index, value) in module.common.0.into_iter().enumerate() {
+        effect
+            .set_common_parameter(0x7fc0 + index as u16, value)
+            .map_err(SongAudioError::Effect)?;
+    }
+    audio
+        .add_effect(channel_index, module.instance_id, effect)
+        .map_err(SongAudioError::Playback)
+}
+
+/// The largest block a plugin effect takes at once (the engine's); longer ones run in parts.
+const PLUGIN_BLOCK: usize = 1024;
+
 impl SongAudioBridge {
     pub fn new(song: &Song, sample_rate: f32) -> Result<Self, SongAudioError> {
         if !sample_rate.is_finite() || sample_rate <= 0.0 {
@@ -42,6 +76,10 @@ impl SongAudioBridge {
                     .map_err(SongAudioError::Playback)?;
             }
             for module in &channel.rack.modules {
+                if module.type_id == crate::song::plugin::PLUGIN_EFFECT {
+                    add_plugin_effect(&mut audio, song, channel_index, module, sample_rate)?;
+                    continue;
+                }
                 let Some(info) = effect_info(module.type_id) else {
                     continue;
                 };

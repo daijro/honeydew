@@ -294,7 +294,31 @@ pub fn instruments() -> impl Iterator<Item = &'static ModuleSpec> {
     instruments::MODULES.iter()
 }
 
-/// The module with type id `id` (effect, note effect or instrument), or `None` for ids that are not registered.
+/// The module with type id `id` (effect, note effect, instrument or a plugin module), or `None` for ids that are not
+/// registered.
 pub fn module_spec(id: u16) -> Option<&'static ModuleSpec> {
-    modules().chain(instruments()).find(|m| m.id == id)
+    modules()
+        .chain(instruments())
+        .chain(&PLUGINS)
+        .find(|m| m.id == id)
 }
+
+/// The plugin module types ([`crate::song::plugin`]): Enable alone here; a plugin's own params follow it, named by the
+/// plugin ([`crate::song::ModuleInstance::param_spec`]). Not in [`modules`] or [`instruments`]: no panel, no preset.
+static PLUGINS: [ModuleSpec; 2] = [
+    ModuleSpec::instrument(
+        crate::song::plugin::PLUGIN_INSTRUMENT,
+        "Plugin",
+        "Plugin",
+        &[ParamSpec::ENABLE],
+        &[],
+    ),
+    ModuleSpec::effect(
+        crate::song::plugin::PLUGIN_EFFECT,
+        "Plugin",
+        "Plugin FX",
+        false,
+        &[ParamSpec::ENABLE],
+        &[],
+    ),
+];

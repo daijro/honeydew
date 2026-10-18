@@ -230,6 +230,25 @@ impl CommonModule {
     }
 }
 
+/// An audio effect the host provides from outside the engine (a third-party plugin, desktop only). It processes
+/// whole blocks in place; the module's Enable (param 0) and common params wrap it as they wrap the built-in effects
+/// ([`AudioEffect::external`]). Its methods run on the audio thread: none may block or allocate.
+pub trait ExternalEffect: Send {
+    /// Param `index` ≥ 1 is now `value`, normalized (param 0, Enable, is the module's).
+    fn set_parameter(&mut self, index: usize, value: f32);
+    /// Processes one block in place.
+    fn process(&mut self, left: &mut [f32], right: &mut [f32], context: ProcessContext);
+    /// Clears its tails and delay lines (ResetSound).
+    fn reset(&mut self);
+}
+
+/// An external effect and its dry copy, for the common params' mix.
+struct External {
+    effect: Box<dyn ExternalEffect>,
+    dry_left: Vec<f32>,
+    dry_right: Vec<f32>,
+}
+
 pub struct AudioEffect {
     id: u16,
     params: Vec<f32>,
@@ -238,6 +257,7 @@ pub struct AudioEffect {
     sample_rate: f32,
     meter: MeterSnapshot,
     probe: analysis::Probe,
+    external: Option<External>,
 }
 
 impl AudioEffect {
@@ -445,10 +465,47 @@ impl AudioEffect {
             sample_rate,
             meter: MeterSnapshot::default(),
             probe: analysis::Probe::new(id, sample_rate),
+            external: None,
         };
         effect.refresh_coefficients();
         effect.reset();
         Ok(effect)
+    }
+
+    /// Module type `id` processed by `effect` ([`ExternalEffect`]), with `params` params (Enable and the effect's),
+    /// all at 0 but Enable until set, and room for blocks of `max_block` frames (longer ones run in parts). Nothing
+    /// is reset: the effect may run on in the engine this one replaces.
+    pub fn external(
+        id: u16,
+        sample_rate: f32,
+        effect: Box<dyn ExternalEffect>,
+        params: usize,
+        max_block: usize,
+    ) -> Result<Self, EffectError> {
+        if !sample_rate.is_finite() || sample_rate <= 0.0 {
+            return Err(EffectError::InvalidSampleRate);
+        }
+        let mut values = vec![0.0; params.max(1)];
+        values[0] = 1.0;
+        Ok(Self {
+            id,
+            params: values,
+            common: CommonModule::default(),
+            processor: Processor::Monitor,
+            sample_rate,
+            meter: MeterSnapshot::default(),
+            probe: analysis::Probe::new(id, sample_rate),
+            external: Some(External {
+                effect,
+                dry_left: vec![0.0; max_block.max(1)],
+                dry_right: vec![0.0; max_block.max(1)],
+            }),
+        })
+    }
+
+    /// An [`ExternalEffect`]'s module ([`Self::external`]).
+    pub fn is_external(&self) -> bool {
+        self.external.is_some()
     }
 
     pub fn type_id(&self) -> u16 {
@@ -522,6 +579,12 @@ impl AudioEffect {
             .get_mut(index)
             .ok_or(EffectError::InvalidParameter(index))?;
         *parameter = value;
+        if let Some(external) = &mut self.external {
+            if index > 0 {
+                external.effect.set_parameter(index, value);
+            }
+            return Ok(());
+        }
         if self.id == 46 {
             if index == 3 && self.params[4] > value {
                 self.params[4] = value;
@@ -605,6 +668,9 @@ impl AudioEffect {
     }
 
     pub fn reset(&mut self) {
+        if let Some(external) = &mut self.external {
+            external.effect.reset();
+        }
         self.processor.reset(&self.params);
         self.meter = MeterSnapshot::default();
         self.probe.reset();
@@ -634,6 +700,10 @@ impl AudioEffect {
         // A block has run: from now on a change glides, bypassed or not.
         self.common.fresh = false;
         let runs = self.common.runs(self.params[0] >= 0.5);
+        if let Some(external) = &mut self.external {
+            self.meter = external.process(&mut self.common, runs, left, right, context);
+            return Ok(());
+        }
         // A bypassed processor stands still: MultiFX's free LFO, too, advanced by each prepared block. Tape Stop still
         // takes the tempo, which a synced stop pressed as it comes back times its ramp by.
         if runs {
@@ -666,6 +736,53 @@ impl AudioEffect {
     fn refresh_coefficients(&mut self) {
         self.processor
             .refresh_coefficients(&self.params, self.sample_rate);
+    }
+}
+
+impl External {
+    /// [`AudioEffect::process`] for an external effect: in parts of at most the dry copy's length, the effect in place,
+    /// then the common params against the dry copy. Bypassed, the effect does not run.
+    fn process(
+        &mut self,
+        common: &mut CommonModule,
+        runs: bool,
+        left: &mut [f32],
+        right: &mut [f32],
+        context: ProcessContext,
+    ) -> MeterSnapshot {
+        let mut peak = MeterSnapshot::default();
+        let block = self.dry_left.len();
+        let beats_per_frame =
+            f64::from(context.tempo_bpm) / (60.0 * f64::from(context.sample_rate));
+        for (part, (out_l, out_r)) in left
+            .chunks_mut(block)
+            .zip(right.chunks_mut(block))
+            .enumerate()
+        {
+            let frames = out_l.len();
+            for (l, r) in out_l.iter().zip(out_r.iter()) {
+                peak.input_peak = peak.input_peak.max(l.abs()).max(r.abs());
+            }
+            if runs {
+                let (dry_l, dry_r) = (&mut self.dry_left[..frames], &mut self.dry_right[..frames]);
+                dry_l.copy_from_slice(out_l);
+                dry_r.copy_from_slice(out_r);
+                let offset = if context.playing { part * block } else { 0 };
+                let context = ProcessContext {
+                    start_beat: context.start_beat + offset as f64 * beats_per_frame,
+                    ..context
+                };
+                self.effect.process(out_l, out_r, context);
+                for (frame, (l, r)) in out_l.iter_mut().zip(out_r.iter_mut()).enumerate() {
+                    (*l, *r) = common.frame((dry_l[frame], dry_r[frame]), (*l, *r));
+                }
+            }
+            for (l, r) in out_l.iter().zip(out_r.iter()) {
+                peak.peak_left = peak.peak_left.max(l.abs());
+                peak.peak_right = peak.peak_right.max(r.abs());
+            }
+        }
+        peak
     }
 }
 

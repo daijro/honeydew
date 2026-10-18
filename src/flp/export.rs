@@ -3,7 +3,8 @@
 //! (3 of FL's ticks to each of ours, so every position is exact).
 //!
 //! - Each regular channel becomes an FL channel named, coloured and at the volume and pan it has. A 3x Osc becomes
-//!   FL's 3x Osc with its oscillators ([`osc_state`], the inverse of the `.fst` import) and filter; a DW Sampler a
+//!   FL's 3x Osc with its oscillators ([`osc_state`], the inverse of the `.fst` import) and filter; a third-party plugin
+//!   instrument FL's plugin wrapper with the plugin and its state ([`super::wrapper`]); a DW Sampler a
 //!   Sampler with its sample (an audio file as it is, a program's zone nearest C5), its root key set so it plays at
 //!   our pitch; a Drums channel one Sampler for each pad it plays, its hits at C5. Any other instrument becomes an
 //!   empty Sampler named after its channel, with a notice.
@@ -25,6 +26,7 @@ use crate::audio_engine::samples::dw_path;
 use crate::params::{Role, module_spec};
 use crate::sample_cache::SampleCache;
 use crate::smf::export::plays;
+use crate::song::plugin::PLUGIN_INSTRUMENT;
 use crate::song::{
     Channel, ChannelKind, Event as SongEvent, LaneKind, ModuleInstance, PPQ, SamplerSlot, Song,
 };
@@ -65,6 +67,8 @@ struct FlChannel {
 enum Sound {
     Sampler(Option<String>),
     ThreeOsc(Vec<u8>, [i32; 3]),
+    /// A third-party plugin: FL's plugin wrapper with its wrapper state ([`super::wrapper`]).
+    Wrapper(Vec<u8>),
     /// An audio clip channel and its sample file.
     Audio(Option<String>),
 }
@@ -156,6 +160,10 @@ impl Out {
                     let filter =
                         [p(111) * 256.0, p(112) * 256.0, p(110) * 7.0].map(|v| v.round() as i32);
                     (Sound::ThreeOsc(osc_state(&m.params), filter), C5)
+                }
+                Some(m) if m.type_id == PLUGIN_INSTRUMENT && m.file.plugin.is_some() => {
+                    let plugin = m.file.plugin.as_deref().expect("checked");
+                    (Sound::Wrapper(super::wrapper::encode(None, plugin)), C5)
                 }
                 Some(m) if m.type_id == 1 => match self.dw_sample(&channel.name, m, cache) {
                     Some((file, root)) => (Sound::Sampler(Some(file)), root),
@@ -545,19 +553,21 @@ fn pattern_meta(number: u16, name: &str) -> Vec<Event> {
 
 /// A channel block in the minimal form FL 26 loads.
 fn channel_events(n: u16, ch: &FlChannel) -> Vec<Event> {
-    let plugin = matches!(ch.sound, Sound::ThreeOsc(..));
+    let plugin = matches!(ch.sound, Sound::ThreeOsc(..) | Sound::Wrapper(_));
     let kind = match ch.sound {
-        Sound::ThreeOsc(..) => 2,
+        Sound::ThreeOsc(..) | Sound::Wrapper(_) => 2,
         Sound::Audio(_) => 4,
         Sound::Sampler(_) => 0,
+    };
+    let internal = match ch.sound {
+        Sound::ThreeOsc(..) => "3x Osc",
+        Sound::Wrapper(_) => super::wrapper::WRAPPER,
+        _ => "",
     };
     let mut b = vec![
         Event::new(id::CH_NEW, Value::U16(n)),
         Event::new(id::CH_TYPE, Value::U8(kind)),
-        Event::new(
-            id::PLUGIN_NAME,
-            Value::var(utf16(if plugin { "3x Osc" } else { "" })),
-        ),
+        Event::new(id::PLUGIN_NAME, Value::var(utf16(internal))),
     ];
     if plugin {
         let mut rec = vec![0u8; 52];
@@ -581,6 +591,9 @@ fn channel_events(n: u16, ch: &FlChannel) -> Vec<Event> {
         for (k, v) in filter.iter().enumerate() {
             levels[12 + 4 * k..16 + 4 * k].copy_from_slice(&v.to_le_bytes());
         }
+    }
+    if let Sound::Wrapper(state) = &ch.sound {
+        b.push(Event::new(id::PLUGIN_STATE, Value::var(state.clone())));
     }
     b.push(Event::new(id::CH_ENABLED, Value::U8(1)));
     b.push(Event::new(id::CH_TARGET, Value::U16(0)));

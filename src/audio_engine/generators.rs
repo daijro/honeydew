@@ -10,7 +10,8 @@ use crate::flm::sf2d::Sf2d;
 use crate::panels::cstm::settings_from_cstm;
 use crate::params::{Role, module_spec};
 use crate::sample_cache::{SampleCache, SampleKey};
-use crate::song::{Channel, ModuleInstance};
+use crate::song::plugin::PLUGIN_INSTRUMENT;
+use crate::song::{Channel, ModuleInstance, TimeSig};
 use honeydew_audio::dw_sampler::{DwSampler, DwZone};
 use honeydew_audio::dwp::Cstm;
 use honeydew_audio::gmsynth::{self, GmSynth};
@@ -31,9 +32,10 @@ fn instrument(
     module: &ModuleInstance,
     sample_rate: f32,
     samples: &SampleCache,
-    subdivision: u8,
+    time_sig: TimeSig,
     origin: &mut DefaultHasher,
 ) -> Option<Box<dyn Instrument>> {
+    let subdivision = time_sig.subdivision;
     match module.type_id {
         0 => Some(Box::new(MiniSynth::new(sample_rate).ok()?)),
         1 => Some(Box::new(dw_sampler(module, sample_rate, samples, origin))),
@@ -64,6 +66,12 @@ fn instrument(
             samples,
             origin,
         ))),
+        // A hosted plugin (desktop only); its instance outlives engines, so the build is by which plugin it is.
+        PLUGIN_INSTRUMENT => {
+            module.file.plugin.as_ref().map(|p| p.uid()).hash(origin);
+            let bar = time_sig.bar_beats();
+            crate::plugins::instrument(channel, module, sample_rate, bar, super::BLOCK_FRAMES)
+        }
         _ => None,
     }
 }
@@ -136,8 +144,8 @@ fn soundfont_player(
     SoundFontPlayer::new(sample_rate, bank)
 }
 
-/// `channel`'s instruments in rack order, by instance id, with scratch room for `max_block` frames. `subdivision` is
-/// the song's TDIV byte 0 (3x Osc's D). Their params
+/// `channel`'s instruments in rack order, by instance id, with scratch room for `max_block` frames. `time_sig` is
+/// the song's TDIV (byte 0 is 3x Osc's D; a plugin's transport counts bars of byte 1). Their params
 /// arrive with the engine's initial state. An instrument type without a constructor is left out (silent) and logged
 /// once per process.
 pub(super) fn build(
@@ -146,7 +154,7 @@ pub(super) fn build(
     tempo_bpm: f32,
     max_block: usize,
     samples: &SampleCache,
-    subdivision: u8,
+    time_sig: TimeSig,
 ) -> Vec<(i32, InstrumentModule)> {
     let is_instrument = |module: &&ModuleInstance| {
         module_spec(module.type_id).is_some_and(|spec| spec.role == Role::Instrument)
@@ -155,16 +163,12 @@ pub(super) fn build(
         .filter_map(|module| {
             let mut origin = DefaultHasher::new();
             module.type_id.hash(&mut origin);
-            let built = instrument(
-                channel,
-                module,
-                sample_rate,
-                samples,
-                subdivision,
-                &mut origin,
-            );
+            let built = instrument(channel, module, sample_rate, samples, time_sig, &mut origin);
             let Some(mut instrument) = built else {
-                log_silent(module.type_id);
+                // A plugin that is not running is reported by the host.
+                if !crate::song::plugin::is_plugin(module.type_id) {
+                    log_silent(module.type_id);
+                }
                 return None;
             };
             instrument.set_tempo_bpm(tempo_bpm);
@@ -287,7 +291,7 @@ mod tests {
                 module,
                 48_000.0,
                 &samples,
-                4,
+                Default::default(),
                 &mut DefaultHasher::new(),
             )
             .unwrap()
@@ -318,7 +322,7 @@ mod tests {
             module,
             48_000.0,
             &samples,
-            4,
+            Default::default(),
             &mut DefaultHasher::new(),
         )
         .unwrap();
@@ -347,7 +351,7 @@ mod tests {
                 module,
                 48_000.0,
                 &samples,
-                4,
+                Default::default(),
                 &mut DefaultHasher::new(),
             )
             .unwrap();
@@ -413,7 +417,7 @@ mod tests {
             module,
             48_000.0,
             &cache,
-            4,
+            Default::default(),
             &mut DefaultHasher::new(),
         );
         (built.unwrap(), cache.soundfont(&path).is_some())
@@ -482,7 +486,7 @@ mod tests {
             &module,
             48_000.0,
             &SampleCache::default(),
-            4,
+            Default::default(),
             &mut DefaultHasher::new(),
         );
         let mut built = built.unwrap();

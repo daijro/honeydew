@@ -45,6 +45,7 @@ mod input;
 mod keys;
 mod midi;
 mod note_record;
+mod plugins;
 mod tracks;
 mod typed;
 // A song load on the web waits for its bundled sounds.
@@ -293,6 +294,7 @@ impl HoneydewApp {
         setup_context(&cc.egui_ctx);
         let mut app = Self::with_storage(settings::storage());
         app.midi.link = crate::midi::device::MidiLink::platform(cc.egui_ctx.clone());
+        app.start_plugins(&cc.egui_ctx);
         app.extract_demo_songs(cfg!(target_arch = "wasm32"));
         // Once per start, before the purge (whose end every move waits for): a folder of the songs folder named as a row
         // beside it (`My Songs/Demo Songs`) gets a free numbered name, so that it is listed, not hidden.
@@ -531,6 +533,8 @@ impl HoneydewApp {
                 // Real-time safe: the playing engine holds its own `Arc`s, and a retired engine is dropped on this
                 // thread.
                 self.audio.samples = SampleCache::default();
+                // The old song's plugins go; the new one's start with its engine.
+                crate::plugins::song_replaced();
                 // A fresh engine and the missing check; on the web once the bundled sounds are in (`app/bundle_wait.rs`).
                 self.song_loaded();
             }
@@ -1695,6 +1699,8 @@ impl eframe::App for HoneydewApp {
 
     /// The settings not flushed yet (a drag's, or a failed flush's) get a last try (native only: the web has no exit).
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        // The plugins' editors close before their windows go.
+        crate::plugins::song_replaced();
         if self.settings_unflushed
             && let Some(storage) = self.storage.as_deref_mut()
         {
@@ -1758,6 +1764,7 @@ impl HoneydewApp {
             hidden,
             snapshot.as_ref().map_or(0, |s| s.transport_tick),
         );
+        self.plugins_frame(ctx, snapshot.as_ref().map_or(0, |s| s.transport_tick));
         let was_playing = self.main_screen.playing;
         let was_recording = self.recording();
         // A slice of the export under way, which stops the transport (`app/export.rs`).
@@ -2223,6 +2230,8 @@ impl HoneydewApp {
             Some(edit) => self.song_edited(edit, tick),
             None => {}
         }
+        // After its step: a playlist delete asks whether what it emptied goes too (`app/tracks.rs`).
+        self.ask_emptied();
         // Removing a drum row clears the undo history, the removal's step too.
         if std::mem::take(&mut self.slots.drum_editor.row_removed) {
             self.history = History::new(&self.song);

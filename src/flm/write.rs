@@ -197,10 +197,27 @@ fn write_rack_chunk(
             write_kit(writer, kit)
         })?;
     }
-    for module in &channel.rack.modules {
+    write_modules(writer, &channel.rack.modules)?;
+    write_raw(writer, &channel.file.rack_unknown_chunks)
+}
+
+/// A rack's modules in chain order: an `RMOd` each, then each plugin module ([`crate::song::plugin`]) as an `HDPm`,
+/// which a reader that does not know it skips as an unknown chunk, while an `RMOd` of a type it does not know would
+/// fail the whole song. An `HDPm` is `u32` its position in the chain, `u32` 1 (the layout), then its
+/// module's `RMOd`, which carries the plugin's `PLUG` and `PSTA`.
+fn write_modules(writer: &mut ChunkWriter, modules: &[ModuleInstance]) -> Result<(), FlmError> {
+    let plugin = |module: &ModuleInstance| crate::song::plugin::is_plugin(module.type_id);
+    for module in modules.iter().filter(|m| !plugin(m)) {
         writer.chunk(*b"RMOd", |writer| write_module(writer, module))?;
     }
-    write_raw(writer, &channel.file.rack_unknown_chunks)
+    for (position, module) in modules.iter().enumerate().filter(|(_, m)| plugin(m)) {
+        writer.chunk(*b"HDPm", |writer| {
+            writer.u32(position as u32)?;
+            writer.u32(1)?;
+            writer.chunk(*b"RMOd", |writer| write_module(writer, module))
+        })?;
+    }
+    Ok(())
 }
 
 /// A kit's `PADS`, its slots and its unknown chunks: what follows the `RSMP` prefix, or the `.tmpl` magic.
@@ -230,12 +247,11 @@ pub fn write_preset(module: &ModuleInstance) -> Result<Vec<u8>, FlmError> {
     Ok(writer.into_bytes())
 }
 
-/// A rack preset, `.flmrack`: an `RMOd` per module, in chain order, with its type and instance id.
+/// A rack preset, `.flmrack`: an `RMOd` per module, in chain order, with its type and instance id (a plugin module an
+/// `HDPm`, as in a song).
 pub fn write_rack(modules: &[ModuleInstance]) -> Result<Vec<u8>, FlmError> {
     let mut writer = ChunkWriter::default();
-    for module in modules {
-        writer.chunk(*b"RMOd", |writer| write_module(writer, module))?;
-    }
+    write_modules(&mut writer, modules)?;
     Ok(writer.into_bytes())
 }
 
@@ -296,7 +312,34 @@ fn write_module_body(writer: &mut ChunkWriter, module: &ModuleInstance) -> Resul
     if let Some(data) = &custom_data {
         writer.chunk(*b"CSTM", |writer| writer.raw(data))?;
     }
+    if let Some(plugin) =
+        (module.file.plugin.as_ref()).filter(|_| crate::song::plugin::is_plugin(module.type_id))
+    {
+        write_plugin(writer, plugin)?;
+    }
     write_raw(writer, &module.file.unknown_chunks)
+}
+
+/// A plugin module's plugin, `PLUG`: `vstr16` format, id, name and vendor, `vstr32` path, `u32` n, then per param `u32`
+/// id, `f32` default and `vstr16` name; and its state, `PSTA`, the plugin's own bytes.
+fn write_plugin(
+    writer: &mut ChunkWriter,
+    plugin: &crate::song::plugin::PluginRef,
+) -> Result<(), FlmError> {
+    writer.chunk(*b"PLUG", |writer| {
+        for text in [&plugin.format, &plugin.id, &plugin.name, &plugin.vendor] {
+            writer.vstr16(text.as_bytes())?;
+        }
+        writer.vstr32(plugin.path.as_bytes())?;
+        writer.u32(plugin.params.len() as u32)?;
+        for param in &plugin.params {
+            writer.u32(param.id)?;
+            writer.f32(param.default)?;
+            writer.vstr16(param.name.as_bytes())?;
+        }
+        Ok(())
+    })?;
+    writer.chunk(*b"PSTA", |writer| writer.raw(&plugin.state))
 }
 
 /// The `CSTM` `module` saves: its blob, except that a DW Sampler's `PATh` floats (of the `PATh` that counts,

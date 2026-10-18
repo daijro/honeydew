@@ -288,7 +288,7 @@ impl SongAudioEngine {
                 tempo_bpm,
                 BLOCK_FRAMES,
                 samples,
-                song.time_sig.subdivision,
+                song.time_sig,
             );
             // Each instrument runs after the effects above it.
             let mut effects = 0;

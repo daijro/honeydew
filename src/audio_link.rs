@@ -436,6 +436,8 @@ impl AudioLink {
             return;
         }
         self.samples.load_live(song, keep, read);
+        // The song's plugins run before an engine is built for it.
+        crate::plugins::sync(keep);
         (self.song, self.tempo) = (Some(song.clone()), None);
         self.controllers.clear();
         let Some(sink) = &mut self.sink else {
@@ -585,6 +587,8 @@ impl AudioLink {
             }
         };
         self.samples.load_live(song, keep, read);
+        crate::plugins::set_rate(rate);
+        crate::plugins::sync(keep);
         let moved = self.tempo.is_some();
         let mut last = self.song.take().filter(|_| how != Handover::Fresh);
         let edit = last.as_mut().map(|last| match how {

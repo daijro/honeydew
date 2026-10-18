@@ -247,6 +247,10 @@ impl ProjectFiles {
     /// The Save dialog's FLP export: `<name>.flp` and the samples it plays, as a `.zip`; the notices of what had no FL
     /// counterpart show once it is written.
     pub(super) fn flp_archive(&mut self, song: &Song, name: &str) -> Result<Vec<u8>, String> {
+        // The plugins' states as they are now (the song holds them as added or read).
+        let mut song = song.clone();
+        crate::plugins::store_states(&mut song);
+        let song = &song;
         let mut cache = SampleCache::default();
         cache.load(song, &reader(self));
         let out = crate::flp::export::export(song, &cache);

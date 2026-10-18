@@ -630,6 +630,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap-sys"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a76abbdb2907f6fd97fb6bc0b7be96b77d328f2dd9669d1075cc03369ed22154"
+
+[[package]]
 name = "clipboard-win"
 version = "5.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1558,15 +1564,21 @@ checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
 name = "honeydew"
-version = "0.1.9"
+version = "0.2.0"
 dependencies = [
  "android-activity",
  "crc32fast",
  "eframe",
  "honeydew-audio",
  "jni 0.21.1",
+ "libc",
  "midir",
  "miniz_oxide 0.9.1",
+ "os-clap",
+ "os-engine",
+ "os-host",
+ "os-vst2",
+ "os-vst3",
  "png",
  "rfd",
  "serde",
@@ -1575,6 +1587,8 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "webbrowser",
+ "windows-sys 0.61.2",
+ "x11rb",
 ]
 
 [[package]]
@@ -2492,6 +2506,52 @@ dependencies = [
 ]
 
 [[package]]
+name = "os-clap"
+version = "0.0.1"
+dependencies = [
+ "clap-sys",
+ "libloading",
+ "os-engine",
+ "os-host",
+]
+
+[[package]]
+name = "os-engine"
+version = "0.0.1"
+
+[[package]]
+name = "os-host"
+version = "0.0.1"
+dependencies = [
+ "cc",
+ "libc",
+ "libloading",
+ "os-engine",
+ "web-time",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "os-vst2"
+version = "0.0.1"
+dependencies = [
+ "libloading",
+ "os-engine",
+ "os-host",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "os-vst3"
+version = "0.0.1"
+dependencies = [
+ "libloading",
+ "os-engine",
+ "os-host",
+ "vst3-sys",
+]
+
+[[package]]
 name = "owned_ttf_parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3206,6 +3266,17 @@ dependencies = [
 
 [[package]]
 name = "syn"
+version = "1.0.109"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b64191b275b66ffe2469e8af2c1cfe3bafa67b529ead792a6d0160888b4237"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "syn"
 version = "2.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "872831b642d1a07999a962a351ed35b955ea2cfc8f3862091e2a240a84f17297"
@@ -3533,6 +3604,43 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "vst3-com"
+version = "0.1.0"
+source = "git+https://github.com/robbert-vdh/vst3-sys.git?rev=b3ff4d775940f5b476b9d1cca02a90e07e1922a2#b3ff4d775940f5b476b9d1cca02a90e07e1922a2"
+dependencies = [
+ "vst3-com-macros",
+]
+
+[[package]]
+name = "vst3-com-macros"
+version = "0.2.0"
+source = "git+https://github.com/robbert-vdh/vst3-sys.git?rev=b3ff4d775940f5b476b9d1cca02a90e07e1922a2#b3ff4d775940f5b476b9d1cca02a90e07e1922a2"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+ "vst3-com-macros-support",
+]
+
+[[package]]
+name = "vst3-com-macros-support"
+version = "0.2.0"
+source = "git+https://github.com/robbert-vdh/vst3-sys.git?rev=b3ff4d775940f5b476b9d1cca02a90e07e1922a2#b3ff4d775940f5b476b9d1cca02a90e07e1922a2"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "vst3-sys"
+version = "0.1.0"
+source = "git+https://github.com/robbert-vdh/vst3-sys.git?rev=b3ff4d775940f5b476b9d1cca02a90e07e1922a2#b3ff4d775940f5b476b9d1cca02a90e07e1922a2"
+dependencies = [
+ "vst3-com",
+]
 
 [[package]]
 name = "walkdir"

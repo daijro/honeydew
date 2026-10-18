@@ -24,6 +24,7 @@ use super::chunk::{
     MAGIC_TMPL, MAX_FILE_SIZE, Prefix, PrefixKind, file_chunks, text,
 };
 use crate::params;
+use crate::song::plugin::{self, PluginParam, PluginRef};
 use crate::song::{
     AutomationTarget, CHANNEL_ID_LIMIT, Channel, ChannelKind, Clip, ClipFileState, DrumGrid,
     DrumKit, Event, KeyboardState, Lane, LaneKind, MetaState, ModuleInstance, PPQ, Raw, RawChunk,
@@ -138,6 +139,41 @@ pub fn read_drumset(bytes: &[u8]) -> Result<DrumKit, FlmError> {
     Ok(reader.kit(&chunk)?.0)
 }
 
+/// A plugin module's `PLUG` (`flm::write`), without its state.
+fn plugin_ref(chunk: &Chunk<'_>) -> Result<PluginRef, FlmError> {
+    let mut reader = chunk.reader();
+    let mut texts = [(); 4].map(|_| String::new());
+    for value in &mut texts {
+        *value = text(reader.vstr16()?);
+    }
+    let [format, id, name, vendor] = texts;
+    let path = text(reader.vstr32()?);
+    let count = reader.u32()? as usize;
+    // Each param takes at least 10 bytes: a count past what is left is broken.
+    if count > reader.remaining() / 10 {
+        return Err(FlmError::new(&chunk.path, FlmErrorKind::BadValue));
+    }
+    let mut params = Vec::with_capacity(count);
+    for _ in 0..count {
+        let id = reader.u32()?;
+        let default = reader.f32()?;
+        params.push(PluginParam {
+            id,
+            default,
+            name: text(reader.vstr16()?),
+        });
+    }
+    Ok(PluginRef {
+        format,
+        id,
+        name,
+        vendor,
+        path,
+        params,
+        ..PluginRef::default()
+    })
+}
+
 /// Reads a rack preset, `.flmrack`: its modules in chain order. Their ids are the saving rack's, so each takes a
 /// fresh one after `last_instance_id`, the counter of the rack they go into, which then covers them. A file that fails
 /// (as a song's module does, or over the size limits) leaves the counter as it was.
@@ -149,18 +185,27 @@ pub fn read_rack(
     let mut reader = Reader::for_file(bytes, PATH)?;
     let mut last = *last_instance_id;
     let mut modules = Vec::new();
+    let mut plugins = Vec::new();
     for chunk in ChunkIter::new(bytes, PATH) {
         let chunk = chunk?;
-        if matches!(&chunk.id, b"RMOd" | b"RMOD") {
-            let (_, mut module) = reader.module(&chunk)?;
-            // Ids are ≥ 2 and at most MAX_ID.
-            last = last.clamp(1, MAX_ID as i32) + 1;
-            if last > MAX_ID as i32 {
-                return Err(FlmError::new(&chunk.path, FlmErrorKind::TooLarge));
-            }
-            module.instance_id = last;
-            modules.push(module);
+        if chunk.id == *b"HDPm" {
+            plugins.extend(reader.plugin_module(&chunk)?);
+        } else if matches!(&chunk.id, b"RMOd" | b"RMOD") {
+            modules.push(reader.module(&chunk)?.1);
         }
+    }
+    // The plugin modules back at their places in the chain.
+    plugins.sort_by_key(|&(position, ..)| position);
+    for (position, _, module) in plugins {
+        modules.insert(position.min(modules.len()), module);
+    }
+    for module in &mut modules {
+        // Ids are ≥ 2 and at most MAX_ID.
+        last = last.clamp(1, MAX_ID as i32) + 1;
+        if last > MAX_ID as i32 {
+            return Err(FlmError::new(PATH, FlmErrorKind::TooLarge));
+        }
+        module.instance_id = last;
     }
     *last_instance_id = last;
     Ok(modules)
@@ -429,6 +474,7 @@ impl Reader {
         let mut channel = Channel::new(String::new(), ChannelKind::Instrument, 0.6);
         channel.lanes.clear();
         let mut module_ids = Vec::new();
+        let mut plugins = Vec::new();
         let mut pads = Vec::new();
         for child in children {
             let child = child?;
@@ -466,8 +512,16 @@ impl Reader {
                     module_ids.push(id);
                     channel.rack.modules.push(module);
                 }
+                b"HDPm" => plugins.extend(self.plugin_module(&child)?),
                 _ => self.unknown(&child, &mut channel.file.rack_unknown_chunks)?,
             }
+        }
+        // The plugin modules back at their places in the chain.
+        plugins.sort_by_key(|&(position, ..)| position);
+        for (position, id, module) in plugins {
+            let at = position.min(module_ids.len());
+            module_ids.insert(at, id);
+            channel.rack.modules.insert(at, module);
         }
         // Module ids are ≥ 2 and unique; the counter covers them.
         let rack = &mut channel.rack;
@@ -718,6 +772,10 @@ impl Reader {
                         .collect();
                     if legacy_reverb {
                         legacy_reverb_params(&mut module.params, &values);
+                    } else if plugin::is_plugin(type_id) && !values.is_empty() {
+                        // A plugin module's params are Enable and then the plugin's, as many as it has.
+                        self.charge(4 * values.len(), &child.path)?;
+                        module.params = values;
                     } else {
                         for (param, value) in module.params.iter_mut().zip(values) {
                             *param = value;
@@ -733,6 +791,23 @@ impl Reader {
                 b"CSTM" => {
                     check_cstm(type_id, child.payload, &child.path)?;
                     module.file.custom_data = Some(child.payload.to_vec());
+                }
+                b"PLUG" if plugin::is_plugin(type_id) => {
+                    let state = module
+                        .file
+                        .plugin
+                        .take()
+                        .map(|p| p.state)
+                        .unwrap_or_default();
+                    let mut read = plugin_ref(&child)?;
+                    self.charge(read.params.len() * size_of::<PluginParam>(), &child.path)?;
+                    read.state = state;
+                    module.file.plugin = Some(Box::new(read));
+                }
+                b"PSTA" if plugin::is_plugin(type_id) => {
+                    self.charge(child.payload.len(), &child.path)?;
+                    let plugin = module.file.plugin.get_or_insert_default();
+                    plugin.state = child.payload.into();
                 }
                 _ => self.unknown(&child, &mut module.file.unknown_chunks)?,
             }
@@ -752,6 +827,27 @@ impl Reader {
             }
         }
         Ok((instance_id, module))
+    }
+
+    /// An `HDPm` (`flm::write`): its position in the chain and its plugin module with the instance id from its
+    /// `RMOd`. `None` for a layout other than 1 or no `RMOd`, which is skipped as an unknown chunk would be.
+    fn plugin_module(
+        &mut self,
+        chunk: &Chunk<'_>,
+    ) -> Result<Option<(usize, u32, ModuleInstance)>, FlmError> {
+        let (Prefix::TwoU32(position, 1), children) = chunk.container(PrefixKind::TwoU32)? else {
+            return Ok(None);
+        };
+        for child in children {
+            let child = child?;
+            if child.id == *b"RMOd" {
+                let (id, module) = self.module(&child)?;
+                if plugin::is_plugin(module.type_id) {
+                    return Ok(Some((position as usize, id, module)));
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// Reads a `CHNL` into its rack's channel; returns its playlist row and base name.

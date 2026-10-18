@@ -156,6 +156,10 @@ pub struct Settings {
     /// import without asking ([`crate::project_files::ProjectFiles::import_accepted`]).
     #[serde(rename = "importNoticeAccepted")]
     pub import_notice_accepted: bool,
+    /// The plugin folders the user added in SETTINGS (our own key), searched besides the standard ones
+    /// (`plugins::scan::default_folders`). Desktop only.
+    #[serde(rename = "pluginFolders")]
+    pub plugin_folders: Vec<String>,
 }
 
 impl Default for Settings {
@@ -192,6 +196,7 @@ impl Default for Settings {
             module_browser_ordering: -1,
             song_browser_ordering: Sort::AZ.id(),
             import_notice_accepted: false,
+            plugin_folders: Vec::new(),
         }
     }
 }
@@ -492,6 +497,7 @@ mod tests {
             module_browser_ordering: 1,
             song_browser_ordering: 2,
             import_notice_accepted: !d.import_notice_accepted,
+            plugin_folders: vec!["/plugins".into()],
         }
     }
 
@@ -661,6 +667,7 @@ mod tests {
                 "mtmlevel",
                 "multithreaded",
                 "multitrackrec",
+                "pluginFolders",
                 "preferredKbdSize",
                 "reccount",
                 "recentKbdSize",

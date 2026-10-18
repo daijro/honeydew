@@ -4,6 +4,14 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result {
+    // The plugin scanner: this program loading one plugin file in a process of its own (`plugins::scan`).
+    #[cfg(plugin_host)]
+    {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        if args.first().map(String::as_str) == Some(honeydew::plugins::scan::ARG) {
+            honeydew::plugins::scan::child_main(&args[1..]);
+        }
+    }
     let icon = include_bytes!("../assets/branding/honeydew-256.png");
     let options = eframe::NativeOptions {
         // A landscape phone shape: about 36.6 U x 16.9 U at U = 32.

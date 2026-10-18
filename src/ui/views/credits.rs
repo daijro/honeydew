@@ -17,6 +17,9 @@ use crate::content::{Bundle, web};
 /// The logo's credit, as the README gives it.
 pub const LOGO: &str = "The icon is a derivative of \"Melon\" by afitrose. It is licensed as Free for commercial use \
                         WITH ATTRIBUTION.";
+/// The plugin hosting's credit (the desktop's; `vendor/lemon-studio`).
+const PLUGIN_HOSTS: &str = "VST3, VST2 and CLAP plugin hosting: Lemon Studio by ItsAlphaNeon (GPL-3.0-or-later), \
+                            https://github.com/ItsAlphaNeon/Lemon-Studio";
 /// The repo's notices for the third-party code the app includes.
 const THIRD_PARTY: &str = "Third-party software notices: THIRD_PARTY_NOTICES.md";
 /// The bundled sounds' section, and its only line without a bundle.
@@ -67,6 +70,9 @@ fn lines(bundle: Option<&Bundle>, loading: &mut bool) -> Vec<String> {
     ]
     .map(str::to_owned)
     .into();
+    if cfg!(plugin_host) {
+        lines.insert(4, PLUGIN_HOSTS.into());
+    }
     let Some(bundle) = bundle else {
         lines.push(NO_BUNDLE.into());
         return lines;

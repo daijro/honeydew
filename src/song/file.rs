@@ -341,6 +341,8 @@ pub struct ModuleFileState {
     /// The DW Sampler's Attack (p1) and Release (p2) values its program set as their default, which a double tap and
     /// `Reset` set. `None`: no program set them, so the registry's. Not in the file: a program load sets it again.
     pub program_reset: Option<[f32; 2]>,
+    /// A plugin module's plugin and state ([`super::plugin`]); `None` on every other module.
+    pub plugin: Option<Box<super::plugin::PluginRef>>,
 }
 
 impl Default for ModuleFileState {
@@ -362,6 +364,7 @@ impl Default for ModuleFileState {
             add1_extra: Vec::new(),
             program_init: None,
             program_reset: None,
+            plugin: None,
         }
     }
 }

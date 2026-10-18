@@ -236,12 +236,12 @@ impl Channel {
                 None => param.name.to_owned(),
             });
         }
-        let spec = params::module_spec(self.rack.get(target.instance_id)?.type_id)?;
+        let module = self.rack.get(target.instance_id)?;
         let param = match usize::try_from(target.param) {
-            Ok(i) => spec.params.get(i)?.name,
+            Ok(i) => module.param_spec(i)?.name,
             Err(_) => params::COMMON_PARAMS.get(common_index(target.param)?)?.name,
         };
-        Some(format!("{param} : {}", spec.display_name))
+        Some(format!("{param} : {}", module.title()))
     }
 
     /// Adds an automation lane for `target`, labelled by [`Self::automation_label`] (empty when `None`), where a file

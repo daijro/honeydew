@@ -3,8 +3,9 @@
 use eframe::egui;
 
 use super::{AppCtx, Nav, Overlay, preset_picker};
+use crate::plugins;
 use crate::song::ModuleInstance;
-use crate::ui::modules_browser::{BrowserAction, InsertAt, ModulesBrowser, add_module};
+use crate::ui::modules_browser::{BrowserAction, InsertAt, ModulesBrowser, add_module, add_plugin};
 use crate::ui::rack::{Held, Outcome, PresetTarget, hold_removal, paste, takes_instruments};
 
 /// The flash of a `Paste` with nothing on the clipboard that the channel takes.
@@ -73,6 +74,25 @@ pub fn show(
             preset_picker::load_close_grand(picker, app.files, ch.id, id, type_id);
             true
         }
+        (BrowserAction::Plugin(uid), Some(ch)) => {
+            let at = state.added.map_or(at, InsertAt::Replace);
+            match add_plugin(&mut ch.rack, ch.id, uid, at) {
+                Ok(id) => {
+                    state.added = Some(id);
+                    // Its own editor opens at once if it has one; a failure shows on its card.
+                    if let Some(plugins::State::Live(info)) = plugins::state(ch.id, id)
+                        && info.has_editor
+                    {
+                        let _ = plugins::show_editor(ch.id, id, true);
+                    }
+                    true
+                }
+                Err(why) => {
+                    app.files.flash(why);
+                    false
+                }
+            }
+        }
         (BrowserAction::Paste, Some(ch)) => {
             let pasted = paste(ch, clipboard, at) == Outcome::ChainChanged;
             if !pasted {
@@ -97,7 +117,7 @@ pub fn show(
                 });
                 return Some(Nav::Close);
             }
-            None if matches!(action, BrowserAction::Pick(_)) => {
+            None if matches!(action, BrowserAction::Pick(_) | BrowserAction::Plugin(_)) => {
                 // A pick marks the song changed, with no undo step.
                 app.files.song_changed();
                 app.pick_loaded();

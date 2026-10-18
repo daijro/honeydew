@@ -220,13 +220,15 @@ impl HoneydewApp {
     }
 
     /// Nothing under way that a remote change would cut short or a proposal would catch half done: no pointer down
-    /// (a drag, a held control), no param or sample-row gesture, no channel params outside the history, no recording.
+    /// (a drag, a held control), no param or sample-row gesture, no channel params outside the history, no recording, no
+    /// question about what a playlist delete emptied (its yes joins the delete's change).
     fn live_quiet(&self, ctx: &egui::Context) -> bool {
         !ctx.input(|i| i.pointer.any_down())
             && !self.param_gesture
             && !self.row_drag
             && !self.params_moved
             && !self.recording()
+            && !matches!(self.asked, Some(tracks::Asked::Emptied(_)))
     }
 
     /// The end of a frame: the remote changes waiting, then a report if the shared song changed, once quiet.

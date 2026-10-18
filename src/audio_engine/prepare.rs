@@ -648,8 +648,14 @@ mod tests {
                 slide: false,
             });
         let channel = &song.channels[1];
-        let instruments =
-            super::super::generators::build(channel, 48e3, 120.0, 64, &SampleCache::default(), 4);
+        let instruments = super::super::generators::build(
+            channel,
+            48e3,
+            120.0,
+            64,
+            &SampleCache::default(),
+            Default::default(),
+        );
         let mut actions = Vec::new();
         notes(
             &song,
@@ -703,8 +709,14 @@ mod tests {
             });
         }
         let channel = &song.channels[1];
-        let instruments =
-            super::super::generators::build(channel, 48e3, 120.0, 64, &SampleCache::default(), 4);
+        let instruments = super::super::generators::build(
+            channel,
+            48e3,
+            120.0,
+            64,
+            &SampleCache::default(),
+            Default::default(),
+        );
         let mut actions = Vec::new();
         notes(
             &song,
@@ -758,7 +770,7 @@ mod tests {
                 120.0,
                 64,
                 &SampleCache::default(),
-                4,
+                Default::default(),
             );
             let mut actions = Vec::new();
             notes(

@@ -7,6 +7,7 @@ pub mod chords;
 mod drum_kit;
 mod file;
 mod lane;
+pub mod plugin;
 pub mod points;
 mod rack;
 pub mod scales;

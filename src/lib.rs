@@ -20,6 +20,7 @@ pub mod metrics;
 pub mod midi;
 pub mod panels;
 pub mod params;
+pub mod plugins;
 pub mod project_files;
 pub mod recording;
 pub mod render;

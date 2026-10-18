@@ -1,0 +1,7 @@
+[package]
+name = "os-engine"
+description = "Honeydew's subset of Lemon Studio's audio engine: the types the plugin hosts need"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false

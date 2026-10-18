@@ -62,6 +62,7 @@ use crate::ui::scroller::{self, Axis, Scroller, Y, Zones};
 use crate::ui::widgets::{self, Button, Control, ParamMenu};
 use crate::ui::{UiCtx, focus_lost};
 
+mod plugin_card;
 #[cfg(test)]
 mod tests;
 
@@ -133,6 +134,8 @@ pub fn ui_height(type_id: u16) -> Option<f32> {
         29 | 50 => 6.5,
         41 | 47 => 11.0,
         42 => 8.4,
+        // Plugin modules: their status, the editor button and a page of params.
+        crate::song::plugin::PLUGIN_INSTRUMENT | crate::song::plugin::PLUGIN_EFFECT => 8.0,
         _ => return None,
     })
 }
@@ -686,7 +689,11 @@ fn card_menu(minimized: bool, type_id: u16, full: bool) -> Vec<PopupItem<CardAct
     .into_iter()
     .chain(set_range)
     .chain(full_range)
-    .map(|(action, col, row, label)| PopupItem::new(action, col, row, label))
+    .map(|(action, col, row, label)| PopupItem {
+        // A plugin keeps its presets itself: its module saves none.
+        disabled: action == SavePreset && crate::song::plugin::is_plugin(type_id),
+        ..PopupItem::new(action, col, row, label)
+    })
     .collect()
 }
 
@@ -1043,6 +1050,10 @@ pub struct RackPanel {
     slides: HashMap<i32, f32>,
     /// The frame the slides last decayed in.
     slid: u64,
+    /// The shown channel's id, for its plugin cards.
+    channel_id: i32,
+    /// Each plugin card's page and editor error, by channel index and instance id.
+    plugin_cards: HashMap<(usize, i32), plugin_card::PluginCard>,
 }
 
 impl RackPanel {
@@ -1131,6 +1142,7 @@ impl RackPanel {
         let rack = Rect::from_min_max(px.min.round(), px.max.round());
         let rect = rack / ppp;
         let mut actions = RackActions::default();
+        self.channel_id = channel.id;
         // The links of the channel's `CCLK`: its bound controls' `Unlink from MIDI CC`.
         panels::set_cc_links(ui.ctx(), links::links(&channel.file.cc_links));
         ui.painter().rect_filled(rect, 0.0, contrast);
@@ -1806,19 +1818,29 @@ impl RackPanel {
         if r.clicked_by(eframe::egui::PointerButton::Secondary) || long || (effect && r.clicked()) {
             self.dialog = Some((id, icon.center()));
         }
-        // Truncated, keeping 5 tail characters.
-        let (label, font) = (module_name(module.type_id), m.font_id(FontSize::Pt12));
+        // Truncated, keeping 5 tail characters. A plugin module is named after its plugin.
+        let plugin = crate::song::plugin::is_plugin(module.type_id);
+        let label = if plugin {
+            module.title()
+        } else {
+            module_name(module.type_id)
+        };
+        let (label, font) = (label.to_owned(), m.font_id(FontSize::Pt12));
         widgets::truncated(
             ui.painter(),
             name,
             Align2::LEFT_CENTER,
-            label,
+            &label,
             font,
             text,
             5,
         );
-        preset_button(ui, cx, preset_rect, &preset, text);
-        let presets = (ui.interact(preset_rect, base.with("preset"), Sense::click())).clicked();
+        // A plugin's presets are its own (its editor): its card has no preset button.
+        if !plugin {
+            preset_button(ui, cx, preset_rect, &preset, text);
+        }
+        let presets =
+            !plugin && (ui.interact(preset_rect, base.with("preset"), Sense::click())).clicked();
         let b = icon_button(base.with("menu"), menu, IconId::Menu);
         if widgets::button(ui, cx, &b, true).clicked() {
             self.card_menu = Some((id, menu.center()));
@@ -1826,7 +1848,20 @@ impl RackPanel {
 
         if let (false, Some(h)) = (module.minimized || minimized, ui_height(module.type_id)) {
             let content = content_rect(card * ppp, h, u) / ppp;
-            match panels::panel_for(module.type_id) {
+            if plugin {
+                let key = (self.channel, id);
+                let state = self.plugin_cards.entry(key).or_default();
+                let (moved, pressed) =
+                    plugin_card::show(ui, cx, content, self.channel_id, module, state, ink);
+                changed.extend(moved);
+                if let Some(p) = pressed {
+                    touch = Some(Touch {
+                        target: target(p),
+                        pick: None,
+                    });
+                }
+            }
+            match panels::panel_for(module.type_id).filter(|_| !plugin) {
                 Some(panel) => {
                     let key = (self.channel, id, module.type_id);
                     let fresh = !self.panels.contains_key(&key);
@@ -1937,6 +1972,7 @@ impl RackPanel {
                         }
                     }
                 }
+                None if plugin => {}
                 None => widgets::display_area(ui, cx, content),
             }
         }

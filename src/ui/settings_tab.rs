@@ -118,7 +118,32 @@ enum Kind {
     ContentFolder,
     /// `Sound credits`: a full-width light button that opens the credits screen ([`SettingsTab::take_credits`]).
     Credits,
+    /// The plugin folders the user added (the label) and `Add folder` ([`SettingsTab::take_plugin_action`]).
+    PluginFolders,
+    /// The scan's state (the label) and `Rescan`, which scans every plugin file again.
+    PluginScan,
+    /// `Forget my plugin folders`: a full-width light button, enabled while there are some.
+    ForgetPluginFolders,
 }
+
+/// What the plugin rows asked the app for ([`SettingsTab::take_plugin_action`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PluginAction {
+    /// Pick a folder to add, then scan.
+    AddFolder,
+    /// Scan every plugin file again.
+    Rescan,
+    /// The user's folders were forgotten: scan again without them.
+    Forgot,
+}
+
+/// The plugin rows, before `Advanced:`, where plugins are hosted ([`SettingsTab::plugins`]).
+const PLUGIN_ROWS: [Row; 4] = [
+    row("Plugins (VST3, VST2, CLAP):", Kind::Header),
+    row("Plugin folders", Kind::PluginFolders),
+    row("Plugins", Kind::PluginScan),
+    row("Forget my plugin folders", Kind::ForgetPluginFolders),
+];
 
 /// The dropdown rows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -252,6 +277,10 @@ pub struct SettingsTab {
     restore_demos: bool,
     /// `Sound credits` was tapped, until [`Self::take_credits`].
     credits: bool,
+    /// A plugin row's tap, until [`Self::take_plugin_action`].
+    plugin_action: Option<PluginAction>,
+    /// The plugin rows show: the app hosts plugins (the desktop). The caller sets it.
+    pub plugins: bool,
 }
 
 impl SettingsTab {
@@ -283,12 +312,24 @@ impl SettingsTab {
         std::mem::take(&mut self.credits)
     }
 
-    /// The rows shown: all but the content folder's without one.
-    fn rows(&self) -> &'static [Row] {
-        match self.content {
-            Some(_) => &ROWS,
+    /// What a plugin row asked for since the last call, once a tap.
+    pub fn take_plugin_action(&mut self) -> Option<PluginAction> {
+        self.plugin_action.take()
+    }
+
+    /// The rows shown: all but the content folder's without one, and the plugin rows before `Advanced:` where plugins
+    /// are hosted.
+    fn rows(&self) -> Vec<&'static Row> {
+        let rows = match self.content {
+            Some(_) => &ROWS[..],
             None => &ROWS[..ROWS.len() - CONTENT_ROWS],
-        }
+        };
+        let plugins = if self.plugins { &PLUGIN_ROWS[..] } else { &[] };
+        let at = (rows.iter().position(|r| r.label == "Advanced:")).unwrap_or(rows.len());
+        (rows[..at].iter())
+            .chain(plugins)
+            .chain(&rows[at..])
+            .collect()
     }
 
     /// Draws the tab in `page` (the menu panel's width, below its tab row) and applies the user's edits to `settings`;
@@ -506,6 +547,58 @@ impl SettingsTab {
             Kind::SignIn => {
                 label(ui, before(button_rect), FontSize::Pt10);
                 light_button(ui, button_rect, "Sign In", false);
+            }
+            Kind::PluginFolders => {
+                let folders = match s.plugin_folders.len() {
+                    0 => "The standard folders, and yabridge's".to_owned(),
+                    _ => format!("Also: {}", s.plugin_folders.join("; ")),
+                };
+                let (room, size) = (before(button_rect), FontSize::Pt10.points() as u8);
+                shrink(
+                    ui.painter(),
+                    m,
+                    room,
+                    Align2::LEFT_CENTER,
+                    &folders,
+                    size,
+                    text,
+                );
+                if light_button(ui, button_rect, "Add folder", true) {
+                    self.plugin_action = Some(PluginAction::AddFolder);
+                }
+            }
+            Kind::PluginScan => {
+                let state = if crate::plugins::scanning() {
+                    "Scanning for plugins…".to_owned()
+                } else {
+                    let found = crate::plugins::available().len();
+                    let (_, failed) = crate::plugins::scan_counts();
+                    match failed {
+                        0 => format!("{found} plugins found"),
+                        _ => format!("{found} plugins found, {failed} files did not load"),
+                    }
+                };
+                let (room, size) = (before(button_rect), FontSize::Pt10.points() as u8);
+                shrink(
+                    ui.painter(),
+                    m,
+                    room,
+                    Align2::LEFT_CENTER,
+                    &state,
+                    size,
+                    text,
+                );
+                if light_button(ui, button_rect, "Rescan", !crate::plugins::scanning()) {
+                    self.plugin_action = Some(PluginAction::Rescan);
+                }
+            }
+            Kind::ForgetPluginFolders => {
+                let rect = Rect::from_center_size(r.center(), vec2(r.width(), m.u(BUTTON_H)));
+                let some = !s.plugin_folders.is_empty();
+                if light_button(ui, rect, row.label, some) && some {
+                    s.plugin_folders.clear();
+                    self.plugin_action = Some(PluginAction::Forgot);
+                }
             }
             Kind::ContentFolder => {
                 let path =
