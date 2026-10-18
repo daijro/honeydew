@@ -1118,7 +1118,7 @@ mod tests {
                 let clip = (prim.clip_rect * ppp)
                     .intersect(Rect::from_min_size(Pos2::ZERO, vec2(w as f32, h as f32)));
                 let (tex_size, tex) = &textures[&mesh.texture_id];
-                for tri in mesh.indices.chunks_exact(3) {
+                for tri in mesh.indices.as_chunks::<3>().0 {
                     let v = [0, 1, 2].map(|k| mesh.vertices[tri[k] as usize]);
                     let p = v.map(|v| (v.pos.to_vec2() * ppp).to_pos2());
                     let area2 = cross(p[0], p[1], p[2]);

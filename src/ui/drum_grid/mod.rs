@@ -38,9 +38,11 @@
 //!   once; a tap while a selection showed only deselects; a long press shows the touch-down's selection. A move's
 //!   release (as the piano roll's) leaves the moved hits selected with their handles and row hidden, a quiet selection,
 //!   which shows no frame or handle to touch (a tap on empty grid still only deselects it); a tap on a hit then selects
-//!   it with them, and a long press, a box, a right click, a paste or a key shows a selection again. On empty grid a
-//!   long press starts the marquee at once (lifted in place it selects nothing, and shows `Paste`, below); a right
-//!   click on a hit makes it the selection, on empty grid it shows `Paste`.
+//!   it with them, and a long press, a box, a paste or a key shows a selection again. On empty grid a long press starts
+//!   the marquee at once (lifted in place it selects nothing, and shows `Paste`, below).
+//! - **The right button** (owner request, after the desktop app: [`gesture::Erase`]): a press on a hit deletes it, and
+//!   dragging on deletes every hit the pointer's path crosses, with no box, all one undo step; a right click on empty
+//!   grid that deleted nothing shows `Paste`.
 //! - **Drag a hit** moves it at once (no long press): the start snaps to the nearest snap unit, not before the clip
 //!   start; rows move in whole steps (changing the pad), clamped to existing rows; overlaps allowed; release = one undo
 //!   step ([`edit::moved`]). A drag on a selected hit moves the selection, a drag on another makes it the selection
@@ -167,6 +169,8 @@ enum Gesture {
     /// The marquee: its selection is live.
     Box(Marquee),
     Edit(Edit),
+    /// A right-button swipe deleting the hits it crosses ([`gesture::Erase`]).
+    Erase(gesture::Erase),
 }
 
 /// A move or resize in progress, recomputed from the hits as they were at its start.
@@ -408,13 +412,15 @@ impl DrumGridView {
             song,
             (&l, &place),
             key,
-            (
-                &self.sel,
-                match &self.gesture {
-                    Gesture::Edit(e) if e.reported => Some((&e.orig[..], &e.which[..])),
-                    _ => None,
-                },
-            ),
+            match &self.gesture {
+                Gesture::Edit(e) if e.reported => {
+                    (&self.sel[..], Some((&e.orig[..], &e.which[..])))
+                }
+                // A swipe's deleted hits show the others as this person's selection, where they were, until its
+                // release sends the change (as the piano roll's).
+                Gesture::Erase(e) => (&[][..], Some((&e.orig[..], &e.gone[..]))),
+                _ => (&self.sel[..], None),
+            },
             self.covered,
         );
         let heads = (&mut self.current, &mut self.press, &mut self.fold);
@@ -800,18 +806,12 @@ impl DrumGridView {
             }
         }
 
-        // A right click on a hit makes it the selection; on empty grid it is `Paste`, while the clipboard is set.
-        if grid.secondary_clicked()
-            && !down
-            && let Some(p) = grid.interact_pointer_pos()
+        // A right press starts a swipe that deletes the hits it crosses (module docs).
+        if matches!(self.gesture, Gesture::Idle)
+            && let Some(erase) = gesture::Erase::start(ui, grid, pos, events, &self.sel)
         {
-            match self.target(place, events, p) {
-                Some(Target::Hit(i) | Target::Handle(i)) => {
-                    (self.sel, self.quiet) = (only(i, events.len()), false);
-                }
-                None if clipboard() => self.paste = Some(p),
-                None => {}
-            }
+            self.paste = None;
+            self.gesture = Gesture::Erase(erase);
         }
 
         // A press on empty grid held past a tap is a long press: the marquee, which the finger then drags (lifted
@@ -921,6 +921,26 @@ impl DrumGridView {
                     } else {
                         only(edit.anchor, events.len())
                     };
+                }
+            }
+            Gesture::Erase(mut erase) => {
+                // What the swipe crossed goes at once, an ongoing edit; it shows in the grid, not under the strip.
+                let left = erase.sweep(pos, |e| place.rect(e).map(|r| r.intersect(grid.rect)));
+                if gesture::Erase::held(ui) && !stale {
+                    action = left.map(|(events, selected)| hits_edit(events, selected, false));
+                    self.gesture = Gesture::Erase(erase);
+                } else if erase.erased() {
+                    // The release closes the swipe's one undo step: this frame's deletions, or the hits as the last
+                    // frame's left them.
+                    let (events, selected) =
+                        left.unwrap_or_else(|| (events.to_vec(), self.sel.clone()));
+                    action = Some(hits_edit(events, selected, true));
+                } else if grid.secondary_clicked()
+                    && clipboard()
+                    && pos.is_some_and(|p| self.target(place, events, p).is_none())
+                {
+                    // A right click on empty grid that deleted nothing is `Paste`.
+                    self.paste = pos;
                 }
             }
             Gesture::Pan | Gesture::Idle => {}
@@ -1227,7 +1247,12 @@ impl DrumGridView {
         let gesture = std::mem::take(&mut self.gesture);
         self.region.close_popups();
         let graph = self.graph_drag.take().is_some_and(|(_, sent)| sent);
-        graph || matches!(gesture, Gesture::Edit(Edit { reported: true, .. }))
+        graph
+            || match gesture {
+                Gesture::Edit(edit) => edit.reported,
+                Gesture::Erase(erase) => erase.erased(),
+                _ => false,
+            }
     }
 
     /// This editor as another channel's starts it: a fresh view keeping the fold, every clip's view and the snap.

@@ -27,11 +27,12 @@
 //!   A later tap pastes there; dragging or another press hides it.
 //!   Out of the calm zone on either axis (each its own 0.5 U) the touch is the scroller's ([`scroller`]): it scrolls,
 //!   never a tap or a marquee. Two fingers zoom; the wheel zooms or scrolls by zone (`Self::scroll`).
-//! - A right click on a note makes it the selection with its handles and floating row; on empty grid it is `Paste` (as
-//!   above).
+//! - The right button (owner request, after the desktop app: [`gesture::Erase`]): a press on a note (its drawn box)
+//!   deletes it, and dragging on deletes every note the pointer's path crosses, with no box, all one undo step; a right
+//!   click on empty grid that deleted nothing is `Paste` (as above).
 //! - A move's release is neither a tap nor a long press, so it brings up no floating row: the moved notes stay selected
 //!   with their handles and floating row hidden, a *quiet* selection, until a tap on a note (which selects that note),
-//!   a long press, a box, a right click, a paste or a key shows one again. Its frame and handles take no touch, and an
+//!   a long press, a box, a paste or a key shows one again. Its frame and handles take no touch, and an
 //!   empty-grid tap clears it and creates a note. A resize's release shows the handles again.
 //! - Sound: touching or tapping a note is silent. A new note sounds at velocity 1 for 150 ms; while a selection one key
 //!   tall is dragged, each key change stops the old key and plays the new one at velocity 0.7, until the release
@@ -173,7 +174,7 @@ pub enum PianoRollAction {
 }
 
 /// The remembered note: what a tap's new note takes. Set whenever exactly one note becomes the selection (a touch-down,
-/// tap, long press or right click on it, a box round it, the commit of its move or resize): L = max(its length, the
+/// tap or long press on it, a box round it, the commit of its move or resize): L = max(its length, the
 /// minimum length then), its velocity and pan (at most 254) and slide. Graph-lane `Vel` / `Pan` paints set V / P,
 /// `Toggle Slide` sets S; `Set length` does not set L.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -288,6 +289,8 @@ enum Gesture {
     /// The marquee: its selection is live.
     Box(clips::Marquee),
     Edit(Edit),
+    /// A right-button swipe deleting the notes it crosses ([`gesture::Erase`]).
+    Erase(gesture::Erase),
 }
 
 /// A move or resize in progress, recomputed from the events as they were at its start.
@@ -600,13 +603,15 @@ impl PianoRoll {
             song,
             (grid, &g),
             (self.channel, self.lane, self.clip_id),
-            (
-                &self.selected,
-                match &self.gesture {
-                    Gesture::Edit(e) if e.reported => Some((&e.orig[..], &e.which[..])),
-                    _ => None,
-                },
-            ),
+            match &self.gesture {
+                Gesture::Edit(e) if e.reported => {
+                    (&self.selected[..], Some((&e.orig[..], &e.which[..])))
+                }
+                // A swipe's deleted notes show the others as this person's selection, where they were, until its
+                // release sends the change (and no ghosts meanwhile).
+                Gesture::Erase(e) => (&[][..], Some((&e.orig[..], &e.gone[..]))),
+                _ => (&self.selected[..], None),
+            },
             opts.covered,
         );
         // The marquee: a square growing while a touch is held on empty grid, then the box.
@@ -770,11 +775,15 @@ impl PianoRoll {
         let seen = std::mem::take(&mut self.seen);
         self.graph_drag_end(&seen, &mut actions);
         self.seen = seen;
-        if let Gesture::Edit(edit) = std::mem::take(&mut self.gesture) {
-            self.stop_sound(&edit, &mut actions);
-            if edit.reported {
-                edited(&mut actions, true);
+        match std::mem::take(&mut self.gesture) {
+            Gesture::Edit(edit) => {
+                self.stop_sound(&edit, &mut actions);
+                if edit.reported {
+                    edited(&mut actions, true);
+                }
             }
+            Gesture::Erase(erase) if erase.erased() => edited(&mut actions, true),
+            _ => {}
         }
         actions
     }
@@ -1008,22 +1017,12 @@ impl PianoRoll {
             }
         }
 
-        // A right click on a note makes it the selection; on empty grid it is `Paste` (module docs).
-        if response.secondary_clicked()
-            && !down
-            && let Some(p) = response.interact_pointer_pos()
+        // A right press starts a swipe that deletes the notes it crosses (module docs).
+        if matches!(self.gesture, Gesture::Idle)
+            && let Some(erase) = gesture::Erase::start(ui, response, pos, &events, &self.selected)
         {
-            match hit_test(&g, u, &events, &self.selected, p) {
-                Some(Hit::Body(i) | Hit::Handle(i)) => {
-                    self.selected = only(i, events.len());
-                    self.quiet = false;
-                    self.remember(&events, min_len);
-                }
-                Some(Hit::Empty { .. }) if !note_clipboard(ui.ctx()).is_empty() => {
-                    self.paste = Some(p);
-                }
-                _ => {}
-            }
+            self.paste = None;
+            self.gesture = Gesture::Erase(erase);
         }
         self.seen = events;
 
@@ -1114,6 +1113,31 @@ impl PianoRoll {
                     }
                 } else {
                     self.gesture = Gesture::Edit(edit);
+                }
+            }
+            Gesture::Erase(mut erase) => {
+                // What the swipe crossed goes at once, an ongoing edit; it shows in the grid, not under the keys.
+                let left = erase.sweep(pos, |e| g.note_rect(e).map(|r| r.intersect(grid)));
+                if let Some((events, sel)) = left
+                    && let Some(clip) = self.clip_mut(song)
+                {
+                    clip.events = events;
+                    clip.fit_loop(sig.bar_beats());
+                    self.selected = sel;
+                    edited(actions, false);
+                }
+                if gesture::Erase::held(ui) && !stale {
+                    self.gesture = Gesture::Erase(erase);
+                } else if erase.erased() {
+                    // The release closes the swipe's one undo step.
+                    edited(actions, true);
+                } else if response.secondary_clicked()
+                    && let Some(p) = pos
+                    && let Some(Hit::Empty { .. }) = hit_test(&g, u, &self.seen, &self.selected, p)
+                    && !note_clipboard(ui.ctx()).is_empty()
+                {
+                    // A right click on empty grid that deleted nothing is `Paste`.
+                    self.paste = Some(p);
                 }
             }
             Gesture::Pan | Gesture::Idle => {}

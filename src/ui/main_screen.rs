@@ -1751,7 +1751,7 @@ impl MainScreen {
         // held or hovered, labelled as the floating row's bubbles are (10 pt overflows the disc).
         let font = label_font(ui.ctx(), m, m.u(PREVIEW_D), &["Undo", "Redo"]);
         for (slot, label, step) in [
-            (Some(slots.undo).filter(|_| shown[0]), "Undo", Step::Undo),
+            (shown[0].then_some(slots.undo), "Undo", Step::Undo),
             (slots.redo.filter(|_| shown[2]), "Redo", Step::Redo),
         ] {
             let Some(slot) = slot else { continue };

@@ -5,9 +5,10 @@
 //! audio editors) decide their touches with [`is_long`] and [`left_calm`]; the headers, buttons and controls with
 //! [`press`] / [`long_press`]. egui's own `long_touched` counts touches only, and only after 0.8 s.
 
-use eframe::egui::{Pos2, Response, Ui, Vec2, response::Flags};
+use eframe::egui::{Pos2, Rect, Response, Ui, Vec2, response::Flags};
 
 use crate::metrics::Metrics;
+use crate::song::Event;
 use crate::ui::focus_lost;
 
 /// How long a press is held before it is a long press (s).
@@ -154,6 +155,99 @@ struct Hold {
     cancelled: bool,
     fired: Option<u64>,
     seen: u64,
+}
+
+/// Owner request/deviation (2026-10-18), after the desktop app (the touch-first original has no right button): a right
+/// press on a note or hit of the piano roll or the drum editor deletes it, and dragging on deletes every one the
+/// pointer's path crosses, each frame's whole path from the last point (a fast swipe skips none); no selection box
+/// shows, and the whole swipe is one undo step. Touches are unchanged. The swipe under way: the pointer's last point,
+/// the editor's events as it found them with their selection flags, and which of them it deleted.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Erase {
+    last: Pos2,
+    pub orig: Vec<Event>,
+    sel: Vec<bool>,
+    pub gone: Vec<bool>,
+}
+
+impl Erase {
+    /// The swipe a right press starts this frame: one that went down on `grid` at `at` with the primary button up, over
+    /// `events` and their selection `sel`.
+    pub(crate) fn start(
+        ui: &Ui,
+        grid: &Response,
+        at: Option<Pos2>,
+        events: &[Event],
+        sel: &[bool],
+    ) -> Option<Self> {
+        let pressed = ui.input(|i| {
+            let p = &i.pointer;
+            p.secondary_pressed() && !p.primary_down() && i.multi_touch().is_none()
+        });
+        let at = at.filter(|_| pressed && grid.is_pointer_button_down_on())?;
+        let mut sel = sel.to_vec();
+        sel.resize(events.len(), false);
+        Some(Self {
+            last: at,
+            orig: events.to_vec(),
+            sel,
+            gone: vec![false; events.len()],
+        })
+    }
+
+    /// The right button is still down: the swipe goes on.
+    pub(crate) fn held(ui: &Ui) -> bool {
+        ui.input(|i| i.pointer.secondary_down())
+    }
+
+    /// The pointer on to `p` (`None`: it stays): its path from the last point deletes every event whose box (`rect`) it
+    /// crosses. When that deleted more, the events and selection flags left.
+    pub(crate) fn sweep(
+        &mut self,
+        p: Option<Pos2>,
+        rect: impl Fn(&Event) -> Option<Rect>,
+    ) -> Option<(Vec<Event>, Vec<bool>)> {
+        let (a, b) = (self.last, p.unwrap_or(self.last));
+        self.last = b;
+        let mut more = false;
+        for (e, gone) in self.orig.iter().zip(&mut self.gone) {
+            if !*gone && rect(e).is_some_and(|r| crosses(r, a, b)) {
+                (*gone, more) = (true, true);
+            }
+        }
+        more.then(|| {
+            let left = (self.orig.iter().zip(&self.sel).zip(&self.gone)).filter(|(_, g)| !**g);
+            left.map(|((e, s), _)| (*e, *s)).unzip()
+        })
+    }
+
+    /// Whether it deleted anything.
+    pub(crate) fn erased(&self) -> bool {
+        self.gone.contains(&true)
+    }
+}
+
+/// Whether the path from `a` to `b` (a point when they are equal) crosses `r`, without its right and bottom edges (so
+/// an edge two boxes share is one box's only). Slab clipping of the segment against both axes.
+fn crosses(r: Rect, a: Pos2, b: Pos2) -> bool {
+    if !r.is_positive() {
+        return false;
+    }
+    let (mut t0, mut t1) = (0.0_f32, 1.0_f32);
+    for (o, d, lo, hi) in [
+        (a.x, b.x - a.x, r.min.x, r.max.x),
+        (a.y, b.y - a.y, r.min.y, r.max.y),
+    ] {
+        if d == 0.0 {
+            if !(lo..hi).contains(&o) {
+                return false;
+            }
+        } else {
+            let (u, v) = ((lo - o) / d, (hi - o) / d);
+            (t0, t1) = (t0.max(u.min(v)), t1.min(u.max(v)));
+        }
+    }
+    t0 < t1
 }
 
 #[cfg(test)]

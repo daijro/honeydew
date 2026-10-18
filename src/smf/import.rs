@@ -1,13 +1,23 @@
 //! MIDI import: [`scan`] for the import dialog and the one-channel shortcut, and [`import`] for its three entry
 //! points.
+//!
+//! Where MIDI files and readers differ, Honeydew's choices:
+//! - Running status is kept across metas and SysEx, which are skipped ([`codec::read`]); a data byte with no status
+//!   before it fails the file.
+//! - A channel's program is its last `Cn`; a channel without one plays GM program 0.
+//! - A CC lane is shared by the SMF tracks of one target channel, MIDI channel and CC.
+//! - A file whose scan finds no channel opens as a song with only the master (the tempo set); the track menu imports
+//!   nothing from it.
 
 use std::collections::HashMap;
 
 use super::codec::{self, SmfEvent};
+use super::gm;
+use crate::content::Factory;
 use crate::midi::MidiMsg;
 use crate::song::points::{self, Point, PointKey};
 use crate::song::{
-    AutomationTarget, ChannelKind, Clip, Event, Lane, LaneKind, PPQ, Song, SynthKind,
+    AutomationTarget, ChannelKind, Clip, DrumGrid, Event, Lane, LaneKind, PPQ, Song, SynthKind,
 };
 
 /// What every failure shows; the `Err` string is the detail.
@@ -136,17 +146,28 @@ pub fn scan(bytes: &[u8]) -> Result<Scan, String> {
     Ok(scan)
 }
 
-/// Imports `bytes` into `song`: with Split on (always when `as_song`) into one new DW Sampler channel per selected MIDI
-/// channel, else into channel `current`; notes on notes lanes, controllers and the pitch wheel on channel automation
-/// lanes. `as_song` (opening a `.mid`) also sets the file tempo. `Err` (the detail for [`LOAD_FAILED`]) leaves the song
-/// as it was: the file does not read, or `current` is no channel.
+/// What an import made: the new channels' indices, and a line per channel naming the sound it plays
+/// (`<channel>: <sound>`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Imported {
+    pub channels: Vec<usize>,
+    pub notices: Vec<String>,
+}
+
+/// Imports `bytes` into `song`: with Split on (always when `as_song`) into one new channel per selected MIDI channel,
+/// else into channel `current`; notes on notes lanes, controllers and the pitch wheel on channel automation lanes. A
+/// new channel plays the sound of its GM program from `factory` ([`gm::load_program`]); MIDI channel 10 a Drums
+/// channel with our kit, its notes as hits on a notes-grid drum lane ([`gm::drum_kit`]). `as_song` (opening a `.mid`)
+/// also sets the file tempo. `Err` (the detail for [`LOAD_FAILED`]) leaves the song as it was: the file does not read,
+/// or `current` is no channel.
 pub fn import(
     song: &mut Song,
     current: usize,
     bytes: &[u8],
     opts: &ImportOpts,
     as_song: bool,
-) -> Result<(), String> {
+    factory: &Factory,
+) -> Result<Imported, String> {
     let smf = codec::read(bytes)?;
     if current >= song.channels.len() {
         return Err(format!("no channel {current}"));
@@ -154,6 +175,8 @@ pub fn import(
     let mut state = State {
         split: opts.split || as_song,
         current,
+        factory,
+        kits: Vec::new(),
         made: [None; 16],
         last_notes: HashMap::new(),
         notes: Vec::new(),
@@ -199,8 +222,16 @@ pub fn import(
                         continue;
                     };
                     if std::mem::take(&mut new_lane) && made_here >> ch & 1 == 0 {
-                        let lane = song.channels[target].add_lane(LaneKind::Notes);
-                        song.channels[target].lanes[lane].label.clone_from(&name);
+                        let channel = &mut song.channels[target];
+                        let drums = state.is_drums(target);
+                        let lane = match drums {
+                            true => channel.add_lane(LaneKind::Drums),
+                            false => channel.add_lane(LaneKind::Notes),
+                        };
+                        channel.lanes[lane].label.clone_from(&name);
+                        if drums {
+                            channel.lanes[lane].grid = DrumGrid::Notes;
+                        }
                         state.start_notes(target, lane);
                     }
                     let velocity = (f64::from(vel) * 0.007874 * 255.0) as u8;
@@ -247,25 +278,36 @@ pub fn import(
     }
     if as_song {
         let (lo, hi) = crate::song::TEMPO_RANGE;
-        song.tempo_bpm = tempo.unwrap_or(1.0).clamp(lo, hi);
+        // Owner request (2026-10-18): a file without `FF 51` plays at the MIDI default of 120 BPM.
+        song.tempo_bpm = tempo.unwrap_or(120.0).clamp(lo, hi);
     }
-    let made = state.made;
+    let (made, kits) = (state.made, state.kits.clone());
     state.finish(song);
+    let mut imported = Imported::default();
     for (ch, made) in (0..).zip(made) {
-        if let Some(i) = made {
-            let channel = &mut song.channels[i];
-            let preset = program_name(ch, program[usize::from(ch)]);
-            let renamed = format!("{} (MIDI Channel {ch}: {preset})", channel.name);
-            channel.name = renamed.trim_start().to_owned();
-        }
+        let Some(i) = made else { continue };
+        let p = program[usize::from(ch)];
+        let sound = match kits.iter().find(|(c, _)| *c == i) {
+            Some(&(_, kit)) => kit.to_owned(),
+            None => gm::load_program(song, i, p, factory),
+        };
+        let channel = &mut song.channels[i];
+        let preset = program_name(ch, p);
+        let renamed = format!("{} (MIDI Channel {ch}: {preset})", channel.name);
+        channel.name = renamed.trim_start().to_owned();
+        imported.channels.push(i);
+        imported.notices.push(format!("{}: {sound}", channel.name));
     }
-    Ok(())
+    Ok(imported)
 }
 
 /// Where an import puts what it reads, until [`State::finish`] writes the clips.
-struct State {
+struct State<'a> {
     split: bool,
     current: usize,
+    factory: &'a Factory,
+    /// The Drums channels made for MIDI channel 10, with their kit's name.
+    kits: Vec<(usize, &'static str)>,
     /// With Split on: the channel made for each MIDI channel.
     made: [Option<usize>; 16],
     /// Each target channel's last notes lane, an index into `notes`.
@@ -326,7 +368,12 @@ impl NotesLane {
     }
 }
 
-impl State {
+impl State<'_> {
+    /// Channel `channel` is a Drums channel this import made: its notes are hits.
+    fn is_drums(&self, channel: usize) -> bool {
+        self.kits.iter().any(|(c, _)| *c == channel)
+    }
+
     /// The channel MIDI channel `ch` goes to, if it has one yet.
     fn existing(&self, ch: u8) -> Option<usize> {
         if self.split {
@@ -336,9 +383,9 @@ impl State {
         }
     }
 
-    /// The channel MIDI channel `ch` goes to. With Split on, the first time makes it: a DW Sampler channel named after
-    /// the track, its notes lane too, with Pitch at 0.75 (+12 semitones) and nothing loaded (no program or kit ships).
-    /// `None` once the channel ids are used up.
+    /// The channel MIDI channel `ch` goes to. With Split on, the first time makes it, named after the track, its notes
+    /// lane too: a DW Sampler channel, whose sound [`import`] loads at the end; for MIDI channel 10 a Drums channel with
+    /// our kit and a notes-grid drum lane. `None` once the channel ids are used up.
     fn target(
         &mut self,
         song: &mut Song,
@@ -349,16 +396,27 @@ impl State {
         if let Some(i) = self.existing(ch) {
             return Some(i);
         }
+        let drums = ch == 9;
+        let kind = match drums {
+            true => ChannelKind::Drums,
+            false => ChannelKind::Synth(SynthKind::DwSampler),
+        };
         // ponytail: a MIDI channel past the channel id limit is dropped; no message for it yet.
-        let i = song.insert_channel(
-            song.channels.len(),
-            ChannelKind::Synth(SynthKind::DwSampler),
-        )?;
+        let i = song.insert_channel(song.channels.len(), kind)?;
         let channel = &mut song.channels[i];
         channel.name = name.to_owned();
         channel.lanes[0].label = name.to_owned();
-        if let Some(pitch) = channel.rack.modules[0].params.get_mut(3) {
-            *pitch = 0.75;
+        if drums {
+            channel.lanes[0].grid = DrumGrid::Notes;
+            let default = || {
+                (
+                    channel.drum_kit.clone().unwrap_or_default(),
+                    "the default kit",
+                )
+            };
+            let (kit, kit_name) = gm::drum_kit(self.factory).unwrap_or_else(default);
+            channel.drum_kit = Some(kit);
+            self.kits.push((i, kit_name));
         }
         self.made[usize::from(ch)] = Some(i);
         *made_here |= 1 << ch;
@@ -397,18 +455,36 @@ impl State {
     /// notes lanes' indices hold).
     fn finish(self, song: &mut Song) {
         let bar = song.time_sig.bar_beats();
-        for lane in self.notes.into_iter().filter(|l| !l.notes.is_empty()) {
-            let target = &mut song.channels[lane.channel].lanes[lane.lane];
+        for lane in self.notes.iter().filter(|l| !l.notes.is_empty()) {
+            let channel = &mut song.channels[lane.channel];
+            // A Drums channel's notes are hits, each GM key on its pad.
+            let kit =
+                (self.is_drums(lane.channel)).then(|| channel.drum_kit.clone().unwrap_or_default());
+            let target = &mut channel.lanes[lane.lane];
             let clip = new_clip(target, lane.notes.iter().map(|n| n.beat));
             let start = clip.start_tick;
             clip.events = (lane.notes.iter())
-                .map(|n| Event::Note {
-                    pos: tick(n.beat).saturating_sub(start),
-                    len_beats: n.len,
-                    key: n.key,
-                    velocity: n.velocity,
-                    pan: Event::DEFAULT_PAN,
-                    slide: false,
+                .map(|n| {
+                    let pos = tick(n.beat).saturating_sub(start);
+                    match &kit {
+                        Some(kit) => Event::Drum {
+                            pos,
+                            len_beats: n.len,
+                            pad: gm::drum_pad(kit, n.key),
+                            velocity: n.velocity,
+                            pan: Event::DEFAULT_PAN,
+                            value: Event::DEFAULT_PITCH,
+                            repeat: 0,
+                        },
+                        None => Event::Note {
+                            pos,
+                            len_beats: n.len,
+                            key: n.key,
+                            velocity: n.velocity,
+                            pan: Event::DEFAULT_PAN,
+                            slide: false,
+                        },
+                    }
                 })
                 .collect();
             clip.events.sort_by_key(Event::pos);
@@ -448,7 +524,7 @@ fn tick(beat: f64) -> u32 {
 }
 
 /// The lane's clip for events starting at `beats`: from floor(first / 4)·4, 4 beats long, grown to the last event start
-/// when that is 4 beats or more past the start ([`fit`] adds a tick). The events are the caller's.
+/// when that is 4 beats or more past the start ([`fit`] grows it over the notes). The events are the caller's.
 fn new_clip(lane: &mut Lane, beats: impl Iterator<Item = f64> + Clone) -> &mut Clip {
     let first = beats.clone().fold(f64::INFINITY, f64::min);
     let last = beats.fold(0.0, f64::max);
@@ -461,12 +537,19 @@ fn new_clip(lane: &mut Lane, beats: impl Iterator<Item = f64> + Clone) -> &mut C
 /// Sets the clip's visible length, and its loop to `fit_loop`'s b·2ᵏ, doubled until it holds the visible part: nothing
 /// repeats inside the clip, and no event sits on the loop end.
 fn fit(clip: &mut Clip, bar: u32) {
-    let last = clip.events.iter().map(Event::pos).max().unwrap_or(0);
-    // A grown clip ends exactly 1 tick after its last event start, so the final note, CC or pitch-wheel value
-    // starts (a sustain released at the end, a bend reset), as `fit_loop` lets a zero-length note last a tick. The
-    // notes keep their lengths but sound only to the clip end (the last one a tick): a note-off is clamped to the
-    // clip's length.
-    let visible = (clip.visible_len_beats).max((f64::from(last) + 1.0) / f64::from(PPQ));
+    // A grown clip ends at least 1 tick after its last event start, so the final CC or pitch-wheel value starts (a
+    // sustain released at the end, a bend reset), as `fit_loop` lets a zero-length note last a tick; and it covers its
+    // notes' ends, so the last notes sound in full (owner request, 2026-10-18).
+    let ppq = f64::from(PPQ);
+    let end = (clip.events.iter())
+        .map(|e| match *e {
+            Event::Note { pos, len_beats, .. } | Event::Drum { pos, len_beats, .. } => {
+                f64::from(pos) + (len_beats * ppq).max(1.0)
+            }
+            ref e => f64::from(e.pos()) + 1.0,
+        })
+        .fold(0.0, f64::max);
+    let visible = (clip.visible_len_beats).max(end / ppq);
     clip.fit_loop(bar);
     while clip.loop_len_beats < visible {
         clip.loop_len_beats *= 2.0;
@@ -485,13 +568,11 @@ fn channel_of(msg: MidiMsg) -> u8 {
     }
 }
 
-/// The program name of `program` on MIDI channel `ch`: `Drums` on channel 9; else the preset name the GM
-/// program maps to. Only 0 → `Close Grand` is known (no preset index ships); the rest are `Program %u`, 0-based.
+/// The program name of `program` on MIDI channel `ch`: `Drums` on channel 9; else its GM name.
 fn program_name(ch: u8, program: u8) -> String {
-    match (ch, program) {
-        (9, _) => "Drums".to_owned(),
-        (_, 0) => "Close Grand".to_owned(),
-        _ => format!("Program {program}"),
+    match ch {
+        9 => "Drums".to_owned(),
+        _ => gm::program_name(program).to_owned(),
     }
 }
 

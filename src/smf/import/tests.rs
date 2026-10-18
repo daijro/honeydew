@@ -44,7 +44,15 @@ fn smf(division: u16, tracks: Vec<Vec<Ev>>) -> Vec<u8> {
 /// `bytes` opened as a song.
 fn open(bytes: &[u8]) -> Song {
     let mut song = Song::default();
-    import(&mut song, 0, bytes, &ImportOpts::OPEN_AS_SONG, true).expect("imports");
+    import(
+        &mut song,
+        0,
+        bytes,
+        &ImportOpts::OPEN_AS_SONG,
+        true,
+        crate::content::factory(),
+    )
+    .expect("imports");
     song
 }
 
@@ -52,7 +60,7 @@ fn open(bytes: &[u8]) -> Song {
 /// imported into it with `opts` from the track menu (not as a song).
 fn into_keys(bytes: &[u8], opts: ImportOpts) -> Song {
     let mut song = keys_song();
-    import(&mut song, 1, bytes, &opts, false).expect("imports");
+    import(&mut song, 1, bytes, &opts, false, crate::content::factory()).expect("imports");
     song
 }
 
@@ -186,9 +194,9 @@ fn open_as_song_tempo() {
     // Each one overwrites the last, in file order (no tempo map).
     let two = vec![vec![t(0, 500_000), t(960, 1_000_000)], vec![t(0, 400_000)]];
     assert_eq!(tempo(two), 150.0);
-    // No FF 51 → 1 BPM; a malformed one is the parse error → 120.
-    assert_eq!(tempo(vec![vec![on(0, 0, 60, 64)]]), 1.0);
-    assert_eq!(tempo(vec![]), 1.0);
+    // No FF 51 → 120, the MIDI default; a malformed one is the parse error → 120 too.
+    assert_eq!(tempo(vec![vec![on(0, 0, 60, 64)]]), 120.0);
+    assert_eq!(tempo(vec![]), 120.0);
     assert_eq!(tempo(vec![vec![t(0, 1_000_000), bad.clone()]]), 120.0);
     assert_eq!(tempo(vec![vec![bad.clone(), t(0, 1_000_000)]]), 60.0);
     // The time signature is never read.
@@ -208,7 +216,15 @@ fn open_as_song_tempo() {
     assert_eq!(into_keys(&bytes, ImportOpts::ONE_CHANNEL).tempo_bpm, 120.0);
     assert_eq!(into_keys(&bytes, ImportOpts::OPEN_AS_SONG).tempo_bpm, 120.0);
     let mut song = keys_song();
-    import(&mut song, 1, &bytes, &ImportOpts::ONE_CHANNEL, false).unwrap();
+    import(
+        &mut song,
+        1,
+        &bytes,
+        &ImportOpts::ONE_CHANNEL,
+        false,
+        crate::content::factory(),
+    )
+    .unwrap();
     assert_eq!(song.tempo_bpm, 120.0);
 }
 
@@ -223,12 +239,42 @@ fn failures_leave_the_song() {
         b"garbage bytes here",
     ] {
         assert!(scan(bytes).is_err());
-        assert!(import(&mut song, 1, bytes, &ImportOpts::ONE_CHANNEL, false).is_err());
-        assert!(import(&mut song, 0, bytes, &ImportOpts::OPEN_AS_SONG, true).is_err());
+        assert!(
+            import(
+                &mut song,
+                1,
+                bytes,
+                &ImportOpts::ONE_CHANNEL,
+                false,
+                crate::content::factory()
+            )
+            .is_err()
+        );
+        assert!(
+            import(
+                &mut song,
+                0,
+                bytes,
+                &ImportOpts::OPEN_AS_SONG,
+                true,
+                crate::content::factory()
+            )
+            .is_err()
+        );
     }
     // A current channel that does not exist.
     let good = smf(96, vec![vec![on(0, 0, 60, 64)]]);
-    assert!(import(&mut song, 2, &good, &ImportOpts::ONE_CHANNEL, false).is_err());
+    assert!(
+        import(
+            &mut song,
+            2,
+            &good,
+            &ImportOpts::ONE_CHANNEL,
+            false,
+            crate::content::factory()
+        )
+        .is_err()
+    );
     assert_eq!(song, before);
     assert_eq!(
         LOAD_FAILED,
@@ -260,17 +306,17 @@ fn split_channels_are_shared_across_tracks_and_renamed() {
         ],
     );
     let song = open(&bytes);
-    // `<track name> (MIDI Channel c: <program name>)`: c 0-based; the last program wins; `Drums` on 9; `Program %u`
-    // 0-based; no preset index ships, so only program 0 maps (to `Close Grand`, also with no program change).
+    // `<track name> (MIDI Channel c: <program name>)`: c 0-based; the last program wins; `Drums` on 9; else the GM
+    // name (program 0 with no program change).
     assert_eq!(
         names(&song),
         [
             "MASTER",
-            "Piano (MIDI Channel 0: Close Grand)",
-            "Bass (MIDI Channel 1: Program 33)",
+            "Piano (MIDI Channel 0: Acoustic Grand Piano)",
+            "Bass (MIDI Channel 1: Electric Bass (finger))",
             "Kit (MIDI Channel 9: Drums)",
-            "Lead (MIDI Channel 2: Program 119)",
-            "Pad (MIDI Channel 3: Close Grand)",
+            "Lead (MIDI Channel 2: Reverse Cymbal)",
+            "Pad (MIDI Channel 3: Acoustic Grand Piano)",
         ]
     );
     // The SMF tracks on MIDI channel 0 share its channel; the later one adds its own lane.
@@ -294,13 +340,21 @@ fn split_channels_are_shared_across_tracks_and_renamed() {
         channels: 1 | 1 << 9,
         ..ImportOpts::OPEN_AS_SONG
     };
-    import(&mut song, 1, &bytes, &opts, false).unwrap();
+    import(
+        &mut song,
+        1,
+        &bytes,
+        &opts,
+        false,
+        crate::content::factory(),
+    )
+    .unwrap();
     assert_eq!(
         names(&song),
         [
             "MASTER",
             "Keys",
-            "Piano (MIDI Channel 0: Close Grand)",
+            "Piano (MIDI Channel 0: Acoustic Grand Piano)",
             "Kit (MIDI Channel 9: Drums)",
         ]
     );
@@ -312,7 +366,15 @@ fn split_channels_are_shared_across_tracks_and_renamed() {
         channels: 1 << 1,
         ..ImportOpts::ONE_CHANNEL
     };
-    import(&mut song, 1, &bytes, &opts, false).unwrap();
+    import(
+        &mut song,
+        1,
+        &bytes,
+        &opts,
+        false,
+        crate::content::factory(),
+    )
+    .unwrap();
     assert_eq!(names(&song), ["MASTER", "Keys"]);
     assert_eq!(
         labels(&song.channels[1]),
@@ -322,47 +384,99 @@ fn split_channels_are_shared_across_tracks_and_renamed() {
 }
 
 #[test]
-fn new_channels_get_a_dw_sampler_at_pitch_0_75() {
-    let song = open(&smf(
-        96,
-        vec![vec![on(0, 0, 60, 64), on(0, 9, 36, 64), cc(0, 5, 7, 1)]],
-    ));
-    assert_eq!(song.channels.len(), 4);
-    for c in &song.channels[1..] {
-        assert_eq!(c.kind, ChannelKind::Synth(SynthKind::DwSampler));
-        assert_eq!(c.rack.modules.len(), 1, "{}", c.name);
-        let dw = &c.rack.modules[0];
-        assert_eq!(dw.type_id, SynthKind::DwSampler.type_id());
-        assert_eq!(dw.params[3], 0.75);
-        // Otherwise its init preset, and empty: no program or kit ships.
-        let mut init = crate::song::ModuleInstance::new(dw.type_id, dw.instance_id);
-        init.params[3] = 0.75;
-        assert_eq!(*dw, init);
-        assert_eq!(c.drum_kit, None);
-        assert_eq!(c.lanes[0].kind, LaneKind::Notes);
-    }
-}
-
-#[test]
-fn midi_channel_10_goes_to_a_notes_lane() {
-    let song = open(&smf(
-        96,
-        vec![vec![
-            name("Kit"),
-            on(0, 9, 36, 100),
-            off(24, 9, 36),
-            on(48, 9, 42, 100),
-        ]],
-    ));
-    let kit = &song.channels[1];
-    assert_eq!(kit.name, "Kit (MIDI Channel 9: Drums)");
-    assert_eq!(labels(kit), [(LaneKind::Notes, "Kit")]);
-    // Keys unchanged; no drum lane, no kit.
+fn imported_channels_play_their_program_and_gm_drums_from_running_status() {
+    // Format 0, 96 PPQ, running status throughout: program 33 (finger bass) on channel 0, GM drums on channel 10.
+    let track: &[u8] = &[
+        0x00, 0xC0, 33, // program 33
+        0x00, 0x90, 40, 100, // note on
+        0x60, 40, 0, // running status, v 0: off a beat later
+        0x00, 43, 90, // running status: on
+        0x84, 0x40, 43, 0, // off 6 beats later
+        0x00, 0x99, 36, 127, // kick
+        0x18, 36, 0, //
+        0x00, 38, 100, // snare
+        0x18, 38, 0, //
+        0x00, 0xFF, 0x2F, 0x00,
+    ];
+    let mut bytes = b"MThd\0\0\0\x06\0\0\0\x01\0\x60MTrk".to_vec();
+    bytes.extend((track.len() as u32).to_be_bytes());
+    bytes.extend(track);
+    // Without the bundle (a unit test's factory): our code-made preset for the program's family, and the Relay Kit.
+    let song = open(&bytes);
     assert_eq!(
-        notes(&kit.lanes[0]),
-        [(0, 36, 200, 0.25), (64, 42, 200, 1.0)]
+        names(&song),
+        [
+            "MASTER",
+            "(MIDI Channel 0: Electric Bass (finger))",
+            "(MIDI Channel 9: Drums)"
+        ]
     );
-    assert_eq!(kit.drum_kit, None);
+    let bass = &song.channels[1];
+    assert_eq!(bass.kind, ChannelKind::Synth(SynthKind::MiniSynth));
+    assert_eq!(bass.rack.modules[0].file.preset_name, "Velvet Sub");
+    assert_eq!(
+        notes(&bass.lanes[0]),
+        [(0, 40, 200, 1.0), (128, 43, 180, 6.0)]
+    );
+    // The clip covers the last note's end, not just its start.
+    assert_eq!(bass.lanes[0].clips[0].visible_len_beats, 7.0);
+    let drums = &song.channels[2];
+    assert_eq!(drums.kind, ChannelKind::Drums);
+    let kit = drums.drum_kit.as_ref().unwrap();
+    assert_eq!(kit.slots[0].pad_name(), "Kick");
+    assert_eq!(
+        (kit.slots[0].midi_note(), kit.slots[1].midi_note()),
+        (Some(36), Some(38))
+    );
+    let lane = &drums.lanes[0];
+    assert_eq!((lane.kind, lane.grid), (LaneKind::Drums, DrumGrid::Notes));
+    let hits: Vec<_> = (lane.clips[0].events.iter())
+        .map(|e| match *e {
+            Event::Drum {
+                pos,
+                pad,
+                velocity,
+                len_beats,
+                ..
+            } => (pos, pad, velocity, len_beats),
+            other => panic!("not a hit: {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        (lane.clips[0].start_tick, hits),
+        (512, vec![(384, 0, 254, 0.25), (416, 1, 200, 0.25)])
+    );
+
+    // With the bundle: our DW program for the program, at its own pitch.
+    let entry = crate::content::Entry::new("Presets/DW Sampler/Bass/Finger Bass.dwp", Vec::new);
+    let factory = crate::content::Factory::new(vec![entry]);
+    let mut song = Song::default();
+    let imported = import(
+        &mut song,
+        0,
+        &bytes,
+        &ImportOpts::OPEN_AS_SONG,
+        true,
+        &factory,
+    )
+    .unwrap();
+    let dw = &song.channels[1].rack.modules[0];
+    assert_eq!(
+        song.channels[1].kind,
+        ChannelKind::Synth(SynthKind::DwSampler)
+    );
+    assert_eq!(
+        (dw.file.preset_name.as_str(), dw.params[3]),
+        ("Finger Bass", 0.5)
+    );
+    assert_eq!(imported.channels, [1, 2]);
+    assert_eq!(
+        imported.notices,
+        [
+            "(MIDI Channel 0: Electric Bass (finger)): Finger Bass",
+            "(MIDI Channel 9: Drums): the default kit"
+        ]
+    );
 }
 
 // --- lanes and clips ---
@@ -437,16 +551,16 @@ fn each_track_starts_a_new_lane() {
 }
 
 #[test]
-fn clips_start_on_four_beats_and_grow_to_the_last_event_start() {
+fn clips_start_on_four_beats_and_grow_over_their_notes() {
     let clip = |tracks| open(&smf(128, tracks)).channels[1].lanes[0].clips[0].clone();
-    // Start floor(5 / 4)·4 = 4; the last note starts 9.5 beats past it, and the clip shows it for a tick.
+    // Start floor(5 / 4)·4 = 4; the last note starts 9.5 beats past it and lasts a beat, which the clip covers.
     let c = clip(vec![vec![
         on(5 * 128, 0, 60, 64),
         on(7 * 128, 0, 61, 64),
         on(13 * 128 + 64, 0, 62, 64),
     ]]);
     assert_eq!(c.start_tick, 512);
-    assert_eq!(c.visible_len_beats, 9.5 + 1.0 / 128.0);
+    assert_eq!(c.visible_len_beats, 10.5);
     assert_eq!(
         c.events.iter().map(Event::pos).collect::<Vec<_>>(),
         [128, 384, 1216]
@@ -458,19 +572,19 @@ fn clips_start_on_four_beats_and_grow_to_the_last_event_start() {
             .iter()
             .all(|e| f64::from(e.pos()) < c.loop_ticks().unwrap())
     );
-    // Under 4 beats past the start the clip stays 4 beats long; exactly 4 beats past, it also shows that event.
-    let c = clip(vec![vec![on(128, 0, 60, 64), on(3 * 128 + 64, 0, 61, 64)]]);
+    // Under 4 beats past the start the clip stays 4 beats long, but for the notes' ends.
+    let c = clip(vec![vec![on(128, 0, 60, 64), on(2 * 128 + 64, 0, 61, 64)]]);
     assert_eq!((c.start_tick, c.visible_len_beats), (0, 4.0));
     let c = clip(vec![vec![on(0, 0, 60, 64), on(4 * 128, 0, 61, 64)]]);
-    assert_eq!((c.start_tick, c.visible_len_beats), (0, 4.0 + 1.0 / 128.0));
+    assert_eq!((c.start_tick, c.visible_len_beats), (0, 5.0));
     assert!(
         c.events
             .iter()
             .all(|e| f64::from(e.pos()) < c.loop_ticks().unwrap())
     );
-    // A note-off past the last note start does not grow it: the clip ends by its last event start, not the note end.
+    // A note-off past the last note start grows it to the note's end.
     let c = clip(vec![vec![on(9 * 128, 0, 60, 64), off(20 * 128, 0, 60)]]);
-    assert_eq!((c.start_tick, c.visible_len_beats), (1024, 4.0));
+    assert_eq!((c.start_tick, c.visible_len_beats), (1024, 12.0));
     assert_eq!(c.events, [note(128, 11.0, 60, 128)]);
     // Automation clips grow alike.
     let song = open(&smf(
@@ -666,7 +780,15 @@ fn controller_lanes() {
         only_supported: true,
         ..ImportOpts::OPEN_AS_SONG
     };
-    import(&mut song, 1, &controllers(), &opts, false).unwrap();
+    import(
+        &mut song,
+        1,
+        &controllers(),
+        &opts,
+        false,
+        crate::content::factory(),
+    )
+    .unwrap();
     let params: Vec<i32> = autos(&song.channels[2]).iter().map(|a| a.0).collect();
     assert_eq!(params, [4, 8, 14, 15, 17, 71]);
 
@@ -676,7 +798,15 @@ fn controller_lanes() {
         automation: false,
         ..ImportOpts::OPEN_AS_SONG
     };
-    import(&mut song, 1, &controllers(), &opts, false).unwrap();
+    import(
+        &mut song,
+        1,
+        &controllers(),
+        &opts,
+        false,
+        crate::content::factory(),
+    )
+    .unwrap();
     assert_eq!(autos(&song.channels[2]), [(4, "Pitch Wheel")]);
 
     // Split off: `CHN #c : MIDI CC #n` and `CHN #c : Pitch Wheel`, on the current channel.
@@ -754,7 +884,7 @@ fn pitch_wheel() {
         ..ImportOpts::OPEN_AS_SONG
     };
     let mut song = Song::default();
-    import(&mut song, 0, &bytes, &opts, true).unwrap();
+    import(&mut song, 0, &bytes, &opts, true, crate::content::factory()).unwrap();
     let c = &song.channels[1];
     assert_eq!(autos(c), [(4, "Pitch Wheel")]);
     // clamp(trunc(v14·0.000061039·65534), 0, 65534): 8192 → 32769, 16383 → 65534.
@@ -786,9 +916,9 @@ fn scan_lists_channels_programs_and_automation() {
     // pressure, note-offs or CC 127 alone.
     let s = scan(&bytes).unwrap();
     assert_eq!(s.used, 1 | 1 << 3);
-    assert_eq!(s.programs[0], ["Close Grand", "Program 5"]);
+    assert_eq!(s.programs[0], ["Acoustic Grand Piano", "Electric Piano 2"]);
     // No program change: the default program. Programs are collected on every channel; channel 10 is `Drums`.
-    assert_eq!(s.programs[3], ["Close Grand"]);
+    assert_eq!(s.programs[3], ["Acoustic Grand Piano"]);
     assert_eq!(s.programs[9], ["Drums"]);
     assert!(s.programs[1].is_empty() && s.programs[15].is_empty());
     assert!(!s.automation);
@@ -801,7 +931,7 @@ fn scan_lists_channels_programs_and_automation() {
     let s = scan(&stray).unwrap();
     assert_eq!(
         (s.used, s.programs[5].clone()),
-        (1, vec!["Program 2".to_owned()])
+        (1, vec!["Electric Grand Piano".to_owned()])
     );
     let keys = into_keys(&stray, ImportOpts::ONE_CHANNEL);
     assert_eq!(notes(&keys.channels[1].lanes[1]), [(0, 60, 128, 1.0)]);
@@ -864,12 +994,13 @@ fn export_import_round_trip() {
         names(&back),
         [
             "MASTER",
-            "Keys (MIDI Channel 0: Close Grand)",
+            "Keys (MIDI Channel 0: Acoustic Grand Piano)",
             "Kit (MIDI Channel 9: Drums)",
-            "Bass (MIDI Channel 3: Close Grand)",
+            "Bass (MIDI Channel 3: Acoustic Grand Piano)",
         ]
     );
-    // Song ticks, keys, velocities (v → 2v → v) and lengths survive; drums come back as notes at pad + 36.
+    // Song ticks, keys, velocities (v → 2v → v) and lengths survive; drums come back as hits: a pad without a MIDI note
+    // goes out at pad + 36 and comes back on the GM kit's pad for that key.
     assert_eq!(
         notes(&back.channels[1].lanes[0]),
         [
@@ -878,10 +1009,27 @@ fn export_import_round_trip() {
             (1152, 67, 2, 2.25)
         ]
     );
+    let hits = |c: &Channel| {
+        (c.lanes[0].clips[0].events.iter())
+            .map(|e| match *e {
+                Event::Drum {
+                    pos,
+                    pad,
+                    velocity,
+                    len_beats,
+                    ..
+                } => (pos, pad, velocity, len_beats),
+                other => panic!("not a hit: {other:?}"),
+            })
+            .collect::<Vec<_>>()
+    };
     assert_eq!(
-        notes(&back.channels[2].lanes[0]),
-        [(0, 36, 100, 0.25), (32, 39, 100, 0.25)]
+        hits(&back.channels[2]),
+        [(0, 0, 100, 0.25), (32, 2, 100, 0.25)]
     );
+    // The GM kit's pads play their MIDI notes, so its hits come back on the same pads.
+    let again = open(&smf_of(&back, None).unwrap());
+    assert_eq!(hits(&again.channels[2]), hits(&back.channels[2]));
     assert_eq!(notes(&back.channels[3].lanes[0]), [(1024, 36, 128, 4.0)]);
     // A one-channel file goes straight into the current channel.
     let one = smf_of(&song, Some(4)).unwrap();
@@ -933,7 +1081,14 @@ fn import_all_ways(bytes: &[u8]) -> bool {
     ] {
         let mut song = keys_song();
         let before = song.clone();
-        let result = import(&mut song, 1, bytes, &opts, as_song);
+        let result = import(
+            &mut song,
+            1,
+            bytes,
+            &opts,
+            as_song,
+            crate::content::factory(),
+        );
         assert_eq!(result.is_ok(), ok, "scan and import read alike");
         ok &= result.is_ok();
         if result.is_err() {

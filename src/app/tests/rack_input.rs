@@ -363,7 +363,7 @@ fn measure(a: &mut InputRig, delay: Option<usize>) {
         let mut rec = a.rig.rec.0.borrow_mut();
         let engine = rec.engine.as_mut().expect("an engine");
         engine.render(&mut output, 2);
-        sent.extend(output.chunks_exact(2).map(|f| f[0]));
+        sent.extend(output.as_chunks::<2>().0.iter().map(|f| f[0]));
         if engine
             .ping_report()
             .is_some_and(|(_, result)| result.is_some())

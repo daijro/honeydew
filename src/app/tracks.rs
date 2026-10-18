@@ -345,9 +345,31 @@ impl HoneydewApp {
             return;
         };
         let before = self.song.clone();
-        if let Err(detail) = smf::import::import(&mut self.song, current, bytes, opts, false) {
-            let lines = vec![smf::import::LOAD_FAILED.into(), detail];
-            return self.navigate(Nav::Open(Overlay::Message {
+        let factory = self.files.factory;
+        let imported =
+            match smf::import::import(&mut self.song, current, bytes, opts, false, factory) {
+                Ok(imported) => imported,
+                Err(detail) => {
+                    let lines = vec![smf::import::LOAD_FAILED.into(), detail];
+                    return self.navigate(Nav::Open(Overlay::Message {
+                        tag: MESSAGE_TAG,
+                        lines,
+                        confirm: None,
+                        extra: None,
+                    }));
+                }
+            };
+        // The new channels' DW programs load as a song's do when it opens.
+        {
+            let read = crate::sample_cache::reader(&self.files);
+            for &i in &imported.channels {
+                for module in &mut self.song.channels[i].rack.modules {
+                    crate::panels::cstm::load_dw_program(module, &read);
+                }
+            }
+        }
+        if let Some(lines) = crate::project_files::stand_ins(imported.notices) {
+            self.navigate(Nav::Open(Overlay::Message {
                 tag: MESSAGE_TAG,
                 lines,
                 confirm: None,

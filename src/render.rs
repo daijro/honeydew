@@ -276,7 +276,7 @@ impl Render {
             && let Some((at, block)) = self.pass.next()
         {
             budget = budget.saturating_sub(block.len() / 2);
-            for (frame, f) in block.chunks_exact(2).zip(at..) {
+            for (frame, f) in block.as_chunks::<2>().0.iter().zip(at..) {
                 self.kept.frame(f, frame);
             }
         }
@@ -343,7 +343,7 @@ impl Stream {
         if self.out[0].len() < BLOCK
             && let Some((at, block)) = self.pass.next()
         {
-            let frames = (block.chunks_exact(2).zip(at..)).filter(|&(_, f)| f >= start);
+            let frames = (block.as_chunks::<2>().0.iter().zip(at..)).filter(|&(_, f)| f >= start);
             for (frame, f) in frames.take_while(|&(_, f)| f < end) {
                 for ((&x, head), out) in frame.iter().zip(&self.head).zip(&mut self.out) {
                     out.push(output(head, f, x, self.peak));
@@ -427,7 +427,7 @@ impl Pass {
         let frames = (stop - done).min(BLOCK);
         let block = &mut self.block[..2 * frames];
         self.engine.render(block, 2);
-        for (frame, f) in block.chunks_exact_mut(2).zip(done..) {
+        for (frame, f) in block.as_chunks_mut::<2>().0.iter_mut().zip(done..) {
             for x in frame {
                 *x = shape(*x, f, self.range, self.tail, self.high_quality);
             }

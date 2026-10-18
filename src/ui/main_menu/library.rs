@@ -301,6 +301,19 @@ impl MemoryLibrary {
 
     /// Keeps the song `bytes` at `path`, replacing a song there but not a folder. Unlike [`SongLibrary::store`], any
     /// file name (the web's session copies of presets and samples).
+    /// A file named `name` (any case) anywhere in it.
+    pub(crate) fn find_name(&self, name: &str) -> Option<PathBuf> {
+        let named = |p: &&PathBuf| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(name))
+        };
+        (self.entries.iter())
+            .filter(|(_, (bytes, _))| bytes.is_some())
+            .map(|(path, _)| path)
+            .find(named)
+            .cloned()
+    }
+
     pub(crate) fn put(&mut self, path: PathBuf, bytes: &[u8]) -> io::Result<()> {
         if matches!(self.entries.get(&path), Some((None, _))) {
             return Err(io::ErrorKind::AlreadyExists.into());
@@ -511,7 +524,7 @@ fn songs_dir_from(
 /// The extensions the songs library lists: songs, and project archives, which SONGS opens like a picked one and
 /// offers `Unzip` for.
 #[cfg(not(target_arch = "wasm32"))]
-const SONG_EXTS: [&str; 2] = ["flm", "zip"];
+const SONG_EXTS: [&str; 5] = ["flm", "zip", "mid", "midi", "flp"];
 
 /// The desktop's library: the files of some extensions (any case; songs and archives, [`SONG_EXTS`], unless
 /// [`NativeLibrary::with_ext`] or [`NativeLibrary::with_exts`] says otherwise) and the folders in a folder on disk, at

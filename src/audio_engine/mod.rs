@@ -1642,7 +1642,7 @@ impl Checkpoints {
         let mut input = vec![0; keys.len()];
         cover(&[], instruments, &mut keys, &mut pads, &mut input);
         let mut checkpoints = Self::default();
-        for span in actions.chunks_exact(CHECKPOINT_SPAN) {
+        for span in actions.as_chunks::<CHECKPOINT_SPAN>().0 {
             for event in span {
                 hold(event, instruments, &mut keys, &mut pads, &mut input, false);
             }

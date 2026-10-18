@@ -256,9 +256,9 @@ pub(crate) fn mesh_quads<'a>(
         egui::Shape::Mesh(m) if m.texture_id == egui::TextureId::default() => Some(m),
         _ => None,
     });
-    let quad = |q: &[egui::epaint::Vertex]| (Rect::from_two_pos(q[0].pos, q[3].pos), q[0].color);
+    let quad = |q: &[egui::epaint::Vertex; 4]| (Rect::from_two_pos(q[0].pos, q[3].pos), q[0].color);
     meshes
-        .flat_map(|m| m.vertices.chunks_exact(4).map(quad))
+        .flat_map(|m| m.vertices.as_chunks::<4>().0.iter().map(quad))
         .collect()
 }
 

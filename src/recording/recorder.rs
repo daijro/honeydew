@@ -487,7 +487,7 @@ mod tests {
         );
         assert_eq!((u16_at(32), u16_at(34), u16_at(36)), (2 * channels, 16, 0));
         assert_eq!((&bytes[38..42], u32_at(42)), (&b"data"[..], data));
-        (bytes[46..].chunks_exact(2))
+        (bytes[46..].as_chunks::<2>().0.iter())
             .map(|b| i16::from_le_bytes([b[0], b[1]]))
             .collect()
     }

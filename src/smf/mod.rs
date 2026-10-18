@@ -2,6 +2,7 @@
 
 pub mod codec;
 pub mod export;
+pub mod gm;
 pub mod import;
 
 pub use codec::{Smf, SmfEvent};

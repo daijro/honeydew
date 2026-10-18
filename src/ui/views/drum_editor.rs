@@ -459,6 +459,8 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
             // The free note-grid's gestures: a drag's step stays open until its release.
             StepAction::Hits { quiet: true, .. } => app.quiet_edited(),
             StepAction::Hits { final_edit, .. } => app.song_edited(final_edit),
+            // A right-button swipe in the step view: one undo step, closed by its release.
+            StepAction::EraseSteps { final_edit, .. } => app.song_edited(final_edit),
             StepAction::GraphEnd => app.song_edited(true),
             // A graph-lane touch that changed nothing: its own undo re-syncs.
             StepAction::GraphCancel(_) => app.resync_edited(),

@@ -2,7 +2,7 @@
 
 use super::codec::{self, MAX_DELTA, MAX_EVENTS, MAX_TRACKS, Smf, SmfEvent};
 use crate::midi::MidiMsg;
-use crate::song::{AutomationTarget, Clip, Event, Lane, LaneKind, PPQ, Song, points};
+use crate::song::{AutomationTarget, Clip, DrumKit, Event, Lane, LaneKind, PPQ, Song, points};
 
 /// No lane to write. The Save dialog shows `Error: no data to save`.
 #[derive(Debug, PartialEq, Eq)]
@@ -78,7 +78,7 @@ pub fn smf_of(song: &Song, only: Option<usize>) -> Result<Vec<u8>, NoData> {
                     if budget < 2 {
                         break 'clips;
                     }
-                    let msgs = messages(write, ch, step, t, event);
+                    let msgs = messages(write, ch, step, t, event, channel.drum_kit.as_ref());
                     budget -= msgs.len();
                     events.extend(msgs);
                 }
@@ -99,8 +99,15 @@ pub fn smf_of(song: &Song, only: Option<usize>) -> Result<Vec<u8>, NoData> {
 }
 
 /// The messages of one play at song tick `t` (fractional) as `(tick, not a note-off, message)`. `step`: a drum hit's
-/// length when it has none.
-fn messages(write: Write, ch: u8, step: f64, t: f64, event: &Event) -> Vec<(u64, bool, MidiMsg)> {
+/// length when it has none; `kit`: the channel's, whose pads' MIDI notes drum hits play.
+fn messages(
+    write: Write,
+    ch: u8,
+    step: f64,
+    t: f64,
+    event: &Event,
+    kit: Option<&DrumKit>,
+) -> Vec<(u64, bool, MidiMsg)> {
     let on = t as u64;
     // A note lasts a tick at least, so its off never sorts before its on.
     let note = |ch, key: u8, vel: u8, len: f64| {
@@ -139,7 +146,10 @@ fn messages(write: Write, ch: u8, step: f64, t: f64, event: &Event) -> Vec<(u64,
             },
         ) => {
             let len = if len_beats > 0.0 { len_beats } else { step };
-            return note(9, pad.saturating_add(36), velocity, len);
+            // Owner request (2026-10-18): a pad with a MIDI note set plays it, so an imported GM kit's keys come
+            // back; any other pad plays pad + 36.
+            let stored = kit.and_then(|k| k.slot_on_pad(usize::from(pad))?.midi_note());
+            return note(9, stored.unwrap_or(pad.saturating_add(36)), velocity, len);
         }
         (Write::PitchBend, Event::Automation { value, .. }) => {
             let value = scaled(value, 16383);
@@ -161,7 +171,7 @@ fn messages(write: Write, ch: u8, step: f64, t: f64, event: &Event) -> Vec<(u64,
 /// Every play of `clip`'s events, `(song tick, event)` with the tick fractional, by the playback loop rule: the
 /// content repeats every [`Clip::loop_ticks`] from the offset, shown for [`Clip::visible_ticks`]. Pass by pass, in
 /// stored order within a pass; plays at or past [`MAX_DELTA`] are dropped.
-fn plays(clip: &Clip) -> impl Iterator<Item = (f64, &Event)> {
+pub(crate) fn plays(clip: &Clip) -> impl Iterator<Item = (f64, &Event)> {
     let lp = clip.loop_ticks().unwrap_or(f64::NAN);
     let visible = clip.visible_ticks();
     let off = clip.offset_beats * f64::from(PPQ);

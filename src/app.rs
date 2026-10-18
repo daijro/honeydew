@@ -840,6 +840,12 @@ impl HoneydewApp {
         self.settings.import_notice_accepted = self.files.import_accepted;
         // A card (and an instrument's channel) named after the preset just saved from it: rack state, with no undo step
         // and nothing for the audio (the rack is not covered by undo), and a song change.
+        // `Locate samples…` loaded samples into the song: an edit, and its audio is built again.
+        if self.files.take_relinked() {
+            self.files.song_changed();
+            self.song_edited(SongEdit::Final, 0);
+            ctx.request_repaint();
+        }
         if self.files.take_preset_named() {
             self.files.song_changed();
             self.song_edited(SongEdit::RackState, 0);
@@ -2826,7 +2832,7 @@ mod tests {
 
     #[test]
     fn the_audio_gesture_is_the_press_natively_and_the_release_on_the_web() {
-        assert!(!START_ON_RELEASE, "the tests run natively");
+        const { assert!(!START_ON_RELEASE, "the tests run natively") };
         let ctx = egui::Context::default();
         let gestures = |pressed: bool| {
             let mut both = (false, false);

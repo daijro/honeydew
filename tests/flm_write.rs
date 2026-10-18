@@ -177,7 +177,7 @@ fn file_lanes(bytes: &[u8]) -> Vec<(i32, Vec<i16>)> {
                 if child.id == *b"CLIP" {
                     let (_, clip) = child.container(PrefixKind::U32Magic).unwrap();
                     for events in clip.map(Result::unwrap).filter(|e| e.id == *b"EVN2") {
-                        let records = events.payload[2..].chunks_exact(20);
+                        let records = events.payload[2..].as_chunks::<20>().0.iter();
                         keys.extend(records.map(|r| i16::from_le_bytes([r[12], r[13]])));
                     }
                 }

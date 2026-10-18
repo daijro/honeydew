@@ -159,7 +159,7 @@ impl Probe {
             (Kind::Multiband(bands), Processor::Multiband(state)) => {
                 for ((history, slab), band) in bands
                     .iter_mut()
-                    .zip(slab.chunks_exact_mut(HISTORY_LEN))
+                    .zip(slab.as_chunks_mut::<HISTORY_LEN>().0)
                     .zip(state.band_levels())
                 {
                     history.frame(slab, band[0], band[1], band[2]);

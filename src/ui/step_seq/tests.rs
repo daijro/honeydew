@@ -2503,18 +2503,30 @@ fn a_long_press_on_a_selected_hit_keeps_the_selection() {
 }
 
 #[test]
-fn a_right_click_makes_the_hit_under_it_the_selection_and_on_an_empty_step_changes_nothing() {
+fn a_right_click_deletes_the_hit_under_it_in_one_undo_step_and_on_an_empty_step_changes_nothing() {
+    // Owner request (2026-10-18): the desktop app's right-button delete (`gesture::Erase`).
     let mut rig = Rig::new(pattern());
     let at = rig.cell(2, 2);
     rig.click_with(at, PointerButton::Secondary);
-    assert_eq!(rig.selection(), [(2, 2)]);
-    let at = rig.cell(1, 12);
-    rig.click_with(at, PointerButton::Secondary);
-    assert_eq!(rig.selection(), [(1, 12)]);
+    assert_eq!(rig.hits(), on(&[(0, 0), (1, 4), (1, 12)]));
+    let cells = vec![(2, 2)];
+    assert_eq!(
+        rig.actions,
+        [
+            StepAction::EraseSteps {
+                cells: cells.clone(),
+                final_edit: false
+            },
+            StepAction::EraseSteps {
+                cells,
+                final_edit: true
+            },
+        ]
+    );
     // An empty step: `Paste`, and there is no step clipboard.
+    rig.actions.clear();
     let at = rig.cell(0, 9);
     rig.click_with(at, PointerButton::Secondary);
-    assert_eq!(rig.selection(), [(1, 12)]);
     assert!(rig.actions.is_empty());
 }
 
@@ -2628,7 +2640,8 @@ fn the_selection_stays_with_its_clip() {
     channel.lanes[0].add_clip(16 * crate::song::PPQ, 4.0).events = b.events;
     let mut rig = Rig::new(channel);
     let at = rig.cell(1, 4);
-    rig.click_with(at, PointerButton::Secondary);
+    rig.hold(at);
+    rig.release(at);
     assert_eq!(rig.selection(), [(1, 4)]);
     rig.view.clip = Some(2);
     rig.frame(vec![]);
@@ -2657,7 +2670,8 @@ fn the_floating_row_hides_on_a_scroll_or_zoom_and_a_tap_on_the_selection_brings_
     rig.kit = twelve();
     rig.frame(vec![]);
     let at = rig.cell(1, 4);
-    rig.click_with(at, PointerButton::Secondary);
+    rig.hold(at);
+    rig.release(at);
     assert!(rig.text_at("Copy").is_some());
     assert_eq!(rig.view.row.rect(), shared(&rig, (1, 4), at));
     // The wheel scrolls the rows: hidden, though the hit is still in view.
@@ -2718,7 +2732,8 @@ fn a_rows_clone_or_delete_clears_the_selection() {
         tap(&mut channel.lanes[0].clips[0], 2, 4);
         let mut rig = Rig::new(channel);
         let at = rig.cell(row, step);
-        rig.click_with(at, PointerButton::Secondary);
+        rig.hold(at);
+        rig.release(at);
         rig.view.apply(&mut rig.song, CH, &action);
         rig.frame(vec![]);
         assert_eq!(rig.selection(), [], "{action:?}");
@@ -3010,7 +3025,8 @@ fn while_steps_are_selected_only_they_take_the_paint_and_a_gesture_that_changes_
     let header = rig.header(1);
     rig.click(header);
     let snare = rig.cell(1, 12);
-    rig.click_with(snare, PointerButton::Secondary);
+    rig.hold(snare);
+    rig.release(snare);
     assert_eq!(rig.view.selection.len(), 1);
     rig.stroke(&[
         pos2(rig.step_x(4), lane_y(0.5)),
@@ -3295,7 +3311,8 @@ fn a_hit_takes_the_note_tint_with_t_from_the_graph_lane_page_and_a_selected_one_
         assert_eq!(rig.hit_fill(1, 4), Some(want), "{prop:?}");
     }
     let at = rig.cell(1, 4);
-    rig.click_with(at, PointerButton::Secondary);
+    rig.hold(at);
+    rig.release(at);
     assert_eq!(rig.selection(), [(1, 4)]);
     for (item, (prop, value)) in graph_lane::DRUM_PROPS
         .into_iter()
@@ -3421,9 +3438,10 @@ fn a_hit_alone_in_the_selection_is_remembered_and_new_hits_take_its_velocity_and
     let at = rig.cell(0, 0);
     rig.click(at);
     assert_eq!(rig.values()[0], (0, 255, 127, 0x7FFF, 0));
-    // Selected alone (a right click), the Snare hit is remembered.
+    // Selected alone (a long press), the Snare hit is remembered.
     let at = rig.cell(1, 4);
-    rig.click_with(at, PointerButton::Secondary);
+    rig.hold(at);
+    rig.release(at);
     let snare = Remembered {
         len_beats: 0.25,
         velocity: 102,
@@ -3438,7 +3456,8 @@ fn a_hit_alone_in_the_selection_is_remembered_and_new_hits_take_its_velocity_and
     assert!(rig.values().contains(&(2, 102, 190, 0x7FFF, 0)));
     // Two hits selected remember nothing; a touch-down that makes one of them the selection remembers it.
     let at = rig.cell(0, 0);
-    rig.click_with(at, PointerButton::Secondary);
+    rig.hold(at);
+    rig.release(at);
     assert_eq!(rig.view.remembered.velocity, 255);
     rig.view.remembered = default;
     rig.boxed(rig.cell(0, 0), rig.cell(1, 4));
@@ -3456,7 +3475,8 @@ fn a_hit_alone_in_the_selection_is_remembered_and_new_hits_take_its_velocity_and
 fn a_lone_copy_is_remembered() {
     let mut rig = Rig::new(odd_hit());
     let at = rig.cell(1, 4);
-    rig.click_with(at, PointerButton::Secondary);
+    rig.hold(at);
+    rig.release(at);
     rig.view.remembered = Remembered::default();
     let copy = rig.text_at("Copy").unwrap();
     rig.click(copy);

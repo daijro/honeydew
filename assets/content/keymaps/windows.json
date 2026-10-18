@@ -7,6 +7,7 @@
     { "key": "ctrl+z", "action": "undo" },
     { "key": "alt+ctrl+z", "action": "redo" },
     { "key": "shift+ctrl+z", "action": "redo" },
+    { "key": "ctrl+y", "action": "redo" },
     { "key": "space", "action": "play" },
     { "key": "ctrl+left", "action": "rewind" },
     { "key": "alt+r", "action": "armRecord" },

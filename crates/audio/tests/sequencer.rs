@@ -432,7 +432,7 @@ fn random_modes_repeat_for_a_seed_and_select_only_held_pitches() {
 #[test]
 fn random_no_repeat_consumes_bags_without_cross_cycle_repeat() {
     let pitches = random_ons(ArpMode::RandomNoRepeat, 15, &[60, 64, 67, 72], 8.1);
-    for bag in pitches.chunks_exact(4) {
+    for bag in pitches.as_chunks::<4>().0 {
         let mut sorted = bag.to_vec();
         sorted.sort_unstable();
         assert_eq!(sorted, [60, 64, 67, 72]);
@@ -445,7 +445,7 @@ fn random_no_repeat_consumes_bags_without_cross_cycle_repeat() {
 #[test]
 fn random_once_cycles_one_shuffle_and_retrigger_preserves_it() {
     let pitches = random_ons(ArpMode::RandomOnce, 77, &[60, 64, 67, 72], 8.1);
-    for cycle in pitches.chunks_exact(4) {
+    for cycle in pitches.as_chunks::<4>().0 {
         assert_eq!(cycle, &pitches[..4]);
     }
     let mut settings = ArpSettings::default();

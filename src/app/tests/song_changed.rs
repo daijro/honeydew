@@ -118,8 +118,13 @@ fn quantize_is_a_change() {
     rig.app.song_edited(SongEdit::Final, 0);
     rig.frame(vec![]);
     rig.app.files.saved();
-    // A right click selects it; the floating row's `Snap` quantizes it.
-    rig.secondary_click(cell + vec2(10.0, 0.0));
+    // A long press selects it; the floating row's `Snap` quantizes it.
+    let on = cell + vec2(10.0, 0.0);
+    rig.press(on);
+    for _ in 0..3 {
+        rig.frame(vec![]);
+    }
+    rig.release(on);
     rig.frame(vec![]);
     rig.click_id(egui::Id::new(("note_button", 2_usize)));
     assert_eq!(pos(&rig), on_grid);

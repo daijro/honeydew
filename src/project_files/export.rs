@@ -64,6 +64,8 @@ pub const RENDER_FAILED: &str = "An error occurred while rendering";
 pub const NO_DATA: &str = "Error: no data to save";
 pub const ARCHIVE_FAILED: &str = "Failed to export archive";
 pub const COMPRESS_FAILED: &str = "Failed to compress files";
+/// The message after an FLP export that left something out; a line for each follows.
+pub const FLP_NOTICES: &str = "Saved. These parts have no .flp counterpart:";
 /// The render rate when no audio output runs.
 pub const NO_AUDIO_RATE: u32 = 44_100;
 /// Frames a slice renders at least: the render's block.
@@ -134,7 +136,7 @@ fn saved(left_out: usize) -> String {
 /// The message a failed write of `format` shows.
 fn failure(format: ExportFormat) -> &'static str {
     match format {
-        ExportFormat::Zip => ARCHIVE_FAILED,
+        ExportFormat::Zip | ExportFormat::Flp => ARCHIVE_FAILED,
         ExportFormat::Midi => SAVE_FILE_FAILED,
         _ => RENDER_FAILED,
     }
@@ -182,6 +184,10 @@ impl ProjectFiles {
                     Some(bytes)
                 }
                 Err((title, detail)) => return self.fail(title, detail),
+            },
+            ExportFormat::Flp => match self.flp_archive(song, &name) {
+                Ok(bytes) => Some(bytes),
+                Err(err) => return self.fail(COMPRESS_FAILED, err),
             },
             ExportFormat::Midi => match smf_of(song, only) {
                 Ok(bytes) => Some(bytes),
@@ -334,10 +340,21 @@ impl ProjectFiles {
                 self.flash = Some(format!("Render complete\nSaved to: {}", path.display()));
             }
             FileEvent::Saved(_) => {
-                self.flash = Some(saved(std::mem::take(&mut self.export_left_out)))
+                self.flash = Some(saved(std::mem::take(&mut self.export_left_out)));
+                // What the FLP had no counterpart for.
+                let notices = std::mem::take(&mut self.export_notices);
+                if !notices.is_empty() {
+                    let mut notices = notices;
+                    super::cap_notices(&mut notices);
+                    self.message = Some(
+                        std::iter::once(FLP_NOTICES.to_owned())
+                            .chain(notices)
+                            .collect(),
+                    );
+                }
             }
             FileEvent::Failed(_, detail) => self.fail(failure(export.format), detail),
-            FileEvent::Opened(..) => {}
+            FileEvent::Opened(..) | FileEvent::Located(_) => {}
         }
     }
 

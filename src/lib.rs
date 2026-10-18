@@ -11,6 +11,7 @@ pub mod audio_link;
 pub mod collaboration;
 pub mod content;
 pub mod flm;
+pub mod flp;
 pub mod fonts;
 pub mod history;
 pub mod icons;
@@ -161,7 +162,7 @@ async fn run_web() -> Result<(), wasm_bindgen::JsValue> {
         },
     )?;
     // While a text field has the keyboard its keys go to eframe's text agent, not the canvas: there only a bound
-    // Ctrl/Cmd key is kept from the browser, and not Ctrl+A or Z, which edit the text.
+    // Ctrl/Cmd key is kept from the browser, and not Ctrl+A, Z or Y, which edit the text.
     let capture = web_sys::AddEventListenerOptions::new();
     capture.set_capture(true);
     runner.add_event_listener_ex(
@@ -169,8 +170,9 @@ async fn run_web() -> Result<(), wasm_bindgen::JsValue> {
         "keydown",
         &capture,
         |event: web_sys::KeyboardEvent, runner, _| {
-            let text_safe =
-                |(at, mods): (Key, Modifiers)| mods.command && !matches!(at, Key::A | Key::Z);
+            let text_safe = |(at, mods): (Key, Modifiers)| {
+                mods.command && !matches!(at, Key::A | Key::Z | Key::Y)
+            };
             if bound_key(&event, runner.egui_ctx()).is_some_and(text_safe) {
                 event.prevent_default();
             }

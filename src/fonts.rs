@@ -146,7 +146,7 @@ mod tests {
                 continue;
             };
             assert_eq!(mesh.texture_id, TextureId::default());
-            for q in mesh.vertices.chunks_exact(4) {
+            for q in mesh.vertices.as_chunks::<4>().0 {
                 let (a, b) = ((q[0].pos * ppp).round(), (q[3].pos * ppp).round());
                 let (ua, ub) = (q[0].uv, q[3].uv);
                 for y in a.y as usize..b.y as usize {

@@ -503,7 +503,9 @@ mod audio {
         assert_eq!(bytes.len(), 46 + 2 * 2 * FRAMES_PER_BEAT);
         // Only the input after the count-in: 0.5, trunc(0.5·32767).
         let samples = bytes[46..]
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|b| i16::from_le_bytes([b[0], b[1]]));
         assert!(samples.into_iter().all(|x| x == 16_383));
         assert_eq!(a.rig.undo_steps(), undos);

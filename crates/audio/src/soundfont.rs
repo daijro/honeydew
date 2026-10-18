@@ -173,12 +173,14 @@ fn phdr(pdta: &[u8]) -> Result<&[u8], ParseError> {
 
 fn headers(phdr: &[u8]) -> Vec<PresetHeader> {
     let patches = (phdr.len() / PHDR_SIZE - 1).min(MAX_PATCHES);
-    let header = |r: &[u8]| PresetHeader {
+    let header = |r: &[u8; PHDR_SIZE]| PresetHeader {
         name: r[..20].try_into().unwrap_or_default(),
         preset: le16(r, 20),
         bank: le16(r, 22),
     };
-    phdr.chunks_exact(PHDR_SIZE)
+    phdr.as_chunks::<PHDR_SIZE>()
+        .0
+        .iter()
         .take(patches)
         .map(header)
         .collect()
@@ -203,11 +205,11 @@ struct Gen {
 }
 
 fn gens(table: &[u8]) -> Vec<Gen> {
-    let generator = |r: &[u8]| Gen {
+    let generator = |r: &[u8; 4]| Gen {
         op: le16(r, 0),
         amount: [r[2], r[3]],
     };
-    table.chunks_exact(4).map(generator).collect()
+    table.as_chunks::<4>().0.iter().map(generator).collect()
 }
 
 /// `base` with the generators of `zone` set; a later generator wins over an earlier one.
@@ -297,7 +299,7 @@ impl Tables {
         ordered(&inst_bags, ibag.len() - 1)?;
         ordered(&ibag, igen.len())?;
         let shdr = table(pdta, b"shdr", 46)?;
-        let sample = |r: &[u8]| SampleHeader {
+        let sample = |r: &[u8; 46]| SampleHeader {
             start: le32(r, 20),
             end: le32(r, 24),
             loop_start: le32(r, 28),
@@ -307,7 +309,7 @@ impl Tables {
             correction: r[41] as i8,
             kind: le16(r, 44),
         };
-        let samples = shdr.chunks_exact(46).map(sample);
+        let samples = shdr.as_chunks::<46>().0.iter().map(sample);
         let samples = samples.take(shdr.len() / 46 - 1).collect();
         let start = smpl.as_ptr() as usize - bytes.as_ptr() as usize;
         let smpl = start..start + smpl.len();

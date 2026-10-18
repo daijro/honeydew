@@ -67,6 +67,8 @@ mod verify;
 pub use picks::{DWP_EXT, SPECTRA_EXT, WAVESHAPES_FOLDER, fits, is_audio, load_pick, read_spectra};
 pub(crate) mod fst;
 pub use fst::{FST_EXT, FstImport, import_fst};
+mod flp;
+pub use flp::{LOCATE, LOCATE_TAG};
 mod archive;
 pub mod export;
 pub use archive::{
@@ -110,6 +112,10 @@ pub const CORRUPTED: [&str; 2] = [
 ];
 /// At most this many load notices show; the rest are counted in one more line.
 const MAX_NOTICES: usize = 8;
+/// At most this many lines of an import's summary ([`STAND_INS`]) show; the rest are counted in one more line.
+const MAX_STAND_INS: usize = 6;
+/// The message of an import (MIDI, FLP) that loaded our sounds for what the file asked for; a line per channel follows.
+pub const STAND_INS: &str = "Some instruments were replaced with the closest built-in sounds:";
 /// FLM2 projects are detected and reported, not converted.
 const FLM2_MAGIC: &[u8] = b"\x99ELM\r\n\x1A\n";
 const FLM2_UNSUPPORTED: &str = "Unsupported old project format";
@@ -153,6 +159,8 @@ pub enum Replace {
     Template(PathBuf),
     /// A file the user picks (SONGS `Import`, `Ctrl+O`).
     Pick,
+    /// A project file dropped on the window, with its bytes.
+    Dropped(PathBuf, Vec<u8>),
 }
 
 /// What a file dialog was asked for ([`ProjectFiles`] remembers it until the file arrives).
@@ -172,7 +180,7 @@ impl Pick {
     /// sample ones for a sample, the MIDI ones for `Import MIDI Tracks`.
     pub const fn accept(self) -> &'static [&'static str] {
         match self {
-            Pick::Song => &["flm", "songtmpl", "zip", "mid", "midi"],
+            Pick::Song => &["flm", "songtmpl", "zip", "mid", "midi", "flp"],
             Pick::Sample => &SAMPLE_EXTS,
             Pick::MidiTracks(_) => FileKind::Midi.extensions(),
         }
@@ -199,6 +207,8 @@ pub enum FileKind {
     Archive,
     /// A Standard MIDI file, `.mid` or `.midi`.
     Midi,
+    /// An FL Studio project, `.flp`.
+    Flp,
 }
 
 impl FileKind {
@@ -209,6 +219,7 @@ impl FileKind {
             FileKind::Template => &["songtmpl"],
             FileKind::Archive => &["zip"],
             FileKind::Midi => &["mid", "midi"],
+            FileKind::Flp => &["flp"],
         }
     }
 }
@@ -245,6 +256,8 @@ pub enum FileEvent {
     /// A request failed: the popup's title ([`OPEN_FAILED`], [`READ_FAILED`] or [`SAVE_FAILED`]) and what went
     /// wrong where.
     Failed(&'static str, String),
+    /// `Locate samples…` found these files (name, bytes) in the folder the user picked.
+    Located(Vec<(String, Vec<u8>)>),
 }
 
 /// Where project files come from and go to. Requests may finish later (the web reads files asynchronously), so
@@ -268,6 +281,9 @@ pub trait FileProvider {
     fn folders(&self) -> bool {
         true
     }
+    /// `Locate samples…`: asks for a folder and finishes with [`FileEvent::Located`], the files in it or below named one
+    /// of `names` (any case). A provider without folders does nothing.
+    fn locate(&mut self, _names: Vec<String>) {}
 }
 
 /// Open / save state: the song's file, the Save dialog and the message popup.
@@ -367,6 +383,16 @@ pub struct ProjectFiles {
     /// The last [`RECENT_STATE`] write, on its worker: the next waits for it, so the last load's lands last.
     #[cfg(not(target_arch = "wasm32"))]
     autosave: Option<std::thread::JoinHandle<()>>,
+    /// The samples the last FLP open could not find, for `Locate samples…`.
+    missing: Vec<flp::Missing>,
+    /// The FLP summary with `Locate samples…` waits for its answer ([`LOCATE_TAG`]).
+    locate_asked: bool,
+    /// Samples were located into the song ([`Self::take_relinked`]).
+    relinked: bool,
+    /// What the FLP export under way could not write, shown once it is saved.
+    export_notices: Vec<String>,
+    /// A file dropped on the window, until no dialog or message is open.
+    drop_waiting: Option<eframe::egui::DroppedFile>,
 }
 
 /// With the platform's provider and library. On the desktop the library is the songs folder, and saving starts
@@ -453,6 +479,11 @@ impl ProjectFiles {
             midi_tracks: None,
             #[cfg(not(target_arch = "wasm32"))]
             autosave: None,
+            missing: Vec::new(),
+            locate_asked: false,
+            relinked: false,
+            export_notices: Vec::new(),
+            drop_waiting: None,
         }
     }
 
@@ -529,6 +560,7 @@ impl ProjectFiles {
                 self.open();
                 None
             }
+            Replace::Dropped(path, bytes) => self.opened(path, bytes),
         }
     }
 
@@ -900,6 +932,7 @@ impl ProjectFiles {
                     self.import_failed(title, err);
                 }
                 FileEvent::Failed(title, err) => self.fail(title, err),
+                FileEvent::Located(files) => self.located(song, files),
             }
         }
         opened
@@ -913,12 +946,24 @@ impl ProjectFiles {
         let mut entries = match file_kind(&path) {
             Some(FileKind::Song | FileKind::Template) => None,
             Some(FileKind::Midi) => return self.open_midi(&path, &bytes),
+            Some(FileKind::Flp) => return self.open_flp(&path, &bytes, None),
             Some(FileKind::Archive) => Some(self.unzip(&bytes)?),
             None => {
                 self.message = Some(vec![UNKNOWN_TYPE.into()]);
                 return None;
             }
         };
+        // An archive of an FL Studio project and its samples (FL's zipped loop package, our FLP export).
+        if let Some(all) = entries
+            .as_deref()
+            .filter(|all| archive::the_song(all).is_none())
+        {
+            let flp = |e: &&Entry| file_kind(Path::new(&e.path)) == Some(FileKind::Flp);
+            let mut projects = all.iter().filter(flp);
+            if let (Some(project), None) = (projects.next(), projects.next()) {
+                return self.open_flp(&path, &project.data, Some(all));
+            }
+        }
         if let Some(entries) = entries.take_if(|all| archive::the_song(all).is_none()) {
             self.ask_import(entries);
             return None;
@@ -1012,11 +1057,7 @@ impl ProjectFiles {
                     song.title = stem(&path);
                     self.set_path(path);
                 }
-                if notices.len() > MAX_NOTICES {
-                    let more = notices.len() - MAX_NOTICES;
-                    notices.truncate(MAX_NOTICES);
-                    notices.push(format!("and {more} more"));
-                }
+                cap_notices(&mut notices);
                 if let Some(first) = notices.first_mut() {
                     *first = format!("Details: {first}");
                 }
@@ -1038,16 +1079,52 @@ impl ProjectFiles {
         }
     }
 
+    /// A file dropped on the window: a project file ([`file_kind`]) is read (the web hands its bytes, the desktop its
+    /// path) and replaces the song as a picked one; any other file is left alone.
+    fn dropped(&mut self, file: eframe::egui::DroppedFile) -> Option<Song> {
+        let path = file
+            .path
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(&file.name));
+        file_kind(&path)?;
+        let bytes = match (file.bytes, &file.path) {
+            (Some(bytes), _) => bytes.to_vec(),
+            #[cfg(not(target_arch = "wasm32"))]
+            (None, Some(at)) => match std::fs::File::open(at).map_err(|e| e.to_string()) {
+                Ok(f) => match read_file_limited(f, MAX_FILE_BYTES) {
+                    Ok(bytes) => bytes,
+                    Err(err) => {
+                        self.fail(READ_FAILED, format!("{}: {err}", at.display()));
+                        return None;
+                    }
+                },
+                Err(err) => {
+                    self.fail(READ_FAILED, format!("{}: {err}", at.display()));
+                    return None;
+                }
+            },
+            _ => return None,
+        };
+        let path = self.imported(path);
+        self.replace(Replace::Dropped(path, bytes))
+    }
+
     /// `.mid` opens as a new song: the master channel, then every MIDI channel
     /// imported with Split on, Import automation on and Only supported off, at the file's tempo. It is untitled, so its
     /// first save asks, and titled after the file. A file that does not read changes nothing.
     fn open_midi(&mut self, path: &Path, bytes: &[u8]) -> Option<Song> {
         use crate::smf::import::{ImportOpts, LOAD_FAILED, import};
         let mut song = Song::default();
-        if let Err(err) = import(&mut song, 0, bytes, &ImportOpts::OPEN_AS_SONG, true) {
-            self.fail(LOAD_FAILED, err);
-            return None;
-        }
+        let as_song = &ImportOpts::OPEN_AS_SONG;
+        let imported = match import(&mut song, 0, bytes, as_song, true, self.factory) {
+            Ok(imported) => imported,
+            Err(err) => {
+                self.fail(LOAD_FAILED, err);
+                return None;
+            }
+        };
+        crate::panels::cstm::load_dw_programs(&mut song, &crate::sample_cache::reader(self));
+        self.message = stand_ins(imported.notices);
         song.title = stem(path);
         song.file.meta.created = created_now();
         self.path = None;
@@ -1116,6 +1193,7 @@ impl ProjectFiles {
         let (tag, confirm, extra) = match self.waiting_for() {
             Some(NEWER_TAG) => (NEWER_TAG, Some(("Yes", CANCEL)), None),
             Some(IMPORT_TAG) => (IMPORT_TAG, Some(("Yes", "No")), None),
+            Some(LOCATE_TAG) => (LOCATE_TAG, Some((LOCATE, "OK")), None),
             #[cfg(not(target_arch = "wasm32"))]
             Some(NOTICE_TAG) => (NOTICE_TAG, Some((IMPORT, NOT_NOW)), None),
             // Top to bottom: `Replace files`, `Keep both`, `Cancel`.
@@ -1153,8 +1231,10 @@ impl ProjectFiles {
             Some(DISCARD_TAG)
         } else if self.overwrite.is_some() {
             Some(OVERWRITE_TAG)
+        } else if self.importing.is_some() {
+            Some(IMPORT_TAG)
         } else {
-            self.importing.is_some().then_some(IMPORT_TAG)
+            self.locate_asked.then_some(LOCATE_TAG)
         }
     }
 
@@ -1209,7 +1289,17 @@ impl ProjectFiles {
                 && answer == Answer::Yes
             {
                 self.import_files(entries);
+            } else if self.locate_asked {
+                self.locate_answered(answer == Answer::Yes);
             }
+        }
+        // A project file dropped on the window opens as a picked one does (asking first with unsaved changes), once
+        // no dialog or message is open (Playground drops a file it opens a moment after the page loads).
+        if let Some(file) = ctx.input(|i| i.raw.dropped_files.first().cloned()) {
+            self.drop_waiting = Some(file);
+        }
+        if shortcuts && let Some(file) = self.drop_waiting.take() {
+            opened = self.dropped(file).or(opened);
         }
         // Last, so that what this frame asked for (native dialogs answer at once) lands in this frame.
         let changes = self.library_changes;
@@ -1331,13 +1421,38 @@ pub(crate) fn too_large() -> String {
     format!("larger than {} MiB", MAX_FILE_BYTES >> 20)
 }
 
-/// The kind of project file `path` names: `.flm`, `.songtmpl`, `.zip`, `.mid` or `.midi`, in any case.
+/// Keeps the first [`MAX_NOTICES`] notices and counts the rest in one more line.
+pub(super) fn cap_notices(notices: &mut Vec<String>) {
+    if notices.len() > MAX_NOTICES {
+        let more = notices.len() - MAX_NOTICES;
+        notices.truncate(MAX_NOTICES);
+        notices.push(format!("and {more} more"));
+    }
+}
+
+/// The [`STAND_INS`] message over `notices` (capped as load notices are), `None` without any.
+pub fn stand_ins(mut notices: Vec<String>) -> Option<Vec<String>> {
+    // Fewer than a load's notices: the summary's header and choices fit a small screen with them.
+    if notices.len() > MAX_STAND_INS {
+        let more = notices.len() - MAX_STAND_INS;
+        notices.truncate(MAX_STAND_INS);
+        notices.push(format!("and {more} more"));
+    }
+    (!notices.is_empty()).then(|| {
+        std::iter::once(STAND_INS.to_owned())
+            .chain(notices)
+            .collect()
+    })
+}
+
+/// The kind of project file `path` names: `.flm`, `.songtmpl`, `.zip`, `.mid`, `.midi` or `.flp`, in any case.
 pub fn file_kind(path: &Path) -> Option<FileKind> {
     [
         FileKind::Song,
         FileKind::Template,
         FileKind::Archive,
         FileKind::Midi,
+        FileKind::Flp,
     ]
     .into_iter()
     .find(|kind| accepts(path, kind.extensions()))

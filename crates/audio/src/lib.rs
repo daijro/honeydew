@@ -1035,7 +1035,9 @@ impl FilterState {
 
     fn process_frame(&mut self, mut l: f32, mut r: f32) -> (f32, f32) {
         for (pair, delay) in self.sections[..self.active]
-            .chunks_exact_mut(2)
+            .as_chunks_mut::<2>()
+            .0
+            .iter_mut()
             .zip(&mut self.stage_delay)
         {
             let next_l = pair[0][0].process(l);

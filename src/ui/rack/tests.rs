@@ -3995,7 +3995,7 @@ fn the_held_card_has_a_5_px_channel_coloured_outline_outside_it_until_release() 
         (rig.shapes.iter())
             .filter_map(|c| match &c.shape {
                 egui::Shape::Rect(r)
-                    if r.stroke == Stroke::new(5.0, ink)
+                    if r.stroke == Stroke::new(5.0_f32, ink)
                         && r.stroke_kind == StrokeKind::Outside =>
                 {
                     Some(r.rect)

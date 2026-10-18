@@ -111,7 +111,7 @@ The sound library is stored in `sounds/` as 90 MB archive parts to stay below Gi
 raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.1.8
+tools/release-content.sh 0.1.9
 ```
 
 Commit the updated `sounds/honeydew-sounds.zip.*` parts with the content changes. Add `--web` to also build the web ZIP
@@ -216,6 +216,21 @@ tools/install-desktop-entry.sh              # add --uninstall to remove it
 
 The entry runs `target/release/honeydew-native`. Run the script again if you move the repository.
 
+## Opening and saving projects
+
+SONGS → Import, `Ctrl+O` or dropping a file on the window opens:
+
+- `.flm` songs and their `.zip` archives;
+- MIDI files (`.mid`, `.midi`): each MIDI channel gets the closest bundled instrument for its General MIDI program,
+  and channel 10 a drum kit;
+- FL Studio desktop projects (`.flp`, or a `.zip` of one with its samples): channels, patterns, the playlist, audio
+  clips, tempo, volume and pan. 3x Osc channels keep their oscillators. Other plugins, and samples that cannot be
+  found, play the closest bundled sound, and one summary lists what was replaced. `Locate samples...` searches a
+  folder for the missing ones.
+
+The Save dialog writes FLM, a project archive (ZIP), MIDI, and FLP: an FL Studio project with the samples it plays,
+saved as a `.zip`.
+
 ## Using your own FL Studio Mobile sounds
 
 Honeydew does not include any FL Studio Mobile content. If you own the app, you can import its sounds and presets
@@ -256,6 +271,9 @@ adb pull /sdcard/Android/obb/<package>/        # the OBB, if the app has one
 ## License
 
 Code: [GPL-3.0-or-later](LICENSE). Copyright (c) 2026 The Honeydew contributors.
+
+FL Studio project (`.flp`) container code: from [Lemon Studio](https://github.com/ItsAlphaNeon/Lemon-Studio) by
+ItsAlphaNeon, GPL-3.0-or-later; see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 Font: Open Sans SemiCondensed SemiBold, SIL Open Font License 1.1 ([`assets/fonts/OFL.txt`](assets/fonts/OFL.txt)).
 

@@ -440,7 +440,7 @@ fn log_time(raw: i64) -> i64 {
 
 /// The whole little-endian i32 of `data`.
 fn ints(data: &[u8]) -> Vec<i32> {
-    (data.chunks_exact(4))
+    (data.as_chunks::<4>().0.iter())
         .map(|c| i32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect()
 }

@@ -701,7 +701,8 @@ pub(crate) fn playlist(
     });
 }
 
-/// A note move or resize under way: the clip's events as it found them, and which of them it changes.
+/// A note move or resize under way, or a right-button swipe: the clip's events as it found them, and which of them it
+/// changes (deletes).
 pub(crate) type NoteDrag<'a> = (&'a [Event], &'a [bool]);
 
 /// A note editor's grid, as it draws it: content ticks across on `axis`, `count` rows `pitch` points tall from `top`
@@ -924,14 +925,15 @@ pub(crate) fn drum_grid(
 }
 
 /// The step sequencer's presence ([`notes`]) on its layout `l` in time signature `sig`: a hit is drawn on its step's
-/// cell ([`step_seq::active_rect`]). `editing`: the channel, lane and clip it edits; `selection`: the selected cells.
+/// cell ([`step_seq::active_rect`]). `editing`: the channel, lane and clip it edits; `selection`: the selected cells,
+/// and a right-button swipe under way, if any: the hits as it found them and which of them it deleted.
 pub(crate) fn steps(
     ui: &egui::Ui,
     cx: &UiCtx,
     song: &Song,
     (l, sig): (&Layout, TimeSig),
     editing: (usize, usize, Option<u32>),
-    selection: &BTreeSet<(u8, usize)>,
+    (selection, drag): (&BTreeSet<(u8, usize)>, Option<NoteDrag>),
     covered: bool,
 ) {
     // The cell of the step a box of ticks starts on (its hit's step: the nearest) and of the row at its middle.
@@ -956,7 +958,7 @@ pub(crate) fn steps(
         step_seq::edit::cell_of(e, sig).is_some_and(|c| selection.contains(&c))
     };
     let at = ("drums", l.grid(), &rows);
-    notes(ui, cx, song, at, editing, (&selected, None), covered);
+    notes(ui, cx, song, at, editing, (&selected, drag), covered);
 }
 
 /// A point editor's plot as it draws it: its frame and time axis (content ticks), which points it edits, their dots'

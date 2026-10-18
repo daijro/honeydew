@@ -91,6 +91,11 @@ impl FileProvider for NativeFiles {
     fn exists(&self, path: &Path) -> bool {
         path.exists()
     }
+
+    #[cfg(not(target_os = "android"))]
+    fn locate(&mut self, names: Vec<String>) {
+        self.event = super::flp::locate_native(&names);
+    }
 }
 
 /// `accept` for the open dialog: each extension and its upper-case form, because GTK's patterns are case-sensitive

@@ -829,7 +829,8 @@ fn a_silent_stretch_draws_a_1_px_line_a_column() {
         egui::epaint::Primitive::Callback(_) => None,
     });
     let triangles = meshes.flat_map(|m| {
-        (m.indices.chunks_exact(3)).map(|t| [t[0], t[1], t[2]].map(|i| m.vertices[i as usize]))
+        (m.indices.as_chunks::<3>().0.iter())
+            .map(|t| [t[0], t[1], t[2]].map(|i| m.vertices[i as usize]))
     });
     let area: f32 = triangles
         .filter(|t| t.iter().all(|v| v.color == wave))

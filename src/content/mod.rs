@@ -33,6 +33,8 @@ pub mod web;
 
 pub use bundle::Bundle;
 pub use demo::{DEMO_FOLDER, demo_songs, restore_demo_songs};
+/// Our code-made preset `name` of module type `type_id`, as a pick of it loads it.
+pub use presets::find as preset;
 
 /// The factory's virtual root.
 pub const ROOT: &str = "<built-in>";

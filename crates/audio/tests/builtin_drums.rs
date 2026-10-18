@@ -35,7 +35,7 @@ fn spectral_centroid(samples: &[f32]) -> f32 {
         .map(|(s, c)| (c, s))
         .unzip();
     let mut power = vec![0.0_f64; N / 2];
-    for frame in samples.chunks_exact(N) {
+    for frame in samples.as_chunks::<N>().0 {
         let x: Vec<f32> = frame.iter().zip(&hann).map(|(s, w)| s * w).collect();
         for (k, p) in power.iter_mut().enumerate() {
             let (mut re, mut im) = (0.0_f32, 0.0_f32);

@@ -557,7 +557,7 @@ impl PresetPicker {
                 SideButton::Menu(mine),
             ]);
         }
-        let import = Some(buttons.len()).filter(|_| self.import);
+        let import = self.import.then_some(buttons.len());
         if import.is_some() {
             buttons.push(SideButton::Plain(IMPORT, true));
         }

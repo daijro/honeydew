@@ -955,7 +955,7 @@ fn wavetables() -> &'static [f32] {
         let mut sum = vec![0.0f64; TABLE_LEN];
         let mut set = vec![0.0f32; TABLES * TABLE_LEN];
         let mut peak = 0.0f64;
-        for (m, table) in set.chunks_exact_mut(TABLE_LEN).enumerate() {
+        for (m, table) in set.as_chunks_mut::<TABLE_LEN>().0.iter_mut().enumerate() {
             let h = m + 1;
             for (n, (acc, out)) in sum.iter_mut().zip(table).enumerate() {
                 *acc += sine[h * n % TABLE_LEN] / h as f64;
@@ -1066,8 +1066,7 @@ impl Voice {
         let f = 440.0
             * ((self.pitch - 69.0 + c.tune + self.slide[0] + 12.0 * m[M_FREQUENCY]) / 12.0).exp2();
         let osc = &mut self.osc;
-        let unison_gain;
-        if p[SUPERSYNC] > 0.5 {
+        let unison_gain = if p[SUPERSYNC] > 0.5 {
             let a = (2.0 * p[SYNC_EG_AMOUNT] - 1.0).powi(3) * self.flip;
             let s = (p[SYNC] + self.sync_eg.level * a + m[M_SYNC]).clamp(0.0, 1.0);
             let r = 1.0 + SYNC_RANGE * s;
@@ -1084,7 +1083,7 @@ impl Voice {
             }
             osc.increments[0] = increment(f, sample_rate);
             osc.tables[0] = table_offset(f, sample_rate);
-            unison_gain = 1.0;
+            1.0
         } else {
             // trunc(fma_f32(v, 11, 1)).
             let n = (p[UNISON].mul_add(11.0, 1.0) as usize).clamp(1, MAX_UNISON);
@@ -1129,8 +1128,8 @@ impl Voice {
             });
             let sub = p[SUB_LEVEL] * p[SUB_LEVEL];
             osc.sub_level = if sub < SUB_MIN { 0.0 } else { sub };
-            unison_gain = 10f32.powf(-(n as f32) / 20.0);
-        }
+            10f32.powf(-(n as f32) / 20.0)
+        };
         // Key tracking reads the gliding note, without Transpose or bend.
         let c_prime = (p[CUTOFF] + self.velocity * p[VEL_TRK] + m[M_CUTOFF]).clamp(0.0, 1.0);
         let fc = cutoff_hz(

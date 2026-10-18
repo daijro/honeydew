@@ -4,8 +4,9 @@
 //! buttons `SAVE` and `SEND`. It is on the dialog base ([`crate::ui::dialog`]): the screen dimmed at α 0.6 and the band
 //! in `moduleFill`, from the first frame.
 //!
-//! The selected format is filled light, the others outlined. FLP (no writer) is dimmed and takes no input, and so is
-//! `SEND` (no share target). `SAVE` with FLM, ZIP or MIDI saves; with WAV, FLAC, OGG or MP3 it turns the band into
+//! The selected format is filled light, the others outlined. `SEND` (no share target) is dimmed and takes no input.
+//! `SAVE` with FLM, FLP (an FL Studio project and its samples, as a `.zip`), ZIP or MIDI saves; with WAV, FLAC, OGG or
+//! MP3 it turns the band into
 //! the render page: the title `<name>.<ext>` (with Split on, the stems' folder `<name> - Multitrack <ext>`) over a dim
 //! `Estimated length:`, the `Normalize level` and `High quality` toggles on the left, `Split mixer tracks` (and, only
 //! while it is on, `Enable master effects`) on the right, the range and remainder spinners side by side in the centre,
@@ -162,9 +163,9 @@ impl ExportFormat {
         matches!(self, Wav | Flac | Ogg | Mp3)
     }
 
-    /// Selectable. FLP has no writer: it is dimmed.
+    /// Selectable: every format (FLP is the FL Studio project, `crate::flp::export`).
     pub fn available(self) -> bool {
-        self != ExportFormat::Flp
+        true
     }
 }
 
@@ -708,7 +709,7 @@ mod tests {
         let available: Vec<_> = (ExportFormat::ALL.into_iter())
             .filter(|f| f.available())
             .collect();
-        assert_eq!(available, [Flm, Zip, Midi, Wav, Flac, Ogg, Mp3]);
+        assert_eq!(available, ExportFormat::ALL);
     }
 
     #[test]
@@ -942,12 +943,10 @@ mod tests {
     }
 
     #[test]
-    fn save_and_the_close_x_act_and_send_and_the_dimmed_formats_do_nothing() {
+    fn save_and_the_close_x_act_and_send_does_nothing() {
         let l = layout(SCREEN, &metrics());
         let mut rig = Rig::new();
         assert_eq!(rig.click(l.send.center()), None);
-        assert_eq!(rig.click(l.formats[1].center()), None);
-        assert_eq!(rig.dialog.format, Flm, "FLP was picked");
         assert_eq!(rig.click(l.save.center()), Some(DialogAction::Save(Flm)));
         assert_eq!(rig.click(l.close.center()), Some(DialogAction::Close));
         // The band and the backdrop swallow clicks without closing.

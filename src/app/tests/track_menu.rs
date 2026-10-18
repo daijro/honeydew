@@ -764,7 +764,12 @@ fn a_drum_editor_on_a_channel_that_moves_keeps_its_step_selection() {
     rig.slide_split();
     let hit = rig.step(0, 0);
     rig.click(hit);
-    rig.secondary_click(hit);
+    // A long press selects it (the rig's frames are 0.1 s apart).
+    rig.press(hit);
+    for _ in 0..3 {
+        rig.frame(vec![]);
+    }
+    rig.release(hit);
     rig.frame(vec![]);
     assert!(rig.painted("Copy"), "selected");
     rig.app.insert_bare_channel(1, ChannelKind::Instrument, 0);
@@ -1553,7 +1558,15 @@ fn picking(bytes: &[u8]) -> (Rig, MemFiles) {
 /// `song` with `bytes` imported into channel `current` as the track menu imports it.
 fn imported(song: &Song, current: usize, bytes: &[u8], opts: ImportOpts) -> Song {
     let mut song = song.clone();
-    import(&mut song, current, bytes, &opts, false).expect("imports");
+    import(
+        &mut song,
+        current,
+        bytes,
+        &opts,
+        false,
+        crate::content::factory(),
+    )
+    .expect("imports");
     song
 }
 
@@ -1639,7 +1652,10 @@ fn several_midi_channels_open_the_dialog_whose_import_makes_a_channel_each_in_on
     rig.click_id(import_id("channel").with(1_usize));
     rig.click_id(import_id("import"));
     rig.frame(vec![]);
-    assert_eq!(rig.overlays(), []);
+    // One summary of the sound each new channel got.
+    assert!(
+        matches!(&rig.overlays()[..], [Overlay::Message { lines, .. }] if lines[0] == crate::project_files::STAND_INS && lines.len() == 3)
+    );
     let opts = ImportOpts {
         split: true,
         automation: true,
@@ -1655,10 +1671,13 @@ fn several_midi_channels_open_the_dialog_whose_import_makes_a_channel_each_in_on
     assert_eq!(
         names(&rig)[3..],
         [
-            "Lead (MIDI Channel 4: Close Grand)",
+            "Lead (MIDI Channel 4: Acoustic Grand Piano)",
             "Kit (MIDI Channel 9: Drums)"
         ]
     );
+    rig.frame(vec![]);
+    let ok = rig.text_rect("OK").center();
+    rig.click(ok);
     rig.frame(undo());
     assert_eq!(rig.app.song.channels, before.channels);
 }
@@ -1935,7 +1954,9 @@ fn with_split_on_an_import_makes_its_channels_though_its_channel_went_under_the_
     let before = rig.app.song.clone();
     rig.click_id(import_id("import"));
     rig.frame(vec![]);
-    assert_eq!(rig.overlays(), []);
+    assert!(
+        matches!(&rig.overlays()[..], [Overlay::Message { lines, .. }] if lines[0] == crate::project_files::STAND_INS)
+    );
     let want = imported(
         &before,
         0,
@@ -1945,8 +1966,8 @@ fn with_split_on_an_import_makes_its_channels_though_its_channel_went_under_the_
     assert_eq!(
         names(&rig)[3..],
         [
-            "Lead (MIDI Channel 4: Close Grand)",
-            "Bass (MIDI Channel 1: Close Grand)"
+            "Lead (MIDI Channel 4: Acoustic Grand Piano)",
+            "Bass (MIDI Channel 1: Acoustic Grand Piano)"
         ]
     );
     assert_eq!(rig.app.song.channels.len(), want.channels.len());

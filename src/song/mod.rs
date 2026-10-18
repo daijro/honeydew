@@ -580,7 +580,7 @@ fn random_guid(salt: i32) -> [u8; 16] {
     use std::hash::{BuildHasher, RandomState};
     let state = RandomState::new();
     let mut guid = [0; 16];
-    for (n, half) in guid.chunks_exact_mut(8).enumerate() {
+    for (n, half) in guid.as_chunks_mut::<8>().0.iter_mut().enumerate() {
         half.copy_from_slice(&state.hash_one((salt, n, entropy())).to_le_bytes());
     }
     guid

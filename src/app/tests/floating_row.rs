@@ -39,25 +39,20 @@ fn every_editor_hides_its_floating_row_on_a_zoom_and_shows_it_again_on_the_selec
     rig.app.song.channels[2].lanes[0].add_clip(0, 16.0);
     rig.frame(vec![]);
     hides_and_comes_back(&mut rig, "playlist", lane(2), Rig::click);
-    // The piano roll: a tap on an empty cell adds a note, a right click selects it. Near the grid's left edge, so
+    // The piano roll: a tap on an empty cell adds a note, a long press selects it. Near the grid's left edge, so
     // that the zoom's scroll stays in range and the note under the pointer.
     rig.edit(2);
     rig.slide_split();
     // The note starts on the step nearest the tap (up to 8 points right of it) and is a beat (64 points) long.
     let cell = pos2(60.0, 200.0);
     rig.click(cell);
-    hides_and_comes_back(
-        &mut rig,
-        "piano roll",
-        cell + vec2(10.0, 0.0),
-        Rig::secondary_click,
-    );
-    // The drum editor: a tap on a step adds a hit, a right click selects it.
+    hides_and_comes_back(&mut rig, "piano roll", cell + vec2(10.0, 0.0), long_press);
+    // The drum editor: a tap on a step adds a hit, a long press selects it.
     rig.edit(1);
     rig.slide_split();
     let step = rig.step(0, 2);
     rig.click(step);
-    hides_and_comes_back(&mut rig, "drum editor", step, Rig::secondary_click);
+    hides_and_comes_back(&mut rig, "drum editor", step, long_press);
 }
 
 #[test]
@@ -105,7 +100,7 @@ fn folding_the_drum_mixer_out_hides_the_step_row_until_a_tap_on_the_selection() 
     rig.slide_split();
     let hit = rig.step(0, 2);
     rig.click(hit);
-    rig.secondary_click(hit);
+    long_press(&mut rig, hit);
     rig.frame(vec![]);
     assert!(rig.painted("Copy"), "shown over the selected hit");
     let grid = egui::Id::new("step_seq").with("grid");
@@ -201,7 +196,7 @@ fn a_tap_on_the_rack_over_a_selection_brings_no_row_back_in_the_piano_roll() {
     rig.click(cell);
     // On the note: it starts on the step nearest the tap (up to 8 points right of it) and is a beat long.
     let on = cell + vec2(10.0, 0.0);
-    rig.secondary_click(on);
+    long_press(&mut rig, on);
     a_tap_on_the_rack_is_not_the_editors(&mut rig, "piano roll", on);
     long_press(&mut rig, on);
     rig.frame(vec![]);
@@ -217,7 +212,7 @@ fn a_tap_on_the_rack_over_a_selection_brings_no_row_back_in_the_step_view() {
     // Under the rack: step 20, past the first bar (the tap grows the loop to two bars).
     let step = rig.step(0, 20);
     rig.click(step);
-    rig.secondary_click(step);
+    long_press(&mut rig, step);
     a_tap_on_the_rack_is_not_the_editors(&mut rig, "step view", step);
     long_press(&mut rig, step);
     rig.frame(vec![]);

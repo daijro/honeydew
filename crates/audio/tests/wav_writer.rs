@@ -14,7 +14,9 @@ fn le32(b: &[u8], at: usize) -> u32 {
 
 fn pcm16(bytes: &[u8]) -> Vec<i16> {
     bytes[HEADER_LEN..]
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|b| i16::from_le_bytes([b[0], b[1]]))
         .collect()
 }
@@ -120,7 +122,7 @@ fn a_one_second_sine_round_trips_within_one_lsb() {
     assert_eq!(d.sample_rate, rate);
     assert_eq!(d.frames(), rate as usize);
     let right = d.right.as_ref().unwrap();
-    for (i, frame) in sine.chunks_exact(2).enumerate() {
+    for (i, frame) in sine.as_chunks::<2>().0.iter().enumerate() {
         for (x, y) in [(frame[0], d.left[i]), (frame[1], right[i])] {
             // The decoder reads 16-bit as code/32768, the writer stores trunc(x·32767).
             let code = f64::from(y) * 32768.0;
@@ -189,8 +191,10 @@ fn float32_wav_is_the_same_layout_with_format_3() {
     assert_eq!(&bytes[38..42], b"data");
     assert_eq!(le32(&bytes, 42), 24);
     let data: Vec<f32> = bytes[HEADER_LEN..]
-        .chunks_exact(4)
-        .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| f32::from_le_bytes(*b))
         .collect();
     assert_eq!(data, [0.25, 1.0, -1.5, 0.125, 0.0, -0.0]);
 

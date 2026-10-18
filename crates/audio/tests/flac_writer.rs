@@ -202,7 +202,9 @@ fn quantizes_exactly_as_wav_writer_does() {
     wav.write(&x).unwrap();
     let wav = wav.finish().unwrap().into_inner();
     let want: Vec<i32> = wav[HEADER_LEN..]
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|b| i32::from(i16::from_le_bytes([b[0], b[1]])))
         .collect();
     let (_, got) = decode_ints(&flac(44_100, 16, &[x]), 16);

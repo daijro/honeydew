@@ -1355,7 +1355,11 @@ mod tests {
         ]);
         let mut files = web("Tune.mid", &tune);
         let mut song = open(&mut files).expect("the file opens");
-        assert_eq!(files.message, None);
+        // One summary of the sound each channel got.
+        assert_eq!(
+            files.message.as_ref().map(|m| (m[0].as_str(), m.len())),
+            Some((crate::project_files::STAND_INS, 4))
+        );
         assert_eq!(song.title, "Tune");
         assert_eq!(song.tempo_bpm, 120.0);
         let names: Vec<_> = song.channels.iter().map(|c| c.name.as_str()).collect();
@@ -1363,9 +1367,9 @@ mod tests {
             names,
             [
                 song.channels[0].name.as_str(),
-                "Lead (MIDI Channel 0: Close Grand)",
+                "Lead (MIDI Channel 0: Acoustic Grand Piano)",
                 "Lead (MIDI Channel 9: Drums)",
-                "Lead (MIDI Channel 3: Close Grand)",
+                "Lead (MIDI Channel 3: Acoustic Grand Piano)",
             ]
         );
         assert_eq!(song.channels[0].kind, ChannelKind::Master);
@@ -1383,9 +1387,9 @@ mod tests {
         );
         files.poll(&mut song);
 
-        // No tempo in the file: 1 BPM.
+        // No tempo in the file: the MIDI default of 120 BPM.
         let mut files = web("Slow.MIDI", &smf(&[(0, SmfEvent::Voice(note_on(0, 60)))]));
-        assert_eq!(open(&mut files).unwrap().tempo_bpm, 1.0);
+        assert_eq!(open(&mut files).unwrap().tempo_bpm, 120.0);
     }
 
     #[test]

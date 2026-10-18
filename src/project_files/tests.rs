@@ -523,10 +523,10 @@ fn file_kinds_follow_the_extension_in_any_case() {
 fn the_open_filter_lists_all_four_kinds_and_the_provider_enforces_it() {
     let mut accept: Vec<_> = Pick::Song.accept().to_vec();
     accept.sort_unstable();
-    assert_eq!(accept, ["flm", "mid", "midi", "songtmpl", "zip"]);
+    assert_eq!(accept, ["flm", "flp", "mid", "midi", "songtmpl", "zip"]);
     assert_eq!(
         accept_attr(Pick::Song.accept()),
-        ".flm,.songtmpl,.zip,.mid,.midi"
+        ".flm,.songtmpl,.zip,.mid,.midi,.flp"
     );
     // Every extension of every kind is in it, and nothing else is.
     for kind in [
@@ -534,6 +534,7 @@ fn the_open_filter_lists_all_four_kinds_and_the_provider_enforces_it() {
         FileKind::Template,
         FileKind::Archive,
         FileKind::Midi,
+        FileKind::Flp,
     ] {
         for ext in kind.extensions() {
             assert!(Pick::Song.accept().contains(ext), "{ext}");

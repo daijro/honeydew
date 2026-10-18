@@ -37,7 +37,7 @@ fn encode(link: CcLink) -> [i32; 3] {
 /// The valid links in `raw`, in file order, duplicates dropped; a partial trailing record is ignored.
 pub fn links(raw: &[u8]) -> Vec<CcLink> {
     let mut out = Vec::new();
-    for record in raw.chunks_exact(12) {
+    for record in raw.as_chunks::<12>().0 {
         let field = |i: usize| i32::from_le_bytes([0, 1, 2, 3].map(|b| record[4 * i + b]));
         if let Some(link) = decode([field(0), field(1), field(2)])
             && !out.contains(&link)

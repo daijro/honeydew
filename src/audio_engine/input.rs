@@ -667,7 +667,7 @@ mod tests {
             ring.push(block.into_iter());
             let mut output = vec![0.0; 2 * 32];
             engine.render(&mut output, 2);
-            sent.extend(output.chunks_exact(2).map(|f| {
+            sent.extend(output.as_chunks::<2>().0.iter().map(|f| {
                 assert_eq!(f[0], f[1], "both channels");
                 f[0]
             }));

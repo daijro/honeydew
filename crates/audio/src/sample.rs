@@ -177,7 +177,11 @@ fn cue_points(body: &[u8]) -> Vec<u32> {
     let Some(points) = body.get(4..) else {
         return Vec::new();
     };
-    let points = points.chunks_exact(24).take(le_u32(body, 0) as usize);
+    let points = points
+        .as_chunks::<24>()
+        .0
+        .iter()
+        .take(le_u32(body, 0) as usize);
     points.map(|point| le_u32(point, 4)).collect()
 }
 

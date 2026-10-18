@@ -431,8 +431,8 @@ impl History {
     }
 }
 
-/// The keymap's `undo` (Ctrl+Z) and `redo` (Ctrl+Shift+Z, and on Windows Ctrl+Alt+Z); Cmd replaces Ctrl on macOS
-/// (`assets/content/keymaps/`). Consumes the key. `None` while a text field has the keyboard: it keeps its own undo.
+/// The keymap's `undo` (Ctrl+Z) and `redo` (Ctrl+Shift+Z, and off macOS Ctrl+Alt+Z and Ctrl+Y, the latter an owner
+/// request of 2026-10-18); Cmd replaces Ctrl on macOS (`assets/content/keymaps/`). Consumes the key. `None` while a text field has the keyboard: it keeps its own undo.
 /// `None` too while a modal message, dialog or popup is open: each lays a backdrop that takes every click outside it,
 /// and marks the frame ([`crate::ui::backdrop`]); so do the main menu, whose outside area closes it, and the tempo
 /// dialog, whose backdrop is its own. Call it after the frame's screens, so this frame's ones count. Panels that block
@@ -1210,13 +1210,18 @@ mod tests {
 
     /// What [`shortcut`] returns for one Z press with `modifiers`, with a text field focused if `focused`.
     fn press_z(modifiers: Modifiers, focused: bool) -> Option<Step> {
+        press(Key::Z, modifiers, focused)
+    }
+
+    /// [`press_z`] for `key`.
+    fn press(key: Key, modifiers: Modifiers, focused: bool) -> Option<Step> {
         let ctx = Context::default();
         if focused {
             ctx.memory_mut(|m| m.request_focus(eframe::egui::Id::new("field")));
         }
         let input = RawInput {
             events: vec![Event::Key {
-                key: Key::Z,
+                key,
                 physical_key: None,
                 pressed: true,
                 repeat: false,
@@ -1237,8 +1242,9 @@ mod tests {
         assert_eq!(press_z(cmd, false), Some(Step::Undo));
         assert_eq!(press_z(ctrl | Modifiers::SHIFT, false), Some(Step::Redo));
         assert_eq!(press_z(cmd | Modifiers::SHIFT, false), Some(Step::Redo));
-        // Windows' redo.
+        // Windows' redos: Ctrl+Alt+Z, and Ctrl+Y (owner request, 2026-10-18).
         assert_eq!(press_z(ctrl | Modifiers::ALT, false), Some(Step::Redo));
+        assert_eq!(press(Key::Y, ctrl, false), Some(Step::Redo));
         assert_eq!(press_z(Modifiers::NONE, false), None);
         assert_eq!(press_z(Modifiers::SHIFT, false), None);
         // Ctrl alone on macOS is not Cmd.

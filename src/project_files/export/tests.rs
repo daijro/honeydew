@@ -141,7 +141,7 @@ fn midi_and_zip_are_written_into_their_folders_flash_saved_and_leave_the_song_al
 }
 
 #[test]
-fn audio_goes_to_my_tracks_through_the_app_and_flm_and_the_dimmed_formats_do_nothing() {
+fn audio_goes_to_my_tracks_through_the_app_and_flm_does_nothing() {
     let (mut files, mem) = files();
     let song = note_song();
     for format in [Wav, Flac, Mp3, Ogg] {
@@ -150,10 +150,8 @@ fn audio_goes_to_my_tracks_through_the_app_and_flm_and_the_dimmed_formats_do_not
         assert_eq!(files.take_export(), Some(export(format, &path)));
     }
     assert!(mem.0.borrow().files.is_empty(), "the app writes renders");
-    for format in [Flm, Flp] {
-        files.export(&song, format, "Song", false);
-        assert_eq!(files.take_export(), None, "{format:?}");
-    }
+    files.export(&song, Flm, "Song", false);
+    assert_eq!(files.take_export(), None);
     assert_eq!(files.take_overlay(), None);
 }
 

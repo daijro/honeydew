@@ -281,7 +281,7 @@ fn tables() -> &'static [f32] {
             .unzip();
         let mut sum = vec![0.0f64; TABLE];
         let mut out = vec![0.0f32; HARMONICS * TABLE];
-        for (h, table) in (1..=HARMONICS).zip(out.chunks_exact_mut(TABLE)) {
+        for (h, table) in (1..=HARMONICS).zip(out.as_chunks_mut::<TABLE>().0) {
             let (magnitude, phase) = harmonic(h);
             let (a, b) = (magnitude * phase.cos(), magnitude * phase.sin());
             for (n, (acc, x)) in sum.iter_mut().zip(table).enumerate() {

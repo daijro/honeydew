@@ -1674,7 +1674,7 @@ fn plays_to_draw_bounds_the_plays_a_pixel_not_the_passes() {
     // At most 128 rows' worth a pixel: 128 events in a pass of a pixel draw, 129 do not.
     c.events.truncate(128);
     assert_eq!(c.plays_to_draw(0, 64, 4.0).count(), 128 * 16);
-    c.events.truncate(0);
+    c.events.clear();
     c.events.extend((0..129).map(|i| Event::Automation {
         pos: i % 4,
         value: 0.5,

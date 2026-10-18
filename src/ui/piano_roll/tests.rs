@@ -1756,18 +1756,34 @@ mod component {
     }
 
     #[test]
-    fn a_right_click_on_a_note_makes_it_the_selection_and_on_empty_grid_changes_nothing() {
-        let mut rig = Rig::new(vec![n(128, 64.0, 70), n(256, 64.0, 60)]);
-        right_click(&mut rig, at(140.0, 70));
-        assert_eq!(rig.roll.selected, [true, false]);
-        assert!(rig.text("Copy").is_some());
-        right_click(&mut rig, at(270.0, 60));
-        assert_eq!(rig.roll.selected, [false, true]);
-        // On empty grid it is `Paste`, and there is no note clipboard.
-        right_click(&mut rig, at(600.0, 66));
-        assert_eq!(rig.roll.selected, [false, true]);
-        assert_eq!(rig.events().len(), 2);
+    fn a_right_press_deletes_its_note_and_a_right_drag_every_note_its_path_crosses_in_one_undo_step()
+     {
+        // Owner request (2026-10-18): the desktop app's right-button delete.
+        let mut rig = Rig::new(vec![
+            n(128, 64.0, 70),
+            n(256, 64.0, 66),
+            n(384, 64.0, 60),
+            n(512, 64.0, 66),
+        ]);
+        // On empty grid a right click deletes nothing (and, with no note clipboard, shows no `Paste`).
+        right_click(&mut rig, at(700.0, 66));
+        assert_eq!(rig.events().len(), 4);
         assert!(rig.all.is_empty());
+        // The press deletes the note under it at once.
+        let p = at(140.0, 70);
+        rig.frame(vec![In::PointerMoved(p)]);
+        rig.button(p, PointerButton::Secondary, true);
+        assert_eq!(rig.events().len(), 3);
+        // Down to key 66 short of its notes, then along it past both in one frame: the path between the frames
+        // deletes the one the pointer never stopped on too; key 60's note stays.
+        rig.frame(vec![In::PointerMoved(at(140.0, 66))]);
+        rig.frame(vec![In::PointerMoved(at(600.0, 66))]);
+        rig.button(at(600.0, 66), PointerButton::Secondary, false);
+        assert_eq!(spans(rig.events()), [(384, 64.0, 60)]);
+        assert_eq!(rig.roll.selected, [false]);
+        // Ongoing edits, then one final: one undo step.
+        assert_eq!(rig.all, [EDITED, EDITED, DONE]);
+        assert_eq!(rig.text("Paste"), None);
     }
 
     #[test]
@@ -1822,7 +1838,7 @@ mod component {
         rig.frame(vec![]);
     }
 
-    /// The grid at the rig's size, and a right click (the mouse's long press: it selects without toggling).
+    /// The grid at the rig's size, and a right click.
     const GRID: Rect = Rect::from_min_max(pos2(50.0, 48.0), pos2(1170.0, 349.0));
 
     fn right_click(rig: &mut Rig, p: Pos2) {
@@ -1856,7 +1872,7 @@ mod component {
         let mut rig = Rig::new(vec![n(512, 128.0, 66)]);
         let middle = |rig: &Rig| shared_row(rig, Pos2::ZERO).0.center();
         let p = middle(&rig);
-        right_click(&mut rig, p);
+        rig.tap(p);
         assert_eq!(rig.roll.selected, [true]);
         assert!(rig.text("Copy").is_some());
         assert_eq!(rig.roll.row.rect(), shared_row(&rig, p).1);
@@ -1892,7 +1908,7 @@ mod component {
 
     #[test]
     fn the_rolls_floating_row_is_the_shared_placement() {
-        // Each: a note (tick, key) right-clicked at its middle, and where its row went.
+        // Each: a note (tick, key) tapped at its middle, and where its row went.
         for ((tick, key), side) in [
             // Room on both sides, one key high: above.
             ((512, 66), "above"),
@@ -1903,7 +1919,7 @@ mod component {
         ] {
             let mut rig = Rig::new(vec![n(tick, 64.0, key)]);
             let (note, _) = shared_row(&rig, Pos2::ZERO);
-            right_click(&mut rig, note.center());
+            rig.tap(note.center());
             let (_, want) = shared_row(&rig, note.center());
             let row = rig.roll.row.rect();
             assert_eq!(row, want, "key {key}");

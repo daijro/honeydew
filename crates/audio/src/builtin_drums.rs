@@ -527,7 +527,7 @@ fn kit_pad(kit: &str, pad: &str) -> Option<Vec<f32>> {
 
 /// A factory pad's own noise seed: FNV-1a 32 of `<kit>/<pad>`, never 0 (xorshift's fixed point).
 fn seed(kit: &str, pad: &str) -> u32 {
-    let bytes = kit.bytes().chain([b'/']).chain(pad.bytes());
+    let bytes = kit.bytes().chain(*b"/").chain(pad.bytes());
     bytes.fold(0x811c_9dc5_u32, |h, b| {
         (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
     }) | 1

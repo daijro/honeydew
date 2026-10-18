@@ -5,6 +5,17 @@ This app includes the third-party software below, each under its own license.
 The Honeydew logo (`assets/branding/`) was supplied by the owner; its license and attribution are still to be checked
 before release, see [`assets/branding/README.md`](assets/branding/README.md).
 
+## Lemon Studio `os-flp` (FL Studio project files)
+
+- Source: Lemon Studio by ItsAlphaNeon (<https://github.com/ItsAlphaNeon/Lemon-Studio>), `crates/os-flp`.
+- Copyright (C) 2026 ItsAlphaNeon.
+- License: GPL-3.0-or-later, the same license as Honeydew ([`LICENSE`](LICENSE)).
+- Modified: the FLP container and event layer (`container.rs`, `event.rs`, `check.rs`, `error.rs`) lives in `src/flp/`,
+  each file keeping its copyright and SPDX header and noting the change: `thiserror` derives replaced by plain
+  `Display` impls, module paths moved. Honeydew's own mapping (`src/flp/import.rs`, `src/flp/export.rs`) follows the
+  layout of Lemon Studio's project writer (event order, playlist and track record templates, the audio clip
+  channel's sample settings).
+
 ## rusty_mp3 1.0.0 (MP3 export)
 
 - Source: the `rusty_mp3` 1.0.0 crate from crates.io (<https://github.com/Remade-With-Rust/remade_ffmpeg_rs>,
