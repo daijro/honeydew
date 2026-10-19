@@ -61,6 +61,8 @@ Open a file from SONGS → Import, with `Ctrl+O`, or by dropping it on the windo
 
 Honeydew can use VST3, VST2 and CLAP plugins as instruments and effects.
 
+<p align="center"><img src="assets/screenshots/12-plugins.webp" width="100%" alt="Dragonfly Hall Reverb's own window over Honeydew, with Surge XT and Dragonfly Hall Reverb loaded as plugin modules in the rack"></p>
+
 1. Install your plugins in one of the folders below.
 2. Open a channel's **Modules** browser. Plugins are listed under PLUGIN INSTRUMENTS and PLUGIN EFFECTS.
 3. Adding a plugin opens its window. The `Editor` button on its card opens and closes it again.
