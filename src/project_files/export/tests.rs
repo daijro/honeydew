@@ -1067,3 +1067,120 @@ fn each_stem_writes_the_bytes_of_its_single_pass() {
         );
     }
 }
+
+#[test]
+fn an_flp_puts_the_effects_on_the_channel_s_insert_and_with_rendered_audio_holds_its_render_too() {
+    use crate::flp::{ChunkBody, FlpFile, id};
+    let (mut files, mem) = files();
+    let mut song = note_song();
+    song.channels[1].name = "Lead".into();
+    let rack = &mut song.channels[1].rack;
+    let eq = rack.add(3);
+    // Band 1: +6 dB.
+    rack.get_mut(eq).unwrap().params[1] = 0.75;
+    rack.add(35);
+    files.export(&song, Flp, "Song", true);
+    // `Include rendered audio`: the app renders the stems first.
+    let export = files.take_export().expect("rendered first");
+    assert_eq!(export.split, Split::Flp);
+    assert!(written(&mem, "My Songs/Song.zip").is_none());
+    let job = Job::new(
+        &song,
+        &SampleCache::default(),
+        export.clone(),
+        cut(false),
+        RATE,
+    )
+    .unwrap();
+    let Done::Rendered(rendered, stems) = run(job).2 else {
+        panic!("the stems");
+    };
+    assert_eq!(stems.iter().map(|s| s.0).collect::<Vec<_>>(), [1]);
+    files.flp_rendered(&rendered, &export, &stems);
+    let zip = written(&mem, "My Songs/Song.zip").unwrap();
+    let entries = crate::zip::read(&zip, u64::MAX).unwrap();
+    let names: Vec<_> = entries.iter().map(|e| e.path.as_str()).collect();
+    assert_eq!(names, ["Song.flp", "Lead.wav", "Lead (rendered).wav"]);
+    assert_eq!(entries[2].data, stems[0].1);
+    assert_eq!(
+        files.export_notices,
+        [
+            "Lead: Reverb 2 is Fruity Reeverb 2 at its default settings",
+            "Lead: MiniSynth has no .flp counterpart, exported as a sample of one note"
+        ]
+    );
+    // The mixer's insert 1, Lead's, holds Fruity Parametric EQ 2 with its band and Fruity Reeverb 2 with none.
+    let file = FlpFile::parse(&entries[0].data).unwrap();
+    let ChunkBody::Events(events) = &file.chunks[1].body else {
+        panic!("events");
+    };
+    let text = |e: &crate::flp::Event| {
+        String::from_utf16_lossy(
+            &(e.data().unwrap().chunks(2))
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .take_while(|&u| u != 0)
+                .collect::<Vec<_>>(),
+        )
+    };
+    let named = |name: &str| {
+        events
+            .iter()
+            .position(|e| e.id == 201 && text(e) == name)
+            .unwrap()
+    };
+    let eq = named("Fruity Parametric EQ 2");
+    let state = events[eq..]
+        .iter()
+        .find(|e| e.id == 213)
+        .unwrap()
+        .data()
+        .unwrap();
+    assert_eq!(
+        (
+            state.len(),
+            i32::from_le_bytes(state[4..8].try_into().unwrap())
+        ),
+        (354, 600)
+    );
+    let reverb = named("Fruity Reeverb 2");
+    assert!(
+        events[reverb..]
+            .iter()
+            .take_while(|e| e.id != 98)
+            .all(|e| e.id != 213)
+    );
+    let lead = events
+        .iter()
+        .position(|e| e.id == id::MX_NAME && text(e) == "Lead")
+        .unwrap();
+    assert!(lead < eq && eq < reverb);
+
+    // Read back: Lead muted on insert 1 with its effects, and its render from the start for its length.
+    let back = crate::flp::import::import(&entries[0].data, files.factory)
+        .unwrap()
+        .song;
+    let names: Vec<_> = back.channels.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["MASTER", "Lead", "Lead (rendered)"]);
+    let lead = &back.channels[1];
+    let effects: Vec<_> = lead
+        .rack
+        .modules
+        .iter()
+        .skip(1)
+        .map(|m| m.type_id)
+        .collect();
+    assert_eq!((lead.params.0[2], effects), (1.0, vec![3, 35]));
+    let audio = &back.channels[2];
+    assert_eq!(
+        (audio.kind, audio.params.0[2]),
+        (ChannelKind::AudioClip, 0.0)
+    );
+    let clip = &audio.lanes[0].clips[0];
+    let secs = decode(&stems[0].1).unwrap().frames() as f64 / f64::from(RATE);
+    assert_eq!(clip.start_tick, 0);
+    assert!(
+        (clip.visible_len_beats - secs * 2.0).abs() < 0.01,
+        "{}",
+        clip.visible_len_beats
+    );
+}

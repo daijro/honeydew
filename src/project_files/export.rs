@@ -64,8 +64,8 @@ pub const RENDER_FAILED: &str = "An error occurred while rendering";
 pub const NO_DATA: &str = "Error: no data to save";
 pub const ARCHIVE_FAILED: &str = "Failed to export archive";
 pub const COMPRESS_FAILED: &str = "Failed to compress files";
-/// The message after an FLP export that left something out; a line for each follows.
-pub const FLP_NOTICES: &str = "Saved. These parts have no .flp counterpart:";
+/// The message after an FLP export that did not carry everything over exactly; a line for each follows.
+pub const FLP_NOTICES: &str = "Saved. These parts differ in the .flp:";
 /// The render rate when no audio output runs.
 pub const NO_AUDIO_RATE: u32 = 44_100;
 /// Frames a slice renders at least: the render's block.
@@ -97,6 +97,8 @@ pub enum Split {
     Folder,
     /// The web: one archive of the stems, `<name> - Multitrack <ext>.zip`, downloaded.
     Zip,
+    /// An FLP's `Include rendered audio`: a WAV stem per channel, kept for the project's archive ([`Done::Rendered`]).
+    Flp,
 }
 
 /// A split export's stems being written ([`ProjectFiles::write_stem`]): their folder, the files whose writes have not
@@ -145,8 +147,9 @@ fn failure(format: ExportFormat) -> &'static str {
 impl ProjectFiles {
     /// The Save dialog's `SAVE` with ZIP or MIDI, or `Render` with an audio format, with the file name `name`. Checks
     /// the name as `SAVE` does (a bad one shows its message), then writes a ZIP or MIDI file, or hands an audio one to
-    /// the app ([`Self::take_export`]), split into stems with `split` ([`Split`]); a file or stem folder that exists
-    /// asks first ([`super::OVERWRITE_TAG`]). FLM ([`Self::dialog_save`]) and the formats that are not
+    /// the app ([`Self::take_export`]), split into stems with `split` ([`Split`]); an FLP with `split` (`Include
+    /// rendered audio`) has the app render its stems first ([`Split::Flp`]). A file or stem folder that exists asks
+    /// first ([`super::OVERWRITE_TAG`]). FLM ([`Self::dialog_save`]) and the formats that are not
     /// [`ExportFormat::available`] do nothing.
     pub fn export(&mut self, song: &Song, format: ExportFormat, name: &str, split: bool) {
         self.export_only(song, format, name, split, None);
@@ -185,7 +188,9 @@ impl ProjectFiles {
                 }
                 Err((title, detail)) => return self.fail(title, detail),
             },
-            ExportFormat::Flp => match self.flp_archive(song, &name) {
+            // Rendered first ([`Split::Flp`]), then archived.
+            ExportFormat::Flp if split => None,
+            ExportFormat::Flp => match self.flp_archive(song, &name, &[]) {
                 Ok(bytes) => Some(bytes),
                 Err(err) => return self.fail(COMPRESS_FAILED, err),
             },
@@ -199,10 +204,13 @@ impl ProjectFiles {
             _ => None,
         };
         let ext = format.ext();
-        let (file, split) = match (split && format.is_audio(), self.provider.folders()) {
-            (false, _) => (format!("{name}.{ext}"), Split::Off),
-            (true, true) => (format!("{name} - Multitrack {ext}"), Split::Folder),
-            (true, false) => (format!("{name} - Multitrack {ext}.zip"), Split::Zip),
+        let (file, split) = match (split, format.is_audio(), self.provider.folders()) {
+            (true, false, _) if format == ExportFormat::Flp => {
+                (format!("{name}.{ext}"), Split::Flp)
+            }
+            (true, true, true) => (format!("{name} - Multitrack {ext}"), Split::Folder),
+            (true, true, false) => (format!("{name} - Multitrack {ext}.zip"), Split::Zip),
+            _ => (format!("{name}.{ext}"), Split::Off),
         };
         let path = user.join(format.folder()).join(&file);
         let export = Export {
@@ -418,6 +426,9 @@ pub enum Done {
     Stem(String, Vec<u8>),
     /// Every stem is rendered, at least one handed over. The job is over.
     Stems,
+    /// An FLP's stems ([`Split::Flp`]): the song they are of, and each a WAV file by its channel there, for
+    /// [`ProjectFiles::flp_rendered`]. The job is over.
+    Rendered(Box<Song>, Vec<(usize, Vec<u8>)>),
     /// The job is over: `Silent` also when no stem has sound.
     Failed(RenderError),
 }
@@ -446,7 +457,8 @@ enum Stage {
 
 impl Job {
     /// Starts rendering `export` of `song`, with `samples` loaded for it, at `rate` Hz with the options of `page`: the
-    /// mix, or with [`Split`] the first stem (`Silent` when no channel has content).
+    /// mix, or with [`Split`] the first stem (`Silent` when no channel has content). An FLP's stems are the whole song
+    /// and its remainder in 32-bit float, without the master's effects (the project's master has them).
     pub fn new(
         song: &Song,
         samples: &SampleCache,
@@ -454,6 +466,13 @@ impl Job {
         page: RenderPage,
         rate: u32,
     ) -> Result<Self, RenderError> {
+        let page = match export.split {
+            Split::Flp => RenderPage {
+                high_quality: true,
+                ..RenderPage::default()
+            },
+            _ => page,
+        };
         let mut spec = RenderSpec {
             range: page.range,
             remainder: page.remainder,
@@ -465,7 +484,11 @@ impl Job {
         };
         let mut split = None;
         if export.split != Split::Off {
-            let stems = stems_of(song, export.format.ext());
+            let ext = match export.split {
+                Split::Flp => "wav",
+                _ => export.format.ext(),
+            };
+            let stems = stems_of(song, ext);
             spec.solo = Some(stems.first().ok_or(RenderError::Silent)?.0);
             split = Some(Box::new(Stems {
                 song: song.clone(),
@@ -583,6 +606,14 @@ impl Job {
                             // Past zip's 4 GiB, which wasm32 memory never holds anyway.
                             Err(_) => Done::Failed(RenderError::Archive),
                         },
+                        (_, Split::Flp) => {
+                            let channel = |file: &str| split.stems.iter().find(|s| s.1 == file);
+                            let zip = std::mem::take(&mut split.zip).into_iter();
+                            let stems =
+                                zip.filter_map(|(file, wav)| Some((channel(&file)?.0, wav)));
+                            let stems = stems.collect();
+                            Done::Rendered(Box::new(std::mem::take(&mut split.song)), stems)
+                        }
                         _ => Done::Stems,
                     });
                 }
@@ -602,7 +633,7 @@ impl Job {
         split.at += 1;
         let bytes = bytes?;
         split.written += 1;
-        if self.export.split == Split::Zip {
+        if matches!(self.export.split, Split::Zip | Split::Flp) {
             split.zip.push((file, bytes));
             return None;
         }

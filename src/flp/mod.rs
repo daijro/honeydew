@@ -12,6 +12,7 @@ pub mod error;
 pub mod event;
 pub mod export;
 pub mod import;
+pub mod mixer;
 pub mod wrapper;
 
 pub use check::check_alignment;
@@ -89,6 +90,10 @@ pub(crate) mod id {
     pub const ARR_NAME: u8 = 241;
     pub const PAT_252: u8 = 252;
     pub const PAT_253: u8 = 253;
+    /// A Layer channel's child, by its channel number; one event each.
+    pub const CH_LAYER_CHILD: u8 = 94;
+    /// A channel's sample and Misc settings; ints at 68 and 72 are its key zone (0 and 256: none).
+    pub const CH_SAMPLE_SETTINGS: u8 = 215;
 }
 
 #[cfg(test)]

@@ -5,6 +5,8 @@
 //! in `moduleFill`, from the first frame.
 //!
 //! The selected format is filled light, the others outlined. `SEND` (no share target) is dimmed and takes no input.
+//! With FLP selected, an `Include rendered audio` toggle (off whenever a dialog opens) sits left of `SAVE`: on, the
+//! project also holds each channel's render as an audio clip.
 //! `SAVE` with FLM, FLP (an FL Studio project and its samples, as a `.zip`), ZIP or MIDI saves; with WAV, FLAC, OGG or
 //! MP3 it turns the band into
 //! the render page: the title `<name>.<ext>` (with Split on, the stems' folder `<name> - Multitrack <ext>`) over a dim
@@ -228,6 +230,8 @@ pub struct SaveDialog {
     pub format: ExportFormat,
     pub page: Page,
     pub render: RenderPage,
+    /// FLP's `Include rendered audio`.
+    pub flp_audio: bool,
     /// The caller's estimated lengths in seconds, for `Estimated length:`: the song's (`Full song`, `Trim initial
     /// silence`) and the selection's. `None`: there is no selection, and the range spinner skips `Selection`.
     pub song_secs: f32,
@@ -243,6 +247,7 @@ impl SaveDialog {
             format: ExportFormat::Flm,
             page: Page::Formats,
             render: RenderPage::default(),
+            flp_audio: false,
             song_secs: 0.0,
             selection_secs: None,
         }
@@ -396,6 +401,10 @@ impl SaveDialog {
             painter.text(center, Align2::CENTER_CENTER, format.button(), small, ink);
         }
 
+        if title.is_none() && self.format == ExportFormat::Flp {
+            let label = "Include rendered audio";
+            toggle(ui, cx, id, l.flp_audio, label, &mut self.flp_audio);
+        }
         let save = Button::new(id.with("save"), l.save, "SAVE", false, c);
         if button(ui, cx, &save, true).clicked() {
             action = self.save();
@@ -576,6 +585,8 @@ pub struct DialogLayout {
     pub formats: [Rect; 8],
     pub save: Rect,
     pub send: Rect,
+    /// FLP's `Include rendered audio`, in the left column level with `SAVE`.
+    pub flp_audio: Rect,
     /// The render page: the `<name>.<ext>` title line and the `Estimated length:` line under it.
     pub heading: Rect,
     pub estimate: Rect,
@@ -653,6 +664,7 @@ pub fn layout(screen: Rect, m: &Metrics) -> DialogLayout {
         formats: std::array::from_fn(|i| formats[i]),
         save: buttons[0],
         send: buttons[1],
+        flp_audio: toggle(left, BUTTON_ROW),
         heading: heading(HEADING_ROW),
         estimate: heading(ESTIMATE_ROW),
         toggles: [

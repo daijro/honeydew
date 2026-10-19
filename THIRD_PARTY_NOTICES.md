@@ -14,7 +14,8 @@ before release, see [`assets/branding/README.md`](assets/branding/README.md).
   each file keeping its copyright and SPDX header and noting the change: `thiserror` derives replaced by plain
   `Display` impls, module paths moved. Honeydew's own mapping (`src/flp/import.rs`, `src/flp/export.rs`) follows the
   layout of Lemon Studio's project writer (event order, playlist and track record templates, the audio clip
-  channel's sample settings).
+  channel's sample settings, a new channel's key zone). `src/flp/mixer.rs` ports its new-mixer writer and Fruity
+  Parametric EQ 2's saved state image (from `plugins/lemon-parametric-eq-2`), keeping the copyright and SPDX header.
 
 ## rusty_mp3 1.0.0 (MP3 export)
 

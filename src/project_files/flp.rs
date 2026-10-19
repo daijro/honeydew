@@ -27,6 +27,7 @@ use crate::sample_cache::{SampleCache, reader};
 use crate::smf::gm;
 use crate::song::{ChannelKind, DrumKit, Event, LaneKind, SamplerSlot, Song, SynthKind};
 use crate::zip::Entry;
+use honeydew_audio::dwp::{self, Zone};
 
 /// The summary's tag while samples are missing, and its choice.
 pub const LOCATE_TAG: &str = "project_files_locate";
@@ -75,7 +76,12 @@ impl ProjectFiles {
             .map(|u| u.join(UNZIPPED_FOLDER).join(stem(path)));
         self.missing.clear();
         let mut missing = Vec::new();
-        for sample in &imported.samples {
+        let (zones, samples): (Vec<&SampleRef>, Vec<&SampleRef>) =
+            imported.samples.iter().partition(|s| s.zone.is_some());
+        for split in zones.chunk_by(|a, b| a.channel == b.channel) {
+            missing.extend(self.load_zones(&mut song, split, path, entries, dir.as_deref()));
+        }
+        for sample in samples {
             let found = (self.find_sample(path, &sample.path, entries))
                 .and_then(|data| self.keep_sample(dir.as_deref()?, file_name(&sample.path), &data));
             match found {
@@ -101,6 +107,74 @@ impl ProjectFiles {
         self.message = stand_ins(missing);
         self.locate_asked = self.message.is_some() && !self.missing.is_empty();
         Some(song)
+    }
+
+    /// A key split's samples (`split`, of one channel) as one DW program: each one found is kept as
+    /// `<dir>/<channel name>/<file name>`, and `<dir>/<channel name>.dwp` plays each on its keys at its root key, with a
+    /// one-shot's release (a second channel of that name takes ` (2)`, and so on). A missing one is left out with a summary line; with none found the channel plays a stand-in.
+    // ponytail: a missing zone sample is not offered to `Locate samples…`; add it when key splits from elsewhere need it.
+    fn load_zones(
+        &mut self,
+        song: &mut Song,
+        split: &[&SampleRef],
+        path: &Path,
+        entries: Option<&[Entry]>,
+        dir: Option<&Path>,
+    ) -> Vec<String> {
+        let index = split[0].channel;
+        let channel = &song.channels[index].name;
+        let mut name = channel.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");
+        // A channel of the same name before it has its program by that name.
+        let before = (song.channels[..index].iter())
+            .filter(|c| c.name == *channel)
+            .count();
+        if before > 0 {
+            name = format!("{name} ({})", before + 1);
+        }
+        let (mut zones, mut lines) = (Vec::new(), Vec::new());
+        for sample in split {
+            let file = file_name(&sample.path).to_owned();
+            let found = (self.find_sample(path, &sample.path, entries)).and_then(|data| {
+                let decoded = honeydew_audio::sample::decode(&data).ok()?;
+                self.keep_sample(&dir?.join(&name), &file, &data)?;
+                Some(decoded)
+            });
+            let Some(decoded) = found else {
+                let channel = &song.channels[index].name;
+                lines.push(format!(
+                    "{channel}: missing sample {}",
+                    short_path(&sample.path)
+                ));
+                continue;
+            };
+            let (lo, hi) = sample.zone.expect("a zone");
+            let zone = Zone {
+                root: sample.root,
+                key_low: lo,
+                key_high: hi,
+                floats: [0.0, 1.0, 1.0, ONE_SHOT_RELEASE],
+                ..Zone::user_sample()
+            };
+            let frames = u32::try_from(decoded.frames()).unwrap_or(u32::MAX);
+            zones.push((zone, file, frames, decoded.right.is_some()));
+        }
+        let rows: Vec<_> = (zones.iter())
+            .map(|(z, f, n, st)| (*z, f.as_str(), *n, *st))
+            .collect();
+        let kept = (dir.filter(|_| !rows.is_empty()))
+            .and_then(|dir| self.keep_sample(dir, &format!("{name}.dwp"), &dwp::write(&rows)));
+        let Some((shorthand, kept)) = kept else {
+            return vec![self.stand_in(song, split[0], dir.map(Path::to_owned))];
+        };
+        let channel = &mut song.channels[index];
+        channel.kind = ChannelKind::Synth(SynthKind::DwSampler);
+        let module = gm::instrument(&mut channel.rack, SynthKind::DwSampler);
+        pick_dw_program(module, &shorthand, None);
+        self.name_module(module, &kept);
+        // Pitch 0: the zones' roots are FL's.
+        module.params[3] = 24.5 / 48.0;
+        load_dw_program(module, &reader(self));
+        lines
     }
 
     /// A stand-in for the missing `sample` ([`gm::stand_in`]), remembered for `Locate samples…`; its summary line.
@@ -244,16 +318,35 @@ impl ProjectFiles {
         std::mem::take(&mut self.relinked)
     }
 
-    /// The Save dialog's FLP export: `<name>.flp` and the samples it plays, as a `.zip`; the notices of what had no FL
-    /// counterpart show once it is written.
-    pub(super) fn flp_archive(&mut self, song: &Song, name: &str) -> Result<Vec<u8>, String> {
+    /// The FLP export with `Include rendered audio`, once its stems are rendered ([`super::export::Done::Rendered`]):
+    /// the archive of `song` with them ([`Self::flp_archive`]), written to `export`'s file.
+    pub fn flp_rendered(
+        &mut self,
+        song: &Song,
+        export: &super::export::Export,
+        stems: &[(usize, Vec<u8>)],
+    ) {
+        match self.flp_archive(song, &stem(&export.path), stems) {
+            Ok(bytes) => self.write_export(export, bytes),
+            Err(err) => self.fail(super::export::COMPRESS_FAILED, err),
+        }
+    }
+
+    /// The Save dialog's FLP export: `<name>.flp` and the samples it plays, as a `.zip`, with each channel's render in
+    /// `rendered` (by song channel) as an audio clip; the notices of what does not carry over show once it is written.
+    pub(super) fn flp_archive(
+        &mut self,
+        song: &Song,
+        name: &str,
+        rendered: &[(usize, Vec<u8>)],
+    ) -> Result<Vec<u8>, String> {
         // The plugins' states as they are now (the song holds them as added or read).
         let mut song = song.clone();
         crate::plugins::store_states(&mut song);
         let song = &song;
         let mut cache = SampleCache::default();
         cache.load(song, &reader(self));
-        let out = crate::flp::export::export(song, &cache);
+        let out = crate::flp::export::export(song, &cache, rendered);
         let mut files = vec![(format!("{name}.flp"), out.flp)];
         files.extend(out.samples);
         self.export_notices = out.notices;
@@ -494,5 +587,151 @@ mod tests {
             ]
         );
         assert_eq!(files.missing_names(), ["FPC_Kick_01.wav"]);
+    }
+
+    #[test]
+    fn a_bundled_program_and_a_zone_list_export_as_layers_of_their_zones_and_play_on_every_key_when_opened_again()
+     {
+        use crate::content::bundle::{Kind, tests::fixture};
+        use crate::flm::chunk::ContentRoot;
+        use crate::ui::save_dialog::ExportFormat;
+        use honeydew_audio::device::AudioRenderer;
+        let tmp = crate::project_files::content::tests::Temp::new("flp-zones");
+        let sine: Vec<f32> = (0..4410).map(|i| (i as f32 * 0.0627).sin() * 0.5).collect();
+        let flac = honeydew_audio::flac_writer::flac(44_100, 16, &[sine]);
+        let zone = |root, key_low, key_high| Zone {
+            root,
+            key_low,
+            key_high,
+            ..Zone::default()
+        };
+        let zones = [
+            (zone(48, 0, 53), "C4.flac"),
+            (zone(60, 54, 65), "C5.flac"),
+            (zone(72, 66, 128), "C6.flac"),
+        ];
+        let rows: Vec<_> = zones.iter().map(|&(z, f)| (z, f, 4410, false)).collect();
+        let mut members = vec![("Test Piano.dwp".to_owned(), dwp::write(&rows))];
+        members.extend(zones.map(|(_, f)| (format!("Test Piano/{f}"), flac.clone())));
+        let members = members
+            .iter()
+            .map(|(n, b)| (n.as_str(), b.clone()))
+            .collect();
+        let program = "Presets/DW Sampler/Keys/Test Piano.dwp";
+        let bundle = fixture(&tmp.0, &[(Kind::Program, program, members)]);
+        // Zones a preset lists in its `CSTM` (`ZONE`s: the path, then root, keys, velocities…), of user files.
+        let wav = honeydew_audio::wav_writer::float32_wav(44_100, &[[0.5f32; 4410]]);
+        let listed = |file: &str, root: u8, lo: u8, hi: u8| {
+            let mut body = format!("@L@\0My Samples/{file}").into_bytes();
+            body.resize(1024, 0);
+            body.extend([root, lo, hi, 0, 127]);
+            body.resize(1065, 0);
+            [&b"ZONE"[..], &1065u32.to_le_bytes(), &body].concat()
+        };
+        let mem = MemFiles::default();
+        let mut files = ProjectFiles::with_provider(Box::new(mem.clone()));
+        let factory = crate::content::Factory::new(Vec::new()).with_bundle(bundle);
+        files.factory = Box::leak(Box::new(factory));
+        for file in ["Low.wav", "High.wav"] {
+            let path = Path::new("My Samples").join(file);
+            files.write_user_file(&path, wav.clone()).unwrap();
+        }
+        let mut song = Song::default();
+        for name in ["Grand Piano", "Close Grand"] {
+            song.add_channel(ChannelKind::Synth(SynthKind::DwSampler));
+            let channel = song.channels.last_mut().unwrap();
+            channel.name = name.into();
+            gm::instrument(&mut channel.rack, SynthKind::DwSampler);
+            channel.lanes[0].add_clip(0, 4.0).events = vec![Event::Note {
+                pos: 0,
+                len_beats: 1.0,
+                key: 60,
+                velocity: 200,
+                pan: 127,
+                slide: false,
+            }];
+        }
+        let path = ContentPath::Shorthand {
+            root: ContentRoot::App,
+            relative: format!("Built-in/{program}"),
+        };
+        pick_dw_program(&mut song.channels[1].rack.modules[0], &path, None);
+        let blob = [
+            &b"10WD"[..],
+            &listed("Low.wav", 48, 0, 59),
+            &listed("High.wav", 72, 60, 127),
+        ]
+        .concat();
+        song.channels[2].rack.modules[0].file.custom_data = Some(blob);
+
+        files.export(&song, ExportFormat::Flp, "Song", false);
+        let zip = (mem
+            .0
+            .borrow()
+            .files
+            .get(Path::new("My Songs/Song.zip"))
+            .cloned())
+        .unwrap();
+        let entries = crate::zip::read(&zip, u64::MAX).unwrap();
+        let names: Vec<_> = entries.iter().map(|e| e.path.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "Song.flp",
+                "Grand Piano C4.wav",
+                "Grand Piano C5.wav",
+                "Grand Piano C6.wav",
+                "Close Grand C4.wav",
+                "Close Grand C6.wav"
+            ]
+        );
+        // Their sounds carry over whole: nothing to sum up.
+        assert!(
+            files.export_notices.is_empty(),
+            "{:?}",
+            files.export_notices
+        );
+        // Each a Layer of a Sampler for each zone, on its keys at its root.
+        let flp = crate::flp::import::import(&entries[0].data, files.factory).unwrap();
+        let samplers: Vec<_> = (flp.samples.iter())
+            .map(|s| (s.channel, s.path.as_str(), s.root, s.zone))
+            .collect();
+        assert_eq!(
+            samplers,
+            [
+                (1, "Grand Piano C4.wav", 48, Some((0, 53))),
+                (1, "Grand Piano C5.wav", 60, Some((54, 65))),
+                (1, "Grand Piano C6.wav", 72, Some((66, 127))),
+                (2, "Close Grand C4.wav", 48, Some((0, 59))),
+                (2, "Close Grand C6.wav", 72, Some((60, 127)))
+            ]
+        );
+
+        // Opened again: a DW Sampler of the zones each, which sounds low, in the middle and high.
+        let mut opened =
+            ProjectFiles::with_provider(Box::new(MemFiles::with_file("Song.zip", &zip)));
+        opened.open();
+        let back = opened
+            .poll(&mut Song::default())
+            .expect("the project opens");
+        let names: Vec<_> = back.channels.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["MASTER", "Grand Piano", "Close Grand"]);
+        let mut cache = SampleCache::default();
+        cache.load(&back, &reader(&opened));
+        for (channel, key) in [1, 2]
+            .into_iter()
+            .flat_map(|c| [(c, 30), (c, 60), (c, 100)])
+        {
+            let mut engine =
+                crate::audio_engine::SongAudioEngine::with_samples(&back, 48_000.0, &cache)
+                    .unwrap();
+            engine.note_on(channel, key, 1.0);
+            let mut out = vec![0.0; 2 * 4800];
+            engine.render(&mut out, 2);
+            assert!(
+                out.iter().any(|s| s.abs() > 1e-3),
+                "channel {channel} key {key} sounds"
+            );
+        }
     }
 }

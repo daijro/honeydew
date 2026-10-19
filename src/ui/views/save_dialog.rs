@@ -77,7 +77,8 @@ pub fn show(
         }
         DialogAction::Save(format) => {
             match state.midi_channel {
-                None => app.files.export(app.song, format, name, false),
+                // FLP's `Include rendered audio` renders its channels first.
+                None => app.files.export(app.song, format, name, dialog.flp_audio),
                 // `Save as MIDI`: its channel's; a channel gone (an undo under the dialog) closes it.
                 Some(id) => {
                     let Some(channel) = app.song.channels.iter().position(|c| c.id == id) else {

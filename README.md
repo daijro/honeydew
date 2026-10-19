@@ -111,7 +111,7 @@ The sound library is stored in `sounds/` as 90 MB archive parts to stay below Gi
 raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.2.0
+tools/release-content.sh 0.2.1
 ```
 
 Commit the updated `sounds/honeydew-sounds.zip.*` parts with the content changes. Add `--web` to also build the web ZIP
@@ -256,7 +256,9 @@ SONGS → Import, `Ctrl+O` or dropping a file on the window opens:
   folder for the missing ones.
 
 The Save dialog writes FLM, a project archive (ZIP), MIDI, and FLP: an FL Studio project with the samples it plays,
-saved as a `.zip`.
+saved as a `.zip`. A multi-sampled instrument becomes a Layer channel of Samplers, one per key range, and each channel's
+effects go on its own mixer insert as FL Studio's own effects. `Include rendered audio` also adds each channel's render
+as an audio clip, with the note channels kept but muted, so the project sounds as it does in Honeydew.
 
 ## Using your own FL Studio Mobile sounds
 

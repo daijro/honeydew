@@ -12,14 +12,16 @@
 //! what reads, with a notice.
 //!
 //! **Instruments.** 3x Osc goes through the `.fst` import ([`crate::project_files::import_fst`]); a Sampler's or audio
-//! clip's sample is the caller's to find ([`Imported::samples`]); an empty Sampler with notes, our closest sound; any other plugin plays the closest sound of ours, guessed from its
-//! channel's and plugin's names ([`gm::stand_in`]), and is named in [`Imported::notices`].
+//! clip's sample is the caller's to find ([`Imported::samples`]); a Layer channel of Samplers each on keys of its own
+//! (a key split) one channel whose samples are zones ([`SampleRef::zone`]); an empty Sampler with notes, our closest
+//! sound; any other plugin plays the closest sound of ours, guessed from its channel's and plugin's names
+//! ([`gm::stand_in`]), and is named in [`Imported::notices`]. A muted channel stays muted.
 //!
 //! Lossy: plugin states other than 3x Osc's, mixer routing, sends and insert levels, effect settings (a kept effect
-//! starts at its defaults), audio clips' stretching and fades, layer channels, automation of anything but channel volume and pan, note
-//! fine pitch, release, mod X/Y and colour groups, playlist track names and markers.
+//! starts at its defaults), audio clips' stretching and fades, other layer channels, automation of anything but
+//! channel volume and pan, note fine pitch, release, mod X/Y and colour groups, playlist track names and markers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::event::EventReader;
 use super::{Event, Value, id};
@@ -42,6 +44,8 @@ pub struct SampleRef {
     pub root: u8,
     /// An audio clip channel's: its clips play it.
     pub audio: bool,
+    /// A key split's sample: it plays only the keys `lo..=hi`, beside the channel's other zones.
+    pub zone: Option<(u8, u8)>,
 }
 
 /// A project read.
@@ -205,6 +209,12 @@ struct FlChannel {
     root: Option<u8>,
     state: Option<Vec<u8>>,
     automation: Option<Vec<u8>>,
+    /// Off: muted.
+    enabled: Option<bool>,
+    /// A Layer's children, by channel number.
+    children: Vec<u16>,
+    /// The keys it plays (event 215's key zone), `None` for all.
+    zone: Option<(u8, u8)>,
     /// Its block's events, for the 3x Osc import.
     events: Vec<Event>,
 }
@@ -265,6 +275,9 @@ struct Project {
     effects: Vec<Effect>,
     /// What a record layout could not read.
     unread: Vec<String>,
+    /// The Layers that are key splits ([`Project::splits`]), and their children that have no notes of their own.
+    splits: HashSet<u16>,
+    folded: HashSet<u16>,
 }
 
 /// Where the scan is.
@@ -434,7 +447,37 @@ impl Project {
         if p.tempo.is_none() {
             p.tempo = coarse.map(|c| c + fine.unwrap_or(0.0));
         }
+        p.splits();
         p
+    }
+
+    /// The Layers that are key splits: each child a Sampler with a sample, no two on the same key. A child with no
+    /// notes of its own is only the Layer's zone.
+    fn splits(&mut self) {
+        let noted: HashSet<u16> = (self.patterns.values())
+            .flat_map(|p| p.notes.iter().map(|n| n.channel))
+            .collect();
+        for layer in self.channels.iter().filter(|c| c.kind == Some(3)) {
+            let children: Option<Vec<&FlChannel>> = (layer.children.iter())
+                .map(|&c| self.channels.iter().find(|ch| ch.iid == c))
+                .collect();
+            let Some(mut children) = children.filter(|c| !c.is_empty()) else {
+                continue;
+            };
+            let sampler = |c: &&FlChannel| matches!(c.kind, Some(0) | None) && c.sample.is_some();
+            children.sort_by_key(|c| c.keys());
+            let split = children.iter().all(sampler)
+                && children.windows(2).all(|w| w[0].keys().1 < w[1].keys().0);
+            if split {
+                self.splits.insert(layer.iid);
+                (self.folded).extend(
+                    children
+                        .iter()
+                        .map(|c| c.iid)
+                        .filter(|c| !noted.contains(c)),
+                );
+            }
+        }
     }
 
     /// The playlist shown: the current arrangement's, else the first.
@@ -487,8 +530,26 @@ impl FlChannel {
             id::CH_ROOT => self.root = Some(int(e).min(127) as u8),
             id::PLUGIN_STATE => self.state = e.data().map(<[u8]>::to_vec),
             id::AUTO_DATA => self.automation = e.data().map(<[u8]>::to_vec),
+            id::CH_ENABLED => self.enabled = Some(int(e) != 0),
+            id::CH_LAYER_CHILD => self.children.push(int(e) as u16),
+            id::CH_SAMPLE_SETTINGS => {
+                let d = e.data().unwrap_or_default();
+                let at = |o: usize| {
+                    d.get(o..o + 4)
+                        .map(|b| i32::from_le_bytes(b.try_into().expect("4 bytes")))
+                };
+                if let (Some(lo), Some(hi)) = (at(68), at(72)) {
+                    let key = |k: i32| k.clamp(0, 127) as u8;
+                    self.zone = ((lo, hi) != (0, 256)).then_some((key(lo), key(hi)));
+                }
+            }
             _ => {}
         }
+    }
+
+    /// The keys it plays, `lo..=hi`.
+    fn keys(&self) -> (u8, u8) {
+        self.zone.unwrap_or((0, 127))
     }
 
     /// The name the channel rack shows: its own, else its plugin's (a VST's from the wrapper), else its sample's.
@@ -656,11 +717,10 @@ impl Build<'_> {
 
     /// A song channel for each generator: a DW Sampler with nothing loaded, named, coloured, at its volume and pan.
     fn channels(&mut self) {
-        for ch in self
-            .project
-            .channels
-            .iter()
-            .filter(|c| c.generator() || c.audio())
+        let project = self.project;
+        for ch in (project.channels.iter())
+            .filter(|c| c.generator() || c.audio() || project.splits.contains(&c.iid))
+            .filter(|c| !project.folded.contains(&c.iid))
         {
             let kind = match ch.audio() {
                 true => crate::song::ChannelKind::AudioClip,
@@ -679,6 +739,9 @@ impl Build<'_> {
             }
             if let Some(pan) = ch.pan {
                 channel.params.0[1] = (pan / 12800.0).clamp(0.0, 1.0) as f32;
+            }
+            if ch.enabled == Some(false) {
+                channel.params.0[2] = 1.0;
             }
             self.channels.insert(ch.iid, i);
         }
@@ -871,12 +934,27 @@ impl Build<'_> {
                     path,
                     root: ch.root.unwrap_or(60),
                     audio,
+                    zone: None,
                 })
             };
             let notes = (self.song.channels[i].lanes.iter())
                 .any(|l| l.clips.iter().any(|c| !c.events.is_empty()));
             match ch.kind {
                 Some(4) => samples.extend(sample(true)),
+                // A key split: each child's sample on its keys.
+                Some(3) => {
+                    let children = (ch.children.iter())
+                        .filter_map(|&c| project.channels.iter().find(|x| x.iid == c));
+                    samples.extend(children.filter_map(|child| {
+                        Some(SampleRef {
+                            channel: i,
+                            path: child.sample.clone()?,
+                            root: child.root.unwrap_or(60),
+                            audio: false,
+                            zone: Some(child.keys()),
+                        })
+                    }));
+                }
                 Some(0) | None => match sample(false) {
                     Some(sample) => samples.push(sample),
                     // An empty Sampler with notes (a placeholder, or another app's synth) plays our closest sound.
@@ -904,10 +982,8 @@ impl Build<'_> {
         for what in &project.unread {
             notices.push(format!("Could not read {what} (an unknown layout)."));
         }
-        let skipped = project
-            .channels
-            .iter()
-            .filter(|c| c.kind == Some(3))
+        let skipped = (project.channels.iter())
+            .filter(|c| c.kind == Some(3) && !project.splits.contains(&c.iid))
             .count();
         if skipped > 0 {
             notices.push(format!("{skipped} layer channel(s) were skipped."));

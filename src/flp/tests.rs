@@ -197,7 +197,8 @@ fn an_fl_12_project_maps_its_tempo_channels_patterns_playlist_and_effects() {
             channel: 1,
             path: "kick.wav".into(),
             root: 60,
-            audio: false
+            audio: false,
+            zone: None
         }]
     );
     assert_eq!(
@@ -279,18 +280,19 @@ fn an_exported_song_passes_the_alignment_checks_and_reads_back() {
     }];
     let mut cache = crate::sample_cache::SampleCache::default();
     cache.load(&song, &|_| None);
-    let out = export::export(&song, &cache);
+    let out = export::export(&song, &cache, &[]);
     assert!(check_alignment(&FlpFile::parse(&out.flp).unwrap()).is_empty());
     assert_eq!(
         out.samples
             .iter()
             .map(|(n, _)| n.as_str())
             .collect::<Vec<_>>(),
-        ["Beat Kick.wav", "Beat Snare.wav"]
+        ["Beat Kick.wav", "Beat Snare.wav", "Silent.wav"]
     );
+    // MiniSynth has none: a Sampler of one note of it.
     assert_eq!(
         out.notices,
-        ["Silent: MiniSynth has no .flp counterpart (an empty Sampler)"]
+        ["Silent: MiniSynth has no .flp counterpart, exported as a sample of one note"]
     );
 
     let back = import(&out.flp, factory()).unwrap();
@@ -330,6 +332,6 @@ fn an_exported_song_passes_the_alignment_checks_and_reads_back() {
     assert_eq!(notes(&back.song, 2), [vec![(0, 60, 0.25, 200)]]);
     assert_eq!(notes(&back.song, 3), [vec![(128, 60, 0.25, 200)]]);
     let paths: Vec<_> = back.samples.iter().map(|s| s.path.as_str()).collect();
-    assert_eq!(paths, ["Beat Kick.wav", "Beat Snare.wav"]);
+    assert_eq!(paths, ["Beat Kick.wav", "Beat Snare.wav", "Silent.wav"]);
     assert_eq!(back.song.channels[4].lanes[0].kind, LaneKind::Notes);
 }

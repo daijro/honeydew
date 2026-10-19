@@ -209,7 +209,7 @@ fn a_saved_song_keeps_its_plugin_and_restores_its_state() {
     let id = ch.id;
     let synth = plugins::add(&mut ch.rack, id, &uid("Poly Mod Synth", "VST3"), 0).unwrap();
     plugins::store_states(&mut back);
-    let flp = honeydew::flp::export::export(&back, &SampleCache::default()).flp;
+    let flp = honeydew::flp::export::export(&back, &SampleCache::default(), &[]).flp;
     let factory = honeydew::content::Factory::new(Vec::new());
     let imported = honeydew::flp::import::import(&flp, &factory).unwrap().song;
     let modules = || imported.channels.iter().flat_map(|c| &c.rack.modules);

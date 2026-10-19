@@ -5,7 +5,7 @@
 use eframe::egui;
 
 use super::HoneydewApp;
-use crate::project_files::export::{Done, Job, NO_AUDIO_RATE, slice};
+use crate::project_files::export::{Done, Job, NO_AUDIO_RATE, Split, slice};
 use crate::sample_cache;
 use crate::ui::views::{Nav, Overlay};
 
@@ -27,7 +27,7 @@ impl HoneydewApp {
         self.nav.overlays.retain(|o| !dialog(o));
         self.slots.export.dialog = None;
         ctx.request_repaint();
-        if !export.format.is_audio() {
+        if !export.format.is_audio() && export.split != Split::Flp {
             return;
         }
         self.audio
@@ -65,6 +65,9 @@ impl HoneydewApp {
                 }
                 Some(Done::File(bytes)) => self.files.write_export(&export, bytes),
                 Some(Done::Stems) => self.files.stems_rendered(),
+                Some(Done::Rendered(song, stems)) => {
+                    self.files.flp_rendered(&song, &export, &stems)
+                }
                 Some(Done::Failed(error)) => self.files.render_failed(&error),
             }
         }
