@@ -192,7 +192,7 @@ Honeydew is an independent project, not affiliated with or endorsed by Image-Lin
 ## License and credits
 
 - **Code:** [GPL-3.0-or-later](LICENSE). Copyright (c) 2026 The Honeydew contributors.
-- **Plugin hosting and FLP support:** from [Lemon Studio](https://github.com/ItsAlphaNeon/Lemon-Studio) by ItsAlphaNeon, GPL-3.0-or-later. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+- **Plugin hosting and FLP support:** from Lemon Studio by ItsAlphaNeon; see [Code from Lemon Studio](#code-from-lemon-studio) below.
 - **Font:** Open Sans SemiCondensed SemiBold, SIL Open Font License 1.1 ([`assets/fonts/OFL.txt`](assets/fonts/OFL.txt)).
 - **Icon:** a derivative of "Melon" by afitrose, licensed as Free for commercial use WITH ATTRIBUTION.
 - **Sounds:** the bundled instruments, drum kits, one-shots, effects, loops and waveforms come from the sources below. Full notices are in the app under SETTINGS → Sound credits.
@@ -249,3 +249,15 @@ Honeydew is an independent project, not affiliated with or endorsed by Image-Lin
 | Honeydew procedural sounds | The Honeydew contributors | CC0 |
 
 </details>
+
+## Code from Lemon Studio
+
+Honeydew includes code from [Lemon Studio](https://github.com/ItsAlphaNeon/Lemon-Studio) by ItsAlphaNeon, used under the
+GPL-3.0-or-later. Each file keeps its original copyright and license header, and the changes are listed in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+- **Plugin hosts** (`vendor/lemon-studio/`): the VST3, VST2 and CLAP hosts (`os-host`, `os-vst3`, `os-vst2`, `os-clap`)
+  and the parts of `os-engine` they use.
+- **FLP files** (`src/flp/`): the FL Studio project reader and writer, the mixer writer and the plugin wrapper format,
+  from `os-flp`.
+- **Plugin scanning and editor windows** (`src/plugins/scan.rs`, `src/plugins/window.rs`).
