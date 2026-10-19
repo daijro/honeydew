@@ -1,10 +1,20 @@
 <p align="center"><img src="assets/branding/honeydew.svg" width="160" alt="Honeydew logo"></p>
 <h1 align="center">Honeydew</h1>
-<p align="center">An open-source, clean-room reimplementation of FL Studio Mobile, rebuilt in pure Rust.</p>
-<p align="center">It runs natively on Windows, Linux, MacOS, Android, and in the browser.</p>
+<p align="center">A free, open-source music studio modelled on FL Studio Mobile, written in Rust.</p>
+<p align="center">Runs on Windows, Linux, macOS, Android and in the browser.</p>
 
 <p align="center"><img src="assets/screenshots/01-playlist-sampler.webp" width="100%" alt="The playlist and a sampler's rack, playing the demo song Edwan - Permich - Tropical"></p>
 <p align="center"><img src="assets/screenshots/02-playlist-supersaw.webp" width="100%" alt="The playlist and a synth's rack, playing the demo song Parrik - Initiated"></p>
+
+## Download
+
+Get the latest version from [Releases](https://github.com/daijro/honeydew/releases/latest).
+
+- **Windows, Linux, macOS:** extract the archive and run `honeydew-native`. Keep the `content/` folder next to it: it holds the sound library.
+- **Android:** install the `.apk`. Needs a 64-bit ARM device on Android 8 or later.
+- **Web:** the `honeydew-web` ZIP is a static site. Serve the folder with any web server.
+
+Every download includes the full sound library.
 
 ## Screens
 
@@ -32,24 +42,161 @@ FL Studio Mobile demo projects, opened as `.flm` files.
   </tr>
 </table>
 
-## How it was made
+## Opening and saving projects
 
-Honeydew is a clean-room reimplementation. The original app's behaviour, file formats and look were written down as a
-specification, and the code was written only from that specification. Honeydew contains no code, samples, presets or
-artwork from FL Studio Mobile.
+Open a file from SONGS → Import, with `Ctrl+O`, or by dropping it on the window.
 
-Honeydew is an independent project, not affiliated with or endorsed by Image-Line. FL Studio is a trademark of
-Image-Line.
+| Format | Open | Save |
+|---|---|---|
+| FL Studio Mobile songs (`.flm`) and project archives (`.zip`) | Yes | Yes |
+| MIDI (`.mid`, `.midi`) | Yes | Yes |
+| FL Studio projects (`.flp`, or a `.zip` with its samples) | Yes | Yes, as a `.zip` |
+| Audio (WAV, FLAC, OGG, MP3) | No | Yes |
 
-## Bundled sounds
+- **MIDI:** each channel gets the closest bundled instrument for its General MIDI program. Channel 10 becomes a drum kit.
+- **Opening an FLP:** you get the channels, patterns, playlist, audio clips, tempo, volume and pan. 3x Osc channels keep their sound. Missing plugins and samples play the closest bundled sound, and a summary lists what was swapped. `Locate samples...` finds missing samples in a folder you pick.
+- **Saving an FLP:** samples are included, and each channel's effects become FL Studio's own effects on its mixer insert. Turn on `Include rendered audio` to also add each channel as audio, so the project sounds the same in FL Studio.
 
-Honeydew bundles instruments, drum kits, one-shots, effects, loops and waveforms from these sources.
-The app's SETTINGS → Sound credits screen includes the full notices.
+## Plugins (desktop only)
 
-For desktop, download and extract the app for your operating system from
-[Releases](https://github.com/daijro/honeydew/releases/latest). The sound library is included beside the executable
-in `content/` and appears in the pickers automatically. Keep that folder beside `honeydew-native` or
-`honeydew-native.exe`. No separate download or import step is needed.
+Honeydew can use VST3, VST2 and CLAP plugins as instruments and effects.
+
+1. Install your plugins in one of the folders below.
+2. Open a channel's **Modules** browser. Plugins are listed under PLUGIN INSTRUMENTS and PLUGIN EFFECTS.
+3. Adding a plugin opens its window. The `Editor` button on its card opens and closes it again.
+
+Plugin settings are saved with the project, and their controls can be automated.
+
+**Where Honeydew looks:**
+
+- **Linux:** `~/.vst3`, `~/.vst` and `~/.clap`, the same folders under `/usr/lib` and `/usr/local/lib`, and `VST_PATH` / `CLAP_PATH`.
+- **Windows and macOS:** the standard plugin folders.
+- **Your own folders:** add them in SETTINGS → Plugins. `Rescan` picks up new plugins.
+
+**Windows plugins on Linux:** install [yabridge](https://github.com/robbert-vdh/yabridge) or [vstbridge](https://github.com/rations/vstbridge) with Wine. They put bridged copies in `~/.vst3/yabridge` and `~/.vst/yabridge`, which Honeydew already scans.
+
+**Good to know:**
+
+- Plugin windows open on Linux only for now. On Windows and macOS, use the sliders on the plugin's card.
+- On Linux, a plugin that crashes while playing closes Honeydew. Scanning plugins is safe.
+- Plugin latency is shown but not compensated.
+- FL Studio Mobile still opens projects that use plugins, just without the plugins. The web and Android versions keep plugin settings but don't play them.
+- Opening an FLP loads its plugins if you have them installed, and saving as FLP writes them back.
+
+## Using your own FL Studio Mobile sounds
+
+Honeydew doesn't include any FL Studio Mobile content. If you own the app, you can import its sounds and presets from your own copy. They stay on your computer, aren't included in exported project ZIPs, and are still covered by your FL Studio Mobile licence, so don't share them.
+
+1. Copy your app's `.apk` or `.obb` into the **Original Content** folder. SETTINGS has an `Open folder` button.
+
+   | OS | Folder |
+   |---|---|
+   | Linux | `~/.local/share/honeydew/Original Content` |
+   | macOS | `~/Library/Application Support/Honeydew/Original Content` |
+   | Windows | `%APPDATA%\Honeydew\data\Original Content` |
+
+2. Open SETTINGS and choose `Import`.
+
+Or from the command line:
+
+```sh
+cargo run --release --bin honeydew-import -- path/to/your.apk
+```
+
+The sounds and presets then show up in the pickers, and demo songs that use them play correctly. Each file is imported once; delete the hidden `.imported-…` file next to it to import it again. The web version can't import.
+
+**Getting the files from your phone.** Use only your own copy. With USB debugging on and Android's platform tools installed:
+
+```sh
+adb shell pm list packages | grep -i studio   # find the package name
+adb shell pm path <package>                    # find the APK (pull base.apk first if there are several)
+adb pull <path>
+adb pull /sdcard/Android/obb/<package>/        # the OBB, if the app has one
+```
+
+## Building from source
+
+### Desktop
+
+```sh
+cargo run --release
+```
+
+**Linux desktop icon:** Wayland only shows an app's icon if a desktop entry is installed. Run `tools/install-desktop-entry.sh` after `cargo build --release` (add `--uninstall` to remove it). Run it again if you move the repository.
+
+### Sound library
+
+The sound library lives in `sounds/`, split into 90 MB parts to stay under GitHub's file size limit. To rebuild it from the raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
+
+```sh
+tools/release-content.sh 0.2.1
+```
+
+Commit the updated `sounds/honeydew-sounds.zip.*` parts with your changes. Add `--web` to also build the web ZIP. Tagged releases include the sounds automatically.
+
+### Web
+
+For development:
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install trunk
+trunk serve
+```
+
+To test with the bundled sounds, also run `python3 -m http.server 8081 --bind 127.0.0.1 --directory content-out`.
+
+For a release build:
+
+```sh
+tools/web-dist.sh          # build the site into dist/
+tools/web-dist.sh --check  # check an existing build
+tools/web-dist.sh --zip    # also write target/honeydew-web-<version>.zip
+```
+
+- **Requirements:** Trunk, binaryen's `wasm-opt` (or set `WASM_OPT`) and `unzip`.
+- **Hosting:** serve `dist/`. Example configs for nginx, Caddy and Cloudflare are in `deploy/`.
+- **Browsers:** Chrome 96, Firefox 113 or Safari 16.4 and later. Older browsers see a notice.
+- **Compression:** files are pre-gzipped and none is over 25 MiB. Hosts that don't send `Content-Encoding: gzip`, like Cloudflare, still work: the browser unpacks the files itself.
+- **Shortcuts:** in the browser, Honeydew's shortcuts win over the browser's, except Ctrl+C, V and X. Chrome keeps Ctrl+Shift+T.
+
+### Android
+
+The Android version plays songs and saves them inside the app. Microphone recording, MIDI devices and importing or exporting files aren't supported yet, and uninstalling the app deletes its songs.
+
+You need Java 21, Android SDK platform 36, Build Tools 36.0.0, NDK 28.0.13004108, Python 3 and `unzip`. Set `ANDROID_HOME` to your SDK, then:
+
+```sh
+rustup target add aarch64-linux-android
+cargo install cargo-ndk --version 4.1.2 --locked
+tools/android-dist.sh
+```
+
+This writes `target/honeydew-android-<version>-arm64-debug.apk`. The debug app is called Honeydew Debug and installs alongside the release app. Its signing key is kept in `android/debug.keystore`; keep that file so debug builds can update each other.
+
+**Release signing:** use the same key for every release, or Android won't install updates over the old version. Back up the keystore and passwords outside the repository.
+
+- **Local release:** set `ANDROID_KEYSTORE_FILE`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`, then run `tools/android-dist.sh --release`.
+- **GitHub releases:** add the repository secrets `ANDROID_KEYSTORE_BASE64` (the keystore as base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Without them the Android job fails rather than publishing an unsigned APK.
+
+See Android's [app-signing guide](https://developer.android.com/studio/publish/app-signing) for creating a key.
+
+## About
+
+Honeydew is a clean-room reimplementation. FL Studio Mobile's behaviour, file formats and look were written down as a specification, and Honeydew's code was written only from that. It contains no code, samples, presets or artwork from FL Studio Mobile.
+
+Honeydew is an independent project, not affiliated with or endorsed by Image-Line. FL Studio is a trademark of Image-Line.
+
+## License and credits
+
+- **Code:** [GPL-3.0-or-later](LICENSE). Copyright (c) 2026 The Honeydew contributors.
+- **Plugin hosting and FLP support:** from [Lemon Studio](https://github.com/ItsAlphaNeon/Lemon-Studio) by ItsAlphaNeon, GPL-3.0-or-later. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+- **Font:** Open Sans SemiCondensed SemiBold, SIL Open Font License 1.1 ([`assets/fonts/OFL.txt`](assets/fonts/OFL.txt)).
+- **Icon:** a derivative of "Melon" by afitrose, licensed as Free for commercial use WITH ATTRIBUTION.
+- **Sounds:** the bundled instruments, drum kits, one-shots, effects, loops and waveforms come from the sources below. Full notices are in the app under SETTINGS → Sound credits.
+
+<details>
+<summary>See all sources</summary>
 
 | Source | Author | Licence |
 |---|---|---|
@@ -99,216 +246,4 @@ in `content/` and appears in the pickers automatically. Keep that folder beside 
 | [VSCO 2 Community Edition](https://github.com/sgossner/VSCO-2-CE) | Versilian Studios LLC (Sam Gossner) | CC0 |
 | Honeydew procedural sounds | The Honeydew contributors | CC0 |
 
-## Build
-
-Desktop:
-
-```sh
-cargo run --release
-```
-
-The sound library is stored in `sounds/` as 90 MB archive parts to stay below GitHub's per-file limit. To rebuild it from the
-raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
-
-```sh
-tools/release-content.sh 0.2.1
-```
-
-Commit the updated `sounds/honeydew-sounds.zip.*` parts with the content changes. Add `--web` to also build the web ZIP
-locally. Tagged releases include the sounds in every desktop, Android and web download; no manual release upload is needed.
-
-Web (development):
-
-```sh
-rustup target add wasm32-unknown-unknown
-cargo install trunk
-trunk serve
-```
-
-In the browser, the app's shortcuts take priority over the browser's, except Ctrl+C, V and X. Chrome keeps
-Ctrl+Shift+T for itself.
-
-## Web release
-
-```sh
-tools/web-dist.sh          # build the site into dist/
-tools/web-dist.sh --check  # check an existing build's files and sizes
-tools/web-dist.sh --zip    # also write target/honeydew-web-<version>.zip
-```
-
-It needs Trunk, binaryen's `wasm-opt` (or set `WASM_OPT`) and `unzip`. It assembles the tracked archive parts in `sounds/`
-into `target/honeydew-sounds.zip` and includes their contents in the site.
-
-- Release builds use `opt-level = 3`, fat LTO, SIMD and `wasm-opt -O3`.
-- Supported browsers: Chrome 96, Firefox 113, Safari 16.4 or later. Older browsers see a notice.
-- Everything is gzipped ahead of time. If the host doesn't send `Content-Encoding: gzip` (Cloudflare, for example),
-  the browser unpacks the files itself. No file is over 25 MiB.
-
-To host it, serve `dist/`. `deploy/` has example configs for nginx, Caddy and Cloudflare (`_headers`).
-
-To test the web build with the bundled sounds locally:
-
-```sh
-python3 -m http.server 8081 --bind 127.0.0.1 --directory content-out &
-trunk serve
-```
-
-## Android APK
-
-The Android build targets 64-bit ARM devices running Android 8 or later. The APK includes the sound library and
-uses landscape orientation, rotating to either landscape side with the device.
-This first port supports playback and songs saved inside the app. Microphone recording, MIDI devices and
-Android file import/export are not available yet. Uninstalling the app removes its saved songs.
-
-Building on Linux or macOS needs Java 21, Android SDK platform 36, Build Tools 36.0.0, NDK 28.0.13004108,
-Python 3 and `unzip`. Set `ANDROID_HOME` to your SDK directory, then install the Rust tools:
-
-```sh
-rustup target add aarch64-linux-android
-```
-
-```sh
-cargo install cargo-ndk --version 4.1.2 --locked
-```
-
-```sh
-tools/android-dist.sh
-```
-
-The script downloads the pinned Gradle version, builds Rust, bundles the tracked sounds and verifies the APK's
-signature, alignment and sound-pack hashes. It writes `target/honeydew-android-<version>-arm64-debug.apk`, or uses
-`CARGO_TARGET_DIR` when set. The development app is named Honeydew Debug and uses `dev.daijro.honeydew.debug`,
-separate from release installs. Its signing key stays in the ignored `android/debug.keystore`, outside build output,
-so `cargo clean` and changing `CARGO_TARGET_DIR` keep debug updates compatible. Keep this file when moving the
-checkout. On the first build, an existing key in the selected target directory is copied here automatically.
-
-### Android release signing
-
-Use one signing key for every release so Android can install updates without removing saved songs.
-Keep the keystore and passwords backed up outside this repository. For a local release, set
-`ANDROID_KEYSTORE_FILE`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`, then run:
-
-```sh
-tools/android-dist.sh --release
-```
-
-Before publishing an Android release, configure these GitHub Actions repository secrets:
-
-| Secret | Value |
-|---|---|
-| `ANDROID_KEYSTORE_BASE64` | The release keystore encoded as base64 |
-| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
-| `ANDROID_KEY_ALIAS` | Signing key alias |
-| `ANDROID_KEY_PASSWORD` | Signing key password |
-
-The tagged release workflow builds and uploads `honeydew-android-<version>-arm64.apk`. Missing signing secrets
-fail the Android job; it never publishes a debug-signed or unsigned APK. See Android's
-[app-signing guide](https://developer.android.com/studio/publish/app-signing) for creating and protecting a key.
-
-## Plugins (desktop)
-
-The desktop app hosts third-party VST3, VST2 and CLAP plugins, as instruments and as effects. They are listed in the
-Modules browser under PLUGIN INSTRUMENTS and PLUGIN EFFECTS. A plugin's own editor opens when you add it, and the card's
-`Editor` button opens and closes it again; its params are sliders on the card and can be automated, and a project saves
-each plugin with its state.
-
-- **Where plugins are found.** On Linux: `~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3`, `~/.vst`,
-  `/usr/lib/vst`, `/usr/local/lib/vst` (or `VST_PATH`), `~/.clap`, `/usr/lib/clap`, `/usr/local/lib/clap` (and
-  `CLAP_PATH`), plus the yabridge folders `~/.vst3/yabridge`, `~/.vst/yabridge` and `~/.clap/yabridge`. On Windows and
-  macOS, the standard VST3, VST2 and CLAP folders. SETTINGS → Plugins adds folders of your own, and `Rescan` scans
-  every plugin file again. Each file is loaded in a process of its own while it is scanned, so a broken plugin cannot
-  take the app down.
-- **Windows plugins on Linux.** Install [yabridge](https://github.com/robbert-vdh/yabridge) or its fork
-  [vstbridge](https://github.com/rations/vstbridge) with Wine, and let it bridge your Windows plugins: it puts Linux
-  VST2 and VST3 files in `~/.vst/yabridge` and `~/.vst3/yabridge`, which Honeydew loads like any Linux plugin.
-- **FL Studio Mobile.** A plugin module is saved where FL Studio Mobile skips it: the project still opens there,
-  without the plugin. The web app and Android keep a project's plugins (and their settings) but cannot play them.
-- **FL Studio projects.** Opening an `.flp` loads each wrapped plugin that is installed here with its saved state (an
-  instrument channel's, and a mixer insert's effects); one that is not plays a stand-in. Saving as `.flp` writes each
-  plugin instrument as a wrapper channel with its state.
-- **Limits.** Editor windows open on Linux only (X11, or XWayland under Wayland); on Windows and macOS the card's sliders
-  are the plugin's controls. On Linux a plugin that crashes while playing takes the app down with it. A plugin's latency
-  is shown on its card but not compensated.
-
-The plugin hosting is Lemon Studio's (<https://github.com/ItsAlphaNeon/Lemon-Studio>, GPL-3.0-or-later).
-
-## Desktop icon (Linux)
-
-Wayland only shows an app's icon if a desktop entry is installed. To install it:
-
-```sh
-cargo build --release
-tools/install-desktop-entry.sh              # add --uninstall to remove it
-```
-
-The entry runs `target/release/honeydew-native`. Run the script again if you move the repository.
-
-## Opening and saving projects
-
-SONGS → Import, `Ctrl+O` or dropping a file on the window opens:
-
-- `.flm` songs and their `.zip` archives;
-- MIDI files (`.mid`, `.midi`): each MIDI channel gets the closest bundled instrument for its General MIDI program,
-  and channel 10 a drum kit;
-- FL Studio desktop projects (`.flp`, or a `.zip` of one with its samples): channels, patterns, the playlist, audio
-  clips, tempo, volume and pan. 3x Osc channels keep their oscillators. Other plugins, and samples that cannot be
-  found, play the closest bundled sound, and one summary lists what was replaced. `Locate samples...` searches a
-  folder for the missing ones.
-
-The Save dialog writes FLM, a project archive (ZIP), MIDI, and FLP: an FL Studio project with the samples it plays,
-saved as a `.zip`. A multi-sampled instrument becomes a Layer channel of Samplers, one per key range, and each channel's
-effects go on its own mixer insert as FL Studio's own effects. `Include rendered audio` also adds each channel's render
-as an audio clip, with the note channels kept but muted, so the project sounds as it does in Honeydew.
-
-## Using your own FL Studio Mobile sounds
-
-Honeydew does not include any FL Studio Mobile content. If you own the app, you can import its sounds and presets
-from your own copy. They stay in your Honeydew user folder; nothing is downloaded or uploaded, and exported project
-ZIPs leave them out. Your FL Studio Mobile licence still applies to them, so don't share them.
-
-1. Copy your app's `.apk` or `.obb` into the **Original Content** folder (SETTINGS has an `Open folder` button):
-
-   | OS | Folder |
-   |---|---|
-   | Linux | `~/.local/share/honeydew/Original Content` |
-   | macOS | `~/Library/Application Support/Honeydew/Original Content` |
-   | Windows | `%APPDATA%\Honeydew\data\Original Content` |
-
-2. Start Honeydew (or open SETTINGS) and choose `Import`.
-
-Or from the command line:
-
-```sh
-cargo run --release --bin honeydew-import -- path/to/your.apk
-```
-
-Imported sounds and presets show up in the pickers, and demo songs that use them play with the right sounds. Each
-file imports once; to import it again, delete the hidden `.imported-…` file next to it. Existing files are never
-overwritten. The web version can't import.
-
-### Getting the files from your phone
-
-Use only a copy you own, from your own device. With USB debugging on and Android's platform tools installed:
-
-```sh
-adb shell pm list packages | grep -i studio   # find the package name
-adb shell pm path <package>                    # find the APK (pull base.apk first if there are several)
-adb pull <path>
-adb pull /sdcard/Android/obb/<package>/        # the OBB, if the app has one
-```
-
-## License
-
-Code: [GPL-3.0-or-later](LICENSE). Copyright (c) 2026 The Honeydew contributors.
-
-FL Studio project (`.flp`) container code: from [Lemon Studio](https://github.com/ItsAlphaNeon/Lemon-Studio) by
-ItsAlphaNeon, GPL-3.0-or-later; see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
-
-Font: Open Sans SemiCondensed SemiBold, SIL Open Font License 1.1 ([`assets/fonts/OFL.txt`](assets/fonts/OFL.txt)).
-
-Plugin hosting: Lemon Studio's VST3, VST2 and CLAP hosts (<https://github.com/ItsAlphaNeon/Lemon-Studio>,
-GPL-3.0-or-later, by ItsAlphaNeon), vendored in `vendor/lemon-studio`; see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
-
-The icon is a derivative of "Melon" by afitrose. It is licensed as Free for commercial use WITH ATTRIBUTION.
-
-Bundled sounds: each source and its licence is listed in the app under SETTINGS → Sound credits.
+</details>
