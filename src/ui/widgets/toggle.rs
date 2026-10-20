@@ -125,7 +125,7 @@ pub fn pill_toggle(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
     use eframe::egui::{Color32, Id};
 
     #[test]
@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn a_right_label_puts_the_pill_0_75_u_in_and_the_label_at_1_7_u() {
         // U = 32.
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let rect = |w| Rect::from_min_size(pos2(10.0, 20.0), vec2(w, 48.0));
         let c = |w, label| Control::new(Id::new("t"), rect(w), label, Color32::RED, 0.0);
         let (centre, at) = place(&c(120.0, "Sync"), &m, true);

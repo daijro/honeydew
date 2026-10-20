@@ -1,12 +1,14 @@
-//! Small round buttons and the captioned transport button. Callers draw the content (icon, glyph or text)
-//! into the returned response's rect. Every interactive widget takes an explicit [`Id`].
+//! Small round buttons, the shared close X and the captioned transport button. Callers draw the content (icon, glyph
+//! or text) into the returned response's rect. Every interactive widget takes an explicit [`Id`].
 
-use eframe::egui::{self, Align2, Color32, FontId, Id, Pos2, Rect, Response, Sense, Stroke, Vec2};
+use eframe::egui::{
+    self, Align2, Color32, FontId, Id, Pos2, Rect, Response, Sense, Stroke, Vec2, vec2,
+};
 
 use crate::metrics::{FontSize, Metrics};
 use crate::theme::ThemeColors;
-use crate::ui::focus;
 use crate::ui::widgets::{hovered, pressed};
+use crate::ui::{UiCtx, focus};
 
 /// Height of the caption strip at the bottom of a captioned button, in U.
 const CAPTION_H: f32 = 0.6;
@@ -164,6 +166,99 @@ pub fn boxed_circle_button(
         fill
     };
     ui.painter().circle_filled(center, diameter / 2.0, fill);
+    response
+}
+
+/// A floating panel button (the show-keyboard `↖`): `shape`, a rounded rect of corner radius `r`, filled `moduleFill`
+/// over a soft drop shadow (12 stacked black layers, α 0.25 together at the edge, spreading 0.45 U, 0.16 U down) and
+/// inside a rim t wide of 0.7·`background` + 0.3·`text`. A hovering mouse makes it 5 % larger about its centre and its
+/// fill ×1.25. `hit` is its touch area; the caller draws the icon.
+pub fn floating_button(
+    ui: &mut egui::Ui,
+    cx: &UiCtx,
+    id: Id,
+    shape: Rect,
+    r: f32,
+    hit: Rect,
+) -> Response {
+    const LAYERS: u8 = 12;
+    let (c, m) = (&cx.theme.colors, cx.m);
+    // Drags too, so that none falls through to the view under it.
+    let response = focus::interact(ui, hit, id, Sense::click_and_drag());
+    let hover = hovered(ui, &response);
+    let (shape, r) = if hover {
+        (shape.scale_from_center(1.05), r * 1.05)
+    } else {
+        (shape, r)
+    };
+    let painter = ui.painter();
+    // Each layer's α, so that the 12 make 0.25 where all overlap.
+    let alpha = 1.0 - 0.75f32.powf(1.0 / f32::from(LAYERS));
+    let shadow = shape.translate(vec2(0.0, m.u(0.16)));
+    for i in (1..=LAYERS).rev() {
+        let spread = m.u(0.45) * f32::from(i) / f32::from(LAYERS);
+        let black = Color32::from_black_alpha((alpha * 255.0).round() as u8);
+        painter.rect_filled(shadow.expand(spread), r + spread, black);
+    }
+    let (bg, text) = (c.background, c.text);
+    let mix = |a: f32, b: f32| 0.7 * a + 0.3 * b;
+    let rim = crate::theme::Rgba::rgb(mix(bg.r, text.r), mix(bg.g, text.g), mix(bg.b, text.b));
+    let t = m.t();
+    painter.rect_filled(shape.expand(t), r + t, rim.to_color32());
+    let fill = c.module_fill.to_color32();
+    let fill = if hover { hover_lit(fill) } else { fill };
+    painter.rect_filled(shape, r, fill);
+    response
+}
+
+/// `rect` filled with a vertical gradient from `top` to `bottom`.
+pub fn gradient(painter: &egui::Painter, rect: Rect, top: Color32, bottom: Color32) {
+    let mut mesh = egui::Mesh::default();
+    for (p, color) in [
+        (rect.left_top(), top),
+        (rect.right_top(), top),
+        (rect.right_bottom(), bottom),
+        (rect.left_bottom(), bottom),
+    ] {
+        mesh.colored_vertex(p, color);
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    painter.add(mesh);
+}
+
+/// `color` under the mouse: RGB × 1.25, clamped, alpha kept.
+pub fn hover_lit(color: Color32) -> Color32 {
+    let [r, g, b, a] = color.to_srgba_unmultiplied();
+    let lit = |c: u8| (f32::from(c) * 1.25).round().min(255.0) as u8;
+    Color32::from_rgba_unmultiplied(lit(r), lit(g), lit(b), a)
+}
+
+/// The close X of every dialog and panel: icon 19 in `text`, `icon` × its standard size, on a disc of `surface` (the
+/// colour the X sits on) `radius` × the short side of `rect` in radius. So at rest only the X shows; under the mouse
+/// the disc lights (RGB × 1.25). The whole `rect` takes the touch.
+pub fn close_x(
+    ui: &mut egui::Ui,
+    cx: &UiCtx,
+    id: Id,
+    rect: Rect,
+    (surface, radius): (Color32, f32),
+    icon: f32,
+) -> Response {
+    let response = focus::interact(ui, rect, id, Sense::click());
+    if hovered(ui, &response) {
+        let r = radius * rect.width().min(rect.height());
+        (ui.painter()).circle_filled(rect.center(), r, hover_lit(surface));
+    }
+    let text = cx.theme.colors.text.to_color32();
+    crate::icons::draw_icon(
+        ui.painter(),
+        rect,
+        crate::icons::IconId::Close,
+        text,
+        icon,
+        cx.m,
+    );
     response
 }
 

@@ -1,37 +1,67 @@
 //! The SoundFont picker, which the SoundFont Player's `Patch` spinner opens, as the side browser panel.
 //!
-//! - Its root and folders are a [`PresetPicker`]'s over `My SoundFonts`, titled [`TITLE`]: `My Files`, then the
-//!   folders and the `.sf2` files by name. No `Default`. No factory SoundFonts are shipped; with imported content in
-//!   the content folder the root then lists its `SoundFonts`, read-only ([`SoundFontPicker::with_factory`]).
-//! - A SoundFont opens like a folder, its name ending the header's breadcrumb, and lists its patches in file order,
-//!   which `Search` filters; Back returns to the files.
-//! - A patch is the pick. A SoundFont that cannot be read is the pick too, with its error: the caller loads it, and
-//!   the panel shows the error.
+//! - **The patch picker.** Opened on the module's SoundFont, it starts in its patches: titled with the SoundFont's file
+//!   name, the patch names in file order (`Sort` `Default`), or by name (`A-Z`, [`PatchOrdering`]), which `Search`
+//!   filters. The current patch is the current row, scrolled into view as it opens. A patch is the pick, and the
+//!   picker stays in the patches, the pick now current. Back goes to the files.
+//! - **The files**, where it opens without a SoundFont: a [`PresetPicker`]'s root and folders over `My SoundFonts`,
+//!   titled [`TITLE`]: `My Files`, then the folders and the `.sf2` files by name. No `Default`. No factory SoundFonts
+//!   are shipped; with imported content in the content folder the root then lists its `SoundFonts`, read-only
+//!   ([`SoundFontPicker::with_factory`]). A SoundFont opens in its patches. One that cannot be read is the pick, with
+//!   its error: the caller loads it, and the panel shows the error.
 //!
 //! The caller keeps a [`SoundFontPicker`] while it is open and loads what [`SoundFontPicker::show`] returns.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use eframe::egui::{Context, Id};
+use eframe::egui::{Context, Id, Pos2};
 
 use crate::project_files::SF2_EXT;
 use crate::sf2::{Preset, Sf2Error};
 use crate::ui::UiCtx;
 use crate::ui::main_menu::SongLibrary;
 use crate::ui::modules_browser::{
-    Chrome, PanelClick, PanelRow, ROW_H, RowKind, SideButton, SidePanel, crumb_text,
+    Chrome, PanelClick, PanelRow, RowKind, SideButton, SidePanel, crumb_text, layout, sort_menu,
 };
-use crate::ui::preset_picker::{MY_FILES, PickerAction, PresetPicker};
+use crate::ui::preset_picker::{PickerAction, PresetPicker, natural};
 
 /// The root's title: the factory folder's name.
 pub const TITLE: &str = "SoundFonts";
 
-/// What the user did in the picker this frame. Either way the picker is done: drop it.
+/// The patch picker's orderings, each with its `SoundFontPatchOrdering` id.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PatchOrdering {
+    /// File order.
+    #[default]
+    Default = 0,
+    /// By name, natural alphanumeric ([`natural`]).
+    AZ = 1,
+}
+
+impl PatchOrdering {
+    const MENU: [(Self, &'static str); 2] = [(Self::Default, "Default"), (Self::AZ, "A-Z")];
+
+    /// Its stored `SoundFontPatchOrdering`.
+    pub fn id(self) -> i32 {
+        self as i32
+    }
+
+    /// The ordering stored as `id`: `A-Z`'s, else `Default` (−1, unset, too).
+    pub fn from_id(id: i32) -> Self {
+        match id == Self::AZ.id() {
+            true => Self::AZ,
+            false => Self::Default,
+        }
+    }
+}
+
+/// What the user did in the picker this frame. A close or a failed SoundFont is the end of it: drop it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SoundFontAction {
     /// The close X, a click outside the panel, or Escape.
     Close,
-    /// Patch `index` of `patches`, the patches of the SoundFont at `path` (as its library lists it).
+    /// Patch `index` of `patches`, the patches of the SoundFont at `path` (as its library lists it). The picker stays
+    /// open.
     Patch {
         path: PathBuf,
         patches: Vec<Preset>,
@@ -41,42 +71,57 @@ pub enum SoundFontAction {
     Failed { path: PathBuf, error: Sf2Error },
 }
 
-/// An open SoundFont: its path, its patches, and the panel listing them.
+/// An open SoundFont: its path, its patches, the current one, and the panel listing them.
 struct Open {
     path: PathBuf,
     patches: Vec<Preset>,
+    current: Option<usize>,
     panel: SidePanel,
+}
+
+impl Open {
+    fn new(path: PathBuf, patches: Vec<Preset>, current: Option<usize>, panel: SidePanel) -> Self {
+        let mut open = Self {
+            path,
+            patches,
+            current,
+            panel,
+        };
+        open.panel.reveal = true;
+        open
+    }
 }
 
 /// The open picker's state. Make a fresh one each time it opens.
 pub struct SoundFontPicker {
-    my_files: Option<PathBuf>,
-    /// The factory folder the root lists, if any.
-    factory: Option<PathBuf>,
     files: PresetPicker,
     open: Option<Open>,
+    /// The patches' ordering: set it from `SoundFontPatchOrdering` as the picker opens.
+    pub sort: PatchOrdering,
+    /// A pick from `Sort`'s menu, the active ordering included: take it and store it as `SoundFontPatchOrdering`.
+    pub sort_picked: Option<PatchOrdering>,
+    /// `Sort`'s menu, open, centred on its button.
+    sort_menu: Option<Pos2>,
 }
 
 impl SoundFontPicker {
     /// A picker over `my_files` (`My SoundFonts`; `None` dims `My Files`), at its root, or in the patches of
-    /// `current`: the module's SoundFont, its path as the library lists it, and its patches.
-    pub fn new(my_files: Option<PathBuf>, current: Option<(PathBuf, Vec<Preset>)>) -> Self {
+    /// `current`: the module's SoundFont, its path as the library lists it, its patches and the current patch.
+    pub fn new(my_files: Option<PathBuf>, current: Option<(PathBuf, Vec<Preset>, usize)>) -> Self {
         Self {
-            files: PresetPicker::new(TITLE, my_files.clone(), SF2_EXT, false),
-            my_files,
-            factory: None,
-            open: current.map(|(path, patches)| Open {
-                path,
-                patches,
-                panel: SidePanel::default(),
+            files: PresetPicker::new(TITLE, my_files, SF2_EXT, false),
+            open: current.map(|(path, patches, patch)| {
+                Open::new(path, patches, Some(patch), SidePanel::default())
             }),
+            sort: PatchOrdering::Default,
+            sort_picked: None,
+            sort_menu: None,
         }
     }
 
     /// Lists the SoundFonts in `folder` (the content folder's `SoundFonts`) at the root, after `My Files`.
     pub fn with_factory(mut self, folder: Option<PathBuf>) -> Self {
-        self.files = self.files.with_factory(folder.clone());
-        self.factory = folder;
+        self.files = self.files.with_factory(folder);
         self
     }
 
@@ -91,76 +136,79 @@ impl SoundFontPicker {
         let Some(open) = &mut self.open else {
             let path = match self.files.show(ctx, cx, library)? {
                 PickerAction::Pick(path) => path,
-                // `Default` is not listed, nor `Import` offered.
-                PickerAction::Close | PickerAction::Default | PickerAction::Import => {
+                // `Default` is not listed, nor `Import` offered, and the files are no nested list.
+                PickerAction::Close
+                | PickerAction::Default
+                | PickerAction::Import
+                | PickerAction::Back => {
                     return Some(SoundFontAction::Close);
                 }
             };
             let read = library.read(&path).map_err(|_| Sf2Error::NotFound);
             match read.and_then(|bytes| crate::sf2::presets(&bytes)) {
                 Ok(patches) => {
-                    let panel = SidePanel::in_place();
-                    self.open = Some(Open {
-                        path,
-                        patches,
-                        panel,
-                    });
+                    self.open = Some(Open::new(path, patches, None, SidePanel::in_place()));
                     return None;
                 }
                 Err(error) => return Some(SoundFontAction::Failed { path, error }),
             }
         };
-        // The folders from `My Files` (or the factory folder, which the root lists itself) down to the SoundFont's.
-        let below =
-            |root: Option<&Path>| Some(open.path.parent()?.strip_prefix(root?).ok()?.to_owned());
-        let (top, folders) = match below(self.factory.as_deref()) {
-            Some(folders) => (None, Some(folders)),
-            None => (Some(MY_FILES), below(self.my_files.as_deref())),
-        };
-        let folders = folders
-            .iter()
-            .flat_map(|f| f.iter())
-            .map(|f| f.to_string_lossy().into_owned());
+        // The files' own id: one panel area for both, as egui hides a new area for its first frame.
+        let id = Id::new("preset_picker");
+        // Before the panel, which would take Escape: the menu takes it first.
+        if let Some(at) = self.sort_menu {
+            let result = sort_menu(ctx, cx, id, at, &PatchOrdering::MENU, self.sort);
+            self.sort_picked = result.selected.or(self.sort_picked);
+            if let Some(sort) = result.selected.filter(|&s| s != self.sort) {
+                // A sort is a list refresh, from the top.
+                self.sort = sort;
+                open.panel.refreshed();
+                open.panel.scroll_y = 0.0;
+            }
+            if result.close {
+                self.sort_menu = None;
+            }
+        }
         let title = open.path.file_stem().unwrap_or_default().to_string_lossy();
-        let crumb: Vec<String> = std::iter::once(TITLE.to_owned())
-            .chain(top.map(String::from))
-            .chain(folders)
-            .chain([title.into_owned()])
-            .collect();
-        let header = crumb_text(crumb.iter().map(String::as_str));
+        let header = crumb_text([title.as_ref()]);
         let chrome = Chrome {
-            // The files' own id: one panel area for both, as egui hides a new area for its first frame.
-            id: Id::new("preset_picker"),
+            id,
             title: &header,
             back: true,
-            buttons: &[SideButton::Search],
-            popup: false,
+            buttons: &[SideButton::Search, SideButton::Plain("Sort", true)],
+            popup: self.sort_menu.is_some(),
         };
-        let patches = &open.patches;
+        let (patches, current) = (&open.patches, open.current);
         let click = open.panel.show(ctx, cx, &chrome, |query| {
-            let rows = matching(patches, query).into_iter();
+            let rows = matching(patches, query, self.sort).into_iter();
             rows.map(|i| PanelRow {
                 name: &patches[i].name,
                 folder: false,
-                h: ROW_H,
                 sub: None,
                 kind: RowKind::Enabled(i),
-                picked: false,
+                picked: current == Some(i),
             })
             .collect()
         });
         match click? {
             PanelClick::Close => Some(SoundFontAction::Close),
-            // Back; it has no other button and asks for no name.
-            PanelClick::Back | PanelClick::Button(_) | PanelClick::Enter => {
+            // `Sort`, the one button it hands back.
+            PanelClick::Button(i) => {
+                self.sort_menu = Some(layout(ctx.content_rect(), 1.0, cx.m).button(i));
+                None
+            }
+            PanelClick::Back => {
                 self.open = None;
                 None
             }
+            // It asks for no name and has no select mode.
+            PanelClick::Enter | PanelClick::Context(..) => None,
+            PanelClick::Drag(_) => None,
             PanelClick::Row(index) => {
-                let open = self.open.take()?;
+                open.current = Some(index);
                 Some(SoundFontAction::Patch {
-                    path: open.path,
-                    patches: open.patches,
+                    path: open.path.clone(),
+                    patches: open.patches.clone(),
                     index,
                 })
             }
@@ -168,16 +216,18 @@ impl SoundFontPicker {
     }
 }
 
-/// The indices of the patches whose name holds `query`, ignoring case, in file order.
-fn matching(patches: &[Preset], query: &str) -> Vec<usize> {
+/// The indices of the patches whose name holds `query`, ignoring case, in file order or by name (`sort`).
+fn matching(patches: &[Preset], query: &str, sort: PatchOrdering) -> Vec<usize> {
     let query = query.to_lowercase();
     let holds = |(_, p): &(usize, &Preset)| p.name.to_lowercase().contains(&query);
-    patches
-        .iter()
-        .enumerate()
+    let mut found: Vec<usize> = (patches.iter().enumerate())
         .filter(holds)
         .map(|(i, _)| i)
-        .collect()
+        .collect();
+    if sort == PatchOrdering::AZ {
+        found.sort_by(|&a, &b| natural(&patches[a].name, &patches[b].name));
+    }
+    found
 }
 
 #[cfg(test)]
@@ -188,7 +238,7 @@ mod tests {
     use eframe::egui::{self, Event, Key, Modifiers, PointerButton, Pos2, RawInput, Rect, pos2};
 
     use super::*;
-    use crate::metrics::{DEFAULT_UI_SCALE_INDEX, FontSize, Metrics};
+    use crate::metrics::{DEFAULT_UI_SCALE, FontSize, Metrics};
     use crate::sf2::tests::soundfont;
     use crate::theme::theme_by_id;
     use crate::ui::main_menu::MemoryLibrary;
@@ -257,7 +307,7 @@ mod tests {
             };
             let (theme, m) = (
                 theme_by_id(0),
-                Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX),
+                Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE),
             );
             let cx = UiCtx {
                 theme: &theme,
@@ -301,7 +351,7 @@ mod tests {
         /// A click on the header's Back arrow.
         fn back(&mut self) -> Option<SoundFontAction> {
             let screen = Rect::from_min_max(pos2(0.0, 0.0), pos2(1000.0, 800.0));
-            let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+            let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
             let back = crate::ui::modules_browser::layout(screen, 1.0, &m).back;
             self.click(back.center())
         }
@@ -356,8 +406,8 @@ mod tests {
         }
         assert!(rig.shows(MY_FILES) && rig.shows("BAS Gen"));
         assert_eq!(rig.click_text("BAS Gen"), None);
-        // The folder the root lists is no `My Files`.
-        assert!(rig.shows("Upright") && rig.header().0 == "     SoundFonts | BAS Gen");
+        // Titled with the SoundFont's name.
+        assert!(rig.shows("Upright") && rig.header().0 == "     BAS Gen");
         let pick = rig.click_text("Grand");
         assert!(
             matches!(&pick, Some(SoundFontAction::Patch { path, index: 1, .. }) if path == Path::new("Content/SoundFonts/BAS Gen.sf2")),
@@ -373,13 +423,12 @@ mod tests {
         assert!(rig.shows("Keys") && rig.shows("Pad") && rig.shows("Broken"));
         assert!(!rig.shows("notes"));
         assert_eq!(rig.click_text("Keys"), None);
-        // Drilled in place: the header does not slide in again.
+        // Drilled in place: the header does not slide in again. The patches are titled with the SoundFont's name.
         let title = rig.header().1.left();
         assert_eq!(rig.click_text("Piano"), None);
         let (crumb, at) = rig.header();
         assert_eq!(at.left(), title);
-        // The trail keeps its tail when it is too long for the header.
-        assert!(crumb.ends_with("Keys | Piano"), "{crumb}");
+        assert_eq!(crumb, "     Piano");
         let ys: Vec<f32> = ["Upright", "Grand", "Bright"]
             .map(|p| rig.find(p).top())
             .to_vec();
@@ -391,7 +440,7 @@ mod tests {
             }
             _ => None,
         });
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         assert_eq!(size, Some(m.font_id(FontSize::Pt18).size));
         let pick = rig.click_text("Grand");
         let want = SoundFontAction::Patch {
@@ -400,6 +449,8 @@ mod tests {
             index: 1,
         };
         assert_eq!(pick, Some(want));
+        // It stays in the patches.
+        assert!(rig.shows("Upright") && rig.shows("Bright"));
     }
 
     #[test]
@@ -441,10 +492,10 @@ mod tests {
         let patches = crate::sf2::presets(&piano()).unwrap();
         let mut rig = Rig::new(SoundFontPicker::new(
             Some(DIR.into()),
-            Some((path, patches)),
+            Some((path, patches, 1)),
         ));
         assert!(rig.shows("Upright") && rig.shows("Bright"));
-        assert!(rig.header().0.ends_with("Keys | Piano"));
+        assert_eq!(rig.header().0, "     Piano");
         // Back goes to the files, at their root.
         rig.back();
         assert!(rig.shows(MY_FILES) && !rig.shows("Upright"));
@@ -460,12 +511,16 @@ mod tests {
     }
 
     #[test]
-    fn search_keeps_the_patches_whose_name_holds_the_query_in_file_order() {
+    fn search_keeps_the_patches_whose_name_holds_the_query_in_file_order_or_a_to_z() {
         let patches = crate::sf2::presets(&piano()).unwrap();
-        assert_eq!(matching(&patches, ""), [0, 1, 2]);
-        assert_eq!(matching(&patches, "R"), [0, 1, 2]);
-        assert_eq!(matching(&patches, "ght"), [0, 2]);
-        assert_eq!(matching(&patches, "GRAND"), [1]);
-        assert!(matching(&patches, "x").is_empty());
+        let matching = |query| matching(&patches, query, PatchOrdering::Default);
+        assert_eq!(matching(""), [0, 1, 2]);
+        assert_eq!(matching("R"), [0, 1, 2]);
+        assert_eq!(matching("ght"), [0, 2]);
+        assert_eq!(matching("GRAND"), [1]);
+        assert!(matching("x").is_empty());
+        // `A-Z`: Bright, Grand, Upright.
+        assert_eq!(super::matching(&patches, "", PatchOrdering::AZ), [2, 1, 0]);
+        assert_eq!(super::matching(&patches, "ght", PatchOrdering::AZ), [2, 0]);
     }
 }

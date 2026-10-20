@@ -147,9 +147,9 @@ const GAMEPAD: [&str; 20] = [
 ];
 
 /// A keymap key token as egui's key (the Android token list): letters, digits, `- = [ ] ; ' \ , . /`, the
-/// ISO key's `` ` ``, `escape backspace tab enter space delete up down left right` and `f1` … `f10`.
+/// ISO key's `` ` ``, `escape backspace tab enter space delete up down left right home end` and `f1` … `f10`.
 fn key_token(token: &str) -> Option<Key> {
-    const NAMED: [&str; 10] = [
+    const NAMED: [&str; 12] = [
         "space",
         "tab",
         "enter",
@@ -160,6 +160,8 @@ fn key_token(token: &str) -> Option<Key> {
         "right",
         "up",
         "down",
+        "home",
+        "end",
     ];
     let f = token.strip_prefix('f').and_then(|n| n.parse::<u8>().ok());
     let name = match token.as_bytes() {
@@ -181,6 +183,8 @@ struct Binding {
     /// `None`: the modifier alone.
     key: Option<Key>,
     win: bool,
+    /// The combination as a tooltip shows it ([`Keymap::shortcut`]).
+    label: String,
 }
 
 /// What a combination is, for the rules that remove: its modifiers, whether `win` is held, its key.
@@ -263,6 +267,14 @@ impl Keymap {
     /// typing-keyboard notes (notes are not keymap actions).
     pub fn binds_plain(&self, at: Key) -> bool {
         (self.bindings.iter()).any(|b| b.matches(at, Modifiers::NONE))
+    }
+
+    /// The combination of `action`'s first key binding as a tooltip shows it: the file's modifier tokens in the order
+    /// its `modifiers` list declares them, then the key token, joined by `+` and upper-cased (`CTRL+K`).
+    pub fn shortcut(&self, action: &str) -> Option<&str> {
+        (self.bindings.iter())
+            .find(|b| b.action == action && b.key.is_some())
+            .map(|b| b.label.as_str())
     }
 
     /// Whether some action binds key `at` ([`key_at`]) pressed with `mods` ([`Binding::matches`]): the web build keeps
@@ -359,7 +371,7 @@ impl Merger {
                 continue;
             }
             match self.combo(key) {
-                Ok(combo) => self.apply(combo, action),
+                Ok(combo) => self.apply(combo, action, self.label(key)),
                 Err(e) => self.log.push(e),
             }
         }
@@ -397,8 +409,17 @@ impl Merger {
         Ok((mods, win, key))
     }
 
+    /// A valid `key` as [`Keymap::shortcut`] shows it.
+    fn label(&self, key: &str) -> String {
+        let mut tokens: Vec<&str> = key.split('+').collect();
+        let last = tokens.pop().unwrap_or_default();
+        tokens.sort_by_key(|t| self.declared.iter().position(|m| m == t));
+        tokens.push(last);
+        tokens.join("+").to_uppercase()
+    }
+
     /// `""` removes every binding of the combination, `-name` that one action from it, any other action is appended.
-    fn apply(&mut self, combo @ (mods, win, key): Combo, action: &str) {
+    fn apply(&mut self, combo @ (mods, win, key): Combo, action: &str, label: String) {
         let bindings = &mut self.map.bindings;
         match action.strip_prefix('-') {
             _ if action.is_empty() => bindings.retain(|b| b.combo() != combo),
@@ -408,6 +429,7 @@ impl Merger {
                 mods,
                 key,
                 win,
+                label,
             }),
         }
     }
@@ -531,7 +553,9 @@ pub(crate) mod tests {
             focusEditorTimeline scrollHorizontal scrollVertical pianoScrollHorizontal pianoZoom zoomInHorizontal \
             zoomInVertical zoomOutHorizontal zoomOutVertical marqueeHorizontal marqueeVertical startMarquee nextTab \
             prevTab increment decrement fineIncrement fineDecrement open close selectFile leaveFolder backspace \
-            blinkCursor newSongInBrowser newSongFromTemplateInBrowser saveSongInBrowser quickSaveSongInBrowser"
+            blinkCursor newSongInBrowser newSongFromTemplateInBrowser saveSongInBrowser quickSaveSongInBrowser \
+            prevBar nextBar lineStart lineEnd wordLeft wordRight selectLeft selectRight selectToLineStart \
+            selectToLineEnd selectWordLeft selectWordRight"
             .split_whitespace()
             .map(String::from)
             .collect();
@@ -659,12 +683,15 @@ pub(crate) mod tests {
             ("f7", Key::F7),
             ("escape", Key::Escape),
             ("delete", Key::Delete),
+            ("home", Key::Home),
+            ("end", Key::End),
+            ("[", Key::OpenBracket),
         ];
         for (token, key) in keys {
             let map = only(&format!("ctrl+{token}"), "play").unwrap_or_else(|e| panic!("{e}"));
             assert_eq!(map.bindings[0].key, Some(key), "{token}");
         }
-        for bad in ["f0", "f11", "f01", "F1", "A", "+", "ab", "numpad1", "home"] {
+        for bad in ["f0", "f11", "f01", "F1", "A", "+", "ab", "numpad1", "pgup"] {
             assert!(only(&format!("ctrl+{bad}"), "play").is_err(), "{bad}");
         }
     }
@@ -806,6 +833,17 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_shortcut_shows_its_modifiers_in_the_declared_order() {
+        assert_eq!(windows().shortcut("showTransport"), Some("CTRL+K"));
+        assert_eq!(windows().shortcut("showTempo"), Some("CTRL+SHIFT+T"));
+        assert_eq!(mac().shortcut("showTempo"), Some("SHIFT+CMD+T"));
+        assert_eq!(windows().shortcut("showRack"), Some("F6"));
+        // The first key binding; a held modifier alone is none.
+        assert_eq!(windows().shortcut("redo"), Some("CTRL+ALT+Z"));
+        assert_eq!(windows().shortcut("fineTweak"), None);
+    }
+
+    #[test]
     fn a_trailing_plus_binds_the_modifier_alone() {
         let map = only("ctrl+", "fineTweak").unwrap();
         assert_eq!(
@@ -814,7 +852,8 @@ pub(crate) mod tests {
                 action: "fineTweak".into(),
                 mods: Modifiers::COMMAND,
                 key: None,
-                win: false
+                win: false,
+                label: "CTRL+".into()
             }]
         );
         // It is a held state, not a press: no key fires it.

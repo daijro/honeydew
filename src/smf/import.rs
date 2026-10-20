@@ -278,7 +278,7 @@ pub fn import(
     }
     if as_song {
         let (lo, hi) = crate::song::TEMPO_RANGE;
-        // Owner request (2026-10-18): a file without `FF 51` plays at the MIDI default of 120 BPM.
+        // A file without `FF 51` plays at the MIDI default of 120 BPM.
         song.tempo_bpm = tempo.unwrap_or(120.0).clamp(lo, hi);
     }
     let (made, kits) = (state.made, state.kits.clone());
@@ -539,7 +539,7 @@ fn new_clip(lane: &mut Lane, beats: impl Iterator<Item = f64> + Clone) -> &mut C
 fn fit(clip: &mut Clip, bar: u32) {
     // A grown clip ends at least 1 tick after its last event start, so the final CC or pitch-wheel value starts (a
     // sustain released at the end, a bend reset), as `fit_loop` lets a zero-length note last a tick; and it covers its
-    // notes' ends, so the last notes sound in full (owner request, 2026-10-18).
+    // notes' ends, so the last notes sound in full.
     let ppq = f64::from(PPQ);
     let end = (clip.events.iter())
         .map(|e| match *e {

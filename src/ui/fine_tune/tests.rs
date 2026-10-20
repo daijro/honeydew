@@ -1,7 +1,7 @@
 use eframe::egui::{Color32, Event, Key, Modifiers, Pos2, Shape, epaint::ClippedShape};
 
 use super::*;
-use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+use crate::metrics::DEFAULT_UI_SCALE;
 use crate::params::module_spec;
 use crate::song::{ChannelKind, SynthKind};
 use crate::ui::modules_browser::{InsertAt, add_module};
@@ -161,21 +161,21 @@ fn a_module_params_scope_is_the_module_and_its_reset_the_module_default() {
 // ---- the box ----
 
 #[test]
-fn the_box_is_8_u_high_full_width_centred_with_its_close_button_and_three_rows_at_ppp_1() {
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+fn the_box_is_8_u_high_inset_1_u_centred_with_its_close_button_and_three_rows_at_ppp_1() {
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     assert_eq!(m.u(1.0), 32.0);
     let l = layout(SCREEN, &m);
-    // 540 / 2 − 4 U = 142.
+    // 540 / 2 − 4 U = 142; 1 U in from the screen's sides.
     assert_eq!(
         l.dialog,
-        Rect::from_min_max(pos2(0.0, 142.0), pos2(1170.0, 398.0))
+        Rect::from_min_max(pos2(32.0, 142.0), pos2(1138.0, 398.0))
     );
     assert_eq!(
         l.close,
-        Rect::from_min_max(pos2(1106.0, 142.0), pos2(1170.0, 206.0))
+        Rect::from_min_max(pos2(1074.0, 142.0), pos2(1138.0, 206.0))
     );
     // Inset 2 U left, right and top, 5 U high, thirds on whole pixels: 206, 259.33 → 259, 312.67 → 313, 366.
-    let row = |top: f32, bottom: f32| Rect::from_min_max(pos2(64.0, top), pos2(1106.0, bottom));
+    let row = |top: f32, bottom: f32| Rect::from_min_max(pos2(96.0, top), pos2(1074.0, bottom));
     assert_eq!(
         l.rows,
         [row(206.0, 259.0), row(259.0, 313.0), row(313.0, 366.0)]
@@ -184,12 +184,12 @@ fn the_box_is_8_u_high_full_width_centred_with_its_close_button_and_three_rows_a
 
 #[test]
 fn at_ppp_2_the_rows_fall_on_half_points() {
-    let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE);
     assert_eq!((m.u(1.0), m.u_px()), (32.0, 64.0));
     let l = layout(SCREEN, &m);
     assert_eq!(
         l.dialog,
-        Rect::from_min_max(pos2(0.0, 142.0), pos2(1170.0, 398.0))
+        Rect::from_min_max(pos2(32.0, 142.0), pos2(1138.0, 398.0))
     );
     assert_eq!(l.close.size(), vec2(64.0, 64.0));
     // 259.33 → 518.67 px → 519 px; 312.67 → 625.33 px → 625 px.
@@ -292,7 +292,7 @@ fn track_x(v: f32) -> f32 {
 }
 
 #[test]
-fn it_shows_the_title_and_the_value_text_at_18_pt_and_no_other_text_on_a_module_fill_box() {
+fn it_shows_the_title_and_the_value_text_at_18_pt_and_no_other_text_on_the_dialog_panel() {
     let rig = Rig::new(0.25);
     let colors = &crate::theme::theme_by_id(0).colors;
     let text = colors.text.to_color32();
@@ -409,17 +409,17 @@ fn the_thumb_is_haloed_while_pressed() {
 fn the_slider_paints_its_parts_in_their_theme_roles_and_the_close_icon_at_0_75() {
     let rig = Rig::new(0.25);
     let colors = &crate::theme::theme_by_id(0).colors;
-    // The row's centre line (y 286) and the value's place on the track (x 80…1090).
+    // The row's centre line (y 286) and the value's place on the track (x 112…1058).
     let (cy, x) = (layout1().rows[1].center().y, track_x(0.25));
     let thumb = Rect::from_center_size(pos2(x, cy), vec2(20.0, 40.0));
     let want = [
         // The track in `controlFill`, 3 t thick; the fill from its left end in the channel colour.
         (
-            Rect::from_min_max(pos2(80.0, cy - 3.0), pos2(1090.0, cy + 3.0)),
+            Rect::from_min_max(pos2(112.0, cy - 3.0), pos2(1058.0, cy + 3.0)),
             colors.control_fill.to_color32(),
         ),
         (
-            Rect::from_min_max(pos2(80.0, cy - 3.0), pos2(x, cy + 3.0)),
+            Rect::from_min_max(pos2(112.0, cy - 3.0), pos2(x, cy + 3.0)),
             Color32::RED,
         ),
         // The thumb in `moduleFill`, its 2 px channel inset and its 2 px `menuFill` centre line.
@@ -440,7 +440,11 @@ fn the_slider_paints_its_parts_in_their_theme_roles_and_the_close_icon_at_0_75()
     let square = crate::icons::icon_square(close, 0.75, &m);
     assert_eq!(square.size(), vec2(32.0, 32.0));
     assert_eq!(square.center(), close.center());
-    let icon = crate::icons::icon_shapes(IconId::Close, square, colors.text.to_color32());
+    let icon = crate::icons::icon_shapes(
+        crate::icons::IconId::Close,
+        square,
+        colors.text.to_color32(),
+    );
     let shapes: Vec<_> = rig.shapes.iter().map(|s| s.shape.clone()).collect();
     assert!(!icon.is_empty() && icon.iter().all(|s| shapes.contains(s)));
 }

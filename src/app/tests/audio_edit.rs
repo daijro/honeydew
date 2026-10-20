@@ -191,7 +191,7 @@ fn screen_metrics() -> (egui::Rect, Metrics) {
     let screen = egui::Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
     (
         screen,
-        Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX),
+        Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE),
     )
 }
 
@@ -619,14 +619,14 @@ fn preview_on_and_off_decodes_no_clip_sample_again() {
         .samples
         .get(&key)
         .expect("the other clip's sample");
-    rig.click_text_button("Preview");
+    rig.click_text_button("SOLO CLIP");
     assert!(rig.app.preview.is_some(), "Preview is on");
     let during = rig.app.audio.samples.get(&key);
     assert!(
         during.is_some_and(|d| Arc::ptr_eq(&before, &d)),
         "kept while previewing"
     );
-    rig.click_text_button("Preview");
+    rig.click_text_button("SOLO CLIP");
     assert!(rig.app.preview.is_none(), "Preview is off");
     let after = rig.app.audio.samples.get(&key).expect("still cached");
     assert!(Arc::ptr_eq(&before, &after), "decoded again");

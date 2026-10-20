@@ -1,59 +1,97 @@
 //! The editors' time ruler: the playlist's, the piano roll's, the automation and audio editors' and both drum modes'.
-//! Every ruler follows the drum step grid's law, t = ceil(U/16) px, h the ruler's height:
+//! Every ruler is 1.65 U tall ([`RULER_H`]) and follows one law, h its height, q = ceil(0.0375·U) px its hairline
+//! ([`q`]):
 //! 1. a `background` fill;
-//! 2. a `menuFill` baseline, t tall, at bottom − 2t, across the full width;
+//! 2. a `menuFill` baseline, ceil(1.5·q) px tall, q above the bottom, across the full width ([`baseline_top`]);
 //! 3. the range, if any ([`RangeSelect`]);
-//! 4. `menuFill` ticks with their bottoms at bottom − 3t: beat-level ticks 2t wide and 0.3h tall, step- and bar-level
-//!    ticks t wide and 0.2h tall, spaced by the mark law ([`next`], [`spacings`], [`marks`]);
-//! 5. bar badges on the top-level marks: a `text` disc of radius 6t on the bar line at mid-height, the 1-based bar number
-//!    on it in font step 0, `menuFill`, skipped when the line is within 6t of the marks' left edge (the playlist's
-//!    header column is not part of it).
+//! 4. `menuFill` ticks q wide standing on the baseline, spaced by the mark law ([`next`], [`spacings`], [`marks`]):
+//!    0.85 of the height above the baseline for the labelled (top-level) marks, 0.35 for mid marks, 0.25 for fine ones;
+//! 5. on each top-level mark the 1-based bar number in 8 pt `text` at α 0.8, left-aligned 0.15 U right of the bar line,
+//!    its top 0.15·(h − 2q) below the ruler top; none for a bar line left of the marks' left edge (the playlist's
+//!    header column is not part of it);
+//! 6. the scroll thumb while the view shows less than the content ([`scroll_thumb`]): display only.
 //!
-//! The law gives "every other bar" (3, 5, 7 …) at the playlist's and the piano roll's opening zooms and every bar at
-//! the automation and audio editors' 4 U a beat. A tick is centred on its mark; the baseline's top is at bottom − 2t;
-//! in Next, B/n and d/n are whole-number divisions; the text box rule max(text width + r, 0.75 U), for text centred on
-//! the disc, never changes what is drawn.
+//! The law labels every bar at the editors' opening zooms (the playlist's 1.2 U a beat, the piano roll's 2 U, the
+//! automation and audio editors' 4 U) and every other bar at 0.8 U. In Next, B/n and d/n are whole-number divisions.
 //!
-//! It scrolls and zooms: the caller passes tick 0's x and the beat width. Every editor's playhead is the shared line
-//! ([`playhead_line`]) under a light disc holding a play triangle, the playhead knob ([`PlayheadKnob`], [`disc`]). A
-//! tap on the ruler sets the playhead, and a range picked on it is the song's play loop, whose `+` button opens the
-//! region menu ([`RangeSelect`]).
+//! It scrolls and zooms: the caller passes tick 0's x and the beat width. Every editor's playhead is the shared grid
+//! line ([`playhead_line`]) and, on the ruler, the play box ([`PlayheadKnob`]) right of it. A tap on the ruler sets
+//! the playhead, and a range picked on it is the song's play loop, whose `+` button opens the region menu
+//! ([`RangeSelect`]).
 
 use eframe::egui::{
-    self, Align2, Color32, Id, Painter, Pos2, Rangef, Rect, Sense, Shape, Vec2, pos2,
+    self, Align2, Color32, CornerRadius, Id, Painter, Pos2, Rangef, Rect, Sense, Shape, pos2, vec2,
 };
 
 use crate::icons::{IconId, draw_icon};
 use crate::metrics::{FontSize, Metrics};
 use crate::song::{PPQ, TimeSig};
+use crate::theme::RECORD_COLOR;
 use crate::ui::buttons::filled_circle_button;
 use crate::ui::clips::TimeAxis;
 use crate::ui::piano_roll::notes::snap_round;
 use crate::ui::region::{self, RegionOp, TimeRange};
-use crate::ui::{UiCtx, gesture, pinch_press, popup, primary_down_live, widgets};
+use crate::ui::{UiCtx, anim, gesture, pinch_press, popup, primary_down_live, widgets};
 
 // Sizes in U.
-pub const RULER_H: f32 = 1.5;
+/// Every ruler's height: the playlist's and every clip editor's.
+pub const RULER_H: f32 = 1.65;
 /// The marks are never closer than this, in U.
 const MARK_U: f32 = 0.6;
-/// Tick heights, in ruler heights; the badge's radius, in t.
-const BEAT_TICK_H: f32 = 0.3;
-const TICK_H: f32 = 0.2;
-const BADGE_T: f32 = 6.0;
-/// The playhead disc's square is this share of the ruler's height, and the disc's radius this many device px short of
-/// half of it.
-const DISC_SIDE: f32 = 1.35;
-const DISC_INSET_PX: f32 = 3.0;
-/// The playhead icon's size factor per U of the disc's diameter.
-const PLAYHEAD_ICON: f32 = 0.4;
+/// Tick heights, in shares of the ruler top to the baseline: labelled, mid and fine marks.
+const TOP_TICK: f32 = 0.85;
+const MID_TICK: f32 = 0.35;
+const FINE_TICK: f32 = 0.25;
+/// A bar label's left inset from its bar line, in U, and its top, in shares of h − 2q below the ruler top.
+const LABEL_X: f32 = 0.15;
+const LABEL_Y: f32 = 0.15;
+const LABEL_ALPHA: f32 = 0.8;
+/// The ruler hairline q, in U (rounded up to whole device px).
+const Q_U: f32 = 0.0375;
+/// The scroll thumb: its track stops this short of the ruler's right end; `text` at this alpha.
+const THUMB_END: f32 = 0.15;
+const THUMB_ALPHA: f32 = 0.3;
+/// The play box: its width, its inset from the ruler's top and bottom, its right corners' radius, the icon's scale and
+/// alpha, how far its line reaches below the ruler (in ruler heights), and its touch area around the playhead x.
+const BOX_W: f32 = 1.72;
+const BOX_INSET: f32 = 0.08;
+const BOX_R: f32 = 0.15;
+const BOX_ICON: f32 = 0.82;
+const BOX_ICON_ALPHA: f32 = 0.85;
+const BOX_LINE_BELOW: f32 = 0.175;
+const BOX_TOUCH_LEFT: f32 = 0.56;
+const BOX_TOUCH_RIGHT: f32 = 2.29;
+const BOX_TOUCH_Y: f32 = 0.29;
+/// The armed box's fill: this share of `recordColor` over `menuFill`.
+const BOX_ARMED_MIX: f32 = 0.22;
+/// The play box's fade keeps this much of the way each 1/60 s (k = 13.33 a second), snapping within this.
+const FADE_KEEP: f32 = 0.8;
+const FADE_SNAP: f32 = 0.001;
 /// The line's shadow: `background` at this alpha.
 const SHADOW_ALPHA: f32 = 0.3;
 /// The range's edge handles, centred on each edge.
 const HANDLE_W: f32 = 1.0;
 /// The `+` button under the released edge.
 const PLUS_D: f32 = 1.25;
-/// How long a dropped playhead knob stays put waiting for the output to report the seek, in seconds.
+/// How long a dropped play box stays put waiting for the output to report the seek, in seconds.
 const DROP_HOLD_S: f64 = 0.25;
+
+/// Every ruler's height in points: [`RULER_H`] U cut to whole device pixels (140 px at U = 85).
+pub fn ruler_h(m: &Metrics) -> f32 {
+    (RULER_H * m.u_px()).trunc() / m.ppp()
+}
+
+/// The ruler hairline q = ceil(0.0375·U) px, in points.
+pub fn q(m: &Metrics) -> f32 {
+    (Q_U * m.u_px()).ceil() / m.ppp()
+}
+
+/// The ruler `rect`'s baseline top: the line is ceil(1.5·q) px tall, thicker than the hairline q, its bottom q above
+/// the ruler's bottom.
+fn baseline_top(rect: Rect, m: &Metrics) -> f32 {
+    let q_px = (Q_U * m.u_px()).ceil();
+    rect.bottom() - (q_px + (1.5 * q_px).ceil()) / m.ppp()
+}
 
 /// A vertical line `px` device pixels wide, starting on the pixel column that contains `x`.
 pub fn vline_px(painter: &Painter, x: f32, y: Rangef, px: f32, color: Color32, m: &Metrics) {
@@ -92,7 +130,7 @@ pub fn next(x: f64, d: i64, b: i64) -> f64 {
 }
 
 /// The fine, mid and top spacings (s0, s1, s2) in beats, for marks at least `m` beats apart: from 1/d, 1 beat and b
-/// beats, Next until at least m, clamp(d, 2, 4)·m and clamp(d, 2, 4)·clamp(b, 2, 4)·m.
+/// beats, Next until at least m, clamp(d, 2, 4)·m and 0.5·clamp(d, 2, 4)·clamp(b, 2, 4)·m.
 pub fn spacings(m: f64, sig: TimeSig) -> [f64; 3] {
     let (d, b) = (i64::from(sig.steps_per_beat()), i64::from(sig.bar_beats()));
     // A bound past any zoom stops the walk (and NaN never starts it).
@@ -106,7 +144,7 @@ pub fn spacings(m: f64, sig: TimeSig) -> [f64; 3] {
     [
         grow(1.0 / d as f64, m),
         grow(1.0, cd * m),
-        grow(b as f64, cd * cb * m),
+        grow(b as f64, 0.5 * cd * cb * m),
     ]
 }
 
@@ -127,7 +165,7 @@ pub fn marks(from: i64, to: i64, s: [f64; 3], d: u32) -> impl Iterator<Item = (i
     })
 }
 
-/// Paints the ruler over `rect` (module docs): its fill and baseline, then its ticks and badges clipped to `marks` (all
+/// Paints the ruler over `rect` (module docs): its fill and baseline, then its ticks and labels clipped to `marks` (all
 /// of `rect`, or the part right of a header column). Tick 0 is at `x0` (left of `marks` once scrolled), a beat is
 /// `beat_w` wide and `sig` is the song's `TDIV`.
 pub fn ruler(
@@ -139,14 +177,14 @@ pub fn ruler(
     sig: TimeSig,
     cx: &UiCtx,
 ) {
-    let (c, t) = (&cx.theme.colors, cx.m.t());
+    let (c, q) = (&cx.theme.colors, q(cx.m));
     painter.rect_filled(rect, 0.0, c.background.to_color32());
-    let base = Rect::from_x_y_ranges(rect.x_range(), rect.bottom() - 2.0 * t..=rect.bottom() - t);
+    let base = Rect::from_x_y_ranges(rect.x_range(), baseline_top(rect, cx.m)..=rect.bottom() - q);
     painter.rect_filled(base, 0.0, c.menu_fill.to_color32());
     ruler_marks(painter, rect, marks, x0, beat_w, sig, cx);
 }
 
-/// The ruler's ticks and bar badges ([`ruler`]), clipped to `marks`.
+/// The ruler's ticks and bar labels ([`ruler`]), clipped to `marks`.
 fn ruler_marks(
     painter: &Painter,
     rect: Rect,
@@ -161,52 +199,78 @@ fn ruler_marks(
         return;
     }
     let painter = painter.with_clip_rect(painter.clip_rect().intersect(marks));
-    let (ink, text) = (c.menu_fill.to_color32(), c.text.to_color32());
-    let t = m.t();
+    let ink = c.menu_fill.to_color32();
+    let label = c.text.to_color32().gamma_multiply(LABEL_ALPHA);
+    let q = q(m);
     let d = sig.steps_per_beat();
     let step_w = beat_w / d as f32;
     let s = spacings(f64::from(m.u(MARK_U) / beat_w), sig);
-    let radius = BADGE_T * t;
     let at = |x: f32| f64::from((x - x0) / step_w);
     let (from, to) = (
         at(marks.left()).floor() as i64,
-        at(marks.right() + radius).ceil() as i64,
+        at(marks.right()).ceil() as i64,
     );
-    let bottom = rect.bottom() - 3.0 * t;
+    let baseline = baseline_top(rect, m);
+    let tall = baseline - rect.top();
+    let font = m.font_id(FontSize::Pt8);
+    let label_top = rect.top() + LABEL_Y * (rect.height() - 2.0 * q);
     let bar = i64::from(d * sig.bar_beats());
     for (j, level) in self::marks(from, to, s, d) {
         let x = x0 + j as f32 * step_w;
-        let (w, h) = match level {
-            Level::Mid => (2.0 * t, BEAT_TICK_H),
-            Level::Fine | Level::Top => (t, TICK_H),
+        let h = match level {
+            Level::Top => TOP_TICK,
+            Level::Mid => MID_TICK,
+            Level::Fine => FINE_TICK,
         };
-        let tick = Rect::from_x_y_ranges(
-            x - w / 2.0..=x + w / 2.0,
-            bottom - h * rect.height()..=bottom,
-        );
+        let tick = Rect::from_x_y_ranges(x - q / 2.0..=x + q / 2.0, baseline - h * tall..=baseline);
         painter.rect_filled(tick, 0.0, ink);
-        if level == Level::Top && x - marks.left() >= radius {
-            let center = pos2(x, rect.center().y);
-            painter.circle_filled(center, radius, text);
-            let font = m.font_id(FontSize::Pt6);
+        if level == Level::Top && x >= marks.left() {
             let number = (j / bar + 1).to_string();
-            painter.text(center, Align2::CENTER_CENTER, number, font, ink);
+            let at = pos2(x + m.u(LABEL_X), label_top);
+            painter.text(at, Align2::LEFT_TOP, number, font.clone(), label);
         }
     }
 }
 
-/// The playhead disc of a ruler `ruler_h` points tall: its square's side and the disc's radius, in points. The square is
-/// 1.35 × the ruler's height, centred on the playhead x and the ruler's mid-height; the radius is side/2 − 3 px, so the
-/// disc overhangs the ruler into the top of the grid.
-pub fn disc(ruler_h: f32, m: &Metrics) -> (f32, f32) {
-    let side = DISC_SIDE * ruler_h;
-    (side, side / 2.0 - DISC_INSET_PX / m.ppp())
+/// The ruler `rect`'s scroll thumb (display only; a touch on it is a ruler touch), the ruler on `axis` showing ticks
+/// `from` to `from + len` of content: while the ruler spans less than that, a `text` α 0.3 bar t tall, t below the
+/// ruler top, on a track from the ruler's left to 0.15 U short of its right: span/length of the track wide (at least
+/// t), at (view start − from)/length along it, clamped inside the track.
+pub fn scroll_thumb(
+    painter: &Painter,
+    rect: Rect,
+    axis: TimeAxis,
+    (from, len): (f64, f64),
+    cx: &UiCtx,
+) {
+    let t = cx.m.t();
+    let (start, span) = (
+        axis.tick(rect.left()),
+        axis.tick(rect.right()) - axis.tick(rect.left()),
+    );
+    // Shown only while the ruler spans less than the content (never for a NaN span).
+    let shown = span < len && len > 0.0;
+    if !shown {
+        return;
+    }
+    let track = (rect.width() - cx.m.u(THUMB_END)).max(0.0);
+    let w = (track * (span / len) as f32).clamp(t.min(track), track);
+    let x = rect.left() + (track * ((start - from) / len) as f32).clamp(0.0, track - w);
+    let bar = Rect::from_min_size(pos2(x, rect.top() + t), vec2(w, t));
+    let ink = cx
+        .theme
+        .colors
+        .text
+        .to_color32()
+        .gamma_multiply(THUMB_ALPHA);
+    painter.rect_filled(bar, 0.0, ink);
 }
 
-/// The playhead line, the same in every editor grid: at `x`, from the top of `grid` to its bottom, first a `background`
-/// shadow at alpha 0.3, 2(t + 1) px wide, then a `text` line 2t px wide, both centred on the pixel nearest `x`
-/// (t = ceil(U/16) px). It is drawn whenever `x` lies within the grid's width, stopped or playing; `painter` clips it
-/// (the playlist's lets its left half show in the gap after the header column).
+/// The playhead line, the same in every editor grid: at `x`, from the top of `grid` to its bottom, a `text` line
+/// ceil(1.5·t) px wide on a `background` α 0.3 shadow 1 px wider each side (t = ceil(U/16) px), on whole device pixels
+/// about the pixel edge nearest `x` (an odd width's extra pixel right of it). It is drawn whenever `x` lies within the
+/// grid's width, stopped or playing; `painter` clips it (the playlist's lets its left half show in the gap after the
+/// header column). The ruler part is the play box's.
 pub fn playhead_line(painter: &Painter, grid: Rect, x: f32, cx: &UiCtx) {
     painter.extend(playhead_line_shapes(grid, x, cx));
 }
@@ -216,32 +280,32 @@ pub fn playhead_line_shapes(grid: Rect, x: f32, cx: &UiCtx) -> Vec<Shape> {
     if !grid.x_range().contains(x) {
         return Vec::new();
     }
+    line_shapes(x, grid.y_range(), 1.0, cx)
+}
+
+/// The playhead line's two bands at `x` over `ys` ([`playhead_line`]), at `alpha`.
+fn line_shapes(x: f32, ys: Rangef, alpha: f32, cx: &UiCtx) -> Vec<Shape> {
     let (c, m) = (&cx.theme.colors, cx.m);
     let (ppp, t) = (m.ppp(), m.t() * m.ppp());
-    let x = (x * ppp).round();
-    let band = |half: f32, color: Color32| {
-        let xs = (x - half) / ppp..=(x + half) / ppp;
-        Shape::rect_filled(Rect::from_x_y_ranges(xs, grid.y_range()), 0.0, color)
+    let w = (1.5 * t).ceil();
+    let left = (x * ppp).round() - (w / 2.0).floor();
+    let band = |from: f32, w: f32, color: Color32| {
+        let xs = from / ppp..=(from + w) / ppp;
+        Shape::rect_filled(Rect::from_x_y_ranges(xs, ys), 0.0, color)
     };
-    let shadow = c.background.to_color32().gamma_multiply(SHADOW_ALPHA);
-    vec![band(t + 1.0, shadow), band(t, c.text.to_color32())]
+    let shadow = c
+        .background
+        .to_color32()
+        .gamma_multiply(SHADOW_ALPHA * alpha);
+    let text = c.text.to_color32().gamma_multiply(alpha);
+    vec![band(left - 1.0, w + 2.0, shadow), band(left, w, text)]
 }
 
-/// The playhead disc's fade target in every editor: shown only while the transport is stopped and no floating row
-/// (`menu`) shows, so while playing only the line shows. The ruler's keyboard focus is no condition here: no ruler
-/// takes the focus (`ui::focus`).
+/// The play box's fade target in every editor: shown only while the transport is stopped and no floating row (`menu`)
+/// shows, so while playing only the grid line shows. The ruler's keyboard focus is no condition here: no ruler takes
+/// the focus (`ui::focus`).
 pub fn knob_shown(playing: bool, menu: bool) -> bool {
     !playing && !menu
-}
-
-/// The playhead's disc of radius `r` at `center`: `text`, with `icon` in `menuFill` on it, both at `alpha`.
-fn paint_disc(painter: &Painter, center: Pos2, r: f32, alpha: f32, icon: IconId, cx: &UiCtx) {
-    let (c, m) = (&cx.theme.colors, cx.m);
-    painter.circle_filled(center, r, c.text.to_color32().gamma_multiply(alpha));
-    let ink = c.menu_fill.to_color32().gamma_multiply(alpha);
-    let factor = PLAYHEAD_ICON * 2.0 * r / m.u(1.0);
-    let square = Rect::from_center_size(center, Vec2::splat(2.0 * r));
-    draw_icon(painter, square, icon, ink, factor, m);
 }
 
 /// The rulers' time range and its region menu, the same in the playlist, the piano roll and the drum editor:
@@ -528,18 +592,8 @@ impl RangeSelect {
     }
 }
 
-/// One frame of the playhead disc's fade: 20 % of the way to `target`, snapping onto it within 0.001.
-pub fn fade(alpha: f32, target: f32) -> f32 {
-    let next = alpha + 0.2 * (target - alpha);
-    if (target - next).abs() < 0.001 {
-        target
-    } else {
-        next
-    }
-}
-
-/// The beat a dragged playhead knob shows and its drop seeks to, as a song tick: the finger's `tick` clamped between
-/// the view-left tick `left` and the song end `end`, then round(tick/unit)·unit on the `grid` (whole ticks without one,
+/// The beat a dragged play box shows and its drop seeks to, as a song tick: the finger's `tick` clamped between the
+/// view-left tick `left` and the range end `end`, then round(tick/unit)·unit on the `grid` (whole ticks without one,
 /// Snap off), never past the end.
 pub fn knob_seek(tick: f64, grid: Option<f64>, left: f64, end: f64) -> u64 {
     let end = end.max(0.0);
@@ -547,10 +601,9 @@ pub fn knob_seek(tick: f64, grid: Option<f64>, left: f64, end: f64) -> u64 {
 }
 
 impl RangeRuler {
-    /// The tick a playhead knob dropped at `x` on this ruler seeks to, in the axis's ticks: [`knob_seek`] from the
-    /// ruler's left edge to `end`, on its grid. The drum editors pass s + L; the piano roll and the automation and
-    /// audio editors pass L − 1 tick in content ticks (their playhead is folded into the loop, where L is its start
-    /// again).
+    /// The tick a play box dropped at `x` on this ruler seeks to, in the axis's ticks: [`knob_seek`] from the ruler's
+    /// left edge to `end`, on its grid. The drum editors pass s + L; the piano roll and the automation and audio
+    /// editors pass L − 1 tick in content ticks (their playhead is folded into the loop, where L is its start again).
     pub fn knob_tick(&self, x: f32, end: f64) -> u64 {
         knob_seek(
             self.axis.tick(x),
@@ -561,33 +614,36 @@ impl RangeRuler {
     }
 }
 
-/// What the playhead knob did this frame.
+/// What the play box did this frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum KnobGesture {
     /// A tap: start playback.
     Tap,
-    /// A drag released at this x: the host seeks to the beat under it ([`knob_seek`]).
+    /// A drag released with the playhead at this x (the finger less its grab offset): the host seeks to the beat under
+    /// it ([`knob_seek`]).
     Drop(f32),
 }
 
-/// The playhead knob: the light disc with a play icon on the ruler.
-/// - A tap (released within 0.3 s, never out of the 0.5 U calm zone: the shared law, [`gesture`]) is
-///   [`KnobGesture::Tap`].
-/// - Moving more than 0.5 U sideways makes the press a drag: the disc follows the finger (the host maps
-///   [`PlayheadKnob::dragging`] to the snapped beat), and the release is [`KnobGesture::Drop`]. A press that moved
-///   only up or down does nothing.
-/// - It grows while held and wobbles once let go by the knobs' own law ([`widgets::pulse`]), and fades ([`fade`])
-///   toward the host's target, tracking the live playhead as it fades: the drum editor's rule in every editor
-///   ([`knob_shown`]), the playlist's only while on the grid too. Fading out it takes no new press.
+/// The play box: the playhead's handle on the ruler, right of the playhead line.
+/// - Its box: left edge on the playhead x, 1.72 U wide, h − 0.16 U tall, 0.08 U in from the ruler's top and bottom,
+///   square left corners and 0.15 U right ones. `menuFill`, with icon 3 (play) in `text` at α 0.85·a, scale 0.82; with
+///   record armed icon 5 in `recordColor` at α a on 0.78·`menuFill` + 0.22·`recordColor`. It draws the ruler part of
+///   the playhead line on itself ([`playhead_line`]'s bands), from its top to 0.175 h below the ruler. Hovered, the
+///   fill is ×1.25. Clipped to the ruler's width at its right end.
+/// - It keeps its size pressed, hovered, dragged and fading: no hover scale, press growth or wobble.
+/// - It fades toward the host's target ([`knob_shown`]): a ← a + (target − a)(1 − e^(−13.33·Δt)), snapping within
+///   0.001, tracking the live playhead as it fades (jumping with SETTINGS `Animation` reduced). At a = 0 it takes no
+///   touch.
+/// - Touch area: 0.56 U left to 2.29 U right of the playhead x, 0.29 U above to 0.29 U below the ruler. A tap
+///   (released within 0.3 s, within the 0.5 U calm zone: the shared law, [`gesture`]) is [`KnobGesture::Tap`].
+/// - Moving more than 0.5 U sideways makes the press a drag: the playhead follows the finger less its grab offset (the
+///   box does not jump under the finger; the host maps [`PlayheadKnob::dragging`] to the snapped beat), and the
+///   release is [`KnobGesture::Drop`]. A press that moved only up or down does nothing.
 ///
-/// It is drawn as the editors' playhead disc ([`disc`]): on its ruler's middle line, its square 1.35 × the ruler's
-/// height, a `text` disc of radius side/2 − 3 px and its icon in `menuFill`, both at the fade's alpha; the icon is REC
-/// (icon 5) while record is armed, else play (icon 3). Neither drawn nor touched while the playhead is off the ruler.
-///
-/// The disc's square is its hit area; a press held over a focus loss does nothing.
+/// Neither drawn nor touched while the playhead is off the ruler; a press held over a focus loss does nothing.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlayheadKnob {
-    /// Record is armed: the disc shows icon 5 (REC) in place of 3 (play). The host sets it each frame.
+    /// Record is armed: the box shows icon 5 (REC) in place of 3 (play). The host sets it each frame.
     pub armed: bool,
     alpha: f32,
     press: Option<KnobPress>,
@@ -599,6 +655,8 @@ pub struct PlayheadKnob {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct KnobPress {
     origin: Pos2,
+    /// The finger's x less the playhead's at the press: kept through a drag.
+    grab: f32,
     since: f64,
     moved: bool,
     drag: bool,
@@ -617,21 +675,22 @@ impl Default for PlayheadKnob {
 }
 
 impl PlayheadKnob {
-    /// While the knob is dragged: the finger's x this frame. The host maps it to a beat ([`knob_seek`]) and passes
-    /// that beat's x to [`Self::show`], so that the line and the disc both follow the finger on the snap grid.
+    /// While the box is dragged: the playhead's x this frame, the finger's less the grab offset. The host maps it to a
+    /// beat ([`knob_seek`]) and passes that beat's x to [`Self::show`], so that the line and the box both follow the
+    /// finger on the snap grid.
     pub fn dragging(&self, ui: &egui::Ui, m: &Metrics) -> Option<f32> {
         let press = self.press?;
         // `interact_pos`, not `latest_pos`: a touch's lift clears the latter in its release frame (`PointerGone`).
         let x = ui.input(|i| i.pointer.interact_pos())?.x;
         // From the frame the finger first goes more than 0.5 U sideways, as [`Self::show`] decides it.
-        (press.drag || (x - press.origin.x).abs() > m.u(gesture::CALM_U)).then_some(x)
+        (press.drag || (x - press.origin.x).abs() > m.u(gesture::CALM_U)).then_some(x - press.grab)
     }
 
-    /// The x the host draws its playhead (line and disc) at on `at`, `end` being the drop's upper clamp
+    /// The x the host draws its playhead (line and box) at on `at`, `end` being the drop's upper clamp
     /// ([`RangeRuler::knob_tick`]):
-    /// - while the knob is dragged, the tick its drop would seek to, so that the line and the disc follow the finger;
+    /// - while the box is dragged, the tick its drop would seek to, so that the line and the box follow the finger;
     /// - after a drop ([`Self::drop_tick`]), that tick, until the output reports a tick in its beat (`at.playhead`) or
-    ///   for a quarter second: the output reports the seek a frame or more later, and meanwhile the disc must not
+    ///   for a quarter second: the output reports the seek a frame or more later, and meanwhile the box must not
     ///   flash back;
     /// - else `live`.
     pub fn line_x(
@@ -656,17 +715,16 @@ impl PlayheadKnob {
         (dragged.or(self.dropped.map(|d| d.0))).map_or(live, |t| at.axis.x(t as f64))
     }
 
-    /// The tick a drop at `x` ([`KnobGesture::Drop`]) on `at` seeks to, up to `end`; [`Self::line_x`] shows the playhead
-    /// there until the output reports it.
+    /// The tick a drop at `x` ([`KnobGesture::Drop`]) on `at` seeks to, up to `end`; [`Self::line_x`] shows the
+    /// playhead there until the output reports it.
     pub fn drop_tick(&mut self, ui: &egui::Ui, at: &RangeRuler, end: f64, x: f32) -> u64 {
         let tick = at.knob_tick(x, end);
         self.dropped = Some((tick, ui.input(|i| i.time)));
         tick
     }
 
-    /// The knob on `ruler` (the time ruler: [`disc`] gives its square and radius) at the live playhead `x`, given every
-    /// frame (while it is dragged, the host's mapping of [`Self::dragging`]); `shown` is the fade's target. The step
-    /// grid passes "stopped" to show it only then.
+    /// The box on `ruler` (the time ruler) at the playhead `x`, given every frame (while it is dragged, the host's
+    /// mapping of [`Self::dragging`]); `shown` is the fade's target.
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -677,8 +735,6 @@ impl PlayheadKnob {
         cx: &UiCtx,
     ) -> Option<KnobGesture> {
         let m = cx.m;
-        let (d, r) = disc(ruler.height(), m);
-        let center = pos2(x, ruler.center().y);
         let on = ruler.x_range().contains(x);
         // Every frame, for their latches: a press held over a focus loss is up, and a second finger is a pinch's,
         // which ends the press (the shared gesture law): no tap, no drop.
@@ -691,15 +747,21 @@ impl PlayheadKnob {
             let pos = p.interact_pos();
             (i.time, p.primary_pressed(), p.primary_released(), pos)
         });
-        let live = on && (shown || self.press.is_some());
-        let hit = Rect::from_center_size(center, Vec2::splat(d)).with_max_y(ruler.bottom());
+        let live = on && (self.alpha > 0.0 || self.press.is_some());
+        let hit = Rect::from_x_y_ranges(
+            x - m.u(BOX_TOUCH_LEFT)..=x + m.u(BOX_TOUCH_RIGHT),
+            ruler.top() - m.u(BOX_TOUCH_Y)..=ruler.bottom() + m.u(BOX_TOUCH_Y),
+        );
         let response = live.then(|| ui.interact(hit, id, Sense::click_and_drag()));
         if pressed
-            && response.is_some_and(|r| r.is_pointer_button_down_on())
+            && response
+                .as_ref()
+                .is_some_and(|r| r.is_pointer_button_down_on())
             && let Some(origin) = pos
         {
             self.press = Some(KnobPress {
                 origin,
+                grab: origin.x - x,
                 since: now,
                 moved: false,
                 drag: false,
@@ -714,7 +776,7 @@ impl PlayheadKnob {
             if !down {
                 if released {
                     out = if press.drag {
-                        pos.map(|p| KnobGesture::Drop(p.x))
+                        pos.map(|p| KnobGesture::Drop(p.x - press.grab))
                     } else if !press.moved && !gesture::is_long(now - press.since) {
                         Some(KnobGesture::Tap)
                     } else {
@@ -730,20 +792,102 @@ impl PlayheadKnob {
         } else {
             0.0
         };
-        self.alpha = fade(self.alpha, target);
-        let scale = widgets::pulse(ui, id, self.press.is_some(), d * m.ppp());
+        let next = self.alpha + (target - self.alpha) * anim::step(ui.ctx(), FADE_KEEP);
+        self.alpha = if (target - next).abs() < FADE_SNAP {
+            target
+        } else {
+            next
+        };
         if self.alpha != target {
             ui.ctx().request_repaint();
         }
         if self.alpha > 0.0 && on {
-            let icon = if self.armed {
-                IconId::Record
-            } else {
-                IconId::Play
-            };
-            paint_disc(ui.painter(), center, r * scale, self.alpha, icon, cx);
+            let hovered = response.is_some_and(|r| r.hovered());
+            self.paint(ui, ruler, x, hovered, cx);
         }
         out
+    }
+
+    /// The box at the playhead `x` on `ruler`, hovered or not (type docs).
+    fn paint(&self, ui: &egui::Ui, ruler: Rect, x: f32, hovered: bool, cx: &UiCtx) {
+        let (c, m, a) = (&cx.theme.colors, cx.m, self.alpha);
+        let inset = m.u(BOX_INSET);
+        let rect = Rect::from_x_y_ranges(
+            x..=x + m.u(BOX_W),
+            ruler.top() + inset..=ruler.bottom() - inset,
+        );
+        let menu_fill = c.menu_fill.to_color32();
+        let (fill, icon, ink) = if self.armed {
+            let fill = crate::ui::clips::mix(c.menu_fill, RECORD_COLOR, BOX_ARMED_MIX);
+            let ink = RECORD_COLOR.to_color32().gamma_multiply(a);
+            (fill.to_color32(), IconId::Record, ink)
+        } else {
+            let ink = c.text.to_color32().gamma_multiply(BOX_ICON_ALPHA * a);
+            (menu_fill, IconId::Play, ink)
+        };
+        let fill = if hovered {
+            widgets::brighter(fill, 1.25)
+        } else {
+            fill
+        };
+        let r = m.u(BOX_R) as u8;
+        let radius = CornerRadius {
+            nw: 0,
+            sw: 0,
+            ne: r,
+            se: r,
+        };
+        // Clipped to the ruler's width, and down to the line's end below it.
+        let below = ruler.bottom() + BOX_LINE_BELOW * ruler.height();
+        let clip = Rect::from_x_y_ranges(ruler.x_range(), ruler.top()..=below);
+        let painter = ui.painter().with_clip_rect(ui.clip_rect().intersect(clip));
+        painter.rect_filled(rect, radius, fill.gamma_multiply(a));
+        painter.extend(line_shapes(x, Rangef::new(rect.top(), below), a, cx));
+        draw_icon(&painter, rect, icon, ink, BOX_ICON, m);
+    }
+}
+
+/// Finding the play box in a frame's shapes, for the editors' tests.
+#[cfg(test)]
+pub(crate) mod testing {
+    use eframe::egui::epaint::{ClippedShape, RectShape};
+    use eframe::egui::{Rect, Shape};
+
+    use crate::theme::RECORD_COLOR;
+
+    /// The play boxes among `shapes`, in paint order: the rects with square left and rounded right corners.
+    pub(crate) fn play_boxes(shapes: &[ClippedShape]) -> impl Iterator<Item = &RectShape> {
+        shapes.iter().filter_map(|s| match &s.shape {
+            Shape::Rect(r) if r.corner_radius.nw == 0 && r.corner_radius.ne > 0 => Some(r),
+            _ => None,
+        })
+    }
+
+    /// The playhead x a play box `rect` shows at U = `u`: its centre less half its width.
+    pub(crate) fn playhead_x(rect: Rect, u: f32) -> f32 {
+        rect.center().x - u * super::BOX_W / 2.0
+    }
+
+    /// The playhead x a playhead line's band `rect` (the line or its shadow) shows at `ppp`: the pixel edge it is drawn
+    /// about, an odd width's extra pixel right of it.
+    pub(crate) fn line_x(rect: Rect, ppp: f32) -> f32 {
+        rect.left() + (rect.width() * ppp / 2.0).floor() / ppp
+    }
+
+    /// The first play box's playhead x ([`playhead_x`]) at U = `u`, if one is drawn.
+    pub(crate) fn play_box_x(shapes: &[ClippedShape], u: f32) -> Option<f32> {
+        play_boxes(shapes).next().map(|r| playhead_x(r.rect, u))
+    }
+
+    /// The first play box shows the REC icon (a `recordColor` disc on it), not the play icon.
+    pub(crate) fn play_box_armed(shapes: &[ClippedShape]) -> bool {
+        let Some(rect) = play_boxes(shapes).next().map(|r| r.rect) else {
+            return false;
+        };
+        let rec = RECORD_COLOR.to_color32();
+        (shapes.iter()).any(
+            |s| matches!(&s.shape, Shape::Circle(c) if c.fill == rec && rect.contains(c.center)),
+        )
     }
 }
 
@@ -1197,134 +1341,63 @@ mod tests {
         }
     }
 
-    /// The playhead line and disc every editor shares.
+    /// The playhead line every editor grid shares.
     mod line {
-        use eframe::egui::{Color32, Context, LayerId, Pos2, RawInput, Rect, Shape, pos2, vec2};
+        use eframe::egui::{Context, LayerId, Pos2, RawInput, Rect, Shape, pos2, vec2};
 
-        use super::super::{disc, playhead_line};
-        use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+        use super::super::playhead_line;
+        use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
         use crate::theme::theme_by_id;
         use crate::ui::UiCtx;
 
-        /// A grid from (100, 60) to (900, 400) points, a ruler 1.5 U tall above it.
         const GRID: Rect = Rect {
             min: pos2(100.0, 60.0),
             max: pos2(900.0, 400.0),
         };
 
-        /// Runs `f` on a background painter at `ppp` and returns the rects (in device px, with their fill) and the
-        /// circles (centre, radius in points, fill, clip rect) it painted.
-        type Circles = Vec<(Pos2, f32, Color32, Rect)>;
-        fn paint(
-            ppp: f32,
-            f: impl Fn(&eframe::egui::Painter, &UiCtx),
-        ) -> (Vec<(Rect, Color32)>, Circles, Vec<Color32>) {
-            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+        /// How many bands `playhead_line` paints at `x`.
+        fn bands(x: f32) -> usize {
+            let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
             let theme = theme_by_id(0);
-            let ctx = Context::default();
-            let mut raw = RawInput {
+            let raw = RawInput {
                 screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1000.0, 500.0))),
                 ..Default::default()
             };
-            raw.viewports
-                .entry(raw.viewport_id)
-                .or_default()
-                .native_pixels_per_point = Some(ppp);
-            let out = ctx.run(raw, |ctx| {
+            let out = Context::default().run(raw, |ctx| {
                 let painter = ctx.layer_painter(LayerId::background());
-                f(
-                    &painter,
-                    &UiCtx {
-                        theme: &theme,
-                        m: &m,
-                    },
-                );
+                let cx = UiCtx {
+                    theme: &theme,
+                    m: &m,
+                };
+                playhead_line(&painter, GRID, x, &cx);
             });
-            let (mut rects, mut circles, mut paths) = (Vec::new(), Vec::new(), Vec::new());
-            for s in out.shapes {
-                match s.shape {
-                    Shape::Rect(r) => rects.push((r.rect * ppp, r.fill)),
-                    Shape::Circle(c) => circles.push((c.center, c.radius, c.fill, s.clip_rect)),
-                    Shape::Path(p) => paths.push(p.fill),
-                    _ => {}
-                }
-            }
-            (rects, circles, paths)
-        }
-
-        fn line(ppp: f32, x: f32) -> Vec<(Rect, Color32)> {
-            paint(ppp, |p, cx| playhead_line(p, GRID, x, cx)).0
-        }
-
-        #[test]
-        fn a_2t_px_text_line_on_a_2t_plus_2_px_background_shadow_down_the_grid() {
-            let c = theme_by_id(0).colors;
-            let shadow = c.background.to_color32().gamma_multiply(0.3);
-            let text = c.text.to_color32();
-            // ppp 1, U = 32: t = 2 px. ppp 2, U = 64 px: t = 4 px. The x is the nearest pixel's.
-            for (ppp, t) in [(1.0f32, 2.0), (2.0, 4.0)] {
-                let x = 300.25;
-                let px = (x * ppp).round();
-                let ys = GRID.top() * ppp..=GRID.bottom() * ppp;
-                let band = |half: f32| Rect::from_x_y_ranges(px - half..=px + half, ys.clone());
-                assert_eq!(
-                    line(ppp, x),
-                    [(band(t + 1.0), shadow), (band(t), text)],
-                    "ppp {ppp}"
-                );
-            }
-        }
-
-        #[test]
-        fn the_width_follows_t_only_twelve_px_and_fourteen_with_the_shadow_at_u_85() {
-            // U = 85 px (ppp 2.65625): t = 6.
-            let widths = |ppp: f32| {
-                line(ppp, 400.0)
-                    .iter()
-                    .map(|(r, _)| r.width().round())
-                    .collect::<Vec<_>>()
-            };
-            assert_eq!(widths(2.65625), [14.0, 12.0]);
-            assert_eq!(widths(1.0), [6.0, 4.0]);
+            (out.shapes.iter())
+                .filter(|s| matches!(s.shape, Shape::Rect(_)))
+                .count()
         }
 
         #[test]
         fn it_shows_only_while_its_x_lies_on_the_grid() {
-            assert_eq!(line(1.0, GRID.left()).len(), 2);
-            assert_eq!(line(1.0, GRID.right()).len(), 2);
-            assert!(line(1.0, GRID.left() - 0.5).is_empty());
-            assert!(line(1.0, GRID.right() + 0.5).is_empty());
-        }
-
-        #[test]
-        fn the_disc_is_a_1_35_ruler_square_less_3_px_of_radius() {
-            // U = 32 points at both: a 48-point ruler. 3 px is 3 points at ppp 1 and 1.5 at ppp 2.
-            for (ppp, r) in [(1.0, 29.4), (2.0, 30.9)] {
-                let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
-                let (side, radius) = disc(48.0, &m);
-                assert!(
-                    (side - 64.8).abs() < 1e-4 && (radius - r).abs() < 1e-4,
-                    "{side} {radius}"
-                );
-            }
+            assert_eq!(bands(GRID.left()), 2);
+            assert_eq!(bands(GRID.right()), 2);
+            assert_eq!(bands(GRID.left() - 0.5), 0);
+            assert_eq!(bands(GRID.right() + 0.5), 0);
         }
     }
 
-    /// The playhead knob.
+    /// The play box.
     mod knob {
         use eframe::egui::{Event, Id, Modifiers, PointerButton, Pos2, Rect, Shape, pos2, vec2};
 
-        use super::super::{KnobGesture, PlayheadKnob, fade, knob_seek};
+        use super::super::{KnobGesture, PlayheadKnob, knob_seek};
         use crate::ui::offscreen::Offscreen;
 
-        /// U = 32: the playlist's knob on its 1.5 U time ruler from x 48 (a 1.35 × 48 square, a disc of 32.4 − 3 =
-        /// 29.4), riding a playhead at x 200 on the ruler's mid-line y 24.
-        const D: f32 = 1.35 * 48.0;
-        const R: f32 = 29.4;
-        const AT: Pos2 = pos2(200.0, 24.0);
+        /// U = 32: the playlist's box on its 1.65 U time ruler from x 48, riding a playhead at x 200; a press at AT is on
+        /// the box's left end, the grab offset 4 points.
+        const AT: Pos2 = pos2(204.0, 26.0);
         const RULER: Rect = Rect {
             min: pos2(48.0, 0.0),
-            max: pos2(1170.0, 48.0),
+            max: pos2(1170.0, 52.8),
         };
         const U: f32 = 32.0;
 
@@ -1335,8 +1408,8 @@ mod tests {
             x: f32,
             shown: bool,
             outs: Vec<KnobGesture>,
-            /// The last frame's discs: centre, radius and alpha.
-            discs: Vec<(Pos2, f32, u8)>,
+            /// The last frame's boxes (`menuFill` rects): left edge and alpha.
+            boxes: Vec<(f32, u8)>,
         }
 
         impl Rig {
@@ -1344,10 +1417,10 @@ mod tests {
                 let mut rig = Self {
                     screen: Offscreen::new(),
                     knob: PlayheadKnob::default(),
-                    x: AT.x,
+                    x: 200.0,
                     shown: true,
                     outs: Vec::new(),
-                    discs: Vec::new(),
+                    boxes: Vec::new(),
                 };
                 rig.frame(vec![]);
                 rig
@@ -1358,14 +1431,18 @@ mod tests {
                 let (knob, x, shown) = (&mut self.knob, self.x, self.shown);
                 let mut out = None;
                 let shapes = self.screen.frame(events, &mut |ui, cx| {
-                    // The host's side: a drag shows where the finger is (no grid here).
+                    // The host's side: a drag shows where the playhead goes (no grid here).
                     let x = knob.dragging(ui, cx.m).unwrap_or(x);
                     out = knob.show(ui, Id::new("knob"), RULER, x, shown, cx);
                 });
                 self.outs.extend(out);
-                self.discs = (shapes.iter())
+                // The box is the one rect with rounded (right) corners; its left edge is the centre less half its
+                // 1.72 U.
+                self.boxes = (shapes.iter())
                     .filter_map(|s| match &s.shape {
-                        Shape::Circle(c) => Some((c.center, c.radius, c.fill.a())),
+                        Shape::Rect(r) if r.corner_radius.ne > 0 => {
+                            Some(((r.rect.center().x - 0.86 * U).round(), r.fill.a()))
+                        }
                         _ => None,
                     })
                     .collect();
@@ -1395,10 +1472,10 @@ mod tests {
                 std::mem::take(&mut self.outs)
             }
 
-            /// The one disc drawn: centre, radius, alpha.
-            fn disc(&self) -> Option<(Pos2, f32, u8)> {
-                assert!(self.discs.len() <= 1, "{:?}", self.discs);
-                self.discs.first().copied()
+            /// The one box drawn: its left edge and alpha.
+            fn drawn(&self) -> Option<(f32, u8)> {
+                assert!(self.boxes.len() <= 1, "{:?}", self.boxes);
+                self.boxes.first().copied()
             }
         }
 
@@ -1413,8 +1490,13 @@ mod tests {
             assert_eq!(rig.gesture(AT, AT, 0.31), []);
             // Moved 0.6 U up: no tap, and no drag either.
             assert_eq!(rig.gesture(AT, AT - vec2(0.0, 0.6 * U), 0.1), []);
-            // Off the knob: nothing.
-            assert_eq!(rig.gesture(AT + vec2(D, 0.0), AT + vec2(D, 0.0), 0.1), []);
+            // Its touch area reaches 2.29 U right of the playhead and 0.56 U left; beyond it, nothing.
+            let right = pos2(200.0 + 2.2 * U, AT.y);
+            assert_eq!(rig.gesture(right, right, 0.1), [KnobGesture::Tap]);
+            let off = pos2(200.0 + 2.6 * U, AT.y);
+            assert_eq!(rig.gesture(off, off, 0.1), []);
+            let left = pos2(200.0 - 0.9 * U, AT.y);
+            assert_eq!(rig.gesture(left, left, 0.1), []);
             // A press held over a focus loss does nothing.
             rig.frame(vec![Event::PointerMoved(AT)]);
             rig.button_after(1.0 / 60.0, AT, true);
@@ -1424,7 +1506,7 @@ mod tests {
         }
 
         #[test]
-        fn a_second_finger_cancels_a_knob_drag_which_then_drops_nothing() {
+        fn a_second_finger_cancels_a_drag_which_then_drops_nothing() {
             // The shared gesture law: a second finger ends the one-finger gesture.
             use eframe::egui::TouchPhase::{End, Move, Start};
             let touch = |id, phase, pos| Event::Touch {
@@ -1443,116 +1525,74 @@ mod tests {
             let mut rig = Rig::new();
             rig.frame(vec![Event::PointerMoved(AT)]);
             rig.frame(vec![touch(1, Start, AT), button(AT, true)]);
-            let to = pos2(300.0, AT.y);
+            let to = pos2(304.0, AT.y);
             rig.frame(vec![touch(1, Move, to), Event::PointerMoved(to)]);
-            assert_eq!(rig.disc().unwrap().0, to);
+            assert_eq!(rig.drawn().unwrap().0, 300.0);
             rig.frame(vec![touch(2, Start, pos2(600.0, 30.0))]);
             rig.frame(vec![touch(2, End, pos2(600.0, 30.0))]);
             // Back on the live playhead, and the lift drops nothing.
-            assert_eq!(rig.disc().unwrap().0, AT);
+            assert_eq!(rig.drawn().unwrap().0, 200.0);
             rig.frame(vec![touch(1, Move, to), Event::PointerMoved(to)]);
             rig.frame(vec![
                 touch(1, End, to),
                 button(to, false),
                 Event::PointerGone,
             ]);
-            assert_eq!(rig.disc().unwrap().0, AT);
+            assert_eq!(rig.drawn().unwrap().0, 200.0);
             assert_eq!(rig.outs, []);
         }
 
         #[test]
-        fn a_sideways_drag_drops_where_the_finger_lets_go_and_the_disc_follows_it() {
+        fn a_sideways_drag_keeps_the_grab_offset_and_drops_the_playhead_where_it_shows() {
             let mut rig = Rig::new();
-            rig.frame(vec![Event::PointerMoved(AT)]);
-            rig.button_after(1.0 / 60.0, AT, true);
-            // 0.5 U is no drag yet: the disc stays.
-            rig.frame(vec![Event::PointerMoved(AT + vec2(0.5 * U, 0.0))]);
-            assert_eq!(rig.disc().unwrap().0, AT);
-            rig.frame(vec![Event::PointerMoved(pos2(300.0, 40.0))]);
-            assert_eq!(rig.disc().unwrap().0, pos2(300.0, AT.y));
+            // Pressed 1 U into the box: the box keeps that offset to the finger.
+            let at = pos2(200.0 + U, AT.y);
+            rig.frame(vec![Event::PointerMoved(at)]);
+            rig.button_after(1.0 / 60.0, at, true);
+            // 0.5 U is no drag yet: the box stays.
+            rig.frame(vec![Event::PointerMoved(at + vec2(0.5 * U, 0.0))]);
+            assert_eq!(rig.drawn().unwrap().0, 200.0);
+            rig.frame(vec![Event::PointerMoved(pos2(332.0, 40.0))]);
+            assert_eq!(rig.drawn().unwrap().0, 300.0);
             // However long it took.
-            rig.button_after(1.0, pos2(310.0, 40.0), false);
+            rig.button_after(1.0, pos2(342.0, 40.0), false);
             assert_eq!(rig.outs, [KnobGesture::Drop(310.0)]);
-            // Then the disc is the playhead's again.
+            // Then the box is the playhead's again.
             rig.frame(vec![]);
-            assert_eq!(rig.disc().unwrap().0, AT);
+            assert_eq!(rig.drawn().unwrap().0, 200.0);
         }
 
         #[test]
-        fn the_disc_grows_while_held_and_wobbles_once_let_go_by_the_knob_law() {
-            // The knobs' own law (`widgets::pulse`, its 0.6 a sixtieth of a second; the rig's frames are 1/60 s).
+        fn the_box_fades_by_the_frame_time_law_tracking_the_live_playhead() {
+            // A fifth of the way a frame (the tests' frames are 1/60 s), snapping within 0.001.
             let mut rig = Rig::new();
-            assert!((rig.disc().unwrap().1 - R).abs() < 1e-4);
-            rig.frame(vec![Event::PointerMoved(AT)]);
-            rig.button_after(1.0 / 60.0, AT, true);
-            let radius = |rig: &Rig| rig.disc().unwrap().1;
-            // The square is h = D px tall: r = R·(1 + k·10/D).
-            let r = |k: f32| R * (1.0 + k * 10.0 / D);
-            // Held: k = 1 − max(0.01, 0.6·a), a = 1, 0.6, 0.36 …
-            for k in [0.4, 0.64, 0.784] {
-                assert!((radius(&rig) - r(k)).abs() < 1e-3, "{}", radius(&rig));
-                rig.frame(vec![]);
-            }
-            for _ in 0..20 {
-                rig.frame(vec![]);
-            }
-            assert!((radius(&rig) - r(0.99)).abs() < 1e-3);
-            // Let go: k = (1 − a)·sin(2π(1 − a)), a restarting at 1 and decaying in the release frame already (as on
-            // touch-down), down to a = 0.01, then R.
-            rig.button_after(1.0 / 60.0, AT, false);
-            let mut a: f32 = 0.6;
-            while a >= 0.01 {
-                let want = r((1.0 - a) * (std::f32::consts::TAU * (1.0 - a)).sin());
-                assert!(
-                    (radius(&rig) - want).abs() < 1e-3,
-                    "a {a}: {}",
-                    radius(&rig)
-                );
-                rig.frame(vec![]);
-                a *= 0.6;
-            }
-            assert!((radius(&rig) - R).abs() < 1e-4);
-        }
-
-        #[test]
-        fn the_disc_fades_a_fifth_of_the_way_a_frame_toward_its_target_tracking_the_live_playhead()
-        {
-            assert_eq!(fade(1.0, 0.0), 0.8);
-            assert_eq!(fade(0.5, 1.0), 0.6);
-            // Snapping within 0.001 of the target.
-            assert_eq!(fade(0.00124, 0.0), 0.0);
-            assert_eq!(fade(0.0013, 0.0), 0.0013 * 0.8);
-            assert_eq!(fade(0.9988, 1.0), 1.0);
-
-            let mut rig = Rig::new();
-            let disc = |rig: &Rig| {
-                rig.disc()
-                    .map(|(at, r, a)| (at, (r * 10.0).round() / 10.0, a))
-            };
-            assert_eq!(disc(&rig), Some((AT, R, 255)));
-            // Its target off (playback started, on the step grid): it fades out tracking the live playhead.
+            assert_eq!(rig.drawn(), Some((200.0, 255)));
+            // Its target off (playback started): it fades out tracking the live playhead.
             rig.shown = false;
             rig.frame(vec![]);
-            assert_eq!(disc(&rig), Some((AT, R, 204)));
+            let a = rig.drawn().unwrap();
+            assert!(a.0 == 200.0 && a.1.abs_diff(204) <= 1, "{a:?}");
             rig.x = 260.0;
             rig.frame(vec![]);
-            assert_eq!(disc(&rig), Some((pos2(260.0, AT.y), R, 163)));
-            // Fading out, it takes no tap.
-            assert_eq!(rig.gesture(pos2(260.0, AT.y), pos2(260.0, AT.y), 0.1), []);
-            for _ in 0..40 {
+            let a = rig.drawn().unwrap();
+            assert!(a.0 == 260.0 && a.1.abs_diff(164) <= 1, "{a:?}");
+            for _ in 0..60 {
                 rig.frame(vec![]);
             }
-            assert_eq!(disc(&rig), None);
+            assert_eq!(rig.drawn(), None);
+            // At a = 0 it takes no tap.
+            assert_eq!(rig.gesture(pos2(264.0, AT.y), pos2(264.0, AT.y), 0.1), []);
             // Back on, it fades in at the playhead.
             (rig.x, rig.shown) = (300.0, true);
             rig.frame(vec![]);
-            assert_eq!(disc(&rig), Some((pos2(300.0, AT.y), R, 51)));
+            let a = rig.drawn().unwrap();
+            assert!(a.0 == 300.0 && a.1.abs_diff(51) <= 1, "{a:?}");
             // Off the ruler it is neither drawn nor touched, whatever its alpha.
             let mut rig = Rig::new();
             rig.x = 20.0;
             rig.frame(vec![]);
-            assert_eq!(disc(&rig), None);
-            assert_eq!(rig.gesture(pos2(20.0, AT.y), pos2(20.0, AT.y), 0.1), []);
+            assert_eq!(rig.drawn(), None);
+            assert_eq!(rig.gesture(pos2(24.0, AT.y), pos2(24.0, AT.y), 0.1), []);
         }
 
         #[test]
@@ -1575,138 +1615,11 @@ mod tests {
         }
     }
 
-    /// The bar-number badges.
-    mod badge {
-        use eframe::egui::{Color32, Context, LayerId, Pos2, RawInput, Rect, Shape, pos2, vec2};
-
-        use super::super::ruler;
-        use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
-        use crate::theme::theme_by_id;
-        use crate::ui::UiCtx;
-
-        /// What a ruler painted: the `text`-filled discs (centre, radius) and the texts (label, colour, font size,
-        /// centre of the galley), all in points.
-        struct Painted {
-            m: Metrics,
-            ruler: Rect,
-            discs: Vec<(Pos2, f32)>,
-            texts: Vec<(String, Color32, f32, Pos2)>,
-        }
-
-        /// A ruler 1.5 U tall across 40 U whose marks start at `left` U; tick 0 is at `x0` U, a bar 8 U wide (4 beats).
-        /// `ppp` 1 gives U = 32, 2.5 gives U = 80.
-        fn paint(ppp: f32, left: f32, x0: f32) -> Painted {
-            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
-            let theme = theme_by_id(0);
-            let text = theme.colors.text.to_color32();
-            let ruler_rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(m.u(40.0), m.u(1.5)));
-            let marks = ruler_rect.with_min_x(m.u(left));
-            let ctx = Context::default();
-            let raw = RawInput {
-                screen_rect: Some(ruler_rect),
-                ..Default::default()
-            };
-            let output = ctx.run(raw, |ctx| {
-                let painter = ctx.layer_painter(LayerId::background());
-                let cx = UiCtx {
-                    theme: &theme,
-                    m: &m,
-                };
-                let sig = crate::song::TimeSig::default();
-                ruler(&painter, ruler_rect, marks, m.u(x0), m.u(2.0), sig, &cx);
-            });
-            let (mut discs, mut texts) = (Vec::new(), Vec::new());
-            // The painter's clip rect is not applied to the shapes: keep those that can show.
-            for s in output
-                .shapes
-                .into_iter()
-                .filter(|s| s.clip_rect.is_positive())
-            {
-                match s.shape {
-                    Shape::Circle(c) if c.fill == text && ruler_rect.contains(c.center) => {
-                        discs.push((c.center, c.radius));
-                    }
-                    Shape::Text(t) if ruler_rect.contains(t.pos) => texts.push((
-                        t.galley.text().to_owned(),
-                        t.galley.job.sections[0].format.color,
-                        t.galley.job.sections[0].format.font_id.size,
-                        t.pos + t.galley.rect.center().to_vec2(),
-                    )),
-                    _ => {}
-                }
-            }
-            Painted {
-                m,
-                ruler: ruler_rect,
-                discs,
-                texts,
-            }
-        }
-
-        fn labels(p: &Painted) -> Vec<&str> {
-            p.texts.iter().map(|t| t.0.as_str()).collect()
-        }
-
-        #[test]
-        fn the_disc_radius_is_six_hairline_units_at_the_ruler_mid_height() {
-            // U = 32: t = 2 px, r = 12 px. U = 80 (ppp 2.5): t = 5 px, r = 30 px = 12 points. U = 85
-            // (ppp 2.65625): t = ceil(85/16) = 6 px, r = 36 px.
-            for (ppp, radius_px) in [(1.0, 12.0), (2.5, 30.0), (2.65625, 36.0)] {
-                let p = paint(ppp, 1.5, 1.5);
-                assert_eq!(
-                    p.discs.len(),
-                    2,
-                    "bars 3 and 5 of the first 40 U (bar = 8 U)"
-                );
-                for (i, &(center, r)) in p.discs.iter().enumerate() {
-                    assert!((r * ppp - radius_px).abs() < 1e-3, "ppp {ppp}: {}", r * ppp);
-                    assert_eq!(center.y, p.ruler.center().y, "ppp {ppp}");
-                    // On the bar line: bar 3 is 16 U right of tick 0, bar 5 is 32 U.
-                    assert_eq!(center.x, p.m.u(1.5 + 16.0 + 16.0 * i as f32), "ppp {ppp}");
-                }
-            }
-        }
-
-        #[test]
-        fn the_number_is_font_step_0_in_menu_fill_centred_on_the_disc() {
-            let p = paint(1.0, 1.5, 1.5);
-            assert_eq!(labels(&p), ["3", "5"]);
-            let menu_fill = theme_by_id(0).colors.menu_fill.to_color32();
-            for (i, (_, color, size, center)) in p.texts.iter().enumerate() {
-                assert_eq!(*color, menu_fill);
-                // Step 0 is 6 pt: floor(32 · 6 / 16) = 12 px.
-                assert_eq!(*size, 12.0);
-                assert!(center.distance(p.discs[i].0) < 0.5, "{center:?}");
-            }
-            // And U = 80: floor(80 · 6 / 16) = 30 px.
-            assert_eq!(paint(2.5, 1.5, 1.5).texts[0].2 * 2.5, 30.0);
-        }
-
-        #[test]
-        fn a_bar_line_closer_than_one_radius_to_the_marks_left_edge_has_no_badge() {
-            // Radius 12 px at U = 32; marks start at 1.5 U = 48 px, so bar 3's line at 48 + 12 = 60 px is the
-            // first that shows. x0 = line − 16 U (bar 3 is two bars, 512 px, right of tick 0).
-            let line = |px: f32| (px - 512.0) / 32.0;
-            assert_eq!(labels(&paint(1.0, 1.5, line(60.0))), ["3", "5", "7"]);
-            assert_eq!(labels(&paint(1.0, 1.5, line(59.5))), ["5", "7"]);
-            // Under the header column it is gone too, and unscrolled, bar 1's line is on the edge.
-            assert_eq!(labels(&paint(1.0, 1.5, line(20.0))), ["5", "7"]);
-            assert_eq!(labels(&paint(1.0, 1.5, 1.5)), ["3", "5"]);
-            assert_eq!(paint(1.0, 1.5, 1.5).discs[0].0.x, 48.0 + 512.0);
-        }
-
-        #[test]
-        fn at_2_u_a_beat_every_other_bar_from_the_third_has_one() {
-            let p = paint(1.0, 0.0, 0.0);
-            assert_eq!(labels(&p), ["3", "5"]);
-        }
-    }
-
     mod law {
-        use eframe::egui::{Color32, Context, LayerId, RawInput, Rect, Shape, pos2, vec2};
+        use eframe::egui::{Context, LayerId, RawInput, Rect, Shape, pos2, vec2};
 
         use super::super::{Level, marks, next, ruler, spacings};
-        use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+        use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
         use crate::song::TimeSig;
         use crate::theme::theme_by_id;
         use crate::ui::UiCtx;
@@ -1716,94 +1629,54 @@ mod tests {
             beats_per_bar: 4,
         };
 
-        /// The rects (fill, rect) and the badge numbers a 1.5 U ruler across 40 U paints at U = 32, from tick 0 at its
-        /// left, a beat `beat_u` U wide.
-        fn paint(beat_u: f32) -> (Vec<(Color32, Rect)>, Vec<String>) {
-            let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        /// The bar labels a ruler across 40 U paints at U = 32 whose marks start at `left` U, tick 0 at `x0` U and a
+        /// beat `beat_u` U wide.
+        fn labels(left: f32, x0: f32, beat_u: f32) -> Vec<String> {
+            let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
             let theme = theme_by_id(0);
-            let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(m.u(40.0), m.u(1.5)));
-            let ctx = Context::default();
+            let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(m.u(40.0), m.u(1.65)));
             let raw = RawInput {
                 screen_rect: Some(rect),
                 ..Default::default()
             };
-            let output = ctx.run(raw, |ctx| {
+            let output = Context::default().run(raw, |ctx| {
                 let painter = ctx.layer_painter(LayerId::background());
                 let cx = UiCtx {
                     theme: &theme,
                     m: &m,
                 };
-                ruler(&painter, rect, rect, 0.0, m.u(beat_u), SIG, &cx);
+                let marks = rect.with_min_x(m.u(left));
+                ruler(&painter, rect, marks, m.u(x0), m.u(beat_u), SIG, &cx);
             });
-            let (mut rects, mut texts) = (Vec::new(), Vec::new());
-            for s in output.shapes {
-                match s.shape {
-                    Shape::Rect(r) => rects.push((r.fill, r.rect)),
-                    Shape::Text(t) => texts.push(t.galley.text().to_owned()),
-                    _ => {}
-                }
-            }
-            (rects, texts)
+            (output.shapes.into_iter())
+                .filter_map(|s| match s.shape {
+                    Shape::Text(t) => Some(t.galley.text().to_owned()),
+                    _ => None,
+                })
+                .collect()
         }
 
         #[test]
-        fn the_ruler_is_a_background_fill_with_a_menu_fill_baseline() {
-            // `background` (#21272B in Classic Gray). The baseline: t = 2 tall at bottom − 2t.
-            let colors = theme_by_id(0).colors;
-            let (rects, _) = paint(4.0);
-            assert_eq!(
-                colors.background.to_color32(),
-                Color32::from_rgb(0x21, 0x27, 0x2B)
-            );
-            let fill = Rect::from_min_size(pos2(0.0, 0.0), vec2(1280.0, 48.0));
-            assert_eq!(rects[0], (colors.background.to_color32(), fill));
-            let base = Rect::from_min_max(pos2(0.0, 44.0), pos2(1280.0, 46.0));
-            assert_eq!(rects[1], (colors.menu_fill.to_color32(), base));
+        fn labels_show_every_bar_at_the_editors_opening_zooms_and_never_left_of_the_marks() {
+            // At 4, 2 and 1.2 U a beat s2 is one bar; at 0.8 U, two bars (the top bound is halved).
+            assert_eq!(labels(0.0, 0.0, 4.0), ["1", "2", "3"]);
+            assert_eq!(labels(0.0, 0.0, 2.0), ["1", "2", "3", "4", "5", "6"]);
+            assert_eq!(labels(0.0, 0.0, 0.8).len(), 7);
+            // A bar line left of the marks' left edge (the playlist's header column) has none; one on it has.
+            assert_eq!(labels(1.5, 1.4, 2.0)[0], "2");
+            assert_eq!(labels(1.5, 1.5, 2.0)[0], "1");
         }
 
         #[test]
-        fn beat_ticks_are_2t_by_0_3h_and_step_and_bar_ticks_t_by_0_2h_over_the_baseline() {
-            // 4 U a beat at U = 32: 128 points a beat, ticks every step (32 points); bottoms at 48 − 3t = 42.
-            let ink = theme_by_id(0).colors.menu_fill.to_color32();
-            let (rects, _) = paint(4.0);
-            let ticks: Vec<Rect> = rects
-                .iter()
-                .filter(|r| r.0 == ink)
-                .map(|r| r.1)
-                .skip(1)
-                .collect();
-            let near = |a: Rect, b: Rect| {
-                (a.min - b.min).length() < 1e-3 && (a.max - b.max).length() < 1e-3
-            };
-            let tick = |x: f32, w: f32, h: f32| {
-                Rect::from_x_y_ranges(x - w / 2.0..=x + w / 2.0, 42.0 - h..=42.0)
-            };
-            // Bar 1's line (top level, bar style), step 1, beat 1.
-            assert!(near(ticks[0], tick(0.0, 2.0, 9.6)), "{:?}", ticks[0]);
-            assert!(near(ticks[1], tick(32.0, 2.0, 9.6)), "{:?}", ticks[1]);
-            assert!(near(ticks[4], tick(128.0, 4.0, 14.4)), "{:?}", ticks[4]);
-        }
-
-        #[test]
-        fn at_4_u_a_beat_every_bar_has_a_badge_at_2_u_every_other_one_zoomed_out_every_fourth() {
-            // The automation and audio editors open at 4 U a beat, where s2 = 1 bar: bar 2 shows (bar 1 sits on the
-            // left edge). The piano roll's 2 U and the playlist's 1.2 U give s2 = 2 bars: 3, 5, 7.
-            assert_eq!(paint(4.0).1, ["2", "3"]);
-            assert_eq!(paint(2.0).1, ["3", "5"]);
-            assert_eq!(paint(1.2).1, ["3", "5", "7", "9"]);
-            // At 0.8 U a beat, s2 = 4 bars: 1 (on the edge), 5, 9, 13.
-            assert_eq!(paint(0.8).1, ["5", "9", "13"]);
-        }
-
-        #[test]
-        fn the_spacings_clamp_d_and_b_to_2_4() {
-            // s1's bound is clamp(d, 2, 4)·m, s2's clamp(d, 2, 4)·clamp(b, 2, 4)·m.
+        fn the_spacings_clamp_d_and_b_to_2_4_and_halve_the_top_bound() {
+            // s1's bound is clamp(d, 2, 4)·m, s2's 0.5·clamp(d, 2, 4)·clamp(b, 2, 4)·m.
             let sig = |d, b| TimeSig {
                 subdivision: d,
                 beats_per_bar: b,
             };
             assert_eq!(spacings(0.6 * 0.33, sig(8, 4)), [0.25, 1.0, 4.0]);
-            assert_eq!(spacings(0.6, sig(4, 7)), [1.0, 7.0, 14.0]);
+            assert_eq!(spacings(0.6, sig(4, 7)), [1.0, 7.0, 7.0]);
+            assert_eq!(spacings(0.6, sig(4, 4)), [1.0, 4.0, 8.0]);
         }
 
         #[test]
@@ -1823,11 +1696,8 @@ mod tests {
             assert_eq!(next(3.0, 3, 3), 6.0);
             // b = 5: from a beat, B/n = 5 → a bar.
             assert_eq!(next(1.0, 4, 5), 5.0);
-            // At 3.03 U a beat (m = 0.6 U = 0.198 beat): steps, beats and bars; zoomed in to 10 U a beat (m = 0.06), the same.
             assert_eq!(spacings(0.6 * 0.33, sig(4, 4)), [0.25, 1.0, 4.0]);
             assert_eq!(spacings(0.06, sig(4, 4)), [0.25, 1.0, 4.0]);
-            // A beat 1 U wide (m = 0.6): fine marks every 2 steps... no: every beat (0.25 → 0.5 → 1); mid 4 beats; top 16.
-            assert_eq!(spacings(0.6, sig(4, 4)), [1.0, 4.0, 16.0]);
             let levels: Vec<_> = marks(0, 16, [0.25, 1.0, 4.0], 4).collect();
             assert_eq!(levels.len(), 17);
             assert_eq!(levels[0], (0, Level::Top));

@@ -148,6 +148,16 @@ fn without_id3v2(mut bytes: &[u8]) -> &[u8] {
     bytes
 }
 
+/// The bits per sample a WAV's `fmt ` chunk names (8, 16, 24 or 32; float is 32), `None` for other bytes.
+pub fn wav_bits(bytes: &[u8]) -> Option<u16> {
+    let bytes = without_id3v2(bytes);
+    if bytes.get(..4)? != b"RIFF" || bytes.get(8..12)? != b"WAVE" {
+        return None;
+    }
+    let (_, fmt) = riff_chunks(&bytes[12..]).find(|(id, _)| *id == b"fmt ")?;
+    (fmt.len() >= 16).then(|| le_u16(fmt, 14))
+}
+
 fn le_u16(b: &[u8], at: usize) -> u16 {
     u16::from_le_bytes([b[at], b[at + 1]])
 }

@@ -3,7 +3,7 @@ use eframe::egui::{self, Context, Event, Modifiers, PointerButton, RawInput, Rec
 use super::spinner::popup_id;
 use super::*;
 use crate::icons::IconId;
-use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+use crate::metrics::DEFAULT_UI_SCALE;
 use crate::theme::theme_by_id;
 
 mod button;
@@ -13,7 +13,7 @@ mod spinner;
 
 /// `U` = 32 points at ppp 1.
 fn metrics() -> Metrics {
-    Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX)
+    Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE)
 }
 
 fn near(a: f32, b: f32) -> bool {

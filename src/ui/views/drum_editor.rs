@@ -50,9 +50,6 @@ use crate::ui::widgets::{Bar, ItemList, item_list_index};
 const PAGES: [&str; 4] = ["Mixer", "Sample", "Envelope", "Seq"];
 /// A pad's note-on velocity: always full, with no position velocity.
 const PAD_VELOCITY: f32 = 1.0;
-/// The `Lock` button's centre, in U from the transport bar's left edge: the slot after the mixer and keyboard settings
-/// buttons, 1.75 U each.
-const LOCK_X: f32 = 2.5 * 1.75;
 
 impl DrumPads for DrumKit {
     /// Slot `i` is row (pad index) `i`.
@@ -340,9 +337,9 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         }
         // Over the strips.
         if steps {
-            state.step.graph_knob(&mut ui, &app.cx, editor);
+            state.step.graph_knob(&mut ui, &app.cx, editor, color);
         } else {
-            state.grid.graph_knob(&mut ui, &app.cx, editor);
+            state.grid.graph_knob(&mut ui, &app.cx, editor, color);
         }
     }
     state.drawn = true;
@@ -484,13 +481,12 @@ pub(crate) fn open(state: &mut State, channel: usize, lane: usize, clip: u32) {
     (state.step.lane, state.step.clip) = (lane, Some(clip));
 }
 
-/// Another channel's editor: a fresh view, keeping the transport's Lock, every clip's zoom and scroll, the mixer's
-/// fold, and the pads.
+/// Another channel's editor: a fresh view, keeping every clip's zoom and scroll, the mixer's fold, and the pads.
 fn switch(state: &mut State, channel: usize) {
     if state.channel == Some(channel) {
         return;
     }
-    let (lock, views) = (state.step.lock, std::mem::take(&mut state.step.views));
+    let views = std::mem::take(&mut state.step.views);
     let fold = state.step.fold;
     let grid = std::mem::take(&mut state.grid).kept();
     *state = State {
@@ -502,7 +498,6 @@ fn switch(state: &mut State, channel: usize) {
         rack_pending: state.rack_pending,
         ..State::default()
     };
-    state.step.lock = lock;
     state.step.views = views;
     state.step.fold = fold;
 }
@@ -548,7 +543,7 @@ pub(crate) fn rekey(
             (state.step.lane, state.step.clip) = (0, None);
         }
         (None, _) => {
-            let (lock, views) = (state.step.lock, std::mem::take(&mut state.step.views));
+            let views = std::mem::take(&mut state.step.views);
             let fold = state.step.fold;
             let grid = std::mem::take(&mut state.grid).kept();
             *state = State {
@@ -559,22 +554,17 @@ pub(crate) fn rekey(
                 rack_pending: state.rack_pending,
                 ..State::default()
             };
-            (state.step.lock, state.step.views, state.step.fold) = (lock, views, fold);
+            (state.step.views, state.step.fold) = (views, fold);
         }
     }
 }
 
-/// After the chrome, every frame: the drum view's `Lock` in the transport bar while the drum editor is drawn, and
-/// otherwise the close of its popups (the row menu and its prompts, the swing popup, the snap, `Cut...`, `AUX` and
+/// After the chrome, every frame: unless the drum editor is drawn, the close of its popups (the row menu and its prompts, the swing popup, the snap, `Cut...`, `AUX` and
 /// region menus and the range's `+`), so that none comes back with the editor. Then the current channel's pads, if it has
 /// any (else the release of a pad still held), and the end of a tap's gate: the frame that ends it is asked for, so
 /// the note never hangs.
 pub fn after_chrome(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) {
-    if std::mem::take(&mut state.drawn) {
-        let transport = app.regions.transport;
-        let at = pos2(transport.left() + app.cx.m.u(LOCK_X), transport.center().y);
-        state.step.lock_button(ui, &app.cx, at);
-    } else {
+    if !std::mem::take(&mut state.drawn) {
         // A drag the hidden editor ended had edits out: their undo step closes. Both views close.
         if state.step.close_popups() | state.grid.close_popups() {
             app.song_edited(true);
@@ -819,13 +809,16 @@ fn send_slot_setting(audio: &mut AudioLink, channel: usize, slot: u32, key: u32,
 /// 1.5 U − 1 px), only when it is fully out (c = 1).
 fn tabs(editor: Rect, c: f32, m: &Metrics) -> Option<Rect> {
     let at = editor.min + vec2(m.u(step_seq::HEADER_W), 0.0);
-    let size = vec2(m.u(step_seq::MIXER_W), m.u(step_seq::TOP_H) - 1.0 / m.ppp());
+    let size = vec2(
+        m.u(step_seq::MIXER_W),
+        crate::ui::timeline::ruler_h(m) - 1.0 / m.ppp(),
+    );
     (c == 1.0).then(|| Rect::from_min_size(at, size))
 }
 
 /// The rows' area in `editor`, between the top strip and the graph lane, if it shows.
 fn rows(editor: Rect, graph: &GraphLane, m: &Metrics) -> Rect {
-    let top = editor.top() + m.u(step_seq::TOP_H);
+    let top = editor.top() + crate::ui::timeline::ruler_h(m);
     step_seq::lane_split(editor, m, graph).0.with_min_y(top)
 }
 
@@ -999,7 +992,6 @@ mod tests {
             },
             ..State::default()
         };
-        state.step.lock = true;
         state.step.lane = 1;
         rekey(&mut state, &mut audio, &channel, &track);
         assert_eq!(rec.take(), ["NoteOff 3 50", "NoteOff 3 48"]);
@@ -1008,7 +1000,7 @@ mod tests {
             (state.channel, pads.channel, pads.held.clone(), pads.tap),
             (None, None, vec![], None)
         );
-        assert_eq!((state.step.lane, state.step.lock), (0, true));
+        assert_eq!(state.step.lane, 0);
     }
 
     #[test]
@@ -1045,14 +1037,15 @@ mod tests {
 
     #[test]
     fn page_tabs_show_only_with_the_mixer_fully_out() {
-        // (x + 3 U, top, column width − 3 U, 1.5 U − 1 px), at c = 1 only.
+        // (x + 3 U, top, column width − 3 U, ruler h − 1 px), at c = 1 only.
         for (ppp, px) in [(1.0, 1.0), (2.0, 0.5)] {
-            let m = Metrics::from_pixels_per_point(ppp, crate::metrics::DEFAULT_UI_SCALE_INDEX);
+            let m = Metrics::from_pixels_per_point(ppp, crate::metrics::DEFAULT_UI_SCALE);
             let editor = Rect::from_min_size(pos2(10.0, 20.0), egui::vec2(1170.0, 349.0));
             for c in [0.0, 0.4, 0.99] {
                 assert_eq!(tabs(editor, c, &m), None, "c = {c}");
             }
-            let want = Rect::from_min_size(pos2(10.0 + 96.0, 20.0), egui::vec2(384.0, 48.0 - px));
+            let h = crate::ui::timeline::ruler_h(&m);
+            let want = Rect::from_min_size(pos2(10.0 + 96.0, 20.0), egui::vec2(384.0, h - px));
             assert_eq!(tabs(editor, 1.0, &m), Some(want));
         }
     }

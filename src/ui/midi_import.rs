@@ -1,5 +1,5 @@
 //! The MIDI import dialog, which the track menu's `Import MIDI Tracks` opens for a file of more than one MIDI channel.
-//! A dialog box (no animation, the screen dimmed to α 0.6 under a `moduleFill` box from the first frame), centred in
+//! A dialog box (no animation, the screen dimmed to α 0.6 under the floating panel from the first frame), centred in
 //! the content area. Top to bottom:
 //! - the title label `MIDI Import:`;
 //! - the toggles `Split MIDI channels`, `Import automation` and `Only supported`, all on at first; the last two only
@@ -115,7 +115,7 @@ impl MidiImport {
         let id = Id::new("midi_import");
         // A dialog box ([`dialog::dialog_box`]): shown from the first frame, over a modal backdrop that takes every touch
         // outside it and holds Ctrl+Z, as the other dialogs on the base do.
-        let backdrop = dialog::dialog_box(ctx, id, c, screen, l.rect);
+        let backdrop = dialog::dialog_box(ctx, id, (c, m), screen, l.rect);
         let escape = crate::ui::close_pressed(ctx);
         let mut action = (backdrop.clicked() || backdrop.secondary_clicked() || escape)
             .then_some(MidiImportAction::Cancel);
@@ -190,11 +190,11 @@ impl MidiImport {
                     );
                 }
 
-                let import = Button::new(id.with("import"), l.import, "Import", false, c);
+                let import = dialog::button(id.with("import"), l.import, "Import", c, m);
                 if button(ui, cx, &import, true).clicked() {
                     action = Some(MidiImportAction::Import(self.opts));
                 }
-                let cancel = Button::new(id.with("cancel"), l.cancel, "Cancel", false, c);
+                let cancel = dialog::button(id.with("cancel"), l.cancel, "Cancel", c, m);
                 if button(ui, cx, &cancel, true).clicked() {
                     action = Some(MidiImportAction::Cancel);
                 }
@@ -328,7 +328,7 @@ mod tests {
         }
     }
 
-    /// The dialog base: screen dim α 0.6, then a `moduleFill` box, from the first frame.
+    /// The dialog base: screen dim α 0.6, then the floating panel, from the first frame.
     #[test]
     fn the_dialog_base_dims_the_screen_then_fills_the_box_with_module_fill() {
         let (mut off, mut dialog) = (Offscreen::new(), MidiImport::new(scan(true)));

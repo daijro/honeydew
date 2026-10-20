@@ -7,11 +7,13 @@
 //!   in the channel colour on the row. While the column is not fully expanded the cell's right edge holds two vertical
 //!   level meters, and a channel whose sub-tracks are hidden shows a down triangle at its bottom.
 //! - **Expanded** (c = 1 exactly, no fade): a horizontal stack over the row: header (flex) | mute 1.5 U | `Solo` 1.5 U
-//!   | pan 2.75 U | level 6 U + a 0.25 U right margin. The master has no mute or `Solo`, so its header takes 4.5 U and
-//!   its pan and level line up with the others'. A sub-track row is header (flex) | slider 8.75 U + 0.25 U. Behind the
-//!   stack the row's name (8 pt, right and top, channel colour, middle-truncated keeping 5 characters).
+//!   | pan 2.75 U | level 6 U + a 0.25 U right margin. The master has no mute or `Solo`: `Unsolo All` takes their 3 U
+//!   (1.25 U tall at most, centred), so its pan and level line up with the others'. A sub-track row is header (flex) |
+//!   slider 8.75 U + 0.25 U. Behind the stack the row's name (8 pt, right and top, channel colour, middle-truncated
+//!   keeping 5 characters).
 //! - **Bindings** (the mixer strip's): level param 0 (reset 0.85312), pan 1 (reset 0.5), mute 2 (the inverted pill: dot
-//!   up in the channel colour while audible), `Solo` 3 (two-state tap); the sliders take the drag law of
+//!   up in the channel colour while audible), `Solo` 3 (two-state tap, then smart solo: [`mixer::smart_solo`]);
+//!   `Unsolo All` is [`mixer::unsolo_all`]; the sliders take the drag law of
 //!   [`widgets::h_slider`]. A sub-track's slider shows only on an automation lane of a module param (instance ≠ 0), in
 //!   `menuFill`, bound to that param with its reset value.
 //!
@@ -31,6 +33,7 @@ use crate::ui::UiCtx;
 use crate::ui::ctrl_menu::Touch;
 use crate::ui::layout::{Node, NodeId, Size, layout};
 use crate::ui::main_screen::{TrackRow, armed_dot};
+use crate::ui::mixer;
 use crate::ui::widgets::{self, Button, Control, ParamMenu, Pill, toggle_on};
 
 /// The leaves of a row. The strip controls' ids are their channel param indices.
@@ -42,6 +45,8 @@ pub const SOLO: NodeId = 3;
 pub const HEADER: NodeId = 4;
 /// A sub-track row's automation slider.
 pub const SLIDER: NodeId = 5;
+/// The master row's `Unsolo All`.
+pub const UNSOLO: NodeId = 6;
 
 // Sizes in U.
 /// The icon cell's width, which is also the collapsed column's.
@@ -51,6 +56,8 @@ const SOLO_W: f32 = 1.5;
 const PAN_W: f32 = 2.75;
 const LEVEL_W: f32 = 6.0;
 const SUB_SLIDER_W: f32 = 8.75;
+/// `Unsolo All`'s height at most.
+const UNSOLO_H: f32 = 1.25;
 /// The level slider's (and the sub-track slider's) right margin.
 const END_MARGIN: f32 = 0.25;
 /// The name label's inset from the row's left and right edges (and t from its top and bottom).
@@ -102,6 +109,7 @@ pub fn parts(kind: RowKind, row: Rect, expanded: bool, m: &Metrics) -> Vec<(Node
                 Node::leaf(HEADER),
                 strip(MUTE, MUTE_W),
                 strip(SOLO, SOLO_W),
+                fixed(UNSOLO, MUTE_W + SOLO_W).visible(expanded && kind == RowKind::Master),
                 fixed(PAN, PAN_W),
                 fixed(LEVEL, LEVEL_W).mr(END_MARGIN),
             ])
@@ -114,7 +122,7 @@ pub fn parts(kind: RowKind, row: Rect, expanded: bool, m: &Metrics) -> Vec<(Node
 }
 
 /// The header's touch area in `row` ([`parts`]): the whole row while collapsed or animating; at c = 1 the header's own
-/// part (1.5 U on a primary row, 4.5 U on the master's and a sub-track's).
+/// part (1.5 U on a primary row and the master's, 4.5 U on a sub-track's).
 pub fn header_rect(kind: RowKind, row: Rect, expanded: bool, m: &Metrics) -> Rect {
     (parts(kind, row, expanded, m).into_iter())
         .find(|p| p.0 == HEADER)
@@ -175,6 +183,8 @@ pub fn show(
     let mut ui = ui.new_child(UiBuilder::new().max_rect(clip));
     ui.set_clip_rect(clip.intersect(ui.clip_rect()));
     let mut out = Output::default();
+    let soloed = mixer::any_soloed(song);
+    let mut unsolo = false;
     let current = col.current.0;
     // The current channel's rows last, on top of the others.
     let order = (rows.iter().filter(|r| r.0.channel != current))
@@ -251,6 +261,29 @@ pub fn show(
                 &mut out,
             );
         }
+        if let Some(&(_, r)) = placed.iter().find(|p| p.0 == UNSOLO) {
+            let r =
+                Rect::from_center_size(r.center(), vec2(r.width(), r.height().min(m.u(UNSOLO_H))));
+            let id = control_id(row.channel, UNSOLO);
+            unsolo |= mixer::unsolo_button(&mut ui, cx, id, r, soloed);
+        }
+    }
+    let solo = |t: &AutomationTarget| t.instance_id == 0 && t.param == 3;
+    let solo_taps: Vec<usize> = (out.changes.iter())
+        .filter(|c| solo(&c.1))
+        .map(|c| c.0)
+        .collect();
+    let target = AutomationTarget {
+        instance_id: 0,
+        param: 3,
+    };
+    for x in solo_taps {
+        let more = mixer::smart_solo(song, x).into_iter();
+        out.changes.extend(more.map(|(c, v)| (c, target, v)));
+    }
+    if unsolo {
+        let cleared = mixer::unsolo_all(song).into_iter();
+        out.changes.extend(cleared.map(|c| (c, target, 0.0)));
     }
     out
 }

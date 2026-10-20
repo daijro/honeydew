@@ -11,7 +11,9 @@ use eframe::egui;
 use super::HoneydewApp;
 use crate::project_files::{MESSAGE_TAG, PresetSource};
 use crate::smf::{self, import::ImportOpts};
-use crate::song::{Channel, ChannelKind, DrumGrid, DrumKit, Lane, LaneKind, SamplerSlot, Song};
+use crate::song::{
+    Channel, ChannelKind, DrumGrid, DrumKit, Lane, LaneKind, PPQ, SamplerSlot, Song,
+};
 use crate::ui::clips::{ClipRef, Emptied};
 use crate::ui::preview::ClipKey;
 use crate::ui::rack::PresetTarget;
@@ -21,6 +23,8 @@ use crate::ui::views::{self, Nav, Overlay, SongEdit, View};
 const DELETE_CHANNEL_TAG: &str = "delete channel";
 const DELETE_TRACK_TAG: &str = "delete empty tracks";
 const EMPTIED_TAG: &str = "delete emptied";
+/// `Burn Notes to Track`'s loading screen.
+const BURNING: &str = "Burning notes to track...";
 /// The channel names the question lists, then `and N more`.
 const LISTED: usize = 4;
 
@@ -343,6 +347,12 @@ impl HoneydewApp {
                 let overlay = self.slots.export.save_as_midi(ch.id, &ch.name);
                 self.navigate(Nav::Open(overlay));
             }
+            // Behind its loading screen ([`Self::burn_notes`]).
+            TrackOp::BurnNotes => {
+                self.burn = Some((ch.id, false));
+                let title = BURNING.into();
+                self.navigate(Nav::Open(Overlay::Busy { title }));
+            }
             // Disabled in the menu (see `TrackOp`).
             TrackOp::SyncAllSamples => {}
         }
@@ -372,6 +382,74 @@ impl HoneydewApp {
         if let Some((picked, opts)) = self.slots.midi_import.take_import() {
             self.import_midi(picked.channel, &picked.bytes, &opts, tick);
         }
+    }
+
+    /// After the screens, each frame: `Burn Notes to Track` once its loading screen has had a frame, then the screen
+    /// closes.
+    // ponytail: runs on the UI thread, in the frame that draws the screen: a channel's notes through its note effects
+    // take milliseconds. A worker, as the export's, if a long arpeggiated song ever stalls a frame.
+    pub(super) fn burn_notes(&mut self, ctx: &egui::Context, tick: u64) {
+        let Some((id, shown)) = self.burn else {
+            return;
+        };
+        ctx.request_repaint();
+        if !shown {
+            self.burn = Some((id, true));
+            return;
+        }
+        self.burn = None;
+        let screen = |o: &Overlay| matches!(o, Overlay::Busy { title } if title == BURNING);
+        self.nav.overlays.retain(|o| !screen(o));
+        if let Some(channel) = self.song.channels.iter().position(|c| c.id == id) {
+            self.burn(channel, tick);
+        }
+    }
+
+    /// Burns channel `channel`'s notes over the song loop, or [0, the song length] without one: the notes its Notes
+    /// tracks play there through its note effects, and its slides, as playback plays them
+    /// ([`crate::audio_engine::burned_notes`]), go on a new notes track, in one clip over the span; the channel's
+    /// notes-track clips overlapping the span are muted, every note effect is switched off (param 0) and the new track
+    /// is current. One undo step, and one change in a live session; the undo leaves the note effects off, as no undo
+    /// covers the rack. Nothing for a channel whose first track is not a notes track, an empty span, or a song playback
+    /// refuses.
+    fn burn(&mut self, channel: usize, tick: u64) {
+        let song = &self.song;
+        if song.channels[channel].lanes.first().map(|l| l.kind) != Some(LaneKind::Notes) {
+            return;
+        }
+        let length = crate::render::song_length_beats(song) * f64::from(PPQ);
+        let (start, end) = song.play_loop.unwrap_or((0, length as u32));
+        let rate = self.audio.sample_rate().unwrap_or(48_000) as f32;
+        let burned = (start < end)
+            .then(|| crate::audio_engine::burned_notes(song, channel, rate, start, end));
+        let Some(Ok(events)) = burned else {
+            return;
+        };
+        let ch = &mut self.song.channels[channel];
+        let (from, to) = (f64::from(start), f64::from(end));
+        for lane in ch.lanes.iter_mut().filter(|l| l.kind == LaneKind::Notes) {
+            for clip in &mut lane.clips {
+                let at = f64::from(clip.start_tick);
+                clip.muted |= at < to && at + clip.visible_ticks() > from;
+            }
+        }
+        for module in &mut ch.rack.modules {
+            if (47..=51).contains(&module.type_id)
+                && let Some(enable) = module.params.first_mut()
+            {
+                *enable = 0.0;
+            }
+        }
+        let lane = ch.add_lane(LaneKind::Notes);
+        let beats = (to - from) / f64::from(PPQ);
+        let clip = ch.lanes[lane].add_clip(start, beats);
+        (clip.visible_len_beats, clip.events) = (beats, events);
+        let id = clip.id;
+        ch.zipped = false;
+        self.rekey(&[LaneShift::new(channel, lane, true)]);
+        let at = ClipRef { channel, lane, id };
+        (self.main_screen.clips).make_current(&mut self.song, &mut self.selected_channel, at);
+        self.song_edited(SongEdit::Final, tick);
     }
 
     /// Imports `bytes` with `opts` into the channel with id `channel` (not as a song: the tempo stays), one undo step.
@@ -825,7 +903,8 @@ impl HoneydewApp {
             | Overlay::LearnCc
             // Its channel is kept by id.
             | Overlay::MidiImport
-            | Overlay::Credits => true,
+            | Overlay::Credits
+            | Overlay::WhatsNew => true,
         });
         // The audio editor's op waiting to be saved (`app/audio_edit.rs`) follows its clip, or goes with it.
         self.audio_edit = (self.audio_edit.take()).and_then(|p| p.moved(|c, l| rk.track(c, l)));

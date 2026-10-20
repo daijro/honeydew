@@ -111,15 +111,15 @@ mod tests {
     }
 }
 
-/// The message box wraps (`message::show`): the text stays inside the box and the box inside the screen.
+/// The message box wraps (`message::show`): the text stays inside the panel and the panel inside the screen.
 #[cfg(test)]
 mod message_tests {
     use eframe::egui::{
-        self, Color32, Context, Id, RawInput, Rect, Shape, Vec2, epaint::ClippedShape, pos2, vec2,
+        self, Color32, Context, RawInput, Rect, Shape, Vec2, epaint::ClippedShape, pos2, vec2,
     };
 
     use crate::audio_link::AudioLink;
-    use crate::metrics::{DEFAULT_UI_SCALE_INDEX, FontSize, Metrics};
+    use crate::metrics::{DEFAULT_UI_SCALE, FontSize, Metrics};
     use crate::project_files::ProjectFiles;
     use crate::project_files::mem::MemFiles;
     use crate::settings::Settings;
@@ -128,20 +128,19 @@ mod message_tests {
     use crate::ui::UiCtx;
     use crate::ui::anim;
     use crate::ui::main_screen::Regions;
-    use crate::ui::popup::PAD_X;
     use crate::ui::views::{AppCtx, message};
 
     /// 300 characters of words, the longest 12.
     const LONG: &str = "Failed to save the song: the folder is read-only, or the disk is full, or the file is open in another application. Free some space or choose another folder in the Save dialog and try again; if the problem stays, export the song to a different folder. The system said: permission denied (os error 13).";
 
-    /// The gap in U between the text column and the screen edges: `message::MARGIN`.
+    /// The gap in U between the panel and the screen's top and bottom: `message::MARGIN`.
     const MARGIN: f32 = 1.0;
 
     /// One frame of `lines` with `OK` on a `size` window at `ppp`; `time` in frames.
     fn frame(ctx: &Context, lines: &[&str], size: Vec2, ppp: f32, time: u32) -> Vec<ClippedShape> {
         let screen = Rect::from_min_size(pos2(0.0, 0.0), size);
         let theme = theme_by_id(0);
-        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
         let lines: Vec<String> = lines.iter().map(|l| (*l).to_owned()).collect();
         let mut raw = RawInput {
             screen_rect: Some(screen),
@@ -206,32 +205,29 @@ mod message_tests {
             .collect()
     }
 
-    /// What one message left on the screen, a few frames in (the animation off: the box is open at once).
+    /// What one message left on the screen, a few frames in (the animation off: the panel is open at once).
     struct Shown {
         ctx: Context,
         m: Metrics,
         screen: Rect,
-        /// The text column: the popup area the items sit in.
-        area: Rect,
-        /// The painted `background` box, full width.
-        boxed: Rect,
+        /// The painted `menuFill` panel.
+        panel: Rect,
         texts: Vec<(String, Rect)>,
     }
 
     impl Shown {
-        /// The texts above the `OK` choice, in order.
+        /// The texts above the `OK` button, in order.
         fn lines(&self) -> Vec<&str> {
             let n = self.texts.len() - 1;
             self.texts[..n].iter().map(|(t, _)| t.as_str()).collect()
         }
 
-        /// The room a line has: the screen less the margins and the popup's padding.
+        /// The room a line has: 60 % of the panel.
         fn max_w(&self) -> f32 {
-            let m = &self.m;
-            m.floor_px(self.screen.width() - 2.0 * m.u(MARGIN) - 2.0 * m.u(PAD_X))
+            self.m.floor_px(0.6 * self.panel.width())
         }
 
-        /// `text` in the header font.
+        /// `text` in the message font.
         fn width(&self, text: &str) -> f32 {
             let font = self.m.font_id(FontSize::Pt12);
             let galley = self
@@ -248,23 +244,17 @@ mod message_tests {
             shapes = frame(&ctx, lines, size, ppp, n);
         }
         let screen = Rect::from_min_size(pos2(0.0, 0.0), size);
-        let bg = theme_by_id(0).colors.background.to_color32();
-        let boxed = (shapes.iter())
+        let fill = theme_by_id(0).colors.menu_fill.to_color32();
+        let panel = (shapes.iter())
             .find_map(|c| match &c.shape {
-                Shape::Rect(r) if r.fill == bg && r.rect.width() == size.x && r.rect != screen => {
-                    Some(r.rect)
-                }
+                Shape::Rect(r) if r.fill == fill => Some(r.rect),
                 _ => None,
             })
-            .expect("the box is painted");
-        let area = ctx
-            .memory(|mem| mem.area_rect(Id::new("message")))
-            .expect("the message is shown");
+            .expect("the panel is painted");
         Shown {
-            m: Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX),
+            m: Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE),
             screen,
-            area,
-            boxed,
+            panel,
             texts: texts(&shapes),
             ctx,
         }
@@ -278,37 +268,32 @@ mod message_tests {
     ];
 
     #[test]
-    fn a_long_message_wraps_inside_the_box_and_the_box_inside_the_screen() {
+    fn a_long_message_wraps_to_60_percent_of_the_panel_and_the_panel_stays_inside_the_screen() {
         assert_eq!(LONG.len(), 300);
         for (ppp, size) in WINDOWS {
             let shown = show(&[LONG], size, ppp);
-            let bounds = shown.screen.shrink(shown.m.u(MARGIN));
             let case = format!("ppp {ppp}, {size:?}: {:?}", shown.texts);
-            // The painted box is as wide as the screen and inside the margins vertically; the text column and the
-            // texts inside the margins.
-            assert_eq!(shown.boxed.x_range(), shown.screen.x_range(), "{case}");
+            // min(20 U, W − 4 px) wide, centred, inside the screen less 1 U above and below.
+            let m = &shown.m;
+            let w = m.u(20.0).min(size.x - 4.0 / ppp);
+            assert!((shown.panel.width() - w).abs() <= 1.0, "{case}");
             assert!(
-                bounds.y_range().contains(shown.boxed.top())
-                    && bounds.y_range().contains(shown.boxed.bottom()),
-                "{case}: {:?}",
-                shown.boxed
+                (shown.panel.center().x - size.x / 2.0).abs() <= 1.0,
+                "{case}"
             );
-            assert!(bounds.contains_rect(shown.area), "{case}: {:?}", shown.area);
-            assert!(shown.boxed.contains_rect(shown.area), "{case}");
+            let bounds = shown.screen.shrink2(vec2(0.0, m.u(MARGIN)));
+            assert!(bounds.contains_rect(shown.panel), "{case}");
             for (text, rect) in &shown.texts {
-                assert!(shown.boxed.contains_rect(*rect), "{case}: {text}");
-                assert!(shown.area.contains_rect(*rect), "{case}: {text}");
+                assert!(shown.panel.contains_rect(*rect), "{case}: {text}");
             }
-            // Wrapped, in order, no word broken.
+            // Wrapped, in order, no word broken, each line as full as it can be.
             let words: Vec<&str> = shown.lines().iter().flat_map(|l| l.split(' ')).collect();
             assert!(
                 words.iter().copied().eq(LONG.split_whitespace()),
                 "{case}: a word broke or went missing"
             );
             assert!(shown.lines().len() >= 2, "{case}: it did not wrap");
-            // Each line is as full as it can be: it fits, and the next line's first word would not have.
-            let max_w = shown.max_w();
-            let lines = shown.lines();
+            let (max_w, lines) = (shown.max_w(), shown.lines());
             for (i, line) in lines.iter().enumerate() {
                 assert!(shown.width(line) <= max_w, "{case}: {line}");
                 if let Some(next) = lines.get(i + 1) {
@@ -319,28 +304,17 @@ mod message_tests {
                     );
                 }
             }
-            // The text column is the widest line's: within one word of the room.
-            assert!(shown.area.width() <= bounds.width(), "{case}");
-            assert!(
-                shown.area.width() > bounds.width() - shown.width("application. "),
-                "{case}: column {}",
-                shown.area.width()
-            );
         }
     }
 
     #[test]
-    fn one_word_wider_than_the_screen_breaks_inside_it() {
+    fn one_word_wider_than_the_panel_breaks_inside_it() {
         let word = "x".repeat(300);
         for (ppp, size) in WINDOWS {
             let shown = show(&[&word], size, ppp);
             let case = format!("ppp {ppp}, {size:?}");
             assert!(shown.lines().len() >= 2, "{case}");
             assert_eq!(shown.lines().concat(), word, "{case}");
-            for (text, rect) in &shown.texts {
-                assert!(shown.area.contains_rect(*rect), "{case}: {text}");
-                assert!(shown.boxed.contains_rect(*rect), "{case}: {text}");
-            }
         }
     }
 
@@ -352,24 +326,24 @@ mod message_tests {
     }
 
     #[test]
-    fn a_short_message_is_one_line_per_text_as_before() {
+    fn a_short_message_is_one_line_per_text_over_its_ok() {
         for (ppp, size) in WINDOWS {
             let shown = show(&["Delete?", "Really."], size, ppp);
             let case = format!("ppp {ppp}, {size:?}");
             let texts: Vec<&str> = shown.texts.iter().map(|(t, _)| t.as_str()).collect();
             assert_eq!(texts, ["Delete?", "Really.", "OK"], "{case}");
-            // Centred on the screen; the box is full width and three 1.25 U rows tall, the column as wide as its
-            // widest text and padding.
+            // Centred on the screen: 1 + 2 + 0.5 + 1.25 + 1 U tall.
             assert!(
-                (shown.area.center() - shown.screen.center())
+                (shown.panel.center() - shown.screen.center())
                     .abs()
                     .max_elem()
-                    <= 1.0
+                    <= 1.0,
+                "{case}"
             );
-            assert!(shown.area.width() < size.x / 2.0, "{case}");
-            assert_eq!(shown.boxed.width(), size.x, "{case}");
-            assert_eq!(shown.boxed.height(), shown.area.height(), "{case}");
-            assert!((shown.boxed.center() - shown.screen.center()).abs().y <= 1.0);
+            assert!(
+                (shown.panel.height() - shown.m.u(5.75)).abs() <= 1.0,
+                "{case}"
+            );
         }
     }
 
@@ -380,12 +354,12 @@ mod message_tests {
         for ppp in [1.0, 2.0] {
             let shown = show(&[&long], size, ppp);
             let bounds = shown.screen.shrink(shown.m.u(MARGIN));
-            let case = format!("ppp {ppp}: box {:?}, column {:?}", shown.boxed, shown.area);
-            // The painted box is the scroll viewport's height (screen less margins) and full width.
-            assert_eq!(shown.boxed.y_range(), bounds.y_range(), "{case}");
-            assert_eq!(shown.boxed.x_range(), shown.screen.x_range(), "{case}");
-            assert!(shown.screen.contains_rect(shown.boxed), "{case}");
-            assert_eq!(shown.area.y_range(), bounds.y_range(), "{case}");
+            let case = format!("ppp {ppp}: panel {:?}", shown.panel);
+            assert!((shown.panel.top() - bounds.top()).abs() <= 1.0, "{case}");
+            assert!(
+                (shown.panel.bottom() - bounds.bottom()).abs() <= 1.0,
+                "{case}"
+            );
         }
     }
 

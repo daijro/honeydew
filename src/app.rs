@@ -23,8 +23,8 @@ use crate::ui::chord_keyboard::{ChordInput, Note, TIMING_MS};
 use crate::ui::clips::{LiveTake, song_end_beats};
 use crate::ui::focus;
 use crate::ui::keyboard::KeyInput;
-use crate::ui::keyboard_settings::{KeyboardMode, panel_target};
-use crate::ui::main_screen::{MainScreen, Regions, ScreenActions, ScreenInput, track_rows};
+use crate::ui::keyboard_settings::KeyboardMode;
+use crate::ui::main_screen::{MainScreen, ScreenActions, ScreenInput, track_rows};
 use crate::ui::performance;
 use crate::ui::piano_roll::notes::project_scale;
 use crate::ui::piano_roll::{PianoRoll, PianoRollAction};
@@ -45,6 +45,7 @@ mod input;
 mod keys;
 mod midi;
 mod note_record;
+mod panel;
 mod plugins;
 mod tracks;
 mod typed;
@@ -53,6 +54,8 @@ mod bundle_wait;
 // Live editing in a Playground session (web only).
 #[cfg(any(target_arch = "wasm32", test))]
 pub(crate) mod live;
+// Audio files dropped on the app.
+mod file_drop;
 
 /// How long a flash (`Saved!`) shows.
 const FLASH_SECS: f64 = 1.5;
@@ -106,6 +109,9 @@ pub struct HoneydewApp {
     /// The theme `settings.theme` names.
     theme: Theme,
     song: Song,
+    /// This frame's `U` in device pixels, which a song new to the app takes its view zooms per U at
+    /// ([`Song::zooms_to_units`]).
+    u_px: f32,
     main_screen: MainScreen,
     /// The view shown and the overlays open.
     nav: Navigation,
@@ -129,6 +135,8 @@ pub struct HoneydewApp {
     engine_keys: Vec<u128>,
     /// When the gate of a tapped note ends (egui input time, in seconds), while it sounds: see [`TAP_GATE`].
     tap_off: Option<f64>,
+    /// `nextBar` (true) or `prevBar` was pressed: the frame seeks to that bar ([`keys::bar_jump`]).
+    bar_jump: Option<bool>,
     /// The web page was hidden since the last frame ([`Self::on_hidden`]): the next frame counts as a focus loss.
     hidden: bool,
     /// Debug view of the whole icon set, toggled with F2.
@@ -197,6 +205,9 @@ pub struct HoneydewApp {
     export: Option<crate::project_files::export::Job>,
     /// `Restore demo songs` behind its loading screen (`app/demo_restore.rs`).
     demo_restore: Option<demo_restore::DemoRestore>,
+    /// `Burn Notes to Track` behind its loading screen: the channel's id, and whether the screen has had its frame
+    /// (`app/tracks.rs`).
+    burn: Option<(i32, bool)>,
     /// MIDI input: the device link and the router (`app/midi.rs`).
     midi: midi::Midi,
     /// The song just loaded has audio files missing: [`MISSING_AUDIO`] shows once no other message does.
@@ -216,6 +227,8 @@ pub struct HoneydewApp {
     fresh: Vec<(usize, u8)>,
     /// Live note-offs waiting for their tap gate, as (when it ends, egui time; channel, key): [`Self::key_off`].
     gated: Vec<(f64, usize, u8)>,
+    /// Audio files dropped on the app, decoding (`app/file_drop.rs`).
+    importing: Option<file_drop::Importing>,
 }
 
 impl Default for HoneydewApp {
@@ -228,6 +241,7 @@ impl Default for HoneydewApp {
             storage: None,
             theme: theme_by_id(Settings::default().theme),
             song: Song::default(),
+            u_px: Metrics::from_pixels_per_point(1.0, crate::metrics::DEFAULT_UI_SCALE).u_px(),
             main_screen: MainScreen::default(),
             nav: Navigation::default(),
             slots: Slots::default(),
@@ -239,6 +253,7 @@ impl Default for HoneydewApp {
             cut: Vec::new(),
             engine_keys: Vec::new(),
             tap_off: None,
+            bar_jump: None,
             hidden: false,
             #[cfg(debug_assertions)]
             show_icon_sheet: false,
@@ -277,6 +292,7 @@ impl Default for HoneydewApp {
             audio_edit: None,
             export: None,
             demo_restore: None,
+            burn: None,
             midi: Default::default(),
             missing_audio: false,
             song_download: None,
@@ -285,6 +301,7 @@ impl Default for HoneydewApp {
             typed: Default::default(),
             fresh: Vec::new(),
             gated: Vec::new(),
+            importing: None,
         }
     }
 }
@@ -292,7 +309,11 @@ impl Default for HoneydewApp {
 impl HoneydewApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         setup_context(&cc.egui_ctx);
-        let mut app = Self::with_storage(settings::storage());
+        let storage = settings::storage();
+        let fresh =
+            (storage.as_deref()).is_none_or(|s| s.get_string(settings::STORAGE_KEY).is_none());
+        let mut app = Self::with_storage(storage);
+        app.whats_new_at_start(fresh);
         app.midi.link = crate::midi::device::MidiLink::platform(cc.egui_ctx.clone());
         app.start_plugins(&cc.egui_ctx);
         app.extract_demo_songs(cfg!(target_arch = "wasm32"));
@@ -330,16 +351,28 @@ impl HoneydewApp {
         app
     }
 
-    /// The first run puts our demo songs into the songs folder, once (`demoSongsRestored`), replacing no copy of the
-    /// user's; a failure (no songs folder) is logged and tried again at the next start. `every_start`: the library
+    /// What's New, once per notes version ([`views::whats_new::due`]): it opens by itself on phones and tablets after an
+    /// upgrade; a `fresh` install (no stored settings) only takes the version.
+    fn whats_new_at_start(&mut self, fresh: bool) {
+        if !views::whats_new::due(&self.settings.whats_new_seen) {
+            return;
+        }
+        if !fresh && cfg!(target_os = "android") {
+            self.nav.overlays.push(Overlay::WhatsNew);
+        }
+        self.settings.whats_new_seen = views::whats_new::NOTES_VERSION.into();
+    }
+
+    /// The first run puts our demo songs into the songs folder, once per set (`demoSongsVersion`), replacing no copy
+    /// of the user's; a failure (no songs folder) is logged and tried again at the next start. `every_start`: the library
     /// lasts a session (the web's), so they go into it at every start. The settings keep the flag at the end of the
     /// first frame.
     fn extract_demo_songs(&mut self, every_start: bool) {
-        if !every_start && self.settings.demo_songs_restored {
+        if !every_start && self.settings.demo_songs_version >= settings::DEMO_SONGS_VERSION {
             return;
         }
         match crate::content::restore_demo_songs(&mut *self.files.library, false) {
-            Ok(()) => self.settings.demo_songs_restored = true,
+            Ok(()) => self.settings.demo_songs_version = settings::DEMO_SONGS_VERSION,
             Err(e) => eprintln!("{}: {e}", crate::content::DEMO_FOLDER),
         }
     }
@@ -478,6 +511,8 @@ impl HoneydewApp {
             SongEdit::Replaced => {
                 // A new song counts from its own first action, and no slider drag of the old one goes on.
                 (self.last_action, self.row_drag) = (None, false);
+                // Its view zooms per U, for its history and engine too.
+                self.song.zooms_to_units(f64::from(self.u_px));
                 self.history = History::new(&self.song);
                 (self.channel_ids, self.asked) = (tracks::channel_ids(&self.song), None);
                 (self.recent, self.delete_asked) = (None, None);
@@ -871,8 +906,8 @@ impl HoneydewApp {
         }
     }
 
-    /// Quit: the window's close button asks [`quit_question`] as the main menu's `Quit` does, holding the close back;
-    /// `Yes` closes the window. (The web has no window to close.)
+    /// Quit: the window's close button asks [`quit_question`], holding the close back; `Yes` closes the window. (The
+    /// web has no window to close.)
     fn quit(&mut self, ctx: &egui::Context) {
         if let Some((QUIT_TAG, yes)) = self.nav.answer() {
             self.nav.take_answer(QUIT_TAG);
@@ -1504,10 +1539,7 @@ impl HoneydewApp {
             playing: self.main_screen.playing,
             tick: snapshot.map_or(0, |s| s.transport_tick),
             song_beats: song_end_beats(&self.song),
-            channels: self.song.channels.len() - 1,
-            active_modules: (self.song.channels.iter())
-                .map(|c| c.rack.modules.len())
-                .sum(),
+            underruns: live.map_or(0, |s| s.underruns),
         };
         let memory = self.main_screen.ram_text();
         let memory = if memory.is_empty() || memory.starts_with("--") {
@@ -1515,20 +1547,18 @@ impl HoneydewApp {
         } else {
             memory.to_owned()
         };
-        let system = self.main_screen.system_memory();
         let p = &mut self.slots.performance;
         if !loading {
             p.update(self.now, reading);
         }
         p.app_memory = memory;
-        p.system_memory = system;
         self.main_screen.meter = Load {
             peak: p.peak,
             smoothed: p.smoothed,
         };
         let page = (self.nav.overlays.iter())
             .any(|o| matches!(o, Overlay::MainMenu(views::MenuTab::Project)));
-        if (p.detached || page) && p.moving() {
+        if page && p.moving() {
             ctx.request_repaint();
         }
     }
@@ -1664,17 +1694,17 @@ impl HoneydewApp {
 }
 
 /// Opens the rack preset picker for a new Rack channel, at the end or at `at` (`Insert Channel`).
-/// The panel's sizes after the `toggleKeyboardPanel` shortcut on a screen `screen_h` points tall: the tap toggle's
-/// height ([`panel_resize::toggled`]), then the release snap rules with no last move ([`panel_resize::released`]),
-/// which also keep it as the recent height when it is over the bar alone.
-fn toggle_snapped(settings: &Settings, screen_h: f32, m: &Metrics) -> panel_resize::Sizes {
+/// The panel's sizes after the `toggleKeyboardPanel` shortcut on a screen `screen_h` points tall, the collapsed height
+/// `c`: the tap toggle's height ([`panel_resize::toggled`], through the release snap), also the recent height when it
+/// is over the bar alone.
+fn toggle_snapped(settings: &Settings, c: f32, screen_h: f32, m: &Metrics) -> panel_resize::Sizes {
     let u = m.u(1.0);
     let (preferred, recent) = (
         settings.preferred_kbd_size * u,
         settings.recent_kbd_size * u,
     );
-    let h = panel_resize::toggled(preferred, recent, screen_h, m);
-    panel_resize::Sizes::settled(panel_resize::released(h, 0.0, screen_h, m), m)
+    let h = panel_resize::toggled(preferred, recent, c, screen_h, m);
+    panel_resize::Sizes::settled(h, c)
 }
 
 fn rack_channel_picker(at: Option<usize>) -> Nav {
@@ -1729,6 +1759,15 @@ impl HoneydewApp {
             ctx.input_mut(|i| i.events.push(egui::Event::WindowFocused(false)));
         }
         self.now = ctx.input(|i| i.time);
+        // A song new to the app keeps its view zooms per U: a file without the zoom-units flag has them per device
+        // pixel, converted at this frame's U, so a save writes the current layout. A replaced song is converted as it
+        // comes in (`SongEdit::Replaced`); the one the app starts with on its first frame, where its undo history
+        // starts.
+        self.u_px = Metrics::new(ctx, self.settings.ui_scale).u_px();
+        if !self.song.file.zooms_per_u() {
+            self.song.zooms_to_units(f64::from(self.u_px));
+            self.history = History::new(&self.song);
+        }
         // The open rack follows the current channel ([`Self::rack_follows`]).
         let was_current = self.current_channel();
         // The focus keys and the focused control's, before anything else reads the keys (`ui::focus`).
@@ -1789,7 +1828,8 @@ impl HoneydewApp {
             .as_ref()
             .map_or_else(Vec::new, |s| s.sounding.clone());
         // Once per frame; screens take it by reference.
-        let metrics = Metrics::new(ctx, self.settings.ui_scale_index);
+        let metrics = Metrics::new(ctx, self.settings.ui_scale);
+        crate::ui::anim::set_mode(ctx, self.settings.animations, self.settings.inertia);
         // As the frame starts; the settings tab edits `self.settings` meanwhile.
         let shown = self.settings.clone();
         // The roll's rows tint for the live notes and the engine's keys alike: each channel's, for the roll to take its
@@ -1817,6 +1857,12 @@ impl HoneydewApp {
         let wheels = self.wheel_values();
         // The chord keyboard's set, transposed to the key, for the frame.
         let chord_set = views::keyboard_settings::chord_set(&self.song);
+        let scale_name = crate::ui::main_screen::scale_name(&self.song);
+        let strip_n = crate::ui::keyboard_settings::strip_controls(
+            views::keyboard_settings::notes_channel(&self.song, self.selected_channel),
+            views::drum_editor::pads_channel(&self.song, self.selected_channel).is_some(),
+            self.settings.keyboard_kind(),
+        );
         let chords = (!piano).then(|| self.chord_input(&chord_set, key_input.enabled));
         let (mut actions, mut navs, overlay_navs, edit) = egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(self.theme.colors.background.to_color32()))
@@ -1830,15 +1876,16 @@ impl HoneydewApp {
                 let grabbed = self
                     .main_screen
                     .grab(ui, &metrics, covered, screen.height());
-                // A resize let go this frame aims at its settled height at once.
-                let u = metrics.u(1.0);
-                let preferred = grabbed.map_or(shown.preferred_kbd_size, |s| s.preferred / u);
-                let target = panel_target(preferred, screen.height(), &metrics);
-                let panel_h = self.main_screen.panel_h(ui.ctx(), target, &metrics);
-                let mut regions = Regions::sized(screen, panel_h, &metrics);
-                if self.main_screen.panel_hidden {
-                    regions = regions.without_panel();
-                }
+                let (mut regions, strip) = panel::panel_layout(
+                    ui.ctx(),
+                    screen,
+                    grabbed,
+                    strip_n,
+                    &mut self.settings,
+                    &mut self.main_screen,
+                    &mut self.nav.overlays,
+                    &metrics,
+                );
                 // The rack slides in and out a step per frame; the view is laid out left of it.
                 let racked = (self.nav.overlays.iter()).any(|o| matches!(o, Overlay::Rack(_)));
                 let width = regions.area.width() * metrics.ppp();
@@ -1847,9 +1894,7 @@ impl HoneydewApp {
                     ui.ctx().request_repaint();
                 }
                 regions = regions.with_rack(open, &metrics);
-                // The keyboard settings strip takes 3 U off the top of the keys.
-                let strip =
-                    (self.nav.overlays.iter()).any(|o| matches!(o, Overlay::KeyboardSettings));
+                // The keyboard settings strip takes its height off the top of the keys.
                 regions = regions.with_strip(strip, &metrics);
                 let input = ScreenInput {
                     view: self.nav.view,
@@ -1861,6 +1906,7 @@ impl HoneydewApp {
                     history: (self.history.can_undo(), self.history.can_redo()),
                     preview: self.preview,
                     can_preview: false,
+                    scale_name: scale_name.as_deref(),
                     sample_row: None,
                     pads: false,
                     keyboard: key_input,
@@ -1902,7 +1948,8 @@ impl HoneydewApp {
                 let editor = !matches!(self.nav.view, View::Playlist | View::Mixer);
                 let view_rect = app.regions.editor;
                 let split = &mut self.main_screen.split;
-                if split.step(editor, view_rect.height() * metrics.ppp()) {
+                let step = crate::ui::anim::step(ui.ctx(), crate::ui::anim::PANEL_KEEP);
+                if split.step(editor, view_rect.height() * metrics.ppp(), step) {
                     ui.ctx().request_repaint();
                 }
                 let split = *split;
@@ -1963,13 +2010,31 @@ impl HoneydewApp {
                                 ui.set_clip_rect(clip.intersect(shown));
                                 navs.extend(self.slots.view(view, ui, &mut app));
                                 ui.set_clip_rect(clip);
-                                (self.main_screen.split).splitter(ui, view_rect, top, &metrics);
-                                // The bottom editors' one close X: the playlist alone again, the clip kept; a focus in
-                                // The editor goes back to the playlist.
-                                let rack_closed =
-                                    app.regions.rack.left() >= app.regions.area.right();
-                                if split::close_button(ui, view_rect, shown.top(), rack_closed, &cx)
-                                {
+                                // The colour band and its close ribbon over the editor, the shadow over the playlist.
+                                // The ribbon's tap: the playlist alone again, the clip kept; a focus in the editor goes
+                                // back to the playlist.
+                                let channel = app.song.channels.get(*app.selected);
+                                let color = channel.map_or(cx.theme.colors.menu_fill, |c| {
+                                    crate::theme::channel_color(c.hue, cx.theme)
+                                });
+                                split::band(
+                                    ui.painter(),
+                                    view_rect,
+                                    shown.top(),
+                                    color.to_color32(),
+                                    &metrics,
+                                );
+                                split::shadow(ui.painter(), top, &metrics);
+                                let split = &mut self.main_screen.split;
+                                let screen = app.regions.screen.right();
+                                if split::ribbon(
+                                    ui,
+                                    split,
+                                    (view_rect, shown.top()),
+                                    screen,
+                                    color,
+                                    &cx,
+                                ) {
                                     navs.push(Nav::Collapse);
                                     if focus::within(ui.ctx(), egui::Id::new(focus::EDITOR)) {
                                         focus::move_to(ui.ctx(), egui::Id::new(focus::PLAYLIST));
@@ -1982,8 +2047,9 @@ impl HoneydewApp {
                 // Escape belongs to the topmost popup or overlay: a popup the view shows over the overlays has taken
                 // it (`popup::show`); otherwise it is held back from the overlays below the topmost one.
                 let escape = !self.nav.overlays.is_empty() && views::take_escape(ui);
-                // After the view, which makes its editor's state.
-                let current = preview::current(self.nav.view, &self.slots, app.song);
+                // After the view, which makes its editor's state: SOLO CLIP shows while the current track has a
+                // current clip, in every view.
+                let current = (self.main_screen.clips).clip_for(app.song, *app.selected);
                 row_clip = sample_row::current(app.song, *app.selected, &self.slots.audio_editor);
                 let row_slot = |key: ClipKey| key.clip(app.song)?.file.sample.as_deref();
                 let input = ScreenInput {
@@ -2001,8 +2067,10 @@ impl HoneydewApp {
                     .chrome(ui, &cx, input, &regions, &mut actions);
                 views::drum_editor::after_chrome(&mut self.slots.drum_editor, ui, &mut app);
                 // The corner buttons go over the rack and under the other overlays.
+                let hue = app.song.channels.get(input.selected).map_or(0.0, |c| c.hue);
+                let ink = crate::theme::channel_color(hue, cx.theme).to_color32();
                 let corner = |ui: &mut egui::Ui| {
-                    let (selected, screen) = (input.selected, &mut self.main_screen);
+                    let (selected, screen) = ((input.selected, ink), &mut self.main_screen);
                     screen.corner_buttons(ui, &cx, selected, &regions, &mut actions);
                 };
                 let overlay_navs =
@@ -2103,6 +2171,9 @@ impl HoneydewApp {
         // point, or from there to the song start.
         let screen = &mut self.main_screen;
         let mut seek = actions.seek;
+        if let Some(next) = self.bar_jump.take() {
+            seek = Some(keys::bar_jump(&self.song, tick, next));
+        }
         // A ruler tap that stops returns to the play-start point, as REV's first press.
         let stop_tap = actions.playhead.is_some() && was_playing;
         if let Some(at) = actions.playhead.filter(|_| !was_playing) {
@@ -2284,7 +2355,9 @@ impl HoneydewApp {
         self.midi_import(ctx, tick);
         self.export_started(ctx);
         self.demo_restore(ctx);
+        self.burn_notes(ctx, tick);
         self.bundle_wait(ctx, tick);
+        self.file_drop(ctx, &metrics, tick);
         self.quit(ctx);
         self.flash(ctx, &metrics);
         if self.current_channel() != was_current {
@@ -2295,6 +2368,12 @@ impl HoneydewApp {
         self.live_frame(ctx, tick);
         // The focus cursor, over everything.
         focus::end_frame(ctx, &self.theme);
+        // The tooltip of the control under the pointer, once every control has named its own.
+        let cx = UiCtx {
+            theme: &self.theme,
+            m: &metrics,
+        };
+        crate::ui::tooltip::show(ctx, &cx);
         self.keep_settings(ctx);
         // The playhead follows the audio; otherwise egui repaints only on input.
         if playing && snapshot.is_some_and(|s| !s.stream_failed) {
@@ -2309,10 +2388,10 @@ impl HoneydewApp {
 mod tests {
     use super::*;
     use crate::audio_link::testing::{Recorder, warnings};
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
     use crate::song::SynthKind;
     use crate::ui::keyboard_settings::PANEL_H;
-    use crate::ui::main_screen::TRANSPORT_H;
+    use crate::ui::main_screen::{Regions, TRANSPORT_H};
     use crate::ui::modules_browser::InsertAt;
     use crate::ui::views::{MenuTab, Overlay};
     use eframe::egui::{Pos2, pos2, vec2};
@@ -2368,6 +2447,8 @@ mod tests {
     mod drag_release;
     // A song load on the web waits for its bundled sounds.
     mod bundle_wait;
+    // Audio files dropped on the app.
+    mod file_drop;
 
     impl HoneydewApp {
         /// A Drums channel as the model makes it (the default kit, no picker open), added at the end and selected:
@@ -2409,6 +2490,14 @@ mod tests {
     }
 
     const U: f32 = 32.0;
+    /// Every ruler's height (the playlist's and the clip editors'), 1.65 U cut to whole pixels, and so the playlist's track
+    /// rows' top.
+    const RULER: f32 = 52.0;
+
+    /// `x` to a thousandth of a point, for a play box's playhead x (its centre less half its width).
+    fn r3(x: f32) -> f32 {
+        (x * 1000.0).round() / 1000.0
+    }
     /// The bottom panel at its default height ([`PANEL_H`] U): its top (the content area's bottom), the transport bar's
     /// centre line under it, and the keys' top under the 1.75 U bar (y 380, 408, 436); the keys run to the screen's
     /// bottom, 540. Checked against the layout by `the_rigs_panel_constants_are_the_layouts`.
@@ -2430,14 +2519,14 @@ mod tests {
     /// 0.35 U under the keys' top).
     fn pad_centre(index: usize) -> Pos2 {
         let band = egui::Rect::from_min_max(pos2(0.0, KEYS_TOP), pos2(1170.0, 540.0));
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let area = crate::ui::keyboard_settings::pads_rect(band, &m);
         crate::ui::drums::pad_grid(area, 1170.0, U).centres[index]
     }
 
     #[test]
     fn the_rigs_panel_constants_are_the_layouts() {
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let r = Regions::new(
             egui::Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0)),
             &m,
@@ -2461,9 +2550,9 @@ mod tests {
         }
     }
 
-    /// The header of track `index` (rows are 2 U tall below the 1.5 U ruler).
+    /// The header of track `index` (rows are 2 U tall below the ruler).
     fn header(index: usize) -> Pos2 {
-        pos2(0.75 * U, 1.5 * U + (index as f32 + 0.5) * 2.0 * U)
+        pos2(0.75 * U, RULER + (index as f32 + 0.5) * 2.0 * U)
     }
 
     /// `files` with an EMPTY factory in place of [`crate::content::factory`]: the real one grows (templates, presets) and
@@ -3268,14 +3357,14 @@ mod tests {
     }
 
     #[test]
-    fn the_logo_opens_the_main_menu_whose_tabs_switch_and_whose_logo_closes_it() {
+    fn the_logo_opens_the_main_menu_whose_tabs_switch_and_whose_close_x_closes_it() {
         let mut rig = Rig::new();
         rig.click(LOGO);
         assert_eq!(rig.overlays(), [Overlay::MainMenu(MenuTab::Songs)]);
         rig.frame(vec![]);
         rig.click_id(egui::Id::new("main_menu").with(("tab", 2_usize)));
         assert_eq!(rig.overlays(), [Overlay::MainMenu(MenuTab::Settings)]);
-        rig.click_id(egui::Id::new("main_menu").with("logo"));
+        rig.click_id(egui::Id::new("main_menu").with("close"));
         assert_eq!(rig.overlays(), []);
     }
 
@@ -3313,9 +3402,9 @@ mod tests {
     fn a_clips_edit_button_opens_its_channels_editor_and_the_close_x_goes_back() {
         let mut rig = Rig::with_drums_and_synth();
         let edit = egui::Id::new(("clip_button", 3_usize));
-        let plus = egui::Id::new("clip_plus");
-        // A tap on the empty drum lane makes its track current, the next shows `+Clip`, which adds a clip and selects
-        // it; its Edit opens the drum editor.
+        let plus = egui::Id::new("clip_insert").with(0);
+        // A tap on the empty drum lane makes its track current, the next shows the insert menu, whose `New Clip` adds a
+        // clip and selects it; its Edit opens the drum editor.
         rig.click(lane(1));
         rig.click(lane(1));
         rig.frame(vec![]);
@@ -3327,7 +3416,7 @@ mod tests {
         rig.click_id(egui::Id::new("editor_close"));
         assert_eq!(rig.app.nav.view, View::Playlist);
         // On the synth lane: the first tap clears the selection, the second makes the track current, the third shows
-        // `+Clip`.
+        // the insert menu.
         for _ in 0..3 {
             rig.click(lane(2));
         }
@@ -3373,7 +3462,7 @@ mod tests {
         rig.click(EDGE_TAB);
         assert_eq!(rig.overlays(), [Overlay::Rack(1)]);
         rig.slide_rack();
-        rig.click(rack_wiring::notch());
+        rig.click(rack_wiring::collapse_tab());
         assert_eq!(rig.overlays(), []);
     }
 
@@ -3453,7 +3542,7 @@ mod tests {
         for (stack, close, left) in [
             (
                 vec![Overlay::Rack(1), Overlay::KeyboardSettings],
-                Err(rack_wiring::notch()),
+                Err(rack_wiring::collapse_tab()),
                 vec![Overlay::KeyboardSettings],
             ),
             // The browser is modal: the rack beside it (the 18 U browser covers the notch) is a click outside it,
@@ -4010,7 +4099,7 @@ mod tests {
         );
         rig.frame(vec![]);
         let screen = egui::Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         rig.click(save_dialog::layout(screen, &m).save.center());
         assert_eq!(rig.overlays(), []);
         assert_eq!(rig.app.song.title, "New Song");
@@ -4046,7 +4135,6 @@ mod tests {
 
     // ---- Settings ----
 
-    use crate::metrics::UI_SCALE_FACTORS;
     use crate::settings::STORAGE_KEY;
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -4157,10 +4245,10 @@ mod tests {
                 .rect
         };
         let before = logo(&rig).width();
-        rig.app.settings.ui_scale_index = UI_SCALE_FACTORS.iter().position(|&f| f == 1.5).unwrap();
+        rig.app.settings.ui_scale = 150;
         rig.frame(vec![]);
         rig.frame(vec![]);
-        assert_eq!(logo(&rig).width(), before * 1.5);
+        assert!((logo(&rig).width() - before * 1.5).abs() < 1e-3);
     }
 
     #[test]
@@ -4197,11 +4285,10 @@ mod tests {
     #[test]
     fn the_meters_setting_shows_or_hides_the_cpu_and_ram_readouts() {
         let mut rig = Rig::new();
-        let texts = rig.texts();
-        assert!(texts.contains(&"CPU".to_owned()) && texts.contains(&"RAM".to_owned()));
+        let readout = |texts: Vec<String>| texts.iter().any(|t| t.ends_with(" MB"));
+        assert!(readout(rig.texts()));
         rig.app.settings.hardware_meters = false;
-        let texts = rig.texts();
-        assert!(!texts.contains(&"CPU".to_owned()) && !texts.contains(&"RAM".to_owned()));
+        assert!(!readout(rig.texts()));
     }
 
     #[test]
@@ -4335,6 +4422,10 @@ mod tests {
         let mut song = rig.app.song.clone();
         assert_eq!(song.tempo_bpm, 140.0);
         song.tempo_bpm = Song::default().tempo_bpm;
+        // Its view, zooms per U from the moment it comes in, is no part of the comparison.
+        assert!(song.file.zooms_per_u());
+        (song.file.playlist_view, song.file.head_extra) =
+            (Song::default().file.playlist_view, vec![]);
         assert!(crate::project_files::tests::new_now(&song));
         assert_eq!(rig.overlays(), []);
         assert!(!rig.app.main_screen.playing);
@@ -4377,7 +4468,7 @@ mod tests {
         ));
         rig.frame(vec![]);
         let screen = egui::Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         rig.click(save_dialog::layout(screen, &m).save.center());
         assert_eq!(rig.overlays(), [Overlay::MainMenu(MenuTab::Songs)]);
         assert!(
@@ -4446,7 +4537,7 @@ mod tests {
         rig.app.files.library.store("Late.flm", b"x").unwrap();
         rig.frame(vec![]);
         assert!(!rig.drawn(row("Late.flm")), "read every frame");
-        rig.click_id(egui::Id::new("main_menu").with("logo"));
+        rig.click_id(egui::Id::new("main_menu").with("close"));
         assert_eq!(rig.overlays(), []);
         rig.frame(vec![]);
         rig.open_menu(MenuTab::Songs);
@@ -4672,7 +4763,7 @@ mod tests {
         // The link is below the fold.
         let content = crate::ui::main_menu::shell_layout(
             egui::Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0)),
-            &Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX),
+            &Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE),
         )
         .content;
         let scroll = |rig: &mut Rig, dy: f32| {
@@ -4876,7 +4967,7 @@ mod tests {
         // The lock button is below the fold.
         let content = crate::ui::main_menu::shell_layout(
             egui::Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0)),
-            &Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX),
+            &Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE),
         )
         .content;
         let wheel = egui::Event::MouseWheel {
@@ -4930,54 +5021,25 @@ mod tests {
         rig.click_id(message_item(row));
     }
 
-    /// Whether the frame after next paints `texts` in this order (a message's lines, then its choices top to
-    /// bottom). A popup shows from its second frame.
+    /// Whether the frame after next paints `texts` in this order (a message's lines, wrapped or not, then its
+    /// choices left to right). A message shows from its second frame.
     fn shows_in_order(rig: &mut Rig, texts: &[&str]) -> bool {
         rig.frame(vec![]);
-        let shown = rig.texts();
-        let mut rest = shown.iter();
-        texts.iter().all(|text| rest.any(|t| t == text))
+        let shown = rig.texts().join(" ");
+        let mut rest = shown.as_str();
+        texts.iter().all(|text| match rest.find(text) {
+            Some(at) => {
+                rest = &rest[at + text.len()..];
+                true
+            }
+            None => false,
+        })
     }
 
     // ---- Quit, and the unsaved-changes question ----
 
     #[test]
-    fn quit_asks_yes_or_cancel_whatever_the_song_then_closes_the_window_and_help_does_nothing() {
-        let exit = format!("Exit {}?", crate::APP_NAME);
-        for edited in [false, true] {
-            let mut rig = Rig::new();
-            if edited {
-                rig.app.add_default_drums(0);
-            }
-            rig.open_menu(MenuTab::Songs);
-            let quit = egui::Id::new("main_menu").with("Quit");
-            rig.click_id(quit);
-            // Never the unsaved-changes question.
-            assert_eq!(asking(&rig), Some("main_menu_quit"), "{edited}");
-            assert!(
-                shows_in_order(&mut rig, &[&exit, "Yes", "Cancel"]),
-                "{edited}"
-            );
-            assert!(!rig.texts().iter().any(|t| t == UNSAVED || t == "No"));
-            choose(&mut rig, 2);
-            assert!(
-                !closes(&rig.out) && !closes(&rig.output(vec![])),
-                "Cancel closed it"
-            );
-            assert_eq!(rig.overlays(), [Overlay::MainMenu(MenuTab::Songs)]);
-            rig.click_id(quit);
-            choose(&mut rig, 1);
-            assert!(closes(&rig.out), "{edited}");
-        }
-        let mut rig = Rig::new();
-        rig.open_menu(MenuTab::Songs);
-        rig.click_id(egui::Id::new("main_menu").with("Help"));
-        assert_eq!(rig.overlays(), [Overlay::MainMenu(MenuTab::Songs)]);
-        assert!(!closes(&rig.out) && !closes(&rig.output(vec![])));
-    }
-
-    #[test]
-    fn closing_the_window_asks_as_quit_does_and_closes_on_yes() {
+    fn closing_the_window_asks_exit_and_closes_on_yes() {
         let mut rig = Rig::new();
         rig.app.add_default_drums(0);
         rig.close_request = true;
@@ -5358,10 +5420,10 @@ mod tests {
     fn dial(quarter: usize) -> Pos2 {
         TEMPO_DIAL + [vec2(U, 0.0), vec2(0.0, U), vec2(-U, 0.0), vec2(0.0, -U)][quarter % 4]
     }
-    /// In the keyboard settings strip (from the keys' band top, 3 U under the 1.75 U button bar, the keys below it):
-    /// the key spinner's `v` and the scale spinner's `^`.
-    const KEY_DOWN: Pos2 = pos2(104.0, KEYS_TOP + 87.0);
-    const SCALE_UP: Pos2 = pos2(232.0, KEYS_TOP + 33.0);
+    /// In the keyboard settings strip (from the keys' band top, 3 U under the 1.75 U button bar, the keys below it; six
+    /// 5 U cells from x 105): the key spinner's `v` and the scale spinner's `^`.
+    const KEY_DOWN: Pos2 = pos2(345.0, KEYS_TOP + 79.0);
+    const SCALE_UP: Pos2 = pos2(505.0, KEYS_TOP + 33.0);
 
     /// Ctrl/Cmd+Z with `extra` held.
     fn z(extra: egui::Modifiers) -> Vec<egui::Event> {
@@ -5370,11 +5432,6 @@ mod tests {
 
     fn ink() -> egui::Color32 {
         crate::theme::theme_by_id(0).colors.text.to_color32()
-    }
-
-    /// The light bubbles' label colour.
-    fn menu_ink() -> egui::Color32 {
-        crate::theme::theme_by_id(0).colors.menu_fill.to_color32()
     }
 
     impl Rig {
@@ -5546,87 +5603,52 @@ mod tests {
     }
 
     #[test]
-    fn the_editors_undo_and_redo_buttons_step_through_the_history() {
+    fn the_undo_and_redo_buttons_step_through_the_history() {
         let mut rig = Rig::with_synth();
-        // As loaded, the master's automation clip open: nothing to undo (Preview: `app/tests/preview.rs`). An editor
-        // follows the current track: only the master's stays open while another channel is added and selected.
-        rig.app.song.channels[0].lanes[0].add_clip(0, 4.0);
-        rig.app.song_edited(SongEdit::Replaced, 0);
-        let master = ClipKey {
-            channel: 0,
-            lane: 0,
-            id: 1,
-        };
-        rig.app.navigate(Nav::EditClip(master));
-        rig.slide_split();
-        assert_eq!(rig.color_of("Undo"), None);
-        assert_eq!(rig.color_of("Redo"), None);
         rig.app.add_default_drums(0);
         rig.take();
         rig.frame(vec![]);
-        // A light bubble with a `menuFill` label.
-        assert_eq!(rig.color_of("Undo"), Some(menu_ink()));
         rig.click_text_button("Undo");
         assert_eq!(rig.app.song.channels.len(), 2);
         // The selected channel went with it.
         assert_eq!(rig.app.selected_channel, 1);
         assert_eq!(rig.take(), ["ReplaceSong adopting"]);
         rig.frame(vec![]);
-        assert_eq!(rig.color_of("Undo"), None);
-        assert_eq!(rig.color_of("Redo"), Some(menu_ink()));
         rig.click_text_button("Redo");
         assert_eq!(rig.app.song.channels.len(), 3);
         assert_eq!(rig.take(), ["ReplaceSong adopting"]);
-        // Neither the playlist nor the mixer shows them; the editor shows Undo, and Preview with its clip.
-        for (view, shown) in [
-            (View::AutomationEditor(0), true),
-            (View::Mixer, false),
-            (View::Playlist, false),
-        ] {
-            rig.app.nav.view = view;
-            rig.frame(vec![]);
-            assert_eq!(rig.painted("Undo"), shown, "{view:?}");
-            assert_eq!(rig.painted("Preview"), shown, "{view:?}");
-        }
     }
 
     #[test]
-    fn the_editor_buttons_give_way_to_the_centre_group_on_a_narrow_transport() {
+    fn a_narrow_window_takes_two_transport_rows_and_keeps_every_button() {
         let mut rig = Rig::with_synth();
-        rig.app.add_default_drums(0);
-        // Something to undo and something to redo, and a clip to preview.
-        rig.frame(z(egui::Modifiers::NONE));
         rig.app.song.channels[1].lanes[0].add_clip(0, 4.0);
         rig.edit(1);
-        // The transport bar's slots: n = 6, 4 and 3 slots of b = 1.75 U fit between CTRL and the close X at 100, 125
-        // and 150 %. Six is all of them; at four the meters go (s = 6 > n and m > n) and the three buttons keep theirs
-        // (m = 4 ≤ n); at three Preview goes too, then Redo fits.
-        for (scale, shown, meters) in [
-            (1.0, &["Undo", "Redo", "Preview"][..], true),
-            (1.25, &["Undo", "Redo", "Preview"], false),
-            (1.5, &["Undo", "Redo"], false),
-        ] {
-            rig.app.settings.ui_scale_index =
-                UI_SCALE_FACTORS.iter().position(|&f| f == scale).unwrap();
+        // At 100 % the 1170-point window is 36.6 U wide: one row. At 150 % it is 24.4 U, under the 27.25 U the right
+        // group needs with the meters: two rows, the right group under the centre one.
+        for (scale, rows) in [(1.0, 1), (1.5, 2)] {
+            rig.app.settings.ui_scale = (scale * 100.0) as u32;
             rig.frame(vec![]);
             rig.frame(vec![]);
-            let painted: Vec<&str> = ["Undo", "Redo", "Preview"]
-                .into_iter()
-                .filter(|label| rig.painted(label))
-                .collect();
-            assert_eq!(painted, shown, "{scale}");
-            assert_eq!(rig.painted("CPU"), meters, "{scale}");
-            assert_eq!(rig.painted("RAM"), meters, "{scale}");
+            assert_eq!(rig.app.main_screen.rows, rows, "{scale}");
             let rect = |label: &str| {
                 let id = egui::Id::new(("transport", label));
                 rig.ctx.read_response(id).unwrap().rect
             };
-            let ctrl = rect("CTRL");
-            for label in shown {
-                assert!(rect(label).left() >= ctrl.right(), "{label} at {scale}");
+            let (control, undo, solo) = (rect("CONTROL"), rect("Undo"), rect("SOLO CLIP"));
+            if rows == 2 {
+                assert!(
+                    undo.top() >= control.bottom() && solo.right() == undo.left(),
+                    "{scale}"
+                );
+            } else {
+                assert!(
+                    undo.top() == control.top() && solo.left() > control.right(),
+                    "{scale}"
+                );
             }
-            // CTRL still takes its taps.
-            rig.click_id(egui::Id::new(("transport", "CTRL")));
+            // CONTROL still takes its taps.
+            rig.click_id(egui::Id::new(("transport", "CONTROL")));
             assert_eq!(rig.overlays(), [Overlay::CtrlMenu], "{scale}");
             rig.app.nav.overlays.clear();
         }
@@ -5679,12 +5701,14 @@ mod tests {
         assert_eq!(rig.app.song.title, "Beat");
         rig.frame(z(egui::Modifiers::SHIFT));
         assert_eq!(rig.app.song.tempo_bpm, 99.0);
-        // A loaded song has nothing to undo. (The playlist writes the view it opened at back into it, HEAD@296.)
+        // A loaded song has nothing to undo. (Its view zooms count per U, and the playlist writes the view it opened
+        // at back into it, HEAD@296.)
         rig.app.song = Song::default();
         rig.app.song_edited(SongEdit::Replaced, 0);
         rig.take();
         rig.frame(z(egui::Modifiers::NONE));
         let mut new = Song::default();
+        new.file.head_extra = vec![1];
         new.file.playlist_view = rig.app.song.file.playlist_view;
         assert_eq!(rig.app.song, new);
         assert_eq!(rig.take(), Vec::<String>::new());
@@ -5794,7 +5818,6 @@ mod tests {
         for _ in 0..3 {
             rig.frame(vec![]);
         }
-        assert!(rig.painted("RAM"));
         let memory = rig.out.shapes.iter().find_map(|s| match &s.shape {
             egui::Shape::Text(t) if t.galley.text().ends_with(" MB") => {
                 Some(t.galley.text().to_owned())
@@ -5820,7 +5843,7 @@ mod tests {
         for _ in 0..3 {
             rig.frame(vec![]);
         }
-        assert!(!rig.painted("RAM") && !rig.painted("CPU"));
+        assert!(!rig.texts().iter().any(|t| t.ends_with(" MB")));
         let delay = rig.out.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
         assert!(delay.as_secs_f32() > 1.0, "{delay:?}");
     }

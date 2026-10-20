@@ -136,7 +136,7 @@ fn f8_on_the_open_menu_moves_the_focus_back_into_the_songs_list() {
     // A tap on the menu's header: the focus leaves the list.
     let header = crate::ui::main_menu::shell_layout(
         egui::Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0)),
-        &Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX),
+        &Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE),
     )
     .header;
     rig.click(header.center());

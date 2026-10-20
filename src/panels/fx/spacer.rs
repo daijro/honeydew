@@ -189,7 +189,7 @@ mod tests {
     use eframe::egui::{Shape, pos2, vec2};
 
     use super::*;
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
     use crate::panels::tests::{U, display_shapes};
     use crate::theme::theme_by_id;
 
@@ -202,7 +202,7 @@ mod tests {
         // #8 at the reference: 0.5, 4.24, 6, 0.15 U, so its centre is at 3.5 U.
         let eight = Rect::from_min_size(pos2(0.5 * U, 4.24 * U), vec2(6.0 * U, 0.15 * U));
         for ppp in [1.0, 2.0] {
-            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
             let stub = bar(eight, 0.0, &m);
             assert!(
                 close(stub.left(), 3.4625 * U) && close(stub.right(), 3.5375 * U),
@@ -252,7 +252,7 @@ mod tests {
         let text = theme_by_id(0).colors.text.to_color32();
         let feed = [1.0, -0.5];
         for ppp in [1.0, 2.0] {
-            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
             for (n, c) in [(8, 1.0), (9, -0.5)] {
                 let shapes = crate::panels::tests::display_shapes_fed(
                     34,

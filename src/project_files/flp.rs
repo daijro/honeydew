@@ -582,7 +582,7 @@ mod tests {
                 crate::project_files::STAND_INS,
                 r"Kick: missing sample ...\Kicks\FPC_Kick_01.wav, plays Relay Kit Kick",
                 "Serum: Serum replaced by Neon Ribbon",
-                "Serum: Fruity Limiter as Limiter",
+                "Serum: Fruity Limiter as Lemon Limiter at its default settings",
                 "Serum: Gross Beat dropped",
             ]
         );

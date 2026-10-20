@@ -223,14 +223,14 @@ pub fn chord_editor(ui: &mut Ui, cx: &UiCtx, rect: Rect, chord: &Chord) -> Edite
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
     use crate::ui::offscreen::Offscreen;
     use eframe::egui::{
         Color32, Event, Key, Modifiers, PointerButton, Pos2, Shape, epaint::ClippedShape,
     };
 
     fn metrics(ppp: f32) -> Metrics {
-        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX)
+        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE)
     }
 
     fn c_major() -> Chord {

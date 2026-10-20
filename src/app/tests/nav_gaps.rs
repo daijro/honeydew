@@ -235,9 +235,10 @@ fn the_keyboard_settings_cover_nothing_that_scrolls_and_the_tempo_dialog_covers_
 }
 
 #[test]
-fn the_save_and_tempo_dialogs_dim_the_whole_app_screen_and_fill_their_band_with_module_fill() {
-    // Dialog boxes, through the app: the screen dimmed at α 0.6 over everything the app drew, then
-    // the band in `moduleFill`: the Save dialog's 7 U band (y 158..382) and the tempo dialog's 3 U band (y 222..318).
+fn the_save_and_tempo_dialogs_dim_the_whole_app_screen_and_paint_their_band_as_the_floating_panel()
+{
+    // Dialog boxes, through the app: the screen dimmed at α 0.6 over everything the app drew, then the band as the
+    // floating panel: the Save dialog's 20 U × 7 U band (y 158..382) and the tempo dialog's 3 U band (y 222..318).
     let colors = crate::theme::theme_by_id(0).colors;
     let screen = egui::Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(1170.0, 540.0));
     let band = |top, bottom| egui::Rect::from_x_y_ranges(0.0..=1170.0, top..=bottom);
@@ -246,12 +247,11 @@ fn the_save_and_tempo_dialogs_dim_the_whole_app_screen_and_fill_their_band_with_
             Overlay::SaveDialog {
                 name: "Song".into(),
             },
-            band(158.0, 382.0),
+            egui::Rect::from_x_y_ranges(265.0..=905.0, 158.0..=382.0),
         ),
         (Overlay::TempoEditor, band(222.0, 318.0)),
     ];
-    let m =
-        crate::metrics::Metrics::from_pixels_per_point(1.0, crate::metrics::DEFAULT_UI_SCALE_INDEX);
+    let m = crate::metrics::Metrics::from_pixels_per_point(1.0, crate::metrics::DEFAULT_UI_SCALE);
     let panel_top = crate::ui::main_screen::Regions::new(screen, &m)
         .transport
         .top();

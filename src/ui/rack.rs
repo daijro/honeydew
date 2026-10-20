@@ -31,8 +31,8 @@
 use std::collections::HashMap;
 
 use eframe::egui::{
-    Align2, Area, Color32, Event, FontId, Id, Order, Painter, Pos2, Rect, Sense, Shape, Stroke,
-    StrokeKind, Ui, Vec2, pos2, vec2,
+    Align2, Area, Color32, CornerRadius, Event, FontId, Id, Mesh, Order, Painter, Pos2, Rangef,
+    Rect, Sense, Shape, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
 use honeydew_audio::MeterSnapshot;
 use honeydew_audio::device::{AudioCommand, ModuleKey, ModuleMeter};
@@ -52,7 +52,6 @@ use crate::song::{
     SynthKind, output_bus,
 };
 use crate::theme::channel_color;
-use crate::ui::buttons::outline_circle_button;
 use crate::ui::ctrl_menu::{CtrlAction, Touch};
 use crate::ui::gesture;
 use crate::ui::layout::{self, Node, Size};
@@ -62,20 +61,37 @@ use crate::ui::scroller::{self, Axis, Scroller, Y, Zones};
 use crate::ui::widgets::{self, Button, Control, ParamMenu};
 use crate::ui::{UiCtx, focus_lost};
 
+mod lemon_card;
 mod plugin_card;
 #[cfg(test)]
 mod tests;
 
 // Sizes in U unless noted.
-/// The band of the header bar at the top: the bar and the 2 px line under it.
-const HEADER_BAR: f32 = 0.8;
-/// The gutter on each side of the card column; the left one holds the rack ≡.
-const GUTTER: f32 = 1.5;
+/// The header at the top, its 2 px border included: in a full-screen rack, and in a side one.
+const HEADER_FULL: f32 = 1.75;
+const HEADER_SIDE: f32 = 1.3;
+/// The header bar's bottom corners.
+const HEADER_CORNER: f32 = 0.4;
+/// The margin on each side of the header and the card column: 1.5 U beside a 20 U rack, less as the rack narrows,
+/// down to 0.5 U.
+const MARGIN_MAX: f32 = 1.5;
+const MARGIN_MIN: f32 = 0.5;
+/// The gap between cards, trunc(0.35 U) px; the first card starts half of it under the header.
+const CARD_GAP: f32 = 0.35;
 /// A card's header row; a minimized card is only that.
 const CARD_HEADER: f32 = 1.5;
-/// Device pixels between cards, and above the first one.
-const CARD_GAP_PX: f32 = 5.0;
-const FIRST_GAP_PX: f32 = 2.0;
+/// A card's corners.
+const CARD_CORNER: f32 = 0.4;
+/// The side rack's collapse tab: its size, its inset from the rack's left edge and its outline ring in device px, just
+/// outside the pill.
+const COLLAPSE: Vec2 = vec2(1.0, 1.6);
+const COLLAPSE_INSET: f32 = 0.25;
+const COLLAPSE_RING_PX: f32 = 2.0;
+/// The collapse tab's icon size factor.
+const COLLAPSE_ICON: f32 = 0.6;
+/// The side rack's shadow over the view on its left, and its alpha at the rack's edge.
+const SHADOW: f32 = 0.75;
+const SHADOW_ALPHA: f32 = 0.28;
 /// `Add Module`, the SENDS header, a send row and `Add Send`.
 const ROW: f32 = 1.75;
 /// Above the SENDS header.
@@ -91,9 +107,9 @@ const MULTIBAND: u16 = 36;
 const NOTE_ECHO: u16 = 47;
 /// An icon button's disc: 0.7 × half the rect height.
 const ICON_DISC: f32 = 0.7;
-/// The rack ≡: an outline circle of 0.7 × half the 1.5 U column, and its icon's size factor.
-const RACK_MENU_D: f32 = 1.05;
-const RACK_MENU_ICON: f32 = 0.5;
+/// The header's ≡ and close X: their icons' size factor, and the X's disc, this × the square's side in radius.
+const HEADER_BUTTON_ICON: f32 = 0.6;
+const CLOSE_DISC: f32 = 0.375;
 /// Icon size factors in the card header and the send row.
 const HEADER_ICON: f32 = 0.6;
 const SEND_ICON: f32 = 0.75;
@@ -136,6 +152,7 @@ pub fn ui_height(type_id: u16) -> Option<f32> {
         42 => 8.4,
         // Plugin modules: their status, the editor button and a page of params.
         crate::song::plugin::PLUGIN_INSTRUMENT | crate::song::plugin::PLUGIN_EFFECT => 8.0,
+        honeydew_audio::lemon::REVERB | honeydew_audio::lemon::LIMITER => 7.0,
         _ => return None,
     })
 }
@@ -160,6 +177,14 @@ fn module_icon(type_id: u16) -> IconId {
         Some(Role::NoteEffect) => IconId::Music,
         Some(Role::Instrument) | None => IconId::Piano,
     }
+}
+
+/// The built-in Lemon plugin module `module` hosts, if any ([`crate::plugins::builtin`]).
+fn lemon_plugin(module: &ModuleInstance) -> Option<&'static crate::plugins::builtin::Builtin> {
+    let plugin = module.file.plugin.as_deref()?;
+    (crate::song::plugin::is_plugin(module.type_id))
+        .then(|| crate::plugins::builtin::of(plugin))
+        .flatten()
 }
 
 /// A card's height in U: its UI height, or the header alone when it is minimized or its type is unknown.
@@ -221,8 +246,9 @@ pub fn flow(rack: Rect, scroll: f32, u: f32, input: bool, heights: &[f32], sends
 }
 
 /// Lays out the content of `rack` scrolled up by `scroll`, with cards `heights` U tall, at `u` per U (all in device
-/// pixels): the column is 1.5 U in from both sides; with `input`, the 4 U audio-input row starts 2 px under the
-/// 0.8 U header bar and the first card directly under it, else the first card starts there; the others 5 px apart;
+/// pixels): the column is the [`Chrome`] margin in from both sides; with `input`, the 4 U audio-input row starts half a
+/// card gap under the header and the first card directly under it, else the first card starts there; the others a
+/// card gap (trunc(0.35 U)) apart;
 /// `Add Module` follows like another card (1 U lower when there are no cards and no input row); with `sends`, the
 /// SENDS header 0.75 U under it, a row per send, 1 px, `Add Send`, and the `Disconnected from MASTER` row when that
 /// applies. Edges are floored to whole pixels one by one.
@@ -234,18 +260,17 @@ pub fn flow_sends(
     heights: &[f32],
     sends: Option<SendRows>,
 ) -> Flow {
-    let x = (rack.left() + GUTTER * u).floor()..=(rack.right() - GUTTER * u).floor();
+    let c = Chrome::new(rack, u);
+    let x = (rack.left() + c.margin).floor()..=(rack.right() - c.margin).floor();
     let row = |y: &mut f32, h: f32, gap: f32| {
         let r = Rect::from_x_y_ranges(x.clone(), y.floor()..=(*y + h).floor());
         *y += h + gap;
         r
     };
-    let mut y = rack.top() - scroll + HEADER_BAR * u + FIRST_GAP_PX;
+    let gap = card_gap(u);
+    let mut y = c.header_bottom - scroll + (gap / 2.0).floor();
     let input = input.then(|| row(&mut y, INPUT_ROW * u, 0.0));
-    let cards: Vec<Rect> = heights
-        .iter()
-        .map(|&h| row(&mut y, h * u, CARD_GAP_PX))
-        .collect();
+    let cards: Vec<Rect> = heights.iter().map(|&h| row(&mut y, h * u, gap)).collect();
     if cards.is_empty() && input.is_none() {
         y += EMPTY_DROP * u;
     }
@@ -275,20 +300,25 @@ pub fn flow_sends(
 const RACK_W: f32 = 20.0;
 
 /// The rack over the content `area` (the screen above the keyboard panel), slid in by `open` (0 closed … 1 open): R =
-/// trunc(min(20 U, W)) wide and the area's height, its left edge at the area's right − `open`·R. Closed, it lies just
-/// past the area's right edge.
-pub fn rack_rect(area: Rect, open: f32, m: &Metrics) -> Rect {
+/// trunc(min(20 U, W)) wide, or W in a `portrait` window ([`is_portrait`](crate::metrics::is_portrait)), and the
+/// area's height, its left edge at the area's right − `open`·R. Closed, it lies just past the area's right edge.
+pub fn rack_rect(area: Rect, open: f32, portrait: bool, m: &Metrics) -> Rect {
     let ppp = m.ppp();
     // Both are whole pixels: rounding the width first keeps float noise from truncating a pixel away.
-    let w = (RACK_W * m.u_px()).min((area.width() * ppp).round()) / ppp;
+    let full = (area.width() * ppp).round();
+    let w = if portrait {
+        full
+    } else {
+        (RACK_W * m.u_px()).min(full)
+    } / ppp;
     let left = area.right() - open * w;
     Rect::from_x_y_ranges(left..=left + w, area.y_range())
 }
 
-/// One frame of the rack's slide: `r` moves half way to `target`, snapping to it once within a pixel of the area's
-/// `width_px`.
-pub fn slide(r: f32, target: f32, width_px: f32) -> f32 {
-    let r = r + 0.5 * (target - r);
+/// One frame of the rack's slide: `r` moves the share `step` of the way to `target` ([`anim::step`](crate::ui::anim::step),
+/// about half at 60 fps), snapping to it once within a pixel of the area's `width_px`.
+pub fn slide(r: f32, target: f32, width_px: f32, step: f32) -> f32 {
+    let r = r + step * (target - r);
     if (target - r).abs() < 1.0 / width_px {
         target
     } else {
@@ -296,18 +326,88 @@ pub fn slide(r: f32, target: f32, width_px: f32) -> f32 {
     }
 }
 
-/// The channel-colour divider of the rack `rack` (in px): 2 px wide at its left edge + 1, its full height.
-pub fn divider(rack: Rect) -> Rect {
-    Rect::from_x_y_ranges(rack.left() + 1.0..=rack.left() + 3.0, rack.y_range())
+/// The gap between cards at `u` px per U, in px: trunc(0.35 U).
+pub fn card_gap(u: f32) -> f32 {
+    (CARD_GAP * u).trunc()
 }
 
-/// The `▶` notch on the divider of the rack `rack` (in px) at a U of `u` px: half-height s = trunc(0.5 U), its base at
-/// x = trunc(left + 3) from y_c − s to y_c + s, its apex at (x + s, y_c), y_c = trunc(top + (height − 2s)/2).
-pub fn notch(rack: Rect, u: f32) -> [Pos2; 3] {
-    let s = (0.5 * u).trunc();
-    let x = (rack.left() + 3.0).trunc();
-    let y = (rack.top() + (rack.height() - 2.0 * s) / 2.0).trunc();
-    [pos2(x, y - s), pos2(x + s, y), pos2(x, y + s)]
+/// The rack's frame, in device px: the header and its buttons, and in a side rack the collapse tab.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Chrome {
+    /// The rack covers the whole width: it is narrower than 20 U, or wider in a portrait window ([`rack_rect`]).
+    pub full: bool,
+    /// The header's and the card column's inset from each side: clamp(1.5 U − (20 U − R)/2, 0.5 U, 1.5 U).
+    pub margin: f32,
+    /// The channel-colour header bar: the margins in, at the top, 1.75 U (full screen) or 1.3 U (side) tall less its
+    /// 2 px border.
+    pub bar: Rect,
+    /// Where the header and its border end; the content scrolls under it.
+    pub header_bottom: f32,
+    /// The ≡ at the bar's left end, a square of its height.
+    pub menu: Rect,
+    /// Full screen: the close X at the bar's right end, the same square.
+    pub close: Option<Rect>,
+    /// The channel name's room: between the buttons with equal insets (full screen), else right of the ≡.
+    pub name: Rect,
+    /// Side: the collapse tab, 1 × 1.6 U, 0.25 U in from the rack's left edge, centred on the rack tab's height.
+    pub collapse: Option<Rect>,
+}
+
+impl Chrome {
+    /// The frame of the rack `rack` at `u` px per U.
+    pub fn new(rack: Rect, u: f32) -> Self {
+        // Only the side rack is exactly 20 U wide ([`rack_rect`]).
+        // ponytail: a portrait window exactly 20 U wide gets the side chrome; pass the mode in if that ever matters.
+        let full = (rack.width() - RACK_W * u).abs() > 0.5;
+        let margin = (MARGIN_MAX * u - (RACK_W * u - rack.width()) / 2.0)
+            .clamp(MARGIN_MIN * u, MARGIN_MAX * u);
+        let header = if full { HEADER_FULL } else { HEADER_SIDE } * u;
+        let header_bottom = (rack.top() + header).floor();
+        let bar = Rect::from_x_y_ranges(
+            (rack.left() + margin).floor()..=(rack.right() - margin).floor(),
+            rack.top()..=header_bottom - 2.0,
+        );
+        let square =
+            |left: f32| Rect::from_min_size(pos2(left, bar.top()), Vec2::splat(bar.height()));
+        let menu = square(bar.left());
+        let close = full.then(|| square(bar.right() - bar.height()));
+        let name = match full {
+            true => bar.shrink2(vec2(bar.height(), 0.0)),
+            false => bar.with_min_x(menu.right()),
+        };
+        let collapse = (!full).then(|| {
+            let size = COLLAPSE * u;
+            let center = pos2(
+                rack.left() + COLLAPSE_INSET * u + size.x / 2.0,
+                rack_tab_y(rack.y_range(), u),
+            );
+            Rect::from_center_size(center, size)
+        });
+        Self {
+            full,
+            margin,
+            bar,
+            header_bottom,
+            menu,
+            close,
+            name,
+            collapse,
+        }
+    }
+}
+
+/// The y range of `rack` (px) in points.
+fn rect_y(rack: Rect, ppp: f32) -> Rangef {
+    Rangef::new(rack.top() / ppp, rack.bottom() / ppp)
+}
+
+/// The rack tab's vertical centre over the content area `area` (its y range) at `u` per U: the middle of (top …
+/// bottom + 2 U), its 2.43 U pill at least 5 U below the top and 0.25 U above the bottom.
+pub fn rack_tab_y(area: Rangef, u: f32) -> f32 {
+    let half = 2.43 / 2.0 * u;
+    let mid = (area.min + area.max + 2.0 * u) / 2.0;
+    mid.min(area.max - 0.25 * u - half)
+        .max(area.min + 5.0 * u + half)
 }
 
 /// Where a held card whose on-screen top is `top` goes with the finger at height `finger_y` (`u` per U and `gap`, the
@@ -359,8 +459,12 @@ pub enum PresetTarget {
     Module(i32),
     /// The rack ≡ `Load Rack preset`: a rack preset replaces the rack's modules ([`load_rack`]).
     RackReplace,
-    /// The Modules browser's `Rack Preset`: a rack preset's modules go in where its `Paste` puts modules ([`paste`]).
-    RackInsert(InsertAt),
+    /// The Modules browser's `Rack Preset`: its `Channel Racks` list in the browser's panel, where each pick replaces the
+    /// rack's modules as [`Self::RackReplace`] does. The browser's insert point, for its Back.
+    ModulesRack(InsertAt),
+    /// The Modules browser's `Instrument`: the Instruments list in the browser's panel, whose pick adds a module of the
+    /// preset's instrument at this insert point, loaded with it; each later pick replaces the module the last one added.
+    ModulesInstrument(InsertAt),
     /// The add-channel `Rack`: a new Rack channel holding a rack preset, last or (`Insert Channel`) at this index.
     NewChannel(Option<usize>),
     /// `Load Drumset` (the rack ≡ menu's and the drums track menu's): a drum kit template replaces the channel's kit.
@@ -467,8 +571,8 @@ pub fn insert(rack: &mut Rack, type_id: u16, at: InsertAt) -> Outcome {
 /// - Without `at` (`Load Rack preset`, a new Rack channel) they replace the rack's modules, and the preset's
 ///   instruments the channel's, which stay when the preset has none. Each goes where `Add Module` puts it; an
 ///   instrument goes under the note effects and the instruments already there, above any effect.
-/// - With `at` (the Modules browser's `Rack Preset`) they go where [`paste`] puts the same modules: from `+` appended
-///   at the bottom, else at `at`, in file order.
+/// - With `at` they go where [`paste`] puts the same modules: from `+` appended at the bottom, else at `at`, in file
+///   order.
 ///
 /// A module is skipped by the rule `Paste` follows ([`attaches`]): an id above 52, and an instrument where the channel
 /// does not take one ([`takes_instruments`]: Master, Effect Track, audio, Drums), as the browser's SYNTH rows do; a
@@ -920,7 +1024,7 @@ pub struct RackActions {
     pub redetect: Vec<i32>,
     /// A Slicer's momentary `AUTO` was pressed: rewrite the current clip with its slices now.
     pub auto_clip: Option<i32>,
-    /// The notch was clicked: close the rack.
+    /// The close X, the collapse tab or the left margin was tapped: close the rack.
     pub close: bool,
     /// The `INPUT` menu opened: list the input devices into [`RackPanel::inputs`] for it.
     pub list_inputs: bool,
@@ -949,6 +1053,7 @@ struct Card {
 }
 
 /// What one card's pass changed ([`RackPanel::card`]).
+#[derive(Default)]
 struct CardEdits {
     /// The params the user changed.
     changed: Vec<i32>,
@@ -1007,8 +1112,6 @@ pub struct RackPanel {
     dialog: Option<(i32, Pos2)>,
     /// The open `INPUT` menu's centre.
     input_menu: Option<Pos2>,
-    /// The open SoundFont Player patch menu: its card and the point it is centred on.
-    patch_menu: Option<(i32, Pos2)>,
     /// The input devices for the open `INPUT` menu, and the channel's input among them: the host lists them when
     /// [`RackActions::list_inputs`] asks. `None` until then; the menu shows once they are there.
     pub inputs: Option<(Vec<InputDevice>, Option<InputChoice>)>,
@@ -1023,8 +1126,8 @@ pub struct RackPanel {
     /// egui frame (`cumulative_frame_nr`) the rack was shown in: a gap is a rack opened again.
     input_frames: u32,
     shown_frame: u64,
-    /// A note effect's param, or a setting the engine reads at build ([`settings::rebuilds`]), changed; once the
-    /// pointer is up the engine needs the song again.
+    /// A note effect's param, Lemon Reverb's Room Size (`honeydew_audio::lemon::rebuilds`), or a setting the engine
+    /// reads at build ([`settings::rebuilds`]), changed; once the pointer is up the engine needs the song again.
     note_edit: bool,
     /// The Slicers whose rebuild setting (Sensitivity) changed since the last [`RackActions::replace_song`].
     redetect: Vec<i32>,
@@ -1054,6 +1157,12 @@ pub struct RackPanel {
     channel_id: i32,
     /// Each plugin card's page and editor error, by channel index and instance id.
     plugin_cards: HashMap<(usize, i32), plugin_card::PluginCard>,
+    /// Each built-in Lemon plugin's card: its editor's texture and the pointer's state.
+    lemon_cards: HashMap<(usize, i32), lemon_card::LemonCard>,
+    /// The card column's width and the U, in device pixels, as last laid out: a Lemon card's height follows its width.
+    column: (f32, f32),
+    /// The pointer was over a Lemon card's editor last frame: the wheel is the editor's, not the rack's.
+    lemon_wheel: bool,
 }
 
 impl RackPanel {
@@ -1120,6 +1229,19 @@ impl RackPanel {
         self.panels.extend(copies);
     }
 
+    /// A card's height in U ([`card_height`]). A built-in Lemon plugin's card is as tall as its editor at the card
+    /// column's width, its aspect kept.
+    fn card_height(&self, module: &ModuleInstance) -> f32 {
+        let (column, u) = self.column;
+        match lemon_plugin(module) {
+            Some(b) if !module.minimized && u > 0.0 => {
+                // The body is 4 px narrower than the column and its rect 1 px shorter than its rows ([`content_rect`]).
+                2.0 + (lemon_card::body_height(b.size, column - 4.0) + 1.0) / u
+            }
+            _ => card_height(module),
+        }
+    }
+
     /// Draws the rack of `channel` (the song's channel `index`) in `rect` and returns what the app must do. Edits go
     /// to the channel directly.
     pub fn show(
@@ -1176,8 +1298,11 @@ impl RackPanel {
         // first, as they are on top.
         // While a card is held, every card shows minimized.
         let held = self.drag.map(|d| d.id);
+        let chrome = Chrome::new(rack, u);
+        let column = (rack.right() - chrome.margin).floor() - (rack.left() + chrome.margin).floor();
+        self.column = (column, u);
         let heights: Vec<f32> = (channel.rack.modules.iter())
-            .map(|m| held.map_or(card_height(m), |_| CARD_HEADER))
+            .map(|m| held.map_or(self.card_height(m), |_| CARD_HEADER))
             .collect();
         let sends = (channel.kind != ChannelKind::Master).then(|| SendRows {
             rows: channel.file.sends.len(),
@@ -1200,9 +1325,15 @@ impl RackPanel {
         };
         let scroll_id = ui.id().with("rack");
         if held.is_none() {
+            // Over a Lemon card's editor the wheel is the editor's.
+            let wheel = if std::mem::take(&mut self.lemon_wheel) {
+                Rect::NOTHING
+            } else {
+                rect
+            };
             let zones = Zones {
                 touch: [Rect::NOTHING, rect],
-                wheel_scroll: rect,
+                wheel_scroll: wheel,
                 ..Zones::NONE
             };
             // No new touch or wheel under an overlay (an open menu or dialog's backdrop is one), nor in a rack sliding
@@ -1215,14 +1346,16 @@ impl RackPanel {
             (self.scroller).update(ui, scroll_id, m.u(1.0), &zones, &mut axes, opts);
             self.scroll = axes[Y].pos as f32;
         }
-        // Clicks that nothing on the rack takes are the rack's (not a control a few points off, such as the notch).
+        // Clicks that nothing on the rack takes are the rack's (not a control a few points off, such as the collapse
+        // tab).
         ui.interact(rect, ui.id().with("rack clicks"), Sense::click());
         let at = (self.scroll * ppp).round();
         let f = flow_sends(rack, at, u, input, &heights, sends);
 
         // The scrolling content slides under the header bar.
         let outer = ui.clip_rect();
-        ui.set_clip_rect(outer.intersect(rect.with_min_y(rect.top() + m.u(HEADER_BAR))));
+        let header_bottom = Chrome::new(rack, u).header_bottom;
+        ui.set_clip_rect(outer.intersect(rect.with_min_y(header_bottom / ppp)));
         let (mut confirmed, mut held_rect) = (None, None);
         // The held card draws last, over a neighbour sliding past it.
         let mut cards: Vec<_> = channel.rack.modules.iter_mut().zip(&f.cards).collect();
@@ -1235,18 +1368,7 @@ impl RackPanel {
             if held != Some(id) && !ui.clip_rect().intersects(card) {
                 continue;
             }
-            let CardEdits {
-                changed,
-                stored,
-                presets,
-                press,
-                sample,
-                auto,
-                touch,
-                sent,
-                header,
-                double_tap,
-            } = self.card(
+            let edits = self.card(
                 ui,
                 cx,
                 card,
@@ -1257,7 +1379,8 @@ impl RackPanel {
             );
             // The name label's gestures: a double tap is the menu's `Minimize` / `Maximize`, a long press holds the
             // card, and its release lets go.
-            if double_tap {
+            let header = edits.header;
+            if edits.double_tap {
                 module.minimized ^= true;
                 actions.minimized = true;
             }
@@ -1276,43 +1399,7 @@ impl RackPanel {
             if held == Some(id) {
                 held_rect = Some(card);
             }
-            actions.settings |= stored;
-            actions.touch = touch.or(actions.touch);
-            // A setting the engine derives app-thread data from at build rebuilds it once the pointer is up, as a
-            // note-effect edit does; the others go out live.
-            let (id, type_id) = (module.instance_id, module.type_id);
-            let (rebuild, live): (Vec<_>, Vec<_>) =
-                (sent.into_iter()).partition(|&(key, _)| settings::rebuilds(type_id, key));
-            self.note_edit |= !rebuild.is_empty();
-            if type_id == slicer::TYPE_ID && !rebuild.is_empty() && !self.redetect.contains(&id) {
-                self.redetect.push(id);
-            }
-            if auto {
-                actions.auto_clip = Some(id);
-            }
-            actions
-                .setting_changes
-                .extend(live.into_iter().map(|(key, value)| SettingChange {
-                    channel: index,
-                    instance_id: id,
-                    key,
-                    value,
-                }));
-            if presets {
-                actions.picker = Some(PresetTarget::Module(id));
-            }
-            match press {
-                Some(Press::Picker) => actions.soundfont = Some(module.instance_id),
-                // Opened in `card`.
-                Some(Press::Menu) => {}
-                // Another patch: a final edit, as a picked one is.
-                Some(Press::Stepped) => actions.replace_song = true,
-                None => {}
-            }
-            if sample || three_osc::custom_picked(module, &changed) {
-                actions.module_sample = Some(module.instance_id);
-            }
-            self.report(&mut actions, index, module, changed);
+            self.absorb(&mut actions, index, module, edits);
         }
         if let Some(row) = f.input {
             let row = InputRow {
@@ -1338,23 +1425,24 @@ impl RackPanel {
         if let Some(sends) = &f.sends {
             self.sends(ui, cx, sends, index, channel, ink, &mut actions);
         }
-        // The held card's 5 px outline in the channel colour, outside its rect, over its neighbours.
+        // The held card's 5 px outline in the channel colour, outside its rounded rect, over its neighbours.
         if let (Some(r), Some(_)) = (held_rect, self.drag) {
-            let stroke = Stroke::new(CARD_GAP_PX / ppp, ink);
+            let stroke = Stroke::new(card_gap(u) / ppp, ink);
             ui.painter()
-                .rect_stroke(r, 0.0, stroke, StrokeKind::Outside);
+                .rect_stroke(r, m.u(CARD_CORNER), stroke, StrokeKind::Outside);
         }
         ui.set_clip_rect(outer);
-        // The swap slides decay once a drawn frame.
+        // The swap slides decay once a drawn frame, by 0.7 each 1/60 s.
         let frame = ui.ctx().cumulative_frame_nr();
         if self.slid != frame {
             self.slid = frame;
+            let keep = 1.0 - crate::ui::anim::step(ui.ctx(), 0.7);
             self.slides.retain(|_, o| {
-                *o *= 0.7;
+                *o *= keep;
                 (*o * u).abs() >= 1.0
             });
         }
-        let view = rack.with_min_y(rack.top() + HEADER_BAR * u);
+        let view = rack.with_min_y(header_bottom);
         self.step(ui, cx, &f, view, held_rect, &mut channel.rack, &mut actions);
         // A hold confirmed: every card shows minimized from the next frame on, and the offset moves by the held card's
         // top shift so that it stays put. Let go: they show as they are again, and the offset follows the held card if
@@ -1368,7 +1456,7 @@ impl RackPanel {
         }
         if let (Some(id), None) = (held, self.drag) {
             if let Some(i) = slot(id) {
-                let shown: Vec<f32> = modules.iter().map(card_height).collect();
+                let shown: Vec<f32> = modules.iter().map(|m| self.card_height(m)).collect();
                 let top = flow_sends(rack, at, u, input, &shown, sends).cards[i].top();
                 let y = top - view.top();
                 if y < at || y > at + 0.9 * view.height() {
@@ -1380,7 +1468,7 @@ impl RackPanel {
             self.scroller.let_go(&axes(self.scroll));
         }
 
-        actions.close = self.chrome(ui, cx, rack, &f, &channel.name, ink, contrast);
+        actions.close = self.chrome(ui, cx, rack, &channel.name, ink, contrast);
         self.popups(ui, cx, index, channel, &mut actions);
         // A control that took the drag (an Equalizer handle claims it), or a popup open over the rack (a long press's
         // dialog with the finger still down), has the touch: the scroller yields it, as to a held track header, and no
@@ -1391,17 +1479,12 @@ impl RackPanel {
             || self.rack_menu.is_some()
             || self.dialog.is_some()
             || self.send_menu.is_some()
-            || self.patch_menu.is_some()
             || self.input_menu.is_some();
         if taken || popup {
             self.scroller.yield_touch();
         }
         self.learn(index, channel, &mut actions);
-        if self.note_edit && !ui.input(|i| i.pointer.any_down()) {
-            actions.replace_song = true;
-            actions.redetect = std::mem::take(&mut self.redetect);
-            self.note_edit = false;
-        }
+        self.settle(ui, &mut actions);
         if !self.slides.is_empty() {
             ui.ctx().request_repaint();
         }
@@ -1455,7 +1538,7 @@ impl RackPanel {
         if drag.stepped.is_some_and(|(t, d)| now - t < d) {
             return;
         }
-        let gap = CARD_GAP_PX / ppp;
+        let gap = card_gap(m.u_px()) / ppp;
         let Some(action) = drag_step(card.top(), finger.y, m.u(1.0), gap) else {
             return;
         };
@@ -1488,7 +1571,7 @@ impl RackPanel {
         {
             let shown = |m: &ModuleInstance| match self.drag {
                 Some(_) => CARD_HEADER,
-                None => card_height(m),
+                None => self.card_height(m),
             };
             let (moved, other) = (&rack.modules[to], &rack.modules[from]);
             let toward = if to < from { 1.0 } else { -1.0 };
@@ -1722,6 +1805,61 @@ impl RackPanel {
         }
     }
 
+    /// Adds what one card's pass changed, `edits` on `module` of the song's channel `index`, to `actions`.
+    fn absorb(
+        &mut self,
+        actions: &mut RackActions,
+        index: usize,
+        module: &ModuleInstance,
+        edits: CardEdits,
+    ) {
+        actions.settings |= edits.stored;
+        actions.touch = edits.touch.or(actions.touch);
+        // A setting the engine derives app-thread data from at build rebuilds it once the pointer is up, as a
+        // note-effect edit does; the others go out live.
+        let (id, type_id) = (module.instance_id, module.type_id);
+        let (rebuild, live): (Vec<_>, Vec<_>) =
+            (edits.sent.into_iter()).partition(|&(key, _)| settings::rebuilds(type_id, key));
+        self.note_edit |= !rebuild.is_empty();
+        if type_id == slicer::TYPE_ID && !rebuild.is_empty() && !self.redetect.contains(&id) {
+            self.redetect.push(id);
+        }
+        if edits.auto {
+            actions.auto_clip = Some(id);
+        }
+        actions
+            .setting_changes
+            .extend(live.into_iter().map(|(key, value)| SettingChange {
+                channel: index,
+                instance_id: id,
+                key,
+                value,
+            }));
+        if edits.presets {
+            actions.picker = Some(PresetTarget::Module(id));
+        }
+        match edits.press {
+            Some(Press::Picker) => actions.soundfont = Some(id),
+            // Another patch: a final edit, as a picked one is.
+            Some(Press::Stepped) => actions.replace_song = true,
+            None => {}
+        }
+        if edits.sample || three_osc::custom_picked(module, &edits.changed) {
+            actions.module_sample = Some(id);
+        }
+        self.report(actions, index, module, edits.changed);
+    }
+
+    /// A pending note-effect edit, or one of a setting the engine reads at build, asks for a new song once the pointer
+    /// is up.
+    fn settle(&mut self, ui: &Ui, actions: &mut RackActions) {
+        if self.note_edit && !ui.input(|i| i.pointer.any_down()) {
+            actions.replace_song = true;
+            actions.redetect = std::mem::take(&mut self.redetect);
+            self.note_edit = false;
+        }
+    }
+
     /// Adds the params `changed` on `module` to `actions`; a note effect's also call for a new song.
     fn report(
         &mut self,
@@ -1732,7 +1870,7 @@ impl RackPanel {
     ) {
         let note = module_spec(module.type_id).is_some_and(|s| s.role == Role::NoteEffect);
         for index in changed {
-            self.note_edit |= note;
+            self.note_edit |= note || honeydew_audio::lemon::rebuilds(module.type_id, index);
             actions.params.push(ParamChange {
                 channel,
                 instance_id: module.instance_id,
@@ -1761,24 +1899,41 @@ impl RackPanel {
         let (text, fill) = (colors.text.to_color32(), colors.module_fill.to_color32());
         let id = module.instance_id;
         let base = ui.id().with(("rack card", id));
-        let painter = ui.painter();
-        painter.rect_filled(card, 0.0, fill);
-        // Both 1 px rules inside the card.
-        let rule = 1.0 / ppp;
-        painter.rect_filled(card.with_max_y(card.top() + rule), 0.0, ink);
-        painter.rect_filled(card.with_min_y(card.bottom() - rule), 0.0, ink);
+        // A `moduleFill` rounded rect, with nothing framing it.
+        let corner = m.u(CARD_CORNER);
+        ui.painter().rect_filled(card, corner, fill);
 
+        // A plugin module is named after its plugin, and its presets and window are its own (its editor). A built-in
+        // Lemon plugin's card shows its editor itself; an installed plugin with an editor window has the pop-out
+        // button, the only cards that do, `Some(open)` here.
+        let plugin = crate::song::plugin::is_plugin(module.type_id);
+        let lemon = lemon_plugin(module);
+        let window = match crate::plugins::state(self.channel_id, id) {
+            Some(crate::plugins::State::Live(info))
+                if lemon.is_none()
+                    && info.has_editor
+                    && info.stopped.is_none()
+                    && info.editor_failed.is_none() =>
+            {
+                Some(info.editor_open)
+            }
+            _ => None,
+        };
+        let has_popout = window.is_some();
         let preset = module.file.preset_name.clone();
         let preset_w = preset_width(text_width(ui, &preset, m.font_id(FontSize::Pt10)), m.u(1.0));
-        let [toggle, icon, name, preset_rect, menu] =
-            header_row(card * ppp, u, preset_w).map(|r| r / ppp);
+        let [toggle, icon, name, preset_rect, menu, popout] =
+            header_row(card * ppp, u, preset_w, has_popout).map(|r| r / ppp);
         // The module-name label (its cell in the header row) takes the card's own gestures, not the header's buttons.
         let header_id = base.with("header");
         let mut held = ui.interact(name, header_id, Sense::click());
         let header = gesture::press(ui, &mut held, m, gesture::vertical);
         let double_tap = widgets::double_tap(ui, header_id, &held);
-        let (mut changed, mut stored, mut press) = (Vec::new(), false, None);
-        let (mut sent, mut sample, mut auto) = (Vec::new(), false, false);
+        let mut edits = CardEdits {
+            header,
+            double_tap,
+            ..CardEdits::default()
+        };
 
         // Enable, p0. A module without params (an unknown type) shows it on and inert.
         let has_enable = !module.params.is_empty();
@@ -1791,18 +1946,20 @@ impl RackPanel {
             ..Control::new(base.with("enable"), toggle, "", ink, 1.0)
         };
         if widgets::toggle(ui, cx, &c, enable, |_| String::new()).changed() {
-            changed.push(0);
+            edits.changed.push(0);
         }
-        let target = |param| AutomationTarget {
+        let target = AutomationTarget {
             instance_id: id,
-            param,
+            param: 0,
         };
-        let mut touch = Touch::new(target(0), widgets::signal(ui, c.id));
+        edits.touch = Touch::new(target, widgets::signal(ui, c.id));
         // The header's icon buttons: a `text` icon on a `moduleFill` background, which is invisible on the card. A disc
         // would cut the icon down to fit it (`Button`'s rule), so the background is the rect and the icon a fixed size.
+        // Rounded as the card is, so the ≡ (8 px in from its side) stays inside the card's corners.
         let icon_button = |id: Id, rect: Rect, icon: IconId| Button {
             icon: Some(icon),
             icon_scale: HEADER_ICON,
+            corner,
             fill_on: fill,
             fill_off: fill,
             text_on: text,
@@ -1818,8 +1975,7 @@ impl RackPanel {
         if r.clicked_by(eframe::egui::PointerButton::Secondary) || long || (effect && r.clicked()) {
             self.dialog = Some((id, icon.center()));
         }
-        // Truncated, keeping 5 tail characters. A plugin module is named after its plugin.
-        let plugin = crate::song::plugin::is_plugin(module.type_id);
+        // Truncated, keeping 5 tail characters.
         let label = if plugin {
             module.title()
         } else {
@@ -1835,221 +1991,297 @@ impl RackPanel {
             text,
             5,
         );
-        // A plugin's presets are its own (its editor): its card has no preset button.
         if !plugin {
             preset_button(ui, cx, preset_rect, &preset, text);
         }
-        let presets =
+        edits.presets =
             !plugin && (ui.interact(preset_rect, base.with("preset"), Sense::click())).clicked();
+        // The pop-out (icon 11) opens the plugin's own editor window, or brings it to the front; lit as a button is on
+        // (`text`, its icon `moduleFill`) while the window is open.
+        if let Some(open) = window {
+            let b = Button {
+                fill_on: text,
+                text_on: fill,
+                ..icon_button(base.with("popout"), popout, IconId::Detach)
+            };
+            if widgets::button(ui, cx, &b, open).clicked() {
+                // A failure is kept by the host (`Info::editor_failed`) and shown on the card.
+                let _ = crate::plugins::show_editor(self.channel_id, id, true);
+            }
+            crate::ui::tooltip::tip(ui, popout, "Open editor", None);
+        }
         let b = icon_button(base.with("menu"), menu, IconId::Menu);
         if widgets::button(ui, cx, &b, true).clicked() {
             self.card_menu = Some((id, menu.center()));
         }
 
-        if let (false, Some(h)) = (module.minimized || minimized, ui_height(module.type_id)) {
+        let shown = !(module.minimized || minimized);
+        if let (true, Some(plugin)) = (shown, lemon) {
+            let content = content_rect(card * ppp, self.card_height(module), u) / ppp;
+            let state = self.lemon_cards.entry((self.channel, id)).or_default();
+            let running = lemon_card::show(ui, content, self.channel_id, id, plugin, state);
+            self.lemon_wheel |= lemon_card::over(state);
+            if running {
+                return edits;
+            }
+        }
+        if let (true, Some(h)) = (shown, ui_height(module.type_id)) {
+            let h = if lemon.is_some() {
+                self.card_height(module)
+            } else {
+                h
+            };
             let content = content_rect(card * ppp, h, u) / ppp;
             if plugin {
                 let key = (self.channel, id);
                 let state = self.plugin_cards.entry(key).or_default();
                 let (moved, pressed) =
                     plugin_card::show(ui, cx, content, self.channel_id, module, state, ink);
-                changed.extend(moved);
+                edits.changed.extend(moved);
                 if let Some(p) = pressed {
-                    touch = Some(Touch {
-                        target: target(p),
+                    edits.touch = Some(Touch {
+                        target: AutomationTarget {
+                            instance_id: id,
+                            param: p,
+                        },
                         pick: None,
                     });
                 }
-            }
-            match panels::panel_for(module.type_id).filter(|_| !plugin) {
-                Some(panel) => {
-                    let key = (self.channel, id, module.type_id);
-                    let fresh = !self.panels.contains_key(&key);
-                    let card = self.panels.entry(key).or_insert_with(|| Card {
-                        state: PanelState::new(panel),
-                        cstm: None,
-                    });
-                    if fresh || card.cstm != module.file.custom_data {
-                        cstm::seed(module, &mut card.state);
-                        card.cstm.clone_from(&module.file.custom_data);
-                    }
-                    let state = &mut card.state;
-                    // Left absent (0): `constructing` (SuperSaw), which an updated card never sets. The SoundFont
-                    // Player's wiring sets `loading`, the Slicer's `sample_loaded`.
-                    state.flags.insert(panels::flag::CHANNEL_KIND, channel_kind);
-                    let offset = usize::from(self.middle_c_is_c4);
-                    state.flags.insert(panels::flag::OCTAVE_OFFSET, offset);
-                    let soundfont = module.type_id == soundfont_player::TYPE_ID;
-                    if soundfont {
-                        soundfont_player::wire(module, state, &self.soundfonts);
-                    }
-                    if module.type_id == three_osc::TYPE_ID {
-                        three_osc::wire(module, state);
-                    }
-                    if module.type_id == slicer::TYPE_ID {
-                        slicer::wire(module, state);
-                    }
-                    let before = (state.settings.clone(), state.tab);
-                    // The module's meter for the panel's draws, silence when the audio has none for it; none without
-                    // a running stream, so the draws rest and stop polling.
-                    let key = ModuleKey {
-                        channel: self.channel,
-                        instance_id: id,
-                    };
-                    let feed = (self.meters.as_ref()).map(|meters| {
-                        let meter = meters.iter().find(|m| m.key == key);
-                        meter.map_or((MeterSnapshot::default(), &[][..]), |m| {
-                            (m.value, &m.analysis[..])
-                        })
-                    });
-                    panels::post_feed(ui, id, feed);
-                    // A Note Echo's `Stop` is enabled while echoes are pending.
-                    if module.type_id == NOTE_ECHO {
-                        let slab = feed.map(|(_, slab)| slab);
-                        let pending =
-                            slab.and_then(honeydew_audio::analysis::note_echo) == Some(true);
-                        state
-                            .flags
-                            .insert(panels::flag::PENDING, usize::from(pending));
-                    }
-                    let edits = panels::show(ui, cx, panel, module, state, content, ink);
-                    let pressed = edits.pressed.map(|p| (p, None));
-                    let picked = edits.pick.map(|(p, pick)| (p, Some(pick)));
-                    if let Some((p, pick)) = picked.or(pressed) {
-                        touch = Some(Touch {
-                            target: target(p as i32),
-                            pick,
-                        });
-                    }
-                    // A user edit stores the settings and page, with what the panel's hook set (Pitcher 2's Scale
-                    // after a note edit). A hook's own correction (the Tuner's Input off) stays in the card until then.
-                    let edited = !edits.settings.is_empty() || !edits.params.is_empty();
-                    let moved = state.settings != before.0 || state.tab != before.1;
-                    changed.extend(edits.params.into_iter().map(|p| p as i32));
-                    if edited && moved && cstm::store(module, state) {
-                        card.cstm.clone_from(&module.file.custom_data);
-                        stored = true;
-                    }
-                    // The engine gets what a build would read: the settings a user edit just stored in the blob (the
-                    // hook's among them: the Pitcher's notes after a Scale change), and a Multiband's soloed band, UI
-                    // state. Not a card's seeding (the new engine reads that blob), a hook's correction nothing
-                    // stored (the Tuner's Input off), nor a setting a hook adds on the card's first pass, except a
-                    // screen-only one: no build reads it, so a card that starts without it (a clone's,
-                    // [`Self::copy_panels`]) sends it as its hook sets it.
-                    let screen_only = |k: u32| settings::screen_only(module.type_id, k);
-                    let settings = state.settings.iter().map(|(&k, &v)| (k, v));
-                    sent.extend(settings.filter(|&(k, v)| {
-                        let changed = before.0.get(&k).map_or(screen_only(k), |&b| b != v);
-                        (stored || screen_only(k)) && changed
-                    }));
-                    sent.sort_by_key(|&(key, _)| key);
-                    if module.type_id == slicer::TYPE_ID {
-                        let (id, u) = (base.with("loop"), cx.m.u(1.0));
-                        sample = slicer::asks_for_loop(
-                            ui,
-                            id,
-                            module,
-                            state,
-                            content,
-                            u,
-                            &edits.settings,
-                        );
-                        auto = slicer::auto_pressed(state, &edits.settings);
-                    }
-                    if soundfont {
-                        let fonts = &self.soundfonts;
-                        press = soundfont_player::press(module, state, &edits.settings, fonts)
-                            .or_else(|| {
-                                let id = base.with("soundfont error");
-                                soundfont_player::error_tap(ui, id, content, state)
-                            });
-                        // The patch menu is the rack's own popup, over the spinner.
-                        if press == Some(Press::Menu) {
-                            let u = cx.m.u(1.0);
-                            let at =
-                                soundfont_player::menu_anchor(panel, module, state, content, u);
-                            self.patch_menu = Some((id, at));
-                        }
-                    }
-                }
-                None if plugin => {}
-                None => widgets::display_area(ui, cx, content),
+            } else {
+                self.body(ui, cx, content, module, ink, channel_kind, &mut edits);
             }
         }
-        CardEdits {
-            changed,
-            stored,
-            presets,
-            press,
-            sample,
-            auto,
-            touch,
-            sent,
-            header,
-            double_tap,
+        edits
+    }
+
+    /// The module panel of built-in module `module` (of the channel [`Self::channel`]) in `content` (points). Adds what
+    /// it changed to `edits`. `channel_kind` as for [`Self::card`].
+    #[allow(clippy::too_many_arguments)]
+    fn body(
+        &mut self,
+        ui: &mut Ui,
+        cx: &UiCtx,
+        content: Rect,
+        module: &mut ModuleInstance,
+        ink: Color32,
+        channel_kind: usize,
+        edits: &mut CardEdits,
+    ) {
+        let id = module.instance_id;
+        let base = ui.id().with(("rack card", id));
+        let Some(panel) = panels::panel_for(module.type_id) else {
+            widgets::display_area(ui, cx, content);
+            return;
+        };
+        let key = (self.channel, id, module.type_id);
+        let fresh = !self.panels.contains_key(&key);
+        let card = self.panels.entry(key).or_insert_with(|| Card {
+            state: PanelState::new(panel),
+            cstm: None,
+        });
+        if fresh || card.cstm != module.file.custom_data {
+            cstm::seed(module, &mut card.state);
+            card.cstm.clone_from(&module.file.custom_data);
+        }
+        let state = &mut card.state;
+        // Left absent (0): `constructing` (SuperSaw), which an updated card never sets. The SoundFont
+        // Player's wiring sets `loading`, the Slicer's `sample_loaded`.
+        state.flags.insert(panels::flag::CHANNEL_KIND, channel_kind);
+        let offset = usize::from(self.middle_c_is_c4);
+        state.flags.insert(panels::flag::OCTAVE_OFFSET, offset);
+        let soundfont = module.type_id == soundfont_player::TYPE_ID;
+        if soundfont {
+            soundfont_player::wire(module, state, &self.soundfonts);
+        }
+        if module.type_id == three_osc::TYPE_ID {
+            three_osc::wire(module, state);
+        }
+        if module.type_id == slicer::TYPE_ID {
+            slicer::wire(module, state);
+        }
+        let before = (state.settings.clone(), state.tab);
+        // The module's meter for the panel's draws, silence when the audio has none for it; none without
+        // a running stream, so the draws rest and stop polling.
+        let key = ModuleKey {
+            channel: self.channel,
+            instance_id: id,
+        };
+        let feed = (self.meters.as_ref()).map(|meters| {
+            let meter = meters.iter().find(|m| m.key == key);
+            meter.map_or((MeterSnapshot::default(), &[][..]), |m| {
+                (m.value, &m.analysis[..])
+            })
+        });
+        panels::post_feed(ui, id, feed);
+        // A Note Echo's `Stop` is enabled while echoes are pending.
+        if module.type_id == NOTE_ECHO {
+            let slab = feed.map(|(_, slab)| slab);
+            let pending = slab.and_then(honeydew_audio::analysis::note_echo) == Some(true);
+            state
+                .flags
+                .insert(panels::flag::PENDING, usize::from(pending));
+        }
+        let shown = panels::show(ui, cx, panel, module, state, content, ink);
+        let pressed = shown.pressed.map(|p| (p, None));
+        let picked = shown.pick.map(|(p, pick)| (p, Some(pick)));
+        if let Some((p, pick)) = picked.or(pressed) {
+            edits.touch = Some(Touch {
+                target: AutomationTarget {
+                    instance_id: id,
+                    param: p as i32,
+                },
+                pick,
+            });
+        }
+        // A user edit stores the settings and page, with what the panel's hook set (Pitcher 2's Scale
+        // after a note edit). A hook's own correction (the Tuner's Input off) stays in the card until then.
+        let edited = !shown.settings.is_empty() || !shown.params.is_empty();
+        let moved = state.settings != before.0 || state.tab != before.1;
+        (edits.changed).extend(shown.params.into_iter().map(|p| p as i32));
+        if edited && moved && cstm::store(module, state) {
+            card.cstm.clone_from(&module.file.custom_data);
+            edits.stored = true;
+        }
+        // The engine gets what a build would read: the settings a user edit just stored in the blob (the
+        // hook's among them: the Pitcher's notes after a Scale change), and a Multiband's soloed band, UI
+        // state. Not a card's seeding (the new engine reads that blob), a hook's correction nothing
+        // stored (the Tuner's Input off), nor a setting a hook adds on the card's first pass, except a
+        // screen-only one: no build reads it, so a card that starts without it (a clone's,
+        // [`Self::copy_panels`]) sends it as its hook sets it.
+        let stored = edits.stored;
+        let screen_only = |k: u32| settings::screen_only(module.type_id, k);
+        let settings = state.settings.iter().map(|(&k, &v)| (k, v));
+        edits.sent.extend(settings.filter(|&(k, v)| {
+            let changed = before.0.get(&k).map_or(screen_only(k), |&b| b != v);
+            (stored || screen_only(k)) && changed
+        }));
+        edits.sent.sort_by_key(|&(key, _)| key);
+        if module.type_id == slicer::TYPE_ID {
+            let (id, u) = (base.with("loop"), cx.m.u(1.0));
+            let asked = slicer::asks_for_loop(ui, id, module, state, content, u, &shown.settings);
+            edits.sample = asked;
+            edits.auto = slicer::auto_pressed(state, &shown.settings);
+        }
+        if soundfont {
+            let fonts = &self.soundfonts;
+            edits.press =
+                soundfont_player::press(module, state, &shown.settings, fonts).or_else(|| {
+                    let id = base.with("soundfont error");
+                    soundfont_player::error_tap(ui, id, content, state)
+                });
         }
     }
 
-    /// The fixed chrome over the content: header bar with the channel name, the rack ≡, the divider and the
-    /// notch. `rack` is in device pixels. Returns whether the notch was clicked.
-    #[allow(clippy::too_many_arguments)]
+    /// The fixed chrome over the content ([`Chrome`]): the header bar with the rack ≡, the channel name and, full
+    /// screen, the close X; a side rack's shadow, edge line and collapse tab. `rack` is in device pixels. Returns
+    /// whether the X, the collapse tab or the left margin was tapped: the rack closes.
     fn chrome(
         &mut self,
         ui: &mut Ui,
         cx: &UiCtx,
         rack: Rect,
-        f: &Flow,
         name: &str,
         ink: Color32,
         contrast: Color32,
     ) -> bool {
         let m = cx.m;
         let (ppp, u) = (m.ppp(), m.u_px());
-        let text = cx.theme.colors.text.to_color32();
-        let painter = ui.painter();
-        let bar_bottom = (rack.top() + HEADER_BAR * u - 2.0).floor();
-        let bar = Rect::from_x_y_ranges(f.add_module.x_range(), rack.top()..=bar_bottom);
-        painter.rect_filled(bar / ppp, 0.0, ink);
-        let line = Rect::from_x_y_ranges(f.add_module.x_range(), bar_bottom..=bar_bottom + 2.0);
-        painter.rect_filled(line / ppp, 0.0, contrast);
-        widgets::text_label(
-            ui,
-            cx,
-            bar / ppp,
-            name,
-            FontSize::Pt10,
+        let c = Chrome::new(rack, u);
+        let px = |r: Rect| r / ppp;
+        let painter = ui.painter().clone();
+        // The bar in the channel colour, its bottom corners rounded, inside a 2 px border of the panel's colour.
+        let r = (HEADER_CORNER * u / ppp) as u8;
+        let rounded = CornerRadius {
+            nw: 0,
+            ne: 0,
+            sw: r,
+            se: r,
+        };
+        let border = c.bar.expand2(vec2(2.0, 0.0)).with_max_y(c.header_bottom);
+        painter.rect_filled(px(border), rounded, contrast);
+        painter.rect_filled(px(c.bar), rounded, ink);
+        let font = m.font_id(FontSize::Pt12);
+        widgets::truncated(
+            &painter,
+            px(c.name),
             Align2::CENTER_CENTER,
+            name,
+            font,
             contrast,
+            0,
         );
-
-        ui.painter().rect_filled(divider(rack) / ppp, 0.0, ink);
-        let notch = notch(rack, u);
-        ui.painter().add(Shape::convex_polygon(
-            notch.map(|p| p / ppp).to_vec(),
-            ink,
-            Stroke::NONE,
-        ));
-
-        let at = (rack.min / ppp) + Vec2::splat(m.u(GUTTER / 2.0));
-        let id = ui.id().with("rack menu button");
-        if outline_circle_button(ui, id, at, m.u(RACK_MENU_D), text, m).clicked() {
-            self.rack_menu = Some(at);
-        }
+        // The ≡: the rack menu.
+        let menu = ui.interact(px(c.menu), ui.id().with("rack menu button"), Sense::click());
         draw_icon(
-            ui.painter(),
-            Rect::from_center_size(at, Vec2::ZERO),
+            &painter,
+            px(c.menu),
             IconId::Menu,
-            text,
-            RACK_MENU_ICON,
+            contrast,
+            HEADER_BUTTON_ICON,
             m,
         );
-        // The hit area is the left gutter's width (it holds no cards) × 1 U.
-        let notch_rect = Rect::from_min_max(
-            pos2(rack.left(), notch[0].y),
-            pos2(rack.left() + GUTTER * u, notch[2].y),
+        if menu.clicked() {
+            self.rack_menu = Some(px(c.menu).center());
+        }
+        let mut close = false;
+        // Full screen: the close X, on a disc of the bar's colour that lights under the mouse.
+        if let Some(x) = c.close.map(px) {
+            let response = ui.interact(x, ui.id().with("rack close"), Sense::click());
+            if widgets::hovered(ui, &response) {
+                let lit = crate::ui::buttons::hover_lit(ink);
+                painter.circle_filled(x.center(), CLOSE_DISC * x.width().min(x.height()), lit);
+            }
+            draw_icon(&painter, x, IconId::Close, contrast, HEADER_BUTTON_ICON, m);
+            close |= response.clicked();
+        }
+        // A side rack: a shadow over the view on its left and a t-wide channel-colour line at its edge, and the
+        // collapse tab.
+        if let Some(tab) = c.collapse.map(px) {
+            let (left, t) = (rack.left() / ppp, m.t());
+            let line = Rect::from_x_y_ranges(left - t..=left, rect_y(rack, ppp));
+            painter.rect_filled(line, 0.0, ink);
+            let shadow =
+                Rect::from_x_y_ranges(line.left() - m.u(SHADOW)..=line.left(), line.y_range());
+            let dark = Color32::from_black_alpha((SHADOW_ALPHA * 255.0) as u8);
+            let mut mesh = Mesh::default();
+            let corners = [
+                (shadow.left_top(), Color32::TRANSPARENT),
+                (shadow.right_top(), dark),
+                (shadow.right_bottom(), dark),
+                (shadow.left_bottom(), Color32::TRANSPARENT),
+            ];
+            for (at, color) in corners {
+                mesh.colored_vertex(at, color);
+            }
+            mesh.add_triangle(0, 1, 2);
+            mesh.add_triangle(0, 2, 3);
+            painter
+                .with_clip_rect(ui.ctx().content_rect())
+                .add(Shape::mesh(mesh));
+            let response = ui.interact(tab, ui.id().with("rack collapse"), Sense::click());
+            let grown = if widgets::hovered(ui, &response) {
+                1.05
+            } else {
+                1.0
+            };
+            let pill = Rect::from_center_size(tab.center(), tab.size() * grown);
+            // The ring: a channel-colour pill 2 px larger on every side, under the pill's own full-size fill.
+            let ring = pill.expand(COLLAPSE_RING_PX / ppp);
+            painter.rect_filled(ring, ring.width() / 2.0, ink);
+            painter.rect_filled(pill, pill.width() / 2.0, contrast);
+            // Icon 10, the small `›`.
+            draw_icon(&painter, pill, IconId::Collapse, ink, COLLAPSE_ICON, m);
+            close |= response.clicked();
+        }
+        // A tap in the left margin, under the header, closes the rack too.
+        let margin = Rect::from_x_y_ranges(
+            rack.left()..=rack.left() + c.margin,
+            c.header_bottom..=rack.bottom(),
         );
-        ui.interact(notch_rect / ppp, ui.id().with("notch"), Sense::click())
-            .clicked()
+        close |= ui
+            .interact(px(margin), ui.id().with("rack margin"), Sense::click())
+            .clicked();
+        close
     }
 
     /// The open card menu, rack menu or dialog, and what picking from them does.
@@ -2104,29 +2336,6 @@ impl RackPanel {
                     actions.preset = channel.rack.get(id).cloned().map(PresetSource::Module)
                 }
                 _ => {}
-            }
-        }
-        if let Some((id, at)) = self.patch_menu {
-            let fonts = &self.soundfonts;
-            let items = channel
-                .rack
-                .get(id)
-                .and_then(|m| soundfont_player::menu_items(m, fonts));
-            match items {
-                Some(items) => {
-                    let menu_id = ui.id().with(("rack patch menu", id));
-                    let r = popup::show(ctx, menu_id, at, screen, &items, cx);
-                    if r.close {
-                        self.patch_menu = None;
-                        ctx.request_repaint();
-                    }
-                    let module = channel.rack.get_mut(id);
-                    let pick = r.selected.zip(module);
-                    let pick = pick.and_then(|(i, m)| soundfont_player::menu_pick(m, fonts, i));
-                    actions.replace_song |= pick == Some(Press::Stepped);
-                }
-                // Gone with its card, its SoundFont or its patches (a delete, a pick): closed.
-                None => self.patch_menu = None,
             }
         }
         if let Some(at) = self.input_menu {
@@ -2211,20 +2420,25 @@ impl RackPanel {
     }
 }
 
-/// The header row's items in card `card` (device pixels, as `u`): enable toggle, icon, name, preset button and ≡.
-/// `preset_w` is the preset button's width in U.
-fn header_row(card: Rect, u: f32, preset_w: f32) -> [Rect; 5] {
+/// The header row's items in card `card` (device pixels, as `u`): enable toggle, icon, name, preset button, ≡ and,
+/// with `popout`, the pop-out button left of the ≡ (else [`Rect::NOTHING`]). `preset_w` is the preset button's width
+/// in U.
+fn header_row(card: Rect, u: f32, preset_w: f32, popout: bool) -> [Rect; 6] {
     let (px8, px4) = (8.0 / u, 4.0 / u);
     let fixed = |id, w| Node::leaf(id).w(Size::U(w)).margins(px8, 0.0, px8, 0.0);
-    let row = Node::hstack([
-        fixed(0, 1.5),
-        fixed(1, 1.5),
-        Node::leaf(2).margins(px4, 0.0, px4, 0.25),
-        fixed(3, preset_w),
-        fixed(4, 1.5),
-    ]);
+    let row = Node::hstack(
+        [
+            fixed(0, 1.5),
+            fixed(1, 1.5),
+            Node::leaf(2).margins(px4, 0.0, px4, 0.25),
+            fixed(3, preset_w),
+        ]
+        .into_iter()
+        .chain(popout.then(|| fixed(5, 1.5)))
+        .chain([fixed(4, 1.5)]),
+    );
     let rects = layout::layout(&row, card.with_max_y(card.top() + CARD_HEADER * u), u);
-    std::array::from_fn(|i| layout::rect_of(&rects, i as u32).expect("every item is shown"))
+    std::array::from_fn(|i| layout::rect_of(&rects, i as u32).unwrap_or(Rect::NOTHING))
 }
 
 /// The preset button's width in U for a name `text` wide: the text width / U + 1, at most 5. `text` and `u`

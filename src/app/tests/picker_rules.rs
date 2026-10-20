@@ -251,7 +251,8 @@ fn samples(rig: &mut Rig) {
 }
 
 #[test]
-fn a_tap_on_an_empty_audio_track_cell_opens_a_picker_whose_browse_is_one_clip_and_one_undo_step() {
+fn new_clip_on_an_empty_audio_track_cell_opens_a_picker_whose_browse_is_one_clip_and_one_undo_step()
+{
     let mut rig = Rig::new();
     rig.app.add_channel(ChannelKind::AudioClip, 0);
     rig.click(OUTSIDE);
@@ -259,9 +260,13 @@ fn a_tap_on_an_empty_audio_track_cell_opens_a_picker_whose_browse_is_one_clip_an
     rig.frame(vec![]);
     rig.take();
     let steps = rig.app.history.steps();
-    // A tap on the current audio track's empty space (track 1's row, past its header).
+    // A tap on the current audio track's empty space (track 1's row, past its header) shows the insert menu, whose
+    // `New Clip` opens the picker.
     let at = pos2(600.0, header(1).y);
     rig.click(at);
+    rig.frame(vec![]);
+    let new_clip = rig.ctx.read_response(egui::Id::new("clip_insert").with(0));
+    rig.click(new_clip.expect("the insert menu").rect.center());
     rig.frame(vec![]);
     let [Overlay::TrackSamplePicker { channel, lane, .. }] = rig.overlays()[..] else {
         panic!("{:?}", rig.overlays());
@@ -917,6 +922,9 @@ fn add_drums_new_pad_and_an_empty_cell_browses_later_pick_are_changes() {
     samples(&mut rig);
     rig.frame(vec![]);
     rig.click(pos2(600.0, header(1).y));
+    rig.frame(vec![]);
+    let new_clip = rig.ctx.read_response(egui::Id::new("clip_insert").with(0));
+    rig.click(new_clip.expect("the insert menu").rect.center());
     rig.frame(vec![]);
     picker_row(&mut rig, 0);
     picker_row(&mut rig, 1);

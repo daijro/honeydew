@@ -40,7 +40,7 @@
 //!   which shows no frame or handle to touch (a tap on empty grid still only deselects it); a tap on a hit then selects
 //!   it with them, and a long press, a box, a paste or a key shows a selection again. On empty grid a long press starts
 //!   the marquee at once (lifted in place it selects nothing, and shows `Paste`, below).
-//! - **The right button** (owner request, after the desktop app: [`gesture::Erase`]): a press on a hit deletes it, and
+//! - **The right button** ([`gesture::Erase`]): a press on a hit deletes it, and
 //!   dragging on deletes every hit the pointer's path crosses, with no box, all one undo step; a right click on empty
 //!   grid that deleted nothing shows `Paste`.
 //! - **Drag a hit** moves it at once (no long press): the start snaps to the nearest snap unit, not before the clip
@@ -49,15 +49,15 @@
 //!   first, "touched"; the group keeps its shape at the clip start and the row edges.
 //! - **Resize handle** drags the right edge; the end snaps to the nearest snap unit; minimum length = snap unit/8, or
 //!   1/128 beat with Snap off ([`edit::resized`]). Every selected hit's end moves by the grabbed one's change; the
-//!   handle is the piano roll's, a 0.6 U disc just past the end.
+//!   handle is the piano roll's, the selection's end capsule just past the end ([`clips::end_handle`]).
 //! - **Marquee and long press.** The marquee selects hits whose extent overlaps it and then shows the resize handle.
 //!   Hit-testing uses [start, start + length] (no minimum touch width). A long press on empty grid without dragging
 //!   shows the Paste button when the clipboard is set. As in the automation editor, the floating `Copy` also stores the
 //!   copied hits in the drum editors' clipboard ([`step_seq::hit_clipboard`], shared with step mode); while it is set,
-//!   a stationary long press and a right click on empty grid show one round `Paste` bubble at the finger,
-//!   which dragging or another press hides. Its tap lands the earliest copied hit on the
-//!   nearest snap unit under it, the others at their offsets with their pads and lengths, in one final edit
-//!   ([`edit::paste`]); they are the selection (a lone one is remembered).
+//!   a stationary long press and a right click on empty grid show the `Paste` insert menu over the finger's row at the
+//!   snapped beat, its cursor across the copied hits' pads ([`step_seq::paste_button`]), which dragging or another
+//!   press hides. Its tap lands the earliest copied hit on that snapped beat, the others at their offsets with their
+//!   pads and lengths, in one final edit ([`edit::paste`]); they are the selection (a lone one is remembered).
 //! - **Remembered values (both drum modes).** Whenever exactly one hit becomes the selection (touched, tapped or pasted
 //!   alone), the editor remembers length = max(its length, minimum length), its velocity and pan. Editing Velocity or
 //!   Panning in the graph lane also updates them ([`Remembered`]: the step view's
@@ -74,7 +74,7 @@
 //! list's first item or a row header cut off at the rows' bottom, however thin that header's visible part (see
 //! [`graph_lane`]).
 //!
-//! The Snap button: free note-grid mode shows only the Snap icon button, 1.5 U × (1.5 U − 1 px), in the ruler row's
+//! The Snap button: free note-grid mode shows only the Snap icon button, 1.5 U × (ruler h − 1 px), in the ruler row's
 //! top-left cell; a tap toggles snap on/off, and a long press opens the snap list. It is the piano roll's look and snap
 //! model ([`Snap`], Auto by default, on); the editor keeps it in memory. A gesture's end fits the loop to the hits
 //! ([`crate::song::Clip::fit_loop`], as the piano roll's notes: their ends count, and it may shrink), unless it put
@@ -92,11 +92,11 @@ use eframe::egui::{self, Id, Pos2, Rangef, Rect, Response, Sense, Ui, vec2};
 use crate::song::{Event, LaneKind, Song, TimeSig};
 use crate::theme::{Rgba, channel_color};
 use crate::ui::clips::{
-    FloatingRow, GridView, Marquee, Selection, TimeAxis, hold_square, paint_marquee,
+    self, FloatingRow, GridView, Marquee, Selection, TimeAxis, hold_square, paint_marquee,
 };
 use crate::ui::edit_keys::{self, EditKey};
 use crate::ui::graph_lane::{self, GraphLane, Prop};
-use crate::ui::piano_roll::notes::{auto_grid, remove_selected};
+use crate::ui::piano_roll::notes::{auto_grid, remove_selected, snap_round};
 use crate::ui::piano_roll::{Snap, SnapMode};
 use crate::ui::popup::{self, PopupItem};
 use crate::ui::region::{self, TimeRange};
@@ -104,7 +104,7 @@ use crate::ui::scroller::{self, Axis, Scroller, X, Y};
 use crate::ui::step_seq::edit as steps;
 use crate::ui::step_seq::{
     self, DrumPads, Fold, GRAPH_KNOB_X, Layout, MIXER_W, Overlay, Remembered, RowView, StepAction,
-    TOP_H, hit_color, hit_tints, lane_split, pop_in,
+    hit_color, hit_tints, lane_split, pop_in,
 };
 use crate::ui::timeline::{self, KnobGesture, PlayheadKnob, RangeRuler, RangeSelect};
 use crate::ui::widgets::{self, SnapTouch};
@@ -339,7 +339,7 @@ impl DrumGridView {
         // zooms the rows over the header column and the time over the ruler, and scrolls over the grid, where a
         // trackpad pinch zooms the time. The time scrolls over twice the loop.
         let u = m.u(1.0);
-        let body = rect.with_min_y(rect.top() + m.u(TOP_H));
+        let body = rect.with_min_y(rect.top() + timeline::ruler_h(m));
         let mut view = (self.views.get(&key).copied()).unwrap_or_else(|| ClipView::new(d));
         let laid = Layout::new(rect, rows, 1, m, self.mixer_w, view.rows);
         let k_zoom = |k: f32| 4.0 * f64::from(k) / f64::from(u * f32::from(d.max(1)));
@@ -396,8 +396,11 @@ impl DrumGridView {
         self.current = self.current.min(rows.saturating_sub(1));
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, bg);
-        let snap_cell = Rect::from_min_size(rect.min, vec2(m.u(SNAP_W), m.u(TOP_H) - 1.0 / l.ppp));
-        self.snap_button(ui, snap_cell, cx);
+        let snap_cell = Rect::from_min_size(
+            rect.min,
+            vec2(m.u(SNAP_W), timeline::ruler_h(m) - 1.0 / l.ppp),
+        );
+        self.snap_button(ui, snap_cell, ink, cx);
 
         // The rows scroll under the strip: everything below is clipped to their area, input included.
         let outer = ui.clip_rect();
@@ -456,15 +459,16 @@ impl DrumGridView {
             self.paste = None;
         }
         if let Some(finger) = self.paste {
-            let (rect, tap) = step_seq::paste_button(ui, cx, id().with("paste"), finger);
             let hits = step_seq::hit_clipboard(ui.ctx());
+            let tick = place.axis.tick(finger.x);
+            let x = place.axis.x(snap_round(tick, snap).max(0.0));
+            let tap = step_seq::paste_button(ui, cx, id().with("paste"), &l, (finger, x), &hits);
             if tap.is_some() {
                 self.paste = None;
             }
             if tap == Some(true) && !hits.is_empty() {
                 self.quiet = false;
                 let (mut events, mut sel) = (events.to_vec(), self.sel.clone());
-                let tick = place.axis.tick(rect.center().x);
                 edit::paste(&mut events, &mut sel, &hits, tick, snap);
                 remember_lone(&events, &sel, remembered, min_beats);
                 action = Some(hits_edit(events, sel, true));
@@ -512,6 +516,7 @@ impl DrumGridView {
             self.region.view_moved();
         }
         let out = self.region.show(ui, id().with("region"), &at, false, cx);
+        timeline::scroll_thumb(&ruler_painter, ruler, axis, (0.0, loop_beats * BEAT), cx);
         // A ruler press waiting for its long press is the scroller's too, until its range starts.
         if self.region.pending() {
             self.scroller.claim();
@@ -961,7 +966,7 @@ impl DrumGridView {
         now: f64,
     ) {
         let colors = &cx.theme.colors;
-        let (text, bg) = (colors.text.to_color32(), colors.background.to_color32());
+        let bg = colors.background.to_color32();
         let px = 1.0 / l.ppp;
         let grid = l.grid();
         let axis = place.axis;
@@ -1012,16 +1017,16 @@ impl DrumGridView {
         // A touch on a hit hides the handles until it ends, and a quiet selection has none.
         let touched = self.quiet || matches!(self.gesture, Gesture::Edit(_));
         for (e, _) in (events.iter().zip(&self.sel)).filter(|(_, s)| **s && !touched) {
-            if let Some(h) = place.handle(e) {
-                painter.circle_filled(h.center(), h.width() / 2.0, text);
+            if let Some(r) = place.rect(e) {
+                clips::paint_handle(painter, cx, clips::end_handle(r, cx.m), (1.0, 0.0), false);
             }
         }
     }
 
     /// The Snap button in `cell` ([`widgets::snap_button`]): a tap toggles snap; a long press or a right click opens
     /// the snap menu.
-    fn snap_button(&mut self, ui: &mut Ui, cell: Rect, cx: &UiCtx) {
-        match widgets::snap_button(ui, id().with("snap"), cell, self.snap.on, cx) {
+    fn snap_button(&mut self, ui: &mut Ui, cell: Rect, ink: egui::Color32, cx: &UiCtx) {
+        match widgets::snap_button(ui, id().with("snap"), cell, (self.snap.on, ink), cx) {
             Some(SnapTouch::Menu) => self.snap_menu = true,
             Some(SnapTouch::Toggle) => self.snap.on = !self.snap.on,
             None => {}
@@ -1075,7 +1080,9 @@ impl DrumGridView {
             .filter(|(_, s)| **s)
             .map(|(e, _)| e)
             .collect();
-        let handles: Vec<Rect> = chosen.iter().filter_map(|e| place.handle(e)).collect();
+        let handles: Vec<Rect> = (chosen.iter().filter_map(|e| place.rect(e)))
+            .map(|r| clips::end_handle(r, cx.m))
+            .collect();
         let pads = || chosen.iter().filter_map(|e| edit::hit(e)).map(|h| h.0);
         // A quiet selection has no row, which a release on it brings back neither.
         let sel = (chosen.iter().filter_map(|e| place.rect(e)))
@@ -1227,13 +1234,13 @@ impl DrumGridView {
         None
     }
 
-    /// The graph lane's knob for the view `rect`, as the step view's: at 1.4 U from its left, on the lane's top or
-    /// the view's bottom edge. The host calls it after the drum mixer's strips.
-    pub fn graph_knob(&mut self, ui: &mut Ui, cx: &UiCtx, rect: Rect) {
+    /// The graph lane's tab for the view `rect`, as the step view's: centred 1.4 U from its left, over the lane's top
+    /// or the view's bottom edge, its icon in `ink`. The host calls it after the drum mixer's strips.
+    pub fn graph_knob(&mut self, ui: &mut Ui, cx: &UiCtx, rect: Rect, ink: egui::Color32) {
         let m = cx.m;
-        let below = (rect, rect.top() + m.u(TOP_H));
+        let below = (rect, rect.top() + timeline::ruler_h(m));
         let x = rect.left() + m.u(GRAPH_KNOB_X);
-        (self.graph).knob_below(ui, cx, id().with("graph knob"), below, x);
+        (self.graph).tab_below(ui, cx, id().with("graph tab"), below, x, ink);
     }
 
     /// Closes the popups over the view (the row menu and its prompts, the snap menu, the ruler's region menu and `+`,

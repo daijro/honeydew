@@ -3,20 +3,25 @@
 //! The items split the rect into equal cells (columns for a horizontal list, rows for a vertical one). Each cell
 //! has a 2 t marker bar on the list's bar side and its text is centred in the cell without 3 t on that side. The
 //! selected item is drawn in `text` with a `text` bar, the others in the channel colour with a `menuFill` bar. A
-//! boxed list has no bars: its selected cell gets a `menuFill` box inset 2 t.
+//! boxed list has no bars: its selected cell gets a `menuFill` box inset 2 t. The tab selector look (`tabs`, the
+//! graph lanes' lists) adds a `moduleFill` column (the selected cell's `moduleFill` box inset 2 t is the column's own
+//! colour, so it is not drawn), middle-truncated labels and a channel-colour wash at 5 % under the mouse.
 //!
 //! Header items are drawn at FontSize 3 and, as in the popup menus, cannot be selected. A pressed cell gets a light
 //! wash (`text` at 10 %) as its press highlight.
 
 use eframe::egui::{Align2, Color32, Id, Pos2, Rect, Response, Sense, Ui, WidgetInfo, WidgetType};
 
-use super::{primary_down_on, through_index};
+use super::{hovered, primary_down_on, through_index, truncated};
 use crate::metrics::FontSize;
 use crate::ui::UiCtx;
 use crate::ui::focus::{self, Kind};
 
-/// Alpha of the wash under a pressed cell.
+/// Alpha of the wash under a pressed cell, and of the tab selector's channel-colour wash under the mouse.
 const PRESS_WASH: f32 = 0.1;
+const HOVER_WASH: f32 = 0.05;
+/// The tail a tab selector's truncated label keeps.
+const TAIL: usize = 5;
 
 /// Where each cell's marker bar sits, which also says how the list runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,6 +48,8 @@ pub struct ItemList<'a> {
     pub channel: Color32,
     /// No input.
     pub disabled: bool,
+    /// The tab selector look (see the module doc).
+    pub tabs: bool,
 }
 
 impl<'a> ItemList<'a> {
@@ -55,6 +62,7 @@ impl<'a> ItemList<'a> {
             bar,
             channel,
             disabled: false,
+            tabs: false,
         }
     }
 }
@@ -168,9 +176,18 @@ pub fn item_list_index(ui: &mut Ui, cx: &UiCtx, list: &ItemList, selected: &mut 
 
     let (text, menu_fill) = (colors.text.to_color32(), colors.menu_fill.to_color32());
     let painter = ui.painter();
+    let hover = (response.hover_pos())
+        .filter(|_| list.tabs && hovered(ui, &response))
+        .and_then(|p| cell_at(rect, len, list.bar, p));
+    if list.tabs {
+        painter.rect_filled(rect, 0.0, colors.module_fill.to_color32());
+    }
     for (i, label) in list.items.iter().enumerate() {
         let is_selected = i == *selected;
         let cell = cell(rect, len, i, list.bar, t);
+        if hover == Some(i) {
+            painter.rect_filled(cell.cell, 0.0, list.channel.gamma_multiply(HOVER_WASH));
+        }
         if pressed == Some(i) {
             painter.rect_filled(cell.cell, 0.0, text.gamma_multiply(PRESS_WASH));
         }
@@ -190,14 +207,14 @@ pub fn item_list_index(ui: &mut Ui, cx: &UiCtx, list: &ItemList, selected: &mut 
         } else {
             FontSize::Pt10
         };
-        // Plain text: an item wider than its cell overhangs it.
-        painter.text(
-            cell.text.center(),
-            Align2::CENTER_CENTER,
-            label,
-            m.font_id(font),
-            if is_selected { text } else { list.channel },
-        );
+        // Plain text: an item wider than its cell overhangs it; a tab selector's is truncated.
+        let ink = if is_selected { text } else { list.channel };
+        let (at, font) = (Align2::CENTER_CENTER, m.font_id(font));
+        if list.tabs {
+            truncated(painter, cell.text, at, label, font, ink, TAIL);
+        } else {
+            painter.text(cell.text.center(), at, label, font, ink);
+        }
     }
     response
 }

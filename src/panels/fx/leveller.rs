@@ -356,7 +356,7 @@ mod tests {
     use eframe::egui::{Rangef, Shape, pos2, vec2};
 
     use super::*;
-    use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+    use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
     use crate::panels::fx::limiter::tests::metrics;
     use crate::panels::tests::{U, display_shapes};
     use crate::theme::theme_by_id;
@@ -402,7 +402,7 @@ mod tests {
     fn the_scale_draws_in_text_at_fontsize_1_and_12_overhangs_the_right_edge() {
         let text = theme_by_id(0).colors.text.to_color32();
         for ppp in [1.0, 2.0] {
-            let pt8 = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX)
+            let pt8 = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE)
                 .font_id(FontSize::Pt8)
                 .size;
             let shapes = display_shapes(20, 2, &[], &PanelState::default(), content(), ppp);

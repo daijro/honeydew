@@ -16,7 +16,7 @@ fn dialog() -> DialogLayout {
     let screen = egui::Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
     layout(
         screen,
-        &Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX),
+        &Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE),
     )
 }
 
@@ -311,7 +311,7 @@ fn split_writes_each_stem_into_its_folder_with_its_progress_and_flashes_the_fold
     let name = rig.app.song.channels[1].name.clone();
     rig.render_page(WAV);
     rig.click(dialog().toggles[2].center());
-    assert!(rig.shows("Enable master effects"), "shown with Split on");
+    assert!(rig.shows("Enable master FX"), "shown with Split on");
     rig.click(dialog().render.center());
     rig.frame(vec![]);
     // The two lines of the busy title are each centred.

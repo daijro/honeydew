@@ -1,8 +1,7 @@
 //! A plugin module's card content (`crate::plugins`): a status line (the format and vendor, the plugin's latency,
-//! or why it is not running), the `Editor` button (filled in the channel colour) that opens the plugin's own window,
-//! and its params as sliders, a page at a time. The sliders are the generic editor where the plugin has no window of
-//! its own (or it failed), and each is a bound control: the recent control for REC and the CTRL menu, its moves
-//! `SetParam`s.
+//! or why it is not running) and its params as sliders, a page at a time (the header's pop-out button opens the
+//! plugin's own window). The sliders are the generic editor where the plugin has no window of its own (or it failed),
+//! and each is a bound control: the recent control for REC and the CTRL menu, its moves `SetParam`s.
 
 use eframe::egui::{Align2, Color32, Rect, Ui, pos2, vec2};
 
@@ -10,7 +9,7 @@ use crate::metrics::FontSize;
 use crate::plugins::{self, State};
 use crate::song::ModuleInstance;
 use crate::ui::UiCtx;
-use crate::ui::widgets::{self, Button, Control};
+use crate::ui::widgets::{self, Control};
 
 /// The status row and the page buttons, in U.
 const ROW: f32 = 1.2;
@@ -18,8 +17,6 @@ const ROW: f32 = 1.2;
 const SLIDER: f32 = 1.5;
 /// The page buttons' width, in U.
 const PAGE_W: f32 = 1.5;
-/// The `Editor` button's width, in U.
-const EDITOR_W: f32 = 2.6;
 
 /// A plugin card's own state: its page of params.
 #[derive(Debug, Default)]
@@ -50,33 +47,9 @@ pub(super) fn show(
         Some(State::Live(info)) => Some(info.clone()),
         _ => None,
     };
-    // The status line, left; the editor button and the page buttons, right.
+    // The status line, left; the page buttons, right. The plugin's own editor window opens with the card header's
+    // pop-out button.
     let mut right = row.right();
-    if let Some(info) = live
-        .as_ref()
-        .filter(|i| i.has_editor && i.stopped.is_none() && i.editor_failed.is_none())
-    {
-        let rect = Rect::from_min_max(
-            row.right_top() - vec2(EDITOR_W * u, 0.0),
-            row.right_bottom(),
-        );
-        right = rect.left();
-        let label = if info.editor_open { "Close" } else { "Editor" };
-        let b = Button {
-            fill_on: ink,
-            ..Button::new(
-                id.with("editor"),
-                rect.shrink(0.1 * u),
-                label,
-                false,
-                colors,
-            )
-        };
-        if widgets::button(ui, cx, &b, true).clicked() {
-            // A failure is kept by the host (`Info::editor_failed`) and shown below.
-            let _ = plugins::show_editor(channel_id, module.instance_id, !info.editor_open);
-        }
-    }
     let count = module.params.len().saturating_sub(1);
     let per_page = (((content.height() - ROW * u) / (SLIDER * u)).floor() as usize).max(1);
     let pages = count.div_ceil(per_page).max(1);

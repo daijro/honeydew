@@ -1,7 +1,7 @@
 use eframe::egui::{Pos2, Vec2, pos2, vec2};
 
 use super::*;
-use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+use crate::metrics::DEFAULT_UI_SCALE;
 use crate::song::ChannelKind;
 use crate::ui::offscreen::{Offscreen, SCREEN};
 use honeydew_audio::sample_edit::speed_semitones;
@@ -273,7 +273,7 @@ fn keyboard() -> Rect {
 #[test]
 fn the_row_is_30_by_2_u_centred_with_2_u_cells_and_four_equal_sliders_at_ppp_1_and_2() {
     for ppp in [1.0, 2.0] {
-        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
         assert_eq!(m.u(1.0), U, "ppp {ppp}");
         let rects = layout(keyboard(), &m);
         // 960 × 64 points centred in the area 0.35 U under the keys' top (y 447.2 … 540): x 105 … 1065, y 461.6 …
@@ -309,7 +309,7 @@ fn the_row_is_30_by_2_u_centred_with_2_u_cells_and_four_equal_sliders_at_ppp_1_a
 fn under_2_u_the_row_sits_at_the_top_of_its_area_and_overflows_below() {
     // [flex, 2 U, flex] collapses to the row at the top.
     for ppp in [1.0, 2.0] {
-        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
         // Keys areas 2.35 U tall (the row just fits: centred is the top), 1.25 U (the strip open on a 6 U panel), and
         // −0.75 U (a 4 U panel: below the panel's bottom).
         for k in [2.35, 1.25, -0.75] {
@@ -348,7 +348,7 @@ fn a_keys_area_0_tall_hides_the_row() {
 
 #[test]
 fn a_narrow_keyboard_area_narrows_the_sliders_on_whole_pixels() {
-    let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE);
     let area = Rect::from_x_y_ranges(10.0..=(10.0 + 20.3 * U), 0.0..=(4.0 * U));
     let rects = layout(area, &m);
     // The row is the area's width (its right edge on a whole device pixel); the cells keep 2 U, and the sliders share

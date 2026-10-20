@@ -6,7 +6,7 @@ use eframe::egui::{
     Vec2, epaint::ClippedShape, pos2,
 };
 
-use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
 use crate::theme::theme_by_id;
 use crate::ui::UiCtx;
 
@@ -16,7 +16,7 @@ pub const SCREEN: Rect = Rect {
 };
 
 pub fn metrics() -> Metrics {
-    Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX)
+    Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE)
 }
 
 pub struct Offscreen {

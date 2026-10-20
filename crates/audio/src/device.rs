@@ -27,6 +27,8 @@ pub struct ModuleMeter {
 pub struct OutputSnapshot {
     pub transport_tick: u64,
     pub cpu_load: f32,
+    /// The callbacks since the stream started that took longer than their buffer lasts: each one an underrun.
+    pub underruns: u64,
     pub module_meters: Vec<ModuleMeter>,
     pub stream_failed: bool,
     /// A count-in holds the transport ([`AudioRenderer::counting_in`]).
@@ -356,6 +358,7 @@ impl MeterBank {
 struct Shared {
     tick: AtomicU64,
     cpu: AtomicU32,
+    underruns: AtomicU64,
     failed: AtomicBool,
     counting_in: AtomicBool,
     /// The last [`PingReport`], packed ([`pack`]); 0 = none.
@@ -594,6 +597,7 @@ impl<R: AudioRenderer> AudioOutput<R> {
         OutputSnapshot {
             transport_tick: self.shared.tick.load(Ordering::Acquire),
             cpu_load: f32::from_bits(self.shared.cpu.load(Ordering::Acquire)),
+            underruns: self.shared.underruns.load(Ordering::Acquire),
             stream_failed: self.shared.failed.load(Ordering::Acquire),
             module_meters: self.meters.take(),
             counting_in: self.shared.counting_in(),
@@ -639,10 +643,13 @@ impl<R: AudioRenderer> CallbackState<R> {
         #[cfg(not(target_arch = "wasm32"))]
         if !output.is_empty() {
             let available = output.len() as f32 / channels as f32 / sample_rate as f32;
-            self.shared.cpu.store(
-                (start.elapsed().as_secs_f32() / available).to_bits(),
-                Ordering::Release,
-            );
+            let load = start.elapsed().as_secs_f32() / available;
+            self.shared.cpu.store(load.to_bits(), Ordering::Release);
+            // ponytail: a render slower than its buffer counts as the underrun it makes; the backends report no
+            // xruns of their own to count instead.
+            if load > 1.0 {
+                self.shared.underruns.fetch_add(1, Ordering::Release);
+            }
         }
     }
 

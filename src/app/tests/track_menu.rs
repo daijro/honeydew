@@ -23,7 +23,7 @@ const INSERT: (usize, usize) = (0, 3);
 const DELETE_TRACK: (usize, usize) = (0, 4);
 const DELETE_CHANNEL: (usize, usize) = (0, 5);
 /// `Add Track` of an instrument, `Add StepSeq Track` and `Add Notes Track` of a drums channel.
-const ADD_TRACK: (usize, usize) = (1, 2);
+const ADD_TRACK: (usize, usize) = (1, 3);
 const ADD_STEP_SEQ: (usize, usize) = (1, 2);
 const ADD_NOTES: (usize, usize) = (1, 3);
 
@@ -177,6 +177,70 @@ fn add_step_seq_and_add_notes_track_add_drum_lanes_of_flag_0_and_1_one_undo_step
     assert_eq!(grids(&rig), [(Drums, Steps)]);
     rig.frame(redo());
     assert_eq!(grids(&rig), [(Drums, Steps), (Drums, Notes)]);
+}
+
+#[test]
+fn burn_notes_puts_the_loops_notes_as_the_note_effects_play_them_on_a_new_track_one_undo_step() {
+    use crate::song::PPQ;
+    let mut rig = Rig::with_drums_and_synth();
+    let synth = &mut rig.app.song.channels[2];
+    // An octave up.
+    let transpose = synth.rack.add(48);
+    synth.rack.get_mut(transpose).unwrap().params[1] = 5.0 / 8.0;
+    // A slide up a tone on the note at beat 2, as the slide plays it (from its anchor).
+    let slide = |pos, key| SongEvent::Note {
+        pos,
+        len_beats: 0.5,
+        key,
+        velocity: SongEvent::DEFAULT_VELOCITY,
+        pan: SongEvent::DEFAULT_PAN,
+        slide: true,
+    };
+    let lane = &mut synth.lanes[0];
+    let notes = [note(0), note(2 * PPQ), slide(2 * PPQ + PPQ / 4, 62)];
+    lane.add_clip(0, 8.0).events = [&notes[..], &[note(5 * PPQ)]].concat();
+    // Past the loop: it stays unmuted.
+    lane.add_clip(8 * PPQ, 4.0).events = vec![note(0)];
+    rig.app.song.play_loop = Some((PPQ, 6 * PPQ));
+    rig.app.song_edited(SongEdit::Final, 0);
+    let before = rig.app.song.clone();
+    rig.app.track_op(2, 0, TrackOp::BurnNotes, 0);
+    let screen = Overlay::Busy {
+        title: "Burning notes to track...".into(),
+    };
+    assert_eq!(rig.overlays(), std::slice::from_ref(&screen));
+    rig.frame(vec![]);
+    assert_eq!(rig.overlays(), [screen], "it shows a frame first");
+    rig.frame(vec![]);
+    assert_eq!(rig.overlays(), []);
+    let synth = &rig.app.song.channels[2];
+    assert_eq!(lanes(&rig, 2), [LaneKind::Notes, LaneKind::Notes]);
+    let muted: Vec<bool> = synth.lanes[0].clips.iter().map(|c| c.muted).collect();
+    assert_eq!(muted, [true, false]);
+    assert_eq!(synth.rack.get(transpose).unwrap().params[0], 0.0);
+    // One clip over the loop, the notes starting in it an octave up, from its start, and the slide a tone above its
+    // anchor still.
+    let [clip] = &synth.lanes[1].clips[..] else {
+        panic!("{:?}", synth.lanes[1].clips);
+    };
+    let spans = (clip.start_tick, clip.visible_len_beats, clip.loop_len_beats);
+    assert_eq!(spans, (PPQ, 5.0, 5.0));
+    let up = |pos| SongEvent::Note {
+        pos,
+        len_beats: 1.0,
+        key: 72,
+        velocity: SongEvent::DEFAULT_VELOCITY,
+        pan: SongEvent::DEFAULT_PAN,
+        slide: false,
+    };
+    let slid = slide(PPQ + PPQ / 4, 74);
+    assert_eq!(clip.events, [up(PPQ), slid, up(4 * PPQ)]);
+    assert_eq!(rig.app.main_screen.clips.track, Some((2, 1)), "current");
+    // One undo step takes the track away and unmutes the clips; the note effects stay off, as no undo covers the rack.
+    rig.frame(undo());
+    let mut want = before.channels;
+    want[2].rack.get_mut(transpose).unwrap().params[0] = 0.0;
+    assert_eq!(rig.app.song.channels, want);
 }
 
 #[test]
@@ -503,15 +567,14 @@ fn channel_settings_renames_and_recolours_the_channel_one_undo_step_each() {
     assert_eq!(rig.overlays(), []);
 }
 
-/// Dialog boxes: screen dim α 0.6, then a `moduleFill` box, from the dialog's first frame.
+/// Dialog boxes: screen dim α 0.6, then the floating panel, from the dialog's first frame.
 #[test]
-fn channel_settings_is_on_the_dialog_base_the_dim_then_a_module_fill_box() {
+fn channel_settings_is_on_the_dialog_base_the_dim_then_the_panel() {
     let mut rig = Rig::with_drums_and_synth();
     rig.track_menu(2, SETTINGS);
     assert_eq!(rig.overlays().len(), 1, "the dialog's first frame");
     let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1170.0, 540.0));
-    let m =
-        crate::metrics::Metrics::from_pixels_per_point(1.0, crate::metrics::DEFAULT_UI_SCALE_INDEX);
+    let m = crate::metrics::Metrics::from_pixels_per_point(1.0, crate::metrics::DEFAULT_UI_SCALE);
     // 10 U × 5.75 U, centred in the content area above the transport bar.
     let area = crate::ui::main_screen::Regions::new(screen, &m).area;
     let boxed = egui::Rect::from_center_size(area.center(), egui::vec2(10.0 * 32.0, 5.75 * 32.0));
@@ -1232,7 +1295,7 @@ fn a_new_channel_past_the_id_limit_adds_nothing_and_says_why() {
 }
 
 #[test]
-fn channel_settings_is_a_dialog_box_a_module_fill_box_over_the_screen_dimmed_at_once() {
+fn channel_settings_is_a_dialog_box_over_the_screen_dimmed_at_once() {
     // Dialog boxes do not animate.
     let mut rig = Rig::with_drums_and_synth();
     crate::ui::anim::enable(&rig.ctx);
@@ -1247,8 +1310,8 @@ fn channel_settings_is_a_dialog_box_a_module_fill_box_over_the_screen_dimmed_at_
         .collect();
     let dim = colors.background.to_color32().gamma_multiply(0.6);
     assert!(fills.contains(&(screen, dim)), "the dim");
-    let module_fill = colors.module_fill.to_color32();
-    let boxed = (fills.iter()).find(|(r, f)| *f == module_fill && (r.width() - 320.0).abs() < 0.5);
+    let menu_fill = colors.menu_fill.to_color32();
+    let boxed = (fills.iter()).find(|(r, f)| *f == menu_fill && (r.width() - 320.0).abs() < 0.5);
     assert!(boxed.is_some(), "the 10 U box");
 }
 
@@ -1901,10 +1964,7 @@ fn save_as_midi_writes_only_that_channel_on_midi_channel_1_into_my_midi() {
     assert!(!rig.painted("Save as MIDI"));
     let l = crate::ui::save_dialog::layout(
         egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(1170.0, 540.0)),
-        &crate::metrics::Metrics::from_pixels_per_point(
-            1.0,
-            crate::metrics::DEFAULT_UI_SCALE_INDEX,
-        ),
+        &crate::metrics::Metrics::from_pixels_per_point(1.0, crate::metrics::DEFAULT_UI_SCALE),
     );
     rig.click(l.formats[3].center());
     rig.click(l.save.center());

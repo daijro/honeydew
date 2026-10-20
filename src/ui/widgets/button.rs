@@ -49,6 +49,8 @@ pub struct Button<'a> {
     pub round: bool,
     /// Round buttons: the disc's radius is `shape × 0.5 × min(w, h)`.
     pub shape: f32,
+    /// Rect buttons: the corner radius, in points (square by default).
+    pub corner: f32,
     /// A disc behind the button bigger by the pad in device pixels (for rect buttons the rect grown by half the pad on
     /// every side): the halo's colour and pad.
     pub halo: Option<(Color32, f32)>,
@@ -76,6 +78,7 @@ impl<'a> Button<'a> {
             icon_scale: 1.0,
             round,
             shape: 1.0,
+            corner: 0.0,
             halo: None,
             fill_on: text_color,
             fill_off: menu_fill,
@@ -89,9 +92,14 @@ impl<'a> Button<'a> {
 
 /// `color` as a pressed button draws it: RGB × 1.15, clamped, alpha unchanged.
 pub(crate) fn pressed(color: Color32) -> Color32 {
+    brighter(color, PRESSED_GAIN)
+}
+
+/// `color` with its RGB × `gain` (each channel capped at 255), its alpha kept: the controls' hover look (× 1.25).
+pub(crate) fn brighter(color: Color32, gain: f32) -> Color32 {
     let [r, g, b, a] = color.to_srgba_unmultiplied();
-    let brighter = |c: u8| (f32::from(c) * PRESSED_GAIN).round().min(255.0) as u8;
-    Color32::from_rgba_unmultiplied(brighter(r), brighter(g), brighter(b), a)
+    let up = |c: u8| (f32::from(c) * gain).round().min(255.0) as u8;
+    Color32::from_rgba_unmultiplied(up(r), up(g), up(b), a)
 }
 
 /// Radius of a round button's disc.
@@ -183,7 +191,7 @@ pub fn button(ui: &mut Ui, cx: &UiCtx, b: &Button, on: bool) -> Response {
         if let Some((color, pad)) = halo {
             painter.rect_filled(b.rect.expand(pad / 2.0), 0.0, color);
         }
-        painter.rect_filled(b.rect, 0.0, fill);
+        painter.rect_filled(b.rect, b.corner, fill);
     }
 
     let (icon_area, text_area) = content_rects(b.rect, b.icon.is_some(), !b.text.is_empty());
@@ -209,7 +217,7 @@ pub fn button(ui: &mut Ui, cx: &UiCtx, b: &Button, on: bool) -> Response {
 mod tests {
     use super::*;
     use crate::icons::icon_edge;
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
     use eframe::egui::{pos2, vec2};
 
     #[test]
@@ -248,7 +256,7 @@ mod tests {
     }
 
     fn m(ppp: f32) -> Metrics {
-        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX)
+        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE)
     }
 
     #[test]
@@ -296,7 +304,7 @@ mod tests {
     fn the_snapped_icon_square_stays_inside_the_disc_at_any_pixel_density() {
         use crate::icons::icon_square;
         for ppp in [1.0, 1.25, 1.5, 2.0, 2.625, 3.0] {
-            for index in 0..crate::metrics::UI_SCALE_FACTORS.len() {
+            for index in [60, 75, 90, 100, 110, 125, 150, 175, 200] {
                 let m = Metrics::from_pixels_per_point(ppp, index);
                 let u = m.u(1.0);
                 // An odd position, so that snapping moves the square's corner.

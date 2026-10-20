@@ -21,6 +21,33 @@ struct Played {
 }
 
 impl Played {
+    /// `event`, at song tick `tick` of a clip that ends at tick `cut`, as the slide law reads it; `None` for an event
+    /// that is not a note, and for a note whose length is not finite.
+    fn of(tick: u64, event: &Event, cut: f64) -> Option<Self> {
+        let Event::Note {
+            len_beats,
+            key,
+            velocity,
+            pan,
+            slide,
+            ..
+        } = *event
+        else {
+            return None;
+        };
+        let len = len_beats * f64::from(PPQ);
+        len_beats.is_finite().then_some(Self {
+            start: tick,
+            len,
+            cut,
+            end: (tick as f64 + len).min(cut),
+            key,
+            velocity: velocity.max(1),
+            pan,
+            slide,
+        })
+    }
+
     /// It sounds at tick `tick`: start ≤ tick < end.
     fn sounds_at(&self, tick: u64) -> bool {
         !self.slide && self.start <= tick && (tick as f64) < self.end
@@ -62,39 +89,7 @@ pub(super) fn actions(
     actions: &mut Vec<ScheduledAction>,
 ) -> Result<(), EngineError> {
     let ppq = f64::from(PPQ);
-    let mut notes = Vec::new();
-    let lanes = song.channels[channel].lanes.iter();
-    for lane in lanes.filter(|lane| lane.kind == LaneKind::Notes) {
-        for clip in playing_clips(lane) {
-            let cut = f64::from(clip.start_tick) + clip.visible_ticks();
-            for (tick, event) in clip.events_in_song_range(0, (end_beat * ppq).ceil() as u64) {
-                if let Event::Note {
-                    len_beats,
-                    key,
-                    velocity,
-                    pan,
-                    slide,
-                    ..
-                } = *event
-                    && len_beats.is_finite()
-                {
-                    let len = len_beats * ppq;
-                    let (velocity, pan) = (velocity.max(1), pan);
-                    notes.push(Played {
-                        start: tick,
-                        len,
-                        cut,
-                        end: (tick as f64 + len).min(cut),
-                        key,
-                        velocity,
-                        pan,
-                        slide,
-                    });
-                }
-            }
-        }
-    }
-    notes.sort_by_key(|note| note.start);
+    let notes = played(song, channel, end_beat);
     let slides = notes.iter().filter(|note| note.slide);
     if slides
         .clone()
@@ -104,12 +99,9 @@ pub(super) fn actions(
     {
         return Err(EngineError::TooManyEvents);
     }
-    let mut anchor: Option<Played> = None;
     let mut prev = [0.0_f32; 3];
-    for slide in slides {
-        if !anchor.is_some_and(|anchor| anchor.sounds_at(slide.start)) {
-            let sounding = notes.iter().filter(|note| note.sounds_at(slide.start));
-            anchor = sounding.max_by_key(|note| note.key).copied();
+    for (slide, anchor, new) in anchored(&notes) {
+        if new {
             prev = [0.0; 3];
         }
         let Some(a) = anchor else {
@@ -142,6 +134,86 @@ pub(super) fn actions(
         prev = at(slide.kept());
     }
     Ok(())
+}
+
+/// The notes of `channel`'s notes lanes up to `end_beat`, as the slide law reads them, in start order.
+fn played(song: &Song, channel: usize, end_beat: f64) -> Vec<Played> {
+    let mut notes = Vec::new();
+    let lanes = song.channels[channel].lanes.iter();
+    for lane in lanes.filter(|lane| lane.kind == LaneKind::Notes) {
+        for clip in playing_clips(lane) {
+            let cut = f64::from(clip.start_tick) + clip.visible_ticks();
+            let to = (end_beat * f64::from(PPQ)).ceil() as u64;
+            let events = clip.events_in_song_range(0, to);
+            notes.extend(events.filter_map(|(tick, event)| Played::of(tick, event, cut)));
+        }
+    }
+    notes.sort_by_key(|note| note.start);
+    notes
+}
+
+/// Each slide of `notes` (in start order) with its anchor, and whether the anchor was found anew there (prev resets):
+/// the anchor stays while it still sounds at the slide's start, else it is the highest-key non-slide note sounding
+/// there, if any.
+fn anchored(notes: &[Played]) -> Vec<(Played, Option<Played>, bool)> {
+    let mut anchor: Option<Played> = None;
+    let mut out = Vec::new();
+    for slide in notes.iter().filter(|note| note.slide) {
+        let new = !anchor.is_some_and(|anchor| anchor.sounds_at(slide.start));
+        if new {
+            let sounding = notes.iter().filter(|note| note.sounds_at(slide.start));
+            anchor = sounding.max_by_key(|note| note.key).copied();
+        }
+        out.push((*slide, anchor, new));
+    }
+    out
+}
+
+/// `Burn Notes to Track`: the slides of `channel`'s notes lanes (up to `end_beat`) that start in song ticks [`start`,
+/// `end`), for a clip there whose other notes are `notes` (positions from `start`). Playback plays a slide as an offset
+/// from its anchor, read from the notes as stored, so each keeps its key, pan and velocity less its anchor's, now from
+/// its anchor among `notes` by the same rule: a note effect that moved the anchor moves the slide with it, and with
+/// none they are unchanged. A slide with no anchor on either side does nothing and is left out.
+// ponytail: a slide that ran past its own clip's end, which cut its events there, runs on to the span's end; it would
+// need a length of its own and another rate to stop there.
+pub(super) fn burned(
+    song: &Song,
+    channel: usize,
+    end_beat: f64,
+    notes: &[Event],
+    start: u32,
+    end: u32,
+) -> Vec<Event> {
+    let span = u64::from(start)..u64::from(end);
+    let aims: Vec<(Played, Played)> = (anchored(&played(song, channel, end_beat)).into_iter())
+        .filter(|(slide, ..)| span.contains(&slide.start))
+        .filter_map(|(slide, anchor, _)| Some((slide, anchor?)))
+        .collect();
+    let cut = f64::from(end);
+    let mut clip: Vec<Played> = (notes.iter())
+        .filter_map(|event| Played::of(span.start + u64::from(event.pos()), event, cut))
+        .chain(aims.iter().map(|&(slide, _)| slide))
+        .collect();
+    clip.sort_by_key(|note| note.start);
+    // The byte `to` + `by` − `from`, clamped to `range`.
+    let moved = |to: u8, by: u8, from: u8, range: std::ops::RangeInclusive<i16>| {
+        let value = i16::from(to) + i16::from(by) - i16::from(from);
+        value.clamp(*range.start(), *range.end()) as u8
+    };
+    // The slides come in the same order on both sides: a stable sort by start.
+    (aims.iter().zip(anchored(&clip)))
+        .filter_map(|(&(slide, a), (_, b, _))| {
+            let b = b?;
+            Some(Event::Note {
+                pos: (slide.start - span.start) as u32,
+                len_beats: slide.len / f64::from(PPQ),
+                key: moved(b.key, slide.key, a.key, 0..=127),
+                velocity: moved(b.velocity, slide.velocity, a.velocity, 1..=255),
+                pan: moved(b.pan, slide.pan, a.pan, 0..=255),
+                slide: true,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]

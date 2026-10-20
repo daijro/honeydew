@@ -679,7 +679,7 @@ mod tests {
     use eframe::egui::epaint::ColorMode;
 
     use super::*;
-    use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+    use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
     use crate::panels::tests::{U, display_shapes};
     use crate::theme::theme_by_id;
 
@@ -699,7 +699,7 @@ mod tests {
     #[test]
     fn rects_a_to_h_follow_the_display_rect() {
         for ppp in [1.0, 2.0] {
-            let u = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX).u(1.0);
+            let u = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE).u(1.0);
             let r = rects(reference_d(), u);
             let want = [
                 ('A', r.a, u_rect(2.5375, 4.29, 8.925, 0.2)),
@@ -866,7 +866,7 @@ mod tests {
 
     /// The readouts at the end of `shapes`: each at its rect's anchor, FontSize 2, colour A.
     fn assert_readouts(shapes: &[Shape], want: &[(Rect, Align2, &str)], ppp: f32) {
-        let size = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX)
+        let size = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE)
             .font_id(FontSize::Pt10)
             .size;
         let texts = &shapes[shapes.len() - want.len()..];
@@ -1125,7 +1125,7 @@ mod tests {
         use honeydew_audio::MeterSnapshot;
         let (theme, m) = (
             theme_by_id(0),
-            Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX),
+            Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE),
         );
         let cx = UiCtx {
             theme: &theme,
@@ -1225,7 +1225,7 @@ mod tests {
         use honeydew_audio::MeterSnapshot;
         let (theme, m) = (
             theme_by_id(0),
-            Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX),
+            Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE),
         );
         let cx = UiCtx {
             theme: &theme,

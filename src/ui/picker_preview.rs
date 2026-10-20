@@ -10,9 +10,9 @@
 //!
 //! **Sample strip.** 1.75 U at the bottom of the panel, `menuFill`: the play button (icon 3, 1.2 U, centred in a 2 U
 //! column), the waveform (from x + 2 U, max(W − 2.4 U, 0) wide, 1 U tall, `text` at 0.85), and under it the sample's
-//! name and its progress in a 5 : 1 width. It plays the pick once from the start; the play button stops or plays from
-//! the start, a touch on the waveform stops and its release plays from there. The waveform sits 0.125 U below
-//! the strip's top, the labels fill the rest; the progress is the position as m:ss (0:00 while stopped).
+//! name and its progress in a 5 : 1 width. It plays the pick once from the start; the play button (or the play key)
+//! stops or plays from the start, a touch on the waveform stops and its release plays from there. The waveform sits
+//! 0.125 U below the strip's top, the labels fill the rest; the progress is the position as m:ss (0:00 while stopped).
 
 use eframe::egui::{Align2, Id, Mesh, Painter, Rect, Sense, Ui, pos2, vec2};
 
@@ -277,7 +277,9 @@ impl SampleStrip {
 
         let button = ui.interact(play, id.with("sample play"), Sense::click());
         draw_icon(&painter, play, IconId::Play, text, 1.0, m);
-        if button.clicked() {
+        // The play key plays or stops it too (`Play preview` / `Pause preview`), unless a text field has the keys.
+        let key = !ui.ctx().wants_keyboard_input() && crate::keymap::pressed(ui.ctx(), "play");
+        if button.clicked() || key {
             match self.playing.is_some() {
                 true => self.stop(),
                 false => self.play(0),

@@ -205,19 +205,20 @@ fn an_fl_12_project_maps_its_tempo_channels_patterns_playlist_and_effects() {
         song.channels[2].kind,
         ChannelKind::Synth(SynthKind::SuperSaw)
     );
-    // Insert 1's reverb comes along at its defaults; Gross Beat has no counterpart.
+    // Insert 1's reverb comes along as Lemon Reverb, at its defaults (its state is empty); Gross Beat has no
+    // counterpart.
     assert!(
         song.channels[1]
             .rack
             .modules
             .iter()
-            .any(|m| m.type_id == 35)
+            .any(|m| m.type_id == honeydew_audio::lemon::REVERB)
     );
     assert_eq!(
         imported.notices,
         [
             "Pad Strings: Sytrus replaced by Warm Blanket",
-            "Kick: Fruity Reeverb 2 as Reverb 2",
+            "Kick: Fruity Reeverb 2 as Lemon Reverb at its default settings",
             "Kick: Gross Beat dropped"
         ]
     );

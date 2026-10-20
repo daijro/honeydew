@@ -1,30 +1,31 @@
-//! The performance monitor: the data both of its views read, and the drawing both of them share. The views are the
-//! PROJECT page's block and the floating overlay ([`monitor_rect`]); both take one [`Performance`], the shared data
-//! source, which the app updates once a frame ([`Performance::update`]).
+//! The performance monitor: the data the PROJECT page's Performance block shows, and its drawing. The block takes the
+//! one [`Performance`], the shared data source (the transport's CPU meter reads it too), which the app updates once a
+//! frame ([`Performance::update`]).
 //!
 //! The data updates once per drawn main-UI frame (the app does not call [`Performance::update`] while a loading screen
-//! is up), the 3 s peak hold is real time, the 0.001 peak decay and the 2 % smoothing are per frame. The idle overlay
-//! ends at the first playback of the app session and never returns: a song load keeps it, keeps the monitor shown or
-//! hidden, and keeps the graph's history, which is resized to the song (a length change stretches it) rather than
-//! cleared.
+//! is up). The smoothed load jumps up to a higher load at once and decays toward a lower one with a 3 s time constant
+//! (real time); the 3 s peak hold is real time, the 0.001 peak decay per frame. The idle overlay ends at the first
+//! playback of the app session and never returns: a song load keeps it, and keeps the graph's history, which is
+//! resized to the song (a length change stretches it) rather than cleared.
+//!
+//! - The status line is `CPU: <n> % | Underruns: <k>` ([`status_line`]): the smoothed load, and the audio callbacks
+//!   that overran their buffer. The bar shows the smoothed load alone.
 //!
 //! - The graph's x axis is the song, from its start to its end (at least [`MIN_SPAN_BEATS`] beats): while the song
 //!   plays, the load goes into the column under the song position, so a run fills the curve in. The sample is the raw
 //!   load of the frame (the bar is the smoothed one). The data keeps [`BINS`] columns, each a share of the song; a view
 //!   draws one per 2 px of its plot, each taken from the bin under it.
-//! - The footer's `App memory:` is the transport `RAM` readout's value, and the machine's memory is the readout's last
-//!   read of it ([`SystemMemory`]): `-` where the platform does not report it.
+//! - The footer is `App memory:` and the transport `RAM` readout's value, `-` where unknown.
 
 use eframe::egui::{Align2, Pos2, Rect, Stroke, Ui, pos2, vec2};
 
-use crate::metrics::{FontSize, Metrics};
+use crate::metrics::FontSize;
 use crate::theme::{RECORD_COLOR, Rgba, hsl_to_rgb};
 use crate::ui::UiCtx;
-use crate::ui::transport_extras::{SystemMemory, memory_used, physical_memory};
 use crate::ui::widgets::text_label as label;
 
-/// The share of the way the smoothed load `u` goes toward the raw load on each update (a drawn frame).
-pub const SMOOTHING: f32 = 0.02;
+/// The smoothed load `u` falls toward a lower raw load with this time constant, in seconds (it jumps up at once).
+pub const DECAY_S: f32 = 3.0;
 /// How long the peak is held, in seconds (real time).
 pub const HOLD_S: f64 = 3.0;
 /// What the peak falls by on each update once its hold has run out.
@@ -35,9 +36,6 @@ pub const BINS: usize = 1024;
 pub const MIN_SPAN_BEATS: f64 = 4.0;
 /// Song ticks a beat.
 const TICKS_PER_BEAT: f64 = 128.0;
-
-/// The floating monitor's size in U (16 U × 9 U).
-pub const MONITOR_SIZE: [f32; 2] = [16.0, 9.0];
 
 // The graph box's inner margins, in U: the axis labels' column, the top and right gap, the tick labels' row.
 const GRAPH_LEFT: f32 = 1.5;
@@ -55,11 +53,9 @@ const CURVE_PX: f32 = 1.5;
 const SAMPLE_PX: f32 = 2.0;
 /// The shown idle text.
 pub const IDLE_TEXT: &str = "Press play to analyze performance";
-/// The footer (`Physical memory: %s | Memory used: %2.0f %% | App memory: %s`), with the app's memory and the
-/// machine's, `-` where unknown.
-pub fn footer_line(app_memory: &str, system: Option<SystemMemory>) -> String {
-    let (physical, used) = (physical_memory(system), memory_used(system, true));
-    format!("Physical memory: {physical} | Memory used: {used} | App memory: {app_memory}")
+/// The footer, `App memory: <size>`.
+pub fn footer_line(app_memory: &str) -> String {
+    format!("App memory: {app_memory}")
 }
 
 /// What the app reads for one update of the data.
@@ -73,25 +69,23 @@ pub struct Reading {
     pub tick: u64,
     /// Where the song ends, in beats.
     pub song_beats: f64,
-    /// The song's channels (the master not counted) and the modules in their racks.
-    pub channels: usize,
-    pub active_modules: usize,
+    /// The audio callbacks that overran their buffer since the stream started.
+    pub underruns: u64,
 }
 
-/// The data both performance views draw: the counts, the smoothed load `u` (the bar), the peak, and the graph.
+/// The data the Performance block draws: the smoothed load `u` (the bar), the underruns, the peak, and the graph.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Performance {
-    /// The floating monitor is shown: PROJECT `Detach` / `Attach`. Not saved, so every launch starts attached.
-    pub detached: bool,
-    pub channels: usize,
-    pub active_modules: usize,
+    pub underruns: u64,
     pub playing: bool,
     /// The song has played since the app started: the graph is no longer idle, and never is again.
     pub played: bool,
     /// The raw load of the last frame.
     pub load: f32,
-    /// `u`: the load smoothed, moving [`SMOOTHING`] of the way toward the raw load on each update.
+    /// `u`: the load smoothed: up to a higher raw load at once, down toward a lower one with a [`DECAY_S`] time constant.
     pub smoothed: f32,
+    /// When the last update was, in seconds of the frames' clock.
+    updated: Option<f64>,
     /// The largest raw load, held [`HOLD_S`] and then falling [`PEAK_DECAY`] an update.
     pub peak: f32,
     /// When the peak was last reached, in seconds of the frames' clock.
@@ -100,8 +94,6 @@ pub struct Performance {
     pub position: f32,
     /// The transport `RAM` readout's value for the footer, `-` where unknown.
     pub app_memory: String,
-    /// The machine's memory for the footer, where the platform reports it.
-    pub system_memory: Option<SystemMemory>,
     /// The bin the last update of a playing song wrote, until it stops.
     last_bin: Option<usize>,
     samples: Vec<Option<f32>>,
@@ -110,18 +102,16 @@ pub struct Performance {
 impl Default for Performance {
     fn default() -> Self {
         Self {
-            detached: false,
-            channels: 0,
-            active_modules: 0,
+            underruns: 0,
             playing: false,
             played: false,
             load: 0.0,
             smoothed: 0.0,
+            updated: None,
             peak: 0.0,
             peak_at: 0.0,
             position: 0.0,
             app_memory: "-".to_owned(),
-            system_memory: None,
             last_bin: None,
             samples: vec![None; BINS],
         }
@@ -133,8 +123,7 @@ impl Performance {
     /// held or falls, and a playing song records the load at its position. The app calls it once per drawn main-UI
     /// frame and not while a loading screen is up.
     pub fn update(&mut self, now: f64, reading: Reading) {
-        self.channels = reading.channels;
-        self.active_modules = reading.active_modules;
+        self.underruns = reading.underruns;
         self.playing = reading.playing;
         self.played |= reading.playing;
         self.load = if reading.load > 0.0 {
@@ -145,7 +134,13 @@ impl Performance {
         // The span is the song's length now; the history keeps its shares, so a longer or shorter song stretches it.
         let span = reading.song_beats.max(MIN_SPAN_BEATS);
         self.position = (reading.tick as f64 / TICKS_PER_BEAT / span).clamp(0.0, 1.0) as f32;
-        self.smoothed += (self.load - self.smoothed) * SMOOTHING;
+        let dt = self.updated.map_or(0.0, |t| (now - t).max(0.0) as f32);
+        self.updated = Some(now);
+        self.smoothed = if self.load >= self.smoothed {
+            self.load
+        } else {
+            self.smoothed + (1.0 - (-dt / DECAY_S).exp()) * (self.load - self.smoothed)
+        };
         if self.load >= self.peak {
             (self.peak, self.peak_at) = (self.load, now);
         } else if now - self.peak_at >= HOLD_S {
@@ -184,11 +179,10 @@ impl Performance {
     }
 }
 
-/// `Channels: 3 | Active modules: 3 | Utilization:   1 %`: the smoothed load `u`, held to 0…1, as C's `%3.0f`, rounded
-/// and right-aligned in 3 characters.
-pub fn status_line(channels: usize, modules: usize, u: f32) -> String {
+/// `CPU: 12 % | Underruns: 0`: the smoothed load `u`, held to 0…1, rounded and unpadded, and the underruns.
+pub fn status_line(u: f32, underruns: u64) -> String {
     let share = u.clamp(0.0, 1.0) * 100.0;
-    format!("Channels: {channels} | Active modules: {modules} | Utilization: {share:3.0} %")
+    format!("CPU: {share:.0} % | Underruns: {underruns}")
 }
 
 /// Where the parts go inside a monitor rect, from the line height `fh` and the hairline unit `t`: the status line, the
@@ -211,18 +205,6 @@ pub fn layout(rect: Rect, fh: f32, t: f32) -> Layout {
         graph: part(fh + 8.0 * t, rect.height() - 2.0 * fh - 9.0 * t),
         footer: part(rect.height() - fh, fh),
     }
-}
-
-/// The floating monitor's rect on `screen`: [`MONITOR_SIZE`] against its right edge and centred vertically
-/// (x = right − 16 U, y = top + (h − 9 U)/2). The size is fixed: on a screen too small for it, it runs off the left,
-/// top and bottom. Recomputed from the screen every frame, so it follows a resize.
-pub fn monitor_rect(screen: Rect, m: &Metrics) -> Rect {
-    let size = vec2(m.u(MONITOR_SIZE[0]), m.u(MONITOR_SIZE[1]));
-    let min = pos2(
-        screen.right() - size.x,
-        screen.top() + (screen.height() - size.y) / 2.0,
-    );
-    Rect::from_min_size(min, size)
 }
 
 /// The saturation and lightness of `color` (HSL).
@@ -283,15 +265,15 @@ pub fn curve_color(v: f32, text: Rgba) -> Rgba {
     }
 }
 
-/// Draws a monitor of `p` in `rect`: the status line, the load bar, the graph and the footer ([`layout`]). Nothing
-/// else paints, so a floating monitor shows what lies under it round the bar and the graph box.
+/// Draws the Performance block of `p` in `rect`: the status line, the load bar, the graph and the footer ([`layout`]).
+/// Nothing else paints.
 pub fn show(ui: &Ui, cx: &UiCtx, rect: Rect, p: &Performance) {
     let (m, c) = (cx.m, &cx.theme.colors);
     let font = m.font_id(FontSize::Pt10);
     let fh = ui.ctx().fonts_mut(|f| f.row_height(&font));
     let parts = layout(rect, fh, m.t());
     let text = c.text.to_color32();
-    let line = status_line(p.channels, p.active_modules, p.smoothed);
+    let line = status_line(p.smoothed, p.underruns);
     label(
         ui,
         cx,
@@ -307,14 +289,14 @@ pub fn show(ui: &Ui, cx: &UiCtx, rect: Rect, p: &Performance) {
         ui,
         cx,
         parts.footer,
-        &footer_line(&p.app_memory, p.system_memory),
+        &footer_line(&p.app_memory),
         FontSize::Pt10,
         Align2::LEFT_CENTER,
         text,
     );
 }
 
-/// The load bar: `background`, the smoothed load filled in its colour, and the peak as a line `t` wide in the same.
+/// The load bar: `background`, and the smoothed load filled in its colour.
 fn bar(ui: &Ui, cx: &UiCtx, rect: Rect, p: &Performance) {
     let c = &cx.theme.colors;
     let painter = ui.painter();
@@ -322,10 +304,6 @@ fn bar(ui: &Ui, cx: &UiCtx, rect: Rect, p: &Performance) {
     let color = bar_color(p.smoothed, c.text).to_color32();
     let u = p.smoothed.clamp(0.0, 1.0);
     painter.rect_filled(rect.with_max_x(rect.left() + rect.width() * u), 0.0, color);
-    let t = cx.m.t();
-    let left = (rect.left() + rect.width() * p.peak.clamp(0.0, 1.0)).min(rect.right() - t);
-    let line = Rect::from_x_y_ranges(left..=left + t, rect.y_range());
-    painter.rect_filled(line, 0.0, color);
 }
 
 /// The graph box: `0 %`..`100 %` up the left, `1`..`6` along the bottom, faint grid lines, the load by song position
@@ -425,7 +403,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
     use crate::theme::{Theme, theme_by_id};
 
     fn theme() -> Theme {
@@ -505,30 +483,31 @@ mod tests {
     }
 
     #[test]
-    fn u_moves_2_percent_of_the_way_toward_the_load_each_update() {
+    fn u_jumps_up_to_the_load_and_decays_with_a_3_s_time_constant() {
         let mut p = Performance::default();
-        p.update(1.0, reading(1.0));
-        assert!(near(p.smoothed, 0.02));
-        p.update(1.1, reading(1.0));
-        assert!(near(p.smoothed, 0.02 + 0.98 * 0.02));
-        for k in 2..100 {
-            p.update(1.0 + 0.1 * f64::from(k), reading(1.0));
+        p.update(1.0, reading(0.8));
+        assert_eq!(p.smoothed, 0.8);
+        // Down: 3 s later it has gone 1 − 1/e of the way, whatever the frames between.
+        p.update(4.0, reading(0.2));
+        assert!(
+            near(p.smoothed, 0.2 + 0.6 / std::f32::consts::E),
+            "{}",
+            p.smoothed
+        );
+        let mut q = Performance::default();
+        q.update(1.0, reading(0.8));
+        for k in 1..=30 {
+            q.update(1.0 + 0.1 * f64::from(k), reading(0.2));
         }
-        assert!(near(p.smoothed, 1.0 - 0.98_f32.powi(100)), "{}", p.smoothed);
-        // And back down toward a lower load.
-        p.update(20.0, reading(0.0));
-        assert!(near(p.smoothed, (1.0 - 0.98_f32.powi(100)) * 0.98));
-    }
-
-    #[test]
-    fn an_update_is_one_drawn_frame_whatever_the_time_between() {
-        // The 0.001 peak decay and the 2 % smoothing apply per frame: a slow frame is no more than one step, and a fast
-        // one no less.
-        let mut p = Performance::default();
-        for now in [10.0, 10.001, 70.0] {
-            p.update(now, reading(1.0));
-        }
-        assert!(near(p.smoothed, 1.0 - 0.98_f32.powi(3)), "{}", p.smoothed);
+        assert!(
+            (q.smoothed - p.smoothed).abs() < 1e-4,
+            "{} vs {}",
+            q.smoothed,
+            p.smoothed
+        );
+        // And up again at once.
+        p.update(4.1, reading(0.9));
+        assert_eq!(p.smoothed, 0.9);
     }
 
     #[test]
@@ -629,28 +608,8 @@ mod tests {
     }
 
     #[test]
-    fn the_footer_names_the_machines_memory_and_the_apps_with_the_share_padded_to_2() {
-        // `Memory used: %2.0f %%`.
-        let gib = |n: u64| n << 30;
-        let mem = |used| {
-            Some(SystemMemory {
-                total: gib(16),
-                used,
-            })
-        };
-        assert_eq!(
-            footer_line("241 MB", mem(gib(16) * 86 / 100)),
-            "Physical memory: 16 GB | Memory used: 86 % | App memory: 241 MB"
-        );
-        assert_eq!(
-            footer_line("241 MB", mem(gib(16) * 7 / 100)),
-            "Physical memory: 16 GB | Memory used:  7 % | App memory: 241 MB"
-        );
-        // Where the platform reports neither.
-        assert_eq!(
-            footer_line("-", None),
-            "Physical memory: - | Memory used: - | App memory: -"
-        );
+    fn the_footer_names_the_apps_memory() {
+        assert_eq!(footer_line("241 MB"), "App memory: 241 MB");
         assert_eq!(Performance::default().app_memory, "-");
     }
 
@@ -680,38 +639,6 @@ mod tests {
         assert!(p.samples[39].is_none() && p.samples[40].is_some());
     }
 
-    #[test]
-    fn the_floating_monitor_is_16_by_9_u_at_the_right_edge_centred_and_follows_a_resize() {
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
-        let u = m.u(1.0);
-        let screen = Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
-        let r = monitor_rect(screen, &m);
-        assert_eq!(
-            r,
-            Rect::from_min_size(
-                pos2(1170.0 - 16.0 * u, (540.0 - 9.0 * u) / 2.0),
-                vec2(16.0 * u, 9.0 * u)
-            )
-        );
-        // A resize moves it: still against the right edge, still centred.
-        let screen = Rect::from_min_size(Pos2::ZERO, vec2(900.0, 700.0));
-        let r = monitor_rect(screen, &m);
-        assert_eq!(
-            (r.right(), r.center().y, r.size()),
-            (900.0, 350.0, vec2(16.0 * u, 9.0 * u))
-        );
-        // A screen too small for it: still 16 × 9 U by the same formula, so it runs off the left, top and bottom.
-        let tiny = Rect::from_min_size(pos2(5.0, 7.0), vec2(300.0, 200.0));
-        let r = monitor_rect(tiny, &m);
-        assert_eq!(
-            r,
-            Rect::from_min_size(
-                pos2(305.0 - 16.0 * u, 7.0 + (200.0 - 9.0 * u) / 2.0),
-                vec2(16.0 * u, 9.0 * u)
-            )
-        );
-    }
-
     /// One frame of `show` over `rect` at `ppp`: what it painted, and the metrics.
     fn painted(ppp: f32, rect: Rect, p: &Performance) -> (Vec<ClippedShape>, Metrics) {
         let ctx = Context::default();
@@ -725,7 +652,7 @@ mod tests {
             .native_pixels_per_point = Some(ppp);
         let (theme, m) = (
             theme(),
-            Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX),
+            Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE),
         );
         let cx = UiCtx {
             theme: &theme,
@@ -770,7 +697,7 @@ mod tests {
             .or_default()
             .native_pixels_per_point = Some(ppp);
         // The fonts exist from the first frame on.
-        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
         let mut height = 0.0;
         let _ = ctx.run(raw, |ctx| {
             height = ctx.fonts_mut(|f| f.row_height(&m.font_id(FontSize::Pt10)))
@@ -779,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    fn the_bar_paints_the_smoothed_load_in_its_colour_and_the_peak_as_a_line() {
+    fn the_bar_paints_the_smoothed_load_in_its_colour_and_no_peak() {
         for (ppp, rect) in monitors() {
             let p = Performance {
                 smoothed: 0.5,
@@ -793,8 +720,7 @@ mod tests {
             let bar = layout(rect, fh(ppp), t).bar;
             let colors = theme().colors;
             let all = rects(&shapes);
-            // The bar rect is `background`; u of it is filled in the colour of u; the peak line is t wide, as high as the
-            // bar, at x + w * peak, in the same colour.
+            // The bar rect is `background`; u of it is filled in the colour of u; no line marks the peak.
             assert!(
                 all.contains(&(bar, colors.background.to_color32())),
                 "ppp {ppp}: {bar:?}"
@@ -807,14 +733,14 @@ mod tests {
             );
             let x = bar.left() + bar.width() * 0.8;
             let line = Rect::from_x_y_ranges(x..=x + t, bar.y_range());
-            assert!(all.contains(&(line, color)), "ppp {ppp}: peak {line:?}");
+            assert!(!all.contains(&(line, color)), "ppp {ppp}: peak {line:?}");
             assert_eq!(bar.height(), 2.0 * t);
         }
     }
 
     #[test]
     fn only_the_bar_and_the_graph_box_paint_fills() {
-        // No panel background, border, title or close X: a floating monitor shows what is under it round them.
+        // No panel background, border, title or close X.
         for (ppp, rect) in monitors() {
             let p = Performance {
                 playing: true,
@@ -844,16 +770,13 @@ mod tests {
                 .collect();
             let status = texts
                 .iter()
-                .find(|t| t.0.starts_with("Channels:"))
+                .find(|t| t.0.starts_with("CPU:"))
                 .expect("status line");
             let footer = texts
                 .iter()
-                .find(|t| t.0.starts_with("Physical memory:"))
+                .find(|t| t.0.starts_with("App memory:"))
                 .expect("footer");
-            assert_eq!(
-                status.0,
-                "Channels: 0 | Active modules: 0 | Utilization:   0 %"
-            );
+            assert_eq!(status.0, "CPU: 0 % | Underruns: 0");
             assert!(
                 (status.1 - footer.1).abs() < 0.01,
                 "ppp {ppp}: both labels in one font"
@@ -987,38 +910,11 @@ mod tests {
     }
 
     #[test]
-    fn the_status_line_rights_the_share_in_3_characters() {
-        // `Utilization: %3.0f %%` of u clamped to 0…1, so 3, 2 or 1 spaces.
-        let line = |u| status_line(3, 3, u);
-        assert_eq!(
-            line(0.01),
-            "Channels: 3 | Active modules: 3 | Utilization:   1 %"
-        );
-        assert_eq!(
-            line(0.05),
-            "Channels: 3 | Active modules: 3 | Utilization:   5 %"
-        );
-        assert_eq!(
-            line(0.42),
-            "Channels: 3 | Active modules: 3 | Utilization:  42 %"
-        );
-        assert_eq!(
-            line(1.0),
-            "Channels: 3 | Active modules: 3 | Utilization: 100 %"
-        );
-        assert_eq!(
-            line(1.7),
-            "Channels: 3 | Active modules: 3 | Utilization: 100 %"
-        );
-        assert_eq!(
-            line(-0.2),
-            "Channels: 3 | Active modules: 3 | Utilization:   0 %"
-        );
-        // %.0f rounds half to even on an exact tie, as C does.
-        assert_eq!(
-            line(0.125),
-            "Channels: 3 | Active modules: 3 | Utilization:  12 %"
-        );
+    fn the_status_line_is_the_rounded_load_and_the_underruns() {
+        assert_eq!(status_line(0.05, 0), "CPU: 5 % | Underruns: 0");
+        assert_eq!(status_line(0.42, 3), "CPU: 42 % | Underruns: 3");
+        assert_eq!(status_line(1.7, 0), "CPU: 100 % | Underruns: 0");
+        assert_eq!(status_line(-0.2, 0), "CPU: 0 % | Underruns: 0");
     }
 
     #[test]
@@ -1031,7 +927,7 @@ mod tests {
         };
         for (ppp, rect) in monitors() {
             let (shapes, _) = painted(ppp, rect, &p);
-            let status = "Channels: 0 | Active modules: 0 | Utilization:   5 %";
+            let status = "CPU: 5 % | Underruns: 0";
             assert!(
                 shapes
                     .iter()

@@ -80,7 +80,8 @@ pub const DEFAULT_CHORD_JSON: &str = r#"{
 /// `HEAD` fields beyond the song model, plus `META`, `KEYB`, the `TDIV` tail and unknown top-level chunks.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SongFileState {
-    /// @358: the saving app's version. [`super::Song::stamp_save`] sets ours ("4.10.19").
+    /// @358: the saving app's version. [`super::Song::stamp_save`] sets ours ([`super::FORMAT_VERSION`], or
+    /// [`super::PIXEL_ZOOM_VERSION`] while the zooms are per pixel).
     pub version: String,
     /// @0: the selected channel's index.
     pub selected_channel: i32,
@@ -88,7 +89,8 @@ pub struct SongFileState {
     pub last_send_bus: i32,
     /// @288: the playhead at save, beats. Ignored on load.
     pub playhead_beats: f64,
-    /// @296: the playlist view (scroll x, scroll y, zoom x, zoom y).
+    /// @296: the playlist view (scroll x, scroll y, zoom x, zoom y). The zooms are beats and rows a U, or a device
+    /// pixel while [`Self::zooms_per_u`] is false.
     pub playlist_view: [f64; 4],
     /// @328: zero until [`super::Song::stamp_save`] gives it a random one (zero loads as random).
     pub guid: [u8; 16],
@@ -98,7 +100,7 @@ pub struct SongFileState {
     pub play_truncated_notes: bool,
     /// @354: the next channel id (ids are never reused). Always > every channel id, ≤ 4095.
     pub next_channel_id: i32,
-    /// Bytes after the version string.
+    /// Bytes after the version string: first the zoom-units flag ([`Self::zooms_per_u`]), absent in older files.
     pub head_extra: Vec<u8>,
     /// `TDIV` bytes after the two kept in `Song::time_sig`.
     pub time_sig_extra: Vec<u8>,
@@ -110,7 +112,7 @@ pub struct SongFileState {
 impl Default for SongFileState {
     fn default() -> Self {
         Self {
-            version: "4.10.19".into(),
+            version: super::PIXEL_ZOOM_VERSION.into(),
             selected_channel: 0,
             last_send_bus: 0,
             playhead_beats: 0.0,
@@ -125,6 +127,15 @@ impl Default for SongFileState {
             keyboard: KeyboardState::default(),
             unknown_chunks: Vec::new(),
         }
+    }
+}
+
+impl SongFileState {
+    /// The zoom-units flag is 1: the view zooms (the playlist's, each clip's `ZOOM`, each channel's `CHHD`@1040) count
+    /// per U. Otherwise (a file from before the flag, a new song) they count per device pixel, until
+    /// [`super::Song::zooms_to_units`].
+    pub fn zooms_per_u(&self) -> bool {
+        self.head_extra.first() == Some(&1)
     }
 }
 
@@ -250,7 +261,7 @@ impl Default for SendState {
 /// differs from the auto name (the preset name, else the base name), or the one read while it is still the name.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChannelFileState {
-    /// @1040, @1048: per-channel view.
+    /// @1040, @1048: per-channel view. @1040 is a zoom, in the song's zoom units ([`SongFileState::zooms_per_u`]).
     pub view: [f64; 2],
     /// @1056: input monitoring.
     pub input_monitoring: bool,
@@ -389,7 +400,8 @@ pub struct LaneFileState {
 pub struct ClipFileState {
     /// `CLHd` @28: audio lanes' source length, beats (0 elsewhere). A visible length ≤ 0 falls back to it.
     pub source_len_beats: f64,
-    /// `ZOOM`: the editor view. Placeholder default: the drums value (audio and automation clips are usually
+    /// `ZOOM`: the editor view (scroll x, scroll y, zoom x, zoom y), the zooms in the song's zoom units
+    /// ([`SongFileState::zooms_per_u`]). Placeholder default: the drums value (audio and automation clips are usually
     /// `0, 127, 1/96, 2`).
     pub zoom: [f64; 4],
     /// `CLSm`: an audio clip's sample (boxed: most clips have none). Its id is given on load.

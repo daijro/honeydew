@@ -13,8 +13,9 @@ use crate::song::points::{self, Point};
 use crate::song::{PPQ, TimeSig};
 use crate::ui::clips::TimeAxis;
 use crate::ui::scroller::{Axis, Zones};
+use crate::ui::timeline::ruler_h;
 
-/// The ruler row's height and the left column's width (the Snap cell, the value axis), in U.
+/// The left column's width (the Snap cell, the value axis), in U. The ruler row is [`ruler_h`] tall.
 pub const BAR: f32 = 1.5;
 /// A touch finds the nearest point within this many U.
 pub const HIT_R: f32 = 1.25;
@@ -24,7 +25,7 @@ const NEW_BEAT_U: f32 = 4.0;
 const ROWS: f64 = 127.0;
 
 /// The editor's rects. `ruler` is the whole ruler row (the `background` rect over the margin and the ruler); `snap`
-/// its left cell, 1.5 U × (1.5 U − 1 px); `time` the time ruler, from x + 1.5 U + ceil(U/16). Below the ruler: `grid`
+/// its left cell, 1.5 U × (ruler h − 1 px); `time` the time ruler, from x + 1.5 U + ceil(U/16). Below the ruler: `grid`
 /// (G high) from the same x to the right edge, `value` the grid inset by pad at top and bottom (V high), `column` the
 /// 1.5 U column left of the grid (G high) and `axis` its value-axis part (V high).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -50,8 +51,8 @@ pub struct AxisTick {
 impl Frame {
     /// The frame of an editor in `rect`. G = h − ruler, pad = clamp(min(0.5 U, G − 3.5 U), 0, ∞), V = G − 2·pad.
     pub fn new(rect: Rect, m: &Metrics) -> Self {
-        let (u, bar) = (m.u(1.0), m.u(BAR));
-        let ruler = Rect::from_x_y_ranges(rect.x_range(), rect.top()..=rect.top() + bar);
+        let (u, bar, h) = (m.u(1.0), m.u(BAR), ruler_h(m));
+        let ruler = Rect::from_x_y_ranges(rect.x_range(), rect.top()..=rect.top() + h);
         let left = (rect.left() + bar + m.t()).min(rect.right());
         let g = (rect.bottom() - ruler.bottom()).max(0.0);
         let pad = (0.5 * u).min(g - 3.5 * u).max(0.0);
@@ -60,7 +61,7 @@ impl Frame {
         let column = Rangef::new(rect.left(), rect.left() + bar);
         Self {
             ruler,
-            snap: Rect::from_min_size(rect.min, vec2(bar, bar - 1.0 / m.ppp())),
+            snap: Rect::from_min_size(rect.min, vec2(bar, h - 1.0 / m.ppp())),
             time: Rect::from_x_y_ranges(left..=rect.right(), ruler.y_range()),
             grid: Rect::from_x_y_ranges(left..=rect.right(), below),
             value: Rect::from_x_y_ranges(left..=rect.right(), value),
@@ -209,14 +210,24 @@ mod tests {
 
     /// U = 32 points at both densities (the desktop boost), so the frames match but for the 1 px Snap cell gap.
     fn metrics(ppp: f32) -> Metrics {
-        let m = Metrics::from_pixels_per_point(ppp, 1);
+        let m = Metrics::from_pixels_per_point(ppp, 100);
         assert_eq!(m.u(1.0), 32.0);
         m
     }
 
+    /// The ruler's bottom in [`frame`]: everything below it lies on whole points.
+    const RULER_BOTTOM: f32 = 68.0;
+
+    /// The ruler's top in [`frame`] at `ppp` (the ruler's height above [`RULER_BOTTOM`]).
+    fn top(ppp: f32) -> f32 {
+        RULER_BOTTOM - ruler_h(&metrics(ppp))
+    }
+
+    /// The frame of an editor from x 10, 400 wide, its ruler ending at y [`RULER_BOTTOM`] and its rect at 20 + `h`
+    /// (G = `h` − 48).
     fn frame(h: f32, ppp: f32) -> Frame {
         Frame::new(
-            Rect::from_min_size(pos2(10.0, 20.0), vec2(400.0, h)),
+            Rect::from_min_max(pos2(10.0, top(ppp)), pos2(410.0, 20.0 + h)),
             &metrics(ppp),
         )
     }
@@ -226,18 +237,19 @@ mod tests {
         for ppp in [1.0, 2.0] {
             let px = 1.0 / ppp;
             let f = frame(300.0, ppp);
+            let h = ruler_h(&metrics(ppp));
             assert_eq!(
                 f.ruler,
-                Rect::from_min_max(pos2(10.0, 20.0), pos2(410.0, 68.0))
+                Rect::from_min_max(pos2(10.0, top(ppp)), pos2(410.0, 68.0))
             );
             assert_eq!(
                 f.snap,
-                Rect::from_min_max(pos2(10.0, 20.0), pos2(58.0, 68.0 - px))
+                Rect::from_min_size(pos2(10.0, top(ppp)), vec2(48.0, h - px))
             );
             // x + 1.5 U + ceil(U/16): 2 points at either density.
             assert_eq!(
                 f.time,
-                Rect::from_min_max(pos2(60.0, 20.0), pos2(410.0, 68.0))
+                Rect::from_min_max(pos2(60.0, top(ppp)), pos2(410.0, 68.0))
             );
             // G = 252, pad = 0.5 U, V = 220.
             assert_eq!(
@@ -384,10 +396,7 @@ mod tests {
         };
         assert_eq!(clamped(narrow, 4.0).beat_w, 32.0 / 12.0);
         // Its zones: one finger on the ruler band only; the wheel zooms over the ruler and the grid.
-        let f = Frame::new(
-            Rect::from_min_size(pos2(10.0, 20.0), vec2(400.0, 300.0)),
-            &metrics(1.0),
-        );
+        let f = frame(300.0, 1.0);
         let z = zones(&f);
         assert_eq!(z.touch, [f.time, Rect::NOTHING]);
         assert_eq!(z.wheel_zoom, [f.time.union(f.grid), Rect::NOTHING]);

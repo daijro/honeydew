@@ -3,7 +3,7 @@ use eframe::egui::{
 };
 
 use super::*;
-use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+use crate::metrics::DEFAULT_UI_SCALE;
 use crate::params::module_spec;
 use crate::song::{AutomationTarget, ChannelKind, Raw, SendState, SynthKind};
 use crate::theme::theme_by_id;
@@ -107,7 +107,7 @@ fn instruments_take_the_card_heights_of_their_table() {
 const U: f32 = 32.0;
 
 #[test]
-fn cards_stack_5_px_apart_from_2_px_under_the_header_bar() {
+fn cards_stack_a_card_gap_apart_from_half_a_gap_under_the_header() {
     let rack = Rect::from_min_size(pos2(100.0, 50.0), vec2(640.0, 900.0));
     let f = flow(rack, 0.0, U, false, &[5.5, 1.5, 7.0], true);
     let sends = |f: &Flow| {
@@ -116,33 +116,34 @@ fn cards_stack_5_px_apart_from_2_px_under_the_header_bar() {
     };
     // x = rack x + 1.5 U, width = rack width − 3 U.
     let col = |y0: f32, y1: f32| Rect::from_min_max(pos2(148.0, y0), pos2(692.0, y1));
-    // First top 50 + 0.8 U + 2 = 77.6; then + height + 5 px each. Edges floor to whole pixels.
+    // The header ends at floor(50 + 1.3 U) = 91; the gap is trunc(0.35 U) = 11 px, the first top 91 + 5 = 96; then
+    // + height + 11 px each. Edges floor to whole pixels.
     assert_eq!(
         f.cards,
-        [col(77.0, 253.0), col(258.0, 306.0), col(311.0, 535.0)]
+        [col(96.0, 272.0), col(283.0, 331.0), col(342.0, 566.0)]
     );
     // Add Module (1.75 U) follows the last card like another card; SENDS 0.75 U lower, then the send row, 1 px,
     // and Add Send.
-    assert_eq!(f.add_module, col(540.0, 596.0));
+    assert_eq!(f.add_module, col(577.0, 633.0));
     assert_eq!(
         sends(&f),
         Some((
-            col(620.0, 676.0),
-            vec![col(676.0, 732.0)],
-            col(733.0, 789.0),
+            col(657.0, 713.0),
+            vec![col(713.0, 769.0)],
+            col(770.0, 826.0),
             None
         ))
     );
-    assert!((f.bottom - 789.6).abs() < 1e-3, "{}", f.bottom);
+    assert_eq!(f.bottom, 826.0);
 
     // Scrolling moves everything up by the offset.
     let scrolled = flow(rack, 30.0, U, false, &[5.5, 1.5, 7.0], true);
-    assert_eq!(scrolled.cards[0], col(47.0, 223.0));
+    assert_eq!(scrolled.cards[0], col(66.0, 242.0));
     // No cards: Add Module drops 1 U. No sends: the flow ends with it.
     let empty = flow(rack, 0.0, U, false, &[], false);
-    assert_eq!(empty.add_module, col(109.0, 165.0));
+    assert_eq!(empty.add_module, col(128.0, 184.0));
     assert!(empty.sends.is_none());
-    assert!((empty.bottom - 165.6).abs() < 1e-3, "{}", empty.bottom);
+    assert_eq!(empty.bottom, 184.0);
 }
 
 #[test]
@@ -807,7 +808,7 @@ impl Rig {
         let theme = theme_by_id(0);
         // ppp 1 unless a test sets it, so points are device pixels: the tests' rects are floored pixel edges (`flow`),
         // which move by up to a pixel at a fractional ppp.
-        let m = Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE);
         let cx = UiCtx {
             theme: &theme,
             m: &m,
@@ -818,7 +819,7 @@ impl Rig {
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE)
                 .show(ctx, |ui| {
-                    let rect = super::rack_rect(SCREEN, 1.0, &m);
+                    let rect = super::rack_rect(SCREEN, 1.0, false, &m);
                     let a = rack.show(ui, &cx, rect, index, channel);
                     all.params.extend(a.params);
                     all.replace_song |= a.replace_song;
@@ -1268,7 +1269,7 @@ fn save_preset_and_save_rack_preset_hand_out_what_they_save_and_change_nothing()
     rig.click(at);
     let module = rig.module(3).clone();
     assert_eq!(rig.actions.preset, Some(PresetSource::Module(module)));
-    rig.open(rack_rect(SCREEN).min + Vec2::splat(0.75 * U));
+    rig.open(rack_menu_at());
     let at = rig.text("Save Rack preset").center();
     rig.click(at);
     let rack = PresetSource::Rack {
@@ -1285,7 +1286,7 @@ fn copy_rack_hands_out_every_module_top_to_bottom_the_instrument_included_and_ch
     let mut rig = Rig::new(&[51, 0, 6]);
     rig.channel.rack.modules[2].params[1] = 0.9;
     let before = rig.channel.clone();
-    rig.open(rack_rect(SCREEN).min + Vec2::splat(0.75 * U));
+    rig.open(rack_menu_at());
     let at = rig.text("Copy Rack").center();
     rig.click(at);
     assert_eq!(rig.actions.copy, Some(before.rack.modules.clone()));
@@ -1302,7 +1303,7 @@ fn copy_rack_hands_out_every_module_top_to_bottom_the_instrument_included_and_ch
 #[test]
 fn clear_rack_empties_an_effects_rack_and_asks_for_a_new_song() {
     let mut rig = Rig::new(&[6, 11]);
-    rig.open(rack_rect(SCREEN).min + Vec2::splat(0.75 * U));
+    rig.open(rack_menu_at());
     let at = rig.text("Clear Rack").center();
     rig.click(at);
     assert!(rig.channel.rack.modules.is_empty());
@@ -1365,7 +1366,7 @@ fn the_header_row_follows_section_3_3() {
     let r = |x0, y0, x1, y1| Rect::from_min_max(pos2(x0, y0), pos2(x1, y1));
     // Toggle, icon, preset and ≡: 8 px top and bottom; the name 4 px and 0.25 U left; the name takes what is left.
     assert_eq!(
-        header_row(card, 100.0, 2.0),
+        header_row(card, 100.0, 2.0, false)[..5],
         [
             r(150.0, 88.0, 300.0, 222.0),
             r(300.0, 88.0, 450.0, 222.0),
@@ -1416,7 +1417,7 @@ fn the_module_area_of_an_instrument_card_is_16_96_u_by_h_minus_2_01_u() {
 
 #[test]
 fn the_level_popup_hangs_from_the_icon_centre_and_moves_up_to_stay_on_screen() {
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let popup = |x, y| Rect::from_min_size(pos2(x, y), vec2(10.0 * U, 8.0 * U));
     assert_eq!(
         level_popup_rect(pos2(760.0, 51.0), SCREEN, &m),
@@ -1569,7 +1570,7 @@ impl Rig {
 #[test]
 fn a_new_synth_channel_shows_its_instrument_card() {
     let rig = Rig::synth(SynthKind::DwSampler);
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let card = rig.cards()[0];
     assert_eq!(card.height(), (7.5 * U).floor());
     // The name: 12 pt, 0.25 U past the toggle and the icon.
@@ -1640,10 +1641,10 @@ fn drag_the_common_params(rig: &mut Rig, id: i32) {
 
 #[test]
 fn the_level_popup_of_a_low_card_moves_up_onto_the_screen_bottom() {
-    // Two 10 U Equalizers push the MiniSynth card down: its icon centre is at y = 677 + 0.75 U = 701.
+    // Two 10 U Equalizers push the MiniSynth card down: its icon centre is at y = 708 + 0.75 U = 732.
     let mut rig = Rig::new(&[3, 3, 0]);
     let icon = rig.header(2, 2.25);
-    assert_eq!(icon, pos2(760.0, 701.0));
+    assert_eq!(icon, pos2(760.0, 732.0));
     rig.secondary_click(icon);
     rig.frame(vec![]);
     let menu_fill = theme_by_id(0).colors.menu_fill.to_color32();
@@ -1716,15 +1717,16 @@ fn inserting_a_picked_module_always_changes_the_chain_and_its_edits_are_sent() {
 }
 
 #[test]
-fn the_notch_takes_clicks_across_the_left_gutter() {
+fn the_collapse_tab_and_the_left_margin_close_the_rack_and_the_header_does_not() {
     let mut rig = Rig::new(&[6]);
-    let rack = rack_rect(SCREEN);
-    let cy = rack.center().y - 0.5 * U;
-    // 1.4 U in: past the drawn triangle, still in the 1.5 U gutter.
-    rig.click(pos2(rack.left() + 1.4 * U, cy));
+    let c = Chrome::new(rack_rect(SCREEN), U);
+    rig.click(c.collapse.unwrap().center());
     assert!(rig.actions.close);
-    // Above or below the notch's 1 U band the gutter does not close the rack.
-    rig.click(pos2(rack.left() + 1.4 * U, cy + 0.6 * U));
+    // Anywhere in the 1.5 U margin under the header.
+    rig.click(pos2(c.bar.left() - 0.1 * U, c.header_bottom + 2.0 * U));
+    assert!(rig.actions.close);
+    // The header's name does nothing; a side rack has no close X.
+    rig.click(c.name.center());
     assert!(!rig.actions.close);
 }
 
@@ -1735,10 +1737,10 @@ fn a_fractional_card_height_stacks_on_floored_edges() {
     let rack = Rect::from_min_size(pos2(100.0, 50.0), vec2(640.0, 900.0));
     let f = flow(rack, 0.0, U, false, &[8.4, 5.5], false);
     let col = |y0: f32, y1: f32| Rect::from_min_max(pos2(148.0, y0), pos2(692.0, y1));
-    // 77.6 → 346.4, + 5 px → 351.4 → 527.4, + 5 px → Add Module 532.4 → 588.4; each edge floored on its own.
-    assert_eq!(f.cards, [col(77.0, 346.0), col(351.0, 527.0)]);
-    assert_eq!(f.add_module, col(532.0, 588.0));
-    assert!((f.bottom - 588.4).abs() < 1e-3, "{}", f.bottom);
+    // 96 → 364.8, + 11 px → 375.8 → 551.8, + 11 px → Add Module 562.8 → 618.8; each edge floored on its own.
+    assert_eq!(f.cards, [col(96.0, 364.0), col(375.0, 551.0)]);
+    assert_eq!(f.add_module, col(562.0, 618.0));
+    assert!((f.bottom - 618.8).abs() < 1e-3, "{}", f.bottom);
     // The module area stays unrounded: 6.4 U − 1 px.
     assert!((content_rect(f.cards[0], 8.4, U).height() - 203.8).abs() < 1e-3);
 }
@@ -1747,21 +1749,21 @@ fn a_fractional_card_height_stacks_on_floored_edges() {
 fn an_audio_record_rack_has_a_4_u_input_row_above_the_first_card() {
     let rack = Rect::from_min_size(pos2(100.0, 50.0), vec2(640.0, 900.0));
     let col = |y0: f32, y1: f32| Rect::from_min_max(pos2(148.0, y0), pos2(692.0, y1));
-    // 77.6 → 205.6; the first card follows directly, Add Module 5 px after it.
+    // 96 → 224; the first card follows directly, Add Module a card gap after it.
     let f = flow(rack, 0.0, U, true, &[5.5], false);
-    assert_eq!(f.input, Some(col(77.0, 205.0)));
-    assert_eq!(f.cards, [col(205.0, 381.0)]);
-    assert_eq!(f.add_module, col(386.0, 442.0));
+    assert_eq!(f.input, Some(col(96.0, 224.0)));
+    assert_eq!(f.cards, [col(224.0, 400.0)]);
+    assert_eq!(f.add_module, col(411.0, 467.0));
     // No cards: Add Module directly under the row, not 1 U lower.
     let empty = flow(rack, 0.0, U, true, &[], false);
-    assert_eq!(empty.add_module, col(205.0, 261.0));
+    assert_eq!(empty.add_module, col(224.0, 280.0));
     assert_eq!(flow(rack, 0.0, U, false, &[5.5], false).input, None);
 
     // Drawn for an audio-record channel only: the mic button and `INPUT`, whose menu has no devices.
     let mut song = crate::song::Song::default();
     song.add_channel(ChannelKind::AudioRecord);
     let mut rig = Rig::with(song.channels.pop().unwrap());
-    let row = col(27.0, 155.0).translate(vec2(540.0, 0.0));
+    let row = col(46.0, 174.0).translate(vec2(540.0, 0.0));
     assert_eq!(rig.cards(), []);
     assert_eq!(
         rig.text("Add Module").center().y.floor(),
@@ -1769,7 +1771,7 @@ fn an_audio_record_rack_has_a_4_u_input_row_above_the_first_card() {
     );
     let input = rig.text("INPUT");
     assert!(row.contains_rect(input), "{input:?}");
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     assert_eq!(rig.font_size("INPUT"), m.font_id(FontSize::Pt12).size);
     rig.open(input.center());
     // The host lists the devices after the frame that opened the menu: none, so `<no input>`.
@@ -2124,7 +2126,7 @@ fn panel_states_of_removed_modules_are_dropped() {
 fn one_frame(draw: impl FnMut(&mut Ui, &UiCtx)) -> Vec<(String, Rect, f32)> {
     let mut draw = draw;
     let theme = theme_by_id(0);
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let cx = UiCtx {
         theme: &theme,
         m: &m,
@@ -2163,12 +2165,13 @@ fn ellipsis<'a>(shown: &'a str, full: &str) -> (&'a str, &'a str) {
 
 #[test]
 fn a_card_name_wider_than_its_label_is_truncated_keeping_5_tail_characters() {
-    // A 16 U rack: 13 U cards, whose name label (3.25 U in) is narrower than `SoundFont Player` at 12 pt.
+    // A 14 U (full-screen) rack: 0.5 U margins and 13 U cards, whose name label (3.25 U in) is narrower than
+    // `SoundFont Player` at 12 pt.
     let mut song = crate::song::Song::default();
     song.add_channel(ChannelKind::Synth(SynthKind::SoundFontPlayer));
     let mut channel = song.channels.pop().unwrap();
     let mut rack = RackPanel::default();
-    let view = Rect::from_min_size(pos2(0.0, 0.0), vec2(16.0 * U, 800.0));
+    let view = Rect::from_min_size(pos2(0.0, 0.0), vec2(14.0 * U, 800.0));
     let texts = one_frame(|ui, cx| {
         rack.show(ui, cx, view, CHANNEL, &mut channel);
     });
@@ -2488,7 +2491,7 @@ fn the_preset_button_and_load_rack_preset_ask_for_the_preset_picker() {
     rig.click(rig.header(1, -2.0));
     assert_eq!(rig.actions.picker, Some(PresetTarget::Module(3)));
     let before = rig.channel.clone();
-    rig.open(rack_rect(SCREEN).min + Vec2::splat(0.75 * U));
+    rig.open(rack_menu_at());
     let at = rig.text("Load Rack preset").center();
     rig.click(at);
     assert_eq!(rig.actions.picker, Some(PresetTarget::RackReplace));
@@ -2499,7 +2502,7 @@ fn the_preset_button_and_load_rack_preset_ask_for_the_preset_picker() {
 fn load_drumset_asks_for_the_drumset_picker() {
     let mut rig = Rig::with(channel(ChannelKind::Drums, &[6]));
     let before = rig.channel.clone();
-    rig.open(rack_rect(SCREEN).min + Vec2::splat(0.75 * U));
+    rig.open(rack_menu_at());
     let at = rig.text("Load Drumset").center();
     rig.click(at);
     assert_eq!(rig.actions.picker, Some(PresetTarget::Drumset));
@@ -2896,7 +2899,7 @@ fn minimize_and_maximize_write_add1_byte_0_and_a_load_restores_it() {
         rig.frame(vec![]);
     };
     let rack_item = |rig: &mut Rig, item: &str| {
-        rig.open(rack_rect(SCREEN).min + Vec2::splat(0.75 * U));
+        rig.open(rack_menu_at());
         let at = rig.text(item).center();
         rig.click(at);
         rig.frame(vec![]);
@@ -3186,7 +3189,7 @@ fn another_channel_or_another_card_ends_a_key_learn() {
     // The rack shows another channel: the learn ends on the one it was on.
     channel.name = "Other".into();
     let (rack, ch) = (&mut rig.rack, &mut channel);
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let theme = theme_by_id(0);
     let cx = UiCtx {
         theme: &theme,
@@ -3515,111 +3518,19 @@ fn sf2d_patch(rig: &Rig) -> Option<i32> {
     blob.and_then(crate::flm::sf2d::Sf2d::read).map(|s| s.patch)
 }
 
-/// Where the last frame painted `text` last: in the open popup, which is over the card.
-fn popup_text(rig: &Rig, text: &str) -> Rect {
-    let found = rig.shapes.iter().rev().find_map(|c| match &c.shape {
-        egui::Shape::Text(t) if t.galley.text() == text => {
-            Some(t.galley.rect.translate(t.pos.to_vec2()))
-        }
-        _ => None,
-    });
-    found.unwrap_or_else(|| panic!("{text:?} not drawn"))
-}
-
 #[test]
-fn the_patch_spinner_over_a_soundfonts_patches_opens_the_patch_menu_in_columns_of_12() {
-    // The patch menu lists the patches in file order, item i at column floor(i/12), row i mod 12.
+fn the_patch_spinner_opens_the_picker_with_or_without_patches_to_list() {
+    // Over a SoundFont's patches (the picker starts in them), and with nothing loaded (the files). A SoundFont the
+    // rack could not read shows its error instead, whose tap opens the picker: `soundfont_player::error_tap`.
     let mut rig = soundfont_rig(14, Some(30));
-    let spinner = control(&rig, 8.5, 1200);
-    assert!(rig.drawn("Voice 14") && !rig.drawn("Voice 00"));
-    rig.click(spinner.center());
-    assert_eq!(rig.actions.soundfont, None, "the picker opened");
-    rig.frame(vec![]);
-    let at = |i: usize| popup_text(&rig, &format!("Voice {i:02}"));
-    let (first, below, last_of_column, next_column) = (at(0), at(1), at(11), at(12));
-    // Same column, same x, one row apart (the rows fit this screen at 1.25 U); the next column to the right, back at
-    // the top row.
-    let row = below.center().y - first.center().y;
-    assert!((row - 1.25 * U).abs() < 1.0, "row height {row}");
-    assert_eq!(first.left(), last_of_column.left());
-    assert!((last_of_column.center().y - first.center().y - 11.0 * row).abs() < 1.0);
-    assert!(
-        next_column.left() > first.right(),
-        "{first:?} {next_column:?}"
-    );
-    assert_eq!(next_column.center().y, first.center().y);
-    for i in 0..30 {
-        let (col, r) = (i / 12, i % 12);
-        let cell = at(i);
-        assert_eq!(cell.left(), at(col * 12).left(), "Voice {i:02} column");
-        assert!(
-            (cell.center().y - first.center().y - r as f32 * row).abs() < 1.0,
-            "Voice {i:02} row"
-        );
-    }
-    // The patches only: the next cell is empty (another SoundFont is the preset button's).
-    assert!(!rig.drawn("Load SoundFont..."));
-    // The current patch (14) is marked: a bar under its label.
-    let bar = rig.shapes.iter().any(
-        |c| matches!(&c.shape, egui::Shape::Rect(r) if r.rect.contains_rect(at(14).shrink(1.0))),
-    );
-    assert!(bar, "no bar under the current patch");
-}
-
-#[test]
-fn picking_from_the_patch_menu_sets_the_patch_as_a_song_edit_and_closes_the_menu() {
-    let mut rig = soundfont_rig(14, Some(30));
-    let spinner = control(&rig, 8.5, 1200);
-    rig.open(spinner.center());
-    // Dismissed by a click outside, and by Escape: no change.
-    let away = pos2(5.0, 5.0);
-    rig.click(away);
-    rig.frame(vec![]);
-    assert!(rig.actions.soundfont.is_none() && !rig.actions.replace_song);
+    rig.click(control(&rig, 8.5, 1200).center());
+    assert_eq!(rig.actions.soundfont, Some(2));
     assert_eq!(sf2d_patch(&rig), Some(14));
-    rig.open(spinner.center());
-    rig.frame(vec![Event::Key {
-        key: egui::Key::Escape,
-        physical_key: None,
-        pressed: true,
-        repeat: false,
-        modifiers: Default::default(),
-    }]);
-    rig.frame(vec![]);
-    assert_eq!(
-        (sf2d_patch(&rig), rig.actions.replace_song),
-        (Some(14), false)
-    );
-    // A pick: the menu's `Voice 07`.
-    rig.open(spinner.center());
-    let menu = [popup_text(&rig, "Voice 07")];
-    rig.click(menu[0].center());
-    assert_eq!(sf2d_patch(&rig), Some(7));
-    assert!(rig.actions.replace_song && rig.actions.soundfont.is_none());
-    // Closed, and the spinner shows the pick.
-    rig.frame(vec![]);
-    assert!(rig.drawn("Voice 07") && !rig.drawn("Voice 00"));
-    // Picking the current patch again is no edit.
-    rig.open(spinner.center());
-    let same = popup_text(&rig, "Voice 07");
-    rig.click(same.center());
-    assert!(!rig.actions.replace_song && rig.actions.soundfont.is_none());
-    rig.frame(vec![]);
-    assert!(!rig.drawn("Voice 00"), "the menu stayed open");
-}
-
-#[test]
-fn the_patch_spinner_without_patches_to_list_opens_the_picker() {
-    // Nothing loaded: the picker, not a menu (a SoundFont the rack could not read shows its error instead, whose tap
-    // opens the picker: `soundfont_player::error_tap`).
     let mut rig = soundfont_rig(0, None);
     rig.channel.rack.get_mut(2).unwrap().file.custom_data = None;
     rig.frame(vec![]);
-    let spinner = control(&rig, 8.5, 1200);
-    rig.click(spinner.center());
+    rig.click(control(&rig, 8.5, 1200).center());
     assert_eq!(rig.actions.soundfont, Some(2));
-    rig.frame(vec![]);
-    assert!(!rig.drawn("Voice 00"));
 }
 
 #[test]
@@ -3634,62 +3545,18 @@ fn the_preset_button_of_a_soundfont_player_opens_the_preset_picker_like_every_mo
     }
 }
 
-#[test]
-fn the_patch_menu_opens_with_the_current_patchs_column_in_view() {
-    // A long bank: 200 patches are 17 columns, wider than the screen. The menu opens where the current patch is, each
-    // time it opens (egui keeps a scroll area's offset, so a menu opened again would stay where it was left).
-    let mut rig = soundfont_rig(190, Some(200));
-    let spinner = control(&rig, 8.5, 1200);
-    let in_view = |rig: &Rig, text: &str| {
-        let r = popup_text(rig, text);
-        r.left() >= SCREEN.left() && r.right() <= SCREEN.right()
-    };
-    rig.click(spinner.center());
-    rig.frame(vec![]);
-    assert!(
-        in_view(&rig, "Voice 190"),
-        "{:?}",
-        popup_text(&rig, "Voice 190")
-    );
-    assert!(!in_view(&rig, "Voice 00"));
-    // Scroll to the start, close with Escape, open again: the current patch is in view again.
-    let at = pos2(SCREEN.center().x, 300.0);
-    rig.frame(vec![Event::PointerMoved(at)]);
-    for _ in 0..40 {
-        rig.frame(vec![Event::MouseWheel {
-            unit: MouseWheelUnit::Point,
-            delta: vec2(0.0, 300.0),
-            modifiers: Default::default(),
-        }]);
-    }
-    rig.frame(vec![]);
-    assert!(in_view(&rig, "Voice 00") && !in_view(&rig, "Voice 190"));
-    let escape = Event::Key {
-        key: egui::Key::Escape,
-        physical_key: None,
-        pressed: true,
-        repeat: false,
-        modifiers: Default::default(),
-    };
-    rig.frame(vec![escape]);
-    rig.frame(vec![]);
-    rig.frame(vec![]);
-    rig.click(spinner.center());
-    rig.frame(vec![]);
-    assert!(
-        in_view(&rig, "Voice 190"),
-        "{:?}",
-        popup_text(&rig, "Voice 190")
-    );
-}
-
 // ---- panel geometry ----
 
 /// The open rack over `area` at the tests' U (32 px, ppp 1). It shadows the glob import, so the panel tests above keep
 /// their one-argument calls.
 fn rack_rect(area: Rect) -> Rect {
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
-    super::rack_rect(area, 1.0, &m)
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
+    super::rack_rect(area, 1.0, false, &m)
+}
+
+/// The header's ≡ of the rig's rack.
+fn rack_menu_at() -> Pos2 {
+    Chrome::new(rack_rect(SCREEN), U).menu.center()
 }
 
 #[test]
@@ -3704,17 +3571,17 @@ fn the_rack_is_20_u_wide_capped_at_the_area_width_right_aligned_and_full_height(
         (2.0, 2000.0, 1280.0),
         (2.0, 3000.0, 1280.0),
     ] {
-        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
         let area = Rect::from_min_size(pos2(0.0, 0.0), vec2(w / ppp, 300.0));
-        let rack = super::rack_rect(area, 1.0, &m);
+        let rack = super::rack_rect(area, 1.0, false, &m);
         assert_eq!(rack.width() * ppp, rack_px, "ppp {ppp}, W {w}");
         assert_eq!(rack.right(), area.right(), "ppp {ppp}, W {w}");
         assert_eq!(rack.y_range(), area.y_range(), "ppp {ppp}, W {w}");
     }
     // Right-aligned in an area that does not start at x 0; closed, it lies just past the area's right edge.
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let area = Rect::from_min_max(pos2(100.0, 20.0), pos2(1100.0, 400.0));
-    let at = |r: f32| super::rack_rect(area, r, &m);
+    let at = |r: f32| super::rack_rect(area, r, false, &m);
     assert_eq!(
         at(1.0),
         Rect::from_min_max(pos2(460.0, 20.0), pos2(1100.0, 400.0))
@@ -3725,13 +3592,36 @@ fn the_rack_is_20_u_wide_capped_at_the_area_width_right_aligned_and_full_height(
 }
 
 #[test]
+fn a_portrait_window_over_20_u_wide_gets_the_full_screen_rack_and_full_width_menu_and_pickers() {
+    // 900 × 1400 px at U = 32 is 28 U wide, but taller than wide.
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
+    let screen = Rect::from_min_size(Pos2::ZERO, vec2(900.0, 1400.0));
+    let rack = crate::ui::main_screen::Regions::new(screen, &m)
+        .with_rack(1.0, &m)
+        .rack;
+    assert_eq!(rack.x_range(), screen.x_range());
+    let c = Chrome::new(rack, m.u_px());
+    assert!(c.full && c.close.is_some() && c.collapse.is_none());
+    assert_eq!(crate::ui::main_menu::shell_layout(screen, &m).panel, screen);
+    let picker = crate::ui::modules_browser::layout(screen, 1.0, &m).panel;
+    assert_eq!(picker.x_range(), screen.x_range());
+    // The same width in landscape keeps the 20 U side rack.
+    let wide = Rect::from_min_size(Pos2::ZERO, vec2(900.0, 600.0));
+    let side = crate::ui::main_screen::Regions::new(wide, &m)
+        .with_rack(1.0, &m)
+        .rack;
+    assert_eq!(side.width(), 640.0);
+    assert!(!Chrome::new(side, m.u_px()).full);
+}
+
+#[test]
 fn the_rack_slides_halfway_each_frame_and_snaps_within_a_pixel() {
-    assert_eq!(slide(0.0, 1.0, 1000.0), 0.5);
-    assert_eq!(slide(0.5, 1.0, 1000.0), 0.75);
+    assert_eq!(slide(0.0, 1.0, 1000.0, 0.5), 0.5);
+    assert_eq!(slide(0.5, 1.0, 1000.0, 0.5), 0.75);
     let frames = |mut r: f32, target: f32, width: f32| {
         let mut n = 0;
         while r != target {
-            r = slide(r, target, width);
+            r = slide(r, target, width, 0.5);
             n += 1;
             assert!(n < 100, "never snaps");
         }
@@ -3742,29 +3632,39 @@ fn the_rack_slides_halfway_each_frame_and_snaps_within_a_pixel() {
     assert_eq!(frames(1.0, 0.0, 1000.0), 10);
     assert_eq!(frames(0.0, 1.0, 3000.0), 12);
     // At rest it stays put.
-    assert_eq!(slide(1.0, 1.0, 1000.0), 1.0);
-    assert_eq!(slide(0.0, 0.0, 1000.0), 0.0);
+    assert_eq!(slide(1.0, 1.0, 1000.0, 0.5), 1.0);
+    assert_eq!(slide(0.0, 0.0, 1000.0, 0.5), 0.0);
 }
 
 #[test]
-fn the_divider_and_the_notch_hang_off_the_racks_left_edge() {
-    // In px, at a fractional left edge mid-slide.
-    let rack = Rect::from_min_max(pos2(100.6, 20.0), pos2(740.6, 421.0));
+fn the_chrome_is_full_screen_below_20_u_with_margins_from_1_5_down_to_0_5_u() {
+    let u = 32.0;
+    // A 20 U side rack: 1.5 U margins, a 1.3 U header (its bar 2 px less), the collapse tab and no X.
+    let side = Chrome::new(Rect::from_min_size(pos2(530.0, 0.0), vec2(640.0, 540.0)), u);
+    assert!(!side.full && side.close.is_none());
+    assert_eq!((side.margin, side.header_bottom), (48.0, 41.0));
+    assert_eq!(side.bar, Rect::from_x_y_ranges(578.0..=1122.0, 0.0..=39.0));
+    let tab = side.collapse.unwrap();
+    assert_eq!((tab.left(), tab.width()), (538.0, 32.0));
+    assert!((tab.height() - 1.6 * u).abs() < 1e-3);
+    // 19 U: full screen already (narrower than 20 U), with 1 U margins.
+    let narrower = Chrome::new(Rect::from_min_size(Pos2::ZERO, vec2(608.0, 540.0)), u);
+    assert_eq!((narrower.full, narrower.margin), (true, 32.0));
+    // Full screen on a 16.9 U phone: 0.5 U margins, a 1.75 U header with the X at its right end, no collapse tab.
+    let full = Chrome::new(Rect::from_min_size(Pos2::ZERO, vec2(540.0, 900.0)), u);
+    assert!(full.full && full.collapse.is_none());
+    assert_eq!((full.margin, full.header_bottom), (16.0, 56.0));
     assert_eq!(
-        divider(rack),
-        Rect::from_x_y_ranges(101.6..=103.6, 20.0..=421.0)
+        full.close,
+        Some(Rect::from_min_size(pos2(470.0, 0.0), vec2(54.0, 54.0)))
     );
-    // U = 33: s = trunc(16.5) = 16, x = trunc(103.6) = 103, y_c = trunc(20 + (401 − 32) / 2) = trunc(204.5) = 204.
-    assert_eq!(
-        notch(rack, 33.0),
-        [pos2(103.0, 188.0), pos2(119.0, 204.0), pos2(103.0, 220.0)]
-    );
+    assert_eq!(full.name, Rect::from_x_y_ranges(70.0..=470.0, 0.0..=54.0));
 }
 
 #[test]
 fn the_view_ends_at_the_racks_left_edge_but_keeps_1_u() {
     use crate::ui::main_screen::Regions;
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let regions = |w: f32, r: f32| {
         Regions::new(Rect::from_min_size(Pos2::ZERO, vec2(w, 540.0)), &m).with_rack(r, &m)
     };
@@ -3952,16 +3852,16 @@ fn a_confirmed_hold_shows_every_card_minimized_keeps_the_held_one_in_place_and_r
     assert!(rig.channel.rack.modules.iter().all(|m| !m.minimized));
     assert!(!rig.actions.minimized && !rig.actions.replace_song);
     assert!(!rig.drawn("Drive"), "no module panel shows");
-    // The held card keeps its place: the offset moved by its top's shift (133 − 389) and is not clamped.
+    // The held card keeps its place: the offset moved by its top's shift (164 − 420) and is not clamped.
     assert_eq!(rig.rack.scroll, -256.0);
     assert_eq!(rig.shown()[2].top(), before[2].top());
     assert_eq!(rig.shown()[2].height(), 1.5 * U);
-    // As drawn: its name where it was, the next card a minimized slot (1.5 U and 5 px) under it.
+    // As drawn: its name where it was, the next card a minimized slot (1.5 U and an 11 px gap) under it.
     assert_eq!(rig.text("Stereoizer").top(), name);
-    assert_eq!(rig.text("Tape Delay").top(), name + 53.0);
-    assert!(next > name + 53.0);
-    // Released without a drag: full cards, its top 619 px down the viewport is past p + 0.9 H = 441, so p takes the
-    // shift back, and the clamp is on again.
+    assert_eq!(rig.text("Tape Delay").top(), name + 59.0);
+    assert!(next > name + 59.0);
+    // Released without a drag: full cards, its top far down the viewport is past p + 0.9 H, so p takes the shift
+    // back, and the clamp is on again.
     rig.button(at, false);
     rig.frame(vec![]);
     assert!(rig.drawn("Drive"));
@@ -3971,31 +3871,31 @@ fn a_confirmed_hold_shows_every_card_minimized_keeps_the_held_one_in_place_and_r
 
 #[test]
 fn a_release_moves_the_offset_back_by_the_held_cards_shift_when_it_lands_out_of_range() {
-    // Four 10 U cards scrolled to 400: card 2 shows at 277. Held, p = 400 + (−267 − 277) = −144.
+    // Four 10 U cards scrolled to 400: card 2 shows at 708 − 400 = 308. Held, p = 400 + (164 − 708) = −144.
     let mut rig = Rig::new(&[3, 7, 26, 30]);
     rig.rack.scroll = 400.0;
     rig.frame(vec![]);
     let top = rig.shown()[2].top();
-    assert_eq!(top, 277.0);
+    assert_eq!(top, 308.0);
     let at = pos2(rig.name(2).x, top + 0.75 * U);
     rig.hold(at, 0.3, false);
     assert_eq!(rig.rack.scroll, -144.0);
-    // Let go: full again its top is 821, 795.4 down the viewport, past p + 0.9 H = 553: p += 821 − 277.
+    // Let go: full again its top is 852, 811 down the viewport, past p + 0.9 H = 539.1: p += 852 − 308.
     rig.button(at, false);
     assert_eq!(rig.rack.scroll, 400.0);
     rig.frame(vec![]);
-    assert_eq!(rig.shown()[2].top(), 277.0);
+    assert_eq!(rig.shown()[2].top(), 308.0);
 }
 
 #[test]
-fn the_held_card_has_a_5_px_channel_coloured_outline_outside_it_until_release() {
+fn the_held_card_has_a_card_gap_wide_channel_coloured_outline_outside_it_until_release() {
     let mut rig = Rig::new(&[6, 11, 15]);
     let ink = channel_color(rig.channel.hue, &theme_by_id(0)).to_color32();
     let outlines = |rig: &Rig| -> Vec<Rect> {
         (rig.shapes.iter())
             .filter_map(|c| match &c.shape {
                 egui::Shape::Rect(r)
-                    if r.stroke == Stroke::new(5.0_f32, ink)
+                    if r.stroke == Stroke::new(11.0_f32, ink)
                         && r.stroke_kind == StrokeKind::Outside =>
                 {
                     Some(r.rect)
@@ -4052,13 +3952,14 @@ fn the_drag_starts_at_a_0_5_u_vertical_move_and_a_still_finger_steps_nothing() {
 }
 
 #[test]
-fn next_to_the_held_card_in_the_5_px_gaps_or_beside_it_nothing_steps() {
+fn next_to_the_held_card_in_the_card_gaps_or_beside_it_nothing_steps() {
     let mut rig = Rig::new(&[6, 11, 15]);
     rig.grab(1);
     let c = rig.shown()[1];
+    // The gaps are 11 px.
     let near = [
-        pos2(c.center().x, c.top() - 5.0),
-        pos2(c.center().x, c.top() + 1.5 * U + 5.0),
+        pos2(c.center().x, c.top() - 11.0),
+        pos2(c.center().x, c.top() + 1.5 * U + 11.0),
         pos2(c.left() - 1.0 * U, c.top() + 0.75 * U),
         pos2(c.right() + 1.0 * U, c.top() - 4.0),
         pos2(c.right() + 1.0 * U, c.top() + 1.5 * U + 4.0),
@@ -4070,11 +3971,11 @@ fn next_to_the_held_card_in_the_5_px_gaps_or_beside_it_nothing_steps() {
         }
     }
     // A pixel further: up above, down below.
-    rig.to(0.4, pos2(c.center().x, c.top() - 6.0));
+    rig.to(0.4, pos2(c.center().x, c.top() - 12.0));
     assert_eq!(rig.ids(), [3, 2, 4]);
     rig.settle();
     let c = rig.shown()[0];
-    rig.to(0.4, pos2(c.center().x, c.top() + 1.5 * U + 6.0));
+    rig.to(0.4, pos2(c.center().x, c.top() + 1.5 * U + 12.0));
     assert_eq!(rig.ids(), [2, 3, 4]);
 }
 
@@ -4093,7 +3994,7 @@ fn the_step_interval_is_345_ms_on_the_new_top_and_105_ms_1_5_u_away_or_more() {
 
 #[test]
 fn moves_within_d_of_a_step_are_dropped_not_queued() {
-    // Minimized cards: 53 px apart (tops 27, 80, 133, 186, ...), and the hold moves no offset.
+    // Minimized cards: 59 px apart (tops 46, 105, 164, 223, ...), and the hold moves no offset.
     let mut rig = Rig::new(&[6, 11, 15, 18, 10, 12]);
     rig.minimize_all();
     let x = rig.name(3).x;
@@ -4117,7 +4018,7 @@ fn moves_within_d_of_a_step_are_dropped_not_queued() {
 
     // Close: onto the slot above, so the new top is the finger's height: d = 345 ms.
     rig.settle();
-    rig.to(0.1, pos2(x, 27.0));
+    rig.to(0.1, pos2(x, 46.0));
     assert_eq!(rig.ids(), [5, 2, 3, 4, 6, 7]);
     rig.to(0.3, pos2(x, 200.0));
     assert_eq!(rig.ids(), [5, 2, 3, 4, 6, 7]);
@@ -4127,41 +4028,41 @@ fn moves_within_d_of_a_step_are_dropped_not_queued() {
 
 #[test]
 fn past_90_percent_of_the_viewport_a_step_moves_the_offset_by_the_cards_shift() {
-    // Four 10 U cards; held, they show minimized and p = 80 − 352 = −272: [p, p + 0.9 H] = [−272, 425] (H = 774.4).
+    // Four 10 U cards; held, they show minimized and p = 105 − 377 = −272: [p, p + 0.9 H] = [−272, 411.1] (H = 759).
     let mut rig = Rig::new(&[3, 7, 26, 30]);
     rig.grab(1);
     assert_eq!(rig.rack.scroll, -272.0);
     let x = rig.name(1).x;
-    // Down into slot 2: its new top is 405 − 25.6 = 379.4 down the viewport, in range.
+    // Down into slot 2: its new top is 436 − 41 = 395 down the viewport, in range.
     rig.to(0.1, pos2(x, 700.0));
     assert_eq!(rig.ids(), [2, 4, 3, 5]);
     assert_eq!(rig.rack.scroll, -272.0);
     rig.settle();
-    // Into slot 3: 432.4 is past 425, so p moves by y′ − y = 53 and the card keeps its place on screen.
+    // Into slot 3: 454 is past 411.1, so p moves by y′ − y = 59 and the card keeps its place on screen.
     rig.to(0.1, pos2(x, 701.0));
     assert_eq!(rig.ids(), [2, 4, 5, 3]);
-    assert_eq!(rig.rack.scroll, -219.0);
+    assert_eq!(rig.rack.scroll, -213.0);
     rig.frame(vec![]);
-    assert_eq!(rig.shown()[3].top(), 405.0);
+    assert_eq!(rig.shown()[3].top(), 436.0);
 }
 
 #[test]
 fn above_the_offset_a_step_moves_it_by_the_cards_shift_too() {
-    // 15 minimized cards, scrolled to 150: card 3 shows at 36, 10.4 px down the viewport, which is less than p.
+    // 15 minimized cards, scrolled to 150: card 3 shows at 73, 32 px down the viewport, which is less than p.
     let mut rig = Rig::new(&[6; 15]);
     rig.minimize_all();
     rig.rack.scroll = 150.0;
     rig.frame(vec![]);
     let top = rig.shown()[3].top();
-    assert_eq!(top, 36.0);
+    assert_eq!(top, 73.0);
     let at = pos2(rig.name(3).x, top + 0.75 * U);
     rig.hold(at, 0.3, false);
     assert_eq!(rig.rack.scroll, 150.0);
     rig.to(0.1, pos2(at.x, 1.0));
     assert_eq!(rig.ids()[2], 5);
-    assert_eq!(rig.rack.scroll, 97.0);
+    assert_eq!(rig.rack.scroll, 91.0);
     rig.frame(vec![]);
-    assert_eq!(rig.shown()[2].top(), 36.0);
+    assert_eq!(rig.shown()[2].top(), 73.0);
 }
 
 #[test]
@@ -4219,8 +4120,8 @@ fn a_menu_move_slides_both_cards_from_their_old_places_decaying_0_7_a_frame() {
     assert_eq!(rig.rack.slides.get(&2), Some(&-5.5));
     assert_eq!(rig.rack.slides.get(&3), Some(&5.5));
     rig.frame(vec![]);
-    // Drawn at its new top (208) − 5.5 U: 5 px under where it was.
-    assert_eq!(rig.text("Distortion").top(), top + 5.0);
+    // Drawn at its new top − 5.5 U: a card gap (11 px) under where it was.
+    assert_eq!(rig.text("Distortion").top(), top + 11.0);
     let left = |rig: &Rig| rig.rack.slides.get(&2).copied();
     assert!((left(&rig).unwrap() + 5.5 * 0.7).abs() < 1e-5);
     // 176 px · 0.7^14 = 1.2 px still slides; · 0.7 = 0.83 px snaps to 0.
@@ -4367,47 +4268,47 @@ fn a_second_finger_cancels_the_hold_and_restores_the_cards() {
 
 #[test]
 fn the_0_9_h_rule_measures_down_the_viewport_below_the_header_bar() {
-    // 15 minimized cards scrolled to 90: card 4 (top 149) steps up into slot 3, whose top 96 is 70.4 down the viewport,
-    // above p = 90, so p moves by 96 − 149. (From the rack's own top, 96, it would be in range.)
+    // 15 minimized cards scrolled to 100: card 4 (top 182) steps up into slot 3, whose top 123 is 82 down the
+    // viewport, above p = 100, so p moves by 123 − 182. (From the rack's own top, 123, it would be in range.)
     let mut rig = Rig::new(&[6; 15]);
     rig.minimize_all();
-    rig.rack.scroll = 90.0;
+    rig.rack.scroll = 100.0;
     rig.frame(vec![]);
     let top = rig.shown()[4].top();
-    assert_eq!(top, 149.0);
+    assert_eq!(top, 182.0);
     let at = pos2(rig.name(4).x, top + 0.75 * U);
     rig.hold(at, 0.3, false);
     rig.to(0.1, pos2(at.x, 1.0));
     assert_eq!(rig.ids()[3], 6);
-    assert_eq!(rig.rack.scroll, 37.0);
+    assert_eq!(rig.rack.scroll, 41.0);
 
-    // Scrolled to 15: card 13 (top 701) steps down into slot 14, whose top 754 is 728.4 down the viewport, past
-    // p + 0.9 H = 711.96 with H the 774.4 px under the bar (0.9 × the rack's full 800 px would be 735: in range).
+    // Scrolled to 20: card 12 (top 734) steps down into slot 13, whose top 793 is 752 down the viewport, past
+    // p + 0.9 H = 703.1 with H the 759 px under the header.
     let mut rig = Rig::new(&[6; 15]);
     rig.minimize_all();
-    rig.rack.scroll = 15.0;
+    rig.rack.scroll = 20.0;
     rig.frame(vec![]);
-    let top = rig.shown()[13].top();
-    assert_eq!(top, 701.0);
-    let at = pos2(rig.name(13).x, top + 0.75 * U);
+    let top = rig.shown()[12].top();
+    assert_eq!(top, 734.0);
+    let at = pos2(rig.name(12).x, top + 0.75 * U);
     rig.hold(at, 0.3, false);
-    rig.to(0.1, pos2(at.x, 790.0));
-    assert_eq!(rig.ids()[14], 15);
-    assert_eq!(rig.rack.scroll, 68.0);
+    rig.to(0.1, pos2(at.x, 798.0));
+    assert_eq!(rig.ids()[13], 14);
+    assert_eq!(rig.rack.scroll, 79.0);
 }
 
 #[test]
 fn a_release_moves_the_offset_only_past_its_thresholds() {
     // (cards, how many from the second on are minimized, the held card, p before, p as the release leaves it)
     let cases: [(&[u16], usize, usize, f32, f32); 4] = [
-        // Four 10 U cards, card 1 held at p = 86: p = −186, and let go its full top is 512.4 down the viewport, past
-        // p + 0.9 H = 510.96: p += 272. From 87 it lands at 511.4, short of 511.96: p stays.
-        (&[3, 7, 26, 30], 0, 1, 86.0, 86.0),
-        (&[3, 7, 26, 30], 0, 1, 87.0, -185.0),
-        // A 10 U card over 20 minimized ones, card 6 held at p = 568: p = 296, and its full top lands 295.4 down the
-        // viewport, above p: p += 272. From 567 it lands at 296.4, not above 295: p stays.
-        (&[3; 21], 20, 6, 568.0, 568.0),
-        (&[3; 21], 20, 6, 567.0, 295.0),
+        // Four 10 U cards, card 1 held at p = 98: p = −174, and let go its full top is 510 down the viewport, past
+        // p + 0.9 H = 509.1: p += 272. From 99 it lands at 509, short of 510.1: p stays.
+        (&[3, 7, 26, 30], 0, 1, 98.0, 98.0),
+        (&[3, 7, 26, 30], 0, 1, 99.0, -173.0),
+        // A 10 U card over 20 minimized ones, card 6 held at p = 588: p = 316, and its full top lands 315 down the
+        // viewport, above p: p += 272. From 587 it lands at 316, not above 315: p stays.
+        (&[3; 21], 20, 6, 588.0, 588.0),
+        (&[3; 21], 20, 6, 587.0, 315.0),
     ];
     for (types, minimized, held, p, after) in cases {
         let mut rig = Rig::new(types);
@@ -4438,9 +4339,9 @@ fn a_menu_move_between_cards_of_different_heights_slides_each_by_the_others_heig
     assert_eq!(rig.rack.slides.get(&2), Some(&-10.0));
     assert_eq!(rig.rack.slides.get(&3), Some(&5.5));
     rig.frame(vec![]);
-    // Each 5 px past its old place: the slide is a height, not the 5 px longer slot.
-    assert_eq!(rig.text("Distortion").top(), distortion + 5.0);
-    assert_eq!(rig.text("Equalizer").top(), equalizer - 5.0);
+    // Each a card gap past its old place: the slide is a height, not the 11 px longer slot.
+    assert_eq!(rig.text("Distortion").top(), distortion + 11.0);
+    assert_eq!(rig.text("Equalizer").top(), equalizer - 11.0);
 }
 
 #[test]
@@ -4704,8 +4605,8 @@ fn at_ppp_2_the_law_runs_in_points_and_the_end_is_the_last_device_pixel_row() {
     assert_eq!(rig.rack.scroll, 1.5 * U);
     rig.button(at - vec2(0.0, 2.0 * U), false);
     // The end: the flow's bottom (device pixels, U = 64 px) on the rack's, in points.
-    let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX);
-    let px = super::rack_rect(SCREEN, 1.0, &m) * 2.0;
+    let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE);
+    let px = super::rack_rect(SCREEN, 1.0, false, &m) * 2.0;
     let heights: Vec<f32> = rig.channel.rack.modules.iter().map(card_height).collect();
     let bottom = flow(px, 0.0, m.u_px(), false, &heights, true).bottom;
     assert_eq!(rig.wheel_to_end(), (bottom - px.bottom()) / 2.0);

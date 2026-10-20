@@ -2,18 +2,16 @@
 //! (`Vel` / `Pan` in the piano roll; `Velocity` / `Panning` / `Pitch` / `Repeat` in the drum editor, `Repeat` only in
 //! step-sequencer mode) and a value area that shows and paints one property of the notes or hits.
 //!
-//! This module holds what both editors share: the lane's size and its knob ([`GraphLane`]), the strip's common
+//! This module holds what both editors share: the lane's size and its pull-up tab ([`GraphLane`]), the strip's common
 //! drawing and list ([`frame`]), the value laws ([`Prop`]), the note tint and the piano roll's paint rule
 //! ([`paint_notes`]). Each editor draws its own value area and routes its own edits.
 //!
-//! - The knob's press growth reaches its 10 px over [`GROW_S`]; the release wobble is a damped cosine
-//!   ([`WOBBLE_S`], [`WOBBLE_PERIOD`]). With the lane hidden the knob sits on the editor's bottom edge, clipped to
-//!   the editor (its upper half shows and takes touches), so it never covers the transport bar.
-//! - A knob drag released below 0.1 hides the lane and keeps the last f; the next show restores it.
-//! - The knob's 2×2 U touch box wins wherever it overlaps what lies under it: the list's first item and, in the drum
-//!   editor, a row header cut off at the rows' bottom, whose visible part may be a sliver. A header's taps have a
-//!   whole row elsewhere. It holds because the editor interacts the knob last and the knob senses drags: egui then
-//!   gives it every press in its box, even over a click-only widget thinner than its thin-target rule.
+//! - The tab sits with its bottom 2 px below the lane's top, or below the editor's bottom while the lane is closed. It
+//!   is clipped to the editor, so it never covers the transport bar, and its visible part takes the touches.
+//! - The tab's touches win wherever it overlaps what lies under it (a row header cut off at the rows' bottom, whose
+//!   visible part may be a sliver). It holds because the editor interacts the tab last and the tab senses drags: egui
+//!   then gives it every press in its rect, even over a click-only widget thinner than its thin-target rule.
+//! - The remembered height fraction lives in each editor's [`GraphLane`] for the run; nothing saves it.
 //! - The note tint is the muted playlist clip's tint (the miniature's three stops) over the channel colour, or over
 //!   the selected (whitened) colour for selected notes. Its middle stop is 0.66, shared with the playlist through
 //!   `clips::sample`, so the piano roll's, the drum grid's and the step sequencer's hit colours move with it.
@@ -24,36 +22,50 @@
 //! - The `Show graph editor` / `Close graph editor` shortcuts and the gamepad steps are not wired. `showGraphEditor`
 //!   is bound only to the gamepad's LB+RB+↓, the app reads no gamepad (`keymap.rs` skips those entries), and neither
 //!   built-in keyboard map binds it, so nothing could fire it. The focus system (`ui/focus.rs`) is there: wiring them
-//!   is a global action (`app/keys.rs`) that shows this lane and focuses a container round it, and a `close` that
-//!   hides it while the focus is inside. Each editor remembers the last Vel / Pan painted for its new notes and hits
-//!   (its remembered note or hit).
+//!   is a global action (`app/keys.rs`) that opens this lane (with the tab's animation) and focuses a container round
+//!   it, and a `close` that closes it while the focus is inside. Each editor remembers the last Vel / Pan painted for
+//!   its new notes and hits (its remembered note or hit).
 
 use std::f64::consts::TAU;
 
-use eframe::egui::{Color32, Id, Mesh, Painter, Rangef, Rect, Sense, Ui, Vec2, pos2};
+use eframe::egui::{
+    Color32, CornerRadius, Id, Mesh, Painter, Rangef, Rect, Sense, Stroke, StrokeKind, Ui, pos2,
+    vec2,
+};
 
+use crate::icons::{IconId, draw_icon};
 use crate::metrics::Metrics;
 use crate::sample_cache::Waveform;
 use crate::song::Event;
 use crate::theme::{Rgba, ThemeColors};
+use crate::ui::anim;
 use crate::ui::audio_editor::{Wave, add_column, columns, pixel_columns, wave_rows};
 use crate::ui::clips::{mix, sample, tint_stops};
 use crate::ui::piano_roll::notes::note;
 use crate::ui::widgets::{Bar, ItemList, item_list_index};
 use crate::ui::{UiCtx, gesture, primary_down_live};
 
-/// The lane is at least this tall, in U.
-const MIN_H: f32 = 2.0;
-/// The height fraction f: its cap, the release below which the lane hides, and the first show's.
+/// The height fraction f: its cap and the first open's.
 const F_MAX: f32 = 0.7;
-const F_HIDE: f32 = 0.1;
 const F_FIRST: f32 = 0.5;
-/// The gap over the list and the value area, in device pixels.
+/// A drag below min(this many U / H, [`F_CLOSE_MAX`]) closes the lane.
+const CLOSE_U: f32 = 2.5;
+const F_CLOSE_MAX: f32 = 0.5;
+/// A tap's open or close keeps this much of the way each 1/60 s (k = 41.7 a second), landing within the snap.
+const TAP_KEEP: f32 = 0.5;
+const TAP_SNAP: f32 = 0.002;
+/// The gap over the list and the value area, at most this many device pixels.
 const GAP_PX: f32 = 4.0;
-/// The knob: its touch box and its dot, in U; a tap is no long press ([`gesture::is_long`]).
-const KNOB_BOX: f32 = 2.0;
-const KNOB_D: f32 = 1.0;
-/// The knob's press growth, in device pixels, and the time it takes.
+/// The tab: its size and its top corners' radius, in U; its icon's scale; how far its bottom hangs below the lane's
+/// top, and its shadow spreads past its sides and top, in device pixels. A tap is no long press
+/// ([`gesture::is_long`]).
+const TAB_W: f32 = 1.7;
+const TAB_H: f32 = 1.25;
+const TAB_R: f32 = 0.4;
+const TAB_ICON: f32 = 0.9;
+const TAB_DROP_PX: f32 = 2.0;
+const SHADOW_PX: f32 = 2.0;
+/// The press growth of the editors' handles, in device pixels, and the time it takes.
 const GROW_PX: f32 = 10.0;
 const GROW_S: f64 = 0.1;
 /// The release wobble: how long, and its period.
@@ -232,21 +244,19 @@ pub fn paint_notes(
     changed
 }
 
-/// The lane's state in one editor: the item shown, whether it is open and how tall, and its knob's gesture.
+/// The lane's state in one editor: the item shown, whether it is open and how tall, and its tab's gesture.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GraphLane {
     /// The selected item, an index into the editor's list.
     pub item: usize,
-    /// Shown. A new editor's lane is hidden.
+    /// Open (or opening). A new editor's lane is closed.
     pub open: bool,
-    /// The last height fraction shown, which the next show restores.
+    /// The remembered height fraction, which a tap opens to.
     pub f: f32,
-    /// A knob drag in progress: its f, which the lane shows meanwhile.
-    drag: Option<f32>,
-    /// When the knob was pressed (egui time), while it is.
+    /// The fraction shown while a tap's animation runs toward `open`'s (f or 0).
+    moving: Option<f32>,
+    /// When the tab was pressed (egui time), while it is.
     pressed: Option<f64>,
-    /// When it was let go, and its growth then (device pixels): the wobble.
-    released: Option<(f64, f32)>,
 }
 
 impl Default for GraphLane {
@@ -255,55 +265,64 @@ impl Default for GraphLane {
             item: 0,
             open: false,
             f: F_FIRST,
-            drag: None,
+            moving: None,
             pressed: None,
-            released: None,
         }
     }
 }
 
 impl GraphLane {
+    /// The height fraction shown now: the animation's, else f while open, else 0.
+    fn shown(&self) -> f32 {
+        (self.moving).unwrap_or(if self.open { self.f } else { 0.0 })
+    }
+
     /// `area` (the editor below its top margin, H tall) split into the part above the lane and the lane strip, which
-    /// is max(f·H, 2 U) tall (at most H), its top on a device pixel; no strip while hidden.
+    /// is trunc(f·H) device pixels tall (at most H); no strip while closed.
     pub fn split(&self, area: Rect, m: &Metrics) -> (Rect, Option<Rect>) {
         self.split_below(area, area.top(), m)
     }
 
     /// [`Self::split`] of the `editor` below its top margin (H tall) whose strip stays below `y` (the piano roll's
-    /// ruler): the part from `y` down to the lane, and the strip, max(f·H, 2 U) tall but none of it above `y`.
+    /// ruler): the part from `y` down to the lane, and the strip, trunc(f·H) device pixels tall but none of it above
+    /// `y`.
     pub fn split_below(&self, editor: Rect, y: f32, m: &Metrics) -> (Rect, Option<Rect>) {
         let area = editor.with_min_y(y);
-        let Some(f) = self.drag.or(self.open.then_some(self.f)) else {
+        let h = (self.shown() * editor.height() * m.ppp()).trunc() / m.ppp();
+        let h = h.min(area.height());
+        if h <= 0.0 {
             return (area, None);
-        };
-        let h = (f * editor.height()).max(m.u(MIN_H)).min(area.height());
+        }
         let top = m.round_px(area.bottom() - h);
         (area.with_max_y(top), Some(area.with_min_y(top)))
     }
 
-    /// The knob of the lane in the editor `area` (below its top margin), centred at `x` on the grid/lane boundary, or
-    /// on the editor's bottom edge while the lane is hidden: a tap toggles the lane, a vertical drag sizes it
-    /// (f = 1 − (finger y − top)/H, at most 0.7; released below 0.1 it hides). Draw it after the grid and the lane.
-    pub fn knob(&mut self, ui: &mut Ui, cx: &UiCtx, id: Id, area: Rect, x: f32) {
-        self.knob_below(ui, cx, id, (area, area.top()), x);
-    }
-
-    /// [`Self::knob`] of the lane [`Self::split_below`] places: in the `editor` below its top margin (H, and the
-    /// drag's top), on the part below `y`.
-    pub fn knob_below(
+    /// The pull-up tab of the lane [`Self::split_below`] places in the `editor` below its top margin (H, and the
+    /// drag's measure), on the part below `y`; centred at `x`, its icon in the channel colour `ink`. A tap (released
+    /// within 0.3 s) opens the lane to f or closes it, animated; a drag sets f = (editor bottom − finger y)/H at once,
+    /// clamped to 0…0.7, closing the lane below min(2.5 U/H, 0.5) and otherwise remembering it. Draw it after the
+    /// grid and the lane.
+    pub fn tab_below(
         &mut self,
         ui: &mut Ui,
         cx: &UiCtx,
         id: Id,
         (editor, y): (Rect, f32),
         x: f32,
+        ink: Color32,
     ) {
         let m = cx.m;
+        let px = 1.0 / m.ppp();
         let area = editor.with_min_y(y);
         let (_, strip) = self.split_below(editor, y, m);
-        let center = pos2(x, strip.map_or(area.bottom(), |s| s.top()));
-        let touch = Rect::from_center_size(center, Vec2::splat(m.u(KNOB_BOX))).intersect(area);
-        let response = ui.interact(touch, id, Sense::click_and_drag());
+        let bottom = strip.map_or(area.bottom(), |s| s.top()) + TAB_DROP_PX * px;
+        let half = m.u(TAB_W) / 2.0;
+        let tab = Rect::from_x_y_ranges(
+            m.round_px(x - half)..=m.round_px(x + half),
+            m.round_px(bottom - m.u(TAB_H))..=bottom,
+        );
+        let response = ui.interact(tab.intersect(area), id, Sense::click_and_drag());
+        crate::ui::tooltip::tip(ui, tab, "Graph editor", Some("showGraphEditor"));
         // A press held over a focus loss is up (see `primary_down_live`).
         let live = primary_down_live(ui, id);
         let now = ui.input(|i| i.time);
@@ -313,50 +332,84 @@ impl GraphLane {
         }
         // A press and release within one frame leave no press time: a tap too.
         if response.clicked() && self.pressed.is_none_or(|t| !gesture::is_long(now - t)) {
+            self.moving = Some(self.shown());
             self.open = !self.open;
         }
         if response.dragged()
             && live
             && let Some(p) = response.interact_pointer_pos()
         {
-            self.drag = Some((1.0 - (p.y - editor.top()) / editor.height()).clamp(0.0, F_MAX));
-        }
-        if (response.drag_stopped() || !live)
-            && let Some(f) = self.drag.take()
-        {
-            if f < F_HIDE {
-                self.open = false;
-            } else {
-                (self.open, self.f) = (true, f);
+            let f = ((editor.bottom() - p.y) / editor.height()).clamp(0.0, F_MAX);
+            self.moving = None;
+            self.open = f >= (m.u(CLOSE_U) / editor.height()).min(F_CLOSE_MAX);
+            if self.open {
+                self.f = f;
             }
         }
-        if !down && let Some(t) = self.pressed.take() {
-            self.released = Some((now, grow(now - t)));
+        if !down {
+            self.pressed = None;
+        }
+        // The tap's animation; with the animations off it lands at once.
+        if let Some(s) = self.moving {
+            let target = if self.open { self.f } else { 0.0 };
+            let ctx = ui.ctx();
+            let next = s + (target - s) * anim::step(ctx, TAP_KEEP);
+            let s = if !anim::enabled(ctx) || (target - next).abs() < TAP_SNAP {
+                target
+            } else {
+                next
+            };
+            self.moving = (s != target).then_some(s);
+            if self.moving.is_some() {
+                ctx.request_repaint();
+            }
         }
 
-        // The dot: 1 U in `text` with a 1 px `background` rim at 30 %, grown while pressed, wobbling once let go.
-        let px = 1.0 / m.ppp();
-        let (growth, moving) = press_growth(self.pressed, self.released, now);
-        if moving {
-            ui.ctx().request_repaint();
-        }
-        let r = (m.u(KNOB_D) + growth * px) / 2.0;
+        // A black shadow 2 px wider on the sides and top, a 1 px `text` rim over the `background` fill (× 1.25 under
+        // the mouse), the icon: a bar chart closed, a down chevron open.
         let colors = &cx.theme.colors;
         let painter = ui.painter_at(area);
-        painter.circle_filled(center, r, colors.text.to_color32());
-        let rim = colors.background.to_color32().gamma_multiply(0.3);
-        painter.circle_stroke(center, r + px / 2.0, (px, rim));
+        let round = |r: f32| {
+            let r = r.round().clamp(0.0, 255.0) as u8;
+            CornerRadius {
+                nw: r,
+                ne: r,
+                sw: 0,
+                se: 0,
+            }
+        };
+        let r = m.u(TAB_R);
+        let s = SHADOW_PX * px;
+        let shadow = Rect::from_min_max(tab.min - vec2(s, s), pos2(tab.right() + s, tab.bottom()));
+        painter.rect_filled(shadow, round(r + s), Color32::from_black_alpha(102));
+        let gain = if response.hovered() { 1.25 } else { 1.0 };
+        let c = colors.background;
+        let fill = Rgba {
+            r: c.r * gain,
+            g: c.g * gain,
+            b: c.b * gain,
+            ..c
+        };
+        painter.rect_filled(tab, round(r), fill.to_color32());
+        let rim = colors.text.to_color32().gamma_multiply(0.28);
+        painter.rect_stroke(tab, round(r), Stroke::new(px, rim), StrokeKind::Inside);
+        let icon = if self.open {
+            IconId::ChevronDown
+        } else {
+            IconId::GraphLane
+        };
+        draw_icon(&painter, tab, icon, ink, TAB_ICON, m);
     }
 }
 
-/// The knob's growth `held` seconds into a press, in device pixels (and every editor handle's: the audio editor's
-/// stretch handle, the playlist selection's).
+/// An editor handle's growth `held` seconds into a press, in device pixels (the audio editor's stretch handle, the
+/// playlist selection's).
 pub(crate) fn grow(held: f64) -> f32 {
     GROW_PX * (held / GROW_S).clamp(0.0, 1.0) as f32
 }
 
-/// An editor handle's press growth now, in device pixels, and whether it still moves: the graph lane knob's law,
-/// shared by the audio editor's stretch handle and the playlist selection's handles. Pressed since `pressed`,
+/// An editor handle's press growth now, in device pixels, and whether it still moves: shared by the audio editor's
+/// stretch handle and the playlist selection's handles. Pressed since `pressed`,
 /// [`grow`]; let go at `t` grown `g`, the damped cosine g·cos(2πs/[`WOBBLE_PERIOD`])·(1 − s/[`WOBBLE_S`]) for
 /// [`WOBBLE_S`]; else 0. It is not the knob law of the knobs (`widgets::pulse`, an exponential 0.6 a frame), which
 /// knobs, sliders and header cells use.
@@ -376,9 +429,10 @@ pub(crate) fn press_growth(
     }
 }
 
-/// The lane strip's common drawing and its item list: `background` over the strip, a 2 px channel-colour line 1 px
-/// below its top, then under the 4 px gap the list (`labels`, bar right, `list_w` wide, unselected items in `color`)
-/// picking `item` (clamped to the items). Returns the strip below the gap, the list's and the value area's height.
+/// The lane strip's common drawing and its item list: `background` over the strip and the 1 + q px above it (q =
+/// ceil(0.0375·U) px), a q-tall line of the channel colour `color` at 45 % just above the strip, then under the gap
+/// the tab selector (`labels`, bar right, `list_w` wide, unselected items in `color`) picking `item` (clamped to the
+/// items). Returns the strip below the gap, the list's and the value area's height.
 #[allow(clippy::too_many_arguments)]
 pub fn frame(
     ui: &mut Ui,
@@ -390,24 +444,26 @@ pub fn frame(
     color: Color32,
     item: &mut usize,
 ) -> Rect {
-    let px = 1.0 / cx.m.ppp();
-    let painter = ui.painter_at(strip);
-    painter.rect_filled(strip, 0.0, cx.theme.colors.background.to_color32());
-    let line = Rect::from_x_y_ranges(strip.x_range(), strip.top() + px..=strip.top() + 3.0 * px);
-    painter.rect_filled(line, 0.0, color);
-    let content = content(strip, cx.m);
+    let m = cx.m;
+    let q = crate::ui::timeline::q(m);
+    let px = 1.0 / m.ppp();
+    let above = strip.with_min_y(strip.top() - q - px);
+    let painter = ui.painter_at(above);
+    painter.rect_filled(above, 0.0, cx.theme.colors.background.to_color32());
+    let line = Rect::from_x_y_ranges(strip.x_range(), strip.top() - q..=strip.top());
+    painter.rect_filled(line, 0.0, color.gamma_multiply(0.45));
+    let content = content(strip, m);
     let list = content.with_max_x(strip.left() + list_w);
     *item = (*item).min(labels.len().saturating_sub(1));
-    item_list_index(
-        ui,
-        cx,
-        &ItemList::new(id, list, labels, Bar::Right, color),
-        item,
-    );
+    let tabs = ItemList {
+        tabs: true,
+        ..ItemList::new(id, list, labels, Bar::Right, color)
+    };
+    item_list_index(ui, cx, &tabs, item);
     content
 }
 
-/// The lane strip `strip` below its 4 px gap: the rows of the list, the drum editor's spacer and the value area.
+/// The lane strip `strip` below its gap, min(strip height, 4) px: the rows of the list, the drum editor's spacer and the value area.
 pub fn content(strip: Rect, m: &Metrics) -> Rect {
     strip.with_min_y((strip.top() + GAP_PX / m.ppp()).min(strip.bottom()))
 }
@@ -507,11 +563,10 @@ pub fn drum_bar(
 
 #[cfg(test)]
 mod tests {
-    use eframe::egui::epaint::ClippedShape;
-    use eframe::egui::{Event as In, PointerButton, Pos2, Shape, vec2};
+    use eframe::egui::{Event as In, PointerButton, Pos2};
 
     use super::*;
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
     use crate::song::PPQ;
     use crate::ui::offscreen::Offscreen;
 
@@ -539,7 +594,7 @@ mod tests {
     }
 
     fn metrics() -> Metrics {
-        Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX)
+        Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE)
     }
 
     #[test]
@@ -705,149 +760,154 @@ mod tests {
     }
 
     #[test]
-    fn the_lane_is_hidden_first_then_max_f_h_or_2_u_tall() {
+    fn the_lane_is_closed_first_then_trunc_f_h_tall() {
         let m = metrics();
         let area = Rect::from_min_max(pos2(0.0, 48.0), pos2(400.0, 348.0));
         let mut lane = GraphLane::default();
-        assert_eq!(lane.split(area, &m).1, None);
-        assert_eq!(lane.split(area, &m).0, area);
-        // The first show: f = 0.5 of the 300 below the margin.
+        assert_eq!(lane.split(area, &m), (area, None));
+        // The first open: f = 0.5 of the 300 below the margin.
         lane.open = true;
         let (above, strip) = lane.split(area, &m);
         assert_eq!(strip, Some(area.with_min_y(198.0)));
         assert_eq!(above, area.with_max_y(198.0));
-        // At least 2 U, at most H.
-        lane.f = 0.1;
-        assert_eq!(lane.split(area, &m).1.unwrap().height(), 64.0);
-        let short = area.with_min_y(300.0);
-        assert_eq!(lane.split(short, &m).1.unwrap(), short);
+        // No least height: trunc(0.033·300) = 9 px. At most the part below `y`.
+        lane.f = 0.033;
+        assert_eq!(lane.split(area, &m).1.unwrap().height(), 9.0);
+        lane.f = 0.5;
+        assert_eq!(
+            lane.split_below(area, 300.0, &m).1,
+            Some(area.with_min_y(300.0))
+        );
     }
 
-    // The knob, offscreen.
+    // The tab, offscreen.
 
     /// The editor below its margin, 300 tall from y 48.
     const AREA: Rect = Rect {
         min: Pos2 { x: 0.0, y: 48.0 },
         max: Pos2 { x: 400.0, y: 348.0 },
     };
+    /// In the closed lane's tab, whose bottom hangs 2 px below the editor (x −3..51, y 310..350).
+    const CLOSED_TAB: Pos2 = pos2(24.0, 340.0);
 
-    /// The knob of `lane` in [`AREA`] at x 24, for an offscreen frame.
-    fn knob(lane: &mut GraphLane) -> impl FnMut(&mut Ui, &UiCtx) + '_ {
-        move |ui, cx| lane.knob(ui, cx, Id::new("knob"), AREA, 24.0)
+    /// The tab of `lane` in [`AREA`] at x 24, for an offscreen frame.
+    fn tab(lane: &mut GraphLane) -> impl FnMut(&mut Ui, &UiCtx) + '_ {
+        move |ui, cx| {
+            lane.tab_below(
+                ui,
+                cx,
+                Id::new("tab"),
+                (AREA, AREA.top()),
+                24.0,
+                Color32::WHITE,
+            )
+        }
     }
 
     #[test]
-    fn a_long_press_on_the_knob_toggles_nothing() {
+    fn a_long_press_on_the_tab_toggles_nothing() {
         // Held 0.35 s in place (egui still calls its release a click): past the shared 300 ms, so no tap.
         let mut lane = GraphLane::default();
         let mut s = Offscreen::new();
-        let at = pos2(24.0, 345.0);
         let button = |pressed| In::PointerButton {
-            pos: at,
+            pos: CLOSED_TAB,
             button: PointerButton::Primary,
             pressed,
             modifiers: Default::default(),
         };
-        s.frame(vec![In::PointerMoved(at)], &mut knob(&mut lane));
-        s.frame(vec![button(true)], &mut knob(&mut lane));
+        s.frame(vec![In::PointerMoved(CLOSED_TAB)], &mut tab(&mut lane));
+        s.frame(vec![button(true)], &mut tab(&mut lane));
         s.time += 0.35;
-        s.frame(vec![button(false)], &mut knob(&mut lane));
+        s.frame(vec![button(false)], &mut tab(&mut lane));
         assert!(!lane.open);
         // A quick one toggles.
-        s.click(at, &mut knob(&mut lane));
+        s.click(CLOSED_TAB, &mut tab(&mut lane));
         assert!(lane.open);
     }
 
     #[test]
-    fn the_knob_toggles_the_lane_on_a_tap_and_sizes_it_on_a_drag() {
+    fn a_tap_animates_the_lane_open_or_shut_and_a_drag_sizes_closes_and_remembers_it_at_once() {
         let m = metrics();
         let top = |lane: &GraphLane| lane.split(AREA, &m).1.map(|s| s.top());
         let mut lane = GraphLane::default();
         let mut s = Offscreen::new();
-        s.frame(vec![], &mut knob(&mut lane));
-        // Hidden, the knob sits on the bottom edge: its upper half takes the tap, which shows the lane at f 0.5.
-        s.click(pos2(24.0, 345.0), &mut knob(&mut lane));
+        anim::enable(&s.ctx);
+        // Frames until the tap's animation lands.
+        let settle = |s: &mut Offscreen, lane: &mut GraphLane| {
+            let mut n = 0;
+            while lane.moving.is_some() {
+                s.frame(vec![], &mut tab(lane));
+                n += 1;
+                assert!(n < 20, "{lane:?}");
+            }
+            n
+        };
+        s.frame(vec![], &mut tab(&mut lane));
+        // A tap opens toward f 0.5, half the way each 60 fps frame, landing within 0.002.
+        s.click(CLOSED_TAB, &mut tab(&mut lane));
         assert!(lane.open);
+        assert!((lane.shown() - 0.25).abs() < 1e-3, "{}", lane.shown());
+        assert!((6..=9).contains(&settle(&mut s, &mut lane)));
         assert_eq!(top(&lane), Some(198.0));
-        // A tap on the boundary hides it.
-        s.click(pos2(24.0, 198.0), &mut knob(&mut lane));
+        // A tap on the tab (now y 160..200) closes it the same way.
+        s.click(pos2(24.0, 190.0), &mut tab(&mut lane));
+        assert!(!lane.open && lane.shown() > 0.0);
+        settle(&mut s, &mut lane);
         assert_eq!(top(&lane), None);
-        // A drag up from the bottom edge to y 108 (f 0.8) shows it, capped at 0.7.
-        let up = [vec2(0.0, -100.0), vec2(0.0, -237.0)];
-        s.drag(pos2(24.0, 345.0), &up, &mut knob(&mut lane));
-        assert_eq!((lane.open, lane.f), (true, 0.7));
-        assert_eq!(top(&lane), Some(138.0));
-        // Down to y 228: f 0.4.
+        // A drag up to y 108 (f 0.8) opens it at once, capped at 0.7: trunc(0.7·300) = 210 tall.
         s.drag(
-            pos2(24.0, 138.0),
-            &[vec2(0.0, 30.0), vec2(0.0, 90.0)],
-            &mut knob(&mut lane),
+            CLOSED_TAB,
+            &[vec2(0.0, -100.0), vec2(0.0, -232.0)],
+            &mut tab(&mut lane),
+        );
+        assert_eq!((lane.open, lane.f, lane.moving), (true, 0.7, None));
+        assert_eq!(top(&lane), Some(138.0));
+        // Down to y 228: f 0.4, remembered.
+        let to = |y: f32| vec2(0.0, y - 135.0);
+        s.drag(
+            pos2(24.0, 135.0),
+            &[to(150.0), to(228.0)],
+            &mut tab(&mut lane),
         );
         assert!((lane.f - 0.4).abs() < 1e-6, "{}", lane.f);
         assert_eq!(top(&lane), Some(228.0));
-        // Released below 0.1 it hides, keeping f; the next tap shows it at 0.4 again.
+        // Through y 240 (f 0.36) to below min(2.5 U/H, 0.5) = 0.267 (y 268): it closes, keeping the last f above that;
+        // the next tap opens it to 0.36.
+        let to = |y: f32| vec2(0.0, y - 225.0);
         s.drag(
-            pos2(24.0, 228.0),
-            &[vec2(0.0, 30.0), vec2(0.0, 117.0)],
-            &mut knob(&mut lane),
+            pos2(24.0, 225.0),
+            &[to(240.0), to(275.0)],
+            &mut tab(&mut lane),
         );
         assert_eq!(top(&lane), None);
-        s.click(pos2(24.0, 345.0), &mut knob(&mut lane));
-        assert_eq!(top(&lane), Some(228.0));
+        assert!((lane.f - 0.36).abs() < 1e-6, "{}", lane.f);
+        s.click(CLOSED_TAB, &mut tab(&mut lane));
+        settle(&mut s, &mut lane);
+        assert_eq!(top(&lane), Some(240.0));
     }
 
     #[test]
     fn a_press_and_release_in_one_frame_is_a_tap() {
         let mut lane = GraphLane::default();
         let mut s = Offscreen::new();
-        let at = pos2(24.0, 345.0);
-        s.frame(vec![In::PointerMoved(at)], &mut knob(&mut lane));
+        s.frame(vec![In::PointerMoved(CLOSED_TAB)], &mut tab(&mut lane));
         let button = |pressed| In::PointerButton {
-            pos: at,
+            pos: CLOSED_TAB,
             button: PointerButton::Primary,
             pressed,
             modifiers: Default::default(),
         };
-        s.frame(vec![button(true), button(false)], &mut knob(&mut lane));
+        s.frame(vec![button(true), button(false)], &mut tab(&mut lane));
         assert!(lane.open);
     }
 
     #[test]
-    fn the_knob_grows_while_pressed_and_wobbles_back_once_let_go() {
-        let text = crate::theme::theme_by_id(0).colors.text.to_color32();
-        let radius = |shapes: &[ClippedShape]| {
-            shapes.iter().find_map(|c| match &c.shape {
-                Shape::Circle(c) if c.fill == text => Some(c.radius),
-                _ => None,
-            })
-        };
-        let mut lane = GraphLane::default();
-        let mut s = Offscreen::new();
-        let at = pos2(24.0, 345.0);
-        s.frame(vec![In::PointerMoved(at)], &mut knob(&mut lane));
-        // A 1 U dot, growing by 10 px over the first 0.1 s of a press.
-        let button = |pressed| In::PointerButton {
-            pos: at,
-            button: PointerButton::Primary,
-            pressed,
-            modifiers: Default::default(),
-        };
-        assert_eq!(
-            radius(&s.frame(vec![button(true)], &mut knob(&mut lane))),
-            Some(16.0)
-        );
-        for _ in 0..6 {
-            s.frame(vec![], &mut knob(&mut lane));
-        }
-        assert_eq!(radius(&s.frame(vec![], &mut knob(&mut lane))), Some(21.0));
-        // Let go, it swings below its size and settles within 0.3 s.
-        s.frame(vec![button(false)], &mut knob(&mut lane));
-        let mut sizes = Vec::new();
-        for _ in 0..20 {
-            sizes.extend(radius(&s.frame(vec![], &mut knob(&mut lane))));
-        }
-        assert!(sizes.iter().any(|&r| r < 16.0), "{sizes:?}");
-        assert_eq!(sizes.last(), Some(&16.0));
+    fn a_handle_grows_10_px_over_0_1_s_and_wobbles_back_within_0_3_s() {
+        assert_eq!(press_growth(Some(1.0), None, 1.05), (5.0, true));
+        assert_eq!(press_growth(Some(1.0), None, 2.0), (10.0, true));
+        let let_go = |s: f64| press_growth(None, Some((1.0, 10.0)), 1.0 + s);
+        assert!(let_go(0.06).0 < 0.0);
+        assert_eq!(let_go(0.3), (0.0, false));
     }
 
     #[test]

@@ -160,3 +160,62 @@ fn the_owners_local_sample_round_trips_when_present() {
     };
     round_trip("sample.flm", &bytes);
 }
+
+/// The view zooms the zoom-units flag covers: the playlist's, then per channel its `CHHD`@1040 and its clips' `ZOOM`
+/// zooms.
+fn view_zooms(song: &Song) -> Vec<f64> {
+    let mut zooms = song.file.playlist_view[2..].to_vec();
+    for c in &song.channels {
+        zooms.push(c.file.view[0]);
+        let clips = c.lanes.iter().flat_map(|l| &l.clips);
+        zooms.extend(clips.flat_map(|clip| clip.file.zoom[2..].to_vec()));
+    }
+    zooms
+}
+
+/// Both layouts open, save and open again as the app does: a file without the zoom-units flag (4.10.19) has its view
+/// zooms per device pixel and takes them per U at the U it opens with; a 5.0.1 file (flag 1) has them per U already
+/// and writes back byte for byte. Either saves as 5.0.1 (HEAD 368 bytes: the version, then the flag) and opens again
+/// with the same zooms. Real 5.0.1 saves come from `STUDIO_FLM_FIXTURES` when it is set (never copied into the repo).
+#[test]
+fn both_layouts_open_save_and_open_again_with_their_view_zooms() {
+    // The app's U in device pixels as it opens them.
+    const U: f64 = 85.0;
+    let check = |name: &str, bytes: &[u8]| -> Vec<u8> {
+        let file = read(bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let scale = if file.file.zooms_per_u() { 1.0 } else { U };
+        let want: Vec<f64> = view_zooms(&file).iter().map(|z| z * scale).collect();
+        let mut song = file.clone();
+        song.zooms_to_units(U);
+        assert_eq!(view_zooms(&song), want, "{name}: opened");
+        song.stamp_save("2026-10-19 12:00:00");
+        let saved = write(&song).unwrap();
+        assert_eq!(saved[8..12], 368_u32.to_le_bytes(), "{name}");
+        assert_eq!(
+            &saved[12 + 358..12 + 368],
+            b"\x05\0\0\x005.0.1\x01",
+            "{name}"
+        );
+        let mut again = read(&saved).unwrap();
+        assert_eq!(view_zooms(&again), want, "{name}: opened again");
+        let opened = again.clone();
+        again.zooms_to_units(U);
+        assert!(again == opened, "{name}: converted again");
+        if file.file.zooms_per_u() {
+            let (report, _) = round_trip(name, bytes);
+            assert!(report.is_empty(), "{name}: {report:#?}");
+        }
+        saved
+    };
+    let saved = check("owner-fresh-song.flm", OWNER);
+    check("owner-fresh-song.flm saved", &saved);
+    let Ok(folder) = std::env::var("STUDIO_FLM_FIXTURES") else {
+        return;
+    };
+    for entry in std::fs::read_dir(folder).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|ext| ext == "flm") {
+            check(&path.display().to_string(), &std::fs::read(&path).unwrap());
+        }
+    }
+}

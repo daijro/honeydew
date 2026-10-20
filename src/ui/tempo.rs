@@ -16,10 +16,9 @@ use std::f64::consts::TAU;
 
 use eframe::egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2, pos2, vec2};
 
-use crate::icons::{IconId, draw_icon};
 use crate::metrics::{FontSize, Metrics};
 use crate::song::TimeSig;
-use crate::ui::buttons::filled_circle_button;
+use crate::ui::buttons::close_x;
 use crate::ui::dialog;
 use crate::ui::main_menu::{TEMPO_RANGE, tempo_step};
 use crate::ui::widgets::{Button, button};
@@ -223,7 +222,7 @@ impl TempoEditor {
         let backdrop = ui.interact(screen, id.with("backdrop"), Sense::click_and_drag());
         // On the dialog base: the screen dimmed at α 0.6, then a `moduleFill` band, from the first frame. Drawn last,
         // so on top.
-        dialog::paint_base(ui.painter(), ui.painter(), c, screen, rect);
+        dialog::paint_base(ui.painter(), ui.painter(), (c, m), screen, rect);
 
         for ((label, delta), r) in STEPS.into_iter().zip(l.steps) {
             let b = Button::new(id.with(label), r, label, false, c);
@@ -286,16 +285,9 @@ impl TempoEditor {
             text,
         );
 
-        let close = filled_circle_button(ui, id.with("close"), l.close, m.u(CLOSE_D), text);
         let square = Rect::from_center_size(l.close, vec2(m.u(CLOSE_D), m.u(CLOSE_D)));
-        draw_icon(
-            ui.painter(),
-            square,
-            IconId::Close,
-            c.background.to_color32(),
-            CLOSE_ICON,
-            m,
-        );
+        let surface = (c.menu_fill.to_color32(), 0.375);
+        let close = close_x(ui, cx, id.with("close"), square, surface, CLOSE_ICON);
         let escape = crate::ui::close_pressed(ui.ctx());
         let outside = backdrop.clicked()
             && (backdrop.interact_pointer_pos())
@@ -779,18 +771,15 @@ mod tests {
         }
     }
 
-    /// The dialog base: screen dim α 0.6, then a `moduleFill` box, from the first frame (the tempo dialog is a dialog
+    /// The dialog base: screen dim α 0.6, then the floating panel, from the first frame (the tempo dialog is a dialog
     /// band like the Save dialog's).
     #[test]
-    fn the_dialog_base_dims_the_screen_then_fills_the_band_with_module_fill() {
+    fn the_dialog_base_dims_the_screen_then_paints_the_band_as_the_floating_panel() {
         // The rig's first frame.
         let rig = Rig::new(140.0);
         let painted = crate::ui::dialog::painted_rects(rig.shapes.iter().map(|s| &s.shape));
         let colors = crate::theme::theme_by_id(0).colors;
         crate::ui::dialog::assert_base(&painted, &colors, SCREEN, BAND);
-        // The band takes no other fill: the old `menuFill` band is gone from the dialog.
-        let menu_fill = colors.menu_fill.to_color32();
-        assert!(!painted.iter().any(|&(r, f)| r == BAND && f == menu_fill));
     }
 
     #[test]

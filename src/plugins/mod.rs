@@ -1,28 +1,21 @@
-//! Third-party plugins (VST3, VST2, CLAP) on the desktop: scanning, an instance per plugin module of the song, the
-//! engines' share of it, the plugins' own editors. Built on Lemon Studio's plugin hosts (`vendor/lemon-studio`).
+//! Plugins: Lemon Studio's own, built into the app on every platform ([`builtin`]), and third-party ones (VST3, VST2,
+//! CLAP) on the desktop: scanning, an instance per plugin module of the song, the engines' share of it, the plugins'
+//! own editors. Built on Lemon Studio's plugin hosts (`vendor/lemon-studio`).
 //!
-//! On the web and Android nothing is hosted ([`stub`]): a song's plugin modules are kept as they are (their state saved
-//! back untouched) and play nothing.
+//! On the web and Android only the built-in plugins are hosted: a song's other plugin modules are kept as they are
+//! (their state saved back untouched) and play nothing.
 //!
 //! Windows plugins on Linux: yabridge and its fork vstbridge wrap them as native Linux VST2 and VST3 plugins in
 //! `~/.vst/yabridge` and `~/.vst3/yabridge`, which the default search folders include ([`scan::default_folders`]), so
 //! they load like any Linux plugin.
 
-#[cfg(plugin_host)]
+pub mod builtin;
 mod engine;
-#[cfg(plugin_host)]
 mod host;
 #[cfg(plugin_host)]
 pub mod scan;
-#[cfg(plugin_host)]
 mod window;
-#[cfg(plugin_host)]
 pub use host::*;
-
-#[cfg(not(plugin_host))]
-mod stub;
-#[cfg(not(plugin_host))]
-pub use stub::*;
 
 /// The settings store's key for the scan results.
 pub const CACHE_KEY: &str = "honeydew.pluginCache";

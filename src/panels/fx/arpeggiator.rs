@@ -758,10 +758,7 @@ mod tests {
     ) -> Vec<Shape> {
         let (theme, m) = (
             theme_by_id(0),
-            crate::metrics::Metrics::from_pixels_per_point(
-                ppp,
-                crate::metrics::DEFAULT_UI_SCALE_INDEX,
-            ),
+            crate::metrics::Metrics::from_pixels_per_point(ppp, crate::metrics::DEFAULT_UI_SCALE),
         );
         let cx = UiCtx {
             theme: &theme,

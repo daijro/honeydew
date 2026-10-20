@@ -1,23 +1,18 @@
-//! The playlist screen's chrome: the keyboard panel's close X and the show-keyboard `↖`, and the add-channel `+`.
+//! The playlist screen's chrome: the keyboard panel's close X and the show-keyboard button, and the add-channel `+`.
 
-use eframe::egui::{
-    Color32, Shape,
-    epaint::{CircleShape, ColorMode},
-};
+use eframe::egui::{Color32, Shape, epaint::CircleShape};
 
 use super::*;
 
-/// Inside the `↖` quarter-disc on the bottom-right corner.
+/// In the `↖`'s touch area on the bottom-right corner.
 const SHOW_KEYS: Pos2 = pos2(1170.0 - 0.5 * U, 540.0 - 0.5 * U);
+/// The `↖` disc: 1.5 U, 0.6 U in from the right edge and 0.2 U up from the bottom.
+const SHOW_DISC: egui::Rect = egui::Rect::from_min_max(
+    pos2(1170.0 - 2.1 * U, 540.0 - 1.7 * U),
+    pos2(1170.0 - 0.6 * U, 540.0 - 0.2 * U),
+);
 /// The bottom-right corner.
 const CORNER: Pos2 = pos2(1170.0, 540.0);
-
-/// `text` brightened as a pressed button is (RGB × 1.15, clamped).
-fn pressed(color: Color32) -> Color32 {
-    let [r, g, b, a] = color.to_srgba_unmultiplied();
-    let up = |c: u8| (f32::from(c) * 1.15).round().min(255.0) as u8;
-    Color32::from_rgba_unmultiplied(up(r), up(g), up(b), a)
-}
 
 impl Rig {
     /// The last frame's filled circles centred on `center`, with their index in the shapes.
@@ -36,6 +31,14 @@ impl Rig {
         self.app.main_screen.panel_hidden
     }
 
+    /// The `↖`'s `moduleFill` disc in the last frame's shapes: its index.
+    fn show_button(&self) -> Option<usize> {
+        let fill = self.app.theme.colors.module_fill.to_color32();
+        (self.out.shapes.iter()).position(
+            |s| matches!(&s.shape, Shape::Rect(r) if r.rect == SHOW_DISC && r.fill == fill),
+        )
+    }
+
     /// Lets an opened clip editor's split settle (`ui::split`): f halves toward 0 each frame and snaps on the ninth in
     /// the rig's 380-point view.
     pub(super) fn slide_split(&mut self) {
@@ -50,7 +53,7 @@ fn the_close_x_on_the_playlist_hides_the_panel_and_the_corner_button_brings_it_b
     let mut rig = Rig::with_synth();
     rig.frame(vec![]);
     assert!(rig.painted("BPM"));
-    assert!(rig.discs_at(CORNER).is_empty());
+    assert!(rig.show_button().is_none());
     rig.click(CLOSE);
     assert!(rig.hidden());
     rig.frame(vec![]);
@@ -60,47 +63,19 @@ fn the_close_x_on_the_playlist_hides_the_panel_and_the_corner_button_brings_it_b
     rig.click(E4);
     assert_eq!(rig.take(), Vec::<String>::new());
     let tab = rig.ctx.read_response(egui::Id::new("edge_tab")).unwrap();
-    assert_eq!(tab.rect.center().y, (48.0 + 540.0) / 2.0);
-    // The `↖`: a 2 U `text` quarter-disc with icon 11 in `menuFill`.
-    let disc = rig.discs_at(CORNER);
-    assert_eq!(disc.len(), 1, "{disc:?}");
-    assert_eq!((disc[0].1.radius, disc[0].1.fill), (2.0 * U, ink()));
-    let menu_fill = rig.app.theme.colors.menu_fill.to_color32();
-    // Its arrow head is a filled triangle.
-    let icon = (rig.out.shapes[disc[0].0 + 1..].iter())
-        .any(|s| matches!(&s.shape, Shape::Path(p) if p.fill == menu_fill));
-    assert!(icon, "no icon in menuFill over the disc");
-
-    // Pressed: fill × 1.15, radius × 1.05.
-    rig.press(SHOW_KEYS);
-    let disc = rig.discs_at(CORNER);
-    assert_eq!(
-        (disc[0].1.radius, disc[0].1.fill),
-        (2.0 * U * 1.05, pressed(ink()))
-    );
-    rig.release(SHOW_KEYS);
+    assert_eq!(tab.rect.center().y, (540.0 + 2.0 * U) / 2.0);
+    // The `↖`: a floating 1.5 U `moduleFill` disc with icon 11 in `text`, its arrow head a filled triangle.
+    let disc = rig.show_button().expect("the ↖");
+    let icon = (rig.out.shapes[disc + 1..].iter())
+        .any(|s| matches!(&s.shape, Shape::Path(p) if p.fill == ink()));
+    assert!(icon, "no icon in text over the disc");
+    rig.click(SHOW_KEYS);
     assert!(!rig.hidden());
     rig.frame(vec![]);
     assert!(rig.painted("BPM"));
-    assert!(rig.discs_at(CORNER).is_empty());
+    assert!(rig.show_button().is_none());
     rig.click(E4);
     assert_eq!(rig.take(), ["NoteOn 1 52 108", "NoteOff 1 52"]);
-}
-
-#[test]
-fn the_logo_and_the_rack_tab_press_the_same_way() {
-    let mut rig = Rig::with_synth();
-    rig.press(LOGO);
-    let logo = rig.discs_at(pos2(1170.0, 0.0));
-    assert_eq!(
-        (logo[0].1.radius, logo[0].1.fill),
-        (2.0 * U * 1.05, pressed(ink()))
-    );
-    rig.release(LOGO);
-    rig.app.nav.overlays.clear();
-    rig.press(EDGE_TAB);
-    let tab = rig.discs_at(pos2(1170.0, TAB_Y));
-    assert_eq!((tab[0].1.radius, tab[0].1.fill), (U * 1.05, pressed(ink())));
 }
 
 /// The transport's close X hides the keyboard panel in every view; the clip editors keep their view, and the `↖`
@@ -143,8 +118,8 @@ fn the_corner_button_lies_over_the_open_rack_and_takes_its_taps() {
     let rack_fill = (rig.out.shapes.iter())
         .rposition(|s| matches!(&s.shape, Shape::Rect(r) if r.rect == rack))
         .expect("the rack's fill");
-    let disc = rig.discs_at(CORNER);
-    assert!(disc[0].0 > rack_fill, "{} <= {rack_fill}", disc[0].0);
+    let disc = rig.show_button().expect("the ↖");
+    assert!(disc > rack_fill, "{disc} <= {rack_fill}");
     rig.click(SHOW_KEYS);
     assert!(!rig.hidden());
     assert_eq!(rig.overlays(), [Overlay::Rack(1)]);
@@ -158,7 +133,7 @@ fn the_drum_editor_runs_with_the_panel_hidden() {
     rig.slide_split();
     rig.frame(vec![]);
     assert_eq!(rig.app.nav.view, View::DrumEditor(1));
-    assert_eq!(rig.discs_at(CORNER).len(), 1);
+    assert!(rig.show_button().is_some());
     rig.click(SHOW_KEYS);
     rig.frame(vec![]);
     assert!(!rig.hidden());
@@ -169,11 +144,13 @@ fn the_drum_editor_runs_with_the_panel_hidden() {
 fn the_add_channel_plus_sits_under_the_last_row_on_the_screen_centre_and_the_rack_covers_it() {
     let mut rig = Rig::with_drums_and_synth();
     let plus = egui::Id::new("add_channel_button");
-    // Three rows (48..240): 0.75 U below the last, 2 U across, centred on the screen.
+    // Three 2 U rows under the ruler: 0.75 U below the last, 2 U across, centred on the screen.
     rig.frame(vec![]);
     let rect = rig.ctx.read_response(plus).unwrap().rect;
-    let expected =
-        egui::Rect::from_min_size(pos2(585.0 - U, 240.0 + 0.75 * U), vec2(2.0 * U, 2.0 * U));
+    let expected = egui::Rect::from_min_size(
+        pos2(585.0 - U, RULER + 6.0 * U + 0.75 * U),
+        vec2(2.0 * U, 2.0 * U),
+    );
     assert_eq!(rect, expected);
     let disc = rig.discs_at(expected.center());
     assert_eq!(disc.len(), 1);
@@ -191,25 +168,31 @@ fn the_add_channel_plus_sits_under_the_last_row_on_the_screen_centre_and_the_rac
     assert!(disc[0].0 < rack_fill);
 }
 
+/// The rack tab hides while the rack is open; the logo lies over the rack and takes its tap, and the main menu it
+/// opens covers it.
 #[test]
-fn the_rack_tab_and_the_logo_lie_over_the_open_rack_and_take_its_taps_under_the_main_menu() {
+fn the_logo_lies_over_the_open_rack_and_takes_its_tap_under_the_main_menu() {
     let mut rig = Rig::with_synth();
     rig.app.navigate(Nav::Open(Overlay::Rack(1)));
     rig.slide_rack();
     rig.frame(vec![]);
-    // The rack is 20 U at the right of the content area. Top layer last: rack, rack tab, logo.
+    assert!(rig.ctx.read_response(egui::Id::new("edge_tab")).is_none());
     let rack = egui::Rect::from_min_max(pos2(530.0, 0.0), pos2(1170.0, PANEL_TOP));
     let rack_fill = (rig.out.shapes.iter())
         .rposition(|s| matches!(&s.shape, Shape::Rect(r) if r.rect == rack))
         .expect("the rack's fill");
-    let tab = rig.discs_at(pos2(1170.0, TAB_Y));
-    let logo = rig.discs_at(pos2(1170.0, 0.0));
-    assert_eq!((tab.len(), logo.len()), (1, 1));
-    assert!(
-        rack_fill < tab[0].0 && tab[0].0 < logo[0].0,
-        "{rack_fill} {tab:?} {logo:?}"
-    );
-    // The logo takes its tap: the main menu opens, and covers the corner.
+    let logo = |rig: &Rig| {
+        let at = rig
+            .ctx
+            .read_response(egui::Id::new("app_logo"))
+            .unwrap()
+            .rect
+            .expand(4.0);
+        (rig.out.shapes.iter())
+            .position(|s| matches!(&s.shape, Shape::Mesh(m) if at.contains_rect(m.calc_bounds())))
+            .expect("the logo's image")
+    };
+    assert!(rack_fill < logo(&rig));
     rig.click(LOGO);
     assert_eq!(
         rig.overlays(),
@@ -221,17 +204,10 @@ fn the_rack_tab_and_the_logo_lie_over_the_open_rack_and_take_its_taps_under_the_
     let menu = (rig.out.shapes.iter()).rposition(
         |s| matches!(&s.shape, Shape::Rect(r) if r.fill == menu_fill && r.rect.contains(corner)),
     );
-    let logo = rig.discs_at(pos2(1170.0, 0.0));
-    assert!(menu > Some(logo[0].0), "{menu:?} {logo:?}");
-    // So does the tab: with the menu gone, a tap on it closes the rack.
-    rig.app.nav.overlays.pop();
-    rig.frame(vec![]);
-    rig.click(EDGE_TAB);
-    assert_eq!(rig.overlays(), []);
+    assert!(menu > Some(logo(&rig)), "{menu:?}");
 }
 
 impl Rig {
-    /// The ink of the icon drawn over a disc: the stroke colour of the first path after shape `disc`.
     /// The tint of the last frame's first image (a mesh off the font atlas) inside `rect`, if its vertices share one.
     fn image_tint_in(&self, rect: egui::Rect) -> Option<Color32> {
         self.out.shapes.iter().find_map(|s| match &s.shape {
@@ -245,52 +221,13 @@ impl Rig {
             _ => None,
         })
     }
-
-    fn icon_ink_after(&self, disc: usize) -> Option<Color32> {
-        self.out.shapes[disc + 1..]
-            .iter()
-            .find_map(|s| match &s.shape {
-                Shape::Path(p) => match p.stroke.color {
-                    ColorMode::Solid(c) => Some(c),
-                    _ => None,
-                },
-                _ => None,
-            })
-    }
 }
 
+/// A clip editor opens under the playlist, sliding up fully expanded, the playlist going to 0. The close ribbon drags
+/// the split down: a 4 px gap under the playlist, the t colour band, the editor the rest, and the playlist above is
+/// live.
 #[test]
-fn the_logo_and_the_rack_tab_icons_are_menu_fill_on_their_text_discs() {
-    // The `↖` is a `text` quarter-disc with icon 11 in `menuFill`; the logo quarter-disc (top-right) and the rack tab
-    // are drawn the same way.
-    let mut rig = Rig::with_synth();
-    rig.frame(vec![]);
-    let colors = &rig.app.theme.colors;
-    let (menu_fill, background) = (
-        colors.menu_fill.to_color32(),
-        colors.background.to_color32(),
-    );
-    assert_ne!(menu_fill, background, "the theme tells the two apart");
-    // The rack tab is centred on the track rows, wherever the panel puts them.
-    let tab = rig.ctx.read_response(egui::Id::new("edge_tab")).unwrap();
-    for (what, centre) in [("logo", pos2(1170.0, 0.0)), ("rack tab", tab.rect.center())] {
-        let disc = rig.discs_at(centre);
-        assert_eq!(disc.len(), 1, "{what}");
-        assert_eq!(disc[0].1.fill, ink(), "{what}: a `text` disc");
-        if what == "rack tab" {
-            assert_eq!(rig.icon_ink_after(disc[0].0), Some(menu_fill), "{what}");
-        } else {
-            // The logo is the Honeydew silhouette image, tinted like the other icons.
-            let logo = rig.ctx.read_response(egui::Id::new("app_logo")).unwrap();
-            assert_eq!(rig.image_tint_in(logo.rect), Some(menu_fill), "{what}");
-        }
-    }
-}
-
-/// A clip editor opens under the playlist, sliding up fully expanded, the playlist going to 0. The splitter drags the
-/// split down: a 4 px gap under the playlist, the editor the rest, and the playlist above is live.
-#[test]
-fn a_clip_editor_opens_under_the_playlist_and_the_splitter_moves_it() {
+fn a_clip_editor_opens_under_the_playlist_and_the_ribbon_moves_it() {
     let mut rig = Rig::with_synth();
     rig.app.song.channels[1].lanes[0].add_clip(512, 8.0);
     rig.app.song_edited(SongEdit::Final, 0);
@@ -299,17 +236,17 @@ fn a_clip_editor_opens_under_the_playlist_and_the_splitter_moves_it() {
     // The first frame: the playlist has half the area (to the pixel), the roll its settled size, moved down to the gap.
     assert_eq!(
         roll_grid(&rig).top(),
-        (PANEL_TOP / 2.0).round() + 4.0 + 1.5 * U
+        (PANEL_TOP / 2.0).round() + 4.0 + ROLL_TOP
     );
-    assert_eq!(roll_grid(&rig).height(), PANEL_TOP - 1.5 * U);
+    assert_eq!(roll_grid(&rig).height(), PANEL_TOP - ROLL_TOP);
     rig.slide_split();
     assert_eq!(
         roll_grid(&rig).y_range(),
-        egui::Rangef::new(1.5 * U, PANEL_TOP)
+        egui::Rangef::new(ROLL_TOP, PANEL_TOP)
     );
-    // A drag from the area's top edge moves the split with the finger.
-    drag_split(&mut rig, &[2.0, 42.0, 82.0]);
-    assert_eq!(roll_grid(&rig).top(), 80.0 + 4.0 + 1.5 * U);
+    // The ribbon dragged down moves the split with the finger.
+    drag_split(&mut rig, 120.0);
+    assert_eq!(roll_grid(&rig).top(), 120.0 + 4.0 + ROLL_TOP);
     // The playlist above is live: its ruler (a beat 38.4 points from x 48) seeks.
     rig.take();
     rig.click(pos2(48.0 + 3.1 * 38.4, 24.0));
@@ -334,13 +271,25 @@ fn playlist_drawn(rig: &Rig) -> bool {
     .contains(&true)
 }
 
-/// A drag at x 600 through `ys`, and a frame after it.
-fn drag_split(rig: &mut Rig, ys: &[f32]) {
-    rig.press(pos2(600.0, ys[0]));
-    for &y in &ys[1..] {
-        rig.drag_to(pos2(600.0, y));
+/// The roll's grid top with the editor at the area's top: the t colour band (2 points at U = 32), then the ruler.
+const ROLL_TOP: f32 = 2.0 + 52.0;
+
+/// The close ribbon dragged `dy` points down (up when negative) in 4-point steps, so no flick, and two frames after it.
+fn drag_split(rig: &mut Rig, dy: f32) {
+    let at = rig
+        .ctx
+        .read_response(egui::Id::new("editor_close"))
+        .expect("the ribbon")
+        .rect
+        .center();
+    rig.press(at);
+    let steps = (dy.abs() / 4.0).ceil() as usize;
+    for i in 1..=steps {
+        rig.drag_to(at + vec2(0.0, dy * i as f32 / steps as f32));
     }
-    rig.release(pos2(600.0, ys[ys.len() - 1]));
+    rig.release(at + vec2(0.0, dy));
+    // The release sets the split after this frame's layout; the next lays out by it, and a read comes a frame late.
+    rig.frame(vec![]);
     rig.frame(vec![]);
 }
 
@@ -359,20 +308,20 @@ fn tab(rig: &mut Rig) {
     ]);
 }
 
-/// The synth's piano roll open, the splitter dragged down to 80 points of playlist (the gap at 80 … 84).
+/// The synth's piano roll open, the ribbon dragged down to 100 points of playlist (the gap at 100 … 104).
 fn roll_rig() -> Rig {
     let mut rig = Rig::with_synth();
     rig.app.song.channels[1].lanes[0].add_clip(512, 8.0);
     rig.app.song_edited(SongEdit::Final, 0);
     rig.edit(1);
     rig.slide_split();
-    drag_split(&mut rig, &[2.0, 42.0, 82.0]);
+    drag_split(&mut rig, 100.0);
     rig
 }
 
 /// Editors open fully expanded. The piano roll and the drum editor open with the playlist 0 high and not drawn, the
-/// editor from the area's top (the X at the window top); the splitter still drags it down, a switch to another editor
-/// keeps that split, and the next opening from the playlist is fully expanded again.
+/// editor from the area's top (the band at the window top, the ribbon under it); the ribbon still drags it down, a
+/// switch to another editor keeps that split, and the next opening from the playlist is fully expanded again.
 #[test]
 fn the_piano_roll_and_the_drum_editor_open_fully_expanded_and_a_switch_keeps_the_split() {
     let mut rig = Rig::with_drums_and_synth();
@@ -380,25 +329,25 @@ fn the_piano_roll_and_the_drum_editor_open_fully_expanded_and_a_switch_keeps_the
         rig.app.song.channels[channel].lanes[0].add_clip(0, 4.0);
     }
     rig.app.song_edited(SongEdit::Final, 0);
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let area = egui::Rect::from_min_max(pos2(0.0, 0.0), pos2(1170.0, PANEL_TOP));
     let x = egui::Id::new("editor_close");
     let expanded = |rig: &Rig| {
         let (playlist, editor, _) = rig.app.main_screen.split.layout(area, &m);
-        assert_eq!((playlist.height(), editor.top()), (0.0, area.top()));
+        assert_eq!((playlist.height(), editor.top()), (0.0, area.top() + 2.0));
         assert!(!playlist_drawn(rig));
-        assert_eq!(rig.ctx.read_response(x).map(|r| r.rect.top()), Some(0.0));
+        assert_eq!(rig.ctx.read_response(x).map(|r| r.rect.top()), Some(2.0));
     };
-    // The synth's piano roll: its 1.5 U ruler from the area top.
+    // The synth's piano roll: its ruler under the band at the area top.
     rig.edit(2);
     rig.slide_split();
     rig.frame(vec![]);
     assert_eq!(rig.app.nav.view, View::PianoRoll(2));
     expanded(&rig);
-    assert_eq!(roll_grid(&rig).top(), 1.5 * U);
-    // Dragged down from the top edge, the playlist shows its first rows.
-    drag_split(&mut rig, &[2.0, 22.0, 122.0, 242.0]);
-    assert_eq!(roll_grid(&rig).top(), 240.0 + 4.0 + 1.5 * U);
+    assert_eq!(roll_grid(&rig).top(), ROLL_TOP);
+    // The ribbon dragged down: the playlist shows its first rows.
+    drag_split(&mut rig, 240.0);
+    assert_eq!(roll_grid(&rig).top(), 240.0 + 4.0 + ROLL_TOP);
     assert!(playlist_drawn(&rig));
     let split = rig.app.main_screen.split;
     // A tap on the drums' clip (row 1, beat 2) switches to the drum editor: the split stays.
@@ -417,26 +366,25 @@ fn the_piano_roll_and_the_drum_editor_open_fully_expanded_and_a_switch_keeps_the
     expanded(&rig);
 }
 
-/// The splitter drags a clip editor all the way up. The editor then fills the area from its top with no gap, the
-/// playlist is 0 high and not drawn (no ruler controls over the editor, nothing to focus), the close X still shows the
-/// playlist alone, and a drag on the top edge, however slow, brings the playlist back.
+/// The ribbon drags a clip editor all the way up. Let go under the playlist's 2.5 U floor, the editor fills the area
+/// from its top with no gap, the playlist is 0 high and not drawn (no ruler controls over the editor, nothing to
+/// focus), the ribbon's tap still shows the playlist alone, and a slow drag down brings the playlist back.
 #[test]
-fn the_splitter_drags_the_editor_up_to_the_area_top_and_back_down() {
+fn the_ribbon_drags_the_editor_up_to_the_area_top_and_back_down() {
     let mut rig = roll_rig();
     assert!(playlist_drawn(&rig));
-    // From the gap past the window top.
-    drag_split(&mut rig, &[82.0, 62.0, 22.0, 0.0]);
+    drag_split(&mut rig, -60.0);
     assert_eq!(rig.app.main_screen.split.f, 0.0);
-    // The roll's 1.5 U ruler starts at the area top.
-    assert_eq!(roll_grid(&rig).top(), 1.5 * U);
+    // The roll's ruler starts under the band at the area top.
+    assert_eq!(roll_grid(&rig).top(), ROLL_TOP);
     assert!(!playlist_drawn(&rig));
     for _ in 0..40 {
         tab(&mut rig);
         assert!(!focus::within(&rig.ctx, egui::Id::new(focus::PLAYLIST)));
     }
-    // The X keeps to the window top, and still jumps the split to 1.
+    // The ribbon hangs from the band at the window top, and its tap still jumps the split to 1.
     let x = egui::Id::new("editor_close");
-    assert_eq!(rig.ctx.read_response(x).map(|r| r.rect.top()), Some(0.0));
+    assert_eq!(rig.ctx.read_response(x).map(|r| r.rect.top()), Some(2.0));
     rig.click_id(x);
     rig.frame(vec![]);
     assert_eq!(
@@ -449,17 +397,15 @@ fn the_splitter_drags_the_editor_up_to_the_area_top_and_back_down() {
     rig.slide_split();
     // The ninth frame's snap to 0 is the last move (read back a frame late).
     rig.frame(vec![]);
-    assert_eq!(roll_grid(&rig).top(), 1.5 * U);
-    // 2 points a frame from the splitter's zone on the top edge: the drag counts from the press, so the playlist,
-    // 0 while under its 1.5 U ruler, comes back.
-    let slow: Vec<f32> = (0..=50).map(|i| 2.0 + 2.0 * i as f32).collect();
-    drag_split(&mut rig, &slow);
-    assert_eq!(roll_grid(&rig).top(), 100.0 + 4.0 + 1.5 * U);
+    assert_eq!(roll_grid(&rig).top(), ROLL_TOP);
+    // 4 points a frame: the drag counts from the press, so the playlist, 0 while under its ruler, comes back.
+    drag_split(&mut rig, 100.0);
+    assert_eq!(roll_grid(&rig).top(), 100.0 + 4.0 + ROLL_TOP);
     assert!(playlist_drawn(&rig));
 }
 
-/// A playlist dragged under its 1.5 U ruler is snapped to 0, so nothing of it acts over the editor. At 20
-/// points a pinch on the editor's ruler zooms the editor only; at 2 points Tab never reaches the playlist's hidden `+`.
+/// A playlist dragged under its floor goes to 0, so nothing of it acts over the editor: a pinch on the editor's ruler
+/// zooms the editor only, and Tab never reaches the playlist's hidden `+`.
 #[test]
 fn a_playlist_dragged_under_its_ruler_is_none_and_takes_no_pinch_or_focus() {
     let view = |rig: &Rig| {
@@ -467,10 +413,10 @@ fn a_playlist_dragged_under_its_ruler_is_none_and_takes_no_pinch_or_focus() {
         (s.zoom, s.scroll_x, s.scroll_y)
     };
     let mut rig = roll_rig();
-    drag_split(&mut rig, &[82.0, 62.0, 22.0]);
-    assert_eq!(roll_grid(&rig).top(), 1.5 * U);
+    drag_split(&mut rig, -80.0);
+    assert_eq!(roll_grid(&rig).top(), ROLL_TOP);
     assert!(!playlist_drawn(&rig));
-    // Both fingers on the editor's ruler, where the playlist's 1.5 U ruler would reach; the second spreads them.
+    // Both fingers on the editor's ruler, where the playlist's ruler would reach; the second spreads them.
     use egui::TouchPhase::{End, Move, Start};
     let touch = |id, phase, x| egui::Event::Touch {
         device_id: egui::TouchDeviceId(1),
@@ -497,8 +443,8 @@ fn a_playlist_dragged_under_its_ruler_is_none_and_takes_no_pinch_or_focus() {
     assert_eq!(view(&rig), before);
 
     let mut rig = roll_rig();
-    drag_split(&mut rig, &[82.0, 62.0, 22.0, 4.0]);
-    assert_eq!(roll_grid(&rig).top(), 1.5 * U);
+    drag_split(&mut rig, -96.0);
+    assert_eq!(roll_grid(&rig).top(), ROLL_TOP);
     tab(&mut rig);
     assert!(!focus::within(&rig.ctx, egui::Id::new(focus::PLAYLIST)));
     assert_ne!(
@@ -507,12 +453,11 @@ fn a_playlist_dragged_under_its_ruler_is_none_and_takes_no_pinch_or_focus() {
     );
 }
 
-/// One close X serves the four bottom editors, a 1.5 U `menuFill` disc with the X in `text`, its square at
-/// trunc(R − 3.5 U) beside the rack tab (else trunc(R − 1.5 U − 5 px)), centred on the 4 px divider. A tap shows the
-/// playlist alone at once, the clip kept, with no undo step.
+/// One close ribbon serves the four bottom editors: 1.5 U × 1.3 U in the channel colour, hanging from the t colour band
+/// at the editor's top, its left edge at min(screen right − 4.4 U, editor right − 1.8 U), its touch area 0.3 U wider
+/// left, right and below. A tap shows the playlist alone at once, the clip kept, with no undo step.
 #[test]
-fn one_close_x_on_the_divider_closes_every_bottom_editor_and_keeps_its_clip() {
-    use super::editor_wiring::EDITOR_TOP;
+fn one_close_ribbon_closes_every_bottom_editor_and_keeps_its_clip() {
     let mut rig = Rig::with_drums_and_synth();
     rig.app.add_channel(ChannelKind::AudioClip, 0);
     for channel in [2, 3, 0, 1] {
@@ -526,8 +471,13 @@ fn one_close_x_on_the_divider_closes_every_bottom_editor_and_keeps_its_clip() {
         id: 1,
     };
     let x = egui::Id::new("editor_close");
-    let menu_fill = rig.app.theme.colors.menu_fill.to_color32();
-    // Nothing to undo: an X that made a step would show.
+    // The touch area of a ribbon whose left edge is at `left`, under the band at the area top.
+    let touch = |left: f32| {
+        egui::Rect::from_min_size(pos2(left, 2.0), vec2(1.5 * U, 1.3 * U))
+            .expand2(vec2(0.3 * U, 0.0))
+            .with_max_y(2.0 + 1.6 * U)
+    };
+    // Nothing to undo: a tap that made a step would show.
     rig.app.history = History::new(&rig.app.song);
     for (nav, view) in [
         (Nav::Edit(2), View::PianoRoll(2)),
@@ -536,24 +486,16 @@ fn one_close_x_on_the_divider_closes_every_bottom_editor_and_keeps_its_clip() {
         (Nav::Edit(3), View::AudioEditor(3)),
     ] {
         rig.app.navigate(nav);
-        // The last X's click left the pointer there, which lights the disc under it.
         rig.frame(vec![egui::Event::PointerGone]);
         rig.slide_split();
         assert_eq!(rig.app.nav.view, view);
         let current = crate::ui::preview::current(view, &rig.app.slots, &rig.app.song);
-        // The square: left at 1170 − 3.5 U, top at the editor top − (4 px + 1.5 U)/2, never above the window top: there
-        // while the editor opens fully expanded.
-        let square = rig.ctx.read_response(x).expect("the close X").rect;
-        let top = (EDITOR_TOP - (4.0 + 1.5 * U) / 2.0).max(0.0);
-        let want =
-            egui::Rect::from_min_size(pos2(1170.0 - 3.5 * U, top), egui::Vec2::splat(1.5 * U));
-        assert_eq!(square, want, "{view:?}");
-        let disc = rig.discs_at(want.center());
-        assert_eq!(disc.len(), 1, "{view:?}");
-        assert_eq!(
-            (disc[0].1.radius, disc[0].1.fill),
-            (0.75 * U, menu_fill),
-            "{view:?}"
+        // Just left of the logo: 1170 − 4.4 U, to the pixel.
+        let at = rig.ctx.read_response(x).expect("the ribbon").rect;
+        let want = touch((1170.0 - 4.4 * U).floor());
+        assert!(
+            (at.min - want.min).length() + (at.max - want.max).length() < 1e-3,
+            "{view:?} {at:?}"
         );
         rig.click_id(x);
         assert_eq!(rig.app.nav.view, View::Playlist, "{view:?}");
@@ -567,12 +509,15 @@ fn one_close_x_on_the_divider_closes_every_bottom_editor_and_keeps_its_clip() {
         );
         assert!(!rig.app.history.can_undo(), "{view:?}");
     }
-    // With the rack open, R is its left edge and the X sits 1.5 U + 5 px left of it.
+    // With the rack open, the editor ends at its left edge and the ribbon sits 1.8 U in from it.
     rig.edit(2);
     rig.app.navigate(Nav::Open(Overlay::Rack(2)));
     rig.slide_rack();
-    let square = rig.ctx.read_response(x).expect("the close X").rect;
-    assert_eq!(square.left(), 530.0 - 1.5 * U - 5.0);
+    let at = rig.ctx.read_response(x).expect("the ribbon").rect;
+    assert!(
+        (at.left() + 0.3 * U - (530.0 - 1.8 * U)).abs() <= 1.0,
+        "{at:?}"
+    );
     // Its tap collapses the editor and keeps the rack (and every other overlay).
     rig.click_id(x);
     assert_eq!(
@@ -655,13 +600,11 @@ fn the_rolls_new_note_stops_when_the_x_or_the_mixer_button_takes_the_roll_away()
     }
 }
 
-/// Every clip editor draws the shared Snap button in its ruler row's left cell: a `text` halo disc 2 px wider under
-/// the fill disc of radius 0.325·(1.5 U − 1 px); on (the editors start with Snap on) the fill is `text` with a dark
-/// icon; a tap turns it off, a `background` fill.
-#[test]
-fn every_clip_editor_has_the_shared_snap_button_lit_while_snap_is_on() {
-    use super::editor_wiring::EDITOR_TOP;
-    let mut rig = Rig::with_drums_and_synth();
+/// The bottom editors with their Snap buttons, each with a clip from beat 0: the piano roll (channel 2), the drum
+/// editor's free grid (a notes lane of channel 1), the automation editor (the master) and the audio editor (channel 3):
+/// how to open each, its id (its Snap button's is `.with("snap")`, its play box's `.with("knob")`), and its snap state.
+#[allow(clippy::type_complexity)]
+fn snap_editors(rig: &mut Rig) -> Vec<(Nav, egui::Id, fn(&Rig) -> bool)> {
     rig.app.add_channel(ChannelKind::AudioClip, 0);
     for channel in [3, 0, 2] {
         rig.app.song.channels[channel].lanes[0].add_clip(0, 4.0);
@@ -672,108 +615,95 @@ fn every_clip_editor_has_the_shared_snap_button_lit_while_snap_is_on() {
     drums.lanes[notes].grid = crate::song::DrumGrid::Notes;
     drums.lanes[notes].add_clip(0, 4.0);
     rig.app.song_edited(SongEdit::Final, 0);
-    // The playhead knob, which covers the button at beat 0 and takes its touches, at beat 2 (the output, which the
-    // first click starts, reports it).
-    rig.click(OUTSIDE);
-    rig.rec.0.borrow_mut().tick = 256;
-    rig.frame(vec![]);
     let key = |channel, lane| crate::ui::preview::ClipKey {
         channel,
         lane,
         id: 1,
     };
-    let bg = rig.app.theme.colors.background.to_color32();
-    let center = pos2(0.75 * U, EDITOR_TOP + (1.5 * U - 1.0) / 2.0);
-    let r = 0.325 * (1.5 * U - 1.0);
-    for (nav, snap) in [
-        (Nav::Edit(2), egui::Id::new("piano_roll").with("snap")),
+    vec![
+        (Nav::Edit(2), egui::Id::new("piano_roll"), |rig| {
+            rig.app.slots.piano_roll.rolls[&2].snap.on
+        }),
         (
             Nav::EditClip(key(1, notes)),
-            egui::Id::new("drum_grid").with("snap"),
+            egui::Id::new("drum_grid"),
+            |rig| rig.app.slots.drum_editor.grid.snap.on,
         ),
         (
             Nav::EditClip(key(0, 0)),
-            egui::Id::new("automation_editor").with("snap"),
+            egui::Id::new("automation_editor"),
+            |rig| rig.app.slots.automation_editor.editor.snap.on,
         ),
-        (Nav::Edit(3), egui::Id::new("audio_editor").with("snap")),
-    ] {
+        (Nav::Edit(3), egui::Id::new("audio_editor"), |rig| {
+            rig.app.slots.audio_editor.editor.snap.on
+        }),
+    ]
+}
+
+/// Every clip editor has the shared Snap button in its ruler row's left cell; the editors start with Snap on, and a tap
+/// turns it off.
+#[test]
+fn every_clip_editor_has_the_shared_snap_button_and_a_tap_turns_snap_off() {
+    let mut rig = Rig::with_drums_and_synth();
+    // The play box's touch area, which covers part of the button at beat 0, at beat 2 (the output, which the first
+    // click starts, reports it).
+    rig.click(OUTSIDE);
+    rig.rec.0.borrow_mut().tick = 256;
+    rig.frame(vec![]);
+    for (nav, id, on) in snap_editors(&mut rig) {
         rig.app.navigate(nav);
         rig.slide_split();
         let view = rig.app.nav.view;
-        // The `text` halo disc 2 px wider, then the fill disc.
-        let discs = |rig: &Rig| -> Vec<(f32, Color32)> {
-            (rig.discs_at(center).iter())
-                .map(|(_, c)| (c.radius, c.fill))
-                .collect()
-        };
-        assert_eq!(discs(&rig), [(r + 2.0, ink()), (r, ink())], "{view:?}");
-        rig.click_id(snap);
-        rig.frame(vec![]);
-        assert_eq!(discs(&rig), [(r + 2.0, ink()), (r, bg)], "{view:?}");
+        assert!(on(&rig), "{view:?}");
+        rig.click_id(id.with("snap"));
+        assert!(!on(&rig), "{view:?}");
     }
 }
 
-/// The playhead disc as last drawn, in the ruler row from the area top (any size: it grows and wobbles; the Snap
-/// button's discs are smaller): its paint index and shape.
-fn playhead_disc(rig: &Rig) -> Option<(usize, CircleShape)> {
-    (rig.out.shapes.iter().enumerate()).find_map(|(i, s)| match &s.shape {
-        Shape::Circle(c) if c.center.y == 0.75 * U && c.radius > 20.0 && c.fill.a() > 0 => {
-            Some((i, *c))
-        }
-        _ => None,
-    })
-}
-
-/// The playhead disc lies above the Snap button (the disc on top). At beat 0, stopped, the disc overhangs the ruler
-/// row's left cell in the playlist, the piano roll and the automation and audio editors; there and in the drum editor's
-/// free grid (whose 3 U header column keeps the disc clear of it) it is drawn after the button.
+/// At beat 0, stopped, the play box's touch area (from 0.56 U left of the playhead) reaches over the ruler row's left
+/// cell, the Snap button, in the playlist, the piano roll and the automation and audio editors; there it takes the
+/// touches (a tap plays, Snap stays). In the drum editor's free grid the 3 U header column keeps it clear of the button.
 #[test]
-fn at_beat_0_the_playhead_disc_is_drawn_over_the_snap_button_in_the_playlist_and_every_editor() {
+fn at_beat_0_the_play_box_takes_the_taps_over_the_snap_button_in_the_playlist_and_every_editor() {
     let mut rig = Rig::with_drums_and_synth();
-    rig.app.add_channel(ChannelKind::AudioClip, 0);
-    for channel in [3, 0, 2] {
-        rig.app.song.channels[channel].lanes[0].add_clip(0, 4.0);
-    }
-    let drums = &mut rig.app.song.channels[1];
-    let notes = drums.add_lane(LaneKind::Drums);
-    drums.lanes[notes].grid = crate::song::DrumGrid::Notes;
-    drums.lanes[notes].add_clip(0, 4.0);
-    rig.app.song_edited(SongEdit::Final, 0);
-    let key = |channel, lane| crate::ui::preview::ClipKey {
-        channel,
-        lane,
-        id: 1,
-    };
-    // The button's cell is the ruler row's left 1.5 U, at the area top in the playlist and in an editor opened fully
-    // expanded.
-    let button = pos2(0.75 * U, (1.5 * U - 1.0) / 2.0);
-    let over = |rig: &Rig, what: &str, overlap: bool| {
-        let (disc, circle) = playhead_disc(rig).expect(what);
-        let left = circle.center.x - circle.radius;
-        assert_eq!(
-            left < 1.5 * U,
-            overlap,
-            "{what}: the disc's left edge at {left}"
-        );
-        let under = rig.discs_at(button);
-        assert_eq!(under.len(), 2, "{what}: the button's halo and fill");
-        assert!(under.iter().all(|&(i, _)| i < disc), "{what}");
-    };
-    // The playlist's knob fades in.
-    for _ in 0..40 {
-        rig.frame(vec![egui::Event::PointerGone]);
-    }
-    over(&rig, "playlist", true);
-    for (nav, overlap) in [
-        (Nav::Edit(2), true),
-        (Nav::EditClip(key(1, notes)), false),
-        (Nav::EditClip(key(0, 0)), true),
-        (Nav::Edit(3), true),
-    ] {
+    rig.app.settings.count_in = false;
+    let editors = snap_editors(&mut rig);
+    let rect = |rig: &Rig, id: egui::Id| rig.ctx.read_response(id).expect("drawn").rect;
+    let check =
+        |rig: &mut Rig, knob: egui::Id, snap: egui::Id, on: fn(&Rig) -> bool, overlap: bool| {
+            // The box fades in.
+            for _ in 0..40 {
+                rig.frame(vec![egui::Event::PointerGone]);
+            }
+            let view = rig.app.nav.view;
+            let both = rect(rig, knob).intersect(rect(rig, snap));
+            assert_eq!(both.is_positive(), overlap, "{view:?}");
+            if overlap {
+                let was = on(rig);
+                rig.click(both.center());
+                assert!(rig.app.main_screen.playing, "{view:?}");
+                assert_eq!(on(rig), was, "{view:?}");
+                rig.click(PLAY);
+                assert!(!rig.app.main_screen.playing, "{view:?}");
+            }
+        };
+    let playlist = (
+        egui::Id::new("playhead_knob"),
+        egui::Id::new("playlist_snap"),
+    );
+    check(
+        &mut rig,
+        playlist.0,
+        playlist.1,
+        |rig| rig.app.main_screen.snap.on,
+        true,
+    );
+    for (nav, id, on) in editors {
         rig.app.navigate(nav);
         rig.frame(vec![egui::Event::PointerGone]);
         rig.slide_split();
-        over(&rig, &format!("{:?}", rig.app.nav.view), overlap);
+        let overlap = !matches!(rig.app.nav.view, View::DrumEditor(_));
+        check(&mut rig, id.with("knob"), id.with("snap"), on, overlap);
     }
 }
 
@@ -803,9 +733,9 @@ fn over_the_snap_button_the_playlists_playhead_knob_takes_the_tap_while_it_shows
 
 // ---- TK: two-keyboard mode and the panel height ----
 
-/// The strip's icon 13 (two rows) on the default panel, right of the wheels' icon 12: 15.5 U from the left, on the
-/// strip's middle line.
-const TWO_ROWS: Pos2 = pos2(15.5 * U, KEYS_TOP + 1.5 * U);
+/// The strip's icon 13 (two rows) on the default panel: the last of six 5 U cells centred on the 1170-point strip, its
+/// button 1.74 U under the strip's top.
+const TWO_ROWS: Pos2 = pos2(985.0, KEYS_TOP + 1.74 * U);
 
 impl Rig {
     /// The keyboard panel's height as the last frame laid it out, in points.
@@ -816,7 +746,7 @@ impl Rig {
     /// The keys' rows on a panel `panel_u` U tall, top to bottom (one, or `two`), from the layout.
     pub(super) fn rows_at(panel_u: f32, two: bool) -> Vec<egui::Rect> {
         let keys = regions_at(panel_u).keyboard;
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         crate::ui::keyboard::rows(keys, two, &m)
             .into_iter()
             .map(|r| r.0)
@@ -826,9 +756,9 @@ impl Rig {
 
 /// The rig's regions under a keyboard panel `panel_u` U tall.
 fn regions_at(panel_u: f32) -> Regions {
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let screen = egui::Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
-    Regions::sized(screen, panel_u * U, &m)
+    Regions::sized(screen, panel_u * U, 1, &m)
 }
 
 /// The keyboard settings button and the strip's icon 13 on a panel `panel_u` U tall.
@@ -837,13 +767,14 @@ fn settings_buttons(panel_u: f32) -> (Pos2, Pos2) {
     let bar = r.transport.center().y;
     (
         pos2(KEYBOARD_SETTINGS.x, bar),
-        pos2(TWO_ROWS.x, r.transport.bottom() + 1.5 * U),
+        pos2(TWO_ROWS.x, r.transport.bottom() + 1.74 * U),
     )
 }
 
 #[test]
-fn two_rows_raise_the_panel_to_6_u_a_half_step_a_frame_and_the_second_row_plays_an_octave_up() {
-    // The default panel: 5 U, at once from the first frame. Two rows need more than 5 U.
+fn two_rows_raise_the_panel_to_its_room_a_half_step_a_frame_and_the_second_row_plays_an_octave_up()
+{
+    // The default panel: 5 U, at once from the first frame. Two rows need a keys area over 3.25 U.
     let rig = Rig::new();
     assert_eq!(rig.panel(), 5.0 * U);
     let spy = Spy::default();
@@ -854,29 +785,31 @@ fn two_rows_raise_the_panel_to_6_u_a_half_step_a_frame_and_the_second_row_plays_
     rig.click(KEYBOARD_SETTINGS);
     rig.click(TWO_ROWS);
     assert!(rig.app.settings.show_two_rows);
-    assert_eq!(rig.app.settings.preferred_kbd_size, 6.0);
-    // h ← h + 0.5·(6 U − h) a frame, snapping within 2 px: 16, 8, 4, 2 px short, then there. Each frame on the way
-    // asks for the next; once it is there (and egui has settled) no more frames are asked for.
+    // The bar, 4.25 U of keys and the open strip: 1.75 + 4.25 + 3 = 9 U.
+    assert_eq!(rig.app.settings.preferred_kbd_size, 9.0);
+    // h ← h + 0.5·(9 U − h) a frame (at 60 fps, as tests run), snapping within 2 px: 64, 32, 16, 8, 4, 2 px short,
+    // then there. Each frame on the way asks for the next; once it is there (and egui has settled) no more frames are
+    // asked for.
     let (mut short, mut asks) = (vec![], vec![]);
-    for _ in 0..6 {
+    for _ in 0..8 {
         rig.frame(vec![]);
         let delay = rig.out.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
-        short.push(6.0 * U - rig.panel());
+        short.push(9.0 * U - rig.panel());
         asks.push(delay.is_zero());
     }
-    assert_eq!(short, [16.0, 8.0, 4.0, 2.0, 0.0, 0.0]);
-    assert_eq!(asks[..4], [true; 4]);
-    assert!(!asks[5]);
+    assert_eq!(short, [64.0, 32.0, 16.0, 8.0, 4.0, 2.0, 0.0, 0.0]);
+    assert_eq!(asks[..6], [true; 6]);
+    assert!(!asks[7]);
     // Kept: the settings were written with both values.
     let stored = Settings::load(&spy);
     assert!(stored.show_two_rows);
-    assert_eq!(stored.preferred_kbd_size, 6.0);
+    assert_eq!(stored.preferred_kbd_size, 9.0);
 
     // Closed strip: the second row over the main one, each key an octave over the key under it.
-    let (settings, two_rows) = settings_buttons(6.0);
+    let (settings, two_rows) = settings_buttons(9.0);
     rig.click(settings);
     rig.take();
-    let [top, bottom] = Rig::rows_at(6.0, true)[..] else {
+    let [top, bottom] = Rig::rows_at(9.0, true)[..] else {
         panic!()
     };
     let low = |row: egui::Rect| pos2(5.0 * U, row.top() + 0.9 * row.height());
@@ -892,13 +825,13 @@ fn two_rows_raise_the_panel_to_6_u_a_half_step_a_frame_and_the_second_row_plays_
         "{played:?}"
     );
 
-    // Off: one row again from the next frame, and the panel keeps its 6 U.
+    // Off: one row again from the next frame, and the panel keeps its 9 U.
     rig.click(settings);
     rig.click(two_rows);
     rig.click(settings);
     rig.frame(vec![]);
     assert!(!rig.app.settings.show_two_rows);
-    assert_eq!(rig.panel(), 6.0 * U);
+    assert_eq!(rig.panel(), 9.0 * U);
     rig.take();
     rig.click(low(top));
     assert!(
@@ -932,7 +865,7 @@ fn the_chord_kinds_keep_one_row_and_a_5_u_panel_shows_none() {
     rig.frame(vec![]);
     rig.click(at);
     assert!(rig.take()[0].starts_with("NoteOn 1 64 "));
-    // A panel of exactly 5 U is not over 5 U: one row.
+    // A panel of exactly 5 U has a keys area of exactly 3.25 U, not over it: one row.
     rig.app.settings.preferred_kbd_size = 5.0;
     for _ in 0..8 {
         rig.frame(vec![]);
@@ -1020,11 +953,12 @@ fn a_bar_drag_resizes_past_1_u_without_a_jump_and_its_release_settles_and_is_kep
     // From then on h ← h − Δy per move: 60 points up, then 2 down, laid out in the same frame (the bar's REC is there).
     rig.drag_to(at - vec2(0.0, 100.0));
     assert_eq!(rig.panel(), 5.0 * U + 60.0);
-    // REC's caption, 0.3 U over the bottom of a bar whose top is the panel's.
+    // REC's caption, about 0.5 U over the bottom of a bar whose top is the panel's (the bottom third's centre, lifted
+    // 0.2 U).
     let caption = rig.text_rect("REC").center().y;
     let bar_bottom = 540.0 - (5.0 * U + 60.0) + 1.75 * U;
     assert!(
-        (caption - (bar_bottom - 0.3 * U)).abs() < 2.0,
+        (caption - (bar_bottom - 0.5 * U)).abs() < 2.0,
         "no frame of lag: {caption}"
     );
     rig.drag_to(at - vec2(0.0, 98.0));
@@ -1033,7 +967,7 @@ fn a_bar_drag_resizes_past_1_u_without_a_jump_and_its_release_settles_and_is_kep
     rig.frame(vec![]);
     assert_eq!(rig.panel(), 5.0 * U + 58.0);
     assert_eq!(rig.app.settings.preferred_kbd_size, 5.0);
-    // Let go: h' = h − 10·(last Δy = 2) = 198, kept as both sizes, and the panel settles there by the 0.5 law.
+    // Let go: h' = h − 10·(last Δy = 2) = 198, kept as both sizes, and the panel settles there half the way a frame.
     rig.release(at - vec2(0.0, 98.0));
     let h = 5.0 * U + 58.0 - 20.0;
     assert_eq!(rig.app.settings.preferred_kbd_size, h / U);
@@ -1117,14 +1051,15 @@ fn a_tap_on_the_bars_gap_collapses_the_panel_and_another_opens_it_to_the_recent_
 
 #[test]
 fn the_shortcuts_toggle_snaps_like_a_release() {
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let at = |preferred: f32, recent: f32| {
         let s = Settings {
             preferred_kbd_size: preferred,
             recent_kbd_size: recent,
             ..Settings::default()
         };
-        let sizes = toggle_snapped(&s, 540.0, &m);
+        let c = crate::ui::panel_resize::collapsed(1, &m);
+        let sizes = toggle_snapped(&s, c, 540.0, &m);
         (sizes.preferred / U, sizes.recent.map(|r| r / U))
     };
     // Over the bar: collapse, recent kept.
@@ -1132,8 +1067,8 @@ fn the_shortcuts_toggle_snaps_like_a_release() {
     // At the bar: the recent size, which stays recent; one within min of the screen fills it.
     assert_eq!(at(1.75, 7.0), (7.0, Some(7.0)));
     assert_eq!(at(1.75, 16.0), (540.0 / U, Some(540.0 / U)));
-    // One under 2.5 U leaves the bar alone.
-    assert_eq!(at(1.75, 2.0), (1.75, None));
+    // A recent size under c + 0.75 U opens to c + 0.75 U.
+    assert_eq!(at(1.75, 2.0), (2.5, Some(2.5)));
 }
 
 #[test]
@@ -1178,32 +1113,17 @@ fn a_tap_on_the_cpu_or_ram_readout_opens_project_scrolled_to_its_performance_gra
     // Opened from the logo: where the `Performance` header sits on an unscrolled page.
     let mut rig = Rig::with_synth();
     rig.open_menu(MenuTab::Project);
-    let unscrolled = rig.text_rect("Performance").top();
-    // The meters' slots, right to left from the close X: RAM, then CPU (b = 1.75 U).
+    let unscrolled = rig.text_rect("Performance:").top();
+    // The readout's slot: one b = 1.75 U left of ↘'s, at the bar's right end.
     let b = 1.75 * U;
-    for (x, name) in [(1170.0 - 2.5 * b, "CPU"), (1170.0 - 1.5 * b, "RAM")] {
-        let mut rig = Rig::with_synth();
-        rig.click(pos2(x, BAR_Y));
-        assert_eq!(
-            rig.overlays(),
-            [Overlay::MainMenu(MenuTab::Project)],
-            "{name}"
-        );
-        for _ in 0..12 {
-            rig.frame(vec![]);
-        }
-        let top = rig.text_rect("Performance").top();
-        assert!(top < unscrolled - U, "{name}: {top} vs {unscrolled}");
-    }
-    // A press held past 0.3 s is no tap.
     let mut rig = Rig::with_synth();
-    let cpu = pos2(1170.0 - 2.5 * b, BAR_Y);
-    rig.press(cpu);
-    for _ in 0..3 {
+    rig.click(pos2(1170.0 - 1.5 * b, BAR_Y));
+    assert_eq!(rig.overlays(), [Overlay::MainMenu(MenuTab::Project)]);
+    for _ in 0..12 {
         rig.frame(vec![]);
     }
-    rig.release(cpu);
-    assert_eq!(rig.overlays(), []);
+    let top = rig.text_rect("Performance:").top();
+    assert!(top < unscrolled - U, "{top} vs {unscrolled}");
 }
 
 // ---- CK: the pitch and mod wheels ----
@@ -1543,7 +1463,10 @@ fn chordset_save_marks_the_set_saved_at_once_and_writes_custom_chord_set_into_my
         "Custom Chord Set"
     );
     rig.frame(vec![]);
-    assert!(rig.painted("Custom Chord Set"));
+    // The ChordSet box shows it, shrunk (here truncated) to its cell.
+    let label = &rig.app.slots.keyboard_settings.chords.set_label;
+    assert_eq!(label, "Custom Chord Set");
+    assert!(rig.painted("Custom ...d Set"), "{:?}", rig.texts());
 }
 
 // ---- CK: the keyboard kind is a setting (`keyboardKind`) ----
@@ -1599,10 +1522,9 @@ fn a_wobbly_upward_drag_at_45_or_58_degrees_resizes_and_never_scrolls_the_keys()
 
 #[test]
 fn the_shortcut_reopens_a_collapsed_panel_at_every_density_and_ui_scale() {
-    use crate::metrics::UI_SCALE_FACTORS;
     for ppp in [1.0, 1.25, 1.5, 2.0, 2.75, 3.0] {
-        for (scale, factor) in UI_SCALE_FACTORS.iter().enumerate() {
-            let m = Metrics::from_pixels_per_point(ppp, scale);
+        for factor in [60, 75, 90, 100, 110, 125, 150, 175, 200] {
+            let m = Metrics::from_pixels_per_point(ppp, factor);
             let u = m.u(1.0);
             // Collapsed by the shortcut itself, then the shortcut again: the recent 7 U (on a tall screen).
             let open = Settings {
@@ -1610,12 +1532,13 @@ fn the_shortcut_reopens_a_collapsed_panel_at_every_density_and_ui_scale() {
                 recent_kbd_size: 7.0,
                 ..Settings::default()
             };
-            let shut = toggle_snapped(&open, 2000.0, &m);
+            let c = crate::ui::panel_resize::collapsed(1, &m);
+            let shut = toggle_snapped(&open, c, 2000.0, &m);
             let collapsed = Settings {
                 preferred_kbd_size: shut.preferred / u,
                 ..open.clone()
             };
-            let back = toggle_snapped(&collapsed, 2000.0, &m);
+            let back = toggle_snapped(&collapsed, c, 2000.0, &m);
             assert!(
                 (back.preferred - 7.0 * u).abs() < 1e-3,
                 "ppp {ppp}, scale {factor}: {back:?}"
@@ -1778,7 +1701,7 @@ fn with_the_chord_editor_open_the_bar_works_and_the_strips_take_their_taps_over_
     rig.frame(vec![]);
     rig.frame(vec![]);
     let keys = regions_at(5.0).keyboard;
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let (editor, strips) = crate::ui::chord_editor::editor_rects(keys, &m);
     assert_eq!(editor.top(), keys.top());
     assert!(editor.bottom() > 540.0 && strips.top() > editor.top());
@@ -2104,21 +2027,23 @@ fn opening_the_chord_editor_moves_the_focus_to_its_first_button_and_closing_it_g
 }
 
 #[test]
-fn the_corner_logo_is_menu_fill_and_the_menu_header_logo_is_text() {
-    // The silhouette is dark gray on the corner's light disc (`menuFill`) and white beside the app name on the menu's
-    // gray header (`text`).
+fn the_floating_logo_and_the_menu_header_logo_are_text() {
+    // The silhouette is white (`text`) on the floating logo's `moduleFill` disc and beside the app name on the menu's
+    // gray header.
     let mut rig = Rig::with_synth();
     rig.frame(vec![]);
     let colors = &rig.app.theme.colors;
-    let (menu_fill, text) = (colors.menu_fill.to_color32(), colors.text.to_color32());
+    let text = colors.text.to_color32();
     let rect = |rig: &Rig, id: egui::Id| rig.ctx.read_response(id).unwrap().rect;
-    let corner = rig.image_tint_in(rect(&rig, egui::Id::new("app_logo")));
+    // Its icon sits 0.125 U left of the disc's centre, a little past the touch area's left edge.
+    let corner = rig.image_tint_in(rect(&rig, egui::Id::new("app_logo")).expand(4.0));
     rig.app
         .navigate(Nav::Open(Overlay::MainMenu(MenuTab::Songs)));
     rig.frame(vec![]);
     rig.frame(vec![]);
-    let header = rig.image_tint_in(rect(&rig, egui::Id::new("main_menu").with("logo")));
-    assert_eq!(corner, Some(menu_fill));
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1170.0, 540.0));
+    let m = crate::metrics::Metrics::from_pixels_per_point(1.0, crate::metrics::DEFAULT_UI_SCALE);
+    let header = rig.image_tint_in(crate::ui::main_menu::shell_layout(screen, &m).header);
+    assert_eq!(corner, Some(text));
     assert_eq!(header, Some(text));
-    assert_ne!(corner, header);
 }

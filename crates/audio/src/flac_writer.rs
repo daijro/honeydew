@@ -582,6 +582,14 @@ impl FlacEncoder {
         self.extend(channels, |&s| i32::from(s) << shift);
     }
 
+    /// [`Self::push`] for samples already at the stream's depth (within ±2^(bits−1)): stored exactly.
+    ///
+    /// # Panics
+    /// If there is not exactly one slice per channel.
+    pub fn push_i32<C: AsRef<[i32]>>(&mut self, channels: &[C]) {
+        self.extend(channels, |&s| s);
+    }
+
     fn extend<T, C: AsRef<[T]>>(&mut self, channels: &[C], quantize: impl Fn(&T) -> i32) {
         assert_eq!(channels.len(), self.pending.len(), "one slice per channel");
         let len = channels.iter().map(|c| c.as_ref().len()).min().unwrap_or(0);

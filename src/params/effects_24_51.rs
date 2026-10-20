@@ -941,7 +941,7 @@ const ARP_PATTERNS: &[&str] = &[
     "Cascade Down",
     "Cascade Up-Down",
     "Random",
-    "Random No Repeat",
+    "Rand No Repeat",
     "Random Once",
     "Random Walk",
 ];

@@ -4,7 +4,8 @@
 //!
 //! The folder title is in the folder rows' size ([`ROW_FONT`]), with no gap above it: the breadcrumb's line is there
 //! only inside a folder, so at the root the title is level with `Back`. One row size: song rows too are in
-//! [`ROW_FONT`], as the side browsers' rows are all one size.
+//! [`ROW_FONT`], as the side browsers' rows are all one size. The rows are the browsers' ([`search_bar::paint_row`]):
+//! the current one is the song last opened here, or the folder holding it.
 //!
 //! Folders come first, then songs and project archives (`.zip`, in the same row style), each group in the chosen order
 //! (`A-Z` by default, case-insensitive). The search bar ([`SearchBar`]) keeps the rows whose name holds the query,
@@ -17,8 +18,10 @@
 //! (Ctrl+F) shows the bar while the focus is inside the browser and no popup, name field or dialog is open; Escape
 //! hides it, else stops select mode, before the menu closes ([`SongsTab::escape`]). Each showing of the page resets
 //! the search. A non-empty query lists the songs below the open folder, recursively (the side browser's rule,
-//! [`crate::ui::search_bar::Walk`]): 2.2 U rows with the folder's path from `My Songs` under the name. The bar's
-//! browser rect is the content left of the big circles' column, so the bar stops short of them.
+//! [`crate::ui::search_bar::Walk`]), with the folder's path from `My Songs` under the name. The bar's browser rect is
+//! the content left of the big circles' column, so the bar stops short of them.
+//!
+//! A secondary tap (right click) on a row enters select mode, selects the row and opens the ≡ menu at the pointer.
 //!
 //! The ≡ menu has the file actions that apply to songs, archives and folders ([`file_ops`]); `Send to playlist` and
 //! `Insert at playhead` never do (SONGS lists no audio files). `Unzip` is there while exactly one archive is selected:
@@ -53,14 +56,14 @@ use eframe::egui::{Align2, Id, Key, Pos2, Rect, Sense, TextEdit, Ui, pos2, vec2}
 
 use super::file_ops::{FILE_MANAGER, FileActions, MenuState, Moved, Opt, Step, options_menu};
 use super::library::{BIN_DAYS, RECENTLY_DELETED, SONGS_FOLDER, SongEntry, SongLibrary};
-use super::{Circle, CircleStyle, MainMenuAction, circle_button, pressed_box, scroll, text_field};
+use super::{Circle, CircleStyle, MainMenuAction, circle_button, scroll, text_field};
 use crate::content::{self, Factory};
 use crate::icons::IconId;
 use crate::metrics::FontSize;
 use crate::ui::UiCtx;
 use crate::ui::focus;
 use crate::ui::popup::{self, PopupItem};
-use crate::ui::search_bar::{self, FOUND_ROW_H, Found, SearchBar, Walk, matching};
+use crate::ui::search_bar::{self, Found, ROW_H, RowLook, SearchBar, Walk, matching};
 use crate::ui::song_options::{SongOptionsAction, SongOptionsDialog};
 use crate::ui::widgets::{text_label, truncated};
 
@@ -77,16 +80,15 @@ const BIG_STEP: f32 = 2.5;
 const CRUMB_H: f32 = 0.75;
 const TITLE_H: f32 = SIDE_STEP;
 const SEARCH_H: f32 = 1.0;
-const ROW_H: f32 = 1.25;
-/// Text inset from the row's left edge.
-const ROW_PAD: f32 = 0.25;
+/// The gap under the name field.
+const FIELD_GAP: f32 = 0.25;
 /// Every row's font, folder or song, and the folder title's: one row size, and the title in it.
 const ROW_FONT: FontSize = FontSize::Pt12;
 /// The characters a too-long breadcrumb keeps after its middle ellipsis, at most: far more than the modules browser's
 /// 5, as the nearest parent folder is what the trail is for. The middle ellipsis then settles at about half the line
 /// for the end.
 const CRUMB_TAIL_K: usize = 40;
-/// The tail a too-long folder title or list row keeps after its middle ellipsis: the browsers' titles' 5.
+/// The tail a too-long folder title keeps after its middle ellipsis: the browsers' titles' 5.
 const NAME_TAIL_K: usize = 5;
 /// The longest name, in characters.
 const TEXT_LIMIT: usize = 255;
@@ -251,6 +253,8 @@ pub(super) struct SongsTab {
     pub(super) factory: Option<&'static Factory>,
     /// The Song options dialog, while it asks for a new empty song.
     new_song: Option<SongOptionsDialog>,
+    /// The song last opened from the list: the current row, or the folder holding it.
+    current: Option<PathBuf>,
 }
 
 impl SongsTab {
@@ -448,7 +452,7 @@ impl SongsTab {
         if let Some(prompt) = &mut self.prompt {
             let label = line(CRUMB_H);
             let field = line(SEARCH_H);
-            line(ROW_PAD);
+            line(FIELD_GAP);
             if self.popup.is_none() && crate::ui::close_pressed(ui.ctx()) {
                 commit = Some(false);
             }
@@ -490,21 +494,20 @@ impl SongsTab {
             self.found = Some(self.walk(library));
         }
         let listing = self.listing.as_deref().unwrap_or_default();
-        let (rows, row_h): (Vec<(&SongEntry, Option<&Found>)>, f32) =
+        let rows: Vec<(&SongEntry, Option<&Found>)> =
             match self.found.as_deref().filter(|_| !query.is_empty()) {
-                Some(found) => (
-                    (matching(found, query).into_iter())
-                        .map(|f| (&f.entry, Some(f)))
-                        .collect(),
-                    m.u(FOUND_ROW_H),
-                ),
-                None => (
-                    (visible(listing, self.sort, query).into_iter())
-                        .map(|e| (e, None))
-                        .collect(),
-                    m.u(ROW_H),
-                ),
+                Some(found) => (matching(found, query).into_iter())
+                    .map(|f| (&f.entry, Some(f)))
+                    .collect(),
+                None => (visible(listing, self.sort, query).into_iter())
+                    .map(|e| (e, None))
+                    .collect(),
             };
+        let row_h = m.u(ROW_H);
+        // Select mode's checkboxes grow in.
+        let checks = (self.selection.as_ref()).map(|_| {
+            crate::ui::anim::browser_slide(crate::ui::anim::elapsed(&ctx, id.with("select")))
+        });
         // Under the Song options dialog the list keeps still: the wheel is the dialog's.
         let offset = match self.new_song {
             Some(_) => self.scroll,
@@ -522,7 +525,7 @@ impl SongsTab {
         let outer_clip = ui.clip_rect();
         ui.set_clip_rect(outer_clip.intersect(list));
         focus::open(ui, Id::new(focus::SONGS), list);
-        let mut clicked = None;
+        let (mut clicked, mut context) = (None, None);
         for (i, &(entry, found)) in rows.iter().enumerate() {
             let rect = Rect::from_min_size(
                 pos2(list.left(), list.top() - offset + i as f32 * row_h),
@@ -537,35 +540,32 @@ impl SongsTab {
                 id.with(("row", &entry.path)),
                 Sense::click(),
             );
-            let selected = self
-                .selection
+            let selected = (self.selection.as_ref()).is_some_and(|s| s.contains(&entry.path));
+            let current = self
+                .current
                 .as_ref()
-                .is_some_and(|s| s.contains(&entry.path));
-            let ink = if selected {
-                // The inverted bar of a current popup item.
-                painter.rect_filled(rect, 0.0, text);
-                c.menu_fill.to_color32()
-            } else {
-                if response.is_pointer_button_down_on() {
-                    pressed_box(&painter, rect, cx);
-                }
-                text
+                .is_some_and(|c| match entry.is_folder {
+                    true => c.starts_with(&entry.path),
+                    false => *c == entry.path,
+                });
+            // Centred in the whole row: the clip cuts a half-scrolled one. One row size for songs and folders.
+            let look = RowLook {
+                name: &entry.name,
+                place: found.map(|f| f.place.as_str()),
+                font: ROW_FONT,
+                ink: text,
+                current,
+                pressed: response.is_pointer_button_down_on(),
+                hovered: crate::ui::widgets::hovered(ui, &response),
+                select: checks
+                    .filter(|_| !is_place(&entry.path))
+                    .map(|t| (t, selected)),
             };
-            let mut inner = rect.with_min_x(rect.left() + m.u(ROW_PAD));
-            if let Some(found) = found {
-                search_bar::place_line(ui.painter(), m, &mut inner, &found.place, ink);
+            search_bar::paint_row(&painter, cx, rect, &look);
+            if response.secondary_clicked() && !is_place(&entry.path) {
+                let at = response.interact_pointer_pos().unwrap_or(rect.center());
+                context = Some((entry.path.clone(), at));
             }
-            // Centred in the whole row: the clip cuts a half-scrolled one.
-            truncated(
-                ui.painter(),
-                inner,
-                Align2::LEFT_CENTER,
-                &entry.name,
-                // One row size for songs and folders.
-                m.font_id(ROW_FONT),
-                ink,
-                NAME_TAIL_K,
-            );
             if response.clicked() {
                 // A found folder opens through the folders above it.
                 let folders = found.map_or_else(|| vec![entry.clone()], Found::folders);
@@ -597,8 +597,17 @@ impl SongsTab {
                     self.search.end();
                 }
             } else {
+                self.current = Some(entry.path.clone());
                 action = Some(MainMenuAction::Open(entry.path));
             }
+        }
+        // A secondary tap: select mode with the row selected, and the ≡ menu at the pointer.
+        if let Some((path, at)) = context {
+            let selection = self.selection.get_or_insert_default();
+            if !selection.contains(&path) {
+                selection.push(path);
+            }
+            self.popup = Some((Popup::Options, at));
         }
 
         // Popups last, over everything.
@@ -631,6 +640,8 @@ impl SongsTab {
                     let state = MenuState {
                         selected: picked.len(),
                         archive: matches!(&picked[..], [e] if e.is_archive()),
+                        // SONGS lists no audio files.
+                        wav: false,
                         in_trash,
                         paste: self.actions.can_paste(),
                         export: !cfg!(target_os = "android")

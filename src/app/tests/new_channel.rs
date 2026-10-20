@@ -197,9 +197,9 @@ fn a_close_grand_whose_zones_do_not_decode_leaves_the_supersaw_and_the_name() {
 
 // ---- Every new DW Sampler loads Close Grand ----
 
-/// The Modules browser's DW Sampler row ([`super::rack_wiring::browser_row`]: `Paste` 0, `Rack Preset` 1, SYNTH 2, 3x
-/// Osc 3, DW Sampler 4).
-const DW_ROW: usize = 4;
+/// The Modules browser's DW Sampler row ([`super::rack_wiring::browser_row`]: `Paste` 0, `Rack Preset` 1, `Instrument`
+/// 2, SYNTH 3, 3x Osc 4, Lemon Trio 5, DW Sampler 6).
+const DW_ROW: usize = 6;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]

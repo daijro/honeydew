@@ -1236,7 +1236,7 @@ fn what_is_not_an_edit_is_kept_from_the_current_song() {
             restored.file.guid,
             restored.file.playhead_beats
         ),
-        (FORMAT_VERSION, current.file.guid, 3.0)
+        (current.file.version.as_str(), current.file.guid, 3.0)
     );
     assert_eq!(
         (restored.file.selected_channel, restored.file.playlist_view),

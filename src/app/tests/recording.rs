@@ -550,7 +550,7 @@ mod audio {
     #[test]
     fn an_armed_channel_shows_its_dot_with_multitrack_recording_on() {
         let mut a = AudioRig::new("dot", false);
-        let header = egui::Rect::from_min_size(pos2(0.0, 3.5 * U), vec2(1.5 * U, 2.0 * U));
+        let header = egui::Rect::from_min_size(pos2(0.0, RULER + 2.0 * U), vec2(1.5 * U, 2.0 * U));
         let center = header.left_top() + vec2(0.3 * U, 0.3 * U);
         // The channel is current, so its cell is filled with its colour and the dot takes the icon's `moduleFill`.
         let ink = a.rig.app.theme.colors.module_fill.to_color32();

@@ -1,9 +1,10 @@
-//! Playlist clips. Each track row shows its lane's clips as [`paint_clip`] draws them: the current clip has the light
-//! outline. The selection (one clip, or a marquee's group) is one pulsing `text` box with its round handles (left,
-//! right, and a third under an audio clip that does not loop) and the floating `Copy`, `Delete`, `Snap`, `Edit`,
-//! `More...` above it. Dragging a clip moves it, dragging a handle resizes it (each clip of a group). Positions snap to
-//! the ruler's Snap unit (its mode, Auto by the zoom); with Snap off, drags go to whole ticks while `+Clip`, `Copy` and
-//! `Snap` keep the mode's unit. Clips drag between tracks of any channel by lane kind ([`Clips::drag_rows`]).
+//! Playlist clips. Each track row shows its lane's clips as [`paint_clip`] draws them, rounded boxes: the current clip
+//! has the light outline. The selection (one clip, or a marquee's group) is one pulsing `text` box with its capsule
+//! handles (start, end, and a bar under an audio clip that does not loop, [`paint_handle`]) and the floating `Copy`,
+//! `Delete`, `Snap`, `Edit`, `More...` above it. Dragging a clip moves it, dragging a handle resizes it (each clip of a
+//! group). Positions snap to the ruler's Snap unit (its mode, Auto by the zoom); with Snap off, drags go to whole ticks
+//! while the insert menu, `Copy` and `Snap` keep the mode's unit. Clips drag between tracks of any channel by lane
+//! kind ([`Clips::drag_rows`]).
 //!
 //! Gestures, each decided from its touch-down by the shared law ([`gesture::is_long`], [`gesture::left_calm`]):
 //! - Touch-down on a clip makes it the selection, its handles and row hidden until the touch ends. The current clip
@@ -17,12 +18,14 @@
 //! - A move's release (as the piano roll's) is neither a tap nor a long press: the moved clip or group stays selected,
 //!   the selection box pulsing, with its handles and row hidden (a quiet selection, whose handles take no touch and
 //!   whose group frame only its clips' touches reach; a tap on empty track space still only deselects it). A tap on a
-//!   clip then selects it with them; a long press, a box, `+Clip`, a paste or a key shows a selection again.
-//! - A tap on empty track space only deselects a showing selection; else on the current track it shows `+Clip`
-//!   ([`Clips::plus_button`]), on another track it makes that one current. The current track goes with the
-//!   keyboard's channel (its main track until a tap picks another of its tracks), and only note and drum tracks show
-//!   `+Clip` (an automation or audio track takes no new clip here). A long press there lifted in place, or a right
-//!   click, is `Paste` while the clip clipboard holds clips ([`Clips::paste_button`]).
+//!   clip then selects it with them; a long press, a box, `New Clip`, a paste or a key shows a selection again.
+//! - A tap on empty track space only deselects a showing selection; else on the current track it shows the insert menu
+//!   `New Clip` / `Paste` at the snapped beat ([`Clips::insert_menu`]), and a second tap on that cell hides it; on
+//!   another track it makes that one current. The current track goes with the keyboard's channel (its main track until
+//!   a tap picks another of its tracks).
+//! - A long press on empty track space (any track) shows the menu there from 300 ms on, while the finger holds still,
+//!   and keeps it at the lift; dragging on makes it a marquee instead, and hides the menu. A right click on empty track
+//!   space shows the menu there too.
 
 use eframe::egui::{
     self, Align2, Color32, FontId, Id, Mesh, Painter, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2,
@@ -45,11 +48,12 @@ use crate::ui::automation::pop_scale;
 use crate::ui::buttons::bubble_button;
 use crate::ui::edit_keys::{self, EditKey};
 use crate::ui::graph_lane::{grow, press_growth};
+use crate::ui::insert::{self, Tap};
 use crate::ui::main_screen::track_rows;
 use crate::ui::piano_roll::notes::{Snap, auto_grid};
 use crate::ui::popup::{self, PopupItem};
 use crate::ui::preview::ClipKey;
-use crate::ui::step_seq::{self, pop_in};
+use crate::ui::step_seq::pop_in;
 use crate::ui::views::{AppCtx, Nav, Overlay};
 use crate::ui::widgets::truncated;
 use crate::ui::{UiCtx, gesture, primary_down_live};
@@ -137,15 +141,30 @@ pub(crate) fn paint_marquee(painter: &Painter, rect: Rect, cx: &UiCtx) {
 }
 
 // The selection overlay; sizes in U.
-/// A handle is a 1 U box drawn as a disc (the left one's box at most a third of the selection wide, so a narrow clip
-/// still moves from its middle).
-const HANDLE: f32 = 1.0;
-/// The right handle's centre, right of the selection box.
-const END_OFF: f32 = 0.65;
-/// The third (audio scale) handle's centre, below the selection box's bottom right corner.
-const SCALE_OFF: f32 = 0.8;
-/// The handle's rim: `background` at this alpha.
-const RIM_ALPHA: f32 = 0.3;
+/// A selection handle is a vertical capsule this wide and tall, plus 2 px each ([`capsule`]); its touch zone is
+/// [`ZONE`] wide (the start handle's at most a third of the selection wide, so a narrow clip still moves from most of
+/// its width).
+const HANDLE: [f32; 2] = [0.42, 1.41];
+const ZONE: f32 = 1.0;
+/// The start handle's right edge is this far inside the selection box's left edge; the end handle's left edge this far
+/// right of its right edge.
+const START_IN: f32 = 0.5;
+const END_OFF: f32 = 0.15;
+/// The third (audio scale) handle: a bar this wide and tall (plus 2 px), centred on the selection box's right edge, its
+/// top this far below the box.
+const SCALE_BAR: [f32; 2] = [1.0, 0.56];
+const SCALE_OFF: f32 = 0.12;
+/// A handle's frame and its grip bar: `menuFill` at these alphas. The grip is this share of the handle's width and
+/// height, centred.
+const FRAME_A: f32 = 0.3;
+const GRIP_A: f32 = 0.7;
+const GRIP: [f32; 2] = [0.18, 0.44];
+/// The third handle's `↔`: `text` mixed this much toward `menuFill`.
+const ARROW_MIX: f32 = 0.7;
+/// Under the mouse a handle is this much larger.
+const HOVER: f32 = 1.05;
+/// Clip boxes have rounded corners of this radius.
+pub(crate) const CORNER: f32 = 0.15;
 /// The selection fill: `text` at α 0.15 + 0.05·cos(2π·p), p advancing this much a drawn frame (an 80-frame cycle).
 const PULSE: [f32; 3] = [0.15, 0.05, 0.0125];
 /// The handles' pop-in: a ← 0.6·a per frame.
@@ -155,8 +174,6 @@ pub(crate) const BUTTON_D: f32 = 1.4;
 const ROW_B: f32 = 1.5;
 const ROW_SLOT: f32 = 1.6;
 const ROW_M: f32 = 0.2;
-/// The `+Clip` button's side.
-const PLUS: f32 = 1.5;
 /// Labels shrink until each fits this share of a button's diameter.
 const LABEL_FIT: f32 = 0.85;
 // The clip drawing.
@@ -278,10 +295,8 @@ pub struct Clips {
     last_tap: f64,
     /// A touch until it is decided.
     touch: Option<Touch>,
-    /// The `+Clip` button on track (channel, lane), centred on this tick.
-    plus: Option<(usize, usize, f64)>,
-    /// The Paste bubble on track (channel, lane), at this tick and screen y.
-    paste: Option<(usize, usize, f64, f32)>,
+    /// The insert menu (`New Clip`, `Paste`) on track (channel, lane), for this snapped tick ([`Self::insert_menu`]).
+    insert: Option<(usize, usize, f64)>,
     /// Several clips a marquee selected (none of them `selected`): one selection box with its handles, one floating row
     /// over them all.
     pub(crate) group: Vec<ClipRef>,
@@ -372,6 +387,8 @@ struct Touch {
     shown: bool,
     /// It left the calm zone too early to drag: nothing more until the lift.
     cancelled: bool,
+    /// The insert menu that showed at the touch-down (its press hid it).
+    menu: Option<(usize, usize, f64)>,
 }
 
 #[derive(Clone)]
@@ -443,8 +460,9 @@ impl Clips {
     /// is the area right of the track headers, which clips are clipped to. While Preview plays `preview` alone, every
     /// other clip is dimmed as a muted one. The `takes` being recorded show over the clips as live bars
     /// ([`paint_take`]). Song edits are reported through `app.song_edited`; a clip's `Edit`, or a double tap on it,
-    /// returns its editor's navigation. `+Clip`, `Copy` and `Snap` round to `snap`'s unit (round(beat/unit)·unit), and
-    /// drags too while it is on (whole ticks while off).
+    /// returns its editor's navigation, as does `New Clip` on an audio track (the sample picker). The insert menu,
+    /// `Copy` and `Snap` round to `snap`'s unit (round(beat/unit)·unit), and drags too while it is on (whole ticks
+    /// while off).
     #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
@@ -484,8 +502,10 @@ impl Clips {
         let down = primary_down_live(ui, Id::new("clip_touch"));
         let stale = held && !down || ui.input(|i| !i.focused || crate::ui::focus_lost(i));
         let multi = ui.input(|i| i.multi_touch().is_some());
-        if multi || stale || self.clipboard.is_empty() {
-            self.paste = None;
+        // The menu a touch-down finds: a tap on its own cell only hides it.
+        let menu = self.insert;
+        if multi || stale {
+            self.insert = None;
         }
         // A move's release leaves its selection quiet (module docs); a pinch puts the clips back as they were.
         if !down && !multi && self.drag.as_ref().is_some_and(|d| d.part == Part::Body) {
@@ -500,12 +520,11 @@ impl Clips {
             if pressed && tap.is_pointer_button_down_on() {
                 landed = Some(Target::Lane(channel, lane));
             }
-            // A right click there is `Paste`, while clips are copied.
+            // A right click there shows the insert menu.
             if tap.secondary_clicked()
-                && !self.clipboard.is_empty()
                 && let Some(p) = tap.interact_pointer_pos()
             {
-                self.paste = Some((channel, lane, axis.tick(p.x), p.y));
+                self.insert = Some((channel, lane, cell(axis.tick(p.x), snap)));
             }
         }
 
@@ -543,6 +562,8 @@ impl Clips {
                 )
             });
         let current = self.current_clip(app);
+        // The current clip's outline goes over every row and clip, after them all ([`paint_outline`]).
+        let mut outline = None;
         for &(r, rect) in &blocks {
             // A clip being recorded shows only as its take's live bar.
             let live =
@@ -558,6 +579,9 @@ impl Clips {
                     dimmed: clip.muted || silent,
                     picked: (self.selected == Some(r) && !body).then_some(pick),
                 };
+                if look.current {
+                    outline = Some((clip_box(rect, m), look.dimmed));
+                }
                 paint_clip(
                     &painter,
                     &app.cx,
@@ -591,6 +615,9 @@ impl Clips {
             }
         }
 
+        if let Some((b, dimmed)) = outline {
+            paint_outline(&painter, &app.cx, b, dimmed);
+        }
         self.line_slot = Some(painter.add(egui::Shape::Noop));
         // The selection overlay: one pulsing `text` box over every selected clip, gaps included, no outline. While a
         // marquee is live it is the only box drawn: the selection shows on its release; its frame still takes touches
@@ -600,7 +627,7 @@ impl Clips {
         if let Some(b) = sbox {
             let a = PULSE[0] + PULSE[1] * (std::f32::consts::TAU * self.pulse).cos();
             let text = app.cx.theme.colors.text;
-            painter.rect_filled(b, 0.0, Rgba { a, ..text }.to_color32());
+            painter.rect_filled(b, m.u(CORNER), Rgba { a, ..text }.to_color32());
             self.pulse = (self.pulse + PULSE[2]).fract();
             ui.ctx().request_repaint();
         } else {
@@ -632,9 +659,8 @@ impl Clips {
         // The handles pop in from the frame they show.
         self.shown = (sbox.is_some() && !body).then(|| self.shown.unwrap_or(now));
         let mut handles = Vec::new();
-        for (part, center) in
-            (sbox.filter(|_| !self.quiet)).map_or(Vec::new(), |b| handle_centres(b, scale, m))
-        {
+        let shown_box = sbox.filter(|_| !self.quiet);
+        for (part, rect) in shown_box.map_or(Vec::new(), |b| handle_rects(b, scale, m)) {
             // The right handle's drag hides the third, the third's the other two.
             let hidden = match self.held.map(|h| h.0) {
                 Some(Part::End) => part == Part::Scale,
@@ -642,14 +668,11 @@ impl Clips {
                 _ => false,
             };
             if !body && !hidden {
-                paint_handle(&painter, &app.cx, center, self.handle_anim(part, now));
-                handles.push(Rect::from_center_size(center, Vec2::splat(m.u(HANDLE))));
+                let anim = self.handle_anim(part, now);
+                paint_handle(&painter, &app.cx, rect, anim, part == Part::Scale);
+                handles.push(rect);
             }
-            let side = match (part, sbox) {
-                (Part::Start, Some(b)) => m.u(HANDLE).min(b.width() / 3.0),
-                _ => m.u(HANDLE),
-            };
-            let zone = Rect::from_center_size(center, Vec2::splat(side));
+            let zone = handle_zone(part, rect, shown_box.unwrap_or(rect), m);
             let response = ui.interact(
                 zone.intersect(grid),
                 Id::new(("clip_handle", part)),
@@ -662,14 +685,13 @@ impl Clips {
                 });
             }
         }
-        let plus = self.plus_button(ui, app, rows, axis, snap, bar, pressed);
         if self.marquee.is_some_and(|marquee| {
             marquee.dragged || crate::ui::gesture::left_calm(marquee.from, pos, m.u(1.0))
         }) {
-            self.paste = None;
+            self.insert = None;
         }
-        let paste = self.paste_button(ui, app, rows, axis, snap, pressed);
-        if plus || paste {
+        let (on_menu, picker) = self.insert_menu(ui, app, grid, rows, axis, (snap, bar), pressed);
+        if on_menu {
             landed = None;
         }
 
@@ -716,6 +738,7 @@ impl Clips {
                 current,
                 shown,
                 cancelled: false,
+                menu,
             });
         }
         let mut nav = None;
@@ -724,7 +747,7 @@ impl Clips {
             if stale {
                 self.touch = Some(touch);
             } else {
-                nav = self.decide(app, touch, (pos, now, down), rows, axis);
+                nav = self.decide(app, touch, (pos, now, down), rows, (axis, snap));
             }
             if let Some(t) = self.touch.filter(|t| matches!(t.on, Target::Lane(..))) {
                 // A held touch on empty space grows the marquee's square.
@@ -751,12 +774,14 @@ impl Clips {
             if marquee.dragged {
                 paint_marquee(&painter, marquee.drawn(m.u(1.0)), &app.cx);
             }
-            self.paste = None;
-            if !(multi || stale || marquee.dragged || self.clipboard.is_empty())
+            // Held still it is the insert menu's long press: the menu shows at its touch-down, and stays at its
+            // lift; dragged, it is a marquee only.
+            self.insert = None;
+            if !(multi || stale || marquee.dragged)
                 && let Some(&(channel, lane, _)) =
                     rows.iter().find(|r| r.2.y_range().contains(marquee.from.y))
             {
-                self.paste = Some((channel, lane, axis.tick(marquee.from.x), marquee.from.y));
+                self.insert = Some((channel, lane, cell(axis.tick(marquee.from.x), snap)));
                 ui.ctx().request_repaint();
             }
             if down && !multi && !stale {
@@ -791,7 +816,7 @@ impl Clips {
         };
         // A quiet selection has no row, which a release on it brings back neither.
         let sel = target
-            .filter(|_| !self.quiet && self.paste.is_none())
+            .filter(|_| !self.quiet && self.insert.is_none())
             .map(|(_, rect, _)| Selection {
                 rect,
                 one_row,
@@ -810,7 +835,7 @@ impl Clips {
             self.released = let_go.or(self.released);
         }
         self.more_menu(ui, app);
-        button.or(nav)
+        button.or(nav).or(picker)
     }
 
     /// Handle `part`'s animation now (as the other editor handles', e.g. the audio editor's stretch handle):
@@ -857,7 +882,7 @@ impl Clips {
     }
 
     /// Clip `r` becomes its track's current clip (DESc@24: view state, no edit) and its track the current one: a tap, a
-    /// double tap, `Edit`, `Select clip`, `Add clip` and `+Clip`. Nothing else changes a track's current clip.
+    /// double tap, `Edit`, `Select clip`, `Add clip` and `New Clip`. Nothing else changes a track's current clip.
     pub(crate) fn make_current(&mut self, song: &mut Song, keys: &mut usize, r: ClipRef) {
         if let Some(lane) = lane_mut(song, r.channel, r.lane) {
             lane.file.current_clip_id = r.id;
@@ -879,8 +904,8 @@ impl Clips {
     }
 
     /// Follows the tracks when channels or tracks move: `track` maps a track's old (channel, lane) to its new one, `None`
-    /// when it went. The selection, the current clip and track, the group and `+Clip` follow; what went with its
-    /// track goes, and a gesture under way ends.
+    /// when it went. The selection, the current clip and track, the group and the insert menu follow; what went with
+    /// its track goes, and a gesture under way ends.
     pub(crate) fn rekey(&mut self, track: impl Fn(usize, usize) -> Option<(usize, usize)>) {
         let map = |r: ClipRef| {
             track(r.channel, r.lane).map(|(channel, lane)| ClipRef { channel, lane, ..r })
@@ -897,19 +922,17 @@ impl Clips {
             .into_iter()
             .filter_map(map)
             .collect();
-        self.plus = (self.plus).and_then(|(c, l, tick)| track(c, l).map(|(c, l)| (c, l, tick)));
-        self.paste =
-            (self.paste).and_then(|(c, l, tick, y)| track(c, l).map(|(c, l)| (c, l, tick, y)));
+        self.insert = (self.insert).and_then(|(c, l, tick)| track(c, l).map(|(c, l)| (c, l, tick)));
         self.cursor = (self.cursor).and_then(|(tick, (c, l))| track(c, l).map(|t| (tick, t)));
         // A clip whose track is gone goes from the clipboard.
         let kept = std::mem::take(&mut self.clipboard).into_iter();
         self.clipboard = kept.filter_map(|(r, k, c)| Some((map(r)?, k, c))).collect();
     }
 
-    /// The view scrolled or zoomed sideways: `+Clip` and `Paste` hide. (The floating row hides at any view change by
+    /// The view scrolled or zoomed sideways: the insert menu hides. (The floating row hides at any view change by
     /// itself.)
     pub(crate) fn view_moved(&mut self) {
-        (self.plus, self.paste) = (None, None);
+        self.insert = None;
     }
 
     /// A touch on empty track space held past a tap, or its marquee: the playlist does not scroll under it (`now`,
@@ -936,10 +959,10 @@ impl Clips {
     /// The keymap's editing actions while the playlist holds the keyboard (`ui/edit_keys.rs`), on the selected clip or
     /// the group as the floating row's: `copy` puts them on the clip clipboard, `cut` too, `cut` and `delete` remove
     /// them, `paste` adds the clipboard at the grid cursor ([`paste_clips`]), `open` selects the clip at the cursor
-    /// (`Select clip`, no edit) or else is `Add clip` there (the `+Clip` rule: note and drum tracks only), `close`
-    /// deselects; `selectAll` is the piano roll's only. Each edit is one final edit; each action hides the floating row
-    /// and `+Clip`. Called after the playlist's popups, which take Escape first; nothing during a touch. `snap` is the
-    /// grid in ticks.
+    /// (`Select clip`, no edit) or else is `Add clip` there (`New Clip`'s rule, note and drum tracks only),
+    /// `close` deselects; `selectAll` is the piano roll's only. Each edit is one final edit; each action hides the
+    /// floating row and the insert menu. Called after the playlist's popups, which take Escape first; nothing during a
+    /// touch. `snap` is the grid in ticks.
     pub(crate) fn keys(&mut self, ui: &egui::Ui, app: &mut AppCtx, snap: f64) {
         if self.touch.is_some() || self.drag.is_some() || self.marquee.is_some() {
             return;
@@ -950,7 +973,7 @@ impl Clips {
         };
         self.row.hide();
         // A key shows the selection's handles, as before a move left it quiet.
-        (self.plus, self.quiet) = (None, false);
+        (self.insert, self.quiet) = (None, false);
         ctx.request_repaint();
         let targets = self.targets();
         if matches!(k, EditKey::Copy | EditKey::Cut) && !targets.is_empty() {
@@ -1047,7 +1070,7 @@ impl Clips {
         mut touch: Touch,
         (pos, now, down): (Option<Pos2>, f64, bool),
         rows: &[(usize, usize, Rect)],
-        axis: TimeAxis,
+        (axis, snap): (TimeAxis, f64),
     ) -> Option<Nav> {
         let euclid = gesture::left_calm(touch.origin, pos, app.cx.m.u(1.0));
         // Empty lane space is the scroller's: its per-axis calm zone decides.
@@ -1095,123 +1118,99 @@ impl Clips {
             Target::Group(None, Part::Body) if tap => self.deselect(),
             // A handle's long press keeps the group; a long press on the frame shows it.
             Target::Group(..) => self.quiet = false,
-            // On empty lane space a tap only deselects a showing selection; else, on the current track it shows `+Clip`
-            // (on an audio track it opens the sample picker, whose first pick makes the clip there, at the grid line
-            // nearest the tap, as `+Clip`), on another it makes that track current. A long press there is `Paste` (its
-            // marquee's release, `Self::show`).
+            // On empty lane space a tap only deselects a showing selection; else, on the current track it shows the
+            // insert menu at the snapped beat, or hides it when the touch-down hid it there; on another track it makes
+            // that track current. A long press there is the menu's too (its marquee's, `Self::show`).
             Target::Lane(channel, lane) if tap && !moved => {
                 // A quiet selection too: a selection is there, so the tap only deselects.
                 if self.selected.is_some() || !self.group.is_empty() {
                     self.deselect();
                 } else if (channel, lane) == self.current_track(app) {
-                    let row = rows.iter().find(|r| (r.0, r.1) == (channel, lane));
-                    let kind = (app.song.channels.get(channel)).and_then(|c| c.lanes.get(lane));
-                    let takes =
-                        kind.is_some_and(|l| matches!(l.kind, LaneKind::Notes | LaneKind::Drums));
-                    let tick = axis.tick(touch.origin.x);
-                    if row.is_some() && kind.is_some_and(|l| l.kind == LaneKind::Audio) {
-                        let grid = grid_ticks(axis, app.song.time_sig, app.cx.m);
-                        let tick = ((tick.max(0.0) / grid).round() * grid).round() as u32;
-                        let picker = Overlay::TrackSamplePicker {
-                            channel,
-                            lane,
-                            tick,
-                        };
-                        return Some(Nav::Open(picker));
-                    }
-                    if row.is_some() && takes {
-                        self.plus = Some((channel, lane, tick));
+                    let at = (channel, lane, cell(axis.tick(touch.origin.x), snap));
+                    if touch.menu != Some(at) && rows.iter().any(|r| (r.0, r.1) == (channel, lane))
+                    {
+                        self.insert = Some(at);
                     }
                 } else {
                     self.make_current_track(app, channel, lane);
                 }
+            }
+            // A long press lifted in place before its marquee started: the insert menu there, as the marquee's would.
+            Target::Lane(channel, lane) if !moved => {
+                self.deselect();
+                self.insert = Some((channel, lane, cell(axis.tick(touch.origin.x), snap)));
             }
             Target::Lane(..) => {}
         }
         None
     }
 
-    /// The `+Clip` button while it shows: a 1.5 U square centred on the tap's x and its row's centre line, a `menuFill`
-    /// square labelled `+Clip` in `text`. Pressing it adds a clip on that track
-    /// at the snap line nearest its centre ([`add_clip`]) and makes it the current, selected clip; any other press
-    /// hides it. Returns whether the press was on it.
+    /// The insert menu while it shows ([`insert::show`]): `New Clip` and `Paste` over its track's row at its snapped
+    /// tick, the insert cursor across the row. `New Clip` adds a one-bar clip there on a note or drum track
+    /// ([`add_clip`]), the current, selected clip; on an audio track it opens the sample picker, whose first pick makes
+    /// the clip there. An automation track takes no new clip, so there it is dimmed. `Paste` pastes the clip clipboard
+    /// there ([`paste_clips`]), selecting the copies; it is dimmed while the clipboard is empty. Any other press hides
+    /// the menu, as does a track that went. Returns whether this frame's press is on it, and the picker to open.
     #[allow(clippy::too_many_arguments)]
-    fn plus_button(
+    fn insert_menu(
         &mut self,
         ui: &mut egui::Ui,
         app: &mut AppCtx,
+        grid: Rect,
         rows: &[(usize, usize, Rect)],
         axis: TimeAxis,
-        snap: f64,
-        bar: u32,
+        (snap, bar): (f64, u32),
         pressed: bool,
-    ) -> bool {
-        let Some((channel, lane, tick)) = self.plus else {
-            return false;
+    ) -> (bool, Option<Nav>) {
+        let Some((channel, lane, tick)) = self.insert else {
+            return (false, None);
         };
         let Some(&(.., row)) = rows.iter().find(|r| (r.0, r.1) == (channel, lane)) else {
-            self.plus = None;
-            return false;
+            self.insert = None;
+            return (false, None);
         };
-        let (c, m) = (&app.cx.theme.colors, app.cx.m);
-        let rect =
-            Rect::from_center_size(pos2(axis.x(tick), row.center().y), Vec2::splat(m.u(PLUS)));
-        let response = ui.interact(rect, Id::new("clip_plus"), Sense::click());
-        ui.painter()
-            .rect_filled(rect, 0.0, c.menu_fill.to_color32());
-        let font = m.font_id(FontSize::Pt12);
-        let text = c.text.to_color32();
-        (ui.painter()).text(rect.center(), Align2::CENTER_CENTER, "+Clip", font, text);
-        let on = response.is_pointer_button_down_on();
-        if response.clicked() {
-            self.plus = None;
-            if let Some(l) = lane_mut(app.song, channel, lane) {
-                let id = add_clip(l, tick, snap, bar);
-                let r = ClipRef { channel, lane, id };
-                (self.selected, self.quiet) = (Some(r), false);
-                self.make_current(app.song, app.selected, r);
-                app.song_edited(true);
-            }
-        } else if pressed && !on {
-            self.plus = None;
-        }
-        on
-    }
-
-    /// One Paste bubble at the held position. Its tap pastes the clip clipboard there, selecting the copies;
-    /// any other press hides it, as does a track that went. Whether this frame's press is on it.
-    fn paste_button(
-        &mut self,
-        ui: &mut egui::Ui,
-        app: &mut AppCtx,
-        rows: &[(usize, usize, Rect)],
-        axis: TimeAxis,
-        snap: f64,
-        pressed: bool,
-    ) -> bool {
-        let Some((channel, lane, tick, y)) = self.paste else {
-            return false;
-        };
-        if !rows.iter().any(|r| (r.0, r.1) == (channel, lane)) {
-            self.paste = None;
-            return false;
-        }
-        let finger = pos2(axis.x(tick), y);
-        let (rect, tap) = step_seq::paste_button(ui, &app.cx, Id::new("clip_paste"), finger);
+        let kind = (app.song.channels.get(channel))
+            .and_then(|c| c.lanes.get(lane))
+            .map(|l| l.kind);
+        let new = matches!(
+            kind,
+            Some(LaneKind::Notes | LaneKind::Drums | LaneKind::Audio)
+        );
+        let items = [("New Clip", new), ("Paste", !self.clipboard.is_empty())];
+        let at = (axis.x(tick), row.y_range(), row.y_range());
+        let tap = insert::show(ui, &app.cx, Id::new("clip_insert"), grid, at, &items);
+        let mut nav = None;
         if tap.is_some() {
-            self.paste = None;
+            self.insert = None;
         }
-        if tap == Some(true) {
-            let pasted = paste_clips(app.song, &self.clipboard, tick, (channel, lane), snap);
-            if !pasted.is_empty() {
-                self.set_selection(pasted);
-                app.song_edited(true);
+        match tap {
+            Some(Tap::Button(0)) if kind == Some(LaneKind::Audio) => {
+                let tick = tick as u32;
+                nav = Some(Nav::Open(Overlay::TrackSamplePicker {
+                    channel,
+                    lane,
+                    tick,
+                }));
             }
+            Some(Tap::Button(0)) => {
+                if let Some(l) = lane_mut(app.song, channel, lane) {
+                    let id = add_clip(l, tick, snap, bar);
+                    let r = ClipRef { channel, lane, id };
+                    (self.selected, self.quiet) = (Some(r), false);
+                    self.make_current(app.song, app.selected, r);
+                    app.song_edited(true);
+                }
+            }
+            Some(Tap::Button(_)) => {
+                let pasted = paste_clips(app.song, &self.clipboard, tick, (channel, lane), snap);
+                if !pasted.is_empty() {
+                    self.set_selection(pasted);
+                    app.song_edited(true);
+                }
+            }
+            Some(Tap::Away) | None => {}
         }
-        pressed
-            && ui
-                .input(|i| i.pointer.interact_pos())
-                .is_some_and(|p| rect.contains(p))
+        (pressed && tap != Some(Tap::Away), nav)
     }
 
     /// Starts dragging the selected clip's `part` from the press at `press`.
@@ -1627,17 +1626,58 @@ fn selection_box(
         .filter(|_| !rows.is_empty())
 }
 
-/// The selection box `b`'s handles and their centres: the left one on its left edge and the right one 0.65 U
-/// right of its right edge, both at mid height; with `scale`, the third one at its right edge, 0.8 U below it.
-fn handle_centres(b: Rect, scale: bool, m: &Metrics) -> Vec<(Part, Pos2)> {
-    let mut handles = vec![
-        (Part::Start, pos2(b.left(), b.center().y)),
-        (Part::End, pos2(b.right() + m.u(END_OFF), b.center().y)),
-    ];
+/// The selection box `b`'s handles as drawn: the start capsule ending 0.5 U inside its left edge (none when it would
+/// touch the end one), the end capsule from 0.15 U right of its right edge, both centred on it vertically; with
+/// `scale`, the third handle's bar centred on its right edge, 0.12 U below it.
+fn handle_rects(b: Rect, scale: bool, m: &Metrics) -> Vec<(Part, Rect)> {
+    let end = end_handle(b, m);
+    let size = capsule(m);
+    let start = Rect::from_min_size(pos2(b.left() + m.u(START_IN) - size.x, end.top()), size);
+    let mut handles = Vec::new();
+    if start.right() < end.left() {
+        handles.push((Part::Start, start));
+    }
+    handles.push((Part::End, end));
     if scale {
-        handles.push((Part::Scale, pos2(b.right(), b.bottom() + m.u(SCALE_OFF))));
+        let bar = vec2(m.u(SCALE_BAR[0]), m.u(SCALE_BAR[1]) + 2.0 / m.ppp());
+        let top = b.bottom() + m.u(SCALE_OFF);
+        let bar = Rect::from_min_size(pos2(b.right() - bar.x / 2.0, top), bar);
+        handles.push((Part::Scale, bar));
     }
     handles
+}
+
+/// A selection handle's size: (0.42 U + 2 px) × (1.41 U + 2 px).
+pub(crate) fn capsule(m: &Metrics) -> Vec2 {
+    let px2 = 2.0 / m.ppp();
+    vec2(m.u(HANDLE[0]) + px2, m.u(HANDLE[1]) + px2)
+}
+
+/// The end handle of the box `b` (a selection, a note, a hit): the capsule from 0.15 U right of it, centred on it
+/// vertically.
+pub(crate) fn end_handle(b: Rect, m: &Metrics) -> Rect {
+    let size = capsule(m);
+    Rect::from_min_size(
+        pos2(b.right() + m.u(END_OFF), b.center().y - size.y / 2.0),
+        size,
+    )
+}
+
+/// The end handle's centre right of the box's right edge, in U, less the capsule's 1 px frame: where the editors
+/// centre its touch box.
+pub(crate) const END_CENTRE: f32 = END_OFF + HANDLE[0] / 2.0;
+/// The capsule's height in U, less its frame: the editors' touch boxes are this tall.
+pub(crate) const HANDLE_H: f32 = HANDLE[1];
+
+/// Its touch zone, centred on it: as tall as a capsule and [`ZONE`] wide (the start one at most a third of the
+/// selection box `b`), or for the bar as wide as it and [`ZONE`] tall.
+fn handle_zone(part: Part, rect: Rect, b: Rect, m: &Metrics) -> Rect {
+    let size = match part {
+        Part::Start => vec2(m.u(ZONE).min(b.width() / 3.0), rect.height()),
+        Part::Scale => vec2(rect.width(), m.u(ZONE)),
+        Part::End | Part::Body => vec2(m.u(ZONE), rect.height()),
+    };
+    Rect::from_center_size(rect.center(), size)
 }
 
 /// Whether a clip of `lane` alone in the selection takes the third handle: an audio clip that does not loop,
@@ -1647,19 +1687,62 @@ fn scalable(lane: &Lane, clip: &Clip) -> bool {
     lane.kind == LaneKind::Audio && visible <= lp - wrap(clip.offset_beats, lp)
 }
 
-/// A selection handle at `center`: a 1 U box drawn as a disc, radius 0.5 U in `background` α 0.3 under a
-/// `text` disc 1 px smaller; its animation ([`Clips::handle_anim`]) scales both radii by its pop-in and widens both
-/// discs by its growth in device pixels, as the stretch handle's.
-fn paint_handle(painter: &Painter, cx: &UiCtx, center: Pos2, (scale, growth): (f32, f32)) {
+/// A selection handle in `rect` (every editor's): a `menuFill` α 0.3 frame a device pixel wide around a `text` body,
+/// both with round ends; a capsule ([`capsule`]) has a `menuFill` α 0.7 grip bar (0.18 × 0.44 of it) in the middle,
+/// the third handle's bar (`arrows`) a `↔` in 0.3·`text` + 0.7·`menuFill`. Its animation scales it about its centre
+/// by `scale` (a pop-in) and widens it by `growth` device pixels (a press, [`press_growth`]); under the mouse it is
+/// 5 % larger.
+pub(crate) fn paint_handle(
+    painter: &Painter,
+    cx: &UiCtx,
+    rect: Rect,
+    (scale, growth): (f32, f32),
+    arrows: bool,
+) {
     let (m, c) = (cx.m, &cx.theme.colors);
-    let (r, px) = (m.u(HANDLE) / 2.0, 1.0 / m.ppp());
-    let rim = Rgba {
-        a: RIM_ALPHA,
-        ..c.background
+    let px = 1.0 / m.ppp();
+    let hover = painter
+        .ctx()
+        .input(|i| (i.pointer.hover_pos()).filter(|_| !i.pointer.any_down()));
+    let k = scale
+        * if hover.is_some_and(|p| rect.contains(p)) {
+            HOVER
+        } else {
+            1.0
+        };
+    let outer = Rect::from_center_size(rect.center(), rect.size() * k).expand(growth * px / 2.0);
+    let body = outer.shrink(px);
+    if !body.is_positive() {
+        return;
+    }
+    let round = |r: Rect| r.width().min(r.height()) / 2.0;
+    let frame = Rgba {
+        a: FRAME_A,
+        ..c.menu_fill
     };
-    let grown = growth * px / 2.0;
-    painter.circle_filled(center, r * scale + grown, rim.to_color32());
-    painter.circle_filled(center, (r - px) * scale + grown, c.text.to_color32());
+    painter.rect_filled(outer, round(outer), frame.to_color32());
+    painter.rect_filled(body, round(body), c.text.to_color32());
+    if arrows {
+        let ink = mix(c.text, c.menu_fill, ARROW_MIX).to_color32();
+        let (mid, w, a) = (body.center(), body.width() * 0.3, body.height() * 0.25);
+        let stroke = Stroke::new(body.height() * 0.1, ink);
+        painter.line_segment([mid - vec2(w, 0.0), mid + vec2(w, 0.0)], stroke);
+        for s in [-1.0, 1.0] {
+            let tip = mid + vec2(s * w, 0.0);
+            let back = tip - vec2(s * a, 0.0);
+            painter.add(egui::Shape::line(
+                vec![back - vec2(0.0, a), tip, back + vec2(0.0, a)],
+                stroke,
+            ));
+        }
+    } else {
+        let grip = Rect::from_center_size(outer.center(), outer.size() * Vec2::from(GRIP));
+        let ink = Rgba {
+            a: GRIP_A,
+            ..c.menu_fill
+        };
+        painter.rect_filled(grip, round(grip), ink.to_color32());
+    }
 }
 
 /// The third handle's scale of an audio clip by `k`, its sample `frames` long at `rate` (as the audio editor's stretch
@@ -1683,13 +1766,9 @@ fn stretch_clip(song: &mut Song, r: ClipRef, (frames, rate): (usize, u32), k: f6
         len_beats: len,
         ratio,
     };
-    let mut changed = audio_editor::apply(song, (r.channel, r.lane, r.id), &stretched);
+    let changed = audio_editor::apply(song, (r.channel, r.lane, r.id), &stretched);
     if let Some(clip) = find_mut(song, r) {
         clip.visible_len_beats = visible;
-        if let Some(slot) = clip.file.sample.as_deref_mut() {
-            changed |= slot.file.stretch_mode == 0;
-            slot.file.stretch_mode = slot.file.stretch_mode.max(1);
-        }
     }
     changed
 }
@@ -1782,9 +1861,9 @@ impl Look {
 }
 
 /// A clip of `lane` in its clip box `b` ([`clip_box`]) on `painter`, which is clipped to the grid
-/// (a = playlistTrackBackgroundTransparency):
-/// 1. the current clip only: a `background` box t taller above and below, a `text` fill 1.5t taller at α a, and its
-///    outline t wide at α a (1 − a² when a² < 0.9);
+/// (a = playlistTrackBackgroundTransparency). Every box has corners of radius 0.15 U:
+/// 1. the current clip only: its frame F ([`current_frame`]) filled with `background`, then with `text` at α a, so a
+///    ring 1.5t wide shows round the clip on every side; its outline comes after every clip ([`paint_outline`]);
 /// 2. the frame: `background` at α 0.3 over the box grown by a device pixel;
 /// 3. the body: the channel colour at α a; no header strip;
 /// 4. the name ([`clip_name`]): 8 pt in the content colour, in the top 0.7 U from 5 px in (or the grid's left edge)
@@ -1810,18 +1889,16 @@ fn paint_clip(
     let (bg, text) = (theme.colors.background, theme.colors.text);
     let a = theme.options.playlist_track_background_transparency;
     let alpha = |c: Rgba, a: f32| Rgba { a, ..c }.to_color32();
+    let r = m.u(CORNER);
     if look.current {
-        painter.rect_filled(b.expand2(vec2(0.0, t)), 0.0, bg.to_color32());
-        let lit = b.expand2(vec2(0.0, 1.5 * t));
-        painter.rect_filled(lit, 0.0, alpha(text, a));
-        let edge = if a * a < 0.9 { 1.0 - a * a } else { a };
-        let stroke = Stroke::new(t, alpha(text, edge));
-        painter.rect_stroke(lit, 0.0, stroke, StrokeKind::Middle);
+        let (lit, lit_r, lit_a) = current_frame(cx, b, look.dimmed);
+        painter.rect_filled(lit, lit_r, bg.to_color32());
+        painter.rect_filled(lit, lit_r, alpha(text, lit_a));
     }
-    painter.rect_filled(b.expand(px), 0.0, alpha(bg, FRAME_ALPHA));
+    painter.rect_filled(b.expand(px), r + px, alpha(bg, FRAME_ALPHA));
     let color = channel_color(channel.hue, theme);
     let body = painter.with_clip_rect(painter.clip_rect().intersect(b));
-    body.rect_filled(b, 0.0, alpha(color, a));
+    body.rect_filled(b, r, alpha(color, a));
     let (content, stops) = tint(theme, color);
     let left = (b.left() + NAME_IN_PX * px).max(painter.clip_rect().left());
     let name = Rect::from_x_y_ranges(
@@ -1898,6 +1975,28 @@ fn paint_clip(
     }
 }
 
+/// The current clip's frame F around its clip box `b`: grown 1.5t on every side, its corners r + 1.5t, and its α a
+/// (a = playlistTrackBackgroundTransparency, × 0.25 when `dimmed`, clamped to 0–1).
+fn current_frame(cx: &UiCtx, b: Rect, dimmed: bool) -> (Rect, f32, f32) {
+    let g = 1.5 * cx.m.t();
+    let a = cx.theme.options.playlist_track_background_transparency;
+    let a = if dimmed { 0.25 * a } else { a }.clamp(0.0, 1.0);
+    (b.expand(g), cx.m.u(CORNER) + g, a)
+}
+
+/// The current clip's outline, drawn after every row and clip so it lies over its neighbours: F's rounded edge
+/// ([`current_frame`]) in `text` at α 1 − a² while a² < 0.9, else a, a band t + 1 px wide centred on the edge.
+fn paint_outline(painter: &Painter, cx: &UiCtx, b: Rect, dimmed: bool) {
+    let (f, r, a) = current_frame(cx, b, dimmed);
+    let edge = if a * a < 0.9 { 1.0 - a * a } else { a };
+    let color = Rgba {
+        a: edge,
+        ..cx.theme.colors.text
+    };
+    let stroke = Stroke::new(cx.m.t() + 1.0 / cx.m.ppp(), color.to_color32());
+    painter.rect_stroke(f, r, stroke, StrokeKind::Middle);
+}
+
 /// A clip's loop repeats that reach song ticks `from..to`: with L the loop and o the offset wrapped into [0, L),
 /// repeat i = 0 … ceil((o + length)/L) − 1 starts at start + i·L − o. Returns repeat 0's start, L and the repeats'
 /// range; `None` without a loop.
@@ -1924,8 +2023,9 @@ fn paint_take(painter: &Painter, cx: &UiCtx, channel: &Channel, rect: Rect) {
     let (b, px) = (clip_box(rect, cx.m), 1.0 / cx.m.ppp());
     let color = channel_color(channel.hue, cx.theme);
     let (content, _) = tint(cx.theme, color);
-    painter.rect_filled(b.shrink2(vec2(0.0, px)), 0.0, color.to_color32());
-    painter.rect_filled(b.shrink2(vec2(0.0, 3.0 * px)), 0.0, content.to_color32());
+    let r = cx.m.u(CORNER);
+    painter.rect_filled(b.shrink2(vec2(0.0, px)), r, color.to_color32());
+    painter.rect_filled(b.shrink2(vec2(0.0, 3.0 * px)), r, content.to_color32());
 }
 
 /// A clip's name (DESc@28): an automation lane's custom label, else its auto name (`<Param> : <Module>`, `Level`); an
@@ -2320,6 +2420,11 @@ pub fn dragged(orig: Span, loop_beats: f64, part: Part, delta: f64, grid: f64, m
             }
         }
     }
+}
+
+/// The grid line nearest `tick` (≥ 0), as a whole tick: where the insert menu inserts.
+fn cell(tick: f64, grid: f64) -> f64 {
+    ((tick.max(0.0) / grid).round() * grid).round()
 }
 
 /// Adds a one-bar clip (`bar` beats) to `lane` from the grid line nearest `tick` (round(beat/unit)·unit);
@@ -3570,7 +3675,7 @@ mod tests {
 
     // ---- the clip drawing and the muted clip's tint ----
 
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
     use crate::song::{ChannelKind, SynthKind};
     use crate::theme::theme_by_id;
 
@@ -3629,7 +3734,7 @@ mod tests {
     const ALL: Rect = Rect::EVERYTHING;
 
     fn m1() -> Metrics {
-        Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX)
+        Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE)
     }
 
     /// A song with a MiniSynth (channel 1), whose colour and name the test clips take.
@@ -3639,8 +3744,9 @@ mod tests {
         song
     }
 
-    /// Every shape [`paint_clip`] paints for `lane`'s first clip with `look`, on `theme` at ppp 1 and `axis` on [`TRACK`],
-    /// its painter clipped to `grid`, in paint order; and the clip box.
+    /// Every shape [`paint_clip`] paints for `lane`'s first clip with `look` (then a current clip's
+    /// [`paint_outline`]), on `theme` at ppp 1 and `axis` on [`TRACK`], its painter clipped to `grid`, in paint order;
+    /// and the clip box.
     fn paint_all(
         lane: &Lane,
         wave: Option<(&Waveform, Wave)>,
@@ -3671,6 +3777,9 @@ mod tests {
                 let painter = ui.painter().with_clip_rect(grid);
                 let channel = &song.channels[1];
                 paint_clip(&painter, &cx, channel, lane, clip, wave, look, b, axis);
+                if look.current {
+                    paint_outline(&painter, &cx, b, look.dimmed);
+                }
             });
         });
         // Less the panel's empty placeholder.
@@ -3754,18 +3863,18 @@ mod tests {
         let narrow = clip_box(Rect::from_x_y_ranges(100.2..=100.9, 100.0..=163.0), &m);
         assert_eq!(narrow.x_range(), Rangef::new(100.0, 102.0));
         // ppp 2: device pixels are half points, and the row less its gap ends half a point above the next.
-        let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE);
         let b = clip_box(Rect::from_x_y_ranges(100.7..=228.9, 100.0..=163.5), &m);
         let want = Rect::from_min_max(pos2(100.5, 100.5), pos2(228.5, 164.0 - m.t() - 0.5));
         assert_eq!(b, want);
     }
 
     #[test]
-    fn only_the_current_clip_has_the_light_outline_1_5_t_above_and_below_it() {
+    fn only_the_current_clip_has_the_light_frame_1_5_t_on_every_side() {
         let lane = notes_lane(4.0);
         let mut theme = theme_by_id(0);
         let (bg, text) = (theme.colors.background, theme.colors.text);
-        let t = m1().t();
+        let (t, r) = (m1().t(), m1().u(CORNER));
         assert_eq!(t, 2.0);
         let rects = |shapes: Vec<egui::Shape>| -> Vec<egui::epaint::RectShape> {
             (shapes.into_iter())
@@ -3780,38 +3889,41 @@ mod tests {
         let plain = rects(shapes);
         assert!(plain.iter().all(|r| b.expand(1.0).contains_rect(r.rect)));
         assert!(plain.iter().all(|r| r.stroke.width == 0.0));
-        // Current: a `background` box t taller, a `text` fill 1.5t taller at α a, and its outline t wide at α a, or
-        // 1 − a² while a² < 0.9; then the clip as before.
-        for (a, edge) in [
-            (1.0, 1.0),
-            (0.5, 0.75),
-            (0.92, 1.0 - 0.92 * 0.92),
-            (0.96, 0.96),
+        // Current: F, the box grown 1.5t on every side with corners r + 1.5t, filled `background` then `text` at α a
+        // (a quarter of it when dimmed); then the clip as before; last F's outline, t + 1 px wide, at α 1 − a² while
+        // a² < 0.9, else a.
+        for (a, dimmed, fill, edge) in [
+            (1.0, false, 1.0, 1.0),
+            (0.5, false, 0.5, 0.75),
+            (0.92, false, 0.92, 1.0 - 0.92 * 0.92),
+            (0.96, false, 0.96, 0.96),
+            (1.0, true, 0.25, 1.0 - 0.25 * 0.25),
         ] {
             theme.options.playlist_track_background_transparency = a;
             let look = Look {
                 current: true,
+                dimmed,
                 ..Look::default()
             };
             let (shapes, b) = paint_all(&lane, None, look, &theme, ALL, AXIS);
             let lit = rects(shapes);
-            let tall = b.expand2(vec2(0.0, 1.5 * t));
+            let f = b.expand(1.5 * t);
+            let corner = egui::CornerRadius::from(r + 1.5 * t);
             assert_eq!(
-                (lit[0].rect, lit[0].fill),
-                (b.expand2(vec2(0.0, t)), bg.to_color32())
+                (lit[0].rect, lit[0].corner_radius, lit[0].fill),
+                (f, corner, bg.to_color32())
             );
+            let fill = Rgba { a: fill, ..text }.to_color32();
+            assert_eq!((lit[1].rect, lit[1].fill), (f, fill), "a {a}");
+            assert_eq!(lit[2].rect, b.expand(1.0));
+            let outline = lit.last().unwrap();
+            let stroke = Stroke::new(t + 1.0, Rgba { a: edge, ..text }.to_color32());
+            assert_eq!((outline.rect, outline.corner_radius), (f, corner), "a {a}");
             assert_eq!(
-                (lit[1].rect, lit[1].fill),
-                (tall, Rgba { a, ..text }.to_color32())
-            );
-            let stroke = Stroke::new(t, Rgba { a: edge, ..text }.to_color32());
-            assert_eq!(lit[2].rect, tall, "a {a}");
-            assert_eq!(
-                (lit[2].stroke, lit[2].stroke_kind),
+                (outline.stroke, outline.stroke_kind),
                 (stroke, StrokeKind::Middle),
                 "a {a}"
             );
-            assert_eq!(lit[3].rect, b.expand(1.0));
         }
     }
 
@@ -3833,7 +3945,7 @@ mod tests {
                 Rect::from_min_max(pos2(100.0, 100.5), pos2(228.0, 161.0)),
             ),
         ] {
-            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
             let lane = notes_lane(4.0);
             let (shapes, b) = paint_at(&lane, None, Look::default(), &theme, ALL, AXIS, &m);
             let [egui::Shape::Rect(frame), egui::Shape::Rect(body), ..] = &shapes[..] else {
@@ -3920,7 +4032,7 @@ mod tests {
         assert_eq!(at.left(), 105.0);
         assert!((at.center().y - 112.2).abs() < 0.01, "{at:?}");
         // At ppp 2 the 5 px are 2.5 points, from y0 = 100.5.
-        let m2 = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX);
+        let m2 = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE);
         let (_, at, _, font) = name_at("Drive : Distortion", 8.0, 0.0, &m2).unwrap();
         assert_eq!((at.left(), font), (102.5, m2.font_id(FontSize::Pt8)));
         assert!((at.center().y - 111.7).abs() < 0.01, "{at:?}");
@@ -4073,7 +4185,7 @@ mod tests {
             origin: 0.0,
             beat_w: 32.0,
         };
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let area = Rect::from_x_y_ranges(0.0..=3200.0, 0.0..=48.0);
         let view = Rect::from_x_y_ranges(320.0..=448.0, 0.0..=48.0);
         let out = egui::Context::default().run(egui::RawInput::default(), |ctx| {
@@ -4135,7 +4247,7 @@ mod tests {
             origin: -16_000_000.0,
             beat_w: 32.0,
         };
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let area = Rect::from_x_y_ranges(axis.x(0.0)..=axis.x(1.28e8), 0.0..=48.0);
         let view = Rect::from_x_y_ranges(0.0..=128.0, 0.0..=48.0);
         let fills = miniature_fills(clip.clone(), area, view, axis, m).expect("painted within 5 s");
@@ -4146,7 +4258,7 @@ mod tests {
     #[test]
     fn a_one_bar_loop_of_200_notes_paints_at_the_lowest_zoom_on_every_ui_scale() {
         // The playlist's lowest zoom: d/48 U a beat, at d = 4.
-        for scale in 0..crate::metrics::UI_SCALE_FACTORS.len() {
+        for scale in [60, 75, 90, 100, 110, 125, 150, 175, 200] {
             let m = Metrics::from_pixels_per_point(1.0, scale);
             let mut lane = Lane::new(LaneKind::Notes);
             let clip = lane.add_clip(0, 4.0);
@@ -4173,7 +4285,7 @@ mod tests {
             origin: 0.0,
             beat_w: 32.0,
         };
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let area = Rect::from_x_y_ranges(0.0..=3200.0, 0.0..=48.0);
         assert_eq!(miniature_fills(clip.clone(), area, area, axis, m), Some(0));
         // Nor repeats: no triangles, no notes.
@@ -4383,7 +4495,7 @@ mod tests {
     /// The boxes [`automation`] fills of `clip` in red as (left, right, top), `view` the painter's clip rect, at 32
     /// points a beat from x = 100, values over y 0 ..= 49 (a box from 48 − ⌊48·v⌋), ppp 1.
     fn automation_boxes(clip: &Clip, view: Rect) -> Vec<(f32, f32, f32)> {
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let area = Rect::from_x_y_ranges(0.0..=10_000.0, 1.0..=49.0);
         let out = egui::Context::default().run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
@@ -4480,7 +4592,7 @@ mod tests {
         let color = channel_color(song.channels[1].hue, &theme);
         let (content, _) = stops();
         for ppp in [1.0, 2.0] {
-            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
             let cx = UiCtx {
                 theme: &theme,
                 m: &m,
@@ -4556,62 +4668,31 @@ mod tests {
     }
 
     #[test]
-    fn the_handles_sit_on_the_left_edge_0_65_u_right_of_the_right_one_and_0_8_u_under_its_corner() {
+    fn the_capsules_end_0_5_u_inside_and_start_0_15_u_outside_and_the_start_one_hides_when_they_would_touch()
+     {
+        // U = 32: a capsule is 15.44 × 47.12 (0.42 U + 2 px by 1.41 U + 2 px), centred on the box vertically.
         let m = m1();
         let b = Rect::from_min_max(pos2(164.0, 48.0), pos2(420.0, 240.0));
-        let (left, right, third) = (
-            pos2(164.0, 144.0),
-            pos2(420.0 + 20.8, 144.0),
-            pos2(420.0, 265.6),
-        );
-        let parts = |scale| -> Vec<(Part, Pos2)> { handle_centres(b, scale, &m) };
-        assert_eq!(parts(false), [(Part::Start, left), (Part::End, right)]);
-        assert_eq!(
-            parts(true),
-            [
-                (Part::Start, left),
-                (Part::End, right),
-                (Part::Scale, third)
-            ]
-        );
-    }
-
-    #[test]
-    fn a_handle_is_a_background_0_3_disc_of_half_a_u_under_a_text_disc_a_pixel_smaller() {
-        let theme = theme_by_id(0);
-        let rim = Rgba {
-            a: 0.3,
-            ..theme.colors.background
-        };
-        for ppp in [1.0, 2.0] {
-            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
-            let cx = UiCtx {
-                theme: &theme,
-                m: &m,
-            };
-            let out = egui::Context::default().run(egui::RawInput::default(), |ctx| {
-                let panel = egui::CentralPanel::default().frame(egui::Frame::NONE);
-                panel.show(ctx, |ui| {
-                    paint_handle(ui.painter(), &cx, pos2(100.0, 100.0), (1.5, 6.0))
-                });
-            });
-            let discs: Vec<(f32, Color32)> = (out.shapes.into_iter())
-                .filter_map(|c| match c.shape {
-                    egui::Shape::Circle(c) => Some((c.radius, c.fill)),
-                    _ => None,
-                })
-                .collect();
-            // Scaled 1.5 by a pop-in, and 6 device pixels wider (3 a side) by a press.
-            let (r, px) = (16.0, 1.0 / ppp);
-            assert_eq!(
-                discs,
-                [
-                    (r * 1.5 + 3.0 * px, rim.to_color32()),
-                    ((r - px) * 1.5 + 3.0 * px, theme.colors.text.to_color32())
-                ],
-                "ppp {ppp}"
-            );
+        let near =
+            |a: Rect, b: Rect| (a.min - b.min).length() < 1e-3 && (a.max - b.max).length() < 1e-3;
+        let capsule = |x: f32| Rect::from_min_size(pos2(x, 144.0 - 23.56), vec2(15.44, 47.12));
+        let (start, end) = (capsule(164.0 + 16.0 - 15.44), capsule(420.0 + 4.8));
+        // The audio bar: 1 U × (0.56 U + 2 px), centred on the right edge, 0.12 U below the box.
+        let bar = Rect::from_min_size(pos2(404.0, 243.84), vec2(32.0, 19.92));
+        let parts = |b: Rect, scale| handle_rects(b, scale, &m);
+        let got = parts(b, true);
+        let want = [(Part::Start, start), (Part::End, end), (Part::Scale, bar)];
+        assert_eq!(got.len(), 3);
+        for ((p, r), (q, w)) in got.into_iter().zip(want) {
+            assert!(p == q && near(r, w), "{p:?} {r:?} vs {w:?}");
         }
+        // 0.35 U wide, the start capsule's right edge would meet the end one's left: it hides. Any wider, it shows.
+        let narrow = |w: f32| parts(Rect::from_min_size(b.min, vec2(w, 192.0)), false);
+        assert_eq!(
+            narrow(11.2).iter().map(|h| h.0).collect::<Vec<_>>(),
+            [Part::End]
+        );
+        assert_eq!(narrow(11.3).len(), 2);
     }
 
     #[test]

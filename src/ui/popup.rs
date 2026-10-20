@@ -103,9 +103,9 @@ fn just_opened(ctx: &Context, id: Id) -> bool {
 /// over another before that one (egui still draws the newer on top), as a container shows its popups before its
 /// own Escape check.
 ///
-/// It opens with the menu sweep, one step per drawn frame: the screen dims (`background` α 0.6) at once, a 2 px bar
-/// grows at the popup's left edge to full height, then the fill grows rightwards to full width ([`Sweep`]); the items
-/// show from frame 23. The items take input from the first frame, and a close is instant. A popup not shown for a frame
+/// It opens with the menu sweep, on frame time: the screen dims (`background` α 0.6) at once, a 2 px bar grows at the
+/// popup's left edge to full height, then the fill grows rightwards to full width ([`Sweep`]); the items show once it
+/// ends (frame 21 at 60 fps). The items take input from the first frame, and a close is instant. A popup not shown for a frame
 /// opens from the start again.
 pub fn show<T: Copy>(
     ctx: &Context,
@@ -115,7 +115,7 @@ pub fn show<T: Copy>(
     items: &[PopupItem<T>],
     cx: &UiCtx,
 ) -> PopupResult<T> {
-    let (phase, a) = anim::sweep(anim::frame(ctx, id));
+    let (phase, a) = anim::sweep(anim::elapsed(ctx, id));
     if phase < 3 {
         ctx.request_repaint();
     }
@@ -431,14 +431,14 @@ fn place(size: Vec2, center: Pos2, bounds: Rect, m: &Metrics) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
     use crate::theme::theme_by_id;
     use crate::ui::offscreen::key_tap;
     use eframe::egui::{Event, PointerButton, RawInput};
 
     /// `U` = 32 points at ppp 1.
     fn metrics() -> Metrics {
-        Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX)
+        Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE)
     }
 
     fn item(col: usize, row: usize, label: &'static str) -> PopupItem<usize> {
@@ -495,7 +495,7 @@ mod tests {
         assert_eq!(cells[1].top(), 38.0);
         assert!(size.y <= 540.0, "{size:?}");
         // At ppp 2 too.
-        let m2 = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX);
+        let m2 = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE);
         let (size, cells) = grid(&rows, &w, 540.0, &m2);
         assert_eq!(cells[1].top(), 38.5);
         assert!(size.y <= 540.0, "{size:?}");
@@ -1154,7 +1154,7 @@ mod tests {
 mod sweep_tests {
     //! The menu opening animation of popup lists, frame by frame.
     use super::*;
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
     use crate::theme::theme_by_id;
     use eframe::egui::{Event, PointerButton, RawInput, Shape, epaint::ClippedShape};
 
@@ -1209,7 +1209,7 @@ mod sweep_tests {
                 .or_default()
                 .native_pixels_per_point = Some(self.ppp);
             let theme = theme_by_id(0);
-            let m = Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE_INDEX);
+            let m = Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE);
             let cx = UiCtx {
                 theme: &theme,
                 m: &m,
@@ -1231,7 +1231,7 @@ mod sweep_tests {
 
         /// The popup's full rect.
         fn rect(&self) -> Rect {
-            let m = Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE_INDEX);
+            let m = Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE);
             geometry(&self.ctx, &items(), CENTER, SCREEN, &m).0
         }
     }
@@ -1261,7 +1261,7 @@ mod sweep_tests {
     }
 
     #[test]
-    fn the_screen_dims_from_the_first_frame_and_the_bar_then_the_fill_sweep_open_in_11_frames_each()
+    fn the_screen_dims_from_the_first_frame_and_the_bar_then_the_fill_sweep_open_in_10_frames_each()
     {
         for ppp in [1.0, 2.0] {
             let mut rig = Rig::new(ppp);
@@ -1271,7 +1271,7 @@ mod sweep_tests {
                 .background
                 .to_color32()
                 .gamma_multiply(0.6);
-            for n in 1..=24 {
+            for n in 1..=22 {
                 let (_, shapes, again) = rig.frame(true, vec![]);
                 let rect = rig.rect();
                 // The dim, every frame, over the whole screen and under the popup.
@@ -1282,11 +1282,15 @@ mod sweep_tests {
                 assert_eq!(dims.len(), 1, "ppp {ppp} frame {n}");
                 let fills = fills(&shapes);
                 assert!(fills.len() <= 1, "{fills:?}");
-                let k = |first: i32| 0.4f32.powi(n - first);
-                match n {
-                    1..=11 => {
+                // Tests run at 60 fps: frame n is n/60 s in. The bar runs frames 1–10, the fill 11–20.
+                let (phase, a) = crate::ui::anim::sweep(n as f32 / 60.0);
+                assert_eq!(phase, [1, 2, 3][(n as usize - 1) / 10], "frame {n}");
+                match phase {
+                    // egui lays a new area out unseen the first time it shows it.
+                    1 if n == 1 => assert_eq!(fills, [], "frame 1"),
+                    1 => {
                         // A 2 px bar at the left edge, (1 − a)·H tall, centred on the popup.
-                        let h = (1.0 - k(1)) * rect.height();
+                        let h = (1.0 - a) * rect.height();
                         match fills.first() {
                             None => assert!(h < px, "frame {n}"),
                             Some(bar) => {
@@ -1303,19 +1307,19 @@ mod sweep_tests {
                             }
                         }
                     }
-                    12..=22 => {
+                    2 => {
                         let band = fills[0];
-                        let w = 2.0 * px + (1.0 - k(12)) * (rect.width() - 2.0 * px);
+                        let w = 2.0 * px + (1.0 - a) * (rect.width() - 2.0 * px);
                         assert!(near(band.width() * ppp, w * ppp), "frame {n}: {band:?} {w}");
                         assert_eq!((band.left(), band.y_range()), (rect.left(), rect.y_range()));
                     }
                     _ => assert_eq!(fills, [rect], "frame {n}"),
                 }
-                // The items show from frame 23; the animation asks for frames until then (frame 23 lays out new glyphs,
+                // The items show from frame 21; the animation asks for frames until then (frame 21 lays out new glyphs,
                 // which asks for one more frame of its own).
-                assert_eq!(texts(&shapes) > 0, n >= 23, "frame {n}");
-                if n != 23 {
-                    assert_eq!(again, n < 23, "frame {n}");
+                assert_eq!(texts(&shapes) > 0, n >= 21, "frame {n}");
+                if n != 21 {
+                    assert_eq!(again, n < 21, "frame {n}");
                 }
             }
         }
@@ -1326,7 +1330,7 @@ mod sweep_tests {
         let mut rig = Rig::new(1.0);
         rig.frame(true, vec![]);
         rig.frame(true, vec![]);
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let cell = geometry(&rig.ctx, &items(), CENTER, SCREEN, &m).1[1].center();
         let button = |pressed| Event::PointerButton {
             pos: cell,

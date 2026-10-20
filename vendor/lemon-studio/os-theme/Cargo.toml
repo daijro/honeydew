@@ -1,0 +1,11 @@
+[package]
+name = "os-theme"
+description = "Lemon Studio theme tokens and the HSL adjustment model"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+# Upstream code that only Lemon Studio's app uses.
+[lints.rust]
+dead_code = "allow"

@@ -12,9 +12,9 @@ use crate::ui::views::preset_picker::{CHANNEL_LIMIT, join_workers};
 
 /// The rig's rack, open: 20 U at the content area's right (x 530..1170, down to the panel).
 fn rack() -> Rect {
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let screen = Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
-    rack_rect(Regions::new(screen, &m).area, 1.0, &m)
+    rack_rect(Regions::new(screen, &m).area, 1.0, false, &m)
 }
 
 impl Rig {
@@ -26,10 +26,12 @@ impl Rig {
     }
 }
 
-/// The `▶` notch on the rack's divider; it takes clicks across the 1.5 U left gutter, 1 U high.
-pub(super) fn notch() -> Pos2 {
-    let rack = rack();
-    pos2(rack.left() + 0.75 * U, rack.center().y - 0.5 * U)
+/// The centre of the side rack's collapse tab, which closes it.
+pub(super) fn collapse_tab() -> Pos2 {
+    crate::ui::rack::Chrome::new(rack(), U)
+        .collapse
+        .unwrap()
+        .center()
 }
 
 /// How `channel`'s rack lays out, unscrolled.
@@ -183,12 +185,12 @@ fn insert_above_opens_the_browser_there_and_escape_closes_the_browser_only() {
     rig.frame(vec![]);
     rig.frame(vec![]);
     // The search is closed, so row 1 is `Rack Preset`, not the `Chorus` of the last search: it opens the rack
-    // preset picker in the browser's place, for the same place.
+    // preset list in the browser's place.
     let query = Id::new(BROWSER).with("query");
     assert!(rig.ctx.read_response(query).is_none());
     rig.frame(vec![]);
     rig.click_id(Id::new(BROWSER).with(("row", 1_usize)));
-    let target = PresetTarget::RackInsert(at);
+    let target = PresetTarget::ModulesRack(at);
     let picker = Overlay::PresetPicker { channel: 1, target };
     assert_eq!(rig.overlays(), [Overlay::Rack(1), picker]);
     assert_eq!(types(&rig, 1), [0, 11, 6]);
@@ -416,7 +418,7 @@ fn the_browser_opens_afresh_after_a_close_its_slot_did_not_see() {
     rig.frame(vec![]);
     rig.frame(vec![]);
     // The search is closed, so row 1 is `Rack Preset`, not the `Distortion` of the last search: the rack preset
-    // picker takes the browser's place.
+    // list takes the browser's place.
     assert!(
         rig.ctx
             .read_response(Id::new(BROWSER).with("query"))
@@ -424,7 +426,7 @@ fn the_browser_opens_afresh_after_a_close_its_slot_did_not_see() {
     );
     rig.frame(vec![]);
     rig.click_id(row);
-    let target = PresetTarget::RackInsert(InsertAt::End);
+    let target = PresetTarget::ModulesRack(InsertAt::End);
     assert_eq!(
         rig.overlays(),
         [Overlay::PresetPicker { channel: 1, target }]
@@ -1056,7 +1058,7 @@ pub(super) fn with_web_files(types: &[u16]) -> (Rig, MemFiles) {
 
 /// `SAVE` in the open Save or preset dialog.
 pub(super) fn dialog_save(rig: &mut Rig) {
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let screen = Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
     rig.frame(vec![]);
     rig.click(save_dialog::layout(screen, &m).save.center());
@@ -1299,38 +1301,49 @@ fn load_rack_preset_replaces_the_racks_modules_staying_open_with_no_undo_step() 
     assert_eq!(rig.app.history.steps(), steps);
 }
 
+/// Clicks row `i` of a list shown in the Modules browser's panel (`Rack Preset`, `Instrument`), once it has drawn.
+pub(super) fn nested_row(rig: &mut Rig, i: usize) {
+    browser_row(rig, i);
+    rig.click_id(Id::new(BROWSER).with(("row", i)));
+    rig.frame(vec![]);
+}
+
 #[test]
-fn the_browsers_rack_preset_adds_the_modules_there_and_skips_an_instrument() {
+fn the_browsers_rack_preset_lists_in_its_panel_and_each_pick_replaces_the_rack_staying_open() {
     let (mut rig, _) = with_web_files(&[6]);
-    // The synth channel's rack (MiniSynth, Chorus), saved.
+    // The synth channel's rack (MiniSynth, Chorus), saved; then a Distortion under them.
     add_module(&mut rig.app.song.channels[1].rack, 11, InsertAt::End);
     rig.app.song_edited(SongEdit::Final, 0);
     rig.open_rack(1);
     rig.slide_rack();
     save_rack_preset(&mut rig, 1);
-    rig.open_rack(2);
-    rig.slide_rack();
+    add_module(&mut rig.app.song.channels[1].rack, 6, InsertAt::End);
+    rig.app.song_edited(SongEdit::Final, 0);
     rig.take();
-    // Insert above the Distortion: the browser gives way to the picker, for the same place.
-    let distortion = instance_id(&rig, 2, 0);
-    card_menu(&mut rig, 2, 0, INSERT_ABOVE);
-    browser_row(&mut rig, 1);
-    rig.click_id(Id::new(BROWSER).with(("row", 1_usize)));
-    let target = PresetTarget::RackInsert(InsertAt::Above(distortion));
-    assert_eq!(rig.overlays(), [Overlay::Rack(2), picker(2, target)]);
-    picker_row(&mut rig, 0);
-    picker_row(&mut rig, 0);
-    // The effect track takes no instrument.
-    assert_eq!(types(&rig, 2), [11, 6]);
-    let lines = message(&rig).expect("the skip notice");
-    assert_eq!(lines, ["Skipped 1 incompatible module"]);
-    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
-    rig.frame(escape());
-    rig.frame(z(egui::Modifiers::NONE));
-    // The undo takes back the effect track's add before them; the Chorus on channel 1 stays (the rack and presets are
-    // not covered by undo).
+    let steps = rig.app.history.steps();
+    // Insert above the Distortion: the browser gives way to its rack list, whose Back at its root comes back.
+    let at = InsertAt::Above(instance_id(&rig, 1, 2));
+    rig.app
+        .navigate(Nav::Open(Overlay::ModulesBrowser { channel: 1, at }));
+    nested_row(&mut rig, 1);
+    let list = picker(1, PresetTarget::ModulesRack(at));
+    assert_eq!(rig.overlays(), [Overlay::Rack(1), list.clone()]);
+    browser_row(&mut rig, 0);
+    rig.click_id(Id::new(BROWSER).with("back"));
+    let browser = Overlay::ModulesBrowser { channel: 1, at };
+    assert_eq!(rig.overlays(), [Overlay::Rack(1), browser]);
+    // My Files, the preset: it replaces the whole rack (the Distortion goes, the modules are new), and the list stays
+    // open.
+    let before = instance_id(&rig, 1, 2);
+    nested_row(&mut rig, 1);
+    nested_row(&mut rig, 0);
+    nested_row(&mut rig, 0);
     assert_eq!(types(&rig, 1), [0, 11]);
-    assert_eq!(rig.app.song.channels.len(), 2);
+    assert!(instance_id(&rig, 1, 0) > before);
+    assert_eq!(rig.overlays(), [Overlay::Rack(1), list]);
+    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
+    // No undo step.
+    assert_eq!(rig.app.history.steps(), steps);
 }
 
 #[test]
@@ -1340,7 +1353,7 @@ fn closing_the_picker_the_browser_gave_way_to_goes_back_to_the_rack() {
     rig.click(add.center());
     browser_row(&mut rig, 1);
     rig.click_id(Id::new(BROWSER).with(("row", 1_usize)));
-    let target = PresetTarget::RackInsert(InsertAt::End);
+    let target = PresetTarget::ModulesRack(InsertAt::End);
     assert_eq!(rig.overlays(), [Overlay::Rack(2), picker(2, target)]);
     rig.frame(vec![]);
     rig.frame(escape());
@@ -1561,12 +1574,12 @@ fn with_rack_channel(types: &[u16]) -> Rig {
     rig
 }
 
-/// The browser's rows without a search: `Paste` 0, `Rack Preset` 1, SYNTH 2, then 3x Osc 3, DW Sampler 4, GMSynth 5,
-/// MiniSynth 6, Slicer 7, SoundFont Player 8, SuperSaw 9, Transistor Bass 10.
-const THREE_X_OSC: usize = 3;
-const DW_SAMPLER: usize = 4;
-const GM_SYNTH: usize = 5;
-const SLICER: usize = 7;
+/// The browser's rows without a search: `Paste` 0, `Rack Preset` 1, `Instrument` 2, SYNTH 3, then 3x Osc 4, Lemon Trio
+/// 5, DW Sampler 6, Lemon Sampler 7, GMSynth 8, MiniSynth 9, Slicer 10, SoundFont Player 11, SuperSaw 12, Transistor
+/// Bass 13.
+const THREE_X_OSC: usize = 4;
+const DW_SAMPLER: usize = 6;
+const GM_SYNTH: usize = 8;
 const INSERT_BELOW: (usize, usize) = (1, 2);
 
 #[test]
@@ -1606,7 +1619,7 @@ fn insert_above_below_and_replace_take_an_instrument_like_any_module() {
     // A Rack channel holding Distortion, Chorus; the card menu of the Distortion (card 0).
     let cases = [
         (INSERT_ABOVE, DW_SAMPLER, vec![1, 6, 11]),
-        (INSERT_BELOW, SLICER, vec![6, 33, 11]),
+        (INSERT_BELOW, GM_SYNTH, vec![6, 2, 11]),
         (REPLACE, THREE_X_OSC, vec![39, 11]),
     ];
     for (item, row, expected) in cases {
@@ -1633,7 +1646,7 @@ fn insert_above_below_and_replace_take_an_instrument_like_any_module() {
 }
 
 #[test]
-fn the_synth_rows_are_dimmed_and_inert_on_a_drums_channel_and_an_effect_track() {
+fn the_instruments_are_not_listed_on_a_drums_channel_and_an_effect_track() {
     let mut rig = with_effects(&[6]);
     rig.app.add_default_drums(0);
     let (effect_track, drums) = (2, 3);
@@ -1643,63 +1656,30 @@ fn the_synth_rows_are_dimmed_and_inert_on_a_drums_channel_and_an_effect_track() 
         rig.app
             .navigate(Nav::Open(Overlay::ModulesBrowser { channel, at }));
     };
+    let search = |rig: &mut Rig, text: &str| {
+        rig.click_id(Id::new(BROWSER).with("search"));
+        rig.frame(vec![Event::Text(text.into())]);
+        rig.frame(vec![]);
+    };
     for channel in [effect_track, drums] {
         open(&mut rig, channel);
-        // `Paste` and `Rack Preset` are enabled; the eight instrument rows (3..=10) take no click.
-        assert!(browser_row(&mut rig, 0).is_some(), "channel {channel}");
+        // `Paste` and `Rack Preset`, then ECHO: no `Instrument`, no SYNTH.
         assert!(browser_row(&mut rig, 1).is_some(), "channel {channel}");
-        for row in 2..=10 {
-            assert!(browser_row(&mut rig, row).is_none(), "{channel}: row {row}");
-        }
-        // Searching for one finds it, still dimmed.
-        rig.click_id(Id::new(BROWSER).with("search"));
-        rig.frame(vec![Event::Text("MiniSynth".into())]);
-        rig.frame(vec![]);
-        assert!(browser_row(&mut rig, 1).is_none(), "channel {channel}");
+        assert!(
+            browser_row(&mut rig, 2).is_none(),
+            "channel {channel}: a header"
+        );
+        // A search finds none.
+        search(&mut rig, "MiniSynth");
+        assert!(browser_row(&mut rig, 0).is_none(), "channel {channel}");
         rig.app.navigate(Nav::Close);
         rig.frame(vec![]);
-        assert!(
-            !rig.overlays()
-                .iter()
-                .any(|o| matches!(o, Overlay::ModulesBrowser { .. }))
-        );
     }
-    // A Synth channel's are enabled, found by search too.
+    // A Synth channel's are listed, found by search too.
     open(&mut rig, 1);
-    assert!(browser_row(&mut rig, 3).is_some());
-    rig.click_id(Id::new(BROWSER).with("search"));
-    rig.frame(vec![Event::Text("MiniSynth".into())]);
-    rig.frame(vec![]);
+    assert!(browser_row(&mut rig, 2).is_some() && browser_row(&mut rig, THREE_X_OSC).is_some());
+    search(&mut rig, "MiniSynth");
     assert!(browser_row(&mut rig, 1).is_some());
-}
-
-#[test]
-fn a_rack_preset_with_an_instrument_into_a_rack_that_has_one_keeps_both() {
-    let (mut rig, _) = with_web_files(&[6]);
-    // The synth channel's rack (MiniSynth, Chorus), saved.
-    add_module(&mut rig.app.song.channels[1].rack, 11, InsertAt::End);
-    rig.app.song_edited(SongEdit::Final, 0);
-    rig.open_rack(1);
-    rig.slide_rack();
-    save_rack_preset(&mut rig, 1);
-    rig.take();
-    let steps = rig.app.history.steps();
-    // Appended to the same rack by the browser's `Rack Preset`, at the bottom as `Paste` puts them: both instruments
-    // stay, both Chorus too, and there is no notice about a skipped module.
-    let end = InsertAt::End;
-    rig.app.navigate(Nav::Open(Overlay::ModulesBrowser {
-        channel: 1,
-        at: end,
-    }));
-    browser_row(&mut rig, 1);
-    rig.click_id(Id::new(BROWSER).with(("row", 1_usize)));
-    picker_row(&mut rig, 0);
-    picker_row(&mut rig, 0);
-    assert_eq!(types(&rig, 1), [0, 11, 0, 11]);
-    assert_eq!(message(&rig), None);
-    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
-    // No undo step.
-    assert_eq!(rig.app.history.steps(), steps);
 }
 
 #[test]
@@ -2447,7 +2427,7 @@ impl Rig {
 fn grid_right(rig: &Rig) -> f32 {
     let fill = rig.app.theme.colors.control_fill.to_color32();
     let lane = |s: &egui::epaint::ClippedShape| match &s.shape {
-        egui::Shape::Rect(r) if r.fill == fill && r.rect.min == pos2(1.5 * U + 2.0, 1.5 * U) => {
+        egui::Shape::Rect(r) if r.fill == fill && r.rect.min == pos2(1.5 * U + 2.0, RULER) => {
             Some(r.rect.right())
         }
         _ => None,
@@ -2487,7 +2467,7 @@ fn the_rack_slides_in_and_out_and_the_playlist_ends_at_its_left_edge() {
     };
     assert!(fill(&rig), "the rack's fill");
     // The hit test (what keeps the wheel from the view) is that rect too.
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let screen = Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
     let regions = Regions::new(screen, &m).with_rack(1.0, &m);
     let covered = |at: Pos2| {
@@ -2511,7 +2491,7 @@ fn the_rack_slides_in_and_out_and_the_playlist_ends_at_its_left_edge() {
         "the transport bar"
     );
     // The notch closes it: it slides out the same way, still drawn, and the grid widens with it.
-    rig.click(notch());
+    rig.click(collapse_tab());
     assert_eq!(rig.overlays(), []);
     rig.frame(vec![]);
     assert_eq!(grid_right(&rig), 1170.0 - 320.0);
@@ -3167,7 +3147,7 @@ fn a_rack_sliding_out_takes_no_wheel() {
             .expect("the Equalizer card")
     };
     let before = top(&rig);
-    rig.click(notch());
+    rig.click(collapse_tab());
     assert_eq!(rig.overlays(), []);
     // Over what is left of the rack, half way out.
     let wheel = Event::MouseWheel {

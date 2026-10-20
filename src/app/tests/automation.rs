@@ -819,7 +819,7 @@ fn fine_tuning(rig: &Rig) -> Option<(usize, AutomationTarget)> {
 /// The dialog's slider row on the 1170 × 540 screen (U = 32): y 259…313, its track from x 80 to 1090.
 const TUNE_Y: f32 = 286.0;
 fn tune_x(v: f32) -> f32 {
-    80.0 + v * 1010.0
+    112.0 + v * 946.0
 }
 
 /// Drags the dialog's thumb from value `from` by `dv` of the track, over a few frames, and lets go.
@@ -867,8 +867,8 @@ fn the_ctrl_menus_fine_tune_control_opens_the_dialog_on_the_recent_control() {
     assert!(rig.painted(&format!("{name} | Distortion | Drive")));
     let text = crate::params::module_spec(6).unwrap().params[1].display_text(0.25);
     assert!(rig.painted(&text), "the value text {text:?}");
-    // The close button: 2 U at the box's top right (y 142…206).
-    rig.click(pos2(1170.0 - 32.0, 142.0 + 32.0));
+    // The close button: 2 U at the box's top right (y 142…206), the box 1 U in from the screen's sides.
+    rig.click(pos2(1170.0 - 64.0, 142.0 + 32.0));
     rig.frame(vec![]);
     assert_eq!(fine_tuning(&rig), None);
     assert_eq!(rig.app.nav.overlays, [Overlay::Rack(2)], "the rack stays");

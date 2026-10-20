@@ -33,7 +33,8 @@
 //!   egui's own Tab / arrow focus is let go every frame, so Space and Enter never click a widget it picked.
 //! - `open` (Enter) presses a focused button, toggle, spinner or row as a tap does. Disabled controls are no targets.
 //! - `blinkCursor` turns the keyboard look on, so the flash shows.
-//! - A target with nothing of it in view shows no cursor.
+//! - A target with nothing of it in view shows the cursor on the nearest edge of the area it would show in (its clip
+//!   on the screen), squeezed flat there: an edge indicator pointing the way to it.
 
 use std::f64::consts::TAU;
 
@@ -51,7 +52,7 @@ pub const EDITOR: &str = "focus editor";
 pub const PLAYLIST: &str = "focus playlist";
 pub const MIXER: &str = "focus mixer";
 pub const RACK: &str = "focus rack";
-/// The keyboard panel, which `showTransport` calls the transport bar.
+/// The keyboard panel, which `showTransport` shows, focuses and hides.
 pub const TRANSPORT: &str = "focus transport";
 /// The SONGS page's file list, where `showMainBrowser` puts the focus.
 pub const SONGS: &str = "focus songs list";
@@ -226,6 +227,16 @@ fn ease(from: Rect, to: Rect) -> Rect {
     )
 }
 
+/// The cursor's rect for a target at `rect` in the visible area `view`: itself while any of it shows, else clamped
+/// onto `view`'s nearest edge (the edge indicator).
+fn on_view(rect: Rect, view: Rect) -> Rect {
+    if rect.intersects(view) || !view.is_positive() {
+        rect
+    } else {
+        Rect::from_min_max(view.clamp(rect.min), view.clamp(rect.max))
+    }
+}
+
 /// The outer and inner frames' rects around cursor `rect` at pulse `p`, `ppp` device pixels per point: the outer is
 /// `rect` grown 3p px each side, the inner 3 px inside it. Each line is drawn inside its rect.
 fn frames(rect: Rect, p: f32, ppp: f32) -> (Rect, Rect) {
@@ -385,10 +396,15 @@ pub fn close(ctx: &Context, id: Id) {
 }
 
 /// `ui.interact` for a button-like control: one that senses clicks (and is enabled) is a [`Kind::Button`] target, and
-/// `open` on it is a click (egui's keyboard click: `clicked()` is true, with no pointer position).
+/// `open` on it is a click (egui's keyboard click: `clicked()` is true, with no pointer position). A mouse over it shows
+/// the clickable cursor.
 pub fn interact(ui: &Ui, rect: Rect, id: Id, sense: Sense) -> Response {
     let mut response = ui.interact(rect, id, sense);
     if sense.senses_click() && ui.is_enabled() {
+        if response.hovered() {
+            ui.ctx()
+                .set_cursor_icon(eframe::egui::CursorIcon::PointingHand);
+        }
         register(ui, id, rect, Kind::Button);
         if activated(ui.ctx(), id) {
             response.flags.set(Flags::FAKE_PRIMARY_CLICKED, true);
@@ -621,8 +637,8 @@ pub fn end_frame(ctx: &Context, theme: &Theme) {
             .filter(|_| s.keyboard);
         let target = at
             .map(|i| s.tree.nodes[i])
-            .filter(|n| n.rect.intersects(n.clip.intersect(screen)));
-        s.cursor = target.map(|n| s.cursor.map_or(n.rect, |c| ease(c, n.rect)));
+            .map(|n| on_view(n.rect, n.clip.intersect(screen)));
+        s.cursor = target.map(|r| s.cursor.map_or(r, |c| ease(c, r)));
         let v = s.blink;
         s.blink = if v * BLINK_DECAY < BLINK_END {
             0.0

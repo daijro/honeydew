@@ -2,11 +2,10 @@
 
 use std::ops::RangeInclusive;
 
-use eframe::egui::{self, Align2, Color32, Id, Pos2, Rangef, Rect, Sense, pos2, vec2};
+use eframe::egui::{self, Align2, Color32, Id, Pos2, Rangef, Rect, Sense, vec2};
 
 use crate::metrics::Metrics;
 use crate::settings::Settings;
-use crate::ui::main_screen::TRANSPORT_H;
 use crate::ui::piano_roll::notes::in_scale;
 use crate::ui::{Finger, UiCtx, fingers, focus_lost, widgets};
 
@@ -14,8 +13,8 @@ use crate::ui::{Finger, UiCtx, fingers, focus_lost, widgets};
 const BLACK_KEY_W: f32 = 0.7;
 /// Black key height, as a fraction of the keyboard height.
 const BLACK_KEY_H: f32 = 0.6;
-/// The panel height the second row needs to show, in U (the button bar included): more than this.
-const TWO_ROWS_MIN: f32 = 5.0;
+/// The keys area's height the second row and the wheels need to show, in U: more than this.
+pub(crate) const TWO_ROWS_MIN: f32 = 3.25;
 
 /// How touches play the keys.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -171,9 +170,9 @@ pub fn rows(r: Rect, two: bool, m: &Metrics) -> Vec<(Rect, RangeInclusive<u8>)> 
 }
 
 /// Whether the second row shows: the keyboard is a piano (`Classic`, `Scale`, or an automation lane's piano), two rows
-/// are `on`, and the keyboard `panel` (the button bar included) is over 5 U tall.
-pub fn second_row(piano: bool, on: bool, panel: Rect, m: &Metrics) -> bool {
-    piano && on && panel.height() > m.u(TWO_ROWS_MIN)
+/// are `on`, and the `keys` area is over 3.25 U tall.
+pub fn second_row(piano: bool, on: bool, keys: Rect, m: &Metrics) -> bool {
+    piano && on && keys.height() > m.u(TWO_ROWS_MIN)
 }
 
 /// The piano's place: the keys rect R ([`crate::ui::keyboard_settings::piano_rect`]), whether the second row shows
@@ -584,14 +583,13 @@ pub fn key_name(midi: u8, root: bool, middle_c_is_c4: bool) -> String {
 }
 
 /// The bottom keyboard panel's backdrop: `controlFill` over the whole `panel` (the bar, the keys and the pads alike);
-/// while the `wheels` show, `moduleFill` behind them over (panel x, panel top + 1.75 U, 4 U, panel h), past the panel's
-/// bottom; and a 1 px `background` line across the panel's top edge (inside it).
-pub fn panel_backdrop(painter: &egui::Painter, panel: Rect, wheels: bool, cx: &UiCtx) {
+/// while the wheels show over the keys area `wheels`, `moduleFill` behind them over (panel x, keys top, 4 U, K); and a
+/// 1 px `background` line across the panel's top edge (inside it).
+pub fn panel_backdrop(painter: &egui::Painter, panel: Rect, wheels: Option<Rect>, cx: &UiCtx) {
     let (colors, m) = (&cx.theme.colors, cx.m);
     painter.rect_filled(panel, 0.0, colors.control_fill.to_color32());
-    if wheels {
-        let top = panel.top() + m.u(TRANSPORT_H);
-        let column = Rect::from_min_size(pos2(panel.left(), top), vec2(m.u(4.0), panel.height()));
+    if let Some(keys) = wheels {
+        let column = keys.with_max_x(keys.left() + m.u(4.0));
         painter.rect_filled(column, 0.0, colors.module_fill.to_color32());
     }
     let line = panel.with_max_y(panel.top() + 1.0 / m.ppp());
@@ -601,7 +599,7 @@ pub fn panel_backdrop(painter: &egui::Painter, panel: Rect, wheels: bool, cx: &U
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+    use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
     use crate::song::scales::SCALE_MASKS;
     use crate::theme::theme_by_id;
     use eframe::egui::{
@@ -661,7 +659,7 @@ mod tests {
         let ctx = egui::Context::default();
         let screen = Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
         let theme = theme_by_id(0);
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let mut all = Vec::new();
         for frame in frames {
             let raw = RawInput {
@@ -1098,7 +1096,7 @@ mod tests {
     fn the_scale_layout_starts_at_midi_48_like_the_piano_whatever_the_scale() {
         // The default view's left edge is white key 28 (MIDI 48); the scale layout starts at the first tone from 48,
         // not at its 28th tone (which a pentatonic would put 5.6 octaves up).
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let piano = Piano::from(KEYBOARD);
         for (scale, first) in [
             ((0, MAJOR), 48),
@@ -1189,7 +1187,7 @@ mod tests {
     #[test]
     fn two_rows_split_the_keys_rect_into_halves_ceil_u_16_px_apart_at_ppp_1_and_2() {
         for ppp in [1.0, 2.0] {
-            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
             let t = (m.u_px() / 16.0).ceil() / ppp;
             for r in [
                 KEYBOARD,
@@ -1217,13 +1215,13 @@ mod tests {
     }
 
     #[test]
-    fn the_second_row_shows_for_a_piano_with_two_rows_on_over_a_5_u_panel() {
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    fn the_second_row_shows_for_a_piano_with_two_rows_on_over_a_3_25_u_keys_area() {
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let panel = |h: f32| Rect::from_min_size(pos2(0.0, 300.0), vec2(1170.0, h));
-        assert!(second_row(true, true, panel(5.0 * U + 1.0), &m));
+        assert!(second_row(true, true, panel(3.25 * U + 1.0), &m));
         assert!(
-            !second_row(true, true, panel(5.0 * U), &m),
-            "over 5 U, not 5 U"
+            !second_row(true, true, panel(3.25 * U), &m),
+            "over 3.25 U, not 3.25 U"
         );
         assert!(!second_row(true, false, panel(8.0 * U), &m));
         assert!(
@@ -1265,7 +1263,7 @@ mod tests {
 
     #[test]
     fn rows_share_the_view_so_each_top_key_is_an_octave_above_the_key_below_it() {
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         for view in [
             KeyView::default(),
             KeyView {
@@ -1677,7 +1675,7 @@ mod tests {
         let ctx = egui::Context::default();
         let screen = Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
         let theme = theme_by_id(0);
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let mut frames = vec![vec![]];
         frames.extend(before);
         let mut out = None;
@@ -1958,7 +1956,7 @@ mod tests {
     fn painted(input: KeyInput, p: f32, sounding: u128) -> Vec<egui::Shape> {
         let ctx = egui::Context::default();
         let theme = theme_by_id(0);
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let cx = UiCtx {
             theme: &theme,
             m: &m,
@@ -2012,7 +2010,7 @@ mod tests {
         let colors = theme_by_id(0).colors;
         let panel = Rect::from_min_max(pos2(0.0, 380.0), pos2(1170.0, 540.0));
         for (ppp, wheels) in [(1.0, false), (2.0, true)] {
-            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
             let theme = theme_by_id(0);
             let cx = UiCtx {
                 theme: &theme,
@@ -2022,15 +2020,17 @@ mod tests {
             let out = ctx.run(RawInput::default(), |ctx| {
                 egui::CentralPanel::default()
                     .frame(egui::Frame::NONE)
-                    .show(ctx, |ui| panel_backdrop(ui.painter(), panel, wheels, &cx));
+                    .show(ctx, |ui| {
+                        let keys = panel.with_min_y(380.0 + m.u(1.75));
+                        panel_backdrop(ui.painter(), panel, wheels.then_some(keys), &cx)
+                    });
             });
             // (The egui panel paints a transparent rect of its own.)
             let shapes: Vec<egui::Shape> = (out.shapes.into_iter().map(|s| s.shape))
                 .filter(|s| !matches!(s, egui::Shape::Rect(r) if r.fill == Color32::TRANSPARENT))
                 .collect();
             let px = 1.0 / ppp;
-            let column =
-                Rect::from_min_size(pos2(0.0, 380.0 + m.u(1.75)), vec2(m.u(4.0), panel.height()));
+            let column = Rect::from_min_max(pos2(0.0, 380.0 + m.u(1.75)), pos2(m.u(4.0), 540.0));
             let mut want = vec![(panel, colors.control_fill)];
             if wheels {
                 want.push((column, colors.module_fill));

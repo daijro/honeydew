@@ -20,7 +20,7 @@
 //!   slider's touch pulse applied to the fill, 10 px · f wider and taller about its centre; the texts stay.
 //! - The keyboard/gamepad `Show mixer` / `Hide mixer` are not wired: the app has no shortcut table for them.
 //!
-//! `SWING` has the ruler row's top-left cell, 3 U × (1.5 U − 1 px), to itself: this view is the step-sequencer mode
+//! `SWING` has the ruler row's top-left cell, 3 U × (ruler h − 1 px), to itself: this view is the step-sequencer mode
 //! (a step lane, `DrumGrid::Steps`), so the Snap button, which the free note-grid mode (a notes lane,
 //! `DrumGrid::Notes`, another view) has in that cell, is never drawn here.
 //!
@@ -34,7 +34,7 @@
 //!   selection box at once; moving on without lifting stretches it, and the release selects the hits of every step
 //!   it touches (lifted in place: nothing; `Paste` shows while the hit clipboard is set, below). A
 //!   long press on a hit that then moves boxes too.
-//! - The right button (owner request, after the desktop app: [`gesture::Erase`]): a press on a step with a hit deletes
+//! - The right button ([`gesture::Erase`]): a press on a step with a hit deletes
 //!   its hits, and dragging on deletes those of every step the pointer's path crosses, with no box, all one undo step;
 //!   a right click on an empty step that deleted nothing is `Paste` (below).
 //! - `Paste` (as the automation editor's): the floating `Copy` also stores the copied hits in the drum editors'
@@ -67,7 +67,7 @@
 //! then grows the loop to the smallest b·2ᵏ that holds it, in the same action.
 //!
 //! The top strip holds the step grid's ruler right of the drum mixer's room (the editors' shared [`timeline::ruler`] in
-//! song coordinates, so its badges are song bars, and the scroll indicator, [`ruler::indicator`]). It takes the shared
+//! song coordinates, so its labels are song bars, with its scroll thumb over the loop). It takes the shared
 //! gestures ([`RangeSelect`]) in song ticks: a tap before the loop's end (s + L) sets the song's playhead
 //! ([`StepAction::SetPlayhead`]) and past it does nothing, the range is the song's play loop
 //! ([`StepAction::PlayLoop`]), and each region item is one final edit on every hit of the clip ([`StepAction::Region`],
@@ -114,7 +114,6 @@ use crate::icons::{self, IconId};
 use crate::metrics::{FontSize, Metrics};
 use crate::song::{Channel, Clip, Event, Lane, LaneKind, Song, TimeSig};
 use crate::theme::{DISABLED_ALPHA, Rgba, channel_color};
-use crate::ui::buttons::outline_circle_button;
 use crate::ui::clips::{
     FloatingRow, GridView, Marquee, Selection, TimeAxis, hold_square, paint_marquee,
 };
@@ -133,8 +132,6 @@ use crate::ui::{UiCtx, pinch_press, primary_down_live};
 use ruler::BEAT;
 
 // Sizes in U.
-/// The `SWING` strip on top: the playlist ruler's height.
-pub(crate) const TOP_H: f32 = 1.5;
 /// The row header column: the pad editor strip's 3 U header cell, which is the whole column while the drum mixer is
 /// collapsed.
 pub(crate) const HEADER_W: f32 = 3.0;
@@ -170,10 +167,8 @@ const PROMPT_W: f32 = 8.0;
 const PROMPT_ROW_H: f32 = 1.25;
 /// Horizontal text padding, as in the popup.
 const PROMPT_PAD: f32 = 0.5;
-/// The graph lane's knob: its x from the view's left, in U.
+/// The graph lane's tab: its centre's x from the view's left, in U.
 pub(crate) const GRAPH_KNOB_X: f32 = 1.4;
-/// The `Lock` button: the transport's round-button size.
-const LOCK_D: f32 = 1.25;
 
 const DELETE_PROMPT: &str = "Delete drum sample? (no undo)";
 /// The `Set Name` prompt's title (`New sample name` is the audio clip's).
@@ -196,20 +191,29 @@ pub(crate) fn set_hit_clipboard(ctx: &Context, hits: Vec<Event>) {
     ctx.data_mut(|d| d.insert_temp(Id::new("drum_hit_clipboard"), hits));
 }
 
-/// One Paste bubble at the held position. Only a later click activates it; another press dismisses it.
-pub(crate) fn paste_button(ui: &mut Ui, cx: &UiCtx, id: Id, finger: Pos2) -> (Rect, Option<bool>) {
-    let d = cx.m.u(crate::ui::clips::BUTTON_D);
-    let font = crate::ui::clips::label_font(ui.ctx(), cx.m, d, &["Paste"]);
-    let response =
-        crate::ui::buttons::bubble_button(ui, id, finger, d, 1.0, "Paste", font, &cx.theme.colors);
-    let elsewhere =
-        ui.input(|i| i.pointer.any_pressed()) && !response.response.is_pointer_button_down_on();
-    let tap = if response.clicked() {
-        Some(true)
-    } else {
-        elsewhere.then_some(false)
+/// The drum editors' `Paste` insert menu for the press at `finger` in layout `l` ([`crate::ui::insert::paste`]): over
+/// the finger's row at `x` (the snapped beat, or the step's start), the insert cursor across the rows of the copied
+/// `hits`' pads (a paste keeps each hit's pad). Only a later click activates it (`Some(true)`); another press dismisses
+/// it (`Some(false)`).
+pub(crate) fn paste_button(
+    ui: &mut Ui,
+    cx: &UiCtx,
+    id: Id,
+    l: &Layout,
+    (finger, x): (Pos2, f32),
+    hits: &[Event],
+) -> Option<bool> {
+    let row = l.span(l.row_top(), l.pitch, l.cell_at(finger).0);
+    let pads = || {
+        hits.iter()
+            .filter_map(|e| drum_grid::edit::hit(e).map(|h| usize::from(h.0)))
     };
-    (response.rect(), tap)
+    let (lo, hi) = (pads().min().unwrap_or(0), pads().max().unwrap_or(0));
+    let span = Rangef::new(
+        l.span(l.row_top(), l.pitch, lo).min,
+        l.span(l.row_top(), l.pitch, hi).max,
+    );
+    crate::ui::insert::paste(ui, cx, id, l.grid(), (x, row, span))
 }
 
 /// What the step view reads from the drum kit, by pad index (= the drum event's `pad`, = the row).
@@ -410,8 +414,6 @@ pub struct StepSeqView {
     pub clip: Option<u32>,
     /// The selected row (pad).
     pub selected: usize,
-    /// The transport's `Lock` button, shown in the drum view only.
-    pub lock: bool,
     /// Room (points) between the row headers and the steps for the drum mixer's pages, which the host draws there (a
     /// strip is the header cell, then the page layer): c·12 U, set by [`Self::show`] from [`Self::fold`] every frame.
     pub mixer_w: f32,
@@ -820,7 +822,7 @@ impl StepSeqView {
         }
         self.mixer_w = self.fold.c * m.u(MIXER_W);
 
-        let body = rect.with_min_y(rect.top() + m.u(TOP_H));
+        let body = rect.with_min_y(rect.top() + timeline::ruler_h(m));
         let key = self.key(index, lane);
         let old = self.selection_key.replace(key);
         if old != Some(key) {
@@ -889,7 +891,7 @@ impl StepSeqView {
         painter.rect_filled(rect, 0.0, bg);
 
         // `SWING`: a button opening the swing popup, which starts from the clip's current positions. It has the
-        // ruler row's top-left cell, 3 U × (1.5 U − 1 px), to itself (step-sequencer mode: no Snap).
+        // ruler row's top-left cell, 3 U × (ruler h − 1 px), to itself (step-sequencer mode: no Snap).
         let strip = l.swing_strip();
         let button = Rect::from_min_size(strip.min, vec2(l.header_w, strip.height() - 1.0 / l.ppp));
         let font = m.font_id(FontSize::Pt10);
@@ -1067,13 +1069,14 @@ impl StepSeqView {
             self.paste = None;
         }
         if let Some(finger) = self.paste {
-            let (rect, tap) = paste_button(ui, cx, id().with("paste"), finger);
+            let hits = hit_clipboard(ui.ctx());
+            let step = l.cell_at(finger).1;
+            let x = l.x0 + step as f32 * l.step_w;
+            let tap = paste_button(ui, cx, id().with("paste"), &l, (finger, x), &hits);
             if tap.is_some() {
                 self.paste = None;
             }
-            let hits = hit_clipboard(ui.ctx());
             if tap == Some(true) && !hits.is_empty() {
-                let step = l.cell_at(rect.center()).1;
                 action = Some(StepAction::PasteSteps { step, hits });
             }
         }
@@ -1091,18 +1094,12 @@ impl StepSeqView {
         // The ruler over the steps in song ticks, its range and region menu, and the playhead knob (module docs).
         let ruler_painter = ui.painter_at(ruler);
         timeline::ruler(&ruler_painter, ruler, ruler, axis.origin, bw, sig, cx);
-        let visible = f64::from(ruler.width() / bw);
-        ruler::indicator(
-            &ruler_painter,
-            ruler,
-            (view.x, visible, loop_beats),
-            ink,
-            m.t(),
-        );
         if report.scrolled[X] || report.zoomed[X] {
             self.region.view_moved();
         }
         let out = self.region.show(ui, id().with("region"), &at, false, cx);
+        let content = (origin as f64, loop_beats * BEAT);
+        timeline::scroll_thumb(&ruler_painter, ruler, at.axis, content, cx);
         // A ruler press waiting for its long press is the scroller's too, until its range starts.
         if self.region.pending() {
             self.scroller.claim();
@@ -1241,13 +1238,14 @@ impl StepSeqView {
         }
     }
 
-    /// The graph lane's knob for the view `rect`: at 1.4 U from its left, on the lane's top or the view's bottom edge.
-    /// The host calls it after everything it draws over the rows (the drum mixer's strips), so that the knob is on top.
-    pub fn graph_knob(&mut self, ui: &mut Ui, cx: &UiCtx, rect: Rect) {
+    /// The graph lane's tab for the view `rect`, its icon in the channel colour `ink`: centred 1.4 U from its left,
+    /// over the lane's top or the view's bottom edge. The host calls it after everything it draws over the rows (the
+    /// drum mixer's strips), so that the tab is on top.
+    pub fn graph_knob(&mut self, ui: &mut Ui, cx: &UiCtx, rect: Rect, ink: Color32) {
         let m = cx.m;
-        let below = (rect, rect.top() + m.u(TOP_H));
+        let below = (rect, rect.top() + timeline::ruler_h(m));
         let x = rect.left() + m.u(GRAPH_KNOB_X);
-        (self.graph).knob_below(ui, cx, id().with("graph knob"), below, x);
+        (self.graph).tab_below(ui, cx, id().with("graph tab"), below, x, ink);
     }
 
     /// The graph lane in the strip `strip`: its items in the header column, the mixer's room left to the host (the
@@ -1736,24 +1734,6 @@ impl StepSeqView {
         let erased = self.erase.take().is_some_and(|e| e.erased());
         self.graph_drag.take().is_some_and(|(_, sent)| sent) || erased
     }
-
-    /// The transport's `Lock` button (drum view only), centred on `center`: an outline circle with `Lock` in it,
-    /// filled while on. A click toggles [`Self::lock`].
-    pub fn lock_button(&mut self, ui: &mut Ui, cx: &UiCtx, center: Pos2) {
-        let colors = &cx.theme.colors;
-        let (text, bg) = (colors.text.to_color32(), colors.background.to_color32());
-        let d = cx.m.u(LOCK_D);
-        if outline_circle_button(ui, id().with("lock"), center, d, text, cx.m).clicked() {
-            self.lock = !self.lock;
-        }
-        if self.lock {
-            ui.painter().circle_filled(center, d / 2.0, text);
-        }
-        let ink = if self.lock { bg } else { text };
-        let font = cx.m.font_id(FontSize::Pt8);
-        ui.painter()
-            .text(center, Align2::CENTER_CENTER, "Lock", font, ink);
-    }
 }
 
 /// Shows the open `overlay` over the view `rect` and returns what it produced. `rotate`: the row menu lists `Rotate
@@ -1824,7 +1804,7 @@ pub(crate) fn overlays(
         } => {
             let (close, at_rest) = swing_popup(
                 ctx,
-                rect.min + vec2(0.0, cx.m.u(TOP_H)),
+                rect.min + vec2(0.0, timeline::ruler_h(cx.m)),
                 &mut amount,
                 ink,
                 cx,
@@ -1971,7 +1951,7 @@ fn lane_swing(lane: &Lane) -> f64 {
 /// if it shows, below the strip: the lane sizes against the view below its top window margin, which is 0 here (the
 /// strip counts, as the roll's: [`GraphLane::split_below`]).
 pub(crate) fn lane_split(rect: Rect, m: &Metrics, lane: &GraphLane) -> (Rect, Option<Rect>) {
-    let (above, strip) = lane.split_below(rect, rect.top() + m.u(TOP_H), m);
+    let (above, strip) = lane.split_below(rect, rect.top() + timeline::ruler_h(m), m);
     (rect.with_max_y(above.bottom()), strip)
 }
 
@@ -2173,7 +2153,7 @@ impl Layout {
         mixer_w: f32,
         view: RowView,
     ) -> Self {
-        let (u, top) = (m.u(1.0), rect.top() + m.u(TOP_H));
+        let (u, top) = (m.u(1.0), rect.top() + timeline::ruler_h(m));
         let header_w = m.u(HEADER_W);
         // GL = x + HW + ceil(U/16) px.
         let t = m.t();
@@ -2305,7 +2285,7 @@ impl Layout {
     }
 
     /// The (row, step) under `p`, or nearest to it.
-    fn cell_at(&self, p: Pos2) -> (usize, usize) {
+    pub(crate) fn cell_at(&self, p: Pos2) -> (usize, usize) {
         let row = ((p.y - self.row_top()) / self.pitch).max(0.0) as usize;
         let step = ((p.x - self.x0) / self.step_w).max(0.0) as usize;
         (row.min(self.rows.saturating_sub(1)), step)

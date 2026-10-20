@@ -201,12 +201,12 @@ fn write_rack_chunk(
     write_raw(writer, &channel.file.rack_unknown_chunks)
 }
 
-/// A rack's modules in chain order: an `RMOd` each, then each plugin module ([`crate::song::plugin`]) as an `HDPm`,
-/// which a reader that does not know it skips as an unknown chunk, while an `RMOd` of a type it does not know would
-/// fail the whole song. An `HDPm` is `u32` its position in the chain, `u32` 1 (the layout), then its
-/// module's `RMOd`, which carries the plugin's `PLUG` and `PSTA`.
+/// A rack's modules in chain order: an `RMOd` each, then each of Honeydew's own modules (a plugin module,
+/// [`crate::song::plugin`], or one of Lemon Studio's effects) as an `HDPm`, which a reader that does not know it skips as
+/// an unknown chunk, while an `RMOd` of a type it does not know would fail the whole song. An `HDPm` is `u32` its
+/// position in the chain, `u32` 1 (the layout), then its module's `RMOd`, which carries a plugin's `PLUG` and `PSTA`.
 fn write_modules(writer: &mut ChunkWriter, modules: &[ModuleInstance]) -> Result<(), FlmError> {
-    let plugin = |module: &ModuleInstance| crate::song::plugin::is_plugin(module.type_id);
+    let plugin = |module: &ModuleInstance| crate::song::plugin::is_own(module.type_id);
     for module in modules.iter().filter(|m| !plugin(m)) {
         writer.chunk(*b"RMOd", |writer| write_module(writer, module))?;
     }

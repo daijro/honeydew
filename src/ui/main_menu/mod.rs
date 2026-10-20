@@ -1,12 +1,13 @@
 //! The main menu, opened from the app logo. It is a `menuFill` panel on the right of the screen, 20 U wide or the whole
 //! screen if that is narrower:
-//! - a header with the logo glyph, [`APP_NAME`] over our version string, and the light `Help` and `Quit` circles;
+//! - a header with `Help` at the left, the close X at the right, and centred between them the logo glyph, [`APP_NAME`]
+//!   and our version;
 //! - the tab row `SONGS PROJECT SETTINGS` across the panel in equal cells, the active tab underlined in `text`;
 //! - the active tab below.
 //!
 //! [`MainMenu::show`] paints it and returns what the user asked for as a [`MainMenuAction`]; the app routes those
-//! (opening, saving, quitting …). A click outside the panel, on the header logo, or Escape closes the menu. SETTINGS
-//! shows the [`SettingsTab`] in [`shell_layout`]'s content rect. `Help` is disabled.
+//! (opening, saving …). The close X, a click outside the panel, or Escape closes the menu; the header itself does not.
+//! SETTINGS shows the [`SettingsTab`] in [`shell_layout`]'s content rect. `Help` opens the Help menu.
 
 use eframe::egui::{
     Align, Align2, Color32, Id, Painter, Pos2, Rect, Response, RichText, Sense, Stroke, TextEdit,
@@ -18,9 +19,12 @@ use crate::icons::{IconId, draw_icon};
 use crate::metrics::{FontSize, Metrics};
 use crate::settings::Settings;
 use crate::theme::DISABLED_ALPHA;
-use crate::ui::buttons::{boxed_circle_button, filled_circle_button, outline_circle_button};
+use crate::ui::buttons::{
+    boxed_circle_button, close_x, filled_circle_button, outline_circle_button,
+};
+use crate::ui::popup::{PopupItem, PopupResult};
 use crate::ui::settings_tab::SettingsTab;
-use crate::ui::widgets::{Button, button, text_label};
+use crate::ui::widgets::{Button, button, text_label, truncated};
 use crate::ui::{UiCtx, anim};
 
 mod file_ops;
@@ -31,7 +35,9 @@ mod songs;
 pub(crate) use file_ops::rename_shadowed_folders;
 #[cfg(not(target_arch = "wasm32"))]
 pub use file_ops::reveal;
-pub(crate) use file_ops::{FILE_MANAGER, FileActions, MenuState, Opt, Step, delete, options_menu};
+pub(crate) use file_ops::{
+    CONVERTING, FILE_MANAGER, FileActions, MenuState, Opt, Step, delete, options_menu,
+};
 pub use library::{MemoryLibrary, SONGS_FOLDER, SongEntry, SongLibrary};
 #[cfg(not(target_arch = "wasm32"))]
 pub use library::{NativeLibrary, songs_dir};
@@ -47,17 +53,23 @@ const TAB_H: f32 = 1.25;
 /// Inset of the header, tab strip and content from the panel's edges, and the gap under the tab strip.
 const PAD: f32 = 0.5;
 const GAP: f32 = 0.25;
-/// `Help` and `Quit`.
-const HEADER_BUTTON_D: f32 = 1.5;
+/// `Help`'s and the close X's cells at the header's ends.
+const HEADER_CELL: f32 = 2.0;
+/// The close X's icon size factor.
+const CLOSE_ICON: f32 = 0.6;
+/// A tab under the mouse: `text` at this alpha over its cell.
+const TAB_HOVER_ALPHA: f32 = 0.05;
+/// A tab label too wide for its cell keeps this many characters after its middle ellipsis.
+const TAB_TAIL_K: usize = 5;
 /// The pressed tab's (and row's) lighter box: `text` at this alpha over the panel.
 const PRESSED_ALPHA: f32 = 0.15;
 /// A text field's empty-field hint and selection fill: `text` at this alpha. Not a disabled state (that is
 /// [`DISABLED_ALPHA`]), though the same value.
 const HINT_ALPHA: f32 = 0.3;
 
-/// The version shown under the app name.
+/// The version shown after the app name.
 pub fn version() -> String {
-    format!("Version {}", env!("CARGO_PKG_VERSION"))
+    env!("CARGO_PKG_VERSION").to_owned()
 }
 
 /// The main menu's tabs, in strip order.
@@ -86,12 +98,8 @@ impl Tab {
 /// metadata texts it edits in [`ProjectInfo`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum MainMenuAction {
-    /// Close the menu: a click outside the panel, on the header logo, or Escape.
+    /// Close the menu: the close X, a click outside the panel, or Escape.
     Close,
-    /// The header's `Help` (disabled).
-    Help,
-    /// The header's `Quit` (disabled on the web).
-    Quit,
     /// SONGS `New` (or its menu's `Empty`), then the Song options dialog's `OK`: a new empty song with these options.
     NewSong(crate::ui::song_options::SongOptions),
     /// A template picked from SONGS `New`'s menu: a new untitled song from the `.songtmpl` at this path, in
@@ -128,19 +136,36 @@ pub enum MainMenuAction {
     QuickRender,
     /// SETTINGS `Open folder`: show this folder (the Original Content folder) in the system's file manager.
     Reveal(std::path::PathBuf),
-    /// PROJECT `Detach`: show the floating performance monitor and close the menu.
-    DetachPerformance,
-    /// PROJECT `Attach`, which `Detach` becomes while the monitor is shown: hide it, and leave the menu open.
-    AttachPerformance,
     /// SETTINGS `Restore demo songs`: write our demo songs into the library again
     /// ([`crate::content::restore_demo_songs`]).
     RestoreDemoSongs,
+    /// Help → `What's new`: show the What's New dialog.
+    WhatsNew,
+}
+
+/// The Help menu's links, after `What's new`: the project's own pages.
+pub const HELP_LINKS: [(&str, &str); 2] = [
+    ("User manual", "https://github.com/daijro/honeydew#readme"),
+    (
+        "Report a problem",
+        "https://github.com/daijro/honeydew/issues",
+    ),
+];
+
+/// The Help menu at `at`: `What's new` (item 0), then [`HELP_LINKS`].
+fn help_menu(ctx: &eframe::egui::Context, cx: &UiCtx, id: Id, at: Pos2) -> PopupResult<usize> {
+    let labels = std::iter::once("What's new").chain(HELP_LINKS.iter().map(|l| l.0));
+    let items: Vec<PopupItem<usize>> = (labels.enumerate())
+        .map(|(row, label)| PopupItem::new(row, 0, row, label))
+        .collect();
+    crate::ui::preset_picker::modal(ctx, cx, id, at, &items)
 }
 
 /// Where the menu's parts go on a screen.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShellLayout {
-    /// The right of the screen: 20 U wide, or the whole screen if that is narrower.
+    /// The right of the screen: 20 U wide, or the whole screen if that is narrower or portrait
+    /// ([`is_portrait`](crate::metrics::is_portrait)).
     pub panel: Rect,
     pub header: Rect,
     /// Directly under the header, across the whole panel.
@@ -151,7 +176,11 @@ pub struct ShellLayout {
 
 /// Lays the menu out on `screen`.
 pub fn shell_layout(screen: Rect, m: &Metrics) -> ShellLayout {
-    let panel = screen.with_min_x(screen.right() - m.u(PANEL_W).min(screen.width()));
+    let w = match crate::metrics::is_portrait(screen) {
+        true => screen.width(),
+        false => m.u(PANEL_W).min(screen.width()),
+    };
+    let panel = screen.with_min_x(screen.right() - w);
     let inner = panel.shrink(m.u(PAD));
     let header = inner
         .with_min_y(panel.top())
@@ -175,6 +204,8 @@ pub struct MainMenu {
     pub tab: Tab,
     songs: songs::SongsTab,
     project: project::ProjectTab,
+    /// The Help menu, open at this point (the `Help` button's centre).
+    help_menu: Option<Pos2>,
 }
 
 impl MainMenu {
@@ -243,11 +274,11 @@ impl MainMenu {
         // from the first frame, and the handlers never check the animation.
         let ctx = ui.ctx().clone();
         let (n, page_n) = (
-            anim::frame(&ctx, id),
-            anim::frame(&ctx, id.with(("page", self.tab as u8))),
+            anim::elapsed(&ctx, id),
+            anim::elapsed(&ctx, id.with(("page", self.tab as u8))),
         );
-        let ease = |n| anim::menu_slide(n).powi(4);
-        let shift = |n| (ease(n) * l.panel.width() * m.ppp()).trunc() / m.ppp();
+        let ease = |t| anim::menu_slide(t).powi(4);
+        let shift = |t| (ease(t) * l.panel.width() * m.ppp()).trunc() / m.ppp();
         // The page counts from the menu's opening, or from its tab's change since.
         let page_dx = if page_n < n { shift(page_n) } else { 0.0 };
         let dx = shift(n);
@@ -301,77 +332,74 @@ impl MainMenu {
         ui.painter()
             .rect_filled(header, 0.0, c.module_fill.to_color32());
 
-        // Header.
-        let logo = Rect::from_min_size(l.header.min, vec2(l.header.height(), l.header.height()));
-        draw_icon(ui.painter(), logo, IconId::AppLogo, text, 1.0, m);
-        if ui.interact(logo, id.with("logo"), Sense::click()).clicked() {
+        // Header: `Help` in a 2 U cell at the left, the close X in one at the right, and between them, centred as a
+        // group, the logo, our name and the version. The header itself is no button.
+        let cell =
+            |left: f32| Rect::from_x_y_ranges(left..=left + m.u(HEADER_CELL), header.y_range());
+        let (help, close) = (cell(header.left()), cell(header.right() - m.u(HEADER_CELL)));
+        // `Help`: plain text, opening the Help menu.
+        text_label(
+            ui,
+            cx,
+            help,
+            "Help",
+            FontSize::Pt10,
+            Align2::CENTER_CENTER,
+            text,
+        );
+        if crate::ui::focus::interact(ui, help, id.with("Help"), Sense::click()).clicked() {
+            self.help_menu = Some(help.center());
+        }
+        let surface = (c.module_fill.to_color32(), 0.375);
+        if close_x(ui, cx, id.with("close"), close, surface, CLOSE_ICON).clicked() {
             action = Some(MainMenuAction::Close);
         }
-        let d = m.u(HEADER_BUTTON_D);
-        let names = Rect::from_x_y_ranges(
-            logo.right() + m.u(GAP)..=l.header.right() - 2.0 * d - 2.0 * m.u(GAP),
-            l.header.y_range(),
-        );
-        let (upper, lower) = names.split_top_bottom_at_fraction(0.55);
-        text_label(
+        self.title(
             ui,
             cx,
-            upper,
-            APP_NAME,
-            FontSize::Pt12,
-            Align2::LEFT_BOTTOM,
-            text,
+            header.with_min_x(help.right()).with_max_x(close.left()),
         );
-        text_label(
-            ui,
-            cx,
-            lower,
-            &version(),
-            FontSize::Pt8,
-            Align2::LEFT_TOP,
-            text,
-        );
-        for (i, (name, act, enabled)) in [
-            ("Quit", MainMenuAction::Quit, !cfg!(target_arch = "wasm32")),
-            ("Help", MainMenuAction::Help, false),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let center = pos2(
-                l.header.right() - d / 2.0 - i as f32 * (d + m.u(GAP)),
-                l.header.center().y,
-            );
-            let circle = Circle {
-                enabled,
-                ..Circle::new(id.with(name), center, d, name)
-            };
-            if circle_button(ui, cx, &circle) {
-                action = Some(act);
+        if let Some(at) = self.help_menu {
+            let picked = help_menu(ui.ctx(), cx, id.with("help_menu"), at);
+            if picked.close {
+                self.help_menu = None;
             }
+            action = picked.selected.map(|i| match i {
+                0 => MainMenuAction::WhatsNew,
+                i => MainMenuAction::OpenLink(HELP_LINKS[i - 1].1.into()),
+            });
         }
 
-        // Tab row: equal cells, each label 10 pt and centred in its cell. A label is never
-        // shrunk, cut or clipped to its cell: one wider than its cell runs evenly over its neighbours.
+        // Tab row: equal cells, each label 10 pt and centred in its cell, a middle ellipsis keeping 5 tail characters
+        // when the cell is too narrow. The current tab is underlined (2t) along its cell's bottom; under the mouse a
+        // cell lights (`text` α 0.05).
         let font = m.font_id(FontSize::Pt10);
         let cell_w = l.tabs.width() / Tab::ALL.len() as f32;
         for (i, tab) in Tab::ALL.into_iter().enumerate() {
             let left = l.tabs.left() + i as f32 * cell_w;
             let cell = Rect::from_x_y_ranges(left..=left + cell_w, l.tabs.y_range());
-            let galley = ui
-                .painter()
-                .layout_no_wrap(tab.label().to_owned(), font.clone(), text);
             let response =
                 crate::ui::focus::interact(ui, cell, id.with(("tab", i)), Sense::click());
             let painter = ui.painter();
-            let label_rect = Rect::from_center_size(cell.center(), galley.size());
-            if response.is_pointer_button_down_on() {
-                pressed_box(painter, label_rect.expand(m.u(GAP)), cx);
+            if crate::ui::widgets::hovered(ui, &response) {
+                painter.rect_filled(cell, 0.0, text.gamma_multiply(TAB_HOVER_ALPHA));
             }
-            painter.galley(label_rect.min, galley, text);
+            if response.is_pointer_button_down_on() {
+                pressed_box(painter, cell, cx);
+            }
+            let label = cell.shrink2(vec2(m.u(GAP), 0.0));
+            let center = Align2::CENTER_CENTER;
+            truncated(
+                painter,
+                label,
+                center,
+                tab.label(),
+                font.clone(),
+                text,
+                TAB_TAIL_K,
+            );
             if tab == self.tab {
-                let y = label_rect.bottom() + m.u(0.1);
-                let line = Rect::from_x_y_ranges(label_rect.x_range(), y..=y + m.t());
+                let line = cell.with_min_y(cell.bottom() - 2.0 * m.t());
                 painter.rect_filled(line, 0.0, text);
             }
             if response.clicked() {
@@ -415,6 +443,40 @@ impl MainMenu {
             action = Some(MainMenuAction::Close);
         }
         action
+    }
+}
+
+impl MainMenu {
+    /// The header's centred group in `room` (between the two cells): the logo (a header-high square), 5 px, our name
+    /// in the largest size from 18 pt down to 8 pt that leaves room for the rest, 0.25 U, then the version in 8 pt at
+    /// α 0.6 on the name's baseline.
+    fn title(&self, ui: &Ui, cx: &UiCtx, room: Rect) {
+        let m = cx.m;
+        let text = cx.theme.colors.text.to_color32();
+        let painter = ui.painter();
+        let layout =
+            |s: &str, pt: f32, color| painter.layout_no_wrap(s.to_owned(), m.font_id_pt(pt), color);
+        let version = layout(&version(), FontSize::Pt8.points(), text.gamma_multiply(0.6));
+        let logo = room.height();
+        let gaps = 5.0 / m.ppp() + m.u(GAP);
+        let fixed = logo + gaps + version.size().x;
+        let name = (8..=18)
+            .rev()
+            .map(|pt| layout(APP_NAME, pt as f32, text))
+            .find(|g| fixed + g.size().x <= room.width())
+            .unwrap_or_else(|| layout(APP_NAME, 8.0, text));
+        let left = room.center().x - (fixed + name.size().x) / 2.0;
+        let square = Rect::from_min_size(pos2(left, room.top()), vec2(logo, logo));
+        draw_icon(painter, square, IconId::AppLogo, text, 1.0, m);
+        let x = square.right() + 5.0 / m.ppp();
+        let top = room.center().y - name.size().y / 2.0;
+        // The version's baseline on the name's.
+        let baseline =
+            |g: &eframe::egui::Galley| (g.rows[0].row.glyphs.first()).map_or(0.0, |gl| gl.pos.y);
+        let version_top = top + baseline(&name) - baseline(&version);
+        let name_w = name.size().x;
+        painter.galley(pos2(x, top), name, text);
+        painter.galley(pos2(x + name_w + m.u(GAP), version_top), version, text);
     }
 }
 

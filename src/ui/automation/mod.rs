@@ -13,14 +13,14 @@
 //! within 1.25 U) drags it, or the whole selection when it lands inside the showing selection's touch frame; released
 //! without movement it is a tap, which selects the point, or only deselects when a selection showed at the touch-down,
 //! or after more than 300 ms a long press, which shows the touch-down's selection without toggling. On empty grid a
-//! long press (300 ms within 0.5 U) offers a round `Paste` button at the finger when the clipboard holds points;
-//! dragging from there makes a marquee ([`Marquee`]) whose points are the selection live. Shift (the selection
-//! modifier) starts one at once. With two or more points selected, the band right of the selection box inside its touch frame is
-//! the right-edge handle, which scales. Each gesture is one final edit at its release, only when the points changed;
-//! meanwhile only the drawing follows the finger. A move's release (as the piano roll's) leaves the moved points
-//! selected with the floating row hidden, a quiet selection whose frame and handle take no touch (a tap on empty grid
-//! still only clears it): a tap on a point then selects it with the row, and a long press, a box, a paste or a key
-//! shows a selection again.
+//! long press (300 ms within 0.5 U) offers the `Paste` insert menu at the finger's snapped beat when the clipboard
+//! holds points ([`paste_menu`]); dragging from there makes a marquee ([`Marquee`]) whose points are the selection
+//! live. Shift (the selection modifier) starts one at once. With two or more points selected, the band right of the
+//! selection box inside its touch frame is the right-edge handle, which scales. Each gesture is one final edit at its
+//! release, only when the points changed; meanwhile only the drawing follows the finger. A move's release (as the piano
+//! roll's) leaves the moved points selected with the floating row hidden, a quiet selection whose frame and handle take
+//! no touch (a tap on empty grid still only clears it): a tap on a point then selects it with the row, and a long
+//! press, a box, a paste or a key shows a selection again.
 //!
 //! - b (bar marks, the `Bar` snap, the clip's loop rule) is [`TimeSig::bar_beats`], TDIV byte 1; the zoom limits take
 //!   d, byte 0 ([`geom::zoom_limits`]).
@@ -31,14 +31,15 @@
 //! - Lines are snapped to whole device pixels; vertical marks span the grid, the five lines and the init line its
 //!   width. The selection guides go under the curve, the marquee (the step view's box) over it.
 //! - The touch frame (the box grown by 1.25 U) is the selection the floating row is placed over and re-shown by; the
-//!   right-edge handle is the part of it right of the box (checked before the points); neither is drawn. The row hides
+//!   right-edge handle is the part of it right of the box (checked before the points), drawn as the end capsule of the
+//!   points' box grown by their radius ([`crate::ui::clips::end_handle`]); the frame is not drawn. The row hides
 //!   while a point or the handle is held and from a completed long press on.
 //! - The view is the scroller's ([`scroller`]): one finger scrolls the time on the ruler band only (a drag on empty
 //!   grid moves nothing), two zoom it there; the wheel zooms it over the ruler and the grid, as does a trackpad pinch
 //!   over the grid.
 //! - Created and pasted points pop in; every point of a drag (or scale) grows while it lasts and wobbles at its
 //!   release; animations are keyed by the point's tick and value.
-//! - The `Paste` button hides at any other press; it pastes at its centre's beat.
+//! - The `Paste` menu hides at any other press; it pastes at its snapped beat.
 //! - Continuous scrolling turns the time ruler's long press and range drags off; a tap still moves the playhead, which
 //!   the app turns into a stop while playing. A drag's beats come from the view as it is each frame, so a held point
 //!   stays on the beat under the finger while the view moves.
@@ -63,6 +64,7 @@ use crate::ui::clips::{
 };
 use crate::ui::drum_grid::edit::{MARK_GAP, marks};
 use crate::ui::edit_keys::{self, EditKey};
+use crate::ui::insert;
 use crate::ui::piano_roll::notes::{auto_grid, snap_round};
 use crate::ui::piano_roll::{Snap, SnapMode};
 use crate::ui::popup::{self, PopupItem};
@@ -403,6 +405,12 @@ impl AutomationEditor {
             (sig, loop_ticks),
             now,
         );
+        // The right-edge handle is drawn as the end capsule of the points as drawn (their box grown by the point
+        // radius); its touch is the band right of the box.
+        if let Some(b) = sbox.filter(|_| handle.is_some() && !self.quiet) {
+            let capsule = crate::ui::clips::end_handle(b.expand(m.u(POINT_R)), m);
+            crate::ui::clips::paint_handle(&ui.painter_at(f.grid), cx, capsule, (1.0, 0.0), false);
+        }
         #[cfg(any(target_arch = "wasm32", test))]
         crate::app::live::points(
             ui,
@@ -467,7 +475,7 @@ impl AutomationEditor {
             }
             ui.ctx().request_repaint();
         }
-        if let Some(new) = self.paste_button(ui, cx, ax, &pts, snap, now) {
+        if let Some(new) = self.paste_button(ui, cx, (&f, ax), &pts, snap, now) {
             (edit, self.quiet) = (Some(new), false);
         }
 
@@ -489,6 +497,7 @@ impl AutomationEditor {
         let picked = self
             .region
             .show(ui, id().with("region"), &ruler_at, false, cx);
+        timeline::scroll_thumb(&ruler, f.time, ax, (0.0, loop_ticks), cx);
         // A ruler press waiting for its long press is the scroller's too, until its range starts.
         if self.region.pending() {
             self.scroller.claim();
@@ -530,7 +539,7 @@ impl AutomationEditor {
         // is dragged, the line and the disc follow the finger.
         let line = ui.painter_at(f.grid.with_min_x(f.column.right()));
         let x = (self.knob).line_x(ui, m, &ruler_at, loop_ticks - 1.0, ax.x(drawn));
-        self.snap_button(ui, f.snap, cx);
+        self.snap_button(ui, f.snap, color, cx);
         // After the Snap button, which the disc overhangs at beat 0 (the disc on top), and whose touches the knob takes
         // there while it shows, as the playlist's.
         timeline::playhead_line(&line, f.grid, x, cx);
@@ -978,12 +987,12 @@ impl AutomationEditor {
         }
     }
 
-    /// The shared round Paste button; a separate tap commits the clipboard.
+    /// The `Paste` insert menu ([`paste_menu`]); a separate tap commits the clipboard.
     fn paste_button(
         &mut self,
         ui: &mut Ui,
         cx: &UiCtx,
-        ax: TimeAxis,
+        (f, ax): (&Frame, TimeAxis),
         pts: &[Point],
         snap: Option<f64>,
         now: f64,
@@ -994,12 +1003,18 @@ impl AutomationEditor {
             self.paste = None;
             return None;
         }
-        let (rect, tap) = crate::ui::step_seq::paste_button(ui, cx, id().with("paste"), finger);
-        let tap = tap?;
+        let tick = ax.tick(finger.x);
+        let tap = paste_menu(
+            ui,
+            cx,
+            id().with("paste"),
+            f,
+            ax.x(snap_round(tick, snap).max(0.0)),
+            finger,
+        )?;
         self.paste = None;
         if tap {
-            let (new, sel) =
-                points::paste(pts, &clipboard, ax.tick(rect.center().x), snap, KEY.max());
+            let (new, sel) = points::paste(pts, &clipboard, tick, snap, KEY.max());
             self.pop(&new, &sel, now);
             return Some((new, sel));
         }
@@ -1008,8 +1023,8 @@ impl AutomationEditor {
 
     /// The Snap button in `cell` ([`widgets::snap_button`]): a tap toggles snap, a long press or a right click opens
     /// the snap menu.
-    fn snap_button(&mut self, ui: &mut Ui, cell: Rect, cx: &UiCtx) {
-        match widgets::snap_button(ui, id().with("snap"), cell, self.snap.on, cx) {
+    fn snap_button(&mut self, ui: &mut Ui, cell: Rect, ink: Color32, cx: &UiCtx) {
+        match widgets::snap_button(ui, id().with("snap"), cell, (self.snap.on, ink), cx) {
             Some(SnapTouch::Menu) => self.snap_menu = true,
             Some(SnapTouch::Toggle) => self.snap.on = !self.snap.on,
             None => {}
@@ -1093,6 +1108,22 @@ fn region_op(pts: &mut Vec<Point>, op: RegionOp, range: TimeRange, p: u32, loop_
         | RegionOp::FadeIn
         | RegionOp::FadeOut => {}
     }
+}
+
+/// The automation and audio editors' `Paste` insert menu ([`insert::paste`]) for the press at `finger`: over the
+/// finger at the snapped beat's `x` (their 127 rows are too fine to place it by),
+/// the insert cursor across the value area (a paste keeps the values). `Some(true)` for its click, `Some(false)` for a
+/// press elsewhere.
+pub(crate) fn paste_menu(
+    ui: &mut Ui,
+    cx: &UiCtx,
+    id: Id,
+    f: &Frame,
+    x: f32,
+    finger: Pos2,
+) -> Option<bool> {
+    let row = Rangef::point(finger.y);
+    insert::paste(ui, cx, id, f.grid, (x, row, f.value.y_range()))
 }
 
 #[cfg(test)]

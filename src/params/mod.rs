@@ -13,6 +13,7 @@ mod inst_rows;
 #[cfg(test)]
 mod inst_tests;
 mod instruments;
+mod lemon;
 #[cfg(test)]
 mod spec_rows;
 #[cfg(test)]
@@ -27,6 +28,8 @@ pub(crate) use effects_24_51::ARP_RHYTHM_PATTERNS;
 pub use effects_24_51::snap_echo_delay;
 pub(crate) use effects_24_51::{arp_pattern, arp_steps};
 pub(crate) use instruments::GMSYNTH_WAVESHAPES;
+/// Lemon Studio's reverb and limiter, Honeydew's own effects (`honeydew_audio::lemon`).
+pub use lemon::MODULES as LEMON_MODULES;
 
 /// What a module does with the signal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -294,12 +297,13 @@ pub fn instruments() -> impl Iterator<Item = &'static ModuleSpec> {
     instruments::MODULES.iter()
 }
 
-/// The module with type id `id` (effect, note effect, instrument or a plugin module), or `None` for ids that are not
-/// registered.
+/// The module with type id `id` (effect, note effect, instrument, a plugin module or one of Lemon Studio's effects), or
+/// `None` for ids that are not registered.
 pub fn module_spec(id: u16) -> Option<&'static ModuleSpec> {
     modules()
         .chain(instruments())
         .chain(&PLUGINS)
+        .chain(&LEMON_MODULES)
         .find(|m| m.id == id)
 }
 

@@ -247,7 +247,7 @@ mod tests {
     use eframe::egui::Shape;
 
     use super::*;
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
     use crate::panels::tests::{U, display_shapes};
     use crate::theme::theme_by_id;
 
@@ -257,7 +257,7 @@ mod tests {
     }
 
     fn metrics(ppp: f32) -> Metrics {
-        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX)
+        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE)
     }
 
     fn close(a: f32, b: f32) -> bool {

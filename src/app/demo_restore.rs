@@ -44,7 +44,7 @@ impl HoneydewApp {
         match stage {
             DemoRestore::Copy => match self.files.restore_demo_songs() {
                 Ok(()) => {
-                    self.settings.demo_songs_restored = true;
+                    self.settings.demo_songs_version = crate::settings::DEMO_SONGS_VERSION;
                     self.demo_restore = Some(DemoRestore::Held(self.now));
                     ctx.request_repaint_after_secs(HOLD_SECS as f32);
                 }

@@ -146,8 +146,8 @@ fn messages(
             },
         ) => {
             let len = if len_beats > 0.0 { len_beats } else { step };
-            // Owner request (2026-10-18): a pad with a MIDI note set plays it, so an imported GM kit's keys come
-            // back; any other pad plays pad + 36.
+            // A pad with a MIDI note set plays it, so an imported GM kit's keys come back; any other pad plays
+            // pad + 36.
             let stored = kit.and_then(|k| k.slot_on_pad(usize::from(pad))?.midi_note());
             return note(9, stored.unwrap_or(pad.saturating_add(36)), velocity, len);
         }

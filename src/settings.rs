@@ -12,13 +12,15 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::metrics::{DEFAULT_UI_SCALE_INDEX, UI_SCALE_FACTORS};
+use crate::metrics::{DEFAULT_UI_SCALE, UI_SCALE_FACTORS, UI_SCALE_RANGE};
 use crate::midi::device::ANY;
 use crate::theme::builtin_themes;
 use crate::ui::keyboard_settings::KeyboardMode;
 use crate::ui::main_menu::Sort;
 use crate::ui::modules_browser::ModuleOrdering;
 use crate::ui::save_dialog::ExportFormat;
+use crate::ui::soundfont_picker::PatchOrdering;
+use serde_json::{Map, Value};
 
 /// The [`eframe::Storage`] key the settings are stored under, prefixed because the web's local storage is shared by
 /// everything on the page's origin.
@@ -92,9 +94,16 @@ pub struct Settings {
     pub metronome_level: f32,
     /// `Theme:`, a built-in theme id.
     pub theme: u32,
-    /// `Scaling:`, an index into [`UI_SCALE_FACTORS`].
-    #[serde(rename = "uiscale")]
-    pub ui_scale_index: usize,
+    /// `Scaling:`, the UI scale in percent, kept in [`UI_SCALE_RANGE`]. A missing one is the older `uiscale` index's
+    /// factor ([`UI_SCALE_FACTORS`]), once.
+    #[serde(rename = "uiscalefactor")]
+    pub ui_scale: u32,
+    /// `Animation` is `Full`: panels, menus, fades and eases animate; off, they jump to their end.
+    #[serde(rename = "enableAnimations")]
+    pub animations: bool,
+    /// `Animation` is not `Minimal`: scrolls coast after a fling.
+    #[serde(rename = "enableInertia")]
+    pub inertia: bool,
     /// `Enable ghost notes` (read by the piano roll).
     #[serde(rename = "ghostnotes")]
     pub ghost_notes: bool,
@@ -117,21 +126,21 @@ pub struct Settings {
     /// ([`ExportFormat::id`]; a hidden setting).
     #[serde(rename = "lastAudioFileFormat")]
     pub last_audio_format: u8,
-    /// The keyboard panel's `lockpads`: the drum pads cannot be rearranged. Off by default (nothing in the
-    /// app sets it yet).
+    /// The keyboard panel's `lockpads`: the drum pads cannot be rearranged. On by default; the keyboard settings
+    /// strip's `Lock` toggles it.
     #[serde(rename = "lockpads")]
     pub lock_pads: bool,
     /// The keyboard panel's `showTwoRows`: the piano shows a second row, an octave up, over the main one. Off by
     /// default.
     #[serde(rename = "showTwoRows")]
     pub show_two_rows: bool,
-    /// The keyboard panel's `preferredKbdSize`, in U: the height the panel animates to. 5 U by default; turning two
-    /// rows on raises it to 6 U.
-    #[serde(rename = "preferredKbdSize")]
+    /// The keyboard panel's `preferredKbdSizeCells`, in U: the height the panel animates to. 5 U by default; turning
+    /// two rows on raises it to make room for them. A load without it takes the former `preferredKbdSize` (U too).
+    #[serde(rename = "preferredKbdSizeCells")]
     pub preferred_kbd_size: f32,
-    /// The keyboard panel's `recentKbdSize`, in U: the last height a hand resize left above the bar alone, which the
-    /// tap toggle opens the panel to again. 5 U by default.
-    #[serde(rename = "recentKbdSize")]
+    /// The keyboard panel's `recentKbdSizeCells`, in U: the last height a hand resize left above the bar alone, which
+    /// the tap toggle opens the panel to again. 5 U by default. A load without it takes the former `recentKbdSize`.
+    #[serde(rename = "recentKbdSizeCells")]
     pub recent_kbd_size: f32,
     /// The keyboard panel's `showWheels`: the strip's icon 12 shows the pitch and mod wheels left of the keys. Off by
     /// default, and the strip's `Reset` turns it off.
@@ -141,10 +150,18 @@ pub struct Settings {
     /// 2 `Chords`, 3 `Strum`.
     #[serde(rename = "keyboardKind")]
     pub keyboard_kind: u8,
-    /// Our demo songs went into the songs folder (`demoSongsRestored`): the first run does it once
-    /// ([`crate::content::restore_demo_songs`]), and `Restore demo songs` sets it too.
-    #[serde(rename = "demoSongsRestored")]
-    pub demo_songs_restored: bool,
+    /// The demo-song set last put into the songs folder: a start copies the missing ones while it is below
+    /// [`DEMO_SONGS_VERSION`] ([`crate::content::restore_demo_songs`]), and `Restore demo songs` sets it too. A load
+    /// without it takes the former `demoSongsRestored` as the current set.
+    #[serde(rename = "demoSongsVersion")]
+    pub demo_songs_version: i32,
+    /// The What's New notes version last shown at a start, "" before any.
+    #[serde(rename = "whatsNewSeen")]
+    pub whats_new_seen: String,
+    /// The SoundFont patch picker's `Sort` (`SoundFontPatchOrdering`, a hidden setting): the id of the
+    /// [`PatchOrdering`] its menu last picked, −1 (missing) until then, which is `Default` (file order).
+    #[serde(rename = "SoundFontPatchOrdering")]
+    pub sound_font_patch_ordering: i32,
     /// The Modules picker's ordering (`ModuleBrowserOrdering`, a hidden setting): the id of the [`ModuleOrdering`] its
     /// `Sort` menu last picked, −1 (missing) until then; one that names no ordering opens the picker in `Category`.
     #[serde(rename = "ModuleBrowserOrdering")]
@@ -164,8 +181,8 @@ pub struct Settings {
 
 impl Default for Settings {
     /// The fresh-install state: ghost notes, range labels, the count-in and the CPU and RAM meters on, the latency
-    /// toggle unset (shown ON, compensating), the other toggles off, `NATIVE`, `Classic Gray` (the fallback theme) and
-    /// `100%`. The metronome level is half way.
+    /// toggle unset (shown ON, compensating), the other toggles off, `NATIVE`, `Classic Gray` (the fallback theme),
+    /// `100 %` and `Animation` `Full`. The metronome level is half way; the drum pads are locked.
     fn default() -> Self {
         Self {
             midi_device: ANY.to_owned(),
@@ -178,21 +195,25 @@ impl Default for Settings {
             count_in: true,
             metronome_level: 0.5,
             theme: 0,
-            ui_scale_index: DEFAULT_UI_SCALE_INDEX,
+            ui_scale: DEFAULT_UI_SCALE,
+            animations: true,
+            inertia: true,
             ghost_notes: true,
             key_names: false,
             middle_c_is_c4: false,
             range_labels: true,
             continuous_scroll: false,
             hardware_meters: true,
-            lock_pads: false,
+            lock_pads: true,
             last_audio_format: ExportFormat::Wav.id(),
             show_two_rows: false,
             preferred_kbd_size: crate::ui::keyboard_settings::PANEL_H,
             recent_kbd_size: crate::ui::keyboard_settings::PANEL_H,
             show_wheels: false,
             keyboard_kind: 0,
-            demo_songs_restored: false,
+            demo_songs_version: 0,
+            whats_new_seen: String::new(),
+            sound_font_patch_ordering: -1,
             module_browser_ordering: -1,
             song_browser_ordering: Sort::AZ.id(),
             import_notice_accepted: false,
@@ -205,11 +226,25 @@ impl Settings {
     /// The settings stored in `storage`. Anything missing or unreadable is the default, field by field, and so is an
     /// out-of-range value: an unknown theme is Classic Gray, an unknown scale 100 %.
     pub fn load(storage: &dyn eframe::Storage) -> Self {
-        use serde_json::{Map, Value};
         let mut fields: Map<String, Value> = storage
             .get_string(STORAGE_KEY)
             .and_then(|json| serde_json::from_str(&json).ok())
             .unwrap_or_default();
+        // `uiscalefactor` replaces the `uiscale` index: a missing (or zero) one takes the index's factor, an unknown
+        // index 100 %.
+        if !(fields.get("uiscalefactor")).is_some_and(|v| v.as_u64().is_some_and(|p| p >= 1)) {
+            let index = fields.get("uiscale").and_then(Value::as_u64);
+            let factor = index.and_then(|i| UI_SCALE_FACTORS.get(i as usize).copied());
+            if let Some(factor) = factor {
+                fields.insert(
+                    "uiscalefactor".into(),
+                    ((factor * 100.0).round() as u32).into(),
+                );
+            } else {
+                fields.remove("uiscalefactor");
+            }
+        }
+        migrate_keys(&mut fields);
         // Field by field: one unreadable value (wrong type, out of its type's range) is dropped on its own instead of
         // failing the whole object.
         fields.retain(|k, v| {
@@ -221,9 +256,9 @@ impl Settings {
         if s.theme as usize >= builtin_themes().len() {
             s.theme = d.theme;
         }
-        if s.ui_scale_index >= UI_SCALE_FACTORS.len() {
-            s.ui_scale_index = d.ui_scale_index;
-        }
+        s.ui_scale = s
+            .ui_scale
+            .clamp(*UI_SCALE_RANGE.start(), *UI_SCALE_RANGE.end());
         if !SOUND_MODES.iter().any(|&(id, _)| id == s.sound_mode) {
             s.sound_mode = d.sound_mode;
         }
@@ -267,6 +302,11 @@ impl Settings {
         ModuleOrdering::from_id(self.module_browser_ordering).unwrap_or_default()
     }
 
+    /// The SoundFont patch picker's ordering at an opening: the one `SoundFontPatchOrdering` names, else `Default`.
+    pub fn patch_ordering(&self) -> PatchOrdering {
+        PatchOrdering::from_id(self.sound_font_patch_ordering)
+    }
+
     /// The SONGS page's order the `SongBrowserOrdering` setting names (an unknown one is `A-Z`).
     pub fn song_ordering(&self) -> Sort {
         Sort::from_id(self.song_browser_ordering).unwrap_or_default()
@@ -276,6 +316,30 @@ impl Settings {
     pub fn save(&self, storage: &mut dyn eframe::Storage) {
         let json = serde_json::to_string(self).expect("plain data always serialises");
         storage.set_string(STORAGE_KEY, json);
+    }
+}
+
+/// The demo-song set this build puts into the songs folder ([`Settings::demo_songs_version`]).
+pub const DEMO_SONGS_VERSION: i32 = 2;
+
+/// Moves the values of the preference keys that newer ones replaced to those, where they hold nothing yet: the panel
+/// heights move to the `…Cells` keys (ours were in U already), and `demoSongsRestored` becomes the current demo-song
+/// set. The former keys are read no more and go with the next save.
+fn migrate_keys(fields: &mut Map<String, Value>) {
+    for (old, new) in [
+        ("preferredKbdSize", "preferredKbdSizeCells"),
+        ("recentKbdSize", "recentKbdSizeCells"),
+    ] {
+        if let Some(value) = fields.remove(old)
+            && !fields.contains_key(new)
+        {
+            fields.insert(new.into(), value);
+        }
+    }
+    if fields.remove("demoSongsRestored") == Some(Value::Bool(true))
+        && !fields.contains_key("demoSongsVersion")
+    {
+        fields.insert("demoSongsVersion".into(), DEMO_SONGS_VERSION.into());
     }
 }
 
@@ -479,7 +543,9 @@ mod tests {
             count_in: !d.count_in,
             metronome_level: 0.25,
             theme: 6,
-            ui_scale_index: 8,
+            ui_scale: 145,
+            animations: false,
+            inertia: false,
             ghost_notes: !d.ghost_notes,
             key_names: !d.key_names,
             middle_c_is_c4: !d.middle_c_is_c4,
@@ -493,7 +559,9 @@ mod tests {
             recent_kbd_size: 9.25,
             show_wheels: !d.show_wheels,
             keyboard_kind: 3,
-            demo_songs_restored: !d.demo_songs_restored,
+            demo_songs_version: 2,
+            whats_new_seen: "5.0".into(),
+            sound_font_patch_ordering: 1,
             module_browser_ordering: 1,
             song_browser_ordering: 2,
             import_notice_accepted: !d.import_notice_accepted,
@@ -515,7 +583,9 @@ mod tests {
         // `NATIVE`, `Classic Gray`, `100%`.
         assert_eq!(d.sound_mode, 3);
         assert_eq!(d.theme, 0);
-        assert_eq!(UI_SCALE_FACTORS[d.ui_scale_index], 1.0);
+        assert_eq!(d.ui_scale, 100);
+        // `Animation`: `Full`.
+        assert!(d.animations && d.inertia);
         assert_eq!(d.metronome_level, 0.5);
         // The last export format: WAV.
         assert_eq!(d.last_audio_format, 2);
@@ -529,8 +599,14 @@ mod tests {
             (d.keyboard_kind, d.keyboard_kind()),
             (0, KeyboardMode::Classic)
         );
+        // The drum pads are locked.
+        assert!(d.lock_pads);
         // The demo songs are not out until the first run puts them there.
-        assert!(!d.demo_songs_restored);
+        assert_eq!(d.demo_songs_version, 0);
+        assert_eq!(
+            (d.whats_new_seen.as_str(), d.sound_font_patch_ordering),
+            ("", -1)
+        );
         // The first import asks first.
         assert!(!d.import_notice_accepted);
     }
@@ -607,8 +683,8 @@ mod tests {
         );
         // A keyboard height that is no size: 5 U.
         for json in [
-            r#"{"preferredKbdSize": -1, "recentKbdSize": -2}"#,
-            r#"{"preferredKbdSize": "6", "recentKbdSize": "7"}"#,
+            r#"{"preferredKbdSizeCells": -1, "recentKbdSizeCells": -2}"#,
+            r#"{"preferredKbdSizeCells": "6", "recentKbdSizeCells": "7"}"#,
         ] {
             let s = Settings::load(&stored(json));
             assert_eq!(
@@ -626,14 +702,45 @@ mod tests {
             r#"{"theme": 8, "uiscale": 8, "soundModeAndr": 0, "mtmlevel": 1.0}"#,
         ));
         assert_eq!(
-            (s.theme, s.ui_scale_index, s.sound_mode, s.metronome_level),
-            (8, 8, 0, 1.0)
+            (s.theme, s.ui_scale, s.sound_mode, s.metronome_level),
+            (8, 60, 0, 1.0)
         );
+        // `uiscalefactor` is kept in 60–200 %; a missing or zero one takes the old `uiscale` index's factor.
+        for (json, want) in [
+            (r#"{"uiscalefactor": 250}"#, 200),
+            (r#"{"uiscalefactor": 30, "uiscale": 2}"#, 60),
+            (r#"{"uiscalefactor": 0, "uiscale": 2}"#, 125),
+            (r#"{"uiscalefactor": 145, "uiscale": 2}"#, 145),
+            (r#"{"uiscale": 6}"#, 175),
+        ] {
+            assert_eq!(Settings::load(&stored(json)).ui_scale, want, "{json}");
+        }
         // The last export format is an audio format's id: FLM (0), MIDI (1) and no format (4) are WAV; FLAC (5) stays.
         for (id, want) in [(0, 2), (1, 2), (4, 2), (9, 2), (5, 5), (3, 3)] {
             let s = Settings::load(&stored(&format!(r#"{{"lastAudioFileFormat": {id}}}"#)));
             assert_eq!(s.last_audio_format, want, "{id}");
         }
+    }
+
+    #[test]
+    fn the_keys_newer_ones_replaced_are_read_once_into_those() {
+        // The panel heights (ours in U already) keep their values; a set demo flag is the current set. A save writes
+        // only the new keys.
+        let mut mem = stored(
+            r#"{"preferredKbdSize": 7.5, "recentKbdSize": 6.25, "demoSongsRestored": true}"#,
+        );
+        let s = Settings::load(&mem);
+        assert_eq!((s.preferred_kbd_size, s.recent_kbd_size), (7.5, 6.25));
+        assert_eq!(s.demo_songs_version, DEMO_SONGS_VERSION);
+        s.save(&mut mem);
+        for old in ["KbdSize\"", "demoSongsRestored"] {
+            assert!(!mem.0[STORAGE_KEY].contains(old), "{old}");
+        }
+        // A new key wins over its old one.
+        let s = Settings::load(&stored(
+            r#"{"preferredKbdSize": 7.5, "preferredKbdSizeCells": 6.0, "demoSongsRestored": false}"#,
+        ));
+        assert_eq!((s.preferred_kbd_size, s.demo_songs_version), (6.0, 0));
     }
 
     #[test]
@@ -654,9 +761,12 @@ mod tests {
                 "MidiDevice",
                 "ModuleBrowserOrdering",
                 "SongBrowserOrdering",
+                "SoundFontPatchOrdering",
                 "bgAudio",
                 "continuousScroll",
-                "demoSongsRestored",
+                "demoSongsVersion",
+                "enableAnimations",
+                "enableInertia",
                 "ghostnotes",
                 "importNoticeAccepted",
                 "keyboardKind",
@@ -668,9 +778,9 @@ mod tests {
                 "multithreaded",
                 "multitrackrec",
                 "pluginFolders",
-                "preferredKbdSize",
+                "preferredKbdSizeCells",
                 "reccount",
-                "recentKbdSize",
+                "recentKbdSizeCells",
                 "reclatency",
                 "showHardwareMeters",
                 "showKeyNames",
@@ -679,7 +789,8 @@ mod tests {
                 "showWheels",
                 "soundModeAndr",
                 "theme",
-                "uiscale"
+                "uiscalefactor",
+                "whatsNewSeen"
             ]
         );
     }
@@ -711,6 +822,31 @@ mod tests {
             let s = Settings::load(&stored(&format!(r#"{{"ModuleBrowserOrdering": {id}}}"#)));
             assert_eq!(s.module_ordering(), want, "{id}");
         }
+    }
+
+    #[test]
+    fn the_soundfont_patch_sort_is_stored_under_sound_font_patch_ordering_by_its_id() {
+        // Missing is −1, `Default` (file order); `Default` is stored as 0, `A-Z` as 1; any other id is `Default`.
+        let d = Settings::default();
+        assert_eq!(d.patch_ordering(), PatchOrdering::Default);
+        let mut mem = Mem::default();
+        Settings {
+            sound_font_patch_ordering: PatchOrdering::AZ.id(),
+            ..d
+        }
+        .save(&mut mem);
+        let json: serde_json::Value = serde_json::from_str(&mem.0[STORAGE_KEY]).unwrap();
+        assert_eq!(json["SoundFontPatchOrdering"], 1);
+        assert_eq!(Settings::load(&mem).patch_ordering(), PatchOrdering::AZ);
+        for (id, want) in [
+            (-1, PatchOrdering::Default),
+            (0, PatchOrdering::Default),
+            (7, PatchOrdering::Default),
+        ] {
+            let s = Settings::load(&stored(&format!(r#"{{"SoundFontPatchOrdering": {id}}}"#)));
+            assert_eq!(s.patch_ordering(), want, "{id}");
+        }
+        assert_eq!(PatchOrdering::Default.id(), 0);
     }
 
     #[test]

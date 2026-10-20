@@ -156,13 +156,13 @@ pub(super) mod tests {
     use eframe::egui::{Shape, pos2, vec2};
 
     use super::*;
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
     use crate::panels::tests::{U, display_shapes};
     use crate::theme::theme_by_id;
 
     /// U = 32 points at either density.
     pub(in crate::panels::fx) fn metrics(ppp: f32) -> Metrics {
-        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX)
+        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE)
     }
 
     /// A rect given in U.

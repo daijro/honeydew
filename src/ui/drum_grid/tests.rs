@@ -552,11 +552,11 @@ fn the_marquee_selects_hits_whose_extent_overlaps_it() {
 }
 
 #[test]
-fn a_handle_is_the_piano_rolls_disc_just_past_the_end() {
-    // 0.6 U across, centred 0.3 U past the end on the row's centre line.
+fn a_handles_touch_box_is_the_piano_rolls_on_the_end_capsule() {
+    // 0.6 U wide and 1.41 U tall, centred 0.36 U past the end (on the capsule) on the row's centre line.
     let h = PLACE.handle(&drum(1, 64, 32.0)).unwrap();
-    assert_eq!(h.center(), pos2(196.0 + 9.6, 144.0));
-    assert!((h.width() - 19.2).abs() < 1e-4);
+    assert!((h.center() - pos2(196.0 + 11.52, 144.0)).length() < 1e-4);
+    assert!((h.size() - vec2(19.2, 45.12)).length() < 1e-4);
 }
 
 #[test]
@@ -577,7 +577,7 @@ fn the_pop_in_scales_from_nothing_past_full_size_and_settles() {
 
 use eframe::egui::{self, Color32, Context, Modifiers, PointerButton, RawInput, Vec2, vec2};
 
-use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
 use crate::song::{Channel, ChannelKind, DrumGrid, Song};
 use crate::theme::{channel_color, theme_by_id};
 use crate::ui::UiCtx;
@@ -616,11 +616,14 @@ const SCREEN: Rect = Rect {
 /// The channel under test, and the left of its grid (the 3 U header column and the t gap, ceil(U/16) px).
 const CH: usize = 1;
 const GRID_X: f32 = 98.0;
+/// The rows' top at U = 32 (ppp 1): the ruler's height; row 0 starts on the nearest pixel, [`Y0`].
+const TOP: f32 = 52.0;
+const Y0: f32 = 52.0;
 
 /// Row `pad`'s centre line at `tick`, at the default view: 4 U (128 points) a beat is a point a tick from the grid's
-/// left; rows 2 U (64 points) from below the 1.5 U ruler.
+/// left; rows 2 U (64 points) from below the ruler.
 fn at(pad: usize, tick: f32) -> Pos2 {
-    pos2(GRID_X + tick, 48.0 + 64.0 * pad as f32 + 32.0)
+    pos2(GRID_X + tick, TOP + 64.0 * pad as f32 + 32.0)
 }
 
 /// [`notes_lane`] with no hits in the one-bar clip at 0 a playlist `+Clip` makes: the free grid makes no clip itself.
@@ -702,7 +705,7 @@ impl Rig {
         viewport.native_pixels_per_point = Some(self.ppp);
         let (theme, m) = (
             theme_by_id(0),
-            Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE_INDEX),
+            Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE),
         );
         let cx = UiCtx {
             theme: &theme,
@@ -716,7 +719,7 @@ impl Rig {
                 .frame(egui::Frame::NONE)
                 .show(ctx, |ui| {
                     action = view.show(ui, &cx, song, CH, (0, clip), &Kit, remembered);
-                    view.graph_knob(ui, &cx, SCREEN);
+                    view.graph_knob(ui, &cx, SCREEN, egui::Color32::WHITE);
                 });
         });
         self.shapes = output.shapes;
@@ -803,11 +806,13 @@ impl Rig {
     }
 
     /// A resize handle is drawn at `center`: a `text` disc 0.6 U (19.2 points) across.
-    fn handle_at(&self, center: Pos2) -> bool {
+    /// A handle's capsule body (a rounded `text` rect) just past the hit end `end`, centred on its row.
+    fn handle_at(&self, end: Pos2) -> bool {
         let text = theme_by_id(0).colors.text.to_color32();
         self.shapes.iter().any(|s| {
-            matches!(&s.shape, egui::Shape::Circle(c)
-                if c.fill == text && c.center.distance(center) < 1e-3 && (c.radius - 9.6).abs() < 1e-3)
+            matches!(&s.shape, egui::Shape::Rect(r)
+                if r.fill == text && r.corner_radius != egui::CornerRadius::ZERO
+                    && (end.x..end.x + 8.0).contains(&r.rect.left()) && r.rect.center().y == end.y)
         })
     }
 
@@ -917,10 +922,10 @@ fn a_tap_on_a_hit_selects_it_with_a_handle_and_copy_delete_snap_and_a_second_tap
     for label in OPS {
         let p = rig.text_at(label).unwrap_or_else(|| panic!("{label}"));
         // Above the one-row selection.
-        assert!(p.y < 112.0, "{label} at {p:?}");
+        assert!(p.y < Y0 + 64.0, "{label} at {p:?}");
     }
-    // The handle: a `text` disc 0.6 U across, centred 0.3 U past the end.
-    assert!(rig.handle_at(pos2(GRID_X + 96.0 + 9.6, 144.0)));
+    // The handle: the end capsule past the hit's end.
+    assert!(rig.handle_at(pos2(GRID_X + 96.0, at(1, 0.0).y)));
     // Remembered: its length, velocity and pan.
     assert_eq!(
         rig.remembered,
@@ -934,12 +939,13 @@ fn a_tap_on_a_hit_selects_it_with_a_handle_and_copy_delete_snap_and_a_second_tap
     rig.click(at(1, 80.0));
     assert_eq!(rig.selected(), [false, false]);
     assert_eq!(rig.text_at("Copy"), None);
-    assert!(!rig.handle_at(pos2(192.0 + 9.6, 144.0)));
+    assert!(!rig.handle_at(pos2(192.0, at(1, 0.0).y)));
     // While one shows, a tap on another hit only deselects (below the floating row over the Kick's row).
     rig.click(at(1, 80.0));
-    rig.click(pos2(GRID_X + 10.0, 109.0));
+    let kick = at(0, 10.0) + vec2(0.0, 29.0);
+    rig.click(kick);
     assert_eq!(rig.selected(), [false, false]);
-    rig.click(pos2(GRID_X + 10.0, 109.0));
+    rig.click(kick);
     assert_eq!(rig.selected(), [true, false]);
     assert!(rig.actions.is_empty());
 }
@@ -962,9 +968,10 @@ fn copy_fills_the_hit_clipboard_and_a_long_press_on_empty_grid_pastes_it_at_the_
     );
     rig.release(empty);
     let paste = rig.text_at("Paste").expect("the Paste button");
+    assert!(paste.y < empty.y, "over the finger's row");
     rig.click(paste);
     assert_eq!(rig.finals().last(), Some(&true));
-    // Beat 3, under the button: pasted, and the selection.
+    // Beat 3, the held one's: pasted, and the selection.
     let pasted = (rig.events().iter())
         .position(|e| e.pos() == 384)
         .expect("pasted on beat 3");
@@ -1112,7 +1119,7 @@ fn a_long_press_then_a_drag_is_a_marquee_selecting_hits_by_extent() {
     // The zero-length hit at 64 lies in it; then its handle and the row show.
     assert_eq!(rig.selected(), [false, true, false, false]);
     assert!(rig.text_at("Copy").is_some());
-    assert!(rig.handle_at(pos2(GRID_X + 64.0 + 9.6, 144.0)));
+    assert!(rig.handle_at(pos2(GRID_X + 64.0, at(1, 0.0).y)));
     assert!(rig.actions.is_empty());
     assert_eq!(rig.view.views.values().next().map(|v| v.x), Some(0.0));
     // A long press on empty space, lifted where it was, selects nothing and adds nothing.
@@ -1170,14 +1177,8 @@ fn the_row_menu_hides_rotate_and_its_fill_makes_n_quarter_beat_hits() {
 fn the_snap_button_has_the_ruler_cell_in_place_of_swing() {
     let mut rig = Rig::new(empty_clip());
     assert_eq!(rig.text_at("SWING"), None);
-    // The shared Snap button in the 1.5 U × (1.5 U − 1 px) cell: on, a `text` disc of radius 0.325·47.
-    let text = theme_by_id(0).colors.text.to_color32();
-    let disc = rig.shapes.iter().any(|s| {
-        matches!(&s.shape, egui::Shape::Circle(c)
-            if c.center == pos2(24.0, 23.5) && c.radius == 0.325 * 47.0 && c.fill == text)
-    });
-    assert!(disc);
-    // A tap toggles snap.
+    // The shared Snap button in the 1.5 U × (ruler h − 1 px) cell, on: a tap toggles snap.
+    assert!(rig.view.snap.on);
     rig.click(pos2(24.0, 24.0));
     assert!(!rig.view.snap.on);
     rig.click(pos2(24.0, 24.0));
@@ -1205,10 +1206,19 @@ fn hits_are_drawn_over_their_length_2_px_into_the_row_on_a_1_px_background_frame
         let rig = Rig::at_ppp(notes_lane(&[drum(1, 64, 32.0), drum(2, 128, 0.0)]), ppp);
         let fill = rig.hit_color(Prop::Velocity, 100, false);
         let bg = theme_by_id(0).colors.background.to_color32();
-        // Row 1 is 112..176: the hit is 112 + 2 px … 176 − 2 px.
+        // Row 1 is Y0 + 64 … Y0 + 128 (the ruler cut to whole pixels: 52.5 points at ppp 2): the hit is 2 px in from
+        // each.
         let (x, y) = (|tick: f32| GRID_X + tick, |y: f32| y + 2.0 * px);
-        let hit = Rect::from_min_max(pos2(x(64.0), y(112.0)), pos2(x(96.0), 176.0 - 2.0 * px));
-        let zero = Rect::from_min_max(pos2(x(128.0), y(176.0)), pos2(x(128.0), 240.0 - 2.0 * px));
+        let y0 = (1.65 * 32.0 * ppp).trunc() / ppp;
+        let row = |i: f32| y0 + 64.0 * i;
+        let hit = Rect::from_min_max(
+            pos2(x(64.0), y(row(1.0))),
+            pos2(x(96.0), row(2.0) - 2.0 * px),
+        );
+        let zero = Rect::from_min_max(
+            pos2(x(128.0), y(row(2.0))),
+            pos2(x(128.0), row(3.0) - 2.0 * px),
+        );
         assert_eq!(rig.rects(fill), [hit, zero], "ppp {ppp}");
         let frames = rig.rects(bg);
         assert!(frames.contains(&hit.expand(px)), "ppp {ppp}");
@@ -1221,22 +1231,26 @@ fn rows_are_control_fill_bands_under_background_marks() {
     let rig = Rig::new(notes_lane(&[]));
     let fill = theme_by_id(0).colors.control_fill.to_color32();
     let bg = theme_by_id(0).colors.background.to_color32();
-    // Row 0, 48..112, inset 1 px; from the grid's left (beat 0) to its right.
+    // Row 0, Y0 … Y0 + 64, inset 1 px; from the grid's left (beat 0) to its right.
     let bands = rig.rects(fill);
     assert!(
-        bands.contains(&Rect::from_min_max(pos2(GRID_X, 49.0), pos2(1170.0, 111.0))),
+        bands.contains(&Rect::from_min_max(
+            pos2(GRID_X, Y0 + 1.0),
+            pos2(1170.0, Y0 + 63.0)
+        )),
         "{bands:?}"
     );
     // At 4 U a beat: a 4 px bar line at tick 0, 2 px at the beat, 1 px at the step, over the four rows.
     let lines = rig.rects(bg);
-    let line = |x0: f32, w: f32| Rect::from_min_max(pos2(x0, 48.0), pos2(x0 + w, 304.0));
+    let line = |x0: f32, w: f32| Rect::from_min_max(pos2(x0, TOP), pos2(x0 + w, TOP + 256.0));
     for l in [
         line(GRID_X - 2.0, 4.0),
         line(GRID_X + 32.0, 1.0),
         line(GRID_X + 127.0, 2.0),
         line(GRID_X + 510.0, 4.0),
     ] {
-        assert!(lines.contains(&l), "{l:?}");
+        let near = |r: &Rect| (r.min - l.min).length() < 1e-3 && (r.max - l.max).length() < 1e-3;
+        assert!(lines.iter().any(near), "{l:?}");
     }
 }
 
@@ -1356,26 +1370,25 @@ fn the_playhead_line_is_cut_at_the_header_columns_right_edge_and_at_beat_0_shows
     let column = 3.0 * 32.0;
     let lines: Vec<(Rect, Rect)> = (rig.shapes.iter())
         .filter_map(|s| match &s.shape {
-            egui::Shape::Rect(r) if [text, shadow].contains(&r.fill) && r.rect.top() == 48.0 => {
+            egui::Shape::Rect(r) if [text, shadow].contains(&r.fill) && r.rect.top() == TOP => {
                 Some((r.rect, s.clip_rect))
             }
             _ => None,
         })
         .collect();
-    let want =
-        |half: f32| Rect::from_x_y_ranges(column + 2.0 - half..=column + 2.0 + half, 48.0..=48.0);
+    // The shadow and the line, centred on the grid's left (t right of the column), cut at the column.
     assert_eq!(
         lines
             .iter()
-            .map(|(r, c)| (r.x_range(), c.left()))
+            .map(|(r, c)| (crate::ui::timeline::testing::line_x(*r, 1.0), c.left()))
             .collect::<Vec<_>>(),
-        [(want(3.0).x_range(), column), (want(2.0).x_range(), column)]
+        [(column + 2.0, column); 2]
     );
 }
 
 #[test]
 fn the_lanes_knob_drags_f_on_the_editor_below_its_top_margin() {
-    // f = 1 − (y − top)/H, H the whole view (its top margin is 0).
+    // f = (bottom − y)/H, H the whole view (its top margin is 0); the press is in the tab over the lane's top.
     let mut rig = Rig::new(notes_lane(&[drum(0, 0, 32.0)]));
     rig.view.graph.open = true;
     rig.frame(vec![]);
@@ -1416,7 +1429,7 @@ fn the_row_menus_file_items_and_the_add_drum_button_ask_the_host() {
     let add = rig.view.last.unwrap().add_button();
     assert_eq!(
         add,
-        Rect::from_min_size(pos2(16.0, 328.0), vec2(64.0, 64.0))
+        Rect::from_min_size(pos2(16.0, Y0 + 256.0 + 24.0), vec2(64.0, 64.0))
     );
     rig.click(add.center());
     assert_eq!(rig.actions, [StepAction::AddDrum]);
@@ -1424,37 +1437,42 @@ fn the_row_menus_file_items_and_the_add_drum_button_ask_the_host() {
 }
 
 #[test]
-fn the_graph_knobs_box_wins_over_a_cut_off_header_and_the_first_selector_row() {
-    // In both drum modes, where the knob's 2×2 U touch box overlaps the graph list's first item or a row header cut
-    // off at the rows' bottom, however thin the header's visible part, the knob takes the tap.
+fn the_graph_tab_wins_over_a_cut_off_header() {
+    // In both drum modes, where the graph lane's tab overlaps a row header cut off at the rows' bottom, however thin the
+    // header's visible part, the tab takes the tap. It ends 2 px into the lane's 4 px gap, clear of the list.
     let mut rig = Rig::new(notes_lane(&[drum(11, 0, 32.0)]));
     let key = (CH, 0, Some(1));
     let view = rig.view.views[&key];
     let rows = RowView {
         pitch: 2.0,
-        scroll: 0.875,
+        scroll: (TOP - 20.0) / 32.0,
     };
     rig.view.views.insert(key, ClipView { rows, ..view });
     rig.frame(vec![]);
-    // Row 8 shows only its top 8 points, 532..540, inside the knob's box (x 12.8..76.8, y 508..540).
-    rig.click(pos2(44.8, 536.0));
+    // A row header's visible part, at the tab's x (x 18..72).
+    let seen = |rig: &Rig, row: usize| {
+        let r = rig.ctx.read_response(id().with(("row", row))).unwrap();
+        pos2(44.8, r.interact_rect.center().y)
+    };
+    // Row 8 shows only its top few points, under the closed tab (y 502..540 of 502..542).
+    rig.click(seen(&rig, 8));
     assert!(rig.view.graph.open);
     assert_eq!((rig.view.current, rig.view.fold.open), (0, false));
-    // The lane's top is at 270: the knob's box (y 238..302) covers row 3's cut-off header above it (212..270) ...
-    rig.click(pos2(44.8, 255.0));
+    // The lane's top is at 270: the tab (y 232..272) covers row 3's cut-off header above it ...
+    rig.frame(vec![]);
+    let row_3 = seen(&rig, 3);
+    assert!(232.0 < row_3.y && row_3.y < 270.0, "{row_3:?}");
+    rig.click(row_3);
     assert!(!rig.view.graph.open);
     assert_eq!(rig.view.current, 0);
-    // ... and the list's first item (`Velocity`, from 274) below it.
+    // ... while the list's first item (`Velocity`, from 274) takes its own tap.
     rig.view.graph.item = 2;
-    rig.click(pos2(44.8, 536.0));
-    rig.click(pos2(44.8, 290.0));
-    assert_eq!((rig.view.graph.open, rig.view.graph.item), (false, 2));
-    // Outside the box both take their taps.
-    rig.click(pos2(44.8, 536.0));
-    rig.click(pos2(90.0, 290.0));
+    rig.click(seen(&rig, 8));
+    rig.click(pos2(44.8, 280.0));
     assert_eq!((rig.view.graph.open, rig.view.graph.item), (true, 0));
-    rig.click(pos2(44.8, 290.0));
-    rig.click(pos2(90.0, 536.0));
+    // Beside the tab the header takes its tap.
+    rig.click(row_3);
+    rig.click(seen(&rig, 8) + vec2(45.0, 0.0));
     assert_eq!((rig.view.graph.open, rig.view.current), (false, 8));
     assert!(rig.actions.is_empty(), "{:?}", rig.actions);
 }
@@ -1798,8 +1816,8 @@ fn a_trackpad_pinch_over_the_free_grid_zooms_the_time_only() {
 #[test]
 fn the_drum_editors_zones_are_round_21s() {
     // An 800 × 448 editor, the drum mixer half out (HW = 3 U + 0.5·12 U = 288 points, GL = 288 + ceil(U/16) = 290),
-    // the ruler 1.5 U.
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    // the ruler TOP.
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 448.0));
     let l = Layout::new(rect, 4, 1, &m, 192.0, RowView::default());
     let r = |x0, y0, x1, y1| Rect::from_min_max(pos2(x0, y0), pos2(x1, y1));
@@ -1807,16 +1825,16 @@ fn the_drum_editors_zones_are_round_21s() {
     // Touch scroll y: the full width below the ruler; touch scroll x: the grid columns from the ruler's top.
     assert_eq!(
         z.touch,
-        [r(290.0, 0.0, 800.0, 448.0), r(0.0, 48.0, 800.0, 448.0)]
+        [r(290.0, 0.0, 800.0, 448.0), r(0.0, TOP, 800.0, 448.0)]
     );
     // Wheel zoom x over the ruler band, zoom y over the header column; the grid scrolls and takes the pinch.
     assert_eq!(
         z.wheel_zoom,
-        [r(290.0, 0.0, 800.0, 48.0), r(0.0, 48.0, 288.0, 448.0)]
+        [r(290.0, 0.0, 800.0, TOP), r(0.0, TOP, 288.0, 448.0)]
     );
     assert_eq!(
         (z.wheel_scroll, z.pinch),
-        (r(290.0, 48.0, 800.0, 448.0), r(290.0, 48.0, 800.0, 448.0))
+        (r(290.0, TOP, 800.0, 448.0), r(290.0, TOP, 800.0, 448.0))
     );
 }
 
@@ -2043,20 +2061,19 @@ fn the_shared_long_press_time_and_calm_zone_decide_a_touch_on_empty_grid() {
     assert_eq!(hits_after(0.2, 0.55 * 32.0), 0);
 }
 
-/// The playhead disc fades as the drum editor's (`timeline::knob_shown`, through `timeline::PlayheadKnob`): out while
+/// The play box fades as the drum editor's (`timeline::knob_shown`, through `timeline::PlayheadKnob`): out while
 /// playing, so that only the line shows, and back in once stopped.
 #[test]
-fn the_playhead_disc_fades_out_while_playing_and_back_in_stopped() {
-    let text = theme_by_id(0).colors.text.to_color32();
+fn the_play_box_fades_out_while_playing_and_back_in_stopped() {
+    let menu = theme_by_id(0).colors.menu_fill.to_color32();
     let mut rig = Rig::new(notes_lane(&[drum(0, 0, 32.0)]));
     let disc = |rig: &Rig| {
-        (rig.shapes.iter()).find_map(|s| match &s.shape {
-            egui::Shape::Circle(c) if (c.radius - 29.4).abs() < 1e-3 => Some(c.fill),
-            _ => None,
-        })
+        crate::ui::timeline::testing::play_boxes(&rig.shapes)
+            .next()
+            .map(|b| b.fill)
     };
     rig.view.playhead = 0;
-    for (playing, fill) in [(false, Some(text)), (true, None), (false, Some(text))] {
+    for (playing, fill) in [(false, Some(menu)), (true, None), (false, Some(menu))] {
         rig.view.playing = playing;
         for _ in 0..40 {
             rig.frame(vec![]);

@@ -62,7 +62,7 @@ pub mod picker_preview;
 pub mod fine_tune;
 // The MIDI import dialog.
 pub mod midi_import;
-// The dialog base: the dim and the `moduleFill` box.
+// The dialog base: the dim and the floating panel.
 pub mod dialog;
 // The performance monitor's data and drawing: the PROJECT block and the floating overlay.
 pub mod performance;
@@ -132,6 +132,8 @@ const MODAL_PASS: &str = "modal backdrop pass";
 pub(crate) fn modal_shown(ctx: &egui::Context) {
     let pass = ctx.cumulative_pass_nr();
     ctx.data_mut(|d| d.insert_temp(egui::Id::new(MODAL_PASS), pass));
+    // It covers the controls drawn before it.
+    tooltip::cover(ctx);
     // The keyboard focus stays inside it: what it draws from here on.
     focus::modal(ctx, egui::Order::Background);
 }
@@ -255,3 +257,9 @@ pub fn fingers_on(ui: &egui::Ui, on: impl Fn(egui::Id) -> bool) -> Vec<Finger> {
 pub mod focus;
 // The browsers' search bar.
 pub mod search_bar;
+// Desktop tooltips.
+pub mod tooltip;
+// Audio files dragged onto the playlist: the drop curtain, the drop target, the browsers' in-app drag.
+pub mod file_drag;
+// The insert menu (`New Clip`, `Paste`) and its cursor.
+pub mod insert;

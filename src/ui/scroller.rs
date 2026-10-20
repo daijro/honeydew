@@ -408,8 +408,14 @@ impl Scroller {
                 } else if let Some((d, ..)) =
                     (t.moved).filter(|m| frame - m.2 <= 1 && now - m.1 <= FLING_STALE_S)
                 {
+                    // `Animation` `Minimal`: no inertia, the scroll stops where the finger left it.
+                    let inertia = crate::ui::anim::inertia(ui.ctx());
                     for a in [X, Y] {
-                        if t.left[a] && t.scrolls(a, opts.follow) && d[a].abs() > u * FLING_U {
+                        if inertia
+                            && t.left[a]
+                            && t.scrolls(a, opts.follow)
+                            && d[a].abs() > u * FLING_U
+                        {
                             self.v[a] = axes[a].zoom * f64::from(d[a]);
                         }
                     }

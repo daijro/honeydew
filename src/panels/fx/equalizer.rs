@@ -374,7 +374,7 @@ mod tests {
     use eframe::egui::{Event, PointerButton, Shape, pos2, vec2};
 
     use super::*;
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
     use crate::panels::tests::{Rig, U, card, display_shapes};
     use crate::params::{menu_value, module_spec};
     use crate::theme::theme_by_id;
@@ -388,7 +388,7 @@ mod tests {
     };
 
     fn metrics(ppp: f32) -> Metrics {
-        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX)
+        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE)
     }
 
     fn defaults() -> Vec<f32> {
@@ -964,7 +964,7 @@ mod tests {
             let (rack, channel) = (&mut self.rack, &mut self.channel);
             let out = self.ctx.run(raw, |ctx| {
                 eframe::egui::CentralPanel::default().show(ctx, |ui| {
-                    let rect = crate::ui::rack::rack_rect(Self::SCREEN, 1.0, &m);
+                    let rect = crate::ui::rack::rack_rect(Self::SCREEN, 1.0, false, &m);
                     rack.show(ui, &cx, rect, 3, channel);
                 });
             });
@@ -983,7 +983,7 @@ mod tests {
             use crate::ui::rack::{card_height, content_rect, flow, rack_rect};
             let modules = &self.channel.rack.modules;
             let heights: Vec<f32> = modules.iter().map(card_height).collect();
-            let rack = rack_rect(Self::SCREEN, 1.0, &metrics(1.0));
+            let rack = rack_rect(Self::SCREEN, 1.0, false, &metrics(1.0));
             let card = flow(rack, 0.0, U, false, &heights, true).cards[0];
             let content = content_rect(card, 10.0, U);
             let panel = panel().unwrap();

@@ -31,8 +31,13 @@ pub const PPQ: u32 = 128;
 /// Channel ids run below this: HEAD@354, the next id, must stay under 4096, so the last id given out is 4094.
 pub const CHANNEL_ID_LIMIT: i32 = 4095;
 
-/// The format version this model writes (the new-song default).
-pub const FORMAT_VERSION: &str = "4.10.19";
+/// The format version a save writes: the layout with the zoom-units flag and the view zooms per U
+/// ([`SongFileState::zooms_per_u`]).
+pub const FORMAT_VERSION: &str = "5.0.1";
+
+/// The version of a song whose view zooms are still per device pixel (the new-song default): the last layout without
+/// the zoom-units flag, which a save writes for it instead.
+pub const PIXEL_ZOOM_VERSION: &str = "4.10.19";
 
 /// Instrument modules offered in the add-channel popup's `Synth:` column, in menu order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -454,8 +459,9 @@ impl Song {
     }
 
     /// Prepares the song for a save at `now` (`YYYY-MM-DD HH:MM:SS`, local time): the `META` modified date, the created
-    /// date if it has none (with dashes in the time), this app's version, and a random GUID for the song and for every
-    /// channel that has none (kept ones stay). The writer itself is deterministic. The app's other view state (HEAD @0
+    /// date if it has none (with dashes in the time), the version of its layout ([`FORMAT_VERSION`] once its zooms are
+    /// per U, [`Self::zooms_to_units`]), and a random GUID for the song and for every channel that has none (kept ones
+    /// stay). The writer itself is deterministic. The app's other view state (HEAD @0
     /// selected channel, @288 playhead) is set here too when it is kept; none is yet.
     pub fn stamp_save(&mut self, now: &str) {
         let meta = &mut self.file.meta;
@@ -466,7 +472,11 @@ impl Song {
                 None => now.to_owned(),
             };
         }
-        self.file.version = FORMAT_VERSION.to_owned();
+        self.file.version = match self.file.zooms_per_u() {
+            true => FORMAT_VERSION,
+            false => PIXEL_ZOOM_VERSION,
+        }
+        .to_owned();
         if self.file.guid == [0; 16] {
             self.file.guid = random_guid(-1);
         }
@@ -474,6 +484,31 @@ impl Song {
             if c.file.guid == [0; 16] {
                 c.file.guid = random_guid(c.id);
             }
+        }
+    }
+
+    /// Makes the view zooms count per U, at `u_px` device pixels a U, if they count per device pixel (a file without
+    /// the zoom-units flag, a new song): the playlist's always, each clip's `ZOOM` zooms and each channel's
+    /// `CHHD`@1040 where above 0. Then sets the flag. A song new to the app takes it once, at the U it opens with.
+    pub fn zooms_to_units(&mut self, u_px: f64) {
+        if self.file.zooms_per_u() {
+            return;
+        }
+        self.file.playlist_view[2] *= u_px;
+        self.file.playlist_view[3] *= u_px;
+        for c in &mut self.channels {
+            for zoom in std::iter::once(&mut c.file.view[0]).chain(
+                (c.lanes.iter_mut().flat_map(|l| &mut l.clips))
+                    .flat_map(|clip| &mut clip.file.zoom[2..]),
+            ) {
+                if *zoom > 0.0 {
+                    *zoom *= u_px;
+                }
+            }
+        }
+        match self.file.head_extra.first_mut() {
+            Some(flag) => *flag = 1,
+            None => self.file.head_extra.push(1),
         }
     }
 

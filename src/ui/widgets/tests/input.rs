@@ -15,7 +15,7 @@ const INCH: f32 = 192.0;
 #[test]
 fn a_knob_moves_0_24_of_the_range_per_inch_dragged_up_at_any_density() {
     for ppp in [1.0, 2.0, 2.625] {
-        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
         assert!(
             near(Law::Knob(1.0).delta(vec2(0.0, -INCH), &m), 0.24),
             "{ppp}"
@@ -26,7 +26,7 @@ fn a_knob_moves_0_24_of_the_range_per_inch_dragged_up_at_any_density() {
         // A sensitivity s scales it: the drum strip's `Start` (s = 0.5) moves 0.12 per inch.
         assert!(near(Law::Knob(0.5).delta(vec2(0.0, -INCH), &m), 0.12));
         // Android reports physical DPI independently of its logical pixels per point and UI scale.
-        for scale in [0, DEFAULT_UI_SCALE_INDEX, 3] {
+        for scale in [75, DEFAULT_UI_SCALE, 150] {
             let m = Metrics::from_display_dpi(ppp, scale, f32::INFINITY, Some(384.0));
             let inch = m.dpi() / ppp;
             assert!(near(Law::Knob(1.0).delta(vec2(0.0, -inch), &m), 0.24));
@@ -435,18 +435,15 @@ fn exactly_one_control_is_hovered_and_only_under_the_pointer() {
 }
 
 #[test]
-fn the_cursor_never_changes() {
-    for (at, press) in [
-        (pos2(150.0, 150.0), false),
-        (pos2(150.0, 150.0), true),
-        (pos2(240.0, 210.0), false),
-        (pos2(240.0, 210.0), true),
+fn only_a_clickable_control_under_the_mouse_changes_the_cursor() {
+    // Over a knob, held or not: the default cursor; over the button: the clickable one, until a press drags off it.
+    for (at, press, cursor) in [
+        (pos2(150.0, 150.0), false, CursorIcon::Default),
+        (pos2(150.0, 150.0), true, CursorIcon::Default),
+        (pos2(240.0, 210.0), false, CursorIcon::PointingHand),
+        (pos2(240.0, 210.0), true, CursorIcon::Default),
     ] {
-        assert_eq!(
-            lit_with_pointer_at(at, press).2,
-            CursorIcon::Default,
-            "{at:?} {press}"
-        );
+        assert_eq!(lit_with_pointer_at(at, press).2, cursor, "{at:?} {press}");
     }
 }
 

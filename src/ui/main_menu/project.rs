@@ -4,11 +4,14 @@
 //! The tab shows a [`ProjectInfo`] the app fills in. It edits the metadata texts in place and reports everything else
 //! as a [`MainMenuAction`].
 //!
+//! The section headers end in a colon (`Project info:`, `Metadata:`, `Performance:`), and a divider (1 px `text`
+//! α 0.18) sits in the gap above `Metadata:` and `Performance:`.
+//!
 //! The Performance section: the header row, then one block (status line, load bar, graph, footer;
-//! [`crate::ui::performance`]) 2 U in from each side of the page, 5 U tall, with the `Detach` / `Attach` button centred
-//! on its right edge's top. `Hide` and `Reset` are the same button. The page is the menu panel; the tabs' content is
-//! inset 0.5 U from it. A request to show the block ([`ProjectTab::show_performance`], the CPU / RAM labels' tap)
-//! scrolls it into view with a 1.5 U margin ([`scroll_to`]).
+//! [`crate::ui::performance`]) 2 U in from each side of the page (0.5 U on a page under 20 U wide), 5 U tall. The page
+//! is the menu panel; the tabs' content is inset 0.5 U from it. A request to show the block
+//! ([`ProjectTab::show_performance`], the CPU / RAM labels' tap) scrolls it into view with a 1.5 U margin
+//! ([`scroll_to`]).
 //!
 //! Hide and Lock, from the song's META@256 time spent and META@776 lock:
 //! - While the time spent is negative, the Time spent, Project started on and Project last saved on values show
@@ -42,17 +45,18 @@ const TEMPO_H: f32 = 0.8;
 /// Metadata: the label line over each field, and the field.
 const FIELD_LABEL_H: f32 = 0.75;
 const FIELD_H: f32 = 1.0;
-/// Performance: the header row, the block under it and how far it is in from the page's sides, the `Detach` / `Attach`,
-/// `Hide` and `Reset` discs (diameter 2 × 0.7 U), the disc's centre below the block's top, and the margin the block is
+/// Performance: the header row, the block under it and how far it is in from the page's sides (on a page under
+/// [`WIDE_PAGE`], [`NARROW_INSET`]), the `Hide` and `Reset` discs (diameter 2 × 0.7 U), and the margin the block is
 /// scrolled into view with.
 const PERFORMANCE_HEADER_H: f32 = 1.3;
 const BLOCK_H: f32 = 5.0;
 const BLOCK_INSET: f32 = 2.0;
+const WIDE_PAGE: f32 = 20.0;
+const NARROW_INSET: f32 = 0.5;
 const BUTTON_D: f32 = 1.4;
-const DETACH_DY: f32 = 0.5;
-/// `Detach`'s touch box.
-const DETACH_BOX: f32 = 2.0;
 const SCROLL_MARGIN: f32 = 1.5;
+/// The dividers' alpha (`text`).
+const DIVIDER_ALPHA: f32 = 0.18;
 
 /// The lowest and highest tempo the `-` / `+` buttons reach, in BPM: the tempo dial's range.
 pub const TEMPO_RANGE: (f64, f64) = (10.0, 999.0);
@@ -81,8 +85,7 @@ pub struct ProjectInfo {
     /// The song's META@776 lock (`Lock metadata forever` was confirmed): the texts are read-only, and `Hide`, `Reset`
     /// and the lock button are gone.
     pub metadata_locked: bool,
-    /// The performance monitor's data: the block's status line, bar and graph, and which button it offers
-    /// ([`Performance::detached`]).
+    /// The performance monitor's data: the block's status line, bar, graph and footer.
     pub performance: Performance,
 }
 
@@ -347,7 +350,7 @@ impl ProjectTab {
             ui,
             cx,
             header,
-            "Project info",
+            "Project info:",
             FontSize::Pt12,
             Align2::LEFT_CENTER,
             text,
@@ -463,7 +466,7 @@ impl ProjectTab {
                 _ => {}
             }
         }
-        band(GAP);
+        divider(ui, cx, band(GAP));
 
         // Metadata.
         let header = band(HEADER_H);
@@ -471,11 +474,13 @@ impl ProjectTab {
             ui,
             cx,
             header,
-            "Metadata",
+            "Metadata:",
             FontSize::Pt12,
             Align2::LEFT_CENTER,
             text,
         );
+        // The gap above `Performance:`, which holds its divider.
+        let mut gap = Rect::NOTHING;
         for (name, value, limit) in [
             ("Title:", &mut info.title, TEXT_LIMIT),
             ("Author:", &mut info.author, TEXT_LIMIT),
@@ -520,7 +525,7 @@ impl ProjectTab {
             crate::android_text::edit(&mut response, value, limit);
             // The field counts characters; the file counts bytes.
             value.truncate(value.floor_char_boundary(limit));
-            band(GAP);
+            gap = band(GAP);
         }
         if !locked {
             let lock = band(BUTTON_H);
@@ -528,8 +533,9 @@ impl ProjectTab {
             if light_button(ui, cx, id.with("lock"), lock, name, true) {
                 action = Some(MainMenuAction::LockMetadata);
             }
-            band(GAP);
+            gap = band(GAP);
         }
+        divider(ui, cx, gap);
 
         // Performance: the header row, then the block 2 U in from the page's sides.
         let header = band(PERFORMANCE_HEADER_H);
@@ -537,36 +543,23 @@ impl ProjectTab {
             ui,
             cx,
             header,
-            "Performance",
+            "Performance:",
             FontSize::Pt12,
             Align2::LEFT_CENTER,
             text,
         );
-        let inset = m.u(BLOCK_INSET - PAD);
+        // The page is the panel: the content, 0.5 U in from it.
+        let page_w = area.width() + m.u(2.0 * PAD);
+        let inset = if page_w < m.u(WIDE_PAGE) {
+            NARROW_INSET
+        } else {
+            BLOCK_INSET
+        };
+        let inset = m.u(inset - PAD);
         let (left, right) = (area.left() + inset, area.right() - inset);
         let row = band(BLOCK_H);
         let block = Rect::from_min_max(pos2(left, row.top()), pos2(right, row.bottom()));
         performance::show(ui, cx, block, &info.performance);
-        // `Detach` / `Attach`, centred on the block's right edge, 0.5 U below its top.
-        let detached = info.performance.detached;
-        let button = Circle {
-            style: CircleStyle::Rimmed,
-            // The 2 U x 2 U box is the touch area, not the 1.4 U disc.
-            hit: Some(m.u(DETACH_BOX)),
-            ..Circle::new(
-                id.with("detach"),
-                pos2(block.right(), block.top() + m.u(DETACH_DY)),
-                m.u(BUTTON_D),
-                if detached { "Attach" } else { "Detach" },
-            )
-        };
-        if circle_button(ui, cx, &button) {
-            action = Some(if detached {
-                MainMenuAction::AttachPerformance
-            } else {
-                MainMenuAction::DetachPerformance
-            });
-        }
 
         self.content_h = y - top;
         if std::mem::take(&mut self.scroll_to_performance) {
@@ -579,6 +572,20 @@ impl ProjectTab {
         ui.set_clip_rect(outer_clip);
         action
     }
+}
+
+/// A divider centred in `band`: 1 px `text` α 0.18 across it.
+fn divider(ui: &Ui, cx: &UiCtx, band: Rect) {
+    let px = 1.0 / cx.m.ppp();
+    let y = cx.m.floor_px(band.center().y);
+    let line = Rect::from_x_y_ranges(band.x_range(), y..=y + px);
+    let ink = cx
+        .theme
+        .colors
+        .text
+        .to_color32()
+        .gamma_multiply(DIVIDER_ALPHA);
+    ui.painter().rect_filled(line, 0.0, ink);
 }
 
 #[cfg(test)]

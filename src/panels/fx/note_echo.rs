@@ -639,7 +639,7 @@ mod tests {
 
     use eframe::egui::{Context, RawInput, Shape, Stroke, pos2, vec2};
 
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
     use crate::panels::tests::{Rig, U, card, display_shapes};
     use crate::theme::theme_by_id;
 
@@ -664,7 +664,7 @@ mod tests {
     }
 
     fn metrics(ppp: f32) -> Metrics {
-        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX)
+        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE)
     }
 
     /// #6 at the reference: (4.62, 1.25, 9.38, 5) U.

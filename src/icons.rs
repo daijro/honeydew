@@ -1,5 +1,6 @@
 //! Vector icons on a 48-unit design grid, drawn in one tint. An imported icon sheet replaces the glyphs
-//! except for trademark IDs ([`sheet`]). The app mark uses our logo as a tinted image ([`logo`]).
+//! except for trademark IDs, and for the newer IDs (and icon 10) on an older sheet ([`sheet`]). The app mark uses our
+//! logo as a tinted image ([`logo`]).
 
 use eframe::egui::{self, Color32, Pos2, Rect, Shape, Stroke, StrokeKind, Vec2, pos2, vec2};
 
@@ -27,7 +28,7 @@ pub enum IconId {
     More = 7,
     Mixer = 8,
     Tempo = 9,
-    Back = 10,
+    Collapse = 10,
     Detach = 11,
     ChannelVolume = 12,
     Tracks = 13,
@@ -96,15 +97,25 @@ pub enum IconId {
     Download = 76,
     Randomize = 77,
     CloudSync = 78,
+    SnapOff = 79,
+    SoloClip = 80,
+    Undo = 81,
+    Redo = 82,
+    Knob = 83,
+    Hide = 84,
+    Stop = 85,
+    GraphLane = 86,
+    ChevronDown = 87,
+    RackTab = 88,
 }
 
 impl IconId {
     /// Every icon, in ID order (`ALL[n] as u8 == n`).
     #[rustfmt::skip]
-    pub const ALL: [IconId; 79] = {
+    pub const ALL: [IconId; 89] = {
         use IconId::*;
         [
-            Browser, StepSeq, Piano, Play, Rewind, Record, AppLogo, More, Mixer, Tempo, Back,
+            Browser, StepSeq, Piano, Play, Rewind, Record, AppLogo, More, Mixer, Tempo, Collapse,
             Detach, ChannelVolume, Tracks, Manual, Snap, PlatformA, PlatformM, PlatformW, Close,
             WirelessMidi, AudioClip, AudioRecord, Position, Volume, Warning, Loop, Menu, Freeze,
             Search, Import, PatternClip, Up, Down, Sharp, Flat, Natural, Reorder, Shop, Locked,
@@ -113,6 +124,7 @@ impl IconId {
             DpadLeft, LeftStickVertical, LeftStickHorizontal, RightStickVertical,
             RightStickHorizontal, LeftStickClick, RightStickClick, PadMenu, PadView, FavoriteOff,
             FavoriteOn, AddSmall, Confirm, Done, Filter, Music, Download, Randomize, CloudSync,
+            SnapOff, SoloClip, Undo, Redo, Knob, Hide, Stop, GraphLane, ChevronDown, RackTab,
         ]
     };
 }
@@ -191,7 +203,7 @@ pub fn icon_shapes(id: IconId, square: Rect, color: Color32) -> Vec<Shape> {
         Piano => piano(&mut p, 8.0, 10.0, 40.0, 38.0, 4),
         Play => p.poly(&[(16.0, 11.0), (38.0, 24.0), (16.0, 37.0)]),
         Rewind => {
-            p.rect(11.0, 12.0, 15.0, 36.0, 1.0);
+            p.rect(11.5, 12.0, 14.0, 36.0, 1.0);
             p.poly(&[(17.0, 24.0), (37.0, 12.0), (37.0, 36.0)]);
         }
         Record => p.disc(24.0, 24.0, 12.0),
@@ -210,11 +222,12 @@ pub fn icon_shapes(id: IconId, square: Rect, color: Color32) -> Vec<Shape> {
             }
         }
         Mixer => faders(&mut p, &[(11.5, 30.0), (24.0, 16.0), (36.5, 24.0)]),
-        Back => p.line(&[(32.0, 7.0), (17.0, 24.0), (32.0, 41.0)], 2.5),
+        // A small right chevron, for a narrow tab.
+        Collapse => p.line(&[(19.5, 15.0), (28.5, 24.0), (19.5, 33.0)], 3.0),
         Detach => {
             // Arrow to the upper left: a right-triangle head, the shaft starting on its long side.
             p.poly(&[(11.0, 11.0), (25.0, 11.0), (11.0, 25.0)]);
-            p.line(&[(18.0, 18.0), (37.0, 37.0)], 3.5);
+            p.line(&[(18.0, 18.0), (37.0, 37.0)], 2.5);
         }
         Close => {
             // One full diagonal; the other is split so the two never overlap.
@@ -263,9 +276,36 @@ pub fn icon_shapes(id: IconId, square: Rect, color: Color32) -> Vec<Shape> {
             plus(&mut p, 10.0, 2.0);
         }
         KeyboardSettings => {
-            // Four keys across the bottom, a gear clear above their right end.
-            piano(&mut p, 4.0, 24.0, 44.0, 43.0, 4);
-            gear(&mut p, 34.5, 11.5);
+            // Three white keys seen from above, narrowed at the top where the black keys would be, and a gear over
+            // the bottom-right corner with the keys cleared around it.
+            let (top, mid, bottom) = (10.5, 21.75, 34.5);
+            p.poly(&[
+                (16.5, mid),
+                (18.75, mid),
+                (18.75, bottom),
+                (12.0, bottom),
+                (12.0, top),
+                (16.5, top),
+            ]);
+            p.poly(&[
+                (30.0, mid),
+                (30.0, top),
+                (34.5, top),
+                (34.5, 23.6),
+                (27.75, 23.6),
+                (27.75, mid),
+            ]);
+            // The middle key in two fills, as one would not be star-shaped: its top runs 1.5 into its bottom, which
+            // a circle about the gear bites into. That one starts on its left edge, which sees all of it.
+            let (gx, gy, clear) = (32.6, 31.9, 8.5f32);
+            p.rect(21.75, top, 24.75, mid + 1.5, 0.0);
+            let mut key = vec![(20.25, 28.0), (20.25, mid), (26.25, mid)];
+            let from = 180.0 + ((gx - 26.25) / clear).acos().to_degrees();
+            let to = 180.0 - ((bottom - gy) / clear).asin().to_degrees();
+            key.extend(arc_points(gx, gy, clear, from, to));
+            key.push((20.25, bottom));
+            p.poly(&key);
+            gear(&mut p, gx, gy);
         }
         AddSmall => {
             p.ring(24.0, 24.0, 10.0, 2.5);
@@ -607,6 +647,115 @@ pub fn icon_shapes(id: IconId, square: Rect, color: Color32) -> Vec<Shape> {
             cloud.extend(arc_points(34.0, 29.0, 7.0, 270.0, 450.0).skip(1));
             p.outline(&cloud, 2.5);
         }
+        SnapOff => {
+            // The snap magnet, struck through.
+            let mut horseshoe = vec![(13.0, 17.0)];
+            horseshoe.extend(arc_points(24.0, 25.0, 11.0, 180.0, 0.0));
+            horseshoe.push((35.0, 17.0));
+            p.line(&horseshoe, 8.0);
+            p.rect(9.0, 8.0, 17.0, 15.0, 0.0);
+            p.rect(31.0, 8.0, 39.0, 15.0, 0.0);
+            p.line(&[(8.0, 40.0), (40.0, 8.0)], 3.0);
+        }
+        SoloClip => {
+            // Four corner brackets, arms 2.25 thick and 6.75 long, their outer corners rounded: a frame with its
+            // sides left open. Each starts at its inner corner, which sees all of it.
+            let mut bracket = vec![(15.0, 15.0), (19.5, 15.0), (19.5, 12.75)];
+            bracket.extend(arc_points(14.25, 14.25, 1.5, 270.0, 180.0));
+            bracket.extend([(12.75, 19.5), (15.0, 19.5)]);
+            for flip_x in [false, true] {
+                for flip_y in [false, true] {
+                    let flip = |v: f32, f: bool| if f { 48.0 - v } else { v };
+                    let points: Vec<_> = (bracket.iter())
+                        .map(|&(x, y)| (flip(x, flip_x), flip(y, flip_y)))
+                        .collect();
+                    p.poly(&points);
+                }
+            }
+        }
+        Undo | Redo => {
+            // A shallow arch from an L head pointing down-left (mirrored for Redo). The arch's left end runs down
+            // into the head's inner corner, aimed at its tip; its right end drops to a flat cut at y 29.25.
+            let flip = |(x, y): (f32, f32)| if id == Undo { (x, y) } else { (48.0 - x, y) };
+            p.line(&[(10.75, 21.0), (10.75, 27.5), (18.0, 27.5)].map(flip), 2.0);
+            let mut arch = vec![
+                (11.75, 26.5),
+                (12.4, 25.9),
+                (13.1, 24.9),
+                (14.6, 23.6),
+                (16.5, 21.6),
+                (18.0, 20.9),
+                (19.5, 20.3),
+                (21.0, 19.9),
+                (24.0, 19.55),
+                (27.0, 19.9),
+                (28.5, 20.3),
+                (30.0, 21.0),
+                (31.5, 21.7),
+                (33.0, 22.8),
+                (34.5, 24.1),
+                (36.0, 25.9),
+                (37.5, 27.7),
+                (38.4, 28.75),
+                (38.4, 29.25),
+            ];
+            // Two rounds of corner cutting smooth the points; the ends stay put, so does the last segment's direction
+            // (straight down: the flat cut).
+            for _ in 0..2 {
+                let (first, last) = (arch[0], arch[arch.len() - 1]);
+                let cut = |a: (f32, f32), b: (f32, f32), t: f32| {
+                    (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t)
+                };
+                arch = std::iter::once(first)
+                    .chain(
+                        arch.windows(2)
+                            .flat_map(|w| [cut(w[0], w[1], 0.25), cut(w[0], w[1], 0.75)]),
+                    )
+                    .chain([last])
+                    .collect();
+            }
+            p.line(&arch.into_iter().map(flip).collect::<Vec<_>>(), 2.0);
+        }
+        Knob => {
+            // A disc with a notch 2 wide cut from its centre to its rim, 35° above the left horizontal. The notched
+            // disc is not star-shaped, so it is two fills: the side beyond the notch, and the rest from the notch's
+            // inner corner, which runs 1.5 under the first so no seam shows.
+            let (r, half, over, notch) = (10.5f32, 1.0f32, 1.5f32, 215.0f32);
+            let (s, c) = notch.to_radians().sin_cos();
+            // Along the notch, then across it.
+            let at = |a: f32, l: f32| (24.0 + a * c - l * s, 24.0 + a * s + l * c);
+            let side = (half / r).asin().to_degrees();
+            let beside: Vec<_> =
+                arc_points(24.0, 24.0, r, notch + side, notch + 180.0 - side).collect();
+            p.poly(&beside);
+            let under = ((half + over) / r).asin().to_degrees();
+            let mut rest = vec![at(0.0, -half)];
+            rest.extend(arc_points(
+                24.0,
+                24.0,
+                r,
+                notch - side,
+                notch - 180.0 - under,
+            ));
+            rest.push(at(0.0, half + over));
+            p.poly(&rest);
+        }
+        Hide => {
+            // A thin arrow to the lower right: the shaft ends in the inner corner of an L head.
+            p.line(&[(14.25, 14.25), (32.25, 32.25)], 1.5);
+            p.line(&[(33.0, 18.75), (33.0, 33.0), (19.5, 33.0)], 1.5);
+        }
+        Stop => p.rect(14.0, 14.0, 34.0, 34.0, 2.0),
+        GraphLane => {
+            for (x, top) in [(11.0, 24.0), (21.0, 12.0), (31.0, 30.0)] {
+                p.rect(x, top, x + 6.0, 38.0, 1.0);
+            }
+        }
+        ChevronDown => p.line(&[(13.0, 19.0), (24.0, 30.0), (35.0, 19.0)], 3.5),
+        RackTab => {
+            p.rect(14.0, 13.0, 34.0, 21.0, 4.0);
+            p.rect(14.0, 27.0, 34.0, 35.0, 4.0);
+        }
     }
     p.shapes
 }
@@ -623,14 +772,19 @@ fn piano(p: &mut Pen, x0: f32, y0: f32, x1: f32, y1: f32, keys: u8) {
     }
 }
 
-/// A six-tooth gear with a small hole, centred on (x, y), 21 units across: a solid hub out to 6.5 and teeth 4 units
-/// deep and 3.4 wide at the tip, so the teeth still stand apart at 0.6 px a unit.
+/// A six-tooth gear centred on (x, y): a ring from radius 3.4 to 4.9 around an empty hole, and teeth 2.25 wide out to
+/// 6.4, the first straight up.
 fn gear(p: &mut Pen, x: f32, y: f32) {
-    p.ring(x, y, 4.5, 4.0);
+    p.ring(x, y, 3.4, 1.5);
     for i in 0..6 {
         let (s, c) = (std::f32::consts::FRAC_PI_3 * i as f32).sin_cos();
-        let at = |r: f32, w: f32| (x + r * c - w * s, y + r * s + w * c);
-        p.poly(&[at(6.0, -2.0), at(10.5, -1.7), at(10.5, 1.7), at(6.0, 2.0)]);
+        let at = |r: f32, w: f32| (x + r * s + w * c, y - r * c + w * s);
+        p.poly(&[
+            at(4.5, -1.125),
+            at(6.4, -1.125),
+            at(6.4, 1.125),
+            at(4.5, 1.125),
+        ]);
     }
 }
 
@@ -645,9 +799,9 @@ fn plus(p: &mut Pen, arm: f32, w: f32) {
 /// Fader tracks 3 units wide at `(x, knob y)`, each split around its 11 × 8 knob.
 fn faders(p: &mut Pen, faders: &[(f32, f32)]) {
     for &(x, knob) in faders {
-        p.rect(x - 1.5, 7.0, x + 1.5, knob - 4.0, 0.0);
-        p.rect(x - 5.5, knob - 4.0, x + 5.5, knob + 4.0, 2.0);
-        p.rect(x - 1.5, knob + 4.0, x + 1.5, 41.0, 0.0);
+        p.rect(x - 1.5, 7.0, x + 1.5, knob - 3.0, 0.0);
+        p.rect(x - 5.5, knob - 3.0, x + 5.5, knob + 3.0, 2.0);
+        p.rect(x - 1.5, knob + 3.0, x + 1.5, 41.0, 0.0);
     }
 }
 
@@ -851,7 +1005,7 @@ impl Pen {
         ));
     }
 
-    /// Circle outline `w` wide, centred on radius `r`.
+    /// Circle outline `w` wide, from radius `r` outwards (egui strokes a circle outside its radius).
     fn ring(&mut self, x: f32, y: f32, r: f32, w: f32) {
         let stroke = self.stroke(w);
         self.shapes
@@ -866,7 +1020,14 @@ impl Pen {
 
     /// Filled polygon: convex, or at least star-shaped from its first point (egui fills a fan from it).
     fn poly(&mut self, points: &[(f32, f32)]) {
-        let points = self.pts(points);
+        let mut points = self.pts(points);
+        // egui reverses a counter-clockwise path and would then fan from its last point: reverse it here, first kept.
+        let twice_area: f32 = (points.iter().zip(points.iter().cycle().skip(1)))
+            .map(|(a, b)| a.x * b.y - b.x * a.y)
+            .sum();
+        if twice_area < 0.0 {
+            points[1..].reverse();
+        }
         self.shapes
             .push(Shape::convex_polygon(points, self.color, Stroke::NONE));
     }
@@ -932,7 +1093,7 @@ pub fn draw_debug_sheet(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
 
     #[test]
     fn the_catalog_lists_every_icon_in_id_order() {
@@ -943,7 +1104,7 @@ mod tests {
 
     #[test]
     fn edge_is_four_thirds_of_u() {
-        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         assert_eq!(icon_edge(1.0, &m), m.u(1.0) * 4.0 / 3.0);
         assert_eq!(icon_edge(0.5, &m), m.u(1.0) * 2.0 / 3.0);
     }
@@ -951,7 +1112,7 @@ mod tests {
     #[test]
     fn icon_square_is_centred_and_pixel_snapped() {
         // ppp 1.5 -> U = 32 pt, edge 42.67 pt = 64 px.
-        let m = Metrics::from_pixels_per_point(1.5, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.5, DEFAULT_UI_SCALE);
         let rect = Rect::from_min_size(pos2(10.1, 20.3), vec2(100.0, 50.0));
         let sq = icon_square(rect, 1.0, &m);
         assert!((sq.width() - sq.height()).abs() < 1e-3);
@@ -1028,25 +1189,13 @@ mod tests {
 
     #[test]
     fn the_transport_icons_read_at_their_actual_size() {
-        // The mixer and keyboard-settings buttons draw at 0.7 × 4/3 U: 0.6 px a unit at U = 32 px. The faders keep
-        // every part at least 3 units (about 2 px) across.
+        // The mixer button draws at 4/3 U: under 0.9 px a unit at U = 32 px. The faders keep every part at least 3
+        // units across.
         let square = Rect::from_min_size(Pos2::ZERO, Vec2::splat(GRID));
-        let bounds = |id| -> Vec<Rect> {
-            (icon_shapes(id, square, Color32::WHITE).iter())
-                .map(Shape::visual_bounding_rect)
-                .collect()
-        };
-        for b in bounds(IconId::Mixer) {
+        for shape in icon_shapes(IconId::Mixer, square, Color32::WHITE) {
+            let b = shape.visual_bounding_rect();
             assert!(b.width().min(b.height()) >= 3.0, "{b:?}");
         }
-        // Piano keys under a gear: the keys span most of the width, and the gear sits clear above them.
-        let (gear, keys): (Vec<_>, Vec<_>) = (bounds(IconId::KeyboardSettings).into_iter())
-            .partition(|b| b.center().y < GRID / 2.0 - 2.0);
-        let union = |rs: Vec<Rect>| rs.into_iter().fold(Rect::NOTHING, |a, b| a.union(b));
-        let (gear, keys) = (union(gear), union(keys));
-        assert!(keys.width() >= 36.0, "{keys:?}");
-        assert!(gear.width() >= 18.0, "{gear:?}");
-        assert!(keys.top() - gear.bottom() >= 2.0, "{gear:?} over {keys:?}");
     }
 
     /// The render harness, not a check: rasterises the F2 debug sheet in software at ppp 1, 2 and 4 into
@@ -1061,8 +1210,8 @@ mod tests {
         let dir = std::env::var("ICON_RENDER_DIR").expect("set ICON_RENDER_DIR");
         let colors = crate::theme::theme_by_id(0).colors;
         for ppp in [1.0f32, 2.0, 4.0] {
-            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
-            let area = Rect::from_min_size(Pos2::ZERO, vec2(m.u(16.0), m.u(15.0)));
+            let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
+            let area = Rect::from_min_size(Pos2::ZERO, vec2(m.u(16.0), m.u(18.0)));
             let ctx = egui::Context::default();
             crate::fonts::install(&ctx);
             let mut raw = egui::RawInput {

@@ -1,0 +1,32 @@
+[package]
+name = "lemon-3x-osc"
+description = "Lemon Trio: Lemon Studio's three-oscillator synthesizer as a VST3 / CLAP plugin"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[features]
+# Compiled into Lemon Studio: no exported plugin entry points (they would clash with the other built-in plugins).
+linked = []
+# Honeydew (vendored addition): the editor draws into Honeydew's own window (`os-plugkit`'s `embed`).
+embed = ["os-plugkit/embed", "os-hostlink/embed"]
+
+[dependencies]
+nih_plug = { path = "../../nih-plug" }
+os-engine = { path = "../os-engine", features = ["plugins"] }
+os-model = { path = "../os-model" }
+os-hostlink = { path = "../os-hostlink" }
+os-plugkit = { path = "../os-plugkit" }
+os-ui = { path = "../os-ui" }
+os-theme = { path = "../os-theme" }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Controls", "Win32_System_LibraryLoader"] }
+
+# Upstream allows a lint that Rust 1.91 (Honeydew's CI) does not know yet; with `embed` the Win32 editor goes unused on
+# Windows.
+[lints.rust]
+unknown_lints = "allow"
+dead_code = "allow"

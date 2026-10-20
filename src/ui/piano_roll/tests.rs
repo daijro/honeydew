@@ -179,9 +179,10 @@ fn hits_tell_note_handle_and_empty_apart() {
     // Left of tick 0 or outside the keys: nothing.
     assert_eq!(hit(&none, 99.0, 70.0), None);
     assert_eq!(hit(&none, 120.0, 40.0), None);
-    // A selected note grows a handle just past its right end, which beats the empty cell under it.
-    let center = handle_center(&G, U, &events[0]).unwrap();
-    assert_eq!(center, pos2(228.0 + 0.3 * U, 74.0));
+    // A selected note grows a handle past its right end (its touch box centred on the end capsule, 0.36 U out), which
+    // beats the empty cell under it.
+    let center = handle_rect(&G, U, &events[0]).unwrap().center();
+    assert_eq!(center, pos2(228.0 + 0.36 * U, 74.0));
     assert_eq!(hit(&[true], center.x + 4.0, 74.0), Some(Hit::Handle(0)));
     assert!(matches!(
         hit(&none, center.x + 4.0, 74.0),
@@ -894,15 +895,16 @@ mod component {
 
     use eframe::egui::{TouchDeviceId, TouchId, TouchPhase};
 
-    use super::{n, spans};
-    use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+    use super::{U, n, spans};
+    use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
     use crate::song::scales::{SCALES, scale_to_stored};
     use crate::song::{ChannelKind, Event, PPQ, Song};
     use crate::theme::theme_by_id;
     use crate::ui::UiCtx;
     use crate::ui::clips::{Selection, place_row};
-    use crate::ui::piano_roll::notes::{Geom, HANDLE_D, SnapMode, handle_center};
+    use crate::ui::piano_roll::notes::{Geom, SnapMode};
     use crate::ui::piano_roll::{BEAT_U, PianoRoll, PianoRollAction, Remembered, RollOptions};
+    use crate::ui::timeline;
 
     /// An editor area 1170 × 349 points at U = 32 (ppp 1): the playlist's ruler and track bands before the 5 U panel.
     const RECT: Rect = Rect {
@@ -912,18 +914,25 @@ mod component {
             y: 349.0,
         },
     };
-    /// Scrolled so that key 72's row is the top one; the grid starts at (50, 48) (the 1.5 U key column and t), a beat
-    /// is 64 points, a row 16.
+    /// Scrolled so that key 72's row is the top one; the grid starts at (50, [`TOP`]) (the 1.5 U key column and t), a
+    /// beat is 64 points, a row 16.
     const SCROLL_Y: f32 = 880.0;
+    /// The grid's top: the ruler's height at U = 32.
+    const TOP: f32 = 52.0;
     const EDITED: PianoRollAction = PianoRollAction::SongEdited { final_edit: false };
     const DONE: PianoRollAction = PianoRollAction::SongEdited { final_edit: true };
     /// A tap's new note: final, and no re-sync.
     const QUIET: PianoRollAction = PianoRollAction::QuietEdit;
 
+    /// `x` to a thousandth of a point, for a play box's playhead x (its centre less half its width).
+    fn r3(x: f32) -> f32 {
+        (x * 1000.0).round() / 1000.0
+    }
+
     /// x of `tick` and the y of the middle of `key`'s row, in the default view.
     fn at(tick: f64, key: u8) -> Pos2 {
         let g = Geom {
-            origin: pos2(50.0, 48.0 - SCROLL_Y),
+            origin: pos2(50.0, TOP - SCROLL_Y),
             beat_w: 64.0,
             row_h: 16.0,
         };
@@ -946,9 +955,10 @@ mod component {
         rects: Vec<Rect>,
         /// [`Self::rects`] with their fills, in paint order.
         painted: Vec<(Rect, egui::Color32)>,
-        /// The playhead disc's centre x, last frame: a `text` disc of radius 1.35·1.5 U/2 − 3 px on the ruler's
-        /// mid-height.
+        /// The playhead x the play box showed last frame, to a thousandth of a point ([`r3`]), and whether it showed the
+        /// REC icon.
         handle: Option<f32>,
+        armed: bool,
         /// Held through every frame.
         modifiers: Modifiers,
         /// Every shape of the last frame in paint order, groups flattened.
@@ -984,6 +994,7 @@ mod component {
                 rects: Vec::new(),
                 painted: Vec::new(),
                 handle: None,
+                armed: false,
                 modifiers: Modifiers::NONE,
                 shapes: Vec::new(),
                 visible: Vec::new(),
@@ -1005,7 +1016,7 @@ mod component {
             };
             let (theme, m) = (
                 theme_by_id(0),
-                Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX),
+                Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE),
             );
             let cx = UiCtx {
                 theme: &theme,
@@ -1026,15 +1037,8 @@ mod component {
             }
             self.all.extend(last.iter().copied());
             self.last = last;
-            let text = theme.colors.text.to_color32();
-            self.handle = output.shapes.iter().find_map(|c| match &c.shape {
-                egui::Shape::Circle(d)
-                    if d.fill == text && (d.radius - 29.4).abs() < 1e-3 && d.center.y == 24.0 =>
-                {
-                    Some(d.center.x)
-                }
-                _ => None,
-            });
+            self.handle = timeline::testing::play_box_x(&output.shapes, U).map(r3);
+            self.armed = timeline::testing::play_box_armed(&output.shapes);
             self.texts = output
                 .shapes
                 .iter()
@@ -1088,8 +1092,8 @@ mod component {
             self.button(pos, PointerButton::Primary, false);
         }
 
-        /// The playhead at beat 2: its knob, which at beat 0 covers most of the Snap button and the ruler's first half
-        /// beat (and takes their touches), clear of them.
+        /// The playhead at beat 2: its play box, whose touch area at beat 0 covers part of the Snap button and the
+        /// ruler's first beat and more (and takes their touches), clear of them.
         fn knob_away(&mut self) {
             self.opts.playhead = 256;
             self.frame(vec![]);
@@ -1217,18 +1221,15 @@ mod component {
             .read_response(egui::Id::new("piano_roll").with("grid")))
         .unwrap()
         .rect;
-        let shows = |fill: egui::Color32, x0: f32, x1: f32| {
-            let want = Rect::from_x_y_ranges(x0..=x1, grid.y_range());
-            rig.visible.contains(&(want, fill))
+        // What shows of it reaches both sides of x 50, over the grid's height.
+        let both_sides = |fill: egui::Color32| {
+            (rig.visible.iter()).any(|&(r, f)| {
+                f == fill && r.y_range() == grid.y_range() && r.left() < 50.0 && r.right() > 50.0
+            })
         };
-        assert!(
-            shows(c.text.to_color32(), 48.0, 52.0),
-            "the line, both halves"
-        );
-        assert!(
-            shows(c.background.to_color32().gamma_multiply(0.3), 48.0, 53.0),
-            "the shadow, its left pixel hidden"
-        );
+        assert!(both_sides(c.text.to_color32()), "the line, both halves");
+        let shadow = c.background.to_color32().gamma_multiply(0.3);
+        assert!(both_sides(shadow), "the shadow, both halves");
     }
 
     #[test]
@@ -1241,15 +1242,16 @@ mod component {
         let theme = theme_by_id(0);
         let text = theme.colors.text.to_color32();
         let x = at(128.0, 70).x;
+        use crate::ui::timeline::testing::line_x;
         let position = |f: &dyn Fn(&egui::Shape) -> bool| rig.shapes.iter().position(f);
         let note = position(
             &|s| matches!(s, egui::Shape::Rect(r) if r.rect.contains(at(64.0, 70)) && r.fill != text),
         );
         let line = position(
-            &|s| matches!(s, egui::Shape::Rect(r) if r.fill == text && r.rect.width() == 4.0 && r.rect.center().x == x),
+            &|s| matches!(s, egui::Shape::Rect(r) if r.fill == text && r.rect.top() >= TOP && r.rect.width() < U && line_x(r.rect, 1.0) == x),
         );
         let handle = position(
-            &|s| matches!(s, egui::Shape::Circle(c) if c.fill == text && c.radius == 0.3 * 32.0),
+            &|s| matches!(s, egui::Shape::Rect(r) if r.fill == text && r.corner_radius != egui::CornerRadius::ZERO),
         );
         let (note, line, handle) = (
             note.expect("the note"),
@@ -1260,17 +1262,13 @@ mod component {
     }
 
     #[test]
-    fn while_rec_is_armed_the_playhead_disc_shows_the_record_icon() {
-        // The playhead knob: icon 5 while REC is armed, else 3, in `menuFill`.
-        let menu_fill = theme_by_id(0).colors.menu_fill.to_color32();
+    fn while_rec_is_armed_the_play_box_shows_the_record_icon() {
+        // The play box: icon 5 while REC is armed, else 3.
         let mut rig = Rig::new(vec![]);
-        let record = |rig: &Rig| {
-            (rig.shapes.iter()).any(|s| matches!(s, egui::Shape::Circle(c) if c.fill == menu_fill && (c.center.y - 24.0).abs() < 1.0))
-        };
-        assert!(!record(&rig));
+        assert!(rig.handle.is_some() && !rig.armed);
         rig.opts.armed = true;
         rig.frame(vec![]);
-        assert!(record(&rig));
+        assert!(rig.armed);
     }
 
     #[test]
@@ -1442,9 +1440,9 @@ mod component {
 
     #[test]
     fn a_touch_in_the_rows_margin_binds_the_note_but_a_tap_there_selects_nothing() {
-        // Key 70's row is y 80..96; the band reaches 0.2 row (3.2 points) into key 71's.
+        // Key 70's row is 16 points tall; the band reaches 0.2 row (3.2 points) into key 71's.
         let mut rig = Rig::new(vec![n(128, 64.0, 70)]);
-        let margin = pos2(at(140.0, 70).x, 78.0);
+        let margin = at(140.0, 70) - vec2(0.0, 8.0 + 2.0);
         rig.tap(margin);
         assert_eq!(rig.roll.selected, [false]);
         assert_eq!(rig.events().len(), 1, "no note added");
@@ -1510,10 +1508,10 @@ mod component {
         rig.drag(from, from + vec2(64.0, 0.0));
         assert_eq!(spans(rig.events())[2], (640, 64.0, 60));
         assert_eq!(rig.roll.selected, [false, false, true]);
-        // Two selected and showing: a touch on empty grid inside their frame (tick 200, key 69) moves both.
+        // Two selected and showing: a touch on empty grid inside their frame (tick 160, key 69) moves both.
         (rig.roll.selected, rig.roll.quiet) = (vec![true, true, false], false);
         rig.frame(vec![]);
-        let inside = at(200.0, 69);
+        let inside = at(160.0, 69);
         rig.drag(inside, inside + vec2(64.0, 0.0));
         assert_eq!(
             spans(rig.events()),
@@ -1758,7 +1756,7 @@ mod component {
     #[test]
     fn a_right_press_deletes_its_note_and_a_right_drag_every_note_its_path_crosses_in_one_undo_step()
      {
-        // Owner request (2026-10-18): the desktop app's right-button delete.
+        // The right-button delete (`gesture::Erase`).
         let mut rig = Rig::new(vec![
             n(128, 64.0, 70),
             n(256, 64.0, 66),
@@ -1839,7 +1837,7 @@ mod component {
     }
 
     /// The grid at the rig's size, and a right click.
-    const GRID: Rect = Rect::from_min_max(pos2(50.0, 48.0), pos2(1170.0, 349.0));
+    const GRID: Rect = Rect::from_min_max(pos2(50.0, TOP), pos2(1170.0, 349.0));
 
     fn right_click(rig: &mut Rig, p: Pos2) {
         rig.frame(vec![In::PointerMoved(p)]);
@@ -1853,8 +1851,8 @@ mod component {
         let g = rig.roll.geom(GRID.min, 32.0);
         let e = &rig.events()[0];
         let rect = g.note_rect(e).unwrap();
-        let handle = handle_center(&g, 32.0, e).unwrap();
-        let handles = [Rect::from_center_size(handle, Vec2::splat(HANDLE_D * 32.0))];
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
+        let handles = [crate::ui::clips::end_handle(rect, &m)];
         let sel = Selection {
             rect,
             one_row: true,
@@ -2047,11 +2045,11 @@ mod component {
             "{scroll:?}"
         );
         let p = pos2(600.0, 200.0);
-        let before = rig.roll.geom(pos2(50.0, 48.0), 32.0);
+        let before = rig.roll.geom(pos2(50.0, TOP), 32.0);
         // A trackpad pinch over the grid zooms the time only.
         rig.frame(vec![In::PointerMoved(p), In::Zoom(2.0)]);
         assert_eq!((rig.roll.beat_u, rig.roll.row_u), (4.0, 0.5));
-        let after = rig.roll.geom(pos2(50.0, 48.0), 32.0);
+        let after = rig.roll.geom(pos2(50.0, TOP), 32.0);
         assert!((after.tick(p.x) - before.tick(p.x)).abs() < 1e-3);
         assert!(after.key(p.y) == before.key(p.y));
     }
@@ -2071,7 +2069,7 @@ mod component {
                 },
             ]);
         };
-        let g = |rig: &Rig| rig.roll.geom(pos2(50.0, 48.0), 32.0);
+        let g = |rig: &Rig| rig.roll.geom(pos2(50.0, TOP), 32.0);
         let row_at = |g: Geom, y: f32| (y - g.origin.y) / g.row_h;
         let tick_at = |g: Geom, x: f32| g.tick(x);
         // The key column: the rows, the row under the pointer kept.
@@ -2114,7 +2112,14 @@ mod component {
         assert_eq!(rig.roll.scroll, scroll);
     }
 
-    // A vertical key column. Key 72 (`C6`) is the top row, y 48 … 64.
+    // A vertical key column. Key 72 (`C6`) is the top row, y TOP … TOP + 16.
+
+    /// `rig` showed a `fill` rect at `want` (to a thousandth of a point) last frame.
+    fn shows(rig: &Rig, want: Rect, fill: egui::Color32) -> bool {
+        (rig.visible.iter()).any(|&(r, f)| {
+            f == fill && (r.min - want.min).length() < 1e-3 && (r.max - want.max).length() < 1e-3
+        })
+    }
 
     /// The column's label texts, with their fill and font size.
     fn key_labels(rig: &Rig) -> Vec<(String, egui::Color32, Rect, f32)> {
@@ -2142,11 +2147,11 @@ mod component {
     fn a_black_keys_row_spans_the_whole_key_column_and_plays_its_key_there() {
         let mut rig = Rig::new(vec![]);
         let black = theme_by_id(0).colors.black_key.to_color32();
-        // A#5 (70): the third row, y 80 … 96, the column's full 1.5 U.
-        let row = Rect::from_x_y_ranges(0.0..=48.0, 80.0..=96.0);
-        assert!(rig.visible.contains(&(row, black)), "{:?}", rig.visible);
+        // A#5 (70): the third row, the column's full 1.5 U.
+        let row = Rect::from_x_y_ranges(0.0..=48.0, TOP + 32.0..=TOP + 48.0);
+        assert!(shows(&rig, row, black), "{:?}", rig.visible);
         // Its right end plays it.
-        let p = pos2(46.0, 88.0);
+        let p = pos2(46.0, at(0.0, 70).y);
         rig.frame(vec![In::PointerMoved(p)]);
         rig.button(p, PointerButton::Primary, true);
         assert_eq!(rig.sounds, [(70, Some(crate::app::KEY_VELOCITY))]);
@@ -2158,12 +2163,12 @@ mod component {
         let rig = Rig::new(vec![]);
         let c = theme_by_id(0).colors;
         // Under C6, over B5.
-        let line = Rect::from_x_y_ranges(0.0..=48.0, 63.0..=64.0);
+        let line = Rect::from_x_y_ranges(0.0..=48.0, TOP + 15.0..=TOP + 16.0);
         let faint = c.background.to_color32().gamma_multiply(0.3);
-        assert!(rig.visible.contains(&(line, faint)), "{:?}", rig.visible);
+        assert!(shows(&rig, line, faint), "{:?}", rig.visible);
         // The line lies on C6's full row.
-        let c6 = Rect::from_x_y_ranges(0.0..=48.0, 48.0..=64.0);
-        assert!(rig.visible.contains(&(c6, c.white_key.to_color32())));
+        let c6 = Rect::from_x_y_ranges(0.0..=48.0, TOP..=TOP + 16.0);
+        assert!(shows(&rig, c6, c.white_key.to_color32()));
     }
 
     #[test]
@@ -2171,14 +2176,10 @@ mod component {
         let rig = Rig::new(vec![]);
         let theme = theme_by_id(0);
         let ink = crate::theme::channel_color(rig.song.channels[1].hue, &theme).to_color32();
-        // ceil(0.1 U) = 4 px wide, the row's full height: C6 (y 48 … 64) and C5 (y 240 … 256).
-        for top in [48.0, 240.0] {
+        // ceil(0.1 U) = 4 px wide, the row's full height: C6 (the top row) and C5, 12 rows down.
+        for top in [TOP, TOP + 12.0 * 16.0] {
             let bar = Rect::from_x_y_ranges(0.0..=4.0, top..=top + 16.0);
-            assert!(
-                rig.visible.contains(&(bar, ink)),
-                "{top}: {:?}",
-                rig.visible
-            );
+            assert!(shows(&rig, bar, ink), "{top}: {:?}", rig.visible);
         }
     }
 
@@ -2191,9 +2192,9 @@ mod component {
             .find(|l| l.0 == "C6")
             .unwrap_or_else(|| panic!("{labels:?}"));
         assert_eq!(*color, grey);
-        // 0.08 U after the 4 px bar; the row's middle is y 56.
+        // 0.08 U after the 4 px bar; centred on the row's middle.
         assert!((rect.left() - (4.0 + 0.08 * 32.0)).abs() < 1e-3, "{rect:?}");
-        assert!((rect.center().y - 56.0).abs() <= 0.5, "{rect:?}");
+        assert!((rect.center().y - (TOP + 8.0)).abs() <= 0.5, "{rect:?}");
         // 0.95 × the 16 px row = 7.6 pt: floor(32 · 7.6 / 16) = 15 px.
         assert_eq!(*size, 15.0);
     }
@@ -2210,8 +2211,8 @@ mod component {
         // 0.375 U rows: 0.95 × 12 px is under 6 pt (12 px): no label, the bar stays.
         rows_at(&mut rig, 0.375);
         assert!(key_labels(&rig).is_empty(), "{:?}", key_labels(&rig));
-        let bar = Rect::from_x_y_ranges(0.0..=4.0, 48.0..=60.0);
-        assert!(rig.visible.contains(&(bar, ink)), "{:?}", rig.visible);
+        let bar = Rect::from_x_y_ranges(0.0..=4.0, TOP..=TOP + 12.0);
+        assert!(shows(&rig, bar, ink), "{:?}", rig.visible);
         // 0.4375 U rows (14 px): 0.95 × 14 = 13.3 px, 6.65 pt.
         rows_at(&mut rig, 0.4375);
         assert_eq!(size(&rig), Some(13.0));
@@ -2933,11 +2934,11 @@ mod component {
         assert!(rows(&rig).is_empty(), "the dialog stayed open");
     }
 
-    /// The scale-guess result is on the dialog base: screen dim α 0.6, then a `moduleFill` box, from the first frame,
+    /// The scale-guess result is on the dialog base: screen dim α 0.6, then the floating panel, from the first frame,
     /// and no popup look (a popup sweeps open over 23 frames in a `text` fill). The animations are on, so a popup would
     /// show: the dim and box are there at once, and no `text` fill ever lies under the rows.
     #[test]
-    fn the_scale_guess_result_is_on_the_dialog_base_the_dim_then_a_module_fill_box() {
+    fn the_scale_guess_result_is_on_the_dialog_base_the_dim_then_the_panel() {
         let mut rig = Rig::new(vec![n(0, 64.0, 62), n(128, 64.0, 66), n(256, 64.0, 69)]);
         rig.select(vec![true; 3]);
         rig.tap(rig.text("More...").unwrap());
@@ -2947,12 +2948,12 @@ mod component {
         rig.tap(rig.text("Guess Scale...").unwrap());
         let colors = theme_by_id(0).colors;
         let screen = Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
-        let (module_fill, text_fill) = (colors.module_fill.to_color32(), colors.text.to_color32());
-        // The box: centred on the screen, in `moduleFill`.
+        let (panel_fill, text_fill) = (colors.menu_fill.to_color32(), colors.text.to_color32());
+        // The box: centred on the screen, the floating panel's `menuFill`.
         let boxed_in = |rig: &Rig| {
             (rig.painted.iter())
                 .find(|&&(r, f)| {
-                    f == module_fill && r.width() > 100.0 && r.center() == screen.center()
+                    f == panel_fill && r.width() > 100.0 && r.center() == screen.center()
                 })
                 .map(|p| p.0)
         };
@@ -3031,10 +3032,11 @@ mod component {
 
     // ---- the graph lane ----
 
-    /// The knob on the editor's bottom edge while the lane is hidden: x 0.75 U, its upper half in the editor.
-    const KNOB: Pos2 = pos2(24.0, 345.0);
+    /// In the graph lane's tab on the editor's bottom edge while the lane is closed (centred on the key column's
+    /// right edge, x 1.5 U).
+    const KNOB: Pos2 = pos2(48.0, 340.0);
     /// The lane at the first show (f 0.5 of H = 349, the editor below its top window margin, which is 0: the ruler
-    /// counts): its strip from y round(174.5) = 175, its list and value area under the 4 px gap, 170 tall.
+    /// counts): its strip from y 349 − trunc(174.5) = 175, its list and value area under the 4 px gap, 170 tall.
     const STRIP_TOP: f32 = 175.0;
     const LANE_TOP: f32 = 179.0;
 
@@ -3102,10 +3104,10 @@ mod component {
         assert_eq!(rig.roll.graph.item, 1);
         rig.tap(vel);
         assert_eq!(rig.roll.graph.item, 0);
-        // The grid ends above the lane, and the knob on the lane's top hides it again.
+        // The grid ends above the lane, and the tab on the lane's top closes it again.
         rig.tap(pos2(at(500.0, 70).x, 300.0));
         assert_eq!(rig.events().len(), 2);
-        rig.tap(pos2(24.0, STRIP_TOP));
+        rig.tap(pos2(48.0, STRIP_TOP - 10.0));
         rig.frame(vec![]);
         assert_eq!(rig.text("Vel"), None);
         assert!(!rig.roll.graph.open);
@@ -3348,7 +3350,8 @@ mod component {
             n(384, 64.0, 65),
         ];
         let mut rig = Rig::new(notes);
-        select(&mut rig, 128.0, 256.0);
+        // Made from its end, clear of the play box's touch area at beat 0.
+        select(&mut rig, 256.0, 128.0);
         // The clip starts at song tick 0: content ticks are song ticks.
         assert_eq!(rig.song.play_loop, Some((128, 256)));
         assert_eq!(rig.text("Deselect"), None, "the menu waits for the +");
@@ -3383,7 +3386,7 @@ mod component {
         let clip = &mut rig.song.channels[1].lanes[0].clips[0];
         (clip.start_tick, clip.offset_beats) = (512, 2.0);
         rig.frame(vec![]);
-        select(&mut rig, 128.0, 256.0);
+        select(&mut rig, 256.0, 128.0);
         assert_eq!(rig.song.play_loop, Some((384, 512)));
     }
 
@@ -3402,7 +3405,7 @@ mod component {
     fn snap_to_scale_on_a_range_snaps_only_the_notes_that_start_in_it() {
         let mut rig = Rig::new(vec![n(0, 64.0, 61), n(128, 64.0, 61), n(256, 64.0, 61)]);
         (rig.song.key_root, rig.song.key_scale) = (0, super::stored("Major"));
-        region(&mut rig, 128.0, 256.0);
+        region(&mut rig, 256.0, 128.0);
         rig.tap(rig.text("Snap to Scale").unwrap());
         assert_eq!(keys(&rig), [61, 60, 61]);
         // It re-syncs whatever it changed.
@@ -3438,11 +3441,12 @@ mod component {
 
     #[test]
     fn the_playhead_items_follow_the_transports_playhead_in_the_clip() {
-        // Inside the range, or past the clip: both are off. The range is made from its end, clear of the knob on it.
+        // Inside the range, or past the clip: both are off. The range is made from its end, clear of the play box's
+        // touch area.
         for playhead in [160, 5000] {
             let mut rig = Rig::new(vec![n(128, 64.0, 62)]);
             rig.opts.playhead = playhead;
-            region(&mut rig, 256.0, 128.0);
+            region(&mut rig, 384.0, 128.0);
             rig.tap(rig.text("Copy to playhead").unwrap());
             rig.tap(rig.text("Move to playhead").unwrap());
             assert!(rig.all.is_empty(), "{playhead:?}");
@@ -3450,7 +3454,7 @@ mod component {
         // Stopped at 0: the copy is inserted there, pushing the source on.
         let mut rig = Rig::new(vec![n(128, 64.0, 62)]);
         rig.opts.playhead = 0;
-        region(&mut rig, 128.0, 256.0);
+        region(&mut rig, 256.0, 128.0);
         rig.tap(rig.text("Copy to playhead").unwrap());
         assert_eq!(starts(&rig), [0, 256]);
         assert_eq!(rig.all, [DONE]);
@@ -3465,22 +3469,23 @@ mod component {
         // Stopped there, the handle rests on it.
         rig.opts.playhead = 192;
         rig.frame(vec![]);
-        assert_eq!(rig.handle, Some(ruler(192.0).x));
+        assert_eq!(rig.handle, Some(r3(ruler(192.0).x)));
     }
 
     #[test]
     fn a_tap_on_an_offset_clips_ruler_seeks_where_that_content_plays() {
-        // At song tick 512, two beats into its one-bar content: content tick 128 plays at 512 + 384.
+        // At song tick 512, two beats into its one-bar content: content tick 384 (past the play box's touch area at
+        // content tick 0) plays at 512 + 128.
         let mut rig = Rig::new(vec![]);
         let clip = &mut rig.song.channels[1].lanes[0].clips[0];
         (clip.start_tick, clip.offset_beats) = (512, 2.0);
         rig.frame(vec![]);
-        rig.tap(ruler(128.0));
-        assert_eq!(rig.all, [PianoRollAction::SetPlayhead(896)]);
+        rig.tap(ruler(384.0));
+        assert_eq!(rig.all, [PianoRollAction::SetPlayhead(640)]);
         // Read back, the handle is where the tap was.
-        rig.opts.playhead = 896;
+        rig.opts.playhead = 640;
         rig.frame(vec![]);
-        assert_eq!(rig.handle, Some(ruler(128.0).x));
+        assert_eq!(rig.handle, Some(r3(ruler(384.0).x)));
     }
 
     #[test]
@@ -3807,10 +3812,11 @@ mod component {
         assert_eq!(spans(rig.events()), [(0, 64.0, 60)]);
         rig.release(finger);
         rig.frame(vec![]);
-        // A single Paste bubble remains at the hold location until tapped.
+        // The `Paste` menu remains over the held row until tapped.
         let paste = rig.text("Paste").expect("the Paste button");
-        assert!((paste - finger).length() < 2.0, "{paste:?}");
-        // Its tap lands the earliest note on the button's cell, the other at its offsets: one final edit, selected.
+        assert!(paste.y < finger.y, "{paste:?}");
+        // Its tap lands the earliest note on the held cell's snapped beat, the other at its offsets: one final edit,
+        // selected.
         rig.all.clear();
         rig.tap(paste);
         assert_eq!(
@@ -3898,7 +3904,7 @@ mod grid {
     use eframe::egui::{Color32, Context, LayerId, RawInput, Rect, Shape, pos2};
 
     use super::n;
-    use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+    use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
     use crate::song::scales::{SCALES, scale_to_stored};
     use crate::song::{ChannelKind, Song, SynthKind, TimeSig};
     use crate::theme::{Rgba, theme_by_id};
@@ -3914,7 +3920,7 @@ mod grid {
         ppp: f32,
         paint: &dyn Fn(&eframe::egui::Painter, Rect, &Geom, &UiCtx),
     ) -> (Vec<(Rect, Color32)>, Rect, f32, Geom) {
-        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
         let u = m.u(1.0);
         let theme = theme_by_id(0);
         let cx = UiCtx {

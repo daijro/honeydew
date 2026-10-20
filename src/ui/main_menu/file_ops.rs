@@ -1,6 +1,7 @@
 //! The file actions of SONGS and the preset pickers (the ≡ options menu; [`FileActions`]) on a [`SongLibrary`]: make a
 //! folder, delete into [`RECENTLY_DELETED`] (a copy at the same place below the user folder), restore from it, delete
-//! for good, paste what was copied or cut, rename, export, and show in the system's file manager.
+//! for good, paste what was copied or cut, rename, export, show in the system's file manager, and convert one WAV to
+//! FLAC beside it.
 //!
 //! Nothing is ever replaced. A paste, a delete, a restore and an export take a free `Name (n)` where the name is
 //! taken (as `New Song (1)`); a name the user typed that is taken is refused with a message. Links are
@@ -18,8 +19,8 @@ use crate::project_files::PRESETS_FOLDER;
 use crate::project_files::content::{FOLD_CASE, inside as fold_inside};
 use crate::ui::popup::PopupItem;
 
-/// The ≡ menu's items that apply to SONGS and the preset pickers: `Send to playlist` and `Insert at playhead` never do
-/// (they list no audio files). `Unzip` only does in SONGS, the one that lists archives.
+/// The ≡ menu's items that apply to SONGS and the preset pickers: `Send to playlist` and `Insert at playhead` never do.
+/// `Unzip` only does in SONGS, the one that lists archives; `Convert to FLAC` only in the pickers that list audio files.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Opt {
     SelectAll,
@@ -29,6 +30,7 @@ pub(crate) enum Opt {
     Delete,
     /// SONGS only: [`FileActions`] leaves it to the tab, which needs the app's files to extract with.
     Unzip,
+    ConvertFlac,
     Copy,
     Cut,
     Paste,
@@ -44,6 +46,8 @@ pub(crate) struct MenuState {
     pub selected: usize,
     /// The selection is exactly one archive.
     pub archive: bool,
+    /// The selection is exactly one `.wav` file.
+    pub wav: bool,
     /// The open folder is `Recently Deleted`, or one inside it.
     pub in_trash: bool,
     /// The clipboard holds something.
@@ -67,7 +71,7 @@ pub(crate) fn options_menu(s: MenuState) -> Vec<PopupItem<Opt>> {
     let reveal: Option<Cow<'static, str>> =
         s.reveal.map(|name| format!("Show in {name}...").into());
     // (item, label, present, enabled)
-    let items: [(Opt, Cow<'static, str>, bool, bool); 12] = [
+    let items: [(Opt, Cow<'static, str>, bool, bool); 13] = [
         (SelectAll, "Select all".into(), true, true),
         (Restore, "Restore".into(), s.in_trash, any),
         (
@@ -89,6 +93,13 @@ pub(crate) fn options_menu(s: MenuState) -> Vec<PopupItem<Opt>> {
             !s.locked_picked,
         ),
         (Unzip, "Unzip".into(), s.archive, true),
+        // It writes beside the file, so not into original content.
+        (
+            ConvertFlac,
+            "Convert to FLAC".into(),
+            s.wav,
+            !s.locked_picked,
+        ),
         (Copy, "Copy".into(), any, true),
         (Cut, "Cut".into(), any, !s.locked_picked),
         (Paste, "Paste".into(), true, s.paste && !s.locked_folder),
@@ -134,6 +145,7 @@ pub(crate) struct FileActions {
     clipboard: Option<Clipboard>,
     purge: Option<Vec<SongEntry>>,
     moved: Vec<Moved>,
+    convert: Option<Convert>,
 }
 
 /// What [`FileActions::apply`] leaves to the browser.
@@ -203,6 +215,12 @@ impl FileActions {
                 return Step::Confirm(question);
             }
             Opt::Unzip => return Step::Nothing,
+            Opt::ConvertFlac => {
+                if let [entry] = &picked[..] {
+                    self.convert = Some(Convert::Shown(entry.path.clone()));
+                }
+                return Step::Nothing;
+            }
             Opt::Delete => delete(lib, &picked, &mut self.moved),
             Opt::Restore => restore(lib, &picked, &mut self.moved),
             Opt::Paste => {
@@ -256,6 +274,130 @@ impl FileActions {
     /// What the actions moved (`Some` where to) or deleted since the last call, oldest first.
     pub(crate) fn take_moves(&mut self) -> Vec<Moved> {
         std::mem::take(&mut self.moved)
+    }
+
+    /// `Convert to FLAC` is under way: the browser shows [`CONVERTING`] with an abort button over everything, and
+    /// calls [`Self::convert_step`] each frame (or [`Self::abort_convert`]).
+    pub(crate) fn converting(&self) -> bool {
+        self.convert.is_some()
+    }
+
+    /// Stops `Convert to FLAC`: nothing is written.
+    pub(crate) fn abort_convert(&mut self) {
+        self.convert = None;
+    }
+
+    /// One slice of `Convert to FLAC`, 4096 frames at a time until `over` says the slice is spent: the frame it was
+    /// picked in shows the loading screen, the next reads and decodes the WAV, the rest encode it. The FLAC goes beside
+    /// the WAV as `<name>.flac`, or the free `<name> (n).flac`, once whole. `Some` when it is over: a failure is
+    /// [`CONVERT_FAILED`].
+    pub(crate) fn convert_step(
+        &mut self,
+        lib: &mut dyn SongLibrary,
+        over: &mut dyn FnMut() -> bool,
+    ) -> Option<Done> {
+        let done = match self.convert.take()? {
+            Convert::Shown(wav) => {
+                self.convert = Some(Convert::Read(wav));
+                return None;
+            }
+            Convert::Read(wav) => match Encode::new(lib, wav) {
+                Some(encode) => {
+                    self.convert = Some(Convert::Encode(Box::new(encode)));
+                    return None;
+                }
+                None => Err(()),
+            },
+            Convert::Encode(mut encode) => {
+                if !encode.step(over) {
+                    self.convert = Some(Convert::Encode(encode));
+                    return None;
+                }
+                encode.write(lib)
+            }
+        };
+        Some(done.map_err(|()| CONVERT_FAILED.into()))
+    }
+}
+
+/// `Convert to FLAC`'s loading screen and failure message.
+pub(crate) const CONVERTING: &str = "Converting to FLAC...";
+pub(crate) const CONVERT_FAILED: &str = "Failed to convert to FLAC.";
+
+/// Where `Convert to FLAC` is, with the WAV's path.
+enum Convert {
+    /// Picked: the loading screen shows first.
+    Shown(PathBuf),
+    /// Read and decoded next.
+    Read(PathBuf),
+    Encode(Box<Encode>),
+}
+
+/// A WAV decoded, and encoded so far.
+struct Encode {
+    wav: PathBuf,
+    data: honeydew_audio::sample::SampleData,
+    encoder: honeydew_audio::flac_writer::FlacEncoder,
+    /// 2^(bits − 1): a sample's full scale at the FLAC's depth.
+    scale: f32,
+    /// Frames encoded.
+    at: usize,
+}
+
+impl Encode {
+    /// The WAV at `wav` read and decoded, to a FLAC of its depth: 16-bit for an 8- or 16-bit file, 24-bit for the rest
+    /// (24-bit, 32-bit and float, the encoder's deepest), mono or stereo as the file is.
+    fn new(lib: &dyn SongLibrary, wav: PathBuf) -> Option<Self> {
+        let bytes = lib.read(&wav).ok()?;
+        let data = honeydew_audio::sample::decode(&bytes).ok()?;
+        let bits = match honeydew_audio::sample::wav_bits(&bytes) {
+            Some(8 | 16) => 16,
+            _ => 24,
+        };
+        let channels = 1 + usize::from(data.right.is_some());
+        let encoder =
+            honeydew_audio::flac_writer::FlacEncoder::new(data.sample_rate, bits, channels);
+        let scale = (1u32 << (bits - 1)) as f32;
+        Some(Self {
+            wav,
+            data,
+            encoder,
+            scale,
+            at: 0,
+        })
+    }
+
+    /// Encodes until `over` or the end; returns whether it is the end. A sample the decoder read from an integer
+    /// file comes back exactly.
+    fn step(&mut self, over: &mut dyn FnMut() -> bool) -> bool {
+        const BLOCK: usize = 4096;
+        let scale = self.scale;
+        let quantize = |x: &f32| (x * scale).round().clamp(-scale, scale - 1.0) as i32;
+        let channels = std::iter::once(&self.data.left).chain(&self.data.right);
+        let channels: Vec<&[f32]> = channels.map(|c| &c[..]).collect();
+        while self.at < self.data.frames() {
+            let end = (self.at + BLOCK).min(self.data.frames());
+            let block: Vec<Vec<i32>> = (channels.iter())
+                .map(|c| c[self.at..end].iter().map(quantize).collect())
+                .collect();
+            self.encoder.push_i32(&block);
+            self.at = end;
+            if over() {
+                break;
+            }
+        }
+        self.at == self.data.frames()
+    }
+
+    /// The finished FLAC (the WAV's loop, tempo and markers kept) written beside the WAV under a free name.
+    fn write(self, lib: &mut dyn SongLibrary) -> Result<(), ()> {
+        let bytes = self.encoder.finish_with_meta(&self.data.meta);
+        let dir = self.wav.parent().ok_or(())?;
+        let stem = self.wav.file_stem().ok_or(())?;
+        let mut name = stem.to_owned();
+        name.push(".flac");
+        let to = free_path(lib, dir, &name, false);
+        lib.write_new(&to, &bytes).map_err(drop)
     }
 }
 
@@ -923,6 +1065,101 @@ mod tests {
             actions.apply(Opt::Unzip, Vec::new(), None, &mut lib),
             Step::Nothing
         );
+    }
+
+    /// A PCM WAV at 44.1 kHz of `bits` and `channels`, from interleaved `samples`.
+    fn pcm_wav(bits: u16, channels: u16, samples: &[i32]) -> Vec<u8> {
+        let width = usize::from(bits / 8);
+        let data: Vec<u8> = (samples.iter())
+            .flat_map(|s| s.to_le_bytes()[..width].to_vec())
+            .collect();
+        let (rate, align) = (44_100u32, channels * bits / 8);
+        let mut out = [b"RIFF".as_slice(), &(36 + data.len() as u32).to_le_bytes()].concat();
+        out.extend(b"WAVEfmt \x10\0\0\0\x01\0");
+        out.extend(channels.to_le_bytes());
+        out.extend(rate.to_le_bytes());
+        out.extend((rate * u32::from(align)).to_le_bytes());
+        out.extend([align.to_le_bytes(), bits.to_le_bytes()].concat());
+        out.extend(b"data");
+        out.extend((data.len() as u32).to_le_bytes());
+        out.extend(data);
+        out
+    }
+
+    /// `Convert to FLAC` is offered for exactly one WAV, after `Unzip` and before `Copy`. It writes a FLAC beside the
+    /// WAV, under a free name, that decodes to the same samples at the WAV's depth (16-bit stereo, 24-bit mono), and
+    /// keeps the WAV; aborted, it writes nothing.
+    #[test]
+    fn convert_to_flac_writes_the_same_samples_beside_one_wav() {
+        let one = MenuState {
+            selected: 1,
+            wav: true,
+            ..MenuState::default()
+        };
+        let both_kinds = menu(MenuState {
+            archive: true,
+            ..one
+        });
+        let at = |label: &str| both_kinds.iter().position(|(l, _)| l == label);
+        assert!(at("Unzip") < at("Convert to FLAC") && at("Convert to FLAC") < at("Copy"));
+        assert!(menu(one).contains(&on("Convert to FLAC", true)));
+        let convert = |s| {
+            options_menu(s)
+                .iter()
+                .any(|i| i.id == Some(Opt::ConvertFlac))
+        };
+        assert!(!convert(MenuState { wav: false, ..one }));
+
+        both("flac", |lib| {
+            let dir = root(lib).join("Samples");
+            lib.make_folder(&dir).unwrap();
+            // A ramp over the full 16-bit range, and 24-bit values 16 bits could not hold.
+            let stereo: Vec<i32> = (0..20_000).map(|i| i * 13 % 65_536 - 32_768).collect();
+            let mono: Vec<i32> = (0..5000)
+                .map(|i| i * 3355 % 16_777_216 - 8_388_608)
+                .collect();
+            let files = [
+                ("Kick", pcm_wav(16, 2, &stereo)),
+                ("Pad", pcm_wav(24, 1, &mono)),
+            ];
+            for (name, wav) in &files {
+                lib.write_new(&dir.join(format!("{name}.wav")), wav)
+                    .unwrap();
+            }
+            lib.write_new(&dir.join("Kick.flac"), b"taken").unwrap();
+            let decoded = |lib: &dyn SongLibrary, name: &str| {
+                honeydew_audio::sample::decode(&lib.read(&dir.join(name)).unwrap()).unwrap()
+            };
+            // The songs library on disk lists no audio files.
+            let wav = |name: &str| SongEntry {
+                name: format!("{name}.wav"),
+                path: dir.join(format!("{name}.wav")),
+                is_folder: false,
+                recency: 0,
+            };
+            let mut actions = FileActions::default();
+            for ((name, _), flac) in files.iter().zip(["Kick (1).flac", "Pad.flac"]) {
+                let wav = wav(name);
+                let step = actions.apply(Opt::ConvertFlac, vec![wav], Some(dir.clone()), lib);
+                assert_eq!(step, Step::Nothing);
+                let done = (0..10).find_map(|_| actions.convert_step(lib, &mut || true));
+                assert_eq!(done, Some(Ok(())), "{name}");
+                assert!(!actions.converting());
+                let (wav, flac) = (decoded(lib, &format!("{name}.wav")), decoded(lib, flac));
+                assert_eq!(flac.sample_rate, 44_100);
+                assert_eq!((flac.left, flac.right), (wav.left, wav.right), "{name}");
+            }
+            assert_eq!(lib.read(&dir.join("Kick.flac")).unwrap(), b"taken");
+            // Aborted while it encodes: nothing is written.
+            actions.apply(Opt::ConvertFlac, vec![wav("Kick")], Some(dir.clone()), lib);
+            for _ in 0..3 {
+                assert_eq!(actions.convert_step(lib, &mut || true), None);
+            }
+            actions.abort_convert();
+            assert!(!actions.converting());
+            assert!(!lib.exists(&dir.join("Kick (2).flac")));
+            assert!(lib.exists(&dir.join("Kick.wav")) && lib.exists(&dir.join("Pad.wav")));
+        });
     }
 
     #[test]

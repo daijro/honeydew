@@ -463,7 +463,11 @@ pub fn panel_for(type_id: u16) -> Option<&'static Panel> {
         let inst = inst::IDS
             .iter()
             .filter_map(|&id| Some((id, inst::panel(id)?)));
-        fx.chain(inst).collect()
+        let lemon = [
+            (honeydew_audio::lemon::REVERB, fx::lemon::reverb()),
+            (honeydew_audio::lemon::LIMITER, fx::lemon::limiter()),
+        ];
+        fx.chain(inst).chain(lemon).collect()
     });
     PANELS.iter().find(|(id, _)| *id == type_id).map(|(_, p)| p)
 }

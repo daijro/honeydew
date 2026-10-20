@@ -1,8 +1,12 @@
 //! The SoundFont picker overlay: the SoundFont Player's `Patch` spinner (or, in the error state, a tap on its panel)
 //! opens it over `My SoundFonts` (and imported content's `SoundFonts`, when there), starting in the patches of the
-//! module's SoundFont when the rack read them. A pick sets the module's `SF2D` (the SoundFont's shorthand path and the
-//! patch index) as one final song edit: a new engine, and no undo step (the rack is not covered by undo). A SoundFont
-//! that cannot be read loads too, at patch 0, and the panel shows its error. Playing it is the engine's.
+//! module's SoundFont when the rack read them, its current patch current. A patch pick sets the module's `SF2D` (the
+//! SoundFont's shorthand path and the patch index) at once, as one final song edit: a new engine, and no undo step (the
+//! rack is not covered by undo); the spinner shows it and the picker stays open. The patches' `Sort` is stored as
+//! `SoundFontPatchOrdering` at once. A SoundFont that cannot be read loads too, at patch 0, the picker closes and the
+//! panel shows its error. Playing it is the engine's.
+//!
+//! A patch pick does not turn on an audition strip: the patches are no presets, and the keyboard plays the channel.
 
 use eframe::egui;
 
@@ -21,8 +25,8 @@ pub struct State {
 }
 
 /// Draws the picker for the SoundFont Player `module` on `channel`, modal, over the left of the screen, and loads its
-/// pick, telling `rack` the patches it read so the panel needs no second read. A pick, the X, a click outside,
-/// Escape, or the module being gone close it.
+/// pick, telling `rack` the patches it read so the panel needs no second read. The X, a click outside, Escape, a
+/// SoundFont that fails, or the module being gone close it.
 pub fn show(
     state: &mut State,
     rack: &mut rack::State,
@@ -47,26 +51,43 @@ pub fn show(
         let sf2d = player.file.custom_data.as_deref().and_then(Sf2d::read);
         let current = sf2d.and_then(|s| {
             let patches = rack.soundfont(&s.path)?.as_ref().ok()?.clone();
-            Some((files.library_path(&s.path)?, patches))
+            // An index past either end is the patch at that end, as the spinner reads it.
+            let patch = usize::try_from(s.patch)
+                .unwrap_or(0)
+                .min(patches.len().saturating_sub(1));
+            Some((files.library_path(&s.path)?, patches, patch))
         });
-        SoundFontPicker::new(files.soundfonts_dir(), current)
-            .with_factory(files.content_folder(SOUNDFONTS))
+        let mut picker = SoundFontPicker::new(files.soundfonts_dir(), current)
+            .with_factory(files.content_folder(SOUNDFONTS));
+        picker.sort = app.settings.patch_ordering();
+        picker
     });
     let library = files.preset_library(&[SF2_EXT]);
-    let action = picker.show(ui.ctx(), &app.cx, &*library)?;
+    let action = picker.show(ui.ctx(), &app.cx, &*library);
     drop(library);
-    state.picker = None;
-    let (path, patch, read) = match action {
-        SoundFontAction::Close => return Some(Nav::Close),
+    // A pick from `Sort`'s menu is saved as `SoundFontPatchOrdering`, the active one too.
+    if let Some(sort) = picker.sort_picked.take() {
+        app.settings.sound_font_patch_ordering = sort.id();
+    }
+    let (path, patch, read) = match action? {
+        SoundFontAction::Close => {
+            state.picker = None;
+            return Some(Nav::Close);
+        }
         SoundFontAction::Patch {
             path,
             patches,
             index,
         } => (path, index, Ok(patches)),
-        SoundFontAction::Failed { path, error } => (path, 0, Err(error)),
+        SoundFontAction::Failed { path, error } => {
+            state.picker = None;
+            (path, 0, Err(error))
+        }
     };
+    let stays = read.is_ok();
     // The picker lists the user and content folders only, so a pick always has a shorthand; one without loads nothing.
     let Some(shorthand) = app.files.shorthand(&path) else {
+        state.picker = None;
         return Some(Nav::Close);
     };
     rack.soundfont_read(shorthand.clone(), read);
@@ -88,5 +109,5 @@ pub fn show(
             app.song_edited(true);
         }
     }
-    Some(Nav::Close)
+    (!stays).then_some(Nav::Close)
 }

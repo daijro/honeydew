@@ -14,6 +14,7 @@ pub mod gm_waveshapes;
 pub mod gmsynth;
 pub mod input;
 pub mod instrument;
+pub mod lemon;
 pub mod metronome;
 pub mod minisynth;
 pub mod mixer;
@@ -96,6 +97,8 @@ pub fn effect_info(id: u16) -> Option<EffectInfo> {
         44 => ("Spreader", 5),
         45 => ("Pitcher 2", 27),
         46 => ("Tremolo", 12),
+        lemon::REVERB => ("Lemon Reverb", lemon::REVERB_MID_SIDE + 1),
+        lemon::LIMITER => ("Lemon Limiter", lemon::LIMITER_SAFETY + 1),
         _ => return None,
     };
     Some(EffectInfo {
@@ -455,6 +458,16 @@ impl AudioEffect {
                 ],
                 Processor::Tremolo(TremoloState::default()),
             ),
+            lemon::REVERB => {
+                let params = lemon::defaults(id);
+                let state = lemon::ReverbFx::new(sample_rate, &params);
+                (params, Processor::LemonReverb(Box::new(state)))
+            }
+            lemon::LIMITER => {
+                let params = lemon::defaults(id);
+                let state = lemon::LimiterFx::new(sample_rate, &params);
+                (params, Processor::LemonLimiter(Box::new(state)))
+            }
             _ => return Err(EffectError::UnsupportedEffect(id)),
         };
         let mut effect = Self {
@@ -519,6 +532,7 @@ impl AudioEffect {
             Processor::Gate(_) => 255,
             Processor::Pitcher(state) => state.latency_samples(),
             Processor::Pitcher2(state) => state.latency_samples(),
+            Processor::LemonLimiter(state) => state.latency(),
             _ => 0,
         }
     }
@@ -559,10 +573,11 @@ impl AudioEffect {
     /// Takes over what `built`, this effect built again for an edit's engine, sized off the audio thread for that
     /// engine's tempo: a Tape Stop's longer ring (`TapeStopState::take_ring`), its running ramp kept. Allocates nothing.
     pub fn take_buffers(&mut self, built: &mut AudioEffect) {
-        if let (Processor::TapeStop(state), Processor::TapeStop(theirs)) =
-            (&mut self.processor, &mut built.processor)
-        {
-            state.take_ring(theirs);
+        match (&mut self.processor, &mut built.processor) {
+            (Processor::TapeStop(state), Processor::TapeStop(theirs)) => state.take_ring(theirs),
+            // A room size the running reverb held back (`lemon::ReverbFx`).
+            (Processor::LemonReverb(state), Processor::LemonReverb(theirs)) => state.take(theirs),
+            _ => {}
         }
     }
 
@@ -734,6 +749,10 @@ impl AudioEffect {
     }
 
     fn refresh_coefficients(&mut self) {
+        // Once a block has run, the audio thread holds it: Lemon's reverb keeps its room size there.
+        if let Processor::LemonReverb(state) = &mut self.processor {
+            state.live = !self.common.fresh;
+        }
         self.processor
             .refresh_coefficients(&self.params, self.sample_rate);
     }
@@ -814,6 +833,8 @@ enum Processor {
     TapeStop(TapeStopState),
     Spreader(SpreaderState),
     Waveshaper(WaveshaperState),
+    LemonReverb(Box<lemon::ReverbFx>),
+    LemonLimiter(Box<lemon::LimiterFx>),
     Monitor,
 }
 
@@ -853,6 +874,8 @@ impl Processor {
             Self::Waveshaper(state) => {
                 state.refresh(params, sample_rate).unwrap();
             }
+            Self::LemonReverb(state) => state.set(params, sample_rate),
+            Self::LemonLimiter(state) => state.set(params, sample_rate),
             Self::Monitor => {}
         }
     }
@@ -881,6 +904,7 @@ impl Processor {
                 state.prepare_block(context.tempo_bpm, context.start_beat, frames)
             }
             Self::TapeStop(state) => state.prepare_block(context.tempo_bpm),
+            Self::LemonReverb(state) => state.set_tempo(context.tempo_bpm),
             Self::Waveshaper(state) => {
                 state
                     .prepare_block(
@@ -922,6 +946,8 @@ impl Processor {
             Self::TapeStop(state) => state.process_frame(l, r),
             Self::Spreader(state) => state.process_frame(l, r),
             Self::Waveshaper(state) => state.process_frame(l, r),
+            Self::LemonReverb(state) => state.frame(l, r),
+            Self::LemonLimiter(state) => state.frame(l, r),
             Self::Monitor => (l, r),
         }
     }
@@ -958,6 +984,8 @@ impl Processor {
             Self::TapeStop(state) => state.reset(),
             Self::Spreader(state) => state.reset(),
             Self::Waveshaper(state) => state.reset(),
+            Self::LemonReverb(state) => state.clear(),
+            Self::LemonLimiter(state) => state.reset(),
             Self::Monitor => {}
         }
     }

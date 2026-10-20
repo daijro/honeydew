@@ -11,6 +11,8 @@
 //!   row becomes the current one.
 //! - The sample row: the audio clip's slot takes the file; a file with a tempo turns SYNC on ([`load_clip_sample`]).
 //! - A tap on an empty cell of the current audio track ([`show_track`]): the first pick makes an audio clip there.
+//!   An audio file dropped on the playlist (`ui::file_drag`) decodes and makes its clip the same way ([`drop_decode`],
+//!   [`drop_clip`]).
 //! - A module's sample ([`show_module`]): `Custom` picked in a 3x Osc Shape menu, or the Slicer's `LOAD SAMPLE` or a
 //!   tap on its waveform. The root lists `My Files`, then our own factory folder (3x Osc `Shapes`, Slicer `Loops`:
 //!   listed from code, rendered only when played) and imported content's (`3xOsc Shapes`, `Loop Samples`) when it
@@ -52,7 +54,7 @@ use crate::flm::chunk::{ContentPath, ContentRoot};
 use crate::panels::inst::{slicer, three_osc};
 use crate::project_files::{DRUM_SAMPLES, ProjectFiles, SAMPLE_EXTS, SAMPLES_FOLDER, load_pick};
 use crate::sample_cache::{self, SampleCache, SampleKey, Waveform, disk_reader};
-use crate::song::{DrumKit, LaneKind, ModuleInstance, SamplerSlot, Song};
+use crate::song::{DrumKit, Lane, LaneKind, ModuleInstance, SamplerSlot, Song};
 use crate::ui::drums::PAD_COUNT;
 use crate::ui::picker_preview::{Play, SampleStrip};
 use crate::ui::preset_picker::{PickerAction, PresetPicker};
@@ -120,7 +122,7 @@ fn opening(state: &mut State, ui: &egui::Ui) -> bool {
 }
 
 /// What the worker made of a picked sample file ([`decode_pick`]).
-pub(super) struct Decoded {
+pub(crate) struct Decoded {
     /// A cache of its own holding the file's sample, or the 3x Osc Custom table built from it, for the app's to take
     /// once the pick applies ([`SampleCache::absorb`]).
     pub samples: SampleCache,
@@ -292,7 +294,7 @@ fn pick(
                 close_waiting(state, app.audio);
             }
         }
-        Some(PickerAction::Default) | None => {}
+        Some(PickerAction::Default | PickerAction::Back) | None => {}
     }
     let arrived = match state.loading.as_ref().map(|(_, done)| done.try_recv()) {
         None => None,
@@ -622,6 +624,50 @@ fn clip_pick(
 ) -> Option<PickFor> {
     let (mut slot, bpm) = (slot.unwrap_or_default(), song.tempo_bpm);
     load_clip_sample(&mut slot, path, files, None, bpm).then_some(PickFor::Clip(slot, bpm))
+}
+
+/// Decodes the audio files `paths` dropped on the playlist (`ui::file_drag`) on the worker ([`spawn`]), each for a new
+/// audio clip's slot as an audio track's pick decodes it ([`clip_pick`]); a file the slot does not take is left out.
+pub(crate) fn drop_decode(
+    song: &Song,
+    paths: Vec<PathBuf>,
+    files: &ProjectFiles,
+) -> Receiver<Vec<(PathBuf, Decoded)>> {
+    let jobs: Vec<_> = (paths.iter())
+        .filter_map(|path| {
+            let into = clip_pick(None, song, path, files)?;
+            let (key, read) = (sample_key(files, path), pick_bytes(files, path));
+            Some((path.clone(), key, read, into))
+        })
+        .collect();
+    spawn(move || {
+        (jobs.into_iter())
+            .map(|(path, key, read, into)| (path, decode_pick(key, read(), false, Some(into))))
+            .collect()
+    })
+}
+
+/// An audio clip at `tick` on the audio lane `lane` holding the dropped file `path`, as its decode (`decoded`) left it,
+/// as an audio track's first pick makes one ([`show_track`]): fitted to its sample, which `samples` takes. Returns its
+/// end tick; `None`, and no clip, for a file the slot does not take or that did not decode.
+pub(crate) fn drop_clip(
+    lane: &mut Lane,
+    tick: u32,
+    path: &Path,
+    decoded: Decoded,
+    files: &ProjectFiles,
+    samples: &mut SampleCache,
+    (bpm, bar): (f64, u32),
+) -> Option<u32> {
+    let tempo = decoded.wave.as_ref()?.data.meta.tempo;
+    let mut slot = SamplerSlot::default();
+    load_clip_sample(&mut slot, path, files, tempo, bpm).then_some(())?;
+    samples.forget_missing();
+    samples.absorb(decoded.samples);
+    let clip = lane.add_clip(tick, f64::from(bar));
+    clip.file.sample = Some(Box::new(slot));
+    fit_audio_clip(clip, samples, bpm, bar);
+    Some(tick.saturating_add(clip.visible_ticks().round() as u32))
 }
 
 /// A Slicer `module`'s pick of the loop `path`: the Sensitivity the pick leaves it ([`load_pick`]: its own, or a new

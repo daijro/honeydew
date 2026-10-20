@@ -2025,7 +2025,7 @@ mod live {
         }
 
         fn frame(&mut self, events: Vec<eframe::egui::Event>) {
-            use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+            use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
             self.time += 1.0 / 60.0;
             let raw = eframe::egui::RawInput {
                 screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(800.0, 600.0))),
@@ -2034,7 +2034,7 @@ mod live {
                 ..Default::default()
             };
             let theme = crate::theme::theme_by_id(0);
-            let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+            let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
             let cx = UiCtx {
                 theme: &theme,
                 m: &m,

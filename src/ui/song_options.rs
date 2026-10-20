@@ -186,7 +186,7 @@ struct Layout {
 fn layout(screen: Rect, m: &Metrics) -> Layout {
     let band_h = m.round_px(m.u(BAND_H));
     let top = m.round_px(screen.center().y - band_h / 2.0);
-    let band = Rect::from_x_y_ranges(screen.x_range(), top..=top + band_h);
+    let band = Rect::from_x_y_ranges(crate::ui::dialog::floating_x(screen, m), top..=top + band_h);
     // Rects `widths` wide side by side, centred, at `row`.
     let row = |(t, h): (f32, f32), widths: &[f32]| -> Vec<Rect> {
         let w: Vec<f32> = widths.iter().map(|&w| m.round_px(m.u(w))).collect();
@@ -240,9 +240,9 @@ impl SongOptionsDialog {
         let l = layout(screen, m);
         let id = Id::new(ID);
         // Modal: drawn last, the screen takes every click the band's widgets do not. The dialog base: the screen dimmed
-        // at α 0.6, then a `moduleFill` box, from the first frame.
+        // at α 0.6, then the floating panel, from the first frame.
         ui.interact(screen, id.with("backdrop"), Sense::click_and_drag());
-        dialog::paint_base(ui.painter(), ui.painter(), c, screen, l.band);
+        dialog::paint_base(ui.painter(), ui.painter(), (c, m), screen, l.band);
         text_label(
             ui,
             cx,
@@ -295,7 +295,7 @@ impl SongOptionsDialog {
             ("ok", l.ok, "OK", SongOptionsAction::Ok(self.options)),
         ];
         for (part, rect, label, end) in ends {
-            let b = Button::new(id.with(part), rect, label, false, c);
+            let b = dialog::button(id.with(part), rect, label, c, m);
             if button(ui, cx, &b, true).clicked() {
                 action = Some(end);
             }
@@ -589,15 +589,15 @@ mod tests {
         assert!(top("/") < top("OK"));
         assert_eq!(top("Cancel"), top("OK"));
         assert!(rig.find("Cancel").center().x < rig.find("OK").center().x);
-        // Everything inside the band, which is 8 U across the middle of the screen.
+        // Everything inside the band, 20 U by 8 U in the middle of the screen.
         let band = layout(SCREEN, &crate::ui::offscreen::metrics()).band;
-        assert_eq!(band, Rect::from_x_y_ranges(0.0..=1170.0, 142.0..=398.0));
+        assert_eq!(band, Rect::from_x_y_ranges(265.0..=905.0, 142.0..=398.0));
         assert!(rig.texts.iter().all(|(_, r)| band.contains_rect(*r)));
     }
 
-    /// The dialog base: screen dim α 0.6, then a `moduleFill` box, from the first frame.
+    /// The dialog base: screen dim α 0.6, then the floating panel, from the first frame.
     #[test]
-    fn the_dialog_base_dims_the_screen_then_fills_the_band_with_module_fill() {
+    fn the_dialog_base_dims_the_screen_then_paints_the_floating_panel() {
         let rig = Rig::new();
         let c = crate::theme::theme_by_id(0).colors;
         let band = layout(SCREEN, &crate::ui::offscreen::metrics()).band;

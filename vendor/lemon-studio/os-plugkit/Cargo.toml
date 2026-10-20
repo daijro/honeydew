@@ -1,0 +1,35 @@
+[package]
+name = "os-plugkit"
+description = "Shared pieces of Lemon Studio's own plugin editors: live parameter edits, menus, native editor windows, popups and type-in boxes"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[features]
+# Honeydew (vendored addition): the editors draw into Honeydew's own window (`src/embed.rs`) on every platform.
+embed = []
+
+[dependencies]
+nih_plug = { path = "../../nih-plug" }
+os-ui = { path = "../os-ui" }
+os-theme = { path = "../os-theme" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-time = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Controls", "Win32_System_LibraryLoader"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.13", features = ["xinput"] }
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry", "NSString", "NSArray", "NSData", "NSEnumerator", "NSObject", "NSURL"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "objc2-core-foundation", "objc2-quartz-core", "NSResponder", "NSView", "NSEvent", "NSWindow", "NSPanel", "NSScreen", "NSTrackingArea", "NSCursor", "NSGraphics", "NSPasteboard", "NSDragging"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "CFRunLoop", "CFString", "CFCGTypes"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGImage", "CGDataProvider", "CGColorSpace", "CGRemoteOperation", "CGDirectDisplay", "CGError", "libc"] }
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer", "CATransaction"] }

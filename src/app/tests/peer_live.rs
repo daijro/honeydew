@@ -340,7 +340,7 @@ fn presence_is_in_song_terms_and_shows_the_others_through_this_view() {
     let (tips, outlines, _) = marks(&rig, bob);
     assert!(tips.len() == 1 && (tips[0] - at).length() < 1.0, "{tips:?}");
     assert!(
-        outlines.len() == 1 && (outlines[0].top() - 3.5 * U).abs() < 1.0,
+        outlines.len() == 1 && (outlines[0].top() - RULER - 2.0 * U).abs() < 1.0,
         "{outlines:?}"
     );
     for other in [1, 2] {

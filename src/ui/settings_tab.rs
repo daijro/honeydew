@@ -1,7 +1,10 @@
 //! The SETTINGS tab of the main menu: one scrolling column of section headers and rows, editing a [`Settings`].
 //!
 //! The row pitch is 2 U, a control row 1.5 U (centred in its pitch), and the content column is the page's left + 2 U,
-//! wide W - 4 U (the page is the menu panel: the tab hands this its panel-wide page). The list scrolls in whole rows.
+//! wide W - 4 U, or 0.5 U in from each side on a page under 20 U wide (the page is the menu panel: the tab hands this
+//! its panel-wide page). The list scrolls in whole rows, with a thin `text` scrollbar (t wide, α 0.5) 0.25 U from the
+//! page's right edge while it can scroll. Section headers are FontSize 4; each one after the first has a divider (1 px
+//! `text` α 0.18) centred in the top 0.5 U of its row.
 //! Every toggle is the label-right pill in a rect that starts 0.5 U left of the column and ends at its right edge: the
 //! rect is a `menuFill` bar (x 1.15 while pressed), the pill is centred 0.75 U in from its left, and the label runs
 //! from 1.7 U to 0.2 U short of the right edge, 10 pt, always in `text`, drawn plain (it overflows when long). The
@@ -12,14 +15,14 @@
 //! `Restore default settings`, ...) are `text` fills, the light ones; `Scan Bluetooth MIDI Devices` is a `menuFill`
 //! fill, so it reads as plain text with an icon.
 //!
-//! Headers are 12 pt text (the popup's section font); wide light buttons are 6 × 1 U (at most half the column) and
+//! Wide light buttons are 6 × 1 U (at most half the column) and
 //! full-width ones 1 U tall; the metronome row is a 1 U label line with the level in percent on the right and the
 //! slider under it. Rows the app cannot use yet (MIDI, Bluetooth, nearby sharing, `Share logs`, cloud backup) are drawn
 //! at the disabled 30 % alpha and take no input. The slider's colour is `text`, the root context colour. Any other
 //! label has the room left of its control, and uses shrink drawing in it (down a point at a time to 6 pt, then a
 //! middle ellipsis keeping 5 tail characters): plain drawing would run it under its control at large UI scales on a
-//! narrow screen. Where the label fits, as on the 20 U panel, it is drawn whole at its own size. There is no scroll
-//! bar: the list scrolls by wheel or drag.
+//! narrow screen. Where the label fits, as on the 20 U panel, it is drawn whole at its own size. The list scrolls by
+//! wheel or drag.
 //!
 //! `Input device:` is live: its popup is the MIDI device [`menu`] over the ports the app lends the tab
 //! ([`SettingsTab::set_midi_ports`]), the pick is stored as the menu label in `Settings::midi_device`, and opening the
@@ -44,7 +47,7 @@ use eframe::egui::{
 };
 
 use crate::icons::{IconId, draw_icon};
-use crate::metrics::{FontSize, UI_SCALE_FACTORS, ui_scale_menu_order};
+use crate::metrics::{FontSize, UI_SCALE_RANGE};
 use crate::midi::device::menu as midi_menu;
 use crate::settings::{SOUND_MODES, Settings};
 use crate::theme::{DISABLED_ALPHA, builtin_themes};
@@ -60,8 +63,16 @@ use crate::ui::{UiCtx, primary_down_live};
 const ROW_PITCH: f32 = 2.0;
 /// A control row's height, centred in its pitch.
 const ROW_H: f32 = 1.5;
-/// The column is this far in from each side of the page.
+/// The column is this far in from each side of the page; on a page under [`WIDE_PAGE`], [`NARROW_INSET`].
 const COLUMN_INSET: f32 = 2.0;
+const WIDE_PAGE: f32 = 20.0;
+const NARROW_INSET: f32 = 0.5;
+/// A header's divider: centred in this strip at the top of its row, `text` at this alpha.
+const DIVIDER_STRIP: f32 = 0.5;
+const DIVIDER_ALPHA: f32 = 0.18;
+/// The scrollbar's distance from the page's right edge, and its `text` alpha.
+const SCROLLBAR_RIGHT: f32 = 0.25;
+const SCROLLBAR_ALPHA: f32 = 0.5;
 /// A toggle's rect starts this far left of the column.
 const TOGGLE_OUT: f32 = 0.5;
 /// The latency toggle is this much shorter, for `Calibrate`, which is this wide.
@@ -106,6 +117,10 @@ enum Kind {
     Scan,
     /// The metronome level: the label line and a full-width slider.
     Level,
+    /// `Scaling:`: the UI scale's label line and a full-width slider, 60 % to 200 %, applied when it is let go.
+    Scaling,
+    /// The note under `Scaling:` while the window width limits the scale; the row is left out otherwise.
+    ScaleLimit,
     /// A disabled full-width light button.
     DisabledButton,
     /// `Restore default settings`: a full-width light button asking Yes / No before it resets.
@@ -150,7 +165,8 @@ const PLUGIN_ROWS: [Row; 4] = [
 enum Choice {
     SoundMode,
     Theme,
-    Scaling,
+    /// `Animation`: `Full`, `Reduced` (no animations) or `Minimal` (no scroll inertia either).
+    Animation,
 }
 
 struct Row {
@@ -163,7 +179,7 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 }
 
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 36] = {
+const ROWS: [Row; 38] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -198,7 +214,9 @@ const ROWS: [Row; 36] = {
         row("Metronome level", Level),
         row("User interface:", Header),
         row("Theme:", Dropdown(Choice::Theme)),
-        row("Scaling:", Dropdown(Choice::Scaling)),
+        row("Scaling:", Scaling),
+        row("Scale is currently limited to", ScaleLimit),
+        row("Animation:", Dropdown(Choice::Animation)),
         row("Application:", Header),
         row("Enable ghost notes", Toggle(|s| &mut s.ghost_notes)),
         row(
@@ -281,6 +299,10 @@ pub struct SettingsTab {
     plugin_action: Option<PluginAction>,
     /// The plugin rows show: the app hosts plugins (the desktop). The caller sets it.
     pub plugins: bool,
+    /// `Scaling:`'s slider position (0 = 60 %, 1 = 200 %) while it is held: shown, applied when let go.
+    scaling: Option<f32>,
+    /// A new scale was applied: the next frame, at the new `U`, scrolls `Scaling:` back into view.
+    reveal_scaling: bool,
 }
 
 impl SettingsTab {
@@ -344,6 +366,10 @@ impl SettingsTab {
         let m = cx.m;
         let rows = self.rows();
         let pitch = m.u(ROW_PITCH);
+        // The scale note's row takes no room while the scale is not limited.
+        let limited = m.scale_limited_to().is_some();
+        let shown = |row: &Row| limited || !matches!(row.kind, Kind::ScaleLimit);
+        let slots = rows.iter().filter(|r| shown(r)).count();
         // Drags and the wheel move the list; widgets that sense clicks let drags through to it. It scrolls in whole rows.
         let id = Id::new("settings_tab").with("scroll");
         let drag = ui.interact(page, id, Sense::drag());
@@ -351,19 +377,57 @@ impl SettingsTab {
         if ui.rect_contains_pointer(page) {
             moved += ui.input(|i| i.smooth_scroll_delta.y);
         }
-        let hidden_rows = ((rows.len() as f32 * pitch - page.height()) / pitch).ceil();
+        let hidden_rows = ((slots as f32 * pitch - page.height()) / pitch).ceil();
+        if std::mem::take(&mut self.reveal_scaling) {
+            // `Scaling:` back in view after the new scale, 1.5 U clear of the page's ends.
+            let at = rows
+                .iter()
+                .take_while(|r| r.label != "Scaling:")
+                .filter(|r| shown(r));
+            let y = at.count() as f32 * pitch;
+            let margin = m.u(1.5);
+            self.offset = (self.offset)
+                .min(y - margin)
+                .max(y + pitch + margin - page.height());
+        }
         self.offset = (self.offset - moved).clamp(0.0, hidden_rows.max(0.0) * pitch);
-        let top = page.top() - (self.offset / pitch).round() * pitch;
-        let column = page.shrink2(vec2(m.u(COLUMN_INSET), 0.0)).x_range();
+        let scrolled = (self.offset / pitch).round() * pitch;
+        let top = page.top() - scrolled;
+        let inset = if page.width() < m.u(WIDE_PAGE) {
+            NARROW_INSET
+        } else {
+            COLUMN_INSET
+        };
+        let column = page.shrink2(vec2(m.u(inset), 0.0)).x_range();
         let outer_clip = ui.clip_rect();
         ui.set_clip_rect(outer_clip.intersect(page));
+        let mut y = top - pitch;
         for (index, row) in rows.iter().enumerate() {
-            let y = top + index as f32 * pitch;
+            if !shown(row) {
+                continue;
+            }
+            y += pitch;
             let slot = Rect::from_x_y_ranges(column, y..=y + pitch);
             // The toggle's rect reaches out of the column: the page is what is visible.
             if ui.is_rect_visible(slot.expand2(vec2(m.u(TOGGLE_OUT), 0.0))) {
                 self.row(ui, cx, index, row, slot, settings);
             }
+        }
+        let content = slots as f32 * pitch;
+        if content > page.height() {
+            let t = m.t();
+            let h = (page.height() * page.height() / content).max(m.u(0.5));
+            let y =
+                page.top() + (page.height() - h) * scrolled / (content - page.height()).max(1.0);
+            let x = page.right() - m.u(SCROLLBAR_RIGHT) - t;
+            let thumb = Rect::from_min_size(Pos2::new(x, y.min(page.bottom() - h)), vec2(t, h));
+            let ink = cx
+                .theme
+                .colors
+                .text
+                .to_color32()
+                .gamma_multiply(SCROLLBAR_ALPHA);
+            ui.painter().rect_filled(thumb, 0.0, ink);
         }
         ui.set_clip_rect(outer_clip);
         self.popup(ui, cx, settings);
@@ -382,7 +446,7 @@ impl SettingsTab {
         let (m, colors) = (cx.m, &cx.theme.colors);
         // Headers and the metronome row take the whole slot; the other rows are a control row, centred in it.
         let r = match row.kind {
-            Kind::Header | Kind::Level => slot,
+            Kind::Header | Kind::Level | Kind::Scaling => slot,
             _ => Rect::from_center_size(slot.center(), vec2(slot.width(), m.u(ROW_H))),
         };
         let text = colors.text.to_color32();
@@ -431,7 +495,15 @@ impl SettingsTab {
         // At most half the row, so that the label keeps room at large scales.
         let button_rect = right(BUTTON_W.min(r.width() / 2.0 / m.u(1.0)), BUTTON_H);
         match row.kind {
-            Kind::Header => label(ui, r, FontSize::Pt12),
+            Kind::Header => {
+                if index > 0 {
+                    let y = m.floor_px(r.top() + m.u(DIVIDER_STRIP / 2.0));
+                    let line = Rect::from_x_y_ranges(r.x_range(), y..=y + 1.0 / m.ppp());
+                    ui.painter()
+                        .rect_filled(line, 0.0, text.gamma_multiply(DIVIDER_ALPHA));
+                }
+                label(ui, r, FontSize::Pt18)
+            }
             Kind::Toggle(_) | Kind::FixedToggle(_) | Kind::Latency => {
                 // The rect starts 0.5 U left of the column and ends at its right edge; the latency one is 2.5 U
                 // shorter, for `Calibrate`, which is 2.5 U wide at the right end, only while the toggle is OFF
@@ -532,6 +604,44 @@ impl SettingsTab {
                 );
                 let c = level_control(id, body, text);
                 h_slider(ui, cx, &c, &mut s.metronome_level, |_| String::new());
+            }
+            Kind::Scaling => {
+                // Held, the slider shows its value; let go (or reset), the scale applies at once.
+                let (lo, hi) = (*UI_SCALE_RANGE.start() as f32, *UI_SCALE_RANGE.end() as f32);
+                let stored = (s.ui_scale as f32 - lo) / (hi - lo);
+                let mut v = self.scaling.unwrap_or(stored);
+                let (line, body) = r.split_top_bottom_at_y(r.top() + m.u(LEVEL_LABEL_H));
+                let reset = (crate::metrics::DEFAULT_UI_SCALE as f32 - lo) / (hi - lo);
+                let c = Control {
+                    bipolar: false,
+                    menu: ParamMenu::Unbound,
+                    ..Control::new(id, body, "", text, reset)
+                };
+                let response = h_slider(ui, cx, &c, &mut v, |_| String::new());
+                if response.is_pointer_button_down_on() {
+                    self.scaling = Some(v);
+                } else if self.scaling.take().is_some() || v != stored {
+                    let percent = (lo + v.clamp(0.0, 1.0) * (hi - lo)).round() as u32;
+                    self.reveal_scaling |= percent != s.ui_scale;
+                    s.ui_scale = percent;
+                }
+                let (room, percent_room) =
+                    line.split_left_right_at_x(line.right() - m.u(PERCENT_W));
+                label(ui, room, FontSize::Pt10);
+                let percent = format!("{:.0} %", lo + v.clamp(0.0, 1.0) * (hi - lo));
+                plain(
+                    ui,
+                    percent_room,
+                    &percent,
+                    FontSize::Pt10,
+                    Align2::RIGHT_CENTER,
+                );
+            }
+            Kind::ScaleLimit => {
+                let limit = m.scale_limited_to().unwrap_or(s.ui_scale);
+                let note = format!("Scale is currently limited to {limit}%");
+                let (pt, accent) = (FontSize::Pt10.points() as u8, colors.accent.to_color32());
+                shrink(ui.painter(), m, r, Align2::LEFT_CENTER, &note, pt, accent);
             }
             Kind::DisabledButton | Kind::Restore | Kind::RestoreDemos | Kind::Credits => {
                 let rect = Rect::from_center_size(r.center(), vec2(r.width(), m.u(BUTTON_H)));
@@ -649,10 +759,12 @@ impl SettingsTab {
                     s.midi_device = pick.label().to_owned();
                 }
             }
-            // What the first run did stays done: the demos are not written over the user's copies at the next start.
+            // What the first run did stays done: the demos are not written over the user's copies at the next start,
+            // and What's New does not show again.
             (Menu::Restore, Some(CONFIRM_YES)) => {
                 *s = Settings {
-                    demo_songs_restored: s.demo_songs_restored,
+                    demo_songs_version: s.demo_songs_version,
+                    whats_new_seen: std::mem::take(&mut s.whats_new_seen),
                     ..Settings::default()
                 }
             }
@@ -690,9 +802,10 @@ impl Choice {
                 .into_iter()
                 .map(|t| (t.id as usize, t.name))
                 .collect(),
-            Choice::Scaling => ui_scale_menu_order()
+            Choice::Animation => ["Full", "Reduced", "Minimal"]
                 .into_iter()
-                .map(|i| (i, format!("{}%", (UI_SCALE_FACTORS[i] * 100.0).round())))
+                .map(str::to_owned)
+                .enumerate()
                 .collect(),
         }
     }
@@ -702,7 +815,8 @@ impl Choice {
         match self {
             Choice::SoundMode => usize::from(s.sound_mode),
             Choice::Theme => s.theme as usize,
-            Choice::Scaling => s.ui_scale_index,
+            Choice::Animation if !s.inertia => 2,
+            Choice::Animation => usize::from(!s.animations),
         }
     }
 
@@ -711,7 +825,7 @@ impl Choice {
         match self {
             Choice::SoundMode => s.sound_mode = value as u8,
             Choice::Theme => s.theme = value as u32,
-            Choice::Scaling => s.ui_scale_index = value,
+            Choice::Animation => (s.animations, s.inertia) = (value == 0, value != 2),
         }
     }
 
@@ -780,7 +894,7 @@ mod tests {
     use eframe::egui::{self, Event, PointerButton, RawInput, pos2, vec2};
 
     use super::*;
-    use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics, UI_SCALE_FACTORS};
+    use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
     use crate::theme::theme_by_id;
 
     /// The index of the row labelled `label`.
@@ -811,6 +925,8 @@ mod tests {
                 "User interface:",
                 "Theme:",
                 "Scaling:",
+                "Scale is currently limited to",
+                "Animation:",
                 "Application:",
                 "Enable ghost notes",
                 "Show key names on keyboard and piano roll",
@@ -837,7 +953,7 @@ mod tests {
             let header = matches!(r.kind, Kind::Header);
             let dropdown = matches!(
                 r.kind,
-                Kind::Dropdown(_) | Kind::MidiDropdown | Kind::FixedDropdown(_)
+                Kind::Dropdown(_) | Kind::MidiDropdown | Kind::FixedDropdown(_) | Kind::Scaling
             );
             assert_eq!(r.label.ends_with(':'), header || dropdown, "{}", r.label);
         }
@@ -889,20 +1005,15 @@ mod tests {
             ]
         );
         assert_eq!(values(Choice::Theme), (0..9).collect::<Vec<_>>());
-        assert_eq!(
-            labels(Choice::Scaling),
-            [
-                "60%", "75%", "90%", "100%", "110%", "125%", "150%", "175%", "200%"
-            ]
-        );
-        assert_eq!(values(Choice::Scaling), [8, 0, 4, 1, 5, 2, 3, 6, 7]);
+        assert_eq!(labels(Choice::Animation), ["Full", "Reduced", "Minimal"]);
+        assert_eq!(values(Choice::Animation), [0, 1, 2]);
         // The buttons show the current item.
         let s = Settings::default();
         assert_eq!(Choice::SoundMode.label(&s), "NATIVE");
         assert_eq!(Choice::Theme.label(&s), "Classic Gray");
-        assert_eq!(Choice::Scaling.label(&s), "100%");
+        assert_eq!(Choice::Animation.label(&s), "Full");
         let mut s = Settings::default();
-        for c in [Choice::SoundMode, Choice::Theme, Choice::Scaling] {
+        for c in [Choice::SoundMode, Choice::Theme, Choice::Animation] {
             let (value, label) = c.items()[1].clone();
             c.set(&mut s, value);
             assert_eq!(c.get(&s), value);
@@ -913,17 +1024,18 @@ mod tests {
 
     #[test]
     fn the_popup_marks_the_current_item() {
+        // Inertia off is `Minimal`, whatever the animations.
         let s = Settings {
-            ui_scale_index: 3,
+            inertia: false,
             ..Settings::default()
         };
-        let items = popup_items(Menu::Choice(Choice::Scaling), &s, &[]);
+        let items = popup_items(Menu::Choice(Choice::Animation), &s, &[]);
         let current: Vec<_> = items
             .iter()
             .filter(|i| i.current)
             .map(|i| &*i.label)
             .collect();
-        assert_eq!(current, ["150%"]);
+        assert_eq!(current, ["Minimal"]);
         assert!(
             items
                 .iter()
@@ -944,8 +1056,8 @@ mod tests {
         width: f32,
         height: f32,
         ppp: f32,
-        /// The UI-scale index feeding `U`.
-        scale: usize,
+        /// The UI scale feeding `U`, in percent.
+        scale: u32,
         time: f64,
         /// `show` reported a change on some frame since the last [`Rig::take_changed`].
         changed: bool,
@@ -973,7 +1085,7 @@ mod tests {
                 width: 1170.0,
                 height,
                 ppp: 1.0,
-                scale: DEFAULT_UI_SCALE_INDEX,
+                scale: DEFAULT_UI_SCALE,
                 time: 0.0,
                 changed: false,
                 left: 585.0,
@@ -987,7 +1099,7 @@ mod tests {
 
         /// The tab `tab_u` U wide at pixels-per-point `ppp` and UI-scale index `scale`, filling a screen as wide
         /// (the main menu's panel is min(20 U, screen width)), tall enough to show every row.
-        fn at(ppp: f32, scale: usize, tab_u: f32) -> Self {
+        fn at(ppp: f32, scale: u32, tab_u: f32) -> Self {
             let u = Metrics::from_pixels_per_point(ppp, scale).u(1.0);
             let mut rig = Self::new();
             (rig.ppp, rig.scale, rig.width, rig.left) = (ppp, scale, tab_u * u, 0.0);
@@ -1132,7 +1244,7 @@ mod tests {
     }
 
     /// Pixel densities and tab widths (in U) the layout is checked at: 200 % is where the labels are widest.
-    const SCALE_200: usize = 7;
+    const SCALE_200: u32 = 200;
     const NARROW_U: f32 = 9.0;
     const WIDE_U: f32 = 20.0;
 
@@ -1185,7 +1297,8 @@ mod tests {
         // The Rig installs no app font, so this runs on egui's default font: the glyph widths differ from the app
         // font's, and the test pins only the shape of the result (head, `...`, 5-character tail, the 6 pt floor),
         // never the exact characters kept in the middle.
-        let rig = Rig::at(1.0, SCALE_200, NARROW_U);
+        // A 6 U page: a 5 U column.
+        let rig = Rig::at(1.0, SCALE_200, 6.0);
         let long = "Scan Bluetooth MIDI Devices";
         let control = rig.rect_of(row_id(index(long)));
         let (label, shown) = rig.label_rect(control.y_range().into());
@@ -1203,7 +1316,7 @@ mod tests {
     #[test]
     fn labels_are_drawn_whole_at_full_size_when_the_tab_is_wide() {
         // The menu panel is 20 U at most; every label fits its room there at 100 % and 200 % alike.
-        for (ppp, scale) in [(1.0, DEFAULT_UI_SCALE_INDEX), (2.0, SCALE_200)] {
+        for (ppp, scale) in [(1.0, DEFAULT_UI_SCALE), (2.0, SCALE_200)] {
             let rig = Rig::at(ppp, scale, WIDE_U);
             let sizes: Vec<_> = rig
                 .shapes
@@ -1226,7 +1339,11 @@ mod tests {
             for r in ROWS.iter().filter(|r| {
                 !matches!(
                     r.kind,
-                    Kind::Header | Kind::DisabledButton | Kind::Restore | Kind::ContentFolder
+                    Kind::Header
+                        | Kind::DisabledButton
+                        | Kind::Restore
+                        | Kind::ContentFolder
+                        | Kind::ScaleLimit
                 )
             }) {
                 assert_eq!(
@@ -1236,14 +1353,14 @@ mod tests {
                     r.label
                 );
             }
-            // The headers are 12 pt: the height a 12 pt galley has in this context, not merely taller than ten.
+            // The headers are 18 pt (FontSize 4): the height an 18 pt galley has in this context.
             let m = Metrics::from_pixels_per_point(ppp, scale);
-            let twelve = rig.ctx.fonts_mut(|f| {
-                f.layout_no_wrap("Hg".into(), m.font_id(FontSize::Pt12), Color32::WHITE)
+            let eighteen = rig.ctx.fonts_mut(|f| {
+                f.layout_no_wrap("Hg".into(), m.font_id(FontSize::Pt18), Color32::WHITE)
                     .size()
                     .y
             });
-            assert!(twelve > ten, "ppp {ppp}: 12 pt {twelve} vs 10 pt {ten}");
+            assert!(eighteen > ten, "ppp {ppp}: 18 pt {eighteen} vs 10 pt {ten}");
             // `Original content:` (BYO) is the last section, below this rig's visible height; its row has its own
             // test (`texts.contains("Original content:")`).
             for r in ROWS
@@ -1252,8 +1369,8 @@ mod tests {
             {
                 assert_eq!(
                     height(r.label),
-                    twelve,
-                    "ppp {ppp}: `{}` not at 12 pt",
+                    eighteen,
+                    "ppp {ppp}: `{}` not at 18 pt",
                     r.label
                 );
             }
@@ -1298,9 +1415,9 @@ mod tests {
     }
 
     /// The `(config)` rigs the settings geometry is checked at: ppp 1 and 2, and 200 % at ppp 2.
-    const CONFIGS: [(f32, usize); 3] = [
-        (1.0, DEFAULT_UI_SCALE_INDEX),
-        (2.0, DEFAULT_UI_SCALE_INDEX),
+    const CONFIGS: [(f32, u32); 3] = [
+        (1.0, DEFAULT_UI_SCALE),
+        (2.0, DEFAULT_UI_SCALE),
         (2.0, SCALE_200),
     ];
 
@@ -1583,7 +1700,7 @@ mod tests {
         // with `text`; `Scan Bluetooth MIDI Devices` is filled with `menuFill`, so it reads as plain text with an icon.
         let colors = theme_by_id(0).colors;
         let text = colors.text.to_color32();
-        for (ppp, scale) in [(1.0, DEFAULT_UI_SCALE_INDEX), (2.0, DEFAULT_UI_SCALE_INDEX)] {
+        for (ppp, scale) in [(1.0, DEFAULT_UI_SCALE), (2.0, DEFAULT_UI_SCALE)] {
             let rig = Rig::at(ppp, scale, WIDE_U);
             let u = Metrics::from_pixels_per_point(ppp, scale).u(1.0);
             let fills = fills(&rig);
@@ -1740,7 +1857,8 @@ mod tests {
         let toggle = rig.rect_of(row_id(index(label)));
         assert_eq!(toggle, on, "the toggle is as short with `Calibrate` hidden");
         assert_eq!(calibrate.width(), 2.5 * 32.0);
-        assert_eq!(calibrate.right(), rig.width - 2.0 * 32.0);
+        // The rig's page is under 20 U wide: the column is 0.5 U in.
+        assert_eq!(calibrate.right(), rig.width - 0.5 * 32.0);
         assert_eq!(calibrate.left(), toggle.right());
         assert_eq!(calibrate.center().y, toggle.center().y);
         assert_eq!(calibrate.height(), 32.0);
@@ -1776,10 +1894,13 @@ mod tests {
         assert!(rig.take_changed());
         assert_eq!(rig.tab.menu, None);
 
-        rig.click_row("Scaling:");
-        let pct150 = rig.rect_of(popup_id().with((0_usize, 6_usize))).center();
-        rig.click(pct150);
-        assert_eq!(UI_SCALE_FACTORS[rig.settings.ui_scale_index], 1.5);
+        rig.click_row("Animation:");
+        let minimal = rig.rect_of(popup_id().with((0_usize, 2_usize))).center();
+        rig.click(minimal);
+        assert_eq!(
+            (rig.settings.animations, rig.settings.inertia),
+            (false, false)
+        );
 
         rig.click_row("Sound mode:");
         let safe = rig.rect_of(popup_id().with((0_usize, 1_usize))).center();
@@ -1993,7 +2114,7 @@ mod tests {
     fn a_long_device_name_stays_inside_its_button() {
         let long = "Launchkey Mini MK3:Launchkey Mini MK3 LK Mini MIDI In";
         for ppp in [1.0, 2.0] {
-            for (scale, tab_u) in [(DEFAULT_UI_SCALE_INDEX, WIDE_U), (SCALE_200, NARROW_U)] {
+            for (scale, tab_u) in [(DEFAULT_UI_SCALE, WIDE_U), (SCALE_200, NARROW_U)] {
                 let mut rig = Rig::at(ppp, scale, tab_u);
                 rig.settings.midi_device = long.into();
                 rig.frame(vec![]);
@@ -2013,7 +2134,7 @@ mod tests {
             }
         }
         // A name that fits is drawn whole, centred.
-        let mut rig = Rig::at(1.0, DEFAULT_UI_SCALE_INDEX, WIDE_U);
+        let mut rig = Rig::at(1.0, DEFAULT_UI_SCALE, WIDE_U);
         rig.settings.midi_device = "Keys 49".into();
         rig.frame(vec![]);
         let button = rig.rect_of(row_id(index("Input device:")));
@@ -2106,14 +2227,16 @@ mod tests {
     fn restore_default_settings_keeps_the_demo_songs_restored() {
         let mut rig = Rig::new();
         rig.settings = Settings {
-            demo_songs_restored: true,
+            demo_songs_version: 2,
+            whats_new_seen: "5.0".into(),
             ..edited()
         };
         rig.click_row("Restore default settings");
         let yes = rig.rect_of(popup_id().with(YES)).center();
         rig.click(yes);
         let kept = Settings {
-            demo_songs_restored: true,
+            demo_songs_version: 2,
+            whats_new_seen: "5.0".into(),
             ..Settings::default()
         };
         assert_eq!(rig.settings, kept);
@@ -2231,6 +2354,33 @@ mod tests {
     }
 
     #[test]
+    fn the_scaling_slider_shows_its_value_while_held_and_applies_it_when_let_go() {
+        let mut rig = Rig::new();
+        let slider = rig.rect_of(row_id(index("Scaling:")));
+        // 60 % at the left end of the track (1 U shorter than the slider) to 200 % at the right: 100 % is 2/7 along.
+        let track = slider.width() - 32.0;
+        let from = slider.center();
+        rig.frame(vec![Event::PointerMoved(from)]);
+        rig.button(from, true);
+        let to = from + vec2(track * 0.25, 0.0);
+        for k in 1..=4 {
+            rig.frame(vec![Event::PointerMoved(
+                from + (to - from) * k as f32 / 4.0,
+            )]);
+        }
+        // Held: shown, not applied.
+        assert!(
+            rig.texts().contains(&"135 %".to_owned()),
+            "{:?}",
+            rig.texts()
+        );
+        assert_eq!(rig.settings.ui_scale, 100);
+        rig.button(to, false);
+        assert_eq!(rig.settings.ui_scale, 135);
+        assert!(rig.take_changed());
+    }
+
+    #[test]
     fn the_full_width_level_slider_follows_the_pointer_over_its_whole_track() {
         // v += d / L, L the track length, so the long track needs a long drag: 4 U, the old kit's full range, is only a
         // fraction of it.
@@ -2285,7 +2435,7 @@ mod tests {
     #[test]
     fn the_original_content_rows_show_the_folder_and_open_it_on_the_desktop_only() {
         let folder = std::path::PathBuf::from("/home/me/.local/share/honeydew/Original Content");
-        let mut rig = Rig::at(1.0, DEFAULT_UI_SCALE_INDEX, 20.0);
+        let mut rig = Rig::at(1.0, DEFAULT_UI_SCALE, 20.0);
         // Without a content folder (the web) the rows are not there.
         assert!(
             !rig.texts()

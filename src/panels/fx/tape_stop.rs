@@ -294,14 +294,14 @@ mod tests {
     use eframe::egui::{self, Context, Pos2, RawInput, Shape};
 
     use super::*;
-    use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+    use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
     use crate::params::menu_value;
     use crate::theme::theme_by_id;
 
     const U: f32 = 32.0;
 
     fn metrics() -> Metrics {
-        Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX)
+        Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE)
     }
 
     /// The shapes the overlay draws for control `#n` in `rect` at U = 32.

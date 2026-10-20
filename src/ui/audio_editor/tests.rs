@@ -21,9 +21,10 @@ use crate::ui::offscreen::{Offscreen, SCREEN, metrics};
 use crate::ui::piano_roll::notes::auto_grid;
 use crate::ui::views::{self, AppCtx, SongEdit};
 
-/// The editor's rect in the rig: ruler 0..48, grid x 50..1170 and y 48..340, value area y 64..324 (V = 260).
+/// The editor's rect in the rig: its ruler from a little above the screen's top down to y 48 (so that all below it
+/// lies on whole points), grid x 50..1170 and y 48..340, value area y 64..324 (V = 260).
 const RECT: Rect = Rect {
-    min: pos2(0.0, 0.0),
+    min: pos2(0.0, 48.0 - 52.0),
     max: pos2(1170.0, 340.0),
 };
 const AT: At = (1, 0, 1);
@@ -204,16 +205,19 @@ fn at_beat_0_the_lines_left_half_shows_in_the_gap_after_the_value_column() {
         _ => None,
     });
     let (rect, clip) = line.expect("the line at tick 0");
-    assert_eq!((rect.center().x, rect.width()), (f.grid.left(), 4.0));
-    let shown = rect.intersect(clip);
     assert_eq!(
-        (shown.left(), shown.right()),
-        (f.column.right(), rect.right())
+        crate::ui::timeline::testing::line_x(rect, 1.0),
+        f.grid.left()
     );
+    // Clipped at the column's right edge, so its left half shows left of the grid.
+    assert_eq!(clip.left(), f.column.right());
+    let shown = rect.intersect(clip);
+    assert!(shown.left() < f.grid.left(), "{shown:?}");
+    assert_eq!(shown.right(), rect.right());
 }
 
-/// The shared playhead line (the audio editor uses the automation grid): 2t = 4 points of `text` down the grid at the
-/// playhead, stopped as well as playing.
+/// The shared playhead line (the audio editor uses the automation grid): `text` down the grid at the playhead, stopped
+/// as well as playing.
 #[test]
 fn the_playhead_line_shows_stopped_and_playing() {
     let text = crate::theme::theme_by_id(0).colors.text.to_color32();
@@ -227,25 +231,24 @@ fn the_playhead_line_shows_stopped_and_playing() {
         rig.run(vec![]);
         let grid = frame().grid;
         let lines: Vec<Rect> = (rig.rects(text).into_iter())
-            .filter(|r| r.width() == 4.0 && r.y_range() == grid.y_range())
+            .filter(|r| r.width() < 32.0 && r.y_range() == grid.y_range())
             .collect();
         assert_eq!(lines.len(), 1, "playing {playing}");
     }
 }
 
-/// The playhead disc fades as the drum editor's (`timeline::knob_shown`, through `timeline::PlayheadKnob`): out while
+/// The play box fades as the drum editor's (`timeline::knob_shown`, through `timeline::PlayheadKnob`): out while
 /// playing, so that only the line shows, and back in once stopped.
 #[test]
-fn the_playhead_disc_fades_out_while_playing_and_back_in_stopped() {
-    let text = crate::theme::theme_by_id(0).colors.text.to_color32();
+fn the_play_box_fades_out_while_playing_and_back_in_stopped() {
+    let menu = crate::theme::theme_by_id(0).colors.menu_fill.to_color32();
     let mut rig = Rig::new(song(), None);
     let disc = |rig: &Rig| {
-        (rig.shapes.iter()).find_map(|s| match &s.shape {
-            Shape::Circle(c) if (c.radius - 29.4).abs() < 1e-3 => Some(c.fill),
-            _ => None,
-        })
+        crate::ui::timeline::testing::play_boxes(&rig.shapes)
+            .next()
+            .map(|b| b.fill)
     };
-    for (playing, fill) in [(false, Some(text)), (true, None), (false, Some(text))] {
+    for (playing, fill) in [(false, Some(menu)), (true, None), (false, Some(menu))] {
         rig.t = Transport {
             tick: 128,
             playing,
@@ -396,15 +399,19 @@ fn mono_is_centred_and_stereo_halves_at_a_quarter_and_three_quarters() {
 #[test]
 fn geometry_at_ppp_1_and_2() {
     for ppp in [1.0, 2.0] {
-        let m = Metrics::from_pixels_per_point(ppp, 1);
-        let f = Frame::new(RECT, &m);
+        let m = Metrics::from_pixels_per_point(ppp, 100);
+        let ruler = crate::ui::timeline::ruler_h(&m);
+        let f = Frame::new(RECT.with_min_y(48.0 - ruler), &m);
         // One column a device pixel across the grid.
         assert_eq!(pixel_columns(f.grid, &m), (50.0, (1120.0 * ppp) as usize));
-        // The stretch handle's box: 2 U, centred 1 U right of the end line, mid-grid.
-        assert_eq!(
-            stretch_box(&f, 306.0, &m),
-            Rect::from_center_size(pos2(338.0, 194.0), Vec2::splat(64.0))
-        );
+        // The sample-length handle: the end capsule from 0.15 U right of the end line, centred on the wave area; its
+        // box 2 U, centred on it.
+        let (h, px) = (stretch_handle(&f, 306.0, &m), 1.0 / ppp);
+        assert!((h.left() - (306.0 + 4.8)).abs() < 1e-3 && h.center().y == f.value.center().y);
+        assert!((h.width() - (13.44 + 2.0 * px)).abs() < 1e-3);
+        let touch = stretch_box(&f, 306.0, &m);
+        assert_eq!((touch.left(), touch.right()), (h.left(), 306.0 + 64.0));
+        assert_eq!((touch.center().y, touch.height()), (h.center().y, 64.0));
     }
 }
 
@@ -471,12 +478,13 @@ fn a_region_ops_envelope_part_follows_automation_s_rows() {
 #[test]
 fn a_stretch_sets_the_ratio_and_the_clip_resyncs_by_the_loop_rule() {
     // A 4-beat clip: L = 3 makes @28 = 3 beats, and the loop stays 4 (never below 4 or b, @8).
+    // A slot not stretched yet: the length turns SYNC on.
     let mut s = song();
-    slot(&mut s).file.stretch_mode = 1;
     let stretch = |len_beats, ratio| Action::Stretch { len_beats, ratio };
     assert!(apply(&mut s, AT, &stretch(3.0, 1.5)));
     let c = clip(&s);
-    assert_eq!(c.file.sample.as_ref().unwrap().file.stretch_ratio, 1.5);
+    let file = &c.file.sample.as_ref().unwrap().file;
+    assert_eq!((file.stretch_ratio, file.stretch_mode), (1.5, 1));
     assert_eq!((c.file.source_len_beats, c.loop_len_beats), (3.0, 4.0));
     // The next envelope edit keeps that loop.
     let point = vec![Point { tick: 0, value: 1 }];
@@ -658,15 +666,13 @@ fn a_long_press_marquees_and_copy_then_paste_adds_the_points() {
         rig.run(vec![]);
     }
     assert!(rig.ed.paste.is_some(), "Paste appears before release");
-    assert!(
-        rig.shapes
-            .iter()
-            .any(|s| matches!(&s.shape, Shape::Circle(c) if c.center == at))
-    );
+    let menu = egui::Id::new("audio_editor").with("paste");
+    let paste = crate::ui::insert::button(&rig.off.ctx, menu, 0).expect("the Paste menu");
+    assert!(paste.bottom() < at.y, "over the finger");
     assert_eq!(rig.take(), []);
     rig.button(at, false);
     assert_eq!(rig.take(), [], "the original lift does not paste");
-    rig.click(at);
+    rig.click(paste.center());
     // Tick 522 snaps to 512.
     let (want, _) = points::paste(&pts, &copied, 522.0, snap(), 65535);
     assert_eq!(want[2].tick, 512);
@@ -731,17 +737,12 @@ fn a_ruler_tap_seeks_before_the_content_end_and_stops_while_playing() {
 }
 
 #[test]
-fn the_stretch_handle_shows_on_a_stretched_slot_and_sets_the_length_on_release() {
-    // 1 s at 44.1 kHz and 120 BPM: 2 beats, the end line at 306.
+fn the_sample_length_handle_sets_the_length_in_one_edit_on_release() {
+    // 1 s at 44.1 kHz and 120 BPM: 2 beats, the end line at 306. Not stretched yet: the handle shows all the same.
     let one_s = || sample(44_100, vec![0.5; 44_100], None);
-    let rig = Rig::new(song(), Some(one_s()));
-    assert_eq!(rig.ed.handle, None, "only on a SYNC slot");
-    let mut s = song();
-    slot(&mut s).file.stretch_mode = 1;
-    let mut rig = Rig::new(s, Some(one_s()));
+    let mut rig = Rig::new(song(), Some(one_s()));
     let handle = rig.ed.handle.expect("the handle");
-    assert_eq!(handle.center(), pos2(338.0, 194.0));
-    // One beat right: L = 3 beats.
+    // One beat right: L = 3 beats, one edit at the release (none while dragged); SYNC goes on.
     rig.drag(handle.center(), handle.center() + vec2(128.0, 40.0));
     assert_eq!(
         rig.take(),
@@ -752,9 +753,10 @@ fn the_stretch_handle_shows_on_a_stretched_slot_and_sets_the_length_on_release()
     );
     let c = clip(&rig.song);
     assert_eq!((c.file.source_len_beats, c.loop_len_beats), (3.0, 4.0));
+    assert_eq!(c.file.sample.as_ref().unwrap().file.stretch_mode, 1);
     // Away and back in one drag: the ratio is the slot's, nothing goes out.
     let h = rig.ed.handle.unwrap().center();
-    assert_eq!(h, pos2(466.0, 194.0));
+    assert_eq!(h, handle.center() + vec2(128.0, 0.0));
     rig.run(vec![egui::Event::PointerMoved(h)]);
     rig.button(h, true);
     rig.run(vec![egui::Event::PointerMoved(h + vec2(100.0, 0.0))]);
@@ -1427,8 +1429,9 @@ fn a_copy_in_the_automation_editor_pastes_in_an_envelope_lane_and_back() {
 
     // The audio editor's VOL lane: a long press shows `Paste`; its tap pastes the copied point (full scale kept).
     both.tap(true, pos2(572.0, 200.0), true);
-    let paste = both.audio.paste.expect("Paste").0;
-    both.tap(true, paste, false);
+    let menu = egui::Id::new("audio_editor").with("paste");
+    let paste = crate::ui::insert::button(&both.off.ctx, menu, 0).expect("Paste");
+    both.tap(true, paste.center(), false);
     let (vol, _) = points::paste(&[], &copied, 522.0, snap(), 65535);
     assert_eq!(
         vol,
@@ -1457,7 +1460,9 @@ fn a_copy_in_the_automation_editor_pastes_in_an_envelope_lane_and_back() {
     assert_eq!(copied, [(4.0, 32768.0 / 65535.0)]);
     let finger = pos2(50.0 + 384.0, 300.0);
     both.tap(false, finger, true);
-    both.tap(false, finger, false);
+    let menu = egui::Id::new("automation_editor").with("paste");
+    let paste = crate::ui::insert::button(&both.off.ctx, menu, 0).expect("Paste");
+    both.tap(false, paste.center(), false);
     let (want, _) = points::paste(&auto, &copied, 384.0, snap(), 65534);
     assert_eq!(
         want[2],
@@ -1497,14 +1502,14 @@ fn the_audio_editors_wheel_zooms_the_time_on_the_ruler_and_on_the_grid() {
 }
 
 #[test]
-fn at_its_opening_4_u_a_beat_the_ruler_badges_every_bar_from_bar_2() {
-    // Every ruler follows the same law: at 4 U a beat s2 is one bar, so bar 2 has its badge, on the bar line 4 beats
+fn at_its_opening_4_u_a_beat_the_ruler_labels_every_bar() {
+    // Every ruler follows the same law: at 4 U a beat s2 is one bar, so bar 2 has its label, by the bar line 4 beats
     // (512 points at U = 32) right of bar 1's.
     let rig = Rig::new(song(), None);
-    let menu = crate::theme::theme_by_id(0).colors.menu_fill.to_color32();
+    let ink = (crate::theme::theme_by_id(0).colors.text.to_color32()).gamma_multiply(0.8);
     let labels = Offscreen::texts(&rig.shapes);
-    assert!(labels.contains(&("2".into(), menu)), "{labels:?}");
-    assert!(labels.contains(&("3".into(), menu)), "{labels:?}");
+    assert!(labels.contains(&("2".into(), ink)), "{labels:?}");
+    assert!(labels.contains(&("3".into(), ink)), "{labels:?}");
     let (two, three) = (text_at(&rig.shapes, "2"), text_at(&rig.shapes, "3"));
     assert!(((three.x - two.x) - 512.0).abs() < 1.0, "{two:?} {three:?}");
 }

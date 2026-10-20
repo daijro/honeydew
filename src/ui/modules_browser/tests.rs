@@ -1,14 +1,17 @@
 use super::*;
 
-/// The Modules browser's list: `Paste`, `Rack Preset`, then the sections. The NOTE EFFECT section's five entries are
-/// all the note effects of the registry.
+/// The Modules browser's list: `Paste`, `Rack Preset`, `Instrument`, then the sections. The NOTE EFFECT section's five entries are
+/// all the note effects of the registry. Lemon Reverb and Lemon Limiter are Honeydew's own (`honeydew_audio::lemon`), and
+/// Lemon Trio, Lemon Sampler and Lemon Parametric EQ its built-in plugins (`crate::plugins::builtin`).
 const SPEC: &[(&str, &[&str])] = &[
-    ("", &["Paste", "Rack Preset"]),
+    ("", &["Paste", "Rack Preset", "Instrument"]),
     (
         "SYNTH",
         &[
             "3x Osc",
+            "Lemon Trio",
             "DW Sampler",
+            "Lemon Sampler",
             "GMSynth",
             "MiniSynth",
             "Slicer",
@@ -19,7 +22,13 @@ const SPEC: &[(&str, &[&str])] = &[
     ),
     (
         "ECHO",
-        &["Reverb", "Reverb 2", "Tape Delay", "Trance Delay"],
+        &[
+            "Reverb",
+            "Reverb 2",
+            "Lemon Reverb",
+            "Tape Delay",
+            "Trance Delay",
+        ],
     ),
     (
         "LEVEL",
@@ -30,6 +39,7 @@ const SPEC: &[(&str, &[&str])] = &[
             "Gate",
             "Leveller",
             "Limiter",
+            "Lemon Limiter",
             "Multiband Compressor",
             "Waveshaper",
         ],
@@ -39,6 +49,7 @@ const SPEC: &[(&str, &[&str])] = &[
         &[
             "Comb Filter",
             "Equalizer",
+            "Lemon Parametric EQ",
             "Filter",
             "Graphic EQ",
             "Spacer",
@@ -80,9 +91,9 @@ fn names(rows: &[Row]) -> Vec<&'static str> {
     rows.iter().map(|r| r.name()).collect()
 }
 
-/// The list in the Modules picker's own ordering, `Category`.
+/// The list in the Modules picker's own ordering, `Category`, for a channel that takes instruments.
 fn rows(query: &str) -> Vec<Row> {
-    super::rows(query, ModuleOrdering::Category)
+    super::rows(query, ModuleOrdering::Category, true)
 }
 
 #[test]
@@ -125,7 +136,7 @@ fn every_current_effect_is_listed_once_and_legacy_ids_never() {
     }
     let mut listed_sorted = listed.clone();
     listed_sorted.sort();
-    let current: Vec<u16> = params::modules()
+    let current: Vec<u16> = (params::modules().chain(&params::LEMON_MODULES))
         .filter(|m| !m.legacy)
         .map(|m| m.id)
         .collect();
@@ -159,35 +170,46 @@ const SYNTH_IDS: [(&str, u16); 8] = [
 ];
 
 #[test]
-fn every_module_row_can_be_picked_the_synth_rows_only_where_an_instrument_goes() {
-    for row in rows("") {
-        if let Row::Item(e) = row {
-            let pick = |instruments| matches!(e.action(instruments), Some(BrowserAction::Pick(_)));
-            // Effects and note effects always; the SYNTH rows only into a channel that takes instruments.
-            let module = matches!(e, Entry::Module(_));
-            let synth = matches!(e, Entry::Synth(_));
-            assert_eq!(pick(true), module || synth, "{}", e.name());
-            assert_eq!(pick(false), module, "{}", e.name());
-        }
-    }
-    assert_eq!(
-        Entry::Module(47).action(false),
-        Some(BrowserAction::Pick(47))
-    );
+fn where_no_instrument_goes_the_list_leaves_out_instrument_the_synths_and_the_note_effects() {
+    // Each row picks its module; the actions are their own.
     for (name, id) in SYNTH_IDS {
         let entry = rows(name).into_iter().find_map(|r| match r {
             Row::Item(e @ Entry::Synth(_)) => Some(e),
             _ => None,
         });
         let entry = entry.unwrap_or_else(|| panic!("{name} not listed"));
-        assert_eq!(entry.action(true), Some(BrowserAction::Pick(id)), "{name}");
-        assert_eq!(entry.action(false), None, "{name}");
+        assert_eq!(entry.action(), BrowserAction::Pick(id), "{name}");
         // The id is the registry's instrument of that name.
         assert_eq!(params::module_spec(id).map(|s| s.display_name), Some(name));
     }
-    assert_eq!(Entry::Paste.action(false), Some(BrowserAction::Paste));
-    let rack_preset = Entry::RackPreset.action(false);
-    assert_eq!(rack_preset, Some(BrowserAction::RackPreset));
+    assert_eq!(Entry::Instrument.action(), BrowserAction::Instrument);
+    // Drums, audio, an effect track: the same list without `Instrument`, SYNTH and NOTE EFFECT, in both orderings.
+    for sort in [ModuleOrdering::Category, ModuleOrdering::AZ] {
+        let all = names(&super::rows("", sort, true));
+        let some = names(&super::rows("", sort, false));
+        let synths = SYNTH_IDS.map(|(name, _)| name);
+        let lemon = ["Lemon Trio", "Lemon Sampler"];
+        let notes = [
+            "NOTE EFFECT",
+            "Arpeggiator",
+            "Note Echo",
+            "Randomizer",
+            "Scale",
+            "Transpose",
+        ];
+        let gone = |n: &&str| {
+            *n == "Instrument"
+                || *n == "SYNTH"
+                || synths.contains(n)
+                || lemon.contains(n)
+                || notes.contains(n)
+        };
+        let kept: Vec<_> = all.iter().filter(|n| !gone(n)).copied().collect();
+        assert_eq!(some, kept, "{sort:?}");
+        assert!(all.contains(&"Instrument") && some.contains(&"Paste") && some.contains(&"Reverb"));
+    }
+    let gone = names(&super::rows("", ModuleOrdering::Category, false));
+    assert_eq!(&gone[..3], ["Paste", "Rack Preset", "ECHO"]);
 }
 
 #[test]
@@ -205,20 +227,30 @@ fn search_keeps_matching_entries_and_hides_empty_sections() {
     );
     assert_eq!(
         names(&rows("pa")),
-        ["Paste", "FILTER", "Spacer"],
+        ["Paste", "FILTER", "Lemon Parametric EQ", "Spacer"],
         "the actions are entries too"
     );
     assert_eq!(
         names(&rows("eq")),
-        ["FILTER", "Equalizer", "Graphic EQ", "Tuned EQ"]
+        [
+            "FILTER",
+            "Equalizer",
+            "Lemon Parametric EQ",
+            "Graphic EQ",
+            "Tuned EQ"
+        ]
     );
     assert_eq!(
         names(&rows("tr")),
         [
+            "Instrument",
             "SYNTH",
+            "Lemon Trio",
             "Transistor Bass",
             "ECHO",
             "Trance Delay",
+            "FILTER",
+            "Lemon Parametric EQ",
             "MISC",
             "Tremolo",
             "NOTE EFFECT",
@@ -347,7 +379,7 @@ fn paste_inserts_a_copy_with_a_fresh_id_where_a_pick_would_go() {
 use eframe::egui::epaint::ClippedShape;
 use eframe::egui::{self, Event, Key, Modifiers, PointerButton, RawInput, Shape, pos2, vec2};
 
-use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+use crate::metrics::DEFAULT_UI_SCALE;
 use crate::theme::theme_by_id;
 
 const SCREEN: Rect = Rect {
@@ -357,7 +389,7 @@ const SCREEN: Rect = Rect {
 
 /// `U` = 32 points at ppp 1.
 fn metrics() -> Metrics {
-    Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX)
+    Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE)
 }
 
 struct Rig {
@@ -589,19 +621,25 @@ fn the_rows_are_drawn_in_order_down_the_list() {
         .map(|t| rig.text_at(t).y)
         .collect();
     assert!(ys.windows(2).all(|w| w[1] > w[0]), "{ys:?}");
-    // One row per 1.25 U, the first at the top of the list.
-    assert_eq!(ys[0], list.top() + 20.0);
-    assert_eq!(ys[1] - ys[0], 40.0);
+    // One row per 1.5 U, the first at the top of the list.
+    assert_eq!(ys[0], list.top() + 24.0);
+    assert_eq!(ys[1] - ys[0], 48.0);
     // Rows below the list are not drawn.
     assert!(!rig.shows("Transpose"));
 }
 
 #[test]
 fn picking_an_effect_returns_its_id() {
-    let mut rig = Rig::new();
-    let at = rig.text_at("Tape Delay");
-    assert_eq!(rig.click(at), Some(BrowserAction::Pick(18)));
-    let mut rig = Rig::new();
+    // ECHO in view: the list scrolled 200 points.
+    let scrolled = || {
+        let mut rig = Rig::new();
+        rig.drag(pos2(200.0, 480.0), pos2(200.0, 280.0));
+        rig
+    };
+    let mut rig = scrolled();
+    let at = rig.text_at("Reverb 2");
+    assert_eq!(rig.click(at), Some(BrowserAction::Pick(35)));
+    let mut rig = scrolled();
     let at = rig.text_at("Reverb");
     assert_eq!(rig.click(at), Some(BrowserAction::Pick(32)));
 }
@@ -639,29 +677,6 @@ fn paste_is_always_enabled() {
     assert_eq!(rig.color("Paste"), text);
     let at = rig.text_at("Paste");
     assert_eq!(rig.click(at), Some(BrowserAction::Paste));
-}
-
-#[test]
-fn the_synth_rows_are_dimmed_and_inert_where_no_instrument_goes() {
-    let text = theme_by_id(0).colors.text.to_color32();
-    let dim = text.gamma_multiply(DISABLED_ALPHA);
-    let names = SYNTH_IDS.map(|(name, _)| name);
-    // The rows visible without scrolling: Paste and Rack Preset, then SYNTH and its eight rows.
-    let mut rig = Rig::over(false);
-    for name in names {
-        assert_eq!(rig.color(name), dim, "{name}");
-        let at = rig.text_at(name);
-        assert_eq!(rig.click(at), None, "{name}");
-    }
-    // The effects below stay enabled.
-    assert_eq!(rig.color("Reverb"), text);
-    let at = rig.text_at("Reverb");
-    assert_eq!(rig.click(at), Some(BrowserAction::Pick(32)));
-    // Where an instrument goes, they are as enabled as any module.
-    let rig = Rig::over(true);
-    for name in names {
-        assert_eq!(rig.color(name), text, "{name}");
-    }
 }
 
 #[test]
@@ -749,7 +764,7 @@ fn search_filters_as_you_type_and_hides_again_keeping_its_text() {
     let list = rig.layout().list;
     let query = rig.text_at("delay").y - list.top();
     assert!((query - 32.0).abs() <= 1.0, "{query}");
-    assert_eq!(rig.text_at("ECHO").y, list.top() + 56.0 + 20.0);
+    assert_eq!(rig.text_at("ECHO").y, list.top() + 56.0 + 24.0);
     let at = rig.text_at("Trance Delay");
     assert_eq!(rig.click(at), Some(BrowserAction::Pick(16)));
 
@@ -791,10 +806,12 @@ fn the_modules_picker_orders_by_category_and_stores_each_ordering_by_its_id() {
 fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_type_id() {
     // By item type, then a per-type index, else alphanumeric. The types are the actions, the instruments and the
     // effects (note effects included); the index is the module type id; no section rows.
-    let top = super::rows("", ModuleOrdering::TopLevel);
+    let top = super::rows("", ModuleOrdering::TopLevel, true);
     assert_eq!(
         names(&top),
         [
+            // The actions, which have no index: by name.
+            "Instrument",
             "Paste",
             "Rack Preset",
             // Instruments: 0, 1, 2, 19, 23, 33, 39, 52.
@@ -806,6 +823,9 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             "Slicer",
             "3x Osc",
             "SoundFont Player",
+            // The built-in plugins, which have no type id of their own: by name.
+            "Lemon Sampler",
+            "Lemon Trio",
             // Effects: 3 … 46, then the note effects 47 … 51.
             "Equalizer",
             "MultiFX",
@@ -843,11 +863,15 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             "Randomizer",
             "Scale",
             "Arpeggiator",
+            // Honeydew's own: 1002, 1003, then the built-in plugin.
+            "Lemon Reverb",
+            "Lemon Limiter",
+            "Lemon Parametric EQ",
         ]
     );
     // The search filters it, in the same order.
     assert_eq!(
-        names(&super::rows("DELAY", ModuleOrdering::TopLevel)),
+        names(&super::rows("DELAY", ModuleOrdering::TopLevel, true)),
         ["Trance Delay", "Tape Delay"]
     );
 }
@@ -856,7 +880,7 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
 fn a_z_lists_every_entry_by_its_name_naturally_with_no_sections() {
     // A-Z: natural alphanumeric compare of the display name, with no grouping before it, so the actions sort in with
     // the modules.
-    let az = names(&super::rows("", ModuleOrdering::AZ));
+    let az = names(&super::rows("", ModuleOrdering::AZ, true));
     let entries = rows("").into_iter().filter(|r| matches!(r, Row::Item(_)));
     assert_eq!(az.len(), entries.count());
     assert_eq!(&az[..4], ["3x Osc", "Analyzer", "Arpeggiator", "Autoduck"]);
@@ -866,6 +890,8 @@ fn a_z_lists_every_entry_by_its_name_naturally_with_no_sections() {
         (at("Pitcher 2"), at("Reverb 2"))
     );
     assert!(at("Note Echo") < at("Paste") && at("Paste") < at("Phaser"));
+    assert!(at("Graphic EQ") < at("Instrument") && at("Instrument") < at("Lemon Limiter"));
+    assert!(at("Pitcher 2") < at("Rack Preset") && at("Rack Preset") < at("Randomizer"));
     // Without case: a byte compare would put `GMSynth` first.
     assert!(at("Gate") < at("GMSynth"));
     assert_eq!(az.last(), Some(&"Wow & Flutter"));
@@ -920,13 +946,13 @@ fn sort_offers_a_z_and_category_whose_pick_reorders_the_list() {
 fn dragging_scrolls_to_the_end_of_the_list_and_no_further() {
     let mut rig = Rig::new();
     let list = rig.layout().list;
-    for _ in 0..5 {
+    for _ in 0..6 {
         rig.drag(pos2(200.0, 480.0), pos2(200.0, 80.0));
     }
     // The drags pick nothing, and the last row now sits at the bottom of the list.
     assert_eq!(rig.action, None);
     assert!(!rig.shows("Paste"));
-    assert_eq!(rig.text_at("Transpose").y, list.bottom() - 20.0);
+    assert_eq!(rig.text_at("Transpose").y, list.bottom() - 24.0);
     let at = rig.text_at("Transpose");
     assert_eq!(rig.click(at), Some(BrowserAction::Pick(48)));
 }
@@ -936,7 +962,7 @@ fn the_wheel_scrolls_the_list_only_over_it() {
     let mut rig = Rig::new();
     let list = rig.layout().list;
     let first = rig.text_at("3x Osc").y;
-    assert_eq!(first, list.top() + 3.0 * 40.0 + 20.0);
+    assert_eq!(first, list.top() + 4.0 * 48.0 + 24.0);
     // Over the panel's button column: nothing moves.
     rig.wheel(pos2(30.0, 400.0), -80.0);
     assert_eq!(rig.text_at("3x Osc").y, first);
@@ -950,7 +976,7 @@ fn the_wheel_scrolls_the_list_only_over_it() {
     assert_eq!(rig.text_at("3x Osc").y, first);
     // And at the end.
     rig.wheel(pos2(200.0, 400.0), -5000.0);
-    assert_eq!(rig.text_at("Transpose").y, list.bottom() - 20.0);
+    assert_eq!(rig.text_at("Transpose").y, list.bottom() - 24.0);
 }
 
 #[test]
@@ -960,7 +986,7 @@ fn a_narrower_query_clamps_the_scroll_to_the_shorter_list() {
         let mut rig = Rig::new();
         let search = rig.layout().button(0);
         rig.click(search);
-        for _ in 0..5 {
+        for _ in 0..7 {
             rig.drag(pos2(200.0, 480.0), pos2(200.0, 120.0));
         }
         assert!(rig.shows("Transpose"));
@@ -970,23 +996,23 @@ fn a_narrower_query_clamps_the_scroll_to_the_shorter_list() {
     // Still longer than the list: the end of the new list sits at the bottom, not past it.
     let mut rig = scrolled();
     let list = rig.layout().list;
-    // The search bar moves the list down 1.75 U; the rows are 40 points high.
+    // The search bar moves the list down 1.75 U; the rows are 48 points high.
     let shown = rows("e");
     assert!(
-        shown.len() as f32 * 40.0 > list.height() - 56.0,
+        shown.len() as f32 * 48.0 > list.height() - 56.0,
         "pick a longer query"
     );
     rig.frame(vec![Event::Text("e".into())]);
     rig.frame(vec![]);
     let last = shown.last().unwrap().name();
-    assert_eq!(rig.text_at(last).y, list.bottom() - 20.0);
+    assert_eq!(rig.text_at(last).y, list.bottom() - 24.0);
 
     // Short enough to fit: back at the top, under the search bar, not scrolled out of sight.
     let mut rig = scrolled();
     let list = rig.layout().list;
     rig.frame(vec![Event::Text("delay".into())]);
     rig.frame(vec![]);
-    assert_eq!(rig.text_at("ECHO").y, list.top() + 56.0 + 20.0);
+    assert_eq!(rig.text_at("ECHO").y, list.top() + 56.0 + 24.0);
     assert!(rig.shows("Tape Delay") && rig.shows("Trance Delay"));
 }
 
@@ -1040,8 +1066,8 @@ impl Rig {
     }
 }
 
-/// Every row, item or section, in the folder rows' FontSize 4; the left buttons' labels are 8 pt, shrunk to fit their
-/// button.
+/// Every item row in the folder rows' FontSize 4, a section's label in FontSize 3; the left buttons' labels are 8 pt,
+/// shrunk to fit their button.
 #[test]
 fn every_row_is_in_fontsize_4_and_the_button_labels_in_8_pt() {
     let rig = Rig::new();
@@ -1049,7 +1075,7 @@ fn every_row_is_in_fontsize_4_and_the_button_labels_in_8_pt() {
     let pt = |s: FontSize| m.font_id(s).size;
     assert_eq!(rig.font_size("Reverb"), pt(FontSize::Pt18));
     assert_eq!(rig.font_size("Paste"), pt(FontSize::Pt18));
-    assert_eq!(rig.font_size("ECHO"), pt(FontSize::Pt18));
+    assert_eq!(rig.font_size("ECHO"), pt(FontSize::Pt12));
     let d = m.u(BUTTON_D);
     for label in ["Search", "Sort"] {
         let size = rig.font_size(label);
@@ -1079,7 +1105,7 @@ fn a_sort_pick_lists_from_the_top_and_refreshes_the_list() {
     rig.click(item);
     rig.frame(vec![]);
     assert_eq!(rig.browser.panel.scroll_y, 0.0);
-    assert_eq!(rig.text_at("3x Osc").y, rig.layout().list.top() + 20.0);
+    assert_eq!(rig.text_at("3x Osc").y, rig.layout().list.top() + 24.0);
     assert!(!rig.browser.panel.audition.on, "refreshed");
 }
 
@@ -1347,7 +1373,6 @@ fn bare_frame(
                 .map(|&(name, folder)| PanelRow {
                     name,
                     folder,
-                    h: ROW_H,
                     sub: None,
                     kind: RowKind::Enabled(()),
                     picked: false,
@@ -1358,14 +1383,15 @@ fn bare_frame(
     output.shapes
 }
 
-/// Whether a flash (a translucent fill no taller than a row) is painted over row `i` of the bare panel.
+/// Whether a flash (a translucent fill no taller than a row, brighter than the hover and press bands) is painted over
+/// row `i` of the bare panel.
 fn bare_flash(ctx: &Context, shapes: &[ClippedShape], i: usize) -> bool {
     let row = ctx
         .read_response(Id::new("bare").with(("row", i)))
         .unwrap()
         .rect;
     shapes.iter().any(|c| match &c.shape {
-        Shape::Rect(r) => r.rect == row && (1..255).contains(&r.fill.a()),
+        Shape::Rect(r) => r.rect == row && (64..255).contains(&r.fill.a()),
         _ => false,
     })
 }

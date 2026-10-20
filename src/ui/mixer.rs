@@ -1,7 +1,8 @@
 //! The mixer view: one 4 U strip per channel, master first, in a row that scrolls sideways.
 //!
 //! Gestures: the fader and the pan knob take the slider and knob laws ([`widgets`]), Mute and `Solo` the two-state tap;
-//! soloing never clears another strip. A tap anywhere else on a strip makes its channel current
+//! soloing never clears a strip outside the tapped channel and the channels it sends to ([`smart_solo`]). The master's
+//! mute/solo row holds `Unsolo All` ([`unsolo_all`]). A tap anywhere else on a strip makes its channel current
 //! ([`MixerState::selected`]). A touch that starts off the controls (or on a toggle, which takes no drags) scrolls the
 //! row by the editors' [`scroller`] law: still within 0.5 U of the touch-down, then 1:1, a fifth past either end, a
 //! fling on release and a spring back from past an end; a short one that stays calm is a strip tap. The wheel steps a
@@ -13,20 +14,20 @@
 //! A strip control's press or parameter menu pick is the app's recent control ([`MixerState::touch`]); its menu's
 //! `Unlink from MIDI CC` follows the channel's `CCLK`.
 
-use eframe::egui::{Align2, Pos2, Rect, Ui, UiBuilder, Vec2, pos2, vec2};
+use eframe::egui::{Align2, Id, Pos2, Rect, Ui, UiBuilder, Vec2, pos2, vec2};
 
 use crate::icons::draw_icon;
 use crate::metrics::FontSize;
 use crate::midi::links;
 use crate::song::{AutomationTarget, ChannelKind, Song};
-use crate::theme::channel_color;
+use crate::theme::{DISABLED_ALPHA, channel_color};
 use crate::ui::UiCtx;
 use crate::ui::ctrl_menu::Touch;
 use crate::ui::fine_tune;
 use crate::ui::layout::{Node, NodeId, Size, layout};
 use crate::ui::main_screen::kind_icon;
 use crate::ui::scroller::{self, Axis, Scroller, X, Zones};
-use crate::ui::widgets::{self, Control, ParamMenu, Pill};
+use crate::ui::widgets::{self, Button, Control, ParamMenu, Pill};
 
 /// Strip width in U, which is also the scroll unit (the wheel's step).
 pub const STRIP_W: f32 = 4.0;
@@ -41,6 +42,8 @@ const CELL: NodeId = 4;
 const SPACER: NodeId = 5;
 /// The name slot: the top 0.75 U, the strip's width, shown at every height.
 const NAME: NodeId = 6;
+/// The master's `Unsolo All`, in the row where the other strips have Mute and `Solo`.
+const UNSOLO: NodeId = 7;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MixerState {
@@ -61,7 +64,8 @@ pub struct MixerState {
 
 /// A strip `h` U tall: the 0.75 U name slot, fader (60 % wide, flex), pan knob (80 % wide, 2 U), the mute/solo row
 /// (1.75 U), the bottom cell (1.5 U), each hidden at or below its height threshold; a flex spacer stands in for the
-/// fader. The master keeps the mute/solo row's space, empty, so that its fader and knob line up with the others'.
+/// fader. The master's mute/solo row holds `Unsolo All` instead (1.25 U tall, 0.75 U side margins), so that its fader
+/// and knob line up with the others'.
 fn strip_tree(h: f32, master: bool) -> Node {
     Node::vstack([
         Node::leaf(NAME).h(Size::U(0.75)),
@@ -74,6 +78,9 @@ fn strip_tree(h: f32, master: bool) -> Node {
         Node::hstack([
             Node::leaf(MUTE).visible(!master),
             Node::leaf(SOLO).visible(!master),
+            Node::leaf(UNSOLO)
+                .visible(master)
+                .margins(0.25, 0.75, 0.25, 0.75),
         ])
         .h(Size::U(1.75))
         .visible(h > 10.5),
@@ -146,6 +153,8 @@ pub fn show(
     let base = ui.id().with("mixer");
     let content = song.channels.len() as f32 * unit;
     let tap = scroll_row(ui, state, rect, content, m.u(1.0));
+    let soloed = any_soloed(song);
+    let mut unsolo = false;
 
     ui.painter()
         .rect_filled(rect, 0.0, colors.module_fill.to_color32());
@@ -170,7 +179,8 @@ pub fn show(
         // A tap on the strip that no control is under (the four controls' ids are 0 ..= 3).
         if let Some(p) = tap
             && strip.contains(p)
-            && !(placed.iter()).any(|&(leaf, r)| leaf <= SOLO && (r / ppp).contains(p))
+            && !(placed.iter())
+                .any(|&(leaf, r)| (leaf <= SOLO || leaf == UNSOLO) && (r / ppp).contains(p))
         {
             state.selected = Some(i);
         }
@@ -217,6 +227,10 @@ pub fn show(
                 }
                 SOLO => widgets::text_toggle(&mut ui, cx, &control("Solo", 0.0), &mut params[3])
                     .changed(),
+                UNSOLO => {
+                    unsolo |= unsolo_button(&mut ui, cx, id, r, soloed);
+                    continue;
+                }
                 _ => {
                     let ink = if state.selected == Some(i) {
                         ui.painter().rect_filled(r, 0.0, color);
@@ -240,6 +254,13 @@ pub fn show(
             }
         }
     }
+    let solo_taps: Vec<usize> = (changes.iter()).filter(|c| c.1 == 3).map(|c| c.0).collect();
+    for x in solo_taps {
+        changes.extend(smart_solo(song, x).into_iter().map(|(c, v)| (c, 3, v)));
+    }
+    if unsolo {
+        changes.extend(unsolo_all(song).into_iter().map(|c| (c, 3, 0.0)));
+    }
     #[cfg(any(target_arch = "wasm32", test))]
     crate::app::live::mixer(
         &ui,
@@ -252,10 +273,113 @@ pub fn show(
     changes
 }
 
+/// A Solo value that solos its channel: the mix rule's > 0.5.
+fn soloed(v: f32) -> bool {
+    v > 0.5
+}
+
+/// Whether a non-master channel is soloed: `Unsolo All` takes input only then.
+pub fn any_soloed(song: &Song) -> bool {
+    (song.channels.iter()).any(|c| c.kind != ChannelKind::Master && soloed(c.params.0[3]))
+}
+
+/// The channels `x` reaches through routing, transitively, as indices: the targets of all its sends (enabled or not, at
+/// any level) and of its drum pads' sends, then theirs. Never the master, never `x` itself.
+fn downstream(song: &Song, x: usize) -> Vec<usize> {
+    let index =
+        |id: i32| (song.channels.iter()).position(|c| c.id == id && c.kind != ChannelKind::Master);
+    let targets = |i: usize| {
+        let c = &song.channels[i];
+        let sends = c.file.sends.iter().map(|s| s.target_channel_id);
+        let pads = (c.drum_kit.iter()).flat_map(|kit| kit.slots.iter().map(|s| s.file.send_target));
+        sends.chain(pads).filter_map(index).collect::<Vec<_>>()
+    };
+    let (mut found, mut next) = (Vec::new(), vec![x]);
+    while let Some(i) = next.pop() {
+        for t in targets(i) {
+            if t != x && !found.contains(&t) {
+                found.push(t);
+                next.push(t);
+            }
+        }
+    }
+    found
+}
+
+/// Smart solo, after a `Solo` tap (the main mixer's or an expanded track header's) set channel `x`'s Solo: the solos it
+/// changes besides, already written to `song`, as (channel, value).
+/// - Turned on: unless a channel upstream of `x` (one that reaches it, [`downstream`]) is soloed, every channel `x`
+///   reaches is soloed too.
+/// - Turned off: unless an upstream channel is soloed, when some of the reached channels are soloed and some not, they
+///   are all soloed and the tap is refused (`x` stays soloed; a second tap unsolos); otherwise they are all unsoloed.
+///   This unsolos a bus that another soloed channel also feeds.
+///
+/// Each change is an ordinary Solo change; drum-pad solos are never touched.
+pub fn smart_solo(song: &mut Song, x: usize) -> Vec<(usize, f32)> {
+    if song.channels[x].kind == ChannelKind::Master {
+        return Vec::new();
+    }
+    let on = soloed(song.channels[x].params.0[3]);
+    let upstream = (0..song.channels.len()).any(|u| {
+        u != x && soloed(song.channels[u].params.0[3]) && downstream(song, u).contains(&x)
+    });
+    if upstream {
+        return Vec::new();
+    }
+    let down = downstream(song, x);
+    let solos: Vec<bool> = (down.iter())
+        .map(|&d| soloed(song.channels[d].params.0[3]))
+        .collect();
+    let mixed = solos.contains(&true) && solos.contains(&false);
+    let (to, refuse) = match (on, mixed) {
+        (true, _) => (1.0, false),
+        (false, true) => (1.0, true),
+        (false, false) => (0.0, false),
+    };
+    let mut changes = Vec::new();
+    for d in down.into_iter().chain(refuse.then_some(x)) {
+        let solo = &mut song.channels[d].params.0[3];
+        if *solo != to {
+            *solo = to;
+            changes.push((d, to));
+        }
+    }
+    changes
+}
+
+/// `Unsolo All`: every soloed non-master channel's Solo goes to 0. The channels it changed.
+pub fn unsolo_all(song: &mut Song) -> Vec<usize> {
+    let mut changed = Vec::new();
+    for (i, c) in song.channels.iter_mut().enumerate() {
+        if c.kind != ChannelKind::Master && soloed(c.params.0[3]) {
+            c.params.0[3] = 0.0;
+            changed.push(i);
+        }
+    }
+    changed
+}
+
+/// The `Unsolo All` text button in `rect` (`moduleFill`, a `text` label): it never latches, and takes input only while
+/// `enabled` (a non-master channel is soloed). Disabled, it is drawn at the disabled alpha. Whether it was tapped.
+pub fn unsolo_button(ui: &mut Ui, cx: &UiCtx, id: Id, rect: Rect, enabled: bool) -> bool {
+    let c = &cx.theme.colors;
+    let b = Button {
+        font: FontSize::Pt8,
+        fill_off: c.module_fill.to_color32(),
+        disabled: !enabled,
+        ..Button::new(id, rect, "Unsolo All", false, c)
+    };
+    let mut ui = ui.new_child(UiBuilder::new().max_rect(rect));
+    if !enabled {
+        ui.multiply_opacity(DISABLED_ALPHA);
+    }
+    widgets::button(&mut ui, cx, &b, false).clicked()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metrics::{DEFAULT_UI_SCALE_INDEX, FontSize, Metrics};
+    use crate::metrics::{DEFAULT_UI_SCALE, FontSize, Metrics};
     use crate::song::{ChannelParams, SynthKind};
     use crate::theme::theme_by_id;
     use crate::ui::ctrl_menu::CtrlAction;
@@ -325,13 +449,77 @@ mod tests {
     }
 
     #[test]
-    fn the_master_strip_has_no_mute_or_solo_but_keeps_the_row() {
+    fn the_master_strip_has_unsolo_all_in_the_mute_solo_row() {
         let rect = Rect::from_min_size(Pos2::ZERO, vec2(UNIT, 12.0 * U));
-        assert_eq!(ids(12.0 * U, true), [NAME, FADER, KNOB, CELL]);
+        assert_eq!(ids(12.0 * U, true), [NAME, FADER, KNOB, UNSOLO, CELL]);
+        assert_eq!(ids(10.5 * U, true), [NAME, FADER, KNOB, CELL]);
         let (master, other) = (place_strip(rect, U, true), place_strip(rect, U, false));
         for id in [NAME, FADER, KNOB, CELL] {
             assert_eq!(rect_of(&master, id), rect_of(&other, id), "{id}");
         }
+    }
+
+    #[test]
+    fn a_solo_tap_follows_the_smart_solo_rules() {
+        // A (1) and D (4) send to the bus B (2), B to the bus C (3); E (5) sends nowhere.
+        let mut song = Song::default();
+        for kind in [
+            ChannelKind::Instrument,
+            ChannelKind::EffectTrack,
+            ChannelKind::EffectTrack,
+            ChannelKind::Instrument,
+            ChannelKind::Instrument,
+        ] {
+            song.add_channel(kind);
+        }
+        let id = |song: &Song, i: usize| song.channels[i].id;
+        for (from, to) in [(1, 2), (2, 3), (4, 2)] {
+            let target = id(&song, to);
+            song.channels[from].file.sends[0].target_channel_id = target;
+        }
+        let solos = |song: &Song| {
+            song.channels
+                .iter()
+                .map(|c| c.params.0[3])
+                .collect::<Vec<_>>()
+        };
+        // A tap sets the tapped Solo; smart solo follows.
+        let tap = |song: &mut Song, x: usize| {
+            let solo = &mut song.channels[x].params.0[3];
+            *solo = if *solo > 0.5 { 0.0 } else { 1.0 };
+            smart_solo(song, x)
+        };
+        // On: A's buses come on with it; E (nothing downstream) alone.
+        assert_eq!(tap(&mut song, 1), [(2, 1.0), (3, 1.0)]);
+        assert_eq!(solos(&song), [0.0, 1.0, 1.0, 1.0, 0.0, 0.0]);
+        // B has a soloed upstream (A): only B goes off.
+        assert!(tap(&mut song, 2).is_empty());
+        assert_eq!(solos(&song), [0.0, 1.0, 0.0, 1.0, 0.0, 0.0]);
+        // A off with its downstream mixed: refused, everything downstream soloed, A stays on; a second tap unsolos.
+        assert_eq!(tap(&mut song, 1), [(2, 1.0), (1, 1.0)]);
+        assert_eq!(solos(&song), [0.0, 1.0, 1.0, 1.0, 0.0, 0.0]);
+        assert_eq!(tap(&mut song, 1), [(2, 0.0), (3, 0.0)]);
+        assert_eq!(solos(&song), [0.0; 6]);
+        // A and D both soloed: unsoloing A unsolos the shared buses all the same.
+        tap(&mut song, 1);
+        tap(&mut song, 4);
+        assert_eq!(tap(&mut song, 1), [(2, 0.0), (3, 0.0)]);
+        assert_eq!(solos(&song), [0.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+        // A drum pad's send reaches its target too.
+        let mut song = Song::default();
+        song.add_channel(ChannelKind::Drums);
+        song.add_channel(ChannelKind::EffectTrack);
+        let bus = id(&song, 2);
+        let kit = song.channels[1]
+            .drum_kit
+            .get_or_insert_with(Default::default);
+        kit.slots.push(Default::default());
+        kit.slots[0].file.send_target = bus;
+        assert_eq!(tap(&mut song, 1), [(2, 1.0)]);
+        // `Unsolo All` clears every non-master Solo.
+        assert!(any_soloed(&song));
+        assert_eq!(unsolo_all(&mut song), [1, 2]);
+        assert!(!any_soloed(&song));
     }
 
     #[test]
@@ -411,7 +599,7 @@ mod tests {
             };
             let (theme, m) = (
                 theme_by_id(0),
-                Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX),
+                Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE),
             );
             let cx = UiCtx {
                 theme: &theme,
@@ -710,14 +898,13 @@ mod tests {
         rig.click(mute);
         assert_eq!(rig.changes, [(1, 2, 1.0), (1, 3, 1.0), (1, 2, 0.0)]);
         assert_eq!(rig.song.channels[1].params.0[..4], [0.8531, 0.5, 0.0, 1.0]);
-        // The master's row is empty: a click there changes nothing.
-        let row = Rect::from_min_max(
-            rig.part(0, KNOB).left_bottom(),
-            rig.part(0, CELL).right_top(),
-        );
-        rig.click(row.center());
-        assert_eq!(rig.changes.len(), 3);
+        // The master's row holds `Unsolo All`: it unsolos channel 1, and the master's params stay.
+        rig.click(rig.part(0, UNSOLO).center());
+        assert_eq!(rig.changes[3..], [(1, 3, 0.0)]);
         assert_eq!(rig.song.channels[0].params, ChannelParams::default());
+        // With nothing soloed it takes no input.
+        rig.click(rig.part(0, UNSOLO).center());
+        assert_eq!(rig.changes.len(), 4);
     }
 
     #[test]
@@ -815,17 +1002,17 @@ mod tests {
     fn a_tap_off_the_controls_makes_its_strip_current() {
         let mut rig = Rig::new(2);
         assert_eq!(rig.state.selected, None);
-        // The bottom cell, the name slot, beside the fader, and the master's empty mute/solo row.
+        // The bottom cell, the name slot, beside the fader, and the master's mute/solo row beside `Unsolo All`.
         let beside = |rig: &Rig, i| {
             let fader = rig.part(i, FADER);
             pos2(fader.left() - 8.0, fader.center().y)
         };
         let row = |rig: &Rig| {
-            Rect::from_min_max(
+            let row = Rect::from_min_max(
                 rig.part(0, KNOB).left_bottom(),
                 rig.part(0, CELL).right_top(),
-            )
-            .center()
+            );
+            pos2(row.left() + 4.0, row.center().y)
         };
         for (at, i) in [
             (rig.part(2, CELL).center(), 2),
@@ -1206,7 +1393,7 @@ mod tests {
         let theme = theme_by_id(0);
         let solo = rig.part(1, SOLO);
         let text = theme.colors.text.to_color32();
-        let size = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX)
+        let size = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE)
             .font_id(FontSize::Pt8)
             .size;
         let dim = text.gamma_multiply(0.25);

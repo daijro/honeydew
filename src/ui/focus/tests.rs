@@ -4,7 +4,7 @@ use eframe::egui::{
 };
 
 use super::*;
-use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
 use crate::theme::theme_by_id;
 use crate::ui::UiCtx;
 use crate::ui::widgets::{Control, knob};
@@ -282,7 +282,7 @@ impl Rig {
         self.time += 1.0 / 60.0;
         let (theme, m) = (
             theme_by_id(0),
-            Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE_INDEX),
+            Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE),
         );
         let cx = UiCtx {
             theme: &theme,
@@ -694,17 +694,27 @@ fn a_modal_without_targets_keeps_the_keys_from_the_control_under_it() {
 }
 
 #[test]
-fn a_focused_control_scrolled_out_of_its_clip_shows_no_cursor() {
+fn a_focused_control_scrolled_out_of_its_clip_shows_the_cursor_flat_on_the_clips_nearest_edge() {
     let mut rig = Rig::new(1.0);
+    let clip = r(0.0, 200.0, 800.0, 400.0);
     let mut draw = |ui: &mut Ui, _: &UiCtx| {
-        ui.set_clip_rect(r(0.0, 200.0, 800.0, 400.0));
+        ui.set_clip_rect(clip);
         interact(ui, BUTTONS[0], Id::new("scrolled"), Sense::click());
     };
     rig.frame(vec![], &mut draw);
     rig.frame(tap(Key::Tab, Modifiers::NONE), &mut draw);
     assert_eq!(focused(&rig.ctx), Some(Id::new("scrolled")));
     assert!(is_keyboard_mode(&rig.ctx));
-    assert_eq!(rig.cursor(), None);
+    // Above the clip: flat on its top edge, as wide as the control (and the pulse's growth).
+    let cursor = rig.cursor().expect("the edge indicator");
+    assert!(
+        (cursor.center() - pos2(30.0, clip.top())).length() < 1e-3,
+        "{cursor:?}"
+    );
+    assert!(
+        cursor.height() <= 6.0 + 1e-3 && cursor.width() >= 40.0,
+        "{cursor:?}"
+    );
 }
 
 #[test]

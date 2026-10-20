@@ -829,8 +829,8 @@ impl Reader {
         Ok((instance_id, module))
     }
 
-    /// An `HDPm` (`flm::write`): its position in the chain and its plugin module with the instance id from its
-    /// `RMOd`. `None` for a layout other than 1 or no `RMOd`, which is skipped as an unknown chunk would be.
+    /// An `HDPm` (`flm::write`): its position in the chain and its module (Honeydew's own type) with the instance id
+    /// from its `RMOd`. `None` for a layout other than 1 or no `RMOd`, which is skipped as an unknown chunk would be.
     fn plugin_module(
         &mut self,
         chunk: &Chunk<'_>,
@@ -842,7 +842,7 @@ impl Reader {
             let child = child?;
             if child.id == *b"RMOd" {
                 let (id, module) = self.module(&child)?;
-                if plugin::is_plugin(module.type_id) {
+                if plugin::is_own(module.type_id) {
                     return Ok(Some((position as usize, id, module)));
                 }
             }

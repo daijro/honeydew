@@ -75,7 +75,7 @@ fn a_halo_is_a_larger_disc_behind_the_button_by_the_pad_in_device_pixels() {
 fn the_halo_pad_is_in_device_pixels_at_any_density() {
     // At 2 pixels per point a 4 px pad is 2 points.
     let theme = theme_by_id(0);
-    let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE);
     let cx = UiCtx {
         theme: &theme,
         m: &m,
@@ -362,7 +362,7 @@ fn a_text_label_anchors_its_text_in_the_rect_and_does_not_clip_it() {
 #[test]
 fn the_display_placeholder_is_a_control_fill_rect_with_a_one_pixel_background_outline() {
     let theme = theme_by_id(0);
-    let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE);
     let cx = UiCtx {
         theme: &theme,
         m: &m,

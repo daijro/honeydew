@@ -329,6 +329,10 @@ impl<U: DerefMut<Target: SongLibrary + Sized>> SongLibrary for Union<'_, U> {
         self.user_for(&[path])?.remove(path)
     }
 
+    fn write_new(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        self.user_for(&[path])?.write_new(path, bytes)
+    }
+
     fn read_only(&self, path: &Path) -> bool {
         self.of(path).read_only(path)
     }

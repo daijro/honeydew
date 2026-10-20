@@ -7,22 +7,19 @@
 //! then the patch's name; `Prev` and `Next` step through the patches. In the error state, where the spinner is hidden,
 //! a tap on the content opens the SoundFont picker.
 //!
-//! A tap on the spinner opens the **patch menu** ([`menu_items`]): the SoundFont's patch names in file order, 12 rows
-//! per column, the current patch marked. A pick sets the patch ([`menu_pick`]), one song edit. The menu holds the
-//! patches only. Another SoundFont is the card's preset button's: the module has one preset picker, whose `.sf2` files
-//! its own loader takes (`ui::views::preset_picker`, `My SoundFonts` beside `My Files`). The spinner opens
-//! The SoundFont picker while there are no patches to list: no SoundFont chosen yet, one still loading, or one that
-//! failed.
+//! A tap on the spinner opens the SoundFont picker (`ui::soundfont_picker`): the side panel of the SoundFont's
+//! patches, or of the SoundFont files while there are none to list (no SoundFont chosen yet, one still loading, or
+//! one that failed). Another SoundFont is also the card's preset button's: the module has one preset picker, whose
+//! `.sf2` files its own loader takes (`ui::views::preset_picker`, `My SoundFonts` beside `My Files`).
 
 use std::collections::HashMap;
 
-use eframe::egui::{Id, Pos2, Rect, Sense, Ui};
+use eframe::egui::{Id, Rect, Sense, Ui};
 
 use crate::flm::chunk::ContentPath;
 use crate::flm::sf2d::Sf2d;
 use crate::panels::build::*;
 use crate::sf2::{Preset, Sf2Error};
-use crate::ui::popup::PopupItem;
 
 /// The SoundFont Player's module type.
 pub const TYPE_ID: u16 = 52;
@@ -73,11 +70,9 @@ fn clamp(patch: i32, len: usize) -> usize {
 /// What a pass's edited controls without a param (`edited`, [`crate::panels::Edits::settings`]) asked of the wiring.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Press {
-    /// The `Patch` spinner with no SoundFont to list: open the SoundFont picker.
+    /// The `Patch` spinner, or a tap on the error: open the SoundFont picker.
     Picker,
-    /// The `Patch` spinner over a SoundFont's patches: open the patch menu ([`menu_items`]).
-    Menu,
-    /// `Prev`, `Next` or the patch menu set `module`'s `SF2D` to another patch.
+    /// `Prev` or `Next` set `module`'s `SF2D` to another patch.
     Stepped,
 }
 
@@ -106,7 +101,7 @@ fn set_patch(module: &mut ModuleInstance, patch: usize) -> bool {
 
 /// Acts on `Prev` / `Next` pressed (not released) and the `Patch` spinner tapped this pass. `Prev` and `Next` step the
 /// patch through the SoundFont's patches in file order and wrap at either end; without a SoundFont that `fonts` read
-/// they do nothing. The spinner opens the patch menu over a SoundFont's patches, else the picker.
+/// they do nothing. The spinner opens the picker.
 pub fn press(
     module: &mut ModuleInstance,
     state: &PanelState,
@@ -114,8 +109,7 @@ pub fn press(
     fonts: &SoundFonts,
 ) -> Option<Press> {
     if edited.contains(&PATCH) {
-        let listed = patches(module, fonts).is_some();
-        return Some(if listed { Press::Menu } else { Press::Picker });
+        return Some(Press::Picker);
     }
     let pressed = |id| edited.contains(&id) && state.settings.get(&id).is_some_and(|&v| v >= 0.5);
     let by = match (pressed(PREV), pressed(NEXT)) {
@@ -127,42 +121,6 @@ pub fn press(
     // Both ends wrap.
     let to = (current as i64 + by).rem_euclid(patches.len() as i64);
     set_patch(module, to as usize).then_some(Press::Stepped)
-}
-
-/// Patches per column of the patch menu.
-const MENU_ROWS: usize = 12;
-
-/// The items of `module`'s patch menu: the SoundFont's patch names in file order, item *i* at
-/// column ⌊i/12⌋ and row i mod 12, the current patch marked. Each item's id is its index. `None` when
-/// there are no patches to list ([`patches`]): the menu closes.
-pub fn menu_items(module: &ModuleInstance, fonts: &SoundFonts) -> Option<Vec<PopupItem<usize>>> {
-    let (patches, current) = patches(module, fonts)?;
-    let item = |(i, p): (usize, &Preset)| PopupItem {
-        current: i == current,
-        ..PopupItem::new(i, i / MENU_ROWS, i % MENU_ROWS, p.name.clone())
-    };
-    Some(patches.iter().enumerate().map(item).collect())
-}
-
-/// Acts on menu item `picked` ([`menu_items`]): a patch other than the current one is set (`Stepped`: a song edit); the
-/// current patch, an index past the menu, or nothing to list is no change.
-pub fn menu_pick(module: &mut ModuleInstance, fonts: &SoundFonts, picked: usize) -> Option<Press> {
-    let (patches, current) = patches(module, fonts)?;
-    let change = picked < patches.len() && picked != current;
-    (change && set_patch(module, picked)).then_some(Press::Stepped)
-}
-
-/// Where the patch menu opens: over the `Patch` spinner, in the card's `content` rect (`u` per U, in its units).
-pub fn menu_anchor(
-    panel: &Panel,
-    module: &ModuleInstance,
-    state: &PanelState,
-    content: Rect,
-    u: f32,
-) -> Pos2 {
-    let placed = crate::panels::place(panel, module, state, content, u);
-    let spinner = placed.into_iter().find(|(l, _)| l.id == PATCH);
-    spinner.map_or(content.center(), |(_, r)| r.center())
 }
 
 /// In the error state (`loading` 2) the controls hide, the spinner with them, so a tap anywhere on the content
@@ -523,90 +481,5 @@ mod tests {
         let mut empty = ModuleInstance::new(52, 2);
         assert_eq!(press(&mut empty, &pressed(NEXT, 1.0), &[NEXT], &abc), None);
         assert_eq!(empty.file.custom_data, None);
-        // The spinner asks for the patch menu over a SoundFont's patches, else for the picker.
-        let tapped = |module: &mut ModuleInstance, fonts: &SoundFonts| {
-            press(module, &PanelState::default(), &[PATCH], fonts)
-        };
-        assert_eq!(tapped(&mut module, &abc), Some(Press::Menu));
-        for fonts in [&bad, &SoundFonts::new(), &fonts(Ok(&[]))] {
-            assert_eq!(tapped(&mut module, fonts), Some(Press::Picker));
-        }
-        assert_eq!(tapped(&mut empty, &abc), Some(Press::Picker));
-    }
-
-    fn names(count: usize) -> Vec<String> {
-        (0..count).map(|i| format!("Voice {i:02}")).collect()
-    }
-
-    /// `Piano.sf2` with `count` patches.
-    fn many(count: usize) -> SoundFonts {
-        let names = names(count);
-        fonts(Ok(&names.iter().map(String::as_str).collect::<Vec<_>>()))
-    }
-
-    #[test]
-    fn the_patch_menu_lays_the_patches_out_in_columns_of_12_in_file_order_and_holds_nothing_else() {
-        // Item i at column floor(i/12), row i mod 12, in file order, 12 rows per column. The patches only: another
-        // SoundFont is the preset button's.
-        let items = menu_items(&player(14), &many(30)).unwrap();
-        assert_eq!(items.len(), 30);
-        for (i, item) in items.iter().enumerate() {
-            assert_eq!((item.col, item.row), (i / 12, i % 12), "item {i}");
-            assert_eq!(item.id, Some(i));
-            assert_eq!(item.current, i == 14, "item {i}");
-            assert!(!item.disabled && !item.keep_open && !item.dot, "item {i}");
-            assert_eq!(item.label, format!("Voice {i:02}"), "item {i}");
-        }
-        // A patch index past the end reads as the last patch, as the spinner's text does.
-        let items = menu_items(&player(99), &many(30)).unwrap();
-        assert_eq!(
-            (items.iter().position(|i| i.current), items.len()),
-            (Some(29), 30)
-        );
-        // No SoundFont, a failed or an unread one, or one without patches: no menu.
-        let none = ModuleInstance::new(52, 2);
-        assert_eq!(menu_items(&none, &many(3)), None);
-        for fonts in [
-            &fonts(Err(Sf2Error::Corrupted)),
-            &SoundFonts::new(),
-            &fonts(Ok(&[])),
-        ] {
-            assert_eq!(menu_items(&player(0), fonts), None);
-        }
-    }
-
-    #[test]
-    fn picking_a_patch_sets_the_sf2d_patch_and_nothing_else_is_pickable() {
-        let fonts = many(30);
-        let mut module = player(3);
-        let before = module.file.custom_data.clone();
-        // The current patch is no change: no edit, no undo step.
-        assert_eq!(menu_pick(&mut module, &fonts, 3), None);
-        assert_eq!(module.file.custom_data, before);
-        for want in [29, 0, 13] {
-            assert_eq!(menu_pick(&mut module, &fonts, want), Some(Press::Stepped));
-            assert_eq!(patch(&module), want as i32);
-        }
-        // Past the menu (just past the patches, and beyond): nothing, and no edit.
-        let before = module.file.custom_data.clone();
-        for past in [30, 31] {
-            assert_eq!(menu_pick(&mut module, &fonts, past), None);
-        }
-        assert_eq!(module.file.custom_data, before);
-        // Nothing to pick from: nothing.
-        assert_eq!(menu_pick(&mut module, &SoundFonts::new(), 1), None);
-        assert_eq!(menu_pick(&mut ModuleInstance::new(52, 2), &fonts, 1), None);
-        assert_eq!(patch(&module), 13);
-    }
-
-    #[test]
-    fn the_patch_menu_opens_over_the_spinner() {
-        let rig = rig();
-        let spinner = rig.rect_of(PATCH);
-        let at = menu_anchor(&rig.panel, &rig.module, &rig.state, RECT, U);
-        assert!(
-            spinner.contains(at) && (at - spinner.center()).length() < 1.0,
-            "{at:?} {spinner:?}"
-        );
     }
 }

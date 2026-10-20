@@ -257,13 +257,13 @@ fn load_notices_show_once_the_song_is_open() {
 
 #[test]
 fn a_project_from_a_newer_version_waits_for_an_answer() {
-    let mem = MemFiles::with_file("/songs/New.flm", &synthetic_file(0, "4.11", ""));
+    let mem = MemFiles::with_file("/songs/New.flm", &synthetic_file(0, "5.1", ""));
     let mut files = files(&mem);
     assert_eq!(open(&mut files), None);
     assert_eq!(
         files.message,
         lines(&[
-            "This project was created with a newer version (4.11) than this app (4.10.19),",
+            "This project was created with a newer version (5.1) than this app (5.0.1),",
             "and will probably not load correctly.",
             "Do you want to continue loading this project anyway?",
         ])

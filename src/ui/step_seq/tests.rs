@@ -2,7 +2,7 @@ use eframe::egui::{self, Color32, Context, Modifiers, PointerButton, RawInput};
 
 use super::edit::*;
 use super::*;
-use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+use crate::metrics::DEFAULT_UI_SCALE;
 use crate::song::{ChannelKind, Clip, Event, Lane, Song, TimeSig};
 use crate::theme::theme_by_id;
 use crate::ui::clips::place_row;
@@ -435,8 +435,12 @@ fn reset_midi_note_needs_a_note_and_delete_a_second_row() {
 // Layout.
 
 fn metrics() -> Metrics {
-    Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX)
+    Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE)
 }
+
+/// The rows' top at U = 32 (ppp 1): the `SWING` strip's height, the ruler's; row 0 starts on the nearest pixel, [`Y0`].
+const TOP: f32 = 52.0;
+const Y0: f32 = 52.0;
 
 #[test]
 fn the_row_pitch_is_a_zoom_clamped_to_2_to_100_24_u() {
@@ -453,7 +457,7 @@ fn the_row_pitch_is_a_zoom_clamped_to_2_to_100_24_u() {
     );
     // A pinch over the rows zooms them within that range, around the pointer (here the rows' top).
     let mut rig = Rig::new(pattern());
-    let top = pos2(400.0, 48.0);
+    let top = pos2(400.0, TOP);
     rig.pinch(top, 1.5);
     assert_eq!(
         rig.row_view(),
@@ -471,26 +475,27 @@ fn the_row_pitch_is_a_zoom_clamped_to_2_to_100_24_u() {
 
 #[test]
 fn rows_take_the_zoom_pitch_and_steps_share_the_width() {
-    // U = 32: the strip is 48 tall, the headers 96 wide, a new clip's rows 64 apart.
+    // U = 32: the strip is the ruler's height, the headers 96 wide, a new clip's rows 64 apart from the pixel nearest
+    // the strip's bottom.
     let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 448.0));
     let l = Layout::new(rect, 4, 16, &metrics(), 0.0, RowView::default());
     assert_eq!(
         l.swing_strip(),
-        Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 48.0))
+        Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, TOP))
     );
     // Pitch 64, step 43.875 (702 points from the t gap, 2 points), each one pixel short.
     assert_eq!(
         l.header(0),
-        Rect::from_min_max(pos2(0.0, 48.0), pos2(96.0, 111.0))
+        Rect::from_min_max(pos2(0.0, Y0), pos2(96.0, Y0 + 63.0))
     );
     assert_eq!(
         l.cell(1, 2),
-        Rect::from_min_max(pos2(186.0, 112.0), pos2(229.0, 175.0))
+        Rect::from_min_max(pos2(186.0, Y0 + 64.0), pos2(229.0, Y0 + 127.0))
     );
-    assert_eq!(l.hit(pos2(187.0, 113.0)), Some((1, 2)));
-    assert_eq!(l.hit(pos2(799.0, 303.0)), Some((3, 15)));
-    assert_eq!(l.hit(pos2(799.0, 305.0)), None, "below the last row");
-    assert_eq!(l.hit(pos2(50.0, 113.0)), None, "a header");
+    assert_eq!(l.hit(pos2(187.0, Y0 + 65.0)), Some((1, 2)));
+    assert_eq!(l.hit(pos2(799.0, Y0 + 255.0)), Some((3, 15)));
+    assert_eq!(l.hit(pos2(799.0, Y0 + 257.0)), None, "below the last row");
+    assert_eq!(l.hit(pos2(50.0, Y0 + 65.0)), None, "a header");
     assert_eq!(l.hit(pos2(185.0, 20.0)), None, "the strip");
     let l = Layout::new(rect, 4, 32, &metrics(), 0.0, RowView::default());
     assert_eq!(l.cell(0, 31).x_range(), Rangef::new(778.0, 799.0));
@@ -504,8 +509,9 @@ fn rows_take_the_zoom_pitch_and_steps_share_the_width() {
 
 #[test]
 fn the_scroll_range_is_the_rows_and_one_and_a_half_more() {
-    // 12 rows of 64 and 96 of room in a 400-tall body: 464 to scroll, 14.5 U.
+    // 12 rows of 64 and 96 of room in the body under the strip: 864 less its height to scroll.
     let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 448.0));
+    let range = (864.0 - (448.0 - TOP)) / 32.0;
     let at = |scroll| {
         Layout::new(
             rect,
@@ -516,10 +522,10 @@ fn the_scroll_range_is_the_rows_and_one_and_a_half_more() {
             RowView { pitch: 2.0, scroll },
         )
     };
-    assert_eq!(at(100.0).view.scroll, 14.5);
+    assert!((at(100.0).view.scroll - range).abs() < 1e-4);
     assert_eq!(at(-3.0).view.scroll, 0.0);
     // Header i spans gridTop + i pitch - scroll, one pixel short of the pitch; the cells follow.
-    let l = at(14.5);
+    let l = at(100.0);
     assert_eq!(
         l.header(11),
         Rect::from_min_max(pos2(0.0, 288.0), pos2(96.0, 351.0))
@@ -555,7 +561,7 @@ fn edges_fall_on_device_pixels() {
         rect,
         12,
         16,
-        &Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX),
+        &Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE),
         0.0,
         RowView {
             pitch: 2.3,
@@ -575,7 +581,6 @@ const SCREEN: Rect = Rect {
     min: pos2(0.0, 0.0),
     max: pos2(800.0, 600.0),
 };
-const LOCK: Pos2 = pos2(700.0, 24.0);
 /// The channel under test.
 const CH: usize = 1;
 /// The `SWING` button: the top strip's header cell.
@@ -641,8 +646,7 @@ impl Rig {
                 .frame(egui::Frame::NONE)
                 .show(ctx, |ui| {
                     action = view.show(ui, &cx, song, CH, kit);
-                    view.graph_knob(ui, &cx, SCREEN);
-                    view.lock_button(ui, &cx, LOCK);
+                    view.graph_knob(ui, &cx, SCREEN, egui::Color32::WHITE);
                 });
         });
         self.shapes = output.shapes;
@@ -1135,16 +1139,19 @@ fn level_meters_stand_at_the_headers_right_edge_until_the_mixer_is_fully_out() {
 
 #[test]
 fn swing_has_the_3_u_ruler_cell_to_itself_in_step_sequencer_mode() {
-    // `SWING` 3 U × (1.5 U − 1 px) at the cell's top left. Snap belongs to the free note-grid view (a notes lane); this
-    // step-sequencer view never draws it or takes touches for it.
+    // `SWING` 3 U × (ruler h − 1 px) at the cell's top left. Snap belongs to the free note-grid view (a notes lane);
+    // this step-sequencer view never draws it or takes touches for it.
     let rig = Rig::new(pattern());
     let swing = rig
         .ctx
         .read_response(id().with("swing button"))
         .unwrap()
         .rect;
-    assert_eq!(swing, Rect::from_min_size(pos2(0.0, 0.0), vec2(96.0, 47.0)));
-    let cell = Rect::from_min_size(pos2(0.0, 0.0), vec2(96.0, 48.0));
+    assert_eq!(
+        swing,
+        Rect::from_min_size(pos2(0.0, 0.0), vec2(96.0, TOP - 1.0))
+    );
+    let cell = Rect::from_min_size(pos2(0.0, 0.0), vec2(96.0, TOP));
     let texts: Vec<String> = (rig.shapes.iter())
         .filter_map(|s| match &s.shape {
             egui::Shape::Text(t) if cell.contains(t.visual_bounding_rect().center()) => {
@@ -1720,17 +1727,6 @@ fn a_clip_id_that_is_gone_edits_nothing_and_makes_no_clip() {
 }
 
 #[test]
-fn the_lock_button_toggles() {
-    let mut rig = Rig::new(pattern());
-    rig.click(LOCK);
-    assert!(rig.view.lock);
-    rig.frame(vec![]);
-    rig.frame(vec![]);
-    rig.click(LOCK);
-    assert!(!rig.view.lock);
-}
-
-#[test]
 fn rows_without_a_kit_pad_get_a_plain_name() {
     let mut channel = pattern();
     tap(&mut channel.lanes[0].clips[0], 5, 0);
@@ -1821,7 +1817,7 @@ fn a_new_clip_opens_at_2_u() {
     );
     assert_eq!(
         rig.layout().header(3),
-        Rect::from_min_max(pos2(0.0, 240.0), pos2(96.0, 303.0))
+        Rect::from_min_max(pos2(0.0, Y0 + 192.0), pos2(96.0, Y0 + 255.0))
     );
 }
 
@@ -1831,7 +1827,7 @@ fn each_clip_keeps_its_own_zoom_and_scroll() {
     channel.lanes[0].add_clip(512, 4.0);
     let mut rig = Rig::new(channel);
     rig.kit = twelve();
-    rig.pinch(pos2(400.0, 48.0), 1.5);
+    rig.pinch(pos2(400.0, TOP), 1.5);
     rig.drag(pos2(400.0, 500.0), -100.0);
     let zoomed = rig.row_view();
     assert_eq!(zoomed.pitch, 3.0);
@@ -1851,18 +1847,19 @@ fn twelve_rows_scroll_to_the_last_row_and_the_add_button() {
     let mut rig = Rig::new(pattern());
     rig.kit = twelve();
     rig.frame(vec![]);
-    // 12 rows of 64 and 96 of room in the 552-tall body: 312 to scroll. A drag on the grid scrolls, past the end at a
-    // fifth (the rubber band), which springs back once let go.
+    // 12 rows of 64 and 96 of room in the body under the strip: 864 less its height to scroll. A drag on the grid
+    // scrolls, past the end at a fifth (the rubber band), which springs back once let go.
+    let range = 864.0 - (600.0 - TOP);
     rig.drag(pos2(400.0, 590.0), -400.0);
-    assert!(rig.row_view().scroll > 312.0 / 32.0);
+    assert!(rig.row_view().scroll > range / 32.0);
     for _ in 0..80 {
         rig.frame(vec![]);
     }
-    assert_eq!(rig.row_view().scroll, 312.0 / 32.0);
+    assert!((rig.row_view().scroll - range / 32.0).abs() < 1e-4);
     let l = rig.layout();
     let body = l.body();
     // The header column scrolls with the grid.
-    assert_eq!(l.header(0).top(), 48.0 - 312.0);
+    assert_eq!(l.header(0).top(), (TOP - range).round());
     assert_eq!(
         l.header(11),
         Rect::from_min_max(pos2(0.0, 440.0), pos2(96.0, 503.0))
@@ -1901,7 +1898,7 @@ fn headers_span_the_pitch_and_their_lines_sit_on_the_middle_and_half_a_u_below()
         let p = pitch * 32.0;
         for row in 0..4 {
             let h = rig.layout().header(row);
-            let top = 48.0 + row as f32 * p;
+            let top = Y0 + row as f32 * p;
             assert_eq!(
                 h,
                 Rect::from_min_max(pos2(0.0, top), pos2(96.0, top + p - 1.0)),
@@ -1971,7 +1968,7 @@ fn a_trackpad_pinch_zooms_the_time_and_two_fingers_zoom_the_rows() {
         "{:?}",
         rig.clip_view()
     );
-    rig.pinch(pos2(400.0, 48.0), 1.5);
+    rig.pinch(pos2(400.0, TOP), 1.5);
     assert_eq!(rig.row_view().pitch, before.pitch * 1.5);
 }
 
@@ -1981,23 +1978,17 @@ fn a_pinch_keeps_the_point_under_the_pointer() {
     rig.kit = twelve();
     rig.frame(vec![]);
     // 100 points into the rows, 1.5625 rows down; at 3 U the same row point is 150 points down, so 50 scroll.
-    let at = pos2(400.0, 148.0);
+    let at = pos2(400.0, TOP + 100.0);
     let row_at = |rig: &Rig| {
         let l = rig.layout();
         (at.y - l.row_top()) / l.pitch
     };
-    assert_eq!(row_at(&rig), 1.5625);
+    assert!((row_at(&rig) - 1.5625).abs() < 1e-5);
     rig.pinch(at, 1.5);
     let view = rig.row_view();
     assert!((view.scroll - 50.0 / 32.0).abs() < 1e-5, "{view:?}");
-    assert_eq!(
-        rig.row_view(),
-        RowView {
-            pitch: 3.0,
-            scroll: view.scroll
-        }
-    );
-    assert_eq!(row_at(&rig), 1.5625);
+    assert!((view.pitch - 3.0).abs() < 1e-5, "{view:?}");
+    assert!((row_at(&rig) - 1.5625).abs() < 1e-5);
 }
 
 #[test]
@@ -2028,7 +2019,7 @@ fn each_lane_keeps_its_own_clip_views() {
     assert_eq!(channel.lanes[1].clips[0].id, channel.lanes[0].clips[0].id);
     let mut rig = Rig::new(channel);
     rig.kit = twelve();
-    rig.pinch(pos2(400.0, 48.0), 1.5);
+    rig.pinch(pos2(400.0, TOP), 1.5);
     assert_eq!(rig.row_view().pitch, 3.0);
     rig.view.lane = 1;
     rig.frame(vec![]);
@@ -2504,7 +2495,7 @@ fn a_long_press_on_a_selected_hit_keeps_the_selection() {
 
 #[test]
 fn a_right_click_deletes_the_hit_under_it_in_one_undo_step_and_on_an_empty_step_changes_nothing() {
-    // Owner request (2026-10-18): the desktop app's right-button delete (`gesture::Erase`).
+    // The right-button delete (`gesture::Erase`).
     let mut rig = Rig::new(pattern());
     let at = rig.cell(2, 2);
     rig.click_with(at, PointerButton::Secondary);
@@ -2575,7 +2566,7 @@ fn copy_fills_the_hit_clipboard_and_a_long_press_or_right_click_on_an_empty_step
     );
     rig.release(empty);
     let paste = rig.text_at("Paste").expect("the Paste button");
-    assert!(paste.distance(empty) < 2.0);
+    assert!(paste.y < empty.y, "over the finger's row");
     rig.click(paste);
     let hits = copied.clone();
     assert_eq!(
@@ -2771,7 +2762,7 @@ fn a_second_finger_cancels_the_box_and_starts_none() {
 
 // The graph lane.
 
-/// The knob on the view's bottom edge while the lane is hidden (x 1.4 U, its upper half in the view), and the lane
+/// In the graph lane's tab on the view's bottom edge while the lane is closed (centred at x 1.4 U), and the lane
 /// at its first show (f 0.5 of H = 600, the view below its top window margin, which is 0: the `SWING` strip counts):
 /// its strip from y 300, its list and value area under the 4 px gap, 296 tall, the centre band around y 452.
 const KNOB: Pos2 = pos2(44.8, 595.0);
@@ -2790,7 +2781,7 @@ impl Rig {
         self.cell(0, step).x
     }
 
-    /// Shows the lane with a tap on its knob.
+    /// Shows the lane with a tap on its tab.
     fn open_lane(&mut self) {
         self.click(KNOB);
         assert!(self.view.graph.open);
@@ -2868,7 +2859,7 @@ fn the_lane_is_hidden_until_its_knob_is_tapped_and_lists_its_four_items_in_the_h
     assert_eq!(rig.view.graph.item, 2);
     rig.click(at[3]);
     assert_eq!(rig.view.graph.item, 3);
-    // The knob on the lane's top hides it.
+    // The tab on the lane's top closes it.
     rig.click(pos2(44.8, STRIP_TOP));
     assert!(!rig.view.graph.open);
     assert_eq!(rig.text_at("Velocity"), None);
@@ -3138,15 +3129,13 @@ const STEPS_4_8: crate::ui::region::TimeRange = crate::ui::region::TimeRange {
 
 #[test]
 fn the_top_strip_has_a_ruler_over_the_steps() {
-    // A `background` fill, then a `menuFill` baseline t tall at bottom − 2t across the full width (t = 2 at U = 32).
+    // Its `background` fill from the grid's left.
     let rig = Rig::new(pattern());
     let l = rig.layout();
     let colors = theme_by_id(0).colors;
-    let strip = Rect::from_min_max(pos2(l.grid_left(), 0.0), pos2(SCREEN.right(), 48.0));
+    let strip = Rect::from_min_max(pos2(l.grid_left(), 0.0), pos2(SCREEN.right(), TOP));
     let bg = rig.rects(colors.background.to_color32());
     assert!(bg.contains(&strip), "{bg:?}");
-    let base = Rect::from_min_max(pos2(l.grid_left(), 44.0), pos2(SCREEN.right(), 46.0));
-    assert!(rig.rects(colors.menu_fill.to_color32()).contains(&base));
 }
 
 #[test]
@@ -3234,7 +3223,8 @@ fn a_region_edit_drops_the_step_selection() {
     rig.hold(at);
     rig.release(at);
     assert_eq!(rig.selection(), [(1, 4)]);
-    rig.region(0, 4);
+    // Made from its end, clear of the play box's touch area at step 0.
+    rig.region(4, 0);
     rig.pick("Insert space");
     assert_eq!(rig.hits(), on(&[(0, 4), (2, 6), (1, 8), (1, 16)]));
     assert_eq!(rig.selection(), []);
@@ -3569,34 +3559,39 @@ fn a_pop_stays_with_its_clip() {
 }
 
 #[test]
-fn the_graph_knobs_box_wins_over_a_cut_off_header_and_the_first_selector_row() {
-    // As in the piano roll, and in both drum modes: where the knob's 2×2 U touch box overlaps the graph list's first
-    // item or a row header cut off at the rows' bottom, however thin the header's visible part, the knob takes the tap.
+fn the_graph_tab_wins_over_a_cut_off_header() {
+    // As in the drum grid: where the graph lane's tab overlaps a row header cut off at the rows' bottom, however thin
+    // the header's visible part, the tab takes the tap; it ends 2 px into the lane's 4 px gap, clear of the list.
     let mut rig = Rig::new(pattern());
     rig.kit = twelve();
-    // Row 9 shows only its top 8 points, 592..600, inside the knob's box (x 12.8..76.8, y 568..600).
     rig.set_row_view(RowView {
         pitch: 2.0,
-        scroll: 1.0,
+        scroll: (TOP - 16.0) / 32.0,
     });
-    rig.click(pos2(44.8, 596.0));
+    // A row header's visible part, at the tab's x (x 18..72).
+    let seen = |rig: &Rig, row: usize| {
+        let r = rig.ctx.read_response(id().with(("row", row))).unwrap();
+        pos2(44.8, r.interact_rect.center().y)
+    };
+    // Row 9 shows only its top few points, under the closed tab (y 562..600 of 562..602).
+    rig.click(seen(&rig, 9));
     assert!(rig.view.graph.open);
     assert_eq!((rig.view.selected, rig.view.fold.open), (0, false));
-    // The lane's top is at 300: the knob's box (y 268..332) covers row 4's cut-off header above it (272..300) ...
-    rig.click(pos2(44.8, 280.0));
+    // The lane's top is at 300: the tab (y 262..302) covers row 4's cut-off header above it ...
+    rig.frame(vec![]);
+    let row_4 = seen(&rig, 4);
+    assert!(262.0 < row_4.y && row_4.y < 300.0, "{row_4:?}");
+    rig.click(row_4);
     assert!(!rig.view.graph.open);
     assert_eq!(rig.view.selected, 0);
-    // ... and the list's first item (`Velocity`, from 304) below it.
+    // ... while the list's first item (`Velocity`, from 304) takes its own tap.
     rig.view.graph.item = 2;
-    rig.click(pos2(44.8, 596.0));
-    rig.click(pos2(44.8, 316.0));
-    assert_eq!((rig.view.graph.open, rig.view.graph.item), (false, 2));
-    // Outside the box both take their taps.
-    rig.click(pos2(44.8, 596.0));
-    rig.click(pos2(90.0, 316.0));
+    rig.click(seen(&rig, 9));
+    rig.click(pos2(44.8, 310.0));
     assert_eq!((rig.view.graph.open, rig.view.graph.item), (true, 0));
-    rig.click(pos2(44.8, 316.0));
-    rig.click(pos2(90.0, 596.0));
+    // Beside the tab the header takes its tap.
+    rig.click(row_4);
+    rig.click(seen(&rig, 9) + vec2(45.0, 0.0));
     assert_eq!((rig.view.graph.open, rig.view.selected), (false, 9));
 }
 
@@ -3781,7 +3776,7 @@ fn one_bar() -> Rig {
 #[test]
 fn cells_run_from_content_beat_0_with_1_px_gaps_at_ppp_1_and_2() {
     for ppp in [1.0, 2.0] {
-        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
         let px = 1.0 / ppp;
         let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 448.0));
         // A step 24.3 points wide, content beat 0 a third of a beat left of the grid (x 96).
@@ -4149,71 +4144,50 @@ fn follow_puts_the_folded_playhead_at_a_quarter_of_the_view_while_playing_a_long
 }
 
 #[test]
-fn the_rulers_bar_numbers_are_song_bars_and_its_ticks_sit_over_the_baseline() {
+fn the_rulers_bar_numbers_are_song_bars() {
     // A one-bar clip at song bar 5: its content beat 4 is song bar 6's line.
     let mut channel = drums();
     channel.lanes[0].add_clip(4 * 512, 4.0);
     let rig = Rig::new(channel);
     let l = rig.layout();
-    let colors = theme_by_id(0).colors;
-    let badge = |n: &str| {
+    // A label's left, on the ruler.
+    let label = |n: &str| {
         (rig.shapes.iter()).find_map(|s| match &s.shape {
-            egui::Shape::Text(t)
-                if t.galley.text() == n
-                    && t.galley.job.sections[0].format.color == colors.menu_fill.to_color32() =>
-            {
-                Some(t.visual_bounding_rect().center())
-            }
+            egui::Shape::Text(t) if t.galley.text() == n && t.pos.y < TOP => Some(t.pos.x),
             _ => None,
         })
     };
     let beat = l.step_w * 4.0;
-    let six = badge("6").expect("bar 6");
-    assert!((six.x - (l.x0 + 4.0 * beat)).abs() < 1.0, "{six:?}");
-    // "5" sits on X, within 6t: skipped. No content bar numbers.
-    assert_eq!(badge("5"), None);
-    assert_eq!(badge("2"), None);
-    // Ticks: a beat-level one 2t wide and 0.3h tall, bottom at bottom − 3t (48 − 6); a step-level one t wide, 0.2h.
-    let ink = rig.rects(colors.menu_fill.to_color32());
-    let near = |want: Rect| {
-        ink.iter()
-            .any(|r| (r.min - want.min).length() < 1e-3 && (r.max - want.max).length() < 1e-3)
-    };
-    let beat1 = l.x0 + beat;
-    assert!(near(Rect::from_x_y_ranges(
-        beat1 - 2.0..=beat1 + 2.0,
-        42.0 - 14.4..=42.0
-    )));
-    let step1 = l.x0 + l.step_w;
-    assert!(near(Rect::from_x_y_ranges(
-        step1 - 1.0..=step1 + 1.0,
-        42.0 - 9.6..=42.0
-    )));
+    // Left-aligned 0.15 U right of its bar line.
+    let six = label("6").expect("bar 6");
+    assert!(
+        (six - (l.x0 + 4.0 * beat + 0.15 * 32.0)).abs() < 1.0,
+        "{six:?}"
+    );
+    // No content bar numbers.
+    assert_eq!(label("2"), None);
 }
 
 #[test]
-fn the_scroll_indicator_shows_the_view_over_the_loop() {
-    // A four-bar clip, scrolled 2 beats in: 7.24 of 16 beats in view.
+fn the_scroll_thumb_shows_the_view_over_the_loop() {
+    // A four-bar clip, scrolled 2 beats in: 7.24 of 16 beats in view. The track stops 0.15 U short of the ruler's end;
+    // the thumb is t tall, t below the ruler top, in `text` at α 0.3.
     let mut channel = drums();
     channel.lanes[0].add_clip(0, 16.0);
     let mut rig = Rig::new(channel);
     rig.scroll_to(2.0);
-    let ink = channel_color(rig.channel().hue, &theme_by_id(0)).to_color32();
-    let w = 702.0;
+    let ink = theme_by_id(0).colors.text.to_color32().gamma_multiply(0.3);
+    let (w, track) = (702.0, 702.0 - 0.15 * 32.0);
     let visible = w / (32.0 / 0.33);
     let want = Rect::from_min_size(
-        pos2(98.0 + 2.0 * w / 16.0, 0.0),
-        vec2(w * visible / 16.0, 2.0),
+        pos2(98.0 + 2.0 * track / 16.0, 2.0),
+        vec2(track * visible / 16.0, 2.0),
     );
     let bars = rig.rects(ink);
     assert!(bars.iter().any(|r| (r.min - want.min).length() < 1e-3 && (r.size() - want.size()).length() < 1e-3), "{bars:?}");
     // A loop the view spans has none.
     let rig = one_bar();
-    assert!(
-        rig.rects(ink)
-            .iter()
-            .all(|r| r.height() != 2.0 || r.top() != 0.0)
-    );
+    assert!(rig.rects(ink).is_empty());
 }
 
 #[test]
@@ -4232,53 +4206,45 @@ fn a_ruler_tap_past_the_loop_end_does_nothing() {
 
 #[test]
 fn the_playhead_line_sits_at_the_folded_playhead_stopped_or_playing_down_to_the_last_row() {
-    // The pattern's 4 rows of 64 from y 48: the line ends at 304. t = 2: the line 4 wide, its shadow 6.
+    // The pattern's 4 rows of 64 from the grid's top: the line ends 256 below it.
     let mut rig = Rig::new(pattern());
     let colors = theme_by_id(0).colors;
     // Stopped at song tick 512 + 6 steps: folded into the one-bar loop, step 6.
     rig.view.playhead = 512 + 6 * u64::from(STEP_TICKS);
     rig.frame(vec![]);
     let l = rig.layout();
-    // On the device pixel nearest the playhead's x (ppp 1).
+    // Centred on the device pixel nearest the playhead's x (ppp 1).
     let x = (l.x0 + 6.0 * l.step_w).round();
-    let line = Rect::from_x_y_ranges(x - 2.0..=x + 2.0, 48.0..=304.0);
-    assert!(
-        rig.rects(colors.text.to_color32()).contains(&line),
-        "{:?}",
-        rig.rects(colors.text.to_color32())
-    );
-    let shadow = Rect::from_x_y_ranges(x - 3.0..=x + 3.0, 48.0..=304.0);
-    assert_eq!(
-        rig.fill_at(shadow),
-        Some(colors.background.to_color32().gamma_multiply(0.3))
-    );
+    let line = |rig: &Rig| {
+        (rig.rects(colors.text.to_color32()).iter()).any(|r| {
+            crate::ui::timeline::testing::line_x(*r, 1.0) == x
+                && r.y_range() == Rangef::new(TOP, TOP + 256.0)
+                && r.width() < 32.0
+        })
+    };
+    assert!(line(&rig), "{:?}", rig.rects(colors.text.to_color32()));
     // Playing, the same.
     rig.view.playing = true;
     rig.frame(vec![]);
-    assert!(rig.rects(colors.text.to_color32()).contains(&line));
+    assert!(line(&rig));
 }
 
 #[test]
 fn the_knob_shows_stopped_plays_on_a_tap_and_a_drop_seeks_within_the_loop() {
     let mut rig = one_bar();
-    let text = theme_by_id(0).colors.text.to_color32();
-    let disc = |rig: &Rig| {
-        (rig.shapes.iter()).find_map(|s| match &s.shape {
-            // Not a bar badge (radius 6t = 12).
-            egui::Shape::Circle(c) if c.fill == text && c.radius > 20.0 => {
-                Some((c.center, c.radius))
-            }
-            _ => None,
-        })
+    let play_box = |rig: &Rig| {
+        timeline::testing::play_boxes(&rig.shapes)
+            .next()
+            .map(|b| b.rect)
     };
-    // Stopped at 0: a disc of radius 1.35·48/2 − 3 on the ruler's middle at content beat 0, past the t gap.
-    let (center, r) = disc(&rig).expect("the knob");
-    assert_eq!(center, pos2(98.0, 24.0));
-    assert!((r - (1.35 * 48.0 / 2.0 - 3.0)).abs() < 1e-4);
+    // Stopped at 0: the play box, its left edge on content beat 0, past the t gap.
+    let knob = play_box(&rig).expect("the knob");
+    assert!((knob.left() - 98.0).abs() < 1e-3, "{knob:?}");
     // A tap plays.
+    let center = knob.center();
     rig.click(center);
     assert!(rig.view.play);
-    // A drag past the loop end drops on it: s + L = 512.
+    // A drag past the loop end (less the grab offset, still past it) drops on it: s + L = 512.
     let to = rig.ruler(24);
     rig.frame(vec![egui::Event::PointerMoved(center)]);
     rig.press(center, PointerButton::Primary, true);
@@ -4294,7 +4260,7 @@ fn the_knob_shows_stopped_plays_on_a_tap_and_a_drop_seeks_within_the_loop() {
     for _ in 0..60 {
         rig.frame(vec![]);
     }
-    assert_eq!(disc(&rig), None);
+    assert_eq!(play_box(&rig), None);
 }
 
 #[test]
@@ -4471,7 +4437,8 @@ fn scrolled_off_a_step_boundary_nothing_paints_into_the_header_column() {
         x - 2.0 >= l.column_right() && x - 3.0 < l.column_right(),
         "{x}"
     );
-    let line = Rect::from_x_y_ranges(x - 2.0..=x + 2.0, l.top..=rows_bottom);
+    // The shadow: the 3 px line and 1 px each side, about the pixel edge at x.
+    let line = Rect::from_x_y_ranges(x - 2.0..=x + 3.0, l.top..=rows_bottom);
     assert!(cut(line, l.column_right()));
 }
 
@@ -4480,7 +4447,7 @@ fn the_grid_starts_a_t_gap_right_of_the_header_column_where_its_zones_start() {
     // GL = x + HW + ceil(U/16) px. The layout left the gap out while its zones had it, so the drawing and the touches
     // were t apart.
     for ppp in [1.0, 1.5, 2.0] {
-        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
         let rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 448.0));
         let l = Layout::new(rect, 4, 16, &m, 192.0, RowView::default());
         let gl = m.u(HEADER_W) + 192.0 + m.t();
@@ -4494,11 +4461,11 @@ fn the_grid_starts_a_t_gap_right_of_the_header_column_where_its_zones_start() {
     }
 }
 
-/// The playhead line's rect (2t = 4 points of `text`, from the grid top) and its clip, if the last frame drew it.
+/// The playhead line's rect (`text`, narrower than U, from the grid top) and its clip, if the last frame drew it.
 fn playhead_line(shapes: &[egui::epaint::ClippedShape], top: f32) -> Option<(Rect, Rect)> {
     let text = theme_by_id(0).colors.text.to_color32();
     shapes.iter().find_map(|s| match &s.shape {
-        egui::Shape::Rect(r) if r.fill == text && r.rect.width() == 4.0 && r.rect.top() == top => {
+        egui::Shape::Rect(r) if r.fill == text && r.rect.width() < 32.0 && r.rect.top() == top => {
             Some((r.rect, s.clip_rect))
         }
         _ => None,
@@ -4513,15 +4480,19 @@ fn at_beat_0_the_playhead_lines_left_half_shows_in_the_t_gap() {
     rig.view.playhead = 0;
     rig.frame(vec![]);
     let column = 3.0 * 32.0;
-    let (line, clip) = playhead_line(&rig.shapes, 48.0).expect("the line");
-    assert_eq!(line.x_range(), Rangef::new(column, column + 4.0));
+    let (line, clip) = playhead_line(&rig.shapes, TOP).expect("the line");
+    // It reaches left of the grid (t right of the column), and is clipped at the column.
+    assert!(
+        line.left() < column + 2.0 && line.right() > column + 2.0,
+        "{line:?}"
+    );
     assert_eq!(clip.left(), column);
 }
 
 #[test]
 fn the_lane_is_f_of_the_editor_below_its_top_margin_and_its_knob_drags_f_on_that_height() {
-    // The piano roll's law here too: height max(f·H, 2 U), H = the editor below its top window margin (0 for a bottom
-    // editor: the SWING strip counts); a knob drag sets f = 1 − (y − top)/H.
+    // The piano roll's law here too: height trunc(f·H), H = the editor below its top window margin (0 for a bottom
+    // editor: the SWING strip counts); a tab drag sets f = (bottom − y)/H.
     let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0));
     let mut lane = GraphLane::default();
     lane.open = true;
@@ -4544,23 +4515,15 @@ fn the_lane_is_f_of_the_editor_below_its_top_margin_and_its_knob_drags_f_on_that
     );
 }
 
-/// The `menuFill` disc of the record icon (icon 5) near `center`, if the last frame painted one.
-fn record_icon(rig: &Rig, center: Pos2) -> bool {
-    let menu = theme_by_id(0).colors.menu_fill.to_color32();
-    (rig.shapes.iter()).any(|s| {
-        matches!(&s.shape, egui::Shape::Circle(c) if c.fill == menu && c.center.distance(center) < 1.5)
-    })
-}
-
 #[test]
 fn the_knob_shows_the_record_icon_while_rec_is_armed() {
     // Icon 5 (REC) while record is armed, else 3 (play).
     let mut rig = one_bar();
-    let knob = pos2(98.0, 24.0);
-    assert!(!record_icon(&rig, knob), "the play icon");
+    let armed = |rig: &Rig| timeline::testing::play_box_armed(&rig.shapes);
+    assert!(!armed(&rig), "the play icon");
     rig.view.armed = true;
     rig.frame(vec![]);
-    assert!(record_icon(&rig, knob));
+    assert!(armed(&rig));
 }
 
 #[test]

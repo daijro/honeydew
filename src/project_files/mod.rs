@@ -84,9 +84,8 @@ pub use import::{
 #[cfg(not(target_arch = "wasm32"))]
 mod obb;
 
-/// The format version this app reads and writes (a new song's default). A file saved by a newer version
-/// asks before loading.
-pub const FORMAT_VERSION: &str = "4.10.19";
+/// The format version this app reads and writes. A file saved by a newer version asks before loading.
+pub use crate::song::FORMAT_VERSION;
 /// The per-file limit: larger files fail with [`READ_FAILED`]. The web's is
 /// 128 MiB: the file's `ArrayBuffer`, its copy and the reader's budget (64 MiB + 2× the file) must fit wasm32's memory,
 /// or the tab aborts instead of showing the error.
@@ -1294,8 +1293,12 @@ impl ProjectFiles {
             }
         }
         // A project file dropped on the window opens as a picked one does (asking first with unsaved changes), once
-        // no dialog or message is open (Playground drops a file it opens a moment after the page loads).
-        if let Some(file) = ctx.input(|i| i.raw.dropped_files.first().cloned()) {
+        // no dialog or message is open (Playground drops a file it opens a moment after the page loads). Audio files
+        // dropped are the playlist's (`ui::file_drag`).
+        let project = |f: &&eframe::egui::DroppedFile| {
+            is_project(f.path.as_deref().unwrap_or(Path::new(&f.name)))
+        };
+        if let Some(file) = ctx.input(|i| i.raw.dropped_files.iter().find(project).cloned()) {
             self.drop_waiting = Some(file);
         }
         if shortcuts && let Some(file) = self.drop_waiting.take() {

@@ -7,7 +7,7 @@
 
 use std::cmp::Reverse;
 
-use eframe::egui::{Pos2, Rect, pos2};
+use eframe::egui::{Pos2, Rect, pos2, vec2};
 
 use crate::song::scales::{CHROMATIC, SCALE_MASKS, SCALES, scale_from_stored};
 use crate::song::{Clip, Event, LaneKind, PPQ, Song, TimeSig};
@@ -20,7 +20,7 @@ pub const TOP_KEY: u8 = 127;
 const MIN_CELL: f32 = 0.4;
 /// How far, in rows, a touch-down above or below a note's row still binds it.
 const ROW_BAND: f32 = 0.2;
-/// Diameter of a selected note's resize handle, in U.
+/// The width of a selected note's resize handle's touch box, in U.
 pub const HANDLE_D: f32 = 0.6;
 
 /// The snap menu, in menu order; the discriminant is the stored snap id.
@@ -250,20 +250,23 @@ pub enum Hit {
     },
 }
 
-/// Centre of a note's resize handle: just past its right end, on its row's centre line.
-pub fn handle_center(g: &Geom, u: f32, e: &Event) -> Option<Pos2> {
+/// A note's resize handle, the selection's end capsule ([`crate::ui::clips::end_handle`]): its touch box,
+/// [`HANDLE_D`] wide and the capsule's height, centred on it, past the note's right end on its row's centre line.
+pub fn handle_rect(g: &Geom, u: f32, e: &Event) -> Option<Rect> {
+    use crate::ui::clips::{END_CENTRE, HANDLE_H};
     let r = g.note_rect(e)?;
-    Some(pos2(r.right() + HANDLE_D * u / 2.0, r.center().y))
+    let centre = pos2(r.right() + END_CENTRE * u, r.center().y);
+    Some(Rect::from_center_size(
+        centre,
+        vec2(HANDLE_D * u, HANDLE_H * u),
+    ))
 }
 
 /// The handle, note or empty cell at `p`. Handles of selected notes come first, then the note [`note_at`] binds.
 /// `None` left of tick 0 or outside the key range.
 pub fn hit_test(g: &Geom, u: f32, events: &[Event], selected: &[bool], p: Pos2) -> Option<Hit> {
-    let radius = HANDLE_D * u / 2.0;
     for (i, e) in events.iter().enumerate().rev() {
-        if selected.get(i) == Some(&true)
-            && handle_center(g, u, e).is_some_and(|c| c.distance(p) <= radius)
-        {
+        if selected.get(i) == Some(&true) && handle_rect(g, u, e).is_some_and(|h| h.contains(p)) {
             return Some(Hit::Handle(i));
         }
     }

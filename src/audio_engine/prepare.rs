@@ -2,7 +2,7 @@
 //! kind (Notes, Drums in `drums.rs`; Audio clips in `audio_clips.rs`), and the per-param timelines that seek
 //! reads.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use super::{EngineError, strip_param};
 use crate::audio_bridge::{SongAudioBridge, playing_clips};
@@ -266,10 +266,7 @@ fn notes(
             continue;
         }
         if stage.0 != effects.len() {
-            let mut rack = NoteEffectRack::new(effects.clone()).map_err(EngineError::Notes)?;
-            rack.bar_beats = f64::from(song.time_sig.bar_beats());
-            rack.sample_rate = f64::from(sample_rate);
-            rack.block_frames = super::BLOCK_FRAMES as u64;
+            let rack = note_rack(song, effects.clone(), sample_rate)?;
             let mut traced = Vec::new();
             let events = rack
                 .process_events_traced(0.0, end_beat, f64::from(tempo_bpm), &input, &mut traced)
@@ -296,6 +293,83 @@ fn notes(
         )?;
     }
     Ok(())
+}
+
+/// `effects` as a rack that runs as playback's: the song's bar, the engine's sample rate and block.
+fn note_rack(
+    song: &Song,
+    effects: Vec<NoteEffectModule>,
+    sample_rate: f32,
+) -> Result<NoteEffectRack, EngineError> {
+    let mut rack = NoteEffectRack::new(effects).map_err(EngineError::Notes)?;
+    rack.bar_beats = f64::from(song.time_sig.bar_beats());
+    rack.sample_rate = f64::from(sample_rate);
+    rack.block_frames = super::BLOCK_FRAMES as u64;
+    Ok(rack)
+}
+
+/// `Burn Notes to Track`: what `channel`'s Notes lanes play in song ticks [`start`, `end`), as the notes of a clip
+/// there (positions from `start`). The notes go through every note effect of its rack, in rack order, with their
+/// automation, over the whole song as playback prepares them at `sample_rate`, and are paired up ([`clip_notes`]); the
+/// slides follow their anchors ([`super::slides::burned`]). A song playback refuses is refused here too.
+pub(crate) fn burned_notes(
+    song: &Song,
+    channel: usize,
+    sample_rate: f32,
+    start: u32,
+    end: u32,
+) -> Result<Vec<Event>, EngineError> {
+    if plays(song)? > MAX_PLAYS as f64 {
+        return Err(EngineError::TooManyEvents);
+    }
+    let end_beat = song_end_beat(song)?;
+    let input = SongAudioBridge::note_events_in_block(song, channel, 0.0, end_beat)
+        .map_err(EngineError::Song)?;
+    let effects = (song.channels[channel].rack.modules.iter())
+        .filter(|module| (47..=51).contains(&module.type_id))
+        .map(|module| note_effect(song, channel, module, end_beat))
+        .collect::<Result<_, _>>()?;
+    let tempo_bpm = f64::from(song.tempo_bpm as f32);
+    let events = (note_rack(song, effects, sample_rate)?)
+        .process_events(0.0, end_beat, tempo_bpm, &input)
+        .map_err(EngineError::Notes)?;
+    let mut notes = clip_notes(&events, start, end);
+    let slides = super::slides::burned(song, channel, end_beat, &notes, start, end);
+    notes.extend(slides);
+    notes.sort_by_key(Event::pos);
+    Ok(notes)
+}
+
+/// Playback's note events as the notes of a clip over song ticks [`start`, `end`): each note-on paired with the next
+/// note-off of its key, the notes that start in the span, from its start, each ending by its end (as does one with no
+/// note-off). A note-off with no note open (a Note Echo repeat's) is dropped.
+fn clip_notes(events: &[InputNoteEvent], start: u32, end: u32) -> Vec<Event> {
+    let ppq = f64::from(PPQ);
+    let mut open: HashMap<i16, VecDeque<usize>> = HashMap::new();
+    let mut notes: Vec<(&InputNoteEvent, f64)> = Vec::new();
+    for e in events {
+        if e.kind == NoteKind::On {
+            open.entry(e.pitch).or_default().push_back(notes.len());
+            notes.push((e, f64::NAN));
+        } else if let Some(i) = open.get_mut(&e.pitch).and_then(VecDeque::pop_front) {
+            notes[i].1 = e.beat;
+        }
+    }
+    let span = f64::from(start)..f64::from(end);
+    (notes.into_iter())
+        .filter_map(|(e, off)| {
+            let tick = (e.beat * ppq).round();
+            span.contains(&tick).then(|| Event::Note {
+                pos: tick as u32 - start,
+                // `min` takes the end over a missing note-off (NaN).
+                len_beats: off.min(span.end / ppq) - e.beat,
+                key: e.pitch as u8,
+                velocity: e.velocity,
+                pan: (e.pan * 255.0).round() as u8,
+                slide: false,
+            })
+        })
+        .collect()
 }
 
 /// The note effect a trace is of.

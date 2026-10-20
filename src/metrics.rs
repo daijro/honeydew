@@ -5,43 +5,47 @@
 
 use eframe::egui;
 
-/// Factor for each UI-scale index (the preference stores the index, not the factor).
+/// The legacy `uiscale` setting's factor for each index, read once to migrate it to a percent.
 pub const UI_SCALE_FACTORS: [f32; 9] = [0.75, 1.0, 1.25, 1.5, 0.9, 1.1, 1.75, 2.0, 0.6];
 
-/// UI-scale index used when nothing has been chosen (100 %).
-pub const DEFAULT_UI_SCALE_INDEX: usize = 1;
+/// `Scaling:` in percent when nothing has been chosen, and the range it is kept in.
+pub const DEFAULT_UI_SCALE: u32 = 100;
+pub const UI_SCALE_RANGE: std::ops::RangeInclusive<u32> = 60..=200;
 
 /// Desktop and web screens sit farther from the eye than a phone, so the reported DPI is boosted
 /// to keep `U` comfortable. Tune this later.
 pub const DESKTOP_DPI_BOOST: f32 = 2.0;
 
-/// Lower bound of the DPI that feeds `U`, so `U >= 16`.
-const DPI_MIN: f32 = 96.0;
-
-/// Upper bound of the DPI as a fraction of the drawing surface width in device pixels, so `U <= width / 20`.
-const DPI_MAX_PER_WIDTH: f32 = 0.3;
+/// A scale above 100 % grows `U` up to this fraction of the window width, no further.
+const MAX_U_PER_WIDTH: f32 = 0.05;
 
 /// egui's logical DPI at `pixels_per_point == 1.0`.
 const BASE_DPI: f32 = 96.0;
 
-/// Indices of [`UI_SCALE_FACTORS`] sorted by ascending factor, for a 60 %..200 % settings list.
-pub fn ui_scale_menu_order() -> [usize; 9] {
-    let mut order: [usize; 9] = std::array::from_fn(|i| i);
-    order.sort_by(|&a, &b| UI_SCALE_FACTORS[a].total_cmp(&UI_SCALE_FACTORS[b]));
-    order
+/// Whether the window `screen` is portrait: taller than wide. Then the rack (in its full screen mode), the main menu
+/// and the side pickers take the whole window width, even on a window 20 U or wider.
+pub fn is_portrait(screen: egui::Rect) -> bool {
+    screen.height() > screen.width()
 }
 
-/// `U` in device pixels: `round(clamp(dpi * factor, 96, 0.3 * surface_w_px) / 6)`.
-/// The minimum is applied after the maximum, so 96 wins on a surface narrower than 320 px. Halves round up. An
-/// out-of-range index means a factor of 1.0.
-pub fn ui_unit_px(dpi: f32, scale_index: usize, surface_w_px: f32) -> f32 {
-    let factor = UI_SCALE_FACTORS.get(scale_index).copied().unwrap_or(1.0);
-    // Not `f32::clamp`: it panics when min > max, and here max < min is the narrow-surface case.
-    ((dpi * factor)
-        .min(DPI_MAX_PER_WIDTH * surface_w_px)
-        .max(DPI_MIN)
-        / 6.0)
-        .round()
+/// `U` in device pixels at `percent` (kept in [`UI_SCALE_RANGE`]) on a window `surface_w_px` wide, and the percent
+/// the scale is limited to when the width caps it. base = dpi / 6 and U = round(base × factor), capped at
+/// max(floor(0.05 × width), round(base)): 100 % is never reduced by a narrow window, and a larger scale only grows
+/// `U` to 5 % of the width. Halves round up.
+pub fn ui_unit_px(dpi: f32, percent: u32, surface_w_px: f32) -> (f32, Option<u32>) {
+    let factor = percent.clamp(*UI_SCALE_RANGE.start(), *UI_SCALE_RANGE.end()) as f32 / 100.0;
+    let base = dpi / 6.0;
+    let want = (dpi * factor / 6.0).round().max(1.0);
+    // Whole pixels: `U` is one, and 100 % (round(base)) always fits.
+    let cap = (MAX_U_PER_WIDTH * surface_w_px)
+        .floor()
+        .max(base.round())
+        .max(1.0);
+    if want <= cap {
+        (want, None)
+    } else {
+        (cap, Some((100.0 * cap / base).round() as u32))
+    }
 }
 
 /// Text sizes, named by their point size.
@@ -80,34 +84,36 @@ pub struct Metrics {
     ppp: f32,
     /// The density used for this frame's layout and physical knob travel.
     dpi: f32,
+    /// The percent the UI scale is limited to by the window width, if it is.
+    limited: Option<u32>,
 }
 
 impl Metrics {
-    /// Builds the metrics for this frame; call once per frame, so a resize or rotation recomputes `U` (the
-    /// DPI clamp follows the drawing surface, which is the whole viewport).
-    pub fn new(ctx: &egui::Context, scale_index: usize) -> Self {
+    /// Builds the metrics for this frame at the UI scale `percent`; call once per frame, so a resize or rotation
+    /// recomputes `U` (the width cap follows the drawing surface, which is the whole viewport).
+    pub fn new(ctx: &egui::Context, percent: u32) -> Self {
         let ppp = ctx.pixels_per_point();
-        Self::on_surface(ppp, scale_index, ctx.viewport_rect().width() * ppp)
+        Self::on_surface(ppp, percent, ctx.viewport_rect().width() * ppp)
     }
 
-    /// For a surface of unknown width: only the DPI minimum applies. Tests that fix `U` use this.
-    pub fn from_pixels_per_point(ppp: f32, scale_index: usize) -> Self {
-        Self::on_surface(ppp, scale_index, f32::INFINITY)
+    /// For a surface of unknown width: no cap applies. Tests that fix `U` use this.
+    pub fn from_pixels_per_point(ppp: f32, percent: u32) -> Self {
+        Self::on_surface(ppp, percent, f32::INFINITY)
     }
 
     /// `surface_w_px` is the drawing surface width in device pixels.
-    fn on_surface(ppp: f32, scale_index: usize, surface_w_px: f32) -> Self {
+    fn on_surface(ppp: f32, percent: u32, surface_w_px: f32) -> Self {
         #[cfg(target_os = "android")]
         let display_dpi = Some(crate::android::display_dpi());
         #[cfg(not(target_os = "android"))]
         let display_dpi = None;
-        Self::from_display_dpi(ppp, scale_index, surface_w_px, display_dpi)
+        Self::from_display_dpi(ppp, percent, surface_w_px, display_dpi)
     }
 
     /// A frame's reported physical display density, if the platform supplies one.
     pub(crate) fn from_display_dpi(
         ppp: f32,
-        scale_index: usize,
+        percent: u32,
         surface_w_px: f32,
         display_dpi: Option<f32>,
     ) -> Self {
@@ -115,13 +121,19 @@ impl Metrics {
         let dpi = display_dpi
             .filter(|dpi| dpi.is_finite() && *dpi > 0.0)
             .unwrap_or(BASE_DPI * ppp * DESKTOP_DPI_BOOST);
-        let u_px = ui_unit_px(dpi, scale_index, surface_w_px);
+        let (u_px, limited) = ui_unit_px(dpi, percent, surface_w_px);
         Self {
             u: u_px / ppp,
             u_px,
             ppp,
             dpi,
+            limited,
         }
+    }
+
+    /// The percent the window width limits the UI scale to, while it does (SETTINGS shows it).
+    pub fn scale_limited_to(&self) -> Option<u32> {
+        self.limited
     }
 
     /// `n` UI units, in points (`u(1.0)` is `U` itself).
@@ -178,53 +190,24 @@ mod tests {
     const WIDE: f32 = 100_000.0;
 
     #[test]
-    fn ui_unit_at_each_scale() {
-        assert_eq!(ui_unit_px(510.0, 1, WIDE), 85.0);
-        assert_eq!(ui_unit_px(510.0, 8, WIDE), 51.0);
-        // Rounded, not truncated: 100 / 6 = 16.67.
-        assert_eq!(ui_unit_px(100.0, 1, WIDE), 17.0);
-    }
-
-    #[test]
-    fn out_of_range_scale_index_is_100_percent() {
-        assert_eq!(ui_unit_px(510.0, 99, WIDE), 85.0);
-    }
-
-    #[test]
-    fn narrow_surface_gives_the_minimum_dpi() {
-        // 0.3 * 300 = 90 < 96: the minimum is applied last, so 96 wins and U = 16 at every scale.
-        for index in 0..UI_SCALE_FACTORS.len() {
-            assert_eq!(ui_unit_px(510.0, index, 300.0), 16.0, "index {index}");
-        }
-        assert_eq!(ui_unit_px(510.0, 1, 0.0), 16.0);
-        // The same wins below 96 even without the maximum: a dpi of 60 is raised to 96.
-        assert_eq!(ui_unit_px(60.0, 1, WIDE), 16.0);
-    }
-
-    #[test]
-    fn wide_high_dpi_is_clamped_by_a_third_of_the_width() {
-        // 0.3 * 1000 = 300 < 510: U = 50, not 85.
-        assert_eq!(ui_unit_px(510.0, 1, 1000.0), 50.0);
-        // The clamp is on dpi * factor: 510 * 0.6 = 306 is just above 300, 510 * 0.9 and up are too.
-        assert_eq!(ui_unit_px(510.0, 8, 1000.0), 50.0);
-        assert_eq!(ui_unit_px(510.0, 7, 1000.0), 50.0);
-        // Below the maximum nothing changes: 0.3 * 2000 = 600.
-        assert_eq!(ui_unit_px(510.0, 1, 2000.0), 85.0);
-        // The same dpi on 960 px: 288 -> U = 48 (U is at most width / 20).
-        assert_eq!(ui_unit_px(510.0, 7, 960.0), 48.0);
-    }
-
-    #[test]
-    fn halves_round_up() {
-        // 99 / 6 = 16.5 and 111 / 6 = 18.5 exactly.
-        assert_eq!(ui_unit_px(99.0, 1, WIDE), 17.0);
-        assert_eq!(ui_unit_px(111.0, 1, WIDE), 19.0);
-        // 0.75 * 148 = 111 through a scale factor.
-        assert_eq!(ui_unit_px(148.0, 0, WIDE), 19.0);
+    fn a_narrow_window_never_reduces_100_percent_and_caps_larger_scales_at_5_percent_of_its_width()
+    {
+        // U = 85 at 100 %. Landscape 3120 px: the cap is 156 px, so 200 % is limited to 183 %.
+        assert_eq!(ui_unit_px(510.0, 100, 3120.0), (85.0, None));
+        assert_eq!(ui_unit_px(510.0, 150, 3120.0), (128.0, None));
+        assert_eq!(ui_unit_px(510.0, 200, 3120.0), (156.0, Some(184)));
+        // Portrait 1440 px: the cap is U itself, so every scale above 100 % is limited to 100 %.
+        assert_eq!(ui_unit_px(510.0, 100, 1440.0), (85.0, None));
+        assert_eq!(ui_unit_px(510.0, 125, 1440.0), (85.0, Some(100)));
+        // Below 100 % is never limited, and a percent outside 60–200 is kept in it.
+        assert_eq!(ui_unit_px(510.0, 60, 300.0), (51.0, None));
+        assert_eq!(ui_unit_px(510.0, 10, WIDE), (51.0, None));
+        // Halves round up: 0.75 * 148 / 6 = 18.5.
+        assert_eq!(ui_unit_px(148.0, 75, WIDE), (19.0, None));
     }
 
     /// `Metrics::new` for a surface of `size` points at `ppp`.
-    fn metrics_on(size: egui::Vec2, ppp: f32, index: usize) -> Metrics {
+    fn metrics_on(size: egui::Vec2, ppp: f32, percent: u32) -> Metrics {
         let ctx = egui::Context::default();
         let mut raw = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
@@ -235,30 +218,33 @@ mod tests {
             .or_default()
             .native_pixels_per_point = Some(ppp);
         let mut out = None;
-        let _ = ctx.run(raw, |ctx| out = Some(Metrics::new(ctx, index)));
+        let _ = ctx.run(raw, |ctx| out = Some(Metrics::new(ctx, percent)));
         out.unwrap()
     }
 
     #[test]
     fn metrics_new_follows_the_surface_width_in_device_pixels() {
         let v = egui::vec2;
-        // Wide enough at ppp 1: dpi 192 < 0.3 * 1000.
-        assert_eq!(metrics_on(v(1000.0, 600.0), 1.0, 1).u_px(), 32.0);
-        // Narrow: 300 px wide, 0.3 * 300 = 90 -> 96 -> 16 px.
-        assert_eq!(metrics_on(v(300.0, 600.0), 1.0, 1).u_px(), 16.0);
-        // 100 % at ppp 2 is dpi 384 on 800 px (400 pt): clamped to 240 -> U = 40 px = 20 pt.
-        let m = metrics_on(v(400.0, 300.0), 2.0, 1);
-        assert_eq!((m.u_px(), m.u(1.0)), (40.0, 20.0));
-        // Resizing the window recomputes it: the same ppp on 1600 px is not clamped (0.3 * 1600 = 480).
-        assert_eq!(metrics_on(v(800.0, 300.0), 2.0, 1).u_px(), 64.0);
+        // dpi 192 at ppp 1: U = 32 px, on a wide or a portrait window.
+        assert_eq!(metrics_on(v(1000.0, 600.0), 1.0, 100).u_px(), 32.0);
+        assert_eq!(metrics_on(v(300.0, 600.0), 1.0, 100).u_px(), 32.0);
+        // 200 % at ppp 2 (base 64 px) on 800 px: 5 % is 40 px, under 100 %, so U is 64 px and the scale 100 %.
+        let m = metrics_on(v(400.0, 300.0), 2.0, 200);
+        assert_eq!(
+            (m.u_px(), m.u(1.0), m.scale_limited_to()),
+            (64.0, 32.0, Some(100))
+        );
+        // Resizing the window recomputes it: on 3000 px the cap is 150 px.
+        let m = metrics_on(v(1500.0, 300.0), 2.0, 200);
+        assert_eq!((m.u_px(), m.scale_limited_to()), (128.0, None));
     }
 
     #[test]
     fn physical_dpi_keeps_manual_scale_and_rejects_invalid_reports() {
         let (ppp, dpi) = (2.625, 384.0);
-        for index in 0..UI_SCALE_FACTORS.len() {
-            let m = Metrics::from_display_dpi(ppp, index, WIDE, Some(dpi));
-            assert_eq!(m.u_px(), ui_unit_px(dpi, index, WIDE));
+        for percent in [60, 100, 145, 200] {
+            let m = Metrics::from_display_dpi(ppp, percent, WIDE, Some(dpi));
+            assert_eq!(m.u_px(), ui_unit_px(dpi, percent, WIDE).0);
             assert_eq!(m.dpi(), dpi);
             assert_eq!(m.ppp(), ppp);
         }
@@ -269,13 +255,10 @@ mod tests {
             Some(f32::NAN),
             Some(f32::INFINITY),
         ] {
-            let m = Metrics::from_display_dpi(ppp, 1, WIDE, dpi);
+            let m = Metrics::from_display_dpi(ppp, 100, WIDE, dpi);
             assert_eq!(m.dpi(), 504.0);
             assert_eq!(m.u_px(), 84.0);
         }
-        let narrow = Metrics::from_display_dpi(ppp, 1, 300.0, Some(dpi));
-        assert_eq!(narrow.u_px(), 16.0);
-        assert_eq!(narrow.dpi(), dpi);
     }
 
     #[test]
@@ -285,6 +268,7 @@ mod tests {
             u_px,
             ppp,
             dpi: u_px * 6.0,
+            limited: None,
         };
         assert_eq!(at(80.0, 1.0).font_id(FontSize::Pt10).size, 50.0);
         assert_eq!(at(85.0, 1.0).font_id(FontSize::Pt8).size, 42.0);
@@ -293,18 +277,9 @@ mod tests {
     }
 
     #[test]
-    fn menu_order_is_ascending_percentages() {
-        let factors: Vec<f32> = ui_scale_menu_order()
-            .iter()
-            .map(|&i| UI_SCALE_FACTORS[i])
-            .collect();
-        assert_eq!(factors, [0.6, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0]);
-    }
-
-    #[test]
     fn metrics_convert_pixels_to_points() {
         // ppp 2.0 -> dpi 384 -> U = 64 px = 32 pt; 10 pt text = floor(64 * 10 / 16) = 40 px = 20 pt.
-        let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE);
         assert_eq!(m.u(1.0), 32.0);
         assert_eq!(m.u(2.5), 80.0);
         let id = m.font_id(FontSize::Pt10);
@@ -315,10 +290,10 @@ mod tests {
     #[test]
     fn hairline_is_a_sixteenth_of_u_rounded_up_in_pixels() {
         // U = 64 px at ppp 2: t = 4 px = 2 points.
-        let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE);
         assert_eq!(m.t(), 2.0);
         // U = 85 px (panels-instruments 4.1 check): t = ceil(5.3125) = 6 px.
-        let m = Metrics::from_pixels_per_point(85.0 / 32.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(85.0 / 32.0, DEFAULT_UI_SCALE);
         assert_eq!(m.u_px(), 85.0);
         assert!((m.t() * m.ppp() - 6.0).abs() < 1e-4, "{}", m.t() * m.ppp());
     }
@@ -326,7 +301,7 @@ mod tests {
     #[test]
     fn any_point_size_follows_the_font_rule() {
         // floor(64 * 9 / 16) = 36 px = 18 points; the named sizes agree.
-        let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE);
         assert_eq!(m.font_id_pt(9.0).size, 18.0);
         assert_eq!(m.font_id_pt(12.0), m.font_id(FontSize::Pt12));
     }
@@ -334,15 +309,15 @@ mod tests {
     #[test]
     fn metrics_font_size_is_exact_for_fractional_ppp() {
         // ppp 1.5 -> dpi 288 -> U = 48 px = 32 pt; 12 pt text = 36 px = 24 pt.
-        let m = Metrics::from_pixels_per_point(1.5, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(1.5, DEFAULT_UI_SCALE);
         assert_eq!(m.font_id(FontSize::Pt12).size, 24.0);
     }
 
     #[test]
     fn accessors_report_whole_pixels_at_every_scale_and_density() {
         for ppp in [1.0, 1.25, 1.5, 2.0, 2.625, 3.0] {
-            for index in 0..UI_SCALE_FACTORS.len() {
-                let m = Metrics::from_pixels_per_point(ppp, index);
+            for percent in [60, 75, 90, 100, 110, 125, 150, 175, 200] {
+                let m = Metrics::from_pixels_per_point(ppp, percent);
                 assert_eq!(m.ppp(), ppp);
                 let px = m.u_px();
                 assert!(px >= 1.0 && px == px.round(), "{px} px at ppp {ppp}");
@@ -358,7 +333,7 @@ mod tests {
                 }
             }
         }
-        let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE);
         assert_eq!((m.u_px(), m.u(1.0), m.ppp()), (64.0, 32.0, 2.0));
     }
 }

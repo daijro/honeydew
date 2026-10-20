@@ -277,7 +277,7 @@ mod tests {
     use eframe::egui::{self, Context, RawInput, Shape, pos2, vec2};
 
     use super::*;
-    use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+    use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
     use crate::panels::tests::{Rig, U, card};
     use crate::params::menu_value;
     use crate::theme::theme_by_id;
@@ -539,7 +539,7 @@ mod tests {
     fn drawn(module: &ModuleInstance, rects: &[(u32, Rect)], ppp: f32) -> Vec<Shape> {
         let (theme, m) = (
             theme_by_id(0),
-            Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX),
+            Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE),
         );
         let cx = UiCtx {
             theme: &theme,
@@ -630,7 +630,7 @@ mod tests {
         let index = shape_index(module.params[1]);
         let (theme, m) = (
             theme_by_id(0),
-            Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX),
+            Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE),
         );
         let cx = UiCtx {
             theme: &theme,

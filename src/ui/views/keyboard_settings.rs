@@ -9,12 +9,15 @@ use crate::song::chords::{ChordSet, minor_default};
 use crate::song::{LaneKind, SET_DEFAULT, SET_EDITED, SET_LOADED, Song};
 use crate::ui::keyboard_settings::{
     ChordControls, KEYS, KeyboardMode, KeyboardSettings, KeyboardSettingsAction as A, SetItem,
-    TWO_ROWS_H, scale_from_stored, scale_to_stored,
+    scale_from_stored, scale_to_stored,
 };
 use crate::ui::rack::PresetTarget;
 
 /// What the panel keeps between frames: the values that are not the song's (keyboard mode, wheels, two rows).
 pub type State = KeyboardSettings;
+
+/// The keys area turning two rows on makes room for, in U.
+const TWO_ROWS_KEYS: f32 = 4.25;
 
 /// Draws the strip under the transport bar, above the keys; the transport's icon 48 closes it again. It shows
 /// the song's key lock, and a key or scale the user picks (or `Reset`) is a param edit: an undo step, with no
@@ -34,6 +37,8 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) -> Option<Na
     state.wheels = app.settings.show_wheels;
     state.mode = app.settings.keyboard_kind();
     state.notes = notes_channel(song, *app.selected);
+    state.drums = super::drum_editor::pads_channel(song, *app.selected).is_some();
+    state.lock = app.settings.lock_pads;
     state.chords = chord_controls(song);
     let action = state.show(ui, &app.cx, rect);
     if crate::ui::close_pressed(ui.ctx()) {
@@ -42,7 +47,12 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) -> Option<Na
     match action? {
         A::ChordSet(item) => return chord_set_item(item, app),
         action => {
-            if apply(action, state, &mut *app.song, app.settings) {
+            // Two rows on raise the panel to the bar, 4.25 U and the open strip, within the screen.
+            let (r, m) = (&app.regions, app.cx.m);
+            let two_rows = (r.transport.height() + m.u(TWO_ROWS_KEYS) + r.strip.height())
+                .min(r.screen.height())
+                / m.u(1.0);
+            if apply(action, state, &mut *app.song, app.settings, two_rows) {
                 app.param_edited();
             }
         }
@@ -146,9 +156,16 @@ fn reload_default(song: &mut Song) {
 /// - The key and the scale are the song's key lock; `Reset` sets both back and turns two rows off (with the wheels and
 ///   key-lock), and resets `KEYB`'s chords: the default set by the project scale, `Octave` 0, `Timing` 0, `Velocity`
 ///   0.5, `Hold` off.
-/// - Two rows on raises the panel's preferred height to [`TWO_ROWS_H`] if lower; off leaves it.
+/// - Two rows on raises the panel's preferred height to `two_rows` U if lower; off leaves it.
+/// - `Lock` is the pads' lock, `lockpads`.
 /// - Picking `Chords` or `Strum` turns the chord keyboard's Hold off, an edit when it was on.
-fn apply(action: A, state: &State, song: &mut Song, settings: &mut Settings) -> bool {
+fn apply(
+    action: A,
+    state: &State,
+    song: &mut Song,
+    settings: &mut Settings,
+    two_rows: f32,
+) -> bool {
     match action {
         A::Key(key) => song.key_root = key as i32,
         A::Scale(scale) => song.set_key_scale(scale_to_stored(scale)),
@@ -166,8 +183,12 @@ fn apply(action: A, state: &State, song: &mut Song, settings: &mut Settings) -> 
         A::TwoRows(on) => {
             settings.show_two_rows = on;
             if on {
-                settings.preferred_kbd_size = settings.preferred_kbd_size.max(TWO_ROWS_H);
+                settings.preferred_kbd_size = settings.preferred_kbd_size.max(two_rows);
             }
+            return false;
+        }
+        A::Lock(on) => {
+            settings.lock_pads = on;
             return false;
         }
         A::Mode(mode @ (KeyboardMode::Chords | KeyboardMode::Strum)) => {
@@ -203,18 +224,30 @@ mod tests {
     use crate::ui::keyboard_settings::SCALES;
 
     #[test]
-    fn two_rows_is_the_setting_and_on_raises_the_preferred_height_to_6_u() {
+    fn two_rows_is_the_setting_and_on_raises_the_preferred_height_to_its_room() {
         let (mut song, mut settings) = (Song::default(), Settings::default());
         let state = State::default();
-        assert!(!apply(A::TwoRows(true), &state, &mut song, &mut settings));
+        assert!(!apply(
+            A::TwoRows(true),
+            &state,
+            &mut song,
+            &mut settings,
+            6.0
+        ));
         assert!(settings.show_two_rows);
         assert_eq!(settings.preferred_kbd_size, 6.0);
         // Off never shrinks it; a taller preference stays.
-        assert!(!apply(A::TwoRows(false), &state, &mut song, &mut settings));
+        assert!(!apply(
+            A::TwoRows(false),
+            &state,
+            &mut song,
+            &mut settings,
+            6.0
+        ));
         assert!(!settings.show_two_rows);
         assert_eq!(settings.preferred_kbd_size, 6.0);
         settings.preferred_kbd_size = 8.0;
-        apply(A::TwoRows(true), &state, &mut song, &mut settings);
+        apply(A::TwoRows(true), &state, &mut song, &mut settings, 6.0);
         assert_eq!(settings.preferred_kbd_size, 8.0);
         assert_eq!(song, Song::default(), "no song edit");
     }
@@ -233,7 +266,13 @@ mod tests {
             ..Settings::default()
         };
         // The panel's state after `Reset`: every default.
-        assert!(apply(A::Reset, &State::default(), &mut song, &mut settings));
+        assert!(apply(
+            A::Reset,
+            &State::default(),
+            &mut song,
+            &mut settings,
+            6.0
+        ));
         assert_eq!(
             (song.key_root, song.key_scale),
             (0, scale_to_stored(CHROMATIC))
@@ -247,9 +286,21 @@ mod tests {
     fn the_wheels_toggle_is_the_show_wheels_setting_and_no_song_edit() {
         let (mut song, mut settings) = (Song::default(), Settings::default());
         let state = State::default();
-        assert!(!apply(A::Wheels(true), &state, &mut song, &mut settings));
+        assert!(!apply(
+            A::Wheels(true),
+            &state,
+            &mut song,
+            &mut settings,
+            6.0
+        ));
         assert!(settings.show_wheels);
-        assert!(!apply(A::Wheels(false), &state, &mut song, &mut settings));
+        assert!(!apply(
+            A::Wheels(false),
+            &state,
+            &mut song,
+            &mut settings,
+            6.0
+        ));
         assert!(!settings.show_wheels);
         assert_eq!(song, Song::default());
     }
@@ -262,18 +313,18 @@ mod tests {
             let mut song = Song::default();
             song.file.keyboard.hold = true;
             assert!(
-                apply(A::Mode(mode), &state, &mut song, &mut settings),
+                apply(A::Mode(mode), &state, &mut song, &mut settings, 6.0),
                 "{mode:?}"
             );
             assert!(!song.file.keyboard.hold);
             // Already off: no edit.
-            assert!(!apply(A::Mode(mode), &state, &mut song, &mut settings));
+            assert!(!apply(A::Mode(mode), &state, &mut song, &mut settings, 6.0));
         }
         // Classic and Scale leave it.
         for mode in [KeyboardMode::Classic, KeyboardMode::Scale] {
             let mut song = Song::default();
             song.file.keyboard.hold = true;
-            assert!(!apply(A::Mode(mode), &state, &mut song, &mut settings));
+            assert!(!apply(A::Mode(mode), &state, &mut song, &mut settings, 6.0));
             assert!(song.file.keyboard.hold, "{mode:?}");
         }
         // The kind is the `keyboardKind` setting: the last one picked, Scale.
@@ -298,7 +349,7 @@ mod tests {
             A::Hold(true),
         ] {
             assert!(
-                apply(action, &state, &mut song, &mut settings),
+                apply(action, &state, &mut song, &mut settings, 6.0),
                 "{action:?}"
             );
         }
@@ -312,7 +363,8 @@ mod tests {
             A::Mode(KeyboardMode::Strum),
             &state,
             &mut song,
-            &mut settings
+            &mut settings,
+            6.0
         ));
         assert_eq!(
             (song.file.keyboard.hold, song.file.keyboard.vertical_mode),
@@ -322,14 +374,16 @@ mod tests {
             A::Mode(KeyboardMode::Chords),
             &state,
             &mut song,
-            &mut settings
+            &mut settings,
+            6.0
         ));
         assert_eq!(song.file.keyboard.vertical_mode, 0);
         assert!(!apply(
             A::Mode(KeyboardMode::Chords),
             &state,
             &mut song,
-            &mut settings
+            &mut settings,
+            6.0
         ));
     }
 
@@ -394,7 +448,13 @@ mod tests {
         let (mut song, mut settings) = (Song::default(), Settings::default());
         let state = State::default();
         let minor = SCALES.iter().position(|&s| s == "Minor Natural").unwrap();
-        assert!(apply(A::Scale(minor), &state, &mut song, &mut settings));
+        assert!(apply(
+            A::Scale(minor),
+            &state,
+            &mut song,
+            &mut settings,
+            6.0
+        ));
         let k = &song.file.keyboard;
         assert_eq!(
             k.chord_json,
@@ -405,7 +465,7 @@ mod tests {
             ("Minor", SET_DEFAULT)
         );
         // Reset: Chromatic, so Major again.
-        assert!(apply(A::Reset, &state, &mut song, &mut settings));
+        assert!(apply(A::Reset, &state, &mut song, &mut settings, 6.0));
         let k = &song.file.keyboard;
         assert_eq!(
             k.chord_json,
@@ -416,7 +476,7 @@ mod tests {
         song.file.keyboard.set_state = SET_LOADED;
         song.file.keyboard.chord_set_name = "Mine".into();
         let json = song.file.keyboard.chord_json.clone();
-        apply(A::Scale(minor), &state, &mut song, &mut settings);
+        apply(A::Scale(minor), &state, &mut song, &mut settings, 6.0);
         assert_eq!(
             (
                 song.file.keyboard.chord_json.as_str(),

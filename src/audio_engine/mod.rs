@@ -15,6 +15,7 @@ pub(crate) mod slicer;
 mod slides;
 
 pub use input::{LiveInput, MONITOR_MAX_LAG_FRAMES, RecordTap, TakeStart};
+pub(crate) use prepare::burned_notes;
 
 use std::sync::Arc;
 

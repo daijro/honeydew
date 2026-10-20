@@ -30,10 +30,6 @@ fn note(pos: u32, key: u8) -> Event {
     }
 }
 
-fn background() -> Color32 {
-    crate::theme::theme_by_id(0).colors.background.to_color32()
-}
-
 impl Rig {
     /// Drums (1) with a one-bar clip at bar 1, MiniSynth (2) with one-bar clips at bars 2 and 3, as loaded; the audio
     /// started, channel 2's piano roll shown (it edits clip 1) and an empty log.
@@ -55,7 +51,7 @@ impl Rig {
     }
 
     fn preview(&mut self) {
-        self.click_text_button("Preview");
+        self.click_text_button("SOLO CLIP");
     }
 
     /// Where the engine the app sent last plays to from `tick`, 1024 frames on (a few ticks).
@@ -71,75 +67,78 @@ impl Rig {
 }
 
 #[test]
-fn preview_shows_with_a_current_clip_in_either_editor_and_lights_while_on() {
-    // A lane with no clip has no editor to open, and nothing to preview.
+fn solo_clip_shows_while_the_current_track_has_a_current_clip_in_every_view_and_lights_while_on() {
+    // A lane with no clip has no editor to open, and nothing to solo.
     let mut rig = Rig::with_synth();
     rig.app.navigate(Nav::Edit(1));
     rig.slide_split();
-    assert!(!rig.painted("Preview"));
+    assert!(!rig.painted("SOLO CLIP"));
 
     let mut rig = Rig::previewable();
-    assert_eq!(rig.color_of("Preview"), Some(ink()));
+    assert_eq!(rig.color_of("SOLO CLIP"), Some(ink()));
     rig.preview();
     assert_eq!(rig.app.preview, Some(SYNTH_1));
     rig.frame(vec![]);
-    // Lit: a `text` disc behind a `background` label.
-    assert_eq!(rig.color_of("Preview"), Some(background()));
+    // Lit: a `text` disc behind the icon, and no caption.
+    assert!(!rig.painted("SOLO CLIP"));
     let slot = rig
         .ctx
-        .read_response(egui::Id::new(("transport", "Preview")))
+        .read_response(egui::Id::new(("transport", "SOLO CLIP")))
         .unwrap()
         .rect;
-    assert!(rig.out.shapes.iter().any(|s| matches!(&s.shape,
-        Shape::Circle(c) if c.fill == ink() && c.center == slot.center())));
+    let lit = |rig: &Rig| {
+        rig.out.shapes.iter().any(|s| {
+            matches!(&s.shape,
+            Shape::Circle(c) if c.center == slot.center() && c.radius > slot.width() / 3.0)
+        })
+    };
+    assert!(lit(&rig));
     rig.preview();
     assert_eq!(rig.app.preview, None);
     rig.frame(vec![]);
-    assert_eq!(rig.color_of("Preview"), Some(ink()));
+    assert!(rig.painted("SOLO CLIP") && !lit(&rig));
 
-    // The drum editor has it too; the playlist and the mixer do not.
-    for (nav, shown) in [
-        (Nav::EditClip(DRUMS), true),
-        (Nav::Show(View::Playlist), false),
-        (Nav::Show(View::Mixer), false),
+    // The drum editor, the playlist and the mixer have it too: the current track keeps its current clip.
+    for nav in [
+        Nav::EditClip(DRUMS),
+        Nav::Show(View::Playlist),
+        Nav::Show(View::Mixer),
     ] {
         rig.app.navigate(nav.clone());
         rig.frame(vec![]);
         rig.frame(vec![]);
-        assert_eq!(rig.painted("Preview"), shown, "{nav:?}");
+        assert!(rig.painted("SOLO CLIP"), "{nav:?}");
     }
 }
 
 #[test]
-fn undo_and_redo_show_only_when_available_in_slots_that_do_not_move() {
+fn undo_and_redo_always_show_and_ignore_taps_while_unavailable() {
     let mut rig = Rig::previewable();
-    assert_eq!(
-        (
-            rig.painted("Undo"),
-            rig.painted("Redo"),
-            rig.painted("Preview")
-        ),
-        (false, false, true)
-    );
     let rect = |rig: &Rig, label: &str| {
         let id = egui::Id::new(("transport", label));
         rig.ctx.read_response(id).map(|r| r.rect)
     };
-    let preview = rect(&rig, "Preview").unwrap();
+    let (undo, redo) = (rect(&rig, "Undo").unwrap(), rect(&rig, "Redo").unwrap());
+    // Nothing to undo: a tap does nothing (and is no tap on the bar's empty space).
+    rig.click_text_button("Undo");
+    assert!(!rig.app.history.can_redo());
+    assert_eq!(rig.app.settings.preferred_kbd_size, 5.0);
     rig.app.song.tempo_bpm = 150.0;
     rig.app.song_edited(SongEdit::Final, 0);
     rig.frame(vec![]);
-    rig.frame(vec![]);
-    assert_eq!(rig.color_of("Undo"), Some(menu_ink()));
-    let undo = rect(&rig, "Undo").unwrap();
+    let flags = |rig: &Rig| (rig.app.history.can_undo(), rig.app.history.can_redo());
+    assert_eq!(flags(&rig), (true, false));
     rig.click_text_button("Undo");
-    rig.frame(vec![]);
-    assert_eq!((rig.painted("Undo"), rig.painted("Redo")), (false, true));
-    // Redo in the slot between Undo's and Preview's (1.75 U each), which stays put.
-    let redo = rect(&rig, "Redo").unwrap();
-    assert_eq!(redo.center().x - undo.center().x, 1.75 * U);
-    assert_eq!(preview.center().x - redo.center().x, 1.75 * U);
-    assert_eq!(rect(&rig, "Preview"), Some(preview));
+    assert_eq!(flags(&rig), (false, true));
+    rig.click_text_button("Redo");
+    assert_eq!(flags(&rig), (true, false));
+    // Nothing to redo now: a tap does nothing; neither button moved.
+    rig.click_text_button("Redo");
+    assert_eq!(flags(&rig), (true, false));
+    assert_eq!(
+        (rect(&rig, "Undo"), rect(&rig, "Redo")),
+        (Some(undo), Some(redo))
+    );
 }
 
 /// A finger on E4 (52) going down or lifting: a touch, so the mouse stays free for the Preview button.
@@ -270,6 +269,7 @@ fn turning_preview_on_or_off_silences_a_held_drum_pad_too() {
     // panel has.
     let pad_rig = || {
         let mut rig = Rig::previewable();
+        rig.app.settings.lock_pads = false;
         let mut kit = DrumKit::default();
         kit.insert_slot(0, SamplerSlot::default());
         rig.app.song.channels[1].drum_kit = Some(kit);
@@ -324,7 +324,7 @@ fn turning_preview_on_or_off_silences_a_held_drum_pad_too() {
     let mut rig = pad_rig();
     let button = (rig
         .ctx
-        .read_response(egui::Id::new(("transport", "Preview"))))
+        .read_response(egui::Id::new(("transport", "SOLO CLIP"))))
     .expect("drawn")
     .rect
     .center();
@@ -826,15 +826,15 @@ fn previewing_an_offset_clip_the_roll_maps_the_transport_through_the_span() {
     let grid = egui::Id::new("piano_roll").with("grid");
     let left = rig.ctx.read_response(grid).unwrap().rect.left();
     assert_eq!(rig.playhead(grid), (left + 44.0 / 128.0 * 2.0 * U, true));
-    // Stopped, a tap on content beat 1 seeks to s + 128, inside the loop.
+    // Stopped, a tap on content beat 2 (past the play box's touch area) seeks to s + 256, inside the loop.
     rig.app.main_screen.playing = false;
     rig.frame(vec![]);
     rig.take();
     rig.click(pos2(
-        left + 2.0 * U,
+        left + 4.0 * U,
         super::editor_wiring::EDITOR_TOP + 24.0,
     ));
-    assert_eq!(rig.take(), ["Seek 384"]);
+    assert_eq!(rig.take(), ["Seek 512"]);
 }
 
 #[test]
@@ -856,24 +856,29 @@ fn previewing_an_offset_clip_the_drum_editor_maps_the_transport_through_the_span
     rig.app.main_screen.playing = true;
     rig.rec.0.borrow_mut().tick = 300;
     rig.frame(vec![]);
-    // The step grid's playhead line (`text`, 2t = 4 points wide at U = 32) is there.
+    // The step grid's playhead line (`text`, narrower than U, under the ruler) is there.
     let (x0, step) = rig.app.slots.drum_editor.step.time_axis().unwrap();
     let text = rig.app.theme.colors.text.to_color32();
     // The editor's, under the playlist's (`ui::split`).
     let line = (rig.rects(text).into_iter())
-        .find(|r| r.width() == 4.0 && r.top() >= super::editor_wiring::EDITOR_TOP)
+        .find(|r| r.width() < U && r.top() >= super::editor_wiring::EDITOR_TOP + RULER)
         .expect("the playhead line");
     // Centred on the device pixel nearest the playhead's x (MM's line, ppp 1).
-    assert_eq!(line.center().x, (x0 + 1.375 * step).round(), "{line:?}");
-    // Stopped, a tap on step 4 (content 128) seeks to s + 128 (the ruler maps song ticks).
+    assert_eq!(
+        crate::ui::timeline::testing::line_x(line, 1.0),
+        (x0 + 1.375 * step).round(),
+        "{line:?}"
+    );
+    // Stopped, a tap on step 8 (content 256, past the play box's touch area) seeks to s + 256 (the ruler maps song
+    // ticks).
     rig.app.main_screen.playing = false;
     rig.frame(vec![]);
     rig.take();
     rig.click(pos2(
-        x0 + 4.2 * step,
+        x0 + 8.2 * step,
         super::editor_wiring::EDITOR_TOP + 24.0,
     ));
-    assert_eq!(rig.take(), ["Seek 384"]);
+    assert_eq!(rig.take(), ["Seek 512"]);
 }
 
 #[test]
@@ -925,7 +930,7 @@ fn starting_a_recording_by_playing_with_preview_on_keeps_the_starting_key() {
         }
         rig.frame(vec![]);
         let button = (rig.ctx)
-            .read_response(egui::Id::new(("transport", "Preview")))
+            .read_response(egui::Id::new(("transport", "SOLO CLIP")))
             .expect("drawn")
             .rect
             .center();

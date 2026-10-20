@@ -27,11 +27,16 @@
 //!   with " | ". Back, Ctrl+Up (`leaveFolder`) go up a folder; at the root the arrow is hidden.
 //! - A pick stays picked: the caller may keep the picker open, turn the audition strip on over its row
 //!   ([`PresetPicker::audition_on`]) or show the sample strip ([`PresetPicker::set_sample`]). Every list refresh (a
-//!   folder entered or left, a search, select mode) turns the audition off and stops the sample.
+//!   folder entered or left, a search, select mode) turns the audition off and stops the sample. The current row is
+//!   the last pick, or, in a folder above it, the folder it was picked through.
+//! - [`PresetPicker::in_modules`]: a list shown in the Modules browser's place, in the same panel. Its header has the
+//!   Back arrow at its root too, where Back gives [`PickerAction::Back`].
+//! - A long press then a drag on an audio file's row drags the file out to the playlist ([`crate::ui::file_drag`]).
 //!
 //! - [`PresetPicker::show_mut`] adds `Select` and the ≡ options menu below them, with the file browser's actions
 //!   (SONGS' [`FileActions`]) on the user's files: inside `My Files` and `Recently Deleted`, dimmed at the root, whose
-//!   `Default` is no file. `Delete` puts a preset into `Recently Deleted` at its place below the user folder; the root
+//!   `Default` is no file. A secondary tap (right click) on a row there enters select mode, selects the row and opens
+//!   the ≡ menu at the pointer. `Delete` puts a preset into `Recently Deleted` at its place below the user folder; the root
 //!   lists that copy of `My Files` as `Recently Deleted` once it exists, where `Restore` and `Delete permanently`
 //!   apply. `Create folder` and `Rename` ask for the name in a field over the list; `Delete permanently` asks first,
 //!   and a failure shows its message, each in a popup over the panel, which stays open.
@@ -44,13 +49,14 @@
 //! - the root lists `My Files`, then the categories; a category lists its presets in index order, unsorted;
 //! - `My Files` lists every folder, and the instrument files, `.instr` and audio files ([`categories::EXTS`]), a
 //!   `.flmpst` only when its `HEAD` names an instrument other than the Slicer;
-//! - every row 1.5 U tall; folders and presets alike in FontSize 4 (18 pt), as in every side browser;
+//! - folders and presets alike in FontSize 4 (18 pt), as in every side browser;
 //! - the left column is `Search`, with `Select` and ≡ only inside `My Files`;
 //! - the search lists every folder and preset below the open folder, `My Files`' too at the root (a walk, made once a
-//!   search needs it), the rows 2.2 U tall with their folder's path from the root under the name, in FontSize 1 at
-//!   α 0.6. A found folder opens through the folders above it, and the search ends ([`crate::ui::search_bar`]). An
-//!   empty query is the open folder's normal listing, even with the search bar shown. The path's folders are joined
-//!   with `/`.
+//!   search needs it), with their folder's path from the root under the name ([`crate::ui::search_bar::paint_row`]). A
+//!   found folder opens through the folders above it, and the search ends. An empty query is the open folder's normal
+//!   listing, even with the search bar shown. The path's folders are joined with `/`.
+//!
+//! Every picker's rows are the side browsers' ([`crate::ui::search_bar::ROW_H`]).
 
 use std::cell::OnceCell;
 use std::cmp::Ordering;
@@ -63,19 +69,20 @@ use eframe::egui::{Area, Context, Id, LayerId, Order, Pos2, Sense};
 
 use crate::content;
 use crate::project_files::content::{FOLD_CASE, inside};
+use crate::project_files::export::slice;
 use crate::project_files::{DWP_EXT, PRESET_EXT, SAMPLE_EXTS, fits};
-use crate::ui::UiCtx;
 use crate::ui::main_menu::library::RECENTLY_DELETED;
 use crate::ui::main_menu::{
-    FILE_MANAGER, FileActions, MenuState, Opt, SongEntry, SongLibrary, Step, bin_crumb,
+    CONVERTING, FILE_MANAGER, FileActions, MenuState, Opt, SongEntry, SongLibrary, Step, bin_crumb,
     options_menu,
 };
 use crate::ui::modules_browser::{
-    Chrome, PanelClick, PanelRow, ROW_H, RowKind, SideButton, SidePanel, crumb_text, layout,
+    Chrome, PanelClick, PanelRow, RowKind, SideButton, SidePanel, crumb_text, layout,
 };
 use crate::ui::picker_preview::{Play, SampleStrip, Sound};
 use crate::ui::popup::{self, PopupItem, PopupResult};
-use crate::ui::search_bar::{FOUND_ROW_H, Found, Walk, matching};
+use crate::ui::search_bar::{Found, Walk, matching};
+use crate::ui::{UiCtx, views};
 
 /// The root row that opens the user's folder for the scope.
 pub const MY_FILES: &str = "My Files";
@@ -103,6 +110,8 @@ pub enum PickerAction {
     Import,
     /// The close X, a click outside the panel, or Escape.
     Close,
+    /// Back at the root of a list shown in the Modules browser's place ([`PresetPicker::in_modules`]).
+    Back,
     /// `Default`: the module's init preset, its defaults; in the drum kit scope, the built-in kit; in the chord scope, the
     /// built-in set.
     Default,
@@ -112,8 +121,6 @@ pub enum PickerAction {
 
 /// The Instruments picker's title.
 pub const INSTRUMENTS_TITLE: &str = "Instruments";
-/// The Instruments picker's rows ([`PresetPicker::instruments`]), in U.
-const INSTRUMENT_ROW_H: f32 = 1.5;
 
 /// A second root beside `My Files` ([`PresetPicker::with_root`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -167,18 +174,25 @@ impl<'a> Item<'a> {
 /// What a click asks of the picker.
 enum Go {
     Done(PickerAction),
+    /// A preset (`None`: `Default`), with the folders it was found in below the open one.
+    Pick(Option<PathBuf>, Vec<PathBuf>),
+    Nothing,
     Back,
     Open(SongEntry),
     /// A found folder: these folders, outermost first, then the search ends.
     Into(Vec<SongEntry>),
     /// Select mode: the row's selection toggles.
     Toggle(PathBuf),
+    /// A secondary tap: select mode with the row selected, and the ≡ menu at this point.
+    Context(PathBuf, Pos2),
     /// `Select` toggles select mode.
     Select,
     /// The ≡ menu.
     Options,
     /// Enter in the name field.
     Name,
+    /// A row dragged out ([`drag_out`]): nothing more.
+    Dragged,
 }
 
 /// A popup over the panel.
@@ -231,6 +245,10 @@ pub struct PresetPicker {
     popup: Option<Popup>,
     /// The last pick, by its path (`None` in it: `Default`): the audition strip's row.
     picked: Option<Option<PathBuf>>,
+    /// The folders open at the last pick, from the root down to the one it is in: their rows are current above it.
+    picked_in: Vec<PathBuf>,
+    /// A list shown in the Modules browser's place ([`Self::in_modules`]).
+    nested: bool,
     /// The plays [`Self::set_sample`] made, until they are taken.
     held_plays: Vec<Play>,
     /// The Instruments picker's categories ([`Self::instruments`]); `None`: another picker.
@@ -276,6 +294,8 @@ impl PresetPicker {
             renaming: None,
             popup: None,
             picked: None,
+            picked_in: Vec::new(),
+            nested: false,
             held_plays: Vec::new(),
             categories: None,
             found: OnceCell::new(),
@@ -288,6 +308,16 @@ impl PresetPicker {
     pub fn instruments(self, categories: Vec<categories::Category>) -> Self {
         Self {
             categories: Some(categories),
+            ..self
+        }
+    }
+
+    /// A list shown in the Modules browser's place, in its panel: no slide-in, and the Back arrow at its root too, which
+    /// gives [`PickerAction::Back`].
+    pub fn in_modules(self) -> Self {
+        Self {
+            nested: true,
+            panel: SidePanel::in_place(),
             ..self
         }
     }
@@ -371,6 +401,7 @@ impl PresetPicker {
             self.folders.push(next);
         }
         self.picked = Some(Some(path.to_owned()));
+        self.picked_in = self.folders.iter().map(|f| f.path.clone()).collect();
         self.panel.reveal = true;
     }
 
@@ -533,7 +564,23 @@ impl PresetPicker {
                 }
             });
         }
-        let id = Id::new("preset_picker");
+        // `Convert to FLAC`'s loading screen over everything, in place of the panel; its abort button or Escape stops
+        // it, and the list shows the new file once it is done.
+        if self.actions.converting() {
+            if views::busy_abort(ctx, cx, CONVERTING) || crate::ui::close_pressed(ctx) {
+                self.actions.abort_convert();
+            } else if let Some(done) = self.actions.convert_step(library, &mut slice()) {
+                self.changed(done);
+            }
+            ctx.request_repaint();
+            return None;
+        }
+        // A list in the Modules browser's place draws in its panel: egui shows a new area only from its second frame.
+        let id = Id::new(if self.nested {
+            "modules_browser"
+        } else {
+            "preset_picker"
+        });
         // Before the panel, which would take Escape.
         if let Some(popup) = &self.popup {
             self.popup_shown(popup_items(popup, self.menu_state()), ctx, cx, id, library);
@@ -544,7 +591,7 @@ impl PresetPicker {
         // Out of `self` while it shows, as the rows borrow `self`.
         let mut panel = std::mem::take(&mut self.panel);
         let header = self.header();
-        let back = !self.folders.is_empty();
+        let back = !self.folders.is_empty() || self.nested;
         let mut buttons = vec![SideButton::Search];
         // The user's presets only: a factory folder and the second root are read-only.
         let mine = back && !self.in_factory() && !self.in_extra();
@@ -581,11 +628,6 @@ impl PresetPicker {
                 .map(|item| PanelRow {
                     name: item.name(),
                     folder: item.is_folder(),
-                    h: match instruments {
-                        _ if searching => FOUND_ROW_H,
-                        true => INSTRUMENT_ROW_H,
-                        false => ROW_H,
-                    },
                     sub: match item {
                         Item::Found(found) => Some(&found.place),
                         _ => None,
@@ -602,12 +644,22 @@ impl PresetPicker {
                 .collect()
         });
         let selecting = mine && self.selection.is_some();
+        let path_of = |item: Item| match item {
+            Item::Entry(e) => Some(e.path.clone()),
+            Item::Found(f) => Some(f.entry.path.clone()),
+            _ => None,
+        };
         let go = click.map(|click| match click {
             PanelClick::Close => Go::Done(PickerAction::Close),
             PanelClick::Button(i) if Some(i) == import => Go::Done(PickerAction::Import),
             PanelClick::Button(SELECT) => Go::Select,
             PanelClick::Button(_) => Go::Options,
+            PanelClick::Back if self.folders.is_empty() => Go::Done(PickerAction::Back),
             PanelClick::Back => Go::Back,
+            PanelClick::Context(item, at) => match path_of(item) {
+                Some(path) => Go::Context(path, at),
+                None => Go::Nothing,
+            },
             PanelClick::Enter => Go::Name,
             PanelClick::Row(Item::MyFiles(path)) => {
                 Go::Open(folder(MY_FILES, path.unwrap_or(Path::new(""))))
@@ -617,24 +669,31 @@ impl PresetPicker {
                 Go::Open(folder(extra.name, path))
             }
             PanelClick::Row(Item::Bin(path)) => Go::Open(folder(RECENTLY_DELETED, path)),
-            PanelClick::Row(Item::Default) => Go::Done(PickerAction::Default),
+            PanelClick::Row(Item::Default) => Go::Pick(None, Vec::new()),
             PanelClick::Row(Item::Entry(e)) if selecting => Go::Toggle(e.path.clone()),
             PanelClick::Row(Item::Entry(e)) if e.is_folder => Go::Open(e.clone()),
-            PanelClick::Row(Item::Entry(e)) => Go::Done(PickerAction::Pick(e.path.clone())),
+            PanelClick::Row(Item::Entry(e)) => Go::Pick(Some(e.path.clone()), Vec::new()),
             PanelClick::Row(Item::Found(f)) if selecting => Go::Toggle(f.entry.path.clone()),
             PanelClick::Row(Item::Found(f)) if f.entry.is_folder => Go::Into(f.folders()),
-            PanelClick::Row(Item::Found(f)) => Go::Done(PickerAction::Pick(f.entry.path.clone())),
+            PanelClick::Row(Item::Found(f)) => {
+                // The folders it was found in, below the open one.
+                let mut trail: Vec<PathBuf> = f.folders().into_iter().map(|f| f.path).collect();
+                trail.pop();
+                Go::Pick(Some(f.entry.path.clone()), trail)
+            }
+            PanelClick::Drag(item) => drag_out(ctx, item),
         });
         self.panel = panel;
         match go? {
-            Go::Done(action) => {
-                match &action {
-                    PickerAction::Pick(path) => self.picked = Some(Some(path.clone())),
-                    PickerAction::Default => self.picked = Some(None),
-                    _ => {}
-                }
-                return Some(action);
+            Go::Dragged => return None,
+            Go::Pick(path, trail) => {
+                let open = self.folders.iter().map(|f| f.path.clone());
+                self.picked_in = open.chain(trail).collect();
+                self.picked = Some(path.clone());
+                return Some(path.map_or(PickerAction::Default, PickerAction::Pick));
             }
+            Go::Done(action) => return Some(action),
+            Go::Nothing => return None,
             Go::Back => drop(self.folders.pop()),
             Go::Open(folder) => self.folders.push(folder),
             Go::Into(folders) => {
@@ -647,6 +706,17 @@ impl PresetPicker {
                     Some(at) => drop(selection.remove(at)),
                     None => selection.push(path),
                 }
+                return None;
+            }
+            Go::Context(path, at) => {
+                if self.selection.is_none() {
+                    self.panel.refreshed();
+                }
+                let selection = self.selection.get_or_insert_default();
+                if !selection.contains(&path) {
+                    selection.push(path);
+                }
+                self.popup = Some(Popup::Options(at));
                 return None;
             }
             Go::Select => {
@@ -813,8 +883,12 @@ impl PresetPicker {
     /// What the ≡ menu depends on.
     fn menu_state(&self) -> MenuState {
         let picked = self.picked();
+        let wav = |e: &SongEntry| {
+            !e.is_folder && (e.path.extension()).is_some_and(|x| x.eq_ignore_ascii_case("wav"))
+        };
         MenuState {
             selected: picked.len(),
+            wav: matches!(&picked[..], [e] if wav(e)),
             in_trash: self.in_trash(),
             paste: self.actions.can_paste(),
             // The web downloads each file: a folder cannot be.
@@ -1078,7 +1152,11 @@ impl PresetPicker {
     /// `My Files`.
     fn header(&self) -> String {
         if self.folders.is_empty() {
-            return self.title.clone();
+            // The Back arrow shows at a nested list's root too.
+            return match self.nested {
+                true => crumb_text([self.title.as_str()]),
+                false => self.title.clone(),
+            };
         }
         let (first, folders) = match self.opened_from_bin_row() {
             true => (bin_crumb(), &self.folders[1..]),
@@ -1098,10 +1176,27 @@ impl PresetPicker {
     fn is_picked(&self, item: Item) -> bool {
         match (item, &self.picked) {
             (Item::Default, Some(None)) => true,
-            (Item::Entry(e), Some(Some(path))) => !e.is_folder && same_file(&e.path, path),
-            (Item::Found(f), Some(Some(path))) => same_file(&f.entry.path, path),
+            (Item::Entry(e), Some(_)) if e.is_folder => self.holds_pick(&e.path),
+            (Item::MyFiles(Some(path)) | Item::Bin(path), Some(_)) => self.holds_pick(path),
+            (
+                Item::Extra(Extra {
+                    path: Some(path), ..
+                }),
+                Some(_),
+            ) => self.holds_pick(path),
+            (Item::Entry(e), Some(Some(path))) => same_file(&e.path, path),
+            (Item::Found(f), Some(Some(path))) => {
+                !f.entry.is_folder && same_file(&f.entry.path, path)
+            }
             _ => false,
         }
+    }
+
+    /// `folder`, a row of the open folder, is the one the last pick was made in, or one above it.
+    fn holds_pick(&self, folder: &Path) -> bool {
+        let depth = self.folders.len();
+        let open = self.folders.iter().map(|f| &f.path);
+        self.picked_in.get(depth).is_some_and(|f| f == folder) && open.eq(&self.picked_in[..depth])
     }
 }
 
@@ -1145,6 +1240,20 @@ pub(crate) fn natural(a: &str, b: &str) -> Ordering {
 fn number(chars: &mut Peekable<Chars>) -> String {
     let digits: String = std::iter::from_fn(|| chars.next_if(char::is_ascii_digit)).collect();
     digits.trim_start_matches('0').to_owned()
+}
+
+/// A long press then a drag on `item`: an audio file's row drags the file out to the playlist
+/// ([`crate::ui::file_drag`]).
+fn drag_out(ctx: &Context, item: Item) -> Go {
+    let entry = match item {
+        Item::Entry(e) => e,
+        Item::Found(f) => &f.entry,
+        _ => return Go::Dragged,
+    };
+    if !entry.is_folder && crate::project_files::is_audio(&entry.path) {
+        crate::ui::file_drag::start(ctx, &entry.path, &entry.name);
+    }
+    Go::Dragged
 }
 
 /// `a` and `b` name the same file: component by component, without case where the file system ignores it

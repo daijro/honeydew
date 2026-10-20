@@ -1,6 +1,6 @@
 [package]
 name = "honeydew"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
@@ -30,6 +30,18 @@ png = "0.18.1"
 # wasm32, so they add no package: deflate/inflate and the CRC-32 of the container.
 miniz_oxide = "0.9"
 crc32fast = "1"
+# Lemon Studio's own plugins (Lemon Trio, Lemon Sampler, Lemon Parametric EQ) built into the app on every platform,
+# hosted through Lemon Studio's CLAP host, their editors drawn into the rack cards (`vendor/lemon-studio/README.md`,
+# `src/plugins/builtin.rs`).
+lemon-3x-osc = { path = "vendor/lemon-studio/lemon-3x-osc", features = ["linked", "embed"] }
+lemon-sampler = { path = "vendor/lemon-studio/lemon-sampler", features = ["linked", "embed"] }
+lemon-parametric-eq-2 = { path = "vendor/lemon-studio/lemon-parametric-eq-2", features = ["linked", "embed"] }
+os-plugkit = { path = "vendor/lemon-studio/os-plugkit", features = ["embed"] }
+os-ui = { path = "vendor/lemon-studio/os-ui" }
+os-theme = { path = "vendor/lemon-studio/os-theme" }
+os-engine = { path = "vendor/lemon-studio/os-engine" }
+os-host = { path = "vendor/lemon-studio/os-host" }
+os-clap = { path = "vendor/lemon-studio/os-clap" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2.129"
@@ -51,10 +63,8 @@ jni = "0.21.1"
 rfd = "0.17.2"
 # M11 J2: MIDI input over ALSA (cpal's `alsa 0.9`), CoreMIDI and WinMM. 0.10.4 is the last 0.10.x, on `alsa ^0.9`.
 midir = "=0.10.4"
-# Third-party plugin hosting (VST3, VST2, CLAP), desktop only: Lemon Studio's hosts, vendored (vendor/lemon-studio).
-os-engine = { path = "vendor/lemon-studio/os-engine" }
-os-host = { path = "vendor/lemon-studio/os-host" }
-os-clap = { path = "vendor/lemon-studio/os-clap" }
+# Third-party plugin hosting (VST3, VST2, CLAP), desktop only: Lemon Studio's hosts, vendored (vendor/lemon-studio);
+# `os-host` and `os-clap` above, which the built-in plugins need everywhere.
 os-vst3 = { path = "vendor/lemon-studio/os-vst3" }
 os-vst2 = { path = "vendor/lemon-studio/os-vst2" }
 
@@ -74,7 +84,7 @@ windows-sys = { version = "0.61", features = ["Win32_System_Com", "Win32_System_
 # a song link that fails to parse as a local file path (the PROJECT tab's `Open`).
 webbrowser = { version = "1.2.4", features = ["hardened"] }
 
-# Built for speed (owner decision); the web build adds `[profile.web]` below, and wasm-opt -O3 (tools/web-dist.sh).
+# Built for speed; the web build adds `[profile.web]` below, and wasm-opt -O3 (tools/web-dist.sh).
 # Not `panic = "abort"`: wasm32 aborts already, and on native it would turn off `sample.rs::guarded`, which turns a
 # decoder's panic into `Malformed`.
 [profile.release]

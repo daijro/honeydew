@@ -686,7 +686,7 @@ mod tests {
     fn the_speed_labels_and_ticks_frame_the_slider_on_tuning_only() {
         let mut rig = Rig::new(45, panel().unwrap(), card(8.0).1);
         let s = rig.rect_of(SPEED);
-        let m = crate::metrics::Metrics::from_pixels_per_point(1.0, 1);
+        let m = crate::metrics::Metrics::from_pixels_per_point(1.0, 100);
         let (b, size) = (speed_box(s), m.font_id(FontSize::Pt8).size);
         for (text, align) in SPEED_LABELS {
             let shape = rig
@@ -777,7 +777,7 @@ mod tests {
     /// stay.
     #[test]
     fn custom_can_be_picked_and_leaves_the_notes() {
-        use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+        use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
         use crate::panels::{place, show};
         use crate::theme::theme_by_id;
         use crate::ui::UiCtx;
@@ -792,7 +792,7 @@ mod tests {
         let before = m.params.clone();
         let (theme, metrics) = (
             theme_by_id(0),
-            Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX),
+            Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE),
         );
         let cx = UiCtx {
             theme: &theme,

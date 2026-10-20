@@ -1,0 +1,129 @@
+name: Lemon Studio effects
+
+# Compares the vendored Lemon Studio effects (vendor/lemon-studio/os-engine/src/effects: upstream's files at the commit
+# vendor/lemon-studio/README.md pins) with Lemon Studio's main. While they differ, one open issue lists the changed files
+# and the upstream commits; it is closed once they match again. Syncing is tools/sync-lemon-effects.sh in the
+# development repo.
+#
+# The built-in plugins (Lemon Trio, Lemon Sampler, Lemon Parametric EQ and the crates they use, which Honeydew patches)
+# the same way: their own issue lists what upstream's main changed in them since their pinned commit. Syncing is
+# tools/sync-lemon-plugins.sh.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare with upstream and open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          title="Lemon Studio effects changed upstream"
+          url=https://github.com/ItsAlphaNeon/Lemon-Studio
+          src=crates/os-engine/src/effects
+          dst=vendor/lemon-studio/os-engine/src/effects
+          pinned=$(sed -nE 's/^- Effects commit: `([0-9a-f]{40})`.*/\1/p' vendor/lemon-studio/README.md)
+          git clone -q --filter=blob:none --no-checkout "$url" "$RUNNER_TEMP/lemon"
+          lemon() { git -C "$RUNNER_TEMP/lemon" "$@"; }
+          main=$(lemon rev-parse HEAD)
+          upstream="$RUNNER_TEMP/upstream"
+          mkdir -p "$upstream"
+          for f in $(lemon ls-tree --name-only HEAD "$src/"); do
+            lemon show "HEAD:$f" > "$upstream/$(basename "$f")"
+          done
+          changed=()
+          for name in $( (ls "$dst"; ls "$upstream") | sort -u); do
+            cmp -s "$dst/$name" "$upstream/$name" || changed+=("$name")
+          done
+          issue=$(gh issue list --state open --limit 100 --json number,title \
+            --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          if [ ${#changed[@]} -eq 0 ]; then
+            echo "The vendored effects match Lemon Studio's main ($main)."
+            if [ -n "$issue" ]; then
+              gh issue close "$issue" --comment "The vendored effects match Lemon Studio's \`main\` again (\`$main\`)."
+            fi
+            exit 0
+          fi
+          {
+            echo "Lemon Studio's \`main\` differs from the effects Honeydew vendors in \`$dst\`."
+            echo
+            echo "- Pinned: [\`${pinned:0:12}\`]($url/commit/$pinned)"
+            echo "- Upstream \`main\`: [\`${main:0:12}\`]($url/commit/$main)"
+            echo "- Range: $url/compare/$pinned...$main"
+            echo
+            echo "Changed files:"
+            printf -- '- `%s`\n' "${changed[@]}"
+            echo
+            echo "Upstream commits touching them since the pinned one:"
+            commits=$(lemon log --format='- [`%h`]('"$url"'/commit/%H) %s' "$pinned..$main" -- "$src" 2>/dev/null \
+              || echo "- (the pinned commit is not in upstream's history)")
+            echo "${commits:-- none: the vendored files differ from the pinned commit}"
+            echo
+            echo "To sync, run \`tools/sync-lemon-effects.sh $main\` in the development repo (see \`vendor/lemon-studio/README.md\`)."
+          } > "$RUNNER_TEMP/body.md"
+          if [ -n "$issue" ]; then
+            gh issue edit "$issue" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh issue create --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          fi
+      - name: Compare the plugins with upstream and open, update or close their issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          title="Lemon Studio plugins changed upstream"
+          url=https://github.com/ItsAlphaNeon/Lemon-Studio
+          paths=(plugins/lemon-3x-osc plugins/lemon-sampler plugins/lemon-parametric-eq-2 crates/os-plugkit crates/os-ui
+            crates/os-theme crates/os-hostlink crates/os-model crates/os-dsp crates/os-paths
+            crates/os-engine/src/clock.rs crates/os-engine/src/envelope.rs crates/os-engine/src/laws.rs
+            crates/os-engine/src/sample.rs)
+          pinned=$(sed -nE 's/^- Plugins commit: `([0-9a-f]{40})`.*/\1/p' vendor/lemon-studio/README.md)
+          lemon() { git -C "$RUNNER_TEMP/lemon" "$@"; }
+          [ -d "$RUNNER_TEMP/lemon" ] || git clone -q --filter=blob:none --no-checkout "$url" "$RUNNER_TEMP/lemon"
+          main=$(lemon rev-parse HEAD)
+          if ! lemon cat-file -e "$pinned^{commit}" 2>/dev/null; then
+            changed="(the pinned commit is not in upstream's history)"
+          else
+            changed=$(lemon diff --name-only "$pinned" "$main" -- "${paths[@]}")
+          fi
+          issue=$(gh issue list --state open --limit 100 --json number,title \
+            --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          if [ -z "$changed" ]; then
+            echo "The vendored plugins are at upstream's main as far as they go ($main)."
+            if [ -n "$issue" ]; then
+              gh issue close "$issue" --comment "Lemon Studio's \`main\` has no changes to the plugins since the pinned commit any more (\`$main\`)."
+            fi
+            exit 0
+          fi
+          {
+            echo "Lemon Studio's \`main\` changed the plugins Honeydew vendors in \`vendor/lemon-studio\` since their pinned commit."
+            echo
+            echo "- Pinned: [\`${pinned:0:12}\`]($url/commit/$pinned)"
+            echo "- Upstream \`main\`: [\`${main:0:12}\`]($url/commit/$main)"
+            echo "- Range: $url/compare/$pinned...$main"
+            echo
+            echo "Changed files:"
+            printf -- '- `%s`\n' $changed
+            echo
+            echo "Upstream commits touching them:"
+            commits=$(lemon log --format='- [`%h`]('"$url"'/commit/%H) %s' "$pinned..$main" -- "${paths[@]}" 2>/dev/null || true)
+            echo "${commits:-- none found}"
+            echo
+            echo "To sync, run \`tools/sync-lemon-plugins.sh $main\` in the development repo (see \`vendor/lemon-studio/README.md\`)."
+          } > "$RUNNER_TEMP/plugins.md"
+          if [ -n "$issue" ]; then
+            gh issue edit "$issue" --body-file "$RUNNER_TEMP/plugins.md"
+          else
+            gh issue create --title "$title" --body-file "$RUNNER_TEMP/plugins.md"
+          fi

@@ -1,5 +1,5 @@
 //! Our demo song through the whole app: the first run puts it into the songs folder's `Demo songs` once
-//! (`demoSongsRestored`), with no flash; SETTINGS `Restore demo songs` writes it back behind its loading screen, held
+//! (`demoSongsVersion`), with no flash; SETTINGS `Restore demo songs` writes it back behind its loading screen, held
 //! 1 s, then flashes `Restored`; and SONGS lists the folder and opens the song with no notices, ready to play.
 
 use std::path::{Path, PathBuf};
@@ -38,7 +38,7 @@ fn the_first_run_writes_the_demo_and_the_next_run_does_not() {
     let spy = Spy::default();
     let rig = start(&spy, Box::<MemoryLibrary>::default());
     assert_eq!(rig.app.files.library.read(&file).unwrap(), bytes);
-    assert!(Settings::load(&spy).demo_songs_restored, "kept");
+    assert_eq!(Settings::load(&spy).demo_songs_version, 2, "kept");
     // The user deletes it; the next start leaves it deleted.
     let mut library = rig.app.files.library;
     library.remove(&file).unwrap();
@@ -69,7 +69,7 @@ fn a_first_run_that_fails_tries_again_at_the_next_start() {
     }
     let spy = Spy::default();
     let rig = start(&spy, Box::new(Nowhere));
-    assert!(!rig.app.settings.demo_songs_restored);
+    assert_eq!(rig.app.settings.demo_songs_version, 0);
     let rig = start(&spy, Box::<MemoryLibrary>::default());
     assert!(rig.app.files.library.exists(&demo_file().0));
 }
@@ -151,7 +151,7 @@ fn restore_demo_songs_runs_behind_its_loading_screen_held_1_s_then_flashes_resto
     let held = closed - copied;
     assert!((1.0 - 1e-9..1.15).contains(&held), "held {held} s");
     assert_eq!(rig.app.files.library.read(&file).unwrap(), bytes);
-    assert!(rig.app.settings.demo_songs_restored);
+    assert_eq!(rig.app.settings.demo_songs_version, 2);
     let texts = rig.texts();
     assert!(texts.contains(&RESTORED.to_owned()), "{texts:?}");
     assert!(!texts.contains(&RESTORING_DEMO_SONGS.to_owned()));
@@ -186,7 +186,7 @@ fn a_lost_flag_does_not_replace_the_users_copy_but_restore_does() {
         .unwrap();
     let mut rig = start(&Spy::default(), Box::new(library));
     assert_eq!(rig.app.files.library.read(&file).unwrap(), b"mine");
-    assert!(rig.app.settings.demo_songs_restored);
+    assert_eq!(rig.app.settings.demo_songs_version, 2);
     let binned = rig.app.files.library.bin_path(&file).unwrap();
     restore(&mut rig);
     assert_eq!(rig.app.files.library.read(&file).unwrap(), bytes);

@@ -1,14 +1,18 @@
 //! The Modules side browser: the modules a rack can add, by section, with search. The rack opens it from `Add Module`
 //! and from a card's `Insert above` / `Insert below` / `Replace`; the caller keeps a [`ModulesBrowser`] while it is
 //! open and applies a pick with [`add_module`], a `Paste` of the clipboard's modules with [`crate::ui::rack::paste`].
-//! `Rack Preset` hands over to the rack preset picker.
+//! `Rack Preset` and `Instrument` hand over to the rack preset list and the Instruments list, shown in the same panel
+//! (`ui::views::preset_picker`), whose Back comes back here.
 //!
-//! The SYNTH section (`3x Osc` to `Transistor Bass`) is a section like the others, with no rule that sets its rows
-//! apart: a pick adds an instrument module with the registry defaults and a fresh id, from `Add Module` and from
-//! `Insert above` / `Insert below` / `Replace`, like any module. But `Paste` puts instrument modules only into a
-//! channel whose primary lane is a notes lane, and the picker follows the same rule: on any other channel (drums,
-//! audio, effect track, master) the rows are dimmed and inert. The caller says which with `show`'s `instruments`, from
-//! [`crate::ui::rack::takes_instruments`], the one predicate `Paste` and a rack preset's load use too.
+//! The SYNTH section (`3x Osc` to `Transistor Bass`) is a section like the others: a pick adds an instrument module
+//! with the registry defaults and a fresh id, from `Add Module` and from `Insert above` / `Insert below` / `Replace`,
+//! like any module. But `Paste` puts instrument modules only into a channel whose primary lane is a notes lane, and
+//! the picker follows the same rule: on any other channel (drums, audio, effect track, master) the list leaves out
+//! `Instrument`, the SYNTH and NOTE EFFECT sections and the plugin instruments. The caller says which with `show`'s
+//! `instruments`, from [`crate::ui::rack::takes_instruments`], the one predicate `Paste` and a rack preset's load use
+//! too.
+//!
+//! The current row is the last pick of the session.
 //!
 //! `Paste` is always listed and enabled: the clipboard holds the modules a card's `Copy` or the rack's `Copy Rack` put
 //! there, and what does not fit the channel is the caller's `Cannot paste module`.
@@ -35,22 +39,25 @@ use crate::metrics::{FontSize, Metrics};
 use crate::params::{self, Role};
 use crate::song::{ModuleInstance, Rack, SynthKind};
 use crate::theme::DISABLED_ALPHA;
-use crate::ui::buttons::{filled_circle_button, outline_circle_button};
+use crate::ui::buttons::{close_x, outline_circle_button};
 use crate::ui::picker_preview::{Audition, STRIP_H, SampleStrip};
-use crate::ui::popup::PopupItem;
+use crate::ui::popup::{PopupItem, PopupResult};
 use crate::ui::preset_picker::{modal, natural};
-use crate::ui::search_bar::{self, SearchBar};
+use crate::ui::search_bar::{self, RowLook, SearchBar};
 use crate::ui::widgets::{shrink, truncated};
 use crate::ui::{Finger, UiCtx, anim, fingers, focus, focus_lost};
+use honeydew_audio::lemon;
 
 use Entry::Module as M;
 use SynthKind as S;
 
-/// An entry of the list: the two actions, an instrument or an effect.
+/// An entry of the list: the three actions, an instrument or an effect.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Entry {
     Paste,
     RackPreset,
+    /// The Instruments list, whose pick adds an instrument loaded with the preset.
+    Instrument,
     /// An instrument module; addable only into a channel that takes instruments.
     Synth(SynthKind),
     /// An effect or note effect, by type id.
@@ -74,6 +81,7 @@ impl Entry {
         match self {
             Self::Paste => "Paste",
             Self::RackPreset => "Rack Preset",
+            Self::Instrument => "Instrument",
             Self::Synth(kind) => kind.label(),
             Self::Module(id) => params::module_spec(id).map_or("", |s| s.display_name),
             Self::Plugin(plugin) => plugin.name,
@@ -122,15 +130,27 @@ impl Row {
     }
 }
 
+/// Lemon Studio's built-in plugins ([`crate::plugins::builtin`]), each listed after the module it is Lemon's
+/// counterpart of (as Lemon Reverb and Lemon Limiter are), on every platform.
+const fn lemon(b: crate::plugins::builtin::Builtin, instrument: bool) -> Entry {
+    Entry::Plugin(PluginEntry {
+        uid: b.uid,
+        name: b.name,
+        instrument,
+    })
+}
+
 /// The Modules sections, in order. The first group has no header. Ids by display name; where a name is shared
 /// (Reverb, Limiter, Autoduck) the current, non-legacy id.
 const SECTIONS: [(Option<&str>, &[Entry]); 7] = [
-    (None, &[Entry::Paste, Entry::RackPreset]),
+    (None, &[Entry::Paste, Entry::RackPreset, Entry::Instrument]),
     (
         Some("SYNTH"),
         &[
             Entry::Synth(S::ThreeXOsc),
+            lemon(crate::plugins::builtin::LEMON_TRIO, true),
             Entry::Synth(S::DwSampler),
+            lemon(crate::plugins::builtin::LEMON_SAMPLER, true),
             Entry::Synth(S::GmSynth),
             Entry::Synth(S::MiniSynth),
             Entry::Synth(S::Slicer),
@@ -139,14 +159,37 @@ const SECTIONS: [(Option<&str>, &[Entry]); 7] = [
             Entry::Synth(S::TransistorBass),
         ],
     ),
-    (Some("ECHO"), &[M(32), M(35), M(18), M(16)]),
+    (
+        Some("ECHO"),
+        &[M(32), M(35), M(lemon::REVERB), M(18), M(16)],
+    ),
     (
         Some("LEVEL"),
-        &[M(29), M(8), M(6), M(27), M(20), M(28), M(36), M(41)],
+        &[
+            M(29),
+            M(8),
+            M(6),
+            M(27),
+            M(20),
+            M(28),
+            M(lemon::LIMITER),
+            M(36),
+            M(41),
+        ],
     ),
     (
         Some("FILTER"),
-        &[M(40), M(3), M(9), M(7), M(34), M(44), M(15), M(30)],
+        &[
+            M(40),
+            M(3),
+            lemon(crate::plugins::builtin::LEMON_EQ, false),
+            M(9),
+            M(7),
+            M(34),
+            M(44),
+            M(15),
+            M(30),
+        ],
     ),
     (
         Some("MISC"),
@@ -208,7 +251,7 @@ impl Entry {
     /// effects and note effects, each by module type id.
     fn top_level(self) -> (u8, u16) {
         match self {
-            Self::Paste | Self::RackPreset => (0, 0),
+            Self::Paste | Self::RackPreset | Self::Instrument => (0, 0),
             Self::Synth(kind) => (1, kind.type_id()),
             Self::Module(id) => (2, id),
             Self::Plugin(plugin) => (if plugin.instrument { 1 } else { 2 }, u16::MAX),
@@ -216,11 +259,12 @@ impl Entry {
     }
 }
 
-/// The list for `query` in `sort`: the entries whose name contains it, ignoring case. In `Category` each section
-/// header is kept while one of its entries is; the other orderings have no section rows.
-pub fn rows(query: &str, sort: ModuleOrdering) -> Vec<Row> {
+/// The list for `query` in `sort`: the entries whose name contains it, ignoring case, and that the channel takes
+/// (`instruments`: it takes instruments, [`Entry::fits`]). In `Category` each section header is kept while one of its
+/// entries is; the other orderings have no section rows.
+pub fn rows(query: &str, sort: ModuleOrdering, instruments: bool) -> Vec<Row> {
     let query = query.to_lowercase();
-    let hit = |e: &&Entry| e.name().to_lowercase().contains(&query);
+    let hit = |e: &&Entry| e.fits(instruments) && e.name().to_lowercase().contains(&query);
     let plugins = plugin_sections();
     if sort != ModuleOrdering::Category {
         let entries = SECTIONS.iter().flat_map(|(_, entries)| entries.iter());
@@ -322,7 +366,8 @@ pub fn paste_module(rack: &mut Rack, module: &ModuleInstance, at: InsertAt) -> i
     instance_id
 }
 
-// Sizes in U. The width is 18 U, at most the screen's.
+// Sizes in U. The width is 18 U, at most the screen's; a portrait screen's whole width
+// ([`is_portrait`](crate::metrics::is_portrait)).
 const WIDTH: f32 = 18.0;
 /// The header: 2 U, a 1 px `text` line under it, the X 1.5 U wide 0.25 U from the right edge, the Back
 /// arrow (icon 43) 1.5 U wide at the left.
@@ -341,9 +386,7 @@ const BUTTON_GAP: f32 = 0.5;
 const BUTTON_APART: f32 = 0.25;
 /// The buttons' labels: 8 pt, shrunk to fit the button.
 const BUTTON_LABEL_PT: u8 = 8;
-/// A row's height (the Instruments picker's are taller, `PanelRow::h`).
-pub(crate) const ROW_H: f32 = 1.25;
-/// Left padding of the title, the row texts and the search text.
+/// Left padding of the title and the name field's text (a row's own is [`search_bar::paint_row`]'s).
 const PAD_X: f32 = 0.5;
 const SCROLLBAR_W: f32 = 0.15;
 /// Icon size factor of the close X (as the transport's), and of the ≡ button's icon (as SONGS').
@@ -358,12 +401,15 @@ const TAIL_K: usize = 5;
 const CRUMB_TAIL_K: usize = 40;
 /// The Back arrow's icon size factor.
 const BACK_ICON: f32 = 0.7;
-/// `text` alphas: the pressed row's band, the scrollbar thumb (disabled rows: [`DISABLED_ALPHA`]).
-const PRESSED_ALPHA: f32 = 0.15;
+/// `text` alphas: the scrollbar thumb, a section header's band (disabled rows: [`DISABLED_ALPHA`]).
 const SCROLLBAR_ALPHA: f32 = 0.5;
-/// Every row's text: folders, items, section bands and found rows alike, one size in every side browser (the folder
-/// rows' FontSize 4). A long name keeps its middle ellipsis ([`TAIL_K`]).
+const SECTION_ALPHA: f32 = 0.05;
+/// Every row's name: folders and items alike, one size in every side browser (the folder rows' FontSize 4); a found
+/// row with a path is the exception ([`search_bar::paint_row`]). A section header's label is FontSize 3.
 const ROW_FONT: FontSize = FontSize::Pt18;
+const SECTION_FONT: FontSize = FontSize::Pt12;
+/// A section header's label inset from the row's left.
+const SECTION_PAD: f32 = 0.25;
 /// Row flash on pick: a tapped item row is lit with `text` at this alpha, fading out linearly over [`FLASH_S`]
 /// seconds.
 const FLASH_ALPHA: f32 = 0.6;
@@ -380,22 +426,36 @@ pub enum BrowserAction {
     Plugin(&'static str),
     /// `Paste`: add the clipboard's modules with [`crate::ui::rack::paste`].
     Paste,
-    /// `Rack Preset`: open the rack preset picker in the browser's place, for the same insert point.
+    /// `Rack Preset`: open the rack preset list in the browser's place.
     RackPreset,
+    /// `Instrument`: open the Instruments list in the browser's place, for the same insert point.
+    Instrument,
 }
 
 impl Entry {
-    /// What a click on the entry does; `None`: it is dimmed and inert. `instruments`: the channel takes instruments.
-    fn action(self, instruments: bool) -> Option<BrowserAction> {
+    /// What a click on the entry does.
+    fn action(self) -> BrowserAction {
         match self {
-            Self::Paste => Some(BrowserAction::Paste),
-            Self::RackPreset => Some(BrowserAction::RackPreset),
-            Self::Synth(kind) => instruments.then_some(BrowserAction::Pick(kind.type_id())),
-            Self::Module(id) => Some(BrowserAction::Pick(id)),
-            Self::Plugin(plugin) => {
-                (instruments || !plugin.instrument).then_some(BrowserAction::Plugin(plugin.uid))
-            }
+            Self::Paste => BrowserAction::Paste,
+            Self::RackPreset => BrowserAction::RackPreset,
+            Self::Instrument => BrowserAction::Instrument,
+            Self::Synth(kind) => BrowserAction::Pick(kind.type_id()),
+            Self::Module(id) => BrowserAction::Pick(id),
+            Self::Plugin(plugin) => BrowserAction::Plugin(plugin.uid),
         }
+    }
+
+    /// Whether the entry is listed for a channel that takes instruments or not (`instruments`): `Instrument`, the
+    /// instruments and the note effects only where an instrument goes.
+    fn fits(self, instruments: bool) -> bool {
+        let note = |id| params::module_spec(id).is_some_and(|s| s.role == Role::NoteEffect);
+        instruments
+            || match self {
+                Self::Instrument | Self::Synth(_) => false,
+                Self::Module(id) => !note(id),
+                Self::Plugin(plugin) => !plugin.instrument,
+                Self::Paste | Self::RackPreset => true,
+            }
     }
 }
 
@@ -409,23 +469,28 @@ pub struct ModulesBrowser {
     pub sort_picked: Option<ModuleOrdering>,
     /// `Sort`'s menu, open, centred on its button.
     sort_menu: Option<Pos2>,
+    /// The last pick: the current row.
+    picked: Option<Entry>,
 }
 
 impl ModulesBrowser {
+    /// The browser coming back from a list shown in its place (`Instrument`, `Rack Preset`): no slide-in.
+    pub fn in_place() -> Self {
+        Self {
+            panel: SidePanel::in_place(),
+            ..Self::default()
+        }
+    }
+
     /// Shows the panel over everything else; call it every frame while it is open. `instruments`: the channel takes
-    /// instruments, so the SYNTH rows are enabled (else dimmed). See `SidePanel::show` for how it is modal and takes
-    /// Escape.
+    /// instruments, so `Instrument`, the SYNTH and the NOTE EFFECT rows are listed. See `SidePanel::show` for how it is
+    /// modal and takes Escape.
     pub fn show(&mut self, ctx: &Context, cx: &UiCtx, instruments: bool) -> Option<BrowserAction> {
         let id = Id::new("modules_browser");
         // Before the panel, which would take Escape: the menu takes it first.
         if let Some(at) = self.sort_menu {
-            let items: Vec<_> = (ModuleOrdering::MENU.into_iter().enumerate())
-                .map(|(row, sort)| PopupItem {
-                    current: sort == self.sort,
-                    ..PopupItem::new(sort, 0, row, sort.label())
-                })
-                .collect();
-            let result = modal(ctx, cx, id.with("sort menu"), at, &items);
+            let menu = ModuleOrdering::MENU.map(|o| (o, o.label()));
+            let result = sort_menu(ctx, cx, id, at, &menu, self.sort);
             self.sort_picked = result.selected.or(self.sort_picked);
             if let Some(sort) = result.selected.filter(|&s| s != self.sort) {
                 // A sort is a list refresh, from the top.
@@ -444,35 +509,62 @@ impl ModulesBrowser {
             buttons: &[SideButton::Search, SideButton::Plain("Sort", true)],
             popup: self.sort_menu.is_some(),
         };
-        let sort = self.sort;
+        let (sort, picked) = (self.sort, self.picked);
         let click = self.panel.show(ctx, cx, &chrome, |query| {
             let row = |row: Row| PanelRow {
                 name: row.name(),
                 folder: false,
-                h: ROW_H,
                 sub: None,
                 kind: match row {
                     Row::Section(_) => RowKind::Section,
-                    Row::Item(entry) => entry
-                        .action(instruments)
-                        .map_or(RowKind::Disabled, RowKind::Enabled),
+                    Row::Item(entry) => RowKind::Enabled(entry),
                 },
-                picked: false,
+                picked: matches!(row, Row::Item(e) if Some(e) == picked),
             };
-            rows(query, sort).into_iter().map(row).collect()
+            rows(query, sort, instruments)
+                .into_iter()
+                .map(row)
+                .collect()
         })?;
         match click {
             PanelClick::Close => Some(BrowserAction::Close),
-            PanelClick::Row(action) => Some(action),
+            PanelClick::Row(entry) => {
+                let action = entry.action();
+                if matches!(action, BrowserAction::Pick(_) | BrowserAction::Plugin(_)) {
+                    self.picked = Some(entry);
+                }
+                Some(action)
+            }
             // `Sort`, the one button the panel hands back.
             PanelClick::Button(i) => {
                 self.sort_menu = Some(layout(ctx.content_rect(), 1.0, cx.m).button(i));
                 None
             }
-            // The browser asks for no name and has no folders.
-            PanelClick::Enter | PanelClick::Back => None,
+            // The browser asks for no name, has no folders and no select mode.
+            PanelClick::Enter
+            | PanelClick::Back
+            | PanelClick::Context(..)
+            | PanelClick::Drag(_) => None,
         }
     }
+}
+
+/// `Sort`'s menu of the panel `id`, centred on `at`: one row per ordering, the `current` one highlighted.
+pub(crate) fn sort_menu<T: Copy + PartialEq>(
+    ctx: &Context,
+    cx: &UiCtx,
+    id: Id,
+    at: Pos2,
+    orderings: &[(T, &'static str)],
+    current: T,
+) -> PopupResult<T> {
+    let items: Vec<_> = (orderings.iter().enumerate())
+        .map(|(row, &(sort, label))| PopupItem {
+            current: sort == current,
+            ..PopupItem::new(sort, 0, row, label)
+        })
+        .collect();
+    modal(ctx, cx, id.with("sort menu"), at, &items)
 }
 
 // ---- the side browser panel, which the preset picker shares ----
@@ -497,8 +589,8 @@ pub(crate) struct Chrome<'a> {
     pub id: Id,
     /// The header's text, top-left in large text: the root's title, or inside a folder its [`crumb_text`].
     pub title: &'a str,
-    /// Inside a folder: the Back arrow shows at the header's left, and Back, Ctrl+Up (`leaveFolder`) give
-    /// [`PanelClick::Back`]. At the root it is hidden.
+    /// Inside a folder, or in a list shown in another's place: the Back arrow shows at the header's left, and Back,
+    /// Ctrl+Up (`leaveFolder`) give [`PanelClick::Back`]. Otherwise it is hidden.
     pub back: bool,
     /// Down the left edge, in order.
     pub buttons: &'a [SideButton<'a>],
@@ -516,11 +608,11 @@ pub(crate) fn crumb_text<'a>(parts: impl IntoIterator<Item = &'a str>) -> String
 
 /// How a row looks, and what a click on it gives.
 pub(crate) enum RowKind<T> {
-    /// A section header on a darker band; inert.
+    /// A section header on a `text` α 0.05 band; inert.
     Section,
     /// A click gives this.
     Enabled(T),
-    /// [`Self::Enabled`], selected: drawn as an inverted bar (`text`, with `menuFill` ink), as a current popup item.
+    /// [`Self::Enabled`], selected in select mode: its checkbox has the inner disc.
     Selected(T),
     /// Dimmed and inert.
     Disabled,
@@ -531,13 +623,12 @@ pub(crate) struct PanelRow<'a, T> {
     pub name: &'a str,
     /// A folder: a tap opens it, which is its own feedback, so it never flashes.
     pub folder: bool,
-    /// Its height, in U ([`ROW_H`]).
-    pub h: f32,
-    /// A search result's folder path, under the name ([`search_bar::place_line`]).
+    /// A search result's folder path, under the name ([`search_bar::paint_row`]).
     pub sub: Option<&'a str>,
     pub kind: RowKind<T>,
-    /// The last pick: the audition strip sits over it while it is on. It is drawn as any row (it has no look of its
-    /// own, and the loading pulse, a `text` fill under `menuFill` text, is drawn for a plain row).
+    /// The current row: the last pick, or the folder holding it, drawn inverted outside select mode. The audition strip
+    /// sits over a picked item row while it is on, and its loading pulse (a `text` fill under `menuFill` text) over a
+    /// plain one: a picked row is not inverted while it loads.
     pub picked: bool,
 }
 
@@ -550,11 +641,16 @@ pub(crate) enum PanelClick<T> {
     Button(usize),
     /// An enabled row; also the picked row a second finger re-picks through the audition strip.
     Row(T),
+    /// A secondary tap (right click) on an enabled row, where the panel offers select mode (an enabled
+    /// [`SideButton::Toggle`]): the caller enters select mode, selects the row and opens its ≡ menu at this point.
+    Context(T, Pos2),
     /// Enter in the name field [`SidePanel::ask`] opened: take the name with [`SidePanel::take_prompt`].
     Enter,
     /// Back up one folder: the header's Back arrow, or `leaveFolder` (Ctrl+Up, Cmd+Up on a Mac), shown inside a
     /// folder only ([`Chrome::back`]).
     Back,
+    /// A long press then a drag on an item row: the caller may drag it out ([`crate::ui::file_drag`]).
+    Drag(T),
 }
 
 /// The open panel's state: the search, the scroll, the slide-in. Make a fresh one each time it opens: every opening
@@ -614,7 +710,11 @@ impl Layout {
 }
 
 pub(crate) fn layout(screen: Rect, p: f32, m: &Metrics) -> Layout {
-    let w = m.round_px(m.u(WIDTH).min(screen.width()));
+    let w = match crate::metrics::is_portrait(screen) {
+        true => screen.width(),
+        false => m.u(WIDTH).min(screen.width()),
+    };
+    let w = m.round_px(w);
     let left = m.round_px(screen.left() + (p - 1.0) * w);
     let panel = Rect::from_min_size(pos2(left, screen.top()), vec2(w, screen.height()));
     let header = panel.with_max_y(panel.top() + m.u(HEADER_H));
@@ -695,7 +795,7 @@ impl SidePanel {
         // (egui's widgets are where they are painted).
         let p = match self.in_place {
             true => 1.0,
-            false => anim::browser_slide(anim::frame(ctx, id)),
+            false => anim::browser_slide(anim::elapsed(ctx, id)),
         };
         if p < 1.0 {
             ctx.request_repaint();
@@ -719,10 +819,14 @@ impl SidePanel {
             focus::move_to(ctx, strip_id);
         }
         self.auditioned &= self.audition.on;
-        // Select mode, as a tap on its lit toggle leaves it.
+        // Select mode, as a tap on its lit toggle leaves it; a secondary tap enters it where it is offered.
         let selecting = (chrome.buttons.iter())
             .position(|b| matches!(b, SideButton::Toggle(_, true, _)))
             .map(PanelClick::Button);
+        let selectable =
+            (chrome.buttons.iter()).any(|b| matches!(b, SideButton::Toggle(_, _, true)));
+        // The checkboxes grow in as select mode starts.
+        let checks = selecting.map(|_| anim::browser_slide(anim::elapsed(ctx, id.with("select"))));
         let outside =
             backdrop.clicked() || backdrop.secondary_clicked() || backdrop.middle_clicked();
         let mut click = outside.then_some(PanelClick::Close);
@@ -774,9 +878,10 @@ impl SidePanel {
                 let px = 1.0 / m.ppp();
                 let line = at.header.with_min_y(at.header.bottom() - px);
                 painter.rect_filled(line, 0.0, text);
-                let close =
-                    filled_circle_button(ui, id.with("close"), at.close, m.u(CLOSE_W), text);
-                draw_icon(&painter, close.rect(), IconId::Close, ink, CLOSE_ICON, m);
+                // The shared close X on the panel's `menuFill`.
+                let cell = Rect::from_center_size(at.close, vec2(m.u(CLOSE_W), m.u(CLOSE_W)));
+                let surface = (c.menu_fill.to_color32(), 0.5);
+                let close = close_x(ui, cx, id.with("close"), cell, surface, CLOSE_ICON);
                 if close.clicked() {
                     click = Some(PanelClick::Close);
                 }
@@ -841,7 +946,7 @@ impl SidePanel {
                     }
                 }
 
-                let row_h = m.round_px(m.u(ROW_H));
+                let row_h = m.round_px(m.u(search_bar::ROW_H));
                 let mut list = at.list;
                 // The sample strip takes the panel's bottom; the list shrinks by its height.
                 if let Some(strip) = &mut self.sample {
@@ -900,18 +1005,20 @@ impl SidePanel {
 
                 // Drags and the wheel scroll; rows sense clicks only, so a drag that starts on one still scrolls.
                 let rows = rows(self.search.query());
-                let heights: Vec<f32> = rows.iter().map(|r| m.round_px(m.u(r.h))).collect();
-                let content_h: f32 = heights.iter().sum();
+                let content_h = rows.len() as f32 * row_h;
                 if std::mem::take(&mut self.reveal)
                     && let Some(i) = rows.iter().position(|r| r.picked)
                 {
-                    let top: f32 = heights[..i].iter().sum();
-                    let shown = self.scroll_y.max(top + heights[i] - list.height());
+                    let top = i as f32 * row_h;
+                    let shown = self.scroll_y.max(top + row_h - list.height());
                     self.scroll_y = shown.min(top);
                 }
                 let drag = ui.interact(list, id.with("list"), Sense::drag());
                 let mut moved = drag.drag_delta().y;
-                if drag.contains_pointer() {
+                // A row dragged out of the list leaves it where it is.
+                if crate::ui::file_drag::dragging(ctx) {
+                    moved = 0.0;
+                } else if drag.contains_pointer() {
                     moved += ui.input(|i| i.smooth_scroll_delta.y);
                 }
                 self.scroll_y =
@@ -925,24 +1032,43 @@ impl SidePanel {
                 // The flashing row's full rect, when it shows.
                 let mut flashed = None;
                 let now = ui.input(|i| i.time);
-                let mut top = list.top() - scroll;
-                for (i, (row, row_h)) in rows.into_iter().zip(heights).enumerate() {
+                for (i, row) in rows.into_iter().enumerate() {
+                    let top = list.top() - scroll + i as f32 * row_h;
                     let rect = Rect::from_x_y_ranges(list.x_range(), top..=top + row_h);
-                    top += row_h;
-                    let top = rect.top();
+                    let item = !row.folder && row.picked;
                     if let (true, RowKind::Enabled(pick) | RowKind::Selected(pick)) =
-                        (row.picked, &row.kind)
+                        (item, &row.kind)
                     {
                         picked = Some((rect, *pick, i, row.name));
                     }
                     if top >= list.bottom() || top + row_h <= list.top() {
                         continue;
                     }
-                    let selected = matches!(row.kind, RowKind::Selected(_));
-                    let color = match row.kind {
+                    let mut look = RowLook {
+                        name: row.name,
+                        place: row.sub,
+                        font: ROW_FONT,
+                        ink: text,
+                        current: row.picked && !(item && self.audition.loading),
+                        pressed: false,
+                        hovered: false,
+                        select: None,
+                    };
+                    match row.kind {
                         RowKind::Section => {
-                            painter.rect_filled(rect, 0.0, c.control_fill.to_color32());
-                            text
+                            painter.rect_filled(rect, 0.0, text.gamma_multiply(SECTION_ALPHA));
+                            let label = rect.with_min_x(rect.left() + m.u(SECTION_PAD));
+                            let font = m.font_id(SECTION_FONT);
+                            truncated(
+                                &painter,
+                                label,
+                                Align2::LEFT_CENTER,
+                                row.name,
+                                font,
+                                text,
+                                0,
+                            );
+                            continue;
                         }
                         RowKind::Enabled(pick) | RowKind::Selected(pick) => {
                             let row_id = id.with(("row", i));
@@ -952,6 +1078,9 @@ impl SidePanel {
                                 row_id,
                                 Sense::click(),
                             );
+                            if !row.folder && crate::ui::file_drag::row_dragged(ui, &response, m) {
+                                click = Some(PanelClick::Drag(pick));
+                            }
                             if response.clicked() {
                                 click = Some(PanelClick::Row(pick));
                                 // Row flash on pick: every tap on an item row starts it over, a re-tap of the
@@ -960,29 +1089,25 @@ impl SidePanel {
                                     self.flash = Some((i, row.name.to_owned(), now));
                                 }
                             }
-                            if selected {
-                                painter.rect_filled(rect, 0.0, text);
-                                c.menu_fill.to_color32()
-                            } else {
-                                if response.is_pointer_button_down_on() {
-                                    let band = text.gamma_multiply(PRESSED_ALPHA);
-                                    painter.rect_filled(rect, 0.0, band);
-                                }
-                                text
+                            if selectable && response.secondary_clicked() {
+                                let at = response.interact_pointer_pos().unwrap_or(rect.center());
+                                click = Some(PanelClick::Context(pick, at));
                             }
+                            look.pressed = response.is_pointer_button_down_on();
+                            look.hovered = crate::ui::widgets::hovered(ui, &response);
+                            let selected = matches!(row.kind, RowKind::Selected(_));
+                            look.select = checks.map(|t| (t, selected));
                         }
-                        RowKind::Disabled => text.gamma_multiply(DISABLED_ALPHA),
-                    };
+                        RowKind::Disabled => {
+                            look.ink = text.gamma_multiply(DISABLED_ALPHA);
+                            look.select = checks.map(|t| (t, false));
+                        }
+                    }
                     if (self.flash.as_ref()).is_some_and(|(f, name, _)| *f == i && name == row.name)
                     {
                         flashed = Some(rect);
                     }
-                    let mut label = rect.shrink2(vec2(m.u(PAD_X), 0.0));
-                    if let Some(place) = row.sub {
-                        search_bar::place_line(&painter, m, &mut label, place, color);
-                    }
-                    let (left, font) = (Align2::LEFT_CENTER, m.font_id(ROW_FONT));
-                    truncated(&painter, label, left, row.name, font, color, TAIL_K);
+                    search_bar::paint_row(&painter, cx, rect, &look);
                 }
                 focus::close(ctx, rows_id);
                 // The loading pulse over the picked row, the audition strip's or not (a Slicer's or a sample picker's

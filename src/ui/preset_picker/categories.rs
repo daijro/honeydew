@@ -119,6 +119,14 @@ pub fn instrument_of(path: &Path, bytes: &[u8]) -> Option<u16> {
     listed(type_id).then_some(type_id)
 }
 
+/// The instrument a pick in the Modules browser's Instruments list adds: [`instrument_of`]'s, and the DW Sampler for an
+/// `.instr` or audio file (its loader takes the one, refuses the other).
+pub fn module_instrument_of(path: &Path, bytes: &[u8]) -> Option<u16> {
+    let is = |ext: &str| (path.extension()).is_some_and(|e| e.eq_ignore_ascii_case(ext));
+    let dw = is("instr") || SAMPLE_EXTS.iter().any(|x| is(x));
+    instrument_of(path, bytes).or(dw.then_some(DW_SAMPLER))
+}
+
 /// Whether the file `name` of a source of type `type_id` is one of its presets: one of its preset types; a `.flmpst`
 /// only when its `HEAD` names a [`listed`] instrument (`read`).
 pub fn preset_file(type_id: u16, name: &Path, read: impl FnOnce() -> Option<Vec<u8>>) -> bool {

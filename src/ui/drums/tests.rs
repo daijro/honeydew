@@ -2,7 +2,7 @@ use eframe::egui::epaint::ClippedShape;
 use eframe::egui::{self, Context, Event, PointerButton, RawInput, Shape, Vec2, pos2, vec2};
 
 use super::*;
-use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
 use crate::midi::CcLink;
 use crate::theme::theme_by_id;
 use crate::ui::ctrl_menu::CtrlAction;
@@ -287,7 +287,7 @@ impl Rig {
         };
         let (theme, m) = (
             theme_by_id(0),
-            Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX),
+            Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE),
         );
         let cx = UiCtx {
             theme: &theme,

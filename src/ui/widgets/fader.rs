@@ -168,7 +168,7 @@ mod tests {
     fn device_check_at_u_51() {
         // At 60 % scale and 510 dpi (ppp 510 / 192 with the desktop boost), U = 51 px and t = 4 px, and the cap's inner
         // rect is about 60 × 92 px. The parts are measured in device pixels (px = 1).
-        let m = crate::metrics::Metrics::from_pixels_per_point(510.0 / 192.0, 8);
+        let m = crate::metrics::Metrics::from_pixels_per_point(510.0 / 192.0, 60);
         let (u, t) = (m.u_px(), (m.t() * m.ppp()).round());
         assert_eq!((u, t), (51.0, 4.0));
         let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(0.6 * 4.0 * u, 10.0 * u));

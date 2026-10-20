@@ -10,10 +10,14 @@ use honeydew_audio::device::AudioRenderer;
 
 #[test]
 fn the_keyboard_starts_with_middle_c_centered_and_keeps_manual_scroll() {
-    for (width, scale, wheels) in [(480.0, 0, false), (1170.0, 1, true), (2048.0, 2, false)] {
+    for (width, scale, wheels) in [
+        (480.0, 75, false),
+        (1170.0, 100, true),
+        (2048.0, 125, false),
+    ] {
         let mut rig = Rig::new();
         rig.app.main_screen = MainScreen::default();
-        rig.app.settings.ui_scale_index = scale;
+        rig.app.settings.ui_scale = scale;
         rig.app.settings.show_wheels = wheels;
         rig.app
             .add_bare_channel(ChannelKind::Synth(SynthKind::MiniSynth), 0);

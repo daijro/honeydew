@@ -67,6 +67,29 @@ fn ctrl_left_is_rev_and_alt_r_arms_without_playing() {
 }
 
 #[test]
+fn ctrl_brackets_jump_to_bar_starts_within_the_song() {
+    // 4/4, a 16-beat song.
+    let mut rig = rig();
+    let jump = |rig: &mut Rig, beats: f64, key| {
+        rig.rec.0.borrow_mut().tick = (beats * 128.0) as u64;
+        rig.key(key, CMD);
+        rig.sent()
+    };
+    assert_eq!(jump(&mut rig, 6.0, Key::CloseBracket), ["Seek 1024"]);
+    assert_eq!(jump(&mut rig, 6.0, Key::OpenBracket), ["Seek 512"]);
+    // On a bar line: the bar before; at the start, the start.
+    assert_eq!(jump(&mut rig, 8.0, Key::OpenBracket), ["Seek 512"]);
+    assert_eq!(jump(&mut rig, 0.0, Key::OpenBracket), ["Seek 0"]);
+    // Never past the song end.
+    assert_eq!(jump(&mut rig, 15.0, Key::CloseBracket), ["Seek 2048"]);
+    assert_eq!(jump(&mut rig, 16.0, Key::CloseBracket), ["Seek 2048"]);
+    // A 3-beat bar.
+    rig.app.song.time_sig.beats_per_bar = 3;
+    assert_eq!(keys::bar_jump(&rig.app.song, 7 * 128, true), 9 * 128);
+    assert_eq!(keys::bar_jump(&rig.app.song, 6 * 128, false), 3 * 128);
+}
+
+#[test]
 fn f8_and_f10_open_the_main_menu_on_songs_and_settings_and_never_close_it() {
     let mut rig = Rig::new();
     rig.key(Key::F8, NONE);

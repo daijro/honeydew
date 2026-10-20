@@ -51,6 +51,8 @@ mod wrap;
 pub mod fine_tune;
 // The `Sound credits` screen.
 pub mod credits;
+// The What's New dialog.
+pub mod whats_new;
 
 /// What fills the editor area, between the top of the screen and the transport bar.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -146,6 +148,8 @@ pub enum Overlay {
     MidiImport,
     /// The `Sound credits` screen (SETTINGS' `Sound credits`): the bundled sounds' sources and the app's own credits.
     Credits,
+    /// The What's New dialog (Help → `What's new`, or by itself once per notes version).
+    WhatsNew,
 }
 
 /// `Link to MIDI CC`'s prompt.
@@ -517,11 +521,12 @@ pub struct Slots {
     pub fine_tune: fine_tune::State,
     /// The MIDI import dialog's file and choices.
     pub midi_import: midi_import::State,
-    /// The performance monitor's data and whether its floating view is shown. The app keeps `detached` when another
-    /// song loads, and starts the graph over.
+    /// The performance monitor's data, which the PROJECT page shows.
     pub performance: Performance,
     /// The `Sound credits` screen's lines, made when it first shows.
     pub credits: credits::State,
+    /// The What's New dialog's scroll.
+    pub whats_new: whats_new::State,
 }
 
 impl Slots {
@@ -623,9 +628,6 @@ impl Slots {
                 && let Some(corner) = corner.take()
             {
                 corner(ui);
-                // The detached performance monitor floats over the rack and the corner buttons, under the main menu,
-                // the dialogs and the popups, which come after.
-                main_menu::monitor(&self.performance, ui, app);
             }
             if i == top && escape {
                 crate::ui::hand_close(ui.ctx());
@@ -634,7 +636,6 @@ impl Slots {
         }
         if let Some(corner) = corner {
             corner(ui);
-            main_menu::monitor(&self.performance, ui, app);
         }
         navs
     }
@@ -748,6 +749,8 @@ impl Slots {
             Overlay::MidiImport => midi_import::show(&mut self.midi_import, ui, app),
             // Modal like the Save dialog: hidden while a message shows over it, which draws in the same layer.
             Overlay::Credits => top.then(|| credits::show(&mut self.credits, ui, app))?,
+            // Modal like the Save dialog: hidden while a message shows over it.
+            Overlay::WhatsNew => top.then(|| whats_new::show(&mut self.whats_new, ui, app))?,
         }
     }
 }
@@ -755,7 +758,18 @@ impl Slots {
 /// A loading screen: `title` centred on the background over the whole screen, which takes every click. The export's
 /// `Overlay::Busy` and the audio editor's `Processing...` show it.
 pub fn busy(ctx: &egui::Context, cx: &UiCtx, title: &str) {
+    busy_screen(ctx, cx, title, false);
+}
+
+/// [`busy`] with an abort button, the close X in a 1.5 U cell 0.25 U in from the top-right corner: `text` on a
+/// `background` disc that only shows under the mouse. Returns whether it was clicked.
+pub fn busy_abort(ctx: &egui::Context, cx: &UiCtx, title: &str) -> bool {
+    busy_screen(ctx, cx, title, true)
+}
+
+fn busy_screen(ctx: &egui::Context, cx: &UiCtx, title: &str, abort: bool) -> bool {
     let screen = ctx.content_rect();
+    let mut aborted = false;
     let c = &cx.theme.colors;
     egui::Area::new(egui::Id::new("busy"))
         .order(egui::Order::Foreground)
@@ -777,7 +791,22 @@ pub fn busy(ctx: &egui::Context, cx: &UiCtx, title: &str) {
             let galley = painter.layout_job(job);
             let at = screen.center() - egui::vec2(0.0, galley.size().y / 2.0);
             painter.galley(at, galley, ink);
+            if abort {
+                let (m, inset) = (cx.m, cx.m.u(0.25));
+                let cell = egui::Rect::from_min_size(
+                    egui::pos2(screen.right() - inset - m.u(1.5), screen.top() + inset),
+                    egui::Vec2::splat(m.u(1.5)),
+                );
+                let id = egui::Id::new("busy abort");
+                let bg = c.background.to_color32();
+                let x =
+                    crate::ui::buttons::filled_circle_button(ui, id, cell.center(), m.u(1.2), bg);
+                let close = crate::icons::IconId::Close;
+                crate::icons::draw_icon(&painter, cell, close, ink, 0.7, m);
+                aborted = x.clicked();
+            }
         });
+    aborted
 }
 
 /// `Link to MIDI CC`'s prompt in the popup style, centred on the screen: [`LEARN_CC_PROMPT`], then `Cancel`. `Cancel`,
@@ -1058,7 +1087,7 @@ mod tests {
     fn a_swap_closes_the_asking_overlay_and_opens_the_other_on_top() {
         let at = InsertAt::End;
         let browser = ModulesBrowser { channel: 1, at };
-        let target = crate::ui::rack::PresetTarget::RackInsert(at);
+        let target = crate::ui::rack::PresetTarget::ModulesRack(at);
         let picker = PresetPicker { channel: 1, target };
         let mut nav = with(View::Playlist, &[Rack(1), browser, CtrlMenu]);
         nav.apply_from(1, Nav::Swap(picker.clone()), &song());
@@ -1144,7 +1173,7 @@ mod tests {
     #[test]
     fn the_strongest_edit_of_a_frame_wins() {
         let theme = crate::theme::theme_by_id(0);
-        let m = crate::metrics::Metrics::from_pixels_per_point(1.0, 1);
+        let m = crate::metrics::Metrics::from_pixels_per_point(1.0, 100);
         let (mut song, mut audio, mut selected) = (song(), AudioLink::default(), 1);
         let mut files =
             ProjectFiles::with_provider(Box::new(crate::project_files::mem::MemFiles::default()));

@@ -38,9 +38,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+      # signalsmith-stretch (Lemon Sampler's time stretching) compiles C++ and runs bindgen, which loads libclang.
+      # macOS has it in Xcode; Windows images ship LLVM, installed here if missing.
       - name: System libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: libclang
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $llvm = 'C:\Program Files\LLVM\bin'
+          if (-not (Test-Path "$llvm\libclang.dll")) { choco install llvm -y --no-progress }
+          "LIBCLANG_PATH=$llvm" >> $env:GITHUB_ENV
       - run: cargo build --release --locked --target ${{ matrix.target }} --bins
       - name: Package
         shell: bash
@@ -124,6 +133,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Android build tools
         run: |
+          sudo apt-get update && sudo apt-get install -y libclang-dev
           sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.0.13004108'
           cargo install cargo-ndk --version 4.1.2 --locked
       - name: Build signed APK with sounds

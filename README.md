@@ -44,7 +44,7 @@ FL Studio Mobile demo projects, opened as `.flm` files.
 
 ## Opening and saving projects
 
-Open a file from SONGS → Import, with `Ctrl+O`, or by dropping it on the window.
+Open a file from SONGS → Import, with `Ctrl+O`, or by dropping it on the window. Audio files dropped on the playlist become clips.
 
 | Format | Open | Save |
 |---|---|---|
@@ -54,20 +54,22 @@ Open a file from SONGS → Import, with `Ctrl+O`, or by dropping it on the windo
 | Audio (WAV, FLAC, OGG, MP3) | No | Yes |
 
 - **MIDI:** each channel gets the closest bundled instrument for its General MIDI program. Channel 10 becomes a drum kit.
-- **Opening an FLP:** you get the channels, patterns, playlist, audio clips, tempo, volume and pan. 3x Osc channels keep their sound. Missing plugins and samples play the closest bundled sound, and a summary lists what was swapped. `Locate samples...` finds missing samples in a folder you pick.
-- **Saving an FLP:** samples are included, and each channel's effects become FL Studio's own effects on its mixer insert. Turn on `Include rendered audio` to also add each channel as audio, so the project sounds the same in FL Studio.
+- **Opening an FLP:** you get the channels, patterns, playlist, audio clips, tempo, volume and pan. 3x Osc channels keep their sound, and Fruity Reeverb 2 and Fruity Limiter become Lemon Reverb and Lemon Limiter with their settings. Missing plugins and samples play the closest bundled sound, and a summary lists what was swapped. `Locate samples...` finds missing samples in a folder you pick.
+- **Saving an FLP:** samples are included, and each channel's effects become FL Studio's own effects on its mixer insert (Lemon Reverb and Lemon Limiter with their settings). Turn on `Include rendered audio` to also add each channel as audio, so the project sounds the same in FL Studio.
 
-## Plugins (desktop only)
+## Plugins
 
-Honeydew can use VST3, VST2 and CLAP plugins as instruments and effects.
+The desktop app can use VST3, VST2 and CLAP plugins as instruments and effects.
 
 <p align="center"><img src="assets/screenshots/12-plugins.webp" width="100%" alt="Dragonfly Hall Reverb's own window over Honeydew, with Surge XT and Dragonfly Hall Reverb loaded as plugin modules in the rack"></p>
 
 1. Install your plugins in one of the folders below.
 2. Open a channel's **Modules** browser. Plugins are listed under PLUGIN INSTRUMENTS and PLUGIN EFFECTS.
-3. Adding a plugin opens its window. The `Editor` button on its card opens and closes it again.
+3. Adding a plugin opens its window. The pop-out button on its card opens it again.
 
 Plugin settings are saved with the project, and their controls can be automated.
+
+**Built-in plugins, on every platform:** Lemon Studio's Lemon Trio and Lemon Sampler are under SYNTH, and Lemon Parametric EQ under FILTER. Their own controls show right in the rack card, on the web and Android too. If you have them installed separately, Honeydew uses the built-in ones. On the web and Android, Lemon Sampler can't open sample files yet, and on the web its time stretching only resamples.
 
 **Where Honeydew looks:**
 
@@ -82,7 +84,7 @@ Plugin settings are saved with the project, and their controls can be automated.
 - Plugin windows open on Linux only for now. On Windows and macOS, use the sliders on the plugin's card.
 - On Linux, a plugin that crashes while playing closes Honeydew. Scanning plugins is safe.
 - Plugin latency is shown but not compensated.
-- FL Studio Mobile still opens projects that use plugins, just without the plugins. The web and Android versions keep plugin settings but don't play them.
+- FL Studio Mobile still opens projects that use plugins, just without the plugins. The web and Android versions keep other plugins' settings but don't play them.
 - Opening an FLP loads its plugins if you have them installed, and saving as FLP writes them back.
 
 ## Using your own FL Studio Mobile sounds
@@ -131,7 +133,7 @@ cargo run --release
 The sound library lives in `sounds/`, split into 90 MB parts to stay under GitHub's file size limit. To rebuild it from the raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.2.1
+tools/release-content.sh 0.3.0
 ```
 
 Commit the updated `sounds/honeydew-sounds.zip.*` parts with your changes. Add `--web` to also build the web ZIP. Tagged releases include the sounds automatically.
@@ -192,7 +194,7 @@ Honeydew is an independent project, not affiliated with or endorsed by Image-Lin
 ## License and credits
 
 - **Code:** [GPL-3.0-or-later](LICENSE). Copyright (c) 2026 The Honeydew contributors.
-- **Plugin hosting and FLP support:** from Lemon Studio by ItsAlphaNeon; see [Code from Lemon Studio](#code-from-lemon-studio) below.
+- **Plugin hosting, FLP support, Lemon Reverb, Lemon Limiter, Lemon Trio, Lemon Sampler and Lemon Parametric EQ:** from Lemon Studio by ItsAlphaNeon; see [Code from Lemon Studio](#code-from-lemon-studio) below.
 - **Font:** Open Sans SemiCondensed SemiBold, SIL Open Font License 1.1 ([`assets/fonts/OFL.txt`](assets/fonts/OFL.txt)).
 - **Icon:** a derivative of "Melon" by afitrose, licensed as Free for commercial use WITH ATTRIBUTION.
 - **Sounds:** the bundled instruments, drum kits, one-shots, effects, loops and waveforms come from the sources below. Full notices are in the app under SETTINGS → Sound credits.
@@ -261,3 +263,13 @@ GPL-3.0-or-later. Each file keeps its original copyright and license header, and
 - **FLP files** (`src/flp/`): the FL Studio project reader and writer, the mixer writer and the plugin wrapper format,
   from `os-flp`.
 - **Plugin scanning and editor windows** (`src/plugins/scan.rs`, `src/plugins/window.rs`).
+- **Lemon Reverb and Lemon Limiter** (`vendor/lemon-studio/os-engine/src/effects/`): Lemon Studio's reverb and its
+  limiter, compressor and noise gate, as built-in effects.
+- **Lemon Trio** (`vendor/lemon-studio/lemon-3x-osc/`): Lemon Studio's three-oscillator synth, built in with its own
+  editor.
+- **Lemon Sampler** (`vendor/lemon-studio/lemon-sampler/`): Lemon Studio's sampler, built in with its own editor.
+- **Lemon Parametric EQ** (`vendor/lemon-studio/lemon-parametric-eq-2/`): Lemon Studio's seven-band EQ, built in with its
+  own editor.
+- **Plugin UI and support code** (`vendor/lemon-studio/`): the editor kit, theme, drawing and fonts these three plugins use
+  (`os-plugkit`, `os-ui`, `os-theme`), the host link and data model (`os-hostlink`, `os-model`), and the DSP and path
+  helpers (`os-dsp`, `os-paths`).

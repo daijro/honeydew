@@ -17,11 +17,17 @@
 //!   panel's focus does.
 //! - `showMainBrowser` moves the focus into the SONGS list ([`focus::SONGS`]) whether or not the menu was open, so
 //!   `startSearch` works there. `startSearch` itself is no global action: the browsers take it.
+//! - `prevBar` / `nextBar` (Ctrl+[ / Ctrl+]) seek to a bar start ([`bar_jump`]), as a ruler tap's seek does: playback
+//!   goes on, the play-start point moves, and a recording stops.
+//! - The text-field actions (`lineStart`, `wordLeft`, `selectLeft` …) are listed in the maps for completeness: egui's
+//!   text fields have those keys themselves, and every global action waits while a field has the keyboard, so
+//!   `ctrl+left` is still `rewind` everywhere else.
 
 use eframe::egui::{self, InputState};
 
 use super::HoneydewApp;
 use crate::keymap::{self, Keymap};
+use crate::song::{PPQ, Song};
 use crate::ui::focus;
 use crate::ui::views::{MenuTab, Nav, Overlay, View};
 
@@ -39,6 +45,8 @@ pub(crate) enum Global {
     KbdFocus,
     /// `toggleKeyboardPanel`: the tap toggle with the release snap.
     TogglePanel,
+    /// `nextBar` (true) and `prevBar` (false).
+    Bar(bool),
 }
 
 /// What the three-way actions show, hide and focus, and the keyboard panel of `enterKbdFocus`.
@@ -52,7 +60,7 @@ pub(crate) enum Panel {
     Keyboard,
 }
 
-const GLOBALS: [(&str, Global); 12] = [
+const GLOBALS: [(&str, Global); 14] = [
     ("play", Global::Play),
     ("rewind", Global::Rewind),
     ("armRecord", Global::ArmRecord),
@@ -65,7 +73,34 @@ const GLOBALS: [(&str, Global); 12] = [
     ("focusEditor", Global::FocusEditor),
     ("enterKbdFocus", Global::KbdFocus),
     ("toggleKeyboardPanel", Global::TogglePanel),
+    ("prevBar", Global::Bar(false)),
+    ("nextBar", Global::Bar(true)),
 ];
+
+/// Where a bar jump from song tick `tick` goes: `next`, the start of the next bar; else the start of the current bar, or
+/// of the previous one when `tick` is on a bar line (within 1e−6 beat). A bar is TDIV byte 1 beats (at least 1). The
+/// result is clamped to [0, the song end].
+pub(crate) fn bar_jump(song: &Song, tick: u64, next: bool) -> u64 {
+    const ON_LINE: f64 = 1e-6;
+    let (bar, ppq) = (f64::from(song.time_sig.bar_beats()), f64::from(PPQ));
+    let beat = tick as f64 / ppq;
+    let nearest = (beat / bar).round();
+    let on_line = (beat - nearest * bar).abs() <= ON_LINE;
+    let current = if on_line {
+        nearest
+    } else {
+        (beat / bar).floor()
+    };
+    let to = if next {
+        current + 1.0
+    } else if on_line {
+        current - 1.0
+    } else {
+        current
+    } * bar;
+    let end = crate::ui::clips::song_end_beats(song);
+    (to.min(end).max(0.0) * ppq).round() as u64
+}
 
 /// The global actions pressed this frame that `allowed` lets through, in [`GLOBALS`] order, their keys consumed.
 pub(crate) fn take(
@@ -156,10 +191,13 @@ impl HoneydewApp {
                 }
             }
             Global::TogglePanel => {
-                let m = crate::metrics::Metrics::new(ctx, self.settings.ui_scale_index);
-                let sizes = super::toggle_snapped(&self.settings, ctx.content_rect().height(), &m);
+                let m = crate::metrics::Metrics::new(ctx, self.settings.ui_scale);
+                let (c, screen_h) = (self.main_screen.collapsed(&m), ctx.content_rect().height());
+                let sizes = super::toggle_snapped(&self.settings, c, screen_h, &m);
                 self.set_panel_sizes(sizes, &m);
             }
+            // The frame seeks once it has the transport's position.
+            Global::Bar(next) => self.bar_jump = Some(next),
         }
     }
 

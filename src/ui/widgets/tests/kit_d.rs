@@ -115,7 +115,7 @@ impl KitRig {
         let (kit, value, y) = (self.kit, &mut self.value, &mut self.y);
         let mut changed = false;
         let output = self.ctx.run(raw, |ctx| {
-            let m = Metrics::new(ctx, DEFAULT_UI_SCALE_INDEX);
+            let m = Metrics::new(ctx, DEFAULT_UI_SCALE);
             let cx = UiCtx {
                 theme: &theme,
                 m: &m,

@@ -257,7 +257,7 @@ fn a_right_label_toggle_reserves_no_on_off_strip() {
 fn pill_geometry_holds_at_two_pixels_per_point() {
     // ppp 2: U = 64 px, t = ceil(64 / 16) = 4 px = 2 points.
     let theme = theme_by_id(0);
-    let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE);
     let (u, t) = (m.u(1.0), m.t());
     assert_eq!((m.u_px(), t * 2.0), (64.0, (m.u_px() / 16.0).ceil()));
     let cx = UiCtx {

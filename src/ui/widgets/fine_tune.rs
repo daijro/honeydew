@@ -125,10 +125,8 @@ mod tests {
     #[test]
     fn at_ppp_2_the_pixel_insets_halve_in_points() {
         // ppp 2: U = 32 points (64 px), t = 2 points (4 px), px = 0.5 point.
-        let m = crate::metrics::Metrics::from_pixels_per_point(
-            2.0,
-            crate::metrics::DEFAULT_UI_SCALE_INDEX,
-        );
+        let m =
+            crate::metrics::Metrics::from_pixels_per_point(2.0, crate::metrics::DEFAULT_UI_SCALE);
         assert_eq!((m.u(1.0), m.t()), (U, T));
         let p = parts(row(), 1.0, false, m.t(), m.u(1.0), 1.0 / m.ppp());
         let at = pos2(1064.0 - 16.0, row().center().y);

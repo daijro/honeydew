@@ -15,8 +15,8 @@
 //!   `Open` opens the online link in the browser. `Detach` shows the floating performance monitor ([`monitor`]) and
 //!   closes the menu; `Attach` hides it and leaves the menu open (the monitor is the app's: it keeps its state over a
 //!   song load).
-//! - `Quit` asks [`quit_question`], which the app answers (closing the window on `Yes`), as it does for the
-//!   window's own close button. It is disabled on the web. `Help` is disabled.
+//! - The menu has no `Quit`: the desktop window's own close button asks [`quit_question`], which the app answers
+//!   (closing the window on `Yes`). `Help` is disabled.
 //! - SETTINGS shows the Original Content folder ([`ProjectFiles::content_dir`]); its `Open folder` shows it in the
 //!   system's file manager (the SONGS `Show in file browser...` helper), and a failure shows its message.
 //!   `Restore demo songs` asks the app to write our demo songs into the library's `Demo songs` folder again, behind
@@ -39,13 +39,13 @@ use crate::project_files::Replace;
 use crate::project_files::export::quick_render_format;
 use crate::ui::clips::song_end_beats;
 use crate::ui::main_menu::{MainMenu, MainMenuAction, ProjectInfo, meta_secs};
-use crate::ui::performance::{self, Performance};
+use crate::ui::performance::Performance;
 
 /// The questions `Lock metadata forever`, `Hide` and `Reset` ask.
 const LOCK_TAG: &str = "main_menu_lock";
 const HIDE_TAG: &str = "main_menu_hide_time";
 const RESET_TAG: &str = "main_menu_reset_time";
-/// `Quit`'s question, [`quit_question`].
+/// The window close's question, [`quit_question`].
 pub const QUIT_TAG: &str = "main_menu_quit";
 /// SONGS `Delete permanently`'s question, and the SONGS messages.
 const PURGE_TAG: &str = "main_menu_purge";
@@ -179,7 +179,6 @@ pub fn show(
     };
     match action {
         MainMenuAction::Close => return Some(Nav::Close),
-        MainMenuAction::Quit => nav = Some(quit_question()),
         MainMenuAction::NewSong(options) => replace(app, Replace::NewWith(options)),
         MainMenuAction::Save => app.files.save(app.song),
         MainMenuAction::SaveNew => app.files.save_as(app.song),
@@ -212,14 +211,7 @@ pub fn show(
             state.asked = Some(PURGE_TAG);
             nav = Some(message(PURGE_TAG, vec![question], "Yes", "No"));
         }
-        // `Help` is disabled.
-        MainMenuAction::Help => {}
-        // The floating monitor is shown or hidden by these two alone; `Detach` closes the menu, `Attach` leaves it.
-        MainMenuAction::DetachPerformance => {
-            perf.detached = true;
-            return Some(Nav::Close);
-        }
-        MainMenuAction::AttachPerformance => perf.detached = false,
+        MainMenuAction::WhatsNew => nav = Some(Nav::Open(Overlay::WhatsNew)),
         // The folder's README: on Linux the file manager opens the folder that holds it, elsewhere it selects it.
         #[cfg(not(target_arch = "wasm32"))]
         MainMenuAction::Reveal(folder) => {
@@ -240,16 +232,6 @@ pub fn show(
         MainMenuAction::RestoreDemoSongs => app.files.restore_demos = true,
     }
     nav
-}
-
-/// The floating performance monitor ([`crate::ui::performance`]) while `perf` is detached: over the view, the keyboard
-/// panel, the rack and the corner buttons, under the main menu, the dialogs and the popups. It paints no panel of its own
-/// and takes no touch (they always pass through).
-pub fn monitor(perf: &Performance, ui: &egui::Ui, app: &AppCtx) {
-    if perf.detached {
-        let rect = performance::monitor_rect(app.regions.screen, app.cx.m);
-        performance::show(ui, &app.cx, rect, perf);
-    }
 }
 
 /// Replaces the song with `what` now, or after the frame (a picked file, a question answered).

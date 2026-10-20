@@ -9,8 +9,9 @@
 //!   Layer channel of one Sampler for each zone ([`dw_zones`]), each on its zone's keys; a Drums channel one Sampler
 //!   for each pad it plays, its hits at C5. Any other instrument becomes a Sampler of one note of it, rendered.
 //! - Each effect goes into its insert's slots ([`mixer`]): FL's own effect where it has one like it ([`EFFECTS`]), the
-//!   Equalizer with its bands ([`eq_bands`]), the others at FL's default settings; a third-party plugin effect in FL's
-//!   plugin wrapper. The master's effects go into the master's slots.
+//!   Equalizer with its bands ([`eq_bands`]), Lemon Reverb and Lemon Limiter as Fruity Reeverb 2 and Fruity Limiter
+//!   with their settings (`honeydew_audio::lemon`), the others at FL's default settings; a third-party plugin effect in
+//!   FL's plugin wrapper. The master's effects go into the master's slots.
 //! - Each clip of a notes or drum lane is a pattern of its plays over its visible length (loops unrolled), placed in
 //!   the playlist at its start, muted as it is, one playlist track per lane.
 //! - An audio clip channel becomes an FL audio clip channel for each sample its clips play, each clip placed from its
@@ -20,8 +21,8 @@
 //! - The samples it plays are WAV files beside the project ([`Exported::samples`]), named as the Samplers name them.
 //!
 //! Lossy: sends, automation lanes, audio clips' stretch and pitch, the 3x Osc's envelopes, LFOs and arpeggiator, DW
-//! Sampler envelopes, filters and velocity layers, effect settings but the Equalizer's, note effects, every other
-//! instrument's sound but one note of it.
+//! Sampler envelopes, filters and velocity layers, effect settings but the Equalizer's and Lemon Studio's effects', note
+//! effects, every other instrument's sound but one note of it.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -43,6 +44,7 @@ use crate::song::{
     Channel, ChannelKind, ChannelParams, Event as SongEvent, Lane, LaneKind, ModuleInstance, PPQ,
     SamplerSlot, Song,
 };
+use honeydew_audio::lemon;
 
 /// The version written (FL 26 opens it without a warning) and its build.
 const VERSION: &str = "26.1.7.5653";
@@ -106,10 +108,10 @@ const AUDIO_CLIP_215: &str = "8c0000000000000001000000ffffffff3c0000000000803f00
 /// Honeydew's effects and FL's own effect like each, by type id.
 const EFFECTS: &[(&[u16], &str)] = &[
     (&[3, 7, 30], "Fruity Parametric EQ 2"),
-    (&[12, 32, 35], "Fruity Reeverb 2"),
+    (&[12, 32, 35, lemon::REVERB], "Fruity Reeverb 2"),
     (&[16, 18], "Fruity Delay 3"),
     (&[8], "Fruity Compressor"),
-    (&[5, 28], "Fruity Limiter"),
+    (&[5, 28, lemon::LIMITER], "Fruity Limiter"),
     (&[36], "Fruity Multiband Compressor"),
     (&[9], "Fruity Filter"),
     (&[11], "Fruity Chorus"),
@@ -316,8 +318,8 @@ impl Out {
         (self.mixer.len() - 1) as u16
     }
 
-    /// The channel's effects as an insert's slot plugins, in order ([`EFFECTS`]): the Equalizer with its bands, the
-    /// others at FL's defaults (each a notice), a third-party plugin in FL's plugin wrapper. One with no FL counterpart,
+    /// The channel's effects as an insert's slot plugins, in order ([`EFFECTS`]): the Equalizer with its bands, Lemon
+    /// Studio's effects with their settings, the others at FL's defaults (each a notice), a third-party plugin in FL's plugin wrapper. One with no FL counterpart,
     /// or past the insert's ten slots, is left out with a notice.
     fn effects(&mut self, channel: &Channel) -> Vec<Slot> {
         let mut slots = Vec::new();
@@ -337,6 +339,8 @@ impl Out {
                 (_, Some(&(_, fl))) => {
                     let state = match m.type_id {
                         EQUALIZER => mixer::eq2_state(&eq_bands(&m.params)),
+                        lemon::REVERB => lemon::reverb_fl_state(&m.params),
+                        lemon::LIMITER => lemon::limiter_fl_state(&m.params),
                         _ => Vec::new(),
                     };
                     if state.is_empty() {

@@ -2,7 +2,7 @@ use eframe::egui::{self, Context, Event, PointerButton, Pos2, RawInput, pos2, ve
 
 use super::build::*;
 use super::*;
-use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
 use crate::midi::CcLink;
 use crate::params::{ModuleSpec, menu_value, module_spec};
 use crate::theme::theme_by_id;
@@ -279,7 +279,7 @@ fn only_an_opted_in_latching_button_may_press_a_continuous_param() {
 #[test]
 fn every_panel_fits_its_module() {
     let mut problems = Vec::new();
-    for spec in crate::params::modules() {
+    for spec in crate::params::modules().chain(&crate::params::LEMON_MODULES) {
         if let Some(panel) = panel_for(spec.id) {
             problems.extend(check(spec, panel));
         }
@@ -383,7 +383,7 @@ fn a_toggle_is_item_1_when_on() {
 
 /// `U` = 32 points at ppp 1.
 fn metrics() -> Metrics {
-    Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX)
+    Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE)
 }
 
 pub(crate) const U: f32 = 32.0;
@@ -453,7 +453,7 @@ impl Rig {
             .entry(raw.viewport_id)
             .or_default()
             .native_pixels_per_point = Some(self.ppp);
-        let m = Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE);
         let theme = theme_by_id(0);
         let cx = UiCtx {
             theme: &theme,
@@ -505,7 +505,7 @@ impl Rig {
 
     /// The rect (points) of control `#id` as the renderer lays it out now.
     pub(crate) fn rect_of(&self, id: u32) -> Rect {
-        let u_px = Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE_INDEX).u_px();
+        let u_px = Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE).u_px();
         let rect = content_px(self.rect, self.ppp).expect("a finite content rect");
         place(&self.panel, &self.module, &self.state, rect, u_px)
             .into_iter()
@@ -874,7 +874,7 @@ fn show_draws_a_fractional_rect_from_a_whole_device_pixel_at_a_fractional_ppp() 
         .or_default()
         .native_pixels_per_point = Some(ppp);
     let theme = theme_by_id(0);
-    let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
     let cx = UiCtx {
         theme: &theme,
         m: &m,
@@ -1081,7 +1081,7 @@ fn display_shapes_with(
     state.seed(panel);
     let (theme, m) = (
         theme_by_id(0),
-        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX),
+        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE),
     );
     let cx = UiCtx {
         theme: &theme,

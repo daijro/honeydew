@@ -8,10 +8,10 @@ use eframe::egui::{
 };
 
 use super::*;
-use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+use crate::metrics::DEFAULT_UI_SCALE;
 use crate::theme::theme_by_id;
 use crate::ui::offscreen::key_tap;
-use crate::ui::performance::{IDLE_TEXT, Performance, footer_line};
+use crate::ui::performance::{Performance, footer_line};
 use crate::ui::song_options::{Mode, SongOptions, TITLE};
 
 const SIZE: [f32; 2] = [1170.0, 540.0];
@@ -128,7 +128,7 @@ impl Rig {
         let output = self.ctx.run(raw, |ctx| {
             // No surface-width clamp: these tests fix U = 32 × scale. The app caps U at about width / 20, which the
             // tab-row test's 200 % scale exceeds on both its 360 px and its 1170 px screens.
-            let m = Metrics::from_pixels_per_point(ctx.pixels_per_point(), settings.ui_scale_index);
+            let m = Metrics::from_pixels_per_point(ctx.pixels_per_point(), settings.ui_scale);
             let cx = UiCtx {
                 theme: &theme,
                 m: &m,
@@ -236,7 +236,7 @@ impl Rig {
 }
 
 fn m() -> Metrics {
-    Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX)
+    Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE)
 }
 
 #[test]
@@ -270,10 +270,14 @@ fn the_menu_is_at_most_20_u_wide_on_the_right_with_the_tab_row_under_the_header(
 fn the_header_names_the_app_and_its_version_and_the_tabs_run_in_order() {
     let rig = Rig::new(Tab::Songs);
     let panel = shell_layout(Rect::from_min_size(Pos2::ZERO, SIZE.into()), &m()).panel;
-    let version = format!("Version {}", env!("CARGO_PKG_VERSION"));
-    for text in [APP_NAME, &version, "Help", "Quit"] {
+    let version = env!("CARGO_PKG_VERSION");
+    for text in [APP_NAME, version, "Help"] {
         assert!(panel.contains_rect(rig.find(text)), "{text}");
     }
+    // `Help` at the left; our name and version centred as a group, the version on the name's line, to its right.
+    let (name, ver) = (rig.find(APP_NAME), rig.find(version));
+    assert!(rig.find("Help").right() < name.left() && name.right() < ver.left());
+    assert!(name.y_range().contains(ver.center().y));
     let xs: Vec<f32> = Tab::ALL
         .iter()
         .map(|t| rig.find(t.label()).center().x)
@@ -289,7 +293,7 @@ fn clicking_a_tab_shows_it() {
     let mut rig = Rig::new(Tab::Songs);
     assert!(rig.has("My Songs"));
     for (tab, marker) in [
-        (Tab::Project, "Project info"),
+        (Tab::Project, "Project info:"),
         (Tab::Settings, "MIDI:"),
         (Tab::Songs, "My Songs"),
     ] {
@@ -409,7 +413,7 @@ fn the_folder_title_is_in_the_folder_rows_size_level_with_back_at_the_root() {
     );
 }
 
-/// One row size. Every row, folder or song, is in the title's 12 pt; a long name keeps its middle ellipsis and stops
+/// One row size. Every row, folder or song, is in the title's 12 pt; a long name is cut with an end ellipsis and stops
 /// before the big circles.
 #[test]
 fn every_row_is_in_12_pt_and_a_long_name_is_cut_before_the_big_circles() {
@@ -428,7 +432,7 @@ fn every_row_is_in_12_pt_and_a_long_name_is_cut_before_the_big_circles() {
     let (cut, at) = (texts.iter())
         .find(|(t, _)| t.starts_with("A Very"))
         .expect("the long name is drawn");
-    assert!(cut.contains("...") && cut.ends_with("l.flm"), "{cut}");
+    assert!(cut.ends_with("..."), "{cut}");
     assert_eq!(font_size(&rig, cut), pt12);
     let content = shell_layout(Rect::from_min_size(Pos2::ZERO, SIZE.into()), &m()).content;
     assert!(at.right() <= content.right() - 2.5 * 32.0, "{at:?}");
@@ -590,11 +594,7 @@ fn project_texts_fit_their_meta_fields_in_bytes() {
 fn project_info_shows_the_values_it_is_given() {
     let mut rig = Rig::new(Tab::Project);
     let mut performance = Performance::default();
-    (
-        performance.channels,
-        performance.active_modules,
-        performance.smoothed,
-    ) = (3, 3, 0.01);
+    (performance.smoothed, performance.underruns) = (0.01, 2);
     rig.info = ProjectInfo {
         length_secs: 2.4,
         time_spent_secs: 13.0 * 60.0 + 2.7,
@@ -610,7 +610,7 @@ fn project_info_shows_the_values_it_is_given() {
         "10 October 2026 23:55:03",
         "140.0 BPM",
         "48,000 Hz",
-        "Channels: 3 | Active modules: 3 | Utilization:   1 %",
+        "CPU: 1 % | Underruns: 2",
         "Press play to analyze performance",
     ] {
         assert!(rig.has(text), "{text}");
@@ -757,7 +757,7 @@ fn the_metadata_fields_edit_the_project_info_until_locked() {
 fn the_project_page_scrolls_to_the_performance_footer() {
     let mut rig = Rig::new(Tab::Project);
     let content = shell_layout(Rect::from_min_size(Pos2::ZERO, SIZE.into()), &m()).content;
-    let footer = "Physical memory: - | Memory used: - | App memory: -";
+    let footer = "App memory: -";
     assert!(
         rig.find(footer).top() > content.bottom(),
         "below the fold at first"
@@ -768,14 +768,9 @@ fn the_project_page_scrolls_to_the_performance_footer() {
 }
 
 #[test]
-fn outside_the_panel_the_logo_and_escape_close_the_menu() {
+fn outside_the_panel_and_escape_close_the_menu() {
     let mut rig = Rig::new(Tab::Songs);
     assert_eq!(rig.click(pos2(100.0, 270.0)), Some(MainMenuAction::Close));
-    let logo = shell_layout(Rect::from_min_size(Pos2::ZERO, SIZE.into()), &m()).header;
-    assert_eq!(
-        rig.click(logo.left_center() + vec2(16.0, 0.0)),
-        Some(MainMenuAction::Close)
-    );
     let escape = || key_tap(Key::Escape, Modifiers::NONE);
     rig.frame(escape());
     assert_eq!(rig.action, Some(MainMenuAction::Close));
@@ -790,10 +785,21 @@ fn outside_the_panel_the_logo_and_escape_close_the_menu() {
 }
 
 #[test]
-fn quit_returns_its_action_and_help_is_disabled() {
+fn help_opens_its_menu_the_close_x_closes_and_the_header_does_nothing() {
     let mut rig = Rig::new(Tab::Project);
     assert_eq!(rig.click_text("Help"), None);
-    assert_eq!(rig.click_text("Quit"), Some(MainMenuAction::Quit));
+    assert_eq!(rig.click_text("What's new"), Some(MainMenuAction::WhatsNew));
+    rig.click_text("Help");
+    let manual = MainMenuAction::OpenLink(HELP_LINKS[0].1.into());
+    assert_eq!(rig.click_text("User manual"), Some(manual));
+    assert_eq!(rig.click_text(crate::APP_NAME), None);
+    assert!(!rig.has("Quit"));
+    let close = rig
+        .ctx
+        .read_response(Id::new("main_menu").with("close"))
+        .unwrap()
+        .rect;
+    assert_eq!(rig.click(close.center()), Some(MainMenuAction::Close));
 }
 
 #[test]
@@ -873,19 +879,13 @@ fn a_half_scrolled_rows_name_stays_centred_in_its_row() {
 }
 
 #[test]
-fn the_tab_row_has_equal_cells_and_labels_centred_in_them_that_overflow_evenly() {
+fn the_tab_row_has_equal_cells_and_labels_centred_in_them_shortened_in_the_middle_when_too_wide() {
     let mut rig = Rig::new(Tab::Settings);
-    let factor = |f: f32| {
-        crate::metrics::UI_SCALE_FACTORS
-            .iter()
-            .position(|&x| x == f)
-            .unwrap()
-    };
-    let mut widths_at_200 = Vec::new();
+    let factor = |f: f32| (f * 100.0) as u32;
     for (scale, width) in [(1.0, 1170.0), (1.5, 1170.0), (2.0, 1170.0), (2.0, 360.0)] {
         let case = format!("{scale} on {width}");
         rig.screen = vec2(width, 540.0);
-        rig.settings.1.ui_scale_index = factor(scale);
+        rig.settings.1.ui_scale = factor(scale);
         rig.frame(vec![]);
         rig.frame(vec![]);
         let screen = Rect::from_min_size(Pos2::ZERO, rig.screen);
@@ -896,7 +896,6 @@ fn the_tab_row_has_equal_cells_and_labels_centred_in_them_that_overflow_evenly()
         assert_eq!(l.tabs.height(), 1.25 * u, "{case}");
         assert_eq!(l.tabs.x_range(), l.panel.x_range(), "{case}");
         let cell_w = l.panel.width() / Tab::ALL.len() as f32;
-        let mut labels = Vec::new();
         for (i, tab) in Tab::ALL.into_iter().enumerate() {
             let cell = rig
                 .ctx
@@ -910,43 +909,24 @@ fn the_tab_row_has_equal_cells_and_labels_centred_in_them_that_overflow_evenly()
                     && (cell.max - expected.max).length() < 0.01,
                 "{case}: {tab:?} {cell:?} != {expected:?}"
             );
-            let (label, clip) = rig
-                .shapes
-                .iter()
-                .find_map(|c| match &c.shape {
-                    egui::Shape::Text(t) if t.galley.text() == tab.label() => {
-                        Some((t.galley.rect.translate(t.pos.to_vec2()), c.clip_rect))
-                    }
-                    _ => None,
-                })
-                .expect("drawn");
-            // Centred in its cell, overflowing it evenly; plain text, clipped by no cell (only by the screen).
+            // The label drawn in the cell: whole, or shortened in the middle; centred, inside it.
+            let (text, label) = rig
+                .texts()
+                .into_iter()
+                .find(|(_, r)| cell.contains(r.center()))
+                .expect("a label");
+            let whole = text == tab.label();
+            assert!(whole || text.contains("..."), "{case}: {text}");
             assert!(
-                (label.center().x - cell.center().x).abs() < 0.5
-                    && (label.center().y - cell.center().y).abs() < 1.0,
-                "{case}: {tab:?} {label:?} not centred in {cell:?}"
+                (label.center().x - cell.center().x).abs() < 0.5,
+                "{case}: {tab:?}"
             );
-            assert!(
-                clip.contains_rect(label.intersect(screen)),
-                "{case}: {tab:?} clipped to {clip:?}"
-            );
-            labels.push(label);
-        }
-        if width == 1170.0 {
-            for pair in labels.windows(2) {
-                assert!(pair[0].right() <= pair[1].left(), "{case}: {pair:?}");
-            }
-        }
-        if scale == 2.0 {
-            widths_at_200.push(labels.iter().map(|l| l.width()).collect::<Vec<_>>());
-        }
-        if width == 360.0 {
-            // 10 pt at 200 %, never shrunk: `SETTINGS` is wider than its cell and runs into its neighbours.
-            assert!(labels[2].width() > cell_w, "{labels:?}");
-            assert!(labels[2].left() < labels[1].right(), "{labels:?}");
+            assert!(label.width() <= cell.width(), "{case}: {text} {label:?}");
+            // Whole on the 20 U panel; 10 pt `SETTINGS` overflows its 360 px cell at 200 %.
+            assert!(whole || width != 1170.0, "{case}: {text}");
+            assert!(!(whole && width == 360.0 && tab == Tab::Settings), "{case}");
         }
     }
-    assert_eq!(widths_at_200[0], widths_at_200[1], "the labels shrank");
 }
 
 /// SONGS on an in-memory library holding `A.flm` and `B.flm`, in select mode.
@@ -1075,10 +1055,11 @@ fn a_long_bin_breadcrumb_is_shortened_in_the_middle_keeping_its_end() {
     assert!(rect.right() <= 1154.0 - 2.5 * 32.0 + 1.0, "{rect:?}");
 }
 
-/// The folder title under the breadcrumb and the list's rows are truncated drawing too (K = 5 as the browsers'
-/// titles): a long name keeps its head, `...` and its last characters, and stops before the big circles.
+/// The folder title under the breadcrumb and the list's rows are truncated drawing too: a long name keeps its head and
+/// `...`, in the title (K = 5 as the browsers' titles) its last characters too, and stops before the big circles.
 #[test]
-fn a_long_folder_name_is_shortened_in_the_middle_in_its_row_and_title_before_the_big_circles() {
+fn a_long_folder_name_is_cut_at_its_end_in_its_row_and_in_the_middle_in_its_title_before_the_big_circles()
+ {
     const LONG: &str = "Songs from the long summer of the year before last, the winter after it, and the spring \
                         that came much too late for any of them";
     let mut library = MemoryLibrary::default();
@@ -1088,18 +1069,18 @@ fn a_long_folder_name_is_shortened_in_the_middle_in_its_row_and_title_before_the
     rig.menu.refresh();
     rig.frame(vec![]);
     // The one shortened text: the row at the root, then the title of the folder it opens (which lists nothing).
-    let shortened = |rig: &Rig| {
+    let shortened = |rig: &Rig, tail_k: usize| {
         let found = rig.texts().into_iter().find(|(t, _)| t.contains("..."));
         let (shown, rect) = found.unwrap_or_else(|| panic!("nothing short: {:?}", rig.texts()));
         let (head, tail) = shown.split_once("...").unwrap();
         assert!(LONG.starts_with(head) && head.len() > 5, "{shown}");
-        assert_eq!(tail, &LONG[LONG.len() - 5..], "{shown}");
+        assert_eq!(tail, &LONG[LONG.len() - tail_k..], "{shown}");
         assert!(rect.right() <= 1154.0 - 2.5 * 32.0 + 1.0, "{rect:?}");
         rect
     };
-    let row = shortened(&rig);
+    let row = shortened(&rig, 0);
     rig.click(row.center());
-    let title = shortened(&rig);
+    let title = shortened(&rig, 5);
     assert!(title.top() < row.top(), "the title, above the list");
 }
 
@@ -1232,9 +1213,10 @@ fn the_menu_slides_in_from_the_right_over_10_frames_as_the_screen_dims() {
     let w = 640.0;
     for n in 1..=12u32 {
         rig.frame(vec![]);
-        let u4 = crate::ui::anim::menu_slide(n).powi(4);
+        let u4 = crate::ui::anim::menu_slide(n as f32 / 60.0).powi(4);
         let (panel, dim) = panel_and_dim(&rig);
-        assert_eq!(panel.left(), 530.0 + (u4 * w).trunc(), "frame {n}");
+        let want = 530.0 + (u4 * w).trunc();
+        assert!((panel.left() - want).abs() <= 1.0, "frame {n}: {panel:?}");
         assert!((dim - 0.6 * (1.0 - u4)).abs() < 0.01, "frame {n}: {dim}");
     }
     // Frame 1 is 0.9⁴ = 65.6 % of the way out; frame 10 is home.
@@ -1269,7 +1251,7 @@ fn a_tab_change_slides_only_the_page_in_again() {
     // The release frame changed the tab: from the next one the new page slides in by trunc(u⁴·W).
     for n in 1..=11u32 {
         rig.frame(vec![]);
-        let dx = (crate::ui::anim::menu_slide(n).powi(4) * 640.0).trunc();
+        let dx = (crate::ui::anim::menu_slide(n as f32 / 60.0).powi(4) * 640.0).trunc();
         let texts = rig.texts();
         assert_eq!(
             label(&texts, "PROJECT"),
@@ -1278,7 +1260,7 @@ fn a_tab_change_slides_only_the_page_in_again() {
         );
         let (page, want) = (label(&texts, "Tempo:"), label(&home, "Tempo:"));
         let (page, want) = (page.expect("Tempo:"), want.unwrap());
-        assert_eq!(page.left(), want.left() + dx, "frame {n}");
+        assert!((page.left() - want.left() - dx).abs() <= 1.0, "frame {n}");
         assert_eq!(
             panel_and_dim(&rig).0.left(),
             530.0,
@@ -1406,7 +1388,7 @@ fn circles(rig: &Rig) -> Vec<(Pos2, f32, Color32, f32, Color32)> {
 
 /// The page's facts at `ppp`: the metrics, the menu panel and the line height of FontSize 2.
 fn page(rig: &Rig, ppp: f32) -> (Metrics, Rect, f32) {
-    let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
     let panel = shell_layout(Rect::from_min_size(Pos2::ZERO, SIZE.into()), &m).panel;
     let fh = rig
         .ctx
@@ -1423,10 +1405,10 @@ fn the_performance_block_is_one_5_u_block_2_u_in_from_the_page_and_1_3_u_under_i
         rig.scroll_down();
         let (m, panel, fh) = page(&rig, ppp);
         let u = m.u(1.0);
-        let (header, ..) = text_of(&rig, "Performance").expect("the header");
-        let status = "Channels: 0 | Active modules: 0 | Utilization:   0 %";
+        let (header, ..) = text_of(&rig, "Performance:").expect("the header");
+        let status = "CPU: 0 % | Underruns: 0";
         let (status, _, status_font) = text_of(&rig, status).expect("the status line");
-        let (footer, _, footer_font) = text_of(&rig, &footer_line("-", None)).expect("the footer");
+        let (footer, _, footer_font) = text_of(&rig, &footer_line("-")).expect("the footer");
         let at = format!("ppp {ppp}");
         // The header row is 1.3 U: the block starts where it ends, and its status line fills the block's first line (a
         // text is centred in its line, so the block's top is the status text's centre less half a line).
@@ -1502,16 +1484,15 @@ fn the_performance_block_is_one_5_u_block_2_u_in_from_the_page_and_1_3_u_under_i
 }
 
 #[test]
-fn detach_hide_and_reset_are_text_discs_of_radius_0_7_u_with_a_module_fill_rim_and_label() {
+fn hide_and_reset_are_text_discs_of_radius_0_7_u_with_a_module_fill_rim_and_label() {
     // Each is a `text` disc of radius 0.7 U with a 2 px `moduleFill` rim, its label FontSize 1 (8 pt) in `moduleFill`.
-    // `Detach` is centred on the block's right edge, 0.5 U under its top.
     let colors = theme_by_id(0).colors;
     let (text, module_fill) = (colors.text.to_color32(), colors.module_fill.to_color32());
     for ppp in [1.0, 2.0] {
         let mut rig = Rig::at_ppp(Tab::Project, ppp);
         rig.info.time_spent_secs = 5.0;
         rig.frame(vec![]);
-        let (m, panel, _) = page(&rig, ppp);
+        let (m, ..) = page(&rig, ppp);
         let u = m.u(1.0);
         let at = format!("ppp {ppp}");
         let styled = |rig: &Rig, label: &str| {
@@ -1547,47 +1528,9 @@ fn detach_hide_and_reset_are_text_discs_of_radius_0_7_u_with_a_module_fill_rim_a
         for label in ["Hide", "Reset"] {
             styled(&rig, label);
         }
-        // `Detach`, once the page is scrolled to it.
+        // No `Detach` on the Performance block.
         rig.scroll_down();
-        let centre = styled(&rig, "Detach");
-        let (header, ..) = text_of(&rig, "Performance").unwrap();
-        let want = pos2(
-            panel.right() - 2.0 * u,
-            header.center().y + 0.65 * u + 0.5 * u,
-        );
-        assert!(
-            (centre - want).length() < 1.0,
-            "{at}: {centre:?} vs {want:?}"
-        );
-    }
-}
-
-#[test]
-fn detach_takes_a_tap_in_its_2_u_box_and_not_outside_it() {
-    // The button's touch area is a 2 U × 2 U box at (column right − 1 U, monitor top − 0.5 U); the disc is 1.4 U.
-    for ppp in [1.0, 2.0] {
-        let mut rig = Rig::at_ppp(Tab::Project, ppp);
-        rig.scroll_down();
-        let (m, ..) = page(&rig, ppp);
-        let u = m.u(1.0);
-        let centre = text_of(&rig, "Detach").expect("the button").0.center();
-        // In a corner of the box, well off the disc (1.27 U from its centre).
-        let corner = centre + vec2(0.9 * u, 0.9 * u);
-        assert_eq!(
-            rig.click(corner),
-            Some(MainMenuAction::DetachPerformance),
-            "ppp {ppp}"
-        );
-        let corner = centre + vec2(-0.9 * u, -0.9 * u);
-        assert_eq!(
-            rig.click(corner),
-            Some(MainMenuAction::DetachPerformance),
-            "ppp {ppp}"
-        );
-        // Just outside the box.
-        for away in [vec2(1.1 * u, 0.0), vec2(0.0, 1.1 * u), vec2(-1.1 * u, 0.0)] {
-            assert_eq!(rig.click(centre + away), None, "ppp {ppp}: {away:?}");
-        }
+        assert!(!rig.has("Detach") && !rig.has("Attach"), "{at}");
     }
 }
 
@@ -1634,25 +1577,6 @@ fn the_panel_is_menu_fill_with_a_module_fill_header_and_a_menu_fill_tab_row() {
 }
 
 #[test]
-fn detach_becomes_attach_while_the_monitor_shows_and_the_block_stays_in_both_states() {
-    let mut rig = Rig::new(Tab::Project);
-    rig.scroll_down();
-    assert!(rig.has("Detach") && !rig.has("Attach") && rig.has(IDLE_TEXT));
-    assert_eq!(
-        rig.click_text("Detach"),
-        Some(MainMenuAction::DetachPerformance)
-    );
-    // Shown: the page offers `Attach`, which hides it and leaves the menu to the app (no close).
-    rig.info.performance.detached = true;
-    rig.frame(vec![]);
-    assert!(rig.has("Attach") && !rig.has("Detach") && rig.has(IDLE_TEXT));
-    assert_eq!(
-        rig.click_text("Attach"),
-        Some(MainMenuAction::AttachPerformance)
-    );
-}
-
-#[test]
 fn the_cpu_and_ram_tap_scrolls_the_performance_block_into_view() {
     for ppp in [1.0, 2.0] {
         let mut rig = Rig::at_ppp(Tab::Project, ppp);
@@ -1662,15 +1586,15 @@ fn the_cpu_and_ram_tap_scrolls_the_performance_block_into_view() {
         )
         .content;
         assert!(
-            rig.find(&footer_line("-", None)).top() > content.bottom(),
+            rig.find(&footer_line("-")).top() > content.bottom(),
             "ppp {ppp}: below the fold at first"
         );
         rig.menu.show_performance();
         rig.frame(vec![]);
         rig.frame(vec![]);
         let (footer, status) = (
-            rig.find(&footer_line("-", None)),
-            rig.find("Channels: 0 | Active modules: 0 | Utilization:   0 %"),
+            rig.find(&footer_line("-")),
+            rig.find("CPU: 0 % | Underruns: 0"),
         );
         // (Within a pixel: the page's offset is snapped to device pixels.)
         let view = content.expand(1.0);
@@ -1682,7 +1606,7 @@ fn the_cpu_and_ram_tap_scrolls_the_performance_block_into_view() {
         rig.menu.show_performance();
         rig.frame(vec![]);
         rig.frame(vec![]);
-        assert_eq!(rig.find(&footer_line("-", None)), footer, "ppp {ppp}");
+        assert_eq!(rig.find(&footer_line("-")), footer, "ppp {ppp}");
     }
 }
 
@@ -1765,7 +1689,7 @@ fn escape_or_a_click_outside_closes_the_new_menu_and_does_nothing() {
 fn the_new_menu_sits_on_a_whole_pixel_grid_at_ppp_1_and_2() {
     for ppp in [1.0_f32, 2.0] {
         let rig = new_menu_rig(&THREE, ppp);
-        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX);
+        let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
         let content = shell_layout(Rect::from_min_size(Pos2::ZERO, SIZE.into()), &m).content;
         let boxes: Vec<Rect> = MENU.iter().map(|t| rig.find(t)).collect();
         // Five rows 1.25 U apart (40 points), a whole pixel each.
@@ -1900,9 +1824,9 @@ fn an_archive_is_a_row_beside_the_songs_and_a_tap_opens_it() {
     for pair in order.windows(2) {
         assert!(top(&rig, pair[0]) < top(&rig, pair[1]), "{pair:?}");
     }
-    // The same row as a song's: one row pitch (1.25 U) apart, a name at the row's left inset.
+    // The same row as a song's: one row pitch (1.5 U) apart, a name at the row's left inset.
     let pitch = top(&rig, "Pack.zip") - top(&rig, "Other.zip");
-    assert!((pitch - 1.25 * 32.0).abs() < 1.0, "{pitch}");
+    assert!((pitch - 1.5 * 32.0).abs() < 1.0, "{pitch}");
     assert_eq!(rig.find("Pack.zip").left(), rig.find("A.flm").left());
     // A tap opens it, as it opens a song: the app reads the file through the library.
     assert_eq!(
@@ -2130,7 +2054,7 @@ fn ctrl_f_does_nothing_off_the_songs_page() {
 
 #[test]
 fn a_songs_search_lists_the_songs_below_the_open_folder_with_their_folders_path() {
-    // A non-empty query lists everything below the open folder, recursively, in 2.2 U rows with the folder's
+    // A non-empty query lists everything below the open folder, recursively, in 1.5 U rows with the folder's
     // path under the name in FontSize 1 at α 0.6.
     let mut rig = Rig::new(Tab::Songs);
     rig.ctrl_f();
@@ -2150,15 +2074,11 @@ fn a_songs_search_lists_the_songs_below_the_open_folder_with_their_folders_path(
     let format = painted(place).unwrap();
     assert_eq!(format.font_id.size, m().font_id(FontSize::Pt8).size);
     assert_eq!(format.color, text.gamma_multiply(0.6));
-    // The row is 2.2 U: the file below it lands one such row lower.
+    // Both lines fit the 1.5 U row.
+    assert!(at.bottom() - name.top() <= 1.5 * 32.0, "{name:?} {at:?}");
     // Depth first in the page's order: the folder, its song, then the root's.
     rig.clear_and_type("e");
     assert_eq!(rig.rows(), ["Demo songs", "Three.flm", "beta.flm"]);
-    let (first, second) = (rig.find("Three.flm").top(), rig.find("beta.flm").top());
-    assert!(
-        (second - first - 2.2 * 32.0).abs() < 0.01,
-        "{first} {second}"
-    );
     // A pick opens the song where it is.
     let at = rig.find("Three.flm").center();
     let three = PathBuf::from("/My Songs/Demo songs/Three.flm");

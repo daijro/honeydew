@@ -1,6 +1,7 @@
-//! The hosted plugins, on the app thread (desktop only): the plugins the scan found, and an instance per plugin module
-//! of the song, keyed by channel id and instance id. An instance outlives engine builds (every edit builds one): the
-//! engines get it shared ([`super::engine`]). A module whose plugin is not installed keeps its state and plays nothing.
+//! The hosted plugins, on the app thread: the built-in ones ([`super::builtin`], every platform) and the plugins the
+//! scan found (the desktop), and an instance per plugin module of the song, keyed by channel id and instance id. An
+//! instance outlives engine builds (every edit builds one): the engines get it shared ([`super::engine`]). A module
+//! whose plugin is not installed keeps its state and plays nothing.
 //!
 //! Threading follows Lemon Studio's hosts: everything here runs on the app thread, the audio thread only `try_lock`s an
 //! instance, and an instance is destroyed on the app thread once no engine holds it.
@@ -8,11 +9,15 @@
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock, mpsc};
+#[cfg(plugin_host)]
+use std::sync::mpsc;
+use std::sync::{Arc, OnceLock};
 
 use os_host::{Descriptor, Format, Kind, Library, ParamEvent, SharedPlugin};
 
+use super::builtin;
 use super::engine::{ParamShared, PluginEffect, PluginInstrument};
+#[cfg(plugin_host)]
 use super::scan::{self, Cache, Status};
 use super::window::{self, EditorWindow};
 use super::{Available, Info, PluginKind, PluginMove, State};
@@ -26,22 +31,46 @@ const START_RATE: u32 = 48_000;
 /// A plugin file of the scan, loaded the first time one of its plugins is created.
 struct FileLib {
     path: PathBuf,
+    #[cfg_attr(not(plugin_host), allow(dead_code))]
     format: Format,
     lib: OnceLock<Result<Arc<dyn Library>, String>>,
 }
 
 impl FileLib {
     fn get(&self) -> Result<Arc<dyn Library>, String> {
-        self.lib
-            .get_or_init(|| scan::load_file(&self.path, self.format))
-            .clone()
+        #[cfg(plugin_host)]
+        let load = || scan::load_file(&self.path, self.format);
+        #[cfg(not(plugin_host))]
+        let load = || {
+            Err(format!(
+                "{}: plugins run in the desktop app only",
+                self.path.display()
+            ))
+        };
+        self.lib.get_or_init(load).clone()
     }
 }
 
-/// A plugin the scan found.
+/// A plugin the scan found, or a built-in one.
 struct Entry {
     desc: Descriptor,
     file: Arc<FileLib>,
+    builtin: bool,
+}
+
+/// The built-in plugins' entries ([`builtin::libraries`]), listed before the scan's.
+fn builtin_entries() -> Vec<Entry> {
+    (builtin::libraries().iter())
+        .map(|(desc, lib)| Entry {
+            desc: desc.clone(),
+            file: Arc::new(FileLib {
+                path: desc.path.clone(),
+                format: desc.format,
+                lib: OnceLock::from(Ok(lib.clone())),
+            }),
+            builtin: true,
+        })
+        .collect()
 }
 
 /// A plugin module's instance.
@@ -54,6 +83,8 @@ struct Hosted {
     /// goes to the plugin.
     song_values: Vec<f32>,
     window: Option<EditorWindow>,
+    /// A built-in plugin's editor, drawn into its rack card: its id and scale ([`lemon_editor`]).
+    embedded: Option<(u32, f32)>,
     name: String,
     /// Its crash was reported.
     stopped: bool,
@@ -74,6 +105,7 @@ impl Drop for Hosted {
 #[derive(Default)]
 struct Host {
     entries: Vec<Entry>,
+    #[cfg(plugin_host)]
     cache: Cache,
     live: HashMap<(i32, i32), Hosted>,
     /// Instances whose module left the song (a delete, an undo): an undo or redo that brings it back finds it here.
@@ -85,13 +117,18 @@ struct Host {
     notices: BTreeSet<String>,
     rate: u32,
     rendering: bool,
+    #[cfg(plugin_host)]
     scan: Option<mpsc::Receiver<Cache>>,
     /// A scan asked for while one ran, started when it ends: its folders, `all`, the scanner.
+    #[cfg(plugin_host)]
     queued: Option<(Vec<PathBuf>, bool, PathBuf)>,
 }
 
 thread_local! {
-    static HOST: RefCell<Host> = RefCell::new(Host::default());
+    static HOST: RefCell<Host> = RefCell::new(Host {
+        entries: builtin_entries(),
+        ..Host::default()
+    });
 }
 
 fn with<R>(f: impl FnOnce(&mut Host) -> R) -> R {
@@ -103,17 +140,47 @@ fn with<R>(f: impl FnOnce(&mut Host) -> R) -> R {
 pub fn start(ctx: &eframe::egui::Context, cache: Option<String>, folders: &[String]) {
     static CTX: OnceLock<eframe::egui::Context> = OnceLock::new();
     let _ = CTX.set(ctx.clone());
-    os_host::set_waker(|| {
+    fn wake() {
         if let Some(ctx) = CTX.get() {
             ctx.request_repaint();
         }
-    });
+    }
+    os_host::set_waker(wake);
+    os_plugkit::embed::set_repaint(wake);
+    #[cfg(plugin_host)]
     if let Some(json) = cache {
         load_cache(&json);
     }
+    #[cfg(not(plugin_host))]
+    let _ = cache;
     rescan_folders(folders, false);
 }
 
+/// The web and Android scan nothing: only the built-in plugins are there.
+#[cfg(not(plugin_host))]
+mod no_scan {
+    pub fn rescan_folders(_: &[String], _: bool) {}
+
+    pub fn poll_scan() -> bool {
+        false
+    }
+
+    pub fn scanning() -> bool {
+        false
+    }
+
+    pub fn scan_counts() -> (usize, usize) {
+        (0, 0)
+    }
+
+    pub fn cache_json() -> String {
+        String::new()
+    }
+}
+#[cfg(not(plugin_host))]
+pub use no_scan::*;
+
+#[cfg(plugin_host)]
 /// Scans the default folders and the user's `folders` ([`rescan`]) with this program as the scanner.
 pub fn rescan_folders(folders: &[String], all: bool) {
     let mut all_folders = scan::default_folders();
@@ -123,17 +190,20 @@ pub fn rescan_folders(folders: &[String], all: bool) {
     }
 }
 
+#[cfg(plugin_host)]
 /// Lists the plugins of scan results `cache` (the settings store's JSON); unreadable JSON is an empty list.
 pub fn load_cache(json: &str) {
     let cache = serde_json::from_str(json).unwrap_or_default();
     with(|host| host.set_cache(cache));
 }
 
+#[cfg(plugin_host)]
 /// The scan results as JSON, for the settings store.
 pub fn cache_json() -> String {
     with(|host| serde_json::to_string(&host.cache).unwrap_or_default())
 }
 
+#[cfg(plugin_host)]
 /// Starts a scan of `folders` in the background with the scanner program `scanner`: new and changed files, or every
 /// file with `all`. [`poll_scan`] takes the result. A scan already running goes on.
 pub fn rescan(folders: Vec<PathBuf>, all: bool, scanner: PathBuf) {
@@ -147,6 +217,7 @@ pub fn rescan(folders: Vec<PathBuf>, all: bool, scanner: PathBuf) {
     });
 }
 
+#[cfg(plugin_host)]
 fn start_scan(host: &mut Host, folders: Vec<PathBuf>, all: bool, scanner: PathBuf) {
     let old = host.cache.clone();
     let (tx, rx) = mpsc::channel();
@@ -162,11 +233,13 @@ fn start_scan(host: &mut Host, folders: Vec<PathBuf>, all: bool, scanner: PathBu
     }
 }
 
+#[cfg(plugin_host)]
 /// A scan is running or waiting.
 pub fn scanning() -> bool {
     with(|host| host.scan.is_some())
 }
 
+#[cfg(plugin_host)]
 /// The finished scan's result, once: true when it came (the app stores [`cache_json`]). Modules that missed their plugin
 /// try again.
 pub fn poll_scan() -> bool {
@@ -196,6 +269,7 @@ pub fn poll_scan() -> bool {
 pub fn available() -> Vec<Available> {
     with(|host| {
         let mut list: Vec<Available> = (host.entries.iter())
+            .filter(|e| !e.builtin)
             .filter_map(|e| {
                 let kind = match e.desc.kind {
                     Kind::Instrument => PluginKind::Instrument,
@@ -221,6 +295,7 @@ pub fn installed(plugin: &PluginRef) -> bool {
     with(|host| host.find(plugin).is_some())
 }
 
+#[cfg(plugin_host)]
 /// The scan's counts: files scanned and files that failed (crashed, timed out, did not load).
 pub fn scan_counts() -> (usize, usize) {
     with(|host| {
@@ -287,6 +362,7 @@ pub fn instantiate(channel_id: i32, instance_id: i32, uid: &str) -> Result<Modul
                 ids,
                 song_values: values,
                 window: None,
+                embedded: None,
                 name: desc.name,
                 stopped: false,
                 editor_failed: None,
@@ -356,6 +432,7 @@ fn param_list(plugin: &SharedPlugin) -> (Vec<u32>, Vec<PluginParam>, Vec<f32>) {
 }
 
 impl Host {
+    #[cfg(plugin_host)]
     fn set_cache(&mut self, cache: Cache) {
         let mut files: HashMap<(String, String), Arc<FileLib>> = HashMap::new();
         // A file loaded already stays loaded: its instances run on.
@@ -368,7 +445,7 @@ impl Host {
                 e.file,
             );
         }
-        let mut entries: Vec<Entry> = Vec::new();
+        let mut entries = builtin_entries();
         for f in cache.files.iter().filter(|f| f.status == Status::Ok) {
             let Some(format) = Format::parse(&f.format) else {
                 continue;
@@ -384,11 +461,13 @@ impl Host {
                 });
             for record in &f.plugins {
                 let desc = record.descriptor(format, &path);
-                // The first file wins for a plugin found twice.
-                if !entries.iter().any(|e| e.desc.uid() == desc.uid()) {
+                // The first file wins for a plugin found twice; a built-in plugin's own copy is left out.
+                let builtin = builtin::find(desc.format.as_str(), &desc.id).is_some();
+                if !builtin && !entries.iter().any(|e| e.desc.uid() == desc.uid()) {
                     entries.push(Entry {
                         desc,
                         file: file.clone(),
+                        builtin: false,
                     });
                 }
             }
@@ -405,6 +484,13 @@ impl Host {
     /// else the same format and name. Another format's copy would not read the state.
     // ponytail: no cross-format stand-in (Lemon plays another format's copy from defaults); add it if users ask.
     fn find(&self, plugin: &PluginRef) -> Option<&Entry> {
+        // A built-in plugin (or its own copy installed): the built-in one.
+        if let Some(b) = builtin::of(plugin) {
+            return self
+                .entries
+                .iter()
+                .find(|e| e.builtin && e.desc.id == b.clap_id());
+        }
         let format = Format::parse(&plugin.format)?;
         let same = |e: &&Entry| e.desc.format == format;
         let file = |p: &str| p.rsplit(['/', '\\']).next().unwrap_or(p).to_lowercase();
@@ -425,11 +511,14 @@ impl Host {
     fn revive(&self, module: &ModuleInstance) -> Result<Hosted, String> {
         let plugin_ref = module.file.plugin.as_deref().ok_or("no plugin")?;
         let missing = || {
-            format!(
-                "{} ({}) is not installed: it plays nothing, and its settings are kept.",
-                plugin_ref.name,
-                plugin_ref.format_label()
-            )
+            let (name, format) = (&plugin_ref.name, plugin_ref.format_label());
+            if cfg!(plugin_host) {
+                format!(
+                    "{name} ({format}) is not installed: it plays nothing, and its settings are kept."
+                )
+            } else {
+                format!("{name} ({format}) runs in the desktop app only; its settings are kept.")
+            }
         };
         let entry = self.find(plugin_ref).ok_or_else(missing)?;
         let (desc, file) = (entry.desc.clone(), entry.file.clone());
@@ -459,6 +548,7 @@ impl Host {
             params: shared,
             song_values,
             window: None,
+            embedded: None,
             origin: plugin_ref.state.clone(),
             name: desc.name,
             stopped: false,
@@ -622,8 +712,14 @@ pub fn song_replaced() {
     });
 }
 
-/// Closes the plugin's editor, then its window (an editor whose window went first crashes).
+/// Closes the plugin's editor, then its window (an editor whose window went first crashes); a built-in plugin's editor
+/// in its card.
 fn close_editor_of(hosted: &mut Hosted) {
+    if hosted.embedded.take().is_some()
+        && let Ok(mut p) = hosted.plugin.lock()
+    {
+        p.close_editor();
+    }
     let Some(window) = hosted.window.take() else {
         return;
     };
@@ -717,7 +813,7 @@ pub fn busy() -> bool {
     let runloop = os_host::runloop::active();
     #[cfg(not(unix))]
     let runloop = false;
-    runloop || with(|host| host.scan.is_some() || host.live.values().any(|h| h.window.is_some()))
+    runloop || scanning() || with(|host| host.live.values().any(|h| h.window.is_some()))
 }
 
 /// Saves each instance's state into its module (a project save, a share): the plugins keep their state themselves, so
@@ -762,8 +858,10 @@ pub fn state(channel_id: i32, instance_id: i32) -> Option<State> {
         let hosted = host.live.get(&key)?;
         let editor_open = hosted.window.is_some();
         let p = hosted.plugin.try_lock().ok()?;
+        // A built-in plugin's editor is in its card.
+        let builtin = builtin::find(p.desc().format.as_str(), &p.desc().id).is_some();
         Some(State::Live(Info {
-            has_editor: p.has_editor() && window::AVAILABLE,
+            has_editor: p.has_editor() && window::AVAILABLE && !builtin,
             editor_open,
             editor_failed: hosted.editor_failed.clone(),
             latency: p.latency(),
@@ -836,6 +934,33 @@ fn open_window(hosted: &mut Hosted) -> Result<(), String> {
     w.show();
     hosted.window = Some(w);
     Ok(())
+}
+
+/// The editor of built-in plugin module `instance_id` on the channel with id `channel_id`, drawn into its rack card
+/// (`os_plugkit::embed`) at `scale` device pixels per editor pixel: its id, opened now if it is not open, or opened
+/// again when it was opened at a scale more than 2 % off (a resized window; the card stretches it meanwhile). `None`
+/// while the plugin is not running.
+pub fn lemon_editor(channel_id: i32, instance_id: i32, scale: f32) -> Option<u32> {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT: AtomicU32 = AtomicU32::new(1);
+    with(|host| {
+        let hosted = host.live.get_mut(&(channel_id, instance_id))?;
+        if let Some((id, at)) = hosted.embedded
+            && (at / scale - 1.0).abs() <= 0.02
+            && os_plugkit::embed::is_open(id as _)
+        {
+            return Some(id);
+        }
+        let id = NEXT.fetch_add(1, Ordering::Relaxed);
+        os_plugkit::embed::set_scale(id as _, scale);
+        let mut p = hosted.plugin.lock().ok()?;
+        p.close_editor();
+        // The handle is the editor's id ([`os_plugkit::embed::Parent`]).
+        p.open_editor(id as usize as *mut std::ffi::c_void, scale)
+            .ok()?;
+        hosted.embedded = Some((id, scale));
+        Some(id)
+    })
 }
 
 /// While `f` runs, the engines built get fresh instances of their plugins (an export renders on its own, twice): each

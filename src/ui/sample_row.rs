@@ -268,6 +268,7 @@ pub fn show(ui: &mut Ui, cx: &UiCtx, area: Rect, ink: Color32, row: Row) -> Opti
                 if widgets::button(ui, cx, &b, true).clicked() {
                     action = Some(RowAction::Pick);
                 }
+                crate::ui::tooltip::tip(ui, rect, "Load sample", None);
             }
             Ctl::Rev | Ctl::Sync => {
                 let label = if ctl == Ctl::Rev { "REV" } else { "SYNC" };

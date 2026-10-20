@@ -5,7 +5,7 @@
 //!
 //! Layout inside the rect it is given: the ruler strip on top, with the snap button in its left corner (the close X is
 //! the app's, shared by the bottom editors: [`crate::ui::split::close_button`]); a vertical mini keyboard on the left;
-//! the note grid in the rest, over the graph lane (`Vel` / `Pan`, [`graph_lane`]) while its knob shows it. The x axis
+//! the note grid in the rest, over the graph lane (`Vel` / `Pan`, [`graph_lane`]) while its tab shows it. The x axis
 //! is the clip's content (tick 0 = content start). The grid background: no beat bands; rows light by scale and
 //! instrument range, lit by selection and sound, the shared adaptive beat marks, root lines, and black α 0.15 past the
 //! loop end ([`paint_grid`], [`paint_notes`]). Note names are not drawn.
@@ -23,11 +23,12 @@
 //!   slider, and no ≥ 2-note scale handle.
 //! - Empty grid: a tap dismisses a visible floating menu, else clears the selection and adds a note ([`Remembered`]); a long press is the
 //!   marquee ([`clips::Marquee`]): after 300 ms, dragging beyond 0.5 U makes a selection rectangle.
-//!   While held still, copied notes offer one `Paste` bubble at the finger ([`step_seq::paste_button`]).
-//!   A later tap pastes there; dragging or another press hides it.
+//!   While held still, copied notes offer the `Paste` insert menu over the finger's row at the snapped beat, with the
+//!   insert cursor across the keys the paste takes ([`insert::paste`]). A later tap pastes there; dragging or another
+//!   press hides it.
 //!   Out of the calm zone on either axis (each its own 0.5 U) the touch is the scroller's ([`scroller`]): it scrolls,
 //!   never a tap or a marquee. Two fingers zoom; the wheel zooms or scrolls by zone (`Self::scroll`).
-//! - The right button (owner request, after the desktop app: [`gesture::Erase`]): a press on a note (its drawn box)
+//! - The right button ([`gesture::Erase`]): a press on a note (its drawn box)
 //!   deletes it, and dragging on deletes every note the pointer's path crosses, with no box, all one undo step; a right
 //!   click on empty grid that deleted nothing is `Paste` (as above).
 //! - A move's release is neither a tap nor a long press, so it brings up no floating row: the moved notes stay selected
@@ -62,7 +63,7 @@
 //! - `Snap to Scale` moves each note to the nearest tone of the project scale (the song's key lock, which the keyboard
 //!   settings edit), the lower of two equally near ones.
 //! - `Guess Scale...` opens its results as a dialog box on the dialog base ([`crate::ui::dialog`]: the screen dimmed,
-//!   the rows in `text` on a `moduleFill` box, no sweep), centred on the screen: every root and scale but Chromatic,
+//!   the rows in `text` on the floating panel, no sweep), centred on the screen: every root and scale but Chromatic,
 //!   ranked by fewest accidentals, then most root notes, then picker order; 5 rows, 12 after `Show more`. A row sets
 //!   the project key and scale; `Disable` sets the scale to Chromatic. Without an exact fit, `Choose` lists the closest
 //!   ones.
@@ -99,14 +100,12 @@ use crate::ui::dialog;
 use crate::ui::drum_grid::edit::{MARK_GAP, mark_spacing, marks};
 use crate::ui::edit_keys::{self, EditKey};
 use crate::ui::graph_lane::{self, GraphLane, Prop};
+use crate::ui::insert;
 use crate::ui::keyboard::octave_label;
 use crate::ui::popup::{self, PopupItem};
 use crate::ui::region::{self, RegionOp, TimeRange};
 use crate::ui::scroller::{self, Axis, Scroller, X, Y, Zones};
-use crate::ui::step_seq;
-use crate::ui::timeline::{
-    self, KnobGesture, PlayheadKnob, RULER_H, RangeRuler, RangeSelect, vline_px,
-};
+use crate::ui::timeline::{self, KnobGesture, PlayheadKnob, RangeRuler, RangeSelect, vline_px};
 use crate::ui::widgets::{self, SnapTouch};
 use crate::ui::{UiCtx, gesture, pinch_press, primary_down_live};
 
@@ -135,9 +134,7 @@ const LABEL_PT: [f32; 2] = [6.0, 12.0];
 pub(crate) const GHOST_ALPHA: f32 = 0.35;
 /// Rows that sound or hold a selected note: the channel colour at this alpha.
 const LIT_ALPHA: f32 = 0.1;
-/// The graph lane: its knob's x from the editor's left, in U; its guides' and its (and the grid's) past-the-end
-/// overlay's black alpha (0.2 and 0.15).
-const GRAPH_KNOB_X: f32 = 0.75;
+/// The graph lane: its guides' and its (and the grid's) past-the-end overlay's black alpha (0.2 and 0.15).
 const GUIDE_ALPHA: u8 = 51;
 const PAST_END_LANE_ALPHA: u8 = 38;
 /// Room to scroll past the loop end or the last note, in bars.
@@ -252,7 +249,7 @@ pub struct PianoRoll {
     menu: Option<Menu>,
     /// The time range on the ruler.
     pub(crate) region: RangeSelect,
-    /// The graph lane ([`graph_lane`]): its item, size and knob; and its drag: the clip's events at the drag's start,
+    /// The graph lane ([`graph_lane`]): its item, size and tab; and its drag: the clip's events at the drag's start,
     /// and whether the drag has reported an edit (its end then closes it, even with the notes back as they were).
     pub(crate) graph: GraphLane,
     graph_drag: Option<(Vec<Event>, bool)>,
@@ -496,7 +493,10 @@ impl PianoRoll {
         let m = cx.m;
         let u = m.u(1.0);
         let bpb = song.time_sig.bar_beats();
-        let ruler = Rect::from_x_y_ranges(rect.x_range(), rect.top()..=rect.top() + m.u(RULER_H));
+        let ruler = Rect::from_x_y_ranges(
+            rect.x_range(),
+            rect.top()..=rect.top() + timeline::ruler_h(m),
+        );
         // Below the ruler: the grid, and under it the graph lane while it shows, sized by the editor's height below
         // its top window margin (0 here: the whole rect, ruler included).
         let (body, lane) = self.graph.split_below(rect, ruler.bottom(), m);
@@ -671,6 +671,7 @@ impl PianoRoll {
             self.region.view_moved();
         }
         let out = self.region.show(ui, id.with("region"), &at, true, cx);
+        timeline::scroll_thumb(&bars_painter, bars, at.axis, (0.0, loop_ticks), cx);
         // A ruler press waiting for its long press is the scroller's too, until its range starts.
         if self.region.pending() {
             self.scroller.claim();
@@ -702,12 +703,14 @@ impl PianoRoll {
             vec2(m.u(KEYS_W), corner.height() - 1.0 / m.ppp()),
         );
         let snap_center = snap_cell.center();
-        self.snap_button(ui, id, snap_cell, cx);
-        let knob_x = rect.left() + m.u(GRAPH_KNOB_X);
+        self.snap_button(ui, id, snap_cell, color.to_color32(), cx);
+        // The graph lane's tab, centred on the key column's right edge.
+        let tab_x = rect.left() + m.u(KEYS_W);
         let below = (rect, ruler.bottom());
-        (self.graph).knob_below(ui, cx, id.with("graph knob"), below, knob_x);
+        let ink = color.to_color32();
+        (self.graph).tab_below(ui, cx, id.with("graph tab"), below, tab_x, ink);
         self.floating_buttons(ui, grid, &g, song, cx, &mut actions);
-        self.paste_button(ui, id, &g, song, cx, &mut actions);
+        self.paste_button(ui, id, grid, &g, song, cx, &mut actions);
         // The playhead knob over them all: above the Snap button, which it overhangs at beat 0, and takes the touches
         // there while it shows, as the playlist's.
         self.knob.armed = opts.armed;
@@ -1435,11 +1438,15 @@ impl PianoRoll {
         }
     }
 
-    /// One Paste bubble at the held position; a later tap pastes the note clipboard there.
+    /// The `Paste` insert menu for the held position ([`insert::paste`]): over the tapped key's row at the snapped
+    /// beat, its cursor across the keys the paste takes (as [`Self::paste`] moves them, kept inside the keys); a later
+    /// tap pastes the note clipboard there.
+    #[allow(clippy::too_many_arguments)]
     fn paste_button(
         &mut self,
         ui: &mut egui::Ui,
         id: Id,
+        grid: Rect,
         g: &Geom,
         song: &mut Song,
         cx: &UiCtx,
@@ -1449,18 +1456,30 @@ impl PianoRoll {
             self.paste = None;
             return;
         };
-        if note_clipboard(ui.ctx()).is_empty() {
+        let notes = note_clipboard(ui.ctx());
+        let first =
+            (notes.iter().filter_map(note)).min_by(|a, b| a.0.total_cmp(&b.0).then(a.2.cmp(&b.2)));
+        let Some((_, _, k0)) = first else {
             self.paste = None;
             return;
-        }
-        let (rect, tap) = step_seq::paste_button(ui, cx, id.with("paste"), finger);
+        };
+        let sig = song.time_sig;
+        let snap = self.snap.active(auto_grid(g.beat_w, cx.m.u(1.0), sig), sig);
+        let tick = g.tick(finger.x).max(0.0);
+        let keys = || notes.iter().filter_map(note).map(|n| i32::from(n.2));
+        let (lo, hi) = (keys().min().unwrap_or(0), keys().max().unwrap_or(0));
+        let dk = (i32::from(key) - i32::from(k0))
+            .max(-lo)
+            .min(i32::from(TOP_KEY) - hi);
+        let (top, bottom) = (g.y((hi + dk) as u8), g.y((lo + dk) as u8) + g.row_h);
+        let row = Rangef::new(g.y(key), g.y(key) + g.row_h);
+        let at = (g.x(snap_round(tick, snap)), row, Rangef::new(top, bottom));
+        let tap = insert::paste(ui, cx, id.with("paste"), grid, at);
         if tap.is_some() {
             self.paste = None;
         }
         if tap == Some(true) {
-            self.cursor = (g.tick(rect.center().x).max(0.0), key);
-            let sig = song.time_sig;
-            let snap = self.snap.active(auto_grid(g.beat_w, cx.m.u(1.0), sig), sig);
+            self.cursor = (tick, key);
             let min_len = snap.map_or(1.0, |unit| unit / 8.0);
             self.paste(ui.ctx(), song, snap, min_len, actions);
         }
@@ -1529,10 +1548,9 @@ impl PianoRoll {
         if self.quiet || matches!(self.gesture, Gesture::Edit(_)) {
             return;
         }
-        let text = cx.theme.colors.text.to_color32();
         for (e, _) in events.iter().zip(&self.selected).filter(|(_, s)| **s) {
-            if let Some(center) = handle_center(g, cx.m.u(1.0), e) {
-                painter.circle_filled(center, cx.m.u(HANDLE_D) / 2.0, text);
+            if let Some(r) = g.note_rect(e) {
+                clips::paint_handle(painter, cx, clips::end_handle(r, cx.m), (1.0, 0.0), false);
             }
         }
     }
@@ -1677,8 +1695,8 @@ impl PianoRoll {
 
     /// The snap button in `cell` ([`widgets::snap_button`]): a tap toggles snap, a long press or right click opens the
     /// snap menu.
-    fn snap_button(&mut self, ui: &mut egui::Ui, id: Id, cell: Rect, cx: &UiCtx) {
-        match widgets::snap_button(ui, id.with("snap"), cell, self.snap.on, cx) {
+    fn snap_button(&mut self, ui: &mut egui::Ui, id: Id, cell: Rect, ink: Color32, cx: &UiCtx) {
+        match widgets::snap_button(ui, id.with("snap"), cell, (self.snap.on, ink), cx) {
             Some(SnapTouch::Menu) => self.menu = Some(Menu::Snap),
             Some(SnapTouch::Toggle) => self.snap.on = !self.snap.on,
             None => {}
@@ -1695,15 +1713,13 @@ impl PianoRoll {
         cx: &UiCtx,
         actions: &mut Vec<PianoRollAction>,
     ) {
-        let u = cx.m.u(1.0);
         let events = self.clip(song).map_or(&[][..], |c| &c.events);
         let notes: Vec<(&Event, Rect)> = (events.iter().zip(&self.selected))
             .filter(|(_, s)| **s)
             .filter_map(|(e, _)| Some((e, g.note_rect(e)?)))
             .collect();
         let handles: Vec<Rect> = (notes.iter())
-            .filter_map(|(e, _)| handle_center(g, u, e))
-            .map(|c| Rect::from_center_size(c, Vec2::splat(HANDLE_D * u)))
+            .map(|(_, r)| clips::end_handle(*r, cx.m))
             .filter(|h| h.intersects(grid))
             .collect();
         // A quiet selection has no row, which a release on it brings back neither.
@@ -2058,11 +2074,11 @@ impl PianoRoll {
                 button(&mut items, GuessItem::Disable, "Disable", false);
             }
         }
-        // A dialog box: the screen dimmed at α 0.6 under a `moduleFill` box round the rows, from the first frame, whose
+        // A dialog box: the screen dimmed at α 0.6 under the floating panel round the rows, from the first frame, whose
         // rows are the popup's `text` items without its sweep or fill.
         let (bounds, id) = (ctx.content_rect(), id.with("guess"));
         let rect = popup::popup_rect(ctx, &items, bounds.center(), bounds, cx.m).intersect(bounds);
-        dialog::paint_in_layers(ctx, id, &cx.theme.colors, bounds, rect);
+        dialog::paint_in_layers(ctx, id, (&cx.theme.colors, cx.m), bounds, rect);
         let result = popup::show_on_box(ctx, id, bounds.center(), bounds, &items, cx, true);
         let lock = (song.key_root, song.key_scale);
         match result.selected {

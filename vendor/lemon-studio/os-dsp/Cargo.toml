@@ -1,0 +1,11 @@
+[package]
+name = "os-dsp"
+description = "Lemon Studio DSP building blocks: level curve, pan split, gain glides, mixer matrix and equaliser"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+# Time stretching and pitch shifting (MIT): C++, which the browser build has no compiler for (`src/lib.rs`).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+signalsmith-stretch = "0.1.3"

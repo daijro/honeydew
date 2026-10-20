@@ -19,3 +19,5 @@ rusty_mp3 = { path = "../../vendor/rusty_mp3", version = "=1.0.0" }
 # THIRD_PARTY_NOTICES.md.
 zvidlib-vorbis-encoder = "=0.5.0"
 ogg = "=0.8.0"
+# Lemon Studio's reverb and limiter (`lemon.rs`), vendored with its plugin hosts (vendor/lemon-studio, GPL-3.0-or-later).
+os-engine = { path = "../../vendor/lemon-studio/os-engine" }

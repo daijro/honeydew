@@ -1,6 +1,7 @@
-//! The channel properties dialog, the track menu's `Channel Settings`: the title over the `Channel Name` field and the
-//! `Channel Color` slider (the hue, `CHHD` @1036). The `Channel Name` field is inline, with `Enter Channel Name` as its
-//! hint. A `moduleFill` box centred in the content area, above the transport bar, over the screen dimmed to α 0.6.
+//! The channel properties dialog, the track menu's `Channel Settings`: the title and the close X over the
+//! `Channel Name` field and the `Channel Color` slider (the hue, `CHHD` @1036). The `Channel Name` field is inline,
+//! with `Enter Channel Name` as its hint. A floating dialog centred in the content area, above the transport bar, over
+//! the screen dimmed to α 0.6.
 
 use eframe::egui::{
     self, Align, Align2, Area, Id, Key, Margin, Order, Rect, Sense, TextEdit, vec2,
@@ -20,6 +21,8 @@ const TITLE: (f32, f32) = (0.25, 1.0);
 const CAPTION: (f32, f32) = (1.5, 0.5);
 const FIELD: (f32, f32) = (2.0, 1.25);
 const SLIDER: (f32, f32) = (3.5, 2.0);
+/// The close X's cell at the top-right corner.
+const CLOSE: f32 = 1.5;
 
 /// Shows `channel`'s dialog, modal, `name` holding its field's text. The name applies on Enter, which closes the
 /// dialog, or on a click outside, which closes it too; a blank one is ignored, and Escape closes it without the name
@@ -44,9 +47,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut AppCtx, channel: usize, name: &mut Stri
         )
     };
     let id = Id::new("channel_settings");
-    // A dialog box (`dialog::dialog_box`): no animation, the screen dimmed to α 0.6 under a `moduleFill` box from the
+    // A dialog box (`dialog::dialog_box`): no animation, the screen dimmed to α 0.6 under the floating panel from the
     // first frame, over a backdrop that takes every click outside it.
-    let backdrop = crate::ui::dialog::dialog_box(&ctx, id, c, screen, rect);
+    let backdrop = crate::ui::dialog::dialog_box(&ctx, id, (c, m), screen, rect);
     let escape = crate::ui::close_pressed(&ctx);
     let mut close = backdrop.clicked() || backdrop.secondary_clicked() || escape;
     let mut hue = ch.hue;
@@ -108,6 +111,14 @@ pub fn show(ui: &mut egui::Ui, app: &mut AppCtx, channel: usize, name: &mut Stri
                 ..Control::new(id.with("color"), row(SLIDER), "Channel Color", ink, hue)
             };
             h_slider(ui, &app.cx, &control, &mut hue, |_| String::new());
+            // The close X, as a click outside: the name applies.
+            let x = Rect::from_min_size(
+                rect.right_top() - vec2(m.u(CLOSE), 0.0),
+                vec2(m.u(CLOSE), m.u(CLOSE)),
+            );
+            let surface = (c.menu_fill.to_color32(), 0.375);
+            close |= crate::ui::buttons::close_x(ui, &app.cx, id.with("close"), x, surface, 0.6)
+                .clicked();
         });
     let ch = &mut app.song.channels[channel];
     let mut edited = hue != ch.hue;

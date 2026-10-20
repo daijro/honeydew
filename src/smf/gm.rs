@@ -1,10 +1,10 @@
 //! General MIDI and the sounds Honeydew gives imported channels: MIDI import ([`super::import`]) and FLP import
 //! (`crate::flp`) share these.
 //!
-//! Owner request (2026-10-18): every imported channel makes sound. A GM program loads our closest bundled DW program
-//! ([`BUNDLED`]), or without the bundle (a build without `content/`) our code-made preset for its family ([`CODE`]);
-//! our programs play at concert pitch. MIDI channel 10 plays on a Drums channel with our kit ([`drum_kit`]), each GM
-//! drum key on the pad that fits it best ([`drum_pad`]).
+//! Every imported channel makes sound. A GM program loads our closest bundled DW program ([`BUNDLED`]), or without the
+//! bundle (a build without `content/`) our code-made preset for its family ([`CODE`]); our programs play at concert
+//! pitch. MIDI channel 10 plays on a Drums channel with our kit ([`drum_kit`]), each GM drum key on the pad that fits
+//! it best ([`drum_pad`]).
 
 use std::path::{Path, PathBuf};
 

@@ -185,6 +185,10 @@ pub trait SongLibrary {
     fn remove(&mut self, _path: &Path) -> io::Result<()> {
         Err(io::ErrorKind::Unsupported.into())
     }
+    /// Writes the new file `path`, in a folder that is there, with `bytes` (`Convert to FLAC`).
+    fn write_new(&mut self, _path: &Path, _bytes: &[u8]) -> io::Result<()> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
     /// `path` is read-only: imported content, which the ≡ actions never change. The default has none.
     fn read_only(&self, _path: &Path) -> bool {
         false
@@ -461,6 +465,13 @@ impl SongLibrary for MemoryLibrary {
             self.entries.remove(&old);
         }
         Ok(())
+    }
+
+    fn write_new(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        if self.exists(path) {
+            return Err(io::ErrorKind::AlreadyExists.into());
+        }
+        self.put(path.to_owned(), bytes)
     }
 }
 
@@ -918,6 +929,16 @@ impl SongLibrary for NativeLibrary {
         } else {
             std::fs::remove_file(path)
         }
+    }
+
+    /// Whole or not at all ([`write_atomic`](crate::project_files::write_atomic)).
+    fn write_new(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        wait_for_purge();
+        self.writable(path)?;
+        if self.exists(path) {
+            return Err(io::ErrorKind::AlreadyExists.into());
+        }
+        crate::project_files::write_atomic(path, bytes)
     }
 
     /// The Original Content folder's `New Song Templates`, by stem, sorted by byte order.

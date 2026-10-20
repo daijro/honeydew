@@ -6,7 +6,7 @@ use honeydew_audio::MeterSnapshot;
 use honeydew_audio::device::{ModuleKey, ModuleMeter};
 
 use super::*;
-use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
 use crate::song::SynthKind;
 use crate::theme::theme_by_id;
 use crate::ui::main_screen::track_rows;
@@ -22,7 +22,7 @@ fn r(x0: f32, y0: f32, x1: f32, y1: f32) -> Rect {
 }
 
 fn m(ppp: f32) -> Metrics {
-    Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX)
+    Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE)
 }
 
 fn ids(placed: &[(NodeId, Rect)]) -> Vec<NodeId> {
@@ -65,16 +65,21 @@ fn at_c_1_the_stack_is_header_mute_solo_pan_and_level_at_their_u() {
 }
 
 #[test]
-fn the_masters_header_takes_4_5_u_so_its_pan_and_level_line_up() {
+fn the_masters_unsolo_all_takes_mute_and_solo_so_its_pan_and_level_line_up() {
     let row = r(0.0, 0.0, 13.5 * U, 63.0);
     let placed = parts(RowKind::Master, row, true, &m(1.0));
     assert_eq!(
         xs_u(&placed),
-        [(HEADER, 0.0, 4.5), (PAN, 4.5, 7.25), (LEVEL, 7.25, 13.25)]
+        [
+            (HEADER, 0.0, 1.5),
+            (UNSOLO, 1.5, 4.5),
+            (PAN, 4.5, 7.25),
+            (LEVEL, 7.25, 13.25)
+        ]
     );
     assert_eq!(
         header_rect(RowKind::Master, row, true, &m(1.0)),
-        r(0.0, 0.0, 4.5 * U, 63.0)
+        r(0.0, 0.0, 1.5 * U, 63.0)
     );
     assert_eq!(
         header_rect(RowKind::Primary, row, true, &m(1.0)),

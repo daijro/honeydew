@@ -24,44 +24,70 @@ use crate::ui::scroller::{WHEEL_FLOOR, WHEEL_ZOOM};
 
 /// The vertical travel, in U, past which a grab resizes.
 const RESIZE_U: f32 = 1.0;
-/// A let-go height under this, in U, collapses to the bar alone.
-const BAR_ONLY_U: f32 = 2.5;
+/// The least open height over the collapsed one, in U: a let-go height under c + 0.75 U collapses to the bar alone.
+pub const OPEN_MIN: f32 = 0.75;
 /// A let-go height follows the last move this many times over: h' = h − 10·Δy.
 const THROW: f32 = 10.0;
 /// The least last move, in U, that flings the keys, and the fling's speed kept per frame.
 const FLING_MIN_U: f32 = 0.125;
 const DECAY: f32 = 0.9;
 
-/// The panel's least height: trunc(1.75 U) px, the button bar alone, in points.
-pub fn panel_min(m: &Metrics) -> f32 {
-    (m.u_px() * TRANSPORT_H).trunc() / m.ppp()
+/// c, the collapsed panel's height (the transport bar alone, `rows` rows of 1.75 U): trunc(c · U) px, in points.
+pub fn collapsed(rows: u8, m: &Metrics) -> f32 {
+    (m.u_px() * TRANSPORT_H * f32::from(rows)).trunc() / m.ppp()
 }
 
-/// The height a resize let go at `h` settles at, after a last move of `last_dy` points on a screen `screen_h` tall:
-/// h' = h − 10·Δy; full screen when clamp(h', min, H) > H − min, the bar alone when h' < 2.5 U, else h'.
-pub fn released(h: f32, last_dy: f32, screen_h: f32, m: &Metrics) -> f32 {
-    let min = panel_min(m);
-    let full = screen_h.max(min);
-    let thrown = h - THROW * last_dy;
-    if thrown.clamp(min, full) > full - min {
+/// The height a resize let go at `h` settles at, after a last move of `last_dy` points, for the collapsed height `c` on
+/// a screen `screen_h` tall (M): h' = h − 10·Δy within [c, M]; M when h' > M − c, c when h' < c + 0.75 U, else h'.
+pub fn released(h: f32, last_dy: f32, c: f32, screen_h: f32, m: &Metrics) -> f32 {
+    let full = screen_h.max(c);
+    let thrown = (h - THROW * last_dy).clamp(c, full);
+    if thrown > full - c {
         full
-    } else if thrown < m.u(BAR_ONLY_U) {
-        min
+    } else if thrown < c + m.u(OPEN_MIN) {
+        c
     } else {
         thrown
     }
 }
 
-/// The tap toggle's height: the bar alone while the `preferred` height is over it, else the `recent` one within
-/// [min, `screen_h`]. All in points. "Over" is by more than half a device pixel: a height kept in U comes back a hair
-/// off the bar's own.
-pub fn toggled(preferred: f32, recent: f32, screen_h: f32, m: &Metrics) -> f32 {
-    let min = panel_min(m);
-    if (preferred - min) * m.ppp() > 0.5 {
-        min
+/// The tap toggle's height (the bar's empty space, the strip's, `toggleKeyboardPanel`): collapsed (0, snapped up to
+/// c) while the `preferred` height is over the collapsed `c`, else the restore height max(`recent`, c + 0.75 U); either
+/// through the release snap ([`released`]). All in points. "Over" is by more than half a device pixel: a height kept
+/// in U comes back a hair off the bar's own.
+pub fn toggled(preferred: f32, recent: f32, c: f32, screen_h: f32, m: &Metrics) -> f32 {
+    let target = if (preferred - c) * m.ppp() > 0.5 {
+        0.0
     } else {
-        recent.clamp(min, screen_h.max(min))
+        recent.max(c + m.u(OPEN_MIN))
+    };
+    released(target, 0.0, c, screen_h, m)
+}
+
+/// The preferred height when the transport bar's rows change, its collapsed height going from `old` to `new` (all in
+/// points): a collapsed panel stays collapsed at `new`; an open one is at least `new` + 0.75 U.
+pub fn rows_changed(preferred: f32, old: f32, new: f32, m: &Metrics) -> f32 {
+    if (preferred - old) * m.ppp() > 0.5 {
+        preferred.max(new + m.u(OPEN_MIN))
+    } else {
+        new
     }
+}
+
+/// The preferred height (points) the keyboard settings strip opens the panel to: while the panel was `hidden`,
+/// collapsed or had no keys area under the strip `strip` points tall, min(M, max(`recent`, c + strip + 6.5 U)); `None`
+/// keeps the size.
+pub fn strip_opened(
+    preferred: f32,
+    recent: f32,
+    c: f32,
+    strip: f32,
+    screen_h: f32,
+    hidden: bool,
+    m: &Metrics,
+) -> Option<f32> {
+    let no_keys = (preferred - c - strip) * m.ppp() <= 0.5;
+    (hidden || no_keys).then(|| recent.max(c + strip + m.u(6.5)).min(screen_h.max(c)))
 }
 
 /// What the panel's sizes become, in points: the preferred height, and the recent one when it changes.
@@ -72,11 +98,11 @@ pub struct Sizes {
 }
 
 impl Sizes {
-    /// The sizes after a resize settles at `h`: the recent height too while `h` is over the bar alone.
-    pub fn settled(h: f32, m: &Metrics) -> Self {
+    /// The sizes after a resize settles at `h`: the recent height too while `h` is over the collapsed `c`.
+    pub fn settled(h: f32, c: f32) -> Self {
         Self {
             preferred: h,
-            recent: (h > panel_min(m)).then_some(h),
+            recent: (h > c).then_some(h),
         }
     }
 }
@@ -221,7 +247,12 @@ impl PanelGrab {
                 let t = self.touch.take().expect("matched above");
                 match t.mode {
                     Mode::Resize => out.released = Some(t.last.y),
-                    Mode::Scroll if t.last.x.abs() > m.u(FLING_MIN_U) => self.fling = t.last.x,
+                    Mode::Scroll
+                        if t.last.x.abs() > m.u(FLING_MIN_U)
+                            && crate::ui::anim::inertia(ui.ctx()) =>
+                    {
+                        self.fling = t.last.x
+                    }
                     _ => {}
                 }
             }
@@ -256,88 +287,96 @@ impl PanelGrab {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
 
     fn metrics(ppp: f32) -> Metrics {
-        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX)
+        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE)
     }
 
     #[test]
-    fn a_let_go_height_follows_its_last_move_ten_times_and_snaps_to_full_or_the_bar() {
+    fn a_let_go_height_follows_its_last_move_ten_times_and_snaps_to_full_or_collapsed_by_the_bars_rows()
+     {
         for ppp in [1.0, 2.0] {
             let m = metrics(ppp);
-            let (u, min, screen) = (m.u(1.0), panel_min(&m), 540.0);
-            // trunc(1.75 U) px: 56 pt at U = 32 px; 1.75 · 32 = 56 px at ppp 2, so 28 pt there.
-            assert_eq!(min, (1.75 * m.u_px()).trunc() / ppp, "{ppp}");
-            // Still: h' = h.
-            assert_eq!(released(6.0 * u, 0.0, screen, &m), 6.0 * u);
-            // The last move 3 points up throws it 30 points taller.
-            assert_eq!(released(6.0 * u, -3.0, screen, &m), 6.0 * u + 30.0);
-            // Past H − min (clamped first): full screen; a throw past the screen too.
-            assert_eq!(released(screen - min + 1.0, 0.0, screen, &m), screen);
-            assert_eq!(released(screen - min, 0.0, screen, &m), screen - min);
-            assert_eq!(released(6.0 * u, -100.0, screen, &m), screen);
-            // Under 2.5 U: the bar alone; at 2.5 U it stays; a throw down below it collapses.
-            assert_eq!(released(2.5 * u - 0.5, 0.0, screen, &m), min);
-            assert_eq!(released(2.5 * u, 0.0, screen, &m), 2.5 * u);
-            assert_eq!(released(4.0 * u, 2.0 * u / 10.0, screen, &m), min);
+            let (u, screen) = (m.u(1.0), 540.0);
+            for rows in [1, 2] {
+                let c = collapsed(rows, &m);
+                assert_eq!(c, (1.75 * f32::from(rows) * m.u_px()).trunc() / ppp);
+                // Still: h' = h; the last move 3 points up throws it 30 points taller.
+                assert_eq!(released(8.0 * u, 0.0, c, screen, &m), 8.0 * u);
+                assert_eq!(released(8.0 * u, -3.0, c, screen, &m), 8.0 * u + 30.0);
+                // Past M − c: full screen.
+                assert_eq!(released(screen - c + 1.0, 0.0, c, screen, &m), screen);
+                assert_eq!(released(screen - c, 0.0, c, screen, &m), screen - c);
+                // Under c + 0.75 U: collapsed; at it, it stays.
+                assert_eq!(released(c + 0.75 * u - 0.5, 0.0, c, screen, &m), c);
+                assert_eq!(released(c + 0.75 * u, 0.0, c, screen, &m), c + 0.75 * u);
+                // The toggle: an open panel collapses; a collapsed one opens to the recent height, at least c + 0.75 U.
+                assert_eq!(toggled(c + 1.0 / ppp, 7.0 * u, c, screen, &m), c);
+                assert_eq!(toggled(c, 7.0 * u, c, screen, &m), 7.0 * u);
+                assert_eq!(toggled(c, 0.0, c, screen, &m), c + 0.75 * u);
+                assert_eq!(toggled(c, 900.0, c, screen, &m), screen);
+            }
         }
     }
 
     #[test]
-    fn the_toggle_collapses_a_panel_over_the_bar_and_opens_the_bar_to_the_recent_height() {
-        for ppp in [1.0, 2.0] {
-            let m = metrics(ppp);
-            let (u, min) = (m.u(1.0), panel_min(&m));
-            assert_eq!(toggled(5.0 * u, 7.0 * u, 540.0, &m), min);
-            // One device pixel over it collapses.
-            assert_eq!(toggled(min + 1.0 / ppp, 7.0 * u, 540.0, &m), min);
-            // At the bar (or under it): the recent height, kept within [min, H].
-            assert_eq!(toggled(min, 7.0 * u, 540.0, &m), 7.0 * u);
-            assert_eq!(toggled(0.0, 900.0, 540.0, &m), 540.0);
-            assert_eq!(toggled(min, 1.0, 540.0, &m), min);
-        }
-    }
-
-    #[test]
-    fn a_settled_height_over_the_bar_is_also_the_recent_one() {
+    fn a_row_switch_keeps_a_collapsed_panel_collapsed_and_the_strip_opens_a_panel_without_keys() {
         let m = metrics(1.0);
+        let u = m.u(1.0);
+        let (one, two) = (collapsed(1, &m), collapsed(2, &m));
+        // Collapsed stays collapsed, either way; an open panel is at least the new c + 0.75 U.
+        assert_eq!(rows_changed(one, one, two, &m), two);
+        assert_eq!(rows_changed(two, two, one, &m), one);
+        assert_eq!(rows_changed(4.0 * u, one, two, &m), two + 0.75 * u);
+        assert_eq!(rows_changed(8.0 * u, one, two, &m), 8.0 * u);
+        // The strip (3 U): a panel with keys keeps its size; hidden, collapsed or without keys it opens to
+        // max(recent, c + strip + 6.5 U), at most the screen.
+        let strip = 3.0 * u;
         assert_eq!(
-            Sizes::settled(200.0, &m),
-            Sizes {
-                preferred: 200.0,
-                recent: Some(200.0)
-            }
+            strip_opened(8.0 * u, 5.0 * u, one, strip, 540.0, false, &m),
+            None
         );
-        let min = panel_min(&m);
+        let opened = Some(one + strip + 6.5 * u);
         assert_eq!(
-            Sizes::settled(min, &m),
-            Sizes {
-                preferred: min,
-                recent: None
-            }
+            strip_opened(8.0 * u, 5.0 * u, one, strip, 540.0, true, &m),
+            opened
+        );
+        assert_eq!(
+            strip_opened(one, 5.0 * u, one, strip, 540.0, false, &m),
+            opened
+        );
+        assert_eq!(
+            strip_opened(one + strip, 5.0 * u, one, strip, 540.0, false, &m),
+            opened
+        );
+        assert_eq!(
+            strip_opened(one, 14.0 * u, one, strip, 540.0, false, &m),
+            Some(14.0 * u)
+        );
+        assert_eq!(
+            strip_opened(one, 5.0 * u, one, strip, 300.0, false, &m),
+            Some(300.0)
         );
     }
 
     #[test]
     fn a_collapsed_panel_kept_in_u_reopens_at_every_density_and_ui_scale() {
-        use crate::metrics::UI_SCALE_FACTORS;
-        // The settings keep sizes in U: the bar alone comes back as min / U · U, which may land an ulp off min (at
+        // The settings keep sizes in U: the bar alone comes back as c / U · U, which may land an ulp off c (at
         // 150 % DPI and 110 % scale, U = 53 px).
         for ppp in [1.0, 1.25, 1.5, 2.0, 2.75, 3.0] {
-            for (scale, factor) in UI_SCALE_FACTORS.iter().enumerate() {
-                let m = Metrics::from_pixels_per_point(ppp, scale);
-                let (u, min) = (m.u(1.0), panel_min(&m));
-                let stored = min / u;
-                let back = m.u(stored);
+            for factor in [60, 75, 90, 100, 110, 125, 150, 175, 200] {
+                let m = Metrics::from_pixels_per_point(ppp, factor);
+                let (u, c) = (m.u(1.0), collapsed(1, &m));
+                let back = m.u(c / u);
                 assert_eq!(
-                    toggled(back, 7.0 * u, 2000.0, &m),
+                    toggled(back, 7.0 * u, c, 2000.0, &m),
                     7.0 * u,
                     "ppp {ppp}, scale {factor}"
                 );
                 // And a panel a pixel over the bar still collapses.
-                let over = m.u((min + 1.0 / ppp) / u);
-                assert_eq!(toggled(over, 7.0 * u, 2000.0, &m), min, "ppp {ppp}");
+                let over = m.u((c + 1.0 / ppp) / u);
+                assert_eq!(toggled(over, 7.0 * u, c, 2000.0, &m), c, "ppp {ppp}");
             }
         }
     }

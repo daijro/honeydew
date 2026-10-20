@@ -81,7 +81,7 @@ impl<'de> Deserialize<'de> for Rgba {
     }
 }
 
-/// The 10 colour roles of a theme.
+/// The 11 colour roles of a theme.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThemeColors {
@@ -90,6 +90,8 @@ pub struct ThemeColors {
     pub module_fill: Rgba,
     pub menu_fill: Rgba,
     pub text: Rgba,
+    /// Text and icons on an `accent` fill.
+    pub text_on_accent: Rgba,
     pub accent: Rgba,
     pub white_key: Rgba,
     pub black_key: Rgba,
@@ -179,6 +181,7 @@ struct RawColors {
     module_fill: Option<Rgba>,
     menu_fill: Option<Rgba>,
     text: Option<Rgba>,
+    text_on_accent: Option<Rgba>,
     accent: Option<Rgba>,
     white_key: Option<Rgba>,
     black_key: Option<Rgba>,
@@ -219,6 +222,8 @@ impl RawTheme {
                 module_fill: c.module_fill.unwrap_or(Rgba::hex(0x394046)),
                 menu_fill: c.menu_fill.unwrap_or(Rgba::hex(0x434C51)),
                 text,
+                // A fixed default, not the theme's background: no built-in theme sets it.
+                text_on_accent: c.text_on_accent.unwrap_or(Rgba::hex(0x21272B)),
                 accent: c.accent.unwrap_or(text),
                 white_key: c.white_key.unwrap_or(Rgba::hex(0xC7CEDA)),
                 black_key: c.black_key.unwrap_or(Rgba::hex(0x21272B)),
@@ -262,6 +267,7 @@ pub fn builtin_themes() -> Vec<Theme> {
                 module_fill: c(main[2]),
                 menu_fill: c(main[3]),
                 text: c(main[4]),
+                text_on_accent: None,
                 accent: c(main[5]),
                 white_key: key(0),
                 black_key: key(1),
@@ -548,14 +554,15 @@ mod tests {
         assert_eq!(c.best_contrasting(Rgba::hex(0xFFFFFF), &[b, a]), b);
     }
 
-    /// All 10 colour roles, in struct order.
-    fn all_colors(c: &ThemeColors) -> [Rgba; 10] {
+    /// All 11 colour roles, in struct order.
+    fn all_colors(c: &ThemeColors) -> [Rgba; 11] {
         [
             c.background,
             c.control_fill,
             c.module_fill,
             c.menu_fill,
             c.text,
+            c.text_on_accent,
             c.accent,
             c.white_key,
             c.black_key,
@@ -605,7 +612,11 @@ mod tests {
         }
         // Wire key names; a renamed key would round-trip but not interoperate.
         let paper = theme_by_id(3).to_json();
-        for key in ["whiteKeyDisabled", "playlistTrackBackgroundTransparency"] {
+        for key in [
+            "whiteKeyDisabled",
+            "textOnAccent",
+            "playlistTrackBackgroundTransparency",
+        ] {
             assert!(
                 paper.contains(&format!("\"{key}\"")),
                 "missing key {key} in {paper}"

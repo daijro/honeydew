@@ -1,8 +1,8 @@
 //! The preset picker overlay: what it lists and where its pick loads.
 //! - A card's preset button: the module's presets, or `Default`, into that module (and an instrument's name into its
 //!   channel).
-//! - The rack ≡ `Load Rack preset`: a rack preset replaces the rack's modules; the Modules browser's `Rack Preset` adds
-//!   them where its `Paste` would; the add-channel `Rack` makes a new Rack channel of them, selected.
+//! - The rack ≡ `Load Rack preset` and the Modules browser's `Rack Preset`: a rack preset replaces the rack's modules;
+//!   the add-channel `Rack` makes a new Rack channel of them, selected.
 //! - `Load Drumset` (the rack ≡ menu's, the drums track menu's and the drum row menu's, and a new Drums channel's): the
 //!   `Drumsets` picker over `My Drumsets`, `Default`, the built-in kit ([`DrumKit::default_kit`]), and our factory
 //!   kits; a drum kit template replaces the channel's kit.
@@ -33,6 +33,17 @@
 //! the UI thread ([`load_module`]). Either way the file is stored by its shorthand (`@R@Built-in/…`, `@R@` in the
 //! content folder, else `@L@`) and named, `PRST` included, relative to the root it is in
 //! ([`ProjectFiles::name_module`]).
+//!
+//! The Modules browser's `Instrument` and `Rack Preset` show their lists in the browser's panel
+//! ([`PresetPicker::in_modules`]), Back at their root going back to it ([`State::back_to_modules`]):
+//! - `Instrument` ([`PresetTarget::ModulesInstrument`]): the Instruments picker's content. A pick adds a module of the
+//!   preset's instrument ([`categories::module_instrument_of`]) at the browser's insert point, or in place of the module
+//!   the last pick added, and loads the preset into it as an Instruments pick does ([`pick_module_instrument`]); the
+//!   audition turns on and the list stays open. `Cannot load preset` flashes for a file of no instrument the channel
+//!   takes, `Failed to load preset` for one that does not load (its module goes again).
+//! - `Rack Preset` ([`PresetTarget::ModulesRack`]): the `Channel Racks` list ([`CHANNEL_RACKS`]); each pick replaces
+//!   the rack's modules as `Load Rack preset` does, and the list stays open; one that does not load flashes
+//!   `Failed to load preset`.
 //!
 //! The add-channel `Instrument` opens the Instruments picker ([`PresetTarget::Instruments`]): `My Files` over the whole
 //! user folder, then the instrument categories of imported content and ours ([`categories`],
@@ -84,6 +95,7 @@ use crate::sf2::Preset;
 use crate::song::Rack;
 use crate::song::chords::ChordSet;
 use crate::song::{ChannelKind, DrumKit, KeyboardState, ModuleInstance};
+use crate::ui::modules_browser::{InsertAt, add_module};
 use crate::ui::picker_preview::Sound;
 use crate::ui::preset_picker::categories;
 use crate::ui::preset_picker::{
@@ -91,11 +103,17 @@ use crate::ui::preset_picker::{
 };
 use crate::ui::rack::{
     Held, Outcome, PresetTarget, hold_removal, load_rack_into, module_name,
-    name_instrument_channel, name_song_channel,
+    name_instrument_channel, name_song_channel, takes_instruments,
 };
 
 /// The tag of the picker's messages, which only have `OK`.
 pub const TAG: &str = "preset_picker";
+
+/// The Modules browser's lists' flashes: a file of no instrument the channel takes, a file that does not load.
+pub const CANNOT_LOAD: &str = "Cannot load preset";
+pub const PRESET_FAILED: &str = "Failed to load preset";
+/// The title of the Modules browser's rack preset list.
+pub const CHANNEL_RACKS: &str = "Channel Racks";
 
 /// The open picker. It starts afresh on each opening, however it was last closed: at its root, with the slide-in.
 #[derive(Default)]
@@ -125,6 +143,10 @@ pub struct State {
     grand_download: Option<(PathBuf, content::web::Ticket)>,
     /// The web: the [`load_close_grand`]s waiting for theirs, by channel id and module id.
     grand_downloads: Vec<(i32, i32, (PathBuf, content::web::Ticket))>,
+    /// The module the last pick in the Modules browser's Instruments list added, by instance id: the next replaces it.
+    added: Option<i32>,
+    /// A list in the Modules browser's place went Back to it: the browser opens again in place, with no slide-in.
+    pub(crate) back_to_modules: bool,
 }
 
 impl State {
@@ -349,16 +371,26 @@ pub(super) fn spawn<T: Send + 'static>(job: impl FnOnce() -> T + Send + 'static)
     rx
 }
 
-/// Whether a pick in `target`'s picker keeps it open: a module's presets (its preset button) and a rack preset opened
-/// from the rack do; the drumsets, the chord sets and a new Rack channel's preset (the playlist's) close on a pick.
+/// Whether a pick in `target`'s picker keeps it open: a module's presets (its preset button), a rack preset opened
+/// from the rack and the Instruments do; the drumsets, the chord sets and a new Rack channel's preset (the playlist's)
+/// close on a pick.
 fn stays_open(target: PresetTarget) -> bool {
     matches!(
         target,
         PresetTarget::Module(_)
             | PresetTarget::RackReplace
-            | PresetTarget::RackInsert(_)
+            | PresetTarget::ModulesRack(_)
             | PresetTarget::Instruments
+            | PresetTarget::ModulesInstrument(_)
     )
+}
+
+/// The Modules browser's insert point of a list shown in its place, which a load failure only flashes in.
+fn in_modules(target: PresetTarget) -> Option<InsertAt> {
+    match target {
+        PresetTarget::ModulesRack(at) | PresetTarget::ModulesInstrument(at) => Some(at),
+        _ => None,
+    }
 }
 
 /// The Slicer's module type id: its picks show the sample strip instead of the audition strip.
@@ -400,6 +432,7 @@ pub fn show(
         state.loading = None;
         state.closing = false;
         state.grand_download = None;
+        state.added = None;
     }
     // Its module is now another type (as a card's panel state keys by type): what it lists is not for that one.
     if state
@@ -415,7 +448,7 @@ pub fn show(
     let channel_id = app.song.channels.get(channel).map(|c| c.id);
     let ours = |l: &Loading| {
         let mine = match target {
-            PresetTarget::Instruments => l.instruments,
+            PresetTarget::Instruments | PresetTarget::ModulesInstrument(_) => l.instruments,
             _ => target == PresetTarget::Module(l.id),
         };
         mine && channel_id == Some(l.channel_id)
@@ -461,8 +494,17 @@ pub fn show(
             {
                 sample_picker::show_strip(picker, &loading.path, wave.clone());
             }
+            let added = loading.id;
             let landed = finish(app, rack, channel, loading, done, held);
-            if state.closing || landed.is_err() {
+            // In the Modules browser's Instruments list a pick that fails flashes, and its module goes.
+            if let (Err(_), false, Some(_)) = (&landed, state.closing, in_modules(target)) {
+                if let Some(ch) = app.song.channels.get_mut(channel) {
+                    ch.rack.remove(added);
+                }
+                state.added = None;
+                app.files.flash(PRESET_FAILED);
+                app.pick_loaded();
+            } else if state.closing || landed.is_err() {
                 state.closing = false;
                 close(state, app, channel);
                 return Some(outcome(landed));
@@ -507,6 +549,13 @@ pub fn show(
         }
         return None;
     }
+    if let (PickerAction::Back, Some(at)) = (&action, in_modules(target)) {
+        // A pick still loading lands whatever is open, as a new DW Sampler's Close Grand does.
+        state.close_grands.extend(state.loading.take());
+        close(state, app, channel);
+        state.back_to_modules = true;
+        return Some(Nav::Swap(Overlay::ModulesBrowser { channel, at }));
+    }
     if action == PickerAction::Close {
         if state.loading.is_some() {
             // The pick still loading lands first.
@@ -524,6 +573,13 @@ pub fn show(
             return None;
         };
         return pick_instrument(state, app, ui.ctx(), channel, path, bytes, held);
+    }
+    if let PresetTarget::ModulesInstrument(at) = target {
+        let (PickerAction::Pick(path), Some(bytes)) = (action, bytes) else {
+            return None;
+        };
+        let pick = (path, bytes);
+        return pick_module_instrument(state, app, ui.ctx(), (channel, at), pick, held);
     }
     // A pick on a new DW Sampler's card drops its Close Grand still loading.
     state
@@ -585,6 +641,11 @@ pub fn show(
         // A rack has no `Default`.
         _ => Ok(0),
     };
+    // The Modules browser's rack list only flashes a failure.
+    if let (Err(_), Some(_)) = (&loaded, in_modules(target)) {
+        app.files.flash(PRESET_FAILED);
+        return None;
+    }
     let stays = stays_open(target) && state.ask_remove.is_none();
     match (stays, &loaded, &mut state.picker) {
         (true, Ok(0), Some(picker)) => {
@@ -671,6 +732,80 @@ fn pick_instrument(
             Some(outcome(Err(err)))
         }
     }
+}
+
+/// A pick of `path` (its `bytes` read) in the Modules browser's Instruments list on `channel`: a module of the file's
+/// instrument goes in at the browser's insert point `at`, or in place of the module the last pick added, and the file
+/// loads into it as an Instruments pick's does ([`load_into`], or on a worker, the row pulsing), with no undo step. The
+/// audition turns on and the list stays open. A file of no instrument the channel takes flashes [`CANNOT_LOAD`]; one
+/// that fails to load on the UI thread flashes [`PRESET_FAILED`] and leaves the rack as it was. A first pick in place
+/// of a module automation lanes target is held for the app's question, as the browser's `Replace` is, and closes the
+/// list (the module then comes in at its defaults).
+fn pick_module_instrument(
+    state: &mut State,
+    app: &mut AppCtx,
+    ctx: &egui::Context,
+    (channel, at): (usize, InsertAt),
+    (path, bytes): (PathBuf, std::io::Result<Vec<u8>>),
+    held: Option<(usize, u32)>,
+) -> Option<Nav> {
+    let Ok(bytes) = bytes else {
+        app.files.flash(PRESET_FAILED);
+        return None;
+    };
+    let ch = app.song.channels.get_mut(channel)?;
+    let type_id = categories::module_instrument_of(&path, &bytes).filter(|_| takes_instruments(ch));
+    let Some(type_id) = type_id else {
+        app.files.flash(CANNOT_LOAD);
+        return None;
+    };
+    let (before, channel_id) = (ch.clone(), ch.id);
+    let id = add_module(
+        &mut ch.rack,
+        type_id,
+        state.added.map_or(at, InsertAt::Replace),
+    );
+    if let Some(after) = hold_removal(ch, before.clone()) {
+        state.ask_remove = Some(Held {
+            channel,
+            after,
+            skipped: 0,
+        });
+        close(state, app, channel);
+        return Some(Nav::Close);
+    }
+    // A pick that applies now replaces one still loading, which would land over it.
+    state.loading = None;
+    let loaded = match ON_WORKER.contains(&type_id) && worker_loads(type_id, &path) {
+        true => {
+            let loading = start(app.files, channel_id, id, type_id, path, bytes, None);
+            state.loading = Some(Loading {
+                instruments: true,
+                ..loading
+            });
+            // The new module is in: the song is marked changed.
+            app.files.song_changed();
+            app.pick_loaded();
+            ctx.request_repaint();
+            Ok(true)
+        }
+        false => load_into(app, channel, id, Some((&path, &bytes)), held, true).map(|_| false),
+    };
+    match loaded {
+        Ok(loading) => {
+            state.added = Some(id);
+            if let Some(picker) = &mut state.picker {
+                picker.audition_on();
+                picker.set_loading(loading);
+                sample_picker::preview(picker, app.audio);
+            }
+        }
+        Err(_) => {
+            app.song.channels[channel].rack = before.rack;
+            app.files.flash(PRESET_FAILED);
+        }
+    }
+    None
 }
 
 /// Where an Instruments pick of `type_id` loads in `rack`: the top card, when it is of that type; else the top card is
@@ -1016,7 +1151,7 @@ fn finish(
 /// The file types the picker for `target` lists: a module's (`module_type`), drum kits or rack presets.
 fn exts(target: PresetTarget, module_type: Option<u16>) -> &'static [&'static str] {
     match (target, module_type) {
-        (PresetTarget::Instruments, _) => &categories::EXTS,
+        (PresetTarget::Instruments | PresetTarget::ModulesInstrument(_), _) => &categories::EXTS,
         (PresetTarget::Drumset, _) => &[DRUMSET_EXT],
         (PresetTarget::ChordSet, _) => &[CHORDS_EXT],
         (_, Some(t)) => preset_exts(t),
@@ -1028,7 +1163,7 @@ fn exts(target: PresetTarget, module_type: Option<u16>) -> &'static [&'static st
 /// or rack presets); the Instruments picker's is the whole user folder (`""`).
 fn top(target: PresetTarget, module_type: Option<u16>) -> &'static str {
     match (target, module_type) {
-        (PresetTarget::Instruments, _) => "",
+        (PresetTarget::Instruments | PresetTarget::ModulesInstrument(_), _) => "",
         (PresetTarget::Drumset, _) => DRUMSETS_FOLDER,
         (PresetTarget::ChordSet, _) => CHORD_SETS_FOLDER,
         (_, Some(_)) => PRESETS_FOLDER,
@@ -1054,8 +1189,8 @@ fn built_in_folder(target: PresetTarget, module_type: Option<u16>) -> Option<Pat
 fn picker(files: &ProjectFiles, target: PresetTarget, module_type: Option<u16>) -> PresetPicker {
     let exts = exts(target, module_type);
     let ours = built_in_folder(target, module_type);
-    match (target, module_type) {
-        (PresetTarget::Instruments, _) => {
+    let picker = match (target, module_type) {
+        (PresetTarget::Instruments | PresetTarget::ModulesInstrument(_), _) => {
             let index = categories::index(&*files.preset_library(exts), &instrument_sources(files));
             PresetPicker::new(
                 INSTRUMENTS_TITLE,
@@ -1089,8 +1224,18 @@ fn picker(files: &ProjectFiles, target: PresetTarget, module_type: Option<u16>) 
                     .chain(files.content_folder(content::CHORD_SETS)),
             )
         }
-        _ => PresetPicker::new(RACK_TITLE, files.racks_dir(), exts[0], false)
-            .with_factory(files.content_folder(RACK_PRESETS)),
+        _ => {
+            let title = match target {
+                PresetTarget::ModulesRack(_) => CHANNEL_RACKS,
+                _ => RACK_TITLE,
+            };
+            PresetPicker::new(title, files.racks_dir(), exts[0], false)
+                .with_factory(files.content_folder(RACK_PRESETS))
+        }
+    };
+    match in_modules(target) {
+        Some(_) => picker.in_modules(),
+        None => picker,
     }
 }
 
@@ -1253,11 +1398,7 @@ fn load_rack_preset(
             let Some(before) = song.channels.get(channel).cloned() else {
                 return Ok(0);
             };
-            let at = match target {
-                PresetTarget::RackInsert(at) => Some(at),
-                _ => None,
-            };
-            let loaded = load_rack_into(song, channel, &modules, at);
+            let loaded = load_rack_into(song, channel, &modules, None);
             if let Some(after) = hold_removal(&mut song.channels[channel], before) {
                 // Its skipped modules show once it is made: a message now would give way to the question.
                 let skipped = loaded.1;
@@ -1679,7 +1820,7 @@ mod tests {
         let id = song.channels[1].rack.modules[0].instance_id;
         let (theme, m) = (
             crate::theme::theme_by_id(0),
-            crate::metrics::Metrics::from_pixels_per_point(1.0, 1),
+            crate::metrics::Metrics::from_pixels_per_point(1.0, 100),
         );
         let (mut audio, mut selected, mut settings) =
             (AudioLink::default(), 1, Settings::default());
@@ -1942,13 +2083,13 @@ mod tests {
 
     #[test]
     fn a_modules_or_a_racks_picker_stays_open_on_a_pick_and_the_others_close() {
-        // The module preset button and a rack preset opened from the rack stay open; the drumsets, the chord sets and a
-        // new Rack channel's preset (the playlist's) close.
-        use crate::ui::modules_browser::InsertAt;
+        // The module preset button, a rack preset opened from the rack and the Modules browser's lists stay open; the
+        // drumsets, the chord sets and a new Rack channel's preset (the playlist's) close.
         for target in [
             PresetTarget::Module(2),
             PresetTarget::RackReplace,
-            PresetTarget::RackInsert(InsertAt::End),
+            PresetTarget::ModulesRack(InsertAt::End),
+            PresetTarget::ModulesInstrument(InsertAt::End),
         ] {
             assert!(stays_open(target), "{target:?}");
         }
@@ -2132,7 +2273,7 @@ mod tests {
     ) -> R {
         let (theme, m) = (
             crate::theme::theme_by_id(0),
-            crate::metrics::Metrics::from_pixels_per_point(1.0, 1),
+            crate::metrics::Metrics::from_pixels_per_point(1.0, 100),
         );
         let (mut audio, mut selected, mut settings) =
             (AudioLink::default(), 1, Settings::default());

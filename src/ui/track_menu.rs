@@ -19,6 +19,8 @@ pub enum TrackOp {
     ImportMidi,
     /// `Save as MIDI`: the channel alone as a MIDI file.
     SaveMidi,
+    /// `Burn Notes to Track`: the channel's notes as its note effects play them, on a new notes track.
+    BurnNotes,
     /// A track of the primary track's kind.
     AddTrack,
     /// The `Drumsets` picker over `My Drumsets`, whose pick replaces the channel's kit.
@@ -37,7 +39,7 @@ pub enum TrackOp {
 ///   channel has more than one track of the primary's kind or this track's kind differs from it; `Delete Channel`
 ///   (not on the master). The master's menu is items 1, 2 and 5.
 /// - Column 1, generator channels only (not the master, not a send), by the primary track's kind: notes
-///   `Import MIDI Tracks`, `Save as MIDI`, `Add Track`; audio `Add Track`, `Sync All Samples`; drums `Load Drumset`,
+///   `Import MIDI Tracks`, `Save as MIDI`, `Burn Notes to Track`, `Add Track`; audio `Add Track`, `Sync All Samples`; drums `Load Drumset`,
 ///   `Save Drumset`, `Add StepSeq Track`, `Add Notes Track`, `Save as MIDI`. `Sync All Samples` is disabled (see
 ///   [`TrackOp`]).
 ///
@@ -80,6 +82,7 @@ pub fn track_menu(song: &Song, channel: usize, lane: usize) -> Vec<PopupItem<Tra
                 !cfg!(target_os = "android"),
             ),
             (SaveMidi, "Save as MIDI", true),
+            (BurnNotes, "Burn Notes to Track", true),
             (AddTrack, "Add Track", true),
         ],
         LaneKind::Audio => &[
@@ -163,13 +166,14 @@ mod tests {
     ];
 
     #[test]
-    fn an_instrument_channel_adds_the_midi_items_and_add_track() {
+    fn an_instrument_channel_adds_the_midi_items_burn_notes_and_add_track() {
         let song = song();
         for channel in [1, 5, 7] {
             let want: Vec<_> = (CHANNEL.iter().copied())
                 .chain([
                     (1, "Import MIDI Tracks", true),
                     (1, "Save as MIDI", true),
+                    (1, "Burn Notes to Track", true),
                     (1, "Add Track", true),
                 ])
                 .collect();

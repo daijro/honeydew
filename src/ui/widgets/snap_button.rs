@@ -1,23 +1,19 @@
 //! The Snap button of the ruler row's top-left cell, shared by the clip editors (and the playlist's ruler).
 //!
-//! A disc of radius 0.325·min(w, h) of its cell, with a 2 px `text` halo ring. Off: a `background` disc with icon 15 in
-//! `text`. On: a `text` disc with the icon in `menuFill`. A tap toggles Snap; a long press (300 ms within the 0.5 U
-//! calm zone) or a right click opens the snap-mode menu, which the caller shows.
-//!
-//! Drawing (shared with the playlist ruler's button): the halo is a `text` disc of radius r + 2 px under the fill disc
-//! of radius r (two filled discs, no seam); the icon's size factor is 0.6. The whole cell takes the touch.
+//! Icon only, no disc or ring, the icon's size factor 0.6: on, icon 15 in the caller's `ink` (`text` in the playlist,
+//! the channel colour in the clip editors); off, icon 79 (the magnet with a slash) in `menuFill`. A tap toggles Snap; a
+//! long press (300 ms within the 0.5 U calm zone) or a right click opens the snap-mode menu, which the caller shows.
+//! The whole cell takes the touch.
 //! [`paint_snap_button`] and [`snap_touch`] are its two halves, for a caller that paints and senses at different points
 //! of its draw order; [`snap_button`] does both.
 
-use eframe::egui::{Id, Painter, Pos2, Rect, Sense, Ui, Vec2};
+use eframe::egui::{Color32, Id, Painter, Rect, Sense, Ui, Vec2};
 
 use crate::icons::{IconId, draw_icon};
 use crate::ui::{UiCtx, gesture};
 
 /// The icon's size factor.
 const ICON: f32 = 0.6;
-/// The halo's width, in device px.
-const HALO_PX: f32 = 2.0;
 
 /// What a touch on the Snap button asks for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,31 +24,27 @@ pub enum SnapTouch {
     Menu,
 }
 
-/// The disc's centre and radius in `cell`.
-pub fn snap_disc(cell: Rect) -> (Pos2, f32) {
-    (cell.center(), 0.325 * cell.width().min(cell.height()))
-}
-
-/// The Snap button in `cell`, drawn `on` or off and sensing its touches (module docs). Returns what a touch asked for
-/// this frame.
-pub fn snap_button(ui: &mut Ui, id: Id, cell: Rect, on: bool, cx: &UiCtx) -> Option<SnapTouch> {
-    paint_snap_button(ui.painter(), cell, on, cx);
+/// The Snap button in `cell`, drawn `on` (in `ink`) or off and sensing its touches (module docs). Returns what a touch
+/// asked for this frame.
+pub fn snap_button(
+    ui: &mut Ui,
+    id: Id,
+    cell: Rect,
+    (on, ink): (bool, Color32),
+    cx: &UiCtx,
+) -> Option<SnapTouch> {
+    paint_snap_button(ui.painter(), cell, (on, ink), cx);
     snap_touch(ui, id, cell, cx)
 }
 
-/// Paints the Snap button in `cell`, `on` or off: the `text` halo disc, the fill disc and icon 15.
-pub fn paint_snap_button(painter: &Painter, cell: Rect, on: bool, cx: &UiCtx) {
-    let (c, m) = (&cx.theme.colors, cx.m);
-    let (center, r) = snap_disc(cell);
-    let text = c.text.to_color32();
-    let (fill, ink) = if on {
-        (text, c.menu_fill.to_color32())
+/// Paints the Snap button in `cell`: icon 15 in `ink` while `on`, else icon 79 in `menuFill`.
+pub fn paint_snap_button(painter: &Painter, cell: Rect, (on, ink): (bool, Color32), cx: &UiCtx) {
+    let (icon, ink) = if on {
+        (IconId::Snap, ink)
     } else {
-        (c.background.to_color32(), text)
+        (IconId::SnapOff, cx.theme.colors.menu_fill.to_color32())
     };
-    painter.circle_filled(center, r + HALO_PX / m.ppp(), text);
-    painter.circle_filled(center, r, fill);
-    draw_icon(painter, cell, IconId::Snap, ink, ICON, m);
+    draw_icon(painter, cell, icon, ink, ICON, cx.m);
 }
 
 /// The Snap button's touches over `cell`, by the shared button law ([`gesture::press`]): a tap toggles, a long press
@@ -61,6 +53,7 @@ pub fn paint_snap_button(painter: &Painter, cell: Rect, on: bool, cx: &UiCtx) {
 /// drag (6 points of travel) is neither a tap nor a long press.
 pub fn snap_touch(ui: &mut Ui, id: Id, cell: Rect, cx: &UiCtx) -> Option<SnapTouch> {
     let mut response = ui.interact(cell, id, Sense::click_and_drag());
+    crate::ui::tooltip::tip(ui, cell, "Beat snapping", Some("toggleBeatSnap"));
     let press = gesture::press(ui, &mut response, cx.m, Vec2::length);
     if press.long || response.secondary_clicked() {
         Some(SnapTouch::Menu)
@@ -76,7 +69,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+    use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
     use crate::theme::theme_by_id;
 
     struct Rig {
@@ -91,7 +84,7 @@ mod tests {
             Self {
                 ctx: Context::default(),
                 time: 0.0,
-                m: Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX),
+                m: Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE),
                 on,
             }
         }
@@ -120,7 +113,7 @@ mod tests {
             let mut touch = None;
             let out = self.ctx.run(raw, |ctx| {
                 CentralPanel::default().frame(Frame::NONE).show(ctx, |ui| {
-                    touch = snap_button(ui, Id::new("snap"), cell, on, &cx);
+                    touch = snap_button(ui, Id::new("snap"), cell, (on, Color32::RED), &cx);
                 });
             });
             if touch == Some(SnapTouch::Toggle) {
@@ -139,50 +132,6 @@ mod tests {
                 modifiers: Default::default(),
             };
             self.frame(dt, vec![Event::PointerMoved(pos), event]).1
-        }
-    }
-
-    #[test]
-    fn a_disc_of_0_325_min_w_h_with_a_2_px_text_halo_light_with_a_dark_icon_when_on_at_ppp_1_and_2()
-    {
-        let theme = theme_by_id(0);
-        let c = &theme.colors;
-        let (text, bg, menu) = (
-            c.text.to_color32(),
-            c.background.to_color32(),
-            c.menu_fill.to_color32(),
-        );
-        for ppp in [1.0, 2.0] {
-            for (on, fill, ink) in [(true, text, menu), (false, bg, text)] {
-                let mut rig = Rig::new(ppp, on);
-                let (shapes, _) = rig.frame(0.1, vec![]);
-                let cell = rig.cell();
-                let r = 0.325 * cell.height();
-                let px = 1.0 / ppp;
-                let circles: Vec<_> = (shapes.iter())
-                    .filter_map(|s| match s {
-                        Shape::Circle(c) => Some(*c),
-                        _ => None,
-                    })
-                    .collect();
-                // The halo, a `text` disc 2 px wider, under the fill disc.
-                let discs: Vec<_> = (circles.iter())
-                    .map(|c| (c.center, c.radius, c.fill, c.stroke.width))
-                    .collect();
-                assert_eq!(
-                    discs,
-                    [
-                        (cell.center(), r + 2.0 * px, text, 0.0),
-                        (cell.center(), r, fill, 0.0)
-                    ],
-                    "ppp {ppp} on {on}"
-                );
-                // At U = 32 points: r = 0.325·(48 − 1 px).
-                assert!((r - 0.325 * (48.0 - px)).abs() < 1e-4, "{r}");
-                // The magnet's pole tips are rects in the icon colour.
-                let tips = (shapes.iter()).filter(|s| matches!(s, Shape::Rect(r) if r.fill == ink));
-                assert_eq!(tips.count(), 2, "ppp {ppp} on {on}");
-            }
         }
     }
 

@@ -511,7 +511,7 @@ fn buttons_take_the_modules_colours() {
     assert_eq!(rig.discs_in(snap_rect), [background]);
 }
 
-/// Round 11: a two-state button draws on for any value but 0, and a tap writes 1 from exactly 0, else 0.
+/// A two-state button draws on for any value but 0, and a tap writes 1 from exactly 0, else 0.
 #[test]
 fn a_button_is_on_for_any_value_but_0_and_a_tap_writes_1_only_from_0() {
     // The Comb Filter's Snap, drawn as in `buttons_take_the_modules_colours`: on = a `text` disc.
@@ -908,8 +908,7 @@ fn a_halo_is_a_channel_disc_bigger_by_its_pad_unless_it_has_its_own_colour() {
 #[test]
 fn a_pad_in_t_is_t_device_pixels_at_any_density() {
     // ppp 2 at the default scale: U = 64 px, t = ceil(64 / 16) = 4 px.
-    let m =
-        crate::metrics::Metrics::from_pixels_per_point(2.0, crate::metrics::DEFAULT_UI_SCALE_INDEX);
+    let m = crate::metrics::Metrics::from_pixels_per_point(2.0, crate::metrics::DEFAULT_UI_SCALE);
     assert_eq!(Pad::T(1.0).px(&m), 4.0);
     assert_eq!(Pad::T(0.5).px(&m), 2.0);
     assert_eq!(Pad::Px(4.0).px(&m), 4.0);

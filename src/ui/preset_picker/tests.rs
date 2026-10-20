@@ -7,7 +7,7 @@ use eframe::egui::{
 };
 
 use super::*;
-use crate::metrics::{DEFAULT_UI_SCALE_INDEX, FontSize, Metrics};
+use crate::metrics::{DEFAULT_UI_SCALE, FontSize, Metrics};
 use crate::project_files::{PRESET_EXT, RACK_EXT};
 use crate::theme::{DISABLED_ALPHA, theme_by_id};
 use crate::ui::main_menu::MemoryLibrary;
@@ -183,7 +183,7 @@ const SCREEN: Rect = Rect {
 
 /// `U` = 32 points at ppp 1.
 fn metrics() -> Metrics {
-    Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX)
+    Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE)
 }
 
 /// A library that counts its listings.
@@ -390,6 +390,20 @@ fn text() -> Color32 {
     theme_by_id(0).colors.text.to_color32()
 }
 
+impl Rig {
+    /// Whether `name`'s row has its select-mode checkbox filled: a `text` disc left of its label.
+    fn checked(&self, name: &str) -> bool {
+        let label = self.find(name).0;
+        (self.shapes.iter()).any(|c| match &c.shape {
+            egui::Shape::Circle(d) => {
+                let near = (d.center.y - label.center().y).abs() < metrics().u(0.5);
+                d.fill == text() && d.center.x < label.left() && near
+            }
+            _ => false,
+        })
+    }
+}
+
 #[test]
 fn my_files_then_a_folder_then_a_preset_picks_its_path() {
     let mut rig = Rig::new(reverb());
@@ -427,18 +441,18 @@ fn every_row_folder_or_item_is_in_fontsize_4_and_a_long_name_is_cut_to_the_row()
         (font_size(&rig, "Vocal"), font_size(&rig, "A Room")),
         (pt18, pt18)
     );
-    // The row height stays the picker's own: 1.25 U here.
+    // Every browser row is 1.5 U.
     let id = Id::new("preset_picker").with(("row", 0_usize));
     let row = rig.ctx.read_response(id).unwrap().rect;
-    assert_eq!(row.height(), m.round_px(m.u(1.25)));
-    // The long name keeps its middle ellipsis inside the row.
+    assert_eq!(row.height(), m.round_px(m.u(1.5)));
+    // The long name is cut with an end ellipsis inside the row's 0.25 U margin.
     let texts = rig.texts();
     let (cut, at, _) = (texts.iter())
         .find(|(t, ..)| t.starts_with("Cathedral"))
         .expect("the long name is drawn");
-    assert!(cut.contains("...") && cut.ends_with("Tail"), "{cut}");
+    assert!(cut.ends_with("..."), "{cut}");
     assert!(
-        at.right() <= row.right() - m.u(0.5) + 0.01,
+        at.right() <= row.right() - m.u(0.25) + 0.01,
         "{at:?} in {row:?}"
     );
 }
@@ -613,7 +627,7 @@ fn a_module_scope_lists_only_the_presets_its_module_loads() {
 }
 
 #[test]
-fn a_long_preset_name_is_shortened_with_its_tail_kept() {
+fn a_long_preset_name_is_cut_with_an_end_ellipsis() {
     let long = "A very long preset name that runs well past the side panel's edge 12345";
     let mut lib = reverb_lib();
     put(&mut lib, &format!("{REVERB}/{long}.flmpst"), b"");
@@ -623,7 +637,10 @@ fn a_long_preset_name_is_shortened_with_its_tail_kept() {
     let (shown, rect, _) = (rig.texts().into_iter())
         .find(|(t, ..)| t.starts_with("A very"))
         .expect("drawn");
-    assert!(shown.contains("...") && shown.ends_with("12345"), "{shown}");
+    assert!(
+        shown.ends_with("...") && !shown.contains("12345"),
+        "{shown}"
+    );
     assert!(rect.right() <= list.right(), "{rect:?} in {list:?}");
 }
 
@@ -653,7 +670,7 @@ fn a_folder_opens_scrolled_to_its_top_with_the_search_kept() {
     rig.click_text("Set 20");
     assert!(rig.shows("Clear"), "the bar stays");
     // The first row, under the search bar (which moves the list down 1.75 U), at the top of the list.
-    let (m, row_h) = (metrics(), metrics().round_px(metrics().u(1.25)));
+    let (m, row_h) = (metrics(), metrics().round_px(metrics().u(1.5)));
     let first = rig.text_at("Hall 20").y;
     assert!(
         (first - (list.top() + m.u(1.75) + 0.5 * row_h)).abs() < 1.0,
@@ -1313,15 +1330,15 @@ fn the_options_menu_has_the_file_browsers_items_for_the_selection() {
 }
 
 #[test]
-fn a_selected_row_is_drawn_inverted_and_a_click_in_select_mode_toggles_it() {
+fn a_selected_rows_checkbox_is_filled_and_a_click_in_select_mode_toggles_it() {
     let mut rig = files_rig();
-    let ink = theme_by_id(0).colors.menu_fill.to_color32();
+    assert!(!rig.checked("A Room"));
     assert_eq!(rig.click_text("A Room"), None, "selected, not picked");
-    assert_eq!(rig.color("A Room"), ink);
+    assert!(rig.checked("A Room") && rig.color("A Room") == text());
     assert_eq!(rig.click_text("Archive"), None, "a folder too, not opened");
-    assert!(rig.shows("b Hall") && rig.color("Archive") == ink);
+    assert!(rig.shows("b Hall") && rig.checked("Archive"));
     rig.click_text("A Room");
-    assert_eq!(rig.color("A Room"), text());
+    assert!(!rig.checked("A Room"));
     // Out of select mode a click picks again.
     rig.click_text("Select");
     let room = PathBuf::from("My Presets/Reverb/A Room.flmpst");
@@ -1336,9 +1353,8 @@ fn select_all_selects_every_row_the_search_keeps() {
     rig.frame(vec![Event::Text("o".into())]);
     rig.frame(vec![]);
     rig.pick("Select all");
-    let ink = theme_by_id(0).colors.menu_fill.to_color32();
     for name in ["Vocal", "A Room", "Long"] {
-        assert_eq!(rig.color(name), ink, "{name}");
+        assert!(rig.checked(name), "{name}");
     }
     assert_eq!(rig.picker.picked().len(), 3);
 }
@@ -1660,7 +1676,7 @@ fn pick_a_room() -> Option<PickerAction> {
 }
 
 /// The alpha of the flash over the row showing `name` (the last translucent fill no taller than a row over the name's
-/// centre: a selected row's bar is opaque, a focus ring unfilled), if one is painted.
+/// centre, brighter than the hover band: the current row's bar is opaque, a focus ring unfilled), if one is painted.
 fn flash(rig: &Rig, name: &str) -> Option<u8> {
     let (at, row) = (rig.text_at(name), metrics().u(2.0));
     (rig.shapes.iter().rev())
@@ -1670,7 +1686,7 @@ fn flash(rig: &Rig, name: &str) -> Option<u8> {
             }
             _ => None,
         })
-        .find(|a| (1..255).contains(a))
+        .find(|a| (20..255).contains(a))
 }
 
 #[test]
@@ -1752,8 +1768,7 @@ fn a_tap_in_select_mode_selects_the_row_and_does_not_flash_it() {
     rig.click_text(MY_FILES);
     rig.click_text("Select");
     assert_eq!(rig.click_text("A Room"), None);
-    let ink = theme_by_id(0).colors.menu_fill.to_color32();
-    assert_eq!(rig.color("A Room"), ink, "selected");
+    assert!(rig.checked("A Room"), "selected");
     assert_eq!(flash(&rig, "A Room"), None);
 }
 
@@ -1763,7 +1778,8 @@ fn the_first_tap_on_a_row_only_picks_it() {
     rig.click_text(MY_FILES);
     assert_eq!(rig.click_text("A Room"), pick_a_room());
     assert_eq!(rig.picker.take_sounds(), []);
-    assert_eq!(rig.color("A Room"), text(), "drawn as any row");
+    let ink = theme_by_id(0).colors.menu_fill.to_color32();
+    assert_eq!(rig.color("A Room"), ink, "the current row, inverted");
     // Until the caller turns the strip on (an instrument's load), a tap on it picks it again.
     assert_eq!(rig.click_text("A Room"), pick_a_room());
     assert_eq!(rig.picker.take_sounds(), []);
@@ -2215,7 +2231,8 @@ fn instrument_rows_are_1_5_u_tall_and_folders_and_presets_alike_in_fontsize_4() 
     rig.click_text("Bass");
     assert_eq!(font_size(&rig, "Acid Drip"), preset_pt);
     assert_eq!(row_h(&rig, 0), m.round_px(m.u(1.5)));
-    // No type or folder icon: nothing but text is drawn in a row.
+    // No type or folder icon: nothing but text is drawn in a row (the pointer away, so no hover band).
+    rig.frame(vec![Event::PointerGone]);
     let id = Id::new("preset_picker").with(("row", 1_usize));
     assert!(!rig.draws_in(rig.ctx.read_response(id).unwrap().rect));
     rig.back();
@@ -2226,7 +2243,7 @@ fn instrument_rows_are_1_5_u_tall_and_folders_and_presets_alike_in_fontsize_4() 
 }
 
 #[test]
-fn an_open_search_shows_2_2_u_rows_with_the_folder_path_small_and_dimmed_under_the_name_and_picks_its_path()
+fn an_open_search_shows_1_5_u_rows_with_the_folder_path_small_and_dimmed_under_the_name_and_picks_its_path()
  {
     let m = metrics();
     let mut rig = Rig::with(instruments(), user_folder());
@@ -2241,9 +2258,9 @@ fn an_open_search_shows_2_2_u_rows_with_the_folder_path_small_and_dimmed_under_t
             && !rig.shows("Acid Drip")
             && !rig.shows("Keyboard")
     );
-    assert_eq!(row_h(&rig, 0), m.round_px(m.u(2.2)));
-    // A found preset's name in FontSize 4, as every row's.
-    assert_eq!(font_size(&rig, "Round"), m.font_id(FontSize::Pt18).size);
+    assert_eq!(row_h(&rig, 0), m.round_px(m.u(1.5)));
+    // A found preset's name in FontSize 3, which leaves room for its path in the row.
+    assert_eq!(font_size(&rig, "Round"), m.font_id(FontSize::Pt12).size);
     let (name, place) = (rig.find("Round").0, rig.find("Bass").0);
     assert!(place.top() > name.top(), "the path is under the name");
     assert_eq!(font_size(&rig, "Bass"), m.font_id(FontSize::Pt8).size);
@@ -2366,7 +2383,7 @@ fn the_instruments_bar_with_an_empty_query_lists_the_open_folder_and_a_query_sea
     rig.frame(vec![]);
     rig.frame(vec![]);
     assert!(rig.shows("Round") && !rig.shows(MY_FILES));
-    assert_eq!(row_h(&rig, 0), m.round_px(m.u(2.2)));
+    assert_eq!(row_h(&rig, 0), m.round_px(m.u(1.5)));
 }
 
 // ---- the recursive search of every side picker ----
@@ -2389,7 +2406,7 @@ fn a_search_lists_the_presets_below_the_open_folder_with_their_folders_path_in_a
     rig.search("plate");
     assert!(rig.shows("Plate") && rig.shows("My Files/Vocal"));
     assert!(!rig.shows(MY_FILES) && !rig.shows(DEFAULT));
-    assert_eq!(row_h(&rig, 0), m.round_px(m.u(2.2)));
+    assert_eq!(row_h(&rig, 0), m.round_px(m.u(1.5)));
     let (name, place) = (rig.find("Plate").0, rig.find("My Files/Vocal").0);
     assert!(place.top() > name.top(), "the path is under the name");
     assert_eq!(
@@ -2458,8 +2475,8 @@ fn a_found_folder_shows_with_its_path_and_a_tap_opens_it_and_ends_the_search() {
         "the folder, its path `My Files` under it"
     );
     assert!(rig.find(MY_FILES).0.top() > rig.find("Vocal").0.top());
-    assert_eq!(row_h(&rig, 0), m.round_px(m.u(2.2)));
-    assert_eq!(font_size(&rig, "Vocal"), m.font_id(FontSize::Pt18).size);
+    assert_eq!(row_h(&rig, 0), m.round_px(m.u(1.5)));
+    assert_eq!(font_size(&rig, "Vocal"), m.font_id(FontSize::Pt12).size);
     assert_eq!(rig.click_text("Vocal"), None);
     // Inside it, with the trail from the root: the search is over.
     assert!(rig.shows("Plate") && rig.shows("     Reverb | My Files | Vocal"));
@@ -2501,8 +2518,7 @@ fn escape_in_the_name_field_drops_only_the_field() {
     assert_eq!(rig.action, None);
     rig.frame(vec![]);
     assert!(!rig.shows("Enter name"));
-    let ink = theme_by_id(0).colors.menu_fill.to_color32();
-    assert_eq!(rig.color("A Room"), ink, "still selected");
+    assert!(rig.checked("A Room"), "still selected");
 }
 
 #[test]
@@ -2576,8 +2592,7 @@ fn in_select_mode_a_found_folder_toggles_and_does_not_open() {
     rig.search("voc");
     rig.click_text("Select");
     assert_eq!(rig.click_text("Vocal"), None);
-    let ink = theme_by_id(0).colors.menu_fill.to_color32();
-    assert_eq!(rig.color("Vocal"), ink, "selected");
+    assert!(rig.checked("Vocal"), "selected");
     assert!(rig.shows("Clear") && !rig.shows("Plate"), "not opened");
 }
 

@@ -1,0 +1,7 @@
+[package]
+name = "os-paths"
+description = "Where Lemon Studio keeps its own files (settings, themes, presets) on each platform"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false

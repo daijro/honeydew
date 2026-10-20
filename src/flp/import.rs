@@ -256,6 +256,8 @@ struct Effect {
     name: String,
     /// A wrapped third-party plugin's wrapper state ([`super::wrapper`]).
     wrapper: Option<Vec<u8>>,
+    /// FL's own effect as Lemon Studio's ([`lemon_of`]).
+    lemon: Option<(u16, Option<Vec<f32>>)>,
 }
 
 /// What the event stream holds.
@@ -394,11 +396,13 @@ impl Project {
                                 let wrapper = (plugin.name == super::wrapper::WRAPPER)
                                     .then(|| plugin.state.clone())
                                     .flatten();
+                                let lemon = lemon_of(&plugin.name, plugin.state.as_deref());
                                 let name = name.or(plugin.display).unwrap_or(plugin.name);
                                 p.effects.push(Effect {
                                     insert: plugin.insert.unwrap_or(insert),
                                     name,
                                     wrapper,
+                                    lemon,
                                 });
                             }
                         }
@@ -598,6 +602,21 @@ fn plugin_module(song: &mut Song, index: usize, type_id: u16, plugin: PluginRef)
     let id = rack.add(type_id);
     if let Some(module) = rack.get_mut(id) {
         module.file.plugin = Some(Box::new(plugin));
+    }
+}
+
+/// Lemon Studio's effect for FL's own `plugin` with saved state `state`: Fruity Reeverb 2 as Lemon Reverb, Fruity
+/// Limiter as Lemon Limiter, with the params the state holds (`None` inside for a state that cannot be read).
+fn lemon_of(plugin: &str, state: Option<&[u8]>) -> Option<(u16, Option<Vec<f32>>)> {
+    use honeydew_audio::lemon;
+    let state = state.unwrap_or_default();
+    match plugin {
+        "Fruity Reeverb 2" => Some((lemon::REVERB, lemon::reverb_from_fl(state))),
+        "Fruity Limiter" => Some((
+            lemon::LIMITER,
+            (!state.is_empty()).then(|| lemon::limiter_from_fl(state)),
+        )),
+        _ => None,
     }
 }
 
@@ -991,8 +1010,9 @@ impl Build<'_> {
         (pairs, samples)
     }
 
-    /// The effects of each channel's mixer insert, appended to its rack where Honeydew has the effect (at its default
-    /// settings), and the master insert's to the master's. `pairs`: each song channel's FL channel.
+    /// The effects of each channel's mixer insert, appended to its rack where Honeydew has the effect (Fruity Reeverb 2
+    /// and Fruity Limiter as Lemon Studio's, with their settings; the others at their default settings), and the master
+    /// insert's to the master's. `pairs`: each song channel's FL channel.
     fn effects(&mut self, pairs: &[(usize, usize)], notices: &mut Vec<String>) {
         let project = self.project;
         let mut inserts: Vec<(i32, Vec<usize>)> = vec![(0, vec![0])];
@@ -1018,6 +1038,24 @@ impl Build<'_> {
                 if let Some(plugin) = wrapped.filter(crate::plugins::installed) {
                     for &c in &channels {
                         plugin_module(self.song, c, PLUGIN_EFFECT, plugin.clone());
+                    }
+                    continue;
+                }
+                if let Some((type_id, params)) = &effect.lemon {
+                    for &c in &channels {
+                        let rack = &mut self.song.channels[c].rack;
+                        let id = rack.add(*type_id);
+                        if let (Some(module), Some(params)) = (rack.get_mut(id), params) {
+                            module.params.clone_from(params);
+                        }
+                    }
+                    if params.is_none() {
+                        let ours =
+                            crate::params::module_spec(*type_id).map_or("", |s| s.display_name);
+                        notices.push(format!(
+                            "{where_}: {} as {ours} at its default settings",
+                            effect.name
+                        ));
                     }
                     continue;
                 }

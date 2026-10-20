@@ -9,19 +9,19 @@
 //!   `text`, centred. Nothing else: no `Default:`, no field, no OK.
 //! - **Behaviour** ([`show`]): the slider edits the value v (0…1) itself; its reset value, for the double tap, is the
 //!   param default ([`Param::reset`]). The close button, Escape or a tap outside the box closes it (the tap outside as
-//!   in the channel settings dialog). A dialog box: no animation, the screen dimmed to α 0.6 under a `moduleFill` box
+//!   in the channel settings dialog). A dialog box: no animation, the screen dimmed to α 0.6 under the floating panel
 //!   from the first frame.
 //!
 //! The app's slot ([`crate::ui::views::fine_tune`]) writes each change to the param as a hand move does.
 
 use eframe::egui::{Align2, Area, Color32, Context, Id, Order, Rect, Sense, Vec2, pos2, vec2};
 
-use crate::icons::{IconId, draw_icon};
 use crate::metrics::{FontSize, Metrics};
 use crate::params::{
     CHANNEL_PARAMS, COMMON_PARAMS, DRUM_SLOT_PARAMS, ParamKind, ParamSpec, Role, module_spec,
 };
 use crate::song::{AutomationTarget, Song};
+use crate::ui::buttons::close_x;
 use crate::ui::widgets::{self, Control, ParamMenu};
 use crate::ui::{UiCtx, dialog};
 
@@ -30,6 +30,8 @@ const HEIGHT: f32 = 8.0;
 /// The close button's edge, in U, and its icon's scale.
 const CLOSE: f32 = 2.0;
 const CLOSE_ICON: f32 = 0.75;
+/// The close X's hover disc: this × the cell's short side in radius.
+const CLOSE_DISC: f32 = 0.375;
 /// The content's inset from the box's left, right and top, and its height, in U.
 const INSET: f32 = 2.0;
 const CONTENT_H: f32 = 5.0;
@@ -77,7 +79,8 @@ pub struct Param {
     /// ([`widgets::UNITY`]) for the channel Level and 0.5 for its Pan (a send level resets to unity, as its rack
     /// slider does).
     pub reset: f32,
-    /// A note effect's param: its edit rebuilds the engine at the end of the drag, as a rack card's does.
+    /// A note effect's param (or Lemon Reverb's Room Size): its edit rebuilds the engine at the end of the drag, as a
+    /// rack card's does.
     pub note_effect: bool,
 }
 
@@ -118,7 +121,8 @@ pub fn param(song: &Song, channel: usize, target: AutomationTarget) -> Option<Pa
                 // −1, −2, −3: Post Gain, Mix, Wet Pan.
                 Err(_) => *COMMON_PARAMS.get(usize::try_from(-1 - target.param).ok()?)?,
             };
-            let note = module.role == Role::NoteEffect;
+            let note = module.role == Role::NoteEffect
+                || honeydew_audio::lemon::rebuilds(instance.type_id, target.param);
             (instance.title(), spec, spec.default, note)
         }
     };
@@ -150,7 +154,11 @@ pub struct Layout {
 pub fn layout(screen: Rect, m: &Metrics) -> Layout {
     let u = m.u(1.0);
     let top = m.round_px(screen.center().y - HEIGHT / 2.0 * u);
-    let dialog = Rect::from_min_size(pos2(screen.left(), top), vec2(screen.width(), HEIGHT * u));
+    // Inset 1 U from the host's sides.
+    let dialog = Rect::from_min_size(
+        pos2(screen.left() + u, top),
+        vec2(screen.width() - 2.0 * u, HEIGHT * u),
+    );
     let close = Rect::from_min_size(
         pos2(dialog.right() - CLOSE * u, dialog.top()),
         Vec2::splat(CLOSE * u),
@@ -207,7 +215,7 @@ pub fn show(
     let l = layout(screen, m);
     let id = id();
     // A dialog box: the dim and the box show from the first frame ([`dialog::paint_in_layers`]).
-    dialog::paint_in_layers(ctx, id, c, screen, l.dialog);
+    dialog::paint_in_layers(ctx, id, (c, m), screen, l.dialog);
     // Below the box, above the screens: it takes every touch outside the box. Not [`crate::ui::backdrop`], which marks
     // the pass modal and so holds Ctrl+Z: undo acts under this dialog, which then shows the song's value. It is the one
     // dialog on the base that is not modal for undo.
@@ -236,8 +244,18 @@ pub fn show(
             let font = m.font_id(FONT);
             let [title, slider, value_row] = l.rows;
             let center = Align2::CENTER_CENTER;
-            ui.painter()
-                .text(title.center(), center, d.title, font.clone(), ink);
+            // The title shrinks from 18 pt down to 6 pt to fit its row (not under the close X).
+            let room = title.with_max_x(title.right().min(l.close.left()));
+            let room = room.with_min_x(title.left() + (title.right() - room.right()));
+            widgets::shrink(
+                ui.painter(),
+                m,
+                room,
+                center,
+                d.title,
+                FONT.points() as u8,
+                ink,
+            );
             // The dialog shows no other text: the slider has no menu of its own.
             let control = Control {
                 menu: ParamMenu::Off,
@@ -246,10 +264,9 @@ pub fn show(
             shown.changed = widgets::fine_tune_slider(ui, cx, &control, value).changed();
             ui.painter()
                 .text(value_row.center(), center, text(*value), font, ink);
-            draw_icon(ui.painter(), l.close, IconId::Close, ink, CLOSE_ICON, m);
-            shown.close |= ui
-                .interact(l.close, id.with("close"), Sense::click())
-                .clicked();
+            let surface = (cx.theme.colors.menu_fill.to_color32(), CLOSE_DISC);
+            shown.close |=
+                close_x(ui, cx, id.with("close"), l.close, surface, CLOSE_ICON).clicked();
         });
     shown
 }

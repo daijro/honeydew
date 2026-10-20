@@ -316,14 +316,14 @@ impl Place {
         ))
     }
 
-    /// A hit's resize handle: the piano roll's disc, [`HANDLE_D`] across, just past its right end on its row's
-    /// centre line.
+    /// A hit's resize handle, the piano roll's: its touch box, [`HANDLE_D`] wide and the end capsule's height, centred
+    /// on the capsule past its right end on its row's centre line ([`crate::ui::clips::end_handle`]).
     pub fn handle(&self, e: &Event) -> Option<Rect> {
+        use crate::ui::clips::{END_CENTRE, HANDLE_H};
         let r = self.rect(e)?;
-        let d = HANDLE_D * self.u;
         Some(Rect::from_center_size(
-            pos2(r.right() + d / 2.0, r.center().y),
-            Vec2::splat(d),
+            pos2(r.right() + END_CENTRE * self.u, r.center().y),
+            Vec2::new(HANDLE_D, HANDLE_H) * self.u,
         ))
     }
 

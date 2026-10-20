@@ -61,18 +61,56 @@ impl ProjectFiles {
     /// ponytail: on the web each import stays in memory for the session, with no cap on their total; add one (or an
     /// IndexedDB store) if sessions import enough to strain the tab.
     pub(super) fn audio_imported(&mut self, path: &Path, bytes: Vec<u8>) {
-        let (Some(dir), Some(ext)) = (self.import_dir.take(), path.extension()) else {
+        let Some(dir) = self.import_dir.take() else {
             return self.fail(IMPORT_FAILED, path.display().to_string());
         };
+        if self.keep_audio(&dir, path, bytes).is_some() {
+            self.flash = Some(IMPORTED.into());
+        }
+    }
+
+    /// Keeps the audio file `path`'s `bytes` in `dir` under its name or a free `name (n)` and counts it in
+    /// [`Self::library_changes`]; returns where it is kept. A failure shows its message and gives `None`.
+    fn keep_audio(&mut self, dir: &Path, path: &Path, bytes: Vec<u8>) -> Option<PathBuf> {
+        let Some(ext) = path.extension() else {
+            self.fail(IMPORT_FAILED, path.display().to_string());
+            return None;
+        };
         let ext = ext.to_string_lossy();
-        let name = self.free_name(Some(&dir), &super::stem(path), &ext, None);
+        let name = self.free_name(Some(dir), &super::stem(path), &ext, None);
         let target = dir.join(format!("{name}.{ext}"));
         match self.write_user_file(&target, bytes) {
             Ok(()) => {
                 self.library_changes += 1;
-                self.flash = Some(IMPORTED.into());
+                Some(target)
             }
-            Err(err) => self.fail(SAVE_FILE_FAILED, format!("{}: {err}", target.display())),
+            Err(err) => {
+                self.fail(SAVE_FILE_FAILED, format!("{}: {err}", target.display()));
+                None
+            }
+        }
+    }
+
+    /// An audio file dropped on the window (the web hands its bytes, the desktop its path), kept in the user's
+    /// [`SAMPLES_FOLDER`] as `Import` keeps a picked one ([`Self::keep_audio`]), so that songs refer to the copy. Returns
+    /// where it is kept; a file that does not read shows [`IMPORT_FAILED`] and gives `None`.
+    pub(crate) fn keep_dropped(&mut self, file: &eframe::egui::DroppedFile) -> Option<PathBuf> {
+        let path = (file.path.clone()).unwrap_or_else(|| PathBuf::from(&file.name));
+        let bytes = match (&file.bytes, &file.path) {
+            (Some(bytes), _) => Ok(bytes.to_vec()),
+            #[cfg(not(target_arch = "wasm32"))]
+            (None, Some(at)) => std::fs::File::open(at)
+                .map_err(|e| e.to_string())
+                .and_then(|f| super::read_file_limited(f, super::MAX_FILE_BYTES)),
+            _ => Err(String::new()),
+        };
+        let dir = self.user_dir()?.join(SAMPLES_FOLDER);
+        match bytes {
+            Ok(bytes) => self.keep_audio(&dir, &path, bytes),
+            Err(err) => {
+                self.fail(IMPORT_FAILED, format!("{}: {err}", path.display()));
+                None
+            }
         }
     }
 

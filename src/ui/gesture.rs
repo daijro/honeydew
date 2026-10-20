@@ -157,11 +157,10 @@ struct Hold {
     seen: u64,
 }
 
-/// Owner request/deviation (2026-10-18), after the desktop app (the touch-first original has no right button): a right
-/// press on a note or hit of the piano roll or the drum editor deletes it, and dragging on deletes every one the
-/// pointer's path crosses, each frame's whole path from the last point (a fast swipe skips none); no selection box
-/// shows, and the whole swipe is one undo step. Touches are unchanged. The swipe under way: the pointer's last point,
-/// the editor's events as it found them with their selection flags, and which of them it deleted.
+/// The right-button erase: a right press on a note or hit of the piano roll or the drum editor deletes it, and dragging
+/// on deletes every one the pointer's path crosses, each frame's whole path from the last point (a fast swipe skips
+/// none); no selection box shows, and the whole swipe is one undo step. Touches are unchanged. The swipe under way: the
+/// pointer's last point, the editor's events as it found them with their selection flags, and which of them it deleted.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Erase {
     last: Pos2,

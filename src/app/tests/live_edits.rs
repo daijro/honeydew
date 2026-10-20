@@ -58,12 +58,12 @@ fn a_tap_created_note_does_not_re_sync_but_a_paste_does() {
     rig.slide_split();
     rig.take();
     let notes = |rig: &Rig| rig.app.song.channels[1].lanes[0].clips[0].events.len();
-    // Far right of the grid, past the notes, left of the rack tab's 1 U radius.
+    // Far right of the grid, past the notes, left of the rack tab (2.1 U from the screen's right).
     let grid = rig
         .ctx
         .read_response(egui::Id::new("piano_roll").with("grid"));
     let grid = grid.expect("the roll drew").rect;
-    rig.click(pos2(grid.right() - 2.0 * U, grid.center().y));
+    rig.click(pos2(grid.right() - 3.0 * U, grid.center().y));
     assert_eq!(notes(&rig), 3);
     let log = rig.take();
     assert!(

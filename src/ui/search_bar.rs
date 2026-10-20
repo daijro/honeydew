@@ -6,9 +6,16 @@
 //! [`SearchBar::start`] and [`SearchBar::end`]; and Escape's order, bar → select mode → close.
 //!
 //! A non-empty query lists everything below the open folder, recursively: [`Walk`] gathers the folders and files below
-//! it once, [`matching`] keeps those whose name holds the query without case, and each shows in a [`FOUND_ROW_H`] row
-//! with its folder's path from the browser's root under the name ([`place_line`]). A found folder opens through the
-//! folders above it ([`Found::folders`]), and the search ends. Both browsers use these.
+//! it once, [`matching`] keeps those whose name holds the query without case, and each shows in a row of the usual
+//! [`ROW_H`] with its folder's path from the browser's root under the name ([`paint_row`]). A found folder opens through
+//! the folders above it ([`Found::folders`]), and the search ends. Both browsers use these.
+//!
+//! **Browser rows** ([`paint_row`], every side browser's and SONGS'): [`ROW_H`] tall, search results included; labels
+//! 0.25 U in from either side, cut with an end ellipsis. A result with a folder path draws two lines centred in the row:
+//! the name in FontSize 3 (an 18 pt name and the path do not fit the row), the path in FontSize 1 at α 0.6. The current
+//! row (the last pick, or the folder holding it) is inverted, a `text` fill under `menuFill` ink, outside select mode;
+//! a pressed row is lit `text` α 0.15, a hovered one α 0.05. In select mode a `controlFill` checkbox circle (radius
+//! 0.2 U at x + 0.525 U) grows in, a selected row's with an inner `text` disc, and the label moves right 0.75 U.
 //!
 //! - A `Search` tap that shows the bar starts the search as Ctrl+F does (the field takes the keyboard, select mode is
 //!   left).
@@ -28,7 +35,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use eframe::egui::{
-    Align, Align2, Color32, Context, Id, Painter, Rect, RichText, Stroke, TextEdit, Ui, vec2,
+    Align, Align2, Color32, Context, Id, Painter, Rect, RichText, Stroke, TextEdit, Ui, pos2, vec2,
 };
 
 use crate::keymap;
@@ -58,13 +65,23 @@ const HINT_ALPHA: f32 = 0.25;
 const BLINK_FRAMES: u32 = 60;
 /// The longest text, in characters (as SONGS' name fields).
 const TEXT_LIMIT: usize = 255;
-/// A recursive result's row height, in U, and its path line: its top below the row's, its height, its alpha.
-pub(crate) const FOUND_ROW_H: f32 = 2.2;
-const PLACE_TOP: f32 = 1.4;
-const PLACE_H: f32 = 0.6;
+/// Every browser row's height, search results included, in U.
+pub(crate) const ROW_H: f32 = 1.5;
+/// A row's label inset on either side, in U.
+const ROW_PAD: f32 = 0.25;
+/// A search result's two lines: the name's and the path's heights (FontSize 3 and 1), in U, and the path's alpha.
+const NAME_LINE: f32 = 0.75;
+const PLACE_LINE: f32 = 0.5;
 const PLACE_ALPHA: f32 = 0.6;
-/// The tail a too-long path keeps after its middle ellipsis (the browsers' titles').
-const PLACE_TAIL_K: usize = 5;
+/// `text` alphas of a pressed and a hovered row.
+const PRESSED_ALPHA: f32 = 0.15;
+const HOVER_ALPHA: f32 = 0.05;
+/// Select mode's checkbox: its centre in from the row's left, its radius and its selected disc's, the label's shift,
+/// in U.
+const CHECK_X: f32 = 0.525;
+const CHECK_R: f32 = 0.2;
+const CHECK_DOT: f32 = 0.1;
+const CHECK_SHIFT: f32 = 0.75;
 /// How deep the walk goes below the open folder.
 const WALK_DEPTH: usize = 16;
 
@@ -161,29 +178,64 @@ pub(crate) fn matching<'a>(found: &'a [Found], query: &str) -> Vec<&'a Found> {
         .collect()
 }
 
-/// Draws a result's folder path under its name, in FontSize 1 at α 0.6 of the row's `color`: `label` is the row's
-/// text rect, which it leaves to the name, the row's top [`PLACE_TOP`] U.
-pub(crate) fn place_line(
-    painter: &Painter,
-    m: &Metrics,
-    label: &mut Rect,
-    place: &str,
-    color: Color32,
-) {
-    let top = label.top();
-    let line = label.with_min_y(top + m.u(PLACE_TOP));
-    let line = line.with_max_y(line.top() + m.u(PLACE_H));
-    let (font, dim) = (m.font_id(FontSize::Pt8), color.gamma_multiply(PLACE_ALPHA));
-    truncated(
-        painter,
-        line,
-        Align2::LEFT_CENTER,
-        place,
-        font,
-        dim,
-        PLACE_TAIL_K,
-    );
-    label.max.y = top + m.u(PLACE_TOP);
+/// How a browser row looks ([`paint_row`]).
+pub(crate) struct RowLook<'a> {
+    pub name: &'a str,
+    /// A search result's folder path from the browser's root: a second line under the name, unless empty.
+    pub place: Option<&'a str>,
+    /// The name's font on a one-line row.
+    pub font: FontSize,
+    /// The label's colour: `text`, or dimmed.
+    pub ink: Color32,
+    /// The last pick, or the folder holding it: inverted, unless in select mode.
+    pub current: bool,
+    pub pressed: bool,
+    /// A desktop pointer is over it.
+    pub hovered: bool,
+    /// Select mode: how far its checkbox has grown in (0 to 1), and whether the row is selected.
+    pub select: Option<(f32, bool)>,
+}
+
+/// Paints a browser row in `rect` (see the module docs).
+pub(crate) fn paint_row(painter: &Painter, cx: &UiCtx, rect: Rect, row: &RowLook) {
+    let (c, m) = (&cx.theme.colors, cx.m);
+    let text = c.text.to_color32();
+    let mut ink = row.ink;
+    if row.current && row.select.is_none() {
+        painter.rect_filled(rect, 0.0, text);
+        ink = c.menu_fill.to_color32();
+    } else if row.pressed || row.hovered {
+        let alpha = if row.pressed {
+            PRESSED_ALPHA
+        } else {
+            HOVER_ALPHA
+        };
+        painter.rect_filled(rect, 0.0, text.gamma_multiply(alpha));
+    }
+    let mut label = rect.shrink2(vec2(m.u(ROW_PAD), 0.0));
+    if let Some((t, selected)) = row.select {
+        let at = pos2(rect.left() + m.u(CHECK_X), rect.center().y);
+        painter.circle_filled(at, m.u(CHECK_R) * t, c.control_fill.to_color32());
+        if selected {
+            painter.circle_filled(at, m.u(CHECK_DOT) * t, text);
+        }
+        label.min.x += m.u(CHECK_SHIFT) * t;
+    }
+    let left = Align2::LEFT_CENTER;
+    match row.place.filter(|p| !p.is_empty()) {
+        Some(place) => {
+            let top = label.center().y - m.u(NAME_LINE + PLACE_LINE) / 2.0;
+            let name = label.with_min_y(top).with_max_y(top + m.u(NAME_LINE));
+            let line = label
+                .with_min_y(name.bottom())
+                .with_max_y(name.bottom() + m.u(PLACE_LINE));
+            let font = m.font_id(FontSize::Pt12);
+            truncated(painter, name, left, row.name, font, ink, 0);
+            let (font, dim) = (m.font_id(FontSize::Pt8), ink.gamma_multiply(PLACE_ALPHA));
+            truncated(painter, line, left, place, font, dim, 0);
+        }
+        None => truncated(painter, label, left, row.name, m.font_id(row.font), ink, 0),
+    }
 }
 
 /// One browser's search: the bar, its field's text and the query the list filters by.

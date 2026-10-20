@@ -640,7 +640,7 @@ fn brighter(c: Rgba) -> Rgba {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metrics::DEFAULT_UI_SCALE_INDEX;
+    use crate::metrics::DEFAULT_UI_SCALE;
     use crate::ui::offscreen::Offscreen;
     use eframe::egui::{Event, PointerButton, TouchDeviceId, TouchId, TouchPhase};
 
@@ -652,7 +652,7 @@ mod tests {
     };
 
     fn metrics(ppp: f32) -> Metrics {
-        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE_INDEX)
+        Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE)
     }
 
     #[test]

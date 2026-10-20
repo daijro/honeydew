@@ -1,6 +1,6 @@
-//! The SoundFont Player's patch selector in the app: the `Patch` spinner opens the SoundFont picker, whose
-//! pick sets the module's `SF2D` with no undo step (the rack is not covered by undo), and `Prev` / `Next` step through
-//! the patches.
+//! The SoundFont Player's patch selector in the app: the `Patch` spinner opens the SoundFont picker, whose patch
+//! pick sets the module's `SF2D` with no undo step (the rack is not covered by undo), the picker staying open, and
+//! `Prev` / `Next` step through the patches.
 
 use std::path::Path;
 
@@ -102,14 +102,14 @@ fn the_patch_spinner_picks_a_soundfonts_patch_and_prev_and_next_step_each_with_n
         module: PLAYER,
     };
     assert_eq!(rig.overlays(), [Overlay::Rack(CHANNEL), picker.clone()]);
-    // My Files, then the SoundFont (after `Broken`), and its second patch.
+    // My Files, then the SoundFont (after `Broken`), and its second patch: it loads at once, and the picker stays.
     for row in [0, 1, 1] {
         picker_row(&mut rig, row);
     }
-    assert_eq!(rig.overlays(), [Overlay::Rack(CHANNEL)]);
+    assert_eq!(rig.overlays(), [Overlay::Rack(CHANNEL), picker.clone()]);
     assert_eq!(sf2d(&rig), in_my_soundfonts("Piano.sf2", 1));
     assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
-    rig.frame(vec![]);
+    close_picker(&mut rig);
     assert!(shows(&rig, "Grand") && !shows(&rig, "Load Patch"));
     // Another channel's rack and back: what the rack read stays, so the patch shows at once, never `...`.
     rig.open_rack(1);
@@ -132,19 +132,15 @@ fn the_patch_spinner_picks_a_soundfonts_patch_and_prev_and_next_step_each_with_n
         assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
     }
 
-    // With a SoundFont loaded the spinner opens the patch menu, not the picker: its patches in file
-    // order, and a pick is one edit.
+    // With a SoundFont loaded the spinner opens the picker in its patches, in file order; a pick is one edit, and
+    // the picker stays.
     rig.click_id(control(PATCH));
-    rig.frame(vec![]);
-    assert_eq!(rig.overlays(), [Overlay::Rack(CHANNEL)]);
-    let (upright, grand) = (text_rect(&rig, "Upright"), text_rect(&rig, "Grand"));
-    assert!(upright.left() == grand.left() && upright.top() < grand.top());
-    assert!(shows(&rig, "Bright") && !shows(&rig, "Load SoundFont..."));
-    rig.click(upright.center());
+    assert_eq!(rig.overlays(), [Overlay::Rack(CHANNEL), picker.clone()]);
+    picker_row(&mut rig, 0);
     assert_eq!(sf2d(&rig), in_my_soundfonts("Piano.sf2", 0));
     assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
-    rig.frame(vec![]);
-    assert!(!shows(&rig, "Bright"), "the menu stayed open");
+    assert_eq!(rig.overlays(), [Overlay::Rack(CHANNEL), picker]);
+    close_picker(&mut rig);
 
     // No undo step for any of them.
     assert_eq!(rig.app.history.steps(), steps);
@@ -317,12 +313,12 @@ fn the_preset_button_lists_default_presets_and_soundfonts_and_a_picked_sf2_loads
     assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
     close_picker(&mut rig);
     assert!(shows(&rig, "Upright") && !shows(&rig, "Load Patch"));
-    // The patch is picked from the spinner's patch menu.
+    // The patch is picked from the spinner's picker, open in the SoundFont's patches.
     rig.click_id(control(PATCH));
-    rig.frame(vec![]);
-    rig.click(text_rect(&rig, "Grand").center());
+    picker_row(&mut rig, 1);
     assert_eq!(sf2d(&rig), in_my_soundfonts("Piano.sf2", 1));
     assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
+    close_picker(&mut rig);
 
     // `My Files`, `Warm`: a generic preset, all of it loaded (the SoundFont goes with the old state).
     rig.click_id(preset_button());

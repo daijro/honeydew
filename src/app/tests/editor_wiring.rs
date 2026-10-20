@@ -32,9 +32,9 @@ fn pad(index: usize) -> Pos2 {
 /// The centre of pad `index` under a keyboard panel `panel_u` U tall, once it has its height. On the default 5 U
 /// panel only the first row (pads 0–6) is on the screen: the grid keeps its least size and overflows below.
 pub(super) fn pad_in(panel_u: f32, index: usize) -> Pos2 {
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let screen = egui::Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
-    let keys = Regions::sized(screen, panel_u * U, &m).keyboard;
+    let keys = Regions::sized(screen, panel_u * U, 1, &m).keyboard;
     let area = crate::ui::keyboard_settings::pads_rect(keys, &m);
     drums::pad_grid(area, 1170.0, U).centres[index]
 }
@@ -46,9 +46,6 @@ pub(super) const EDITOR_TOP: f32 = 0.0;
 
 /// The gap between a drum editor's header column and its grid: t = ceil(U/16) px.
 const T: f32 = 2.0;
-
-/// The drum view's `Lock`: the third round button from the left of the transport bar.
-const LOCK: Pos2 = pos2(3.75 * U, BAR_Y);
 
 impl Rig {
     /// The rects the last frame filled with `color`.
@@ -80,39 +77,38 @@ impl Rig {
         texts.into_iter().map(|t| t.1).collect()
     }
 
-    /// An editor's playhead: the x of its disc (a `text` disc of radius 1.35·1.5 U/2 − 3 px on the 1.5 U ruler), and
-    /// whether its line (2t = 4 points of `text`) is drawn down the `grid` widget (the roll's or the step view's).
+    /// An editor's playhead: the x of its play box on the ruler ([`r3`]), and whether its line is drawn down the
+    /// `grid` widget (the roll's or the step view's).
     pub(super) fn playhead(&self, grid: egui::Id) -> (f32, bool) {
-        let (disc, line) = self.editor_playhead(grid);
-        (disc.expect("the playhead's handle").0, line.is_some())
+        let (handle, line) = self.editor_playhead(grid);
+        (handle.expect("the playhead's handle").0, line.is_some())
     }
 
-    /// An editor's playhead as drawn: its disc's x and alpha (`text` at the fade's alpha), if drawn, and its line's x,
-    /// if drawn down the `grid` widget.
+    /// An editor's playhead as drawn: its play box's playhead x ([`r3`]) and alpha (`menuFill` at the fade's alpha), if
+    /// drawn on the ruler at the editor's top, and its line's x, if drawn down the `grid` widget.
     pub(super) fn editor_playhead(&self, grid: egui::Id) -> (Option<(f32, u8)>, Option<f32>) {
+        (
+            self.play_box_in(EDITOR_TOP..EDITOR_TOP + RULER),
+            self.line_in(grid),
+        )
+    }
+
+    /// The play box drawn with its centre in the band `ys` (a ruler): the playhead x it shows ([`r3`]) and its alpha
+    /// (`menuFill` at the fade's alpha).
+    pub(super) fn play_box_in(&self, ys: std::ops::Range<f32>) -> Option<(f32, u8)> {
+        use crate::ui::timeline::testing::{play_boxes, playhead_x};
+        play_boxes(&self.out.shapes)
+            .find(|b| ys.contains(&b.rect.center().y))
+            .map(|b| (r3(playhead_x(b.rect, U)), b.fill.a()))
+    }
+
+    /// The x of the playhead line (`text`, narrower than U) drawn down the `grid` widget, if any.
+    fn line_in(&self, grid: egui::Id) -> Option<f32> {
         let text = self.app.theme.colors.text.to_color32();
-        let r = 1.35 * 0.75 * U - 3.0;
-        // `text` at the disc's alpha, give or take the rounding of each channel.
-        let faded_text = |fill: Color32| {
-            let want = text.gamma_multiply(f32::from(fill.a()) / 255.0);
-            (fill.to_array().iter().zip(want.to_array())).all(|(a, b)| a.abs_diff(b) <= 1)
-        };
-        let disc = self.out.shapes.iter().find_map(|s| match &s.shape {
-            Shape::Circle(c)
-                if c.fill.a() > 0
-                    && faded_text(c.fill)
-                    && (c.radius - r).abs() < 1e-3
-                    && (EDITOR_TOP..EDITOR_TOP + 1.5 * U).contains(&c.center.y) =>
-            {
-                Some((c.center.x, c.fill.a()))
-            }
-            _ => None,
-        });
         let grid = self.rect_of(grid);
-        let line = (self.rects(text).iter())
-            .find(|r| r.width() == 4.0 && r.y_range() == grid.y_range())
-            .map(|r| r.center().x);
-        (disc, line)
+        (self.rects(text).iter())
+            .find(|r| r.width() < U && r.y_range() == grid.y_range())
+            .map(|r| crate::ui::timeline::testing::line_x(*r, 1.0))
     }
 
     /// Channel `channel`'s note events.
@@ -392,11 +388,8 @@ fn the_row_menu_swing_cut_and_region_popups_close_with_the_editor() {
 fn the_expanded_column_is_15_u_in_a_narrow_editor_too() {
     // At 125 % the 1170-point editor is about 29 U wide.
     let mut rig = drum_rig();
-    let scale = crate::metrics::UI_SCALE_FACTORS
-        .iter()
-        .position(|&f| f == 1.25)
-        .unwrap();
-    rig.app.settings.ui_scale_index = scale;
+    let scale = 125;
+    rig.app.settings.ui_scale = scale;
     rig.frame(vec![]);
     rig.frame(vec![]);
     let m = crate::metrics::Metrics::from_pixels_per_point(1.0, scale);
@@ -423,7 +416,12 @@ fn the_drum_mixer_column_is_15_u_and_scrolls_with_the_rows() {
     // A new clip's rows are 2 U apart, each strip on its row.
     for row in 0..4 {
         let (h, level) = (header(&rig, row), rig.rect_of(strip(row, Ctl::Level)));
-        assert_eq!(h.top(), grid.top() + row as f32 * 2.0 * U, "row {row}");
+        // On whole pixels.
+        assert_eq!(
+            h.top(),
+            (grid.top() + row as f32 * 2.0 * U).round(),
+            "row {row}"
+        );
         assert!(
             h.y_range().contains(level.center().y),
             "row {row}: {level:?}"
@@ -445,8 +443,9 @@ fn the_drum_mixer_column_is_15_u_and_scrolls_with_the_rows() {
         rig.frame(vec![]);
     }
     let after = (header(&rig, 3), rig.rect_of(strip(3, Ctl::Level)));
-    assert_eq!(before.0.top() - after.0.top(), range);
-    assert_eq!(before.1.top() - after.1.top(), range);
+    // The rows lie on whole pixels, the grid's top need not.
+    assert!((before.0.top() - after.0.top() - range).abs() <= 0.5);
+    assert!((before.1.top() - after.1.top() - range).abs() <= 0.5);
     assert!(rig.hits().is_empty(), "a drag is no tap");
     // The scroll is the clip's: another drum channel's editor opens unscrolled, and coming back finds it.
     rig.app.add_default_drums(0);
@@ -1139,6 +1138,7 @@ fn the_pads_replace_the_keyboard_and_play_the_drums_channel() {
 #[test]
 fn a_pad_dropped_on_another_swaps_their_slots_as_one_undo_step() {
     let mut rig = drum_rig();
+    rig.app.settings.lock_pads = false;
     let pads = |rig: &Rig| {
         rig.app.song.channels[1]
             .drum_kit
@@ -1266,22 +1266,6 @@ fn the_bottom_panel_follows_the_current_channels_first_lane_in_every_view() {
     rig.press(pad(0));
     rig.release(pad(0));
     assert_eq!(rig.take(), Vec::<String>::new());
-}
-
-#[test]
-fn the_transport_has_lock_in_the_drum_view_only() {
-    let mut rig = drum_rig();
-    let lock = |rig: &Rig| rig.app.slots.drum_editor.step.lock;
-    rig.click(LOCK);
-    assert!(lock(&rig));
-    rig.click(LOCK);
-    assert!(!lock(&rig));
-    rig.click(PLAY);
-    assert_eq!(rig.take(), ["Play"]);
-    rig.click_id(egui::Id::new(EDITOR_CLOSE));
-    assert_eq!(rig.app.nav.view, View::Playlist);
-    rig.click(LOCK);
-    assert!(!lock(&rig), "a Lock on the playlist");
 }
 
 #[test]
@@ -1446,7 +1430,7 @@ fn the_rolls_c_labels_follow_the_middle_c_setting() {
     rig.edit(1);
     rig.slide_split();
     // The key column, left of the grid and below the ruler: the roll opens on middle C.
-    let keys = Rect::from_min_max(pos2(0.0, EDITOR_TOP + 1.5 * U), pos2(1.5 * U, PANEL_TOP));
+    let keys = Rect::from_min_max(pos2(0.0, EDITOR_TOP + RULER), pos2(1.5 * U, PANEL_TOP));
     assert_eq!(rig.texts_in(keys), ["C5"]);
     rig.app.settings.middle_c_is_c4 = true;
     rig.frame(vec![]);
@@ -1460,7 +1444,7 @@ fn the_rolls_playhead_is_the_transports_and_its_line_shows_stopped_and_playing()
     rig.rec.0.borrow_mut().tick = 300;
     rig.edit(1);
     rig.slide_split();
-    // Stopped: the disc and the line show the transport's tick 300 (a beat, 128 ticks, being 2 U): the line has no
+    // Stopped: the play box and the line show the transport's tick 300 (a beat, 128 ticks, being 2 U): the line has no
     // play-state condition.
     let left = rig.rect_of(roll("grid")).left();
     let at = left + 300.0 / 128.0 * 2.0 * U;
@@ -1477,17 +1461,17 @@ fn the_rolls_playhead_is_the_transports_and_its_line_shows_stopped_and_playing()
     assert_eq!(rig.playhead(roll("grid")), (left, true));
 }
 
-/// Every editor's disc fades as the drum editor's (`timeline::knob_shown`): out while playing, so that only the line
-/// shows, and back in once stopped.
+/// Every editor's play box fades as the drum editor's (`timeline::knob_shown`): out while playing, so that only the
+/// line shows, and back in once stopped.
 #[test]
-fn while_playing_the_playlists_and_the_rolls_discs_fade_out_and_only_their_lines_show() {
+fn while_playing_the_playlists_and_the_rolls_play_boxes_fade_out_and_only_their_lines_show() {
     let mut rig = Rig::with_synth();
     rig.app.song.channels[1].lanes[0].add_clip(0, 8.0);
     rig.rec.0.borrow_mut().tick = 300;
     rig.frame(vec![]);
     let settle = |rig: &mut Rig| (0..40).for_each(|_| rig.frame(vec![]));
     // The playlist: a beat is 1.2 U from the grid's left edge.
-    let x = 1.5 * U + 2.0 + 300.0 / 128.0 * 1.2 * U;
+    let x = r3(1.5 * U + 2.0 + 300.0 / 128.0 * 1.2 * U);
     assert_eq!(playlist_playhead(&rig), (Some((x, 255)), true));
     rig.click(PLAY);
     rig.frame(vec![]);
@@ -1518,20 +1502,13 @@ fn while_playing_the_playlists_and_the_rolls_discs_fade_out_and_only_their_lines
     assert_eq!(rig.editor_playhead(grid), (Some((x, 255)), Some(x)));
 }
 
-/// The playlist's playhead: its disc (radius 1.35·1.5 U/2 − 3 px on the ruler's middle) as its x and alpha, if drawn,
-/// and whether its line (2t = 4 points of `text`) runs down the track area.
+/// The playlist's playhead: its play box on the ruler as its playhead x ([`r3`]) and alpha, if drawn, and whether its
+/// line (`text`, narrower than U) runs down the track area.
 fn playlist_playhead(rig: &Rig) -> (Option<(f32, u8)>, bool) {
     let text = rig.app.theme.colors.text.to_color32();
-    let r = 1.35 * 0.75 * U - 3.0;
-    let handle = rig.out.shapes.iter().find_map(|s| match &s.shape {
-        Shape::Circle(c) if (c.radius - r).abs() < 1e-3 && c.center.y == 0.75 * U => {
-            Some((c.center.x, c.fill.a()))
-        }
-        _ => None,
-    });
-    let tracks = egui::Rangef::new(1.5 * U, PANEL_TOP);
-    let line = (rig.rects(text).iter()).any(|r| r.width() == 4.0 && r.y_range() == tracks);
-    (handle, line)
+    let tracks = egui::Rangef::new(RULER, PANEL_TOP);
+    let line = (rig.rects(text).iter()).any(|r| r.width() < U && r.y_range() == tracks);
+    (rig.play_box_in(0.0..RULER), line)
 }
 
 #[test]
@@ -1554,7 +1531,7 @@ fn the_playlists_playhead_shows_only_over_the_grid_and_fades_in_there() {
         playlist_playhead(rig)
     };
     // On the grid, from its left edge to near its right one (1170 points).
-    let shown = |x: f32| Some((x, 255));
+    let shown = |x: f32| Some((r3(x), 255));
     assert_eq!(at(&mut rig, 0, 0.0), (shown(grid_left), true));
     assert_eq!(
         at(&mut rig, 9 * 128, 0.0),
@@ -1689,17 +1666,14 @@ fn switching_straight_to_another_drum_channel_releases_the_held_pad() {
 #[test]
 fn a_new_song_resets_the_rolls_and_the_drum_editor() {
     let mut rig = drum_rig();
-    rig.click(LOCK);
     rig.app
         .add_channel(ChannelKind::Synth(SynthKind::MiniSynth), 0);
     rig.edit(2);
     rig.slide_split();
     assert!(rig.app.slots.piano_roll.rolls.contains_key(&2));
-    assert!(rig.app.slots.drum_editor.step.lock);
     rig.app.test_edit = Some(SongEdit::Replaced);
     rig.frame(vec![]);
     assert!(rig.app.slots.piano_roll.rolls.is_empty());
-    assert!(!rig.app.slots.drum_editor.step.lock);
 }
 
 #[test]
@@ -1764,11 +1738,8 @@ fn the_playlists_view_goes_into_the_song_but_is_no_unsaved_change() {
     assert!(!rig.app.files.modified());
     rig.wheel(pos2(24.0, 200.0), 300.0);
     let zoom_y = rig.app.song.file.playlist_view[3];
-    // Rows 2 U / (1 − 0.001·300) tall: zoom y is their reciprocal in pixels.
-    assert!(
-        (zoom_y - 0.7 / (2.0 * f64::from(U))).abs() < 1e-6,
-        "{zoom_y}"
-    );
+    // Rows 2 U / (1 − 0.001·300) tall: zoom y is their reciprocal in U.
+    assert!((zoom_y - 0.7 / 2.0).abs() < 1e-6, "{zoom_y}");
     assert!(!rig.app.files.modified());
 }
 
@@ -2088,7 +2059,7 @@ fn the_wheel_scrolls_no_piano_roll_under_the_rack_but_beside_it() {
     rig.app.navigate(Nav::Open(Overlay::Rack(1)));
     rig.slide_split();
     // The key column: the roll opens on middle C.
-    let keys = Rect::from_min_max(pos2(0.0, EDITOR_TOP + 1.5 * U), pos2(1.5 * U, PANEL_TOP));
+    let keys = Rect::from_min_max(pos2(0.0, EDITOR_TOP + RULER), pos2(1.5 * U, PANEL_TOP));
     assert_eq!(rig.texts_in(keys), ["C5"]);
     rig.wheel(pos2(800.0, 200.0), 500.0);
     assert_eq!(rig.texts_in(keys), ["C5"]);
@@ -2102,8 +2073,12 @@ fn the_wheel_zooms_no_piano_roll_under_the_main_menu() {
     rig.edit(1);
     rig.slide_split();
     // The key column: at the default zoom it shows middle C only; the wheel over it zooms the rows out, and it shows
-    // more Cs: their channel-colour bars, as rows that short have no labels.
-    let keys = Rect::from_min_max(pos2(0.0, EDITOR_TOP + 1.5 * U), pos2(1.5 * U, PANEL_TOP));
+    // more Cs: their channel-colour bars, as rows that short have no labels. (Above the graph lane's tab, whose icon
+    // is in the channel colour too.)
+    let keys = Rect::from_min_max(
+        pos2(0.0, EDITOR_TOP + RULER),
+        pos2(1.5 * U, PANEL_TOP - 1.25 * U),
+    );
     let ink =
         crate::theme::channel_color(rig.app.song.channels[1].hue, &rig.app.theme).to_color32();
     let zoom_out = |rig: &mut Rig| {
@@ -2245,25 +2220,25 @@ fn piano_roll_and_drum_editor_region_edits_go_through_the_funnel_as_one_undo_ste
     rig.edit(1);
     rig.slide_split();
     rig.take();
-    // The roll: a beat is 64 points from x 48; `Insert space` on beat 0 (made from its end, clear of the playhead knob
-    // at beat 0).
+    // The roll: a beat is 64 points from x 48; `Insert space` on beats 0 to 2 (made from its end, clear of the play
+    // box's touch area at beat 0).
     let beat = |b: f32| pos2(48.0 + b * 64.0, EDITOR_TOP + 24.0);
-    rig.region(beat(1.0), beat(0.1), "Insert space");
+    rig.region(beat(2.0), beat(0.1), "Insert space");
     let starts = |rig: &Rig| rig.notes(1).iter().map(Event::pos).collect::<Vec<_>>();
-    assert_eq!(starts(&rig), [128, 384]);
+    assert_eq!(starts(&rig), [256, 512]);
     // The region's loop reached the engine before the edit.
-    assert_eq!(rig.take(), ["SetLoop 0 128", "ReplaceSong adopting"]);
+    assert_eq!(rig.take(), ["SetLoop 0 256", "ReplaceSong adopting"]);
     rig.frame(z(egui::Modifiers::NONE));
     assert_eq!(starts(&rig), [0, 256]);
 
-    // The drum editor: Kick on step 0 and Snare on step 2; `Trim selection` over steps 2 to 4 keeps the Snare, now
-    // on step 0.
+    // The drum editor: Kick on step 0 and Snare on step 2; `Trim selection` over steps 2 to 4 (made from its end, clear
+    // of the play box's touch area at step 0) keeps the Snare, now on step 0.
     let mut rig = drum_rig();
     rig.click(rig.step(0, 0));
     rig.click(rig.step(1, 2));
     rig.take();
     let step = |s: usize| pos2(rig.step(0, s).x, EDITOR_TOP + 24.0);
-    rig.region(step(2), step(4), "Trim selection");
+    rig.region(step(4), step(2), "Trim selection");
     assert_eq!(rig.hits(), [(1, 0)]);
     assert_eq!(rig.take(), ["SetLoop 64 128", "ReplaceSong adopting"]);
     rig.frame(z(egui::Modifiers::NONE));
@@ -2310,22 +2285,22 @@ fn the_playhead_knob_takes_its_own_taps_and_the_ruler_beside_it_keeps_its_gestur
     let mut rig = Rig::with_synth();
     rig.rec.0.borrow_mut().tick = 384;
     rig.frame(vec![]);
-    // Stopped at beat 3; 0.6 beat to its right is on the knob (a beat is 38.4 points from x 48): a tap plays.
+    // Stopped at beat 3; 0.6 beat to its right is on the box (a beat is 38.4 points from x 48): a tap plays.
     let beat = |b: f32| pos2(48.0 + b * 38.4, 24.0);
     rig.click(beat(3.6));
     assert_eq!(rig.take(), ["Play"]);
     rig.click(PLAY);
     rig.take();
-    // Past the knob, a tap seeks...
-    rig.click(beat(4.2));
-    assert_eq!(rig.take(), ["Seek 512"]);
+    // Past the box's touch area (2.29 U right of the playhead, to beat 4.9), a tap seeks...
+    rig.click(beat(5.2));
+    assert_eq!(rig.take(), ["Seek 640"]);
     // ... and a long press starts a range.
-    rig.press(beat(4.4));
+    rig.press(beat(5.4));
     rig.next_frame_at(rig.time + 0.31);
     rig.frame(vec![]);
-    rig.drag_to(beat(6.0));
-    rig.release(beat(6.0));
-    assert_eq!(rig.app.song.play_loop, Some((512, 768)));
+    rig.drag_to(beat(7.0));
+    rig.release(beat(7.0));
+    assert_eq!(rig.app.song.play_loop, Some((640, 896)));
 }
 
 // ---- the graph lanes ----
@@ -3531,10 +3506,10 @@ mod editors {
             rig.click_id(egui::Id::new(("clip_button", 3_usize)));
             rig.frame(vec![]);
             assert_eq!(shown(&rig), (view, Some(first(row, 0))));
-            assert!(rig.painted("Undo") && rig.painted("Preview"), "{view:?}");
-            rig.click_text_button("Preview");
+            assert!(rig.painted("SOLO CLIP"), "{view:?}");
+            rig.click_text_button("SOLO CLIP");
             assert_eq!(rig.app.preview, Some(first(row, 0)), "{view:?}");
-            rig.click_text_button("Preview");
+            rig.click_text_button("SOLO CLIP");
             assert_eq!(rig.app.preview, None);
         }
     }
@@ -3683,7 +3658,7 @@ fn a_mini_mixer_edit_reaches_the_audio_as_set_param_and_saves_no_undo_step() {
     let mut rig = Rig::with_synth();
     let steps = rig.app.history.steps();
     // A tap on the current track's header (channel 1, row 1) expands the column; it settles at c = 1.
-    let header = pos2(0.75 * U, 1.5 * U + 1.5 * 2.0 * U);
+    let header = header(1);
     rig.click(header);
     for _ in 0..10 {
         rig.frame(vec![]);
@@ -3759,11 +3734,18 @@ fn a_keys_area_0_tall_hides_the_pads_and_a_press_there_plays_nothing() {
     // below the panel otherwise.
     let mut rig = Rig::new();
     rig.app.add_default_drums(0);
-    rig.app.settings.preferred_kbd_size = 4.75;
+    // Opened on a panel with keys, the strip keeps its size; then the panel is set.
     rig.app.navigate(Nav::Open(Overlay::KeyboardSettings));
+    rig.frame(vec![]);
+    rig.app.settings.preferred_kbd_size = 4.75;
+    // Pads: 6-point paths under the bar (the keyboard-settings icon's keys are 6-point paths too).
+    let under_bar = 540.0 - (4.75 - 1.75) * U;
     let hexes = |rig: &Rig| {
         (rig.out.shapes.iter())
-            .filter(|s| matches!(&s.shape, Shape::Path(p) if p.points.len() == 6))
+            .filter(|s| match &s.shape {
+                Shape::Path(p) => p.points.len() == 6 && p.points.iter().all(|q| q.y > under_bar),
+                _ => false,
+            })
             .count()
     };
     for _ in 0..10 {
@@ -3786,30 +3768,29 @@ fn a_keys_area_0_tall_hides_the_pads_and_a_press_there_plays_nothing() {
 fn rec_armed_gives_the_step_knob_its_record_icon_and_a_tap_on_the_knob_plays() {
     // The app tells the step view REC's arm (the knob's icon 5) and starts playback on its tap.
     let mut rig = drum_rig();
-    let (text, menu) = (
-        rig.app.theme.colors.text.to_color32(),
-        rig.app.theme.colors.menu_fill.to_color32(),
-    );
-    // On the editor's ruler, under the playlist and its own knob (`ui::split`).
-    let ruler = EDITOR_TOP..EDITOR_TOP + 1.5 * U;
-    let circle = |rig: &Rig, fill: Color32, big: bool| {
-        rig.out.shapes.iter().find_map(|s| match &s.shape {
-            Shape::Circle(c)
-                if c.fill == fill && (c.radius > 20.0) == big && ruler.contains(&c.center.y) =>
-            {
-                Some(c.center)
-            }
-            _ => None,
-        })
+    // On the editor's ruler, under the playlist and its own box (`ui::split`).
+    let ruler = EDITOR_TOP..EDITOR_TOP + RULER;
+    let play_box = |rig: &Rig| {
+        crate::ui::timeline::testing::play_boxes(&rig.out.shapes)
+            .find(|b| ruler.contains(&b.rect.center().y))
+            .map(|b| b.rect)
     };
-    let knob = circle(&rig, text, true).expect("the stopped knob");
-    assert!(circle(&rig, menu, false).is_none_or(|c| c.distance(knob) > 2.0));
+    // The REC icon: a `recordColor` disc on the box.
+    let rec = crate::theme::RECORD_COLOR.to_color32();
+    let armed = |rig: &Rig, on: Rect| {
+        (rig.out.shapes.iter())
+            .any(|s| matches!(&s.shape, Shape::Circle(c) if c.fill == rec && on.contains(c.center)))
+    };
+    let knob = play_box(&rig).expect("the stopped box");
+    assert!(!armed(&rig, knob));
     rig.app.main_screen.armed = true;
     rig.frame(vec![]);
-    let icon = circle(&rig, menu, false).expect("the record icon");
-    assert!(icon.distance(knob) < 1.5, "{icon:?} {knob:?}");
+    assert!(
+        armed(&rig, play_box(&rig).expect("the box")),
+        "the record icon"
+    );
     assert!(!rig.app.main_screen.playing);
-    rig.click(knob);
+    rig.click(knob.center());
     assert!(rig.app.main_screen.playing);
 }
 
@@ -3817,9 +3798,9 @@ fn rec_armed_gives_the_step_knob_its_record_icon_and_a_tap_on_the_knob_plays() {
 /// The pads, it shows in the 0.35 U gap above them.
 #[test]
 fn the_keyboard_panel_is_control_fill_under_a_1_px_background_line_behind_the_piano_and_the_pads() {
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let screen = egui::Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
-    let regions = Regions::sized(screen, crate::ui::keyboard_settings::PANEL_H * U, &m);
+    let regions = Regions::sized(screen, crate::ui::keyboard_settings::PANEL_H * U, 1, &m);
     let panel = Rect::from_min_max(regions.transport.min, regions.keyboard.max);
     let on_top = |rig: &Rig, at: Pos2| {
         (rig.out.shapes.iter().rev()).find_map(|s| match &s.shape {
@@ -3849,7 +3830,11 @@ fn the_keyboard_panel_is_control_fill_under_a_1_px_background_line_behind_the_pi
             assert_eq!(on_top(&rig, gap), Some(control));
             let apex = (rig.out.shapes.iter())
                 .filter_map(|s| match &s.shape {
-                    Shape::Path(p) if p.points.len() == 6 => {
+                    // Under the bar: its keyboard-settings icon has 6-point keys too.
+                    Shape::Path(p)
+                        if p.points.len() == 6
+                            && p.points.iter().all(|q| q.y > regions.transport.bottom()) =>
+                    {
                         p.points.iter().map(|q| q.y).reduce(f32::min)
                     }
                     _ => None,

@@ -41,12 +41,14 @@ pub struct State {
 
 impl State {
     /// One frame of the slide: in while a rack is `shown`, else out, in an area `width_px` wide, a step per frame of
-    /// `ctx`, however many passes the frame runs. Returns how far in the rack is now, 0 closed … 1 open.
+    /// `ctx` ([`anim::PANEL_KEEP`](crate::ui::anim::PANEL_KEEP)), however many passes the frame runs. Returns how far in the
+    /// rack is now, 0 closed … 1 open.
     pub(crate) fn slide(&mut self, shown: bool, width_px: f32, ctx: &egui::Context) -> f32 {
         let frame = Some(ctx.cumulative_frame_nr());
         if self.slid != frame {
             self.slid = frame;
-            self.open = slide(self.open, if shown { 1.0 } else { 0.0 }, width_px);
+            let step = crate::ui::anim::step(ctx, crate::ui::anim::PANEL_KEEP);
+            self.open = slide(self.open, if shown { 1.0 } else { 0.0 }, width_px, step);
         }
         self.open
     }
@@ -132,10 +134,10 @@ fn input_peaks(input: &LiveInput, id: i32) -> [f32; METER_RINGS] {
 /// through [`AppCtx::files`]); a card's preset button and `Load Rack preset` open the preset picker, a SoundFont
 /// Player's `Patch` spinner the SoundFont picker (its `Prev` / `Next` are final song edits; the SoundFonts the players
 /// name are read first), and `Custom` picked in a 3x Osc Shape menu or a Slicer's `LOAD SAMPLE` or waveform the
-/// module's sample picker (the Slicers' loops are handed to their waveforms first); the notch, or the channel being
-/// gone, closes the rack. A Slicer's AUTO writes into `held` (the channel's piano roll clip) first
-/// ([`write_auto_clip`]). A bound control's touch and a `Delete` the app must ask about first go to [`State::touch`]
-/// and [`State::ask_delete`], a held `Clear Rack` to [`State::ask_remove`].
+/// module's sample picker (the Slicers' loops are handed to their waveforms first); the close X, the collapse tab, the
+/// left margin, or the channel being gone, closes the rack. A Slicer's AUTO writes into `held` (the channel's piano
+/// roll clip) first ([`write_auto_clip`]). A bound control's touch and a `Delete` the app must ask about first go to
+/// [`State::touch`] and [`State::ask_delete`], a held `Clear Rack` to [`State::ask_remove`].
 pub fn show(
     state: &mut State,
     ui: &mut egui::Ui,

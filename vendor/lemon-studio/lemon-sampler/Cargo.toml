@@ -1,0 +1,37 @@
+[package]
+name = "lemon-sampler"
+description = "Lemon Sampler: Lemon Studio's sampler instrument as a VST3 / CLAP plugin"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[features]
+# Compiled into Lemon Studio: no exported plugin entry points (they would clash with the other built-in plugins).
+linked = []
+# Honeydew (vendored addition): the editor draws into Honeydew's own window (`os-plugkit`'s `embed`).
+embed = ["os-plugkit/embed", "os-hostlink/embed"]
+
+[dependencies]
+nih_plug = { path = "../../nih-plug" }
+os-engine = { path = "../os-engine", features = ["plugins"] }
+os-dsp = { path = "../os-dsp" }
+os-model = { path = "../os-model" }
+os-hostlink = { path = "../os-hostlink" }
+os-plugkit = { path = "../os-plugkit" }
+os-ui = { path = "../os-ui" }
+os-theme = { path = "../os-theme" }
+os-paths = { path = "../os-paths" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Controls_Dialogs", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_LibraryLoader", "Win32_UI_Shell", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole"] }
+
+# The open / save sample dialogs (the browser and Android have none).
+[target.'cfg(not(any(target_arch = "wasm32", target_os = "android")))'.dependencies]
+rfd = "0.17"
+
+# Upstream allows a lint that Rust 1.91 (Honeydew's CI) does not know yet; with `embed` the Win32 editor goes unused on
+# Windows.
+[lints.rust]
+unknown_lints = "allow"
+dead_code = "allow"

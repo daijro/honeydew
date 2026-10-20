@@ -12,13 +12,15 @@ fn rect(rig: &Rig, id: egui::Id) -> Rect {
     rig.ctx.read_response(id).expect("drawn").rect
 }
 
-/// The `text` discs of a handle's size (radius 0.25 U to 0.55 U) centred in `area` last frame: the resize handles.
+/// The rounded `text` rects of a handle's size centred in `area` last frame: the resize handles' capsule bodies.
 fn handles(rig: &Rig, area: Rect) -> usize {
     let text = rig.app.theme.colors.text.to_color32();
     (rig.out.shapes.iter())
         .filter(|c| {
-            matches!(&c.shape, Shape::Circle(d)
-                if d.fill == text && area.contains(d.center) && (8.0..18.0).contains(&d.radius))
+            matches!(&c.shape, Shape::Rect(r)
+                if r.fill == text && r.corner_radius != egui::CornerRadius::ZERO
+                    && area.contains(r.rect.center()) && (4.0..60.0).contains(&r.rect.width())
+                    && r.rect.height() < 70.0)
         })
         .count()
 }
@@ -139,8 +141,8 @@ fn a_dragged_item_keeps_its_row_and_handles_hidden_until_a_tap_in_every_editor()
     let grid = Rect::from_min_max(pos2(1.5 * U, 1.5 * U), pos2(1170.0, PANEL_TOP));
     let at = lane(2);
     rig.click(at);
-    // Its empty-tap item is `+Clip` on the current track, past the clip's end (x 739 once moved).
-    let offers = |rig: &Rig| usize::from(rig.painted("+Clip"));
+    // Its empty-tap item is the insert menu on the current track, past the clip's end (x 739 once moved).
+    let offers = |rig: &Rig| usize::from(rig.painted("New Clip"));
     let taps = (at, at + vec2(77.0, 0.0), at + vec2(500.0, 0.0));
     drag_then_tap(&mut rig, "playlist", grid, taps, 2, &offers);
 }

@@ -5,7 +5,7 @@ use std::path::Path;
 
 use eframe::egui::{Id, Rect};
 
-use super::rack_wiring::{PICKER, click_row, types, worker_done};
+use super::rack_wiring::{BROWSER, PICKER, click_row, instance_id, nested_row, types, worker_done};
 use super::*;
 use crate::song::ModuleInstance;
 use crate::ui::picker_preview::LOADING;
@@ -74,6 +74,49 @@ fn the_add_channel_instrument_opens_it_titled_with_my_files_then_our_categories(
     // Root order: `My Files`, then the categories, top to bottom.
     let tops: Vec<f32> = (0..8).map(|i| row(&mut rig, i).top()).collect();
     assert!(tops.windows(2).all(|w| w[0] < w[1]), "{tops:?}");
+}
+
+#[test]
+fn the_modules_browsers_instrument_lists_them_in_its_panel_and_a_later_pick_replaces_the_module_the_first_added()
+ {
+    let mut rig = Rig::with_synth();
+    rig.app.files.factory = crate::content::factory();
+    rig.open_rack(1);
+    rig.slide_rack();
+    rig.take();
+    let steps = rig.app.history.steps();
+    rig.click(super::rack_wiring::layout(&rig, 1).add_module.center());
+    // `Paste`, `Rack Preset`, `Instrument`.
+    nested_row(&mut rig, 2);
+    let at = crate::ui::modules_browser::InsertAt::End;
+    let list = Overlay::PresetPicker {
+        channel: 1,
+        target: PresetTarget::ModulesInstrument(at),
+    };
+    assert_eq!(rig.overlays(), [Overlay::Rack(1), list.clone()]);
+    // Bells: `Frost Chime`, a GMSynth's, added at the bottom loaded with it; the audition is on, the list stays.
+    nested_row(&mut rig, BELLS);
+    nested_row(&mut rig, 0);
+    assert_eq!(types(&rig, 1), [0, 2]);
+    let first = instance_id(&rig, 1, 1);
+    let frost = ours(2, "GMSynth", "Bells/Frost Chime").params;
+    assert_eq!(rig.app.song.channels[1].rack.modules[1].params, frost);
+    assert!(rig.app.slots.preset_picker.auditioning());
+    assert_eq!(rig.overlays(), [Overlay::Rack(1), list]);
+    // The next pick takes its place.
+    nested_row(&mut rig, 1);
+    assert_eq!(types(&rig, 1), [0, 2]);
+    assert_ne!(instance_id(&rig, 1, 1), first);
+    let tin = ours(2, "GMSynth", "Bells/Tin Carousel").params;
+    assert_eq!(rig.app.song.channels[1].rack.modules[1].params, tin);
+    assert_eq!(rig.app.history.steps(), steps);
+    // Back out of Bells, then Back at the list's root: the Modules browser again.
+    for _ in 0..2 {
+        rig.click_id(Id::new(BROWSER).with("back"));
+        rig.frame(vec![]);
+    }
+    let browser = Overlay::ModulesBrowser { channel: 1, at };
+    assert_eq!(rig.overlays(), [Overlay::Rack(1), browser]);
 }
 
 #[test]
@@ -304,7 +347,7 @@ fn a_folder_renamed_in_the_picker_takes_the_open_songs_file_along() {
 
 /// Opens the picker's ≡ menu (the left column's third button) and lets its items show.
 fn options(rig: &mut Rig) {
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let screen = Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
     rig.click(crate::ui::modules_browser::layout(screen, 1.0, &m).button(2));
     for _ in 0..30 {

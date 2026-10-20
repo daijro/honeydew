@@ -53,7 +53,7 @@ use crate::ui::popup::{self, PopupItem};
 use crate::ui::{UiCtx, gesture, primary_down_live};
 
 mod button;
-pub(crate) use button::pressed;
+pub(crate) use button::{brighter, pressed};
 mod fader;
 mod knob;
 mod list;
@@ -76,7 +76,7 @@ pub use text_toggle::{disc_toggle, text_button, text_toggle};
 pub use toggle::{Pill, pill_toggle, toggle};
 
 /// Height of the label strip at the top and of the value strip at the bottom, in U.
-const STRIP_H: f32 = 0.75;
+pub(crate) const STRIP_H: f32 = 0.75;
 /// The share of its range a knob moves per inch dragged up.
 const KNOB_PER_INCH: f32 = 0.24;
 /// Drag factor k while the fine-tweak modifier is held.
@@ -588,4 +588,4 @@ pub use fine_tune::fine_tune_slider;
 
 mod snap_button;
 
-pub use snap_button::{SnapTouch, paint_snap_button, snap_button, snap_disc, snap_touch};
+pub use snap_button::{SnapTouch, paint_snap_button, snap_button, snap_touch};

@@ -7,7 +7,7 @@ use eframe::egui::{
 };
 
 use super::*;
-use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
 use crate::song::points::{self, PointKey, value_at_row};
 use crate::song::{AutomationTarget, Song};
 use crate::theme::{channel_color, theme_by_id};
@@ -16,13 +16,22 @@ const SCREEN: Rect = Rect {
     min: pos2(0.0, 0.0),
     max: pos2(1170.0, 540.0),
 };
-/// The editor: the 1.5 U ruler, then G = 286 with pad 16, so V = 254 (2 points a row). The grid starts at x 50
-/// (1.5 U + ceil(U/16)); a clip with no saved view shows 128 points a beat from its first point's beat, here 0, so
-/// tick t sits at x 50 + t.
+/// The editor: its ruler, from a little above the screen's top down to y 48 (so that all below it lies on whole
+/// points), then G = 286 with pad 16, so V = 254 (2 points a row). The grid starts at x 50 (1.5 U + ceil(U/16)); a
+/// clip with no saved view shows 128 points a beat from its first point's beat, here 0, so tick t sits at x 50 + t.
 const RECT: Rect = Rect {
-    min: pos2(0.0, 0.0),
+    min: pos2(0.0, RULER_BOTTOM - 52.0),
     max: pos2(1050.0, 334.0),
 };
+/// The ruler's bottom in [`RECT`].
+const RULER_BOTTOM: f32 = 48.0;
+
+/// [`RECT`] at `ppp`: the ruler is cut to whole device pixels (52.5 points at ppp 2), so its top moves to keep its
+/// bottom at [`RULER_BOTTOM`].
+fn rect_at(ppp: f32) -> Rect {
+    let m = Metrics::from_pixels_per_point(ppp, crate::metrics::DEFAULT_UI_SCALE);
+    RECT.with_min_y(RULER_BOTTOM - crate::ui::timeline::ruler_h(&m))
+}
 const GRID_X: f32 = 50.0;
 const TOP: f32 = 64.0;
 const V: f32 = 254.0;
@@ -144,7 +153,7 @@ impl Rig {
         viewport.native_pixels_per_point = Some(self.ppp);
         let (theme, m) = (
             theme_by_id(0),
-            Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE_INDEX),
+            Metrics::from_pixels_per_point(self.ppp, DEFAULT_UI_SCALE),
         );
         let cx = UiCtx {
             theme: &theme,
@@ -317,7 +326,7 @@ fn the_screen_draws_its_lines_axis_overlay_curve_and_points_at_ppp_1_and_2() {
     let pts = [p(0, 0), p(256, MAX), p(384, 32767)];
     for ppp in [1.0, 2.0] {
         let px = 1.0 / ppp;
-        let rig = Rig::at(&pts, ppp, RECT);
+        let rig = Rig::at(&pts, ppp, rect_at(ppp));
         // 3: five 1 px `background` lines across the grid at value top − 0.5 px + V·{0, ¼, ½, ¾, 1}.
         let mut lines: Vec<f32> = (rig.rects(bg).iter())
             .filter(|r| r.x_range() == (GRID_X..=1050.0) && close(r.height(), px, 1e-4))
@@ -408,7 +417,7 @@ fn a_value_area_under_3_u_has_three_axis_ticks() {
     let (_, _, _, ink) = colors();
     for ppp in [1.0, 2.0] {
         // G = 90 < 3.5 U: no pad, V = 90 < 3 U.
-        let rect = Rect::from_min_size(RECT.min, vec2(1050.0, 48.0 + 90.0));
+        let rect = Rect::from_min_max(RECT.min, pos2(1050.0, RULER_BOTTOM + 90.0));
         let rig = Rig::at(&[p(0, 0)], ppp, rect);
         let labels = rig.texts(ink);
         let names: Vec<&str> = labels.iter().map(|l| l.0.as_str()).collect();
@@ -688,13 +697,15 @@ fn a_long_press_shows_paste_where_the_finger_is_and_paste_lands_the_earliest_poi
         rig.text_at("Paste").is_some(),
         "Paste appears before release"
     );
-    assert!(rig.discs().iter().any(|d| d.0 == finger));
+    let menu = egui::Id::new("automation_editor").with("paste");
+    let paste = crate::ui::insert::button(&rig.ctx, menu, 0).expect("the Paste menu");
+    assert!(paste.bottom() < finger.y, "over the finger");
     assert_eq!(rig.points(), [p(0, 0)]);
     assert_eq!(rig.edits, 0);
     rig.release(finger);
     assert_eq!(rig.points(), [p(0, 0)], "the original lift does not paste");
     assert_eq!(rig.edits, 0);
-    rig.tap(finger);
+    rig.tap(paste.center());
     // Tick 250 snaps to 256; the second keeps its half beat; values × 65534.
     assert_eq!(rig.points(), [p(0, 0), p(256, 32767), p(320, MAX)]);
     assert_eq!((rig.selected(), rig.edits), (vec![false, true, true], 1));
@@ -795,20 +806,21 @@ fn the_rulers_region_menu_runs_the_ops_on_the_points_in_one_edit() {
 
 #[test]
 fn a_ruler_tap_seeks_to_the_snapped_tick() {
+    // Past the play box's touch area at tick 0: tick 200 on the 32-tick grid.
     let mut rig = Rig::new(&[p(0, 0)]);
-    rig.tap(pos2(GRID_X + 70.0, 24.0));
-    assert_eq!(rig.seeks, [64]);
+    rig.tap(pos2(GRID_X + 200.0, 24.0));
+    assert_eq!(rig.seeks, [192]);
 }
 
 #[test]
 fn continuous_scrolling_keeps_the_playhead_a_quarter_in_while_playing_a_loop_longer_than_the_view()
 {
     let (_, text, _, _) = colors();
-    // The playhead's line (its disc fades out while playing, `timeline::knob_shown`): 2t = 4 points of `text`.
+    // The playhead's line (its play box fades out while playing, `timeline::knob_shown`): `text`, narrower than U.
     let handle = |rig: &Rig| {
         (rig.rects(text).into_iter())
-            .find(|r| r.width() == 4.0 && r.top() < TOP && r.bottom() > TOP + V)
-            .map(|r| r.center().x)
+            .find(|r| r.width() < 32.0 && r.top() < TOP && r.bottom() > TOP + V)
+            .map(|r| crate::ui::timeline::testing::line_x(r, 1.0))
     };
     let mut rig = Rig::new(&[p(0, 0)]);
     let at = |rig: &mut Rig, playhead: u64, playing: bool, continuous: bool| {
@@ -844,13 +856,15 @@ fn the_playhead_is_the_song_position_wrapped_modulo_the_loop() {
     let mut rig = Rig::new(&[p(0, 0)]);
     rig.opts.playhead = 512 + 100;
     rig.frame(vec![]);
-    assert!(
-        (rig.discs().iter())
-            .any(|d| (d.1 - 29.4).abs() < 1e-3 && d.2 == text && d.0.x == GRID_X + 100.0)
-    );
-    // Stopped, its line shows too: 2t = 4 points of `text` down the grid, centred on the playhead.
+    let x = timeline::testing::play_box_x(&rig.shapes, 32.0).expect("the play box");
+    assert!((x - (GRID_X + 100.0)).abs() < 1e-3, "{x}");
+    // Stopped, its line shows too: `text` down the grid, centred on the playhead.
     let line = (rig.rects(text).into_iter())
-        .find(|r| r.width() == 4.0 && r.center().x == GRID_X + 100.0)
+        .find(|r| {
+            r.width() < 32.0
+                && crate::ui::timeline::testing::line_x(*r, 1.0) == GRID_X + 100.0
+                && r.top() >= RULER_BOTTOM
+        })
         .expect("the playhead line");
     assert!(line.top() < TOP && line.bottom() > TOP + V, "{line:?}");
 }
@@ -862,7 +876,7 @@ fn the_init_line_sits_at_1_minus_v_and_a_tail_past_every_point_spans_the_grid() 
     let (_, text, menu, _) = colors();
     for ppp in [1.0, 2.0] {
         let px = 1.0 / ppp;
-        let mut rig = Rig::at(&[p(0, 0), p(256, 32767)], ppp, RECT);
+        let mut rig = Rig::at(&[p(0, 0), p(256, 32767)], ppp, rect_at(ppp));
         rig.song.channels[0].params.0[1] = 0.25;
         rig.frame(vec![]);
         // In the grid: the ruler's `menuFill` baseline spans the same width above it.
@@ -1063,6 +1077,10 @@ fn while_following_a_ruler_tap_still_moves_the_playhead_but_takes_no_range() {
     following(&mut rig, 1280);
     // The view's left is 10 − 7.8125/4 beats: tick 1030 sits on the grid's left edge.
     assert_eq!(rig.view().left, 10.0 - 7.8125 / 4.0);
+    // The play box fades out while playing (a fifth of the way a frame); at alpha 0 it takes no touch.
+    for _ in 0..40 {
+        rig.frame(vec![]);
+    }
     rig.tap(pos2(GRID_X + 250.0 + 70.0, 24.0));
     // Tick 1280 + 70 on the 32-tick grid; the app stops the playing transport instead.
     assert_eq!(rig.seeks, [1344]);
@@ -1234,19 +1252,19 @@ fn ctrl_held_drags_a_marquee_from_a_point_instead_of_moving_it() {
 }
 
 #[test]
-fn at_its_opening_4_u_a_beat_the_ruler_badges_every_bar_from_bar_2() {
+fn at_its_opening_4_u_a_beat_the_ruler_labels_every_bar() {
     // Every ruler follows the same law: at 4 U a beat s2 is one bar, so bar 2 (beat 4, 512 points right of the grid's
-    // left at U = 32) has its badge; bar 1 sits on the left edge.
+    // left at U = 32) has its label, just right of its line.
     let rig = Rig::new(&[p(0, 0)]);
-    let (_, _, menu, _) = colors();
-    let badges = rig.texts(menu);
-    let two = badges.iter().find(|t| t.0 == "2").expect("bar 2's badge");
-    assert!((two.1.x - (GRID_X + 512.0)).abs() < 1.0, "{badges:?}");
-    assert!(badges.iter().all(|t| t.0 != "1"));
+    let (_, text, _, _) = colors();
+    let labels = rig.texts(text.gamma_multiply(0.8));
+    let two = labels.iter().find(|t| t.0 == "2").expect("bar 2's label");
+    let line = GRID_X + 512.0;
+    assert!(two.1.x > line && two.1.x < line + 16.0, "{labels:?}");
 }
 
 /// The value column covers only what lies left of its right edge (the playhead line's z-order): at beat 0 the line's
-/// left half shows in the t gap, x 48 … 52.
+/// left half shows in the t gap, x 48 … 50.
 #[test]
 fn at_beat_0_the_lines_left_half_shows_in_the_gap_after_the_value_column() {
     let (_, text, _, _) = colors();
@@ -1255,14 +1273,18 @@ fn at_beat_0_the_lines_left_half_shows_in_the_gap_after_the_value_column() {
     rig.frame(vec![]);
     let shown: Vec<Rect> = (rig.shapes.iter())
         .filter_map(|s| match &s.shape {
-            Shape::Rect(r) if r.fill == text && r.rect.width() == 4.0 => {
+            Shape::Rect(r)
+                if r.fill == text && r.rect.width() < 32.0 && r.rect.top() >= RULER_BOTTOM =>
+            {
                 Some(r.rect.intersect(s.clip_rect))
             }
             _ => None,
         })
         .collect();
     assert!(
-        shown.iter().any(|r| (r.left(), r.right()) == (48.0, 52.0)),
+        shown
+            .iter()
+            .any(|r| r.left() < GRID_X && r.right() > GRID_X),
         "{shown:?}"
     );
 }
@@ -1317,19 +1339,19 @@ fn a_press_held_over_a_focus_loss_adds_no_point_moves_none_and_shows_no_paste() 
     assert_eq!(rig.edits, 0);
 }
 
-/// The playhead disc fades as the drum editor's (`timeline::knob_shown`, through `timeline::PlayheadKnob`): out while
+/// The play box fades as the drum editor's (`timeline::knob_shown`, through `timeline::PlayheadKnob`): out while
 /// playing, so that only the line shows, and back in once stopped.
 #[test]
-fn the_playhead_disc_fades_out_while_playing_and_back_in_stopped() {
-    let (_, text, _, _) = colors();
+fn the_play_box_fades_out_while_playing_and_back_in_stopped() {
+    let (_, _, menu, _) = colors();
     let mut rig = Rig::new(&[p(0, 0)]);
     let disc = |rig: &Rig| {
-        (rig.discs().into_iter())
-            .find(|d| (d.1 - 29.4).abs() < 1e-3)
-            .map(|d| d.2)
+        timeline::testing::play_boxes(&rig.shapes)
+            .next()
+            .map(|b| b.fill)
     };
     rig.opts.playhead = 128;
-    for (playing, fill) in [(false, Some(text)), (true, None), (false, Some(text))] {
+    for (playing, fill) in [(false, Some(menu)), (true, None), (false, Some(menu))] {
         rig.opts.playing = playing;
         for _ in 0..40 {
             rig.frame(vec![]);

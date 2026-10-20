@@ -240,7 +240,7 @@ fn a_header_tap_on_a_track_with_a_current_clip_retargets_the_editor_and_preview(
     rig.click(at(1, 2.0));
     rig.click(at(2, 2.0));
     assert_eq!(shown(&rig), (View::PianoRoll(2), Some(key(2, 1))));
-    rig.click_text_button("Preview");
+    rig.click_text_button("SOLO CLIP");
     assert_eq!(rig.app.preview, Some(key(2, 1)));
     // The drums' header makes their track current: its current clip shows, and Preview moves to it.
     rig.click(header(1));
@@ -258,18 +258,18 @@ fn a_header_tap_on_a_track_with_a_current_clip_retargets_the_editor_and_preview(
 fn preview_goes_off_when_the_editor_collapses_for_want_of_a_current_clip_but_not_on_the_x() {
     // The collapse takes Preview's button and leaves it nothing to play.
     let mut rig = open_rig();
-    rig.click_text_button("Preview");
+    rig.click_text_button("SOLO CLIP");
     assert_eq!(rig.app.preview, Some(key(2, 1)));
     // The drums' clip was never made current: their header tap collapses the editor, and Preview goes off.
     rig.click(header(1));
-    assert!(!rig.painted("Preview"));
+    assert!(!rig.painted("SOLO CLIP"));
     rig.frame(vec![]);
     assert_eq!(shown(&rig), (View::Playlist, None));
     assert_eq!(rig.app.preview, None);
     // The X keeps the clip current, and Preview on it.
     rig.app.navigate(Nav::EditClip(key(2, 1)));
     rig.slide_split();
-    rig.click_text_button("Preview");
+    rig.click_text_button("SOLO CLIP");
     rig.click_id(egui::Id::new("editor_close"));
     rig.frame(vec![]);
     assert_eq!(rig.app.nav.view, View::Playlist);
@@ -282,7 +282,7 @@ fn after_the_x_preview_follows_the_current_tracks_current_clip_and_goes_off_with
     let mut rig = open_rig();
     rig.click(at(1, 2.0));
     rig.click(at(2, 2.0));
-    rig.click_text_button("Preview");
+    rig.click_text_button("SOLO CLIP");
     rig.click_id(egui::Id::new("editor_close"));
     rig.frame(vec![]);
     let state = |rig: &Rig| (rig.app.nav.view, rig.app.preview);

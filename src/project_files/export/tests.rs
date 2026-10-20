@@ -1155,7 +1155,8 @@ fn an_flp_puts_the_effects_on_the_channel_s_insert_and_with_rendered_audio_holds
         .unwrap();
     assert!(lead < eq && eq < reverb);
 
-    // Read back: Lead muted on insert 1 with its effects, and its render from the start for its length.
+    // Read back: Lead muted on insert 1 with its effects (Fruity Reeverb 2 as Lemon Reverb, at its defaults), and its
+    // render from the start for its length.
     let back = crate::flp::import::import(&entries[0].data, files.factory)
         .unwrap()
         .song;
@@ -1169,7 +1170,10 @@ fn an_flp_puts_the_effects_on_the_channel_s_insert_and_with_rendered_audio_holds
         .skip(1)
         .map(|m| m.type_id)
         .collect();
-    assert_eq!((lead.params.0[2], effects), (1.0, vec![3, 35]));
+    assert_eq!(
+        (lead.params.0[2], effects),
+        (1.0, vec![3, honeydew_audio::lemon::REVERB])
+    );
     let audio = &back.channels[2];
     assert_eq!(
         (audio.kind, audio.params.0[2]),

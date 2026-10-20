@@ -2,8 +2,8 @@
 
 This app includes the third-party software below, each under its own license.
 
-The Honeydew logo (`assets/branding/`) was supplied by the owner; its license and attribution are still to be checked
-before release, see [`assets/branding/README.md`](assets/branding/README.md).
+The Honeydew logo (`assets/branding/`) is a derivative of "Melon" by afitrose, licensed as Free for commercial use WITH
+ATTRIBUTION; see [`assets/branding/README.md`](assets/branding/README.md).
 
 ## Lemon Studio `os-flp` (FL Studio project files)
 
@@ -356,6 +356,98 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 - Modified: a copy lives in `vendor/lemon-studio`, whose `README.md` lists each change from upstream (the engine types
   reduced to what the hosts use; a MIDI hook for pitch bend, channel pressure and CCs, marked
   `Honeydew (vendored addition)`). The ported app files start with a `Modified for Honeydew` line.
+
+## Lemon Studio's reverb and limiter (Lemon Reverb and Lemon Limiter)
+
+- Source: Lemon Studio (<https://github.com/ItsAlphaNeon/Lemon-Studio>), at the commit `vendor/lemon-studio/README.md`
+  pins (`eb1c13ee6108e30bedfdb21679c60bc30535da2b` at first): `crates/os-engine/src/effects/` (the reverb, the limiter's
+  dynamics and their siblings), and the knob names and value texts of `plugins/lemon-reverb` and `plugins/lemon-limiter`
+  (`src/params/lemon.rs`).
+- Copyright (C) 2026 ItsAlphaNeon.
+- License: GPL-3.0-or-later, the license of Honeydew itself ([`LICENSE`](LICENSE)); every file keeps its copyright and
+  SPDX header.
+- Modified: none in `vendor/lemon-studio/os-engine/src/effects/`, a copy of upstream's files
+  (`tools/sync-lemon-effects.sh` updates them). `src/params/lemon.rs` starts with a `Modified for Honeydew` line.
+
+## Lemon Studio's plugins (Lemon Trio, Lemon Sampler and Lemon Parametric EQ)
+
+- Source: Lemon Studio (<https://github.com/ItsAlphaNeon/Lemon-Studio>), at the commit `vendor/lemon-studio/README.md`
+  pins (`6e9c3b9d7c7cfa5a31dc2dc087358ba04eebc96e` at first): `plugins/lemon-3x-osc`, `plugins/lemon-sampler`,
+  `plugins/lemon-parametric-eq-2`, the crates they use (`os-plugkit`, `os-ui`, `os-theme`, `os-hostlink`, `os-model`,
+  `os-dsp`, `os-paths`) and four files of `os-engine`.
+- Copyright (C) 2026 ItsAlphaNeon, and thacer13 for parts of `os-engine`.
+- License: GPL-3.0-or-later, the license of Honeydew itself ([`LICENSE`](LICENSE)); every file keeps its copyright and
+  SPDX header.
+- Modified: a copy lives in `vendor/lemon-studio`; Honeydew's changes are `vendor/lemon-studio/honeydew.patch`, listed in
+  that folder's `README.md` and marked `Honeydew (vendored change)` or `(vendored addition)` (the editors drawn into
+  Honeydew's window on every platform, the browser build without threads or C++).
+
+## nih-plug (the built-in plugins' framework)
+
+- Source: <https://github.com/robbert-vdh/nih-plug>, commit `de421011f41a6d10fc8c7a6084e4f4dee0143683`, the core crate
+  and its derive macros.
+- License: ISC, reproduced below.
+- Modified: a copy lives in `vendor/nih-plug` without its VST3 and standalone wrappers; in the browser build its
+  background tasks run without a thread and it takes Lemon Studio's `lemon-web` editor window (`vendor/nih-plug/README.md`).
+
+```text
+ISC License
+
+Copyright (c) 2022-2024 Robbert van der Helm
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+```
+
+## The built-in plugins' fonts and icons
+
+Lemon Studio's plugin editors draw with these (`vendor/lemon-studio/os-ui`):
+
+- **Barlow** (Semi Condensed Regular and SemiBold, Condensed Medium): Copyright 2017 The Barlow Project Authors
+  (<https://github.com/jpt/barlow>), SIL Open Font License 1.1 (`vendor/lemon-studio/os-ui/fonts/Barlow/OFL.txt`).
+- **Cuprum**: Copyright (c) 2008-2010 by Jovanny Lemonad (<http://www.jovanny.ru>), SIL Open Font License 1.1
+  (`vendor/lemon-studio/os-ui/fonts/Cuprum/OFL.txt`).
+- **Tabler Icons**' shapes (`os-ui/src/tabler.rs`), under this license:
+
+```text
+MIT License
+
+Copyright (c) 2020-2024 Paweł Kuna
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Signalsmith Stretch (Lemon Sampler's time stretching, desktop and Android)
+
+- Source: the `signalsmith-stretch` 0.1.3 crate from crates.io (<https://github.com/colinmarc/signalsmith-stretch-rs>,
+  Copyright 2024 Colin Marc) and the Signalsmith Stretch library it compiles (Copyright (c) 2022 Geraint Luff /
+  Signalsmith Audio Ltd.), unmodified.
+- License: MIT, both; the text is the clap-sys section's below, with these copyright lines.
 
 ## vst3-sys (VST3 interfaces, through Lemon Studio's VST3 host)
 

@@ -37,7 +37,8 @@ cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > "$HONEYDEW_ANDROID_BUILD_DIR/so
 rm -rf "$HONEYDEW_ANDROID_BUILD_DIR/assets/content"
 unzip -q "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip" 'content/*' -x '*.gz' -d "$HONEYDEW_ANDROID_BUILD_DIR/assets"
 rm "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip"
-cargo ndk -t arm64-v8a --platform 26 -o "$HONEYDEW_ANDROID_BUILD_DIR/jniLibs" rustc --release --locked --lib -- -C link-arg=-Wl,-z,max-page-size=16384
+# signalsmith-stretch's C++ links libc++_shared.so, which the APK has to ship beside libhoneydew.so.
+cargo ndk -t arm64-v8a --platform 26 --link-libcxx-shared -o "$HONEYDEW_ANDROID_BUILD_DIR/jniLibs" rustc --release --locked --lib -- -C link-arg=-Wl,-z,max-page-size=16384
 debug_keystore=$PWD/android/debug.keystore
 if [ "$variant" = debug ] && [ ! -f "$debug_keystore" ]; then
     # Keep the existing signing identity when moving it out of disposable build output.
@@ -62,7 +63,8 @@ import sys
 import zipfile
 
 with zipfile.ZipFile(sys.argv[1]) as apk:
-    assert apk.getinfo('lib/arm64-v8a/libhoneydew.so').compress_type == zipfile.ZIP_STORED
+    for lib in ('libhoneydew.so', 'libc++_shared.so'):
+        assert apk.getinfo('lib/arm64-v8a/' + lib).compress_type == zipfile.ZIP_STORED, lib
     assert apk.read('assets/content/CREDITS.txt'), 'missing sound credits'
     index = json.loads(apk.read('assets/content/index.json'))
     parts = {part['file']: part for entry in index['entries'] for part in entry['parts']}

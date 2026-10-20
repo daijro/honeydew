@@ -18,6 +18,12 @@ pub fn is_plugin(type_id: u16) -> bool {
     matches!(type_id, PLUGIN_INSTRUMENT | PLUGIN_EFFECT)
 }
 
+/// Whether module type `type_id` is Honeydew's own, outside the song format's module types: a plugin module, or one of
+/// Lemon Studio's effects (`honeydew_audio::lemon`). The `.flm` writer keeps these in `HDPm` chunks.
+pub fn is_own(type_id: u16) -> bool {
+    type_id >= PLUGIN_INSTRUMENT
+}
+
 /// `s` as a `&'static str`, for the registry types a plugin's names fill ([`crate::params::ParamSpec`]).
 // ponytail: interned for good, bounded by the distinct plugin and parameter names a session meets.
 pub(crate) fn intern(s: &str) -> &'static str {

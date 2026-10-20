@@ -2,7 +2,7 @@
 //! `SPEED` (clip keys ±1/±2/±3, the slot's Level, Pan and Speed at value/65535), on the automation editor's frame
 //! ([`crate::ui::automation::geom`]).
 //!
-//! - **Layout.** The frame's 1.5 U ruler row with the Snap cell, 127 fixed rows, horizontal scroll and zoom only, the
+//! - **Layout.** The frame's 1.65 U ruler row with the Snap cell, 127 fixed rows, horizontal scroll and zoom only, the
 //!   scroll range 2 × the loop, a new view at 4 U per beat. The left 1.5 U column is the vertical lane list on
 //!   `menuFill` ([`ItemList`], bar right).
 //! - **Draw order.** 1 `background`; 2 the waveform; 3 beat marks in `controlFill` (4/2/1 px, at least 2.4 U apart);
@@ -15,9 +15,11 @@
 //! - **Zoom**: (12/U)·4/d … (0.01/U)·4/d beats per point, d = `TDIV` byte 0 ([`geom::zoom_limits`]).
 //! - **Markers.** The sample end, a 1 px `menuFill` line strictly inside the grid; the song loop's edges, 1 px in the
 //!   channel colour.
-//! - **Stretch handle** (SYNC slots only): a 1 U `text` disc with a 1 px `background` α 0.3 rim, 2 U touch box
-//!   centred 1 U right of the end line and mid-grid; it grows up to 10 px while pressed and wobbles on release.
-//!   Dragging sets L ([`stretch_len`]); on release, if the ratio changed, one undo step ([`Action::Stretch`]).
+//! - **Sample-length handle** (every clip with its sample): the selection's end capsule from 0.15 U right of the sample
+//!   end, centred on the wave area ([`stretch_handle`]), its touch box 2 U tall from its left edge to 2 U past the end
+//!   ([`stretch_box`]); it grows up to 10 px while pressed and
+//!   wobbles on release. Dragging sets the sample's length L in beats ([`stretch_len`]: snapped, clamped); on release,
+//!   if the ratio changed, one undo step that re-stretches the sample and turns SYNC on ([`Action::Stretch`]).
 //! - **Ruler tap.** Hides the point selection; while playing it stops (the app's playhead rule), else it seeks only
 //!   before the content end, or with a loop length of 0.
 //! - **Region menu** ([`region::audio_items`]): an [`Action::Region`]. [`apply`] makes its envelope part on the current
@@ -37,18 +39,18 @@
 //! - A SYNC slot is drawn at its stretched length: the source frames over n·ratio display frames (playback stretches
 //!   the same way); the source length in beats that L clamps against is the unstretched n·tempo/(60·rate), Speed left
 //!   out as in the ratio's law.
-//! - The stretch handle's song beat is the finger's less the handle's 1 U offset, so a press does not move the end; a
-//!   drag counts once it leaves the calm zone, as every editor handle's and point's ([`gesture::left_calm`]). A re-sync
-//!   sets @28 to L/speed (Speed in its law), then the clip-update rule sets the loop (@8: b·2ᵏ over the envelopes, 4·2ᵐ
-//!   over @28, never below 4 or b; the visible length is left as it is).
+//! - The sample-length handle's song beat is the finger's less the handle centre's offset, so a press does not move the
+//!   end; a drag counts once it leaves the calm zone, as every editor handle's and point's ([`gesture::left_calm`]). A
+//!   re-sync sets @28 to L/speed (Speed in its law), then the clip-update rule sets the loop (@8: b·2ᵏ over the
+//!   envelopes, 4·2ᵐ over @28, never below 4 or b; the visible length is left as it is).
 //! - The content end of the ruler-tap rule is the loop length.
 //! - The view is the scroller's ([`scroller`]): one finger scrolls the time on the ruler band only (a drag on empty
 //!   grid moves nothing), two zoom it there; the wheel zooms it over the ruler and the grid, as does a trackpad pinch
 //!   over the grid. The view (zoom, scroll) is kept per clip in memory, and a new one starts at beat 0; the app re-keys
 //!   the views when tracks move ([`AudioEditor::rekey`]), and a view whose clip is gone goes.
-//! - The other lanes draw only their curves (1.5 px), no points. The right-edge handle is a 0.6 U `text` disc 1 U
-//!   right of the selection box, mid-height. A touch inside the selection's touch frame (the box grown by 1.25 U)
-//!   that binds no point drags the selection.
+//! - The other lanes draw only their curves (1.5 px), no points. The right-edge handle is the end capsule of the
+//!   selection box grown by the point radius, mid-height. A touch inside the selection's touch frame (the box grown by
+//!   1.25 U) that binds no point drags the selection.
 //! - Markers are drawn between the overlay (6) and the current lane (7).
 //! - The envelope clipboard is the automation editor's app-wide one ([`clipboard`]).
 
@@ -56,7 +58,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
 use eframe::egui::{
-    self, Color32, Id, Mesh, Painter, Pos2, Rangef, Rect, Response, Sense, Stroke, Ui, Vec2, pos2,
+    self, Color32, Id, Mesh, Painter, Pos2, Rangef, Rect, Response, Sense, Stroke, Ui, pos2,
 };
 use honeydew_audio::sample::SampleData;
 use honeydew_audio::sample_edit::{peaks, speed_ratio};
@@ -92,13 +94,10 @@ const PAST_LOOP_ALPHA: f32 = 0.15;
 /// Points (U) and curve lines (device px).
 const POINT_R: f32 = 0.2;
 const LINE_PX: f32 = 1.5;
-/// The right-edge handle: diameter, and its offset right of the box, U.
-const SCALE_D: f32 = 0.6;
-const SCALE_OFF: f32 = 1.0;
-/// The stretch handle: disc and touch box (U), its offset right of the end line (U).
-const STRETCH_D: f32 = 1.0;
+/// The right-edge handle's touch reaches this far around its capsule, U.
+const SCALE_REACH: f32 = 0.3;
+/// The sample-length handle's touch box, U: this tall, centred on its capsule, and this far right of the sample end.
 const STRETCH_BOX: f32 = 2.0;
-const STRETCH_OFF: f32 = 1.0;
 /// L is clamped to these multiples of the source length.
 pub(crate) const STRETCH: [f64; 2] = [0.2, 10.0];
 /// The point animation: a ← 0.6·a per frame; the pop-in law; the drag floor.
@@ -134,7 +133,7 @@ pub struct Transport {
 pub enum Action {
     /// A gesture's final points for one envelope (one undo step).
     Points { key: PointKey, points: Vec<Point> },
-    /// The stretch handle's release: the length L in beats and the STR1 ratio.
+    /// The sample-length handle's release: the length L in beats and the STR1 ratio (SYNC goes on).
     Stretch { len_beats: f64, ratio: f64 },
     /// The ruler's range, as the song's play loop.
     PlayLoop(Option<(u32, u32)>),
@@ -281,10 +280,20 @@ pub fn pixel_columns(grid: Rect, m: &Metrics) -> (f32, usize) {
     )
 }
 
-/// The stretch handle's touch box for the end line at `end_x`: 2 U, centred 1 U right of it and mid-grid.
+/// The sample-length handle for the sample end at `end_x`: the selection's end capsule
+/// ([`crate::ui::clips::end_handle`]) from 0.15 U right of it, centred on the wave area.
+pub fn stretch_handle(f: &Frame, end_x: f32, m: &Metrics) -> Rect {
+    crate::ui::clips::end_handle(Rect::from_x_y_ranges(end_x..=end_x, f.value.y_range()), m)
+}
+
+/// Its touch box: from its left edge to 2 U right of the sample end (never over the end line), 2 U tall, centred on it.
 pub fn stretch_box(f: &Frame, end_x: f32, m: &Metrics) -> Rect {
-    let centre = pos2(end_x + m.u(STRETCH_OFF), f.grid.center().y);
-    Rect::from_center_size(centre, Vec2::splat(m.u(STRETCH_BOX)))
+    let h = stretch_handle(f, end_x, m);
+    let half = m.u(STRETCH_BOX) / 2.0;
+    Rect::from_x_y_ranges(
+        h.left()..=end_x + 2.0 * half,
+        h.center().y - half..=h.center().y + half,
+    )
 }
 
 /// L for the end line dragged to content tick `tick`: the snapped song beat less the clip origin (`origin`, a song
@@ -368,6 +377,9 @@ pub fn apply(song: &mut Song, at: At, action: &Action) -> bool {
             };
             let speed = speed_ratio(slot.params[2]);
             let old_ratio = std::mem::replace(&mut slot.file.stretch_ratio, ratio);
+            // A set length plays stretched: SYNC goes on.
+            let synced = slot.file.stretch_mode != 0;
+            slot.file.stretch_mode = slot.file.stretch_mode.max(1);
             let lengths = |c: &Clip| {
                 (
                     c.file.source_len_beats,
@@ -380,7 +392,7 @@ pub fn apply(song: &mut Song, at: At, action: &Action) -> bool {
             // @8 rule (b·2ᵏ over the envelopes, 4·2ᵐ over @28); the visible length is left as it is.
             clip.file.source_len_beats = len_beats / speed;
             clip.fit_loop(b);
-            old_ratio != ratio || lengths(clip) != before
+            old_ratio != ratio || !synced || lengths(clip) != before
         }
         Action::PlayLoop(_) | Action::SetPlayhead(_) | Action::Play | Action::Seek(_) => false,
     }
@@ -651,8 +663,7 @@ impl AudioEditor {
             );
             (w.per_beat > 0.0 && w.per_beat.is_finite()).then_some(w)
         };
-        let synced = slot.is_some_and(|s| s.file.stretch_mode != 0);
-        if let Some((slot, s)) = slot.zip(sample).filter(|_| synced)
+        if let Some((slot, s)) = slot.zip(sample)
             && let Some(w) = wave_of(self.preview_stretch(s, tempo, slot))
         {
             let end_x = axis.x(w.end() * f64::from(PPQ));
@@ -752,7 +763,7 @@ impl AudioEditor {
         } else {
             false
         };
-        if let Some(w) = wave.filter(|_| synced) {
+        if let Some(w) = wave {
             self.paint_stretch(ui, cx, &f, axis.x(w.end() * f64::from(PPQ)), now);
         }
         #[cfg(any(target_arch = "wasm32", test))]
@@ -811,6 +822,7 @@ impl AudioEditor {
         let r = self
             .region
             .show_with(ui, id.with("region"), &ruler, &region::audio_items, cx);
+        timeline::scroll_thumb(&rp, f.time, axis, (0.0, loop_ticks), cx);
         // A ruler press waiting for its long press is the scroller's too, until its range starts.
         if self.region.pending() {
             self.scroller.claim();
@@ -858,11 +870,11 @@ impl AudioEditor {
         if let Some((new, sel)) = self.floating_row(ui, cx, &f, axis, &pts, max, boxing) {
             self.commit(at, key, new, sel, Anim::Wobble, now, &mut out);
         }
-        if let Some((new, sel)) = self.paste_button(ui, cx, &pts, max, snap) {
+        if let Some((new, sel)) = self.paste_button(ui, cx, (&f, axis), &pts, max, snap) {
             self.quiet = false;
             self.commit(at, key, new, sel, Anim::Pop, now, &mut out);
         }
-        self.snap_button(ui, id, f.snap, cx);
+        self.snap_button(ui, id, f.snap, ink, cx);
         // The playhead knob over them all, the Snap button too, which it overhangs at beat 0 (the playhead line's
         // z-order), and whose touches it takes there while it shows, as the playlist's.
         self.knob.armed = t.armed;
@@ -931,11 +943,11 @@ impl AudioEditor {
             .reduce(Rect::union)
     }
 
-    /// The right-edge handle, with ≥ 2 points selected.
+    /// The right-edge handle, with ≥ 2 points selected: the end capsule of their box grown by the point radius (the
+    /// points as drawn).
     fn scale_handle(&self, bx: Option<Rect>, sel: &[bool], m: &Metrics) -> Option<Rect> {
         let bx = bx.filter(|_| sel.iter().filter(|s| **s).count() >= 2)?;
-        let centre = pos2(bx.right() + m.u(SCALE_OFF), bx.center().y);
-        Some(Rect::from_center_size(centre, Vec2::splat(m.u(SCALE_D))))
+        Some(crate::ui::clips::end_handle(bx.expand(m.u(POINT_R)), m))
     }
 
     /// The gesture a press at `p` starts (module docs).
@@ -965,7 +977,7 @@ impl AudioEditor {
         // A quiet selection's handle and frame take no touch; a touch on one of its points binds it as not showing.
         if self
             .scale_handle(bx, &self.sel, m)
-            .is_some_and(|h| !self.quiet && h.center().distance(p) <= h.width())
+            .is_some_and(|h| !self.quiet && h.expand(m.u(SCALE_REACH)).contains(p))
         {
             return moving(true, None, self.sel.clone());
         }
@@ -1173,7 +1185,7 @@ impl AudioEditor {
             if let (Some(p), Some(o)) = (pos, self.stretch.origin)
                 && (self.stretch.len.is_some() || gesture::left_calm(o, Some(p), m.u(1.0)))
             {
-                let tick = axis.tick(p.x - m.u(STRETCH_OFF));
+                let tick = axis.tick(p.x - (touch.center().x - end_x));
                 self.stretch.len = Some(stretch_len(tick, origin, snap, src));
             }
             return None;
@@ -1184,21 +1196,15 @@ impl AudioEditor {
         self.stretch.len.take().filter(|_| !cancel)
     }
 
-    /// The stretch handle at the end line `end_x`: a 1 U `text` disc with a 1 px `background` α 0.3 rim, grown while
-    /// pressed, wobbling once let go (the graph lane knob's law).
+    /// The sample-length handle at the sample end `end_x` ([`stretch_handle`]), grown while pressed, wobbling once let
+    /// go (the graph lane knob's law).
     fn paint_stretch(&mut self, ui: &Ui, cx: &UiCtx, f: &Frame, end_x: f32, now: f64) {
-        let (m, c) = (cx.m, &cx.theme.colors);
-        let px = 1.0 / m.ppp();
         let (growth, moving) = press_growth(self.stretch.pressed, self.stretch.released, now);
         if moving {
             ui.ctx().request_repaint();
         }
-        let centre = stretch_box(f, end_x, m).center();
-        let r = (m.u(STRETCH_D) + growth * px) / 2.0;
-        let painter = ui.painter_at(f.grid);
-        painter.circle_filled(centre, r, c.text.to_color32());
-        let rim = c.background.to_color32().gamma_multiply(0.3);
-        painter.circle_stroke(centre, r + px / 2.0, (px, rim));
+        let handle = stretch_handle(f, end_x, cx.m);
+        crate::ui::clips::paint_handle(&ui.painter_at(f.grid), cx, handle, (1.0, growth), false);
     }
 
     /// 2: the waveform's columns over the sample's extent.
@@ -1274,7 +1280,7 @@ impl AudioEditor {
             painter.rect_filled(r, 0.0, text);
         }
         if let Some(handle) = self.scale_handle(Some(bx), sel, m).filter(|_| !self.quiet) {
-            painter.circle_filled(handle.center(), handle.width() / 2.0, text);
+            crate::ui::clips::paint_handle(painter, cx, handle, (1.0, 0.0), false);
         }
     }
 
@@ -1342,11 +1348,12 @@ impl AudioEditor {
         Some((kept, vec![false; n]))
     }
 
-    /// The shared round Paste button; a separate tap commits the clipboard.
+    /// The `Paste` insert menu ([`crate::ui::automation::paste_menu`]); a separate tap commits the clipboard.
     fn paste_button(
         &mut self,
         ui: &mut Ui,
         cx: &UiCtx,
+        (f, axis): (&Frame, TimeAxis),
         pts: &[Point],
         max: u16,
         snap: Option<f64>,
@@ -1358,16 +1365,16 @@ impl AudioEditor {
         }
         let (finger, tick) = self.paste?;
         let id = Id::new("audio_editor").with("paste");
-        let (_, tap) = crate::ui::step_seq::paste_button(ui, cx, id, finger);
-        let tap = tap?;
+        let x = axis.x(snap_round(tick, snap).max(0.0));
+        let tap = crate::ui::automation::paste_menu(ui, cx, id, f, x, finger)?;
         self.paste = None;
         tap.then(|| points::paste(pts, &copied, tick, snap, max))
     }
 
     /// The Snap button in `cell` ([`widgets::snap_button`]): a tap toggles snap, a long press or a right click opens
     /// the snap menu.
-    fn snap_button(&mut self, ui: &mut Ui, id: Id, cell: Rect, cx: &UiCtx) {
-        match widgets::snap_button(ui, id.with("snap"), cell, self.snap.on, cx) {
+    fn snap_button(&mut self, ui: &mut Ui, id: Id, cell: Rect, ink: Color32, cx: &UiCtx) {
+        match widgets::snap_button(ui, id.with("snap"), cell, (self.snap.on, ink), cx) {
             Some(SnapTouch::Menu) => self.snap_menu = true,
             Some(SnapTouch::Toggle) => self.snap.on = !self.snap.on,
             None => {}

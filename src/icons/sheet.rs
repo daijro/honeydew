@@ -61,12 +61,20 @@ pub fn install_sheet(ctx: &Context, png: &[u8]) -> bool {
     let Some(sheet) = decode_sheet(png) else {
         return false;
     };
+    // An older sheet has no glyph in the newer cells: those keep ours.
+    let blank: Vec<bool> = (0..SHEET_W / CELL * SHEET_H / CELL)
+        .map(|n| {
+            let (x0, y0) = ((n & 7) * CELL, (n >> 3) * CELL);
+            (y0..y0 + CELL).all(|y| (x0..x0 + CELL).all(|x| sheet.pixels[y * SHEET_W + x].a() == 0))
+        })
+        .collect();
     let handle = ctx.load_texture("original_icon_sheet", sheet, TextureOptions::LINEAR);
     let id = handle.id();
     // The handle keeps the texture; the id is what each draw reads.
     ctx.data_mut(|d| {
         d.insert_temp::<TextureHandle>(handle_id(), handle);
         d.insert_temp(handle_id(), id);
+        d.insert_temp(handle_id().with("blank"), std::sync::Arc::new(blank));
     });
     true
 }
@@ -84,6 +92,13 @@ pub(super) fn sheet_shape(
     }
     let texture = ctx.data(|d| d.get_temp::<TextureId>(handle_id()))?;
     let n = id as usize;
+    let blank = ctx.data(|d| d.get_temp::<std::sync::Arc<Vec<bool>>>(handle_id().with("blank")));
+    // Icon 10 changed with the newer cells (a small right chevron): an older sheet's, which has no stop square (85),
+    // is the former glyph.
+    let older = |b: &Vec<bool>| id == IconId::Collapse && b[IconId::Stop as usize];
+    if blank.is_some_and(|b| b[n] || older(&b)) {
+        return None;
+    }
     let (w, h) = (SHEET_W as f32, SHEET_H as f32);
     let corner = pos2(((n & 7) * CELL) as f32, ((n >> 3) * CELL) as f32);
     // Half a texel in, so that filtering never reads a neighbouring cell.
@@ -198,6 +213,34 @@ pub(crate) mod tests {
                     .all(|s| !matches!(s, Shape::Mesh(_)))
             );
         }
+    }
+
+    #[test]
+    fn an_empty_cell_keeps_our_glyph() {
+        // An older sheet has nothing in the newer cells.
+        let ctx = Context::default();
+        assert!(install_sheet(
+            &ctx,
+            &png(SHEET_W, SHEET_H, &vec![0; SHEET_W * SHEET_H * 4])
+        ));
+        let shapes = painted(&ctx, IconId::SoloClip);
+        assert!(!shapes.is_empty() && shapes.iter().all(|s| !matches!(s, Shape::Mesh(_))));
+        // A sheet with only the older cells drawn: icon 10 keeps ours too, the others come from it.
+        let mut rgba = vec![0; SHEET_W * SHEET_H * 4];
+        for n in 0..79 {
+            let (x0, y0) = ((n & 7) * CELL, (n >> 3) * CELL);
+            for y in y0..y0 + CELL {
+                rgba[(y * SHEET_W + x0) * 4 + 3] = 255;
+            }
+        }
+        let ctx = Context::default();
+        assert!(install_sheet(&ctx, &png(SHEET_W, SHEET_H, &rgba)));
+        let mesh = |id| {
+            painted(&ctx, id)
+                .iter()
+                .any(|s| matches!(s, Shape::Mesh(_)))
+        };
+        assert!(mesh(IconId::Play) && !mesh(IconId::Collapse) && !mesh(IconId::Stop));
     }
 
     #[test]

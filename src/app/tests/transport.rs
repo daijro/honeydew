@@ -17,23 +17,25 @@ fn ruler(beat: f32) -> Pos2 {
     pos2(1.5 * U + 2.0 + beat * 1.2 * U, 0.75 * U)
 }
 
-/// The playhead knob, a disc on the ruler's middle line, on the transport at `tick`.
+/// The playhead knob (the play box, its left edge on the playhead) on the ruler's middle line, on the transport at
+/// `tick`.
 fn knob(tick: u64) -> Pos2 {
     ruler(tick as f32 / BEAT as f32)
 }
 
 impl Rig {
-    /// The x of the playhead knob's disc as last drawn (any size: it grows and wobbles; the bar badges and the Snap
-    /// button's discs are smaller).
-    fn disc_x(&self) -> Option<f32> {
-        self.out.shapes.iter().find_map(|s| match &s.shape {
-            egui::Shape::Circle(c)
-                if c.center.y == 0.75 * U && c.radius > 20.0 && c.fill.a() > 0 =>
-            {
-                Some(c.center.x)
-            }
-            _ => None,
-        })
+    /// The playhead x the play box on the ruler shows as last drawn (its centre less half its width), to a thousandth
+    /// of a point ([`r3`]).
+    fn box_x(&self) -> Option<f32> {
+        self.play_box_in(0.0..RULER).map(|b| b.0)
+    }
+
+    /// Lets the play box fade out (or in): at alpha 0 it takes no touch.
+    fn fade(&mut self) {
+        // A fifth of the way a frame: gone within 31 frames.
+        for _ in 0..40 {
+            self.frame(vec![]);
+        }
     }
 
     /// The output reports the transport at `tick`.
@@ -182,7 +184,7 @@ fn a_ruler_tap_that_stops_goes_back_to_where_play_started() {
     rig.at(4 * BEAT);
     rig.frame(vec![]);
     assert_eq!(rig.app.main_screen.play_start, 4 * BEAT);
-    assert_eq!(rig.disc_x(), Some(knob(4 * BEAT).x));
+    assert_eq!(rig.box_x(), Some(r3(knob(4 * BEAT).x)));
     // Stopped on the play-start point itself, it stays there: REV's second press would go to the song start.
     rig.click(PLAY);
     rig.take();
@@ -202,11 +204,11 @@ fn a_ruler_tap_that_stops_goes_back_to_where_play_started() {
 fn playing_the_playlists_line_moves_on_every_frame_between_the_outputs_steps() {
     let mut rig = song_rig();
     let text = rig.app.theme.colors.text.to_color32();
-    let tracks = egui::Rangef::new(1.5 * U, PANEL_TOP);
+    let tracks = egui::Rangef::new(RULER, PANEL_TOP);
     let line = |rig: &Rig| {
         (rig.rects(text).iter())
-            .find(|r| r.width() == 4.0 && r.y_range() == tracks)
-            .map(|r| r.center().x)
+            .find(|r| r.width() < U && r.y_range() == tracks)
+            .map(|r| crate::ui::timeline::testing::line_x(*r, 1.0))
     };
     rig.click(PLAY);
     let (t0, block) = (rig.time, 2048.0 / 48_000.0);
@@ -297,7 +299,7 @@ fn following_the_playlists_line_stands_still_a_quarter_in() {
     rig.app.song.channels[1].lanes[0].add_clip(2048, 48.0);
     rig.app.settings.continuous_scroll = true;
     let text = rig.app.theme.colors.text.to_color32();
-    let tracks = egui::Rangef::new(1.5 * U, PANEL_TOP);
+    let tracks = egui::Rangef::new(RULER, PANEL_TOP);
     rig.at(20 * BEAT);
     rig.frame(vec![]);
     rig.click(PLAY);
@@ -310,7 +312,7 @@ fn following_the_playlists_line_stands_still_a_quarter_in() {
         rig.frame(vec![]);
         leads.push(rig.app.audio.playhead_lead());
         let rects = rig.rects(text);
-        let line = (rects.iter()).find(|r| r.width() == 4.0 && r.y_range() == tracks);
+        let line = (rects.iter()).find(|r| r.width() < U && r.y_range() == tracks);
         xs.push(line.expect("the line").center().x);
     }
     assert!(leads.iter().any(|&l| l > 0), "{leads:?}");
@@ -325,8 +327,9 @@ fn a_tap_on_the_playhead_knob_plays() {
     assert!(rig.playing());
     assert_eq!(rig.transport(), ["Play"]);
     assert_eq!(rig.app.main_screen.play_start, 2 * BEAT);
-    // Playing, the knob fades out and takes no tap, as the drum editor's (`timeline::knob_shown`): the tap is the
-    // ruler's, which stops and goes back to the play-start point.
+    // Playing, the knob fades out and, faded, takes no tap, as the drum editor's (`timeline::knob_shown`): the tap is
+    // the ruler's, which stops and goes back to the play-start point.
+    rig.fade();
     rig.click(knob(2 * BEAT));
     assert!(!rig.playing());
     assert_eq!(rig.transport(), ["Stop", "Seek 256"]);
@@ -350,11 +353,12 @@ fn a_playhead_drag_seeks_to_the_beat_it_lets_go_on_within_the_song() {
     rig.at(5 * BEAT);
     drag(&mut rig, knob(5 * BEAT), ruler(25.0));
     assert_eq!(rig.transport(), ["Seek 2048"]);
-    // Playing, the knob fades out and takes no drag, as the drum editor's (`timeline::knob_shown`): no seek, and it
-    // plays on.
+    // Playing, the knob fades out and, faded, takes no drag, as the drum editor's (`timeline::knob_shown`): no seek,
+    // and it plays on.
     rig.at(6 * BEAT);
     rig.click(REC);
     rig.click(PLAY);
+    rig.fade();
     rig.take();
     drag(&mut rig, knob(6 * BEAT), ruler(2.2));
     assert!(rig.playing());
@@ -363,7 +367,7 @@ fn a_playhead_drag_seeks_to_the_beat_it_lets_go_on_within_the_song() {
     assert_eq!(rig.app.main_screen.play_start, 6 * BEAT);
 }
 
-/// Regression: the piano roll's disc did not drag. Every editor's disc is the playhead knob: stopped, a drag seeks to
+/// Regression: the piano roll's handle did not drag. Every editor's play box is the playhead knob: stopped, a drag seeks to
 /// The snapped beat it lets go on.
 #[test]
 fn the_piano_rolls_playhead_knob_drags_and_seeks_where_it_lets_go() {
@@ -371,21 +375,21 @@ fn the_piano_rolls_playhead_knob_drags_and_seeks_where_it_lets_go() {
     rig.edit(1);
     rig.slide_split();
     rig.take();
-    // The roll's ruler: a beat is 64 points from the grid's left edge (1.5 U + t, t = 2 points). The disc at beat 0,
-    // dragged 3 U right: beat 1.5.
+    // The roll's ruler: a beat is 64 points from the grid's left edge (1.5 U + t, t = 2 points). The box at beat 0,
+    // pressed on the playhead and dragged 3 U right: beat 1.5.
     let beat = |b: f32| pos2(1.5 * U + 2.0 + b * 64.0, 0.75 * U);
     let to = beat(1.5);
     rig.press(beat(0.0));
     rig.drag_to(beat(0.75));
     rig.drag_to(to);
-    // The line and the disc follow the finger.
-    assert_eq!(rig.disc_x(), Some(to.x));
+    // The line and the box follow the finger.
+    assert_eq!(rig.box_x(), Some(r3(to.x)));
     rig.release(to);
     assert!(!rig.playing());
     assert_eq!(rig.transport(), ["Seek 192"]);
-    // Until the output reports the seek, the disc stays on the drop.
+    // Until the output reports the seek, the box stays on the drop.
     rig.frame(vec![]);
-    assert_eq!(rig.disc_x(), Some(to.x));
+    assert_eq!(rig.box_x(), Some(r3(to.x)));
     // Held across a Play (Space), the drop seeks and it plays on, as the playlist's knob.
     rig.at(192);
     rig.press(to);
@@ -401,7 +405,7 @@ fn the_piano_rolls_playhead_knob_drags_and_seeks_where_it_lets_go() {
 
 #[test]
 fn a_dropped_knob_stays_where_it_was_dropped_until_the_transport_gets_there_or_a_quarter_second() {
-    // The output reports the seek a frame or more later; meanwhile the disc must not flash back.
+    // The output reports the seek a frame or more later; meanwhile the box must not flash back.
     let mut rig = song_rig();
     let drop = |rig: &mut Rig, from: Pos2, to: Pos2| {
         rig.press(from);
@@ -413,21 +417,22 @@ fn a_dropped_knob_stays_where_it_was_dropped_until_the_transport_gets_there_or_a
     let frame_at = |rig: &mut Rig, t: f64| {
         rig.next_frame_at(t);
         rig.frame(vec![]);
-        rig.disc_x()
+        rig.box_x()
     };
     let t = drop(&mut rig, knob(0), ruler(5.3));
-    // Still at tick 0 in the output: the disc stays on the dropped beat 5.
-    assert_eq!(frame_at(&mut rig, t + 0.02), Some(ruler(5.0).x));
+    let at = |p: Pos2| Some(r3(p.x));
+    // Still at tick 0 in the output: the box stays on the dropped beat 5.
+    assert_eq!(frame_at(&mut rig, t + 0.02), at(ruler(5.0)));
     // The output gets there: from then on it follows the output again.
     rig.at(5 * BEAT + 3);
-    assert_eq!(frame_at(&mut rig, t + 0.04), Some(knob(5 * BEAT + 3).x));
+    assert_eq!(frame_at(&mut rig, t + 0.04), at(knob(5 * BEAT + 3)));
     rig.at(0);
-    assert_eq!(frame_at(&mut rig, t + 0.06), Some(knob(0).x));
+    assert_eq!(frame_at(&mut rig, t + 0.06), at(knob(0)));
     // An output that never gets there: back to it after a quarter second.
     let t = drop(&mut rig, knob(0), ruler(8.2));
-    assert_eq!(frame_at(&mut rig, t + 0.1), Some(ruler(8.0).x));
-    assert_eq!(frame_at(&mut rig, t + 0.2), Some(ruler(8.0).x));
-    assert_eq!(frame_at(&mut rig, t + 0.3), Some(knob(0).x));
+    assert_eq!(frame_at(&mut rig, t + 0.1), at(ruler(8.0)));
+    assert_eq!(frame_at(&mut rig, t + 0.2), at(ruler(8.0)));
+    assert_eq!(frame_at(&mut rig, t + 0.3), at(knob(0)));
 }
 
 /// A recorded note: (clip id, clip start, pos, key, length in beats).

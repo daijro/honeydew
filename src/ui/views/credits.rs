@@ -2,8 +2,8 @@
 //! of the bundled sounds (`index.json`'s `credits`) grouped by licence, each with its title,
 //! author, link and note, then the full notices of the content dir's `CREDITS.txt` (on the web, downloaded when the
 //! screen first shows, `Loading...` until it is in: [`web::notices`]). It is a message box
-//! ([`message::show`]): its lines word-wrap, scroll past the screen's height, and `OK`, Escape or a click outside
-//! close it.
+//! ([`message::show_wrapped`]): its lines word-wrap to nearly the panel's width, scroll past the screen's height, and
+//! `OK`, Escape or a click outside close it.
 
 use std::collections::BTreeMap;
 
@@ -20,6 +20,10 @@ pub const LOGO: &str = "The icon is a derivative of \"Melon\" by afitrose. It is
 /// The plugin hosting's credit (the desktop's; `vendor/lemon-studio`).
 const PLUGIN_HOSTS: &str = "VST3, VST2 and CLAP plugin hosting: Lemon Studio by ItsAlphaNeon (GPL-3.0-or-later), \
                             https://github.com/ItsAlphaNeon/Lemon-Studio";
+/// The credit of the Lemon Reverb and Lemon Limiter effects (`vendor/lemon-studio/os-engine/src/effects`) and the
+/// built-in Lemon plugins (`crate::plugins::builtin`).
+const EFFECTS: &str = "Lemon Reverb, Lemon Limiter, Lemon Trio, Lemon Sampler and Lemon Parametric EQ: Lemon Studio by \
+                       ItsAlphaNeon (GPL-3.0-or-later), https://github.com/ItsAlphaNeon/Lemon-Studio";
 /// The repo's notices for the third-party code the app includes.
 const THIRD_PARTY: &str = "Third-party software notices: THIRD_PARTY_NOTICES.md";
 /// The bundled sounds' section, and its only line without a bundle.
@@ -49,7 +53,10 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) -> Option<Na
     }
     let loading = &mut state.loading;
     let lines = state.lines.get_or_insert_with(|| lines(bundle, loading));
-    let nav = message::show(ui, app, TAG, lines, None, None);
+    // Wrapped to the panel less 0.5 U each side, not the message's 60 %: its links are long.
+    let share =
+        1.0 - app.cx.m.u(1.0) / crate::ui::dialog::floating_x(app.regions.screen, app.cx.m).span();
+    let nav = message::show_wrapped(ui, app, (TAG, lines), None, None, share);
     if nav.is_some() {
         state.lines = None;
     }
@@ -64,6 +71,7 @@ fn lines(bundle: Option<&Bundle>, loading: &mut bool) -> Vec<String> {
         "",
         &format!("{APP_NAME}:"),
         LOGO,
+        EFFECTS,
         THIRD_PARTY,
         "",
         SOUNDS,
@@ -71,7 +79,7 @@ fn lines(bundle: Option<&Bundle>, loading: &mut bool) -> Vec<String> {
     .map(str::to_owned)
     .into();
     if cfg!(plugin_host) {
-        lines.insert(4, PLUGIN_HOSTS.into());
+        lines.insert(5, PLUGIN_HOSTS.into());
     }
     let Some(bundle) = bundle else {
         lines.push(NO_BUNDLE.into());
@@ -107,7 +115,7 @@ mod tests {
     use super::*;
     use crate::audio_link::AudioLink;
     use crate::content::Factory;
-    use crate::metrics::{DEFAULT_UI_SCALE_INDEX, Metrics};
+    use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
     use crate::project_files::ProjectFiles;
     use crate::project_files::content::tests::Temp;
     use crate::project_files::mem::MemFiles;
@@ -146,7 +154,7 @@ mod tests {
         files.factory = Box::leak(Box::new(factory));
         let (theme, m) = (
             theme_by_id(0),
-            Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX),
+            Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE),
         );
         let screen = Rect::from_min_max(pos2(0.0, 0.0), pos2(1170.0, 3000.0));
         let (ctx, mut state, mut song, mut audio) = (

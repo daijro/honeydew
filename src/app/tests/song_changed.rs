@@ -11,9 +11,9 @@ use honeydew_audio::device::AudioRenderer;
 
 /// The centre of control `id` of the first card of channel 2's rack (`with_effects`), as placed.
 fn control(rig: &Rig, id: u32) -> Pos2 {
-    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE_INDEX);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
     let screen = egui::Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
-    let rack = rack_rect(Regions::new(screen, &m).area, 1.0, &m);
+    let rack = rack_rect(Regions::new(screen, &m).area, 1.0, false, &m);
     let module = rig.app.song.channels[2].rack.modules[0].clone();
     let heights = [crate::ui::rack::card_height(&module)];
     let card = flow(rack, 0.0, U, false, &heights, true).cards[0];
@@ -98,7 +98,7 @@ fn automation_playback_sets_nothing() {
 
 #[test]
 fn quantize_is_a_change() {
-    // Round 35 item 1: Quantize re-syncs (`SongEdit::Resync`); a step that moved notes sets the flag.
+    // Quantize re-syncs (`SongEdit::Resync`); a step that moved notes sets the flag.
     let mut rig = Rig::with_drums_and_synth();
     rig.edit(2);
     rig.slide_split();
