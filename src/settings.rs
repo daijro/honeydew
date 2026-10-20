@@ -232,7 +232,10 @@ impl Settings {
             .unwrap_or_default();
         // `uiscalefactor` replaces the `uiscale` index: a missing (or zero) one takes the index's factor, an unknown
         // index 100 %.
-        if !(fields.get("uiscalefactor")).is_some_and(|v| v.as_u64().is_some_and(|p| p >= 1)) {
+        if fields
+            .get("uiscalefactor")
+            .is_none_or(|v| v.as_u64().is_none_or(|p| p < 1))
+        {
             let index = fields.get("uiscale").and_then(Value::as_u64);
             let factor = index.and_then(|i| UI_SCALE_FACTORS.get(i as usize).copied());
             if let Some(factor) = factor {

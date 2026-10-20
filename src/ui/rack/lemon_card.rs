@@ -42,7 +42,7 @@ const TYPE_IN_W: f32 = 140.0;
 #[derive(Default)]
 pub(super) struct LemonCard {
     /// The editor shown ([`plugins::lemon_editor`]).
-    editor: u32,
+    editor: embed::Parent,
     texture: Option<TextureHandle>,
     /// The frame shown, its size in pixels and when it came.
     version: u64,
@@ -89,7 +89,10 @@ pub(super) fn show(
     // The editor at the card's width in device pixels, so that it is sharp ([`plugins::lemon_editor`] opens it again
     // only when that moves by more than a little).
     let scale = (content.width() * ppp / plugin.size.0 as f32).clamp(0.5, 4.0);
-    let Some(editor) = plugins::lemon_editor(channel_id, instance_id, scale) else {
+    // The handle's type is the platform's (`embed::Parent`: `usize` on macOS).
+    let Some(editor) = plugins::lemon_editor(channel_id, instance_id, scale)
+        .map(|id| -> embed::Parent { id as _ })
+    else {
         return false;
     };
     if card.editor != editor {
