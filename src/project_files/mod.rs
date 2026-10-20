@@ -361,8 +361,6 @@ pub struct ProjectFiles {
     stem_writes: export::StemWrites,
     /// An archive's files, while `Import %d files?` waits for its answer ([`IMPORT_TAG`]).
     importing: Option<Vec<Entry>>,
-    /// The content folder's icon sheet was looked for ([`Self::install_original_icons`]).
-    icons_checked: bool,
     /// Where the audio file an `Import` asked for goes ([`Self::import_audio`]).
     import_dir: Option<PathBuf>,
     /// The archive import running on a worker ([`Self::import_archives`]).
@@ -466,7 +464,6 @@ impl ProjectFiles {
             export_left_out: 0,
             stem_writes: export::StemWrites::default(),
             importing: None,
-            icons_checked: false,
             import_dir: None,
             #[cfg(not(target_arch = "wasm32"))]
             import: None,
@@ -1251,10 +1248,6 @@ impl ProjectFiles {
         answer: Option<Answer>,
     ) -> Option<Song> {
         self.provider.attach(ctx);
-        // Once, on the first frame: the context to draw icons in is here.
-        if !std::mem::replace(&mut self.icons_checked, true) {
-            self.install_original_icons(ctx);
-        }
         if shortcuts {
             if ctx.input_mut(|i| i.consume_shortcut(&OPEN_KEY)) {
                 self.replace(Replace::Pick);

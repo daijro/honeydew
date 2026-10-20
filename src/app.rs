@@ -377,13 +377,19 @@ impl HoneydewApp {
         }
     }
 
-    /// Applies and keeps what the frame changed in the settings: the theme at once (the UI scale is read every
-    /// frame), the storage in memory at once, and the disk only while no pointer button is down, so that a slider
+    /// Applies and keeps what the frame changed in the settings: the theme and the metronome level at once (the UI
+    /// scale is read every frame), the storage in memory at once, and the disk only while no pointer button is down, so that a slider
     /// drag writes the file once, at its end.
     fn keep_settings(&mut self, ctx: &egui::Context) {
         if self.settings != self.settings_saved {
             if self.theme.id != self.settings.theme {
                 self.theme = theme_by_id(self.settings.theme);
+            }
+            // The click level, heard at once (the engine keeps one level for REC's clicks and the flag's).
+            let level = self.settings.metronome_level;
+            if level != self.settings_saved.metronome_level {
+                let on = self.audio.metronome_flag();
+                self.audio.send(AudioCommand::MetronomeFlag { on, level });
             }
             if let Some(storage) = self.storage.as_deref_mut() {
                 self.settings.save(storage);
@@ -1299,7 +1305,8 @@ impl HoneydewApp {
         self.song_edited(SongEdit::Ongoing, tick);
     }
 
-    /// The engine's metronome follows REC's arm, and so does its song-end wrap: a recording does not wrap there.
+    /// The engine's metronome follows REC's arm, and so does its song-end wrap: a recording does not wrap there. The
+    /// tempo dialog's metronome flag clicks too, on its own command (`AudioCommand::MetronomeFlag`).
     fn send_arm(&mut self, on: bool) {
         self.auto_record.armed = on;
         let level = self.settings.metronome_level;
@@ -5410,10 +5417,9 @@ mod tests {
     use crate::song::ChannelParams;
     use crate::ui::keyboard_settings::{SCALES, scale_to_stored};
 
-    /// The BPM button; in the tempo editor (a 3 U band across the middle of the screen, the dial and the row
-    /// `-10 -1 [value] +1 +10 TAP` centred on it) the dial's centre.
+    /// The BPM button; in the tempo dialog (over the whole screen) the dial's centre, the screen's.
     const BPM: Pos2 = pos2(585.0 + 1.75 * U, BAR_Y);
-    const TEMPO_DIAL: Pos2 = pos2(381.0, 270.0);
+    const TEMPO_DIAL: Pos2 = pos2(585.0, 270.0);
 
     /// On the dial, 1 U out: 3, 6, 9 and 12 o'clock for `quarter` 0 to 3 (and on round), so that each next one is a
     /// quarter turn clockwise, +0.25 BPM.
@@ -5519,10 +5525,12 @@ mod tests {
         assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
         rig.frame(vec![]);
         assert!(rig.painted("121"), "the transport shows the new tempo");
-        // The editor is modal: undo waits until the BPM button closes it.
+        // The dialog is modal: undo waits until it closes (the BPM button under it is swallowed too).
         rig.frame(z(egui::Modifiers::NONE));
         assert!((rig.app.song.tempo_bpm - 121.0).abs() < 1e-9);
         rig.click(BPM);
+        assert_eq!(rig.overlays(), [Overlay::TempoEditor]);
+        rig.frame(escape());
         assert_eq!(rig.overlays(), []);
         rig.frame(z(egui::Modifiers::NONE));
         assert_eq!(rig.app.song.tempo_bpm, 120.0);
@@ -5539,23 +5547,24 @@ mod tests {
     }
 
     #[test]
-    fn the_tempo_editor_swallows_a_touch_within_7_u_of_its_dial_and_closes_on_one_beyond() {
+    fn the_tempo_dialog_swallows_a_touch_on_its_disc_and_closes_on_one_off_it() {
         let mut rig = Rig::with_synth();
         rig.click(BPM);
         rig.frame(vec![]);
         assert_eq!(rig.overlays(), [Overlay::TempoEditor]);
-        // In the tracks area, 5.3 U and 6.25 U from the dial's centre: nothing happens, to the
+        // On its 7.5 U disc, over the tracks and the transport, off the dial and the buttons: nothing happens, to the
         // dialog or to what is under it.
         for at in [
-            pos2(TEMPO_DIAL.x, 100.0),
-            pos2(TEMPO_DIAL.x - 5.0 * U, 150.0),
+            pos2(TEMPO_DIAL.x, TEMPO_DIAL.y - 6.0 * U),
+            pos2(TEMPO_DIAL.x, TEMPO_DIAL.y + 7.0 * U),
+            BPM,
         ] {
             rig.click(at);
             assert_eq!(rig.overlays(), [Overlay::TempoEditor], "{at:?}");
             assert_eq!(rig.take(), Vec::<String>::new());
         }
-        // 7.3 U up and left: it closes, and reaches nothing below.
-        rig.click(pos2(TEMPO_DIAL.x - 7.3 * U, TEMPO_DIAL.y));
+        // 7.6 U left: it closes, and reaches nothing below.
+        rig.click(pos2(TEMPO_DIAL.x - 7.6 * U, TEMPO_DIAL.y));
         assert_eq!(rig.overlays(), []);
         assert_eq!(rig.take(), Vec::<String>::new());
     }

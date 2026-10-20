@@ -741,7 +741,7 @@ fn a_long_press_shows_paste_where_the_finger_is_and_paste_lands_the_earliest_poi
 }
 
 #[test]
-fn a_long_press_that_moves_draws_a_marquee_and_the_right_edge_handle_scales() {
+fn a_long_press_that_moves_draws_a_marquee_and_the_scale_bar_scales() {
     let pts = [p(0, 0), p(128, 32767), p(256, 32767), p(448, MAX)];
     let mut rig = Rig::new(&pts);
     set_clipboard(&rig.ctx, vec![(0.0, 0.5)]);
@@ -758,10 +758,11 @@ fn a_long_press_that_moves_draws_a_marquee_and_the_right_edge_handle_scales() {
         (rig.selected(), rig.edits),
         (vec![false, true, true, false], 0)
     );
-    // The handle: right of the box's right edge (tick 256), within the touch frame. Its right edge snaps; the box
-    // scales about its left edge.
+    // The ↔ bar: under the bottom-right of the points' box as drawn (the centres' box, ticks 128…256 on row y
+    // TOP + 127, grown by the 6.4-point radius), 34 points wide, its top 3.84 points below. The box's end goes to the
+    // finger's tick (no grab offset), snapped: 373 → 384, so the box scales ×2 about its left edge.
     rig.drag(
-        pos2(GRID_X + 256.0 + 24.0, TOP + 127.0 + 20.0),
+        pos2(GRID_X + 245.0, TOP + 147.0),
         &[vec2(64.0, 0.0), vec2(128.0, 0.0)],
     );
     assert_eq!(rig.points(), [pts[0], pts[1], p(384, 32767), pts[3]]);

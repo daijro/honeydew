@@ -240,6 +240,19 @@ pub fn scaled(
     dt: f64,
     snap: Option<f64>,
 ) -> Option<(Vec<Point>, Vec<bool>)> {
+    let (_, right, _, _) = bounds(orig, sel, 1)?;
+    scaled_to(orig, sel, |left| {
+        f64::from(snapped(f64::from(right) + dt, snap)).max(left)
+    })
+}
+
+/// The ↔ scale: with ≥ 2 selected points, the box's right edge goes to `to(left edge)` (ticks, at least the left
+/// edge) and the selected ticks scale about the left edge. `None` when nothing changed or the box has no width.
+pub fn scaled_to(
+    orig: &[Point],
+    sel: &[bool],
+    to: impl FnOnce(f64) -> f64,
+) -> Option<(Vec<Point>, Vec<bool>)> {
     debug_assert_eq!(orig.len(), sel.len());
     if sel.iter().filter(|s| **s).count() < 2 {
         return None;
@@ -249,8 +262,7 @@ pub fn scaled(
     if width == 0.0 {
         return None;
     }
-    let to = snapped(f64::from(right) + dt, snap).max(left);
-    let k = f64::from(to - left) / width;
+    let k = (to(f64::from(left)) - f64::from(left)).max(0.0) / width;
     let pts = (orig.iter().zip(sel))
         .map(|(p, s)| match s {
             true => Point {

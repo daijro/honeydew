@@ -15,8 +15,9 @@
 //! or after more than 300 ms a long press, which shows the touch-down's selection without toggling. On empty grid a
 //! long press (300 ms within 0.5 U) offers the `Paste` insert menu at the finger's snapped beat when the clipboard
 //! holds points ([`paste_menu`]); dragging from there makes a marquee ([`Marquee`]) whose points are the selection
-//! live. Shift (the selection modifier) starts one at once. With two or more points selected, the band right of the
-//! selection box inside its touch frame is the right-edge handle, which scales. Each gesture is one final edit at its
+//! live. Shift (the selection modifier) starts one at once. With two or more points selected, the ↔ bar under the
+//! selection box's bottom-right scales them in time about the box's start (the box's end, with no grab offset, goes to
+//! the finger's tick, snapped, at least grid/8 after the start: [`box_end`]). Each gesture is one final edit at its
 //! release, only when the points changed; meanwhile only the drawing follows the finger. A move's release (as the piano
 //! roll's) leaves the moved points selected with the floating row hidden, a quiet selection whose frame and handle take
 //! no touch (a tap on empty grid still only clears it): a tap on a point then selects it with the row, and a long
@@ -30,10 +31,12 @@
 //!   playhead` use it.
 //! - Lines are snapped to whole device pixels; vertical marks span the grid, the five lines and the init line its
 //!   width. The selection guides go under the curve, the marquee (the step view's box) over it.
-//! - The touch frame (the box grown by 1.25 U) is the selection the floating row is placed over and re-shown by; the
-//!   right-edge handle is the part of it right of the box (checked before the points), drawn as the end capsule of the
-//!   points' box grown by their radius ([`crate::ui::clips::end_handle`]); the frame is not drawn. The row hides
-//!   while a point or the handle is held and from a completed long press on.
+//! - The selection box as drawn is the points' box grown by their radius (a lone point's own disc square): it pulses
+//!   (`text` at α 0.15 + 0.05·cos(2π·p), an 80-frame cycle, [`clips::paint_pulse`]) whenever a point is selected, a
+//!   marquee's catch and a drag's points too. The ↔ bar sits under its bottom-right ([`clips::editor_handles`],
+//!   checked before the points), grows while held and wobbles at its release; a point's touch hides it. The touch
+//!   frame (the box grown by 1.25 U) is the selection the floating row is placed over and re-shown by; it is not
+//!   drawn. The row hides while a point or the bar is held and from a completed long press on.
 //! - The view is the scroller's ([`scroller`]): one finger scrolls the time on the ruler band only (a drag on empty
 //!   grid moves nothing), two zoom it there; the wheel zooms it over the ruler and the grid, as does a trackpad pinch
 //!   over the grid.
@@ -60,12 +63,13 @@ use crate::song::points::{self, LAST_ROW, Point, PointKey};
 use crate::song::{Clip, LaneKind, PPQ, Song, TimeSig};
 use crate::theme::channel_color;
 use crate::ui::clips::{
-    FloatingRow, GridView, Marquee, Selection, TimeAxis, hold_square, paint_marquee,
+    self, FloatingRow, GridView, HandlePress, Marquee, Part, Selection, TimeAxis, hold_square,
+    paint_marquee,
 };
 use crate::ui::drum_grid::edit::{MARK_GAP, marks};
 use crate::ui::edit_keys::{self, EditKey};
 use crate::ui::insert;
-use crate::ui::piano_roll::notes::{auto_grid, snap_round};
+use crate::ui::piano_roll::notes::{auto_grid, box_end, snap_round};
 use crate::ui::piano_roll::{Snap, SnapMode};
 use crate::ui::popup::{self, PopupItem};
 use crate::ui::preview::ClipKey;
@@ -185,10 +189,10 @@ enum Gesture {
     Drag(Drag),
 }
 
-/// A point (or the right-edge handle) held: the points as they were, recomputed from the finger every frame.
+/// A point (or the ↔ bar) held: the points as they were, recomputed from the finger every frame.
 #[derive(Clone, Debug)]
 struct Drag {
-    /// The right-edge handle: a scale.
+    /// The ↔ bar: a scale.
     scale: bool,
     origin: Pos2,
     /// The content tick under the press: the view may move under the finger (continuous scrolling).
@@ -221,6 +225,9 @@ pub struct AutomationEditor {
     /// The playhead knob on the ruler.
     knob: PlayheadKnob,
     row: FloatingRow,
+    /// The selection box's pulse ([`clips::paint_pulse`]) and its ↔ bar's press animation.
+    pulse: f32,
+    handle_press: HandlePress,
     snap_menu: bool,
     /// The `Paste` button shows, for a long press here.
     paste: Option<Pos2>,
@@ -389,7 +396,7 @@ impl AutomationEditor {
         .unwrap_or_else(|| (pts.clone(), self.sel.clone()));
         let at = |q: &Point| pos2(ax.x(q.tick.into()), f.point_y(q.value, max));
         let sbox = sel_box(&shown_pts, &shown_sel, at);
-        let handle = self.handle(&shown_pts, &shown_sel, sbox, m);
+        let handle = self.handle(&shown_sel, sbox, m);
 
         let ch = &song.channels[key.channel];
         let color = channel_color(ch.hue, cx.theme).to_color32();
@@ -405,11 +412,15 @@ impl AutomationEditor {
             (sig, loop_ticks),
             now,
         );
-        // The right-edge handle is drawn as the end capsule of the points as drawn (their box grown by the point
-        // radius); its touch is the band right of the box.
-        if let Some(b) = sbox.filter(|_| handle.is_some() && !self.quiet) {
-            let capsule = crate::ui::clips::end_handle(b.expand(m.u(POINT_R)), m);
-            crate::ui::clips::paint_handle(&ui.painter_at(f.grid), cx, capsule, (1.0, 0.0), false);
+        // The ↔ bar under the selection box's bottom-right.
+        let held = match &self.gesture {
+            Gesture::Drag(d) if d.scale => Some((Part::Scale, d.since)),
+            _ => None,
+        };
+        self.handle_press.follow(held, now);
+        if let Some((bar, _)) = handle {
+            let growth = self.handle_press.growth(ui.ctx(), Part::Scale, now);
+            clips::paint_handle(&ui.painter_at(f.grid), cx, bar, (1.0, growth), true);
         }
         #[cfg(any(target_arch = "wasm32", test))]
         crate::app::live::points(
@@ -443,7 +454,7 @@ impl AutomationEditor {
         let hidden = self.quiet
             || self.paste.is_some()
             || matches!(self.gesture, Gesture::Drag(_) | Gesture::Box(_));
-        let handles: Vec<Rect> = handle.into_iter().collect();
+        let handles: Vec<Rect> = handle.into_iter().map(|h| h.0).collect();
         let one_row = {
             let mut rows = (shown_pts.iter().zip(&shown_sel))
                 .filter(|(_, s)| **s)
@@ -783,7 +794,7 @@ impl AutomationEditor {
         self.paste = (!clipboard(ui.ctx()).is_empty()).then_some(origin);
     }
 
-    /// What a press at `p` holds: (the right-edge handle, its point's index) first, else (the nearest point, false).
+    /// What a press at `p` holds: (the ↔ bar, its first point's index) first, else (the nearest point, false).
     fn target(
         &self,
         f: &Frame,
@@ -794,9 +805,8 @@ impl AutomationEditor {
     ) -> Option<(usize, bool)> {
         let at = |q: &Point| pos2(ax.x(q.tick.into()), f.point_y(q.value, KEY.max()));
         let sbox = sel_box(pts, &self.sel, at);
-        // A quiet selection's handle takes no touch.
-        if let Some(h) = self.handle(pts, &self.sel, sbox, m).filter(|_| !self.quiet)
-            && h.contains(p)
+        if let Some((_, zone)) = self.handle(&self.sel, sbox, m)
+            && zone.contains(p)
         {
             let i = self.sel.iter().position(|s| *s)?;
             return Some((i, true));
@@ -804,22 +814,14 @@ impl AutomationEditor {
         f.hit(ax, pts, KEY.max(), p, m).map(|i| (i, false))
     }
 
-    /// The right-edge handle: with ≥ 2 selected points spanning some time, the touch frame right of the box.
-    fn handle(&self, pts: &[Point], sel: &[bool], sbox: Option<Rect>, m: &Metrics) -> Option<Rect> {
+    /// The ↔ bar and its touch zone: with ≥ 2 selected points, under the bottom-right of their box as drawn (the
+    /// points' centres' box grown by their radius). None while the selection is quiet or a point is held.
+    fn handle(&self, sel: &[bool], sbox: Option<Rect>, m: &Metrics) -> Option<(Rect, Rect)> {
         let count = sel.iter().filter(|s| **s).count();
-        let ticks = || {
-            pts.iter()
-                .zip(sel)
-                .filter(|(_, s)| **s)
-                .map(|(p, _)| p.tick)
-        };
-        let wide = ticks().min() != ticks().max();
-        let r = sbox.filter(|_| count >= 2 && wide)?;
-        let frame = r.expand(m.u(HIT_R));
-        Some(Rect::from_x_y_ranges(
-            r.right()..=frame.right(),
-            frame.y_range(),
-        ))
+        let held = matches!(&self.gesture, Gesture::Drag(d) if !d.scale);
+        let b = sbox.filter(|_| count >= 2 && !self.quiet && !held)?;
+        let (_, bar, zone) = clips::editor_handles(b.expand(m.u(POINT_R)), false, true, m).pop()?;
+        Some((bar, zone))
     }
 
     /// A drag's points and selection with the finger at `p`, `None` when they did not change.
@@ -834,7 +836,8 @@ impl AutomationEditor {
         // In beats from the view as it is now.
         let dt = ax.tick(p.x) - d.origin_tick;
         if d.scale {
-            points::scaled(&d.orig, &d.sel, dt, snap)
+            // No grab offset: the box's end goes to the finger's tick.
+            points::scaled_to(&d.orig, &d.sel, |left| box_end(ax.tick(p.x), left, snap))
         } else {
             let dr = f.row_at(p.y) - f.row_at(d.origin.y);
             points::moved(&d.orig, &d.sel, dt, dr, snap, KEY.max())
@@ -960,6 +963,8 @@ impl AutomationEditor {
         if moving {
             ui.ctx().request_repaint();
         }
+        // The selection box pulsing over the selected points as drawn, a marquee's catch too.
+        clips::paint_pulse(&gp, cx, sbox.map(|b| b.expand(r)), 0.0, &mut self.pulse);
         // The marquee: a square growing while a touch is held on empty grid, then the box.
         let marquee = match self.gesture {
             Gesture::Press { origin, since } => hold_square(origin, m.u(1.0), now - since),

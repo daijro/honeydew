@@ -140,6 +140,9 @@ pub struct AudioLink {
     built_input: Option<LiveInput>,
     /// The metronome as last sent (`AudioCommand::Metronome`); each new engine gets it again.
     metronome: Option<(bool, f32)>,
+    /// The metronome flag as last sent (`AudioCommand::MetronomeFlag`), after the metronome: a runtime flag, off at
+    /// start, kept across songs and never saved ([`Self::metronome_flag`]).
+    metronome_flag: Option<(bool, f32)>,
     /// The beats of the count-in last sent (`AudioCommand::CountIn`), armed or running, until Stop, `CountIn(0)` or
     /// a poll that sees it end: a new engine counts in again before it plays.
     count_in: Option<u32>,
@@ -244,6 +247,7 @@ impl AudioLink {
         }
         match cmd {
             AudioCommand::Metronome { on, level } => self.metronome = Some((on, level)),
+            AudioCommand::MetronomeFlag { on, level } => self.metronome_flag = Some((on, level)),
             AudioCommand::CountIn(beats) => {
                 (self.count_in, self.held) = (Some(beats).filter(|b| *b > 0), None);
             }
@@ -468,11 +472,19 @@ impl AudioLink {
         }
     }
 
-    /// The metronome as last sent, for a new engine (which starts with it off).
+    /// The metronome and its flag as last sent, for a new engine (which starts with both off).
     fn resend_metronome(&mut self) {
         if let Some((on, level)) = self.metronome {
             self.send(AudioCommand::Metronome { on, level });
         }
+        if let Some((on, level)) = self.metronome_flag {
+            self.send(AudioCommand::MetronomeFlag { on, level });
+        }
+    }
+
+    /// The metronome flag is on: playback clicks the beats, REC armed or not (the tempo dialog's toggle).
+    pub fn metronome_flag(&self) -> bool {
+        self.metronome_flag.is_some_and(|(on, _)| on)
     }
 
     /// The screen-only settings as last sent, for a new engine built from `song`: re-keyed to its channels by channel
@@ -788,6 +800,7 @@ pub(crate) mod testing {
             } => format!("SetSetting {channel} {instance_id} {key} {value:.3}"),
             AudioCommand::CountIn(beats) => format!("CountIn {beats}"),
             AudioCommand::Metronome { on, level } => format!("Metronome {on} {level:.3}"),
+            AudioCommand::MetronomeFlag { on, level } => format!("MetronomeFlag {on} {level:.3}"),
             AudioCommand::Ping(id) => format!("Ping {id}"),
             AudioCommand::LiveLane { channel, notes } => format!("LiveLane {channel} {notes}"),
             AudioCommand::Preview(Some((data, from))) => {
@@ -840,6 +853,9 @@ pub(crate) mod testing {
                 (AudioCommand::CountIn(beats), Some(engine)) => engine.count_in(beats),
                 (AudioCommand::Metronome { on, level }, Some(engine)) => {
                     engine.set_metronome(on, level)
+                }
+                (AudioCommand::MetronomeFlag { on, level }, Some(engine)) => {
+                    engine.set_metronome_flag(on, level)
                 }
                 (AudioCommand::Ping(id), Some(engine)) => engine.ping(id),
                 (

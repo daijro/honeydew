@@ -1,6 +1,6 @@
 [package]
 name = "honeydew"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
@@ -24,7 +24,7 @@ path = "src/main.rs"
 honeydew-audio = { path = "crates/audio" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.152"
-# Already in the tree through eframe (its `image` reads PNGs): decodes the user's imported icon sheet.
+# Already in the tree through eframe (its `image` reads PNGs): decodes our logo glyph.
 png = "0.18.1"
 # The ZIP codec (`zip.rs`). Both are already in the tree through eframe (image -> png -> flate2), on native and
 # wasm32, so they add no package: deflate/inflate and the CRC-32 of the container.

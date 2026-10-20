@@ -31,7 +31,7 @@
 //!   it). Start = tap beat rounded to the nearest snap unit (not rounded with Snap off), ≥ 0. Length = the remembered
 //!   length (default 1/4 beat), never below the minimum length. Velocity and pan = the remembered values (defaults 255
 //!   and 127); pitch centred; repeat 0 ([`edit::new_hit`]).
-//! - **Tap on a hit** selects it: a resize handle at its right end plus the floating `Copy` `Delete` `Snap` row; a tap
+//! - **Tap on a hit** selects it: the end capsule right of it plus the floating `Copy` `Delete` `Snap` row; a tap
 //!   on the selected hit deselects it. With the shared touch law ([`gesture`]): a touch is decided from its touch-down
 //!   (a tap is released within 0.3 s and 0.5 U, a long press later); touch-down on a hit makes it the selection (inside
 //!   the showing selection's frame it acts on the whole selection) with its handles and row hidden, and it drags at
@@ -47,10 +47,15 @@
 //!   start; rows move in whole steps (changing the pad), clamped to existing rows; overlaps allowed; release = one undo
 //!   step ([`edit::moved`]). A drag on a selected hit moves the selection, a drag on another makes it the selection
 //!   first, "touched"; the group keeps its shape at the clip start and the row edges.
-//! - **Resize handle** drags the right edge; the end snaps to the nearest snap unit; minimum length = snap unit/8, or
-//!   1/128 beat with Snap off ([`edit::resized`]). Every selected hit's end moves by the grabbed one's change; the
-//!   handle is the piano roll's, the selection's end capsule just past the end ([`clips::end_handle`]).
-//! - **Marquee and long press.** The marquee selects hits whose extent overlaps it and then shows the resize handle.
+//! - **The selection frame** is the piano roll's without the ↔ bar. The free note-grid is the one drum editor mode
+//!   that has it; step mode keeps its own look. The selected hits' box (their earliest start to their
+//!   latest end, the top hit's row top to the bottom one's row bottom) pulses whenever a hit is selected
+//!   ([`clips::paint_pulse`]), a marquee's catch, a quiet selection and a drag's hits too. Its end capsule, 0.15 U right of the box and vertically centred on it
+//!   ([`clips::editor_handles`]), shows while the selection does and no touch holds its hits; it grows while held and
+//!   wobbles at its release. Dragging it (no grab offset) puts the box's end on the finger's tick, snapped to the
+//!   nearest snap unit, the box at least snap unit/8 wide, or 1/128 beat with Snap off; every selected hit's length
+//!   changes by as much, one undo step ([`edit::resized`]).
+//! - **Marquee and long press.** The marquee selects hits whose extent overlaps it and then shows the end capsule.
 //!   Hit-testing uses [start, start + length] (no minimum touch width). A long press on empty grid without dragging
 //!   shows the Paste button when the clipboard is set. As in the automation editor, the floating `Copy` also stores the
 //!   copied hits in the drum editors' clipboard ([`step_seq::hit_clipboard`], shared with step mode); while it is set,
@@ -89,10 +94,11 @@ use std::collections::HashMap;
 
 use eframe::egui::{self, Id, Pos2, Rangef, Rect, Response, Sense, Ui, vec2};
 
+use crate::metrics::Metrics;
 use crate::song::{Event, LaneKind, Song, TimeSig};
 use crate::theme::{Rgba, channel_color};
 use crate::ui::clips::{
-    self, FloatingRow, GridView, Marquee, Selection, TimeAxis, hold_square, paint_marquee,
+    self, FloatingRow, GridView, Marquee, Part, Selection, TimeAxis, hold_square, paint_marquee,
 };
 use crate::ui::edit_keys::{self, EditKey};
 use crate::ui::graph_lane::{self, GraphLane, Prop};
@@ -175,8 +181,9 @@ enum Gesture {
 
 /// A move or resize in progress, recomputed from the hits as they were at its start.
 struct Edit {
+    /// The end capsule is held: a resize.
     resize: bool,
-    /// The grabbed hit (in `orig`), whose start (move) or end (resize) snaps.
+    /// The grabbed hit (in `orig`), whose start a move snaps.
     anchor: usize,
     origin: Pos2,
     /// When it touched down (input time), whether a selection showed then, and which.
@@ -193,10 +200,10 @@ struct Edit {
     reported: bool,
 }
 
-/// What the pointer is over: a selected hit's resize handle, or a hit.
+/// What the pointer is over: the selection's end capsule, or a hit.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Target {
-    Handle(usize),
+    Handle,
     Hit(usize),
 }
 
@@ -245,6 +252,9 @@ pub struct DrumGridView {
     /// The playhead knob on the ruler.
     knob: PlayheadKnob,
     row: FloatingRow,
+    /// The selection box's pulse ([`clips::paint_pulse`]) and its end capsule's press animation.
+    pulse: f32,
+    handle_press: clips::HandlePress,
     snap_menu: bool,
     /// Hits a tap added, popping in, and the input time each first showed.
     pops: Vec<(Event, Option<f64>)>,
@@ -377,7 +387,7 @@ impl DrumGridView {
 
         // The gestures.
         let before = self.sel.clone();
-        let mut action = self.grid_input(ui, &grid, &place, events, snap, remembered);
+        let mut action = self.grid_input(ui, &grid, &place, events, snap, remembered, m);
         if self.sel != before {
             remember_lone(events, &self.sel, remembered, min_beats);
         }
@@ -676,23 +686,26 @@ impl DrumGridView {
         (l, place)
     }
 
-    /// The handle or hit at `p`: a selected hit's handle first (none while the selection is quiet), then the topmost
-    /// hit.
-    fn target(&self, place: &Place, events: &[Event], p: Pos2) -> Option<Target> {
-        let handle = (0..events.len()).rev().find(|&i| {
-            !self.quiet
-                && self.sel.get(i) == Some(&true)
-                && place
-                    .handle(&events[i])
-                    .is_some_and(|h| h.center().distance(p) <= h.width() / 2.0)
-        });
-        handle
-            .map(Target::Handle)
-            .or_else(|| place.hit_at(events, p).map(Target::Hit))
+    /// The handle or hit at `p`: the selection's end capsule first (none while the selection is quiet), then the
+    /// topmost hit.
+    fn target(&self, place: &Place, events: &[Event], p: Pos2, m: &Metrics) -> Option<Target> {
+        let handle = (self.handle(place, events, m)).is_some_and(|h| h.2.contains(p));
+        (handle.then_some(Target::Handle)).or_else(|| place.hit_at(events, p).map(Target::Hit))
+    }
+
+    /// The end capsule on the selection box, with its touch zone; none while the selection is quiet or a touch holds
+    /// its hits.
+    fn handle(&self, place: &Place, events: &[Event], m: &Metrics) -> Option<(Part, Rect, Rect)> {
+        let held = matches!(&self.gesture, Gesture::Edit(e) if !e.resize);
+        let b = place
+            .sel_box(events, &self.sel)
+            .filter(|_| !self.quiet && !held)?;
+        clips::editor_handles(b, true, false, m).pop()
     }
 
     /// Touches and drags on the grid (module docs). Returns the edit. A touch on empty grid is the scroller's until it
     /// is a box.
+    #[allow(clippy::too_many_arguments)]
     fn grid_input(
         &mut self,
         ui: &Ui,
@@ -701,6 +714,7 @@ impl DrumGridView {
         events: &[Event],
         snap: Option<f64>,
         remembered: &Remembered,
+        m: &Metrics,
     ) -> Option<StepAction> {
         let (held, pressed, pos, now) = ui.input(|i| {
             let p = &i.pointer;
@@ -767,14 +781,18 @@ impl DrumGridView {
                 .reduce(Rect::union);
             let inside = shown && frame.is_some_and(|f| f.contains(at));
             let prior = self.sel.clone();
-            let target = self.target(place, events, at);
-            if let Some(Target::Hit(i) | Target::Handle(i)) = target
-                && let Some((pad, ..)) = edit::hit(&events[i])
-            {
+            let target = self.target(place, events, at, m);
+            let first = self.sel.iter().position(|s| *s);
+            let touched = match target {
+                Some(Target::Hit(i)) => Some(i),
+                Some(Target::Handle) => first,
+                None => None,
+            };
+            if let Some((pad, ..)) = touched.and_then(|i| edit::hit(&events[i])) {
                 self.cursor = Some((place.axis.tick(at.x).max(0.0), usize::from(pad)));
             }
             let anchor = match target {
-                Some(Target::Handle(i)) => Some((true, i)),
+                Some(Target::Handle) => first.map(|i| (true, i)),
                 Some(Target::Hit(i)) if self.sel[i] => Some((false, i)),
                 Some(Target::Hit(i)) if !inside => {
                     self.sel = only(i, events.len());
@@ -878,7 +896,9 @@ impl DrumGridView {
                     let d = p - edit.origin;
                     let dt = f64::from(d.x / place.axis.beat_w) * BEAT;
                     let (new, sel) = if edit.resize {
-                        let new = edit::resized(&edit.orig, &edit.which, edit.anchor, dt, snap);
+                        // No grab offset: the selection box's end goes to the finger's tick.
+                        let finger = place.axis.tick(p.x);
+                        let new = edit::resized(&edit.orig, &edit.which, finger, snap);
                         (new, edit.orig_sel.clone())
                     } else {
                         let dr = (d.y / place.pitch).round() as i32;
@@ -942,7 +962,7 @@ impl DrumGridView {
                     action = Some(hits_edit(events, selected, true));
                 } else if grid.secondary_clicked()
                     && clipboard()
-                    && pos.is_some_and(|p| self.target(place, events, p).is_none())
+                    && pos.is_some_and(|p| self.target(place, events, p, m).is_none())
                 {
                     // A right click on empty grid that deleted nothing is `Paste`.
                     self.paste = pos;
@@ -1014,12 +1034,18 @@ impl DrumGridView {
             painter.rect_filled(hit.expand(px), 0.0, bg);
             painter.rect_filled(hit, 0.0, hit_color(&tints, prop, value, selected));
         }
-        // A touch on a hit hides the handles until it ends, and a quiet selection has none.
-        let touched = self.quiet || matches!(self.gesture, Gesture::Edit(_));
-        for (e, _) in (events.iter().zip(&self.sel)).filter(|(_, s)| **s && !touched) {
-            if let Some(r) = place.rect(e) {
-                clips::paint_handle(painter, cx, clips::end_handle(r, cx.m), (1.0, 0.0), false);
-            }
+        // The selection box pulses over the selected hits (a marquee's catch too), with its end capsule unless a touch
+        // on the hits or a quiet selection hides it.
+        let sbox = place.sel_box(events, &self.sel);
+        clips::paint_pulse(painter, cx, sbox, 0.0, &mut self.pulse);
+        let held = match &self.gesture {
+            Gesture::Edit(e) if e.resize => Some((Part::End, e.since)),
+            _ => None,
+        };
+        self.handle_press.follow(held, now);
+        if let Some((part, rect, _)) = self.handle(place, events, cx.m) {
+            let growth = self.handle_press.growth(painter.ctx(), part, now);
+            clips::paint_handle(painter, cx, rect, (1.0, growth), false);
         }
     }
 
@@ -1080,8 +1106,10 @@ impl DrumGridView {
             .filter(|(_, s)| **s)
             .map(|(e, _)| e)
             .collect();
-        let handles: Vec<Rect> = (chosen.iter().filter_map(|e| place.rect(e)))
-            .map(|r| clips::end_handle(r, cx.m))
+        let handles: Vec<Rect> = self
+            .handle(place, events, cx.m)
+            .into_iter()
+            .map(|h| h.1)
             .collect();
         let pads = || chosen.iter().filter_map(|e| edit::hit(e)).map(|h| h.0);
         // A quiet selection has no row, which a release on it brings back neither.

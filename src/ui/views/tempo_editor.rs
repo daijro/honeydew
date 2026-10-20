@@ -1,21 +1,15 @@
-//! The tempo editor, opened by the transport's BPM button: [`crate::ui::tempo`]'s editor in a 3 U band across the
-//! middle of the screen, as the Save dialog's band.
+//! The tempo dialog, opened by the transport's BPM button: [`crate::ui::tempo`]'s dialog over the whole screen.
+//!
+//! Every tempo change here is one undo step (a step button, a `TAP` group, a turn of the dial), and closing the dialog
+//! adds none. The undo history is never cleared, tempo-synced audio clips or not.
 
-use eframe::egui::{self, Rect, vec2};
+use eframe::egui;
+use honeydew_audio::device::AudioCommand;
 
 use super::{AppCtx, Nav};
-use crate::metrics::Metrics;
 use crate::ui::tempo::{TempoAction, TempoEditor};
 
-/// The band's height, in U.
-const BAND_H: f32 = 3.0;
-
-/// The editor's band on `screen`.
-pub fn band(screen: Rect, m: &Metrics) -> Rect {
-    Rect::from_center_size(screen.center(), vec2(screen.width(), m.u(BAND_H)))
-}
-
-/// What the tempo editor keeps between frames.
+/// What the tempo dialog keeps between frames.
 #[derive(Default)]
 pub struct State {
     editor: TempoEditor,
@@ -24,23 +18,34 @@ pub struct State {
     dragging: Option<f64>,
 }
 
-/// Draws the editor. A new tempo goes into the song: mid-drag as an ongoing edit, at the end of the drag (or from a
-/// step button or `TAP`) as a completed one. Closing it mid-drag (Escape) completes the drag.
+/// Draws the dialog. A new tempo goes into the song: mid-drag as an ongoing edit (the engine takes it live), at the end
+/// of the drag (or from a step button or `TAP`) as a completed one, which re-syncs the audio clips. Closing it mid-drag
+/// (Escape, a focus loss) completes the drag. The metronome button flips the audio's metronome flag, which is no song
+/// edit.
 pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) -> Option<Nav> {
-    let rect = band(app.regions.screen, app.cx.m);
     let song = &mut *app.song;
     if state.dragging != Some(song.tempo_bpm) {
         state.dragging = None;
     }
-    match state
-        .editor
-        .show(ui, &app.cx, rect, song.tempo_bpm, song.time_sig)?
-    {
+    let metronome = app.audio.metronome_flag();
+    match state.editor.show(
+        ui,
+        &app.cx,
+        app.regions.screen,
+        song.tempo_bpm,
+        song.time_sig,
+        metronome,
+    )? {
         TempoAction::Set { bpm, done } => {
             // Also scales the audio clips' stretch ratios, in the drag's one undo step (`Song::set_tempo`).
             song.set_tempo(bpm);
             state.dragging = (!done).then_some(bpm);
             app.song_edited(done);
+            None
+        }
+        TempoAction::Metronome => {
+            let (on, level) = (!metronome, app.settings.metronome_level);
+            app.audio.send(AudioCommand::MetronomeFlag { on, level });
             None
         }
         TempoAction::Close => {
@@ -52,7 +57,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) -> Option<Na
     }
 }
 
-/// The editor went another way than its own Close (the `showTempo` key's toggle): a dial drag under way at `tempo` ends
+/// The dialog went another way than its own Close (the `showTempo` key's toggle): a dial drag under way at `tempo` ends
 /// there, as Escape ends it. Whether that is a completed edit to make (`app::left_view`).
 pub fn closed(state: &mut State, tempo: f64) -> bool {
     state.dragging.take() == Some(tempo)
@@ -69,6 +74,7 @@ mod tests {
     use crate::ui::main_screen::Regions;
     use crate::ui::offscreen::{Offscreen, SCREEN};
     use crate::ui::views::SongEdit;
+    use eframe::egui::vec2;
 
     /// The tempo editor on a 140 BPM song with one SYNC-on audio clip (ratio 1.5), a frame at a time.
     struct Rig {
@@ -172,13 +178,7 @@ mod tests {
     #[test]
     fn a_dial_turn_rescales_them_on_every_frame_and_ends_where_one_change_would() {
         let mut rig = Rig::new();
-        let c = rig
-            .screen
-            .ctx
-            .read_response(egui::Id::new("tempo_editor").with("dial"))
-            .expect("the dial was drawn")
-            .rect
-            .center();
+        let c = SCREEN.center();
         // A full turn clockwise as seen, 32 points out (from 3 o'clock through 6, 9 and 12): +1 BPM.
         let r = 32.0;
         let offsets = [

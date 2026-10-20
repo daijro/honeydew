@@ -6,9 +6,10 @@
 //! - **When.** At start and whenever SETTINGS, which shows the folder, comes up ([`ProjectFiles::import_archives`]),
 //!   on a worker thread. [`ProjectFiles::update`] hands the result over once nothing else is shown or asked, on any
 //!   screen: the flash [`IMPORTED`] with the count of files (`Imported %d file%s`), or the message [`IMPORT_FAILED`]
-//!   with why and that count (no question whether to delete the archive: it is the user's own copy). A new icon
-//!   sheet (`wrap.png`) becomes the atlas at once; GMSynth's waveshapes and the shortcut files need a restart, as the
-//!   README says.
+//!   with why and that count (no question whether to delete the archive: it is the user's own copy). GMSynth's
+//!   waveshapes and the shortcut files need a restart, as the README says.
+//! - **Sounds, presets and demo songs only.** The app's icon sheet (`wrap.png`) is skipped: the icons are always
+//!   our own.
 //! - **Once.** A hidden marker beside the archive, `.imported-<file name>-<size>`, says it was imported. A failure
 //!   leaves none, so the next start tries again and goes on where it stopped; until then that archive is left alone
 //!   unless it is replaced (one message a session, however often SETTINGS comes up).
@@ -41,6 +42,8 @@ use crate::ui::views::Answer;
 
 /// Where an APK holds the content container.
 pub const OBB_IN_APK: &str = "assets/obb/assets.obb";
+/// The container's icon sheet, never imported.
+const ICON_SHEET: &str = "wrap.png";
 /// The flash after an import, and the message title after a failed one.
 pub const IMPORTED: &str = "Successfully imported";
 pub const IMPORT_FAILED: &str = "Import failed";
@@ -165,6 +168,9 @@ fn write_new<R: Read>(path: &Path, data: &mut io::Take<R>) -> io::Result<bool> {
 fn unpack(obb: impl Read, len: u64, content: &Path, counts: &mut Counts) -> io::Result<()> {
     let root = content.canonicalize()?;
     super::obb::read(obb, len, |name, data| {
+        if name == ICON_SHEET {
+            return Ok(());
+        }
         let path = content.join(name);
         let parent = path.parent().unwrap_or(content);
         if !real(parent).is_some_and(|p| inside(&p, &root, FOLD_CASE)) {
@@ -289,7 +295,7 @@ impl ProjectFiles {
     }
 
     /// Once the import is done and nothing else is shown or asked (`shortcuts` is [`Self::update`]'s: no other
-    /// screen's dialog or message is open): its flash or message, and a sheet it brought made the icon atlas.
+    /// screen's dialog or message is open): its flash or message.
     pub(super) fn import_done(&mut self, ctx: &Context, shortcuts: bool) {
         // Held while something else shows, so it never takes another question's place or buttons.
         let busy = !shortcuts
@@ -331,9 +337,6 @@ impl ProjectFiles {
         match error {
             None => self.flash = Some(format!("{IMPORTED}\n{count}")),
             Some(why) => self.message = Some(vec![IMPORT_FAILED.into(), why, count]),
-        }
-        if written > 0 {
-            self.install_original_icons(ctx);
         }
         ctx.request_repaint();
     }
@@ -612,23 +615,11 @@ mod tests {
     }
 
     #[test]
-    fn an_imported_icon_sheet_becomes_the_atlas_and_a_flash_counts_the_files() {
-        use eframe::egui::{Color32, Pos2, Rect, Shape, Vec2};
+    fn an_archives_icon_sheet_is_skipped_and_a_flash_counts_the_files() {
         let tmp = Temp::new("import-icons");
         let mut files = accepted(&tmp.0);
         let ctx = Context::default();
-        let play = |ctx: &Context| {
-            let square = Rect::from_min_size(Pos2::ZERO, Vec2::splat(48.0));
-            crate::icons::painted_shapes(ctx, crate::icons::IconId::Play, square, Color32::WHITE)
-        };
-        until_done(&mut files, &ctx);
-        assert!(
-            !matches!(&play(&ctx)[..], [Shape::Mesh(_)]),
-            "our drawn set"
-        );
-        // A synthetic 512 × 1024 sheet of white squares, in a synthetic container.
-        let sheet = crate::icons::sheet_tests::fake_sheet();
-        let obb = container(&[(crate::icons::SHEET_FILE, &sheet), TREE[0]]);
+        let obb = container(&[(ICON_SHEET, b"\x89PNG gen"), TREE[0], TREE[1]]);
         put(&tmp.0.join(CONTENT_FOLDER).join("Gen.obb"), &obb);
         files.import_archives();
         assert!(files.import.is_some());
@@ -644,7 +635,7 @@ mod tests {
             files.take_flash().as_deref(),
             Some("Successfully imported\nImported 2 files")
         );
-        assert!(matches!(&play(&ctx)[..], [Shape::Mesh(_)]), "the sheet");
+        assert!(!tmp.0.join(CONTENT_FOLDER).join(ICON_SHEET).exists());
         // Nothing waits any more.
         files.import_archives();
         assert!(files.import.is_none());

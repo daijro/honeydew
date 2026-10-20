@@ -624,15 +624,7 @@ impl Clips {
         // and places the floating row.
         let selection = selection_box(app.song, &self.targets(), rows, axis, 1.0 / m.ppp());
         let sbox = selection.filter(|_| self.marquee.is_none());
-        if let Some(b) = sbox {
-            let a = PULSE[0] + PULSE[1] * (std::f32::consts::TAU * self.pulse).cos();
-            let text = app.cx.theme.colors.text;
-            painter.rect_filled(b, m.u(CORNER), Rgba { a, ..text }.to_color32());
-            self.pulse = (self.pulse + PULSE[2]).fract();
-            ui.ctx().request_repaint();
-        } else {
-            self.pulse = 0.0;
-        }
+        paint_pulse(&painter, &app.cx, sbox, m.u(CORNER), &mut self.pulse);
         // A touch-down in the group's frame acts on the group whole; in a quiet group's, only one on its clips.
         let frame = selection.filter(|_| !self.group.is_empty());
         let grouped = |on| matches!(on, Target::Clip(r, _) if self.group.contains(&r));
@@ -1663,12 +1655,6 @@ pub(crate) fn end_handle(b: Rect, m: &Metrics) -> Rect {
     )
 }
 
-/// The end handle's centre right of the box's right edge, in U, less the capsule's 1 px frame: where the editors
-/// centre its touch box.
-pub(crate) const END_CENTRE: f32 = END_OFF + HANDLE[0] / 2.0;
-/// The capsule's height in U, less its frame: the editors' touch boxes are this tall.
-pub(crate) const HANDLE_H: f32 = HANDLE[1];
-
 /// Its touch zone, centred on it: as tall as a capsule and [`ZONE`] wide (the start one at most a third of the
 /// selection box `b`), or for the bar as wide as it and [`ZONE`] tall.
 fn handle_zone(part: Part, rect: Rect, b: Rect, m: &Metrics) -> Rect {
@@ -1680,6 +1666,81 @@ fn handle_zone(part: Part, rect: Rect, b: Rect, m: &Metrics) -> Rect {
     Rect::from_center_size(rect.center(), size)
 }
 
+/// Fills the selection box `b` (corners `corner`) with `text` at α 0.15 + 0.05·cos(2π·p) and advances p (`pulse`)
+/// 0.0125 a drawn frame, wrapping at 1 (an 80-frame cycle); without a box p restarts at 0.
+pub(crate) fn paint_pulse(
+    painter: &Painter,
+    cx: &UiCtx,
+    b: Option<Rect>,
+    corner: f32,
+    pulse: &mut f32,
+) {
+    let Some(b) = b else {
+        *pulse = 0.0;
+        return;
+    };
+    let a = PULSE[0] + PULSE[1] * (std::f32::consts::TAU * *pulse).cos();
+    let text = cx.theme.colors.text;
+    painter.rect_filled(b, corner, Rgba { a, ..text }.to_color32());
+    *pulse = (*pulse + PULSE[2]).fract();
+    painter.ctx().request_repaint();
+}
+
+/// The clip editors' selection handles on the box `b` (piano roll, drum note grid, automation), each with its touch
+/// zone (at least 1 U × 1 U, centred): with `end` the end capsule, its edges on whole device pixels; with `scale` the
+/// ↔ bar, its right edge on the box's, U + 2 px × 0.56 U + 2 px, 0.12 U below the box.
+pub(crate) fn editor_handles(
+    b: Rect,
+    end: bool,
+    scale: bool,
+    m: &Metrics,
+) -> Vec<(Part, Rect, Rect)> {
+    let mut handles = Vec::new();
+    if end {
+        let r = end_handle(b, m);
+        let floor = |p: Pos2| pos2(m.floor_px(p.x), m.floor_px(p.y));
+        let r = Rect::from_min_max(floor(r.min), floor(r.max));
+        handles.push((Part::End, r, handle_zone(Part::End, r, b, m)));
+    }
+    if scale {
+        let px2 = 2.0 / m.ppp();
+        let size = vec2(m.u(1.0) + px2, m.u(SCALE_BAR[1]) + px2);
+        let r = Rect::from_min_size(pos2(b.right() - size.x, b.bottom() + m.u(SCALE_OFF)), size);
+        handles.push((Part::Scale, r, handle_zone(Part::Scale, r, b, m)));
+    }
+    handles
+}
+
+/// The press growth and release wobble of the clip editors' selection handles ([`press_growth`]).
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct HandlePress {
+    held: Option<(Part, f64)>,
+    released: Option<(Part, f64, f32)>,
+}
+
+impl HandlePress {
+    /// Follows the handle a gesture holds and since when: one let go wobbles from the growth it had.
+    pub(crate) fn follow(&mut self, held: Option<(Part, f64)>, now: f64) {
+        if held.is_none()
+            && let Some((part, t)) = self.held
+        {
+            self.released = Some((part, now, grow(now - t)));
+        }
+        self.held = held;
+    }
+
+    /// Handle `part`'s growth now, in device pixels; asks for the next frame while it moves.
+    pub(crate) fn growth(&self, ctx: &egui::Context, part: Part, now: f64) -> f32 {
+        let pressed = self.held.filter(|h| h.0 == part).map(|h| h.1);
+        let released = self.released.filter(|r| r.0 == part).map(|r| (r.1, r.2));
+        let (growth, moving) = press_growth(pressed, released, now);
+        if moving {
+            ctx.request_repaint();
+        }
+        growth
+    }
+}
+
 /// Whether a clip of `lane` alone in the selection takes the third handle: an audio clip that does not loop,
 /// its length at most its loop less its content offset (wrapped into the loop).
 fn scalable(lane: &Lane, clip: &Clip) -> bool {
@@ -1688,8 +1749,10 @@ fn scalable(lane: &Lane, clip: &Clip) -> bool {
 }
 
 /// A selection handle in `rect` (every editor's): a `menuFill` α 0.3 frame a device pixel wide around a `text` body,
-/// both with round ends; a capsule ([`capsule`]) has a `menuFill` α 0.7 grip bar (0.18 × 0.44 of it) in the middle,
-/// the third handle's bar (`arrows`) a `↔` in 0.3·`text` + 0.7·`menuFill`. Its animation scales it about its centre
+/// both with round ends; a capsule ([`capsule`]) has a `menuFill` α 0.7 grip bar (0.18 × 0.44 of it) in the middle.
+/// The third handle's bar (`arrows`) has corners of 0.3 × the body's height h and a `↔` in 0.3·`text` + 0.7·`menuFill`,
+/// centred vertically: a shaft 0.12 h tall from 0.62 h inside each end, tips 0.34 h inside them, heads 0.28 h long and
+/// 0.5 h tall. Its animation scales it about its centre
 /// by `scale` (a pop-in) and widens it by `growth` device pixels (a press, [`press_growth`]); under the mouse it is
 /// 5 % larger.
 pub(crate) fn paint_handle(
@@ -1715,27 +1778,34 @@ pub(crate) fn paint_handle(
     if !body.is_positive() {
         return;
     }
-    let round = |r: Rect| r.width().min(r.height()) / 2.0;
     let frame = Rgba {
         a: FRAME_A,
         ..c.menu_fill
     };
-    painter.rect_filled(outer, round(outer), frame.to_color32());
-    painter.rect_filled(body, round(body), c.text.to_color32());
     if arrows {
+        let h = body.height();
+        painter.rect_filled(outer, 0.3 * h + px, frame.to_color32());
+        painter.rect_filled(body, 0.3 * h, c.text.to_color32());
         let ink = mix(c.text, c.menu_fill, ARROW_MIX).to_color32();
-        let (mid, w, a) = (body.center(), body.width() * 0.3, body.height() * 0.25);
-        let stroke = Stroke::new(body.height() * 0.1, ink);
-        painter.line_segment([mid - vec2(w, 0.0), mid + vec2(w, 0.0)], stroke);
-        for s in [-1.0, 1.0] {
-            let tip = mid + vec2(s * w, 0.0);
-            let back = tip - vec2(s * a, 0.0);
-            painter.add(egui::Shape::line(
-                vec![back - vec2(0.0, a), tip, back + vec2(0.0, a)],
-                stroke,
-            ));
+        let (y, x) = (body.center().y, body.x_range());
+        let shaft = Rect::from_x_y_ranges(
+            x.min + 0.62 * h..=x.max - 0.62 * h,
+            y - 0.06 * h..=y + 0.06 * h,
+        );
+        painter.rect_filled(shaft, 0.0, ink);
+        for (tip, s) in [(x.min + 0.34 * h, 1.0), (x.max - 0.34 * h, -1.0)] {
+            let back = tip + s * 0.28 * h;
+            let head = vec![
+                pos2(tip, y),
+                pos2(back, y - 0.25 * h),
+                pos2(back, y + 0.25 * h),
+            ];
+            painter.add(egui::Shape::convex_polygon(head, ink, Stroke::NONE));
         }
     } else {
+        let round = |r: Rect| r.width().min(r.height()) / 2.0;
+        painter.rect_filled(outer, round(outer), frame.to_color32());
+        painter.rect_filled(body, round(body), c.text.to_color32());
         let grip = Rect::from_center_size(outer.center(), outer.size() * Vec2::from(GRIP));
         let ink = Rgba {
             a: GRIP_A,

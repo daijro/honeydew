@@ -15,12 +15,25 @@
 //! which acts only at its release; leaving the zone first makes the touch a drag.
 //! - Touch-down on a note (bound by [`note_at`]: its row widened 0.2 row each way) makes it the whole selection, or
 //!   acts on the whole selection when it lands inside the showing selection's frame (the selected notes' bounds); the
-//!   handles and the floating row hide meanwhile. The note (or the selection) drags at once; a handle resizes.
+//!   handles and the floating row hide meanwhile. The note (or the selection) drags at once; a handle drags its own
+//!   way (below).
 //! - Tap on a note: if a selection was showing, the tap only deselects; else the note becomes the selection with its
 //!   handles and floating row, after a re-check on its exact row (a tap in the 0.2-row margin selects nothing). So a
 //!   second tap deselects: a tap never deletes a note.
-//! - Long press on a note: the touch-down's selection shows its handles and floating row; it never toggles. There is no
-//!   slider, and no ≥ 2-note scale handle.
+//! - Long press on a note: the touch-down's selection shows its handles and floating row; it never toggles.
+//! - The selection frame: the selected notes' box (earliest start to latest end, the highest note's row top to the
+//!   lowest one's row bottom, one note's own rect) pulses, `text` at α 0.15 + 0.05·cos(2π·p), p + 0.0125 a drawn frame
+//!   ([`clips::paint_pulse`]), whenever a note is selected: a marquee's catch, a quiet selection and a drag's notes
+//!   too. Its handles ([`clips::editor_handles`]), drawn while the selection shows and no touch holds its notes, grow
+//!   while held and wobble at their release:
+//!   - the end capsule, 0.15 U right of the box, vertically centred on it: every selected note's length changes by as
+//!     much as the box's width ([`stretch_to`]);
+//!   - with ≥ 2 notes, the ↔ bar under the box's bottom-right: the notes scale in time about the box's start A,
+//!     start' = A + (start − A)·k, length' = length·k, k = new width / width ([`scale_notes`]).
+//!
+//!   A handle takes no grab offset: the box's end goes to the finger's tick, rounded to the snap grid, at least grid/8
+//!   (1/128 beat without snap) after the box's start ([`box_end`]); only the box's end snaps. Each drag is one undo
+//!   step.
 //! - Empty grid: a tap dismisses a visible floating menu, else clears the selection and adds a note ([`Remembered`]); a long press is the
 //!   marquee ([`clips::Marquee`]): after 300 ms, dragging beyond 0.5 U makes a selection rectangle.
 //!   While held still, copied notes offer the `Paste` insert menu over the finger's row at the snapped beat, with the
@@ -34,14 +47,14 @@
 //! - A move's release is neither a tap nor a long press, so it brings up no floating row: the moved notes stay selected
 //!   with their handles and floating row hidden, a *quiet* selection, until a tap on a note (which selects that note),
 //!   a long press, a box, a paste or a key shows one again. Its frame and handles take no touch, and an
-//!   empty-grid tap clears it and creates a note. A resize's release shows the handles again.
+//!   empty-grid tap clears it and creates a note. A handle's release shows the handles again.
 //! - Sound: touching or tapping a note is silent. A new note sounds at velocity 1 for 150 ms; while a selection one key
 //!   tall is dragged, each key change stops the old key and plays the new one at velocity 0.7, until the release
 //!   ([`PianoRollAction::Note`]).
 //! - The snap button: a tap toggles snap, a long press or a right click opens the snap menu.
 //!
-//! A move or resize changes nothing until the pointer has left the calm zone, so a long press never nudges a note onto
-//! the grid.
+//! A move or a handle's drag changes nothing until the pointer has left the calm zone, so a long press never nudges a
+//! note onto the grid.
 //!
 //! A new note: key = the row's, snapped to the project scale (an identity while it is Chromatic); start = the tick
 //! floored to the snap unit (the visible grid spacing in Auto, unrounded with snap off), ≥ 0;
@@ -95,7 +108,7 @@ use crate::song::scales::{CHROMATIC, SCALE_MASKS, scale_to_stored};
 use crate::song::{Clip, Event, LaneKind, PPQ, Song, TimeSig};
 use crate::theme::{Rgba, channel_color};
 use crate::ui::automation::geom;
-use crate::ui::clips::{self, TimeAxis};
+use crate::ui::clips::{self, Part, TimeAxis};
 use crate::ui::dialog;
 use crate::ui::drum_grid::edit::{MARK_GAP, mark_spacing, marks};
 use crate::ui::edit_keys::{self, EditKey};
@@ -171,7 +184,7 @@ pub enum PianoRollAction {
 }
 
 /// The remembered note: what a tap's new note takes. Set whenever exactly one note becomes the selection (a touch-down,
-/// tap or long press on it, a box round it, the commit of its move or resize): L = max(its length, the
+/// tap or long press on it, a box round it, the commit of its move or handle drag): L = max(its length, the
 /// minimum length then), its velocity and pan (at most 254) and slide. Graph-lane `Vel` / `Pan` paints set V / P,
 /// `Toggle Slide` sets S; `Set length` does not set L.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -255,6 +268,9 @@ pub struct PianoRoll {
     graph_drag: Option<(Vec<Event>, bool)>,
     /// The floating buttons over the selection.
     pub(crate) row: clips::FloatingRow,
+    /// The selection box's pulse ([`clips::paint_pulse`]) and its handles' press animation.
+    pulse: f32,
+    press: clips::HandlePress,
     /// What a new note takes.
     pub(crate) remembered: Remembered,
     /// A new note's sound: its key and when it stops (egui time).
@@ -290,10 +306,11 @@ enum Gesture {
     Erase(gesture::Erase),
 }
 
-/// A move or resize in progress, recomputed from the events as they were at its start.
+/// A move or a handle drag in progress, recomputed from the events as they were at its start.
 struct Edit {
-    resize: bool,
-    /// The grabbed note (in `orig`), whose start (move) or end (resize) snaps.
+    /// What it holds: the notes ([`Part::Body`], a move), the end capsule or the ↔ bar.
+    part: Part,
+    /// The grabbed note (in `orig`), whose start a move snaps.
     anchor: usize,
     origin: Pos2,
     /// When it touched down (egui time), whether a selection was showing then, and which.
@@ -385,6 +402,8 @@ impl PianoRoll {
             graph: GraphLane::default(),
             graph_drag: None,
             row: clips::FloatingRow::default(),
+            pulse: 0.0,
+            press: clips::HandlePress::default(),
             remembered: Remembered::default(),
             gate: None,
             key_down: None,
@@ -561,7 +580,7 @@ impl PianoRoll {
         }
         let response = ui.interact(grid, id.with("grid"), Sense::click_and_drag());
         crate::ui::focus::register(ui, id.with("grid"), grid, crate::ui::focus::Kind::Container);
-        self.grid_input(ui, &response, grid, u, song, &mut actions);
+        self.grid_input(ui, &response, grid, m, song, &mut actions);
         let g = self.geom(grid.min, u);
 
         // The grid and what lies on it.
@@ -595,7 +614,7 @@ impl PianoRoll {
         );
         // The playhead line's slot: over the notes, under their handles, the marquee and the floating row.
         let line_slot = grid_painter.add(egui::Shape::Noop);
-        self.paint_handles(&grid_painter, &g, events, cx);
+        self.paint_selection(&grid_painter, &g, events, cx);
         #[cfg(any(target_arch = "wasm32", test))]
         crate::app::live::piano_roll(
             ui,
@@ -951,10 +970,11 @@ impl PianoRoll {
         ui: &egui::Ui,
         response: &egui::Response,
         grid: Rect,
-        u: f32,
+        m: &crate::metrics::Metrics,
         song: &mut Song,
         actions: &mut Vec<PianoRollAction>,
     ) {
+        let u = m.u(1.0);
         let g = self.geom(grid.min, u);
         let sig = song.time_sig;
         let snap = self.snap.active(auto_grid(g.beat_w, u, sig), sig);
@@ -1012,7 +1032,7 @@ impl PianoRoll {
                 self.gesture = Gesture::Box(clips::Marquee::at(at, true));
                 self.scroller.yield_touch();
             } else {
-                self.gesture = self.touch_down(&g, u, song, &events, at, now, min_len);
+                self.gesture = self.touch_down(&g, m, song, &events, at, now, min_len);
                 // Empty grid is the scroller's; a note, a handle or the selection's frame is the edit's.
                 if matches!(self.gesture, Gesture::Press { .. }) {
                     self.scroller.claim();
@@ -1136,7 +1156,7 @@ impl PianoRoll {
                     edited(actions, true);
                 } else if response.secondary_clicked()
                     && let Some(p) = pos
-                    && let Some(Hit::Empty { .. }) = hit_test(&g, u, &self.seen, &self.selected, p)
+                    && let Some(Hit::Empty { .. }) = hit_test(&g, &self.seen, p)
                     && !note_clipboard(ui.ctx()).is_empty()
                 {
                     // A right click on empty grid that deleted nothing is `Paste`.
@@ -1152,7 +1172,7 @@ impl PianoRoll {
     fn touch_down(
         &mut self,
         g: &Geom,
-        u: f32,
+        m: &crate::metrics::Metrics,
         song: &Song,
         events: &[Event],
         at: Pos2,
@@ -1161,27 +1181,25 @@ impl PianoRoll {
     ) -> Gesture {
         // A quiet selection is not showing: its frame and its (hidden) handles take no touch.
         let shown = self.selected.contains(&true) && !self.quiet;
-        let frame = (events.iter().zip(&self.selected))
-            .filter(|(_, s)| **s)
-            .filter_map(|(e, _)| g.note_rect(e))
-            .reduce(Rect::union);
+        let frame = sel_box(g, events, &self.selected);
         let inside = shown && frame.is_some_and(|f| f.contains(at));
         let prior = self.selected.clone();
-        let handles = if shown { &self.selected[..] } else { &[] };
-        let hit = hit_test(g, u, events, handles, at);
-        if hit.is_some() {
+        let handle = (self.handles(frame, m).into_iter()).find(|h| h.2.contains(at));
+        let hit = hit_test(g, events, at);
+        if hit.is_some() || handle.is_some() {
             self.cursor = (g.tick(at.x).max(0.0), g.key(at.y).unwrap_or(self.cursor.1));
         }
-        let (resize, anchor) = match hit {
-            Some(Hit::Handle(i)) => (true, i),
-            Some(Hit::Body(i)) if self.selected[i] => (false, i),
-            Some(Hit::Body(i)) if !inside => {
+        let first = self.selected.iter().position(|s| *s);
+        let (part, anchor) = match (handle, hit) {
+            (Some((part, ..)), _) => (part, first.unwrap_or(0)),
+            (_, Some(Hit::Body(i))) if self.selected[i] => (Part::Body, i),
+            (_, Some(Hit::Body(i))) if !inside => {
                 self.selected = only(i, events.len());
-                (false, i)
+                (Part::Body, i)
             }
             // Inside the showing selection's frame: it moves, the first selected note snapping.
-            _ => match self.selected.iter().position(|s| *s) {
-                Some(first) if inside => (false, first),
+            _ => match first {
+                Some(first) if inside => (Part::Body, first),
                 _ => {
                     return Gesture::Press {
                         origin: at,
@@ -1194,13 +1212,15 @@ impl PianoRoll {
         self.remember(events, min_len);
         let orig_loop = self.clip(song).map_or(0.0, |c| c.loop_len_beats);
         Gesture::Edit(Edit {
-            resize,
+            part,
             anchor,
             origin: at,
             since: now,
             shown,
             prior,
-            create_on_tap: matches!(hit, Some(Hit::Empty { .. })) && !self.row.showing(),
+            create_on_tap: part == Part::Body
+                && matches!(hit, Some(Hit::Empty { .. }))
+                && !self.row.showing(),
             orig: events.to_vec(),
             orig_sel: self.selected.clone(),
             orig_loop,
@@ -1211,8 +1231,8 @@ impl PianoRoll {
         })
     }
 
-    /// A move or resize dragged by `delta` points: the notes follow, and a selection one key tall sounds each key it
-    /// reaches.
+    /// A move or a handle's drag, `delta` points from its touch-down: the notes follow, and a selection one key tall
+    /// sounds each key it reaches.
     fn drag(
         &mut self,
         edit: &mut Edit,
@@ -1225,7 +1245,7 @@ impl PianoRoll {
         let bpb = song.time_sig.bar_beats();
         let (new, sel) = drag_edit(edit, delta, g, snap);
         let keys = || flagged(&edit.orig, &edit.which).map(|n| n.2);
-        if !edit.resize
+        if edit.part == Part::Body
             && let (Some(low), Some(high)) = (keys().min(), keys().max())
             && low == high
         {
@@ -1268,8 +1288,8 @@ impl PianoRoll {
         actions: &mut Vec<PianoRollAction>,
     ) {
         self.stop_sound(&edit, actions);
-        // A move's release leaves its selection quiet; a tap, a long press or a resize shows it (module docs).
-        self.quiet = edit.armed && !edit.resize;
+        // A move's release leaves its selection quiet; a tap, a long press or a handle's drag shows it (module docs).
+        self.quiet = edit.armed && edit.part == Part::Body;
         if edit.armed {
             if edit.reported {
                 edited(actions, true);
@@ -1277,8 +1297,9 @@ impl PianoRoll {
         } else if !gesture::is_long(now - edit.since) {
             // A tap: a showing selection only clears; else the note alone (out of a quiet selection too), if the
             // touch-down lay on its exact row.
-            let on =
-                !edit.shown && !edit.resize && on_note(g, &edit.orig[edit.anchor], edit.origin);
+            let on = !edit.shown
+                && edit.part == Part::Body
+                && on_note(g, &edit.orig[edit.anchor], edit.origin);
             if on {
                 self.selected = only(edit.anchor, self.selected.len());
             } else {
@@ -1543,15 +1564,30 @@ impl PianoRoll {
         }
     }
 
-    /// Draws the selected notes' resize handles, unless a touch on a note or a quiet selection hides them (module docs).
-    fn paint_handles(&self, painter: &egui::Painter, g: &Geom, events: &[Event], cx: &UiCtx) {
-        if self.quiet || matches!(self.gesture, Gesture::Edit(_)) {
-            return;
+    /// The selection box pulsing over the selected notes, a marquee's catch too, and its handles (module docs).
+    fn paint_selection(&mut self, painter: &egui::Painter, g: &Geom, events: &[Event], cx: &UiCtx) {
+        let sbox = sel_box(g, events, &self.selected);
+        clips::paint_pulse(painter, cx, sbox, 0.0, &mut self.pulse);
+        let now = painter.ctx().input(|i| i.time);
+        let held = match &self.gesture {
+            Gesture::Edit(e) if e.part != Part::Body => Some((e.part, e.since)),
+            _ => None,
+        };
+        self.press.follow(held, now);
+        for (part, rect, _) in self.handles(sbox, cx.m) {
+            let growth = self.press.growth(painter.ctx(), part, now);
+            clips::paint_handle(painter, cx, rect, (1.0, growth), part == Part::Scale);
         }
-        for (e, _) in events.iter().zip(&self.selected).filter(|(_, s)| **s) {
-            if let Some(r) = g.note_rect(e) {
-                clips::paint_handle(painter, cx, clips::end_handle(r, cx.m), (1.0, 0.0), false);
-            }
+    }
+
+    /// The handles on the selection box `sbox` with their touch zones: the end capsule, and the ↔ bar with ≥ 2 notes
+    /// selected. None while the selection is quiet or a touch holds its notes.
+    fn handles(&self, sbox: Option<Rect>, m: &crate::metrics::Metrics) -> Vec<(Part, Rect, Rect)> {
+        let held = matches!(&self.gesture, Gesture::Edit(e) if e.part == Part::Body);
+        let scale = self.selected.iter().filter(|s| **s).count() >= 2;
+        match sbox {
+            Some(b) if !self.quiet && !held => clips::editor_handles(b, true, scale, m),
+            _ => Vec::new(),
         }
     }
 
@@ -1718,10 +1754,12 @@ impl PianoRoll {
             .filter(|(_, s)| **s)
             .filter_map(|(e, _)| Some((e, g.note_rect(e)?)))
             .collect();
-        let handles: Vec<Rect> = (notes.iter())
-            .map(|(_, r)| clips::end_handle(*r, cx.m))
-            .filter(|h| h.intersects(grid))
-            .collect();
+        let handles: Vec<Rect> = (self
+            .handles(sel_box(g, events, &self.selected), cx.m)
+            .iter())
+        .map(|h| h.1)
+        .filter(|h| h.intersects(grid))
+        .collect();
         // A quiet selection has no row, which a release on it brings back neither.
         let rects = notes
             .iter()
@@ -2151,22 +2189,19 @@ fn edited(actions: &mut Vec<PianoRollAction>, final_edit: bool) {
     actions.push(PianoRollAction::SongEdited { final_edit });
 }
 
-/// The events and selection of a move or resize dragged by `delta` points.
+/// The events and selection of a move or handle drag dragged by `delta` points. A handle takes no grab offset: the
+/// selection box's end goes to the finger's tick.
 fn drag_edit(edit: &Edit, delta: Vec2, g: &Geom, snap: Option<f64>) -> (Vec<Event>, Vec<bool>) {
-    let dx = f64::from(delta.x / g.beat_w) * BEAT;
-    let (pos, len, _) = note(&edit.orig[edit.anchor]).unwrap_or_default();
-    let mut events = if edit.resize {
-        let end = snap_round(pos + len + dx, snap);
-        stretch_notes(
-            &edit.orig,
-            &edit.which,
-            end - (pos + len),
-            snap.unwrap_or(1.0),
-        )
-    } else {
-        let start = snap_round(pos + dx, snap);
-        let dk = -(delta.y / g.row_h).round() as i32;
-        shift_notes(&edit.orig, &edit.which, start - pos, dk)
+    let finger = g.tick(edit.origin.x + delta.x);
+    let mut events = match edit.part {
+        Part::Scale => scale_notes(&edit.orig, &edit.which, finger, snap),
+        Part::End | Part::Start => stretch_to(&edit.orig, &edit.which, finger, snap),
+        Part::Body => {
+            let pos = note(&edit.orig[edit.anchor]).map_or(0.0, |n| n.0);
+            let start = snap_round(pos + f64::from(delta.x / g.beat_w) * BEAT, snap);
+            let dk = -(delta.y / g.row_h).round() as i32;
+            shift_notes(&edit.orig, &edit.which, start - pos, dk)
+        }
     };
     let mut sel = edit.orig_sel.clone();
     sort(&mut events, &mut sel);

@@ -97,7 +97,7 @@ Plugin settings are saved with the project, and their controls can be automated.
 
 ## Using your own FL Studio Mobile sounds
 
-Honeydew doesn't include any FL Studio Mobile content. If you own the app, you can import its sounds and presets from your own copy. They stay on your computer, aren't included in exported project ZIPs, and are still covered by your FL Studio Mobile licence, so don't share them.
+Honeydew doesn't include any FL Studio Mobile content. If you own the app, you can import its sounds, presets and demo songs from your own copy. They stay on your computer, aren't included in exported project ZIPs, and are still covered by your FL Studio Mobile licence, so don't share them.
 
 1. Copy your app's `.apk` or `.obb` into the **Original Content** folder. SETTINGS has an `Open folder` button.
 
@@ -115,7 +115,7 @@ Or from the command line:
 cargo run --release --bin honeydew-import -- path/to/your.apk
 ```
 
-The sounds and presets then show up in the pickers, and demo songs that use them play correctly. Each file is imported once; delete the hidden `.imported-…` file next to it to import it again. The web version can't import.
+The sounds and presets then show up in the pickers, and demo songs that use them play correctly. The icons are always Honeydew's own. Each file is imported once; delete the hidden `.imported-…` file next to it to import it again. The web version can't import.
 
 **Getting the files from your phone.** Use only your own copy. With USB debugging on and Android's platform tools installed:
 
@@ -143,7 +143,7 @@ cargo run --release
 The sound library lives in `sounds/`, split into 90 MB parts to stay under GitHub's file size limit. To rebuild it from the raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.3.1
+tools/release-content.sh 0.3.2
 ```
 
 Commit the updated `sounds/honeydew-sounds.zip.*` parts with your changes. Add `--web` to also build the web ZIP. Tagged releases include the sounds automatically.
@@ -199,7 +199,7 @@ See Android's [app-signing guide](https://developer.android.com/studio/publish/a
 
 ## About
 
-Honeydew is a clean-room reimplementation. FL Studio Mobile's behaviour, file formats and look were written down as a specification, and Honeydew's code was written only from that. It contains no code, samples, presets or artwork from FL Studio Mobile.
+Honeydew is a clean-room reimplementation. FL Studio Mobile's behaviour, file formats and look were written down as a specification, and Honeydew's code was written only from that. It contains no code, samples, presets or artwork from FL Studio Mobile. The icons are Honeydew's own as well: every one is drawn from scratch in code, not taken from the app.
 
 Honeydew is an independent project, not affiliated with or endorsed by Image-Line. FL Studio is a trademark of Image-Line.
 

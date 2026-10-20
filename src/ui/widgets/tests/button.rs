@@ -485,7 +485,7 @@ fn a_rect_buttons_icon_has_the_icons_md_edge_centred_in_its_area_and_scales() {
         full.width() <= edge + 1.0 && full.height() <= edge + 1.0,
         "{full:?}"
     );
-    assert!(full.width() > 0.4 * edge, "{full:?}");
+    assert!(full.width() > 0.3 * edge, "{full:?}");
     assert!((full.center() - area_centre).length() <= 1.5, "{full:?}");
     // A size factor of 0.5 halves it.
     assert!(

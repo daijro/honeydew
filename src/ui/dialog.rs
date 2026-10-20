@@ -63,7 +63,7 @@ pub(crate) fn button<'a>(
 }
 
 /// Paints the base: `screen` dimmed into `dim`, then the panel `rect` into `boxed`. The two are the same painter for a
-/// dialog drawn into its parent `Ui` (Song options, the tempo dialog), which is last in the frame.
+/// dialog drawn into its parent `Ui` (Song options), which is last in the frame.
 pub(crate) fn paint_base(
     dim: &Painter,
     boxed: &Painter,

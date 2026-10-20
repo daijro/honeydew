@@ -220,12 +220,11 @@ fn the_keyboard_settings_cover_nothing_that_scrolls_and_the_tempo_dialog_covers_
     rig.wheel(pos2(300.0, 200.0), -100.0);
     let scrolled = rig.app.main_screen.scroll_y;
     assert!(scrolled > 0.0);
-    // The tempo dialog is modal over the whole screen (its band is y 222..318): the wheel scrolls nothing under it,
-    // over the band or above it.
+    // The tempo dialog is modal over the whole screen: the wheel scrolls nothing under it, on its disc or off it.
     rig.app.navigate(Nav::Open(Overlay::TempoEditor));
     rig.frame(vec![]);
-    rig.wheel(pos2(300.0, 270.0), -100.0);
-    rig.wheel(pos2(300.0, 100.0), -100.0);
+    rig.wheel(pos2(585.0, 270.0), -100.0);
+    rig.wheel(pos2(50.0, 100.0), -100.0);
     assert_eq!(rig.app.main_screen.scroll_y, scrolled);
     // Closed, the rows scroll again.
     rig.app.nav.overlays.clear();
@@ -235,34 +234,35 @@ fn the_keyboard_settings_cover_nothing_that_scrolls_and_the_tempo_dialog_covers_
 }
 
 #[test]
-fn the_save_and_tempo_dialogs_dim_the_whole_app_screen_and_paint_their_band_as_the_floating_panel()
-{
-    // Dialog boxes, through the app: the screen dimmed at α 0.6 over everything the app drew, then the band as the
-    // floating panel: the Save dialog's 20 U × 7 U band (y 158..382) and the tempo dialog's 3 U band (y 222..318).
+fn the_save_and_tempo_dialogs_dim_the_whole_app_screen_and_paint_only_their_box_over_it() {
+    // Dialogs, through the app: the screen dimmed over everything the app drew, then the dialog: the Save dialog's
+    // 20 U × 7 U band (y 158..382) as the floating panel over a dim of α 0.6, the tempo dialog over a dim of α 0.8.
     let colors = crate::theme::theme_by_id(0).colors;
     let screen = egui::Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(1170.0, 540.0));
-    let band = |top, bottom| egui::Rect::from_x_y_ranges(0.0..=1170.0, top..=bottom);
     let dialogs = [
         (
             Overlay::SaveDialog {
                 name: "Song".into(),
             },
             egui::Rect::from_x_y_ranges(265.0..=905.0, 158.0..=382.0),
+            0.6,
         ),
-        (Overlay::TempoEditor, band(222.0, 318.0)),
+        (Overlay::TempoEditor, screen, 0.8),
     ];
     let m = crate::metrics::Metrics::from_pixels_per_point(1.0, crate::metrics::DEFAULT_UI_SCALE);
     let panel_top = crate::ui::main_screen::Regions::new(screen, &m)
         .transport
         .top();
-    for (overlay, band) in dialogs {
+    for (overlay, band, alpha) in dialogs {
         let mut rig = Rig::with_synth();
         rig.app.navigate(Nav::Open(overlay.clone()));
         rig.frame(vec![]);
         let clipped = crate::ui::dialog::painted_clipped(&rig.out.shapes);
         let painted: Vec<_> = clipped.iter().map(|&(r, f, _)| (r, f)).collect();
-        crate::ui::dialog::assert_base(&painted, &colors, screen, band);
-        let dim = (colors.background.to_color32().gamma_multiply(0.6), screen);
+        if band != screen {
+            crate::ui::dialog::assert_base(&painted, &colors, screen, band);
+        }
+        let dim = (colors.background.to_color32().gamma_multiply(alpha), screen);
         let dim_at = painted
             .iter()
             .position(|&(r, f)| (f, r) == dim)
@@ -292,7 +292,7 @@ fn the_save_and_tempo_dialogs_dim_the_whole_app_screen_and_paint_their_band_as_t
 fn a_pinch_or_ctrl_wheel_zooms_no_playlist_under_the_tempo_dialog() {
     let mut rig = Rig::with_synth();
     let zoom = |rig: &mut Rig| {
-        // Over the playlist, above the dialog's band.
+        // Over the playlist, under the dialog.
         let at = pos2(300.0, 100.0);
         rig.frame(vec![egui::Event::PointerMoved(at), egui::Event::Zoom(1.5)]);
         rig.frame(vec![]);

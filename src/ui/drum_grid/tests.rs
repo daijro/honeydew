@@ -261,22 +261,24 @@ fn a_move_snaps_the_anchor_start_keeps_the_group_after_0_and_its_rows_in_range()
 }
 
 #[test]
-fn a_resize_snaps_the_anchor_end_and_keeps_the_minimum_length() {
+fn the_end_capsule_moves_the_box_end_to_the_snapped_finger_and_every_length_by_as_much() {
     let orig = [drum(0, 0, 32.0), drum(1, 64, 64.0)];
-    let len = |anchor, which: &[bool], dt, snap| -> Vec<f64> {
-        hits(&resized(&orig, which, anchor, dt, snap))
+    let len = |which: &[bool], finger, snap| -> Vec<f64> {
+        hits(&resized(&orig, which, finger, snap))
             .iter()
             .map(|h| h.2)
             .collect()
     };
-    // End 32 + 20 = 52 → 64.
-    assert_eq!(len(0, &[true, false], 20.0, Some(32.0)), [64.0, 64.0]);
-    // Both, by the anchor's change.
-    assert_eq!(len(0, &[true, true], 32.0, Some(32.0)), [64.0, 96.0]);
-    // Down to the minimum: 32/8, or a tick with snap off.
-    assert_eq!(len(0, &[true, false], -40.0, Some(32.0)), [4.0, 64.0]);
-    assert_eq!(len(0, &[true, false], -40.0, None), [1.0, 64.0]);
-    assert_eq!(len(0, &[true, false], 3.4, None), [35.0, 64.0]);
+    // The box [0, 32]: the finger at 52 → 64.
+    assert_eq!(len(&[true, false], 52.0, Some(32.0)), [64.0, 64.0]);
+    // Both, the box [0, 128]: its end 150 → 160, each length + 32.
+    assert_eq!(len(&[true, true], 150.0, Some(32.0)), [64.0, 96.0]);
+    // The box's minimum width: 32/8, or a tick with snap off.
+    assert_eq!(len(&[true, false], -8.0, Some(32.0)), [4.0, 64.0]);
+    assert_eq!(len(&[true, false], -8.0, None), [1.0, 64.0]);
+    assert_eq!(len(&[true, false], 35.4, None), [35.0, 64.0]);
+    // Only the box has a minimum: the box [0, 128] down to 4 takes 124 off each, which keeps a tick.
+    assert_eq!(len(&[true, true], 0.0, Some(32.0)), [1.0, 1.0]);
 }
 
 #[test]
@@ -552,14 +554,6 @@ fn the_marquee_selects_hits_whose_extent_overlaps_it() {
 }
 
 #[test]
-fn a_handles_touch_box_is_the_piano_rolls_on_the_end_capsule() {
-    // 0.6 U wide and 1.41 U tall, centred 0.36 U past the end (on the capsule) on the row's centre line.
-    let h = PLACE.handle(&drum(1, 64, 32.0)).unwrap();
-    assert!((h.center() - pos2(196.0 + 11.52, 144.0)).length() < 1e-4);
-    assert!((h.size() - vec2(19.2, 45.12)).length() < 1e-4);
-}
-
-#[test]
 fn the_pop_in_scales_from_nothing_past_full_size_and_settles() {
     // a ← 0.6·a per 60 Hz frame; the scale 1.0515·sin(1.885·(1 − a)).
     assert_eq!(pop_scale(1.0), 0.0);
@@ -805,14 +799,15 @@ impl Rig {
             .collect()
     }
 
-    /// A resize handle is drawn at `center`: a `text` disc 0.6 U (19.2 points) across.
-    /// A handle's capsule body (a rounded `text` rect) just past the hit end `end`, centred on its row.
+    /// The end capsule's body (a rounded `text` rect) just past the selection's end `end`, centred on its rows (its
+    /// edges on whole pixels).
     fn handle_at(&self, end: Pos2) -> bool {
         let text = theme_by_id(0).colors.text.to_color32();
         self.shapes.iter().any(|s| {
             matches!(&s.shape, egui::Shape::Rect(r)
                 if r.fill == text && r.corner_radius != egui::CornerRadius::ZERO
-                    && (end.x..end.x + 8.0).contains(&r.rect.left()) && r.rect.center().y == end.y)
+                    && (end.x..end.x + 8.0).contains(&r.rect.left())
+                    && (r.rect.center().y - end.y).abs() <= 1.0)
         })
     }
 

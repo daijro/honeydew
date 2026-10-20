@@ -215,12 +215,6 @@ fn check(
             Ok(song) => play(files, &song, samples),
             Err(e) => failed(&e),
         },
-        "png" if path.file_name() == Some(crate::icons::SHEET_FILE.as_ref()) => {
-            match crate::icons::decode_sheet(&bytes) {
-                Some(_) => Outcome::Ok,
-                None => Outcome::Failed("not a 512 × 1024 8-bit RGBA PNG icon sheet".into()),
-            }
-        }
         "dwp" => program(files, path),
         "fst" => fst(files, path, &bytes),
         "chords" => match std::str::from_utf8(&bytes).map_err(|e| e.to_string()) {
@@ -450,8 +444,8 @@ mod tests {
         }
         assert_eq!(row("Chord Sets"), Some([1, 1, 0]), "{shown}");
         assert_eq!(row("Keyboard Shortcuts"), Some([1, 2, 0]), "{shown}");
-        // The icon sheet, and the README.
-        assert_eq!(row("(top)"), Some([1, 0, 1]), "{shown}");
+        // The README.
+        assert_eq!(row("(top)"), Some([0, 0, 1]), "{shown}");
         assert_eq!(report.failures.len(), 8, "{shown}");
         let failed = |i: usize, start: &str| {
             assert!(report.failures[i].starts_with(start), "{i}: {shown}");

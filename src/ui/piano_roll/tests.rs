@@ -159,35 +159,25 @@ fn geometry_maps_ticks_and_keys() {
 }
 
 #[test]
-fn hits_tell_note_handle_and_empty_apart() {
+fn hits_tell_note_and_empty_apart() {
     // A beat-long note (64 points) on key 126, from x 164 to 228, y 66 to 82.
     let events = [n(128, 128.0, 126)];
-    let none = [false];
-    let hit = |sel: &[bool], x: f32, y: f32| hit_test(&G, U, &events, sel, pos2(x, y));
-    assert_eq!(hit(&none, 170.0, 70.0), Some(Hit::Body(0)));
+    let hit = |x: f32, y: f32| hit_test(&G, &events, pos2(x, y));
+    assert_eq!(hit(170.0, 70.0), Some(Hit::Body(0)));
     // No resize zone at the right end (only the handle resizes); the end itself is outside.
-    assert_eq!(hit(&none, 227.0, 70.0), Some(Hit::Body(0)));
-    assert!(matches!(hit(&none, 228.0, 70.0), Some(Hit::Empty { .. })));
+    assert_eq!(hit(227.0, 70.0), Some(Hit::Body(0)));
+    assert!(matches!(hit(228.0, 70.0), Some(Hit::Empty { .. })));
     // Empty cells report the tick and key under the pointer.
     assert_eq!(
-        hit(&none, 132.0, 90.0),
+        hit(132.0, 90.0),
         Some(Hit::Empty {
             tick: 64.0,
             key: 125
         })
     );
     // Left of tick 0 or outside the keys: nothing.
-    assert_eq!(hit(&none, 99.0, 70.0), None);
-    assert_eq!(hit(&none, 120.0, 40.0), None);
-    // A selected note grows a handle past its right end (its touch box centred on the end capsule, 0.36 U out), which
-    // beats the empty cell under it.
-    let center = handle_rect(&G, U, &events[0]).unwrap().center();
-    assert_eq!(center, pos2(228.0 + 0.36 * U, 74.0));
-    assert_eq!(hit(&[true], center.x + 4.0, 74.0), Some(Hit::Handle(0)));
-    assert!(matches!(
-        hit(&none, center.x + 4.0, 74.0),
-        Some(Hit::Empty { .. })
-    ));
+    assert_eq!(hit(99.0, 70.0), None);
+    assert_eq!(hit(120.0, 40.0), None);
 }
 
 #[test]
@@ -213,14 +203,8 @@ fn a_touch_binds_a_note_a_fifth_of_a_row_off_its_row_and_a_tap_rechecks_the_row(
 #[test]
 fn the_topmost_note_wins() {
     let events = [n(0, 256.0, 126), n(64, 64.0, 126)];
-    assert_eq!(
-        hit_test(&G, U, &events, &[false, false], pos2(150.0, 70.0)),
-        Some(Hit::Body(1))
-    );
-    assert_eq!(
-        hit_test(&G, U, &events, &[false, false], pos2(110.0, 70.0)),
-        Some(Hit::Body(0))
-    );
+    assert_eq!(hit_test(&G, &events, pos2(150.0, 70.0)), Some(Hit::Body(1)));
+    assert_eq!(hit_test(&G, &events, pos2(110.0, 70.0)), Some(Hit::Body(0)));
 }
 
 #[test]
@@ -551,10 +535,7 @@ fn notes_above_key_127_are_left_alone() {
     );
     // Nothing to hit at key 200's would-be row, and no panic finding the key 0 note.
     let low = G.y(0) + 8.0;
-    assert_eq!(
-        hit_test(&G, U, &orig, &[false, false], pos2(110.0, low)),
-        Some(Hit::Body(0))
-    );
+    assert_eq!(hit_test(&G, &orig, pos2(110.0, low)), Some(Hit::Body(0)));
 }
 
 // ---- note menu: scale, slide, transpose ----
@@ -1603,14 +1584,45 @@ mod component {
     }
 
     #[test]
-    fn dragging_the_handle_resizes_to_the_grid() {
-        let mut rig = Rig::new(vec![n(128, 64.0, 70)]);
+    fn the_end_capsule_puts_the_box_end_on_the_snapped_finger_and_every_length_changes_as_much() {
+        let mut rig = Rig::new(vec![n(128, 64.0, 70), n(256, 32.0, 66)]);
         rig.tap(at(140.0, 70));
-        // The note ends at tick 192 (x 144), its handle 0.3 U on; 30 points right = 60 ticks: 252 rounds to 256.
+        // The note ends at tick 192, its capsule 0.15 U on. No grab offset: the finger 39.6 points past the end is at
+        // tick 271, which rounds to 256 on the 32-tick grid.
         let handle = at(192.0, 70) + vec2(9.6, 0.0);
         rig.drag(handle, handle + vec2(30.0, 0.0));
-        assert_eq!(spans(rig.events()), [(128, 128.0, 70)]);
+        assert_eq!(spans(rig.events()), [(128, 128.0, 70), (256, 32.0, 66)]);
         assert_eq!(rig.last, [DONE]);
+        // Both: one capsule on the box [128, 288] (keys 70…66), centred on it. Its end 367 → 352: each note + 64.
+        (rig.roll.selected, rig.roll.quiet) = (vec![true, true], false);
+        rig.frame(vec![]);
+        let handle = pos2(at(288.0, 70).x + 9.6, (at(0.0, 70).y + at(0.0, 66).y) / 2.0);
+        rig.drag(handle, handle + vec2(30.0, 0.0));
+        assert_eq!(spans(rig.events()), [(128, 192.0, 70), (256, 96.0, 66)]);
+    }
+
+    #[test]
+    fn the_scale_bar_scales_the_selection_about_its_start_to_the_snapped_end_in_one_step() {
+        let mut rig = Rig::new(vec![n(128, 64.0, 70), n(256, 128.0, 66)]);
+        // The box [128, 384]: its right edge at x 242, its bottom (key 66's row) 8 points under that row's centre.
+        (rig.roll.selected, rig.roll.quiet) = (vec![true, true], false);
+        rig.frame(vec![]);
+        // The ↔ bar: 34 points wide, ending on the box's right edge, its top 3.84 points under the box.
+        let bar = pos2(242.0 - 17.0, at(0.0, 66).y + 8.0 + 3.84 + 9.96);
+        // The finger at tick 650: the box's end on 640, k = 512 / 256 = 2 about A = 128.
+        rig.drag(bar, bar + vec2(150.0, 0.0));
+        assert_eq!(spans(rig.events()), [(128, 128.0, 70), (384, 256.0, 66)]);
+        assert_eq!(
+            rig.all.iter().filter(|a| **a == DONE).count(),
+            1,
+            "{:?}",
+            rig.all
+        );
+        assert_eq!(rig.roll.selected, [true, true]);
+        // Far left of the start: the box's minimum width, 32/8 = 4 ticks, so k = 4 / 512.
+        let bar = bar + vec2(128.0, 0.0);
+        rig.drag(bar, bar - vec2(400.0, 0.0));
+        assert_eq!(spans(rig.events()), [(128, 1.0, 70), (130, 2.0, 66)]);
     }
 
     #[test]

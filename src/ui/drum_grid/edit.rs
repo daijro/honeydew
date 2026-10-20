@@ -2,13 +2,13 @@
 //! `Clip.events` sorted by position (stable) with the selection mask (one flag per event) in step. Positions are in
 //! ticks ([`PPQ`] per beat) as `f64` while editing and whole ticks when stored; lengths are `len_beats`.
 
-use eframe::egui::{Pos2, Rect, Vec2, pos2};
+use eframe::egui::{Pos2, Rect, pos2};
 
 use super::Remembered;
 use crate::song::{Clip, Event, PPQ, TimeSig};
 use crate::ui::clips::TimeAxis;
 use crate::ui::graph_lane::Prop;
-use crate::ui::piano_roll::notes::{HANDLE_D, snap_round, sort};
+use crate::ui::piano_roll::notes::{box_end, snap_round, sort};
 use crate::ui::step_seq::edit as steps;
 
 pub const BEAT: f64 = PPQ as f64;
@@ -201,23 +201,28 @@ pub fn moved(
     (events, sel)
 }
 
-/// The `which` hits of `orig` resized: the `anchor`'s end goes to the nearest snap unit of its end + `dt` ticks, the
-/// others' ends by as much, none shorter than [`min_len`].
-pub fn resized(
-    orig: &[Event],
-    which: &[bool],
-    anchor: usize,
-    dt: f64,
-    snap: Option<f64>,
-) -> Vec<Event> {
-    let Some((_, start, len)) = orig.get(anchor).and_then(hit) else {
+/// The `which` hits of `orig` resized by the selection's end capsule dragged to tick `finger`: the selection box's end
+/// goes to [`box_end`] (the nearest snap unit, at least [`min_len`] after the box's start), and every hit's length
+/// changes by as much as the box's width. Only the box has a minimum; a hit is only kept at least a tick long (or as
+/// long as it was, if shorter).
+pub fn resized(orig: &[Event], which: &[bool], finger: f64, snap: Option<f64>) -> Vec<Event> {
+    let hits = || {
+        (orig.iter().zip(which))
+            .filter(|(_, w)| **w)
+            .filter_map(|(e, _)| hit(e))
+    };
+    let Some((start, end)) = hits()
+        .map(|(_, pos, len)| (pos, pos + len))
+        .reduce(|a, b| (a.0.min(b.0), a.1.max(b.1)))
+    else {
         return orig.to_vec();
     };
-    let dl = snap_round(start + len + dt, snap) - (start + len);
-    let min = min_len(snap);
+    let dl = box_end(finger, start, snap) - end;
     (orig.iter().zip(which))
         .map(|(&e, &w)| match hit(&e) {
-            Some((pad, pos, len)) if w => with(e, pos as u32, pad, Some((len + dl).max(min))),
+            Some((pad, pos, len)) if w => {
+                with(e, pos as u32, pad, Some((len + dl).max(len.min(1.0))))
+            }
             _ => e,
         })
         .collect()
@@ -316,15 +321,13 @@ impl Place {
         ))
     }
 
-    /// A hit's resize handle, the piano roll's: its touch box, [`HANDLE_D`] wide and the end capsule's height, centred
-    /// on the capsule past its right end on its row's centre line ([`crate::ui::clips::end_handle`]).
-    pub fn handle(&self, e: &Event) -> Option<Rect> {
-        use crate::ui::clips::{END_CENTRE, HANDLE_H};
-        let r = self.rect(e)?;
-        Some(Rect::from_center_size(
-            pos2(r.right() + END_CENTRE * self.u, r.center().y),
-            Vec2::new(HANDLE_D, HANDLE_H) * self.u,
-        ))
+    /// The selection box of the `sel` hits: their earliest start to their latest end, the highest one's row top to the
+    /// lowest one's row bottom.
+    pub fn sel_box(&self, events: &[Event], sel: &[bool]) -> Option<Rect> {
+        (events.iter().zip(sel))
+            .filter(|(_, s)| **s)
+            .filter_map(|(e, _)| self.rect(e))
+            .reduce(Rect::union)
     }
 
     /// The row under `y`, if any.

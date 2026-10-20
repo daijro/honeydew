@@ -596,7 +596,7 @@ mod audio {
         a.rig.click(BPM);
         assert_eq!(a.rig.overlays(), [Overlay::TempoEditor]);
         assert!(a.rig.app.main_screen.playing && a.rig.app.recorder.is_some());
-        a.rig.click(BPM);
+        a.rig.frame(escape());
         a.rig.app.song.set_tempo(300.0);
         a.rig.app.song_edited(SongEdit::Final, BEAT);
         a.feed(FRAMES_PER_BEAT, 0.5);

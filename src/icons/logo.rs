@@ -2,7 +2,9 @@
 //! tinted image: the one-colour silhouette of the coloured app icon (`honeydew.svg`). Each egui context loads a
 //! rasterisation once, the first time it draws the logo at that size.
 
-use eframe::egui::{Color32, Context, Id, Rect, Shape, TextureHandle, TextureOptions, pos2};
+use eframe::egui::{
+    Color32, ColorImage, Context, Id, Rect, Shape, TextureHandle, TextureOptions, pos2,
+};
 
 /// The silhouette's rasterisations (white on transparency) by edge in pixels, smallest first.
 const PNGS: [(usize, &[u8]); 4] = [
@@ -33,6 +35,24 @@ fn source_for(px: f32) -> (usize, &'static [u8]) {
         .unwrap_or(last)
 }
 
+/// `png` as an image: `None` unless it decodes as an 8-bit RGBA PNG of `size` pixels.
+fn decode_rgba(png: &[u8], size: [usize; 2]) -> Option<ColorImage> {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(png));
+    // At most the image's own pixels in memory, however the file says otherwise.
+    decoder.set_limits(png::Limits {
+        bytes: size[0] * size[1] * 4 * 2,
+    });
+    let mut reader = decoder.read_info().ok()?;
+    let info = reader.info();
+    let rgba8 = (info.color_type, info.bit_depth) == (png::ColorType::Rgba, png::BitDepth::Eight);
+    if !rgba8 || (info.width, info.height) != (size[0] as u32, size[1] as u32) {
+        return None;
+    }
+    let mut pixels = vec![0; reader.output_buffer_size()?];
+    reader.next_frame(&mut pixels).ok()?;
+    Some(ColorImage::from_rgba_unmultiplied(size, &pixels))
+}
+
 /// The logo on `square` in `ctx`, tinted `color`.
 pub(super) fn logo_shape(ctx: &Context, square: Rect, color: Color32) -> Shape {
     let (n, png) = source_for(square.width() * ctx.pixels_per_point());
@@ -40,7 +60,7 @@ pub(super) fn logo_shape(ctx: &Context, square: Rect, color: Color32) -> Shape {
     let texture = ctx
         .data(|d| d.get_temp::<TextureHandle>(id))
         .unwrap_or_else(|| {
-            let image = super::sheet::decode_rgba(png, [n, n]).expect("our logo is an RGBA PNG");
+            let image = decode_rgba(png, [n, n]).expect("our logo is an RGBA PNG");
             let handle = ctx.load_texture("honeydew_logo", image, TextureOptions::LINEAR);
             ctx.data_mut(|d| d.insert_temp(id, handle.clone()));
             handle
@@ -58,7 +78,7 @@ mod tests {
     #[test]
     fn every_rasterisation_decodes_at_its_size() {
         for (n, png) in PNGS {
-            let image = super::super::sheet::decode_rgba(png, [n, n]);
+            let image = decode_rgba(png, [n, n]);
             assert!(image.is_some(), "honeydew-mono-{n}.png");
         }
     }
@@ -68,7 +88,7 @@ mod tests {
         // The in-app logo is the one-colour silhouette (`honeydew-mono.svg`), white on transparency so that the draw's
         // tint is its colour; the coloured melon has no white pixel.
         for (n, png) in PNGS {
-            let image = super::super::sheet::decode_rgba(png, [n, n]).unwrap();
+            let image = decode_rgba(png, [n, n]).unwrap();
             let px = &image.pixels;
             let white = px.iter().all(|c| {
                 let [r, g, b, a] = c.to_srgba_unmultiplied();

@@ -151,6 +151,9 @@ pub struct SongAudioEngine {
     /// The metronome clicks on the song's beats while the transport rolls. It follows REC's arm (`App::auto_record`,
     /// its only sender), so it also tells a recording, which does not wrap at the song end ([`Self::wrap_range`]).
     metronome_on: bool,
+    /// The metronome flag (the tempo dialog's toggle): the beats click while it is on too, REC armed or not. It never
+    /// stops the song-end wrap. An export's engine never gets it.
+    metronome_flag: bool,
     /// The click level, from the `Metronome level` setting.
     metronome_level: f32,
     /// b: the accent sounds on beats with floor(beat) mod b = 0.
@@ -432,6 +435,7 @@ impl SongAudioEngine {
             playing: false,
             metronome: Metronome::new(sample_rate),
             metronome_on: false,
+            metronome_flag: false,
             metronome_level: metronome::level(Settings::default().metronome_level),
             bar_beats: song.time_sig.bar_beats(),
             count_in_beats: 0,
@@ -1026,6 +1030,14 @@ impl AudioRenderer for SongAudioEngine {
         }
     }
 
+    /// As [`Self::set_metronome`], for the flag.
+    fn set_metronome_flag(&mut self, on: bool, level: f32) {
+        self.metronome_flag = on;
+        if level.is_finite() {
+            self.metronome_level = metronome::level(level.clamp(0.0, 1.0));
+        }
+    }
+
     fn ping(&mut self, id: u32) {
         self.start_ping(id);
     }
@@ -1207,7 +1219,7 @@ impl SongAudioEngine {
                 self.click_beat(k);
             }
             next.0 = Some(self.beat_from(done + 1, self.tempo_bpm).1 - done);
-        } else if self.metronome_on && self.playing {
+        } else if (self.metronome_on || self.metronome_flag) && self.playing {
             // The beat the transport is on or last passed clicks as the transport reaches it, which lands within an
             // output frame of it (its frame is a stop); at a live tempo the transport's frames go by faster or slower.
             let (mut k, mut start) = self.beat_from(self.frame, self.built_bpm);
@@ -2138,6 +2150,18 @@ mod tests {
         engine.play();
         let expected = [0, 24_000, 48_000, 72_000, 96_000];
         assert_eq!(clicks(&mut engine, 4 * 24_000 + 1), expected);
+    }
+
+    /// The metronome flag clicks the beats with REC off, and the transport still wraps at the song end (one bar).
+    #[test]
+    fn the_metronome_flag_clicks_without_rec_and_keeps_the_song_end_wrap() {
+        let mut engine = SongAudioEngine::new(&Song::default(), 48_000.0).unwrap();
+        engine.play();
+        assert!(clicks(&mut engine, 24_000).is_empty());
+        engine.set_metronome_flag(true, 1.0);
+        // Beats 1 to 3, then beat 0 again past the wrap: 5 beats in, the transport is 1 beat into the bar.
+        assert_eq!(clicks(&mut engine, 4 * 24_000), [0, 24_000, 48_000, 72_000]);
+        assert_eq!(engine.transport_tick(), u64::from(PPQ));
     }
 
     /// Play forgets the last beat clicked, so a count-in after a Stop clicks its beats.

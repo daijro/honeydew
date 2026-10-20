@@ -136,12 +136,9 @@ pub fn readme() -> String {
          \n\
          {folders}\
          \n\
-         The icon sheet, {sheet}, goes right in this folder; its trademark icons are never shown.\n\
-         \n\
          Songs and templates that name original content find it here, and the pickers list it next to your own\n\
-         files, read-only. Restart {app} after adding or changing GMSynth waveshapes or the icon sheet.\n",
+         files, read-only. Restart {app} after adding or changing GMSynth waveshapes.\n",
         app = crate::APP_NAME,
-        sheet = crate::icons::SHEET_FILE,
     )
 }
 
@@ -193,20 +190,6 @@ impl ProjectFiles {
     pub fn install_original_keymap(&self) {
         let (shortcuts, user) = self.keymap_dirs();
         crate::keymap::install(shortcuts.as_deref(), user);
-    }
-
-    /// Makes the content folder's icon sheet (`<content folder>/wrap.png`) `ctx`'s icon atlas, when it is there and
-    /// decodes as one ([`crate::icons::install_sheet`]). Returns whether it did; otherwise our drawn set stays.
-    pub fn install_original_icons(&self, ctx: &eframe::egui::Context) -> bool {
-        let Some(path) = self
-            .content_dir()
-            .map(|dir| dir.join(crate::icons::SHEET_FILE))
-        else {
-            return false;
-        };
-        let regular = std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file());
-        let png = regular.then(|| self.read_user_file(&path).ok()).flatten();
-        png.is_some_and(|png| crate::icons::install_sheet(ctx, &png))
     }
 
     /// The file `path` names: `@L@` in the user folder, `@R@` in the content folder, `@T@`
@@ -751,10 +734,6 @@ pub(crate) mod tests {
             &at("Keyboard Shortcuts/windows.json"),
             br#"{ "modifiers": ["ctrl"], "actions": [] }"#,
         );
-        put(
-            &at(crate::icons::SHEET_FILE),
-            &crate::icons::sheet_tests::fake_sheet(),
-        );
     }
 
     /// Our own test SoundFont (one sine patch).
@@ -854,26 +833,6 @@ pub(crate) mod tests {
             assert_eq!(reader(&files)(&app(relative)), None, "{relative}");
         }
         assert_eq!(built_in(&app("Built-in Kicks\\Kick")), None);
-    }
-
-    #[test]
-    fn the_original_icon_sheet_in_the_content_folder_becomes_the_atlas() {
-        use eframe::egui::{Color32, Context, Pos2, Rect, Shape, Vec2};
-        let ctx = Context::default();
-        let tmp = Temp::new("icons");
-        let files = ProjectFiles::on_disk(&tmp.0);
-        assert!(!files.install_original_icons(&ctx), "no sheet: our set");
-        let sheet = tmp.0.join(CONTENT_FOLDER).join(crate::icons::SHEET_FILE);
-        put(&sheet, b"\x89PNG junk");
-        assert!(!files.install_original_icons(&ctx), "a bad sheet: our set");
-        fake_tree(&tmp.0.join(CONTENT_FOLDER));
-        assert!(files.install_original_icons(&ctx));
-        let square = Rect::from_min_size(Pos2::ZERO, Vec2::splat(48.0));
-        let play = crate::icons::IconId::Play;
-        let shapes = crate::icons::painted_shapes(&ctx, play, square, Color32::WHITE);
-        assert!(matches!(&shapes[..], [Shape::Mesh(_)]), "{shapes:?}");
-        let web = ProjectFiles::with_provider(Box::new(MemFiles::default()));
-        assert!(!web.install_original_icons(&Context::default()));
     }
 
     #[cfg(unix)]

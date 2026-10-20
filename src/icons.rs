@@ -1,6 +1,5 @@
-//! Vector icons on a 48-unit design grid, drawn in one tint. An imported icon sheet replaces the glyphs
-//! except for trademark IDs, and for the newer IDs (and icon 10) on an older sheet ([`sheet`]). The app mark uses our
-//! logo as a tinted image ([`logo`]).
+//! Vector icons on a 48-unit design grid, drawn in one tint. The app mark uses our logo as a tinted image
+//! ([`logo`]).
 
 use eframe::egui::{self, Color32, Pos2, Rect, Shape, Stroke, StrokeKind, Vec2, pos2, vec2};
 
@@ -9,12 +8,8 @@ use crate::metrics::FontSize;
 use crate::metrics::Metrics;
 
 mod logo;
-mod sheet;
-#[cfg(test)]
-pub(crate) use sheet::tests as sheet_tests;
-pub use sheet::{SHEET_FILE, decode_sheet, install_sheet};
 
-/// Icon IDs, numbered as the icon sheet's cells ([`sheet`]). Names follow each icon's role.
+/// Icon IDs. Names follow each icon's role.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum IconId {
@@ -154,21 +149,27 @@ pub fn draw_icon(
     size_factor: f32,
     m: &Metrics,
 ) {
-    let square = icon_square(rect, size_factor, m);
+    let square = if id == IconId::AppLogo {
+        // Our logo sits on the rect's centre to the nearest pixel: truncating would pull it up and left by up to 1.5 px.
+        let edge = m.floor_px(icon_edge(size_factor, m));
+        let min = rect.center() - Vec2::splat(edge / 2.0);
+        Rect::from_min_size(
+            pos2(m.round_px(min.x), m.round_px(min.y)),
+            Vec2::splat(edge),
+        )
+    } else {
+        icon_square(rect, size_factor, m)
+    };
     painter.extend(painted_shapes(painter.ctx(), id, square, color));
 }
 
 /// What icon `id` paints on `square` in `ctx`, tinted `color`: for [`IconId::AppLogo`] our logo glyph's image
-/// ([`logo`]); else its cell of the imported sheet when the user's imported content holds one ([`install_sheet`]), else
-/// our own glyph ([`icon_shapes`]).
+/// ([`logo`]), else our own glyph ([`icon_shapes`]).
 pub fn painted_shapes(ctx: &egui::Context, id: IconId, square: Rect, color: Color32) -> Vec<Shape> {
     if id == IconId::AppLogo {
         return vec![logo::logo_shape(ctx, square, color)];
     }
-    match sheet::sheet_shape(ctx, id, square, color) {
-        Some(shape) => vec![shape],
-        None => icon_shapes(id, square, color),
-    }
+    icon_shapes(id, square, color)
 }
 
 /// The shapes of icon `id`, with its 48 × 48 design box mapped onto `square`.
@@ -203,10 +204,18 @@ pub fn icon_shapes(id: IconId, square: Rect, color: Color32) -> Vec<Shape> {
         Piano => piano(&mut p, 8.0, 10.0, 40.0, 38.0, 4),
         Play => p.poly(&[(16.0, 11.0), (38.0, 24.0), (16.0, 37.0)]),
         Rewind => {
-            p.rect(11.5, 12.0, 14.0, 36.0, 1.0);
-            p.poly(&[(17.0, 24.0), (37.0, 12.0), (37.0, 36.0)]);
+            // A bar with round caps, and a triangle pointing at it with its corners rounded 1.
+            p.line(&[(16.5, 15.5), (16.5, 32.5)], 2.5);
+            p.disc(16.5, 15.5, 1.25);
+            p.disc(16.5, 32.5, 1.25);
+            let head = [(22.5, 24.0), (34.5, 15.5), (34.5, 32.5)];
+            p.poly(&head);
+            for (k, &(x, y)) in head.iter().enumerate() {
+                p.line(&[(x, y), head[(k + 1) % 3]], 2.0);
+                p.disc(x, y, 1.0);
+            }
         }
-        Record => p.disc(24.0, 24.0, 12.0),
+        Record => p.disc(24.0, 24.0, 9.0),
         AppLogo => {
             // A one-colour stand-in for our logo, which `painted_shapes` draws instead ([`logo`]): one thick stroke
             // curled into an "S".
@@ -221,14 +230,21 @@ pub fn icon_shapes(id: IconId, square: Rect, color: Color32) -> Vec<Shape> {
                 p.disc(x, 24.0, 3.5);
             }
         }
-        Mixer => faders(&mut p, &[(11.5, 30.0), (24.0, 16.0), (36.5, 24.0)]),
+        Mixer => {
+            // Three faders: rounded tracks broken around floating pill caps.
+            for (x, cap) in [(13.5f32, 17.5f32), (24.0, 26.5), (34.5, 21.5)] {
+                for (from, to) in [(12.5, cap - 2.75), (cap + 5.75, 35.5)] {
+                    p.line(&[(x, from), (x, to)], 2.5);
+                    p.disc(x, from, 1.25);
+                    p.disc(x, to, 1.25);
+                }
+                p.rect(x - 3.25, cap, x + 3.25, cap + 3.0, 1.5);
+            }
+        }
         // A small right chevron, for a narrow tab.
         Collapse => p.line(&[(19.5, 15.0), (28.5, 24.0), (19.5, 33.0)], 3.0),
-        Detach => {
-            // Arrow to the upper left: a right-triangle head, the shaft starting on its long side.
-            p.poly(&[(11.0, 11.0), (25.0, 11.0), (11.0, 25.0)]);
-            p.line(&[(18.0, 18.0), (37.0, 37.0)], 2.5);
-        }
+        // The hide arrow turned half round, so the pair match.
+        Detach => corner_arrow(&mut p, true),
         Close => {
             // One full diagonal; the other is split so the two never overlap.
             const W: f32 = 3.5;
@@ -351,13 +367,8 @@ pub fn icon_shapes(id: IconId, square: Rect, color: Color32) -> Vec<Shape> {
             }
         }
         Snap => {
-            // Horseshoe magnet opening upward; the pole tips stand apart from the arms.
-            let mut horseshoe = vec![(13.0, 17.0)];
-            horseshoe.extend(arc_points(24.0, 25.0, 11.0, 180.0, 0.0));
-            horseshoe.push((35.0, 17.0));
-            p.line(&horseshoe, 8.0);
-            p.rect(9.0, 8.0, 17.0, 15.0, 0.0);
-            p.rect(31.0, 8.0, 39.0, 15.0, 0.0);
+            // A C magnet opening right, its pole caps standing apart from the arms.
+            magnet(&mut p, true, true);
         }
         Swap => {
             // Right along the top, left along the bottom.
@@ -648,14 +659,29 @@ pub fn icon_shapes(id: IconId, square: Rect, color: Color32) -> Vec<Shape> {
             p.outline(&cloud, 2.5);
         }
         SnapOff => {
-            // The snap magnet, struck through.
-            let mut horseshoe = vec![(13.0, 17.0)];
-            horseshoe.extend(arc_points(24.0, 25.0, 11.0, 180.0, 0.0));
-            horseshoe.push((35.0, 17.0));
-            p.line(&horseshoe, 8.0);
-            p.rect(9.0, 8.0, 17.0, 15.0, 0.0);
-            p.rect(31.0, 8.0, 39.0, 15.0, 0.0);
-            p.line(&[(8.0, 40.0), (40.0, 8.0)], 3.0);
+            // The snap magnet with a slash through it: the slash cuts a clean gap, and the top pole cap is gone.
+            magnet(&mut p, false, true);
+            // The upper arm, its end cut parallel to the slash.
+            let mut arm = vec![(20.5, 12.0)];
+            arm.extend(arc_points(27.5, 13.0, 1.0, 270.0, 360.0));
+            arm.extend([(28.5, 15.5), (24.5, 19.5), (20.5, 19.5)]);
+            p.poly(&arm);
+            // The ring's upper part, from the cut round to the top: fanned from its outer middle, which sees all of it.
+            let (start, end) = (138.4f32, 144.0f32);
+            let mid = (start + 270.0) / 2.0;
+            let mut ring: Vec<_> = arc_points(21.0, 24.0, 12.0, mid, 270.0).collect();
+            ring.extend(arc_points(21.0, 24.0, 4.5, 270.0, end));
+            ring.extend(arc_points(21.0, 24.0, 12.0, start, mid).take(16));
+            p.poly(&ring);
+            // The lower part below the cut: the bottom arm and the ring's foot.
+            let mut foot = vec![(23.5, 28.5)];
+            foot.extend(arc_points(27.5, 29.5, 1.0, 270.0, 360.0));
+            foot.extend(arc_points(27.5, 35.0, 1.0, 0.0, 90.0));
+            foot.extend(arc_points(21.0, 24.0, 12.0, 90.0, 110.6));
+            p.poly(&foot);
+            p.line(&[(37.0, 11.0), (11.0, 37.0)], 2.5);
+            p.disc(37.0, 11.0, 1.25);
+            p.disc(11.0, 37.0, 1.25);
         }
         SoloClip => {
             // Four corner brackets, arms 2.25 thick and 6.75 long, their outer corners rounded: a frame with its
@@ -717,34 +743,32 @@ pub fn icon_shapes(id: IconId, square: Rect, color: Color32) -> Vec<Shape> {
             p.line(&arch.into_iter().map(flip).collect::<Vec<_>>(), 2.0);
         }
         Knob => {
-            // A disc with a notch 2 wide cut from its centre to its rim, 35° above the left horizontal. The notched
-            // disc is not star-shaped, so it is two fills: the side beyond the notch, and the rest from the notch's
-            // inner corner, which runs 1.5 under the first so no seam shows.
-            let (r, half, over, notch) = (10.5f32, 1.0f32, 1.5f32, 215.0f32);
-            let (s, c) = notch.to_radians().sin_cos();
-            // Along the notch, then across it.
-            let at = |a: f32, l: f32| (24.0 + a * c - l * s, 24.0 + a * s + l * c);
-            let side = (half / r).asin().to_degrees();
-            let beside: Vec<_> =
-                arc_points(24.0, 24.0, r, notch + side, notch + 180.0 - side).collect();
-            p.poly(&beside);
-            let under = ((half + over) / r).asin().to_degrees();
-            let mut rest = vec![at(0.0, -half)];
-            rest.extend(arc_points(
-                24.0,
-                24.0,
-                r,
-                notch - side,
-                notch - 180.0 - under,
-            ));
-            rest.push(at(0.0, half + over));
-            p.poly(&rest);
+            // A disc with a rounded slot, 2.5 wide, from its centre 6.5 towards 10 o'clock, short of the rim. The slot is
+            // a hole, so the disc is two fills split along the slot's axis: one exact, the other reaching 1.5 under it
+            // beside the slot's ends, so no seam shows. Each is fanned from its rim point across from the axis.
+            let (r, w, len, over) = (10.5f32, 1.25f32, 6.5f32, 1.5f32);
+            let axis = 240.0f32;
+            let (us, uc) = axis.to_radians().sin_cos();
+            // Along the axis (u), then across it towards 330° (n).
+            let at = |u: f32, n: f32| (24.0 + u * uc - n * us, 24.0 + u * us + n * uc);
+            let end = at(len, 0.0);
+            let lean = (over / r).asin().to_degrees();
+            // No point twice in a row: a zero-length edge breaks the fill's feathering.
+            let mut near: Vec<_> = arc_points(24.0, 24.0, r, axis + 90.0, axis + 180.0).collect();
+            near.extend(arc_points(24.0, 24.0, w, axis + 180.0, axis + 90.0));
+            near.extend(arc_points(end.0, end.1, w, axis + 90.0, axis));
+            near.extend(arc_points(24.0, 24.0, r, axis, axis + 90.0).take(16));
+            p.poly(&near);
+            let mut far: Vec<_> =
+                arc_points(24.0, 24.0, r, axis - 90.0, axis - 180.0 - lean).collect();
+            far.push(at(-w - over, over));
+            far.extend(arc_points(24.0, 24.0, w, axis - 180.0, axis - 90.0));
+            far.extend(arc_points(end.0, end.1, w, axis - 90.0, axis));
+            far.push(at(len + w + over, over));
+            far.extend(arc_points(24.0, 24.0, r, axis + lean, axis - 90.0).take(16));
+            p.poly(&far);
         }
-        Hide => {
-            // A thin arrow to the lower right: the shaft ends in the inner corner of an L head.
-            p.line(&[(14.25, 14.25), (32.25, 32.25)], 1.5);
-            p.line(&[(33.0, 18.75), (33.0, 33.0), (19.5, 33.0)], 1.5);
-        }
+        Hide => corner_arrow(&mut p, false),
         Stop => p.rect(14.0, 14.0, 34.0, 34.0, 2.0),
         GraphLane => {
             for (x, top) in [(11.0, 24.0), (21.0, 12.0), (31.0, 30.0)] {
@@ -753,8 +777,8 @@ pub fn icon_shapes(id: IconId, square: Rect, color: Color32) -> Vec<Shape> {
         }
         ChevronDown => p.line(&[(13.0, 19.0), (24.0, 30.0), (35.0, 19.0)], 3.5),
         RackTab => {
-            p.rect(14.0, 13.0, 34.0, 21.0, 4.0);
-            p.rect(14.0, 27.0, 34.0, 35.0, 4.0);
+            p.rect(12.0, 12.0, 36.0, 23.0, 3.5);
+            p.rect(12.0, 25.0, 36.0, 36.0, 3.5);
         }
     }
     p.shapes
@@ -1045,6 +1069,39 @@ impl Pen {
     }
 }
 
+/// A thin arrow to the lower right, its shaft ending in the inner corner of an L head; turned half round (to the upper
+/// left) with `flip`.
+fn corner_arrow(p: &mut Pen, flip: bool) {
+    let f = |(x, y): (f32, f32)| if flip { (48.0 - x, 48.0 - y) } else { (x, y) };
+    p.line(&[f((14.25, 14.25)), f((32.25, 32.25))], 1.5);
+    p.line(&[f((33.0, 18.75)), f((33.0, 33.0)), f((19.5, 33.0))], 1.5);
+}
+
+/// The snap magnet, a C opening right around (21, 24) (outer radius 12, inner 4.5) with arms out to x 28.5 whose
+/// outer corners are rounded 1, and pole caps 3 × 7.5 at x 30.5: the ring and the lower arm, the upper arm with `upper`,
+/// and the caps (`caps`: the top cap only with `upper`).
+fn magnet(p: &mut Pen, upper: bool, caps: bool) {
+    if upper {
+        p.arc(21.0, 24.0, 8.25, 90.0, 270.0, 7.5);
+        let mut arm = vec![(20.5, 12.0)];
+        arm.extend(arc_points(27.5, 13.0, 1.0, 270.0, 360.0));
+        arm.extend(arc_points(27.5, 18.5, 1.0, 0.0, 90.0));
+        arm.push((20.5, 19.5));
+        p.poly(&arm);
+        let mut low = vec![(20.5, 28.5)];
+        low.extend(arc_points(27.5, 29.5, 1.0, 270.0, 360.0));
+        low.extend(arc_points(27.5, 35.0, 1.0, 0.0, 90.0));
+        low.push((20.5, 36.0));
+        p.poly(&low);
+    }
+    if caps {
+        if upper {
+            p.rect(30.5, 12.0, 33.5, 19.5, 1.0);
+        }
+        p.rect(30.5, 28.5, 33.5, 36.0, 1.0);
+    }
+}
+
 /// Points on an arc of radius `r` around (x, y) from `from` to `to` degrees (0° = right, 90° = down).
 fn arc_points(x: f32, y: f32, r: f32, from: f32, to: f32) -> impl Iterator<Item = (f32, f32)> {
     const STEPS: u8 = 16;
@@ -1189,12 +1246,12 @@ mod tests {
 
     #[test]
     fn the_transport_icons_read_at_their_actual_size() {
-        // The mixer button draws at 4/3 U: under 0.9 px a unit at U = 32 px. The faders keep every part at least 3
-        // units across.
+        // The mixer button draws at 4/3 U: under 0.9 px a unit at U = 32 px. The faders keep every part at least 2.5
+        // units across (over 2 px).
         let square = Rect::from_min_size(Pos2::ZERO, Vec2::splat(GRID));
         for shape in icon_shapes(IconId::Mixer, square, Color32::WHITE) {
             let b = shape.visual_bounding_rect();
-            assert!(b.width().min(b.height()) >= 3.0, "{b:?}");
+            assert!(b.width().min(b.height()) >= 2.5, "{b:?}");
         }
     }
 

@@ -88,6 +88,9 @@ pub trait AudioRenderer: Send + 'static {
     /// The metronome clicks on the song's beats while `on` and playing; `level` is the normalized `Metronome level`
     /// setting, which the count-in uses too.
     fn set_metronome(&mut self, on: bool, level: f32);
+    /// The metronome flag (the tempo dialog's toggle): the song's beats click while it is on and the transport plays,
+    /// whatever [`Self::set_metronome`] says; `level` as there. The default ignores it.
+    fn set_metronome_flag(&mut self, _on: bool, _level: f32) {}
     /// Starts latency measurement number `id`: while it runs, the output
     /// is its test signal alone.
     fn ping(&mut self, id: u32);
@@ -165,6 +168,11 @@ pub enum AudioCommand<R> {
     CountIn(u32),
     /// [`AudioRenderer::set_metronome`].
     Metronome {
+        on: bool,
+        level: f32,
+    },
+    /// [`AudioRenderer::set_metronome_flag`].
+    MetronomeFlag {
         on: bool,
         level: f32,
     },
@@ -696,6 +704,9 @@ impl<R: AudioRenderer> CallbackState<R> {
                     } => self.renderer.set_setting(channel, instance_id, key, value),
                     AudioCommand::CountIn(beats) => self.renderer.count_in(beats),
                     AudioCommand::Metronome { on, level } => self.renderer.set_metronome(on, level),
+                    AudioCommand::MetronomeFlag { on, level } => {
+                        self.renderer.set_metronome_flag(on, level)
+                    }
                     AudioCommand::Ping(id) => self.renderer.ping(id),
                     AudioCommand::LiveLane { channel, notes } => {
                         self.renderer.set_live_lane(channel, notes)

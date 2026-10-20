@@ -64,10 +64,16 @@ fn the_close_x_on_the_playlist_hides_the_panel_and_the_corner_button_brings_it_b
     assert_eq!(rig.take(), Vec::<String>::new());
     let tab = rig.ctx.read_response(egui::Id::new("edge_tab")).unwrap();
     assert_eq!(tab.rect.center().y, (540.0 + 2.0 * U) / 2.0);
-    // The `↖`: a floating 1.5 U `moduleFill` disc with icon 11 in `text`, its arrow head a filled triangle.
+    // The `↖`: a floating 1.5 U `moduleFill` disc with icon 11 in `text` over it.
     let disc = rig.show_button().expect("the ↖");
-    let icon = (rig.out.shapes[disc + 1..].iter())
-        .any(|s| matches!(&s.shape, Shape::Path(p) if p.fill == ink()));
+    let icon = (rig.out.shapes[disc + 1..].iter()).any(|s| match &s.shape {
+        Shape::Circle(c) => c.fill == ink(),
+        Shape::Path(p) => {
+            p.fill == ink() || p.stroke.color == egui::epaint::ColorMode::Solid(ink())
+        }
+        Shape::LineSegment { stroke, .. } => stroke.color == ink(),
+        _ => false,
+    });
     assert!(icon, "no icon in text over the disc");
     rig.click(SHOW_KEYS);
     assert!(!rig.hidden());

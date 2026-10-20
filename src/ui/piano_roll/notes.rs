@@ -7,7 +7,7 @@
 
 use std::cmp::Reverse;
 
-use eframe::egui::{Pos2, Rect, pos2, vec2};
+use eframe::egui::{Pos2, Rect, pos2};
 
 use crate::song::scales::{CHROMATIC, SCALE_MASKS, SCALES, scale_from_stored};
 use crate::song::{Clip, Event, LaneKind, PPQ, Song, TimeSig};
@@ -20,8 +20,6 @@ pub const TOP_KEY: u8 = 127;
 const MIN_CELL: f32 = 0.4;
 /// How far, in rows, a touch-down above or below a note's row still binds it.
 const ROW_BAND: f32 = 0.2;
-/// The width of a selected note's resize handle's touch box, in U.
-pub const HANDLE_D: f32 = 0.6;
 
 /// The snap menu, in menu order; the discriminant is the stored snap id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -151,6 +149,13 @@ pub fn snap_round(t: f64, grid: Option<f64>) -> f64 {
     }
 }
 
+/// A clip editor's selection handle (the end capsule, the ↔ bar) dragged to tick `finger`: the selection box's new
+/// end, `finger` rounded to the `grid` (whole ticks when `None`), at least grid/8 (1/128 beat without snap) after the
+/// box's start `start`. Only the box's end snaps, never each item's.
+pub fn box_end(finger: f64, start: f64, grid: Option<f64>) -> f64 {
+    snap_round(finger, grid).max(start + grid.map_or(1.0, |g| g / 8.0))
+}
+
 /// `(pos, len, key)` of a note event, in ticks; `None` for other events and for key bytes above 127, which a file
 /// may hold but the roll neither draws nor edits.
 pub fn note(e: &Event) -> Option<(f64, f64, u8)> {
@@ -238,38 +243,15 @@ impl Geom {
     }
 }
 
-/// What the pointer is over.
+/// What the pointer is over (the selection's handles aside, which the roll checks first).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Hit {
-    /// The resize handle of selected note `i`.
-    Handle(usize),
     Body(usize),
-    Empty {
-        tick: f64,
-        key: u8,
-    },
+    Empty { tick: f64, key: u8 },
 }
 
-/// A note's resize handle, the selection's end capsule ([`crate::ui::clips::end_handle`]): its touch box,
-/// [`HANDLE_D`] wide and the capsule's height, centred on it, past the note's right end on its row's centre line.
-pub fn handle_rect(g: &Geom, u: f32, e: &Event) -> Option<Rect> {
-    use crate::ui::clips::{END_CENTRE, HANDLE_H};
-    let r = g.note_rect(e)?;
-    let centre = pos2(r.right() + END_CENTRE * u, r.center().y);
-    Some(Rect::from_center_size(
-        centre,
-        vec2(HANDLE_D * u, HANDLE_H * u),
-    ))
-}
-
-/// The handle, note or empty cell at `p`. Handles of selected notes come first, then the note [`note_at`] binds.
-/// `None` left of tick 0 or outside the key range.
-pub fn hit_test(g: &Geom, u: f32, events: &[Event], selected: &[bool], p: Pos2) -> Option<Hit> {
-    for (i, e) in events.iter().enumerate().rev() {
-        if selected.get(i) == Some(&true) && handle_rect(g, u, e).is_some_and(|h| h.contains(p)) {
-            return Some(Hit::Handle(i));
-        }
-    }
+/// The note [`note_at`] binds at `p`, or the empty cell there. `None` left of tick 0 or outside the key range.
+pub fn hit_test(g: &Geom, events: &[Event], p: Pos2) -> Option<Hit> {
     if let Some(i) = note_at(g, events, p) {
         return Some(Hit::Body(i));
     }
@@ -307,6 +289,15 @@ pub fn on_note(g: &Geom, e: &Event, p: Pos2) -> bool {
         let top = f32::from(TOP_KEY - key);
         (pos..pos + len).contains(&tick) && (top..top + 1.0).contains(&row)
     })
+}
+
+/// The selection box of the flagged notes: their earliest start to their latest end, the highest one's row top to the
+/// lowest one's row bottom.
+pub fn sel_box(g: &Geom, events: &[Event], which: &[bool]) -> Option<Rect> {
+    (events.iter().zip(which))
+        .filter(|(_, s)| **s)
+        .filter_map(|(e, _)| g.note_rect(e))
+        .reduce(Rect::union)
 }
 
 /// One flag per event: its note touches `rect`.
@@ -397,6 +388,40 @@ pub fn shift_notes(orig: &[Event], which: &[bool], dt: f64, dk: i32) -> Vec<Even
 pub fn stretch_notes(orig: &[Event], which: &[bool], dl: f64, min_len: f64) -> Vec<Event> {
     map_notes(orig, which, |pos, len, key| {
         (pos, (len + dl).max(min_len), key)
+    })
+}
+
+/// The flagged notes' span in ticks: (earliest start, latest end).
+fn span(orig: &[Event], which: &[bool]) -> Option<(f64, f64)> {
+    flagged(orig, which)
+        .map(|(pos, len, _)| (pos, pos + len))
+        .reduce(|a, b| (a.0.min(b.0), a.1.max(b.1)))
+}
+
+/// The selection's end capsule dragged to tick `finger`: the box's end goes to [`box_end`], and every flagged note's
+/// length changes by as much as the box's width. Only the box has a minimum; a note is only kept at least a tick long.
+/// Not re-sorted.
+pub fn stretch_to(orig: &[Event], which: &[bool], finger: f64, grid: Option<f64>) -> Vec<Event> {
+    let Some((start, end)) = span(orig, which) else {
+        return orig.to_vec();
+    };
+    stretch_notes(orig, which, box_end(finger, start, grid) - end, 1.0)
+}
+
+/// The selection's ↔ bar dragged to tick `finger`: the box's end goes to [`box_end`] and the flagged notes scale in
+/// time about the box's start A by k = new width / width (1 for no width): start' = A + (start − A)·k (on whole
+/// ticks), length' = length·k. Not re-sorted.
+pub fn scale_notes(orig: &[Event], which: &[bool], finger: f64, grid: Option<f64>) -> Vec<Event> {
+    let Some((a, end)) = span(orig, which) else {
+        return orig.to_vec();
+    };
+    let k = if end > a {
+        (box_end(finger, a, grid) - a) / (end - a)
+    } else {
+        1.0
+    };
+    map_notes(orig, which, |pos, len, key| {
+        (a + (pos - a) * k, len * k, key)
     })
 }
 

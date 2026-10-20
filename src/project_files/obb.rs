@@ -212,7 +212,7 @@ pub(crate) mod tests {
         ("Drum Samples/Kick/Gen Kick.wav", b"fLaC gen kick"),
         ("empty.txt", b""),
         ("Chord Sets/Gen Minor.chords", b"{}"),
-        ("wrap.png", b"\x89PNG gen"),
+        ("Gen Art.png", b"\x89PNG gen"),
     ];
 
     /// Where entry 0's name length, offset, size and flags are in a [`container`] whose first name is `name`.
