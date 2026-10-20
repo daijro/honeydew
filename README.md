@@ -6,6 +6,8 @@
 <p align="center"><img src="assets/screenshots/01-playlist-sampler.webp" width="100%" alt="The playlist and a sampler's rack, playing the demo song Edwan - Permich - Tropical"></p>
 <p align="center"><img src="assets/screenshots/02-playlist-supersaw.webp" width="100%" alt="The playlist and a synth's rack, playing the demo song Parrik - Initiated"></p>
 
+---
+
 ## Download
 
 Get the latest version from [Releases](https://github.com/daijro/honeydew/releases/latest).
@@ -15,6 +17,8 @@ Get the latest version from [Releases](https://github.com/daijro/honeydew/releas
 - **Web:** the `honeydew-web` ZIP is a static site. Serve the folder with any web server.
 
 Every download includes the full sound library.
+
+---
 
 ## Screens
 
@@ -42,6 +46,8 @@ FL Studio Mobile demo projects, opened as `.flm` files.
   </tr>
 </table>
 
+---
+
 ## Opening and saving projects
 
 Open a file from SONGS → Import, with `Ctrl+O`, or by dropping it on the window. Audio files dropped on the playlist become clips.
@@ -56,6 +62,8 @@ Open a file from SONGS → Import, with `Ctrl+O`, or by dropping it on the windo
 - **MIDI:** each channel gets the closest bundled instrument for its General MIDI program. Channel 10 becomes a drum kit.
 - **Opening an FLP:** you get the channels, patterns, playlist, audio clips, tempo, volume and pan. 3x Osc channels keep their sound, and Fruity Reeverb 2 and Fruity Limiter become Lemon Reverb and Lemon Limiter with their settings. Missing plugins and samples play the closest bundled sound, and a summary lists what was swapped. `Locate samples...` finds missing samples in a folder you pick.
 - **Saving an FLP:** samples are included, and each channel's effects become FL Studio's own effects on its mixer insert (Lemon Reverb and Lemon Limiter with their settings). Turn on `Include rendered audio` to also add each channel as audio, so the project sounds the same in FL Studio.
+
+---
 
 ## Plugins
 
@@ -79,13 +87,13 @@ Plugin settings are saved with the project, and their controls can be automated.
 
 **Windows plugins on Linux:** install [yabridge](https://github.com/robbert-vdh/yabridge) or [vstbridge](https://github.com/rations/vstbridge) with Wine. They put bridged copies in `~/.vst3/yabridge` and `~/.vst/yabridge`, which Honeydew already scans.
 
-**Good to know:**
+**Notes:**
 
 - Plugin windows open on Linux only for now. On Windows and macOS, use the sliders on the plugin's card.
-- On Linux, a plugin that crashes while playing closes Honeydew. Scanning plugins is safe.
-- Plugin latency is shown but not compensated.
-- FL Studio Mobile still opens projects that use plugins, just without the plugins. The web and Android versions keep other plugins' settings but don't play them.
+- FL Studio Mobile will still opens projects that use plugins, just without the plugins. The web and Android versions keep other plugins' settings but don't play them.
 - Opening an FLP loads its plugins if you have them installed, and saving as FLP writes them back.
+
+---
 
 ## Using your own FL Studio Mobile sounds
 
@@ -113,10 +121,12 @@ The sounds and presets then show up in the pickers, and demo songs that use them
 
 ```sh
 adb shell pm list packages | grep -i studio   # find the package name
-adb shell pm path <package>                    # find the APK (pull base.apk first if there are several)
+adb shell pm path <package>                   # find the APK (pull base.apk first if there are several)
 adb pull <path>
-adb pull /sdcard/Android/obb/<package>/        # the OBB, if the app has one
+adb pull /sdcard/Android/obb/<package>/       # the OBB, if the app has one
 ```
+
+---
 
 ## Building from source
 
@@ -185,11 +195,15 @@ This writes `target/honeydew-android-<version>-arm64-debug.apk`. The debug app i
 
 See Android's [app-signing guide](https://developer.android.com/studio/publish/app-signing) for creating a key.
 
+---
+
 ## About
 
 Honeydew is a clean-room reimplementation. FL Studio Mobile's behaviour, file formats and look were written down as a specification, and Honeydew's code was written only from that. It contains no code, samples, presets or artwork from FL Studio Mobile.
 
 Honeydew is an independent project, not affiliated with or endorsed by Image-Line. FL Studio is a trademark of Image-Line.
+
+---
 
 ## License and credits
 
@@ -252,11 +266,15 @@ Honeydew is an independent project, not affiliated with or endorsed by Image-Lin
 
 </details>
 
-## Code from Lemon Studio
+### Code from Lemon Studio
 
-Honeydew includes code from [Lemon Studio](https://github.com/ItsAlphaNeon/Lemon-Studio) by ItsAlphaNeon, used under the
+Honeydew brings FL Studio desktop features like plugins and flp file support into the app by including code from [Lemon Studio](https://github.com/ItsAlphaNeon/Lemon-Studio) by ItsAlphaNeon, used under the
 GPL-3.0-or-later. Each file keeps its original copyright and license header, and the changes are listed in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+<details>
+
+<summary>See list of features</summary>
 
 - **Plugin hosts** (`vendor/lemon-studio/`): the VST3, VST2 and CLAP hosts (`os-host`, `os-vst3`, `os-vst2`, `os-clap`)
   and the parts of `os-engine` they use.
@@ -273,3 +291,5 @@ GPL-3.0-or-later. Each file keeps its original copyright and license header, and
 - **Plugin UI and support code** (`vendor/lemon-studio/`): the editor kit, theme, drawing and fonts these three plugins use
   (`os-plugkit`, `os-ui`, `os-theme`), the host link and data model (`os-hostlink`, `os-model`), and the DSP and path
   helpers (`os-dsp`, `os-paths`).
+
+</details>
