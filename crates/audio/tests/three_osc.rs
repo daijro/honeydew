@@ -1464,9 +1464,9 @@ fn coarse_is_the_fused_step_rounded_half_away_from_zero() {
     assert_eq!(coarse(0.59375), 5.0, "4.5 rounds away from zero");
     assert_eq!(coarse(0.40625), -5.0, "−4.5 too");
     // One rounding: the fused value is 2.499999 (−0.4999995); a multiply then a subtract gives 2.5 (−0.5) instead.
-    let v = f32::from_bits(1_057_838_421);
+    let v = 0.552_083_3f32;
     assert_eq!(coarse(v), 2.0);
-    assert_eq!(coarse(f32::from_bits(1_056_615_083)), 0.0);
+    assert_eq!(coarse(0.489_583_34f32), 0.0);
     // The voice uses it: osc 1 at key 57 plays 59.
     let mut s = solo(FS, Shape::Sine, &[(13, v)]);
     s.note_on(57, 1.0, 0.5);

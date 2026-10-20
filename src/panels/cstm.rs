@@ -261,8 +261,8 @@ const ANALYZER_NEW: [u8; 128] = le_words([
     // Spectrum
     bits(0.0),
     bits(1.0),
-    0x3E969698,
-    0x3F25A5A6,
+    bits(0.294_117_7),
+    bits(66.0 / 102.0),
     // Spectrogram
     bits(0.0),
     bits(1.0),
@@ -272,17 +272,17 @@ const ANALYZER_NEW: [u8; 128] = le_words([
     bits(0.25),
     bits(0.0),
     bits(0.5),
-    0x3E2AAAAC,
-    0x3F2AAAAB,
+    bits(0.166_666_69),
+    bits(2.0 / 3.0),
     // Loudness
     bits(0.5),
     bits(0.5),
-    0x3E969698,
-    0x3F25A5A6,
+    bits(0.294_117_7),
+    bits(66.0 / 102.0),
     // Pitch track
     bits(0.5),
     bits(0.5),
-    0x3E924924,
+    bits(0.285_714_27),
     bits(0.5),
 ]);
 
@@ -697,12 +697,11 @@ mod tests {
 
     /// The Analyzer's new-module view state, written out.
     fn analyzer_view() -> Vec<u8> {
-        let h = f32::from_bits;
         le(&[
             0.0,
             1.0,
-            h(0x3E969698),
-            h(0x3F25A5A6), // Spectrum
+            0.294_117_7,
+            66.0 / 102.0, // Spectrum
             0.0,
             1.0,
             0.0,
@@ -710,15 +709,15 @@ mod tests {
             0.25,
             0.0,
             0.5,
-            h(0x3E2AAAAC),
-            h(0x3F2AAAAB), // Oscilloscope: trigger, then x w y h
+            0.166_666_69,
+            2.0 / 3.0, // Oscilloscope: trigger, then x w y h
             0.5,
             0.5,
-            h(0x3E969698),
-            h(0x3F25A5A6), // Loudness
+            0.294_117_7,
+            66.0 / 102.0, // Loudness
             0.5,
             0.5,
-            h(0x3E924924),
+            0.285_714_27,
             0.5, // Pitch track
         ])
     }

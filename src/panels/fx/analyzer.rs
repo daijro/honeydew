@@ -396,8 +396,8 @@ const VIEWS: [View; 6] = [
 ];
 
 /// −60…+6 dB of −90…+12 dB as a selection's y and h.
-const DB_Y: f32 = f32::from_bits(0x3E96_9698);
-const DB_H: f32 = f32::from_bits(0x3F25_A5A6);
+const DB_Y: f32 = 0.294_117_7;
+const DB_H: f32 = 66.0 / 102.0;
 
 impl View {
     /// Its new-module selection, which every re-application shows.
@@ -413,8 +413,8 @@ impl View {
             View::Scope => Sel {
                 x: 0.0,
                 w: 0.5,
-                y: f32::from_bits(0x3E2A_AAAC),
-                h: f32::from_bits(0x3F2A_AAAB),
+                y: 0.166_666_69,
+                h: 2.0 / 3.0,
             },
             // The last 10 s.
             View::Loudness => Sel {
@@ -427,7 +427,7 @@ impl View {
             View::Pitch => Sel {
                 x: 0.5,
                 w: 0.5,
-                y: f32::from_bits(0x3E92_4924),
+                y: 0.285_714_27,
                 h: 0.5,
             },
         }

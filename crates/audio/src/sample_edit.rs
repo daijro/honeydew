@@ -17,9 +17,9 @@ pub fn speed_semitones(speed: f32) -> i32 {
 }
 
 /// The Speed slot param as a playback-rate ratio: exp2f(s · 1/12) in f32, with s = [`speed_semitones`] and 1/12 the
-/// f32 0x3DAAAAAB.
+/// f32 1/12.
 pub fn speed_ratio(speed: f32) -> f64 {
-    let twelfth = f32::from_bits(0x3DAA_AAAB);
+    let twelfth = 1.0f32 / 12.0;
     f64::from((speed_semitones(speed) as f32 * twelfth).exp2())
 }
 

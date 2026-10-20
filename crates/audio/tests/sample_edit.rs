@@ -85,7 +85,7 @@ fn speed_semitones_follow_the_fused_law_on_every_step() {
 
 #[test]
 fn speed_ratio_is_exp2f_of_s_times_f32_one_twelfth() {
-    let twelfth = f32::from_bits(0x3DAA_AAAB);
+    let twelfth = 1.0f32 / 12.0;
     for k in 0..=48u32 {
         let v = k as f32 / 48.0;
         let s = stepped_semitones(k) as f32;

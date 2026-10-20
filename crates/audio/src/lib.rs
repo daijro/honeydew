@@ -1449,7 +1449,9 @@ impl LegacyLimiterState {
 
     fn process_frame(&mut self, l: f32, r: f32) -> (f32, f32) {
         let peak = l.abs().max(r.abs());
-        let sine = (self.release_phase * f32::from_bits(0x3fc9_0ff9)).sin();
+        // A quarter turn, 1.5708 rounded.
+        #[allow(clippy::approx_constant)]
+        let sine = (self.release_phase * 1.5708f32).sin();
         let mut reduction = 1.0 + (sine * sine - 1.0) * (1.0 - self.release_base);
         if reduction * peak > self.threshold {
             reduction = self.threshold / peak;
@@ -2960,20 +2962,19 @@ mod tests {
                 (0..=10).collect()
             ]
         );
-        let starts = [
-            0x3db9_fee3,
-            0x3e3a_16b7,
-            0x3e8b_96ff,
-            0x3eba_22a2,
-            0x3ee8_ae45,
-            0x3f0b_9cf4,
-            0x3f22_e2c5,
-            0x3f3a_2897,
-            0x3f51_6e68,
-            0x3f68_b43a,
-            0x3f7f_fa0b,
-        ]
-        .map(f32::from_bits);
+        let starts: [f32; 11] = [
+            0.090_818_19,
+            0.181_727_28,
+            0.272_636_38,
+            0.363_545_48,
+            0.454_454_57,
+            0.545_363_66,
+            0.636_272_7,
+            0.727_181_85,
+            0.818_090_9,
+            0.909_000_04,
+            0.999_909_1,
+        ];
         assert_eq!(starts.map(&key), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
         assert_eq!(
             starts.map(|start| key(start.next_down())),

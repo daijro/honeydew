@@ -664,8 +664,8 @@ fn the_echo_pan_offset_and_drift_apply_at_full_size() {
 #[test]
 fn the_velocity_stop_includes_exactly_1_127() {
     let count = |v7: f32| echoes(3, 0.5, &[(1, 4.0 / 32.0), (7, v7)]).len();
-    assert_eq!(count(f32::from_bits(0x3ea1_ee87)), 2);
-    assert_eq!(count(f32::from_bits(0x3ea1_ee88)), 3);
+    assert_eq!(count(0.316_272_94), 2);
+    assert_eq!(count(0.316_272_97), 3);
 }
 
 /// The tick stop: no repeat after one shorter than trunc(fs·0.46875/BPM) = trunc(187.5) = 187 frames. A note held 187
@@ -1306,7 +1306,7 @@ fn transpose_rounds_its_f32_range_map_halves_away_from_zero() {
 /// product, 2.4999999, rounded to 2).
 #[test]
 fn the_randomizer_range_rounds_the_f32_product() {
-    let v = f32::from_bits(0x3dd5_5555);
+    let v = 5.0f32 / 48.0;
     let widest = (0..200)
         .flat_map(|id| {
             pitches(&run(
@@ -1324,7 +1324,7 @@ fn the_randomizer_range_rounds_the_f32_product() {
 #[test]
 fn the_arpeggiator_menus_round_the_f32_product() {
     let mut params = arp_params();
-    params[1] = f32::from_bits(0x3f24_9249);
+    params[1] = 9.0f32 / 14.0;
     let input = [
         InputNoteEvent::on(0.0, 60, 100),
         InputNoteEvent::off(3.5, 60),
@@ -1357,7 +1357,7 @@ fn the_live_chain_steps_in_f32_like_the_texts() {
         [(0, 1)]
     );
     let mut params = arp_params();
-    params[1] = f32::from_bits(0x3f24_9249);
+    params[1] = 9.0f32 / 14.0;
     let input = [
         InputNoteEvent::on(0.0, 60, 100),
         InputNoteEvent::off(3.5, 60),

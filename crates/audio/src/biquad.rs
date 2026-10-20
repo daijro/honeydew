@@ -65,7 +65,7 @@ impl Biquad {
             return;
         }
         let a = 10.0_f32.powf(gain_db * 0.05);
-        let omega = (frequency * f32::from_bits(0x40c9_0fda) / sample_rate).clamp(0.0, 3.0);
+        let omega = (frequency * std::f32::consts::TAU.next_down() / sample_rate).clamp(0.0, 3.0);
         let (sin, cos) = omega.sin_cos();
         let alpha = sin * (0.346_573_6 * bandwidth * omega / sin).sinh();
         let (b0, b1, b2, a0, a1, a2) = match response {

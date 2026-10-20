@@ -385,7 +385,7 @@ fn set(v: f32) -> bool {
     v != 0.0
 }
 
-/// 1/12 as `f32` (0x3DAAAAAB) and 1/6 (0x3E2AAAAB), as the ratio law uses them.
+/// 1/12 and 1/6 as `f32`, as the ratio law uses them.
 const TWELFTH: f32 = 1.0 / 12.0;
 const SIXTH: f32 = 1.0 / 6.0;
 
@@ -964,7 +964,7 @@ mod tests {
         dw.set_parameter(PITCH, 30.0 / 48.0);
         dw.set_parameter(FINE, 0.3);
         dw.set_controller(4, 0.8);
-        let twelfth = f32::from_bits(0x3DAA_AAAB);
+        let twelfth = 1.0f32 / 12.0;
         assert_eq!(twelfth, 1.0 / 12.0);
         let s = (30.0f32 / 48.0).mul_add(48.0, -24.0).trunc();
         let bend = 2.0 * 0.8f32 - 1.0;
