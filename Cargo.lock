@@ -1866,6 +1866,7 @@ dependencies = [
  "os-vst2",
  "os-vst3",
  "png 0.18.1",
+ "pollster",
  "rfd",
  "serde",
  "serde_json",

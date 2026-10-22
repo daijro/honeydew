@@ -61,6 +61,7 @@ jni = "0.21.1"
 
 [target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
 rfd = "0.17.2"
+pollster = "0.4.0"
 # M11 J2: MIDI input over ALSA (cpal's `alsa 0.9`), CoreMIDI and WinMM. 0.10.4 is the last 0.10.x, on `alsa ^0.9`.
 midir = "=0.10.4"
 # Third-party plugin hosting (VST3, VST2, CLAP), desktop only: Lemon Studio's hosts, vendored (vendor/lemon-studio);
