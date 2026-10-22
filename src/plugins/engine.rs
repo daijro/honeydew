@@ -1,15 +1,100 @@
 //! A hosted plugin as the engine drives it: [`PluginInstrument`] (an engine instrument) and [`PluginEffect`] (an
 //! external effect). The instance is shared with the app ([`super::host`]) and outlives engines; the audio thread only
-//! `try_lock`s it, and a busy instance plays silence (an instrument, its notes kept for the next block) or passes the
-//! sound through (an effect). Nothing here allocates or blocks.
+//! tries its lock with a shared, bounded wait for the whole audio callback. If the deadline passes, an instrument
+//! keeps its notes for the next block and plays silence; an effect passes the sound through. Nothing here allocates.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{MutexGuard, TryLockError};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Duration, Instant};
 
 use honeydew_audio::instrument::Instrument;
 use honeydew_audio::{ExternalEffect, ProcessContext};
 use os_engine::TransportInfo;
 use os_host::SharedPlugin;
+
+static LOCK_MISSES: AtomicU64 = AtomicU64::new(0);
+static RECOVERED_WAITS: AtomicU64 = AtomicU64::new(0);
+
+/// Cumulative plugin calls that missed the lock and those recovered after contention.
+pub(crate) fn lock_stats() -> (u64, u64) {
+    (
+        LOCK_MISSES.load(Ordering::Relaxed),
+        RECOVERED_WAITS.load(Ordering::Relaxed),
+    )
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+thread_local! {
+    static LOCK_DEADLINE: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
+}
+
+/// Restores the previous thread-local deadline even if a render unwinds.
+pub(crate) struct CallbackWait {
+    #[cfg(not(target_arch = "wasm32"))]
+    previous: Option<Instant>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for CallbackWait {
+    fn drop(&mut self) {
+        LOCK_DEADLINE.set(self.previous);
+    }
+}
+
+/// Start one shared wait window for every plugin used by this render callback.
+pub(crate) fn begin_callback(frames: usize, sample_rate: f32) -> CallbackWait {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let deadline = Instant::now().checked_add(wait_limit(frames, sample_rate));
+        let previous = LOCK_DEADLINE.replace(deadline);
+        CallbackWait { previous }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (frames, sample_rate);
+        CallbackWait {}
+    }
+}
+
+/// At most 3 ms, and at most a quarter of the device buffer's duration.
+#[cfg(not(target_arch = "wasm32"))]
+fn wait_limit(frames: usize, sample_rate: f32) -> Duration {
+    if frames == 0 || !sample_rate.is_finite() || sample_rate <= 0.0 {
+        return Duration::ZERO;
+    }
+    Duration::from_secs_f64((frames as f64 / f64::from(sample_rate) / 4.0).min(0.003))
+}
+
+/// A first uncontended attempt is free. Once contested, all plugins share the same callback deadline.
+fn lock_plugin<T: ?Sized>(plugin: &Mutex<T>) -> Option<MutexGuard<'_, T>> {
+    let mut contended = false;
+    loop {
+        match plugin.try_lock() {
+            Ok(guard) => {
+                if contended {
+                    RECOVERED_WAITS.fetch_add(1, Ordering::Relaxed);
+                }
+                return Some(guard);
+            }
+            Err(TryLockError::Poisoned(_)) => break,
+            Err(TryLockError::WouldBlock) => contended = true,
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        let can_wait = LOCK_DEADLINE.with(|deadline| {
+            deadline.get().is_some_and(|until| Instant::now() < until)
+        });
+        #[cfg(target_arch = "wasm32")]
+        let can_wait = false;
+        if !can_wait {
+            break;
+        }
+        std::hint::spin_loop();
+    }
+    LOCK_MISSES.fetch_add(1, Ordering::Relaxed);
+    None
+}
 
 /// The plugin's params as the engine sets them: a param is sent only when its value differs from the last one sent
 /// (or that the plugin reported), so an engine build's initial writes cost nothing for params that did not change.
@@ -201,7 +286,7 @@ impl Instrument for PluginInstrument {
     }
 
     fn process(&mut self, left: &mut [f32], right: &mut [f32], context: ProcessContext) {
-        let Ok(mut plugin) = self.plugin.try_lock() else {
+        let Some(mut plugin) = lock_plugin(&self.plugin) else {
             return;
         };
         if std::mem::take(&mut self.reset) {
@@ -291,7 +376,7 @@ impl ExternalEffect for PluginEffect {
     }
 
     fn process(&mut self, left: &mut [f32], right: &mut [f32], context: ProcessContext) {
-        let Ok(mut plugin) = self.plugin.try_lock() else {
+        let Some(mut plugin) = lock_plugin(&self.plugin) else {
             return;
         };
         if std::mem::take(&mut self.reset) {
@@ -306,5 +391,26 @@ impl ExternalEffect for PluginEffect {
 
     fn reset(&mut self) {
         self.reset = true;
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod wait_tests {
+    use super::*;
+
+    #[test]
+    fn budget_is_shared_and_scales_down_for_small_buffers() {
+        assert_eq!(wait_limit(1024, 48_000.0), Duration::from_millis(3));
+        assert!(wait_limit(128, 48_000.0) < Duration::from_millis(1));
+        assert!(wait_limit(128, 48_000.0) > Duration::ZERO);
+        assert_eq!(wait_limit(0, 48_000.0), Duration::ZERO);
+        assert_eq!(wait_limit(1024, 0.0), Duration::ZERO);
+
+        let callback = begin_callback(1024, 48_000.0);
+        let deadline = LOCK_DEADLINE.get();
+        assert!(deadline.is_some());
+        assert_eq!(LOCK_DEADLINE.get(), deadline);
+        drop(callback);
+        assert_eq!(LOCK_DEADLINE.get(), None);
     }
 }
