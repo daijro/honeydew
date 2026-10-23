@@ -11,6 +11,7 @@
 
 pub mod builtin;
 mod engine;
+pub(crate) use engine::{begin_callback, lock_stats};
 mod host;
 #[cfg(plugin_host)]
 pub mod scan;

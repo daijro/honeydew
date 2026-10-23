@@ -77,6 +77,10 @@ pub struct Reading {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Performance {
     pub underruns: u64,
+    /// Plugin calls that could not acquire the instance lock before the callback's wait deadline.
+    pub plugin_lock_misses: u64,
+    /// Contended plugin calls that did acquire the lock within that deadline.
+    pub recovered_waits: u64,
     pub playing: bool,
     /// The song has played since the app started: the graph is no longer idle, and never is again.
     pub played: bool,
@@ -103,6 +107,8 @@ impl Default for Performance {
     fn default() -> Self {
         Self {
             underruns: 0,
+            plugin_lock_misses: 0,
+            recovered_waits: 0,
             playing: false,
             played: false,
             load: 0.0,
@@ -183,6 +189,20 @@ impl Performance {
 pub fn status_line(u: f32, underruns: u64) -> String {
     let share = u.clamp(0.0, 1.0) * 100.0;
     format!("CPU: {share:.0} % | Underruns: {underruns}")
+}
+
+/// Adds cumulative plugin-lock diagnostics once either counter is nonzero.
+pub fn status_line_with_locks(p: &Performance) -> String {
+    let mut line = status_line(p.smoothed, p.underruns);
+    if p.plugin_lock_misses != 0 || p.recovered_waits != 0 {
+        use std::fmt::Write;
+        let _ = write!(
+            line,
+            " | Plugin lock misses: {} | Recovered waits: {}",
+            p.plugin_lock_misses, p.recovered_waits
+        );
+    }
+    line
 }
 
 /// Where the parts go inside a monitor rect, from the line height `fh` and the hairline unit `t`: the status line, the
@@ -273,7 +293,7 @@ pub fn show(ui: &Ui, cx: &UiCtx, rect: Rect, p: &Performance) {
     let fh = ui.ctx().fonts_mut(|f| f.row_height(&font));
     let parts = layout(rect, fh, m.t());
     let text = c.text.to_color32();
-    let line = status_line(p.smoothed, p.underruns);
+    let line = status_line_with_locks(p);
     label(
         ui,
         cx,
@@ -915,6 +935,21 @@ mod tests {
         assert_eq!(status_line(0.42, 3), "CPU: 42 % | Underruns: 3");
         assert_eq!(status_line(1.7, 0), "CPU: 100 % | Underruns: 0");
         assert_eq!(status_line(-0.2, 0), "CPU: 0 % | Underruns: 0");
+    }
+
+    #[test]
+    fn plugin_lock_counters_appear_after_contention() {
+        let p = Performance {
+            smoothed: 0.05,
+            plugin_lock_misses: 18,
+            recovered_waits: 194,
+            ..Performance::default()
+        };
+        assert_eq!(
+            status_line_with_locks(&p),
+            "CPU: 5 % | Underruns: 0 | Plugin lock misses: 18 | Recovered waits: 194"
+        );
+        assert_eq!(status_line_with_locks(&Performance::default()), "CPU: 0 % | Underruns: 0");
     }
 
     #[test]
