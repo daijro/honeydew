@@ -949,7 +949,10 @@ mod tests {
             status_line_with_locks(&p),
             "CPU: 5 % | Underruns: 0 | Plugin lock misses: 18 | Recovered waits: 194"
         );
-        assert_eq!(status_line_with_locks(&Performance::default()), "CPU: 0 % | Underruns: 0");
+        assert_eq!(
+            status_line_with_locks(&Performance::default()),
+            "CPU: 0 % | Underruns: 0"
+        );
     }
 
     #[test]
