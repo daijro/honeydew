@@ -68,6 +68,9 @@ midir = "=0.10.4"
 os-vst3 = { path = "vendor/lemon-studio/os-vst3" }
 os-vst2 = { path = "vendor/lemon-studio/os-vst2" }
 
+[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
+rayon = "1.11"
+
 # The plugin editors' X11 windows. Already in the tree through winit.
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = "0.13.2"
