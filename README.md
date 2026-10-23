@@ -101,6 +101,8 @@ without changing its preset, or create a built-in synth/drum track and add
 notes. See [the MCP setup guide](tools/honeydew-mcp/README.md) for security,
 configuration, commands and current limits.
 
+**Multi core processing:** On Linux, macOS and Windows desktop builds, SETTINGS → Multi core processing can run independent channel racks on separate CPU cores. Sends still run before their target bus, and each rack's modules stay in order. The setting takes effect during playback without a restart. It is off by default and falls back to sequential processing for short segments, a single-core machine or a song with no independent channels. It does not split one plugin instance (including Vital) across cores; with one active instrument, leave it off. If enabling it increases underruns on your audio setup, turn it off again.
+
 ---
 
 ## Using your own FL Studio Mobile sounds

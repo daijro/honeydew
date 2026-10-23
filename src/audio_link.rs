@@ -157,6 +157,8 @@ pub struct AudioLink {
     /// The metronome flag as last sent (`AudioCommand::MetronomeFlag`), after the metronome: a runtime flag, off at
     /// start, kept across songs and never saved ([`Self::metronome_flag`]).
     metronome_flag: Option<(bool, f32)>,
+    /// Effective desktop multi-core setting; new renderers receive it too.
+    multi_core: bool,
     /// The beats of the count-in last sent (`AudioCommand::CountIn`), armed or running, until Stop, `CountIn(0)` or
     /// a poll that sees it end: a new engine counts in again before it plays.
     count_in: Option<u32>,
@@ -193,6 +195,16 @@ pub struct AudioLink {
 }
 
 impl AudioLink {
+    /// Prepare workers on this (UI) thread, then switch the running renderer at
+    /// the next callback. No engine or audio stream restart is needed.
+    pub fn set_multi_core(&mut self, on: bool) {
+        let enabled = on && crate::audio_engine::prepare_multi_core();
+        if self.multi_core != enabled {
+            self.multi_core = enabled;
+            self.send(AudioCommand::SetMultiCore(enabled));
+        }
+    }
+
     /// The song the last engine was built from.
     #[cfg(test)]
     pub(crate) fn built_song(&self) -> Option<&Song> {
@@ -520,8 +532,11 @@ impl AudioLink {
         self.low_latency = low_latency;
     }
 
-    /// The metronome and its flag as last sent, for a new engine (which starts with both off).
+    /// The multicore choice, metronome and its flag for a fresh renderer.
     fn resend_metronome(&mut self) {
+        if self.multi_core {
+            self.send(AudioCommand::SetMultiCore(true));
+        }
         if let Some((on, level)) = self.metronome {
             self.send(AudioCommand::Metronome { on, level });
         }
@@ -666,6 +681,7 @@ impl AudioLink {
         }
         match (built, edit, last) {
             (Ok(mut engine), Some(edit), Some(last)) => {
+                engine.set_multi_core(self.multi_core);
                 // The new engine takes over the playing one, its transport and state included. Play keeps the
                 // output's own Play/Stop record.
                 (self.song, self.tempo) = (Some(song.clone()), None);
@@ -685,7 +701,8 @@ impl AudioLink {
                 self.resend_settings(song);
                 true
             }
-            (Ok(engine), _, _) => {
+            (Ok(mut engine), _, _) => {
+                engine.set_multi_core(self.multi_core);
                 (self.song, self.tempo) = (Some(song.clone()), None);
                 self.controllers.clear();
                 self.send(AudioCommand::ReplaceSong(Box::new(engine)));
@@ -849,6 +866,7 @@ pub(crate) mod testing {
             AudioCommand::CountIn(beats) => format!("CountIn {beats}"),
             AudioCommand::Metronome { on, level } => format!("Metronome {on} {level:.3}"),
             AudioCommand::MetronomeFlag { on, level } => format!("MetronomeFlag {on} {level:.3}"),
+            AudioCommand::SetMultiCore(on) => format!("SetMultiCore {on}"),
             AudioCommand::Ping(id) => format!("Ping {id}"),
             AudioCommand::LiveLane { channel, notes } => format!("LiveLane {channel} {notes}"),
             AudioCommand::Preview(Some((data, from))) => {
@@ -894,6 +912,7 @@ pub(crate) mod testing {
                     *slot = Some(*engine);
                 }
                 (AudioCommand::Play, Some(engine)) => engine.play(),
+                (AudioCommand::SetMultiCore(on), Some(engine)) => engine.set_multi_core(on),
                 (AudioCommand::Stop, Some(engine)) => engine.stop(),
                 (AudioCommand::Seek(tick), Some(engine)) => engine.seek(tick),
                 (AudioCommand::ResetSound, Some(engine)) => engine.reset_sound(),
@@ -1035,6 +1054,24 @@ mod tests {
         link.start(&Song::default(), false, &|_| None, |_, _| rec.sink());
         rec.take();
         link
+    }
+
+    #[test]
+    fn multi_core_switches_live_and_is_resent_to_new_streams() {
+        let rec = Recorder::default();
+        let mut link = AudioLink::default();
+        link.set_multi_core(true);
+        if !link.multi_core {
+            return; // A single-core or non-desktop host has no worker pool.
+        }
+        link.start(&Song::default(), false, &|_| None, |_, _| rec.sink());
+        assert_eq!(rec.take(), ["SetMultiCore true"]);
+        link.set_multi_core(false);
+        assert_eq!(rec.take(), ["SetMultiCore false"]);
+        link.set_multi_core(true);
+        assert_eq!(rec.take(), ["SetMultiCore true"]);
+        fresh(&mut link, &Song::default(), false, 0);
+        assert_eq!(rec.take(), ["ReplaceSong", "SetMultiCore true"]);
     }
 
     #[test]

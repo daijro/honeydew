@@ -354,6 +354,7 @@ impl HoneydewApp {
             storage,
             ..Self::default()
         };
+        app.audio.set_multi_core(app.settings.multi_core);
         // The song the app starts with is created now (MET`created`).
         if let Some(song) = app.files.replace(Replace::New) {
             app.history = History::new(&song);
@@ -404,6 +405,9 @@ impl HoneydewApp {
             }
             if self.settings.low_latency != self.settings_saved.low_latency {
                 self.audio.set_low_latency(&self.song, self.settings.low_latency);
+            }
+            if self.settings.multi_core != self.settings_saved.multi_core {
+                self.audio.set_multi_core(self.settings.multi_core);
             }
             if let Some(storage) = self.storage.as_deref_mut() {
                 self.settings.save(storage);

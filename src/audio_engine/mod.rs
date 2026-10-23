@@ -6,6 +6,8 @@ mod generators;
 mod input;
 mod live;
 mod merge;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+mod parallel;
 mod prepare;
 mod preview;
 mod routing;
@@ -31,14 +33,47 @@ use honeydew_audio::metronome::{self, Metronome};
 use honeydew_audio::mixer::{MixError, Mixer, OwnedStereoBuffer};
 use honeydew_audio::note_effects::{LiveNoteEvent, NoteEffectError, NoteEffectTrace};
 use honeydew_audio::playback::AudioPlayback;
+use honeydew_audio::playback::{PlaybackChannel, PlaybackError};
 use honeydew_audio::sample::SampleData;
 use honeydew_audio::{MeterSnapshot, ProcessContext};
 use input::Monitor;
 use prepare::{Action, KIT, ParamTimeline, ScheduledAction, beat_frame};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+use rayon::prelude::*;
 
 pub use slicer::{auto_clip as slicer_auto_clip, settle_first_notes};
 
 const BLOCK_FRAMES: usize = 1024;
+
+/// Prepare the desktop worker pool off the audio callback. Other platforms
+/// retain the sequential path even if an old preference is on.
+pub(crate) fn prepare_multi_core() -> bool {
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    {
+        parallel::prepare()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        false
+    }
+}
+
+fn process_rack(
+    audio: &mut PlaybackChannel,
+    instruments: &mut [(i32, InstrumentModule)],
+    left: &mut [f32],
+    right: &mut [f32],
+    context: ProcessContext,
+) -> Result<(), PlaybackError> {
+    let mut done = 0;
+    for (_, module) in instruments {
+        audio.process_effects(done..module.effects_above, left, right, context)?;
+        module.process(left, right, context);
+        done = module.effects_above;
+    }
+    audio.process_effects(done..usize::MAX, left, right, context)
+}
+
 /// Channel param 4: Pitch Bend.
 const PITCH_BEND: usize = 4;
 /// Channel param 7 + 64: MIDI CC #64, the sustain pedal.
@@ -74,6 +109,8 @@ pub enum EngineError {
 pub struct SongAudioEngine {
     audio: AudioPlayback,
     mixer: Mixer,
+    /// Enabled by the audio command; the pool itself is prepared by the UI.
+    multi_core: bool,
     /// Per channel, its instruments in rack order, by instance id.
     instruments: Vec<Vec<(i32, InstrumentModule)>>,
     /// Per channel, its pad sampler; `None` without drum slots.
@@ -377,6 +414,7 @@ impl SongAudioEngine {
         let mut engine = Self {
             audio: bridge.audio,
             mixer,
+            multi_core: false,
             instruments,
             kits,
             clips,
@@ -724,17 +762,7 @@ impl SongAudioEngine {
         if let Some(monitor) = &mut self.monitor {
             monitor.add(&mut self.buffers, frames);
         }
-        let (audio, instruments) = (&mut self.audio, &mut self.instruments);
-        let rack = |index: usize, left: &mut [f32], right: &mut [f32]| {
-            let mut done = 0;
-            for (_, module) in &mut instruments[index] {
-                audio.process_effects(index, done..module.effects_above, left, right, context)?;
-                module.process(left, right, context);
-                done = module.effects_above;
-            }
-            audio.process_effects(index, done..usize::MAX, left, right, context)
-        };
-        if self.mixer.mix(&mut self.buffers, rack).is_err() {
+        if !self.process_racks(context, frames) {
             return;
         }
         for (meter, buffer) in self.channel_meters.iter_mut().zip(&self.buffers) {
@@ -765,9 +793,83 @@ impl SongAudioEngine {
             }
         }
     }
+
+    fn process_racks(&mut self, context: ProcessContext, frames: usize) -> bool {
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        if self.multi_core
+            && frames >= 128
+            && self.mixer.has_parallel_stage()
+            && let Some(pool) = parallel::pool()
+        {
+            let (mixer, buffers, instruments, audio) = (
+                &self.mixer,
+                &mut self.buffers,
+                &mut self.instruments,
+                &mut self.audio,
+            );
+            let processors = audio.channels_mut();
+            let stages = mixer.stage_of();
+            for stage in 0..mixer.stages().len() {
+                if let [index] = mixer.stages()[stage].as_slice() {
+                    let buffer = &mut buffers[*index];
+                    if process_rack(
+                        &mut processors[*index],
+                        &mut instruments[*index],
+                        &mut buffer.left,
+                        &mut buffer.right,
+                        context,
+                    )
+                    .is_err()
+                    {
+                        return false;
+                    }
+                    mixer.route_stage(buffers, stage);
+                    continue;
+                }
+                let result: Result<(), PlaybackError> = pool.install(|| {
+                    processors
+                        .par_iter_mut()
+                        .zip(instruments.par_iter_mut())
+                        .zip(buffers.par_iter_mut())
+                        .enumerate()
+                        .filter(|(index, _)| stages[*index] == stage)
+                        .try_for_each(|(_, ((audio, instruments), buffer))| {
+                            process_rack(
+                                audio,
+                                instruments,
+                                &mut buffer.left,
+                                &mut buffer.right,
+                                context,
+                            )
+                        })
+                });
+                if result.is_err() {
+                    return false;
+                }
+                mixer.route_stage(buffers, stage);
+            }
+            return true;
+        }
+        let audio = self.audio.channels_mut();
+        let instruments = &mut self.instruments;
+        self.mixer
+            .mix(&mut self.buffers, |index, left, right| {
+                process_rack(
+                    &mut audio[index],
+                    &mut instruments[index],
+                    left,
+                    right,
+                    context,
+                )
+            })
+            .is_ok()
+    }
 }
 
 impl AudioRenderer for SongAudioEngine {
+    fn set_multi_core(&mut self, on: bool) {
+        self.multi_core = on;
+    }
     fn render(&mut self, output: &mut [f32], channels: usize) {
         output.fill(0.0);
         if channels == 0 || self.render_ping(output, channels) {
@@ -1093,6 +1195,57 @@ impl AudioRenderer for SongAudioEngine {
     /// key that sounds stays lit.
     fn sounding(&self, channel: usize) -> u128 {
         self.sounding.get(channel).copied().unwrap_or(0)
+    }
+}
+
+#[cfg(all(
+    test,
+    any(target_os = "linux", target_os = "macos", target_os = "windows")
+))]
+mod parallel_tests {
+    use super::*;
+    use crate::song::{ChannelKind, SendState, Song, SynthKind};
+
+    #[test]
+    fn parallel_racks_match_sequential_through_sends_and_live_toggle() {
+        if !prepare_multi_core() {
+            return; // A single-core host keeps the sequential renderer.
+        }
+        let mut song = Song::default();
+        song.add_channel(ChannelKind::EffectTrack);
+        for _ in 0..3 {
+            song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+        }
+        let bus = song.channels[1].id;
+        for index in [2, 4] {
+            song.channels[index].file.sends.push(SendState {
+                target_channel_id: bus,
+                ..SendState::default()
+            });
+        }
+        song.channels[1].rack.add(20); // A bus effect runs after its sources.
+        let mut serial = SongAudioEngine::new(&song, 48_000.0).unwrap();
+        let mut parallel = SongAudioEngine::new(&song, 48_000.0).unwrap();
+        assert!(parallel.mixer.has_parallel_stage());
+        for channel in 2..=4 {
+            serial.note_on(channel, 60 + channel as u8, 0.8);
+            parallel.note_on(channel, 60 + channel as u8, 0.8);
+        }
+        parallel.set_multi_core(true);
+        for frames in [1, 127, 1024, 333, 2048, 511] {
+            let (mut expected, mut actual) = (vec![0.0; frames * 2], vec![0.0; frames * 2]);
+            serial.render(&mut expected, 2);
+            parallel.render(&mut actual, 2);
+            assert!(expected.iter().any(|sample| sample.abs() > 0.001));
+            for (a, b) in actual.iter().zip(expected) {
+                assert!((a - b).abs() < 1e-5, "{a} versus {b}");
+            }
+        }
+        parallel.set_multi_core(false);
+        let (mut expected, mut actual) = (vec![0.0; 2048], vec![0.0; 2048]);
+        serial.render(&mut expected, 2);
+        parallel.render(&mut actual, 2);
+        assert_eq!(actual, expected);
     }
 }
 
