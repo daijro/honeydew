@@ -259,9 +259,10 @@ pub enum FileEvent {
     Located(Vec<(String, Vec<u8>)>),
 }
 
-/// Where project files come from and go to. Requests may finish later (the web reads files asynchronously), so
-/// their outcome arrives through [`FileProvider::poll`]. A provider checks a file's extension against what was asked
-/// for ([`Pick::accept`]) before it reads it, and reads at most [`MAX_FILE_BYTES`].
+/// Where project files come from and go to. Requests may finish later (the web reads files asynchronously, and the
+/// native open picker runs off the UI thread), so their outcome arrives through [`FileProvider::poll`]. A provider
+/// checks a file's extension against what was asked for ([`Pick::accept`]) before it reads it, and reads at most
+/// [`MAX_FILE_BYTES`].
 pub trait FileProvider {
     /// Asks the user for a file to open, one whose extension is in `accept` (no dot, any case). Any other file
     /// finishes with [`UNKNOWN_TYPE`], unread.
@@ -272,8 +273,12 @@ pub trait FileProvider {
     fn save(&mut self, path: &Path, ask: bool, bytes: Vec<u8>);
     /// The next finished request.
     fn poll(&mut self) -> Option<FileEvent>;
-    /// Hands over the context, to repaint when a request finishes between frames (the web). Called every frame.
+    /// Hands over the context, to repaint when a request finishes between frames. Called every frame.
     fn attach(&mut self, _ctx: &Context) {}
+    /// Whether an open-file picker is already waiting for the user's answer.
+    fn opening(&self) -> bool {
+        false
+    }
     /// Whether `path` names an existing file or folder. Always false where that cannot be known (the web).
     fn exists(&self, path: &Path) -> bool;
     /// Whether a save keeps its folder. False where a save is a download (the web), which keeps only the file name.
@@ -517,6 +522,9 @@ impl ProjectFiles {
     }
 
     fn open_pick(&mut self, pick: Pick) {
+        if self.provider.opening() {
+            return;
+        }
         self.pick = Some(pick);
         self.provider.open(pick.accept());
     }
@@ -1297,7 +1305,7 @@ impl ProjectFiles {
         if shortcuts && let Some(file) = self.drop_waiting.take() {
             opened = self.dropped(file).or(opened);
         }
-        // Last, so that what this frame asked for (native dialogs answer at once) lands in this frame.
+        // Last, so completed requests land in this frame (the native open picker may still be pending).
         let changes = self.library_changes;
         opened = self.poll(song).or(opened);
         // After all that may ask something this frame: the import's result waits for it.

@@ -6,6 +6,8 @@ use std::fs::File;
 use std::path::Path;
 #[cfg(not(target_os = "android"))]
 use std::path::PathBuf;
+#[cfg(not(target_os = "android"))]
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 use super::{FileEvent, FileProvider, SAVE_FAILED};
 #[cfg(not(target_os = "android"))]
@@ -14,20 +16,30 @@ use super::{MAX_FILE_BYTES, OPEN_FAILED, READ_FAILED, UNKNOWN_TYPE, accepts, rea
 #[derive(Default)]
 pub struct NativeFiles {
     event: Option<FileEvent>,
+    #[cfg(not(target_os = "android"))]
+    opening: Option<Receiver<Option<FileEvent>>>,
+    #[cfg(not(target_os = "android"))]
+    ctx: Option<eframe::egui::Context>,
 }
 
-// ponytail: the dialogs block the UI thread while open (one frozen frame); rfd's AsyncFileDialog on a task if the
-// app must keep drawing (audio runs on its own thread either way).
 impl FileProvider for NativeFiles {
     #[cfg(not(target_os = "android"))]
     fn open(&mut self, accept: &'static [&'static str]) {
-        let Some(path) = rfd::FileDialog::new()
-            .add_filter("Supported files", &dialog_extensions(accept))
-            .pick_file()
-        else {
-            return;
-        };
-        self.event = Some(open_path(path, accept));
+        let (tx, rx) = mpsc::channel();
+        self.opening = Some(rx);
+        let ctx = self.ctx.clone();
+        std::thread::spawn(move || {
+            let result = pollster::block_on(
+                rfd::AsyncFileDialog::new()
+                    .add_filter("Supported files", &dialog_extensions(accept))
+                    .pick_file(),
+            )
+            .map(|file| open_path(file.path().to_path_buf(), accept));
+            let _ = tx.send(result);
+            if let Some(ctx) = ctx {
+                ctx.request_repaint();
+            }
+        });
     }
 
     #[cfg(target_os = "android")]
@@ -85,7 +97,33 @@ impl FileProvider for NativeFiles {
     }
 
     fn poll(&mut self) -> Option<FileEvent> {
-        self.event.take()
+        if let Some(event) = self.event.take() {
+            return Some(event);
+        }
+        #[cfg(not(target_os = "android"))]
+        match self.opening.as_ref()?.try_recv() {
+            Ok(result) => {
+                self.opening = None;
+                result
+            }
+            Err(TryRecvError::Disconnected) => {
+                self.opening = None;
+                None
+            }
+            Err(TryRecvError::Empty) => None,
+        }
+        #[cfg(target_os = "android")]
+        return None;
+    }
+
+    #[cfg(not(target_os = "android"))]
+    fn attach(&mut self, ctx: &eframe::egui::Context) {
+        self.ctx = Some(ctx.clone());
+    }
+
+    #[cfg(not(target_os = "android"))]
+    fn opening(&self) -> bool {
+        self.opening.is_some()
     }
 
     fn exists(&self, path: &Path) -> bool {
@@ -155,10 +193,38 @@ fn read(path: &Path) -> Result<Vec<u8>, (&'static str, String)> {
     read_file_limited(file, MAX_FILE_BYTES).map_err(|e| (READ_FAILED, e))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_os = "android")))]
 mod tests {
     use super::*;
     use crate::project_files::{Pick, UNKNOWN_TYPE};
+
+    #[test]
+    fn pending_open_is_polled_without_waiting_for_the_picker() {
+        let (tx, rx) = mpsc::channel();
+        let mut files = NativeFiles {
+            opening: Some(rx),
+            ..Default::default()
+        };
+        assert!(files.opening());
+        assert_eq!(files.poll(), None);
+        let event = FileEvent::Opened(PathBuf::from("Song.flm"), b"10LF".to_vec());
+        tx.send(Some(event.clone())).unwrap();
+        assert_eq!(files.poll(), Some(event));
+        assert!(!files.opening());
+        assert_eq!(files.poll(), None);
+    }
+
+    #[test]
+    fn cancelling_an_open_clears_the_pending_picker() {
+        let (tx, rx) = mpsc::channel();
+        let mut files = NativeFiles {
+            opening: Some(rx),
+            ..Default::default()
+        };
+        tx.send(None).unwrap();
+        assert_eq!(files.poll(), None);
+        assert!(!files.opening());
+    }
 
     #[test]
     fn the_type_is_checked_before_the_file_is_opened() {
