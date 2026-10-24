@@ -129,6 +129,19 @@ pub fn open_device_with_mode(
 }
 
 pub fn buffer_mode(sound_mode: u8, low_latency: bool) -> BufferMode {
+    // On desktop FL Studio Mobile's low-latency switch is meaningful only in its
+    // Multitrack driver mode. Standard is the compatibility/default mode.
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+    {
+        return if sound_mode == 1 && low_latency {
+            BufferMode::Fast
+        } else {
+            BufferMode::Native
+        };
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
     if low_latency {
         return BufferMode::Fast;
     }
@@ -137,6 +150,7 @@ pub fn buffer_mode(sound_mode: u8, low_latency: bool) -> BufferMode {
         0 => BufferMode::Safe,
         1 => BufferMode::Fast,
         _ => BufferMode::Native,
+    }
     }
 }
 

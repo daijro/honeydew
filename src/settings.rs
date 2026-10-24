@@ -54,8 +54,19 @@ pub fn migrate_legacy_keys(storage: &mut dyn eframe::Storage) {
 }
 
 /// The `Sound mode:` items in menu order, with their stored ids.
+///
+/// FL Studio Mobile exposes buffer profiles on Android, but its desktop builds expose the
+/// driver modes `Standard` and `Multitrack` instead.
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+pub const SOUND_MODES: [(u8, &str); 2] = [(0, "STANDARD"), (1, "MULTITRACK")];
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 pub const SOUND_MODES: [(u8, &str); 4] =
     [(2, "ULTRASAFE"), (0, "SAFE"), (1, "FAST"), (3, "NATIVE")];
+
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+const DEFAULT_SOUND_MODE: u8 = 0;
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+const DEFAULT_SOUND_MODE: u8 = 3;
 
 /// Every SETTINGS value the app keeps. For the defaults see [`Settings::default`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -75,7 +86,7 @@ pub struct Settings {
     /// `Enable background audio`. Stored only.
     #[serde(rename = "bgAudio")]
     pub background_audio: bool,
-    /// `Sound mode:`, a stored id from [`SOUND_MODES`], selecting the output buffer profile.
+    /// `Sound mode:`, a stored id from [`SOUND_MODES`], selecting the platform's audio mode.
     #[serde(rename = "soundModeAndr")]
     pub sound_mode: u8,
     /// `Enable audio recording latency compensation`: the toggle as stored, `None` while unset. Its meaning is
@@ -189,7 +200,7 @@ impl Default for Settings {
             multi_core: false,
             low_latency: false,
             background_audio: false,
-            sound_mode: 3,
+            sound_mode: DEFAULT_SOUND_MODE,
             latency_compensation: None,
             multitrack_recording: false,
             count_in: true,
@@ -540,7 +551,7 @@ mod tests {
             multi_core: !d.multi_core,
             low_latency: !d.low_latency,
             background_audio: !d.background_audio,
-            sound_mode: 2,
+            sound_mode: SOUND_MODES[1].0,
             latency_compensation: Some(false),
             multitrack_recording: !d.multitrack_recording,
             count_in: !d.count_in,
@@ -584,7 +595,7 @@ mod tests {
         assert!(!d.multitrack_recording);
         assert!(!d.key_names && !d.middle_c_is_c4 && !d.continuous_scroll);
         // `NATIVE`, `Classic Gray`, `100%`.
-        assert_eq!(d.sound_mode, 3);
+        assert_eq!(d.sound_mode, DEFAULT_SOUND_MODE);
         assert_eq!(d.theme, 0);
         assert_eq!(d.ui_scale, 100);
         // `Animation`: `Full`.

@@ -561,10 +561,16 @@ impl SettingsTab {
                     self.menu = Some((Menu::Choice(choice), button_rect.center()));
                 }
                 if matches!(choice, Choice::SoundMode) {
+                    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+                    let sound_mode_tip =
+                        "STANDARD: broad compatibility; MULTITRACK: multiple inputs and supports low latency";
+                    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+                    let sound_mode_tip =
+                        "ULTRASAFE: largest buffer; SAFE: large; FAST: small and lower latency; NATIVE: device default";
                     crate::ui::tooltip::tip(
                         ui,
                         button_rect,
-                        "ULTRASAFE: largest buffer; SAFE: large; FAST: small and lower latency; NATIVE: device default",
+                        sound_mode_tip,
                         None,
                     );
                 }
@@ -993,11 +999,19 @@ mod tests {
     fn dropdowns_list_the_spec_items_and_store_their_ids() {
         let labels = |c: Choice| -> Vec<String> { c.items().into_iter().map(|(_, l)| l).collect() };
         let values = |c: Choice| -> Vec<usize> { c.items().into_iter().map(|(v, _)| v).collect() };
-        assert_eq!(
-            labels(Choice::SoundMode),
-            ["ULTRASAFE", "SAFE", "FAST", "NATIVE"]
-        );
-        assert_eq!(values(Choice::SoundMode), [2, 0, 1, 3]);
+        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        {
+            assert_eq!(labels(Choice::SoundMode), ["STANDARD", "MULTITRACK"]);
+            assert_eq!(values(Choice::SoundMode), [0, 1]);
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        {
+            assert_eq!(
+                labels(Choice::SoundMode),
+                ["ULTRASAFE", "SAFE", "FAST", "NATIVE"]
+            );
+            assert_eq!(values(Choice::SoundMode), [2, 0, 1, 3]);
+        }
         assert_eq!(
             labels(Choice::Theme),
             [
@@ -1017,7 +1031,14 @@ mod tests {
         assert_eq!(values(Choice::Animation), [0, 1, 2]);
         // The buttons show the current item.
         let s = Settings::default();
-        assert_eq!(Choice::SoundMode.label(&s), "NATIVE");
+        assert_eq!(
+            Choice::SoundMode.label(&s),
+            SOUND_MODES
+                .iter()
+                .find(|&&(id, _)| id == s.sound_mode)
+                .unwrap()
+                .1
+        );
         assert_eq!(Choice::Theme.label(&s), "Classic Gray");
         assert_eq!(Choice::Animation.label(&s), "Full");
         let mut s = Settings::default();
@@ -1027,6 +1048,9 @@ mod tests {
             assert_eq!(c.get(&s), value);
             assert_eq!(c.label(&s), label);
         }
+        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        assert_eq!(SOUND_MODES, [(0, "STANDARD"), (1, "MULTITRACK")]);
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
         assert_eq!(SOUND_MODES[1], (0, "SAFE"));
     }
 
