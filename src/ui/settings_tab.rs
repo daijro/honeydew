@@ -560,6 +560,14 @@ impl SettingsTab {
                 if light_button(ui, button_rect, &choice.label(s), true) {
                     self.menu = Some((Menu::Choice(choice), button_rect.center()));
                 }
+                if matches!(choice, Choice::SoundMode) {
+                    crate::ui::tooltip::tip(
+                        ui,
+                        button_rect,
+                        "ULTRASAFE: largest buffer; SAFE: large; FAST: small and lower latency; NATIVE: device default",
+                        None,
+                    );
+                }
             }
             Kind::MidiDropdown => {
                 label(ui, before(button_rect), FontSize::Pt10);

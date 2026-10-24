@@ -75,7 +75,7 @@ pub struct Settings {
     /// `Enable background audio`. Stored only.
     #[serde(rename = "bgAudio")]
     pub background_audio: bool,
-    /// `Sound mode:`, a stored id from [`SOUND_MODES`]. Stored only.
+    /// `Sound mode:`, a stored id from [`SOUND_MODES`], selecting the output buffer profile.
     #[serde(rename = "soundModeAndr")]
     pub sound_mode: u8,
     /// `Enable audio recording latency compensation`: the toggle as stored, `None` while unset. Its meaning is

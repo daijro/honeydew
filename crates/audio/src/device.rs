@@ -55,6 +55,15 @@ pub enum PingFailure {
 /// the round trip in frames or why there is none.
 pub type PingReport = (u32, Option<Result<u32, PingFailure>>);
 
+/// Output buffer policy. Native keeps the backend's default; the other modes trade latency for stability.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BufferMode {
+    UltraSafe,
+    Safe,
+    Fast,
+    Native,
+}
+
 pub trait AudioRenderer: Send + 'static {
     fn render(&mut self, output: &mut [f32], channels: usize);
     /// Enables independent-channel processing if this renderer supports it.
@@ -444,7 +453,7 @@ pub struct AudioOutput<R: AudioRenderer> {
     replaced: Option<Arc<MeterBank>>,
     sample_rate: u32,
     transport_playing: bool,
-    low_latency: bool,
+    buffer_mode: BufferMode,
 }
 
 impl<R: AudioRenderer> AudioOutput<R> {
@@ -452,11 +461,22 @@ impl<R: AudioRenderer> AudioOutput<R> {
     where
         F: FnOnce(u32) -> Result<R, E>,
     {
-        Self::start_with_latency(false, make_renderer)
+        Self::start_with_mode(BufferMode::Native, make_renderer)
     }
 
     /// Starts the output, preferring the smallest buffer the device advertises when `low_latency` is on.
     pub fn start_with_latency<F, E>(low_latency: bool, make_renderer: F) -> Result<Self, StartError<E>>
+    where
+        F: FnOnce(u32) -> Result<R, E>,
+    {
+        Self::start_with_mode(
+            if low_latency { BufferMode::Fast } else { BufferMode::Native },
+            make_renderer,
+        )
+    }
+
+    /// Starts the output with an explicit buffer profile.
+    pub fn start_with_mode<F, E>(mode: BufferMode, make_renderer: F) -> Result<Self, StartError<E>>
     where
         F: FnOnce(u32) -> Result<R, E>,
     {
@@ -486,7 +506,7 @@ impl<R: AudioRenderer> AudioOutput<R> {
         let error = move |_| {
             error_shared.failed.store(true, Ordering::Release);
         };
-        let config = output_config(&device, &supported, low_latency);
+        let config = output_config(&device, &supported, mode);
         let stream = match supported.sample_format() {
             cpal::SampleFormat::I8 => {
                 build_stream::<i8, _, _>(&device, &config, channels, state, error)
@@ -534,7 +554,7 @@ impl<R: AudioRenderer> AudioOutput<R> {
             replaced: None,
             sample_rate,
             transport_playing: false,
-            low_latency,
+            buffer_mode: mode,
         })
     }
 
@@ -542,7 +562,7 @@ impl<R: AudioRenderer> AudioOutput<R> {
     where
         F: FnOnce(u32) -> Result<R, E>,
     {
-        self.reopen_with_latency(self.low_latency, make_renderer)
+        self.reopen_with_mode(self.buffer_mode, make_renderer)
     }
 
     /// Reopens the output with the requested buffer policy, preserving transport state.
@@ -550,11 +570,22 @@ impl<R: AudioRenderer> AudioOutput<R> {
     where
         F: FnOnce(u32) -> Result<R, E>,
     {
+        self.reopen_with_mode(
+            if low_latency { BufferMode::Fast } else { BufferMode::Native },
+            make_renderer,
+        )
+    }
+
+    /// Reopens the output with the requested buffer profile, preserving transport state.
+    pub fn reopen_with_mode<F, E>(&mut self, mode: BufferMode, make_renderer: F) -> Result<(), StartError<E>>
+    where
+        F: FnOnce(u32) -> Result<R, E>,
+    {
         let tick = self.shared.tick.load(Ordering::Acquire);
         let playing = self.transport_playing;
         drop(self.stream.take());
         self.shared.failed.store(true, Ordering::Release);
-        let mut replacement = Self::start_with_latency(low_latency, make_renderer)?;
+        let mut replacement = Self::start_with_mode(mode, make_renderer)?;
         let _ = replacement.send(AudioCommand::Seek(tick));
         if playing {
             let _ = replacement.send(AudioCommand::Play);
@@ -643,13 +674,13 @@ impl<R: AudioRenderer> AudioOutput<R> {
 fn output_config(
     device: &cpal::Device,
     default: &SupportedStreamConfig,
-    low_latency: bool,
+    mode: BufferMode,
 ) -> StreamConfig {
     let mut config = default.config();
-    if !low_latency {
+    if mode == BufferMode::Native {
         return config;
     }
-    let min = device
+    let Some((min, max)) = device
         .supported_output_configs()
         .ok()
         .into_iter()
@@ -661,13 +692,20 @@ fn output_config(
                 && default.sample_rate() <= range.max_sample_rate()
         })
         .filter_map(|range| match *range.buffer_size() {
-            SupportedBufferSize::Range { min, .. } => Some(min),
+            SupportedBufferSize::Range { min, max } => Some((min, max)),
             SupportedBufferSize::Unknown => None,
         })
-        .min();
-    if let Some(min) = min {
-        config.buffer_size = BufferSize::Fixed(min);
-    }
+        .min_by_key(|(min, _)| *min)
+    else {
+        return config;
+    };
+    let frames = match mode {
+        BufferMode::UltraSafe => max,
+        BufferMode::Safe => 256.clamp(min, max),
+        BufferMode::Fast => min,
+        BufferMode::Native => return config,
+    };
+    config.buffer_size = BufferSize::Fixed(frames);
     config
 }
 
@@ -1052,7 +1090,7 @@ mod tests {
             replaced: None,
             sample_rate: 48_000,
             transport_playing: false,
-            low_latency: false,
+            buffer_mode: BufferMode::Native,
         };
         (output, state)
     }

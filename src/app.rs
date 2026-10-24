@@ -4,7 +4,7 @@ use eframe::egui;
 use honeydew_audio::device::{AudioCommand, OutputSnapshot};
 
 use crate::audio_engine::LiveInput;
-use crate::audio_link::{AudioLink, AudioSink, Handover, open_device_with_latency};
+use crate::audio_link::{AudioLink, AudioSink, Handover, buffer_mode, open_device_with_mode};
 use crate::fonts;
 use crate::history::{self, History, Step};
 use crate::metrics::{FontSize, Metrics};
@@ -405,6 +405,9 @@ impl HoneydewApp {
             }
             if self.settings.low_latency != self.settings_saved.low_latency {
                 self.audio.set_low_latency(&self.song, self.settings.low_latency);
+            }
+            if self.settings.sound_mode != self.settings_saved.sound_mode {
+                self.audio.set_sound_mode(&self.song, self.settings.sound_mode);
             }
             if self.settings.multi_core != self.settings_saved.multi_core {
                 self.audio.set_multi_core(self.settings.multi_core);
@@ -1748,8 +1751,11 @@ impl eframe::App for HoneydewApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "android")]
         crate::android_text::begin_frame(ctx);
+        let sound_mode = self.settings.sound_mode;
         let low_latency = self.settings.low_latency;
-        self.frame(ctx, |song, samples| open_device_with_latency(song, samples, low_latency));
+        self.frame(ctx, |song, samples| {
+            open_device_with_mode(song, samples, buffer_mode(sound_mode, low_latency))
+        });
         #[cfg(target_os = "android")]
         crate::android_text::end_frame(ctx);
     }
@@ -1804,6 +1810,7 @@ impl HoneydewApp {
         let mut snapshot = self.audio.poll();
         if !self.audio.running() && ctx.input(|i| audio_gesture(i, START_ON_RELEASE)) {
             self.audio.set_low_latency_preference(self.settings.low_latency);
+            self.audio.set_sound_mode_preference(self.settings.sound_mode);
             let solo = self.solo();
             let song = solo.as_ref().unwrap_or(&self.song);
             let read = sample_cache::reader(&self.files);
