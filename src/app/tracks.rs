@@ -578,6 +578,45 @@ impl HoneydewApp {
         }
     }
 
+    /// Adds an instrument channel with the chosen VST/CLAP already in its rack, as one channel edit.
+    /// A plugin that vanished or fails to start leaves the song untouched.
+    pub(super) fn insert_plugin_channel(&mut self, at: usize, uid: &str, tick: u64) {
+        let name = crate::plugins::available().into_iter().find(|p|
+            p.uid == uid && p.kind == crate::plugins::PluginKind::Instrument)
+            .map(|p| p.name)
+            .or_else(|| [crate::plugins::builtin::LEMON_TRIO, crate::plugins::builtin::LEMON_SAMPLER]
+                .into_iter().find(|p| p.uid == uid).map(|p| p.name.to_owned()));
+        let Some(plugin_name) = name else {
+            return self.navigate(Nav::Open(Overlay::Message {
+                tag: MESSAGE_TAG,
+                lines: vec!["Instrument plugin is no longer available".into(), uid.to_owned()],
+                confirm: None,
+                extra: None,
+            }));
+        };
+        let name = self.song.free_name(&plugin_name);
+        let before = self.song.clone();
+        let Some(at) = self.song.insert_channel(at, ChannelKind::Instrument) else {
+            return self.navigate(Nav::Open(views::preset_picker::channel_limit_message()));
+        };
+        let channel = &mut self.song.channels[at];
+        if let Err(why) = crate::plugins::add(&mut channel.rack, channel.id, uid, 0) {
+            self.song = before;
+            return self.navigate(Nav::Open(Overlay::Message {
+                tag: MESSAGE_TAG,
+                lines: vec![format!("Could not load {plugin_name}"), why],
+                confirm: None,
+                extra: None,
+            }));
+        }
+        channel.name = name;
+        let bar = self.song.time_sig.bar_beats();
+        let id = crate::ui::clips::add_clip(&mut channel.lanes[0], 0.0, 1.0, bar);
+        self.song_edited(SongEdit::Final, tick);
+        self.selected_channel = at;
+        self.navigate(Nav::EditClip(ClipKey { channel: at, lane: 0, id }));
+    }
+
     /// Deletes channel `index` (not the master).
     pub(super) fn delete_channel(&mut self, index: usize, tick: u64) {
         if index == 0 || index >= self.song.channels.len() {

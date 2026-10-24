@@ -19,6 +19,7 @@ use crate::song::scales::{CHROMATIC, SCALE_MASKS};
 use crate::song::{AutomationTarget, Channel, ChannelKind, LaneKind, Song};
 use crate::theme::{Theme, theme_by_id};
 use crate::ui::UiCtx;
+use crate::ui::add_channel_menu::AddChannelPick;
 use crate::ui::chord_keyboard::{ChordInput, Note, TIMING_MS};
 use crate::ui::clips::{LiveTake, song_end_beats};
 use crate::ui::focus;
@@ -49,6 +50,8 @@ mod panel;
 mod plugins;
 mod tracks;
 mod typed;
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+mod control;
 // A song load on the web waits for its bundled sounds.
 mod bundle_wait;
 // Live editing in a Playground session (web only).
@@ -229,6 +232,8 @@ pub struct HoneydewApp {
     gated: Vec<(f64, usize, u8)>,
     /// Audio files dropped on the app, decoding (`app/file_drop.rs`).
     importing: Option<file_drop::Importing>,
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+    control: Option<control::Bridge>,
 }
 
 impl Default for HoneydewApp {
@@ -302,6 +307,8 @@ impl Default for HoneydewApp {
             fresh: Vec::new(),
             gated: Vec::new(),
             importing: None,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            control: None,
         }
     }
 }
@@ -316,6 +323,10 @@ impl HoneydewApp {
         app.whats_new_at_start(fresh);
         app.midi.link = crate::midi::device::MidiLink::platform(cc.egui_ctx.clone());
         app.start_plugins(&cc.egui_ctx);
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        {
+            app.control = control::Bridge::start(cc.egui_ctx.clone());
+        }
         app.extract_demo_songs(cfg!(target_arch = "wasm32"));
         // Once per start, before the purge (whose end every move waits for): a folder of the songs folder named as a row
         // beside it (`My Songs/Demo Songs`) gets a free numbered name, so that it is listed, not hidden.
@@ -2109,6 +2120,8 @@ impl HoneydewApp {
         // As drawn: the channel indices the bound controls' touches name.
         let add_automation = self.take_touches();
         let tick = snapshot.as_ref().map_or(0, |s| s.transport_tick);
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        self.control_frame(tick);
         // The chord editor's edit: the set in use with the new chord, marked edited, an undo step.
         if let Some((strip, chord)) = actions.chord_edit.take() {
             let mut set = views::keyboard_settings::chord_set(&self.song);
@@ -2249,11 +2262,17 @@ impl HoneydewApp {
         // After every live key of the frame, and the channel the header picked.
         self.record_notes(jumped, tick);
         self.send_disarm();
-        if let Some(kind) = actions.add {
-            self.add_channel(kind, tick);
+        if let Some(pick) = actions.add {
+            match pick {
+                AddChannelPick::Kind(kind) => self.add_channel(kind, tick),
+                AddChannelPick::Plugin(uid) => self.insert_plugin_channel(self.song.channels.len(), uid, tick),
+            }
         }
-        if let Some((at, kind)) = actions.insert {
-            self.insert_channel(at, kind, tick);
+        if let Some((at, pick)) = actions.insert {
+            match pick {
+                AddChannelPick::Kind(kind) => self.insert_channel(at, kind, tick),
+                AddChannelPick::Plugin(uid) => self.insert_plugin_channel(at, uid, tick),
+            }
         }
         if let Some((channel, lane, op)) = actions.track {
             self.track_op(channel, lane, op, tick);

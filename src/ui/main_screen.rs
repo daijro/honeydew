@@ -16,7 +16,7 @@ use crate::metrics::{FontSize, Metrics};
 use crate::settings::Settings;
 use crate::song::{ChannelKind, LaneKind, PPQ, Song, TimeSig};
 use crate::theme::{RECORD_COLOR, channel_color};
-use crate::ui::add_channel_menu::add_channel_menu;
+use crate::ui::add_channel_menu::{AddChannelPick, add_channel_menu};
 use crate::ui::buttons::{filled_circle_button, floating_button, gradient};
 use crate::ui::clips::{Clips, LiveTake, TimeAxis, grid_ticks, song_end_beats};
 use crate::ui::ctrl_menu::Touch;
@@ -223,15 +223,15 @@ pub fn band_layout(screen_h: f32, u: f32, panel_h: f32, rows: u8) -> Bands {
 /// What the user did on the playlist screen this frame. Play / Stop shows in [`MainScreen::playing`].
 #[derive(Default)]
 pub struct ScreenActions {
-    /// The channel kind picked in the add-channel popup.
-    pub add: Option<ChannelKind>,
+    /// The channel kind or plugin picked in the add-channel popup.
+    pub add: Option<AddChannelPick>,
     /// The channel whose track header was clicked.
     pub header: Option<usize>,
     /// The track menu's pick, for track `.1` of channel `.0` (`Insert Channel` shows the add-channel popup instead,
     /// see [`Self::insert`]).
     pub track: Option<(usize, usize, TrackOp)>,
-    /// `Insert Channel`'s pick: the channel kind, to go in at the index.
-    pub insert: Option<(usize, ChannelKind)>,
+    /// `Insert Channel`'s pick: the channel kind or plugin, to go in at the index.
+    pub insert: Option<(usize, AddChannelPick)>,
     /// A held track header's drag dropped: the channels' new playlist order, their indices top to bottom
     /// ([`Song::set_playlist`]). The rows show the drag live meanwhile.
     pub reorder: Option<Vec<usize>>,
@@ -1630,14 +1630,14 @@ impl MainScreen {
         }
     }
 
-    /// Shows the add-channel popup if it is open, centred on `anchor`. Returns the picked channel kind.
+    /// Shows the add-channel popup if it is open, centred on `anchor`. Returns the pick.
     fn add_channel_popup(
         &mut self,
         ctx: &egui::Context,
         anchor: Pos2,
         screen: Rect,
         cx: &UiCtx,
-    ) -> Option<ChannelKind> {
+    ) -> Option<AddChannelPick> {
         if !self.add_channel_open {
             return None;
         }
@@ -1676,14 +1676,14 @@ impl MainScreen {
         }
     }
 
-    /// `Insert Channel`'s add-channel popup, while it is open. Returns the picked kind with the index it goes in at:
+    /// `Insert Channel`'s add-channel popup, while it is open. Returns the pick with the index it goes in at:
     /// the long-pressed channel's, so the new channel lands above it.
     fn insert_popup(
         &mut self,
         ctx: &egui::Context,
         screen: Rect,
         cx: &UiCtx,
-    ) -> Option<(usize, ChannelKind)> {
+    ) -> Option<(usize, AddChannelPick)> {
         let (at, center) = self.insert?;
         let id = Id::new("insert_channel_popup");
         let result = popup::show(ctx, id, center, screen, &add_channel_menu(), cx);
@@ -2536,7 +2536,7 @@ mod tests {
         playhead: Option<u64>,
         /// The track menu's pick, and the insert popup's.
         track: Option<(usize, usize, TrackOp)>,
-        insert: Option<(usize, ChannelKind)>,
+        insert: Option<(usize, AddChannelPick)>,
         reorder: Option<Vec<usize>>,
         /// The playhead knob's drop: the song tick it seeks to.
         seek: Option<u64>,
@@ -6025,7 +6025,7 @@ mod tests {
         ] {
             insert = insert.or(rig.frame(events).insert);
         }
-        assert_eq!(insert, Some((1, ChannelKind::Instrument)));
+        assert_eq!(insert, Some((1, AddChannelPick::Kind(ChannelKind::Instrument))));
         rig.frame(vec![]);
         assert_eq!(rig.rect_of(item), None);
     }

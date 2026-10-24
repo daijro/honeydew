@@ -93,6 +93,14 @@ Plugin settings are saved with the project, and their controls can be automated.
 - FL Studio Mobile will still opens projects that use plugins, just without the plugins. The web and Android versions keep other plugins' settings but don't play them.
 - Opening an FLP loads its plugins if you have them installed, and saving as FLP writes them back.
 
+### Local music-assistant control (experimental)
+
+The desktop build has an opt-in local control bridge for editing the open song
+with an MCP assistant. It can reuse an already-configured plugin instrument
+without changing its preset, or create a built-in synth/drum track and add
+notes. See [the MCP setup guide](tools/honeydew-mcp/README.md) for security,
+configuration, commands and current limits.
+
 ---
 
 ## Using your own FL Studio Mobile sounds

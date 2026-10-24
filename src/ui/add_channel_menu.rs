@@ -1,26 +1,47 @@
 //! The add-channel popup's contents, opened from the playlist `+`.
 
+use crate::plugins::{self, PluginKind};
+use crate::song::plugin::intern;
 use crate::song::{ChannelKind, SynthKind};
 use crate::ui::popup::PopupItem;
 
-/// Two columns: `Channel:` with the six channel kinds and `Synth:` with the eight instrument modules.
+/// What the add-channel popup creates.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AddChannelPick {
+    Kind(ChannelKind),
+    /// An installed instrument plugin's `format:id` UID.
+    Plugin(&'static str),
+}
+
+/// Channel and synth kinds, followed by installed instrument plugins.
 /// No `dot` flags: content tracking is out of scope.
-pub fn add_channel_menu() -> Vec<PopupItem<ChannelKind>> {
+pub fn add_channel_menu() -> Vec<PopupItem<AddChannelPick>> {
     let column = |col: usize, header: &'static str, kinds: &[ChannelKind]| {
         let items = kinds
             .iter()
             .enumerate()
-            .map(|(i, &kind)| PopupItem::new(kind, col, i + 1, kind.label()));
+            .map(|(i, &kind)| PopupItem::new(AddChannelPick::Kind(kind), col, i + 1, kind.label()));
         std::iter::once(PopupItem::header(col, 0, header))
             .chain(items)
             .collect::<Vec<_>>()
     };
     let synths = SynthKind::ALL.map(ChannelKind::Synth);
-    [
+    let mut items = [
         column(0, "Channel:", &ChannelKind::ADDABLE),
         column(1, "Synth:", &synths),
     ]
-    .concat()
+    .concat();
+    items.push(PopupItem::header(2, 0, "Plugins:"));
+    let bundled = [plugins::builtin::LEMON_TRIO, plugins::builtin::LEMON_SAMPLER]
+        .into_iter().map(|p| (p.uid.to_owned(), p.name.to_owned(), "CLAP"));
+    let installed = plugins::available().into_iter()
+        .filter(|p| p.kind == PluginKind::Instrument)
+        .map(|p| (p.uid, p.name, p.format));
+    items.extend(bundled.chain(installed).enumerate().map(|(row, (uid, name, format))| {
+        PopupItem::new(AddChannelPick::Plugin(intern(&uid)), 2, row + 1,
+            format!("{name} ({format})"))
+    }));
+    items
 }
 
 #[cfg(test)]
@@ -39,9 +60,9 @@ mod tests {
             v.sort();
             v
         };
-        assert_eq!(cells(true), [(0, 0, "Channel:"), (1, 0, "Synth:")]);
+        assert_eq!(cells(true), [(0, 0, "Channel:"), (1, 0, "Synth:"), (2, 0, "Plugins:")]);
         assert_eq!(
-            cells(false),
+            cells(false).into_iter().filter(|(col, _, _)| *col < 2).collect::<Vec<_>>(),
             [
                 (0, 1, "Drums"),
                 (0, 2, "Instrument"),
@@ -69,7 +90,7 @@ mod tests {
                 "{}",
                 item.label
             );
-            if let Some(kind) = item.id {
+            if let Some(AddChannelPick::Kind(kind)) = item.id {
                 assert_eq!(kind.label(), item.label);
             }
         }
@@ -81,8 +102,17 @@ mod tests {
         };
         assert_eq!(
             synth("3x Osc"),
-            Some(ChannelKind::Synth(SynthKind::ThreeXOsc))
+            Some(AddChannelPick::Kind(ChannelKind::Synth(SynthKind::ThreeXOsc)))
         );
-        assert_eq!(synth("Rack"), Some(ChannelKind::Rack));
+        assert_eq!(synth("Rack"), Some(AddChannelPick::Kind(ChannelKind::Rack)));
+    }
+
+    #[test]
+    fn installed_instrument_plugins_have_selectable_rows() {
+        let menu = add_channel_menu();
+        assert!(menu.iter().any(|item| matches!(item.id,
+            Some(AddChannelPick::Plugin(uid)) if uid == crate::plugins::builtin::LEMON_TRIO.uid)));
+        assert!(menu.iter().filter(|item| item.col == 2 && !item.is_header())
+            .all(|item| matches!(item.id, Some(AddChannelPick::Plugin(_)))));
     }
 }
