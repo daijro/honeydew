@@ -69,7 +69,7 @@ pub struct Settings {
     /// `Multi core processing`. Stored only.
     #[serde(rename = "multithreaded")]
     pub multi_core: bool,
-    /// `Enable low latency mode`. Stored only.
+    /// `Enable low latency mode`: prefers the smallest output buffer supported by the audio device.
     #[serde(rename = "lowlatency")]
     pub low_latency: bool,
     /// `Enable background audio`. Stored only.

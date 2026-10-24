@@ -89,7 +89,7 @@ Plugin settings are saved with the project, and their controls can be automated.
 
 **Notes:**
 
-- Plugin windows open on Linux only for now. On Windows and macOS, use the sliders on the plugin's card.
+- External plugin editor windows open on Linux, Windows and macOS. If a plugin cannot create its native editor, use the sliders on the plugin's card.
 - FL Studio Mobile will still opens projects that use plugins, just without the plugins. The web and Android versions keep other plugins' settings but don't play them.
 - Opening an FLP loads its plugins if you have them installed, and saving as FLP writes them back.
 

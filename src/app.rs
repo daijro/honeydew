@@ -4,7 +4,7 @@ use eframe::egui;
 use honeydew_audio::device::{AudioCommand, OutputSnapshot};
 
 use crate::audio_engine::LiveInput;
-use crate::audio_link::{AudioLink, AudioSink, Handover, open_device};
+use crate::audio_link::{AudioLink, AudioSink, Handover, open_device_with_latency};
 use crate::fonts;
 use crate::history::{self, History, Step};
 use crate::metrics::{FontSize, Metrics};
@@ -401,6 +401,9 @@ impl HoneydewApp {
             if level != self.settings_saved.metronome_level {
                 let on = self.audio.metronome_flag();
                 self.audio.send(AudioCommand::MetronomeFlag { on, level });
+            }
+            if self.settings.low_latency != self.settings_saved.low_latency {
+                self.audio.set_low_latency(&self.song, self.settings.low_latency);
             }
             if let Some(storage) = self.storage.as_deref_mut() {
                 self.settings.save(storage);
@@ -1741,7 +1744,8 @@ impl eframe::App for HoneydewApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "android")]
         crate::android_text::begin_frame(ctx);
-        self.frame(ctx, open_device);
+        let low_latency = self.settings.low_latency;
+        self.frame(ctx, |song, samples| open_device_with_latency(song, samples, low_latency));
         #[cfg(target_os = "android")]
         crate::android_text::end_frame(ctx);
     }
@@ -1795,6 +1799,7 @@ impl HoneydewApp {
         // this click. The start is before the screen, so a press that lands on a key is heard natively.
         let mut snapshot = self.audio.poll();
         if !self.audio.running() && ctx.input(|i| audio_gesture(i, START_ON_RELEASE)) {
+            self.audio.set_low_latency_preference(self.settings.low_latency);
             let solo = self.solo();
             let song = solo.as_ref().unwrap_or(&self.song);
             let read = sample_cache::reader(&self.files);

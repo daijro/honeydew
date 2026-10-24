@@ -9,10 +9,120 @@
 //! manager, sized to the editor. One connection serves every window (each plugin opens its own for its editor); the
 //! app reads its events every frame ([`pump`]) and closes an editor whose window was closed.
 //!
-//! Other platforms have no editor windows yet: [`EditorWindow::new`] fails there and the rack card's parameter list is
-//! the plugin's controls.
+//! Windows uses a small Win32 host window and macOS uses an AppKit window whose content view is passed to the plugin.
 
 use std::ffi::c_void;
+
+#[cfg(windows)]
+mod win {
+    use std::sync::Mutex;
+    use windows_sys::Win32::Foundation::{GetLastError, HWND, LPARAM, LRESULT, RECT, WPARAM};
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+
+    static WINDOWS: Mutex<Vec<HWND>> = Mutex::new(Vec::new());
+    static CLOSED: Mutex<Vec<HWND>> = Mutex::new(Vec::new());
+    const CLASS: &[u16] = &[b'H' as u16, b'o' as u16, b'n' as u16, b'e' as u16, b'y' as u16, b'd' as u16, b'e' as u16, b'w' as u16, b'P' as u16, b'l' as u16, b'u' as u16, b'g' as u16, b'i' as u16, b'n' as u16, b'E' as u16, b'd' as u16, b'i' as u16, b't' as u16, b'o' as u16, b'r' as u16, 0];
+
+    unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+        if msg == WM_CLOSE {
+            if let Ok(mut closed) = CLOSED.lock() {
+                closed.push(hwnd);
+            }
+            unsafe { DestroyWindow(hwnd) };
+            return 0;
+        }
+        unsafe { DefWindowProcW(hwnd, msg, wp, lp) }
+    }
+
+    pub fn create(title: &str) -> Result<HWND, String> {
+        unsafe {
+            let instance = GetModuleHandleW(std::ptr::null());
+            let class = WNDCLASSW {
+                lpfnWndProc: Some(proc),
+                hInstance: instance,
+                lpszClassName: CLASS.as_ptr(),
+                hCursor: LoadCursorW(std::ptr::null_mut(), IDC_ARROW),
+                ..std::mem::zeroed()
+            };
+            RegisterClassW(&class);
+            let title: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
+            let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+            let hwnd = CreateWindowExW(0, CLASS.as_ptr(), title.as_ptr(), style, CW_USEDEFAULT, CW_USEDEFAULT, 400, 300, std::ptr::null_mut(), std::ptr::null_mut(), instance, std::ptr::null());
+            if hwnd.is_null() {
+                return Err(format!("could not create the plugin window (Win32 error {})", GetLastError()));
+            }
+            WINDOWS.lock().unwrap().push(hwnd);
+            Ok(hwnd)
+        }
+    }
+
+    pub fn resize(hwnd: HWND, (w, h): (u32, u32)) {
+        unsafe {
+            let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
+            let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+            let mut rect = RECT { left: 0, top: 0, right: w.min(16384) as i32, bottom: h.min(16384) as i32 };
+            AdjustWindowRectEx(&mut rect, style, 0, ex);
+            SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, rect.right - rect.left, rect.bottom - rect.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
+
+    pub fn show(hwnd: HWND) { unsafe { ShowWindow(hwnd, SW_SHOWNORMAL); SetForegroundWindow(hwnd); } }
+    pub fn destroy(hwnd: HWND) {
+        unsafe { DestroyWindow(hwnd); }
+        if let Ok(mut windows) = WINDOWS.lock() { windows.retain(|&w| w != hwnd); }
+    }
+    pub fn pump() -> Vec<HWND> {
+        let windows = WINDOWS.lock().map(|w| w.clone()).unwrap_or_default();
+        unsafe {
+            for hwnd in windows {
+                let mut msg = std::mem::zeroed();
+                while PeekMessageW(&mut msg, hwnd, 0, 0, PM_REMOVE) != 0 { TranslateMessage(&msg); DispatchMessageW(&msg); }
+            }
+        }
+        CLOSED.lock().map(|mut c| std::mem::take(&mut *c)).unwrap_or_default()
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod mac {
+    use std::sync::Mutex;
+    use objc2::rc::Retained;
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSBackingStoreType, NSView, NSWindow, NSWindowStyleMask};
+    use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+
+    pub struct Native { pub window: Retained<NSWindow>, pub view: Retained<NSView>, pub shown: bool }
+    static WINDOWS: Mutex<Vec<(usize, usize, bool)>> = Mutex::new(Vec::new());
+
+    pub fn create(title: &str) -> Result<Native, String> {
+        let Some(mtm) = MainThreadMarker::new() else { return Err("plugin editor windows must open on the macOS main thread".into()); };
+        let rect = NSRect::new(NSPoint::new(100.0, 100.0), NSSize::new(400.0, 300.0));
+        let window = NSWindow::initWithContentRect_styleMask_backing_defer(NSWindow::alloc(mtm), rect, NSWindowStyleMask::Titled | NSWindowStyleMask::Closable | NSWindowStyleMask::Miniaturizable, NSBackingStoreType::Buffered, false);
+        window.setTitle(&NSString::from_str(title));
+        unsafe { window.setReleasedWhenClosed(false); }
+        let view = unsafe { NSView::initWithFrame(NSView::alloc(mtm), NSRect::new(NSPoint::new(0.0, 0.0), rect.size)) };
+        window.setContentView(Some(&view));
+        let native = Native { window, view, shown: false };
+        WINDOWS.lock().unwrap().push((native.window.as_ptr() as usize, native.view.as_ptr() as usize, false));
+        Ok(native)
+    }
+    pub fn resize(native: &Native, (w, h): (u32, u32)) { native.window.setContentSize(NSSize::new(f64::from(w.max(1)), f64::from(h.max(1)))); }
+    pub fn show(native: &mut Native) {
+        native.shown = true;
+        if let Ok(mut windows) = WINDOWS.lock() { if let Some(w) = windows.iter_mut().find(|w| w.0 == native.window.as_ptr() as usize) { w.2 = true; } }
+        native.window.makeKeyAndOrderFront(None);
+    }
+    pub fn destroy(native: &Native) {
+        native.window.orderOut(None); native.window.close();
+        if let Ok(mut windows) = WINDOWS.lock() { windows.retain(|w| w.0 != native.window.as_ptr() as usize); }
+    }
+    pub fn scale(native: &Native) -> f32 { native.window.backingScaleFactor() as f32 }
+    pub fn pump() -> Vec<usize> {
+        let Some(_) = MainThreadMarker::new() else { return Vec::new(); };
+        WINDOWS.lock().map(|windows| windows.iter().filter(|w| w.2 && !unsafe { (&*(w.0 as *mut NSWindow)).isVisible() }).map(|w| w.1).collect()).unwrap_or_default()
+    }
+}
 
 #[cfg(target_os = "linux")]
 mod x11 {
@@ -549,8 +659,8 @@ pub fn editor_call<R>(f: impl FnOnce() -> R) -> (R, Option<String>) {
     (f(), None)
 }
 
-/// Whether this platform has plugin editor windows: X11 ones, on Linux only for now.
-pub const AVAILABLE: bool = cfg!(target_os = "linux");
+/// Whether this platform has plugin editor windows.
+pub const AVAILABLE: bool = cfg!(any(target_os = "linux", target_os = "macos", windows));
 
 /// A plugin editor's window. Dropping it destroys the window: close the plugin's editor first.
 pub struct EditorWindow {
@@ -558,6 +668,10 @@ pub struct EditorWindow {
     conn: std::rc::Rc<x11::Conn>,
     #[cfg(target_os = "linux")]
     win: u32,
+    #[cfg(windows)]
+    native: windows_sys::Win32::Foundation::HWND,
+    #[cfg(target_os = "macos")]
+    native: mac::Native,
 }
 
 impl EditorWindow {
@@ -569,10 +683,18 @@ impl EditorWindow {
             let win = x11::create(&conn, title)?;
             Ok(Self { conn, win })
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(windows)]
+        {
+            Ok(Self { native: win::create(title)? })
+        }
+        #[cfg(target_os = "macos")]
+        {
+            Ok(Self { native: mac::create(title)? })
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
         {
             let _ = title;
-            Err("plugin editor windows are not available on this platform yet".into())
+            Err("plugin editor windows are not available on this platform".into())
         }
     }
 
@@ -582,44 +704,66 @@ impl EditorWindow {
         {
             self.win as usize as *mut c_void
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(windows)]
+        {
+            self.native as *mut c_void
+        }
+        #[cfg(target_os = "macos")]
+        {
+            self.native.view.as_ptr() as *mut c_void
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
         std::ptr::null_mut()
     }
 
     /// The display's scale, which the editor is told to draw at.
     pub fn scale(&self) -> f32 {
         #[cfg(target_os = "linux")]
-        {
-            self.conn.scale
-        }
-        #[cfg(not(target_os = "linux"))]
-        1.0
+        { return self.conn.scale; }
+        #[cfg(windows)]
+        { return 1.0; }
+        #[cfg(target_os = "macos")]
+        { return mac::scale(&self.native); }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+        { return 1.0; }
     }
 
     /// Fits the window to an editor of `size` device pixels.
     pub fn resize(&self, size: (u32, u32)) {
         #[cfg(target_os = "linux")]
         x11::resize(&self.conn, self.win, size);
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(windows)]
+        win::resize(self.native, size);
+        #[cfg(target_os = "macos")]
+        mac::resize(&self.native, size);
+        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
         let _ = size;
     }
 
     /// Shows the window in front.
-    pub fn show(&self) {
+    pub fn show(&mut self) {
         #[cfg(target_os = "linux")]
         x11::show(&self.conn, self.win);
+        #[cfg(windows)]
+        win::show(self.native);
+        #[cfg(target_os = "macos")]
+        mac::show(&mut self.native);
     }
 
     /// Whether `window` (from [`pump`]) is this one.
-    pub fn is(&self, window: u32) -> bool {
+    pub fn is(&self, window: usize) -> bool {
         #[cfg(target_os = "linux")]
         {
-            self.win == window
+            self.win as usize == window
         }
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = window;
-            false
+            #[cfg(windows)]
+            { self.native as usize == window }
+            #[cfg(target_os = "macos")]
+            { let _ = window; false }
+            #[cfg(not(any(target_os = "macos", windows)))]
+            { let _ = window; false }
         }
     }
 }
@@ -628,15 +772,25 @@ impl Drop for EditorWindow {
     fn drop(&mut self) {
         #[cfg(target_os = "linux")]
         x11::destroy(&self.conn, self.win);
+        #[cfg(windows)]
+        win::destroy(self.native);
+        #[cfg(target_os = "macos")]
+        mac::destroy(&self.native);
     }
 }
 
 /// Reads the windows' events; returns the windows the user closed.
-pub fn pump() -> Vec<u32> {
+pub fn pump() -> Vec<usize> {
     #[cfg(target_os = "linux")]
     {
-        x11::pump()
+        return x11::pump().into_iter().map(|w| w as usize).collect();
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        win::pump().into_iter().map(|h| h as usize).collect()
+    }
+    #[cfg(target_os = "macos")]
+    { return mac::pump(); }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     Vec::new()
 }

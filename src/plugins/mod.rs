@@ -31,7 +31,7 @@ pub enum PluginKind {
 /// The editor and processing facts a rack card shows.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Info {
-    /// The plugin has an editor, and this platform has editor windows (Linux only for now).
+    /// The plugin has an editor, and this platform has editor windows.
     pub has_editor: bool,
     pub editor_open: bool,
     /// Processing latency in frames; the engine has no delay compensation, so it is shown, not compensated.

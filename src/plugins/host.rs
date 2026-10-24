@@ -755,7 +755,7 @@ pub fn idle() -> Vec<PluginMove> {
     }
 }
 
-fn idle_plugins(closed: &[u32]) -> Vec<PluginMove> {
+fn idle_plugins(closed: &[usize]) -> Vec<PluginMove> {
     #[cfg(unix)]
     os_host::runloop::dispatch();
     with(|host| {
@@ -953,7 +953,7 @@ pub fn show_editor(channel_id: i32, instance_id: i32, open: bool) -> Result<(), 
             close_editor_of(hosted);
             return Ok(());
         }
-        if let Some(w) = &hosted.window {
+        if let Some(w) = hosted.window.as_mut() {
             w.show();
             return Ok(());
         }
@@ -971,7 +971,7 @@ pub fn show_editor(channel_id: i32, instance_id: i32, open: bool) -> Result<(), 
 /// Opens the plugin's editor in a new window, or says why it could not.
 fn open_window(hosted: &mut Hosted) -> Result<(), String> {
     let failed = |e: String| format!("The editor could not be opened: {e}");
-    let w = EditorWindow::new(&hosted.name).map_err(failed)?;
+    let mut w = EditorWindow::new(&hosted.name).map_err(failed)?;
     let plugin = &hosted.plugin;
     let (opened, x_error) = window::editor_call(|| {
         let mut p = plugin

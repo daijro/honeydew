@@ -76,9 +76,14 @@ x11rb = "0.13.2"
 # plugin hosts).
 libc = "0.2"
 
-# The plugin scanner process's error mode and COM setup (`plugins::scan`). Already in the tree through the plugin hosts.
+# The plugin scanner process's error mode and COM setup (`plugins::scan`), plus the native editor windows.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_Com", "Win32_System_Diagnostics_Debug", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Com", "Win32_System_Diagnostics_Debug", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry", "NSString"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSView"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Already in the tree through eframe's egui-winit, which opens links with it. `hardened`: only http(s) URLs open, never
