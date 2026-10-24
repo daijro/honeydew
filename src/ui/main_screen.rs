@@ -1642,7 +1642,11 @@ impl MainScreen {
             return None;
         }
         let id = Id::new("add_channel_popup");
-        let result = popup::show(ctx, id, anchor, screen, &add_channel_menu(), cx);
+        // Keep a large plugin installation from making Add Track taller than a compact chooser. The
+        // popup still has the full contents and scrolls through them; eight plugin rows remain visible
+        // beneath the column headers.
+        let bounds = add_channel_popup_bounds(anchor, screen, *cx.m);
+        let result = popup::show(ctx, id, anchor, bounds, &add_channel_menu(), cx);
         if result.close {
             self.add_channel_open = false;
             // Nothing else triggers a frame to redraw without the popup, or with the new row.
@@ -1686,7 +1690,8 @@ impl MainScreen {
     ) -> Option<(usize, AddChannelPick)> {
         let (at, center) = self.insert?;
         let id = Id::new("insert_channel_popup");
-        let result = popup::show(ctx, id, center, screen, &add_channel_menu(), cx);
+        let bounds = add_channel_popup_bounds(center, screen, *cx.m);
+        let result = popup::show(ctx, id, center, bounds, &add_channel_menu(), cx);
         if result.close {
             self.insert = None;
             ctx.request_repaint();
@@ -1837,6 +1842,14 @@ impl MainScreen {
         actions.nav = nav.or(actions.nav.take());
         transport_tips(ui, &slots, input.can_preview, self.playing);
     }
+}
+
+/// The compact viewport used by both ways of opening Add Track: a header plus eight item rows. It is centred around
+/// the trigger where possible, so a button near the bottom of the window does not make the popup jump to the top.
+fn add_channel_popup_bounds(anchor: Pos2, screen: Rect, m: Metrics) -> Rect {
+    let height = screen.height().min(m.u(1.25 * 9.0));
+    let top = (anchor.y - height / 2.0).clamp(screen.top(), screen.bottom() - height);
+    Rect::from_min_max(pos2(screen.left(), top), pos2(screen.right(), top + height))
 }
 
 /// The transport's tooltips ([`crate::ui::tooltip::tip`]): each slot's control while it shows, with its keymap action.

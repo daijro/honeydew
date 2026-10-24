@@ -24,6 +24,16 @@ export HONEYDEW_CONTROL_TOKEN='paste-your-private-token-here'
 cargo run --release --bin honeydew-native
 ```
 
+For a one-command token setup, use the launcher instead:
+
+```sh
+tools/honeydew-mcp/honeydew-mcp.sh app
+```
+
+It stores a private token at `~/.config/honeydew/control-token`. Configure the
+MCP client to launch `tools/honeydew-mcp/honeydew-mcp.sh adapter`; that mode
+reads the same token and starts the stdio adapter automatically.
+
 In a second terminal, to test the MCP adapter:
 
 ```sh

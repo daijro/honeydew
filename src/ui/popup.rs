@@ -208,7 +208,7 @@ fn show_as<T: Copy>(
         escape || backdrop.clicked() || backdrop.secondary_clicked() || backdrop.middle_clicked();
 
     // Taller than its bounds even at the smallest rows, or wider (a long list in columns, the SoundFont Player's patch
-    // menu): it scrolls that way (drag or wheel), with no scroll bar.
+    // menu): it scrolls that way (drag, wheel, or its visible scrollbar).
     let scrolls = [
         rect.width() > bounds.width(),
         rect.height() > bounds.height(),
@@ -290,7 +290,7 @@ fn show_as<T: Copy>(
                     .max_height(bounds.height())
                     .min_scrolled_width(bounds.width())
                     .min_scrolled_height(bounds.height())
-                    .scroll_bar_visibility(ScrollBarVisibility::AlwaysHidden);
+                    .scroll_bar_visibility(ScrollBarVisibility::AlwaysVisible);
                 if let (true, Some(cell)) = (opened, current) {
                     let to = |center: f32, content: f32, view: f32| {
                         (center - view / 2.0).clamp(0.0, (content - view).max(0.0))
