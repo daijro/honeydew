@@ -66,7 +66,7 @@ pub struct Settings {
     /// is not connected: the choice reconnects when the device returns.
     #[serde(rename = "MidiDevice")]
     pub midi_device: String,
-    /// `Multi core processing`. Stored only.
+    /// `Multi core processing`: parallel independent desktop channel racks.
     #[serde(rename = "multithreaded")]
     pub multi_core: bool,
     /// `Enable low latency mode`. Stored only.

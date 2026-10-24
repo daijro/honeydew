@@ -56,6 +56,8 @@ pub type PingReport = (u32, Option<Result<u32, PingFailure>>);
 
 pub trait AudioRenderer: Send + 'static {
     fn render(&mut self, output: &mut [f32], channels: usize);
+    /// Enables independent-channel processing if this renderer supports it.
+    fn set_multi_core(&mut self, _on: bool) {}
     fn set_param(&mut self, channel: usize, instance_id: i32, index: i32, value: f32);
     fn play(&mut self);
     fn stop(&mut self);
@@ -130,6 +132,7 @@ pub trait AudioRenderer: Send + 'static {
 }
 
 pub enum AudioCommand<R> {
+    SetMultiCore(bool),
     SetParam {
         channel: usize,
         instance_id: i32,
@@ -678,6 +681,7 @@ impl<R: AudioRenderer> CallbackState<R> {
                     self.replace(renderer, meters);
                 }
                 CallbackCommand::Control(command) => match command {
+                    AudioCommand::SetMultiCore(on) => self.renderer.set_multi_core(on),
                     AudioCommand::SetParam {
                         channel,
                         instance_id,

@@ -29,14 +29,14 @@ struct EffectInstance {
     effect: AudioEffect,
 }
 
-struct Channel {
+pub struct PlaybackChannel {
     parameters: [f32; 134],
     effects: Vec<EffectInstance>,
 }
 
 pub struct AudioPlayback {
     pub automation: AutomationPlayback,
-    channels: Vec<Channel>,
+    channels: Vec<PlaybackChannel>,
 }
 
 impl AudioPlayback {
@@ -44,7 +44,7 @@ impl AudioPlayback {
         Self {
             automation,
             channels: (0..channel_count)
-                .map(|_| Channel {
+                .map(|_| PlaybackChannel {
                     parameters: {
                         let mut parameters = [0.0; 134];
                         parameters[..6].copy_from_slice(&[0.8531, 0.5, 0.0, 0.0, 0.5, 0.0]);
@@ -160,36 +160,15 @@ impl AudioPlayback {
         right: &mut [f32],
         context: ProcessContext,
     ) -> Result<(), PlaybackError> {
-        if left.len() != right.len() {
-            return Err(PlaybackError::MismatchedBuffers);
-        }
-        if !context.sample_rate.is_finite()
-            || context.sample_rate <= 0.0
-            || !context.tempo_bpm.is_finite()
-            || context.tempo_bpm <= 0.0
-            || !context.start_beat.is_finite()
-        {
-            return Err(PlaybackError::InvalidContext);
-        }
-        let channel = self
-            .channels
+        self.channels
             .get_mut(channel)
-            .ok_or(PlaybackError::InvalidTarget)?;
-        let run = channel
-            .effects
-            .iter_mut()
-            .take(effects.end)
-            .skip(effects.start);
-        for entry in run {
-            if entry.effect.sample_rate != context.sample_rate {
-                return Err(PlaybackError::Effect(EffectError::InvalidSampleRate));
-            }
-            entry
-                .effect
-                .process(left, right, context)
-                .map_err(PlaybackError::Effect)?;
-        }
-        Ok(())
+            .ok_or(PlaybackError::InvalidTarget)?
+            .process_effects(effects, left, right, context)
+    }
+
+    /// Independently owned channel processors, for routing-level parallel playback.
+    pub fn channels_mut(&mut self) -> &mut [PlaybackChannel] {
+        &mut self.channels
     }
 
     pub fn set_target(
@@ -368,6 +347,44 @@ impl AudioPlayback {
                 &mut buffer.right[start..end],
                 segment_context,
             )?;
+        }
+        Ok(())
+    }
+}
+
+impl PlaybackChannel {
+    /// The effects at positions `effects` in this channel's rack.
+    pub fn process_effects(
+        &mut self,
+        effects: std::ops::Range<usize>,
+        left: &mut [f32],
+        right: &mut [f32],
+        context: ProcessContext,
+    ) -> Result<(), PlaybackError> {
+        if left.len() != right.len() {
+            return Err(PlaybackError::MismatchedBuffers);
+        }
+        if !context.sample_rate.is_finite()
+            || context.sample_rate <= 0.0
+            || !context.tempo_bpm.is_finite()
+            || context.tempo_bpm <= 0.0
+            || !context.start_beat.is_finite()
+        {
+            return Err(PlaybackError::InvalidContext);
+        }
+        for entry in self
+            .effects
+            .iter_mut()
+            .take(effects.end)
+            .skip(effects.start)
+        {
+            if entry.effect.sample_rate != context.sample_rate {
+                return Err(PlaybackError::Effect(EffectError::InvalidSampleRate));
+            }
+            entry
+                .effect
+                .process(left, right, context)
+                .map_err(PlaybackError::Effect)?;
         }
         Ok(())
     }

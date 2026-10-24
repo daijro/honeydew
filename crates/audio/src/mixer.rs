@@ -70,6 +70,8 @@ pub enum MixError<E = Infallible> {
 pub struct Mixer {
     channels: Vec<ChannelMix>,
     order: Vec<usize>,
+    stages: Vec<Vec<usize>>,
+    stage_of: Vec<usize>,
 }
 
 impl Mixer {
@@ -109,10 +111,38 @@ impl Mixer {
             return Err(MixError::CyclicRoute);
         }
         queue.push(0);
+        // A channel may run in parallel with its peers only after every source
+        // feeding it has finished. Preserve `order` within each stage so sends
+        // into one target are summed in a stable order.
+        let mut stage_of = vec![0; channels.len()];
+        for &source in &queue {
+            for send in &channels[source].sends {
+                stage_of[send.target] = stage_of[send.target].max(stage_of[source] + 1);
+            }
+        }
+        let mut stages = vec![Vec::new(); stage_of.iter().copied().max().unwrap_or(0) + 1];
+        for &index in &queue {
+            stages[stage_of[index]].push(index);
+        }
         Ok(Self {
             channels: channels.to_vec(),
             order: queue,
+            stages,
+            stage_of,
         })
+    }
+
+    /// Routing levels; every channel in one stage has received all its inputs.
+    pub fn stages(&self) -> &[Vec<usize>] {
+        &self.stages
+    }
+
+    pub fn stage_of(&self) -> &[usize] {
+        &self.stage_of
+    }
+
+    pub fn has_parallel_stage(&self) -> bool {
+        self.stages.iter().any(|stage| stage.len() > 1)
     }
 
     pub fn set_channel_controls(
@@ -173,36 +203,49 @@ impl Mixer {
         for &index in &self.order {
             let (left, right) = buffers[index].stereo();
             process(index, left, right).map_err(MixError::Process)?;
-            let channel = &self.channels[index];
-            let gain = level_gain(channel.level);
-            let left_gain = gain * (2.0 - 2.0 * channel.pan).min(1.0);
-            let right_gain = gain * (2.0 * channel.pan).min(1.0);
-            for (left, right) in left.iter_mut().zip(right.iter_mut()) {
-                *left *= left_gain;
-                *right *= right_gain;
-            }
-            for send in channel.sends.iter().filter(|send| send.enabled > 0.5) {
-                let gain = level_gain(send.level);
-                let (source, target) = if index < send.target {
-                    let (before, after) = buffers.split_at_mut(send.target);
-                    (&mut before[index], &mut after[0])
-                } else {
-                    let (before, after) = buffers.split_at_mut(index);
-                    (&mut after[0], &mut before[send.target])
-                };
-                let (source_left, source_right) = source.stereo();
-                let (target_left, target_right) = target.stereo();
-                for ((target_left, target_right), (left, right)) in target_left
-                    .iter_mut()
-                    .zip(target_right.iter_mut())
-                    .zip(source_left.iter().zip(source_right.iter()))
-                {
-                    *target_left += gain * left;
-                    *target_right += gain * right;
-                }
-            }
+            self.route_channel(buffers, index);
         }
         Ok(())
+    }
+
+    /// Apply the strip and sends for a completed stage, on the callback thread.
+    /// Call stages in order, after processing all their racks.
+    pub fn route_stage<B: MixBuffer>(&self, buffers: &mut [B], stage: usize) {
+        for &index in &self.stages[stage] {
+            self.route_channel(buffers, index);
+        }
+    }
+
+    fn route_channel<B: MixBuffer>(&self, buffers: &mut [B], index: usize) {
+        let (left, right) = buffers[index].stereo();
+        let channel = &self.channels[index];
+        let gain = level_gain(channel.level);
+        let left_gain = gain * (2.0 - 2.0 * channel.pan).min(1.0);
+        let right_gain = gain * (2.0 * channel.pan).min(1.0);
+        for (left, right) in left.iter_mut().zip(right.iter_mut()) {
+            *left *= left_gain;
+            *right *= right_gain;
+        }
+        for send in channel.sends.iter().filter(|send| send.enabled > 0.5) {
+            let gain = level_gain(send.level);
+            let (source, target) = if index < send.target {
+                let (before, after) = buffers.split_at_mut(send.target);
+                (&mut before[index], &mut after[0])
+            } else {
+                let (before, after) = buffers.split_at_mut(index);
+                (&mut after[0], &mut before[send.target])
+            };
+            let (source_left, source_right) = source.stereo();
+            let (target_left, target_right) = target.stereo();
+            for ((target_left, target_right), (left, right)) in target_left
+                .iter_mut()
+                .zip(target_right.iter_mut())
+                .zip(source_left.iter().zip(source_right.iter()))
+            {
+                *target_left += gain * left;
+                *target_right += gain * right;
+            }
+        }
     }
 }
 
