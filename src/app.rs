@@ -1562,6 +1562,7 @@ impl HoneydewApp {
         if !loading {
             p.update(self.now, reading);
         }
+        (p.plugin_lock_misses, p.recovered_waits) = crate::plugins::lock_stats();
         p.app_memory = memory;
         self.main_screen.meter = Load {
             peak: p.peak,

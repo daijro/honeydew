@@ -876,6 +876,7 @@ impl AudioRenderer for SongAudioEngine {
             return;
         }
         let total_frames = output.len() / channels;
+        let _plugin_wait = crate::plugins::begin_callback(total_frames, self.sample_rate);
         let mut cursor = 0;
         self.held_meters.fill(MeterSnapshot::default());
         while cursor < total_frames {
