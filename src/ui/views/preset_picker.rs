@@ -850,13 +850,10 @@ fn instrument_sources(files: &ProjectFiles) -> Vec<(u16, PathBuf)> {
 /// The preset a new `Instrument` channel starts with, in place of the SuperSaw it is made with.
 const CLOSE_GRAND: &str = "Close Grand";
 
-/// Our bundled grand: what a new DW Sampler loads where the content has no [`CLOSE_GRAND`].
-const GRAND_PIANO: &str = "Presets/DW Sampler/Piano/Grand Piano.dwp";
-
 /// Where the content has [`CLOSE_GRAND`], found by name as the Instruments picker indexes presets
 /// ([`categories::index`]), over the DW Sampler's picker folders: its Instruments source, `DirectWave Samples`, and the
 /// `DirectWave Samples EXP` tree, which the Instruments index leaves out and the content keeps it in (Essential Pianos
-/// EXP). Without it, our bundled [`GRAND_PIANO`]; `None` without that either.
+/// EXP). Without it, our bundled [`content::GRAND_PIANO`]; `None` without that either.
 fn close_grand(files: &ProjectFiles) -> Option<PathBuf> {
     let sources: Vec<_> = (files.factory_presets(DW).into_iter())
         .map(|dir| (DW, dir))
@@ -865,14 +862,14 @@ fn close_grand(files: &ProjectFiles) -> Option<PathBuf> {
     let mut presets = categories::index(&*library, &sources)
         .into_iter()
         .flat_map(|c| c.items);
-    let ours = Path::new(content::ROOT).join(GRAND_PIANO);
+    let ours = Path::new(content::ROOT).join(content::GRAND_PIANO);
     (presets.find(|p| p.name == CLOSE_GRAND).map(|p| p.path))
         .or_else(|| library.exists(&ours).then_some(ours))
 }
 
 /// Every new DW Sampler loads Close Grand. Module `id` of type `type_id`, just made in the channel with id `channel_id`
 /// (a Synth channel's, a Modules browser pick's), loads [`CLOSE_GRAND`] when it is a DW Sampler and the content has it,
-/// else our bundled [`GRAND_PIANO`] ([`close_grand`]), on a worker as a pick of it in its card's picker loads; it lands
+/// else our bundled [`content::GRAND_PIANO`] ([`close_grand`]), on a worker as a pick of it in its card's picker loads; it lands
 /// whatever is open ([`land_close_grands`]). Without either the module stays at `Default`.
 pub(crate) fn load_close_grand(
     state: &mut State,

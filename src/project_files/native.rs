@@ -1,24 +1,20 @@
 //! Disk saves and, on desktop, system file dialogs (`rfd`).
-//! Android saves into its private library; external import/export awaits a document-provider bridge.
+//! Android saves into its private library and opens files through the system document picker
+//! ([`crate::android::pick_document`]); external export awaits a document-provider bridge.
 
-#[cfg(not(target_os = "android"))]
 use std::fs::File;
-use std::path::Path;
-#[cfg(not(target_os = "android"))]
-use std::path::PathBuf;
-#[cfg(not(target_os = "android"))]
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
-use super::{FileEvent, FileProvider, SAVE_FAILED};
-#[cfg(not(target_os = "android"))]
-use super::{MAX_FILE_BYTES, OPEN_FAILED, READ_FAILED, UNKNOWN_TYPE, accepts, read_file_limited};
+use super::{
+    FileEvent, FileProvider, MAX_FILE_BYTES, OPEN_FAILED, READ_FAILED, SAVE_FAILED, UNKNOWN_TYPE,
+    accepts, read_file_limited,
+};
 
 #[derive(Default)]
 pub struct NativeFiles {
     event: Option<FileEvent>,
-    #[cfg(not(target_os = "android"))]
     opening: Option<Receiver<Option<FileEvent>>>,
-    #[cfg(not(target_os = "android"))]
     ctx: Option<eframe::egui::Context>,
 }
 
@@ -42,12 +38,26 @@ impl FileProvider for NativeFiles {
         });
     }
 
+    /// The picked document arrives as a cache copy, read like a desktop pick and then removed.
     #[cfg(target_os = "android")]
-    fn open(&mut self, _: &'static [&'static str]) {
-        self.event = Some(FileEvent::Failed(
-            super::OPEN_FAILED,
-            "External file import is not available in this Android preview.".into(),
-        ));
+    fn open(&mut self, accept: &'static [&'static str]) {
+        let (tx, rx) = mpsc::channel();
+        self.opening = Some(rx);
+        let ctx = self.ctx.clone();
+        crate::android::pick_document(MAX_FILE_BYTES, move |picked| {
+            let event = picked.map(|picked| match picked {
+                Ok(path) => {
+                    let event = open_path(path.clone(), accept);
+                    let _ = std::fs::remove_file(&path);
+                    event
+                }
+                Err(err) => FileEvent::Failed(OPEN_FAILED, err),
+            });
+            let _ = tx.send(event);
+            if let Some(ctx) = ctx {
+                ctx.request_repaint();
+            }
+        });
     }
 
     fn save(&mut self, path: &Path, ask: bool, bytes: Vec<u8>) {
@@ -100,7 +110,6 @@ impl FileProvider for NativeFiles {
         if let Some(event) = self.event.take() {
             return Some(event);
         }
-        #[cfg(not(target_os = "android"))]
         match self.opening.as_ref()?.try_recv() {
             Ok(result) => {
                 self.opening = None;
@@ -112,16 +121,12 @@ impl FileProvider for NativeFiles {
             }
             Err(TryRecvError::Empty) => None,
         }
-        #[cfg(target_os = "android")]
-        return None;
     }
 
-    #[cfg(not(target_os = "android"))]
     fn attach(&mut self, ctx: &eframe::egui::Context) {
         self.ctx = Some(ctx.clone());
     }
 
-    #[cfg(not(target_os = "android"))]
     fn opening(&self) -> bool {
         self.opening.is_some()
     }
@@ -147,7 +152,6 @@ fn dialog_extensions(accept: &[&str]) -> Vec<String> {
 }
 
 /// Reads the picked file, if its type is one of `accept`.
-#[cfg(not(target_os = "android"))]
 fn open_path(path: PathBuf, accept: &[&str]) -> FileEvent {
     if !accepts(&path, accept) {
         return FileEvent::Failed(UNKNOWN_TYPE, path.display().to_string());
@@ -187,7 +191,6 @@ fn with_extension(path: PathBuf, ext: &str) -> PathBuf {
 }
 
 /// The whole file, up to [`MAX_FILE_BYTES`]. Errors carry the popup title.
-#[cfg(not(target_os = "android"))]
 fn read(path: &Path) -> Result<Vec<u8>, (&'static str, String)> {
     let file = File::open(path).map_err(|e| (OPEN_FAILED, e.to_string()))?;
     read_file_limited(file, MAX_FILE_BYTES).map_err(|e| (READ_FAILED, e))

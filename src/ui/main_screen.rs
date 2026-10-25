@@ -1000,7 +1000,8 @@ impl MainScreen {
     }
 
     /// Track `lane` of `channel` becomes the playlist's current track ([`Clips::make_current_track`]: the clips'
-    /// taps and the headers share one), and its channel takes the keyboard (never the master's).
+    /// taps and the headers share one), and its channel becomes current, the master's too (its rack holds the master
+    /// effects).
     fn make_current(
         &mut self,
         app: &mut AppCtx,
@@ -1009,9 +1010,7 @@ impl MainScreen {
         actions: &mut ScreenActions,
     ) {
         self.clips.make_current_track(app, channel, lane);
-        if channel > 0 {
-            actions.header = Some(channel);
-        }
+        actions.header = Some(channel);
     }
 
     /// The header column's width: 1.5 U + c·12 U.
@@ -4274,8 +4273,8 @@ mod tests {
         rig.click(drums);
         assert_eq!(rig.plus().0, Some(SongEdit::Final));
         assert_eq!(rig.clips(1)[0].start_tick, 0);
-        // The master's automation track (current without the keyboard) takes no new clip: on it the menu's `New Clip`
-        // is dimmed and adds nothing.
+        // The master's automation track (current, its keys silent) takes no new clip: on it the menu's `New Clip` is
+        // dimmed and adds nothing.
         let master = pos2(600.0, 80.0);
         for _ in 0..2 {
             assert_eq!(rig.click(master), (None, None));
@@ -4286,7 +4285,7 @@ mod tests {
         assert_eq!(rig.plus(), (None, None));
         assert!(rig.plus_shown());
         assert_eq!(rig.clips(0).len(), 1, "only the rig's own clip at beat 60");
-        assert_eq!(rig.selected, 1);
+        assert_eq!(rig.selected, 0);
     }
 
     #[test]
@@ -4571,7 +4570,7 @@ mod tests {
     }
 
     #[test]
-    fn a_tap_on_a_clip_gives_its_channel_the_keyboard_but_the_master_never_takes_it() {
+    fn a_tap_on_a_clip_makes_its_channel_current_the_masters_too() {
         let mut song = song_with_a_clip();
         // A clip on the master's automation lane, from a file (the rig's song has one at beat 60 already).
         song.channels[0].lanes[0].add_clip(512, 4.0);
@@ -4588,7 +4587,7 @@ mod tests {
                 id: 2
             })
         );
-        assert_eq!(rig.selected, 2);
+        assert_eq!(rig.selected, 0);
     }
 
     #[test]
@@ -5778,13 +5777,12 @@ mod tests {
 
     #[test]
     fn two_taps_on_the_masters_header_select_its_track_then_toggle_the_column() {
-        // The master never takes the keyboard, but its track becomes current all the same.
         let mut rig = Rig::new(song_with_a_clip());
         rig.click(header_at(0));
         rig.frame(vec![]);
-        assert_eq!((rig.selected, rig.screen.column.1), (1, 0.0));
+        assert_eq!((rig.selected, rig.screen.column.1), (0, 0.0));
         rig.click(header_at(0));
-        assert_eq!((rig.selected, rig.screen.column.1), (1, 1.0));
+        assert_eq!((rig.selected, rig.screen.column.1), (0, 1.0));
         // Another track: selected, the column stays.
         rig.click(header_at(2));
         assert_eq!((rig.selected, rig.screen.column.1), (2, 1.0));

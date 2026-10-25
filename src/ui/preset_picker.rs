@@ -370,10 +370,7 @@ impl PresetPicker {
 
     /// Offers `Import` down the left edge, after the other buttons, when `import` ([`PickerAction::Import`]).
     pub fn with_import(self, import: bool) -> Self {
-        Self {
-            import: import && !cfg!(target_os = "android"),
-            ..self
-        }
+        Self { import, ..self }
     }
 
     /// Opens the folders from the root down to the file `path`'s, as taps on them would, and makes it the pick, its row

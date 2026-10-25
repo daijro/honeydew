@@ -173,8 +173,7 @@ impl HoneydewApp {
     }
 
     /// `Add automation track` for the recent control: a new lane on its channel with one empty clip at floor(song
-    /// beat), b beats long; the lanes re-keyed, the channel selected (never the master: it is only selected while it is
-    /// alone) and the automation editor opened on the clip.
+    /// beat), b beats long; the lanes re-keyed, the channel selected and the automation editor opened on the clip.
     fn add_automation_track(&mut self, tick: u64) {
         let Some((channel, target)) = self.recent_index() else {
             return;
@@ -189,9 +188,7 @@ impl HoneydewApp {
         let (lane, id) = add_lane(ch, (target, label), start, beats);
         self.rekey(&[LaneShift::new(channel, lane, true)]);
         self.song_edited(SongEdit::Final, tick);
-        if channel > 0 {
-            self.selected_channel = channel;
-        }
+        self.selected_channel = channel;
         self.navigate(Nav::EditClip(ClipKey { channel, lane, id }));
     }
 

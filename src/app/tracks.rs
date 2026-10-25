@@ -826,9 +826,7 @@ impl HoneydewApp {
         let last = self.song.channels.len().saturating_sub(1);
         let selected = rk.channel(self.selected_channel);
         // A deleted channel's keyboard goes to the channel now in its place.
-        self.selected_channel = selected
-            .unwrap_or(self.selected_channel)
-            .clamp(last.min(1), last);
+        self.selected_channel = selected.unwrap_or(self.selected_channel).min(last);
         self.preview = (self.preview).and_then(|k| {
             let (channel, lane) = rk.track(k.channel, k.lane)?;
             Some(ClipKey { channel, lane, ..k })

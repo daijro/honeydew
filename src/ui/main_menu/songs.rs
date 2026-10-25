@@ -386,10 +386,7 @@ impl SongsTab {
             if circle_button(
                 ui,
                 cx,
-                &Circle {
-                    enabled: !cfg!(target_os = "android") || i != 2,
-                    ..Circle::new(id.with(("big", i)), at, m.u(BIG_D), name)
-                },
+                &Circle::new(id.with(("big", i)), at, m.u(BIG_D), name),
             ) {
                 match act {
                     Some(act) => action = Some(act),
