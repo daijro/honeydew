@@ -10,8 +10,9 @@ use crate::ui::mixer::{self, MixerState};
 pub type State = MixerState;
 
 /// Draws the mixer in `app.regions.editor`. A changed param is already in the song; it goes to the channel strip
-/// (instance 0) live, and sets the song-changed flag with no undo step. A strip tap off its controls selects the channel
-/// for the keyboard, never the master. A strip control's touch stays in [`MixerState::touch`] for the app's recent control.
+/// (instance 0) live, and sets the song-changed flag with no undo step. A strip tap off its controls makes the channel
+/// current, the master's too (its rack holds the master effects). A strip control's touch stays in
+/// [`MixerState::touch`] for the app's recent control.
 pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) -> Option<Nav> {
     state.selected = Some(*app.selected);
     state.covered = app.covered;
@@ -27,7 +28,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) -> Option<Na
             value,
         });
     }
-    if let Some(channel) = state.selected.filter(|&c| c > 0) {
+    if let Some(channel) = state.selected {
         *app.selected = channel;
     }
     None

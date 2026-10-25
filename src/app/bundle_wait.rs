@@ -6,6 +6,7 @@
 use eframe::egui;
 
 use super::HoneydewApp;
+use crate::audio_engine::samples;
 use crate::audio_link::Handover;
 use crate::content::web;
 use crate::sample_cache::{self, SampleCache, SampleKey};
@@ -25,7 +26,13 @@ impl HoneydewApp {
     /// with them all in, it loads now.
     pub(super) fn song_loaded(&mut self) {
         let bundle = self.files.factory.bundle.as_deref();
-        let keys = bundle.map(|_| SampleCache::referenced(&self.song));
+        let keys = bundle.map(|_| {
+            let mut keys = SampleCache::referenced(&self.song);
+            if samples::may_stand_in(&self.song) {
+                keys.push(SampleKey::File(samples::stand_in()));
+            }
+            keys
+        });
         self.song_download = bundle
             .zip(keys)
             .and_then(|(bundle, keys)| web::song(bundle, &keys));

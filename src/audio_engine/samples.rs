@@ -3,12 +3,16 @@
 //! sample it plays (`refs.add_slot` for a sampler slot). It can call `refs.read` to open a file that names further
 //! samples, such as a `.dwp`.
 
-use crate::flm::chunk::{ChunkIter, ContentPath, Cursor};
+use std::sync::Arc;
+
+use crate::flm::chunk::{ChunkIter, ContentPath, ContentRoot, Cursor};
 use crate::flm::sf2d::Sf2d;
 use crate::panels::inst::three_osc;
-use crate::sample_cache::{Refs, SampleKey};
+use crate::project_files::BUILT_IN;
+use crate::sample_cache::{Refs, SampleCache, SampleKey};
 use crate::song::{Channel, LaneKind, ModuleInstance, Song};
-use honeydew_audio::dwp::Cstm;
+use honeydew_audio::dwp::{Cstm, Zone};
+use honeydew_audio::sample::SampleData;
 
 /// Hands every sample `song` plays to `refs`, channel by channel.
 pub(crate) fn walk(song: &Song, refs: &mut Refs) {
@@ -56,9 +60,105 @@ pub(crate) fn dw_module(module: &ModuleInstance, refs: &mut Refs) {
             refs.add(SampleKey::File(path));
         }
     }
-    if let Some(path) = cstm.program.and_then(|program| dw_path(program.path)) {
+    if let Some(path) = program_path(&cstm) {
         refs.add_program(&path);
     }
+    if silent(&cstm, refs.cache()) {
+        refs.add_program(&stand_in());
+    }
+}
+
+/// What a DW Sampler whose files are all missing plays instead (a song from another device, its samples left there):
+/// our bundled grand piano. The song keeps naming its own files.
+pub(crate) fn stand_in() -> ContentPath {
+    ContentPath::Shorthand {
+        root: ContentRoot::App,
+        relative: format!("{BUILT_IN}/{}", crate::content::GRAND_PIANO),
+    }
+}
+
+/// A DW Sampler of `song` names a file in the user folder: on the web, which has only this session's copies there, it
+/// is likely missing and plays [`stand_in`], which downloads with the song (15 MB: not for every factory program).
+pub(crate) fn may_stand_in(song: &Song) -> bool {
+    let modules = song.channels.iter().flat_map(|c| &c.rack.modules);
+    let blobs = modules
+        .filter(|m| m.type_id == 1)
+        .filter_map(|m| m.file.custom_data.as_deref());
+    blobs.map(Cstm::read).any(|cstm| {
+        let program = cstm.program.as_ref().map(|program| program.path);
+        let paths = program
+            .into_iter()
+            .chain(cstm.zones.iter().map(|(path, _)| *path));
+        paths.filter_map(dw_path).any(|path| {
+            matches!(
+                path,
+                ContentPath::Shorthand {
+                    root: ContentRoot::User,
+                    ..
+                }
+            )
+        })
+    })
+}
+
+/// The zones DW Sampler `cstm` plays, each with its decoded sample: its program's (`PATh`/`PATH`) or its `ZONE`s, never
+/// both ([`Cstm::read`]); a zone whose sample is missing is dropped. One that plays nothing of its own as its files are
+/// missing ([`silent`]) plays [`stand_in`]'s.
+pub(crate) fn sampler_zones(cstm: &Cstm, samples: &SampleCache) -> Vec<(Zone, Arc<SampleData>)> {
+    match own_zones(cstm, samples) {
+        zones if zones.is_empty() && missing(cstm, samples) => program_zones(&stand_in(), samples),
+        zones => zones,
+    }
+}
+
+/// The sampler plays nothing of its own, as a load found its files missing. Nothing is missing before a load has met
+/// them (the web's download plan), so only a song that needs it loads [`stand_in`].
+fn silent(cstm: &Cstm, samples: &SampleCache) -> bool {
+    own_zones(cstm, samples).is_empty() && missing(cstm, samples)
+}
+
+fn own_zones(cstm: &Cstm, samples: &SampleCache) -> Vec<(Zone, Arc<SampleData>)> {
+    match program_path(cstm) {
+        Some(path) => program_zones(&path, samples),
+        None => (cstm.zones.iter())
+            .filter_map(|(path, zone)| {
+                Some((*zone, samples.get(&SampleKey::File(dw_path(path)?))?))
+            })
+            .collect(),
+    }
+}
+
+fn program_zones(path: &ContentPath, samples: &SampleCache) -> Vec<(Zone, Arc<SampleData>)> {
+    let program = samples.program(path);
+    let zones = program.iter().flat_map(|zones| zones.iter());
+    zones
+        .filter_map(|(zone, key)| Some((*zone, samples.get(key)?)))
+        .collect()
+}
+
+/// A file the sampler names (its program, the program's zones, or its own `ZONE`s) is missing.
+fn missing(cstm: &Cstm, samples: &SampleCache) -> bool {
+    match program_path(cstm) {
+        Some(path) => {
+            let zones = samples.program(&path);
+            let mut keys = zones
+                .iter()
+                .flat_map(|zones| zones.iter())
+                .map(|zone| &zone.1);
+            samples.is_missing(&SampleKey::File(path.clone()))
+                || keys.any(|key| samples.is_missing(key))
+        }
+        None => (cstm.zones.iter())
+            .filter_map(|(path, _)| dw_path(path))
+            .any(|path| samples.is_missing(&SampleKey::File(path))),
+    }
+}
+
+/// The program a DW `CSTM` names (`PATh`/`PATH`).
+fn program_path(cstm: &Cstm) -> Option<ContentPath> {
+    cstm.program
+        .as_ref()
+        .and_then(|program| dw_path(program.path))
 }
 
 /// The content path a DW `CSTM` stores as shorthand bytes, `None` when it is empty.

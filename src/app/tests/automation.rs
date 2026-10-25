@@ -290,7 +290,7 @@ fn add_automation_track_adds_an_empty_lane_at_the_song_beat_and_opens_its_editor
 }
 
 #[test]
-fn add_automation_track_on_the_master_strip_leaves_the_selected_channel() {
+fn add_automation_track_on_the_master_strip_selects_the_master() {
     let mut rig = effects_rig();
     // The master's strip, left of channel 1's (x 0..128): its Level, instance 0.
     rig.app.navigate(Nav::Show(View::Mixer));
@@ -302,8 +302,8 @@ fn add_automation_track_on_the_master_strip_leaves_the_selected_channel() {
     rig.ctrl_pick("Add automation track");
     assert_eq!(rig.app.song.channels[0].lanes.len(), lanes + 1);
     assert_eq!(rig.app.nav.view, View::AutomationEditor(0));
-    // The master is only selected while it is alone.
-    assert_eq!(rig.app.selected_channel, 1);
+    // The new lane is current, and so is its channel.
+    assert_eq!(rig.app.selected_channel, 0);
 }
 
 #[test]

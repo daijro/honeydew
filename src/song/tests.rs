@@ -1904,3 +1904,22 @@ fn a_scale_change_reloads_an_untouched_default_chord_set_and_leaves_a_loaded_one
     );
     assert_eq!(song.key_scale, 10);
 }
+
+#[test]
+fn a_clip_saved_without_a_loop_length_loads_with_one_that_holds_its_notes() {
+    // A MIDI import may save clips it never updated: no visible and no loop length.
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    let clip = song.channels[1].lanes[0].add_clip(0, 0.0);
+    clip.events.push(Event::Note {
+        pos: 9 * PPQ,
+        len_beats: 1.0,
+        key: 60,
+        velocity: 100,
+        pan: 127,
+        slide: false,
+    });
+    let saved = crate::flm::read(&crate::flm::write(&song).unwrap()).unwrap();
+    // The generic clip-update rule: 4 beats doubled until the note's end (beat 10) is inside.
+    assert_eq!(saved.channels[1].lanes[0].clips[0].loop_len_beats, 16.0);
+}

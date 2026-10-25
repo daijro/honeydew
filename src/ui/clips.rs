@@ -849,7 +849,6 @@ impl Clips {
 
     /// [`Self::current_track`] with channel `keys` on the keyboard.
     fn track_for(&self, keys: usize) -> (usize, usize) {
-        // The master's track is current without the keyboard (it never takes it).
         (self.track.filter(|t| t.0 == keys || t.0 == 0)).unwrap_or((keys, 0))
     }
 
@@ -882,17 +881,15 @@ impl Clips {
         self.set_track(keys, r.channel, r.lane);
     }
 
-    /// Track (`channel`, `lane`) becomes current; its channel takes the keyboard. The master plays nothing, so it
-    /// never takes it.
+    /// Track (`channel`, `lane`) becomes current; its channel takes the keyboard and the rack (the master's keys play
+    /// nothing).
     pub(crate) fn make_current_track(&mut self, app: &mut AppCtx, channel: usize, lane: usize) {
         self.set_track(app.selected, channel, lane);
     }
 
     fn set_track(&mut self, keys: &mut usize, channel: usize, lane: usize) {
         self.track = Some((channel, lane));
-        if channel > 0 {
-            *keys = channel;
-        }
+        *keys = channel;
     }
 
     /// Follows the tracks when channels or tracks move: `track` maps a track's old (channel, lane) to its new one, `None`

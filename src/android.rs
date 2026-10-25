@@ -25,6 +25,48 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onDisplayDpi(
     DISPLAY_DPI.store(dpi.to_bits(), Ordering::Relaxed);
 }
 
+/// What a document pick finishes with: the copy of the picked file, an error, or `None` when it was cancelled.
+pub type Picked = Option<Result<PathBuf, String>>;
+static PICKING: Mutex<Option<Box<dyn FnOnce(Picked) + Send>>> = Mutex::new(None);
+
+/// Opens the system document picker (`HoneydewActivity.openDocument`); `done` gets the pick, copied into the app's
+/// cache (at most `max_bytes` + 1 bytes), on a Java thread.
+pub fn pick_document(max_bytes: u64, done: impl FnOnce(Picked) + Send + 'static) {
+    *PICKING.lock().expect("picker lock") = Some(Box::new(done));
+    let max = jni::sys::jlong::try_from(max_bytes).unwrap_or(jni::sys::jlong::MAX - 1);
+    let opened = with_activity(|env, activity| {
+        env.call_method(activity, "openDocument", "(J)V", &[max.into()])
+            .map(drop)
+    });
+    if let Err(err) = opened {
+        picked(Some(Err(err)));
+    }
+}
+
+fn picked(result: Picked) {
+    let done = PICKING.lock().ok().and_then(|mut done| done.take());
+    if let Some(done) = done {
+        done(result);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onDocumentPicked(
+    mut env: jni::JNIEnv<'_>,
+    _class: jni::objects::JClass<'_>,
+    path: jni::objects::JString<'_>,
+    error: jni::objects::JString<'_>,
+) {
+    let mut text = |s: &jni::objects::JString<'_>| {
+        (!s.is_null()).then(|| env.get_string(s).map(String::from).unwrap_or_default())
+    };
+    picked(match (text(&path), text(&error)) {
+        (Some(path), _) => Some(Ok(path.into())),
+        (None, Some(error)) => Some(Err(error)),
+        (None, None) => None,
+    });
+}
+
 /// Android gives each install an absolute, private data directory; no storage permission is needed.
 pub fn data_dir() -> Option<PathBuf> {
     ACTIVITY

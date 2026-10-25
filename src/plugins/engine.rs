@@ -3,8 +3,8 @@
 //! tries its lock with a shared, bounded wait for the whole audio callback. If the deadline passes, an instrument
 //! keeps its notes for the next block and plays silence; an effect passes the sound through. Nothing here allocates.
 
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::sync::{MutexGuard, TryLockError};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -82,9 +82,8 @@ fn lock_plugin<T: ?Sized>(plugin: &Mutex<T>) -> Option<MutexGuard<'_, T>> {
             Err(TryLockError::WouldBlock) => contended = true,
         }
         #[cfg(not(target_arch = "wasm32"))]
-        let can_wait = LOCK_DEADLINE.with(|deadline| {
-            deadline.get().is_some_and(|until| Instant::now() < until)
-        });
+        let can_wait = LOCK_DEADLINE
+            .with(|deadline| deadline.get().is_some_and(|until| Instant::now() < until));
         #[cfg(target_arch = "wasm32")]
         let can_wait = false;
         if !can_wait {

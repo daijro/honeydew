@@ -461,6 +461,15 @@ impl Reader {
         });
         let mut channels: Vec<Option<Channel>> = channels.into_iter().map(Some).collect();
         song.channels = order.iter().filter_map(|&i| channels[i].take()).collect();
+        // A clip with no stored loop length gets the generic clip-update rule, as a new clip does: a MIDI import may
+        // save clips it never updated, which would otherwise show nothing and play nothing.
+        let bar = song.time_sig.bar_beats();
+        let lanes = song.channels.iter_mut().flat_map(|c| &mut c.lanes);
+        for clip in lanes.flat_map(|l| &mut l.clips) {
+            if clip.loop_ticks().is_none() {
+                clip.fit_loop(bar);
+            }
+        }
         Ok(song)
     }
 

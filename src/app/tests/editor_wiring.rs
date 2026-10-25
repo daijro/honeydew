@@ -1226,8 +1226,7 @@ fn the_bottom_panel_follows_the_current_channels_first_lane_in_every_view() {
     let mut rig = drum_rig();
     rig.app
         .add_channel(ChannelKind::Synth(SynthKind::MiniSynth), 0);
-    // An editor follows the current track, so only the master's, whose track is current without the keyboard, shows
-    // under another channel's panel.
+    // An editor follows the current track: the master's makes the master current, whose keys play nothing.
     rig.app.song.channels[0].lanes[0].add_clip(0, 4.0);
     let master = ClipKey {
         channel: 0,
@@ -1237,18 +1236,12 @@ fn the_bottom_panel_follows_the_current_channels_first_lane_in_every_view() {
     rig.app.navigate(Nav::EditClip(master));
     rig.slide_split();
     rig.take();
-    // The MiniSynth (2) is current: its keyboard, under the master's automation editor too.
-    assert_eq!(rig.app.selected_channel, 2);
+    assert_eq!(rig.app.selected_channel, 0);
     assert_eq!(rig.app.nav.view, View::AutomationEditor(0));
     assert_eq!(rig.pad_hexes(), 0);
     rig.press(E4);
-    assert!(
-        rig.take()
-            .first()
-            .is_some_and(|c| c.starts_with("NoteOn 2 "))
-    );
     rig.release(E4);
-    rig.take();
+    assert!(rig.take().iter().all(|c| !c.starts_with("NoteOn")));
     // The Drums channel current: its pads, on the playlist too.
     rig.app.selected_channel = 1;
     rig.app.navigate(Nav::Show(View::Playlist));

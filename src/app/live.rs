@@ -313,8 +313,7 @@ impl HoneydewApp {
         let ids = &self.channel_ids;
         let gone = |id: i32| before.channels.iter().any(|c| c.id == id) && !ids.contains(&id);
         self.main_screen.forget_keys_views(gone);
-        let last = self.song.channels.len() - 1;
-        self.selected_channel = self.selected_channel.clamp(last.min(1), last);
+        self.selected_channel = self.selected_channel.min(self.song.channels.len() - 1);
         self.rebuild_as(tick, Handover::Undo);
         Ok(replaced)
     }

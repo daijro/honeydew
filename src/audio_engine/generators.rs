@@ -5,11 +5,11 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::samples::{dw_path, shape_key};
+use super::samples::{sampler_zones, shape_key};
 use crate::flm::sf2d::Sf2d;
 use crate::panels::cstm::settings_from_cstm;
 use crate::params::{Role, module_spec};
-use crate::sample_cache::{SampleCache, SampleKey};
+use crate::sample_cache::SampleCache;
 use crate::song::plugin::PLUGIN_INSTRUMENT;
 use crate::song::{Channel, ModuleInstance, TimeSig};
 use honeydew_audio::dw_sampler::{DwSampler, DwZone};
@@ -76,8 +76,7 @@ fn instrument(
     }
 }
 
-/// The DW Sampler with its `CSTM`'s zones: its program's (`PATh`/`PATH`) or its `ZONE`s, never both ([`Cstm::read`]),
-/// each with its decoded sample. A zone whose sample is missing is dropped.
+/// The DW Sampler with its `CSTM`'s zones ([`sampler_zones`]).
 fn dw_sampler(
     module: &ModuleInstance,
     sample_rate: f32,
@@ -85,26 +84,9 @@ fn dw_sampler(
     origin: &mut DefaultHasher,
 ) -> DwSampler {
     let cstm = Cstm::read(module.file.custom_data.as_deref().unwrap_or_default());
-    let zones: Vec<DwZone> = match &cstm.program {
-        Some(program) => (dw_path(program.path).and_then(|path| samples.program(&path)))
-            .iter()
-            .flat_map(|zones| zones.iter())
-            .filter_map(|(zone, key)| {
-                Some(DwZone {
-                    zone: *zone,
-                    sample: samples.get(key)?,
-                })
-            })
-            .collect(),
-        None => (cstm.zones.iter())
-            .filter_map(|(path, zone)| {
-                Some(DwZone {
-                    zone: *zone,
-                    sample: samples.get(&SampleKey::File(dw_path(path)?))?,
-                })
-            })
-            .collect(),
-    };
+    let zones: Vec<DwZone> = (sampler_zones(&cstm, samples).into_iter())
+        .map(|(zone, sample)| DwZone { zone, sample })
+        .collect();
     module.file.custom_data.hash(origin);
     for zone in &zones {
         Arc::as_ptr(&zone.sample).hash(origin);
@@ -196,6 +178,7 @@ mod tests {
     use super::*;
     use crate::flm::chunk::ContentPath;
     use crate::panels::cstm::GMSYNTH;
+    use crate::sample_cache::SampleKey;
     use honeydew_audio::ProcessContext;
 
     #[test]

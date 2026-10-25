@@ -446,7 +446,7 @@ impl HoneydewApp {
 
     /// Switches the view or the overlays, as the screens do. The bottom editor follows the playlist's current clip
     /// ([`Slots::follow`]): a clip's `Edit` makes it its track's current clip and the track the current one (its channel
-    /// takes the keyboard, but never the master); a channel's `Edit` is its main lane's current clip's
+    /// takes the keyboard); a channel's `Edit` is its main lane's current clip's
     /// ([`views::main_clip`]), else nothing.
     pub fn navigate(&mut self, nav: Nav) {
         let nav = match nav {
@@ -647,9 +647,8 @@ impl HoneydewApp {
         let ids = &self.channel_ids;
         let gone = |id: i32| before.channels.iter().any(|c| c.id == id) && !ids.contains(&id);
         self.main_screen.forget_keys_views(gone);
-        // The selected channel may be gone; the master is selected only while it is alone.
-        let last = self.song.channels.len() - 1;
-        self.selected_channel = self.selected_channel.clamp(last.min(1), last);
+        // The selected channel may be gone.
+        self.selected_channel = self.selected_channel.min(self.song.channels.len() - 1);
         self.rebuild_as(tick, Handover::Undo);
     }
 
@@ -2166,7 +2165,7 @@ impl HoneydewApp {
         let step = actions.step.or_else(|| history::shortcut(ctx));
         // The header's channel, then the keyboard's and the typed keys: every press of the frame can start playback
         // in this frame (its note goes out right after that Play).
-        if let Some(index) = actions.header.filter(|&i| i > 0) {
+        if let Some(index) = actions.header {
             self.selected_channel = index;
         }
         // The keyboard holds no key over a focus loss (`ui::fingers`): its notes stop now, not at the next click.
@@ -3305,7 +3304,7 @@ mod tests {
     }
 
     #[test]
-    fn a_new_channel_is_selected_and_a_header_click_selects_but_never_the_master() {
+    fn a_new_channel_is_selected_and_a_header_click_selects_the_master_too() {
         let mut rig = Rig::new();
         assert_eq!(rig.app.selected_channel, 0);
         rig.app
@@ -3327,10 +3326,15 @@ mod tests {
         rig.frame(vec![]);
         rig.click(header(1));
         assert_eq!(rig.app.selected_channel, 1);
-        rig.click(header(0));
-        assert_eq!(rig.app.selected_channel, 1, "the master was selected");
         rig.press(E4);
         assert_eq!(rig.take(), ["NoteOn 1 52 108"]);
+        rig.release(E4);
+        rig.take();
+        // The master becomes current, and its keys play nothing.
+        rig.click(header(0));
+        assert_eq!(rig.app.selected_channel, 0);
+        rig.press(E4);
+        assert!(rig.take().is_empty());
     }
 
     #[test]
@@ -3499,11 +3503,11 @@ mod tests {
         rig.click(header(1));
         assert_eq!(rig.app.selected_channel, 1);
         assert_eq!(rig.overlays(), []);
-        // The master is never selected.
+        // The master is selected too: the edge tab opens its rack, where the master effects go.
         rig.click(header(0));
-        assert_eq!(rig.app.selected_channel, 1);
+        assert_eq!(rig.app.selected_channel, 0);
         rig.click(EDGE_TAB);
-        assert_eq!(rig.overlays(), [Overlay::Rack(1)]);
+        assert_eq!(rig.overlays(), [Overlay::Rack(0)]);
         rig.slide_rack();
         rig.click(rack_wiring::collapse_tab());
         assert_eq!(rig.overlays(), []);
@@ -5525,10 +5529,10 @@ mod tests {
             "{log:?}"
         );
         // A strip's bottom cell (1.5 U over the panel) selects its channel for the bottom panel (the Drums channel's
-        // pads); the master's does not.
-        rig.click(pos2(192.0, PANEL_TOP - 0.75 * U));
-        assert_eq!(rig.app.selected_channel, 1);
+        // pads); the master's selects the master.
         rig.click(pos2(64.0, PANEL_TOP - 0.75 * U));
+        assert_eq!(rig.app.selected_channel, 0);
+        rig.click(pos2(192.0, PANEL_TOP - 0.75 * U));
         assert_eq!(rig.app.selected_channel, 1);
         rig.press(pad_centre(0));
         rig.release(pad_centre(0));
