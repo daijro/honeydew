@@ -128,22 +128,24 @@ pub fn open_device_with_mode(
     }
 }
 
-pub fn buffer_mode(sound_mode: u8, low_latency: bool) -> BufferMode {
-    // On desktop FL Studio Mobile's low-latency switch is meaningful only in its
-    // Multitrack driver mode. Standard is the compatibility/default mode.
+pub fn buffer_mode(sound_mode: u8, low_latency: u8) -> BufferMode {
+    let target = crate::settings::BUFFER_SIZES
+        .get(usize::from(low_latency))
+        .copied()
+        .unwrap_or_else(|| *crate::settings::BUFFER_SIZES.last().unwrap());
+    let requested = (target > 0).then_some(BufferMode::Fixed(target));
+    // The explicit buffer target is independent of the desktop Sound Mode. Native keeps
+    // the device default; a selected target is applied in either Standard or Multitrack.
     #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     {
-        return if sound_mode == 1 && low_latency {
-            BufferMode::Fast
-        } else {
-            BufferMode::Native
-        };
+        let _ = sound_mode;
+        return requested.unwrap_or(BufferMode::Native);
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
-    if low_latency {
-        return BufferMode::Fast;
+    if let Some(requested) = requested {
+        return requested;
     }
     match sound_mode {
         2 => BufferMode::UltraSafe,
@@ -178,8 +180,8 @@ pub struct AudioLink {
     sink: Option<Box<dyn AudioSink>>,
     /// The output's stream failed (its snapshot says so). Commands are dropped until a [`Self::start`] reopens it.
     stream_failed: bool,
-    /// Whether newly opened streams prefer the smallest supported device buffer.
-    low_latency: bool,
+    /// The selected output buffer target index; zero keeps the device default.
+    low_latency: u8,
     /// Stored sound-mode id; 2=UltraSafe, 0=Safe, 1=Fast, 3=Native.
     sound_mode: u8,
     /// Commands the full audio queue handed back, oldest first. They go out before any newer command.
@@ -516,8 +518,8 @@ impl AudioLink {
         keep: &Song,
         playing: bool,
         read: &Reader<'_>,
-        open: impl FnOnce(&Song, &SampleCache, bool) -> Option<Box<dyn AudioSink>>,
-        low_latency: bool,
+        open: impl FnOnce(&Song, &SampleCache, u8) -> Option<Box<dyn AudioSink>>,
+        low_latency: u8,
     ) {
         self.low_latency = low_latency;
         if self.running() {
@@ -558,7 +560,7 @@ impl AudioLink {
     }
 
     /// Changes the output buffer policy, reopening the current stream while preserving transport state.
-    pub fn set_low_latency(&mut self, song: &Song, low_latency: bool) {
+    pub fn set_low_latency(&mut self, song: &Song, low_latency: u8) {
         if self.low_latency == low_latency {
             return;
         }
@@ -574,7 +576,7 @@ impl AudioLink {
     }
 
     /// Records the preference before the first stream exists; an active stream is changed by [`Self::set_low_latency`].
-    pub fn set_low_latency_preference(&mut self, low_latency: bool) {
+    pub fn set_low_latency_preference(&mut self, low_latency: u8) {
         self.low_latency = low_latency;
     }
 

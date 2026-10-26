@@ -1,14 +1,43 @@
 #!/usr/bin/env python3
 """Dependency-free local MCP adapter for Honeydew's opt-in control socket.
 
-Run with HONEYDEW_CONTROL_TOKEN set to the same secret as Honeydew. Only
-JSON-RPC MCP messages go to stdout; diagnostic errors go to stderr.
+The adapter reads the desktop token file automatically. HONEYDEW_CONTROL_TOKEN
+remains supported as an override for compatibility. Only JSON-RPC MCP messages
+go to stdout; diagnostic errors go to stderr.
 """
 
 import json
 import os
 import socket
 import sys
+
+
+def token_path():
+    override = os.environ.get("HONEYDEW_TOKEN_FILE")
+    if override:
+        return override
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA")
+        return os.path.join(base, "Honeydew", "control-token") if base else None
+    if sys.platform == "darwin":
+        home = os.path.expanduser("~")
+        return os.path.join(home, "Library", "Application Support", "Honeydew", "control-token")
+    base = os.environ.get("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config"))
+    return os.path.join(base, "Honeydew", "control-token")
+
+
+def load_token():
+    token = os.environ.get("HONEYDEW_CONTROL_TOKEN")
+    if token:
+        return token
+    path = token_path()
+    if not path:
+        return ""
+    try:
+        with open(path, encoding="utf-8") as token_file:
+            return token_file.read().strip()
+    except OSError:
+        return ""
 
 
 TOOLS = [
@@ -88,9 +117,9 @@ TOOLS = [
 
 
 def honeydew(action, payload=None, channel_id=None):
-    token = os.environ.get("HONEYDEW_CONTROL_TOKEN", "")
+    token = load_token()
     if len(token) < 24:
-        raise RuntimeError("Set HONEYDEW_CONTROL_TOKEN (at least 24 characters) in both Honeydew and this MCP server")
+        raise RuntimeError("Honeydew MCP token file is missing or invalid; generate a token in Honeydew Settings")
     port = int(os.environ.get("HONEYDEW_CONTROL_PORT", "57831"))
     request = {"token": token, "action": action}
     if payload is not None:

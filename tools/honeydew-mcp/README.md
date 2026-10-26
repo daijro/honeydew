@@ -11,16 +11,14 @@ it talks only to Honeydew's authenticated `127.0.0.1` bridge.
 
 ## Start
 
-Generate a long, private token (for example `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`).
-Set the **same** `HONEYDEW_CONTROL_TOKEN` in the environment of both Honeydew
-and the MCP server. The port defaults to 57831; set `HONEYDEW_CONTROL_PORT` in
-both processes if it is occupied. Restart Honeydew after setting the token.
-The bridge is disabled unless the token is set and at least 24 characters.
+Enable MCP in Honeydew Settings and use `Generate` under Authentication token.
+The Python adapter reads the same protected token file automatically. The port
+defaults to 57831; set `HONEYDEW_CONTROL_PORT` only when using a custom port.
+`HONEYDEW_CONTROL_TOKEN` remains available as a compatibility override.
 
 From this repository:
 
 ```sh
-export HONEYDEW_CONTROL_TOKEN='paste-your-private-token-here'
 cargo run --release --bin honeydew-native
 ```
 
@@ -34,19 +32,11 @@ It stores a private token at `~/.config/honeydew/control-token`. Configure the
 MCP client to launch `tools/honeydew-mcp/honeydew-mcp.sh adapter`; that mode
 reads the same token and starts the stdio adapter automatically.
 
-In a second terminal, to test the MCP adapter:
-
-```sh
-HONEYDEW_CONTROL_TOKEN='paste-your-private-token-here' \
-python3 tools/honeydew-mcp/server.py
-```
-
 The MCP client starts the adapter as a **stdio** server; normally you do not
 run it by hand. Configure its command as `python3` and its argument as the
-absolute path to `tools/honeydew-mcp/server.py`. Pass the token as an
-environment variable, not in a prompt or a command argument. In Codex, for
-example, add the stdio server in Settings → MCP servers, then use its tools in
-a new chat. ChatGPT web requires a separate remote/tunneled MCP connection;
+absolute path to `tools/honeydew-mcp/server.py`. In Codex, for example, add
+the stdio server in Settings → MCP servers, then use its tools in a new chat.
+ChatGPT web requires a separate remote/tunneled MCP connection;
 this local stdio configuration does not automatically make it available there.
 
 ## Example request

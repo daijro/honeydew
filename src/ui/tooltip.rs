@@ -9,9 +9,10 @@
 //!   next shows at once. Moving more than 4 px, or onto another control, hides it and starts the wait again. A press,
 //!   a click or a key hides it until the pointer moves again. Mouse pointers only: a touch leaves no hover.
 //! - **Look.** The label (FontSize 2), a 0.8 U gap and the shortcut (FontSize 2, `text` α 0.5) on the right, padded
-//!   0.4 U × 0.2 U, at most half the window − 0.8 U wide (the label end-ellipsised), on a `menuFill` rounded rect
-//!   (radius 0.25 U) with a 1 px `text` α 0.15 outline; it fades in at 10 per second. It is centred under the control,
-//!   0.25 U below it, or 0.25 U above where it would leave the window's bottom, and kept inside the window.
+//!   0.4 U × 0.2 U, at a consistent maximum width of 24 U (or half the window − 0.8 U when narrower), with the
+//!   label wrapped at word boundaries, on a `menuFill` rounded rect (radius 0.25 U) with a 1 px `text` α 0.15
+//!   outline; it fades in at 10 per second. It is centred under the control, 0.25 U below it, or 0.25 U above where
+//!   it would leave the window's bottom, and kept inside the window.
 //! - **Shortcut.** The action's first key binding in the keymap ([`crate::keymap::Keymap::shortcut`]), `CTRL+K`.
 
 use eframe::egui::{
@@ -22,8 +23,6 @@ use eframe::egui::{
 use crate::keymap;
 use crate::metrics::FontSize;
 use crate::ui::UiCtx;
-use crate::ui::widgets::truncated_text;
-
 // Times in seconds, sizes in U (the move tolerance in device pixels).
 const DWELL: f64 = 0.6;
 const RECENT: f64 = 1.0;
@@ -36,6 +35,8 @@ const RADIUS: f32 = 0.25;
 const OFFSET: f32 = 0.25;
 const SHORTCUT_ALPHA: f32 = 0.5;
 const OUTLINE_ALPHA: f32 = 0.15;
+/// The shared maximum tooltip width, in U, before the label wraps at a word boundary.
+const MAX_WIDTH_U: f32 = 24.0;
 
 /// A control's tooltip, as it named it this frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -201,13 +202,18 @@ fn draw(ctx: &Context, cx: &UiCtx, t: &Tip, alpha: f32) {
     let layout = |s: &str| painter.layout_no_wrap(s.to_owned(), font.clone(), Color32::PLACEHOLDER);
     let short = layout(shortcut);
     let gap = if shortcut.is_empty() { 0.0 } else { m.u(GAP) };
-    let max_w = (screen.width() / 2.0 - m.u(GAP)).max(0.0);
+    let max_w = (screen.width() / 2.0 - m.u(GAP)).min(m.u(MAX_WIDTH_U)).max(0.0);
     let pad = vec2(m.u(PAD_X), m.u(PAD_Y));
     let label_room = (max_w - 2.0 * pad.x - gap - short.size().x).max(0.0);
-    let label = truncated_text(&painter, t.label, font.clone(), label_room, 0);
-    let label_w = layout(&label).size().x;
-    let h = short.size().y.max(layout("Ag").size().y);
-    let size = vec2(label_w + gap + short.size().x, h) + 2.0 * pad;
+    let label_job = eframe::egui::text::LayoutJob::simple(
+        t.label.to_owned(),
+        font.clone(),
+        text,
+        label_room,
+    );
+    let label = painter.layout_job(label_job);
+    let h = short.size().y.max(label.size().y);
+    let size = vec2(label.size().x + gap + short.size().x, h) + 2.0 * pad;
     let below = t.rect.bottom() + m.u(OFFSET);
     let top = if below + size.y > screen.bottom() {
         t.rect.top() - m.u(OFFSET) - size.y
@@ -224,11 +230,9 @@ fn draw(ctx: &Context, cx: &UiCtx, t: &Tip, alpha: f32) {
     let stroke = Stroke::new(1.0 / m.ppp(), outline);
     painter.rect_stroke(rect, radius, stroke, StrokeKind::Inside);
     let inner = rect.shrink2(pad);
-    painter.text(
-        inner.left_center(),
-        Align2::LEFT_CENTER,
+    painter.galley(
+        pos2(inner.left(), inner.center().y - label.size().y / 2.0),
         label,
-        font.clone(),
         text,
     );
     if !shortcut.is_empty() {

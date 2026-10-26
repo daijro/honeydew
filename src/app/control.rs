@@ -17,7 +17,6 @@ use crate::song::{ChannelKind, Event, LaneKind, PPQ, Song, SynthKind};
 use crate::ui::views::SongEdit;
 
 const MAX_REQUEST: u64 = 256 * 1024;
-const DEFAULT_PORT: u16 = 57831;
 
 struct Request {
     value: Value,
@@ -26,20 +25,23 @@ struct Request {
 
 pub(super) struct Bridge {
     requests: Receiver<Request>,
+    shutdown: Sender<()>,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Bridge {
-    pub(super) fn start(ctx: egui::Context) -> Option<Self> {
-        // Disabled by default. Both the app and the local MCP adapter need the same secret.
-        let token = std::env::var("HONEYDEW_CONTROL_TOKEN").ok()?;
-        if token.len() < 24 {
-            eprintln!("Honeydew control disabled: HONEYDEW_CONTROL_TOKEN needs at least 24 characters");
+    pub(super) fn start(ctx: egui::Context, enabled: bool, port: u16) -> Option<Self> {
+        if !enabled {
             return None;
         }
-        let port = std::env::var("HONEYDEW_CONTROL_PORT")
-            .ok()
-            .and_then(|s| s.parse::<u16>().ok())
-            .unwrap_or(DEFAULT_PORT);
+        // The desktop Settings token file is shared with the Python MCP adapter.
+        // Keep the environment fallback during the migration from the old startup flow.
+        let token = crate::settings::load_mcp_token()
+            .or_else(|| std::env::var("HONEYDEW_CONTROL_TOKEN").ok())?;
+        if token.len() < 24 {
+            eprintln!("Honeydew control disabled: the MCP token needs at least 24 characters");
+            return None;
+        }
         let listener = match TcpListener::bind(("127.0.0.1", port)) {
             Ok(listener) => listener,
             Err(err) => {
@@ -48,25 +50,50 @@ impl Bridge {
             }
         };
         let (tx, requests) = mpsc::channel();
-        std::thread::Builder::new()
+        let (shutdown, stop) = mpsc::channel();
+        listener.set_nonblocking(true).ok()?;
+        let thread = std::thread::Builder::new()
             .name("honeydew-control".into())
             .spawn(move || {
-                for connection in listener.incoming() {
-                    let Ok(mut stream) = connection else { continue };
-                    let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
-                    let _ = stream.set_write_timeout(Some(Duration::from_secs(3)));
-                    let answer = serve(&mut stream, &token, &tx, &ctx);
-                    let _ = serde_json::to_writer(&mut stream, &answer);
-                    let _ = stream.flush();
+                loop {
+                    if stop.try_recv().is_ok() {
+                        break;
+                    }
+                    match listener.accept() {
+                        Ok((mut stream, _)) => {
+                            let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
+                            let _ = stream.set_write_timeout(Some(Duration::from_secs(3)));
+                            let answer = serve(&mut stream, &token, &tx, &ctx);
+                            let _ = serde_json::to_writer(&mut stream, &answer);
+                            let _ = stream.flush();
+                        }
+                        Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(Duration::from_millis(25));
+                        }
+                        Err(_) => break,
+                    }
                 }
             })
             .ok()?;
         eprintln!("Honeydew control enabled on 127.0.0.1:{port}");
-        Some(Self { requests })
+        Some(Self {
+            requests,
+            shutdown,
+            thread: Some(thread),
+        })
     }
 
     fn drain(&self) -> Vec<Request> {
         self.requests.try_iter().take(32).collect()
+    }
+}
+
+impl Drop for Bridge {
+    fn drop(&mut self) {
+        let _ = self.shutdown.send(());
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
     }
 }
 

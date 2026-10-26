@@ -1849,6 +1849,7 @@ dependencies = [
  "android-activity",
  "crc32fast",
  "eframe",
+ "getrandom 0.3.4",
  "honeydew-audio",
  "jni 0.21.1",
  "lemon-3x-osc",

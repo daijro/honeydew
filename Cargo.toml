@@ -71,6 +71,7 @@ os-vst2 = { path = "vendor/lemon-studio/os-vst2" }
 
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
 rayon = "1.11"
+getrandom = "0.3.4"
 
 # The plugin editors' X11 windows. Already in the tree through winit.
 [target.'cfg(target_os = "linux")'.dependencies]

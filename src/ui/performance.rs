@@ -17,12 +17,12 @@
 //!   draws one per 2 px of its plot, each taken from the bin under it.
 //! - The footer is `App memory:` and the transport `RAM` readout's value, `-` where unknown.
 
-use eframe::egui::{Align2, Pos2, Rect, Stroke, Ui, pos2, vec2};
+use eframe::egui::{Align2, Id, Pos2, Rect, Stroke, Ui, pos2, vec2};
 
 use crate::metrics::FontSize;
 use crate::theme::{RECORD_COLOR, Rgba, hsl_to_rgb};
 use crate::ui::UiCtx;
-use crate::ui::widgets::text_label as label;
+use crate::ui::widgets::{Button, button, text_label as label};
 
 /// The smoothed load `u` falls toward a lower raw load with this time constant, in seconds (it jumps up at once).
 pub const DECAY_S: f32 = 3.0;
@@ -77,10 +77,13 @@ pub struct Reading {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Performance {
     pub underruns: u64,
+    underrun_base: u64,
     /// Plugin calls that could not acquire the instance lock before the callback's wait deadline.
     pub plugin_lock_misses: u64,
+    plugin_lock_misses_base: u64,
     /// Contended plugin calls that did acquire the lock within that deadline.
     pub recovered_waits: u64,
+    recovered_waits_base: u64,
     pub playing: bool,
     /// The song has played since the app started: the graph is no longer idle, and never is again.
     pub played: bool,
@@ -107,8 +110,11 @@ impl Default for Performance {
     fn default() -> Self {
         Self {
             underruns: 0,
+            underrun_base: 0,
             plugin_lock_misses: 0,
+            plugin_lock_misses_base: 0,
             recovered_waits: 0,
+            recovered_waits_base: 0,
             playing: false,
             played: false,
             load: 0.0,
@@ -129,7 +135,7 @@ impl Performance {
     /// held or falls, and a playing song records the load at its position. The app calls it once per drawn main-UI
     /// frame and not while a loading screen is up.
     pub fn update(&mut self, now: f64, reading: Reading) {
-        self.underruns = reading.underruns;
+        self.underruns = reading.underruns.saturating_sub(self.underrun_base);
         self.playing = reading.playing;
         self.played |= reading.playing;
         self.load = if reading.load > 0.0 {
@@ -153,6 +159,26 @@ impl Performance {
             self.peak = (self.peak - PEAK_DECAY).max(0.0);
         }
         self.record();
+    }
+
+    /// Rebase the cumulative diagnostics so the next frame displays them from zero.
+    pub fn clear_counters(&mut self) {
+        self.underrun_base = self.underrun_base.saturating_add(self.underruns);
+        self.plugin_lock_misses_base = self
+            .plugin_lock_misses_base
+            .saturating_add(self.plugin_lock_misses);
+        self.recovered_waits_base = self
+            .recovered_waits_base
+            .saturating_add(self.recovered_waits);
+        self.underruns = 0;
+        self.plugin_lock_misses = 0;
+        self.recovered_waits = 0;
+    }
+
+    /// Updates the cumulative plugin diagnostics while respecting the user's clear point.
+    pub fn set_plugin_lock_stats(&mut self, misses: u64, recovered: u64) {
+        self.plugin_lock_misses = misses.saturating_sub(self.plugin_lock_misses_base);
+        self.recovered_waits = recovered.saturating_sub(self.recovered_waits_base);
     }
 
     /// Writes the load at the song position while the song plays.
@@ -287,22 +313,28 @@ pub fn curve_color(v: f32, text: Rgba) -> Rgba {
 
 /// Draws the Performance block of `p` in `rect`: the status line, the load bar, the graph and the footer ([`layout`]).
 /// Nothing else paints.
-pub fn show(ui: &Ui, cx: &UiCtx, rect: Rect, p: &Performance) {
+pub fn show(ui: &mut Ui, cx: &UiCtx, rect: Rect, p: &Performance) -> bool {
     let (m, c) = (cx.m, &cx.theme.colors);
     let font = m.font_id(FontSize::Pt10);
     let fh = ui.ctx().fonts_mut(|f| f.row_height(&font));
     let parts = layout(rect, fh, m.t());
     let text = c.text.to_color32();
     let line = status_line_with_locks(p);
+    let clear_w = m.u(3.5);
+    let clear_gap = m.u(0.5);
+    let clear = parts.status.with_min_x(parts.status.right() - clear_w);
+    let status = parts.status.with_max_x(clear.left() - clear_gap);
     label(
         ui,
         cx,
-        parts.status,
+        status,
         &line,
         FontSize::Pt10,
         Align2::LEFT_CENTER,
         text,
     );
+    let clear = Button::new(Id::new("performance_clear"), clear, "Clear", false, c);
+    let cleared = button(ui, cx, &clear, true).clicked();
     bar(ui, cx, parts.bar, p);
     graph(ui, cx, parts.graph, p);
     label(
@@ -314,6 +346,7 @@ pub fn show(ui: &Ui, cx: &UiCtx, rect: Rect, p: &Performance) {
         Align2::LEFT_CENTER,
         text,
     );
+    cleared
 }
 
 /// The load bar: `background`, and the smoothed load filled in its colour.
@@ -769,12 +802,13 @@ mod tests {
             };
             let (shapes, m) = painted(ppp, rect, &p);
             let parts = layout(rect, fh(ppp), m.t());
+            let clear = parts.status.with_min_x(parts.status.right() - m.u(3.5));
             for (r, fill) in rects(&shapes)
                 .into_iter()
                 .filter(|(_, f)| *f != Color32::TRANSPARENT)
             {
                 assert!(
-                    parts.bar.contains_rect(r) || parts.graph.contains_rect(r),
+                    parts.bar.contains_rect(r) || parts.graph.contains_rect(r) || clear.contains_rect(r),
                     "ppp {ppp}: a fill {r:?} {fill:?} outside the bar and the graph"
                 );
             }
@@ -953,6 +987,33 @@ mod tests {
             status_line_with_locks(&Performance::default()),
             "CPU: 0 % | Underruns: 0"
         );
+    }
+
+    #[test]
+    fn clearing_counters_rebases_future_readings() {
+        let mut p = Performance::default();
+        p.update(
+            1.0,
+            Reading {
+                underruns: 25,
+                ..reading(0.0)
+            },
+        );
+        p.set_plugin_lock_stats(104, 424);
+        assert_eq!((p.underruns, p.plugin_lock_misses, p.recovered_waits), (25, 104, 424));
+
+        p.clear_counters();
+        assert_eq!((p.underruns, p.plugin_lock_misses, p.recovered_waits), (0, 0, 0));
+
+        p.update(
+            2.0,
+            Reading {
+                underruns: 27,
+                ..reading(0.0)
+            },
+        );
+        p.set_plugin_lock_stats(108, 430);
+        assert_eq!((p.underruns, p.plugin_lock_misses, p.recovered_waits), (2, 4, 6));
     }
 
     #[test]

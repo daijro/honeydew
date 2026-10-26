@@ -61,6 +61,8 @@ pub enum BufferMode {
     UltraSafe,
     Safe,
     Fast,
+    /// Requests a target frame count, clamped to the device's supported range.
+    Fixed(u32),
     Native,
 }
 
@@ -703,6 +705,7 @@ fn output_config(
         BufferMode::UltraSafe => max,
         BufferMode::Safe => 256.clamp(min, max),
         BufferMode::Fast => min,
+        BufferMode::Fixed(target) => target.clamp(min, max),
         BufferMode::Native => return config,
     };
     config.buffer_size = BufferSize::Fixed(frames);

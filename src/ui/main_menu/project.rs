@@ -559,7 +559,9 @@ impl ProjectTab {
         let (left, right) = (area.left() + inset, area.right() - inset);
         let row = band(BLOCK_H);
         let block = Rect::from_min_max(pos2(left, row.top()), pos2(right, row.bottom()));
-        performance::show(ui, cx, block, &info.performance);
+        if performance::show(ui, cx, block, &info.performance) {
+            info.performance.clear_counters();
+        }
 
         self.content_h = y - top;
         if std::mem::take(&mut self.scroll_to_performance) {

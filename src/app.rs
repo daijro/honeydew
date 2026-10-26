@@ -314,6 +314,23 @@ impl Default for HoneydewApp {
 }
 
 impl HoneydewApp {
+    fn mcp_status(&self) -> &'static str {
+        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        {
+            if !self.settings.mcp_enabled {
+                "Disabled"
+            } else if self.control.is_some() {
+                "Listening"
+            } else {
+                "Error"
+            }
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        {
+            "Disabled"
+        }
+    }
+
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         setup_context(&cc.egui_ctx);
         let storage = settings::storage();
@@ -325,7 +342,11 @@ impl HoneydewApp {
         app.start_plugins(&cc.egui_ctx);
         #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
         {
-            app.control = control::Bridge::start(cc.egui_ctx.clone());
+            app.control = control::Bridge::start(
+                cc.egui_ctx.clone(),
+                app.settings.mcp_enabled,
+                app.settings.mcp_port,
+            );
         }
         app.extract_demo_songs(cfg!(target_arch = "wasm32"));
         // Once per start, before the purge (whose end every move waits for): a folder of the songs folder named as a row
@@ -346,6 +367,11 @@ impl HoneydewApp {
         let settings = storage
             .as_deref()
             .map_or_else(Settings::default, Settings::load);
+        let mut settings = settings;
+        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        if let Some(token) = settings::load_mcp_token() {
+            settings.mcp_token = token;
+        }
         let mut app = Self {
             theme: theme_by_id(settings.theme),
             routing: storage.as_deref().map(Routing::load).unwrap_or_default(),
@@ -411,6 +437,19 @@ impl HoneydewApp {
             }
             if self.settings.multi_core != self.settings_saved.multi_core {
                 self.audio.set_multi_core(self.settings.multi_core);
+            }
+            #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+            if self.settings.mcp_enabled != self.settings_saved.mcp_enabled
+                || self.settings.mcp_port != self.settings_saved.mcp_port
+            {
+                self.control = None;
+                if self.settings.mcp_enabled {
+                    self.control = control::Bridge::start(
+                        ctx.clone(),
+                        self.settings.mcp_enabled,
+                        self.settings.mcp_port,
+                    );
+                }
             }
             if let Some(storage) = self.storage.as_deref_mut() {
                 self.settings.save(storage);
@@ -1578,7 +1617,8 @@ impl HoneydewApp {
         if !loading {
             p.update(self.now, reading);
         }
-        (p.plugin_lock_misses, p.recovered_waits) = crate::plugins::lock_stats();
+        let (plugin_lock_misses, recovered_waits) = crate::plugins::lock_stats();
+        p.set_plugin_lock_stats(plugin_lock_misses, recovered_waits);
         p.app_memory = memory;
         self.main_screen.meter = Load {
             peak: p.peak,
@@ -1883,6 +1923,7 @@ impl HoneydewApp {
         // As of the last frame's editor state; an editor that moved to another clip moves Preview after the screens.
         let previewing = (self.preview)
             .is_some_and(|k| preview::current(self.nav.view, &self.slots, &self.song) == Some(k));
+        let mcp_status = self.mcp_status();
         self.slots.ctrl_menu.recent = self.ctrl_recent();
         // The sample row's clip, found after the view.
         let mut row_clip = None;
@@ -1949,6 +1990,9 @@ impl HoneydewApp {
                     wheels,
                     chords,
                 };
+                // Keep the Settings MCP status in sync with the bridge that is actually running. The bridge is
+                // restarted after settings changes in `keep_settings`, so the next frame reflects bind failures too.
+                self.slots.settings_tab.set_mcp_status(mcp_status);
                 let mut app = AppCtx {
                     cx,
                     regions,
