@@ -23,7 +23,7 @@ def token_path():
         home = os.path.expanduser("~")
         return os.path.join(home, "Library", "Application Support", "Honeydew", "control-token")
     base = os.environ.get("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config"))
-    return os.path.join(base, "Honeydew", "control-token")
+    return os.path.join(base, "honeydew", "control-token")
 
 
 def load_token():

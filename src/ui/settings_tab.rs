@@ -40,7 +40,7 @@
 //! which asks the app to show the folder in the system's file manager ([`SettingsTab::take_reveal`]). They show only
 //! where there is such a folder ([`SettingsTab::content`]): on the desktop, not on the web.
 
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 use eframe::egui::{
     Align2, Color32, DragValue, Id, Pos2, Rect, Sense, Shape, TextEdit, Ui, UiBuilder,
@@ -96,6 +96,19 @@ const PERCENT_W: f32 = 2.0;
 pub const OPEN_FOLDER: &str = "Open folder";
 /// The rows at the end that show only with a content folder.
 const CONTENT_ROWS: usize = 2;
+/// Settings sections start closed; their headers remain visible so each one can be opened independently.
+const SECTION_HEADERS: [&str; 10] = [
+    "MIDI:",
+    "Audio:",
+    "Recording:",
+    "User interface:",
+    "Application:",
+    "Advanced:",
+    "MCP:",
+    "Cloud backup:",
+    "Original content:",
+    "Plugins (VST3, VST2, CLAP):",
+];
 
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 fn generated_mcp_token() -> String {
@@ -314,6 +327,10 @@ pub struct SettingsTab {
     shown_frame: u64,
     /// How far the list is dragged or wheeled, in points. It is drawn at the whole row nearest to it.
     offset: f32,
+    /// Section headers the user has collapsed. This is UI state, so it is kept for the lifetime of the settings tab
+    /// rather than saved as an application preference.
+    collapsed_sections: HashSet<&'static str>,
+    collapsed_sections_initialized: bool,
     /// `Calibrate` was tapped: the app starts the latency calibration and clears it.
     pub calibrate: bool,
     /// The MIDI input ports the `Input device:` menu lists ([`Self::set_midi_ports`]).
@@ -404,6 +421,24 @@ impl SettingsTab {
             .collect()
     }
 
+    /// The settings rows after removing the contents of collapsed sections. Headers stay visible so they can be
+    /// tapped again to reopen their section.
+    fn visible_rows(&self, rows: &[&'static Row]) -> Vec<(usize, &'static Row)> {
+        let mut expanded = true;
+        rows.iter()
+            .copied()
+            .enumerate()
+            .filter_map(|(index, row)| {
+                if matches!(row.kind, Kind::Header) {
+                    expanded = !self.collapsed_sections.contains(row.label);
+                    Some((index, row))
+                } else {
+                    expanded.then_some((index, row))
+                }
+            })
+            .collect()
+    }
+
     /// Draws the tab in `page` (the menu panel's width, below its tab row) and applies the user's edits to `settings`;
     /// the app saves and applies what changed.
     pub fn show(&mut self, ui: &mut Ui, cx: &UiCtx, page: Rect, settings: &mut Settings) {
@@ -414,11 +449,15 @@ impl SettingsTab {
         }
         self.shown_frame = frame;
         let m = cx.m;
-        let rows = self.rows();
+        if !self.collapsed_sections_initialized {
+            self.collapsed_sections.extend(SECTION_HEADERS);
+            self.collapsed_sections_initialized = true;
+        }
+        let rows = self.visible_rows(&self.rows());
         let pitch = m.u(ROW_PITCH);
         // The scale note's row takes no room while the scale is not limited.
         let limited = m.scale_limited_to().is_some();
-        let shown = |row: &Row| limited || !matches!(row.kind, Kind::ScaleLimit);
+        let shown = |(_, row): &(usize, &Row)| limited || !matches!(row.kind, Kind::ScaleLimit);
         let slots = rows.iter().filter(|r| shown(r)).count();
         // Drags and the wheel move the list; widgets that sense clicks let drags through to it. It scrolls in whole rows.
         let id = Id::new("settings_tab").with("scroll");
@@ -432,7 +471,7 @@ impl SettingsTab {
             // `Scaling:` back in view after the new scale, 1.5 U clear of the page's ends.
             let at = rows
                 .iter()
-                .take_while(|r| r.label != "Scaling:")
+                .take_while(|(_, r)| r.label != "Scaling:")
                 .filter(|r| shown(r));
             let y = at.count() as f32 * pitch;
             let margin = m.u(1.5);
@@ -452,15 +491,15 @@ impl SettingsTab {
         let outer_clip = ui.clip_rect();
         ui.set_clip_rect(outer_clip.intersect(page));
         let mut y = top - pitch;
-        for (index, row) in rows.iter().enumerate() {
-            if !shown(row) {
+        for (index, row) in rows.iter() {
+            if !shown(&(*index, *row)) {
                 continue;
             }
             y += pitch;
             let slot = Rect::from_x_y_ranges(column, y..=y + pitch);
             // The toggle's rect reaches out of the column: the page is what is visible.
             if ui.is_rect_visible(slot.expand2(vec2(m.u(TOGGLE_OUT), 0.0))) {
-                self.row(ui, cx, index, row, slot, settings);
+                self.row(ui, cx, *index, row, slot, settings);
             }
         }
         let content = slots as f32 * pitch;
@@ -552,6 +591,21 @@ impl SettingsTab {
                     ui.painter()
                         .rect_filled(line, 0.0, text.gamma_multiply(DIVIDER_ALPHA));
                 }
+                let response = ui.interact(r, id, Sense::click());
+                if response.clicked() {
+                    if self.collapsed_sections.insert(row.label) {
+                        // The section was just collapsed.
+                    } else {
+                        self.collapsed_sections.remove(row.label);
+                    }
+                }
+                let icon = if self.collapsed_sections.contains(row.label) {
+                    IconId::Collapse
+                } else {
+                    IconId::ChevronDown
+                };
+                let icon_rect = r.with_min_x(r.right() - m.u(1.0));
+                draw_icon(ui.painter(), icon_rect, icon, text, 0.65, m);
                 label(ui, r, FontSize::Pt18)
             }
             Kind::Toggle(_) | Kind::FixedToggle(_) | Kind::Latency => {
@@ -1268,6 +1322,8 @@ mod tests {
                 hidden: false,
                 access: None,
             };
+            // Existing control tests start with all sections expanded so they can address individual rows directly.
+            rig.tab.collapsed_sections_initialized = true;
             rig.frame(vec![]);
             rig
         }
