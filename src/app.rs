@@ -370,11 +370,10 @@ impl HoneydewApp {
 
     /// The app with the settings `storage` holds, kept there as they change.
     fn with_storage(storage: Option<Box<dyn eframe::Storage>>) -> Self {
-        let settings = storage
+        let mut settings = storage
             .as_deref()
             .map_or_else(Settings::default, Settings::load);
-        let mut settings = settings;
-        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        // The MCP token lives in its own file (desktop only: elsewhere there is none).
         if let Some(token) = settings::load_mcp_token() {
             settings.mcp_token = token;
         }
