@@ -8,7 +8,7 @@
 //! Every toggle is the label-right pill in a rect that starts 0.5 U left of the column and ends at its right edge: the
 //! rect is a `menuFill` bar (x 1.15 while pressed), the pill is centred 0.75 U in from its left, and the label runs
 //! from 1.7 U to 0.2 U short of the right edge, 10 pt, always in `text`, drawn plain (it overflows when long). The
-//! whole rect is the control, so a tap on the label flips the toggle too. The latency toggle is 2.5 U shorter, and
+//! whole rect is the control, so a tap on the label flips the toggle too. The latency compensation toggle is 2.5 U shorter, and
 //! `Calibrate`, 2.5 U wide, takes the right end of its row. The bar is the colour of the menu body (`menuFill`), so it
 //! is invisible at rest and shows only while pressed; the pill's on-dot is `text` (the root context colour, nothing in
 //! the menu sets another) and its off-dot `menuFill`. The full-width buttons (`Share logs`, `Restore demo songs`,
@@ -40,16 +40,17 @@
 //! which asks the app to show the folder in the system's file manager ([`SettingsTab::take_reveal`]). They show only
 //! where there is such a folder ([`SettingsTab::content`]): on the desktop, not on the web.
 
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 use eframe::egui::{
-    Align2, Color32, Id, Pos2, Rect, Sense, Shape, Ui, UiBuilder, WidgetInfo, WidgetType, vec2,
+    Align2, Color32, DragValue, Id, Pos2, Rect, Sense, Shape, TextEdit, Ui, UiBuilder, WidgetInfo,
+    WidgetType, vec2,
 };
 
 use crate::icons::{IconId, draw_icon};
 use crate::metrics::{FontSize, UI_SCALE_RANGE};
 use crate::midi::device::menu as midi_menu;
-use crate::settings::{SOUND_MODES, Settings};
+use crate::settings::{BUFFER_SIZES, SOUND_MODES, Settings};
 use crate::theme::{DISABLED_ALPHA, builtin_themes};
 use crate::ui::popup::{self, PopupItem};
 use crate::ui::widgets::{
@@ -96,6 +97,24 @@ pub const OPEN_FOLDER: &str = "Open folder";
 /// The rows at the end that show only with a content folder.
 const CONTENT_ROWS: usize = 2;
 
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+fn generated_mcp_token() -> String {
+    let mut bytes = [0_u8; 32];
+    getrandom::fill(&mut bytes).expect("the operating system random source is unavailable");
+    let mut token = String::with_capacity(8 + bytes.len() * 2);
+    token.push_str("honeydew_");
+    for byte in bytes {
+        use std::fmt::Write;
+        write!(token, "{byte:02x}").expect("writing to a String cannot fail");
+    }
+    token
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+fn generated_mcp_token() -> String {
+    String::new()
+}
+
 /// What a row shows and edits.
 #[derive(Clone, Copy)]
 enum Kind {
@@ -103,6 +122,11 @@ enum Kind {
     Header,
     /// A toggle bound to a setting.
     Toggle(fn(&mut Settings) -> &mut bool),
+    /// The output buffer target slider, with a native/default position at zero.
+    BufferSize,
+    McpPort,
+    McpToken,
+    McpStatus,
     /// A disabled toggle fixed in this state.
     FixedToggle(bool),
     /// `Enable audio recording latency compensation`: a toggle of the stored `Option<bool>`, shown ON while unset.
@@ -179,7 +203,7 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 }
 
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 38] = {
+const ROWS: [Row; 43] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -195,10 +219,14 @@ const ROWS: [Row; 38] = {
         row("Scan Bluetooth MIDI Devices", Scan),
         row("Audio:", Header),
         row("Multi core processing", Toggle(|s| &mut s.multi_core)),
-        row("Enable low latency mode", Toggle(|s| &mut s.low_latency)),
+        row("Audio buffer size", BufferSize),
         row(
-            "Enable background audio",
-            Toggle(|s| &mut s.background_audio),
+            "Enable background audio (iOS Only)",
+            if cfg!(target_os = "ios") {
+                Toggle(|s| &mut s.background_audio)
+            } else {
+                FixedToggle(false)
+            },
         ),
         row("Sound mode:", Dropdown(Choice::SoundMode)),
         row("Recording:", Header),
@@ -240,6 +268,11 @@ const ROWS: [Row; 38] = {
             "Enable sharing files with nearby devices",
             FixedToggle(false),
         ),
+        row("MCP:", Header),
+        row("Enable MCP control", Toggle(|s| &mut s.mcp_enabled)),
+        row("Port", McpPort),
+        row("Authentication token", McpToken),
+        row("Status", McpStatus),
         row("Advanced:", Header),
         row("Share logs", DisabledButton),
         row("Restore demo songs", RestoreDemos),
@@ -281,6 +314,9 @@ pub struct SettingsTab {
     shown_frame: u64,
     /// How far the list is dragged or wheeled, in points. It is drawn at the whole row nearest to it.
     offset: f32,
+    /// Section headers the user has collapsed (all start open). This is UI state, so it is kept for the lifetime of
+    /// the settings tab rather than saved as an application preference.
+    collapsed_sections: HashSet<&'static str>,
     /// `Calibrate` was tapped: the app starts the latency calibration and clears it.
     pub calibrate: bool,
     /// The MIDI input ports the `Input device:` menu lists ([`Self::set_midi_ports`]).
@@ -301,11 +337,18 @@ pub struct SettingsTab {
     pub plugins: bool,
     /// `Scaling:`'s slider position (0 = 60 %, 1 = 200 %) while it is held: shown, applied when let go.
     scaling: Option<f32>,
+    /// The audio buffer slider position while it is held: shown, applied when let go so the stream is reopened once.
+    buffer_size: Option<f32>,
+    mcp_status: &'static str,
     /// A new scale was applied: the next frame, at the new `U`, scrolls `Scaling:` back into view.
     reveal_scaling: bool,
 }
 
 impl SettingsTab {
+    pub fn set_mcp_status(&mut self, status: &'static str) {
+        self.mcp_status = status;
+    }
+
     /// Lends the tab the MIDI input ports (`MidiLink::ports`) for the `Input device:` menu. Call it every frame
     /// before [`Self::show`]; a menu that is open follows the ports.
     pub fn set_midi_ports(&mut self, ports: &[String]) {
@@ -346,11 +389,45 @@ impl SettingsTab {
             Some(_) => &ROWS[..],
             None => &ROWS[..ROWS.len() - CONTENT_ROWS],
         };
+        let rows: Vec<_> = rows
+            .iter()
+            .filter(|r| {
+                cfg!(any(
+                    target_os = "windows",
+                    target_os = "macos",
+                    target_os = "linux"
+                )) || (!matches!(r.kind, Kind::Dropdown(Choice::SoundMode))
+                    && !matches!(
+                        r.label,
+                        "MCP:" | "Enable MCP control" | "Port" | "Authentication token" | "Status"
+                    ))
+            })
+            .collect();
         let plugins = if self.plugins { &PLUGIN_ROWS[..] } else { &[] };
         let at = (rows.iter().position(|r| r.label == "Advanced:")).unwrap_or(rows.len());
-        (rows[..at].iter())
-            .chain(plugins)
-            .chain(&rows[at..])
+        rows[..at]
+            .iter()
+            .copied()
+            .chain(plugins.iter())
+            .chain(rows[at..].iter().copied())
+            .collect()
+    }
+
+    /// The settings rows after removing the contents of collapsed sections. Headers stay visible so they can be
+    /// tapped again to reopen their section.
+    fn visible_rows(&self, rows: &[&'static Row]) -> Vec<(usize, &'static Row)> {
+        let mut expanded = true;
+        rows.iter()
+            .copied()
+            .enumerate()
+            .filter_map(|(index, row)| {
+                if matches!(row.kind, Kind::Header) {
+                    expanded = !self.collapsed_sections.contains(row.label);
+                    Some((index, row))
+                } else {
+                    expanded.then_some((index, row))
+                }
+            })
             .collect()
     }
 
@@ -364,11 +441,11 @@ impl SettingsTab {
         }
         self.shown_frame = frame;
         let m = cx.m;
-        let rows = self.rows();
+        let rows = self.visible_rows(&self.rows());
         let pitch = m.u(ROW_PITCH);
         // The scale note's row takes no room while the scale is not limited.
         let limited = m.scale_limited_to().is_some();
-        let shown = |row: &Row| limited || !matches!(row.kind, Kind::ScaleLimit);
+        let shown = |(_, row): &(usize, &Row)| limited || !matches!(row.kind, Kind::ScaleLimit);
         let slots = rows.iter().filter(|r| shown(r)).count();
         // Drags and the wheel move the list; widgets that sense clicks let drags through to it. It scrolls in whole rows.
         let id = Id::new("settings_tab").with("scroll");
@@ -382,7 +459,7 @@ impl SettingsTab {
             // `Scaling:` back in view after the new scale, 1.5 U clear of the page's ends.
             let at = rows
                 .iter()
-                .take_while(|r| r.label != "Scaling:")
+                .take_while(|(_, r)| r.label != "Scaling:")
                 .filter(|r| shown(r));
             let y = at.count() as f32 * pitch;
             let margin = m.u(1.5);
@@ -402,15 +479,15 @@ impl SettingsTab {
         let outer_clip = ui.clip_rect();
         ui.set_clip_rect(outer_clip.intersect(page));
         let mut y = top - pitch;
-        for (index, row) in rows.iter().enumerate() {
-            if !shown(row) {
+        for (index, row) in rows.iter() {
+            if !shown(&(*index, *row)) {
                 continue;
             }
             y += pitch;
             let slot = Rect::from_x_y_ranges(column, y..=y + pitch);
             // The toggle's rect reaches out of the column: the page is what is visible.
             if ui.is_rect_visible(slot.expand2(vec2(m.u(TOGGLE_OUT), 0.0))) {
-                self.row(ui, cx, index, row, slot, settings);
+                self.row(ui, cx, *index, row, slot, settings);
             }
         }
         let content = slots as f32 * pitch;
@@ -446,7 +523,7 @@ impl SettingsTab {
         let (m, colors) = (cx.m, &cx.theme.colors);
         // Headers and the metronome row take the whole slot; the other rows are a control row, centred in it.
         let r = match row.kind {
-            Kind::Header | Kind::Level | Kind::Scaling => slot,
+            Kind::Header | Kind::Level | Kind::Scaling | Kind::BufferSize => slot,
             _ => Rect::from_center_size(slot.center(), vec2(slot.width(), m.u(ROW_H))),
         };
         let text = colors.text.to_color32();
@@ -485,12 +562,16 @@ impl SettingsTab {
                 text,
             );
         };
-        let light_button = |ui: &mut Ui, rect: Rect, label: &str, enabled: bool| {
+        // The row's id: a row with a second button gives that one its own (`Copy` beside `Generate`).
+        let light_button_as = |ui: &mut Ui, id: Id, rect: Rect, label: &str, enabled: bool| {
             let b = Button {
                 disabled: !enabled,
                 ..Button::new(id, rect, label, false, colors)
             };
             button(ui, cx, &b, true).clicked()
+        };
+        let light_button = |ui: &mut Ui, rect: Rect, label: &str, enabled: bool| {
+            light_button_as(ui, id, rect, label, enabled)
         };
         // At most half the row, so that the label keeps room at large scales.
         let button_rect = right(BUTTON_W.min(r.width() / 2.0 / m.u(1.0)), BUTTON_H);
@@ -502,6 +583,21 @@ impl SettingsTab {
                     ui.painter()
                         .rect_filled(line, 0.0, text.gamma_multiply(DIVIDER_ALPHA));
                 }
+                let response = ui.interact(r, id, Sense::click());
+                if response.clicked() {
+                    if self.collapsed_sections.insert(row.label) {
+                        // The section was just collapsed.
+                    } else {
+                        self.collapsed_sections.remove(row.label);
+                    }
+                }
+                let icon = if self.collapsed_sections.contains(row.label) {
+                    IconId::Collapse
+                } else {
+                    IconId::ChevronDown
+                };
+                let icon_rect = r.with_min_x(r.right() - m.u(1.0));
+                draw_icon(ui.painter(), icon_rect, icon, text, 0.65, m);
                 label(ui, r, FontSize::Pt18)
             }
             Kind::Toggle(_) | Kind::FixedToggle(_) | Kind::Latency => {
@@ -554,11 +650,30 @@ impl SettingsTab {
                     }
                     _ => {}
                 }
+                if row.label == "Multi core processing" {
+                    crate::ui::tooltip::tip(
+                        ui,
+                        rect,
+                        "Runs independent channel racks in parallel. It can reduce CPU load, but may increase glitches with some plugins or systems.",
+                        None,
+                    );
+                }
             }
             Kind::Dropdown(choice) => {
                 label(ui, before(button_rect), FontSize::Pt10);
                 if light_button(ui, button_rect, &choice.label(s), true) {
                     self.menu = Some((Menu::Choice(choice), button_rect.center()));
+                }
+                if matches!(choice, Choice::SoundMode) {
+                    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+                    let sound_mode_tip = "STANDARD: general-purpose mode with broad device compatibility.\nMULTITRACK: experimental; FL-style per-input multitrack routing is not implemented yet. The buffer slider works in either mode.";
+                    #[cfg(not(any(
+                        target_os = "windows",
+                        target_os = "macos",
+                        target_os = "linux"
+                    )))]
+                    let sound_mode_tip = "ULTRASAFE: largest buffer; maximum stability and compatibility, highest latency.\nSAFE: moderately large buffer; fewer glitches with more latency.\nFAST: small buffer; lower latency but more CPU/dropout risk.\nNATIVE: device/OS default audio behavior.";
+                    crate::ui::tooltip::tip(ui, button_rect, sound_mode_tip, None);
                 }
             }
             Kind::MidiDropdown => {
@@ -604,6 +719,94 @@ impl SettingsTab {
                 );
                 let c = level_control(id, body, text);
                 h_slider(ui, cx, &c, &mut s.metronome_level, |_| String::new());
+            }
+            Kind::BufferSize => {
+                let (line, body) = r.split_top_bottom_at_y(r.top() + m.u(LEVEL_LABEL_H));
+                let (room, value_room) =
+                    line.split_left_right_at_x(line.right() - m.u(PERCENT_W + 2.5));
+                label(ui, room, FontSize::Pt10);
+                let max = (BUFFER_SIZES.len() - 1) as f32;
+                let stored = f32::from(s.low_latency.min((BUFFER_SIZES.len() - 1) as u8)) / max;
+                let mut value = self.buffer_size.unwrap_or(stored);
+                let c = Control {
+                    bipolar: false,
+                    menu: ParamMenu::Unbound,
+                    ..Control::new(id, body, "", text, 0.0)
+                };
+                let response = h_slider(ui, cx, &c, &mut value, |_| String::new());
+                if response.is_pointer_button_down_on() {
+                    self.buffer_size = Some(value);
+                } else if self.buffer_size.take().is_some() || value != stored {
+                    s.low_latency = (value.clamp(0.0, 1.0) * max).round() as u8;
+                }
+                let index = (value.clamp(0.0, 1.0) * max).round() as usize;
+                let display = if index == 0 {
+                    "Native".to_owned()
+                } else {
+                    format!("{} frames", BUFFER_SIZES[index])
+                };
+                plain(
+                    ui,
+                    value_room,
+                    &display,
+                    FontSize::Pt10,
+                    Align2::RIGHT_CENTER,
+                );
+                crate::ui::tooltip::tip(
+                    ui,
+                    r,
+                    "Chooses the output buffer target. Native uses the device default; smaller frame sizes reduce latency but increase CPU and dropout risk. The setting works independently of Sound Mode.",
+                    None,
+                );
+            }
+            Kind::McpPort => {
+                label(ui, before(button_rect), FontSize::Pt10);
+                let port = Rect::from_min_size(
+                    button_rect.right_center() - vec2(m.u(5.0), m.u(BUTTON_H / 2.0)),
+                    vec2(m.u(5.0), m.u(BUTTON_H)),
+                );
+                ui.scope(|ui| {
+                    ui.style_mut().override_font_id = Some(m.font_id(FontSize::Pt12));
+                    ui.put(port, DragValue::new(&mut s.mcp_port).range(1024..=65535));
+                });
+            }
+            Kind::McpToken => {
+                label(ui, before(button_rect), FontSize::Pt10);
+                let generate = Rect::from_min_size(
+                    button_rect.right_center() - vec2(m.u(3.0), m.u(BUTTON_H / 2.0)),
+                    vec2(m.u(3.0), m.u(BUTTON_H)),
+                );
+                let copy = Rect::from_min_size(
+                    generate.left_center() - vec2(m.u(3.25), m.u(BUTTON_H / 2.0)),
+                    vec2(m.u(3.0), m.u(BUTTON_H)),
+                );
+                if light_button(ui, generate, "Generate", true) {
+                    let token = generated_mcp_token();
+                    if !token.is_empty() && crate::settings::save_mcp_token(&token).is_ok() {
+                        s.mcp_token = token;
+                    }
+                }
+                if light_button_as(ui, id.with("copy"), copy, "Copy", !s.mcp_token.is_empty()) {
+                    ui.ctx().copy_text(s.mcp_token.clone());
+                }
+                let token_rect = r.with_max_x(copy.left() - m.u(MARGIN));
+                ui.put(
+                    token_rect,
+                    TextEdit::singleline(&mut s.mcp_token)
+                        .id(id.with("token"))
+                        .password(true)
+                        .hint_text("not generated"),
+                );
+            }
+            Kind::McpStatus => {
+                label(ui, before(button_rect), FontSize::Pt10);
+                plain(
+                    ui,
+                    button_rect,
+                    self.mcp_status,
+                    FontSize::Pt10,
+                    Align2::RIGHT_CENTER,
+                );
             }
             Kind::Scaling => {
                 // Held, the slider shows its value; let go (or reset), the scale applies at once.
@@ -914,8 +1117,8 @@ mod tests {
                 "Scan Bluetooth MIDI Devices",
                 "Audio:",
                 "Multi core processing",
-                "Enable low latency mode",
-                "Enable background audio",
+                "Audio buffer size",
+                "Enable background audio (iOS Only)",
                 "Sound mode:",
                 "Recording:",
                 "Enable audio recording latency compensation",
@@ -935,6 +1138,11 @@ mod tests {
                 "Continuous scrolling during playback",
                 "Show CPU and RAM meters",
                 "Enable sharing files with nearby devices",
+                "MCP:",
+                "Enable MCP control",
+                "Port",
+                "Authentication token",
+                "Status",
                 "Advanced:",
                 "Share logs",
                 "Restore demo songs",
@@ -968,7 +1176,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(toggles.len(), 11);
+        assert_eq!(toggles.len(), if cfg!(target_os = "ios") { 11 } else { 10 });
         for (label, field) in &toggles {
             let mut s = Settings::default();
             *field(&mut s) = !*field(&mut s);
@@ -985,11 +1193,17 @@ mod tests {
     fn dropdowns_list_the_spec_items_and_store_their_ids() {
         let labels = |c: Choice| -> Vec<String> { c.items().into_iter().map(|(_, l)| l).collect() };
         let values = |c: Choice| -> Vec<usize> { c.items().into_iter().map(|(v, _)| v).collect() };
-        assert_eq!(
-            labels(Choice::SoundMode),
-            ["ULTRASAFE", "SAFE", "FAST", "NATIVE"]
-        );
-        assert_eq!(values(Choice::SoundMode), [2, 0, 1, 3]);
+        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        {
+            assert_eq!(labels(Choice::SoundMode), ["STANDARD", "MULTITRACK"]);
+            assert_eq!(values(Choice::SoundMode), [0, 1]);
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        {
+            assert_eq!(labels(Choice::SoundMode), ["NATIVE"]);
+            assert_eq!(values(Choice::SoundMode), [3]);
+        }
         assert_eq!(
             labels(Choice::Theme),
             [
@@ -1009,17 +1223,33 @@ mod tests {
         assert_eq!(values(Choice::Animation), [0, 1, 2]);
         // The buttons show the current item.
         let s = Settings::default();
-        assert_eq!(Choice::SoundMode.label(&s), "NATIVE");
+        assert_eq!(
+            Choice::SoundMode.label(&s),
+            SOUND_MODES
+                .iter()
+                .find(|&&(id, _)| id == s.sound_mode)
+                .unwrap()
+                .1
+        );
         assert_eq!(Choice::Theme.label(&s), "Classic Gray");
         assert_eq!(Choice::Animation.label(&s), "Full");
         let mut s = Settings::default();
-        for c in [Choice::SoundMode, Choice::Theme, Choice::Animation] {
+        for c in [Choice::Theme, Choice::Animation] {
             let (value, label) = c.items()[1].clone();
             c.set(&mut s, value);
             assert_eq!(c.get(&s), value);
             assert_eq!(c.label(&s), label);
         }
-        assert_eq!(SOUND_MODES[1], (0, "SAFE"));
+        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        {
+            let (value, label) = Choice::SoundMode.items()[1].clone();
+            Choice::SoundMode.set(&mut s, value);
+            assert_eq!(Choice::SoundMode.get(&s), value);
+            assert_eq!(Choice::SoundMode.label(&s), label);
+            assert_eq!(SOUND_MODES, [(0, "STANDARD"), (1, "MULTITRACK")]);
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        assert_eq!(SOUND_MODES, [(3, "NATIVE")]);
     }
 
     #[test]
@@ -1074,7 +1304,7 @@ mod tests {
     impl Rig {
         /// Tall enough to show every row (2 U each) without scrolling.
         fn new() -> Self {
-            Self::with_height(2400.0)
+            Self::with_height(3000.0)
         }
 
         fn with_height(height: f32) -> Self {
@@ -1434,11 +1664,11 @@ mod tests {
             // Three rows in a section, then a dropdown and the next header's toggle: one pitch each.
             let first = centre("Multi core processing");
             assert!(
-                (centre("Enable low latency mode") - first - 2.0 * u).abs() < 0.01,
+                (centre("Audio buffer size") - first - 2.5 * u).abs() < 0.01,
                 "{at}"
             );
             assert!(
-                (centre("Enable background audio") - first - 4.0 * u).abs() < 0.01,
+                (centre("Enable background audio (iOS Only)") - first - 4.0 * u).abs() < 0.01,
                 "{at}"
             );
             assert!(
@@ -1903,9 +2133,9 @@ mod tests {
         );
 
         rig.click_row("Sound mode:");
-        let safe = rig.rect_of(popup_id().with((0_usize, 1_usize))).center();
-        rig.click(safe);
-        assert_eq!(rig.settings.sound_mode, 0);
+        let multitrack = rig.rect_of(popup_id().with((0_usize, 1_usize))).center();
+        rig.click(multitrack);
+        assert_eq!(rig.settings.sound_mode, 1);
     }
 
     #[test]

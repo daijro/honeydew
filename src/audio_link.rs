@@ -4,7 +4,9 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use honeydew_audio::device::{AudioCommand, AudioOutput, AudioRenderer, OutputSnapshot};
+use honeydew_audio::device::{
+    AudioCommand, AudioOutput, AudioRenderer, BufferMode, OutputSnapshot,
+};
 use honeydew_audio::sample::SampleData;
 
 use crate::audio_engine::{LiveInput, SongAudioEngine, settings, strip_param};
@@ -58,6 +60,7 @@ pub trait AudioSink {
         song: &Song,
         samples: &SampleCache,
         input: Option<&LiveInput>,
+        mode: BufferMode,
     ) -> Result<(), String>;
 }
 
@@ -79,8 +82,9 @@ impl AudioSink for AudioOutput<SongAudioEngine> {
         song: &Song,
         samples: &SampleCache,
         input: Option<&LiveInput>,
+        mode: BufferMode,
     ) -> Result<(), String> {
-        AudioOutput::reopen(self, |rate| {
+        AudioOutput::reopen_with_mode(self, mode, |rate| {
             SongAudioEngine::with_input(song, rate as f32, samples, input)
         })
         .map_err(|err| format!("{err:?}"))
@@ -91,13 +95,62 @@ impl AudioSink for AudioOutput<SongAudioEngine> {
 /// logs one warning and the app runs without audio. It monitors nothing: an input opens at the output's rate, so
 /// after it.
 pub fn open_device(song: &Song, samples: &SampleCache) -> Option<Box<dyn AudioSink>> {
-    match AudioOutput::start(|rate| SongAudioEngine::with_samples(song, rate as f32, samples)) {
+    open_device_with_latency(song, samples, false)
+}
+
+pub fn open_device_with_latency(
+    song: &Song,
+    samples: &SampleCache,
+    low_latency: bool,
+) -> Option<Box<dyn AudioSink>> {
+    match AudioOutput::start_with_latency(low_latency, |rate| {
+        SongAudioEngine::with_samples(song, rate as f32, samples)
+    }) {
         Ok(output) => Some(Box::new(output)),
         Err(err) => {
             warn(&format!("audio is off: {err:?}"));
             None
         }
     }
+}
+
+pub fn open_device_with_mode(
+    song: &Song,
+    samples: &SampleCache,
+    mode: BufferMode,
+) -> Option<Box<dyn AudioSink>> {
+    match AudioOutput::start_with_mode(mode, |rate| {
+        SongAudioEngine::with_samples(song, rate as f32, samples)
+    }) {
+        Ok(output) => Some(Box::new(output)),
+        Err(err) => {
+            warn(&format!("audio is off: {err:?}"));
+            None
+        }
+    }
+}
+
+pub fn buffer_mode(sound_mode: u8, low_latency: u8) -> BufferMode {
+    let target = crate::settings::BUFFER_SIZES
+        .get(usize::from(low_latency))
+        .copied()
+        .unwrap_or_else(|| *crate::settings::BUFFER_SIZES.last().unwrap());
+    let requested = (target > 0).then_some(BufferMode::Fixed(target));
+    // The explicit buffer target is independent of the desktop Sound Mode. Native keeps
+    // the device default; a selected target is applied in either Standard or Multitrack.
+    if cfg!(any(
+        target_os = "windows",
+        target_os = "macos",
+        target_os = "linux"
+    )) {
+        return requested.unwrap_or(BufferMode::Native);
+    }
+    requested.unwrap_or(match sound_mode {
+        2 => BufferMode::UltraSafe,
+        0 => BufferMode::Safe,
+        1 => BufferMode::Fast,
+        _ => BufferMode::Native,
+    })
 }
 
 #[cfg(test)]
@@ -124,6 +177,10 @@ pub struct AudioLink {
     sink: Option<Box<dyn AudioSink>>,
     /// The output's stream failed (its snapshot says so). Commands are dropped until a [`Self::start`] reopens it.
     stream_failed: bool,
+    /// The selected output buffer target index; zero keeps the device default.
+    low_latency: u8,
+    /// Stored sound-mode id; 2=UltraSafe, 0=Safe, 1=Fast, 3=Native.
+    sound_mode: u8,
     /// Commands the full audio queue handed back, oldest first. They go out before any newer command.
     pending: VecDeque<Command>,
     /// The live notes and controllers waiting for the transport's next Play or Stop, in order, while held
@@ -448,6 +505,27 @@ impl AudioLink {
         read: &Reader<'_>,
         open: impl FnOnce(&Song, &SampleCache) -> Option<Box<dyn AudioSink>>,
     ) {
+        self.start_keeping_mode(
+            song,
+            keep,
+            playing,
+            read,
+            |song, samples, _| open(song, samples),
+            self.low_latency,
+        );
+    }
+
+    /// Like [`Self::start_keeping`], with an explicit output buffer policy for the initial stream.
+    pub fn start_keeping_mode(
+        &mut self,
+        song: &Song,
+        keep: &Song,
+        playing: bool,
+        read: &Reader<'_>,
+        open: impl FnOnce(&Song, &SampleCache, u8) -> Option<Box<dyn AudioSink>>,
+        low_latency: u8,
+    ) {
+        self.low_latency = low_latency;
         if self.running() {
             return;
         }
@@ -456,8 +534,9 @@ impl AudioLink {
         crate::plugins::sync(keep);
         (self.song, self.tempo) = (Some(song.clone()), None);
         self.controllers.clear();
+        let mode = self.buffer_mode();
         let Some(sink) = &mut self.sink else {
-            self.sink = open(song, &self.samples);
+            self.sink = open(song, &self.samples, low_latency);
             // The arm before Play: a recording's engine does not wrap at the song end.
             self.resend_metronome();
             // The play button works without audio; the new engine starts stopped.
@@ -467,7 +546,7 @@ impl AudioLink {
             self.resend_settings(song);
             return;
         };
-        match sink.reopen(song, &self.samples, self.input.as_ref()) {
+        match sink.reopen(song, &self.samples, self.input.as_ref(), mode) {
             Ok(()) => {
                 self.stream_failed = false;
                 self.built_input.clone_from(&self.input);
@@ -482,6 +561,50 @@ impl AudioLink {
             }
             Err(err) => warn(&format!("the audio stream is still off: {err}")),
         }
+    }
+
+    /// Changes the output buffer policy, reopening the current stream while preserving transport state.
+    pub fn set_low_latency(&mut self, song: &Song, low_latency: u8) {
+        if self.low_latency == low_latency {
+            return;
+        }
+        self.low_latency = low_latency;
+        let mode = self.buffer_mode();
+        let Some(sink) = &mut self.sink else { return };
+        if let Err(err) = sink.reopen(song, &self.samples, self.input.as_ref(), mode) {
+            warn(&format!("could not change audio latency mode: {err}"));
+            self.stream_failed = true;
+            return;
+        }
+        self.stream_failed = false;
+    }
+
+    /// Records the preference before the first stream exists; an active stream is changed by [`Self::set_low_latency`].
+    pub fn set_low_latency_preference(&mut self, low_latency: u8) {
+        self.low_latency = low_latency;
+    }
+
+    pub fn set_sound_mode(&mut self, song: &Song, sound_mode: u8) {
+        if self.sound_mode == sound_mode {
+            return;
+        }
+        self.sound_mode = sound_mode;
+        let mode = self.buffer_mode();
+        let Some(sink) = &mut self.sink else { return };
+        if let Err(err) = sink.reopen(song, &self.samples, self.input.as_ref(), mode) {
+            warn(&format!("could not change sound mode: {err}"));
+            self.stream_failed = true;
+        } else {
+            self.stream_failed = false;
+        }
+    }
+
+    pub fn set_sound_mode_preference(&mut self, sound_mode: u8) {
+        self.sound_mode = sound_mode;
+    }
+
+    fn buffer_mode(&self) -> BufferMode {
+        buffer_mode(self.sound_mode, self.low_latency)
     }
 
     /// The multicore choice, metronome and its flag for a fresh renderer.
@@ -950,6 +1073,7 @@ pub(crate) mod testing {
             song: &Song,
             samples: &SampleCache,
             input: Option<&LiveInput>,
+            _mode: BufferMode,
         ) -> Result<(), String> {
             let mut r = self.0.borrow_mut();
             r.reopens += 1;

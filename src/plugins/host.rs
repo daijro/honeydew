@@ -11,7 +11,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 #[cfg(plugin_host)]
 use std::sync::mpsc;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, TryLockError};
 
 use os_host::{Descriptor, Format, Kind, Library, ParamEvent, SharedPlugin};
 
@@ -90,6 +90,9 @@ struct Hosted {
     stopped: bool,
     /// Its editor failed to open (an X error, no X display, the plugin refused): why; it is not offered again.
     editor_failed: Option<String>,
+    /// The card keeps its last successful reads while the audio thread holds the plugin lock.
+    card_info: Option<Info>,
+    card_text: HashMap<usize, (f32, String)>,
     /// The module's state it was started from: a copy of the module (a channel's clone, a paste) shares it, and starts
     /// from this instance's state now instead.
     origin: Arc<[u8]>,
@@ -366,6 +369,8 @@ pub fn instantiate(channel_id: i32, instance_id: i32, uid: &str) -> Result<Modul
                 name: desc.name,
                 stopped: false,
                 editor_failed: None,
+                card_info: None,
+                card_text: HashMap::new(),
                 origin: state,
             },
         );
@@ -553,6 +558,8 @@ impl Host {
             name: desc.name,
             stopped: false,
             editor_failed: None,
+            card_info: None,
+            card_text: HashMap::new(),
         })
     }
 }
@@ -748,7 +755,7 @@ pub fn idle() -> Vec<PluginMove> {
     }
 }
 
-fn idle_plugins(closed: &[u32]) -> Vec<PluginMove> {
+fn idle_plugins(closed: &[usize]) -> Vec<PluginMove> {
     #[cfg(unix)]
     os_host::runloop::dispatch();
     with(|host| {
@@ -848,40 +855,65 @@ pub fn store_states(song: &mut Song) {
     });
 }
 
-/// The module's plugin as the card shows it; `None` for a module that is not a plugin module of the song as last synced.
+/// The module's plugin as the card shows it; a busy audio callback keeps the last successful read.
+/// `None` for a module that is not a plugin module of the song as last synced.
 pub fn state(channel_id: i32, instance_id: i32) -> Option<State> {
     with(|host| {
         let key = (channel_id, instance_id);
         if let Some(why) = host.failed.get(&key) {
             return Some(State::Missing(why.clone()));
         }
-        let hosted = host.live.get(&key)?;
-        let editor_open = hosted.window.is_some();
-        let p = hosted.plugin.try_lock().ok()?;
-        // A built-in plugin's editor is in its card.
-        let builtin = builtin::find(p.desc().format.as_str(), &p.desc().id).is_some();
-        Some(State::Live(Info {
-            has_editor: p.has_editor() && window::AVAILABLE && !builtin,
-            editor_open,
-            editor_failed: hosted.editor_failed.clone(),
-            latency: p.latency(),
-            stopped: p
-                .stopped()
-                .map(|c| os_host::guard::stopped_text(&hosted.name, c)),
-        }))
+        let hosted = host.live.get_mut(&key)?;
+        let read = match hosted.plugin.try_lock() {
+            Ok(p) => Some({
+                // A built-in plugin's editor is in its card.
+                let builtin = builtin::find(p.desc().format.as_str(), &p.desc().id).is_some();
+                Info {
+                    has_editor: p.has_editor() && window::AVAILABLE && !builtin,
+                    editor_open: hosted.window.is_some(),
+                    editor_failed: hosted.editor_failed.clone(),
+                    latency: p.latency(),
+                    stopped: p
+                        .stopped()
+                        .map(|c| os_host::guard::stopped_text(&hosted.name, c)),
+                }
+            }),
+            Err(TryLockError::WouldBlock) => None,
+            Err(TryLockError::Poisoned(_)) => {
+                return Some(State::Missing("plugin lock poisoned".into()));
+            }
+        };
+        if let Some(info) = read {
+            hosted.card_info = Some(info);
+        }
+        let mut info = hosted.card_info.clone()?;
+        info.editor_open = hosted.window.is_some();
+        info.editor_failed.clone_from(&hosted.editor_failed);
+        Some(State::Live(info))
     })
 }
 
-/// The plugin's text for param `param` (module index, ≥ 1) at `value`.
+/// The plugin's text for param `param` (module index, ≥ 1) at `value`. A busy callback keeps
+/// its last text only if the normalized parameter value is unchanged.
 pub fn param_text(channel_id: i32, instance_id: i32, param: usize, value: f32) -> Option<String> {
     with(|host| {
-        let hosted = host.live.get(&(channel_id, instance_id))?;
+        let hosted = host.live.get_mut(&(channel_id, instance_id))?;
         let id = *hosted.ids.get(param.checked_sub(1)?)?;
-        hosted
-            .plugin
-            .try_lock()
-            .ok()?
-            .param_text(id, f64::from(value))
+        match hosted.plugin.try_lock() {
+            Ok(p) => {
+                let text = p.param_text(id, f64::from(value));
+                if let Some(ref text) = text {
+                    hosted.card_text.insert(param, (value, text.clone()));
+                }
+                text
+            }
+            Err(TryLockError::WouldBlock) => {
+                hosted.card_text.get(&param).and_then(|(cached, text)| {
+                    (cached.to_bits() == value.to_bits()).then(|| text.clone())
+                })
+            }
+            Err(TryLockError::Poisoned(_)) => None,
+        }
     })
 }
 
@@ -896,7 +928,7 @@ pub fn show_editor(channel_id: i32, instance_id: i32, open: bool) -> Result<(), 
             close_editor_of(hosted);
             return Ok(());
         }
-        if let Some(w) = &hosted.window {
+        if let Some(w) = hosted.window.as_mut() {
             w.show();
             return Ok(());
         }
@@ -914,7 +946,7 @@ pub fn show_editor(channel_id: i32, instance_id: i32, open: bool) -> Result<(), 
 /// Opens the plugin's editor in a new window, or says why it could not.
 fn open_window(hosted: &mut Hosted) -> Result<(), String> {
     let failed = |e: String| format!("The editor could not be opened: {e}");
-    let w = EditorWindow::new(&hosted.name).map_err(failed)?;
+    let mut w = EditorWindow::new(&hosted.name).map_err(failed)?;
     let plugin = &hosted.plugin;
     let (opened, x_error) = window::editor_call(|| {
         let mut p = plugin
@@ -1038,4 +1070,38 @@ pub fn effect(
         rate,
         bar_beats as u16,
     )))
+}
+
+#[cfg(test)]
+mod card_tests {
+    use super::*;
+
+    #[test]
+    fn busy_plugin_lock_keeps_the_last_card_status_and_value_text() {
+        let channel_id = 3901;
+        let instance_id = 7;
+        let module = instantiate(channel_id, instance_id, builtin::LEMON_TRIO.uid).unwrap();
+        let status = state(channel_id, instance_id).expect("plugin is running");
+        let (param, value, label) = (1..module.params.len())
+            .find_map(|index| {
+                let value = module.params[index];
+                param_text(channel_id, instance_id, index, value).map(|label| (index, value, label))
+            })
+            .expect("plugin provides a parameter label");
+        let plugin = with(|host| host.live[&(channel_id, instance_id)].plugin.clone());
+        let guard = plugin.lock().unwrap();
+        assert_eq!(state(channel_id, instance_id), Some(status));
+        assert_eq!(
+            param_text(channel_id, instance_id, param, value),
+            Some(label)
+        );
+        assert_eq!(
+            param_text(channel_id, instance_id, param, (value + 0.1).min(1.0)),
+            None
+        );
+        drop(guard);
+        with(|host| {
+            host.live.remove(&(channel_id, instance_id));
+        });
+    }
 }

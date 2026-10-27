@@ -54,8 +54,78 @@ pub fn migrate_legacy_keys(storage: &mut dyn eframe::Storage) {
 }
 
 /// The `Sound mode:` items in menu order, with their stored ids.
-pub const SOUND_MODES: [(u8, &str); 4] =
-    [(2, "ULTRASAFE"), (0, "SAFE"), (1, "FAST"), (3, "NATIVE")];
+///
+/// FL Studio Mobile exposes buffer profiles on mobile builds, but its desktop builds expose the
+/// driver modes `Standard` and `Multitrack` instead.
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+pub const SOUND_MODES: [(u8, &str); 2] = [(0, "STANDARD"), (1, "MULTITRACK")];
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+pub const SOUND_MODES: [(u8, &str); 1] = [(3, "NATIVE")];
+
+/// Buffer-size slider positions. Zero keeps the audio device's native/default buffer;
+/// positive values are targets that the backend clamps to the device's supported range.
+pub const BUFFER_SIZES: [u32; 7] = [0, 64, 128, 256, 512, 1024, 2048];
+pub const MCP_DEFAULT_PORT: u16 = 57831;
+
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+pub fn mcp_token_path() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "linux")]
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config"))
+        })?;
+    #[cfg(target_os = "macos")]
+    let base = std::env::var_os("HOME")
+        .map(|h| std::path::PathBuf::from(h).join("Library/Application Support"))?;
+    #[cfg(target_os = "windows")]
+    let base = std::env::var_os("APPDATA").map(std::path::PathBuf::from)?;
+    #[cfg(target_os = "linux")]
+    let app_dir = "honeydew";
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let app_dir = "Honeydew";
+    Some(base.join(app_dir).join("control-token"))
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+pub fn load_mcp_token() -> Option<String> {
+    let token = std::fs::read_to_string(mcp_token_path()?)
+        .ok()?
+        .trim()
+        .to_owned();
+    (!token.is_empty()).then_some(token)
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+pub fn save_mcp_token(token: &str) -> std::io::Result<()> {
+    let path = mcp_token_path()
+        .ok_or_else(|| std::io::Error::other("could not determine config directory"))?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, token)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+pub fn load_mcp_token() -> Option<String> {
+    None
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+pub fn save_mcp_token(_token: &str) -> std::io::Result<()> {
+    Err(std::io::Error::other("MCP token storage is desktop-only"))
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+const DEFAULT_SOUND_MODE: u8 = 0;
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+const DEFAULT_SOUND_MODE: u8 = 3;
 
 /// Every SETTINGS value the app keeps. For the defaults see [`Settings::default`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -69,13 +139,19 @@ pub struct Settings {
     /// `Multi core processing`: parallel independent desktop channel racks.
     #[serde(rename = "multithreaded")]
     pub multi_core: bool,
-    /// `Enable low latency mode`. Stored only.
+    #[serde(rename = "mcpEnabled")]
+    pub mcp_enabled: bool,
+    #[serde(rename = "mcpPort")]
+    pub mcp_port: u16,
+    #[serde(skip)]
+    pub mcp_token: String,
+    /// The selected output buffer target: an index into [`BUFFER_SIZES`]. Zero keeps the device default.
     #[serde(rename = "lowlatency")]
-    pub low_latency: bool,
-    /// `Enable background audio`. Stored only.
+    pub low_latency: u8,
+    /// `Enable background audio (iOS Only)`. Stored for the iOS build; disabled elsewhere.
     #[serde(rename = "bgAudio")]
     pub background_audio: bool,
-    /// `Sound mode:`, a stored id from [`SOUND_MODES`]. Stored only.
+    /// `Sound mode:`, a stored id from [`SOUND_MODES`], selecting the platform's audio mode.
     #[serde(rename = "soundModeAndr")]
     pub sound_mode: u8,
     /// `Enable audio recording latency compensation`: the toggle as stored, `None` while unset. Its meaning is
@@ -187,9 +263,12 @@ impl Default for Settings {
         Self {
             midi_device: ANY.to_owned(),
             multi_core: false,
-            low_latency: false,
+            mcp_enabled: false,
+            mcp_port: MCP_DEFAULT_PORT,
+            mcp_token: String::new(),
+            low_latency: 0,
             background_audio: false,
-            sound_mode: 3,
+            sound_mode: DEFAULT_SOUND_MODE,
             latency_compensation: None,
             multitrack_recording: false,
             count_in: true,
@@ -248,6 +327,11 @@ impl Settings {
             }
         }
         migrate_keys(&mut fields);
+        // Older versions stored this setting as a boolean toggle. Preserve an enabled toggle as the
+        // smallest target when loading those settings into the buffer-size slider.
+        if let Some(enabled) = fields.get("lowlatency").and_then(Value::as_bool) {
+            fields.insert("lowlatency".into(), u64::from(enabled).into());
+        }
         // Field by field: one unreadable value (wrong type, out of its type's range) is dropped on its own instead of
         // failing the whole object.
         fields.retain(|k, v| {
@@ -262,6 +346,7 @@ impl Settings {
         s.ui_scale = s
             .ui_scale
             .clamp(*UI_SCALE_RANGE.start(), *UI_SCALE_RANGE.end());
+        s.low_latency = s.low_latency.min((BUFFER_SIZES.len() - 1) as u8);
         if !SOUND_MODES.iter().any(|&(id, _)| id == s.sound_mode) {
             s.sound_mode = d.sound_mode;
         }
@@ -538,9 +623,15 @@ mod tests {
         Settings {
             midi_device: "Keys 49".into(),
             multi_core: !d.multi_core,
-            low_latency: !d.low_latency,
+            mcp_enabled: !d.mcp_enabled,
+            mcp_port: 57999,
+            mcp_token: String::new(),
+            low_latency: if d.low_latency == 0 { 1 } else { 0 },
             background_audio: !d.background_audio,
-            sound_mode: 2,
+            sound_mode: SOUND_MODES
+                .get(1)
+                .map(|&(id, _)| id)
+                .unwrap_or(d.sound_mode),
             latency_compensation: Some(false),
             multitrack_recording: !d.multitrack_recording,
             count_in: !d.count_in,
@@ -580,11 +671,11 @@ mod tests {
         // The latency toggle is unset: shown ON, and it compensates.
         assert_eq!(d.latency_compensation, None);
         // The other toggles are off.
-        assert!(!d.multi_core && !d.low_latency && !d.background_audio);
+        assert!(!d.multi_core && d.low_latency == 0 && !d.background_audio);
         assert!(!d.multitrack_recording);
         assert!(!d.key_names && !d.middle_c_is_c4 && !d.continuous_scroll);
         // `NATIVE`, `Classic Gray`, `100%`.
-        assert_eq!(d.sound_mode, 3);
+        assert_eq!(d.sound_mode, DEFAULT_SOUND_MODE);
         assert_eq!(d.theme, 0);
         assert_eq!(d.ui_scale, 100);
         // `Animation`: `Full`.
@@ -776,6 +867,8 @@ mod tests {
                 "lastAudioFileFormat",
                 "lockpads",
                 "lowlatency",
+                "mcpEnabled",
+                "mcpPort",
                 "middlec4",
                 "mtmlevel",
                 "multithreaded",

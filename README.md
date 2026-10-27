@@ -89,9 +89,17 @@ Plugin settings are saved with the project, and their controls can be automated.
 
 **Notes:**
 
-- Plugin windows open on Linux only for now. On Windows and macOS, use the sliders on the plugin's card.
+- External plugin editor windows open on Linux, Windows and macOS. If a plugin cannot create its native editor, use the sliders on the plugin's card.
 - FL Studio Mobile will still opens projects that use plugins, just without the plugins. The web and Android versions keep other plugins' settings but don't play them.
 - Opening an FLP loads its plugins if you have them installed, and saving as FLP writes them back.
+
+### Local music-assistant control (experimental)
+
+The desktop build has an opt-in local control bridge for editing the open song
+with an MCP assistant. It can reuse an already-configured plugin instrument
+without changing its preset, or create a built-in synth/drum track and add
+notes. See [the MCP setup guide](tools/honeydew-mcp/README.md) for security,
+configuration, commands and current limits.
 
 **Multi core processing:** On Linux, macOS and Windows desktop builds, SETTINGS → Multi core processing can run independent channel racks on separate CPU cores. Sends still run before their target bus, and each rack's modules stay in order. The setting takes effect during playback without a restart. It is off by default and falls back to sequential processing for short segments, a single-core machine or a song with no independent channels. It does not split one plugin instance (including Vital) across cores; with one active instrument, leave it off. If enabling it increases underruns on your audio setup, turn it off again.
 

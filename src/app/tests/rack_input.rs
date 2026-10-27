@@ -433,7 +433,9 @@ fn calibrate_measures_the_round_trip_and_the_next_recording_drops_that_much() {
     a.rig.click(PLAY);
 
     // A new `Sound mode` forgets it.
-    a.rig.app.settings.sound_mode = 0;
+    let current = a.rig.app.settings.sound_mode;
+    let other = crate::settings::SOUND_MODES.iter().find(|m| m.0 != current);
+    a.rig.app.settings.sound_mode = other.expect("another sound mode").0;
     a.rig.frame(vec![]);
     assert_eq!(a.rig.app.latency, None);
 }

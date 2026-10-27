@@ -4,7 +4,7 @@ use eframe::egui;
 use honeydew_audio::device::{AudioCommand, OutputSnapshot};
 
 use crate::audio_engine::LiveInput;
-use crate::audio_link::{AudioLink, AudioSink, Handover, open_device};
+use crate::audio_link::{AudioLink, AudioSink, Handover, buffer_mode, open_device_with_mode};
 use crate::fonts;
 use crate::history::{self, History, Step};
 use crate::metrics::{FontSize, Metrics};
@@ -19,6 +19,7 @@ use crate::song::scales::{CHROMATIC, SCALE_MASKS};
 use crate::song::{AutomationTarget, Channel, ChannelKind, LaneKind, Song};
 use crate::theme::{Theme, theme_by_id};
 use crate::ui::UiCtx;
+use crate::ui::add_channel_menu::AddChannelPick;
 use crate::ui::chord_keyboard::{ChordInput, Note, TIMING_MS};
 use crate::ui::clips::{LiveTake, song_end_beats};
 use crate::ui::focus;
@@ -39,6 +40,8 @@ use crate::ui::{panel_resize, wheels};
 mod audio_edit;
 pub(crate) mod auto_record;
 pub(crate) mod automation;
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+mod control;
 mod demo_restore;
 mod export;
 mod input;
@@ -229,6 +232,8 @@ pub struct HoneydewApp {
     gated: Vec<(f64, usize, u8)>,
     /// Audio files dropped on the app, decoding (`app/file_drop.rs`).
     importing: Option<file_drop::Importing>,
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+    control: Option<control::Bridge>,
 }
 
 impl Default for HoneydewApp {
@@ -302,11 +307,30 @@ impl Default for HoneydewApp {
             fresh: Vec::new(),
             gated: Vec::new(),
             importing: None,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            control: None,
         }
     }
 }
 
 impl HoneydewApp {
+    fn mcp_status(&self) -> &'static str {
+        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        {
+            if !self.settings.mcp_enabled {
+                "Disabled"
+            } else if self.control.is_some() {
+                "Listening"
+            } else {
+                "Error"
+            }
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        {
+            "Disabled"
+        }
+    }
+
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         setup_context(&cc.egui_ctx);
         let storage = settings::storage();
@@ -316,6 +340,14 @@ impl HoneydewApp {
         app.whats_new_at_start(fresh);
         app.midi.link = crate::midi::device::MidiLink::platform(cc.egui_ctx.clone());
         app.start_plugins(&cc.egui_ctx);
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        {
+            app.control = control::Bridge::start(
+                cc.egui_ctx.clone(),
+                app.settings.mcp_enabled,
+                app.settings.mcp_port,
+            );
+        }
         app.extract_demo_songs(cfg!(target_arch = "wasm32"));
         // Once per start, before the purge (whose end every move waits for): a folder of the songs folder named as a row
         // beside it (`My Songs/Demo Songs`) gets a free numbered name, so that it is listed, not hidden.
@@ -335,6 +367,11 @@ impl HoneydewApp {
         let settings = storage
             .as_deref()
             .map_or_else(Settings::default, Settings::load);
+        let mut settings = settings;
+        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        if let Some(token) = settings::load_mcp_token() {
+            settings.mcp_token = token;
+        }
         let mut app = Self {
             theme: theme_by_id(settings.theme),
             routing: storage.as_deref().map(Routing::load).unwrap_or_default(),
@@ -392,8 +429,29 @@ impl HoneydewApp {
                 let on = self.audio.metronome_flag();
                 self.audio.send(AudioCommand::MetronomeFlag { on, level });
             }
+            if self.settings.low_latency != self.settings_saved.low_latency {
+                self.audio
+                    .set_low_latency(&self.song, self.settings.low_latency);
+            }
+            if self.settings.sound_mode != self.settings_saved.sound_mode {
+                self.audio
+                    .set_sound_mode(&self.song, self.settings.sound_mode);
+            }
             if self.settings.multi_core != self.settings_saved.multi_core {
                 self.audio.set_multi_core(self.settings.multi_core);
+            }
+            #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+            if self.settings.mcp_enabled != self.settings_saved.mcp_enabled
+                || self.settings.mcp_port != self.settings_saved.mcp_port
+            {
+                self.control = None;
+                if self.settings.mcp_enabled {
+                    self.control = control::Bridge::start(
+                        ctx.clone(),
+                        self.settings.mcp_enabled,
+                        self.settings.mcp_port,
+                    );
+                }
             }
             if let Some(storage) = self.storage.as_deref_mut() {
                 self.settings.save(storage);
@@ -1561,7 +1619,8 @@ impl HoneydewApp {
         if !loading {
             p.update(self.now, reading);
         }
-        (p.plugin_lock_misses, p.recovered_waits) = crate::plugins::lock_stats();
+        let (plugin_lock_misses, recovered_waits) = crate::plugins::lock_stats();
+        p.set_plugin_lock_stats(plugin_lock_misses, recovered_waits);
         p.app_memory = memory;
         self.main_screen.meter = Load {
             peak: p.peak,
@@ -1733,7 +1792,11 @@ impl eframe::App for HoneydewApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "android")]
         crate::android_text::begin_frame(ctx);
-        self.frame(ctx, open_device);
+        let sound_mode = self.settings.sound_mode;
+        let low_latency = self.settings.low_latency;
+        self.frame(ctx, |song, samples| {
+            open_device_with_mode(song, samples, buffer_mode(sound_mode, low_latency))
+        });
         #[cfg(target_os = "android")]
         crate::android_text::end_frame(ctx);
     }
@@ -1787,6 +1850,10 @@ impl HoneydewApp {
         // this click. The start is before the screen, so a press that lands on a key is heard natively.
         let mut snapshot = self.audio.poll();
         if !self.audio.running() && ctx.input(|i| audio_gesture(i, START_ON_RELEASE)) {
+            self.audio
+                .set_low_latency_preference(self.settings.low_latency);
+            self.audio
+                .set_sound_mode_preference(self.settings.sound_mode);
             let solo = self.solo();
             let song = solo.as_ref().unwrap_or(&self.song);
             let read = sample_cache::reader(&self.files);
@@ -1860,6 +1927,7 @@ impl HoneydewApp {
         // As of the last frame's editor state; an editor that moved to another clip moves Preview after the screens.
         let previewing = (self.preview)
             .is_some_and(|k| preview::current(self.nav.view, &self.slots, &self.song) == Some(k));
+        let mcp_status = self.mcp_status();
         self.slots.ctrl_menu.recent = self.ctrl_recent();
         // The sample row's clip, found after the view.
         let mut row_clip = None;
@@ -1926,6 +1994,9 @@ impl HoneydewApp {
                     wheels,
                     chords,
                 };
+                // Keep the Settings MCP status in sync with the bridge that is actually running. The bridge is
+                // restarted after settings changes in `keep_settings`, so the next frame reflects bind failures too.
+                self.slots.settings_tab.set_mcp_status(mcp_status);
                 let mut app = AppCtx {
                     cx,
                     regions,
@@ -2112,6 +2183,8 @@ impl HoneydewApp {
         // As drawn: the channel indices the bound controls' touches name.
         let add_automation = self.take_touches();
         let tick = snapshot.as_ref().map_or(0, |s| s.transport_tick);
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        self.control_frame(tick);
         // The chord editor's edit: the set in use with the new chord, marked edited, an undo step.
         if let Some((strip, chord)) = actions.chord_edit.take() {
             let mut set = views::keyboard_settings::chord_set(&self.song);
@@ -2252,11 +2325,19 @@ impl HoneydewApp {
         // After every live key of the frame, and the channel the header picked.
         self.record_notes(jumped, tick);
         self.send_disarm();
-        if let Some(kind) = actions.add {
-            self.add_channel(kind, tick);
+        if let Some(pick) = actions.add {
+            match pick {
+                AddChannelPick::Kind(kind) => self.add_channel(kind, tick),
+                AddChannelPick::Plugin(uid) => {
+                    self.insert_plugin_channel(self.song.channels.len(), uid, tick)
+                }
+            }
         }
-        if let Some((at, kind)) = actions.insert {
-            self.insert_channel(at, kind, tick);
+        if let Some((at, pick)) = actions.insert {
+            match pick {
+                AddChannelPick::Kind(kind) => self.insert_channel(at, kind, tick),
+                AddChannelPick::Plugin(uid) => self.insert_plugin_channel(at, uid, tick),
+            }
         }
         if let Some((channel, lane, op)) = actions.track {
             self.track_op(channel, lane, op, tick);

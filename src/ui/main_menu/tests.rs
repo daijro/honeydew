@@ -2049,7 +2049,8 @@ fn ctrl_f_does_nothing_off_the_songs_page() {
     let mut rig = Rig::new(Tab::Project);
     rig.ctrl_f();
     rig.frame(vec![]);
-    assert!(!rig.has("Clear") && rig.action.is_none());
+    // PROJECT has a `Clear` of its own (the performance counters): no search field opens.
+    assert!(!rig.searching() && rig.action.is_none());
 }
 
 #[test]
