@@ -153,8 +153,8 @@ mod win {
 
 #[cfg(target_os = "macos")]
 mod mac {
-    use objc2::MainThreadMarker;
     use objc2::rc::Retained;
+    use objc2::{MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{NSBackingStoreType, NSView, NSWindow, NSWindowStyleMask};
     use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
     use std::sync::Mutex;
@@ -171,25 +171,27 @@ mod mac {
             return Err("plugin editor windows must open on the macOS main thread".into());
         };
         let rect = NSRect::new(NSPoint::new(100.0, 100.0), NSSize::new(400.0, 300.0));
-        let window = NSWindow::initWithContentRect_styleMask_backing_defer(
-            NSWindow::alloc(mtm),
-            rect,
-            NSWindowStyleMask::Titled
-                | NSWindowStyleMask::Closable
-                | NSWindowStyleMask::Miniaturizable,
-            NSBackingStoreType::Buffered,
-            false,
-        );
+        // SAFETY: a fresh allocation on the main thread; the window is not released when closed (below), so the
+        // `Retained` stays the only owner.
+        let window = unsafe {
+            NSWindow::initWithContentRect_styleMask_backing_defer(
+                NSWindow::alloc(mtm),
+                rect,
+                NSWindowStyleMask::Titled
+                    | NSWindowStyleMask::Closable
+                    | NSWindowStyleMask::Miniaturizable,
+                NSBackingStoreType::Buffered,
+                false,
+            )
+        };
         window.setTitle(&NSString::from_str(title));
         unsafe {
             window.setReleasedWhenClosed(false);
         }
-        let view = unsafe {
-            NSView::initWithFrame(
-                NSView::alloc(mtm),
-                NSRect::new(NSPoint::new(0.0, 0.0), rect.size),
-            )
-        };
+        let view = NSView::initWithFrame(
+            NSView::alloc(mtm),
+            NSRect::new(NSPoint::new(0.0, 0.0), rect.size),
+        );
         window.setContentView(Some(&view));
         let native = Native {
             window,
