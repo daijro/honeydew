@@ -7,11 +7,15 @@
 //! The recent control is the channel (by id, which no move changes) and the [`AutomationTarget`] of the last control
 //! bound to a parameter that was pressed: a rack card's module or common param, a mixer strip's (instance 0) or a drum
 //! slot strip's (instance −slot id). It is held in memory and cleared with a new song.
+//!
+//! While the song plays, the controls show what the automation sets ([`HoneydewApp::show_automation`]).
 
 use super::HoneydewApp;
 use super::tracks::LaneShift;
+use crate::audio_bridge::playing_clips;
+use crate::audio_engine::strip_param;
 use crate::midi::links;
-use crate::song::{AutomationTarget, Channel, Lane, LaneKind, PPQ, Song};
+use crate::song::{AutomationTarget, Channel, Clip, Event, Lane, LaneKind, PPQ, Song};
 use crate::ui::ctrl_menu::{CtrlAction, RecentControl};
 use crate::ui::fine_tune;
 use crate::ui::preview::ClipKey;
@@ -83,7 +87,134 @@ fn link(ch: &mut Channel, lane: usize, (target, label): (AutomationTarget, Strin
     true
 }
 
+/// A param the screens show at the value its automation has set ([`HoneydewApp::show_automation`]): its channel's id
+/// and target, the song tick and value of the automation event that set it, and the song's own value, which comes back
+/// after the screens.
+pub(super) struct Automated {
+    channel: i32,
+    target: AutomationTarget,
+    at: u64,
+    value: f32,
+    saved: f32,
+}
+
+/// The end of the song ticks whose plays of `clip` have happened by song tick `tick`: none plays past its visible
+/// length.
+fn reach(clip: &Clip, tick: u64) -> u64 {
+    let end = (f64::from(clip.start_tick) + clip.visible_ticks()).ceil() as u64;
+    (tick + 1).min(end.saturating_add(1))
+}
+
+/// The last play of an automation event of `clip` at or before song tick `tick`, as (song tick, value): past the clip's
+/// end, its last one. The loop's worth of plays before [`reach`] holds it.
+fn last_play(clip: &Clip, tick: u64) -> Option<(u64, f32)> {
+    let to = reach(clip, tick);
+    let from = to.saturating_sub(clip.loop_ticks()?.ceil() as u64 + 1);
+    let plays = clip.events_in_song_range(from.max(clip.start_tick.into()), to);
+    let values = plays.filter_map(|(at, e)| match *e {
+        Event::Automation { value, .. } => Some((at, value)),
+        _ => None,
+    });
+    values.last()
+}
+
+/// The latest [`last_play`] of `lane`'s playing clips. The clip that reaches furthest goes first: a clip that ends before
+/// what it played is not read.
+fn lane_value(lane: &Lane, tick: u64) -> Option<(u64, f32)> {
+    let first = playing_clips(lane).max_by_key(|c| reach(c, tick))?;
+    let mut last = last_play(first, tick);
+    for clip in playing_clips(lane) {
+        let later = |at: u64| last.is_none_or(|(best, _)| at > best);
+        if !std::ptr::eq(clip, first)
+            && later(reach(clip, tick))
+            && let Some(play) = last_play(clip, tick).filter(|p| later(p.0))
+        {
+            last = Some(play);
+        }
+    }
+    last
+}
+
+/// The own value of the target of automation clip `key` while the screens show another (`automated`,
+/// [`HoneydewApp::show_automation`]): the automation editor's init line.
+pub(super) fn automated_init(automated: &[Automated], song: &Song, key: ClipKey) -> Option<f32> {
+    let ch = song.channels.get(key.channel)?;
+    let target = ch.lanes.get(key.lane)?.target?;
+    let a = (automated.iter()).find(|a| (a.channel, a.target) == (ch.id, target))?;
+    Some(a.saved)
+}
+
 impl HoneydewApp {
+    /// While the song plays, the controls of each automated param show the value its automation has set by the drawn
+    /// playhead `tick`, as the engine plays it: the last event at or before it on the playing clips of the lanes that
+    /// target it, past a clip's end its last (audio-engine.md, re-sync step 4). MIDI CC #7, #8 and #10 show on the
+    /// Level and Pan they drive; a param no event has reached keeps its own value. The controls draw the song, so for
+    /// the screens the song holds those values; [`Self::hide_automation`] puts its own back.
+    pub(super) fn show_automation(&mut self, tick: u64) {
+        let automated = &mut self.automated;
+        for ch in &self.song.channels {
+            for lane in (ch.lanes.iter()).filter(|l| l.kind == LaneKind::Automation) {
+                let (Some(t), Some((at, value))) = (lane.target, lane_value(lane, tick)) else {
+                    continue;
+                };
+                let target = AutomationTarget {
+                    param: strip_param(t.instance_id, t.param),
+                    ..t
+                };
+                match (automated.iter_mut()).find(|a| (a.channel, a.target) == (ch.id, target)) {
+                    Some(a) if a.at > at => {}
+                    Some(a) => (a.at, a.value) = (at, value),
+                    None => automated.push(Automated {
+                        channel: ch.id,
+                        target,
+                        at,
+                        value,
+                        saved: value,
+                    }),
+                }
+            }
+        }
+        // A MIDI CC the song keeps no value for has no control to show it on. The recent control while its press lasts
+        // shows its own value, under the finger: a drag writes back any other value it is drawn at.
+        let held = self.recent.filter(|_| self.recent_held);
+        let song = &mut self.song;
+        automated.retain_mut(|a| {
+            if held == Some((a.channel, a.target)) {
+                return false;
+            }
+            let ch = song.channels.iter_mut().find(|c| c.id == a.channel);
+            let Some(v) = ch.and_then(|c| c.param_mut(a.target)) else {
+                return false;
+            };
+            a.saved = std::mem::replace(v, a.value);
+            true
+        });
+    }
+
+    /// After the screens: each param [`Self::show_automation`] showed gets the song's own value back, and so does an
+    /// edit held for `Delete automation?`, which the screens made from the song as shown. A control moved meanwhile
+    /// keeps the value it was moved to: moving a control sets its init value (automation.md §4b). `replaced`: the
+    /// screens put another song in its place.
+    pub(super) fn hide_automation(&mut self, replaced: bool) {
+        let slots = &mut self.slots;
+        let held = [
+            &mut slots.rack.ask_remove,
+            &mut slots.modules_browser.ask_remove,
+            &mut slots.preset_picker.ask_remove,
+        ];
+        let held = held.into_iter().flatten().map(|h| &mut h.after);
+        let channels = (self.song.channels.iter_mut()).chain(held);
+        for ch in channels.filter(|_| !replaced) {
+            let id = ch.id;
+            for a in self.automated.iter().filter(|a| a.channel == id) {
+                if let Some(v) = ch.param_mut(a.target).filter(|v| **v == a.value) {
+                    *v = a.saved;
+                }
+            }
+        }
+        self.automated.clear();
+    }
+
     /// The recent control's channel index and target, while both still exist.
     pub(super) fn recent_index(&self) -> Option<(usize, AutomationTarget)> {
         let (id, target) = self.recent?;
@@ -123,6 +254,7 @@ impl HoneydewApp {
         for (channel, touch) in touches.into_iter().flatten() {
             if let Some(ch) = self.song.channels.get(channel) {
                 self.recent = Some((ch.id, touch.target));
+                self.recent_held |= touch.pick.is_none();
                 pick = touch.pick.or(pick);
             }
         }

@@ -499,6 +499,36 @@ fn a_racks_value_texts_read_the_song_tempo() {
     assert!(texts.iter().any(|t| t == "125 ms"), "{texts:?}");
 }
 
+/// While the song plays, a control shows the value its automation has set by the playhead (issue #14), and the song
+/// keeps its own: the Autoduck's Attack at 0.25, automated to 0.5 (125 ms) from beat 0.
+#[test]
+fn a_playing_automation_moves_its_control_and_the_song_keeps_its_value() {
+    let mut rig = with_effects(&[29]);
+    rig.app.song.tempo_bpm = 120.0;
+    let id = instance_id(&rig, 2, 0);
+    rig.app.song.channels[2].rack.modules[0].params[2] = 0.25;
+    let target = AutomationTarget {
+        instance_id: id,
+        param: 2,
+    };
+    let lane = rig.app.song.channels[2].add_automation_lane(target);
+    lane.add_clip(0, 4.0)
+        .events
+        .push(crate::song::Event::Automation {
+            pos: 0,
+            value: 0.5,
+            control: true,
+        });
+    rig.click(PLAY);
+    rig.rec.0.borrow_mut().tick = 64;
+    rig.frame(vec![]);
+    let attack = rack_id(2).with(("module panel", id)).with(2_u32);
+    let rect = rig.ctx.read_response(attack).unwrap().rect;
+    let texts = texts_in(&rig, rect);
+    assert!(texts.iter().any(|t| t == "125 ms"), "{texts:?}");
+    assert_eq!(rig.app.song.channels[2].rack.modules[0].params[2], 0.25);
+}
+
 /// Control `n` of the Pitcher on top of `channel`'s rack.
 fn pitcher(rig: &Rig, channel: usize, n: u32) -> Id {
     let id = instance_id(rig, channel, 0);

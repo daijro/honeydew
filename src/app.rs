@@ -176,8 +176,12 @@ pub struct HoneydewApp {
     /// The recent control: the channel id and the target of the last bound control pressed. In memory only; a new song
     /// clears it.
     recent: Option<(i32, AutomationTarget)>,
+    /// The recent control's press goes on: the pointer has stayed down since it.
+    recent_held: bool,
     /// `Delete automation?` waiting for its answer: the channel's id and what goes on the answer.
     delete_asked: Option<(i32, automation::Pending)>,
+    /// The params this frame's screens show at the value their automation has set ([`Self::show_automation`]).
+    automated: Vec<automation::Automated>,
     /// REC's live automation recording: the recent control's last value and the clips being recorded.
     auto_record: auto_record::AutoRecord,
     /// REC's live notes and drum hits ([`note_record`]).
@@ -277,7 +281,9 @@ impl Default for HoneydewApp {
             channel_ids: tracks::channel_ids(&Song::default()),
             asked: None,
             recent: None,
+            recent_held: false,
             delete_asked: None,
+            automated: Vec::new(),
             auto_record: Default::default(),
             note_record: Default::default(),
             // Tests never open a device: a rig that records hands in a fake opener.
@@ -1283,6 +1289,7 @@ impl HoneydewApp {
                     param,
                 },
             ));
+            self.recent_held = true;
         }
         let mut edited = false;
         for (param, value) in wheels.moves {
@@ -1902,6 +1909,15 @@ impl HoneydewApp {
                 (!self.main_screen.armed).then(|| (beats * f64::from(crate::song::PPQ)) as u64)
             });
         (self.audio).advance_playhead(self.now, self.main_screen.playing, bpm, end);
+        // While the song plays, its automation moves the controls, at the drawn playhead; not in Preview, where the
+        // engine plays one clip alone, nor under the main menu or a Save dialog, which save and render the song itself.
+        let saving = (self.nav.overlays.iter())
+            .any(|o| matches!(o, Overlay::MainMenu(_) | Overlay::SaveDialog { .. }));
+        let shows = self.main_screen.playing && self.preview.is_none() && !saving;
+        self.recent_held &= ctx.input(|i| i.pointer.any_down());
+        if let Some(s) = snapshot.as_ref().filter(|_| shows) {
+            self.show_automation(s.transport_tick + self.audio.playhead_lead());
+        }
         self.engine_keys = snapshot
             .as_ref()
             .map_or_else(Vec::new, |s| s.sounding.clone());
@@ -2086,6 +2102,13 @@ impl HoneydewApp {
                                 self.slots.piano_roll.sounding =
                                     lit.get(channel).copied().unwrap_or(0);
                             }
+                            if let View::AutomationEditor(channel) = view {
+                                let editor = &mut self.slots.automation_editor;
+                                let key = editor.current(app.song, channel);
+                                editor.init = key.and_then(|k| {
+                                    automation::automated_init(&self.automated, app.song, k)
+                                });
+                            }
                             app.regions.editor = bottom;
                             focus::container(ui, keys(focus::EDITOR, true), shown, |ui| {
                                 let clip = ui.clip_rect();
@@ -2172,6 +2195,8 @@ impl HoneydewApp {
                 (actions, navs, overlay_navs, app.edit)
             })
             .inner;
+        // Before anything else reads the song: its own values, for the edits, the undo steps and the engines.
+        self.hide_automation(edit == Some(SongEdit::Replaced));
         if midi_rescan {
             self.midi_rescan();
         }

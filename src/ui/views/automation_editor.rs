@@ -19,6 +19,9 @@ pub struct State {
     pub(crate) clips: HashMap<usize, (usize, u32)>,
     /// The editor: its snap, the selection and every clip's view, shared by the channels.
     pub(crate) editor: AutomationEditor,
+    /// The init value of the shown clip's target while the song holds its automated value for the frame (the app sets
+    /// it each frame, [`Options::init`]).
+    pub(crate) init: Option<f32>,
 }
 
 impl State {
@@ -49,6 +52,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         previewing: app.previewing,
         covered: app.covered,
         continuous: app.settings.continuous_scroll,
+        init: state.init,
     };
     let rect = app.regions.editor;
     let out = (state.editor).show(ui, &app.cx, rect, app.song, key, &opts);

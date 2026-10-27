@@ -153,6 +153,9 @@ pub struct Options {
     pub covered: bool,
     /// The setting `Continuous scrolling during playback`.
     pub continuous: bool,
+    /// The target's init value, while the song holds another for the frame (its automated value at the playhead,
+    /// `app/automation.rs`); `None`: the song's.
+    pub init: Option<f32>,
 }
 
 /// What a frame did.
@@ -400,7 +403,7 @@ impl AutomationEditor {
 
         let ch = &song.channels[key.channel];
         let color = channel_color(ch.hue, cx.theme).to_color32();
-        let init = (ch.lanes[key.lane].target).and_then(|t| ch.param(t));
+        let init = (opts.init).or_else(|| (ch.lanes[key.lane].target).and_then(|t| ch.param(t)));
         self.paint(
             ui,
             cx,
