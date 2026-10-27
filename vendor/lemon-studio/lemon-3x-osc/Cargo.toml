@@ -23,7 +23,11 @@ os-theme = { path = "../os-theme" }
 serde_json = "1"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Controls", "Win32_System_LibraryLoader"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Controls", "Win32_UI_Controls_Dialogs", "Win32_System_LibraryLoader"] }
+
+# The custom shape's open sample dialog (the browser and Android have none).
+[target.'cfg(not(any(target_arch = "wasm32", target_os = "android")))'.dependencies]
+rfd = "0.17"
 
 # Upstream allows a lint that Rust 1.91 (Honeydew's CI) does not know yet; with `embed` the Win32 editor goes unused on
 # Windows.

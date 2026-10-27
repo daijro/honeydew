@@ -27,7 +27,7 @@ use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
 
 pub use crate::input::{keysym, keysym_char, Button, Input};
-use crate::MenuDef;
+use crate::{MenuDef, Opener};
 
 /// The host's window: an X11 window id.
 pub type Parent = u32;
@@ -227,7 +227,12 @@ impl Window {
             | EventMask::KEY_PRESS
             | EventMask::STRUCTURE_NOTIFY;
         (|| -> Result<(), Box<dyn std::error::Error>> {
-            c.create_window(x11rb::COPY_DEPTH_FROM_PARENT, win, parent, 0, 0, px(w), px(h), 0, WindowClass::INPUT_OUTPUT, x11rb::COPY_FROM_PARENT, &CreateWindowAux::new().event_mask(events))?;
+            // The plugin look's background until the first frame is put: the server fills the window with it at once,
+            // so it does not show black while the editor builds that frame.
+            let bg = os_ui::kit::lemon::plug::BG;
+            let bg = u32::from(bg.r) << 16 | u32::from(bg.g) << 8 | u32::from(bg.b);
+            let aux = CreateWindowAux::new().event_mask(events).background_pixel(bg);
+            c.create_window(x11rb::COPY_DEPTH_FROM_PARENT, win, parent, 0, 0, px(w), px(h), 0, WindowClass::INPUT_OUTPUT, x11rb::COPY_FROM_PARENT, &aux)?;
             c.create_gc(gc, win, &CreateGCAux::new().graphics_exposures(0))?;
             // An invisible cursor: a cleared 1 x 1 bitmap as its own mask.
             let (pix, pgc) = (c.generate_id()?, c.generate_id()?);
@@ -558,14 +563,14 @@ impl Window {
         r
     }
 
-    fn popup_at<C: Clone>(&mut self, x: i32, y: i32, def: &MenuDef<C>, pal: &Palette, scale: f32, parent: Option<[i32; 4]>) -> PopRes<C> {
+    fn popup_at<C: Clone>(&mut self, x: i32, y: i32, def: &MenuDef<C>, pal: &Palette, scale: f32, parent: Option<Opener>) -> PopRes<C> {
         let Ok(mut measure) = Canvas::new(8, 8, scale) else { return PopRes::Cancel };
         let layout = kmenu::layout(&mut measure, &def.items, def.style);
         let (w, h) = ((layout.w * scale).ceil() as i32, (layout.h * scale).ceil() as i32);
         let (mut px, mut py) = (x, y);
         if px + w > self.root_size.0 {
             px = match parent {
-                Some(p) => p[0] - w,
+                Some(p) => p.menu[0] - w,
                 None => self.root_size.0 - w,
             };
         }
@@ -588,7 +593,6 @@ impl Window {
         let opened = Instant::now();
         let start = (i32::from(self.pointer.0), i32::from(self.pointer.1));
         let mut moved = false;
-        let mut sub_open: Option<usize> = None;
         let result = loop {
             let Some(e) = self.event() else { break PopRes::Cancel };
             match e {
@@ -599,7 +603,7 @@ impl Window {
                     if (cur.0 - start.0).abs() + (cur.1 - start.1).abs() > 2 {
                         moved = true;
                     }
-                    if !inside(&rect, cur) && parent.is_some_and(|p| inside(&p, cur)) {
+                    if parent.is_some_and(|p| p.takes_back(rect, cur)) {
                         break PopRes::Back;
                     }
                     let hov = if inside(&rect, cur) { item_at(cur) } else { None }.filter(|&i| def.items[i].clickable());
@@ -608,23 +612,16 @@ impl Window {
                         paint(&mut canvas, hover);
                         self.show(pop, &canvas);
                     }
-                    // Submenu: opens while its row is hovered.
-                    match hov {
-                        Some(i) if sub_open != Some(i) => {
-                            if let Some(sub) = def.sub(i) {
-                                sub_open = Some(i);
-                                let row = layout.rows[i];
-                                let sx = px + ((row.x + row.w) * scale) as i32 - 2;
-                                let sy = py + (row.y * scale) as i32 - 2;
-                                match self.popup_at(sx, sy, sub, pal, scale, Some(rect)) {
-                                    PopRes::Pick(c) => break PopRes::Pick(c),
-                                    PopRes::Cancel => break PopRes::Cancel,
-                                    PopRes::Back => self.grab(pop.0),
-                                }
-                            }
+                    // Submenu: opens while its row is hovered, until the pointer moves on to another row of this menu.
+                    if let Some((i, sub)) = hov.and_then(|i| Some((i, def.sub(i)?))) {
+                        let row = layout.rows[i];
+                        let sx = px + ((row.x + row.w) * scale) as i32 - 2;
+                        let sy = py + (row.y * scale) as i32 - 2;
+                        match self.popup_at(sx, sy, sub, pal, scale, Some(Opener::new(rect, row, scale))) {
+                            PopRes::Pick(c) => break PopRes::Pick(c),
+                            PopRes::Cancel => break PopRes::Cancel,
+                            PopRes::Back => self.grab(pop.0),
                         }
-                        Some(_) => {}
-                        None => sub_open = None,
                     }
                 }
                 Event::ButtonPress(e) => {
@@ -835,5 +832,30 @@ fn put(c: &RustConnection, win: u32, gc: u32, depth: u8, lsb_first: bool, max_re
     for (i, band) in px[..w * h].chunks(w * rows).enumerate() {
         let bytes: Vec<u8> = band.iter().flat_map(|p| if lsb_first { p.to_le_bytes() } else { p.to_be_bytes() }).collect();
         let _ = c.put_image(ImageFormat::Z_PIXMAP, win, gc, w as u16, (band.len() / w) as u16, 0, (i * rows) as i16, 0, depth, &bytes);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use x11rb::wrapper::ConnectionExt as _;
+
+    /// A new editor window shows the plugin look's background before its first frame, not black. Opens a window: a
+    /// private X server only (`DISPLAY=:78 cargo test -p os-plugkit -- --ignored`).
+    #[test]
+    #[ignore]
+    fn a_new_window_is_never_black() {
+        let (c, screen) = RustConnection::connect(None).expect("an X server (DISPLAY)");
+        let root = c.setup().roots[screen].root;
+        let parent = c.generate_id().unwrap();
+        c.create_window(x11rb::COPY_DEPTH_FROM_PARENT, parent, root, 0, 0, 200, 120, 0, WindowClass::INPUT_OUTPUT, x11rb::COPY_FROM_PARENT, &CreateWindowAux::new()).unwrap();
+        c.map_window(parent).unwrap();
+        c.flush().unwrap();
+        let w = Window::open(parent, (160, 100), Waker::new().unwrap()).unwrap();
+        c.sync().unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        let img = c.get_image(ImageFormat::Z_PIXMAP, w.win, 80, 50, 1, 1, !0).unwrap().reply().unwrap();
+        let px = u32::from_le_bytes(img.data[..4].try_into().unwrap()) & 0xff_ffff;
+        assert_eq!(px, 0x2b2b2b, "the background, not black ({px:06x})");
     }
 }

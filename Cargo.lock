@@ -2168,6 +2168,7 @@ dependencies = [
  "os-plugkit",
  "os-theme",
  "os-ui",
+ "rfd",
  "serde_json",
  "windows-sys 0.61.2",
 ]
@@ -2994,6 +2995,7 @@ dependencies = [
 name = "os-engine"
 version = "0.0.1"
 dependencies = [
+ "miniz_oxide 0.8.9",
  "os-dsp",
  "os-model",
  "symphonia 0.6.1",

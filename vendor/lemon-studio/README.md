@@ -15,11 +15,13 @@ tests need Lemon's engine and plugins, so their dev-dependencies are not carried
 `os-engine/src/effects/` is upstream's `crates/os-engine/src/effects/`, every file unmodified (Lemon's own comments and
 tests included), at its own commit:
 
-- Effects commit: `eb1c13ee6108e30bedfdb21679c60bc30535da2b`
+- Effects commit: `a6ce2dd443d75abf424a50fb5dd68526f87bed9d`
 
 Honeydew runs `reverb.rs` and `dynamics.rs` as the built-in effects Lemon Reverb and Lemon Limiter
-(`crates/audio/src/lemon.rs`, on every platform); the others come along so that `mod.rs` stays upstream's. Honeydew's
-own code reads them only through their public items, so an upstream change that keeps those compiles as it is.
+(`crates/audio/src/lemon.rs`, on every platform); the others come along so that `mod.rs` stays upstream's (they use
+`os-dsp` and `miniz_oxide`, so `os-engine` always depends on those), and Lemon Parametric EQ runs `eq` (below), so the
+effects and the plugins are synced to the same commit. Honeydew's own code reads them only through their public items,
+so an upstream change that keeps those compiles as it is.
 
 **Syncing.** In the development repo, `tools/sync-lemon-effects.sh [commit]` (default: upstream's `main`) fetches Lemon
 Studio, copies the effect files here (removing those upstream removed), prints the diff and pins the new commit above.
@@ -35,7 +37,7 @@ compiled in with their `linked` feature (no exported entry points) and hosted th
 tables (`src/plugins/builtin.rs`). Their editors draw into the rack cards (`embed`, below). From upstream, at its own
 commit:
 
-- Plugins commit: `6e9c3b9d7c7cfa5a31dc2dc087358ba04eebc96e`
+- Plugins commit: `a6ce2dd443d75abf424a50fb5dd68526f87bed9d`
 
 - `plugins/lemon-3x-osc`, `plugins/lemon-sampler` and `plugins/lemon-parametric-eq-2`: their `src/` (no examples).
 - What they use that the hosts did not bring: `crates/os-plugkit`, `os-ui` (with its fonts and icon notice), `os-theme`
@@ -57,12 +59,13 @@ Honeydew's changes to these files are `honeydew.patch` beside this file, each ma
   editors use (`Peer`) on Windows too. `lib.rs`: the VST3 impl only without `linked`
   (Honeydew builds no VST3 wrapper).
 - Lemon Sampler: in the browser, a sample's effects are computed at once instead of on a thread, `std::time` is
-  `os_plugkit::time`, and the browser and Android have no sample file dialog.
+  `os_plugkit::time`, and the browser and Android have no sample file dialog. Lemon Trio: the browser and Android have
+  no file dialog for its custom shape's sample.
 - `os-dsp`: in the browser, which cannot compile Signalsmith Stretch (C++), `src/stretch_web.rs` (Honeydew's own file)
   stands in for `stretch.rs`: it resamples, so a stretched sound's pitch follows its speed there.
 - The manifests are Honeydew's (as for the hosts), with `crate-type` lib only, nih-plug by path without its VST3 feature,
-  rfd 0.17 (Honeydew's own) for Lemon Sampler's dialogs, and lint settings for upstream warnings and lints Rust 1.91
-  does not know.
+  rfd 0.17 (Honeydew's own) for Lemon Sampler's and Lemon Trio's dialogs, and lint settings for upstream warnings and
+  lints Rust 1.91 does not know.
 
 **Syncing.** `tools/sync-lemon-plugins.sh [commit]` (default: upstream's `main`) replaces these files with upstream's,
 applies `honeydew.patch`, prints the diff, shows upstream's manifest changes to carry over by hand, and pins the new
