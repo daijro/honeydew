@@ -38,11 +38,12 @@ jobs:
           main=$(lemon rev-parse HEAD)
           upstream="$RUNNER_TEMP/upstream"
           mkdir -p "$upstream"
-          for f in $(lemon ls-tree --name-only HEAD "$src/"); do
-            lemon show "HEAD:$f" > "$upstream/$(basename "$f")"
+          for f in $(lemon ls-tree -r --name-only HEAD "$src/"); do
+            mkdir -p "$(dirname "$upstream/${f#"$src"/}")"
+            lemon show "HEAD:$f" > "$upstream/${f#"$src"/}"
           done
           changed=()
-          for name in $( (ls "$dst"; ls "$upstream") | sort -u); do
+          for name in $( (cd "$dst" && find . -type f; cd "$upstream" && find . -type f) | sed 's|^\./||' | sort -u); do
             cmp -s "$dst/$name" "$upstream/$name" || changed+=("$name")
           done
           issue=$(gh issue list --state open --limit 100 --json number,title \

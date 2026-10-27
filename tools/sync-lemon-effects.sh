@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Updates the vendored Lemon Studio effects (vendor/lemon-studio/os-engine/src/effects, upstream's files unmodified) to
-# Lemon Studio at `commit` (default: upstream's main): copies every file of upstream's crates/os-engine/src/effects,
-# removes those upstream removed, prints the diff and pins the commit in vendor/lemon-studio/README.md. Commit the
-# result yourself after building and testing (see that README).
+# Lemon Studio at `commit` (default: upstream's main): copies every file of upstream's crates/os-engine/src/effects
+# (subfolders too), removes those upstream removed, prints the diff and pins the commit in
+# vendor/lemon-studio/README.md. Commit the result yourself after building and testing (see that README).
 #
 #   tools/sync-lemon-effects.sh [commit]
 #
@@ -34,15 +34,14 @@ fi
 pinned=$(sed -nE 's/^- Effects commit: `([0-9a-f]{40})`.*/\1/p' "$readme")
 echo "Lemon Studio effects: ${pinned:-none} -> $commit"
 
-files=$(git -C "$repo" ls-tree --name-only "$commit" "$src/")
+files=$(git -C "$repo" ls-tree -r --name-only "$commit" "$src/")
 [ -n "$files" ] || { echo "no $src at $commit" >&2; exit 1; }
-mkdir -p "$dst"
-for f in "$dst"/*; do
-    [ -e "$f" ] || continue
-    grep -qxF "$src/$(basename "$f")" <<<"$files" || rm "$f"
-done
+# Every file is upstream's, subfolders included: the folder is replaced whole.
+rm -rf "$dst"
 for f in $files; do
-    git -C "$repo" show "$commit:$f" >"$dst/$(basename "$f")"
+    out=$dst/${f#"$src"/}
+    mkdir -p "$(dirname "$out")"
+    git -C "$repo" show "$commit:$f" >"$out"
 done
 sed -i -E "s/^(- Effects commit: \`)[0-9a-f]{40}(\`.*)$/\1$commit\2/" "$readme"
 
