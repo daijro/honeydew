@@ -581,15 +581,26 @@ impl HoneydewApp {
     /// Adds an instrument channel with the chosen VST/CLAP already in its rack, as one channel edit.
     /// A plugin that vanished or fails to start leaves the song untouched.
     pub(super) fn insert_plugin_channel(&mut self, at: usize, uid: &str, tick: u64) {
-        let name = crate::plugins::available().into_iter().find(|p|
-            p.uid == uid && p.kind == crate::plugins::PluginKind::Instrument)
+        let name = crate::plugins::available()
+            .into_iter()
+            .find(|p| p.uid == uid && p.kind == crate::plugins::PluginKind::Instrument)
             .map(|p| p.name)
-            .or_else(|| [crate::plugins::builtin::LEMON_TRIO, crate::plugins::builtin::LEMON_SAMPLER]
-                .into_iter().find(|p| p.uid == uid).map(|p| p.name.to_owned()));
+            .or_else(|| {
+                [
+                    crate::plugins::builtin::LEMON_TRIO,
+                    crate::plugins::builtin::LEMON_SAMPLER,
+                ]
+                .into_iter()
+                .find(|p| p.uid == uid)
+                .map(|p| p.name.to_owned())
+            });
         let Some(plugin_name) = name else {
             return self.navigate(Nav::Open(Overlay::Message {
                 tag: MESSAGE_TAG,
-                lines: vec!["Instrument plugin is no longer available".into(), uid.to_owned()],
+                lines: vec![
+                    "Instrument plugin is no longer available".into(),
+                    uid.to_owned(),
+                ],
                 confirm: None,
                 extra: None,
             }));
@@ -614,7 +625,11 @@ impl HoneydewApp {
         let id = crate::ui::clips::add_clip(&mut channel.lanes[0], 0.0, 1.0, bar);
         self.song_edited(SongEdit::Final, tick);
         self.selected_channel = at;
-        self.navigate(Nav::EditClip(ClipKey { channel: at, lane: 0, id }));
+        self.navigate(Nav::EditClip(ClipKey {
+            channel: at,
+            lane: 0,
+            id,
+        }));
     }
 
     /// Deletes channel `index` (not the master).

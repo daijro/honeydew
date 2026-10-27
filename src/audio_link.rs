@@ -4,7 +4,9 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use honeydew_audio::device::{AudioCommand, AudioOutput, AudioRenderer, BufferMode, OutputSnapshot};
+use honeydew_audio::device::{
+    AudioCommand, AudioOutput, AudioRenderer, BufferMode, OutputSnapshot,
+};
 use honeydew_audio::sample::SampleData;
 
 use crate::audio_engine::{LiveInput, SongAudioEngine, settings, strip_param};
@@ -136,24 +138,19 @@ pub fn buffer_mode(sound_mode: u8, low_latency: u8) -> BufferMode {
     let requested = (target > 0).then_some(BufferMode::Fixed(target));
     // The explicit buffer target is independent of the desktop Sound Mode. Native keeps
     // the device default; a selected target is applied in either Standard or Multitrack.
-    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
-    {
-        let _ = sound_mode;
+    if cfg!(any(
+        target_os = "windows",
+        target_os = "macos",
+        target_os = "linux"
+    )) {
         return requested.unwrap_or(BufferMode::Native);
     }
-
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    {
-    if let Some(requested) = requested {
-        return requested;
-    }
-    match sound_mode {
+    requested.unwrap_or(match sound_mode {
         2 => BufferMode::UltraSafe,
         0 => BufferMode::Safe,
         1 => BufferMode::Fast,
         _ => BufferMode::Native,
-    }
-    }
+    })
 }
 
 #[cfg(test)]
@@ -508,7 +505,14 @@ impl AudioLink {
         read: &Reader<'_>,
         open: impl FnOnce(&Song, &SampleCache) -> Option<Box<dyn AudioSink>>,
     ) {
-        self.start_keeping_mode(song, keep, playing, read, |song, samples, _| open(song, samples), self.low_latency);
+        self.start_keeping_mode(
+            song,
+            keep,
+            playing,
+            read,
+            |song, samples, _| open(song, samples),
+            self.low_latency,
+        );
     }
 
     /// Like [`Self::start_keeping`], with an explicit output buffer policy for the initial stream.

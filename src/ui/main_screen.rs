@@ -6036,7 +6036,10 @@ mod tests {
         ] {
             insert = insert.or(rig.frame(events).insert);
         }
-        assert_eq!(insert, Some((1, AddChannelPick::Kind(ChannelKind::Instrument))));
+        assert_eq!(
+            insert,
+            Some((1, AddChannelPick::Kind(ChannelKind::Instrument)))
+        );
         rig.frame(vec![]);
         assert_eq!(rig.rect_of(item), None);
     }

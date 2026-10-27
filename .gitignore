@@ -9,3 +9,4 @@ content-out/
 *.jks
 *.keystore
 /docs/
+__pycache__/

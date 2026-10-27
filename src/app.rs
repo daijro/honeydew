@@ -40,6 +40,8 @@ use crate::ui::{panel_resize, wheels};
 mod audio_edit;
 pub(crate) mod auto_record;
 pub(crate) mod automation;
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+mod control;
 mod demo_restore;
 mod export;
 mod input;
@@ -50,8 +52,6 @@ mod panel;
 mod plugins;
 mod tracks;
 mod typed;
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
-mod control;
 // A song load on the web waits for its bundled sounds.
 mod bundle_wait;
 // Live editing in a Playground session (web only).
@@ -430,10 +430,12 @@ impl HoneydewApp {
                 self.audio.send(AudioCommand::MetronomeFlag { on, level });
             }
             if self.settings.low_latency != self.settings_saved.low_latency {
-                self.audio.set_low_latency(&self.song, self.settings.low_latency);
+                self.audio
+                    .set_low_latency(&self.song, self.settings.low_latency);
             }
             if self.settings.sound_mode != self.settings_saved.sound_mode {
-                self.audio.set_sound_mode(&self.song, self.settings.sound_mode);
+                self.audio
+                    .set_sound_mode(&self.song, self.settings.sound_mode);
             }
             if self.settings.multi_core != self.settings_saved.multi_core {
                 self.audio.set_multi_core(self.settings.multi_core);
@@ -1848,8 +1850,10 @@ impl HoneydewApp {
         // this click. The start is before the screen, so a press that lands on a key is heard natively.
         let mut snapshot = self.audio.poll();
         if !self.audio.running() && ctx.input(|i| audio_gesture(i, START_ON_RELEASE)) {
-            self.audio.set_low_latency_preference(self.settings.low_latency);
-            self.audio.set_sound_mode_preference(self.settings.sound_mode);
+            self.audio
+                .set_low_latency_preference(self.settings.low_latency);
+            self.audio
+                .set_sound_mode_preference(self.settings.sound_mode);
             let solo = self.solo();
             let song = solo.as_ref().unwrap_or(&self.song);
             let read = sample_cache::reader(&self.files);
@@ -2324,7 +2328,9 @@ impl HoneydewApp {
         if let Some(pick) = actions.add {
             match pick {
                 AddChannelPick::Kind(kind) => self.add_channel(kind, tick),
-                AddChannelPick::Plugin(uid) => self.insert_plugin_channel(self.song.channels.len(), uid, tick),
+                AddChannelPick::Plugin(uid) => {
+                    self.insert_plugin_channel(self.song.channels.len(), uid, tick)
+                }
             }
         }
         if let Some((at, pick)) = actions.insert {

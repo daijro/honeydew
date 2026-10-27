@@ -202,15 +202,13 @@ fn draw(ctx: &Context, cx: &UiCtx, t: &Tip, alpha: f32) {
     let layout = |s: &str| painter.layout_no_wrap(s.to_owned(), font.clone(), Color32::PLACEHOLDER);
     let short = layout(shortcut);
     let gap = if shortcut.is_empty() { 0.0 } else { m.u(GAP) };
-    let max_w = (screen.width() / 2.0 - m.u(GAP)).min(m.u(MAX_WIDTH_U)).max(0.0);
+    let max_w = (screen.width() / 2.0 - m.u(GAP))
+        .min(m.u(MAX_WIDTH_U))
+        .max(0.0);
     let pad = vec2(m.u(PAD_X), m.u(PAD_Y));
     let label_room = (max_w - 2.0 * pad.x - gap - short.size().x).max(0.0);
-    let label_job = eframe::egui::text::LayoutJob::simple(
-        t.label.to_owned(),
-        font.clone(),
-        text,
-        label_room,
-    );
+    let label_job =
+        eframe::egui::text::LayoutJob::simple(t.label.to_owned(), font.clone(), text, label_room);
     let label = painter.layout_job(label_job);
     let h = short.size().y.max(label.size().y);
     let size = vec2(label.size().x + gap + short.size().x, h) + 2.0 * pad;

@@ -8,8 +8,8 @@ use super::instruments_picker::PLUCK;
 use super::rack_wiring::{click_row, types, worker_done};
 use super::*;
 use crate::song::ModuleInstance;
-use crate::ui::modules_browser::InsertAt;
 use crate::ui::add_channel_menu::{AddChannelPick, add_channel_menu};
+use crate::ui::modules_browser::InsertAt;
 use crate::ui::rack::PresetTarget;
 
 fn picker(channel: usize, target: PresetTarget) -> Overlay {
@@ -111,7 +111,8 @@ fn drums_and_instrument_prompt_for_their_sound_from_the_plus_and_from_insert_cha
 #[test]
 fn a_plugin_pick_from_the_add_menu_creates_a_ready_instrument_track() {
     let uid = crate::plugins::builtin::LEMON_TRIO.uid;
-    let item = add_channel_menu().into_iter()
+    let item = add_channel_menu()
+        .into_iter()
         .find(|item| item.id == Some(AddChannelPick::Plugin(uid)))
         .expect("built-in instrument plugin is listed");
     for insert in [false, true] {
@@ -125,18 +126,33 @@ fn a_plugin_pick_from_the_add_menu_creates_a_ready_instrument_track() {
             rig.frame(vec![]);
             2
         };
-        let popup = if insert { "insert_channel_popup" } else { "add_channel_popup" };
+        let popup = if insert {
+            "insert_channel_popup"
+        } else {
+            "add_channel_popup"
+        };
         rig.click(center(&rig, Id::new(popup).with((item.col, item.row))));
         let channel = &rig.app.song.channels[at];
         assert_eq!(channel.name, "Lemon Trio");
         assert_eq!(channel.lanes[0].clips.len(), 1);
         assert_eq!(channel.rack.modules.len(), 1);
-        assert_eq!(channel.rack.modules[0].file.plugin.as_ref().unwrap().name, "Lemon Trio");
+        assert_eq!(
+            channel.rack.modules[0].file.plugin.as_ref().unwrap().name,
+            "Lemon Trio"
+        );
         assert_eq!(rig.app.selected_channel, at);
         assert_eq!(rig.app.history.steps(), steps + 1);
-        assert!(!rig.overlays().iter().any(|o| matches!(o, Overlay::PresetPicker { .. })));
+        assert!(
+            !rig.overlays()
+                .iter()
+                .any(|o| matches!(o, Overlay::PresetPicker { .. }))
+        );
         rig.frame(z(egui::Modifiers::NONE));
-        assert_eq!(rig.app.song.channels.len(), 2, "the plugin track is one undo step");
+        assert_eq!(
+            rig.app.song.channels.len(),
+            2,
+            "the plugin track is one undo step"
+        );
     }
 }
 

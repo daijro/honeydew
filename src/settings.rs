@@ -72,7 +72,9 @@ pub fn mcp_token_path() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "linux")]
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))?;
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config"))
+        })?;
     #[cfg(target_os = "macos")]
     let base = std::env::var_os("HOME")
         .map(|h| std::path::PathBuf::from(h).join("Library/Application Support"))?;
@@ -87,13 +89,17 @@ pub fn mcp_token_path() -> Option<std::path::PathBuf> {
 
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 pub fn load_mcp_token() -> Option<String> {
-    let token = std::fs::read_to_string(mcp_token_path()?).ok()?.trim().to_owned();
+    let token = std::fs::read_to_string(mcp_token_path()?)
+        .ok()?
+        .trim()
+        .to_owned();
     (!token.is_empty()).then_some(token)
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 pub fn save_mcp_token(token: &str) -> std::io::Result<()> {
-    let path = mcp_token_path().ok_or_else(|| std::io::Error::other("could not determine config directory"))?;
+    let path = mcp_token_path()
+        .ok_or_else(|| std::io::Error::other("could not determine config directory"))?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -115,7 +121,6 @@ pub fn load_mcp_token() -> Option<String> {
 pub fn save_mcp_token(_token: &str) -> std::io::Result<()> {
     Err(std::io::Error::other("MCP token storage is desktop-only"))
 }
-
 
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 const DEFAULT_SOUND_MODE: u8 = 0;
@@ -623,7 +628,10 @@ mod tests {
             mcp_token: String::new(),
             low_latency: if d.low_latency == 0 { 1 } else { 0 },
             background_audio: !d.background_audio,
-            sound_mode: SOUND_MODES.get(1).map(|&(id, _)| id).unwrap_or(d.sound_mode),
+            sound_mode: SOUND_MODES
+                .get(1)
+                .map(|&(id, _)| id)
+                .unwrap_or(d.sound_mode),
             latency_compensation: Some(false),
             multitrack_recording: !d.multitrack_recording,
             count_in: !d.count_in,
@@ -663,7 +671,7 @@ mod tests {
         // The latency toggle is unset: shown ON, and it compensates.
         assert_eq!(d.latency_compensation, None);
         // The other toggles are off.
-        assert!(d.multi_core == false && d.low_latency == 0 && !d.background_audio);
+        assert!(!d.multi_core && d.low_latency == 0 && !d.background_audio);
         assert!(!d.multitrack_recording);
         assert!(!d.key_names && !d.middle_c_is_c4 && !d.continuous_scroll);
         // `NATIVE`, `Classic Gray`, `100%`.
@@ -859,6 +867,8 @@ mod tests {
                 "lastAudioFileFormat",
                 "lockpads",
                 "lowlatency",
+                "mcpEnabled",
+                "mcpPort",
                 "middlec4",
                 "mtmlevel",
                 "multithreaded",

@@ -808,7 +808,9 @@ mod tests {
                 .filter(|(_, f)| *f != Color32::TRANSPARENT)
             {
                 assert!(
-                    parts.bar.contains_rect(r) || parts.graph.contains_rect(r) || clear.contains_rect(r),
+                    parts.bar.contains_rect(r)
+                        || parts.graph.contains_rect(r)
+                        || clear.contains_rect(r),
                     "ppp {ppp}: a fill {r:?} {fill:?} outside the bar and the graph"
                 );
             }
@@ -1000,10 +1002,16 @@ mod tests {
             },
         );
         p.set_plugin_lock_stats(104, 424);
-        assert_eq!((p.underruns, p.plugin_lock_misses, p.recovered_waits), (25, 104, 424));
+        assert_eq!(
+            (p.underruns, p.plugin_lock_misses, p.recovered_waits),
+            (25, 104, 424)
+        );
 
         p.clear_counters();
-        assert_eq!((p.underruns, p.plugin_lock_misses, p.recovered_waits), (0, 0, 0));
+        assert_eq!(
+            (p.underruns, p.plugin_lock_misses, p.recovered_waits),
+            (0, 0, 0)
+        );
 
         p.update(
             2.0,
@@ -1013,7 +1021,10 @@ mod tests {
             },
         );
         p.set_plugin_lock_stats(108, 430);
-        assert_eq!((p.underruns, p.plugin_lock_misses, p.recovered_waits), (2, 4, 6));
+        assert_eq!(
+            (p.underruns, p.plugin_lock_misses, p.recovered_waits),
+            (2, 4, 6)
+        );
     }
 
     #[test]

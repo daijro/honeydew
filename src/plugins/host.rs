@@ -907,39 +907,14 @@ pub fn param_text(channel_id: i32, instance_id: i32, param: usize, value: f32) -
                 }
                 text
             }
-            Err(TryLockError::WouldBlock) => hosted.card_text.get(&param).and_then(|(cached, text)| {
-                (cached.to_bits() == value.to_bits()).then(|| text.clone())
-            }),
+            Err(TryLockError::WouldBlock) => {
+                hosted.card_text.get(&param).and_then(|(cached, text)| {
+                    (cached.to_bits() == value.to_bits()).then(|| text.clone())
+                })
+            }
             Err(TryLockError::Poisoned(_)) => None,
         }
     })
-}
-
-#[cfg(test)]
-mod card_tests {
-    use super::*;
-
-    #[test]
-    fn busy_plugin_lock_keeps_the_last_card_status_and_value_text() {
-        let channel_id = 3901;
-        let instance_id = 7;
-        let module = instantiate(channel_id, instance_id, builtin::LEMON_TRIO.uid).unwrap();
-        let status = state(channel_id, instance_id).expect("plugin is running");
-        let (param, value, label) = (1..module.params.len())
-            .find_map(|index| {
-                let value = module.params[index];
-                param_text(channel_id, instance_id, index, value)
-                    .map(|label| (index, value, label))
-            })
-            .expect("plugin provides a parameter label");
-        let plugin = with(|host| host.live[&(channel_id, instance_id)].plugin.clone());
-        let guard = plugin.lock().unwrap();
-        assert_eq!(state(channel_id, instance_id), Some(status));
-        assert_eq!(param_text(channel_id, instance_id, param, value), Some(label));
-        assert_eq!(param_text(channel_id, instance_id, param, (value + 0.1).min(1.0)), None);
-        drop(guard);
-        with(|host| { host.live.remove(&(channel_id, instance_id)); });
-    }
 }
 
 /// Opens the plugin's own editor in a window, or brings it to the front; closes it with `open` false.
@@ -1095,4 +1070,38 @@ pub fn effect(
         rate,
         bar_beats as u16,
     )))
+}
+
+#[cfg(test)]
+mod card_tests {
+    use super::*;
+
+    #[test]
+    fn busy_plugin_lock_keeps_the_last_card_status_and_value_text() {
+        let channel_id = 3901;
+        let instance_id = 7;
+        let module = instantiate(channel_id, instance_id, builtin::LEMON_TRIO.uid).unwrap();
+        let status = state(channel_id, instance_id).expect("plugin is running");
+        let (param, value, label) = (1..module.params.len())
+            .find_map(|index| {
+                let value = module.params[index];
+                param_text(channel_id, instance_id, index, value).map(|label| (index, value, label))
+            })
+            .expect("plugin provides a parameter label");
+        let plugin = with(|host| host.live[&(channel_id, instance_id)].plugin.clone());
+        let guard = plugin.lock().unwrap();
+        assert_eq!(state(channel_id, instance_id), Some(status));
+        assert_eq!(
+            param_text(channel_id, instance_id, param, value),
+            Some(label)
+        );
+        assert_eq!(
+            param_text(channel_id, instance_id, param, (value + 0.1).min(1.0)),
+            None
+        );
+        drop(guard);
+        with(|host| {
+            host.live.remove(&(channel_id, instance_id));
+        });
+    }
 }

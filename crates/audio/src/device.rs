@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering, fence};
 use std::time::Instant;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{BufferSize, SupportedBufferSize, SupportedStreamConfig, StreamConfig};
+use cpal::{BufferSize, StreamConfig, SupportedBufferSize, SupportedStreamConfig};
 use crossbeam_channel::{Receiver, Sender, TrySendError, bounded};
 
 use crate::MeterSnapshot;
@@ -467,12 +467,19 @@ impl<R: AudioRenderer> AudioOutput<R> {
     }
 
     /// Starts the output, preferring the smallest buffer the device advertises when `low_latency` is on.
-    pub fn start_with_latency<F, E>(low_latency: bool, make_renderer: F) -> Result<Self, StartError<E>>
+    pub fn start_with_latency<F, E>(
+        low_latency: bool,
+        make_renderer: F,
+    ) -> Result<Self, StartError<E>>
     where
         F: FnOnce(u32) -> Result<R, E>,
     {
         Self::start_with_mode(
-            if low_latency { BufferMode::Fast } else { BufferMode::Native },
+            if low_latency {
+                BufferMode::Fast
+            } else {
+                BufferMode::Native
+            },
             make_renderer,
         )
     }
@@ -568,18 +575,30 @@ impl<R: AudioRenderer> AudioOutput<R> {
     }
 
     /// Reopens the output with the requested buffer policy, preserving transport state.
-    pub fn reopen_with_latency<F, E>(&mut self, low_latency: bool, make_renderer: F) -> Result<(), StartError<E>>
+    pub fn reopen_with_latency<F, E>(
+        &mut self,
+        low_latency: bool,
+        make_renderer: F,
+    ) -> Result<(), StartError<E>>
     where
         F: FnOnce(u32) -> Result<R, E>,
     {
         self.reopen_with_mode(
-            if low_latency { BufferMode::Fast } else { BufferMode::Native },
+            if low_latency {
+                BufferMode::Fast
+            } else {
+                BufferMode::Native
+            },
             make_renderer,
         )
     }
 
     /// Reopens the output with the requested buffer profile, preserving transport state.
-    pub fn reopen_with_mode<F, E>(&mut self, mode: BufferMode, make_renderer: F) -> Result<(), StartError<E>>
+    pub fn reopen_with_mode<F, E>(
+        &mut self,
+        mode: BufferMode,
+        make_renderer: F,
+    ) -> Result<(), StartError<E>>
     where
         F: FnOnce(u32) -> Result<R, E>,
     {

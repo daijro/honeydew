@@ -43,8 +43,8 @@
 use std::{collections::HashSet, path::PathBuf};
 
 use eframe::egui::{
-    Align2, Color32, DragValue, Id, Pos2, Rect, Sense, Shape, TextEdit, Ui, UiBuilder,
-    WidgetInfo, WidgetType, vec2,
+    Align2, Color32, DragValue, Id, Pos2, Rect, Sense, Shape, TextEdit, Ui, UiBuilder, WidgetInfo,
+    WidgetType, vec2,
 };
 
 use crate::icons::{IconId, draw_icon};
@@ -96,19 +96,6 @@ const PERCENT_W: f32 = 2.0;
 pub const OPEN_FOLDER: &str = "Open folder";
 /// The rows at the end that show only with a content folder.
 const CONTENT_ROWS: usize = 2;
-/// Settings sections start closed; their headers remain visible so each one can be opened independently.
-const SECTION_HEADERS: [&str; 10] = [
-    "MIDI:",
-    "Audio:",
-    "Recording:",
-    "User interface:",
-    "Application:",
-    "Advanced:",
-    "MCP:",
-    "Cloud backup:",
-    "Original content:",
-    "Plugins (VST3, VST2, CLAP):",
-];
 
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 fn generated_mcp_token() -> String {
@@ -281,15 +268,15 @@ const ROWS: [Row; 43] = {
             "Enable sharing files with nearby devices",
             FixedToggle(false),
         ),
-        row("Advanced:", Header),
-        row("Share logs", DisabledButton),
-        row("Restore demo songs", RestoreDemos),
-        row("Restore default settings", Restore),
         row("MCP:", Header),
         row("Enable MCP control", Toggle(|s| &mut s.mcp_enabled)),
         row("Port", McpPort),
         row("Authentication token", McpToken),
         row("Status", McpStatus),
+        row("Advanced:", Header),
+        row("Share logs", DisabledButton),
+        row("Restore demo songs", RestoreDemos),
+        row("Restore default settings", Restore),
         row("Cloud backup:", Header),
         row("You are not signed in", SignIn),
         row("Sync automatically", FixedToggle(false)),
@@ -327,10 +314,9 @@ pub struct SettingsTab {
     shown_frame: u64,
     /// How far the list is dragged or wheeled, in points. It is drawn at the whole row nearest to it.
     offset: f32,
-    /// Section headers the user has collapsed. This is UI state, so it is kept for the lifetime of the settings tab
-    /// rather than saved as an application preference.
+    /// Section headers the user has collapsed (all start open). This is UI state, so it is kept for the lifetime of
+    /// the settings tab rather than saved as an application preference.
     collapsed_sections: HashSet<&'static str>,
-    collapsed_sections_initialized: bool,
     /// `Calibrate` was tapped: the app starts the latency calibration and clears it.
     pub calibrate: bool,
     /// The MIDI input ports the `Input device:` menu lists ([`Self::set_midi_ports`]).
@@ -406,9 +392,15 @@ impl SettingsTab {
         let rows: Vec<_> = rows
             .iter()
             .filter(|r| {
-                cfg!(any(target_os = "windows", target_os = "macos", target_os = "linux"))
-                    || (!matches!(r.kind, Kind::Dropdown(Choice::SoundMode))
-                        && !matches!(r.label, "MCP:" | "Enable MCP control" | "Port" | "Authentication token" | "Status"))
+                cfg!(any(
+                    target_os = "windows",
+                    target_os = "macos",
+                    target_os = "linux"
+                )) || (!matches!(r.kind, Kind::Dropdown(Choice::SoundMode))
+                    && !matches!(
+                        r.label,
+                        "MCP:" | "Enable MCP control" | "Port" | "Authentication token" | "Status"
+                    ))
             })
             .collect();
         let plugins = if self.plugins { &PLUGIN_ROWS[..] } else { &[] };
@@ -449,10 +441,6 @@ impl SettingsTab {
         }
         self.shown_frame = frame;
         let m = cx.m;
-        if !self.collapsed_sections_initialized {
-            self.collapsed_sections.extend(SECTION_HEADERS);
-            self.collapsed_sections_initialized = true;
-        }
         let rows = self.visible_rows(&self.rows());
         let pitch = m.u(ROW_PITCH);
         // The scale note's row takes no room while the scale is not limited.
@@ -574,12 +562,16 @@ impl SettingsTab {
                 text,
             );
         };
-        let light_button = |ui: &mut Ui, rect: Rect, label: &str, enabled: bool| {
+        // The row's id: a row with a second button gives that one its own (`Copy` beside `Generate`).
+        let light_button_as = |ui: &mut Ui, id: Id, rect: Rect, label: &str, enabled: bool| {
             let b = Button {
                 disabled: !enabled,
-                ..Button::new(id.with(("button", label)), rect, label, false, colors)
+                ..Button::new(id, rect, label, false, colors)
             };
             button(ui, cx, &b, true).clicked()
+        };
+        let light_button = |ui: &mut Ui, rect: Rect, label: &str, enabled: bool| {
+            light_button_as(ui, id, rect, label, enabled)
         };
         // At most half the row, so that the label keeps room at large scales.
         let button_rect = right(BUTTON_W.min(r.width() / 2.0 / m.u(1.0)), BUTTON_H);
@@ -674,17 +666,14 @@ impl SettingsTab {
                 }
                 if matches!(choice, Choice::SoundMode) {
                     #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
-                    let sound_mode_tip =
-                        "STANDARD: general-purpose mode with broad device compatibility.\nMULTITRACK: experimental; FL-style per-input multitrack routing is not implemented yet. The buffer slider works in either mode.";
-                    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-                    let sound_mode_tip =
-                        "ULTRASAFE: largest buffer; maximum stability and compatibility, highest latency.\nSAFE: moderately large buffer; fewer glitches with more latency.\nFAST: small buffer; lower latency but more CPU/dropout risk.\nNATIVE: device/OS default audio behavior.";
-                    crate::ui::tooltip::tip(
-                        ui,
-                        button_rect,
-                        sound_mode_tip,
-                        None,
-                    );
+                    let sound_mode_tip = "STANDARD: general-purpose mode with broad device compatibility.\nMULTITRACK: experimental; FL-style per-input multitrack routing is not implemented yet. The buffer slider works in either mode.";
+                    #[cfg(not(any(
+                        target_os = "windows",
+                        target_os = "macos",
+                        target_os = "linux"
+                    )))]
+                    let sound_mode_tip = "ULTRASAFE: largest buffer; maximum stability and compatibility, highest latency.\nSAFE: moderately large buffer; fewer glitches with more latency.\nFAST: small buffer; lower latency but more CPU/dropout risk.\nNATIVE: device/OS default audio behavior.";
+                    crate::ui::tooltip::tip(ui, button_rect, sound_mode_tip, None);
                 }
             }
             Kind::MidiDropdown => {
@@ -756,7 +745,13 @@ impl SettingsTab {
                 } else {
                     format!("{} frames", BUFFER_SIZES[index])
                 };
-                plain(ui, value_room, &display, FontSize::Pt10, Align2::RIGHT_CENTER);
+                plain(
+                    ui,
+                    value_room,
+                    &display,
+                    FontSize::Pt10,
+                    Align2::RIGHT_CENTER,
+                );
                 crate::ui::tooltip::tip(
                     ui,
                     r,
@@ -791,7 +786,7 @@ impl SettingsTab {
                         s.mcp_token = token;
                     }
                 }
-                if light_button(ui, copy, "Copy", !s.mcp_token.is_empty()) {
+                if light_button_as(ui, id.with("copy"), copy, "Copy", !s.mcp_token.is_empty()) {
                     ui.ctx().copy_text(s.mcp_token.clone());
                 }
                 let token_rect = r.with_max_x(copy.left() - m.u(MARGIN));
@@ -805,7 +800,13 @@ impl SettingsTab {
             }
             Kind::McpStatus => {
                 label(ui, before(button_rect), FontSize::Pt10);
-                plain(ui, button_rect, self.mcp_status, FontSize::Pt10, Align2::RIGHT_CENTER);
+                plain(
+                    ui,
+                    button_rect,
+                    self.mcp_status,
+                    FontSize::Pt10,
+                    Align2::RIGHT_CENTER,
+                );
             }
             Kind::Scaling => {
                 // Held, the slider shows its value; let go (or reset), the scale applies at once.
@@ -1137,15 +1138,15 @@ mod tests {
                 "Continuous scrolling during playback",
                 "Show CPU and RAM meters",
                 "Enable sharing files with nearby devices",
-                "Advanced:",
-                "Share logs",
-                "Restore demo songs",
-                "Restore default settings",
                 "MCP:",
                 "Enable MCP control",
                 "Port",
                 "Authentication token",
                 "Status",
+                "Advanced:",
+                "Share logs",
+                "Restore demo songs",
+                "Restore default settings",
                 "Cloud backup:",
                 "You are not signed in",
                 "Sync automatically",
@@ -1303,7 +1304,7 @@ mod tests {
     impl Rig {
         /// Tall enough to show every row (2 U each) without scrolling.
         fn new() -> Self {
-            Self::with_height(2400.0)
+            Self::with_height(3000.0)
         }
 
         fn with_height(height: f32) -> Self {
@@ -1322,8 +1323,6 @@ mod tests {
                 hidden: false,
                 access: None,
             };
-            // Existing control tests start with all sections expanded so they can address individual rows directly.
-            rig.tab.collapsed_sections_initialized = true;
             rig.frame(vec![]);
             rig
         }
