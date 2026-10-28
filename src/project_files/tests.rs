@@ -263,7 +263,10 @@ fn a_project_from_a_newer_version_waits_for_an_answer() {
     assert_eq!(
         files.message,
         lines(&[
-            "This project was created with a newer version (5.1) than this app (5.0.1),",
+            &format!(
+                "This project was saved in a newer format (5.1) than Honeydew {} can read,",
+                env!("CARGO_PKG_VERSION")
+            ),
             "and will probably not load correctly.",
             "Do you want to continue loading this project anyway?",
         ])

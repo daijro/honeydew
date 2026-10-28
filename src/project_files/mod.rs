@@ -982,8 +982,11 @@ impl ProjectFiles {
         }
         if let Some(version) = saved_version(song).filter(|v| newer(v, FORMAT_VERSION)) {
             self.message = Some(vec![
+                // The file's version is its format's; the app names its own version.
                 format!(
-                    "This project was created with a newer version ({version}) than this app ({FORMAT_VERSION}),"
+                    "This project was saved in a newer format ({version}) than {} {} can read,",
+                    crate::APP_NAME,
+                    crate::ui::main_menu::version()
                 ),
                 "and will probably not load correctly.".into(),
                 "Do you want to continue loading this project anyway?".into(),
