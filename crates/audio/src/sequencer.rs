@@ -121,6 +121,25 @@ impl InputNoteEvent {
     }
 }
 
+/// Sorts `events` by beat, a note-off before a note-on at the same beat, equal ones in their given order: the stable
+/// sort by that key. The note-ons and note-offs are sorted apart and merged, as each is mostly in order already (a
+/// clip's note-ons are, and a note's off follows its on), which is far quicker on a song of many notes.
+pub fn sort_note_events(events: &mut Vec<InputNoteEvent>) {
+    let by_beat = |a: &InputNoteEvent, b: &InputNoteEvent| a.beat.total_cmp(&b.beat);
+    let (mut offs, mut ons): (Vec<_>, Vec<_>) =
+        events.drain(..).partition(|e| e.kind == NoteKind::Off);
+    offs.sort_by(by_beat);
+    ons.sort_by(by_beat);
+    let mut ons = ons.into_iter().peekable();
+    for off in offs {
+        while let Some(on) = ons.next_if(|on| by_beat(on, &off).is_lt()) {
+            events.push(on);
+        }
+        events.push(off);
+    }
+    events.extend(ons);
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ArpNoteEvent {
     pub beat: f64,

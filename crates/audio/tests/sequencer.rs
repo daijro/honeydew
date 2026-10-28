@@ -737,3 +737,32 @@ fn strum_uses_crossing_times_without_automatic_spacing() {
         [TimedNoteEvent::off(ms(101), 67)]
     );
 }
+
+#[test]
+fn note_events_sort_as_the_stable_sort_by_beat_with_offs_first() {
+    // Interleaved clips' notes with many equal beats and pitches: the order is the stable sort's, ties included.
+    let mut state = 7_u64;
+    let mut next = |n: u64| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state % n
+    };
+    let mut events = Vec::new();
+    for clip in 0..4 {
+        for i in 0..500 {
+            let on = f64::from(clip) + (i / 3) as f64 / 8.0;
+            let pitch = next(4) as i16;
+            events.push(InputNoteEvent::on(on, pitch, (i % 200) as u8 + 1));
+            events.push(InputNoteEvent::off(on + next(5) as f64 / 8.0, pitch));
+        }
+    }
+    let mut want = events.clone();
+    want.sort_by(|a, b| {
+        a.beat
+            .total_cmp(&b.beat)
+            .then_with(|| (a.kind != NoteKind::Off).cmp(&(b.kind != NoteKind::Off)))
+    });
+    sort_note_events(&mut events);
+    assert_eq!(events, want);
+}

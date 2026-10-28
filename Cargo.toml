@@ -1,6 +1,6 @@
 [package]
 name = "honeydew"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
@@ -93,6 +93,10 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 # Already in the tree through eframe's egui-winit, which opens links with it. `hardened`: only http(s) URLs open, never
 # a song link that fails to parse as a local file path (the PROJECT tab's `Open`).
 webbrowser = { version = "1.2.4", features = ["hardened"] }
+
+# winit's Android backend with a mouse's wheel, hover and buttons (issue #15), vendored (`vendor/winit/README.md`).
+[patch.crates-io]
+winit = { path = "vendor/winit" }
 
 # Built for speed; the web build adds `[profile.web]` below, and wasm-opt -O3 (tools/web-dist.sh).
 # Not `panic = "abort"`: wasm32 aborts already, and on native it would turn off `sample.rs::guarded`, which turns a

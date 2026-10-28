@@ -97,6 +97,11 @@ impl DwpZone<'_> {
         self.audio.is_some()
     }
 
+    /// The frames 0x1F7 says its audio holds, 0 when it says none: what decoding it takes.
+    pub fn declared_frames(&self) -> u64 {
+        self.format.map_or(0, |format| format.frames)
+    }
+
     /// The embedded audio, decoded: the lead-in skipped, then at most 0x1F7's frames. `None` for a file zone or audio
     /// that does not decode. App thread.
     pub fn decode(&self) -> Option<SampleData> {

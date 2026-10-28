@@ -165,6 +165,21 @@ fn echo_chain_rejects_unbounded_expansion() {
 }
 
 #[test]
+fn a_channel_without_note_effects_passes_any_number_of_notes() {
+    // A Black MIDI channel: more notes than note effects may make, and no note effect.
+    let rack = NoteEffectRack::new(Vec::new()).unwrap();
+    let n = 150_000;
+    let mut input = Vec::with_capacity(2 * n);
+    for i in 0..n {
+        let beat = i as f64 / 1000.0;
+        input.push(InputNoteEvent::on(beat, 60, 100));
+        input.push(InputNoteEvent::off(beat + 0.0005, 60));
+    }
+    let output = rack.process_events(0.0, 200.0, 120.0, &input).unwrap();
+    assert_eq!(output.len(), 2 * n);
+}
+
+#[test]
 fn note_echo_default_sync_delay_is_half_a_beat() {
     let mut params = vec![0.5; 16];
     params[0] = 1.0;

@@ -6,7 +6,7 @@ use honeydew_audio::automation::{
 };
 use honeydew_audio::mixer::send_param;
 use honeydew_audio::playback::{AudioPlayback, AutomationChange, PlaybackError, StereoBlock};
-use honeydew_audio::sequencer::{InputNoteEvent, NoteKind};
+use honeydew_audio::sequencer::{InputNoteEvent, sort_note_events};
 use honeydew_audio::{AudioEffect, EffectError, ProcessContext, effect_info};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -338,11 +338,7 @@ impl SongAudioBridge {
                 }
             }
         }
-        events.sort_by(|a, b| {
-            a.beat
-                .total_cmp(&b.beat)
-                .then_with(|| (a.kind != NoteKind::Off).cmp(&(b.kind != NoteKind::Off)))
-        });
+        sort_note_events(&mut events);
         Ok(events)
     }
 

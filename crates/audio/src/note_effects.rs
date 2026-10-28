@@ -151,7 +151,9 @@ impl NoteEffectRack {
         }
         let mut notes = pair(input)?;
         const MAX_NOTES: usize = 100_000;
-        if notes.len() > MAX_NOTES {
+        // The cap is on what note effects make: with none, the notes pass as they came (a channel of a Black MIDI
+        // song holds hundreds of thousands; the song's own play budget bounds them).
+        if !self.modules.is_empty() && notes.len() > MAX_NOTES {
             return Err(NoteEffectError::TooManyEvents);
         }
         for module in &self.modules {
@@ -343,11 +345,7 @@ fn events_from_notes(notes: Vec<Note>) -> Vec<InputNoteEvent> {
         }
         events.push(InputNoteEvent::off(note.end, note.pitch).with_pan(note.pan));
     }
-    events.sort_by(|a, b| {
-        a.beat
-            .total_cmp(&b.beat)
-            .then_with(|| (a.kind != NoteKind::Off).cmp(&(b.kind != NoteKind::Off)))
-    });
+    crate::sequencer::sort_note_events(&mut events);
     events
 }
 

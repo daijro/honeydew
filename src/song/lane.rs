@@ -274,13 +274,30 @@ impl Clip {
             0.0 => lp,
             off => off,
         };
+        // The events are sorted by position, so a pass walks only those that can play in range, a tick wider each
+        // side for the rounding: a heavy clip costs what it shows, not all its events. A position past the next pass
+        // (a file's loop shorter than its content) plays wrapped, so such a clip is walked whole.
+        let events = &self.events[..];
+        let narrow = events.last().is_none_or(|e| f64::from(e.pos()) < off + lp);
+        let at = move |pos: f64| events.partition_point(|e| f64::from(e.pos()) < pos);
         reps.flat_map(move |k| {
+            // A position p at or after the offset plays at p − off in its pass, one before it at p − off + loop.
+            let (lo, hi) = (from - k as f64 * lp - 1.0, to - k as f64 * lp + 1.0);
+            let (late, early) = match narrow {
+                true => {
+                    let late = at(off.max(lo + off));
+                    let early = at(lo + off - lp);
+                    let (late_end, early_end) = (at(hi + off), at((hi + off - lp).min(off)));
+                    (
+                        &events[late..late_end.max(late)],
+                        &events[early..early_end.max(early)],
+                    )
+                }
+                false => (events, events),
+            };
             // Content at or after the offset plays first in each repetition.
-            let late = self
-                .events
-                .iter()
-                .filter(move |e| f64::from(e.pos()) >= off);
-            let early = self.events.iter().filter(move |e| f64::from(e.pos()) < off);
+            let late = late.iter().filter(move |e| f64::from(e.pos()) >= off);
+            let early = early.iter().filter(move |e| f64::from(e.pos()) < off);
             late.chain(early).filter_map(move |e| {
                 let t = self.rel_tick(e.pos())? + k as f64 * lp;
                 let tick = clip_start + t.round() as u64;

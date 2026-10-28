@@ -680,23 +680,55 @@ impl Refs<'_> {
                         .or_insert_with(decoded);
                     return Arc::from([(Zone::user_sample(), key.clone())]);
                 };
+                // Embedded zones decode across the keyboard: every key range's most played velocity layer, then
+                // the next layer of each, and so on ([`decode_order`]). One whose size is over what is left is left
+                // out, and plays the nearest decoded zone's sample on its own keys and velocities: a program bigger
+                // than the budget plays every key, with fewer layers. One that does not decode is missing.
+                let mut decoded = vec![false; zones.len()];
+                let mut left_out = Vec::new();
+                for index in decode_order(&zones) {
+                    let zone = &zones[index];
+                    let key = SampleKey::Embedded(path.clone(), index as u32);
+                    if !self.cache.samples.contains_key(&key)
+                        && zone.declared_frames() > budget as u64
+                    {
+                        left_out.push(key);
+                        continue;
+                    }
+                    let decoded_zone = || zone.decode_with_limit(budget).map(Arc::new);
+                    let sample = self.cache.samples.entry(key).or_insert_with(decoded_zone);
+                    // A zone cached from an older version of the file may be larger than what is left.
+                    budget =
+                        budget.saturating_sub(sample.as_ref().map_or(0, |sample| sample.frames()));
+                    decoded[index] = sample.is_some();
+                }
+                // With none decoded there is nothing to stand in: those left out are missing.
+                if !decoded.contains(&true) {
+                    for key in left_out.drain(..) {
+                        self.cache.samples.insert(key, None);
+                    }
+                }
                 let zones = zones.iter().enumerate().filter_map(|(index, zone)| {
-                    let sample = if zone.embedded() {
-                        let key = SampleKey::Embedded(path.clone(), index as u32);
-                        let decoded = || zone.decode_with_limit(budget).map(Arc::new);
-                        let sample = self
-                            .cache
-                            .samples
-                            .entry(key.clone())
-                            .or_insert_with(decoded);
-                        // A zone cached from an older version of the file may be larger than what is left.
-                        budget = budget
-                            .saturating_sub(sample.as_ref().map_or(0, |sample| sample.frames()));
-                        key
-                    } else {
-                        SampleKey::File(zone_file(path, zone.file.as_deref()?))
-                    };
-                    Some((zone.zone, sample))
+                    if !zone.embedded() {
+                        let file = SampleKey::File(zone_file(path, zone.file.as_deref()?));
+                        return Some((zone.zone, file));
+                    }
+                    let key = |at: usize| SampleKey::Embedded(path.clone(), at as u32);
+                    match left_out.contains(&key(index)) {
+                        true => {
+                            let at = nearest(&zones, &decoded, index)?;
+                            let ranges = &zone.zone;
+                            let stand_in = Zone {
+                                key_low: ranges.key_low,
+                                key_high: ranges.key_high,
+                                vel_low: ranges.vel_low,
+                                vel_high: ranges.vel_high,
+                                ..zones[at].zone
+                            };
+                            Some((stand_in, key(at)))
+                        }
+                        false => Some((zone.zone, key(index))),
+                    }
                 });
                 zones.collect::<DwProgram>()
             });
@@ -827,6 +859,46 @@ pub fn disk_reader(files: &ProjectFiles) -> Option<WorkerReader> {
 }
 
 /// `.dwp` zone's sample file: `<folder of .dwp>/<.dwp base name>/<name>`.
+/// The order a program's embedded zones decode in: by layer (each key range's zones nearest velocity 100 first), then
+/// by key, then in file order. File zones are not in it.
+fn decode_order(zones: &[dwp::DwpZone<'_>]) -> Vec<usize> {
+    let distance = |z: &Zone| {
+        (i32::from(z.vel_low) - 100)
+            .max(100 - i32::from(z.vel_high))
+            .max(0)
+    };
+    let range = |i: usize| (zones[i].zone.key_low, zones[i].zone.key_high);
+    let mut by_range: Vec<usize> = (0..zones.len()).filter(|&i| zones[i].embedded()).collect();
+    by_range.sort_by_key(|&i| (range(i), distance(&zones[i].zone), i));
+    let mut layered = Vec::with_capacity(by_range.len());
+    for (n, &i) in by_range.iter().enumerate() {
+        let layer = match n.checked_sub(1).map(|p| by_range[p]) {
+            Some(p) if range(p) == range(i) => layered.last().map_or(0, |&(l, _, _)| l + 1),
+            _ => 0,
+        };
+        layered.push((layer, range(i), i));
+    }
+    layered.sort();
+    layered.into_iter().map(|(_, _, i)| i).collect()
+}
+
+/// The decoded zone nearest zone `index`: overlapping keys or the smallest gap between them first, then the nearest
+/// velocities, then the nearest root.
+fn nearest(zones: &[dwp::DwpZone<'_>], decoded: &[bool], index: usize) -> Option<usize> {
+    let z = &zones[index].zone;
+    let gap = |a: u8, b: u8, c: u8, d: u8| {
+        i32::from(c.saturating_sub(b)).max(i32::from(a.saturating_sub(d)))
+    };
+    (0..zones.len()).filter(|&i| decoded[i]).min_by_key(|&i| {
+        let o = &zones[i].zone;
+        (
+            gap(z.key_low, z.key_high, o.key_low, o.key_high),
+            gap(z.vel_low, z.vel_high, o.vel_low, o.vel_high),
+            (i32::from(z.root) - i32::from(o.root)).abs(),
+        )
+    })
+}
+
 fn zone_file(program: &ContentPath, name: &str) -> ContentPath {
     let beside = |path: &str| {
         let base = path
@@ -1641,6 +1713,52 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_program_over_the_budget_plays_every_key_with_fewer_layers() {
+        // Four key ranges of two velocity layers, 4 frames each; the budget holds four zones. Each range decodes its
+        // layer nearest velocity 100, and its other layer plays that sample on its own velocities: every key plays
+        // and nothing is missing (decoded bottom-up, the top two ranges were silent).
+        let zone = |lo: u8, hi: u8, vel: (u8, u8)| {
+            let mut keys = vec![lo, lo, hi, vel.0, vel.1, 0, 0, 0, 0];
+            keys.extend(1f32.to_le_bytes());
+            keys.extend([0; 12]);
+            let mut format = 4u64.to_le_bytes().to_vec();
+            format.extend(1u32.to_le_bytes());
+            format.extend(16u32.to_le_bytes());
+            format.extend(44_100f32.to_le_bytes());
+            let pcm: Vec<u8> = [1i16, 2, 3, 4]
+                .iter()
+                .flat_map(|s| s.to_le_bytes())
+                .collect();
+            [
+                record(0x1F4, &keys),
+                record(0x1F7, &format),
+                record(0x205, &pcm),
+            ]
+            .concat()
+        };
+        let ranges = [(0, 31), (32, 63), (64, 95), (96, 127)];
+        let program = dwp(&(ranges.iter())
+            .flat_map(|&(lo, hi)| [zone(lo, hi, (1, 64)), zone(lo, hi, (65, 127))])
+            .collect::<Vec<_>>());
+        let path = user("Grand.dwp");
+        let song = dw_song(dw_cstm(b"@L@\0Grand.dwp"));
+        let mut cache = SampleCache::with_max_bytes(4 * 4 * 8);
+        cache.load(&song, &|p| (*p == path).then(|| program.clone()));
+        let zones = cache.program(&path).expect("the program loads");
+        assert_eq!(zones.len(), 8);
+        for (n, (zone, key)) in zones.iter().enumerate() {
+            let loud = SampleKey::Embedded(path.clone(), (n | 1) as u32);
+            assert_eq!(key, &loud, "zone {n}");
+            assert!(cache.get(key).is_some(), "zone {n}");
+            let (lo, hi) = ranges[n / 2];
+            assert_eq!((zone.key_low, zone.key_high), (lo, hi), "zone {n}");
+            let vel = if n % 2 == 0 { (1, 64) } else { (65, 127) };
+            assert_eq!((zone.vel_low, zone.vel_high), vel, "zone {n}");
+        }
+        assert_eq!(cache.missing().count(), 0);
+    }
+
+    #[test]
     fn a_changed_program_never_overdraws_the_budget() {
         // v1: zone 0 broken, zone 1 decodes to 32.77 M frames. v2: zone 0 decodes to 32.77 M frames, and zone 1 is
         // still cached from v1 (its key is the index), which is more than the budget has left.
@@ -1703,7 +1821,7 @@ pub(crate) mod tests {
     #[test]
     fn a_program_s_embedded_audio_counts_against_the_total_budget() {
         // Three zones of 4 mono frames each, and room for 64 bytes, which the program budget reads as 8 frames: two
-        // fit.
+        // fit, and the third plays one of them.
         let pcm: Vec<u8> = [1i16, 2, 3, 4]
             .iter()
             .flat_map(|s| s.to_le_bytes())
@@ -1720,11 +1838,9 @@ pub(crate) mod tests {
         cache.load(&song, &|p| (*p == path).then(|| program.clone()));
         let kept = (0..3).filter_map(|i| cache.get(&SampleKey::Embedded(path.clone(), i)));
         assert_eq!(kept.count(), 2);
-        assert!(
-            cache
-                .missing()
-                .any(|k| *k == SampleKey::Embedded(path.clone(), 2))
-        );
+        let zones = cache.program(&path).expect("the program loads");
+        assert!(cache.get(&zones[2].1).is_some());
+        assert_eq!(cache.missing().count(), 0);
     }
 
     #[test]

@@ -2257,27 +2257,32 @@ fn notes(
         } => Some((len_beats, pad, velocity)),
         _ => None,
     };
-    // Keys from the whole content, so that nothing shifts while the playlist scrolls.
-    let content = || clip.events.iter().filter_map(note);
-    let keys = (content().map(|n| n.1).min(), content().map(|n| n.1).max());
-    let (Some(lo), Some(hi), Some(lp)) = (keys.0, keys.1, clip.loop_ticks()) else {
-        return;
-    };
     let (px, t) = (1.0 / m.ppp(), m.t());
     let width = |len: f64| match steps {
         true => (2.0 * t).max(0.25 * axis.beat_w),
         false => (len as f32 * axis.beat_w).max(2.0 * px),
     };
+    // Keys from the whole content, so that nothing shifts while the playlist scrolls, and the widest note, in one pass.
+    let (lo, hi, widest) = (clip.events.iter().filter_map(note))
+        .fold((u8::MAX, u8::MIN, 0.0_f32), |(lo, hi, w), (len, key, _)| {
+            (lo.min(key), hi.max(key), w.max(width(len)))
+        });
+    let Some(lp) = clip.loop_ticks().filter(|_| lo <= hi) else {
+        return;
+    };
     let seen = painter.clip_rect();
     // A note that starts before the view reaches into it by its width.
     // ponytail: at most a view's width; a note longer than that, starting further before the view, is left out.
-    let longest = (content().map(|n| width(n.0)).fold(0.0, f32::max)).min(seen.width());
+    let longest = widest.min(seen.width());
     let start = f64::from(clip.start_tick);
     let from = axis.tick(seen.left() - longest).max(start);
     let to = axis.tick(seen.right()).min(end_tick(clip)).ceil();
     let p = area.height() / (f32::from(hi - lo) + 2.0);
     let base = start - (clip.offset_beats * f64::from(PPQ)).rem_euclid(lp);
     let px_ticks = f64::from(px / axis.beat_w) * f64::from(PPQ);
+    // Per key, how far right its drawn notes reach. The plays come in time order, so a note that ends there too lies
+    // within one already drawn: a dense clip zoomed out draws a few rects a row, not every note.
+    let mut drawn = vec![f32::NEG_INFINITY; usize::from(hi - lo) + 1];
     for (tick, event) in clip.plays_to_draw(from as u64, to.max(from) as u64, px_ticks) {
         let Some((len, key, velocity)) = note(event) else {
             continue;
@@ -2286,6 +2291,11 @@ fn notes(
         let end = base + (((tick - base) / lp).floor() + 1.0) * lp;
         let x = m.floor_px(axis.x(tick));
         let right = (x + width(len)).min(m.floor_px(axis.x(end)));
+        let reach = &mut drawn[usize::from(key - lo)];
+        if right <= *reach {
+            continue;
+        }
+        *reach = right;
         let y = m.floor_px(area.bottom() - t - (f32::from(key) - f32::from(lo) + 1.0) * p);
         painter.rect_filled(
             Rect::from_x_y_ranges(x..=right, y..=y + t),
@@ -4278,7 +4288,7 @@ mod tests {
         view: Rect,
         axis: TimeAxis,
         m: Metrics,
-    ) -> Option<usize> {
+    ) -> Option<Vec<Rect>> {
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let out = egui::Context::default().run(egui::RawInput::default(), |ctx| {
@@ -4288,8 +4298,11 @@ mod tests {
                 });
             });
             let fills = (out.shapes.iter())
-                .filter(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == Color32::RED))
-                .count();
+                .filter_map(|c| match &c.shape {
+                    egui::Shape::Rect(r) if r.fill == Color32::RED => Some(r.rect),
+                    _ => None,
+                })
+                .collect();
             let _ = tx.send(fills);
         });
         rx.recv_timeout(std::time::Duration::from_secs(5)).ok()
@@ -4317,7 +4330,8 @@ mod tests {
         let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let area = Rect::from_x_y_ranges(axis.x(0.0)..=axis.x(1.28e8), 0.0..=48.0);
         let view = Rect::from_x_y_ranges(0.0..=128.0, 0.0..=48.0);
-        let fills = miniature_fills(clip.clone(), area, view, axis, m).expect("painted within 5 s");
+        let fills = (miniature_fills(clip.clone(), area, view, axis, m).map(|f| f.len()))
+            .expect("painted within 5 s");
         // The view and a view's width before it: 1024 ticks, a play every 4.
         assert!((200..=300).contains(&fills), "{fills}");
     }
@@ -4336,8 +4350,15 @@ mod tests {
                 beat_w: m.u(4.0 / 48.0),
             };
             let area = Rect::from_x_y_ranges(0.0..=axis.x(64.0 * 128.0), 0.0..=48.0);
+            // Every pass paints its notes, from the first to the last: a note under one painted before it is not
+            // painted again.
             let fills = miniature_fills(clip.clone(), area, area, axis, m).unwrap();
-            assert_eq!(fills, 200 * 16, "scale {scale}");
+            for pass in 0..16 {
+                let (first, last) = (pass * 4 * PPQ, pass * 4 * PPQ + 199 * 2);
+                let (a, b) = (axis.x(f64::from(first)), axis.x(f64::from(last)));
+                let covered = |x: f32| fills.iter().any(|r| r.left() <= x.floor() && x < r.right());
+                assert!(covered(a) && covered(b), "scale {scale}, pass {pass}");
+            }
         }
     }
 
@@ -4354,7 +4375,10 @@ mod tests {
         };
         let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let area = Rect::from_x_y_ranges(0.0..=3200.0, 0.0..=48.0);
-        assert_eq!(miniature_fills(clip.clone(), area, area, axis, m), Some(0));
+        assert_eq!(
+            miniature_fills(clip.clone(), area, area, axis, m).map(|f| f.len()),
+            Some(0)
+        );
         // Nor repeats: no triangles, no notes.
         let (fills, _, paths) = painted(&lane);
         assert_eq!((fills.len(), paths.len()), (1, 0));

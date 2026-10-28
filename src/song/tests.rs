@@ -1923,3 +1923,62 @@ fn a_clip_saved_without_a_loop_length_loads_with_one_that_holds_its_notes() {
     // The generic clip-update rule: 4 beats doubled until the note's end (beat 10) is inside.
     assert_eq!(saved.channels[1].lanes[0].clips[0].loop_len_beats, 16.0);
 }
+
+#[test]
+fn a_range_of_plays_is_what_walking_every_event_of_every_pass_finds() {
+    // The plays in a range come from the passes' sorted positions near it: the same plays, in the same order, as a
+    // walk over every event of every pass, whatever the offset, loop, visible length and positions past the loop.
+    let mut state = 99_u64;
+    let mut next = |n: u64| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state % n
+    };
+    for _ in 0..200 {
+        let looped = (1 + next(16)) as f64 / 2.0;
+        let mut c = clip(
+            next(512) as u32,
+            next(80) as f64 / 3.0,
+            looped,
+            next(40) as f64 / 7.0,
+        );
+        let past = next(4) == 0;
+        let span = (looped * f64::from(PPQ)) as u64 * if past { 2 } else { 1 };
+        let mut positions: Vec<u32> = (0..next(40)).map(|_| next(span + 1) as u32).collect();
+        positions.sort();
+        c.events = (positions.into_iter())
+            .map(|pos| Event::Automation {
+                pos,
+                value: 0.5,
+                control: true,
+            })
+            .collect();
+        let (lp, visible) = (c.loop_ticks().unwrap(), c.visible_ticks());
+        let off = match (c.offset_beats * f64::from(PPQ)).rem_euclid(lp) {
+            0.0 => lp,
+            off => off,
+        };
+        let rel = |pos: u32| (f64::from(pos) - c.offset_beats * f64::from(PPQ)).rem_euclid(lp);
+        for _ in 0..20 {
+            let start = next(6000);
+            let end = start + next(3000);
+            let mut want = Vec::new();
+            for k in 0..(visible / lp) as u64 + 3 {
+                let late = c.events.iter().filter(|e| f64::from(e.pos()) >= off);
+                let early = c.events.iter().filter(|e| f64::from(e.pos()) < off);
+                for e in late.chain(early) {
+                    let t = rel(e.pos()) + k as f64 * lp;
+                    let tick = u64::from(c.start_tick) + t.round() as u64;
+                    if t < visible && (start..end).contains(&tick) {
+                        want.push((tick, e.pos()));
+                    }
+                }
+            }
+            let got: Vec<_> = (c.events_in_song_range(start, end))
+                .map(|(tick, e)| (tick, e.pos()))
+                .collect();
+            assert_eq!(got, want, "{start}..{end} of {c:?}");
+        }
+    }
+}
