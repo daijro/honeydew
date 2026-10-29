@@ -1229,3 +1229,29 @@ fn a_fine_tune_drag_of_the_tremolos_max_below_min_lowers_min_with_no_undo_step()
     rig.frame(z(egui::Modifiers::SHIFT));
     assert_eq!(limits(&rig), (high, low));
 }
+
+#[test]
+fn a_tempo_change_makes_the_tempo_recent_and_add_automation_track_automates_it() {
+    // The tempo dialog's dial makes the master's tempo the recent control; CTRL's `Add automation track` gives the
+    // master a `Tempo` lane and opens it.
+    let mut rig = Rig::with_synth();
+    rig.frame(vec![]);
+    rig.click(BPM);
+    rig.frame(vec![]);
+    rig.press(dial(0));
+    for quarter in 1..=4 {
+        rig.drag_to(dial(quarter));
+    }
+    rig.release(dial(4));
+    rig.frame(vec![]);
+    assert_eq!(rig.recent(), Some((0, crate::song::TEMPO_TARGET)));
+    rig.frame(escape());
+    rig.frame(vec![]);
+    rig.ctrl_pick("Add automation track");
+    let lane = rig.app.song.channels[0].lanes.last().unwrap();
+    assert_eq!(
+        (lane.target, lane.label.as_str()),
+        (Some(crate::song::TEMPO_TARGET), "Tempo")
+    );
+    assert_eq!(rig.app.nav.view, View::AutomationEditor(0));
+}

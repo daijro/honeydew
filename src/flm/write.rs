@@ -17,7 +17,7 @@ use super::chunk::{
 use super::read::{check_cstm, decode_events};
 use crate::song::{
     AutomationTarget, CHANNEL_ID_LIMIT, Channel, ChannelKind, Clip, DrumKit, Event, Lane, LaneKind,
-    ModuleInstance, PPQ, RawChunk, SamplerSlot, SendState, Song, output_bus,
+    ModuleInstance, PPQ, RawChunk, SamplerSlot, SendState, Song, TEMPO_TARGET, output_bus,
 };
 
 /// Writes `song`. Fails only on a song no reader result can be: a first channel that is not the master with id 0,
@@ -414,11 +414,14 @@ fn write_channel(writer: &mut ChunkWriter, channel: &Channel, row: usize) -> Res
             writer.chunk(*b"SEND", |writer| write_send(writer, send))?;
         }
     }
-    // Automation lanes after the others, in file order.
+    // Automation lanes after the others, in file order. The master's tempo lane (Honeydew's own) is an `HDTk`, a
+    // `TRKH` by another name, which a reader that does not know it skips as an unknown chunk.
     let mut lanes: Vec<&Lane> = channel.lanes.iter().collect();
     lanes.sort_by_key(|lane| lane.target.map_or(i32::MIN, AutomationTarget::file_order));
     for lane in lanes {
-        writer.chunk(*b"TRKH", |writer| write_lane(writer, lane))?;
+        let tempo = channel.kind == ChannelKind::Master && lane.target == Some(TEMPO_TARGET);
+        let id = if tempo { *b"HDTk" } else { *b"TRKH" };
+        writer.chunk(id, |writer| write_lane(writer, lane))?;
     }
     write_raw(writer, &channel.file.channel_unknown_chunks)
 }

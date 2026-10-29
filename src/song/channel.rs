@@ -220,6 +220,9 @@ impl Channel {
     /// A drum slot's is `"<Param> : <Pad>"`, the pad named as its row header's first line
     /// ([`super::SamplerSlot::display_name`]), else by its sample's name, else `"<Param>"` alone.
     pub fn automation_label(&self, target: AutomationTarget) -> Option<String> {
+        if target == super::TEMPO_TARGET && self.kind == ChannelKind::Master {
+            return Some("Tempo".to_owned());
+        }
         if target.instance_id == 0 {
             let index = usize::try_from(target.param).ok()?;
             return ChannelParams::name(index);

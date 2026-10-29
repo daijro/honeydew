@@ -1,13 +1,46 @@
 //! A tempo change and the audio clips.
 
-use super::{LaneKind, Song};
+use super::{AutomationTarget, ChannelKind, LaneKind, Song};
 
 /// The tempos the app sets, in BPM: TAP's and the MIDI import's clamp,
 /// the widest. A read song's tempo is clamped to it too; the tempo dial's is narrower
 /// ([`crate::ui::main_menu::TEMPO_RANGE`]).
 pub const TEMPO_RANGE: (f64, f64) = (1.0, 999.0);
 
+/// The master channel's param an automation lane moves the tempo with (Honeydew's own: FL Studio Mobile automates no
+/// tempo, and channel param 6 is none of its). Its value v plays [`automated_tempo`]; files keep such a lane apart
+/// (`flm::write`).
+pub const TEMPO_PARAM: i32 = 6;
+/// [`TEMPO_PARAM`] as a lane's target.
+pub const TEMPO_TARGET: AutomationTarget = AutomationTarget {
+    instance_id: 0,
+    param: TEMPO_PARAM,
+};
+/// The tempos a tempo automation spans, the tempo dial's.
+pub const AUTOMATION_TEMPO_RANGE: (f64, f64) = (10.0, 999.0);
+
+/// The tempo automation value `v` plays: linear over [`AUTOMATION_TEMPO_RANGE`].
+pub fn automated_tempo(v: f32) -> f64 {
+    let (lo, hi) = AUTOMATION_TEMPO_RANGE;
+    lo + f64::from(v.clamp(0.0, 1.0)) * (hi - lo)
+}
+
+/// The tempo automation value of `bpm`, [`automated_tempo`]'s inverse, clamped to its range.
+pub fn tempo_value(bpm: f64) -> f32 {
+    let (lo, hi) = AUTOMATION_TEMPO_RANGE;
+    ((bpm - lo) / (hi - lo)).clamp(0.0, 1.0) as f32
+}
+
 impl Song {
+    /// Whether channel `channel` with automation target `target` moves the tempo: the master's [`TEMPO_TARGET`].
+    pub fn is_tempo(&self, channel: usize, target: AutomationTarget) -> bool {
+        target == TEMPO_TARGET
+            && self
+                .channels
+                .get(channel)
+                .is_some_and(|c| c.kind == ChannelKind::Master)
+    }
+
     /// Sets the tempo to `bpm`; every audio clip's stretch ratio (`STR1`, SYNC on or off) is multiplied by
     /// old / new, so the next render keeps a SYNC-on clip's length in beats and a SYNC-off clip plays at its native
     /// speed (its source length in beats, `CLHd` @28, scales with the tempo instead). Pads and other channels' samples

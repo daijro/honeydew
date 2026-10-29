@@ -500,3 +500,31 @@ fn an_edit_that_shortens_the_song_wraps_the_transport_modulo_its_new_length() {
     same.take_over(&mut stopped);
     assert_eq!(same.transport_tick(), 4 * 128);
 }
+
+#[test]
+fn the_masters_tempo_automation_plays_the_song_at_its_tempo() {
+    // 120 BPM, and from beat 2 the master's Tempo lane says 240: the first second plays 2 beats, the next half second 2
+    // more. Stop puts the song's tempo back, which plays again until the point.
+    use honeydew::song::{TEMPO_TARGET, tempo_value};
+    let rate = 48_000.0;
+    let mut song = song(&[]);
+    let lane = song.channels[0].add_automation_lane(TEMPO_TARGET);
+    lane.add_clip(0, 16.0).events.push(Event::Automation {
+        pos: 256,
+        value: tempo_value(240.0),
+        control: true,
+    });
+    let mut engine = SongAudioEngine::new(&song, rate).unwrap();
+    engine.play();
+    render(&mut engine, 72_000, 256);
+    assert!(
+        (510..=513).contains(&engine.transport_tick()),
+        "{}",
+        engine.transport_tick()
+    );
+    engine.stop();
+    engine.seek(0);
+    engine.play();
+    render(&mut engine, 24_000, 256);
+    assert_eq!(engine.transport_tick(), 128);
+}

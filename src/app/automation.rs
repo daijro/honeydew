@@ -145,6 +145,17 @@ pub(super) fn automated_init(automated: &[Automated], song: &Song, key: ClipKey)
 }
 
 impl HoneydewApp {
+    /// The tempo the master's tempo automation has set by song tick `tick`: its last event played by then, `None` while
+    /// none has (the song's tempo plays).
+    pub(super) fn automated_tempo(&self, tick: u64) -> Option<f64> {
+        let master = self.song.channels.first()?;
+        let lanes = (master.lanes.iter()).filter(|l| l.target == Some(crate::song::TEMPO_TARGET));
+        let (_, value) = lanes
+            .filter_map(|l| lane_value(l, tick))
+            .max_by_key(|&(at, _)| at)?;
+        Some(crate::song::automated_tempo(value))
+    }
+
     /// While the song plays, the controls of each automated param show the value its automation has set by the drawn
     /// playhead `tick`, as the engine plays it: the last event at or before it on the playing clips of the lanes that
     /// target it, past a clip's end its last (audio-engine.md, re-sync step 4). MIDI CC #7, #8 and #10 show on the
@@ -257,6 +268,12 @@ impl HoneydewApp {
                 self.recent_held |= touch.pick.is_none();
                 pick = touch.pick.or(pick);
             }
+        }
+        // The tempo dialog's changes make the master's tempo the recent control: `Add automation track` automates it.
+        if std::mem::take(&mut slots.tempo_editor.touched)
+            && let Some(master) = self.song.channels.first()
+        {
+            self.recent = Some((master.id, crate::song::TEMPO_TARGET));
         }
         pick
     }

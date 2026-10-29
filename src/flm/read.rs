@@ -886,7 +886,8 @@ impl Reader {
                         channel.file.sends.push(send);
                     }
                 }
-                b"TRKH" => {
+                // An `HDTk` is the master's tempo lane (`flm::write`).
+                b"TRKH" | b"HDTk" => {
                     if let Some(lane) = self.lane(&child, &mut next_slot)? {
                         channel.lanes.push(lane);
                     }

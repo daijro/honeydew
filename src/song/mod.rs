@@ -23,7 +23,9 @@ pub use file::{
 pub use lane::MAX_PLAYS_A_PIXEL;
 pub use lane::{AutomationTarget, Clip, DrumGrid, Event, Lane, LaneKind};
 pub use rack::{CommonParams, ModuleInstance, Rack};
-pub use tempo::TEMPO_RANGE;
+pub use tempo::{
+    AUTOMATION_TEMPO_RANGE, TEMPO_PARAM, TEMPO_RANGE, TEMPO_TARGET, automated_tempo, tempo_value,
+};
 
 /// Ticks per beat of event positions and clip start ticks.
 pub const PPQ: u32 = 128;

@@ -1256,8 +1256,11 @@ impl HoneydewApp {
     }
 
     /// The value of `target` on `channel`: the song's, or for MIDI CC 1 (channel param 8) the MOD wheel's, which the
-    /// song does not keep.
+    /// song does not keep; the master's tempo param is the song's tempo ([`crate::song::tempo_value`]).
     pub(super) fn param_value(&self, channel: usize, target: AutomationTarget) -> Option<f32> {
+        if self.song.is_tempo(channel, target) {
+            return Some(crate::song::tempo_value(self.song.tempo_bpm));
+        }
         let ch = self.song.channels.get(channel)?;
         ch.param(target).or_else(|| {
             let cc1 = AutomationTarget {
@@ -1914,8 +1917,12 @@ impl HoneydewApp {
             .any(|o| matches!(o, Overlay::MainMenu(_) | Overlay::SaveDialog { .. }));
         let shows = self.main_screen.playing && self.preview.is_none() && !saving;
         self.recent_held &= ctx.input(|i| i.pointer.any_down());
+        let mut shown_bpm = self.song.tempo_bpm;
         if let Some(s) = snapshot.as_ref().filter(|_| shows) {
-            self.show_automation(s.transport_tick + self.audio.playhead_lead());
+            let tick = s.transport_tick + self.audio.playhead_lead();
+            self.show_automation(tick);
+            // The BPM button shows the tempo the master's tempo automation has set.
+            shown_bpm = self.automated_tempo(tick).unwrap_or(shown_bpm);
         }
         self.engine_keys = snapshot
             .as_ref()
@@ -1996,7 +2003,7 @@ impl HoneydewApp {
                     selected: self.selected_channel,
                     settings: &shown,
                     audio: snapshot.as_ref(),
-                    bpm: self.song.tempo_bpm,
+                    bpm: shown_bpm,
                     history: (self.history.can_undo(), self.history.can_redo()),
                     preview: self.preview,
                     can_preview: false,

@@ -16,6 +16,8 @@ pub struct State {
     /// The tempo a drag in progress last set. Any other tempo means the song changed under the drag (an undo,
     /// which also cancels the drag): there is no drag left to finish.
     dragging: Option<f64>,
+    /// The tempo changed this frame: it is the recent control, which the app takes (the master's tempo param).
+    pub(crate) touched: bool,
 }
 
 /// Draws the dialog. A new tempo goes into the song: mid-drag as an ongoing edit (the engine takes it live), at the end
@@ -39,6 +41,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) -> Option<Na
         TempoAction::Set { bpm, done } => {
             // Also scales the audio clips' stretch ratios, in the drag's one undo step (`Song::set_tempo`).
             song.set_tempo(bpm);
+            state.touched = true;
             state.dragging = (!done).then_some(bpm);
             app.song_edited(done);
             None

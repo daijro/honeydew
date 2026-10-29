@@ -1982,3 +1982,25 @@ fn a_range_of_plays_is_what_walking_every_event_of_every_pass_finds() {
         }
     }
 }
+
+#[test]
+fn the_masters_tempo_lane_is_saved_apart_and_read_back() {
+    // An `HDTk`, which FL Studio Mobile skips as an unknown chunk: it automates no tempo.
+    let mut song = Song::default();
+    let lane = song.channels[0].add_automation_lane(TEMPO_TARGET);
+    assert_eq!(lane.label, "Tempo");
+    lane.add_clip(0, 4.0).events.push(Event::Automation {
+        pos: 0,
+        value: 0.5,
+        control: true,
+    });
+    let bytes = crate::flm::write(&song).unwrap();
+    assert_eq!(bytes.windows(4).filter(|w| *w == b"HDTk").count(), 1);
+    let read = crate::flm::read(&bytes).unwrap();
+    let lane = &read.channels[0].lanes[1];
+    assert_eq!(
+        (lane.target, lane.label.as_str()),
+        (Some(TEMPO_TARGET), "Tempo")
+    );
+    assert_eq!(lane.clips[0].events.len(), 1);
+}

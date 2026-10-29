@@ -24,7 +24,7 @@ use std::sync::Arc;
 use crate::audio_bridge::{SongAudioBridge, SongAudioError};
 use crate::sample_cache::SampleCache;
 use crate::settings::Settings;
-use crate::song::{PPQ, Song};
+use crate::song::{PPQ, Song, TEMPO_PARAM, automated_tempo, tempo_value};
 use honeydew_audio::analysis;
 use honeydew_audio::automation::AutomationTarget;
 use honeydew_audio::device::{AudioRenderer, ModuleKey, PingReport};
@@ -314,13 +314,18 @@ impl SongAudioEngine {
                 tempo_bpm,
                 samples,
             )?);
-            // A CC lane's target rests at 0 before its first point: the song stores no value for it.
+            // A CC lane's target rests at 0 before its first point: the song stores no value for it. The master's
+            // tempo rests at the song's.
             for target in channel.lanes.iter().filter_map(|lane| lane.target) {
                 let index = strip_param(0, target.param);
                 let key = (channel_index, 0, index);
                 if target.instance_id == 0 && !initial.iter().any(|&(c, i, p, _)| (c, i, p) == key)
                 {
-                    initial.push((channel_index, 0, index, 0.0));
+                    let rest = match song.is_tempo(channel_index, target) {
+                        true => tempo_value(song.tempo_bpm),
+                        false => 0.0,
+                    };
+                    initial.push((channel_index, 0, index, rest));
                 }
             }
             let mut modules = generators::build(
@@ -559,6 +564,11 @@ impl SongAudioEngine {
         }
         if let Some(at) = position(&self.initial, (channel, instance_id, index)) {
             self.applied[at] = value;
+        }
+        // The master's tempo automation: the value is a tempo (`song::automated_tempo`), played as a live tempo change.
+        if (channel, instance_id, index) == (0, 0, TEMPO_PARAM) {
+            self.set_tempo(automated_tempo(value) as f32);
+            return;
         }
         if instance_id == 0
             && let Some((target, level)) = self.routing.send(index)
