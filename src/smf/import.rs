@@ -8,6 +8,8 @@
 //! - A CC lane is shared by the SMF tracks of one target channel, MIDI channel and CC.
 //! - A file whose scan finds no channel opens as a song with only the master (the tempo set); the track menu imports
 //!   nothing from it.
+//! - Opened as a song, a file of more than one tempo plays as a tempo map ([`set_tempo`]); the track menu keeps the
+//!   song's tempo and master.
 
 use std::collections::HashMap;
 
@@ -15,9 +17,10 @@ use super::codec::{self, SmfEvent};
 use super::gm;
 use crate::content::Factory;
 use crate::midi::MidiMsg;
-use crate::song::points::{self, Point, PointKey};
+use crate::song::points::{self, Point, PointKey, Shape, ShapeKind};
 use crate::song::{
     AutomationTarget, ChannelKind, Clip, DrumGrid, Event, Lane, LaneKind, PPQ, Song, SynthKind,
+    TEMPO_RANGE, TEMPO_TARGET, tempo_value,
 };
 
 /// What every failure shows; the `Err` string is the detail.
@@ -158,8 +161,8 @@ pub struct Imported {
 /// else into channel `current`; notes on notes lanes, controllers and the pitch wheel on channel automation lanes. A
 /// new channel plays the sound of its GM program from `factory` ([`gm::load_program`]); MIDI channel 10 a Drums
 /// channel with our kit, its notes as hits on a notes-grid drum lane ([`gm::drum_kit`]). `as_song` (opening a `.mid`)
-/// also sets the file tempo. `Err` (the detail for [`LOAD_FAILED`]) leaves the song as it was: the file does not read,
-/// or `current` is no channel.
+/// also sets the file tempo and its tempo map (`set_tempo`). `Err` (the detail for [`LOAD_FAILED`]) leaves the song as
+/// it was: the file does not read, or `current` is no channel.
 pub fn import(
     song: &mut Song,
     current: usize,
@@ -184,7 +187,8 @@ pub fn import(
         auto_index: HashMap::new(),
     };
     let division = f64::from(smf.division);
-    let (mut tempo, mut program) = (None, [0u8; 16]);
+    // The `FF 51`s as (beat, BPM), in file order.
+    let (mut tempos, mut program) = (Vec::new(), [0u8; 16]);
     for track in &smf.tracks {
         let mut name = String::new();
         let mut new_lane = true;
@@ -198,12 +202,12 @@ pub fn import(
                     continue;
                 }
                 SmfEvent::Tempo(us) => {
-                    tempo = Some(60e6 / f64::from(*us));
+                    tempos.push((beat, 60e6 / f64::from(*us)));
                     continue;
                 }
                 // A malformed `FF 51` is a tempo parse error.
                 SmfEvent::Other { kind: 0x51, .. } => {
-                    tempo = Some(120.0);
+                    tempos.push((beat, 120.0));
                     continue;
                 }
                 SmfEvent::Other { .. } => continue,
@@ -277,9 +281,7 @@ pub fn import(
         }
     }
     if as_song {
-        let (lo, hi) = crate::song::TEMPO_RANGE;
-        // A file without `FF 51` plays at the MIDI default of 120 BPM.
-        song.tempo_bpm = tempo.unwrap_or(120.0).clamp(lo, hi);
+        set_tempo(song, tempos);
     }
     let (made, kits) = (state.made, state.kits.clone());
     state.finish(song);
@@ -524,6 +526,53 @@ impl State<'_> {
             fit(clip, bar);
         }
     }
+}
+
+/// Sets the song's tempo from the file's `tempos`, (beat, BPM) in file order, clamped to [`TEMPO_RANGE`], and replaces
+/// the master's tempo lane. One tempo (at the lane's resolution; none at all is the MIDI
+/// default of 120 BPM) is the song's tempo, wherever it falls. More are a tempo map: the song's tempo is the one in
+/// force at tick 0 (the last there in file order, else 120), and a master `Tempo` lane gets a point at each change,
+/// Square at 100 % so it holds its tempo up to the next point and jumps there (its values clamped to the lane's range,
+/// [`crate::song::AUTOMATION_TEMPO_RANGE`]).
+fn set_tempo(song: &mut Song, mut tempos: Vec<(f64, f64)>) {
+    let value = |bpm| points::raw(tempo_value(bpm));
+    let (lo, hi) = TEMPO_RANGE;
+    let bar = song.time_sig.bar_beats();
+    let master = &mut song.channels[0];
+    master.lanes.retain(|l| l.target != Some(TEMPO_TARGET));
+    if tempos.iter().all(|t| value(t.1) == value(tempos[0].1)) {
+        song.tempo_bpm = tempos.last().map_or(120.0, |t| t.1).clamp(lo, hi);
+        return;
+    }
+    tempos.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut map = vec![(0, 120.0)];
+    for (beat, bpm) in tempos {
+        let at = tick(beat);
+        match map.last_mut() {
+            Some(last) if last.0 == at => last.1 = bpm,
+            _ => map.push((at, bpm)),
+        }
+    }
+    map.dedup_by_key(|p| value(p.1));
+    song.tempo_bpm = map[0].1.clamp(lo, hi);
+    if map.len() == 1 {
+        return;
+    }
+    let lane = master.add_automation_lane(TEMPO_TARGET);
+    let clip = new_clip(lane, map.iter().map(|p| f64::from(p.0) / f64::from(PPQ)));
+    let shape = Shape {
+        kind: ShapeKind::Square,
+        tension: 100,
+    };
+    let pts = (map.iter())
+        .map(|&(tick, bpm)| Point {
+            tick,
+            value: value(bpm),
+            shape,
+        })
+        .collect();
+    points::set_points(clip, PointKey::Automation, pts);
+    fit(clip, bar);
 }
 
 /// The song tick of `beat`, rounded.

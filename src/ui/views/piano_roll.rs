@@ -7,6 +7,7 @@ use eframe::egui;
 use honeydew_audio::device::AudioCommand;
 
 use super::{AppCtx, Nav, View};
+use crate::ui::clips::LiveTake;
 use crate::ui::piano_roll::{PianoRoll, PianoRollAction, RollOptions};
 
 /// What the piano roll keeps between frames: each channel's roll, by channel index (the app re-keys them when
@@ -17,6 +18,9 @@ pub struct State {
     /// The keys sounding on the shown roll's channel outside it (the app sets them each frame,
     /// [`RollOptions::sounding`]).
     pub(crate) sounding: u128,
+    /// The takes being recorded (the app sets them each frame): a roll on one's clip shows it live
+    /// ([`RollOptions::recording`]).
+    pub(crate) takes: Vec<LiveTake>,
 }
 
 /// Draws the piano roll of `channel`'s note lane in `app.regions.editor`; back to the playlist once the channel is gone
@@ -40,6 +44,9 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         covered: app.covered,
         continuous: app.settings.continuous_scroll,
         sounding: state.sounding,
+        recording: (state.takes.iter()).any(|t| {
+            (t.channel, t.lane, t.clip) == (channel, roll.lane, roll.clip_id) && t.clip.is_some()
+        }),
     };
     for action in roll.show(ui, app.regions.editor, &app.cx, app.song, &opts) {
         match action {

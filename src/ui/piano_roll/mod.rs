@@ -97,6 +97,12 @@
 //! the loop's end], the line and the disc following it. The region items act on every note of the clip ([`region`]);
 //! `Snap to Scale` and `Guess Scale...` on the notes that start in the range. A region edit is one final edit and drops
 //! the note selection.
+//!
+//! A Honeydew addition (issue #26): on a take being recorded ([`RollOptions::recording`]; the app opens the take's clip
+//! in a roll open on its channel) the roll shows the clip as it records ([`crate::app::note_record::live`]: each held
+//! note from its note-on to the playhead, the clip grown as the take will leave it) and edits nothing. Its playhead
+//! runs on from the clip's start, unfolded, as the take grows to it; with `Continuous scrolling during playback` on the
+//! view keeps it a quarter in, and with it off the view turns a page whenever it leaves the view.
 
 pub(crate) mod notes;
 
@@ -234,6 +240,8 @@ pub struct RollOptions {
     /// channel's input (song playback, previews), bit k for key k: their rows are lit (grid background step 4), with
     /// the roll's own sounds.
     pub sounding: u128,
+    /// The roll's clip is a take being recorded: it shows live and read-only (module docs; Honeydew's own).
+    pub recording: bool,
 }
 
 /// The piano roll of one clip: which clip, the snap setting, and view and gesture state.
@@ -285,6 +293,8 @@ pub struct PianoRoll {
     pending: Vec<PianoRollAction>,
     /// The playhead knob on the ruler.
     knob: PlayheadKnob,
+    /// The clip is a take being recorded ([`RollOptions::recording`]): nothing edits it.
+    recording: bool,
 }
 
 /// A touch on the grid (module docs). Outside a touch, the selection is the one showing.
@@ -411,6 +421,7 @@ impl PianoRoll {
             paste: None,
             pending: Vec::new(),
             knob: PlayheadKnob::default(),
+            recording: false,
         }
     }
 
@@ -454,6 +465,9 @@ impl PianoRoll {
     }
 
     fn clip_mut<'a>(&self, song: &'a mut Song) -> Option<&'a mut Clip> {
+        if self.recording {
+            return None;
+        }
         let lane = song
             .channels
             .get_mut(self.channel)?
@@ -461,6 +475,15 @@ impl PianoRoll {
             .get_mut(self.lane)
             .filter(|l| l.kind == LaneKind::Notes)?;
         lane.clips.iter_mut().find(|c| Some(c.id) == self.clip_id)
+    }
+
+    /// The content tick the playhead shows at song tick `tick` ([`region::playhead_tick`]); on a take being recorded
+    /// (Honeydew's own, module docs), from the clip's start on, unfolded: the take grows to it.
+    fn playhead_at(&self, song: &Song, tick: u64, opts: &RollOptions) -> Option<f64> {
+        match self.clip(song).filter(|_| self.recording) {
+            Some(clip) => Some(tick as f64 - f64::from(clip.start_tick)),
+            None => region::playhead_tick(self.clip(song), tick, opts.previewing),
+        }
     }
 
     /// The ghost notes to draw over the content ticks `view`, `px` ticks a pixel ([`ghost_notes`]): none when the
@@ -523,6 +546,7 @@ impl PianoRoll {
         let keys = body.with_max_x(rect.left() + m.u(KEYS_W));
         let grid = body.with_min_x(keys.right() + m.t());
         let id = Id::new("piano_roll");
+        self.recording = opts.recording;
         let mut actions = std::mem::take(&mut self.pending);
         // A new note's sound ends after its gate.
         let now = ui.input(|i| i.time);
@@ -583,11 +607,12 @@ impl PianoRoll {
         self.grid_input(ui, &response, grid, m, song, &mut actions);
         let g = self.geom(grid.min, u);
 
-        // The grid and what lies on it.
-        let events = self.clip(song).map_or(&[][..], |c| &c.events);
-        let loop_ticks = self
-            .clip(song)
-            .map_or(BEAT * f64::from(bpb), |c| c.loop_len_beats * BEAT);
+        // The grid and what lies on it: a take being recorded as it shows live.
+        let live = (self.clip(song).filter(|_| self.recording))
+            .map(|c| crate::app::note_record::live(c, opts.playhead, bpb));
+        let shown = live.as_ref().or(self.clip(song));
+        let events = shown.map_or(&[][..], |c| &c.events);
+        let loop_ticks = shown.map_or(BEAT * f64::from(bpb), |c| c.loop_len_beats * BEAT);
         let color = channel_color(
             song.channels.get(self.channel).map_or(0.0, |c| c.hue),
             cx.theme,
@@ -671,7 +696,7 @@ impl PianoRoll {
         let sig = song.time_sig;
         timeline::ruler(&bars_painter, bars, bars, g.origin.x, g.beat_w, sig, cx);
         let origin = region::clip_origin(self.clip(song));
-        let playhead = region::playhead_tick(self.clip(song), opts.playhead, opts.previewing);
+        let playhead = self.playhead_at(song, opts.playhead, opts);
         let at = RangeRuler {
             strip: bars,
             axis: TimeAxis {
@@ -709,8 +734,7 @@ impl PianoRoll {
         }
         // Clipped at the key column's right edge: at beat 0 its left half shows in the t gap. While the knob is
         // dragged, the line and the disc follow the finger.
-        let drawn =
-            region::playhead_tick(self.clip(song), opts.playhead + opts.lead, opts.previewing);
+        let drawn = self.playhead_at(song, opts.playhead + opts.lead, opts);
         let x = (self.knob).line_x(ui, m, &at, loop_ticks - 1.0, g.x(drawn.unwrap_or(0.0)));
         let line_painter = ui.painter_at(body.with_min_x(keys.right()));
         line_painter.set(line_slot, timeline::playhead_line_shapes(grid, x, cx));
@@ -890,7 +914,8 @@ impl PianoRoll {
     /// zooms the time. With Settings `Continuous scrolling during playback` on, while playing a clip longer than the
     /// view, the view keeps the playhead (folded into the clip's loop, clip-relative) a quarter in, and one finger
     /// scrolls no time. The time scrolls over 0 … the loop end or the last note's bar, plus [`TAIL_BARS`]; the rows
-    /// over the 128 keys.
+    /// over the 128 keys. On a take being recorded (Honeydew's own, module docs) the playhead is unfolded, the time
+    /// scrolls a view past it, and the view follows it with the setting on and turns a page with it off.
     fn scroll(
         &mut self,
         ui: &egui::Ui,
@@ -931,15 +956,26 @@ impl PianoRoll {
                 view: grid.y_range(),
             },
         ];
+        // A take being recorded: where its playhead is, in beats; the time scrolls a view past it.
+        let take = (self.playhead_at(song, opts.playhead + opts.lead, opts))
+            .filter(|_| self.recording)
+            .map(|tick| tick / BEAT);
+        if let Some(beat) = take {
+            axes[X].range[1] = axes[X].range[1].max(beat + axes[X].span());
+        }
         let was = axes;
         let loop_ticks = clip.map_or(0.0, |c| c.loop_len_beats * BEAT);
-        let follow =
-            (opts.continuous && opts.playing && loop_ticks / BEAT > axes[X].span()).then(|| {
-                geom::playhead(
-                    (opts.playhead + opts.lead) as f64 - region::clip_origin(clip) as f64,
-                    loop_ticks,
-                )
-            });
+        let follow = match take {
+            Some(beat) => opts.continuous.then_some(beat * BEAT),
+            None => {
+                (opts.continuous && opts.playing && loop_ticks / BEAT > axes[X].span()).then(|| {
+                    geom::playhead(
+                        (opts.playhead + opts.lead) as f64 - region::clip_origin(clip) as f64,
+                        loop_ticks,
+                    )
+                })
+            }
+        };
         let options = scroller::Options {
             covered: opts.covered,
             follow: follow.is_some(),
@@ -949,6 +985,11 @@ impl PianoRoll {
             .update(ui, id.with("scroll"), u, &zones, &mut axes, options);
         if let Some(tick) = follow {
             scroller::follow(&mut axes[X], tick / BEAT);
+        } else if let Some(beat) = take
+            && !(axes[X].pos..axes[X].pos + axes[X].span()).contains(&beat)
+        {
+            // Setting off: the page turns, the playhead at the left edge.
+            axes[X].pos = beat.clamp(axes[X].range[0], axes[X].max());
         }
         let [x, y] = axes;
         if x.zoom != was[X].zoom {

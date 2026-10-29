@@ -470,12 +470,12 @@ fn without_a_loop_the_transport_wraps_at_the_song_end_rounded_up_to_whole_bars()
 fn a_recording_without_a_loop_plays_on_past_the_song_end() {
     let rate = 48_000.0;
     let mut engine = SongAudioEngine::new(&song(&[]), rate).unwrap();
-    engine.set_metronome(true, 0.0);
+    engine.set_metronome(true, true, 0.0);
     engine.seek(15 * 128);
     engine.play();
     render(&mut engine, frame(2 * 128, rate), 1000);
     assert_eq!(engine.transport_tick(), 17 * 128);
-    engine.set_metronome(false, 0.0);
+    engine.set_metronome(false, true, 0.0);
     render(&mut engine, 64, 64);
     assert_eq!(engine.transport_tick(), 0);
 }

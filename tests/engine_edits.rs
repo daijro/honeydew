@@ -623,7 +623,7 @@ fn a_latency_measurement_goes_on_through_an_edit() {
 #[test]
 fn a_metronome_click_rings_on_through_an_edit() {
     let song = synths(&[&[]]);
-    let on = |e: &mut SongAudioEngine| e.set_metronome(true, 1.0);
+    let on = |e: &mut SongAudioEngine| e.set_metronome(true, true, 1.0);
     // 100 frames into beat 1's click.
     let mut engine = retimed(&song, 120.0, on, 1.0 + 100.0 / BEAT as f64);
     assert!(

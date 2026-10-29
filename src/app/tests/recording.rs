@@ -50,14 +50,15 @@ impl Rig {
     }
 
     /// Renders the Recorder's engine for `frames` frames (it runs a count-in), given the output's buffer size first as
-    /// the device does.
-    fn render(&mut self, frames: usize) {
+    /// the device does. Returns the stereo output.
+    fn render(&mut self, frames: usize) -> Vec<f32> {
         let mut output = vec![0.0; 2 * frames];
         let mut rec = self.rec.0.borrow_mut();
         let buffer = rec.buffer_frames;
         let engine = rec.engine.as_mut().expect("an engine");
         engine.set_buffer_frames(buffer);
         engine.render(&mut output, 2);
+        output
     }
 }
 
@@ -102,6 +103,28 @@ fn rec_arms_with_the_metronome_and_any_stop_disarms() {
     rig.frame(vec![]);
     assert!(!rig.app.main_screen.armed);
     assert!(rig.take().ends_with(&["Metronome false 0.500".to_owned()]));
+}
+
+/// `Metronome when recording` off: the take is silent, yet still a recording to the engine (it runs past the one-bar
+/// song end). Switched on while armed, the beats click again.
+#[test]
+fn rec_with_the_metronome_setting_off_records_without_clicks() {
+    let mut rig = rec_rig(false);
+    rig.app.settings.rec_metronome = false;
+    rig.frame(vec![]);
+    rig.take();
+    rig.click(REC);
+    rig.click(PLAY);
+    assert!(rig.app.recording());
+    assert_eq!(rig.take(), ["Metronome true 0.500 silent", "Play"]);
+    let loud = |output: &[f32]| output.iter().any(|s| s.abs() > 0.01);
+    assert!(!loud(&rig.render(6 * 24_000)), "no clicks");
+    let tick = rig.rec.0.borrow().engine.as_ref().unwrap().transport_tick();
+    assert_eq!(tick, 6 * BEAT, "no wrap at the song end");
+    rig.app.settings.rec_metronome = true;
+    rig.frame(vec![]);
+    assert_eq!(rig.take(), ["Metronome true 0.500"]);
+    assert!(loud(&rig.render(24_000)), "beat 6 clicks");
 }
 
 #[test]
@@ -1374,4 +1397,89 @@ fn a_moved_channel_or_a_new_song_leaves_no_phantom_held_note_for_the_next_take()
     rig.click(PLAY);
     rig.frame(vec![]);
     assert_eq!(notes(&rig, 1), [Vec::new()]);
+}
+
+/// The rects the last frame filled inside `area` whose (rect, fill) `keep` takes, groups flattened.
+fn fills_in(
+    rig: &Rig,
+    area: egui::Rect,
+    keep: impl Fn(egui::Rect, egui::Color32) -> bool,
+) -> Vec<egui::Rect> {
+    fn walk(shape: &egui::Shape, out: &mut Vec<(egui::Rect, egui::Color32)>) {
+        match shape {
+            egui::Shape::Rect(r) => out.push((r.rect, r.fill)),
+            egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, out)),
+            _ => {}
+        }
+    }
+    let mut all = Vec::new();
+    (rig.out.shapes.iter()).for_each(|s| walk(&s.shape, &mut all));
+    (all.into_iter())
+        .filter(|&(r, fill)| area.contains_rect(r) && keep(r, fill))
+        .map(|(r, _)| r)
+        .collect()
+}
+
+#[test]
+fn a_held_note_shows_live_in_the_playlist_and_the_open_piano_roll_as_the_take_then_stores_it() {
+    // Honeydew's own (issue #26). The roll is open on the synth's (2) empty one-bar clip at 0, which the take replaces:
+    // it stays open, on the take's clip.
+    let mut rig = Rig::with_drums_and_synth();
+    rig.app.settings.count_in = false;
+    rig.click(OUTSIDE);
+    rig.edit(2);
+    rig.frame(vec![]);
+    rig.app.main_screen.split.target = 0.6;
+    rig.slide_split();
+    rig.at_tick(BEAT);
+    rig.click(REC);
+    rig.click(PLAY);
+    rig.press(E4);
+    let ink =
+        crate::theme::channel_color(rig.app.song.channels[2].hue, &crate::theme::theme_by_id(0));
+    // The note as drawn: in the playlist, the 2 px bar on the synth's row (the third); in the roll, its cell.
+    let drawn = |rig: &mut Rig, tick| {
+        rig.at_tick(tick);
+        rig.frame(vec![]);
+        let row = egui::Rect::from_x_y_ranges(50.0..=1170.0, RULER + 4.0 * U..=RULER + 6.0 * U);
+        let grid = rig
+            .ctx
+            .read_response(egui::Id::new("piano_roll").with("grid"));
+        let grid = grid.expect("the roll").rect;
+        let bar = fills_in(rig, row, |r, _| r.height() == 2.0);
+        let cell = fills_in(rig, grid, |r, fill| {
+            fill == ink.to_color32() && r.height() > 10.0
+        });
+        (bar, cell)
+    };
+    let (bar, cell) = drawn(&mut rig, 2 * BEAT);
+    let [bar] = bar[..] else { panic!("{bar:?}") };
+    let [cell] = cell[..] else { panic!("{cell:?}") };
+    let clip = rig.app.song.channels[2].lanes[0].clips[0].id;
+    assert_eq!(rig.app.nav.view, View::PianoRoll(2));
+    assert_eq!(rig.app.slots.piano_roll.rolls[&2].clip_id, Some(clip));
+    // A beat later the held note reaches a beat further, from the same note-on.
+    let (grown, longer) = drawn(&mut rig, 3 * BEAT);
+    let ([grown], [longer]) = (&grown[..], &longer[..]) else {
+        panic!("{grown:?} {longer:?}")
+    };
+    let (grown, longer) = (*grown, *longer);
+    assert_eq!((grown.left(), longer.left()), (bar.left(), cell.left()));
+    assert!(
+        (grown.width() - bar.width() - 38.4).abs() < 1e-3,
+        "{bar:?} {grown:?}"
+    );
+    assert!(longer.width() > cell.width(), "{cell:?} {longer:?}");
+    // Let go there, and the take ends: the clip is what showed, the roll still on it.
+    rig.release(E4);
+    rig.click(PLAY);
+    let (stored, kept) = drawn(&mut rig, 3 * BEAT);
+    assert_eq!((stored, kept), (vec![grown], vec![longer]));
+    let v = notes(&rig, 2)[0][0].3;
+    assert_eq!(notes(&rig, 2), [vec![(0, PPQ, 52, v, 2.0)]]);
+    assert_eq!(
+        rig.app.song.channels[2].lanes[0].clips[0].visible_len_beats,
+        3.0
+    );
+    assert_eq!(rig.app.slots.piano_roll.rolls[&2].clip_id, Some(clip));
 }

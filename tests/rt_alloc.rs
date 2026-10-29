@@ -134,6 +134,11 @@ fn engine_render_and_commands_do_not_allocate() {
         .find(|m| m.type_id == 8)
         .unwrap()
         .sidechain = Some(key);
+    // Channel 1's notes and CCs go on to channel 2 too: a MIDI send.
+    (song.channels[1].file.midi_sends).push(honeydew::song::MidiSend {
+        target_channel_id: key,
+        enabled: true,
+    });
     let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
     engine.note_on(2, 45, 1.0);
     let mut output = vec![0.0_f32; 4096 * 2];
@@ -439,7 +444,7 @@ fn metronome_count_in_monitoring_recording_and_the_latency_ping_do_not_allocate(
     // Warm-up: one pass over every block size, counting in, recording.
     live.tap.arm(300);
     engine.set_loop(Some((0, 128)));
-    engine.set_metronome(true, 0.7);
+    engine.set_metronome(true, true, 0.7);
     engine.count_in(4);
     engine.play();
     for frames in BLOCKS {
@@ -464,7 +469,7 @@ fn metronome_count_in_monitoring_recording_and_the_latency_ping_do_not_allocate(
             // rolls through a seek and loop wraps.
             match i % 60 {
                 10 if i < 60 => engine.ping(1),
-                20 => engine.set_metronome(i % 120 == 20, 0.3),
+                20 => engine.set_metronome(i % 120 == 20, true, 0.3),
                 30 => engine.seek(96),
                 40 => engine.stop(),
                 45 => engine.count_in(1),

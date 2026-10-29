@@ -206,7 +206,7 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 }
 
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 45] = {
+const ROWS: [Row; 46] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -242,6 +242,7 @@ const ROWS: [Row; 45] = {
             "Enable count-in when recording",
             Toggle(|s| &mut s.count_in),
         ),
+        row("Metronome when recording", Toggle(|s| &mut s.rec_metronome)),
         row("Metronome level", Level),
         row("User interface:", Header),
         row("Theme:", Dropdown(Choice::Theme)),
@@ -1143,6 +1144,7 @@ mod tests {
                 "Enable audio recording latency compensation",
                 "Enable multitrack recording",
                 "Enable count-in when recording",
+                "Metronome when recording",
                 "Metronome level",
                 "User interface:",
                 "Theme:",
@@ -1197,7 +1199,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(toggles.len(), if cfg!(target_os = "ios") { 12 } else { 11 });
+        assert_eq!(toggles.len(), if cfg!(target_os = "ios") { 13 } else { 12 });
         for (label, field) in &toggles {
             let mut s = Settings::default();
             *field(&mut s) = !*field(&mut s);
@@ -1735,7 +1737,7 @@ mod tests {
             let (u, t) = (m.u(1.0), m.t());
             let column_right = rig.width - 2.0 * u;
             let fills = fills(&rig);
-            assert_eq!(toggles().count(), 16);
+            assert_eq!(toggles().count(), 17);
             for r in toggles() {
                 let at = format!("ppp {ppp} scale {scale}: `{}`", r.label);
                 let control = rig.rect_of(row_id(index(r.label)));

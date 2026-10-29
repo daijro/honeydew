@@ -33,6 +33,7 @@ use eframe::egui::{
 };
 use honeydew_audio::drums::SPEED;
 
+use crate::app::note_record;
 use crate::metrics::{FontSize, Metrics};
 use crate::project_files::ProjectFiles;
 use crate::sample_cache::{self, SampleCache, Waveform};
@@ -266,7 +267,8 @@ impl From<ClipKey> for ClipRef {
 }
 
 /// A take being recorded: its channel, its track and its span in song ticks, which grows as the take does. `clip`: the
-/// clip it records into, which shows only as this bar meanwhile; an audio take has none until it stops.
+/// clip it records into, which shows only as this bar meanwhile (a notes or drums take's with its notes live, a
+/// Honeydew addition: [`paint_live`]); an audio take has none until it stops.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LiveTake {
     pub channel: usize,
@@ -462,8 +464,9 @@ impl Clips {
     /// Draws and edits the clips of the visible track rows. `rows` gives each row's channel, lane and lane rect; `grid`
     /// is the area right of the track headers, which clips are clipped to. While Preview plays `preview` alone, every
     /// other clip is dimmed as a muted one. The `takes` being recorded show over the clips as live bars
-    /// ([`paint_take`]). Song edits are reported through `app.song_edited`; a clip's `Edit`, or a double tap on it,
-    /// returns its editor's navigation, as does `New Clip` on an audio track (the sample picker). The insert menu,
+    /// ([`paint_take`]), a notes or drums take's clip with its notes as they record ([`paint_live`], Honeydew's own).
+    /// Song edits are reported through `app.song_edited`; a clip's `Edit`, or a double tap on it, returns its editor's
+    /// navigation, as does `New Clip` on an audio track (the sample picker). The insert menu,
     /// `Copy` and `Snap` round to `snap`'s unit (round(beat/unit)·unit), and drags too while it is on (whole ticks
     /// while off).
     #[allow(clippy::too_many_arguments)]
@@ -592,7 +595,7 @@ impl Clips {
         // The current clip's outline goes over every row and clip, after them all ([`paint_outline`]).
         let mut outline = None;
         for &(r, rect) in &blocks {
-            // A clip being recorded shows only as its take's live bar.
+            // A clip being recorded shows only as its take's live bar (with its notes live: [`paint_live`]).
             let live =
                 |t: &LiveTake| (t.channel, t.lane, t.clip) == (r.channel, r.lane, Some(r.id));
             if let Some(clip) = find(app.song, r).filter(|_| !takes.iter().any(live)) {
@@ -638,7 +641,17 @@ impl Clips {
             if let (Some(&(.., row)), Some(channel)) = (row, app.song.channels.get(take.channel)) {
                 let x = axis.x(take.start)..=axis.x(take.end);
                 let rect = Rect::from_x_y_ranges(x, row.y_range());
-                paint_take(&painter, &app.cx, channel, rect);
+                let lane = &channel.lanes[take.lane];
+                let clip = (take.clip)
+                    .filter(|_| matches!(lane.kind, LaneKind::Notes | LaneKind::Drums))
+                    .and_then(|id| lane.clips.iter().find(|c| c.id == id));
+                match clip {
+                    Some(clip) => {
+                        let clip = note_record::live(clip, take.end as u64, bar);
+                        paint_live(&painter, &app.cx, channel, lane, &clip, rect, axis);
+                    }
+                    None => paint_take(&painter, &app.cx, channel, rect),
+                }
             }
         }
 
@@ -2139,6 +2152,32 @@ fn paint_take(painter: &Painter, cx: &UiCtx, channel: &Channel, rect: Rect) {
     let r = cx.m.u(CORNER);
     painter.rect_filled(b.shrink2(vec2(0.0, px)), r, color.to_color32());
     painter.rect_filled(b.shrink2(vec2(0.0, 3.0 * px)), r, content.to_color32());
+}
+
+/// A notes or drums take's clip being recorded, `clip` as it shows live ([`note_record::live`]), its block `rect`
+/// running from its start to the song position: issue #26 (a plain recording clip draws only the live
+/// bar). The bar ([`paint_take`]), so it still reads as a recording, then over its content-colour box the notes or hits
+/// in the channel colour, laid out as the clip's miniature is in [`paint_clip`] (the same content rect), so they stay
+/// where they are once the take ends; held ones reach the playhead.
+fn paint_live(
+    painter: &Painter,
+    cx: &UiCtx,
+    channel: &Channel,
+    lane: &Lane,
+    clip: &Clip,
+    rect: Rect,
+    axis: TimeAxis,
+) {
+    paint_take(painter, cx, channel, rect);
+    let (b, m) = (clip_box(rect, cx.m), cx.m);
+    let area = Rect::from_x_y_ranges(
+        b.x_range(),
+        b.top() + m.u(NAME_H)..=b.bottom() - CONTENT_END_T * m.t(),
+    );
+    let steps = lane.kind == LaneKind::Drums && lane.grid == DrumGrid::Steps;
+    let ink = channel_color(channel.hue, cx.theme).to_color32();
+    let body = painter.with_clip_rect(painter.clip_rect().intersect(b));
+    notes(&body, clip, steps, area, axis, |_| ink, m);
 }
 
 /// A clip's name (DESc@28): an automation lane's custom label, else its auto name (`<Param> : <Module>`, `Level`); an

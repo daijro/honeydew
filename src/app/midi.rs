@@ -129,6 +129,7 @@ impl HoneydewApp {
             };
             let targets = self.midi_targets(device, msg.channel());
             let mut outs = self.midi.router.route(device, msg, &targets, &links);
+            self.record_cc(msg, &targets, &outs, tick);
             // The learned key plays after its edit rebuilds the engine, so it sounds with its pad.
             outs.sort_by_key(|out| !matches!(out, Out::LearnedNote(_)));
             for out in outs {

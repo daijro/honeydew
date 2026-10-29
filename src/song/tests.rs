@@ -2111,3 +2111,31 @@ fn shaped_automation_segments_round_trip_through_flm_and_default_ones_write_the_
     points::set_points(clip(&mut song), PointKey::Automation, line);
     assert_eq!(crate::flm::write(&song).unwrap(), plain);
 }
+
+#[test]
+fn midi_sends_are_saved_apart_and_go_with_their_target() {
+    // An `HDMs`, which FL Studio Mobile skips as an unknown chunk, only on a channel with MIDI sends.
+    let mut song = Song::default();
+    for _ in 0..3 {
+        song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    }
+    let plain = crate::flm::write(&song).unwrap();
+    assert!(!plain.windows(4).any(|w| w == b"HDMs"));
+    let [b, c] = [2, 3].map(|i| song.channels[i].id);
+    let send = |target_channel_id, enabled| MidiSend {
+        target_channel_id,
+        enabled,
+    };
+    song.channels[1].file.midi_sends = vec![send(b, true), send(c, false)];
+    let bytes = crate::flm::write(&song).unwrap();
+    assert_eq!(bytes.windows(4).filter(|w| *w == b"HDMs").count(), 1);
+    let read = crate::flm::read(&bytes).unwrap();
+    assert_eq!(read.channels[1].file, song.channels[1].file);
+    // With none left the bytes are as before.
+    let mut cleared = song.clone();
+    cleared.channels[1].file.midi_sends.clear();
+    assert_eq!(crate::flm::write(&cleared).unwrap(), plain);
+    // Deleting a target takes its MIDI send.
+    song.delete_channel(3);
+    assert_eq!(song.channels[1].file.midi_sends, [send(b, true)]);
+}

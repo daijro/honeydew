@@ -8,8 +8,9 @@ use super::HoneydewApp;
 use super::auto_record::start;
 use super::tracks::LaneShift;
 use crate::song::{Channel, Clip, DrumGrid, Event, Lane, LaneKind, PPQ, Song};
+use crate::ui::clips::ClipRef;
 use crate::ui::preview;
-use crate::ui::views::SongEdit;
+use crate::ui::views::{SongEdit, View};
 
 /// The shortest recorded length, in beats.
 const MIN_BEATS: f64 = 0.01;
@@ -305,7 +306,9 @@ impl HoneydewApp {
     /// Live note recording after the frame's keys, at song tick `tick`; `jumped`: the frame seeked. A
     /// take that recorded and ends is one undo step, closed before the next take records; meanwhile its notes are an
     /// ongoing edit, and the engine plays without them (`rebuild`). The new clip is no current clip; an open editor whose
-    /// empty clip the take replaced collapses, as the current clip went ([`crate::ui::views::Slots::follow`]).
+    /// empty clip the take replaced collapses, as the current clip went ([`crate::ui::views::Slots::follow`]). A
+    /// Honeydew addition (issue #26): a piano roll open on the take's channel opens the take's clip instead, as `Edit`
+    /// would (its clip and track become current), so the roll shows the take while it records and after.
     pub(super) fn record_notes(&mut self, jumped: bool, tick: u64) {
         let open = preview::current(self.nav.view, &self.slots, &self.song);
         let channel = self.selected_channel;
@@ -335,10 +338,21 @@ impl HoneydewApp {
             };
             self.song_edited(edit, tick);
         }
+        let roll = match self.nav.view {
+            View::PianoRoll(c) => Some(c),
+            _ => None,
+        };
+        let take =
+            |rec: &NoteRecord, song: &Song| rec.clips(song).into_iter().find(|t| Some(t.0) == roll);
+        let had = take(&self.note_record, &self.song).is_some();
         let Some(added) = self.note_record.record(&mut self.song, &now) else {
             return;
         };
         self.rekey(&added);
+        if let Some((channel, lane, id)) = take(&self.note_record, &self.song).filter(|_| !had) {
+            let r = ClipRef { channel, lane, id };
+            (self.main_screen.clips).make_current(&mut self.song, &mut self.selected_channel, r);
+        }
         // A take sets the song-changed flag while it records too.
         self.files.song_changed();
         self.song_edited(SongEdit::Ongoing, tick);
@@ -415,8 +429,7 @@ fn close(ch: &mut Channel, take: &mut Take, key: Option<u8>, at: u64, bar: u32) 
         if key.is_some_and(|key| key != k) {
             return true;
         }
-        let held = at.saturating_sub(u64::from(clip.start_tick) + u64::from(at_pos));
-        let beats = (held as f64 / f64::from(PPQ)).max(MIN_BEATS);
+        let beats = held_beats(clip, at_pos, at);
         let open = clip.events.iter_mut().find_map(|e| match e {
             Event::Note {
                 pos,
@@ -442,6 +455,34 @@ fn close(ch: &mut Channel, take: &mut Take, key: Option<u8>, at: u64, bar: u32) 
         grow(clip, at, bar);
     }
     closed
+}
+
+/// The length of a note of `clip` at content position `pos` released at song tick `at`: release − note start, at least
+/// [`MIN_BEATS`].
+fn held_beats(clip: &Clip, pos: u32, at: u64) -> f64 {
+    let held = at.saturating_sub(u64::from(clip.start_tick) + u64::from(pos));
+    (held as f64 / f64::from(PPQ)).max(MIN_BEATS)
+}
+
+/// A take's clip as it shows while it records, in the playlist and the piano roll (a Honeydew addition, issue #26; the
+/// original draws the take as a bare bar until it ends): the clip as it would be if every key still held let go at song
+/// tick `tick`, closed and grown as [`close`] would. A take's clip is its own, and every note a take closes is at least
+/// [`MIN_BEATS`] long, so its length-0 notes are the ones still held.
+pub(crate) fn live(clip: &Clip, tick: u64, bar: u32) -> Clip {
+    let mut live = clip.clone();
+    let mut held = false;
+    for event in &mut live.events {
+        if let Event::Note { pos, len_beats, .. } | Event::Drum { pos, len_beats, .. } = event
+            && *len_beats == 0.0
+        {
+            *len_beats = held_beats(clip, *pos, tick);
+            held = true;
+        }
+    }
+    if held {
+        grow(&mut live, tick, bar);
+    }
+    live
 }
 
 /// After a recorded press or release at song tick `at`: the loop fits the content (the automatic length rule), and the

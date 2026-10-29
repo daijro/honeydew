@@ -128,7 +128,7 @@ fn unit(value: f32) -> f32 {
 }
 
 /// Whether a path of `edges` leads from `from` to `to` (or `from` is `to`).
-fn reaches(edges: &[Vec<usize>], from: usize, to: usize) -> bool {
+pub(super) fn reaches(edges: &[Vec<usize>], from: usize, to: usize) -> bool {
     let mut seen = vec![false; edges.len()];
     let mut stack = vec![from];
     while let Some(node) = stack.pop() {

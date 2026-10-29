@@ -16,22 +16,26 @@ const PLAIN_CAPACITY: usize = 256;
 
 /// A channel's live keys: its note effects in real time, and per instrument the note effects above it.
 pub(super) struct Live {
-    chain: LiveNoteChain,
+    pub(super) chain: LiveNoteChain,
     stages: Vec<usize>,
+    /// Its note effects: a note past them all is what its MIDI sends forward.
+    effects: usize,
     /// The channel's current lane is a notes lane; until the app says, its first lane.
     pub notes_lane: bool,
 }
 
-/// The live path of `channel`, whose `instruments` the engine plays; `None` when nothing on it plays a note.
+/// The live path of `channel`, whose `instruments` the engine plays; `None` when nothing on it plays a note and it
+/// `forwards` none (it has no MIDI send).
 pub(super) fn build(
     song: &Song,
     channel: usize,
     instruments: &[(i32, InstrumentModule)],
+    forwards: bool,
     sample_rate: f32,
     tempo_bpm: f32,
 ) -> Result<Option<Live>, EngineError> {
     let kit = song.channels[channel].drum_kit.as_ref();
-    if instruments.is_empty() && kit.is_none_or(|kit| kit.slots.is_empty()) {
+    if instruments.is_empty() && kit.is_none_or(|kit| kit.slots.is_empty()) && !forwards {
         return Ok(None);
     }
     let end_beat = song_end_beat(song)?;
@@ -52,6 +56,7 @@ pub(super) fn build(
     } else {
         CAPACITY
     };
+    let count = effects.len();
     let chain = LiveNoteChain::new(
         effects,
         f64::from(song.time_sig.bar_beats()),
@@ -64,6 +69,7 @@ pub(super) fn build(
     Ok(Some(Live {
         chain,
         stages,
+        effects: count,
         notes_lane: lanes
             .first()
             .is_some_and(|lane| lane.kind == LaneKind::Notes),
@@ -154,19 +160,25 @@ impl SongAudioEngine {
         }
     }
 
-    /// Sends every live note on and off due at `cursor` into the render call.
+    /// Sends every live note on and off due at `cursor` into the render call, each channel before the targets of its
+    /// MIDI sends, which get the notes past all its note effects (and a note-off an edit took over) in the same pass.
     pub(super) fn live_due(&mut self, cursor: usize) {
         let now = self.live_frame(cursor);
         let song_beat = self.beat();
-        for channel in 0..self.live.len() {
+        for at in 0..self.midi_sends.order.len() {
+            let channel = self.midi_sends.order[at];
             let Some(live) = &mut self.live[channel] else {
                 continue;
             };
+            let past = live.effects;
             self.live_out.clear();
             live.chain.due(now, song_beat, &mut self.live_out);
             for index in 0..self.live_out.len() {
                 let event = self.live_out[index];
                 self.send_live(channel, event);
+                if event.level == past || event.route.is_some() {
+                    self.forward_live(channel, event, now);
+                }
             }
         }
     }

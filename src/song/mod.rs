@@ -17,8 +17,8 @@ pub use channel::{Channel, ChannelParams};
 pub use drum_kit::{DrumKit, SamplerSlot};
 pub use file::{
     ChannelFileState, ClipFileState, DEFAULT_CHORD_JSON, KeyboardState, KitFileState,
-    LaneFileState, MetaState, ModuleFileState, Raw, RawChunk, SET_DEFAULT, SET_EDITED, SET_LOADED,
-    SendState, SlotFileState, SongFileState,
+    LaneFileState, MetaState, MidiSend, ModuleFileState, Raw, RawChunk, SET_DEFAULT, SET_EDITED,
+    SET_LOADED, SendState, SlotFileState, SongFileState,
 };
 pub use lane::MAX_PLAYS_A_PIXEL;
 pub use lane::{AutomationTarget, Clip, DrumGrid, Event, Lane, LaneKind};
@@ -344,9 +344,9 @@ impl Song {
     /// Removes channel `index` (`Delete Channel`): the channels' `SEND`s to it go to the master (dropped where one to
     /// the master exists), the channels that output to its bus or sent to it output where their `SEND`s now say
     /// ([`output_bus`]), and their Enable Send / Send Level automation lanes for it (params 0x1000 / 0x2000 + its id)
-    /// go, and so do the pad sends to it (`LINk` @10, back to the channel output) and the sidechains it keyed. The file's
-    /// selected channel (`HEAD` @0, an index) stays on its channel, or in range when that is the one deleted. Never the
-    /// master.
+    /// go, and so do the pad sends to it (`LINk` @10, back to the channel output), the sidechains it keyed and the MIDI
+    /// sends to it. The file's selected channel (`HEAD` @0, an index) stays on its channel, or in range when that is the
+    /// one deleted. Never the master.
     pub fn delete_channel(&mut self, index: usize) {
         if index == 0 || index >= self.channels.len() {
             return;
@@ -378,6 +378,7 @@ impl Song {
                 l.target
                     .is_none_or(|t| t.instance_id != 0 || !send_params.contains(&t.param))
             });
+            c.file.midi_sends.retain(|s| s.target_channel_id != gone.id);
             let sends = &mut c.file.sends;
             let to_master = sends.iter().any(|s| s.target_channel_id == 0);
             if to_master {

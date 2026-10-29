@@ -3232,6 +3232,7 @@ fn send_rig() -> Rig {
         key: true,
         bus,
         to_master: true,
+        midi: false,
     };
     rig.rack.targets = vec![
         target(0, "MASTER", true, 0),
@@ -3278,6 +3279,7 @@ impl Rig {
         let rows = SendRows {
             rows: self.channel.file.sends.len(),
             disconnected: disconnected(&self.channel, &self.rack.targets),
+            midi: Some(self.channel.file.midi_sends.len()),
         };
         flow_sends(rack_rect(SCREEN), 0.0, U, false, &heights, Some(rows))
             .sends
@@ -3299,7 +3301,11 @@ impl Rig {
 #[test]
 fn the_sends_section_has_one_row_per_send() {
     let flow = |rows, disconnected| {
-        let rows = Some(SendRows { rows, disconnected });
+        let rows = Some(SendRows {
+            rows,
+            disconnected,
+            midi: None,
+        });
         flow_sends(rack_rect(SCREEN), 0.0, U, false, &[], rows)
             .sends
             .unwrap()
@@ -4651,4 +4657,31 @@ fn the_instruments_picker_names_the_channel_by_the_preset_or_by_instrument_and_i
     assert_eq!(song.channels[second].name, "Instrument 2");
     name_instrument_channel(&mut song, second, "Low Hum", "Transistor Bass");
     assert_eq!(song.channels[second].name, "Low Hum");
+}
+
+#[test]
+fn add_midi_send_offers_the_note_channels_no_midi_send_leads_back_from() {
+    let mut song = crate::song::Song::default();
+    song.add_channel(ChannelKind::EffectTrack); // 1: id 1
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth)); // 2: id 2
+    song.add_channel(ChannelKind::Drums); // 3: id 3
+    song.add_channel(ChannelKind::Instrument); // 4: id 4
+    // 4 sends MIDI to Drums, and Drums to 2 (switched off): 2 may send to neither, as each leads back to it. The master
+    // and the send channel play no notes.
+    song.channels[3].file.midi_sends.push(MidiSend {
+        target_channel_id: 2,
+        enabled: false,
+    });
+    song.channels[4].file.midi_sends.push(MidiSend {
+        target_channel_id: 3,
+        enabled: true,
+    });
+    let offered = |channel| {
+        (send_targets(&song, channel).into_iter())
+            .filter_map(|t| t.midi.then_some(t.id))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(offered(2), [0; 0]);
+    assert_eq!(offered(3), [2]);
+    assert_eq!(offered(4), [2, 3]);
 }

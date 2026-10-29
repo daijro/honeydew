@@ -487,7 +487,7 @@ fn a_seek_while_recording_notes_ends_the_take_and_a_held_note_keeps_length_0() {
 }
 
 #[test]
-fn an_empty_open_clip_covering_the_takes_start_is_replaced_and_its_editor_closes() {
+fn an_empty_open_clip_covering_the_takes_start_is_replaced_and_its_editor_shows_the_take() {
     let mut rig = song_rig();
     rig.edit(1);
     rig.frame(vec![]);
@@ -497,10 +497,10 @@ fn an_empty_open_clip_covering_the_takes_start_is_replaced_and_its_editor_closes
     rig.click(PLAY);
     rig.at(2 * BEAT);
     rig.type_key(egui::Key::Z, true);
-    // The piano roll's clip (lane 0, id 1, empty, over beat 0) goes; the take's clip (id 2) takes its place and is no
-    // current clip: the next frame's editor, which follows the current one, collapses.
+    // The piano roll's clip (lane 0, id 1, empty, over beat 0) goes; the take's clip (id 2) takes its place, and the
+    // piano roll stays open on it while it records (issue #26).
     rig.frame(vec![]);
-    assert_eq!(rig.app.nav.view, View::Playlist);
+    assert_eq!(rig.app.nav.view, View::PianoRoll(1));
     assert_eq!(recorded(&rig), [vec![(2, 0, 2 * PPQ, 48, 0.0)]]);
     assert_eq!(rig.app.song.channels[1].lanes[0].clips.len(), 1);
 }

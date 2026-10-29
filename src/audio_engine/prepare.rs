@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
+use super::midi_sends::MidiSends;
 use super::{EngineError, strip_param};
 use crate::audio_bridge::{SongAudioBridge, playing_clips};
 use crate::panels::couple_scale;
@@ -107,11 +108,12 @@ pub(super) const MAX_PLAYS: usize = crate::flm::BUDGET_BASE / std::mem::size_of:
 
 /// Every action of `song`, sorted by frame. `instruments` holds each channel's instruments by instance id. A song whose
 /// loop passes would expand to more than [`MAX_PLAYS`] event plays is refused first (`TooManyEvents`). Each note effect
-/// that ran leaves its trace in `traces`, with its channel.
+/// that ran leaves its trace in `traces`, with its channel. The notes and CCs `midi_sends` forward are its targets' too.
 pub(super) fn actions(
     song: &Song,
     bridge: &SongAudioBridge,
     instruments: &[Vec<(i32, InstrumentModule)>],
+    midi_sends: &MidiSends,
     sample_rate: f32,
     tempo_bpm: f32,
     traces: &mut Vec<(usize, NoteEffectTrace)>,
@@ -145,6 +147,8 @@ pub(super) fn actions(
             },
         })
         .collect();
+    super::midi_sends::forward_params(&mut actions, midi_sends);
+    let forwarded = super::midi_sends::forwarded(song, midi_sends, end_beat, sample_rate)?;
     for (channel, instruments) in instruments.iter().enumerate() {
         let kit = (song.channels[channel].drum_kit.as_ref()).filter(|kit| !kit.slots.is_empty());
         if let Some(kit) = kit {
@@ -165,6 +169,7 @@ pub(super) fn actions(
                 song,
                 channel,
                 instruments,
+                &forwarded[channel],
                 end_beat,
                 sample_rate,
                 tempo_bpm,
@@ -219,10 +224,10 @@ pub(super) fn actions(
     Ok(actions)
 }
 
-/// The Notes lanes of `channel` as note on/off actions: unchanged for its pad sampler, which renders before every
-/// module, and for each of its `instruments` through the note effects above it. The note effects rewrite the event list
-/// top to bottom, and each instrument gets the list as it stands at its own rack position, so a note effect acts only
-/// on the instruments below it.
+/// The Notes lanes of `channel`, and what its MIDI sources send it (`forwarded`), as note on/off actions: unchanged for
+/// its pad sampler, which renders before every module, and for each of its `instruments` through the note effects above
+/// it. The note effects rewrite the event list top to bottom, and each instrument gets the list as it stands at its own
+/// rack position, so a note effect acts only on the instruments below it.
 #[allow(
     clippy::too_many_arguments,
     reason = "the song's timing and both outputs"
@@ -231,14 +236,14 @@ fn notes(
     song: &Song,
     channel: usize,
     instruments: &[(i32, InstrumentModule)],
+    forwarded: &[InputNoteEvent],
     end_beat: f64,
     sample_rate: f32,
     tempo_bpm: f32,
     actions: &mut Vec<ScheduledAction>,
     traces: &mut Vec<(usize, NoteEffectTrace)>,
 ) -> Result<(), EngineError> {
-    let input = SongAudioBridge::note_events_in_block(song, channel, 0.0, end_beat)
-        .map_err(EngineError::Song)?;
+    let input = super::midi_sends::input(song, channel, end_beat, forwarded)?;
     for note in &input {
         actions.push(ScheduledAction {
             frame: beat_frame(note.beat, sample_rate, tempo_bpm)?,
@@ -296,7 +301,7 @@ fn notes(
 }
 
 /// `effects` as a rack that runs as playback's: the song's bar, the engine's sample rate and block.
-fn note_rack(
+pub(super) fn note_rack(
     song: &Song,
     effects: Vec<NoteEffectModule>,
     sample_rate: f32,
@@ -736,6 +741,7 @@ mod tests {
             &song,
             1,
             &instruments,
+            &[],
             4.0,
             48e3,
             120.0,
@@ -797,6 +803,7 @@ mod tests {
             &song,
             1,
             &instruments,
+            &[],
             4.0,
             48e3,
             120.0,
@@ -852,6 +859,7 @@ mod tests {
                 song,
                 1,
                 &instruments,
+                &[],
                 8.0,
                 48e3,
                 120.0,

@@ -166,6 +166,10 @@ pub struct Settings {
     /// `Enable count-in when recording` (default on).
     #[serde(rename = "reccount")]
     pub count_in: bool,
+    /// `Metronome when recording` (our own key; default on): REC's take clicks the beats. Off, it records silently; a
+    /// count-in still clicks.
+    #[serde(rename = "recMetronome")]
+    pub rec_metronome: bool,
     /// `Metronome level` in [0, 1], shown as 0–100 %. Stored only.
     #[serde(rename = "mtmlevel")]
     pub metronome_level: f32,
@@ -267,9 +271,9 @@ pub struct Settings {
 }
 
 impl Default for Settings {
-    /// The fresh-install state: ghost notes, range labels, the count-in and the CPU and RAM meters on, the latency
-    /// toggle unset (shown ON, compensating), the other toggles off, `NATIVE`, `Classic Gray` (the fallback theme),
-    /// `100 %` and `Animation` `Full`. The metronome level is half way; the drum pads are locked.
+    /// The fresh-install state: ghost notes, range labels, the count-in, the recording's metronome and the CPU and RAM
+    /// meters on, the latency toggle unset (shown ON, compensating), the other toggles off, `NATIVE`, `Classic Gray`
+    /// (the fallback theme), `100 %` and `Animation` `Full`. The metronome level is half way; the drum pads are locked.
     fn default() -> Self {
         Self {
             midi_device: ANY.to_owned(),
@@ -283,6 +287,7 @@ impl Default for Settings {
             latency_compensation: None,
             multitrack_recording: false,
             count_in: true,
+            rec_metronome: true,
             metronome_level: 0.5,
             theme: 0,
             ui_scale: DEFAULT_UI_SCALE,
@@ -649,6 +654,7 @@ mod tests {
             latency_compensation: Some(false),
             multitrack_recording: !d.multitrack_recording,
             count_in: !d.count_in,
+            rec_metronome: !d.rec_metronome,
             metronome_level: 0.25,
             theme: 6,
             ui_scale: 145,
@@ -687,7 +693,9 @@ mod tests {
     fn defaults_are_the_device_state() {
         let d = Settings::default();
         // The rows that default on, and the count-in.
-        assert!(d.ghost_notes && d.range_labels && d.hardware_meters && d.count_in);
+        assert!(
+            d.ghost_notes && d.range_labels && d.hardware_meters && d.count_in && d.rec_metronome
+        );
         // The latency toggle is unset: shown ON, and it compensates.
         assert_eq!(d.latency_compensation, None);
         // The other toggles are off.
@@ -896,6 +904,7 @@ mod tests {
                 "multitrackrec",
                 "pluginFolders",
                 "preferredKbdSizeCells",
+                "recMetronome",
                 "reccount",
                 "recentKbdSizeCells",
                 "reclatency",

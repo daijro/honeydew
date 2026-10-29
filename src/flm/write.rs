@@ -438,6 +438,17 @@ fn write_channel(writer: &mut ChunkWriter, channel: &Channel, row: usize) -> Res
             writer.u32(input.channel.map_or(0, |c| u32::from(c) + 1))
         })?;
     }
+    // Honeydew's own MIDI sends, only when there are any: `i32` the target channel id and `u32` on (1) or off (0), each.
+    let sends = &channel.file.midi_sends;
+    if !sends.is_empty() {
+        writer.chunk(*b"HDMs", |writer| {
+            for send in sends {
+                writer.i32(send.target_channel_id)?;
+                writer.u32(send.enabled.into())?;
+            }
+            Ok(())
+        })?;
+    }
     write_raw(writer, &channel.file.channel_unknown_chunks)
 }
 

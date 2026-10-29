@@ -293,6 +293,17 @@ pub struct ChannelFileState {
     pub header_extra: Vec<u8>,
     /// Honeydew's own `HDMi`: the live MIDI an instrument or drum channel takes.
     pub midi_input: MidiInput,
+    /// Honeydew's own `HDMs`: the channels the notes and MIDI CCs it plays also go to, in the order added.
+    pub midi_sends: Vec<MidiSend>,
+}
+
+/// A MIDI send (Honeydew's own): every note the channel's instruments get, past its note effects, and its MIDI CCs and
+/// Pitch Bend, go to another channel's note input too. Saved in an `HDMs`, which FL Studio Mobile skips.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MidiSend {
+    /// The target channel id (`CHHD`@1080).
+    pub target_channel_id: i32,
+    pub enabled: bool,
 }
 
 /// Which live MIDI a channel takes (Honeydew's own; FL Studio Mobile takes it all on the current channel). `None` is
@@ -332,6 +343,7 @@ impl Default for ChannelFileState {
             channel_unknown_chunks: Vec::new(),
             header_extra: Vec::new(),
             midi_input: MidiInput::default(),
+            midi_sends: Vec::new(),
         }
     }
 }

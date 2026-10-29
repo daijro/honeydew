@@ -45,7 +45,8 @@ impl SongAudioEngine {
             .map(|count_in| self.retime_count_in(count_in, old.tempo_bpm));
         self.count_in_beats = old.count_in_beats;
         std::mem::swap(&mut self.metronome, &mut old.metronome);
-        (self.metronome_on, self.metronome_level) = (old.metronome_on, old.metronome_level);
+        (self.armed, self.armed_clicks) = (old.armed, old.armed_clicks);
+        self.metronome_level = old.metronome_level;
         self.metronome_flag = old.metronome_flag;
         self.clicked_beat = old.clicked_beat;
         // Song length re-estimate: with no loop, a transport at or past a changed song end wraps modulo the length,

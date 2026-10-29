@@ -1186,7 +1186,7 @@ mod recording {
         let starts: Vec<usize> = (0..6).map(|k| (k as f64 * beat).ceil() as usize).collect();
         assert_eq!(starts[1..4], [22_154, 44_308, 66_462]);
         let mut engine = SongAudioEngine::new(&song, 48_000.0).unwrap();
-        engine.set_metronome(true, 1.0);
+        engine.set_metronome(true, true, 1.0);
         assert_eq!(
             energy(&render(&mut engine, 4096)),
             0.0,
@@ -1205,10 +1205,10 @@ mod recording {
             );
         }
         // The level law: v 0.5 is 0.325. Off stops the clicks, whatever the level.
-        engine.set_metronome(true, 0.5);
+        engine.set_metronome(true, true, 0.5);
         let out = render(&mut engine, starts[1]);
         assert!((out[0] - 0.631 * 0.325).abs() < 1e-6, "{}", out[0]);
-        engine.set_metronome(false, f32::NAN);
+        engine.set_metronome(false, true, f32::NAN);
         assert_eq!(
             energy(&render(&mut engine, starts[2])),
             0.0,

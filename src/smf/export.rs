@@ -1,8 +1,13 @@
-//! MIDI export: the regular channels' notes, drum hits and channel MIDI automation as a format-1 file at 128 PPQ.
+//! MIDI export: the regular channels' notes, drum hits and channel MIDI automation as a format-1 file at 128 PPQ, with
+//! the song's tempo map.
 
 use super::codec::{self, MAX_DELTA, MAX_EVENTS, MAX_TRACKS, Smf, SmfEvent};
 use crate::midi::MidiMsg;
-use crate::song::{AutomationTarget, Clip, DrumKit, Event, Lane, LaneKind, PPQ, Song, points};
+use crate::song::points::{PointKey, shape_value};
+use crate::song::{
+    AutomationTarget, ChannelKind, Clip, DrumKit, Event, Lane, LaneKind, PPQ, Song, TEMPO_TARGET,
+    automated_tempo, points, tempo_value,
+};
 
 /// No lane to write. The Save dialog shows `Error: no data to save`.
 #[derive(Debug, PartialEq, Eq)]
@@ -39,7 +44,7 @@ fn write_of(lane: &Lane) -> Option<Write> {
 }
 
 /// The song (`only: None`) or channel `only` as a Standard MIDI file: one track per written lane, in channel and then
-/// lane order; the tempo in the first track; each track named after its channel.
+/// lane order; the tempo map in the first track ([`tempo_map`]); each track named after its channel.
 ///
 /// MIDI channels: a counter from 0 that steps once per regular channel (skipping 10, stopping at 15), 0 for a single
 /// channel, and 9 for drum lanes. Plays at song ticks past [`MAX_DELTA`] are dropped (a note-off is cut there), and
@@ -50,6 +55,9 @@ pub fn smf_of(song: &Song, only: Option<usize>) -> Result<Vec<u8>, NoData> {
     let mut tracks = Vec::new();
     // ponytail: plays past the caps are dropped silently; a message if a real song ever gets there.
     let mut budget = MAX_EVENTS - 3 * MAX_TRACKS;
+    let mut tempos = tempo_map(song);
+    tempos.truncate(budget / 2);
+    budget -= tempos.len();
     let mut next = 0u8;
     for (i, channel) in song.channels.iter().enumerate() {
         // Regular channels only: not the master, not a send.
@@ -90,12 +98,85 @@ pub fn smf_of(song: &Song, only: Option<usize>) -> Result<Vec<u8>, NoData> {
         }
     }
     let first = tracks.first_mut().ok_or(NoData)?;
-    let tempo = ((60_000_000.0 / song.tempo_bpm) as u32).clamp(1, 0xFF_FFFF);
-    first.insert(0, (0, SmfEvent::Tempo(tempo)));
+    first.splice(0..0, tempos);
+    // Stable: a tempo goes first at its tick.
+    first.sort_by_key(|e| e.0);
     Ok(codec::write(&Smf {
         division: PPQ as u16,
         tracks,
     }))
+}
+
+/// The song's tempo as `FF 51`s at song ticks: its tempo at tick 0, then the changes the master's tempo lanes play
+/// ([`tempo_changes`]), each written only where the tempo changes at the lane's resolution; at one tick the last.
+fn tempo_map(song: &Song) -> Vec<(u64, SmfEvent)> {
+    let value = |bpm| points::raw(tempo_value(bpm));
+    let mut map = vec![(0, song.tempo_bpm)];
+    let master = song
+        .channels
+        .first()
+        .filter(|c| c.kind == ChannelKind::Master);
+    let lanes =
+        (master.into_iter().flat_map(|c| &c.lanes)).filter(|l| l.target == Some(TEMPO_TARGET));
+    for clip in lanes.flat_map(crate::audio_bridge::playing_clips) {
+        let mut changes = clip.clone();
+        changes.events = tempo_changes(clip);
+        map.extend(plays(&changes).filter_map(|(t, e)| match *e {
+            Event::Automation { value, .. } => Some((t as u64, automated_tempo(value))),
+            _ => None,
+        }));
+    }
+    map.sort_by_key(|c| c.0);
+    // The song's own tempo stays at tick 0 when the lane's point there says the same.
+    map.dedup_by(|later, kept| {
+        let same = later.0 == kept.0;
+        if same && value(later.1) != value(kept.1) {
+            kept.1 = later.1;
+        }
+        same
+    });
+    map.dedup_by_key(|c| value(c.1));
+    (map.into_iter())
+        .map(|(t, bpm)| {
+            let us = ((60_000_000.0 / bpm) as u32).clamp(1, 0xFF_FFFF);
+            (t, SmfEvent::Tempo(us))
+        })
+        .collect()
+}
+
+/// A tempo clip's tempo changes as automation events at its content ticks: each point, each riser of a stepped segment
+/// (Square, Stairs) as the engine plays it, and a curve every sixteenth note.
+fn tempo_changes(clip: &Clip) -> Vec<Event> {
+    const SIXTEENTH: usize = PPQ as usize / 4;
+    let pts = points::points(clip, PointKey::Automation);
+    let mut out = Vec::new();
+    for (i, a) in pts.iter().enumerate() {
+        out.push((a.tick, f64::from(a.value)));
+        let Some(b) = pts.get(i + 1).filter(|b| b.tick > a.tick) else {
+            continue;
+        };
+        let len = f64::from(b.tick - a.tick);
+        let xs = a.shape.risers().unwrap_or_else(|| {
+            let from = (u64::from(a.tick) + 1).next_multiple_of(SIXTEENTH as u64);
+            (from..u64::from(b.tick))
+                .step_by(SIXTEENTH)
+                .map(|t| (t - u64::from(a.tick)) as f64 / len)
+                .collect()
+        });
+        for x in xs {
+            let (from, to) = (f64::from(a.value), f64::from(b.value));
+            // Just after a riser, as the engine steps.
+            let v = shape_value(a.shape, from, to, x.max(f64::MIN_POSITIVE));
+            out.push(((f64::from(a.tick) + x * len).round() as u32, v));
+        }
+    }
+    (out.into_iter())
+        .map(|(pos, v)| Event::Automation {
+            pos,
+            value: points::unit(v.round() as u16),
+            control: true,
+        })
+        .collect()
 }
 
 /// The messages of one play at song tick `t` (fractional) as `(tick, not a note-off, message)`. `step`: a drum hit's

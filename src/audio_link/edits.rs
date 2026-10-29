@@ -23,7 +23,9 @@ pub(super) struct Edit {
 /// (its hits leave with it and the later rows move up, which is no lane change here). The songs cannot tell every
 /// gesture apart, so the editors report the rest: the additions that run no re-sync (a tap-create, a tap on an empty
 /// step, Clear and Fill) as [`super::Handover::Quiet`], and the edits that re-sync whatever they changed (Quantize,
-/// Humanize, Snap to scale, a graph-lane touch that changed nothing) as [`super::Handover::Undo`]. `last` is scratch.
+/// Humanize, Snap to scale, a graph-lane touch that changed nothing) as [`super::Handover::Undo`]. A MIDI send added,
+/// removed or switched (or gone with its channel) re-syncs too, and silences every channel a MIDI send played into, so
+/// that no live note it forwarded is left without its note-off. `last` is scratch.
 pub(super) fn edit(last: &mut Song, new: &Song, tempo_moved: bool) -> Edit {
     let tempo = tempo_moved || last.tempo_bpm != new.tempo_bpm;
     let deleted: Vec<i32> = (last.channels.iter().map(|c| c.id))
@@ -34,6 +36,23 @@ pub(super) fn edit(last: &mut Song, new: &Song, tempo_moved: bool) -> Edit {
         resync: (tempo && sampled(new)) || !deleted.is_empty(),
         silence: Vec::new(),
     };
+    fn midi_sends(song: &Song, id: i32) -> &[crate::song::MidiSend] {
+        let channel = song.channels.iter().find(|c| c.id == id);
+        channel.map_or(&[], |c| &c.file.midi_sends)
+    }
+    if (last.channels.iter()).any(|a| midi_sends(new, a.id) != midi_sends(last, a.id)) {
+        edit.resync = true;
+        let index = |id| new.channels.iter().position(|c| c.id == id);
+        let sends = last.channels.iter().flat_map(|a| &a.file.midi_sends);
+        let targets = sends
+            .filter(|s| s.enabled)
+            .filter_map(|s| index(s.target_channel_id));
+        for target in targets {
+            if !edit.silence.contains(&target) {
+                edit.silence.push(target);
+            }
+        }
+    }
     for a in &mut last.channels {
         if let Some(b) = new.channels.iter().find(|b| b.id == a.id) {
             renumber(a, b, &deleted);
@@ -445,9 +464,10 @@ mod tests {
         assert_close(&rendered(&rec, 1.0), &reference(&song, 1.0, 1.0));
     }
 
-    /// Every structural edit takes over the playing engine; only deleting a channel re-syncs (the rest).
+    /// Every structural edit takes over the playing engine; only deleting a channel or a MIDI send change re-syncs (the
+    /// rest).
     #[test]
-    fn structural_edits_take_over_and_only_a_deleted_channel_re_syncs() {
+    fn structural_edits_take_over_and_only_a_deleted_channel_or_a_midi_send_re_syncs() {
         let mut song = drums(&[0.0]);
         song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
         song.add_channel(ChannelKind::EffectTrack);
@@ -455,7 +475,7 @@ mod tests {
             song.channels[1].drum_kit.as_mut().unwrap()
         }
         type Case = (&'static str, fn(&mut Song));
-        let edits: [Case; 13] = [
+        let edits: [Case; 14] = [
             ("add a channel", |s| s.add_channel(ChannelKind::Drums)),
             ("delete a channel", |s| s.delete_channel(3)),
             ("add an effect", |s| _ = s.channels[2].rack.add(DELAY)),
@@ -494,6 +514,13 @@ mod tests {
             ("reorder the channels", |s| {
                 _ = s.set_playlist(&[0, 3, 1, 2])
             }),
+            ("add a MIDI send", |s| {
+                let target_channel_id = s.channels[1].id;
+                (s.channels[2].file.midi_sends).push(crate::song::MidiSend {
+                    target_channel_id,
+                    enabled: true,
+                })
+            }),
         ];
         for (name, edit) in edits {
             let rec = Recorder::default();
@@ -506,7 +533,7 @@ mod tests {
                 "{name}"
             );
             let expected = match name {
-                "delete a channel" => "ReplaceSong adopting",
+                "delete a channel" | "add a MIDI send" => "ReplaceSong adopting",
                 _ => "ReplaceSong adopting no-resync",
             };
             assert_eq!(rec.take(), [expected, "Play"], "{name}");

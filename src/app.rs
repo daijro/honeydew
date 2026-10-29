@@ -47,7 +47,7 @@ mod export;
 mod input;
 mod keys;
 mod midi;
-mod note_record;
+pub(crate) mod note_record;
 mod panel;
 mod plugins;
 mod tracks;
@@ -443,6 +443,11 @@ impl HoneydewApp {
             if level != self.settings_saved.metronome_level {
                 let on = self.audio.metronome_flag();
                 self.audio.send(AudioCommand::MetronomeFlag { on, level });
+            }
+            if self.settings.rec_metronome != self.settings_saved.rec_metronome
+                && self.auto_record.armed
+            {
+                self.send_arm(true);
             }
             if self.settings.low_latency != self.settings_saved.low_latency {
                 self.audio
@@ -1368,29 +1373,19 @@ impl HoneydewApp {
         let Some((channel, target, old, new)) = moved.filter(|_| !self.audio.counting_in()) else {
             return;
         };
-        let current = self.current_track().filter(|&(c, _)| c == channel);
-        let song = &mut self.song;
-        let current = current.map(|(_, lane)| lane);
-        let Some(added) =
-            (self.auto_record).record(song, channel, target, (old, new), tick, current)
-        else {
-            return;
-        };
-        if let Some(lane) = added {
-            // ponytail: a song copy per lane added (`lane_shifts` compares two songs); one per take and target at most.
-            let mut before = self.song.clone();
-            before.channels[channel].lanes.remove(lane);
-            self.rekey(&tracks::lane_shifts(&before, &self.song));
+        if self.record_point(channel, target, (old, new), tick) {
+            self.song_edited(SongEdit::Ongoing, tick);
         }
-        self.song_edited(SongEdit::Ongoing, tick);
     }
 
-    /// The engine's metronome follows REC's arm, and so does its song-end wrap: a recording does not wrap there. The
-    /// tempo dialog's metronome flag clicks too, on its own command (`AudioCommand::MetronomeFlag`).
+    /// The engine's metronome follows REC's arm unless `Metronome when recording` is off, and its song-end wrap
+    /// always does: a recording does not wrap there. The tempo dialog's metronome flag clicks too, on its own command
+    /// (`AudioCommand::MetronomeFlag`).
     fn send_arm(&mut self, on: bool) {
         self.auto_record.armed = on;
-        let level = self.settings.metronome_level;
-        self.audio.send(AudioCommand::Metronome { on, level });
+        let (click, level) = (self.settings.rec_metronome, self.settings.metronome_level);
+        self.audio
+            .send(AudioCommand::Metronome { on, click, level });
     }
 
     /// REC disarmed reaches the engine after the frame's takes (`audio_record`, `record_notes`) left their clips: the
@@ -1910,6 +1905,7 @@ impl HoneydewApp {
             self.main_screen.playing = false;
         }
         self.main_screen.takes = self.live_takes(snapshot.as_ref().map_or(0, |s| s.transport_tick));
+        self.slots.piano_roll.takes = self.main_screen.takes.clone();
         self.update_performance(ctx, snapshot.as_ref());
         // The playhead the editors draw this frame, smooth between the snapshot's block steps, never past where the
         // engine wraps: its loop's end, else the song length (not while REC is armed: a recording plays on).

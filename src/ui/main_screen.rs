@@ -4154,7 +4154,7 @@ mod tests {
     #[test]
     fn a_clip_being_recorded_shows_only_as_its_live_bar() {
         // The live take bar: the take's clip (MiniSynth row, y 176 ..= 239, from beat 4) shows as the bar from its
-        // start to the playhead (beat 5), not as itself: nothing of it past the bar.
+        // start to the playhead (beat 5), its notes live in it: nothing of it past the bar.
         let mut rig = Rig::new(song_with_a_clip());
         let fills_past = |rig: &mut Rig| {
             let f = rig.frame(vec![]);

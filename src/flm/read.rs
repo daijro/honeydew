@@ -28,8 +28,8 @@ use crate::song::plugin::{self, PluginParam, PluginRef};
 use crate::song::points::{Shape, ShapeKind};
 use crate::song::{
     AutomationTarget, CHANNEL_ID_LIMIT, Channel, ChannelKind, Clip, ClipFileState, DrumGrid,
-    DrumKit, Event, KeyboardState, Lane, LaneKind, MetaState, ModuleInstance, PPQ, Raw, RawChunk,
-    SamplerSlot, SendState, Song, SynthKind, TimeSig,
+    DrumKit, Event, KeyboardState, Lane, LaneKind, MetaState, MidiSend, ModuleInstance, PPQ, Raw,
+    RawChunk, SamplerSlot, SendState, Song, SynthKind, TimeSig,
 };
 use honeydew_audio::dwp::Cstm;
 
@@ -905,6 +905,21 @@ impl Reader {
                     input.device = (!device.is_empty()).then_some(device);
                     let ch = reader.u32_or(0);
                     input.channel = (1..=16).contains(&ch).then(|| ch as u8 - 1);
+                }
+                // Honeydew's own MIDI sends (`flm::write`); a repeated target is ignored.
+                b"HDMs" => {
+                    let mut reader = child.reader();
+                    let sends = &mut channel.file.midi_sends;
+                    while let (Ok(id), Ok(on)) = (reader.i32(), reader.u32()) {
+                        let send = MidiSend {
+                            target_channel_id: id,
+                            enabled: on != 0,
+                        };
+                        if !sends.iter().any(|s| s.target_channel_id == id) {
+                            self.charge(size_of::<MidiSend>(), &child.path)?;
+                            sends.push(send);
+                        }
+                    }
                 }
                 _ => self.unknown(&child, &mut channel.file.channel_unknown_chunks)?,
             }

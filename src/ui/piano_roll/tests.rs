@@ -1709,6 +1709,27 @@ mod component {
     }
 
     #[test]
+    fn while_recording_the_view_follows_the_unfolded_playhead_or_turns_a_page_with_the_setting_off()
+    {
+        // Honeydew's own (issue #26): a take's one-bar clip, the playhead 42 beats on from its start, past its loop.
+        let mut rig = Rig::new(vec![]);
+        (rig.opts.playing, rig.opts.recording, rig.opts.continuous) = (true, true, true);
+        rig.opts.playhead = 42 * u64::from(PPQ);
+        rig.frame(vec![]);
+        // 1120 points show 17.5 beats; beat 42 a quarter in.
+        let left = |beat: f32| (beat - 1120.0 / 64.0 / 4.0) * 64.0;
+        assert!((rig.roll.scroll.unwrap().x - left(42.0)).abs() < 1e-2);
+        // The setting off: the view stays while the playhead is in it, then turns a page.
+        rig.opts.continuous = false;
+        rig.opts.playhead = 55 * u64::from(PPQ);
+        rig.frame(vec![]);
+        assert!((rig.roll.scroll.unwrap().x - left(42.0)).abs() < 1e-2);
+        rig.opts.playhead = 56 * u64::from(PPQ);
+        rig.frame(vec![]);
+        assert_eq!(rig.roll.scroll.unwrap().x, 56.0 * 64.0);
+    }
+
+    #[test]
     fn a_ruler_press_dragged_sideways_before_its_long_press_scrolls_and_starts_no_range() {
         let mut rig = Rig::new(vec![]);
         rig.song.channels[1].lanes[0].clips[0].loop_len_beats = 32.0;

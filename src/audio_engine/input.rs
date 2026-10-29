@@ -440,7 +440,7 @@ mod tests {
             let ring = Arc::new(InputRing::new(1, RATE, 1 << 16));
             let input = LiveInput::new(ring.clone(), Vec::new());
             let mut engine = Self::engine(&song, &input);
-            engine.set_metronome(true, 0.0);
+            engine.set_metronome(true, true, 0.0);
             Self {
                 engine,
                 reader: InputReader::new(input.tap.frames().clone()),
@@ -655,7 +655,7 @@ mod tests {
         let ring = Arc::new(InputRing::new(2, RATE, 1 << 16));
         let input = LiveInput::new(ring.clone(), Vec::new());
         let mut engine = Rig::engine(&Song::default(), &input);
-        engine.set_metronome(true, 1.0);
+        engine.set_metronome(true, true, 1.0);
         engine.play();
         engine.ping(9);
         assert_eq!(engine.ping_report(), Some((9, None)));

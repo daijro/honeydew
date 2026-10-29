@@ -191,9 +191,13 @@ fn open_as_song_tempo() {
     assert_eq!(tempo(vec![vec![t(0, 0xFF_FFFF)]]), 60e6 / 16_777_215.0);
     assert_eq!(tempo(vec![vec![t(0, 200_000)]]), 300.0);
     assert_eq!(tempo(vec![vec![t(0, 100_000)]]), 600.0);
-    // Each one overwrites the last, in file order (no tempo map).
+    // The tempo at tick 0: the last one there in file order (the 60 at tick 960 starts a tempo map, below).
     let two = vec![vec![t(0, 500_000), t(960, 1_000_000)], vec![t(0, 400_000)]];
     assert_eq!(tempo(two), 150.0);
+    // One tempo, said twice: no tempo lane.
+    let one = open(&smf(96, vec![vec![t(0, 600_000), t(960, 600_000)]]));
+    assert_eq!(one.tempo_bpm, 100.0);
+    assert_eq!(one.channels[0].lanes.len(), 1);
     // No FF 51 → 120, the MIDI default; a malformed one is the parse error → 120 too.
     assert_eq!(tempo(vec![vec![on(0, 0, 60, 64)]]), 120.0);
     assert_eq!(tempo(vec![]), 120.0);
@@ -226,6 +230,59 @@ fn open_as_song_tempo() {
     )
     .unwrap();
     assert_eq!(song.tempo_bpm, 120.0);
+}
+
+#[test]
+fn a_tempo_map_imports_as_a_square_tempo_lane_that_plays_and_exports_back() {
+    use crate::song::{TEMPO_TARGET, tempo_value};
+    use honeydew_audio::device::AudioRenderer;
+    use points::{PointKey, Shape, ShapeKind};
+    // 120 BPM, 90 from bar 3, 140 from bar 5, at 96 ticks a beat: bar 3 is file tick 768, song tick 1024.
+    let t = |at, bpm: f64| (at, SmfEvent::Tempo((60e6 / bpm).round() as u32));
+    let bytes = smf(
+        96,
+        vec![vec![
+            t(0, 120.0),
+            on(0, 0, 60, 64),
+            off(96, 0, 60),
+            t(768, 90.0),
+            t(1536, 140.0),
+        ]],
+    );
+    let song = open(&bytes);
+    assert_eq!(song.tempo_bpm, 120.0);
+    let tempo = lane(&song.channels[0], "Tempo");
+    assert_eq!(tempo.target, Some(TEMPO_TARGET));
+    let value = |bpm| points::raw(tempo_value(bpm));
+    let want = [(0, value(120.0)), (1024, value(90.0)), (2048, value(140.0))];
+    assert_eq!(pts(tempo), want);
+    // Square at 100 %: each tempo holds up to the next point and jumps there.
+    let square = Shape {
+        kind: ShapeKind::Square,
+        tension: 100,
+    };
+    let shapes = points::points(&tempo.clips[0], PointKey::Automation);
+    assert!(shapes.iter().all(|p| p.shape == square), "{shapes:?}");
+    // Played: 4 s at 120 reach bar 3 (a jump halfway would have played 90 from bar 2), 5⅓ s at 90 reach bar 5.
+    let mut engine = crate::audio_engine::SongAudioEngine::new(&song, 48_000.0).unwrap();
+    engine.play();
+    let mut out = vec![0.0; 512];
+    let mut ticks = Vec::new();
+    for frames in [192_000, 256_000] {
+        for _ in 0..frames / 256 {
+            engine.render(&mut out, 2);
+        }
+        ticks.push(engine.transport_tick());
+    }
+    assert!((1022..=1024).contains(&ticks[0]), "{ticks:?}");
+    assert!((2046..=2048).contains(&ticks[1]), "{ticks:?}");
+    // Exported and read back: the same tempo changes.
+    let back = open(&smf_of(&song, None).unwrap());
+    assert_eq!(back.tempo_bpm, 120.0);
+    assert_eq!(pts(lane(&back.channels[0], "Tempo")), want);
+    // Into the current song: its tempo and master stay.
+    let into = into_keys(&bytes, ImportOpts::OPEN_AS_SONG);
+    assert_eq!(into.channels[0].lanes.len(), 1);
 }
 
 #[test]

@@ -99,9 +99,9 @@ pub trait AudioRenderer: Send + 'static {
     /// The next Play first counts in `beats` beats of metronome with the transport held; 0 takes it back. Any Play
     /// takes it, so send it right before the Play it is for.
     fn count_in(&mut self, beats: u32);
-    /// The metronome clicks on the song's beats while `on` and playing; `level` is the normalized `Metronome level`
-    /// setting, which the count-in uses too.
-    fn set_metronome(&mut self, on: bool, level: f32);
+    /// REC's arm: while `on` a recording runs (no wrap at the song end) and, if `click`, the song's beats click while
+    /// playing; `level` is the normalized `Metronome level` setting, which the count-in uses too.
+    fn set_metronome(&mut self, on: bool, click: bool, level: f32);
     /// The metronome flag (the tempo dialog's toggle): the song's beats click while it is on and the transport plays,
     /// whatever [`Self::set_metronome`] says; `level` as there. The default ignores it.
     fn set_metronome_flag(&mut self, _on: bool, _level: f32) {}
@@ -184,6 +184,7 @@ pub enum AudioCommand<R> {
     /// [`AudioRenderer::set_metronome`].
     Metronome {
         on: bool,
+        click: bool,
         level: f32,
     },
     /// [`AudioRenderer::set_metronome_flag`].
@@ -820,7 +821,9 @@ impl<R: AudioRenderer> CallbackState<R> {
                         value,
                     } => self.renderer.set_setting(channel, instance_id, key, value),
                     AudioCommand::CountIn(beats) => self.renderer.count_in(beats),
-                    AudioCommand::Metronome { on, level } => self.renderer.set_metronome(on, level),
+                    AudioCommand::Metronome { on, click, level } => {
+                        self.renderer.set_metronome(on, click, level)
+                    }
                     AudioCommand::MetronomeFlag { on, level } => {
                         self.renderer.set_metronome_flag(on, level)
                     }
@@ -962,7 +965,7 @@ mod tests {
             self.count_in = beats;
         }
 
-        fn set_metronome(&mut self, on: bool, level: f32) {
+        fn set_metronome(&mut self, on: bool, _click: bool, level: f32) {
             self.metronome = (on, level);
         }
 
@@ -1447,6 +1450,7 @@ mod tests {
             AudioCommand::CountIn(4),
             AudioCommand::Metronome {
                 on: true,
+                click: true,
                 level: 0.25,
             },
             AudioCommand::Ping(3),

@@ -6,6 +6,7 @@ mod generators;
 mod input;
 mod live;
 mod merge;
+mod midi_sends;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod parallel;
 mod prepare;
@@ -140,6 +141,7 @@ pub struct SongAudioEngine {
     kit_sustained: Vec<[u8; 128]>,
     /// The channel ids and the solo links of the song's sends and pad targets.
     routing: routing::Routing,
+    midi_sends: midi_sends::MidiSends,
     /// What the sequencer holds, as the actions played so far left it ([`hold`]): per channel, instrument (as in
     /// `instruments`, then the pads' notes) and key, the note-ons not yet matched by a note-off; per channel and pad,
     /// the hits not yet released; per channel, the keys at its input. A re-sync releases what no note covers.
@@ -185,9 +187,11 @@ pub struct SongAudioEngine {
     playing: bool,
     /// The click voice: the metronome's beats and the count-in's.
     metronome: Metronome,
-    /// The metronome clicks on the song's beats while the transport rolls. It follows REC's arm (`App::auto_record`,
-    /// its only sender), so it also tells a recording, which does not wrap at the song end ([`Self::wrap_range`]).
-    metronome_on: bool,
+    /// REC's arm (`App::auto_record`, its only sender): a recording, which does not wrap at the song end
+    /// ([`Self::wrap_range`]), and whose beats click while the transport rolls if [`Self::armed_clicks`].
+    armed: bool,
+    /// The `Metronome when recording` setting: REC's arm clicks the beats.
+    armed_clicks: bool,
     /// The metronome flag (the tempo dialog's toggle): the beats click while it is on too, REC armed or not. It never
     /// stops the song-end wrap. An export's engine never gets it.
     metronome_flag: bool,
@@ -268,6 +272,7 @@ impl SongAudioEngine {
                 .map_err(|error| EngineError::Song(SongAudioError::Playback(error)))?;
         }
         let (mixes, routing) = routing::build(song);
+        let midi_sends = midi_sends::build(song);
         let mixer = Mixer::new(&mixes).map_err(EngineError::Mixer)?;
         for &(channel, instance_id, source) in &routing.keyed {
             // An effect that does not run here (a plugin's left out) keys nothing.
@@ -380,6 +385,7 @@ impl SongAudioEngine {
                 song,
                 channel_index,
                 &modules,
+                !midi_sends.targets[channel_index].is_empty(),
                 sample_rate,
                 tempo_bpm,
             )?);
@@ -392,6 +398,7 @@ impl SongAudioEngine {
             song,
             &bridge,
             &instruments,
+            &midi_sends,
             sample_rate,
             tempo_bpm,
             &mut traces,
@@ -459,6 +466,7 @@ impl SongAudioEngine {
             sustained,
             kit_sustained: vec![[0; 128]; count],
             routing,
+            midi_sends,
             cover: held.clone(),
             cover_pads: held_pads.clone(),
             cover_keys: vec![0; count],
@@ -483,7 +491,8 @@ impl SongAudioEngine {
             song_beats: Some(crate::render::song_length_beats(song)),
             playing: false,
             metronome: Metronome::new(sample_rate),
-            metronome_on: false,
+            armed: false,
+            armed_clicks: true,
             metronome_flag: false,
             metronome_level: metronome::level(Settings::default().metronome_level),
             bar_beats: song.time_sig.bar_beats(),
@@ -986,12 +995,17 @@ impl AudioRenderer for SongAudioEngine {
         if let Some(at) = position(&self.initial, (channel, instance_id, index)) {
             self.initial[at].3 = value;
         }
+        if instance_id == 0 {
+            self.forward_param(channel, index, value, true);
+        }
     }
 
     /// MIDI's Pitch Bend or channel pressure: no initial value (the song holds none), so a re-sync and Stop put the
     /// saved one back. The on-screen pitch wheel writes the song, and comes as [`Self::set_param`].
     fn set_live_param(&mut self, channel: usize, index: i32, value: f32) {
-        self.apply_param(channel, 0, strip_param(0, index), value);
+        let index = strip_param(0, index);
+        self.apply_param(channel, 0, index, value);
+        self.forward_param(channel, index, value, false);
     }
 
     /// Play start: the pickers' sample preview stops; every channel gets a full all-notes-off ([`Self::release_notes`]:
@@ -1168,8 +1182,8 @@ impl AudioRenderer for SongAudioEngine {
     }
 
     /// `on` always applies; a level that is not finite keeps the last one.
-    fn set_metronome(&mut self, on: bool, level: f32) {
-        self.metronome_on = on;
+    fn set_metronome(&mut self, on: bool, click: bool, level: f32) {
+        (self.armed, self.armed_clicks) = (on, click);
         if level.is_finite() {
             self.metronome_level = metronome::level(level.clamp(0.0, 1.0));
         }
@@ -1305,7 +1319,7 @@ impl SongAudioEngine {
     /// Where a rolling transport wraps: the loop, else [0, song end), but for a recording (with no song loop it does
     /// not wrap at the song end) and an export.
     fn wrap_range(&self) -> Option<(u64, u64)> {
-        let beats = self.song_beats.filter(|_| !self.metronome_on);
+        let beats = self.song_beats.filter(|_| !self.armed);
         let end = beats.and_then(|beats| beat_frame(beats, self.sample_rate, self.built_bpm).ok());
         let end = end.filter(|end| *end > 0);
         self.loop_frames.or(end.map(|end| (0, end)))
@@ -1420,7 +1434,7 @@ impl SongAudioEngine {
                 self.click_beat(k);
             }
             next.0 = Some(self.beat_from(done + 1, self.tempo_bpm).1 - done);
-        } else if (self.metronome_on || self.metronome_flag) && self.playing {
+        } else if (self.armed && self.armed_clicks || self.metronome_flag) && self.playing {
             // The beat the transport is on or last passed clicks as the transport reaches it, which lands within an
             // output frame of it (its frame is a stop); at a live tempo the transport's frames go by faster or slower.
             let (mut k, mut start) = self.beat_from(self.frame, self.built_bpm);
@@ -2113,7 +2127,7 @@ mod tests {
     fn the_metronome_clicks_on_each_beat_at_a_live_tempo() {
         for bpm in [90.0, 180.0, 250.0] {
             let mut engine = SongAudioEngine::new(&Song::default(), 48_000.0).unwrap();
-            engine.set_metronome(true, 1.0);
+            engine.set_metronome(true, true, 1.0);
             engine.set_tempo(bpm);
             engine.play();
             let per_beat = 48_000.0 * 60.0 / f64::from(bpm);
@@ -2326,7 +2340,7 @@ mod tests {
     /// An engine for `song` with the metronome on at full level.
     fn clicking(song: &Song) -> SongAudioEngine {
         let mut engine = SongAudioEngine::new(song, 48_000.0).unwrap();
-        engine.set_metronome(true, 1.0);
+        engine.set_metronome(true, true, 1.0);
         engine
     }
 

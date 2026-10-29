@@ -1,10 +1,15 @@
 //! REC's live automation recording, the pure rules: which
 //! clip a control's change goes to, and the point it adds there. The app arms REC, starts the transport and counts in;
-//! while it rolls armed, each change of the recent control comes here.
+//! while it rolls armed, each change of the recent control comes here, and so does each MIDI controller that reaches a
+//! channel recording notes ([`HoneydewApp::record_cc`]).
 
+use super::{HoneydewApp, tracks};
+use crate::midi::route::Target;
+use crate::midi::{MidiMsg, Out};
 use crate::params::{self, ParamKind, ParamSpec, menu_index, menu_value};
 use crate::song::points::{self, Point, PointKey};
 use crate::song::{AutomationTarget, Channel, Clip, LaneKind, PPQ, Song};
+use crate::ui::views::SongEdit;
 
 /// The beats a recording clip starts on a multiple of: start = floor(beat/4)·4 (4, not the bar's b).
 const START_BEATS: u32 = 4;
@@ -144,6 +149,102 @@ impl AutoRecord {
         self.clips
             .iter()
             .map(|&(id, _, lane, clip)| (id, lane, clip))
+    }
+
+    /// Drops the last point but one of the clip recording `target` on `channel` when it lies on the straight line
+    /// between its neighbours, within one MIDI value step (1/127 of the range): a controller's sweep keeps its turns.
+    // ponytail: greedy, a point is checked once, against the neighbours it has then; a long gentle curve can drift a
+    // few steps from the points it dropped. A pass over the whole take at its end if that shows.
+    fn thin(&self, song: &mut Song, channel: usize, target: AutomationTarget) {
+        let Some(ch) = song.channels.get_mut(channel) else {
+            return;
+        };
+        let key = |&&(c, t, ..): &&(i32, AutomationTarget, usize, u32)| (c, t) == (ch.id, target);
+        let Some(&(.., lane, id)) = self.clips.iter().find(key) else {
+            return;
+        };
+        let clips = ch.lanes.get_mut(lane).map(|l| &mut l.clips);
+        let Some(clip) = clips.and_then(|c| c.iter_mut().find(|c| c.id == id)) else {
+            return;
+        };
+        let mut pts = points::points(clip, PointKey::Automation);
+        let n = pts.len();
+        let [.., a, b, c] = pts[..] else {
+            return;
+        };
+        let (t, v) = (|p: Point| f64::from(p.tick), |p: Point| f64::from(p.value));
+        let line = v(a) + (v(c) - v(a)) * (t(b) - t(a)) / (t(c) - t(a));
+        let step = f64::from(PointKey::Automation.max()) / 127.0;
+        if a.tick < b.tick && b.tick < c.tick && (v(b) - line).abs() <= step {
+            pts.remove(n - 2);
+            points::set_points(clip, PointKey::Automation, pts);
+        }
+    }
+}
+
+impl HoneydewApp {
+    /// Records the change `values` (old, new) of `target` on channel `channel` at song tick `tick`
+    /// ([`AutoRecord::record`]), with the current lane if it is this channel's; a lane it adds re-keys the tracks.
+    /// Whether the song changed.
+    pub(super) fn record_point(
+        &mut self,
+        channel: usize,
+        target: AutomationTarget,
+        values: (f32, f32),
+        tick: u64,
+    ) -> bool {
+        let current = self.current_track().filter(|&(c, _)| c == channel);
+        let current = current.map(|(_, lane)| lane);
+        let song = &mut self.song;
+        let Some(added) = (self.auto_record).record(song, channel, target, values, tick, current)
+        else {
+            return false;
+        };
+        if let Some(lane) = added {
+            // ponytail: a song copy per lane added (`lane_shifts` compares two songs); one per take and target at most.
+            let mut before = self.song.clone();
+            before.channels[channel].lanes.remove(lane);
+            self.rekey(&tracks::lane_shifts(&before, &self.song));
+        }
+        true
+    }
+
+    /// REC's MIDI controllers, at song tick `tick` while a take runs and no count-in does: a CC or pitch bend `msg`
+    /// that reaches a channel recording notes (`targets` that [`Self::record_channels`] holds, as for its notes) is a
+    /// point of that channel's CC param (7 + CC, pitch bend 4), each in a lane and clip of its own
+    /// ([`AutoRecord::record`]), [`AutoRecord::thin`]ned. A CC that moved a link (`outs`) or was learned records nothing
+    /// here: a link records through its control. An ongoing edit.
+    ///
+    /// A Honeydew addition: the spec records the recent control only, one target at a time; here every controller does.
+    pub(super) fn record_cc(&mut self, msg: MidiMsg, targets: &[Target], outs: &[Out], tick: u64) {
+        // As the router plays them; there is no CC #127 channel param.
+        let (param, value) = match msg {
+            MidiMsg::Cc { cc, value, .. } if cc < 127 => {
+                (7 + i32::from(cc), f32::from(value) / 127.0)
+            }
+            MidiMsg::PitchBend { value, .. } => (4, f32::from(value) / 16383.0),
+            _ => return,
+        };
+        let linked = (outs.iter()).any(|o| matches!(o, Out::Linked { .. } | Out::LearnedCc(_)));
+        if linked || !self.recording() || self.audio.counting_in() {
+            return;
+        }
+        let target = AutomationTarget {
+            instance_id: 0,
+            param,
+        };
+        let recording = self.record_channels();
+        let mut changed = false;
+        let channels = targets.iter().map(|t| t.0);
+        for channel in channels.filter(|c| *c > 0 && recording.contains(c)) {
+            if self.record_point(channel, target, (value, value), tick) {
+                self.auto_record.thin(&mut self.song, channel, target);
+                changed = true;
+            }
+        }
+        if changed {
+            self.song_edited(SongEdit::Ongoing, tick);
+        }
     }
 }
 
