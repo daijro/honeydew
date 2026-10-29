@@ -13,6 +13,8 @@
 Get the latest version from [Releases](https://github.com/daijro/honeydew/releases/latest).
 
 - **Windows, Linux, macOS:** extract the archive and run `honeydew-native`. Keep the `content/` folder next to it: it holds the sound library.
+- **Linux AppImage:** the `.AppImage` is the whole app in one file. Make it executable (`chmod +x`) and run it. It needs FUSE, which most desktops have; without it, run it with `--appimage-extract-and-run`. The Linux downloads need glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 or later).
+- **`-avx2` downloads** are built for CPUs with AVX2 (most Intel Core CPUs since 2013 and AMD CPUs since 2015, but not every Pentium, Celeron or Atom) and can be faster. If unsure, take the plain one.
 - **Android:** install the `.apk`. Needs a 64-bit ARM device on Android 8 or later.
 - **Web:** the `honeydew-web` ZIP is a static site. Serve the folder with any web server.
 

@@ -3,10 +3,11 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Builds an existing tag's source with this workflow and replaces its release's downloads.
   workflow_dispatch:
     inputs:
-      android_tag:
-        description: Existing release tag whose Android APK should be rebuilt
+      tag:
+        description: Existing release tag to rebuild
         required: true
         type: string
 
@@ -15,29 +16,37 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  TAG: ${{ inputs.tag || github.ref_name }}
   TRUNK_VERSION: v0.21.14
   BINARYEN_VERSION: version_133
 
 jobs:
   desktop:
-    if: github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
+        # Each x86-64 download comes twice: the plain one runs on any x86-64 CPU, the -avx2 one is built for
+        # x86-64-v3 (AVX2: Intel since 2013, AMD since 2015). Linux builds on the oldest runner, so its downloads
+        # run on glibc 2.35 or newer (Ubuntu 22.04, Debian 12).
         include:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, name: linux-x86_64 }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, name: linux-x86_64 }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, name: linux-x86_64-avx2, rustflags: -Ctarget-cpu=x86-64-v3 }
           - { os: windows-latest, target: x86_64-pc-windows-msvc, name: windows-x86_64 }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, name: windows-x86_64-avx2, rustflags: -Ctarget-cpu=x86-64-v3 }
           - { os: macos-latest, target: aarch64-apple-darwin, name: macos-arm64 }
           - { os: macos-latest, target: x86_64-apple-darwin, name: macos-x86_64 }
+          - { os: macos-latest, target: x86_64-apple-darwin, name: macos-x86_64-avx2, rustflags: -Ctarget-cpu=x86-64-v3 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          key: ${{ matrix.name }}
       # signalsmith-stretch (Lemon Sampler's time stretching) compiles C++ and runs bindgen, which loads libclang.
       # macOS has it in Xcode; Windows images ship LLVM, installed here if missing.
       - name: System libraries
@@ -51,10 +60,12 @@ jobs:
           if (-not (Test-Path "$llvm\libclang.dll")) { choco install llvm -y --no-progress }
           "LIBCLANG_PATH=$llvm" >> $env:GITHUB_ENV
       - run: cargo build --release --locked --target ${{ matrix.target }} --bins
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
       - name: Package
         shell: bash
         run: |
-          dir=honeydew-${GITHUB_REF_NAME}-${{ matrix.name }}
+          dir=honeydew-${TAG}-${{ matrix.name }}
           mkdir "$dir"
           bin=target/${{ matrix.target }}/release
           ext=; [ "$RUNNER_OS" = Windows ] && ext=.exe
@@ -75,13 +86,56 @@ jobs:
           fi
       - uses: softprops/action-gh-release@v2
         with:
-          files: honeydew-${{ github.ref_name }}-*.*z*
+          tag_name: ${{ env.TAG }}
+          files: honeydew-${{ env.TAG }}-*.*z*
+      # After the archive's upload, so a failure here can't cost it.
+      - name: AppImage
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          dir=honeydew-${TAG}-${{ matrix.name }}
+          # The AppDir layout: AppRun, the desktop file and its icon at the root, the rest under usr/. The app finds
+          # its sounds at <exe dir>/../share/honeydew/content.
+          share=AppDir/usr/share
+          mkdir -p AppDir/usr/bin "$share/applications" "$share/honeydew" "$share/doc/honeydew"
+          cp "$dir/honeydew-native" "$dir/honeydew-import" AppDir/usr/bin/
+          ln -s usr/bin/honeydew-native AppDir/AppRun
+          mv "$dir/content" "$share/honeydew/"
+          cp "$dir/README.md" "$dir/LICENSE" "$share/doc/honeydew/"
+          cp -R "$dir/linux/icons" "$share/"
+          cp "$dir/linux/honeydew.desktop" AppDir/
+          cp "$dir/linux/honeydew.desktop" "$share/applications/"
+          cp "$dir/linux/icons/hicolor/256x256/apps/honeydew.png" AppDir/honeydew.png
+          cp AppDir/honeydew.png AppDir/.DirIcon
+          # Nothing to bundle: every library honeydew-native links is one AppImages leave to the system (glibc,
+          # libstdc++, libgcc_s, ALSA's libasound). The graphics stack, X11 and Wayland are loaded at run time.
+          if ldd AppDir/usr/bin/honeydew-native | awk '{print $1}' |
+            grep -vxE 'linux-vdso\.so\.1|/lib64/ld-linux-x86-64\.so\.2|lib(c|m|dl|pthread|rt|gcc_s|stdc\+\+|asound)\.so\.[0-9]+'; then
+            echo 'honeydew-native links a library above that the AppImage would have to bundle' >&2
+            exit 1
+          fi
+          # appimagetool and the AppImage runtime, pinned by version and SHA-256.
+          curl --retry 3 -sSfLo "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          curl --retry 3 -sSfLo "$RUNNER_TEMP/runtime" https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
+          printf '%s  %s\n' ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0 "$RUNNER_TEMP/appimagetool" \
+            2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d "$RUNNER_TEMP/runtime" | sha256sum -c
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          # VERSION becomes the desktop file's X-AppImage-Version. Extract-and-run needs no FUSE on the runner.
+          ARCH=x86_64 VERSION="${TAG#v}" "$RUNNER_TEMP/appimagetool" --appimage-extract-and-run \
+            --runtime-file "$RUNNER_TEMP/runtime" AppDir "$dir.AppImage"
+      - uses: softprops/action-gh-release@v2
+        if: runner.os == 'Linux'
+        with:
+          tag_name: ${{ env.TAG }}
+          files: honeydew-${{ env.TAG }}-*.AppImage
+          fail_on_unmatched_files: true
 
   web:
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -94,6 +148,7 @@ jobs:
       - run: tools/web-dist.sh --zip
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG }}
           files: target/honeydew-web-*.zip
 
   android:
@@ -101,7 +156,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.android_tag || github.ref }}
+          ref: ${{ env.TAG }}
       - name: Prepare signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -148,6 +203,6 @@ jobs:
         run: rm -f "$RUNNER_TEMP/honeydew-release.jks"
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.android_tag || github.ref_name }}
+          tag_name: ${{ env.TAG }}
           files: target/honeydew-android-*-arm64.apk
           fail_on_unmatched_files: true
