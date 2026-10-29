@@ -1,8 +1,9 @@
-//! The `•••` CTRL menu of the transport bar: an inverted popup of six items acting on the most recently touched
-//! parameter, the "recent control". Disabled items stay in place, dimmed.
+//! The `•••` CTRL menu of the transport bar: an inverted popup of seven items acting on the most recently touched
+//! parameter, the "recent control", but for `Add MIDI CC track…`, which acts on the selected channel. Disabled items
+//! stay in place, dimmed.
 //!
 //! An item is enabled when its condition holds **and** the caller lists it as implemented: [`IMPLEMENTED`], every
-//! item now: the three MIDI CC link items, the two automation items and `Fine tune control`
+//! item now: the three MIDI CC link items, the three automation items and `Fine tune control`
 //! ([`crate::ui::fine_tune`]). The popup sits right above the CTRL button, centred on it and kept on screen.
 //!
 //! The recent control comes from the views as [`Touch`]es: a bound control's press, or its parameter menu's pick of
@@ -10,7 +11,7 @@
 
 use eframe::egui::{Context, Id, Rect};
 
-use crate::song::AutomationTarget;
+use crate::song::{AutomationTarget, LaneKind, Song};
 use crate::ui::UiCtx;
 use crate::ui::popup::{self, PopupItem};
 use crate::ui::widgets::Signal;
@@ -22,26 +23,30 @@ pub enum CtrlAction {
     LinkModWheel,
     UnlinkMidiCc,
     AddAutomationTrack,
+    /// `Add MIDI CC track…`: a picker of the CCs, for a lane on the selected channel. Not about the recent control.
+    AddCcTrack,
     LinkRecentControl,
     FineTune,
 }
 
-/// Its first four rows are also the parameter menu's rows 1…4.
-pub(crate) const ITEMS: [(CtrlAction, &str); 6] = [
+/// Its first four rows are also the parameter menu's rows 1…4, its last the parameter menu's `Fine tune control`.
+pub(crate) const ITEMS: [(CtrlAction, &str); 7] = [
     (CtrlAction::LinkMidiCc, "Link to MIDI CC"),
     (CtrlAction::LinkModWheel, "Link to Mod Wheel"),
     (CtrlAction::UnlinkMidiCc, "Unlink from MIDI CC"),
     (CtrlAction::AddAutomationTrack, "Add automation track"),
+    (CtrlAction::AddCcTrack, "Add MIDI CC track…"),
     (CtrlAction::LinkRecentControl, "Link to recent control"),
     (CtrlAction::FineTune, "Fine tune control"),
 ];
 
 /// The actions the app carries out; the others stay disabled.
-pub const IMPLEMENTED: [CtrlAction; 6] = [
+pub const IMPLEMENTED: [CtrlAction; 7] = [
     CtrlAction::LinkMidiCc,
     CtrlAction::LinkModWheel,
     CtrlAction::UnlinkMidiCc,
     CtrlAction::AddAutomationTrack,
+    CtrlAction::AddCcTrack,
     CtrlAction::LinkRecentControl,
     CtrlAction::FineTune,
 ];
@@ -80,16 +85,18 @@ pub struct RecentControl {
     pub fine_tune: bool,
 }
 
-/// The enable condition for `action`, with `recent` the recent control (`None`: there is none).
-fn allowed(action: CtrlAction, recent: Option<&RecentControl>) -> bool {
+/// The enable condition for `action`, with `recent` the recent control (`None`: there is none) and `cc_channel` whether
+/// the selected channel takes a MIDI CC track ([`cc_channel`]).
+fn allowed(action: CtrlAction, recent: Option<&RecentControl>, cc_channel: bool) -> bool {
     let Some(r) = recent else {
-        return false;
+        return action == CtrlAction::AddCcTrack && cc_channel;
     };
     let linkable = !r.channel_cc;
     match action {
         CtrlAction::LinkMidiCc | CtrlAction::LinkModWheel => linkable,
         CtrlAction::UnlinkMidiCc => linkable && r.cc_linked,
         CtrlAction::AddAutomationTrack => true,
+        CtrlAction::AddCcTrack => cc_channel,
         CtrlAction::LinkRecentControl => {
             linkable && r.on_current_channel && r.track_automates_other
         }
@@ -97,20 +104,28 @@ fn allowed(action: CtrlAction, recent: Option<&RecentControl>) -> bool {
     }
 }
 
-/// The menu's items for the recent control: one column, each enabled when its condition holds and it is in
-/// `implemented`, the actions whose feature exists.
+/// The menu's items for the recent control and the selected channel (`cc_channel`, [`allowed`]): one column, each enabled
+/// when its condition holds and it is in `implemented`, the actions whose feature exists.
 pub fn menu_items(
     recent: Option<&RecentControl>,
+    cc_channel: bool,
     implemented: &[CtrlAction],
 ) -> Vec<PopupItem<CtrlAction>> {
     ITEMS
         .iter()
         .enumerate()
         .map(|(row, &(action, label))| PopupItem {
-            disabled: !(allowed(action, recent) && implemented.contains(&action)),
+            disabled: !(allowed(action, recent, cc_channel) && implemented.contains(&action)),
             ..PopupItem::new(action, 0, row, label)
         })
         .collect()
+}
+
+/// Whether channel `channel` takes `Add MIDI CC track…`: an instrument or drum channel (its main lane notes or drums),
+/// whose instruments the CCs play to.
+pub fn cc_channel(song: &Song, channel: usize) -> bool {
+    let main = song.channels.get(channel).and_then(|c| c.lanes.first());
+    main.is_some_and(|l| matches!(l.kind, LaneKind::Notes | LaneKind::Drums))
 }
 
 /// Whether the CTRL menu is open (the transport opens it when CTRL is tapped), and what it tells the app.
@@ -162,17 +177,18 @@ mod tests {
 
     use CtrlAction::*;
 
-    const ALL: [CtrlAction; 6] = [
+    const ALL: [CtrlAction; 7] = [
         LinkMidiCc,
         LinkModWheel,
         UnlinkMidiCc,
         AddAutomationTrack,
+        AddCcTrack,
         LinkRecentControl,
         FineTune,
     ];
 
     fn enabled(recent: Option<&RecentControl>) -> Vec<CtrlAction> {
-        menu_items(recent, &ALL)
+        menu_items(recent, false, &ALL)
             .into_iter()
             .filter(|i| !i.disabled)
             .filter_map(|i| i.id)
@@ -180,8 +196,8 @@ mod tests {
     }
 
     #[test]
-    fn six_items_in_the_spec_order_in_one_column() {
-        let items = menu_items(None, &ALL);
+    fn seven_items_in_the_spec_order_in_one_column() {
+        let items = menu_items(None, false, &ALL);
         let cells: Vec<_> = items
             .iter()
             .map(|i| (i.col, i.row, &*i.label, i.id))
@@ -193,8 +209,9 @@ mod tests {
                 (0, 1, "Link to Mod Wheel", Some(LinkModWheel)),
                 (0, 2, "Unlink from MIDI CC", Some(UnlinkMidiCc)),
                 (0, 3, "Add automation track", Some(AddAutomationTrack)),
-                (0, 4, "Link to recent control", Some(LinkRecentControl)),
-                (0, 5, "Fine tune control", Some(FineTune)),
+                (0, 4, "Add MIDI CC track…", Some(AddCcTrack)),
+                (0, 5, "Link to recent control", Some(LinkRecentControl)),
+                (0, 6, "Fine tune control", Some(FineTune)),
             ]
         );
         assert!(items.iter().all(|i| !i.dot && !i.keep_open && !i.current));
@@ -203,6 +220,12 @@ mod tests {
     #[test]
     fn without_a_recent_control_everything_is_disabled() {
         assert_eq!(enabled(None), []);
+        // But `Add MIDI CC track…`, on an instrument or drum channel: it acts on the selected channel.
+        let cc = menu_items(None, true, &ALL);
+        let on: Vec<_> = (cc.iter().filter(|i| !i.disabled))
+            .filter_map(|i| i.id)
+            .collect();
+        assert_eq!(on, [AddCcTrack]);
     }
 
     #[test]
@@ -253,7 +276,7 @@ mod tests {
             fine_tune: true,
             ..Default::default()
         };
-        let some = menu_items(Some(&everything), &[FineTune, LinkModWheel]);
+        let some = menu_items(Some(&everything), true, &[FineTune, LinkModWheel]);
         let on: Vec<_> = some
             .iter()
             .filter(|i| !i.disabled)
@@ -262,7 +285,7 @@ mod tests {
         assert_eq!(on, [LinkModWheel, FineTune]);
         // Nothing implemented: everything disabled.
         assert!(
-            menu_items(Some(&everything), &[])
+            menu_items(Some(&everything), true, &[])
                 .iter()
                 .all(|i| i.disabled)
         );
@@ -271,7 +294,7 @@ mod tests {
     #[test]
     fn the_app_implements_every_item() {
         let on = |recent: &RecentControl| -> Vec<_> {
-            menu_items(Some(recent), &IMPLEMENTED)
+            menu_items(Some(recent), false, &IMPLEMENTED)
                 .into_iter()
                 .filter(|i| !i.disabled)
                 .filter_map(|i| i.id)
@@ -302,7 +325,8 @@ mod tests {
             track_automates_other: true,
             ..linked
         };
-        assert_eq!(on(&tunable), ALL);
+        let all = menu_items(Some(&tunable), true, &IMPLEMENTED);
+        assert!(all.iter().all(|i| !i.disabled));
         assert!(IMPLEMENTED.iter().all(|a| ALL.contains(a)));
     }
 
@@ -387,22 +411,22 @@ mod tests {
 
     #[test]
     fn the_popup_stands_on_the_button_centred_on_it() {
-        let mut rig = Rig::new(menu_items(None, &[]));
+        let mut rig = Rig::new(menu_items(None, false, &[]));
         let r = rig.popup_rect().unwrap();
         assert_eq!(r.bottom(), BUTTON.top());
         assert!((r.center().x - BUTTON.center().x).abs() <= 1.0, "{r:?}");
-        // Six rows of 1.25 U.
-        assert_eq!(r.height(), 6.0 * 40.0);
+        // Seven rows of 1.25 U.
+        assert_eq!(r.height(), 7.0 * 40.0);
         assert!(SCREEN.contains_rect(r));
     }
 
     #[test]
     fn picking_an_enabled_item_returns_its_action_and_closes() {
-        let mut items = menu_items(None, &[]);
+        let mut items = menu_items(None, false, &[]);
         items[3].disabled = false;
         let mut rig = Rig::new(items);
         let r = rig.popup_rect().unwrap();
-        // Row 3 of six: Add automation track.
+        // Row 3 of seven: Add automation track.
         rig.frame_at(Some(pos2(r.center().x, r.top() + 3.5 * 40.0)));
         assert_eq!(rig.picked, [AddAutomationTrack]);
         assert!(!rig.menu.open);
@@ -410,7 +434,7 @@ mod tests {
 
     #[test]
     fn disabled_items_do_nothing_and_a_tap_outside_closes() {
-        let mut rig = Rig::new(menu_items(None, &[]));
+        let mut rig = Rig::new(menu_items(None, false, &[]));
         let r = rig.popup_rect().unwrap();
         rig.frame_at(Some(pos2(r.center().x, r.top() + 0.5 * 40.0)));
         assert!(rig.picked.is_empty() && rig.menu.open);

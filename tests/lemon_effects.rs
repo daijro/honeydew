@@ -1,8 +1,10 @@
-//! Lemon Studio's reverb and limiter as rack modules: in the song file, a rack preset and an FL Studio project.
+//! Lemon Studio's reverb and limiter as rack modules: in the song file, a rack preset and an FL Studio project. The
+//! Dynamic EQ, Honeydew's own effect, is saved as they are.
 
 use honeydew::content::Factory;
 use honeydew::sample_cache::SampleCache;
 use honeydew::song::{ChannelKind, ModuleInstance, Song};
+use honeydew_audio::dynamic_eq::{self, band};
 use honeydew_audio::lemon::{self, dynamics, norm, reverb};
 
 /// A song with a Lemon Reverb between two of the song format's own effects and a Lemon Limiter on the master, off
@@ -48,7 +50,13 @@ fn lemon_modules<'a>(
 
 #[test]
 fn a_saved_song_and_a_rack_preset_keep_them_where_fl_studio_mobile_skips_them() {
-    let song = song();
+    let mut song = song();
+    // And a Dynamic EQ after them, off its defaults.
+    let rack = &mut song.channels[1].rack;
+    let id = rack.add(dynamic_eq::DYNAMIC_EQ);
+    let p = &mut rack.get_mut(id).unwrap().params;
+    (p[band(1, dynamic_eq::GAIN)], p[band(2, dynamic_eq::RANGE)]) = (0.8, 0.1);
+    (p[band(3, dynamic_eq::ON)], p[dynamic_eq::RELEASE]) = (0.0, 0.3);
     let bytes = honeydew::flm::write(&song).unwrap();
     // Each one's `RMOd` is inside an `HDPm`, which a reader that does not know its type skips, never the rack's own.
     let rmods: Vec<usize> = (bytes.windows(4).enumerate())
@@ -57,7 +65,7 @@ fn a_saved_song_and_a_rack_preset_keep_them_where_fl_studio_mobile_skips_them() 
         })
         .map(|(i, _)| i)
         .collect();
-    assert_eq!(rmods.len(), 2);
+    assert_eq!(rmods.len(), 3);
     assert!(rmods.iter().all(|&i| &bytes[i - 16..i - 12] == b"HDPm"));
     // Read back, and written again byte for byte (as a live session's checkpoints require).
     let back = honeydew::flm::read(&bytes).unwrap();

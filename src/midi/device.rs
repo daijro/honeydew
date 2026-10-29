@@ -1,6 +1,6 @@
 //! MIDI input devices: the input device menu and the [`MidiLink`] seam. The link holds an opener and a lister: `midir`
-//! natively, Web MIDI on the web, fakes in tests (no test opens a port). Devices push raw messages into a channel that
-//! The app drains each frame.
+//! natively, Web MIDI on the web, fakes in tests (no test opens a port). Devices push raw messages, each with its
+//! device's name, into a channel that the app drains each frame.
 
 use std::any::Any;
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
@@ -18,6 +18,9 @@ pub const ANY: &str = "Any available";
 pub const RESCAN_SECS: f64 = 2.0;
 /// Messages held for the app; more are dropped until it drains.
 const QUEUE: usize = 4096;
+
+/// A message as the link hands it over: its device's [`device_name`] and its bytes.
+pub type Message = (String, Vec<u8>);
 
 /// An `Input device:` pick. Stored by its [label](Self::label) (`MidiDevice`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -116,7 +119,7 @@ fn connect_each<C>(
 /// Opens the ports of a choice. Each message goes to the sender; the context, if any, repaints. The box keeps the
 /// connections open until it is dropped.
 type Opener = Box<
-    dyn FnMut(&MidiChoice, SyncSender<Vec<u8>>, Option<Context>) -> Result<Box<dyn Any>, String>,
+    dyn FnMut(&MidiChoice, SyncSender<Message>, Option<Context>) -> Result<Box<dyn Any>, String>,
 >;
 /// Lists the input ports by name.
 type Lister = Box<dyn FnMut() -> Vec<String>>;
@@ -126,8 +129,8 @@ pub struct MidiLink {
     open: Opener,
     list: Lister,
     ctx: Option<Context>,
-    tx: SyncSender<Vec<u8>>,
-    rx: Receiver<Vec<u8>>,
+    tx: SyncSender<Message>,
+    rx: Receiver<Message>,
     choice: MidiChoice,
     /// The ports at the last scan.
     ports: Vec<String>,
@@ -143,7 +146,7 @@ impl MidiLink {
     pub fn new(
         open: impl FnMut(
             &MidiChoice,
-            SyncSender<Vec<u8>>,
+            SyncSender<Message>,
             Option<Context>,
         ) -> Result<Box<dyn Any>, String>
         + 'static,
@@ -234,7 +237,7 @@ impl MidiLink {
     }
 
     /// The messages received since the last call, oldest first: one complete message each.
-    pub fn drain(&mut self) -> Vec<Vec<u8>> {
+    pub fn drain(&mut self) -> Vec<Message> {
         self.rx.try_iter().collect()
     }
 
@@ -253,13 +256,15 @@ impl MidiLink {
     }
 }
 
-/// Hands one message from a device callback to the link, and wakes the UI. Only what [`MidiMsg::parse`] reads is
-/// kept: system messages (SysEx, clock, active sensing), poly pressure and malformed bytes are skipped.
+/// Hands one message from a device callback to the link, with the name of the `port` it came in on ([`device_name`]),
+/// and wakes the UI. Only what [`MidiMsg::parse`] reads is kept: system messages (SysEx, clock, active sensing), poly
+/// pressure and malformed bytes are skipped.
 #[cfg(any(not(target_os = "android"), test))]
-fn forward(bytes: &[u8], tx: &SyncSender<Vec<u8>>, ctx: Option<&Context>) {
+fn forward(port: &str, bytes: &[u8], tx: &SyncSender<Message>, ctx: Option<&Context>) {
     // ponytail: a full queue (an app that stopped drawing frames) drops new messages; a ring that keeps the newest
     // if that ever matters.
-    if MidiMsg::parse(bytes).is_some() && tx.try_send(bytes.to_vec()).is_ok() {
+    let message = (device_name(port).to_owned(), bytes.to_vec());
+    if MidiMsg::parse(bytes).is_some() && tx.try_send(message).is_ok() {
         // ponytail: the message waits for the next egui frame; a direct path to the engine if latency matters.
         if let Some(ctx) = ctx {
             ctx.request_repaint();
@@ -277,7 +282,7 @@ mod backend {
     use eframe::egui::Context;
     use midir::{Ignore, MidiInput};
 
-    use super::{MidiChoice, connect_each, forward};
+    use super::{Message, MidiChoice, connect_each, forward};
 
     /// Lists through one cached client (`ports()` asks the system each time); a failed listing drops it.
     pub fn lister() -> impl FnMut() -> Vec<String> {
@@ -305,7 +310,7 @@ mod backend {
 
     pub fn open(
         choice: &MidiChoice,
-        tx: SyncSender<Vec<u8>>,
+        tx: SyncSender<Message>,
         ctx: Option<Context>,
     ) -> Result<Box<dyn Any>, String> {
         guard(|| {
@@ -319,9 +324,10 @@ mod backend {
                 // `connect` consumes its client, so each port takes one.
                 let mut input = client()?;
                 input.ignore(Ignore::All);
-                let (tx, ctx) = (tx.clone(), ctx.clone());
-                let on_message =
-                    move |_: u64, bytes: &[u8], _: &mut ()| forward(bytes, &tx, ctx.as_ref());
+                let (tx, ctx, port) = (tx.clone(), ctx.clone(), names[i].clone());
+                let on_message = move |_: u64, bytes: &[u8], _: &mut ()| {
+                    forward(&port, bytes, &tx, ctx.as_ref())
+                };
                 let connection = input.connect(&ports[i], crate::APP_NAME, on_message, ());
                 connection.map_err(|err| format!("{}: {err}", names[i]))
             })?;
@@ -355,7 +361,7 @@ mod backend {
     use wasm_bindgen_futures::JsFuture;
     use web_sys::{MidiAccess, MidiInput, MidiMessageEvent, MidiPortDeviceState};
 
-    use super::{MidiChoice, connect_each, forward};
+    use super::{Message, MidiChoice, connect_each, forward};
 
     enum Access {
         NotAsked,
@@ -384,7 +390,7 @@ mod backend {
 
     pub fn open(
         choice: &MidiChoice,
-        tx: SyncSender<Vec<u8>>,
+        tx: SyncSender<Message>,
         ctx: Option<Context>,
     ) -> Result<Box<dyn Any>, String> {
         if ACCESS.with_borrow(|access| matches!(access, Access::NotAsked)) {
@@ -393,8 +399,11 @@ mod backend {
         let repaint = ctx.clone();
         let on_message =
             Closure::<dyn FnMut(MidiMessageEvent)>::new(move |event: MidiMessageEvent| {
+                // The input the message came in on, named as `inputs` names it.
+                let input = event.target().map(|t| t.unchecked_into::<MidiInput>());
+                let port = input.map_or_else(String::new, |i| i.name().unwrap_or_else(|| i.id()));
                 if let Ok(bytes) = event.data() {
-                    forward(&bytes, &tx, repaint.as_ref());
+                    forward(&port, &bytes, &tx, repaint.as_ref());
                 }
             });
         let conn = Rc::new(Conn {
@@ -558,12 +567,16 @@ mod tests {
             &[0xA0, 60, 10],
             &[0x90, 60],
         ] {
-            forward(bytes, &tx, None);
+            forward("Keys 20:0", bytes, &tx, None);
         }
-        forward(&[0xB0, 7, 100], &tx, None);
+        forward("Pads", &[0xB0, 7, 100], &tx, None);
+        // Each with its device's name.
         assert_eq!(
             rx.try_iter().collect::<Vec<_>>(),
-            [vec![0x90, 60, 100], vec![0xB0, 7, 100]]
+            [
+                ("Keys".to_owned(), vec![0x90, 60, 100]),
+                ("Pads".to_owned(), vec![0xB0, 7, 100])
+            ]
         );
     }
 
@@ -571,10 +584,10 @@ mod tests {
     fn a_full_queue_drops_new_messages() {
         let (tx, rx) = sync_channel(2);
         for key in [60, 62, 64] {
-            forward(&[0x90, key, 100], &tx, None);
+            forward("Keys", &[0x90, key, 100], &tx, None);
         }
         assert_eq!(
-            rx.try_iter().collect::<Vec<_>>(),
+            bytes(rx.try_iter().collect()),
             [vec![0x90, 60, 100], vec![0x90, 62, 100]]
         );
     }
@@ -594,7 +607,7 @@ mod tests {
     }
 
     /// One successful open: the ports it connected, and its sender.
-    type Open = (Vec<String>, SyncSender<Vec<u8>>);
+    type Open = (Vec<String>, SyncSender<Message>);
 
     struct Conn(Rc<Cell<usize>>);
 
@@ -632,7 +645,12 @@ mod tests {
     }
 
     fn send(fake: &Fake, open: usize, bytes: &[u8]) {
-        forward(bytes, &fake.opens.borrow()[open].1, None);
+        forward("Keys", bytes, &fake.opens.borrow()[open].1, None);
+    }
+
+    /// The messages' bytes.
+    fn bytes(messages: Vec<Message>) -> Vec<Vec<u8>> {
+        messages.into_iter().map(|m| m.1).collect()
     }
 
     fn connected(fake: &Fake, open: usize) -> Vec<String> {
@@ -644,14 +662,14 @@ mod tests {
         let fake = Rc::new(Fake::default());
         *fake.ports.borrow_mut() = ports(&["Keys"]);
         let mut link = link(&fake);
-        assert_eq!(link.drain(), Vec::<Vec<u8>>::new());
+        assert!(link.drain().is_empty());
         link.open(MidiChoice::Any).unwrap();
         assert_eq!(link.ports(), ["Keys"]);
         send(&fake, 0, &[0x90, 60, 100]);
         send(&fake, 0, &[0x90, 64, 90]);
         send(&fake, 0, &[0x80, 60, 0]);
         let expected = [vec![0x90, 60, 100], vec![0x90, 64, 90], vec![0x80, 60, 0]];
-        assert_eq!(link.drain(), expected);
+        assert_eq!(bytes(link.drain()), expected);
         assert!(link.drain().is_empty());
     }
 
@@ -731,7 +749,7 @@ mod tests {
         link.tick(2.0);
         assert_eq!(fake.opens.borrow().len(), 1);
         send(&fake, 0, &[0x90, 60, 100]);
-        assert_eq!(link.drain(), [vec![0x90, 60, 100]]);
+        assert_eq!(bytes(link.drain()), [vec![0x90, 60, 100]]);
         // Unplugged: the connection closes and the open fails, without a panic. Plugged in again: it reconnects.
         fake.ports.borrow_mut().clear();
         link.tick(4.0);
@@ -841,7 +859,7 @@ mod backend {
 
     pub fn open(
         _: &MidiChoice,
-        _: SyncSender<Vec<u8>>,
+        _: SyncSender<Message>,
         _: Option<Context>,
     ) -> Result<Box<dyn Any>, String> {
         Ok(Box::new(()))

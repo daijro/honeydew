@@ -255,8 +255,15 @@ impl LimiterFx {
     // ponytail: Lemon's block process called one frame at a time, as the engine runs its built-in effects; its silence
     // sleep and state flush then act per frame. A block path for it if the per-call cost ever shows.
     pub(crate) fn frame(&mut self, l: f32, r: f32) -> (f32, f32) {
+        self.keyed(l, r, None)
+    }
+
+    /// [`Self::frame`] with its compressor reading `key` (left, right) instead of the frame: Lemon's own sidechain input.
+    pub(crate) fn keyed(&mut self, l: f32, r: f32, key: Option<(f32, f32)>) -> (f32, f32) {
         let (mut left, mut right) = ([l], [r]);
-        self.dsp.process(&mut left, &mut right, None);
+        let key = key.map(|(key_l, key_r)| ([key_l], [key_r]));
+        let key = key.as_ref().map(|(key_l, key_r)| (&key_l[..], &key_r[..]));
+        self.dsp.process(&mut left, &mut right, key);
         (left[0], right[0])
     }
 

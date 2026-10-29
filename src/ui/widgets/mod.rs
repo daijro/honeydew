@@ -530,8 +530,8 @@ enum MenuAction {
 fn menu_items(reset: bool, menu: ParamMenu, fine_tune: bool) -> Vec<PopupItem<MenuAction>> {
     let bound = matches!(menu, ParamMenu::Bound | ParamMenu::Linked);
     let reset = reset.then(|| PopupItem::new(MenuAction::Reset, 0, 0, "Reset"));
-    // Rows 1…4 are the CTRL menu's first four, row 5 its sixth.
-    let fine_tune = fine_tune.then_some(&ctrl_menu::ITEMS[5]);
+    // Rows 1…4 are the CTRL menu's first four, row 5 its last.
+    let fine_tune = ctrl_menu::ITEMS.last().filter(|_| fine_tune);
     let links = (ctrl_menu::ITEMS[..4].iter().chain(fine_tune))
         .filter(|_| bound)
         .map(|&(action, label)| PopupItem {

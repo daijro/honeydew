@@ -519,3 +519,63 @@ fn a_slide_outside_a_modules_key_range_never_reaches_it() {
         "72 is out of 0..=64"
     );
 }
+
+/// Master, B (channel 1) and A (channel 2), MiniSynths. B's Compressor (−16 dB, 20:1, no make-up gain) is keyed from A
+/// when `keyed`; A is muted with its fader down (a ghost key), so the output is B's alone.
+fn keyed_song(keyed: bool) -> Song {
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    let a = &mut song.channels[2];
+    (a.params.0[0], a.params.0[2]) = (0.0, 1.0);
+    let a = a.id;
+    let b = &mut song.channels[1].rack;
+    let id = b.add(8);
+    let compressor = b.get_mut(id).unwrap();
+    for (index, value) in [(1, 0.6), (2, 1.0), (5, 0.0), (7, 0.0)] {
+        compressor.params[index] = value;
+    }
+    compressor.sidechain = keyed.then_some(a);
+    song
+}
+
+/// `song` with B holding a quiet key and, if `a_plays`, A a loud one: the output.
+fn keyed_output(song: &Song, a_plays: bool) -> Vec<f32> {
+    let mut engine = SongAudioEngine::new(song, RATE).unwrap();
+    engine.note_on(1, 69, 0.1);
+    if a_plays {
+        engine.note_on(2, 45, 1.0);
+    }
+    let mut output = vec![0.0; 8192 * 2];
+    engine.render(&mut output, 2);
+    output
+}
+
+#[test]
+fn a_keyed_compressor_ducks_its_channel_while_the_source_plays() {
+    // B comes first in channel order, yet runs after A, its key. A is silent in the output.
+    let off = keyed_output(&keyed_song(false), true);
+    assert!(energy(&off) > 0.01);
+    assert_eq!(keyed_output(&keyed_song(false), false), off, "A muted");
+    assert_eq!(keyed_output(&keyed_song(true), false), off, "a silent key");
+    // The key is A's rack output before its fader and mute: B ducks under the muted A's burst.
+    let ducked = keyed_output(&keyed_song(true), true);
+    assert!(
+        energy(&ducked) < 0.5 * energy(&off),
+        "{} {}",
+        energy(&ducked),
+        energy(&off)
+    );
+    // Nor does a solo change the key: A unmuted at unity but soloed out (B soloed) keys B alike, and is not heard.
+    let mut soloed = keyed_song(true);
+    let a = &mut soloed.channels[2].params.0;
+    (a[0], a[2]) = (0.8531, 0.0);
+    soloed.channels[1].params.0[3] = 1.0;
+    assert_eq!(keyed_output(&soloed, true), ducked);
+    // A keyed back from B would close a cycle: that key is dropped, and B still ducks.
+    let mut cycle = keyed_song(true);
+    let b = cycle.channels[1].id;
+    let id = cycle.channels[2].rack.add(8);
+    cycle.channels[2].rack.get_mut(id).unwrap().sidechain = Some(b);
+    assert!(energy(&keyed_output(&cycle, true)) < 0.5 * energy(&off));
+}

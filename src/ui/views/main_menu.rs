@@ -77,6 +77,24 @@ impl State {
     }
 }
 
+/// The sound library question's tag ([`sounds_question`]): the app takes its answer (`app/sounds.rs`).
+pub const SOUNDS_TAG: &str = "main_menu_sounds";
+
+/// Where to install the sound library from, after `why` (none for SETTINGS `Install sound library…`): `ZIP file…`
+/// (the extra choice), `Folder…` (yes) or `Cancel`, tagged [`SOUNDS_TAG`].
+pub fn sounds_question(why: Option<String>) -> Nav {
+    let zip = format!("honeydew-v{}-sounds.zip", env!("CARGO_PKG_VERSION"));
+    let how = format!(
+        "Install it from the sounds ZIP of a release ({zip}) or the content folder of a full download."
+    );
+    Nav::Open(Overlay::Message {
+        tag: SOUNDS_TAG,
+        lines: why.into_iter().chain([how]).collect(),
+        confirm: Some(("Folder…".into(), "Cancel".into())),
+        extra: Some("ZIP file…".into()),
+    })
+}
+
 /// `Exit <app>?` with `Yes` / `Cancel`, tagged [`QUIT_TAG`]. It never asks about unsaved changes.
 pub fn quit_question() -> Nav {
     message(QUIT_TAG, vec![format!("Exit {APP_NAME}?")], "Yes", "Cancel")
@@ -154,6 +172,9 @@ pub fn show(
     app.midi_rescan |= settings.take_midi_rescan();
     if settings.take_credits() {
         nav = Some(Nav::Open(Overlay::Credits));
+    }
+    if settings.take_install_sounds() {
+        nav = Some(sounds_question(None));
     }
     plugin_folders(settings.take_plugin_action(), app.settings);
     let action = action.or(answered);

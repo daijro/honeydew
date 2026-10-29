@@ -275,6 +275,8 @@ struct State {
     press: Option<Id>,
     /// The pass [`focus`] was last asked in: a panel shown and focused at once draws from the next pass on.
     asked: Option<u64>,
+    /// The target that takes `focusUp` / `focusDown` this frame while it is focused ([`hold_vertical`]).
+    vertical: Option<Id>,
 }
 
 impl State {
@@ -426,6 +428,12 @@ pub fn take_step(ctx: &Context, id: Id) -> Option<Step> {
     })
 }
 
+/// Target `id` takes `focusUp` / `focusDown` in the next frame while it is focused, as itself said in this one (an
+/// editor grid nudging its selection).
+pub fn hold_vertical(ctx: &Context, id: Id) {
+    with(ctx, |s| s.vertical = Some(id));
+}
+
 /// Focuses control or container `id` (a container passes it to its first target at the frame's end); keyboard look
 /// on.
 pub fn focus(ctx: &Context, id: Id) {
@@ -552,8 +560,13 @@ pub fn begin_frame(ctx: &Context) {
         ("focusUp", Dir::Up),
         ("focusDown", Dir::Down),
     ];
+    // A focused target holding the arrows keeps Up and Down.
+    let held = with(ctx, |s| {
+        s.vertical.take().is_some_and(|v| s.focused == Some(v))
+    });
     let moves: Vec<Dir> = ctx.input_mut(|i| {
         (MOVES.iter())
+            .filter(|(_, dir)| !(held && matches!(dir, Dir::Up | Dir::Down)))
             .filter(|(action, _)| keys.consume_press(i, action))
             .map(|&(_, dir)| dir)
             .collect()

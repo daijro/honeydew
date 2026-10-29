@@ -46,6 +46,7 @@ fn a_tap_adds_a_point_and_a_drag_moves_it_each_in_one_undo_step() {
     let first = Point {
         tick: 64,
         value: value_at_row(10.0, MAX),
+        ..Default::default()
     };
     assert_eq!(pts(&rig), [first]);
     // A beat right and 20 rows down, in one step at the release.
@@ -59,6 +60,7 @@ fn a_tap_adds_a_point_and_a_drag_moves_it_each_in_one_undo_step() {
     let moved = Point {
         tick: 192,
         value: value_at_row(points::row(first.value, MAX) + 20.0, MAX),
+        ..Default::default()
     };
     assert_eq!(pts(&rig), [moved]);
     rig.frame(z(egui::Modifiers::NONE));
@@ -82,10 +84,15 @@ fn the_editors_saved_view_follows_its_track() {
     };
     let clip = (rig.app.song.channels[2].add_automation_lane(level)).add_clip(0, 16.0);
     let ends = vec![
-        Point { tick: 0, value: 0 },
+        Point {
+            tick: 0,
+            value: 0,
+            ..Default::default()
+        },
         Point {
             tick: 2047,
             value: MAX,
+            ..Default::default()
         },
     ];
     points::set_points(clip, PointKey::Automation, ends);
@@ -118,4 +125,64 @@ fn the_editors_saved_view_follows_its_track() {
     rig.frame(vec![]);
     assert_eq!(rig.app.nav.view, View::AutomationEditor(2));
     assert_eq!((left(&rig, 1), left(&rig, 2)), (None, Some(2.0)));
+}
+
+/// Where the last frame painted `text`.
+fn text_at(rig: &Rig, text: &str) -> Pos2 {
+    let found = rig.out.shapes.iter().find_map(|s| match &s.shape {
+        egui::Shape::Text(t) if t.galley.text() == text => Some(t.visual_bounding_rect().center()),
+        _ => None,
+    });
+    found.unwrap_or_else(|| panic!("{text:?} not painted"))
+}
+
+#[test]
+fn set_shape_square_on_two_selected_points_is_one_undo_step() {
+    use crate::song::points::{Shape, ShapeKind};
+    let mut rig = editor_rig();
+    let pt = |tick, value| Point {
+        tick,
+        value,
+        ..Point::default()
+    };
+    let line = vec![pt(0, 0), pt(128, MAX), pt(256, 0)];
+    let clip = &mut rig.app.song.channels[0].lanes[0].clips[0];
+    points::set_points(clip, PointKey::Automation, line.clone());
+    rig.app.song_edited(SongEdit::Final, 0);
+    rig.frame(vec![]);
+    let grid = (rig
+        .ctx
+        .read_response(egui::Id::new("automation_editor").with("grid")))
+    .expect("the grid")
+    .rect;
+    let pad = 16f32.min(grid.height() - 112.0).max(0.0);
+    let (top, bottom) = (grid.top() + pad, grid.bottom() - pad);
+    // A long press on empty grid, then a box over the last two points (a tick is a point).
+    let from = pos2(grid.left() + 60.0, top + 2.0);
+    rig.press(from);
+    for _ in 0..4 {
+        rig.frame(vec![]);
+    }
+    rig.drag_to(pos2(grid.left() + 300.0, bottom - 2.0));
+    rig.release(pos2(grid.left() + 300.0, bottom - 2.0));
+    rig.frame(vec![]);
+    rig.click(text_at(&rig, "Set shape"));
+    // A new area shows from its second frame.
+    rig.frame(vec![]);
+    rig.frame(vec![]);
+    // The pick shows on the curve only while the popup is open; its close is the edit.
+    rig.click(text_at(&rig, "Square"));
+    rig.frame(vec![]);
+    assert_eq!(pts(&rig), line);
+    rig.click(pos2(1100.0, 530.0));
+    rig.frame(vec![]);
+    let square = Shape {
+        kind: ShapeKind::Square,
+        tension: 50,
+    };
+    let mut want = line.clone();
+    (want[1].shape, want[2].shape) = (square, square);
+    assert_eq!(pts(&rig), want);
+    rig.frame(z(egui::Modifiers::NONE));
+    assert_eq!(pts(&rig), line);
 }

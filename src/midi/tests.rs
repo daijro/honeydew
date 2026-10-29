@@ -123,7 +123,13 @@ fn note(channel: usize, key: u8, on: bool, velocity: f32) -> Out {
         key,
         on,
         velocity,
+        sound: true,
     }
+}
+
+/// Routes `msg` from the device `Keys` to `channel` alone.
+fn route(r: &mut Router, msg: MidiMsg, channel: usize, links: &[(usize, CcLink)]) -> Vec<Out> {
+    r.route("Keys", msg, &[(channel, true)], links)
 }
 
 #[test]
@@ -131,7 +137,7 @@ fn notes_carry_velocity_from_any_midi_channel() {
     // v·0.007874: 127 is just under 1, so it records as 254.
     let mut r = Router::default();
     assert_eq!(
-        r.route(on(60, 127), 2, &[]),
+        route(&mut r, on(60, 127), 2, &[]),
         [note(2, 60, true, 127.0 * 0.007874)]
     );
     let omni = MidiMsg::NoteOn {
@@ -139,28 +145,31 @@ fn notes_carry_velocity_from_any_midi_channel() {
         key: 64,
         vel: 0x40,
     };
-    assert_eq!(r.route(omni, 2, &[]), [note(2, 64, true, 64.0 * 0.007874)]);
+    assert_eq!(
+        route(&mut r, omni, 2, &[]),
+        [note(2, 64, true, 64.0 * 0.007874)]
+    );
     let release = MidiMsg::NoteOff {
         ch: 9,
         key: 64,
         vel: 127,
     };
-    assert_eq!(r.route(release, 2, &[]), [note(2, 64, false, 1.0)]);
+    assert_eq!(route(&mut r, release, 2, &[]), [note(2, 64, false, 1.0)]);
 }
 
 #[test]
 fn held_note_ends_on_its_channel_after_selection_change() {
     let mut r = Router::default();
-    r.route(on(60, 100), 1, &[]);
-    r.route(on(62, 100), 1, &[]);
+    route(&mut r, on(60, 100), 1, &[]);
+    route(&mut r, on(62, 100), 1, &[]);
     // The selection moves to channel 3: new notes go there, held ones end where they started.
     assert_eq!(
-        r.route(on(64, 100), 3, &[]),
+        route(&mut r, on(64, 100), 3, &[]),
         [note(3, 64, true, 100.0 * 0.007874)]
     );
-    assert_eq!(r.route(off(60), 3, &[]), [note(1, 60, false, 0.0)]);
+    assert_eq!(route(&mut r, off(60), 3, &[]), [note(1, 60, false, 0.0)]);
     // A note-off nobody holds goes to the selected channel.
-    assert_eq!(r.route(off(60), 3, &[]), [note(3, 60, false, 0.0)]);
+    assert_eq!(route(&mut r, off(60), 3, &[]), [note(3, 60, false, 0.0)]);
     assert_eq!(
         r.release_all(),
         [note(1, 62, false, 0.0), note(3, 64, false, 0.0)]
@@ -171,9 +180,9 @@ fn held_note_ends_on_its_channel_after_selection_change() {
 #[test]
 fn retrigger_on_another_channel_releases_the_first() {
     let mut r = Router::default();
-    r.route(on(60, 100), 1, &[]);
+    route(&mut r, on(60, 100), 1, &[]);
     assert_eq!(
-        r.route(on(60, 100), 2, &[]),
+        route(&mut r, on(60, 100), 2, &[]),
         [note(1, 60, false, 0.0), note(2, 60, true, 100.0 * 0.007874)]
     );
     assert_eq!(r.release_all(), [note(2, 60, false, 0.0)]);
@@ -182,10 +191,41 @@ fn retrigger_on_another_channel_releases_the_first() {
 #[test]
 fn retrigger_on_the_same_channel_sends_no_note_off() {
     let mut r = Router::default();
-    r.route(on(60, 100), 1, &[]);
+    route(&mut r, on(60, 100), 1, &[]);
     assert_eq!(
-        r.route(on(60, 90), 1, &[]),
+        route(&mut r, on(60, 90), 1, &[]),
         [note(1, 60, true, 90.0 * 0.007874)]
+    );
+}
+
+#[test]
+fn each_device_holds_its_own_keys_and_a_record_only_target_gets_notes_but_no_params() {
+    // Two keyboards on two channels press the same key: each note-off ends its own.
+    let mut r = Router::default();
+    let v = 100.0 * 0.007874;
+    r.route("Keys", on(60, 100), &[(1, true)], &[]);
+    r.route("Pads", on(60, 100), &[(2, true)], &[]);
+    assert_eq!(
+        r.route("Keys", off(60), &[(1, true)], &[]),
+        [note(1, 60, false, 0.0)]
+    );
+    // Channel 3 only records: its notes say so, and a CC or pitch bend moves only the channels that sound.
+    let both = [(1, true), (3, false)];
+    let silent = |on, velocity| Out::Note {
+        channel: 3,
+        key: 64,
+        on,
+        velocity,
+        sound: false,
+    };
+    assert_eq!(
+        r.route("Keys", on(64, 100), &both, &[]),
+        [note(1, 64, true, v), silent(true, v)]
+    );
+    assert_eq!(r.route("Keys", cc(7, 127), &both, &[]), [param(1, 14, 1.0)]);
+    assert_eq!(
+        r.route("Keys", off(64), &[], &[]),
+        [note(1, 64, false, 0.0), silent(false, 0.0)]
     );
 }
 
@@ -201,12 +241,12 @@ fn param(channel: usize, index: i32, value: f32) -> Out {
 fn ccs_become_channel_params() {
     let mut r = Router::default();
     // #7 = param 14 (the engine aliases it to Level), #64 = param 71 (sustain), #1 = param 8 (mod wheel).
-    assert_eq!(r.route(cc(7, 127), 1, &[]), [param(1, 14, 1.0)]);
-    assert_eq!(r.route(cc(64, 127), 1, &[]), [param(1, 71, 1.0)]);
-    assert_eq!(r.route(cc(1, 0), 1, &[]), [param(1, 8, 0.0)]);
-    assert_eq!(r.route(cc(126, 127), 1, &[]), [param(1, 133, 1.0)]);
+    assert_eq!(route(&mut r, cc(7, 127), 1, &[]), [param(1, 14, 1.0)]);
+    assert_eq!(route(&mut r, cc(64, 127), 1, &[]), [param(1, 71, 1.0)]);
+    assert_eq!(route(&mut r, cc(1, 0), 1, &[]), [param(1, 8, 0.0)]);
+    assert_eq!(route(&mut r, cc(126, 127), 1, &[]), [param(1, 133, 1.0)]);
     // There is no CC #127 channel param.
-    assert!(r.route(cc(127, 127), 1, &[]).is_empty());
+    assert!(route(&mut r, cc(127, 127), 1, &[]).is_empty());
 }
 
 #[test]
@@ -219,17 +259,17 @@ fn pitch_bend_pressure_and_program() {
             index: 4,
             value,
         },
-    ] = r.route(bend(8192), 1, &[])[..]
+    ] = route(&mut r, bend(8192), 1, &[])[..]
     else {
         panic!("pitch bend");
     };
     assert!((value - 0.50003).abs() < 1e-5, "{value}");
-    assert_eq!(r.route(bend(16383), 1, &[]), [param(1, 4, 1.0)]);
-    assert_eq!(r.route(bend(0), 1, &[]), [param(1, 4, 0.0)]);
+    assert_eq!(route(&mut r, bend(16383), 1, &[]), [param(1, 4, 1.0)]);
+    assert_eq!(route(&mut r, bend(0), 1, &[]), [param(1, 4, 0.0)]);
     let pressure = MidiMsg::ChannelPressure { ch: 0, value: 127 };
-    assert_eq!(r.route(pressure, 1, &[]), [param(1, 5, 1.0)]);
+    assert_eq!(route(&mut r, pressure, 1, &[]), [param(1, 5, 1.0)]);
     let program = MidiMsg::Program { ch: 0, program: 5 };
-    assert!(r.route(program, 1, &[]).is_empty());
+    assert!(route(&mut r, program, 1, &[]).is_empty());
 }
 
 fn link(cc: u8, instance_id: i32, param: i32) -> CcLink {
@@ -259,16 +299,16 @@ fn a_cc_moves_its_links_on_every_channel() {
     ];
     // A link fired: the selected channel's own CC param is left alone.
     assert_eq!(
-        r.route(cc(20, 127), 4, &links),
+        route(&mut r, cc(20, 127), 4, &links),
         [linked(4, 2, 6, 1.0), linked(2, -3, 0, 1.0)]
     );
     // Links fire on their own channel, whichever is selected.
-    assert_eq!(r.route(cc(21, 0), 1, &links), [linked(4, 2, 5, 0.0)]);
+    assert_eq!(route(&mut r, cc(21, 0), 1, &links), [linked(4, 2, 5, 0.0)]);
     // No link on the CC: the selected channel's CC param.
-    assert_eq!(r.route(cc(22, 0), 1, &links), [param(1, 29, 0.0)]);
+    assert_eq!(route(&mut r, cc(22, 0), 1, &links), [param(1, 29, 0.0)]);
     // A link on CC #127 still moves its param.
     assert_eq!(
-        r.route(cc(127, 0), 4, &[(3, link(127, 2, 1))]),
+        route(&mut r, cc(127, 0), 4, &[(3, link(127, 2, 1))]),
         [linked(3, 2, 1, 0.0)]
     );
 }
@@ -277,7 +317,7 @@ fn a_cc_moves_its_links_on_every_channel() {
 fn the_mod_wheel_reaches_the_channel_even_when_linked() {
     let mut r = Router::default();
     assert_eq!(
-        r.route(cc(1, 127), 4, &[(2, link(1, 2, 5))]),
+        route(&mut r, cc(1, 127), 4, &[(2, link(1, 2, 5))]),
         [linked(2, 2, 5, 1.0), param(4, 8, 1.0)]
     );
 }
@@ -287,15 +327,15 @@ fn learn_note_consumes_one_note_on_and_it_still_plays() {
     let mut r = Router::default();
     r.learn = Learn::Note;
     // CCs and note-offs don't learn.
-    assert_eq!(r.route(cc(1, 3), 1, &[]), [param(1, 8, 3.0 / 127.0)]);
-    assert_eq!(r.route(off(50), 1, &[]), [note(1, 50, false, 0.0)]);
+    assert_eq!(route(&mut r, cc(1, 3), 1, &[]), [param(1, 8, 3.0 / 127.0)]);
+    assert_eq!(route(&mut r, off(50), 1, &[]), [note(1, 50, false, 0.0)]);
     assert_eq!(
-        r.route(on(40, 127), 1, &[]),
+        route(&mut r, on(40, 127), 1, &[]),
         [note(1, 40, true, 127.0 * 0.007874), Out::LearnedNote(40)]
     );
     assert_eq!(r.learn, Learn::Off);
     assert_eq!(
-        r.route(on(41, 127), 1, &[]),
+        route(&mut r, on(41, 127), 1, &[]),
         [note(1, 41, true, 127.0 * 0.007874)]
     );
 }
@@ -306,17 +346,17 @@ fn learn_cc_consumes_the_next_cc() {
     r.learn = Learn::Cc;
     // Notes pass through and keep the learn waiting.
     assert_eq!(
-        r.route(on(40, 127), 1, &[]),
+        route(&mut r, on(40, 127), 1, &[]),
         [note(1, 40, true, 127.0 * 0.007874)]
     );
     assert_eq!(r.learn, Learn::Cc);
     // Any CC learns, channel-mode numbers included; it is not forwarded, not even to its existing links.
     assert_eq!(
-        r.route(cc(123, 64), 1, &[(1, link(123, 2, 0))]),
+        route(&mut r, cc(123, 64), 1, &[(1, link(123, 2, 0))]),
         [Out::LearnedCc(123)]
     );
     assert_eq!(r.learn, Learn::Off);
-    assert_eq!(r.route(cc(123, 127), 1, &[]), [param(1, 130, 1.0)]);
+    assert_eq!(route(&mut r, cc(123, 127), 1, &[]), [param(1, 130, 1.0)]);
 }
 
 #[test]

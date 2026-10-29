@@ -1,5 +1,6 @@
 use honeydew_audio::automation::{
-    AutomationClip, AutomationLane, AutomationPlayback, AutomationPoint, AutomationTarget,
+    AutomationClip, AutomationEvent, AutomationLane, AutomationPlayback, AutomationPoint,
+    AutomationTarget, Shape, ShapeKind, shape_value,
 };
 
 fn target(channel: usize) -> AutomationTarget {
@@ -25,7 +26,11 @@ fn clip(
         3,
         points
             .iter()
-            .map(|&(tick, value)| AutomationPoint { tick, value })
+            .map(|&(tick, value)| AutomationPoint {
+                tick,
+                value,
+                ..Default::default()
+            })
             .collect(),
     )
     .unwrap()
@@ -60,17 +65,13 @@ fn small_or_same_tick_changes_have_no_steps_and_rebuild_is_idempotent() {
     jump.rebuild_events();
     assert_eq!(jump.events().len(), 2);
     assert_eq!(jump.events()[1].normalized_value(), 1.0);
-    jump.replace_points(vec![AutomationPoint {
+    let point = AutomationPoint {
         tick: 8,
         value: 100,
-    }]);
-    assert_eq!(
-        jump.points(),
-        &[AutomationPoint {
-            tick: 8,
-            value: 100
-        }]
-    );
+        ..Default::default()
+    };
+    jump.replace_points(vec![point]);
+    assert_eq!(jump.points(), &[point]);
     assert_eq!(jump.events().len(), 1);
 }
 
@@ -209,4 +210,108 @@ fn fractional_sample_event_dispatches_in_the_next_block() {
         })
         .unwrap();
     assert_eq!(changes, vec![0]);
+}
+
+/// A two-point clip whose segment has `shape`.
+fn shaped(a: (u64, u16), b: (u64, u16), shape: Shape) -> AutomationClip {
+    let point = |(tick, value), shape| AutomationPoint { tick, value, shape };
+    let points = vec![point(a, shape), point(b, Shape::default())];
+    AutomationClip::new(0, 1024, 1024, 0, 3, points).unwrap()
+}
+
+fn steps(clip: &AutomationClip) -> Vec<(u64, u16)> {
+    (clip.events().iter())
+        .filter(|e| e.key < 0)
+        .map(|e| (e.tick, e.value))
+        .collect()
+}
+
+#[test]
+fn every_shape_starts_and_ends_exactly_on_its_points_and_linear_50_is_the_line() {
+    for kind in ShapeKind::ALL {
+        for tension in [0, 1, 20, 50, 80, 99, 100] {
+            let s = Shape { kind, tension };
+            assert_eq!(shape_value(s, 1000.0, 60000.0, 0.0), 1000.0, "{s:?}");
+            assert_eq!(shape_value(s, 1000.0, 60000.0, 1.0), 60000.0, "{s:?}");
+            assert_eq!(shape_value(s, 60000.0, 1000.0, 1.0), 1000.0, "{s:?}");
+        }
+    }
+    for x in [0.1, 0.25, 0.5, 0.7] {
+        assert_eq!(
+            shape_value(Shape::default(), 1000.0, 60000.0, x),
+            1000.0 + 59000.0 * x
+        );
+    }
+}
+
+/// The step events of the straight line, written out apart from the engine.
+fn line_steps(points: &[(u64, u16)]) -> Vec<(u64, u16)> {
+    let mut out = Vec::new();
+    for w in points.windows(2) {
+        let ((ta, a), (tb, b)) = (w[0], w[1]);
+        let (la, lb) = (
+            (a as f64 / 511.984375) as i64,
+            (b as f64 / 511.984375) as i64,
+        );
+        if tb > ta && (lb - la).abs() >= 2 {
+            for d in 1..(lb - la).abs() {
+                let k = la + d * (lb - la).signum();
+                let f = d as f64 / (lb - la).abs() as f64;
+                let tick = (ta as f64 + f * (tb - ta) as f64).round() as u64;
+                out.push((tick, (k as f64 * 511.984375).min(65534.0) as u16));
+            }
+        }
+    }
+    out.sort_by_key(|s| s.0);
+    out
+}
+
+#[test]
+fn a_linear_50_segment_steps_exactly_as_the_straight_line() {
+    let curve = [
+        (0, 0),
+        (512, 65534),
+        (515, 3000),
+        (900, 40000),
+        (900, 2),
+        (1000, 65535),
+    ];
+    let built = clip(0, 1024, 1024, 0, &curve);
+    assert_eq!(steps(&built), line_steps(&curve));
+    let ends: Vec<AutomationEvent> = (built.events().iter())
+        .filter(|e| e.key > 0)
+        .copied()
+        .collect();
+    assert_eq!(ends.len(), curve.len());
+}
+
+#[test]
+fn a_square_segment_holds_and_jumps_once_at_its_tension() {
+    let square = |tension| Shape {
+        kind: ShapeKind::Square,
+        tension,
+    };
+    // 25 %: a quarter of the way; no level in between.
+    assert_eq!(
+        steps(&shaped((0, 0), (512, 65534), square(25))),
+        [(128, 65534)]
+    );
+    assert_eq!(steps(&shaped((0, 65534), (512, 0), square(50))), [(256, 0)]);
+    // 100 %: at the next point, which is the jump.
+    assert_eq!(steps(&shaped((0, 0), (512, 65534), square(100))), []);
+}
+
+#[test]
+fn a_stairs_segment_at_50_climbs_in_4_equal_steps() {
+    let stairs = Shape {
+        kind: ShapeKind::Stairs,
+        tension: 50,
+    };
+    // Three risers inside, the fourth at the next point.
+    let clip = shaped((0, 0), (512, 65534), stairs);
+    assert_eq!(steps(&clip), [(128, 16384), (256, 32767), (384, 49151)]);
+    assert_eq!(
+        clip.events().last().map(|e| (e.tick, e.value)),
+        Some((512, 65534))
+    );
 }

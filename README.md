@@ -12,13 +12,23 @@
 
 Get the latest version from [Releases](https://github.com/daijro/honeydew/releases/latest).
 
-- **Windows, Linux, macOS:** extract the archive and run `honeydew-native`. Keep the `content/` folder next to it: it holds the sound library.
+- **Windows, Linux, macOS:** extract the archive and run `honeydew-native`. The full download has the sound library in its `content/` folder. On its first start, Honeydew copies it into its app data folder, so later versions can be the smaller `-no-sounds` download.
+- **`-no-sounds` downloads** are the app alone, about 40 MB. They use the sound library installed in the app data folder: run a full download once, or install `honeydew-<version>-sounds.zip`.
+- **`honeydew-<version>-sounds.zip`** is the sound library on its own. Install it with SETTINGS → `Install sound library…` (`ZIP file…`), which also takes the `content/` folder of a full download (`Folder…`). Without one, Honeydew asks for it once at start, and again only when a newer sound library ships.
+- **The installed sound library** is in the folder below. A full download of a newer version updates it at start, copying only what changed; an older one never replaces it. After `Install sound library…`, restart Honeydew to use it.
+
+  | OS | Folder |
+  |---|---|
+  | Linux | `~/.local/share/honeydew/content` |
+  | macOS | `~/Library/Application Support/Honeydew/content` |
+  | Windows | `%APPDATA%\Honeydew\data\content` |
+
 - **Linux AppImage:** the `.AppImage` is the whole app in one file. Make it executable (`chmod +x`) and run it. It needs FUSE, which most desktops have; without it, run it with `--appimage-extract-and-run`. The Linux downloads need glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 or later).
 - **`-avx2` downloads** are built for CPUs with AVX2 (most Intel Core CPUs since 2013 and AMD CPUs since 2015, but not every Pentium, Celeron or Atom) and can be faster. If unsure, take the plain one.
 - **Android:** install the `.apk`. Needs a 64-bit ARM device on Android 8 or later.
 - **Web:** the `honeydew-web` ZIP is a static site. Serve the folder with any web server.
 
-Every download includes the full sound library.
+Every download but the `-no-sounds` ones includes the full sound library.
 
 ---
 
@@ -155,10 +165,10 @@ cargo run --release
 The sound library lives in `sounds/`, split into 90 MB parts to stay under GitHub's file size limit. To rebuild it from the raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.3.7
+tools/release-content.sh 0.4.0
 ```
 
-Commit the updated `sounds/honeydew-sounds.zip.*` parts with your changes. Add `--web` to also build the web ZIP. Tagged releases include the sounds automatically.
+Commit the updated `sounds/honeydew-sounds.zip.*` parts and `sounds/release.txt` (the library's version: the app warns when an installed library is older) with your changes. Add `--web` to also build the web ZIP. Tagged releases include the sounds automatically.
 
 ### Web
 

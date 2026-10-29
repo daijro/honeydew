@@ -53,9 +53,13 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         covered: app.covered,
         continuous: app.settings.continuous_scroll,
         init: state.init,
+        sample_rate: app.audio.sample_rate().map_or(0.0, |r| r as f32),
     };
     let rect = app.regions.editor;
+    // The value snap is an app setting: the snap menu's pick is saved with the settings.
+    state.editor.value_snap = app.settings.automation_value_snap;
     let out = (state.editor).show(ui, &app.cx, rect, app.song, key, &opts);
+    app.settings.automation_value_snap = state.editor.value_snap;
     if out.edited {
         app.song_edited(true);
     }

@@ -1293,17 +1293,18 @@ fn channel_and_common_param_names_come_from_the_registry() {
 
 #[test]
 fn channel_params_7_to_133_are_midi_ccs_and_sends_name_their_target() {
-    // 0-5 are RPRM, 6 has no name, 7-133 are MIDI CC #0-126 (no CC #127).
+    // 0-5 are RPRM, 6 has no name, 7-133 are MIDI CC 0-126 (no CC 127), by name where MIDI 1.0 defines one.
     let name = ChannelParams::name;
     let names = [
         (0, "Level"),
         (5, "Aftertouch"),
-        (7, "MIDI CC #0"),
-        (8, "MIDI CC #1"),
+        (7, "CC 0 Bank Select"),
+        (8, "CC 1 Modulation"),
+        (10, "CC 3"),
     ];
     for (i, want) in names
         .into_iter()
-        .chain([(71, "MIDI CC #64"), (133, "MIDI CC #126")])
+        .chain([(71, "CC 64 Sustain"), (133, "CC 126 Mono On")])
     {
         assert_eq!(name(i).as_deref(), Some(want), "{i}");
     }
@@ -1318,7 +1319,7 @@ fn channel_params_7_to_133_are_midi_ccs_and_sends_name_their_target() {
             param,
         })
     };
-    assert_eq!(label(71).as_deref(), Some("MIDI CC #64"));
+    assert_eq!(label(71).as_deref(), Some("CC 64 Sustain"));
     assert_eq!(label(134), None);
     // The send labels "Enable Send (to <name>)" and "Send Level (to <name>)", with the target's id below 4096 in the
     // low bits.
@@ -2003,4 +2004,110 @@ fn the_masters_tempo_lane_is_saved_apart_and_read_back() {
         (Some(TEMPO_TARGET), "Tempo")
     );
     assert_eq!(lane.clips[0].events.len(), 1);
+}
+
+#[test]
+fn a_sidechain_is_saved_apart_read_back_and_goes_with_its_source() {
+    // An `HDSc` in the keyed module's `RMOd`, which FL Studio Mobile skips; none at all without a sidechain.
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    let compressor = song.channels[2].rack.add(8);
+    let plain = crate::flm::write(&song).unwrap();
+    let source = song.channels[1].id;
+    song.channels[2].rack.modules[1].sidechain = Some(source);
+    let bytes = crate::flm::write(&song).unwrap();
+    assert_eq!(bytes.windows(4).filter(|w| *w == b"HDSc").count(), 1);
+    let read = crate::flm::read(&bytes).unwrap();
+    let module = read.channels[2].rack.get(compressor).unwrap();
+    assert_eq!(module.sidechain, Some(source));
+    song.channels[2].rack.modules[1].sidechain = None;
+    assert_eq!(crate::flm::write(&song).unwrap(), plain);
+    // Deleting the source clears it.
+    song.channels[2].rack.modules[1].sidechain = Some(source);
+    song.delete_channel(1);
+    assert_eq!(song.channels[1].rack.modules[1].sidechain, None);
+}
+
+#[test]
+fn a_channels_midi_input_is_saved_apart_and_a_song_without_one_writes_none() {
+    // An `HDMi`, which FL Studio Mobile skips as an unknown chunk, only when set.
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    let plain = crate::flm::write(&song).unwrap();
+    assert!(!plain.windows(4).any(|w| w == b"HDMi"));
+    let input = &mut song.channels[1].file.midi_input;
+    input.device = Some("Keys".to_owned());
+    input.channel = Some(15);
+    let bytes = crate::flm::write(&song).unwrap();
+    assert_eq!(bytes.windows(4).filter(|w| *w == b"HDMi").count(), 1);
+    let read = crate::flm::read(&bytes).unwrap();
+    assert_eq!(
+        read.channels[1].file.midi_input,
+        song.channels[1].file.midi_input
+    );
+    assert_eq!(read.channels[1].file.channel_unknown_chunks, []);
+}
+
+#[test]
+fn a_hidden_track_is_saved_apart_and_a_song_with_none_hidden_writes_as_before() {
+    // An `HDHd` in the track's `TRKH`, which FL Studio Mobile skips as an unknown chunk: there the track shows.
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    song.channels[1].add_lane(LaneKind::Notes);
+    song.channels[1].lanes[1].add_clip(0, 4.0);
+    let before = crate::flm::write(&song).unwrap();
+    assert!(!before.windows(4).any(|w| w == b"HDHd"));
+    song.channels[1].lanes[1].hidden = true;
+    let bytes = crate::flm::write(&song).unwrap();
+    assert_eq!(bytes.windows(4).filter(|w| *w == b"HDHd").count(), 1);
+    let read = crate::flm::read(&bytes).unwrap();
+    let hidden: Vec<Vec<bool>> = (read.channels.iter())
+        .map(|c| c.lanes.iter().map(|l| l.hidden).collect())
+        .collect();
+    assert_eq!(hidden, [vec![false], vec![false, true]]);
+    assert_eq!(read.channels[1].lanes[1].clips.len(), 1);
+    // Shown again, the song writes what it wrote before it was hidden.
+    song.channels[1].lanes[1].hidden = false;
+    assert_eq!(crate::flm::write(&song).unwrap(), before);
+}
+
+#[test]
+fn shaped_automation_segments_round_trip_through_flm_and_default_ones_write_the_same_bytes() {
+    use super::points::{self, Point, PointKey, Shape, ShapeKind};
+    let mut song = Song::default();
+    let target = AutomationTarget {
+        instance_id: 0,
+        param: 1,
+    };
+    song.channels[0]
+        .add_automation_lane(target)
+        .add_clip(0, 4.0);
+    fn clip(song: &mut Song) -> &mut Clip {
+        &mut song.channels[0].lanes.last_mut().unwrap().clips[0]
+    }
+    let pt = |tick, value| Point {
+        tick,
+        value,
+        ..Point::default()
+    };
+    let line = vec![pt(0, 0), pt(256, 65534), pt(384, 1000)];
+    points::set_points(clip(&mut song), PointKey::Automation, line.clone());
+    let plain = crate::flm::write(&song).unwrap();
+    let mut shaped = line.clone();
+    shaped[1].shape = Shape {
+        kind: ShapeKind::Smooth,
+        tension: 70,
+    };
+    points::set_points(clip(&mut song), PointKey::Automation, shaped.clone());
+    let bytes = crate::flm::write(&song).unwrap();
+    let hdsh = |b: &[u8]| b.windows(4).filter(|w| *w == b"HDSh").count();
+    assert_eq!((hdsh(&plain), hdsh(&bytes)), (0, 1));
+    let mut read = crate::flm::read(&bytes).unwrap();
+    let back = clip(&mut read).clone();
+    assert_eq!(points::points(&back, PointKey::Automation), shaped);
+    assert_eq!(back.events, clip(&mut song).events, "the shaped steps");
+    // Back to the line: the bytes as before.
+    points::set_points(clip(&mut song), PointKey::Automation, line);
+    assert_eq!(crate::flm::write(&song).unwrap(), plain);
 }

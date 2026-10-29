@@ -3229,6 +3229,7 @@ fn send_rig() -> Rig {
         id,
         name: name.into(),
         offered,
+        key: true,
         bus,
         to_master: true,
     };

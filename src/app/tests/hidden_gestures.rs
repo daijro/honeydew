@@ -395,7 +395,8 @@ fn a_clip_dragged_onto_its_channels_sub_track_moves_there_as_one_undo_step() {
     assert!(rig.app.files.modified());
     let log = rig.take();
     assert!(log.iter().any(|c| c.starts_with("ReplaceSong")), "{log:?}");
-    let current = (rig.app.main_screen.clips).clip_for(&rig.app.song, rig.app.selected_channel);
+    let current =
+        (rig.app.main_screen.clips).clip_for(&rig.app.song, rig.app.selected_channel, false);
     assert_eq!(current.map(|r| (r.channel, r.lane)), Some((1, sub)));
 }
 

@@ -905,6 +905,7 @@ impl Build<'_> {
                         Point {
                             tick: ((beat - offset) * f64::from(PPQ)).round() as u32,
                             value: points::raw(value.clamp(0.0, 1.0)),
+                            ..Default::default()
                         }
                     })
                     .collect();

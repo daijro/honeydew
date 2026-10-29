@@ -62,6 +62,8 @@ jobs:
       - run: cargo build --release --locked --target ${{ matrix.target }} --bins
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
+      # Each build twice: the full download, and the app alone (`-no-sounds`), which uses the sound library installed
+      # in the app data folder (the release's own `honeydew-<tag>-sounds.zip`, uploaded by the `sounds` job).
       - name: Package
         shell: bash
         run: |
@@ -70,24 +72,31 @@ jobs:
           bin=target/${{ matrix.target }}/release
           ext=; [ "$RUNNER_OS" = Windows ] && ext=.exe
           cp "$bin/honeydew-native$ext" "$bin/honeydew-import$ext" README.md LICENSE "$dir/"
-          cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > target/honeydew-sounds.zip
-          if [ "$RUNNER_OS" = Windows ]; then
-            7z x target/honeydew-sounds.zip "-o$dir" >/dev/null
-          else
-            unzip -q target/honeydew-sounds.zip -d "$dir"
-          fi
           if [ "$RUNNER_OS" = Linux ]; then
             cp -R assets/linux tools/install-desktop-entry.sh "$dir/"
-            tar czf "$dir.tar.gz" "$dir"
-          elif [ "$RUNNER_OS" = Windows ]; then
-            7z a "$dir.zip" "$dir" >/dev/null
-          else
-            tar czf "$dir.tar.gz" "$dir"
           fi
+          # The archive of the folder as it is, named $1 and .zip on Windows, .tar.gz elsewhere.
+          pack() {
+            if [ "$RUNNER_OS" = Windows ]; then
+              7z a "$1.zip" "$dir" >/dev/null
+            else
+              tar czf "$1.tar.gz" "$dir"
+            fi
+          }
+          pack "$dir-no-sounds"
+          # Without the web's gzipped copies (`*.gz`, ~700 MB): only the web reads them.
+          cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > target/honeydew-sounds.zip
+          if [ "$RUNNER_OS" = Windows ]; then
+            7z x target/honeydew-sounds.zip "-o$dir" '-xr!*.gz' >/dev/null
+          else
+            unzip -q target/honeydew-sounds.zip -d "$dir" -x '*.gz'
+          fi
+          pack "$dir"
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
           files: honeydew-${{ env.TAG }}-*.*z*
+          fail_on_unmatched_files: true
       # After the archive's upload, so a failure here can't cost it.
       - name: AppImage
         if: runner.os == 'Linux'
@@ -128,6 +137,24 @@ jobs:
         with:
           tag_name: ${{ env.TAG }}
           files: honeydew-${{ env.TAG }}-*.AppImage
+          fail_on_unmatched_files: true
+
+  # The sound library on its own, once per release: the parts joined, `content/` at its top, without the web's
+  # gzipped copies (`*.gz`). A job of its own, so no build's failure can cost it, nor its upload a build's downloads.
+  sounds:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - run: |
+          cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > "honeydew-${TAG}-sounds.zip"
+          command -v zip >/dev/null || { sudo apt-get update && sudo apt-get install -y zip; }
+          zip -dq "honeydew-${TAG}-sounds.zip" '*.gz'
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          files: honeydew-${{ env.TAG }}-sounds.zip
           fail_on_unmatched_files: true
 
   web:

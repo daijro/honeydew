@@ -50,6 +50,9 @@ pub struct ChannelMix {
     pub level: f32,
     pub pan: f32,
     pub sends: Vec<SendMix>,
+    /// The channels (indexes, never the master) whose rack output keys this channel's effects, a sidechain each: they
+    /// run before it, but none is mixed into it.
+    pub keys: Vec<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -65,13 +68,16 @@ pub enum MixError<E = Infallible> {
 }
 
 /// Mixes the channels into the master: each runs its rack, then its Level and Pan, then adds itself into each send's
-/// target at that send's level. A target runs after all its sources. Sends are post-fader and post-pan, with
-/// the default send to the master at unity this is the plain strip.
+/// target at that send's level. A target runs after all its sources, and a channel after the channels that key it
+/// ([`ChannelMix::keys`]). Sends are post-fader and post-pan, with the default send to the master at unity this is the
+/// plain strip.
 pub struct Mixer {
     channels: Vec<ChannelMix>,
     order: Vec<usize>,
     stages: Vec<Vec<usize>>,
     stage_of: Vec<usize>,
+    /// Per channel, the channels it keys.
+    keyed: Vec<Vec<usize>>,
 }
 
 impl Mixer {
@@ -79,7 +85,8 @@ impl Mixer {
         if channels.is_empty() {
             return Err(MixError::MismatchedChannels);
         }
-        let mut incoming = vec![0; channels.len()];
+        // Each channel's edges: its sends' targets, then the channels it keys.
+        let mut edges = Vec::with_capacity(channels.len());
         for (index, channel) in channels.iter().enumerate() {
             if !valid_controls(channel.level, channel.pan)
                 || !(channel.sends.iter()).all(|s| valid_controls(s.level, s.enabled))
@@ -90,8 +97,22 @@ impl Mixer {
                 if index == 0 || send.target == index || send.target >= channels.len() {
                     return Err(MixError::InvalidRoute(index));
                 }
-                incoming[send.target] += 1;
             }
+            edges.push(channel.sends.iter().map(|s| s.target).collect::<Vec<_>>());
+        }
+        let mut keyed = vec![Vec::new(); channels.len()];
+        for (index, channel) in channels.iter().enumerate() {
+            for &key in &channel.keys {
+                if key == 0 || key == index || key >= channels.len() {
+                    return Err(MixError::InvalidRoute(index));
+                }
+                edges[key].push(index);
+                keyed[key].push(index);
+            }
+        }
+        let mut incoming = vec![0; channels.len()];
+        for &target in edges.iter().flatten() {
+            incoming[target] += 1;
         }
         // Sources before targets (Kahn); the master, which sends nowhere, last.
         let mut queue: Vec<usize> = (1..channels.len())
@@ -99,10 +120,10 @@ impl Mixer {
             .collect();
         let mut cursor = 0;
         while cursor < queue.len() {
-            for send in &channels[queue[cursor]].sends {
-                incoming[send.target] -= 1;
-                if send.target != 0 && incoming[send.target] == 0 {
-                    queue.push(send.target);
+            for &target in &edges[queue[cursor]] {
+                incoming[target] -= 1;
+                if target != 0 && incoming[target] == 0 {
+                    queue.push(target);
                 }
             }
             cursor += 1;
@@ -116,8 +137,8 @@ impl Mixer {
         // into one target are summed in a stable order.
         let mut stage_of = vec![0; channels.len()];
         for &source in &queue {
-            for send in &channels[source].sends {
-                stage_of[send.target] = stage_of[send.target].max(stage_of[source] + 1);
+            for &target in &edges[source] {
+                stage_of[target] = stage_of[target].max(stage_of[source] + 1);
             }
         }
         let mut stages = vec![Vec::new(); stage_of.iter().copied().max().unwrap_or(0) + 1];
@@ -129,10 +150,21 @@ impl Mixer {
             order: queue,
             stages,
             stage_of,
+            keyed,
         })
     }
 
-    /// Routing levels; every channel in one stage has received all its inputs.
+    /// The channels whose effects channel `source` keys: they take its rack output, before its strip, once it has run.
+    pub fn keyed(&self, source: usize) -> &[usize] {
+        self.keyed.get(source).map_or(&[], Vec::as_slice)
+    }
+
+    /// The channels in the order [`Self::mix`] runs them: each after its sources and its keys.
+    pub fn order(&self) -> &[usize] {
+        &self.order
+    }
+
+    /// Routing levels; every channel in one stage has received all its inputs and its keys.
     pub fn stages(&self) -> &[Vec<usize>] {
         &self.stages
     }
@@ -216,7 +248,8 @@ impl Mixer {
         }
     }
 
-    fn route_channel<B: MixBuffer>(&self, buffers: &mut [B], index: usize) {
+    /// Channel `index`'s strip, then its sends: once it has run, in [`Self::order`].
+    pub fn route_channel<B: MixBuffer>(&self, buffers: &mut [B], index: usize) {
         let (left, right) = buffers[index].stereo();
         let channel = &self.channels[index];
         let gain = level_gain(channel.level);

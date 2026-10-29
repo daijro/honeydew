@@ -105,22 +105,28 @@ impl Frame {
     /// The value axis: N = 5 ticks when V ≥ 3 U, else 3; tick i at top + V·i/(N − 1), a line from x + 3 px to
     /// x + w − 3 px, labelled 100 − 100·i/(N − 1) in (x + 3 px, y − 0.5 U, w − 6 px, 0.5 U).
     pub fn axis_ticks(&self, m: &Metrics) -> Vec<AxisTick> {
-        let (a, px) = (self.axis, 1.0 / m.ppp());
-        let n = if a.height() >= m.u(3.0) { 5 } else { 3 };
+        let n = if self.axis.height() >= m.u(3.0) { 5 } else { 3 };
         (0..n)
             .map(|i| {
-                let y = a.top() + a.height() * i as f32 / (n - 1) as f32;
-                AxisTick {
-                    y,
-                    line: Rangef::new(a.left() + 3.0 * px, a.right() - 3.0 * px),
-                    label: (100 - 100 * i / (n - 1)).to_string(),
-                    text: Rect::from_min_size(
-                        pos2(a.left() + 3.0 * px, y - m.u(0.5)),
-                        vec2(a.width() - 6.0 * px, m.u(0.5)),
-                    ),
-                }
+                let label = (100 - 100 * i / (n - 1)).to_string();
+                self.axis_tick(1.0 - i as f32 / (n - 1) as f32, label, m)
             })
             .collect()
+    }
+
+    /// The axis tick at fraction `f` of the range (1 at the top), y = top + V·(1 − f), labelled `label`.
+    pub fn axis_tick(&self, f: f32, label: String, m: &Metrics) -> AxisTick {
+        let (a, px) = (self.axis, 1.0 / m.ppp());
+        let y = a.top() + a.height() * (1.0 - f);
+        AxisTick {
+            y,
+            line: Rangef::new(a.left() + 3.0 * px, a.right() - 3.0 * px),
+            label,
+            text: Rect::from_min_size(
+                pos2(a.left() + 3.0 * px, y - m.u(0.5)),
+                vec2(a.width() - 6.0 * px, m.u(0.5)),
+            ),
+        }
     }
 }
 
@@ -309,10 +315,12 @@ mod tests {
             Point {
                 tick: 256,
                 value: MAX,
+                ..Default::default()
             },
             Point {
                 tick: 288,
                 value: MAX,
+                ..Default::default()
             },
         ];
         // The first point sits at (60, 84) for touches: row 0, without the +0.5.

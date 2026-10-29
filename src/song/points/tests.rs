@@ -4,7 +4,11 @@ use crate::song::{Lane, LaneKind};
 const MAX: u16 = 65534;
 
 fn pt(tick: u32, value: u16) -> Point {
-    Point { tick, value }
+    Point {
+        tick,
+        value,
+        ..Default::default()
+    }
 }
 
 fn clip(kind: LaneKind) -> Clip {
@@ -295,16 +299,30 @@ fn the_marquee_takes_beats_in_range_and_one_row_bands() {
 }
 
 #[test]
-fn copy_and_paste_keep_offsets_and_values() {
-    let pts = vec![pt(0, 5), pt(128, MAX), pt(192, 0)];
+fn copy_and_paste_keep_offsets_values_and_shapes() {
+    let square = Shape {
+        kind: ShapeKind::Square,
+        tension: 30,
+    };
+    let shaped = Point {
+        shape: square,
+        ..pt(128, MAX)
+    };
+    let pts = vec![pt(0, 5), shaped, pt(192, 0)];
     let clipboard = copy(&pts, &[false, true, true], MAX);
-    assert_eq!(clipboard, [(1.0, 1.0), (1.5, 0.0)]);
+    assert_eq!(
+        clipboard,
+        [(1.0, 1.0, square), (1.5, 0.0, Shape::default())]
+    );
     // 300 snaps to 288 (units of 32).
     let (new, sel) = paste(&pts, &clipboard, 300.0, Some(32.0), MAX);
-    assert_eq!(
-        new,
-        [pt(0, 5), pt(128, MAX), pt(192, 0), pt(288, MAX), pt(352, 0)]
-    );
+    let pasted = Point {
+        shape: square,
+        ..pt(288, MAX)
+    };
+    assert_eq!(new, [pt(0, 5), shaped, pt(192, 0), pasted, pt(352, 0)]);
+    let pts = vec![pt(0, 5), pt(128, MAX), pt(192, 0)];
+    let clipboard = copy(&pts, &[false, true, true], MAX);
     assert_eq!(sel, [false, false, false, true, true]);
     assert_eq!(
         paste(&[], &clipboard, -40.0, None, MAX).0,
@@ -330,6 +348,26 @@ fn a_break_uses_the_point_there_or_interpolates() {
     assert_eq!(pts, ramp());
     assert_eq!(break_at(&mut pts, 128), Some(1));
     assert_eq!(pts[1], pt(128, 500));
+    // On a shaped segment: the value on its curve, and its shape on both sides.
+    let square = Shape {
+        kind: ShapeKind::Square,
+        tension: 50,
+    };
+    let mut held = vec![
+        Point {
+            shape: square,
+            ..pt(0, 0)
+        },
+        pt(512, 2000),
+    ];
+    assert_eq!(break_at(&mut held, 128), Some(1));
+    assert_eq!(
+        held[1],
+        Point {
+            shape: square,
+            ..pt(128, 0)
+        }
+    );
     // Between a jump's right side and the next point.
     let mut jump = vec![pt(0, 0), pt(256, 1000), pt(256, 2000), pt(512, 3000)];
     assert_eq!(break_at(&mut jump, 384), Some(3));

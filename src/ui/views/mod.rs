@@ -53,6 +53,8 @@ pub mod fine_tune;
 pub mod credits;
 // The What's New dialog.
 pub mod whats_new;
+// `Add MIDI CC track…`'s picker.
+pub mod cc_picker;
 
 /// What fills the editor area, between the top of the screen and the transport bar.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -150,6 +152,8 @@ pub enum Overlay {
     Credits,
     /// The What's New dialog (Help → `What's new`, or by itself once per notes version).
     WhatsNew,
+    /// `Add MIDI CC track…`'s picker of the MIDI CCs, for a lane on this channel.
+    CcPicker(usize),
 }
 
 /// `Link to MIDI CC`'s prompt.
@@ -527,6 +531,8 @@ pub struct Slots {
     pub credits: credits::State,
     /// The What's New dialog's scroll.
     pub whats_new: whats_new::State,
+    /// The MIDI CC picker's panel and pick.
+    pub cc_picker: cc_picker::State,
 }
 
 impl Slots {
@@ -751,6 +757,7 @@ impl Slots {
             Overlay::Credits => top.then(|| credits::show(&mut self.credits, ui, app))?,
             // Modal like the Save dialog: hidden while a message shows over it.
             Overlay::WhatsNew => top.then(|| whats_new::show(&mut self.whats_new, ui, app))?,
+            Overlay::CcPicker(channel) => cc_picker::show(&mut self.cc_picker, ui, app, *channel),
         }
     }
 }

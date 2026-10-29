@@ -66,6 +66,9 @@ const MARQUEE_U: f32 = 3.0;
 const MARQUEE_ALPHA: f32 = 0.2;
 /// The floating row's pop-in: a ← 0.6·a per frame.
 const ROW_POP: f32 = 0.6;
+/// A hidden track's row, which Settings `Show hidden tracks` shows: `background` at this alpha over its header and clips,
+/// under the playhead and the selection.
+pub(crate) const HIDDEN_VEIL: f32 = 0.6;
 
 /// The side of the square a touch held on empty grid grows, `elapsed` seconds after its touch-down: 3 U·k,
 /// k = clamp(4.4333·elapsed − 0.33, 0, 1). It shows from about 74 ms and is 3 U at 300 ms.
@@ -479,11 +482,35 @@ impl Clips {
         let auto = grid_ticks(axis, sig, m);
         let (snap, drag_unit) = (snap.grid(auto, sig), snap.active(auto, sig).unwrap_or(1.0));
         let bar = app.song.time_sig.bar_beats();
-        // A clip that went away (undo, another song) takes its selection and gesture with it.
-        if self.selected.is_some_and(|r| find(app.song, r).is_none()) {
+        // A clip that went away (undo, another song), or whose track no longer shows (`Hide track`), takes its selection
+        // and gesture with it.
+        let show = app.settings.show_hidden_tracks;
+        let kept = |r: ClipRef| {
+            find(app.song, r).is_some()
+                && (show || !app.song.channels[r.channel].lanes[r.lane].hidden)
+        };
+        if self.selected.is_some_and(|r| !kept(r)) {
             self.deselect();
         }
-        self.group.retain(|&r| find(app.song, r).is_some());
+        self.group.retain(|&r| kept(r));
+        // A current track or grid cursor whose track no longer shows moves to the nearest track that does (the one below
+        // on a tie): `paste` and `Add clip` go there.
+        if !show {
+            let all = track_rows(app.song, true);
+            let hidden = |t: (usize, usize)| {
+                (all.iter().position(|r| (r.channel, r.lane) == t)).filter(|&p| all[p].hidden)
+            };
+            if let Some(p) = hidden(self.track_for(*app.selected)) {
+                let near = (all.iter().enumerate().filter(|(_, r)| !r.hidden))
+                    .min_by_key(|&(i, _)| (i.abs_diff(p), i < p));
+                if let Some((_, r)) = near {
+                    self.set_track(app.selected, r.channel, r.lane);
+                }
+            }
+            if self.cursor.is_some_and(|(_, t)| hidden(t).is_some()) {
+                self.cursor = None;
+            }
+        }
         if self.group.len() == 1 {
             self.selected = self.group.pop();
         }
@@ -615,6 +642,18 @@ impl Clips {
             }
         }
 
+        // A hidden track's clips (Settings `Show hidden tracks`), dimmed under the playhead and the selection.
+        let veil = (app.cx.theme.colors.background.to_color32()).gamma_multiply(HIDDEN_VEIL);
+        for &(channel, lane, row) in rows {
+            let track = app
+                .song
+                .channels
+                .get(channel)
+                .and_then(|c| c.lanes.get(lane));
+            if track.is_some_and(|l| l.hidden) {
+                painter.rect_filled(row, 0.0, veil);
+            }
+        }
         if let Some((b, dimmed)) = outline {
             paint_outline(&painter, &app.cx, b, dimmed);
         }
@@ -622,7 +661,7 @@ impl Clips {
         // The selection overlay: one pulsing `text` box over every selected clip, gaps included, no outline. While a
         // marquee is live it is the only box drawn: the selection shows on its release; its frame still takes touches
         // and places the floating row.
-        let selection = selection_box(app.song, &self.targets(), rows, axis, 1.0 / m.ppp());
+        let selection = selection_box(app.song, &self.targets(), rows, axis, 1.0 / m.ppp(), show);
         let sbox = selection.filter(|_| self.marquee.is_none());
         paint_pulse(&painter, &app.cx, sbox, m.u(CORNER), &mut self.pulse);
         // A touch-down in the group's frame acts on the group whole; in a quiet group's, only one on its clips.
@@ -801,7 +840,7 @@ impl Clips {
             grid,
             map: [
                 axis.origin,
-                list_top(app.song, rows, 1.0 / m.ppp()),
+                list_top(app.song, rows, 1.0 / m.ppp(), show),
                 axis.beat_w,
                 row.height(),
             ],
@@ -852,22 +891,22 @@ impl Clips {
         (self.track.filter(|t| t.0 == keys || t.0 == 0)).unwrap_or((keys, 0))
     }
 
-    /// The current clip: the current track's own (each track keeps one, its lane's DESc@24), while it exists. It is
-    /// drawn as current, and the bottom editor shows it (the app; it collapses whenever the current track has none).
+    /// The current clip: the current track's own (each track keeps one, its lane's DESc@24), while it exists and its
+    /// track shows. It is drawn as current, and the bottom editor shows it (the app; it collapses whenever the current
+    /// track has none, so a track hidden under it closes it).
     pub(crate) fn current_clip(&self, app: &AppCtx) -> Option<ClipRef> {
-        self.clip_for(app.song, *app.selected)
+        self.clip_for(app.song, *app.selected, app.settings.show_hidden_tracks)
     }
 
-    /// [`Self::current_clip`] in `song` with channel `keys` on the keyboard.
-    pub(crate) fn clip_for(&self, song: &Song, keys: usize) -> Option<ClipRef> {
+    /// [`Self::current_clip`] in `song` with channel `keys` on the keyboard; a hidden track has one only with
+    /// `show_hidden` (Settings `Show hidden tracks`).
+    pub(crate) fn clip_for(&self, song: &Song, keys: usize, show_hidden: bool) -> Option<ClipRef> {
         let (channel, lane) = self.track_for(keys);
-        let id = song
-            .channels
-            .get(channel)?
-            .lanes
-            .get(lane)?
-            .file
-            .current_clip_id;
+        let track = song.channels.get(channel)?.lanes.get(lane)?;
+        let id = track.file.current_clip_id;
+        if track.hidden && !show_hidden {
+            return None;
+        }
         let r = ClipRef { channel, lane, id };
         find(song, r).map(|_| r)
     }
@@ -981,7 +1020,9 @@ impl Clips {
             }
             EditKey::Cut | EditKey::Delete => {}
             EditKey::Paste => {
-                let pasted = paste_clips(app.song, &self.clipboard, tick, (channel, lane), snap);
+                let show = app.settings.show_hidden_tracks;
+                let pasted =
+                    paste_clips(app.song, &self.clipboard, tick, (channel, lane), snap, show);
                 if !pasted.is_empty() {
                     self.set_selection(pasted);
                     app.song_edited(true);
@@ -1191,7 +1232,9 @@ impl Clips {
                 }
             }
             Some(Tap::Button(_)) => {
-                let pasted = paste_clips(app.song, &self.clipboard, tick, (channel, lane), snap);
+                let show = app.settings.show_hidden_tracks;
+                let pasted =
+                    paste_clips(app.song, &self.clipboard, tick, (channel, lane), snap, show);
                 if !pasted.is_empty() {
                     self.set_selection(pasted);
                     app.song_edited(true);
@@ -1280,7 +1323,7 @@ impl Clips {
         // The rows first: the spans below go to the clips where they are now.
         let mut moved = false;
         if let (Part::Body, Some(pos)) = (drag.part, pos) {
-            let tracks = track_rows(app.song);
+            let tracks = track_rows(app.song, app.settings.show_hidden_tracks);
             let index = |y: f32| {
                 let row = rows.iter().min_by(|a, b| {
                     let d = |r: &&(usize, usize, Rect)| (r.2.center().y - y).abs();
@@ -1353,7 +1396,7 @@ impl Clips {
     /// moved.
     // ponytail: the lone clip's nearest track may be scrolled out; restrict it to the shown rows if that shows.
     fn drag_rows(&mut self, app: &mut AppCtx, drag: &mut Drag, want: isize) -> bool {
-        let tracks = track_rows(app.song);
+        let tracks = track_rows(app.song, app.settings.show_hidden_tracks);
         let index =
             |r: ClipRef| (tracks.iter()).position(|t| (t.channel, t.lane) == (r.channel, r.lane));
         let homes: Option<Vec<(ClipRef, usize, usize)>> = (drag.clips.iter())
@@ -1572,12 +1615,13 @@ impl Clips {
 
 /// The track list's scroll, as the screen y where its first row (the master's, scrolled out or not) starts: the
 /// first of the visible `rows` less the rows above it. A scroll by whole rows moves it too, and a selection that
-/// moves between rows does not. `px` is the device pixel of gap that the rows' rects leave out under each row.
-fn list_top(song: &Song, rows: &[(usize, usize, Rect)], px: f32) -> f32 {
+/// moves between rows does not. `px` is the device pixel of gap that the rows' rects leave out under each row; with
+/// `show_hidden` the hidden tracks are rows ([`track_rows`]).
+fn list_top(song: &Song, rows: &[(usize, usize, Rect)], px: f32, show_hidden: bool) -> f32 {
     let Some(&(channel, lane, first)) = rows.first() else {
         return 0.0;
     };
-    let above = (track_rows(song).iter())
+    let above = (track_rows(song, show_hidden).iter())
         .take_while(|t| (t.channel, t.lane) != (channel, lane))
         .count();
     first.top() - above as f32 * pitch(rows, px)
@@ -1601,8 +1645,10 @@ fn selection_box(
     rows: &[(usize, usize, Rect)],
     axis: TimeAxis,
     px: f32,
+    show_hidden: bool,
 ) -> Option<Rect> {
-    let (tracks, top, pitch) = (track_rows(song), list_top(song, rows, px), pitch(rows, px));
+    let tracks = track_rows(song, show_hidden);
+    let (top, pitch) = (list_top(song, rows, px, show_hidden), pitch(rows, px));
     (sel.iter())
         .filter_map(|&r| {
             let clip = find(song, r)?;
@@ -2535,13 +2581,15 @@ pub fn copy_clip(lane: &mut Lane, id: u32, grid: f64) -> Option<u32> {
 
 /// `paste` (as the automation editor's Paste): the earliest of `clips` lands on the grid line nearest `tick`,
 /// the others keep their offsets from it. A lone clip goes on `track` when that is a track of its kind, else each goes
-/// back on its own track; a track that is gone or of another kind takes nothing. Returns the copies (new ids).
+/// back on its own track; a track that is gone or of another kind takes nothing, nor does a hidden one (`Hide track`)
+/// unless `show_hidden` (Settings `Show hidden tracks`). Returns the copies (new ids).
 pub fn paste_clips(
     song: &mut Song,
     clips: &[(ClipRef, LaneKind, Clip)],
     tick: f64,
     (channel, lane): (usize, usize),
     grid: f64,
+    show_hidden: bool,
 ) -> Vec<ClipRef> {
     let Some(first) = clips.iter().map(|c| c.2.start_tick).min() else {
         return Vec::new();
@@ -2554,7 +2602,8 @@ pub fn paste_clips(
             true => (channel, lane),
             false => (r.channel, r.lane),
         };
-        let Some(target) = lane_mut(song, c, l).filter(|t| t.kind == *k) else {
+        let fits = |t: &&mut Lane| t.kind == *k && (show_hidden || !t.hidden);
+        let Some(target) = lane_mut(song, c, l).filter(fits) else {
             continue;
         };
         let mut copy = clip.clone();
@@ -2676,12 +2725,24 @@ pub fn unlink_loop(clip: &mut Clip) -> bool {
         return false;
     }
     let start = u64::from(clip.start_tick);
-    let events = clip
-        .events_in_song_range(start, end_tick(clip).ceil() as u64)
+    let plays = || clip.events_in_song_range(start, end_tick(clip).ceil() as u64);
+    let events = plays()
         .map(|(tick, e)| at_pos(*e, (tick - start) as u32))
         .collect();
+    // An automation point's segment shape goes with each of its plays.
+    let mut shapes: Vec<_> = (plays())
+        .filter_map(|(tick, e)| match *e {
+            Event::Automation { pos, control, .. } if control => Some((
+                (tick - start) as u32,
+                crate::song::points::shape_at(clip, pos),
+            )),
+            _ => None,
+        })
+        .filter(|s| s.1 != Default::default())
+        .collect();
+    shapes.dedup_by_key(|s| s.0);
     let visible = clip.visible_ticks() / f64::from(PPQ);
-    clip.events = events;
+    (clip.events, clip.file.shapes) = (events, shapes);
     (
         clip.loop_len_beats,
         clip.visible_len_beats,
@@ -3044,7 +3105,7 @@ mod tests {
         for _ in 0..4 {
             song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
         }
-        let tracks = track_rows(&song);
+        let tracks = track_rows(&song, false);
         let (top, view_h, pitch) = (100.0_f32, 32.0_f32, 64.0_f32);
         let list_top_at = |scroll: f32| {
             let first = (scroll / pitch).floor() as usize;
@@ -3057,7 +3118,7 @@ mod tests {
                     (tracks[i].channel, tracks[i].lane, rect)
                 })
                 .collect();
-            list_top(&song, &rows, 1.0)
+            list_top(&song, &rows, 1.0, false)
         };
         // At 63 row 0 is first and row 1 is below it; at 64 row 1 is alone. The list's top still moves by the point.
         assert_ne!(list_top_at(63.0), list_top_at(64.0));
@@ -4744,18 +4805,18 @@ mod tests {
             lane: 0,
             id: 1,
         };
-        let b = selection_box(&song, &[r(0), r(2)], &rows, AXIS, 1.0);
+        let b = selection_box(&song, &[r(0), r(2)], &rows, AXIS, 1.0, false);
         assert_eq!(
             b,
             Some(Rect::from_min_max(pos2(164.0, 48.0), pos2(420.0, 240.0)))
         );
         // One clip: its start to its end across its own row.
-        let b = selection_box(&song, &[r(2)], &rows, AXIS, 1.0);
+        let b = selection_box(&song, &[r(2)], &rows, AXIS, 1.0, false);
         assert_eq!(
             b,
             Some(Rect::from_min_max(pos2(292.0, 176.0), pos2(420.0, 240.0)))
         );
-        assert_eq!(selection_box(&song, &[], &rows, AXIS, 1.0), None);
+        assert_eq!(selection_box(&song, &[], &rows, AXIS, 1.0, false), None);
     }
 
     #[test]

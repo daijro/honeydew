@@ -332,6 +332,36 @@ fn a_knobs_add_automation_track_opens_the_automation_editor_on_a_new_lane_named_
 }
 
 #[test]
+fn add_midi_cc_track_picks_a_cc_by_name_for_a_lane_on_the_selected_channel_in_one_undo_step() {
+    let mut rig = Rig::with_synth();
+    let (undos, lanes) = (rig.undos(), rig.app.song.channels[1].lanes.len());
+    rig.ctrl_pick("Add MIDI CC track…");
+    // The picker, past its slide-in: search, then the one match.
+    for _ in 0..3 {
+        rig.frame(vec![]);
+    }
+    rig.click_id(egui::Id::new("cc_picker").with("search"));
+    rig.frame(vec![egui::Event::Text("bright".into())]);
+    rig.frame(vec![]);
+    rig.click_id(egui::Id::new("cc_picker").with(("row", 0_usize)));
+    rig.frame(vec![]);
+    let ch = &rig.app.song.channels[1];
+    assert_eq!(ch.lanes.len(), lanes + 1);
+    let cc_74 = Some(target(0, 81));
+    let lane = ch.lanes.iter().position(|l| l.target == cc_74).unwrap();
+    assert_eq!(ch.lanes[lane].label, "CC 74 Brightness");
+    assert_eq!(ch.lanes[lane].clips.len(), 1);
+    assert_eq!(rig.app.nav.view, View::AutomationEditor(1));
+    assert_eq!(rig.undos(), undos + 1);
+    // A plain automation lane in the file: it saves and reopens as it is.
+    let read = crate::flm::read(&crate::flm::write(&rig.app.song).unwrap()).unwrap();
+    let l = &read.channels[1].lanes[lane];
+    assert_eq!((l.target, l.label.as_str()), (cc_74, "CC 74 Brightness"));
+    rig.frame(z(egui::Modifiers::NONE));
+    assert_eq!(rig.app.song.channels[1].lanes.len(), lanes);
+}
+
+#[test]
 fn a_send_lane_is_named_after_its_target_channel() {
     // `Send Level (to <name>)`: the name of the channel the send goes to.
     let mut rig = effects_rig();

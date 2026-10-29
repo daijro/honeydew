@@ -111,11 +111,17 @@ pub enum RowAction {
     Set { ctl: Ctl, v: f32, done: bool },
 }
 
-/// The clip the row edits on `channel`: none unless the channel's main lane is audio; then the audio editor's clip for
-/// the channel (`editor`), else the main lane's current clip (`DESc`@24).
-pub fn current(song: &Song, channel: usize, editor: &audio_editor::State) -> Option<ClipKey> {
+/// The clip the row edits on `channel`: none unless the channel's main lane is audio and shows (not hidden, `Hide track`,
+/// or `show_hidden`: Settings `Show hidden tracks`); then the audio editor's clip for the channel (`editor`), else the
+/// main lane's current clip (`DESc`@24).
+pub fn current(
+    song: &Song,
+    channel: usize,
+    editor: &audio_editor::State,
+    show_hidden: bool,
+) -> Option<ClipKey> {
     let main = song.channels.get(channel)?.lanes.first()?;
-    if main.kind != LaneKind::Audio {
+    if main.kind != LaneKind::Audio || main.hidden && !show_hidden {
         return None;
     }
     editor.current(song, channel).or_else(|| {

@@ -1211,7 +1211,7 @@ fn the_wheels_show_over_5_u_narrow_the_piano_and_drive_pitch_and_cc_1_as_the_rec
     let lane = rig.app.song.channels[1].lanes.last().unwrap();
     assert_eq!(
         (lane.target, lane.label.as_str()),
-        (Some(MOD_WHEEL), "MIDI CC #1")
+        (Some(MOD_WHEEL), "CC 1 Modulation")
     );
 }
 

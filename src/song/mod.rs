@@ -149,6 +149,11 @@ impl ChannelKind {
             _ => 0x100,
         }
     }
+
+    /// An instrument or drum channel: one live notes play on.
+    pub fn plays_notes(self) -> bool {
+        matches!(self, Self::Drums | Self::Instrument | Self::Synth(_))
+    }
 }
 
 /// Hue of the first channel added after the master; the n-th added channel is `fract(HUE_START + n × HUE_STEP)`.
@@ -339,8 +344,9 @@ impl Song {
     /// Removes channel `index` (`Delete Channel`): the channels' `SEND`s to it go to the master (dropped where one to
     /// the master exists), the channels that output to its bus or sent to it output where their `SEND`s now say
     /// ([`output_bus`]), and their Enable Send / Send Level automation lanes for it (params 0x1000 / 0x2000 + its id)
-    /// go, and so do the pad sends to it (`LINk` @10, back to the channel output). The file's selected channel
-    /// (`HEAD` @0, an index) stays on its channel, or in range when that is the one deleted. Never the master.
+    /// go, and so do the pad sends to it (`LINk` @10, back to the channel output) and the sidechains it keyed. The file's
+    /// selected channel (`HEAD` @0, an index) stays on its channel, or in range when that is the one deleted. Never the
+    /// master.
     pub fn delete_channel(&mut self, index: usize) {
         if index == 0 || index >= self.channels.len() {
             return;
@@ -357,6 +363,9 @@ impl Song {
         *selected = (*selected).min(self.channels.len() as i32 - 1);
         let buses = self.send_buses();
         for c in &mut self.channels {
+            for module in &mut c.rack.modules {
+                module.sidechain.take_if(|&mut id| id == gone.id);
+            }
             for slot in c.drum_kit.iter_mut().flat_map(|kit| &mut kit.slots) {
                 if slot.file.send_target == gone.id {
                     slot.file.send_target = -1;

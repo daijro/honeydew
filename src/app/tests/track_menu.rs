@@ -271,7 +271,7 @@ fn hide_tracks_hides_the_sub_track_rows_and_show_tracks_brings_them_back() {
     let mut rig = Rig::with_drums_and_synth();
     rig.track_menu(1, ADD_NOTES);
     // Rows: master, drums, its notes track, synth.
-    assert_eq!(track_rows(&rig.app.song).len(), 4);
+    assert_eq!(track_rows(&rig.app.song, false).len(), 4);
     // A clip selected on the notes track goes with it.
     rig.app.song.channels[1].lanes[1].add_clip(0, 16.0);
     rig.app.song_edited(SongEdit::Final, 0);
@@ -280,7 +280,7 @@ fn hide_tracks_hides_the_sub_track_rows_and_show_tracks_brings_them_back() {
     assert_eq!(selected(&rig), Some((1, 1)));
     rig.track_menu(1, HIDE);
     assert!(rig.app.song.channels[1].zipped);
-    assert_eq!(track_rows(&rig.app.song).len(), 3);
+    assert_eq!(track_rows(&rig.app.song, false).len(), 3);
     assert_eq!(rig.app.main_screen.clips.selected, None);
     // The synth moved up a row: a tap on its header makes it current.
     rig.click(header(2));
@@ -559,6 +559,15 @@ fn channel_settings_renames_and_recolours_the_channel_one_undo_step_each() {
     assert_eq!(rig.app.song.channels[2].name, "Lead");
     rig.frame(undo());
     assert_eq!(rig.app.song.channels[2].name, "MiniSynth");
+    // An instrument channel's MIDI input: its arm button arms it, one step.
+    rig.track_menu(2, SETTINGS);
+    rig.frame(vec![]);
+    let arm = rig.ctx.read_response(dialog.with("arm")).expect("arm").rect;
+    rig.click(arm.center());
+    assert!(rig.app.song.channels[2].file.record_armed);
+    rig.frame(escape());
+    rig.frame(undo());
+    assert!(!rig.app.song.channels[2].file.record_armed);
     // A gone channel closes it.
     rig.track_menu(2, SETTINGS);
     rig.app.song.delete_channel(2);
@@ -575,9 +584,10 @@ fn channel_settings_is_on_the_dialog_base_the_dim_then_the_panel() {
     assert_eq!(rig.overlays().len(), 1, "the dialog's first frame");
     let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1170.0, 540.0));
     let m = crate::metrics::Metrics::from_pixels_per_point(1.0, crate::metrics::DEFAULT_UI_SCALE);
-    // 10 U × 5.75 U, centred in the content area above the transport bar.
+    // 20 U × 5.75 U on an instrument channel (10 U wide on others), centred in the content area above the transport
+    // bar.
     let area = crate::ui::main_screen::Regions::new(screen, &m).area;
-    let boxed = egui::Rect::from_center_size(area.center(), egui::vec2(10.0 * 32.0, 5.75 * 32.0));
+    let boxed = egui::Rect::from_center_size(area.center(), egui::vec2(20.0 * 32.0, 5.75 * 32.0));
     let painted = crate::ui::dialog::painted_rects(rig.out.shapes.iter().map(|s| &s.shape));
     let colors = crate::theme::theme_by_id(0).colors;
     crate::ui::dialog::assert_base(&painted, &colors, screen, boxed);
@@ -1311,8 +1321,9 @@ fn channel_settings_is_a_dialog_box_over_the_screen_dimmed_at_once() {
     let dim = colors.background.to_color32().gamma_multiply(0.6);
     assert!(fills.contains(&(screen, dim)), "the dim");
     let menu_fill = colors.menu_fill.to_color32();
-    let boxed = (fills.iter()).find(|(r, f)| *f == menu_fill && (r.width() - 320.0).abs() < 0.5);
-    assert!(boxed.is_some(), "the 10 U box");
+    // An instrument channel's: 20 U.
+    let boxed = (fills.iter()).find(|(r, f)| *f == menu_fill && (r.width() - 640.0).abs() < 0.5);
+    assert!(boxed.is_some(), "the 20 U box");
 }
 
 // Track reorder: a header held 300 ms then dragged vertically.
@@ -1332,7 +1343,7 @@ impl Rig {
 fn shown(rig: &mut Rig) -> Vec<usize> {
     rig.frame(vec![]);
     rig.frame(vec![]);
-    let tracks = track_rows(&rig.app.song);
+    let tracks = track_rows(&rig.app.song, false);
     let top = |i: usize| {
         let id = Id::new(("track_header", i));
         rig.ctx.read_response(id).expect("drawn").rect.top()
@@ -2149,4 +2160,86 @@ fn save_as_midi_proposes_the_channel_name_made_a_file_name() {
         saved(&mem).0,
         std::path::Path::new("My MIDI").join(format!("{name}.mid"))
     );
+}
+
+/// `Hide track`, column 0's last item, hides a track everywhere but in playback, one undo step: its row goes and the
+/// rows below it move up, its notes are no ghost notes in another channel's roll, and the song sounds the same.
+/// The current track moves off it, so paste goes elsewhere. Settings `Show hidden tracks` brings its row back, where its
+/// menu reads `Show track`. An editor open on the track closes as it hides.
+#[test]
+fn hide_track_takes_its_row_and_ghost_notes_but_not_its_sound() {
+    use crate::audio_engine::SongAudioEngine;
+    use crate::theme::channel_color;
+    use honeydew_audio::device::AudioRenderer;
+    const HIDE_TRACK: (usize, usize) = (0, 6);
+    let mut rig = Rig::with_drums_and_synth();
+    rig.app
+        .add_channel(ChannelKind::Synth(SynthKind::MiniSynth), 0);
+    rig.app.song.channels[3].lanes[0]
+        .add_clip(0, 4.0)
+        .events
+        .push(note(0));
+    rig.app.song_edited(SongEdit::Final, 0);
+    let rows = |rig: &Rig| -> Vec<usize> {
+        let show = rig.app.settings.show_hidden_tracks;
+        (track_rows(&rig.app.song, show).iter())
+            .map(|t| t.channel)
+            .collect()
+    };
+    let ghost = channel_color(rig.app.song.channels[3].hue, &rig.app.theme)
+        .to_color32()
+        .gamma_multiply(crate::ui::piano_roll::GHOST_ALPHA);
+    // The synth's roll, open and closed again.
+    let ghosts = |rig: &mut Rig| {
+        rig.edit(2);
+        rig.slide_split();
+        let n = rig.rects(ghost).len();
+        rig.app.navigate(Nav::Collapse);
+        rig.frame(vec![]);
+        n
+    };
+    let sound = |rig: &Rig| {
+        let mut engine = SongAudioEngine::new(&rig.app.song, 48_000.0).unwrap();
+        engine.play();
+        let mut output = vec![0.0; 8192 * 2];
+        engine.render(&mut output, 2);
+        output
+    };
+    let before = sound(&rig);
+    assert!(before.iter().any(|s| s.abs() > 0.01));
+    assert_eq!(rows(&rig), [0, 1, 2, 3]);
+    assert_eq!(ghosts(&mut rig), 1);
+    // The bass clip tapped (its track current, the grid cursor on it) and copied.
+    rig.click(pos2(48.0 + 2.0 * 38.4, header(3).y));
+    rig.frame(key_tap(egui::Key::C, egui::Modifiers::COMMAND));
+    assert_eq!(rig.app.selected_channel, 3);
+    rig.track_menu(3, HIDE_TRACK);
+    assert!(rig.app.song.channels[3].lanes[0].hidden);
+    assert_eq!(rows(&rig), [0, 1, 2]);
+    // The current track moves to the nearest one shown, where a paste lands: the hidden track takes nothing.
+    assert_eq!(rig.app.selected_channel, 2);
+    let clips = |rig: &Rig| [2, 3].map(|c| rig.app.song.channels[c].lanes[0].clips.len());
+    let [synth, bass] = clips(&rig);
+    rig.frame(key_tap(egui::Key::V, egui::Modifiers::COMMAND));
+    assert_eq!(clips(&rig), [synth + 1, bass]);
+    rig.frame(undo());
+    assert_eq!(ghosts(&mut rig), 0);
+    assert!(sound(&rig) == before, "a hidden track plays as before");
+    rig.frame(undo());
+    assert_eq!(rows(&rig), [0, 1, 2, 3]);
+    rig.frame(redo());
+    assert_eq!(rows(&rig), [0, 1, 2]);
+    rig.app.settings.show_hidden_tracks = true;
+    rig.frame(vec![]);
+    assert_eq!(rows(&rig), [0, 1, 2, 3]);
+    rig.track_menu(3, HIDE_TRACK);
+    assert!(!rig.app.song.channels[3].lanes[0].hidden, "`Show track`");
+    // Hidden under its open editor, the editor closes.
+    rig.app.settings.show_hidden_tracks = false;
+    rig.edit(3);
+    rig.slide_split();
+    assert_eq!(rig.app.nav.view, View::PianoRoll(3));
+    rig.app.track_op(3, 0, TrackOp::ToggleHidden, 0);
+    rig.frame(vec![]);
+    assert_eq!(rig.app.nav.view, View::Playlist);
 }

@@ -1,4 +1,5 @@
 use crate::automation::{AutomationError, AutomationPlayback, AutomationTarget};
+use crate::mixer::OwnedStereoBuffer;
 use crate::{AudioEffect, EffectError, ProcessContext};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -27,11 +28,16 @@ pub enum PlaybackError {
 struct EffectInstance {
     id: i32,
     effect: AudioEffect,
+    /// Its sidechain: the slot in its channel's `keys` ([`AudioPlayback::set_key`]).
+    key: Option<usize>,
 }
 
 pub struct PlaybackChannel {
     parameters: [f32; 134],
     effects: Vec<EffectInstance>,
+    /// The sidechain sources its effects read: each one's channel index and its rack output this block
+    /// ([`Self::take_key`]).
+    keys: Vec<(usize, OwnedStereoBuffer)>,
 }
 
 pub struct AudioPlayback {
@@ -51,6 +57,7 @@ impl AudioPlayback {
                         parameters
                     },
                     effects: Vec::new(),
+                    keys: Vec::new(),
                 })
                 .collect(),
         }
@@ -75,7 +82,35 @@ impl AudioPlayback {
         channel.effects.push(EffectInstance {
             id: instance_id,
             effect,
+            key: None,
         });
+        Ok(())
+    }
+
+    /// Keys effect `instance_id` of channel `channel` from channel `source`'s rack output, a sidechain
+    /// ([`AudioEffect::process_keyed`]). Each source gets one key buffer per channel, made here `frames` long (the
+    /// longest block), which the source fills once it has run ([`PlaybackChannel::take_key`]). Off the audio thread.
+    pub fn set_key(
+        &mut self,
+        channel: usize,
+        instance_id: i32,
+        source: usize,
+        frames: usize,
+    ) -> Result<(), PlaybackError> {
+        let channel = (self.channels.get_mut(channel)).ok_or(PlaybackError::InvalidTarget)?;
+        let effect = (channel.effects.iter()).position(|entry| entry.id == instance_id);
+        let effect = effect.ok_or(PlaybackError::InvalidTarget)?;
+        let slot = match channel.keys.iter().position(|(from, _)| *from == source) {
+            Some(slot) => slot,
+            None => {
+                let (left, right) = (vec![0.0; frames], vec![0.0; frames]);
+                channel
+                    .keys
+                    .push((source, OwnedStereoBuffer { left, right }));
+                channel.keys.len() - 1
+            }
+        };
+        channel.effects[effect].key = Some(slot);
         Ok(())
     }
 
@@ -353,7 +388,23 @@ impl AudioPlayback {
 }
 
 impl PlaybackChannel {
-    /// The effects at positions `effects` in this channel's rack.
+    /// Channel `source`'s rack output this block, `left` and `right`, into its key buffer if this channel's effects read
+    /// it: once the source has run, before its strip (fader, pan, mute) and before this channel runs. Allocates nothing;
+    /// a block longer than the key buffer keys nothing.
+    pub fn take_key(&mut self, source: usize, left: &[f32], right: &[f32]) {
+        let Some((_, key)) = self.keys.iter_mut().find(|(from, _)| *from == source) else {
+            return;
+        };
+        let frames = left.len();
+        if let (Some(key_left), Some(key_right)) =
+            (key.left.get_mut(..frames), key.right.get_mut(..frames))
+        {
+            key_left.copy_from_slice(left);
+            key_right.copy_from_slice(right);
+        }
+    }
+
+    /// The effects at positions `effects` in this channel's rack, a keyed one reading its key ([`Self::take_key`]).
     pub fn process_effects(
         &mut self,
         effects: std::ops::Range<usize>,
@@ -381,9 +432,12 @@ impl PlaybackChannel {
             if entry.effect.sample_rate != context.sample_rate {
                 return Err(PlaybackError::Effect(EffectError::InvalidSampleRate));
             }
+            let frames = left.len();
+            let key = (entry.key.and_then(|slot| self.keys.get(slot)))
+                .and_then(|(_, key)| Some((key.left.get(..frames)?, key.right.get(..frames)?)));
             entry
                 .effect
-                .process(left, right, context)
+                .process_keyed(left, right, key, context)
                 .map_err(PlaybackError::Effect)?;
         }
         Ok(())

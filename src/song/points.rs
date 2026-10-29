@@ -9,8 +9,13 @@
 //! Rows: the value range shows as 127 rows; a value's row is r = (1 − value/max)·126 ([`row`]), 0 at the top, with
 //! max = [`PointKey::max`]: 65534 for automation (new editor points top out there) and 65535 for envelopes (rows from
 //! value/65535). Ticks are content ticks, [`PPQ`] per beat; a snap unit is in ticks (`None`: Snap off).
+//!
+//! An automation point also carries the [`Shape`] of the segment that starts at it (Honeydew's own, kept in the clip's
+//! `HDSh`, [`super::ClipFileState::shapes`]); envelope points keep the straight line. The ops carry each point's shape
+//! with it; a break takes its value on the shaped curve and the segment's shape on both sides.
 
 use super::{Clip, Event, PPQ};
+pub use honeydew_audio::automation::{Shape, ShapeKind, shape_value};
 
 /// Which points of a clip: the automation lane's, or an audio clip's envelope `env_param` (0 Level, 1 Pan, 2 Speed;
 /// the file key is ±(env_param + 1)).
@@ -71,11 +76,21 @@ impl PointKey {
     }
 }
 
-/// A control point: content tick and stored value.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A control point: content tick, stored value and the shape of the segment that starts at it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Point {
     pub tick: u32,
     pub value: u16,
+    pub shape: Shape,
+}
+
+/// The shape of the automation segment that starts at content tick `tick` of `clip` (the straight line unless its
+/// `HDSh` names one).
+pub fn shape_at(clip: &Clip, tick: u32) -> Shape {
+    let shapes = &clip.file.shapes;
+    shapes
+        .binary_search_by_key(&tick, |s| s.0)
+        .map_or_else(|_| Shape::default(), |i| shapes[i].1)
 }
 
 /// The bottom row; rows run 0…126 (127 rows).
@@ -99,23 +114,47 @@ pub fn points(clip: &Clip, key: PointKey) -> Vec<Point> {
         .map(|(tick, value, _)| Point {
             tick,
             value: raw(value),
+            shape: match key {
+                PointKey::Automation => shape_at(clip, tick),
+                PointKey::Envelope(_) => Shape::default(),
+            },
         })
         .collect()
 }
 
 /// Makes `pts` (sorted by tick, stable) the points of `key` in `clip` and rebuilds that key's steps through
-/// `honeydew_audio::automation::AutomationClip`; every other event stays.
+/// `honeydew_audio::automation::AutomationClip`, with their shapes on automation; every other event stays.
 pub fn set_points(clip: &mut Clip, key: PointKey, pts: Vec<Point>) {
     use honeydew_audio::automation::{AutomationClip, AutomationPoint};
+    let automation = key == PointKey::Automation;
     let pts = pts
         .iter()
         .map(|p| AutomationPoint {
             tick: p.tick.into(),
             value: p.value,
+            shape: if automation {
+                p.shape
+            } else {
+                Shape::default()
+            },
         })
         .collect();
     // Key 1, a one-tick loop: only the rebuild is used, which sorts the points (stable) and adds the steps.
     let built = AutomationClip::new(0, 1, 1, 0, 1, pts).expect("a positive key and a loop");
+    if automation {
+        // By tick, the last point's at each: the one whose segment has a length.
+        let shapes = &mut clip.file.shapes;
+        shapes.clear();
+        for p in built.points() {
+            let tick = p.tick as u32;
+            if shapes.last().is_some_and(|s| s.0 == tick) {
+                shapes.pop();
+            }
+            if p.shape != Shape::default() {
+                shapes.push((tick, p.shape));
+            }
+        }
+    }
     clip.events.retain(|e| key.of(e).is_none());
     // A tick is a u32 point's, or a step between two of them.
     (clip.events).extend(
@@ -188,6 +227,7 @@ pub fn create(
     let p = Point {
         tick: snapped(tick, snap),
         value: value_at_row(r, max),
+        ..Point::default()
     };
     let i = insert(&mut new, p);
     let mut sel = vec![false; new.len()];
@@ -223,6 +263,7 @@ pub fn moved(
                 } else {
                     value_at_row(row(p.value, max) + dr, max)
                 },
+                ..*p
             },
             false => *p,
         })
@@ -289,25 +330,29 @@ pub fn marquee(pts: &[Point], ticks: [f64; 2], rows: [f64; 2], max: u16) -> Vec<
         .collect()
 }
 
-/// `Copy`: each selected point's (beat, value/max).
-pub fn copy(pts: &[Point], sel: &[bool], max: u16) -> Vec<(f64, f64)> {
+/// A copied point: (beat, value/max, shape).
+pub type Copied = (f64, f64, Shape);
+
+/// `Copy`: each selected point's (beat, value/max, shape).
+pub fn copy(pts: &[Point], sel: &[bool], max: u16) -> Vec<Copied> {
     (pts.iter().zip(sel))
         .filter(|(_, s)| **s)
         .map(|(p, _)| {
             (
                 f64::from(p.tick) / f64::from(PPQ),
                 f64::from(p.value) / f64::from(max),
+                p.shape,
             )
         })
         .collect()
 }
 
 /// Paste at finger tick `tick`: the earliest copied point lands on the snapped tick (≥ 0), the others keep their
-/// offsets; values are the copied ones (×max, so full scale stays full scale across keys). Returns the points and
-/// a selection of just the pasted ones.
+/// offsets; values are the copied ones (×max, so full scale stays full scale across keys), and so are the shapes.
+/// Returns the points and a selection of just the pasted ones.
 pub fn paste(
     pts: &[Point],
-    clipboard: &[(f64, f64)],
+    clipboard: &[Copied],
     tick: f64,
     snap: Option<f64>,
     max: u16,
@@ -315,10 +360,11 @@ pub fn paste(
     let at = f64::from(snapped(tick, snap));
     let first = clipboard.iter().map(|c| c.0).fold(f64::INFINITY, f64::min);
     let (mut new, mut sel) = (pts.to_vec(), vec![false; pts.len()]);
-    for &(beat, f) in clipboard {
+    for &(beat, f, shape) in clipboard {
         let p = Point {
             tick: (at + (beat - first) * f64::from(PPQ)).round() as u32,
             value: (f * f64::from(max)).round().clamp(0.0, 65535.0) as u16,
+            shape,
         };
         let i = insert(&mut new, p);
         sel.insert(i, true);
@@ -332,8 +378,9 @@ fn first_at(pts: &[Point], t: u32) -> Option<usize> {
     (pts.get(i)?.tick == t).then_some(i)
 }
 
-/// The point a break at `t` adds: strictly between two points' ticks, the value on the line between the last point
-/// before `t` and the first after (rounded). `None` where a point is at `t` or there is no line.
+/// The point a break at `t` adds: strictly between two points' ticks, the value on the curve between the last point
+/// before `t` and the first after (rounded), with that segment's shape. `None` where a point is at `t` or there is no
+/// curve.
 fn between(pts: &[Point], t: u32) -> Option<Point> {
     let i = pts.partition_point(|p| p.tick < t);
     let (a, b) = (*pts.get(i.checked_sub(1)?)?, *pts.get(i)?);
@@ -341,7 +388,8 @@ fn between(pts: &[Point], t: u32) -> Option<Point> {
     let (va, vb) = (f64::from(a.value), f64::from(b.value));
     (b.tick > t).then(|| Point {
         tick: t,
-        value: (va + (vb - va) * f).round() as u16,
+        value: shape_value(a.shape, va, vb, f).round() as u16,
+        shape: a.shape,
     })
 }
 

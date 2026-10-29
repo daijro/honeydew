@@ -6,7 +6,16 @@
 //! loop end; 6 a 1 px `menuFill` line at the target's init value v, y = top + V·(1 − v) − 0.5 px; 7 the curve (1.5 px
 //! lines; nothing left of the first point, a level line from the last to the right edge), then the points
 //! (radius 0.2 U). A segment is `text` when either end is selected, a point when it is; else the channel colour. The
-//! value axis left of the grid: N = 5 ticks from V ≥ 3 U, else 3, labelled `100 … 0` in the channel colour.
+//! value axis left of the grid: N = 5 ticks from V ≥ 3 U, else 3, in the channel colour.
+//!
+//! **Values** (GitHub issue #21; [`value`]): the axis labels the
+//! target's value at each tick's fraction of the range in its own units (the registry's lane text, `120 BPM` on the
+//! tempo lane, percent without a display); the selected points, a drag's live, and the point under a hovering mouse
+//! show their value in a label beside them. `Edit value` (the floating row's third button) types one value for every
+//! selected point ([`AutomationEditor::value_panel`]); Up and Down nudge the selection a grid step (Shift: ten). The
+//! snap menu's `Value` column sets the value snap, an app setting: `Off`, `Rows` (the rows' law, the default), `1 %`
+//! … `25 %`, or a discrete target's `Steps`. A grid's lines show under the curve while its snap is on, and dragged,
+//! created and pasted points land on it ([`value::Land`]); off, values move continuously.
 //!
 //! **Gestures** (the shared law, [`gesture::is_long`] and [`gesture::left_calm`]): a tap (released within 300 ms,
 //! moved ≤ 0.5 U) on empty grid creates a point, or only clears a shown selection; a press on a point (the nearest
@@ -50,15 +59,21 @@
 //!   ([`AutomationEditor::rekey`]), and a view whose clip is gone goes.
 
 pub mod geom;
+mod shape;
+pub mod value;
 
 use std::collections::HashMap;
 use std::f32::consts::TAU;
 
+use eframe::egui::text::{CCursor, CCursorRange};
+use eframe::egui::text_edit::TextEditState;
 use eframe::egui::{
-    self, Align2, Color32, Id, Painter, Pos2, Rangef, Rect, Response, Sense, Stroke, Ui, pos2,
+    self, Align, Align2, Area, Color32, Id, Key, Margin, Order, Painter, Pos2, Rangef, Rect,
+    Response, Sense, Stroke, TextEdit, Ui, pos2, vec2,
 };
 
 use crate::metrics::{FontSize, Metrics};
+use crate::params::menu_value;
 use crate::song::points::{self, LAST_ROW, Point, PointKey};
 use crate::song::{Clip, LaneKind, PPQ, Song, TimeSig};
 use crate::theme::channel_color;
@@ -77,9 +92,10 @@ use crate::ui::region::{self, RegionOp, TimeRange};
 use crate::ui::scroller::{self, Axis, Scroller, X};
 use crate::ui::step_seq::pop_in;
 use crate::ui::timeline::{self, KnobGesture, PlayheadKnob, RangeRuler, RangeSelect, vline_px};
-use crate::ui::widgets::{self, SnapTouch, truncated};
-use crate::ui::{UiCtx, gesture, pinch_press, primary_down_live};
+use crate::ui::widgets::{self, SnapTouch};
+use crate::ui::{UiCtx, dialog, gesture, pinch_press, primary_down_live};
 use geom::{Frame, HIT_R, View};
+use value::{Land, Target, ValueGrid, ValueSnap};
 
 const KEY: PointKey = PointKey::Automation;
 
@@ -94,9 +110,20 @@ const PAST_END: u8 = 38;
 const ANIM_RATE: f32 = 0.6;
 const DRAG_FLOOR: f32 = 0.01;
 /// The floating buttons over a selection.
-const OPS: [&str; 2] = ["Copy", "Delete"];
-/// The axis labels keep this many tail characters when truncated.
-const LABEL_K: usize = 5;
+const OPS: [&str; 4] = ["Copy", "Delete", "Edit\nvalue", "Set shape"];
+/// The value grid's lines: at least this many U apart, `text` at this alpha.
+const GRID_GAP: f32 = 0.25;
+const GRID_ALPHA: f32 = 0.15;
+/// A point's value label: its gap from the point's edge and its padding, in U.
+const LABEL_GAP: f32 = 0.15;
+const LABEL_PAD: f32 = 0.15;
+/// The `Edit value` panel's size and padding, its rows' (top, height) in U from its top, and its buttons' width.
+const PANEL: [f32; 2] = [8.0, 4.5];
+const PANEL_PAD: f32 = 0.5;
+const TITLE_ROW: (f32, f32) = (0.25, 1.0);
+const FIELD_ROW: (f32, f32) = (1.25, 1.25);
+const BUTTON_ROW: (f32, f32) = (2.75, 1.25);
+const BUTTON_W: f32 = 3.0;
 
 fn id() -> Id {
     Id::new("automation_editor")
@@ -104,12 +131,12 @@ fn id() -> Id {
 
 /// The app-wide automation clipboard: (beat, value/max) pairs in egui's memory, so it outlives songs and views and is
 /// never saved. The audio editor's envelope lanes share it.
-pub fn clipboard(ctx: &egui::Context) -> Vec<(f64, f64)> {
+pub fn clipboard(ctx: &egui::Context) -> Vec<points::Copied> {
     ctx.data(|d| d.get_temp(id().with("clipboard")))
         .unwrap_or_default()
 }
 
-pub fn set_clipboard(ctx: &egui::Context, points: Vec<(f64, f64)>) {
+pub fn set_clipboard(ctx: &egui::Context, points: Vec<points::Copied>) {
     ctx.data_mut(|d| d.insert_temp(id().with("clipboard"), points));
 }
 
@@ -156,6 +183,8 @@ pub struct Options {
     /// The target's init value, while the song holds another for the frame (its automated value at the playhead,
     /// `app/automation.rs`); `None`: the song's.
     pub init: Option<f32>,
+    /// The audio's sample rate (0 without audio), which some value texts read.
+    pub sample_rate: f32,
 }
 
 /// What a frame did.
@@ -242,6 +271,14 @@ pub struct AutomationEditor {
     cursor: Option<(f64, f64)>,
     /// The view's scroll and zoom controller.
     scroller: Scroller,
+    /// The value snap (an app setting the host keeps, [`value`]).
+    pub value_snap: ValueSnap,
+    /// How values land this frame: the value snap on the shown target.
+    land: Land,
+    /// The `Edit value` panel's text while it is open.
+    typing: Option<String>,
+    /// The `Set shape` popup, while open ([`shape`]).
+    shaping: Option<shape::Shaping>,
 }
 
 /// The clip `key` names, on an automation lane.
@@ -329,6 +366,9 @@ impl AutomationEditor {
         let mut pts = points::points(clip, KEY);
         let (mut loop_beats, origin) = (clip.loop_len_beats, region::clip_origin(Some(clip)));
         let now = ui.input(|i| i.time);
+        let lane_target = song.channels[key.channel].lanes[key.lane].target;
+        let target = Target::of(song, key.channel, lane_target, opts.sample_rate);
+        self.land = self.value_snap.land(target.steps(), max);
 
         // The selection follows the clip; an outside change drops it.
         if (self.seen.as_ref()).is_none_or(|(k, p)| *k != key || *p != pts) {
@@ -339,7 +379,7 @@ impl AutomationEditor {
             self.seen = Some((key, pts.clone()));
             self.sel = vec![false; pts.len()];
             self.gesture = Gesture::Idle;
-            self.paste = None;
+            (self.paste, self.typing, self.shaping) = (None, None, None);
         }
 
         // The view: the clip's saved one, the wheel and zoom, continuous scrolling. Views of gone clips go.
@@ -400,9 +440,36 @@ impl AutomationEditor {
         let at = |q: &Point| pos2(ax.x(q.tick.into()), f.point_y(q.value, max));
         let sbox = sel_box(&shown_pts, &shown_sel, at);
         let handle = self.handle(&shown_sel, sbox, m);
+        // The point under a mouse with no button down: its value shows.
+        let hover = (grid.hover_pos())
+            .filter(|_| !ui.input(|i| i.pointer.any_down()) && self.typing.is_none())
+            .and_then(|p| f.hit(ax, &shown_pts, max, p, m));
 
         let ch = &song.channels[key.channel];
         let color = channel_color(ch.hue, cx.theme).to_color32();
+        // `Set shape`: its popup over the selection, its picks on the curve, one edit at its close.
+        if let Some(mut shaping) = self.shaping.take() {
+            let mut own = (pts.iter().zip(&self.sel))
+                .filter(|(_, s)| **s)
+                .map(|(p, _)| p.shape);
+            let first = own.next();
+            let own = first.filter(|&f| own.all(|s| s == f));
+            let frame = sbox.map(|r| r.expand(m.u(HIT_R)));
+            let close = frame.is_none_or(|r| {
+                let id = id().with("shape");
+                shape::popup(ui.ctx(), cx, id, r, (&mut shaping, own), color).close
+            });
+            let new = shaping.on(&pts, &self.sel);
+            if !close {
+                self.shaping = Some(shaping);
+            } else if new != pts {
+                edit = Some((new, self.sel.clone()));
+            }
+        }
+        let shown_pts = match self.shaping {
+            Some(shaping) => shaping.on(&shown_pts, &shown_sel),
+            None => shown_pts,
+        };
         let init = (opts.init).or_else(|| (ch.lanes[key.lane].target).and_then(|t| ch.param(t)));
         self.paint(
             ui,
@@ -413,6 +480,7 @@ impl AutomationEditor {
             sbox,
             (color, init),
             (sig, loop_ticks),
+            (&target, hover),
             now,
         );
         // The ↔ bar under the selection box's bottom-right.
@@ -456,6 +524,8 @@ impl AutomationEditor {
         // Hidden while a point is held, and by a long press or its marquee.
         let hidden = self.quiet
             || self.paste.is_some()
+            || self.typing.is_some()
+            || self.shaping.is_some()
             || matches!(self.gesture, Gesture::Drag(_) | Gesture::Box(_));
         let handles: Vec<Rect> = handle.into_iter().map(|h| h.0).collect();
         let one_row = {
@@ -480,17 +550,23 @@ impl AutomationEditor {
         {
             match i {
                 0 => set_clipboard(ui.ctx(), points::copy(&pts, &self.sel, max)),
-                _ => {
+                1 => {
                     let keep = (pts.iter().zip(&self.sel)).filter(|(_, s)| !**s);
                     let keep: Vec<Point> = keep.map(|(p, _)| *p).collect();
                     let n = keep.len();
                     edit = Some((keep, vec![false; n]));
                 }
+                2 => self.open_value(&target, &pts),
+                3 => self.shaping = Some(shape::Shaping::default()),
+                _ => {}
             }
             ui.ctx().request_repaint();
         }
         if let Some(new) = self.paste_button(ui, cx, (&f, ax), &pts, snap, now) {
             (edit, self.quiet) = (Some(new), false);
+        }
+        if let Some(new) = self.value_panel(ui, cx, f.grid, &target, &pts, now) {
+            edit = Some(new);
         }
 
         // The ruler, its range and region menu, and the playhead.
@@ -567,7 +643,7 @@ impl AutomationEditor {
             }
             None => {}
         }
-        self.snap_menu(ui, f.snap, cx);
+        self.snap_menu(ui, f.snap, cx, target.steps().is_some());
         // After the menus, which take Escape first.
         if let Some(new) = self.keys(ui, &pts, snap, now) {
             edit = Some(new);
@@ -587,8 +663,19 @@ impl AutomationEditor {
     #[allow(clippy::too_many_arguments)]
     fn keys(&mut self, ui: &Ui, pts: &[Point], snap: Option<f64>, now: f64) -> Option<Edit> {
         let ctx = ui.ctx();
-        if !matches!(self.gesture, Gesture::Idle) {
+        if !matches!(self.gesture, Gesture::Idle) || self.shaping.is_some() {
             return None;
+        }
+        // Up and Down nudge a selection by a grid step, Shift by ten (a Honeydew addition): the grid takes the
+        // arrows from the keyboard focus while it holds a selection.
+        if self.sel.contains(&true) {
+            crate::ui::focus::hold_vertical(ctx, id().with("grid"));
+            if let Some((up, shift)) = edit_keys::vertical(ctx) {
+                let lines = if shift { 10 * up } else { up };
+                let edit = value::nudge(pts, &self.sel, lines, self.land, KEY.max())?;
+                self.wobble(&edit.0, &edit.1, now);
+                return Some(edit);
+            }
         }
         let k = edit_keys::take(ctx)?;
         self.row.hide();
@@ -601,7 +688,7 @@ impl AutomationEditor {
             set_clipboard(ctx, points::copy(pts, &self.sel, max));
         }
         let (tick, row) = self.cursor.unwrap_or((0.0, LAST_ROW / 2.0));
-        let edit = match k {
+        let mut edit = match k {
             EditKey::Close => {
                 self.sel.fill(false);
                 return None;
@@ -623,6 +710,7 @@ impl AutomationEditor {
             }
             EditKey::Open => points::create(pts, tick, row, snap, max),
         };
+        value::landed(&mut edit.0, &edit.1, 0.0, self.land, max);
         self.pop(&edit.0, &edit.1, now);
         Some(edit)
     }
@@ -733,8 +821,9 @@ impl AutomationEditor {
                         // A tap: a shown (or quiet) selection only clears; else a new point, selected.
                         self.sel.fill(false);
                     } else {
-                        let (new, sel) =
+                        let (mut new, sel) =
                             points::create(pts, ax.tick(origin.x), f.row_at(origin.y), snap, max);
+                        value::landed(&mut new, &sel, 0.0, self.land, max);
                         self.pop(&new, &sel, now);
                         edit = Some((new, sel));
                     }
@@ -842,8 +931,16 @@ impl AutomationEditor {
             // No grab offset: the box's end goes to the finger's tick.
             points::scaled_to(&d.orig, &d.sel, |left| box_end(ax.tick(p.x), left, snap))
         } else {
-            let dr = f.row_at(p.y) - f.row_at(d.origin.y);
-            points::moved(&d.orig, &d.sel, dt, dr, snap, KEY.max())
+            let (dr, max) = (f.row_at(p.y) - f.row_at(d.origin.y), KEY.max());
+            if self.land.on && self.land.step.is_none() {
+                return points::moved(&d.orig, &d.sel, dt, dr, snap, max);
+            }
+            // Snap off or a grid: the time moves as with rows, the values continuously or onto the grid.
+            let (mut pts, sel) = points::moved(&d.orig, &d.sel, dt, 0.0, snap, max)
+                .unwrap_or_else(|| (d.orig.clone(), d.sel.clone()));
+            let dv = -dr * f64::from(max) / LAST_ROW;
+            value::landed(&mut pts, &sel, dv, self.land, max);
+            (pts != d.orig).then_some((pts, sel))
         }
     }
 
@@ -889,6 +986,7 @@ impl AutomationEditor {
         sbox: Option<Rect>,
         (color, init): (Color32, Option<f32>),
         (sig, loop_ticks): (TimeSig, f64),
+        (target, hover): (&Target, Option<usize>),
         now: f64,
     ) {
         let (c, m) = (&cx.theme.colors, cx.m);
@@ -909,6 +1007,26 @@ impl AutomationEditor {
         for i in 0..5 {
             let y = value.top() - 0.5 * px + value.height() * i as f32 / 4.0;
             hline(&gp, grid.x_range(), y, 1.0, bg, m);
+        }
+        // The value grid with value snap on: a line through the centre of each value it lands on, when at least
+        // 0.25 U apart (rows never are at the editor's sizes).
+        if let Land {
+            on: true,
+            step: Some(g),
+        } = self.land
+        {
+            let max = KEY.max();
+            let apart = (f.point_y(0, max) - f.point_y(max, max)) * (g / f64::from(max)) as f32;
+            if apart >= m.u(GRID_GAP) {
+                let (lines, ink) = (
+                    (f64::from(max) / g + 1e-9).floor() as u32,
+                    text.gamma_multiply(GRID_ALPHA),
+                );
+                for k in 0..=lines {
+                    let y = f.point_y((f64::from(k) * g).round() as u16, max);
+                    hline(&gp, grid.x_range(), y, 1.0, ink, m);
+                }
+            }
         }
         // 4.
         let (t0, t1) = (ax.tick(grid.left()), ax.tick(grid.right()));
@@ -941,9 +1059,14 @@ impl AutomationEditor {
         let at = |q: &Point| pos2(ax.x(q.tick.into()), f.point_y(q.value, KEY.max()));
         let stroke = |on: bool| Stroke::new(LINE_PX * px, if on { text } else { color });
         for (i, w) in pts.windows(2).enumerate() {
-            let (a, z) = (at(&w[0]), at(&w[1]));
+            let (a, z, s) = (at(&w[0]), at(&w[1]), w[0].shape);
             if z.x >= grid.left() && a.x <= grid.right() {
-                gp.line_segment([a, z], stroke(sel[i] || sel[i + 1]));
+                let stroke = stroke(sel[i] || sel[i + 1]);
+                if s == points::Shape::default() {
+                    gp.line_segment([a, z], stroke);
+                } else {
+                    gp.add(egui::Shape::line(shape::curve(s, a, z), stroke));
+                }
             }
         }
         if let Some(last) = pts.last() {
@@ -977,21 +1100,43 @@ impl AutomationEditor {
         if let Some(rect) = marquee {
             paint_marquee(&gp, rect, cx);
         }
+        // The values of the selected points (a drag's live) and of the hovered one, in the target's units.
+        let mut taken = Vec::new();
+        for (i, (q, &s)) in pts.iter().zip(sel).enumerate() {
+            if s || hover == Some(i) {
+                let r = r * self.scale(q, s, now);
+                value_label(&gp, cx, at(q), r, &target.value_text(q.value), &mut taken);
+            }
+        }
 
         // The value axis: `background`, ticks and labels in the channel colour.
         painter.rect_filled(f.axis, 0.0, bg);
-        let font = m.font_id(FontSize::Pt8);
-        for t in f.axis_ticks(m) {
+        // In the target's units ([`Target::axis_text`]): the value at each tick's fraction of the range, fitted from
+        // FontSize 1 down to 6 pt, then truncated keeping 5 tail characters. A discrete target with no more steps than
+        // ticks has a tick at each step instead; no label repeats one above it.
+        let ticks = f.axis_ticks(m);
+        let fracs: Vec<f32> = match target.steps() {
+            Some(n) if n <= ticks.len() => (0..n).rev().map(|k| menu_value(k, n)).collect(),
+            _ => (0..ticks.len())
+                .map(|i| 1.0 - i as f32 / (ticks.len() - 1) as f32)
+                .collect(),
+        };
+        let mut shown: Vec<String> = Vec::new();
+        for v in fracs {
+            let t = f.axis_tick(v, target.axis_text(v), m);
             hline(&painter, t.line, t.y, 2.0, color, m);
-            truncated(
-                &painter,
-                t.text,
-                Align2::CENTER_CENTER,
-                &t.label,
-                font.clone(),
-                color,
-                LABEL_K,
-            );
+            if !shown.contains(&t.label) {
+                widgets::shrink(
+                    &painter,
+                    m,
+                    t.text,
+                    Align2::CENTER_CENTER,
+                    &t.label,
+                    8,
+                    color,
+                );
+                shown.push(t.label);
+            }
         }
     }
 
@@ -1022,11 +1167,120 @@ impl AutomationEditor {
         )?;
         self.paste = None;
         if tap {
-            let (new, sel) = points::paste(pts, &clipboard, tick, snap, KEY.max());
+            let (mut new, sel) = points::paste(pts, &clipboard, tick, snap, KEY.max());
+            value::landed(&mut new, &sel, 0.0, self.land, KEY.max());
             self.pop(&new, &sel, now);
             return Some((new, sel));
         }
         None
+    }
+
+    /// `Edit value`: the panel opens on the selected points' value text when they all read the same, else empty.
+    fn open_value(&mut self, target: &Target, pts: &[Point]) {
+        let chosen = (pts.iter().zip(&self.sel)).filter(|(_, s)| **s);
+        let mut texts = chosen.map(|(p, _)| target.value_text(p.value));
+        let first = texts.next();
+        self.typing = Some(first.filter(|t| texts.all(|u| u == *t)).unwrap_or_default());
+    }
+
+    /// The `Edit value` panel while open (a Honeydew addition): a dialog box over the grid's centre with the title, a
+    /// field of the typed value (all of it selected as it opens, so typing replaces it) and `Cancel` `OK`. Enter or
+    /// `OK` sets every selected point to the typed value ([`Target::parse`]) as one edit and closes it; a text that
+    /// names no value keeps it open. Escape, `Cancel` or a tap outside closes it.
+    fn value_panel(
+        &mut self,
+        ui: &Ui,
+        cx: &UiCtx,
+        grid: Rect,
+        target: &Target,
+        pts: &[Point],
+        now: f64,
+    ) -> Option<Edit> {
+        let mut text = self.typing.take()?;
+        let ctx = ui.ctx().clone();
+        let (c, m) = (&cx.theme.colors, cx.m);
+        let ink = c.text.to_color32();
+        let id = id().with("edit value");
+        let field_id = id.with("field");
+        let size = vec2(m.u(PANEL[0]), m.u(PANEL[1]));
+        let min = grid.center() - size / 2.0;
+        let rect = Rect::from_min_size(pos2(m.round_px(min.x), m.round_px(min.y)), size);
+        let backdrop = dialog::dialog_box(&ctx, id, (c, m), ctx.content_rect(), rect);
+        let mut close =
+            backdrop.clicked() || backdrop.secondary_clicked() || crate::ui::close_pressed(&ctx);
+        let mut ok = false;
+        Area::new(id)
+            .order(Order::Foreground)
+            .fixed_pos(rect.min)
+            .constrain(false)
+            .fade_in(false)
+            .show(&ctx, |ui| {
+                ui.allocate_exact_size(rect.size(), Sense::hover());
+                let pad = m.u(PANEL_PAD);
+                let row = |(top, h): (f32, f32)| {
+                    Rect::from_x_y_ranges(
+                        rect.left() + pad..=rect.right() - pad,
+                        rect.top() + m.u(top)..=rect.top() + m.u(top + h),
+                    )
+                };
+                let painter = ui.painter().clone();
+                let title = row(TITLE_ROW).center();
+                let font = m.font_id(FontSize::Pt12);
+                painter.text(title, Align2::CENTER_CENTER, "Edit value", font, ink);
+                let field = row(FIELD_ROW);
+                painter.rect_filled(field, 0.0, c.background.to_color32());
+                let visuals = ui.visuals_mut();
+                visuals.text_cursor.stroke.color = ink;
+                visuals.selection.bg_fill = c.accent.to_color32().gamma_multiply(0.5);
+                visuals.selection.stroke.color = ink;
+                let edit = TextEdit::singleline(&mut text)
+                    .id(field_id)
+                    .frame(false)
+                    .margin(Margin::symmetric(m.u(0.25) as i8, 0))
+                    .font(m.font_id(FontSize::Pt10))
+                    .text_color(ink)
+                    .desired_width(f32::INFINITY)
+                    .min_size(field.size())
+                    .vertical_align(Align::Center);
+                let mut response = ui.put(field, edit);
+                crate::android_text::edit(&mut response, &mut text, usize::MAX);
+                ok = response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                if !response.has_focus() && !response.lost_focus() {
+                    response.request_focus();
+                    let mut state = TextEditState::load(ui.ctx(), field_id).unwrap_or_default();
+                    let all =
+                        CCursorRange::two(CCursor::new(0), CCursor::new(text.chars().count()));
+                    state.cursor.set_char_range(Some(all));
+                    state.store(ui.ctx(), field_id);
+                }
+                let buttons = row(BUTTON_ROW);
+                let w = m.u(BUTTON_W);
+                for (part, x) in [("Cancel", buttons.left()), ("OK", buttons.right() - w)] {
+                    let at = Rect::from_x_y_ranges(x..=x + w, buttons.y_range());
+                    let b = dialog::button(id.with(part), at, part, c, m);
+                    if widgets::button(ui, cx, &b, true).clicked() {
+                        (ok, close) = (ok || part == "OK", close || part == "Cancel");
+                    }
+                }
+            });
+        let mut edit = None;
+        if let Some(v) = ok.then(|| target.parse(&text, KEY.max())).flatten() {
+            let set = |(p, s): (&Point, &bool)| Point {
+                value: if *s { v } else { p.value },
+                ..*p
+            };
+            let new: Vec<Point> = pts.iter().zip(&self.sel).map(set).collect();
+            self.wobble(&new, &self.sel.clone(), now);
+            edit = (new != pts).then(|| (new, self.sel.clone()));
+            close = true;
+        }
+        if close {
+            ctx.memory_mut(|mem| mem.surrender_focus(field_id));
+            ctx.request_repaint();
+        } else {
+            self.typing = Some(text);
+        }
+        edit
     }
 
     /// The Snap button in `cell` ([`widgets::snap_button`]): a tap toggles snap, a long press or a right click opens
@@ -1039,18 +1293,35 @@ impl AutomationEditor {
         }
     }
 
-    /// The snap menu while open: one column, the current mode highlighted; a pick sets it and turns snap on.
-    fn snap_menu(&mut self, ui: &Ui, cell: Rect, cx: &UiCtx) {
+    /// The snap menu while open: the time modes under `Time`, the current one highlighted, a pick sets it and turns
+    /// snap on; beside them (a Honeydew addition) the value snap under `Value`: `Off`, then the grid sizes (`Steps` only
+    /// on a discrete target), the current one highlighted, a pick sets it and turns value snap on.
+    fn snap_menu(&mut self, ui: &Ui, cell: Rect, cx: &UiCtx, discrete: bool) {
         if !self.snap_menu {
             return;
         }
         let ctx = ui.ctx();
-        let items: Vec<PopupItem<SnapMode>> = (SnapMode::ALL.iter().enumerate())
-            .map(|(row, &mode)| PopupItem {
-                current: mode == self.snap.mode,
-                ..PopupItem::new(mode, 0, row, mode.label())
-            })
-            .collect();
+        let vs = self.value_snap;
+        let time = (SnapMode::ALL.iter().enumerate()).map(|(row, &mode)| PopupItem {
+            current: mode == self.snap.mode,
+            ..PopupItem::new(Pick::Time(mode), 0, row + 1, mode.label())
+        });
+        let grids = (ValueGrid::ALL.into_iter()).filter(|&g| discrete || g != ValueGrid::Steps);
+        let values = [None].into_iter().chain(grids.map(Some)).enumerate();
+        let values = values.map(|(row, g)| PopupItem {
+            current: g == vs.on.then_some(vs.grid),
+            ..PopupItem::new(
+                Pick::Value(g),
+                1,
+                row + 1,
+                g.map_or_else(|| "Off".into(), ValueGrid::label),
+            )
+        });
+        let heads = [
+            PopupItem::header(0, 0, "Time"),
+            PopupItem::header(1, 0, "Value"),
+        ];
+        let items: Vec<PopupItem<Pick>> = heads.into_iter().chain(time).chain(values).collect();
         let result = popup::show(
             ctx,
             id().with("snap menu"),
@@ -1059,8 +1330,13 @@ impl AutomationEditor {
             &items,
             cx,
         );
-        if let Some(mode) = result.selected {
-            self.snap = Snap { on: true, mode };
+        match result.selected {
+            Some(Pick::Time(mode)) => self.snap = Snap { on: true, mode },
+            Some(Pick::Value(grid)) => {
+                self.value_snap = (grid.map(|grid| ValueSnap { on: true, grid }))
+                    .unwrap_or(ValueSnap { on: false, ..vs });
+            }
+            None => {}
         }
         if result.close {
             self.snap_menu = false;
@@ -1092,6 +1368,40 @@ impl AutomationEditor {
         self.seen = Some((key, now));
         *clip != before
     }
+}
+
+/// A pick in the snap menu: a time mode, or a value grid (`None`: value snap off).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Pick {
+    Time(SnapMode),
+    Value(Option<ValueGrid>),
+}
+
+/// A point's value `text` beside it (centre `at`, drawn radius `r`): above and right of it, left where that passes
+/// the grid's right edge, below where it passes the top, so it never covers the point; `text` on a `background` pill,
+/// clipped to the grid (`gp`'s clip). One that would overlap a label drawn before (`taken`) is left out.
+fn value_label(gp: &Painter, cx: &UiCtx, at: Pos2, r: f32, text: &str, taken: &mut Vec<Rect>) {
+    let (c, m) = (&cx.theme.colors, cx.m);
+    let ink = c.text.to_color32();
+    let galley = gp.layout_no_wrap(text.to_owned(), m.font_id(FontSize::Pt8), ink);
+    let pad = m.u(LABEL_PAD);
+    let size = galley.size() + vec2(2.0 * pad, 0.0);
+    let (grid, gap) = (gp.clip_rect(), r + m.u(LABEL_GAP));
+    let x = match at.x + gap + size.x <= grid.right() {
+        true => at.x + gap,
+        false => at.x - gap - size.x,
+    };
+    let y = match at.y - gap - size.y >= grid.top() {
+        true => at.y - gap - size.y,
+        false => at.y + gap,
+    };
+    let rect = Rect::from_min_size(pos2(m.round_px(x), m.round_px(y)), size);
+    if taken.iter().any(|t| t.intersects(rect)) {
+        return;
+    }
+    taken.push(rect);
+    gp.rect_filled(rect, pad, c.background.to_color32());
+    gp.galley(rect.min + vec2(pad, 0.0), galley, ink);
 }
 
 /// The region menu's `op` on `pts` (the current key only) for `range`, the playhead at content tick `p` and the loop

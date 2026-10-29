@@ -414,7 +414,11 @@ fn presence_is_in_song_terms_and_shows_the_others_through_this_view() {
         (1, "audio", PointKey::Envelope(0)),
     ] {
         let clip = rig.app.song.channels[channel].lanes[0].add_clip(0, 4.0);
-        let at = |tick| points::Point { tick, value: 20000 };
+        let at = |tick| points::Point {
+            tick,
+            value: 20000,
+            ..Default::default()
+        };
         points::set_points(clip, key, vec![at(0), at(2 * crate::song::PPQ)]);
         let first = points::points(clip, key)[0];
         let (lane, id) = (0, 1);

@@ -1,5 +1,6 @@
 //! Automation lanes from the panels' controls: the recent control,
-//! the CTRL menu's `Add automation track` and `Link to recent control`, the parameter menu's `Add automation track`
+//! the CTRL menu's `Add automation track`, `Add MIDI CC track…` and `Link to recent control`, the parameter menu's
+//! `Add automation track`
 //! (the MIDI CC items of both menus go on to `app/midi.rs`; `Fine tune control` opens the fine tune dialog), and the
 //! `Delete automation?` question a card's `Delete` asks for a module that lanes target, as do
 //! `Clear Rack`, a `Replace` and a rack preset's load, held back until the answer.
@@ -283,13 +284,26 @@ impl HoneydewApp {
     /// Each lane op and CC link change is one undo step. `tick` is the transport position.
     pub(super) fn automation(&mut self, pick: Option<CtrlAction>, tick: u64) {
         match self.slots.ctrl_menu.picked.take().or(pick) {
-            Some(CtrlAction::AddAutomationTrack) => self.add_automation_track(tick),
+            Some(CtrlAction::AddAutomationTrack) => {
+                if let Some((channel, target)) = self.recent_index() {
+                    self.add_automation_track(channel, target, tick);
+                }
+            }
+            Some(CtrlAction::AddCcTrack) => {
+                self.navigate(Nav::Open(Overlay::CcPicker(self.selected_channel)))
+            }
             Some(CtrlAction::LinkRecentControl) => self.link_recent_control(tick),
             Some(CtrlAction::LinkMidiCc) => self.learn_cc(),
             Some(CtrlAction::LinkModWheel) => self.link_cc(Some(1), tick),
             Some(CtrlAction::UnlinkMidiCc) => self.link_cc(None, tick),
             Some(CtrlAction::FineTune) => self.fine_tune(),
             None => {}
+        }
+        // The CC picker's pick: a lane of the CC's channel param.
+        if let Some((channel, target)) = self.slots.cc_picker.picked.take()
+            && channel < self.song.channels.len()
+        {
+            self.add_automation_track(channel, target, tick);
         }
         if let Some((channel, instance_id)) = self.slots.rack.ask_delete.take()
             && let Some(ch) = self.song.channels.get(channel)
@@ -321,12 +335,10 @@ impl HoneydewApp {
         }));
     }
 
-    /// `Add automation track` for the recent control: a new lane on its channel with one empty clip at floor(song
-    /// beat), b beats long; the lanes re-keyed, the channel selected and the automation editor opened on the clip.
-    fn add_automation_track(&mut self, tick: u64) {
-        let Some((channel, target)) = self.recent_index() else {
-            return;
-        };
+    /// `Add automation track` for `target` on `channel` (the recent control, or `Add MIDI CC track…`'s pick): a new lane
+    /// with one empty clip at floor(song beat), b beats long; the lanes re-keyed, the channel selected and the
+    /// automation editor opened on the clip.
+    fn add_automation_track(&mut self, channel: usize, target: AutomationTarget, tick: u64) {
         let start = u32::try_from(tick / u64::from(PPQ) * u64::from(PPQ)).unwrap_or(u32::MAX);
         let beats = f64::from(self.song.time_sig.bar_beats());
         let label = self

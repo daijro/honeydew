@@ -33,7 +33,8 @@
 //! ([`SettingsTab::take_restore_demos`]), with no question first.
 //!
 //! `Sound credits` is a full-width light button: the main menu opens the credits screen ([`SettingsTab::take_credits`],
-//! `views/credits.rs`).
+//! `views/credits.rs`). On the desktop `Install sound library…`, one too, asks the app to install a sound library
+//! ([`SettingsTab::take_install_sounds`], `content::install`).
 //!
 //! The list ends with `Original content:` and a row with the Original Content folder's path
 //! ([`crate::project_files::CONTENT_FOLDER`], shortened in the middle like a label) and an `Open folder` light button,
@@ -157,6 +158,8 @@ enum Kind {
     ContentFolder,
     /// `Sound credits`: a full-width light button that opens the credits screen ([`SettingsTab::take_credits`]).
     Credits,
+    /// `Install sound library…`: a full-width light button the app answers ([`SettingsTab::take_install_sounds`]).
+    InstallSounds,
     /// The plugin folders the user added (the label) and `Add folder` ([`SettingsTab::take_plugin_action`]).
     PluginFolders,
     /// The scan's state (the label) and `Rescan`, which scans every plugin file again.
@@ -203,7 +206,7 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 }
 
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 43] = {
+const ROWS: [Row; 45] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -260,6 +263,7 @@ const ROWS: [Row; 43] = {
             "Continuous scrolling during playback",
             Toggle(|s| &mut s.continuous_scroll),
         ),
+        row("Show hidden tracks", Toggle(|s| &mut s.show_hidden_tracks)),
         row(
             "Show CPU and RAM meters",
             Toggle(|s| &mut s.hardware_meters),
@@ -283,6 +287,7 @@ const ROWS: [Row; 43] = {
         row("Sync only when connected to WiFi", FixedToggle(true)),
         // The bundled sounds' sources.
         row("Sound credits", Credits),
+        row("Install sound library…", InstallSounds),
         // The content folder ([`CONTENT_ROWS`]).
         row("Original content:", Header),
         row("Original content folder", ContentFolder),
@@ -331,6 +336,8 @@ pub struct SettingsTab {
     restore_demos: bool,
     /// `Sound credits` was tapped, until [`Self::take_credits`].
     credits: bool,
+    /// `Install sound library…` was tapped, until [`Self::take_install_sounds`].
+    install_sounds: bool,
     /// A plugin row's tap, until [`Self::take_plugin_action`].
     plugin_action: Option<PluginAction>,
     /// The plugin rows show: the app hosts plugins (the desktop). The caller sets it.
@@ -377,6 +384,11 @@ impl SettingsTab {
         std::mem::take(&mut self.credits)
     }
 
+    /// Whether `Install sound library…` was tapped since the last call, once a tap: the main menu asks where from.
+    pub fn take_install_sounds(&mut self) -> bool {
+        std::mem::take(&mut self.install_sounds)
+    }
+
     /// What a plugin row asked for since the last call, once a tap.
     pub fn take_plugin_action(&mut self) -> Option<PluginAction> {
         self.plugin_action.take()
@@ -396,11 +408,13 @@ impl SettingsTab {
                     target_os = "windows",
                     target_os = "macos",
                     target_os = "linux"
-                )) || (!matches!(r.kind, Kind::Dropdown(Choice::SoundMode))
-                    && !matches!(
-                        r.label,
-                        "MCP:" | "Enable MCP control" | "Port" | "Authentication token" | "Status"
-                    ))
+                )) || (!matches!(
+                    r.kind,
+                    Kind::Dropdown(Choice::SoundMode) | Kind::InstallSounds
+                ) && !matches!(
+                    r.label,
+                    "MCP:" | "Enable MCP control" | "Port" | "Authentication token" | "Status"
+                ))
             })
             .collect();
         let plugins = if self.plugins { &PLUGIN_ROWS[..] } else { &[] };
@@ -846,13 +860,18 @@ impl SettingsTab {
                 let (pt, accent) = (FontSize::Pt10.points() as u8, colors.accent.to_color32());
                 shrink(ui.painter(), m, r, Align2::LEFT_CENTER, &note, pt, accent);
             }
-            Kind::DisabledButton | Kind::Restore | Kind::RestoreDemos | Kind::Credits => {
+            Kind::DisabledButton
+            | Kind::Restore
+            | Kind::RestoreDemos
+            | Kind::Credits
+            | Kind::InstallSounds => {
                 let rect = Rect::from_center_size(r.center(), vec2(r.width(), m.u(BUTTON_H)));
                 let enabled = !row.kind.disabled();
                 if light_button(ui, rect, row.label, enabled) && enabled {
                     match row.kind {
                         Kind::Restore => self.menu = Some((Menu::Restore, rect.center())),
                         Kind::Credits => self.credits = true,
+                        Kind::InstallSounds => self.install_sounds = true,
                         _ => self.restore_demos = true,
                     }
                 }
@@ -1136,6 +1155,7 @@ mod tests {
                 "Set middle C to C4",
                 "Show range labels on keyboard",
                 "Continuous scrolling during playback",
+                "Show hidden tracks",
                 "Show CPU and RAM meters",
                 "Enable sharing files with nearby devices",
                 "MCP:",
@@ -1152,6 +1172,7 @@ mod tests {
                 "Sync automatically",
                 "Sync only when connected to WiFi",
                 "Sound credits",
+                "Install sound library…",
                 "Original content:",
                 "Original content folder",
             ]
@@ -1176,7 +1197,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(toggles.len(), if cfg!(target_os = "ios") { 11 } else { 10 });
+        assert_eq!(toggles.len(), if cfg!(target_os = "ios") { 12 } else { 11 });
         for (label, field) in &toggles {
             let mut s = Settings::default();
             *field(&mut s) = !*field(&mut s);
@@ -1714,7 +1735,7 @@ mod tests {
             let (u, t) = (m.u(1.0), m.t());
             let column_right = rig.width - 2.0 * u;
             let fills = fills(&rig);
-            assert_eq!(toggles().count(), 15);
+            assert_eq!(toggles().count(), 16);
             for r in toggles() {
                 let at = format!("ppp {ppp} scale {scale}: `{}`", r.label);
                 let control = rig.rect_of(row_id(index(r.label)));
@@ -1973,7 +1994,7 @@ mod tests {
         // "Scrolling moves in whole 2 U rows" and no further than the list: wheeling far past the end leaves the last row
         // in view, within a row of the bottom, and a second wheel changes nothing.
         let mut rig = Rig::with_height(540.0);
-        let last = row_id(index("Sound credits"));
+        let last = row_id(index("Install sound library…"));
         let over = pos2(800.0, 300.0);
         rig.frame(vec![Event::PointerMoved(over)]);
         let wheel = |rig: &mut Rig| {

@@ -1,5 +1,5 @@
-//! A song's routing: each channel's `SEND`s as the mixer's sends, the channel ids the
-//! send params name (0x1000 / 0x2000 + channel id), and which channels a solo keeps audible.
+//! A song's routing: each channel's `SEND`s as the mixer's sends, its modules' sidechains as the mixer's keys, the
+//! channel ids the send params name (0x1000 / 0x2000 + channel id), and which channels a solo keeps audible.
 
 use honeydew_audio::mixer::{ChannelMix, SendMix, send_param};
 
@@ -11,6 +11,8 @@ pub(super) struct Routing {
     /// Per channel, the other channels a path of sends or pad targets joins it to, either way, the master left out:
     /// they stay audible while it is soloed, and it while one of them is.
     pub linked: Vec<Vec<usize>>,
+    /// Each sidechain kept: (the keyed module's channel index, its instance id, the source's channel index).
+    pub keyed: Vec<(usize, i32, usize)>,
 }
 
 impl Routing {
@@ -32,7 +34,12 @@ impl Routing {
 /// close a cycle. The app never makes a cycle; a file's is broken at the send that closes it, scanning the channels in
 /// order. Enable Send does not change the routing, and a pad's send target always
 /// makes its drum channel a source of that target, for the solo links only: the pads play into the target's
-/// buffer before any channel runs, so they need no mixing order.
+/// buffer before any channel runs, so they need no mixing order. A sidechain ([`ModuleInstance::key_source`]) makes its
+/// source a key of the module's channel; one from the master (whose output is the song's), from the channel itself or
+/// from no channel is left out, and so is one that would close a cycle through the sends and the sidechains before it,
+/// scanning the channels and their racks in order: the module then detects on its own input.
+///
+/// [`ModuleInstance::key_source`]: crate::song::ModuleInstance::key_source
 pub(super) fn build(song: &Song) -> (Vec<ChannelMix>, Routing) {
     let ids: Vec<i32> = song.channels.iter().map(|c| c.id).collect();
     let count = ids.len();
@@ -60,7 +67,31 @@ pub(super) fn build(song: &Song) -> (Vec<ChannelMix>, Routing) {
             level: channel.params.level(),
             pan: channel.params.pan(),
             sends,
+            keys: Vec::new(),
         });
+    }
+    // The sends and the sidechains kept, for the cycles: a key is no solo link, as it hears its source whatever the
+    // source's strip does.
+    let mut graph = targets.clone();
+    let mut keyed = Vec::new();
+    for (index, channel) in song.channels.iter().enumerate() {
+        for module in &channel.rack.modules {
+            let source = module.key_source();
+            let Some(source) = source.and_then(|id| ids.iter().position(|&other| other == id))
+            else {
+                continue;
+            };
+            if source == 0 || source == index || reaches(&graph, index, source) {
+                continue;
+            }
+            if !graph[source].contains(&index) {
+                graph[source].push(index);
+            }
+            if !mixes[index].keys.contains(&source) {
+                mixes[index].keys.push(source);
+            }
+            keyed.push((index, module.instance_id, source));
+        }
     }
     let mut edges = targets;
     for (index, channel) in song.channels.iter().enumerate() {
@@ -84,7 +115,7 @@ pub(super) fn build(song: &Song) -> (Vec<ChannelMix>, Routing) {
                 .collect()
         })
         .collect();
-    (mixes, Routing { ids, linked })
+    (mixes, Routing { ids, linked, keyed })
 }
 
 /// A file value as a mixer control: clamped to 0..=1, a non-finite one 0 (as the reader reads one elsewhere).

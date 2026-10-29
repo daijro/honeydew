@@ -6,6 +6,7 @@
 
 mod channel;
 mod display;
+mod dynamic_eq;
 mod effects;
 mod effects_24_51;
 #[cfg(test)]
@@ -24,6 +25,8 @@ mod tests;
 pub use channel::{CHANNEL_PARAMS, COMMON_PARAMS, DRUM_SLOT_PARAMS};
 pub(crate) use display::clamp01;
 pub use display::{At, Display, Fmt, Sign, TextCx, menu_index, menu_value};
+/// The Dynamic EQ, Honeydew's own effect (`honeydew_audio::dynamic_eq`).
+pub use dynamic_eq::MODULE as DYNAMIC_EQ;
 pub(crate) use effects_24_51::ARP_RHYTHM_PATTERNS;
 pub use effects_24_51::snap_echo_delay;
 pub(crate) use effects_24_51::{arp_pattern, arp_steps};
@@ -209,8 +212,8 @@ impl ParamSpec {
     }
 
     /// The value text of an automation lane for normalised `v` in context `cx`: the target module's params, the song
-    /// tempo and the sample rate, as the panels pass them. Nothing draws it yet: the editor's value axis is percent
-    /// of the range, never parameter units.
+    /// tempo and the sample rate, as the panels pass them. The automation editor's value axis, point labels and typed
+    /// values read it (`ui::automation::value`).
     pub fn automation_text_in(&self, v: f32, cx: TextCx) -> String {
         match self.automation {
             // A menu's automation texts name the same items: the control's index law picks one.
@@ -297,13 +300,14 @@ pub fn instruments() -> impl Iterator<Item = &'static ModuleSpec> {
     instruments::MODULES.iter()
 }
 
-/// The module with type id `id` (effect, note effect, instrument, a plugin module or one of Lemon Studio's effects), or
-/// `None` for ids that are not registered.
+/// The module with type id `id` (effect, note effect, instrument, a plugin module, one of Lemon Studio's effects or the
+/// Dynamic EQ), or `None` for ids that are not registered.
 pub fn module_spec(id: u16) -> Option<&'static ModuleSpec> {
     modules()
         .chain(instruments())
         .chain(&PLUGINS)
         .chain(&LEMON_MODULES)
+        .chain([&DYNAMIC_EQ])
         .find(|m| m.id == id)
 }
 

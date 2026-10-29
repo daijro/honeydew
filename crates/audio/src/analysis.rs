@@ -67,6 +67,8 @@ enum Kind {
     Pitcher2,
     /// Analyzer (26): every view's data ([`analyzer`]).
     Analyzer(Box<Analyzer>),
+    /// Dynamic EQ: each band's gain offset now, dB.
+    DynamicEq,
 }
 
 impl Probe {
@@ -93,6 +95,7 @@ impl Probe {
                 Kind::Analyzer(Box::new(Analyzer::new(sample_rate))),
                 analyzer::LEN,
             ),
+            crate::dynamic_eq::DYNAMIC_EQ => (Kind::DynamicEq, crate::dynamic_eq::BANDS),
             _ => (Kind::None, 0),
         };
         let mut probe = Self {
@@ -136,7 +139,7 @@ impl Probe {
             Kind::Tuner(detector) => detector.reset(),
             Kind::Pitcher | Kind::Pitcher2 => self.slab[1] = -1.0,
             Kind::Analyzer(analyzer) => analyzer.reset(&mut self.slab),
-            Kind::None | Kind::Tremolo | Kind::Waveshaper => {}
+            Kind::None | Kind::Tremolo | Kind::Waveshaper | Kind::DynamicEq => {}
         }
     }
 
@@ -210,6 +213,9 @@ impl Probe {
             (Kind::Pitcher2, Processor::Pitcher2(state)) => {
                 slab[0] = state.tracked_frequency();
                 slab[1] = state.target_frequency();
+            }
+            (Kind::DynamicEq, Processor::DynamicEq(state)) => {
+                slab.copy_from_slice(&state.dynamic_db())
             }
             _ => {}
         }
@@ -584,6 +590,11 @@ pub fn limiter(slab: &[f32]) -> Option<HistoryView> {
 pub fn multiband(slab: &[f32], band: usize) -> Option<HistoryView> {
     let at = band * HISTORY_LEN;
     (slab.len() == 3 * HISTORY_LEN && band < 3).then(|| history_view(&slab[at..at + HISTORY_LEN]))
+}
+
+/// Dynamic EQ: each band's gain offset from its detector now, dB.
+pub fn dynamic_eq(slab: &[f32]) -> Option<[f32; crate::dynamic_eq::BANDS]> {
+    slab.try_into().ok()
 }
 
 /// Spacer: the input's and the output's correlation, −1…1.

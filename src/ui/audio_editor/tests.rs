@@ -436,10 +436,15 @@ fn a_region_ops_envelope_part_follows_automation_s_rows() {
     let mut s = song();
     s.play_loop = Some((128, 256));
     let pts = vec![
-        Point { tick: 0, value: 0 },
+        Point {
+            tick: 0,
+            value: 0,
+            ..Default::default()
+        },
         Point {
             tick: 512,
             value: 65535,
+            ..Default::default()
         },
     ];
     points::set_points(&mut s.channels[1].lanes[0].clips[0], VOL, pts.clone());
@@ -487,7 +492,11 @@ fn a_stretch_sets_the_ratio_and_the_clip_resyncs_by_the_loop_rule() {
     assert_eq!((file.stretch_ratio, file.stretch_mode), (1.5, 1));
     assert_eq!((c.file.source_len_beats, c.loop_len_beats), (3.0, 4.0));
     // The next envelope edit keeps that loop.
-    let point = vec![Point { tick: 0, value: 1 }];
+    let point = vec![Point {
+        tick: 0,
+        value: 1,
+        ..Default::default()
+    }];
     apply(
         &mut s,
         AT,
@@ -623,10 +632,12 @@ fn a_long_press_marquees_and_copy_then_paste_adds_the_points() {
         Point {
             tick: 128,
             value: 40000,
+            ..Default::default()
         },
         Point {
             tick: 256,
             value: 20000,
+            ..Default::default()
         },
     ];
     points::set_points(&mut s.channels[1].lanes[0].clips[0], VOL, pts.clone());
@@ -686,7 +697,7 @@ fn a_long_press_marquees_and_copy_then_paste_adds_the_points() {
     // A held bubble disappears when the gesture becomes a marquee, loses focus, pinches, or loses its clipboard.
     for cancel in 0..4 {
         let mut rig = Rig::new(song(), None);
-        set_clipboard(&rig.off.ctx, vec![(0.0, 0.5)]);
+        set_clipboard(&rig.off.ctx, vec![(0.0, 0.5, points::Shape::default())]);
         rig.run(vec![egui::Event::PointerMoved(at)]);
         rig.button(at, true);
         for _ in 0..20 {
@@ -719,6 +730,7 @@ fn a_ruler_tap_seeks_before_the_content_end_and_stops_while_playing() {
         vec![Point {
             tick: 128,
             value: 100,
+            ..Default::default()
         }],
     );
     let mut rig = Rig::new(s, None);
@@ -856,6 +868,7 @@ fn the_draw_order_layers_marks_lanes_overlay_and_markers() {
         vec![Point {
             tick: 0,
             value: 65535,
+            ..Default::default()
         }],
     );
     s.play_loop = Some((128, 256));
@@ -1032,10 +1045,12 @@ fn the_right_edge_handle_scales_two_points_and_delete_removes_the_selection() {
         Point {
             tick: 128,
             value: v,
+            ..Default::default()
         },
         Point {
             tick: 256,
             value: v,
+            ..Default::default()
         },
     ];
     points::set_points(&mut s.channels[1].lanes[0].clips[0], VOL, pts.clone());
@@ -1094,6 +1109,7 @@ fn a_tap_on_a_point_selects_it_moves_nothing_and_another_tap_deselects() {
     let pts = vec![Point {
         tick: 100,
         value: 30000,
+        ..Default::default()
     }];
     points::set_points(&mut s.channels[1].lanes[0].clips[0], VOL, pts.clone());
     let mut rig = Rig::new(s, None);
@@ -1284,6 +1300,7 @@ fn a_point_or_the_stretch_handle_moved_inside_the_calm_zone_is_a_tap_not_a_drag(
     let pts = vec![Point {
         tick: 128,
         value: 40000,
+        ..Default::default()
     }];
     let mut s = song();
     points::set_points(&mut s.channels[1].lanes[0].clips[0], VOL, pts.clone());
@@ -1392,10 +1409,15 @@ fn a_copy_in_the_automation_editor_pastes_in_an_envelope_lane_and_back() {
         .unwrap();
     let clip = ch.lanes[lane].add_clip(0, 4.0);
     let auto = vec![
-        Point { tick: 0, value: 0 },
+        Point {
+            tick: 0,
+            value: 0,
+            ..Default::default()
+        },
         Point {
             tick: 256,
             value: 32767,
+            ..Default::default()
         },
     ];
     points::set_points(clip, PointKey::Automation, auto.clone());
@@ -1425,7 +1447,7 @@ fn a_copy_in_the_automation_editor_pastes_in_an_envelope_lane_and_back() {
     );
     both.tap(false, text_at(&both.shapes, "Copy"), false);
     let copied = automation::clipboard(&both.off.ctx);
-    assert_eq!(copied, [(2.0, 32767.0 / 65534.0)]);
+    assert_eq!(copied, [(2.0, 32767.0 / 65534.0, points::Shape::default())]);
 
     // The audio editor's VOL lane: a long press shows `Paste`; its tap pastes the copied point (full scale kept).
     both.tap(true, pos2(572.0, 200.0), true);
@@ -1437,7 +1459,8 @@ fn a_copy_in_the_automation_editor_pastes_in_an_envelope_lane_and_back() {
         vol,
         [Point {
             tick: 512,
-            value: 32768
+            value: 32768,
+            ..Default::default()
         }]
     );
     assert_eq!(
@@ -1457,7 +1480,7 @@ fn a_copy_in_the_automation_editor_pastes_in_an_envelope_lane_and_back() {
         .read_response(egui::Id::new(("audio_point_button", 0usize)));
     both.tap(true, copy.expect("the floating row").rect.center(), false);
     let copied = automation::clipboard(&both.off.ctx);
-    assert_eq!(copied, [(4.0, 32768.0 / 65535.0)]);
+    assert_eq!(copied, [(4.0, 32768.0 / 65535.0, points::Shape::default())]);
     let finger = pos2(50.0 + 384.0, 300.0);
     both.tap(false, finger, true);
     let menu = egui::Id::new("automation_editor").with("paste");
@@ -1468,7 +1491,8 @@ fn a_copy_in_the_automation_editor_pastes_in_an_envelope_lane_and_back() {
         want[2],
         Point {
             tick: 384,
-            value: 32767
+            value: 32767,
+            ..Default::default()
         }
     );
     assert_eq!(both.automation(), want);
@@ -1562,6 +1586,7 @@ fn stretch_rig() -> (Rig, Pos2, Pos2) {
     let pts = vec![Point {
         tick: 128,
         value: 40000,
+        ..Default::default()
     }];
     points::set_points(&mut s.channels[1].lanes[0].clips[0], VOL, pts);
     let rig = Rig::new(s, Some(sample(44_100, vec![0.5; 44_100], None)));

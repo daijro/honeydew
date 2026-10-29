@@ -291,6 +291,27 @@ pub struct ChannelFileState {
     pub channel_unknown_chunks: Vec<RawChunk>,
     /// `CHHD` bytes after the three names.
     pub header_extra: Vec<u8>,
+    /// Honeydew's own `HDMi`: the live MIDI an instrument or drum channel takes.
+    pub midi_input: MidiInput,
+}
+
+/// Which live MIDI a channel takes (Honeydew's own; FL Studio Mobile takes it all on the current channel). `None` is
+/// All. Saved as an `HDMi` in the `CHNL`, only when set, which FL Studio Mobile skips as an unknown chunk.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MidiInput {
+    /// A device by the name the MIDI layer reports (`midi::device::device_name`); while it is missing nothing
+    /// matches.
+    pub device: Option<String>,
+    /// A MIDI channel, 0…15 (shown as 1…16).
+    pub channel: Option<u8>,
+}
+
+impl MidiInput {
+    /// Whether a message from `device` on MIDI channel `channel` gets through.
+    pub fn passes(&self, device: &str, channel: u8) -> bool {
+        self.device.as_deref().is_none_or(|d| d == device)
+            && self.channel.is_none_or(|c| c == channel)
+    }
 }
 
 impl Default for ChannelFileState {
@@ -310,6 +331,7 @@ impl Default for ChannelFileState {
             rack_unknown_chunks: Vec::new(),
             channel_unknown_chunks: Vec::new(),
             header_extra: Vec::new(),
+            midi_input: MidiInput::default(),
         }
     }
 }
@@ -411,6 +433,9 @@ pub struct ClipFileState {
     pub header_extra: Vec<u8>,
     /// The `EVN2` payload as read, kept only when re-encoding the events would not give it back.
     pub raw_events: Raw<Vec<u8>>,
+    /// `HDSh` (Honeydew's own): on an automation clip, the shape of each segment that is not the straight line, by the
+    /// tick of its point (sorted, one per tick: the last point at a tick starts the segment that has a length).
+    pub shapes: Vec<(u32, honeydew_audio::automation::Shape)>,
 }
 
 impl Default for ClipFileState {
@@ -422,6 +447,7 @@ impl Default for ClipFileState {
             unknown_chunks: Vec::new(),
             header_extra: Vec::new(),
             raw_events: Raw::default(),
+            shapes: Vec::new(),
         }
     }
 }

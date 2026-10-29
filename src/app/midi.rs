@@ -1,8 +1,11 @@
 //! MIDI input in the app. Each frame the device link's messages go through the [`Router`], and its outputs are executed
 //! here:
-//! - notes play on the selected channel the way the on-screen keyboard's do ([`HoneydewApp::key_on`]); each key of a
-//!   chord sounds, and a key ends on the channel it began on;
-//! - the selected channel's own CC, pitch bend and aftertouch params are live engine values, no song edit;
+//! - notes play on the selected channel and on each monitoring instrument or drum channel (Honeydew's own; each once)
+//!   the way the on-screen keyboard's do ([`HoneydewApp::key_on`]); each key of a chord sounds, and a key ends on the
+//!   channels it began on. An armed instrument or drum channel takes them too, for REC, sounding only if it is one of
+//!   those. A channel takes only what its MIDI input lets through (`ChannelFileState::midi_input`), the selected one
+//!   too ([`HoneydewApp::midi_targets`]);
+//! - the sounding channels' own CC, pitch bend and aftertouch params are live engine values, no song edit;
 //! - a CC link sets its param on the channel that owns it, as a hand move does: the song-changed flag and no undo step,
 //!   and REC records it when it is the recent control. The undo history takes a burst's values [`BURST_SECS`] after its
 //!   last move with no pointer down ([`crate::history::History::sync`]);
@@ -21,6 +24,7 @@ use honeydew_audio::device::AudioCommand;
 use super::{HoneydewApp, START_ON_RELEASE, audio_gesture, typed};
 use crate::midi::device::{MidiChoice, MidiLink};
 use crate::midi::links::{self, song_links};
+use crate::midi::route::Target;
 use crate::midi::{Learn, MidiMsg, Out, Router};
 use crate::song::AutomationTarget;
 use crate::ui::views::{self, Nav, Overlay, SongEdit, View};
@@ -119,8 +123,12 @@ impl HoneydewApp {
             song_links(&self.song)
         };
         let mut linked = false;
-        for msg in messages.iter().filter_map(|m| MidiMsg::parse(m)) {
-            let mut outs = self.midi.router.route(msg, self.selected_channel, &links);
+        for (device, bytes) in &messages {
+            let Some(msg) = MidiMsg::parse(bytes) else {
+                continue;
+            };
+            let targets = self.midi_targets(device, msg.channel());
+            let mut outs = self.midi.router.route(device, msg, &targets, &links);
             // The learned key plays after its edit rebuilds the engine, so it sounds with its pad.
             outs.sort_by_key(|out| !matches!(out, Out::LearnedNote(_)));
             for out in outs {
@@ -143,7 +151,23 @@ impl HoneydewApp {
         }
     }
 
-    /// Note-offs for every key MIDI holds, each on the channel it plays on.
+    /// The channels a message from `device` on MIDI channel `ch` reaches, each once, with whether it sounds there: the
+    /// selected channel and every monitoring instrument or drum channel sound; an armed one that is neither only
+    /// records (REC takes it, [`Self::record_channels`]). Each only while its MIDI input lets the message through.
+    pub(super) fn midi_targets(&self, device: &str, ch: u8) -> Vec<Target> {
+        let selected = self.selected_channel;
+        let channels = self.song.channels.iter().enumerate();
+        let passes = channels.filter(|(_, c)| c.file.midi_input.passes(device, ch));
+        passes
+            .filter_map(|(i, c)| {
+                let notes = c.kind.plays_notes();
+                let sound = i == selected || notes && c.file.input_monitoring;
+                (sound || notes && c.file.record_armed).then_some((i, sound))
+            })
+            .collect()
+    }
+
+    /// Note-offs for every key MIDI holds, each on the channels it plays on.
     pub(super) fn release_midi(&mut self) {
         for out in self.midi.router.release_all() {
             self.midi_out(out, 0);
@@ -169,18 +193,34 @@ impl HoneydewApp {
                 key,
                 on: true,
                 velocity,
+                sound,
             } => {
-                let played = self.key_locked(key);
+                let played = self.key_locked(channel, key);
                 // A retrigger on its channel: a note the lock moved since ends first.
                 if let Some(old) = self.unsnap(channel, key).filter(|&old| old != played) {
                     self.key_off(channel, old);
                 }
                 self.midi.snapped.push((channel, key, played));
-                self.key_on(channel, played, velocity);
+                // A channel that only records hears the key at REC alone.
+                if sound {
+                    self.key_on(channel, played, velocity);
+                } else {
+                    self.live_key((channel, played, Some(velocity)));
+                }
             }
-            Out::Note { channel, key, .. } => {
+            Out::Note {
+                channel,
+                key,
+                sound,
+                ..
+            } => {
                 let played = self.unsnap(channel, key);
-                self.key_off(channel, played.unwrap_or_else(|| self.key_locked(key)));
+                let played = played.unwrap_or_else(|| self.key_locked(channel, key));
+                if sound {
+                    self.key_off(channel, played);
+                } else {
+                    self.live_key((channel, played, None));
+                }
             }
             Out::ChannelParam {
                 channel,
@@ -270,11 +310,11 @@ impl HoneydewApp {
         Some(snapped.remove(at).2)
     }
 
-    /// A MIDI `key` under key-lock, as a typed key is (the snap comes before recording): the keyboard's lock, but none
-    /// on a channel whose pads replace the keyboard. Its note-off ends the key the press played ([`Midi::snapped`]),
-    /// else the one it snaps to now.
-    fn key_locked(&self, key: u8) -> u8 {
-        let pads = views::drum_editor::pads_channel(&self.song, self.selected_channel).is_some();
+    /// A MIDI `key` under key-lock on `channel`, as a typed key is (the snap comes before recording): the keyboard's
+    /// lock, but none on a channel whose pads replace the keyboard. Its note-off ends the key the press played
+    /// ([`Midi::snapped`]), else the one it snaps to now.
+    fn key_locked(&self, channel: usize, key: u8) -> u8 {
+        let pads = views::drum_editor::pads_channel(&self.song, channel).is_some();
         typed::snap(key, self.key_input().lock.filter(|_| !pads), typed::UP)
     }
 

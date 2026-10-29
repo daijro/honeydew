@@ -25,6 +25,7 @@ use super::chunk::{
 };
 use crate::params;
 use crate::song::plugin::{self, PluginParam, PluginRef};
+use crate::song::points::{Shape, ShapeKind};
 use crate::song::{
     AutomationTarget, CHANNEL_ID_LIMIT, Channel, ChannelKind, Clip, ClipFileState, DrumGrid,
     DrumKit, Event, KeyboardState, Lane, LaneKind, MetaState, ModuleInstance, PPQ, Raw, RawChunk,
@@ -206,6 +207,8 @@ pub fn read_rack(
             return Err(FlmError::new(PATH, FlmErrorKind::TooLarge));
         }
         module.instance_id = last;
+        // Its sidechain named a channel of the song the rack was saved from.
+        module.sidechain = None;
     }
     *last_instance_id = last;
     Ok(modules)
@@ -813,6 +816,8 @@ impl Reader {
                     read.state = state;
                     module.file.plugin = Some(Box::new(read));
                 }
+                // Honeydew's own sidechain (`flm::write`).
+                b"HDSc" => module.sidechain = child.reader().i32().ok(),
                 b"PSTA" if plugin::is_plugin(type_id) => {
                     self.charge(child.payload.len(), &child.path)?;
                     let plugin = module.file.plugin.get_or_insert_default();
@@ -892,6 +897,15 @@ impl Reader {
                         channel.lanes.push(lane);
                     }
                 }
+                // Honeydew's own MIDI input (`flm::write`); what does not read is All.
+                b"HDMi" => {
+                    let mut reader = child.reader();
+                    let input = &mut channel.file.midi_input;
+                    let device = reader.vstr32().map(text).unwrap_or_default();
+                    input.device = (!device.is_empty()).then_some(device);
+                    let ch = reader.u32_or(0);
+                    input.channel = (1..=16).contains(&ch).then(|| ch as u8 - 1);
+                }
                 _ => self.unknown(&child, &mut channel.file.channel_unknown_chunks)?,
             }
         }
@@ -920,6 +934,8 @@ impl Reader {
                     lane.clips.push(clip);
                 }
                 b"DESc" if !seen_desc => seen_desc = true,
+                // A hidden track (`flm::write`).
+                b"HDHd" => lane.hidden = true,
                 _ => self.unknown(&child, &mut lane.file.unknown_chunks)?,
             }
         }
@@ -1042,6 +1058,10 @@ impl Reader {
                     clip.events = decode_events(&payload, kind, file_param, &mut self.budget)
                         .ok_or_else(|| FlmError::new(&child.path, FlmErrorKind::TooLarge))?;
                 }
+                b"HDSh" if kind == LaneKind::Automation => {
+                    self.charge(2 * child.payload.len(), &child.path)?;
+                    clip.file.shapes = shapes(child.payload);
+                }
                 b"CLSm" => {
                     let (_, mut sample) = self.slot(&child)?;
                     *next_slot = (*next_slot + 1).min(MAX_ID);
@@ -1053,6 +1073,26 @@ impl Reader {
         }
         Ok(clip)
     }
+}
+
+/// An `HDSh` (`flm::write`): 6-byte records of u32 tick, u8 shape, u8 tension. An unknown shape is skipped, a tension
+/// over 100 % is 100 %; the last record at a tick counts, and the straight line is no entry.
+fn shapes(payload: &[u8]) -> Vec<(u32, Shape)> {
+    let mut shapes: Vec<(u32, Shape)> = (payload.as_chunks::<6>().0.iter())
+        .filter_map(|r| {
+            let tick = u32::from_le_bytes([r[0], r[1], r[2], r[3]]);
+            let kind = *ShapeKind::ALL.get(usize::from(r[4]))?;
+            let tension = r[5].min(100);
+            Some((tick, Shape { kind, tension }))
+        })
+        .collect();
+    // Stable, then the last at each tick first, which `dedup` keeps.
+    shapes.sort_by_key(|s| s.0);
+    shapes.reverse();
+    shapes.dedup_by_key(|s| s.0);
+    shapes.reverse();
+    shapes.retain(|s| s.1 != Shape::default());
+    shapes
 }
 
 /// `HEAD`; returns @354, the next channel id, `None` when absent (legacy routing).

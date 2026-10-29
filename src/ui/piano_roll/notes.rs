@@ -733,7 +733,8 @@ pub struct Ghost {
 /// The notes of every other channel's notes lanes that play during the edited clip's first loop pass (without a
 /// clip: during the first bar), mapped into the clip's content: those that reach the content ticks `view` shows, from
 /// clips whose loop passes are at least `px` ticks (a pixel) long ([`Clip::plays_to_draw`]). So the walk is bounded
-/// by the view, not by a file's loop or visible lengths.
+/// by the view, not by a file's loop or visible lengths. A hidden track's notes (`Hide track`) are never ghosts, whatever
+/// Settings `Show hidden tracks` (the playlist's) says.
 pub fn ghost_notes(
     song: &Song,
     channel: usize,
@@ -752,7 +753,7 @@ pub fn ghost_notes(
         if ci == channel {
             continue;
         }
-        for lane in ch.lanes.iter().filter(|l| l.kind == LaneKind::Notes) {
+        for lane in (ch.lanes.iter()).filter(|l| l.kind == LaneKind::Notes && !l.hidden) {
             for c in &lane.clips {
                 // A note that starts before the view reaches into it by its length.
                 // ponytail: at most a view's width; a ghost longer than that, starting further before the view, is

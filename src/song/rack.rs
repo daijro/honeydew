@@ -48,6 +48,10 @@ pub struct ModuleInstance {
     /// The module card is collapsed in the rack.
     pub minimized: bool,
     pub file: ModuleFileState,
+    /// Honeydew's own: the channel id (`CHHD`@1080) whose output keys this module's detector, a sidechain; `None`: its
+    /// own input. Only a module that [takes a key](honeydew_audio::takes_key) uses it ([`Self::key_source`]). The `.flm`
+    /// keeps it in an `HDSc` chunk FL Studio Mobile skips (`flm::write`).
+    pub sidechain: Option<i32>,
 }
 
 impl ModuleInstance {
@@ -88,12 +92,13 @@ impl ModuleInstance {
             common: CommonParams::default(),
             minimized: false,
             file: ModuleFileState::default(),
+            sidechain: None,
         }
     }
 
     /// Loads `preset`, a module of this type read from a preset file ([`crate::flm::read_preset`]): its params, common
     /// params, `CSTM` and the rest of its file chunks. The module keeps its instance id and its place in the rack
-    /// (`ADD1`: minimized, the key range). [`Self::name_preset`] then names the file.
+    /// (`ADD1`: minimized, the key range), and its sidechain. [`Self::name_preset`] then names the file.
     pub fn load_preset(&mut self, preset: ModuleInstance) {
         let file = ModuleFileState {
             key_low: self.file.key_low,
@@ -105,6 +110,7 @@ impl ModuleInstance {
             instance_id: self.instance_id,
             minimized: self.minimized,
             file,
+            sidechain: self.sidechain,
             ..preset
         };
     }
@@ -187,6 +193,13 @@ impl ModuleInstance {
             Ok(i) => self.params.get(i).copied(),
             Err(_) => self.common.0.get(common_index(param)?).copied(),
         }
+    }
+
+    /// The channel id of the sidechain source this module's detector reads: [`Self::sidechain`] on a module that takes a
+    /// key.
+    pub fn key_source(&self) -> Option<i32> {
+        self.sidechain
+            .filter(|_| honeydew_audio::takes_key(self.type_id))
     }
 
     pub fn param_mut(&mut self, param: i32) -> Option<&mut f32> {

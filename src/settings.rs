@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::metrics::{DEFAULT_UI_SCALE, UI_SCALE_FACTORS, UI_SCALE_RANGE};
 use crate::midi::device::ANY;
 use crate::theme::builtin_themes;
+use crate::ui::automation::value::ValueSnap;
 use crate::ui::keyboard_settings::KeyboardMode;
 use crate::ui::main_menu::Sort;
 use crate::ui::modules_browser::ModuleOrdering;
@@ -195,6 +196,9 @@ pub struct Settings {
     /// `Continuous scrolling during playback`.
     #[serde(rename = "continuousScroll")]
     pub continuous_scroll: bool,
+    /// `Show hidden tracks` (our own key): the playlist shows the tracks `Hide track` hid, dimmed. Off by default.
+    #[serde(rename = "showHiddenTracks")]
+    pub show_hidden_tracks: bool,
     /// `Show CPU and RAM meters`.
     #[serde(rename = "showHardwareMeters")]
     pub hardware_meters: bool,
@@ -253,6 +257,13 @@ pub struct Settings {
     /// (`plugins::scan::default_folders`). Desktop only.
     #[serde(rename = "pluginFolders")]
     pub plugin_folders: Vec<String>,
+    /// The shipped sound release (`sounds/release.txt`) the desktop's missing-sounds question was last shown for (our
+    /// own key), "" before any: it shows again only for a newer one (`app/sounds.rs`).
+    #[serde(rename = "soundsNoticeSeen")]
+    pub sounds_notice_seen: String,
+    /// The automation editor's value snap (our own key): on, and its grid; on with `Rows` by default.
+    #[serde(rename = "automationValueSnap")]
+    pub automation_value_snap: ValueSnap,
 }
 
 impl Default for Settings {
@@ -282,6 +293,7 @@ impl Default for Settings {
             middle_c_is_c4: false,
             range_labels: true,
             continuous_scroll: false,
+            show_hidden_tracks: false,
             hardware_meters: true,
             lock_pads: true,
             last_audio_format: ExportFormat::Wav.id(),
@@ -297,6 +309,8 @@ impl Default for Settings {
             song_browser_ordering: Sort::AZ.id(),
             import_notice_accepted: false,
             plugin_folders: Vec::new(),
+            sounds_notice_seen: String::new(),
+            automation_value_snap: ValueSnap::default(),
         }
     }
 }
@@ -645,6 +659,7 @@ mod tests {
             middle_c_is_c4: !d.middle_c_is_c4,
             range_labels: !d.range_labels,
             continuous_scroll: !d.continuous_scroll,
+            show_hidden_tracks: !d.show_hidden_tracks,
             hardware_meters: !d.hardware_meters,
             lock_pads: !d.lock_pads,
             last_audio_format: 5,
@@ -660,6 +675,11 @@ mod tests {
             song_browser_ordering: 2,
             import_notice_accepted: !d.import_notice_accepted,
             plugin_folders: vec!["/plugins".into()],
+            sounds_notice_seen: "0.1.4".into(),
+            automation_value_snap: ValueSnap {
+                on: false,
+                grid: crate::ui::automation::value::ValueGrid::Percent(10),
+            },
         }
     }
 
@@ -856,6 +876,7 @@ mod tests {
                 "ModuleBrowserOrdering",
                 "SongBrowserOrdering",
                 "SoundFontPatchOrdering",
+                "automationValueSnap",
                 "bgAudio",
                 "continuousScroll",
                 "demoSongsVersion",
@@ -879,11 +900,13 @@ mod tests {
                 "recentKbdSizeCells",
                 "reclatency",
                 "showHardwareMeters",
+                "showHiddenTracks",
                 "showKeyNames",
                 "showRangeIndexLabels",
                 "showTwoRows",
                 "showWheels",
                 "soundModeAndr",
+                "soundsNoticeSeen",
                 "theme",
                 "uiscalefactor",
                 "whatsNewSeen"

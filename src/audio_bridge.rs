@@ -401,6 +401,7 @@ fn playback_clip(clip: &Clip) -> Result<Clip, SongAudioError> {
             points.push(AutomationPoint {
                 tick: u64::from(*pos),
                 value: (f64::from(*value) * 65535.0).round() as u16,
+                shape: crate::song::points::shape_at(clip, *pos),
             });
         }
     }

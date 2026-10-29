@@ -86,4 +86,16 @@ impl MidiMsg {
             _ => return None,
         })
     }
+
+    /// The MIDI channel, 0…15.
+    pub fn channel(self) -> u8 {
+        match self {
+            Self::NoteOn { ch, .. }
+            | Self::NoteOff { ch, .. }
+            | Self::Cc { ch, .. }
+            | Self::PitchBend { ch, .. }
+            | Self::ChannelPressure { ch, .. }
+            | Self::Program { ch, .. } => ch,
+        }
+    }
 }

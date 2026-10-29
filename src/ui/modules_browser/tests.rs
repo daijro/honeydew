@@ -1,8 +1,8 @@
 use super::*;
 
 /// The Modules browser's list: `Paste`, `Rack Preset`, `Instrument`, then the sections. The NOTE EFFECT section's five entries are
-/// all the note effects of the registry. Lemon Reverb and Lemon Limiter are Honeydew's own (`honeydew_audio::lemon`), and
-/// Lemon Trio, Lemon Sampler and Lemon Parametric EQ its built-in plugins (`crate::plugins::builtin`).
+/// all the note effects of the registry. Lemon Reverb and Lemon Limiter are Honeydew's own (`honeydew_audio::lemon`), as is
+/// the Dynamic EQ, and Lemon Trio, Lemon Sampler and Lemon Parametric EQ its built-in plugins (`crate::plugins::builtin`).
 const SPEC: &[(&str, &[&str])] = &[
     ("", &["Paste", "Rack Preset", "Instrument"]),
     (
@@ -48,6 +48,7 @@ const SPEC: &[(&str, &[&str])] = &[
         "FILTER",
         &[
             "Comb Filter",
+            "Dynamic EQ",
             "Equalizer",
             "Lemon Parametric EQ",
             "Filter",
@@ -137,6 +138,7 @@ fn every_current_effect_is_listed_once_and_legacy_ids_never() {
     let mut listed_sorted = listed.clone();
     listed_sorted.sort();
     let current: Vec<u16> = (params::modules().chain(&params::LEMON_MODULES))
+        .chain([&params::DYNAMIC_EQ])
         .filter(|m| !m.legacy)
         .map(|m| m.id)
         .collect();
@@ -234,6 +236,7 @@ fn search_keeps_matching_entries_and_hides_empty_sections() {
         names(&rows("eq")),
         [
             "FILTER",
+            "Dynamic EQ",
             "Equalizer",
             "Lemon Parametric EQ",
             "Graphic EQ",
@@ -863,9 +866,10 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             "Randomizer",
             "Scale",
             "Arpeggiator",
-            // Honeydew's own: 1002, 1003, then the built-in plugin.
+            // Honeydew's own: 1002, 1003, 1004, then the built-in plugin.
             "Lemon Reverb",
             "Lemon Limiter",
+            "Dynamic EQ",
             "Lemon Parametric EQ",
         ]
     );

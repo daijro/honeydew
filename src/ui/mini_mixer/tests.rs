@@ -187,7 +187,7 @@ impl Rig {
     }
 
     fn frame(&mut self, events: Vec<Event>) {
-        let rows = track_rows(&self.song);
+        let rows = track_rows(&self.song, false);
         let shown: Vec<(TrackRow, f32)> = (rows.iter().enumerate())
             .map(|(i, &row)| (row, i as f32 * ROW_H))
             .collect();

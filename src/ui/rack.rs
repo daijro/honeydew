@@ -27,6 +27,10 @@
 //! A card's `Set Range` (`Set First Note` on a Slicer) learns the module's `ADD1` key range from the next keys played
 //! ([`RackPanel::key_played`]); the SENDS section edits the channel's `SEND`s by the channels the host names
 //! ([`RackPanel::targets`], [`send_targets`]); `Create FX Channel` asks the host ([`create_send`]).
+//!
+//! Honeydew's own: a dynamics card (a module that [takes a key](honeydew_audio::takes_key)) has `Sidechain` in its ≡
+//! menu, which picks the channel whose output keys its detector, or `Sidechain: Off` ([`RackPanel::key_menu`]); its
+//! header shows the source's name.
 
 use std::collections::HashMap;
 
@@ -153,6 +157,7 @@ pub fn ui_height(type_id: u16) -> Option<f32> {
         // Plugin modules: their status, the editor button and a page of params.
         crate::song::plugin::PLUGIN_INSTRUMENT | crate::song::plugin::PLUGIN_EFFECT => 8.0,
         honeydew_audio::lemon::REVERB | honeydew_audio::lemon::LIMITER => 7.0,
+        honeydew_audio::dynamic_eq::DYNAMIC_EQ => 11.0,
         _ => return None,
     })
 }
@@ -458,6 +463,8 @@ pub enum CardAction {
     SetRange,
     /// `Set Full Range`: instrument cards but the Slicer's, while the key range is not 0–127.
     SetFullRange,
+    /// `Sidechain`: a module that takes a key; opens its source menu ([`RackPanel::key_menu`]).
+    Sidechain,
 }
 
 /// What a preset picker loads into.
@@ -527,7 +534,7 @@ pub fn apply(rack: &mut Rack, instance_id: i32, action: CardAction) -> Outcome {
         CardAction::Replace => Outcome::Browse(InsertAt::Replace(instance_id)),
         CardAction::Copy => Outcome::Copied,
         CardAction::SavePreset => Outcome::SavePreset,
-        CardAction::SetRange => Outcome::Nothing,
+        CardAction::SetRange | CardAction::Sidechain => Outcome::Nothing,
         // The engine reads the key range at build.
         CardAction::SetFullRange => {
             let file = &mut rack.modules[index].file;
@@ -775,7 +782,7 @@ fn attaches(module: &ModuleInstance, notes: bool) -> bool {
 
 /// The ≡ menu of a card of module type `type_id`, two columns, every item enabled. An instrument's adds `Set Range`
 /// (`Set First Note` on a Slicer) at the foot of the first column, and under it `Set Full Range` while its key range is
-/// not `full` (never on a Slicer).
+/// not `full` (never on a Slicer); a module that takes a key adds `Sidechain` there.
 fn card_menu(minimized: bool, type_id: u16, full: bool) -> Vec<PopupItem<CardAction>> {
     use CardAction::*;
     let minimize = if minimized { "Maximize" } else { "Minimize" };
@@ -785,6 +792,7 @@ fn card_menu(minimized: bool, type_id: u16, full: bool) -> Vec<PopupItem<CardAct
             Some((SetRange, 0, 4, "Set Range")),
             (!full).then_some((SetFullRange, 0, 5, "Set Full Range")),
         ),
+        None if honeydew_audio::takes_key(type_id) => (Some((Sidechain, 0, 4, "Sidechain")), None),
         None => (None, None),
     };
     [
@@ -832,6 +840,9 @@ pub struct SendTarget {
     pub name: String,
     /// `Add Send` offers it: the master or a send channel that sends nothing back to the rack's channel.
     pub offered: bool,
+    /// A sidechain of the rack's modules may name it: not the master, and nothing of the rack's channel (its sends and
+    /// sidechains) leads to it, which would close a cycle.
+    pub key: bool,
     /// Its send bus (`RHED`@8): ≥ 1 on a send channel.
     pub bus: i32,
     /// A path of its sends reaches the master (the master itself does).
@@ -840,13 +851,18 @@ pub struct SendTarget {
 
 /// What channel `channel`'s sends can name: every other channel of `song`, in song order. `Add Send` offers each send
 /// channel by its name, and the master too (it can come back after its send was removed, and the menu has no other
-/// way); a channel whose sends lead back to `channel` is not offered, so the app never makes a cycle.
+/// way); a channel whose sends or sidechains lead back to `channel` is not offered, nor as a sidechain source one that
+/// `channel`'s lead to, so the app never makes a cycle.
 pub fn send_targets(song: &Song, channel: usize) -> Vec<SendTarget> {
     let Some(this) = song.channels.get(channel) else {
         return Vec::new();
     };
-    // Whether a path of sends leads from channel id `from` to `to`.
-    let reaches = |from: i32, to: i32| {
+    // Each sidechain: (its source's id, its module's channel's id).
+    let keys: Vec<(i32, i32)> = (song.channels.iter())
+        .flat_map(|c| (c.rack.modules.iter()).filter_map(move |m| Some((m.key_source()?, c.id))))
+        .collect();
+    // Whether a path of sends, with `keyed` of sidechains too, leads from channel id `from` to `to`.
+    let reaches = |from: i32, to: i32, keyed: bool| {
         let (mut seen, mut stack) = (Vec::new(), vec![from]);
         while let Some(id) = stack.pop() {
             if id == to {
@@ -862,6 +878,8 @@ pub fn send_targets(song: &Song, channel: usize) -> Vec<SendTarget> {
                     .flat_map(|c| &c.file.sends)
                     .map(|s| s.target_channel_id),
             );
+            let keyed = keys.iter().filter(|&&(source, _)| keyed && source == id);
+            stack.extend(keyed.map(|&(_, channel)| channel));
         }
         false
     };
@@ -870,9 +888,11 @@ pub fn send_targets(song: &Song, channel: usize) -> Vec<SendTarget> {
         .map(|(index, c)| SendTarget {
             id: c.id,
             name: c.name.clone(),
-            offered: (index == 0 || c.kind == ChannelKind::EffectTrack) && !reaches(c.id, this.id),
+            offered: (index == 0 || c.kind == ChannelKind::EffectTrack)
+                && !reaches(c.id, this.id, true),
+            key: index != 0 && !reaches(this.id, c.id, true),
             bus: c.bus_id,
-            to_master: reaches(c.id, 0),
+            to_master: reaches(c.id, 0, false),
         })
         .collect()
 }
@@ -1155,6 +1175,8 @@ pub struct RackPanel {
     played: Vec<u8>,
     /// The open send-target menu: the send it retargets (`None`: `Add Send`) and its centre.
     send_menu: Option<(Option<usize>, Pos2)>,
+    /// The open sidechain menu: its card and its centre ([`Self::key_menu`]).
+    key_menu: Option<(i32, Pos2)>,
     /// The card held to reorder it. Meanwhile every card shows minimized, a view the song does not hold.
     drag: Option<Drag>,
     /// The swap slides by instance id: how far (U) each card is drawn from its laid-out place.
@@ -1487,6 +1509,7 @@ impl RackPanel {
             || self.rack_menu.is_some()
             || self.dialog.is_some()
             || self.send_menu.is_some()
+            || self.key_menu.is_some()
             || self.input_menu.is_some();
         if taken || popup {
             self.scroller.yield_touch();
@@ -1813,6 +1836,39 @@ impl RackPanel {
         }
     }
 
+    /// The open sidechain menu of a card's module, one column: `Sidechain: Off`, then each channel that may key it
+    /// ([`SendTarget::key`]) by name, the current pick shown current. A pick is a final edit, which rebuilds the engine.
+    fn key_menu(&mut self, ui: &Ui, cx: &UiCtx, channel: &mut Channel, actions: &mut RackActions) {
+        let Some((id, at)) = self.key_menu else {
+            return;
+        };
+        let Some(module) = channel.rack.get_mut(id) else {
+            self.key_menu = None;
+            return;
+        };
+        let current = module.sidechain;
+        let offered = (self.targets.iter()).filter(|t| t.key || Some(t.id) == current);
+        let picks = std::iter::once((None, "Sidechain: Off".to_owned()))
+            .chain(offered.map(|t| (Some(t.id), t.name.clone())));
+        let items: Vec<_> = (picks.enumerate())
+            .map(|(row, (pick, name))| PopupItem {
+                current: pick == current,
+                ..PopupItem::new(pick, 0, row, name)
+            })
+            .collect();
+        let ctx = ui.ctx();
+        let menu = ui.id().with("key menu");
+        let r = popup::show(ctx, menu, at, ctx.content_rect(), &items, cx);
+        if r.close {
+            self.key_menu = None;
+            ctx.request_repaint();
+        }
+        if let Some(pick) = r.selected.filter(|&pick| pick != current) {
+            module.sidechain = pick;
+            actions.replace_song = true;
+        }
+    }
+
     /// Adds what one card's pass changed, `edits` on `module` of the song's channel `index`, to `actions`.
     fn absorb(
         &mut self,
@@ -1990,6 +2046,20 @@ impl RackPanel {
             module_name(module.type_id)
         };
         let (label, font) = (label.to_owned(), m.font_id(FontSize::Pt12));
+        // A sidechain's source, by name: 10 pt in the channel colour, at the label cell's right 0.5 U short of the preset
+        // button, in at most half the cell.
+        let source = module.key_source();
+        let name = match source.and_then(|id| self.targets.iter().find(|t| t.id == id)) {
+            Some(source) => {
+                let (tag, small) = (format!("SC: {}", source.name), m.font_id(FontSize::Pt10));
+                let right = name.right() - m.u(0.5);
+                let w = text_width(ui, &tag, small.clone()).min(name.width() / 2.0);
+                let at = name.with_min_x(right - w).with_max_x(right);
+                widgets::truncated(ui.painter(), at, Align2::RIGHT_CENTER, &tag, small, ink, 0);
+                name.with_max_x(at.left() - m.u(0.25))
+            }
+            None => name,
+        };
         widgets::truncated(
             ui.painter(),
             name,
@@ -2302,6 +2372,7 @@ impl RackPanel {
         actions: &mut RackActions,
     ) {
         self.send_menu(ui, cx, channel, actions);
+        self.key_menu(ui, cx, channel, actions);
         let ctx = ui.ctx();
         let screen = ctx.content_rect();
         if let Some((id, at)) = self.card_menu {
@@ -2325,6 +2396,9 @@ impl RackPanel {
                 }
                 selected => selected,
             };
+            if selected == Some(CardAction::Sidechain) {
+                self.key_menu = Some((id, at));
+            }
             if selected == Some(CardAction::SetRange) {
                 // One key-learn at a time: another card's ends.
                 if let Some((other, _)) = self.learning.replace((id, None)) {

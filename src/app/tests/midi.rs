@@ -8,7 +8,7 @@ use std::sync::mpsc::SyncSender;
 
 use super::*;
 use crate::app::midi::{BURST_SECS, Midi};
-use crate::midi::device::{MidiChoice, MidiLink};
+use crate::midi::device::{Message, MidiChoice, MidiLink};
 use crate::midi::links;
 use crate::song::DrumGrid;
 
@@ -16,7 +16,7 @@ use crate::song::DrumGrid;
 #[derive(Default)]
 pub(super) struct Device {
     ports: RefCell<Vec<String>>,
-    tx: RefCell<Option<SyncSender<Vec<u8>>>>,
+    tx: RefCell<Option<SyncSender<Message>>>,
     opens: RefCell<usize>,
     lists: RefCell<usize>,
 }
@@ -53,9 +53,15 @@ impl Rig {
 
     /// The controller sends `messages`; the next frame plays them.
     pub(super) fn midi(&mut self, device: &Device, messages: &[&[u8]]) {
+        self.midi_from(device, "Keys", messages);
+    }
+
+    /// [`Self::midi`] from the device named `name`.
+    fn midi_from(&mut self, device: &Device, name: &str, messages: &[&[u8]]) {
         for message in messages {
             let tx = device.tx.borrow();
-            tx.as_ref().expect("open").send(message.to_vec()).unwrap();
+            let message = (name.to_owned(), message.to_vec());
+            tx.as_ref().expect("open").send(message).unwrap();
         }
         self.frame(vec![]);
     }
@@ -348,7 +354,7 @@ fn what_the_keyboard_sent_while_the_page_was_hidden_is_dropped_on_its_return() {
         [0x80, 60, 0],
         [0x90, 62, 100],
     ] {
-        tx.send(message.to_vec()).unwrap();
+        tx.send(("Keys".to_owned(), message.to_vec())).unwrap();
     }
     rig.frame(vec![]);
     assert_eq!(rig.take(), Vec::<String>::new());
@@ -388,7 +394,7 @@ fn a_key_the_old_connection_queued_is_released_by_the_reconnect_in_the_same_fram
     let (mut rig, keys) = midi_rig();
     // The note-on waits in the queue when the frame finds the keyboard gone: the frame drains it, then releases.
     let tx = keys.tx.borrow().clone().expect("open");
-    tx.send(vec![0x90, 60, 100]).unwrap();
+    tx.send(("Keys".to_owned(), vec![0x90, 60, 100])).unwrap();
     keys.ports.borrow_mut().clear();
     rig.next_frame_at(rig.time + 2.0);
     rig.frame(vec![]);
@@ -983,4 +989,64 @@ fn a_frames_midi_notes_and_live_controllers_reach_the_engine_in_input_order() {
             "LiveParam 1 4 0.500"
         ]
     );
+}
+
+#[test]
+fn a_monitored_channel_plays_along_once_and_each_channel_takes_only_what_its_midi_input_passes() {
+    let (mut rig, keys) = midi_rig();
+    rig.app.song.channels[2].file.input_monitoring = true;
+    rig.midi(&keys, &[&[0x90, 60, 100]]);
+    assert_eq!(rig.take(), ["NoteOn 1 60 100", "NoteOn 2 60 100"]);
+    rig.midi(&keys, &[&[0x80, 60, 0]]);
+    assert_eq!(rig.take(), ["NoteOff 1 60", "NoteOff 2 60"]);
+    // Selected and monitoring: once.
+    rig.app.selected_channel = 2;
+    rig.midi(&keys, &[&[0x90, 62, 100]]);
+    assert_eq!(rig.take(), ["NoteOn 2 62 100"]);
+    rig.midi(&keys, &[&[0x80, 62, 0]]);
+    rig.app.selected_channel = 1;
+    rig.take();
+    // Channel 2 takes MIDI channel 2 only: a channel-1 note reaches the selected channel alone.
+    rig.app.song.channels[2].file.midi_input.channel = Some(1);
+    rig.midi(&keys, &[&[0x90, 64, 100], &[0x91, 65, 100]]);
+    assert_eq!(
+        rig.take(),
+        ["NoteOn 1 64 100", "NoteOn 1 65 100", "NoteOn 2 65 100"]
+    );
+    rig.midi(&keys, &[&[0x80, 64, 0], &[0x81, 65, 0]]);
+    rig.take();
+    // The selected channel takes the device `Keys` only: `Pads` plays channel 2 on MIDI channel 2, and its pitch bend
+    // follows.
+    rig.app.song.channels[1].file.midi_input.device = Some("Keys".to_owned());
+    rig.midi_from(&keys, "Pads", &[&[0x90, 67, 100], &[0x91, 69, 100]]);
+    assert_eq!(rig.take(), ["NoteOn 2 69 100"]);
+    rig.midi_from(&keys, "Pads", &[&[0xE1, 0x00, 0x40]]);
+    assert_eq!(rig.take(), ["LiveParam 2 4 0.500"]);
+}
+
+#[test]
+fn rec_records_midi_into_the_armed_channels_and_not_the_selected_one() {
+    let (mut rig, keys) = midi_rig();
+    rig.app.settings.count_in = false;
+    rig.app.song.channels[2].file.record_armed = true;
+    rig.app.main_screen.armed = true;
+    rig.midi(&keys, &[&[0x90, 60, 100]]);
+    assert!(rig.app.main_screen.playing);
+    // Armed, not monitoring: channel 2 records without sounding; the selected channel sounds.
+    let log = rig.take();
+    assert!(log.contains(&"NoteOn 1 60 100".to_owned()), "{log:?}");
+    assert!(!log.iter().any(|l| l.starts_with("NoteOn 2")), "{log:?}");
+    rig.rec.0.borrow_mut().tick = u64::from(crate::song::PPQ);
+    rig.midi(&keys, &[&[0x80, 60, 0]]);
+    let notes = |rig: &Rig, c: usize| -> Vec<(u8, f64)> {
+        let lanes = &rig.app.song.channels[c].lanes;
+        let events = lanes.iter().flat_map(|l| &l.clips).flat_map(|c| &c.events);
+        (events.filter_map(|e| match *e {
+            crate::song::Event::Note { key, len_beats, .. } => Some((key, len_beats)),
+            _ => None,
+        }))
+        .collect()
+    };
+    assert_eq!(notes(&rig, 2), [(60, 1.0)]);
+    assert_eq!(notes(&rig, 1), []);
 }

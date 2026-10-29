@@ -59,6 +59,9 @@ mod bundle_wait;
 pub(crate) mod live;
 // Audio files dropped on the app.
 mod file_drop;
+// The desktop's sound library: its install and the notice at start.
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+mod sounds;
 
 /// How long a flash (`Saved!`) shows.
 const FLASH_SECS: f64 = 1.5;
@@ -238,6 +241,9 @@ pub struct HoneydewApp {
     importing: Option<file_drop::Importing>,
     #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
     control: Option<control::Bridge>,
+    /// `Install sound library…` running (`app/sounds.rs`).
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+    sounds: Option<crate::content::install::Job>,
 }
 
 impl Default for HoneydewApp {
@@ -315,6 +321,8 @@ impl Default for HoneydewApp {
             importing: None,
             #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
             control: None,
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            sounds: None,
         }
     }
 }
@@ -355,6 +363,8 @@ impl HoneydewApp {
             );
         }
         app.extract_demo_songs(cfg!(target_arch = "wasm32"));
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        app.sounds_at_start();
         // Once per start, before the purge (whose end every move waits for): a folder of the songs folder named as a row
         // beside it (`My Songs/Demo Songs`) gets a free numbered name, so that it is listed, not hidden.
         if let Err(err) = crate::ui::main_menu::rename_shadowed_folders(&mut *app.files.library) {
@@ -1653,7 +1663,7 @@ impl HoneydewApp {
             let channel = channels.iter().position(|c| c.id == id)?;
             Some((channel, lane, clip))
         });
-        let clips = (self.note_record.clip(&self.song).into_iter()).chain(auto);
+        let clips = (self.note_record.clips(&self.song).into_iter()).chain(auto);
         let mut takes: Vec<LiveTake> = clips
             .filter_map(|(channel, lane, id)| {
                 let lane_clips = &channels[channel].lanes.get(lane)?.clips;
@@ -1941,7 +1951,7 @@ impl HoneydewApp {
             theme: &self.theme,
             m: &metrics,
         };
-        let tracks = track_rows(&self.song);
+        let tracks = track_rows(&self.song, self.settings.show_hidden_tracks);
         let answer = self.nav.answer();
         // The piano's scroll and zoom are the current channel's.
         (self.main_screen).keys_for(self.song.channels.get(self.selected_channel).map(|c| c.id));
@@ -2160,8 +2170,10 @@ impl HoneydewApp {
                 let escape = !self.nav.overlays.is_empty() && views::take_escape(ui);
                 // After the view, which makes its editor's state: SOLO CLIP shows while the current track has a
                 // current clip, in every view.
-                let current = (self.main_screen.clips).clip_for(app.song, *app.selected);
-                row_clip = sample_row::current(app.song, *app.selected, &self.slots.audio_editor);
+                let current = (self.main_screen.clips).current_clip(&app);
+                let show = app.settings.show_hidden_tracks;
+                row_clip =
+                    sample_row::current(app.song, *app.selected, &self.slots.audio_editor, show);
                 let row_slot = |key: ClipKey| key.clip(app.song)?.file.sample.as_deref();
                 let input = ScreenInput {
                     // As the view left it: the editor followed the playlist, or collapsed.
@@ -2445,7 +2457,8 @@ impl HoneydewApp {
             self.control_moved();
         }
         // The current track's current clip, whatever the view shows, after this frame's edits, undo and track change.
-        let current = (self.main_screen.clips).clip_for(&self.song, self.selected_channel);
+        let show = self.settings.show_hidden_tracks;
+        let current = (self.main_screen.clips).clip_for(&self.song, self.selected_channel, show);
         self.preview(ctx, actions.preview, current.map(ClipKey::from), tick);
         self.live_lane();
         // Channel params moved go into the undo history once no pointer is down and a burst of linked MIDI CC moves has
@@ -2478,6 +2491,8 @@ impl HoneydewApp {
         self.midi_import(ctx, tick);
         self.export_started(ctx);
         self.demo_restore(ctx);
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        self.sounds(ctx, &metrics);
         self.burn_notes(ctx, tick);
         self.bundle_wait(ctx, tick);
         self.file_drop(ctx, &metrics, tick);
@@ -5866,8 +5881,9 @@ mod tests {
         ] {
             assert_eq!(rig.color_of(item), Some(dim), "{item}");
         }
-        // Standing on the CTRL button (x 669..725, on the panel's top), six rows of 1.25 U: a disabled item does nothing.
-        rig.click(pos2(697.0, PANEL_TOP - 2.5 * 40.0));
+        // Standing on the CTRL button (x 669..725, on the panel's top), seven rows of 1.25 U: a disabled item (`Add
+        // automation track`) does nothing.
+        rig.click(pos2(697.0, PANEL_TOP - 3.5 * 40.0));
         assert_eq!(rig.overlays(), [Overlay::CtrlMenu]);
         // A tap outside closes it and reaches nothing below.
         rig.click(E4);

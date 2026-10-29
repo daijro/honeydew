@@ -29,6 +29,8 @@ fn lane_key(lane: &Lane) -> (LaneKind, Option<AutomationTarget>, &str) {
 }
 
 fn lane_views(lane: &mut Lane, from: &Lane) {
+    // Hidden, as a zipped channel: each person's own view.
+    lane.hidden = from.hidden;
     let to = &mut lane.file;
     let old = &from.file;
     local_fields!(LaneFileState, to, old; current_clip_id; flag, custom_label, unknown_chunks, desc_extra);
@@ -41,7 +43,7 @@ fn lane_views(lane: &mut Lane, from: &Lane) {
             .map_or(&default, |c| &c.file);
         let to = &mut clip.file;
         local_fields!(ClipFileState, to, old; zoom;
-            source_len_beats, sample, unknown_chunks, header_extra, raw_events);
+            source_len_beats, sample, unknown_chunks, header_extra, raw_events, shapes);
     }
 }
 
@@ -114,7 +116,7 @@ fn views(song: &mut Song, local: Option<&Song>) {
             name, kind, id, hue, params, bus_id, output_bus, rack, lanes, drum_kit, file);
         let to = &mut channel.file;
         let from = &from.file;
-        local_fields!(ChannelFileState, to, from; view, input_monitoring, record_armed;
+        local_fields!(ChannelFileState, to, from; view, input_monitoring, record_armed, midi_input;
             guid, preset_name, sends, names, rack_order, cc_links, rack_header_extra,
             params_extra, rack_unknown_chunks, channel_unknown_chunks, header_extra);
         for module in &mut channel.rack.modules {
@@ -125,6 +127,7 @@ fn views(song: &mut Song, local: Option<&Song>) {
                 params: _,
                 common: _,
                 file: _,
+                sidechain: _,
             } = module;
             *minimized = original
                 .and_then(|c| {
@@ -373,7 +376,7 @@ fn merge_channel(
 
 fn merge_lane(b: &Lane, c: &Lane, e: &Lane, path: &str, bar: u32) -> Result<Lane, Conflict> {
     let mut out = c.clone();
-    fields!(Lane, b, c, e, out, path; kind, target, label, swing, grid, file; clips, last_clip_id);
+    fields!(Lane, b, c, e, out, path; kind, target, label, swing, grid, hidden, file; clips, last_clip_id);
     out.last_clip_id = b.last_clip_id.max(c.last_clip_id).max(e.last_clip_id);
     out.clips = keyed(
         &b.clips,

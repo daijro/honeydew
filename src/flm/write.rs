@@ -255,11 +255,17 @@ pub fn write_rack(modules: &[ModuleInstance]) -> Result<Vec<u8>, FlmError> {
     Ok(writer.into_bytes())
 }
 
-/// An `RMOd` payload: the type and instance id, then the body.
+/// An `RMOd` payload: the type and instance id, then the body, then Honeydew's own sidechain
+/// ([`ModuleInstance::sidechain`]) if it has one: an `HDSc`, `i32` the source channel's id, which FL Studio Mobile skips as
+/// an unknown chunk. A module preset (the body alone) keeps none.
 fn write_module(writer: &mut ChunkWriter, module: &ModuleInstance) -> Result<(), FlmError> {
     writer.u32(u32::from(module.type_id))?;
     writer.u32(module.instance_id as u32)?;
-    write_module_body(writer, module)
+    write_module_body(writer, module)?;
+    if let Some(source) = module.sidechain {
+        writer.chunk(*b"HDSc", |writer| writer.i32(source))?;
+    }
+    Ok(())
 }
 
 /// The module chunks: `HEAD DESC PRST ADD1 PRMS SMPR [CSTM]`, then the unknown ones kept.
@@ -423,6 +429,15 @@ fn write_channel(writer: &mut ChunkWriter, channel: &Channel, row: usize) -> Res
         let id = if tempo { *b"HDTk" } else { *b"TRKH" };
         writer.chunk(id, |writer| write_lane(writer, lane))?;
     }
+    // Honeydew's own MIDI input, only when set (`flm::read` reads it back; FL Studio Mobile skips it): `vstr32` the
+    // device ("" for All) and `u32` the MIDI channel 1…16 (0 for All).
+    let input = &channel.file.midi_input;
+    if input.device.is_some() || input.channel.is_some() {
+        writer.chunk(*b"HDMi", |writer| {
+            writer.vstr32(input.device.as_deref().unwrap_or_default().as_bytes())?;
+            writer.u32(input.channel.map_or(0, |c| u32::from(c) + 1))
+        })?;
+    }
     write_raw(writer, &channel.file.channel_unknown_chunks)
 }
 
@@ -473,6 +488,10 @@ fn write_lane(writer: &mut ChunkWriter, lane: &Lane) -> Result<(), FlmError> {
             write_clip(writer, clip, lane.kind, param)
         })?;
     }
+    // A hidden track (Honeydew's own) holds an empty `HDHd`, which a reader that does not know it skips.
+    if lane.hidden {
+        writer.chunk(*b"HDHd", |_| Ok(()))?;
+    }
     write_raw(writer, &lane.file.unknown_chunks)
 }
 
@@ -515,6 +534,19 @@ fn write_clip(
             .ok_or_else(|| FlmError::new("EVN2", FlmErrorKind::BadValue))?;
         writer.raw(&bytes)
     })?;
+    // Honeydew's segment shapes, none for the straight line: an `HDSh`, which a reader that does not know it skips as an
+    // unknown chunk (and plays the segments as lines). Records of u32 tick, u8 shape (Linear, Square, Smooth, Stairs),
+    // u8 tension (%).
+    if kind == LaneKind::Automation && !clip.file.shapes.is_empty() {
+        writer.chunk(*b"HDSh", |writer| {
+            for &(tick, shape) in &clip.file.shapes {
+                writer.u32(tick)?;
+                writer.u8(shape.kind as u8)?;
+                writer.u8(shape.tension)?;
+            }
+            Ok(())
+        })?;
+    }
     write_raw(writer, &clip.file.unknown_chunks)
 }
 

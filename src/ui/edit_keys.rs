@@ -83,6 +83,21 @@ pub fn take(ctx: &Context) -> Option<EditKey> {
     holds(ctx).then(|| ctx.input_mut(|i| take_from(keys, i)))?
 }
 
+/// This frame's `focusUp` (1) or `focusDown` (−1) for a grid that holds the keyboard ([`holds`]) and the arrows
+/// ([`crate::ui::focus::hold_vertical`]), and whether Shift is held; taken.
+pub fn vertical(ctx: &Context) -> Option<(i32, bool)> {
+    let keys = keymap::for_os(ctx.os());
+    let take = |i: &mut InputState| {
+        let dir = match () {
+            _ if keys.consume_press(i, "focusUp") => 1,
+            _ if keys.consume_press(i, "focusDown") => -1,
+            _ => return None,
+        };
+        Some((dir, i.modifiers.shift))
+    };
+    holds(ctx).then(|| ctx.input_mut(take))?
+}
+
 /// The zoom actions of `keys` pressed in `input`, their keys consumed: the factor each axis's z (content units a
 /// point; x, y) is multiplied by, 1 for none.
 pub fn zoom_from(keys: &Keymap, input: &mut InputState) -> [f64; 2] {

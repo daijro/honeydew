@@ -21,13 +21,65 @@ impl Default for ChannelParams {
 impl ChannelParams {
     /// Automation names by index: 0–5 are
     /// `params::CHANNEL_PARAMS` (2, 3 and 5 are 0 in the bundled files; the mixer stores Mute and Solo in 2 and 3),
-    /// 6 has none and 7–133 are `MIDI CC #0` … `MIDI CC #126` (there is no CC #127). The send params
+    /// 6 has none and 7–133 are MIDI CC 0 … 126 (there is no CC 127): `CC <n> <name>` by the MIDI 1.0 control name, or
+    /// `CC <n>` for an undefined number (issue #19). The send params
     /// (`0x1000` / `0x2000` + a channel id) name their target: [`Self::send_name`].
     pub fn name(index: usize) -> Option<String> {
-        match index {
-            7..=133 => Some(format!("MIDI CC #{}", index - 7)),
-            _ => params::CHANNEL_PARAMS.get(index).map(|p| p.name.to_owned()),
-        }
+        let Some(cc) = index.checked_sub(7).filter(|_| index <= 133) else {
+            return params::CHANNEL_PARAMS.get(index).map(|p| p.name.to_owned());
+        };
+        let name = match cc {
+            0 => "Bank Select",
+            1 => "Modulation",
+            2 => "Breath",
+            4 => "Foot Controller",
+            5 => "Portamento Time",
+            6 => "Data Entry",
+            7 => "Volume",
+            8 => "Balance",
+            10 => "Pan",
+            11 => "Expression",
+            12 => "Effect Control 1",
+            13 => "Effect Control 2",
+            16..=19 | 80..=83 => "General Purpose",
+            64 => "Sustain",
+            65 => "Portamento",
+            66 => "Sostenuto",
+            67 => "Soft Pedal",
+            68 => "Legato",
+            69 => "Hold 2",
+            70 => "Variation",
+            71 => "Resonance",
+            72 => "Release Time",
+            73 => "Attack Time",
+            74 => "Brightness",
+            75 => "Decay Time",
+            76 => "Vibrato Rate",
+            77 => "Vibrato Depth",
+            78 => "Vibrato Delay",
+            84 => "Portamento Control",
+            88 => "High Resolution Velocity",
+            91 => "Reverb",
+            92 => "Tremolo",
+            93 => "Chorus",
+            94 => "Detune",
+            95 => "Phaser",
+            96 => "Data Increment",
+            97 => "Data Decrement",
+            98 => "NRPN LSB",
+            99 => "NRPN MSB",
+            100 => "RPN LSB",
+            101 => "RPN MSB",
+            120 => "All Sound Off",
+            121 => "Reset All Controllers",
+            122 => "Local Control",
+            123 => "All Notes Off",
+            124 => "Omni Off",
+            125 => "Omni On",
+            126 => "Mono On",
+            _ => return Some(format!("CC {cc}")),
+        };
+        Some(format!("CC {cc} {name}"))
     }
 
     /// The name of channel send param `index` for the channel named `target`, the target's id (below 4096) being

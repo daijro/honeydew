@@ -279,7 +279,9 @@ fn only_an_opted_in_latching_button_may_press_a_continuous_param() {
 #[test]
 fn every_panel_fits_its_module() {
     let mut problems = Vec::new();
-    for spec in crate::params::modules().chain(&crate::params::LEMON_MODULES) {
+    for spec in (crate::params::modules().chain(&crate::params::LEMON_MODULES))
+        .chain([&crate::params::DYNAMIC_EQ])
+    {
         if let Some(panel) = panel_for(spec.id) {
             problems.extend(check(spec, panel));
         }

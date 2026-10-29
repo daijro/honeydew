@@ -23,7 +23,7 @@ impl Rig {
 
     /// The current clip: the current track's own (its lane's DESc@24).
     pub(super) fn current_clip(&self) -> Option<ClipRef> {
-        (self.app.main_screen.clips).clip_for(&self.app.song, self.app.selected_channel)
+        (self.app.main_screen.clips).clip_for(&self.app.song, self.app.selected_channel, false)
     }
 }
 

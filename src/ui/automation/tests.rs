@@ -36,13 +36,21 @@ const GRID_X: f32 = 50.0;
 const TOP: f32 = 64.0;
 const V: f32 = 254.0;
 const MAX: u16 = 65534;
+const LINE: points::Shape = points::Shape {
+    kind: points::ShapeKind::Linear,
+    tension: 50,
+};
 const TARGET: AutomationTarget = AutomationTarget {
     instance_id: 0,
-    param: 1,
+    param: 4,
 };
 
 fn p(tick: u32, value: u16) -> Point {
-    Point { tick, value }
+    Point {
+        tick,
+        value,
+        ..Default::default()
+    }
 }
 
 /// Where a touch binds `q`: its tick's x and its row's y (r without the +0.5).
@@ -58,14 +66,20 @@ fn drawn(q: Point) -> Pos2 {
     touch(q) + vec2(0.0, 1.0)
 }
 
-/// The master with an automation lane on its Pan (at 0.5), holding a 4-beat clip at song tick 0 with `pts`.
+/// The master with an automation lane on its Pitch Bend (at 0.5; its generic display reads percent), holding a 4-beat
+/// clip at song tick 0 with `pts`.
 fn song(pts: &[Point]) -> (Song, ClipKey) {
+    song_on(TARGET, pts)
+}
+
+/// [`song`] with the lane on `target`.
+fn song_on(target: AutomationTarget, pts: &[Point]) -> (Song, ClipKey) {
     let mut song = Song::default();
     let ch = &mut song.channels[0];
-    ch.params.0[1] = 0.5;
-    ch.add_automation_lane(TARGET);
+    ch.params.0[4] = 0.5;
+    ch.add_automation_lane(target);
     let lane = (ch.lanes.iter())
-        .position(|l| l.target == Some(TARGET))
+        .position(|l| l.target == Some(target))
         .expect("the lane");
     let clip = ch.lanes[lane].add_clip(0, 4.0);
     points::set_points(clip, PointKey::Automation, pts.to_vec());
@@ -361,7 +375,7 @@ fn the_screen_draws_its_lines_axis_overlay_curve_and_points_at_ppp_1_and_2() {
             )],
             "ppp {ppp}"
         );
-        // 6: the init value (Pan 0.5): a 1 px `menuFill` line across the grid at top + V·(1 − v) − 0.5 px.
+        // 6: the init value (Pitch Bend 0.5): a 1 px `menuFill` line across the grid at top + V·(1 − v) − 0.5 px.
         // In the grid: the ruler's `menuFill` baseline spans the same width above it.
         let init: Vec<Rect> = (rig.rects(menu).into_iter())
             .filter(|r| r.x_range() == (GRID_X..=1050.0) && r.top() >= TOP)
@@ -634,13 +648,14 @@ fn a_tapped_point_shows_its_guides_and_copy_delete_and_another_tap_deselects() {
             .iter()
             .any(|r| r.x_range() == (GRID_X..=1050.0) && close(r.center().y, TOP + 127.0, 0.5))
     );
-    // `Copy` `Delete` above the touch frame (the box grown 1.25 U), centred on the finger.
+    // `Copy` `Delete` `Edit value` `Set shape` above the touch frame (the box grown 1.25 U), centred on the finger.
     assert!(rig.text_at("Copy").is_some() && rig.text_at("Delete").is_some());
+    assert!(rig.text_at("Edit\nvalue").is_some());
     let frame_top = TOP + 127.0 - 40.0;
     let row = rig.ed.row.rect().expect("the row");
     assert!(close(row.top(), frame_top - 6.4 - 48.0, 1e-3), "{row:?}");
     assert!(close(row.center().x, GRID_X + 256.0, 0.5), "{row:?}");
-    assert!(close(row.width(), 2.0 * 1.6 * 32.0, 1e-3));
+    assert!(close(row.width(), OPS.len() as f32 * 1.6 * 32.0, 1e-3));
     // A held point hides the row at once; the release is a tap that deselects.
     rig.press(touch(pts[1]));
     assert_eq!(rig.ed.row.rect(), None);
@@ -678,7 +693,7 @@ fn copy_fills_the_clipboard_and_delete_removes_the_selection_in_one_edit() {
     rig.tap(touch(pts[1]));
     let copy = rig.text_at("Copy").expect("Copy");
     rig.tap(copy);
-    assert_eq!(clipboard(&rig.ctx), [(2.0, 32767.0 / 65534.0)]);
+    assert_eq!(clipboard(&rig.ctx), [(2.0, 32767.0 / 65534.0, LINE)]);
     assert_eq!((rig.points(), rig.edits), (pts.to_vec(), 0));
     let delete = rig.text_at("Delete").expect("Delete stays");
     rig.tap(delete);
@@ -690,7 +705,7 @@ fn copy_fills_the_clipboard_and_delete_removes_the_selection_in_one_edit() {
 fn a_long_press_shows_paste_where_the_finger_is_and_paste_lands_the_earliest_point_on_the_snapped_beat()
  {
     let mut rig = Rig::new(&[p(0, 0)]);
-    set_clipboard(&rig.ctx, vec![(1.0, 0.5), (1.5, 1.0)]);
+    set_clipboard(&rig.ctx, vec![(1.0, 0.5, LINE), (1.5, 1.0, LINE)]);
     let finger = pos2(300.0, 250.0);
     rig.hold(finger);
     assert!(
@@ -723,7 +738,7 @@ fn a_long_press_shows_paste_where_the_finger_is_and_paste_lands_the_earliest_poi
     rig.frame(vec![]);
     assert_eq!(rig.text_at("Paste"), None);
     rig.release(finger);
-    set_clipboard(&rig.ctx, vec![(0.0, 0.5)]);
+    set_clipboard(&rig.ctx, vec![(0.0, 0.5, LINE)]);
     rig.hold(finger);
     let touches = [finger, finger + vec2(100.0, 50.0)]
         .into_iter()
@@ -744,7 +759,7 @@ fn a_long_press_shows_paste_where_the_finger_is_and_paste_lands_the_earliest_poi
 fn a_long_press_that_moves_draws_a_marquee_and_the_scale_bar_scales() {
     let pts = [p(0, 0), p(128, 32767), p(256, 32767), p(448, MAX)];
     let mut rig = Rig::new(&pts);
-    set_clipboard(&rig.ctx, vec![(0.0, 0.5)]);
+    set_clipboard(&rig.ctx, vec![(0.0, 0.5, LINE)]);
     rig.hold(pos2(150.0, 150.0));
     assert!(rig.text_at("Paste").is_some());
     rig.move_to(pos2(250.0, 200.0));
@@ -878,7 +893,7 @@ fn the_init_line_sits_at_1_minus_v_and_a_tail_past_every_point_spans_the_grid() 
     for ppp in [1.0, 2.0] {
         let px = 1.0 / ppp;
         let mut rig = Rig::at(&[p(0, 0), p(256, 32767)], ppp, rect_at(ppp));
-        rig.song.channels[0].params.0[1] = 0.25;
+        rig.song.channels[0].params.0[4] = 0.25;
         rig.frame(vec![]);
         // In the grid: the ruler's `menuFill` baseline spans the same width above it.
         let init: Vec<Rect> = (rig.rects(menu).into_iter())
@@ -1210,7 +1225,7 @@ fn the_editing_keys_copy_cut_delete_and_paste_points_at_the_touched_beat_one_edi
     let mut rig = Rig::new(&pts);
     rig.tap(touch(pts[1]));
     rig.key(egui::Key::C, cmd);
-    assert_eq!(clipboard(&rig.ctx), [(2.0, 32767.0 / 65534.0)]);
+    assert_eq!(clipboard(&rig.ctx), [(2.0, 32767.0 / 65534.0, LINE)]);
     rig.key(egui::Key::Escape, Modifiers::NONE);
     assert_eq!((rig.selected(), rig.edits), (vec![false; 3], 0));
     // Touching the last point 20 points right of it puts the cursor on tick 660: the paste lands on 672.
@@ -1330,7 +1345,7 @@ fn a_press_held_over_a_focus_loss_adds_no_point_moves_none_and_shows_no_paste() 
     assert_eq!(rig.edits, 0);
     // A long press with points copied: no `Paste`.
     let mut rig = Rig::new(&[]);
-    set_clipboard(&rig.ctx, vec![(0.0, 0.5)]);
+    set_clipboard(&rig.ctx, vec![(0.0, 0.5, LINE)]);
     rig.hold(at);
     assert!(rig.text_at("Paste").is_some());
     lost(&mut rig);
@@ -1359,4 +1374,124 @@ fn the_play_box_fades_out_while_playing_and_back_in_stopped() {
         }
         assert_eq!(disc(&rig), fill, "playing {playing}");
     }
+}
+
+// Values in the target's units, typed values and the value grid (a Honeydew addition, GitHub issue #21).
+
+/// The channel Level: a dB param.
+const LEVEL: AutomationTarget = AutomationTarget {
+    instance_id: 0,
+    param: 0,
+};
+
+impl Rig {
+    /// A rig whose lane is on `target`.
+    fn on(target: AutomationTarget, pts: &[Point]) -> Self {
+        let mut rig = Self::new(pts);
+        (rig.song, rig.key) = song_on(target, pts);
+        rig.frame(vec![]);
+        rig
+    }
+
+    /// Opens the snap menu with a right click on the Snap button (the playhead knob, which covers it at beat 0, is
+    /// moved to beat 4 first).
+    fn open_snap_menu(&mut self) {
+        self.opts.playhead = 512;
+        let at = pos2(24.0, 24.0);
+        self.frame(vec![egui::Event::PointerMoved(at)]);
+        for pressed in [true, false] {
+            self.frame(vec![egui::Event::PointerButton {
+                pos: at,
+                button: PointerButton::Secondary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            }]);
+        }
+        self.frame(vec![]);
+    }
+}
+
+#[test]
+fn the_axis_labels_in_the_targets_units_a_pan_short_and_a_switch_at_its_steps() {
+    let (_, _, _, ink) = colors();
+    let labels = |target| {
+        let rig = Rig::on(target, &[p(0, 0)]);
+        let names: Vec<String> = rig.texts(ink).into_iter().map(|l| l.0).collect();
+        let ticks: Vec<f32> = (rig.rects(ink).into_iter())
+            .filter(|r| r.x_range() == (3.0..=45.0))
+            .map(|r| r.center().y)
+            .collect();
+        (names, ticks)
+    };
+    // The channel Pan: `100% right` … `center` … `100% left` in short.
+    let pan = AutomationTarget {
+        instance_id: 0,
+        param: 1,
+    };
+    assert_eq!(labels(pan).0, ["100R", "50R", "C", "50L", "100L"]);
+    // A switch (Mute): a tick at each of its two steps, each labelled once.
+    let mute = AutomationTarget {
+        instance_id: 0,
+        param: 2,
+    };
+    let (names, ticks) = labels(mute);
+    assert_eq!(names, ["On", "Off"]);
+    assert_eq!(ticks.len(), 2, "{ticks:?}");
+    assert!(
+        close(ticks[0], TOP, 0.5) && close(ticks[1], TOP + V, 0.5),
+        "{ticks:?}"
+    );
+    // The channel Level in dB.
+    let rig = Rig::on(LEVEL, &[p(0, 0)]);
+    // The ticks at 1, ¾, ½, ¼ and 0 of the range: +6.0, −4.5, −16.5, −31.3 dB and −inf. (In the test font the middle
+    // two do not fit 6 pt and truncate, keeping their tail.)
+    let names: Vec<String> = rig.texts(ink).into_iter().map(|l| l.0).collect();
+    assert_eq!(names.len(), 5, "{names:?}");
+    assert_eq!(
+        (names[0].as_str(), names[1].as_str()),
+        ("+6.0 dB", "-4.5 dB")
+    );
+    assert!(
+        names[2].starts_with("-16") && names[3].starts_with("-31"),
+        "{names:?}"
+    );
+    assert!(names[..4].iter().all(|n| n.ends_with("dB")), "{names:?}");
+    assert_eq!(names[4], "-inf.");
+}
+
+#[test]
+fn edit_value_sets_the_selected_points_to_a_typed_value_in_one_edit() {
+    let pts = [p(0, 0), p(128, 20000), p(256, 50000)];
+    let mut rig = Rig::on(LEVEL, &pts);
+    // A Shift marquee over the last two.
+    rig.modifiers = Modifiers::SHIFT;
+    let from = pos2(GRID_X + 100.0, TOP + 10.0);
+    rig.drag(from, &[vec2(100.0, 100.0), vec2(200.0, 240.0)]);
+    rig.modifiers = Modifiers::NONE;
+    assert_eq!(rig.selected(), [false, true, true]);
+    rig.tap(rig.text_at("Edit\nvalue").expect("Edit value"));
+    rig.frame(vec![egui::Event::Text("-6 dB".into())]);
+    rig.key(egui::Key::Enter, Modifiers::NONE);
+    let got = rig.points();
+    let level = crate::params::CHANNEL_PARAMS[0].display_text(points::unit(got[1].value));
+    assert_eq!((got[1].value, level.as_str()), (got[2].value, "-6.0 dB"));
+    assert_eq!((got[0], rig.edits), (pts[0], 1));
+}
+
+#[test]
+fn with_value_snap_at_10_percent_a_dragged_point_lands_on_a_line_and_off_it_moves_freely() {
+    let q = p(256, 32767);
+    let mut rig = Rig::new(&[q]);
+    rig.open_snap_menu();
+    rig.tap(rig.text_at("10 %").expect("the value column"));
+    // 30.5 rows up: 32767 + 30.5·65534/126 = 48630.6, nearest the 70 % line.
+    rig.drag(touch(q), &[vec2(0.0, -61.0)]);
+    let line = |k: u32| (f64::from(k) * 6553.4).round() as u16;
+    assert_eq!(rig.points(), [p(256, line(7))]);
+    // Off: 11.5 rows down is 5981.2 lower, on no line.
+    rig.open_snap_menu();
+    rig.tap(rig.text_at("Off").expect("Off"));
+    rig.drag(touch(rig.points()[0]), &[vec2(0.0, 23.0)]);
+    assert_eq!(rig.points(), [p(256, 39893)]);
+    assert!((0..=10).all(|k| line(k) != 39893));
 }

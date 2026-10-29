@@ -162,7 +162,7 @@ fn part_name(file: &str) -> bool {
 }
 
 /// The file at `path`, opened when it is a regular one: a FIFO or a device would block or never end.
-fn regular(path: &Path) -> Option<std::fs::File> {
+pub(super) fn regular(path: &Path) -> Option<std::fs::File> {
     let file = std::fs::metadata(path).ok()?.is_file();
     file.then(|| std::fs::File::open(path).ok())?
 }
@@ -236,26 +236,71 @@ impl Bundle {
         }
     }
 
-    /// The desktop's bundle: the first content dir with an index of
-    /// `$HONEYDEW_CONTENT_DIR`, `<exe dir>/content` and `<exe dir>/../share/honeydew/content` (macOS
-    /// `../Resources/content`). Never in unit tests, which build their own. On the web, the one [`install`]ed.
+    /// The desktop's bundle ([`Self::find_in`]) of `$HONEYDEW_CONTENT_DIR`, the installed library
+    /// ([`super::install::dir`]) and the one beside the app: `<exe dir>/content` or `<exe dir>/../share/honeydew/content`
+    /// (macOS `../Resources/content`), which then syncs into the installed one on a worker. Never in unit tests, which
+    /// build their own. On the web and Android, the one [`install`]ed.
     pub fn find() -> Option<Self> {
-        if cfg!(any(target_arch = "wasm32", target_os = "android")) {
-            return INSTALLED.lock().ok()?.take();
+        #[cfg(any(target_arch = "wasm32", target_os = "android"))]
+        return INSTALLED.lock().ok()?.take();
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+        {
+            if cfg!(test) {
+                return None;
+            }
+            let exe = std::env::current_exe().ok();
+            let beside = exe.as_deref().and_then(Path::parent).map(|dir| {
+                let installed = match cfg!(target_os = "macos") {
+                    true => "../Resources/content",
+                    false => "../share/honeydew/content",
+                };
+                [dir.join("content"), dir.join(installed)]
+            });
+            let var = std::env::var_os("HONEYDEW_CONTENT_DIR").map(PathBuf::from);
+            let installed = super::install::dir();
+            let beside: Vec<_> = beside.into_iter().flatten().collect();
+            let (bundle, sync) = Self::find_in(var.as_deref(), installed.as_deref(), &beside)?;
+            if let (Some(from), Some(to)) = (sync, installed) {
+                super::install::sync_in_background(from, to);
+            }
+            Some(bundle)
         }
-        if cfg!(test) {
-            return None;
+    }
+
+    /// [`Self::find`] in `var`, the installed library and the folders `beside` the app: `var`'s; the installed one
+    /// while it is complete and, with a library beside the app, of that one's index; the first beside the app, and its
+    /// folder to sync the installed one from, unless its release is older than the installed one's; or the installed
+    /// one as it is (a sync cut short leaves one that works).
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    fn find_in(
+        var: Option<&Path>,
+        installed: Option<&Path>,
+        beside: &[PathBuf],
+    ) -> Option<(Self, Option<PathBuf>)> {
+        use super::install::{complete, older, same_index};
+        if let Some(bundle) = var.and_then(Self::open) {
+            return Some((bundle, None));
         }
-        let exe = std::env::current_exe().ok();
-        let beside = exe.as_deref().and_then(Path::parent).map(|dir| {
-            let installed = match cfg!(target_os = "macos") {
-                true => "../Resources/content",
-                false => "../share/honeydew/content",
-            };
-            [dir.join("content"), dir.join(installed)]
-        });
-        let var = std::env::var_os("HONEYDEW_CONTENT_DIR").map(PathBuf::from);
-        (var.into_iter().chain(beside.into_iter().flatten())).find_map(|dir| Self::open(&dir))
+        let shipped = beside.iter().find_map(|dir| Some((Self::open(dir)?, dir)));
+        let current = installed.filter(|dir| complete(dir));
+        let in_place = installed.and_then(Self::open);
+        // Never back to an older release than the installed one.
+        let downgrade = |bundle: &Self| {
+            in_place
+                .as_ref()
+                .is_some_and(|i| older(&bundle.index.release, &i.index.release))
+        };
+        match shipped {
+            Some((bundle, dir))
+                if !current.is_some_and(|current| same_index(current, dir))
+                    && !downgrade(&bundle) =>
+            {
+                Some((bundle, installed.map(|_| dir.clone())))
+            }
+            shipped => in_place
+                .or(shipped.map(|(bundle, _)| bundle))
+                .map(|bundle| (bundle, None)),
+        }
     }
 
     /// `rel`, below `Built-in/` (aliases applied): its entry and its member.
@@ -425,6 +470,55 @@ pub(crate) mod tests {
         }
         let big = format!("{good}{}", " ".repeat(MAX_INDEX_BYTES));
         assert!(Index::parse(big.as_bytes()).is_none());
+    }
+
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    #[test]
+    fn the_installed_library_serves_while_complete_and_one_beside_the_app_syncs_into_it() {
+        use crate::content::install::{MANIFEST, Progress, sync};
+        let tmp = crate::project_files::content::tests::Temp::new("bundle-find");
+        let [var, installed, beside] = ["var", "installed", "beside"].map(|d| tmp.0.join(d));
+        let library = |dir: &Path, bytes: &[u8]| {
+            fixture(
+                dir,
+                &[(Kind::Samples, "Loops/", vec![("A.flac", bytes.to_vec())])],
+            );
+        };
+        // The folder used and the one to sync from.
+        let find = |var: Option<&Path>| {
+            let found = Bundle::find_in(var, Some(&installed), std::slice::from_ref(&beside));
+            found.map(|(bundle, from)| (bundle.dir.unwrap(), from))
+        };
+        assert!(find(None).is_none());
+        library(&beside, b"one");
+        assert_eq!(find(None), Some((beside.clone(), Some(beside.clone()))));
+        sync(&beside, &installed, &Progress::default()).unwrap();
+        assert_eq!(find(None), Some((installed.clone(), None)));
+        // An app-only download: nothing beside it.
+        std::fs::remove_dir_all(&beside).unwrap();
+        assert_eq!(find(None), Some((installed.clone(), None)));
+        // A sync cut short before its manifest: still the installed one, until a library beside the app syncs again.
+        std::fs::remove_file(installed.join(MANIFEST)).unwrap();
+        assert_eq!(find(None), Some((installed.clone(), None)));
+        library(&beside, b"one");
+        assert_eq!(find(None), Some((beside.clone(), Some(beside.clone()))));
+        // A new version's library beside the app.
+        let release = |dir: &Path, release: &str| {
+            let mut index = Bundle::open(dir).unwrap().index;
+            index.release = release.into();
+            std::fs::write(dir.join("index.json"), serde_json::to_vec(&index).unwrap()).unwrap();
+        };
+        sync(&beside, &installed, &Progress::default()).unwrap();
+        library(&beside, b"two!");
+        release(&beside, "0.2.0");
+        assert_eq!(find(None), Some((beside.clone(), Some(beside.clone()))));
+        // Never back: an older release beside the app leaves the installed one as it is.
+        sync(&beside, &installed, &Progress::default()).unwrap();
+        library(&beside, b"one");
+        release(&beside, "0.1.0");
+        assert_eq!(find(None), Some((installed.clone(), None)));
+        library(&var, b"var");
+        assert_eq!(find(Some(&var)), Some((var.clone(), None)));
     }
 }
 

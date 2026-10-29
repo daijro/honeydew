@@ -81,10 +81,12 @@ fn vol_points() -> Vec<Point> {
         Point {
             tick: 160,
             value: 1000,
+            ..Default::default()
         },
         Point {
             tick: 384,
             value: 2000,
+            ..Default::default()
         },
     ]
 }
@@ -551,10 +553,12 @@ fn an_op_follows_its_clip_when_an_undo_under_the_question_moves_it() {
         Point {
             tick: 200,
             value: 1000,
+            ..Default::default()
         },
         Point {
             tick: 400,
             value: 2000,
+            ..Default::default()
         },
     ];
     let a = &mut rig.app.song.channels[1].lanes[0].clips[0];

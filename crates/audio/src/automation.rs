@@ -10,10 +10,125 @@ pub struct AutomationTarget {
     pub parameter_index: i32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// How a segment goes from the point that starts it to the next one ([`shape_value`]). Honeydew's own: FL Studio
+/// Mobile's segments are all [`Shape::default`], a straight line.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ShapeKind {
+    #[default]
+    Linear,
+    Square,
+    Smooth,
+    Stairs,
+}
+
+impl ShapeKind {
+    pub const ALL: [Self; 4] = [Self::Linear, Self::Square, Self::Smooth, Self::Stairs];
+}
+
+/// A segment's shape and its tension in percent (0…100).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Shape {
+    pub kind: ShapeKind,
+    pub tension: u8,
+}
+
+/// Linear at 50 %: the straight line.
+impl Default for Shape {
+    fn default() -> Self {
+        Self {
+            kind: ShapeKind::Linear,
+            tension: 50,
+        }
+    }
+}
+
+/// The value at fraction `x` of a segment that runs from `a` (x = 0, the point that starts it) to `b` (x = 1, the next
+/// point) with shape `s`: exactly `a` at x ≤ 0 and `b` at x ≥ 1, else a + (b − a)·g(x). With t = tension/100 and
+/// k = 8^(2t − 1) (1/8 at 0 %, 1 at 50 %, 8 at 100 %):
+/// - Linear: g = x^k. A straight line at 50 %; below it eases out (a fast start), above it eases in.
+/// - Square: g = 0 for x < t, else 1. It holds `a` and jumps to `b` at t: halfway at 50 %, at the next point at 100 %,
+///   just after its own point at 0 %.
+/// - Smooth: g = (S(m(x)) − S(m(0)))/(S(m(1)) − S(m(0))), S(y) = 3y² − 2y³ the smoothstep, m(x) = ½ + k·(x − ½) held
+///   to 0…1. The smoothstep at 50 %, nearly the line at 0 %, at 100 % flat ends with the rise in the middle eighth.
+/// - Stairs: g = i/n for x in [i/n, (i + 1)/n), n = max(2, round(16^t)) steps: 2 at 0 %, 4 at 50 %, 16 at 100 %. Equal
+///   treads from `a`, the n-th riser at the next point.
+///
+/// Each law moves monotonically with the tension: the exponent, the jump, the steepness and the step count.
+pub fn shape_value(s: Shape, a: f64, b: f64, x: f64) -> f64 {
+    if x <= 0.0 {
+        return a;
+    }
+    if x >= 1.0 {
+        return b;
+    }
+    let t = f64::from(s.tension.min(100)) / 100.0;
+    let k = 8f64.powf(2.0 * t - 1.0);
+    let g = match s.kind {
+        ShapeKind::Linear if s.tension == 50 => x,
+        ShapeKind::Linear => x.powf(k),
+        ShapeKind::Square => f64::from(u8::from(x >= t)),
+        ShapeKind::Smooth => {
+            let m = |x: f64| (0.5 + k * (x - 0.5)).clamp(0.0, 1.0);
+            let smooth = |x: f64| m(x) * m(x) * (3.0 - 2.0 * m(x));
+            (smooth(x) - smooth(0.0)) / (smooth(1.0) - smooth(0.0))
+        }
+        ShapeKind::Stairs => {
+            let n = stairs(t);
+            // The last riser at or before x, on the same i/n as [`Shape::risers`].
+            let i = (0..n).rev().find(|&i| f64::from(i) / f64::from(n) <= x);
+            f64::from(i.unwrap_or(0)) / f64::from(n)
+        }
+    };
+    a + (b - a) * g
+}
+
+/// Stairs' step count at tension fraction `t`: max(2, round(16^t)).
+fn stairs(t: f64) -> u32 {
+    (16f64.powf(t).round() as u32).max(2)
+}
+
+impl Shape {
+    /// Where a stepped shape (Square, Stairs) jumps inside its segment, as fractions in [0, 1) (the riser at the next
+    /// point is that point's); `None` for a curve.
+    pub fn risers(self) -> Option<Vec<f64>> {
+        let t = f64::from(self.tension.min(100)) / 100.0;
+        match self.kind {
+            ShapeKind::Square => Some(if t < 1.0 { vec![t] } else { Vec::new() }),
+            ShapeKind::Stairs => {
+                let n = stairs(t);
+                Some((1..n).map(|i| f64::from(i) / f64::from(n)).collect())
+            }
+            ShapeKind::Linear | ShapeKind::Smooth => None,
+        }
+    }
+}
+
+/// The fraction of a segment of shape `s` where its curve first reaches fraction `f` of the way (0 < f < 1): `f` itself
+/// on the line, else by bisection on [`shape_value`], which rises monotonically.
+fn crossing(s: Shape, f: f64) -> f64 {
+    if s == Shape::default() {
+        return f;
+    }
+    // ponytail: 48 steps per level (≤ 127 levels a segment) on every rebuild; closed-form inverses if songs full of
+    // shaped segments show up in profiles.
+    let (mut lo, mut hi) = (0.0, 1.0);
+    for _ in 0..48 {
+        let mid = (lo + hi) / 2.0;
+        if shape_value(s, 0.0, 1.0, mid) >= f {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    hi
+}
+
+/// A control point; `shape` is the segment's that starts at it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AutomationPoint {
     pub tick: u64,
     pub value: u16,
+    pub shape: Shape,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -103,13 +218,34 @@ impl AutomationClip {
             let [a, b] = [pair[0], pair[1]];
             let level_a = (f64::from(a.value) / LEVEL_WIDTH).trunc() as i32;
             let level_b = (f64::from(b.value) / LEVEL_WIDTH).trunc() as i32;
-            if b.tick > a.tick && (level_b - level_a).abs() >= 2 {
+            let tick = |x: f64| (a.tick as f64 + x * (b.tick - a.tick) as f64).round() as u64;
+            if b.tick <= a.tick {
+                // Same tick: an instant jump, whatever the shape.
+            } else if let Some(risers) = a.shape.risers() {
+                // A stepped shape: each riser is a step to the value after it (none where it would not change).
+                let mut last = a.value;
+                for x in risers {
+                    // Just after the riser: Square at 0 % rises at x = 0, where the segment is still `a`.
+                    let after = x.max(f64::MIN_POSITIVE);
+                    let value = shape_value(a.shape, f64::from(a.value), f64::from(b.value), after);
+                    let value = value.round().clamp(0.0, 65535.0) as u16;
+                    if value != last {
+                        self.events.push(AutomationEvent {
+                            tick: tick(x),
+                            key: -self.key,
+                            value,
+                        });
+                        last = value;
+                    }
+                }
+            } else if (level_b - level_a).abs() >= 2 {
+                // A curve: a step where it reaches each level in between (on the line, as for a straight segment).
                 let direction = (level_b - level_a).signum();
                 for distance in 1..(level_b - level_a).abs() {
                     let level = level_a + distance * direction;
                     let fraction = f64::from(distance) / f64::from((level_b - level_a).abs());
                     self.events.push(AutomationEvent {
-                        tick: (a.tick as f64 + fraction * (b.tick - a.tick) as f64).round() as u64,
+                        tick: tick(crossing(a.shape, fraction)),
                         key: -self.key,
                         value: (f64::from(level) * LEVEL_WIDTH).trunc().min(65534.0) as u16,
                     });

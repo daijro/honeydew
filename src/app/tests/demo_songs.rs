@@ -95,8 +95,8 @@ fn tap_restore(rig: &mut Rig) {
         false => rig.open_menu(MenuTab::Settings),
     }
     rig.wheel(pos2(900.0, 300.0), -5000.0);
-    // Back one row (2 U) from the end, so that the button clears the tab row.
-    rig.wheel(pos2(900.0, 300.0), 64.0);
+    // Back two rows (4 U) from the end, so that the button clears the tab row.
+    rig.wheel(pos2(900.0, 300.0), 128.0);
     let label = "Restore demo songs";
     let at = (rig.output(vec![]).shapes.into_iter())
         .find_map(|c| match c.shape {

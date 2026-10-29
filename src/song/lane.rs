@@ -88,6 +88,9 @@ pub struct Lane {
     pub swing: f64,
     /// A drum lane's grid (`DESc` @1). `Steps` on other lanes, whose @1 byte is `file.flag`.
     pub grid: DrumGrid,
+    /// `Hide track` (Honeydew's own, an `HDHd` in the file): no playlist row, no clips, no ghost notes, while Settings
+    /// `Show hidden tracks` is off. It plays all the same.
+    pub hidden: bool,
     pub file: LaneFileState,
 }
 
@@ -102,6 +105,7 @@ impl Lane {
             last_clip_id: 0,
             swing: 0.0,
             grid: DrumGrid::Steps,
+            hidden: false,
             file: LaneFileState::default(),
         }
     }

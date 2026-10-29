@@ -353,8 +353,18 @@ impl HoneydewApp {
                 let title = BURNING.into();
                 self.navigate(Nav::Open(Overlay::Busy { title }));
             }
+            // Its pick is [`Self::automation`]'s.
+            TrackOp::AddCcTrack => self.navigate(Nav::Open(Overlay::CcPicker(channel))),
             // Disabled in the menu (see `TrackOp`).
             TrackOp::SyncAllSamples => {}
+            // The playlist lets go of a selected clip that no longer shows (`Clips::show`); the audio never reads it:
+            // an undo step with no rebuild.
+            TrackOp::ToggleHidden => {
+                if let Some(l) = ch.lanes.get_mut(lane) {
+                    l.hidden = !l.hidden;
+                    self.song_edited(SongEdit::Param, tick);
+                }
+            }
         }
     }
 
@@ -932,7 +942,8 @@ impl HoneydewApp {
             | Overlay::SamplePicker { channel, .. }
             | Overlay::SoundFontPicker { channel, .. }
             | Overlay::FineTune { channel, .. }
-            | Overlay::ModuleSamplePicker { channel, .. } => rekey(channel),
+            | Overlay::ModuleSamplePicker { channel, .. }
+            | Overlay::CcPicker(channel) => rekey(channel),
             // The clip's track.
             Overlay::ClipSamplePicker(key) => rk
                 .track(key.channel, key.lane)

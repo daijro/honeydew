@@ -112,17 +112,21 @@ pub struct TrackRow {
     /// A primary track of an Audio Record channel whose rack arm button is on (CHHD@1060): with multitrack recording
     /// on, its header shows the armed dot.
     pub armed: bool,
+    /// A hidden track (`Hide track`), shown by Settings `Show hidden tracks`: drawn dimmed.
+    pub hidden: bool,
 }
 
 /// The playlist's rows, top to bottom: each channel's ([`Song::playlist`] order) primary track, then its sub-tracks
-/// unless they are hidden (`Hide tracks`). A primary header shows the channel kind's icon, a sub-track's its own
-/// kind's.
-pub fn track_rows(song: &Song) -> Vec<TrackRow> {
+/// unless they are hidden (`Hide tracks`); a track `Hide track` hid only with `show_hidden` (Settings `Show hidden
+/// tracks`), so a channel whose every track is hidden has no row. A primary header shows the channel kind's icon, a
+/// sub-track's its own kind's.
+pub fn track_rows(song: &Song, show_hidden: bool) -> Vec<TrackRow> {
     let mut rows = Vec::new();
     for channel in song.playlist() {
         let ch = &song.channels[channel];
         let shown = if ch.zipped { 1 } else { ch.lanes.len() };
-        for (lane, l) in ch.lanes.iter().enumerate().take(shown) {
+        let lanes = ch.lanes.iter().enumerate().take(shown);
+        for (lane, l) in lanes.filter(|(_, l)| show_hidden || !l.hidden) {
             rows.push(TrackRow {
                 channel,
                 lane,
@@ -133,10 +137,30 @@ pub fn track_rows(song: &Song) -> Vec<TrackRow> {
                 },
                 hue: ch.hue,
                 armed: lane == 0 && ch.kind == ChannelKind::AudioRecord && ch.file.record_armed,
+                hidden: l.hidden,
             });
         }
     }
     rows
+}
+
+/// The channels `tracks` has rows of, top to bottom, once each.
+fn shown_channels(tracks: &[TrackRow]) -> Vec<usize> {
+    let mut channels: Vec<usize> = tracks.iter().map(|t| t.channel).collect();
+    channels.dedup();
+    channels
+}
+
+/// The whole playlist order for `shown`, a new order of the channels with rows: a channel without one (every track
+/// hidden) keeps its place.
+fn whole_order(song: &Song, shown: &[usize]) -> Vec<usize> {
+    let mut next = shown.iter().copied();
+    (song.playlist().into_iter())
+        .map(|c| match shown.contains(&c) {
+            true => next.next().unwrap_or(c),
+            false => c,
+        })
+        .collect()
 }
 
 /// One frame of a track header's drag: the finger puts channel `dragged`'s primary row at row `raw` (fractional) of
@@ -665,7 +689,13 @@ impl MainScreen {
             actions.nav = Some(nav);
         }
         #[cfg(any(target_arch = "wasm32", test))]
-        crate::app::live::playlist(ui, &cx, app.song, (grid, &lanes, axis), app.covered);
+        crate::app::live::playlist(
+            ui,
+            &cx,
+            app.song,
+            (grid, &lanes, axis),
+            (app.covered, app.settings.show_hidden_tracks),
+        );
         // Children get the touch first: a held header, a marquee (or the hold that starts one) takes it from the
         // scroller; a ruler press waiting for its long press leaves it the scroller's until a range starts.
         if self.header_busy || self.clips.busy(ui.input(|i| i.time)) {
@@ -726,6 +756,12 @@ impl MainScreen {
                 .map(|s| &s.module_meters[..]),
         };
         let out = mini_mixer::show(ui, &cx, app.song, &shown, row_h, &col, column);
+        // A hidden track's header dimmed, as its clips are ([`Clips::show`]).
+        let veil = (c.background.to_color32()).gamma_multiply(crate::ui::clips::HIDDEN_VEIL);
+        for &(_, top) in shown.iter().filter(|(t, _)| t.hidden) {
+            let row = Rect::from_x_y_ranges(column.x_range(), top..=top + row_h);
+            ui.painter_at(track_area).rect_filled(row, 0.0, veil);
+        }
         if !out.changes.is_empty() {
             app.channel_param_edited();
         }
@@ -929,16 +965,12 @@ impl MainScreen {
         {
             let pos = ui.input(|i| i.pointer.latest_pos()).unwrap_or(hold.origin);
             let dy = pos.y - hold.origin.y;
-            // Only a channel's primary row drags, any channel's.
-            hold.dragging |= dy.abs() > m.u(gesture::CALM_U) && lane == 0;
+            // Only a channel's first row drags (its primary's, unless that is hidden), any channel's.
+            let first = tracks.iter().position(|t| t.channel == channel) == Some(i);
+            hold.dragging |= dy.abs() > m.u(gesture::CALM_U) && first;
             if hold.dragging {
-                let primaries = || -> Vec<usize> {
-                    (tracks.iter().filter(|t| t.lane == 0))
-                        .map(|t| t.channel)
-                        .collect()
-                };
-                // Every channel shows a row, so its index is below the row count.
-                let mut counts = vec![0; tracks.len()];
+                let primaries = || shown_channels(tracks);
+                let mut counts = vec![0; app.song.channels.len()];
                 for t in tracks {
                     counts[t.channel] += 1;
                 }
@@ -951,7 +983,7 @@ impl MainScreen {
                     ui.ctx().request_repaint();
                 }
                 if p.long_released && *order != primaries() {
-                    actions.reorder = Some(order.clone());
+                    actions.reorder = Some(whole_order(app.song, order));
                 }
             } else if p.long_released {
                 self.track_menu = Some((channel, lane, pos));
@@ -973,7 +1005,7 @@ impl MainScreen {
     /// Where each track row shows: its index in `tracks` and its row from the top (fractional), in drawing order. While a
     /// header drags, in the order the drag left, the dragged channel's rows last, at the finger.
     fn placed(&self, tracks: &[TrackRow]) -> Vec<(usize, f32)> {
-        let primaries = tracks.iter().filter(|t| t.lane == 0).count();
+        let primaries = shown_channels(tracks).len();
         let live = (self.hold.as_ref())
             .and_then(|h| Some((tracks.get(h.row)?.channel, h.live.as_ref()?)))
             .filter(|(_, (order, _))| order.len() == primaries);
@@ -2579,7 +2611,7 @@ mod tests {
             ..Default::default()
         };
         let theme = theme_by_id(0);
-        let tracks = track_rows(song);
+        let tracks = track_rows(song, false);
         let follow = FOLLOW.get();
         let output_snapshot = follow.map(|tick| OutputSnapshot {
             transport_tick: tick,
@@ -2892,7 +2924,7 @@ mod tests {
             &std::cell::Cell<bool>,
         ),
     ) {
-        let (tracks, settings) = (track_rows(&Song::default()), Settings::default());
+        let (tracks, settings) = (track_rows(&Song::default(), false), Settings::default());
         let input = ScreenInput {
             view: View::Playlist,
             tracks: &tracks,
@@ -2983,7 +3015,7 @@ mod tests {
     #[test]
     fn rec_tells_accessibility_tools_it_is_the_arm_recording_toggle() {
         use egui::accesskit::{NodeId, Role, Toggled};
-        let (tracks, settings) = (track_rows(&Song::default()), Settings::default());
+        let (tracks, settings) = (track_rows(&Song::default(), false), Settings::default());
         let input = ScreenInput {
             view: View::Playlist,
             tracks: &tracks,
@@ -3185,7 +3217,7 @@ mod tests {
 
         /// The current clip: the current track's own.
         fn current_clip(&self) -> Option<ClipRef> {
-            self.screen.clips.clip_for(&self.song, self.selected)
+            self.screen.clips.clip_for(&self.song, self.selected, false)
         }
 
         fn frame(&mut self, events: Vec<egui::Event>) -> Frame {
@@ -3522,7 +3554,7 @@ mod tests {
             m: &m,
         };
         let song = song_with_a_clip();
-        let tracks: Vec<(TrackRow, f32)> = (track_rows(&song).into_iter())
+        let tracks: Vec<(TrackRow, f32)> = (track_rows(&song, false).into_iter())
             .zip([48.0, 112.0, 176.0])
             .collect();
         let axis = TimeAxis {
@@ -5635,7 +5667,7 @@ mod tests {
             param: 1,
         });
         let rows = |song: &Song| -> Vec<(usize, usize, u8)> {
-            let rows = track_rows(song);
+            let rows = track_rows(song, false);
             rows.iter()
                 .map(|r| (r.channel, r.lane, r.icon as u8))
                 .collect()
@@ -5648,7 +5680,7 @@ mod tests {
         song.channels[1].zipped = true;
         assert_eq!(rows(&song), [(0, 0, 0), (1, 0, 1), (2, 0, 2), (2, 1, 0)]);
         assert!(
-            track_rows(&song)
+            track_rows(&song, false)
                 .iter()
                 .all(|r| r.hue == song.channels[r.channel].hue)
         );

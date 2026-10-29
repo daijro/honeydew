@@ -507,9 +507,17 @@ impl State<'_> {
                 let tick = tick(beat).saturating_sub(start);
                 // Stepped: the previous value first, at the new point's tick.
                 if let Some(value) = last {
-                    pts.push(Point { tick, value });
+                    pts.push(Point {
+                        tick,
+                        value,
+                        ..Default::default()
+                    });
                 }
-                pts.push(Point { tick, value });
+                pts.push(Point {
+                    tick,
+                    value,
+                    ..Default::default()
+                });
                 last = Some(value);
             }
             points::set_points(clip, PointKey::Automation, pts);

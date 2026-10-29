@@ -203,25 +203,29 @@ fn the_current_clip_is_the_audio_editors_else_the_main_lanes_current_one() {
     let mut song = song();
     let mut editor = audio_editor::State::default();
     // No current clip: `DESc`@24 is 0.
-    assert_eq!(current(&song, 1, &editor), None);
+    assert_eq!(current(&song, 1, &editor, false), None);
     song.channels[1].lanes[0].file.current_clip_id = 2;
-    assert_eq!(current(&song, 1, &editor), Some(key(1, 0, 2)));
+    assert_eq!(current(&song, 1, &editor, false), Some(key(1, 0, 2)));
     // A current clip id that names no clip.
     song.channels[1].lanes[0].file.current_clip_id = 9;
-    assert_eq!(current(&song, 1, &editor), None);
+    assert_eq!(current(&song, 1, &editor, false), None);
     // The audio editor's clip wins, on any audio lane of the channel.
     let more = song.channels[1].add_lane(LaneKind::Audio);
     song.channels[1].lanes[more].add_clip(0, 2.0);
     editor.clips.insert(1, (more, 1));
-    assert_eq!(current(&song, 1, &editor), Some(key(1, more, 1)));
+    assert_eq!(current(&song, 1, &editor, false), Some(key(1, more, 1)));
     editor.clips.insert(1, (0, 1));
-    assert_eq!(current(&song, 1, &editor), Some(key(1, 0, 1)));
+    assert_eq!(current(&song, 1, &editor, false), Some(key(1, 0, 1)));
     // Only while the channel's main lane is audio: not on a synth, nor the master, nor a missing channel.
     song.channels[2].lanes[0].file.current_clip_id = 1;
     editor.clips.insert(2, (0, 1));
     for channel in [0, 2, 7] {
-        assert_eq!(current(&song, channel, &editor), None, "{channel}");
+        assert_eq!(current(&song, channel, &editor, false), None, "{channel}");
     }
+    // Nor while the main lane is hidden (`Hide track`), unless Settings `Show hidden tracks` shows it.
+    song.channels[1].lanes[0].hidden = true;
+    assert_eq!(current(&song, 1, &editor, false), None);
+    assert_eq!(current(&song, 1, &editor, true), Some(key(1, 0, 1)));
 }
 
 #[test]

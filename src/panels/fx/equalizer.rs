@@ -58,6 +58,30 @@ const fn freq_p(k: usize) -> usize {
     2 + 4 * k
 }
 
+/// Where a display's band handles keep their params: band `k`'s (from 0) gain and frequency, each normalised, which
+/// place its handle (step 3) and which its drag sets (**Touch**). The Dynamic EQ's display shares the handles.
+#[derive(Clone, Copy)]
+pub(super) struct Handles {
+    pub gain: fn(usize) -> usize,
+    pub freq: fn(usize) -> usize,
+}
+
+const HANDLES: Handles = Handles {
+    gain: gain_p,
+    freq: freq_p,
+};
+
+impl Handles {
+    /// Step 3: band `k`'s disc centre, (frequency, bottom − gain·h); a param the module lacks reads 0.5.
+    fn centre(self, rect: Rect, params: &[f32], k: usize) -> Pos2 {
+        let v = |p: usize| params.get(p).copied().unwrap_or(0.5);
+        pos2(
+            rect.left() + v((self.freq)(k)) * rect.width(),
+            rect.bottom() - v((self.gain)(k)) * rect.height(),
+        )
+    }
+}
+
 /// Band `k`'s normalised gain, frequency, bandwidth and kind; a param the module lacks reads 0.5.
 fn band(params: &[f32], k: usize) -> [f32; 4] {
     std::array::from_fn(|i| params.get(gain_p(k) + i).copied().unwrap_or(0.5))
@@ -83,12 +107,17 @@ pub(crate) fn response(params: &[f32], x: f32) -> f32 {
 /// Step 2: the response bars in `rect`, one every 4t from the left edge, 2t wide (cut at the right edge), from the
 /// bottom up to (s + 1)·h/2.
 pub(crate) fn bars(rect: Rect, m: &Metrics, params: &[f32]) -> Vec<Rect> {
+    response_bars(rect, m, |x| response(params, x))
+}
+
+/// [`bars`] of response `s(x)` in [−1, 1] at normalised `x`.
+pub(super) fn response_bars(rect: Rect, m: &Metrics, s: impl Fn(f32) -> f32) -> Vec<Rect> {
     let (step, w) = (4.0 * m.t(), 2.0 * m.t());
     let n = (rect.width() / step).ceil() as usize;
     (0..n)
         .map(|i| {
             let x = rect.left() + i as f32 * step;
-            let s = response(params, (x - rect.left()) / rect.width());
+            let s = s((x - rect.left()) / rect.width());
             let top = rect.bottom() - (s + 1.0) * rect.height() / 2.0;
             Rect::from_min_max(pos2(x, top), pos2((x + w).min(rect.right()), rect.bottom()))
         })
@@ -96,12 +125,9 @@ pub(crate) fn bars(rect: Rect, m: &Metrics, params: &[f32]) -> Vec<Rect> {
 }
 
 /// Step 3: band `k`'s disc centre, (frequency, bottom − gain·h).
+#[cfg(test)]
 pub(crate) fn centre(rect: Rect, params: &[f32], k: usize) -> Pos2 {
-    let [gain, f, ..] = band(params, k);
-    pos2(
-        rect.left() + f * rect.width(),
-        rect.bottom() - gain * rect.height(),
-    )
+    HANDLES.centre(rect, params, k)
 }
 
 /// Step 3: a disc's radius at pointer proximity `p`, trunc(0.3 U) device px + 0.25 U·p.
@@ -110,10 +136,10 @@ pub(crate) fn radius(m: &Metrics, p: f32) -> f32 {
 }
 
 /// Touch: the band whose handle is nearest `at` within its radius + 1 U; ties go to the lower band.
-fn pick(rect: Rect, m: &Metrics, params: &[f32], at: Pos2) -> Option<usize> {
+fn pick(rect: Rect, m: &Metrics, params: &[f32], at: Pos2, h: Handles) -> Option<usize> {
     let reach = radius(m, 0.0) + m.u(1.0);
     (0..BANDS)
-        .map(|k| (k, at.distance(centre(rect, params, k))))
+        .map(|k| (k, at.distance(h.centre(rect, params, k))))
         .filter(|&(_, d)| d <= reach)
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(k, _)| k)
@@ -130,20 +156,21 @@ struct Touch {
 
 /// What a pass of [`touch`] leaves for the drawing: the params it changed, the last pointer position and the band
 /// the press holds.
-struct Touched {
-    set: Vec<usize>,
+pub(super) struct Touched {
+    pub set: Vec<usize>,
     pointer: Option<Pos2>,
     held: Option<usize>,
 }
 
-/// The display's touch handling (the module doc's **Touch**).
-fn touch(
+/// The display's touch handling (the module doc's **Touch**), for handles `h`.
+pub(super) fn touch(
     ui: &Ui,
     m: &Metrics,
     id: Id,
     rect: Rect,
     module: &mut ModuleInstance,
     state: &mut PanelState,
+    h: Handles,
 ) -> Touched {
     // Clicks only: the drag is claimed when a press picks a handle, so one from elsewhere scrolls the rack.
     let response = ui.interact(rect, id, Sense::click());
@@ -172,7 +199,7 @@ fn touch(
     let mut set = Vec::new();
     match (at, t.held) {
         (Some(at), _) if pressed => {
-            let k = pick(rect, m, &module.params, at);
+            let k = pick(rect, m, &module.params, at, h);
             t.held = k.map(|k| (k, now));
             if k.is_some() && down {
                 ui.ctx().set_dragged_id(id);
@@ -185,7 +212,7 @@ fn touch(
                 state.tab = k;
             }
             if let (Some(k), true, Some(spec)) = (k, double, module_spec(module.type_id)) {
-                for p in [gain_p(k), freq_p(k)] {
+                for p in [(h.gain)(k), (h.freq)(k)] {
                     if let Some(s) = spec.params.get(p) {
                         write(module, p, s.reset, &mut set);
                     }
@@ -195,8 +222,8 @@ fn touch(
         (Some(at), Some((k, since))) if moved && now - since >= DRAG_DELAY => {
             let f = ((at.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
             let gain = ((rect.bottom() - at.y) / rect.height()).clamp(0.0, 1.0);
-            write(module, freq_p(k), f, &mut set);
-            write(module, gain_p(k), gain, &mut set);
+            write(module, (h.freq)(k), f, &mut set);
+            write(module, (h.gain)(k), gain, &mut set);
             // A press that dragged is no tap.
             t.last = None;
         }
@@ -229,9 +256,8 @@ fn curve(
     state: &mut PanelState,
     ink: Color32,
 ) -> Vec<usize> {
-    let Touched { set, pointer, held } = touch(ui, cx.m, id, rect, module, state);
+    let touched = touch(ui, cx.m, id, rect, module, state, HANDLES);
     let (m, colors, params) = (cx.m, &cx.theme.colors, &module.params);
-    let [menu, text] = [colors.menu_fill, colors.text].map(|c| c.to_color32());
     let painter = ui.painter();
     let px = 1.0 / m.ppp();
     painter.rect_filled(rect, 0.0, colors.control_fill.to_color32());
@@ -239,14 +265,33 @@ fn curve(
     let zero = Rect::from_x_y_ranges(rect.x_range(), mid..=mid + px);
     painter.rect_filled(zero, 0.0, colors.module_fill.to_color32());
     for bar in bars(rect, m, params) {
-        painter.rect_filled(bar, 0.0, menu);
+        painter.rect_filled(bar, 0.0, colors.menu_fill.to_color32());
     }
-    let selected = state.tab;
+    handles(ui, cx, rect, params, state.tab, &touched, ink, HANDLES);
+    touched.set
+}
+
+/// Steps 3 and 4: the band handles `h` in `rect`, band `selected` last in `ink`, after a [`touch`] pass.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn handles(
+    ui: &Ui,
+    cx: &UiCtx,
+    rect: Rect,
+    params: &[f32],
+    selected: usize,
+    &Touched { pointer, held, .. }: &Touched,
+    ink: Color32,
+    h: Handles,
+) {
+    let (m, colors) = (cx.m, &cx.theme.colors);
+    let [menu, text] = [colors.menu_fill, colors.text].map(|c| c.to_color32());
+    let painter = ui.painter();
+    let px = 1.0 / m.ppp();
     let order = (0..BANDS)
         .filter(|&k| k != selected)
         .chain((selected < BANDS).then_some(selected));
     for k in order {
-        let c = centre(rect, params, k);
+        let c = h.centre(rect, params, k);
         let p = match pointer {
             _ if held == Some(k) => 1.0,
             Some(at) => ((m.u(0.75) - at.distance(c)) / m.u(0.75)).max(0.0),
@@ -267,7 +312,6 @@ fn curve(
             colors.background.to_color32(),
         );
     }
-    set
 }
 
 pub fn panel() -> Option<Panel> {

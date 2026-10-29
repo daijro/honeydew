@@ -22,7 +22,11 @@ fn lane(target: AutomationTarget, initial_value: f32, tick: u64, value: u16) -> 
                 128,
                 0,
                 (target.parameter_index + 1) as i16,
-                vec![AutomationPoint { tick, value }],
+                vec![AutomationPoint {
+                    tick,
+                    value,
+                    ..Default::default()
+                }],
             )
             .unwrap(),
         ],

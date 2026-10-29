@@ -72,10 +72,15 @@ fn automation_playback_sets_nothing() {
     };
     let clip = (rig.app.song.channels[1].add_automation_lane(level)).add_clip(0, 16.0);
     let ends = vec![
-        Point { tick: 0, value: 0 },
+        Point {
+            tick: 0,
+            value: 0,
+            ..Default::default()
+        },
         Point {
             tick: 2047,
             value: 65534,
+            ..Default::default()
         },
     ];
     points::set_points(clip, PointKey::Automation, ends);

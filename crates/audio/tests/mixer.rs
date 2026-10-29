@@ -17,6 +17,7 @@ fn channel(targets: &[usize], level: f32, pan: f32) -> ChannelMix {
                 level: SEND,
             })
             .collect(),
+        keys: Vec::new(),
     }
 }
 

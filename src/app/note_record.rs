@@ -1,7 +1,8 @@
 //! REC's live note recording. Touched keys, typed keys, MIDI notes and drum pads all come here, after they sound
-//! ([`NoteRecord::keys`]). While REC is armed, the transport plays and no count-in runs, a take records the current
-//! channel's keys as played (no quantize) into one clip of its own; a song-position jump, a channel change, arming and
-//! disarming each end the take, and the app makes each take that recorded one undo step.
+//! ([`NoteRecord::keys`]). While REC is armed, the transport plays and no count-in runs, a take per recording channel
+//! (the armed instrument and drum channels, else the current channel: Honeydew's own) records that channel's keys as
+//! played (no quantize) into one clip of its own; a song-position jump, a change of the recording channels, arming
+//! and disarming each end the takes, and the app makes the takes that recorded and end in one frame one undo step.
 
 use super::HoneydewApp;
 use super::auto_record::start;
@@ -18,9 +19,11 @@ pub(super) type Key = (usize, u8, Option<f32>);
 
 /// What the frame is, as the recording sees it.
 pub(super) struct Now {
-    /// The current channel (the master, 0, records nothing), and its current lane if it has one.
+    /// The current channel, and its current lane if it has one.
     pub channel: usize,
     pub lane: Option<usize>,
+    /// The channels that record ([`HoneydewApp::record_channels`]); the master, 0, records nothing.
+    pub channels: Vec<usize>,
     pub armed: bool,
     pub playing: bool,
     pub counting_in: bool,
@@ -39,13 +42,14 @@ pub(super) struct NoteRecord {
     /// The keys held now, from every source: (channel, key, velocity). Play's cut drops its keys
     /// ([`HoneydewApp::cut_live_keys`]).
     pub(super) held: Vec<(usize, u8, f32)>,
-    take: Option<Take>,
-    /// The take made a track this frame and holds its index as it is now: the app's re-key of that change, which
-    /// comes next, leaves its clip where it is ([`Self::rekey`]).
+    /// The takes under way, one per recording channel.
+    takes: Vec<Take>,
+    /// A take made a track this frame and holds its index as it is now: the app's re-key of that change, which comes
+    /// next, leaves the takes' clips where they are ([`Self::rekey`]).
     shifted: bool,
 }
 
-/// The take under way.
+/// A take under way.
 struct Take {
     /// Its channel's id.
     channel: i32,
@@ -59,54 +63,61 @@ struct Take {
 }
 
 impl NoteRecord {
-    /// Ends the take when the frame `now` ends it: Stop and seeks leave its open notes at length 0; the loop wrap
-    /// closes them where the take last was; disarming and another current channel close them now. Whether the ended
-    /// take recorded anything, which the app closes as one undo step before the next take records.
+    /// Ends each take the frame `now` ends: Stop and seeks leave its open notes at length 0; the loop wrap closes
+    /// them where the take last was; disarming and its channel no longer recording close them now. Whether an ended
+    /// take recorded anything, which the app closes as one undo step before the next takes record.
     pub(super) fn end(&mut self, song: &mut Song, now: &Now) -> bool {
-        let Some(take) = &mut self.take else {
-            return false;
-        };
-        let current = song.channels.get(now.channel).map(|c| c.id);
-        let at = if !now.playing || now.jumped {
-            None
-        } else if now.tick < take.last {
-            Some(take.last)
-        } else if now.armed && !now.counting_in && current == Some(take.channel) {
-            take.last = now.tick;
-            return false;
-        } else {
-            Some(now.tick)
-        };
-        let mut take = self.take.take().expect("a take");
+        let recording: Vec<i32> = (now.channels.iter())
+            .filter_map(|&c| song.channels.get(c).map(|c| c.id))
+            .collect();
         let bar = song.time_sig.bar_beats();
-        let ch = song.channels.iter_mut().find(|c| c.id == take.channel);
-        if let (Some(at), Some(ch)) = (at, ch) {
-            close(ch, &mut take, None, at, bar);
-        }
-        take.clip.is_some()
+        let mut recorded = false;
+        self.takes.retain_mut(|take| {
+            let at = if !now.playing || now.jumped {
+                None
+            } else if now.tick < take.last {
+                Some(take.last)
+            } else if now.armed && !now.counting_in && recording.contains(&take.channel) {
+                take.last = now.tick;
+                return true;
+            } else {
+                Some(now.tick)
+            };
+            let ch = song.channels.iter_mut().find(|c| c.id == take.channel);
+            if let (Some(at), Some(ch)) = (at, ch) {
+                close(ch, take, None, at, bar);
+            }
+            recorded |= take.clip.is_some();
+            false
+        });
+        recorded
     }
 
-    /// The frame's keys ([`Self::keys`]): a take starts once `now` records, with every key still held on the current
-    /// channel as a new note at its start; then each key of the current channel records while one runs. `None` when
-    /// the song is unchanged, else the lanes the frame added.
+    /// The frame's keys ([`Self::keys`]): a take starts on each recording channel once `now` records, with every key
+    /// still held on that channel as a new note at its start; then each key of a channel with a take records. `None`
+    /// when the song is unchanged, else the lanes the frame added.
     pub(super) fn record(&mut self, song: &mut Song, now: &Now) -> Option<Vec<LaneShift>> {
         // The re-key that follows the frame that set it consumed it.
         debug_assert!(!self.shifted, "a lane added without the app's re-key");
         let mut changed = None;
-        let recording = now.armed && now.playing && !now.counting_in && now.channel > 0;
-        if let Some(ch) = song.channels.get(now.channel).filter(|_| recording)
-            && self.take.is_none()
-        {
-            self.take = Some(Take {
+        let recording = now.armed && now.playing && !now.counting_in;
+        for &channel in now.channels.iter().filter(|&&c| c > 0 && recording) {
+            let Some(ch) = song.channels.get(channel) else {
+                continue;
+            };
+            if self.takes.iter().any(|t| t.channel == ch.id) {
+                continue;
+            }
+            self.takes.push(Take {
                 channel: ch.id,
                 start: now.tick,
                 last: now.tick,
                 clip: None,
                 open: Vec::new(),
             });
-            for (channel, key, velocity) in self.held.clone() {
-                if channel == now.channel {
-                    self.press(song, now, key, velocity, &mut changed);
+            for (c, key, velocity) in self.held.clone() {
+                if c == channel {
+                    self.press(song, now, channel, key, velocity, &mut changed);
                 }
             }
         }
@@ -115,11 +126,12 @@ impl NoteRecord {
             if let Some(v) = velocity {
                 self.held.push((channel, key, v));
             }
-            let Some(take) = self.take.as_mut().filter(|_| channel == now.channel) else {
+            let id = song.channels.get(channel).map(|c| c.id);
+            let Some(take) = self.takes.iter_mut().find(|t| Some(t.channel) == id) else {
                 continue;
             };
             match velocity {
-                Some(v) => self.press(song, now, key, v, &mut changed),
+                Some(v) => self.press(song, now, channel, key, v, &mut changed),
                 None => {
                     let bar = song.time_sig.bar_beats();
                     if close(&mut song.channels[channel], take, Some(key), now.tick, bar) {
@@ -131,22 +143,25 @@ impl NoteRecord {
         changed
     }
 
-    /// The take's clip while it records, as (channel, lane, clip id).
-    pub(super) fn clip(&self, song: &Song) -> Option<(usize, usize, u32)> {
-        let take = self.take.as_ref()?;
-        let (lane, id) = take.clip?;
-        let channel = song.channels.iter().position(|c| c.id == take.channel)?;
-        Some((channel, lane, id))
+    /// The takes' clips while they record, as (channel, lane, clip id).
+    pub(super) fn clips(&self, song: &Song) -> Vec<(usize, usize, u32)> {
+        (self.takes.iter())
+            .filter_map(|take| {
+                let (lane, id) = take.clip?;
+                let channel = song.channels.iter().position(|c| c.id == take.channel)?;
+                Some((channel, lane, id))
+            })
+            .collect()
     }
 
-    /// The song was replaced: the take, the held keys and the queued ones were the old song's channels'.
+    /// The song was replaced: the takes, the held keys and the queued ones were the old song's channels'.
     pub(super) fn forget(&mut self) {
         *self = Self::default();
     }
 
     /// The channels or tracks moved (the app's re-key; `ids`: the channel ids before): the held and queued keys go with
-    /// their channels, and the take's clip with its track, unless the take made that change itself ([`Self::shifted`]).
-    /// A key or clip whose channel or track went is dropped.
+    /// their channels, and the takes' clips with their tracks, unless a take made that change itself
+    /// ([`Self::shifted`]). A key or clip whose channel or track went is dropped.
     pub(super) fn rekey(
         &mut self,
         ids: &[i32],
@@ -157,36 +172,45 @@ impl NoteRecord {
             .retain_mut(|h| channel(h.0).map(|c| h.0 = c).is_some());
         self.keys
             .retain_mut(|k| channel(k.0).map(|c| k.0 = c).is_some());
+        // Takes on other channels than the one a take added a track to keep their tracks.
         let shifted = std::mem::take(&mut self.shifted);
-        if let Some(take) = self.take.as_mut().filter(|_| !shifted) {
+        for take in self.takes.iter_mut().filter(|_| !shifted) {
             let old = ids.iter().position(|&id| id == take.channel);
             take.clip = (take.clip).and_then(|(lane, id)| Some((track(old?, lane)?.1, id)));
         }
     }
 
-    /// `song` as the engine plays it during the take: without the take's clip. `None` while no take has a clip.
+    /// `song` as the engine plays it during the takes: without their clips. `None` while no take has a clip.
     pub(super) fn without_take(&self, song: &Song) -> Option<Song> {
-        let (channel, lane, id) = self.clip(song)?;
+        let clips = self.clips(song);
+        if clips.is_empty() {
+            return None;
+        }
         let mut song = song.clone();
-        let lane = song.channels[channel].lanes.get_mut(lane)?;
-        lane.clips.retain(|c| c.id != id);
+        for (channel, lane, id) in clips {
+            if let Some(lane) = song.channels[channel].lanes.get_mut(lane) {
+                lane.clips.retain(|c| c.id != id);
+            }
+        }
         Some(song)
     }
 
-    /// `key` pressed at `velocity` during the take, on the current channel: what its first lane records ("When notes
-    /// are recorded"), a note, or a hit on each slot the key plays; nothing on an audio or automation channel. A key
-    /// still open closes first.
+    /// `key` pressed at `velocity` during the take of `channel`: what its first lane records ("When notes are
+    /// recorded"), a note, or a hit on each slot the key plays; nothing on an audio or automation channel. A key still
+    /// open closes first. Only the current channel has a current lane.
     fn press(
         &mut self,
         song: &mut Song,
         now: &Now,
+        channel: usize,
         key: u8,
         velocity: f32,
         changed: &mut Option<Vec<LaneShift>>,
     ) {
-        let take = self.take.as_mut().expect("a take");
+        let ch = &mut song.channels[channel];
+        let take = (self.takes.iter_mut()).find(|t| t.channel == ch.id);
+        let take = take.expect("a take");
         let bar = song.time_sig.bar_beats();
-        let ch = &mut song.channels[now.channel];
         let drums = match ch.lanes.first().map(|l| l.kind) {
             Some(LaneKind::Drums) => true,
             Some(LaneKind::Audio) => return,
@@ -214,8 +238,9 @@ impl NoteRecord {
             None => {
                 // A drum take's clip starts from the take's start.
                 let from = start(if drums { take.start } else { now.tick });
-                let (lane, id, new) = choose(ch, drums, from, now.lane, bar);
-                shifts.extend(new.map(|lane| LaneShift::new(now.channel, lane, true)));
+                let current = now.lane.filter(|_| channel == now.channel);
+                let (lane, id, new) = choose(ch, drums, from, current, bar);
+                shifts.extend(new.map(|lane| LaneShift::new(channel, lane, true)));
                 self.shifted |= new.is_some();
                 (lane, id)
             }
@@ -256,6 +281,19 @@ impl NoteRecord {
 }
 
 impl HoneydewApp {
+    /// The channels REC's live notes record into: every armed instrument or drum channel (CHHD@1060, Honeydew's own on
+    /// them), else the current channel.
+    pub(super) fn record_channels(&self) -> Vec<usize> {
+        let channels = self.song.channels.iter().enumerate();
+        let armed = channels.filter(|(_, c)| c.kind.plays_notes() && c.file.record_armed);
+        let armed: Vec<usize> = armed.map(|(i, _)| i).collect();
+        if armed.is_empty() {
+            vec![self.selected_channel]
+        } else {
+            armed
+        }
+    }
+
     /// A live key after it sounded, the drum pads' too: REC hears it at the frame's end ([`Self::record_notes`]), and a
     /// press while REC is armed and the transport stopped starts playback.
     pub(super) fn live_key(&mut self, key: Key) {
@@ -278,6 +316,7 @@ impl HoneydewApp {
         let now = Now {
             channel,
             lane: current.filter(|c| c.0 == channel).map(|c| c.1),
+            channels: self.record_channels(),
             armed: screen.armed,
             playing: screen.playing,
             counting_in: self.audio.counting_in(),
@@ -441,6 +480,7 @@ mod tests {
         Now {
             channel,
             lane: None,
+            channels: vec![channel],
             armed: true,
             playing: true,
             counting_in: false,
@@ -755,7 +795,7 @@ mod tests {
                 frame(&mut rec, &mut song, &quiet, &[on(quiet.channel, 60, 1.0)]),
                 (false, None)
             );
-            assert!(rec.take.is_none());
+            assert!(rec.takes.is_empty());
             // A key still held when the take starts records from its start.
             frame(&mut rec, &mut song, &now(SYNTH, 2 * BEAT), &[]);
             frame(
@@ -1028,7 +1068,7 @@ mod tests {
         rec.rekey(&ids, &same, &|c, l| {
             Some((c, if c == SYNTH && l >= 1 { l + 1 } else { l }))
         });
-        assert_eq!(rec.clip(&song), Some((SYNTH, 1, 1)));
+        assert_eq!(rec.clips(&song), [(SYNTH, 1, 1)]);
         // A track op then puts a lane before it: the take's clip goes with its track.
         song.channels[SYNTH]
             .lanes
@@ -1036,7 +1076,7 @@ mod tests {
         rec.rekey(&ids, &same, &|c, l| {
             Some((c, if c == SYNTH { l + 1 } else { l }))
         });
-        assert_eq!(rec.clip(&song), Some((SYNTH, 2, 1)));
+        assert_eq!(rec.clips(&song), [(SYNTH, 2, 1)]);
         frame(
             &mut rec,
             &mut song,

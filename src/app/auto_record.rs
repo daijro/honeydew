@@ -258,12 +258,20 @@ fn add(pts: &mut Vec<Point>, pos: u32, value: u16, old: Option<u16>) {
         let step = Point {
             tick: pos,
             value: old,
+            ..Default::default()
         };
         if pts.last() != Some(&step) {
             points::insert(pts, step);
         }
     }
-    points::insert(pts, Point { tick: pos, value });
+    points::insert(
+        pts,
+        Point {
+            tick: pos,
+            value,
+            ..Default::default()
+        },
+    );
 }
 
 #[cfg(test)]

@@ -155,7 +155,8 @@ impl Band {
         }
     }
 
-    fn process(&mut self, left: f32, right: f32) -> (f32, f32) {
+    /// The band's frame `(left, right)`, its detector reading `(key_l, key_r)` (the frame itself, unkeyed).
+    fn process(&mut self, (left, right): (f32, f32), (key_l, key_r): (f32, f32)) -> (f32, f32) {
         if self.bypass {
             let level = left.abs().max(right.abs());
             self.levels = [level, level, 1.0];
@@ -171,7 +172,7 @@ impl Band {
         self.input += (self.target_input - self.input) * 0.01;
         let input_left = left * self.input;
         let input_right = right * self.input;
-        let level = input_left.abs().max(input_right.abs()) * self.input;
+        let level = (key_l * self.input).abs().max((key_r * self.input).abs()) * self.input;
         self.peak = if level > self.peak {
             level
         } else {
@@ -239,6 +240,8 @@ pub struct MultibandState {
     sample_rate: f32,
     params: [f32; 31],
     splitters: [Splitter; 3],
+    /// The key's crossover, at the same frequencies ([`Self::keyed`]).
+    key_splitters: [Splitter; 3],
     bands: [Band; 3],
     master_gain: f32,
     master_target: f32,
@@ -256,6 +259,11 @@ impl MultibandState {
             sample_rate,
             params,
             splitters: [
+                Splitter::new(low, sample_rate),
+                Splitter::new(high, sample_rate),
+                Splitter::new(high, sample_rate),
+            ],
+            key_splitters: [
                 Splitter::new(low, sample_rate),
                 Splitter::new(high, sample_rate),
                 Splitter::new(high, sample_rate),
@@ -294,13 +302,15 @@ impl MultibandState {
             self.update_controls();
             return;
         }
-        if params[2] != self.params[2] {
-            self.splitters[0].set_frequency(crossover_frequency(params[2]), sample_rate);
-        }
-        if params[3] != self.params[3] {
-            let high = crossover_frequency(params[3]);
-            self.splitters[1].set_frequency(high, sample_rate);
-            self.splitters[2].set_frequency(high, sample_rate);
+        for splitters in [&mut self.splitters, &mut self.key_splitters] {
+            if params[2] != self.params[2] {
+                splitters[0].set_frequency(crossover_frequency(params[2]), sample_rate);
+            }
+            if params[3] != self.params[3] {
+                let high = crossover_frequency(params[3]);
+                splitters[1].set_frequency(high, sample_rate);
+                splitters[2].set_frequency(high, sample_rate);
+            }
         }
         self.params.copy_from_slice(&params[..31]);
         self.update_controls();
@@ -313,7 +323,7 @@ impl MultibandState {
     }
 
     pub fn reset(&mut self) {
-        for splitter in &mut self.splitters {
+        for splitter in self.splitters.iter_mut().chain(&mut self.key_splitters) {
             splitter.clear();
         }
         for band in &mut self.bands {
@@ -323,15 +333,20 @@ impl MultibandState {
     }
 
     pub fn process_frame(&mut self, left: f32, right: f32) -> (f32, f32) {
+        self.keyed(left, right, None)
+    }
+
+    /// [`Self::process_frame`] with each band's detector reading that band of `key` (left, right), split by the same
+    /// crossover; `None`: its own band.
+    pub fn keyed(&mut self, left: f32, right: f32, key: Option<(f32, f32)>) -> (f32, f32) {
         if self.params[0] < 0.5 {
             return (left, right);
         }
-        let (low, upper) = self.splitters[0].process(left, right);
-        let (mid, high) = self.splitters[1].process(upper.0, upper.1);
-        let (low_a, low_b) = self.splitters[2].process(low.0, low.1);
-        let low = self.bands[0].process(low_a.0 + low_b.0, low_a.1 + low_b.1);
-        let mid = self.bands[1].process(mid.0, mid.1);
-        let high = self.bands[2].process(high.0, high.1);
+        let bands = split(&mut self.splitters, (left, right));
+        let keys = key.map_or(bands, |key| split(&mut self.key_splitters, key));
+        let low = self.bands[0].process(bands[0], keys[0]);
+        let mid = self.bands[1].process(bands[1], keys[1]);
+        let high = self.bands[2].process(bands[2], keys[2]);
         if self.master_gain < 0.0 {
             self.master_gain = self.master_target;
         } else {
@@ -372,6 +387,14 @@ impl MultibandState {
             band.safe_width = p[30] >= 0.5;
         }
     }
+}
+
+/// `(left, right)` in its low, mid and high bands, by the crossover `splitters`.
+fn split(splitters: &mut [Splitter; 3], (left, right): (f32, f32)) -> [(f32, f32); 3] {
+    let (low, upper) = splitters[0].process(left, right);
+    let (mid, high) = splitters[1].process(upper.0, upper.1);
+    let (low_a, low_b) = splitters[2].process(low.0, low.1);
+    [(low_a.0 + low_b.0, low_a.1 + low_b.1), mid, high]
 }
 
 fn crossover_frequency(value: f32) -> f32 {

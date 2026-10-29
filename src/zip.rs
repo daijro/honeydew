@@ -357,23 +357,7 @@ pub fn open_entry<'a>(
     mut file: impl Read + Seek + 'a,
     name: &str,
 ) -> Result<Option<Streamed<'a>>, ZipError> {
-    let len = file.seek(SeekFrom::End(0)).map_err(|_| ZipError::NotZip)?;
-    let tail_at = len.saturating_sub((END_LEN + 0xFFFF) as u64);
-    let tail = read_at(&mut file, tail_at, (len - tail_at) as usize)?;
-    let end = find_end(&tail).ok_or(ZipError::NotZip)?;
-    let (disk, dir_disk) = (u16_at(&tail, end + 4)?, u16_at(&tail, end + 6)?);
-    let (here, total) = (u16_at(&tail, end + 8)?, u16_at(&tail, end + 10)?);
-    let (dir_len, dir_at) = (u32_at(&tail, end + 12)?, u32_at(&tail, end + 16)?);
-    let dir_end = u64::from(dir_at) + u64::from(dir_len);
-    if disk != 0
-        || dir_disk != 0
-        || here != total
-        || dir_len > MAX_STREAMED_DIR
-        || dir_end > tail_at + end as u64
-    {
-        return Err(ZipError::Corrupt);
-    }
-    let dir = read_at(&mut file, dir_at.into(), dir_len as usize)?;
+    let (dir, total, dir_at, len) = directory(&mut file)?;
     let mut rest = &dir[..];
     for _ in 0..total {
         let h = header(&mut rest)?;
@@ -425,6 +409,48 @@ pub fn open_entry<'a>(
         return Ok(Some((Box::new(checked), h.size.into())));
     }
     Ok(None)
+}
+
+/// The central directory of `file` as [`open_entry`] reads it: its bytes, its record count, where it starts, and the
+/// archive's length.
+fn directory(file: &mut (impl Read + Seek)) -> Result<(Vec<u8>, u16, u32, u64), ZipError> {
+    let len = file.seek(SeekFrom::End(0)).map_err(|_| ZipError::NotZip)?;
+    let tail_at = len.saturating_sub((END_LEN + 0xFFFF) as u64);
+    let tail = read_at(file, tail_at, (len - tail_at) as usize)?;
+    let end = find_end(&tail).ok_or(ZipError::NotZip)?;
+    let (disk, dir_disk) = (u16_at(&tail, end + 4)?, u16_at(&tail, end + 6)?);
+    let (here, total) = (u16_at(&tail, end + 8)?, u16_at(&tail, end + 10)?);
+    let (dir_len, dir_at) = (u32_at(&tail, end + 12)?, u32_at(&tail, end + 16)?);
+    let dir_end = u64::from(dir_at) + u64::from(dir_len);
+    if disk != 0
+        || dir_disk != 0
+        || here != total
+        || dir_len > MAX_STREAMED_DIR
+        || dir_end > tail_at + end as u64
+    {
+        return Err(ZipError::Corrupt);
+    }
+    Ok((
+        read_at(file, dir_at.into(), dir_len as usize)?,
+        total,
+        dir_at,
+        len,
+    ))
+}
+
+/// The files of the archive `file`, named as [`open_entry`] takes them, each with its size and CRC-32: the central
+/// directory's word, which [`open_entry`] checks as the file streams. Folders and names [`read`] refuses are left out.
+pub fn list(mut file: impl Read + Seek) -> Result<Vec<(String, u64, u32)>, ZipError> {
+    let (dir, total, ..) = directory(&mut file)?;
+    let mut rest = &dir[..];
+    let mut files = Vec::new();
+    for _ in 0..total {
+        let h = header(&mut rest)?;
+        if let Some(Ok(Some(path))) = std::str::from_utf8(h.name).ok().map(clean) {
+            files.push((path, h.size.into(), h.crc));
+        }
+    }
+    Ok(files)
 }
 
 /// A raw deflate stream inflated as it is read (`miniz_oxide`'s streaming inflater).

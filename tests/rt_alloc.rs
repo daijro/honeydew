@@ -124,7 +124,18 @@ fn the_counter_sees_this_thread_allocate() {
 
 #[test]
 fn engine_render_and_commands_do_not_allocate() {
-    let mut engine = SongAudioEngine::new(&song(), RATE).unwrap();
+    // The Compressor keyed from a second MiniSynth, holding a key: a sidechain.
+    let mut song = song();
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    let key = song.channels[2].id;
+    let modules = &mut song.channels[1].rack.modules;
+    modules
+        .iter_mut()
+        .find(|m| m.type_id == 8)
+        .unwrap()
+        .sidechain = Some(key);
+    let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
+    engine.note_on(2, 45, 1.0);
     let mut output = vec![0.0_f32; 4096 * 2];
     // Warm-up: one pass over every block size and command.
     engine.play();

@@ -269,6 +269,12 @@ impl SongAudioEngine {
         }
         let (mixes, routing) = routing::build(song);
         let mixer = Mixer::new(&mixes).map_err(EngineError::Mixer)?;
+        for &(channel, instance_id, source) in &routing.keyed {
+            // An effect that does not run here (a plugin's left out) keys nothing.
+            let _ = bridge
+                .audio
+                .set_key(channel, instance_id, source, BLOCK_FRAMES);
+        }
         let mut instruments = Vec::with_capacity(song.channels.len());
         let mut kits = Vec::with_capacity(song.channels.len());
         let mut clips = Vec::with_capacity(song.channels.len());
@@ -833,6 +839,7 @@ impl SongAudioEngine {
                     {
                         return false;
                     }
+                    tap_keys(mixer, processors, buffers, *index);
                     mixer.route_stage(buffers, stage);
                     continue;
                 }
@@ -856,23 +863,48 @@ impl SongAudioEngine {
                 if result.is_err() {
                     return false;
                 }
+                for &index in &mixer.stages()[stage] {
+                    tap_keys(mixer, processors, buffers, index);
+                }
                 mixer.route_stage(buffers, stage);
             }
             return true;
         }
+        // As `Mixer::mix`, each channel's rack output keying the channels it keys before its strip.
         let audio = self.audio.channels_mut();
-        let instruments = &mut self.instruments;
-        self.mixer
-            .mix(&mut self.buffers, |index, left, right| {
-                process_rack(
-                    &mut audio[index],
-                    &mut instruments[index],
-                    left,
-                    right,
-                    context,
-                )
-            })
-            .is_ok()
+        let (instruments, buffers) = (&mut self.instruments, &mut self.buffers);
+        for &index in self.mixer.order() {
+            let buffer = &mut buffers[index];
+            let (left, right) = (&mut buffer.left, &mut buffer.right);
+            if process_rack(
+                &mut audio[index],
+                &mut instruments[index],
+                left,
+                right,
+                context,
+            )
+            .is_err()
+            {
+                return false;
+            }
+            tap_keys(&self.mixer, audio, buffers, index);
+            self.mixer.route_channel(buffers, index);
+        }
+        true
+    }
+}
+
+/// Channel `index`'s rack output, once it has run and before its strip (fader, pan, mute: solo too), into the key
+/// buffers of the channels it keys: a sidechain hears its source whatever the source's strip does.
+fn tap_keys(
+    mixer: &Mixer,
+    audio: &mut [PlaybackChannel],
+    buffers: &[OwnedStereoBuffer],
+    index: usize,
+) {
+    let source = &buffers[index];
+    for &keyed in mixer.keyed(index) {
+        audio[keyed].take_key(index, &source.left, &source.right);
     }
 }
 
@@ -1234,6 +1266,11 @@ mod parallel_tests {
             });
         }
         song.channels[1].rack.add(20); // A bus effect runs after its sources.
+        // A Compressor on channel 2 keyed from channel 4, which runs first.
+        let (id, key) = (song.channels[2].rack.add(8), song.channels[4].id);
+        let compressor = song.channels[2].rack.get_mut(id).unwrap();
+        (compressor.params[1], compressor.params[2]) = (0.0, 1.0);
+        compressor.sidechain = Some(key);
         let mut serial = SongAudioEngine::new(&song, 48_000.0).unwrap();
         let mut parallel = SongAudioEngine::new(&song, 48_000.0).unwrap();
         assert!(parallel.mixer.has_parallel_stage());
