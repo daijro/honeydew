@@ -4101,6 +4101,14 @@ mod grid {
         // No instrument on the channel: no light rows.
         song.channels[1].rack.modules.clear();
         assert_eq!(light(&song), Vec::<usize>::new());
+        // A plugin instrument (Surge XT, Lemon Trio) plays every key: the scale across 0–127.
+        let id = song.channels[1]
+            .rack
+            .add(crate::song::plugin::PLUGIN_INSTRUMENT);
+        song.channels[1].rack.get_mut(id).unwrap().file.key_high = 0;
+        let d_minor = (0..128).filter(|k| [0, 2, 4, 5, 7, 9, 10].contains(&(k % 12)));
+        assert_eq!(light(&song), d_minor.collect::<Vec<usize>>());
+        song.channels[1].rack.modules.clear();
         // Lit: a selected note's row, and the keys sounding on the channel (the keyboard, typed, MIDI).
         let mut roll = roll;
         let events = [n(0, 128.0, 57)];

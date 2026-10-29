@@ -826,8 +826,8 @@ impl PianoRoll {
     }
 
     /// What the grid's key rows show ([`Rows`]): light where the key is in the project scale (Chromatic reads as C
-    /// major) and in an instrument's key range on the channel (none without an instrument); lit where a
-    /// note is selected, the roll sounds the key (a key-column touch, a new note's gate, a dragged key) or it is in
+    /// major) and in an instrument's key range on the channel (none without an instrument; a plugin instrument plays
+    /// every key); lit where a note is selected, the roll sounds the key (a key-column touch, a new note's gate, a dragged key) or it is in
     /// `sounding` (the keyboard, typed notes, MIDI and the engine's keys on the channel, [`RollOptions::sounding`]).
     fn rows(&self, song: &Song, events: &[Event], sounding: u128) -> Rows {
         let (root, mask) = project_scale(song);
@@ -838,8 +838,7 @@ impl PianoRoll {
         };
         let modules = song.channels.get(self.channel).map(|c| &c.rack.modules);
         let ranges: Vec<(i8, i8)> = (modules.into_iter().flatten())
-            .filter(|m| crate::ui::rack::instrument(m.type_id).is_some())
-            .map(|m| (m.file.key_low, m.file.key_high))
+            .filter_map(crate::ui::rack::key_range)
             .collect();
         let light = std::array::from_fn(|k| {
             let key = k as u8;

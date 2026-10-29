@@ -170,6 +170,14 @@ pub(crate) fn instrument(type_id: u16) -> Option<SynthKind> {
     SynthKind::ALL.into_iter().find(|s| s.type_id() == type_id)
 }
 
+/// The keys instrument module `module` plays, `None` for an effect. A plugin instrument plays every key.
+pub(crate) fn key_range(module: &ModuleInstance) -> Option<(i8, i8)> {
+    match module.type_id {
+        crate::song::plugin::PLUGIN_INSTRUMENT => Some((0, 127)),
+        t => instrument(t).map(|_| (module.file.key_low, module.file.key_high)),
+    }
+}
+
 /// The card icon. Instruments have icon 2 (keys), effects icon 8 (faders) and note effects icon 75 (notes).
 fn module_icon(type_id: u16) -> IconId {
     match module_spec(type_id).map(|s| s.role) {

@@ -1057,8 +1057,8 @@ impl HoneydewApp {
         let notes = self.sounding(channel);
         let modules = (self.song.channels.get(channel)).map_or(&[][..], |c| &c.rack.modules);
         let range = (modules.iter())
-            .filter(|m| crate::ui::rack::instrument(m.type_id).is_some())
-            .map(|m| (m.file.key_low.max(0) as u8, m.file.key_high.max(0) as u8))
+            .filter_map(crate::ui::rack::key_range)
+            .map(|(low, high)| (low.max(0) as u8, high.max(0) as u8))
             .reduce(|a, b| (a.0.min(b.0), a.1.max(b.1)));
         KeyInput {
             enabled: channel > 0,
