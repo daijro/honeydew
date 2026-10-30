@@ -139,6 +139,29 @@ fn engine_render_and_commands_do_not_allocate() {
         target_channel_id: key,
         enabled: true,
     });
+    // Modulators: an Envelope keyed by channel 2 on the automated Compressor Threshold, an LFO on the automated Pan and
+    // a Random on MIDI CC #1, which commands set too.
+    let ch = &mut song.channels[1];
+    let compressor = ch
+        .rack
+        .modules
+        .iter()
+        .find(|m| m.type_id == 8)
+        .unwrap()
+        .instance_id;
+    for (source, target) in [(0.0, (compressor, 1)), (0.5, (0, 1)), (1.0, (0, 8))] {
+        let id = ch.rack.add(honeydew_audio::modulator::MODULATOR);
+        let module = ch.rack.get_mut(id).unwrap();
+        (module.params[1], module.sidechain) = (source, Some(key));
+        ch.file.modulations.push(honeydew::song::Modulation {
+            modulator: id,
+            channel: ch.id,
+            target: AutomationTarget {
+                instance_id: target.0,
+                param: target.1,
+            },
+        });
+    }
     let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
     engine.note_on(2, 45, 1.0);
     let mut output = vec![0.0_f32; 4096 * 2];

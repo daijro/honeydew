@@ -17,8 +17,9 @@
 //!   song load).
 //! - The menu has no `Quit`: the desktop window's own close button asks [`quit_question`], which the app answers
 //!   (closing the window on `Yes`). `Help` is disabled.
-//! - SETTINGS shows the Original Content folder ([`ProjectFiles::content_dir`]); its `Open folder` shows it in the
-//!   system's file manager (the SONGS `Show in file browser...` helper), and a failure shows its message.
+//! - SETTINGS shows the user folder and the Original Content folder in it ([`ProjectFiles::content_dir`]); `Open user
+//!   folder` and `Open folder` show them in the system's file manager (the SONGS `Show in file browser...` helper),
+//!   and a failure shows its message.
 //!   `Restore demo songs` asks the app to write our demo songs into the library's `Demo songs` folder again, behind
 //!   its loading screen (`app/demo_restore.rs`).
 //! - The SONGS file actions act on the library themselves; a failure shows its message, and `Delete permanently`
@@ -233,11 +234,10 @@ pub fn show(
             nav = Some(message(PURGE_TAG, vec![question], "Yes", "No"));
         }
         MainMenuAction::WhatsNew => nav = Some(Nav::Open(Overlay::WhatsNew)),
-        // The folder's README: on Linux the file manager opens the folder that holds it, elsewhere it selects it.
+        // On Linux the file manager opens the folder that holds the file, elsewhere it selects it.
         #[cfg(not(target_arch = "wasm32"))]
-        MainMenuAction::Reveal(folder) => {
-            let shown =
-                crate::ui::main_menu::reveal(&folder.join(crate::project_files::README_FILE));
+        MainMenuAction::Reveal(file) => {
+            let shown = crate::ui::main_menu::reveal(&file);
             if let Err(line) = shown {
                 nav = Some(Nav::Open(Overlay::Message {
                     tag: SONGS_TAG,

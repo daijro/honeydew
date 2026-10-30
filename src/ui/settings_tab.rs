@@ -36,12 +36,15 @@
 //! `views/credits.rs`). On the desktop `Install sound library…`, one too, asks the app to install a sound library
 //! ([`SettingsTab::take_install_sounds`], `content::install`).
 //!
-//! The list ends with `Original content:` and a row with the Original Content folder's path
-//! ([`crate::project_files::CONTENT_FOLDER`], shortened in the middle like a label) and an `Open folder` light button,
-//! which asks the app to show the folder in the system's file manager ([`SettingsTab::take_reveal`]). They show only
-//! where there is such a folder ([`SettingsTab::content`]): on the desktop, not on the web.
+//! The list ends with `User folder:` and a row with the user folder's path (the folder of the Original Content folder,
+//! [`crate::ui::main_menu::user_dir`], shortened in the middle like a label) and an `Open user folder` light button,
+//! then `Original content:` and a row with the Original Content folder's path
+//! ([`crate::project_files::CONTENT_FOLDER`]) and an `Open folder` light button. Each button asks the app to show its
+//! folder in the system's file manager ([`SettingsTab::take_reveal`]). They show only where there is such a folder
+//! ([`SettingsTab::content`]): natively, not on the web; the buttons work on the desktop.
 
-use std::{collections::HashSet, path::PathBuf};
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use eframe::egui::{
     Align2, Color32, DragValue, Id, Pos2, Rect, Sense, Shape, TextEdit, Ui, UiBuilder, WidgetInfo,
@@ -93,12 +96,13 @@ const SCAN_ICON: f32 = 0.75;
 const SCAN_ICON_W: f32 = 1.5;
 /// The metronome level's room at the right end of its label line, wider than `100%`.
 const PERCENT_W: f32 = 2.0;
-/// The content folder row's button.
+/// The content folder row's button, and the user folder row's.
 pub const OPEN_FOLDER: &str = "Open folder";
-/// The rows at the end that show only with a content folder.
-const CONTENT_ROWS: usize = 2;
+pub const OPEN_USER_FOLDER: &str = "Open user folder";
+/// The rows at the end that show only with a content folder (and so a user folder).
+const CONTENT_ROWS: usize = 4;
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(desktop)]
 fn generated_mcp_token() -> String {
     let mut bytes = [0_u8; 32];
     getrandom::fill(&mut bytes).expect("the operating system random source is unavailable");
@@ -111,7 +115,7 @@ fn generated_mcp_token() -> String {
     token
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(desktop))]
 fn generated_mcp_token() -> String {
     String::new()
 }
@@ -156,6 +160,8 @@ enum Kind {
     SignIn,
     /// The content folder's path (in place of the label) and the `Open folder` button.
     ContentFolder,
+    /// The user folder's path (in place of the label) and the `Open user folder` button.
+    UserFolder,
     /// `Sound credits`: a full-width light button that opens the credits screen ([`SettingsTab::take_credits`]).
     Credits,
     /// `Install sound library…`: a full-width light button the app answers ([`SettingsTab::take_install_sounds`]).
@@ -206,7 +212,7 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 }
 
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 46] = {
+const ROWS: [Row; 48] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -289,7 +295,9 @@ const ROWS: [Row; 46] = {
         // The bundled sounds' sources.
         row("Sound credits", Credits),
         row("Install sound library…", InstallSounds),
-        // The content folder ([`CONTENT_ROWS`]).
+        // The user folder and the content folder ([`CONTENT_ROWS`]).
+        row("User folder:", Header),
+        row("User folder", UserFolder),
         row("Original content:", Header),
         row("Original content folder", ContentFolder),
     ]
@@ -329,10 +337,11 @@ pub struct SettingsTab {
     midi_ports: Vec<String>,
     /// The `Input device:` dropdown opened since [`Self::take_midi_rescan`].
     midi_rescan: bool,
-    /// The Original Content folder the last rows show; `None` hides them. The caller keeps it current.
+    /// The Original Content folder the last rows show, in the user folder they show too; `None` hides them. The
+    /// caller keeps it current.
     pub content: Option<PathBuf>,
-    /// `Open folder` was tapped, until [`Self::take_reveal`].
-    reveal: bool,
+    /// What `Open folder` or `Open user folder` shows, until [`Self::take_reveal`].
+    reveal: Option<PathBuf>,
     /// `Restore demo songs` was tapped, until [`Self::take_restore_demos`].
     restore_demos: bool,
     /// `Sound credits` was tapped, until [`Self::take_credits`].
@@ -370,9 +379,10 @@ impl SettingsTab {
         std::mem::take(&mut self.midi_rescan)
     }
 
-    /// The folder to show in the file manager once `Open folder` was tapped, once.
+    /// What to show in the file manager once `Open folder` or `Open user folder` was tapped, once: the content
+    /// folder's README, or the user folder's `My Songs` (`main_menu::reveal` shows the folder a file is in).
     pub fn take_reveal(&mut self) -> Option<PathBuf> {
-        std::mem::take(&mut self.reveal).then(|| self.content.clone())?
+        self.reveal.take()
     }
 
     /// Whether `Restore demo songs` was tapped since the last call, once a tap: the app writes the demos.
@@ -405,17 +415,14 @@ impl SettingsTab {
         let rows: Vec<_> = rows
             .iter()
             .filter(|r| {
-                cfg!(any(
-                    target_os = "windows",
-                    target_os = "macos",
-                    target_os = "linux"
-                )) || (!matches!(
-                    r.kind,
-                    Kind::Dropdown(Choice::SoundMode) | Kind::InstallSounds
-                ) && !matches!(
-                    r.label,
-                    "MCP:" | "Enable MCP control" | "Port" | "Authentication token" | "Status"
-                ))
+                cfg!(desktop)
+                    || (!matches!(
+                        r.kind,
+                        Kind::Dropdown(Choice::SoundMode) | Kind::InstallSounds
+                    ) && !matches!(
+                        r.label,
+                        "MCP:" | "Enable MCP control" | "Port" | "Authentication token" | "Status"
+                    ))
             })
             .collect();
         let plugins = if self.plugins { &PLUGIN_ROWS[..] } else { &[] };
@@ -680,13 +687,9 @@ impl SettingsTab {
                     self.menu = Some((Menu::Choice(choice), button_rect.center()));
                 }
                 if matches!(choice, Choice::SoundMode) {
-                    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+                    #[cfg(desktop)]
                     let sound_mode_tip = "STANDARD: general-purpose mode with broad device compatibility.\nMULTITRACK: experimental; FL-style per-input multitrack routing is not implemented yet. The buffer slider works in either mode.";
-                    #[cfg(not(any(
-                        target_os = "windows",
-                        target_os = "macos",
-                        target_os = "linux"
-                    )))]
+                    #[cfg(not(desktop))]
                     let sound_mode_tip = "ULTRASAFE: largest buffer; maximum stability and compatibility, highest latency.\nSAFE: moderately large buffer; fewer glitches with more latency.\nFAST: small buffer; lower latency but more CPU/dropout risk.\nNATIVE: device/OS default audio behavior.";
                     crate::ui::tooltip::tip(ui, button_rect, sound_mode_tip, None);
                 }
@@ -933,9 +936,19 @@ impl SettingsTab {
                     self.plugin_action = Some(PluginAction::Forgot);
                 }
             }
-            Kind::ContentFolder => {
-                let path =
-                    (self.content.as_deref()).map_or_else(String::new, |p| p.display().to_string());
+            Kind::ContentFolder | Kind::UserFolder => {
+                use crate::project_files::README_FILE;
+                use crate::ui::main_menu::SONGS_FOLDER;
+                let content = self.content.as_deref();
+                let (folder, button, shown) = match row.kind {
+                    Kind::UserFolder => (
+                        content.and_then(Path::parent),
+                        OPEN_USER_FOLDER,
+                        SONGS_FOLDER,
+                    ),
+                    _ => (content, OPEN_FOLDER, README_FILE),
+                };
+                let path = folder.map_or_else(String::new, |p| p.display().to_string());
                 let (room, size) = (before(button_rect), FontSize::Pt10.points() as u8);
                 shrink(
                     ui.painter(),
@@ -947,8 +960,8 @@ impl SettingsTab {
                     text,
                 );
                 let native = cfg!(all(not(target_arch = "wasm32"), not(target_os = "android")));
-                if light_button(ui, button_rect, OPEN_FOLDER, native) {
-                    self.reveal = true;
+                if light_button(ui, button_rect, button, native) {
+                    self.reveal = folder.map(|f| f.join(shown));
                 }
             }
         }
@@ -1175,6 +1188,8 @@ mod tests {
                 "Sync only when connected to WiFi",
                 "Sound credits",
                 "Install sound library…",
+                "User folder:",
+                "User folder",
                 "Original content:",
                 "Original content folder",
             ]
@@ -1216,13 +1231,13 @@ mod tests {
     fn dropdowns_list_the_spec_items_and_store_their_ids() {
         let labels = |c: Choice| -> Vec<String> { c.items().into_iter().map(|(_, l)| l).collect() };
         let values = |c: Choice| -> Vec<usize> { c.items().into_iter().map(|(v, _)| v).collect() };
-        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        #[cfg(desktop)]
         {
             assert_eq!(labels(Choice::SoundMode), ["STANDARD", "MULTITRACK"]);
             assert_eq!(values(Choice::SoundMode), [0, 1]);
         }
-        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        #[cfg(not(desktop))]
+        #[cfg(not(desktop))]
         {
             assert_eq!(labels(Choice::SoundMode), ["NATIVE"]);
             assert_eq!(values(Choice::SoundMode), [3]);
@@ -1263,7 +1278,7 @@ mod tests {
             assert_eq!(c.get(&s), value);
             assert_eq!(c.label(&s), label);
         }
-        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        #[cfg(desktop)]
         {
             let (value, label) = Choice::SoundMode.items()[1].clone();
             Choice::SoundMode.set(&mut s, value);
@@ -1271,7 +1286,7 @@ mod tests {
             assert_eq!(Choice::SoundMode.label(&s), label);
             assert_eq!(SOUND_MODES, [(0, "STANDARD"), (1, "MULTITRACK")]);
         }
-        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        #[cfg(not(desktop))]
         assert_eq!(SOUND_MODES, [(3, "NATIVE")]);
     }
 
@@ -1596,6 +1611,7 @@ mod tests {
                         | Kind::DisabledButton
                         | Kind::Restore
                         | Kind::ContentFolder
+                        | Kind::UserFolder
                         | Kind::ScaleLimit
                 )
             }) {
@@ -1614,11 +1630,12 @@ mod tests {
                     .y
             });
             assert!(eighteen > ten, "ppp {ppp}: 18 pt {eighteen} vs 10 pt {ten}");
-            // `Original content:` (BYO) is the last section, below this rig's visible height; its row has its own
-            // test (`texts.contains("Original content:")`).
+            // `User folder:` and `Original content:` (BYO) are the last sections, which show only with a content
+            // folder; their rows have their own test (`texts.contains("Original content:")`).
+            let last = ["User folder:", "Original content:"];
             for r in ROWS
                 .iter()
-                .filter(|r| matches!(r.kind, Kind::Header) && r.label != "Original content:")
+                .filter(|r| matches!(r.kind, Kind::Header) && !last.contains(&r.label))
             {
                 assert_eq!(
                     height(r.label),
@@ -2712,8 +2729,19 @@ mod tests {
             .rect_of(row_id(index("Original content folder")))
             .center();
         rig.click(at);
-        assert_eq!(rig.tab.take_reveal(), Some(folder));
+        assert_eq!(
+            rig.tab.take_reveal(),
+            Some(folder.join(crate::project_files::README_FILE))
+        );
         assert_eq!(rig.tab.take_reveal(), None, "asked once");
+        // The user folder's row above it shows the folder the content folder is in; its button shows its `My Songs`.
+        assert!(texts.contains(&OPEN_USER_FOLDER.to_owned()), "{texts:?}");
+        rig.click(rig.rect_of(row_id(index("User folder"))).center());
+        let user = folder
+            .parent()
+            .unwrap()
+            .join(crate::ui::main_menu::SONGS_FOLDER);
+        assert_eq!(rig.tab.take_reveal(), Some(user));
         assert!(!rig.changed, "no setting changes");
     }
 }

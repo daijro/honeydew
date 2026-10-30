@@ -1803,6 +1803,52 @@ fn each_note_menu_action_rebuilds_once_and_is_one_undo_step() {
     assert!(!slide(&rig));
 }
 
+#[test]
+fn humanize_previews_until_apply_which_is_one_undo_step_and_cancel_none() {
+    let mut rig = Rig::with_synth();
+    rig.edit(1);
+    rig.slide_split();
+    let grid = rig.rect_of(roll("grid"));
+    let at = pos2(grid.left() + 4.0, grid.center().y);
+    rig.click(at);
+    rig.press(at);
+    for _ in 0..10 {
+        rig.frame(vec![]);
+    }
+    rig.release(at);
+    rig.frame(vec![]);
+    let (before, steps) = (rig.notes(1), rig.app.history.steps());
+    let panel = roll("humanize");
+    // The base timing offset dragged to its right end: every start moves later.
+    let shift = |rig: &mut Rig| {
+        let slider = rig.rect_of(panel.with(("row", 7_usize)));
+        rig.press(slider.center());
+        rig.drag_to(slider.right_center() + vec2(U, 0.0));
+        rig.release(slider.right_center() + vec2(U, 0.0));
+        rig.frame(vec![]);
+    };
+    rig.note_menu("Humanize");
+    shift(&mut rig);
+    assert_eq!(rig.notes(1), before, "the preview leaves the song alone");
+    rig.click_id(panel.with("cancel"));
+    rig.frame(vec![]);
+    assert_eq!(rig.notes(1), before);
+    assert_eq!(rig.app.history.steps(), steps);
+
+    rig.note_menu("Humanize");
+    shift(&mut rig);
+    rig.click_id(panel.with("apply"));
+    rig.frame(vec![]);
+    // A quarter beat later, give or take the timing's deviation (3.2 ticks).
+    let start = |notes: &[Event]| notes.iter().map(Event::pos).sum::<u32>();
+    assert!(
+        start(&rig.notes(1)) > start(&before) + 16,
+        "{:?}",
+        rig.notes(1)
+    );
+    assert_eq!(rig.app.history.steps(), steps + 1);
+}
+
 // ---- a pad tap's gate ----
 
 impl Rig {

@@ -118,7 +118,8 @@ fn views(song: &mut Song, local: Option<&Song>) {
         let from = &from.file;
         local_fields!(ChannelFileState, to, from; view, input_monitoring, record_armed, midi_input;
             guid, preset_name, sends, names, rack_order, cc_links, rack_header_extra,
-            params_extra, rack_unknown_chunks, channel_unknown_chunks, header_extra, midi_sends);
+            params_extra, rack_unknown_chunks, channel_unknown_chunks, header_extra, midi_sends,
+            modulations);
         for module in &mut channel.rack.modules {
             let ModuleInstance {
                 type_id,

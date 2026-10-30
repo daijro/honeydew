@@ -2030,6 +2030,41 @@ fn a_sidechain_is_saved_apart_read_back_and_goes_with_its_source() {
 }
 
 #[test]
+fn a_modulator_and_its_target_survive_a_save_and_go_with_the_targets_channel() {
+    // The Modulator in an `HDPm`, keyed by channel 1, and its target (channel 1's Pan) in its channel's `HDMd`.
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    let id = song.channels[2]
+        .rack
+        .add(honeydew_audio::modulator::MODULATOR);
+    let source = song.channels[1].id;
+    let ch = &mut song.channels[2];
+    let module = ch.rack.get_mut(id).unwrap();
+    (module.params[2], module.sidechain) = (0.3, Some(source));
+    let pan = AutomationTarget {
+        instance_id: 0,
+        param: 1,
+    };
+    ch.file.modulations.push(crate::song::Modulation {
+        modulator: id,
+        channel: source,
+        target: pan,
+    });
+    let bytes = crate::flm::write(&song).unwrap();
+    assert_eq!(bytes.windows(4).filter(|w| *w == b"HDMd").count(), 1);
+    let read = crate::flm::read(&bytes).unwrap();
+    assert_eq!(read.channels[2].rack, song.channels[2].rack);
+    assert_eq!(
+        read.channels[2].file.modulations,
+        song.channels[2].file.modulations
+    );
+    // Deleting the target's channel clears it.
+    song.delete_channel(1);
+    assert_eq!(song.channels[1].file.modulations, []);
+}
+
+#[test]
 fn a_channels_midi_input_is_saved_apart_and_a_song_without_one_writes_none() {
     // An `HDMi`, which FL Studio Mobile skips as an unknown chunk, only when set.
     let mut song = Song::default();

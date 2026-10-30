@@ -814,13 +814,22 @@ fn idle_plugins(closed: &[usize]) -> Vec<PluginMove> {
     })
 }
 
-/// Whether anything wants frames: an editor is open or a plugin's run loop has work, or a scan runs.
-pub fn busy() -> bool {
+/// Issue #33: when the app thread should run [`idle`] again without input (the editors draw from it): in about 16 ms
+/// while a plugin's editor is open (its window, VST2's editor idle) or the run loop watches descriptors (an editor's X11
+/// connection), else when the run loop's first timer is due; `None` while nothing waits, so no frames are spent on
+/// plugins. A finished scan wakes the app itself.
+pub fn idle_after() -> Option<std::time::Duration> {
+    const EDITOR: std::time::Duration = std::time::Duration::from_millis(16);
     #[cfg(unix)]
-    let runloop = os_host::runloop::active();
+    let (polling, timer) = (
+        os_host::runloop::polling(),
+        os_host::runloop::next_timer()
+            .map(|due| due.saturating_duration_since(std::time::Instant::now())),
+    );
     #[cfg(not(unix))]
-    let runloop = false;
-    runloop || scanning() || with(|host| host.live.values().any(|h| h.window.is_some()))
+    let (polling, timer) = (false, None);
+    let editor = polling || with(|host| host.live.values().any(|h| h.window.is_some()));
+    editor.then_some(EDITOR).into_iter().chain(timer).min()
 }
 
 /// Saves each instance's state into its module (a project save, a share): the plugins keep their state themselves, so
@@ -1046,12 +1055,16 @@ pub fn instrument(
 ) -> Option<Box<dyn honeydew_audio::instrument::Instrument>> {
     let rate = rate as u32;
     let (plugin, params) = engine_instance(channel, module, rate)?;
+    // Issue #33: a plugin plays the sustain pedal itself, but the built-in ones, which have none of their own (they
+    // ignore CC #64): the engine holds their note-offs, as for its own instruments.
+    let pedal = (module.file.plugin.as_deref()).is_none_or(|p| builtin::of(p).is_none());
     Some(Box::new(PluginInstrument::new(
         plugin,
         params,
         rate,
         bar_beats as u16,
         max_block,
+        pedal,
     )))
 }
 
@@ -1075,6 +1088,31 @@ pub fn effect(
 #[cfg(test)]
 mod card_tests {
     use super::*;
+
+    /// Issue #33: without input, the app runs the plugins' idle about 60 times a second while an editor waits for it
+    /// (its window, or the descriptors the run loop watches for it), at the timer's own time while only a timer waits,
+    /// and never while nothing does.
+    #[cfg(unix)]
+    #[test]
+    fn plugin_idle_runs_only_as_often_as_something_waits_for_it() {
+        use os_host::runloop;
+        use std::os::fd::AsRawFd;
+        use std::time::Duration;
+
+        assert_eq!(idle_after(), None);
+        let timer = runloop::add_timer(Duration::from_millis(500), || {});
+        let after = idle_after().expect("a timer waits");
+        let (low, high) = (Duration::from_millis(400), Duration::from_millis(500));
+        assert!(after > low && after <= high, "{after:?}");
+        let null = std::fs::File::open("/dev/null").unwrap();
+        let watch = runloop::add_fd(null.as_raw_fd(), runloop::READ, |_, _| {});
+        let after = idle_after().expect("an editor's descriptor waits");
+        assert!(after <= Duration::from_millis(20), "{after:?}");
+        for token in [timer, watch] {
+            runloop::remove(token);
+        }
+        assert_eq!(idle_after(), None);
+    }
 
     #[test]
     fn busy_plugin_lock_keeps_the_last_card_status_and_value_text() {

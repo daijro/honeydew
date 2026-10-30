@@ -12,7 +12,7 @@ use crate::panels::inst::soundfont_player;
 use crate::sf2::{Preset, Sf2Error};
 use crate::song::ModuleInstance;
 use crate::ui::ctrl_menu::Touch;
-use crate::ui::rack::{Held, RackPanel, create_send, send_targets, slide};
+use crate::ui::rack::{Held, RackPanel, create_send, modulation_names, send_targets, slide};
 
 /// The rack of the channel it was last drawn for; see [`RackPanel`] for what another channel's rack keeps.
 #[derive(Default)]
@@ -34,6 +34,8 @@ pub struct State {
     pub(crate) list_inputs: bool,
     /// An `INPUT` menu pick: the channel and its input, for the app to keep.
     pub(crate) route: Option<(usize, crate::recording::routing::Route)>,
+    /// The recent control, by channel id, for a Modulator's `Modulate recent control`: the app sets it each frame.
+    pub(crate) recent: Option<(i32, crate::song::AutomationTarget)>,
     /// The rack was re-pointed from a gone channel to the one now at its index, whose widgets take the same ids: a
     /// drag of the old rack's control ends before it moves the new one's ([`show`]).
     pub(crate) stop_drag: bool,
@@ -147,6 +149,8 @@ pub fn show(
     held: Option<(usize, u32)>,
 ) -> Option<Nav> {
     state.panel.targets = send_targets(app.song, channel);
+    (state.panel.recent, state.panel.modulations) =
+        (state.recent, modulation_names(app.song, channel));
     let Some(ch) = app.song.channels.get_mut(channel) else {
         return Some(Nav::Close);
     };

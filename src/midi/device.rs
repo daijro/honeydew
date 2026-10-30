@@ -7,7 +7,7 @@ use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 
 use eframe::egui::Context;
 
-#[cfg(any(not(target_os = "android"), test))]
+#[cfg(any(target_arch = "wasm32", native_midi, test))]
 use super::MidiMsg;
 
 /// The menu item that opens no device.
@@ -93,7 +93,7 @@ fn chosen(choice: &MidiChoice, ports: &[String]) -> Vec<usize> {
 
 /// Connects each of a choice's ports ([`chosen`]), skipping the ones that fail. An error only when a named device
 /// is missing, or when ports were tried and none connected (no ports for `Any` is no error).
-#[cfg(any(not(target_os = "android"), test))]
+#[cfg(any(target_arch = "wasm32", native_midi, test))]
 fn connect_each<C>(
     choice: &MidiChoice,
     ports: &[String],
@@ -259,7 +259,7 @@ impl MidiLink {
 /// Hands one message from a device callback to the link, with the name of the `port` it came in on ([`device_name`]),
 /// and wakes the UI. Only what [`MidiMsg::parse`] reads is kept: system messages (SysEx, clock, active sensing), poly
 /// pressure and malformed bytes are skipped.
-#[cfg(any(not(target_os = "android"), test))]
+#[cfg(any(target_arch = "wasm32", native_midi, test))]
 fn forward(port: &str, bytes: &[u8], tx: &SyncSender<Message>, ctx: Option<&Context>) {
     // ponytail: a full queue (an app that stopped drawing frames) drops new messages; a ring that keeps the newest
     // if that ever matters.
@@ -273,7 +273,7 @@ fn forward(port: &str, bytes: &[u8], tx: &SyncSender<Message>, ctx: Option<&Cont
 }
 
 /// `midir`: `Any` connects every port, `Named` the first port of that device.
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(native_midi)]
 mod backend {
     use std::any::Any;
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -848,8 +848,9 @@ mod tests {
     }
 }
 
-// shortcut: this preview has no Android MIDI service bridge; enable the menu when one is available.
-#[cfg(target_os = "android")]
+// shortcut: this preview has no Android MIDI service bridge; enable the menu when one is available. FreeBSD has no
+// midir backend either (`native_midi`), so no MIDI input.
+#[cfg(not(any(target_arch = "wasm32", native_midi)))]
 mod backend {
     use super::*;
 

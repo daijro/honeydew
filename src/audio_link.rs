@@ -138,11 +138,7 @@ pub fn buffer_mode(sound_mode: u8, low_latency: u8) -> BufferMode {
     let requested = (target > 0).then_some(BufferMode::Fixed(target));
     // The explicit buffer target is independent of the desktop Sound Mode. Native keeps
     // the device default; a selected target is applied in either Standard or Multitrack.
-    if cfg!(any(
-        target_os = "windows",
-        target_os = "macos",
-        target_os = "linux"
-    )) {
+    if cfg!(desktop) {
         return requested.unwrap_or(BufferMode::Native);
     }
     requested.unwrap_or(match sound_mode {

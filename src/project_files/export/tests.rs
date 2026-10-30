@@ -9,6 +9,7 @@ use crate::flm::chunk::ContentRoot;
 use crate::project_files::mem::MemFiles;
 use crate::project_files::{CANCEL, KEEP_BOTH, OVERWRITE_TAG, REPLACE_FILES};
 use crate::render::{Remainder, single_pass};
+use crate::smf::smf_of;
 use crate::song::{ChannelKind, Event, SynthKind};
 use crate::ui::views::Overlay;
 use ExportFormat::*;

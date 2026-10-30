@@ -23,8 +23,21 @@ Get the latest version from [Releases](https://github.com/daijro/honeydew/releas
   | macOS | `~/Library/Application Support/Honeydew/content` |
   | Windows | `%APPDATA%\Honeydew\data\content` |
 
+- **Your files** (songs, samples, presets, renders, MIDI) are in the **user folder**, `Honeydew` in your Documents folder, with a `My …` folder for each kind. SETTINGS → `Open user folder` shows it. Opening a `.zip` that isn't a single song sorts its files into those folders by type.
+
+  | OS | Folder |
+  |---|---|
+  | Linux | `~/Documents/Honeydew` (your XDG documents folder) |
+  | macOS | `~/Documents/Honeydew` |
+  | Windows | `Documents\Honeydew` |
+  | Android | `Android/data/dev.daijro.honeydew/files` |
+
+  Earlier versions kept them in the app data folder; the first start of this version moves them (unless that fails, for example on another drive: then they stay where they are, and SETTINGS shows that folder).
 - **Linux AppImage:** the `.AppImage` is the whole app in one file. Make it executable (`chmod +x`) and run it. It needs FUSE, which most desktops have; without it, run it with `--appimage-extract-and-run`. The Linux downloads need glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 or later).
 - **`-avx2` downloads** are built for CPUs with AVX2 (most Intel Core CPUs since 2013 and AMD CPUs since 2015, but not every Pentium, Celeron or Atom) and can be faster. If unsure, take the plain one.
+- **Arm:** Linux (`aarch64`, also as an AppImage) and Windows (`arm64`) come for 64-bit Arm too. The macOS download is for Apple Silicon Macs only.
+- **Alpine and other musl Linux:** take a `-musl` tarball (x86_64 or aarch64). It needs Alpine 3.22 or later and `apk add libstdc++ alsa-lib`.
+- **FreeBSD:** the `freebsd-x86_64` tarball runs on FreeBSD 14.4 or later with an X11 or Wayland desktop, after `pkg install alsa-lib alsa-plugins`. It has no MIDI input.
 - **Android:** install the `.apk`. Needs a 64-bit ARM device on Android 8 or later.
 - **Web:** the `honeydew-web` ZIP is a static site. Serve the folder with any web server.
 
@@ -125,9 +138,9 @@ Honeydew doesn't include any FL Studio Mobile content. If you own the app, you c
 
    | OS | Folder |
    |---|---|
-   | Linux | `~/.local/share/honeydew/Original Content` |
-   | macOS | `~/Library/Application Support/Honeydew/Original Content` |
-   | Windows | `%APPDATA%\Honeydew\data\Original Content` |
+   | Linux | `~/Documents/Honeydew/Original Content` |
+   | macOS | `~/Documents/Honeydew/Original Content` |
+   | Windows | `Documents\Honeydew\Original Content` |
 
 2. Open SETTINGS and choose `Import`.
 
@@ -165,7 +178,7 @@ cargo run --release
 The sound library lives in `sounds/`, split into 90 MB parts to stay under GitHub's file size limit. To rebuild it from the raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.4.1
+tools/release-content.sh 0.4.2
 ```
 
 Commit the updated `sounds/honeydew-sounds.zip.*` parts and `sounds/release.txt` (the library's version: the app warns when an installed library is older) with your changes. Add `--web` to also build the web ZIP. Tagged releases include the sounds automatically.

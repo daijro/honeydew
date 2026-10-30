@@ -6,7 +6,7 @@ pub mod gm;
 pub mod import;
 
 pub use codec::{Smf, SmfEvent};
-pub use export::{NoData, smf_of};
+pub use export::{NoData, smf_of, smf_with};
 
 #[cfg(test)]
 mod tests;

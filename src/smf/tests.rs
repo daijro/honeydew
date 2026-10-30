@@ -1,5 +1,5 @@
 use super::codec::{self, MAX_DELTA, MAX_EVENTS, MAX_TRACKS, Smf, SmfEvent};
-use super::export::{NoData, smf_of};
+use super::export::{NoData, smf_of, smf_with};
 use crate::midi::MidiMsg::{self, *};
 use crate::song::{AutomationTarget, ChannelKind, Event, LaneKind, Song, points};
 
@@ -443,6 +443,32 @@ fn export_bytes() {
     want.extend((track.len() as u32).to_be_bytes());
     want.extend(track);
     assert_eq!(smf_of(&song, None).unwrap(), want);
+}
+
+/// `Apply note effects` (#31): a channel's notes are written as its rack's note effects play them. A Transpose an
+/// octave up writes each note 12 higher; a Randomizer at Gate 0 % under it leaves nothing to write. Off: the raw notes.
+#[test]
+fn apply_note_effects_writes_the_notes_the_rack_plays() {
+    let keys = |a, b| {
+        let mut song = Song::default();
+        let notes = vec![note(0, 1.0, a, 204), note(128, 0.5, b, 100)];
+        add(&mut song, ChannelKind::Instrument, "Keys", notes);
+        song
+    };
+    let voices =
+        |song: &Song, effects| voice(&parse(&smf_with(song, None, effects).unwrap()).tracks[0]);
+    let mut song = keys(60, 64);
+    let rack = &mut song.channels.last_mut().unwrap().rack;
+    let up = rack.add(48);
+    rack.get_mut(up).unwrap().params[1] = 5.0 / 8.0;
+    let octave_up = voices(&keys(72, 76), None);
+    assert_eq!(octave_up.len(), 4);
+    assert_eq!(voices(&song, Some(48_000.0)), octave_up);
+    let rack = &mut song.channels.last_mut().unwrap().rack;
+    let gate = rack.add(49);
+    rack.get_mut(gate).unwrap().params[4] = 0.0;
+    assert_eq!(smf_with(&song, None, Some(48_000.0)), Err(NoData));
+    assert_eq!(voices(&song, None), voices(&keys(60, 64), None));
 }
 
 #[test]

@@ -28,8 +28,8 @@ use crate::song::plugin::{self, PluginParam, PluginRef};
 use crate::song::points::{Shape, ShapeKind};
 use crate::song::{
     AutomationTarget, CHANNEL_ID_LIMIT, Channel, ChannelKind, Clip, ClipFileState, DrumGrid,
-    DrumKit, Event, KeyboardState, Lane, LaneKind, MetaState, MidiSend, ModuleInstance, PPQ, Raw,
-    RawChunk, SamplerSlot, SendState, Song, SynthKind, TimeSig,
+    DrumKit, Event, KeyboardState, Lane, LaneKind, MetaState, MidiSend, Modulation, ModuleInstance,
+    PPQ, Raw, RawChunk, SamplerSlot, SendState, Song, SynthKind, TimeSig,
 };
 use honeydew_audio::dwp::Cstm;
 
@@ -918,6 +918,23 @@ impl Reader {
                         if !sends.iter().any(|s| s.target_channel_id == id) {
                             self.charge(size_of::<MidiSend>(), &child.path)?;
                             sends.push(send);
+                        }
+                    }
+                }
+                // Honeydew's own Modulator targets (`flm::write`); a Modulator's repeated target is ignored.
+                b"HDMd" => {
+                    let mut reader = child.reader();
+                    while let (Ok(modulator), Ok(id), Ok(instance_id), Ok(param)) =
+                        (reader.i32(), reader.i32(), reader.i32(), reader.i32())
+                    {
+                        let modulations = &mut channel.file.modulations;
+                        if !modulations.iter().any(|m| m.modulator == modulator) {
+                            self.charge(size_of::<Modulation>(), &child.path)?;
+                            modulations.push(Modulation {
+                                modulator,
+                                channel: id,
+                                target: AutomationTarget { instance_id, param },
+                            });
                         }
                     }
                 }

@@ -638,30 +638,113 @@ pub fn guess_scales(events: &[Event], which: &[bool]) -> Option<Vec<Guess>> {
     Some(guesses)
 }
 
-/// `Humanize`: each selected note, once, gets its start moved by N(0, 0.025 beat), kept ≥ 0 and truncated to whole
-/// ticks (1/128 beat), then its velocity moved by N(0, 0.05) of full scale, truncated and kept to 1..=255. `normal`
-/// draws N(0, 1). Length, key, pan and slide stay; the notes are re-sorted and the selection is cleared, which hides
-/// the selection frame.
-pub fn humanize_selected(
-    events: &mut Vec<Event>,
-    sel: &mut Vec<bool>,
-    mut normal: impl FnMut() -> f64,
-) {
-    for (e, _) in events.iter_mut().zip(sel.iter()).filter(|(_, s)| **s) {
-        if let Event::Note {
-            pos, key, velocity, ..
-        } = e
-            && *key <= TOP_KEY
-        {
-            // `as` truncates (and saturates). `v + 255σ` is `(v/255 + σ)·255` without the rounding of `v/255`.
-            *pos = (f64::from(*pos) + normal() * 0.025 * BEAT).max(0.0) as u32;
-            *velocity = (f64::from(*velocity) + normal() * 0.05 * 255.0)
-                .trunc()
-                .clamp(1.0, 255.0) as u8;
+/// The `Humanize` panel's settings ([`super::humanize`]). The panel is issue #29's;
+/// its defaults are the plain `Humanize` rule, so `Apply` on an untouched panel does what the item did before.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Humanize {
+    /// The start's deviation σ, in beats (spec: 0.025).
+    pub timing: f64,
+    /// The length's σ, a share of the note's length (spec: 0).
+    pub length: f64,
+    /// The velocity's σ, a share of full scale (spec: 0.05).
+    pub velocity: f64,
+    /// `Velocity to Length` and `Pitch to Length`, −1..=1: at +1 the loudest (or highest) note is half as long and the
+    /// quietest (or lowest) twice, at −1 the other way round ([`humanize_with`]).
+    pub vel_to_len: f64,
+    pub pitch_to_len: f64,
+    /// The base adjustments, made before the deviations: a velocity offset (a share of full scale), a length factor
+    /// and a start offset in whole ticks (1/128 beat).
+    pub vel_offset: f64,
+    pub len_scale: f64,
+    pub time_offset: f64,
+    /// `Apply to`: every note of the clip, not only the selected ones.
+    pub all: bool,
+}
+
+impl Default for Humanize {
+    /// The spec's rule on the selected notes.
+    fn default() -> Self {
+        Self {
+            timing: 0.025,
+            length: 0.0,
+            velocity: 0.05,
+            vel_to_len: 0.0,
+            pitch_to_len: 0.0,
+            vel_offset: 0.0,
+            len_scale: 1.0,
+            time_offset: 0.0,
+            all: false,
         }
     }
-    sel.fill(false);
-    sort(events, sel);
+}
+
+/// [`humanize_with`] drawing from [`normal`] seeded by `seed`: the same seed and settings give the same notes.
+pub fn humanize(events: &[Event], sel: &[bool], s: &Humanize, seed: u64) -> Vec<Event> {
+    // Spread small seeds over the generator's state.
+    humanize_with(
+        events,
+        sel,
+        s,
+        normal(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15)),
+    )
+}
+
+/// `Humanize`: `events` with each target note (a selected one, or every one with [`Humanize::all`]) changed once,
+/// where `normal` draws N(0, 1), three draws a note whatever the settings, so that a slider scales the same
+/// deviations:
+/// - start = max(0, start + offset + N(0, σt beat)), truncated to whole ticks (1/128 beat);
+/// - velocity v = clamp(v + 255·offset, 0, 255), then clamp(trunc(v + 255·N(0, σv)), 1, 255);
+/// - length = max(1 tick, length · scale · 2^(−a·(2v/255 − 1)) · 2^(−b·(2p − 1)) · (1 + N(0, σl))), with v that offset
+///   velocity, a = `Velocity to Length`, b = `Pitch to Length` and p the key's place in the target notes' key range
+///   (0 lowest, 1 highest, ½ for a single key).
+///
+/// Key, pan and slide stay. The notes are neither re-sorted nor deselected: the order stays, so the preview keeps the
+/// selection; `Apply` re-sorts. With the defaults this is the plain `Humanize` rule, drawing start then
+/// velocity as it does.
+pub fn humanize_with(
+    events: &[Event],
+    sel: &[bool],
+    s: &Humanize,
+    mut normal: impl FnMut() -> f64,
+) -> Vec<Event> {
+    let target = |i: usize, e: &Event| note(e).is_some() && (s.all || sel.get(i) == Some(&true));
+    let keys = (events.iter().enumerate())
+        .filter(|&(i, e)| target(i, e))
+        .filter_map(|(_, e)| note(e).map(|n| f64::from(n.2)));
+    let (low, high) = keys.fold((f64::MAX, f64::MIN), |(l, h), k| (l.min(k), h.max(k)));
+    let place = |key: u8| match high > low {
+        true => (f64::from(key) - low) / (high - low),
+        false => 0.5,
+    };
+    (events.iter().enumerate())
+        .map(|(i, e)| match *e {
+            Event::Note {
+                pos,
+                len_beats,
+                key,
+                velocity,
+                pan,
+                slide,
+            } if target(i, e) => {
+                let (zt, zv, zl) = (normal(), normal(), normal());
+                let v = (f64::from(velocity) + s.vel_offset * 255.0).clamp(0.0, 255.0);
+                let k = s.len_scale
+                    * (-s.vel_to_len * (2.0 * v / 255.0 - 1.0)).exp2()
+                    * (-s.pitch_to_len * (2.0 * place(key) - 1.0)).exp2();
+                let len = (len_beats * BEAT * k * (1.0 + zl * s.length)).max(1.0);
+                // `as` truncates (and saturates). `v + 255σ` is `(v/255 + σ)·255` without the rounding of `v/255`.
+                Event::Note {
+                    pos: (f64::from(pos) + s.time_offset + zt * s.timing * BEAT).max(0.0) as u32,
+                    len_beats: len / BEAT,
+                    key,
+                    velocity: (v + zv * s.velocity * 255.0).trunc().clamp(1.0, 255.0) as u8,
+                    pan,
+                    slide,
+                }
+            }
+            other => other,
+        })
+        .collect()
 }
 
 /// Standard normal draws: Marsaglia's polar method (one value of each pair) over xorshift64*.

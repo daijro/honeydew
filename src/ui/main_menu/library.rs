@@ -30,18 +30,6 @@ pub const SONGS_FOLDER: &str = "My Songs";
 /// The folder deleted files and folders go to.
 pub const RECENTLY_DELETED: &str = "Recently Deleted";
 
-/// The user folders whose files share [`RECENTLY_DELETED`]: the songs', the folder archives are unzipped into (SONGS
-/// lists it as a root), and the preset and chord set pickers'.
-#[cfg(not(target_arch = "wasm32"))]
-const USER_FOLDERS: [&str; 6] = [
-    SONGS_FOLDER,
-    crate::project_files::UNZIPPED_FOLDER,
-    crate::project_files::PRESETS_FOLDER,
-    crate::project_files::RACKS_FOLDER,
-    crate::project_files::DRUMSETS_FOLDER,
-    crate::project_files::CHORD_SETS_FOLDER,
-];
-
 /// How many days a deleted file stays in [`RECENTLY_DELETED`].
 pub const BIN_DAYS: u64 = 30;
 
@@ -475,41 +463,222 @@ impl SongLibrary for MemoryLibrary {
     }
 }
 
-/// The songs folder: `My Songs` in the folder eframe keeps app data in (`eframe::storage_dir`'s layout, which needs
-/// eframe's `persistence` feature, so it is repeated here):
-/// - Linux and other Unixes: `$XDG_DATA_HOME/honeydew/My Songs`, or `~/.local/share/honeydew/My Songs`;
-/// - macOS: `~/Library/Application Support/Honeydew/My Songs`;
-/// - Windows: `%APPDATA%\Honeydew\data\My Songs`.
-///
-/// The app's folder named after its former name ([`crate::LEGACY_APP_NAME`]) becomes this one the first time
-/// ([`crate::migrate_legacy_dir_once`]). `None` when the home or app-data folder is unknown or not an absolute path.
-#[cfg(target_os = "android")]
+/// The songs folder: `My Songs` in the user folder ([`user_dir`]).
+#[cfg(not(target_arch = "wasm32"))]
 pub fn songs_dir() -> Option<PathBuf> {
-    Some(
-        crate::android::data_dir()?
-            .join(crate::APP_NAME)
-            .join(SONGS_FOLDER),
-    )
+    Some(user_dir()?.join(SONGS_FOLDER))
+}
+
+/// The user folder, which holds `My Songs` and the other `My …` folders ([`crate::project_files::MY_FOLDERS`]), the
+/// Original Content folder, `Unzipped songs` and the bin, where the user finds it:
+/// - Linux and other Unixes: `Honeydew` in the XDG documents folder, or `~/Documents/Honeydew`;
+/// - macOS: `~/Documents/Honeydew`;
+/// - Windows: `Honeydew` in the Documents known folder, or `%USERPROFILE%\Documents\Honeydew`;
+/// - Android: the app's external files folder (`Android/data/<package>/files`).
+///
+/// The first time, what [`app_data_dir`], the user folder before, holds moves here ([`migrate_user_dir`]), unless it
+/// cannot: then that folder stays the user folder. [`app_data_dir`] too where there is no documents folder (or no
+/// external one on Android). Worked out once per process.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn user_dir() -> Option<PathBuf> {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    // Outside the lock: on Android there is none before the activity starts, which a later call may find.
+    let old = app_data_dir()?;
+    let dir = DIR.get_or_init(|| match new_user_dir() {
+        None => old,
+        // Tests never touch the user's folders.
+        Some(new) if cfg!(test) => new,
+        Some(new) => migrate_user_dir(&old, &new, |from, to| std::fs::rename(from, to)),
+    });
+    Some(dir.clone())
+}
+
+#[cfg(target_os = "android")]
+fn new_user_dir() -> Option<PathBuf> {
+    crate::android::external_dir().filter(|dir| std::fs::create_dir_all(dir).is_ok())
 }
 
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
-pub fn songs_dir() -> Option<PathBuf> {
+fn new_user_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    if let Some(documents) = known_documents() {
+        return Some(documents.join(crate::APP_NAME));
+    }
+    // Tests never read the user's files (`user-dirs.dirs`).
+    let read = |path: &Path| match cfg!(test) {
+        true => None,
+        false => std::fs::read_to_string(path).ok(),
+    };
+    let documents = documents_dir_from(|key| std::env::var_os(key), read)?;
+    Some(documents.join(crate::APP_NAME))
+}
+
+/// The documents folder, from the environment variables `var` reads and the file `read` reads: `Documents` in the
+/// home folder (`%USERPROFILE%` on Windows), but on Linux and other Unixes the XDG documents folder first
+/// (`XDG_DOCUMENTS_DIR` in `user-dirs.dirs` in the config folder, unless it is the home folder itself). `None` without
+/// an absolute home folder.
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+fn documents_dir_from(
+    var: impl Fn(&str) -> Option<std::ffi::OsString>,
+    read: impl Fn(&Path) -> Option<String>,
+) -> Option<PathBuf> {
+    let path = |key| var(key).map(PathBuf::from).filter(|p| p.is_absolute());
+    let home = path(if cfg!(windows) { "USERPROFILE" } else { "HOME" })?;
+    let xdg = || {
+        let config = path("XDG_CONFIG_HOME").unwrap_or_else(|| home.join(".config"));
+        let dirs = read(&config.join("user-dirs.dirs"))?;
+        let line = dirs
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("XDG_DOCUMENTS_DIR="))?;
+        let value = line.trim().trim_matches('"');
+        let dir = match value.strip_prefix("$HOME") {
+            Some(rest) => home.join(rest.trim_start_matches('/')),
+            None => PathBuf::from(value),
+        };
+        (dir.is_absolute() && dir != home).then_some(dir)
+    };
+    let xdg = if cfg!(any(windows, target_os = "macos")) {
+        None
+    } else {
+        xdg()
+    };
+    Some(xdg.unwrap_or_else(|| home.join("Documents")))
+}
+
+/// The Documents known folder, wherever the user moved it (OneDrive, another drive).
+#[cfg(windows)]
+fn known_documents() -> Option<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::Com::CoTaskMemFree;
+    use windows_sys::Win32::UI::Shell::{FOLDERID_Documents, SHGetKnownFolderPath};
+    let mut path = std::ptr::null_mut();
+    // SAFETY: on success `path` is a NUL-terminated wide string the shell allocated; it is freed once, read or not.
+    unsafe {
+        let found =
+            SHGetKnownFolderPath(&FOLDERID_Documents, 0, std::ptr::null_mut(), &mut path) == 0;
+        let dir = found.then(|| {
+            let len = (0..).take_while(|&i| *path.add(i) != 0).count();
+            std::ffi::OsString::from_wide(std::slice::from_raw_parts(path, len))
+        });
+        CoTaskMemFree(path.cast());
+        dir.map(PathBuf::from).filter(|dir| dir.is_absolute())
+    }
+}
+
+/// The installed sound library's folder in [`app_data_dir`] (`content::install`): it stays there, as the app's.
+pub const SOUND_LIBRARY_FOLDER: &str = "content";
+
+/// The marker an earlier user folder holds once it stays the user folder ([`migrate_user_dir`]): why it does.
+#[cfg(not(target_arch = "wasm32"))]
+const STAYS: &str = ".user-folder-stays-here";
+
+/// Moves what the earlier user folder `old` holds into the user folder `new` and returns `new`, or returns `old` where
+/// it stays the user folder. Each entry of `old` but the installed sound library ([`SOUND_LIBRARY_FOLDER`]) is renamed
+/// into `new` with `rename` (one rename each, nothing copied), and nothing is deleted or written over:
+/// - `old` missing or holding nothing to move: `new`;
+/// - `old` marked ([`STAYS`]) by an earlier start: `old`;
+/// - a name in both: nothing moves, both keep their files, and `old` stays (marked);
+/// - a rename fails (another file system, no permission): what moved goes back, and `old` stays (marked, so the next
+///   start does not try again).
+// ponytail: checked, then renamed: a file made at one of the names in `new` between the check and the rename would be
+// replaced (rename's Unix semantics). `renameat2` with `RENAME_NOREPLACE` would close it.
+#[cfg(not(target_arch = "wasm32"))]
+fn migrate_user_dir(
+    old: &Path,
+    new: &Path,
+    rename: impl Fn(&Path, &Path) -> io::Result<()>,
+) -> PathBuf {
+    let stays = |why: String| {
+        eprintln!(
+            "kept the user folder {}, not moved to {}: {why}",
+            old.display(),
+            new.display()
+        );
+        if let Err(err) = std::fs::write(old.join(STAYS), &why) {
+            eprintln!("{}: {err}", old.join(STAYS).display());
+        }
+        old.to_owned()
+    };
+    if old == new {
+        return new.to_owned();
+    }
+    if old.join(STAYS).exists() {
+        return old.to_owned();
+    }
+    let Ok(listed) = std::fs::read_dir(old) else {
+        return new.to_owned();
+    };
+    let names: Vec<_> = (listed.flatten().map(|e| e.file_name()))
+        .filter(|name| name != SOUND_LIBRARY_FOLDER)
+        .collect();
+    if names.is_empty() {
+        return new.to_owned();
+    }
+    if let Some(name) =
+        (names.iter()).find(|name| std::fs::symlink_metadata(new.join(name)).is_ok())
+    {
+        return stays(format!("{} is in both", name.display()));
+    }
+    let made = !new.exists();
+    if let Err(err) = std::fs::create_dir_all(new) {
+        return stays(err.to_string());
+    }
+    for (i, name) in names.iter().enumerate() {
+        if let Err(err) = rename(&old.join(name), &new.join(name)) {
+            for back in names[..i].iter().rev() {
+                if let Err(err) = rename(&new.join(back), &old.join(back)) {
+                    eprintln!("{} stays in {}: {err}", back.display(), new.display());
+                }
+            }
+            if made {
+                // Only an empty folder goes.
+                let _ = std::fs::remove_dir(new);
+            }
+            return stays(format!("{}: {err}", name.display()));
+        }
+    }
+    eprintln!(
+        "moved the user folder {} to {}",
+        old.display(),
+        new.display()
+    );
+    new.to_owned()
+}
+
+/// The folder eframe keeps app data in (`eframe::storage_dir`'s layout, which needs eframe's `persistence` feature,
+/// so it is repeated here): the installed sound library's ([`SOUND_LIBRARY_FOLDER`]), and the user folder before it
+/// moved to the documents folder ([`user_dir`]):
+/// - Linux and other Unixes: `$XDG_DATA_HOME/honeydew`, or `~/.local/share/honeydew`;
+/// - macOS: `~/Library/Application Support/Honeydew`;
+/// - Windows: `%APPDATA%\Honeydew\data`;
+/// - Android: `Honeydew` in the app's internal data folder.
+///
+/// The app's folder named after its former name ([`crate::LEGACY_APP_NAME`]) becomes this one the first time
+/// ([`crate::migrate_legacy_dir_once`]), before [`user_dir`] moves what it holds. `None` when the home or app-data
+/// folder is unknown or not an absolute path.
+#[cfg(target_os = "android")]
+pub fn app_data_dir() -> Option<PathBuf> {
+    Some(crate::android::data_dir()?.join(crate::APP_NAME))
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+pub fn app_data_dir() -> Option<PathBuf> {
     #[cfg(not(test))]
     let migrate = crate::migrate_legacy_dir_once;
     // Tests never touch the user's folders.
     #[cfg(test)]
     let migrate = |_: &Path, new: &Path| new.to_owned();
-    songs_dir_from(|key| std::env::var_os(key), migrate)
+    app_data_dir_from(|key| std::env::var_os(key), migrate)
 }
 
-/// [`songs_dir`] with the environment variables `var` reads, the app's folder of its former name becoming the new one
-/// through `migrate` (old, new).
+/// [`app_data_dir`] with the environment variables `var` reads, the app's folder of its former name becoming the new
+/// one through `migrate` (old, new).
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
-fn songs_dir_from(
+fn app_data_dir_from(
     var: impl Fn(&str) -> Option<std::ffi::OsString>,
     migrate: fn(&Path, &Path) -> PathBuf,
 ) -> Option<PathBuf> {
-    // No relative fallback: an unset, empty or relative folder means there is no songs folder.
+    // No relative fallback: an unset, empty or relative folder means there is no app data folder.
     let path = |key| var(key).map(PathBuf::from).filter(|p| p.is_absolute());
     let home = || path("HOME");
     let data = if cfg!(windows) {
@@ -528,8 +697,7 @@ fn songs_dir_from(
         }
     };
     let app = migrate(&named(crate::LEGACY_APP_NAME), &named(crate::APP_NAME));
-    let base = if cfg!(windows) { app.join("data") } else { app };
-    Some(base.join(SONGS_FOLDER))
+    Some(if cfg!(windows) { app.join("data") } else { app })
 }
 
 /// The extensions the songs library lists: songs, and project archives, which SONGS opens like a picked one and
@@ -791,14 +959,8 @@ impl SongLibrary for NativeLibrary {
             && let Some(user) = self.user()
         {
             use crate::project_files as pf;
-            let fixed = USER_FOLDERS.into_iter().chain([
-                pf::CONTENT_FOLDER,
-                pf::SAMPLES_FOLDER,
-                pf::RECORDINGS_FOLDER,
-                pf::SOUNDFONTS_FOLDER,
-                pf::MIDI_FOLDER,
-                crate::ui::save_dialog::ExportFormat::Wav.folder(),
-            ]);
+            let fixed =
+                (pf::MY_FOLDERS.into_iter()).chain([pf::UNZIPPED_FOLDER, pf::CONTENT_FOLDER]);
             places.extend(fixed.map(|f| user.join(f)));
         }
         places
@@ -1899,53 +2061,198 @@ mod tests {
 
     #[cfg(all(unix, not(target_os = "macos")))]
     #[test]
-    fn the_songs_folder_needs_an_absolute_data_or_home_folder() {
-        let dir = |vars: &[(&str, &str)]| {
-            songs_dir_from(
-                |key| vars.iter().find(|(k, _)| *k == key).map(|(_, v)| v.into()),
-                |_, new| new.to_owned(),
-            )
+    fn the_app_data_and_documents_folders_need_an_absolute_home() {
+        let var = |vars: &'static [(&str, &str)]| {
+            move |key: &str| vars.iter().find(|(k, _)| *k == key).map(|(_, v)| v.into())
         };
+        let dir = |vars| app_data_dir_from(var(vars), |_, new| new.to_owned());
         assert_eq!(dir(&[]), None);
         assert_eq!(dir(&[("HOME", "relative")]), None);
         assert_eq!(dir(&[("HOME", "")]), None);
         assert_eq!(
             dir(&[("HOME", "/h")]),
-            Some(PathBuf::from("/h/.local/share/honeydew/My Songs"))
+            Some(PathBuf::from("/h/.local/share/honeydew"))
         );
         assert_eq!(
             dir(&[("XDG_DATA_HOME", "/d"), ("HOME", "/h")]),
-            Some(PathBuf::from("/d/honeydew/My Songs"))
+            Some(PathBuf::from("/d/honeydew"))
         );
         assert_eq!(
             dir(&[("XDG_DATA_HOME", "rel"), ("HOME", "/h")]),
-            Some(PathBuf::from("/h/.local/share/honeydew/My Songs"))
+            Some(PathBuf::from("/h/.local/share/honeydew"))
         );
+        // The documents folder: `user-dirs.dirs`' one (not the home folder itself), else `~/Documents`.
+        let docs = |vars, dirs: &'static str| {
+            documents_dir_from(var(vars), |p: &Path| {
+                (p == Path::new("/h/.config/user-dirs.dirs")).then(|| dirs.to_owned())
+            })
+        };
+        let home = &[("HOME", "/h")];
+        assert_eq!(docs(&[], ""), None);
+        assert_eq!(docs(home, ""), Some(PathBuf::from("/h/Documents")));
+        let dirs = "# comment\nXDG_DOCUMENTS_DIR=\"$HOME/Dokumente\"\n";
+        assert_eq!(docs(home, dirs), Some(PathBuf::from("/h/Dokumente")));
+        let dirs = "XDG_DOCUMENTS_DIR=\"/data/docs\"";
+        assert_eq!(docs(home, dirs), Some(PathBuf::from("/data/docs")));
+        let dirs = "XDG_DOCUMENTS_DIR=\"$HOME/\"";
+        assert_eq!(docs(home, dirs), Some(PathBuf::from("/h/Documents")));
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
     #[test]
-    fn the_app_folder_of_the_former_name_becomes_the_songs_folders_home() {
+    fn the_app_folder_of_the_former_name_becomes_the_app_data_folder() {
         let data = std::env::temp_dir().join(format!("br-songs-migrate-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&data);
         let old = data.join("studio").join(SONGS_FOLDER);
         std::fs::create_dir_all(&old).unwrap();
         std::fs::write(old.join("A.flm"), b"song").unwrap();
         let var = |key: &str| (key == "XDG_DATA_HOME").then(|| data.clone().into_os_string());
-        let dir = songs_dir_from(var, crate::migrate_legacy_dir).unwrap();
-        assert_eq!(dir, data.join("honeydew").join(SONGS_FOLDER));
-        assert_eq!(std::fs::read(dir.join("A.flm")).unwrap(), b"song");
+        let dir = app_data_dir_from(var, crate::migrate_legacy_dir).unwrap();
+        assert_eq!(dir, data.join("honeydew"));
+        let song = dir.join(SONGS_FOLDER).join("A.flm");
+        assert_eq!(std::fs::read(song).unwrap(), b"song");
         assert!(!data.join("studio").exists());
         let _ = std::fs::remove_dir_all(&data);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    fn the_songs_folder_is_my_songs_under_the_app_data_folder() {
+    fn the_songs_folder_is_my_songs_under_the_user_folder() {
         let dir = songs_dir().expect("HOME is set in tests");
+        assert_eq!(dir.parent(), user_dir().as_deref(), "{dir:?}");
         assert!(dir.ends_with(SONGS_FOLDER), "{dir:?}");
         let app = dir.parent().unwrap().to_string_lossy().to_lowercase();
         assert!(app.contains("honeydew"), "{dir:?}");
+    }
+
+    /// Every file below `dir`, relative to it, sorted; a folder holding nothing as `<folder>/`.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn tree(dir: &Path) -> Vec<String> {
+        let mut found = Vec::new();
+        let mut todo = vec![dir.to_owned()];
+        while let Some(at) = todo.pop() {
+            let entries: Vec<_> = std::fs::read_dir(&at)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .collect();
+            if entries.is_empty() && at != dir {
+                found.push(format!("{}/", at.strip_prefix(dir).unwrap().display()));
+            }
+            for entry in entries {
+                match entry.file_type().unwrap().is_dir() {
+                    true => todo.push(entry.path()),
+                    false => found.push(
+                        entry
+                            .path()
+                            .strip_prefix(dir)
+                            .unwrap()
+                            .display()
+                            .to_string(),
+                    ),
+                }
+            }
+        }
+        found.sort();
+        found
+    }
+
+    /// The earlier user folder `<base>/old` of the app data folder, holding the installed sound library and the user's
+    /// files, and where the user folder goes, `<base>/Documents/Honeydew`.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn earlier_user_folder(base: &Path) -> (PathBuf, PathBuf) {
+        let _ = std::fs::remove_dir_all(base);
+        let (old, new) = (
+            base.join("old"),
+            base.join("Documents").join(crate::APP_NAME),
+        );
+        for (path, bytes) in [
+            ("My Songs/A.flm", &b"song"[..]),
+            ("My Samples/Kicks/kick.wav", b"kick"),
+            ("Original Content/README.txt", b"readme"),
+            ("Unzipped songs/Pack/Pack.flm", b"pack"),
+            ("Recently Deleted/My Songs/B.flm", b"gone"),
+            ("recent.state", b"state"),
+            ("content/index.json", b"library"),
+        ] {
+            let path = old.join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, bytes).unwrap();
+        }
+        std::fs::create_dir_all(old.join("My Racks")).unwrap();
+        (old, new)
+    }
+
+    const USER_FILES: [&str; 7] = [
+        "My Racks/",
+        "My Samples/Kicks/kick.wav",
+        "My Songs/A.flm",
+        "Original Content/README.txt",
+        "Recently Deleted/My Songs/B.flm",
+        "Unzipped songs/Pack/Pack.flm",
+        "recent.state",
+    ];
+
+    /// The user folder moves out of the app data folder by renames, all of it but the installed sound library, or not
+    /// at all: a name in both places, or a rename that fails, keeps the earlier folder in use with every file in it.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn the_user_folder_moves_whole_to_the_documents_folder_or_stays() {
+        let base = std::env::temp_dir().join(format!("honeydew-userdir-{}", std::process::id()));
+        let rename = |from: &Path, to: &Path| std::fs::rename(from, to);
+        let library = ["content/index.json".to_owned()];
+
+        // Moved: all of it but the sound library, which stays in the app data folder.
+        let (old, new) = earlier_user_folder(&base);
+        assert_eq!(migrate_user_dir(&old, &new, rename), new);
+        assert_eq!(tree(&new), USER_FILES);
+        assert_eq!(tree(&old), library);
+        assert_eq!(std::fs::read(new.join("My Songs/A.flm")).unwrap(), b"song");
+        // Nothing left to move: the next start uses the new folder.
+        assert_eq!(
+            migrate_user_dir(&old, &new, |_, _| panic!("moved again")),
+            new
+        );
+
+        // A rename that fails (the third: another file system) puts back what moved, and the earlier folder stays,
+        // marked, so later starts keep it without trying again.
+        let (old, new) = earlier_user_folder(&base);
+        let tries = std::cell::Cell::new(0);
+        let failing = |from: &Path, to: &Path| {
+            tries.set(tries.get() + 1);
+            match tries.get() == 3 {
+                true => Err(io::Error::new(
+                    io::ErrorKind::CrossesDevices,
+                    "another disk",
+                )),
+                false => std::fs::rename(from, to),
+            }
+        };
+        assert_eq!(migrate_user_dir(&old, &new, failing), old);
+        let mut all: Vec<_> = USER_FILES
+            .map(String::from)
+            .into_iter()
+            .chain(library.clone())
+            .collect();
+        all.push(STAYS.into());
+        all.sort();
+        assert_eq!(tree(&old), all);
+        assert!(!new.exists(), "the folder it made goes, empty");
+        assert_eq!(
+            migrate_user_dir(&old, &new, |_, _| panic!("tried again")),
+            old
+        );
+
+        // A name in both places: nothing moves, both keep their files.
+        let (old, new) = earlier_user_folder(&base);
+        std::fs::create_dir_all(new.join("My Songs")).unwrap();
+        std::fs::write(new.join("My Songs/A.flm"), b"other").unwrap();
+        assert_eq!(migrate_user_dir(&old, &new, |_, _| panic!("moved")), old);
+        assert_eq!(std::fs::read(old.join("My Songs/A.flm")).unwrap(), b"song");
+        assert_eq!(tree(&new), ["My Songs/A.flm"]);
+        assert_eq!(std::fs::read(new.join("My Songs/A.flm")).unwrap(), b"other");
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     /// The folders a deeper file implies list (the web's `My Files`) and exist, so the file actions take them.

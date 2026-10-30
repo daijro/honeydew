@@ -6,7 +6,7 @@
 //! an ignored test:
 //!
 //! ```text
-//! HONEYDEW_ORIGINAL_CONTENT="$HOME/.local/share/honeydew/Original Content" \
+//! HONEYDEW_ORIGINAL_CONTENT="$HOME/Documents/Honeydew/Original Content" \
 //!     cargo test --lib verify_original_content -- --ignored --nocapture
 //! ```
 //!

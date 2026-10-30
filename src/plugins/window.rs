@@ -143,6 +143,21 @@ mod win {
                     DispatchMessageW(&msg);
                 }
             }
+            // Issue #33: the thread's timers too, which most editors redraw from (their own windows' and window-less
+            // ones). Windows makes a WM_TIMER only while no paint is pending, and the app's window has one pending
+            // whenever it redraws every frame (as it does while an editor is open): without this, an editor drew only
+            // when the mouse moved over it.
+            let mut msg = std::mem::zeroed();
+            while PeekMessageW(
+                &mut msg,
+                std::ptr::null_mut(),
+                WM_TIMER,
+                WM_TIMER,
+                PM_REMOVE,
+            ) != 0
+            {
+                DispatchMessageW(&msg);
+            }
         }
         CLOSED
             .lock()
@@ -249,7 +264,7 @@ mod mac {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(x11)]
 mod x11 {
     use std::cell::RefCell;
     use std::rc::Rc;
@@ -447,7 +462,7 @@ mod x11 {
 /// thread; an editor that draws with GLX is refused its own `glXMakeCurrent` while another API's (EGL's, the app's on
 /// Wayland) context is current here, with an X error. Xlib's default error handler then exits the whole app, so the
 /// app's context is released around editor calls and plugins' X errors go to a handler that only reports them.
-#[cfg(target_os = "linux")]
+#[cfg(x11)]
 mod editor_env {
     use std::ffi::{CStr, c_char, c_int, c_uint, c_ulong, c_void};
     use std::io::Write;
@@ -766,32 +781,32 @@ mod editor_env {
 /// Plugins' X errors are reported from now on instead of exiting the app (Xlib's own handler exits): called before
 /// plugins are loaded.
 pub fn catch_x_errors() {
-    #[cfg(target_os = "linux")]
+    #[cfg(x11)]
     editor_env::catch_x_errors();
 }
 
 /// Runs `f`, a call into plugin editor code, in the conditions it needs on the app thread (on Linux: the app's GL
 /// context released, plugins' X errors reported instead of exiting the app); returns the first X error it caused.
 pub fn editor_call<R>(f: impl FnOnce() -> R) -> (R, Option<String>) {
-    #[cfg(target_os = "linux")]
+    #[cfg(x11)]
     {
         catch_x_errors();
         let _ = editor_env::take_x_error();
         let out = editor_env::without_app_gl(f);
         (out, editor_env::take_x_error())
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(x11))]
     (f(), None)
 }
 
 /// Whether this platform has plugin editor windows.
-pub const AVAILABLE: bool = cfg!(any(target_os = "linux", target_os = "macos", windows));
+pub const AVAILABLE: bool = cfg!(any(x11, target_os = "macos", windows));
 
 /// A plugin editor's window. Dropping it destroys the window: close the plugin's editor first.
 pub struct EditorWindow {
-    #[cfg(target_os = "linux")]
+    #[cfg(x11)]
     conn: std::rc::Rc<x11::Conn>,
-    #[cfg(target_os = "linux")]
+    #[cfg(x11)]
     win: u32,
     #[cfg(windows)]
     native: windows_sys::Win32::Foundation::HWND,
@@ -802,7 +817,7 @@ pub struct EditorWindow {
 impl EditorWindow {
     /// A hidden window titled `title`; [`Self::show`] maps it once the editor is in it.
     pub fn new(title: &str) -> Result<Self, String> {
-        #[cfg(target_os = "linux")]
+        #[cfg(x11)]
         {
             let conn = x11::conn()?;
             let win = x11::create(&conn, title)?;
@@ -820,7 +835,7 @@ impl EditorWindow {
                 native: mac::create(title)?,
             })
         }
-        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+        #[cfg(not(any(x11, target_os = "macos", windows)))]
         {
             let _ = title;
             Err("plugin editor windows are not available on this platform".into())
@@ -829,7 +844,7 @@ impl EditorWindow {
 
     /// The native window handle a plugin embeds its editor in (an X11 window id).
     pub fn handle(&self) -> *mut c_void {
-        #[cfg(target_os = "linux")]
+        #[cfg(x11)]
         {
             self.win as usize as *mut c_void
         }
@@ -841,13 +856,13 @@ impl EditorWindow {
         {
             objc2::rc::Retained::as_ptr(&self.native.view) as *mut c_void
         }
-        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+        #[cfg(not(any(x11, target_os = "macos", windows)))]
         std::ptr::null_mut()
     }
 
     /// The display's scale, which the editor is told to draw at.
     pub fn scale(&self) -> f32 {
-        #[cfg(target_os = "linux")]
+        #[cfg(x11)]
         {
             self.conn.scale
         }
@@ -855,25 +870,25 @@ impl EditorWindow {
         {
             mac::scale(&self.native)
         }
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(not(any(x11, target_os = "macos")))]
         1.0
     }
 
     /// Fits the window to an editor of `size` device pixels.
     pub fn resize(&self, size: (u32, u32)) {
-        #[cfg(target_os = "linux")]
+        #[cfg(x11)]
         x11::resize(&self.conn, self.win, size);
         #[cfg(windows)]
         win::resize(self.native, size);
         #[cfg(target_os = "macos")]
         mac::resize(&self.native, size);
-        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+        #[cfg(not(any(x11, target_os = "macos", windows)))]
         let _ = size;
     }
 
     /// Shows the window in front.
     pub fn show(&mut self) {
-        #[cfg(target_os = "linux")]
+        #[cfg(x11)]
         x11::show(&self.conn, self.win);
         #[cfg(windows)]
         win::show(self.native);
@@ -883,11 +898,11 @@ impl EditorWindow {
 
     /// Whether `window` (from [`pump`]) is this one.
     pub fn is(&self, window: usize) -> bool {
-        #[cfg(target_os = "linux")]
+        #[cfg(x11)]
         {
             self.win as usize == window
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(x11))]
         {
             #[cfg(windows)]
             {
@@ -909,7 +924,7 @@ impl EditorWindow {
 
 impl Drop for EditorWindow {
     fn drop(&mut self) {
-        #[cfg(target_os = "linux")]
+        #[cfg(x11)]
         x11::destroy(&self.conn, self.win);
         #[cfg(windows)]
         win::destroy(self.native);
@@ -920,7 +935,7 @@ impl Drop for EditorWindow {
 
 /// Reads the windows' events; returns the windows the user closed.
 pub fn pump() -> Vec<usize> {
-    #[cfg(target_os = "linux")]
+    #[cfg(x11)]
     {
         x11::pump().into_iter().map(|w| w as usize).collect()
     }
@@ -932,6 +947,6 @@ pub fn pump() -> Vec<usize> {
     {
         mac::pump()
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+    #[cfg(not(any(x11, target_os = "macos", windows)))]
     Vec::new()
 }

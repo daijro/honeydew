@@ -40,6 +40,7 @@ use crate::song::Event;
 use crate::theme::{Rgba, ThemeColors};
 use crate::ui::anim;
 use crate::ui::audio_editor::{Wave, add_column, columns, pixel_columns, wave_rows};
+use crate::ui::automation::value::{Land, ValueSnap};
 use crate::ui::clips::{mix, sample, tint_stops};
 use crate::ui::piano_roll::notes::note;
 use crate::ui::widgets::{Bar, ItemList, item_list_index};
@@ -113,16 +114,49 @@ impl Prop {
         x as u16
     }
 
+    /// The lane's top value: Vel 255, Pan 254, Pitch 65534, Repeat 7.
+    pub fn max(self) -> u16 {
+        match self {
+            Self::Velocity => 255,
+            Self::Pan => 254,
+            Self::Pitch => 65534,
+            Self::Repeat => 7,
+        }
+    }
+
     /// Where a stored value sits in [0, 1] for drawing: vel/255, pan/254 (a file's 255 is clamped), pitch/65534,
     /// repeat/7.
     pub fn frac(self, value: u16) -> f32 {
-        let scale = match self {
-            Self::Velocity => 255.0,
-            Self::Pan => 254.0,
-            Self::Pitch => 65534.0,
-            Self::Repeat => 7.0,
+        (f32::from(value) / f32::from(self.max())).min(1.0)
+    }
+
+    /// The piano roll's value snap `vs` on this property, over 0…[`Self::max`] (GitHub issue #32). Vel's `Steps` are
+    /// the 128 MIDI velocities: line k, k·255/127, rounds to 2k or 2k + 1, which a MIDI export writes as k. Pan's are
+    /// left, centre and right.
+    pub fn land(self, vs: ValueSnap) -> Land {
+        let steps = match self {
+            Self::Velocity => 128,
+            _ => 3,
         };
-        (f32::from(value) / scale).min(1.0)
+        vs.land(Some(steps), self.max())
+    }
+
+    /// [`Self::stored`] on `land`'s nearest line while its grid's snap is on; Vel, never 0, at least its first line.
+    pub fn landed(self, v: f32, land: Land) -> u16 {
+        let Some(g) = land.grid() else {
+            return self.stored(v);
+        };
+        let max = f64::from(self.max());
+        let x = land
+            .snap(f64::from(v.clamp(0.0, 1.0)) * max)
+            .round()
+            .min(max);
+        let floor = if self == Self::Velocity {
+            g.round()
+        } else {
+            0.0
+        };
+        x.max(floor) as u16
     }
 
     /// Where a stored value sits on the note tint on this page (both drum modes): Velocity

@@ -43,9 +43,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.91.0
       - uses: Swatinem/rust-cache@v2
-      - name: Intel macOS target
-        if: runner.os == 'macOS'
-        run: rustup target add x86_64-apple-darwin
       - name: libclang
         if: runner.os == 'Windows'
         shell: pwsh
@@ -54,6 +51,3 @@ jobs:
           if (-not (Test-Path "$llvm\libclang.dll")) { choco install llvm -y --no-progress }
           "LIBCLANG_PATH=$llvm" >> $env:GITHUB_ENV
       - run: cargo test --locked --lib parallel_racks_match_sequential_through_sends_and_live_toggle
-      - name: Intel macOS compilation
-        if: runner.os == 'macOS'
-        run: cargo check --locked --target x86_64-apple-darwin

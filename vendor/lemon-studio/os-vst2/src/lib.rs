@@ -563,7 +563,11 @@ impl Plugin {
     /// UI-thread housekeeping: a new rate, a change of channels or latency, and the editor's idle call.
     pub fn idle(&mut self) {
         let wanted = self.wanted_rate.swap(0, Ordering::AcqRel);
-        if self.inst.shared.io_changed.swap(false, Ordering::AcqRel) {
+        let io = self.inst.shared.io_changed.swap(false, Ordering::AcqRel);
+        // Honeydew (vendored change): only a change of channels suspends and resumes the plugin; a latency alone is
+        // read. A plugin that announces its latency whenever it resumes was otherwise suspended and resumed again on
+        // every tick, switching between offline and online for good.
+        if io && self.inst.channels() != (self.ins, self.outs) {
             let r = if wanted != 0 { wanted } else { self.rate };
             self.deactivate();
             if r != 0 {
@@ -571,13 +575,17 @@ impl Plugin {
             } else {
                 self.setup_buffers();
             }
+        } else if wanted != 0 && wanted != self.rate {
+            self.activate(wanted);
+        } else if io {
+            self.latency = self.inst.delay();
+        }
+        if io {
             let n = self.inst.num_params() as usize;
             if self.defaults.len() < n {
                 let more: Vec<f32> = (self.defaults.len() as u32..n as u32).map(|p| self.inst.get(p)).collect();
                 self.defaults.extend(more);
             }
-        } else if wanted != 0 && wanted != self.rate {
-            self.activate(wanted);
         }
         if self.editor {
             self.inst.dispatch(op::EDITOR_IDLE, 0, 0, std::ptr::null_mut(), 0.0);

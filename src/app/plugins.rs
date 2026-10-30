@@ -79,8 +79,8 @@ impl HoneydewApp {
                 }));
             }
         }
-        if plugins::busy() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+        if let Some(after) = plugins::idle_after() {
+            ctx.request_repaint_after(after);
         }
     }
 }

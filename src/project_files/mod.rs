@@ -74,7 +74,9 @@ pub mod export;
 pub use archive::{
     ARCHIVE_FAILED, DECOMPRESS_FAILED, IMPORT_FAILED, IMPORT_TAG, NOTHING_KNOWN, UNZIPPED_FOLDER,
 };
-pub use samples::MIDI_FOLDER;
+#[cfg(not(target_arch = "wasm32"))]
+pub use samples::make_user_folders;
+pub use samples::{INSTRUMENTS_FOLDER, MIDI_FOLDER, MY_FOLDERS, TRACKS_FOLDER};
 #[cfg(not(target_arch = "wasm32"))]
 mod import;
 #[cfg(not(target_arch = "wasm32"))]
@@ -380,6 +382,9 @@ pub struct ProjectFiles {
     /// The notice's `Import` was chosen, now or before: archives import without asking. The app keeps it in its
     /// settings (`importNoticeAccepted`) and hands it over each frame.
     pub import_accepted: bool,
+    /// A MIDI export runs each channel's notes through its note effects at this engine sample rate (`Apply note
+    /// effects`, [`crate::smf::smf_with`]); `None`: the raw notes. The Save dialog sets it before each export.
+    pub midi_note_effects: Option<f32>,
     /// The MIDI file `Import MIDI Tracks` picked, until [`Self::take_midi_tracks`] hands it over.
     midi_tracks: Option<MidiTracks>,
     /// The last [`RECENT_STATE`] write, on its worker: the next waits for it, so the last load's lands last.
@@ -415,10 +420,14 @@ impl Default for ProjectFiles {
                 .map(Path::to_owned);
             files.library = Box::new(library);
             files.copies = false;
-            // At start (not in tests, which must not touch the user's folder): the Original Content folder, and
-            // GMSynth's waveshapes from it before any GMSynth is built (`content`, `picks`).
+            // At start (not in tests, which must not touch the user's folder): the user folder's own folders, the
+            // Original Content folder, and GMSynth's waveshapes from it before any GMSynth is built (`content`,
+            // `picks`).
             #[cfg(not(test))]
             {
+                if let Some(Err(err)) = files.user.as_deref().map(make_user_folders) {
+                    eprintln!("user folders: {err}");
+                }
                 if let Some(Err(err)) = files.make_content_folder() {
                     eprintln!("{}: {err}", content::CONTENT_FOLDER);
                 }
@@ -477,6 +486,7 @@ impl ProjectFiles {
             #[cfg(not(target_arch = "wasm32"))]
             import_notice: None,
             import_accepted: false,
+            midi_note_effects: None,
             midi_tracks: None,
             #[cfg(not(target_arch = "wasm32"))]
             autosave: None,
@@ -750,12 +760,24 @@ impl ProjectFiles {
 
     /// `base`, or `base (n)` with the smallest n ≥ 1, whose `.ext` in `dir` is no file other than `own`.
     fn free_name(&self, dir: Option<&Path>, base: &str, ext: &str, own: Option<&Path>) -> String {
+        self.free_name_from(1, dir, base, ext, own)
+    }
+
+    /// [`Self::free_name`] with the smallest n ≥ `first`.
+    fn free_name_from(
+        &self,
+        first: usize,
+        dir: Option<&Path>,
+        base: &str,
+        ext: &str,
+        own: Option<&Path>,
+    ) -> String {
         let taken = |name: &str| {
             dir.map(|dir| dir.join(format!("{name}.{ext}")))
                 .is_some_and(|file| Some(file.as_path()) != own && self.taken(&file))
         };
         std::iter::once(base.to_owned())
-            .chain((1..).map(|n| format!("{base} ({n})")))
+            .chain((first..).map(|n| format!("{base} ({n})")))
             .find(|name| !taken(name))
             .expect("an unbounded range has a free number")
     }

@@ -77,6 +77,17 @@ pub fn data_dir() -> Option<PathBuf> {
         .filter(|path| path.is_absolute())
 }
 
+/// The app's external files folder (`Android/data/<package>/files`), which a computer sees over USB: the user folder
+/// (`ui::main_menu::user_dir`). No storage permission is needed either.
+pub fn external_dir() -> Option<PathBuf> {
+    ACTIVITY
+        .lock()
+        .ok()?
+        .as_ref()?
+        .external_data_path()
+        .filter(|path| path.is_absolute())
+}
+
 /// Assets are opened separately on each reader thread, so no non-thread-safe asset handle is shared.
 pub fn asset(path: &str) -> Option<Asset> {
     let name = CString::new(path).ok()?;

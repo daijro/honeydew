@@ -1,5 +1,5 @@
-//! The installed sound library, `<app data folder>/content` ([`dir`], beside `My Songs`): on the desktop, the library
-//! the app uses ([`super::Bundle::find`]), kept in step with the one that ships with the app.
+//! The installed sound library, `<app data folder>/content` ([`dir`], apart from the user folder): on the desktop, the
+//! library the app uses ([`super::Bundle::find`]), kept in step with the one that ships with the app.
 //!
 //! - **Sync.** [`sync`] makes the folder hold what a source library's index lists, and nothing else: `index.json`,
 //!   `CREDITS.txt` and every part. The source is a content folder (beside a full download, or one picked) or a sounds
@@ -39,13 +39,14 @@ pub const SHIPPED_RELEASE: &str = include_str!("../../sounds/release.txt");
 /// Files by path: their size and CRC-32.
 type Manifest = BTreeMap<String, (u64, u32)>;
 
-/// `<app data folder>/content`: in the folder `My Songs` is in ([`crate::ui::main_menu::songs_dir`]). `None` without
+/// `<app data folder>/content` ([`crate::ui::main_menu::app_data_dir`]), never in the user folder. `None` without
 /// one, and in tests, which never touch the user's folders.
 pub fn dir() -> Option<PathBuf> {
     if cfg!(test) {
         return None;
     }
-    Some(crate::ui::main_menu::songs_dir()?.parent()?.join("content"))
+    let folder = crate::ui::main_menu::library::SOUND_LIBRARY_FOLDER;
+    Some(crate::ui::main_menu::app_data_dir()?.join(folder))
 }
 
 /// The library at `dir` is complete: its manifest names the index in place.

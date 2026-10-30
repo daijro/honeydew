@@ -1,6 +1,6 @@
 //! The automation editor's values in the target's units, a Honeydew addition (GitHub issue #21): the value text of
 //! the lane's target ([`Target`]), typed values ([`Target::parse`]), and the value grid with its snap ([`ValueSnap`],
-//! [`Land`]).
+//! [`Land`]) and its snap-menu column ([`snap_items`]), which the piano roll's graph lane shares (#32).
 //!
 //! Values stay the stored u16 (0…65534 for new points); a point plays (and reads) value/65535. The value grid's lines
 //! sit at k·g of the range, g = its size (a percent, or a discrete target's step 1/(n − 1)).
@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::params::{CHANNEL_PARAMS, ParamKind, ParamSpec, TextCx, menu_value};
 use crate::song::points::{self, Point, unit};
 use crate::song::{AutomationTarget, Song, automated_tempo};
+use crate::ui::piano_roll::SnapMode;
+use crate::ui::popup::PopupItem;
 use crate::ui::tempo::transport_bpm_text;
 
 /// The value grid's size.
@@ -61,6 +63,12 @@ impl Default for ValueSnap {
 }
 
 impl ValueSnap {
+    /// Off, the grid at `Rows`: the piano roll's default (its lane has no rows, so it lists no `Rows`).
+    pub const OFF: Self = Self {
+        on: false,
+        grid: ValueGrid::Rows,
+    };
+
     /// How vertical moves land on a target of `steps` discrete steps (`None`: continuous), values up to `max`.
     pub fn land(self, steps: Option<usize>, max: u16) -> Land {
         let frac = match self.grid {
@@ -73,6 +81,44 @@ impl ValueSnap {
             step: frac.map(|f| f * f64::from(max)),
         }
     }
+
+    /// The value snap after a pick in the snap menu's value column: on at `grid`, or off (`None`) keeping the grid.
+    pub fn picked(self, grid: Option<ValueGrid>) -> Self {
+        grid.map_or(Self { on: false, ..self }, |grid| Self { on: true, grid })
+    }
+}
+
+/// A pick in a snap menu with a value column: a time mode, or a value grid (`None`: value snap off).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Pick {
+    Time(SnapMode),
+    Value(Option<ValueGrid>),
+}
+
+/// A snap menu's items: the time modes under `Time`, `mode` highlighted; beside them the value snap `vs` under `head`:
+/// `Off`, then `grids` with their labels, the current one highlighted.
+pub fn snap_items(
+    mode: SnapMode,
+    (vs, head): (ValueSnap, &'static str),
+    grids: impl IntoIterator<Item = (ValueGrid, String)>,
+) -> Vec<PopupItem<Pick>> {
+    let time = (SnapMode::ALL.iter().enumerate()).map(|(row, &m)| PopupItem {
+        current: m == mode,
+        ..PopupItem::new(Pick::Time(m), 0, row + 1, m.label())
+    });
+    let off = [(None, "Off".to_owned())];
+    let values = off
+        .into_iter()
+        .chain(grids.into_iter().map(|(g, l)| (Some(g), l)));
+    let values = values.enumerate().map(|(row, (g, label))| PopupItem {
+        current: g == vs.on.then_some(vs.grid),
+        ..PopupItem::new(Pick::Value(g), 1, row + 1, label)
+    });
+    let heads = [
+        PopupItem::header(0, 0, "Time"),
+        PopupItem::header(1, 0, head),
+    ];
+    heads.into_iter().chain(time).chain(values).collect()
 }
 
 /// How the selected points' values move this frame: snap on or off, and the grid step in stored units (`None`: rows).
@@ -85,6 +131,27 @@ impl ValueSnap {
 pub struct Land {
     pub on: bool,
     pub step: Option<f64>,
+}
+
+impl Land {
+    /// The grid step while a grid's snap is on.
+    pub fn grid(self) -> Option<f64> {
+        self.step.filter(|_| self.on)
+    }
+
+    /// `v` (stored units) on the nearest line while a grid's snap is on, else as it is.
+    pub fn snap(self, v: f64) -> f64 {
+        self.grid().map_or(v, |g| (v / g).round() * g)
+    }
+
+    /// The stored value of each line from 0 up to `max` while a grid's snap is on; none else.
+    pub fn lines(self, max: u16) -> Vec<u16> {
+        let Some(g) = self.grid() else {
+            return Vec::new();
+        };
+        let n = (f64::from(max) / g + 1e-9).floor() as u32;
+        (0..=n).map(|k| (f64::from(k) * g).round() as u16).collect()
+    }
 }
 
 /// The selected points' highest and lowest values.
@@ -115,14 +182,7 @@ pub fn landed(pts: &mut [Point], sel: &[bool], dv: f64, land: Land, max: u16) {
     let Some((top, _)) = bounds(pts, sel) else {
         return;
     };
-    let to = match land {
-        Land {
-            on: true,
-            step: Some(g),
-        } => ((top + dv) / g).round() * g,
-        _ => top + dv,
-    };
-    shift_to(pts, sel, to, max);
+    shift_to(pts, sel, land.snap(top + dv), max);
 }
 
 /// Up (`lines` > 0) or Down: the selection moved by `lines` grid steps, as one edit. Rows move whole rows; a grid with

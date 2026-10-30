@@ -50,6 +50,18 @@ fn write_of(lane: &Lane) -> Option<Write> {
 /// channel, and 9 for drum lanes. Plays at song ticks past [`MAX_DELTA`] are dropped (a note-off is cut there), and
 /// the file stays under the reader's caps: at most [`MAX_TRACKS`] tracks and [`MAX_EVENTS`] events.
 pub fn smf_of(song: &Song, only: Option<usize>) -> Result<Vec<u8>, NoData> {
+    smf_with(song, only, None)
+}
+
+/// [`smf_of`], with `Apply note effects` (#31) when `note_effects` is the engine's sample rate: a channel with note
+/// effects writes the notes its Notes lanes play through them, as playback prepares them at that rate (the
+/// Arpeggiator's and Note Echo's timing back in ticks, [`crate::audio_engine::burned_notes`]), all on its first Notes
+/// lane's track. A song playback refuses writes its raw notes.
+pub fn smf_with(
+    song: &Song,
+    only: Option<usize>,
+    note_effects: Option<f32>,
+) -> Result<Vec<u8>, NoData> {
     // A drum hit with no length lasts one step.
     let step = 1.0 / f64::from(song.time_sig.steps_per_beat());
     let mut tracks = Vec::new();
@@ -72,24 +84,38 @@ pub fn smf_of(song: &Song, only: Option<usize>) -> Result<Vec<u8>, NoData> {
         let ch = if only.is_some() { 0 } else { counted };
         let mut name = channel.name.clone();
         name.truncate(name.floor_char_boundary(255));
+        let effects = (channel.rack.modules.iter()).any(|m| (47..=51).contains(&m.type_id));
+        let played = note_effects.filter(|_| effects).and_then(|rate| {
+            crate::audio_engine::burned_notes(song, i, rate, 0, MAX_DELTA as u32).ok()
+        });
+        let mut played_written = false;
         for lane in &channel.lanes {
             let Some(write) = write_of(lane) else {
                 continue;
             };
-            if tracks.len() == MAX_TRACKS || lane.clips.iter().all(|c| c.events.is_empty()) {
+            if tracks.len() == MAX_TRACKS {
                 continue;
             }
+            let source: Box<dyn Iterator<Item = (f64, &Event)>> = match (write, &played) {
+                (Write::Notes, Some(notes)) => {
+                    if played_written || notes.is_empty() {
+                        continue;
+                    }
+                    played_written = true;
+                    Box::new(notes.iter().map(|e| (f64::from(e.pos()), e)))
+                }
+                _ if lane.clips.iter().all(|c| c.events.is_empty()) => continue,
+                _ => Box::new(lane.clips.iter().flat_map(plays)),
+            };
             // (tick, not a note-off, message): note-offs go first at a tick, then the clips' order.
             let mut events = Vec::new();
-            'clips: for clip in &lane.clips {
-                for (t, event) in plays(clip) {
-                    if budget < 2 {
-                        break 'clips;
-                    }
-                    let msgs = messages(write, ch, step, t, event, channel.drum_kit.as_ref());
-                    budget -= msgs.len();
-                    events.extend(msgs);
+            for (t, event) in source {
+                if budget < 2 {
+                    break;
                 }
+                let msgs = messages(write, ch, step, t, event, channel.drum_kit.as_ref());
+                budget -= msgs.len();
+                events.extend(msgs);
             }
             events.sort_by_key(|&(tick, not_off, _)| (tick, not_off));
             let mut track = vec![(0, SmfEvent::Name(name.clone().into_bytes()))];

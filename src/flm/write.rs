@@ -449,6 +449,21 @@ fn write_channel(writer: &mut ChunkWriter, channel: &Channel, row: usize) -> Res
             Ok(())
         })?;
     }
+    // Honeydew's own Modulator targets, those of its rack's modules, only when there are any: `i32` the Modulator's
+    // instance id, the target's channel id, instance id and param, each.
+    let modulations = (channel.file.modulations.iter())
+        .filter(|m| channel.rack.get(m.modulator).is_some())
+        .collect::<Vec<_>>();
+    if !modulations.is_empty() {
+        writer.chunk(*b"HDMd", |writer| {
+            for m in modulations {
+                for v in [m.modulator, m.channel, m.target.instance_id, m.target.param] {
+                    writer.i32(v)?;
+                }
+            }
+            Ok(())
+        })?;
+    }
     write_raw(writer, &channel.file.channel_unknown_chunks)
 }
 

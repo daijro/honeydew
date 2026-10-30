@@ -19,23 +19,27 @@ env:
   TAG: ${{ inputs.tag || github.ref_name }}
   TRUNK_VERSION: v0.21.14
   BINARYEN_VERSION: version_133
+  # The Alpine builds' image, pinned by its multi-arch digest.
+  ALPINE_IMAGE: alpine:3.22.7@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
 
 jobs:
   desktop:
     strategy:
       fail-fast: false
       matrix:
-        # Each x86-64 download comes twice: the plain one runs on any x86-64 CPU, the -avx2 one is built for
-        # x86-64-v3 (AVX2: Intel since 2013, AMD since 2015). Linux builds on the oldest runner, so its downloads
-        # run on glibc 2.35 or newer (Ubuntu 22.04, Debian 12).
+        # Each x86-64 Linux and Windows download comes twice: the plain one runs on any x86-64 CPU, the -avx2 one is
+        # built for x86-64-v3 (AVX2: Intel since 2013, AMD since 2015). Arm builds use the default aarch64 target. Linux
+        # builds on the oldest runners, so its downloads run on glibc 2.35 or newer (Ubuntu 22.04, Debian 12). macOS is
+        # Apple Silicon only. GitHub has no FreeBSD runners: that build is cross-built (tools/freebsd-cross.sh).
         include:
           - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, name: linux-x86_64 }
           - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, name: linux-x86_64-avx2, rustflags: -Ctarget-cpu=x86-64-v3 }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, name: linux-aarch64 }
           - { os: windows-latest, target: x86_64-pc-windows-msvc, name: windows-x86_64 }
           - { os: windows-latest, target: x86_64-pc-windows-msvc, name: windows-x86_64-avx2, rustflags: -Ctarget-cpu=x86-64-v3 }
+          - { os: windows-11-arm, target: aarch64-pc-windows-msvc, name: windows-arm64 }
           - { os: macos-latest, target: aarch64-apple-darwin, name: macos-arm64 }
-          - { os: macos-latest, target: x86_64-apple-darwin, name: macos-x86_64 }
-          - { os: macos-latest, target: x86_64-apple-darwin, name: macos-x86_64-avx2, rustflags: -Ctarget-cpu=x86-64-v3 }
+          - { os: ubuntu-24.04, target: x86_64-unknown-freebsd, name: freebsd-x86_64 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -48,10 +52,13 @@ jobs:
         with:
           key: ${{ matrix.name }}
       # signalsmith-stretch (Lemon Sampler's time stretching) compiles C++ and runs bindgen, which loads libclang.
-      # macOS has it in Xcode; Windows images ship LLVM, installed here if missing.
+      # macOS has it in Xcode; Windows images ship LLVM (the Arm one too), installed here if missing.
       - name: System libraries
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: FreeBSD sysroot
+        if: matrix.target == 'x86_64-unknown-freebsd'
+        run: sudo apt-get install -y clang lld llvm && sh tools/freebsd-cross.sh "$RUNNER_TEMP"
       - name: libclang
         if: runner.os == 'Windows'
         shell: pwsh
@@ -66,32 +73,7 @@ jobs:
       # in the app data folder (the release's own `honeydew-<tag>-sounds.zip`, uploaded by the `sounds` job).
       - name: Package
         shell: bash
-        run: |
-          dir=honeydew-${TAG}-${{ matrix.name }}
-          mkdir "$dir"
-          bin=target/${{ matrix.target }}/release
-          ext=; [ "$RUNNER_OS" = Windows ] && ext=.exe
-          cp "$bin/honeydew-native$ext" "$bin/honeydew-import$ext" README.md LICENSE "$dir/"
-          if [ "$RUNNER_OS" = Linux ]; then
-            cp -R assets/linux tools/install-desktop-entry.sh "$dir/"
-          fi
-          # The archive of the folder as it is, named $1 and .zip on Windows, .tar.gz elsewhere.
-          pack() {
-            if [ "$RUNNER_OS" = Windows ]; then
-              7z a "$1.zip" "$dir" >/dev/null
-            else
-              tar czf "$1.tar.gz" "$dir"
-            fi
-          }
-          pack "$dir-no-sounds"
-          # Without the web's gzipped copies (`*.gz`, ~700 MB): only the web reads them.
-          cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > target/honeydew-sounds.zip
-          if [ "$RUNNER_OS" = Windows ]; then
-            7z x target/honeydew-sounds.zip "-o$dir" '-xr!*.gz' >/dev/null
-          else
-            unzip -q target/honeydew-sounds.zip -d "$dir" -x '*.gz'
-          fi
-          pack "$dir"
+        run: bash tools/package-desktop.sh "honeydew-${TAG}-${{ matrix.name }}" target/${{ matrix.target }}/release
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
@@ -99,10 +81,11 @@ jobs:
           fail_on_unmatched_files: true
       # After the archive's upload, so a failure here can't cost it.
       - name: AppImage
-        if: runner.os == 'Linux'
+        if: contains(matrix.target, 'linux')
         shell: bash
         run: |
           dir=honeydew-${TAG}-${{ matrix.name }}
+          arch=$(uname -m)
           # The AppDir layout: AppRun, the desktop file and its icon at the root, the rest under usr/. The app finds
           # its sounds at <exe dir>/../share/honeydew/content.
           share=AppDir/usr/share
@@ -119,24 +102,53 @@ jobs:
           # Nothing to bundle: every library honeydew-native links is one AppImages leave to the system (glibc,
           # libstdc++, libgcc_s, ALSA's libasound). The graphics stack, X11 and Wayland are loaded at run time.
           if ldd AppDir/usr/bin/honeydew-native | awk '{print $1}' |
-            grep -vxE 'linux-vdso\.so\.1|/lib64/ld-linux-x86-64\.so\.2|lib(c|m|dl|pthread|rt|gcc_s|stdc\+\+|asound)\.so\.[0-9]+'; then
+            grep -vxE 'linux-vdso\.so\.1|/lib(64)?/ld-linux-(x86-64|aarch64)\.so\.[0-9]+|lib(c|m|dl|pthread|rt|gcc_s|stdc\+\+|asound)\.so\.[0-9]+'; then
             echo 'honeydew-native links a library above that the AppImage would have to bundle' >&2
             exit 1
           fi
-          # appimagetool and the AppImage runtime, pinned by version and SHA-256.
-          curl --retry 3 -sSfLo "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
-          curl --retry 3 -sSfLo "$RUNNER_TEMP/runtime" https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
-          printf '%s  %s\n' ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0 "$RUNNER_TEMP/appimagetool" \
-            2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d "$RUNNER_TEMP/runtime" | sha256sum -c
+          # appimagetool and the AppImage runtime, the runner's arch's own, pinned by version and SHA-256.
+          if [ "$arch" = aarch64 ]; then
+            tool_sha=f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
+            runtime_sha=00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
+          else
+            tool_sha=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+            runtime_sha=2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+          fi
+          curl --retry 3 -sSfLo "$RUNNER_TEMP/appimagetool" "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-$arch.AppImage"
+          curl --retry 3 -sSfLo "$RUNNER_TEMP/runtime" "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-$arch"
+          printf '%s  %s\n' "$tool_sha" "$RUNNER_TEMP/appimagetool" "$runtime_sha" "$RUNNER_TEMP/runtime" | sha256sum -c
           chmod +x "$RUNNER_TEMP/appimagetool"
           # VERSION becomes the desktop file's X-AppImage-Version. Extract-and-run needs no FUSE on the runner.
-          ARCH=x86_64 VERSION="${TAG#v}" "$RUNNER_TEMP/appimagetool" --appimage-extract-and-run \
+          ARCH=$arch VERSION="${TAG#v}" "$RUNNER_TEMP/appimagetool" --appimage-extract-and-run \
             --runtime-file "$RUNNER_TEMP/runtime" AppDir "$dir.AppImage"
       - uses: softprops/action-gh-release@v2
-        if: runner.os == 'Linux'
+        if: contains(matrix.target, 'linux')
         with:
           tag_name: ${{ env.TAG }}
           files: honeydew-${{ env.TAG }}-*.AppImage
+          fail_on_unmatched_files: true
+
+  # Alpine and other musl Linux: built in the pinned Alpine image (tools/alpine-build.sh), packaged as the glibc Linux
+  # tarballs are, without an AppImage.
+  alpine:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, name: linux-x86_64-musl }
+          - { os: ubuntu-24.04-arm, name: linux-aarch64-musl }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - run: docker run --rm -v "$PWD:/src" -w /src "$ALPINE_IMAGE" sh tools/alpine-build.sh
+      - name: Package
+        run: bash tools/package-desktop.sh "honeydew-${TAG}-${{ matrix.name }}" target/release
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          files: honeydew-${{ env.TAG }}-*.*z*
           fail_on_unmatched_files: true
 
   # The sound library on its own, once per release: the parts joined, `content/` at its top, without the web's

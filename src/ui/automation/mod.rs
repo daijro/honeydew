@@ -84,9 +84,9 @@ use crate::ui::clips::{
 use crate::ui::drum_grid::edit::{MARK_GAP, marks};
 use crate::ui::edit_keys::{self, EditKey};
 use crate::ui::insert;
+use crate::ui::piano_roll::Snap;
 use crate::ui::piano_roll::notes::{auto_grid, box_end, snap_round};
-use crate::ui::piano_roll::{Snap, SnapMode};
-use crate::ui::popup::{self, PopupItem};
+use crate::ui::popup;
 use crate::ui::preview::ClipKey;
 use crate::ui::region::{self, RegionOp, TimeRange};
 use crate::ui::scroller::{self, Axis, Scroller, X};
@@ -95,7 +95,7 @@ use crate::ui::timeline::{self, KnobGesture, PlayheadKnob, RangeRuler, RangeSele
 use crate::ui::widgets::{self, SnapTouch};
 use crate::ui::{UiCtx, dialog, gesture, pinch_press, primary_down_live};
 use geom::{Frame, HIT_R, View};
-use value::{Land, Target, ValueGrid, ValueSnap};
+use value::{Land, Pick, Target, ValueGrid, ValueSnap};
 
 const KEY: PointKey = PointKey::Automation;
 
@@ -112,8 +112,8 @@ const DRAG_FLOOR: f32 = 0.01;
 /// The floating buttons over a selection.
 const OPS: [&str; 4] = ["Copy", "Delete", "Edit\nvalue", "Set shape"];
 /// The value grid's lines: at least this many U apart, `text` at this alpha.
-const GRID_GAP: f32 = 0.25;
-const GRID_ALPHA: f32 = 0.15;
+pub(crate) const GRID_GAP: f32 = 0.25;
+pub(crate) const GRID_ALPHA: f32 = 0.15;
 /// A point's value label: its gap from the point's edge and its padding, in U.
 const LABEL_GAP: f32 = 0.15;
 const LABEL_PAD: f32 = 0.15;
@@ -1010,21 +1010,13 @@ impl AutomationEditor {
         }
         // The value grid with value snap on: a line through the centre of each value it lands on, when at least
         // 0.25 U apart (rows never are at the editor's sizes).
-        if let Land {
-            on: true,
-            step: Some(g),
-        } = self.land
-        {
+        if let Some(g) = self.land.grid() {
             let max = KEY.max();
             let apart = (f.point_y(0, max) - f.point_y(max, max)) * (g / f64::from(max)) as f32;
             if apart >= m.u(GRID_GAP) {
-                let (lines, ink) = (
-                    (f64::from(max) / g + 1e-9).floor() as u32,
-                    text.gamma_multiply(GRID_ALPHA),
-                );
-                for k in 0..=lines {
-                    let y = f.point_y((f64::from(k) * g).round() as u16, max);
-                    hline(&gp, grid.x_range(), y, 1.0, ink, m);
+                for v in self.land.lines(max) {
+                    let ink = text.gamma_multiply(GRID_ALPHA);
+                    hline(&gp, grid.x_range(), f.point_y(v, max), 1.0, ink, m);
                 }
             }
         }
@@ -1301,27 +1293,9 @@ impl AutomationEditor {
             return;
         }
         let ctx = ui.ctx();
-        let vs = self.value_snap;
-        let time = (SnapMode::ALL.iter().enumerate()).map(|(row, &mode)| PopupItem {
-            current: mode == self.snap.mode,
-            ..PopupItem::new(Pick::Time(mode), 0, row + 1, mode.label())
-        });
         let grids = (ValueGrid::ALL.into_iter()).filter(|&g| discrete || g != ValueGrid::Steps);
-        let values = [None].into_iter().chain(grids.map(Some)).enumerate();
-        let values = values.map(|(row, g)| PopupItem {
-            current: g == vs.on.then_some(vs.grid),
-            ..PopupItem::new(
-                Pick::Value(g),
-                1,
-                row + 1,
-                g.map_or_else(|| "Off".into(), ValueGrid::label),
-            )
-        });
-        let heads = [
-            PopupItem::header(0, 0, "Time"),
-            PopupItem::header(1, 0, "Value"),
-        ];
-        let items: Vec<PopupItem<Pick>> = heads.into_iter().chain(time).chain(values).collect();
+        let grids = grids.map(|g| (g, g.label()));
+        let items = value::snap_items(self.snap.mode, (self.value_snap, "Value"), grids);
         let result = popup::show(
             ctx,
             id().with("snap menu"),
@@ -1332,10 +1306,7 @@ impl AutomationEditor {
         );
         match result.selected {
             Some(Pick::Time(mode)) => self.snap = Snap { on: true, mode },
-            Some(Pick::Value(grid)) => {
-                self.value_snap = (grid.map(|grid| ValueSnap { on: true, grid }))
-                    .unwrap_or(ValueSnap { on: false, ..vs });
-            }
+            Some(Pick::Value(grid)) => self.value_snap = self.value_snap.picked(grid),
             None => {}
         }
         if result.close {
@@ -1370,17 +1341,17 @@ impl AutomationEditor {
     }
 }
 
-/// A pick in the snap menu: a time mode, or a value grid (`None`: value snap off).
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Pick {
-    Time(SnapMode),
-    Value(Option<ValueGrid>),
-}
-
 /// A point's value `text` beside it (centre `at`, drawn radius `r`): above and right of it, left where that passes
 /// the grid's right edge, below where it passes the top, so it never covers the point; `text` on a `background` pill,
 /// clipped to the grid (`gp`'s clip). One that would overlap a label drawn before (`taken`) is left out.
-fn value_label(gp: &Painter, cx: &UiCtx, at: Pos2, r: f32, text: &str, taken: &mut Vec<Rect>) {
+pub(crate) fn value_label(
+    gp: &Painter,
+    cx: &UiCtx,
+    at: Pos2,
+    r: f32,
+    text: &str,
+    taken: &mut Vec<Rect>,
+) {
     let (c, m) = (&cx.theme.colors, cx.m);
     let ink = c.text.to_color32();
     let galley = gp.layout_no_wrap(text.to_owned(), m.font_id(FontSize::Pt8), ink);

@@ -19,6 +19,7 @@ pub mod lemon;
 pub mod metronome;
 pub mod minisynth;
 pub mod mixer;
+pub mod modulator;
 pub mod mp3_writer;
 mod multiband;
 pub mod multifx;
@@ -101,6 +102,7 @@ pub fn effect_info(id: u16) -> Option<EffectInfo> {
         lemon::REVERB => ("Lemon Reverb", lemon::REVERB_MID_SIDE + 1),
         lemon::LIMITER => ("Lemon Limiter", lemon::LIMITER_SAFETY + 1),
         dynamic_eq::DYNAMIC_EQ => ("Dynamic EQ", dynamic_eq::PARAMS),
+        modulator::MODULATOR => ("Modulator", modulator::PARAMS),
         _ => return None,
     };
     Some(EffectInfo {
@@ -111,11 +113,11 @@ pub fn effect_info(id: u16) -> Option<EffectInfo> {
 }
 
 /// Whether module type `id`'s detector can read a sidechain key instead of its own input ([`AudioEffect::process_keyed`]):
-/// the Compressor, Gate, Limiter, Multiband Compressor, Lemon Limiter and Dynamic EQ.
+/// the Compressor, Gate, Limiter, Multiband Compressor, Lemon Limiter, Dynamic EQ and Modulator (its Envelope).
 pub fn takes_key(id: u16) -> bool {
     matches!(
         id,
-        8 | 27 | 28 | 36 | lemon::LIMITER | dynamic_eq::DYNAMIC_EQ
+        8 | 27 | 28 | 36 | lemon::LIMITER | dynamic_eq::DYNAMIC_EQ | modulator::MODULATOR
     )
 }
 
@@ -483,6 +485,10 @@ impl AudioEffect {
                 dynamic_eq::DEFAULTS.to_vec(),
                 Processor::DynamicEq(Box::default()),
             ),
+            modulator::MODULATOR => (
+                modulator::DEFAULTS.to_vec(),
+                Processor::Modulator(Box::default()),
+            ),
             _ => return Err(EffectError::UnsupportedEffect(id)),
         };
         let mut effect = Self {
@@ -691,6 +697,17 @@ impl AudioEffect {
         self.meter
     }
 
+    /// A Modulator's offset for its target, normalized: Amount × its signal as its last block left it
+    /// ([`modulator`]); 0 while it is bypassed, and for any other effect.
+    pub fn modulation(&self) -> f32 {
+        match &self.processor {
+            Processor::Modulator(state) if self.common.runs(self.params[0] >= 0.5) => {
+                state.offset()
+            }
+            _ => 0.0,
+        }
+    }
+
     /// What the effect's panel draws from the audio besides the meter, in its type's layout ([`analysis`]); empty for
     /// an effect without one.
     pub fn analysis(&self) -> &[f32] {
@@ -867,6 +884,7 @@ enum Processor {
     LemonReverb(Box<lemon::ReverbFx>),
     LemonLimiter(Box<lemon::LimiterFx>),
     DynamicEq(Box<dynamic_eq::DynamicEqState>),
+    Modulator(Box<modulator::ModulatorState>),
     Monitor,
 }
 
@@ -909,6 +927,7 @@ impl Processor {
             Self::LemonReverb(state) => state.set(params, sample_rate),
             Self::LemonLimiter(state) => state.set(params, sample_rate),
             Self::DynamicEq(state) => state.refresh(params, sample_rate),
+            Self::Modulator(state) => state.refresh(params, sample_rate),
             Self::Monitor => {}
         }
     }
@@ -938,6 +957,7 @@ impl Processor {
             }
             Self::TapeStop(state) => state.prepare_block(context.tempo_bpm),
             Self::LemonReverb(state) => state.set_tempo(context.tempo_bpm),
+            Self::Modulator(state) => state.prepare_block(context),
             Self::Waveshaper(state) => {
                 state
                     .prepare_block(
@@ -983,6 +1003,7 @@ impl Processor {
             Self::LemonLimiter(state) => state.frame(l, r),
             // Its own input is the key until the sidechain feeds one.
             Self::DynamicEq(state) => state.process_frame(l, r, (l, r)),
+            Self::Modulator(state) => state.process_frame(l, r, (l, r)),
             Self::Monitor => (l, r),
         }
     }
@@ -1000,6 +1021,7 @@ impl Processor {
             Self::Multiband(state) => state.keyed(l, r, Some(key)),
             Self::LemonLimiter(state) => state.keyed(l, r, Some(key)),
             Self::DynamicEq(state) => state.process_frame(l, r, key),
+            Self::Modulator(state) => state.process_frame(l, r, key),
             _ => self.process_frame(l, r),
         }
     }
@@ -1039,6 +1061,7 @@ impl Processor {
             Self::LemonReverb(state) => state.clear(),
             Self::LemonLimiter(state) => state.reset(),
             Self::DynamicEq(state) => state.reset(),
+            Self::Modulator(state) => state.reset(),
             Self::Monitor => {}
         }
     }

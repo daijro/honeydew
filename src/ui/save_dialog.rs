@@ -8,7 +8,9 @@
 //! thick along its cell's bottom, and the mouse lights a cell with `text` at α 0.05. The divider (1 px of `text` at
 //! α 0.18, 0.25 U in from the band's sides) runs along the tabs' bottom. `Send` (no share target) is dimmed and takes no
 //! input. With FLP selected, an `Include rendered audio` toggle (off whenever a dialog opens) sits left of `Save`: on,
-//! the project also holds each channel's render as an audio clip.
+//! the project also holds each channel's render as an audio clip. With MIDI selected (and in `Save as MIDI`), an `Apply
+//! note effects` toggle (on by default, kept in the settings) sits there: on, the notes are written as the channels'
+//! note effects play them.
 //! `Save` with FLM, FLP (an FL Studio project and its samples, as a `.zip`), ZIP or MIDI saves; with WAV, FLAC, OGG or
 //! MP3 it turns the band into
 //! the render page: the title `<name>.<ext>` (with Split on, the stems' folder `<name> - Multitrack <ext>`) over a dim
@@ -160,8 +162,8 @@ impl ExportFormat {
         use ExportFormat::*;
         match self {
             Flm | Flp | Zip => SONGS_FOLDER,
-            Midi => "My MIDI",
-            Wav | Flac | Ogg | Mp3 => "My Tracks",
+            Midi => crate::project_files::MIDI_FOLDER,
+            Wav | Flac | Ogg | Mp3 => crate::project_files::TRACKS_FOLDER,
         }
     }
 
@@ -238,6 +240,8 @@ pub struct SaveDialog {
     pub render: RenderPage,
     /// FLP's `Include rendered audio`.
     pub flp_audio: bool,
+    /// MIDI's `Apply note effects` (#31): the notes as the channels' note effects play them. The caller keeps it.
+    pub midi_effects: bool,
     /// The caller's estimated lengths in seconds, for `Estimated length:`: the song's (`Full song`, `Trim initial
     /// silence`) and the selection's. `None`: there is no selection, and the range spinner skips `Selection`.
     pub song_secs: f32,
@@ -254,6 +258,7 @@ impl SaveDialog {
             page: Page::Formats,
             render: RenderPage::default(),
             flp_audio: false,
+            midi_effects: true,
             song_secs: 0.0,
             selection_secs: None,
         }
@@ -415,6 +420,11 @@ impl SaveDialog {
         if title.is_none() && self.format == ExportFormat::Flp {
             let label = "Include rendered audio";
             toggle(ui, cx, id, l.flp_audio, label, &mut self.flp_audio);
+        }
+        // The song's dialog and `Save as MIDI` alike.
+        if self.format == ExportFormat::Midi {
+            let label = "Apply note effects";
+            toggle(ui, cx, id, l.flp_audio, label, &mut self.midi_effects);
         }
         let save = crate::ui::dialog::button(id.with("save"), l.save, "Save", c, m);
         if button(ui, cx, &save, true).clicked() {
@@ -597,7 +607,7 @@ pub struct DialogLayout {
     pub divider: Rect,
     pub save: Rect,
     pub send: Rect,
-    /// FLP's `Include rendered audio`, in the left column level with `Save`.
+    /// FLP's `Include rendered audio` (MIDI's `Apply note effects`), in the left column level with `Save`.
     pub flp_audio: Rect,
     /// The render page: the `<name>.<ext>` title line and the `Estimated length:` line under it.
     pub heading: Rect,

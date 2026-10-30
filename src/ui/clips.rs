@@ -2356,9 +2356,9 @@ fn notes(
         return;
     };
     let seen = painter.clip_rect();
-    // A note that starts before the view reaches into it by its width.
-    // ponytail: at most a view's width; a note longer than that, starting further before the view, is left out.
-    let longest = widest.min(seen.width());
+    // A note that starts before the view reaches into it by its width, at most a loop pass: it is cut at its pass's end.
+    // A held note of a take outgrows the view as it records, and stays drawn while any of it shows (issue #26).
+    let longest = widest.min((lp / f64::from(PPQ)) as f32 * axis.beat_w);
     let start = f64::from(clip.start_tick);
     let from = axis.tick(seen.left() - longest).max(start);
     let to = axis.tick(seen.right()).min(end_tick(clip)).ceil();
@@ -4409,7 +4409,7 @@ mod tests {
     }
 
     #[test]
-    fn the_miniature_looks_back_at_most_a_view_width_for_long_notes() {
+    fn the_miniature_looks_back_a_loop_pass_for_long_notes() {
         // A 4-tick loop over a million beats with a note a million beats long, scrolled to beat 500 000: looking back
         // by the note's length walked every pass from the clip start, 1.6e7 a frame.
         let mut lane = Lane::new(LaneKind::Notes);
@@ -4432,8 +4432,31 @@ mod tests {
         let view = Rect::from_x_y_ranges(0.0..=128.0, 0.0..=48.0);
         let fills = (miniature_fills(clip.clone(), area, view, axis, m).map(|f| f.len()))
             .expect("painted within 5 s");
-        // The view and a view's width before it: 1024 ticks, a play every 4.
-        assert!((200..=300).contains(&fills), "{fills}");
+        // The view and one pass before it: 516 ticks, a play every 4.
+        assert!((120..=140).contains(&fills), "{fills}");
+        // A 64-beat clip with one 64-beat note (a held note as a take records), scrolled to beats 40 to 44: the note
+        // starts 40 beats before the view, ten views' widths, and is still drawn across it.
+        let mut lane = Lane::new(LaneKind::Notes);
+        let clip = lane.add_clip(0, 64.0);
+        clip.visible_len_beats = 64.0;
+        clip.events = vec![Event::Note {
+            pos: 0,
+            len_beats: 64.0,
+            key: 60,
+            velocity: Event::DEFAULT_VELOCITY,
+            pan: Event::DEFAULT_PAN,
+            slide: false,
+        }];
+        let axis = TimeAxis {
+            origin: -1280.0,
+            beat_w: 32.0,
+        };
+        let area = Rect::from_x_y_ranges(axis.x(0.0)..=axis.x(64.0 * f64::from(PPQ)), 0.0..=48.0);
+        let fills = miniature_fills(clip.clone(), area, view, axis, m).expect("painted within 5 s");
+        assert!(
+            fills.iter().any(|r| r.left() < 0.0 && r.right() > 128.0),
+            "{fills:?}"
+        );
     }
 
     #[test]

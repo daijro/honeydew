@@ -198,6 +198,7 @@ const SECTIONS: [(Option<&str>, &[Entry]); 7] = [
             M(26),
             M(11),
             M(13),
+            M(honeydew_audio::modulator::MODULATOR),
             M(4),
             M(14),
             M(25),

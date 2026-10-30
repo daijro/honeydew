@@ -336,6 +336,14 @@ pub unsafe fn go_mono(e: *mut Effect, delay: i32) {
     unsafe { (m.host)(e, host_op::IO_CHANGED, 0, 0, std::ptr::null_mut(), 0.0) };
 }
 
+// Honeydew (vendored addition): issue #33.
+/// Simulates the plugin announcing `delay` frames of latency, its channels unchanged (as some do whenever they resume).
+pub unsafe fn announce_delay(e: *mut Effect, delay: i32) {
+    let m = unsafe { mock(e) };
+    m.effect.delay = delay;
+    unsafe { (m.host)(e, host_op::IO_CHANGED, 0, 0, std::ptr::null_mut(), 0.0) };
+}
+
 /// Asks the host something the way a plugin does.
 pub unsafe fn ask(e: *mut Effect, opcode: i32, ptr: *mut c_void) -> isize {
     let m = unsafe { mock(e) };

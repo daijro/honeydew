@@ -8,7 +8,8 @@
 //!   in the user folder; bundled files never. Nor, ever, a file that really is in the Original Content folder
 //!   (imported content never leaves the user folder): `@R@`, an `@L@` path into it, or the
 //!   `@L@Online Content` fallback into it. The song keeps their paths, for the recipient's own copy, and the flash
-//!   says how many were left out. **MIDI** is [`smf_of`] the whole song. Both flash `Saved!`.
+//!   says how many were left out. **MIDI** is [`smf_with`] the whole song, with its note effects applied per `Apply note
+//!   effects` ([`ProjectFiles::midi_note_effects`]). Both flash `Saved!`.
 //! - **Audio.** [`ProjectFiles::take_export`] hands the export to the app, which runs it as a [`Job`] in slices behind
 //!   the busy screen: `Rendering "<file>"` (pass 1, [`Render::step`], 1024-frame blocks), `Processing "<file>"`
 //!   ([`Render::finish`]), then `Encoding "<file>"` (pass 2, [`Stream::step`]: the same audio rendered again and
@@ -52,7 +53,7 @@ use super::{
 use crate::flm::chunk::ContentPath;
 use crate::render::{Render, RenderError, RenderSpec, Stream};
 use crate::sample_cache::{self, SampleCache};
-use crate::smf::smf_of;
+use crate::smf::smf_with;
 use crate::song::{ChannelKind, LaneKind, Song};
 use crate::ui::main_menu::library::{FORBIDDEN, check_folder_name};
 use crate::ui::save_dialog::{ExportFormat, RenderPage};
@@ -194,7 +195,7 @@ impl ProjectFiles {
                 Ok(bytes) => Some(bytes),
                 Err(err) => return self.fail(COMPRESS_FAILED, err),
             },
-            ExportFormat::Midi => match smf_of(song, only) {
+            ExportFormat::Midi => match smf_with(song, only, self.midi_note_effects) {
                 Ok(bytes) => Some(bytes),
                 Err(_) => {
                     self.message = Some(vec![NO_DATA.into()]);

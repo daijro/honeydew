@@ -12,9 +12,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use super::{
-    DRUMSET_EXT, DRUMSETS_FOLDER, FLGSYNTH_EXT, FLMS_EXT, PRESET_EXT, PRESETS_FOLDER, Pick,
-    ProjectFiles, RACK_EXT, RACKS_FOLDER, SAVE_FILE_FAILED, SF2_EXT, SOUNDFONTS_FOLDER,
-    UNKNOWN_TYPE,
+    CHORD_SETS_FOLDER, DRUMSET_EXT, DRUMSETS_FOLDER, DWP_EXT, FLGSYNTH_EXT, FLMS_EXT, PRESET_EXT,
+    PRESETS_FOLDER, Pick, ProjectFiles, RACK_EXT, RACKS_FOLDER, SAVE_FILE_FAILED, SF2_EXT,
+    SOUNDFONTS_FOLDER, UNKNOWN_TYPE,
 };
 use crate::ui::main_menu::{SONGS_FOLDER, SongEntry, SongLibrary};
 
@@ -25,6 +25,23 @@ pub const RECORDINGS_FOLDER: &str = "My Recordings";
 pub const SAMPLE_EXTS: [&str; 4] = ["wav", "flac", "mp3", "ogg"];
 /// The user folder MIDI files go to.
 pub const MIDI_FOLDER: &str = "My MIDI";
+/// The user folders instruments (DirectWave programs, `.dwp`) and audio renders go to.
+pub const INSTRUMENTS_FOLDER: &str = "My Instruments";
+pub const TRACKS_FOLDER: &str = "My Tracks";
+/// The user folder's own folders, made at every start where they are missing ([`make_user_folders`]).
+pub const MY_FOLDERS: [&str; 11] = [
+    CHORD_SETS_FOLDER,
+    DRUMSETS_FOLDER,
+    INSTRUMENTS_FOLDER,
+    MIDI_FOLDER,
+    PRESETS_FOLDER,
+    RACKS_FOLDER,
+    RECORDINGS_FOLDER,
+    SAMPLES_FOLDER,
+    SONGS_FOLDER,
+    SOUNDFONTS_FOLDER,
+    TRACKS_FOLDER,
+];
 /// The flash after an `Import`.
 pub const IMPORTED: &str = "Successfully imported";
 /// A failed `Import` of a file of another type.
@@ -178,9 +195,17 @@ impl ProjectFiles {
     }
 }
 
+/// Makes the user folder `user`'s own folders ([`MY_FOLDERS`]) where they are missing.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn make_user_folders(user: &Path) -> io::Result<()> {
+    MY_FOLDERS
+        .iter()
+        .try_for_each(|folder| std::fs::create_dir_all(user.join(folder)))
+}
+
 /// The user folder an archive's file of this name is imported into, by its type, in any case: samples, presets of
-/// Every kind, SoundFonts, songs ([`SONGS_FOLDER`], the songs folder) and MIDI files. `None` for any other type, and
-/// for a hidden file (`.DS_Store`, or the `__MACOSX/._x.wav` resource forks a macOS archive holds).
+/// every kind, SoundFonts, songs ([`SONGS_FOLDER`], the songs folder), MIDI files and instruments. `None` for any other
+/// type, and for a hidden file (`.DS_Store`, or the `__MACOSX/._x.wav` resource forks a macOS archive holds).
 pub(crate) fn import_folder(path: &Path) -> Option<&'static str> {
     let name = path.file_name()?.to_str()?;
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
@@ -195,6 +220,7 @@ pub(crate) fn import_folder(path: &Path) -> Option<&'static str> {
         SF2_EXT => SOUNDFONTS_FOLDER,
         "flm" => SONGS_FOLDER,
         "mid" | "midi" => MIDI_FOLDER,
+        DWP_EXT => INSTRUMENTS_FOLDER,
         _ => return None,
     })
 }
@@ -254,6 +280,41 @@ mod tests {
     fn file(path: &Path) -> (String, PathBuf, bool) {
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         (name, path.to_owned(), false)
+    }
+
+    /// At start the user folder gets its eleven own folders where they are missing; what is there stays.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn the_user_folders_own_folders_are_made_where_missing() {
+        let user = std::env::temp_dir().join(format!("honeydew-my-folders-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&user);
+        std::fs::create_dir_all(user.join(SAMPLES_FOLDER)).unwrap();
+        std::fs::write(user.join(SAMPLES_FOLDER).join("kick.wav"), b"kick").unwrap();
+        make_user_folders(&user).unwrap();
+        let mut made: Vec<_> = (std::fs::read_dir(&user).unwrap())
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        made.sort();
+        let all = [
+            "My Chord Sets",
+            "My Drumsets",
+            "My Instruments",
+            "My MIDI",
+            "My Presets",
+            "My Racks",
+            "My Recordings",
+            "My Samples",
+            "My Songs",
+            "My SoundFonts",
+            "My Tracks",
+        ];
+        assert_eq!(made, all);
+        assert!(all.iter().all(|f| user.join(f).is_dir()));
+        assert_eq!(
+            std::fs::read(user.join("My Samples/kick.wav")).unwrap(),
+            b"kick"
+        );
+        let _ = std::fs::remove_dir_all(&user);
     }
 
     #[test]

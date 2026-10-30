@@ -8,6 +8,7 @@ use eframe::egui;
 
 use super::{AppCtx, Nav, audio_editor};
 use crate::project_files::PresetKind;
+use crate::project_files::export::NO_AUDIO_RATE;
 use crate::render::{RenderRange, estimated_secs, range_ticks};
 use crate::ui::main_menu::library::FORBIDDEN;
 use crate::ui::save_dialog::{DialogAction, ExportFormat, RenderPage, SaveDialog};
@@ -68,14 +69,19 @@ pub fn show(
     dialog.song_secs = estimated_secs(song, RenderRange::Full) as f32;
     dialog.selection_secs = range_ticks(song, RenderRange::Selection)
         .map(|_| estimated_secs(song, RenderRange::Selection) as f32);
+    dialog.midi_effects = app.settings.midi_note_effects;
     let action = dialog.show(ui.ctx(), &app.cx);
     name.clone_from(&dialog.name);
     state.page = dialog.render;
+    app.settings.midi_note_effects = dialog.midi_effects;
     match action? {
         DialogAction::Save(ExportFormat::Flm) => {
             app.files.dialog_save(app.song, name).then_some(Nav::Close)
         }
         DialogAction::Save(format) => {
+            // `Apply note effects`: at the engine's rate, as playback prepares the notes.
+            let rate = app.audio.sample_rate().unwrap_or(NO_AUDIO_RATE) as f32;
+            app.files.midi_note_effects = dialog.midi_effects.then_some(rate);
             match state.midi_channel {
                 // FLP's `Include rendered audio` renders its channels first.
                 None => app.files.export(app.song, format, name, dialog.flp_audio),

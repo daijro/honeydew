@@ -58,9 +58,9 @@ pub fn migrate_legacy_keys(storage: &mut dyn eframe::Storage) {
 ///
 /// FL Studio Mobile exposes buffer profiles on mobile builds, but its desktop builds expose the
 /// driver modes `Standard` and `Multitrack` instead.
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(desktop)]
 pub const SOUND_MODES: [(u8, &str); 2] = [(0, "STANDARD"), (1, "MULTITRACK")];
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(desktop))]
 pub const SOUND_MODES: [(u8, &str); 1] = [(3, "NATIVE")];
 
 /// Buffer-size slider positions. Zero keeps the audio device's native/default buffer;
@@ -68,9 +68,9 @@ pub const SOUND_MODES: [(u8, &str); 1] = [(3, "NATIVE")];
 pub const BUFFER_SIZES: [u32; 7] = [0, 64, 128, 256, 512, 1024, 2048];
 pub const MCP_DEFAULT_PORT: u16 = 57831;
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(desktop)]
 pub fn mcp_token_path() -> Option<std::path::PathBuf> {
-    #[cfg(target_os = "linux")]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| {
@@ -81,14 +81,14 @@ pub fn mcp_token_path() -> Option<std::path::PathBuf> {
         .map(|h| std::path::PathBuf::from(h).join("Library/Application Support"))?;
     #[cfg(target_os = "windows")]
     let base = std::env::var_os("APPDATA").map(std::path::PathBuf::from)?;
-    #[cfg(target_os = "linux")]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let app_dir = "honeydew";
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     let app_dir = "Honeydew";
     Some(base.join(app_dir).join("control-token"))
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(desktop)]
 pub fn load_mcp_token() -> Option<String> {
     let token = std::fs::read_to_string(mcp_token_path()?)
         .ok()?
@@ -97,7 +97,7 @@ pub fn load_mcp_token() -> Option<String> {
     (!token.is_empty()).then_some(token)
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(desktop)]
 pub fn save_mcp_token(token: &str) -> std::io::Result<()> {
     let path = mcp_token_path()
         .ok_or_else(|| std::io::Error::other("could not determine config directory"))?;
@@ -113,19 +113,19 @@ pub fn save_mcp_token(token: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(desktop))]
 pub fn load_mcp_token() -> Option<String> {
     None
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(desktop))]
 pub fn save_mcp_token(_token: &str) -> std::io::Result<()> {
     Err(std::io::Error::other("MCP token storage is desktop-only"))
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(desktop)]
 const DEFAULT_SOUND_MODE: u8 = 0;
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(desktop))]
 const DEFAULT_SOUND_MODE: u8 = 3;
 
 /// Every SETTINGS value the app keeps. For the defaults see [`Settings::default`].
@@ -268,6 +268,15 @@ pub struct Settings {
     /// The automation editor's value snap (our own key): on, and its grid; on with `Rows` by default.
     #[serde(rename = "automationValueSnap")]
     pub automation_value_snap: ValueSnap,
+    /// The Save dialog's MIDI `Apply note effects` (our own key; #31): a MIDI export writes the notes as the channels'
+    /// note effects play them. On by default.
+    #[serde(rename = "midiApplyNoteEffects")]
+    pub midi_note_effects: bool,
+    /// The piano roll graph lane's value snap, `Vel`'s and `Pan`'s (our own keys; #32): off by default.
+    #[serde(rename = "pianoRollVelocitySnap")]
+    pub velocity_snap: ValueSnap,
+    #[serde(rename = "pianoRollPanSnap")]
+    pub pan_snap: ValueSnap,
 }
 
 impl Default for Settings {
@@ -316,6 +325,9 @@ impl Default for Settings {
             plugin_folders: Vec::new(),
             sounds_notice_seen: String::new(),
             automation_value_snap: ValueSnap::default(),
+            midi_note_effects: true,
+            velocity_snap: ValueSnap::OFF,
+            pan_snap: ValueSnap::OFF,
         }
     }
 }
@@ -686,6 +698,15 @@ mod tests {
                 on: false,
                 grid: crate::ui::automation::value::ValueGrid::Percent(10),
             },
+            midi_note_effects: !d.midi_note_effects,
+            velocity_snap: ValueSnap {
+                on: true,
+                grid: crate::ui::automation::value::ValueGrid::Steps,
+            },
+            pan_snap: ValueSnap {
+                on: true,
+                grid: crate::ui::automation::value::ValueGrid::Percent(25),
+            },
         }
     }
 
@@ -899,9 +920,12 @@ mod tests {
                 "mcpEnabled",
                 "mcpPort",
                 "middlec4",
+                "midiApplyNoteEffects",
                 "mtmlevel",
                 "multithreaded",
                 "multitrackrec",
+                "pianoRollPanSnap",
+                "pianoRollVelocitySnap",
                 "pluginFolders",
                 "preferredKbdSizeCells",
                 "recMetronome",

@@ -295,6 +295,21 @@ pub struct ChannelFileState {
     pub midi_input: MidiInput,
     /// Honeydew's own `HDMs`: the channels the notes and MIDI CCs it plays also go to, in the order added.
     pub midi_sends: Vec<MidiSend>,
+    /// Honeydew's own `HDMd`: the targets of its rack's Modulators, one each. Kept here, outside the rack, so that each
+    /// target edit is an undo step (no undo step covers the rack).
+    pub modulations: Vec<Modulation>,
+}
+
+/// A Modulator's target (Honeydew's own, `honeydew_audio::modulator`): the param its signal moves, any automatable
+/// param of any channel. Saved in an `HDMd`, which FL Studio Mobile skips. One whose Modulator or target is gone does
+/// nothing (ids are never reused).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Modulation {
+    /// The Modulator's instance id in the channel's rack.
+    pub modulator: i32,
+    /// The target's channel id (`CHHD`@1080).
+    pub channel: i32,
+    pub target: super::AutomationTarget,
 }
 
 /// A MIDI send (Honeydew's own): every note the channel's instruments get, past its note effects, and its MIDI CCs and
@@ -344,6 +359,7 @@ impl Default for ChannelFileState {
             header_extra: Vec::new(),
             midi_input: MidiInput::default(),
             midi_sends: Vec::new(),
+            modulations: Vec::new(),
         }
     }
 }

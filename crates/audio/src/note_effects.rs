@@ -360,6 +360,8 @@ fn transpose(module: &NoteEffectModule, note: Note, output: &mut Vec<Note>) {
     }
 }
 
+/// Randomizer: Pitch, Velocity and Pan spread the note; Gate (p4) is the chance it plays at all (100 %: always, 0 %:
+/// never), and a note it drops goes with its note-off (issue #31: a probability, which Gate's 100 % default fits).
 fn randomize(module: &NoteEffectModule, note: Note, index: usize, output: &mut Vec<Note>) {
     let mut random = Random::new(module.instance_id, index);
     let range = (24.0 * module.params[1]).round() as i16;
@@ -368,16 +370,17 @@ fn randomize(module: &NoteEffectModule, note: Note, index: usize, output: &mut V
         * (1.0 + random.signed() * f64::from(module.params[2])))
     .round()
     .clamp(1.0, 255.0) as u8;
-    let gate = 1.0 - random.unit() * (1.0 - f64::from(module.params[4]));
+    let plays = random.unit() < f64::from(module.params[4]);
     let pan = (f64::from(note.pan) + random.signed() * f64::from(module.params[3])).clamp(0.0, 1.0)
         as f32;
-    output.push(Note {
-        end: note.start + ((note.end - note.start) * gate).max(1e-9),
-        pitch: pitch.clamp(0, 127),
-        velocity,
-        pan,
-        ..note
-    });
+    if plays {
+        output.push(Note {
+            pitch: pitch.clamp(0, 127),
+            velocity,
+            pan,
+            ..note
+        });
+    }
 }
 
 /// `Delay (sync)`'s items in beats.
@@ -866,7 +869,7 @@ struct LiveArp {
 /// The note effects of a channel run in real time on its live keys:
 /// each live note passes them top to bottom as a sequenced note does in [`NoteEffectRack::process_events`], with the
 /// params in force at the song position. A key's length is known only when it lifts, so the notes made from it end
-/// then: an echo repeat or a Randomizer gate that would end earlier ends at the lift. Its clock is the
+/// then: an echo repeat that would end earlier ends at the lift. Its clock is the
 /// engine's frames rendered, so it runs while the transport is stopped; the Arpeggiator's bar counts from that
 /// clock. Nothing here allocates once built, up to `capacity` notes in flight (more are dropped).
 pub struct LiveNoteChain {

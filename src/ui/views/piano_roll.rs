@@ -48,7 +48,11 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
             (t.channel, t.lane, t.clip) == (channel, roll.lane, roll.clip_id) && t.clip.is_some()
         }),
     };
-    for action in roll.show(ui, app.regions.editor, &app.cx, app.song, &opts) {
+    // The graph lane's value snap is an app setting: the snap menu's picks are saved with the settings.
+    roll.value_snap = [app.settings.velocity_snap, app.settings.pan_snap];
+    let actions = roll.show(ui, app.regions.editor, &app.cx, app.song, &opts);
+    [app.settings.velocity_snap, app.settings.pan_snap] = roll.value_snap;
+    for action in actions {
         match action {
             PianoRollAction::SongEdited { final_edit } => app.song_edited(final_edit),
             PianoRollAction::QuietEdit => app.quiet_edited(),

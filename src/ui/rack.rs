@@ -30,7 +30,8 @@
 //!
 //! Honeydew's own: a dynamics card (a module that [takes a key](honeydew_audio::takes_key)) has `Sidechain` in its ≡
 //! menu, which picks the channel whose output keys its detector, or `Sidechain: Off` ([`RackPanel::key_menu`]); its
-//! header shows the source's name.
+//! header shows the source's name. A Modulator's ≡ menu adds `Modulate recent control` and `Clear target`, which set
+//! the param it drives ([`retarget`], a final song edit and so an undo step); its header shows the target's name.
 
 use std::collections::HashMap;
 
@@ -52,8 +53,8 @@ use crate::panels::{self, PanelState, cstm};
 use crate::params::{COMMON_PARAMS, ParamSpec, Role, module_spec};
 use crate::project_files::PresetSource;
 use crate::song::{
-    AutomationTarget, Channel, ChannelKind, LaneKind, MidiSend, ModuleInstance, Rack, SendState,
-    Song, SynthKind, output_bus,
+    AutomationTarget, Channel, ChannelKind, LaneKind, MidiSend, Modulation, ModuleInstance, Rack,
+    SendState, Song, SynthKind, output_bus,
 };
 use crate::theme::channel_color;
 use crate::ui::ctrl_menu::{CtrlAction, Touch};
@@ -158,6 +159,7 @@ pub fn ui_height(type_id: u16) -> Option<f32> {
         crate::song::plugin::PLUGIN_INSTRUMENT | crate::song::plugin::PLUGIN_EFFECT => 8.0,
         honeydew_audio::lemon::REVERB | honeydew_audio::lemon::LIMITER => 7.0,
         honeydew_audio::dynamic_eq::DYNAMIC_EQ => 11.0,
+        honeydew_audio::modulator::MODULATOR => 8.5,
         _ => return None,
     })
 }
@@ -482,6 +484,9 @@ pub enum CardAction {
     SetFullRange,
     /// `Sidechain`: a module that takes a key; opens its source menu ([`RackPanel::key_menu`]).
     Sidechain,
+    /// A Modulator's `Modulate recent control` and `Clear target` ([`modulator_menu`]).
+    Modulate,
+    ClearTarget,
 }
 
 /// What a preset picker loads into.
@@ -551,7 +556,10 @@ pub fn apply(rack: &mut Rack, instance_id: i32, action: CardAction) -> Outcome {
         CardAction::Replace => Outcome::Browse(InsertAt::Replace(instance_id)),
         CardAction::Copy => Outcome::Copied,
         CardAction::SavePreset => Outcome::SavePreset,
-        CardAction::SetRange | CardAction::Sidechain => Outcome::Nothing,
+        CardAction::SetRange
+        | CardAction::Sidechain
+        | CardAction::Modulate
+        | CardAction::ClearTarget => Outcome::Nothing,
         // The engine reads the key range at build.
         CardAction::SetFullRange => {
             let file = &mut rack.modules[index].file;
@@ -832,6 +840,56 @@ fn card_menu(minimized: bool, type_id: u16, full: bool) -> Vec<PopupItem<CardAct
         ..PopupItem::new(action, col, row, label)
     })
     .collect()
+}
+
+/// A Modulator's ≡ menu items after [`card_menu`]'s, under `Sidechain`: `Modulate recent control`, enabled while there
+/// is a recent control, and `Clear target`, while it has one.
+fn modulator_menu(recent: bool, target: bool) -> [PopupItem<CardAction>; 2] {
+    let item = |action, row, label, enabled: bool| PopupItem {
+        disabled: !enabled,
+        ..PopupItem::new(action, 0, row, label)
+    };
+    [
+        item(CardAction::Modulate, 5, "Modulate recent control", recent),
+        item(CardAction::ClearTarget, 6, "Clear target", target),
+    ]
+}
+
+/// The Modulator `modulator` of a channel whose targets are `modulations` drives `to` (a channel id and a param), or
+/// nothing; whether that changed them.
+pub fn retarget(
+    modulations: &mut Vec<Modulation>,
+    modulator: i32,
+    to: Option<(i32, AutomationTarget)>,
+) -> bool {
+    let before = modulations.clone();
+    modulations.retain(|m| m.modulator != modulator);
+    if let Some((channel, target)) = to {
+        modulations.push(Modulation {
+            modulator,
+            channel,
+            target,
+        });
+    }
+    *modulations != before
+}
+
+/// The names of the targets of channel `channel`'s Modulators, by their instance id: `» <channel> · <param>`, for
+/// those whose target is still there.
+pub fn modulation_names(song: &Song, channel: usize) -> Vec<(i32, String)> {
+    let Some(ch) = song.channels.get(channel) else {
+        return Vec::new();
+    };
+    (ch.file.modulations.iter())
+        .filter_map(|m| {
+            let index = song.channels.iter().position(|c| c.id == m.channel)?;
+            let label = song.automation_label(index, m.target)?;
+            Some((
+                m.modulator,
+                format!("» {} · {label}", song.channels[index].name),
+            ))
+        })
+        .collect()
 }
 
 /// Whether `module`'s key range is the full 0–127.
@@ -1206,6 +1264,10 @@ pub struct RackPanel {
     pub soundfonts: SoundFonts,
     /// The channels the rack's sends can name: the host sets it each frame ([`send_targets`]).
     pub targets: Vec<SendTarget>,
+    /// The recent control, by channel id, for a Modulator's `Modulate recent control`, and the names of the rack's
+    /// Modulators' targets ([`modulation_names`]): the host sets them each frame.
+    pub recent: Option<(i32, AutomationTarget)>,
+    pub modulations: Vec<(i32, String)>,
     /// The key-learn of `Set Range` / `Set First Note`: the module's instance id, and the low key once played.
     learning: Option<(i32, Option<u8>)>,
     /// The keys played on the channel since the last pass ([`Self::key_played`]).
@@ -2182,14 +2244,23 @@ impl RackPanel {
             module_name(module.type_id)
         };
         let (label, font) = (label.to_owned(), m.font_id(FontSize::Pt12));
-        // A sidechain's source, by name: 10 pt in the channel colour, at the label cell's right 0.5 U short of the preset
-        // button, in at most half the cell.
-        let source = module.key_source();
-        let name = match source.and_then(|id| self.targets.iter().find(|t| t.id == id)) {
-            Some(source) => {
-                let (tag, small) = (format!("SC: {}", source.name), m.font_id(FontSize::Pt10));
+        // A sidechain's source and a Modulator's target, by name: 10 pt in the channel colour, at the label cell's right
+        // 0.5 U short of the preset button, in at most half the cell, or with a target what the title leaves of it.
+        let source = (module.key_source())
+            .and_then(|id| self.targets.iter().find(|t| t.id == id))
+            .map(|source| format!("SC: {}", source.name));
+        let target = self.modulations.iter().find(|(k, _)| *k == id);
+        let tags = [source, target.map(|(_, t)| t.clone())];
+        let tag = tags.into_iter().flatten().collect::<Vec<_>>().join("   ");
+        let name = match (!tag.is_empty()).then_some(tag) {
+            Some(tag) => {
+                let small = m.font_id(FontSize::Pt10);
                 let right = name.right() - m.u(0.5);
-                let w = text_width(ui, &tag, small.clone()).min(name.width() / 2.0);
+                let room = match target {
+                    Some(_) => name.width() - text_width(ui, &label, font.clone()) - m.u(1.0),
+                    None => 0.0,
+                };
+                let w = text_width(ui, &tag, small.clone()).min(room.max(name.width() / 2.0));
                 let at = name.with_min_x(right - w).with_max_x(right);
                 widgets::truncated(ui.painter(), at, Align2::RIGHT_CENTER, &tag, small, ink, 0);
                 name.with_max_x(at.left() - m.u(0.25))
@@ -2517,7 +2588,11 @@ impl RackPanel {
                 self.card_menu = None;
                 return;
             };
-            let items = card_menu(module.minimized, module.type_id, full_range(module));
+            let mut items = card_menu(module.minimized, module.type_id, full_range(module));
+            if module.type_id == honeydew_audio::modulator::MODULATOR {
+                let target = self.modulations.iter().any(|(m, _)| *m == id);
+                items.extend(modulator_menu(self.recent.is_some(), target));
+            }
             let menu_id = ui.id().with(("rack card menu", id));
             let r = popup::show(ctx, menu_id, at, screen, &items, cx);
             if r.close {
@@ -2535,6 +2610,14 @@ impl RackPanel {
             };
             if selected == Some(CardAction::Sidechain) {
                 self.key_menu = Some((id, at));
+            }
+            let to = match selected {
+                Some(CardAction::Modulate) => Some(self.recent),
+                Some(CardAction::ClearTarget) => Some(None),
+                _ => None,
+            };
+            if let Some(to) = to {
+                actions.replace_song |= retarget(&mut channel.file.modulations, id, to);
             }
             if selected == Some(CardAction::SetRange) {
                 // One key-learn at a time: another card's ends.

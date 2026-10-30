@@ -329,7 +329,7 @@ impl Default for HoneydewApp {
 
 impl HoneydewApp {
     fn mcp_status(&self) -> &'static str {
-        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        #[cfg(desktop)]
         {
             if !self.settings.mcp_enabled {
                 "Disabled"
@@ -339,7 +339,7 @@ impl HoneydewApp {
                 "Error"
             }
         }
-        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        #[cfg(not(desktop))]
         {
             "Disabled"
         }
@@ -460,7 +460,7 @@ impl HoneydewApp {
             if self.settings.multi_core != self.settings_saved.multi_core {
                 self.audio.set_multi_core(self.settings.multi_core);
             }
-            #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+            #[cfg(desktop)]
             if self.settings.mcp_enabled != self.settings_saved.mcp_enabled
                 || self.settings.mcp_port != self.settings_saved.mcp_port
             {
@@ -1957,6 +1957,7 @@ impl HoneydewApp {
             .is_some_and(|k| preview::current(self.nav.view, &self.slots, &self.song) == Some(k));
         let mcp_status = self.mcp_status();
         self.slots.ctrl_menu.recent = self.ctrl_recent();
+        self.slots.rack.recent = (self.recent_index()).map(|(c, t)| (self.song.channels[c].id, t));
         // The sample row's clip, found after the view.
         let mut row_clip = None;
         // SETTINGS' `Input device:` dropdown opened this frame.

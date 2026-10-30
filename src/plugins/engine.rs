@@ -216,6 +216,8 @@ pub(crate) struct PluginInstrument {
     queued: usize,
     held: [bool; 128],
     reset: bool,
+    /// It takes the sustain pedal itself ([`Instrument::takes_pedal`]).
+    pedal: bool,
     left: Vec<f32>,
     right: Vec<f32>,
 }
@@ -227,12 +229,14 @@ impl PluginInstrument {
         rate: u32,
         numerator: u16,
         max_block: usize,
+        pedal: bool,
     ) -> Self {
         Self {
             plugin,
             params,
             rate,
             numerator,
+            pedal,
             queue: [Pending::Off(0); QUEUE],
             queued: 0,
             held: [false; 128],
@@ -338,6 +342,11 @@ impl Instrument for PluginInstrument {
             _ => return,
         };
         self.push(Pending::Midi(message));
+    }
+
+    /// CC #64 reaches it as any CC (the engine sends it only to an instrument that takes the pedal).
+    fn takes_pedal(&self) -> bool {
+        self.pedal
     }
 }
 

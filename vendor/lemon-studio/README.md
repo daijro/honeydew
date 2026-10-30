@@ -91,6 +91,12 @@ To pull upstream fixes, diff each crate against the commit above; these are the 
   gone. Honeydew keeps its plugin instances in a thread-local made before the run loop's, so at exit they are destroyed
   after it, and a plugin that unregisters a timer or descriptor then (Surge XT does) aborted the app. Marked
   `Honeydew (vendored change)`.
+- Issue #33: a plugin's notice that only its latency changed (VST2 `audioMasterIOChanged` with the same channels, VST3
+  `restartComponent(kLatencyChanged)` alone) is read on the next `idle`, without suspending and resuming the plugin
+  (`os-vst2/src/lib.rs`, `os-vst3/src/lib.rs`): one that announced its latency whenever it resumed was switched off
+  and on again on every tick. `os-vst2` has a test for it (`mock::announce_delay`). And `os-host/src/runloop.rs` has
+  `polling` and `next_timer`, so the app ticks only while something waits. Each marked `Honeydew (vendored change)` or
+  `(vendored addition)`.
 - `os-vst3/src/host.rs` also allows `unknown_lints`: Honeydew's CI pins Rust 1.91, which does not know the lint
   upstream allows there.
 - The manifests name their version, edition and license instead of Lemon's workspace keys, point at each other by

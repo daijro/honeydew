@@ -372,6 +372,19 @@ fn a_change_of_outputs_and_latency_is_taken_on_idle() {
     assert_eq!((l[0], r[0]), (0.5, 0.5));
 }
 
+// Honeydew (vendored addition), issue #33: a plugin that announced its latency whenever it resumed was suspended and
+// resumed again on every tick, switching between offline and online for good.
+#[test]
+fn a_latency_change_alone_is_read_without_suspending_the_plugin() {
+    let (_m, mut p) = gain();
+    p.activate(48000);
+    unsafe { mock::announce_delay(p.inst.effect, 64) };
+    clear();
+    p.idle();
+    assert_eq!(probe(|p| p.log.clone()), Vec::<String>::new());
+    assert_eq!(os_host::Plugin::latency(&p), 64);
+}
+
 #[test]
 fn the_host_answers_what_plugins_ask() {
     let (_m, p) = gain();

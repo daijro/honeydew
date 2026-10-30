@@ -32,8 +32,14 @@ pub trait Instrument: Send {
     /// 5 Aftertouch, 7 + n MIDI CC #n. The instrument applies the laws: Pitch Bend reaches modules as w = 4v − 2.
     /// The engine calls it for every channel param ≥ 4, at build, on seek and on each
     /// change, except the ones it handles itself: CC #7 (Level), CC #8 and #10 (Pan) and CC #64 (the sustain
-    /// pedal holds note-offs).
+    /// pedal holds note-offs), which only an instrument that [takes the pedal](Self::takes_pedal) gets.
     fn set_controller(&mut self, _index: usize, _value: f32) {}
+    /// Issue #33: whether it takes the sustain pedal itself (a hosted plugin: its own pedal, resonance and release
+    /// samples). It then gets CC #64 (param 71) through [`Self::set_controller`] as it moves, half-pedal values too, and
+    /// its note-offs at once: the engine holds none for it.
+    fn takes_pedal(&self) -> bool {
+        false
+    }
     /// The `CSTM` setting `key` is now `value`.
     fn set_setting(&mut self, _key: u32, _value: f32) {}
     /// A slide event: every voice's slide offsets are now `pitch` semitones, `pan`

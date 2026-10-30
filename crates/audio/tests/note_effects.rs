@@ -889,15 +889,48 @@ fn echo_enable_off_drops_the_repeats_still_to_come() {
 
 #[test]
 fn randomizer_is_deterministic_and_keeps_note_off_pitch() {
-    let params = vec![1.0, 0.5, 0.5, 0.0, 0.5];
+    let params = vec![1.0, 0.5, 0.5, 0.0, 1.0];
     let effects = vec![module(49, 42, params)];
     let a = run(effects.clone(), &note());
     let b = run(effects, &note());
     assert_eq!(a, b);
     assert_eq!(a.len(), 2);
     assert_eq!(a[0].pitch, a[1].pitch);
-    assert!((0.5..=1.0).contains(&a[1].beat));
+    assert_eq!(a[1].beat, 1.0);
     assert!((0..=127).contains(&a[0].pitch));
+}
+
+/// Gate is the chance a note plays (#31): of 200 notes about half
+/// play at 50 %, the same ones each time and at their own lengths; all play at 100 %, none at 0 %.
+#[test]
+fn the_randomizer_gate_is_the_chance_a_note_plays() {
+    let input: Vec<_> = (0..200)
+        .flat_map(|k| {
+            let beat = f64::from(k) / 2.0;
+            [
+                InputNoteEvent::on(beat, 60, 100),
+                InputNoteEvent::off(beat + 0.25, 60),
+            ]
+        })
+        .collect();
+    let play = |gate| {
+        run_until(
+            vec![module(49, 7, vec![1.0, 0.0, 0.0, 0.0, gate])],
+            &input,
+            101.0,
+        )
+    };
+    let half = play(0.5);
+    assert_eq!(half, play(0.5));
+    let ons = pitches(&half).len();
+    assert!((80..=120).contains(&ons), "{ons} of 200 played");
+    assert_eq!(half.len(), 2 * ons);
+    assert!(
+        half.chunks(2).all(|n| n[1].beat - n[0].beat == 0.25),
+        "{half:?}"
+    );
+    assert_eq!(pitches(&play(1.0)).len(), 200);
+    assert_eq!(play(0.0), []);
 }
 
 #[test]
@@ -1412,6 +1445,19 @@ fn drive(chain: &mut LiveNoteChain, from: u64, to: u64, out: &mut Vec<(u64, usiz
             .filter(|&next| next > now)
             .map_or(to, |next| next.min(to));
     }
+}
+
+/// A live key the Randomizer drops (Gate 0 %) sounds nothing below it, and its lift leaves nothing held or due.
+#[test]
+fn a_live_key_the_randomizer_drops_sounds_nothing_and_sticks_nothing() {
+    let mut chain = chain_of(vec![module(49, 7, vec![1.0, 0.0, 0.0, 0.0, 0.0])]);
+    let mut out = Vec::new();
+    chain.note_on(0, 60, 0.8, true);
+    drive(&mut chain, 0, 10_000, &mut out);
+    chain.note_off(10_000, 60);
+    drive(&mut chain, 10_000, 20_000, &mut out);
+    assert_eq!(out, [(0, 0, true, 60), (10_000, 0, false, 60)]);
+    assert_eq!((chain.keys_down(), chain.next_due()), (0, None));
 }
 
 /// A live tempo reaches the live chain from the frame it is set. A synced Arpeggiator's steps follow the beats; an

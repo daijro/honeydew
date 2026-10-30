@@ -69,6 +69,8 @@ enum Kind {
     Analyzer(Box<Analyzer>),
     /// Dynamic EQ: each band's gain offset now, dB.
     DynamicEq,
+    /// Modulator: its signal now.
+    Modulator,
 }
 
 impl Probe {
@@ -96,6 +98,7 @@ impl Probe {
                 analyzer::LEN,
             ),
             crate::dynamic_eq::DYNAMIC_EQ => (Kind::DynamicEq, crate::dynamic_eq::BANDS),
+            crate::modulator::MODULATOR => (Kind::Modulator, 1),
             _ => (Kind::None, 0),
         };
         let mut probe = Self {
@@ -139,7 +142,7 @@ impl Probe {
             Kind::Tuner(detector) => detector.reset(),
             Kind::Pitcher | Kind::Pitcher2 => self.slab[1] = -1.0,
             Kind::Analyzer(analyzer) => analyzer.reset(&mut self.slab),
-            Kind::None | Kind::Tremolo | Kind::Waveshaper | Kind::DynamicEq => {}
+            Kind::None | Kind::Tremolo | Kind::Waveshaper | Kind::DynamicEq | Kind::Modulator => {}
         }
     }
 
@@ -217,6 +220,7 @@ impl Probe {
             (Kind::DynamicEq, Processor::DynamicEq(state)) => {
                 slab.copy_from_slice(&state.dynamic_db())
             }
+            (Kind::Modulator, Processor::Modulator(state)) => slab[0] = state.signal(),
             _ => {}
         }
     }
@@ -595,6 +599,14 @@ pub fn multiband(slab: &[f32], band: usize) -> Option<HistoryView> {
 /// Dynamic EQ: each band's gain offset from its detector now, dB.
 pub fn dynamic_eq(slab: &[f32]) -> Option<[f32; crate::dynamic_eq::BANDS]> {
     slab.try_into().ok()
+}
+
+/// Modulator: its signal now, 0…1 (−1…1 for an LFO).
+pub fn modulator(slab: &[f32]) -> Option<f32> {
+    match slab {
+        &[signal] => Some(signal),
+        _ => None,
+    }
 }
 
 /// Spacer: the input's and the output's correlation, −1…1.

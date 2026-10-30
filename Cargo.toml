@@ -1,6 +1,6 @@
 [package]
 name = "honeydew"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
@@ -62,19 +62,22 @@ jni = "0.21.1"
 [target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
 rfd = "0.17.2"
 pollster = "0.4.0"
-# M11 J2: MIDI input over ALSA (cpal's `alsa 0.9`), CoreMIDI and WinMM. 0.10.4 is the last 0.10.x, on `alsa ^0.9`.
-midir = "=0.10.4"
 # Third-party plugin hosting (VST3, VST2, CLAP), desktop only: Lemon Studio's hosts, vendored (vendor/lemon-studio);
 # `os-host` and `os-clap` above, which the built-in plugins need everywhere.
 os-vst3 = { path = "vendor/lemon-studio/os-vst3" }
 os-vst2 = { path = "vendor/lemon-studio/os-vst2" }
 
-[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "macos", target_os = "windows"))'.dependencies]
 rayon = "1.11"
 getrandom = "0.3.4"
 
+# M11 J2: MIDI input over ALSA (cpal's `alsa 0.9`), CoreMIDI and WinMM. 0.10.4 is the last 0.10.x, on `alsa ^0.9`. Its
+# ALSA backend is Linux only, so FreeBSD has no MIDI input.
+[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
+midir = "=0.10.4"
+
 # The plugin editors' X11 windows. Already in the tree through winit.
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
 x11rb = "0.13.2"
 # The plugin editors' GL and Xlib error calls (`plugins::window`), loaded at run time. Already in the tree (CPAL, the
 # plugin hosts).
@@ -82,7 +85,7 @@ libc = "0.2"
 
 # The plugin scanner process's error mode and COM setup (`plugins::scan`), plus the native editor windows.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Com", "Win32_System_Diagnostics_Debug", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Com", "Win32_System_Diagnostics_Debug", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

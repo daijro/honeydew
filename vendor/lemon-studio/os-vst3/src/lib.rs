@@ -823,17 +823,20 @@ impl Plugin {
             eprintln!("[os-vst3] {} restart flags {flags:#x}", self.desc.name);
         }
         let wanted = self.wanted_rate.swap(0, Ordering::AcqRel);
-        if flags & (RELOAD_COMPONENT | IO_CHANGED | LATENCY_CHANGED) != 0 {
+        // Honeydew (vendored change): a latency change alone is read, not answered by deactivating and activating the
+        // plug-in. One that announces its latency whenever it is activated was otherwise switched off and on again on
+        // every tick, between offline and online for good. Honeydew compensates no latency: it only shows it.
+        if flags & (RELOAD_COMPONENT | IO_CHANGED) != 0 {
             let r = if wanted != 0 { wanted } else { self.rate };
             self.deactivate();
-            if flags & (RELOAD_COMPONENT | IO_CHANGED) != 0 {
-                self.setup_buses();
-            }
+            self.setup_buses();
             if r != 0 {
                 self.activate(r);
             }
         } else if wanted != 0 && wanted != self.rate {
             self.activate(wanted);
+        } else if flags & LATENCY_CHANGED != 0 && self.rate != 0 {
+            self.latency = unsafe { self.processor.get_latency_samples() };
         }
         if flags & (RELOAD_COMPONENT | PARAM_TITLES_CHANGED) != 0 {
             self.refresh_param_ids();

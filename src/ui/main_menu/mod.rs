@@ -40,7 +40,7 @@ pub(crate) use file_ops::{
 };
 pub use library::{MemoryLibrary, SONGS_FOLDER, SongEntry, SongLibrary};
 #[cfg(not(target_arch = "wasm32"))]
-pub use library::{NativeLibrary, songs_dir};
+pub use library::{NativeLibrary, app_data_dir, songs_dir, user_dir};
 pub use project::{ProjectInfo, TEMPO_RANGE, duration, link_url, meta_secs, meta_time, tempo_step};
 pub use songs::Sort;
 pub(crate) use songs::bin_crumb;
@@ -134,7 +134,8 @@ pub enum MainMenuAction {
     ConfirmDelete(String),
     /// PROJECT `Quick Render`: render the last audio format with the current render options, no dialog.
     QuickRender,
-    /// SETTINGS `Open folder`: show this folder (the Original Content folder) in the system's file manager.
+    /// SETTINGS `Open folder` or `Open user folder`: show the folder this file is in (the Original Content folder's
+    /// README, the user folder's `My Songs`) in the system's file manager.
     Reveal(std::path::PathBuf),
     /// SETTINGS `Restore demo songs`: write our demo songs into the library again
     /// ([`crate::content::restore_demo_songs`]).

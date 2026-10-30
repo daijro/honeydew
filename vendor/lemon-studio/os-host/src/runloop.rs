@@ -102,6 +102,18 @@ pub fn active() -> bool {
     })
 }
 
+// Honeydew (vendored addition): a host that ticks only while something waits (issue #33).
+/// Descriptors are watched: they can only be polled, so the host ticks at frame rate.
+pub fn polling() -> bool {
+    LOOP.with(|l| !l.borrow().fds.is_empty())
+}
+
+// Honeydew (vendored addition): as `polling`.
+/// When the first timer is due, if any: the host's next tick for the timers.
+pub fn next_timer() -> Option<Instant> {
+    LOOP.with(|l| l.borrow().timers.iter().map(|t| t.due).min())
+}
+
 fn registered(token: Token) -> bool {
     LOOP.with(|l| {
         let l = l.borrow();

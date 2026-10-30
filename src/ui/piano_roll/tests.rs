@@ -797,12 +797,14 @@ fn timing(events: &[Event]) -> Vec<(u32, u8)> {
         .collect()
 }
 
-/// Humanizes `events` (all selected) with every normal draw `z`.
+/// Humanizes `events` (all selected) with the defaults, which are the plain `Humanize`, and every normal draw `z`.
 fn humanized(events: &[Event], z: f64) -> Vec<Event> {
-    let (mut events, mut sel) = (events.to_vec(), vec![true; events.len()]);
-    humanize_selected(&mut events, &mut sel, || z);
-    assert!(sel.iter().all(|s| !s), "the selection is hidden");
-    events
+    humanize_with(
+        events,
+        &vec![true; events.len()],
+        &Humanize::default(),
+        || z,
+    )
 }
 
 #[test]
@@ -825,32 +827,133 @@ fn humanize_moves_starts_by_a_fortieth_of_a_beat_per_sigma_truncated_to_ticks() 
 }
 
 #[test]
-fn humanize_keeps_starts_at_or_after_zero_and_velocity_in_1_to_255() {
+fn humanize_keeps_starts_at_or_after_zero_velocity_in_1_to_255_and_lengths_at_least_a_tick() {
     let notes = [loud(10, 60, 204), loud(500, 62, 3)];
     assert_eq!(timing(&humanized(&notes, -1000.0)), [(0, 1), (0, 1)]);
     assert_eq!(timing(&humanized(&notes, 100.0)), [(330, 255), (820, 255)]);
+    let wide = Humanize {
+        length: 0.5,
+        ..Humanize::default()
+    };
+    let short = humanize_with(&notes, &[true; 2], &wide, || -1000.0);
+    assert_eq!(spans(&short), [(0, 1.0, 60), (0, 1.0, 62)]);
 }
 
 #[test]
-fn humanize_changes_only_the_selected_notes_drawing_start_then_velocity() {
-    let mut events = vec![loud(64, 60, 100), loud(128, 62, 100), loud(192, 200, 100)];
-    let mut sel = vec![false, true, true];
-    let mut draws = [1.0, -1.0].into_iter().cycle();
-    humanize_selected(&mut events, &mut sel, || draws.next().unwrap());
+fn humanize_changes_only_the_selected_notes_unless_it_applies_to_all() {
+    let events = [loud(64, 60, 100), loud(128, 62, 100), loud(192, 200, 100)];
+    // Each note draws its start, velocity and length deviations, in that order.
+    let draws = || {
+        let mut z = [1.0, -1.0, 0.0].into_iter().cycle();
+        move || z.next().unwrap()
+    };
+    let sel = [false, true, true];
+    let selected = humanize_with(&events, &sel, &Humanize::default(), draws());
     // Start +3.2 → +3 ticks, velocity −12.75 → 87; key 200 is not a note the roll edits.
-    assert_eq!(timing(&events), [(64, 100), (131, 87), (192, 100)]);
-    assert_eq!(sel, [false; 3]);
+    assert_eq!(timing(&selected), [(64, 100), (131, 87), (192, 100)]);
+    let all = Humanize {
+        all: true,
+        ..Humanize::default()
+    };
+    let every = humanize_with(&events, &sel, &all, draws());
+    assert_eq!(timing(&every), [(67, 87), (131, 87), (192, 100)]);
 }
 
 #[test]
-fn humanize_re_sorts_notes_that_pass_each_other() {
-    let notes = [loud(10, 60, 100), loud(11, 62, 100)];
-    let mut events = notes.to_vec();
-    let mut sel = vec![true, true];
-    let mut draws = [1.0, 0.0, -1.0, 0.0].into_iter();
-    humanize_selected(&mut events, &mut sel, || draws.next().unwrap());
-    assert_eq!(timing(&events), [(7, 100), (13, 100)]);
-    assert_eq!(spans(&events)[0].2, 62);
+fn humanize_repeats_by_seed_and_its_defaults_spread_as_the_specs() {
+    let notes = vec![loud(1000, 60, 128); 4000];
+    let sel = vec![true; notes.len()];
+    let s = Humanize::default();
+    let a = humanize(&notes, &sel, &s, 7);
+    assert_eq!(
+        a,
+        humanize(&notes, &sel, &s, 7),
+        "the same seed, the same notes"
+    );
+    assert_ne!(a, humanize(&notes, &sel, &s, 8));
+    // N(0, 3.2 ticks) and N(0, 12.75), each floored to a whole step: means −0.5.
+    let stats = |x: Vec<f64>| {
+        let mean = x.iter().sum::<f64>() / x.len() as f64;
+        let var = x.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / x.len() as f64;
+        (mean, var.sqrt())
+    };
+    let (dt, dv): (Vec<f64>, Vec<f64>) = (timing(&a).into_iter())
+        .map(|(p, v)| (f64::from(p) - 1000.0, f64::from(v) - 128.0))
+        .unzip();
+    let (mean, sd) = stats(dt);
+    assert!(
+        (mean + 0.5).abs() < 0.2 && (sd - 3.2).abs() < 0.15,
+        "{mean} {sd}"
+    );
+    let (mean, sd) = stats(dv);
+    assert!(
+        (mean + 0.5).abs() < 0.8 && (sd - 12.75).abs() < 0.6,
+        "{mean} {sd}"
+    );
+    assert!(spans(&a).iter().all(|n| n.1 == 32.0 && n.2 == 60));
+    // Pressing `Apply` on an open panel does what `Humanize` did.
+    assert_eq!(super::humanize::Panel::new(0, true).settings(), s);
+}
+
+#[test]
+fn humanize_modulators_shorten_loud_and_high_notes_at_positive_amounts() {
+    let still = Humanize {
+        timing: 0.0,
+        velocity: 0.0,
+        all: true,
+        ..Humanize::default()
+    };
+    let lens = |s: Humanize, notes: &[Event]| -> Vec<f64> {
+        spans(&humanize(notes, &[], &s, 1))
+            .iter()
+            .map(|n| n.1)
+            .collect()
+    };
+    // Velocity 1.0 and 0.2 on one key; keys 72 and 60 at one velocity.
+    let (by_velocity, by_pitch) = (
+        [loud(0, 60, 255), loud(0, 60, 51)],
+        [loud(0, 72, 128), loud(0, 60, 128)],
+    );
+    for (amount, louder_shorter) in [(1.0, true), (-1.0, false)] {
+        let v = lens(
+            Humanize {
+                vel_to_len: amount,
+                ..still
+            },
+            &by_velocity,
+        );
+        assert_eq!(v[0] < v[1], louder_shorter, "{amount}: {v:?}");
+        let p = lens(
+            Humanize {
+                pitch_to_len: amount,
+                ..still
+            },
+            &by_pitch,
+        );
+        assert_eq!(p[0] < p[1], louder_shorter, "{amount}: {p:?}");
+    }
+    assert_eq!(lens(still, &by_velocity), [32.0, 32.0]);
+}
+
+#[test]
+fn humanize_base_adjustments_come_before_the_deviations() {
+    let base = Humanize {
+        vel_offset: 0.1,
+        len_scale: 2.0,
+        time_offset: 4.0,
+        ..Humanize::default()
+    };
+    // Velocity +25.5 (truncated), length ×2, start +4 ticks.
+    let out = humanize_with(&[loud(64, 60, 204)], &[true], &base, || 0.0);
+    assert_eq!(timing(&out), [(68, 229)]);
+    assert_eq!(spans(&out), [(68, 64.0, 60)]);
+    // The offset velocity is kept to 0..=255 before its deviation: 255 − 12.75, not 331.5 − 12.75.
+    let up = Humanize {
+        vel_offset: 0.5,
+        ..base
+    };
+    let out = humanize_with(&[loud(64, 60, 204)], &[true], &up, || -1.0);
+    assert_eq!(timing(&out), [(64, 242)]);
 }
 
 #[test]
@@ -2798,13 +2901,20 @@ mod component {
     }
 
     #[test]
-    fn humanize_nudges_the_selected_notes_once_and_hides_the_selection() {
+    fn humanize_previews_in_its_panel_and_apply_nudges_the_selected_notes_once() {
         // Eight notes: the chance that a normal draw leaves every start and velocity as it was is negligible.
         let notes: Vec<Event> = (0..8).map(|i| n(64 + i * 64, 32.0, 60 + i as u8)).collect();
         let mut rig = Rig::new(notes.clone());
         more(&mut rig, "Humanize");
-        // It re-syncs whatever it changed.
+        // The panel previews; the song waits for `Apply`.
+        assert!(rig.text("Apply").is_some(), "the panel shows");
+        assert_eq!(rig.events(), &notes[..]);
+        assert!(rig.all.is_empty());
+        rig.tap(rig.text("Apply").unwrap());
+        rig.frame(vec![]);
+        // It re-syncs whatever it changed, and hides the selection.
         assert_eq!(rig.all, [PianoRollAction::Resync]);
+        assert_eq!(rig.text("Apply"), None, "the panel closed");
         assert!(rig.roll.selected.iter().all(|s| !s));
         assert_eq!(rig.text("Delete"), None, "the floating buttons are gone");
         let shape = |events: &[Event]| -> Vec<(f64, u8)> {
@@ -2814,25 +2924,7 @@ mod component {
         after.sort_by_key(|s| s.1);
         assert_eq!(after, shape(&notes), "lengths and keys stay");
         assert_ne!(rig.events(), &notes[..]);
-    }
-
-    /// Humanize re-syncs whatever it changed. A seed whose first draw nudges the start by under a tick (0 ≤ z < 1/3.2)
-    /// changes only the velocity, which the song diff alone takes for a graph-lane edit.
-    #[test]
-    fn humanize_with_no_timing_nudge_still_re_syncs() {
-        let draws = |seed| {
-            let mut z = crate::ui::piano_roll::notes::normal(seed);
-            ((0.0..0.3).contains(&z()), z().abs() > 0.2)
-        };
-        let seed = (0..10_000).find(|&s| draws(s) == (true, true)).unwrap();
-        let mut rig = Rig::new(vec![n(64, 32.0, 60)]);
-        rig.roll.selected = vec![true];
-        let mut actions = Vec::new();
-        let op = crate::ui::piano_roll::MoreOp::Humanize;
-        (rig.roll).more(op, (Pos2::ZERO, seed), &mut rig.song, &mut actions);
-        assert_eq!(spans(rig.events()), [(64, 32.0, 60)]);
-        assert_ne!(looks(rig.events()), [(204, 127, false)]);
-        assert_eq!(actions, [PianoRollAction::Resync]);
+        assert!(rig.events().is_sorted_by_key(|e| e.pos()), "re-sorted");
     }
 
     #[test]
@@ -3179,6 +3271,32 @@ mod component {
         rig.tap(pos2(last, lane_y(0.5)));
         assert_eq!(values(&rig)[2..], [(204, 254), (1, 127)]);
         assert_eq!(rig.roll.remembered.pan, 254);
+    }
+
+    #[test]
+    fn with_value_snap_a_lane_paint_lands_on_the_grid_and_off_it_is_continuous() {
+        let mut rig = lane_rig(vec![n(0, 64.0, 70)]);
+        let pick = |rig: &mut Rig, label: &str| {
+            rig.roll.menu = Some(super::super::Menu::Snap);
+            rig.frame(vec![]);
+            rig.frame(vec![]);
+            rig.tap(rig.text(label).expect(label));
+        };
+        // 0.31 up: Vel 79.05. At 10 % the nearest line is 30 %, 76.5 → 77; the MIDI steps' is k = 39, 39·255/127 =
+        // 78.3 → 78, which a MIDI export writes as 39; off it is trunc(79.05) as before.
+        let at_vel = |rig: &mut Rig, label: &str| {
+            pick(rig, label);
+            rig.tap(pos2(at(10.0, 70).x, lane_y(0.31)));
+            values(rig)[0].0
+        };
+        assert_eq!(at_vel(&mut rig, "10 %"), 77);
+        assert_eq!(at_vel(&mut rig, "MIDI"), 78);
+        assert_eq!(at_vel(&mut rig, "Off"), 79);
+        // Pan's own snap: left, centre or right; 0.85 up (215.9) lands on the right.
+        rig.tap(rig.text("Pan").unwrap());
+        pick(&mut rig, "L/C/R");
+        rig.tap(pos2(at(10.0, 70).x, lane_y(0.85)));
+        assert_eq!(values(&rig), [(79, 254)]);
     }
 
     #[test]

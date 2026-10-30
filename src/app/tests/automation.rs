@@ -511,6 +511,32 @@ fn link_to_recent_control_retargets_the_lane_keeps_its_points_and_rewrites_their
     assert_eq!(written_keys(&rig.app.song), [2, 2]);
 }
 
+#[test]
+fn modulate_recent_control_sets_a_modulators_target_in_one_undo_step() {
+    let mut rig = effects_rig();
+    let ch = &mut rig.app.song.channels[2];
+    let modulator = ch.rack.add(honeydew_audio::modulator::MODULATOR);
+    let id = ch.id;
+    rig.app.song_edited(SongEdit::Final, 0);
+    rig.frame(vec![]);
+    let drive = rig.text_rect("Drive").center();
+    rig.touch_at(drive);
+    let undos = rig.undos();
+    card_item(&mut rig, "Modulator", "Modulate recent control");
+    rig.frame(vec![]);
+    let set = vec![crate::song::Modulation {
+        modulator,
+        channel: id,
+        target: DRIVE,
+    }];
+    assert_eq!(rig.app.song.channels[2].file.modulations, set);
+    assert_eq!(rig.undos(), undos + 1);
+    // Undone, the Modulator drives nothing again.
+    let ctx = rig.ctx.clone();
+    rig.app.step(&ctx, crate::history::Step::Undo, 0);
+    assert_eq!(rig.app.song.channels[2].file.modulations, []);
+}
+
 // ---- `Delete automation?` ----
 
 /// [`effects_rig`] with a Drive lane (one clip) and a Chorus (instance 3) without lanes; its rack open.
