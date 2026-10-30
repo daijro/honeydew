@@ -8,43 +8,6 @@
 
 ---
 
-## Download
-
-Get the latest version from [Releases](https://github.com/daijro/honeydew/releases/latest).
-
-- **Windows, Linux, macOS:** extract the archive and run `honeydew-native`. The full download has the sound library in its `content/` folder. On its first start, Honeydew copies it into its app data folder, so later versions can be the smaller `-no-sounds` download.
-- **`-no-sounds` downloads** are the app alone, about 40 MB. They use the sound library installed in the app data folder: run a full download once, or install `honeydew-<version>-sounds.zip`.
-- **`honeydew-<version>-sounds.zip`** is the sound library on its own. Install it with SETTINGS → `Install sound library…` (`ZIP file…`), which also takes the `content/` folder of a full download (`Folder…`). Without one, Honeydew asks for it once at start, and again only when a newer sound library ships.
-- **The installed sound library** is in the folder below. A full download of a newer version updates it at start, copying only what changed; an older one never replaces it. After `Install sound library…`, restart Honeydew to use it.
-
-  | OS | Folder |
-  |---|---|
-  | Linux | `~/.local/share/honeydew/content` |
-  | macOS | `~/Library/Application Support/Honeydew/content` |
-  | Windows | `%APPDATA%\Honeydew\data\content` |
-
-- **Your files** (songs, samples, presets, renders, MIDI) are in the **user folder**, `Honeydew` in your Documents folder, with a `My …` folder for each kind. SETTINGS → `Open user folder` shows it. Opening a `.zip` that isn't a single song sorts its files into those folders by type.
-
-  | OS | Folder |
-  |---|---|
-  | Linux | `~/Documents/Honeydew` (your XDG documents folder) |
-  | macOS | `~/Documents/Honeydew` |
-  | Windows | `Documents\Honeydew` |
-  | Android | `Android/data/dev.daijro.honeydew/files` |
-
-  Earlier versions kept them in the app data folder; the first start of this version moves them (unless that fails, for example on another drive: then they stay where they are, and SETTINGS shows that folder).
-- **Linux AppImage:** the `.AppImage` is the whole app in one file. Make it executable (`chmod +x`) and run it. It needs FUSE, which most desktops have; without it, run it with `--appimage-extract-and-run`. The Linux downloads need glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 or later).
-- **`-avx2` downloads** are built for CPUs with AVX2 (most Intel Core CPUs since 2013 and AMD CPUs since 2015, but not every Pentium, Celeron or Atom) and can be faster. If unsure, take the plain one.
-- **Arm:** Linux (`aarch64`, also as an AppImage) and Windows (`arm64`) come for 64-bit Arm too. The macOS download is for Apple Silicon Macs only.
-- **Alpine and other musl Linux:** take a `-musl` tarball (x86_64 or aarch64). It needs Alpine 3.22 or later and `apk add libstdc++ alsa-lib`.
-- **FreeBSD:** the `freebsd-x86_64` tarball runs on FreeBSD 14.4 or later with an X11 or Wayland desktop, after `pkg install alsa-lib alsa-plugins`. It has no MIDI input.
-- **Android:** install the `.apk`. Needs a 64-bit ARM device on Android 8 or later.
-- **Web:** the `honeydew-web` ZIP is a static site. Serve the folder with any web server.
-
-Every download but the `-no-sounds` ones includes the full sound library.
-
----
-
 ## Screens
 
 FL Studio Mobile demo projects, opened as `.flm` files.
@@ -70,6 +33,29 @@ FL Studio Mobile demo projects, opened as `.flm` files.
     <td colspan="2" align="center"><img src="assets/screenshots/11-audio-editor.webp" width="50%" alt="Audio editor"><br><b>Audio editor</b>: Goldhands - Elisa (Featuring Tevlo)</td>
   </tr>
 </table>
+
+---
+
+## Download
+
+Get the latest build from [Releases](https://github.com/daijro/honeydew/releases/latest).
+
+| Platform | Download |
+|---|---|
+| Windows | `windows-x86_64.zip`, or `windows-arm64.zip` for ARM |
+| macOS | `macos-arm64.tar.gz` (Apple Silicon only) |
+| Linux | `linux-x86_64.AppImage` or `.tar.gz`, also for `aarch64` |
+| Alpine and other musl distros | `linux-x86_64-musl.tar.gz` or `linux-aarch64-musl.tar.gz` |
+| FreeBSD | `freebsd-x86_64.tar.gz` |
+| Android | the `.apk` (64-bit ARM, Android 8 or later) |
+| Web | `honeydew-web-<version>.zip`, a static site you can host anywhere |
+
+Extract the archive and run `honeydew-native`. The AppImage is a single file. Run `chmod +x` on it, then start it (add `--appimage-extract-and-run` if your system has no FUSE).
+
+- `-avx2` builds can be faster on CPUs from 2013 onward. If unsure, take the plain one.
+- `-no-sounds` builds are just the app, 10 to 15 MB. Honeydew keeps its sounds in its own data folder, so run a full build once (or install `honeydew-<version>-sounds.zip` from Settings > Install sound library) and later updates can be the small download.
+- Linux builds need glibc 2.35 or newer (Ubuntu 22.04, Debian 12). Alpine needs `apk add libstdc++ alsa-lib`. FreeBSD needs `pkg install alsa-lib alsa-plugins` and has no MIDI input yet.
+- Your songs, samples and exports go in `Documents/Honeydew`. Settings > Open user folder takes you there.
 
 ---
 
