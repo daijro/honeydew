@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use super::{
     CHORD_SETS_FOLDER, DRUMSET_EXT, DRUMSETS_FOLDER, DWP_EXT, FLGSYNTH_EXT, FLMS_EXT, PRESET_EXT,
-    PRESETS_FOLDER, Pick, ProjectFiles, RACK_EXT, RACKS_FOLDER, SAVE_FILE_FAILED, SF2_EXT,
+    PRESETS_FOLDER, Pick, ProjectFiles, RACK_EXT, RACKS_FOLDER, SAVE_FILE_FAILED, SF2_EXT, SFZ_EXT,
     SOUNDFONTS_FOLDER, UNKNOWN_TYPE,
 };
 use crate::ui::main_menu::{SONGS_FOLDER, SongEntry, SongLibrary};
@@ -217,7 +217,7 @@ pub(crate) fn import_folder(path: &Path) -> Option<&'static str> {
         PRESET_EXT | FLMS_EXT | FLGSYNTH_EXT => PRESETS_FOLDER,
         RACK_EXT => RACKS_FOLDER,
         DRUMSET_EXT => DRUMSETS_FOLDER,
-        SF2_EXT => SOUNDFONTS_FOLDER,
+        SF2_EXT | SFZ_EXT => SOUNDFONTS_FOLDER,
         "flm" => SONGS_FOLDER,
         "mid" | "midi" => MIDI_FOLDER,
         DWP_EXT => INSTRUMENTS_FOLDER,

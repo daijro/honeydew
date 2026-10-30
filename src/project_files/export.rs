@@ -383,7 +383,8 @@ impl ProjectFiles {
     }
 
     /// The user files `song` plays, by their `/` path in the user folder: what the sample cache asks to read for it.
-    /// Only a DW program (`.dwp`) is handed on, for its zones' files; nothing else is decoded, parsed or stretched.
+    /// Only a DW program (`.dwp`) and an SFZ (`.sfz`, and the `.sfzh` it includes) are handed on, for the files they
+    /// name; nothing else is decoded, parsed or stretched.
     /// A file it plays that really is in the Original Content folder, every link followed, is only counted.
     fn user_files_of(&self, song: &Song) -> (BTreeMap<String, Vec<u8>>, usize) {
         let (read, found) = (sample_cache::reader(self), RefCell::new(BTreeMap::new()));
@@ -399,8 +400,8 @@ impl ProjectFiles {
             }
             let (ContentPath::Shorthand { relative, .. } | ContentPath::Plain(relative)) = path;
             let ext = Path::new(relative).extension();
-            ext.is_some_and(|e| e.eq_ignore_ascii_case("dwp"))
-                .then_some(bytes)
+            let named = ["dwp", "sfz", "sfzh"];
+            (ext.is_some_and(|e| named.iter().any(|x| e.eq_ignore_ascii_case(x)))).then_some(bytes)
         };
         SampleCache::default().load(song, &record);
         (found.into_inner(), left_out.into_inner().len())

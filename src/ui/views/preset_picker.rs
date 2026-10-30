@@ -88,7 +88,8 @@ use crate::params::{Role, module_spec};
 use crate::project_files::{
     CHORD_SETS_FOLDER, CHORDS_EXT, DRUM_TEMPLATES, DRUMSET_EXT, DRUMSETS_FOLDER, FST_EXT,
     LOAD_FAILED, PRESET_EXT, PRESETS_FOLDER, ProjectFiles, RACK_EXT, RACK_PRESETS, RACKS_FOLDER,
-    SAMPLE_EXTS, SF2_EXT, SOUNDFONTS_FOLDER, is_audio, load_pick, preset_exts, preset_folder,
+    SAMPLE_EXTS, SOUNDFONT_EXTS, SOUNDFONTS_FOLDER, is_audio, is_soundfont, load_pick, preset_exts,
+    preset_folder,
 };
 use crate::sample_cache::{SampleCache, Waveform, WorkerReader, disk_reader, reader};
 use crate::sf2::Preset;
@@ -184,14 +185,14 @@ const DW: u16 = 1;
 const ON_WORKER: [u16; 4] = [DW, 33, 39, 52];
 
 /// `path` is a file the worker has a loader for, for a module of type `type_id` ([`ON_WORKER`]): any file for the DW
-/// Sampler (its program loader, then a preset); a `.sf2` for the SoundFont Player; a loop or a shape for the Slicer or
-/// 3x Osc ([`names_sample`]); a module preset (`.flmpst`) for any of them.
+/// Sampler (its program loader, then a preset); a `.sf2` or `.sfz` for the SoundFont Player; a loop or a shape for the
+/// Slicer or 3x Osc ([`names_sample`]); a module preset (`.flmpst`) for any of them.
 // ponytail: a 3x Osc `.fst` imports on the UI thread (`load_module`; a small file), and the shape it names decodes at
 // the engine build; give it a `Picked` case of its own if an import ever shows.
 fn worker_loads(type_id: u16, path: &Path) -> bool {
     let is = |ext: &str| (path.extension()).is_some_and(|e| e.eq_ignore_ascii_case(ext));
     type_id == DW
-        || (type_id == SOUNDFONT_PLAYER && is(SF2_EXT))
+        || (type_id == SOUNDFONT_PLAYER && is_soundfont(path))
         || is(PRESET_EXT)
         || names_sample(type_id, path)
 }
@@ -252,16 +253,18 @@ enum Picked {
 const SOUNDFONT_PLAYER: u16 = 52;
 
 /// The pick `bytes` for a module of type `type_id`: the module's own loader first (the DW Sampler's program loader; the
-/// SoundFont Player's, for the `.sf2` file `sf2`, which reads the whole file the engine will parse; the others' are not
-/// this one's), then a module preset. Runs on the worker.
-fn picked(type_id: u16, sf2: bool, bytes: &[u8]) -> Picked {
+/// SoundFont Player's, for the `.sf2` or `.sfz` file `font`, which reads the whole file the engine will parse; the
+/// others' are not this one's), then a module preset. Runs on the worker.
+fn picked(type_id: u16, font: Option<&Path>, bytes: &[u8]) -> Picked {
     if type_id == DW
         && let Some(sets) = honeydew_audio::dwp::load_program(bytes)
     {
         return Picked::Program(sets);
     }
-    if type_id == SOUNDFONT_PLAYER && sf2 {
-        return match crate::sf2::presets(bytes) {
+    if type_id == SOUNDFONT_PLAYER
+        && let Some(path) = font
+    {
+        return match crate::sf2::patches(path, bytes) {
             Ok(patches) => Picked::SoundFont(patches),
             Err(err) => Picked::Failed(err.to_string()),
         };
@@ -278,12 +281,12 @@ fn picked(type_id: u16, sf2: bool, bytes: &[u8]) -> Picked {
 // as before; share the copies with the worker if a big program on the web matters.
 fn load(
     type_id: u16,
-    sf2: bool,
+    font: Option<&Path>,
     bytes: &[u8],
     program: Option<&ContentPath>,
     read: Option<WorkerReader>,
 ) -> Done {
-    let picked = picked(type_id, sf2, bytes);
+    let picked = picked(type_id, font, bytes);
     let mut samples = SampleCache::default();
     if let (Some(read), DW) = (read, type_id) {
         match &picked {
@@ -1003,7 +1006,7 @@ fn start(
     into: Option<sample_picker::PickFor>,
 ) -> Loading {
     let program = files.shorthand(&path);
-    let sf2 = (path.extension()).is_some_and(|e| e.eq_ignore_ascii_case(SF2_EXT));
+    let font = is_soundfont(&path).then(|| path.clone());
     let done = match names_sample(type_id, &path) {
         true => {
             let (key, shape) = (
@@ -1020,7 +1023,7 @@ fn start(
         }
         false => {
             let (read, job) = (disk_reader(files), program.clone());
-            spawn(move || load(type_id, sf2, &bytes, job.as_ref(), read))
+            spawn(move || load(type_id, font.as_deref(), &bytes, job.as_ref(), read))
         }
     };
     Loading {
@@ -1206,7 +1209,9 @@ fn picker(files: &ProjectFiles, target: PresetTarget, module_type: Option<u16>) 
                 .with_import(import_dir(files, t).is_some());
             // The SoundFont Player's `.sf2` files are in `My SoundFonts`, beside `My Files`.
             match t == SOUNDFONT_PLAYER {
-                true => picker.with_root(SOUNDFONTS_FOLDER, files.soundfonts_dir(), &[SF2_EXT]),
+                true => {
+                    picker.with_root(SOUNDFONTS_FOLDER, files.soundfonts_dir(), &SOUNDFONT_EXTS)
+                }
                 false => picker,
             }
         }

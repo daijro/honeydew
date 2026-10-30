@@ -19,7 +19,7 @@
 use std::f32::consts::PI;
 use std::path::{Path, PathBuf};
 
-use super::{FST_EXT, ProjectFiles, SAMPLE_EXTS, SF2_EXT, SOUNDFONTS, import_fst};
+use super::{FST_EXT, ProjectFiles, SAMPLE_EXTS, SOUNDFONTS, import_fst, is_soundfont};
 use crate::flm::chunk::{ChunkIter, ChunkWriter, ContentPath, FlmError};
 use crate::flm::sf2d::Sf2d;
 use crate::params::Role;
@@ -41,13 +41,13 @@ pub(crate) const THREE_OSC: u16 = 39;
 pub(crate) const SOUNDFONT_PLAYER: u16 = 52;
 
 /// The file `name` is no preset but a file module `type_id`'s loader names in its `CSTM`: a DW program or audio file
-/// for the DW Sampler, an audio file for the Slicer or 3x Osc, a `.sf2` for the SoundFont Player.
+/// for the DW Sampler, an audio file for the Slicer or 3x Osc, a `.sf2` or `.sfz` for the SoundFont Player.
 fn named_file(name: &Path, type_id: u16) -> bool {
     let audio = is_audio(name);
     match type_id {
         DW_SAMPLER => audio || is(name, DWP_EXT),
         SLICER | THREE_OSC => audio,
-        SOUNDFONT_PLAYER => is(name, SF2_EXT),
+        SOUNDFONT_PLAYER => is_soundfont(name),
         _ => false,
     }
 }
@@ -249,8 +249,8 @@ pub fn read_spectra(bytes: &[u8]) -> Option<Spectrum> {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 pub(crate) mod tests {
     use super::*;
-    use crate::project_files::CONTENT_FOLDER;
     use crate::project_files::content::tests::{Temp, app, put};
+    use crate::project_files::{CONTENT_FOLDER, SF2_EXT, SFZ_EXT};
 
     /// `.flms` of `floats` (43 of them): the magic, `HEAD` and `DATA` chunks.
     pub(crate) fn flms(name: &str, floats: &[f32]) -> Vec<u8> {
@@ -323,7 +323,7 @@ pub(crate) mod tests {
             preset_exts(1),
             [[PRESET_EXT, DWP_EXT].as_slice(), &audio].concat()
         );
-        assert_eq!(preset_exts(52), [PRESET_EXT, SF2_EXT]);
+        assert_eq!(preset_exts(52), [PRESET_EXT, SF2_EXT, SFZ_EXT]);
         assert_eq!(preset_exts(33), [[PRESET_EXT].as_slice(), &audio].concat());
         // 3x Osc: its `.fst` presets too.
         assert_eq!(

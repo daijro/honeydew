@@ -18,7 +18,7 @@ use super::picks::{DW_SAMPLER, SLICER, SOUNDFONT_PLAYER, THREE_OSC};
 use super::samples::import_folder;
 use super::{
     DRUMSETS_FOLDER, INSTRUMENTS_FOLDER, MAX_FILE_BYTES, MIDI_FOLDER, PRESETS_FOLDER, ProjectFiles,
-    RACKS_FOLDER, READ_FAILED, SAMPLES_FOLDER, SOUNDFONTS_FOLDER, in_user_folder, stem,
+    RACKS_FOLDER, READ_FAILED, SAMPLES_FOLDER, SOUNDFONTS_FOLDER, in_user_folder, is_sfz, stem,
 };
 use crate::audio_engine::samples::dw_path;
 use crate::flm::chunk::{ChunkWriter, ContentPath};
@@ -341,7 +341,8 @@ impl ProjectFiles {
     }
 
     /// `Import %d files?` answered `Yes`: each file goes into its user folder ([`Self::import_file`]), an audio file
-    /// that goes with a DirectWave program ([`program_of`]) into the program's sample folder, then `Imported %d
+    /// that goes with a DirectWave program ([`program_of`]) into the program's sample folder, an SFZ and the audio files
+    /// of its archive folder ([`sfz_pack`]) into a folder of `My SoundFonts` in their layout, then `Imported %d
     /// file%s` shows, with a line per folder that took some ([`imported_lines`]). The first that cannot be written
     /// stops the import with `Import failed`.
     pub(super) fn import_files(&mut self, entries: Vec<Entry>) {
@@ -350,16 +351,35 @@ impl ProjectFiles {
         let (programs, rest): (Vec<_>, Vec<_>) =
             (0..entries.len()).partition(|&i| is_program(&entries[i]));
         let mut sample_folder: Vec<Option<PathBuf>> = vec![None; entries.len()];
+        // Each SFZ pack's folder in `My SoundFonts`, taken as its first file goes in.
+        let mut packs = std::collections::HashMap::new();
         for i in programs.into_iter().chain(rest) {
             let (entry, at) = (&entries[i], Path::new(&entries[i].path));
             let program =
                 program_of(&entries, at).and_then(|p| Some((p, sample_folder[p].clone()?)));
-            let written = match program {
-                Some((p, folder)) => {
+            let font = match is_sfz(at) {
+                true => Some(at),
+                false => soundfont_of(&entries, at).map(|s| Path::new(&entries[s].path)),
+            };
+            let written = match (program, font) {
+                (Some((p, folder)), _) => {
                     let into = folder.join(in_program_folder(&entries[p], at));
                     self.import_into(into.parent().unwrap_or(&folder), entry, false)
                 }
-                None => self.import_file(entry),
+                (None, Some(font)) => {
+                    let pack = sfz_pack(font);
+                    let dir = match packs.get(&pack) {
+                        Some(dir) => Ok(PathBuf::clone(dir)),
+                        None => self.pack_folder(&pack, font),
+                    };
+                    dir.and_then(|dir| {
+                        let target = dir.join(mirrored(at).strip_prefix(&pack).unwrap_or(at));
+                        self.write_user_file(&target, entry.data.clone())?;
+                        packs.insert(pack, dir);
+                        Ok(target)
+                    })
+                }
+                (None, None) => self.import_file(entry),
             };
             match written {
                 Ok(written) if is_program(entry) => {
@@ -396,6 +416,20 @@ impl ProjectFiles {
             dir.push(sub);
         }
         self.import_into(&dir, entry, folder == INSTRUMENTS_FOLDER)
+    }
+
+    /// A new folder of `My SoundFonts` for the SFZ pack `pack` (its archive folder, [`sfz_pack`]; `""` for an SFZ `font`
+    /// at the archive's top): named after it, or after the SFZ, else a free `name (2)`, `name (3)`, ...
+    fn pack_folder(&self, pack: &Path, font: &Path) -> io::Result<PathBuf> {
+        let user = self.user.as_deref().ok_or(io::ErrorKind::NotFound)?;
+        let base = pack
+            .file_name()
+            .map_or_else(|| stem(font), |n| n.to_string_lossy().into_owned());
+        let names = std::iter::once(base.clone()).chain((2..).map(|n| format!("{base} ({n})")));
+        let free = names
+            .map(|name| user.join(SOUNDFONTS_FOLDER).join(name))
+            .find(|dir| !self.taken(dir));
+        Ok(free.expect("an unbounded range has a free number"))
     }
 
     /// Writes the archive's file `entry` into `dir` under its name or a free `name (2)`, `name (3)`, ...; a `program`'s
@@ -456,6 +490,34 @@ fn program_of(entries: &[Entry], at: &Path) -> Option<usize> {
         .map(|(i, _)| i)
 }
 
+/// The SFZ the archive's audio file `at` goes with, as an index into `entries`: the first whose pack ([`sfz_pack`])
+/// holds the file at any depth (one at the archive's top takes every audio file). `None` for a plain sample, one a
+/// DirectWave program takes ([`program_of`]), and any other file.
+fn soundfont_of(entries: &[Entry], at: &Path) -> Option<usize> {
+    if import_folder(at) != Some(SAMPLES_FOLDER) || program_of(entries, at).is_some() {
+        return None;
+    }
+    let font = |e: &Entry| {
+        is_sfz(Path::new(&e.path)) && mirrored(at).starts_with(sfz_pack(Path::new(&e.path)))
+    };
+    entries.iter().position(font)
+}
+
+/// The archive folder an SFZ at `path` comes with, its samples in it in their layout (`Programs/` and `Samples/` side
+/// by side too): its top folder, below a `My SoundFonts` the archive mirrors; `""` for one at the top.
+fn sfz_pack(path: &Path) -> PathBuf {
+    let mut parts = mirrored(path).components();
+    match (parts.next(), parts.next()) {
+        (Some(top), Some(_)) => PathBuf::from(top.as_os_str()),
+        _ => PathBuf::new(),
+    }
+}
+
+/// `path` without the leading `My SoundFonts` of an archive that mirrors the user folder.
+fn mirrored(path: &Path) -> &Path {
+    path.strip_prefix(SOUNDFONTS_FOLDER).unwrap_or(path)
+}
+
 /// Where the audio file `at` goes in the sample folder of `program` ([`program_of`]): its path from the program's
 /// folder, less the program's own sample folder when it is in it (`Keys/Keys.dwp` with `Keys/C4.wav` or with
 /// `Keys/Keys/C4.wav`: `C4.wav`).
@@ -469,18 +531,21 @@ fn in_program_folder(program: &Entry, at: &Path) -> PathBuf {
 
 /// The summary of an import of `entries`: `Imported %d file%s`, then `%d samples in My Samples` and so on, a line
 /// per folder that took some; the samples that went with a program count with the instruments
-/// (`1 instrument (with 12 samples) in My Instruments`).
+/// (`1 instrument (with 12 samples) in My Instruments`), those that went with an SFZ with the SoundFonts.
 fn imported_lines(entries: &[Entry]) -> Vec<String> {
     let n = entries.len();
     let s = if n == 1 { "" } else { "s" };
     let with_program = |e: &Entry| program_of(entries, Path::new(&e.path)).is_some();
+    let with_font = |e: &Entry| soundfont_of(entries, Path::new(&e.path)).is_some();
     let per_folder = IMPORTED_KINDS.iter().filter_map(|&(folder, one, more)| {
-        let into =
-            |e: &&Entry| import_folder(Path::new(&e.path)) == Some(folder) && !with_program(e);
+        let into = |e: &&Entry| {
+            import_folder(Path::new(&e.path)) == Some(folder) && !with_program(e) && !with_font(e)
+        };
         let n = entries.iter().filter(into).count();
-        let samples = match folder == INSTRUMENTS_FOLDER {
-            true => entries.iter().filter(|e| with_program(e)).count(),
-            false => 0,
+        let samples = match folder {
+            INSTRUMENTS_FOLDER => entries.iter().filter(|e| with_program(e)).count(),
+            SOUNDFONTS_FOLDER => entries.iter().filter(|e| with_font(e)).count(),
+            _ => 0,
         };
         let with = match samples {
             0 => String::new(),
@@ -1113,7 +1178,8 @@ mod tests {
     /// On disk, an archive that is no single song sorts its files into the user folder's own folders by type, a taken
     /// name numbered from 2, and sums up where they went; one with a name that leaves the folder imports nothing. A
     /// DirectWave program takes the audio files of its folder along into `My Instruments`, into the folder named after
-    /// the name it takes, where it plays them (`sample_cache::zone_file`).
+    /// the name it takes, where it plays them (`sample_cache::zone_file`). An SFZ takes the audio files of its archive
+    /// folder along into `My SoundFonts`, in their layout, where its `sample=` paths find them.
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn an_archive_sorts_its_files_into_the_user_folders_by_type() {
@@ -1146,26 +1212,29 @@ mod tests {
             ("Keys/C4.wav", &wav(6)),
             ("Pack/Piano.sf2", b"sf2"),
             ("Pack/Hall.flmpst", b"hall"),
+            ("Grand/Grand.sfz", GRAND_SFZ),
+            ("Grand/samples/C4.wav", &wav(6)),
+            ("Grand/samples/Soft/C4.wav", &wav(7)),
         ]);
         let entries = files.unzip(&archive).unwrap();
         files.ask_import(entries);
-        assert_eq!(files.message.take(), lines(&["Import 8 files?"]));
+        assert_eq!(files.message.take(), lines(&["Import 11 files?"]));
         let entries = files.importing.take().unwrap();
         files.import_files(entries);
         assert_eq!(
             files.message,
             lines(&[
-                "Imported 8 files",
+                "Imported 11 files",
                 "1 sample in My Samples",
                 "1 MIDI file in My MIDI",
                 "2 songs in My Songs",
                 "1 instrument (with 1 sample) in My Instruments",
-                "1 SoundFont in My SoundFonts",
+                "2 SoundFonts (with 2 samples) in My SoundFonts",
                 "1 preset in My Presets",
             ])
         );
         let read = |path: &str| std::fs::read(user.join(path)).unwrap();
-        let imported: [(&str, &[u8]); 11] = [
+        let imported: [(&str, &[u8]); 14] = [
             ("My Samples/kick.wav", b"my kick"),
             ("My Samples/kick (2).wav", b"kick"),
             ("My MIDI/Tune.mid", b"tune"),
@@ -1177,6 +1246,9 @@ mod tests {
             ("My Instruments/Keys (2)/C4.wav", &wav(6)),
             ("My SoundFonts/Piano.sf2", b"sf2"),
             ("My Presets/Hall.flmpst", b"hall"),
+            ("My SoundFonts/Grand/Grand.sfz", GRAND_SFZ),
+            ("My SoundFonts/Grand/samples/C4.wav", &wav(6)),
+            ("My SoundFonts/Grand/samples/Soft/C4.wav", &wav(7)),
         ];
         for (path, bytes) in imported {
             assert_eq!(read(path), bytes, "{path}");
@@ -1192,8 +1264,20 @@ mod tests {
         song.add_channel(ChannelKind::Synth(SynthKind::DwSampler));
         let program = chunk(b"PATh", &vstr(b"@L@\0My Instruments/Keys (2).dwp"));
         song.channels[1].rack.modules[0].file.custom_data = Some([&b"10WD"[..], &program].concat());
+        // A SoundFont Player on the imported SFZ plays both its samples.
+        song.add_channel(ChannelKind::Synth(SynthKind::SoundFontPlayer));
+        let grand = ContentPath::Shorthand {
+            root: ContentRoot::User,
+            relative: "My SoundFonts/Grand/Grand.sfz".into(),
+        };
+        let sf2d = Sf2d {
+            path: grand.clone(),
+            patch: 0,
+        };
+        song.channels[2].rack.modules[0].file.custom_data = Some(sf2d.write(None).unwrap());
         let mut cache = SampleCache::default();
         cache.load(&song, &reader(&files));
+        assert_eq!(cache.soundfont(&grand).map(|f| f.regions(0).len()), Some(2));
         let keys = ContentPath::Shorthand {
             root: ContentRoot::User,
             relative: "My Instruments/Keys (2).dwp".into(),
@@ -1201,6 +1285,9 @@ mod tests {
         let zones = cache.program(&keys).expect("the program loads");
         assert_eq!(cache.get(&zones[0].1).map(|s| s.frames()), Some(6));
     }
+
+    const GRAND_SFZ: &[u8] =
+        b"<region> sample=samples/C4.wav key=60\n<region> sample=samples/Soft/C4.wav key=61";
 
     #[test]
     fn a_failed_import_says_so() {

@@ -67,6 +67,24 @@ pub fn presets(bytes: &[u8]) -> Result<Vec<Preset>, Sf2Error> {
     Ok(headers.iter().map(preset).collect())
 }
 
+/// The patches of the file at `path`, `bytes`: a SoundFont's ([`presets`]), or for an `.sfz` one patch named after
+/// the file. An SFZ is text that the engine reads with its samples; any that reads lists.
+pub fn patches(path: &std::path::Path, bytes: &[u8]) -> Result<Vec<Preset>, Sf2Error> {
+    if !crate::project_files::is_sfz(path) {
+        return presets(bytes);
+    }
+    let name = path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    Ok(vec![Preset {
+        name,
+        preset: 0,
+        bank: 0,
+    }])
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

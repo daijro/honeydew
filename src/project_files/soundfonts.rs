@@ -12,6 +12,22 @@ use crate::sf2::{Preset, Sf2Error};
 pub const SOUNDFONTS_FOLDER: &str = "My SoundFonts";
 /// The SoundFont file type.
 pub const SF2_EXT: &str = "sf2";
+/// The SFZ file type, which the SoundFont Player plays as a SoundFont of one patch.
+pub const SFZ_EXT: &str = "sfz";
+/// The files the SoundFont Player plays.
+pub const SOUNDFONT_EXTS: [&str; 2] = [SF2_EXT, SFZ_EXT];
+
+/// Whether `path` names an SFZ (by its extension, without case).
+pub(crate) fn is_sfz(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case(SFZ_EXT))
+}
+
+/// Whether `path` names a file the SoundFont Player plays: a SoundFont or an SFZ.
+pub(crate) fn is_soundfont(path: &Path) -> bool {
+    let ext = path.extension().unwrap_or_default();
+    SOUNDFONT_EXTS.iter().any(|x| ext.eq_ignore_ascii_case(x))
+}
 
 impl ProjectFiles {
     /// `My SoundFonts`. `None` without a user folder.
@@ -35,15 +51,15 @@ impl ProjectFiles {
         parts.peek().is_some() && parts.all(|c| matches!(c, Component::Normal(_)))
     }
 
-    /// The patches of the SoundFont `path` (an `SF2D` path) names. Only a user-folder or content-folder shorthand can
-    /// name one: `SF2D` holds no other path.
+    /// The patches of the SoundFont (or SFZ, [`crate::sf2::patches`]) `path` (an `SF2D` path) names. Only a user-folder
+    /// or content-folder shorthand can name one: `SF2D` holds no other path.
     pub fn soundfont(&self, path: &ContentPath) -> Result<Vec<Preset>, Sf2Error> {
         let path = self.library_path(path).ok_or(Sf2Error::NotFound)?;
         // ponytail: reads the whole file for its headers, once per SoundFont (the rack keeps what it read); seek
         // past the `sdta` samples if large banks stall the frame.
         let read = self.read_user_file(&path);
         let bytes = read.map_err(|e| read_error(&e, !self.copies && path.exists()))?;
-        crate::sf2::presets(&bytes)
+        crate::sf2::patches(&path, &bytes)
     }
 }
 

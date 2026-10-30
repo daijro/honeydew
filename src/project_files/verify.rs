@@ -187,6 +187,8 @@ fn check(
             Ok(kit) => kit_samples(files, kit),
             Err(e) => failed(&e),
         },
+        // An SFZ is text; its samples are checked as files of their own.
+        "sfz" => Outcome::Ok,
         "sf2" => match crate::sf2::presets(&bytes) {
             Ok(_) if honeydew_audio::soundfont::SoundFont::parse(bytes).is_ok() => Outcome::Ok,
             Ok(_) => Outcome::Failed("the SoundFont's samples do not parse".into()),

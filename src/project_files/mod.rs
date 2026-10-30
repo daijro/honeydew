@@ -49,8 +49,8 @@ mod web;
 #[cfg(target_arch = "wasm32")]
 pub(crate) use web::download;
 mod soundfonts;
-pub use soundfonts::{SF2_EXT, SOUNDFONTS_FOLDER};
-pub(crate) use soundfonts::{in_library, in_user_folder};
+pub use soundfonts::{SF2_EXT, SFZ_EXT, SOUNDFONT_EXTS, SOUNDFONTS_FOLDER};
+pub(crate) use soundfonts::{in_library, in_user_folder, is_sfz, is_soundfont};
 mod samples;
 pub use samples::{RECORDINGS_FOLDER, SAMPLE_EXTS, SAMPLES_FOLDER};
 pub(crate) mod content;

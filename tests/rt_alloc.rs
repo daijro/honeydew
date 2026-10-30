@@ -521,9 +521,27 @@ fn metronome_count_in_monitoring_recording_and_the_latency_ping_do_not_allocate(
 /// command.
 #[test]
 fn soundfont_player_render_does_not_allocate() {
+    let bytes = include_bytes!("../crates/audio/tests/fixtures/sine.sf2");
+    soundfont_render("My SoundFonts/sine.sf2", bytes);
+}
+
+/// The same with an SFZ: built-in waves through round robin, a keyswitch, `first`, a release trigger and a choke.
+#[test]
+fn sfz_player_render_does_not_allocate() {
+    let sfz = "<global> ampeg_attack=0.01 ampeg_release=0.2 sw_lokey=20 sw_hikey=21 sw_default=20
+        <group> seq_length=2 off_by=9 lokey=40 hikey=90
+        <region> sample=*sine seq_position=1 sw_last=20
+        <region> sample=*saw seq_position=2 loop_mode=loop_sustain
+        <region> sample=*sine trigger=release ampeg_release=0.05 group=9
+        <region> sample=*square key=45 trigger=first ampeg_delay=0.01 ampeg_hold=0.02 ampeg_decay=0.1 ampeg_sustain=50";
+    soundfont_render("My SoundFonts/Waves.sfz", sfz.as_bytes());
+}
+
+/// [`soundfont_player_render_does_not_allocate`] with the file `bytes` at `relative`.
+fn soundfont_render(relative: &str, bytes: &[u8]) {
     let path = ContentPath::Shorthand {
         root: ContentRoot::User,
-        relative: "My SoundFonts/sine.sf2".into(),
+        relative: relative.into(),
     };
     let mut song = Song {
         tempo_bpm: 120.0,
@@ -547,9 +565,9 @@ fn soundfont_player_render_does_not_allocate() {
             slide: false,
         });
     }
-    let bytes = include_bytes!("../crates/audio/tests/fixtures/sine.sf2");
     let mut cache = SampleCache::default();
     cache.load(&song, &|p| (*p == path).then(|| bytes.to_vec()));
+    assert!(cache.soundfont(&path).is_some());
     let mut engine = SongAudioEngine::with_samples(&song, RATE, &cache).unwrap();
     let mut output = vec![0.0_f32; 4096 * 2];
     engine.play();
@@ -572,7 +590,8 @@ fn soundfont_player_render_does_not_allocate() {
                 10 => engine.set_param(1, 2, 1 + (i % 4) as i32, 0.3),
                 15 => engine.set_param(1, 0, 4, (i % 7) as f32 / 7.0),
                 20 => (0..40).for_each(|k| engine.note_on(1, 40 + k, 0.8)),
-                25 => engine.note_off(1, 50 + ((i - 5) % 20) as u8),
+                22 => engine.note_on(1, 20 + (i % 2) as u8, 0.5),
+                25 => (0..40).for_each(|k| engine.note_off(1, 40 + k)),
                 35 => engine.seek(((i * 37) % 1024) as u64),
                 40 => engine.stop(),
                 45 => engine.play(),

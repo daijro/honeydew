@@ -5,10 +5,11 @@
 //!   filters. The current patch is the current row, scrolled into view as it opens. A patch is the pick, and the
 //!   picker stays in the patches, the pick now current. Back goes to the files.
 //! - **The files**, where it opens without a SoundFont: a [`PresetPicker`]'s root and folders over `My SoundFonts`,
-//!   titled [`TITLE`]: `My Files`, then the folders and the `.sf2` files by name. No `Default`. No factory SoundFonts
-//!   are shipped; with imported content in the content folder the root then lists its `SoundFonts`, read-only
-//!   ([`SoundFontPicker::with_factory`]). A SoundFont opens in its patches. One that cannot be read is the pick, with
-//!   its error: the caller loads it, and the panel shows the error.
+//!   titled [`TITLE`]: `My Files`, then the folders and the `.sf2` and `.sfz` files by name. No `Default`. No factory
+//!   SoundFonts are shipped; with imported content in the content folder the root then lists its `SoundFonts`, read-only
+//!   ([`SoundFontPicker::with_factory`]). A SoundFont opens in its patches. An SFZ is one patch, named after its file:
+//!   it opens in it, and is the pick at once. One that cannot be read is the pick, with its error: the caller loads it,
+//!   and the panel shows the error.
 //!
 //! The caller keeps a [`SoundFontPicker`] while it is open and loads what [`SoundFontPicker::show`] returns.
 
@@ -16,7 +17,7 @@ use std::path::PathBuf;
 
 use eframe::egui::{Context, Id, Pos2};
 
-use crate::project_files::SF2_EXT;
+use crate::project_files::{SF2_EXT, SOUNDFONT_EXTS, is_sfz};
 use crate::sf2::{Preset, Sf2Error};
 use crate::ui::UiCtx;
 use crate::ui::main_menu::SongLibrary;
@@ -109,7 +110,7 @@ impl SoundFontPicker {
     /// `current`: the module's SoundFont, its path as the library lists it, its patches and the current patch.
     pub fn new(my_files: Option<PathBuf>, current: Option<(PathBuf, Vec<Preset>, usize)>) -> Self {
         Self {
-            files: PresetPicker::new(TITLE, my_files, SF2_EXT, false),
+            files: PresetPicker::new(TITLE, my_files, SF2_EXT, false).of_exts(&SOUNDFONT_EXTS),
             open: current.map(|(path, patches, patch)| {
                 Open::new(path, patches, Some(patch), SidePanel::default())
             }),
@@ -145,7 +146,21 @@ impl SoundFontPicker {
                 }
             };
             let read = library.read(&path).map_err(|_| Sf2Error::NotFound);
-            match read.and_then(|bytes| crate::sf2::presets(&bytes)) {
+            match read.and_then(|bytes| crate::sf2::patches(&path, &bytes)) {
+                Ok(patches) if is_sfz(&path) => {
+                    let open = Open::new(
+                        path.clone(),
+                        patches.clone(),
+                        Some(0),
+                        SidePanel::in_place(),
+                    );
+                    self.open = Some(open);
+                    return Some(SoundFontAction::Patch {
+                        path,
+                        patches,
+                        index: 0,
+                    });
+                }
                 Ok(patches) => {
                     self.open = Some(Open::new(path, patches, None, SidePanel::in_place()));
                     return None;

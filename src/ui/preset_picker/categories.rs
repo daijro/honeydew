@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 
 use crate::params::{Role, module_spec};
 use crate::project_files::{
-    DWP_EXT, FLGSYNTH_EXT, FLMS_EXT, FST_EXT, PRESET_EXT, SAMPLE_EXTS, SF2_EXT, preset_exts,
+    DWP_EXT, FLGSYNTH_EXT, FLMS_EXT, FST_EXT, PRESET_EXT, SAMPLE_EXTS, SOUNDFONT_EXTS, preset_exts,
 };
 use crate::ui::main_menu::{SongEntry, SongLibrary};
 
@@ -131,8 +131,8 @@ pub fn module_instrument_of(path: &Path, bytes: &[u8]) -> Option<u16> {
 /// only when its `HEAD` names a [`listed`] instrument (`read`).
 pub fn preset_file(type_id: u16, name: &Path, read: impl FnOnce() -> Option<Vec<u8>>) -> bool {
     let is = |ext: &str| (name.extension()).is_some_and(|e| e.eq_ignore_ascii_case(ext));
-    let own =
-        (preset_exts(type_id).iter()).any(|x| is(x) && !SAMPLE_EXTS.contains(x) && *x != SF2_EXT);
+    let own = (preset_exts(type_id).iter())
+        .any(|x| is(x) && !SAMPLE_EXTS.contains(x) && !SOUNDFONT_EXTS.contains(x));
     own && (!is(PRESET_EXT) || read().is_some_and(|bytes| lists_preset(&bytes)))
 }
 

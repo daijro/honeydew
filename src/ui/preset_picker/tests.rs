@@ -1034,8 +1034,9 @@ fn minisynth_and_gmsynth_pickers_list_their_legacy_presets_too() {
     let mut gm = picker(2);
     open(&mut gm, &lib, MY_FILES);
     assert_eq!(names(&gm, ""), ["Lead", "Pad"]);
-    // The SoundFont Player's presets are its `.sf2` files too.
-    assert_eq!(preset_exts(52), [PRESET_EXT, crate::project_files::SF2_EXT]);
+    // The SoundFont Player's presets are its `.sf2` and `.sfz` files too.
+    use crate::project_files::{SF2_EXT, SFZ_EXT};
+    assert_eq!(preset_exts(52), [PRESET_EXT, SF2_EXT, SFZ_EXT]);
     // Any other module lists `.flmpst` only.
     assert_eq!(preset_exts(6), [PRESET_EXT]);
 }

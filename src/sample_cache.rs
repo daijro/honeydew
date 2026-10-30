@@ -8,7 +8,7 @@
 //! [`ProjectFiles`].
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Component, Path};
 use std::sync::Arc;
 
 use honeydew_audio::builtin_drums::builtin;
@@ -16,15 +16,16 @@ use honeydew_audio::drums::{
     PadSample, STREAM_FRAMES, Stream, Stretching, stretch, stretch_frames,
 };
 use honeydew_audio::dwp::{self, Zone};
-use honeydew_audio::sample::{MAX_FRAMES, SampleData, decode};
+use honeydew_audio::sample::{DecodeError, MAX_FRAMES, SampleData, decode, decode_with_limit};
 use honeydew_audio::sample_edit::summarize;
+use honeydew_audio::sfz;
 use honeydew_audio::soundfont::SoundFont;
 use honeydew_audio::three_osc::osc::{CYCLE, MIP_LEVELS, MIP_POINTS, Wave};
 
 use crate::flm::chunk::{ContentPath, ContentRoot};
 use crate::project_files::content::built_in;
 use crate::project_files::{
-    BUILT_IN, MAX_FILE_BYTES, ProjectFiles, in_library, read_limited, resolve_in,
+    BUILT_IN, MAX_FILE_BYTES, ProjectFiles, in_library, is_sfz, read_limited, resolve_in,
 };
 use crate::song::{ModuleInstance, SamplerSlot, Song};
 
@@ -210,8 +211,10 @@ pub struct SampleCache {
     /// DW programs by their file (a `File` key); `None` when the file is missing. A file that is no `.dwp` is a program
     /// of one user-sample zone playing that file, whose sample is missing when it does not decode.
     programs: HashMap<SampleKey, Option<DwProgram>>,
-    /// Keyed by [`SampleKey::File`] of the `SF2D` path.
+    /// Keyed by [`SampleKey::File`] of the `SF2D` path. An SFZ is one too ([`load_sfz`]).
     soundfonts: HashMap<SampleKey, Option<Arc<SoundFont>>>,
+    /// The sample files each SFZ of `soundfonts` names that were missing, or left its library: for [`Self::missing`].
+    sfz_missing: HashMap<SampleKey, Vec<SampleKey>>,
     /// `None`: the render did not fit the byte budget ([`MAX_DECODED_BYTES`]).
     stretched: HashMap<StretchKey, Option<Arc<SampleData>>>,
     /// Renders streaming in ([`StretchJob`]), until the whole render goes in their place: no live walk renders them
@@ -292,6 +295,8 @@ impl SampleCache {
         self.waveforms.retain(|key, _| met.samples.contains(key));
         self.programs.retain(|key, _| met.programs.contains(key));
         self.soundfonts
+            .retain(|key, _| met.soundfonts.contains(key));
+        self.sfz_missing
             .retain(|key, _| met.soundfonts.contains(key));
         self.stretched.retain(|key, _| met.stretched.contains(key));
         self.streams.retain(|key, _| met.stretched.contains(key));
@@ -512,6 +517,7 @@ impl SampleCache {
         let samples = self.samples.iter().filter(|(_, s)| s.is_none());
         let programs = self.programs.iter().filter(|(_, p)| p.is_none());
         let fonts = self.soundfonts.iter().filter(|(_, f)| f.is_none());
+        let sfz_samples = self.sfz_missing.values().flatten();
         let renders = self.stretched.iter().filter(|(_, r)| r.is_none());
         let tables = self.shapes.iter().filter(|(_, w)| w.is_none());
         let stand_in = SampleKey::File(crate::audio_engine::samples::stand_in());
@@ -520,6 +526,7 @@ impl SampleCache {
             .chain(tables.map(|(key, _)| key))
             .chain(programs.map(|(key, _)| key))
             .chain(fonts.map(|(key, _)| key))
+            .chain(sfz_samples)
             .filter(move |&key| *key != stand_in)
     }
 
@@ -686,7 +693,10 @@ impl Refs<'_> {
                 // than the budget plays every key, with fewer layers. One that does not decode is missing.
                 let mut decoded = vec![false; zones.len()];
                 let mut left_out = Vec::new();
-                for index in decode_order(&zones) {
+                let spans: Vec<Option<Span>> = (zones.iter())
+                    .map(|z| z.embedded().then(|| zone_span(&z.zone)))
+                    .collect();
+                for index in decode_order(&spans) {
                     let zone = &zones[index];
                     let key = SampleKey::Embedded(path.clone(), index as u32);
                     if !self.cache.samples.contains_key(&key)
@@ -716,7 +726,7 @@ impl Refs<'_> {
                     let key = |at: usize| SampleKey::Embedded(path.clone(), at as u32);
                     match left_out.contains(&key(index)) {
                         true => {
-                            let at = nearest(&zones, &decoded, index)?;
+                            let at = nearest(&spans, &decoded, index)?;
                             let ranges = &zone.zone;
                             let stand_in = Zone {
                                 key_low: ranges.key_low,
@@ -812,11 +822,18 @@ impl Refs<'_> {
 
     /// The song plays the SoundFont at the `SF2D` path `path`. It is read and parsed now unless the cache already has
     /// it, or knows it is missing. Only a user-folder or content-folder path that stays inside it is read
-    /// ([`crate::project_files::ProjectFiles::library_path`]'s rule); any other is missing.
+    /// ([`crate::project_files::ProjectFiles::library_path`]'s rule); any other is missing. An `.sfz` is read with
+    /// its samples ([`load_sfz`]).
     pub fn add_soundfont(&mut self, path: ContentPath) {
         let key = SampleKey::File(path.clone());
         self.met.soundfonts.insert(key.clone());
         if self.plan || self.cache.soundfonts.contains_key(&key) {
+            return;
+        }
+        if in_library(&path).is_some_and(is_sfz) {
+            let (font, missing) = load_sfz(&path, self.read, self.cache.room());
+            self.cache.sfz_missing.insert(key.clone(), missing);
+            self.cache.soundfonts.insert(key, font.map(Arc::new));
             return;
         }
         let bytes = in_library(&path).and_then(|_| self.read(&path));
@@ -858,18 +875,26 @@ pub fn disk_reader(files: &ProjectFiles) -> Option<WorkerReader> {
     }))
 }
 
-/// `.dwp` zone's sample file: `<folder of .dwp>/<.dwp base name>/<name>`.
-/// The order a program's embedded zones decode in: by layer (each key range's zones nearest velocity 100 first), then
-/// by key, then in file order. File zones are not in it.
-fn decode_order(zones: &[dwp::DwpZone<'_>]) -> Vec<usize> {
-    let distance = |z: &Zone| {
-        (i32::from(z.vel_low) - 100)
-            .max(100 - i32::from(z.vel_high))
-            .max(0)
-    };
-    let range = |i: usize| (zones[i].zone.key_low, zones[i].zone.key_high);
-    let mut by_range: Vec<usize> = (0..zones.len()).filter(|&i| zones[i].embedded()).collect();
-    by_range.sort_by_key(|&i| (range(i), distance(&zones[i].zone), i));
+/// A DW zone's or an SFZ region's key range, velocity range and root key: what [`decode_order`] and [`nearest`] read.
+type Span = [u8; 5];
+
+fn zone_span(zone: &Zone) -> Span {
+    [
+        zone.key_low,
+        zone.key_high,
+        zone.vel_low,
+        zone.vel_high,
+        zone.root,
+    ]
+}
+
+/// The order zones (or regions) decode in: by layer (each key range's zones nearest velocity 100 first), then by key,
+/// then in file order. Those without a span (a program's file zones) are not in it.
+fn decode_order(spans: &[Option<Span>]) -> Vec<usize> {
+    let distance = |s: Span| (i32::from(s[2]) - 100).max(100 - i32::from(s[3])).max(0);
+    let range = |i: usize| spans[i].map(|s| (s[0], s[1]));
+    let mut by_range: Vec<usize> = (0..spans.len()).filter(|&i| spans[i].is_some()).collect();
+    by_range.sort_by_key(|&i| (range(i), spans[i].map(distance), i));
     let mut layered = Vec::with_capacity(by_range.len());
     for (n, &i) in by_range.iter().enumerate() {
         let layer = match n.checked_sub(1).map(|p| by_range[p]) {
@@ -884,19 +909,128 @@ fn decode_order(zones: &[dwp::DwpZone<'_>]) -> Vec<usize> {
 
 /// The decoded zone nearest zone `index`: overlapping keys or the smallest gap between them first, then the nearest
 /// velocities, then the nearest root.
-fn nearest(zones: &[dwp::DwpZone<'_>], decoded: &[bool], index: usize) -> Option<usize> {
-    let z = &zones[index].zone;
+fn nearest(spans: &[Option<Span>], decoded: &[bool], index: usize) -> Option<usize> {
+    let z = spans[index]?;
     let gap = |a: u8, b: u8, c: u8, d: u8| {
         i32::from(c.saturating_sub(b)).max(i32::from(a.saturating_sub(d)))
     };
-    (0..zones.len()).filter(|&i| decoded[i]).min_by_key(|&i| {
-        let o = &zones[i].zone;
+    let candidates = (0..spans.len()).filter(|&i| decoded[i]);
+    let candidates = candidates.filter_map(|i| Some((i, spans[i]?)));
+    let near = candidates.min_by_key(|&(_, o)| {
         (
-            gap(z.key_low, z.key_high, o.key_low, o.key_high),
-            gap(z.vel_low, z.vel_high, o.vel_low, o.vel_high),
-            (i32::from(z.root) - i32::from(o.root)).abs(),
+            gap(z[0], z[1], o[0], o[1]),
+            gap(z[2], z[3], o[2], o[3]),
+            (i32::from(z[4]) - i32::from(o[4])).abs(),
         )
-    })
+    });
+    near.map(|(i, _)| i)
+}
+
+/// The SFZ at `path` as a SoundFont of one patch named after the file, read through `read`, and the sample files it
+/// names that were missing. A sample's or `#include`'s path is from the SFZ's folder (`..` included); one that would
+/// leave the user or content folder is never read, and its sample is missing. Each sample file decodes once, within
+/// `room` bytes, across the keyboard first ([`decode_order`]). A region whose file is over what is left plays the
+/// nearest decoded region's sample, repitched, at its own keys ([`sfz::SfzRegion::playing`]), as an over-budget DW
+/// program does; with none decoded those are missing too. A region whose file is missing, or does not decode, is
+/// silent.
+// ponytail: decodes on the app thread at the engine build, as a SoundFont is parsed; a worker load (as the DW
+// Sampler's) or streaming would keep a large library from stalling the frame.
+fn load_sfz(
+    path: &ContentPath,
+    read: &Reader<'_>,
+    room: usize,
+) -> (Option<SoundFont>, Vec<SampleKey>) {
+    let (Some(relative), ContentPath::Shorthand { root, .. }) = (in_library(path), path) else {
+        return (None, Vec::new());
+    };
+    let Some(text) = read(path) else {
+        return (None, Vec::new());
+    };
+    let folder = relative.parent().unwrap_or(Path::new(""));
+    let inside = |relative: String| ContentPath::Shorthand {
+        root: *root,
+        relative,
+    };
+    // A file the SFZ names, from its folder; `None` when that would leave the library.
+    let beside = |name: &str| {
+        let (joined, mut parts) = (folder.join(name), Vec::new());
+        for part in joined.components() {
+            match part {
+                Component::Normal(part) => parts.push(part.to_str()?),
+                Component::CurDir => {}
+                Component::ParentDir => drop(parts.pop()?),
+                Component::RootDir | Component::Prefix(_) => return None,
+            }
+        }
+        (!parts.is_empty()).then(|| inside(parts.join("/")))
+    };
+    let text_of = |bytes: Vec<u8>| String::from_utf8_lossy(&bytes).into_owned();
+    let include = |name: &str| beside(name).and_then(|p| read(&p)).map(text_of);
+    let parsed = sfz::parse(&text_of(text), &include);
+    let regions = &parsed.regions;
+    let span = |r: &sfz::SfzRegion| {
+        let key = |k: i32| k.clamp(0, 127) as u8;
+        let [lo, hi] = r.keys.map(key);
+        [lo, hi, r.vels[0], r.vels[1], key(r.pitch_keycenter)]
+    };
+    let spans: Vec<Option<Span>> = regions.iter().map(|r| Some(span(r))).collect();
+    // By sample name: the decoded sample, `None` when missing.
+    let mut files: HashMap<&str, Option<Arc<SampleData>>> = HashMap::new();
+    let mut left_out = HashSet::new();
+    let mut room = room;
+    for index in decode_order(&spans) {
+        let name = regions[index].sample.as_str();
+        if files.contains_key(name) || left_out.contains(name) {
+            continue;
+        }
+        let decoded = match sfz::builtin(name) {
+            Some(sample) => Ok(sample),
+            None => (beside(name)
+                .and_then(|p| read(&p))
+                .ok_or(DecodeError::Unsupported))
+            .and_then(|bytes| decode_with_limit(&bytes, MAX_FRAMES.min(room / 4))),
+        };
+        match decoded {
+            Ok(sample) if pcm_bytes(&sample) <= room => {
+                room -= pcm_bytes(&sample);
+                files.insert(name, Some(Arc::new(sample)));
+            }
+            Ok(_) | Err(DecodeError::TooLarge) => drop(left_out.insert(name)),
+            Err(_) => drop(files.insert(name, None)),
+        }
+    }
+    let sample_of = |r: &sfz::SfzRegion| files.get(r.sample.as_str()).cloned().flatten();
+    let decoded: Vec<bool> = regions.iter().map(|r| sample_of(r).is_some()).collect();
+    let mut playing = Vec::new();
+    for (index, region) in regions.iter().enumerate() {
+        if let Some(sample) = sample_of(region) {
+            playing.push((region.clone(), sample));
+        } else if left_out.contains(region.sample.as_str())
+            && let Some(near) = nearest(&spans, &decoded, index).map(|at| &regions[at])
+            && let Some(sample) = sample_of(near)
+        {
+            playing.push((region.playing(near), sample));
+        }
+    }
+    // Missing: what is not there, and with nothing decoded what did not fit, by the path it names.
+    let missing_names = files
+        .iter()
+        .filter(|(_, s)| s.is_none())
+        .map(|(name, _)| *name);
+    let unplayed = left_out
+        .iter()
+        .copied()
+        .filter(|_| !decoded.contains(&true));
+    let named = |name: &str| {
+        let written = Path::new(folder)
+            .join(name)
+            .to_string_lossy()
+            .replace('\\', "/");
+        SampleKey::File(beside(name).unwrap_or_else(|| inside(written)))
+    };
+    let missing = missing_names.chain(unplayed).map(named).collect();
+    let stem = relative.file_stem().unwrap_or_default().to_string_lossy();
+    (Some(SoundFont::sfz(&stem, playing)), missing)
 }
 
 fn zone_file(program: &ContentPath, name: &str) -> ContentPath {
@@ -1255,6 +1389,59 @@ pub(crate) mod tests {
             let missing = SampleKey::File(path.clone());
             assert_eq!(cache.missing().collect::<Vec<_>>(), [&missing]);
         }
+    }
+
+    /// An SFZ's samples are read from its folder, each once, never from outside its library; a missing one is silent
+    /// and listed as missing. Over the byte budget, a region plays the nearest decoded region's sample.
+    #[test]
+    fn an_sfz_reads_its_samples_beside_it_and_never_outside_the_library() {
+        let path = user("My SoundFonts/Keys/Piano.sfz");
+        let sfz = "#include \"../../../evil.sfz\"
+            <region> sample=samples/C 4.wav key=60
+            <region> sample=../../../outside.wav key=62
+            <region> sample=samples/gone.wav key=64
+            <region> sample=samples/C 4.wav key=65
+            <region> sample=../Shared/D.wav key=67";
+        let reads = std::cell::RefCell::new(Vec::new());
+        let read = |p: &ContentPath| {
+            let ContentPath::Shorthand { relative, .. } = p else {
+                panic!("{p:?}")
+            };
+            assert!(
+                relative.starts_with("My SoundFonts/") && !relative.contains(".."),
+                "{p:?} was read"
+            );
+            reads.borrow_mut().push(relative.clone());
+            match relative.as_str() {
+                "My SoundFonts/Keys/Piano.sfz" => Some(sfz.as_bytes().to_vec()),
+                "My SoundFonts/Keys/samples/C 4.wav" => Some(wav(&[1000; 100])),
+                "My SoundFonts/Shared/D.wav" => Some(wav(&[2000; 300])),
+                _ => None,
+            }
+        };
+        let song = soundfont_song(path.clone());
+        let mut cache = SampleCache::default();
+        cache.load(&song, &read);
+        let font = cache.soundfont(&path).expect("the SFZ loads");
+        // 60, 65 and 67 play; the escape and the missing file are silent.
+        assert_eq!(font.regions(0).len(), 3);
+        assert_eq!(font.presets()[0].name(), b"Piano");
+        let c4 = reads
+            .borrow()
+            .iter()
+            .filter(|r| r.ends_with("C 4.wav"))
+            .count();
+        assert_eq!(c4, 1, "{:?}", reads.borrow());
+        let mut missing: Vec<_> = cache.missing().cloned().collect();
+        missing.sort_by_key(|k| format!("{k:?}"));
+        let outside = user("My SoundFonts/Keys/../../../outside.wav");
+        let gone = user("My SoundFonts/Keys/samples/gone.wav");
+        assert_eq!(missing, [SampleKey::File(outside), SampleKey::File(gone)]);
+        // Room for C 4 only (100 mono frames): 67 plays it, repitched, at its own key.
+        let mut small = SampleCache::with_max_bytes(4 * 100);
+        small.load(&song, &read);
+        let font = small.soundfont(&path).unwrap();
+        assert_eq!((font.regions(0).len(), font.byte_len()), (3, 400));
     }
 
     #[test]

@@ -13,7 +13,7 @@ use eframe::egui;
 use super::{AppCtx, Nav, rack};
 use crate::flm::sf2d::Sf2d;
 use crate::panels::inst::soundfont_player;
-use crate::project_files::{SF2_EXT, SOUNDFONTS};
+use crate::project_files::{SOUNDFONT_EXTS, SOUNDFONTS};
 use crate::ui::soundfont_picker::{SoundFontAction, SoundFontPicker};
 
 /// The open picker. It starts afresh on each opening, however it was last closed.
@@ -62,7 +62,7 @@ pub fn show(
         picker.sort = app.settings.patch_ordering();
         picker
     });
-    let library = files.preset_library(&[SF2_EXT]);
+    let library = files.preset_library(&SOUNDFONT_EXTS);
     let action = picker.show(ui.ctx(), &app.cx, &*library);
     drop(library);
     // A pick from `Sort`'s menu is saved as `SoundFontPatchOrdering`, the active one too.

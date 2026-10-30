@@ -4,12 +4,20 @@
 //! [`SoundFont::parse`] runs on the app thread (bytes in, no I/O) and keeps the file: the 16-bit samples are read
 //! from it in place. It survives hostile input: every size and index is checked, and what it allocates is bounded by
 //! the file's length. [`SoundFontPlayer`] renders on the audio thread without allocating.
+//!
+//! An SFZ ([`crate::sfz`]) plays through the same player as a SoundFont of one patch ([`SoundFont::sfz`]): its regions
+//! read decoded samples (mono or stereo, each at its own rate) instead of `smpl`, follow the SFZ's trigger, round-robin,
+//! random, keyswitch, crossfade and choke rules, and the SFZ's DAHDSR envelope unless the module's Custom envelope is
+//! on. A SoundFont's regions play exactly as before.
 
+use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
 use crate::ProcessContext;
 use crate::instrument::Instrument;
+use crate::sample::SampleData;
+use crate::sfz::{LoopMode, SfzRegion, Trigger};
 
 /// Why bytes are not a SoundFont.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -265,6 +273,15 @@ pub struct SoundFont {
     bytes: Vec<u8>,
     /// Where `smpl`'s data is in `bytes`.
     smpl: Range<usize>,
+    /// An SFZ's regions and the samples they play, in place of the tables ([`SoundFont::sfz`]).
+    sfz_regions: Vec<Region>,
+    pcm: Vec<Arc<SampleData>>,
+    /// Its `amp_velcurve`s, by [`Rules::curve`].
+    curves: Vec<[f32; 128]>,
+    /// The keys that are keyswitches (the `sw_lokey`…`sw_hikey` of every region with `sw_last`), and the one in force
+    /// before any is played (the first `sw_default`).
+    switches: Option<[u8; 2]>,
+    switch: Option<u8>,
 }
 
 /// The tables of a SoundFont file, checked: everything [`SoundFont`] keeps besides the file.
@@ -342,13 +359,78 @@ impl SoundFont {
             samples: t.samples,
             bytes,
             smpl: t.smpl,
+            sfz_regions: Vec::new(),
+            pcm: Vec::new(),
+            curves: Vec::new(),
+            switches: None,
+            switch: None,
         })
     }
 
+    /// An SFZ as a SoundFont of one patch, `name` (its first 20 bytes): each region with the sample it plays, decoded
+    /// (regions sharing a file share its `Arc`), at most [`MAX_REGIONS`]. A region that plays no frame (an `offset` at
+    /// or past its `end`) or no key is left out. App thread.
+    pub fn sfz(name: &str, regions: Vec<(SfzRegion, Arc<SampleData>)>) -> Self {
+        let mut header = [0; 20];
+        let name = &name.as_bytes()[..name.len().min(20)];
+        header[..name.len()].copy_from_slice(name);
+        let mut font = Self {
+            presets: vec![PresetHeader {
+                name: header,
+                preset: 0,
+                bank: 0,
+            }],
+            preset_bags: Vec::new(),
+            pbag: Vec::new(),
+            pgen: Vec::new(),
+            inst_bags: Vec::new(),
+            ibag: Vec::new(),
+            igen: Vec::new(),
+            samples: Vec::new(),
+            bytes: Vec::new(),
+            smpl: 0..0,
+            sfz_regions: Vec::new(),
+            pcm: Vec::new(),
+            curves: Vec::new(),
+            switches: None,
+            switch: None,
+        };
+        let mut index = HashMap::new();
+        for (region, data) in regions.into_iter().take(MAX_REGIONS) {
+            let pcm = &mut font.pcm;
+            let sample = *index.entry(Arc::as_ptr(&data)).or_insert_with(|| {
+                pcm.push(data.clone());
+                pcm.len() - 1
+            });
+            let curve = (!region.amp_velcurve.is_empty()).then(|| {
+                font.curves.push(velocity_curve(&region.amp_velcurve));
+                font.curves.len() - 1
+            });
+            let Some(playable) = sfz_region(&region, &data, sample, curve) else {
+                continue;
+            };
+            let key = |k: i32| k.clamp(0, 127) as u8;
+            if region.sw_last.is_some() {
+                let [lo, hi] = region.sw_keys.map(key);
+                font.switches = Some(
+                    font.switches
+                        .map_or([lo, hi], |[a, b]| [a.min(lo), b.max(hi)]),
+                );
+            }
+            font.switch = font.switch.or(region.sw_default.map(key));
+            font.sfz_regions.push(playable);
+        }
+        font
+    }
+
     /// The length of the file this keeps, which is nearly all of what it holds (the tables are a few bytes per record
-    /// of the file): what a cache counts against its memory budget.
+    /// of the file), and an SFZ's decoded samples: what a cache counts against its memory budget.
     pub fn byte_len(&self) -> usize {
-        self.bytes.len()
+        let pcm = self
+            .pcm
+            .iter()
+            .map(|s| 4 * (s.left.len() + s.right.as_ref().map_or(0, |r| r.len())));
+        self.bytes.len() + pcm.sum::<usize>()
     }
 
     /// The patches in file order (the `SF2D` patch index counts them), as [`preset_headers`] lists them.
@@ -361,6 +443,9 @@ impl SoundFont {
     /// (instrument) is the global zone, whose generators every other zone starts from; any other such zone is
     /// ignored, and so is a zone naming an instrument or sample that does not exist or cannot play. App thread.
     pub fn regions(&self, patch: usize) -> Vec<Region> {
+        if !self.sfz_regions.is_empty() {
+            return self.sfz_regions.clone();
+        }
         let mut regions = Vec::new();
         let Some(&[first, last]) = self.preset_bags.get(patch..).and_then(|s| s.get(..2)) else {
             return regions;
@@ -437,6 +522,7 @@ impl SoundFont {
             decay: add(DECAY) as f32,
             sustain: 10f32.powf(-centibels(SUSTAIN) / 200.0),
             release: add(RELEASE) as f32,
+            sfz: None,
         })
     }
 
@@ -501,6 +587,9 @@ pub struct Region {
     /// Level.
     sustain: f32,
     release: f32,
+    /// An SFZ region's sample and rules (its frames above are the sample's, its tune 0 and its scale the key
+    /// tracking); `None` for a SoundFont's.
+    sfz: Option<Rules>,
 }
 
 impl Region {
@@ -508,6 +597,196 @@ impl Region {
         (self.keys[0]..=self.keys[1]).contains(&key)
             && (self.vels[0]..=self.vels[1]).contains(&velocity)
     }
+}
+
+/// What an SFZ region plays by besides a [`Region`]'s keys, velocities, frames, pitch and level.
+#[derive(Clone, Copy, Debug)]
+struct Rules {
+    /// Its sample in [`SoundFont::pcm`].
+    sample: usize,
+    /// `transpose` and `tune`, in cents.
+    cents: f64,
+    mode: LoopMode,
+    trigger: Trigger,
+    group: i64,
+    off_by: Option<i64>,
+    off_normal: bool,
+    /// `seq_length`, and `seq_position` from 0.
+    seq: [u32; 2],
+    rand: [f32; 2],
+    sw_last: Option<u8>,
+    xfin: [u8; 2],
+    xfout: [u8; 2],
+    /// `amp_veltrack`, −1…1.
+    veltrack: f32,
+    /// Its `amp_velcurve` in [`SoundFont::curves`].
+    curve: Option<usize>,
+    /// Delay, attack, hold, decay (seconds), sustain (level), release (seconds).
+    ampeg: [f32; 6],
+}
+
+impl Rules {
+    /// The gain of `velocity` (0…1): the curve (`amp_velcurve`, else velocity²) scaled by `amp_veltrack`.
+    fn velocity_gain(&self, curves: &[[f32; 128]], velocity: f32) -> f32 {
+        let curve = match self.curve.and_then(|c| curves.get(c)) {
+            Some(table) => table[(velocity * 127.0).round().clamp(0.0, 127.0) as usize],
+            None => velocity * velocity,
+        };
+        match self.veltrack >= 0.0 {
+            true => 1.0 - self.veltrack * (1.0 - curve),
+            false => 1.0 + self.veltrack * curve,
+        }
+    }
+
+    /// The velocity crossfade's gain at MIDI velocity `velocity`: in over `xfin`, out over `xfout`, by power.
+    fn crossfade(&self, velocity: u8) -> f32 {
+        let v = f32::from(velocity);
+        let [lo, hi] = self.xfin.map(f32::from);
+        let fade_in = match v {
+            v if v < lo => 0.0,
+            v if v >= hi => 1.0,
+            v => ((v - lo) / (hi - lo)).sqrt(),
+        };
+        let [lo, hi] = self.xfout.map(f32::from);
+        let fade_out = match v {
+            v if v <= lo => 1.0,
+            v if v > hi => 0.0,
+            v => ((hi - v) / (hi - lo)).sqrt(),
+        };
+        fade_in * fade_out
+    }
+}
+
+/// `amp_velcurve_N` points as a gain per velocity: straight lines between them, from (0, 0) and to (127, 1) unless
+/// the points set those.
+fn velocity_curve(points: &[(u8, f32)]) -> [f32; 128] {
+    let mut known = [None; 128];
+    (known[0], known[127]) = (Some(0.0), Some(1.0));
+    for &(velocity, gain) in points {
+        known[usize::from(velocity.min(127))] = Some(gain);
+    }
+    let mut curve = [0.0; 128];
+    let mut last = 0;
+    for (v, gain) in known.into_iter().enumerate() {
+        if let Some(gain) = gain {
+            let from = curve[last];
+            for (k, c) in curve.iter_mut().enumerate().take(v + 1).skip(last) {
+                *c = if v == last {
+                    gain
+                } else {
+                    from + (gain - from) * (k - last) as f32 / (v - last) as f32
+                };
+            }
+            last = v;
+        }
+    }
+    curve
+}
+
+/// The [`Region`] of SFZ region `r` playing `data` (sample `sample`, curve `curve`), `None` when it plays nothing. A
+/// loop end is the loop's last frame (the format's, and a WAV `smpl`'s), here exclusive; without `loop_mode` a file
+/// with a loop loops.
+fn sfz_region(
+    r: &SfzRegion,
+    data: &SampleData,
+    sample: usize,
+    curve: Option<usize>,
+) -> Option<Region> {
+    let keys = [r.keys[0].max(0), r.keys[1].min(127)];
+    if keys[0] > keys[1] || r.end.is_some_and(|e| e <= 0) || data.sample_rate == 0 {
+        return None;
+    }
+    let frames = data.frames();
+    let after = |last: u64| {
+        usize::try_from(last)
+            .unwrap_or(usize::MAX)
+            .saturating_add(1)
+    };
+    let end = r.end.map_or(frames, |e| after(e as u64).min(frames));
+    let start = usize::try_from(r.offset).unwrap_or(usize::MAX).min(end);
+    if start >= end {
+        return None;
+    }
+    let file_loop = (data.meta.loop_frames)
+        .map(|(s, e)| (s as usize, after(u64::from(e)).min(frames)))
+        .filter(|(s, e)| s < e);
+    let loop_start = (r
+        .loop_start
+        .map(|s| usize::try_from(s).unwrap_or(usize::MAX)))
+    .or(file_loop.map(|l| l.0))
+    .unwrap_or(start)
+    .clamp(start, end);
+    let loop_end = (r.loop_end.map(after).or(file_loop.map(|l| l.1)))
+        .unwrap_or(end)
+        .clamp(start, end);
+    let mode = r.loop_mode.unwrap_or(match file_loop {
+        Some(_) => LoopMode::Continuous,
+        None => LoopMode::NoLoop,
+    });
+    let root = r.pitch_keycenter.clamp(0, 127) as u8;
+    let rate = match crate::sfz::pitched(&r.sample) {
+        // One cycle a `CYCLE` frames: the key center's frequency.
+        true => crate::sfz::CYCLE as f64 * 440.0 * 2f64.powf((f64::from(root) - 69.0) / 12.0),
+        false => f64::from(data.sample_rate),
+    };
+    let [delay, attack, hold, decay, sustain, release] = r.ampeg;
+    Some(Region {
+        keys: [keys[0] as u8, keys[1] as u8],
+        vels: r.vels,
+        start,
+        end,
+        loop_start,
+        loop_end,
+        looping: matches!(mode, LoopMode::Continuous | LoopMode::Sustain) && loop_end > loop_start,
+        rate,
+        root,
+        tune: 0.0,
+        scale: f64::from(r.pitch_keytrack),
+        pan: r.pan / 200.0,
+        gain: 10f32.powf(r.volume / 20.0) * r.amplitude / 100.0,
+        attack: 0.0,
+        decay: 0.0,
+        sustain: 0.0,
+        release: 0.0,
+        sfz: Some(Rules {
+            sample,
+            cents: f64::from(r.transpose) * 100.0 + f64::from(r.tune),
+            mode,
+            trigger: r.trigger,
+            group: r.group,
+            off_by: r.off_by,
+            off_normal: r.off_normal,
+            seq: [r.seq_length.max(1), r.seq_position.max(1) - 1],
+            rand: r.rand,
+            sw_last: r.sw_last.map(|k| k.clamp(0, 127) as u8),
+            xfin: r.xfin,
+            xfout: r.xfout,
+            veltrack: r.amp_veltrack / 100.0,
+            curve,
+            ampeg: [delay, attack, hold, decay, sustain / 100.0, release],
+        }),
+    })
+}
+
+/// `region`'s decoded sample `data` at `position` (in `start..end`), each channel linearly interpolated, mono as both;
+/// with `looping` the loop's last frame leads into its first.
+fn read_pcm(data: &SampleData, region: &Region, looping: bool, position: f64) -> (f32, f32) {
+    let i = position as usize;
+    let next = if looping && i + 1 >= region.loop_end {
+        region.loop_start
+    } else {
+        (i + 1).min(region.end - 1)
+    };
+    let t = (position - i as f64) as f32;
+    let lerp = |x: &[f32]| {
+        let (a, b) = (
+            x.get(i).copied().unwrap_or(0.0),
+            x.get(next).copied().unwrap_or(0.0),
+        );
+        a + (b - a) * t
+    };
+    let left = lerp(&data.left);
+    (left, data.right.as_deref().map_or(left, lerp))
 }
 
 // Envelope laws. Every stage moves `level += (target − level)·c` each frame.
@@ -526,11 +805,31 @@ const DEFAULTS: [f32; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
 /// Channel param 4, Pitch Bend: v = 1 is 2 semitones up.
 const PITCH_BEND: usize = 4;
 const BEND_RANGE: f32 = 2.0;
+// The SFZ's DAHDSR law: a linear attack; decay and release fall exponentially, e^−9 (−78 dB) in their time.
+/// Below this level an SFZ voice's release ends: e^−9.
+const SFZ_SILENT: f32 = 1.234e-4;
+/// The shortest SFZ release, in seconds: a cut without a click.
+const SFZ_MIN_RELEASE: f32 = 0.001;
+/// How fast a voice another group's region stops (`off_mode=fast`) fades, in seconds.
+const CHOKE_TIME: f32 = 0.006;
+
+/// The per-frame factor of a fall of e^−9 over `seconds`; 0 (at once) for none.
+fn fall(seconds: f32, rate: f32) -> f32 {
+    if seconds > 0.0 {
+        (-9.0 / (seconds * rate)).exp()
+    } else {
+        0.0
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum Stage {
+    /// SFZ only: silent for `wait` frames.
+    Delay,
     #[default]
     Attack,
+    /// SFZ only: full for `wait` frames.
+    Hold,
     Decay,
     Release,
 }
@@ -556,11 +855,27 @@ struct Voice {
     decay: f32,
     sustain: f32,
     release: f32,
+    // SFZ voices only.
+    /// The SFZ's DAHDSR law ([`Self::dahdsr`]) with these coefficients: the attack's step, the decay's and release's
+    /// factors. Else the law above (a SoundFont's, or the Custom envelope's).
+    dahdsr: bool,
+    /// Frames left of the delay or the hold, and the hold's length.
+    wait: u32,
+    hold: u32,
+    /// A note-off does not release it: `one_shot`, or a release trigger's.
+    one_shot: bool,
+    /// Its key is up: a `loop_sustain` loop plays on to the end.
+    released: bool,
+    /// The velocity crossfade's gain, at the note's velocity.
+    crossfade: f32,
 }
 
 impl Voice {
     /// One frame of the envelope; false once the voice has ended.
     fn envelope(&mut self) -> bool {
+        if self.dahdsr {
+            return self.dahdsr();
+        }
         match self.stage {
             Stage::Attack => {
                 self.level += (ATTACK_TARGET - self.level) * self.attack;
@@ -577,8 +892,68 @@ impl Voice {
                     return false;
                 }
             }
+            Stage::Delay | Stage::Hold => {}
         }
         true
+    }
+
+    /// One frame of the SFZ's DAHDSR envelope; false once the voice has ended.
+    fn dahdsr(&mut self) -> bool {
+        match self.stage {
+            Stage::Delay | Stage::Hold if self.wait > 0 => self.wait -= 1,
+            Stage::Delay => self.stage = Stage::Attack,
+            Stage::Hold => self.stage = Stage::Decay,
+            Stage::Attack => {
+                self.level += self.attack;
+                if self.level >= 1.0 {
+                    (self.level, self.stage, self.wait) = (1.0, Stage::Hold, self.hold);
+                }
+            }
+            Stage::Decay => self.level = (self.level * self.decay).max(self.sustain),
+            Stage::Release => {
+                self.level *= self.release;
+                if self.level < SFZ_SILENT {
+                    self.on = false;
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// Stops it for another group's region: its own release with `normal`, else a fade of [`CHOKE_TIME`].
+    fn choke(&mut self, normal: bool, rate: f32) {
+        (self.stage, self.one_shot, self.released) = (Stage::Release, false, true);
+        if !normal {
+            let factor = fall(CHOKE_TIME, rate);
+            self.release = if self.dahdsr { factor } else { 1.0 - factor };
+        }
+    }
+
+    /// Whether an SFZ voice of `region` (rules `rules`) loops now: a `loop_continuous` one, unless it is a release
+    /// trigger's (which plays through), or a `loop_sustain` one while its key is held.
+    fn loops(&self, region: &Region, rules: &Rules) -> bool {
+        region.loop_end > region.loop_start
+            && match rules.mode {
+                LoopMode::Continuous => !(self.one_shot && self.released),
+                LoopMode::Sustain => !self.released,
+                LoopMode::NoLoop | LoopMode::OneShot => false,
+            }
+    }
+
+    /// Moves an SFZ voice `step` frames on through `region`'s sample: round its loop while `looping`, else to its end,
+    /// where it ends.
+    fn advance_pcm(&mut self, region: &Region, looping: bool, step: f64) {
+        self.position += step;
+        if looping {
+            if self.position >= region.loop_end as f64 {
+                let start = region.loop_start as f64;
+                let length = (region.loop_end - region.loop_start) as f64;
+                self.position = start + (self.position - start) % length;
+            }
+        } else if self.position >= region.end as f64 {
+            self.on = false;
+        }
     }
 
     /// Moves `step` frames on through `region`'s sample: round its loop, or up to its last frame, where it fades.
@@ -608,6 +983,15 @@ pub struct SoundFontPlayer {
     params: [f32; 6],
     /// Pitch bend in semitones.
     bend: f32,
+    // An SFZ's state.
+    /// The notes each region has met, for its round robin.
+    seq: Vec<u32>,
+    /// The keys held, with their note-on velocity and pan: for release triggers, `first` and `legato`.
+    held: [Option<(f32, f32)>; 128],
+    /// The keyswitch in force.
+    switch: Option<u8>,
+    /// The random layers' generator (xorshift32).
+    random: u32,
 }
 
 impl SoundFontPlayer {
@@ -618,15 +1002,146 @@ impl SoundFontPlayer {
             let last = font.presets.len().saturating_sub(1);
             font.regions(usize::try_from(*patch).unwrap_or(0).min(last))
         });
+        let regions = regions.unwrap_or_default();
         Self {
+            switch: bank.as_ref().and_then(|(font, _)| font.switch),
+            seq: vec![0; regions.len()],
             font: bank.map(|(font, _)| font),
-            regions: regions.unwrap_or_default(),
+            regions,
             voices: [Voice::default(); VOICES],
             started: 0,
             sample_rate,
             params: DEFAULTS,
             bend: 0.0,
+            held: [None; 128],
+            random: 0x9E37_79B9,
         }
+    }
+
+    /// Whether it plays an SFZ.
+    fn is_sfz(&self) -> bool {
+        self.font
+            .as_ref()
+            .is_some_and(|font| !font.sfz_regions.is_empty())
+    }
+
+    /// Starts the SFZ regions that a note-on of `key` at `velocity` (0…1) and `pan` plays, or with `release` its
+    /// note-off (at the note-on's velocity). Of the regions it plays, past [`VOICES`] only the last ones start. Each
+    /// stops the voices whose region's `off_by` names its group first.
+    fn sfz_note(&mut self, key: u8, velocity: f32, pan: f32, release: bool) {
+        let Some(font) = &self.font else {
+            return;
+        };
+        let steps = (127.0 * velocity).round() as u8;
+        if !release
+            && font
+                .switches
+                .is_some_and(|[lo, hi]| (lo..=hi).contains(&key))
+        {
+            self.switch = Some(key);
+        }
+        let others =
+            (self.held.iter().enumerate()).any(|(k, h)| h.is_some() && k != usize::from(key));
+        if !release && let Some(held) = self.held.get_mut(usize::from(key)) {
+            *held = Some((velocity, pan));
+        }
+        self.random ^= self.random << 13;
+        self.random ^= self.random >> 17;
+        self.random ^= self.random << 5;
+        let dice = (self.random >> 8) as f32 / (1 << 24) as f32;
+        let (mut chosen, mut count) = ([0; VOICES], 0);
+        for (index, region) in self.regions.iter().enumerate() {
+            let Some(rules) = &region.sfz else {
+                continue;
+            };
+            let fires = match rules.trigger {
+                Trigger::Attack => !release,
+                Trigger::Release => release,
+                Trigger::First => !release && !others,
+                Trigger::Legato => !release && others,
+            };
+            if !fires || !region.plays(key, steps) {
+                continue;
+            }
+            let turn = self.seq[index];
+            self.seq[index] = turn.wrapping_add(1);
+            let plays = turn % rules.seq[0] == rules.seq[1]
+                && (rules.rand[0] <= dice && dice < rules.rand[1])
+                && rules.sw_last.is_none_or(|s| self.switch == Some(s));
+            if plays {
+                if count == VOICES {
+                    chosen.copy_within(1.., 0);
+                    count -= 1;
+                }
+                chosen[count] = index;
+                count += 1;
+            }
+        }
+        for &index in &chosen[..count] {
+            let group = self.regions[index].sfz.map(|r| r.group);
+            for voice in self.voices.iter_mut().filter(|v| v.on) {
+                let rules = self.regions[voice.region].sfz;
+                if let Some(rules) = rules.filter(|r| r.off_by.is_some() && r.off_by == group) {
+                    voice.choke(rules.off_normal, self.sample_rate);
+                }
+            }
+        }
+        for &index in &chosen[..count] {
+            self.sfz_start(index, key, velocity, pan, release);
+        }
+    }
+
+    /// Starts a voice of SFZ region `index` (a release trigger's with `release`).
+    fn sfz_start(&mut self, index: usize, key: u8, velocity: f32, pan: f32, release: bool) {
+        let region = &self.regions[index];
+        let Some(rules) = region.sfz else {
+            return;
+        };
+        let rate = self.sample_rate;
+        let cents = (f64::from(key) - f64::from(region.root)) * region.scale + rules.cents;
+        let step = 2f64.powf(cents / 1200.0) * region.rate / f64::from(rate);
+        let custom = self.params[5] != 0.0;
+        let [delay, attack, hold, decay, sustain, release_time] = rules.ampeg;
+        let frames = |seconds: f32| (seconds * rate) as u32;
+        let envelope = match custom {
+            true => self.envelope(region),
+            false => [
+                (1.0 / (attack * rate)).min(1.0),
+                fall(decay, rate),
+                sustain,
+                fall(release_time.max(SFZ_MIN_RELEASE), rate),
+            ],
+        };
+        let slot = (self.voices.iter().enumerate())
+            .min_by_key(|(_, v)| (v.on, v.started))
+            .map_or(0, |(slot, _)| slot);
+        self.started += 1;
+        self.voices[slot] = Voice {
+            on: true,
+            key,
+            started: self.started,
+            region: index,
+            position: region.start as f64,
+            step,
+            velocity,
+            pan,
+            stage: if custom || delay <= 0.0 {
+                Stage::Attack
+            } else {
+                Stage::Delay
+            },
+            attack: envelope[0],
+            decay: envelope[1],
+            sustain: envelope[2],
+            release: envelope[3],
+            dahdsr: !custom,
+            wait: frames(delay),
+            hold: frames(hold),
+            one_shot: release || rules.mode == LoopMode::OneShot,
+            released: release,
+            crossfade: rules.crossfade((127.0 * velocity).round() as u8),
+            ..Voice::default()
+        };
     }
 
     /// Slide offsets for every sounding voice: `pitch` semitones, `pan` and `velocity` added to the
@@ -691,6 +1206,9 @@ impl Instrument for SoundFontPlayer {
         } else {
             0.5
         };
+        if self.is_sfz() {
+            return self.sfz_note(key, velocity, pan, false);
+        }
         let steps = (127.0 * velocity) as u8;
         let matches = self.regions.iter().filter(|r| r.plays(key, steps));
         let skip = matches.count().saturating_sub(VOICES);
@@ -723,22 +1241,38 @@ impl Instrument for SoundFontPlayer {
         }
     }
 
+    /// An SFZ's one-shot voices play on, and its release triggers start.
     fn note_off(&mut self, key: u8) {
-        for voice in self.voices.iter_mut().filter(|v| v.on && v.key == key) {
+        let sfz = self.is_sfz();
+        for voice in self
+            .voices
+            .iter_mut()
+            .filter(|v| v.on && v.key == key && !v.one_shot)
+        {
             voice.stage = Stage::Release;
+            voice.released = true;
+        }
+        if sfz
+            && let Some((velocity, pan)) =
+                self.held.get_mut(usize::from(key)).and_then(Option::take)
+        {
+            self.sfz_note(key, velocity, pan, true);
         }
     }
 
     fn all_notes_off(&mut self) {
         for voice in &mut self.voices {
             voice.stage = Stage::Release;
+            voice.released = true;
         }
+        self.held = [None; 128];
     }
 
     fn reset(&mut self) {
         for voice in &mut self.voices {
             voice.on = false;
         }
+        self.held = [None; 128];
     }
 
     fn process(&mut self, left: &mut [f32], right: &mut [f32], _context: ProcessContext) {
@@ -750,8 +1284,26 @@ impl Instrument for SoundFontPlayer {
             let bend = 2f64.powf(f64::from(self.bend + voice.slide[0]) / 12.0);
             // `min` also turns a hostile file's infinite or NaN step into the cap.
             let step = (voice.step * bend).min(MAX_STEP);
-            let gain = (voice.velocity + voice.slide[2]).clamp(0.0, 1.0) * region.gain;
             let p = (voice.pan + voice.slide[1] + region.pan).clamp(0.0, 1.0);
+            if let Some(rules) = &region.sfz {
+                let sample = &font.pcm[rules.sample];
+                let velocity = (voice.velocity + voice.slide[2]).clamp(0.0, 1.0);
+                let gain =
+                    rules.velocity_gain(&font.curves, velocity) * voice.crossfade * region.gain;
+                let (gain_l, gain_r) = (gain * (2.0 - 2.0 * p).min(1.0), gain * (2.0 * p).min(1.0));
+                let looping = voice.loops(region, rules);
+                for (l, r) in left.iter_mut().zip(right.iter_mut()) {
+                    if !voice.on || !voice.envelope() {
+                        break;
+                    }
+                    let (a, b) = read_pcm(sample, region, looping, voice.position);
+                    *l += a * voice.level * gain_l;
+                    *r += b * voice.level * gain_r;
+                    voice.advance_pcm(region, looping, step);
+                }
+                continue;
+            }
+            let gain = (voice.velocity + voice.slide[2]).clamp(0.0, 1.0) * region.gain;
             let (gain_l, gain_r) = (gain * (2.0 - 2.0 * p).min(1.0), gain * (2.0 * p).min(1.0));
             for (l, r) in left.iter_mut().zip(right.iter_mut()) {
                 if !voice.envelope() {
