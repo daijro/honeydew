@@ -56,7 +56,8 @@ pub fn smf_of(song: &Song, only: Option<usize>) -> Result<Vec<u8>, NoData> {
 /// [`smf_of`], with `Apply note effects` (#31) when `note_effects` is the engine's sample rate: a channel with note
 /// effects writes the notes its Notes lanes play through them, as playback prepares them at that rate (the
 /// Arpeggiator's and Note Echo's timing back in ticks, [`crate::audio_engine::burned_notes`]), all on its first Notes
-/// lane's track. A song playback refuses writes its raw notes.
+/// lane's track; and a drum channel the hits its drum lanes play through them ([`crate::audio_engine::burned_hits`],
+/// issue #40), all on its first drum lane's track. A song playback refuses writes its raw notes.
 pub fn smf_with(
     song: &Song,
     only: Option<usize>,
@@ -85,10 +86,18 @@ pub fn smf_with(
         let mut name = channel.name.clone();
         name.truncate(name.floor_char_boundary(255));
         let effects = (channel.rack.modules.iter()).any(|m| (47..=51).contains(&m.type_id));
-        let played = note_effects.filter(|_| effects).and_then(|rate| {
+        let rate = note_effects.filter(|_| effects);
+        let played = rate.and_then(|rate| {
             crate::audio_engine::burned_notes(song, i, rate, 0, MAX_DELTA as u32).ok()
         });
-        let mut played_written = false;
+        // Issue #40: a drum channel's hits pass its note effects too.
+        let hits = rate
+            .filter(|_| channel.drum_kit.is_some())
+            .and_then(|rate| {
+                crate::audio_engine::burned_hits(song, i, rate, 0, MAX_DELTA as u32).ok()
+            });
+        // Notes, hits: written on the first lane of their kind.
+        let mut written = [false; 2];
         for lane in &channel.lanes {
             let Some(write) = write_of(lane) else {
                 continue;
@@ -96,16 +105,20 @@ pub fn smf_with(
             if tracks.len() == MAX_TRACKS {
                 continue;
             }
-            let source: Box<dyn Iterator<Item = (f64, &Event)>> = match (write, &played) {
-                (Write::Notes, Some(notes)) => {
-                    if played_written || notes.is_empty() {
+            let burned = match write {
+                Write::Notes => played.as_ref().map(|notes| (notes, &mut written[0])),
+                Write::Drums => hits.as_ref().map(|hits| (hits, &mut written[1])),
+                _ => None,
+            };
+            let source: Box<dyn Iterator<Item = (f64, &Event)>> = match burned {
+                Some((events, written)) => {
+                    if std::mem::replace(written, true) || events.is_empty() {
                         continue;
                     }
-                    played_written = true;
-                    Box::new(notes.iter().map(|e| (f64::from(e.pos()), e)))
+                    Box::new(events.iter().map(|e| (f64::from(e.pos()), e)))
                 }
-                _ if lane.clips.iter().all(|c| c.events.is_empty()) => continue,
-                _ => Box::new(lane.clips.iter().flat_map(plays)),
+                None if lane.clips.iter().all(|c| c.events.is_empty()) => continue,
+                None => Box::new(lane.clips.iter().flat_map(plays)),
             };
             // (tick, not a note-off, message): note-offs go first at a tick, then the clips' order.
             let mut events = Vec::new();

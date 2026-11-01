@@ -4,12 +4,12 @@
 //! returned [`DrumsAction`]s (play a pad, send a changed slot param to the audio side). The geometry is pure
 //! ([`pad_grid`], [`strip_rect`], [`place_strip`]) and in device pixels, like the layout engine.
 //!
-//! Strips draw with the widget kits: the no-label pill toggle and the sliders, and their own strip looks: knobs
-//! captioned in a left column ([`widgets::strip_knob`]), `Solo`, `REV` and `Poly` as discs ([`widgets::disc_toggle`])
-//! and the icon 21 button as a hidden disc under a `text` icon. Their header cells are left to the host: the step
-//! view's row headers fill them, two lines that follow the drum mixer strip's own rule ([`header_names`]). The names
-//! shown are [`row_lines`] on a row header and [`hex_lines`] on a pad. Text is plain, drawn in full and never clipped,
-//! except those header lines and the pad names, which shrink to fit.
+//! Strips draw with the widget kits: Mute as the mixer's inverted no-label pill (dot up while audible) and the
+//! sliders, and their own strip looks: knobs captioned in a left column ([`widgets::strip_knob`]), `Solo`, `REV` and
+//! `Poly` as discs ([`widgets::disc_toggle`]) and the icon 21 button as a hidden disc under a `text` icon. Their header
+//! cells are left to the host: the step view's row headers fill them, two lines that follow the drum mixer strip's own
+//! rule ([`header_names`]). The names shown are [`row_lines`] on a row header and [`hex_lines`] on a pad. Text is plain,
+//! drawn in full and never clipped, except those header lines and the pad names, which shrink to fit.
 
 use std::collections::HashMap;
 
@@ -717,10 +717,11 @@ fn control(
         ..Control::new(id, rect, spec.label, channel, reset)
     };
     let changed = match (spec.kind, spec.param) {
+        // Mute, the only pill: inverted as the mixer's, dot up while audible.
         (Kind::Pill, Some(p)) => {
             let pill = Pill {
                 label_right: true,
-                ..Pill::default()
+                inverted: true,
             };
             let value = &mut slot.params[p];
             widgets::pill_toggle(ui, cx, &c, pill, value, |_| String::new()).changed()

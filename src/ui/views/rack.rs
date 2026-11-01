@@ -262,6 +262,14 @@ pub fn show(
     if let Some(module) = actions.soundfont {
         return Some(Nav::Open(Overlay::SoundFontPicker { channel, module }));
     }
+    if let Some(module) = actions.builder {
+        let files = Vec::new();
+        return Some(Nav::Open(Overlay::InstrumentBuilder {
+            channel,
+            module,
+            files,
+        }));
+    }
     if let Some(module) = actions.module_sample {
         return Some(Nav::Open(Overlay::ModuleSamplePicker { channel, module }));
     }

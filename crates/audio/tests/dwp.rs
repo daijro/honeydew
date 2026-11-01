@@ -667,6 +667,7 @@ fn a_written_program_reads_back() {
         loop_start: 100,
         loop_end: 4_000,
         floats: [0.01, 0.0, 1.0, 0.35],
+        ..Zone::default()
     };
     let high = Zone {
         root: 72,

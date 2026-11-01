@@ -131,6 +131,47 @@ impl ProjectFiles {
         }
     }
 
+    /// Saves an instrument the DW Sampler's builder mapped ([`crate::token_map`]): its samples, the files `sources` (by
+    /// the regions' order; an unparsed one is left out) copied into `My Instruments/<name>/` under their names (a
+    /// repeat numbered, [`crate::token_map::unique`]), then `My Instruments/<name>.sfz` naming them. `name` is free with
+    /// its folder, else `<name> (2)` and so on: nothing is overwritten. Returns the `.sfz`. The library lists it at once.
+    // ponytail: copies on the UI thread, read whole; a worker with progress if large libraries stall the frame.
+    pub fn save_instrument(
+        &mut self,
+        name: &str,
+        regions: &[crate::token_map::Region],
+        sources: &[PathBuf],
+    ) -> io::Result<PathBuf> {
+        use crate::token_map::{Flag, free, sfz, unique};
+        let dir = self
+            .user_dir()
+            .ok_or(io::ErrorKind::NotFound)?
+            .join(INSTRUMENTS_FOLDER);
+        let base = name.trim().replace(['/', '\\'], "-");
+        let base = if base.is_empty() { "Instrument" } else { &base };
+        let name = free(base, |n| {
+            self.taken(&dir.join(format!("{n}.{SFZ_EXT}"))) || self.taken(&dir.join(n))
+        });
+        let kept: Vec<(&crate::token_map::Region, &PathBuf)> = (regions.iter().zip(sources))
+            .filter(|(r, _)| !matches!(r.flag, Some(Flag::Unparsed(_))))
+            .collect();
+        let files: Vec<String> = kept.iter().map(|(r, _)| r.file.clone()).collect();
+        let mut written = Vec::with_capacity(kept.len());
+        for ((region, source), file) in kept.into_iter().zip(unique(&files)) {
+            let bytes = (self.read_user_file(source))
+                .map_err(|e| io::Error::other(format!("{}: {e}", source.display())))?;
+            self.write_user_file(&dir.join(&name).join(&file), bytes)?;
+            written.push(crate::token_map::Region {
+                file,
+                ..region.clone()
+            });
+        }
+        let path = dir.join(format!("{name}.{SFZ_EXT}"));
+        self.write_user_file(&path, sfz(&name, &written).into_bytes())?;
+        self.library_changes += 1;
+        Ok(path)
+    }
+
     /// A failed `Import` (the pick or its read): [`UNSUPPORTED`] for a file of another type, else [`IMPORT_FAILED`].
     /// The pick is over.
     pub(super) fn import_failed(&mut self, title: &str, detail: String) {

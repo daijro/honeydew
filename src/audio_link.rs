@@ -1061,6 +1061,9 @@ pub(crate) mod testing {
                     .filter(|(_, k)| k.instance_id == 0)
                     .map(|(e, k)| e.sounding(k.channel))
                     .collect(),
+                modulated: (r.engine.iter())
+                    .flat_map(|e| e.modulated().to_vec())
+                    .collect(),
                 ..OutputSnapshot::default()
             }
         }

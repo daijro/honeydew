@@ -802,6 +802,117 @@ fn a_live_pad_hit_ignores_the_beat_offset() {
     assert_eq!(onset(&render(&mut engine, BEAT)), 0);
 }
 
+/// Issue #40: a drum channel's hits pass its rack's note effects. One without any renders bit for bit as
+/// before that: the hash of a render of step and notes lanes (velocity, pan, Pitch, Repeat, a beat offset, lengths,
+/// a cut group) and a live tap, taken before the change. A deliberate change to the drum sound updates it.
+#[test]
+fn a_drum_channel_without_note_effects_renders_as_before() {
+    let mut song = kit(&["dc", "short", "sine", "ramp", "dc"]);
+    slots(&mut song)[0].params[9] = 0.2;
+    slots(&mut song)[2].file.beat_offset = 0.1;
+    let drum = |pos, pad, len_beats, velocity, pan, value, repeat| Event::Drum {
+        pos,
+        len_beats,
+        pad,
+        velocity,
+        pan,
+        value,
+        repeat,
+    };
+    hits(
+        &mut song,
+        [
+            drum(0, 0, 0.0, 200, 40, Event::DEFAULT_PITCH, 0),
+            drum(32, 1, 0.25, 90, 220, 20_000, 3),
+            drum(64, 2, 0.0, 255, 127, 50_000, 0),
+            drum(96, 3, 0.0, 130, 0, 9_000, 1),
+            drum(100, 4, 0.0, 180, 255, 60_000, 0),
+        ],
+    );
+    let lane = song.channels[1].add_lane(LaneKind::Drums);
+    song.channels[1].lanes[lane].grid = DrumGrid::Notes;
+    song.channels[1].lanes[lane]
+        .add_clip(0, 4.0)
+        .events
+        .extend([
+            drum(16, 0, 0.3, 255, 127, 40_000, 0),
+            drum(140, 2, 1.5, 160, 60, Event::DEFAULT_PITCH, 2),
+        ]);
+    let mut engine = engine(&song);
+    engine.play();
+    let mut output = vec![0.0; 2 * 2 * BEAT];
+    engine.render(&mut output[..2 * BEAT], 2);
+    engine.note_on(1, 49, 0.7);
+    engine.render(&mut output[2 * BEAT..], 2);
+    let hash = (output.iter()).fold(0xcbf2_9ce4_8422_2325_u64, |hash, sample| {
+        (hash ^ u64::from(sample.to_bits())).wrapping_mul(0x100_0000_01b3)
+    });
+    assert!(energy(&output) > 1.0);
+    assert_eq!(hash, 0xf6db_5326_bdaa_e975, "{hash:#x}");
+}
+
+/// Adds note effect `type_id` to the drum rack with `params` set (index, value); its instance id.
+fn note_effect(song: &mut Song, type_id: u16, params: &[(usize, f32)]) -> i32 {
+    let rack = &mut song.channels[1].rack;
+    let id = rack.add(type_id);
+    for &(index, value) in params {
+        rack.get_mut(id).unwrap().params[index] = value;
+    }
+    id
+}
+
+/// Issue #40: the Randomizer's Gate is each hit's chance to play, at 0 % none, at 100 % every one.
+#[test]
+fn a_drum_randomizer_gate_plays_no_hits_at_0_and_all_at_100() {
+    let mut song = kit(&["short", "short"]);
+    hits(&mut song, [hit(0, 0), hit(64, 1), hit(128, 0), hit(192, 1)]);
+    let mut gated = song.clone();
+    note_effect(&mut gated, 49, &[(4, 0.0)]);
+    assert_eq!(energy(&play(&gated, 2 * BEAT)), 0.0, "Gate 0 %");
+    note_effect(&mut song, 49, &[(4, 1.0)]);
+    let all = onsets(&play(&song, 2 * BEAT));
+    assert_eq!(all, [0, BEAT / 2, BEAT, 3 * BEAT / 2], "Gate 100 %");
+}
+
+/// Note Echo repeats a sequenced hit on its own pad: the 100-frame `short` again a beat later, not another pad's sound.
+#[test]
+fn a_drum_note_echo_repeats_the_hit_on_its_pad() {
+    let mut song = kit(&["short"]);
+    hits(&mut song, [hit(0, 0)]);
+    // One repeat, `Delay (sync)` at 1 beat (as `live::tests`), Sync on.
+    let delay = (0.96875_f32 / 7.96875).sqrt();
+    note_effect(&mut song, 47, &[(1, 1.0 / 32.0), (3, delay), (4, 1.0)]);
+    let output = play(&song, 2 * BEAT);
+    let runs = onsets(&output);
+    assert_eq!(runs.len(), 2, "{runs:?}");
+    assert!(runs[1].abs_diff(BEAT) < 1024, "{runs:?}");
+    assert!(
+        output[runs[1] + 100..].iter().all(|&s| s == 0.0),
+        "pad 0's sample"
+    );
+}
+
+/// A live pad tap passes the chain too: Gate 0 % drops it, and the Randomizer's Pan moves it off centre.
+#[test]
+fn a_live_pad_tap_passes_the_drum_note_effects() {
+    let mut song = kit(&["dc"]);
+    let id = note_effect(&mut song, 49, &[(4, 0.0)]);
+    let mut gated = engine(&song);
+    gated.note_on(1, 48, 1.0);
+    assert_eq!(energy(&render(&mut gated, 1000)), 0.0, "Gate 0 %");
+    let params = &mut song.channels[1].rack.get_mut(id).unwrap().params;
+    (params[3], params[4]) = (1.0, 1.0);
+    let mut panned = engine(&song);
+    panned.note_on(1, 48, 1.0);
+    let (l, r) = render_stereo(&mut panned, 100);
+    assert!(
+        l[50] + r[50] > 0.4 && (l[50] - r[50]).abs() > 0.01,
+        "{} {}",
+        l[50],
+        r[50]
+    );
+}
+
 #[test]
 fn a_cut_group_reaches_the_playing_kit_as_a_setting() {
     // The strip's `Cut...` (MAIN@1049) goes to the engine live, key 1049, with no new engine: pads 0 and 1 in group A

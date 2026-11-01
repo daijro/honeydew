@@ -758,9 +758,9 @@ fn a_later_pick_on_the_ui_thread_replaces_a_pick_still_loading() {
     pick_keys(&mut rig);
     rig.frame(vec![]);
     assert!(rig.app.slots.preset_picker.loading());
-    // Back to the root, then `Default`, which loads on the UI thread at once.
+    // Back to the root (`My Files`, `My Instruments`), then `Default`, which loads on the UI thread at once.
     rig.click_id(Id::new(PICKER).with("back"));
-    picker_row(&mut rig, 1);
+    picker_row(&mut rig, 2);
     let last = rig.app.song.channels[DW].rack.modules[0].clone();
     assert!(
         !rig.app.slots.preset_picker.loading(),

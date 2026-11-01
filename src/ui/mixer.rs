@@ -15,6 +15,7 @@
 //! `Unlink from MIDI CC` follows the channel's `CCLK`.
 
 use eframe::egui::{Align2, Id, Pos2, Rect, Ui, UiBuilder, Vec2, pos2, vec2};
+use honeydew_audio::device::ModuleMeter;
 
 use crate::icons::draw_icon;
 use crate::metrics::FontSize;
@@ -26,6 +27,7 @@ use crate::ui::ctrl_menu::Touch;
 use crate::ui::fine_tune;
 use crate::ui::layout::{Node, NodeId, Size, layout};
 use crate::ui::main_screen::kind_icon;
+use crate::ui::mini_mixer;
 use crate::ui::scroller::{self, Axis, Scroller, X, Zones};
 use crate::ui::widgets::{self, Button, Control, ParamMenu, Pill};
 
@@ -138,14 +140,15 @@ fn scroll_row(ui: &Ui, state: &mut MixerState, rect: Rect, content: f32, u: f32)
     report.tap.filter(|t| !t.long).map(|t| t.at)
 }
 
-/// Draws the mixer in `rect` and returns the channel params the user changed this frame, already written to `song`,
-/// as `(channel, param index, new value)`.
+/// Draws the mixer in `rect`, each strip with its channel strip's `meters` (instance 0) while the audio runs, and returns
+/// the channel params the user changed this frame, already written to `song`, as `(channel, param index, new value)`.
 pub fn show(
     ui: &mut Ui,
     cx: &UiCtx,
     song: &mut Song,
     state: &mut MixerState,
     rect: Rect,
+    meters: Option<&[ModuleMeter]>,
 ) -> Vec<(usize, i32, f32)> {
     let (m, colors) = (cx.m, &cx.theme.colors);
     let (unit, ppp) = (m.u(STRIP_W), m.ppp());
@@ -208,10 +211,18 @@ pub fn show(
                     );
                     false
                 }
-                // Reset to 0.85312, unity, not the 0.8531 a new channel stores.
+                // Reset to 0.85312, unity, not the 0.8531 a new channel stores. The level meters at the rect's right
+                // edge span the track, so that the meter law's 0…1 runs along it.
                 FADER => {
                     let c = control("", widgets::UNITY);
-                    widgets::fader(&mut ui, cx, &c, &mut params[0]).changed()
+                    let changed = widgets::fader(&mut ui, cx, &c, &mut params[0]).changed();
+                    let span =
+                        Rect::from_x_y_ranges(r.x_range(), widgets::fader_track(r, m).y_range());
+                    let peaks = mini_mixer::meter_peaks(meters, i);
+                    for bar in mini_mixer::vertical_meters(span, peaks, m.t()) {
+                        ui.painter().rect_filled(bar, 0.0, color);
+                    }
+                    changed
                 }
                 KNOB => {
                     widgets::knob(&mut ui, cx, &control("", 0.5), &mut params[1], none).changed()
@@ -564,6 +575,8 @@ mod tests {
         modifiers: Modifiers,
         /// The last frame asked for the next one at once.
         repaint: bool,
+        /// The meters each frame gets.
+        meters: Vec<ModuleMeter>,
     }
 
     impl Rig {
@@ -583,6 +596,7 @@ mod tests {
                 shapes: Vec::new(),
                 modifiers: Modifiers::NONE,
                 repaint: false,
+                meters: Vec::new(),
             };
             rig.frame(vec![]);
             rig
@@ -606,10 +620,10 @@ mod tests {
                 m: &m,
             };
             let (song, state, changes) = (&mut self.song, &mut self.state, &mut self.changes);
-            let view = self.view;
+            let (view, meters) = (self.view, Some(&self.meters[..]));
             let out = self.ctx.run(raw, |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    changes.extend(show(ui, &cx, song, state, view));
+                    changes.extend(show(ui, &cx, song, state, view, meters));
                 });
             });
             self.shapes = out.shapes;
@@ -1472,5 +1486,62 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn each_strip_meters_its_channel_at_the_fader_rects_right_edge() {
+        use honeydew_audio::MeterSnapshot;
+        use honeydew_audio::device::ModuleKey;
+        let theme = theme_by_id(0);
+        let mut rig = Rig::new(1);
+        let meter = |channel, peak_left, peak_right| ModuleMeter {
+            key: ModuleKey {
+                channel,
+                instance_id: 0,
+            },
+            value: MeterSnapshot {
+                peak_left,
+                peak_right,
+                ..MeterSnapshot::default()
+            },
+            analysis: Vec::new(),
+        };
+        // The master at full scale on the left alone; channel 1 at −30 dB on both sides.
+        let quiet = 10_f32.powf(-1.5);
+        rig.meters = vec![meter(0, 1.0, 0.0), meter(1, quiet, quiet)];
+        rig.frame(vec![]);
+        // Bars t (2) wide at the fader rect's right − 3t and − 2t, over its track (the 6 U fader inset 0.5 U), from the
+        // bottom up by the meter law.
+        let bars = |i: usize| {
+            let fader = rig.part(i, FADER);
+            let color = channel_color(rig.song.channels[i].hue, &theme).to_color32();
+            let (track, right) = (fader.shrink2(vec2(0.0, 0.5 * U)), fader.right());
+            let rects = rig.shapes.iter().filter_map(|s| match &s.shape {
+                Shape::Rect(r) if r.fill == color && r.rect.left() >= right - 6.0 => Some(r.rect),
+                _ => None,
+            });
+            (rects.collect::<Vec<_>>(), track, right)
+        };
+        let (master, track, right) = bars(0);
+        let bar = |x: f32, m: f32| {
+            Rect::from_x_y_ranges(
+                x..=x + 2.0,
+                track.bottom() - track.height() * m..=track.bottom(),
+            )
+        };
+        // 0 dB is (60/66)^1.6667 ≈ 0.853 up the track: about the unity ticks' height.
+        let full = crate::ui::mini_mixer::meter(1.0);
+        assert!((full - widgets::UNITY).abs() < 1e-3, "{full}");
+        assert_eq!(master, [bar(right - 6.0, full)]);
+        let (one, track, right) = bars(1);
+        let m = crate::ui::mini_mixer::meter(quiet);
+        assert!(m > 0.1 && m < 0.5, "{m}");
+        let bar = |x: f32| {
+            Rect::from_x_y_ranges(
+                x..=x + 2.0,
+                track.bottom() - track.height() * m..=track.bottom(),
+            )
+        };
+        assert_eq!(one, [bar(right - 6.0), bar(right - 4.0)]);
     }
 }

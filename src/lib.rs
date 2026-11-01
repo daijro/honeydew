@@ -30,6 +30,7 @@ pub mod sf2;
 pub mod smf;
 pub mod song;
 pub mod theme;
+pub mod token_map;
 pub mod ui;
 pub mod zip;
 
@@ -176,6 +177,20 @@ async fn run_web() -> Result<(), wasm_bindgen::JsValue> {
             };
             if bound_key(&event, runner.egui_ctx()).is_some_and(text_safe) {
                 event.prevent_default();
+            }
+        },
+    )?;
+    // A finger presses from its `touchstart` alone, with its touch in the same frame, as on Android (issue #35).
+    // eframe's canvas `pointerdown` would press it a frame earlier, as a mouse: a drum pad played twice. Its `pointerup`
+    // stays eframe's, whose release frame runs inside the gesture (the audio starts there); the second release that
+    // `touchend` adds goes in `HoneydewApp::raw_input_hook`. (A capturing listener on the target runs before eframe's.)
+    runner.add_event_listener_ex(
+        &canvas,
+        "pointerdown",
+        &capture,
+        |event: web_sys::PointerEvent, _, _| {
+            if event.pointer_type() == "touch" {
+                event.stop_immediate_propagation();
             }
         },
     )?;

@@ -95,7 +95,7 @@ fn names(rows: &[Row]) -> Vec<&'static str> {
 
 /// The list in the Modules picker's own ordering, `Category`, for a channel that takes instruments.
 fn rows(query: &str) -> Vec<Row> {
-    super::rows(query, ModuleOrdering::Category, true)
+    super::rows(query, ModuleOrdering::Category, Takes::Instruments)
 }
 
 #[test]
@@ -186,10 +186,10 @@ fn where_no_instrument_goes_the_list_leaves_out_instrument_the_synths_and_the_no
         assert_eq!(params::module_spec(id).map(|s| s.display_name), Some(name));
     }
     assert_eq!(Entry::Instrument.action(), BrowserAction::Instrument);
-    // Drums, audio, an effect track: the same list without `Instrument`, SYNTH and NOTE EFFECT, in both orderings.
+    // Audio, an effect track: the same list without `Instrument`, SYNTH and NOTE EFFECT, in both orderings.
     for sort in [ModuleOrdering::Category, ModuleOrdering::AZ] {
-        let all = names(&super::rows("", sort, true));
-        let some = names(&super::rows("", sort, false));
+        let all = names(&super::rows("", sort, Takes::Instruments));
+        let some = names(&super::rows("", sort, Takes::Effects));
         let synths = SYNTH_IDS.map(|(name, _)| name);
         let lemon = ["Lemon Trio", "Lemon Sampler"];
         let notes = [
@@ -210,8 +210,15 @@ fn where_no_instrument_goes_the_list_leaves_out_instrument_the_synths_and_the_no
         let kept: Vec<_> = all.iter().filter(|n| !gone(n)).copied().collect();
         assert_eq!(some, kept, "{sort:?}");
         assert!(all.contains(&"Instrument") && some.contains(&"Paste") && some.contains(&"Reverb"));
+        // Issue #40: a drum channel's list keeps the note effects.
+        let drums = names(&super::rows("", sort, Takes::NoteEffects));
+        let kept: Vec<_> = (all.iter())
+            .filter(|n| !gone(n) || notes.contains(n))
+            .copied()
+            .collect();
+        assert_eq!(drums, kept, "{sort:?}: drums");
     }
-    let gone = names(&super::rows("", ModuleOrdering::Category, false));
+    let gone = names(&super::rows("", ModuleOrdering::Category, Takes::Effects));
     assert_eq!(&gone[..3], ["Paste", "Rack Preset", "ECHO"]);
 }
 
@@ -452,7 +459,11 @@ impl Rig {
             if focus {
                 crate::ui::focus::begin_frame(ctx);
             }
-            action = browser.show(ctx, &cx, instruments);
+            let takes = match instruments {
+                true => Takes::Instruments,
+                false => Takes::Effects,
+            };
+            action = browser.show(ctx, &cx, takes);
             if focus {
                 crate::ui::focus::end_frame(ctx, &theme);
             }
@@ -810,7 +821,7 @@ fn the_modules_picker_orders_by_category_and_stores_each_ordering_by_its_id() {
 fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_type_id() {
     // By item type, then a per-type index, else alphanumeric. The types are the actions, the instruments and the
     // effects (note effects included); the index is the module type id; no section rows.
-    let top = super::rows("", ModuleOrdering::TopLevel, true);
+    let top = super::rows("", ModuleOrdering::TopLevel, Takes::Instruments);
     assert_eq!(
         names(&top),
         [
@@ -877,7 +888,11 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
     );
     // The search filters it, in the same order.
     assert_eq!(
-        names(&super::rows("DELAY", ModuleOrdering::TopLevel, true)),
+        names(&super::rows(
+            "DELAY",
+            ModuleOrdering::TopLevel,
+            Takes::Instruments
+        )),
         ["Trance Delay", "Tape Delay"]
     );
 }
@@ -886,7 +901,7 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
 fn a_z_lists_every_entry_by_its_name_naturally_with_no_sections() {
     // A-Z: natural alphanumeric compare of the display name, with no grouping before it, so the actions sort in with
     // the modules.
-    let az = names(&super::rows("", ModuleOrdering::AZ, true));
+    let az = names(&super::rows("", ModuleOrdering::AZ, Takes::Instruments));
     let entries = rows("").into_iter().filter(|r| matches!(r, Row::Item(_)));
     assert_eq!(az.len(), entries.count());
     assert_eq!(&az[..4], ["3x Osc", "Analyzer", "Arpeggiator", "Autoduck"]);

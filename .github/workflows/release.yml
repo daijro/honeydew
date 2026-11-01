@@ -213,10 +213,10 @@ jobs:
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/honeydew-release.jks"
       - uses: dtolnay/rust-toolchain@1.91.0
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android, armv7-linux-androideabi
       - uses: Swatinem/rust-cache@v2
         with:
-          key: android-arm64
+          key: android-arm
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -243,5 +243,5 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
-          files: target/honeydew-android-*-arm64.apk
+          files: target/honeydew-android-*-arm.apk
           fail_on_unmatched_files: true

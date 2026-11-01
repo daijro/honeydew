@@ -65,7 +65,7 @@ mod text_toggle;
 mod toggle;
 
 pub use button::{Button, button};
-pub use fader::{UNITY, fader};
+pub use fader::{UNITY, fader, fader_track};
 pub use knob::{knob, strip_knob};
 pub use list::{Bar, ItemList, item_list, item_list_index};
 pub use menu_button::menu_button;

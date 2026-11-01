@@ -8,9 +8,10 @@
 //! with the registry defaults and a fresh id, from `Add Module` and from `Insert above` / `Insert below` / `Replace`,
 //! like any module. But `Paste` puts instrument modules only into a channel whose primary lane is a notes lane, and
 //! the picker follows the same rule: on any other channel (drums, audio, effect track, master) the list leaves out
-//! `Instrument`, the SYNTH and NOTE EFFECT sections and the plugin instruments. The caller says which with `show`'s
-//! `instruments`, from [`crate::ui::rack::takes_instruments`], the one predicate `Paste` and a rack preset's load use
-//! too.
+//! `Instrument`, the SYNTH section and the plugin instruments, and on all but a drum channel the NOTE EFFECT section
+//! too (issue #40). The caller says which with
+//! `show`'s [`Takes`], from [`crate::ui::rack::takes`], whose instruments are the one predicate `Paste` and a rack
+//! preset's load use too.
 //!
 //! The current row is the last pick of the session.
 //!
@@ -261,12 +262,22 @@ impl Entry {
     }
 }
 
+/// What a channel's rack takes besides effects, each kind taking what the one before it does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Takes {
+    Effects,
+    /// A drum channel's: its hits pass them (issue #40).
+    NoteEffects,
+    /// A notes channel's: instruments and note effects.
+    Instruments,
+}
+
 /// The list for `query` in `sort`: the entries whose name contains it, ignoring case, and that the channel takes
-/// (`instruments`: it takes instruments, [`Entry::fits`]). In `Category` each section header is kept while one of its
-/// entries is; the other orderings have no section rows.
-pub fn rows(query: &str, sort: ModuleOrdering, instruments: bool) -> Vec<Row> {
+/// (`takes`, [`Entry::fits`]). In `Category` each section header is kept while one of its entries is; the other
+/// orderings have no section rows.
+pub fn rows(query: &str, sort: ModuleOrdering, takes: Takes) -> Vec<Row> {
     let query = query.to_lowercase();
-    let hit = |e: &&Entry| e.fits(instruments) && e.name().to_lowercase().contains(&query);
+    let hit = |e: &&Entry| e.fits(takes) && e.name().to_lowercase().contains(&query);
     let plugins = plugin_sections();
     if sort != ModuleOrdering::Category {
         let entries = SECTIONS.iter().flat_map(|(_, entries)| entries.iter());
@@ -447,17 +458,16 @@ impl Entry {
         }
     }
 
-    /// Whether the entry is listed for a channel that takes instruments or not (`instruments`): `Instrument`, the
-    /// instruments and the note effects only where an instrument goes.
-    fn fits(self, instruments: bool) -> bool {
+    /// Whether the entry is listed for a channel that `takes` it: `Instrument` and the instruments only where an
+    /// instrument goes, the note effects also on a drum channel.
+    fn fits(self, takes: Takes) -> bool {
         let note = |id| params::module_spec(id).is_some_and(|s| s.role == Role::NoteEffect);
-        instruments
-            || match self {
-                Self::Instrument | Self::Synth(_) => false,
-                Self::Module(id) => !note(id),
-                Self::Plugin(plugin) => !plugin.instrument,
-                Self::Paste | Self::RackPreset => true,
-            }
+        match self {
+            Self::Instrument | Self::Synth(_) => takes == Takes::Instruments,
+            Self::Module(id) if note(id) => takes >= Takes::NoteEffects,
+            Self::Plugin(plugin) if plugin.instrument => takes == Takes::Instruments,
+            Self::Module(_) | Self::Plugin(_) | Self::Paste | Self::RackPreset => true,
+        }
     }
 }
 
@@ -484,10 +494,10 @@ impl ModulesBrowser {
         }
     }
 
-    /// Shows the panel over everything else; call it every frame while it is open. `instruments`: the channel takes
-    /// instruments, so `Instrument`, the SYNTH and the NOTE EFFECT rows are listed. See `SidePanel::show` for how it is
-    /// modal and takes Escape.
-    pub fn show(&mut self, ctx: &Context, cx: &UiCtx, instruments: bool) -> Option<BrowserAction> {
+    /// Shows the panel over everything else; call it every frame while it is open. `takes`: what the channel takes, so
+    /// whether `Instrument`, the SYNTH and the NOTE EFFECT rows are listed. See `SidePanel::show` for how it is modal
+    /// and takes Escape.
+    pub fn show(&mut self, ctx: &Context, cx: &UiCtx, takes: Takes) -> Option<BrowserAction> {
         let id = Id::new("modules_browser");
         // Before the panel, which would take Escape: the menu takes it first.
         if let Some(at) = self.sort_menu {
@@ -523,10 +533,7 @@ impl ModulesBrowser {
                 },
                 picked: matches!(row, Row::Item(e) if Some(e) == picked),
             };
-            rows(query, sort, instruments)
-                .into_iter()
-                .map(row)
-                .collect()
+            rows(query, sort, takes).into_iter().map(row).collect()
         })?;
         match click {
             PanelClick::Close => Some(BrowserAction::Close),

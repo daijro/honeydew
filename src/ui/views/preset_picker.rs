@@ -86,12 +86,14 @@ use crate::flm::chunk::ContentPath;
 use crate::panels::cstm::{clear_dw_program, load_dw_program, pick_dw_program};
 use crate::params::{Role, module_spec};
 use crate::project_files::{
-    CHORD_SETS_FOLDER, CHORDS_EXT, DRUM_TEMPLATES, DRUMSET_EXT, DRUMSETS_FOLDER, FST_EXT,
-    LOAD_FAILED, PRESET_EXT, PRESETS_FOLDER, ProjectFiles, RACK_EXT, RACK_PRESETS, RACKS_FOLDER,
-    SAMPLE_EXTS, SOUNDFONT_EXTS, SOUNDFONTS_FOLDER, is_audio, is_soundfont, load_pick, preset_exts,
-    preset_folder,
+    CHORD_SETS_FOLDER, CHORDS_EXT, DRUM_TEMPLATES, DRUMSET_EXT, DRUMSETS_FOLDER, DWP_EXT, FST_EXT,
+    INSTRUMENTS_FOLDER, LOAD_FAILED, PRESET_EXT, PRESETS_FOLDER, ProjectFiles, RACK_EXT,
+    RACK_PRESETS, RACKS_FOLDER, SAMPLE_EXTS, SFZ_EXT, SOUNDFONT_EXTS, SOUNDFONTS_FOLDER, is_audio,
+    is_sfz, is_soundfont, load_pick, preset_exts, preset_folder,
 };
-use crate::sample_cache::{SampleCache, Waveform, WorkerReader, disk_reader, reader};
+use crate::sample_cache::{
+    Locator, SampleCache, Waveform, WorkerReader, disk_locator, disk_reader, reader,
+};
 use crate::sf2::Preset;
 use crate::song::Rack;
 use crate::song::chords::ChordSet;
@@ -252,10 +254,15 @@ enum Picked {
 /// The SoundFont Player's module type id, whose picker lists `.sf2` files.
 const SOUNDFONT_PLAYER: u16 = 52;
 
-/// The pick `bytes` for a module of type `type_id`: the module's own loader first (the DW Sampler's program loader; the
+/// The pick `bytes` for a module of type `type_id`: the module's own loader first (the DW Sampler's program loader, which
+/// takes an `.sfz` too, setting no Attack or Release; the
 /// SoundFont Player's, for the `.sf2` or `.sfz` file `font`, which reads the whole file the engine will parse; the
 /// others' are not this one's), then a module preset. Runs on the worker.
 fn picked(type_id: u16, font: Option<&Path>, bytes: &[u8]) -> Picked {
+    // Any `.sfz`, as any `.dwp`: one without a region the sampler plays is silent ([`crate::sample_cache`]).
+    if type_id == DW && font.is_some_and(is_sfz) {
+        return Picked::Program(None);
+    }
     if type_id == DW
         && let Some(sets) = honeydew_audio::dwp::load_program(bytes)
     {
@@ -285,9 +292,12 @@ fn load(
     bytes: &[u8],
     program: Option<&ContentPath>,
     read: Option<WorkerReader>,
+    disk: Option<Locator>,
 ) -> Done {
     let picked = picked(type_id, font, bytes);
     let mut samples = SampleCache::default();
+    // A program past the memory limit streams, as the app's own load would have it.
+    samples.set_disk(disk);
     if let (Some(read), DW) = (read, type_id) {
         match &picked {
             Picked::Program(_) => {
@@ -1022,8 +1032,8 @@ fn start(
             })
         }
         false => {
-            let (read, job) = (disk_reader(files), program.clone());
-            spawn(move || load(type_id, font.as_deref(), &bytes, job.as_ref(), read))
+            let (read, disk, job) = (disk_reader(files), disk_locator(files), program.clone());
+            spawn(move || load(type_id, font.as_deref(), &bytes, job.as_ref(), read, disk))
         }
     };
     Loading {
@@ -1207,12 +1217,17 @@ fn picker(files: &ProjectFiles, target: PresetTarget, module_type: Option<u16>) 
                 .of_type(t)
                 .with_factory(ours.into_iter().chain(files.factory_presets(t)))
                 .with_import(import_dir(files, t).is_some());
-            // The SoundFont Player's `.sf2` files are in `My SoundFonts`, beside `My Files`.
-            match t == SOUNDFONT_PLAYER {
-                true => {
+            // The SoundFont Player's `.sf2` files are in `My SoundFonts`, beside `My Files`; the DW Sampler's programs
+            // (`.dwp`, `.sfz`) in `My Instruments`, where archives and the instrument builder put them.
+            match t {
+                SOUNDFONT_PLAYER => {
                     picker.with_root(SOUNDFONTS_FOLDER, files.soundfonts_dir(), &SOUNDFONT_EXTS)
                 }
-                false => picker,
+                DW => {
+                    let dir = files.user_dir().map(|u| u.join(INSTRUMENTS_FOLDER));
+                    picker.with_root(INSTRUMENTS_FOLDER, dir, &[DWP_EXT, SFZ_EXT])
+                }
+                _ => picker,
             }
         }
         (PresetTarget::Drumset, _) => {
@@ -1538,10 +1553,17 @@ mod tests {
         assert_eq!(module(0, &["Keys"]), ["Gen Keys"]);
         // Reverb 2 lists the `Reverb` folder's presets right at its root.
         assert_eq!(module(32, &[]), [MY_FILES, DEFAULT, "Gen Hall"]);
-        // DW Sampler: both DirectWave folders, the `EXP` one's after; a program without its sample folder.
+        // DW Sampler: `My Instruments` beside `My Files`, then both DirectWave folders, the `EXP` one's after; a
+        // program without its sample folder.
         assert_eq!(
             module(1, &[]),
-            [MY_FILES, DEFAULT, "Guitar", "Synth Bass EXP"]
+            [
+                MY_FILES,
+                "My Instruments",
+                DEFAULT,
+                "Guitar",
+                "Synth Bass EXP"
+            ]
         );
         assert_eq!(module(1, &["Guitar"]), ["Gen Guitar"]);
         assert_eq!(module(33, &["Sliced Drums"]), ["Gen Loop"]);
@@ -1602,6 +1624,19 @@ mod tests {
         assert_eq!(dw(&["WA Production Selection EXP", "Kicks"]), ["Kick 1"]);
         // The user's own folder beside their preset is theirs: it lists.
         assert_eq!(dw(&[MY_FILES]), ["my grand", "My Grand"]);
+        // An `.sfz` is a program too, beside the `.dwp`s, its sample folder left out: in My Files and in My
+        // Instruments, the root beside it.
+        put(&mine.join("Pad.sfz"), b"<region> sample=Pad/a.wav");
+        put(&mine.join("Pad/a.wav"), b"RIFF");
+        let instruments = tmp.0.join("My Instruments");
+        put(
+            &instruments.join("Strings.sfz"),
+            b"<region> sample=Strings/C4.wav",
+        );
+        put(&instruments.join("Strings/C4.wav"), b"RIFF");
+        put(&instruments.join("Keys.dwp"), b"DwPr");
+        assert_eq!(dw(&[MY_FILES]), ["my grand", "My Grand", "Pad"]);
+        assert_eq!(dw(&["My Instruments"]), ["Keys", "Strings"]);
     }
 
     /// The imported content tree holds about 4,000 files. A picker reads one folder when it opens, so a frame never

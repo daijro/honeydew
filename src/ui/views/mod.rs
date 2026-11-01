@@ -55,6 +55,8 @@ pub mod credits;
 pub mod whats_new;
 // `Add MIDI CC track…`'s picker.
 pub mod cc_picker;
+// A DW Sampler's `New from samples…`.
+pub mod instrument_builder;
 
 /// What fills the editor area, between the top of the screen and the transport bar.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -154,6 +156,13 @@ pub enum Overlay {
     WhatsNew,
     /// `Add MIDI CC track…`'s picker of the MIDI CCs, for a lane on this channel.
     CcPicker(usize),
+    /// The instrument builder of the DW Sampler with instance id `module` on `channel` (its `New from samples…`), over
+    /// the audio `files` picked so far.
+    InstrumentBuilder {
+        channel: usize,
+        module: i32,
+        files: Vec<std::path::PathBuf>,
+    },
 }
 
 /// `Link to MIDI CC`'s prompt.
@@ -533,6 +542,8 @@ pub struct Slots {
     pub whats_new: whats_new::State,
     /// The MIDI CC picker's panel and pick.
     pub cc_picker: cc_picker::State,
+    /// The instrument builder's separator, roles and panel.
+    pub instrument_builder: instrument_builder::State,
 }
 
 impl Slots {
@@ -758,6 +769,14 @@ impl Slots {
             // Modal like the Save dialog: hidden while a message shows over it.
             Overlay::WhatsNew => top.then(|| whats_new::show(&mut self.whats_new, ui, app))?,
             Overlay::CcPicker(channel) => cc_picker::show(&mut self.cc_picker, ui, app, *channel),
+            Overlay::InstrumentBuilder {
+                channel,
+                module,
+                files,
+            } => {
+                let state = &mut self.instrument_builder;
+                instrument_builder::show(state, ui, app, (*channel, *module), files)
+            }
         }
     }
 }

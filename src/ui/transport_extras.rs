@@ -72,10 +72,25 @@ fn meminfo_bytes(meminfo: &str) -> Option<SystemMemory> {
     })
 }
 
-/// The machine's memory where the platform reports it in `/proc` (Linux, Android); `None` elsewhere, which shows `-`.
-/// Windows and macOS readers would need `windows-sys` or `libc` as new direct dependencies (only transitive in the
-/// lock).
+/// The machine's memory where the platform reports it: in `/proc` (Linux, Android), or `GlobalMemoryStatusEx`
+/// (Windows); `None` elsewhere, which shows `-`. A macOS reader would need `libc` as a new direct dependency (only
+/// transitive in the lock).
 pub fn system_memory() -> Option<SystemMemory> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+        let mut status = MEMORYSTATUSEX {
+            dwLength: size_of::<MEMORYSTATUSEX>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: `status` is a `MEMORYSTATUSEX` with its length set, as the call requires.
+        let read = unsafe { GlobalMemoryStatusEx(&mut status) } != 0;
+        (read && status.ullTotalPhys > 0).then(|| SystemMemory {
+            total: status.ullTotalPhys,
+            used: status.ullTotalPhys.saturating_sub(status.ullAvailPhys),
+        })
+    }
+    #[cfg(not(windows))]
     if cfg!(any(target_os = "linux", target_os = "android")) {
         meminfo_bytes(&std::fs::read_to_string("/proc/meminfo").ok()?)
     } else {

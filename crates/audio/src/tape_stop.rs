@@ -120,7 +120,7 @@ impl TapeStopState {
         // In runs that wrap neither ring.
         let mut frame = first;
         while frame < self.write_head {
-            let (from, to) = (frame as usize % old, frame as usize % new);
+            let (from, to) = ((frame % old as u64) as usize, (frame % new as u64) as usize);
             let n = ((self.write_head - frame) as usize)
                 .min(old - from)
                 .min(new - to);
@@ -138,7 +138,8 @@ impl TapeStopState {
     }
 
     pub fn process_frame(&mut self, input_l: f32, input_r: f32) -> (f32, f32) {
-        let write = self.write_head as usize % self.left.len();
+        // Wrapped as u64: on 32-bit a frame count past 2^32 (about a day of audio) does not fit a usize.
+        let write = (self.write_head % self.left.len() as u64) as usize;
         self.left[write] = input_l;
         self.right[write] = input_r;
         self.write_head += 1;
@@ -203,9 +204,39 @@ fn capacity(sample_rate: f32, tempo_bpm: f32) -> usize {
 }
 
 fn read(buffer: &[f32], head: f64) -> f32 {
-    let length = buffer.len();
-    let frame = head.floor() as usize;
+    let length = buffer.len() as u64;
+    let frame = head.floor() as u64;
     let fraction = head.fract() as f32;
-    let a = buffer[frame % length];
-    a + (buffer[(frame + 1) % length] - a) * fraction
+    let a = buffer[(frame % length) as usize];
+    a + (buffer[((frame + 1) % length) as usize] - a) * fraction
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The ring wraps by the u64 frame count: on 32-bit a usize cut it at 2^32 frames (about a day of audio) and the
+    /// ramp read another part of the ring than was written.
+    #[test]
+    fn a_ramp_past_2_pow_32_frames_plays_as_one_at_the_same_ring_position() {
+        let params = [1.0, 0.2, 0.2, 1.0 / 3.0, 1.0 / 3.0, 1.0, 0.5, 0.0];
+        let run = |start: u64| {
+            let mut state = TapeStopState::new(&params, 1_000.0, 120.0);
+            state.write_head = start;
+            for i in 0..100 {
+                state.process_frame(i as f32 / 100.0, 0.0);
+            }
+            let mut stopped = params;
+            stopped[5] = 0.0;
+            state.refresh(&stopped, 1_000.0);
+            (0..1_200)
+                .map(|i| state.process_frame((i + 100) as f32 / 100.0, 0.0).0)
+                .collect::<Vec<_>>()
+        };
+        let late = (1 << 32) - 50;
+        let (wrapped, early) = (run(late), run(late % capacity(1_000.0, 120.0) as u64));
+        for (i, (a, b)) in wrapped.iter().zip(&early).enumerate() {
+            assert!((a - b).abs() < 1e-3, "frame {i}: {a} != {b}");
+        }
+    }
 }

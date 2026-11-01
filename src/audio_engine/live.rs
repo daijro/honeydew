@@ -236,7 +236,7 @@ impl SongAudioEngine {
             match on {
                 true => {
                     if let Some(kit) = self.kit(channel) {
-                        kit.note_on(key, velocity);
+                        kit.note_on(key, velocity, pan);
                     }
                 }
                 false => self.key_up(channel, Some(KIT), key),

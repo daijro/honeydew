@@ -537,12 +537,56 @@ fn sfz_player_render_does_not_allocate() {
     soundfont_render("My SoundFonts/Waves.sfz", sfz.as_bytes());
 }
 
+/// An SFZ over the memory budget, looping: its sample's heads in memory, the rest streamed from disk by the engine's
+/// streamer while the audio thread reads the voices' rings, paced so that it does.
+#[test]
+fn streamed_sfz_render_does_not_allocate() {
+    let dir = std::env::temp_dir().join(format!("honeydew-rt-stream-{}", std::process::id()));
+    let folder = dir.join("My SoundFonts");
+    std::fs::create_dir_all(&folder).unwrap();
+    let sfz = "<region> sample=long.wav ampeg_release=0.05 loop_mode=loop_sustain loop_start=60000 loop_end=150000";
+    std::fs::write(folder.join("Long.sfz"), sfz).unwrap();
+    std::fs::write(folder.join("long.wav"), sine_wav(4 * 44_100)).unwrap();
+    let locate = move |p: &ContentPath| match p {
+        ContentPath::Shorthand { relative, .. } => Some(dir.join(relative)),
+        ContentPath::Plain(_) => None,
+    };
+    // Room for the heads (its start and its loop start) alone.
+    let mut cache = SampleCache::with_max_bytes(4 * 44_100);
+    cache.set_disk(Some(Arc::new(locate.clone())));
+    let read = move |p: &ContentPath| std::fs::read(locate(p)?).ok();
+    let path = ContentPath::Shorthand {
+        root: ContentRoot::User,
+        relative: "My SoundFonts/Long.sfz".into(),
+    };
+    let cache = render_soundfont(&path, cache, &read, std::time::Duration::from_millis(1));
+    let heads = cache.soundfont(&path).unwrap().byte_len();
+    assert_eq!(heads, 4 * 44_100, "only the heads are in memory");
+}
+
 /// [`soundfont_player_render_does_not_allocate`] with the file `bytes` at `relative`.
 fn soundfont_render(relative: &str, bytes: &[u8]) {
     let path = ContentPath::Shorthand {
         root: ContentRoot::User,
         relative: relative.into(),
     };
+    let read = |p: &ContentPath| (*p == path).then(|| bytes.to_vec());
+    render_soundfont(
+        &path,
+        SampleCache::default(),
+        &read,
+        std::time::Duration::ZERO,
+    );
+}
+
+/// A SoundFont Player playing the SoundFont or SFZ at `path` (`cache` loads it through `read`), with notes, through
+/// every command; `pace` between blocks. The cache, loaded.
+fn render_soundfont(
+    path: &ContentPath,
+    mut cache: SampleCache,
+    read: &dyn Fn(&ContentPath) -> Option<Vec<u8>>,
+    pace: std::time::Duration,
+) -> SampleCache {
     let mut song = Song {
         tempo_bpm: 120.0,
         ..Song::default()
@@ -565,9 +609,8 @@ fn soundfont_render(relative: &str, bytes: &[u8]) {
             slide: false,
         });
     }
-    let mut cache = SampleCache::default();
-    cache.load(&song, &|p| (*p == path).then(|| bytes.to_vec()));
-    assert!(cache.soundfont(&path).is_some());
+    cache.load(&song, read);
+    assert!(cache.soundfont(path).is_some());
     let mut engine = SongAudioEngine::with_samples(&song, RATE, &cache).unwrap();
     let mut output = vec![0.0_f32; 4096 * 2];
     engine.play();
@@ -585,6 +628,7 @@ fn soundfont_render(relative: &str, bytes: &[u8]) {
             engine.render(&mut output[..frames * 2], 2);
             energy += output[..frames * 2].iter().map(|s| s * s).sum::<f32>();
             rendered += frames;
+            std::thread::sleep(pace);
             match i % 50 {
                 5 => engine.set_param(1, 2, 5, (i % 2) as f32),
                 10 => engine.set_param(1, 2, 1 + (i % 4) as i32, 0.3),
@@ -602,6 +646,7 @@ fn soundfont_render(relative: &str, bytes: &[u8]) {
     });
     assert_eq!(events, 0, "allocator calls on the audio thread");
     assert!(energy > 0.0, "the counted render was silent");
+    cache
 }
 
 /// A 16-bit mono PCM WAV at 44.1 kHz.

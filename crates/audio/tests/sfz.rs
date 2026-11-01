@@ -180,7 +180,7 @@ fn levels(text: &str) -> SoundFontPlayer {
                 amp_veltrack: 0.0,
                 ..r
             };
-            (r, level(n))
+            (r, level(n).into())
         })
         .collect();
     SoundFontPlayer::new(RATE, Some((Arc::new(SoundFont::sfz("Test", regions)), 0)))
@@ -295,7 +295,7 @@ fn sine(hz: f64, rate: u32, frames: usize) -> Vec<f32> {
 fn player_of(text: &str, sample: SampleData) -> SoundFontPlayer {
     let sample = Arc::new(sample);
     let regions = (parse(text, &no_includes).regions.into_iter())
-        .map(|r| (r, sample.clone()))
+        .map(|r| (r, sample.clone().into()))
         .collect();
     SoundFontPlayer::new(RATE, Some((Arc::new(SoundFont::sfz("Test", regions)), 0)))
 }

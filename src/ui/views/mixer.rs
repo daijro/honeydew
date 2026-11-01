@@ -16,7 +16,9 @@ pub type State = MixerState;
 pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) -> Option<Nav> {
     state.selected = Some(*app.selected);
     state.covered = app.covered;
-    let changes = mixer::show(ui, &app.cx, app.song, state, app.regions.editor);
+    // A failed stream's meters are stale: as without a stream, none.
+    let meters = (app.snapshot.filter(|s| !s.stream_failed)).map(|s| &s.module_meters[..]);
+    let changes = mixer::show(ui, &app.cx, app.song, state, app.regions.editor, meters);
     if !changes.is_empty() {
         app.channel_param_edited();
     }

@@ -351,6 +351,9 @@ impl HoneydewApp {
         let fresh =
             (storage.as_deref()).is_none_or(|s| s.get_string(settings::STORAGE_KEY).is_none());
         let mut app = Self::with_storage(storage);
+        // Samples past the memory limit stream from the user and content folders (not in tests' rigs).
+        let disk = sample_cache::disk_locator(&app.files);
+        app.audio.samples.set_disk(disk);
         app.whats_new_at_start(fresh);
         app.midi.link = crate::midi::device::MidiLink::platform(cc.egui_ctx.clone());
         app.start_plugins(&cc.egui_ctx);
@@ -396,6 +399,7 @@ impl HoneydewApp {
             ..Self::default()
         };
         app.audio.set_multi_core(app.settings.multi_core);
+        sample_cache::set_memory_limit(app.settings.sample_memory_limit);
         // The song the app starts with is created now (MET`created`).
         if let Some(song) = app.files.replace(Replace::New) {
             app.history = History::new(&song);
@@ -460,6 +464,8 @@ impl HoneydewApp {
             if self.settings.multi_core != self.settings_saved.multi_core {
                 self.audio.set_multi_core(self.settings.multi_core);
             }
+            // The next loads plan with it.
+            sample_cache::set_memory_limit(self.settings.sample_memory_limit);
             #[cfg(desktop)]
             if self.settings.mcp_enabled != self.settings_saved.mcp_enabled
                 || self.settings.mcp_port != self.settings_saved.mcp_port
@@ -655,7 +661,7 @@ impl HoneydewApp {
                 // A new cache: the old song's samples are freed (the web's memory) and the missing ones read again.
                 // Real-time safe: the playing engine holds its own `Arc`s, and a retired engine is dropped on this
                 // thread.
-                self.audio.samples = SampleCache::default();
+                self.audio.samples = self.audio.samples.emptied();
                 // The old song's plugins go; the new one's start with its engine.
                 crate::plugins::song_replaced();
                 // A fresh engine and the missing check; on the web once the bundled sounds are in (`app/bundle_wait.rs`).
@@ -1831,6 +1837,26 @@ impl eframe::App for HoneydewApp {
     fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
         Some(self)
     }
+
+    /// eframe's web backend reports a finger twice: its pointer events press and release the primary button, and its
+    /// touch events press and release it again with the touch (issue #35). A second release is a second tap (a header
+    /// tap toggled its column back), a second press a second touch-down. In a frame with touch events, a primary press
+    /// or release that repeats the button's state goes (`lib.rs` keeps a finger's `pointerdown` from eframe, so what
+    /// goes is `touchend`'s release). Web only: native backends report a finger once, and a press there after a focus
+    /// loss, which egui keeps down, is a new one.
+    #[cfg(any(target_arch = "wasm32", test))]
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        let touch = (raw.events.iter()).any(|e| matches!(e, egui::Event::Touch { .. }));
+        let mut down = ctx.input(|i| i.pointer.primary_down());
+        raw.events.retain(|e| match *e {
+            egui::Event::PointerButton {
+                button: egui::PointerButton::Primary,
+                pressed,
+                ..
+            } if touch => std::mem::replace(&mut down, pressed) != pressed,
+            _ => true,
+        });
+    }
 }
 
 impl HoneydewApp {
@@ -1926,7 +1952,7 @@ impl HoneydewApp {
         let mut shown_bpm = self.song.tempo_bpm;
         if let Some(s) = snapshot.as_ref().filter(|_| shows) {
             let tick = s.transport_tick + self.audio.playhead_lead();
-            self.show_automation(tick);
+            self.show_automation(tick, &s.modulated);
             // The BPM button shows the tempo the master's tempo automation has set.
             shown_bpm = self.automated_tempo(tick).unwrap_or(shown_bpm);
         }
@@ -2584,6 +2610,8 @@ mod tests {
     mod bundle_wait;
     // Audio files dropped on the app.
     mod file_drop;
+    // A finger's tap in the web build.
+    mod web_touch;
 
     impl HoneydewApp {
         /// A Drums channel as the model makes it (the default kit, no picker open), added at the end and selected:
@@ -2801,6 +2829,8 @@ mod tests {
                 out,
                 ..
             } = self;
+            // As eframe calls it, before the frame.
+            eframe::App::raw_input_hook(app, ctx, &mut input);
             *out = ctx.run(input, |ctx| {
                 app.frame(ctx, |_, _| {
                     *opens += 1;

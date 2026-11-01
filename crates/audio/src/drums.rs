@@ -366,11 +366,11 @@ impl PadSampler {
         self.choke(pad);
     }
 
-    /// A live or sequenced note: every pad whose effective note is `key` plays, pan and pitch centred.
-    pub fn note_on(&mut self, key: u8, velocity: f32) {
+    /// A live or sequenced note: every pad whose effective note is `key` plays at `pan`, pitch centred.
+    pub fn note_on(&mut self, key: u8, velocity: f32, pan: f32) {
         for pad in 0..self.pads.len() {
             if self.pads[pad].note == Some(key) {
-                self.hit(pad, velocity, 0.5, 1.0);
+                self.hit(pad, velocity, pan, 1.0);
             }
         }
     }

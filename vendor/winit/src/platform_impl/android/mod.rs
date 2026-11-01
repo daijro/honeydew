@@ -146,6 +146,8 @@ pub struct EventLoop<T: 'static> {
     combining_accent: Option<char>,
     // Honeydew (vendored addition): the mouse's main button is down, and its moves are a touch's.
     mouse_touch: bool,
+    // Honeydew (vendored addition): the mouse's buttons as the last press or release left them.
+    mouse_buttons: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -196,6 +198,7 @@ impl<T: 'static> EventLoop<T> {
             ignore_volume_keys: attributes.ignore_volume_keys,
             combining_accent: None,
             mouse_touch: false,
+            mouse_buttons: 0,
         })
     }
 
@@ -400,13 +403,19 @@ impl<T: 'static> EventLoop<T> {
                         MotionAction::HoverEnter | MotionAction::HoverMove => vec![moved],
                         MotionAction::HoverExit => vec![event::WindowEvent::CursorLeft { device_id }],
                         MotionAction::ButtonPress | MotionAction::ButtonRelease => {
-                            let button = match motion_event.action_button() {
-                                Button::Secondary => Some(event::MouseButton::Right),
-                                Button::Tertiary => Some(event::MouseButton::Middle),
-                                Button::Back => Some(event::MouseButton::Back),
-                                Button::Forward => Some(event::MouseButton::Forward),
-                                _ => None,
-                            };
+                            // The button whose state changed: `action_button` is API 33, and a library that
+                            // calls it does not load on Android 8 to 12.
+                            let now = motion_event.button_state().0;
+                            let changed = now ^ std::mem::replace(&mut self.mouse_buttons, now);
+                            let button = [
+                                (Button::Secondary, event::MouseButton::Right),
+                                (Button::Tertiary, event::MouseButton::Middle),
+                                (Button::Back, event::MouseButton::Back),
+                                (Button::Forward, event::MouseButton::Forward),
+                            ]
+                            .into_iter()
+                            .find(|(android, _)| changed & u32::from(*android) != 0)
+                            .map(|(_, button)| button);
                             let state = match action {
                                 MotionAction::ButtonPress => event::ElementState::Pressed,
                                 _ => event::ElementState::Released,

@@ -399,7 +399,7 @@ fn live_notes_play_every_pad_on_that_key_centred() {
         ..pad(dc(100_000))
     };
     let mut sampler = PadSampler::new(vec![on(Some(48)), on(Some(48)), on(Some(50))], RATE);
-    sampler.note_on(48, 0.5);
+    sampler.note_on(48, 0.5, 0.5);
     for (index, voices) in [1, 1, 0].into_iter().enumerate() {
         assert_eq!(sampler.active_voices(index), voices);
     }
@@ -681,7 +681,7 @@ fn a_live_note_plays_at_the_pads_own_pitch() {
         }],
         RATE,
     );
-    sampler.note_on(60, 1.0);
+    sampler.note_on(60, 1.0, 0.5);
     assert!(close(period(&left(&mut sampler, 0, 4000)), 100.0, 0.1));
 }
 

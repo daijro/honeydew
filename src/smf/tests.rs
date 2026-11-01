@@ -469,6 +469,14 @@ fn apply_note_effects_writes_the_notes_the_rack_plays() {
     rack.get_mut(gate).unwrap().params[4] = 0.0;
     assert_eq!(smf_with(&song, None, Some(48_000.0)), Err(NoData));
     assert_eq!(voices(&song, None), voices(&keys(60, 64), None));
+    // Issue #40: a drum channel's hits too.
+    let mut song = Song::default();
+    add(&mut song, ChannelKind::Drums, "Kit", vec![hit(0, 0.0, 2)]);
+    let rack = &mut song.channels.last_mut().unwrap().rack;
+    let gate = rack.add(49);
+    rack.get_mut(gate).unwrap().params[4] = 0.0;
+    assert_eq!(voices(&song, None).len(), 2);
+    assert_eq!(smf_with(&song, None, Some(48_000.0)), Err(NoData));
 }
 
 #[test]

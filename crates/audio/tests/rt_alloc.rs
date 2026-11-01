@@ -565,14 +565,14 @@ fn dw_sampler_never_allocates_on_the_audio_thread() {
     let zones = vec![
         DwZone {
             zone: looping,
-            sample: Arc::new(stereo),
+            sample: Arc::new(stereo).into(),
         },
         DwZone {
             zone: Zone {
                 key_low: 60,
                 ..Zone::default()
             },
-            sample: Arc::new(mono),
+            sample: Arc::new(mono).into(),
         },
     ];
     let mut dw = DwSampler::new(

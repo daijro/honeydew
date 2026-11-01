@@ -90,9 +90,12 @@ mod obb;
 pub use crate::song::FORMAT_VERSION;
 /// The per-file limit: larger files fail with [`READ_FAILED`]. The web's is
 /// 128 MiB: the file's `ArrayBuffer`, its copy and the reader's budget (64 MiB + 2× the file) must fit wasm32's memory,
-/// or the tab aborts instead of showing the error.
+/// or the tab aborts instead of showing the error. 32-bit ARM Android's is 256 MiB: read whole beside the 1 GiB sample
+/// cache, a file must fit what is left of a 32-bit address space.
 pub const MAX_FILE_BYTES: u64 = if cfg!(target_arch = "wasm32") {
     128 << 20
+} else if cfg!(target_pointer_width = "32") {
+    256 << 20
 } else {
     512 << 20
 };

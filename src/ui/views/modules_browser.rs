@@ -6,7 +6,7 @@ use super::{AppCtx, Nav, Overlay, preset_picker};
 use crate::plugins;
 use crate::song::ModuleInstance;
 use crate::ui::modules_browser::{BrowserAction, InsertAt, ModulesBrowser, add_module, add_plugin};
-use crate::ui::rack::{Held, Outcome, PresetTarget, hold_removal, paste, takes_instruments};
+use crate::ui::rack::{Held, Outcome, PresetTarget, hold_removal, paste, takes};
 
 /// The flash of a `Paste` with nothing on the clipboard that the channel takes.
 pub const CANNOT_PASTE: &str = "Cannot paste module";
@@ -58,8 +58,7 @@ pub fn show(
     state.pass = pass;
     let action = match app.song.channels.get(channel) {
         Some(ch) => {
-            let instruments = takes_instruments(ch);
-            let action = state.browser.show(ui.ctx(), &app.cx, instruments);
+            let action = state.browser.show(ui.ctx(), &app.cx, takes(ch));
             // A pick from `Sort`'s menu is saved as `ModuleBrowserOrdering`, the active one too; an opening saves
             // nothing.
             if let Some(sort) = state.browser.sort_picked.take() {

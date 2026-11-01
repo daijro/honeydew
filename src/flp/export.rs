@@ -30,6 +30,7 @@ use std::sync::Arc;
 use honeydew_audio::dw_sampler::pitch_shift;
 use honeydew_audio::dwp::{Cstm, Zone};
 use honeydew_audio::sample::SampleData;
+use honeydew_audio::stream::Pcm;
 use honeydew_audio::wav_writer::float32_wav;
 
 use super::mixer::{self, Band, HIGH_SHELF, LOW_SHELF, PEAKING, Slot, Track};
@@ -687,8 +688,9 @@ fn dw_zones(module: &ModuleInstance, cache: &SampleCache) -> Vec<(Zone, Arc<Samp
             .filter_map(|(raw, zone)| Some((*zone, SampleKey::File(dw_path(raw)?))))
             .collect(),
     };
-    let mut zones: Vec<(Zone, Arc<SampleData>)> = (zones.into_iter())
-        .filter_map(|(zone, key)| Some((zone, cache.get(&key)?)))
+    // A streamed zone is read whole from disk, once it is one of these.
+    let mut zones: Vec<(Zone, Pcm)> = (zones.into_iter())
+        .filter_map(|(zone, key)| Some((zone, cache.pcm(&key)?)))
         .collect();
     let forte = |z: &Zone| (z.vel_low..=z.vel_high).contains(&100);
     if zones.iter().any(|(z, _)| forte(z)) {
@@ -703,7 +705,9 @@ fn dw_zones(module: &ModuleInstance, cache: &SampleCache) -> Vec<(Zone, Arc<Samp
         free = hi.saturating_add(1);
         lo <= hi
     });
-    zones
+    (zones.into_iter())
+        .filter_map(|(zone, pcm)| Some((zone, pcm.whole()?)))
+        .collect()
 }
 
 /// FL's key for a DW Sampler `module`'s key `key`: less its Pitch, so that FL plays it at our pitch.

@@ -200,6 +200,9 @@ enum Choice {
     Theme,
     /// `Animation`: `Full`, `Reduced` (no animations) or `Minimal` (no scroll inertia either).
     Animation,
+    /// `Sample memory limit` (#38): `Auto` or a fixed limit ([`crate::sample_cache::MEMORY_LIMITS`]); not on the web,
+    /// whose budget is fixed.
+    SampleMemory,
 }
 
 struct Row {
@@ -212,7 +215,7 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 }
 
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 48] = {
+const ROWS: [Row; 49] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -238,6 +241,7 @@ const ROWS: [Row; 48] = {
             },
         ),
         row("Sound mode:", Dropdown(Choice::SoundMode)),
+        row("Sample memory limit:", Dropdown(Choice::SampleMemory)),
         row("Recording:", Header),
         row("Enable audio recording latency compensation", Latency),
         row(
@@ -415,14 +419,20 @@ impl SettingsTab {
         let rows: Vec<_> = rows
             .iter()
             .filter(|r| {
-                cfg!(desktop)
-                    || (!matches!(
-                        r.kind,
-                        Kind::Dropdown(Choice::SoundMode) | Kind::InstallSounds
-                    ) && !matches!(
-                        r.label,
-                        "MCP:" | "Enable MCP control" | "Port" | "Authentication token" | "Status"
-                    ))
+                let web = cfg!(target_arch = "wasm32");
+                !(web && matches!(r.kind, Kind::Dropdown(Choice::SampleMemory)))
+                    && (cfg!(desktop)
+                        || (!matches!(
+                            r.kind,
+                            Kind::Dropdown(Choice::SoundMode) | Kind::InstallSounds
+                        ) && !matches!(
+                            r.label,
+                            "MCP:"
+                                | "Enable MCP control"
+                                | "Port"
+                                | "Authentication token"
+                                | "Status"
+                        )))
             })
             .collect();
         let plugins = if self.plugins { &PLUGIN_ROWS[..] } else { &[] };
@@ -692,6 +702,10 @@ impl SettingsTab {
                     #[cfg(not(desktop))]
                     let sound_mode_tip = "ULTRASAFE: largest buffer; maximum stability and compatibility, highest latency.\nSAFE: moderately large buffer; fewer glitches with more latency.\nFAST: small buffer; lower latency but more CPU/dropout risk.\nNATIVE: device/OS default audio behavior.";
                     crate::ui::tooltip::tip(ui, button_rect, sound_mode_tip, None);
+                }
+                if matches!(choice, Choice::SampleMemory) {
+                    let tip = "The most memory SFZ and DW Sampler samples take. Past it, each keeps its start in memory and plays the rest from disk. Auto: the memory available, less a margin.";
+                    crate::ui::tooltip::tip(ui, button_rect, tip, None);
                 }
             }
             Kind::MidiDropdown => {
@@ -1043,6 +1057,10 @@ impl Choice {
                 .map(str::to_owned)
                 .enumerate()
                 .collect(),
+            Choice::SampleMemory => (crate::sample_cache::MEMORY_LIMITS.iter())
+                .map(|&(label, _)| label.to_owned())
+                .enumerate()
+                .collect(),
         }
     }
 
@@ -1053,6 +1071,7 @@ impl Choice {
             Choice::Theme => s.theme as usize,
             Choice::Animation if !s.inertia => 2,
             Choice::Animation => usize::from(!s.animations),
+            Choice::SampleMemory => usize::from(s.sample_memory_limit),
         }
     }
 
@@ -1062,6 +1081,7 @@ impl Choice {
             Choice::SoundMode => s.sound_mode = value as u8,
             Choice::Theme => s.theme = value as u32,
             Choice::Animation => (s.animations, s.inertia) = (value == 0, value != 2),
+            Choice::SampleMemory => s.sample_memory_limit = value as u8,
         }
     }
 
@@ -1153,6 +1173,7 @@ mod tests {
                 "Audio buffer size",
                 "Enable background audio (iOS Only)",
                 "Sound mode:",
+                "Sample memory limit:",
                 "Recording:",
                 "Enable audio recording latency compensation",
                 "Enable multitrack recording",

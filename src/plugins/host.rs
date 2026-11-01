@@ -1013,6 +1013,12 @@ pub fn rendering<T>(f: impl FnOnce() -> T) -> T {
     out
 }
 
+/// An engine built now renders offline ([`rendering`]): its streamed samples are read as it needs them, never by the
+/// streamer (`honeydew_audio::stream`).
+pub fn is_rendering() -> bool {
+    with(|host| host.rendering)
+}
+
 /// The instance an engine build of `module` on `channel` plays: the live one, or a fresh one while [`rendering`].
 fn engine_instance(
     channel: &Channel,

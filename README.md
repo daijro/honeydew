@@ -47,7 +47,7 @@ Get the latest build from [Releases](https://github.com/daijro/honeydew/releases
 | Linux | `linux-x86_64.AppImage` or `.tar.gz`, also for `aarch64` |
 | Alpine and other musl distros | `linux-x86_64-musl.tar.gz` or `linux-aarch64-musl.tar.gz` |
 | FreeBSD | `freebsd-x86_64.tar.gz` |
-| Android | the `.apk` (64-bit ARM, Android 8 or later) |
+| Android | the `.apk` (64-bit or 32-bit ARM, Android 8 or later) |
 | Web | `honeydew-web-<version>.zip`, a static site you can host anywhere |
 
 Extract the archive and run `honeydew-native`. The AppImage is a single file. Run `chmod +x` on it, then start it (add `--appimage-extract-and-run` if your system has no FUSE).
@@ -164,7 +164,7 @@ cargo run --release
 The sound library lives in `sounds/`, split into 90 MB parts to stay under GitHub's file size limit. To rebuild it from the raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.4.3
+tools/release-content.sh 0.4.4
 ```
 
 Commit the updated `sounds/honeydew-sounds.zip.*` parts and `sounds/release.txt` (the library's version: the app warns when an installed library is older) with your changes. Add `--web` to also build the web ZIP. Tagged releases include the sounds automatically.
@@ -202,12 +202,12 @@ The Android version plays songs and saves them inside the app. Microphone record
 You need Java 21, Android SDK platform 36, Build Tools 36.0.0, NDK 28.0.13004108, Python 3 and `unzip`. Set `ANDROID_HOME` to your SDK, then:
 
 ```sh
-rustup target add aarch64-linux-android
+rustup target add aarch64-linux-android armv7-linux-androideabi
 cargo install cargo-ndk --version 4.1.2 --locked
 tools/android-dist.sh
 ```
 
-This writes `target/honeydew-android-<version>-arm64-debug.apk`. The debug app is called Honeydew Debug and installs alongside the release app. Its signing key is kept in `android/debug.keystore`; keep that file so debug builds can update each other.
+This writes `target/honeydew-android-<version>-arm-debug.apk`, one APK for 64-bit and 32-bit ARM. The debug app is called Honeydew Debug and installs alongside the release app. Its signing key is kept in `android/debug.keystore`; keep that file so debug builds can update each other.
 
 **Release signing:** use the same key for every release, or Android won't install updates over the old version. Back up the keystore and passwords outside the repository.
 

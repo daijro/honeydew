@@ -3,8 +3,6 @@
 //! sample it plays (`refs.add_slot` for a sampler slot). It can call `refs.read` to open a file that names further
 //! samples, such as a `.dwp`.
 
-use std::sync::Arc;
-
 use crate::flm::chunk::{ChunkIter, ContentPath, ContentRoot, Cursor};
 use crate::flm::sf2d::Sf2d;
 use crate::panels::inst::three_osc;
@@ -12,7 +10,7 @@ use crate::project_files::BUILT_IN;
 use crate::sample_cache::{Refs, SampleCache, SampleKey};
 use crate::song::{Channel, LaneKind, ModuleInstance, Song};
 use honeydew_audio::dwp::{Cstm, Zone};
-use honeydew_audio::sample::SampleData;
+use honeydew_audio::stream::Pcm;
 
 /// Hands every sample `song` plays to `refs`, channel by channel.
 pub(crate) fn walk(song: &Song, refs: &mut Refs) {
@@ -104,7 +102,7 @@ pub(crate) fn may_stand_in(song: &Song) -> bool {
 /// The zones DW Sampler `cstm` plays, each with its decoded sample: its program's (`PATh`/`PATH`) or its `ZONE`s, never
 /// both ([`Cstm::read`]); a zone whose sample is missing is dropped. One that plays nothing of its own as its files are
 /// missing ([`silent`]) plays [`stand_in`]'s.
-pub(crate) fn sampler_zones(cstm: &Cstm, samples: &SampleCache) -> Vec<(Zone, Arc<SampleData>)> {
+pub(crate) fn sampler_zones(cstm: &Cstm, samples: &SampleCache) -> Vec<(Zone, Pcm)> {
     match own_zones(cstm, samples) {
         zones if zones.is_empty() && missing(cstm, samples) => program_zones(&stand_in(), samples),
         zones => zones,
@@ -117,22 +115,22 @@ fn silent(cstm: &Cstm, samples: &SampleCache) -> bool {
     own_zones(cstm, samples).is_empty() && missing(cstm, samples)
 }
 
-fn own_zones(cstm: &Cstm, samples: &SampleCache) -> Vec<(Zone, Arc<SampleData>)> {
+fn own_zones(cstm: &Cstm, samples: &SampleCache) -> Vec<(Zone, Pcm)> {
     match program_path(cstm) {
         Some(path) => program_zones(&path, samples),
         None => (cstm.zones.iter())
             .filter_map(|(path, zone)| {
-                Some((*zone, samples.get(&SampleKey::File(dw_path(path)?))?))
+                Some((*zone, samples.pcm(&SampleKey::File(dw_path(path)?))?))
             })
             .collect(),
     }
 }
 
-fn program_zones(path: &ContentPath, samples: &SampleCache) -> Vec<(Zone, Arc<SampleData>)> {
+fn program_zones(path: &ContentPath, samples: &SampleCache) -> Vec<(Zone, Pcm)> {
     let program = samples.program(path);
     let zones = program.iter().flat_map(|zones| zones.iter());
     zones
-        .filter_map(|(zone, key)| Some((*zone, samples.get(key)?)))
+        .filter_map(|(zone, key)| Some((*zone, samples.pcm(key)?)))
         .collect()
 }
 

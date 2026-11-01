@@ -18,6 +18,7 @@ use honeydew_audio::gmsynth::{self, GmSynth};
 use honeydew_audio::instrument::{Instrument, InstrumentModule};
 use honeydew_audio::minisynth::MiniSynth;
 use honeydew_audio::soundfont::SoundFontPlayer;
+use honeydew_audio::stream::Rings;
 use honeydew_audio::supersaw::SuperSaw;
 use honeydew_audio::three_osc::ThreeOsc;
 use honeydew_audio::transistor_bass::TransistorBass;
@@ -89,9 +90,19 @@ fn dw_sampler(
         .collect();
     module.file.custom_data.hash(origin);
     for zone in &zones {
-        Arc::as_ptr(&zone.sample).hash(origin);
+        zone.sample.ptr().hash(origin);
     }
-    DwSampler::new(sample_rate, zones, cstm.midi)
+    let sampler = DwSampler::new(sample_rate, zones, cstm.midi);
+    stream(sampler.rings(), samples);
+    sampler
+}
+
+/// The engine's streamer fills `rings` (an instrument's streamed samples), unless the engine renders offline: there
+/// each voice reads its file as it needs it, so that a render never misses a frame.
+fn stream(rings: Option<&Arc<Rings>>, samples: &SampleCache) {
+    if let Some(rings) = rings.filter(|_| !crate::plugins::is_rendering()) {
+        samples.streamer().register(rings);
+    }
 }
 
 /// A GMSynth with `module`'s `CSTM` settings (shapes, PB RANGE, MW); a missing or short blob keeps the defaults. The
@@ -123,7 +134,9 @@ fn soundfont_player(
     bank.as_ref()
         .map(|(font, _)| Arc::as_ptr(font))
         .hash(origin);
-    SoundFontPlayer::new(sample_rate, bank)
+    let player = SoundFontPlayer::new(sample_rate, bank);
+    stream(player.rings(), samples);
+    player
 }
 
 /// `channel`'s instruments in rack order, by instance id, with scratch room for `max_block` frames. `time_sig` is

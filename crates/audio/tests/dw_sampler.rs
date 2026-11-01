@@ -47,7 +47,10 @@ fn ramp(frames: usize) -> Arc<SampleData> {
 }
 
 fn zone(sample: Arc<SampleData>, zone: Zone) -> DwZone {
-    DwZone { zone, sample }
+    DwZone {
+        zone,
+        sample: sample.into(),
+    }
 }
 
 fn keys(low: u8, high: u8) -> Zone {
@@ -221,7 +224,7 @@ fn loops_run_forward_over_start_to_end_while_loop_is_on() {
         };
         sampler(vec![DwZone {
             zone,
-            sample: Arc::new(sample),
+            sample: Arc::new(sample).into(),
         }])
     };
     // Root key, same rate: one frame per frame, so the output is the read position / 1000.
@@ -361,7 +364,7 @@ fn looping_dc(value: f32, zone: Zone) -> DwZone {
     };
     DwZone {
         zone: looping,
-        sample: dc(value, 9600),
+        sample: dc(value, 9600).into(),
     }
 }
 
@@ -989,4 +992,27 @@ fn slides_shift_the_pitch_velocity_and_pan_of_every_voice() {
     let (hard_left, hard_right) = flat([0.0, 0.5, 0.0]);
     assert_eq!(hard_left, 0.0);
     close(hard_right, right, 1e-6);
+}
+
+#[test]
+fn an_sfz_region_plays_at_its_key_center_tuned_and_from_its_offset() {
+    use honeydew_audio::sfz;
+    let text = "<region> sample=a.wav lokey=60 hikey=72 pitch_keycenter=69 transpose=1 tune=-50 offset=4800 end=14399
+        <region> sample=b.wav trigger=release <region> sample=*sine";
+    let regions = sfz::parse(text, &|_| None).regions;
+    let zones: Vec<Zone> = regions.iter().filter_map(Zone::of_sfz).collect();
+    // The note-off region and the built-in sample are none of DW's.
+    assert_eq!(zones.len(), 1);
+    // 4800 silent frames, then 441 Hz: the offset skips the silence; transpose +1 and tune −50 are +50 cents at the
+    // key center; `end` (its last frame) stops the voice 9600 frames on.
+    let tone = sine(441.0, 48_000, 1.0);
+    let silent_first = [vec![0.0; 4800], tone.left[..43_200].to_vec()].concat();
+    let mut dw = sampler(vec![zone(sample(48_000, silent_first), zones[0])]);
+    let out = play(&mut dw, 69, 1.0, 12_000);
+    assert!(
+        out[..16].iter().any(|x| x.abs() > 0.01),
+        "starts at the offset"
+    );
+    close(pitch(&out[..9000]), 441.0 * 2f64.powf(50.0 / 1200.0), 1e-4);
+    assert!(out[9700..].iter().all(|x| *x == 0.0), "ends at `end`");
 }

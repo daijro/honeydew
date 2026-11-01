@@ -50,6 +50,11 @@ fn parts(rect: Rect, v: f32, t: f32, u: f32, px: f32) -> Parts {
     }
 }
 
+/// The track of a fader in `rect`: its value runs up it from 0 at the bottom.
+pub fn fader_track(rect: Rect, m: &crate::metrics::Metrics) -> Rect {
+    parts(rect, 0.0, m.t(), m.u(1.0), 1.0 / m.ppp()).track
+}
+
 /// A fader in `c.rect` (no label or value strips): drags as a vertical slider, a double tap resets to `c.default`.
 pub fn fader(ui: &mut Ui, cx: &UiCtx, c: &Control, value: &mut f32) -> Response {
     let (m, colors) = (cx.m, &cx.theme.colors);

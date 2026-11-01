@@ -299,21 +299,26 @@ fn display_name(name: &str, kind: ChannelKind) -> &str {
 }
 
 /// The channel strip's (instance 0) left and right peaks this frame: none without meters.
-fn meter_peaks(meters: Option<&[ModuleMeter]>, channel: usize) -> [f32; 2] {
+pub(crate) fn meter_peaks(meters: Option<&[ModuleMeter]>, channel: usize) -> [f32; 2] {
     let found = (meters.into_iter().flatten())
         .find(|mm| mm.key.channel == channel && mm.key.instance_id == 0);
     found.map_or([0.0; 2], |mm| [mm.value.peak_left, mm.value.peak_right])
 }
 
-/// The collapsed meters of `cell`: two bars t wide at its right edge (x = right − 3t and right − 2t), from top + 8t to
-/// bottom − 8t, each filled from the bottom by its meter value. Empty bars are left out.
+/// The collapsed meters of `cell`: [`vertical_meters`] from top + 8t to bottom − 8t.
 fn collapsed_meters(cell: Rect, peaks: [f32; 2], m: &Metrics) -> Vec<Rect> {
     let t = m.t();
-    let (top, bottom) = (cell.top() + 8.0 * t, cell.bottom() - 8.0 * t);
+    vertical_meters(cell.shrink2(vec2(0.0, 8.0 * t)), peaks, t)
+}
+
+/// Two meter bars t wide at `span`'s right edge (x = right − 3t and right − 2t, the left peak first), each filled from
+/// its bottom up its height by its meter value. Empty bars are left out.
+pub(crate) fn vertical_meters(span: Rect, peaks: [f32; 2], t: f32) -> Vec<Rect> {
+    let (top, bottom) = (span.top(), span.bottom());
     (peaks.into_iter().enumerate())
         .filter(|&(_, p)| meter(p) > 0.0)
         .map(|(i, p)| {
-            let x = cell.right() - (3.0 - i as f32) * t;
+            let x = span.right() - (3.0 - i as f32) * t;
             let y = bottom - (bottom - top).max(0.0) * meter(p);
             Rect::from_x_y_ranges(x..=x + t, y..=bottom)
         })

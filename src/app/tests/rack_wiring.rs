@@ -529,6 +529,53 @@ fn a_playing_automation_moves_its_control_and_the_song_keeps_its_value() {
     assert_eq!(rig.app.song.channels[2].rack.modules[0].params[2], 0.25);
 }
 
+/// While the song plays, a Modulator's target shows the value the engine moves it to and the song keeps its base; once
+/// stopped it shows its base again (issue #36): a free 1 Hz sine at +100 % on the Distortion's Drive, a quarter second
+/// in.
+#[test]
+fn a_modulated_control_follows_the_engine_and_shows_its_base_once_stopped() {
+    use honeydew_audio::device::AudioRenderer;
+    use honeydew_audio::modulator as m;
+    let mut rig = with_effects(&[6]);
+    let id = instance_id(&rig, 2, 0);
+    let ch = &mut rig.app.song.channels[2];
+    let base = ch.rack.modules[0].params[1];
+    let modulator = ch.rack.add(m::MODULATOR);
+    let module = ch.rack.get_mut(modulator).unwrap();
+    (module.params[m::SOURCE], module.params[m::AMOUNT]) = (0.5, 1.0);
+    let channel = ch.id;
+    ch.file.modulations.push(crate::song::Modulation {
+        modulator,
+        channel,
+        target: AutomationTarget {
+            instance_id: id,
+            param: 1,
+        },
+    });
+    rig.app.song_edited(SongEdit::Final, 0);
+    rig.frame(vec![]);
+    let drive = rack_id(2).with(("module panel", id)).with(3_u32);
+    let shown = |rig: &Rig| texts_in(rig, rig.ctx.read_response(drive).unwrap().rect);
+    let at_base = shown(&rig);
+    rig.click(PLAY);
+    let render = |rig: &Rig| {
+        let mut rec = rig.rec.0.borrow_mut();
+        rec.engine
+            .as_mut()
+            .unwrap()
+            .render(&mut vec![0.0; 12_000 * 2], 2);
+    };
+    render(&rig);
+    rig.frame(vec![]);
+    let up = shown(&rig);
+    assert_ne!(up, at_base);
+    assert_eq!(rig.app.song.channels[2].rack.modules[0].params[1], base);
+    rig.click(PLAY);
+    render(&rig);
+    rig.frame(vec![]);
+    assert_eq!(shown(&rig), at_base, "up there: {up:?}");
+}
+
 /// Control `n` of the Pitcher on top of `channel`'s rack.
 fn pitcher(rig: &Rig, channel: usize, n: u32) -> Id {
     let id = instance_id(rig, channel, 0);

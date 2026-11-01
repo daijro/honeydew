@@ -18,6 +18,7 @@ use crate::ProcessContext;
 use crate::instrument::Instrument;
 use crate::sample::SampleData;
 use crate::sfz::{LoopMode, SfzRegion, Trigger};
+use crate::stream::{Pcm, Rings};
 
 /// Why bytes are not a SoundFont.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -275,7 +276,8 @@ pub struct SoundFont {
     smpl: Range<usize>,
     /// An SFZ's regions and the samples they play, in place of the tables ([`SoundFont::sfz`]).
     sfz_regions: Vec<Region>,
-    pcm: Vec<Arc<SampleData>>,
+    /// Whole in memory, or streamed from disk ([`crate::stream`]).
+    pcm: Vec<Pcm>,
     /// Its `amp_velcurve`s, by [`Rules::curve`].
     curves: Vec<[f32; 128]>,
     /// The keys that are keyswitches (the `sw_lokey`…`sw_hikey` of every region with `sw_last`), and the one in force
@@ -367,10 +369,10 @@ impl SoundFont {
         })
     }
 
-    /// An SFZ as a SoundFont of one patch, `name` (its first 20 bytes): each region with the sample it plays, decoded
-    /// (regions sharing a file share its `Arc`), at most [`MAX_REGIONS`]. A region that plays no frame (an `offset` at
+    /// An SFZ as a SoundFont of one patch, `name` (its first 20 bytes): each region with the sample it plays, decoded or
+    /// streamed (regions sharing a file share its `Arc`), at most [`MAX_REGIONS`]. A region that plays no frame (an `offset` at
     /// or past its `end`) or no key is left out. App thread.
-    pub fn sfz(name: &str, regions: Vec<(SfzRegion, Arc<SampleData>)>) -> Self {
+    pub fn sfz(name: &str, regions: Vec<(SfzRegion, Pcm)>) -> Self {
         let mut header = [0; 20];
         let name = &name.as_bytes()[..name.len().min(20)];
         header[..name.len()].copy_from_slice(name);
@@ -398,7 +400,7 @@ impl SoundFont {
         let mut index = HashMap::new();
         for (region, data) in regions.into_iter().take(MAX_REGIONS) {
             let pcm = &mut font.pcm;
-            let sample = *index.entry(Arc::as_ptr(&data)).or_insert_with(|| {
+            let sample = *index.entry(data.ptr()).or_insert_with(|| {
                 pcm.push(data.clone());
                 pcm.len() - 1
             });
@@ -424,13 +426,10 @@ impl SoundFont {
     }
 
     /// The length of the file this keeps, which is nearly all of what it holds (the tables are a few bytes per record
-    /// of the file), and an SFZ's decoded samples: what a cache counts against its memory budget.
+    /// of the file), and an SFZ's decoded samples and streamed samples' heads: what a cache counts against its memory
+    /// budget.
     pub fn byte_len(&self) -> usize {
-        let pcm = self
-            .pcm
-            .iter()
-            .map(|s| 4 * (s.left.len() + s.right.as_ref().map_or(0, |r| r.len())));
-        self.bytes.len() + pcm.sum::<usize>()
+        self.bytes.len() + self.pcm.iter().map(Pcm::byte_len).sum::<usize>()
     }
 
     /// The patches in file order (the `SF2D` patch index counts them), as [`preset_headers`] lists them.
@@ -686,14 +685,9 @@ fn velocity_curve(points: &[(u8, f32)]) -> [f32; 128] {
 /// The [`Region`] of SFZ region `r` playing `data` (sample `sample`, curve `curve`), `None` when it plays nothing. A
 /// loop end is the loop's last frame (the format's, and a WAV `smpl`'s), here exclusive; without `loop_mode` a file
 /// with a loop loops.
-fn sfz_region(
-    r: &SfzRegion,
-    data: &SampleData,
-    sample: usize,
-    curve: Option<usize>,
-) -> Option<Region> {
+fn sfz_region(r: &SfzRegion, data: &Pcm, sample: usize, curve: Option<usize>) -> Option<Region> {
     let keys = [r.keys[0].max(0), r.keys[1].min(127)];
-    if keys[0] > keys[1] || r.end.is_some_and(|e| e <= 0) || data.sample_rate == 0 {
+    if keys[0] > keys[1] || r.end.is_some_and(|e| e <= 0) || data.sample_rate() == 0 {
         return None;
     }
     let frames = data.frames();
@@ -707,7 +701,7 @@ fn sfz_region(
     if start >= end {
         return None;
     }
-    let file_loop = (data.meta.loop_frames)
+    let file_loop = (data.meta().loop_frames)
         .map(|(s, e)| (s as usize, after(u64::from(e)).min(frames)))
         .filter(|(s, e)| s < e);
     let loop_start = (r
@@ -727,7 +721,7 @@ fn sfz_region(
     let rate = match crate::sfz::pitched(&r.sample) {
         // One cycle a `CYCLE` frames: the key center's frequency.
         true => crate::sfz::CYCLE as f64 * 440.0 * 2f64.powf((f64::from(root) - 69.0) / 12.0),
-        false => f64::from(data.sample_rate),
+        false => f64::from(data.sample_rate()),
     };
     let [delay, attack, hold, decay, sustain, release] = r.ampeg;
     Some(Region {
@@ -787,6 +781,25 @@ fn read_pcm(data: &SampleData, region: &Region, looping: bool, position: f64) ->
     };
     let left = lerp(&data.left);
     (left, data.right.as_deref().map_or(left, lerp))
+}
+
+/// [`read_pcm`] for a streamed sample, voice `voice`'s of `rings`: `None` when a frame is not there yet.
+fn read_disk(
+    rings: &Rings,
+    voice: usize,
+    region: &Region,
+    looping: bool,
+    position: f64,
+) -> Option<(f32, f32)> {
+    let i = position as usize;
+    let next = if looping && i + 1 >= region.loop_end {
+        region.loop_start
+    } else {
+        (i + 1).min(region.end - 1)
+    };
+    let t = (position - i as f64) as f32;
+    let (a, b) = (rings.frame(voice, i)?, rings.frame(voice, next)?);
+    Some((a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t))
 }
 
 // Envelope laws. Every stage moves `level += (target − level)·c` each frame.
@@ -976,6 +989,8 @@ impl Voice {
 /// The SoundFont Player: the regions of one patch of a [`SoundFont`], and [`VOICES`] voices.
 pub struct SoundFontPlayer {
     font: Option<Arc<SoundFont>>,
+    /// A ring per voice, when an SFZ sample streams from disk.
+    rings: Option<Arc<Rings>>,
     regions: Vec<Region>,
     voices: [Voice; VOICES],
     started: u64,
@@ -1003,7 +1018,11 @@ impl SoundFontPlayer {
             font.regions(usize::try_from(*patch).unwrap_or(0).min(last))
         });
         let regions = regions.unwrap_or_default();
+        let disk = bank
+            .as_ref()
+            .map(|(font, _)| font.pcm.iter().map(Pcm::disk).collect());
         Self {
+            rings: disk.and_then(|disk| Rings::new(disk, VOICES)),
             switch: bank.as_ref().and_then(|(font, _)| font.switch),
             seq: vec![0; regions.len()],
             font: bank.map(|(font, _)| font),
@@ -1016,6 +1035,12 @@ impl SoundFontPlayer {
             held: [None; 128],
             random: 0x9E37_79B9,
         }
+    }
+
+    /// Its voices' rings when it streams a sample from disk: for the engine's streamer to fill
+    /// ([`crate::stream::Streamer::register`]).
+    pub fn rings(&self) -> Option<&Arc<Rings>> {
+        self.rings.as_ref()
     }
 
     /// Whether it plays an SFZ.
@@ -1115,6 +1140,9 @@ impl SoundFontPlayer {
         let slot = (self.voices.iter().enumerate())
             .min_by_key(|(_, v)| (v.on, v.started))
             .map_or(0, |(slot, _)| slot);
+        if let Some(rings) = &self.rings {
+            rings.start(slot, rules.sample, region.start, false);
+        }
         self.started += 1;
         self.voices[slot] = Voice {
             on: true,
@@ -1269,8 +1297,11 @@ impl Instrument for SoundFontPlayer {
     }
 
     fn reset(&mut self) {
-        for voice in &mut self.voices {
+        for (slot, voice) in self.voices.iter_mut().enumerate() {
             voice.on = false;
+            if let Some(rings) = &self.rings {
+                rings.stop(slot);
+            }
         }
         self.held = [None; 128];
     }
@@ -1279,7 +1310,7 @@ impl Instrument for SoundFontPlayer {
         let Some(font) = &self.font else {
             return;
         };
-        for voice in self.voices.iter_mut().filter(|v| v.on) {
+        for (slot, voice) in self.voices.iter_mut().enumerate().filter(|(_, v)| v.on) {
             let region = &self.regions[voice.region];
             let bend = 2f64.powf(f64::from(self.bend + voice.slide[0]) / 12.0);
             // `min` also turns a hostile file's infinite or NaN step into the cap.
@@ -1292,14 +1323,44 @@ impl Instrument for SoundFontPlayer {
                     rules.velocity_gain(&font.curves, velocity) * voice.crossfade * region.gain;
                 let (gain_l, gain_r) = (gain * (2.0 - 2.0 * p).min(1.0), gain * (2.0 * p).min(1.0));
                 let looping = voice.loops(region, rules);
+                let rings = self.rings.as_deref();
+                let disk = rings.filter(|_| matches!(sample, Pcm::Disk(_)));
+                if let Some(rings) = disk {
+                    rings.advance(slot, voice.position as usize);
+                }
+                let mut short = false;
                 for (l, r) in left.iter_mut().zip(right.iter_mut()) {
                     if !voice.on || !voice.envelope() {
                         break;
                     }
-                    let (a, b) = read_pcm(sample, region, looping, voice.position);
+                    let (a, b) = match (sample, disk) {
+                        (Pcm::Ram(data), _) => read_pcm(data, region, looping, voice.position),
+                        (Pcm::Disk(_), Some(rings)) => {
+                            let read = read_disk(rings, slot, region, looping, voice.position);
+                            short |= read.is_none();
+                            read.unwrap_or_default()
+                        }
+                        (Pcm::Disk(_), None) => (0.0, 0.0),
+                    };
                     *l += a * voice.level * gain_l;
                     *r += b * voice.level * gain_r;
+                    let before = voice.position;
                     voice.advance_pcm(region, looping, step);
+                    // A wrap reads the loop from its start: its head, then a new segment, unless it is all in memory.
+                    if let Some(rings) = disk
+                        && voice.position < before
+                        && !rings.in_memory(rules.sample, region.loop_start, region.loop_end)
+                    {
+                        rings.start(slot, rules.sample, region.loop_start, false);
+                    }
+                }
+                if let Some(rings) = rings {
+                    if short {
+                        rings.underrun();
+                    }
+                    if !voice.on {
+                        rings.stop(slot);
+                    }
                 }
                 continue;
             }

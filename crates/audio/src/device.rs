@@ -24,6 +24,15 @@ pub struct ModuleMeter {
     pub analysis: Vec<f32>,
 }
 
+/// A param a Modulator moves ([`AudioRenderer::modulated`]): its module, its param index and its value as the last render
+/// left it, NaN while nothing moves it (the transport is stopped: it rests at its base).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Modulated {
+    pub key: ModuleKey,
+    pub index: i32,
+    pub value: f32,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct OutputSnapshot {
     pub transport_tick: u64,
@@ -38,6 +47,8 @@ pub struct OutputSnapshot {
     pub ping: Option<PingReport>,
     /// By channel, the keys sounding at its input as the last render left them ([`AudioRenderer::sounding`]).
     pub sounding: Vec<u128>,
+    /// The params the Modulators move, as the last render left them ([`AudioRenderer::modulated`]).
+    pub modulated: Vec<Modulated>,
 }
 
 /// Why a latency calibration failed.
@@ -132,6 +143,11 @@ pub trait AudioRenderer: Send + 'static {
     /// effects sets its key, the note-off clears it. The default: none.
     fn sounding(&self, _channel: usize) -> u128 {
         0
+    }
+    /// The params the Modulators move, their values as the last render left them; the length is fixed while the
+    /// renderer lives (the device sizes its slots from it once). The default: none.
+    fn modulated(&self) -> &[Modulated] {
+        &[]
     }
     /// The tempo is now `bpm` from the next rendered frame, the song position kept in beats (a tempo drag): what plays
     /// goes on. The default ignores it.
@@ -228,8 +244,14 @@ struct MeterCell {
 }
 
 /// The meters, by channel (one past the meters' highest) the low and high halves of the keys sounding at its input
-/// ([`AudioRenderer::sounding`]), and whether the audio thread has published those keys yet.
-struct MeterBank(Vec<MeterCell>, Box<[[AtomicU64; 2]]>, AtomicBool);
+/// ([`AudioRenderer::sounding`]), whether the audio thread has published those keys yet, and the modulated params with
+/// their values' bits ([`AudioRenderer::modulated`]).
+struct MeterBank(
+    Vec<MeterCell>,
+    Box<[[AtomicU64; 2]]>,
+    AtomicBool,
+    Box<[(Modulated, AtomicU32)]>,
+);
 
 /// Set on a magnitude held since the last [`take`] (a magnitude's sign bit is free).
 const FRESH: u32 = 1 << 31;
@@ -311,6 +333,9 @@ impl MeterBank {
                 .collect(),
             (0..channels).map(|_| Default::default()).collect(),
             AtomicBool::new(false),
+            (renderer.modulated().iter())
+                .map(|&m| (m, AtomicU32::new(f32::NAN.to_bits())))
+                .collect(),
         )
     }
 
@@ -331,11 +356,19 @@ impl MeterBank {
                 to.store(from.load(Ordering::Acquire) & !FRESH, Ordering::Relaxed);
             }
         }
+        // So does each modulated param, which would read as resting at its base until then.
+        for (m, cell) in &self.3 {
+            let same = |(o, _): &&(Modulated, AtomicU32)| (o.key, o.index) == (m.key, m.index);
+            if let Some((_, from)) = old.3.iter().find(same) {
+                cell.store(from.load(Ordering::Acquire), Ordering::Relaxed);
+            }
+        }
         self
     }
 
-    /// The audio thread's write of each channel's sounding keys. The halves are stored one after the other: a read
-    /// between them mixes two renders' keys for one frame, a display glitch the next read mends.
+    /// The audio thread's write of each channel's sounding keys, and of each modulated param's value. The halves are
+    /// stored one after the other: a read between them mixes two renders' keys for one frame, a display glitch the next
+    /// read mends.
     fn publish_sounding<R: AudioRenderer>(&self, renderer: &R) {
         for (channel, [low, high]) in self.1.iter().enumerate() {
             let keys = renderer.sounding(channel);
@@ -343,6 +376,9 @@ impl MeterBank {
             high.store((keys >> 64) as u64, Ordering::Release);
         }
         self.2.store(true, Ordering::Release);
+        for ((_, cell), m) in self.3.iter().zip(renderer.modulated()) {
+            cell.store(m.value.to_bits(), Ordering::Release);
+        }
     }
 
     /// The audio thread has published the sounding keys at least once.
@@ -683,6 +719,12 @@ impl<R: AudioRenderer> AudioOutput<R> {
             underruns: self.shared.underruns.load(Ordering::Acquire),
             stream_failed: self.shared.failed.load(Ordering::Acquire),
             module_meters: self.meters.take(),
+            modulated: (self.meters.3.iter())
+                .map(|(m, cell)| Modulated {
+                    value: f32::from_bits(cell.load(Ordering::Acquire)),
+                    ..*m
+                })
+                .collect(),
             counting_in: self.shared.counting_in(),
             ping: self.shared.ping(),
             sounding,

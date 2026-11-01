@@ -55,6 +55,9 @@ fn drum_slots_and_common_param_automation_survive_round_trip() {
         ..Default::default()
     };
     drums.drum_kit.as_mut().unwrap().slots = vec![slot];
+    // Issue #40: a drum rack's note effect saves as any module.
+    let randomizer = drums.rack.add(49);
+    drums.rack.get_mut(randomizer).unwrap().params[4] = 0.25;
     let module_id = drums.rack.add(9);
     let lane = drums.add_automation_lane(AutomationTarget {
         instance_id: module_id,
@@ -72,6 +75,8 @@ fn drum_slots_and_common_param_automation_survive_round_trip() {
         "Kick"
     );
     assert_eq!(loaded.channels[1].lanes[1].target.unwrap().param, -1);
+    let kept = loaded.channels[1].rack.get(randomizer).unwrap();
+    assert_eq!((kept.type_id, kept.params[4]), (49, 0.25));
     assert_eq!(read(&write(&loaded).unwrap()).unwrap(), loaded);
 }
 

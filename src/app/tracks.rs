@@ -943,6 +943,7 @@ impl HoneydewApp {
             | Overlay::SoundFontPicker { channel, .. }
             | Overlay::FineTune { channel, .. }
             | Overlay::ModuleSamplePicker { channel, .. }
+            | Overlay::InstrumentBuilder { channel, .. }
             | Overlay::CcPicker(channel) => rekey(channel),
             // The clip's track.
             Overlay::ClipSamplePicker(key) => rk

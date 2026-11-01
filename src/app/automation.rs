@@ -9,7 +9,10 @@
 //! bound to a parameter that was pressed: a rack card's module or common param, a mixer strip's (instance 0) or a drum
 //! slot strip's (instance −slot id). It is held in memory and cleared with a new song.
 //!
-//! While the song plays, the controls show what the automation sets ([`HoneydewApp::show_automation`]).
+//! While the song plays, the controls show what the automation and the Modulators set
+//! ([`HoneydewApp::show_automation`]).
+
+use honeydew_audio::device::Modulated;
 
 use super::HoneydewApp;
 use super::tracks::LaneShift;
@@ -160,9 +163,10 @@ impl HoneydewApp {
     /// While the song plays, the controls of each automated param show the value its automation has set by the drawn
     /// playhead `tick`, as the engine plays it: the last event at or before it on the playing clips of the lanes that
     /// target it, past a clip's end its last (audio-engine.md, re-sync step 4). MIDI CC #7, #8 and #10 show on the
-    /// Level and Pan they drive; a param no event has reached keeps its own value. The controls draw the song, so for
-    /// the screens the song holds those values; [`Self::hide_automation`] puts its own back.
-    pub(super) fn show_automation(&mut self, tick: u64) {
+    /// Level and Pan they drive; a param no event has reached keeps its own value. A param a Modulator moves shows the
+    /// value the engine `modulated` it to last, over that base (issue #36). The controls draw the song, so for the
+    /// screens the song holds those values; [`Self::hide_automation`] puts its own back.
+    pub(super) fn show_automation(&mut self, tick: u64, modulated: &[Modulated]) {
         let automated = &mut self.automated;
         for ch in &self.song.channels {
             for lane in (ch.lanes.iter()).filter(|l| l.kind == LaneKind::Automation) {
@@ -184,6 +188,25 @@ impl HoneydewApp {
                         saved: value,
                     }),
                 }
+            }
+        }
+        for m in modulated.iter().filter(|m| m.value.is_finite()) {
+            let Some(ch) = self.song.channels.get(m.key.channel) else {
+                continue;
+            };
+            let target = AutomationTarget {
+                instance_id: m.key.instance_id,
+                param: m.index,
+            };
+            match (automated.iter_mut()).find(|a| (a.channel, a.target) == (ch.id, target)) {
+                Some(a) => a.value = m.value,
+                None => automated.push(Automated {
+                    channel: ch.id,
+                    target,
+                    at: 0,
+                    value: m.value,
+                    saved: m.value,
+                }),
             }
         }
         // A MIDI CC the song keeps no value for has no control to show it on. The recent control while its press lasts

@@ -106,7 +106,7 @@ impl HoneydewApp {
         }
         self.close_busy();
         // Anything built while it waited read the sounds still on their way as missing.
-        self.audio.samples = SampleCache::default();
+        self.audio.samples = self.audio.samples.emptied();
         self.song_audio();
         ctx.request_repaint();
     }

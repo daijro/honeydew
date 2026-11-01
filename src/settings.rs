@@ -277,6 +277,10 @@ pub struct Settings {
     pub velocity_snap: ValueSnap,
     #[serde(rename = "pianoRollPanSnap")]
     pub pan_snap: ValueSnap,
+    /// `Sample memory limit` (our own key; #38): an index into [`crate::sample_cache::MEMORY_LIMITS`], `Auto` (0) by
+    /// default.
+    #[serde(rename = "sampleMemoryLimit")]
+    pub sample_memory_limit: u8,
 }
 
 impl Default for Settings {
@@ -328,6 +332,7 @@ impl Default for Settings {
             midi_note_effects: true,
             velocity_snap: ValueSnap::OFF,
             pan_snap: ValueSnap::OFF,
+            sample_memory_limit: 0,
         }
     }
 }
@@ -405,6 +410,9 @@ impl Settings {
         // No device is called "": it would never connect.
         if s.midi_device.is_empty() {
             s.midi_device = d.midi_device;
+        }
+        if usize::from(s.sample_memory_limit) >= crate::sample_cache::MEMORY_LIMITS.len() {
+            s.sample_memory_limit = d.sample_memory_limit;
         }
         s
     }
@@ -707,6 +715,7 @@ mod tests {
                 on: true,
                 grid: crate::ui::automation::value::ValueGrid::Percent(25),
             },
+            sample_memory_limit: 3,
         }
     }
 
@@ -932,6 +941,7 @@ mod tests {
                 "reccount",
                 "recentKbdSizeCells",
                 "reclatency",
+                "sampleMemoryLimit",
                 "showHardwareMeters",
                 "showHiddenTracks",
                 "showKeyNames",

@@ -6,10 +6,16 @@
 //!
 //! Files are named by content paths and read through a [`Reader`]. The app's reader is [`reader`], built on
 //! [`ProjectFiles`].
+//!
+//! Memory (issues #38, #39 §8): the cache holds at most the `Sample memory limit` (SETTINGS, [`MEMORY_LIMITS`]): `Auto`
+//! is the memory available less [`MARGIN`]. An SFZ's samples and a DW program's zones that are on disk ([`Locator`]) and
+//! can stream (`honeydew_audio::stream`) are planned together ([`plan`]): every one keeps its heads in memory, and then
+//! whole ones while they fit; the rest streams from disk while it plays.
 
 use std::collections::{HashMap, HashSet};
-use std::path::{Component, Path};
-use std::sync::Arc;
+use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use honeydew_audio::builtin_drums::builtin;
 use honeydew_audio::drums::{
@@ -20,6 +26,7 @@ use honeydew_audio::sample::{DecodeError, MAX_FRAMES, SampleData, decode, decode
 use honeydew_audio::sample_edit::summarize;
 use honeydew_audio::sfz;
 use honeydew_audio::soundfont::SoundFont;
+use honeydew_audio::stream::{Pcm, Source, Streamed, Streamer, head_frames, head_spans};
 use honeydew_audio::three_osc::osc::{CYCLE, MIP_LEVELS, MIP_POINTS, Wave};
 
 use crate::flm::chunk::{ContentPath, ContentRoot};
@@ -180,15 +187,60 @@ impl StretchKey {
     }
 }
 
-/// The most memory the cache holds: decoded PCM (`f32`, all channels), the files of the parsed SoundFonts and the
-/// Custom tables of the 3x Oscs. A song names any number of files, so the limits of one file
-/// ([`crate::project_files::MAX_FILE_BYTES`], `MAX_FRAMES`) do not bound the total. A sample, SoundFont or table over
-/// what is left is missing, like one that does not decode. The web has less memory to give.
-const MAX_DECODED_BYTES: usize = if cfg!(target_arch = "wasm32") {
+/// The most memory the cache holds whatever the `Sample memory limit` says: decoded PCM (`f32`, all channels), the
+/// streamed samples' heads, the files of the parsed SoundFonts and the Custom tables of the 3x Oscs. A song names any
+/// number of files, so the limits of one file ([`crate::project_files::MAX_FILE_BYTES`], `MAX_FRAMES`) do not bound the
+/// total. A sample, SoundFont or table over what is left is missing, like one that does not decode. A 32-bit process
+/// (the web, 32-bit ARM Android) has at most 4 GiB of address space for everything, so it gets a quarter; the limit
+/// and this cap, the lower wins.
+const MAX_DECODED_BYTES: usize = if cfg!(target_pointer_width = "32") {
     1 << 30
 } else {
-    2 << 30
+    usize::MAX
 };
+
+/// The `Sample memory limit` choices (SETTINGS): `Auto` (0), then fixed limits in bytes.
+pub const MEMORY_LIMITS: [(&str, u64); 6] = [
+    ("Auto", 0),
+    ("256 MB", 256 << 20),
+    ("512 MB", 512 << 20),
+    ("1 GB", 1 << 30),
+    ("2 GB", 2 << 30),
+    ("4 GB", 4 << 30),
+];
+
+/// The `Sample memory limit` in force, an index into [`MEMORY_LIMITS`]: one app setting for every cache (a worker's
+/// too).
+static MEMORY_LIMIT: AtomicU8 = AtomicU8::new(0);
+
+/// Sets the `Sample memory limit` ([`MEMORY_LIMITS`]): what the next loads plan with. The web keeps its fixed budget.
+pub fn set_memory_limit(choice: u8) {
+    MEMORY_LIMIT.store(choice, Ordering::Relaxed);
+}
+
+/// What `Auto` leaves of the memory available, for the app and the system: at most half of it.
+const MARGIN: usize = 512 << 20;
+/// `Auto` where the platform does not say how much memory is available (macOS): the old fixed budget.
+const AUTO_FALLBACK: usize = 2 << 30;
+
+/// The room of a cache holding `held` bytes under `limit` ([`MEMORY_LIMITS`]): what is left of a fixed limit; with `Auto`
+/// (0), the memory `available` less [`MARGIN`] (what the cache holds is in use already) but at least half of it, or
+/// [`AUTO_FALLBACK`] less `held` where the platform does not say. Never past [`MAX_DECODED_BYTES`].
+// ponytail: memory the allocator keeps after a song's samples are freed reads as in use, so a song load after a big one
+// may stream more than it must; reading it once per app start would miss other apps' use instead.
+fn room_under(limit: u64, held: usize, available: Option<u64>) -> usize {
+    let bytes = |b: u64| usize::try_from(b).unwrap_or(usize::MAX);
+    let room = match (limit, available.map(bytes)) {
+        (0, Some(available)) => available.saturating_sub(MARGIN).max(available / 2),
+        (0, None) => AUTO_FALLBACK.saturating_sub(held),
+        (limit, _) => bytes(limit).saturating_sub(held),
+    };
+    room.min(MAX_DECODED_BYTES.saturating_sub(held))
+}
+
+/// Where a content path's file is on disk, `None` where it is not (the web, a bundled member): what a sample streams
+/// from ([`disk_locator`]).
+pub type Locator = Arc<dyn Fn(&ContentPath) -> Option<PathBuf> + Send + Sync>;
 
 /// The bytes of a Custom table ([`Wave::custom`]'s `byte_len`): the raw cycle and the mip levels, `f32`.
 const TABLE_BYTES: usize = 4 * (CYCLE + MIP_LEVELS * MIP_POINTS);
@@ -207,7 +259,13 @@ fn pcm_bytes(sample: &SampleData) -> usize {
 pub struct SampleCache {
     /// Tests lower the byte cap ([`MAX_DECODED_BYTES`]) to try it with tiny samples.
     max_bytes: Option<usize>,
+    /// Where files are on disk: without it nothing streams ([`Self::set_disk`]).
+    disk: Option<Locator>,
+    /// The streamer of the engines built from this cache (and its clones), started by the first that streams.
+    streamer: Arc<OnceLock<Streamer>>,
     samples: HashMap<SampleKey, Option<Arc<SampleData>>>,
+    /// DW zones streamed from disk: their heads in memory ([`Refs::stream_program`]).
+    streamed: HashMap<SampleKey, Arc<Streamed>>,
     /// DW programs by their file (a `File` key); `None` when the file is missing. A file that is no `.dwp` is a program
     /// of one user-sample zone playing that file, whose sample is missing when it does not decode.
     programs: HashMap<SampleKey, Option<DwProgram>>,
@@ -233,8 +291,9 @@ pub struct SampleCache {
 }
 
 impl SampleCache {
-    #[cfg(test)]
-    fn with_max_bytes(max_bytes: usize) -> Self {
+    /// A cache that holds at most `max_bytes`, whatever the `Sample memory limit`: for tests, to try the budget with tiny
+    /// samples.
+    pub fn with_max_bytes(max_bytes: usize) -> Self {
         Self {
             max_bytes: Some(max_bytes),
             ..Self::default()
@@ -251,8 +310,54 @@ impl SampleCache {
         let streams = self.streams.values().map(|s| s.byte_len());
         let fonts = self.soundfonts.values().flatten().map(|f| f.byte_len());
         let tables = self.shapes.values().flatten().map(|w| w.byte_len());
-        let held: usize = pcm.chain(streams).chain(fonts).chain(tables).sum();
-        (self.max_bytes.unwrap_or(MAX_DECODED_BYTES)).saturating_sub(held)
+        let heads = self.streamed.values().map(|s| s.byte_len());
+        let held: usize = pcm
+            .chain(streams)
+            .chain(fonts)
+            .chain(tables)
+            .chain(heads)
+            .sum();
+        if let Some(max) = self.max_bytes {
+            return max.saturating_sub(held);
+        }
+        let limit = match cfg!(target_arch = "wasm32") {
+            true => MAX_DECODED_BYTES as u64,
+            false => {
+                MEMORY_LIMITS
+                    [usize::from(MEMORY_LIMIT.load(Ordering::Relaxed)).min(MEMORY_LIMITS.len() - 1)]
+                .1
+            }
+        };
+        let available = crate::ui::transport_extras::system_memory().map(|m| m.total - m.used);
+        room_under(limit, held, available)
+    }
+
+    /// Streams what can from the files `disk` finds ([`disk_locator`]); `None`: nothing streams.
+    pub fn set_disk(&mut self, disk: Option<Locator>) {
+        self.disk = disk;
+    }
+
+    /// A cache with nothing loaded that streams as this one does, with its streamer: a song load's fresh cache.
+    pub fn emptied(&self) -> Self {
+        Self {
+            disk: self.disk.clone(),
+            streamer: self.streamer.clone(),
+            ..Self::default()
+        }
+    }
+
+    /// The streamer that fills the rings of the instruments its engines build, started now if none is.
+    pub fn streamer(&self) -> &Streamer {
+        self.streamer.get_or_init(Streamer::spawn)
+    }
+
+    /// The sample `key` names as an instrument plays it: decoded, or streamed from disk. `None` when it is missing or was
+    /// never loaded.
+    pub fn pcm(&self, key: &SampleKey) -> Option<Pcm> {
+        match self.get(key) {
+            Some(data) => Some(Pcm::Ram(data)),
+            None => self.streamed.get(key).cloned().map(Pcm::Disk),
+        }
     }
 
     /// Decodes each sample `song` plays that the cache has not met yet, reading files with `read`. App thread only.
@@ -292,6 +397,7 @@ impl SampleCache {
             |key: &SampleKey| met.shapes.contains(key) && !self.shapes.contains_key(key);
         self.samples
             .retain(|key, _| met.samples.contains(key) || tableless(key));
+        self.streamed.retain(|key, _| met.samples.contains(key));
         self.waveforms.retain(|key, _| met.samples.contains(key));
         self.programs.retain(|key, _| met.programs.contains(key));
         self.soundfonts
@@ -345,12 +451,20 @@ impl SampleCache {
     /// was made of those goes ([`Self::forget`]: waveform summaries, renders, tables); the others stay. One that does not
     /// fit what is left of the budget is missing.
     pub fn absorb(&mut self, worker: Self) {
-        for key in worker.samples.keys().chain(worker.shapes.keys()) {
+        let streamed = worker.streamed.keys();
+        for key in (worker.samples.keys().chain(worker.shapes.keys())).chain(streamed) {
             self.forget(key);
         }
         for (key, sample) in worker.samples {
             let sample = sample.filter(|s| pcm_bytes(s) <= self.room());
             self.samples.insert(key, sample);
+        }
+        // A streamed zone whose heads do not fit is missing.
+        for (key, streamed) in worker.streamed {
+            match streamed.byte_len() <= self.room() {
+                true => drop(self.streamed.insert(key, streamed)),
+                false => drop(self.samples.insert(key, None)),
+            }
         }
         for (key, render) in worker.stretched {
             let render = render.filter(|s| pcm_bytes(s) <= self.room());
@@ -453,7 +567,7 @@ impl SampleCache {
 
     /// Some sample decoded: of a worker's cache, whether a pick will sound.
     pub fn decoded_any(&self) -> bool {
-        self.samples.values().any(Option::is_some)
+        self.samples.values().any(Option::is_some) || !self.streamed.is_empty()
     }
 
     /// The sample `slot` plays ([`SampleKey::of_slot`]), with its `STR1` stretch and pitch rendered ([`Refs::add_slot`]).
@@ -539,7 +653,7 @@ impl SampleCache {
         let zones = self.programs.get(&stand_in).cloned().flatten();
         let ours =
             |k: &SampleKey| *k == stand_in || zones.iter().any(|z| z.iter().any(|z| z.1 == *k));
-        let samples = self.samples.keys().filter(|k| !ours(k));
+        let samples = (self.samples.keys().chain(self.streamed.keys())).filter(|k| !ours(k));
         let programs = (self.programs.keys()).filter(|k| !self.samples.contains_key(k) && !ours(k));
         samples.count() + programs.count() + self.soundfonts.len()
     }
@@ -549,6 +663,7 @@ impl SampleCache {
     /// bundled lite program has its full one now.
     pub fn forget(&mut self, key: &SampleKey) {
         self.samples.remove(key);
+        self.streamed.remove(key);
         self.programs.remove(key);
         self.shapes.remove(key);
         self.waveforms.remove(key);
@@ -662,8 +777,8 @@ impl Refs<'_> {
         self.cache.samples.insert(key, sample.map(Arc::new));
     }
 
-    /// The song plays the DW program at `path`: a `.dwp`, or a plain audio file played as a user sample (the program
-    /// loader). It is read and parsed once, and a `.dwp`'s embedded zones are decoded then, all of them together within
+    /// The song plays the DW program at `path`: a `.dwp`, an `.sfz` ([`sfz_program`]), or a plain audio file played as
+    /// a user sample (the program loader). It is read and parsed once, and a `.dwp`'s embedded zones are decoded then, all of them together within
     /// `MAX_FRAMES` frames and the cache's byte budget: a zone over what is left is missing. Each zone file,
     /// `<folder of .dwp>/<.dwp base name>/<file name>`, is added every time.
     pub fn add_program(&mut self, path: &ContentPath) {
@@ -674,6 +789,11 @@ impl Refs<'_> {
             let room = self.cache.room();
             let mut budget = MAX_FRAMES.min(room / 8);
             let program = self.read(path).map(|bytes| {
+                if in_library(path).is_some_and(is_sfz) {
+                    let program = sfz_program(path, &bytes, self.read);
+                    self.stream_files(&program);
+                    return program;
+                }
                 let Some(zones) = dwp::read(&bytes) else {
                     // The loader's last try: a plain audio file, one user-sample zone. Bytes that do not decode
                     // leave that zone missing.
@@ -681,12 +801,17 @@ impl Refs<'_> {
                         let sample = decode(&bytes).ok();
                         sample.filter(|s| pcm_bytes(s) <= room).map(Arc::new)
                     };
-                    self.cache
-                        .samples
-                        .entry(key.clone())
-                        .or_insert_with(decoded);
+                    if !self.stream_user_sample(&key) {
+                        self.cache
+                            .samples
+                            .entry(key.clone())
+                            .or_insert_with(decoded);
+                    }
                     return Arc::from([(Zone::user_sample(), key.clone())]);
                 };
+                if let Some(program) = self.stream_program(path, &bytes, &zones) {
+                    return program;
+                }
                 // Embedded zones decode across the keyboard: every key range's most played velocity layer, then
                 // the next layer of each, and so on ([`decode_order`]). One whose size is over what is left is left
                 // out, and plays the nearest decoded zone's sample on its own keys and velocities: a program bigger
@@ -747,13 +872,219 @@ impl Refs<'_> {
         let program = self.cache.programs.get(&key).cloned().flatten();
         for (_, sample) in program.iter().flat_map(|zones| zones.iter()) {
             match sample {
-                SampleKey::File(_) => self.add(sample.clone()),
+                SampleKey::File(_) if !self.cache.streamed.contains_key(sample) => {
+                    self.add(sample.clone())
+                }
                 // Decoded with the program.
                 _ => {
                     self.met.samples.insert(sample.clone());
                 }
             }
         }
+    }
+
+    /// The zones of the `.dwp` at `path` (read as `bytes`) when it is on disk and the cache streams ([`SampleCache::set_disk`]),
+    /// else `None`. Each zone's sample that can stream (an embedded one, or a zone file on disk) and that the cache does
+    /// not hold yet keeps its heads (its start, its end for Reverse, its loop start) and, while they fit, is whole
+    /// ([`plan`], across the keyboard by [`decode_order`]); one whose heads do not fit is left out. An embedded one that
+    /// cannot stream then decodes within what is left, else is left out; a zone file that cannot stream is added as
+    /// ever. A zone left out plays the nearest zone kept, on its own keys and velocities; with none kept, it is missing.
+    fn stream_program(
+        &mut self,
+        path: &ContentPath,
+        bytes: &[u8],
+        zones: &[dwp::DwpZone],
+    ) -> Option<DwProgram> {
+        let disk = self.cache.disk.clone()?;
+        let file = disk(path)?;
+        let keys: Vec<Option<SampleKey>> = (zones.iter().enumerate())
+            .map(|(index, z)| match z.embedded() {
+                true => Some(SampleKey::Embedded(path.clone(), index as u32)),
+                false => Some(SampleKey::File(zone_file(path, z.file.as_deref()?))),
+            })
+            .collect();
+        let spans: Vec<Option<Span>> = (zones.iter().zip(&keys))
+            .map(|(z, key)| key.as_ref().map(|_| zone_span(&z.zone)))
+            .collect();
+        let held = |cache: &SampleCache, key: &SampleKey| {
+            cache.samples.contains_key(key) || cache.streamed.contains_key(key)
+        };
+        // The samples that can stream, by coverage: their source, heads and whether a zone loops them.
+        let mut names: Vec<SampleKey> = Vec::new();
+        let mut sources: HashMap<SampleKey, (Source, Vec<usize>, bool)> = HashMap::new();
+        for index in decode_order(&spans) {
+            let (zone, Some(key)) = (&zones[index], &keys[index]) else {
+                continue;
+            };
+            if held(self.cache, key) {
+                continue;
+            }
+            if !sources.contains_key(key) {
+                let source = match key {
+                    SampleKey::File(zone_path) => disk(zone_path).and_then(|f| Source::open(&f)),
+                    _ => zone.source(bytes, &file),
+                };
+                let Some(source) = source else {
+                    continue;
+                };
+                names.push(key.clone());
+                sources.insert(key.clone(), (source, Vec::new(), false));
+            }
+            let (source, starts, looped) = sources.get_mut(key)?;
+            let at = zone_starts(&zone.zone, source);
+            starts.extend(at.into_iter().flatten());
+            *looped |= at[2].is_some();
+        }
+        let costs: Vec<Cost> = (names.iter().map(|key| &sources[key]))
+            .map(|(source, starts, looped)| Cost::of(source, starts, *looped))
+            .collect();
+        let mut left_out = Vec::new();
+        for (key, keep) in names.iter().zip(plan(&costs, self.cache.room())) {
+            let (source, starts, _) = &sources[key];
+            match (keep, key) {
+                (Keep::Whole, SampleKey::Embedded(_, index)) => {
+                    let whole = zones[*index as usize].decode_with_limit(MAX_FRAMES);
+                    self.cache.samples.insert(key.clone(), whole.map(Arc::new));
+                }
+                (Keep::Whole, _) => self.add(key.clone()),
+                (Keep::Heads, _) => match Streamed::new(source.clone(), starts) {
+                    Some(streamed) => {
+                        drop(self.cache.streamed.insert(key.clone(), Arc::new(streamed)))
+                    }
+                    None => drop(self.cache.samples.insert(key.clone(), None)),
+                },
+                (Keep::Out, _) => left_out.push(key.clone()),
+            }
+        }
+        // Embedded zones that cannot stream, within what is left.
+        for index in decode_order(&spans) {
+            let Some(key @ SampleKey::Embedded(..)) = &keys[index] else {
+                continue;
+            };
+            if held(self.cache, key) || left_out.contains(key) {
+                continue;
+            }
+            let budget = MAX_FRAMES.min(self.cache.room() / 8);
+            if zones[index].declared_frames() > budget as u64 {
+                left_out.push(key.clone());
+                continue;
+            }
+            let sample = zones[index].decode_with_limit(budget).map(Arc::new);
+            self.cache.samples.insert(key.clone(), sample);
+        }
+        let kept = |key: &SampleKey| {
+            matches!(self.cache.samples.get(key), Some(Some(_)))
+                || self.cache.streamed.contains_key(key)
+        };
+        let decoded: Vec<bool> = keys
+            .iter()
+            .map(|key| key.as_ref().is_some_and(kept))
+            .collect();
+        // With none kept there is nothing to stand in: those left out are missing.
+        if !decoded.contains(&true) {
+            for key in left_out.drain(..) {
+                self.cache.samples.insert(key, None);
+            }
+        }
+        let program = zones.iter().enumerate().filter_map(|(index, zone)| {
+            let key = keys[index].clone()?;
+            if !left_out.contains(&key) {
+                return Some((zone.zone, key));
+            }
+            let at = nearest(&spans, &decoded, index)?;
+            let ranges = &zone.zone;
+            let stand_in = Zone {
+                key_low: ranges.key_low,
+                key_high: ranges.key_high,
+                vel_low: ranges.vel_low,
+                vel_high: ranges.vel_high,
+                ..zones[at].zone
+            };
+            Some((stand_in, keys[at].clone()?))
+        });
+        Some(program.collect())
+    }
+
+    /// The zone files of DW program `program` (an `.sfz`'s, [`sfz_program`]) that are on disk and can stream, when the
+    /// cache streams ([`SampleCache::set_disk`]) and does not hold them yet: each keeps its heads (each zone's `offset`,
+    /// the frames before its `end` for Reverse, its loop start) and, while they fit, is whole ([`plan`], by
+    /// [`decode_order`]). The others are added as ever: whole, else missing.
+    fn stream_files(&mut self, program: &[(Zone, SampleKey)]) {
+        let Some(disk) = self.cache.disk.clone() else {
+            return;
+        };
+        let spans: Vec<Option<Span>> = program.iter().map(|(z, _)| Some(zone_span(z))).collect();
+        let mut names: Vec<&SampleKey> = Vec::new();
+        let mut sources: HashMap<&SampleKey, (Source, Vec<usize>, bool)> = HashMap::new();
+        for index in decode_order(&spans) {
+            let (zone, key) = &program[index];
+            let SampleKey::File(file) = key else {
+                continue;
+            };
+            if self.cache.samples.contains_key(key) || self.cache.streamed.contains_key(key) {
+                continue;
+            }
+            if !sources.contains_key(key) {
+                let Some(source) = disk(file).and_then(|f| Source::open(&f)) else {
+                    continue;
+                };
+                names.push(key);
+                sources.insert(key, (source, Vec::new(), false));
+            }
+            let Some((source, starts, looped)) = sources.get_mut(key) else {
+                continue;
+            };
+            let at = zone_starts(zone, source);
+            starts.extend(at.into_iter().flatten());
+            *looped |= at[2].is_some();
+        }
+        let costs: Vec<Cost> = (names.iter().map(|key| &sources[key]))
+            .map(|(source, starts, looped)| Cost::of(source, starts, *looped))
+            .collect();
+        for (key, keep) in names.into_iter().zip(plan(&costs, self.cache.room())) {
+            let (source, starts, _) = &sources[key];
+            match keep {
+                Keep::Whole => self.add(key.clone()),
+                Keep::Heads => {
+                    if let Some(streamed) = Streamed::new(source.clone(), starts) {
+                        let streamed = Arc::new(streamed);
+                        self.cache.streamed.insert(key.clone(), streamed);
+                    }
+                }
+                Keep::Out => {}
+            }
+        }
+    }
+
+    /// A DW Sampler playing the plain audio file `key` names (a user sample) streams it when it is on disk, can stream,
+    /// and is over the room whole ([`plan`]): its heads (its start, its end, its loop start) are kept. Whether it did.
+    fn stream_user_sample(&mut self, key: &SampleKey) -> bool {
+        let SampleKey::File(path) = key else {
+            return false;
+        };
+        if self.cache.streamed.contains_key(key) {
+            return true;
+        }
+        let disk = self.cache.disk.clone();
+        let source = (disk.and_then(|disk| disk(path))).and_then(|file| Source::open(&file));
+        let Some(source) = source.filter(|_| !self.cache.samples.contains_key(key)) else {
+            return false;
+        };
+        let loop_start = source.meta.loop_frames.map(|(s, _)| s as usize);
+        let tail = source.frames.saturating_sub(head_frames(source.rate));
+        let starts: Vec<usize> = [Some(0), Some(tail), loop_start]
+            .into_iter()
+            .flatten()
+            .collect();
+        let cost = Cost::of(&source, &starts, loop_start.is_some());
+        if plan(&[cost], self.cache.room()) != [Keep::Heads] {
+            return false;
+        }
+        let Some(streamed) = Streamed::new(source, &starts) else {
+            return false;
+        };
+        self.cache.streamed.insert(key.clone(), Arc::new(streamed));
+        true
     }
 
     /// The song plays sampler slot `slot`: its sample ([`Self::add`]), and that sample with the slot's `STR1` stretch
@@ -831,7 +1162,8 @@ impl Refs<'_> {
             return;
         }
         if in_library(&path).is_some_and(is_sfz) {
-            let (font, missing) = load_sfz(&path, self.read, self.cache.room());
+            let disk = self.cache.disk.as_ref();
+            let (font, missing) = load_sfz(&path, self.read, self.cache.room(), disk);
             self.cache.sfz_missing.insert(key.clone(), missing);
             self.cache.soundfonts.insert(key, font.map(Arc::new));
             return;
@@ -872,6 +1204,18 @@ pub fn disk_reader(files: &ProjectFiles) -> Option<WorkerReader> {
             return None;
         }
         read_limited(file, MAX_FILE_BYTES).ok()
+    }))
+}
+
+/// [`disk_reader`]'s files as paths on disk: where a sample streams from. `None` where they are not on disk.
+pub fn disk_locator(files: &ProjectFiles) -> Option<Locator> {
+    let user = files.disk_user_dir()?.to_owned();
+    let content = files.content_dir();
+    Some(Arc::new(move |path| {
+        let path = built_in(path)
+            .is_none()
+            .then(|| resolve_in(Some(&user), content.as_deref(), path))??;
+        path.is_file().then_some(path)
     }))
 }
 
@@ -928,17 +1272,19 @@ fn nearest(spans: &[Option<Span>], decoded: &[bool], index: usize) -> Option<usi
 
 /// The SFZ at `path` as a SoundFont of one patch named after the file, read through `read`, and the sample files it
 /// names that were missing. A sample's or `#include`'s path is from the SFZ's folder (`..` included); one that would
-/// leave the user or content folder is never read, and its sample is missing. Each sample file decodes once, within
-/// `room` bytes, across the keyboard first ([`decode_order`]). A region whose file is over what is left plays the
-/// nearest decoded region's sample, repitched, at its own keys ([`sfz::SfzRegion::playing`]), as an over-budget DW
-/// program does; with none decoded those are missing too. A region whose file is missing, or does not decode, is
-/// silent.
-// ponytail: decodes on the app thread at the engine build, as a SoundFont is parsed; a worker load (as the DW
-// Sampler's) or streaming would keep a large library from stalling the frame.
+/// leave the user or content folder is never read, and its sample is missing. Each sample file is read once, within
+/// `room` bytes. One on disk (`disk`) that can stream keeps its heads (each region's start and loop start) and, while
+/// they fit, is whole ([`plan`]); the others decode first, across the keyboard ([`decode_order`]), within what the heads
+/// leave. A region whose file is over what is left plays the nearest decoded region's sample, repitched, at its own keys
+/// ([`sfz::SfzRegion::playing`]), as an over-budget DW program does; with none decoded those are missing too. A region
+/// whose file is missing, or does not decode, is silent.
+// ponytail: reads on the app thread at the engine build (heads only, past the budget), as a SoundFont is parsed; a
+// worker load (as the DW Sampler's) would keep a large library from stalling the frame.
 fn load_sfz(
     path: &ContentPath,
     read: &Reader<'_>,
     room: usize,
+    disk: Option<&Locator>,
 ) -> (Option<SoundFont>, Vec<SampleKey>) {
     let (Some(relative), ContentPath::Shorthand { root, .. }) = (in_library(path), path) else {
         return (None, Vec::new());
@@ -951,19 +1297,7 @@ fn load_sfz(
         root: *root,
         relative,
     };
-    // A file the SFZ names, from its folder; `None` when that would leave the library.
-    let beside = |name: &str| {
-        let (joined, mut parts) = (folder.join(name), Vec::new());
-        for part in joined.components() {
-            match part {
-                Component::Normal(part) => parts.push(part.to_str()?),
-                Component::CurDir => {}
-                Component::ParentDir => drop(parts.pop()?),
-                Component::RootDir | Component::Prefix(_) => return None,
-            }
-        }
-        (!parts.is_empty()).then(|| inside(parts.join("/")))
-    };
+    let beside = |name: &str| sfz_file(path, name);
     let text_of = |bytes: Vec<u8>| String::from_utf8_lossy(&bytes).into_owned();
     let include = |name: &str| beside(name).and_then(|p| read(&p)).map(text_of);
     let parsed = sfz::parse(&text_of(text), &include);
@@ -974,13 +1308,40 @@ fn load_sfz(
         [lo, hi, r.vels[0], r.vels[1], key(r.pitch_keycenter)]
     };
     let spans: Vec<Option<Span>> = regions.iter().map(|r| Some(span(r))).collect();
-    // By sample name: the decoded sample, `None` when missing.
-    let mut files: HashMap<&str, Option<Arc<SampleData>>> = HashMap::new();
-    let mut left_out = HashSet::new();
-    let mut room = room;
-    for index in decode_order(&spans) {
+    let order = decode_order(&spans);
+    // The sample files that can stream, by coverage, with their heads and whether a region loops them.
+    let mut names = Vec::new();
+    let mut sources: HashMap<&str, (Source, Vec<usize>, bool)> = HashMap::new();
+    for &index in order.iter().filter(|_| disk.is_some()) {
         let name = regions[index].sample.as_str();
-        if files.contains_key(name) || left_out.contains(name) {
+        let on_disk = || beside(name).and_then(|p| disk?(&p));
+        if sfz::builtin(name).is_none()
+            && !sources.contains_key(name)
+            && let Some(source) = on_disk().and_then(|file| Source::open(&file))
+        {
+            names.push(name);
+            sources.insert(name, (source, Vec::new(), false));
+        }
+    }
+    for region in regions {
+        if let Some((source, starts, looped)) = sources.get_mut(region.sample.as_str()) {
+            let (start, loop_start) = sfz_starts(region, source);
+            starts.extend([Some(start), loop_start].into_iter().flatten());
+            *looped |= loop_start.is_some();
+        }
+    }
+    let costs: Vec<Cost> = (names.iter().map(|name| &sources[name]))
+        .map(|(source, starts, looped)| Cost::of(source, starts, *looped))
+        .collect();
+    let preload: usize = costs.iter().map(|c| c.heads).sum();
+    // By sample name: the decoded or streamed sample, `None` when missing.
+    let mut files: HashMap<&str, Option<Pcm>> = HashMap::new();
+    let mut left_out = HashSet::new();
+    let all = room;
+    let mut room = all.saturating_sub(preload);
+    for index in order {
+        let name = regions[index].sample.as_str();
+        if files.contains_key(name) || left_out.contains(name) || sources.contains_key(name) {
             continue;
         }
         let decoded = match sfz::builtin(name) {
@@ -993,10 +1354,25 @@ fn load_sfz(
         match decoded {
             Ok(sample) if pcm_bytes(&sample) <= room => {
                 room -= pcm_bytes(&sample);
-                files.insert(name, Some(Arc::new(sample)));
+                files.insert(name, Some(Pcm::Ram(Arc::new(sample))));
             }
             Ok(_) | Err(DecodeError::TooLarge) => drop(left_out.insert(name)),
             Err(_) => drop(files.insert(name, None)),
+        }
+    }
+    for (name, keep) in names.iter().zip(plan(&costs, (room + preload).min(all))) {
+        let (source, starts, _) = &sources[name];
+        let whole = || {
+            let bytes = read(&beside(name)?)?;
+            decode_with_limit(&bytes, MAX_FRAMES).ok()
+        };
+        match keep {
+            Keep::Whole => drop(files.insert(name, whole().map(|s| Pcm::Ram(Arc::new(s))))),
+            Keep::Heads => {
+                let streamed = Streamed::new(source.clone(), starts);
+                files.insert(name, streamed.map(|s| Pcm::Disk(Arc::new(s))));
+            }
+            Keep::Out => drop(left_out.insert(name)),
         }
     }
     let sample_of = |r: &sfz::SfzRegion| files.get(r.sample.as_str()).cloned().flatten();
@@ -1031,6 +1407,143 @@ fn load_sfz(
     let missing = missing_names.chain(unplayed).map(named).collect();
     let stem = relative.file_stem().unwrap_or_default().to_string_lossy();
     (Some(SoundFont::sfz(&stem, playing)), missing)
+}
+
+/// SFZ region `r`'s first frame, and its loop start when it may loop, in `source` (as the player reads them).
+fn sfz_starts(r: &sfz::SfzRegion, source: &Source) -> (usize, Option<usize>) {
+    let frame = |f: u64| usize::try_from(f).unwrap_or(usize::MAX);
+    let start = frame(r.offset);
+    let file_loop = source.meta.loop_frames.map(|(s, _)| s as usize);
+    let loops = match r.loop_mode {
+        Some(mode) => matches!(mode, sfz::LoopMode::Continuous | sfz::LoopMode::Sustain),
+        None => file_loop.is_some(),
+    };
+    let loop_start = r.loop_start.map(frame).or(file_loop).unwrap_or(start);
+    (start, loops.then_some(loop_start.max(start)))
+}
+
+/// Where DW zone `z` playing `source` starts a voice: its first frame (`offset`), the frame a head before its last
+/// (Reverse starts at its `end`), and its loop start when it loops (mode > 1; start = end takes the file's loop).
+fn zone_starts(z: &Zone, source: &Source) -> [Option<usize>; 3] {
+    let end = match z.end {
+        0 => source.frames,
+        end => (end as usize).min(source.frames),
+    };
+    let loop_start = match z.loop_start == z.loop_end {
+        true => source.meta.loop_frames.map(|(s, _)| s as usize),
+        false => Some(z.loop_start as usize),
+    };
+    [
+        Some(z.offset as usize),
+        Some(end.saturating_sub(head_frames(source.rate))),
+        loop_start.filter(|_| z.loop_mode > 1),
+    ]
+}
+
+/// What a sample that can stream costs in memory: whole, or its heads alone; and whether it loops.
+#[derive(Clone, Copy, Debug)]
+struct Cost {
+    whole: usize,
+    heads: usize,
+    looped: bool,
+}
+
+impl Cost {
+    /// `source` with heads at `starts`.
+    fn of(source: &Source, starts: &[usize], looped: bool) -> Self {
+        let spans = head_spans(source.frames, source.rate, starts);
+        let frames: usize = spans.iter().map(|(a, b)| b - a).sum();
+        let whole = source.whole_bytes();
+        Self {
+            whole,
+            heads: whole / source.frames.max(1) * frames,
+            looped,
+        }
+    }
+}
+
+/// How a sample that can stream is kept ([`plan`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Keep {
+    /// Decoded whole.
+    Whole,
+    /// Its heads, the rest streamed from disk.
+    Heads,
+    /// Not even its heads fit: left out.
+    Out,
+}
+
+/// How samples that can stream, `costs` in keyboard-coverage order ([`decode_order`]), are kept within `room` bytes:
+/// every one's heads first, in that order while they fit (the preload); then, in what the preload leaves, whole: short
+/// ones first (whole in at most twice their heads), then looped ones (no stream restarts at each wrap), then the rest,
+/// each by coverage, every one that still fits. The rest stream: Budget = room − preload.
+fn plan(costs: &[Cost], room: usize) -> Vec<Keep> {
+    let mut left = room;
+    let mut keep: Vec<Keep> = (costs.iter())
+        .map(|c| match c.heads <= left {
+            true => (left -= c.heads, Keep::Heads).1,
+            false => Keep::Out,
+        })
+        .collect();
+    let tier = |c: &Cost| match (c.whole <= 2 * c.heads, c.looped) {
+        (true, _) => 0,
+        (false, true) => 1,
+        (false, false) => 2,
+    };
+    let mut order: Vec<usize> = (0..costs.len())
+        .filter(|&i| keep[i] == Keep::Heads)
+        .collect();
+    order.sort_by_key(|&i| tier(&costs[i]));
+    for i in order {
+        let extra = costs[i].whole.saturating_sub(costs[i].heads);
+        if extra <= left {
+            left -= extra;
+            keep[i] = Keep::Whole;
+        }
+    }
+    keep
+}
+
+/// The file `name` that the SFZ at `sfz` names, from the SFZ's folder (`..` included); `None` when that would leave
+/// the user or content folder it is in, or `sfz` is in neither.
+fn sfz_file(sfz: &ContentPath, name: &str) -> Option<ContentPath> {
+    let (Some(relative), ContentPath::Shorthand { root, .. }) = (in_library(sfz), sfz) else {
+        return None;
+    };
+    let folder = relative.parent().unwrap_or(Path::new(""));
+    let (joined, mut parts) = (folder.join(name), Vec::new());
+    for part in joined.components() {
+        match part {
+            Component::Normal(part) => parts.push(part.to_str()?),
+            Component::CurDir => {}
+            Component::ParentDir => drop(parts.pop()?),
+            Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    (!parts.is_empty()).then(|| ContentPath::Shorthand {
+        root: *root,
+        relative: parts.join("/"),
+    })
+}
+
+/// The SFZ `bytes` (at `path`) as a DW program: each region a zone ([`Zone::of_sfz`]) playing its sample file from the
+/// SFZ's folder, its `#include`s read from there too. A region whose sample would leave the library is no zone, so it
+/// is never read; nor is one DW cannot play. Its samples decode as a `.dwp`'s files do, in file order.
+fn sfz_program(path: &ContentPath, bytes: &[u8], read: &Reader<'_>) -> DwProgram {
+    let text = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
+    let include = |name: &str| {
+        sfz_file(path, name)
+            .and_then(|p| read(&p))
+            .map(|b| text(&b))
+    };
+    let regions = sfz::parse(&text(bytes), &include).regions;
+    let zone = |r: &sfz::SfzRegion| {
+        Some((
+            Zone::of_sfz(r)?,
+            SampleKey::File(sfz_file(path, &r.sample)?),
+        ))
+    };
+    regions.iter().filter_map(zone).collect()
 }
 
 fn zone_file(program: &ContentPath, name: &str) -> ContentPath {
@@ -1719,6 +2232,42 @@ pub(crate) mod tests {
         );
     }
 
+    #[test]
+    fn a_dw_sampler_plays_an_sfz_program_from_beside_it_and_never_reads_outside_the_library() {
+        let path = user("My Instruments/Keys.sfz");
+        let sfz =
+            "<region> sample=Keys/C4.flac lokey=0 hikey=64 pitch_keycenter=60 lovel=2 hivel=127
+            <region> sample=../../evil.wav key=70
+            <region> sample=Keys/gone.wav key=72";
+        let read = |p: &ContentPath| {
+            let ContentPath::Shorthand { relative, .. } = p else {
+                panic!("{p:?}")
+            };
+            assert!(!relative.contains(".."), "{p:?} was read");
+            match relative.as_str() {
+                "My Instruments/Keys.sfz" => Some(sfz.as_bytes().to_vec()),
+                "My Instruments/Keys/C4.flac" => Some(tone()),
+                _ => None,
+            }
+        };
+        let song = dw_song(dw_cstm(b"@L@\0My Instruments/Keys.sfz"));
+        let mut cache = SampleCache::default();
+        cache.load(&song, &read);
+        let zones = cache.program(&path).expect("the SFZ is the program");
+        let c4 = SampleKey::File(user("My Instruments/Keys/C4.flac"));
+        let gone = SampleKey::File(user("My Instruments/Keys/gone.wav"));
+        let keys: Vec<_> = zones.iter().map(|(_, key)| key.clone()).collect();
+        assert_eq!(keys, [c4, gone.clone()], "the escape is no zone");
+        let z = zones[0].0;
+        assert_eq!(
+            (z.root, z.key_low, z.key_high, z.vel_low, z.vel_high),
+            (60, 0, 64, 2, 127)
+        );
+        assert_eq!(cache.missing().cloned().collect::<Vec<_>>(), [gone]);
+        assert!(sounds(&song, &cache, 1, 60), "its root key plays");
+        assert!(!sounds(&song, &cache, 1, 70));
+    }
+
     /// The files of a session (no content folder) whose factory is `bundle` alone.
     fn bundled_files(bundle: crate::content::Bundle) -> ProjectFiles {
         let mut files = ProjectFiles::with_provider(Box::new(MemFiles::default()));
@@ -1897,6 +2446,183 @@ pub(crate) mod tests {
         cache.forget_missing();
         cache.load(&song, &read);
         assert_eq!(cache.missing().collect::<Vec<_>>(), [&key]);
+    }
+
+    #[test]
+    fn the_plan_keeps_every_head_then_whole_samples_short_and_looped_first() {
+        use Keep::{Heads, Out, Whole};
+        let cost = |whole, heads, looped| Cost {
+            whole,
+            heads,
+            looped,
+        };
+        // By coverage: a long one, a looped one, a short one (whole in twice its heads), another long one.
+        let costs = [
+            cost(1000, 100, false),
+            cost(1000, 100, true),
+            cost(150, 100, false),
+            cost(600, 100, false),
+        ];
+        // The heads take 400 (the preload); 950 left holds the short one (50 more) and the looped one (900).
+        assert_eq!(plan(&costs, 1350), [Heads, Whole, Whole, Heads]);
+        // 500 more: the first long one (900 more) still does not fit, the last (500) does.
+        assert_eq!(plan(&costs, 1850), [Heads, Whole, Whole, Whole]);
+        // Room for three heads: the last by coverage is left out.
+        assert_eq!(plan(&costs, 300), [Heads, Heads, Heads, Out]);
+        // `Auto`: the memory available less the margin, what the cache holds being in use already; a fixed limit less
+        // what it holds.
+        assert_eq!(room_under(0, 300 << 20, Some(2 << 30)), (2 << 30) - MARGIN);
+        assert_eq!(room_under(1 << 30, 300 << 20, Some(8 << 30)), 724 << 20);
+        assert_eq!(room_under(0, 300 << 20, None), AUTO_FALLBACK - (300 << 20));
+        // A low-memory phone keeps at least half of what is available.
+        assert_eq!(room_under(0, 0, Some(600 << 20)), 300 << 20);
+    }
+
+    /// A folder of its own under the temp dir, as the user folder, and the locator of its files.
+    fn user_dir(name: &str) -> (std::path::PathBuf, Locator) {
+        let dir = std::env::temp_dir().join(format!("honeydew-{name}-{}", std::process::id()));
+        let root = dir.clone();
+        let locate = move |p: &ContentPath| match p {
+            ContentPath::Shorthand {
+                root: ContentRoot::User,
+                relative,
+            } => Some(root.join(relative)).filter(|path| path.is_file()),
+            _ => None,
+        };
+        (dir, Arc::new(locate))
+    }
+
+    /// Each key's level on `channel` past the first 0.75 s (past the heads), rendered offline: what plays it.
+    fn levels(song: &Song, cache: &SampleCache, channel: usize, keys: &[u8]) -> Vec<f32> {
+        use honeydew_audio::device::AudioRenderer;
+        let level = |key: u8| {
+            let build = || SongAudioEngine::with_samples(song, 48_000.0, cache).unwrap();
+            let mut engine = crate::plugins::rendering(build);
+            engine.note_on(channel, key, 1.0);
+            let mut out = vec![0.0; 2 * 48_000];
+            engine.render(&mut out, 2);
+            out[2 * 36_000..].iter().map(|s| s.abs()).sum::<f32>()
+        };
+        keys.iter().map(|&key| level(key)).collect()
+    }
+
+    /// 3 s of DC at `level`: a 44.1 kHz mono WAV.
+    fn dc_wav(level: i16) -> Vec<u8> {
+        wav(&vec![level; 3 * 44_100])
+    }
+
+    /// Over the budget, an SFZ's samples stream from disk: room for every head and one whole sample, and the other
+    /// region plays its own sample (not the nearest one's, repitched); nothing is missing.
+    #[test]
+    fn an_sfz_over_the_budget_streams_its_samples_from_disk() {
+        let (dir, disk) = user_dir("sfz-stream");
+        let folder = dir.join("My SoundFonts");
+        std::fs::create_dir_all(&folder).unwrap();
+        let sfz = "<region> sample=low.wav lokey=0 hikey=63 pitch_keycenter=30
+            <region> sample=high.wav lokey=64 hikey=127 pitch_keycenter=100";
+        std::fs::write(folder.join("Two.sfz"), sfz).unwrap();
+        std::fs::write(folder.join("low.wav"), dc_wav(8192)).unwrap();
+        std::fs::write(folder.join("high.wav"), dc_wav(16384)).unwrap();
+        let read = |p: &ContentPath| std::fs::read(disk(p)?).ok();
+        let path = user("My SoundFonts/Two.sfz");
+        let song = soundfonts_song(std::slice::from_ref(&path));
+        // Whole: 4 × 132 300 bytes; heads (0.5 s): 4 × 22 050.
+        let (whole, head) = (4 * 132_300, 4 * 22_050);
+        let mut cache = SampleCache::with_max_bytes(2 * head + whole - head);
+        cache.set_disk(Some(disk.clone()));
+        cache.load(&song, &read);
+        assert_eq!(cache.missing().count(), 0);
+        let font = cache.soundfont(&path).expect("the SFZ loads");
+        assert_eq!(font.byte_len(), whole + head, "one whole, the other's head");
+        let [low, high] = levels(&song, &cache, 1, &[30, 100])[..] else {
+            unreachable!()
+        };
+        assert!((high / low - 2.0).abs() < 1e-3, "{low} {high}");
+    }
+
+    /// Over the budget, a `.dwp`'s zones stream (its embedded audio from it, a zone file from that file): every zone plays
+    /// its own audio.
+    #[test]
+    fn a_dw_program_over_the_budget_streams_its_zones_from_disk() {
+        let (dir, disk) = user_dir("dwp-stream");
+        std::fs::create_dir_all(&dir).unwrap();
+        let zone = |lo: u8, hi: u8, level: i16| {
+            let mut keys = vec![lo, lo, hi, 0, 127, 0, 0, 0, 0];
+            keys.extend(1f32.to_le_bytes());
+            keys.extend([0; 12]);
+            let frames = 3 * 44_100;
+            let mut format = (frames as u64).to_le_bytes().to_vec();
+            format.extend(1u32.to_le_bytes());
+            format.extend(16u32.to_le_bytes());
+            format.extend(44_100f32.to_le_bytes());
+            let pcm: Vec<u8> = vec![level; frames]
+                .iter()
+                .flat_map(|s| s.to_le_bytes())
+                .collect();
+            [
+                record(0x1F4, &keys),
+                record(0x1F7, &format),
+                record(0x205, &pcm),
+            ]
+            .concat()
+        };
+        // The high zone plays a file beside the program.
+        let mut keys = vec![64, 64, 127, 0, 127, 0, 0, 0, 0];
+        keys.extend(1f32.to_le_bytes());
+        keys.extend([0; 12]);
+        let file_zone = [record(0x1F4, &keys), record(0x1F6, b"Samples\\high.wav")].concat();
+        let program = dwp(&[zone(0, 63, 8192), file_zone]);
+        std::fs::create_dir_all(dir.join("Big")).unwrap();
+        std::fs::write(dir.join("Big/high.wav"), dc_wav(16384)).unwrap();
+        std::fs::write(dir.join("Big.dwp"), &program).unwrap();
+        let read = |p: &ContentPath| std::fs::read(disk(p)?).ok();
+        let song = dw_song(dw_cstm(b"@L@\0Big.dwp"));
+        // Whole: 4 × 132 300 bytes; heads: its start and its end (Reverse), 4 × 2 × 22 050.
+        let (whole, heads) = (4 * 132_300, 8 * 22_050);
+        let mut cache = SampleCache::with_max_bytes(2 * heads + whole - heads);
+        cache.set_disk(Some(disk.clone()));
+        cache.load(&song, &read);
+        assert_eq!(cache.missing().count(), 0);
+        // The first by coverage is whole; the other streams.
+        let low = cache.pcm(&SampleKey::Embedded(user("Big.dwp"), 0));
+        let high = cache.pcm(&SampleKey::File(user("Big/high.wav")));
+        assert!(matches!(
+            (low, high),
+            (Some(Pcm::Ram(_)), Some(Pcm::Disk(_)))
+        ));
+        let [low, high] = levels(&song, &cache, 1, &[0, 64])[..] else {
+            unreachable!()
+        };
+        assert!((high / low - 2.0).abs() < 1e-3, "{low} {high}");
+    }
+
+    /// A DW Sampler's SFZ program over the budget streams its sample file, each zone from its own `offset`: one file, 1 s
+    /// at one level then another, played from 0 by one zone and from 1 s by the other.
+    #[test]
+    fn a_dw_sfz_program_over_the_budget_streams_each_zone_from_its_offset() {
+        let (dir, disk) = user_dir("dw-sfz-stream");
+        let folder = dir.join("My Instruments");
+        std::fs::create_dir_all(folder.join("Keys")).unwrap();
+        let sfz = "<region> sample=Keys/two.wav lokey=0 hikey=63 pitch_keycenter=0
+            <region> sample=Keys/two.wav lokey=64 hikey=127 pitch_keycenter=64 offset=44100";
+        std::fs::write(folder.join("Keys.sfz"), sfz).unwrap();
+        let frames: Vec<i16> = (0..3 * 44_100)
+            .map(|i| if i < 44_100 { 4096 } else { 16384 })
+            .collect();
+        std::fs::write(folder.join("Keys/two.wav"), wav(&frames)).unwrap();
+        let read = |p: &ContentPath| std::fs::read(disk(p)?).ok();
+        let song = dw_song(dw_cstm(b"@L@\0My Instruments/Keys.sfz"));
+        // Room for its heads alone: from 0, from 1 s, and before its end (Reverse), 22 050 frames each.
+        let mut cache = SampleCache::with_max_bytes(3 * 4 * 22_050);
+        cache.set_disk(Some(disk.clone()));
+        cache.load(&song, &read);
+        let key = SampleKey::File(user("My Instruments/Keys/two.wav"));
+        assert!(matches!(cache.pcm(&key), Some(Pcm::Disk(_))), "it streams");
+        assert_eq!(cache.missing().count(), 0);
+        let [first, second] = levels(&song, &cache, 1, &[0, 64])[..] else {
+            unreachable!()
+        };
+        assert!((second / first - 4.0).abs() < 1e-3, "{first} {second}");
     }
 
     #[test]

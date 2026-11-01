@@ -3,8 +3,11 @@
 //! panics, and what is kept grows at most linearly with the input (embedded audio decodes under `MAX_FRAMES`).
 
 use std::ops::Range;
+use std::path::Path;
 
 use crate::sample::{MAX_FRAMES, SampleData, decode, decode_with_limit, float_sample};
+use crate::sfz::{LoopMode, SfzRegion, Trigger};
+use crate::stream::{Layout, Source};
 
 /// Which keys and velocities a zone answers, and how it plays (0x1F4/0x1F7/0x1FD, `ZONE`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -25,10 +28,15 @@ pub struct Zone {
     /// The 0x1FD floats: #2 > 0 enables the Decay ramp (≤ 0 jumps to Sustain); #1 and #4 are a program's Attack and
     /// Release.
     pub floats: [f32; 4],
+    /// Cents on the zone's pitch, and the frames it plays, `offset..end` (`end` 0: to the sample's end): an SFZ
+    /// region's ([`Zone::of_sfz`]). A `.dwp` has none of them.
+    pub tune: f32,
+    pub offset: u32,
+    pub end: u32,
 }
 
 impl Default for Zone {
-    /// Root 48, keys 0–128, velocities 0–127, gain 1, pan 0, no loop, floats 0, 1, 1, 0.1.
+    /// Root 48, keys 0–128, velocities 0–127, gain 1, pan 0, no loop, floats 0, 1, 1, 0.1, no tune, the whole sample.
     fn default() -> Self {
         Self {
             root: 48,
@@ -42,6 +50,9 @@ impl Default for Zone {
             loop_start: 0,
             loop_end: 0,
             floats: [0.0, 1.0, 1.0, 0.1],
+            tune: 0.0,
+            offset: 0,
+            end: 0,
         }
     }
 }
@@ -60,6 +71,46 @@ impl Zone {
     /// The Attack and Release a program load sets (value and default) when this is its last zone: floats #1 and #4.
     pub fn attack_release(&self) -> (f32, f32) {
         (self.floats[0], self.floats[3])
+    }
+
+    /// An SFZ region as the DW Sampler plays it (an `.sfz` program): its keys, velocities and `pitch_keycenter`;
+    /// `tune` and `transpose` as the tune; `volume` and `amplitude` as the gain, which DW applies only while Loop is on;
+    /// `pan` stored, as DW never plays it; `offset` and `end`. `loop_continuous` and `loop_sustain` loop over
+    /// `loop_start`…`loop_end`, as does a region without `loop_mode` (SFZ's default for a looped sample); without both
+    /// points the file's own `smpl` loop. `no_loop` and `one_shot` never loop. `None` for a region DW cannot play: a
+    /// built-in sample (`*sine`), a note-off one (`trigger=release`), one with no key, or `end` ≤ 0.
+    pub fn of_sfz(r: &SfzRegion) -> Option<Self> {
+        let silent = r.keys[1] < r.keys[0].max(0) || r.end.is_some_and(|end| end <= 0);
+        if silent || r.sample.starts_with('*') || r.trigger == Trigger::Release {
+            return None;
+        }
+        let key = |k: i32| k.clamp(0, 127) as u8;
+        let frame = |f: u64| u32::try_from(f).unwrap_or(u32::MAX);
+        let looping = matches!(
+            r.loop_mode,
+            None | Some(LoopMode::Continuous | LoopMode::Sustain)
+        );
+        // SFZ's loop end is its last frame; a zone's is past it.
+        let (loop_start, loop_end) = match (r.loop_start, r.loop_end) {
+            (Some(start), Some(end)) => (frame(start), frame(end).saturating_add(1)),
+            _ => (0, 0),
+        };
+        Some(Self {
+            root: key(r.pitch_keycenter),
+            key_low: key(r.keys[0]),
+            key_high: key(r.keys[1]),
+            vel_low: r.vels[0],
+            vel_high: r.vels[1],
+            gain: 10f32.powf(r.volume / 20.0) * r.amplitude / 100.0,
+            pan: r.pan / 100.0,
+            loop_mode: if looping { 2 } else { 0 },
+            loop_start,
+            loop_end,
+            tune: r.tune + 100.0 * r.transpose as f32,
+            offset: frame(r.offset),
+            end: r.end.map_or(0, |end| frame(end as u64).saturating_add(1)),
+            ..Self::default()
+        })
     }
 }
 
@@ -123,7 +174,8 @@ impl DwpZone<'_> {
         };
         let start = (self.lead_in as usize).min(sample.frames());
         let end = self.format.map_or(sample.frames(), |f| {
-            sample.frames().min(start.saturating_add(f.frames as usize))
+            let frames = usize::try_from(f.frames).unwrap_or(usize::MAX);
+            sample.frames().min(start.saturating_add(frames))
         });
         if start == end {
             return None;
@@ -133,6 +185,50 @@ impl DwpZone<'_> {
             sample.right = sample.right.map(|right| right[start..end].into());
         }
         Some(sample)
+    }
+}
+
+impl DwpZone<'_> {
+    /// Its embedded audio streamed from `path`, the `.dwp` file `bytes` were read from: [`Self::decode`]'s frames, read
+    /// from disk as a voice plays them ([`crate::stream`]). `None` for a file zone, or audio that cannot stream.
+    pub fn source(&self, bytes: &[u8], path: &Path) -> Option<Source> {
+        let offset = |slice: &[u8]| (slice.as_ptr() as usize).checked_sub(bytes.as_ptr() as usize);
+        let limit = self.format.map_or(usize::MAX, |f| f.frames as usize);
+        match self.audio? {
+            Embedded::Flac(data) => {
+                let stream = if data.starts_with(b"fLaC") {
+                    data
+                } else {
+                    data.get(8..)?
+                };
+                let start = offset(stream)? as u64;
+                let end = start + stream.len() as u64;
+                Source::flac(path, start, end, u64::from(self.lead_in), limit)
+            }
+            Embedded::Pcm(data) => {
+                // As `pcm` reads it.
+                let format = self.format?;
+                let channels = format.channels as usize;
+                let wide = data.len() as u64 / (format.frames * channels as u64) >= 4;
+                let width = if wide { 4 } else { 2 };
+                let rate = format.rate.round();
+                if !(1.0..=u32::MAX as f32).contains(&rate) {
+                    return None;
+                }
+                let total = data.len() / (width * channels);
+                let start = (self.lead_in as usize).min(total);
+                let frames = (total - start).min(limit);
+                let layout = Layout::Pcm {
+                    offset: (offset(data)? + start * width * channels) as u64,
+                    channels: channels as u16,
+                    width: width as u8,
+                    float: wide,
+                };
+                (1..=MAX_FRAMES)
+                    .contains(&frames)
+                    .then(|| Source::pcm(path, layout, rate as u32, channels == 2, frames))
+            }
+        }
     }
 }
 
@@ -455,5 +551,6 @@ fn cstm_zone(d: &[u8]) -> Zone {
         loop_start: u32_at(d, 17).unwrap_or(0),
         loop_end: u32_at(d, 21).unwrap_or(0),
         floats: std::array::from_fn(|i| float(25 + 4 * i, default.floats[i])),
+        ..default
     }
 }

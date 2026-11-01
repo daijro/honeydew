@@ -38,6 +38,7 @@ pub mod sfz;
 pub mod slicer;
 pub mod soundfont;
 mod spreader;
+pub mod stream;
 pub mod supersaw;
 mod tape_stop;
 pub mod three_osc;

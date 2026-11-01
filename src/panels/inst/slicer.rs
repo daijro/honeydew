@@ -5,12 +5,15 @@
 //!   The waveform then takes the `LOAD SAMPLE` button's slot.
 //! - `LOAD SAMPLE`, or a tap on the waveform (the button is hidden once a loop is loaded), asks for the
 //!   module's sample picker ([`asks_for_loop`]). `AUTO` asks for AUTO's clip once ([`auto_pressed`]).
-//! - The waveform ([`waveform`]), a graph display: the controlFill rect, the loop on top in the channel colour.
+//! - The waveform ([`waveform`]), a graph display: the controlFill rect, the loop on top in the channel colour, and its
+//!   slice lines.
 //!   The rack hands it the loop the sample cache holds, with its min/max summary, made once per loop ([`post_loop`]).
 //!
 //! Details:
 //! - The loop is drawn whole across the display by the audio clip editor's waveform law: one column a device pixel
-//!   from min/max peaks, mono centred, stereo in halves, a column under a pixel a pixel line. No slice markers.
+//!   from min/max peaks, mono centred, stereo in halves, a column under a pixel a pixel line.
+//! - Over it, each slice's start (the engine's slices at the module's Sensitivity) is a `text` line t wide over the
+//!   display's height, in the column that holds that frame; a slice in the first column has none, the edge shows it.
 //! - `sample_loaded` follows `PATH`, so a loop that is missing shows an empty waveform, which a tap replaces.
 
 use std::sync::{Arc, Weak};
@@ -19,7 +22,7 @@ use eframe::egui::{Color32, Context, Id, Mesh, Rect, Sense, Ui};
 use honeydew_audio::sample::SampleData;
 use honeydew_audio::sample_edit::peaks;
 
-use crate::audio_engine::slicer::loop_path;
+use crate::audio_engine::slicer::{loop_path, sensitivity, slices};
 use crate::flm::chunk::ContentPath;
 use crate::panels::build::*;
 use crate::params::Display;
@@ -150,6 +153,15 @@ fn waveform(
         }
     }
     painter.add(mesh);
+    let text = cx.theme.colors.text.to_color32();
+    for &start in slices(&sample, sensitivity(module)).iter() {
+        let column = (start as f64 / per_column).floor() as usize;
+        if (1..width).contains(&column) {
+            let x = x0 + column as f32 * px;
+            let line = Rect::from_x_y_ranges(x..=x + cx.m.t(), rect.y_range());
+            painter.rect_filled(line, 0.0, text);
+        }
+    }
     Vec::new()
 }
 
@@ -280,6 +292,83 @@ mod tests {
         };
         crate::project_files::load_pick(&mut module, Path::new("a.wav"), &[], Some(path)).unwrap();
         assert_eq!(loaded(&module, &mut state), Some(1));
+    }
+
+    /// Issue #36: a line t wide over the display's height at each slice's start, in `text`, in the waveform column
+    /// that holds it; none at the left edge.
+    #[test]
+    fn the_waveform_draws_a_line_at_each_slice_start() {
+        use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
+        use eframe::egui::{CentralPanel, Shape};
+        let mut song = crate::song::Song::default();
+        song.add_channel(crate::song::ChannelKind::Synth(
+            crate::song::SynthKind::Slicer,
+        ));
+        let module = &mut song.channels.last_mut().unwrap().rack.modules[0];
+        let path = ContentPath::Shorthand {
+            root: ContentRoot::App,
+            relative: "Built-in/Loops/Relay Roll 140.wav".into(),
+        };
+        crate::project_files::load_pick(module, Path::new("a.wav"), &[], Some(path.clone()))
+            .unwrap();
+        let mut module = module.clone();
+        let mut samples = SampleCache::default();
+        samples.load(&song, &|_| None);
+        let sample = samples.get(&SampleKey::of_path(&path)).unwrap();
+        let slices = crate::audio_engine::slicer::slices(
+            &sample,
+            crate::audio_engine::slicer::sensitivity(&module),
+        );
+        assert!(slices.len() > 2, "{slices:?}");
+        let (theme, m) = (
+            crate::theme::theme_by_id(0),
+            Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE),
+        );
+        let cx = UiCtx {
+            theme: &theme,
+            m: &m,
+        };
+        let text = theme.colors.text.to_color32();
+        let rect = Rect::from_min_size(
+            eframe::egui::pos2(10.0, 20.0),
+            eframe::egui::vec2(400.0, 100.0),
+        );
+        let ctx = Context::default();
+        let mut state = PanelState::new(&panel().unwrap());
+        let mut lines = Vec::new();
+        for _ in 0..2 {
+            post_loop(&ctx, &module, &samples);
+            let out = ctx.run(Default::default(), |ctx| {
+                CentralPanel::default().show(ctx, |ui| {
+                    waveform(
+                        ui,
+                        &cx,
+                        Id::NULL,
+                        rect,
+                        &mut module,
+                        &mut state,
+                        Color32::RED,
+                    );
+                });
+            });
+            lines = (out.shapes.into_iter())
+                .filter_map(|s| match s.shape {
+                    Shape::Rect(r) if r.fill == text => Some(r.rect),
+                    _ => None,
+                })
+                .collect();
+        }
+        // 400 columns of a device pixel from x = 10.
+        let per_column = sample.frames() as f64 / 400.0;
+        let want: Vec<Rect> = (slices.iter())
+            .map(|&f| (f as f64 / per_column).floor() as f32)
+            .filter(|&column| column > 0.0)
+            .map(|column| {
+                Rect::from_x_y_ranges(10.0 + column..=10.0 + column + m.t(), rect.y_range())
+            })
+            .collect();
+        assert!(want.len() > 1);
+        assert_eq!(lines, want);
     }
 
     #[test]

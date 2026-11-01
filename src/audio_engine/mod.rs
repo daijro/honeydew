@@ -19,7 +19,7 @@ pub(crate) mod slicer;
 mod slides;
 
 pub use input::{LiveInput, MONITOR_MAX_LAG_FRAMES, RecordTap, TakeStart};
-pub(crate) use prepare::burned_notes;
+pub(crate) use prepare::{burned_hits, burned_notes};
 
 use std::sync::Arc;
 
@@ -707,8 +707,9 @@ impl SongAudioEngine {
                     velocity,
                     ..
                 } => {
+                    // A notes lane's notes reach the pads centred.
                     if let Some(kit) = self.kit(event.channel) {
-                        kit.note_on(key, velocity);
+                        kit.note_on(key, velocity, 0.5);
                     }
                 }
                 Action::NoteOn {
@@ -1283,6 +1284,11 @@ impl AudioRenderer for SongAudioEngine {
     /// key that sounds stays lit.
     fn sounding(&self, channel: usize) -> u128 {
         self.sounding.get(channel).copied().unwrap_or(0)
+    }
+
+    /// The Modulators' targets ([`modulation`]).
+    fn modulated(&self) -> &[honeydew_audio::device::Modulated] {
+        &self.modulation.shown
     }
 }
 

@@ -60,7 +60,7 @@ use crate::theme::channel_color;
 use crate::ui::ctrl_menu::{CtrlAction, Touch};
 use crate::ui::gesture;
 use crate::ui::layout::{self, Node, Size};
-use crate::ui::modules_browser::{InsertAt, add_module, paste_module};
+use crate::ui::modules_browser::{InsertAt, Takes, add_module, paste_module};
 use crate::ui::popup::{self, PopupItem};
 use crate::ui::scroller::{self, Axis, Scroller, Y, Zones};
 use crate::ui::widgets::{self, Button, Control, ParamMenu};
@@ -487,6 +487,8 @@ pub enum CardAction {
     /// A Modulator's `Modulate recent control` and `Clear target` ([`modulator_menu`]).
     Modulate,
     ClearTarget,
+    /// A DW Sampler's `New from samples…`: the instrument builder ([`builder_item`]).
+    NewFromSamples,
 }
 
 /// What a preset picker loads into.
@@ -559,7 +561,8 @@ pub fn apply(rack: &mut Rack, instance_id: i32, action: CardAction) -> Outcome {
         CardAction::SetRange
         | CardAction::Sidechain
         | CardAction::Modulate
-        | CardAction::ClearTarget => Outcome::Nothing,
+        | CardAction::ClearTarget
+        | CardAction::NewFromSamples => Outcome::Nothing,
         // The engine reads the key range at build.
         CardAction::SetFullRange => {
             let file = &mut rack.modules[index].file;
@@ -799,6 +802,17 @@ pub fn takes_instruments(channel: &Channel) -> bool {
     (channel.lanes.first()).is_some_and(|l| l.kind == LaneKind::Notes)
 }
 
+/// What `channel`'s rack takes from the Modules browser: instruments and note effects where it
+/// [takes instruments](takes_instruments); note effects where its primary lane is a drum lane (issue #40:
+/// its hits pass them); else effects only.
+pub fn takes(channel: &Channel) -> Takes {
+    match channel.lanes.first().map(|l| l.kind) {
+        Some(LaneKind::Notes) => Takes::Instruments,
+        Some(LaneKind::Drums) => Takes::NoteEffects,
+        _ => Takes::Effects,
+    }
+}
+
 /// Whether a channel takes `module`, the one routine `Paste` and a rack preset's load share: module ids above 52 are
 /// skipped, and an instrument goes only where `notes` (the channel [takes instruments](takes_instruments)).
 fn attaches(module: &ModuleInstance, notes: bool) -> bool {
@@ -853,6 +867,15 @@ fn modulator_menu(recent: bool, target: bool) -> [PopupItem<CardAction>; 2] {
         item(CardAction::Modulate, 5, "Modulate recent control", recent),
         item(CardAction::ClearTarget, 6, "Clear target", target),
     ]
+}
+
+/// A DW Sampler's ≡ menu item after [`card_menu`]'s, under `Set Range` (and `Set Full Range` while it shows):
+/// `New from samples…`, the instrument builder, which picks files with the desktop's dialogs. None elsewhere.
+fn builder_item(full: bool) -> Option<PopupItem<CardAction>> {
+    let row = if full { 5 } else { 6 };
+    let label = "New from samples…";
+    let desktop = cfg!(not(any(target_arch = "wasm32", target_os = "android")));
+    desktop.then(|| PopupItem::new(CardAction::NewFromSamples, 0, row, label))
 }
 
 /// The Modulator `modulator` of a channel whose targets are `modulations` drives `to` (a channel id and a param), or
@@ -1164,6 +1187,8 @@ pub struct RackActions {
     /// `Create FX Channel` in the send-target menu: make a new send channel and point the channel's send at this index
     /// to it, past the last one for a new send ([`create_send`]); a final song edit.
     pub create_send: Option<usize>,
+    /// A DW Sampler's `New from samples…`: open the instrument builder for the module with this instance id.
+    pub builder: Option<i32>,
 }
 
 /// A card's panel state, and its module's `CSTM` blob as the state last matched it: a card is seeded from the blob
@@ -2593,6 +2618,9 @@ impl RackPanel {
                 let target = self.modulations.iter().any(|(m, _)| *m == id);
                 items.extend(modulator_menu(self.recent.is_some(), target));
             }
+            if instrument(module.type_id) == Some(SynthKind::DwSampler) {
+                items.extend(builder_item(full_range(module)));
+            }
             let menu_id = ui.id().with(("rack card menu", id));
             let r = popup::show(ctx, menu_id, at, screen, &items, cx);
             if r.close {
@@ -2610,6 +2638,9 @@ impl RackPanel {
             };
             if selected == Some(CardAction::Sidechain) {
                 self.key_menu = Some((id, at));
+            }
+            if selected == Some(CardAction::NewFromSamples) {
+                actions.builder = Some(id);
             }
             let to = match selected {
                 Some(CardAction::Modulate) => Some(self.recent),

@@ -281,7 +281,7 @@ fn number(value: &str) -> Option<f64> {
 }
 
 /// A note name, `c4` (60), `c#4`, `db4`, `c-1` (0), as a MIDI note.
-fn note(value: &str) -> Option<f64> {
+pub fn note(value: &str) -> Option<f64> {
     let mut chars = value.chars();
     let class = match chars.next()?.to_ascii_lowercase() {
         'c' => 0,

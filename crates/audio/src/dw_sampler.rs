@@ -11,6 +11,7 @@ use crate::biquad::flush;
 use crate::dwp::{Midi, Zone};
 use crate::instrument::Instrument;
 use crate::sample::SampleData;
+use crate::stream::{Pcm, Rings};
 use crate::voice::{LFO_SYNC_BEATS, lfo_attack_increment, lfo_rate_hz};
 
 /// The param count.
@@ -65,18 +66,19 @@ const MAX_CUTOFF: f32 = 0.49;
 /// A zone gain is linear and kept within 0..16, so a hostile file cannot blow up the mix.
 const MAX_ZONE_GAIN: f32 = 16.0;
 
-/// A zone with its decoded sample, as the engine hands it over.
+/// A zone with its sample, decoded or streamed from disk ([`crate::stream`]), as the engine hands it over.
 #[derive(Clone, Debug)]
 pub struct DwZone {
     pub zone: Zone,
-    pub sample: Arc<SampleData>,
+    pub sample: Pcm,
 }
 
-/// A zone ready to play: its effective loop, `[start, end)` in frames.
+/// A zone ready to play: its effective loop, and the frames it plays (its `offset..end`), each `[start, end)`.
 struct Playable {
     zone: Zone,
-    sample: Arc<SampleData>,
+    sample: Pcm,
     looped: Option<(f64, f64)>,
+    span: (f64, f64),
 }
 
 impl Playable {
@@ -84,13 +86,20 @@ impl Playable {
     /// the sample).
     fn new(DwZone { zone, sample }: DwZone) -> Self {
         let (start, end) = if zone.loop_start == zone.loop_end {
-            sample.meta.loop_frames.unwrap_or_default()
+            sample.meta().loop_frames.unwrap_or_default()
         } else {
             (zone.loop_start, zone.loop_end)
         };
         let end = f64::from(end).min(sample.frames() as f64);
         let looped =
             (zone.loop_mode > 1 && f64::from(start) < end).then_some((f64::from(start), end));
+        let frames = sample.frames() as f64;
+        let last = if zone.end == 0 {
+            frames
+        } else {
+            f64::from(zone.end).min(frames)
+        };
+        let span = (f64::from(zone.offset).min(last), last);
         Self {
             zone: Zone {
                 gain: zone.gain.clamp(0.0, MAX_ZONE_GAIN),
@@ -98,6 +107,7 @@ impl Playable {
             },
             sample,
             looped,
+            span,
         }
     }
 }
@@ -427,6 +437,8 @@ fn cutoff_hz(block: &Block, velocity: f32, lfo: f32, env: f32, pitch: f32) -> f3
 /// The DW Sampler: zones, voices and an LFO.
 pub struct DwSampler {
     zones: Vec<Playable>,
+    /// A ring per voice, when a zone streams from disk.
+    rings: Option<Arc<Rings>>,
     params: [f32; PARAMS],
     voices: Box<[Voice]>,
     /// Per key, the zone it last picked.
@@ -446,12 +458,13 @@ impl DwSampler {
     /// A sampler at `sample_rate` over `zones` (a zone with an empty sample is left out), with the `CSTM` `MIDI`
     /// settings. App thread: it allocates the 128 voices.
     pub fn new(sample_rate: f32, zones: Vec<DwZone>, midi: Midi) -> Self {
+        let zones: Vec<_> = (zones.into_iter())
+            .filter(|z| z.sample.frames() > 0)
+            .map(Playable::new)
+            .collect();
         Self {
-            zones: zones
-                .into_iter()
-                .filter(|z| z.sample.frames() > 0)
-                .map(Playable::new)
-                .collect(),
+            rings: Rings::new(zones.iter().map(|z| z.sample.disk()).collect(), VOICES),
+            zones,
             params: DEFAULTS,
             voices: vec![Voice::default(); VOICES].into_boxed_slice(),
             picks: [usize::MAX; 128],
@@ -463,6 +476,12 @@ impl DwSampler {
             midi,
             sample_rate,
         }
+    }
+
+    /// Its voices' rings when a zone streams from disk: for the engine's streamer to fill
+    /// ([`crate::stream::Streamer::register`]).
+    pub fn rings(&self) -> Option<&Arc<Rings>> {
+        self.rings.as_ref()
     }
 
     fn unhold(&mut self, key: u8) {
@@ -628,16 +647,19 @@ impl Instrument for DwSampler {
         let instant = self.params[ATTACK] <= 0.0 && self.midi.attack_flag == 0;
         let reverse = set(self.params[REVERSE]);
         let random = unit(&mut self.rng);
+        let pos = match self.zones[zone].span {
+            (_, end) if reverse => end - 1.0,
+            (start, _) => start,
+        };
+        if let Some(rings) = &self.rings {
+            rings.start(index, zone, pos as usize, reverse);
+        }
         self.voices[index] = Voice {
             stage: if instant { Stage::Decay } else { Stage::Attack },
             level: if instant { 1.0 } else { 0.0 },
             key,
             zone,
-            pos: if reverse {
-                (self.zones[zone].sample.frames() - 1) as f64
-            } else {
-                0.0
-            },
+            pos,
             reverse,
             velocity,
             note_pan,
@@ -688,6 +710,9 @@ impl Instrument for DwSampler {
         self.held_count = 0;
         self.last = None;
         self.voices.fill(Voice::default());
+        if let Some(rings) = &self.rings {
+            (0..VOICES).for_each(|voice| rings.stop(voice));
+        }
     }
 
     fn process(&mut self, left: &mut [f32], right: &mut [f32], context: ProcessContext) {
@@ -697,15 +722,23 @@ impl Instrument for DwSampler {
             voices,
             rng,
             sample_rate,
+            rings,
             ..
         } = self;
         let rate = *sample_rate;
         let beats_per_frame = f64::from(context.tempo_bpm) / (60.0 * f64::from(rate));
-        for voice in voices.iter_mut().filter(|v| v.stage != Stage::Off) {
+        for (index, voice) in voices.iter_mut().enumerate() {
+            if voice.stage == Stage::Off {
+                continue;
+            }
             let zone = &zones[voice.zone];
             let sample = &zone.sample;
-            let frames = sample.frames() as f64;
-            let rate_ratio = f64::from(sample.sample_rate) / f64::from(rate);
+            let disk = rings.as_deref().filter(|_| matches!(sample, Pcm::Disk(_)));
+            if let Some(rings) = disk {
+                rings.advance(index, voice.pos as usize);
+            }
+            let mut short = false;
+            let rate_ratio = f64::from(sample.sample_rate()) / f64::from(rate);
             let root = f32::from(zone.zone.root);
             let decay_ramp = zone.zone.floats[1] > 0.0;
             let zone_gain = if block.looping { zone.zone.gain } else { 1.0 };
@@ -750,9 +783,17 @@ impl Instrument for DwSampler {
                 voice.lfo.level += (level_target - voice.lfo.level) * SMOOTH;
                 voice.lfo.pan = flush(voice.lfo.pan + (pan_target - voice.lfo.pan) * SMOOTH);
 
-                let (dry_l, dry_r) = read(sample, voice.pos, looped);
+                let (dry_l, dry_r) = match (sample, disk) {
+                    (Pcm::Ram(data), _) => read(data, voice.pos, looped),
+                    (Pcm::Disk(_), Some(rings)) => {
+                        let frame = read_disk(rings, index, voice.pos, looped);
+                        short |= frame.is_none();
+                        frame.unwrap_or_default()
+                    }
+                    (Pcm::Disk(_), None) => (0.0, 0.0),
+                };
                 let wet_l = voice.filter.process(block.filter, 0, dry_l);
-                let wet_r = if sample.right.is_some() {
+                let wet_r = if sample.stereo() {
                     voice.filter.process(block.filter, 1, dry_r)
                 } else {
                     wet_l
@@ -801,7 +842,7 @@ impl Instrument for DwSampler {
                 } else {
                     0.0
                 };
-                let octaves = (pitch - root) / 12.0
+                let octaves = (pitch - root + zone.zone.tune / 100.0) / 12.0
                     + block.pitch_env_octaves * pitch_env.powi(3)
                     + lfo_octaves;
                 let step = rate_ratio * f64::from(octaves.exp2()) * f64::from(block.pitch_ratio);
@@ -813,14 +854,30 @@ impl Instrument for DwSampler {
                         && voice.pos >= end
                     {
                         voice.pos = start + (voice.pos - start) % (end - start);
+                        // A wrap reads the loop from its start: its head, then a new segment, unless it is all in
+                        // memory.
+                        let (from, to) = (start as usize, end.ceil() as usize);
+                        if let Some(rings) = disk
+                            && !rings.in_memory(voice.zone, from, to)
+                        {
+                            rings.start(index, voice.zone, from, false);
+                        }
                     }
                 }
-                // A voice ends where its sample does.
-                if !(0.0..frames).contains(&voice.pos) {
+                // A voice ends where its sample (its zone's `end`) does.
+                if !(zone.span.0..zone.span.1).contains(&voice.pos) {
                     voice.stage = Stage::Off;
                 }
                 if voice.stage == Stage::Off {
                     break;
+                }
+            }
+            if let Some(rings) = rings.as_deref() {
+                if short {
+                    rings.underrun();
+                }
+                if voice.stage == Stage::Off {
+                    rings.stop(index);
                 }
             }
         }
@@ -847,6 +904,23 @@ impl Instrument for DwSampler {
             self.midi.pb_range = (value * 12.0).round().clamp(1.0, 12.0) as u8;
         }
     }
+}
+
+/// [`read`] for a streamed sample, voice `voice`'s of `rings`: `None` when a frame is not there yet.
+fn read_disk(
+    rings: &Rings,
+    voice: usize,
+    pos: f64,
+    looped: Option<(f64, f64)>,
+) -> Option<(f32, f32)> {
+    let i = pos as usize;
+    let t = (pos - i as f64) as f32;
+    let next = match looped {
+        Some((start, end)) if (i + 1) as f64 >= end => start as usize,
+        _ => i + 1,
+    };
+    let (a, b) = (rings.frame(voice, i)?, rings.frame(voice, next)?);
+    Some((a.0 + t * (b.0 - a.0), a.1 + t * (b.1 - a.1)))
 }
 
 /// The sample at `pos` by linear interpolation; inside a loop the frame after the last is the loop start. Mono
@@ -1033,7 +1107,7 @@ mod tests {
         };
         let zones = vec![DwZone {
             zone: held,
-            sample: Arc::new(dc),
+            sample: Arc::new(dc).into(),
         }];
         let mut dw = DwSampler::new(48_000.0, zones, Midi::default());
         dw.set_parameter(SLIDE, 0.1);
@@ -1062,7 +1136,7 @@ mod tests {
         };
         let zones = vec![DwZone {
             zone: Zone::default(),
-            sample: Arc::new(dc),
+            sample: Arc::new(dc).into(),
         }];
         let mut dw = DwSampler::new(48_000.0, zones, Midi::default());
         dw.note_on(48, 1.0, 0.5);
@@ -1147,7 +1221,7 @@ mod tests {
         };
         let zones = vec![DwZone {
             zone: Zone::default(),
-            sample: Arc::new(dc),
+            sample: Arc::new(dc).into(),
         }];
         let mut dw = DwSampler::new(48_000.0, zones, Midi::default());
         for (index, value) in [

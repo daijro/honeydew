@@ -70,7 +70,7 @@ use eframe::egui::{Area, Context, Id, LayerId, Order, Pos2, Sense};
 use crate::content;
 use crate::project_files::content::{FOLD_CASE, inside};
 use crate::project_files::export::slice;
-use crate::project_files::{DWP_EXT, PRESET_EXT, SAMPLE_EXTS, fits};
+use crate::project_files::{DWP_EXT, PRESET_EXT, SAMPLE_EXTS, SFZ_EXT, fits};
 use crate::ui::main_menu::library::RECENTLY_DELETED;
 use crate::ui::main_menu::{
     CONVERTING, FILE_MANAGER, FileActions, MenuState, Opt, SongEntry, SongLibrary, Step, bin_crumb,
@@ -1116,6 +1116,11 @@ impl PresetPicker {
                     recency: 0,
                 },
                 Some(Item::Entry(e)) if e.is_folder => e.clone(),
+                Some(Item::Extra(Extra {
+                    name,
+                    path: Some(path),
+                    ..
+                })) => folder(name, path),
                 other => panic!("{name}: {other:?}"),
             };
             self.folders.push(folder);
@@ -1348,8 +1353,8 @@ impl SongLibrary for ReadOnly<'_> {
 /// theirs so too.
 /// - `hide_samples` (a read-only factory or content folder): a program is any listed file but an audio file
 ///   ([`SAMPLE_EXTS`]); a picker that lists no programs there (the sample picker) lists the folder.
-/// - Otherwise (the user's files): only a `.dwp`, listed or not, as before (now without case too). A folder the user
-///   makes beside their preset of its name is theirs, and lists.
+/// - Otherwise (the user's files): only a `.dwp` or `.sfz`, listed or not, without case (an `.sfz` the instrument
+///   builder makes keeps its samples so). A folder the user makes beside their preset of its name is theirs, and lists.
 fn read(
     library: &dyn SongLibrary,
     folder: &Path,
@@ -1358,10 +1363,12 @@ fn read(
     hide_samples: bool,
 ) -> Vec<SongEntry> {
     let entries = library.list(Some(folder)).unwrap_or_default();
-    // The `.dwp` files' stems, listed or not, before `keep` names the files by their stems.
+    // The `.dwp` and `.sfz` files' stems, listed or not, before `keep` names the files by their stems.
+    let program =
+        |x: &std::ffi::OsStr| x.eq_ignore_ascii_case(DWP_EXT) || x.eq_ignore_ascii_case(SFZ_EXT);
     let dwps: Vec<String> = (entries.iter())
         .map(|e| e.path.as_path())
-        .filter(|name| (name.extension()).is_some_and(|x| x.eq_ignore_ascii_case(DWP_EXT)))
+        .filter(|name| name.extension().is_some_and(program))
         .filter_map(|name| Some(name.file_stem()?.to_string_lossy().to_lowercase()))
         .collect();
     let keep = |mut entry: SongEntry| {

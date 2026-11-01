@@ -496,7 +496,7 @@ pub struct MainScreen {
     notice_at: Option<f64>,
     /// The header column's expansion c (0: 1.5 U, 1: 13.5 U) and its target, which a tap on the current track's header
     /// toggles.
-    column: (f32, f32),
+    pub(crate) column: (f32, f32),
     /// A header press is held past its long press: the touch is the header's, and the scroller's no more. (Undecided,
     /// it is the scroller's too: their calm zones are the same 0.5 U up or down.)
     header_busy: bool,

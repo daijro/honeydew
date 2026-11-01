@@ -196,6 +196,7 @@ pub(super) fn actions(
                 sample_rate,
                 tempo_bpm,
                 &mut actions,
+                traces,
             )?;
         }
         super::audio_clips::actions(song, channel, sample_rate, tempo_bpm, &mut actions)?;
@@ -277,16 +278,7 @@ fn notes(
                 .process_events_traced(0.0, end_beat, f64::from(tempo_bpm), &input, &mut traced)
                 .map_err(EngineError::Notes)?;
             stage = (effects.len(), events);
-            // A later stage runs the earlier note effects again, alike: their first traces stand.
-            for trace in traced {
-                let id = trace_id(&trace);
-                if !traces
-                    .iter()
-                    .any(|(c, t)| *c == channel && trace_id(t) == id)
-                {
-                    traces.push((channel, trace));
-                }
-            }
+            add_traces(traces, channel, traced);
         }
         note_actions(
             &stage.1,
@@ -345,6 +337,72 @@ pub(crate) fn burned_notes(
     Ok(notes)
 }
 
+/// [`burned_notes`] for `channel`'s drum lanes (issue #40): the hits they play through its note effects
+/// ([`super::drums::played`], Repeat hits and beat offsets included) in song ticks [`start`, `end`), as the hits of a
+/// clip there. A held hit lasts to its pad's next note-off (by the end), any other has no length; velocity and pan back
+/// in bytes, Pitch centred.
+pub(crate) fn burned_hits(
+    song: &Song,
+    channel: usize,
+    sample_rate: f32,
+    start: u32,
+    end: u32,
+) -> Result<Vec<Event>, EngineError> {
+    if plays(song)? > MAX_PLAYS as f64 {
+        return Err(EngineError::TooManyEvents);
+    }
+    let end_beat = song_end_beat(song)?;
+    let tempo_bpm = song.tempo_bpm as f32;
+    let mut played = super::drums::played(
+        song,
+        channel,
+        end_beat,
+        sample_rate,
+        tempo_bpm,
+        &mut Vec::new(),
+    )?;
+    played.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let (ppq, span) = (f64::from(PPQ), f64::from(start)..f64::from(end));
+    let mut hits = Vec::new();
+    for (at, &(beat, action)) in played.iter().enumerate() {
+        let Action::Hit {
+            pad,
+            velocity,
+            pan,
+            held,
+            ..
+        } = action
+        else {
+            continue;
+        };
+        let tick = (beat * ppq).round();
+        let Ok(pad) = u8::try_from(pad) else {
+            continue;
+        };
+        if beat > end_beat || !span.contains(&tick) {
+            continue;
+        }
+        let off = (played[at..].iter()).find(|(off, action)| {
+            *off > beat && matches!(*action, Action::PadOff { pad: p } if p == usize::from(pad))
+        });
+        let len_beats = match off.filter(|_| held) {
+            Some(&(off, _)) => off.min(span.end / ppq) - beat,
+            None => 0.0,
+        };
+        hits.push(Event::Drum {
+            pos: tick as u32 - start,
+            len_beats,
+            pad,
+            velocity: (velocity * 255.0).round() as u8,
+            pan: (pan * 255.0).round() as u8,
+            value: Event::DEFAULT_PITCH,
+            repeat: 0,
+        });
+    }
+    hits.sort_by_key(Event::pos);
+    Ok(hits)
+}
+
 /// Playback's note events as the notes of a clip over song ticks [`start`, `end`): each note-on paired with the next
 /// note-off of its key, the notes that start in the span, from its start, each ending by its end (as does one with no
 /// note-off). A note-off with no note open (a Note Echo repeat's) is dropped.
@@ -375,6 +433,21 @@ fn clip_notes(events: &[InputNoteEvent], start: u32, end: u32) -> Vec<Event> {
             })
         })
         .collect()
+}
+
+/// `traced`, the traces of `channel`'s note effects, into `traces`: a later stage (or the drum hits) runs the earlier
+/// note effects again, alike, so their first traces stand.
+pub(super) fn add_traces(
+    traces: &mut Vec<(usize, NoteEffectTrace)>,
+    channel: usize,
+    traced: Vec<NoteEffectTrace>,
+) {
+    for trace in traced {
+        let id = trace_id(&trace);
+        if !(traces.iter()).any(|(c, t)| *c == channel && trace_id(t) == id) {
+            traces.push((channel, trace));
+        }
+    }
 }
 
 /// The note effect a trace is of.

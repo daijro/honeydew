@@ -408,8 +408,8 @@ fn a_default_pick_on_the_new_card_while_close_grand_loads_stays() {
     let id = rig.app.song.channels[2].rack.modules[0].instance_id;
     rig.app
         .navigate(Nav::Open(picker(2, PresetTarget::Module(id))));
-    // At the root: `My Files`, then `Default`.
-    click_row(&mut rig, 1);
+    // At the root: `My Files`, `My Instruments`, then `Default`.
+    click_row(&mut rig, 2);
     drop(hold);
     worker_done(&mut rig);
     let ch = &rig.app.song.channels[2];

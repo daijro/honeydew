@@ -8,8 +8,12 @@
 //!
 //! The targets are modulated only while the transport rolls; stopped (and as an edit's engine takes over, which may
 //! have removed the Modulator), each is set back to its base exactly. Nothing here allocates once built.
+//!
+//! The engine reports each target's value as the last segment set it, NaN while stopped ([`Modulations::shown`]), so
+//! that its controls show it.
 
 use honeydew_audio::AudioEffect;
+use honeydew_audio::device::{Modulated, ModuleKey};
 use honeydew_audio::modulator::MODULATOR;
 
 use super::{SongAudioEngine, position, strip_param};
@@ -63,6 +67,9 @@ pub(super) struct Modulations {
     /// Each Modulator: its channel, its instance id and its target's index in `targets`.
     sources: Vec<(usize, i32, usize)>,
     targets: Vec<Target>,
+    /// By target, its value as the last segment set it; NaN while not modulated (the engine's
+    /// `AudioRenderer::modulated`).
+    pub(super) shown: Vec<Modulated>,
     /// The last segment modulated the targets: they may be off their bases.
     on: bool,
 }
@@ -89,6 +96,14 @@ impl Modulations {
                         at,
                         sum: 0.0,
                         sent: f32::NAN,
+                    });
+                    this.shown.push(Modulated {
+                        key: ModuleKey {
+                            channel: param.0,
+                            instance_id: param.1,
+                        },
+                        index: param.2,
+                        value: f32::NAN,
                     });
                     this.targets.len() - 1
                 }
@@ -130,6 +145,7 @@ impl SongAudioEngine {
         for k in 0..self.modulation.targets.len() {
             let t = self.modulation.targets[k];
             let value = (self.applied[t.at] + t.sum).clamp(0.0, 1.0);
+            self.modulation.shown[k].value = if on { value } else { f32::NAN };
             if value.is_finite() && value != t.sent {
                 self.modulation.targets[k].sent = value;
                 let (channel, instance_id, index) = t.param;

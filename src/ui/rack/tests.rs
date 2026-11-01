@@ -507,6 +507,9 @@ fn only_a_channel_whose_primary_lane_is_a_notes_lane_takes_instruments() {
     for (ch, takes) in cases {
         let kind = ch.kind;
         assert_eq!(takes_instruments(&ch), takes, "{kind:?}");
+        // Issue #40: a drum channel takes the note effects.
+        let notes = takes || kind == ChannelKind::Drums;
+        assert_eq!(super::takes(&ch) >= Takes::NoteEffects, notes, "{kind:?}");
         // The three paths agree: the Modules browser's `Paste` and its rack preset, and `Load Rack preset`.
         let pasted = paste(&mut ch.clone(), &preset(&[0]), InsertAt::End) == Outcome::ChainChanged;
         assert_eq!(pasted, takes, "{kind:?}: paste");

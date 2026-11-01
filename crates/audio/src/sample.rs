@@ -226,6 +226,32 @@ fn decode_wav(chunks: &[u8], max_frames: usize) -> Result<SampleData, DecodeErro
     }
     let fmt = fmt.ok_or(DecodeError::Malformed("no fmt chunk"))?;
     let data = data.ok_or(DecodeError::Malformed("no data chunk"))?;
+    let (channels, sample_rate, width, float) = wav_format(fmt)?;
+    let stride = channels * width;
+    let frames = data.len() / stride;
+    if frames == 0 {
+        return Err(DecodeError::Malformed("no audio"));
+    }
+    if frames > max_frames {
+        return Err(DecodeError::TooLarge);
+    }
+    // The loop is read raw and fitted to the frames that are there, so a player can rely on it.
+    meta.loop_frames = meta.loop_frames.map(|l| clamp_loop(l, frames));
+    let channel = |c: usize| -> Arc<[f32]> {
+        let read = |frame: &[u8]| to_f32(float, &frame[c * width..(c + 1) * width]);
+        data.chunks_exact(stride).map(read).collect()
+    };
+    Ok(SampleData {
+        sample_rate,
+        left: channel(0),
+        right: (channels >= 2).then(|| channel(1)),
+        meta,
+    })
+}
+
+/// A WAV `fmt ` chunk's channels, rate, bytes per sample and float flag, checked as [`decode`] checks them (the stream
+/// reader's too, `stream.rs`).
+pub(crate) fn wav_format(fmt: &[u8]) -> Result<(usize, u32, usize, bool), DecodeError> {
     if fmt.len() < 16 {
         return Err(DecodeError::Malformed("short fmt chunk"));
     }
@@ -254,31 +280,12 @@ fn decode_wav(chunks: &[u8], max_frames: usize) -> Result<SampleData, DecodeErro
             "block align is not channels × bits/8",
         ));
     }
-    let stride = block_align;
-    let frames = data.len() / stride;
-    if frames == 0 {
-        return Err(DecodeError::Malformed("no audio"));
-    }
-    if frames > max_frames {
-        return Err(DecodeError::TooLarge);
-    }
-    // The loop is read raw and fitted to the frames that are there, so a player can rely on it.
-    meta.loop_frames = meta.loop_frames.map(|l| clamp_loop(l, frames));
-    let channel = |c: usize| -> Arc<[f32]> {
-        let read = |frame: &[u8]| to_f32(float, &frame[c * width..(c + 1) * width]);
-        data.chunks_exact(stride).map(read).collect()
-    };
-    Ok(SampleData {
-        sample_rate,
-        left: channel(0),
-        right: (channels >= 2).then(|| channel(1)),
-        meta,
-    })
+    Ok((channels, sample_rate, width, float))
 }
 
 /// One little-endian sample. 8-bit is unsigned, value/128 − 1. Wider integers are signed and scaled by
 /// 2^−(bits−1), read as the top bytes of an `i32`. Floats go through [`float_sample`].
-fn to_f32(float: bool, b: &[u8]) -> f32 {
+pub(crate) fn to_f32(float: bool, b: &[u8]) -> f32 {
     let value = match (float, b.len()) {
         (true, _) => f32::from_le_bytes([b[0], b[1], b[2], b[3]]),
         (false, 1) => f32::from(b[0]) / 128.0 - 1.0,
@@ -339,7 +346,7 @@ fn flac_without_metadata(bytes: &[u8]) -> Option<(Vec<u8>, SampleMeta)> {
 // "Already read" is keyed on what a chunk always sets: `meta.beats` for `fLmL` (the only FLAC source of beats; its
 // tempo and loop may be none), so the first `fLmL` of the first FLSM block that has one wins whole. `fLsF` is keyed on
 // `meta.cues`, so one without cue points lets a later one in.
-fn read_flsm(block: &[u8], meta: &mut SampleMeta) {
+pub(crate) fn read_flsm(block: &[u8], meta: &mut SampleMeta) {
     let [kind, a, b, c, data @ ..] = block else {
         return;
     };
@@ -375,14 +382,18 @@ fn read_flsm(block: &[u8], meta: &mut SampleMeta) {
 
 /// `sample` with the `FLSM` `meta`, its loop fitted to the audio: a start at or past the frame count becomes 0, an
 /// end past it becomes the frame count, and then 0/0 is no loop.
-fn with_flsm(mut sample: SampleData, mut meta: SampleMeta) -> SampleData {
-    let frames = sample.frames();
+fn with_flsm(mut sample: SampleData, meta: SampleMeta) -> SampleData {
+    sample.meta = fit_flsm(meta, sample.frames());
+    sample
+}
+
+/// `FLSM` `meta` with its loop fitted to `frames`, as [`with_flsm`] fits it.
+pub(crate) fn fit_flsm(mut meta: SampleMeta, frames: usize) -> SampleMeta {
     meta.loop_frames = meta
         .loop_frames
         .map(|l| clamp_loop(l, frames))
         .filter(|&l| l != (0, 0));
-    sample.meta = meta;
-    sample
+    meta
 }
 
 /// A loop's (start, end) as stored, fitted to `frames` (WAV `smpl` and FLAC `fLmL` alike): no +1 on the end.
@@ -393,7 +404,7 @@ pub(crate) fn clamp_loop((start, end): (u32, u32), frames: usize) -> (u32, u32) 
 
 /// symphonia's fixed and LPC decoders slice `order` (up to 32) warm-up samples before checking the block holds them,
 /// and panic on a shorter block.
-const MIN_DECODED_BLOCK: u64 = 32;
+pub(crate) const MIN_DECODED_BLOCK: u64 = 32;
 
 fn decode_flac(bytes: &[u8], max_frames: usize) -> Result<SampleData, DecodeError> {
     use symphonia::default::{codecs::FlacDecoder, formats::FlacReader};
@@ -542,7 +553,10 @@ fn decode_packets(
             .filter(|decoded| decoded.spec().channels.count() > 0);
         let frames = decoded
             .as_ref()
-            .map_or(packet.dur as usize, |decoded| decoded.frames())
+            .map_or(
+                usize::try_from(packet.dur).unwrap_or(usize::MAX),
+                |decoded| decoded.frames(),
+            )
             .min(end - start);
         if frames == 0 {
             continue;

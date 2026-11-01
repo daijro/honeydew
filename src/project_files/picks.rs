@@ -40,12 +40,12 @@ pub(crate) const THREE_OSC: u16 = 39;
 /// The SoundFont Player, whose loader names the file in its `SF2D`.
 pub(crate) const SOUNDFONT_PLAYER: u16 = 52;
 
-/// The file `name` is no preset but a file module `type_id`'s loader names in its `CSTM`: a DW program or audio file
-/// for the DW Sampler, an audio file for the Slicer or 3x Osc, a `.sf2` or `.sfz` for the SoundFont Player.
+/// The file `name` is no preset but a file module `type_id`'s loader names in its `CSTM`: a DW program (`.dwp`, `.sfz`)
+/// or audio file for the DW Sampler, an audio file for the Slicer or 3x Osc, a `.sf2` or `.sfz` for the SoundFont Player.
 fn named_file(name: &Path, type_id: u16) -> bool {
     let audio = is_audio(name);
     match type_id {
-        DW_SAMPLER => audio || is(name, DWP_EXT),
+        DW_SAMPLER => audio || is(name, DWP_EXT) || is(name, super::SFZ_EXT),
         SLICER | THREE_OSC => audio,
         SOUNDFONT_PLAYER => is_soundfont(name),
         _ => false,
@@ -321,7 +321,7 @@ pub(crate) mod tests {
         assert_eq!(preset_exts(2), [PRESET_EXT, FLGSYNTH_EXT]);
         assert_eq!(
             preset_exts(1),
-            [[PRESET_EXT, DWP_EXT].as_slice(), &audio].concat()
+            [[PRESET_EXT, DWP_EXT, SFZ_EXT].as_slice(), &audio].concat()
         );
         assert_eq!(preset_exts(52), [PRESET_EXT, SF2_EXT, SFZ_EXT]);
         assert_eq!(preset_exts(33), [[PRESET_EXT].as_slice(), &audio].concat());
