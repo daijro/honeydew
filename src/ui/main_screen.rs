@@ -81,7 +81,7 @@ const SCALE_ALPHA: f32 = 0.6;
 const DISABLED_ALPHA: f32 = 0.25;
 /// The vertical dividers: fainter than the row line.
 const VERTICAL_DIVIDER_ALPHA: f32 = 0.12;
-/// Play's ring radius and a lit button's disc radius, in slots (b).
+/// The ring's radius (Play's, Mixer's, keyboard settings') and a lit button's disc radius, in slots (b).
 const PLAY_RING: f32 = 0.4;
 const LIT_R: f32 = 0.375;
 /// A hovered transport button's colours, × this.
@@ -1763,12 +1763,17 @@ impl MainScreen {
         };
         let mut nav = None;
 
-        // Left: mixer and keyboard settings, lit while their view or strip shows; the scale name after them.
-        let mixer = BarButton::icon(IconId::Mixer).lit(input.view == View::Mixer);
+        // Left: mixer and keyboard settings, in Play's ring (issue #41: without the rings they did not read as
+        // buttons), lit while their view or strip shows; the scale name after them.
+        let mixer = BarButton::icon(IconId::Mixer)
+            .lit(input.view == View::Mixer)
+            .ring();
         if button(ui, "mixer", slots.mixer, mixer).clicked() {
             nav = Some(Nav::Show(View::Mixer));
         }
-        let strip = BarButton::icon(IconId::KeyboardSettings).lit(regions.strip.height() > 0.0);
+        let strip = BarButton::icon(IconId::KeyboardSettings)
+            .lit(regions.strip.height() > 0.0)
+            .ring();
         if button(ui, "keyboard_settings", slots.keys, strip).clicked() {
             nav = Some(Nav::Toggle(Overlay::KeyboardSettings));
         }
@@ -1818,9 +1823,7 @@ impl MainScreen {
         } else {
             IconId::Play
         };
-        paint_bar_button(ui, cx, &play, slots.play, BarButton::icon(icon));
-        let ring = egui::Stroke::new(2.0 / m.ppp(), text);
-        (ui.painter()).circle_stroke(slots.play.center(), PLAY_RING * slots.play.width(), ring);
+        paint_bar_button(ui, cx, &play, slots.play, BarButton::icon(icon).ring());
         let bpm = BarButton::default().caption("BPM");
         if button(ui, "BPM", slots.bpm, bpm).clicked() {
             nav = Some(Nav::Toggle(Overlay::TempoEditor));
@@ -1920,6 +1923,8 @@ struct BarButton<'a> {
     /// The icon's colour instead of `text`.
     ink: Option<crate::theme::Rgba>,
     disabled: bool,
+    /// Play's ring round the icon.
+    ring: bool,
 }
 
 impl<'a> BarButton<'a> {
@@ -1936,6 +1941,10 @@ impl<'a> BarButton<'a> {
 
     fn lit(self, lit: bool) -> Self {
         Self { lit, ..self }
+    }
+
+    fn ring(self) -> Self {
+        Self { ring: true, ..self }
     }
 
     fn ink(self, ink: Option<crate::theme::Rgba>) -> Self {
@@ -1989,8 +1998,9 @@ fn bar_response(ui: &mut egui::Ui, id: Id, slot: Rect, disabled: bool) -> egui::
 }
 
 /// A transport button's look over `slot`, with no fill at rest: its icon in `text` (or `look.ink`), over its 6 pt
-/// caption, inset 0.2 U each side; lit, a `text` disc of radius 0.375 b behind a `controlFill` icon; a hovering mouse
-/// (on `response`) brightens it ×1.25. Disabled, the icon is at α 0.25.
+/// caption, inset 0.2 U each side; lit, a `text` disc of radius 0.375 b behind a `controlFill` icon; with `ring`, a 2
+/// px `text` ring of radius 0.4 b round it; a hovering mouse (on `response`) brightens it ×1.25. Disabled, the icon is
+/// at α 0.25.
 fn paint_bar_button(
     ui: &egui::Ui,
     cx: &UiCtx,
@@ -2014,6 +2024,10 @@ fn paint_bar_button(
         let r = LIT_R * slot.width();
         ui.painter().circle_filled(content.center(), r, tone(text));
         ink = c.control_fill.to_color32();
+    }
+    if look.ring {
+        let ring = egui::Stroke::new(2.0 / m.ppp(), text);
+        (ui.painter()).circle_stroke(content.center(), PLAY_RING * slot.width(), ring);
     }
     if look.disabled {
         ink = ink.gamma_multiply(DISABLED_ALPHA);
@@ -4205,6 +4219,22 @@ mod tests {
         assert_eq!(rig.region_item(2), Some(SongEdit::Final));
         assert_eq!(rig.song.play_loop, Some((256, 512)));
         assert_eq!(plays(&rig.song, 2), [(256, 67), (512, 67)]);
+    }
+
+    #[test]
+    fn the_loop_range_shrinks_to_one_snap_unit_or_one_tick_with_snap_off() {
+        // Issue #41. Zoomed in to 2^2.5 times the default beat (6.8 U a beat), Auto follows the grid's half steps (16
+        // ticks): beat 2 to 2.15 is beat 2 to 2.125.
+        let mut rig = Rig::new(song_with_a_clip());
+        rig.screen.zoom = 2.5;
+        rig.frame(vec![]);
+        let beat = |b: f32| b * 2.5f32.exp2();
+        rig.select(beat(2.0), beat(2.15));
+        assert_eq!(rig.song.play_loop, Some((256, 272)));
+        // Snap off, a fresh range (a press on an edge would drag it): one tick.
+        (rig.screen.snap.on, rig.song.play_loop) = (false, None);
+        rig.select(beat(2.0), beat(2.01));
+        assert_eq!(rig.song.play_loop, Some((256, 257)));
     }
 
     #[test]

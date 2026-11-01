@@ -67,6 +67,24 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onDocumentPicke
     });
 }
 
+/// Asks the Activity for a screen orientation (`ActivityInfo.SCREEN_ORIENTATION_*`, from
+/// `Settings::android_orientation`). The window then turns and resizes like a rotation (the manifest's `configChanges`
+/// keep the Activity), and the next frame lays out at the new size. A failure is only logged.
+pub fn request_orientation(orientation: i32) {
+    let requested = with_activity(|env, activity| {
+        env.call_method(
+            activity,
+            "setRequestedOrientation",
+            "(I)V",
+            &[orientation.into()],
+        )
+        .map(drop)
+    });
+    if let Err(err) = requested {
+        eprintln!("screen orientation not set: {err}");
+    }
+}
+
 /// Android gives each install an absolute, private data directory; no storage permission is needed.
 pub fn data_dir() -> Option<PathBuf> {
     ACTIVITY

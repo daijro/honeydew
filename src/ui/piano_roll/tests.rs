@@ -99,6 +99,11 @@ fn auto_snap_follows_the_zoom() {
     assert_eq!(auto_grid(38.0, 32.0, sig(3, 4)), 128.0);
     assert_eq!(auto_grid(77.0, 32.0, sig(6, 4)), 128.0 / 6.0);
     assert_eq!(auto_grid(76.0, 32.0, sig(6, 4)), 128.0);
+    // Past a step it follows the grid's finer lines (issue #41): half steps once they are 0.6 U = 19.2 points wide, down
+    // to a tick.
+    assert_eq!(auto_grid(153.0, 32.0, sig(4, 4)), 32.0);
+    assert_eq!(auto_grid(154.0, 32.0, sig(4, 4)), 16.0);
+    assert_eq!(auto_grid(3200.0, 32.0, sig(4, 4)), 1.0);
 }
 
 #[test]

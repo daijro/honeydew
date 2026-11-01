@@ -3,7 +3,13 @@
 //! - a sample-picker icon button (icon 21), which opens the sample picker for the slot;
 //! - the sliders `Level`, `Pan` and `Speed` (slot `PRMS` 0–2, with their value laws) and `Pitch` (`STR1` semitones,
 //!   normalised as `STRC`'s st/48 + 0.5);
-//! - the text toggles `REV` (`MAIN`@1036) and `SYNC` (`STR1` mode; the ratio stays as stored, for a later SYNC-on).
+//! - the toggles `REV` (`MAIN`@1036) and `SYNC` (`STR1` mode; the ratio stays as stored, for a later SYNC-on).
+//!
+//! The row sits on the keyboard panel's `controlFill`, the colour a slider's track and thumb rim are drawn in, so it
+//! lends them `menuFill` (as the mini mixer's sub-track slider): each track shows whole at rest, the fill over it in
+//! the channel colour, from the middle on the bipolar Pan, Speed and Pitch. `REV` and `SYNC` are round toggles, the
+//! drum strip's [`widgets::disc_toggle`] at the icon button's size on a `menuFill` disc while off (issue #41: plain
+//! text toggles did not read as buttons).
 //!
 //! The row draws from a [`Row`] and returns a [`RowAction`]; the app writes it ([`apply`]) as a song edit, ongoing
 //! while a slider drags and final (one undo step and an engine rebuild, which re-renders the pitch) on its release or
@@ -27,7 +33,7 @@ const ROW_W: f32 = 30.0;
 const ROW_H: f32 = 2.0;
 /// The icon button and each text toggle, U wide.
 const CELL_W: f32 = 2.0;
-/// The icon button's disc, of the cell: the drum strip's sample button (`drums.rs`).
+/// The icon button's disc, of the cell: the drum strip's sample button (`drums.rs`); the toggles' too.
 const ICON_SHAPE: f32 = 0.7;
 /// Pitch steps: −24 … +24 semitones.
 const PITCH_STEPS: usize = 49;
@@ -251,13 +257,20 @@ fn text(ctl: Ctl, v: f32) -> String {
 /// and fills in the channel colour `ink`, showing `row`.
 ///
 /// The sliders put their text under the track (the value strip, so it follows a drag in its own frame), with the
-/// slot's default for a double click or `Reset`; the toggles are text toggles in 10 pt; the icon button is the drum
-/// strip's sample button.
+/// slot's default for a double click or `Reset`; the toggles are discs with their 10 pt label; the icon button is the
+/// drum strip's sample button.
 pub fn show(ui: &mut Ui, cx: &UiCtx, area: Rect, ink: Color32, row: Row) -> Option<RowAction> {
     if area.height() == 0.0 {
         return None;
     }
     let colors = &cx.theme.colors;
+    // `menuFill` in the roles of the sliders' track and the off toggles' disc, which are the panel's colours.
+    let mut theme = cx.theme.clone();
+    (theme.colors.control_fill, theme.colors.module_fill) = (colors.menu_fill, colors.menu_fill);
+    let lent = UiCtx {
+        theme: &theme,
+        m: cx.m,
+    };
     let mut action = None;
     for (ctl, rect) in CTLS.into_iter().zip(layout(area, cx.m)) {
         let mut v = row.get(ctl);
@@ -283,7 +296,7 @@ pub fn show(ui: &mut Ui, cx: &UiCtx, area: Rect, ink: Color32, row: Row) -> Opti
                     menu: ParamMenu::Off,
                     ..Control::new(id(ctl), rect, label, ink, 0.0)
                 };
-                if widgets::text_toggle(ui, cx, &c, &mut v).changed() {
+                if widgets::disc_toggle(ui, &lent, &c, ICON_SHAPE, &mut v).changed() {
                     action = set(v, true);
                 }
             }
@@ -295,7 +308,7 @@ pub fn show(ui: &mut Ui, cx: &UiCtx, area: Rect, ink: Color32, row: Row) -> Opti
                     menu: ParamMenu::Unbound,
                     ..Control::new(id(ctl), rect, "", ink, default)
                 };
-                let r = widgets::h_slider(ui, cx, &c, &mut v, |v| text(ctl, v));
+                let r = widgets::h_slider(ui, &lent, &c, &mut v, |v| text(ctl, v));
                 if r.changed() || r.drag_stopped() {
                     action = set(v, !r.dragged());
                 }

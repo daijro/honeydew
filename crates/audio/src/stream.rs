@@ -6,10 +6,11 @@
 //! (MP3, Ogg, a bundled member, the web's copies) loads whole as before. A WAV is read at its frame's byte, a FLAC from
 //! symphonia's seek, and both decode exactly as [`crate::sample::decode`] does.
 //!
-//! Each instrument that plays one keeps [`Rings`], a ring of [`RING_FRAMES`] per voice. A voice reads its heads at once
-//! and its ring after them. One [`Streamer`] thread per engine fills the rings ahead of the voices; the audio thread only
-//! loads and stores atomics (no lock, allocation or file read). A frame the ring does not hold yet is silence for that
-//! voice, and an underrun is counted. Rings no streamer took (an offline render's) are filled on the reader's own
+//! Each instrument that plays one keeps [`Rings`], [`STREAM_VOICES`] rings of [`RING_FRAMES`]: its voices below
+//! [`STREAM_VOICES`] are the ones that may play a streamed sample, the others play samples in memory. A voice reads its
+//! heads at once and its ring after them. One [`Streamer`] thread per engine fills the rings ahead of the voices; the
+//! audio thread only loads and stores atomics (no lock, allocation or file read). A frame the ring does not hold yet is
+//! silence for that voice, and an underrun is counted. Rings no streamer took (an offline render's) are filled on the reader's own
 //! thread as it needs them: a render never misses a frame.
 //!
 //! A voice reads a segment: from a frame its heads hold, forward (or backward, a reversed DW zone), with the ring
@@ -38,9 +39,15 @@ use crate::sample::{
 /// streamer opens and seeks its file.
 pub const HEAD_SECONDS: f64 = 0.5;
 /// The frames each voice's ring holds ahead of it.
-// ponytail: 16 384 frames (0.34 s at 48 kHz), 128 KiB a voice, 16 MiB for the DW Sampler's 128; raise it if slow storage
-// underruns.
+// ponytail: 16 384 frames (0.34 s at 48 kHz), 128 KiB a ring, 8 MiB for an instrument's [`STREAM_VOICES`]; raise it if
+// slow storage underruns.
 pub const RING_FRAMES: usize = 1 << 14;
+/// The voices of an instrument that may play a streamed sample at once: the rings it keeps, whatever its polyphony. A
+/// streamed note past them steals the oldest of them (the DW Sampler drops it, as it drops any note with no voice free).
+// ponytail: 64 rings are 8 MiB an instrument (512 would be 64 MiB, too much on a phone), and 64 voices reading 48 kHz
+// stereo 24-bit (18 MB/s in all) is about what a phone's storage sustains in 4096-frame random reads. Raise it with
+// faster storage and the memory to spare.
+pub const STREAM_VOICES: usize = 64;
 /// The frames the streamer reads at a time.
 const CHUNK: usize = 4096;
 /// The longest FLAC block, past which a read seeks rather than decodes its way forward.
@@ -779,7 +786,8 @@ struct Filler {
     right: Vec<f32>,
 }
 
-/// An instrument's streamed samples (by its own sample index) and a ring per voice ([`crate::stream`]).
+/// An instrument's streamed samples (by its own sample index) and a ring for each of its first [`STREAM_VOICES`] voices
+/// ([`crate::stream`]).
 pub struct Rings {
     samples: Box<[Option<Arc<Streamed>>]>,
     rings: Box<[Ring]>,
@@ -790,26 +798,36 @@ pub struct Rings {
 }
 
 impl Rings {
-    /// Rings for `voices` voices over `samples` (`None` where one plays from memory); `None` when none streams. App
+    /// [`STREAM_VOICES`] rings over `samples` (`None` where one plays from memory); `None` when none streams. App
     /// thread: it allocates the rings.
-    pub fn new(samples: Vec<Option<Arc<Streamed>>>, voices: usize) -> Option<Arc<Self>> {
+    pub fn new(samples: Vec<Option<Arc<Streamed>>>) -> Option<Arc<Self>> {
         samples.iter().any(Option::is_some).then(|| {
             Arc::new(Self {
                 samples: samples.into(),
-                rings: (0..voices).map(|_| Ring::new()).collect(),
-                fillers: Mutex::new((0..voices).map(|_| Filler::default()).collect()),
+                rings: (0..STREAM_VOICES).map(|_| Ring::new()).collect(),
+                fillers: Mutex::new((0..STREAM_VOICES).map(|_| Filler::default()).collect()),
                 live: AtomicBool::new(false),
                 underruns: AtomicU64::new(0),
             })
         })
     }
 
+    /// The voices it keeps a ring for: the first [`STREAM_VOICES`].
+    pub fn voices(&self) -> usize {
+        self.rings.len()
+    }
+
     fn sample(&self, sample: u64) -> Option<&Streamed> {
         self.samples.get(sample as usize)?.as_deref()
     }
 
+    /// Sample `sample` streams: a voice playing it needs a ring.
+    pub fn streams(&self, sample: usize) -> bool {
+        self.sample(sample as u64).is_some()
+    }
+
     /// Voice `voice` reads `sample` (a streamed one, or any other: none) from frame `origin` on, backward with `reverse`.
-    /// Audio thread.
+    /// A voice past the rings reads none. Audio thread.
     pub fn start(&self, voice: usize, sample: usize, origin: usize, reverse: bool) {
         let Some(ring) = self.rings.get(voice) else {
             return;

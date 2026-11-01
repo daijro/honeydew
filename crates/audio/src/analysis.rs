@@ -481,17 +481,13 @@ impl Detector {
         }
         // The window's energy is the same for every lag.
         let x = &self.linear;
-        let a2 = x[..window].iter().fold(0.0, |sum, a| sum + a * a);
+        let a2 = correlate(&x[..window], &x[..window]).1;
         if a2 / (window as f32) < Self::QUIET * Self::QUIET {
             return 0.0;
         }
         self.scores.fill(0.0);
         for lag in min_lag..=max_lag {
-            let (mut cross, mut b2) = (0.0, 0.0);
-            for (a, b) in x[..window].iter().zip(&x[lag..lag + window]) {
-                cross += a * b;
-                b2 += b * b;
-            }
+            let (cross, b2) = correlate(&x[..window], &x[lag..lag + window]);
             if a2 > 0.0 && b2 > 0.0 {
                 self.scores[lag] = cross / (a2 * b2).sqrt();
             }
@@ -516,6 +512,24 @@ impl Detector {
         };
         self.rate / (best as f32 + offset)
     }
+}
+
+/// Σ a·b and Σ b² over `a` and `b` (as long), each in eight interleaved partial sums (term i into sum i % 8) added up
+/// in order at the end: no add waits on the one before it, so the loop runs vectorised, about six times as fast as one
+/// running sum (the Tuner's and the Analyzer's pitch readings were most of the Analyzer's time).
+fn correlate(a: &[f32], b: &[f32]) -> (f32, f32) {
+    let ((a8, a_rest), (b8, b_rest)) = (a.as_chunks::<8>(), b.as_chunks::<8>());
+    // The rest as one more step padded with zeros, which add nothing: whole arrays a step (as `from_fn`; element by
+    // element the compiler keeps them in memory).
+    let (mut a_last, mut b_last) = ([0.0_f32; 8], [0.0_f32; 8]);
+    a_last[..a_rest.len()].copy_from_slice(a_rest);
+    b_last[..b_rest.len()].copy_from_slice(b_rest);
+    let (mut cross, mut energy) = ([0.0_f32; 8], [0.0_f32; 8]);
+    for (a, b) in a8.iter().zip(b8).chain([(&a_last, &b_last)]) {
+        cross = std::array::from_fn(|k| cross[k] + a[k] * b[k]);
+        energy = std::array::from_fn(|k| energy[k] + b[k] * b[k]);
+    }
+    (cross.iter().sum(), energy.iter().sum())
 }
 
 /// A note effect's slab (it runs ahead of playback; the engine fills this from its [`NoteEffectTrace`]): an
@@ -1273,24 +1287,29 @@ mod tests {
         assert!(near(again.maxima[0], -6.02, 0.05), "{:?}", again.maxima);
     }
 
+    /// Σ term(i) for i < n as [`correlate`] adds: eight partial sums, term i into sum i % 8.
+    fn lanes(n: usize, term: impl Fn(usize) -> f32) -> f32 {
+        let mut sums = [0.0_f32; 8];
+        for i in 0..n {
+            sums[i % 8] += term(i);
+        }
+        sums.iter().sum()
+    }
+
     /// The detector's reading as it was first written: each lag's sums read the ring through [`Detector::at`].
     fn detect_through_the_ring(d: &Detector) -> f32 {
         let min_lag = ((d.rate / Detector::HIGHEST).floor() as usize).max(2);
         let max_lag = d.scores.len() - 2;
         let window = 2 * max_lag;
-        let energy: f32 = (0..window).map(|i| d.at(i) * d.at(i)).sum();
+        let energy = lanes(window, |i| d.at(i) * d.at(i));
         if energy / (window as f32) < Detector::QUIET * Detector::QUIET {
             return 0.0;
         }
         let mut s = vec![0.0f32; d.scores.len()];
         for (lag, score) in s.iter_mut().enumerate().take(max_lag + 1).skip(min_lag) {
-            let (mut cross, mut a2, mut b2) = (0.0, 0.0, 0.0);
-            for i in 0..window {
-                let (a, b) = (d.at(i), d.at(i + lag));
-                cross += a * b;
-                a2 += a * a;
-                b2 += b * b;
-            }
+            let cross = lanes(window, |i| d.at(i) * d.at(i + lag));
+            let a2 = lanes(window, |i| d.at(i) * d.at(i));
+            let b2 = lanes(window, |i| d.at(i + lag) * d.at(i + lag));
             if a2 > 0.0 && b2 > 0.0 {
                 *score = cross / (a2 * b2).sqrt();
             }

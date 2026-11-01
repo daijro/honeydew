@@ -50,6 +50,11 @@ pub trait AudioSink {
     fn send(&mut self, cmd: Command) -> Result<(), Command>;
     /// Transport tick, CPU load, stream failure and meters; read once per frame.
     fn snapshot(&mut self) -> OutputSnapshot;
+    /// The commands queued so far: those up to this count have reached the engine once a snapshot's
+    /// [`OutputSnapshot::taken`] does. The default, with a default snapshot's 0, has every command there at once.
+    fn sent(&self) -> u64 {
+        0
+    }
     /// For building a replacement [`SongAudioEngine`].
     fn sample_rate(&self) -> u32;
     /// Replaces a failed stream with one on the current output device playing `song` with `samples` and monitoring
@@ -71,6 +76,10 @@ impl AudioSink for AudioOutput<SongAudioEngine> {
 
     fn snapshot(&mut self) -> OutputSnapshot {
         AudioOutput::snapshot(self)
+    }
+
+    fn sent(&self) -> u64 {
+        AudioOutput::sent(self)
     }
 
     fn sample_rate(&self) -> u32 {
@@ -231,6 +240,10 @@ pub struct AudioLink {
     /// The playhead the editors draw ([`Self::advance_playhead`]), and how far it runs ahead of the last snapshot.
     clock: clock::PlayheadClock,
     lead: u64,
+    /// The last seek on its way to the engine: its tick, and the sink's [`AudioSink::sent`] count once it went out. Until
+    /// a snapshot shows the audio thread has taken it (up to a buffer later), the snapshot's tick is that tick: REV, Play's
+    /// start point and an edit's engine count from where the transport is going, not from where it was.
+    seeking: Option<(u64, u64)>,
 }
 
 impl AudioLink {
@@ -473,9 +486,16 @@ impl AudioLink {
     pub fn flush(&mut self) {
         let Some(sink) = &mut self.sink else { return };
         while let Some(cmd) = self.pending.pop_front() {
+            let seek = match cmd {
+                AudioCommand::Seek(tick) => Some(tick),
+                _ => None,
+            };
             if let Err(cmd) = sink.send(cmd) {
                 self.pending.push_front(cmd);
                 break;
+            }
+            if let Some(tick) = seek {
+                self.seeking = Some((tick, sink.sent()));
             }
         }
     }
@@ -544,6 +564,8 @@ impl AudioLink {
             self.resend_settings(song);
             return;
         };
+        // A new stream counts its commands afresh.
+        self.seeking = None;
         match sink.reopen(song, &self.samples, self.input.as_ref(), mode) {
             Ok(()) => {
                 self.stream_failed = false;
@@ -569,6 +591,7 @@ impl AudioLink {
         self.low_latency = low_latency;
         let mode = self.buffer_mode();
         let Some(sink) = &mut self.sink else { return };
+        self.seeking = None;
         if let Err(err) = sink.reopen(song, &self.samples, self.input.as_ref(), mode) {
             warn(&format!("could not change audio latency mode: {err}"));
             self.stream_failed = true;
@@ -589,6 +612,7 @@ impl AudioLink {
         self.sound_mode = sound_mode;
         let mode = self.buffer_mode();
         let Some(sink) = &mut self.sink else { return };
+        self.seeking = None;
         if let Err(err) = sink.reopen(song, &self.samples, self.input.as_ref(), mode) {
             warn(&format!("could not change sound mode: {err}"));
             self.stream_failed = true;
@@ -658,14 +682,18 @@ impl AudioLink {
     pub fn poll(&mut self) -> Option<OutputSnapshot> {
         // The previews the engine (and any command still queued) let go of are freed here, on this thread.
         self.previews.retain(|d| Arc::strong_count(d) > 1);
-        let snapshot = self.sink.as_mut().map(|s| s.snapshot());
+        let mut snapshot = self.sink.as_mut().map(|s| s.snapshot());
         let failed = snapshot.as_ref().is_some_and(|s| s.stream_failed);
         if failed && !self.stream_failed {
             warn("the audio stream failed; the next click restarts it");
             self.pending.clear();
         }
         self.stream_failed = failed;
-        if let Some(s) = &snapshot {
+        if let Some(s) = &mut snapshot {
+            match self.seeking {
+                Some((tick, sent)) if s.taken < sent && !failed => s.transport_tick = tick,
+                _ => self.seeking = None,
+            }
             let moved = self.held.is_some_and(|h| h != s.transport_tick);
             if !s.counting_in && (self.counting_in || moved) {
                 (self.count_in, self.held) = (None, None);
@@ -883,6 +911,8 @@ pub(crate) mod testing {
         pub(crate) buffer_frames: u32,
         /// The output's sample rate, Hz; `None` is 48 kHz.
         pub(crate) sample_rate: Option<u32>,
+        /// The commands the audio thread has taken, held here (a long callback); `None`: every command sent.
+        pub(crate) taken: Option<u64>,
     }
 
     impl Recorder {
@@ -1064,8 +1094,13 @@ pub(crate) mod testing {
                 modulated: (r.engine.iter())
                     .flat_map(|e| e.modulated().to_vec())
                     .collect(),
+                taken: r.taken.unwrap_or(r.all.len() as u64),
                 ..OutputSnapshot::default()
             }
+        }
+
+        fn sent(&self) -> u64 {
+            self.0.borrow().all.len() as u64
         }
 
         fn sample_rate(&self) -> u32 {

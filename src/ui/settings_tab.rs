@@ -2,7 +2,7 @@
 //!
 //! The row pitch is 2 U, a control row 1.5 U (centred in its pitch), and the content column is the page's left + 2 U,
 //! wide W - 4 U, or 0.5 U in from each side on a page under 20 U wide (the page is the menu panel: the tab hands this
-//! its panel-wide page). The list scrolls in whole rows, with a thin `text` scrollbar (t wide, α 0.5) 0.25 U from the
+//! its panel-wide page). The list scrolls by the pixel, with a thin `text` scrollbar (t wide, α 0.5) 0.25 U from the
 //! page's right edge while it can scroll. Section headers are FontSize 4; each one after the first has a divider (1 px
 //! `text` α 0.18) centred in the top 0.5 U of its row.
 //! Every toggle is the label-right pill in a rect that starts 0.5 U left of the column and ends at its right edge: the
@@ -22,7 +22,8 @@
 //! label has the room left of its control, and uses shrink drawing in it (down a point at a time to 6 pt, then a
 //! middle ellipsis keeping 5 tail characters): plain drawing would run it under its control at large UI scales on a
 //! narrow screen. Where the label fits, as on the 20 U panel, it is drawn whole at its own size. The list scrolls by
-//! wheel or drag.
+//! wheel, or by drag and fling as the main menu's other pages do ([`crate::ui::main_menu::scroll`]; issue #41: not
+//! in whole rows).
 //!
 //! `Input device:` is live: its popup is the MIDI device [`menu`] over the ports the app lends the tab
 //! ([`SettingsTab::set_midi_ports`]), the pick is stored as the menu label in `Settings::midi_device`, and opening the
@@ -57,6 +58,7 @@ use crate::midi::device::menu as midi_menu;
 use crate::settings::{BUFFER_SIZES, SOUND_MODES, Settings};
 use crate::theme::{DISABLED_ALPHA, builtin_themes};
 use crate::ui::popup::{self, PopupItem};
+use crate::ui::scroller::Scroller;
 use crate::ui::widgets::{
     Button, Control, ParamMenu, Pill, button, h_slider, pill_toggle, pressed, shrink,
     truncated_text,
@@ -64,7 +66,7 @@ use crate::ui::widgets::{
 use crate::ui::{UiCtx, primary_down_live};
 
 // Sizes in U (see the module docs).
-/// Every row takes this much of the list, and scrolling moves by it.
+/// Every row takes this much of the list.
 const ROW_PITCH: f32 = 2.0;
 /// A control row's height, centred in its pitch.
 const ROW_H: f32 = 1.5;
@@ -203,7 +205,13 @@ enum Choice {
     /// `Sample memory limit` (#38): `Auto` or a fixed limit ([`crate::sample_cache::MEMORY_LIMITS`]); not on the web,
     /// whose budget is fixed.
     SampleMemory,
+    /// `Screen orientation:` (#41): `Auto`, `Portrait` or `Landscape` ([`crate::settings::ORIENTATIONS`]).
+    Orientation,
 }
+
+/// `Screen orientation:`, after `Animation:` where the app can lock the screen's orientation
+/// ([`SettingsTab::orientation`]).
+const ORIENTATION_ROW: Row = row("Screen orientation:", Kind::Dropdown(Choice::Orientation));
 
 struct Row {
     label: &'static str,
@@ -330,8 +338,9 @@ const DEVICE_TAIL_K: usize = 5;
 pub struct SettingsTab {
     menu: Option<(Menu, Pos2)>,
     shown_frame: u64,
-    /// How far the list is dragged or wheeled, in points. It is drawn at the whole row nearest to it.
+    /// How far the list is scrolled up, in points, and its touch and fling ([`crate::ui::main_menu::scroll`]).
     offset: f32,
+    kinetic: Scroller,
     /// Section headers the user has collapsed (all start open). This is UI state, so it is kept for the lifetime of
     /// the settings tab rather than saved as an application preference.
     collapsed_sections: HashSet<&'static str>,
@@ -356,6 +365,8 @@ pub struct SettingsTab {
     plugin_action: Option<PluginAction>,
     /// The plugin rows show: the app hosts plugins (the desktop). The caller sets it.
     pub plugins: bool,
+    /// `Screen orientation:` shows: the app can lock the screen's orientation (Android). The caller sets it.
+    pub orientation: bool,
     /// `Scaling:`'s slider position (0 = 60 %, 1 = 200 %) while it is held: shown, applied when let go.
     scaling: Option<f32>,
     /// The audio buffer slider position while it is held: shown, applied when let go so the stream is reopened once.
@@ -437,12 +448,17 @@ impl SettingsTab {
             .collect();
         let plugins = if self.plugins { &PLUGIN_ROWS[..] } else { &[] };
         let at = (rows.iter().position(|r| r.label == "Advanced:")).unwrap_or(rows.len());
-        rows[..at]
+        let mut rows: Vec<_> = rows[..at]
             .iter()
             .copied()
             .chain(plugins.iter())
             .chain(rows[at..].iter().copied())
-            .collect()
+            .collect();
+        if self.orientation {
+            let at = rows.iter().position(|r| r.label == "Animation:");
+            rows.insert(at.map_or(rows.len(), |i| i + 1), &ORIENTATION_ROW);
+        }
+        rows
     }
 
     /// The settings rows after removing the contents of collapsed sections. Headers stay visible so they can be
@@ -479,14 +495,6 @@ impl SettingsTab {
         let limited = m.scale_limited_to().is_some();
         let shown = |(_, row): &(usize, &Row)| limited || !matches!(row.kind, Kind::ScaleLimit);
         let slots = rows.iter().filter(|r| shown(r)).count();
-        // Drags and the wheel move the list; widgets that sense clicks let drags through to it. It scrolls in whole rows.
-        let id = Id::new("settings_tab").with("scroll");
-        let drag = ui.interact(page, id, Sense::drag());
-        let mut moved = drag.drag_delta().y;
-        if ui.rect_contains_pointer(page) {
-            moved += ui.input(|i| i.smooth_scroll_delta.y);
-        }
-        let hidden_rows = ((slots as f32 * pitch - page.height()) / pitch).ceil();
         if std::mem::take(&mut self.reveal_scaling) {
             // `Scaling:` back in view after the new scale, 1.5 U clear of the page's ends.
             let at = rows
@@ -499,8 +507,18 @@ impl SettingsTab {
                 .min(y - margin)
                 .max(y + pitch + margin - page.height());
         }
-        self.offset = (self.offset - moved).clamp(0.0, hidden_rows.max(0.0) * pitch);
-        let scrolled = (self.offset / pitch).round() * pitch;
+        // Drags, flings and the wheel move the list by the pixel; widgets that sense clicks let drags through to it.
+        let content = slots as f32 * pitch;
+        let id = Id::new("settings_tab").with("scroll");
+        let scrolled = crate::ui::main_menu::scroll(
+            ui,
+            id,
+            m.u(1.0),
+            &mut self.kinetic,
+            page,
+            content,
+            &mut self.offset,
+        );
         let top = page.top() - scrolled;
         let inset = if page.width() < m.u(WIDE_PAGE) {
             NARROW_INSET
@@ -522,14 +540,15 @@ impl SettingsTab {
                 self.row(ui, cx, *index, row, slot, settings);
             }
         }
-        let content = slots as f32 * pitch;
         if content > page.height() {
             let t = m.t();
             let h = (page.height() * page.height() / content).max(m.u(0.5));
             let y =
                 page.top() + (page.height() - h) * scrolled / (content - page.height()).max(1.0);
             let x = page.right() - m.u(SCROLLBAR_RIGHT) - t;
-            let thumb = Rect::from_min_size(Pos2::new(x, y.min(page.bottom() - h)), vec2(t, h));
+            // Pulled past an end, the thumb stays at it.
+            let y = y.clamp(page.top(), page.bottom() - h);
+            let thumb = Rect::from_min_size(Pos2::new(x, y), vec2(t, h));
             let ink = cx
                 .theme
                 .colors
@@ -1061,6 +1080,10 @@ impl Choice {
                 .map(|&(label, _)| label.to_owned())
                 .enumerate()
                 .collect(),
+            Choice::Orientation => (crate::settings::ORIENTATIONS.iter())
+                .map(|&(label, _)| label.to_owned())
+                .enumerate()
+                .collect(),
         }
     }
 
@@ -1072,6 +1095,7 @@ impl Choice {
             Choice::Animation if !s.inertia => 2,
             Choice::Animation => usize::from(!s.animations),
             Choice::SampleMemory => usize::from(s.sample_memory_limit),
+            Choice::Orientation => usize::from(s.screen_orientation),
         }
     }
 
@@ -1082,6 +1106,7 @@ impl Choice {
             Choice::Theme => s.theme = value as u32,
             Choice::Animation => (s.animations, s.inertia) = (value == 0, value != 2),
             Choice::SampleMemory => s.sample_memory_limit = value as u8,
+            Choice::Orientation => s.screen_orientation = value as u8,
         }
     }
 
@@ -2031,8 +2056,8 @@ mod tests {
 
     #[test]
     fn the_list_stops_at_its_last_row() {
-        // "Scrolling moves in whole 2 U rows" and no further than the list: wheeling far past the end leaves the last row
-        // in view, within a row of the bottom, and a second wheel changes nothing.
+        // No further than the list: wheeling far past the end leaves the last row in view, within a row of the bottom,
+        // and a second wheel changes nothing.
         let mut rig = Rig::with_height(540.0);
         let last = row_id(index("Install sound library…"));
         let over = pos2(800.0, 300.0);
@@ -2078,28 +2103,43 @@ mod tests {
     }
 
     #[test]
-    fn the_list_scrolls_in_whole_2_u_rows() {
-        // "Scrolling moves in whole 2 U rows."
+    fn a_drag_moves_the_list_by_the_pixel_and_a_flick_flings_it() {
+        // Issue #41: not in whole 2 U (64-point) rows. Out of the 0.5 U calm zone the list follows the finger 1:1, and
+        // a release on a fast move keeps it going, slowing each frame, until it stops. On a row: its toggle lets the
+        // drag through.
         let mut rig = Rig::with_height(540.0);
         let id = row_id(index("Multi core processing"));
-        let top = rig.rect_of(id).top();
-        let over = pos2(800.0, 300.0);
-        rig.frame(vec![Event::PointerMoved(over)]);
-        let mut seen = std::collections::BTreeSet::new();
-        for delta in [-9.0, -9.0, -9.0, -30.0, -17.0, -41.0, -23.0] {
-            rig.frame(vec![Event::MouseWheel {
-                unit: egui::MouseWheelUnit::Point,
-                delta: vec2(0.0, delta),
+        let start = rig.rect_of(id).top();
+        let at = |y| pos2(800.0, y);
+        rig.frame(vec![Event::PointerMoved(at(300.0))]);
+        rig.button(at(300.0), true);
+        rig.frame(vec![Event::PointerMoved(at(260.0))]);
+        assert_eq!(rig.tab.offset, 40.0, "out of the calm zone: 1:1");
+        rig.frame(vec![Event::PointerMoved(at(247.0))]);
+        assert_eq!(rig.tab.offset, 53.0, "13 more points, not a row");
+        // Held still a frame: the rects read back are the last frame's.
+        rig.frame(vec![]);
+        assert_eq!(rig.rect_of(id).top(), start - 53.0, "drawn there too");
+        rig.frame(vec![
+            Event::PointerMoved(at(227.0)),
+            Event::PointerButton {
+                pos: at(227.0),
+                button: PointerButton::Primary,
+                pressed: false,
                 modifiers: Default::default(),
-            }]);
-            for _ in 0..30 {
-                rig.frame(vec![]);
-            }
-            let rows = (top - rig.rect_of(id).top()) / 64.0;
-            assert!((rows - rows.round()).abs() < 1e-3, "{rows} rows");
-            seen.insert(rows.round() as i32);
+            },
+        ]);
+        let mut steps = Vec::new();
+        let mut last = rig.tab.offset;
+        for _ in 0..120 {
+            rig.frame(vec![]);
+            steps.push(rig.tab.offset - last);
+            last = rig.tab.offset;
         }
-        assert!(seen.len() > 2, "it did scroll: {seen:?}");
+        assert!(steps[0] > 10.0, "it flies on: {steps:?}");
+        assert!(steps.windows(2).all(|w| w[1] <= w[0]), "slowing: {steps:?}");
+        assert_eq!(steps[119], 0.0, "and stops: {steps:?}");
+        assert!(!rig.take_changed(), "the drag flipped no toggle");
     }
 
     #[test]
@@ -2197,6 +2237,26 @@ mod tests {
         let multitrack = rig.rect_of(popup_id().with((0_usize, 1_usize))).center();
         rig.click(multitrack);
         assert_eq!(rig.settings.sound_mode, 1);
+    }
+
+    #[test]
+    fn screen_orientation_shows_after_animation_only_where_the_app_can_lock_it() {
+        // Hidden unless the app says it can (Android: `views::main_menu`).
+        let mut rig = Rig::new();
+        assert!(!rig.texts().iter().any(|t| t == "Screen orientation:"));
+        rig.tab.orientation = true;
+        // The first frame lays the rows out anew; the second reads them.
+        rig.frame(vec![]);
+        rig.frame(vec![]);
+        let at = rig.tab.rows().iter().position(|r| r.label == "Animation:");
+        let at = at.unwrap() + 1;
+        assert_eq!(rig.tab.rows()[at].label, "Screen orientation:");
+        assert!(rig.texts().iter().any(|t| t == "Screen orientation:"));
+        // `Landscape`, the third item, stores index 2.
+        rig.click(rig.rect_of(row_id(at)).center());
+        rig.click(rig.rect_of(popup_id().with((0_usize, 2_usize))).center());
+        assert_eq!(rig.settings.screen_orientation, 2);
+        assert!(rig.take_changed());
     }
 
     #[test]

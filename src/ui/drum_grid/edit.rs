@@ -10,6 +10,7 @@ use crate::ui::clips::TimeAxis;
 use crate::ui::graph_lane::Prop;
 use crate::ui::piano_roll::notes::{box_end, snap_round, sort};
 use crate::ui::step_seq::edit as steps;
+use crate::ui::timeline::{self, Level};
 
 pub const BEAT: f64 = PPQ as f64;
 /// The time zoom k: beat width = U·d/(4k).
@@ -30,68 +31,41 @@ pub fn new_k(d: u8) -> f32 {
     (f32::from(d.max(1)) / (4.0 * NEW_BEAT_U)).clamp(K_RANGE[0], K_RANGE[1])
 }
 
-/// The marks between ticks `t0` and `t1` as (tick, line width in device pixels): 4 at a bar, 2 at a beat, 1 finer.
-/// Finer marks split the beat by the prime factors of the subdivision d (smallest first, so the step, 1/d beat, is a
-/// level), then halve it down to a tick; each level only while its marks are at least `gap` U apart (`u` points;
-/// the drum grid's [`MARK_GAP`], the audio editor's 2.4); beats too. Bars are always marked. No width (or NaN)
-/// marks nothing.
+/// The grid lines between ticks `t0` and `t1` as (tick, line width in device pixels): every fine mark of the ruler's
+/// law ([`timeline::spacings`]) for marks at least `gap` U apart (`u` points; the drum grid's [`MARK_GAP`], the audio
+/// editor's 2.4), so a step halves down to a tick zoomed in and bars group zoomed out. 4 px at a bar, 2 at a beat, 1
+/// finer; once the bars group (issue #41), 4 px on the ruler's labelled marks, 2 on its mid ones, 1 on the rest. No
+/// width (or NaN) marks nothing.
 pub fn marks(t0: f64, t1: f64, beat_w: f32, u: f32, sig: TimeSig, gap: f32) -> Vec<(f64, f32)> {
     // NaN too.
     if beat_w.is_nan() || beat_w <= 0.0 {
         return Vec::new();
     }
-    let b = u64::from(sig.bar_beats());
-    let (per_beat, every) = mark_level(beat_w, u, sig, gap);
-    let unit = BEAT / per_beat as f64;
-    let first = ((t0.max(0.0) / unit).ceil() as u64).next_multiple_of(every);
-    (first..)
-        .step_by(every as usize)
-        .map(|i| (i, i as f64 * unit))
-        .take_while(|&(_, t)| t <= t1)
-        .map(|(i, t)| {
-            let w = if i % (per_beat * b) == 0 {
-                4.0
-            } else if i % per_beat == 0 {
-                2.0
-            } else {
-                1.0
+    let [fine, mid, top] = timeline::spacings(f64::from(gap * u / beat_w), sig);
+    let n = timeline::units_per_beat(fine, sig.steps_per_beat());
+    let unit = BEAT / f64::from(n);
+    let b = f64::from(sig.bar_beats());
+    let widths = if fine <= b {
+        [fine, 1.0, b]
+    } else {
+        [fine, mid, top]
+    };
+    let (from, to) = ((t0.max(0.0) / unit).ceil(), (t1 / unit).floor());
+    timeline::marks(from as i64, to as i64, widths, n)
+        .map(|(j, level)| {
+            let w = match level {
+                Level::Top => 4.0,
+                Level::Mid => 2.0,
+                Level::Fine => 1.0,
             };
-            (t, w)
+            (j as f64 * unit, w)
         })
         .collect()
 }
 
-/// The distance in ticks between the visible grid lines.
+/// The distance in ticks between the visible grid lines ([`marks`]): Auto's unit below a step.
 pub fn mark_spacing(beat_w: f32, u: f32, sig: TimeSig, gap: f32) -> f64 {
-    let (per_beat, every) = mark_level(beat_w, u, sig, gap);
-    BEAT / per_beat as f64 * every as f64
-}
-
-fn mark_level(beat_w: f32, u: f32, sig: TimeSig, gap: f32) -> (u64, u64) {
-    // Marks per beat at the finest level far enough apart, or bars only (every b-th beat).
-    (mark_levels(sig.steps_per_beat()).into_iter().rev())
-        .find(|&k| beat_w / k as f32 >= gap * u)
-        .map_or((1, u64::from(sig.bar_beats())), |k| (u64::from(k), 1))
-}
-
-/// Marks per beat at each level, coarsest first: 1, then the beat split by `d`'s prime factors (smallest first),
-/// then halved, never finer than a tick (a level past [`PPQ`] is dropped).
-fn mark_levels(d: u32) -> Vec<u32> {
-    let mut levels = vec![1];
-    let (mut n, mut p) = (d, 2);
-    while n > 1 {
-        if n.is_multiple_of(p) {
-            levels.push(levels[levels.len() - 1] * p);
-            n /= p;
-        } else {
-            p += 1;
-        }
-    }
-    levels.retain(|&k| k <= PPQ);
-    while levels[levels.len() - 1] * 2 <= PPQ {
-        levels.push(levels[levels.len() - 1] * 2);
-    }
-    levels
+    timeline::spacings(f64::from(gap * u / beat_w), sig)[0] * BEAT
 }
 
 /// A drum hit's (pad, start, length) in ticks.

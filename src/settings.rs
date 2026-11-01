@@ -281,7 +281,15 @@ pub struct Settings {
     /// default.
     #[serde(rename = "sampleMemoryLimit")]
     pub sample_memory_limit: u8,
+    /// `Screen orientation:` (our own key; #41, Android only): an index into [`ORIENTATIONS`], `Auto` (0) by default.
+    #[serde(rename = "screenOrientation")]
+    pub screen_orientation: u8,
 }
+
+/// `Screen orientation:`'s items, each with the `ActivityInfo.SCREEN_ORIENTATION_*` the Android activity requests:
+/// `Auto` turns all four ways unless the system's rotation lock is on (`FULL_USER`), `Portrait` and `Landscape` either
+/// way up (`SENSOR_PORTRAIT`, `SENSOR_LANDSCAPE`).
+pub const ORIENTATIONS: [(&str, i32); 3] = [("Auto", 13), ("Portrait", 7), ("Landscape", 6)];
 
 impl Default for Settings {
     /// The fresh-install state: ghost notes, range labels, the count-in, the recording's metronome and the CPU and RAM
@@ -333,6 +341,7 @@ impl Default for Settings {
             velocity_snap: ValueSnap::OFF,
             pan_snap: ValueSnap::OFF,
             sample_memory_limit: 0,
+            screen_orientation: 0,
         }
     }
 }
@@ -414,7 +423,17 @@ impl Settings {
         if usize::from(s.sample_memory_limit) >= crate::sample_cache::MEMORY_LIMITS.len() {
             s.sample_memory_limit = d.sample_memory_limit;
         }
+        if usize::from(s.screen_orientation) >= ORIENTATIONS.len() {
+            s.screen_orientation = d.screen_orientation;
+        }
         s
+    }
+
+    /// The `ActivityInfo.SCREEN_ORIENTATION_*` constant `Screen orientation:` asks the Android activity for (an
+    /// unknown index is `Auto`'s).
+    pub fn android_orientation(&self) -> i32 {
+        let item = ORIENTATIONS.get(usize::from(self.screen_orientation));
+        item.unwrap_or(&ORIENTATIONS[0]).1
     }
 
     /// The `Keyboard` choice the `keyboardKind` setting names (an unknown one is `Classic`).
@@ -716,6 +735,7 @@ mod tests {
                 grid: crate::ui::automation::value::ValueGrid::Percent(25),
             },
             sample_memory_limit: 3,
+            screen_orientation: 2,
         }
     }
 
@@ -942,6 +962,7 @@ mod tests {
                 "recentKbdSizeCells",
                 "reclatency",
                 "sampleMemoryLimit",
+                "screenOrientation",
                 "showHardwareMeters",
                 "showHiddenTracks",
                 "showKeyNames",
@@ -955,6 +976,25 @@ mod tests {
                 "whatsNewSeen"
             ]
         );
+    }
+
+    #[test]
+    fn the_screen_orientation_is_stored_by_index_and_asks_android_for_its_constant() {
+        // `ActivityInfo`: FULL_USER 13, SENSOR_PORTRAIT 7, SENSOR_LANDSCAPE 6. An unknown index loads as `Auto`.
+        assert_eq!(Settings::default().android_orientation(), 13);
+        for (index, want) in [(1, 7), (2, 6), (0, 13)] {
+            let mut mem = Mem::default();
+            Settings {
+                screen_orientation: index,
+                ..Settings::default()
+            }
+            .save(&mut mem);
+            let json: serde_json::Value = serde_json::from_str(&mem.0[STORAGE_KEY]).unwrap();
+            assert_eq!(json["screenOrientation"], index);
+            assert_eq!(Settings::load(&mem).android_orientation(), want, "{index}");
+        }
+        let s = Settings::load(&stored(r#"{"screenOrientation": 3}"#));
+        assert_eq!((s.screen_orientation, s.android_orientation()), (0, 13));
     }
 
     #[test]

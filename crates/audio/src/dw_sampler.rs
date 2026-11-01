@@ -1,9 +1,10 @@
 //! DW Sampler (ID 1): a key- and velocity-zoned sample player.
-//! 128 voices, each with linear-interpolated playback, a linear amp envelope, a filter with its own envelope, a
+//! [`VOICES`] voices, each with linear-interpolated playback, a linear amp envelope, a filter with its own envelope, a
 //! frequency envelope and an LFO. The zones and their decoded samples arrive at construction on the app thread;
 //! nothing here allocates after [`DwSampler::new`].
 
 use std::f32::consts::{PI, TAU};
+use std::ops::Range;
 use std::sync::Arc;
 
 use crate::ProcessContext;
@@ -11,7 +12,7 @@ use crate::biquad::flush;
 use crate::dwp::{Midi, Zone};
 use crate::instrument::Instrument;
 use crate::sample::SampleData;
-use crate::stream::{Pcm, Rings};
+use crate::stream::{Pcm, Rings, STREAM_VOICES};
 use crate::voice::{LFO_SYNC_BEATS, lfo_attack_increment, lfo_rate_hz};
 
 /// The param count.
@@ -54,7 +55,10 @@ const PITCH_BEND: usize = 4;
 /// The panel setting key of PB Range (SAMPLE `1.8`, `panels::cstm`): k/12 for k semitones, 1…12.
 const PB_RANGE_SETTING: u32 = 11_800;
 
-const VOICES: usize = 512;
+/// Voices per sampler; a note with none free is dropped. A streamed zone plays in one of the first
+/// [`STREAM_VOICES`], which have rings.
+pub const VOICES: usize = 512;
+const _: () = assert!(STREAM_VOICES <= VOICES);
 /// LFO and filter coefficients are updated every 16 samples.
 const TICK: u32 = 16;
 /// LFO Level and Pan move this fraction of the way to their target per sample.
@@ -437,7 +441,7 @@ fn cutoff_hz(block: &Block, velocity: f32, lfo: f32, env: f32, pitch: f32) -> f3
 /// The DW Sampler: zones, voices and an LFO.
 pub struct DwSampler {
     zones: Vec<Playable>,
-    /// A ring per voice, when a zone streams from disk.
+    /// The first [`STREAM_VOICES`] voices' rings, when a zone streams from disk.
     rings: Option<Arc<Rings>>,
     params: [f32; PARAMS],
     voices: Box<[Voice]>,
@@ -456,14 +460,14 @@ pub struct DwSampler {
 
 impl DwSampler {
     /// A sampler at `sample_rate` over `zones` (a zone with an empty sample is left out), with the `CSTM` `MIDI`
-    /// settings. App thread: it allocates the 128 voices.
+    /// settings. App thread: it allocates the voices.
     pub fn new(sample_rate: f32, zones: Vec<DwZone>, midi: Midi) -> Self {
         let zones: Vec<_> = (zones.into_iter())
             .filter(|z| z.sample.frames() > 0)
             .map(Playable::new)
             .collect();
         Self {
-            rings: Rings::new(zones.iter().map(|z| z.sample.disk()).collect(), VOICES),
+            rings: Rings::new(zones.iter().map(|z| z.sample.disk()).collect()),
             zones,
             params: DEFAULTS,
             voices: vec![Voice::default(); VOICES].into_boxed_slice(),
@@ -478,10 +482,21 @@ impl DwSampler {
         }
     }
 
-    /// Its voices' rings when a zone streams from disk: for the engine's streamer to fill
+    /// Its first [`STREAM_VOICES`] voices' rings when a zone streams from disk: for the engine's streamer to fill
     /// ([`crate::stream::Streamer::register`]).
     pub fn rings(&self) -> Option<&Arc<Rings>> {
         self.rings.as_ref()
+    }
+
+    /// A free voice for a note of `zone`. In a sampler that streams, a streamed zone's is one of the first
+    /// [`STREAM_VOICES`], which have rings; any other zone's is one past them if one is free.
+    fn free(&self, zone: usize) -> Option<usize> {
+        let free = |mut slots: Range<usize>| slots.find(|&s| self.voices[s].stage == Stage::Off);
+        match &self.rings {
+            None => free(0..VOICES),
+            Some(rings) if rings.streams(zone) => free(0..STREAM_VOICES),
+            Some(_) => free(STREAM_VOICES..VOICES).or_else(|| free(0..STREAM_VOICES)),
+        }
     }
 
     fn unhold(&mut self, key: u8) {
@@ -639,9 +654,8 @@ impl Instrument for DwSampler {
             }
         }
         let picked = self.pick(key, velocity);
-        let free = self.voices.iter().position(|v| v.stage == Stage::Off);
         self.hold(key);
-        let (Some(zone), Some(index)) = (picked, free) else {
+        let Some((zone, index)) = picked.and_then(|zone| Some((zone, self.free(zone)?))) else {
             return;
         };
         let instant = self.params[ATTACK] <= 0.0 && self.midi.attack_flag == 0;

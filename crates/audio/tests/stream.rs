@@ -10,8 +10,8 @@ use honeydew_audio::flac_writer::flac;
 use honeydew_audio::instrument::Instrument;
 use honeydew_audio::sample::{SampleData, decode};
 use honeydew_audio::sfz::parse;
-use honeydew_audio::soundfont::{SoundFont, SoundFontPlayer};
-use honeydew_audio::stream::{Pcm, Source, Streamed, Streamer, head_frames};
+use honeydew_audio::soundfont::{SoundFont, SoundFontPlayer, VOICES};
+use honeydew_audio::stream::{Pcm, STREAM_VOICES, Source, Streamed, Streamer, head_frames};
 
 const RATE: u32 = 48_000;
 
@@ -183,6 +183,43 @@ fn a_streamed_loop_loops_and_a_reversed_zone_plays_from_its_end() {
     let whole = render(&mut ready(sampler(ram), true), 60, frames, 1000, || {});
     let streamed = render(&mut ready(sampler(disk), true), 60, frames, 1000, || {});
     assert_same(&streamed, &whole);
+}
+
+/// A player of [`VOICES`] voices that streams keeps rings for its first [`STREAM_VOICES`] alone: a streamed note past
+/// them steals the oldest streamed voice, never an older one playing from memory.
+#[test]
+fn only_the_stream_voices_have_rings_and_a_streamed_note_steals_among_them() {
+    let path = long_flac("pool.flac", 1);
+    let (ram, disk, _) = both(&path, &[0]);
+    // Soft notes stream; loud ones play from memory, looping.
+    let text = "<region> sample=x.flac hivel=63 pitch_keycenter=60
+        <region> sample=x.flac lovel=64 pitch_keycenter=60 loop_mode=loop_continuous";
+    let regions = (parse(text, &|_| None).regions.into_iter())
+        .zip([disk, ram])
+        .collect();
+    let font = Arc::new(SoundFont::sfz("Test", regions));
+    let mut player = SoundFontPlayer::new(RATE as f32, Some((font, 0)));
+    let rings = player.rings().expect("it streams").voices();
+    assert!((rings, VOICES) == (STREAM_VOICES, 512) && rings < VOICES);
+    // Every voice past the rings plays from memory, then every ring streams, then one more streamed note.
+    for n in 0..VOICES - STREAM_VOICES {
+        player.note_on(100 + (n % 28) as u8, 1.0, 0.5);
+    }
+    for key in 0..=STREAM_VOICES as u8 {
+        player.note_on(key, 0.3, 0.5);
+    }
+    assert_eq!(player.active_voices(), VOICES);
+    let block = |player: &mut SoundFontPlayer| {
+        let (mut left, mut right) = ([0.0; 4800], [0.0; 4800]);
+        player.process(&mut left, &mut right, context());
+    };
+    // Key 0's voice, the oldest streamed one, was stolen: its note-off releases nothing. Key 1's does.
+    player.note_off(0);
+    block(&mut player);
+    assert_eq!(player.active_voices(), VOICES);
+    player.note_off(1);
+    block(&mut player);
+    assert_eq!(player.active_voices(), VOICES - 1);
 }
 
 #[test]

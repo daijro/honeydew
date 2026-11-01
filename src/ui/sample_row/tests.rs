@@ -473,14 +473,16 @@ fn the_row_shows_each_text_law_in_the_channel_colour_and_the_toggles_lit_when_on
     host.row.reverse = true;
     let shapes = off.frame(vec![], &mut host.draw());
     let texts = Offscreen::texts(&shapes);
-    let text = crate::theme::theme_by_id(0).colors.text.to_color32();
+    let colors = crate::theme::theme_by_id(0).colors;
+    let (text, menu_fill) = (colors.text.to_color32(), colors.menu_fill.to_color32());
+    // The toggles' labels are on their discs: on, `menuFill` on `text`; off, `text` on `menuFill`.
     let want = [
         ("Level: 0.0 dB", INK),
         ("Pan: center", INK),
         ("Speed: 1.0x", INK),
         ("Pitch: 0 semitones", INK),
-        ("REV", text),
-        ("SYNC", text.gamma_multiply(0.25)),
+        ("REV", menu_fill),
+        ("SYNC", text),
     ];
     for (label, color) in want {
         assert!(

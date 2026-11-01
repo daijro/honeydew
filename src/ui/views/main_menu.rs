@@ -162,6 +162,7 @@ pub fn show(
     settings.set_midi_ports(app.midi_devices);
     settings.content = app.files.content_dir();
     settings.plugins = cfg!(plugin_host);
+    settings.orientation = cfg!(target_os = "android");
     state.menu.set_factory(app.files.factory);
     let action = state.menu.show(
         ui,

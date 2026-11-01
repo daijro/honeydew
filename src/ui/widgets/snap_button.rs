@@ -1,19 +1,23 @@
 //! The Snap button of the ruler row's top-left cell, shared by the clip editors (and the playlist's ruler).
 //!
-//! Icon only, no disc or ring, the icon's size factor 0.6: on, icon 15 in the caller's `ink` (`text` in the playlist,
-//! the channel colour in the clip editors); off, icon 79 (the magnet with a slash) in `menuFill`. A tap toggles Snap; a
-//! long press (300 ms within the 0.5 U calm zone) or a right click opens the snap-mode menu, which the caller shows.
-//! The whole cell takes the touch.
+//! The icon in an outline circle (issue #41: without the circle it did not read as a button), the icon's size factor
+//! 0.6: on, icon 15 in the caller's `ink` (`text` in the playlist, the channel colour in the clip editors); off, icon
+//! 79 (the magnet with a slash) in `menuFill`. The ring is the icon's colour, 2 px, of radius 0.4 of the cell's smaller
+//! side, as the transport's Play ring. A tap toggles Snap; a long press (300 ms within the 0.5 U
+//! calm zone) or a right click opens the snap-mode menu, which the caller shows. The whole cell takes the touch.
 //! [`paint_snap_button`] and [`snap_touch`] are its two halves, for a caller that paints and senses at different points
 //! of its draw order; [`snap_button`] does both.
 
-use eframe::egui::{Color32, Id, Painter, Rect, Sense, Ui, Vec2};
+use eframe::egui::{Color32, Id, Painter, Rect, Sense, Stroke, Ui, Vec2};
 
 use crate::icons::{IconId, draw_icon};
 use crate::ui::{UiCtx, gesture};
 
 /// The icon's size factor.
 const ICON: f32 = 0.6;
+/// The ring's radius, of the cell's smaller side, and its width in device pixels.
+const RING: f32 = 0.4;
+const RING_PX: f32 = 2.0;
 
 /// What a touch on the Snap button asks for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,13 +41,15 @@ pub fn snap_button(
     snap_touch(ui, id, cell, cx)
 }
 
-/// Paints the Snap button in `cell`: icon 15 in `ink` while `on`, else icon 79 in `menuFill`.
+/// Paints the Snap button in `cell`: icon 15 in `ink` while `on`, else icon 79 in `menuFill`, in a ring of its colour.
 pub fn paint_snap_button(painter: &Painter, cell: Rect, (on, ink): (bool, Color32), cx: &UiCtx) {
     let (icon, ink) = if on {
         (IconId::Snap, ink)
     } else {
         (IconId::SnapOff, cx.theme.colors.menu_fill.to_color32())
     };
+    let ring = Stroke::new(RING_PX / cx.m.ppp(), ink);
+    painter.circle_stroke(cell.center(), RING * cell.width().min(cell.height()), ring);
     draw_icon(painter, cell, icon, ink, ICON, cx.m);
 }
 

@@ -63,6 +63,7 @@ use crate::metrics::FontSize;
 use crate::ui::UiCtx;
 use crate::ui::focus;
 use crate::ui::popup::{self, PopupItem};
+use crate::ui::scroller::Scroller;
 use crate::ui::search_bar::{self, Found, ROW_H, RowLook, SearchBar, Walk, matching};
 use crate::ui::song_options::{SongOptionsAction, SongOptionsDialog};
 use crate::ui::widgets::{text_label, truncated};
@@ -239,8 +240,9 @@ pub(super) struct SongsTab {
     drawn: Option<u64>,
     /// The selected rows' paths while in select mode.
     pub(super) selection: Option<Vec<PathBuf>>,
-    /// How far the list is scrolled up, in points.
+    /// How far the list is scrolled up, in points, and its touch and fling ([`scroll`]).
     scroll: f32,
+    kinetic: Scroller,
     /// The open popup and the point it is centred on.
     popup: Option<(Popup, Pos2)>,
     /// The name field, while `Create folder` or `Rename` asks.
@@ -411,7 +413,7 @@ impl SongsTab {
         if self.search.shown() {
             y += m.u(search_bar::DROP);
             if self.search.show(ui, cx, field, browser) {
-                self.scroll = 0.0;
+                self.scroll_home();
             }
         }
         let mut line = |h: f32| {
@@ -511,6 +513,8 @@ impl SongsTab {
             None => scroll(
                 ui,
                 id.with("scroll"),
+                m.u(1.0),
+                &mut self.kinetic,
                 list,
                 rows.len() as f32 * row_h,
                 &mut self.scroll,
@@ -691,7 +695,7 @@ impl SongsTab {
     /// The search bar showed or hid (`startSearch`, a `Search` tap): select mode is left and the list refreshes.
     fn searched(&mut self) {
         self.selection = None;
-        self.scroll = 0.0;
+        self.scroll_home();
     }
 
     /// Escape in the browser: hides the search bar (leaving select mode, the focus on `Search`), else
@@ -699,7 +703,7 @@ impl SongsTab {
     pub(super) fn escape(&mut self, ctx: &eframe::egui::Context) -> bool {
         if self.search.shown() {
             self.search.end();
-            self.scroll = 0.0;
+            self.scroll_home();
             focus::move_to(ctx, Id::new("main_menu_songs").with(("side", 1)));
         } else if self.selection.is_none() {
             return false;
@@ -805,10 +809,15 @@ impl SongsTab {
         done.err().map(MainMenuAction::Message)
     }
 
+    /// The list back at its top, a fling stopped.
+    fn scroll_home(&mut self) {
+        (self.scroll, self.kinetic) = (0.0, Scroller::default());
+    }
+
     /// The open folder changed: read it, from the top.
     fn open_folder_changed(&mut self) {
         self.listing = None;
-        self.scroll = 0.0;
+        self.scroll_home();
         if let Some(selection) = &mut self.selection {
             selection.clear();
         }

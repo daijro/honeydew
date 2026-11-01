@@ -8,11 +8,14 @@
 //!    0.85 of the height above the baseline for the labelled (top-level) marks, 0.35 for mid marks, 0.25 for fine ones;
 //! 5. on each top-level mark the 1-based bar number in 8 pt `text` at α 0.8, left-aligned 0.15 U right of the bar line,
 //!    its top 0.15·(h − 2q) below the ruler top; none for a bar line left of the marks' left edge (the playlist's
-//!    header column is not part of it);
+//!    header column is not part of it). A beat's mark reads `bar.beat`, a step's `bar.beat.step` ([`label`]);
 //! 6. the scroll thumb while the view shows less than the content ([`scroll_thumb`]): display only.
 //!
 //! The law labels every bar at the editors' opening zooms (the playlist's 1.2 U a beat, the piano roll's 2 U, the
 //! automation and audio editors' 4 U) and every other bar at 0.8 U. In Next, B/n and d/n are whole-number divisions.
+//! Past that at both ends (issue #41): zoomed in, the fine marks split a step in halves down to a
+//! tick and the labels go down to every beat, then every step, as they get room. Every editor's grid lines are these
+//! fine marks (`drum_grid::edit::marks`); Auto snaps to them below a step (`piano_roll::notes::auto_grid`).
 //!
 //! It scrolls and zooms: the caller passes tick 0's x and the beat width. Every editor's playhead is the shared grid
 //! line ([`playhead_line`]) and, on the ruler, the play box ([`PlayheadKnob`]) right of it. A tap on the ruler sets
@@ -130,7 +133,9 @@ pub fn next(x: f64, d: i64, b: i64) -> f64 {
 }
 
 /// The fine, mid and top spacings (s0, s1, s2) in beats, for marks at least `m` beats apart: from 1/d, 1 beat and b
-/// beats, Next until at least m, clamp(d, 2, 4)·m and 0.5·clamp(d, 2, 4)·clamp(b, 2, 4)·m.
+/// beats, Next until at least m, clamp(d, 2, 4)·m and 0.5·clamp(d, 2, 4)·clamp(b, 2, 4)·m. Further (issue #41):
+/// a step at least 2m wide halves while the half is at least m, down to a tick; a bar-long s2 drops to a beat, then to a
+/// step, as soon as that is at least the top bound.
 pub fn spacings(m: f64, sig: TimeSig) -> [f64; 3] {
     let (d, b) = (i64::from(sig.steps_per_beat()), i64::from(sig.bar_beats()));
     // A bound past any zoom stops the walk (and NaN never starts it).
@@ -141,17 +146,46 @@ pub fn spacings(m: f64, sig: TimeSig) -> [f64; 3] {
         x
     };
     let (cd, cb) = (d.clamp(2, 4) as f64, b.clamp(2, 4) as f64);
-    [
-        grow(1.0 / d as f64, m),
-        grow(1.0, cd * m),
-        grow(b as f64, 0.5 * cd * cb * m),
-    ]
+    let step = 1.0 / d as f64;
+    let mut fine = grow(step, m);
+    while fine <= step && fine / 2.0 >= m && fine / 2.0 * f64::from(PPQ) >= 1.0 {
+        fine /= 2.0;
+    }
+    let top = 0.5 * cd * cb * m;
+    let top = match grow(b as f64, top) {
+        s2 if s2 <= b as f64 && step >= top => step,
+        s2 if s2 <= b as f64 && 1.0 >= top => 1.0,
+        s2 => s2,
+    };
+    [fine, grow(1.0, cd * m), top]
 }
 
-/// The marks on steps `from..=to` (none before step 0): every s0, top-level on multiples of s2, mid-level on multiples
-/// of s1, `s` the spacings in beats at `d` steps a beat.
-pub fn marks(from: i64, to: i64, s: [f64; 3], d: u32) -> impl Iterator<Item = (i64, Level)> {
-    let [fine, mid, top] = s.map(|x| ((x * f64::from(d)).round() as i64).max(1));
+/// How many mark units make a beat for the fine spacing `s0` at `d` steps a beat: steps, or s0 itself when it splits a
+/// step.
+pub fn units_per_beat(s0: f64, d: u32) -> u32 {
+    (1.0 / s0).round().max(f64::from(d)) as u32
+}
+
+/// A top-level mark's label, `j` mark units from tick 0 at `n` units a beat ([`units_per_beat`]): the 1-based bar, then
+/// `.beat` off a bar line, then `.step` off a beat.
+pub fn label(j: i64, n: u32, sig: TimeSig) -> String {
+    let (n, d, b) = (
+        i64::from(n),
+        i64::from(sig.steps_per_beat()),
+        i64::from(sig.bar_beats()),
+    );
+    let (bar, beat, step) = (j / (n * b) + 1, j % (n * b) / n + 1, j % n / (n / d) + 1);
+    match (beat, step) {
+        (1, 1) => bar.to_string(),
+        (_, 1) => format!("{bar}.{beat}"),
+        _ => format!("{bar}.{beat}.{step}"),
+    }
+}
+
+/// The marks on mark units `from..=to` (none before 0): every s0, top-level on multiples of s2, mid-level on multiples
+/// of s1, `s` the spacings in beats at `n` units a beat (steps, or finer: [`units_per_beat`]).
+pub fn marks(from: i64, to: i64, s: [f64; 3], n: u32) -> impl Iterator<Item = (i64, Level)> {
+    let [fine, mid, top] = s.map(|x| ((x * f64::from(n)).round() as i64).max(1));
     let first = (from.max(0) + fine - 1) / fine * fine;
     (first..=to).step_by(fine as usize).map(move |j| {
         let level = if j % top == 0 {
@@ -203,8 +237,9 @@ fn ruler_marks(
     let label = c.text.to_color32().gamma_multiply(LABEL_ALPHA);
     let q = q(m);
     let d = sig.steps_per_beat();
-    let step_w = beat_w / d as f32;
     let s = spacings(f64::from(m.u(MARK_U) / beat_w), sig);
+    let n = units_per_beat(s[0], d);
+    let step_w = beat_w / n as f32;
     let at = |x: f32| f64::from((x - x0) / step_w);
     let (from, to) = (
         at(marks.left()).floor() as i64,
@@ -214,8 +249,7 @@ fn ruler_marks(
     let tall = baseline - rect.top();
     let font = m.font_id(FontSize::Pt8);
     let label_top = rect.top() + LABEL_Y * (rect.height() - 2.0 * q);
-    let bar = i64::from(d * sig.bar_beats());
-    for (j, level) in self::marks(from, to, s, d) {
+    for (j, level) in self::marks(from, to, s, n) {
         let x = x0 + j as f32 * step_w;
         let h = match level {
             Level::Top => TOP_TICK,
@@ -225,9 +259,9 @@ fn ruler_marks(
         let tick = Rect::from_x_y_ranges(x - q / 2.0..=x + q / 2.0, baseline - h * tall..=baseline);
         painter.rect_filled(tick, 0.0, ink);
         if level == Level::Top && x >= marks.left() {
-            let number = (j / bar + 1).to_string();
             let at = pos2(x + m.u(LABEL_X), label_top);
-            painter.text(at, Align2::LEFT_TOP, number, font.clone(), label);
+            let text = self::label(j, n, sig);
+            painter.text(at, Align2::LEFT_TOP, text, font.clone(), label);
         }
     }
 }
@@ -315,6 +349,9 @@ pub fn knob_shown(playing: bool, menu: bool) -> bool {
 ///   along the grid; moving more than 0.5 U up or down first cancels it, moving sideways does not. A press on an
 ///   edge's 1 U handle drags that edge at once;
 /// - the released edge gets a `+` button below the ruler, which opens the region menu.
+///
+/// The edges come as close as one snap unit at the current zoom (issue #41; zoomed in, Auto follows the grid's lines
+/// below a step), one tick with Snap off.
 ///
 /// The range itself is the song's play loop, which the host keeps; this keeps only the gesture. It is drawn on the
 /// ruler alone: a `controlFill` rect (`moduleFill` while an edge is dragged) from the ruler's top, 3 t short of its
@@ -1665,6 +1702,15 @@ mod tests {
             // A bar line left of the marks' left edge (the playlist's header column) has none; one on it has.
             assert_eq!(labels(1.5, 1.4, 2.0)[0], "2");
             assert_eq!(labels(1.5, 1.5, 2.0)[0], "1");
+            // Zoomed in past 4.8 U a beat every beat is labelled, past 4.8 U a step every step (issue #41).
+            assert_eq!(
+                labels(0.0, 0.0, 6.0)[..6],
+                ["1", "1.2", "1.3", "1.4", "2", "2.2"]
+            );
+            assert_eq!(
+                labels(0.0, 0.0, 20.0)[..5],
+                ["1", "1.1.2", "1.1.3", "1.1.4", "1.2"]
+            );
         }
 
         #[test]
@@ -1697,7 +1743,11 @@ mod tests {
             // b = 5: from a beat, B/n = 5 → a bar.
             assert_eq!(next(1.0, 4, 5), 5.0);
             assert_eq!(spacings(0.6 * 0.33, sig(4, 4)), [0.25, 1.0, 4.0]);
-            assert_eq!(spacings(0.06, sig(4, 4)), [0.25, 1.0, 4.0]);
+            // Past a step (issue #41): the fine marks halve it while still m apart, down to a tick; the labels drop to
+            // the beat, then the step, that holds the top bound.
+            assert_eq!(spacings(0.06, sig(4, 4)), [0.0625, 1.0, 1.0]);
+            assert_eq!(spacings(0.01, sig(4, 4)), [0.015625, 1.0, 0.25]);
+            assert_eq!(spacings(0.001, sig(4, 4)), [1.0 / 128.0, 1.0, 0.25]);
             let levels: Vec<_> = marks(0, 16, [0.25, 1.0, 4.0], 4).collect();
             assert_eq!(levels.len(), 17);
             assert_eq!(levels[0], (0, Level::Top));

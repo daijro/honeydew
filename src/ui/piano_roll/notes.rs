@@ -11,6 +11,7 @@ use eframe::egui::{Pos2, Rect, pos2};
 
 use crate::song::scales::{CHROMATIC, SCALE_MASKS, SCALES, scale_from_stored};
 use crate::song::{Clip, Event, LaneKind, PPQ, Song, TimeSig};
+use crate::ui::drum_grid::edit;
 use crate::ui::keyboard_settings::KEYS;
 
 const BEAT: f64 = PPQ as f64;
@@ -120,11 +121,14 @@ impl Snap {
     }
 }
 
-/// Auto's grid: the finest of step, beat and bar that is at least [`MIN_CELL`] wide at `beat_w` points a beat.
+/// Auto's grid: the finest of step, beat and bar that is at least [`MIN_CELL`] wide at `beat_w` points a beat (`u`
+/// points a U). Past a step it follows the grid's own finer lines (issue #41: a step halved while the half is at least
+/// 0.6 U, down to a tick, [`edit::mark_spacing`]), so zoomed far in a drag lands on the lines it sees; at the editors'
+/// opening zooms (4 U a beat at most) a 4-step beat's half step is still too narrow.
 pub fn auto_grid(beat_w: f32, u: f32, sig: TimeSig) -> f64 {
     let min = MIN_CELL * u;
     if beat_w / sig.steps_per_beat() as f32 >= min {
-        sig.step_ticks()
+        (sig.step_ticks()).min(edit::mark_spacing(beat_w, u, sig, edit::MARK_GAP))
     } else if beat_w >= min {
         BEAT
     } else {

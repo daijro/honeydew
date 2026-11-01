@@ -23,6 +23,7 @@ use crate::ui::buttons::{
     boxed_circle_button, close_x, filled_circle_button, outline_circle_button,
 };
 use crate::ui::popup::{PopupItem, PopupResult};
+use crate::ui::scroller::{Axis, Scroller, Y, Zones};
 use crate::ui::settings_tab::SettingsTab;
 use crate::ui::widgets::{Button, button, text_label, truncated};
 use crate::ui::{UiCtx, anim};
@@ -632,16 +633,41 @@ fn text_field(ui: &mut Ui, cx: &UiCtx, rect: Rect, hint: &str, edit: TextEdit) -
     .inner
 }
 
-/// Applies this frame's wheel and drag over `area` to `offset` (points scrolled up), keeps it in
-/// `0..=max(0, content_h - area_h)`, and returns it snapped to whole device pixels for painting. Widgets in the area
-/// that sense clicks only let drags through to it.
-fn scroll(ui: &mut Ui, id: Id, area: Rect, content_h: f32, offset: &mut f32) -> f32 {
-    let drag = ui.interact(area, id, Sense::drag());
-    let mut moved = drag.drag_delta().y;
-    if ui.rect_contains_pointer(area) {
-        moved += ui.input(|i| i.smooth_scroll_delta.y);
+/// Applies this frame's touch and wheel over `area` to `offset` (points scrolled up), for `content_h` points of
+/// content, by the pixel, as the mixer's row scrolls ([`Scroller`], whose state `kinetic` keeps): a drag moves it 1:1
+/// once out of the 0.5 U calm zone, a fifth past either end, and its release flings it or springs it back; the wheel
+/// moves it by egui's smoothed delta, within `0..=max(0, content_h - area_h)`. Widgets in the area that sense clicks
+/// only let drags through to it. Returns it snapped to whole device pixels for painting.
+pub(crate) fn scroll(
+    ui: &mut Ui,
+    id: Id,
+    u: f32,
+    kinetic: &mut Scroller,
+    area: Rect,
+    content_h: f32,
+    offset: &mut f32,
+) -> f32 {
+    let mut axes = [
+        Axis::OFF,
+        Axis {
+            pos: f64::from(*offset),
+            zoom: 1.0,
+            range: [0.0, f64::from(content_h)],
+            zoom_range: [1.0; 2],
+            view: area.y_range(),
+        },
+    ];
+    let zones = Zones {
+        touch: [Rect::NOTHING, area],
+        ..Zones::NONE
+    };
+    kinetic.update(ui, id, u, &zones, &mut axes, Default::default());
+    let wheel = ui.input(|i| i.smooth_scroll_delta.y);
+    if wheel != 0.0 && ui.rect_contains_pointer(area) {
+        let y = &mut axes[Y];
+        y.pos = (y.pos - f64::from(wheel)).clamp(y.range[0], y.max());
     }
-    *offset = (*offset - moved).clamp(0.0, (content_h - area.height()).max(0.0));
+    *offset = axes[Y].pos as f32;
     let ppp = ui.ctx().pixels_per_point();
     (*offset * ppp).round() / ppp
 }

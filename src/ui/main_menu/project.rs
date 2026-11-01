@@ -29,6 +29,7 @@ use super::{
 use crate::metrics::FontSize;
 use crate::ui::UiCtx;
 use crate::ui::performance::{self, Performance};
+use crate::ui::scroller::Scroller;
 use crate::ui::widgets::text_label as label;
 
 // Sizes in U.
@@ -260,6 +261,8 @@ pub fn tempo_step(bpm: f64, step: f64) -> f64 {
 #[derive(Default)]
 pub(super) struct ProjectTab {
     scroll: f32,
+    /// The page's touch and fling ([`scroll`]).
+    kinetic: Scroller,
     /// The page's height in the last frame, for the scroll range.
     content_h: f32,
     /// The Performance block is to be scrolled into view ([`Self::show_performance`]).
@@ -310,6 +313,8 @@ impl ProjectTab {
         let offset = scroll(
             ui,
             id.with("scroll"),
+            m.u(1.0),
+            &mut self.kinetic,
             area,
             self.content_h,
             &mut self.scroll,

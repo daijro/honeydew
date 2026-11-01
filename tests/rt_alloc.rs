@@ -619,6 +619,7 @@ fn render_soundfont(
     }
     engine.seek(0);
 
+    const CHORD: u8 = honeydew_audio::stream::STREAM_VOICES as u8 + 16;
     let mut energy = 0.0_f32;
     let events = events_during(|| {
         let mut rendered = 0;
@@ -633,9 +634,10 @@ fn render_soundfont(
                 5 => engine.set_param(1, 2, 5, (i % 2) as f32),
                 10 => engine.set_param(1, 2, 1 + (i % 4) as i32, 0.3),
                 15 => engine.set_param(1, 0, 4, (i % 7) as f32 / 7.0),
-                20 => (0..40).for_each(|k| engine.note_on(1, 40 + k, 0.8)),
+                // Past the voices with rings: a streamed note steals one of them.
+                20 => (0..CHORD).for_each(|k| engine.note_on(1, 40 + k, 0.8)),
                 22 => engine.note_on(1, 20 + (i % 2) as u8, 0.5),
-                25 => (0..40).for_each(|k| engine.note_off(1, 40 + k)),
+                25 => (0..CHORD).for_each(|k| engine.note_off(1, 40 + k)),
                 35 => engine.seek(((i * 37) % 1024) as u64),
                 40 => engine.stop(),
                 45 => engine.play(),
@@ -2055,4 +2057,54 @@ fn the_ccs_an_edit_keeps_do_not_allocate() {
             assert_eq!(events, 0, "re-sync {resync}, Stop {stop}");
         }
     }
+}
+
+/// The device's callback over the engine (sub-blocks, each publishing the meters and the Analyzer's analysis as a
+/// visual frame; the output clock; the load) allocates nothing once warm, at every buffer size. Splitting a callback
+/// into sub-blocks changes no sample: with its callbacks on the export's 1024-frame grid it renders what the engine
+/// renders alone in the export's blocks. (Off the grid the engine's own block boundaries move, as before.)
+#[test]
+fn the_device_callback_publishes_its_visuals_without_allocating_and_sounds_as_the_engine() {
+    use honeydew_audio::device::{AudioOutput, clock};
+    let mut song = song();
+    song.channels[1].rack.add(26);
+    let playing = || {
+        let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
+        engine.play();
+        engine
+    };
+    let frames = 10 * RATE as usize;
+    let mut expected = vec![0.0_f32; 2 * frames];
+    let mut engine = playing();
+    for block in expected.chunks_mut(2 * 1024) {
+        engine.render(block, 2);
+    }
+    let (_output, mut callback) = AudioOutput::offline(playing(), RATE as u32);
+    let mut heard = vec![0.0_f32; 2 * frames];
+    let (mut at, mut i) = (0, 0);
+    let mut run = |sizes: &[usize], until: usize| {
+        while at < until {
+            let n = sizes[i % sizes.len()].min(until - at);
+            callback.run(&mut heard[2 * at..2 * (at + n)], clock());
+            (at, i) = (at + n, i + 1);
+        }
+    };
+    let grid = [512, 2048, 1024, 4096];
+    // Warm-up: about a second, ending on the grid.
+    run(&grid, 96 * 512);
+    assert_eq!(events_during(|| run(&grid, frames)), 0);
+    assert!(expected.iter().any(|s| s.abs() > 0.01));
+    let same = heard
+        .iter()
+        .zip(&expected)
+        .all(|(a, b)| a.to_bits() == b.to_bits());
+    assert!(same, "the callback renders what the engine does");
+    // Every buffer size, on and off the grid.
+    let mut more = vec![0.0_f32; 2 * 4096];
+    let events = events_during(|| {
+        for frames in BLOCKS.into_iter().cycle().take(100) {
+            callback.run(&mut more[..2 * frames], clock());
+        }
+    });
+    assert_eq!(events, 0);
 }

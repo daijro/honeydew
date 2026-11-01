@@ -902,36 +902,37 @@ fn a_frame_between_two_samples_is_interpolated_linearly() {
 // ---- voices ----
 
 #[test]
-fn thirty_two_voices_and_the_oldest_started_is_stolen() {
-    assert_eq!(VOICES, 32);
+fn when_every_voice_sounds_the_oldest_started_is_stolen() {
     let mut player = player(sine_bank(), 0);
-    for key in 40..74 {
+    // Keys 40, 41 and 42, then key 60 until two notes past the voices.
+    for key in [40, 41, 42].into_iter().chain([60; VOICES - 1]) {
         player.note_on(key, 1.0, 0.5);
     }
-    assert_eq!(player.active_voices(), 32);
+    assert_eq!(player.active_voices(), VOICES);
     // Keys 40 and 41, the oldest, were stolen: their note-offs release nothing. Key 42's does.
     player.note_off(40);
     player.note_off(41);
     render(&mut player, 4_800);
-    assert_eq!(player.active_voices(), 32);
+    assert_eq!(player.active_voices(), VOICES);
     player.note_off(42);
     render(&mut player, 4_800);
-    assert_eq!(player.active_voices(), 31);
+    assert_eq!(player.active_voices(), VOICES - 1);
     player.all_notes_off();
     render(&mut player, 4_800);
     assert_eq!(player.active_voices(), 0);
 }
 
 #[test]
-fn a_note_matching_more_zones_than_voices_plays_the_last_32() {
-    // 40 zones match: the first 8 are at 1440 cB, the last 32 at full. The voices sound the last 32.
+fn a_note_matching_more_zones_than_voices_plays_the_last_ones() {
+    // 8 zones at 1440 cB, then as many as there are voices at full: the voices sound the full ones.
     let zone = |cb| vec![amount(ATTENUATION, cb), amount(MODES, 1), amount(SAMPLE, 0)];
-    let zones = [vec![zone(1440); 8], vec![zone(0); 32]].concat();
+    let zones = [vec![zone(1440); 8], vec![zone(0); VOICES]].concat();
     let mut player = player(one_instrument(vec![], zones, &[level_sample()]), 0);
     player.note_on(60, 1.0, 0.5);
-    assert_eq!(player.active_voices(), 32);
+    assert_eq!(player.active_voices(), VOICES);
     let (left, _) = render(&mut player, 480);
-    assert!(close(left[479], 32.0 * 0.5, 1e-4), "{}", left[479]);
+    let full = VOICES as f32 * 0.5;
+    assert!(close(left[479], full, 1e-4), "{}", left[479]);
 }
 
 #[test]

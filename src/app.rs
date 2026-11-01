@@ -355,6 +355,8 @@ impl HoneydewApp {
         let disk = sample_cache::disk_locator(&app.files);
         app.audio.samples.set_disk(disk);
         app.whats_new_at_start(fresh);
+        #[cfg(target_os = "android")]
+        crate::android::request_orientation(app.settings.android_orientation());
         app.midi.link = crate::midi::device::MidiLink::platform(cc.egui_ctx.clone());
         app.start_plugins(&cc.egui_ctx);
         #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
@@ -466,6 +468,10 @@ impl HoneydewApp {
             }
             // The next loads plan with it.
             sample_cache::set_memory_limit(self.settings.sample_memory_limit);
+            #[cfg(target_os = "android")]
+            if self.settings.screen_orientation != self.settings_saved.screen_orientation {
+                crate::android::request_orientation(self.settings.android_orientation());
+            }
             #[cfg(desktop)]
             if self.settings.mcp_enabled != self.settings_saved.mcp_enabled
                 || self.settings.mcp_port != self.settings_saved.mcp_port
@@ -3360,6 +3366,25 @@ mod tests {
         assert_eq!(
             rig.take(),
             ["Play", "Stop", "Play", "Stop", "Seek 0", "ResetSound"]
+        );
+    }
+
+    /// A second REV before the audio has taken the first one's seek (a long callback): the transport counts as at the
+    /// play-start point already, so it goes on to the song start and resets the sound, rather than seeking there again.
+    #[test]
+    fn a_rev_before_the_audio_takes_the_last_seek_counts_from_there() {
+        let mut rig = Rig::with_synth();
+        rig.rec.0.borrow_mut().tick = 500;
+        rig.click(PLAY);
+        // The engine plays on to 2000; then the audio thread takes no command for a while.
+        let mut rec = rig.rec.0.borrow_mut();
+        (rec.tick, rec.taken) = (2000, Some(rec.all.len() as u64));
+        drop(rec);
+        rig.click(REV);
+        rig.click(REV);
+        assert_eq!(
+            rig.take(),
+            ["Play", "Stop", "Seek 500", "Seek 0", "ResetSound"]
         );
     }
 

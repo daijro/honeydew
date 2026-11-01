@@ -18,7 +18,7 @@ use crate::ProcessContext;
 use crate::instrument::Instrument;
 use crate::sample::SampleData;
 use crate::sfz::{LoopMode, SfzRegion, Trigger};
-use crate::stream::{Pcm, Rings};
+use crate::stream::{Pcm, Rings, STREAM_VOICES};
 
 /// Why bytes are not a SoundFont.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,8 +43,10 @@ pub const MAX_PATCHES: usize = 65_536;
 pub const MAX_REGIONS: usize = 8_192;
 /// The generators a patch's regions may visit before the rest is dropped, so that hostile zone products stay cheap.
 const WORK_BUDGET: usize = 1 << 22;
-/// Voices per player; when all sound, the oldest-started is stolen.
+/// Voices per player; when all sound, the oldest-started is stolen. A streamed SFZ sample plays in one of the first
+/// [`STREAM_VOICES`], which have rings, and steals the oldest of those.
 pub const VOICES: usize = 512;
+const _: () = assert!(STREAM_VOICES <= VOICES);
 
 // Generator operators (SoundFont 2.01 §8.1.2).
 const START_LOOP: usize = 2;
@@ -986,13 +988,32 @@ impl Voice {
     }
 }
 
+/// The voice a note takes: a free one, else the oldest-started. With `rings` (a player that streams), a streamed
+/// sample's takes one of the first [`STREAM_VOICES`], which have rings; any other takes a free one past them first.
+fn slot(voices: &[Voice], rings: Option<&Rings>, sample: Option<usize>) -> usize {
+    let pick = |slots: Range<usize>| {
+        let oldest = slots.min_by_key(|&s| (voices[s].on, voices[s].started));
+        oldest.unwrap_or(0)
+    };
+    let Some(rings) = rings else {
+        return pick(0..VOICES);
+    };
+    if sample.is_some_and(|s| rings.streams(s)) {
+        return pick(0..STREAM_VOICES);
+    }
+    Some(pick(STREAM_VOICES..VOICES))
+        .filter(|&s| !voices[s].on)
+        .unwrap_or_else(|| pick(0..VOICES))
+}
+
 /// The SoundFont Player: the regions of one patch of a [`SoundFont`], and [`VOICES`] voices.
 pub struct SoundFontPlayer {
     font: Option<Arc<SoundFont>>,
-    /// A ring per voice, when an SFZ sample streams from disk.
+    /// The first [`STREAM_VOICES`] voices' rings, when an SFZ sample streams from disk.
     rings: Option<Arc<Rings>>,
     regions: Vec<Region>,
-    voices: [Voice; VOICES],
+    /// Boxed: [`VOICES`] voices are too big for a small stack.
+    voices: Box<[Voice]>,
     started: u64,
     sample_rate: f32,
     params: [f32; 6],
@@ -1022,12 +1043,12 @@ impl SoundFontPlayer {
             .as_ref()
             .map(|(font, _)| font.pcm.iter().map(Pcm::disk).collect());
         Self {
-            rings: disk.and_then(|disk| Rings::new(disk, VOICES)),
+            rings: disk.and_then(Rings::new),
             switch: bank.as_ref().and_then(|(font, _)| font.switch),
             seq: vec![0; regions.len()],
             font: bank.map(|(font, _)| font),
             regions,
-            voices: [Voice::default(); VOICES],
+            voices: vec![Voice::default(); VOICES].into_boxed_slice(),
             started: 0,
             sample_rate,
             params: DEFAULTS,
@@ -1037,7 +1058,7 @@ impl SoundFontPlayer {
         }
     }
 
-    /// Its voices' rings when it streams a sample from disk: for the engine's streamer to fill
+    /// Its first [`STREAM_VOICES`] voices' rings when it streams a sample from disk: for the engine's streamer to fill
     /// ([`crate::stream::Streamer::register`]).
     pub fn rings(&self) -> Option<&Arc<Rings>> {
         self.rings.as_ref()
@@ -1074,6 +1095,7 @@ impl SoundFontPlayer {
         self.random ^= self.random >> 17;
         self.random ^= self.random << 5;
         let dice = (self.random >> 8) as f32 / (1 << 24) as f32;
+        // A ring of the last [`VOICES`] chosen (4 KiB of stack), the `count`th at `count % VOICES`.
         let (mut chosen, mut count) = ([0; VOICES], 0);
         for (index, region) in self.regions.iter().enumerate() {
             let Some(rules) = &region.sfz else {
@@ -1094,15 +1116,12 @@ impl SoundFontPlayer {
                 && (rules.rand[0] <= dice && dice < rules.rand[1])
                 && rules.sw_last.is_none_or(|s| self.switch == Some(s));
             if plays {
-                if count == VOICES {
-                    chosen.copy_within(1.., 0);
-                    count -= 1;
-                }
-                chosen[count] = index;
+                chosen[count % VOICES] = index;
                 count += 1;
             }
         }
-        for &index in &chosen[..count] {
+        let chosen = (count.saturating_sub(VOICES)..count).map(|i| chosen[i % VOICES]);
+        for index in chosen.clone() {
             let group = self.regions[index].sfz.map(|r| r.group);
             for voice in self.voices.iter_mut().filter(|v| v.on) {
                 let rules = self.regions[voice.region].sfz;
@@ -1111,7 +1130,7 @@ impl SoundFontPlayer {
                 }
             }
         }
-        for &index in &chosen[..count] {
+        for index in chosen {
             self.sfz_start(index, key, velocity, pan, release);
         }
     }
@@ -1137,9 +1156,7 @@ impl SoundFontPlayer {
                 fall(release_time.max(SFZ_MIN_RELEASE), rate),
             ],
         };
-        let slot = (self.voices.iter().enumerate())
-            .min_by_key(|(_, v)| (v.on, v.started))
-            .map_or(0, |(slot, _)| slot);
+        let slot = slot(&self.voices, self.rings.as_deref(), Some(rules.sample));
         if let Some(rings) = &self.rings {
             rings.start(slot, rules.sample, region.start, false);
         }
@@ -1246,10 +1263,7 @@ impl Instrument for SoundFontPlayer {
             let octaves =
                 (f64::from(key) - f64::from(region.root) + region.tune) * region.scale / 1200.0;
             let step = 2f64.powf(octaves) * region.rate / f64::from(self.sample_rate);
-            // A free voice, else the oldest-started.
-            let slot = (self.voices.iter().enumerate())
-                .min_by_key(|(_, v)| (v.on, v.started))
-                .map_or(0, |(slot, _)| slot);
+            let slot = slot(&self.voices, None, None);
             self.started += 1;
             self.voices[slot] = Voice {
                 on: true,

@@ -3273,6 +3273,42 @@ mod tests {
     }
 
     #[test]
+    fn in_auto_every_drag_lands_on_the_grid_line_nearest_the_finger_at_any_zoom() {
+        // Issue #41: zoomed in, Auto stayed a step while the grid drew lines down to a tick.
+        use crate::metrics::DEFAULT_UI_SCALE;
+        use crate::ui::drum_grid::edit::{MARK_GAP, marks};
+        let (m, sig) = (
+            Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE),
+            TimeSig::default(),
+        );
+        let u = m.u(1.0);
+        // The closest zoom (100 U a beat: lines every tick) and 13 U a beat (every 8 ticks).
+        for beat_u in [100.0, 13.0] {
+            let axis = TimeAxis {
+                origin: 0.0,
+                beat_w: beat_u * u,
+            };
+            let grid = grid_ticks(axis, sig, &m);
+            let lines = marks(0.0, 2048.0, axis.beat_w, u, sig, MARK_GAP);
+            let nearest = |finger: f64| {
+                let d = |l: &&(f64, f32)| (l.0 - finger).abs();
+                lines.iter().min_by(|a, b| d(a).total_cmp(&d(b))).unwrap().0
+            };
+            let bar = span(512, 4.0, 0.0);
+            // Shortening and lengthening alike; the start handle and a move too.
+            for delta in [-37.3, -5.6, 3.4, 21.7] {
+                let end = dragged(bar, 4.0, Part::End, delta, grid, 16.0);
+                let start = dragged(bar, 4.0, Part::Start, delta, grid, 16.0);
+                let moved = dragged(bar, 4.0, Part::Body, delta, grid, 16.0);
+                let at = format!("{beat_u} U a beat, {delta} ticks");
+                assert_eq!(512.0 + end.visible * BEAT, nearest(1024.0 + delta), "{at}");
+                assert_eq!(f64::from(start.start), nearest(512.0 + delta), "{at}");
+                assert_eq!(f64::from(moved.start), nearest(512.0 + delta), "{at}");
+            }
+        }
+    }
+
+    #[test]
     fn the_start_handle_trims_or_extends_with_the_content_in_place() {
         let bar = span(512, 4.0, 0.0);
         // Trimming a beat: the window starts a beat into the content.

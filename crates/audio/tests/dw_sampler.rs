@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use honeydew_audio::ProcessContext;
-use honeydew_audio::dw_sampler::{DwSampler, DwZone};
+use honeydew_audio::dw_sampler::{DwSampler, DwZone, VOICES};
 use honeydew_audio::dwp::{Midi, Zone};
 use honeydew_audio::instrument::Instrument;
 use honeydew_audio::sample::{SampleData, SampleMeta};
@@ -369,27 +369,35 @@ fn looping_dc(value: f32, zone: Zone) -> DwZone {
 }
 
 #[test]
-fn voices_stop_at_128_with_no_stealing() {
-    // Each key has its own level, so a stolen voice would change the sum.
+fn voices_stop_at_the_limit_with_no_stealing() {
+    // Each key has its own level, so a stolen voice would change the sum. The keys go round until every voice sounds.
     let level = |key: u8| f32::from(key + 1) / 16_384.0;
     let zones = (0..128)
         .map(|key| looping_dc(level(key), keys(key, key)))
         .collect();
     let mut dw = sampler(zones);
-    for key in 0..128 {
+    let notes = (0..VOICES).map(|n| (n % 128) as u8);
+    for key in notes.clone() {
         dw.note_on(key, 1.0, 0.5);
     }
     let full = render(&mut dw, 4).0[2];
-    close(f64::from(full), 128.0 * 129.0 / 2.0 / 16_384.0, 1e-5);
+    let sum = notes.clone().map(|key| f64::from(level(key))).sum();
+    close(f64::from(full), sum, 1e-5);
     dw.note_on(60, 1.0, 0.5);
-    assert_eq!(render(&mut dw, 4).0[2], full, "the 129th note is dropped");
+    assert_eq!(
+        render(&mut dw, 4).0[2],
+        full,
+        "a note past the voices is dropped"
+    );
+    // Key 0's note-off frees its voices: the next note plays.
     dw.note_off(0);
     render(&mut dw, 4800);
     dw.note_on(60, 1.0, 0.5);
     let again = render(&mut dw, 4).0[2];
+    let zeros = notes.filter(|&key| key == 0).count() as f32;
     close(
         f64::from(again),
-        f64::from(full - level(0) + level(60)),
+        f64::from(full - zeros * level(0) + level(60)),
         1e-5,
     );
 }

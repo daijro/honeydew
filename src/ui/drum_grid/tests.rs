@@ -91,11 +91,22 @@ fn marks_are_4_px_bars_2_px_beats_1_px_finer_never_closer_than_0_6_u() {
         ticks(marks(0.0, 4.0, 3200.0, u, TimeSig::default(), MARK_GAP)),
         [(0, 4), (1, 1), (2, 1), (3, 1), (4, 1)]
     );
-    // Beats 0.5 U apart are not marked; bars always are.
+    // Beats 0.5 U apart are not marked; every other one is, as on the ruler.
     assert_eq!(
         ticks(marks(0.0, 1024.0, 16.0, u, TimeSig::default(), MARK_GAP)),
-        [(0, 4), (512, 4), (1024, 4)]
+        [(0, 4), (256, 2), (512, 4), (768, 2), (1024, 4)]
     );
+    // Far out (0.05 U a beat, bars 0.2 U apart; issue #41) bars group as the ruler's marks do: every 4 bars (0.8 U),
+    // 2 px every 16, 4 px on the labelled 32.
+    let far = ticks(marks(0.0, 16384.0, 1.6, u, TimeSig::default(), MARK_GAP));
+    assert_eq!(far.len(), 9);
+    assert!(
+        far.iter()
+            .enumerate()
+            .all(|(i, &(t, _))| t == i as u32 * 2048)
+    );
+    let widths: Vec<u32> = far.iter().map(|m| m.1).collect();
+    assert_eq!(widths, [4, 1, 1, 1, 2, 1, 1, 1, 4]);
     // From the first mark at or after t0.
     assert_eq!(
         ticks(marks(100.0, 300.0, 128.0, u, TimeSig::default(), MARK_GAP)),
@@ -105,7 +116,7 @@ fn marks_are_4_px_bars_2_px_beats_1_px_finer_never_closer_than_0_6_u() {
 
 #[test]
 fn finer_marks_split_the_beat_by_the_subdivision_first() {
-    // The timeline grid is 1/d beat (`TDIV` byte 0): the beat splits by d's factors first, then halves.
+    // The timeline grid is 1/d beat (`TDIV` byte 0): coarser levels follow the ruler's Next, finer ones halve a step.
     let sig = |d| TimeSig {
         subdivision: d,
         beats_per_bar: 3,
@@ -141,10 +152,10 @@ fn finer_marks_split_the_beat_by_the_subdivision_first() {
         in_units(marks(0.0, 128.0, 128.0, 32.0, sig(6), MARK_GAP), 6.0),
         [(0, 4), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 2)]
     );
-    // d = 6, 1.5 U a beat: sixths are too close, so halves (thirds would not fit either).
+    // d = 6, 2 U a beat: sixths are too close, so thirds, as the ruler's Next has it (d/n = 3).
     assert_eq!(
-        in_units(marks(0.0, 128.0, 48.0, 32.0, sig(6), MARK_GAP), 2.0),
-        [(0, 4), (1, 1), (2, 2)]
+        in_units(marks(0.0, 128.0, 64.0, 32.0, sig(6), MARK_GAP), 3.0),
+        [(0, 4), (1, 1), (2, 1), (3, 2)]
     );
 }
 
@@ -1575,11 +1586,11 @@ fn a_song_with_subdivision_0_draws_and_takes_a_tap() {
     };
     rig.view.views.clear();
     rig.frame(vec![]);
-    // 4 U a beat at d = 1 is k = 1/16; a tap 47 points in is 47 ticks, the nearest step (a beat at d = 1) is 0. The
-    // hit has the remembered length.
+    // 4 U a beat at d = 1 is k = 1/16; a tap 47 points in is 47 ticks. The grid halves the step (a beat at d = 1) to
+    // quarters 1 U apart, Auto's unit: the nearest is 32. The hit has the remembered length.
     assert_eq!(rig.view.views[&(CH, 0, Some(1))].k, 0.0625);
     rig.click(at(1, 47.0));
-    assert_eq!(rig.hits(), [(1, 0.0, 32.0)]);
+    assert_eq!(rig.hits(), [(1, 32.0, 32.0)]);
 }
 
 #[test]
