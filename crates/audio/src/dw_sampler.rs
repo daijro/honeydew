@@ -54,7 +54,7 @@ const PITCH_BEND: usize = 4;
 /// The panel setting key of PB Range (SAMPLE `1.8`, `panels::cstm`): k/12 for k semitones, 1…12.
 const PB_RANGE_SETTING: u32 = 11_800;
 
-const VOICES: usize = 128;
+const VOICES: usize = 512;
 /// LFO and filter coefficients are updated every 16 samples.
 const TICK: u32 = 16;
 /// LFO Level and Pan move this fraction of the way to their target per sample.
