@@ -44,7 +44,7 @@ pub const MAX_REGIONS: usize = 8_192;
 /// The generators a patch's regions may visit before the rest is dropped, so that hostile zone products stay cheap.
 const WORK_BUDGET: usize = 1 << 22;
 /// Voices per player; when all sound, the oldest-started is stolen.
-pub const VOICES: usize = 32;
+pub const VOICES: usize = 512;
 
 // Generator operators (SoundFont 2.01 §8.1.2).
 const START_LOOP: usize = 2;
