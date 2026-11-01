@@ -5578,7 +5578,8 @@ mod tests {
             assert_eq!(*song, with_stamp(&edited, song), "{action:?}");
             assert_eq!(shown(&rig), [], "{action:?}");
             assert_eq!(rig.take(), Vec::<String>::new(), "{action:?}");
-            assert!(!rig.texts().iter().any(|t| t == "Saved!"), "{action:?}");
+            // Issue #44: a quick save flashes too.
+            assert!(rig.texts().iter().any(|t| t == "Saved!"), "{action:?}");
         }
     }
 

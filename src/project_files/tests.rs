@@ -880,7 +880,7 @@ fn a_failed_save_from_the_unsaved_question_shows_its_message_and_drops_the_actio
         assert_eq!(files.take_flash(), None, "{detail}");
         assert!(files.after_save.is_none(), "{detail}");
     }
-    // Not even by the next save: once the write works again, Ctrl+S only saves.
+    // Not even by the next save: once the write works again, Ctrl+S only saves, and flashes `Saved!`.
     let mut files = files(&write_fails);
     let mut song = opened(&mut files);
     answer_unsaved(&mut files, &mut song, Answer::Extra);
@@ -892,7 +892,7 @@ fn a_failed_save_from_the_unsaved_question_shows_its_message_and_drops_the_actio
     assert_eq!(song, with_stamp(&edited, &song));
     let written = write_fails.0.borrow().files[Path::new("/songs/Beat.flm")].clone();
     assert_eq!(written, plain(1));
-    assert_eq!(files.take_flash(), None);
+    assert_eq!(files.take_flash().as_deref(), Some(SAVED));
     assert_eq!(files.take_overlay(), None);
 }
 

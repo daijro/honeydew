@@ -948,8 +948,9 @@ impl ProjectFiles {
                     // web providers answer within the frame that writes.
                     self.saved();
                     self.set_path(path);
+                    // Every song save flashes, a quick save too (issue #44: a resave showed nothing).
+                    self.flash = Some(SAVED.into());
                     if let Some(what) = self.after_save.take() {
-                        self.flash = Some(SAVED.into());
                         opened = self.replace_now(what).or(opened);
                     }
                 }
