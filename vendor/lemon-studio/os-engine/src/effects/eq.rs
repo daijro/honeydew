@@ -18,7 +18,7 @@ mod matched;
 use std::f64::consts::TAU;
 
 pub use design::{BandCoefs, Coefs, Design, Stored};
-pub use equalizer::{Equalizer, Mode, Options, MAIN, PARAMS};
+pub use equalizer::{Equalizer, MAIN, Mode, Options, PARAMS};
 
 use super::Effect;
 
@@ -40,7 +40,9 @@ pub const PEAKING: i32 = 6;
 pub const HIGH_SHELF: i32 = 7;
 
 /// Types of a new instance's bands.
-pub const DEFAULT_KINDS: [i32; BANDS] = [LOW_SHELF, PEAKING, PEAKING, PEAKING, PEAKING, PEAKING, HIGH_SHELF];
+pub const DEFAULT_KINDS: [i32; BANDS] = [
+    LOW_SHELF, PEAKING, PEAKING, PEAKING, PEAKING, PEAKING, HIGH_SHELF,
+];
 /// Level range in dB (both band levels and the main level).
 pub const MAX_DB: f64 = 18.0;
 
@@ -96,7 +98,13 @@ pub struct Band {
 impl Band {
     pub fn default_for(k: usize) -> Band {
         let kind = DEFAULT_KINDS[k];
-        Band { db: 0.0, freq: default_freq(k), width: default_width(kind), kind, order: 0 }
+        Band {
+            db: 0.0,
+            freq: default_freq(k),
+            width: default_width(kind),
+            kind,
+            order: 0,
+        }
     }
 
     pub fn hz(&self) -> f64 {
@@ -128,7 +136,10 @@ impl Band {
 
 /// The response of a band's sections at `hz` in dB.
 pub fn sections_db(c: &BandCoefs, hz: f64, rate: f64) -> f64 {
-    c.as_slice().iter().map(|s| 10.0 * s.power(TAU * hz / rate).max(1e-24).log10()).sum()
+    c.as_slice()
+        .iter()
+        .map(|s| 10.0 * s.power(TAU * hz / rate).max(1e-24).log10())
+        .sum()
 }
 
 /// The settings that shape the sound: seven bands, the main level and the band enable mask.
@@ -142,7 +153,11 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { bands: std::array::from_fn(Band::default_for), main_db: 0.0, mask: 0x7f }
+        Settings {
+            bands: std::array::from_fn(Band::default_for),
+            main_db: 0.0,
+            mask: 0x7f,
+        }
     }
 }
 
@@ -156,7 +171,12 @@ pub struct Curve {
 impl Curve {
     /// The response at `hz` in dB.
     pub fn db(&self, hz: f64) -> f64 {
-        self.main_db + self.bands.iter().map(|c| sections_db(c, hz, self.rate)).sum::<f64>()
+        self.main_db
+            + self
+                .bands
+                .iter()
+                .map(|c| sections_db(c, hz, self.rate))
+                .sum::<f64>()
     }
 }
 
@@ -170,7 +190,13 @@ impl Settings {
         let mut p = [0; PARAMS];
         for (k, b) in self.bands.iter().enumerate() {
             let s = b.stored();
-            [p[k], p[BANDS + k], p[2 * BANDS + k], p[3 * BANDS + k], p[4 * BANDS + k]] = [s.level, s.freq, s.width, s.kind, s.order];
+            [
+                p[k],
+                p[BANDS + k],
+                p[2 * BANDS + k],
+                p[3 * BANDS + k],
+                p[4 * BANDS + k],
+            ] = [s.level, s.freq, s.width, s.kind, s.order];
         }
         p[MAIN] = stored_of(self.main_db, 100.0).clamp(-1800, 1800);
         p
@@ -178,8 +204,15 @@ impl Settings {
 
     /// The total response (audible bands and the main level) for `design`.
     pub fn curve(&self, design: Design) -> Curve {
-        let bands = (0..BANDS).filter(|&k| self.audible(k)).map(|k| self.bands[k].coefs(design)).collect();
-        Curve { bands, main_db: self.main_db, rate: design.rate() }
+        let bands = (0..BANDS)
+            .filter(|&k| self.audible(k))
+            .map(|k| self.bands[k].coefs(design))
+            .collect();
+        Curve {
+            bands,
+            main_db: self.main_db,
+            rate: design.rate(),
+        }
     }
 
     /// The total response at `hz` in dB.
@@ -200,7 +233,11 @@ impl ParametricEq {
     pub fn from_state(state: &[u8], sample_rate: u32) -> Option<Self> {
         let mut eq = Equalizer::from_state(state, f64::from(sample_rate))?;
         eq.preroll();
-        Some(ParametricEq { eq, l: Vec::new(), r: Vec::new() })
+        Some(ParametricEq {
+            eq,
+            l: Vec::new(),
+            r: Vec::new(),
+        })
     }
 
     pub fn equalizer(&self) -> &Equalizer {
@@ -246,11 +283,19 @@ mod tests {
         assert!((freq_hz(0.0) - 20.0).abs() < 1e-9 && (freq_hz(1.0) - 20000.0).abs() < 1e-6);
         assert!((freq_pos(440.0) - (22.0f64.ln() / 1000f64.ln())).abs() < 1e-12);
         // Stored default frequencies 10923 .. 54613.
-        let stored: Vec<i32> = (0..BANDS).map(|k| Band::default_for(k).stored().freq).collect();
-        assert_eq!(stored, vec![10923, 18204, 25486, 32768, 40050, 47332, 54613]);
+        let stored: Vec<i32> = (0..BANDS)
+            .map(|k| Band::default_for(k).stored().freq)
+            .collect();
+        assert_eq!(
+            stored,
+            vec![10923, 18204, 25486, 32768, 40050, 47332, 54613]
+        );
         assert_eq!(Settings::default().params()[2 * BANDS], 40124);
         // Editor values round to the stored ones, halves to even.
-        let b = Band { db: 0.125, ..Band::default_for(0) };
+        let b = Band {
+            db: 0.125,
+            ..Band::default_for(0)
+        };
         assert_eq!(b.stored().level, 12);
         assert_eq!(Band { db: 30.0, ..b }.stored().level, 1800);
     }
@@ -258,18 +303,36 @@ mod tests {
     #[test]
     fn curves_follow_the_design() {
         let rate = 44100.0;
-        let b = Band { db: 12.0, freq: freq_pos(1000.0), width: 0.5, kind: PEAKING, order: 0 };
+        let b = Band {
+            db: 12.0,
+            freq: freq_pos(1000.0),
+            width: 0.5,
+            kind: PEAKING,
+            order: 0,
+        };
         let hz = f64::from(design::freq_hz(b.stored().freq));
         assert!((b.response_db(hz, Design::Ordinary(rate)) - 12.0).abs() < 1e-3);
         assert!((b.response_db(hz, Design::Matched(rate)) - 12.0).abs() < 1e-3);
         // Near the top the matched design keeps the prototype's shape (about +10 dB at the Nyquist frequency here),
         // where the bilinear one comes back to 0 dB.
-        let top = Band { freq: freq_pos(15000.0), ..b };
+        let top = Band {
+            freq: freq_pos(15000.0),
+            ..b
+        };
         let f = 22049.0;
-        assert!(top.response_db(f, Design::Matched(rate)) > 8.0, "{}", top.response_db(f, Design::Matched(rate)));
+        assert!(
+            top.response_db(f, Design::Matched(rate)) > 8.0,
+            "{}",
+            top.response_db(f, Design::Matched(rate))
+        );
         assert!(top.response_db(f, Design::Ordinary(rate)).abs() < 0.1);
         // A shelf at 0 dB is (very nearly) flat.
-        assert!(Band::default_for(0).response_db(50.0, Design::Ordinary(rate)).abs() < 1e-9);
+        assert!(
+            Band::default_for(0)
+                .response_db(50.0, Design::Ordinary(rate))
+                .abs()
+                < 1e-9
+        );
     }
 
     #[test]
@@ -303,7 +366,10 @@ mod tests {
         let mut buf: Vec<f32> = x.iter().flat_map(|&v| [v, -v]).collect();
         fx.process(&mut buf);
         for i in 44..1000 {
-            assert!((buf[2 * i] - x[i - 44]).abs() < 1e-3 && (buf[2 * i + 1] + x[i - 44]).abs() < 1e-3, "{i}");
+            assert!(
+                (buf[2 * i] - x[i - 44]).abs() < 1e-3 && (buf[2 * i + 1] + x[i - 44]).abs() < 1e-3,
+                "{i}"
+            );
         }
         assert!(ParametricEq::from_state(&st[..100], 44100).is_none());
     }

@@ -46,8 +46,16 @@ impl Glyph {
     fn stroke_path(&mut self, p: tiny_skia::Path, width: f32) -> &mut Self {
         let s = Stroke {
             width,
-            line_cap: if self.round_caps { LineCap::Round } else { LineCap::Butt },
-            line_join: if self.round_caps { LineJoin::Round } else { LineJoin::Miter },
+            line_cap: if self.round_caps {
+                LineCap::Round
+            } else {
+                LineCap::Butt
+            },
+            line_join: if self.round_caps {
+                LineJoin::Round
+            } else {
+                LineJoin::Miter
+            },
             ..Stroke::default()
         };
         if let Some(o) = p.stroke(&s, 4.0) {
@@ -73,8 +81,14 @@ impl Glyph {
     /// Outline of a rect: a band of `width` just inside `r`.
     pub fn frame(&mut self, r: Rect, width: f32) -> &mut Self {
         let erase = self.erase;
-        self.rect(r.x, r.y, r.w, width).rect(r.x, r.bottom() - width, r.w, width);
-        self.rect(r.x, r.y + width, width, r.h - 2.0 * width).rect(r.right() - width, r.y + width, width, r.h - 2.0 * width);
+        self.rect(r.x, r.y, r.w, width)
+            .rect(r.x, r.bottom() - width, r.w, width);
+        self.rect(r.x, r.y + width, width, r.h - 2.0 * width).rect(
+            r.right() - width,
+            r.y + width,
+            width,
+            r.h - 2.0 * width,
+        );
         self.erase = erase;
         self
     }
@@ -114,7 +128,15 @@ impl Glyph {
 
     /// Arc from `start` sweeping `sweep` radians (0 = 3 o'clock, positive = clockwise on screen),
     /// centred on radius `r`.
-    pub fn arc(&mut self, cx: f32, cy: f32, r: f32, start: f32, sweep: f32, width: f32) -> &mut Self {
+    pub fn arc(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        r: f32,
+        start: f32,
+        sweep: f32,
+        width: f32,
+    ) -> &mut Self {
         let steps = ((sweep.abs() * r).ceil() as usize).clamp(6, 96);
         let pts: Vec<(f32, f32)> = (0..=steps)
             .map(|i| {
@@ -128,7 +150,14 @@ impl Glyph {
     /// Add path data made of absolute `M x y`, `L x y`, `Q x1 y1 x y`, `C x1 y1 x2 y2 x y` and `Z`
     /// commands (space separated), mapped by `(x, y) -> (ox + x * k, oy + y * k)`. Filled when
     /// `stroke` is `None`, otherwise stroked with that width.
-    pub fn commands(&mut self, d: &str, ox: f32, oy: f32, k: f32, stroke: Option<f32>) -> &mut Self {
+    pub fn commands(
+        &mut self,
+        d: &str,
+        ox: f32,
+        oy: f32,
+        k: f32,
+        stroke: Option<f32>,
+    ) -> &mut Self {
         if let Some(p) = path_data(d, ox, oy, k) {
             match stroke {
                 Some(w) => self.stroke_path(p, w),
@@ -140,11 +169,20 @@ impl Glyph {
 
     /// Bounds of all shapes (logical).
     pub(crate) fn bounds(&self) -> Option<Rect> {
-        let mut it = self.shapes.iter().filter(|(_, e)| !e).map(|(p, _)| p.bounds());
+        let mut it = self
+            .shapes
+            .iter()
+            .filter(|(_, e)| !e)
+            .map(|(p, _)| p.bounds());
         let first = it.next()?;
         let b = it.fold(first, |a, b| {
-            tiny_skia::Rect::from_ltrb(a.left().min(b.left()), a.top().min(b.top()), a.right().max(b.right()), a.bottom().max(b.bottom()))
-                .unwrap_or(a)
+            tiny_skia::Rect::from_ltrb(
+                a.left().min(b.left()),
+                a.top().min(b.top()),
+                a.right().max(b.right()),
+                a.bottom().max(b.bottom()),
+            )
+            .unwrap_or(a)
         });
         Some(Rect::new(b.left(), b.top(), b.width(), b.height()))
     }
@@ -171,11 +209,15 @@ pub fn path_data(d: &str, ox: f32, oy: f32, k: f32) -> Option<tiny_skia::Path> {
                 pb.line_to(x, y);
             }
             "Q" => {
-                let (Some(a), Some(b)) = (pt(&mut it), pt(&mut it)) else { break };
+                let (Some(a), Some(b)) = (pt(&mut it), pt(&mut it)) else {
+                    break;
+                };
                 pb.quad_to(a.0, a.1, b.0, b.1);
             }
             "C" => {
-                let (Some(a), Some(b), Some(e)) = (pt(&mut it), pt(&mut it), pt(&mut it)) else { break };
+                let (Some(a), Some(b), Some(e)) = (pt(&mut it), pt(&mut it), pt(&mut it)) else {
+                    break;
+                };
                 pb.cubic_to(a.0, a.1, b.0, b.1, e.0, e.1);
             }
             "Z" => pb.close(),
@@ -186,7 +228,14 @@ pub fn path_data(d: &str, ox: f32, oy: f32, k: f32) -> Option<tiny_skia::Path> {
 }
 
 /// Rasterize `g` into per-device-pixel RGB coverage over the device rect (x0, y0, w, h).
-pub(crate) fn coverage(g: &Glyph, scale: f32, x0: i32, y0: i32, w: i32, h: i32) -> Option<Vec<[u8; 3]>> {
+pub(crate) fn coverage(
+    g: &Glyph,
+    scale: f32,
+    x0: i32,
+    y0: i32,
+    w: i32,
+    h: i32,
+) -> Option<Vec<[u8; 3]>> {
     let sw = (w * 3) as u32;
     let mut acc = Mask::new(sw, h as u32)?;
     let mut tmp = Mask::new(sw, h as u32)?;
@@ -197,7 +246,11 @@ pub(crate) fn coverage(g: &Glyph, scale: f32, x0: i32, y0: i32, w: i32, h: i32) 
         let a = acc.data_mut();
         for (d, s) in a.iter_mut().zip(tmp.data()) {
             let (dv, sv) = (u32::from(*d), u32::from(*s));
-            *d = if *erase { (dv * (255 - sv) / 255) as u8 } else { (dv + sv - dv * sv / 255) as u8 };
+            *d = if *erase {
+                (dv * (255 - sv) / 255) as u8
+            } else {
+                (dv + sv - dv * sv / 255) as u8
+            };
         }
     }
     // Five-tap subpixel filter (1 2 3 2 1) / 9 around each colour channel's subpixel.

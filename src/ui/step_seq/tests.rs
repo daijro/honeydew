@@ -1132,7 +1132,11 @@ fn level_meters_stand_at_the_headers_right_edge_until_the_mixer_is_fully_out() {
     let band = page.height() * 0.125;
     assert_eq!((l.left(), l.max.x), (96.0, 480.0));
     assert_eq!((r.left(), r.max.x), (96.0, 288.0));
-    assert!((l.top() - (page.bottom() - band)).abs() < 1e-3, "{}", l.top());
+    assert!(
+        (l.top() - (page.bottom() - band)).abs() < 1e-3,
+        "{}",
+        l.top()
+    );
     assert!(l.height() > 0.0 && l.height() < t, "{}", l.height());
     assert!((l.height() - r.height()).abs() < 1e-3);
     assert!((5.0 * l.height() + (page.bottom() - r.max.y) - band).abs() < 1e-3);

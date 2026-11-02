@@ -25,7 +25,7 @@ mod meter;
 #[cfg(unix)]
 pub mod runloop;
 
-pub use guarded::{share, Guarded};
+pub use guarded::{Guarded, share};
 pub use meter::{Attention, Meter};
 
 use std::ffi::c_void;
@@ -57,7 +57,9 @@ impl Format {
 
     /// The format named by `as_str`.
     pub fn parse(s: &str) -> Option<Format> {
-        [Format::Clap, Format::Vst3, Format::Vst2, Format::Native].into_iter().find(|f| f.as_str() == s)
+        [Format::Clap, Format::Vst3, Format::Vst2, Format::Native]
+            .into_iter()
+            .find(|f| f.as_str() == s)
     }
 }
 
@@ -309,8 +311,13 @@ pub unsafe fn load_module(path: &Path) -> Result<libloading::Library, String> {
     let lib = {
         use libloading::os::unix::{Library, RTLD_LOCAL, RTLD_NOW};
         /// `<dlfcn.h>`: glibc and musl, Apple's.
-        const RTLD_NODELETE: std::ffi::c_int = if cfg!(target_os = "macos") { 0x80 } else { 0x1000 };
-        unsafe { Library::open(Some(path), RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE) }.map(libloading::Library::from)
+        const RTLD_NODELETE: std::ffi::c_int = if cfg!(target_os = "macos") {
+            0x80
+        } else {
+            0x1000
+        };
+        unsafe { Library::open(Some(path), RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE) }
+            .map(libloading::Library::from)
     };
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     let lib = unsafe { libloading::Library::new(path) };
@@ -395,7 +402,10 @@ mod tests {
         inst.lock().unwrap().process(48000, &mut l, &mut r);
         fx.lock().unwrap().process_fx(48000, &mut l, &mut r);
         assert_eq!(l, [1.0; 4]);
-        assert_eq!(p.lock().unwrap().save_state(), Some(0.5f32.to_le_bytes().to_vec()));
+        assert_eq!(
+            p.lock().unwrap().save_state(),
+            Some(0.5f32.to_le_bytes().to_vec())
+        );
         assert!(p.lock().unwrap().desc().is_instrument());
     }
 }

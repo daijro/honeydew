@@ -9,16 +9,20 @@ use std::ffi::c_void;
 use std::time::Instant;
 
 use os_theme::Palette;
-use os_ui::kit::menu::{self as kmenu, MenuStyle};
 use os_ui::Canvas;
+use os_ui::kit::menu::{self as kmenu, MenuStyle};
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    BeginPaint, ClientToScreen, CreateFontW, DeleteObject, EndPaint, GetMonitorInfoW, InvalidateRect, MonitorFromPoint, SetDIBitsToDevice, UpdateWindow, BITMAPINFO,
-    BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HDC, MONITORINFO, MONITOR_DEFAULTTONEAREST, PAINTSTRUCT,
+    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BeginPaint, ClientToScreen, CreateFontW, DIB_RGB_COLORS,
+    DeleteObject, EndPaint, GetMonitorInfoW, HDC, InvalidateRect, MONITOR_DEFAULTTONEAREST,
+    MONITORINFO, MonitorFromPoint, PAINTSTRUCT, SetDIBitsToDevice, UpdateWindow,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::EM_SETSEL;
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetCapture, GetFocus, GetKeyState, ReleaseCapture, SetCapture, SetFocus, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_MENU, VK_RETURN, VK_SHIFT, VK_UP};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    GetCapture, GetFocus, GetKeyState, ReleaseCapture, SetCapture, SetFocus, VK_CONTROL, VK_DOWN,
+    VK_ESCAPE, VK_MENU, VK_RETURN, VK_SHIFT, VK_UP,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 use crate::{MenuDef, Opener};
@@ -57,7 +61,10 @@ pub fn mods() -> (bool, bool, bool) {
 
 /// Client coordinates of a mouse message.
 pub fn xy(l: LPARAM) -> (i32, i32) {
-    ((l & 0xffff) as u16 as i16 as i32, ((l >> 16) & 0xffff) as u16 as i16 as i32)
+    (
+        (l & 0xffff) as u16 as i16 as i32,
+        ((l >> 16) & 0xffff) as u16 as i16 as i32,
+    )
 }
 
 /// Screen position of a client point.
@@ -80,7 +87,20 @@ pub fn blit(hdc: HDC, px: &[u32], w: u32, h: u32) {
             biCompression: BI_RGB,
             ..std::mem::zeroed()
         };
-        SetDIBitsToDevice(hdc, 0, 0, w, h, 0, 0, 0, h, px.as_ptr() as *const c_void, &bmi, DIB_RGB_COLORS);
+        SetDIBitsToDevice(
+            hdc,
+            0,
+            0,
+            w,
+            h,
+            0,
+            0,
+            0,
+            h,
+            px.as_ptr() as *const c_void,
+            &bmi,
+            DIB_RGB_COLORS,
+        );
     }
 }
 
@@ -176,8 +196,21 @@ unsafe extern "system" fn pop_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             if !p.is_null() {
                 let pop = &mut *p;
                 pop.canvas.begin_frame(None);
-                kmenu::paint(&mut pop.canvas, &pop.palette, &pop.items, &pop.layout, pop.style, 0.0, 0.0, pop.hover, pop.current);
-                let (w, h) = ((pop.layout.w * pop.scale).ceil() as u32, (pop.layout.h * pop.scale).ceil() as u32);
+                kmenu::paint(
+                    &mut pop.canvas,
+                    &pop.palette,
+                    &pop.items,
+                    &pop.layout,
+                    pop.style,
+                    0.0,
+                    0.0,
+                    pop.hover,
+                    pop.current,
+                );
+                let (w, h) = (
+                    (pop.layout.w * pop.scale).ceil() as u32,
+                    (pop.layout.h * pop.scale).ceil() as u32,
+                );
                 pop.buf.resize((w * h) as usize, 0);
                 pop.canvas.copy_to_xrgb(&mut pop.buf);
                 blit(hdc, &pop.buf, w, h);
@@ -207,14 +240,29 @@ fn work_area(x: i32, y: i32) -> RECT {
 }
 
 /// Shows a menu at screen (`x`, `y`); the picked entry's command.
-pub fn popup<C: Clone>(owner: HWND, x: i32, y: i32, def: &MenuDef<C>, pal: &Palette, scale: f32) -> Option<C> {
+pub fn popup<C: Clone>(
+    owner: HWND,
+    x: i32,
+    y: i32,
+    def: &MenuDef<C>,
+    pal: &Palette,
+    scale: f32,
+) -> Option<C> {
     match popup_at(owner, x, y, def, pal, scale, None) {
         PopRes::Pick(c) => Some(c),
         _ => None,
     }
 }
 
-fn popup_at<C: Clone>(owner: HWND, x: i32, y: i32, def: &MenuDef<C>, pal: &Palette, scale: f32, parent: Option<Opener>) -> PopRes<C> {
+fn popup_at<C: Clone>(
+    owner: HWND,
+    x: i32,
+    y: i32,
+    def: &MenuDef<C>,
+    pal: &Palette,
+    scale: f32,
+    parent: Option<Opener>,
+) -> PopRes<C> {
     if crate::no_modal() {
         return PopRes::Cancel;
     }
@@ -222,7 +270,10 @@ fn popup_at<C: Clone>(owner: HWND, x: i32, y: i32, def: &MenuDef<C>, pal: &Palet
         let class = register("OpenStudioPluginPopup", Some(pop_proc));
         let mut measure = Canvas::new(8, 8, scale).expect("canvas");
         let layout = kmenu::layout(&mut measure, &def.items, def.style);
-        let (w, h) = ((layout.w * scale).ceil() as i32, (layout.h * scale).ceil() as i32);
+        let (w, h) = (
+            (layout.w * scale).ceil() as i32,
+            (layout.h * scale).ceil() as i32,
+        );
         let wa = work_area(x, y);
         let mut px = x;
         let mut py = y;
@@ -265,7 +316,12 @@ fn popup_at<C: Clone>(owner: HWND, x: i32, y: i32, def: &MenuDef<C>, pal: &Palet
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, pop as isize);
         ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         SetCapture(hwnd);
-        let rect = RECT { left: px, top: py, right: px + w, bottom: py + h };
+        let rect = RECT {
+            left: px,
+            top: py,
+            right: px + w,
+            bottom: py + h,
+        };
         let menu = [px, py, px + w, py + h];
         let opened = Instant::now();
         let mut start = POINT { x: 0, y: 0 };
@@ -275,7 +331,9 @@ fn popup_at<C: Clone>(owner: HWND, x: i32, y: i32, def: &MenuDef<C>, pal: &Palet
             let (lx, ly) = ((sx - px) as f32 / scale, (sy - py) as f32 / scale);
             pop.layout.item_at(&pop.items, lx, ly)
         };
-        let inside = |r: &RECT, sx: i32, sy: i32| sx >= r.left && sx < r.right && sy >= r.top && sy < r.bottom;
+        let inside = |r: &RECT, sx: i32, sy: i32| {
+            sx >= r.left && sx < r.right && sy >= r.top && sy < r.bottom
+        };
         let result = 'run: loop {
             let mut msg: MSG = std::mem::zeroed();
             if GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) <= 0 {
@@ -295,7 +353,11 @@ fn popup_at<C: Clone>(owner: HWND, x: i32, y: i32, def: &MenuDef<C>, pal: &Palet
                     if parent.is_some_and(|p| p.takes_back(menu, (cur.x, cur.y))) {
                         break 'run PopRes::Back;
                     }
-                    let hov = if inside(&rect, cur.x, cur.y) { item_at(&*pop, cur.x, cur.y) } else { None };
+                    let hov = if inside(&rect, cur.x, cur.y) {
+                        item_at(&*pop, cur.x, cur.y)
+                    } else {
+                        None
+                    };
                     let hov = hov.filter(|&i| def.items[i].clickable());
                     if hov != (*pop).hover {
                         (*pop).hover = hov;
@@ -307,7 +369,15 @@ fn popup_at<C: Clone>(owner: HWND, x: i32, y: i32, def: &MenuDef<C>, pal: &Palet
                         let row = (&(*pop).layout.rows)[i];
                         let sx = px + ((row.x + row.w) * scale) as i32 - 2;
                         let sy = py + (row.y * scale) as i32 - 2;
-                        match popup_at(owner, sx, sy, sub, pal, scale, Some(Opener::new(menu, row, scale))) {
+                        match popup_at(
+                            owner,
+                            sx,
+                            sy,
+                            sub,
+                            pal,
+                            scale,
+                            Some(Opener::new(menu, row, scale)),
+                        ) {
                             PopRes::Pick(c) => break 'run PopRes::Pick(c),
                             PopRes::Cancel => break 'run PopRes::Cancel,
                             PopRes::Back => {
@@ -316,7 +386,8 @@ fn popup_at<C: Clone>(owner: HWND, x: i32, y: i32, def: &MenuDef<C>, pal: &Palet
                         }
                     }
                 }
-                WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_NCLBUTTONDOWN | WM_NCRBUTTONDOWN => {
+                WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_NCLBUTTONDOWN
+                | WM_NCRBUTTONDOWN => {
                     if !inside(&rect, cur.x, cur.y) {
                         break 'run PopRes::Cancel;
                     }
@@ -342,9 +413,16 @@ fn popup_at<C: Clone>(owner: HWND, x: i32, y: i32, def: &MenuDef<C>, pal: &Palet
                     }
                     let n = def.items.len();
                     if vk == VK_DOWN || vk == VK_UP {
-                        let mut i = (*pop).hover.or((*pop).current).map_or(if vk == VK_DOWN { n - 1 } else { 0 }, |i| i);
+                        let mut i = (*pop)
+                            .hover
+                            .or((*pop).current)
+                            .map_or(if vk == VK_DOWN { n - 1 } else { 0 }, |i| i);
                         for _ in 0..n {
-                            i = if vk == VK_DOWN { (i + 1) % n } else { (i + n - 1) % n };
+                            i = if vk == VK_DOWN {
+                                (i + 1) % n
+                            } else {
+                                (i + n - 1) % n
+                            };
                             if def.items[i].clickable() {
                                 break;
                             }
@@ -401,7 +479,22 @@ pub fn type_in(owner: HWND, x: i32, y: i32, text: &str, scale: f32) -> Option<St
             return None;
         }
         let face = wide("Segoe UI");
-        let font = CreateFontW(-(14.0 * scale) as i32, 0, 0, 0, 400, 0, 0, 0, 0, 0, 0, 5, 0, face.as_ptr());
+        let font = CreateFontW(
+            -(14.0 * scale) as i32,
+            0,
+            0,
+            0,
+            400,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            5,
+            0,
+            face.as_ptr(),
+        );
         SendMessageW(edit, WM_SETFONT, font as WPARAM, 1);
         ShowWindow(edit, SW_SHOW);
         SetForegroundWindow(edit);
@@ -421,7 +514,11 @@ pub fn type_in(owner: HWND, x: i32, y: i32, text: &str, scale: f32) -> Option<St
             if msg.message == WM_KEYDOWN && msg.wParam as u16 == VK_ESCAPE {
                 break None;
             }
-            if matches!(msg.message, WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_NCLBUTTONDOWN) && msg.hwnd != edit {
+            if matches!(
+                msg.message,
+                WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_NCLBUTTONDOWN
+            ) && msg.hwnd != edit
+            {
                 break None;
             }
             if GetFocus() != edit && msg.message == WM_KEYDOWN {

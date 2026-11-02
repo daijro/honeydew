@@ -51,7 +51,11 @@ fn window(v: f64) -> f64 {
 
 /// The weight of a frame at distance `u` (formula, doubles).
 fn weight(u: f64, a: f64, n: usize) -> f64 {
-    let s = if u == 0.0 { a / PI } else { (a * u).sin() / (PI * u) };
+    let s = if u == 0.0 {
+        a / PI
+    } else {
+        (a * u).sin() / (PI * u)
+    };
     s * window(u / n as f64)
 }
 
@@ -85,10 +89,16 @@ fn tables() -> &'static Tables {
         let sinc = (0..=SINC_SPAN * SINC_RES + 1)
             .map(|i| {
                 let x = i as f64 / SINC_RES as f64;
-                if x == 0.0 { 1.0 } else { ((PI * x).sin() / (PI * x)) as f32 }
+                if x == 0.0 {
+                    1.0
+                } else {
+                    ((PI * x).sin() / (PI * x)) as f32
+                }
             })
             .collect();
-        let win = (0..=WIN_RES + 1).map(|i| window((i as f64 / WIN_RES as f64).min(1.0)) as f32).collect();
+        let win = (0..=WIN_RES + 1)
+            .map(|i| window((i as f64 / WIN_RES as f64).min(1.0)) as f32)
+            .collect();
         Tables { poly, sinc, win }
     })
 }
@@ -123,7 +133,10 @@ pub fn weights(f: f64, ratio: f64, n: usize, quality: Quality, w: &mut [f32]) {
             // sinc(u / ratio) / ratio * window(u / N), from the two tables.
             let t = tables();
             let r = ratio.max(1.0);
-            let (su, wu) = ((SINC_RES as f64 / r) as f32, (WIN_RES as f64 / n as f64) as f32);
+            let (su, wu) = (
+                (SINC_RES as f64 / r) as f32,
+                (WIN_RES as f64 / n as f64) as f32,
+            );
             let scale = (1.0 / r) as f32;
             let u0 = (f + (n - 1) as f64) as f32;
             for (i, w) in w.iter_mut().enumerate() {
@@ -214,12 +227,21 @@ pub fn reach(len: usize, pos: f64, ratio: f64) -> (usize, usize) {
         return (i, i);
     }
     let n = half_width(ratio) as i64;
-    ((k0 - n + 1).clamp(0, last) as usize, (k0 + n).clamp(0, last) as usize)
+    (
+        (k0 - n + 1).clamp(0, last) as usize,
+        (k0 + n).clamp(0, last) as usize,
+    )
 }
 
 /// [`read`] of a sample of `len` frames that are not in one slice: `at(i)` gives frame `i` (both sides), for `i` in
 /// [`reach`]. The same arithmetic in the same order, so the same frames give the same result to the bit.
-pub fn read_by(len: usize, pos: f64, ratio: f64, quality: Quality, at: impl Fn(usize) -> (f32, f32)) -> (f32, f32) {
+pub fn read_by(
+    len: usize,
+    pos: f64,
+    ratio: f64,
+    quality: Quality,
+    at: impl Fn(usize) -> (f32, f32),
+) -> (f32, f32) {
     if len == 0 {
         return (0.0, 0.0);
     }
@@ -256,7 +278,9 @@ mod tests {
     fn exact(f: f64, ratio: f64) -> Vec<f64> {
         let n = half_width(ratio);
         let a = if ratio > 1.0 { PI / ratio } else { PI };
-        (0..2 * n).map(|t| weight(f + (n - 1) as f64 - t as f64, a, n)).collect()
+        (0..2 * n)
+            .map(|t| weight(f + (n - 1) as f64 - t as f64, a, n))
+            .collect()
     }
 
     #[test]
@@ -280,7 +304,11 @@ mod tests {
                 for q in [Quality::Exact, Quality::Table] {
                     let mut w = vec![0.0f32; 2 * n];
                     weights(f, ratio, n, q, &mut w);
-                    let err = w.iter().zip(&want).map(|(a, b)| (f64::from(*a) - b).abs()).fold(0.0, f64::max);
+                    let err = w
+                        .iter()
+                        .zip(&want)
+                        .map(|(a, b)| (f64::from(*a) - b).abs())
+                        .fold(0.0, f64::max);
                     let tol = if q == Quality::Exact { 1e-7 } else { 1e-6 };
                     assert!(err < tol, "{q:?} ratio {ratio} f {f}: off by {err}");
                 }
@@ -292,7 +320,12 @@ mod tests {
     fn a_constant_reads_as_itself_and_a_tone_keeps_its_level() {
         let one = vec![0.5f32; 4000];
         for q in [Quality::Table, Quality::Exact] {
-            for &(pos, ratio) in &[(100.25, 0.9187), (2000.5, 1.0), (1500.7, 1.7), (1500.1, 3.0)] {
+            for &(pos, ratio) in &[
+                (100.25, 0.9187),
+                (2000.5, 1.0),
+                (1500.7, 1.7),
+                (1500.1, 3.0),
+            ] {
                 let (l, r) = read(&one, &one, pos, ratio, q);
                 assert!((l - 0.5).abs() < 2e-3 && l == r, "{q:?} {pos} {ratio}: {l}");
             }
@@ -303,7 +336,9 @@ mod tests {
             assert!((l - 0.5).abs() < 2e-3);
         }
         // A 1 kHz tone at 48 kHz read between its samples.
-        let tone: Vec<f32> = (0..4000).map(|i| (i as f64 * 2.0 * PI * 1000.0 / 48000.0).sin() as f32).collect();
+        let tone: Vec<f32> = (0..4000)
+            .map(|i| (i as f64 * 2.0 * PI * 1000.0 / 48000.0).sin() as f32)
+            .collect();
         for q in [Quality::Table, Quality::Exact] {
             for &p in &[1000.5, 1234.25, 2000.9] {
                 let (l, _) = read(&tone, &tone, p, 0.9187, q);
@@ -323,7 +358,9 @@ mod tests {
     // A read through a frame function is the slice read to the bit, and touches only the frames `reach` names.
     #[test]
     fn a_read_by_frames_is_the_slice_read() {
-        let left: Vec<f32> = (0..3000).map(|i| ((i * 7919) % 1000) as f32 / 1000.0 - 0.5).collect();
+        let left: Vec<f32> = (0..3000)
+            .map(|i| ((i * 7919) % 1000) as f32 / 1000.0 - 0.5)
+            .collect();
         let right: Vec<f32> = left.iter().rev().copied().collect();
         for q in [Quality::Table, Quality::Exact] {
             for &ratio in &[0.5, 1.0, 1.0884, 3.0, 17.0, 40.0, 900.0] {
@@ -335,7 +372,11 @@ mod tests {
                     };
                     let a = read(&left, &right, pos, ratio, q);
                     let b = read_by(left.len(), pos, ratio, q, at);
-                    assert_eq!((a.0.to_bits(), a.1.to_bits()), (b.0.to_bits(), b.1.to_bits()), "{q:?} {ratio} {pos}");
+                    assert_eq!(
+                        (a.0.to_bits(), a.1.to_bits()),
+                        (b.0.to_bits(), b.1.to_bits()),
+                        "{q:?} {ratio} {pos}"
+                    );
                 }
             }
         }

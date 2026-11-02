@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering}
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::Thread;
 
-use os_dsp::resample::{self, Quality, N_MAX};
+use os_dsp::resample::{self, N_MAX, Quality};
 use os_dsp::tone::Tones;
 
 use crate::dsp::MAX_VOICES;
@@ -115,7 +115,10 @@ impl Layout {
             (b"FORM", b"AIFC") => aiff(&mut f, true)?,
             _ => return None,
         };
-        let ok = l.frames > 0 && l.rate > 0 && l.channels > 0 && l.data + (l.frames * l.block()) as u64 <= len;
+        let ok = l.frames > 0
+            && l.rate > 0
+            && l.channels > 0
+            && l.data + (l.frames * l.block()) as u64 <= len;
         ok.then_some(l)
     }
 
@@ -130,29 +133,61 @@ impl Layout {
         match self.kind {
             Kind::U8 => (f32::from(b[0]) / 128.0) - 1.0,
             Kind::I8 => f32::from(b[0] as i8) / 128.0,
-            Kind::I16 => f32::from(if big { i16::from_be_bytes([b[0], b[1]]) } else { i16::from_le_bytes([b[0], b[1]]) }) / 32768.0,
+            Kind::I16 => {
+                f32::from(if big {
+                    i16::from_be_bytes([b[0], b[1]])
+                } else {
+                    i16::from_le_bytes([b[0], b[1]])
+                }) / 32768.0
+            }
             Kind::I24 => {
-                let v = if big { i32::from_be_bytes([b[0], b[1], b[2], 0]) } else { i32::from_le_bytes([0, b[0], b[1], b[2]]) };
+                let v = if big {
+                    i32::from_be_bytes([b[0], b[1], b[2], 0])
+                } else {
+                    i32::from_le_bytes([0, b[0], b[1], b[2]])
+                };
                 (v >> 8) as f32 / 8_388_608.0
             }
             Kind::I32 => {
-                let v = if big { i32::from_be_bytes([b[0], b[1], b[2], b[3]]) } else { i32::from_le_bytes([b[0], b[1], b[2], b[3]]) };
+                let v = if big {
+                    i32::from_be_bytes([b[0], b[1], b[2], b[3]])
+                } else {
+                    i32::from_le_bytes([b[0], b[1], b[2], b[3]])
+                };
                 (f64::from(v) / 2_147_483_648.0) as f32
             }
-            Kind::F32 => f32::from_bits(if big { u32::from_be_bytes([b[0], b[1], b[2], b[3]]) } else { u32::from_le_bytes([b[0], b[1], b[2], b[3]]) }),
+            Kind::F32 => f32::from_bits(if big {
+                u32::from_be_bytes([b[0], b[1], b[2], b[3]])
+            } else {
+                u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+            }),
             Kind::F64 => {
                 let a: [u8; 8] = b[..8].try_into().unwrap_or([0; 8]);
-                (if big { f64::from_be_bytes(a) } else { f64::from_le_bytes(a) }) as f32
+                (if big {
+                    f64::from_be_bytes(a)
+                } else {
+                    f64::from_le_bytes(a)
+                }) as f32
             }
         }
     }
 
     /// Frames `at .. at + left.len()` (all inside the file) from `file`, through `bytes`: the first two channels, a
     /// mono file's one on both sides. A failed read gives silence.
-    fn read(&self, file: &mut File, at: usize, left: &mut [f32], right: &mut [f32], bytes: &mut Vec<u8>) {
+    fn read(
+        &self,
+        file: &mut File,
+        at: usize,
+        left: &mut [f32],
+        right: &mut [f32],
+        bytes: &mut Vec<u8>,
+    ) {
         let (w, block) = (self.kind.bytes(), self.block());
         bytes.resize(left.len() * block, 0);
-        let ok = file.seek(SeekFrom::Start(self.data + (at * block) as u64)).is_ok() && file.read_exact(bytes).is_ok();
+        let ok = file
+            .seek(SeekFrom::Start(self.data + (at * block) as u64))
+            .is_ok()
+            && file.read_exact(bytes).is_ok();
         if !ok {
             left.fill(0.0);
             right.fill(0.0);
@@ -161,7 +196,11 @@ impl Layout {
         for (k, fr) in bytes.chunks_exact(block).enumerate() {
             let l = self.value(&fr[..w]);
             left[k] = l;
-            right[k] = if self.channels > 1 { self.value(&fr[w..2 * w]) } else { l };
+            right[k] = if self.channels > 1 {
+                self.value(&fr[w..2 * w])
+            } else {
+                l
+            };
         }
     }
 }
@@ -183,7 +222,8 @@ fn wav(f: &mut File) -> Option<Layout> {
                 let mut d = vec![0u8; len as usize];
                 f.read_exact(&mut d).ok()?;
                 f.seek(SeekFrom::Current((len & 1) as i64)).ok()?;
-                let (channels, rate, align, bits) = (word(&d, 2), long(&d, 4), word(&d, 12), word(&d, 14));
+                let (channels, rate, align, bits) =
+                    (word(&d, 2), long(&d, 4), word(&d, 12), word(&d, 14));
                 // WAVE_FORMAT_EXTENSIBLE names the format in its sub-format's first two bytes; bits left unused would
                 // need shifting, which the decoder does.
                 let (tag, valid) = match word(&d, 0) {
@@ -209,7 +249,14 @@ fn wav(f: &mut File) -> Option<Layout> {
                 let (kind, channels, rate) = fmt?;
                 let data = f.stream_position().ok()?;
                 let frames = len as usize / (kind.bytes() * usize::from(channels).max(1));
-                return Some(Layout { rate, channels, frames, data, kind, big: false });
+                return Some(Layout {
+                    rate,
+                    channels,
+                    frames,
+                    data,
+                    kind,
+                    big: false,
+                });
             }
             _ => {
                 f.seek(SeekFrom::Current((len + (len & 1)) as i64)).ok()?;
@@ -260,7 +307,14 @@ fn aiff(f: &mut File, aifc: bool) -> Option<Layout> {
                 let block = (kind.bytes() * usize::from(channels).max(1)) as u64;
                 // The frames the headers name, all of them in the chunk.
                 let room = len.checked_sub(8 + offset)? / block;
-                return (room == frames as u64).then_some(Layout { rate, channels, frames, data, kind, big });
+                return (room == frames as u64).then_some(Layout {
+                    rate,
+                    channels,
+                    frames,
+                    data,
+                    kind,
+                    big,
+                });
             }
             _ => {
                 f.seek(SeekFrom::Current((len + (len & 1)) as i64)).ok()?;
@@ -304,14 +358,20 @@ struct Ring {
 impl Ring {
     fn new() -> Ring {
         let side = || (0..RING).map(|_| AtomicU32::new(0)).collect();
-        Ring { left: side(), right: side() }
+        Ring {
+            left: side(),
+            right: side(),
+        }
     }
 
     /// Frame `k` from the ring's start.
     #[inline]
     fn at(&self, k: usize) -> (f32, f32) {
         let i = k & (RING - 1);
-        (f32::from_bits(self.left[i].load(Ordering::Relaxed)), f32::from_bits(self.right[i].load(Ordering::Relaxed)))
+        (
+            f32::from_bits(self.left[i].load(Ordering::Relaxed)),
+            f32::from_bits(self.right[i].load(Ordering::Relaxed)),
+        )
     }
 }
 
@@ -356,7 +416,10 @@ impl Slot {
         }
         let (ug, used) = unpack(self.used.load(Ordering::Acquire));
         let used = if ug == req { used } else { 0 };
-        let k = (used + RING).saturating_sub(f.filled).min(CHUNK).min(frames - at);
+        let k = (used + RING)
+            .saturating_sub(f.filled)
+            .min(CHUNK)
+            .min(frames - at);
         if k == 0 || k < min.min(frames - at) {
             return false;
         }
@@ -367,7 +430,13 @@ impl Slot {
         f.left.resize(CHUNK, 0.0);
         f.right.resize(CHUNK, 0.0);
         if let Ok(mut file) = inner.file.lock() {
-            inner.layout.read(&mut file, at, &mut f.left[..k], &mut f.right[..k], &mut f.bytes);
+            inner.layout.read(
+                &mut file,
+                at,
+                &mut f.left[..k],
+                &mut f.right[..k],
+                &mut f.bytes,
+            );
         }
         for i in 0..k {
             let j = (f.filled + i) & (RING - 1);
@@ -465,7 +534,10 @@ impl Disk {
         if reader.is_err() {
             inner.alive.store(false, Ordering::Release);
         }
-        Ok(Arc::new(Disk { inner, reader: reader.ok() }))
+        Ok(Arc::new(Disk {
+            inner,
+            reader: reader.ok(),
+        }))
     }
 
     pub fn layout(&self) -> &Layout {
@@ -505,7 +577,11 @@ impl Disk {
 
     /// Rings a voice is using now.
     pub fn busy(&self) -> usize {
-        self.inner.slots.iter().filter(|s| s.busy.load(Ordering::Acquire)).count()
+        self.inner
+            .slots
+            .iter()
+            .filter(|s| s.busy.load(Ordering::Acquire))
+            .count()
     }
 
     /// Frames the reader and offline renders have read into rings so far.
@@ -518,19 +594,27 @@ impl Disk {
     #[cfg(test)]
     pub(crate) fn settled(&self) -> bool {
         let frames = self.inner.layout.frames;
-        self.inner.slots.iter().filter(|s| s.busy.load(Ordering::Acquire)).all(|s| {
-            let (req, start) = unpack(s.want.load(Ordering::Acquire));
-            let (g, filled) = unpack(s.have.load(Ordering::Acquire));
-            let (ug, used) = unpack(s.used.load(Ordering::Acquire));
-            let used = if ug == req { used } else { 0 };
-            let rest = frames.saturating_sub(start + filled);
-            g == req && (rest == 0 || (used + RING).saturating_sub(filled) < CHUNK.min(rest))
-        })
+        self.inner
+            .slots
+            .iter()
+            .filter(|s| s.busy.load(Ordering::Acquire))
+            .all(|s| {
+                let (req, start) = unpack(s.want.load(Ordering::Acquire));
+                let (g, filled) = unpack(s.have.load(Ordering::Acquire));
+                let (ug, used) = unpack(s.used.load(Ordering::Acquire));
+                let used = if ug == req { used } else { 0 };
+                let rest = frames.saturating_sub(start + filled);
+                g == req && (rest == 0 || (used + RING).saturating_sub(filled) < CHUNK.min(rest))
+            })
     }
 
     /// A free ring for a voice.
     fn take(&self) -> Option<u16> {
-        let free = |s: &Slot| s.busy.compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed).is_ok();
+        let free = |s: &Slot| {
+            s.busy
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+        };
         self.inner.slots.iter().position(free).map(|i| i as u16)
     }
 }
@@ -613,7 +697,9 @@ impl Played {
         let named = self::points(named, n);
         let old = old.filter(|o| Arc::ptr_eq(&o.disk, &disk));
         let mut learned: Vec<usize> = Vec::new();
-        for p in old.map_or_else(Vec::new, |o| o.learned.iter().copied().chain(o.missed()).collect()) {
+        for p in old.map_or_else(Vec::new, |o| {
+            o.learned.iter().copied().chain(o.missed()).collect()
+        }) {
             if p < n && !named.contains(&p) && !learned.contains(&p) && learned.len() < LEARN {
                 learned.push(p);
             }
@@ -630,15 +716,29 @@ impl Played {
         let held = spans
             .into_iter()
             .map(|(a, b)| {
-                if let Some(h) = old.and_then(|o| o.held.iter().find(|h| h.start == a && h.end() == b)) {
+                if let Some(h) =
+                    old.and_then(|o| o.held.iter().find(|h| h.start == a && h.end() == b))
+                {
                     return h.clone();
                 }
                 let (mut left, mut right) = (vec![0.0; b - a], vec![0.0; b - a]);
                 disk.read_frames(a, &mut left, &mut right);
-                Arc::new(Held { start: a, left, right })
+                Arc::new(Held {
+                    start: a,
+                    left,
+                    right,
+                })
             })
             .collect();
-        Played { disk, held, named, learned, points, missed: Default::default(), news: AtomicBool::new(false) }
+        Played {
+            disk,
+            held,
+            named,
+            learned,
+            points,
+            missed: Default::default(),
+            news: AtomicBool::new(false),
+        }
     }
 
     pub fn disk(&self) -> &Arc<Disk> {
@@ -665,7 +765,12 @@ impl Played {
 
     /// Points notes started at with nothing held there since it was made.
     pub fn missed(&self) -> Vec<usize> {
-        self.missed.iter().map(|m| m.load(Ordering::Acquire)).filter(|&m| m > 0).map(|m| m - 1).collect()
+        self.missed
+            .iter()
+            .map(|m| m.load(Ordering::Acquire))
+            .filter(|&m| m > 0)
+            .map(|m| m - 1)
+            .collect()
     }
 
     /// True once after a note started where nothing is held (the audio thread then asks for a new played sample).
@@ -679,13 +784,31 @@ impl Played {
     pub fn start_at(&self, feed: &mut Feed, pos: f64, learn: bool) {
         let n = self.frames();
         let x = (pos.max(0.0) as usize).min(n);
-        if x >= n || self.held.iter().any(|h| h.start <= x.saturating_sub(BEFORE) && (x + OVERLAP <= h.end() || h.end() == n)) {
+        if x >= n
+            || self.held.iter().any(|h| {
+                h.start <= x.saturating_sub(BEFORE) && (x + OVERLAP <= h.end() || h.end() == n)
+            })
+        {
             return;
         }
         self.aim(feed, x.saturating_sub(BEFORE));
-        let noted = self.learned.len() + self.missed.iter().filter(|m| m.load(Ordering::Relaxed) > 0).count();
-        if learn && noted < LEARN && !self.missed.iter().any(|m| m.load(Ordering::Relaxed) == x + 1) {
-            if self.missed.iter().any(|m| m.compare_exchange(0, x + 1, Ordering::AcqRel, Ordering::Relaxed).is_ok()) {
+        let noted = self.learned.len()
+            + self
+                .missed
+                .iter()
+                .filter(|m| m.load(Ordering::Relaxed) > 0)
+                .count();
+        if learn
+            && noted < LEARN
+            && !self
+                .missed
+                .iter()
+                .any(|m| m.load(Ordering::Relaxed) == x + 1)
+        {
+            if self.missed.iter().any(|m| {
+                m.compare_exchange(0, x + 1, Ordering::AcqRel, Ordering::Relaxed)
+                    .is_ok()
+            }) {
                 self.news.store(true, Ordering::Release);
             }
         }
@@ -702,19 +825,36 @@ impl Played {
         if feed.slot.is_some() && feed.start == start && feed.released == 0 {
             return;
         }
-        let Some(i) = feed.slot.or_else(|| self.disk.take()) else { return };
+        let Some(i) = feed.slot.or_else(|| self.disk.take()) else {
+            return;
+        };
         let slot = &self.disk.inner.slots[usize::from(i)];
-        let req = unpack(slot.want.load(Ordering::Relaxed)).0.wrapping_add(1).max(1);
+        let req = unpack(slot.want.load(Ordering::Relaxed))
+            .0
+            .wrapping_add(1)
+            .max(1);
         slot.used.store(pack(req, 0), Ordering::Release);
         slot.want.store(pack(req, start), Ordering::Release);
-        *feed = Feed { slot: Some(i), req, start, released: 0 };
+        *feed = Feed {
+            slot: Some(i),
+            req,
+            start,
+            released: 0,
+        };
         self.disk.wake();
     }
 
     /// One frame read at `pos` and `ratio` as [`resample::read`] reads the sample in memory: from the held frames or
     /// the voice's ring. `None` while its frames are not in (live playback; the reader is asked for them). With `wait`
     /// (an offline render) the frames are read now instead.
-    pub fn read(&self, feed: &mut Feed, pos: f64, ratio: f64, quality: Quality, wait: bool) -> Option<(f32, f32)> {
+    pub fn read(
+        &self,
+        feed: &mut Feed,
+        pos: f64,
+        ratio: f64,
+        quality: Quality,
+        wait: bool,
+    ) -> Option<(f32, f32)> {
         let n = self.frames();
         let (lo, hi) = resample::reach(n, pos, ratio);
         loop {
@@ -730,7 +870,9 @@ impl Played {
                             slot.used.store(pack(feed.req, rel), Ordering::Release);
                         }
                         let s = feed.start;
-                        return Some(resample::read_by(n, pos, ratio, quality, |x| ring.at(x - s)));
+                        return Some(resample::read_by(n, pos, ratio, quality, |x| {
+                            ring.at(x - s)
+                        }));
                     }
                 }
             }
@@ -742,12 +884,20 @@ impl Played {
                 return Some(resample::read_by(n, pos, ratio, quality, |x| h.at(x)));
             }
             // Not in: the ring is on its way here, or is sent here.
-            let coming = feed.slot.is_some() && lo >= feed.start + feed.released && hi < feed.start + feed.released + RING;
+            let coming = feed.slot.is_some()
+                && lo >= feed.start + feed.released
+                && hi < feed.start + feed.released + RING;
             if !coming {
                 self.aim(feed, lo.saturating_sub(BEFORE));
             }
             let i = feed.slot?;
-            if !wait || !self.disk.inner.slots[usize::from(i)].fill_to(&self.disk.inner, feed.req, hi + 1 - feed.start) {
+            if !wait
+                || !self.disk.inner.slots[usize::from(i)].fill_to(
+                    &self.disk.inner,
+                    feed.req,
+                    hi + 1 - feed.start,
+                )
+            {
                 return None;
             }
         }
@@ -756,7 +906,9 @@ impl Played {
     /// The voice is over: its ring is free.
     pub fn release(&self, feed: &mut Feed) {
         if let Some(i) = feed.slot.take() {
-            self.disk.inner.slots[usize::from(i)].busy.store(false, Ordering::Release);
+            self.disk.inner.slots[usize::from(i)]
+                .busy
+                .store(false, Ordering::Release);
         }
     }
 }
@@ -785,13 +937,24 @@ impl Summary {
         // A whole number of tone blocks per chunk: the tones come out as those of the whole.
         const PART: usize = 64 * os_dsp::tone::BLOCK;
         let (mut l, mut r, mut bytes) = (vec![0.0f32; PART], vec![0.0f32; PART], Vec::new());
-        let mut s = Summary { step, left: Vec::with_capacity(n / step + 1), right: Vec::with_capacity(n / step + 1), stereo: false, tones: Tones { rate: layout.rate, blocks: Vec::new() } };
+        let mut s = Summary {
+            step,
+            left: Vec::with_capacity(n / step + 1),
+            right: Vec::with_capacity(n / step + 1),
+            stereo: false,
+            tones: Tones {
+                rate: layout.rate,
+                blocks: Vec::new(),
+            },
+        };
         let mut at = 0;
         while at < n {
             let k = PART.min(n - at);
             layout.read(&mut file, at, &mut l[..k], &mut r[..k], &mut bytes);
             s.stereo |= l[..k] != r[..k];
-            s.tones.blocks.extend(Tones::analyse_stereo(&l[..k], &r[..k], layout.rate).blocks);
+            s.tones
+                .blocks
+                .extend(Tones::analyse_stereo(&l[..k], &r[..k], layout.rate).blocks);
             let mut j = (at.div_ceil(step) * step) - at;
             while j < k {
                 s.left.push(l[j]);
@@ -811,7 +974,11 @@ mod tests {
 
     fn dir() -> PathBuf {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let d = std::env::temp_dir().join(format!("lemon-sampler-stream-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+        let d = std::env::temp_dir().join(format!(
+            "lemon-sampler-stream-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
         std::fs::create_dir_all(&d).unwrap();
         d
     }
@@ -831,7 +998,9 @@ mod tests {
             fmt.extend(valid.to_le_bytes());
             fmt.extend(0u32.to_le_bytes());
             fmt.extend(1u16.to_le_bytes());
-            fmt.extend([0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71]);
+            fmt.extend([
+                0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
+            ]);
         }
         let mut b = b"RIFF\0\0\0\0WAVE".to_vec();
         // A chunk before `fmt ` and one of odd length between it and `data`, as files have.
@@ -853,7 +1022,13 @@ mod tests {
     }
 
     /// An AIFF (or AIFF-C with `comp`) file of `size`-bit frames at 44100 Hz.
-    fn aiff_file(comp: Option<&[u8; 4]>, channels: u16, size: u16, frames: u32, data: &[u8]) -> Vec<u8> {
+    fn aiff_file(
+        comp: Option<&[u8; 4]>,
+        channels: u16,
+        size: u16,
+        frames: u32,
+        data: &[u8],
+    ) -> Vec<u8> {
         let mut comm = Vec::new();
         comm.extend(channels.to_be_bytes());
         comm.extend(frames.to_be_bytes());
@@ -895,23 +1070,45 @@ mod tests {
     #[test]
     fn streamed_frames_are_the_decoded_ones() {
         let d = dir();
-        let float32: Vec<u8> = (0..1000 * 2).flat_map(|i| ((i as f32 * 0.37).sin() * 1.3).to_le_bytes()).collect();
-        let float64: Vec<u8> = (0..1000).flat_map(|i| ((i as f64 * 0.11).cos() * 0.9).to_le_bytes()).collect();
+        let float32: Vec<u8> = (0..1000 * 2)
+            .flat_map(|i| ((i as f32 * 0.37).sin() * 1.3).to_le_bytes())
+            .collect();
+        let float64: Vec<u8> = (0..1000)
+            .flat_map(|i| ((i as f64 * 0.11).cos() * 0.9).to_le_bytes())
+            .collect();
         let cases: Vec<(&str, Vec<u8>)> = vec![
             ("u8 mono", wav_file(1, 1, 8, 8, 22050, &noise(1000, 1, 1))),
-            ("i16 stereo", wav_file(1, 2, 16, 16, 44100, &noise(1000, 2, 2))),
+            (
+                "i16 stereo",
+                wav_file(1, 2, 16, 16, 44100, &noise(1000, 2, 2)),
+            ),
             ("i16 mono", wav_file(1, 1, 16, 16, 44100, &noise(999, 1, 2))),
-            ("i24 stereo", wav_file(1, 2, 24, 24, 48000, &noise(1000, 2, 3))),
-            ("i32 stereo", wav_file(1, 2, 32, 32, 96000, &noise(1000, 2, 4))),
+            (
+                "i24 stereo",
+                wav_file(1, 2, 24, 24, 48000, &noise(1000, 2, 3)),
+            ),
+            (
+                "i32 stereo",
+                wav_file(1, 2, 32, 32, 96000, &noise(1000, 2, 4)),
+            ),
             ("f32 stereo", wav_file(3, 2, 32, 32, 48000, &float32)),
             ("f64 mono", wav_file(3, 1, 64, 64, 48000, &float64)),
-            ("extensible i24 x4", wav_file(0xFFFE, 4, 24, 24, 48000, &noise(500, 4, 3))),
+            (
+                "extensible i24 x4",
+                wav_file(0xFFFE, 4, 24, 24, 48000, &noise(500, 4, 3)),
+            ),
             ("aiff i16", aiff_file(None, 2, 16, 1000, &noise(1000, 2, 2))),
             ("aiff i24", aiff_file(None, 1, 24, 1000, &noise(1000, 1, 3))),
             ("aiff i32", aiff_file(None, 2, 32, 1000, &noise(1000, 2, 4))),
             ("aiff i8", aiff_file(None, 1, 8, 1000, &noise(1000, 1, 1))),
-            ("aifc none", aiff_file(Some(b"NONE"), 2, 16, 1000, &noise(1000, 2, 2))),
-            ("aifc sowt", aiff_file(Some(b"sowt"), 2, 16, 1000, &noise(1000, 2, 2))),
+            (
+                "aifc none",
+                aiff_file(Some(b"NONE"), 2, 16, 1000, &noise(1000, 2, 2)),
+            ),
+            (
+                "aifc sowt",
+                aiff_file(Some(b"sowt"), 2, 16, 1000, &noise(1000, 2, 2)),
+            ),
         ];
         for (what, bytes) in cases {
             let ext = if what.starts_with("ai") { "aif" } else { "wav" };
@@ -938,7 +1135,10 @@ mod tests {
         let d = dir();
         let p = d.join("x.wav");
         let cases: Vec<(&str, Vec<u8>)> = vec![
-            ("20 of 24 bits", wav_file(0xFFFE, 2, 24, 20, 48000, &noise(100, 2, 3))),
+            (
+                "20 of 24 bits",
+                wav_file(0xFFFE, 2, 24, 20, 48000, &noise(100, 2, 3)),
+            ),
             ("12-bit", wav_file(1, 1, 12, 12, 48000, &noise(100, 1, 2))),
             ("a-law", wav_file(6, 1, 8, 8, 8000, &noise(100, 1, 1))),
             ("cut short", {
@@ -946,7 +1146,10 @@ mod tests {
                 b.truncate(b.len() - 10);
                 b
             }),
-            ("aiff frames missing", aiff_file(None, 2, 16, 1000, &noise(900, 2, 2))),
+            (
+                "aiff frames missing",
+                aiff_file(None, 2, 16, 1000, &noise(900, 2, 2)),
+            ),
             ("not audio", b"hello there, this is no sound file".to_vec()),
         ];
         for (what, bytes) in cases {
@@ -968,10 +1171,23 @@ mod tests {
         let s = Summary::read(&p, &Layout::of(&p).unwrap()).unwrap();
         assert_eq!(s.step, 2);
         assert_eq!(s.left.len(), frames.div_ceil(2));
-        assert!(s.left.iter().enumerate().all(|(i, &v)| v == want.left[i * 2]));
-        assert!(s.right.iter().enumerate().all(|(i, &v)| v == want.right[i * 2]));
+        assert!(
+            s.left
+                .iter()
+                .enumerate()
+                .all(|(i, &v)| v == want.left[i * 2])
+        );
+        assert!(
+            s.right
+                .iter()
+                .enumerate()
+                .all(|(i, &v)| v == want.right[i * 2])
+        );
         assert!(s.stereo);
-        assert_eq!(s.tones, Tones::analyse_stereo(&want.left, &want.right, want.rate));
+        assert_eq!(
+            s.tones,
+            Tones::analyse_stereo(&want.left, &want.right, want.rate)
+        );
         std::fs::remove_dir_all(&d).ok();
     }
 }

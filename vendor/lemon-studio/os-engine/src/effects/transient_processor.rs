@@ -28,8 +28,17 @@ pub const ON: usize = 8;
 
 /// The settings' ranges (the editor's). Stored positions outside them are clamped (spec "Not covered"); any value but
 /// 0 for processing on counts as on.
-pub const RANGES: [(i32, i32); PARAMS] =
-    [(0, 160), (0, 160), (0, 160), (0, 160), (0, 2), (0, 2), (0, 160), (0, 160), (0, 1)];
+pub const RANGES: [(i32, i32); PARAMS] = [
+    (0, 160),
+    (0, 160),
+    (0, 160),
+    (0, 160),
+    (0, 2),
+    (0, 2),
+    (0, 160),
+    (0, 160),
+    (0, 1),
+];
 
 /// A fresh instance's settings, also FL's "Default" preset.
 pub const DEFAULTS: [i32; PARAMS] = [80, 0, 80, 80, 1, 1, 80, 80, 1];
@@ -68,7 +77,11 @@ impl Settings {
     pub fn from_state(b: &[u8]) -> Option<Settings> {
         let version = super::field(b, 0)?;
         let v: [i32; PARAMS] = super::ints(b, 1)?;
-        Some(if version >= 2 { Settings::default() } else { Settings { v } })
+        Some(if version >= 2 {
+            Settings::default()
+        } else {
+            Settings { v }
+        })
     }
 
     /// The saved state (49 bytes) with the display bytes of a new instance.
@@ -148,7 +161,11 @@ const STILL: i64 = -1_073_741_823;
 /// Setting `k`'s position in 0..1: `single(clamp(value * (1 / range), 0, 1))` in doubles (range 160, or 2 for the
 /// shapes).
 pub fn position(k: usize, value: i32) -> f32 {
-    let range = if k == ATTACK_SHAPE || k == RELEASE_SHAPE { 2.0 } else { 160.0 };
+    let range = if k == ATTACK_SHAPE || k == RELEASE_SHAPE {
+        2.0
+    } else {
+        160.0
+    };
     (f64::from(value) * (1.0 / range)).clamp(0.0, 1.0) as f32
 }
 
@@ -156,31 +173,19 @@ pub fn position(k: usize, value: i32) -> f32 {
 fn signed_square(x: f32) -> f32 {
     let t = sub(add(sub(x, 0.5), x), 0.5);
     let s = mul(t, t);
-    if t < 0.0 {
-        -s
-    } else {
-        s
-    }
+    if t < 0.0 { -s } else { s }
 }
 
 /// The attack's weight, -0.6..0.4.
 pub fn attack(x: f32) -> f32 {
     let s = signed_square(x);
-    if s >= 0.0 {
-        mul(C_04, s)
-    } else {
-        mul(C_06, s)
-    }
+    if s >= 0.0 { mul(C_04, s) } else { mul(C_06, s) }
 }
 
 /// The release's weight, -1..0.6.
 pub fn release(x: f32) -> f32 {
     let s = signed_square(x);
-    if s >= 0.0 {
-        mul(s, C_06)
-    } else {
-        s
-    }
+    if s >= 0.0 { mul(s, C_06) } else { s }
 }
 
 /// The drive `D`, 0.1..15 (1 at position 0.1).
@@ -272,7 +277,11 @@ struct Split {
 impl Split {
     fn new(k: f32) -> Split {
         let c = div(1.0, add(k, 1.0));
-        Split { c, ck: mul(c, k), a: -mul(sub(k, 1.0), c) }
+        Split {
+            c,
+            ck: mul(c, k),
+            a: -mul(sub(k, 1.0), c),
+        }
     }
 }
 
@@ -348,7 +357,10 @@ impl TransientProcessor {
     }
 
     pub fn from_state(state: &[u8], sample_rate: u32) -> Option<TransientProcessor> {
-        Some(TransientProcessor::with_settings(sample_rate, &Settings::from_state(state)?))
+        Some(TransientProcessor::with_settings(
+            sample_rate,
+            &Settings::from_state(state)?,
+        ))
     }
 
     /// The stored values applied last.
@@ -393,7 +405,10 @@ impl TransientProcessor {
 
     /// The followers' and the glide's constants for the rate and the shapes.
     fn reshape(&mut self) {
-        let (a, r) = (shape(self.pos[ATTACK_SHAPE]), shape(self.pos[RELEASE_SHAPE]));
+        let (a, r) = (
+            shape(self.pos[ATTACK_SHAPE]),
+            shape(self.pos[RELEASE_SHAPE]),
+        );
         self.consts = Consts::new(self.rate, a, r);
     }
 
@@ -439,8 +454,14 @@ impl TransientProcessor {
         let mut low = [0.0f32; 2];
         let mut high = [0.0f32; 2];
         for ch in 0..2 {
-            low[ch] = add(add(mul(ck, x[ch]), mul(ck, self.x1[ch])), mul(a, self.low1[ch]));
-            high[ch] = add(add(mul(c, x[ch]), mul(-c, self.x1[ch])), mul(a, self.high1[ch]));
+            low[ch] = add(
+                add(mul(ck, x[ch]), mul(ck, self.x1[ch])),
+                mul(a, self.low1[ch]),
+            );
+            high[ch] = add(
+                add(mul(c, x[ch]), mul(-c, self.x1[ch])),
+                mul(a, self.high1[ch]),
+            );
         }
         self.x1 = x;
         self.low1 = low;
@@ -450,7 +471,11 @@ impl TransientProcessor {
         let m = mul(add(high[1].abs(), high[0].abs()), 0.5);
         let [e1, e2, e3, e4, e5] = &mut self.e;
         *e1 = if m > *e1 { m } else { mul(*e1, k.kf) };
-        *e2 = if m > *e2 { add(mul(sub(m, *e2), k.ka), *e2) } else { mul(*e2, k.kf) };
+        *e2 = if m > *e2 {
+            add(mul(sub(m, *e2), k.ka), *e2)
+        } else {
+            mul(*e2, k.kf)
+        };
         *e3 = if m >= *e3 { m } else { mul(*e3, k.k3) };
         *e4 = if m >= *e4 { m } else { mul(*e4, k.k4) };
         let q = if self.release_copy >= 0.0 && *e4 > 0.0 {
@@ -487,8 +512,15 @@ impl TransientProcessor {
         } else {
             1.0
         };
-        let s = add(mul(sub(rel, 1.0), self.release_copy), mul(sub(att, 1.0), self.attack_copy));
-        let g = if s >= 0.0 { add(s, 1.0) } else { div(1.0, sub(1.0, s)) };
+        let s = add(
+            mul(sub(rel, 1.0), self.release_copy),
+            mul(sub(att, 1.0), self.attack_copy),
+        );
+        let g = if s >= 0.0 {
+            add(s, 1.0)
+        } else {
+            div(1.0, sub(1.0, s))
+        };
 
         let d = self.drive_copy;
         let mut out = [0.0f32; 2];
@@ -530,7 +562,10 @@ impl TransientProcessor {
     /// One block in place. In long silence, or switched off, the input passes unchanged and the state stands still.
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         let n = left.len().min(right.len());
-        let silent = left[..n].iter().chain(&right[..n]).all(|x| x.abs() <= C_1E6);
+        let silent = left[..n]
+            .iter()
+            .chain(&right[..n])
+            .all(|x| x.abs() <= C_1E6);
         if self.runs(silent, n) && self.on {
             for (l, r) in left.iter_mut().zip(right.iter_mut()) {
                 (*l, *r) = self.frame(*l, *r);
@@ -557,7 +592,9 @@ mod tests {
 
     #[test]
     fn states_are_read_after_the_version() {
-        let s = Settings { v: [120, 110, 160, 53, 2, 1, 50, 80, 1] };
+        let s = Settings {
+            v: [120, 110, 160, 53, 2, 1, 50, 80, 1],
+        };
         let b = s.to_state();
         assert_eq!(b.len(), STATE_LEN);
         assert_eq!(&b[40..], &DISPLAY);
@@ -598,7 +635,10 @@ mod tests {
         assert!((20.0 * gain(0.0).log10() + 9.0).abs() < 1e-3);
         assert!((20.0 * gain(1.0).log10() - 9.0).abs() < 1e-3);
         // Shapes, balance, split.
-        assert_eq!([0, 1, 2].map(|v| shape(position(ATTACK_SHAPE, v))), [0.5, 1.0, 2.0]);
+        assert_eq!(
+            [0, 1, 2].map(|v| shape(position(ATTACK_SHAPE, v))),
+            [0.5, 1.0, 2.0]
+        );
         assert_eq!(balance(0.5), (1.0, 1.0));
         assert_eq!(balance(0.0), (1.0, 0.0));
         assert_eq!(balance(1.0), (0.0, 1.0));

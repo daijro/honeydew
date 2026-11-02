@@ -16,7 +16,7 @@
 
 use std::cell::Cell;
 use std::collections::VecDeque;
-use std::ffi::{c_void, CString};
+use std::ffi::{CString, c_void};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -26,22 +26,25 @@ use std::time::{Duration, Instant};
 use block2::RcBlock;
 use objc2::rc::{Allocated, Retained};
 use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel};
-use objc2::{msg_send, sel, AllocAnyThread, ClassType, MainThreadMarker, MainThreadOnly};
+use objc2::{AllocAnyThread, ClassType, MainThreadMarker, MainThreadOnly, msg_send, sel};
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSBackingStoreType, NSCursor, NSDragOperation, NSEvent, NSEventMask, NSEventModifierFlags, NSEventType, NSPanel, NSPasteboard,
-    NSPasteboardTypeFileURL, NSPopUpMenuWindowLevel, NSScreen, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindowStyleMask,
+    NSAutoresizingMaskOptions, NSBackingStoreType, NSCursor, NSDragOperation, NSEvent, NSEventMask,
+    NSEventModifierFlags, NSEventType, NSPanel, NSPasteboard, NSPasteboardTypeFileURL,
+    NSPopUpMenuWindowLevel, NSScreen, NSTrackingArea, NSTrackingAreaOptions, NSView,
+    NSWindowStyleMask,
 };
-use objc2_core_foundation::{kCFRunLoopCommonModes, CFRetained, CFRunLoop};
+use objc2_core_foundation::{CFRetained, CFRunLoop, kCFRunLoopCommonModes};
 use objc2_core_graphics::{
-    CGAssociateMouseAndMouseCursorPosition, CGBitmapInfo, CGColorRenderingIntent, CGColorSpace, CGDataProvider, CGDisplayBounds, CGImage,
-    CGImageAlphaInfo, CGImageByteOrderInfo, CGMainDisplayID,
+    CGAssociateMouseAndMouseCursorPosition, CGBitmapInfo, CGColorRenderingIntent, CGColorSpace,
+    CGDataProvider, CGDisplayBounds, CGImage, CGImageAlphaInfo, CGImageByteOrderInfo,
+    CGMainDisplayID,
 };
 use objc2_foundation::{NSArray, NSData, NSPoint, NSRect, NSSize, NSString, NSURL};
 use os_theme::{Color, Palette};
 use os_ui::kit::menu as kmenu;
 use os_ui::{Canvas, Font, Rect};
 
-pub use crate::input::{keysym, keysym_char, Button, Input};
+pub use crate::input::{Button, Input, keysym, keysym_char};
 use crate::{MenuDef, Opener};
 
 /// The host's view: its `NSView *`, as an address.
@@ -76,13 +79,29 @@ struct At {
 }
 
 enum Ev {
-    Down { at: At, btn: Button, dbl: bool },
-    Up { at: At, btn: Button },
+    Down {
+        at: At,
+        btn: Button,
+        dbl: bool,
+    },
+    Up {
+        at: At,
+        btn: Button,
+    },
     /// The pointer moved; the mouse moved this far (device px; what drives a held drag).
-    Move { at: At, dx: f32, dy: f32 },
-    Wheel { at: At, notches: f32 },
+    Move {
+        at: At,
+        dx: f32,
+        dy: f32,
+    },
+    Wheel {
+        at: At,
+        notches: f32,
+    },
     Leave,
-    Key { sym: u32 },
+    Key {
+        sym: u32,
+    },
     Expose,
     Drop(String),
     /// A press outside every surface while a popup or box is open.
@@ -175,16 +194,26 @@ impl Drop for EditorThread {
 /// The backing scale of the host's view (its window's, else the main screen's): the editor's scale, as macOS hosts
 /// never set one (sizes are points there). Main thread.
 pub fn backing_scale(parent: Parent) -> f32 {
-    let Some(mtm) = MainThreadMarker::new() else { return 1.0 };
+    let Some(mtm) = MainThreadMarker::new() else {
+        return 1.0;
+    };
     // SAFETY: the host passes a valid NSView (or null).
     let view = unsafe { (parent as *const NSView).as_ref() };
-    let s = view.and_then(|v| v.window()).map(|w| w.backingScaleFactor()).or_else(|| NSScreen::mainScreen(mtm).map(|s| s.backingScaleFactor()));
+    let s = view
+        .and_then(|v| v.window())
+        .map(|w| w.backingScaleFactor())
+        .or_else(|| NSScreen::mainScreen(mtm).map(|s| s.backingScaleFactor()));
     s.filter(|s| *s > 0.0).map_or(1.0, |s| s as f32)
 }
 
 /// Opens an editor view of `size` device px (at [`backing_scale`]) in the host's view `parent` and runs `run` with it
 /// on a thread of its own. Main thread; `None` elsewhere.
-pub fn spawn(parent: Parent, size: (u32, u32), slot: &Slot, run: impl FnOnce(Window) + Send + 'static) -> Option<EditorThread> {
+pub fn spawn(
+    parent: Parent,
+    size: (u32, u32),
+    slot: &Slot,
+    run: impl FnOnce(Window) + Send + 'static,
+) -> Option<EditorThread> {
     let Some(mtm) = MainThreadMarker::new() else {
         eprintln!("plugin editor: not opened on the main thread");
         return None;
@@ -192,11 +221,26 @@ pub fn spawn(parent: Parent, size: (u32, u32), slot: &Slot, run: impl FnOnce(Win
     // SAFETY: the host passes a valid NSView (or null).
     let parent_view = unsafe { (parent as *const NSView).as_ref() }?;
     let scale = backing_scale(parent);
-    let shared = Arc::new(Shared { state: Mutex::default(), cv: Condvar::new(), quit: AtomicBool::new(false), held: AtomicBool::new(false) });
+    let shared = Arc::new(Shared {
+        state: Mutex::default(),
+        cv: Condvar::new(),
+        quit: AtomicBool::new(false),
+        held: AtomicBool::new(false),
+    });
     let s = f64::from(scale);
-    let view = new_view(mtm, NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(f64::from(size.0) / s, f64::from(size.1) / s)));
+    let view = new_view(
+        mtm,
+        NSRect::new(
+            NSPoint::new(0.0, 0.0),
+            NSSize::new(f64::from(size.0) / s, f64::from(size.1) / s),
+        ),
+    );
     // Stays at the parent's top left (where child windows sit on Windows and X11) when the parent changes size.
-    view.setAutoresizingMask(if parent_view.isFlipped() { NSAutoresizingMaskOptions::ViewMaxYMargin } else { NSAutoresizingMaskOptions::ViewMinYMargin });
+    view.setAutoresizingMask(if parent_view.isFlipped() {
+        NSAutoresizingMaskOptions::ViewMaxYMargin
+    } else {
+        NSAutoresizingMaskOptions::ViewMinYMargin
+    });
     parent_view.addSubview(&view);
     place(&view);
     let id = register(view, None, &shared, scale);
@@ -212,14 +256,21 @@ pub fn spawn(parent: Parent, size: (u32, u32), slot: &Slot, run: impl FnOnce(Win
         raw: VecDeque::new(),
         queue: VecDeque::new(),
     };
-    let Ok(thread) = std::thread::Builder::new().name("plugin editor".into()).spawn(move || run(win)) else {
+    let Ok(thread) = std::thread::Builder::new()
+        .name("plugin editor".into())
+        .spawn(move || run(win))
+    else {
         close_all(&shared);
         return None;
     };
     if let Ok(mut s) = slot.lock() {
         *s = Some(waker.clone());
     }
-    Some(EditorThread { waker, slot: slot.clone(), thread: Some(thread) })
+    Some(EditorThread {
+        waker,
+        slot: slot.clone(),
+        thread: Some(thread),
+    })
 }
 
 // -------------------------------------------------------------------------------------------------------------------
@@ -253,28 +304,49 @@ fn surfaces() -> std::sync::MutexGuard<'static, Vec<Surface>> {
     SURFACES.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn register(view: Retained<NSView>, panel: Option<Retained<NSPanel>>, shared: &Arc<Shared>, scale: f32) -> u64 {
+fn register(
+    view: Retained<NSView>,
+    panel: Option<Retained<NSPanel>>,
+    shared: &Arc<Shared>,
+    scale: f32,
+) -> u64 {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    surfaces().push(Surface { id, shared: shared.clone(), scale, view: Main(view), panel: panel.map(Main), image: None, pending: None });
+    surfaces().push(Surface {
+        id,
+        shared: shared.clone(),
+        scale,
+        view: Main(view),
+        panel: panel.map(Main),
+        image: None,
+        pending: None,
+    });
     id
 }
 
 /// The surface a view of ours shows. Main thread.
 fn target(v: &NSView) -> Option<(u64, Arc<Shared>, f32)> {
     let p: *const NSView = v;
-    surfaces().iter().find(|s| Retained::as_ptr(&s.view.0) == p).map(|s| (s.id, s.shared.clone(), s.scale))
+    surfaces()
+        .iter()
+        .find(|s| Retained::as_ptr(&s.view.0) == p)
+        .map(|s| (s.id, s.shared.clone(), s.scale))
 }
 
 /// A surface's view. Main thread.
 fn view_of(id: u64) -> Option<Retained<NSView>> {
-    surfaces().iter().find(|s| s.id == id).map(|s| s.view.0.clone())
+    surfaces()
+        .iter()
+        .find(|s| s.id == id)
+        .map(|s| s.view.0.clone())
 }
 
 /// Closes a surface: its panel, its view. Main thread.
 fn close(id: u64) {
     let s = {
         let mut l = surfaces();
-        let Some(i) = l.iter().position(|s| s.id == id) else { return };
+        let Some(i) = l.iter().position(|s| s.id == id) else {
+            return;
+        };
         l.remove(i)
     };
     if let Some(p) = &s.panel {
@@ -286,7 +358,11 @@ fn close(id: u64) {
 
 /// The editor is gone: every surface it opened, its monitors and its held cursor. Main thread.
 fn close_all(shared: &Arc<Shared>) {
-    let ids: Vec<u64> = surfaces().iter().filter(|s| Arc::ptr_eq(&s.shared, shared)).map(|s| s.id).collect();
+    let ids: Vec<u64> = surfaces()
+        .iter()
+        .filter(|s| Arc::ptr_eq(&s.shared, shared))
+        .map(|s| s.id)
+        .collect();
     for id in ids {
         remove_monitors(id);
         close(id);
@@ -334,19 +410,35 @@ fn hold_cursor(shared: &Shared, on: bool) {
 fn view_class() -> &'static AnyClass {
     static CLASS: OnceLock<&'static AnyClass> = OnceLock::new();
     CLASS.get_or_init(|| {
-        let base = format!("LemonPluginView{:x}", view_class as fn() -> &'static AnyClass as usize);
+        let base = format!(
+            "LemonPluginView{:x}",
+            view_class as fn() -> &'static AnyClass as usize
+        );
         let mut b = (0..)
             .find_map(|n| {
-                let name = CString::new(if n == 0 { base.clone() } else { format!("{base}_{n}") }).ok()?;
+                let name = CString::new(if n == 0 {
+                    base.clone()
+                } else {
+                    format!("{base}_{n}")
+                })
+                .ok()?;
                 ClassBuilder::new(&name, NSView::class())
             })
             .expect("a free class name");
         // SAFETY: each function has the selector's signature.
         unsafe {
-            for s in [sel!(isFlipped), sel!(isOpaque), sel!(wantsUpdateLayer), sel!(acceptsFirstResponder)] {
+            for s in [
+                sel!(isFlipped),
+                sel!(isOpaque),
+                sel!(wantsUpdateLayer),
+                sel!(acceptsFirstResponder),
+            ] {
                 b.add_method(s, yes as extern "C-unwind" fn(_, _) -> _);
             }
-            b.add_method(sel!(acceptsFirstMouse:), first_mouse as extern "C-unwind" fn(_, _, _) -> _);
+            b.add_method(
+                sel!(acceptsFirstMouse:),
+                first_mouse as extern "C-unwind" fn(_, _, _) -> _,
+            );
             for s in [
                 sel!(mouseDown:),
                 sel!(mouseUp:),
@@ -365,11 +457,26 @@ fn view_class() -> &'static AnyClass {
             ] {
                 b.add_method(s, on_event as extern "C-unwind" fn(_, _, _));
             }
-            b.add_method(sel!(draggingEntered:), drag_enter as extern "C-unwind" fn(_, _, _) -> _);
-            b.add_method(sel!(performDragOperation:), drag_drop as extern "C-unwind" fn(_, _, _) -> _);
-            b.add_method(sel!(updateLayer), update_layer as extern "C-unwind" fn(_, _));
-            b.add_method(sel!(viewDidChangeBackingProperties), expose as extern "C-unwind" fn(_, _));
-            b.add_method(sel!(viewDidMoveToWindow), expose as extern "C-unwind" fn(_, _));
+            b.add_method(
+                sel!(draggingEntered:),
+                drag_enter as extern "C-unwind" fn(_, _, _) -> _,
+            );
+            b.add_method(
+                sel!(performDragOperation:),
+                drag_drop as extern "C-unwind" fn(_, _, _) -> _,
+            );
+            b.add_method(
+                sel!(updateLayer),
+                update_layer as extern "C-unwind" fn(_, _),
+            );
+            b.add_method(
+                sel!(viewDidChangeBackingProperties),
+                expose as extern "C-unwind" fn(_, _),
+            );
+            b.add_method(
+                sel!(viewDidMoveToWindow),
+                expose as extern "C-unwind" fn(_, _),
+            );
         }
         b.register()
     })
@@ -387,7 +494,10 @@ extern "C-unwind" fn first_mouse(_: &NSView, _: Sel, _: Option<&NSEvent>) -> Boo
 /// Shows the surface's newest frame.
 extern "C-unwind" fn update_layer(v: &NSView, _: Sel) {
     let p: *const NSView = v;
-    let image = surfaces().iter().find(|s| Retained::as_ptr(&s.view.0) == p).and_then(|s| s.image.clone());
+    let image = surfaces()
+        .iter()
+        .find(|s| Retained::as_ptr(&s.view.0) == p)
+        .and_then(|s| s.image.clone());
     if let (Some(layer), Some(image)) = (v.layer(), image) {
         let contents: *const CGImage = &*image;
         // SAFETY: a CGImage is a valid layer contents object.
@@ -399,18 +509,32 @@ extern "C-unwind" fn update_layer(v: &NSView, _: Sel) {
 /// backing scale shows the frame scaled to fit).
 extern "C-unwind" fn expose(v: &NSView, _: Sel) {
     if let Some((id, shared, _)) = target(v) {
-        shared.push(Raw { surface: id, ev: Ev::Expose, mods: (false, false, false) });
+        shared.push(Raw {
+            surface: id,
+            ev: Ev::Expose,
+            mods: (false, false, false),
+        });
     }
 }
 
 /// A file dragged over a view that takes files (`Window::accept_files`) is copied in.
 extern "C-unwind" fn drag_enter(_: &NSView, _: Sel, sender: Option<&AnyObject>) -> NSDragOperation {
-    if sender.and_then(dragged_file).is_some() { NSDragOperation::Copy } else { NSDragOperation::None }
+    if sender.and_then(dragged_file).is_some() {
+        NSDragOperation::Copy
+    } else {
+        NSDragOperation::None
+    }
 }
 
 extern "C-unwind" fn drag_drop(v: &NSView, _: Sel, sender: Option<&AnyObject>) -> Bool {
-    let (Some(path), Some((id, shared, _))) = (sender.and_then(dragged_file), target(v)) else { return Bool::NO };
-    shared.push(Raw { surface: id, ev: Ev::Drop(path), mods: (false, false, false) });
+    let (Some(path), Some((id, shared, _))) = (sender.and_then(dragged_file), target(v)) else {
+        return Bool::NO;
+    };
+    shared.push(Raw {
+        surface: id,
+        ev: Ev::Drop(path),
+        mods: (false, false, false),
+    });
     Bool::YES
 }
 
@@ -420,7 +544,9 @@ fn dragged_file(sender: &AnyObject) -> Option<String> {
     let pb: Option<Retained<NSPasteboard>> = unsafe { msg_send![sender, draggingPasteboard] };
     // SAFETY: a static pasteboard type.
     let url = pb?.stringForType(unsafe { NSPasteboardTypeFileURL })?;
-    NSURL::URLWithString(&url)?.to_file_path().map(|p| p.to_string_lossy().into_owned())
+    NSURL::URLWithString(&url)?
+        .to_file_path()
+        .map(|p| p.to_string_lossy().into_owned())
 }
 
 thread_local! {
@@ -430,7 +556,11 @@ thread_local! {
 
 /// Ctrl (Command or Control: the macOS habit), Shift, Alt (Option).
 fn mods_of(f: NSEventModifierFlags) -> (bool, bool, bool) {
-    (f.contains(NSEventModifierFlags::Command) || f.contains(NSEventModifierFlags::Control), f.contains(NSEventModifierFlags::Shift), f.contains(NSEventModifierFlags::Option))
+    (
+        f.contains(NSEventModifierFlags::Command) || f.contains(NSEventModifierFlags::Control),
+        f.contains(NSEventModifierFlags::Shift),
+        f.contains(NSEventModifierFlags::Option),
+    )
 }
 
 /// Where an event happened: on view `v` and on the screen (device px at `scale`).
@@ -439,13 +569,20 @@ fn at(v: &NSView, e: &NSEvent, scale: f32) -> At {
     let p = v.convertPoint_fromView(loc, None);
     let s = v.window().map_or(loc, |w| w.convertPointToScreen(loc));
     let k = f64::from(scale);
-    At { x: (p.x * k) as f32, y: (p.y * k) as f32, sx: (s.x * k).round() as i32, sy: ((main_height() - s.y) * k).round() as i32 }
+    At {
+        x: (p.x * k) as f32,
+        y: (p.y * k) as f32,
+        sx: (s.x * k).round() as i32,
+        sy: ((main_height() - s.y) * k).round() as i32,
+    }
 }
 
 /// The view's mouse and key methods: what happened, for the GUI thread.
 extern "C-unwind" fn on_event(v: &NSView, _: Sel, e: Option<&NSEvent>) {
     let Some(e) = e else { return };
-    let Some((id, shared, scale)) = target(v) else { return };
+    let Some((id, shared, scale)) = target(v) else {
+        return;
+    };
     let flags = e.modifierFlags();
     let mut mods = mods_of(flags);
     // Every second press of a run is a double click. Only mouse presses have a click count: AppKit raises on any other
@@ -453,30 +590,68 @@ extern "C-unwind" fn on_event(v: &NSView, _: Sel, e: Option<&NSEvent>) {
     let dbl = || e.clickCount() >= 2 && e.clickCount() % 2 == 0;
     let ev = match e.r#type() {
         NSEventType::LeftMouseDown => {
-            let right = flags.contains(NSEventModifierFlags::Control) && !flags.contains(NSEventModifierFlags::Command);
+            let right = flags.contains(NSEventModifierFlags::Control)
+                && !flags.contains(NSEventModifierFlags::Command);
             CONTROL_CLICK.set(right);
             // That Control is the click's, not Ctrl held.
             if right {
                 mods.0 = false;
             }
-            Ev::Down { at: at(v, e, scale), btn: if right { Button::Right } else { Button::Left }, dbl: dbl() }
+            Ev::Down {
+                at: at(v, e, scale),
+                btn: if right { Button::Right } else { Button::Left },
+                dbl: dbl(),
+            }
         }
-        NSEventType::LeftMouseUp => Ev::Up { at: at(v, e, scale), btn: if CONTROL_CLICK.get() { Button::Right } else { Button::Left } },
-        NSEventType::RightMouseDown => Ev::Down { at: at(v, e, scale), btn: Button::Right, dbl: dbl() },
-        NSEventType::RightMouseUp => Ev::Up { at: at(v, e, scale), btn: Button::Right },
-        NSEventType::OtherMouseDown if e.buttonNumber() == 2 => Ev::Down { at: at(v, e, scale), btn: Button::Middle, dbl: dbl() },
-        NSEventType::OtherMouseUp if e.buttonNumber() == 2 => Ev::Up { at: at(v, e, scale), btn: Button::Middle },
-        NSEventType::MouseMoved | NSEventType::LeftMouseDragged | NSEventType::RightMouseDragged | NSEventType::OtherMouseDragged => {
-            Ev::Move { at: at(v, e, scale), dx: (e.deltaX() * f64::from(scale)) as f32, dy: (e.deltaY() * f64::from(scale)) as f32 }
-        }
+        NSEventType::LeftMouseUp => Ev::Up {
+            at: at(v, e, scale),
+            btn: if CONTROL_CLICK.get() {
+                Button::Right
+            } else {
+                Button::Left
+            },
+        },
+        NSEventType::RightMouseDown => Ev::Down {
+            at: at(v, e, scale),
+            btn: Button::Right,
+            dbl: dbl(),
+        },
+        NSEventType::RightMouseUp => Ev::Up {
+            at: at(v, e, scale),
+            btn: Button::Right,
+        },
+        NSEventType::OtherMouseDown if e.buttonNumber() == 2 => Ev::Down {
+            at: at(v, e, scale),
+            btn: Button::Middle,
+            dbl: dbl(),
+        },
+        NSEventType::OtherMouseUp if e.buttonNumber() == 2 => Ev::Up {
+            at: at(v, e, scale),
+            btn: Button::Middle,
+        },
+        NSEventType::MouseMoved
+        | NSEventType::LeftMouseDragged
+        | NSEventType::RightMouseDragged
+        | NSEventType::OtherMouseDragged => Ev::Move {
+            at: at(v, e, scale),
+            dx: (e.deltaX() * f64::from(scale)) as f32,
+            dy: (e.deltaY() * f64::from(scale)) as f32,
+        },
         NSEventType::ScrollWheel => {
             let d = e.scrollingDeltaY();
             if d == 0.0 {
                 return;
             }
             // A wheel scrolls by lines (a notch each), a trackpad by points.
-            let notches = if e.hasPreciseScrollingDeltas() { d / POINTS_PER_NOTCH } else { d };
-            Ev::Wheel { at: at(v, e, scale), notches: notches as f32 }
+            let notches = if e.hasPreciseScrollingDeltas() {
+                d / POINTS_PER_NOTCH
+            } else {
+                d
+            };
+            Ev::Wheel {
+                at: at(v, e, scale),
+                notches: notches as f32,
+            }
         }
         NSEventType::MouseExited => Ev::Leave,
         NSEventType::KeyDown => match key_sym(e) {
@@ -485,7 +660,11 @@ extern "C-unwind" fn on_event(v: &NSView, _: Sel, e: Option<&NSEvent>) {
         },
         _ => return,
     };
-    shared.push(Raw { surface: id, ev, mods });
+    shared.push(Raw {
+        surface: id,
+        ev,
+        mods,
+    });
 }
 
 /// The X11 key symbol of a key press: the editing keys by key code, else the character typed (without Command or
@@ -506,8 +685,13 @@ fn key_sym(e: &NSEvent) -> Option<u32> {
         117 => keysym::DELETE,
         _ => {
             let f = e.modifierFlags();
-            let plain = f.contains(NSEventModifierFlags::Command) || f.contains(NSEventModifierFlags::Control);
-            let s = if plain { e.charactersIgnoringModifiers() } else { e.characters() }?;
+            let plain = f.contains(NSEventModifierFlags::Command)
+                || f.contains(NSEventModifierFlags::Control);
+            let s = if plain {
+                e.charactersIgnoringModifiers()
+            } else {
+                e.characters()
+            }?;
             let c = s.to_string().chars().next()?;
             // Control characters, and function keys (private use characters).
             if c.is_control() || ('\u{f700}'..='\u{f8ff}').contains(&c) {
@@ -531,10 +715,21 @@ fn new_view(_mtm: MainThreadMarker, frame: NSRect) -> Retained<NSView> {
         msg_send![a, initWithFrame: frame]
     };
     view.setWantsLayer(true);
-    let opts = NSTrackingAreaOptions::MouseEnteredAndExited | NSTrackingAreaOptions::MouseMoved | NSTrackingAreaOptions::ActiveAlways | NSTrackingAreaOptions::InVisibleRect;
+    let opts = NSTrackingAreaOptions::MouseEnteredAndExited
+        | NSTrackingAreaOptions::MouseMoved
+        | NSTrackingAreaOptions::ActiveAlways
+        | NSTrackingAreaOptions::InVisibleRect;
     let owner: &AnyObject = &view;
     // SAFETY: the owner is the view, which outlives its own tracking area.
-    let area = unsafe { NSTrackingArea::initWithRect_options_owner_userInfo(NSTrackingArea::alloc(), NSRect::ZERO, opts, Some(owner), None) };
+    let area = unsafe {
+        NSTrackingArea::initWithRect_options_owner_userInfo(
+            NSTrackingArea::alloc(),
+            NSRect::ZERO,
+            opts,
+            Some(owner),
+            None,
+        )
+    };
     view.addTrackingArea(&area);
     view
 }
@@ -542,8 +737,14 @@ fn new_view(_mtm: MainThreadMarker, frame: NSRect) -> Retained<NSView> {
 /// Keeps a view at its parent's top left, the parent flipped or not.
 fn place(v: &NSView) {
     // SAFETY: the superview is read on the main thread.
-    let Some(p) = (unsafe { v.superview() }) else { return };
-    let y = if p.isFlipped() { 0.0 } else { p.bounds().size.height - v.frame().size.height };
+    let Some(p) = (unsafe { v.superview() }) else {
+        return;
+    };
+    let y = if p.isFlipped() {
+        0.0
+    } else {
+        p.bounds().size.height - v.frame().size.height
+    };
     v.setFrameOrigin(NSPoint::new(0.0, y));
 }
 
@@ -562,17 +763,32 @@ fn image(px: &[u32], w: u32, h: u32) -> Option<CFRetained<CGImage>> {
     let bytes = data.as_ptr();
     let info = Box::into_raw(data);
     // SAFETY: `bytes` stays valid until the provider releases `info`.
-    let Some(provider) = (unsafe { CGDataProvider::with_data(info.cast(), bytes.cast(), n * 4, Some(release)) }) else {
+    let Some(provider) =
+        (unsafe { CGDataProvider::with_data(info.cast(), bytes.cast(), n * 4, Some(release)) })
+    else {
         // SAFETY: the provider was not made, so nothing else owns `info`.
         drop(unsafe { Box::from_raw(info) });
         return None;
     };
     let space = CGColorSpace::new_device_rgb();
     // XRGB words in memory order: 32-bit little endian, the top byte skipped.
-    let bits = CGBitmapInfo(CGImageAlphaInfo::NoneSkipFirst.0 | CGImageByteOrderInfo::Order32Little.0);
+    let bits =
+        CGBitmapInfo(CGImageAlphaInfo::NoneSkipFirst.0 | CGImageByteOrderInfo::Order32Little.0);
     // SAFETY: the provider holds `w * h` 32-bit pixels; no decode array.
     unsafe {
-        CGImage::new(w as usize, h as usize, 8, 32, w as usize * 4, space.as_deref(), bits, Some(&provider), std::ptr::null(), false, CGColorRenderingIntent::RenderingIntentDefault)
+        CGImage::new(
+            w as usize,
+            h as usize,
+            8,
+            32,
+            w as usize * 4,
+            space.as_deref(),
+            bits,
+            Some(&provider),
+            std::ptr::null(),
+            false,
+            CGColorRenderingIntent::RenderingIntentDefault,
+        )
     }
 }
 
@@ -581,14 +797,18 @@ fn show_frame(id: u64, px: &[u32], w: u32, h: u32) {
     let Some(img) = image(px, w, h) else { return };
     let ask = {
         let mut l = surfaces();
-        let Some(s) = l.iter_mut().find(|s| s.id == id) else { return };
+        let Some(s) = l.iter_mut().find(|s| s.id == id) else {
+            return;
+        };
         s.pending.replace(img).is_none()
     };
     if ask {
         on_main(move |_| {
             let view = {
                 let mut l = surfaces();
-                let Some(s) = l.iter_mut().find(|s| s.id == id) else { return };
+                let Some(s) = l.iter_mut().find(|s| s.id == id) else {
+                    return;
+                };
                 if let Some(p) = s.pending.take() {
                     s.image = Some(p);
                 }
@@ -607,10 +827,21 @@ fn make_panel(mtm: MainThreadMarker, r: [i32; 4], shared: &Arc<Shared>, scale: f
         return None;
     }
     let s = f64::from(scale);
-    let (x, y, w, h) = (f64::from(r[0]) / s, f64::from(r[1]) / s, f64::from(r[2].max(1)) / s, f64::from(r[3].max(1)) / s);
+    let (x, y, w, h) = (
+        f64::from(r[0]) / s,
+        f64::from(r[1]) / s,
+        f64::from(r[2].max(1)) / s,
+        f64::from(r[3].max(1)) / s,
+    );
     let rect = NSRect::new(NSPoint::new(x, main_height() - y - h), NSSize::new(w, h));
     let style = NSWindowStyleMask::Borderless | NSWindowStyleMask::NonactivatingPanel;
-    let panel = NSPanel::initWithContentRect_styleMask_backing_defer(NSPanel::alloc(mtm), rect, style, NSBackingStoreType::Buffered, false);
+    let panel = NSPanel::initWithContentRect_styleMask_backing_defer(
+        NSPanel::alloc(mtm),
+        rect,
+        style,
+        NSBackingStoreType::Buffered,
+        false,
+    );
     // SAFETY: the panel is kept (and closed) by its surface.
     unsafe { panel.setReleasedWhenClosed(false) };
     panel.setLevel(NSPopUpMenuWindowLevel);
@@ -626,7 +857,11 @@ fn make_panel(mtm: MainThreadMarker, r: [i32; 4], shared: &Arc<Shared>, scale: f
 
 /// Whether a window is one of our panels. Main thread.
 fn is_panel(w: *const AnyObject) -> bool {
-    surfaces().iter().any(|s| s.panel.as_ref().is_some_and(|p| Retained::as_ptr(&p.0).cast::<AnyObject>() == w))
+    surfaces().iter().any(|s| {
+        s.panel
+            .as_ref()
+            .is_some_and(|p| Retained::as_ptr(&p.0).cast::<AnyObject>() == w)
+    })
 }
 
 /// While a popup or box of editor surface `id` is open: a press anywhere else (this app's other windows, other apps)
@@ -635,7 +870,8 @@ fn add_monitors(id: u64, shared: &Arc<Shared>) {
     if shared.quitting() {
         return;
     }
-    let presses = NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown | NSEventMask::OtherMouseDown;
+    let presses =
+        NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown | NSEventMask::OtherMouseDown;
     let sh = shared.clone();
     let local = RcBlock::new(move |e: NonNull<NSEvent>| -> *mut NSEvent {
         // SAFETY: AppKit passes a valid event.
@@ -643,26 +879,49 @@ fn add_monitors(id: u64, shared: &Arc<Shared>) {
         match ev.r#type() {
             NSEventType::KeyDown => {
                 if let Some(sym) = key_sym(ev) {
-                    sh.push(Raw { surface: id, ev: Ev::Key { sym }, mods: mods_of(ev.modifierFlags()) });
+                    sh.push(Raw {
+                        surface: id,
+                        ev: Ev::Key { sym },
+                        mods: mods_of(ev.modifierFlags()),
+                    });
                 }
                 std::ptr::null_mut()
             }
-            NSEventType::LeftMouseDown | NSEventType::RightMouseDown | NSEventType::OtherMouseDown => {
+            NSEventType::LeftMouseDown
+            | NSEventType::RightMouseDown
+            | NSEventType::OtherMouseDown => {
                 // SAFETY: monitors run on the main thread.
                 let w = ev.window(unsafe { MainThreadMarker::new_unchecked() });
-                if w.as_ref().is_some_and(|w| is_panel(Retained::as_ptr(w).cast())) {
+                if w.as_ref()
+                    .is_some_and(|w| is_panel(Retained::as_ptr(w).cast()))
+                {
                     return e.as_ptr();
                 }
-                sh.push(Raw { surface: id, ev: Ev::Outside, mods: (false, false, false) });
+                sh.push(Raw {
+                    surface: id,
+                    ev: Ev::Outside,
+                    mods: (false, false, false),
+                });
                 std::ptr::null_mut()
             }
             _ => e.as_ptr(),
         }
     });
     let sh = shared.clone();
-    let global = RcBlock::new(move |_: NonNull<NSEvent>| sh.push(Raw { surface: id, ev: Ev::Outside, mods: (false, false, false) }));
+    let global = RcBlock::new(move |_: NonNull<NSEvent>| {
+        sh.push(Raw {
+            surface: id,
+            ev: Ev::Outside,
+            mods: (false, false, false),
+        })
+    });
     // SAFETY: the handler returns the event or null.
-    let a = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(presses | NSEventMask::KeyDown, &local) };
+    let a = unsafe {
+        NSEvent::addLocalMonitorForEventsMatchingMask_handler(
+            presses | NSEventMask::KeyDown,
+            &local,
+        )
+    };
     let b = NSEvent::addGlobalMonitorForEventsMatchingMask_handler(presses, &global);
     if let Ok(mut m) = MONITORS.lock() {
         m.extend(a.into_iter().chain(b).map(|o| (id, Main(o))));
@@ -673,7 +932,9 @@ fn add_monitors(id: u64, shared: &Arc<Shared>) {
 fn remove_monitors(id: u64) {
     let gone: Vec<_> = match MONITORS.lock() {
         Ok(mut m) => {
-            let (gone, keep) = std::mem::take(&mut *m).into_iter().partition(|(i, _)| *i == id);
+            let (gone, keep) = std::mem::take(&mut *m)
+                .into_iter()
+                .partition(|(i, _)| *i == id);
             *m = keep;
             gone
         }
@@ -740,14 +1001,20 @@ impl Window {
                 return Some(Input::Tick);
             }
             if self.wait(self.next_tick) {
-                return if self.shared.quitting() { None } else { Some(Input::Tick) };
+                return if self.shared.quitting() {
+                    None
+                } else {
+                    Some(Input::Tick)
+                };
             }
         }
     }
 
     /// Waits until `until` for events (into `raw`) or a wake; whether it was a wake.
     fn wait(&mut self, until: Instant) -> bool {
-        let Ok(mut s) = self.shared.state.lock() else { return false };
+        let Ok(mut s) = self.shared.state.lock() else {
+            return false;
+        };
         while s.events.is_empty() && !s.woke && !self.shared.quitting() {
             let now = Instant::now();
             if now >= until {
@@ -789,21 +1056,35 @@ impl Window {
                 self.pointer = (at.sx, at.sy);
                 // The keyboard is left where it is (the host's typing keyboard keeps playing): a type-in box takes
                 // the keys while it is open.
-                Some(Input::Down { x: at.x, y: at.y, btn, dbl })
+                Some(Input::Down {
+                    x: at.x,
+                    y: at.y,
+                    btn,
+                    dbl,
+                })
             }
             Ev::Up { at, btn } => {
                 self.pointer = (at.sx, at.sy);
                 Some(Input::Up { btn })
             }
             // A held drag: the mouse's own movement (the cursor stays where the drag started).
-            Ev::Move { dx, dy, .. } if self.locked => ((dx, dy) != (0.0, 0.0)).then_some(Input::Delta { dx, dy }),
+            Ev::Move { dx, dy, .. } if self.locked => {
+                ((dx, dy) != (0.0, 0.0)).then_some(Input::Delta { dx, dy })
+            }
             Ev::Move { at, .. } => {
                 self.pointer = (at.sx, at.sy);
                 Some(Input::Move { x: at.x, y: at.y })
             }
-            Ev::Wheel { at, notches } => Some(Input::Wheel { x: at.x, y: at.y, notches }),
+            Ev::Wheel { at, notches } => Some(Input::Wheel {
+                x: at.x,
+                y: at.y,
+                notches,
+            }),
             Ev::Leave => Some(Input::Leave),
-            Ev::Key { sym } => Some(Input::Key { sym, text: keysym_char(sym) }),
+            Ev::Key { sym } => Some(Input::Key {
+                sym,
+                text: keysym_char(sym),
+            }),
             Ev::Expose => Some(Input::Expose),
             Ev::Drop(path) => Some(Input::Drop { path }),
             Ev::Outside => None,
@@ -811,7 +1092,10 @@ impl Window {
     }
 
     /// Runs `f` on the main thread and waits for it; `None` when the editor closes meanwhile.
-    fn call<R: Send + 'static>(&self, f: impl FnOnce(MainThreadMarker) -> R + Send + 'static) -> Option<R> {
+    fn call<R: Send + 'static>(
+        &self,
+        f: impl FnOnce(MainThreadMarker) -> R + Send + 'static,
+    ) -> Option<R> {
         let done = Arc::new((Mutex::new(None), Condvar::new()));
         let d = done.clone();
         let shared = self.shared.clone();
@@ -849,7 +1133,10 @@ impl Window {
         let (id, s) = (self.id, f64::from(self.scale));
         on_main(move |_| {
             if let Some(v) = view_of(id) {
-                v.setFrameSize(NSSize::new(f64::from(w.max(1)) / s, f64::from(h.max(1)) / s));
+                v.setFrameSize(NSSize::new(
+                    f64::from(w.max(1)) / s,
+                    f64::from(h.max(1)) / s,
+                ));
                 place(&v);
             }
         });
@@ -860,8 +1147,13 @@ impl Window {
         let (id, s) = (self.id, f64::from(self.scale));
         let r = self.call(move |_| {
             let v = view_of(id)?;
-            let p = v.window()?.convertPointToScreen(v.convertPoint_toView(NSPoint::new(f64::from(x) / s, f64::from(y) / s), None));
-            Some(((p.x * s).round() as i32, ((main_height() - p.y) * s).round() as i32))
+            let p = v.window()?.convertPointToScreen(
+                v.convertPoint_toView(NSPoint::new(f64::from(x) / s, f64::from(y) / s), None),
+            );
+            Some((
+                (p.x * s).round() as i32,
+                ((main_height() - p.y) * s).round() as i32,
+            ))
         });
         r.flatten().unwrap_or((x, y))
     }
@@ -872,11 +1164,24 @@ impl Window {
         let r = self.call(move |mtm| {
             let h = main_height();
             let p = NSPoint::new(f64::from(x) / s, h - f64::from(y) / s);
-            let has = |f: NSRect| p.x >= f.origin.x && p.x < f.origin.x + f.size.width && p.y >= f.origin.y && p.y < f.origin.y + f.size.height;
-            let screen = NSScreen::screens(mtm).iter().find(|sc| has(sc.frame())).or_else(|| NSScreen::mainScreen(mtm))?;
+            let has = |f: NSRect| {
+                p.x >= f.origin.x
+                    && p.x < f.origin.x + f.size.width
+                    && p.y >= f.origin.y
+                    && p.y < f.origin.y + f.size.height
+            };
+            let screen = NSScreen::screens(mtm)
+                .iter()
+                .find(|sc| has(sc.frame()))
+                .or_else(|| NSScreen::mainScreen(mtm))?;
             let f = screen.visibleFrame();
             let px = |v: f64| (v * s).round() as i32;
-            Some([px(f.origin.x), px(h - f.origin.y - f.size.height), px(f.origin.x + f.size.width), px(h - f.origin.y)])
+            Some([
+                px(f.origin.x),
+                px(h - f.origin.y - f.size.height),
+                px(f.origin.x + f.size.width),
+                px(h - f.origin.y),
+            ])
         });
         r.flatten().unwrap_or([0, 0, i32::MAX / 2, i32::MAX / 2])
     }
@@ -893,7 +1198,9 @@ impl Window {
         on_main(move |_| {
             if let Some(v) = view_of(id) {
                 // SAFETY: a static pasteboard type.
-                v.registerForDraggedTypes(&NSArray::from_slice(&[unsafe { NSPasteboardTypeFileURL }]));
+                v.registerForDraggedTypes(&NSArray::from_slice(&[unsafe {
+                    NSPasteboardTypeFileURL
+                }]));
             }
         });
     }
@@ -903,14 +1210,22 @@ impl Window {
         let r = self.call(move |_| {
             let pb = NSPasteboard::generalPasteboard();
             pb.clearContents();
-            pb.setData_forType(Some(&NSData::with_bytes(&wav)), &NSString::from_str(WAV_TYPE))
+            pb.setData_forType(
+                Some(&NSData::with_bytes(&wav)),
+                &NSString::from_str(WAV_TYPE),
+            )
         });
         r.unwrap_or(false)
     }
 
     /// WAV audio on the clipboard, if any.
     pub fn paste_audio(&self) -> Option<Vec<u8>> {
-        self.call(|_| NSPasteboard::generalPasteboard().dataForType(&NSString::from_str(WAV_TYPE)).map(|d| d.to_vec())).flatten()
+        self.call(|_| {
+            NSPasteboard::generalPasteboard()
+                .dataForType(&NSString::from_str(WAV_TYPE))
+                .map(|d| d.to_vec())
+        })
+        .flatten()
     }
 
     pub fn locked(&self) -> bool {
@@ -951,7 +1266,8 @@ impl Window {
     /// A panel (popup, box) at screen `r` (x, y, w, h), shown: its surface.
     fn overlay(&self, r: [i32; 4]) -> Option<u64> {
         let (shared, scale) = (self.shared.clone(), self.scale);
-        self.call(move |mtm| make_panel(mtm, r, &shared, scale)).flatten()
+        self.call(move |mtm| make_panel(mtm, r, &shared, scale))
+            .flatten()
     }
 
     fn close_overlay(&self, id: u64) {
@@ -969,7 +1285,14 @@ impl Window {
     // Popup menus: a borderless panel painted with `kit::menu`, run modally until a pick or a cancel.
 
     /// Shows a menu at screen (`x`, `y`); the picked entry's command.
-    pub fn popup<C: Clone>(&mut self, x: i32, y: i32, def: &MenuDef<C>, pal: &Palette, scale: f32) -> Option<C> {
+    pub fn popup<C: Clone>(
+        &mut self,
+        x: i32,
+        y: i32,
+        def: &MenuDef<C>,
+        pal: &Palette,
+        scale: f32,
+    ) -> Option<C> {
         if crate::no_modal() {
             return None;
         }
@@ -983,10 +1306,23 @@ impl Window {
         r
     }
 
-    fn popup_at<C: Clone>(&mut self, x: i32, y: i32, def: &MenuDef<C>, pal: &Palette, scale: f32, parent: Option<Opener>) -> PopRes<C> {
-        let Ok(mut measure) = Canvas::new(8, 8, scale) else { return PopRes::Cancel };
+    fn popup_at<C: Clone>(
+        &mut self,
+        x: i32,
+        y: i32,
+        def: &MenuDef<C>,
+        pal: &Palette,
+        scale: f32,
+        parent: Option<Opener>,
+    ) -> PopRes<C> {
+        let Ok(mut measure) = Canvas::new(8, 8, scale) else {
+            return PopRes::Cancel;
+        };
         let layout = kmenu::layout(&mut measure, &def.items, def.style);
-        let (w, h) = ((layout.w * scale).ceil() as i32, (layout.h * scale).ceil() as i32);
+        let (w, h) = (
+            (layout.w * scale).ceil() as i32,
+            (layout.h * scale).ceil() as i32,
+        );
         let b = self.screen_at(x, y);
         let (mut px, mut py) = (x, y);
         if px + w > b[2] {
@@ -998,23 +1334,46 @@ impl Window {
         if py + h > b[3] {
             py = (b[3] - h).max(b[1]);
         }
-        let Ok(mut canvas) = Canvas::new(w.max(1) as u32, h.max(1) as u32, scale) else { return PopRes::Cancel };
-        let Some(pop) = self.overlay([px, py, w, h]) else { return PopRes::Cancel };
+        let Ok(mut canvas) = Canvas::new(w.max(1) as u32, h.max(1) as u32, scale) else {
+            return PopRes::Cancel;
+        };
+        let Some(pop) = self.overlay([px, py, w, h]) else {
+            return PopRes::Cancel;
+        };
         let mut hover: Option<usize> = None;
         let paint = |canvas: &mut Canvas, hover: Option<usize>| {
             canvas.begin_frame(None);
-            kmenu::paint(canvas, pal, &def.items, &layout, def.style, 0.0, 0.0, hover, def.current);
+            kmenu::paint(
+                canvas,
+                pal,
+                &def.items,
+                &layout,
+                def.style,
+                0.0,
+                0.0,
+                hover,
+                def.current,
+            );
         };
         paint(&mut canvas, hover);
         self.show(pop, &canvas);
         let rect = [px, py, px + w, py + h];
-        let inside = |r: &[i32; 4], (sx, sy): (i32, i32)| sx >= r[0] && sx < r[2] && sy >= r[1] && sy < r[3];
-        let item_at = |(sx, sy): (i32, i32)| layout.item_at(&def.items, (sx - px) as f32 / scale, (sy - py) as f32 / scale);
+        let inside =
+            |r: &[i32; 4], (sx, sy): (i32, i32)| sx >= r[0] && sx < r[2] && sy >= r[1] && sy < r[3];
+        let item_at = |(sx, sy): (i32, i32)| {
+            layout.item_at(
+                &def.items,
+                (sx - px) as f32 / scale,
+                (sy - py) as f32 / scale,
+            )
+        };
         let opened = Instant::now();
         let start = self.pointer;
         let mut moved = false;
         let result = loop {
-            let Some(e) = self.event() else { break PopRes::Cancel };
+            let Some(e) = self.event() else {
+                break PopRes::Cancel;
+            };
             match e.ev {
                 Ev::Expose if e.surface == pop => self.show(pop, &canvas),
                 Ev::Outside => break PopRes::Cancel,
@@ -1027,7 +1386,12 @@ impl Window {
                     if parent.is_some_and(|p| p.takes_back(rect, cur)) {
                         break PopRes::Back;
                     }
-                    let hov = if inside(&rect, cur) { item_at(cur) } else { None }.filter(|&i| def.items[i].clickable());
+                    let hov = if inside(&rect, cur) {
+                        item_at(cur)
+                    } else {
+                        None
+                    }
+                    .filter(|&i| def.items[i].clickable());
                     if hov != hover {
                         hover = hov;
                         paint(&mut canvas, hover);
@@ -1038,7 +1402,14 @@ impl Window {
                         let row = layout.rows[i];
                         let sx = px + ((row.x + row.w) * scale) as i32 - 2;
                         let sy = py + (row.y * scale) as i32 - 2;
-                        match self.popup_at(sx, sy, sub, pal, scale, Some(Opener::new(rect, row, scale))) {
+                        match self.popup_at(
+                            sx,
+                            sy,
+                            sub,
+                            pal,
+                            scale,
+                            Some(Opener::new(rect, row, scale)),
+                        ) {
                             PopRes::Pick(c) => break PopRes::Pick(c),
                             PopRes::Cancel => break PopRes::Cancel,
                             PopRes::Back => {}
@@ -1051,7 +1422,10 @@ impl Window {
                     }
                     moved = true;
                 }
-                Ev::Up { at, btn: Button::Left | Button::Right } => {
+                Ev::Up {
+                    at,
+                    btn: Button::Left | Button::Right,
+                } => {
                     // The release of the click that opened the menu does not pick.
                     if !moved && opened.elapsed() < Duration::from_millis(400) {
                         continue;
@@ -1069,7 +1443,10 @@ impl Window {
                         keysym::ESCAPE => break PopRes::Cancel,
                         keysym::DOWN | keysym::UP if n > 0 => {
                             let down = sym == keysym::DOWN;
-                            let mut i = hover.or(def.current).unwrap_or(if down { n - 1 } else { 0 });
+                            let mut i =
+                                hover
+                                    .or(def.current)
+                                    .unwrap_or(if down { n - 1 } else { 0 });
                             for _ in 0..n {
                                 i = if down { (i + 1) % n } else { (i + n - 1) % n };
                                 if def.items[i].clickable() {
@@ -1081,7 +1458,9 @@ impl Window {
                             self.show(pop, &canvas);
                         }
                         keysym::RETURN | keysym::KP_ENTER => {
-                            if let Some(i) = hover.filter(|&i| def.items[i].clickable() && def.sub(i).is_none()) {
+                            if let Some(i) =
+                                hover.filter(|&i| def.items[i].clickable() && def.sub(i).is_none())
+                            {
                                 break PopRes::Pick(def.cmds[i].clone());
                             }
                         }
@@ -1103,7 +1482,10 @@ impl Window {
             return None;
         }
         self.unlock();
-        let (w, h) = ((140.0 * scale).round() as i32, (22.0 * scale).round() as i32);
+        let (w, h) = (
+            (140.0 * scale).round() as i32,
+            (22.0 * scale).round() as i32,
+        );
         let b = self.screen_at(x, y);
         let x = x.min(b[2] - w).max(b[0]);
         let y = y.min(b[3] - h).max(b[1]);
@@ -1119,7 +1501,12 @@ impl Window {
             let f = Font::new(14);
             canvas.begin_frame(None);
             canvas.clear(Color::rgb(0xffffff));
-            for r in [Rect::new(0.0, 0.0, lw, 1.0), Rect::new(0.0, lh - 1.0, lw, 1.0), Rect::new(0.0, 0.0, 1.0, lh), Rect::new(lw - 1.0, 0.0, 1.0, lh)] {
+            for r in [
+                Rect::new(0.0, 0.0, lw, 1.0),
+                Rect::new(0.0, lh - 1.0, lw, 1.0),
+                Rect::new(0.0, 0.0, 1.0, lh),
+                Rect::new(lw - 1.0, 0.0, 1.0, lh),
+            ] {
                 canvas.fill_rect(r, Color::rgb(0x646464));
             }
             let text: String = s.iter().collect();
@@ -1174,12 +1561,20 @@ impl Window {
                             all = false;
                         }
                         keysym::RIGHT => {
-                            caret = if all { s.len() } else { (caret + 1).min(s.len()) };
+                            caret = if all {
+                                s.len()
+                            } else {
+                                (caret + 1).min(s.len())
+                            };
                             all = false;
                         }
                         keysym::HOME => (caret, all) = (0, false),
                         keysym::END => (caret, all) = (s.len(), false),
-                        _ if ctrl && keysym_char(sym).is_some_and(|c| c.eq_ignore_ascii_case(&'a')) => all = true,
+                        _ if ctrl
+                            && keysym_char(sym).is_some_and(|c| c.eq_ignore_ascii_case(&'a')) =>
+                        {
+                            all = true
+                        }
                         _ if !ctrl => {
                             if let Some(ch) = keysym_char(sym) {
                                 if all {

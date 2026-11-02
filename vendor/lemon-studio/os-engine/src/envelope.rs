@@ -32,11 +32,7 @@ pub fn tension_k(t: i32) -> f64 {
             break;
         }
     }
-    if t < 0 {
-        -k
-    } else {
-        k
-    }
+    if t < 0 { -k } else { k }
 }
 
 /// Progress of a move through its stage: `u` in 0..=1 maps to 0..=1; `k` > 0 starts fast, 0 is linear.
@@ -78,8 +74,16 @@ impl Params {
             amount: f64::from(e.amount),
             att_k: tension_k(e.attack_tension),
             // At the knob's minimum the short fall is a plain linear fade whatever the tension (measured).
-            dec_k: if e.decay > 100 { tension_k(e.decay_tension) } else { 0.0 },
-            rel_k: if e.release > 100 { tension_k(e.release_tension) } else { 0.0 },
+            dec_k: if e.decay > 100 {
+                tension_k(e.decay_tension)
+            } else {
+                0.0
+            },
+            rel_k: if e.release > 100 {
+                tension_k(e.release_tension)
+            } else {
+                0.0
+            },
         })
     }
 
@@ -139,17 +143,34 @@ mod tests {
     use super::*;
 
     fn rec() -> Envelope {
-        Envelope { enabled: true, delay: 100, attack: 100, hold: 100, decay: 100, sustain: 128, release: 100, ..Envelope::default() }
+        Envelope {
+            enabled: true,
+            delay: 100,
+            attack: 100,
+            hold: 100,
+            decay: 100,
+            sustain: 128,
+            release: 100,
+            ..Envelope::default()
+        }
     }
 
     #[test]
     fn time_knob_matches_measurements() {
         // Falls measured as linear decays to zero; rises from onset / ramp times.
-        for (v, s) in [(8000, 0.0925), (22500, 0.6345), (35000, 2.5406), (48000, 10.1716)] {
+        for (v, s) in [
+            (8000, 0.0925),
+            (22500, 0.6345),
+            (35000, 2.5406),
+            (48000, 10.1716),
+        ] {
             let t = fall_seconds(v);
             assert!((t / s - 1.0).abs() < 0.015, "{v}: {t} vs {s}");
         }
-        assert!((knob_seconds(20000) - 0.465).abs() < 0.01 && (knob_seconds(5000) - 0.0436).abs() < 0.003);
+        assert!(
+            (knob_seconds(20000) - 0.465).abs() < 0.01
+                && (knob_seconds(5000) - 0.0436).abs() < 0.003
+        );
         assert_eq!(knob_seconds(100), 0.0);
     }
 
@@ -159,7 +180,10 @@ mod tests {
         e.attack = 27500;
         let p = Params::new(&e).unwrap();
         let t = knob_seconds(27500);
-        assert!((p.level(t / 2.0, None).unwrap() - 0.5).abs() < 1e-9, "linear attack");
+        assert!(
+            (p.level(t / 2.0, None).unwrap() - 0.5).abs() < 1e-9,
+            "linear attack"
+        );
         assert_eq!(p.level(t * 2.0, None), Some(1.0));
         // Sustain 64 of 128, decay to it takes half of the full-scale time.
         e = rec();
@@ -183,7 +207,10 @@ mod tests {
         let a = knob_seconds(30000);
         let from = p.level(a * 0.3, Some(a * 0.3)).unwrap();
         assert!((from - 0.3).abs() < 1e-9);
-        assert_eq!(p.level(a * 0.3 + fall_seconds(22500) * 0.3 + 1e-6, Some(a * 0.3)), None);
+        assert_eq!(
+            p.level(a * 0.3 + fall_seconds(22500) * 0.3 + 1e-6, Some(a * 0.3)),
+            None
+        );
     }
 
     #[test]

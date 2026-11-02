@@ -784,8 +784,16 @@ fn meter_bars(header: Rect, page: Rect, full: bool, levels: [f32; 2], t: f32) ->
         let far = edge - if i == 0 { 3.0 * t } else { 0.0 };
         Rangef::new(far - 2.0 * t, far)
     };
-    let thickness = if full { ((room - gap) / 5.0).clamp(0.0, t) } else { t };
-    let edge = if full { page.bottom() - gap } else { header.bottom() };
+    let thickness = if full {
+        ((room - gap) / 5.0).clamp(0.0, t)
+    } else {
+        t
+    };
+    let edge = if full {
+        page.bottom() - gap
+    } else {
+        header.bottom()
+    };
     std::array::from_fn(|i| {
         if full {
             let x = Rangef::new(page.left(), page.left() + level(i) * page.width());

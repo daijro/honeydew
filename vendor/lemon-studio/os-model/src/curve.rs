@@ -53,14 +53,35 @@ pub struct Segment {
 impl Segment {
     /// The segment that ends on point `i` (`i >= 1`; point 0 shapes nothing and gives a straight line).
     pub fn new(pts: &[AutoPoint], i: usize) -> Segment {
-        let line = Segment { mode: AutoMode::Single, neg: false, line: true, c0: 0.0, c1: 0.0, c2: 0.0 };
-        let Some(p) = pts.get(i).filter(|_| i > 0) else { return line };
+        let line = Segment {
+            mode: AutoMode::Single,
+            neg: false,
+            line: true,
+            c0: 0.0,
+            c1: 0.0,
+            c2: 0.0,
+        };
+        let Some(p) = pts.get(i).filter(|_| i > 0) else {
+            return line;
+        };
         let t = p.tension;
         let side: f64 = if t < 0.0 { -1.0 } else { 1.0 };
-        let mut s = Segment { mode: p.mode, neg: t < 0.0, line: false, c0: 0.0, c1: 0.0, c2: 0.0 };
+        let mut s = Segment {
+            mode: p.mode,
+            neg: t < 0.0,
+            line: false,
+            c0: 0.0,
+            c1: 0.0,
+            c2: 0.0,
+        };
         use AutoMode::*;
         // Modes 0, 1, 7, 8, 9, 11 and 12 are a straight line at a tension of exactly 0.
-        if t == 0.0 && matches!(p.mode, Single | Double | Single2 | Double2 | HalfSine | Single3 | Double3) {
+        if t == 0.0
+            && matches!(
+                p.mode,
+                Single | Double | Single2 | Double2 | HalfSine | Single3 | Double3
+            )
+        {
             return line;
         }
         match p.mode {
@@ -131,7 +152,8 @@ impl Segment {
                 let back = back.max(TINY) as f32;
                 let ahead = ahead.max(TINY) as f32;
                 let rise = rise as f32;
-                let out = ((((after - f64::from(y0)) / f64::from(rise)) - 1.0) / f64::from(ahead)) as f32;
+                let out =
+                    ((((after - f64::from(y0)) / f64::from(rise)) - 1.0) / f64::from(ahead)) as f32;
                 let into = (-((before - f64::from(y0)) / f64::from(rise)) / f64::from(back)) as f32;
                 s.c0 = if out > 0.0 {
                     let w = 2.0 * ahead + 1.0;
@@ -159,7 +181,13 @@ impl Segment {
         }
         let (c0, c1, c2) = (f64::from(self.c0), f64::from(self.c1), f64::from(self.c2));
         let neg = self.neg;
-        let single = |x: f64| if neg { ((x * c2).exp() - 1.0) * c1 } else { 1.0 - (((1.0 - x) * c2).exp() - 1.0) * c1 };
+        let single = |x: f64| {
+            if neg {
+                ((x * c2).exp() - 1.0) * c1
+            } else {
+                1.0 - (((1.0 - x) * c2).exp() - 1.0) * c1
+            }
+        };
         let curve2 = |a: f64| {
             let u = if neg { a } else { 1.0 - a };
             a - (u.powi(6) - u) * c0
@@ -172,7 +200,11 @@ impl Segment {
         let v = match self.mode {
             Single => single(x),
             Double => {
-                if x < 0.5 { single(2.0 * x) / 2.0 } else { 1.0 - single(2.0 * (1.0 - x)) / 2.0 }
+                if x < 0.5 {
+                    single(2.0 * x) / 2.0
+                } else {
+                    1.0 - single(2.0 * (1.0 - x)) / 2.0
+                }
             }
             Hold => 0.0,
             Stairs => f64::from(round(x * c0 - c2) as f32) * c1,
@@ -199,7 +231,11 @@ impl Segment {
             }
             Single2 => curve2(x),
             Double2 => {
-                if x < 0.5 { curve2(2.0 * x) / 2.0 } else { 1.0 - curve2(2.0 * (1.0 - x)) / 2.0 }
+                if x < 0.5 {
+                    curve2(2.0 * x) / 2.0
+                } else {
+                    1.0 - curve2(2.0 * (1.0 - x)) / 2.0
+                }
             }
             HalfSine => {
                 let a = x * f64::from(std::f64::consts::FRAC_PI_2 as f32);
@@ -208,11 +244,17 @@ impl Segment {
             }
             Smooth => {
                 let (x2, x3) = (x * x, x * x * x);
-                x + ((3.0 * x2 - 2.0 * x3) + x2 * (x - 1.0) * c0 + x * (x - 1.0) * (x - 1.0) * c1 - x) * c2
+                x + ((3.0 * x2 - 2.0 * x3) + x2 * (x - 1.0) * c0 + x * (x - 1.0) * (x - 1.0) * c1
+                    - x)
+                    * c2
             }
             Single3 => curve3(x) - c2,
             Double3 => {
-                if x < 0.5 { curve3(2.0 * x) - c2 } else { (1.0 - curve3(2.0 * (1.0 - x))) + c2 }
+                if x < 0.5 {
+                    curve3(2.0 * x) - c2
+                } else {
+                    (1.0 - curve3(2.0 * (1.0 - x))) + c2
+                }
             }
             Other(_) => 0.0,
         };
@@ -258,15 +300,30 @@ impl Walk {
     pub fn new(pts: &[AutoPoint]) -> Option<Walk> {
         let first = pts.first()?;
         let d = distance(pts, 0);
-        let (p, r) = if d == 0.0 { (1.0, 1.0) } else { (0.0, 1.0 / f64::from(d)) };
-        Some(Walk { i: 0, p, r, from: first.value as f32, by: 0.0, seg: None })
+        let (p, r) = if d == 0.0 {
+            (1.0, 1.0)
+        } else {
+            (0.0, 1.0 / f64::from(d))
+        };
+        Some(Walk {
+            i: 0,
+            p,
+            r,
+            from: first.value as f32,
+            by: 0.0,
+            seg: None,
+        })
     }
 
     /// One step of `b` beats.
     pub fn step(&mut self, pts: &[AutoPoint], b: f64) {
         self.p += b * self.r;
         while self.p >= 1.0 {
-            let left = if self.r == 0.0 { b } else { (self.p - 1.0) / self.r };
+            let left = if self.r == 0.0 {
+                b
+            } else {
+                (self.p - 1.0) / self.r
+            };
             self.from = level(pts, self.i);
             let moved = self.i + 1 < pts.len();
             if moved {
@@ -304,7 +361,13 @@ mod tests {
     use super::*;
 
     fn pt(beat: f64, value: f64, mode: AutoMode, tension: f32) -> AutoPoint {
-        AutoPoint { beat, value, tension, mode, flag: 2 }
+        AutoPoint {
+            beat,
+            value,
+            tension,
+            mode,
+            flag: 2,
+        }
     }
 
     /// Every shape starts at 0 and arrives at 1, at several tensions (pulse and wave end where their count puts them;
@@ -312,7 +375,18 @@ mod tests {
     #[test]
     fn shapes_run_from_the_start_to_the_end() {
         use AutoMode::*;
-        for mode in [Single, Double, Stairs, SmoothStairs, Single2, Double2, HalfSine, Smooth, Single3, Double3] {
+        for mode in [
+            Single,
+            Double,
+            Stairs,
+            SmoothStairs,
+            Single2,
+            Double2,
+            HalfSine,
+            Smooth,
+            Single3,
+            Double3,
+        ] {
             for t in [-1.0f32, -0.5, -0.1, 0.0, 0.1, 0.5, 1.0] {
                 let pts = [pt(0.0, 0.0, Single, 0.0), pt(1.0, 1.0, mode, t)];
                 let s = Segment::new(&pts, 1);
@@ -324,7 +398,10 @@ mod tests {
                 // In between it stays inside the segment.
                 for k in 1..100 {
                     let v = s.progress(f64::from(k) / 100.0);
-                    assert!((-1e-3..=1.0 + 1e-3).contains(&v), "{mode:?} {t} at {k}%: {v}");
+                    assert!(
+                        (-1e-3..=1.0 + 1e-3).contains(&v),
+                        "{mode:?} {t} at {k}%: {v}"
+                    );
                 }
             }
         }
@@ -340,7 +417,11 @@ mod tests {
         assert_eq!(count(1.0), 0.0);
         assert_eq!(count(-1.0), 0.0);
         assert!(seg(Single, 0.5).progress(0.5) > 0.9 && seg(Single, -0.5).progress(0.5) < 0.1);
-        assert_eq!(seg(Single, 0.0).progress(0.25), 0.25, "a straight line at tension 0");
+        assert_eq!(
+            seg(Single, 0.0).progress(0.25),
+            0.25,
+            "a straight line at tension 0"
+        );
         assert_eq!(seg(Hold, 0.3).progress(0.99), 0.0);
         // Stairs at full positive tension: n = 2 steps, c1 = 1: 0 below the middle, 1 above.
         let st = seg(Stairs, 1.0);
@@ -350,20 +431,35 @@ mod tests {
         assert_eq!((pu.progress(0.2), pu.progress(0.7)), (0.0, 1.0));
         // Wave at full negative tension: half a sine cycle from the bottom to the top.
         let wa = seg(Wave, -1.0);
-        assert!(wa.progress(0.0).abs() < 1e-6 && (wa.progress(0.5) - 0.5).abs() < 1e-6 && (wa.progress(1.0) - 1.0).abs() < 1e-6);
+        assert!(
+            wa.progress(0.0).abs() < 1e-6
+                && (wa.progress(0.5) - 0.5).abs() < 1e-6
+                && (wa.progress(1.0) - 1.0).abs() < 1e-6
+        );
         // Single curve 2 at tension 1, halfway: 0.5 + (0.5 - 0.5^6).
         assert!((seg(Single2, 1.0).progress(0.5) - (1.0 - 0.015625)).abs() < 1e-6);
         // Half sine, positive full tension: sin(pi/4) halfway.
         assert!((seg(HalfSine, 1.0).progress(0.5) - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-5);
         // Stairs at full negative tension: the first step at once, the last at the point.
         let sn = seg(Stairs, -1.0);
-        assert_eq!((sn.progress(0.0), sn.progress(0.3), sn.progress(0.9)), (0.0, 0.5, 0.5));
+        assert_eq!(
+            (sn.progress(0.0), sn.progress(0.3), sn.progress(0.9)),
+            (0.0, 0.5, 0.5)
+        );
         // Smooth between smooth points rising evenly is a straight line; the first segment leaves flat.
-        let pts = [pt(0.0, 0.0, Smooth, 0.0), pt(1.0, 1.0 / 3.0, Smooth, 0.0), pt(2.0, 2.0 / 3.0, Smooth, 0.0), pt(3.0, 1.0, Smooth, 0.0)];
+        let pts = [
+            pt(0.0, 0.0, Smooth, 0.0),
+            pt(1.0, 1.0 / 3.0, Smooth, 0.0),
+            pt(2.0, 2.0 / 3.0, Smooth, 0.0),
+            pt(3.0, 1.0, Smooth, 0.0),
+        ];
         for x in [0.1, 0.5, 0.8] {
             assert!((Segment::new(&pts, 2).progress(x) - x as f32).abs() < 1e-5);
         }
-        assert!(Segment::new(&pts, 1).progress(0.5) < 0.45, "flat start, steeper end");
+        assert!(
+            Segment::new(&pts, 1).progress(0.5) < 0.45,
+            "flat start, steeper end"
+        );
     }
 
     /// The walk: a wait before the curve, a ramp, and the last level held; a point at the same place as the one
@@ -371,7 +467,12 @@ mod tests {
     #[test]
     fn the_walk_steps_through_the_points() {
         use AutoMode::*;
-        let pts = [pt(1.0, 0.0, Single, 0.0), pt(3.0, 1.0, Single, 0.0), pt(3.0, 0.25, Hold, 0.0), pt(4.0, 0.25, Single, 0.0)];
+        let pts = [
+            pt(1.0, 0.0, Single, 0.0),
+            pt(3.0, 1.0, Single, 0.0),
+            pt(3.0, 0.25, Hold, 0.0),
+            pt(4.0, 0.25, Single, 0.0),
+        ];
         let mut w = Walk::new(&pts).unwrap();
         let at = |w: &mut Walk, beats: f64| {
             w.step(&pts, beats);
@@ -379,7 +480,11 @@ mod tests {
         };
         assert_eq!(w.value(&pts), 0.0, "the first level before anything");
         assert_eq!(at(&mut w, 0.5), 0.0, "still waiting");
-        assert_eq!(at(&mut w, 1.5), 0.5, "halfway along the ramp from beat 1 to 3");
+        assert_eq!(
+            at(&mut w, 1.5),
+            0.5,
+            "halfway along the ramp from beat 1 to 3"
+        );
         // Beat 3: the ramp ends, the next point at the same place is passed, the hold from 0.25 starts.
         assert_eq!(at(&mut w, 1.0), 0.25);
         assert_eq!(at(&mut w, 5.0), 0.25, "past the last point the level stays");
@@ -389,7 +494,12 @@ mod tests {
     #[test]
     fn a_stair_on_a_tick_has_happened_on_that_tick() {
         use AutoMode::*;
-        let pts = [pt(0.0, 0.0, Single, 0.0), pt(1.0, 0.0, Single, 0.0), pt(1.0, 1.0, Hold, 0.0), pt(2.0, 1.0, Single, 0.0)];
+        let pts = [
+            pt(0.0, 0.0, Single, 0.0),
+            pt(1.0, 0.0, Single, 0.0),
+            pt(1.0, 1.0, Hold, 0.0),
+            pt(2.0, 1.0, Single, 0.0),
+        ];
         let mut w = Walk::new(&pts).unwrap();
         let b = tick_step(96);
         let mut v = Vec::new();
@@ -406,13 +516,21 @@ mod tests {
     #[test]
     fn segment_values_match_the_walk() {
         use AutoMode::*;
-        let pts = [pt(0.0, 0.2, Single, 0.0), pt(2.0, 0.9, Single, 0.4), pt(3.0, 0.1, Double2, -0.6)];
+        let pts = [
+            pt(0.0, 0.2, Single, 0.0),
+            pt(2.0, 0.9, Single, 0.4),
+            pt(3.0, 0.1, Double2, -0.6),
+        ];
         let mut w = Walk::new(&pts).unwrap();
         let b = tick_step(96);
         for k in 1..=288 {
             w.step(&pts, b);
             let beat = f64::from(k) * b;
-            let want = if beat < 2.0 { segment_value(&pts, 1, beat / 2.0) } else { segment_value(&pts, 2, beat - 2.0) };
+            let want = if beat < 2.0 {
+                segment_value(&pts, 1, beat / 2.0)
+            } else {
+                segment_value(&pts, 2, beat - 2.0)
+            };
             assert!((f64::from(w.value(&pts)) - want).abs() < 1e-4, "tick {k}");
         }
     }

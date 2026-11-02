@@ -11,7 +11,7 @@
 //!
 // spec: plugins/fruity-stereo-enhancer.md, plugins/lemon-stereo-enhancer.md
 
-use os_dsp::glide::{plugin_limit, Glide};
+use os_dsp::glide::{Glide, plugin_limit};
 
 use super::Effect;
 
@@ -25,7 +25,14 @@ pub const PLACEMENT: usize = 4;
 pub const INVERT: usize = 5;
 
 /// The settings' ranges (stored values are used as they are).
-pub const RANGES: [(i32, i32); PARAMS] = [(-128, 128), (0, 320), (-96, 96), (-512, 512), (0, 1), (0, 2)];
+pub const RANGES: [(i32, i32); PARAMS] = [
+    (-128, 128),
+    (0, 320),
+    (-96, 96),
+    (-512, 512),
+    (0, 1),
+    (0, 2),
+];
 
 /// FL's "Default" preset, also the plugin database's state (what a new Stereo Enhancer holds).
 pub const DEFAULTS: [i32; PARAMS] = [0, 256, 0, 0, 1, 0];
@@ -64,7 +71,9 @@ impl Default for Settings {
 impl Settings {
     /// A saved state (24 bytes).
     pub fn from_state(b: &[u8]) -> Option<Settings> {
-        Some(Settings { v: super::ints(b, 0)? })
+        Some(Settings {
+            v: super::ints(b, 0)?,
+        })
     }
 
     /// The saved state (24 bytes).
@@ -124,7 +133,10 @@ struct Line {
 
 impl Line {
     fn new(d: usize) -> Line {
-        Line { buf: vec![0.0; d], pos: 0 }
+        Line {
+            buf: vec![0.0; d],
+            pos: 0,
+        }
     }
 
     #[inline]
@@ -180,7 +192,10 @@ impl StereoEnhancer {
     }
 
     pub fn from_state(state: &[u8], sample_rate: u32) -> Option<StereoEnhancer> {
-        Some(StereoEnhancer::with_settings(sample_rate, &Settings::from_state(state)?))
+        Some(StereoEnhancer::with_settings(
+            sample_rate,
+            &Settings::from_state(state)?,
+        ))
     }
 
     /// The stored values applied last.
@@ -294,10 +309,13 @@ impl Effect for StereoEnhancer {
             self.start();
         }
         let n = buf.len() / 2;
-        self.block(buf.chunks_exact_mut(2).map(|f| {
-            let (l, r) = f.split_at_mut(1);
-            (&mut l[0], &mut r[0])
-        }), n);
+        self.block(
+            buf.chunks_exact_mut(2).map(|f| {
+                let (l, r) = f.split_at_mut(1);
+                (&mut l[0], &mut r[0])
+            }),
+            n,
+        );
     }
 }
 
@@ -308,7 +326,9 @@ mod tests {
     #[test]
     fn states_round_trip() {
         // FL's "For strings" preset.
-        let s = Settings { v: [-18, 256, -54, -248, 1, 0] };
+        let s = Settings {
+            v: [-18, 256, -54, -248, 1, 0],
+        };
         assert_eq!(Settings::from_state(&s.to_state()), Some(s));
         assert_eq!(s.to_state().len(), STATE_LEN);
     }
@@ -321,7 +341,10 @@ mod tests {
         assert_eq!((ll, rr), (1.375, 1.375));
         assert_eq!((rl, lr), (1.375 * -0.75, 1.375 * -0.75));
         // Pan right halves the left output (both of its gains).
-        assert_eq!(gains(&[64, 256, 64, 0, 1, 0]), [0.75 * 0.5, 0.75, 0.75 * 0.5 * 0.5, 0.75 * 0.5]);
+        assert_eq!(
+            gains(&[64, 256, 64, 0, 1, 0]),
+            [0.75 * 0.5, 0.75, 0.75 * 0.5 * 0.5, 0.75 * 0.5]
+        );
         // Inversion of the right side.
         assert_eq!(gains(&[0, 256, 0, 0, 1, 2]), [1.0, -1.0, 0.0, -0.0]);
         assert!((volume_gain(320) - 1.9033).abs() < 1e-4);
@@ -346,7 +369,9 @@ mod tests {
     #[test]
     fn the_delay_moves_one_channel_before_or_after_the_gains() {
         // Phase +30 after the gains: the right output is late; separation crosses the undelayed left into it first.
-        let s = Settings { v: [0, 256, 64, 30, POST, 0] };
+        let s = Settings {
+            v: [0, 256, 64, 30, POST, 0],
+        };
         let mut e = StereoEnhancer::with_settings(44100, &s);
         e.start();
         let d = e.delay();
@@ -360,7 +385,12 @@ mod tests {
         assert_eq!(r[0], 0.0);
         assert_eq!(r[d], g[3]);
         // Before the gains (Pre): the delayed right input also reaches the left output late.
-        let mut e = StereoEnhancer::with_settings(44100, &Settings { v: [0, 256, 64, 30, PRE, 0] });
+        let mut e = StereoEnhancer::with_settings(
+            44100,
+            &Settings {
+                v: [0, 256, 64, 30, PRE, 0],
+            },
+        );
         e.start();
         let mut l = vec![0.0f32; 200];
         let mut r = vec![0.0f32; 200];
@@ -373,13 +403,20 @@ mod tests {
     #[test]
     fn gains_glide_from_the_creation_values_in_the_preroll() {
         // Left inverted at volume 320 and separation -96: LL goes from 1 to -2.617, 3617 samples at 0.001.
-        let s = Settings { v: [0, 320, -96, 0, 1, 1] };
+        let s = Settings {
+            v: [0, 320, -96, 0, 1, 1],
+        };
         let mut e = StereoEnhancer::with_settings(44100, &s);
         assert_eq!(e.current(), [1.0, 1.0, 0.0, 0.0]);
         e.start();
         assert_eq!(e.current(), gains(&s.v));
         // A new phase offset empties the line, an unchanged one too.
-        let mut e = StereoEnhancer::with_settings(44100, &Settings { v: [0, 256, 0, 100, 1, 0] });
+        let mut e = StereoEnhancer::with_settings(
+            44100,
+            &Settings {
+                v: [0, 256, 0, 100, 1, 0],
+            },
+        );
         e.start();
         let mut l = vec![0.0f32; 100];
         let mut r = vec![1.0f32; 100];

@@ -53,7 +53,11 @@ pub enum PanLaw {
 impl PanLaw {
     /// The law event 23 holds: 2 is Triangular; 0, no event and values the spec does not name are Circular.
     pub fn from_event(v: Option<u8>) -> PanLaw {
-        if v == Some(2) { PanLaw::Triangular } else { PanLaw::Circular }
+        if v == Some(2) {
+            PanLaw::Triangular
+        } else {
+            PanLaw::Circular
+        }
     }
 }
 
@@ -68,7 +72,10 @@ pub fn pan_split_law(level: f32, pan: f32, law: PanLaw) -> (f32, f32) {
             let p = f64::from(pan.clamp(-1.0, 1.0));
             let centre = std::f64::consts::PI / 4.0;
             let l = f64::from(level);
-            ((l * centre.cos() * (1.0 - p).min(1.0)) as f32, (l * centre.sin() * (1.0 + p).min(1.0)) as f32)
+            (
+                (l * centre.cos() * (1.0 - p).min(1.0)) as f32,
+                (l * centre.sin() * (1.0 + p).min(1.0)) as f32,
+            )
         }
     }
 }
@@ -103,7 +110,10 @@ mod tests {
     #[test]
     fn knob_positions_are_products() {
         let r100 = 0.01f32;
-        let differs = [30, 60, 73, 79, 80].iter().filter(|&&v| knob(v, r100) != v as f32 / 100.0).count();
+        let differs = [30, 60, 73, 79, 80]
+            .iter()
+            .filter(|&&v| knob(v, r100) != v as f32 / 100.0)
+            .count();
         assert!(differs > 0);
         assert_eq!(knob(6400, R6400), 1.0);
     }
@@ -127,15 +137,33 @@ mod tests {
         let tri = |p: f32| pan_split_law(1.0, p, PanLaw::Triangular);
         let c = std::f32::consts::FRAC_1_SQRT_2;
         assert_eq!(tri(0.0), pan_split(1.0, 0.0), "the same centre");
-        for (p, l, r) in [(-1.0, 1.0, 0.0), (-0.5, 1.0, 0.4999), (-0.25, 1.0, 0.7499), (0.25, 0.75, 1.0), (0.5, 0.5001, 1.0)] {
+        for (p, l, r) in [
+            (-1.0, 1.0, 0.0),
+            (-0.5, 1.0, 0.4999),
+            (-0.25, 1.0, 0.7499),
+            (0.25, 0.75, 1.0),
+            (0.5, 0.5001, 1.0),
+        ] {
             let (gl, gr) = tri(p);
-            assert!((gl / c - l).abs() < 2e-4 && (gr / c - r).abs() < 2e-4, "{p}: {} {}", gl / c, gr / c);
+            assert!(
+                (gl / c - l).abs() < 2e-4 && (gr / c - r).abs() < 2e-4,
+                "{p}: {} {}",
+                gl / c,
+                gr / c
+            );
         }
         assert_eq!(tri(3.0), tri(1.0), "clamped");
         for p in [-1.0, -0.3, 0.0, 0.7, 1.0] {
             assert_eq!(pan_split_law(0.8, p, PanLaw::Circular), pan_split(0.8, p));
         }
-        assert_eq!((PanLaw::from_event(None), PanLaw::from_event(Some(0)), PanLaw::from_event(Some(2))), (PanLaw::Circular, PanLaw::Circular, PanLaw::Triangular));
+        assert_eq!(
+            (
+                PanLaw::from_event(None),
+                PanLaw::from_event(Some(0)),
+                PanLaw::from_event(Some(2))
+            ),
+            (PanLaw::Circular, PanLaw::Circular, PanLaw::Triangular)
+        );
     }
 
     /// An audio clip at the default channel volume, centred, plays at unity.

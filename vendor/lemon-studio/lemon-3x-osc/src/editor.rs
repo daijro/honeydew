@@ -10,17 +10,17 @@
 // spec: plugins/lemon-3x-osc.md (§4 hints, §5 interaction, §6 custom shape), plugins/host-link.md
 
 use std::any::Any;
-use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
 
 use nih_plug::prelude::*;
-use os_plugkit::vals::Vals;
 use os_plugkit::MenuDef;
+use os_plugkit::vals::Vals;
 use os_ui::kit::menu::{MenuItem, MenuStyle};
 
-use crate::params::{Osc3Params, FILTERS};
-use crate::view::{self, Hit, Target, ViewState};
 use crate::Shared;
+use crate::params::{FILTERS, Osc3Params};
+use crate::view::{self, Hit, Target, ViewState};
 
 pub struct Osc3Editor {
     pub params: Arc<Osc3Params>,
@@ -56,24 +56,54 @@ impl Osc3Editor {
 }
 
 impl Editor for Osc3Editor {
-    fn spawn(&self, parent: ParentWindowHandle, context: Arc<dyn GuiContext>) -> Box<dyn Any + Send> {
+    fn spawn(
+        &self,
+        parent: ParentWindowHandle,
+        context: Arc<dyn GuiContext>,
+    ) -> Box<dyn Any + Send> {
         let scale = f32::from_bits(self.scale.load(Ordering::Relaxed));
         match parent {
             #[cfg(all(windows, not(feature = "embed")))]
-            ParentWindowHandle::Win32Hwnd(hwnd) => {
-                Box::new(win32::open(hwnd, scale, self.params.clone(), self.shared.clone(), context, self.hwnd.clone()))
-            }
+            ParentWindowHandle::Win32Hwnd(hwnd) => Box::new(win32::open(
+                hwnd,
+                scale,
+                self.params.clone(),
+                self.shared.clone(),
+                context,
+                self.hwnd.clone(),
+            )),
             // Honeydew (vendored change): built in with `embed`, the editor draws into Honeydew's own window
             // (`os_plugkit::embed`) on every platform, and the window handle is that editor's id.
             #[cfg(any(target_os = "linux", all(feature = "embed", not(target_os = "macos"))))]
-            ParentWindowHandle::X11Window(window) => Box::new(gui::open(window, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
+            ParentWindowHandle::X11Window(window) => Box::new(gui::open(
+                window,
+                scale,
+                self.params.clone(),
+                self.shared.clone(),
+                context,
+                &self.slot,
+            )),
             #[cfg(all(windows, feature = "embed"))]
-            ParentWindowHandle::Win32Hwnd(id) => Box::new(gui::open(id as usize as u32, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
+            ParentWindowHandle::Win32Hwnd(id) => Box::new(gui::open(
+                id as usize as u32,
+                scale,
+                self.params.clone(),
+                self.shared.clone(),
+                context,
+                &self.slot,
+            )),
             // macOS hosts set no scale (sizes are points): the editor paints at its window's backing scale.
             #[cfg(target_os = "macos")]
             ParentWindowHandle::AppKitNsView(view) => {
                 let scale = os_plugkit::gui::backing_scale(view as usize);
-                Box::new(gui::open(view as usize, scale, self.params.clone(), self.shared.clone(), context, &self.slot))
+                Box::new(gui::open(
+                    view as usize,
+                    scale,
+                    self.params.clone(),
+                    self.shared.clone(),
+                    context,
+                    &self.slot,
+                ))
             }
             // Elsewhere no editor opens yet.
             _ => {
@@ -168,7 +198,12 @@ enum Drag {
     /// Knob or fader: `v` = the unrounded normalised value the drag has reached (steps would swallow small moves).
     Knob { id: String, v: f32 },
     /// Envelope node: start point and the start values of the knobs it moves.
-    EnvPoint { i: u8, x0: f32, y0: f32, v: [f32; 2] },
+    EnvPoint {
+        i: u8,
+        x0: f32,
+        y0: f32,
+        v: [f32; 2],
+    },
 }
 
 pub struct Logic {
@@ -197,9 +232,23 @@ fn env_point_ids(p: &str, i: u8) -> Vec<String> {
 }
 
 impl Logic {
-    pub fn new(params: Arc<Osc3Params>, shared: Arc<Shared>, ctx: Option<Arc<dyn GuiContext>>) -> Self {
+    pub fn new(
+        params: Arc<Osc3Params>,
+        shared: Arc<Shared>,
+        ctx: Option<Arc<dyn GuiContext>>,
+    ) -> Self {
         let vals = Vals::new(&*params, params.live.clone(), ctx);
-        let mut l = Logic { vals, params, shared, view: ViewState::default(), hits: Vec::new(), drag: None, hint: String::new(), copied: None, hosted: false };
+        let mut l = Logic {
+            vals,
+            params,
+            shared,
+            view: ViewState::default(),
+            hits: Vec::new(),
+            drag: None,
+            hint: String::new(),
+            copied: None,
+            hosted: false,
+        };
         l.sync_sample();
         l
     }
@@ -208,7 +257,11 @@ impl Logic {
     pub fn sync_sample(&mut self) {
         let v = self.shared.custom_version.load(Ordering::Acquire);
         if v != self.view.sample.version {
-            self.view.sample = view::SampleView { path: self.shared.loaded_path(), wave: self.shared.wave(), version: v };
+            self.view.sample = view::SampleView {
+                path: self.shared.loaded_path(),
+                wave: self.shared.wave(),
+                version: v,
+            };
         }
     }
 
@@ -227,11 +280,19 @@ impl Logic {
     }
 
     fn hit(&self, x: f32, y: f32) -> Option<Target> {
-        self.hits.iter().rev().find(|h| h.r.contains(x, y)).map(|h| h.t.clone())
+        self.hits
+            .iter()
+            .rev()
+            .find(|h| h.r.contains(x, y))
+            .map(|h| h.t.clone())
     }
 
     fn name(&self, id: &str) -> String {
-        self.params.defs.iter().find(|d| d.id == id).map_or_else(|| id.to_string(), |d| d.name.clone())
+        self.params
+            .defs
+            .iter()
+            .find(|d| d.id == id)
+            .map_or_else(|| id.to_string(), |d| d.name.clone())
     }
 
     fn hint_for(&self, t: Option<&Target>) -> String {
@@ -242,7 +303,11 @@ impl Logic {
     }
 
     fn range(&self, id: &str) -> (i32, i32) {
-        self.params.defs.iter().find(|d| d.id == id).map_or((0, 1), |d| (d.min, d.max))
+        self.params
+            .defs
+            .iter()
+            .find(|d| d.id == id)
+            .map_or((0, 1), |d| (d.min, d.max))
     }
 
     fn reset(&mut self, id: &str) {
@@ -257,7 +322,9 @@ impl Logic {
 
     pub fn down(&mut self, x: f32, y: f32, btn: Btn, m: Mods, _dbl: bool) -> Vec<Act> {
         self.view.mouse = Some((x, y));
-        let Some(t) = self.hit(x, y) else { return vec![] };
+        let Some(t) = self.hit(x, y) else {
+            return vec![];
+        };
         if !view::works(&t) {
             // Greyed-out controls only say so.
             self.hint = self.hint_for(Some(&t));
@@ -269,12 +336,19 @@ impl Logic {
             (Target::Knob(id), Btn::Middle) => self.reset(id),
             (Target::Knob(id), Btn::Left) => {
                 self.vals.begin(id);
-                self.drag = Some(Drag::Knob { id: id.clone(), v: self.vals.norm(id) });
+                self.drag = Some(Drag::Knob {
+                    id: id.clone(),
+                    v: self.vals.norm(id),
+                });
                 self.view.pressed = Some(t.clone());
                 acts.push(Act::Lock);
             }
-            (Target::Knob(id) | Target::Toggle(id) | Target::Set(id, _), Btn::Right) => acts.push(Act::Menu(MenuReq::Param(id.clone()), x, y)),
-            (Target::List(id), Btn::Left | Btn::Right) => acts.push(Act::Menu(MenuReq::List(id.clone()), x, y)),
+            (Target::Knob(id) | Target::Toggle(id) | Target::Set(id, _), Btn::Right) => {
+                acts.push(Act::Menu(MenuReq::Param(id.clone()), x, y))
+            }
+            (Target::List(id), Btn::Left | Btn::Right) => {
+                acts.push(Act::Menu(MenuReq::List(id.clone()), x, y))
+            }
             (Target::Toggle(id), Btn::Left) => {
                 let on = self.vals.plain(id) > 0.5;
                 self.vals.edit_plain(id, if on { 0.0 } else { 1.0 });
@@ -294,12 +368,20 @@ impl Logic {
             (Target::EnvPoint(i), Btn::Left) => {
                 let p = view::ENV_PREFIX[usize::from(self.view.sub.min(4))];
                 let ids = env_point_ids(p, *i);
-                let v = [self.vals.norm(&ids[0]), ids.get(1).map_or(0.0, |s| self.vals.norm(s))];
+                let v = [
+                    self.vals.norm(&ids[0]),
+                    ids.get(1).map_or(0.0, |s| self.vals.norm(s)),
+                ];
                 for id in &ids {
                     self.vals.begin(id);
                 }
                 self.view.pressed = Some(t.clone());
-                self.drag = Some(Drag::EnvPoint { i: *i, x0: x, y0: y, v });
+                self.drag = Some(Drag::EnvPoint {
+                    i: *i,
+                    x0: x,
+                    y0: y,
+                    v,
+                });
             }
             _ => {}
         }
@@ -309,7 +391,9 @@ impl Logic {
 
     /// Mouse movement during a locked drag (logical px since the last event).
     pub fn delta(&mut self, _dx: f32, dy: f32, m: Mods) -> Vec<Act> {
-        let Some(Drag::Knob { id, v }) = self.drag.clone() else { return vec![] };
+        let Some(Drag::Knob { id, v }) = self.drag.clone() else {
+            return vec![];
+        };
         let f = if m.ctrl { FINE } else { 1.0 };
         let v = (v - dy * f / KNOB_PX).clamp(0.0, 1.0);
         self.vals.set(&id, v);
@@ -319,7 +403,9 @@ impl Logic {
     }
 
     pub fn up(&mut self, _btn: Btn) -> Vec<Act> {
-        let Some(d) = self.drag.take() else { return vec![] };
+        let Some(d) = self.drag.take() else {
+            return vec![];
+        };
         match d {
             Drag::Knob { id, .. } => self.vals.end(&id),
             Drag::EnvPoint { i, .. } => {
@@ -341,7 +427,11 @@ impl Logic {
                 let ids = env_point_ids(p, i);
                 let eg = view::env_geom(&self.vals, p, view::env_rect());
                 // The decay node moves (1 - sustain) of the decay knob's run.
-                let run = if i == 3 { eg.px * (1.0 - eg.sus).max(0.05) } else { eg.px };
+                let run = if i == 3 {
+                    eg.px * (1.0 - eg.sus).max(0.05)
+                } else {
+                    eg.px
+                };
                 self.vals.set(&ids[0], v[0] + (x - x0) / run);
                 if i == 3 {
                     // Sustain node: vertical = sustain level over the drawn level range.
@@ -369,7 +459,9 @@ impl Logic {
 
     /// Wheel: one step per notch (1/128 of the range for times and speeds), spec §5.
     pub fn wheel(&mut self, x: f32, y: f32, notches: f32, _m: Mods) -> Vec<Act> {
-        let Some(t) = self.hit(x, y) else { return vec![] };
+        let Some(t) = self.hit(x, y) else {
+            return vec![];
+        };
         if !view::works(&t) {
             self.hint = self.hint_for(Some(&t));
             return vec![Act::Repaint];
@@ -378,8 +470,13 @@ impl Logic {
             Target::Knob(id) | Target::List(id) | Target::Set(id, _) => {
                 let (lo, hi) = self.range(id);
                 let steps = (hi - lo) as f32;
-                let step = if steps > WHEEL_STEPS { (steps / WHEEL_STEPS).round() } else { 1.0 };
-                let plain = (self.vals.plain(id) + notches.signum() * step).clamp(lo as f32, hi as f32);
+                let step = if steps > WHEEL_STEPS {
+                    (steps / WHEEL_STEPS).round()
+                } else {
+                    1.0
+                };
+                let plain =
+                    (self.vals.plain(id) + notches.signum() * step).clamp(lo as f32, hi as f32);
                 self.vals.edit_plain(id, plain);
             }
             _ => return vec![],
@@ -396,11 +493,17 @@ impl Logic {
                 m.add(MenuItem::item("Reset"), Cmd::Reset(id.clone()));
                 m.sep(Cmd::None);
                 m.add(MenuItem::item("Copy value"), Cmd::CopyValue(id.clone()));
-                m.add(MenuItem::item("Paste value").enabled(self.copied.is_some()), Cmd::PasteValue(id.clone()));
+                m.add(
+                    MenuItem::item("Paste value").enabled(self.copied.is_some()),
+                    Cmd::PasteValue(id.clone()),
+                );
                 m.add(MenuItem::item("Type in value..."), Cmd::TypeIn(id.clone()));
                 // Automation belongs to the host: offered when Lemon Studio hosts the editor (host link).
                 m.sep(Cmd::None);
-                m.add(MenuItem::item("Create automation clip").enabled(self.hosted), Cmd::Automate(id.clone()));
+                m.add(
+                    MenuItem::item("Create automation clip").enabled(self.hosted),
+                    Cmd::Automate(id.clone()),
+                );
                 m
             }
             MenuReq::List(id) => {
@@ -429,7 +532,13 @@ impl Logic {
             }
             Cmd::TypeIn(id) => return vec![Act::TypeIn(id, x, y)],
             Cmd::Choice(id, v) => self.vals.edit_plain(&id, v as f32),
-            Cmd::Automate(id) => return self.param_index(&id).map(Act::Automate).into_iter().collect(),
+            Cmd::Automate(id) => {
+                return self
+                    .param_index(&id)
+                    .map(Act::Automate)
+                    .into_iter()
+                    .collect();
+            }
         }
         vec![Act::Repaint]
     }
@@ -458,8 +567,8 @@ impl Logic {
 #[cfg(windows)]
 mod win32 {
     use std::ffi::c_void;
-    use std::sync::atomic::{AtomicIsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicIsize, Ordering};
 
     use nih_plug::prelude::GuiContext;
     use os_plugkit::win::{self as pw, CursorLock};
@@ -468,15 +577,19 @@ mod win32 {
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
     use windows_sys::Win32::Graphics::Gdi::InvalidateRect;
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-    use windows_sys::Win32::UI::Controls::Dialogs::{GetOpenFileNameW, OFN_FILEMUSTEXIST, OFN_NOCHANGEDIR, OPENFILENAMEW};
+    use windows_sys::Win32::UI::Controls::Dialogs::{
+        GetOpenFileNameW, OFN_FILEMUSTEXIST, OFN_NOCHANGEDIR, OPENFILENAMEW,
+    };
     use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        ReleaseCapture, SetCapture, SetFocus, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
+    };
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
     use super::{Act, Btn, Logic, Mods};
+    use crate::Shared;
     use crate::params::Osc3Params;
     use crate::view::{self, ViewState};
-    use crate::Shared;
 
     const TIMER: usize = 1;
     const WM_CHANGED: u32 = WM_APP + 1;
@@ -525,7 +638,14 @@ mod win32 {
         Mods { ctrl, shift, alt }
     }
 
-    pub fn open(parent: *mut c_void, scale: f32, params: Arc<Osc3Params>, shared: Arc<Shared>, ctx: Arc<dyn GuiContext>, slot: Arc<AtomicIsize>) -> Handle {
+    pub fn open(
+        parent: *mut c_void,
+        scale: f32,
+        params: Arc<Osc3Params>,
+        shared: Arc<Shared>,
+        ctx: Arc<dyn GuiContext>,
+        slot: Arc<AtomicIsize>,
+    ) -> Handle {
         let scale = if scale > 0.0 { scale } else { 1.0 };
         let px = |v: u32| (v as f32 * scale).round() as u32;
         let full = (px(view::W), px(view::H));
@@ -572,7 +692,11 @@ mod win32 {
 
     unsafe fn state(hwnd: HWND) -> Option<&'static mut Win> {
         let p = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut Win;
-        if p.is_null() { None } else { Some(unsafe { &mut *p }) }
+        if p.is_null() {
+            None
+        } else {
+            Some(unsafe { &mut *p })
+        }
     }
 
     unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
@@ -593,7 +717,9 @@ mod win32 {
                 }
                 return DefWindowProcW(hwnd, msg, wp, lp);
             }
-            let Some(w) = state(hwnd) else { return DefWindowProcW(hwnd, msg, wp, lp) };
+            let Some(w) = state(hwnd) else {
+                return DefWindowProcW(hwnd, msg, wp, lp);
+            };
             if msg == os_hostlink::message() {
                 return w.host_link(wp, lp);
             }
@@ -607,7 +733,8 @@ mod win32 {
                     w.poll();
                     0
                 }
-                WM_LBUTTONDOWN | WM_LBUTTONDBLCLK | WM_RBUTTONDOWN | WM_RBUTTONDBLCLK | WM_MBUTTONDOWN => {
+                WM_LBUTTONDOWN | WM_LBUTTONDBLCLK | WM_RBUTTONDOWN | WM_RBUTTONDBLCLK
+                | WM_MBUTTONDOWN => {
                     SetFocus(hwnd);
                     let (x, y) = w.mouse(lp);
                     let btn = match msg {
@@ -624,13 +751,20 @@ mod win32 {
                 }
                 WM_MOUSEMOVE => {
                     if !w.tracking {
-                        let mut tme = TRACKMOUSEEVENT { cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32, dwFlags: TME_LEAVE, hwndTrack: hwnd, dwHoverTime: 0 };
+                        let mut tme = TRACKMOUSEEVENT {
+                            cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                            dwFlags: TME_LEAVE,
+                            hwndTrack: hwnd,
+                            dwHoverTime: 0,
+                        };
                         TrackMouseEvent(&mut tme);
                         w.tracking = true;
                     }
                     if let Some((dx, dy)) = w.lock.delta() {
                         if dx != 0 || dy != 0 {
-                            let acts = w.logic.delta(dx as f32 / w.scale, dy as f32 / w.scale, mods());
+                            let acts =
+                                w.logic
+                                    .delta(dx as f32 / w.scale, dy as f32 / w.scale, mods());
                             w.run(acts);
                         }
                         return 0;
@@ -688,17 +822,31 @@ mod win32 {
     impl Win {
         /// Top of the shown crop in the painted frame: the strip row is left out when the host draws it.
         fn crop_y(&self) -> u32 {
-            if self.logic.hosted { view::HOSTED_CROP_Y } else { view::CROP_Y }
+            if self.logic.hosted {
+                view::HOSTED_CROP_Y
+            } else {
+                view::CROP_Y
+            }
         }
 
         /// Editor content size in logical px.
         fn content(&self) -> (u32, u32) {
-            (view::EDITOR_W, if self.logic.hosted { view::HOSTED_EDITOR_H } else { view::EDITOR_H })
+            (
+                view::EDITOR_W,
+                if self.logic.hosted {
+                    view::HOSTED_EDITOR_H
+                } else {
+                    view::EDITOR_H
+                },
+            )
         }
 
         /// Window-client device px to painted-frame coordinates (the editor is a crop of the painted frame).
         fn to_view(&self, x: f32, y: f32) -> (f32, f32) {
-            (x / self.scale + view::CROP_X as f32, y / self.scale + self.crop_y() as f32)
+            (
+                x / self.scale + view::CROP_X as f32,
+                y / self.scale + self.crop_y() as f32,
+            )
         }
 
         fn mouse(&self, l: LPARAM) -> (f32, f32) {
@@ -723,7 +871,12 @@ mod win32 {
             self.logic.sync_sample();
             let sig = self.logic.vals.signature();
             let rv = self.params.raw_version.load(Ordering::Acquire);
-            if dirty || sig != self.last_sig || rv != self.last_raw || self.logic.view != self.last_view || self.logic.hint != self.last_hint {
+            if dirty
+                || sig != self.last_sig
+                || rv != self.last_raw
+                || self.logic.view != self.last_view
+                || self.logic.hint != self.last_hint
+            {
                 self.invalidate();
             }
             if self.logic.hint != self.last_hint {
@@ -743,7 +896,9 @@ mod win32 {
                     Act::Menu(req, x, y) => {
                         let def = self.logic.menu(&req);
                         let (sx, sy) = self.screen(x, y);
-                        if let Some(cmd) = pw::popup(self.hwnd, sx, sy, &def, &self.palette, self.scale) {
+                        if let Some(cmd) =
+                            pw::popup(self.hwnd, sx, sy, &def, &self.palette, self.scale)
+                        {
                             let acts = self.logic.pick(&req, cmd, x, y);
                             self.run(acts);
                         }
@@ -758,7 +913,11 @@ mod win32 {
                         repaint = true;
                     }
                     Act::Automate(i) => {
-                        os_hostlink::to_host(self.hwnd as isize, os_hostlink::Cmd::Automate, i as isize);
+                        os_hostlink::to_host(
+                            self.hwnd as isize,
+                            os_hostlink::Cmd::Automate,
+                            i as isize,
+                        );
                     }
                     Act::OpenDialog => {
                         if let Some(path) = file_dialog(self.hwnd) {
@@ -776,7 +935,9 @@ mod win32 {
         /// Answers the host (spec `plugins/host-link.md`): three pages (oscillators, envelopes, sample), the hint line.
         unsafe fn host_link(&mut self, wp: WPARAM, lp: LPARAM) -> LRESULT {
             use os_hostlink::{Cmd, PageIcon};
-            let Some(cmd) = Cmd::from_usize(wp) else { return 0 };
+            let Some(cmd) = Cmd::from_usize(wp) else {
+                return 0;
+            };
             match cmd {
                 Cmd::Hello => {
                     if !self.logic.hosted {
@@ -785,7 +946,15 @@ mod win32 {
                         let (cw, ch) = self.content();
                         let px = |v: u32| (v as f32 * self.scale).round() as i32;
                         unsafe {
-                            SetWindowPos(self.hwnd, std::ptr::null_mut(), 0, 0, px(cw), px(ch), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+                            SetWindowPos(
+                                self.hwnd,
+                                std::ptr::null_mut(),
+                                0,
+                                0,
+                                px(cw),
+                                px(ch),
+                                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+                            );
                         }
                         self.invalidate();
                     }
@@ -814,19 +983,38 @@ mod win32 {
                     }
                     1
                 }
-                Cmd::Changed | Cmd::Note | Cmd::Automate | Cmd::Audio | Cmd::Resizable | Cmd::SetSize => 0,
+                Cmd::Changed
+                | Cmd::Note
+                | Cmd::Automate
+                | Cmd::Audio
+                | Cmd::Resizable
+                | Cmd::SetSize => 0,
             }
         }
 
         fn paint(&mut self) {
             let (hdc, ps) = pw::begin_paint(self.hwnd);
-            let hint = if self.logic.hosted { String::new() } else { self.logic.hint.clone() };
-            self.logic.hits = view::paint(&mut self.canvas, &self.palette, &self.logic.vals, &self.logic.view, &hint, self.logic.hosted);
+            let hint = if self.logic.hosted {
+                String::new()
+            } else {
+                self.logic.hint.clone()
+            };
+            self.logic.hits = view::paint(
+                &mut self.canvas,
+                &self.palette,
+                &self.logic.vals,
+                &self.logic.view,
+                &hint,
+                self.logic.hosted,
+            );
             self.last_sig = self.logic.vals.signature();
             self.last_raw = self.params.raw_version.load(Ordering::Acquire);
             self.last_view = self.logic.view.clone();
             // Show the editor area: the painted frame minus the original's border (and the strip row when hosted).
-            let (ox, oy) = ((view::CROP_X as f32 * self.scale).round() as u32, (self.crop_y() as f32 * self.scale).round() as u32);
+            let (ox, oy) = (
+                (view::CROP_X as f32 * self.scale).round() as u32,
+                (self.crop_y() as f32 * self.scale).round() as u32,
+            );
             let (cw, ch) = self.content();
             let w = ((cw as f32 * self.scale).round() as u32).min(self.size.0 - ox);
             let h = ((ch as f32 * self.scale).round() as u32).min(self.size.1 - oy);
@@ -849,7 +1037,10 @@ mod win32 {
             return None;
         }
         let mut file = vec![0u16; 1024];
-        let filter: Vec<u16> = "Audio files\0*.wav;*.flac;*.ogg;*.wv;*.aif;*.aiff;*.mp3\0All files\0*.*\0\0".encode_utf16().collect();
+        let filter: Vec<u16> =
+            "Audio files\0*.wav;*.flac;*.ogg;*.wv;*.aif;*.aiff;*.mp3\0All files\0*.*\0\0"
+                .encode_utf16()
+                .collect();
         let title = pw::wide("Sample for the custom shape");
         unsafe {
             let mut ofn: OPENFILENAMEW = std::mem::zeroed();
@@ -871,8 +1062,8 @@ mod win32 {
 
 #[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
 mod gui {
-    use std::sync::atomic::Ordering;
     use std::sync::Arc;
+    use std::sync::atomic::Ordering;
 
     use nih_plug::prelude::GuiContext;
     use os_hostlink::{Cmd, PageIcon, Peer};
@@ -881,9 +1072,9 @@ mod gui {
     use os_ui::Canvas;
 
     use super::{Act, Btn, Logic, Mods};
+    use crate::Shared;
     use crate::params::Osc3Params;
     use crate::view::{self, ViewState};
-    use crate::Shared;
 
     /// The editor on its GUI thread.
     struct Ed {
@@ -908,38 +1099,57 @@ mod gui {
         last_page: usize,
     }
 
-    pub fn open(parent: px::Parent, scale: f32, params: Arc<Osc3Params>, shared: Arc<Shared>, ctx: Arc<dyn GuiContext>, slot: &px::Slot) -> Option<px::EditorThread> {
+    pub fn open(
+        parent: px::Parent,
+        scale: f32,
+        params: Arc<Osc3Params>,
+        shared: Arc<Shared>,
+        ctx: Arc<dyn GuiContext>,
+        slot: &px::Slot,
+    ) -> Option<px::EditorThread> {
         let scale = if scale > 0.0 { scale } else { 1.0 };
         let px = move |v: u32| (v as f32 * scale).round() as u32;
         // Three pages (oscillators, envelopes, sample); joined, the editor is what lies below the strip row.
         let wake = slot.clone();
         let pages = vec![PageIcon::Plugin, PageIcon::Envelope, PageIcon::Sample];
-        let link = Peer::register(parent as u64, pages, (view::EDITOR_W, view::HOSTED_EDITOR_H), move || px::notify(&wake));
+        let link = Peer::register(
+            parent as u64,
+            pages,
+            (view::EDITOR_W, view::HOSTED_EDITOR_H),
+            move || px::notify(&wake),
+        );
         let peer = link.clone();
-        let thread = px::spawn(parent, (px(view::EDITOR_W), px(view::EDITOR_H)), slot, move |win| {
-            let full = (px(view::W), px(view::H));
-            let Ok(canvas) = Canvas::new(full.0, full.1, scale) else { return };
-            let logic = Logic::new(params.clone(), shared, Some(ctx));
-            let ed = Ed {
-                win,
-                canvas,
-                buf: Vec::new(),
-                crop: Vec::new(),
-                scale,
-                size: full,
-                params,
-                logic,
-                palette: os_plugkit::palette(),
-                last_sig: 0,
-                last_raw: u64::MAX,
-                last_view: ViewState::default(),
-                last_hint: String::new(),
-                dirty: true,
-                link: peer,
-                last_page: 0,
-            };
-            ed.run();
-        });
+        let thread = px::spawn(
+            parent,
+            (px(view::EDITOR_W), px(view::EDITOR_H)),
+            slot,
+            move |win| {
+                let full = (px(view::W), px(view::H));
+                let Ok(canvas) = Canvas::new(full.0, full.1, scale) else {
+                    return;
+                };
+                let logic = Logic::new(params.clone(), shared, Some(ctx));
+                let ed = Ed {
+                    win,
+                    canvas,
+                    buf: Vec::new(),
+                    crop: Vec::new(),
+                    scale,
+                    size: full,
+                    params,
+                    logic,
+                    palette: os_plugkit::palette(),
+                    last_sig: 0,
+                    last_raw: u64::MAX,
+                    last_view: ViewState::default(),
+                    last_hint: String::new(),
+                    dirty: true,
+                    link: peer,
+                    last_page: 0,
+                };
+                ed.run();
+            },
+        );
         if thread.is_none() {
             link.unregister();
         }
@@ -969,7 +1179,9 @@ mod gui {
                     Input::Tick => self.poll(),
                     Input::Down { x, y, btn: b, dbl } => {
                         let (x, y) = self.to_view(x, y);
-                        let acts = self.logic.down(x, y, btn(b), self.mods(), dbl && b == Button::Left);
+                        let acts =
+                            self.logic
+                                .down(x, y, btn(b), self.mods(), dbl && b == Button::Left);
                         self.act(acts);
                     }
                     Input::Move { x, y } => {
@@ -978,7 +1190,9 @@ mod gui {
                         self.act(acts);
                     }
                     Input::Delta { dx, dy } => {
-                        let acts = self.logic.delta(dx / self.scale, dy / self.scale, self.mods());
+                        let acts = self
+                            .logic
+                            .delta(dx / self.scale, dy / self.scale, self.mods());
                         self.act(acts);
                     }
                     Input::Up { .. } => {
@@ -1018,17 +1232,31 @@ mod gui {
 
         /// Top of the shown crop in the painted frame: the strip row is left out when the host draws it.
         fn crop_y(&self) -> u32 {
-            if self.logic.hosted { view::HOSTED_CROP_Y } else { view::CROP_Y }
+            if self.logic.hosted {
+                view::HOSTED_CROP_Y
+            } else {
+                view::CROP_Y
+            }
         }
 
         /// Editor content size in logical px.
         fn content(&self) -> (u32, u32) {
-            (view::EDITOR_W, if self.logic.hosted { view::HOSTED_EDITOR_H } else { view::EDITOR_H })
+            (
+                view::EDITOR_W,
+                if self.logic.hosted {
+                    view::HOSTED_EDITOR_H
+                } else {
+                    view::EDITOR_H
+                },
+            )
         }
 
         /// Window device px to painted-frame coordinates (the editor is a crop of the painted frame).
         fn to_view(&self, x: f32, y: f32) -> (f32, f32) {
-            (x / self.scale + view::CROP_X as f32, y / self.scale + self.crop_y() as f32)
+            (
+                x / self.scale + view::CROP_X as f32,
+                y / self.scale + self.crop_y() as f32,
+            )
         }
 
         /// Screen position of a painted-frame point.
@@ -1044,7 +1272,12 @@ mod gui {
             self.logic.sync_sample();
             let sig = self.logic.vals.signature();
             let rv = self.params.raw_version.load(Ordering::Acquire);
-            if dirty || sig != self.last_sig || rv != self.last_raw || self.logic.view != self.last_view || self.logic.hint != self.last_hint {
+            if dirty
+                || sig != self.last_sig
+                || rv != self.last_raw
+                || self.logic.view != self.last_view
+                || self.logic.hint != self.last_hint
+            {
                 self.dirty = true;
             }
             if self.logic.hint != self.last_hint {
@@ -1116,13 +1349,27 @@ mod gui {
 
         fn paint(&mut self) {
             self.dirty = false;
-            let hint = if self.logic.hosted { String::new() } else { self.logic.hint.clone() };
-            self.logic.hits = view::paint(&mut self.canvas, &self.palette, &self.logic.vals, &self.logic.view, &hint, self.logic.hosted);
+            let hint = if self.logic.hosted {
+                String::new()
+            } else {
+                self.logic.hint.clone()
+            };
+            self.logic.hits = view::paint(
+                &mut self.canvas,
+                &self.palette,
+                &self.logic.vals,
+                &self.logic.view,
+                &hint,
+                self.logic.hosted,
+            );
             self.last_sig = self.logic.vals.signature();
             self.last_raw = self.params.raw_version.load(Ordering::Acquire);
             self.last_view = self.logic.view.clone();
             // Show the editor area: the painted frame minus the original's border (and the strip row when hosted).
-            let (ox, oy) = ((view::CROP_X as f32 * self.scale).round() as u32, (self.crop_y() as f32 * self.scale).round() as u32);
+            let (ox, oy) = (
+                (view::CROP_X as f32 * self.scale).round() as u32,
+                (self.crop_y() as f32 * self.scale).round() as u32,
+            );
             let (cw, ch) = self.content();
             let w = ((cw as f32 * self.scale).round() as u32).min(self.size.0 - ox);
             let h = ((ch as f32 * self.scale).round() as u32).min(self.size.1 - oy);
@@ -1148,7 +1395,10 @@ mod gui {
         let path = win.dialog(move || {
             rfd::FileDialog::new()
                 .set_title("Sample for the custom shape")
-                .add_filter("Audio files", &["wav", "flac", "ogg", "wv", "aif", "aiff", "mp3"])
+                .add_filter(
+                    "Audio files",
+                    &["wav", "flac", "ogg", "wv", "aif", "aiff", "mp3"],
+                )
                 .pick_file()
         });
         path.flatten().map(|p| p.to_string_lossy().into_owned())
@@ -1164,10 +1414,14 @@ mod gui {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::params::{osc, rec, COARSE, R_ATT, R_SUS, SHAPE, T_VOL};
+    use crate::params::{COARSE, R_ATT, R_SUS, SHAPE, T_VOL, osc, rec};
 
     fn logic() -> Logic {
-        let mut l = Logic::new(Arc::new(Osc3Params::default()), Arc::new(Shared::default()), None);
+        let mut l = Logic::new(
+            Arc::new(Osc3Params::default()),
+            Arc::new(Shared::default()),
+            None,
+        );
         paint(&mut l);
         l
     }
@@ -1178,7 +1432,12 @@ mod tests {
     }
 
     fn centre(l: &Logic, t: &Target) -> (f32, f32) {
-        let h = l.hits.iter().rev().find(|h| &h.t == t).unwrap_or_else(|| panic!("no hit {t:?}"));
+        let h = l
+            .hits
+            .iter()
+            .rev()
+            .find(|h| &h.t == t)
+            .unwrap_or_else(|| panic!("no hit {t:?}"));
         (h.r.cx(), h.r.cy())
     }
 
@@ -1196,7 +1455,14 @@ mod tests {
         }
         assert_eq!(l.vals.plain("o2_coarse"), -6.0);
         // Ctrl: a quarter of the speed.
-        l.delta(0.0, -100.0, Mods { ctrl: true, ..Mods::default() });
+        l.delta(
+            0.0,
+            -100.0,
+            Mods {
+                ctrl: true,
+                ..Mods::default()
+            },
+        );
         assert_eq!(l.vals.plain("o2_coarse"), 0.0);
         l.up(Btn::Left);
         assert!(!l.dragging());
@@ -1205,30 +1471,60 @@ mod tests {
         // Wheel: one semitone per notch; Alt+click resets.
         l.wheel(x, y, 1.0, Mods::default());
         assert_eq!(l.vals.plain("o2_coarse"), 1.0);
-        l.down(x, y, Btn::Left, Mods { alt: true, ..Mods::default() }, false);
+        l.down(
+            x,
+            y,
+            Btn::Left,
+            Mods {
+                alt: true,
+                ..Mods::default()
+            },
+            false,
+        );
         assert_eq!(l.vals.plain("o2_coarse"), -12.0);
         // Middle click resets too; right click opens the parameter menu.
         let acts = l.down(x, y, Btn::Right, Mods::default(), false);
-        assert!(matches!(acts.last(), Some(Act::Menu(MenuReq::Param(id), _, _)) if id == "o2_coarse"));
+        assert!(
+            matches!(acts.last(), Some(Act::Menu(MenuReq::Param(id), _, _)) if id == "o2_coarse")
+        );
         let m = l.menu(&MenuReq::Param("o2_coarse".into()));
-        assert_eq!(m.find("Type in value..."), Some(Cmd::TypeIn("o2_coarse".into())));
+        assert_eq!(
+            m.find("Type in value..."),
+            Some(Cmd::TypeIn("o2_coarse".into()))
+        );
         l.typed("o2_coarse", "+7");
         assert_eq!(l.vals.plain("o2_coarse"), 7.0);
-        l.pick(&MenuReq::Param("o2_coarse".into()), Cmd::CopyValue("o2_coarse".into()), 0.0, 0.0);
-        l.pick(&MenuReq::Param("o3_coarse".into()), Cmd::PasteValue("o3_coarse".into()), 0.0, 0.0);
+        l.pick(
+            &MenuReq::Param("o2_coarse".into()),
+            Cmd::CopyValue("o2_coarse".into()),
+            0.0,
+            0.0,
+        );
+        l.pick(
+            &MenuReq::Param("o3_coarse".into()),
+            Cmd::PasteValue("o3_coarse".into()),
+            0.0,
+            0.0,
+        );
         assert_eq!(l.vals.plain("o3_coarse"), 7.0);
         // "Create automation clip" asks the host (only Lemon Studio, via the host link) for parameter k's clip.
         let req = MenuReq::Param("o2_coarse".into());
         let entry = |l: &Logic| {
             let m = l.menu(&req);
             let i = m.items.iter().position(|it| matches!(it, MenuItem::Item { label, .. } if label == "Create automation clip")).unwrap();
-            (matches!(&m.items[i], MenuItem::Item { enabled: true, .. }), m.cmds[i].clone())
+            (
+                matches!(&m.items[i], MenuItem::Item { enabled: true, .. }),
+                m.cmds[i].clone(),
+            )
         };
         assert!(!entry(&l).0);
         l.hosted = true;
         let (enabled, cmd) = entry(&l);
         assert!(enabled);
-        assert_eq!(l.pick(&req, cmd, 0.0, 0.0), vec![Act::Automate(osc(1) + COARSE)]);
+        assert_eq!(
+            l.pick(&req, cmd, 0.0, 0.0),
+            vec![Act::Automate(osc(1) + COARSE)]
+        );
     }
 
     #[test]
@@ -1249,7 +1545,10 @@ mod tests {
         assert!(l.params.flag(crate::params::AM_BYTE));
         assert_eq!(l.hint, "Oscillator 3 = amplitude modulation");
         // The saved state holds the switches as bytes.
-        assert_eq!(crate::params::encode(crate::params::FLAGS, l.vals.plain("flags") as i32), 0x0100_0100);
+        assert_eq!(
+            crate::params::encode(crate::params::FLAGS, l.vals.plain("flags") as i32),
+            0x0100_0100
+        );
         // HQ radio.
         let (x, y) = centre(&l, &Target::Toggle("hq".into()));
         l.down(x, y, Btn::Left, Mods::default(), false);
@@ -1260,11 +1559,19 @@ mod tests {
         paint(&mut l);
         let (x, y) = centre(&l, &Target::List("filter".into()));
         let acts = l.down(x, y, Btn::Left, Mods::default(), false);
-        assert!(matches!(acts.last(), Some(Act::Menu(MenuReq::List(_), _, _))));
+        assert!(matches!(
+            acts.last(),
+            Some(Act::Menu(MenuReq::List(_), _, _))
+        ));
         let m = l.menu(&MenuReq::List("filter".into()));
         assert_eq!(m.current, Some(0));
         assert_eq!(m.find("SVF LP"), Some(Cmd::Choice("filter".into(), 6)));
-        l.pick(&MenuReq::List("filter".into()), Cmd::Choice("filter".into(), 6), 0.0, 0.0);
+        l.pick(
+            &MenuReq::List("filter".into()),
+            Cmd::Choice("filter".into(), 6),
+            0.0,
+            0.0,
+        );
         assert_eq!(l.params.v(crate::params::FILTER), 6);
     }
 
@@ -1272,9 +1579,18 @@ mod tests {
     fn hints_use_the_original_wording() {
         let mut l = logic();
         for (t, want) in [
-            (Target::Knob("o1_phase".into()), "Osc 1 stereo phase offset: 0%"),
-            (Target::Knob("o1_detune".into()), "Osc 1 stereo detune: +0 cent"),
-            (Target::Knob("o1_coarse".into()), "Osc 1 coarse pitch: +0 semitone"),
+            (
+                Target::Knob("o1_phase".into()),
+                "Osc 1 stereo phase offset: 0%",
+            ),
+            (
+                Target::Knob("o1_detune".into()),
+                "Osc 1 stereo detune: +0 cent",
+            ),
+            (
+                Target::Knob("o1_coarse".into()),
+                "Osc 1 coarse pitch: +0 semitone",
+            ),
             (Target::Knob("o1_fine".into()), "Osc 1 fine pitch: +0 cent"),
             (Target::Knob("o1_pan".into()), "Osc 1 panning: Centered"),
             (Target::Knob("o2_mix".into()), "Osc 2 mix level: 50%"),
@@ -1302,7 +1618,11 @@ mod tests {
         l.down(x, y, Btn::Left, Mods::default(), false);
         l.moved(x + 9.0, y, Mods::default());
         l.up(Btn::Left);
-        assert!((l.vals.norm("vol_att") - a0 - 0.1).abs() < 0.01, "{}", l.vals.norm("vol_att"));
+        assert!(
+            (l.vals.norm("vol_att") - a0 - 0.1).abs() < 0.01,
+            "{}",
+            l.vals.norm("vol_att")
+        );
         assert!(l.params.v(rec(T_VOL) + R_ATT) > 20000);
         // The sustain node moves the sustain level vertically.
         let s0 = l.vals.norm("vol_sus");
@@ -1322,7 +1642,11 @@ mod tests {
         let (x, y) = centre(&l, &Target::SubTab(0));
         l.down(x, y, Btn::Left, Mods::default(), false);
         paint(&mut l);
-        assert!(!l.hits.iter().any(|h| h.t == Target::Toggle("pan_env".into())));
+        assert!(
+            !l.hits
+                .iter()
+                .any(|h| h.t == Target::Toggle("pan_env".into()))
+        );
         centre(&l, &Target::Knob("pan_lfo_amt".into()));
     }
 
@@ -1351,11 +1675,21 @@ mod tests {
     fn custom_shape_asks_for_its_sample() {
         let mut l = logic();
         let (x, y) = centre(&l, &Target::Set("o1_shape".into(), 6.0));
-        assert_eq!(l.down(x, y, Btn::Left, Mods::default(), false), vec![Act::Repaint, Act::OpenDialog]);
-        assert_eq!(l.params.v(osc(0) + SHAPE), 6, "chosen even before (or without) a sample");
+        assert_eq!(
+            l.down(x, y, Btn::Left, Mods::default(), false),
+            vec![Act::Repaint, Act::OpenDialog]
+        );
+        assert_eq!(
+            l.params.v(osc(0) + SHAPE),
+            6,
+            "chosen even before (or without) a sample"
+        );
         assert_eq!(l.hint, "Osc 1 shape");
         // The dialog's pick: a period of a square, 8 points.
-        let path = wav("square.wav", &[16384, 16384, 16384, 16384, -16384, -16384, -16384, -16384]);
+        let path = wav(
+            "square.wav",
+            &[16384, 16384, 16384, 16384, -16384, -16384, -16384, -16384],
+        );
         l.load(&path);
         assert_eq!(l.hint, "Custom shape sample: square.wav");
         assert_eq!(*l.params.sample_path.read().unwrap(), path);
@@ -1364,11 +1698,17 @@ mod tests {
         assert_eq!(w.points(), &[0.5, 0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5]);
         // A file that is not a sample leaves the wave as it was.
         l.load(&format!("{path}.missing"));
-        assert_eq!(l.hint, "Custom shape sample: square.wav.missing could not be read");
+        assert_eq!(
+            l.hint,
+            "Custom shape sample: square.wav.missing could not be read"
+        );
         assert_eq!(l.shared.loaded_path(), path);
         // The other shapes do not ask; the wheel reaches the custom shape without a dialog.
         let (x, y) = centre(&l, &Target::Set("o2_shape".into(), 3.0));
-        assert_eq!(l.down(x, y, Btn::Left, Mods::default(), false), vec![Act::Repaint]);
+        assert_eq!(
+            l.down(x, y, Btn::Left, Mods::default(), false),
+            vec![Act::Repaint]
+        );
         for _ in 0..8 {
             l.wheel(x, y, 1.0, Mods::default());
         }
@@ -1387,14 +1727,20 @@ mod tests {
         let (x, y) = centre(&l, &Target::LoadSample);
         l.moved(x, y, Mods::default());
         assert_eq!(l.hint, "Custom shape sample: none (click to load one)");
-        assert_eq!(l.down(x, y, Btn::Left, Mods::default(), false), vec![Act::Repaint, Act::OpenDialog]);
+        assert_eq!(
+            l.down(x, y, Btn::Left, Mods::default(), false),
+            vec![Act::Repaint, Act::OpenDialog]
+        );
         // A sample loaded elsewhere (a restored state) reaches the page on the next poll.
         let w = crate::dsp::Wave::new(&[0.0, 1.0, 0.0, -1.0]).map(Arc::new);
         l.shared.set_custom(w, "C:/samples/Cycle.wav", &l.params);
         l.sync_sample();
         assert_eq!(l.view.sample.path, "C:/samples/Cycle.wav");
         l.moved(x, y, Mods::default());
-        assert_eq!(l.hint, "Custom shape sample: Cycle.wav (click to load another)");
+        assert_eq!(
+            l.hint,
+            "Custom shape sample: Cycle.wav (click to load another)"
+        );
         let mut c = os_ui::Canvas::new(view::W, view::H, 1.0).unwrap();
         l.hits = view::paint(&mut c, &os_plugkit::palette(), &l.vals, &l.view, "", true);
         // Hosted: every control lies inside the area shown.
@@ -1404,7 +1750,12 @@ mod tests {
         c.copy_to_xrgb(&mut px);
         let g = view::sample_graph();
         let main = os_theme::design::lemon::MAIN;
-        let near = |p: u32| [(p >> 16) as u8, (p >> 8) as u8, p as u8].iter().zip([main.r, main.g, main.b]).all(|(a, b)| a.abs_diff(b) <= 80);
+        let near = |p: u32| {
+            [(p >> 16) as u8, (p >> 8) as u8, p as u8]
+                .iter()
+                .zip([main.r, main.g, main.b])
+                .all(|(a, b)| a.abs_diff(b) <= 80)
+        };
         let lit = (g.y as usize..(g.y + g.h) as usize)
             .flat_map(|yy| (g.x as usize..(g.x + g.w) as usize).map(move |xx| (xx, yy)))
             .filter(|&(xx, yy)| near(px[yy * view::W as usize + xx]))
@@ -1422,7 +1773,11 @@ mod tests {
         let (x, y) = centre(&l, &Target::Knob("pan_lfo_amt".into()));
         let v0 = l.vals.norm("pan_lfo_amt");
         for btn in [Btn::Left, Btn::Middle, Btn::Right] {
-            assert_eq!(l.down(x, y, btn, Mods::default(), false), vec![Act::Repaint], "{btn:?}");
+            assert_eq!(
+                l.down(x, y, btn, Mods::default(), false),
+                vec![Act::Repaint],
+                "{btn:?}"
+            );
         }
         l.wheel(x, y, 1.0, Mods::default());
         assert_eq!(l.vals.norm("pan_lfo_amt"), v0);
@@ -1441,6 +1796,10 @@ mod tests {
         assert!(!l.hits.iter().any(|h| matches!(h.t, Target::Tab(_))));
         // Every control lies inside the area shown when hosted.
         let top = view::HOSTED_CROP_Y as f32;
-        assert!(l.hits.iter().all(|h| h.r.y >= top), "{:?}", l.hits.iter().find(|h| h.r.y < top));
+        assert!(
+            l.hits.iter().all(|h| h.r.y >= top),
+            "{:?}",
+            l.hits.iter().find(|h| h.r.y < top)
+        );
     }
 }

@@ -424,7 +424,10 @@ mod tests {
         };
         let mut shift = 0.0;
         let red = Rgba::rgb(1.0, 0.0, 0.0);
-        let from = pos2(1170.0 - 4.4 * 32.0 + 24.0, split.layout(VIEW, &m).1.top() + 20.0);
+        let from = pos2(
+            1170.0 - 4.4 * 32.0 + 24.0,
+            split.layout(VIEW, &m).1.top() + 20.0,
+        );
         let button = |pos: Pos2, pressed| Event::PointerButton {
             pos,
             button: PointerButton::Primary,

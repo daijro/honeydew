@@ -103,7 +103,10 @@ pub fn post_audio(path: &str, channel: bool) {
 
 /// Host (or a plugin whose message went unanswered): the files posted since the last call, oldest first.
 pub fn take_audio() -> Vec<(String, bool)> {
-    OUTBOX.lock().map(|mut o| std::mem::take(&mut *o)).unwrap_or_default()
+    OUTBOX
+        .lock()
+        .map(|mut o| std::mem::take(&mut *o))
+        .unwrap_or_default()
 }
 
 /// The icon of a page tab. The ids are the protocol; the host maps them to its icon set.
@@ -138,7 +141,10 @@ pub struct HintBuf {
 
 impl Default for HintBuf {
     fn default() -> Self {
-        HintBuf { len: 0, text: [0; 128] }
+        HintBuf {
+            len: 0,
+            text: [0; 128],
+        }
     }
 }
 
@@ -163,7 +169,11 @@ pub fn pack_note(key: u8, velocity: u8, on: bool) -> isize {
 }
 
 pub fn unpack_note(v: isize) -> (u8, u8, bool) {
-    ((v & 0x7f) as u8, ((v >> 8) & 0x7f) as u8, (v >> 16) & 1 == 1)
+    (
+        (v & 0x7f) as u8,
+        ((v >> 8) & 0x7f) as u8,
+        (v >> 16) & 1 == 1,
+    )
 }
 
 pub fn pack_size(w: u32, h: u32) -> isize {
@@ -180,7 +190,10 @@ mod win {
     use std::sync::OnceLock;
 
     use windows_sys::Win32::Foundation::{HWND, LPARAM, WPARAM};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetParent, GetWindow, RegisterWindowMessageW, SendMessageTimeoutW, GW_CHILD, SMTO_ABORTIFHUNG};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GW_CHILD, GetParent, GetWindow, RegisterWindowMessageW, SMTO_ABORTIFHUNG,
+        SendMessageTimeoutW,
+    };
 
     use super::*;
 
@@ -203,7 +216,17 @@ mod win {
 
     fn send(hwnd: isize, cmd: Cmd, arg: isize) -> Option<isize> {
         let mut out = 0usize;
-        let ok = unsafe { SendMessageTimeoutW(hwnd as HWND, message(), cmd as WPARAM, arg as LPARAM, SMTO_ABORTIFHUNG, 250, &mut out) };
+        let ok = unsafe {
+            SendMessageTimeoutW(
+                hwnd as HWND,
+                message(),
+                cmd as WPARAM,
+                arg as LPARAM,
+                SMTO_ABORTIFHUNG,
+                250,
+                &mut out,
+            )
+        };
         (ok != 0).then_some(out as isize)
     }
 
@@ -215,7 +238,17 @@ mod win {
             return 0;
         }
         let mut out = 0usize;
-        let ok = unsafe { SendMessageTimeoutW(parent as HWND, message(), cmd as WPARAM, arg as LPARAM, SMTO_ABORTIFHUNG, 100, &mut out) };
+        let ok = unsafe {
+            SendMessageTimeoutW(
+                parent as HWND,
+                message(),
+                cmd as WPARAM,
+                arg as LPARAM,
+                SMTO_ABORTIFHUNG,
+                100,
+                &mut out,
+            )
+        };
         if ok != 0 { out as isize } else { 0 }
     }
 
@@ -228,14 +261,24 @@ mod win {
                 return None;
             }
             let n = send(editor, Cmd::PageCount, 0)?.clamp(0, 8) as usize;
-            let pages = (0..n).map(|i| PageIcon::from_id(send(editor, Cmd::PageIcon, i as isize).unwrap_or(0) as u32)).collect();
+            let pages = (0..n)
+                .map(|i| {
+                    PageIcon::from_id(send(editor, Cmd::PageIcon, i as isize).unwrap_or(0) as u32)
+                })
+                .collect();
             let page = send(editor, Cmd::GetPage, 0).unwrap_or(0).max(0) as usize;
-            Some(Link { editor, pages, page })
+            Some(Link {
+                editor,
+                pages,
+                page,
+            })
         }
 
         /// Editor content size (logical px) after the plugin joined the strip.
         pub fn size(&self) -> Option<(u32, u32)> {
-            send(self.editor, Cmd::Metrics, 0).map(unpack_size).filter(|&(w, h)| w > 0 && h > 0)
+            send(self.editor, Cmd::Metrics, 0)
+                .map(unpack_size)
+                .filter(|&(w, h)| w > 0 && h > 0)
         }
 
         /// The active page as last seen.
@@ -266,7 +309,9 @@ mod win {
 
         /// The editor's smallest content size (logical px) when the frame may resize it; `None` = a fixed size.
         pub fn resizable(&self) -> Option<(u32, u32)> {
-            send(self.editor, Cmd::Resizable, 0).filter(|&v| v != 0).map(unpack_size)
+            send(self.editor, Cmd::Resizable, 0)
+                .filter(|&v| v != 0)
+                .map(unpack_size)
         }
 
         /// The frame was resized: the editor takes content size `w` × `h` (logical px), or the nearest it allows.
@@ -277,7 +322,7 @@ mod win {
 }
 
 #[cfg(windows)]
-pub use win::{message, to_host, Link};
+pub use win::{Link, message, to_host};
 
 // Honeydew (vendored change): with `embed`, Lemon's editors run their Linux and macOS loop on Windows too, with this
 // link (`os-plugkit`'s `embed`).
@@ -309,7 +354,12 @@ mod local {
 
     impl Peer {
         /// A peer for an editor in host window `parent`, registered at once (until dropped by `unregister`).
-        pub fn register(parent: u64, pages: Vec<PageIcon>, hosted_size: (u32, u32), wake: impl Fn() + Send + Sync + 'static) -> Arc<Peer> {
+        pub fn register(
+            parent: u64,
+            pages: Vec<PageIcon>,
+            hosted_size: (u32, u32),
+            wake: impl Fn() + Send + Sync + 'static,
+        ) -> Arc<Peer> {
             let peer = Arc::new(Peer {
                 parent,
                 pages,
@@ -347,7 +397,8 @@ mod local {
 
         /// The editor switched pages itself; the host follows on its next tick.
         pub fn set_page(&self, i: usize) {
-            self.page.store(i.min(self.pages.len().saturating_sub(1)), Ordering::Release);
+            self.page
+                .store(i.min(self.pages.len().saturating_sub(1)), Ordering::Release);
         }
 
         /// The editor's hint line, for the host's title bar.
@@ -406,7 +457,10 @@ mod local {
 
     /// Host: the plugins' messages since the last call: (editor's host window, command, argument).
     pub fn take_host_messages() -> Vec<(u64, Cmd, isize)> {
-        QUEUE.lock().map(|mut q| std::mem::take(&mut *q)).unwrap_or_default()
+        QUEUE
+            .lock()
+            .map(|mut q| std::mem::take(&mut *q))
+            .unwrap_or_default()
     }
 
     /// Host side: a connection to the editor of a Lemon plugin.
@@ -418,7 +472,10 @@ mod local {
 
     impl std::fmt::Debug for Link {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("Link").field("pages", &self.pages).field("page", &self.page).finish()
+            f.debug_struct("Link")
+                .field("pages", &self.pages)
+                .field("page", &self.page)
+                .finish()
         }
     }
 
@@ -426,16 +483,30 @@ mod local {
         /// Looks for a Lemon plugin's editor in `area` (the window the host gave the plugin) and says hello. `None` =
         /// an ordinary plugin: show its editor as it is.
         pub fn connect(area: isize) -> Option<Link> {
-            let peer = REGISTRY.lock().ok()?.iter().find(|(p, _)| *p == area as u64).and_then(|(_, w)| w.upgrade())?;
+            let peer = REGISTRY
+                .lock()
+                .ok()?
+                .iter()
+                .find(|(p, _)| *p == area as u64)
+                .and_then(|(_, w)| w.upgrade())?;
             peer.hosted.store(true, Ordering::Release);
             (peer.wake)();
             let page = peer.page();
-            Some(Link { pages: peer.pages.clone(), page, peer })
+            Some(Link {
+                pages: peer.pages.clone(),
+                page,
+                peer,
+            })
         }
 
         /// Editor content size (logical px) after the plugin joined the strip.
         pub fn size(&self) -> Option<(u32, u32)> {
-            self.peer.hosted_size.lock().ok().map(|s| *s).filter(|&(w, h)| w > 0 && h > 0)
+            self.peer
+                .hosted_size
+                .lock()
+                .ok()
+                .map(|s| *s)
+                .filter(|&(w, h)| w > 0 && h > 0)
         }
 
         /// The editor's smallest content size (logical px) when the frame may resize it; `None` = a fixed size.
@@ -477,10 +548,10 @@ mod local {
     }
 }
 
-#[cfg(not(windows))]
-pub use local::{set_host_waker, take_host_messages, Link, Peer};
 #[cfg(all(windows, feature = "embed"))]
 pub use local::Peer;
+#[cfg(not(windows))]
+pub use local::{Link, Peer, set_host_waker, take_host_messages};
 
 #[cfg(test)]
 mod tests {
@@ -493,10 +564,19 @@ mod tests {
     fn local_link_connects_by_window() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static WAKES: AtomicUsize = AtomicUsize::new(0);
-        let peer = Peer::register(4242, vec![PageIcon::Sample, PageIcon::Envelope], (560, 390), || {
-            WAKES.fetch_add(1, Ordering::Relaxed);
-        });
-        assert_eq!(peer.to_host(Cmd::Note, pack_note(60, 100, true)), 0, "not hosted yet: the plugin plays it itself");
+        let peer = Peer::register(
+            4242,
+            vec![PageIcon::Sample, PageIcon::Envelope],
+            (560, 390),
+            || {
+                WAKES.fetch_add(1, Ordering::Relaxed);
+            },
+        );
+        assert_eq!(
+            peer.to_host(Cmd::Note, pack_note(60, 100, true)),
+            0,
+            "not hosted yet: the plugin plays it itself"
+        );
         assert!(Link::connect(4243).is_none(), "another window");
         let mut link = Link::connect(4242).expect("found by its window");
         assert!(peer.hosted());
@@ -513,7 +593,10 @@ mod tests {
         assert_eq!(link.size(), Some((800, 500)));
         link.set_page(1);
         assert_eq!(peer.page(), 1);
-        assert!(WAKES.load(Ordering::Relaxed) >= 2, "hello and the page change wake the editor");
+        assert!(
+            WAKES.load(Ordering::Relaxed) >= 2,
+            "hello and the page change wake the editor"
+        );
         peer.set_hint("Volume: 50 %");
         assert_eq!(link.hint(), "Volume: 50 %");
         assert_eq!(peer.to_host(Cmd::Automate, 7), 1);

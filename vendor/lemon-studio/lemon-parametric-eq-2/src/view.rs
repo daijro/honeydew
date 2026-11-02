@@ -11,14 +11,14 @@
 
 use std::f32::consts::PI;
 
-use os_engine::effects::eq::{self, freq_hz, has_level, Options, Settings, BANDS};
-use os_theme::design::lemon as brand;
+use os_engine::effects::eq::{self, BANDS, Options, Settings, freq_hz, has_level};
 use os_theme::Color;
+use os_theme::design::lemon as brand;
 use os_ui::kit::lemon::{self, plug};
-use os_ui::kit::{self, eq as keq, State};
+use os_ui::kit::{self, State, eq as keq};
 use os_ui::{Canvas, Font, Rect};
 
-use crate::params::{self, byte, flag, Opt};
+use crate::params::{self, Opt, byte, flag};
 
 pub const W: u32 = 700;
 pub const H: u32 = 350;
@@ -34,7 +34,9 @@ pub const PX_PER_DB: f32 = 246.0 / 36.0;
 pub const COLS: usize = 500;
 
 /// The band colours: the original's hues as light pastels on the dark greys.
-pub const BAND_COLORS: [u32; BANDS] = [0xc6a6f2, 0xf2a6d4, 0xf5b29a, 0xe9d27e, 0xacdd90, 0x92d9c7, 0xa1c0f2];
+pub const BAND_COLORS: [u32; BANDS] = [
+    0xc6a6f2, 0xf2a6d4, 0xf5b29a, 0xe9d27e, 0xacdd90, 0x92d9c7, 0xa1c0f2,
+];
 
 pub const MAIN_X: f32 = 525.0;
 pub const TRACK_TOP: f32 = 25.0;
@@ -158,18 +160,35 @@ pub fn paint(c: &mut Canvas, look: &Look, vs: &ViewState) -> Vec<Hit> {
             c.text(small, r.x + 3.0, r.y - 1.0, label, &format!("C{i}"));
         }
     }
-    let ranges = [(20.0, 40.0, ""), (40.0, 80.0, "SUB"), (80.0, 250.0, "BASS"), (250.0, 500.0, "LOW MID"), (500.0, 2000.0, "MID"), (2000.0, 4000.0, "HIGH MID"), (4000.0, 6000.0, "PRS"), (6000.0, 20000.0, "TREBLE")];
+    let ranges = [
+        (20.0, 40.0, ""),
+        (40.0, 80.0, "SUB"),
+        (80.0, 250.0, "BASS"),
+        (250.0, 500.0, "LOW MID"),
+        (500.0, 2000.0, "MID"),
+        (2000.0, 4000.0, "HIGH MID"),
+        (4000.0, 6000.0, "PRS"),
+        (6000.0, 20000.0, "TREBLE"),
+    ];
     for (a, b, name) in ranges {
         let (x0, x1) = (fx(a), if b >= 20000.0 { PLOT_X1 + 1.0 } else { fx(b) });
         let r = Rect::new(x0, 20.0, (x1 - x0 - 1.0).max(0.0), 10.0);
         chip(c, r, Color::rgb(0x3d3d3d));
-        c.text_center(small, Rect::new(r.x, r.y - 1.0, r.w, r.h), Color::rgb(0xbdbdbd), name);
+        c.text_center(
+            small,
+            Rect::new(r.x, r.y - 1.0, r.w, r.h),
+            Color::rgb(0xbdbdbd),
+            name,
+        );
     }
 
     // Plot.
     lemon::plug_well(c, PLOT.outset(1.0), 6.0);
     c.push_clip(PLOT.inset(0.5));
-    hits.push(Hit { r: PLOT, t: Target::Graph });
+    hits.push(Hit {
+        r: PLOT,
+        t: Target::Graph,
+    });
     for i in 0..=24 {
         let db = 18.0 - 1.5 * f64::from(i);
         let y = y_of(db).round();
@@ -188,13 +207,18 @@ pub fn paint(c: &mut Canvas, look: &Look, vs: &ViewState) -> Vec<Hit> {
         .filter(|(hz, _)| (20.0..=20000.0).contains(hz));
     for (hz, decade) in grid {
         let x = fx(hz).round();
-        let col = if decade { Color::rgb(0x353535) } else { Color::rgb(0x272727) };
+        let col = if decade {
+            Color::rgb(0x353535)
+        } else {
+            Color::rgb(0x272727)
+        };
         c.fill_rect(Rect::new(x, PLOT.y, 1.0, PLOT.h), col);
     }
     c.pop_clip();
 
     // Spectrum (monitor on, histogram enabled).
-    let range_db = [60.0, 90.0, 120.0][(params::opt(look.extra, Opt::Range) - 1).clamp(0, 2) as usize];
+    let range_db =
+        [60.0, 90.0, 120.0][(params::opt(look.extra, Opt::Range) - 1).clamp(0, 2) as usize];
     if let Some(sp) = look.spectrum {
         let n = sp.len().max(2);
         let mut pts = vec![(PLOT.x, PLOT.bottom())];
@@ -262,16 +286,33 @@ pub fn paint(c: &mut Canvas, look: &Look, vs: &ViewState) -> Vec<Hit> {
     c.pop_clip();
 
     // Frequency labels and the dB scale.
-    let marks = [20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0];
+    let marks = [
+        20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+    ];
     for w in marks.windows(2) {
-        let (x0, x1) = (fx(w[0]), if w[1] >= 20000.0 { PLOT_X1 + 1.0 } else { fx(w[1]) });
+        let (x0, x1) = (
+            fx(w[0]),
+            if w[1] >= 20000.0 {
+                PLOT_X1 + 1.0
+            } else {
+                fx(w[1])
+            },
+        );
         let r = Rect::new(x0, 282.0, (x1 - x0 - 1.0).max(0.0), 10.0);
         chip(c, r, Color::rgb(0x353535));
-        let txt = if w[0] >= 1000.0 { format!("{}k", w[0] / 1000.0) } else { format!("{}", w[0]) };
+        let txt = if w[0] >= 1000.0 {
+            format!("{}k", w[0] / 1000.0)
+        } else {
+            format!("{}", w[0])
+        };
         c.text(small, r.x + 3.0, r.y - 1.0, label, &txt);
     }
     for db in [18, 12, 6, 0, -6, -12, -18] {
-        let s = if db > 0 { format!("+{db}") } else { db.to_string() };
+        let s = if db > 0 {
+            format!("+{db}")
+        } else {
+            db.to_string()
+        };
         c.text_right(Font::new(9), 522.0, y_of(f64::from(db)) - 6.0, label, &s);
     }
 
@@ -284,18 +325,41 @@ pub fn paint(c: &mut Canvas, look: &Look, vs: &ViewState) -> Vec<Hit> {
             }
             let (x, y) = token_pos(s, k);
             let lit = !has_level(b.kind) || b.db.abs() > 0.005;
-            let alpha = if !s.audible(k) { 0.35 } else if lit { 1.0 } else { 0.62 };
+            let alpha = if !s.audible(k) {
+                0.35
+            } else if lit {
+                1.0
+            } else {
+                0.62
+            };
             let big = vs.active == Some(k);
             keq::token(c, x, y, k, band_color(k), alpha, big);
-            hits.push(Hit { r: Rect::new(x - 10.0, y - 10.0, 20.0, 20.0), t: Target::Token(k) });
+            hits.push(Hit {
+                r: Rect::new(x - 10.0, y - 10.0, 20.0, 20.0),
+                t: Target::Token(k),
+            });
             if big {
                 let f = Font::new(11);
                 let ry = (y + 13.0).min(PLOT.bottom() - 26.0);
                 // The readout on a dark chip.
-                c.fill_rrect(Rect::new(x - 26.0, ry + 1.0, 52.0, 25.0), 5.0, Color::rgb(0x141414).with_alpha(210));
+                c.fill_rrect(
+                    Rect::new(x - 26.0, ry + 1.0, 52.0, 25.0),
+                    5.0,
+                    Color::rgb(0x141414).with_alpha(210),
+                );
                 let col = band_color(k);
-                c.text_center(f.bold(), Rect::new(x - 30.0, ry, 60.0, 13.0), col, &params::hz_text(b.hz()));
-                c.text_center(f, Rect::new(x - 30.0, ry + 12.0, 60.0, 13.0), col, &format!("{:.0}%", b.width * 100.0));
+                c.text_center(
+                    f.bold(),
+                    Rect::new(x - 30.0, ry, 60.0, 13.0),
+                    col,
+                    &params::hz_text(b.hz()),
+                );
+                c.text_center(
+                    f,
+                    Rect::new(x - 30.0, ry + 12.0, 60.0, 13.0),
+                    col,
+                    &format!("{:.0}%", b.width * 100.0),
+                );
             }
         }
     }
@@ -305,7 +369,10 @@ pub fn paint(c: &mut Canvas, look: &Look, vs: &ViewState) -> Vec<Hit> {
     let mst = st(vs, main_r, Target::Fader(MAIN_FADER));
     keq::slot(c, main_r, mst);
     keq::handle(c, main_r.cx(), y_of(s.main_db), brand::MAIN, mst);
-    hits.push(Hit { r: main_r, t: Target::Fader(MAIN_FADER) });
+    hits.push(Hit {
+        r: main_r,
+        t: Target::Fader(MAIN_FADER),
+    });
 
     // Band columns.
     for k in 0..BANDS {
@@ -318,27 +385,63 @@ pub fn paint(c: &mut Canvas, look: &Look, vs: &ViewState) -> Vec<Hit> {
         keq::slot(c, Rect::new(x, 27.0, 13.0, TRACK_BOTTOM - 27.0 + 1.0), fst);
         let tab = Rect::new(x, 4.0, 13.0, 22.0);
         let tab_st = st(vs, tab, Target::TypeTab(k));
-        let tab_col = if tab_st.hover || tab_st.pressed { col.shade(0.15) } else { col };
+        let tab_col = if tab_st.hover || tab_st.pressed {
+            col.shade(0.15)
+        } else {
+            col
+        };
         c.fill_rrect(Rect::new(x, 4.0, 13.0, 21.0), 4.0, tab_col);
         let ink = Color::rgb(0x262626);
         type_icon(c, b.kind, x + 6.5, 10.5, ink);
         order_mark(c, b.order, x + 6.5, 17.5, ink, b.kind);
-        hits.push(Hit { r: Rect::new(x, 4.0, 13.0, 12.0), t: Target::TypeTab(k) });
-        hits.push(Hit { r: Rect::new(x, 16.0, 13.0, 5.0), t: Target::OrderMark(k) });
+        hits.push(Hit {
+            r: Rect::new(x, 4.0, 13.0, 12.0),
+            t: Target::TypeTab(k),
+        });
+        hits.push(Hit {
+            r: Rect::new(x, 16.0, 13.0, 5.0),
+            t: Target::OrderMark(k),
+        });
         if has_level(b.kind) {
             keq::handle(c, track.cx(), y_of(b.db), col, fst);
-            hits.push(Hit { r: Rect::new(x, TRACK_TOP + 2.0, 13.0, TRACK_BOTTOM - TRACK_TOP - 1.0), t: Target::Fader(k) });
+            hits.push(Hit {
+                r: Rect::new(x, TRACK_TOP + 2.0, 13.0, TRACK_BOTTOM - TRACK_TOP - 1.0),
+                t: Target::Fader(k),
+            });
         }
         // Mute / solo switch.
         let sw = Rect::new(x, 294.0, 13.0, 5.0);
         let sst = st(vs, sw.outset(2.0), Target::Switch(k));
-        let swc = if s.audible(k) { col } else { Color::rgb(0x3d3d3d) };
-        c.fill_rrect(Rect::new(x, 293.0, 13.0, 6.0), 3.0, if sst.hover { swc.mix(Color::rgb(0xffffff), 0.25) } else { swc });
-        hits.push(Hit { r: sw.outset(2.0), t: Target::Switch(k) });
+        let swc = if s.audible(k) {
+            col
+        } else {
+            Color::rgb(0x3d3d3d)
+        };
+        c.fill_rrect(
+            Rect::new(x, 293.0, 13.0, 6.0),
+            3.0,
+            if sst.hover {
+                swc.mix(Color::rgb(0xffffff), 0.25)
+            } else {
+                swc
+            },
+        );
+        hits.push(Hit {
+            r: sw.outset(2.0),
+            t: Target::Switch(k),
+        });
         // Knobs.
         let cx = x + 6.5;
-        for (y, tgt, v) in [(FREQ_Y, Target::Freq(k), b.freq), (BW_Y, Target::Bw(k), b.width)] {
-            let r = Rect::new(cx - KNOB_R - 1.0, y - KNOB_R - 1.0, 2.0 * KNOB_R + 2.0, 2.0 * KNOB_R + 2.0);
+        for (y, tgt, v) in [
+            (FREQ_Y, Target::Freq(k), b.freq),
+            (BW_Y, Target::Bw(k), b.width),
+        ] {
+            let r = Rect::new(
+                cx - KNOB_R - 1.0,
+                y - KNOB_R - 1.0,
+                2.0 * KNOB_R + 2.0,
+                2.0 * KNOB_R + 2.0,
+            );
             keq::arc_knob(c, cx, y, KNOB_R, v as f32, col, st(vs, r, tgt));
             hits.push(Hit { r, t: tgt });
         }
@@ -356,10 +459,21 @@ pub fn paint(c: &mut Canvas, look: &Look, vs: &ViewState) -> Vec<Hit> {
         (false, false) => Color::rgb(0x8f8f8f),
     };
     headphones(c, 532.0, 296.0, pcol);
-    hits.push(Hit { r: ph, t: Target::Phones });
+    hits.push(Hit {
+        r: ph,
+        t: Target::Phones,
+    });
 
     // Wordmark.
-    lemon::wordmark(c, 9.0, 303.0, true, "PARAMETRIC EQ", Font::condensed(25, 0), Font::condensed(11, 0).bold());
+    lemon::wordmark(
+        c,
+        9.0,
+        303.0,
+        true,
+        "PARAMETRIC EQ",
+        Font::condensed(25, 0),
+        Font::condensed(11, 0).bold(),
+    );
 
     // Bottom buttons.
     let mut button = |c: &mut Canvas, cx: f32, cy: f32, r: f32, tgt: Target, lit: bool| -> State {
@@ -373,7 +487,12 @@ pub fn paint(c: &mut Canvas, look: &Look, vs: &ViewState) -> Vec<Hit> {
     kit::triangle(c, 262.0, 324.0, 6.0, kit::Dir::Right, keq::ink(s1));
     let lin = flag(look.extra, params::F_LIN);
     let s2 = button(c, 298.0, 328.0, 15.0, Target::Lin, lin);
-    c.text_center(Font::condensed(13, 0).bold(), Rect::new(283.0, 320.0, 30.0, 16.0), keq::ink(s2), "LIN");
+    c.text_center(
+        Font::condensed(13, 0).bold(),
+        Rect::new(283.0, 320.0, 30.0, 16.0),
+        keq::ink(s2),
+        "LIN",
+    );
     // Bit 0 = on; the mode (bits 1..8) stays while it is off: 1 HQ+, 0 Legacy or Enhanced (flag 0x02).
     let hq = byte(look.extra, params::HQ_BYTE);
     let s3 = button(c, 337.0, 328.0, 15.0, Target::Hq, hq & 1 != 0);
@@ -383,7 +502,13 @@ pub fn paint(c: &mut Canvas, look: &Look, vs: &ViewState) -> Vec<Hit> {
         0 => "L",
         _ => "",
     };
-    let hx = c.text(Font::condensed(13, 0).bold(), 326.0, 319.0, keq::ink(s3), "HQ");
+    let hx = c.text(
+        Font::condensed(13, 0).bold(),
+        326.0,
+        319.0,
+        keq::ink(s3),
+        "HQ",
+    );
     c.text(Font::new(8).bold(), 326.0 + hx, 327.0, keq::ink(s3), sub);
     let tok = byte(look.extra, params::TOKENS_BYTE) != 0;
     // Lit while the tokens show.
@@ -413,7 +538,12 @@ pub fn paint(c: &mut Canvas, look: &Look, vs: &ViewState) -> Vec<Hit> {
 
 /// Heatmap colour for a level 0..1 (dark blue → teal → warm yellow).
 fn heat(v: f32) -> Color {
-    let stops = [(0.0, 0x10283a), (0.45, 0x1f6f80), (0.75, 0xc9b24a), (1.0, 0xfff1c0)];
+    let stops = [
+        (0.0, 0x10283a),
+        (0.45, 0x1f6f80),
+        (0.75, 0xc9b24a),
+        (1.0, 0xfff1c0),
+    ];
     for w in stops.windows(2) {
         let ((a, ca), (b, cb)) = (w[0], w[1]);
         if v <= b {
@@ -427,15 +557,55 @@ fn heat(v: f32) -> Color {
 fn type_icon(c: &mut Canvas, kind: i32, cx: f32, cy: f32, col: Color) {
     let w = 1.3;
     match kind {
-        eq::LOW_PASS => c.polyline(&[(cx - 4.5, cy - 2.0), (cx - 0.5, cy - 2.0), (cx + 2.0, cy - 0.5), (cx + 3.5, cy + 3.5)], w, col),
-        eq::HIGH_PASS => c.polyline(&[(cx - 3.5, cy + 3.5), (cx - 2.0, cy - 0.5), (cx + 0.5, cy - 2.0), (cx + 4.5, cy - 2.0)], w, col),
-        eq::BAND_PASS => c.polyline(&[(cx - 4.5, cy + 3.5), (cx - 2.5, cy - 1.0), (cx, cy - 2.5), (cx + 2.5, cy - 1.0), (cx + 4.5, cy + 3.5)], w, col),
+        eq::LOW_PASS => c.polyline(
+            &[
+                (cx - 4.5, cy - 2.0),
+                (cx - 0.5, cy - 2.0),
+                (cx + 2.0, cy - 0.5),
+                (cx + 3.5, cy + 3.5),
+            ],
+            w,
+            col,
+        ),
+        eq::HIGH_PASS => c.polyline(
+            &[
+                (cx - 3.5, cy + 3.5),
+                (cx - 2.0, cy - 0.5),
+                (cx + 0.5, cy - 2.0),
+                (cx + 4.5, cy - 2.0),
+            ],
+            w,
+            col,
+        ),
+        eq::BAND_PASS => c.polyline(
+            &[
+                (cx - 4.5, cy + 3.5),
+                (cx - 2.5, cy - 1.0),
+                (cx, cy - 2.5),
+                (cx + 2.5, cy - 1.0),
+                (cx + 4.5, cy + 3.5),
+            ],
+            w,
+            col,
+        ),
         eq::BAND_STOP => {
-            c.polyline(&[(cx - 4.0, cy - 3.5), (cx, cy + 0.5), (cx + 4.0, cy - 3.5)], w, col);
+            c.polyline(
+                &[(cx - 4.0, cy - 3.5), (cx, cy + 0.5), (cx + 4.0, cy - 3.5)],
+                w,
+                col,
+            );
             c.line(cx, cy + 0.5, cx, cy + 4.0, w, col);
         }
-        eq::LOW_SHELF => c.polyline(&[(cx - 4.0, cy - 3.5), (cx + 3.5, cy), (cx - 4.0, cy + 3.5)], w, col),
-        eq::HIGH_SHELF => c.polyline(&[(cx + 4.0, cy - 3.5), (cx - 3.5, cy), (cx + 4.0, cy + 3.5)], w, col),
+        eq::LOW_SHELF => c.polyline(
+            &[(cx - 4.0, cy - 3.5), (cx + 3.5, cy), (cx - 4.0, cy + 3.5)],
+            w,
+            col,
+        ),
+        eq::HIGH_SHELF => c.polyline(
+            &[(cx + 4.0, cy - 3.5), (cx - 3.5, cy), (cx + 4.0, cy + 3.5)],
+            w,
+            col,
+        ),
         eq::PEAKING => {
             let pts: Vec<(f32, f32)> = (0..8)
                 .map(|i| {

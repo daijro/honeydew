@@ -11,10 +11,10 @@
 //!
 // spec: plugins/fruity-stereo-shaper.md, plugins/lemon-stereo-shaper.md
 
-use os_dsp::glide::{plugin_limit, Glide};
+use os_dsp::glide::{Glide, plugin_limit};
 
-use super::stereo_enhancer::rate_factor;
 use super::Effect;
+use super::stereo_enhancer::rate_factor;
 
 /// The settings, in the saved state's order (after the version field).
 pub const PARAMS: usize = 8;
@@ -29,8 +29,16 @@ pub const POSITION: usize = 7;
 
 /// The settings' ranges (spec "Settings"; stored values are used as they are). The difference output's range is the
 /// editor's (FL lists the routes of the track; 126 is the most a track can have).
-pub const RANGES: [(i32, i32); PARAMS] =
-    [(-25600, 25600), (-25600, 25600), (-25600, 25600), (-25600, 25600), (-4096, 4096), (-4096, 4096), (0, 126), (-1, 1)];
+pub const RANGES: [(i32, i32); PARAMS] = [
+    (-25600, 25600),
+    (-25600, 25600),
+    (-25600, 25600),
+    (-25600, 25600),
+    (-4096, 4096),
+    (-4096, 4096),
+    (0, 126),
+    (-1, 1),
+];
 
 /// FL's "Default" preset (what a new Stereo Shaper holds): the levels at 100 %, nothing else, the effects "post".
 pub const DEFAULTS: [i32; PARAMS] = [0, 12800, 12800, 0, 0, 0, 0, 1];
@@ -63,7 +71,9 @@ impl Settings {
     /// A saved state: the eight values after the version field, whatever the version. `None` when it is too short.
     pub fn from_state(b: &[u8]) -> Option<Settings> {
         super::field(b, 0)?;
-        Some(Settings { v: super::ints(b, 1)? })
+        Some(Settings {
+            v: super::ints(b, 1)?,
+        })
     }
 
     /// The saved state (36 bytes).
@@ -82,11 +92,7 @@ pub fn level_gain(v: i32) -> f32 {
         return 0.0;
     }
     let g = (((f64::from(x.abs() * (3f64.ln() as f32))).exp() - 1.0) * 0.5) as f32;
-    if x < 0.0 {
-        -g
-    } else {
-        g
-    }
+    if x < 0.0 { -g } else { g }
 }
 
 /// The gains' targets `[L, R, RL, LR]`.
@@ -133,7 +139,11 @@ impl AllPass {
         let hz = phase_hz(k).min((f64::from(rate) * 0.4999) as f32);
         let w = f64::from(hz) * ((2.0 * std::f64::consts::PI) / f64::from(rate));
         let k = 1.0 / (w.sin() + 1.0);
-        Some(AllPass { hz, a1: -2.0 * k * w.cos(), a2: k * (1.0 - w.sin()) })
+        Some(AllPass {
+            hz,
+            a1: -2.0 * k * w.cos(),
+            a2: k * (1.0 - w.sin()),
+        })
     }
 }
 
@@ -146,7 +156,10 @@ struct Line {
 
 impl Line {
     fn new(d: usize) -> Line {
-        Line { buf: vec![0.0; d], pos: 0 }
+        Line {
+            buf: vec![0.0; d],
+            pos: 0,
+        }
     }
 
     #[inline]
@@ -214,7 +227,10 @@ impl StereoShaper {
     }
 
     pub fn from_state(state: &[u8], rate: u32) -> Option<StereoShaper> {
-        Some(StereoShaper::with_settings(rate, &Settings::from_state(state)?))
+        Some(StereoShaper::with_settings(
+            rate,
+            &Settings::from_state(state)?,
+        ))
     }
 
     /// The stored values applied last.
@@ -324,10 +340,18 @@ impl StereoShaper {
         self.block(left.iter_mut().zip(right.iter_mut()), n, None);
     }
 
-    fn block<'a>(&mut self, frames: impl Iterator<Item = (&'a mut f32, &'a mut f32)>, n: usize, mut diff: Option<&mut [f32]>) {
-        let [mut l_, mut r_, mut rl_, mut lr_] = [0, 1, 2, 3].map(|k| self.gains[k].block(self.target[k], n, self.limit));
+    fn block<'a>(
+        &mut self,
+        frames: impl Iterator<Item = (&'a mut f32, &'a mut f32)>,
+        n: usize,
+        mut diff: Option<&mut [f32]>,
+    ) {
+        let [mut l_, mut r_, mut rl_, mut lr_] =
+            [0, 1, 2, 3].map(|k| self.gains[k].block(self.target[k], n, self.limit));
         // With no gain moving and no cross level, the cross terms are left out (which keeps a -0).
-        let straight = [l_, r_, rl_, lr_].iter().all(|r| r.is_flat()) && rl_.first() == 0.0 && lr_.first() == 0.0;
+        let straight = [l_, r_, rl_, lr_].iter().all(|r| r.is_flat())
+            && rl_.first() == 0.0
+            && lr_.first() == 0.0;
         let pre = self.pre();
         for (i, (l, r)) in frames.enumerate() {
             let input = [*l, *r];
@@ -336,7 +360,11 @@ impl StereoShaper {
                 self.effects(&mut x);
             }
             let (gl, gr, grl, glr) = (l_.next(), r_.next(), rl_.next(), lr_.next());
-            let mut y = if straight { [gl * x[0], gr * x[1]] } else { [gl * x[0] + grl * x[1], gr * x[1] + glr * x[0]] };
+            let mut y = if straight {
+                [gl * x[0], gr * x[1]]
+            } else {
+                [gl * x[0] + grl * x[1], gr * x[1] + glr * x[0]]
+            };
             if pre == Some(false) {
                 self.effects(&mut y);
             }
@@ -379,7 +407,10 @@ impl Effect for StereoShaper {
     }
 
     fn extra(&self) -> Option<(usize, &[f32])> {
-        usize::try_from(self.applied[DIFFERENCE]).ok().filter(|&n| n > 0).map(|n| (n, &self.diff[..]))
+        usize::try_from(self.applied[DIFFERENCE])
+            .ok()
+            .filter(|&n| n > 0)
+            .map(|n| (n, &self.diff[..]))
     }
 }
 
@@ -390,7 +421,9 @@ mod tests {
     #[test]
     fn states_round_trip_whatever_the_version() {
         // FL's "Stereoize 3" preset.
-        let s = Settings { v: [0, 12800, 12800, 0, 1408, -2496, 0, 1] };
+        let s = Settings {
+            v: [0, 12800, 12800, 0, 1408, -2496, 0, 1],
+        };
         let b = s.to_state();
         assert_eq!(b.len(), STATE_LEN);
         assert_eq!(Settings::from_state(&b), Some(s));
@@ -409,7 +442,10 @@ mod tests {
         assert_eq!((bits(1), bits(-1)), (0x3834_011e, 0xb834_011e));
         // 63.1 % is a half (a hair above).
         assert_eq!((bits(8076), bits(-8076)), (0x3f00_008f, 0xbf00_008f));
-        assert_eq!((bits(6400), bits(19200), bits(100)), (0x3ebb_67af, 0x4006_46e2, 0x3b8d_3a43));
+        assert_eq!(
+            (bits(6400), bits(19200), bits(100)),
+            (0x3ebb_67af, 0x4006_46e2, 0x3b8d_3a43)
+        );
         assert_eq!(gains(&DEFAULTS), [1.0, 1.0, 0.0, 0.0]);
     }
 
@@ -434,15 +470,57 @@ mod tests {
         assert_eq!(AllPass::new(0, 44100), None);
         let near = |a: f64, b: f64| (a - b).abs() <= 1e-15 * b.abs().max(1.0);
         for (k, rate, hz, a1, a2) in [
-            (1, 44100, 21954.310546875, 1.9729173217630334, 0.9731006896281552),
-            (-1, 44100, 21954.310546875, 1.9729173217630334, 0.9731006896281552),
-            (864, 44100, 3653.49658203125, -1.1587891148062024, 0.3356980531483356),
-            (1744, 44100, 590.8272094726562, -1.8383510023135674, 0.8448836019268244),
-            (2080, 48000, 296.5964660644531, -1.9238204693033076, 0.9252712995275999),
+            (
+                1,
+                44100,
+                21954.310546875,
+                1.9729173217630334,
+                0.9731006896281552,
+            ),
+            (
+                -1,
+                44100,
+                21954.310546875,
+                1.9729173217630334,
+                0.9731006896281552,
+            ),
+            (
+                864,
+                44100,
+                3653.49658203125,
+                -1.1587891148062024,
+                0.3356980531483356,
+            ),
+            (
+                1744,
+                44100,
+                590.8272094726562,
+                -1.8383510023135674,
+                0.8448836019268244,
+            ),
+            (
+                2080,
+                48000,
+                296.5964660644531,
+                -1.9238204693033076,
+                0.9252712995275999,
+            ),
             (4096, 44100, 10.0, -1.9971525108644803, 0.9971545379130746),
-            (-2496, 44100, 128.1198272705078, -1.9638212342242898, 0.9641484599975532),
+            (
+                -2496,
+                44100,
+                128.1198272705078,
+                -1.9638212342242898,
+                0.9641484599975532,
+            ),
             // Held to rate * 0.4999.
-            (1, 8000, 3999.199951171875, 1.9987436809065613, 0.9987440754909773),
+            (
+                1,
+                8000,
+                3999.199951171875,
+                1.9987436809065613,
+                0.9987440754909773,
+            ),
         ] {
             let ap = AllPass::new(k, rate).unwrap();
             assert_eq!(ap.hz, hz as f32, "{k} at {rate}");
@@ -458,14 +536,30 @@ mod tests {
     #[test]
     fn the_matrix_and_the_difference() {
         // FL's "LR to MS": mid on the left, side on the right, a half each.
-        let mut e = StereoShaper::with_settings(44100, &Settings { v: [8076, 8076, -8076, 8076, 0, 0, 1, 1] });
+        let mut e = StereoShaper::with_settings(
+            44100,
+            &Settings {
+                v: [8076, 8076, -8076, 8076, 0, 0, 1, 1],
+            },
+        );
         let mut buf = frames(&[0.5, 0.25], &[0.25, -0.5]);
         Effect::process(&mut e, &mut buf);
         let h = level_gain(8076);
-        assert_eq!(buf, vec![h * 0.5 + h * 0.25, -h * 0.25 + h * 0.5, h * 0.25 + h * -0.5, -h * -0.5 + h * 0.25]);
+        assert_eq!(
+            buf,
+            vec![
+                h * 0.5 + h * 0.25,
+                -h * 0.25 + h * 0.5,
+                h * 0.25 + h * -0.5,
+                -h * -0.5 + h * 0.25
+            ]
+        );
         let (n, d) = e.extra().expect("difference output 1");
         assert_eq!(n, 1);
-        assert_eq!(d, &[0.5 - buf[0], 0.25 - buf[1], 0.25 - buf[2], -0.5 - buf[3]]);
+        assert_eq!(
+            d,
+            &[0.5 - buf[0], 0.25 - buf[1], 0.25 - buf[2], -0.5 - buf[3]]
+        );
         // No difference output: nothing extra.
         let mut e = StereoShaper::with_settings(44100, &Settings::default());
         Effect::process(&mut e, &mut buf);
@@ -474,7 +568,12 @@ mod tests {
         let mut buf = vec![1.0f32, -0.0];
         Effect::process(&mut e, &mut buf);
         assert_eq!(buf[1].to_bits(), 0x8000_0000);
-        let mut e = StereoShaper::with_settings(44100, &Settings { v: [1, 12800, 12800, 0, 0, 0, 0, 1] });
+        let mut e = StereoShaper::with_settings(
+            44100,
+            &Settings {
+                v: [1, 12800, 12800, 0, 0, 0, 0, 1],
+            },
+        );
         let mut buf = vec![1.0f32, -0.0];
         Effect::process(&mut e, &mut buf);
         assert_eq!(buf[1].to_bits(), 0);
@@ -482,8 +581,12 @@ mod tests {
 
     /// The probe of the reference run: a sine on the left, a saw-like pattern on the right.
     fn probe(n: usize) -> (Vec<f32>, Vec<f32>) {
-        let l = (0..n).map(|i| ((i as f64 * 0.05).sin() * 0.5) as f32).collect();
-        let r = (0..n).map(|i| (((i * 37) % 101) as f64 / 101.0 - 0.5) as f32).collect();
+        let l = (0..n)
+            .map(|i| ((i as f64 * 0.05).sin() * 0.5) as f32)
+            .collect();
+        let r = (0..n)
+            .map(|i| (((i * 37) % 101) as f64 / 101.0 - 0.5) as f32)
+            .collect();
         (l, r)
     }
 
@@ -497,7 +600,10 @@ mod tests {
             Effect::process(&mut e, &mut buf[2 * at..2 * (at + n)]);
             at += n;
         }
-        (buf.iter().step_by(2).copied().collect(), buf.iter().skip(1).step_by(2).copied().collect())
+        (
+            buf.iter().step_by(2).copied().collect(),
+            buf.iter().skip(1).step_by(2).copied().collect(),
+        )
     }
 
     /// Samples against an independent reading of the page (bit for bit): delay and phase before the matrix, after it,
@@ -515,7 +621,11 @@ mod tests {
         ] {
             let (l, r) = run(v);
             for (k, &i) in at.iter().enumerate() {
-                assert_eq!((l[i].to_bits(), r[i].to_bits()), want[k], "{v:?}, sample {i}");
+                assert_eq!(
+                    (l[i].to_bits(), r[i].to_bits()),
+                    want[k],
+                    "{v:?}, sample {i}"
+                );
             }
         }
     }
@@ -529,11 +639,19 @@ mod tests {
 
     #[test]
     fn delay_and_phase_settings() {
-        let mut e = StereoShaper::with_settings(44100, &Settings { v: [0, 12800, 12800, 0, 100, 0, 0, 0] });
+        let mut e = StereoShaper::with_settings(
+            44100,
+            &Settings {
+                v: [0, 12800, 12800, 0, 100, 0, 0, 0],
+            },
+        );
         assert_eq!(e.delay(), 4);
         let mut buf = frames(&[0.0; 8], &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         Effect::process(&mut e, &mut buf);
-        assert_eq!(buf.iter().skip(1).step_by(2).copied().collect::<Vec<_>>(), [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(
+            buf.iter().skip(1).step_by(2).copied().collect::<Vec<_>>(),
+            [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+        );
         // Setting the delay empties the line, also to the same length.
         let mut buf = frames(&[0.0; 4], &[1.0; 4]);
         Effect::process(&mut e, &mut buf);
@@ -566,7 +684,9 @@ mod tests {
 
     #[test]
     fn the_matrix_before_the_song_and_when_switched_on() {
-        let s = Settings { v: [0, 25600, 6400, 0, 0, 0, 0, 1] };
+        let s = Settings {
+            v: [0, 25600, 6400, 0, 0, 0, 0, 1],
+        };
         // On at the song's start: at its setting from the first sample.
         let mut e = StereoShaper::with_settings(44100, &s);
         assert_eq!(e.current(), [0.0; 4]);
@@ -582,7 +702,12 @@ mod tests {
         assert_eq!(buf[2], 0.001);
         assert_eq!(e.current()[0], 0.001 * 32.0);
         // Switched off and on again: the gains stay where they were, the line keeps its contents, the memory goes.
-        let mut e = StereoShaper::with_settings(44100, &Settings { v: [0, 12800, 12800, 0, 100, 864, 0, 0] });
+        let mut e = StereoShaper::with_settings(
+            44100,
+            &Settings {
+                v: [0, 12800, 12800, 0, 100, 864, 0, 0],
+            },
+        );
         let mut buf = frames(&[0.0; 4], &[1.0; 4]);
         Effect::process(&mut e, &mut buf);
         Effect::reset(&mut e);
@@ -595,8 +720,11 @@ mod tests {
 
     #[test]
     fn a_slot_reads_its_state() {
-        let s = Settings { v: [-8076, 12800, 12800, -8076, 0, 864, 0, 0] };
-        let mut slot = super::super::from_slot("Fruity Stereo Shaper", &s.to_state(), 44100).expect("a stereo shaper");
+        let s = Settings {
+            v: [-8076, 12800, 12800, -8076, 0, 864, 0, 0],
+        };
+        let mut slot = super::super::from_slot("Fruity Stereo Shaper", &s.to_state(), 44100)
+            .expect("a stereo shaper");
         let mut own = StereoShaper::with_settings(44100, &s);
         own.flush();
         let (l, r) = probe(600);

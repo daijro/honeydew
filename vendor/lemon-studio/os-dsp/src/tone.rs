@@ -77,7 +77,9 @@ impl Tones {
 
     fn analyse_with(frames: usize, rate: u32, at: impl Fn(usize) -> f32) -> Tones {
         let fft = Fft::new(BLOCK);
-        let window: Vec<f32> = (0..BLOCK).map(|i| 0.5 - 0.5 * (2.0 * PI * i as f32 / BLOCK as f32).cos()).collect();
+        let window: Vec<f32> = (0..BLOCK)
+            .map(|i| 0.5 - 0.5 * (2.0 * PI * i as f32 / BLOCK as f32).cos())
+            .collect();
         let (mut re, mut im) = (vec![0f32; BLOCK], vec![0f32; BLOCK]);
         let hz = rate.max(1) as f32 / BLOCK as f32;
         // |X|² over (N/2)²: a full-scale sine's peak bin is about 0.25.
@@ -122,7 +124,11 @@ impl Tones {
         for i in (first..last).step_by(stride) {
             let lo = (i as f64 * blk).max(a);
             let hi = ((i + 1) as f64 * blk).min(b);
-            let w = if stride > 1 { 1.0 } else { ((hi - lo) / blk).max(0.0) as f32 };
+            let w = if stride > 1 {
+                1.0
+            } else {
+                ((hi - lo) / blk).max(0.0) as f32
+            };
             t.add(&self.blocks[i], w);
         }
         t
@@ -140,7 +146,11 @@ impl Fft {
     fn new(n: usize) -> Fft {
         debug_assert!(n.is_power_of_two());
         let a = |k: usize| -2.0 * std::f64::consts::PI * k as f64 / n as f64;
-        Fft { n, cos: (0..n / 2).map(|k| a(k).cos() as f32).collect(), sin: (0..n / 2).map(|k| a(k).sin() as f32).collect() }
+        Fft {
+            n,
+            cos: (0..n / 2).map(|k| a(k).cos() as f32).collect(),
+            sin: (0..n / 2).map(|k| a(k).sin() as f32).collect(),
+        }
     }
 
     fn run(&self, re: &mut [f32], im: &mut [f32]) {
@@ -178,7 +188,9 @@ mod tests {
     use super::*;
 
     fn sine(hz: f32, rate: u32, secs: f32) -> Vec<f32> {
-        (0..(rate as f32 * secs) as usize).map(|i| (2.0 * PI * hz * i as f32 / rate as f32).sin() * 0.5).collect()
+        (0..(rate as f32 * secs) as usize)
+            .map(|i| (2.0 * PI * hz * i as f32 / rate as f32).sin() * 0.5)
+            .collect()
     }
 
     // spec: ui/settings-choices.md "Display: Colorful waveforms (2026-10-16)"
@@ -187,11 +199,18 @@ mod tests {
     fn fft_finds_a_bin_centred_sine() {
         let n = 64;
         let fft = Fft::new(n);
-        let mut re: Vec<f32> = (0..n).map(|i| (2.0 * PI * 5.0 * i as f32 / n as f32).cos()).collect();
+        let mut re: Vec<f32> = (0..n)
+            .map(|i| (2.0 * PI * 5.0 * i as f32 / n as f32).cos())
+            .collect();
         let mut im = vec![0.0; n];
         fft.run(&mut re, &mut im);
         let mag = |k: usize| (re[k] * re[k] + im[k] * im[k]).sqrt();
-        assert!((mag(5) - 32.0).abs() < 1e-3 && (mag(59) - 32.0).abs() < 1e-3, "{} {}", mag(5), mag(59));
+        assert!(
+            (mag(5) - 32.0).abs() < 1e-3 && (mag(59) - 32.0).abs() < 1e-3,
+            "{} {}",
+            mag(5),
+            mag(59)
+        );
         assert!((0..n).filter(|&k| k != 5 && k != 59).all(|k| mag(k) < 1e-3));
     }
 
@@ -210,7 +229,10 @@ mod tests {
             assert!(b[band] > 0.95 * mid.power, "{hz} Hz: bands {b:?}");
             // Amplitude 0.5: a quarter of a full-scale sine's power, per block.
             let per_block = mid.power / 24.0;
-            assert!((per_block - 0.75 / 4.0).abs() < 0.01, "{hz} Hz: power per block {per_block}");
+            assert!(
+                (per_block - 0.75 / 4.0).abs() < 0.01,
+                "{hz} Hz: power per block {per_block}"
+            );
         }
         let quiet = Tones::analyse(&[0.0; 4000], rate);
         assert_eq!(quiet.blocks.len(), 8, "a short last block");

@@ -2228,9 +2228,14 @@ impl HoneydewApp {
                     let corner = |ui: &mut egui::Ui| {
                         let (selected, screen) = ((input.selected, ink), &mut self.main_screen);
                         let shift = tab_shift.get();
-                        tab_shift.set(
-                            screen.corner_buttons(ui, &cx, selected, &regions, &mut actions, shift),
-                        );
+                        tab_shift.set(screen.corner_buttons(
+                            ui,
+                            &cx,
+                            selected,
+                            &regions,
+                            &mut actions,
+                            shift,
+                        ));
                     };
                     (self.slots).overlays(&mut self.nav.overlays, ui, &mut app, escape, corner)
                 };

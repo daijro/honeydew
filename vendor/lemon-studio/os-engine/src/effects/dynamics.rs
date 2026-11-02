@@ -56,7 +56,9 @@ pub const RANGES: [(i32, i32); PARAMS] = [
 ];
 
 /// FL's factory preset "Default" (= a fresh instance).
-pub const DEFAULTS: [i32; PARAMS] = [1000, 1000, 1000, 1115, 3, 5000, 3, 2882, 1000, 0, 0, 0, 6666, 1, 650, 1000, 0, 4187];
+pub const DEFAULTS: [i32; PARAMS] = [
+    1000, 1000, 1000, 1115, 3, 5000, 3, 2882, 1000, 0, 0, 0, 6666, 1, 650, 1000, 0, 4187,
+];
 
 /// Flags bit 0: the limiter aims at the ceiling itself instead of 0.975 of it.
 pub const FLAG_EXACT_CEILING: u8 = 1;
@@ -93,7 +95,11 @@ fn round(x: f64) -> i64 {
 
 /// The coefficient of a smoother direction taking `t` samples (0 = no smoothing).
 fn coef(t: f64) -> f64 {
-    if t > 0.0 { (0.01f64.ln() / t.max(1.0)).exp() } else { 0.0 }
+    if t > 0.0 {
+        (0.01f64.ln() / t.max(1.0)).exp()
+    } else {
+        0.0
+    }
 }
 
 /// Stages of one-pole smoothing in series (spec "Smoothers").
@@ -107,7 +113,12 @@ struct Chain {
 
 impl Chain {
     fn new(start: f64) -> Self {
-        Chain { rise: 0.0, fall: 0.0, start, s: Vec::with_capacity(8) }
+        Chain {
+            rise: 0.0,
+            fall: 0.0,
+            start,
+            s: Vec::with_capacity(8),
+        }
     }
 
     /// Sets the stage count (a changed count starts again at the starting value) and the times.
@@ -245,7 +256,10 @@ impl Dynamics {
             inp: vec![0.0; CHUNK],
             meter_len: 0,
             meter_n: 0,
-            meter_acc: Column { gain: f32::MAX, ..Column::default() },
+            meter_acc: Column {
+                gain: f32::MAX,
+                ..Column::default()
+            },
             columns: Vec::with_capacity(MAX_COLUMNS),
         };
         d.work(true);
@@ -257,7 +271,10 @@ impl Dynamics {
         if len != self.meter_len {
             self.meter_len = len;
             self.meter_n = 0;
-            self.meter_acc = Column { gain: f32::MAX, ..Column::default() };
+            self.meter_acc = Column {
+                gain: f32::MAX,
+                ..Column::default()
+            };
         }
     }
 
@@ -274,7 +291,10 @@ impl Dynamics {
             }
             self.columns.push(*a);
             self.meter_n = 0;
-            *a = Column { gain: f32::MAX, ..Column::default() };
+            *a = Column {
+                gain: f32::MAX,
+                ..Column::default()
+            };
         }
     }
 
@@ -341,11 +361,20 @@ impl Dynamics {
     fn work(&mut self, fresh: bool) {
         let p = &self.p;
         let rate = self.rate;
-        let mut w = Work { gain: level(p[GAIN], 7.0), ceiling: level(p[CEILING], 3.0), ..Work::default() };
-        w.limit = if self.flags & FLAG_EXACT_CEILING != 0 { w.ceiling } else { w.ceiling * 0.975 };
+        let mut w = Work {
+            gain: level(p[GAIN], 7.0),
+            ceiling: level(p[CEILING], 3.0),
+            ..Work::default()
+        };
+        w.limit = if self.flags & FLAG_EXACT_CEILING != 0 {
+            w.ceiling
+        } else {
+            w.ceiling * 0.975
+        };
         w.gate_gain = level(p[GATE_GAIN], 7.0);
         w.gate_below = level(p[GATE_THRES], 7.0).min(w.limit);
-        w.gate_coef = (0.01f64.ln() / (time_samples(p[GATE_REL], rate).max(1.0) * 2.0)).exp() as f32;
+        w.gate_coef =
+            (0.01f64.ln() / (time_samples(p[GATE_REL], rate).max(1.0) * 2.0)).exp() as f32;
         w.knee = level(p[SAT], 3.0);
         w.saturate = w.knee < 1.0;
         if w.saturate {
@@ -358,8 +387,14 @@ impl Dynamics {
         w.threshold = level(p[COMP_THRES], 7.0).max((f64::from(db_unit) * -60.0).exp() as f32);
         w.thr_db = (f64::from(w.threshold).log10() * 20.0) as f32;
         w.top = w.threshold * 100.0;
-        let c = ((f64::from((p[COMP_RATIO].unsigned_abs() as f64 * 0.001) as f32) * 51f64.ln()).exp() - 1.0) as f32;
-        w.ratio = if p[COMP_RATIO] > 0 { (1.0 / (f64::from(c) * 0.38 + 1.0)) as f32 } else { (f64::from(c) * 0.06 + 1.0) as f32 };
+        let c = ((f64::from((p[COMP_RATIO].unsigned_abs() as f64 * 0.001) as f32) * 51f64.ln())
+            .exp()
+            - 1.0) as f32;
+        w.ratio = if p[COMP_RATIO] > 0 {
+            (1.0 / (f64::from(c) * 0.38 + 1.0)) as f32
+        } else {
+            (f64::from(c) * 0.06 + 1.0) as f32
+        };
         w.slope = w.ratio - 1.0;
         let kv = p[COMP_KNEE];
         let k = ((f64::from((kv as f32 * 0.001).abs()) * 201f64.ln()).exp() - 1.0) as f32;
@@ -376,18 +411,36 @@ impl Dynamics {
 
         let look = round(time_samples(p[LIM_ATT], rate)).max(0) as usize;
         w.look = look;
-        w.peak_n = (round(time_samples(p[PEAK_WINDOW], rate)).max(0) as usize).max(look).max(1);
+        w.peak_n = (round(time_samples(p[PEAK_WINDOW], rate)).max(0) as usize)
+            .max(look)
+            .max(1);
         w.rms_m = (round(time_samples(p[RMS_WINDOW], rate)).max(0) as usize).max(1);
         w.tail = look as i64 + round(rate * 1.5);
 
         // Smoother chains.
         let rel = time_samples(p[LIM_REL], rate);
-        let rel_stages = if rel == 0.0 { 0 } else { p[LIM_REL_CURVE].clamp(0, 64) as usize };
-        self.release.set(rel_stages, 0.0, rel * 2.0 / (rel_stages.max(1) as f64).sqrt());
+        let rel_stages = if rel == 0.0 {
+            0
+        } else {
+            p[LIM_REL_CURVE].clamp(0, 64) as usize
+        };
+        self.release.set(
+            rel_stages,
+            0.0,
+            rel * 2.0 / (rel_stages.max(1) as f64).sqrt(),
+        );
         let cs = p[COMP_CURVE].clamp(0, 64) as usize;
         let sq = (cs.max(1) as f64).sqrt();
-        self.compressor.set(cs, time_samples(p[COMP_ATT], rate) / sq, time_samples(p[COMP_REL], rate) * 2.0 / sq);
-        let att_stages = if look < 1 { 0 } else { p[LIM_ATT_CURVE].clamp(0, 64) as usize };
+        self.compressor.set(
+            cs,
+            time_samples(p[COMP_ATT], rate) / sq,
+            time_samples(p[COMP_REL], rate) * 2.0 / sq,
+        );
+        let att_stages = if look < 1 {
+            0
+        } else {
+            p[LIM_ATT_CURVE].clamp(0, 64) as usize
+        };
         let at = f64::from((look as f64 * 0.8) as f32) / (att_stages.max(1) as f64).sqrt();
         self.attack.set(att_stages, at, at);
 
@@ -423,7 +476,10 @@ impl Dynamics {
     /// block's own input. Blocks are the original's ticks: sleep and waking are decided per block.
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32], key: Option<(&[f32], &[f32])>) {
         let n = left.len().min(right.len());
-        let sound = left[..n].iter().chain(&right[..n]).any(|x| !(x.abs() <= SILENT));
+        let sound = left[..n]
+            .iter()
+            .chain(&right[..n])
+            .any(|x| !(x.abs() <= SILENT));
         if sound {
             self.counter = self.w.tail;
         } else {
@@ -440,7 +496,12 @@ impl Dynamics {
         let mut at = 0;
         while at < n {
             let end = (at + CHUNK).min(n);
-            let k = key.map(|(l, r)| (&l[at.min(l.len())..end.min(l.len())], &r[at.min(r.len())..end.min(r.len())]));
+            let k = key.map(|(l, r)| {
+                (
+                    &l[at.min(l.len())..end.min(l.len())],
+                    &r[at.min(r.len())..end.min(r.len())],
+                )
+            });
             self.run(&mut left[at..end], &mut right[at..end], k);
             at = end;
         }
@@ -461,7 +522,11 @@ impl Dynamics {
                 self.peaks.pop_back();
             }
             self.peaks.push_back((at, pk));
-            while self.peaks.front().is_some_and(|&(q, _)| q + w.peak_n as u64 <= at) {
+            while self
+                .peaks
+                .front()
+                .is_some_and(|&(q, _)| q + w.peak_n as u64 <= at)
+            {
                 self.peaks.pop_front();
             }
             self.peak[i] = self.peaks.front().map_or(0.0, |&(_, v)| v);
@@ -476,11 +541,15 @@ impl Dynamics {
             let inv = (1.0 / (2.0 * m as f64)) as f32;
             for i in 0..n {
                 let (l, r) = match key {
-                    Some((kl, kr)) => (kl.get(i).copied().unwrap_or(0.0), kr.get(i).copied().unwrap_or(0.0)),
+                    Some((kl, kr)) => (
+                        kl.get(i).copied().unwrap_or(0.0),
+                        kr.get(i).copied().unwrap_or(0.0),
+                    ),
                     None => (left[i], right[i]),
                 };
                 let x = l * l + r * r;
-                self.rms_sum = (self.rms_sum - f64::from(self.rms_ring[self.rms_at])) + f64::from(x);
+                self.rms_sum =
+                    (self.rms_sum - f64::from(self.rms_ring[self.rms_at])) + f64::from(x);
                 self.rms_ring[self.rms_at] = x;
                 self.rms_at = (self.rms_at + 1) % m;
                 self.rms[i] = ((f64::from(inv) * self.rms_sum) as f32).max(0.0).sqrt();
@@ -543,7 +612,9 @@ impl Dynamics {
                 let a = v.abs();
                 *s = if w.saturate {
                     if a > w.knee {
-                        let y = ((1.0 - (f64::from(w.knee - a) * f64::from(inv_room)).exp()) * f64::from(w.room) + f64::from(w.knee)) as f32;
+                        let y = ((1.0 - (f64::from(w.knee - a) * f64::from(inv_room)).exp())
+                            * f64::from(w.room)
+                            + f64::from(w.knee)) as f32;
                         y.copysign(v)
                     } else {
                         v
@@ -569,7 +640,9 @@ mod tests {
     use super::*;
 
     fn sine(n: usize, amp: f32, rate: f64) -> Vec<f32> {
-        (0..n).map(|i| amp * (i as f64 * 2.0 * std::f64::consts::PI * 220.0 / rate).sin() as f32).collect()
+        (0..n)
+            .map(|i| amp * (i as f64 * 2.0 * std::f64::consts::PI * 220.0 / rate).sin() as f32)
+            .collect()
     }
 
     #[test]

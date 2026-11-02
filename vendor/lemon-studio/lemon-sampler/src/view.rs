@@ -13,15 +13,15 @@ use std::f32::consts::{PI, TAU};
 
 use os_dsp::tone::Tones;
 use os_engine::Sample;
+use os_theme::Palette;
 use os_theme::design::lemon as brand;
 use os_theme::waves::Waves;
-use os_theme::Palette;
 use os_ui::kit::lemon::{self, plug};
-use os_ui::kit::{self, inst, State};
+use os_ui::kit::{self, State, inst};
 use os_ui::tabler as tb;
 use os_ui::{Canvas, Color, Font, Rect};
 
-use crate::params::{self, note_name, KEY_MAX};
+use crate::params::{self, KEY_MAX, note_name};
 
 /// Painted size in logical pixels (FL's window minus its title bar).
 pub const W: u32 = 568;
@@ -138,7 +138,11 @@ impl Target {
     /// The parameter a target edits (middle click resets it).
     pub fn param(&self) -> Option<&str> {
         match self {
-            Target::Knob(s) | Target::Toggle(s) | Target::Set(s, _) | Target::List(s) | Target::Slider(s, _) => Some(s),
+            Target::Knob(s)
+            | Target::Toggle(s)
+            | Target::Set(s, _)
+            | Target::List(s)
+            | Target::Slider(s, _) => Some(s),
             Target::ReverbAb => Some("fx_reverb_type"),
             Target::Key(_) => Some("root"),
             Target::LoopHandle(0) => Some("loop_start"),
@@ -159,7 +163,9 @@ pub struct Hit {
 /// Greyed-out controls draw their disabled look and the editor only names them.
 pub fn off_name(t: &Target) -> Option<&'static str> {
     match t {
-        Target::Toggle(id) if matches!(id.as_str(), "resample" | "load_regions" | "load_slices") => {
+        Target::Toggle(id)
+            if matches!(id.as_str(), "resample" | "load_regions" | "load_slices") =>
+        {
             Some(hint_text(id).unwrap_or("This option"))
         }
         Target::EnvMenu => Some("Channel envelope presets"),
@@ -231,10 +237,20 @@ pub struct Frames<'a> {
 
 impl<'a> Frames<'a> {
     pub fn all(s: &'a Sample) -> Frames<'a> {
-        Frames { left: &s.left, right: &s.right, first: 0, step: 1 }
+        Frames {
+            left: &s.left,
+            right: &s.right,
+            first: 0,
+            step: 1,
+        }
     }
 
-    pub const NONE: Frames<'static> = Frames { left: &[], right: &[], first: 0, step: 1 };
+    pub const NONE: Frames<'static> = Frames {
+        left: &[],
+        right: &[],
+        first: 0,
+        step: 1,
+    };
 
     /// Frame `j` (or the one before it that is kept), both sides.
     fn at(&self, j: usize) -> Option<(f32, f32)> {
@@ -260,11 +276,19 @@ pub struct Wave<'a> {
 impl<'a> Wave<'a> {
     /// A sample in memory.
     pub fn of(s: &'a Sample) -> Wave<'a> {
-        Wave { frames: s.frames(), rate: s.rate, stereo: None, on_disk: false, near: Frames::all(s), whole: Frames::all(s) }
+        Wave {
+            frames: s.frames(),
+            rate: s.rate,
+            stereo: None,
+            on_disk: false,
+            near: Frames::all(s),
+            whole: Frames::all(s),
+        }
     }
 
     fn stereo(&self) -> bool {
-        self.stereo.unwrap_or_else(|| self.whole.left != self.whole.right)
+        self.stereo
+            .unwrap_or_else(|| self.whole.left != self.whole.right)
     }
 }
 
@@ -305,19 +329,42 @@ impl Ui<'_> {
     /// Hover / pressed look of a control occupying `r`; greyed-out controls (`works`) are disabled and never light up.
     fn state(&self, r: Rect, t: &Target) -> State {
         if !works(t) {
-            return State { disabled: true, ..State::NORMAL };
+            return State {
+                disabled: true,
+                ..State::NORMAL
+            };
         }
         let pressed = self.st.pressed.as_ref() == Some(t);
-        let hover = !pressed && self.st.pressed.is_none() && self.st.mouse.is_some_and(|(x, y)| r.contains(x, y));
-        State { hover, pressed, ..State::NORMAL }
+        let hover = !pressed
+            && self.st.pressed.is_none()
+            && self.st.mouse.is_some_and(|(x, y)| r.contains(x, y));
+        State {
+            hover,
+            pressed,
+            ..State::NORMAL
+        }
     }
 }
 
 /// Paints the editor. `hosted` = the host's strip row carries the page tabs and the hint line (host link, spec
 /// `plugins/host-link.md`): the plugin leaves that row out. Otherwise it draws its own tabs and `hint` (parameter name and
 /// value under the mouse) in the strip's free space.
-pub fn paint(c: &mut Canvas, t: &Palette, m: &dyn Model, st: &ViewState, sv: &SampleView, hint: &str, hosted: bool) -> Vec<Hit> {
-    let mut ui = Ui { c, t, m, st, hits: Vec::new() };
+pub fn paint(
+    c: &mut Canvas,
+    t: &Palette,
+    m: &dyn Model,
+    st: &ViewState,
+    sv: &SampleView,
+    hint: &str,
+    hosted: bool,
+) -> Vec<Hit> {
+    let mut ui = Ui {
+        c,
+        t,
+        m,
+        st,
+        hits: Vec::new(),
+    };
     ui.c.begin_frame(None);
     ui.c.clear(plug::BG);
     if !hosted {
@@ -325,7 +372,14 @@ pub fn paint(c: &mut Canvas, t: &Palette, m: &dyn Model, st: &ViewState, sv: &Sa
         if !hint.is_empty() {
             let lh = ui.c.line_height(LABEL);
             let (left, right) = hint.split_once('\t').unwrap_or((hint, ""));
-            ui.c.text_clip(LABEL, 100.0, (y(48.0) - lh / 2.0).round(), 300.0, plug::DIM, left);
+            ui.c.text_clip(
+                LABEL,
+                100.0,
+                (y(48.0) - lh / 2.0).round(),
+                300.0,
+                plug::DIM,
+                left,
+            );
             if !right.is_empty() {
                 ui.c.text_right(LABEL, 556.0, (y(48.0) - lh / 2.0).round(), plug::DIM, right);
             }
@@ -357,24 +411,63 @@ struct KnobLook {
 }
 
 /// Sample-page knobs.
-const BIG: KnobLook = KnobLook { r: 13.0, ring: 16.0 };
+const BIG: KnobLook = KnobLook {
+    r: 13.0,
+    ring: 16.0,
+};
 /// Envelope / LFO knobs.
-const MID: KnobLook = KnobLook { r: 11.5, ring: 13.5 };
+const MID: KnobLook = KnobLook {
+    r: 11.5,
+    ring: 13.5,
+};
 /// Tension knobs (no dot).
 const TINY: KnobLook = KnobLook { r: 8.0, ring: 10.0 };
 
 /// A knob with its value ring and caption (caption text top at `cy + 17.5`).
-fn knob(ui: &mut Ui, id: &str, cx: f32, cy: f32, look: KnobLook, accent: u32, bipolar: bool, caption: &str) {
+fn knob(
+    ui: &mut Ui,
+    id: &str,
+    cx: f32,
+    cy: f32,
+    look: KnobLook,
+    accent: u32,
+    bipolar: bool,
+    caption: &str,
+) {
     let cy = y(cy);
     let target = Target::Knob(id.into());
-    let hr = Rect::new(cx - look.ring - 2.0, cy - look.ring - 2.0, 2.0 * look.ring + 4.0, 2.0 * look.ring + 4.0);
+    let hr = Rect::new(
+        cx - look.ring - 2.0,
+        cy - look.ring - 2.0,
+        2.0 * look.ring + 4.0,
+        2.0 * look.ring + 4.0,
+    );
     let st = ui.state(hr, &target);
     // The loop END knob shows what it cuts off the end: no ring at the sample's end (FL capture t1_default).
-    let v = if id == "loop_end" { 1.0 - ui.m.norm(id) } else { ui.m.norm(id) };
-    inst::dial(ui.c, ui.t, cx, cy, look.r, look.ring, v, bipolar, self::accent(ui.t, accent), st);
+    let v = if id == "loop_end" {
+        1.0 - ui.m.norm(id)
+    } else {
+        ui.m.norm(id)
+    };
+    inst::dial(
+        ui.c,
+        ui.t,
+        cx,
+        cy,
+        look.r,
+        look.ring,
+        v,
+        bipolar,
+        self::accent(ui.t, accent),
+        st,
+    );
     if !caption.is_empty() {
         // The envelope AMT caption sits lower than the others (measured).
-        let dy = if id.starts_with("env") && id.ends_with("_amt") && !id.ends_with("lfo_amt") { 21.5 } else { 17.5 };
+        let dy = if id.starts_with("env") && id.ends_with("_amt") && !id.ends_with("lfo_amt") {
+            21.5
+        } else {
+            17.5
+        };
         inst::caption(ui.c, ui.t, cx, cy + dy, caption, st.disabled);
     }
     ui.hit(hr, target);
@@ -384,7 +477,11 @@ fn knob(ui: &mut Ui, id: &str, cx: f32, cy: f32, look: KnobLook, accent: u32, bi
 fn radio(ui: &mut Ui, id: &str, cx: f32, cy: f32, label: &str) {
     let on = ui.on(id);
     let cy = y(cy);
-    let lw = if label.is_empty() { 0.0 } else { ui.c.text_width(LABEL, label) + 4.0 };
+    let lw = if label.is_empty() {
+        0.0
+    } else {
+        ui.c.text_width(LABEL, label) + 4.0
+    };
     let r = Rect::new(cx - 8.0, cy - 8.0, 16.0 + lw, 16.0);
     let target = Target::Toggle(id.into());
     let st = ui.state(r, &target);
@@ -410,7 +507,11 @@ fn label(ui: &mut Ui, x: f32, cy: f32, s: &str) -> f32 {
 
 /// A Tabler icon centred on (`cx`, `cy`), `size` px square.
 fn icon(c: &mut Canvas, t: &tb::TablerIcon, cx: f32, cy: f32, size: f32, col: Color) {
-    c.icon(t, Rect::new(cx - size / 2.0, cy - size / 2.0, size, size), col);
+    c.icon(
+        t,
+        Rect::new(cx - size / 2.0, cy - size / 2.0, size, size),
+        col,
+    );
 }
 
 /// The page icons the host draws in its strip (same ids as `os_hostlink::PageIcon`).
@@ -425,8 +526,27 @@ pub fn page_icon(c: &mut Canvas, page: u8, cx: f32, cy: f32, col: Color) {
 // Tab strip (only when no host draws it)
 
 fn tab_strip(ui: &mut Ui) {
-    let hover = (0..2u8).find(|&i| ui.state(rr(5.0 + 43.0 * f32::from(i), 49.0 + 43.0 * f32::from(i), 26.0, 71.0), &Target::Tab(i)).hover);
-    lemon::page_strip(ui.c, rr(4.0, 563.0, 25.0, 71.0), 2, ui.st.tab, hover, &|i| 5.0 + 43.0 * f32::from(i), &mut |c, i, x, yy, col| page_icon(c, i, x, yy, col));
+    let hover = (0..2u8).find(|&i| {
+        ui.state(
+            rr(
+                5.0 + 43.0 * f32::from(i),
+                49.0 + 43.0 * f32::from(i),
+                26.0,
+                71.0,
+            ),
+            &Target::Tab(i),
+        )
+        .hover
+    });
+    lemon::page_strip(
+        ui.c,
+        rr(4.0, 563.0, 25.0, 71.0),
+        2,
+        ui.st.tab,
+        hover,
+        &|i| 5.0 + 43.0 * f32::from(i),
+        &mut |c, i, x, yy, col| page_icon(c, i, x, yy, col),
+    );
     for i in 0..2u8 {
         let x0 = 5.0 + 43.0 * f32::from(i);
         ui.hit(rr(x0, x0 + 44.0, 26.0, 71.0), Target::Tab(i));
@@ -463,12 +583,27 @@ fn sample_tab(ui: &mut Ui, sv: &SampleView) {
         let r = rr(x0, x1, 85.0, 107.0);
         let st = ui.state(r, &target);
         if st.hover || st.pressed {
-            ui.c.fill_rrect(r.inset(1.0), 4.0, if st.pressed { Color::rgb(0x1f1f1f) } else { Color::rgb(0x353535) });
+            ui.c.fill_rrect(
+                r.inset(1.0),
+                4.0,
+                if st.pressed {
+                    Color::rgb(0x1f1f1f)
+                } else {
+                    Color::rgb(0x353535)
+                },
+            );
         }
         if x0 > 205.0 {
             ui.c.fill_rect(rr(x0 - 1.0, x0 - 1.0, 88.0, 104.0), plug::FIELD_LINE);
         }
-        icon(ui.c, ic, r.cx(), r.cy(), size, if st.hover { brand::MAIN } else { brand::TEXT });
+        icon(
+            ui.c,
+            ic,
+            r.cx(),
+            r.cy(),
+            size,
+            if st.hover { brand::MAIN } else { brand::TEXT },
+        );
         ui.hit(r, target);
     }
 
@@ -481,10 +616,26 @@ fn sample_tab(ui: &mut Ui, sv: &SampleView) {
     list(ui, "declick", 124.0, 270.0, 199.0, 219.0);
 
     panel(ui, 11.0, 280.0, 239.0, 319.0, 69.0, "Playback");
-    knob(ui, "start_offset", 45.0, 286.0, BIG, ORANGE, false, "START OFFSET");
+    knob(
+        ui,
+        "start_offset",
+        45.0,
+        286.0,
+        BIG,
+        ORANGE,
+        false,
+        "START OFFSET",
+    );
     knob(ui, "loop_start", 98.0, 286.0, BIG, ORANGE, false, "START");
     knob(ui, "loop_end", 140.0, 286.0, BIG, ORANGE, false, "END");
-    icon(ui.c, &tb::ROTATE_CLOCKWISE_2, 119.0, y(286.0) + 21.0, 11.0, brand::MAIN);
+    icon(
+        ui.c,
+        &tb::ROTATE_CLOCKWISE_2,
+        119.0,
+        y(286.0) + 21.0,
+        11.0,
+        brand::MAIN,
+    );
     radio(ui, "loop_use", 184.0, 274.0, "Use loop points");
     radio(ui, "loop_pingpong", 184.0, 294.0, "Ping pong loop");
 
@@ -514,13 +665,32 @@ fn sample_tab(ui: &mut Ui, sv: &SampleView) {
         } else if st.hover {
             ui.c.fill_rrect(face, 6.0, Color::rgb(0x3d3d3d));
         }
-        icon(ui.c, ic, x, y(172.0), 16.0, if on { brand::COLORED_DARK } else if st.hover { brand::TEXT } else { plug::DIM });
+        icon(
+            ui.c,
+            ic,
+            x,
+            y(172.0),
+            16.0,
+            if on {
+                brand::COLORED_DARK
+            } else if st.hover {
+                brand::TEXT
+            } else {
+                plug::DIM
+            },
+        );
         ui.hit(r, target);
     }
     // A panel title like the others.
     let f = LABEL.bold();
     let lh = ui.c.line_height(f);
-    ui.c.text(f, 337.0, (y(172.0) - lh / 2.0).round(), brand::TEXT, "Precomputed effects");
+    ui.c.text(
+        f,
+        337.0,
+        (y(172.0) - lh / 2.0).round(),
+        brand::TEXT,
+        "Precomputed effects",
+    );
     if ui.st.fx_page == 0 {
         radio(ui, "fx_dc", 302.0, 199.0, "Remove DC offset");
         radio(ui, "fx_normalize", 302.0, 221.0, "Normalize");
@@ -540,15 +710,37 @@ fn sample_tab(ui: &mut Ui, sv: &SampleView) {
         }
     } else {
         // BOOST + CLIP share a darker group box.
-        lemon::outlined(ui.c, rr(291.0, 334.0, 187.0, 255.0), 8.0, plug::PANEL_LINE, Color::rgb(0x2d2d2d));
+        lemon::outlined(
+            ui.c,
+            rr(291.0, 334.0, 187.0, 255.0),
+            8.0,
+            plug::PANEL_LINE,
+            Color::rgb(0x2d2d2d),
+        );
         knob(ui, "fx_boost", 312.5, 206.5, BIG, ORANGE, false, "BOOST");
         radio(ui, "fx_clip", 302.0, 246.0, "");
         let lh = ui.c.line_height(CAP);
-        inst::caption_at(ui.c, 311.0, (y(246.0) - lh / 2.0).round(), plug::DIM, "CLIP", inst::CAPTION_TRACK);
+        inst::caption_at(
+            ui.c,
+            311.0,
+            (y(246.0) - lh / 2.0).round(),
+            plug::DIM,
+            "CLIP",
+            inst::CAPTION_TRACK,
+        );
         ui.hits.last_mut().unwrap().r.w += 30.0;
         knob(ui, "fx_eq", 355.0, 206.5, BIG, ORANGE, true, "EQ");
         knob(ui, "fx_rm_mix", 403.0, 206.5, BIG, ORANGE, false, "RM MIX");
-        knob(ui, "fx_rm_freq", 442.5, 206.5, BIG, ORANGE, false, "RM FREQ");
+        knob(
+            ui,
+            "fx_rm_freq",
+            442.5,
+            206.5,
+            BIG,
+            ORANGE,
+            false,
+            "RM FREQ",
+        );
         knob(ui, "fx_cut", 493.5, 206.5, BIG, ORANGE, false, "CUT");
         knob(ui, "fx_res", 533.5, 206.5, BIG, ORANGE, false, "RES");
         let ab = rr(303.0, 315.0, 271.0, 296.0);
@@ -558,7 +750,16 @@ fn sample_tab(ui: &mut Ui, sv: &SampleView) {
         ui.hit(Rect::new(ab.x - 2.0, ab.y - 2.0, 28.0, ab.h + 4.0), target);
         knob(ui, "fx_reverb", 355.0, 283.5, BIG, ORANGE, false, "");
         inst::caption(ui.c, t, 342.0, y(283.5) + 17.5, "REVERB", false);
-        knob(ui, "fx_sdelay", 403.0, 283.5, BIG, ORANGE, true, "STEREO DELAY");
+        knob(
+            ui,
+            "fx_sdelay",
+            403.0,
+            283.5,
+            BIG,
+            ORANGE,
+            true,
+            "STEREO DELAY",
+        );
         knob(ui, "fx_pogo", 533.5, 283.5, BIG, ORANGE, true, "POGO");
     }
 
@@ -621,40 +822,97 @@ fn waveform(ui: &mut Ui, sv: &SampleView) {
     let lh_s = ui.c.line_height(small);
     let wy = y(328.0) + 15.0;
     let bx = 547.0 - wb;
-    lemon::spaced(ui.c, big, bx, (wy - lh_b / 2.0).round(), Color::rgb(0xffffff).with_alpha(82), "SAMPLER", 2.0);
+    lemon::spaced(
+        ui.c,
+        big,
+        bx,
+        (wy - lh_b / 2.0).round(),
+        Color::rgb(0xffffff).with_alpha(82),
+        "SAMPLER",
+        2.0,
+    );
     let sx = bx - 8.0 - ws;
-    lemon::spaced(ui.c, small, sx, (wy - lh_s / 2.0).round() + 1.0, brand::MAIN, "LEMON", 2.5);
+    lemon::spaced(
+        ui.c,
+        small,
+        sx,
+        (wy - lh_s / 2.0).round() + 1.0,
+        brand::MAIN,
+        "LEMON",
+        2.5,
+    );
     lemon::lemon_mark(ui.c, sx - 8.0, wy, 4.0, brand::MAIN);
     // Overview bar: an outlined strip with arrows at both ends and the visible range as a lighter thumb.
     let ov = overview_track();
-    lemon::outlined(ui.c, rr(12.0, 555.0, 437.0, 453.0), 6.0, Color::rgb(0x1a1a1a), Color::rgb(0x232323));
+    lemon::outlined(
+        ui.c,
+        rr(12.0, 555.0, 437.0, 453.0),
+        6.0,
+        Color::rgb(0x1a1a1a),
+        Color::rgb(0x232323),
+    );
     for (x, dir) in [(19.5, -1i8), (548.5, 1)] {
         let r = Rect::new(x - 7.0, y(437.0), 15.0, 17.0);
         let target = Target::WaveArrow(dir);
         let st = ui.state(r, &target);
-        let col = if st.hover { brand::MAIN } else { Color::rgb(0x8a8a8a) };
-        kit::chevron(ui.c, x, y(445.5), 3.5, if dir < 0 { kit::Dir::Left } else { kit::Dir::Right }, col);
+        let col = if st.hover {
+            brand::MAIN
+        } else {
+            Color::rgb(0x8a8a8a)
+        };
+        kit::chevron(
+            ui.c,
+            x,
+            y(445.5),
+            3.5,
+            if dir < 0 {
+                kit::Dir::Left
+            } else {
+                kit::Dir::Right
+            },
+            col,
+        );
         ui.hit(r, target);
     }
     {
         let (a, b) = thumb_span(ui.st, ov);
         let st = ui.state(ov, &Target::Overview(ov));
-        ui.c.fill_rrect(Rect::new(a, ov.y + 2.0, b - a, ov.h - 4.0), 5.0, if st.hover || st.pressed { Color::rgb(0x474747) } else { Color::rgb(0x3d3d3d) });
+        ui.c.fill_rrect(
+            Rect::new(a, ov.y + 2.0, b - a, ov.h - 4.0),
+            5.0,
+            if st.hover || st.pressed {
+                Color::rgb(0x474747)
+            } else {
+                Color::rgb(0x3d3d3d)
+            },
+        );
     }
     ui.hit(ov, Target::Overview(ov));
     ui.hit(area, Target::Wave(area));
     let Some(s) = sv.sample else {
-        ui.c.fill_rect(Rect::new(area.x + 1.0, area.cy().round(), area.w - 2.0, 1.0), Color::rgb(0x3a3a3a));
+        ui.c.fill_rect(
+            Rect::new(area.x + 1.0, area.cy().round(), area.w - 2.0, 1.0),
+            Color::rgb(0x3a3a3a),
+        );
         return;
     };
     let n = s.frames;
     let (v0, vl) = wave_range(ui.st, n);
     let fx = |f: f64| area.x + ((f - v0) / vl) as f32 * area.w;
-    let looped = ui.on("loop_use") && (ui.m.norm("loop_start") > 0.0 || ui.m.norm("loop_end") < 1.0);
+    let looped =
+        ui.on("loop_use") && (ui.m.norm("loop_start") > 0.0 || ui.m.norm("loop_end") < 1.0);
     if looped {
         // The loop region behind the wave.
-        let (a, b) = (fx(f64::from(ui.m.norm("loop_start")) * n as f64), fx(f64::from(ui.m.norm("loop_end")) * n as f64));
-        let r = Rect::new(a.max(area.x), area.y, (b.min(area.right()) - a.max(area.x)).max(0.0), area.h);
+        let (a, b) = (
+            fx(f64::from(ui.m.norm("loop_start")) * n as f64),
+            fx(f64::from(ui.m.norm("loop_end")) * n as f64),
+        );
+        let r = Rect::new(
+            a.max(area.x),
+            area.y,
+            (b.min(area.right()) - a.max(area.x)).max(0.0),
+            area.h,
+        );
         ui.c.fill_rect(r, brand::MAIN.with_alpha(12));
     }
     let wave = Color::rgb(0xc9c9c9);
@@ -665,17 +923,56 @@ fn waveform(ui: &mut Ui, sv: &SampleView) {
     } else if ui.st.multichannel {
         let top = Rect::new(area.x, area.y, area.w, area.h / 2.0);
         let bot = Rect::new(area.x, area.y + area.h / 2.0, area.w, area.h / 2.0);
-        ui.c.fill_rect(Rect::new(area.x, bot.y.round(), area.w, 1.0), plug::WELL_LINE);
-        wave_line(ui.c, &s.near, Side::Left, n, top, (v0, vl), top.h * 0.5, wave, 1.4, sv.tones);
-        wave_line(ui.c, &s.near, Side::Right, n, bot, (v0, vl), bot.h * 0.5, wave, 1.4, sv.tones);
+        ui.c.fill_rect(
+            Rect::new(area.x, bot.y.round(), area.w, 1.0),
+            plug::WELL_LINE,
+        );
+        wave_line(
+            ui.c,
+            &s.near,
+            Side::Left,
+            n,
+            top,
+            (v0, vl),
+            top.h * 0.5,
+            wave,
+            1.4,
+            sv.tones,
+        );
+        wave_line(
+            ui.c,
+            &s.near,
+            Side::Right,
+            n,
+            bot,
+            (v0, vl),
+            bot.h * 0.5,
+            wave,
+            1.4,
+            sv.tones,
+        );
     } else {
-        wave_line(ui.c, &s.near, Side::Mid, n, area, (v0, vl), area.h * 0.5, wave, 1.8, sv.tones);
+        wave_line(
+            ui.c,
+            &s.near,
+            Side::Mid,
+            n,
+            area,
+            (v0, vl),
+            area.h * 0.5,
+            wave,
+            1.8,
+            sv.tones,
+        );
     }
     let off = f64::from(ui.m.norm("start_offset")) * n as f64;
     if off > 0.0 {
         let x = fx(off).round();
         if x >= area.x && x <= area.right() {
-            ui.c.fill_rect(Rect::new(x, area.y, 1.0, area.h), brand::HIGHLIGHT.with_alpha(170));
+            ui.c.fill_rect(
+                Rect::new(x, area.y, 1.0, area.h),
+                brand::HIGHLIGHT.with_alpha(170),
+            );
         }
     }
     if looped {
@@ -687,24 +984,51 @@ fn waveform(ui: &mut Ui, sv: &SampleView) {
             let target = Target::LoopHandle(i);
             let hr = Rect::new(x - 3.0, area.y, 7.0, area.h);
             let st = ui.state(hr, &target);
-            let col = if st.hover || st.pressed { brand::HIGHLIGHT } else { brand::MAIN };
+            let col = if st.hover || st.pressed {
+                brand::HIGHLIGHT
+            } else {
+                brand::MAIN
+            };
             ui.c.push_clip(area);
             ui.c.fill_rect(Rect::new(x, area.y, 1.0, area.h), col);
-            let tri = if i == 0 { [(x + 1.0, area.y), (x + 8.0, area.y), (x + 1.0, area.y + 7.0)] } else { [(x, area.y), (x - 7.0, area.y), (x, area.y + 7.0)] };
+            let tri = if i == 0 {
+                [
+                    (x + 1.0, area.y),
+                    (x + 8.0, area.y),
+                    (x + 1.0, area.y + 7.0),
+                ]
+            } else {
+                [(x, area.y), (x - 7.0, area.y), (x, area.y + 7.0)]
+            };
             ui.c.fill_polygon(&tri, col);
             ui.c.pop_clip();
             ui.hit(hr, target);
         }
     }
     let inner = Rect::new(ov.x + 1.0, ov.y, ov.w - 2.0, ov.h);
-    wave_line(ui.c, &s.whole, Side::Mid, n, inner, (0.0, n as f64), ov.h * 0.42, Color::rgb(0x9a9a9a), 1.3, sv.tones);
+    wave_line(
+        ui.c,
+        &s.whole,
+        Side::Mid,
+        n,
+        inner,
+        (0.0, n as f64),
+        ov.h * 0.42,
+        Color::rgb(0x9a9a9a),
+        1.3,
+        sv.tones,
+    );
     // Bit depth and channel readout on a dark chip.
     let bits = format!("{}", sv.bits & 0xff);
     let zw = ui.c.text_width(LABEL, &bits);
     let info = Rect::new(526.0 - zw, y(418.0), zw + 30.0, 16.0);
     let st = ui.state(info, &Target::WaveInfo);
     ui.c.fill_rrect(info, 4.0, Color::rgb(0x000000).with_alpha(115));
-    let col = if st.hover { brand::MAIN } else { Color::rgb(0xd0d0d0) };
+    let col = if st.hover {
+        brand::MAIN
+    } else {
+        Color::rgb(0xd0d0d0)
+    };
     let lh = ui.c.line_height(LABEL);
     ui.c.text(LABEL, 537.0 - zw, (y(426.5) - lh / 2.0).round(), col, &bits);
     ui.c.stroke_rrect(rr(541.0, 551.0, 423.0, 430.0).inset(0.5), 2.0, 1.2, col);
@@ -725,7 +1049,18 @@ enum Side {
 /// device-pixel column of the line takes the colour of the frames it shows; silence keeps `col` (spec:
 /// ui/settings-choices.md "Display: Colorful waveforms (2026-10-16)").
 #[allow(clippy::too_many_arguments)]
-fn wave_line(c: &mut Canvas, fr: &Frames, side: Side, n: usize, area: Rect, (v0, vl): (f64, f64), amp: f32, col: Color, width: f32, tones: Option<(&Tones, &Waves)>) {
+fn wave_line(
+    c: &mut Canvas,
+    fr: &Frames,
+    side: Side,
+    n: usize,
+    area: Rect,
+    (v0, vl): (f64, f64),
+    amp: f32,
+    col: Color,
+    width: f32,
+    tones: Option<(&Tones, &Waves)>,
+) {
     if n == 0 || vl <= 0.0 || fr.left.is_empty() {
         return;
     }
@@ -785,7 +1120,11 @@ pub fn spectrogram(s: &Sample, v0: f64, vl: f64, w: usize, h: usize) -> Vec<u32>
     spectrogram_by(n, s.rate, v0, vl, w, h, |start, mid| {
         for (i, m) in mid.iter_mut().enumerate() {
             let j = start + i as i64;
-            *m = if j >= 0 && (j as usize) < n { 0.5 * (s.left[j as usize] + s.right[j as usize]) } else { 0.0 };
+            *m = if j >= 0 && (j as usize) < n {
+                0.5 * (s.left[j as usize] + s.right[j as usize])
+            } else {
+                0.0
+            };
         }
     })
 }
@@ -793,13 +1132,23 @@ pub fn spectrogram(s: &Sample, v0: f64, vl: f64, w: usize, h: usize) -> Vec<u32>
 /// [`spectrogram`] of a sample of `n` frames at `rate` whose frames `mid` gives: the mid of [`SPECTRUM_N`] frames from
 /// `start` (silence outside the sample). A sample that plays from disk reads them from its file.
 #[allow(clippy::too_many_arguments)]
-pub fn spectrogram_by(n: usize, rate: u32, v0: f64, vl: f64, w: usize, h: usize, mut mid: impl FnMut(i64, &mut [f32])) -> Vec<u32> {
+pub fn spectrogram_by(
+    n: usize,
+    rate: u32,
+    v0: f64,
+    vl: f64,
+    w: usize,
+    h: usize,
+    mut mid: impl FnMut(i64, &mut [f32]),
+) -> Vec<u32> {
     const N: usize = SPECTRUM_N;
     let mut out = vec![0u32; w * h];
     if n == 0 || w == 0 || h == 0 {
         return out;
     }
-    let hann: Vec<f32> = (0..N).map(|i| 0.5 - 0.5 * (2.0 * PI * i as f32 / N as f32).cos()).collect();
+    let hann: Vec<f32> = (0..N)
+        .map(|i| 0.5 - 0.5 * (2.0 * PI * i as f32 / N as f32).cos())
+        .collect();
     let mut frames = vec![0f32; N];
     let mut re = vec![0f32; N];
     let mut im = vec![0f32; N];
@@ -827,7 +1176,13 @@ pub fn spectrogram_by(n: usize, rate: u32, v0: f64, vl: f64, w: usize, h: usize,
 }
 
 fn heat(k: f32) -> u32 {
-    let stops = [(0.0, (0x1b, 0x1d, 0x1e)), (0.35, (0x1a, 0x2c, 0x5a)), (0.6, (0x8a, 0x32, 0x6a)), (0.8, (0xf0, 0x8a, 0x30)), (1.0, (0xff, 0xf4, 0xd0))];
+    let stops = [
+        (0.0, (0x1b, 0x1d, 0x1e)),
+        (0.35, (0x1a, 0x2c, 0x5a)),
+        (0.6, (0x8a, 0x32, 0x6a)),
+        (0.8, (0xf0, 0x8a, 0x30)),
+        (1.0, (0xff, 0xf4, 0xd0)),
+    ];
     for w in stops.windows(2) {
         let ((a, ca), (b, cb)) = (w[0], w[1]);
         if k <= b {
@@ -882,7 +1237,13 @@ fn envelope_tab(ui: &mut Ui) {
     let t = ui.t;
     let sub = ui.st.sub.min(4) as usize;
     // Measured text spans of the five target tabs (FL capture t2_*); our text is centred in each.
-    const SPANS: [(f32, f32); 5] = [(16.0, 55.0), (65.0, 103.0), (113.0, 145.0), (155.0, 187.0), (197.0, 220.0)];
+    const SPANS: [(f32, f32); 5] = [
+        (16.0, 55.0),
+        (65.0, 103.0),
+        (113.0, 145.0),
+        (155.0, 187.0),
+        (197.0, 220.0),
+    ];
     for (i, n) in TARGET_NAMES.iter().enumerate() {
         let w = ui.c.text_width(LABEL, n);
         let (x0, x1) = SPANS[i];
@@ -890,7 +1251,16 @@ fn envelope_tab(ui: &mut Ui) {
         let cell = rr(x0 - 5.0, x1 + 4.0, 78.0, 106.0);
         let target = Target::SubTab(i as u8);
         let st = ui.state(cell, &target);
-        lemon::text_tab(ui.c, cell, x, n, LABEL, t.a(TARGET_COLORS[i].1), sub == i, st);
+        lemon::text_tab(
+            ui.c,
+            cell,
+            x,
+            n,
+            LABEL,
+            t.a(TARGET_COLORS[i].1),
+            sub == i,
+            st,
+        );
         ui.hit(cell, target);
     }
     let p = ENV_PREFIX[sub];
@@ -906,7 +1276,13 @@ fn envelope_tab(ui: &mut Ui) {
         ui.hits.last_mut().map(|h| h.r.w += lw + 4.0);
         let mr = Rect::new(277.0, y(117.0), 14.0, 16.0);
         let st = ui.state(mr, &Target::EnvMenu);
-        let col = if st.disabled { plug::OFF } else if st.hover { brand::MAIN } else { plug::DIM };
+        let col = if st.disabled {
+            plug::OFF
+        } else if st.hover {
+            brand::MAIN
+        } else {
+            plug::DIM
+        };
         let mut g = os_ui::Glyph::new();
         let (ax, ay) = (284.0, y(126.0));
         g.polygon(&[(ax - 2.5, ay - 4.5), (ax + 3.0, ay), (ax - 2.5, ay + 4.5)]);
@@ -915,7 +1291,14 @@ fn envelope_tab(ui: &mut Ui) {
         let g = env_rect();
         inst::graph_bg(ui.c, g);
         env_graph(ui, g, p, t.a(line));
-        for (k, x, cap) in [("delay", 33.0, "DELAY"), ("att", 67.0, "ATT"), ("hold", 101.0, "HOLD"), ("dec", 135.0, "DEC"), ("sus", 169.0, "SUS"), ("rel", 203.0, "REL")] {
+        for (k, x, cap) in [
+            ("delay", 33.0, "DELAY"),
+            ("att", 67.0, "ATT"),
+            ("hold", 101.0, "HOLD"),
+            ("dec", 135.0, "DEC"),
+            ("sus", 169.0, "SUS"),
+            ("rel", 203.0, "REL"),
+        ] {
             knob(ui, &id(k), x, 243.0, MID, arc, false, cap);
         }
         if sub >= 2 {
@@ -947,7 +1330,12 @@ fn envelope_tab(ui: &mut Ui) {
     let lg = rr(311.0, 442.0, 140.0, 222.0);
     inst::graph_bg(ui.c, lg);
     lfo_graph(ui, lg, p, t.a(line));
-    for (k, x, cap) in [("lfo_delay", 326.0, "DELAY"), ("lfo_att", 359.0, "ATT"), ("lfo_amt", 393.0, "AMT"), ("lfo_speed", 427.0, "SPEED")] {
+    for (k, x, cap) in [
+        ("lfo_delay", 326.0, "DELAY"),
+        ("lfo_att", 359.0, "ATT"),
+        ("lfo_amt", 393.0, "AMT"),
+        ("lfo_speed", 427.0, "SPEED"),
+    ] {
         knob(ui, &id(k), x, 241.0, MID, arc, k == "lfo_amt", cap);
     }
     label(ui, 336.0, 292.0, "Tempo");
@@ -971,12 +1359,26 @@ fn envelope_tab(ui: &mut Ui) {
 fn lfo_icon(c: &mut Canvas, shape: usize, cx: f32, cy: f32, col: Color) {
     // One period of each wave (measured sizes: sine and triangle 13 x 11 px, pulse 11 x 9 px).
     let pts: Vec<(f32, f32)> = match shape {
-        0 => (0..=24).map(|i| {
-            let u = i as f32 / 24.0;
-            (cx - 6.0 + 12.0 * u, cy - 4.6 * (TAU * u).sin())
-        }).collect(),
-        1 => vec![(cx - 8.0, cy), (cx - 5.0, cy - 4.6), (cx + 1.0, cy + 4.6), (cx + 4.0, cy)],
-        _ => vec![(cx - 4.5, cy + 4.0), (cx - 4.5, cy - 3.5), (cx, cy - 3.5), (cx, cy + 3.5), (cx + 4.5, cy + 3.5), (cx + 4.5, cy - 4.0)],
+        0 => (0..=24)
+            .map(|i| {
+                let u = i as f32 / 24.0;
+                (cx - 6.0 + 12.0 * u, cy - 4.6 * (TAU * u).sin())
+            })
+            .collect(),
+        1 => vec![
+            (cx - 8.0, cy),
+            (cx - 5.0, cy - 4.6),
+            (cx + 1.0, cy + 4.6),
+            (cx + 4.0, cy),
+        ],
+        _ => vec![
+            (cx - 4.5, cy + 4.0),
+            (cx - 4.5, cy - 3.5),
+            (cx, cy - 3.5),
+            (cx, cy + 3.5),
+            (cx + 4.5, cy + 3.5),
+            (cx + 4.5, cy - 4.0),
+        ],
     };
     c.polyline(&pts, 1.4, col);
 }
@@ -1009,21 +1411,41 @@ pub fn env_rect() -> Rect {
 
 pub fn env_geom(m: &dyn Model, p: &str, g: Rect) -> EnvGeom {
     let n = |s: &str| m.norm(&format!("{p}_{s}"));
-    let (dl, at, ho, de, su, re) = (n("delay"), n("att"), n("hold"), n("dec"), n("sus"), n("rel"));
+    let (dl, at, ho, de, su, re) = (
+        n("delay"),
+        n("att"),
+        n("hold"),
+        n("dec"),
+        n("sus"),
+        n("rel"),
+    );
     // Stage lengths in knob units: decay falls (1 - sustain) of the range at full-scale speed, the release is not scaled.
     let units = [dl, at, ho, de * (1.0 - su), re];
     let total: f32 = units.iter().sum();
     let x0 = g.x + 1.0;
     let room = g.w - 4.0;
     // Too long for the graph: squeeze the whole curve (Lemon Studio choice).
-    let px = if total * ENV_PX > room && total > 0.0 { room / total } else { ENV_PX };
+    let px = if total * ENV_PX > room && total > 0.0 {
+        room / total
+    } else {
+        ENV_PX
+    };
     let mut x = [x0; 6];
     for i in 0..5 {
         x[i + 1] = x[i] + units[i] * px;
     }
     let has_amt = !matches!(p, "envpan" | "envvol");
-    let amp = if has_amt { ((n("amt") - 0.5) * 2.0).abs() } else { 1.0 };
-    EnvGeom { x, sus: su, amp, px }
+    let amp = if has_amt {
+        ((n("amt") - 0.5) * 2.0).abs()
+    } else {
+        1.0
+    };
+    EnvGeom {
+        x,
+        sus: su,
+        amp,
+        px,
+    }
 }
 
 /// The envelope of the current target: each stage's width follows its knob (decay scaled by the level it falls),
@@ -1053,7 +1475,16 @@ fn env_graph(ui: &mut Ui, g: Rect, p: &str, col: Color) {
     curve(xs, xe, su, 0.0, -tk(tension("rel_t")), &mut pts);
     ui.c.push_clip(g);
     ui.c.polyline(&pts, 1.8, col);
-    for (i, (x, yy)) in [(xd, lvl(0.0)), (xa, lvl(1.0)), (xh, lvl(1.0)), (xs, lvl(su)), (xe, lvl(0.0))].into_iter().enumerate() {
+    for (i, (x, yy)) in [
+        (xd, lvl(0.0)),
+        (xa, lvl(1.0)),
+        (xh, lvl(1.0)),
+        (xs, lvl(su)),
+        (xe, lvl(0.0)),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let target = Target::EnvPoint(i as u8);
         let hr = Rect::new(x - 5.0, yy - 5.0, 10.0, 10.0);
         let st = ui.state(hr, &target);
@@ -1085,7 +1516,13 @@ fn lfo_graph(ui: &mut Ui, g: Rect, p: &str, col: Color) {
     let pts: Vec<(f32, f32)> = (0..=g.w as usize)
         .map(|i| {
             let x = i as f32;
-            let env = if x < xd { 0.0 } else if xa > 0.0 { ((x - xd) / xa).min(1.0) } else { 1.0 };
+            let env = if x < xd {
+                0.0
+            } else if xa > 0.0 {
+                ((x - xd) / xa).min(1.0)
+            } else {
+                1.0
+            };
             let ph = (x / g.w * cycles).fract();
             let w = match shape {
                 0 => (2.0 * PI * ph).sin(),
@@ -1176,7 +1613,11 @@ pub fn key_rows() -> (f32, f32, f32, f32, f32, f32) {
 /// Key under a point of the keyboard (editor coordinates).
 pub fn key_at(st: &ViewState, x: f32, yy: f32) -> Option<i32> {
     let (_, kt, bb, kb, _, _) = key_rows();
-    let (kt, bb, kb) = if st.hand { (y(365.0), y(400.0), y(454.0)) } else { (kt, bb, kb) };
+    let (kt, bb, kb) = if st.hand {
+        (y(365.0), y(400.0), y(454.0))
+    } else {
+        (kt, bb, kb)
+    };
     if yy < kt || yy >= kb || x < KEYS_X || x >= KEYS_X + KEYS_W {
         return None;
     }
@@ -1215,7 +1656,16 @@ fn root_panel(ui: &mut Ui) {
         None => (ui.m.plain("zone_lo") as i32, ui.m.plain("zone_hi") as i32),
     };
     let zone = lo > 0 || hi < KEY_MAX;
-    let title = if zone { format!("Root note: {} / zone: {} to {}", note_name(root), note_name(lo), note_name(hi)) } else { format!("Root note: {}", note_name(root)) };
+    let title = if zone {
+        format!(
+            "Root note: {} / zone: {} to {}",
+            note_name(root),
+            note_name(lo),
+            note_name(hi)
+        )
+    } else {
+        format!("Root note: {}", note_name(root))
+    };
     let pr = panel(ui, 11.0, 556.0, 317.0, 453.0, 0.0, "");
     let tw = ui.c.text_width(LABEL, &title);
     inst::panel_tab(ui.c, t, pr, (tw + 16.0).max(98.0), &title);
@@ -1280,7 +1730,11 @@ fn keyboard(ui: &mut Ui, root: i32, lo: i32, hi: i32, zone: bool) {
         }
         let x = (ox + l).round();
         let r = Rect::new(x, kt, (ox + l + w).round() - x, kb - kt);
-        let (mut a, mut b) = if k.rem_euclid(12) == 0 { (ruler, ruler) } else { white_face(t, 0xbabec5) };
+        let (mut a, mut b) = if k.rem_euclid(12) == 0 {
+            (ruler, ruler)
+        } else {
+            white_face(t, 0xbabec5)
+        };
         if k == root {
             a = accent(t, 0x77a9e6);
             b = a;
@@ -1295,7 +1749,14 @@ fn keyboard(ui: &mut Ui, root: i32, lo: i32, hi: i32, zone: bool) {
         ui.c.fill_rect_gradient(r, a, b, 0.0);
         if k == root {
             // The root's column runs through the ruler.
-            ui.c.fill_rect(Rect::new(r.x, lt, r.w, kt - lt), if out(k) { dim(accent(t, 0x77a9e6)) } else { accent(t, 0x77a9e6) });
+            ui.c.fill_rect(
+                Rect::new(r.x, lt, r.w, kt - lt),
+                if out(k) {
+                    dim(accent(t, 0x77a9e6))
+                } else {
+                    accent(t, 0x77a9e6)
+                },
+            );
         }
         ui.hit(Rect::new(r.x, kt, r.w, kb - kt), Target::Key(k));
     }
@@ -1311,7 +1772,11 @@ fn keyboard(ui: &mut Ui, root: i32, lo: i32, hi: i32, zone: bool) {
         let x = (ox + l).round();
         let r = Rect::new(x, kt, w, bb - kt);
         let d = |c: Color| if out(k) { dim(c) } else { c };
-        let border = if k == root { accent(t, 0x235fc3) } else { t.s(0x2f3031) };
+        let border = if k == root {
+            accent(t, 0x235fc3)
+        } else {
+            t.s(0x2f3031)
+        };
         ui.c.fill_rect(r, d(border));
         let (top, bot) = if k == root {
             (accent(t, 0x5785d2), accent(t, 0x77a9e6))
@@ -1320,9 +1785,20 @@ fn keyboard(ui: &mut Ui, root: i32, lo: i32, hi: i32, zone: bool) {
         } else {
             (t.s(0x3a3b3c), t.s(0x555657))
         };
-        ui.c.fill_rect_gradient(Rect::new(x + 1.0, kt + 1.0, w - 3.0, 24.0), d(top), d(bot), 0.0);
-        ui.c.fill_rect(Rect::new(x + 1.0, kt + 1.0, 1.0, bb - kt - 4.0), d(t.s(0x404142)));
-        ui.c.fill_rect(Rect::new(x + 1.0, kt + 36.0, w - 3.0, 1.0), d(t.s(0x575859)));
+        ui.c.fill_rect_gradient(
+            Rect::new(x + 1.0, kt + 1.0, w - 3.0, 24.0),
+            d(top),
+            d(bot),
+            0.0,
+        );
+        ui.c.fill_rect(
+            Rect::new(x + 1.0, kt + 1.0, 1.0, bb - kt - 4.0),
+            d(t.s(0x404142)),
+        );
+        ui.c.fill_rect(
+            Rect::new(x + 1.0, kt + 36.0, w - 3.0, 1.0),
+            d(t.s(0x575859)),
+        );
         ui.c.fill_rect(Rect::new(x, bb, w + 1.0, 1.0), d(t.tx(0xa2a5ab)));
         ui.hit(r, Target::Key(k));
     }
@@ -1349,7 +1825,13 @@ fn keyboard(ui: &mut Ui, root: i32, lo: i32, hi: i32, zone: bool) {
         if x + 20.0 < KEYS_X || x > KEYS_X + KEYS_W {
             continue;
         }
-        let col = if k == root { accent(t, 0x225cc3) } else if out(k) { t.s(0x6a6e74) } else { t.s(0x6a6e74) };
+        let col = if k == root {
+            accent(t, 0x225cc3)
+        } else if out(k) {
+            t.s(0x6a6e74)
+        } else {
+            t.s(0x6a6e74)
+        };
         ui.c.text(f, x.round() + 2.0, ty, col, &note_name(k));
     }
     if zone {
@@ -1369,12 +1851,35 @@ fn keyboard(ui: &mut Ui, root: i32, lo: i32, hi: i32, zone: bool) {
     let tx = track.x + (track.w - tw) * (ui.st.key_scroll / keyboard_max_scroll(false).max(1.0));
     let target = Target::KeyScroll(track);
     let st = ui.state(sb, &target);
-    ui.c.fill_rrect(Rect::new(tx, sb.cy() - 1.5, tw, 3.0), 1.5, if st.hover || st.pressed { t.s(0x161718) } else { t.s(0x252628) });
+    ui.c.fill_rrect(
+        Rect::new(tx, sb.cy() - 1.5, tw, 3.0),
+        1.5,
+        if st.hover || st.pressed {
+            t.s(0x161718)
+        } else {
+            t.s(0x252628)
+        },
+    );
     for (x, dir) in [(19.0, -1i8), (549.0, 1)] {
         let r = Rect::new(x - 7.0, sb.y, 14.0, sb.h);
         let st = ui.state(r, &Target::KeyArrow(dir));
-        let col = if st.hover { t.s(0x0c0d0e) } else { t.s(0x1e1f21) };
-        kit::chevron(ui.c, x, sb.cy(), 3.0, if dir < 0 { kit::Dir::Left } else { kit::Dir::Right }, col);
+        let col = if st.hover {
+            t.s(0x0c0d0e)
+        } else {
+            t.s(0x1e1f21)
+        };
+        kit::chevron(
+            ui.c,
+            x,
+            sb.cy(),
+            3.0,
+            if dir < 0 {
+                kit::Dir::Left
+            } else {
+                kit::Dir::Right
+            },
+            col,
+        );
         ui.hit(r, Target::KeyArrow(dir));
     }
     ui.hit(track, target);
@@ -1420,8 +1925,17 @@ fn hand_keyboard(ui: &mut Ui, root: i32) {
             white_face(t, 0xc4c8cf)
         };
         ui.c.fill_rect_gradient(r, a, b, 0.0);
-        let col = if k == root { accent(t, 0x235fc3) } else { t.s(0x6a6e74) };
-        ui.c.text_center(f, Rect::new(r.x, kb - 20.0 - lh / 2.0 + 6.0, r.w, lh), col, &note_name(k));
+        let col = if k == root {
+            accent(t, 0x235fc3)
+        } else {
+            t.s(0x6a6e74)
+        };
+        ui.c.text_center(
+            f,
+            Rect::new(r.x, kb - 20.0 - lh / 2.0 + 6.0, r.w, lh),
+            col,
+            &note_name(k),
+        );
         ui.hit(r, Target::Key(k));
     }
     for k in 0..KEY_COUNT {
@@ -1442,8 +1956,16 @@ fn hand_keyboard(ui: &mut Ui, root: i32) {
             (t.s(0x1a1b1c), t.s(0x2f3031))
         };
         ui.c.fill_rect(r, edge);
-        ui.c.fill_rect_gradient(Rect::new(r.x + 2.0, r.y, r.w - 4.0, r.h - 4.0), face.mix(Color::rgb(0x505152), 0.15), face, 0.0);
-        ui.c.fill_rect(Rect::new(r.x + 2.0, r.bottom() - 4.0, r.w - 4.0, 1.0), t.s(0x3c3d3e));
+        ui.c.fill_rect_gradient(
+            Rect::new(r.x + 2.0, r.y, r.w - 4.0, r.h - 4.0),
+            face.mix(Color::rgb(0x505152), 0.15),
+            face,
+            0.0,
+        );
+        ui.c.fill_rect(
+            Rect::new(r.x + 2.0, r.bottom() - 4.0, r.w - 4.0, 1.0),
+            t.s(0x3c3d3e),
+        );
         ui.hit(r, Target::Key(k));
     }
     ui.c.pop_clip();
@@ -1454,7 +1976,11 @@ fn hand_keyboard(ui: &mut Ui, root: i32) {
 
 /// FL's hint label of a parameter (the text before ": value").
 pub fn hint_label(id: &str) -> Option<&'static str> {
-    let suffix = if id.starts_with("env") { id.split_once('_').map_or(id, |(_, s)| s) } else { id };
+    let suffix = if id.starts_with("env") {
+        id.split_once('_').map_or(id, |(_, s)| s)
+    } else {
+        id
+    };
     Some(match suffix {
         "start_offset" => "Sample start offset",
         "loop_start" => "Loop start position",
@@ -1498,7 +2024,11 @@ pub fn hint_label(id: &str) -> Option<&'static str> {
 
 /// Description hints of switches and lists (no value shown).
 fn hint_text(id: &str) -> Option<&'static str> {
-    let suffix = if id.starts_with("env") { id.split_once('_').map_or(id, |(_, s)| s) } else { id };
+    let suffix = if id.starts_with("env") {
+        id.split_once('_').map_or(id, |(_, s)| s)
+    } else {
+        id
+    };
     Some(match suffix {
         "keep_disk" => "Stream sample from hard disk when possible",
         "resample" => "Upsample to mixing frequency",
@@ -1550,7 +2080,9 @@ pub fn hint(t: &Target, m: &dyn Model, st: &ViewState, sv: &SampleView, x: f32, 
         return format!("{name}: not available yet");
     }
     match t {
-        Target::Knob(id) | Target::Toggle(id) | Target::List(id) | Target::Slider(id, _) => param_hint(m, id),
+        Target::Knob(id) | Target::Toggle(id) | Target::List(id) | Target::Slider(id, _) => {
+            param_hint(m, id)
+        }
         Target::Set(id, v) if id.ends_with("lfo_shape") => match *v as i32 {
             0 => "Shape: sine".into(),
             1 => "Shape: triangle".into(),
@@ -1567,7 +2099,9 @@ pub fn hint(t: &Target, m: &dyn Model, st: &ViewState, sv: &SampleView, x: f32, 
         Target::FileOpen => "Load sample file... / Sample history".into(),
         Target::FileBrowse => "Locate sample in browser".into(),
         Target::FileClear => "Remove sample".into(),
-        Target::Key(_) | Target::Ruler | Target::KeyScroll(_) | Target::KeyArrow(_) => "Select range & offset".into(),
+        Target::Key(_) | Target::Ruler | Target::KeyScroll(_) | Target::KeyArrow(_) => {
+            "Select range & offset".into()
+        }
         Target::RootReset => "Default layer properties".into(),
         Target::Hand => "Multi-touch preview keyboard".into(),
         Target::EnvMenu => "Channel envelope presets".into(),
@@ -1580,7 +2114,11 @@ pub fn hint(t: &Target, m: &dyn Model, st: &ViewState, sv: &SampleView, x: f32, 
                 let f = v0 + f64::from((x - area.x) / area.w) * vl;
                 let (cy, amp) = if st.multichannel {
                     let half = area.h / 2.0;
-                    if yy < area.y + half { (area.y + half / 2.0, half / 2.0) } else { (area.y + half * 1.5, half / 2.0) }
+                    if yy < area.y + half {
+                        (area.y + half / 2.0, half / 2.0)
+                    } else {
+                        (area.y + half * 1.5, half / 2.0)
+                    }
                 } else {
                     (area.cy(), area.h / 2.0)
                 };
@@ -1597,7 +2135,12 @@ pub fn hint(t: &Target, m: &dyn Model, st: &ViewState, sv: &SampleView, x: f32, 
                 let kind = if sv.bits & 0x100 != 0 { "float" } else { "int" };
                 let sides = if s.stereo() { "stereo" } else { "mono" };
                 let place = if s.on_disk { "on disk" } else { "in RAM" };
-                format!("{}Hz, {}Bit {kind} {sides}, {}, {place}", s.rate, sv.bits & 0xff, time_ms(s.frames as f64, s.rate))
+                format!(
+                    "{}Hz, {}Bit {kind} {sides}, {}, {place}",
+                    s.rate,
+                    sv.bits & 0xff,
+                    time_ms(s.frames as f64, s.rate)
+                )
             }
             None => String::new(),
         },

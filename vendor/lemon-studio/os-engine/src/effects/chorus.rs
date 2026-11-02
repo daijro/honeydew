@@ -30,8 +30,20 @@ pub const WET_ONLY: usize = 11;
 
 /// The knobs' ranges (spec "Settings"). A stored value outside its range acts as the end it passes (the knob's
 /// position is kept within 0..1).
-pub const RANGES: [(i32, i32); PARAMS] =
-    [(0, 1024), (0, 5000), (0, 1024), (0, 5000), (0, 5000), (0, 5000), (0, 1024), (0, 1024), (0, 1024), (0, 100), (0, 5000), (0, 1024)];
+pub const RANGES: [(i32, i32); PARAMS] = [
+    (0, 1024),
+    (0, 5000),
+    (0, 1024),
+    (0, 5000),
+    (0, 5000),
+    (0, 5000),
+    (0, 1024),
+    (0, 1024),
+    (0, 1024),
+    (0, 100),
+    (0, 5000),
+    (0, 1024),
+];
 
 /// What a new Fruity Chorus holds (spec "Settings", the Default column). FL's "Default" preset differs in LFO 1's wave
 /// only (0 instead of 23: the same shape).
@@ -73,7 +85,11 @@ impl Settings {
     pub fn from_state(b: &[u8]) -> Option<Settings> {
         let version = super::field(b, 0)?;
         let v: [i32; PARAMS] = super::ints(b, 1)?;
-        Some(if version > VERSION { Settings::default() } else { Settings { v } })
+        Some(if version > VERSION {
+            Settings::default()
+        } else {
+            Settings { v }
+        })
     }
 
     /// The saved state (52 bytes).
@@ -189,10 +205,18 @@ pub fn tables() -> &'static [[u32; LINE]; 4] {
         let norm = 2.0 * 2f64.sqrt() + 1.0;
         for i in 0..LINE {
             let x = (i as f64 / 2048.0) as f32;
-            let arc = if x < 1.0 { x * 4.0 * (1.0 - x) } else { (x - 1.0) * -4.0 * (2.0 - x) };
+            let arc = if x < 1.0 {
+                x * 4.0 * (1.0 - x)
+            } else {
+                (x - 1.0) * -4.0 * (2.0 - x)
+            };
             let d = f64::from(x);
-            let sines = (((PI * d).sin() + ((3.0 * PI * d).sin() + (TAU * d).sin()) * third) * 3.0 / norm) as f32;
-            for (k, v) in [arc, arc * arc * arc, sines, sines * sines * sines].into_iter().enumerate() {
+            let sines = (((PI * d).sin() + ((3.0 * PI * d).sin() + (TAU * d).sin()) * third) * 3.0
+                / norm) as f32;
+            for (k, v) in [arc, arc * arc * arc, sines, sines * sines * sines]
+                .into_iter()
+                .enumerate()
+            {
                 t[k][i] = trunc(f64::from((v + 1.0) * 16383.0));
             }
         }
@@ -323,7 +347,8 @@ impl Chorus {
             let table = &t[w.shape[k]];
             let i = self.phase[k] >> 12;
             off[0][k] = table[(i & MASK) as usize].wrapping_mul(w.depth) >> 9;
-            off[1][k] = table[(i.wrapping_add(w.stereo) & MASK) as usize].wrapping_mul(w.depth) >> 9;
+            off[1][k] =
+                table[(i.wrapping_add(w.stereo) & MASK) as usize].wrapping_mul(w.depth) >> 9;
             self.phase[k] = self.phase[k].wrapping_add(w.step[k]);
         }
         let base = ((self.at as u32) << 12).wrapping_sub(w.delay);
@@ -382,7 +407,9 @@ mod tests {
     #[test]
     fn states_round_trip_and_a_later_version_is_not_read() {
         // FL's "50 Detune" preset.
-        let s = Settings { v: [40, 4375, 149, 3229, 0, 781, 587, 0, 1024, 65, 4531, 491] };
+        let s = Settings {
+            v: [40, 4375, 149, 3229, 0, 781, 587, 0, 1024, 65, 4531, 491],
+        };
         let b = s.to_state();
         assert_eq!(b.len(), STATE_LEN);
         assert_eq!(Settings::from_state(&b), Some(s));
@@ -400,30 +427,71 @@ mod tests {
     fn knobs_become_working_values() {
         let w = Working::new(&DEFAULTS, 44100);
         assert_eq!((w.delay, w.depth, w.stereo), (2_714_019, 6350, 681));
-        assert_eq!((w.step, w.shape, w.low_band, w.wet_only), ([171, 475, 932], [0, 0, 0], false, false));
+        assert_eq!(
+            (w.step, w.shape, w.low_band, w.wet_only),
+            ([171, 475, 932], [0, 0, 0], false, false)
+        );
         assert_eq!(cutoff_hz(position(CROSS_CUTOFF, 2500)), 320.243_7);
-        assert_eq!((w.pole.to_bits(), w.gain.to_bits()), (0x3f74_93fd, 0x3cb6_c030));
+        assert_eq!(
+            (w.pole.to_bits(), w.gain.to_bits()),
+            (0x3f74_93fd, 0x3cb6_c030)
+        );
         // "50 Detune": shapes 1 and 3, the low band chorused, wet only.
-        let w = Working::new(&[40, 4375, 149, 3229, 0, 781, 587, 0, 1024, 65, 4531, 491], 44100);
-        assert_eq!((w.delay, w.depth, w.stereo, w.step, w.shape), (220_358, 12348, 297, [793, 0, 46], [1, 0, 3]));
+        let w = Working::new(
+            &[40, 4375, 149, 3229, 0, 781, 587, 0, 1024, 65, 4531, 491],
+            44100,
+        );
+        assert_eq!(
+            (w.delay, w.depth, w.stereo, w.step, w.shape),
+            (220_358, 12348, 297, [793, 0, 46], [1, 0, 3])
+        );
         assert!(w.low_band && w.wet_only);
-        assert_eq!((w.pole.to_bits(), w.gain.to_bits()), (0x3eb3_01a1, 0x3ea6_7f30));
+        assert_eq!(
+            (w.pole.to_bits(), w.gain.to_bits()),
+            (0x3eb3_01a1, 0x3ea6_7f30)
+        );
         // Every knob at its end at 48 kHz: 30 ms, 5 ms, half a cycle, 5 Hz, the cutoff at 12.5 kHz.
-        let w = Working::new(&[1024, 5000, 1024, 5000, 5000, 5000, 1024, 683, 682, 26, 5000, 257], 48000);
-        assert_eq!((w.delay, w.depth, w.stereo, w.step, w.shape), (5_898_240, 15360, 2047, [1747; 3], [3, 2, 1]));
-        assert!(w.low_band && w.wet_only, "26 of 100 and 257 of 1024 are past a quarter");
+        let w = Working::new(
+            &[
+                1024, 5000, 1024, 5000, 5000, 5000, 1024, 683, 682, 26, 5000, 257,
+            ],
+            48000,
+        );
+        assert_eq!(
+            (w.delay, w.depth, w.stereo, w.step, w.shape),
+            (5_898_240, 15360, 2047, [1747; 3], [3, 2, 1])
+        );
+        assert!(
+            w.low_band && w.wet_only,
+            "26 of 100 and 257 of 1024 are past a quarter"
+        );
         assert_eq!(cutoff_hz(1.0), 12_543.854);
-        assert_eq!((w.pole.to_bits(), w.gain.to_bits()), (0x3c9c_f267, 0x3efb_186d));
+        assert_eq!(
+            (w.pole.to_bits(), w.gain.to_bits()),
+            (0x3c9c_f267, 0x3efb_186d)
+        );
         // At their starts at 192 kHz: stereo wraps to one entry behind; a quarter is not past a quarter.
         let w = Working::new(&[0, 0, 0, 0, 1, 2, 341, 342, 1023, 25, 0, 256], 192_000);
-        assert_eq!((w.delay, w.depth, w.stereo, w.step, w.shape), (39321, 0, u32::MAX, [0; 3], [0, 1, 2]));
+        assert_eq!(
+            (w.delay, w.depth, w.stereo, w.step, w.shape),
+            (39321, 0, u32::MAX, [0; 3], [0, 1, 2])
+        );
         assert!(!w.low_band && !w.wet_only);
         assert_eq!(cutoff_hz(0.0), 8.175_799);
-        assert_eq!((w.pole.to_bits(), w.gain.to_bits()), (0x3f7f_ee78, 0x390c_4000));
+        assert_eq!(
+            (w.pole.to_bits(), w.gain.to_bits()),
+            (0x3f7f_ee78, 0x390c_4000)
+        );
         // The cutoff is held to rate / 4.1 at low rates.
         let w = Working::new(&DEFAULTS, 8000);
-        assert_eq!((w.delay, w.depth, w.step), (492_339, 1152, [943, 2621, 5138]));
-        assert_eq!((w.pole.to_bits(), w.gain.to_bits()), (0x3f46_88e4, 0x3de5_dc70));
+        assert_eq!(
+            (w.delay, w.depth, w.step),
+            (492_339, 1152, [943, 2621, 5138])
+        );
+        assert_eq!(
+            (w.pole.to_bits(), w.gain.to_bits()),
+            (0x3f46_88e4, 0x3de5_dc70)
+        );
         // Stored values past the ranges act as the ends.
         assert_eq!(position(DEPTH, 9000), 1.0);
         assert_eq!(position(DELAY, -5), 0.0);
@@ -432,20 +500,47 @@ mod tests {
     #[test]
     fn lfo_tables() {
         let t = tables();
-        let at = |k: usize| [0, 1, 512, 1024, 1536, 2048, 2049, 2560, 3072, 3584, 4095].map(|i| t[k][i]);
-        assert_eq!(at(ARC), [16383, 16414, 28670, 32766, 28670, 16383, 16351, 4095, 0, 4095, 16351]);
-        assert_eq!(at(ARC_CUBED), [16383, 16383, 23294, 32766, 23294, 16383, 16383, 9471, 0, 9471, 16383]);
-        assert_eq!(at(SINES), [16383, 16435, 32766, 24941, 24207, 16383, 16356, 8558, 7824, 0, 16330]);
-        assert_eq!(at(SINES_CUBED), [16383, 16383, 32766, 18718, 18167, 16383, 16383, 14598, 14047, 0, 16382]);
+        let at =
+            |k: usize| [0, 1, 512, 1024, 1536, 2048, 2049, 2560, 3072, 3584, 4095].map(|i| t[k][i]);
+        assert_eq!(
+            at(ARC),
+            [
+                16383, 16414, 28670, 32766, 28670, 16383, 16351, 4095, 0, 4095, 16351
+            ]
+        );
+        assert_eq!(
+            at(ARC_CUBED),
+            [
+                16383, 16383, 23294, 32766, 23294, 16383, 16383, 9471, 0, 9471, 16383
+            ]
+        );
+        assert_eq!(
+            at(SINES),
+            [
+                16383, 16435, 32766, 24941, 24207, 16383, 16356, 8558, 7824, 0, 16330
+            ]
+        );
+        assert_eq!(
+            at(SINES_CUBED),
+            [
+                16383, 16383, 32766, 18718, 18167, 16383, 16383, 14598, 14047, 0, 16382
+            ]
+        );
         for table in t.iter() {
-            assert_eq!((*table.iter().min().unwrap(), *table.iter().max().unwrap()), (0, 32766));
+            assert_eq!(
+                (*table.iter().min().unwrap(), *table.iter().max().unwrap()),
+                (0, 32766)
+            );
         }
     }
 
     #[test]
     fn the_generator_draws_phases_below_32767() {
         let mut g = Generator(0);
-        assert_eq!([g.next(), g.next(), g.next(), g.next(), g.next(), g.next()], [0, 1028, 28213, 6637, 8942, 22008]);
+        assert_eq!(
+            [g.next(), g.next(), g.next(), g.next(), g.next(), g.next()],
+            [0, 1028, 28213, 6637, 8942, 22008]
+        );
         let mut g = Generator(0x1234_5678);
         for _ in 0..1000 {
             assert!(g.next() < 32767);
@@ -459,8 +554,12 @@ mod tests {
 
     /// The input of the reference run: a sine on the left, a saw-like pattern on the right.
     fn probe(n: usize) -> (Vec<f32>, Vec<f32>) {
-        let l = (0..n).map(|i| ((i as f64 * 0.05).sin() * 0.5) as f32).collect();
-        let r = (0..n).map(|i| (((i * 37) % 101) as f64 / 101.0 - 0.5) as f32).collect();
+        let l = (0..n)
+            .map(|i| ((i as f64 * 0.05).sin() * 0.5) as f32)
+            .collect();
+        let r = (0..n)
+            .map(|i| (((i * 37) % 101) as f64 / 101.0 - 0.5) as f32)
+            .collect();
         (l, r)
     }
 
@@ -482,17 +581,35 @@ mod tests {
         let bits = |x: &[f32], i: usize| x[i].to_bits();
         let at = [0, 1, 2, 3, 100, 500, 1000, 1999, 2500, 2999];
         let (l, r) = run(DEFAULTS);
-        let want_l = [0x0, 0x3c8f4cdf, 0x3d0f1f06, 0x3d563c08, 0xbeabd6d8, 0xbd3dbd4e, 0x3e9eed91, 0x3e38b7de, 0x3db8df10, 0xbd736430];
-        let want_r = [0xbeb33333, 0xbdbf9eac, 0x3e26c7bb, 0xbe8fb700, 0x3dbf9eac, 0xbe6dc020, 0xbe4b70db, 0xbe4c49ac, 0x3eddf864, 0x3e2152f2];
+        let want_l = [
+            0x0, 0x3c8f4cdf, 0x3d0f1f06, 0x3d563c08, 0xbeabd6d8, 0xbd3dbd4e, 0x3e9eed91,
+            0x3e38b7de, 0x3db8df10, 0xbd736430,
+        ];
+        let want_r = [
+            0xbeb33333, 0xbdbf9eac, 0x3e26c7bb, 0xbe8fb700, 0x3dbf9eac, 0xbe6dc020, 0xbe4b70db,
+            0xbe4c49ac, 0x3eddf864, 0x3e2152f2,
+        ];
         for (k, &i) in at.iter().enumerate() {
-            assert_eq!((bits(&l, i), bits(&r, i)), (want_l[k], want_r[k]), "Default, sample {i}");
+            assert_eq!(
+                (bits(&l, i), bits(&r, i)),
+                (want_l[k], want_r[k]),
+                "Default, sample {i}"
+            );
         }
         // "50 Detune": wet only, the low band, shapes 1 and 3.
         let (l, r) = run([40, 4375, 149, 3229, 0, 781, 587, 0, 1024, 65, 4531, 491]);
-        let want_l = [0, 0, 0, 0, 0, 0xbf1f4597, 0xbf203e3e, 0xbedf6dbc, 0xbe895880, 0xbe1486a4];
-        let want_r = [0, 0, 0, 0, 0, 0xbd0f1772, 0xbda0039d, 0xbe06f623, 0x3da7bf2c, 0x3da0b043];
+        let want_l = [
+            0, 0, 0, 0, 0, 0xbf1f4597, 0xbf203e3e, 0xbedf6dbc, 0xbe895880, 0xbe1486a4,
+        ];
+        let want_r = [
+            0, 0, 0, 0, 0, 0xbd0f1772, 0xbda0039d, 0xbe06f623, 0x3da7bf2c, 0x3da0b043,
+        ];
         for (k, &i) in at.iter().enumerate() {
-            assert_eq!((bits(&l, i), bits(&r, i)), (want_l[k], want_r[k]), "50 Detune, sample {i}");
+            assert_eq!(
+                (bits(&l, i), bits(&r, i)),
+                (want_l[k], want_r[k]),
+                "50 Detune, sample {i}"
+            );
         }
         // "Low Enhance": two LFOs stopped.
         let (l, r) = run([243, 4336, 416, 0, 0, 781, 0, 0, 1024, 65, 4635, 96]);
@@ -503,7 +620,12 @@ mod tests {
     /// The dry part is the input at 0.7; without delay or depth the three reads are the band just written.
     #[test]
     fn the_dry_part_and_the_reads() {
-        let mut c = Chorus::with_settings(44100, &Settings { v: [0, 0, 341, 0, 0, 0, 0, 0, 0, 0, 2500, 0] });
+        let mut c = Chorus::with_settings(
+            44100,
+            &Settings {
+                v: [0, 0, 341, 0, 0, 0, 0, 0, 0, 0, 2500, 0],
+            },
+        );
         let mut l = [0.5f32, 0.0, 0.0, 0.0];
         let mut r = [0.0f32; 4];
         c.process(&mut l, &mut r);
@@ -512,14 +634,19 @@ mod tests {
         assert_eq!(l[0], x);
         assert_eq!(r, [0.0; 4]);
         // Wet only on silence is silence; set takes effect at once.
-        c.set(&Settings { v: [0, 0, 341, 0, 0, 0, 0, 0, 0, 0, 2500, 1024] });
+        c.set(&Settings {
+            v: [0, 0, 341, 0, 0, 0, 0, 0, 0, 0, 2500, 1024],
+        });
         assert!(c.working().wet_only);
     }
 
     #[test]
     fn a_slot_reads_its_state_and_restarts_on_reset() {
-        let s = Settings { v: [128, 1534, 480, 2695, 0, 1914, 0, 0, 949, 0, 4479, 0] };
-        let mut slot = super::super::from_slot("Fruity Chorus", &s.to_state(), 44100).expect("a chorus");
+        let s = Settings {
+            v: [128, 1534, 480, 2695, 0, 1914, 0, 0, 949, 0, 4479, 0],
+        };
+        let mut slot =
+            super::super::from_slot("Fruity Chorus", &s.to_state(), 44100).expect("a chorus");
         let mut own = Chorus::with_settings(44100, &s);
         let (l, r) = probe(1000);
         let mut buf: Vec<f32> = l.iter().zip(&r).flat_map(|(a, b)| [*a, *b]).collect();
@@ -531,7 +658,11 @@ mod tests {
         // Reset: lines and crossover empty, new phases.
         own.reset();
         assert_eq!(own.phases(), [6637, 8942, 22008]);
-        assert!(own.line.iter().all(|l| l.iter().all(|&v| v == 0.0)) && own.low == [0.0; 2] && own.before == [0.0; 2]);
+        assert!(
+            own.line.iter().all(|l| l.iter().all(|&v| v == 0.0))
+                && own.low == [0.0; 2]
+                && own.before == [0.0; 2]
+        );
     }
 
     #[test]

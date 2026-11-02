@@ -71,7 +71,12 @@ pub fn build(raw: &Sample, src: &Source, k: &FxKey) -> Built {
             let frames = (s[0].len() as f64 * ratio).round().max(1.0) as usize;
             let (l, r) = os_dsp::stretch::whole(&s[0], &s[1], rate as u32, frames, shift);
             let scale = frames as f64 / s[0].len() as f64;
-            lp = lp.map(|(a, b)| ((a as f64 * scale).round_ties_even() as usize, ((b + 1) as f64 * scale).round_ties_even() as usize - 1));
+            lp = lp.map(|(a, b)| {
+                (
+                    (a as f64 * scale).round_ties_even() as usize,
+                    ((b + 1) as f64 * scale).round_ties_even() as usize - 1,
+                )
+            });
             lp = limit(lp, frames);
             s = [l, r];
             per_file_frame *= scale;
@@ -109,7 +114,15 @@ pub fn build(raw: &Sample, src: &Source, k: &FxKey) -> Built {
         effects(&mut s, &mut lp, fx, src, rs);
     }
     let [left, right] = s;
-    Built { sample: Sample { rate: rate as u32, left, right }, looped: lp, per_file_frame }
+    Built {
+        sample: Sample {
+            rate: rate as u32,
+            left,
+            right,
+        },
+        looped: lp,
+        per_file_frame,
+    }
 }
 
 /// **(Lemon Studio)** When the played sample is the file's own frames as they are (no step of [`build`] changes them;
@@ -128,7 +141,8 @@ pub fn as_is(src: &Source, k: &FxKey, rate: u32, frames: usize) -> Option<Option
         }
     }
     let changes = fx.stereo_delay != 2048
-        || fx.flags & (SampleFx::REVERSE | SampleFx::CLIP | SampleFx::FADE_STEREO | SampleFx::SWAP) != 0
+        || fx.flags & (SampleFx::REVERSE | SampleFx::CLIP | SampleFx::FADE_STEREO | SampleFx::SWAP)
+            != 0
         || fx.pogo != 256
         || fx.ring_mix > 0
         || fx.cutoff < 1024
@@ -178,7 +192,13 @@ fn round(x: f64) -> i64 {
 // 1. Start and length
 
 /// Keeps the frames the start and length select, declicks the new edges, and moves the loop with the frames.
-fn cut(s: &mut Sides, lp: Option<(usize, usize)>, start: f64, length: f64, rate: f64) -> Option<(usize, usize)> {
+fn cut(
+    s: &mut Sides,
+    lp: Option<(usize, usize)>,
+    start: f64,
+    length: f64,
+    rate: f64,
+) -> Option<(usize, usize)> {
     let n = s[0].len() as i64;
     let m = (n - 1) as f64;
     let mut i0 = round(start * m);
@@ -243,7 +263,11 @@ fn declick_edge(x: &mut [f32], l0: usize, rate: f64, front: bool) {
         let c = ((2.0 / rate) * (i as f64 * w).exp()).min(1.0);
         let xv = f64::from(x[at]);
         lp += c * (xv - lp);
-        let g = if i <= l - m { 1.0 } else { (((i - (l - m)) as f64 * (1.0 / (m + 1) as f64) * PI).cos() + 1.0) * 0.5 };
+        let g = if i <= l - m {
+            1.0
+        } else {
+            (((i - (l - m)) as f64 * (1.0 / (m + 1) as f64) * PI).cos() + 1.0) * 0.5
+        };
         x[at] = ((xv - lp) * g) as f32;
     }
 }
@@ -288,7 +312,12 @@ fn convert(s: &Sides, lp: Option<(usize, usize)>, ratio: f64) -> (Sides, Option<
             out[c][k] = acc;
         }
     }
-    let lp = lp.map(|(a, b)| (round(a as f64 * ratio).max(0) as usize, (round((b + 1) as f64 * ratio) - 1).max(0) as usize));
+    let lp = lp.map(|(a, b)| {
+        (
+            round(a as f64 * ratio).max(0) as usize,
+            (round((b + 1) as f64 * ratio) - 1).max(0) as usize,
+        )
+    });
     (out, limit(lp, frames))
 }
 
@@ -347,7 +376,8 @@ fn effects(s: &mut Sides, lp: &mut Option<(usize, usize)>, fx: &SampleFx, src: &
         let e = |z: f64| f64::from((z * f64::from(ln601)) as f32).exp() - 1.0;
         let inv600 = f64::from((1.0 / 600.0f64) as f32);
         let res = f64::from(fx.resonance.min(640));
-        let lp_a = f64::from((f64::from((e(f64::from(fx.cutoff) / 1024.0) * inv600) as f32) * rs) as f32);
+        let lp_a =
+            f64::from((f64::from((e(f64::from(fx.cutoff) / 1024.0) * inv600) as f32) * rs) as f32);
         let lp_b = f64::from(1.0f32 - (e((1024.0 - res) / 1024.0) * inv600) as f32);
         let q = (1.0 / mf) / 256.0;
         let boost_g = (f64::from(fx.boost) / 16.0 + 1.0) as f32;
@@ -396,7 +426,8 @@ fn effects(s: &mut Sides, lp: &mut Option<(usize, usize)>, fx: &SampleFx, src: &
     }
     // The one-pole feedback.
     if fx.feedback != 128 {
-        let c = ((f64::from(fx.feedback) * 192.0 / 256.0).floor() - 96.0) as f32 * (1.0f64 / 128.0) as f32;
+        let c = ((f64::from(fx.feedback) * 192.0 / 256.0).floor() - 96.0) as f32
+            * (1.0f64 / 128.0) as f32;
         for side in s.iter_mut() {
             let mut y = 0.0f32;
             for x in side.iter_mut() {
@@ -421,7 +452,8 @@ fn effects(s: &mut Sides, lp: &mut Option<(usize, usize)>, fx: &SampleFx, src: &
                 sum += f64::from(x);
             }
             let mean = sum / n as f64;
-            side.iter_mut().for_each(|x| *x = (f64::from(*x) - mean) as f32);
+            side.iter_mut()
+                .for_each(|x| *x = (f64::from(*x) - mean) as f32);
         }
     }
     // Reverse polarity.
@@ -447,7 +479,8 @@ fn effects(s: &mut Sides, lp: &mut Option<(usize, usize)>, fx: &SampleFx, src: &
                         let t = k as f64 * inv;
                         let (d, from) = (b + 1 - l + k, a + k);
                         if from < side.len() {
-                            side[d] = (f64::from(side[d]) * (1.0 - t) + f64::from(side[from]) * t) as f32;
+                            side[d] =
+                                (f64::from(side[d]) * (1.0 - t) + f64::from(side[from]) * t) as f32;
                         }
                     }
                 }
@@ -481,7 +514,13 @@ fn pogo_read(t: &[f32], k: usize, m: f64, v: u16, b: f32) -> f32 {
     let p = f64::from(k as f32 * (1.0 - b)) + p * f64::from(b);
     let i = (p as f32).trunc() as i64;
     let f = (p - i as f64) as f32;
-    let at = |j: i64| if j < 0 || j as usize >= t.len() { 0.0 } else { t[j as usize] };
+    let at = |j: i64| {
+        if j < 0 || j as usize >= t.len() {
+            0.0
+        } else {
+            t[j as usize]
+        }
+    };
     let (ym, y0, y1, y2) = (at(i - 1), at(i), at(i + 1), at(i + 2));
     let a = (f64::from((y0 - y1) * 3.0 - ym + y2) * 0.5) as f32;
     let bb = (f64::from(y1 * 2.0 + ym) - f64::from(y0 * 5.0 + y2) * 0.5) as f32;
@@ -491,7 +530,9 @@ fn pogo_read(t: &[f32], k: usize, m: f64, v: u16, b: f32) -> f32 {
 
 /// The ring modulator's sine table.
 fn ring_table() -> Vec<f32> {
-    (0..16384).map(|i| (2.0 * i as f64 * PI / 16384.0).sin() as f32).collect()
+    (0..16384)
+        .map(|i| (2.0 * i as f64 * PI / 16384.0).sin() as f32)
+        .collect()
 }
 
 /// A delay line of nominal length `d`: a ring of `max(1, d - 1)` values.
@@ -502,7 +543,10 @@ struct Line {
 
 impl Line {
     fn new(d: usize) -> Line {
-        Line { buf: vec![0.0; d.saturating_sub(1).max(1)], at: 0 }
+        Line {
+            buf: vec![0.0; d.saturating_sub(1).max(1)],
+            at: 0,
+        }
     }
 
     /// What the next push takes out.
@@ -547,7 +591,8 @@ fn reverb(s: &mut Sides, lp: Option<(usize, usize)>, amount: u16, kind: u16) {
     for (c, side) in s.iter_mut().enumerate() {
         if kind == 0 {
             const COMBS: [usize; 4] = [1777, 1847, 1993, 2137];
-            let mut combs: Vec<(Line, f32)> = COMBS.iter().map(|&d| (Line::new(d), fb(d))).collect();
+            let mut combs: Vec<(Line, f32)> =
+                COMBS.iter().map(|&d| (Line::new(d), fb(d))).collect();
             let mut aps: Vec<Line> = [389, 127, 43].iter().map(|&d| Line::new(d)).collect();
             let (mut h1, mut h2) = (0.0f32, 0.0f32);
             for x in side.iter_mut() {
@@ -566,7 +611,8 @@ fn reverb(s: &mut Sides, lp: Option<(usize, usize)>, amount: u16, kind: u16) {
             }
         } else {
             const COMBS: [usize; 6] = [2467, 2767, 3217, 3533, 3877, 4127];
-            let mut combs: Vec<(Line, f32)> = COMBS.iter().map(|&d| (Line::new(d), fb(d))).collect();
+            let mut combs: Vec<(Line, f32)> =
+                COMBS.iter().map(|&d| (Line::new(d), fb(d))).collect();
             let mut aps: Vec<Line> = [599, 197, 67].iter().map(|&d| Line::new(d)).collect();
             let mut ap101 = Line::new(101);
             let mut last = Line::new(if c == 0 { 97 } else { 79 });
@@ -627,7 +673,10 @@ mod tests {
     use super::*;
 
     fn key(fx: SampleFx) -> FxKey {
-        FxKey { fx, ..FxKey::neutral() }
+        FxKey {
+            fx,
+            ..FxKey::neutral()
+        }
     }
 
     /// Decaying noise with a DC offset on each side (the kind of file the spec's cases use).
@@ -653,7 +702,10 @@ mod tests {
     #[test]
     fn as_is_names_exactly_the_files_build_leaves_alone() {
         let s = noise(2000, 44100);
-        let src = Source { int16_mono: false, file_loop: Some((300, 1500)) };
+        let src = Source {
+            int16_mono: false,
+            file_loop: Some((300, 1500)),
+        };
         let with = |f: &dyn Fn(&mut SampleFx)| {
             let mut fx = SampleFx::default();
             f(&mut fx);
@@ -661,11 +713,28 @@ mod tests {
         };
         let keys = [
             key(SampleFx::default()),
-            FxKey { knob_loop: Some((0.25, 0.75)), ..key(SampleFx::default()) },
-            FxKey { knob_loop: Some((0.5, 0.5)), ..key(SampleFx::default()) },
-            FxKey { stretch: true, ..key(SampleFx::default()) },
-            FxKey { stretch: true, ratio: 1.5, ..key(SampleFx::default()) },
-            FxKey { stretch: true, shift: 100.0, ..key(SampleFx::default()) },
+            FxKey {
+                knob_loop: Some((0.25, 0.75)),
+                ..key(SampleFx::default())
+            },
+            FxKey {
+                knob_loop: Some((0.5, 0.5)),
+                ..key(SampleFx::default())
+            },
+            FxKey {
+                stretch: true,
+                ..key(SampleFx::default())
+            },
+            FxKey {
+                stretch: true,
+                ratio: 1.5,
+                ..key(SampleFx::default())
+            },
+            FxKey {
+                stretch: true,
+                shift: 100.0,
+                ..key(SampleFx::default())
+            },
             with(&|f| f.flags |= SampleFx::REVERSE),
             with(&|f| f.flags |= SampleFx::SWAP),
             with(&|f| f.normalize = true),
@@ -682,10 +751,17 @@ mod tests {
             if let Some(lp) = as_is(&src, k, s.rate, s.frames()) {
                 kept += 1;
                 let b = build(&s, &src, k);
-                assert_eq!((&b.sample, b.looped, b.per_file_frame), (&s, lp, 1.0), "{k:?}");
+                assert_eq!(
+                    (&b.sample, b.looped, b.per_file_frame),
+                    (&s, lp, 1.0),
+                    "{k:?}"
+                );
             }
         }
-        assert_eq!(kept, 4, "the neutral key, the loop knobs and a stretch that does nothing");
+        assert_eq!(
+            kept, 4,
+            "the neutral key, the loop knobs and a stretch that does nothing"
+        );
         // A file below 8000 Hz is converted.
         assert_eq!(as_is(&src, &keys[0], 6000, 2000), None);
     }
@@ -702,7 +778,11 @@ mod tests {
     #[test]
     fn start_and_length_keep_the_frames_they_select() {
         let s = noise(17640, 44100);
-        let fx = SampleFx { start_bits: 0.25f64.to_bits(), length_bits: 0.5f64.to_bits(), ..SampleFx::default() };
+        let fx = SampleFx {
+            start_bits: 0.25f64.to_bits(),
+            length_bits: 0.5f64.to_bits(),
+            ..SampleFx::default()
+        };
         let b = build(&s, &Source::default(), &key(fx));
         // i0 = Round(0.25 * 17639) = 4410, i1 = 4410 + Round(0.5 * 0.75 * 17639) = 4410 + 6615.
         assert_eq!(b.sample.frames(), 6616);
@@ -711,43 +791,116 @@ mod tests {
         // The beginning's declick (22 frames at 44100 Hz) ends on a quiet edge.
         assert!(b.sample.left[0].abs() < s.left[4410].abs().max(1e-3));
         // Fewer than 42 frames selected: 41 more are kept.
-        let fx = SampleFx { start_bits: 0.5f64.to_bits(), length_bits: 0.0001f64.to_bits(), ..SampleFx::default() };
+        let fx = SampleFx {
+            start_bits: 0.5f64.to_bits(),
+            length_bits: 0.0001f64.to_bits(),
+            ..SampleFx::default()
+        };
         let b = build(&s, &Source::default(), &key(fx));
         assert_eq!(b.sample.frames(), 1 + 1 + 41);
         // A loop moves with the frames; one whose start is cut away is gone.
-        let src = Source { file_loop: Some((5000, 9000)), ..Source::default() };
-        let fx = SampleFx { start_bits: 0.25f64.to_bits(), length_bits: 0.5f64.to_bits(), ..SampleFx::default() };
+        let src = Source {
+            file_loop: Some((5000, 9000)),
+            ..Source::default()
+        };
+        let fx = SampleFx {
+            start_bits: 0.25f64.to_bits(),
+            length_bits: 0.5f64.to_bits(),
+            ..SampleFx::default()
+        };
         assert_eq!(build(&s, &src, &key(fx)).looped, Some((590, 4590)));
-        let fx = SampleFx { start_bits: 0.5f64.to_bits(), ..SampleFx::default() };
+        let fx = SampleFx {
+            start_bits: 0.5f64.to_bits(),
+            ..SampleFx::default()
+        };
         assert_eq!(build(&s, &src, &key(fx)).looped, None);
     }
 
     // spec "The pass over each side": fades, boost and clip in the file's units.
     #[test]
     fn fades_boost_and_clip_follow_the_formulas() {
-        let s = Sample { rate: 44100, left: vec![0.5; 1025], right: vec![0.5; 1025] };
+        let s = Sample {
+            rate: 44100,
+            left: vec![0.5; 1025],
+            right: vec![0.5; 1025],
+        };
         // Fade in 1024: gain 1 - (1 - k/M) * 4, silent over the first three quarters.
-        let b = build(&s, &Source::default(), &key(SampleFx { fade_in: 1024, ..SampleFx::default() }));
+        let b = build(
+            &s,
+            &Source::default(),
+            &key(SampleFx {
+                fade_in: 1024,
+                ..SampleFx::default()
+            }),
+        );
         assert_eq!(b.sample.left[700], 0.0);
         assert!((b.sample.left[1024] - 0.5).abs() < 1e-7);
-        assert!((b.sample.left[896] - 0.25).abs() < 1e-6, "{}", b.sample.left[896]);
+        assert!(
+            (b.sample.left[896] - 0.25).abs() < 1e-6,
+            "{}",
+            b.sample.left[896]
+        );
         // Fade out 256: reaches silence at the far end.
-        let b = build(&s, &Source::default(), &key(SampleFx { fade_out: 256, ..SampleFx::default() }));
+        let b = build(
+            &s,
+            &Source::default(),
+            &key(SampleFx {
+                fade_out: 256,
+                ..SampleFx::default()
+            }),
+        );
         assert!((b.sample.left[512] - 0.25).abs() < 1e-6 && b.sample.left[1024] == 0.0);
         // Boost 256 = x17, clipped to 1 when the flag is on; normalize afterwards brings the peak to 1.
-        let b = build(&s, &Source::default(), &key(SampleFx { boost: 256, ..SampleFx::default() }));
+        let b = build(
+            &s,
+            &Source::default(),
+            &key(SampleFx {
+                boost: 256,
+                ..SampleFx::default()
+            }),
+        );
         assert_eq!(b.sample.left[10], 8.5);
-        let b = build(&s, &Source::default(), &key(SampleFx { boost: 256, flags: SampleFx::CLIP, ..SampleFx::default() }));
+        let b = build(
+            &s,
+            &Source::default(),
+            &key(SampleFx {
+                boost: 256,
+                flags: SampleFx::CLIP,
+                ..SampleFx::default()
+            }),
+        );
         assert_eq!(b.sample.left[10], 1.0);
     }
 
     // spec "One-pole feedback": c = -0.75 at 0, +0.75 at 256: DC gains 0.571 and 4.
     #[test]
     fn the_feedback_tilts_the_sample() {
-        let s = Sample { rate: 44100, left: vec![0.1; 2000], right: vec![0.1; 2000] };
-        let up = build(&s, &Source::default(), &key(SampleFx { feedback: 256, ..SampleFx::default() }));
-        assert!((up.sample.left[1999] - 0.4).abs() < 1e-5, "{}", up.sample.left[1999]);
-        let down = build(&s, &Source::default(), &key(SampleFx { feedback: 0, ..SampleFx::default() }));
+        let s = Sample {
+            rate: 44100,
+            left: vec![0.1; 2000],
+            right: vec![0.1; 2000],
+        };
+        let up = build(
+            &s,
+            &Source::default(),
+            &key(SampleFx {
+                feedback: 256,
+                ..SampleFx::default()
+            }),
+        );
+        assert!(
+            (up.sample.left[1999] - 0.4).abs() < 1e-5,
+            "{}",
+            up.sample.left[1999]
+        );
+        let down = build(
+            &s,
+            &Source::default(),
+            &key(SampleFx {
+                feedback: 0,
+                ..SampleFx::default()
+            }),
+        );
         assert!((down.sample.left[1999] - 0.1 / 1.75).abs() < 1e-5);
     }
 
@@ -756,107 +909,312 @@ mod tests {
     fn stereo_delay_reverse_and_swap() {
         let s = noise(1000, 44100);
         // 3072: the left side is 1024 frames late; the right ends with 1024 zeros.
-        let b = build(&s, &Source::default(), &key(SampleFx { stereo_delay: 3072, ..SampleFx::default() }));
+        let b = build(
+            &s,
+            &Source::default(),
+            &key(SampleFx {
+                stereo_delay: 3072,
+                ..SampleFx::default()
+            }),
+        );
         assert_eq!(b.sample.frames(), 2024);
-        assert!(b.sample.left[..1024].iter().all(|v| *v == 0.0) && b.sample.left[1024..] == s.left[..]);
-        assert!(b.sample.right[..1000] == s.right[..] && b.sample.right[1000..].iter().all(|v| *v == 0.0));
+        assert!(
+            b.sample.left[..1024].iter().all(|v| *v == 0.0) && b.sample.left[1024..] == s.left[..]
+        );
+        assert!(
+            b.sample.right[..1000] == s.right[..]
+                && b.sample.right[1000..].iter().all(|v| *v == 0.0)
+        );
         // Below the centre the right side is late.
-        let b = build(&s, &Source::default(), &key(SampleFx { stereo_delay: 2048 - 100, ..SampleFx::default() }));
-        assert!(b.sample.right[..100].iter().all(|v| *v == 0.0) && b.sample.right[100..] == s.right[..]);
+        let b = build(
+            &s,
+            &Source::default(),
+            &key(SampleFx {
+                stereo_delay: 2048 - 100,
+                ..SampleFx::default()
+            }),
+        );
+        assert!(
+            b.sample.right[..100].iter().all(|v| *v == 0.0) && b.sample.right[100..] == s.right[..]
+        );
         // A mono 16-bit file: Round(single(x * 32767)) / 32768, so positive values above 16384 come out one step lower
         // (16384 itself gives 16383.5, which rounds to the even 16384).
         let v = [16385.0 / 32768.0, 0.5, -0.5, 0.25];
-        let m = Sample { rate: 44100, left: v.to_vec(), right: v.to_vec() };
-        let src = Source { int16_mono: true, ..Source::default() };
-        let b = build(&m, &src, &key(SampleFx { stereo_delay: 2049, ..SampleFx::default() }));
+        let m = Sample {
+            rate: 44100,
+            left: v.to_vec(),
+            right: v.to_vec(),
+        };
+        let src = Source {
+            int16_mono: true,
+            ..Source::default()
+        };
+        let b = build(
+            &m,
+            &src,
+            &key(SampleFx {
+                stereo_delay: 2049,
+                ..SampleFx::default()
+            }),
+        );
         // Above 2048 the left side is the late one; both sides carry the changed values.
         let want = [16384.0 / 32768.0, 0.5, -0.5, 0.25];
-        assert_eq!((&b.sample.left[1..], &b.sample.right[..4]), (&want[..], &want[..]));
+        assert_eq!(
+            (&b.sample.left[1..], &b.sample.right[..4]),
+            (&want[..], &want[..])
+        );
         // Not for a stereo file.
-        let b = build(&m, &Source::default(), &key(SampleFx { stereo_delay: 2049, ..SampleFx::default() }));
+        let b = build(
+            &m,
+            &Source::default(),
+            &key(SampleFx {
+                stereo_delay: 2049,
+                ..SampleFx::default()
+            }),
+        );
         assert_eq!((b.sample.left[1], b.sample.right[0]), (v[0], v[0]));
         // Reverse with and without the loop following it; swap.
-        let src = Source { file_loop: Some((100, 199)), ..Source::default() };
-        let rev = SampleFx { flags: SampleFx::REVERSE, ..SampleFx::default() };
+        let src = Source {
+            file_loop: Some((100, 199)),
+            ..Source::default()
+        };
+        let rev = SampleFx {
+            flags: SampleFx::REVERSE,
+            ..SampleFx::default()
+        };
         let b = build(&s, &src, &key(rev));
         assert_eq!(b.sample.left[0], s.left[999]);
         assert_eq!(b.looped, Some((100, 199)));
-        let b = build(&s, &src, &key(SampleFx { loop_follows_reverse: true, ..rev }));
+        let b = build(
+            &s,
+            &src,
+            &key(SampleFx {
+                loop_follows_reverse: true,
+                ..rev
+            }),
+        );
         assert_eq!(b.looped, Some((800, 899)));
-        let b = build(&s, &src, &key(SampleFx { flags: SampleFx::SWAP, ..SampleFx::default() }));
-        assert_eq!((b.sample.left[5], b.sample.right[5]), (s.right[5], s.left[5]));
-        let b = build(&s, &src, &key(SampleFx { flags: SampleFx::FADE_STEREO, ..SampleFx::default() }));
-        assert_eq!((b.sample.left[0], b.sample.right[999]), (s.left[0], s.right[999]));
+        let b = build(
+            &s,
+            &src,
+            &key(SampleFx {
+                flags: SampleFx::SWAP,
+                ..SampleFx::default()
+            }),
+        );
+        assert_eq!(
+            (b.sample.left[5], b.sample.right[5]),
+            (s.right[5], s.left[5])
+        );
+        let b = build(
+            &s,
+            &src,
+            &key(SampleFx {
+                flags: SampleFx::FADE_STEREO,
+                ..SampleFx::default()
+            }),
+        );
+        assert_eq!(
+            (b.sample.left[0], b.sample.right[999]),
+            (s.left[0], s.right[999])
+        );
         assert!(b.sample.left[999].abs() < 1e-6 && b.sample.right[0].abs() < 1e-6);
     }
 
     // spec "Ping-pong", "Crossfade": the unfolded loop; the crossfade makes a loop of a file without one.
     #[test]
     fn ping_pong_and_crossfade_change_the_loop() {
-        let s = Sample { rate: 44100, left: (0..20).map(|i| i as f32).collect(), right: (0..20).map(|i| i as f32).collect() };
-        let src = Source { file_loop: Some((5, 9)), ..Source::default() };
-        let b = build(&s, &src, &key(SampleFx { ping_pong: true, ..SampleFx::default() }));
-        assert_eq!(&b.sample.left[..16], &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 8., 7., 6., 10., 11., 12.]);
+        let s = Sample {
+            rate: 44100,
+            left: (0..20).map(|i| i as f32).collect(),
+            right: (0..20).map(|i| i as f32).collect(),
+        };
+        let src = Source {
+            file_loop: Some((5, 9)),
+            ..Source::default()
+        };
+        let b = build(
+            &s,
+            &src,
+            &key(SampleFx {
+                ping_pong: true,
+                ..SampleFx::default()
+            }),
+        );
+        assert_eq!(
+            &b.sample.left[..16],
+            &[
+                0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 8., 7., 6., 10., 11., 12.
+            ]
+        );
         assert_eq!(b.looped, Some((5, 12)));
         // Crossfade 1024 on a file without a loop: half the sample fades into its beginning, the loop starts there.
-        let s = Sample { rate: 44100, left: vec![1.0; 100], right: vec![1.0; 100] };
+        let s = Sample {
+            rate: 44100,
+            left: vec![1.0; 100],
+            right: vec![1.0; 100],
+        };
         let mut s2 = s.clone();
         s2.left[..50].iter_mut().for_each(|v| *v = 0.0);
-        let b = build(&s2, &Source::default(), &key(SampleFx { crossfade: 1024, ..SampleFx::default() }));
+        let b = build(
+            &s2,
+            &Source::default(),
+            &key(SampleFx {
+                crossfade: 1024,
+                ..SampleFx::default()
+            }),
+        );
         assert_eq!(b.looped, Some((50, 99)));
         assert_eq!(b.sample.left[50], 1.0);
-        assert!((b.sample.left[75] - 0.5).abs() < 1e-6, "{}", b.sample.left[75]);
+        assert!(
+            (b.sample.left[75] - 0.5).abs() < 1e-6,
+            "{}",
+            b.sample.left[75]
+        );
     }
 
     // spec "Trim": quiet ends dropped, the loop points keep their numbers.
     #[test]
     fn trim_drops_the_quiet_ends() {
-        let mut s = Sample { rate: 44100, left: vec![0.0; 300], right: vec![0.0; 300] };
+        let mut s = Sample {
+            rate: 44100,
+            left: vec![0.0; 300],
+            right: vec![0.0; 300],
+        };
         s.left[100..200].iter_mut().for_each(|v| *v = 0.5);
-        let b = build(&s, &Source::default(), &key(SampleFx { trim: 1000, ..SampleFx::default() }));
+        let b = build(
+            &s,
+            &Source::default(),
+            &key(SampleFx {
+                trim: 1000,
+                ..SampleFx::default()
+            }),
+        );
         assert_eq!(b.sample.frames(), 100);
         // Not past the loop: kept from the loop start and to the loop end.
-        let src = Source { file_loop: Some((50, 250)), ..Source::default() };
-        let b = build(&s, &src, &key(SampleFx { trim: 1000, ..SampleFx::default() }));
+        let src = Source {
+            file_loop: Some((50, 250)),
+            ..Source::default()
+        };
+        let b = build(
+            &s,
+            &src,
+            &key(SampleFx {
+                trim: 1000,
+                ..SampleFx::default()
+            }),
+        );
         assert_eq!((b.sample.frames(), b.looped), (201, Some((50, 200))));
         // A threshold above every level leaves one frame.
-        let b = build(&s, &Source::default(), &key(SampleFx { trim: 32768, ..SampleFx::default() }));
+        let b = build(
+            &s,
+            &Source::default(),
+            &key(SampleFx {
+                trim: 32768,
+                ..SampleFx::default()
+            }),
+        );
         assert_eq!(b.sample.frames(), 1);
     }
 
     // spec "Reverb": a tail of up to 22050 frames; the quiet end is dropped again.
     #[test]
     fn reverb_adds_a_tail() {
-        let mut s = Sample { rate: 44100, left: vec![0.0; 2000], right: vec![0.0; 2000] };
+        let mut s = Sample {
+            rate: 44100,
+            left: vec![0.0; 2000],
+            right: vec![0.0; 2000],
+        };
         s.left[0] = 1.0;
         s.right[0] = 1.0;
         for kind in [0, 1] {
-            let b = build(&s, &Source::default(), &key(SampleFx { reverb: 256, reverb_type: kind, ..SampleFx::default() }));
-            assert!(b.sample.frames() > 3000 && b.sample.frames() <= 2000 + 22050, "type {kind}: {}", b.sample.frames());
+            let b = build(
+                &s,
+                &Source::default(),
+                &key(SampleFx {
+                    reverb: 256,
+                    reverb_type: kind,
+                    ..SampleFx::default()
+                }),
+            );
+            assert!(
+                b.sample.frames() > 3000 && b.sample.frames() <= 2000 + 22050,
+                "type {kind}: {}",
+                b.sample.frames()
+            );
             let last = b.sample.frames() - 1;
-            assert!(b.sample.left[last].abs() >= 1.0 / 512.0 || b.sample.right[last].abs() >= 1.0 / 512.0, "type {kind}");
+            assert!(
+                b.sample.left[last].abs() >= 1.0 / 512.0
+                    || b.sample.right[last].abs() >= 1.0 / 512.0,
+                "type {kind}"
+            );
             // Type 1's right side has its own last all-pass; type 0 treats both sides alike.
-            assert_eq!(b.sample.left[2500] == b.sample.right[2500], kind == 0, "type {kind}");
+            assert_eq!(
+                b.sample.left[2500] == b.sample.right[2500],
+                kind == 0,
+                "type {kind}"
+            );
         }
         // Silence keeps one frame (not below 1), or the loop's end frame number.
-        let z = Sample { rate: 44100, left: vec![0.0; 2000], right: vec![0.0; 2000] };
-        assert_eq!(build(&z, &Source::default(), &key(SampleFx { reverb: 128, ..SampleFx::default() })).sample.frames(), 1);
-        let src = Source { file_loop: Some((10, 1500)), ..Source::default() };
-        assert_eq!(build(&z, &src, &key(SampleFx { reverb: 128, ..SampleFx::default() })).sample.frames(), 1500);
+        let z = Sample {
+            rate: 44100,
+            left: vec![0.0; 2000],
+            right: vec![0.0; 2000],
+        };
+        assert_eq!(
+            build(
+                &z,
+                &Source::default(),
+                &key(SampleFx {
+                    reverb: 128,
+                    ..SampleFx::default()
+                })
+            )
+            .sample
+            .frames(),
+            1
+        );
+        let src = Source {
+            file_loop: Some((10, 1500)),
+            ..Source::default()
+        };
+        assert_eq!(
+            build(
+                &z,
+                &src,
+                &key(SampleFx {
+                    reverb: 128,
+                    ..SampleFx::default()
+                })
+            )
+            .sample
+            .frames(),
+            1500
+        );
     }
 
     // spec "Files below 8000 Hz": converted to the output rate; the loop points move with the frames.
     #[test]
     fn files_below_8000_hz_are_converted() {
-        let s = Sample { rate: 6000, left: (0..600).map(|i| (i as f32 * 0.1).sin()).collect(), right: vec![0.0; 600] };
-        let src = Source { file_loop: Some((100, 199)), ..Source::default() };
+        let s = Sample {
+            rate: 6000,
+            left: (0..600).map(|i| (i as f32 * 0.1).sin()).collect(),
+            right: vec![0.0; 600],
+        };
+        let src = Source {
+            file_loop: Some((100, 199)),
+            ..Source::default()
+        };
         let b = build(&s, &src, &key(SampleFx::default()));
         assert_eq!((b.sample.rate, b.sample.frames()), (44100, 4410));
         assert_eq!(b.looped, Some((735, 1469)));
         assert_eq!(b.per_file_frame, 7.35);
         // A whole frame of the file reads that frame (within the weights' rounding).
         assert!((b.sample.left[735 * 2] - s.left[200]).abs() < 1e-3);
-        let s8 = Sample { rate: 8000, ..s.clone() };
+        let s8 = Sample {
+            rate: 8000,
+            ..s.clone()
+        };
         assert_eq!(build(&s8, &src, &key(SampleFx::default())).sample, s8);
     }
 
@@ -864,16 +1222,37 @@ mod tests {
     #[test]
     fn pogo_ring_and_low_pass() {
         let s = noise(4000, 44100);
-        let b = build(&s, &Source::default(), &key(SampleFx { cutoff: 512, ..SampleFx::default() }));
+        let b = build(
+            &s,
+            &Source::default(),
+            &key(SampleFx {
+                cutoff: 512,
+                ..SampleFx::default()
+            }),
+        );
         let rough = |x: &[f32]| x.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<f32>();
         assert!(rough(&b.sample.left) < rough(&s.left) * 0.5);
         // Ring modulation at full mix: the right side starts a quarter turn ahead (sine at 4096 = 1).
-        let b = build(&s, &Source::default(), &key(SampleFx { ring_mix: 256, ..SampleFx::default() }));
+        let b = build(
+            &s,
+            &Source::default(),
+            &key(SampleFx {
+                ring_mix: 256,
+                ..SampleFx::default()
+            }),
+        );
         assert_eq!(b.sample.left[0], 0.0);
         assert_eq!(b.sample.right[0], s.right[0]);
         // Pogo keeps the length and the first frame.
         for v in [0, 512] {
-            let b = build(&s, &Source::default(), &key(SampleFx { pogo: v, ..SampleFx::default() }));
+            let b = build(
+                &s,
+                &Source::default(),
+                &key(SampleFx {
+                    pogo: v,
+                    ..SampleFx::default()
+                }),
+            );
             assert_eq!(b.sample.frames(), 4000);
             assert!((b.sample.left[0] - s.left[0]).abs() < 1e-6, "pogo {v}");
         }

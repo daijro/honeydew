@@ -642,7 +642,11 @@ impl PianoRoll {
         let step = crate::ui::anim::step(ui.ctx(), crate::ui::anim::PANEL_KEEP);
         let mut easing = false;
         for (key, glow) in self.key_press.iter_mut().enumerate() {
-            let target = if self.key_down == Some(key as u8) { 1.0 } else { 0.0 };
+            let target = if self.key_down == Some(key as u8) {
+                1.0
+            } else {
+                0.0
+            };
             *glow += (target - *glow) * step;
             easing |= (*glow - target).abs() > 0.002;
         }
@@ -2582,10 +2586,9 @@ fn paint_notes(
         // The new note's pop-in, on its own id so that the next note pops in too. Off with `Animation` reduced
         // ([`crate::ui::anim::elapsed`] is past every end then), and in tests unless they turn animations on.
         let pop = match *e {
-            Event::Note { pos, key, .. } if born == Some((pos, key)) => Some(crate::ui::anim::elapsed(
-                painter.ctx(),
-                Id::new(("roll note born", pos, key)),
-            )),
+            Event::Note { pos, key, .. } if born == Some((pos, key)) => Some(
+                crate::ui::anim::elapsed(painter.ctx(), Id::new(("roll note born", pos, key))),
+            ),
             _ => None,
         };
         match pop.map(|t| (t / POP_S).min(1.0)) {

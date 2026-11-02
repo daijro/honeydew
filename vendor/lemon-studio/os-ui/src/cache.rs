@@ -99,7 +99,12 @@ pub(crate) struct Lru<V> {
 
 impl<V> Lru<V> {
     pub(crate) fn new(budget: usize) -> Self {
-        Lru { map: HashMap::default(), clock: 0, bytes: 0, budget }
+        Lru {
+            map: HashMap::default(),
+            clock: 0,
+            bytes: 0,
+            budget,
+        }
     }
 
     pub(crate) fn get(&mut self, k: u64) -> Option<&V> {

@@ -79,7 +79,11 @@ impl Expo {
             return Expo::default();
         }
         let a = f64::from(v.abs());
-        Expo { c0: v, c1: s(1.0 / a), c2: s((a + 1.0).ln()) }
+        Expo {
+            c0: v,
+            c1: s(1.0 / a),
+            c2: s((a + 1.0).ln()),
+        }
     }
 
     /// `E(u)` in doubles: `u` (no strength), a fast start (`c0 > 0`) or a slow one (`c0 < 0`).
@@ -121,15 +125,18 @@ impl<'a> Reader<'a> {
     }
 
     pub fn i32(&mut self) -> Option<i32> {
-        self.bytes(4).map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        self.bytes(4)
+            .map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
     }
 
     pub fn f32(&mut self) -> Option<f32> {
-        self.bytes(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        self.bytes(4)
+            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
     }
 
     pub fn f64(&mut self) -> Option<f64> {
-        self.bytes(8).map(|b| f64::from_le_bytes(b.try_into().unwrap()))
+        self.bytes(8)
+            .map(|b| f64::from_le_bytes(b.try_into().unwrap()))
     }
 
     pub fn ints(&mut self, n: usize) -> Option<Vec<i32>> {

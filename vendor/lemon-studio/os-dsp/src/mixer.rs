@@ -7,7 +7,7 @@
 // spec: audio/mixer.md ("Fader matrix", "Equaliser", "Sends")
 
 use crate::glide::Ramp;
-use crate::level::{PanLaw, R12800, R6400, R65536, curve, knob, pan_split_law, unity_at_centre};
+use crate::level::{PanLaw, R6400, R12800, R65536, curve, knob, pan_split_law, unity_at_centre};
 
 /// Stored defaults of the three equaliser bands: gain (0.01 dB), frequency and width positions (0..65536).
 pub const EQ_DEFAULT: [[i32; 3]; 3] = [[0, 5777, 17500], [0, 33145, 17500], [0, 55825, 17500]];
@@ -41,12 +41,21 @@ pub fn fader_matrix_law(volume: i32, pan: i32, separation: i32, on: bool, law: P
     }
     if separation != 0 {
         let sep = f64::from(separation) / 64.0;
-        let add = if separation > 0 { (5f64.powf(sep) - 1.0) * 0.25 } else { sep };
+        let add = if separation > 0 {
+            (5f64.powf(sep) - 1.0) * 0.25
+        } else {
+            sep
+        };
         xl = (2.0 * xl + add).min(1.0) * 0.5;
         xr = (2.0 * xr + add).min(1.0) * 0.5;
     }
     let (g0, g1) = (f64::from(g0), f64::from(g1));
-    [(g0 * (1.0 - xl)) as f32, (g0 * xl) as f32, (g1 * (1.0 - xr)) as f32, (g1 * xr) as f32]
+    [
+        (g0 * (1.0 - xl)) as f32,
+        (g0 * xl) as f32,
+        (g1 * (1.0 - xr)) as f32,
+        (g1 * xr) as f32,
+    ]
 }
 
 /// A send's gain from its stored level (0..16000, 12800 = unity): the level curve.
@@ -164,15 +173,27 @@ impl Default for TrackEq {
     }
 }
 
-impl TrackEq { // This code is a part of L e m o n S t u d i o.
+impl TrackEq {
+    // This code is a part of L e m o n S t u d i o.
     /// The equaliser for stored band settings `[gain, frequency, width]` (gain -1800..1800 in 0.01 dB, frequency and
     /// width 0..65536) at `rate`.
     pub fn new(settings: [[i32; 3]; 3], rate: u32) -> Self {
         let band = |k: usize| {
             let s = settings[k];
-            Band { settings: s, kind: k, coef: design(k, s, rate), state: [[0.0; 4]; 2], running: s[0] != 0, dirty: false, count: None }
+            Band {
+                settings: s,
+                kind: k,
+                coef: design(k, s, rate),
+                state: [[0.0; 4]; 2],
+                running: s[0] != 0,
+                dirty: false,
+                count: None,
+            }
         };
-        TrackEq { bands: [band(0), band(1), band(2)], rate }
+        TrackEq {
+            bands: [band(0), band(1), band(2)],
+            rate,
+        }
     }
 
     /// An equaliser whose bands take their type from `kinds` (0 low shelf, 1 peaking, 2 high shelf) and where every
@@ -183,9 +204,20 @@ impl TrackEq { // This code is a part of L e m o n S t u d i o.
             let s = settings[k];
             let kind = kinds[k].min(2);
             let count = (s[0] == 0).then(|| idle_count(rate));
-            Band { settings: s, kind, coef: design(kind, s, rate), state: [[0.0; 4]; 2], running: true, dirty: false, count }
+            Band {
+                settings: s,
+                kind,
+                coef: design(kind, s, rate),
+                state: [[0.0; 4]; 2],
+                running: true,
+                dirty: false,
+                count,
+            }
         };
-        TrackEq { bands: [band(0), band(1), band(2)], rate }
+        TrackEq {
+            bands: [band(0), band(1), band(2)],
+            rate,
+        }
     }
 
     /// True when no band runs (the equaliser passes its input unchanged).
@@ -202,11 +234,17 @@ impl TrackEq { // This code is a part of L e m o n S t u d i o.
     /// whose gain is not 0 afterwards runs on from the memory it has; one whose gain is 0 starts its count afresh and
     /// runs at 0 dB until it ends.
     pub fn set(&mut self, band: usize, field: usize, value: i32) {
-        let (Some(b), true) = (self.bands.get_mut(band), field < 3) else { return };
+        let (Some(b), true) = (self.bands.get_mut(band), field < 3) else {
+            return;
+        };
         b.settings[field] = value;
         b.dirty = true;
         b.running = true;
-        b.count = if b.settings[0] == 0 { Some(idle_count(self.rate)) } else { None };
+        b.count = if b.settings[0] == 0 {
+            Some(idle_count(self.rate))
+        } else {
+            None
+        };
     }
 
     /// Processes one tick of interleaved stereo in place; each band hands the next its output rounded to single. After
@@ -281,7 +319,13 @@ fn design(k: usize, [gain, freq, width]: [i32; 3], rate: u32) -> [f64; 5] {
         let qq = f64::from((((f64::from(q) * 1001f64.ln()).exp()) - 1.0) as f32) * 0.0999 + 0.1;
         let alpha = sn / (2.0 * qq);
         let n = 1.0 / (alpha / a + 1.0);
-        (n * (1.0 + alpha * a), -2.0 * n * cs, n * (1.0 - alpha * a), -2.0 * n * cs, n * (1.0 - alpha / a))
+        (
+            n * (1.0 + alpha * a),
+            -2.0 * n * cs,
+            n * (1.0 - alpha * a),
+            -2.0 * n * cs,
+            n * (1.0 - alpha / a),
+        )
     } else {
         let s = f64::from(q) * 1.9 + 0.1;
         let beta = ((a * a + 1.0) / s - (a - 1.0) * (a - 1.0)).sqrt() * sn;
@@ -310,13 +354,17 @@ fn design(k: usize, [gain, freq, width]: [i32; 3], rate: u32) -> [f64; 5] {
 }
 
 #[cfg(test)]
-mod tests { // This code is a part of L e m o n S t u d i o.
+mod tests {
+    // This code is a part of L e m o n S t u d i o.
     use super::*;
 
     /// The default bands sit at 90 Hz, 1500 Hz and 8000 Hz (spec: ui/mixer.md §8); the knob spans 10 Hz .. 16 kHz.
     #[test]
     fn eq_frequency_law() {
-        let hz: Vec<f32> = EQ_DEFAULT.iter().map(|b| eq_frequency(b[1]).round()).collect();
+        let hz: Vec<f32> = EQ_DEFAULT
+            .iter()
+            .map(|b| eq_frequency(b[1]).round())
+            .collect();
         assert_eq!(hz, [90.0, 1500.0, 8000.0]);
         assert_eq!(eq_frequency(0), 10.0);
         assert!((eq_frequency(65536) - 16000.0).abs() < 1.0);
@@ -332,10 +380,19 @@ mod tests { // This code is a part of L e m o n S t u d i o.
         s[1][0] = 900;
         let at = |hz: f64| eq_response_db(s, 44100, hz);
         assert!((at(1500.0) - 9.0).abs() < 0.05, "{}", at(1500.0));
-        assert!(at(30.0).abs() < 0.5 && at(16000.0).abs() < 0.5, "{} {}", at(30.0), at(16000.0));
+        assert!(
+            at(30.0).abs() < 0.5 && at(16000.0).abs() < 0.5,
+            "{} {}",
+            at(30.0),
+            at(16000.0)
+        );
         s[1][0] = 0;
         s[0][0] = -1200;
-        assert!((eq_response_db(s, 44100, 15.0) + 12.0).abs() < 0.3, "low shelf: {}", eq_response_db(s, 44100, 15.0));
+        assert!(
+            (eq_response_db(s, 44100, 15.0) + 12.0).abs() < 0.3,
+            "low shelf: {}",
+            eq_response_db(s, 44100, 15.0)
+        );
     }
 
     /// Centred at unity the matrix is the identity; the pan law matches the measured mixer pan (at -0.5:
@@ -344,7 +401,12 @@ mod tests { // This code is a part of L e m o n S t u d i o.
     fn fader_matrix_points() {
         assert_eq!(fader_matrix(12800, 0, 0, true), [1.0, 0.0, 1.0, 0.0]);
         let [ll, rl, rr, lr] = fader_matrix(12800, -3200, 0, true);
-        assert!((ll - 1.0068).abs() < 1e-4 && (rl - 0.2997).abs() < 1e-4 && (rr - 0.5412).abs() < 1e-4 && lr == 0.0);
+        assert!(
+            (ll - 1.0068).abs() < 1e-4
+                && (rl - 0.2997).abs() < 1e-4
+                && (rr - 0.5412).abs() < 1e-4
+                && lr == 0.0
+        );
         assert_eq!(fader_matrix(12800, 0, 0, false), [0.0; 4]);
         assert_eq!(fader_matrix(0, 0, 0, true), [0.0; 4]);
         // 16000 is curve(1.25).
@@ -368,20 +430,40 @@ mod tests { // This code is a part of L e m o n S t u d i o.
         ];
         for (pan, want) in table {
             let got = tri(pan);
-            assert!(got.iter().zip(want).all(|(g, w)| (g - w).abs() < 2e-4), "{pan}: {got:?}");
+            assert!(
+                got.iter().zip(want).all(|(g, w)| (g - w).abs() < 2e-4),
+                "{pan}: {got:?}"
+            );
         }
         assert_eq!(tri(0), [1.0, 0.0, 0.0, 1.0]);
-        for (vol, pan, sep) in [(12800, 0, 0), (10000, -3200, 0), (16000, 1600, 20), (12800, 6400, -30)] {
-            assert_eq!(fader_matrix_law(vol, pan, sep, true, PanLaw::Circular), fader_matrix(vol, pan, sep, true));
+        for (vol, pan, sep) in [
+            (12800, 0, 0),
+            (10000, -3200, 0),
+            (16000, 1600, 20),
+            (12800, 6400, -30),
+        ] {
+            assert_eq!(
+                fader_matrix_law(vol, pan, sep, true, PanLaw::Circular),
+                fader_matrix(vol, pan, sep, true)
+            );
         }
-        assert_eq!(fader_matrix_law(10000, 0, 0, true, PanLaw::Triangular), fader_matrix(10000, 0, 0, true), "the same centre");
+        assert_eq!(
+            fader_matrix_law(10000, 0, 0, true, PanLaw::Triangular),
+            fader_matrix(10000, 0, 0, true),
+            "the same centre"
+        );
     }
 
     /// Positive separation merges (mono at 64), negative widens (the side doubled at -64).
     #[test]
     fn separation_merges_and_widens() {
         let [ll, rl, rr, lr] = fader_matrix(12800, 0, 64, true);
-        assert!((ll - 0.5).abs() < 1e-6 && (rl - 0.5).abs() < 1e-6 && (rr - 0.5).abs() < 1e-6 && (lr - 0.5).abs() < 1e-6);
+        assert!(
+            (ll - 0.5).abs() < 1e-6
+                && (rl - 0.5).abs() < 1e-6
+                && (rr - 0.5).abs() < 1e-6
+                && (lr - 0.5).abs() < 1e-6
+        );
         let [ll, rl, ..] = fader_matrix(12800, 0, -64, true);
         assert!((ll - 1.5).abs() < 1e-6 && (rl + 0.5).abs() < 1e-6);
         // Halfway merged follows 5^sep.
@@ -408,15 +490,24 @@ mod tests { // This code is a part of L e m o n S t u d i o.
         s[1][0] = 1200;
         let mut eq = TrackEq::new(s, 44100);
         assert!(!eq.is_flat());
-        let f = f64::from(((((33145.0f32 / 65536.0) as f64 * 101f64.ln()).exp() - 1.0) as f32 as f64 * 159.9 + 10.0) as f32);
+        let f = f64::from(
+            ((((33145.0f32 / 65536.0) as f64 * 101f64.ln()).exp() - 1.0) as f32 as f64 * 159.9
+                + 10.0) as f32,
+        );
         let n = 44100;
-        let mut buf: Vec<f32> = (0..n).flat_map(|i| {
-            let v = (2.0 * std::f64::consts::PI * f * i as f64 / 44100.0).sin() as f32 * 0.1;
-            [v, v]
-        }).collect();
+        let mut buf: Vec<f32> = (0..n)
+            .flat_map(|i| {
+                let v = (2.0 * std::f64::consts::PI * f * i as f64 / 44100.0).sin() as f32 * 0.1;
+                [v, v]
+            })
+            .collect();
         eq.process(&mut buf);
         let peak = buf[n..].iter().fold(0.0f32, |m, v| m.max(v.abs()));
-        assert!((20.0 * (peak / 0.1).log10() - 12.0).abs() < 0.2, "{} dB at {f} Hz", 20.0 * (peak / 0.1).log10());
+        assert!(
+            (20.0 * (peak / 0.1).log10() - 12.0).abs() < 0.2,
+            "{} dB at {f} Hz",
+            20.0 * (peak / 0.1).log10()
+        );
     }
 
     // spec: audio/mixer.md "Changes while the song plays" (the equaliser)
@@ -435,7 +526,10 @@ mod tests { // This code is a part of L e m o n S t u d i o.
         let memory = eq.bands[1].state;
         assert!(memory[0][0] != 0.0);
         eq.set(1, 1, 20000);
-        assert_eq!(eq.bands[1].state, memory, "coefficients change, memory stays");
+        assert_eq!(
+            eq.bands[1].state, memory,
+            "coefficients change, memory stays"
+        );
         tick(&mut eq, 100);
         assert_eq!(eq.settings(1), [600, 20000, 17500]);
         // Back to 0 dB: it runs on for rate div 5 = 8820 samples counted in whole ticks: at 149 samples a tick the
@@ -478,12 +572,20 @@ mod tests { // This code is a part of L e m o n S t u d i o.
         assert_eq!(g.current, 0.01);
         assert_eq!(wet[0], 0.0);
         for k in 0..20 {
-            assert!((wet[2 * k] - 0.0005 * k as f32).abs() < 1e-7, "{k}: {}", wet[2 * k]);
+            assert!(
+                (wet[2 * k] - 0.0005 * k as f32).abs() < 1e-7,
+                "{k}: {}",
+                wet[2 * k]
+            );
             assert_eq!(wet[2 * k], wet[2 * k + 1]);
         }
         // The wet side is weighted by a running sum in doubles from single(1 - start).
         let mut wet = vec![1.0f32; 40];
-        slot_blend(&mut wet, &vec![0.0; 40], Glide::new(0.0).block(0.01, 20, 0.001));
+        slot_blend(
+            &mut wet,
+            &vec![0.0; 40],
+            Glide::new(0.0).block(0.01, 20, 0.001),
+        );
         assert_eq!(wet[0], 1.0);
         assert!((wet[38] - (1.0 - 19.0 * 0.0005)).abs() < 1e-6);
     }

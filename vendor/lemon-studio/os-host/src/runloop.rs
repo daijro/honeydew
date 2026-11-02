@@ -62,21 +62,43 @@ fn token() -> Token {
 /// Watches `fd` for `flags` (`READ`, `WRITE`, `ERROR`); `call(fd, ready flags)` runs when it is ready.
 pub fn add_fd(fd: i32, flags: u32, call: impl FnMut(i32, u32) + 'static) -> Token {
     let t = token();
-    LOOP.with(|l| l.borrow_mut().fds.push(Fd { token: t, fd, flags, call: Rc::new(RefCell::new(call)) }));
+    LOOP.with(|l| {
+        l.borrow_mut().fds.push(Fd {
+            token: t,
+            fd,
+            flags,
+            call: Rc::new(RefCell::new(call)),
+        })
+    });
     t
 }
 
 /// Changes what a registered descriptor is watched for.
 pub fn modify_fd(token: Token, flags: u32) -> bool {
     // Honeydew (vendored change): `try_with`, as in `remove`.
-    LOOP.try_with(|l| l.borrow_mut().fds.iter_mut().find(|f| f.token == token).map(|f| f.flags = flags).is_some()).unwrap_or(false)
+    LOOP.try_with(|l| {
+        l.borrow_mut()
+            .fds
+            .iter_mut()
+            .find(|f| f.token == token)
+            .map(|f| f.flags = flags)
+            .is_some()
+    })
+    .unwrap_or(false)
 }
 
 /// Runs `call` every `period` (at the UI tick's resolution, never more than once per tick).
 pub fn add_timer(period: Duration, call: impl FnMut() + 'static) -> Token {
     let t = token();
     let period = period.max(Duration::from_millis(1));
-    LOOP.with(|l| l.borrow_mut().timers.push(Timer { token: t, period, due: Instant::now() + period, call: Rc::new(RefCell::new(call)) }));
+    LOOP.with(|l| {
+        l.borrow_mut().timers.push(Timer {
+            token: t,
+            period,
+            due: Instant::now() + period,
+            call: Rc::new(RefCell::new(call)),
+        })
+    });
     t
 }
 
@@ -123,8 +145,13 @@ fn registered(token: Token) -> bool {
 
 /// UI thread: runs the callbacks of ready descriptors and due timers. Never blocks.
 pub fn dispatch() {
-    let watched: Vec<(Token, i32, u32, FdCall)> =
-        LOOP.with(|l| l.borrow().fds.iter().map(|f| (f.token, f.fd, f.flags, f.call.clone())).collect());
+    let watched: Vec<(Token, i32, u32, FdCall)> = LOOP.with(|l| {
+        l.borrow()
+            .fds
+            .iter()
+            .map(|f| (f.token, f.fd, f.flags, f.call.clone()))
+            .collect()
+    });
     if !watched.is_empty() {
         for (token, fd, ready, call) in ready(&watched) {
             // An earlier callback may have removed this one.
@@ -166,7 +193,11 @@ fn ready(watched: &[(Token, i32, u32, FdCall)]) -> Vec<(Token, i32, u32, FdCall)
             if flags & WRITE != 0 {
                 events |= libc::POLLOUT;
             }
-            libc::pollfd { fd, events, revents: 0 }
+            libc::pollfd {
+                fd,
+                events,
+                revents: 0,
+            }
         })
         .collect();
     // SAFETY: `polls` is a valid array of `pollfd` for its length; a zero timeout never blocks.

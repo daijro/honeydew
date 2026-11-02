@@ -18,13 +18,16 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use vst3_sys as vst3_com;
-use vst3_sys::base::{kInvalidArgument, kNoInterface, kResultFalse, kResultOk, tresult, FIDString, IBStream, IUnknown};
-use vst3_sys::gui::{IPlugFrame, IPlugView, ViewRect};
+use vst3_sys::base::{
+    kInvalidArgument, kNoInterface, kResultFalse, kResultOk, tresult, FIDString, IBStream, IUnknown,
+};
 #[cfg(target_os = "linux")]
 use vst3_sys::gui::linux::{FileDescriptor, IEventHandler, IRunLoop, ITimerHandler, TimerInterval};
+use vst3_sys::gui::{IPlugFrame, IPlugView, ViewRect};
 use vst3_sys::utils::{SharedVstPtr, StaticVstPtr};
 use vst3_sys::vst::{
-    Event, IAttributeList, IComponentHandler, IEventList, IHostApplication, IMessage, IParamValueQueue, IParameterChanges,
+    Event, IAttributeList, IComponentHandler, IEventList, IHostApplication, IMessage,
+    IParamValueQueue, IParameterChanges,
 };
 use vst3_sys::{c_void, ComInterface, IID, VST3};
 
@@ -36,7 +39,9 @@ pub struct Com<T: IUnknown> {
 impl<T: IUnknown> Com<T> {
     /// Takes the object `allocate` returned (reference count 1).
     pub fn new(b: Box<T>) -> Com<T> {
-        Com { ptr: Box::into_raw(b) }
+        Com {
+            ptr: Box::into_raw(b),
+        }
     }
 
     pub fn get(&self) -> &T {
@@ -162,17 +167,30 @@ impl IHostApplication for HostApp {
         kResultOk
     }
 
-    unsafe fn create_instance(&self, cid: *const IID, iid: *const IID, obj: *mut *mut c_void) -> tresult {
+    unsafe fn create_instance(
+        &self,
+        cid: *const IID,
+        iid: *const IID,
+        obj: *mut *mut c_void,
+    ) -> tresult {
         if cid.is_null() || iid.is_null() || obj.is_null() {
             return kInvalidArgument;
         }
         unsafe {
             *obj = std::ptr::null_mut();
             if *cid == <dyn IMessage as ComInterface>::IID {
-                return hand_out(Message::allocate(RefCell::new(c"".to_owned()), AttributeList::create()), iid, obj);
+                return hand_out(
+                    Message::allocate(RefCell::new(c"".to_owned()), AttributeList::create()),
+                    iid,
+                    obj,
+                );
             }
             if *cid == <dyn IAttributeList as ComInterface>::IID {
-                return hand_out(AttributeList::allocate(RefCell::new(HashMap::new())), iid, obj);
+                return hand_out(
+                    AttributeList::allocate(RefCell::new(HashMap::new())),
+                    iid,
+                    obj,
+                );
             }
         }
         kNoInterface
@@ -227,7 +245,9 @@ unsafe fn key(id: *const std::ffi::c_char) -> Option<Vec<u8>> {
 
 impl IAttributeList for AttributeList {
     unsafe fn set_int(&self, id: *const std::ffi::c_char, value: i64) -> tresult {
-        let Some(k) = (unsafe { key(id) }) else { return kInvalidArgument };
+        let Some(k) = (unsafe { key(id) }) else {
+            return kInvalidArgument;
+        };
         self.map.borrow_mut().insert(k, Attr::Int(value));
         kResultOk
     }
@@ -246,7 +266,9 @@ impl IAttributeList for AttributeList {
     }
 
     unsafe fn set_float(&self, id: *const std::ffi::c_char, value: f64) -> tresult {
-        let Some(k) = (unsafe { key(id) }) else { return kInvalidArgument };
+        let Some(k) = (unsafe { key(id) }) else {
+            return kInvalidArgument;
+        };
         self.map.borrow_mut().insert(k, Attr::Float(value));
         kResultOk
     }
@@ -265,8 +287,15 @@ impl IAttributeList for AttributeList {
     }
 
     /// The documented signature has no size (the string is NUL terminated); the binding's extra argument is ignored.
-    unsafe fn set_string(&self, id: *const std::ffi::c_char, value: *const i16, _size: u32) -> tresult {
-        let Some(k) = (unsafe { key(id) }) else { return kInvalidArgument };
+    unsafe fn set_string(
+        &self,
+        id: *const std::ffi::c_char,
+        value: *const i16,
+        _size: u32,
+    ) -> tresult {
+        let Some(k) = (unsafe { key(id) }) else {
+            return kInvalidArgument;
+        };
         if value.is_null() {
             return kInvalidArgument;
         }
@@ -285,9 +314,16 @@ impl IAttributeList for AttributeList {
     }
 
     /// `size` is the buffer size in bytes.
-    unsafe fn get_string(&self, id: *const std::ffi::c_char, value: *mut i16, size: u32) -> tresult {
+    unsafe fn get_string(
+        &self,
+        id: *const std::ffi::c_char,
+        value: *mut i16,
+        size: u32,
+    ) -> tresult {
         let map = self.map.borrow();
-        let Some(Attr::Str(s)) = (unsafe { key(id) }).and_then(|k| map.get(&k)) else { return kResultFalse };
+        let Some(Attr::Str(s)) = (unsafe { key(id) }).and_then(|k| map.get(&k)) else {
+            return kResultFalse;
+        };
         let cap = (size as usize / 2).saturating_sub(1);
         if value.is_null() || size < 2 {
             return kInvalidArgument;
@@ -300,17 +336,35 @@ impl IAttributeList for AttributeList {
         kResultOk
     }
 
-    unsafe fn set_binary(&self, id: *const std::ffi::c_char, ptr: *const c_void, size: u32) -> tresult {
-        let Some(k) = (unsafe { key(id) }) else { return kInvalidArgument };
-        let data = if ptr.is_null() || size == 0 { Vec::new() } else { unsafe { std::slice::from_raw_parts(ptr as *const u8, size as usize) }.to_vec() };
+    unsafe fn set_binary(
+        &self,
+        id: *const std::ffi::c_char,
+        ptr: *const c_void,
+        size: u32,
+    ) -> tresult {
+        let Some(k) = (unsafe { key(id) }) else {
+            return kInvalidArgument;
+        };
+        let data = if ptr.is_null() || size == 0 {
+            Vec::new()
+        } else {
+            unsafe { std::slice::from_raw_parts(ptr as *const u8, size as usize) }.to_vec()
+        };
         self.map.borrow_mut().insert(k, Attr::Bin(data));
         kResultOk
     }
 
     /// The data stays owned by the list (valid while the attribute is unchanged).
-    unsafe fn get_binary(&self, id: *const std::ffi::c_char, ptr: *const *mut c_void, size: *mut u32) -> tresult {
+    unsafe fn get_binary(
+        &self,
+        id: *const std::ffi::c_char,
+        ptr: *const *mut c_void,
+        size: *mut u32,
+    ) -> tresult {
         let map = self.map.borrow();
-        let Some(Attr::Bin(b)) = (unsafe { key(id) }).and_then(|k| map.get(&k)) else { return kResultFalse };
+        let Some(Attr::Bin(b)) = (unsafe { key(id) }).and_then(|k| map.get(&k)) else {
+            return kResultFalse;
+        };
         if ptr.is_null() || size.is_null() {
             return kInvalidArgument;
         }
@@ -403,10 +457,18 @@ impl Frame {
 /// their timers, and get the callbacks on the UI thread (`os_host::runloop`).
 #[cfg(target_os = "linux")]
 impl IRunLoop for Frame {
-    unsafe fn register_event_handler(&self, h: SharedVstPtr<dyn IEventHandler>, fd: FileDescriptor) -> tresult {
-        let Some(handler) = h.upgrade() else { return kInvalidArgument };
+    unsafe fn register_event_handler(
+        &self,
+        h: SharedVstPtr<dyn IEventHandler>,
+        fd: FileDescriptor,
+    ) -> tresult {
+        let Some(handler) = h.upgrade() else {
+            return kInvalidArgument;
+        };
         let key = { h }.as_ptr() as usize;
-        let token = os_host::runloop::add_fd(fd, os_host::runloop::READ, move |fd, _| unsafe { handler.on_fd_is_set(fd) });
+        let token = os_host::runloop::add_fd(fd, os_host::runloop::READ, move |fd, _| unsafe {
+            handler.on_fd_is_set(fd)
+        });
         self.run.borrow_mut().push((key, token));
         kResultOk
     }
@@ -416,10 +478,19 @@ impl IRunLoop for Frame {
         kResultOk
     }
 
-    unsafe fn register_timer(&self, t: SharedVstPtr<dyn ITimerHandler>, ms: TimerInterval) -> tresult {
-        let Some(timer) = t.upgrade() else { return kInvalidArgument };
+    unsafe fn register_timer(
+        &self,
+        t: SharedVstPtr<dyn ITimerHandler>,
+        ms: TimerInterval,
+    ) -> tresult {
+        let Some(timer) = t.upgrade() else {
+            return kInvalidArgument;
+        };
         let key = { t }.as_ptr() as usize;
-        let token = os_host::runloop::add_timer(std::time::Duration::from_millis(ms), move || unsafe { timer.on_timer() });
+        let token =
+            os_host::runloop::add_timer(std::time::Duration::from_millis(ms), move || unsafe {
+                timer.on_timer()
+            });
         self.run.borrow_mut().push((key, token));
         kResultOk
     }
@@ -431,7 +502,11 @@ impl IRunLoop for Frame {
 }
 
 impl IPlugFrame for Frame {
-    unsafe fn resize_view(&self, view: SharedVstPtr<dyn IPlugView>, new_size: *mut ViewRect) -> tresult {
+    unsafe fn resize_view(
+        &self,
+        view: SharedVstPtr<dyn IPlugView>,
+        new_size: *mut ViewRect,
+    ) -> tresult {
         if new_size.is_null() {
             return kInvalidArgument;
         }
@@ -472,7 +547,12 @@ impl Stream {
 }
 
 impl IBStream for Stream {
-    unsafe fn read(&self, buffer: *mut c_void, num_bytes: i32, num_bytes_read: *mut i32) -> tresult {
+    unsafe fn read(
+        &self,
+        buffer: *mut c_void,
+        num_bytes: i32,
+        num_bytes_read: *mut i32,
+    ) -> tresult {
         if buffer.is_null() || num_bytes < 0 {
             return kInvalidArgument;
         }
@@ -487,7 +567,12 @@ impl IBStream for Stream {
         kResultOk
     }
 
-    unsafe fn write(&self, buffer: *const c_void, num_bytes: i32, num_bytes_written: *mut i32) -> tresult {
+    unsafe fn write(
+        &self,
+        buffer: *const c_void,
+        num_bytes: i32,
+        num_bytes_written: *mut i32,
+    ) -> tresult {
         if buffer.is_null() || num_bytes < 0 {
             return kInvalidArgument;
         }
@@ -496,7 +581,9 @@ impl IBStream for Stream {
         if data.len() < pos + n {
             data.resize(pos + n, 0);
         }
-        unsafe { std::ptr::copy_nonoverlapping(buffer as *const u8, data.as_mut_ptr().add(pos), n) };
+        unsafe {
+            std::ptr::copy_nonoverlapping(buffer as *const u8, data.as_mut_ptr().add(pos), n)
+        };
         self.pos.set(pos + n);
         if !num_bytes_written.is_null() {
             unsafe { *num_bytes_written = n as i32 };
@@ -637,7 +724,10 @@ pub struct ParamChanges {
 
 impl ParamChanges {
     pub fn create() -> Com<ParamChanges> {
-        Com::new(ParamChanges::allocate(RefCell::new(Vec::new()), Cell::new(0)))
+        Com::new(ParamChanges::allocate(
+            RefCell::new(Vec::new()),
+            Cell::new(0),
+        ))
     }
 
     pub fn clear(&self) {
@@ -675,13 +765,20 @@ impl IParameterChanges for ParamChanges {
 
     unsafe fn get_parameter_data(&self, index: i32) -> StaticVstPtr<dyn IParamValueQueue> {
         let qs = self.queues.borrow();
-        match qs.get(index as usize).filter(|_| (index as usize) < self.used.get()) {
+        match qs
+            .get(index as usize)
+            .filter(|_| (index as usize) < self.used.get())
+        {
             Some(q) => q.static_ptr(),
             None => null_static(),
         }
     }
 
-    unsafe fn add_parameter_data(&self, id: *const u32, index: *mut i32) -> StaticVstPtr<dyn IParamValueQueue> {
+    unsafe fn add_parameter_data(
+        &self,
+        id: *const u32,
+        index: *mut i32,
+    ) -> StaticVstPtr<dyn IParamValueQueue> {
         if id.is_null() {
             return null_static();
         }
@@ -693,7 +790,10 @@ impl IParameterChanges for ParamChanges {
             None => {
                 if qs.len() == used {
                     // Room for an automation point every 64 frames of a full block.
-                    qs.push(Com::new(ParamQueue::allocate(Cell::new(0), RefCell::new(Vec::with_capacity(72)))));
+                    qs.push(Com::new(ParamQueue::allocate(
+                        Cell::new(0),
+                        RefCell::new(Vec::with_capacity(72)),
+                    )));
                 }
                 qs[used].get().id.set(id);
                 qs[used].get().points.borrow_mut().clear();

@@ -20,8 +20,12 @@ impl Fft {
     pub fn new(n: usize) -> Fft {
         assert!(n.is_power_of_two() && n >= 2, "FFT length {n}");
         let bits = n.trailing_zeros();
-        let rev = (0..n as u32).map(|i| i.reverse_bits() >> (32 - bits)).collect();
-        let (sin, cos) = (0..n / 2).map(|k| (std::f64::consts::TAU * k as f64 / n as f64).sin_cos()).unzip();
+        let rev = (0..n as u32)
+            .map(|i| i.reverse_bits() >> (32 - bits))
+            .collect();
+        let (sin, cos) = (0..n / 2)
+            .map(|k| (std::f64::consts::TAU * k as f64 / n as f64).sin_cos())
+            .unzip();
         Fft { n, rev, cos, sin }
     }
 
@@ -64,7 +68,14 @@ mod tests {
     fn matches_the_definition_and_inverts() {
         let n = 16;
         let fft = Fft::new(n);
-        let x: Vec<(f64, f64)> = (0..n).map(|i| ((i as f64 * 0.37).sin() + 0.1 * i as f64, (i as f64 * 1.3).cos())).collect();
+        let x: Vec<(f64, f64)> = (0..n)
+            .map(|i| {
+                (
+                    (i as f64 * 0.37).sin() + 0.1 * i as f64,
+                    (i as f64 * 1.3).cos(),
+                )
+            })
+            .collect();
         let (mut re, mut im): (Vec<f64>, Vec<f64>) = x.iter().copied().unzip();
         fft.run(&mut re, &mut im, false);
         for k in 0..n {
@@ -74,7 +85,10 @@ mod tests {
                 sr += xr * c - xi * s;
                 si += xr * s + xi * c;
             }
-            assert!((re[k] - sr).abs() < 1e-12 && (im[k] - si).abs() < 1e-12, "bin {k}");
+            assert!(
+                (re[k] - sr).abs() < 1e-12 && (im[k] - si).abs() < 1e-12,
+                "bin {k}"
+            );
         }
         fft.run(&mut re, &mut im, true);
         for (t, &(xr, xi)) in x.iter().enumerate() {

@@ -42,7 +42,11 @@ impl LiveEdits {
         if let Ok(mut l) = self.0.lock() {
             l.retain(|e| e.addr != addr);
             if (norm - host).abs() > 1e-7 {
-                l.push(LiveEdit { addr, norm, base: host });
+                l.push(LiveEdit {
+                    addr,
+                    norm,
+                    base: host,
+                });
             }
         }
     }

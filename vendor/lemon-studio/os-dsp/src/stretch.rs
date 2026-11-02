@@ -16,7 +16,13 @@ use signalsmith_stretch::Stretch;
 
 /// Stretches the stereo buffer `left` / `right` (`rate` Hz) to `frames` frames with its pitch multiplied by
 /// `transpose`. The result starts where the input starts: the stretcher's latency is taken out.
-pub fn whole(left: &[f32], right: &[f32], rate: u32, frames: usize, transpose: f64) -> (Vec<f32>, Vec<f32>) {
+pub fn whole(
+    left: &[f32],
+    right: &[f32],
+    rate: u32,
+    frames: usize,
+    transpose: f64,
+) -> (Vec<f32>, Vec<f32>) {
     let n = left.len().min(right.len());
     if frames == 0 || n == 0 {
         return (vec![0.0; frames], vec![0.0; frames]);
@@ -26,7 +32,11 @@ pub fn whole(left: &[f32], right: &[f32], rate: u32, frames: usize, transpose: f
     // The stretcher needs an output of at least twice its latency: a shorter one is made from the input padded with
     // silence in proportion (the same ratio), and the padding's part of the output is cut off.
     let out_n = frames.max(2 * st.output_latency() + 1);
-    let in_n = if out_n > frames { ((n as f64 * out_n as f64 / frames as f64).round() as usize).max(n) } else { n };
+    let in_n = if out_n > frames {
+        ((n as f64 * out_n as f64 / frames as f64).round() as usize).max(n)
+    } else {
+        n
+    };
     let mut input = vec![0.0f32; in_n * 2];
     for i in 0..n {
         input[2 * i] = left[i];
@@ -35,7 +45,13 @@ pub fn whole(left: &[f32], right: &[f32], rate: u32, frames: usize, transpose: f
     let mut out = vec![0.0f32; out_n * 2];
     exact(&mut st, &input, &mut out);
     let l = out.iter().step_by(2).take(frames).copied().collect();
-    let r = out.iter().skip(1).step_by(2).take(frames).copied().collect();
+    let r = out
+        .iter()
+        .skip(1)
+        .step_by(2)
+        .take(frames)
+        .copied()
+        .collect();
     (l, r)
 }
 
@@ -47,7 +63,10 @@ pub fn whole(left: &[f32], right: &[f32], rate: u32, frames: usize, transpose: f
 fn exact(st: &mut Stretch, input: &[f32], out: &mut [f32]) {
     let (n, frames) = (input.len() / 2, out.len() / 2);
     let (lat_in, lat_out) = (st.input_latency(), st.output_latency());
-    debug_assert!(frames >= 2 * lat_out, "the output is at least twice the latency");
+    debug_assert!(
+        frames >= 2 * lat_out,
+        "the output is at least twice the latency"
+    );
     // Start positioned on the centre of the input.
     let mut head = vec![0.0f32; lat_in * 2];
     let m = n.min(lat_in) * 2;
@@ -83,7 +102,11 @@ pub struct Stream {
 impl Stream {
     /// A stretcher for audio at `rate` Hz.
     pub fn new(rate: u32) -> Stream {
-        Stream { st: Stretch::preset_default(2, rate.max(1)), rate, out: Vec::new() }
+        Stream {
+            st: Stretch::preset_default(2, rate.max(1)),
+            rate,
+            out: Vec::new(),
+        }
     }
 
     /// The rate it was made for.
@@ -146,12 +169,19 @@ mod tests {
     use std::f64::consts::PI;
 
     fn sine(hz: f64, secs: f64, rate: u32) -> Vec<f32> {
-        (0..(secs * f64::from(rate)) as usize).map(|i| ((2.0 * PI * hz * i as f64 / f64::from(rate)).sin() * 0.5) as f32).collect()
+        (0..(secs * f64::from(rate)) as usize)
+            .map(|i| ((2.0 * PI * hz * i as f64 / f64::from(rate)).sin() * 0.5) as f32)
+            .collect()
     }
 
     /// Frequency from the rising zero crossings of `x`.
     fn freq(x: &[f32], rate: u32) -> f64 {
-        let ups: Vec<usize> = x.windows(2).enumerate().filter(|(_, w)| w[0] < 0.0 && w[1] >= 0.0).map(|(i, _)| i).collect();
+        let ups: Vec<usize> = x
+            .windows(2)
+            .enumerate()
+            .filter(|(_, w)| w[0] < 0.0 && w[1] >= 0.0)
+            .map(|(i, _)| i)
+            .collect();
         let (a, b) = (ups[0], ups[ups.len() - 1]);
         (ups.len() - 1) as f64 * f64::from(rate) / (b - a) as f64
     }
@@ -197,7 +227,11 @@ mod tests {
     /// `exact` gives the library's own result wherever that one is safe (an input at least its input latency long).
     #[test]
     fn exact_matches_the_library_on_long_inputs() {
-        for (rate, n, frames, t) in [(44100u32, 44100usize, 88200usize, 1.0f32), (48000, 30000, 12000, 1.3), (22050, 9000, 9000, 0.8)] {
+        for (rate, n, frames, t) in [
+            (44100u32, 44100usize, 88200usize, 1.0f32),
+            (48000, 30000, 12000, 1.3),
+            (22050, 9000, 9000, 0.8),
+        ] {
             let s = sine(330.0, n as f64 / f64::from(rate), rate);
             let input: Vec<f32> = s.iter().flat_map(|&v| [v, -v]).collect();
             let run = |ours: bool| {
@@ -216,11 +250,16 @@ mod tests {
             // about 0.006 on Linux): the difference's RMS against the signal's.
             let (a, b) = (run(true), run(false));
             let rms = |v: &mut dyn Iterator<Item = f32>| {
-                let (sum, n) = v.fold((0.0f64, 0usize), |(s, n), x| (s + f64::from(x) * f64::from(x), n + 1));
+                let (sum, n) = v.fold((0.0f64, 0usize), |(s, n), x| {
+                    (s + f64::from(x) * f64::from(x), n + 1)
+                });
                 (sum / n.max(1) as f64).sqrt()
             };
             let d = rms(&mut a.iter().zip(&b).map(|(p, q)| p - q)) / rms(&mut b.iter().copied());
-            assert!(d < 0.01, "rate {rate}, {n} -> {frames}: relative RMS difference {d}");
+            assert!(
+                d < 0.01,
+                "rate {rate}, {n} -> {frames}: relative RMS difference {d}"
+            );
         }
     }
 
@@ -231,12 +270,25 @@ mod tests {
     fn whole_handles_samples_shorter_than_its_input_latency() {
         for rate in [22050, 44100, 48000] {
             for n in [1usize, 8, 100, 480, 2000] {
-                let s: Vec<f32> = sine(220.0, n as f64 / f64::from(rate), rate).into_iter().chain(std::iter::repeat(0.25)).take(n).collect();
+                let s: Vec<f32> = sine(220.0, n as f64 / f64::from(rate), rate)
+                    .into_iter()
+                    .chain(std::iter::repeat(0.25))
+                    .take(n)
+                    .collect();
                 for frames in [n, 4 * n, 22150, 88600] {
                     let (l, r) = whole(&s, &s, rate, frames, 1.0);
                     assert_eq!((l.len(), r.len()), (frames, frames));
-                    let peak = l.iter().chain(&r).fold(0.0f32, |m, v| if v.is_finite() { m.max(v.abs()) } else { f32::INFINITY });
-                    assert!(peak < 2.0, "rate {rate}, {n} frames to {frames}: peak {peak}");
+                    let peak = l.iter().chain(&r).fold(0.0f32, |m, v| {
+                        if v.is_finite() {
+                            m.max(v.abs())
+                        } else {
+                            f32::INFINITY
+                        }
+                    });
+                    assert!(
+                        peak < 2.0,
+                        "rate {rate}, {n} frames to {frames}: peak {peak}"
+                    );
                 }
             }
         }

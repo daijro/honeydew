@@ -2324,7 +2324,8 @@ mod component {
         song.add_channel(ChannelKind::Instrument);
         let _ = song.channels[1].lanes[0].add_clip(0, 4.0);
         song.key_root = 2;
-        song.key_scale = scale_to_stored(SCALES.iter().position(|&s| s == "Minor Natural").unwrap());
+        song.key_scale =
+            scale_to_stored(SCALES.iter().position(|&s| s == "Minor Natural").unwrap());
         let rig = Rig::with_song(song);
         let colors = theme_by_id(0).colors;
         assert!(

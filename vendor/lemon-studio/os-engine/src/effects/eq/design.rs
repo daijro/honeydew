@@ -54,7 +54,11 @@ impl Stored {
 
     /// Sections: `|order| + 1`, none for a band of type 0.
     pub fn sections(&self) -> usize {
-        if self.kind == 0 { 0 } else { self.order.unsigned_abs() as usize + 1 }
+        if self.kind == 0 {
+            0
+        } else {
+            self.order.unsigned_abs() as usize + 1
+        }
     }
 
     /// The shelves and the peaking type, whose level counts.
@@ -93,13 +97,22 @@ pub struct Coefs {
 
 impl Coefs {
     /// A section that passes its input on.
-    pub const UNITY: Coefs = Coefs { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 };
+    pub const UNITY: Coefs = Coefs {
+        b0: 1.0,
+        b1: 0.0,
+        b2: 0.0,
+        a1: 0.0,
+        a2: 0.0,
+    };
 
     /// The squared magnitude at `w` radians per sample.
     pub fn power(&self, w: f64) -> f64 {
         let (s1, c1) = w.sin_cos();
         let (s2, c2) = (2.0 * w).sin_cos();
-        let (nr, ni) = (self.b0 * c2 + self.b1 * c1 + self.b2, self.b0 * s2 + self.b1 * s1);
+        let (nr, ni) = (
+            self.b0 * c2 + self.b1 * c1 + self.b2,
+            self.b0 * s2 + self.b1 * s1,
+        );
         let (dr, di) = (c2 + self.a1 * c1 + self.a2, s2 + self.a1 * s1);
         (nr * nr + ni * ni) / (dr * dr + di * di).max(1e-300)
     }
@@ -119,12 +132,30 @@ impl BandCoefs {
 }
 
 /// Rows `m = 1..3` of the steep variants (row 0 unused). All singles.
-const PASS_Q: [[f32; 4]; 4] =
-    [[0.0; 4], [1.9834017, 0.74921465, 0.0, 0.0], [2.64304, 1.0815187, 0.69424474, 0.0], [3.5764515, 1.1417328, 1.0447108, 0.6551186]];
-const SHELF_SLOPE: [[f32; 4]; 4] =
-    [[0.0; 4], [2.6304471, 0.61564445, 0.0, 0.0], [5.161228, 1.109271, 0.5098673, 0.0], [10.319123, 1.5144353, 0.69403285, 0.5529967]];
-const PEAK_SHIFT: [[f32; 4]; 4] = [[0.0; 4], [-0.25, 0.25, 0.0, 0.0], [-0.475, 0.0, 0.475, 0.0], [-0.775, -0.3, 0.3, 0.775]];
-const PEAK_WIDTH: [[f32; 4]; 4] = [[0.0; 4], [1.0, 1.0, 0.0, 0.0], [1.0, 1.5707964, 1.0, 0.0], [1.0, 1.5707964, 1.5707964, 1.0]];
+const PASS_Q: [[f32; 4]; 4] = [
+    [0.0; 4],
+    [1.9834017, 0.74921465, 0.0, 0.0],
+    [2.64304, 1.0815187, 0.69424474, 0.0],
+    [3.5764515, 1.1417328, 1.0447108, 0.6551186],
+];
+const SHELF_SLOPE: [[f32; 4]; 4] = [
+    [0.0; 4],
+    [2.6304471, 0.61564445, 0.0, 0.0],
+    [5.161228, 1.109271, 0.5098673, 0.0],
+    [10.319123, 1.5144353, 0.69403285, 0.5529967],
+];
+const PEAK_SHIFT: [[f32; 4]; 4] = [
+    [0.0; 4],
+    [-0.25, 0.25, 0.0, 0.0],
+    [-0.475, 0.0, 0.475, 0.0],
+    [-0.775, -0.3, 0.3, 0.775],
+];
+const PEAK_WIDTH: [[f32; 4]; 4] = [
+    [0.0; 4],
+    [1.0, 1.0, 0.0, 0.0],
+    [1.0, 1.5707964, 1.0, 0.0],
+    [1.0, 1.5707964, 1.5707964, 1.0],
+];
 const PEAK_GAIN: [f32; 4] = [0.0, 0.32125, 0.2442, 0.214445];
 const PEAK_NARROW: [f32; 4] = [0.0, 0.5, 0.33333334, 0.25];
 
@@ -135,7 +166,11 @@ pub fn freq_hz(freq: i32) -> f32 {
 
 /// `sinh` as the band's settings use it: 0 for arguments within 1e-12 of 0.
 fn sinh(z: f64) -> f64 {
-    if z.abs() <= 1e-12 { 0.0 } else { (z.exp() - (-z).exp()) / 2.0 }
+    if z.abs() <= 1e-12 {
+        0.0
+    } else {
+        (z.exp() - (-z).exp()) / 2.0
+    }
 }
 
 /// The settings shared by the band's sections ("A band's settings").
@@ -154,7 +189,11 @@ impl Shared {
         Shared {
             freq: freq_hz(b.freq),
             width: (b.width as f32) * (1.0 / 65536.0),
-            gain: if b.has_gain() { (b.level as f32) * 0.01 } else { 0.0 },
+            gain: if b.has_gain() {
+                (b.level as f32) * 0.01
+            } else {
+                0.0
+            },
             m,
             share: (1.0 / (m as f64 + 1.0)) as f32,
             steep: b.order < 0,
@@ -184,7 +223,11 @@ impl Shared {
         let db = db_unit();
         let ratio = ((f64::from(db * 3.0)).exp() as f32) / ((f64::from(db * 6.0)).exp() as f32);
         let spread = (f64::from(ratio) * (self.m as f64 + 1.0).sqrt()) as f32;
-        let factor = if kind == BAND_PASS { spread } else { 1.0 / spread };
+        let factor = if kind == BAND_PASS {
+            spread
+        } else {
+            1.0 / spread
+        };
         (f64::from(self.width) * 4.9 + 0.1) * f64::from(factor)
     }
 
@@ -204,7 +247,11 @@ impl Shared {
         let bwn = (f64::from(self.width) * 4.9 + 0.1) * f64::from(PEAK_NARROW[m]);
         let shifted = f64::from(self.freq) * ((f64::from(PEAK_SHIFT[m][k]) * bwn) * LN_2).exp();
         let bw = bwn * f64::from(PEAK_WIDTH[m][k]);
-        let g = if m == 1 { f64::from(PEAK_GAIN[1]) - (bw - 1.0) * 0.01 } else { f64::from(PEAK_GAIN[m]) };
+        let g = if m == 1 {
+            f64::from(PEAK_GAIN[1]) - (bw - 1.0) * 0.01
+        } else {
+            f64::from(PEAK_GAIN[m])
+        };
         (bw, shifted, g)
     }
 }
@@ -212,7 +259,10 @@ impl Shared {
 /// The band's sections for `design` (none for a band of type 0).
 pub fn band(b: &Stored, design: Design) -> BandCoefs {
     let b = b.clamped();
-    let mut out = BandCoefs { n: b.sections(), ..BandCoefs::default() };
+    let mut out = BandCoefs {
+        n: b.sections(),
+        ..BandCoefs::default()
+    };
     if out.n == 0 {
         return out;
     }
@@ -232,7 +282,11 @@ pub fn band(b: &Stored, design: Design) -> BandCoefs {
 /// Section `k` of the ordinary form ("A band's settings", "Coefficients").
 fn ordinary(sh: &Shared, kind: i32, k: usize, rate: f64) -> Coefs {
     let angle = (1.0 / rate) * TAU;
-    let lim = if kind == PEAKING { 2.1991147994995117 } else { 3.138451099395752 };
+    let lim = if kind == PEAKING {
+        2.1991147994995117
+    } else {
+        3.138451099395752
+    };
     let mut w = (f64::from(sh.freq) * angle).min(lim);
     let (mut sn, mut cs) = (w.sin(), w.cos());
     let oct = |bw: f64, w: f64, sn: f64| sn * sinh(HALF_LN_2 * bw * w / sn);
@@ -243,17 +297,45 @@ fn ordinary(sh: &Shared, kind: i32, k: usize, rate: f64) -> Coefs {
             let (a1, a2) = (n * cs * -2.0, n * (1.0 - alpha));
             if kind == LOW_PASS {
                 let b1 = n * (1.0 - cs);
-                Coefs { b0: b1 * 0.5, b1, b2: b1 * 0.5, a1, a2 }
+                Coefs {
+                    b0: b1 * 0.5,
+                    b1,
+                    b2: b1 * 0.5,
+                    a1,
+                    a2,
+                }
             } else {
                 let b1 = n * -(cs + 1.0);
-                Coefs { b0: -b1 * 0.5, b1, b2: -b1 * 0.5, a1, a2 }
+                Coefs {
+                    b0: -b1 * 0.5,
+                    b1,
+                    b2: -b1 * 0.5,
+                    a1,
+                    a2,
+                }
             }
         }
         BAND_PASS | BAND_STOP => {
             let alpha = oct(sh.spread_width(kind), w, sn);
             let n = 1.0 / (alpha + 1.0);
             let (a1, a2) = (n * cs * -2.0, n * (1.0 - alpha));
-            if kind == BAND_PASS { Coefs { b0: n * alpha, b1: 0.0, b2: n * -alpha, a1, a2 } } else { Coefs { b0: n, b1: a1, b2: n, a1, a2 } }
+            if kind == BAND_PASS {
+                Coefs {
+                    b0: n * alpha,
+                    b1: 0.0,
+                    b2: n * -alpha,
+                    a1,
+                    a2,
+                }
+            } else {
+                Coefs {
+                    b0: n,
+                    b1: a1,
+                    b2: n,
+                    a1,
+                    a2,
+                }
+            }
         }
         PEAKING => {
             let mut bw = f64::from(sh.width) * 4.9 + 0.1;
@@ -272,7 +354,13 @@ fn ordinary(sh: &Shared, kind: i32, k: usize, rate: f64) -> Coefs {
             let (down, up) = (alpha / a, alpha * a);
             let n = 1.0 / (down + 1.0);
             let a1 = n * cs * -2.0;
-            Coefs { b0: n * (up + 1.0), b1: a1, b2: n * (1.0 - up), a1, a2: n * (1.0 - down) }
+            Coefs {
+                b0: n * (up + 1.0),
+                b1: a1,
+                b2: n * (1.0 - up),
+                a1,
+                a2: n * (1.0 - down),
+            }
         }
         LOW_SHELF | HIGH_SHELF => {
             let (a, s) = sh.shelf(k);
@@ -314,10 +402,18 @@ fn matched_args(sh: &Shared, kind: i32, k: usize, rate: f64) -> (f32, f32, f32) 
             let (bw, shifted, factor) = sh.steep_peak(k);
             (shifted, band_q(bw), (f64::from(sh.gain) * factor) * 2.0)
         }
-        PEAKING => (f64::from(sh.freq), band_q(f64::from(sh.width) * 4.9 + 0.1), (f64::from(sh.gain) * f64::from(sh.share) * 0.5) * 2.0),
+        PEAKING => (
+            f64::from(sh.freq),
+            band_q(f64::from(sh.width) * 4.9 + 0.1),
+            (f64::from(sh.gain) * f64::from(sh.share) * 0.5) * 2.0,
+        ),
         LOW_SHELF | HIGH_SHELF => {
             let (a, s) = sh.shelf(k);
-            (f64::from(sh.freq), 1.0 / ((a + 1.0 / a) * (1.0 / s - 1.0) + 2.0).sqrt(), f64::from(sh.gain * sh.share))
+            (
+                f64::from(sh.freq),
+                1.0 / ((a + 1.0 / a) * (1.0 / s - 1.0) + 2.0).sqrt(),
+                f64::from(sh.gain * sh.share),
+            )
         }
         _ => (f64::from(sh.freq), 1.0, 0.0),
     };
@@ -329,12 +425,21 @@ mod tests {
     use super::*;
 
     fn db(c: &BandCoefs, hz: f64, rate: f64) -> f64 {
-        c.as_slice().iter().map(|s| 10.0 * s.power(TAU * hz / rate).log10()).sum()
+        c.as_slice()
+            .iter()
+            .map(|s| 10.0 * s.power(TAU * hz / rate).log10())
+            .sum()
     }
 
     fn stored(level: i32, hz: f64, width: i32, kind: i32, order: i32) -> Stored {
         let freq = ((hz / 20.0).ln() / 1000f64.ln() * 65536.0).round() as i32;
-        Stored { level, freq, width, kind, order }
+        Stored {
+            level,
+            freq,
+            width,
+            kind,
+            order,
+        }
     }
 
     // spec: plugins/fruity-parametric-eq-2.md "A band's settings", "Settings" (the factory preset "Default")
@@ -345,15 +450,48 @@ mod tests {
         assert!((f64::from(freq_hz(65536)) - 20000.0).abs() < 0.01);
         assert_eq!(freq_hz(32768), 632.4555_f32);
         // `share` and the width are singles.
-        let sh = Shared::of(&Stored { level: 600, freq: 32768, width: 25412, kind: PEAKING, order: 2 });
-        assert_eq!((sh.m, sh.share, sh.steep), (2, (1.0f64 / 3.0) as f32, false));
+        let sh = Shared::of(&Stored {
+            level: 600,
+            freq: 32768,
+            width: 25412,
+            kind: PEAKING,
+            order: 2,
+        });
+        assert_eq!(
+            (sh.m, sh.share, sh.steep),
+            (2, (1.0f64 / 3.0) as f32, false)
+        );
         assert_eq!(sh.width, 25412.0 / 65536.0);
         assert_eq!(sh.gain, 6.0);
         assert_eq!(db_unit(), 0.115129254758358);
         // Levels count only for shelves and peaking.
-        assert_eq!(Shared::of(&Stored { level: 600, kind: LOW_PASS, ..Stored::default() }).gain, 0.0);
-        assert_eq!(Stored { kind: HIGH_PASS, order: -3, ..Stored::default() }.sections(), 4);
-        assert_eq!(Stored { kind: 0, order: 3, ..Stored::default() }.sections(), 0);
+        assert_eq!(
+            Shared::of(&Stored {
+                level: 600,
+                kind: LOW_PASS,
+                ..Stored::default()
+            })
+            .gain,
+            0.0
+        );
+        assert_eq!(
+            Stored {
+                kind: HIGH_PASS,
+                order: -3,
+                ..Stored::default()
+            }
+            .sections(),
+            4
+        );
+        assert_eq!(
+            Stored {
+                kind: 0,
+                order: 3,
+                ..Stored::default()
+            }
+            .sections(),
+            0
+        );
     }
 
     // spec: plugins/fruity-parametric-eq-2.md "Coefficients"
@@ -370,12 +508,24 @@ mod tests {
         assert_eq!(g6.n, 3);
         assert!((db(&g6, f, rate) - 12.0).abs() < 1e-3);
         // A low pass passes DC, a steep high pass blocks it.
-        let lp = band(&stored(0, 1000.0, 32768, LOW_PASS, 0), Design::Ordinary(rate));
+        let lp = band(
+            &stored(0, 1000.0, 32768, LOW_PASS, 0),
+            Design::Ordinary(rate),
+        );
         assert!(db(&lp, 10.0, rate).abs() < 1e-3 && db(&lp, 10000.0, rate) < -30.0);
-        let hp = band(&stored(0, 1000.0, 32768, HIGH_PASS, -3), Design::Ordinary(rate));
+        let hp = band(
+            &stored(0, 1000.0, 32768, HIGH_PASS, -3),
+            Design::Ordinary(rate),
+        );
         assert!(db(&hp, 20000.0, rate).abs() < 0.5 && db(&hp, 100.0, rate) < -100.0);
         // Hand-worked low pass at width 1 (x = 0, q = 0.1), one section: alpha = sn / (sqrt 2 * 0.1).
-        let one = Stored { level: 0, freq: 32768, width: 65536, kind: LOW_PASS, order: 0 };
+        let one = Stored {
+            level: 0,
+            freq: 32768,
+            width: 65536,
+            kind: LOW_PASS,
+            order: 0,
+        };
         let w = f64::from(freq_hz(32768)) * ((1.0 / rate) * TAU);
         let alpha = w.sin() * (1.0 / (0.5f64.sqrt() * 2.0)) / 0.1;
         let n = 1.0 / (alpha + 1.0);
@@ -385,18 +535,33 @@ mod tests {
         assert_eq!(c.b1, n * (1.0 - w.cos()));
         assert_eq!(c.b0, c.b1 * 0.5);
         // Band pass: unity at the centre; notch: a deep cut there.
-        let bp = band(&stored(0, 1000.0, 25412, BAND_PASS, 0), Design::Ordinary(rate));
+        let bp = band(
+            &stored(0, 1000.0, 25412, BAND_PASS, 0),
+            Design::Ordinary(rate),
+        );
         let f = f64::from(freq_hz(stored(0, 1000.0, 0, 0, 0).freq));
         assert!(db(&bp, f, rate).abs() < 1e-6);
-        let notch = band(&stored(0, 1000.0, 25412, BAND_STOP, 0), Design::Ordinary(rate));
+        let notch = band(
+            &stored(0, 1000.0, 25412, BAND_STOP, 0),
+            Design::Ordinary(rate),
+        );
         assert!(db(&notch, f, rate) < -100.0);
         // Shelves: the full gain far from the corner, none on the other side.
-        let ls = band(&stored(-900, 200.0, 40124, LOW_SHELF, 0), Design::Ordinary(rate));
+        let ls = band(
+            &stored(-900, 200.0, 40124, LOW_SHELF, 0),
+            Design::Ordinary(rate),
+        );
         assert!((db(&ls, 10.0, rate) + 9.0).abs() < 0.05 && db(&ls, 15000.0, rate).abs() < 0.05);
-        let hs = band(&stored(600, 5000.0, 40124, HIGH_SHELF, -2), Design::Ordinary(rate));
+        let hs = band(
+            &stored(600, 5000.0, 40124, HIGH_SHELF, -2),
+            Design::Ordinary(rate),
+        );
         assert!((db(&hs, 21000.0, rate) - 6.0).abs() < 0.3 && db(&hs, 50.0, rate).abs() < 0.05);
         // A shelf or peak at 0 dB is (very nearly) flat.
-        let flat = band(&stored(0, 1000.0, 25412, PEAKING, 0), Design::Ordinary(rate));
+        let flat = band(
+            &stored(0, 1000.0, 25412, PEAKING, 0),
+            Design::Ordinary(rate),
+        );
         assert!((1..200).all(|i| db(&flat, f64::from(i) * 100.0, rate).abs() < 1e-9));
     }
 
@@ -409,11 +574,26 @@ mod tests {
         let c = band(&pk, Design::Ordinary(rate));
         assert_eq!(c.n, 3);
         let centre = |c: &Coefs| (-c.a1 / (2.0 * c.a2.sqrt())).acos() * rate / TAU;
-        assert!(centre(&c.s[0]) < 900.0 && centre(&c.s[2]) > 1100.0, "{} {}", centre(&c.s[0]), centre(&c.s[2]));
+        assert!(
+            centre(&c.s[0]) < 900.0 && centre(&c.s[2]) > 1100.0,
+            "{} {}",
+            centre(&c.s[0]),
+            centre(&c.s[2])
+        );
         // Frequencies at the top are held at L (20 kHz at 32 kHz is above the Nyquist frequency).
-        let top = band(&Stored { level: 0, freq: 65536, width: 32768, kind: LOW_PASS, order: 0 }, Design::Ordinary(32000.0));
+        let top = band(
+            &Stored {
+                level: 0,
+                freq: 65536,
+                width: 32768,
+                kind: LOW_PASS,
+                order: 0,
+            },
+            Design::Ordinary(32000.0),
+        );
         let w: f64 = 3.138451099395752;
-        let alpha = w.sin() * (1.0 / (0.5f64.sqrt() * 2.0)) / (f64::from((1.0 - 0.5f64) as f32).powi(3) * 9.9 + 0.1);
+        let alpha = w.sin() * (1.0 / (0.5f64.sqrt() * 2.0))
+            / (f64::from((1.0 - 0.5f64) as f32).powi(3) * 9.9 + 0.1);
         assert_eq!(top.s[0].a2, (1.0 / (alpha + 1.0)) * (1.0 - alpha));
     }
 }

@@ -46,19 +46,41 @@ pub enum Button {
 /// What happened in the window. Positions are the window's device px.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Input {
-    Down { x: f32, y: f32, btn: Button, dbl: bool },
-    Up { btn: Button },
-    Move { x: f32, y: f32 },
+    Down {
+        x: f32,
+        y: f32,
+        btn: Button,
+        dbl: bool,
+    },
+    Up {
+        btn: Button,
+    },
+    Move {
+        x: f32,
+        y: f32,
+    },
     /// The held cursor moved this far (device px; `lock`).
-    Delta { dx: f32, dy: f32 },
+    Delta {
+        dx: f32,
+        dy: f32,
+    },
     /// Notches, up positive.
-    Wheel { x: f32, y: f32, notches: f32 },
+    Wheel {
+        x: f32,
+        y: f32,
+        notches: f32,
+    },
     Leave,
-    Key { sym: u32, text: Option<char> },
+    Key {
+        sym: u32,
+        text: Option<char>,
+    },
     /// Part of the window needs painting.
     Expose,
     /// The polling period passed, or a parameter changed.
     Tick,
     /// A file dropped on the window (macOS so far: `mac::Window::accept_files`).
-    Drop { path: String },
+    Drop {
+        path: String,
+    },
 }

@@ -31,12 +31,25 @@ pub struct State {
 }
 
 impl State {
-    pub const NORMAL: State = State { hover: false, pressed: false, on: false, disabled: false };
+    pub const NORMAL: State = State {
+        hover: false,
+        pressed: false,
+        on: false,
+        disabled: false,
+    };
     pub fn hover(hover: bool) -> State {
-        State { hover, ..State::NORMAL }
+        State {
+            hover,
+            ..State::NORMAL
+        }
     }
     pub fn new(hover: bool, pressed: bool, on: bool) -> State {
-        State { hover, pressed, on, disabled: false }
+        State {
+            hover,
+            pressed,
+            on,
+            disabled: false,
+        }
     }
     pub fn with_on(self, on: bool) -> State {
         State { on, ..self }
@@ -65,14 +78,31 @@ pub struct Metrics {
     pub thumb_min: f32,
 }
 
-pub const METRICS: Metrics =
-    Metrics { radius: 3.0, radius_small: 2.5, hover_lift: 0.08, press_sink: -0.06, title_h: 23.0, scrollbar: 10.0, thumb_min: 16.0 };
+pub const METRICS: Metrics = Metrics {
+    radius: 3.0,
+    radius_small: 2.5,
+    hover_lift: 0.08,
+    press_sink: -0.06,
+    title_h: 23.0,
+    scrollbar: 10.0,
+    thumb_min: 16.0,
+};
 
 /// Face colour of a neutral (surface) control for a state.
 pub fn face(base: Color, st: State) -> Color {
     let m = METRICS;
-    let c = if st.pressed { base.shade(m.press_sink) } else if st.hover { base.shade(m.hover_lift) } else { base };
-    if st.disabled { c.mix(base, 0.5).shade(-0.1) } else { c }
+    let c = if st.pressed {
+        base.shade(m.press_sink)
+    } else if st.hover {
+        base.shade(m.hover_lift)
+    } else {
+        base
+    };
+    if st.disabled {
+        c.mix(base, 0.5).shade(-0.1)
+    } else {
+        c
+    }
 }
 
 /// Glyph / label colour for a state on a neutral face.
@@ -151,7 +181,12 @@ pub fn button(c: &mut Canvas, t: &Palette, r: Rect, st: State) {
         (t.s(0x191d1f), t.s(0x313537), t.s(0x272b2d))
     };
     c.fill_rect(r, border);
-    for (x, y) in [(r.x, r.y), (r.right() - 1.0, r.y), (r.x, r.bottom() - 1.0), (r.right() - 1.0, r.bottom() - 1.0)] {
+    for (x, y) in [
+        (r.x, r.y),
+        (r.right() - 1.0, r.y),
+        (r.x, r.bottom() - 1.0),
+        (r.right() - 1.0, r.bottom() - 1.0),
+    ] {
         c.pixel(x, y, bg.mix(border, 0.25));
     }
     let f = r.inset(1.0);
@@ -164,7 +199,14 @@ pub fn button(c: &mut Canvas, t: &Palette, r: Rect, st: State) {
 }
 
 /// A button with an icon (glyph drawn by the caller-supplied painter so app and plugin icon sets both work).
-pub fn icon_button(c: &mut Canvas, t: &Palette, r: Rect, st: State, icon: &crate::tabler::TablerIcon, pad: f32) {
+pub fn icon_button(
+    c: &mut Canvas,
+    t: &Palette,
+    r: Rect,
+    st: State,
+    icon: &crate::tabler::TablerIcon,
+    pad: f32,
+) {
     button(c, t, r, st);
     c.icon(icon, r.inset(pad), ink(t, st));
 }
@@ -220,22 +262,51 @@ pub fn arrow_button(c: &mut Canvas, t: &Palette, r: Rect, dir: Dir, st: State) {
         return lemon::arrow_button(c, t, r, dir, st);
     }
     flat_button(c, t, r, st);
-    let col = if st.hover { t.glyph } else { t.glyph.with_alpha(150) };
+    let col = if st.hover {
+        t.glyph
+    } else {
+        t.glyph.with_alpha(150)
+    };
     chevron(c, r.cx().round(), r.cy().round(), 5.0, dir, col);
 }
 
 /// A scroll bar's end button: `arrow_button`, with the light arrow of high visibility while it is on
 /// (`scroll_arrow`).
 pub fn scroll_arrow_button(c: &mut Canvas, t: &Palette, r: Rect, dir: Dir, st: State) {
-    let Some(col) = scroll_arrow(t, st, high_visibility()) else { return arrow_button(c, t, r, dir, st) };
+    let Some(col) = scroll_arrow(t, st, high_visibility()) else {
+        return arrow_button(c, t, r, dir, st);
+    };
     flat_button(c, t, r, st);
-    chevron(c, r.cx().round(), r.cy().round(), if lemon::on(t) { 4.0 } else { 5.0 }, dir, col);
+    chevron(
+        c,
+        r.cx().round(),
+        r.cy().round(),
+        if lemon::on(t) { 4.0 } else { 5.0 },
+        dir,
+        col,
+    );
 }
 
 /// Small up/down spin mark next to a number.
 pub fn spin_mark(c: &mut Canvas, x: f32, cy: f32, col: Color) {
-    c.polyline(&[(x - 1.5, cy - 6.0), (x + 1.0, cy - 4.0), (x - 1.5, cy - 2.0)], 1.0, col);
-    c.polyline(&[(x + 1.0, cy + 2.0), (x - 1.5, cy + 4.0), (x + 1.0, cy + 6.0)], 1.0, col);
+    c.polyline(
+        &[
+            (x - 1.5, cy - 6.0),
+            (x + 1.0, cy - 4.0),
+            (x - 1.5, cy - 2.0),
+        ],
+        1.0,
+        col,
+    );
+    c.polyline(
+        &[
+            (x + 1.0, cy + 2.0),
+            (x - 1.5, cy + 4.0),
+            (x + 1.0, cy + 6.0),
+        ],
+        1.0,
+        col,
+    );
 }
 
 /// Dropdown combo: dark box, text, right arrow.
@@ -246,8 +317,22 @@ pub fn combo(c: &mut Canvas, t: &Palette, r: Rect, text: &str, font: Font, st: S
     let m = METRICS;
     bordered(c, r, m.radius, t.s(0x161819), face(t.s(0x1e2022), st));
     let lh = c.line_height(font);
-    c.text_clip(font, r.x + 5.0, (r.cy() - lh / 2.0).round(), r.w - 22.0, if st.hover { t.tx(0xffffff) } else { t.text }, text);
-    triangle(c, r.right() - 10.0, r.cy(), 4.0, Dir::Right, if st.hover { t.glyph } else { t.s(0x686c6e) });
+    c.text_clip(
+        font,
+        r.x + 5.0,
+        (r.cy() - lh / 2.0).round(),
+        r.w - 22.0,
+        if st.hover { t.tx(0xffffff) } else { t.text },
+        text,
+    );
+    triangle(
+        c,
+        r.right() - 10.0,
+        r.cy(),
+        4.0,
+        Dir::Right,
+        if st.hover { t.glyph } else { t.s(0x686c6e) },
+    );
 }
 
 /// Number box (step counts, track numbers): rounded, light text, spin mark.
@@ -257,7 +342,13 @@ pub fn value_box(c: &mut Canvas, t: &Palette, r: Rect, text: &str, font: Font, s
     }
     bordered(c, r, METRICS.radius, t.s(0x191d1f), face(t.s(0x25282a), st));
     let lh = c.line_height(font);
-    c.text_right(font, r.right() - 9.0, (r.cy() - lh / 2.0).round(), if st.hover { t.glyph } else { t.text }, text);
+    c.text_right(
+        font,
+        r.right() - 9.0,
+        (r.cy() - lh / 2.0).round(),
+        if st.hover { t.glyph } else { t.text },
+        text,
+    );
     spin_mark(c, r.right() - 4.5, r.cy(), t.text_dim);
 }
 
@@ -285,7 +376,16 @@ pub fn led(c: &mut Canvas, t: &Palette, cx: f32, cy: f32, radius: f32, st: State
         return lemon::led(c, t, cx, cy, radius, st);
     }
     let k = radius / 6.0;
-    c.fill_circle(cx, cy, radius, if st.hover { t.s(0x6f7173) } else { t.s(0x595b5c) });
+    c.fill_circle(
+        cx,
+        cy,
+        radius,
+        if st.hover {
+            t.s(0x6f7173)
+        } else {
+            t.s(0x595b5c)
+        },
+    );
     c.fill_circle(cx, cy, 5.0 * k, t.s(0x283028));
     if st.on {
         c.fill_circle(cx, cy, 4.2 * k, t.led(0x3d7803));
@@ -298,13 +398,35 @@ pub fn led(c: &mut Canvas, t: &Palette, cx: f32, cy: f32, radius: f32, st: State
 
 /// Square check mark / tick (menus).
 pub fn tick(c: &mut Canvas, r: Rect, col: Color) {
-    c.polyline(&[(r.x + 3.0, r.cy()), (r.x + r.w * 0.42, r.bottom() - 3.0), (r.right() - 3.0, r.y + 3.0)], 1.8, col);
+    c.polyline(
+        &[
+            (r.x + 3.0, r.cy()),
+            (r.x + r.w * 0.42, r.bottom() - 3.0),
+            (r.right() - 3.0, r.y + 3.0),
+        ],
+        1.8,
+        col,
+    );
 }
 
 /// Cross (close glyph drawn without an icon).
 pub fn cross(c: &mut Canvas, r: Rect, col: Color) {
-    c.line(r.x + 4.0, r.y + 4.0, r.right() - 4.0, r.bottom() - 4.0, 1.5, col);
-    c.line(r.right() - 4.0, r.y + 4.0, r.x + 4.0, r.bottom() - 4.0, 1.5, col);
+    c.line(
+        r.x + 4.0,
+        r.y + 4.0,
+        r.right() - 4.0,
+        r.bottom() - 4.0,
+        1.5,
+        col,
+    );
+    c.line(
+        r.right() - 4.0,
+        r.y + 4.0,
+        r.x + 4.0,
+        r.bottom() - 4.0,
+        1.5,
+        col,
+    );
 }
 
 /// Selection frame (accent outline).
@@ -333,7 +455,17 @@ pub enum KnobLook {
     Mixer { halo: f32, arc: bool },
 }
 
-pub fn knob(c: &mut Canvas, t: &Palette, cx: f32, cy: f32, r: f32, value: f32, bipolar: bool, look: KnobLook, st: State) {
+pub fn knob(
+    c: &mut Canvas,
+    t: &Palette,
+    cx: f32,
+    cy: f32,
+    r: f32,
+    value: f32,
+    bipolar: bool,
+    look: KnobLook,
+    st: State,
+) {
     if lemon::on(t) {
         return lemon::knob(c, t, cx, cy, r, value, bipolar, look, st);
     }
@@ -341,7 +473,11 @@ pub fn knob(c: &mut Canvas, t: &Palette, cx: f32, cy: f32, r: f32, value: f32, b
     let start = 0.75 * PI;
     let sweep = 1.5 * PI;
     let a = start + sweep * v;
-    let (a0, a1) = if bipolar { (start + sweep / 2.0, a) } else { (start, a) };
+    let (a0, a1) = if bipolar {
+        (start + sweep / 2.0, a)
+    } else {
+        (start, a)
+    };
     let lift = |col: Color| if st.hover { col.shade(0.08) } else { col };
     match look {
         KnobLook::Ring => {
@@ -351,31 +487,78 @@ pub fn knob(c: &mut Canvas, t: &Palette, cx: f32, cy: f32, r: f32, value: f32, b
             if (a1 - a0).abs() > 0.01 {
                 c.arc(cx, cy, r - 1.5, a0.min(a1), (a1 - a0).abs(), 2.0, col);
             }
-            c.line(cx + (r - 6.0).max(1.0) * a.cos(), cy + (r - 6.0).max(1.0) * a.sin(), cx + (r - 2.5) * a.cos(), cy + (r - 2.5) * a.sin(), 1.6, col);
+            c.line(
+                cx + (r - 6.0).max(1.0) * a.cos(),
+                cy + (r - 6.0).max(1.0) * a.sin(),
+                cx + (r - 2.5) * a.cos(),
+                cy + (r - 2.5) * a.sin(),
+                1.6,
+                col,
+            );
         }
         KnobLook::Ball => {
             c.fill_circle(cx, cy, r, t.toolbar_line.shade(-0.3));
             c.fill_circle(cx, cy, r - 1.0, lift(t.button_hi.shade(0.02)));
             c.fill_circle(cx, cy + 0.6, r - 2.2, lift(t.sunken_dark.shade(-0.1)));
-            c.fill_circle(cx - r * 0.25, cy - r * 0.35, r * 0.35, Color::rgb(0xffffff).with_alpha(14));
-            let pc = if st.hover { t.glyph } else { t.glyph.shade(-0.15) };
-            c.line(cx + r * 0.3 * a.cos(), cy + r * 0.3 * a.sin(), cx + (r - 2.5) * a.cos(), cy + (r - 2.5) * a.sin(), (r * 0.2).clamp(1.4, 2.0), pc);
+            c.fill_circle(
+                cx - r * 0.25,
+                cy - r * 0.35,
+                r * 0.35,
+                Color::rgb(0xffffff).with_alpha(14),
+            );
+            let pc = if st.hover {
+                t.glyph
+            } else {
+                t.glyph.shade(-0.15)
+            };
+            c.line(
+                cx + r * 0.3 * a.cos(),
+                cy + r * 0.3 * a.sin(),
+                cx + (r - 2.5) * a.cos(),
+                cy + (r - 2.5) * a.sin(),
+                (r * 0.2).clamp(1.4, 2.0),
+                pc,
+            );
         }
         KnobLook::Row => {
             c.fill_circle(cx, cy, r, t.s(0x1e2022));
             c.fill_circle(cx, cy - 0.5, r - 1.0, lift(t.s(0x303234)));
             c.fill_circle(cx, cy + 0.3, r - 1.7, lift(t.s(0x232527)));
-            let pc = if st.hover { t.tx(0xffffff) } else { t.tx(0xadb2b6) };
-            c.line(cx + 1.2 * a.cos(), cy + 1.2 * a.sin(), cx + (r - 1.9) * a.cos(), cy + (r - 1.9) * a.sin(), 2.0, pc);
+            let pc = if st.hover {
+                t.tx(0xffffff)
+            } else {
+                t.tx(0xadb2b6)
+            };
+            c.line(
+                cx + 1.2 * a.cos(),
+                cy + 1.2 * a.sin(),
+                cx + (r - 1.9) * a.cos(),
+                cy + (r - 1.9) * a.sin(),
+                2.0,
+                pc,
+            );
         }
         KnobLook::Mixer { halo, arc } => {
             c.fill_circle(cx, cy, halo, t.s(0x1b1d20));
             c.stroke_circle(cx, cy, halo - 0.5, 1.0, t.s(0x16181a));
             c.fill_circle(cx, cy, r + 0.6, t.s(0x16181b));
-            c.fill_rect_gradient(Rect::new(cx - r, cy - r, 2.0 * r, 2.0 * r), lift(t.s(0x3c3e41)), t.s(0x17191c), r);
+            c.fill_rect_gradient(
+                Rect::new(cx - r, cy - r, 2.0 * r, 2.0 * r),
+                lift(t.s(0x3c3e41)),
+                t.s(0x17191c),
+                r,
+            );
             c.arc(cx, cy, r - 0.6, 1.15 * PI, 0.7 * PI, 1.2, t.s(0x55575a));
             if arc && (a1 - a0).abs() > 0.02 {
-                c.arc(cx, cy, halo - 2.0, a0.min(a1), (a1 - a0).abs(), (halo * 0.22).max(2.0), t.h(0xce2900));
+                c.arc(
+                    cx,
+                    cy,
+                    halo - 2.0,
+                    a0.min(a1),
+                    (a1 - a0).abs(),
+                    (halo * 0.22).max(2.0),
+                    t.h(0xce2900),
+                );
             }
         }
     }
@@ -396,9 +579,17 @@ pub fn fader_handle(c: &mut Canvas, t: &Palette, cx: f32, cy: f32, selected: boo
         (t.s(0x6a6e71), t.s(0x46494c), t.s(0x222528))
     };
     c.fill_rect_gradient(Rect::new(h.x, h.y, h.w, 10.0), top, mid, 2.5);
-    c.fill_rect_gradient(Rect::new(h.x, h.y + 10.0, h.w, 13.0), mid.shade(-0.25), low, 2.5);
+    c.fill_rect_gradient(
+        Rect::new(h.x, h.y + 10.0, h.w, 13.0),
+        mid.shade(-0.25),
+        low,
+        2.5,
+    );
     c.fill_rect(Rect::new(h.x, h.y + 8.0, h.w, 4.0), mid.shade(-0.1));
-    c.fill_rect(Rect::new(h.x + 2.0, h.y + 16.0, h.w - 4.0, 1.0), low.shade(-0.4));
+    c.fill_rect(
+        Rect::new(h.x + 2.0, h.y + 16.0, h.w - 4.0, 1.0),
+        low.shade(-0.4),
+    );
 }
 
 // ---------------------------------------------------------------- scrolling
@@ -407,8 +598,13 @@ pub fn fader_handle(c: &mut Canvas, t: &Palette, cx: f32, cy: f32, selected: boo
 pub fn thumb(track_len: f32, pos: f32, view: f32, total: f32) -> (f32, f32) {
     let total = total.max(view).max(1.0);
     let max = (total - view).max(0.0);
-    let len = (view / total * track_len).clamp(METRICS.thumb_min.min(track_len), track_len.max(0.0));
-    let off = if max > 0.0 { pos.clamp(0.0, max) / max * (track_len - len) } else { 0.0 };
+    let len =
+        (view / total * track_len).clamp(METRICS.thumb_min.min(track_len), track_len.max(0.0));
+    let off = if max > 0.0 {
+        pos.clamp(0.0, max) / max * (track_len - len)
+    } else {
+        0.0
+    };
     (off, len)
 }
 
@@ -431,22 +627,49 @@ pub fn high_visibility() -> bool {
 /// (in the Lemon look the same grey through the look's colour map, a neutral light grey); it lifts on hover / drag.
 pub fn scroll_thumb(t: &Palette, st: State, high: bool) -> Color {
     if high {
-        return t.s(0xb9bfc3).shade(if st.pressed { 0.18 } else if st.hover { 0.1 } else { 0.0 });
+        return t.s(0xb9bfc3).shade(if st.pressed {
+            0.18
+        } else if st.hover {
+            0.1
+        } else {
+            0.0
+        });
     }
     if lemon::on(t) {
         return lemon::scroll_thumb(t, st);
     }
-    if st.pressed { t.overview.shade(0.18) } else if st.hover { t.overview.shade(0.12) } else { t.overview }
+    if st.pressed {
+        t.overview.shade(0.18)
+    } else if st.hover {
+        t.overview.shade(0.12)
+    } else {
+        t.overview
+    }
 }
 
 /// A scroll bar's arrow colour with `high` (high visibility): light, #adb3b7 as measured (the look's own light grey
 /// in the Lemon look), the bright glyph colour on hover. `None` without it: the look's own arrows.
 pub fn scroll_arrow(t: &Palette, st: State, high: bool) -> Option<Color> {
-    high.then(|| if st.hover || st.pressed { t.glyph } else { t.s(0xadb3b7) })
+    high.then(|| {
+        if st.hover || st.pressed {
+            t.glyph
+        } else {
+            t.s(0xadb3b7)
+        }
+    })
 }
 
 /// Scroll bar: flat track, rounded thumb that lifts on hover / drag (`scroll_thumb`).
-pub fn scrollbar(c: &mut Canvas, t: &Palette, track: Rect, vertical: bool, pos: f32, view: f32, total: f32, st: State) {
+pub fn scrollbar(
+    c: &mut Canvas,
+    t: &Palette,
+    track: Rect,
+    vertical: bool,
+    pos: f32,
+    view: f32,
+    total: f32,
+    st: State,
+) {
     if lemon::on(t) {
         return lemon::scrollbar(c, t, track, vertical, pos, view, total, st);
     }
@@ -458,17 +681,33 @@ pub fn scrollbar(c: &mut Canvas, t: &Palette, track: Rect, vertical: bool, pos: 
     } else {
         Rect::new(track.x + off, track.y + 2.0, tl, track.h - 4.0)
     };
-    c.fill_rrect(r, 2.0_f32.min(r.w / 2.0).min(r.h / 2.0), scroll_thumb(t, st, high_visibility()));
+    c.fill_rrect(
+        r,
+        2.0_f32.min(r.w / 2.0).min(r.h / 2.0),
+        scroll_thumb(t, st, high_visibility()),
+    );
 }
 
 // ---------------------------------------------------------------- windows and popups
 
 /// Title bar of a docked / framed window: gradient bar, separator, title text. Returns the client top y.
-pub fn title_bar(c: &mut Canvas, t: &Palette, r: Rect, title: &str, title_x: f32, flat: bool) -> f32 {
+pub fn title_bar(
+    c: &mut Canvas,
+    t: &Palette,
+    r: Rect,
+    title: &str,
+    title_x: f32,
+    flat: bool,
+) -> f32 {
     let h = METRICS.title_h;
     let bar = Rect::new(r.x, r.y, r.w, h);
     if !flat {
-        c.fill_rect_gradient(bar, t.window_title.shade(0.04), t.window_title.shade(-0.03), 0.0);
+        c.fill_rect_gradient(
+            bar,
+            t.window_title.shade(0.04),
+            t.window_title.shade(-0.03),
+            0.0,
+        );
         c.fill_rect(Rect::new(r.x, r.y + h - 1.0, r.w, 1.0), t.splitter_dark);
     }
     c.text(Font::new(17), r.x + title_x, r.y + 1.0, t.text, title);
@@ -480,14 +719,24 @@ pub fn float_frame(c: &mut Canvas, t: &Palette, r: Rect) -> Rect {
     if lemon::on(t) {
         lemon::window(c, t, r);
         let inner = Rect::new(r.x + 7.0, r.y + 5.0, r.w - 14.0, r.h - 12.0);
-        lemon::client(c, t, Rect::new(inner.x - 1.0, inner.y + 22.0, inner.w + 2.0, inner.h - 21.0));
+        lemon::client(
+            c,
+            t,
+            Rect::new(inner.x - 1.0, inner.y + 22.0, inner.w + 2.0, inner.h - 21.0),
+        );
         return inner;
     }
     c.fill_rect(r, t.window_border);
     c.fill_rect(r.inset(1.0), t.window_title);
-    c.fill_rect(Rect::new(r.x + 1.0, r.y + 1.0, r.w - 2.0, 1.0), t.window_title_hi.shade(0.04));
+    c.fill_rect(
+        Rect::new(r.x + 1.0, r.y + 1.0, r.w - 2.0, 1.0),
+        t.window_title_hi.shade(0.04),
+    );
     let inner = Rect::new(r.x + 7.0, r.y + 5.0, r.w - 14.0, r.h - 12.0);
-    c.fill_rect(Rect::new(inner.x - 1.0, inner.y + 22.0, inner.w + 2.0, inner.h - 21.0), t.s(0x131718));
+    c.fill_rect(
+        Rect::new(inner.x - 1.0, inner.y + 22.0, inner.w + 2.0, inner.h - 21.0),
+        t.s(0x131718),
+    );
     inner
 }
 
@@ -511,12 +760,28 @@ pub fn row_highlight(c: &mut Canvas, t: &Palette, r: Rect) {
 }
 
 /// Tooltip bubble: dark, rounded, name line and optional caption line. `at` = top-left; kept inside `bounds`.
-pub fn tooltip(c: &mut Canvas, t: &Palette, at: (f32, f32), name: &str, caption: &str, bounds: Rect) -> Rect {
+pub fn tooltip(
+    c: &mut Canvas,
+    t: &Palette,
+    at: (f32, f32),
+    name: &str,
+    caption: &str,
+    bounds: Rect,
+) -> Rect {
     let (nf, cf) = (Font::new(17), Font::new(14));
-    let w = (c.text_width(nf, name).max(if caption.is_empty() { 0.0 } else { c.text_width(cf, caption) }) + 18.0).round();
+    let w = (c.text_width(nf, name).max(if caption.is_empty() {
+        0.0
+    } else {
+        c.text_width(cf, caption)
+    }) + 18.0)
+        .round();
     let h = if caption.is_empty() { 26.0 } else { 46.0 };
     let x = at.0.min(bounds.right() - w - 4.0).max(bounds.x + 4.0);
-    let y = if at.1 + h > bounds.bottom() { at.1 - h - 24.0 } else { at.1 };
+    let y = if at.1 + h > bounds.bottom() {
+        at.1 - h - 24.0
+    } else {
+        at.1
+    };
     let b = Rect::new(x, y, w, h);
     c.fill_rrect(b.outset(1.0), 7.0, Color::rgb(0).with_alpha(90));
     c.fill_rrect(b, 6.0, t.s(0x090909).with_alpha(245));
@@ -528,7 +793,13 @@ pub fn tooltip(c: &mut Canvas, t: &Palette, at: (f32, f32), name: &str, caption:
 }
 
 /// Minimize / maximize / close glyphs (drawn with Tabler icons) in a row from `x0`; `hovered` = index under the mouse.
-pub fn window_buttons(c: &mut Canvas, t: &Palette, x0: f32, y: f32, hovered: Option<usize>) -> [Rect; 3] {
+pub fn window_buttons(
+    c: &mut Canvas,
+    t: &Palette,
+    x0: f32,
+    y: f32,
+    hovered: Option<usize>,
+) -> [Rect; 3] {
     use crate::tabler as tb;
     let mut out = [Rect::default(); 3];
     for (i, icon) in [&tb::MINUS, &tb::SQUARES, &tb::X].into_iter().enumerate() {
@@ -537,9 +808,25 @@ pub fn window_buttons(c: &mut Canvas, t: &Palette, x0: f32, y: f32, hovered: Opt
         if hov && lemon::on(t) {
             lemon::window_button_hover(c, t, b, i == 2);
         } else if hov {
-            c.fill_rrect(b, 3.0, if i == 2 { t.record.with_alpha(170) } else { t.button_hi });
+            c.fill_rrect(
+                b,
+                3.0,
+                if i == 2 {
+                    t.record.with_alpha(170)
+                } else {
+                    t.button_hi
+                },
+            );
         }
-        c.icon(icon, b.inset(2.0), if hov { t.tx(0xffffff) } else { t.text_dim.mix(t.glyph, 0.6) });
+        c.icon(
+            icon,
+            b.inset(2.0),
+            if hov {
+                t.tx(0xffffff)
+            } else {
+                t.text_dim.mix(t.glyph, 0.6)
+            },
+        );
         out[i] = b;
     }
     out
@@ -567,15 +854,25 @@ mod tests {
         assert_eq!(scroll_thumb(&t, State::NORMAL, false), t.overview);
         assert_eq!(scroll_thumb(&t, State::NORMAL, true), Color::rgb(0xb9bfc3));
         assert_eq!(scroll_arrow(&t, State::NORMAL, false), None);
-        assert_eq!(scroll_arrow(&t, State::NORMAL, true), Some(Color::rgb(0xadb3b7)));
+        assert_eq!(
+            scroll_arrow(&t, State::NORMAL, true),
+            Some(Color::rgb(0xadb3b7))
+        );
         assert_eq!(scroll_arrow(&t, State::hover(true), true), Some(t.glyph));
         let hover = scroll_thumb(&t, State::hover(true), true);
-        assert!(hover.r > 0xb9 && hover.g > 0xbf, "lifts on hover: {hover:?}");
+        assert!(
+            hover.r > 0xb9 && hover.g > 0xbf,
+            "lifts on hover: {hover:?}"
+        );
 
         let l = os_theme::design::palette(os_theme::Design::Lemon, None);
         assert_eq!(scroll_thumb(&l, State::NORMAL, false), l.overview);
         let light = scroll_thumb(&l, State::NORMAL, true);
-        assert_eq!((light.r, light.g), (light.g, light.b), "a neutral grey: {light:?}");
+        assert_eq!(
+            (light.r, light.g),
+            (light.g, light.b),
+            "a neutral grey: {light:?}"
+        );
         assert!(light.r > 0xb0, "light: {light:?}");
         let arrow = scroll_arrow(&l, State::NORMAL, true).unwrap();
         assert!(arrow.r > 0xa0 && arrow.r == arrow.b, "{arrow:?}");
@@ -586,18 +883,60 @@ mod tests {
     fn widgets_paint_without_panics() {
         let mut c = Canvas::new(200, 120, 1.0).unwrap();
         let t = Palette::default();
-        for st in [State::NORMAL, State::hover(true), State::new(false, true, false), State::new(false, false, true)] {
+        for st in [
+            State::NORMAL,
+            State::hover(true),
+            State::new(false, true, false),
+            State::new(false, false, true),
+        ] {
             button(&mut c, &t, Rect::new(2.0, 2.0, 30.0, 33.0), st);
             led(&mut c, &t, 50.0, 20.0, 6.0, st);
-            for look in [KnobLook::Ring, KnobLook::Ball, KnobLook::Row, KnobLook::Mixer { halo: 15.0, arc: true }] {
+            for look in [
+                KnobLook::Ring,
+                KnobLook::Ball,
+                KnobLook::Row,
+                KnobLook::Mixer {
+                    halo: 15.0,
+                    arc: true,
+                },
+            ] {
                 knob(&mut c, &t, 80.0, 30.0, 10.0, 0.3, true, look, st);
             }
-            combo(&mut c, &t, Rect::new(2.0, 60.0, 100.0, 23.0), "All", Font::new(15), st);
-            scrollbar(&mut c, &t, Rect::new(110.0, 2.0, 10.0, 100.0), true, 5.0, 10.0, 40.0, st);
+            combo(
+                &mut c,
+                &t,
+                Rect::new(2.0, 60.0, 100.0, 23.0),
+                "All",
+                Font::new(15),
+                st,
+            );
+            scrollbar(
+                &mut c,
+                &t,
+                Rect::new(110.0, 2.0, 10.0, 100.0),
+                true,
+                5.0,
+                10.0,
+                40.0,
+                st,
+            );
             fader_handle(&mut c, &t, 150.0, 50.0, st.on, st);
             arrow_button(&mut c, &t, Rect::new(130.0, 90.0, 18.0, 18.0), Dir::Up, st);
-            scroll_arrow_button(&mut c, &t, Rect::new(150.0, 90.0, 18.0, 18.0), Dir::Down, st);
+            scroll_arrow_button(
+                &mut c,
+                &t,
+                Rect::new(150.0, 90.0, 18.0, 18.0),
+                Dir::Down,
+                st,
+            );
         }
-        tooltip(&mut c, &t, (190.0, 110.0), "Name", "Caption", Rect::new(0.0, 0.0, 200.0, 120.0));
+        tooltip(
+            &mut c,
+            &t,
+            (190.0, 110.0),
+            "Name",
+            "Caption",
+            Rect::new(0.0, 0.0, 200.0, 120.0),
+        );
     }
 }

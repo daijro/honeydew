@@ -16,12 +16,12 @@
 use std::collections::HashMap;
 
 use os_theme::Color;
+use swash::FontRef;
 use swash::scale::{Render, ScaleContext, Source};
 use swash::zeno::{Format, Transform, Vector};
-use swash::FontRef;
 use tiny_skia::Pixmap;
 
-use super::{ClipPx, Face, Font, CUPRUM};
+use super::{CUPRUM, ClipPx, Face, Font};
 
 static REGULAR: &[u8] = include_bytes!("../fonts/Barlow/BarlowSemiCondensed-Regular.ttf");
 static SEMIBOLD: &[u8] = include_bytes!("../fonts/Barlow/BarlowSemiCondensed-SemiBold.ttf");
@@ -69,13 +69,18 @@ pub struct Sw {
 }
 
 /// Text the widths are fitted on: the mix of letters and digits the UI's labels have.
-const SAMPLE: &str = "Channel rack Mixer Playlist Insert 12 Master Volume 100% Pattern 3 Tempo 140.000";
+const SAMPLE: &str =
+    "Channel rack Mixer Playlist Insert 12 Master Volume 100% Pattern 3 Tempo 140.000";
 
 fn face(data: &'static [u8], cap_ref: f32) -> Result<FaceData, String> {
     let font = FontRef::from_index(data, 0).ok_or("not a font swash can read")?;
     let m = font.metrics(&[]);
     let upem = f32::from(m.units_per_em).max(1.0);
-    let cap = if m.cap_height > 0.0 { m.cap_height / upem } else { 0.7 };
+    let cap = if m.cap_height > 0.0 {
+        m.cap_height / upem
+    } else {
+        0.7
+    };
     let size_k = if cap_ref > 0.0 { cap_ref / cap } else { 1.0 };
     let gm = font.glyph_metrics(&[]);
     let cm = font.charmap();
@@ -95,7 +100,8 @@ impl Drop for Sw {
 
 impl Sw {
     pub fn new() -> Result<Sw, String> {
-        let (asc, desc, ref_avg) = super::portable::os2(CUPRUM).ok_or("the UI font has no OS/2 metrics")?;
+        let (asc, desc, ref_avg) =
+            super::portable::os2(CUPRUM).ok_or("the UI font has no OS/2 metrics")?;
         let cuprum = face(CUPRUM, 0.0)?;
         let cm = cuprum.font.metrics(&[]);
         let cap_ref = cm.cap_height / f32::from(cm.units_per_em);
@@ -103,7 +109,9 @@ impl Sw {
         for (i, v) in to_lin.iter_mut().enumerate() {
             *v = ((i as f32 / 255.0).powf(GAMMA) * 4095.0).round() as u16;
         }
-        let from_lin = (0..4096).map(|i| ((i as f32 / 4095.0).powf(1.0 / GAMMA) * 255.0).round() as u8).collect();
+        let from_lin = (0..4096)
+            .map(|i| ((i as f32 / 4095.0).powf(1.0 / GAMMA) * 255.0).round() as u8)
+            .collect();
         let sw = Sw {
             ctx: ScaleContext::new(),
             ref_sample: cuprum.avg,
@@ -168,7 +176,9 @@ impl Sw {
         if !c.is_ascii_digit() {
             return (own, 0.0);
         }
-        let widest = ('0'..='9').map(|d| self.own_advance(d, f, scale)).fold(0.0, f32::max);
+        let widest = ('0'..='9')
+            .map(|d| self.own_advance(d, f, scale))
+            .fold(0.0, f32::max);
         (widest, (widest - own) * 0.5)
     }
 
@@ -179,7 +189,10 @@ impl Sw {
         }
         let (which, k) = self.setup(f, scale);
         let fd = self.face(which);
-        let gm = fd.font.glyph_metrics(&[]).scale(Self::px(f, scale) * fd.size_k);
+        let gm = fd
+            .font
+            .glyph_metrics(&[])
+            .scale(Self::px(f, scale) * fd.size_k);
         let a = gm.advance_width(fd.font.charmap().map(c)) * k;
         self.advances.insert(key, a);
         a
@@ -212,7 +225,13 @@ impl Sw {
                     top: img.placement.top,
                     cov: img.data,
                 },
-                None => Glyph { cov: Vec::new(), w: 0, h: 0, left: 0, top: 0 },
+                None => Glyph {
+                    cov: Vec::new(),
+                    w: 0,
+                    h: 0,
+                    left: 0,
+                    top: 0,
+                },
             };
             self.glyphs.insert(key, g);
         }
@@ -232,7 +251,18 @@ impl Sw {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn draw(&mut self, pix: &mut Pixmap, clip: ClipPx, f: Font, scale: f32, x: i32, y: i32, c: Color, s: &str, vertical: bool) {
+    pub fn draw(
+        &mut self,
+        pix: &mut Pixmap,
+        clip: ClipPx,
+        f: Font,
+        scale: f32,
+        x: i32,
+        y: i32,
+        c: Color,
+        s: &str,
+        vertical: bool,
+    ) {
         let asc = self.metrics(f, scale).1;
         let pw = pix.width() as i32;
         let col = [c.r, c.g, c.b].map(|v| u32::from(self.to_lin[usize::from(v)]));
@@ -240,7 +270,10 @@ impl Sw {
         for chr in s.chars() {
             let (adv, inset) = self.advance(chr, f, scale);
             let q = ((pen + inset) * PHASES).round() as i32;
-            let (whole, phase) = (q.div_euclid(PHASES as i32), q.rem_euclid(PHASES as i32) as u8);
+            let (whole, phase) = (
+                q.div_euclid(PHASES as i32),
+                q.rem_euclid(PHASES as i32) as u8,
+            );
             self.glyph(chr, f, scale, phase);
             let g = &self.glyphs[&(chr, f, scale.to_bits(), phase)];
             let (gx0, gy0) = (whole + g.left, asc - g.top);
@@ -252,7 +285,11 @@ impl Sw {
                         continue;
                     }
                     let (lx, ly) = (gx0 + i as i32, gy0 + j as i32);
-                    let (dx, dy) = if vertical { (x + ly, y - lx) } else { (x + lx, y + ly) };
+                    let (dx, dy) = if vertical {
+                        (x + ly, y - lx)
+                    } else {
+                        (x + lx, y + ly)
+                    };
                     if dx < clip.0 || dy < clip.1 || dx >= clip.2 || dy >= clip.3 {
                         continue;
                     }

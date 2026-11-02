@@ -9,7 +9,7 @@
 //
 // spec: plugins/image-line-curves.md
 
-use crate::num::{round, s, Expo, Reader};
+use crate::num::{Expo, Reader, round, s};
 
 pub const ENVELOPE: i32 = 1;
 pub const LFO: i32 = 2;
@@ -65,7 +65,10 @@ impl Curve {
         let level = if kind == LFO { 0.5 } else { 0.0 };
         let mut c = Curve {
             kind,
-            points: vec![Point { level, ..Point::default() }],
+            points: vec![Point {
+                level,
+                ..Point::default()
+            }],
             flags: 0,
             enabled: false,
             decay: -1,
@@ -128,7 +131,8 @@ impl Curve {
         let sustain = r.i32()?;
         let mut c = Curve::default_of(kind);
         c.points = points;
-        (c.flags, c.enabled, c.decay, c.loop_start, c.sustain) = (flags, enabled, decay, loop_start, sustain);
+        (c.flags, c.enabled, c.decay, c.loop_start, c.sustain) =
+            (flags, enabled, decay, loop_start, sustain);
         if kind == ENVELOPE {
             for v in c.scales.iter_mut() {
                 *v = r.i32()?;
@@ -159,7 +163,13 @@ impl Curve {
             w.extend_from_slice(&p.tension.to_le_bytes());
             w.extend_from_slice(&[p.mode, p.step, 0, 0]);
         }
-        for v in [i32::from(self.flags), i32::from(self.enabled), self.decay, self.loop_start, self.sustain] {
+        for v in [
+            i32::from(self.flags),
+            i32::from(self.enabled),
+            self.decay,
+            self.loop_start,
+            self.sustain,
+        ] {
             int(w, v);
         }
         let tail: &[i32] = match self.kind {
@@ -214,7 +224,11 @@ impl Curve {
     /// Fitting a map to the length 1.
     fn fit_map(&mut self) {
         if self.points[0].dist > 0.0 {
-            let first = Point { dist: 0.0, level: self.points[0].level, ..Point::default() };
+            let first = Point {
+                dist: 0.0,
+                level: self.points[0].level,
+                ..Point::default()
+            };
             self.points.insert(0, first);
         }
         let total: f64 = self.points.iter().map(|p| f64::from(p.dist)).sum();
@@ -225,7 +239,11 @@ impl Curve {
             }
         } else if total == 0.0 {
             let last = self.points[self.points.len() - 1].level;
-            self.points.push(Point { dist: 1.0, level: last, ..Point::default() });
+            self.points.push(Point {
+                dist: 1.0,
+                level: last,
+                ..Point::default()
+            });
         }
     }
 
@@ -246,15 +264,32 @@ impl Curve {
         };
         self.loop_empty = false;
         if self.hold >= 0 && self.loop_start >= 0 {
-            let to = |m: i32| -> f64 { self.points[..=(m as usize)].iter().map(|p| f64::from(p.dist)).sum() };
+            let to = |m: i32| -> f64 {
+                self.points[..=(m as usize)]
+                    .iter()
+                    .map(|p| f64::from(p.dist))
+                    .sum()
+            };
             if to(self.hold) - to(self.loop_start) <= 0.0 {
                 self.loop_empty = true;
             }
         }
-        self.coef = (0..n).map(|i| if i == 0 { ([0.0; 3], true) } else { self.coefficients(i) }).collect();
+        self.coef = (0..n)
+            .map(|i| {
+                if i == 0 {
+                    ([0.0; 3], true)
+                } else {
+                    self.coefficients(i)
+                }
+            })
+            .collect();
         self.weights = self.offset_weights();
         self.has_steps = !self.loop_empty
-            && self.points.iter().enumerate().any(|(i, p)| p.step != 0 && (self.sustain < 0 || i as i32 <= self.sustain));
+            && self
+                .points
+                .iter()
+                .enumerate()
+                .any(|(i, p)| p.step != 0 && (self.sustain < 0 || i as i32 <= self.sustain));
     }
 
     fn coefficients(&self, i: usize) -> ([f32; 3], bool) {
@@ -331,9 +366,17 @@ impl Curve {
             }
             k
         };
-        let at = |k: i64| -> Option<Point> { if (0..n).contains(&k) { Some(self.points[k as usize]) } else { None } };
+        let at = |k: i64| -> Option<Point> {
+            if (0..n).contains(&k) {
+                Some(self.points[k as usize])
+            } else {
+                None
+            }
+        };
         let me = self.points[i];
-        let Some(prev) = at(fold(i as i64 - 1)) else { return ([0.0; 3], true) };
+        let Some(prev) = at(fold(i as i64 - 1)) else {
+            return ([0.0; 3], true);
+        };
         let (y0, y1) = (f64::from(prev.level), f64::from(me.level));
         let len = f64::from(me.dist).max(TINY24);
         let rise = y1 - y0;
@@ -375,10 +418,21 @@ impl Curve {
         let n = self.points.len();
         let last = n as i32 - 1;
         let a = self.decay.max(0);
-        let sp = if self.sustain >= 0 { self.sustain } else { last };
-        let d = if self.loop_start >= 0 { self.loop_start } else { sp };
+        let sp = if self.sustain >= 0 {
+            self.sustain
+        } else {
+            last
+        };
+        let d = if self.loop_start >= 0 {
+            self.loop_start
+        } else {
+            sp
+        };
         let sum = |from: i32, to: i32| -> f64 {
-            (from..=to).filter(|&k| k >= 0 && k <= last).map(|k| f64::from(self.points[k as usize].dist)).sum()
+            (from..=to)
+                .filter(|&k| k >= 0 && k <= last)
+                .map(|k| f64::from(self.points[k as usize].dist))
+                .sum()
         };
         let div = |x: f64| if x > W16 { x } else { W16 };
         let big_a = div(sum(0, a));
@@ -483,7 +537,10 @@ impl Curve {
             }
             10 => {
                 let x2 = x * x;
-                x + ((((3.0 * x2 - (2.0 * x2) * x) + (x2 * (x - 1.0)) * c0d) + ((x * (x - 1.0)) * (x - 1.0)) * c1d) - x) * c2d
+                x + ((((3.0 * x2 - (2.0 * x2) * x) + (x2 * (x - 1.0)) * c0d)
+                    + ((x * (x - 1.0)) * (x - 1.0)) * c1d)
+                    - x)
+                    * c2d
             }
             11 => {
                 let u = if t < 0.0 { x } else { 1.0 - x };
@@ -506,7 +563,10 @@ impl Curve {
 
     /// The summed distances of points `0..=m`.
     pub fn time_to(&self, m: usize) -> f64 {
-        self.points[..=m.min(self.points.len() - 1)].iter().map(|p| f64::from(p.dist)).sum()
+        self.points[..=m.min(self.points.len() - 1)]
+            .iter()
+            .map(|p| f64::from(p.dist))
+            .sum()
     }
 
     /// True when every point has one level.
@@ -564,8 +624,19 @@ pub struct Walk {
 
 impl Walk {
     pub fn new(c: &Curve, step: f64, centre: f64, limit: bool) -> Walk {
-        let scales = if c.kind == ENVELOPE { c.scales.map(|v| v as f32 / 128.0) } else { [1.0, 1.0, 0.0, 1.0] };
-        let mut w = Walk { step, centre, limit, scales, step_pos: -1, ..Walk::default() };
+        let scales = if c.kind == ENVELOPE {
+            c.scales.map(|v| v as f32 / 128.0)
+        } else {
+            [1.0, 1.0, 0.0, 1.0]
+        };
+        let mut w = Walk {
+            step,
+            centre,
+            limit,
+            scales,
+            step_pos: -1,
+            ..Walk::default()
+        };
         w.reset(c, 0.0);
         w
     }
@@ -630,7 +701,8 @@ impl Walk {
         self.passed_step = false;
         self.step_pos = -1;
         if !c.enabled {
-            (self.stage, self.from, self.by, self.out, self.p, self.r) = (FINISHED, 0.0, 0.0, 0.0, 0.0, 0.0);
+            (self.stage, self.from, self.by, self.out, self.p, self.r) =
+                (FINISHED, 0.0, 0.0, 0.0, 0.0, 0.0);
             return;
         }
         self.i = 0;
@@ -671,7 +743,11 @@ impl Walk {
         self.p += dt * self.r;
         let last = c.points.len() - 1;
         while self.p >= 1.0 {
-            self.p = if self.r == 0.0 { dt } else { (self.p - 1.0) / self.r };
+            self.p = if self.r == 0.0 {
+                dt
+            } else {
+                (self.p - 1.0) / self.r
+            };
             self.from = s(self.lvl(c, self.i));
             if c.has_steps && c.points[self.i].step != 0 && self.stage < RELEASED {
                 self.passed_step = true;
@@ -679,7 +755,8 @@ impl Walk {
                     self.release_now(c);
                     self.from = s(self.lvl(c, self.i));
                 } else if self.count > 0 {
-                    let pos = self.step_pos.max(0) - 2 + i32::from(c.points[self.i].step) + self.count;
+                    let pos =
+                        self.step_pos.max(0) - 2 + i32::from(c.points[self.i].step) + self.count;
                     self.step_pos = pos.rem_euclid(self.count);
                     self.holding = self.step_pos != self.rank;
                     if self.holding {
@@ -738,7 +815,11 @@ impl Walk {
                 self.p *= self.r;
             }
         }
-        self.out = if self.by == 0.0 { self.from } else { s(f64::from(self.from) + f64::from(c.progress(self.i, self.p) * self.by)) };
+        self.out = if self.by == 0.0 {
+            self.from
+        } else {
+            s(f64::from(self.from) + f64::from(c.progress(self.i, self.p) * self.by))
+        };
     }
 
     /// Note-off (Sytrus).
@@ -746,7 +827,12 @@ impl Walk {
         if self.stage >= RELEASED || !c.enabled {
             return;
         }
-        if c.has_steps && self.passed_step && !self.holding && self.count >= 2 && self.stage != WAITING {
+        if c.has_steps
+            && self.passed_step
+            && !self.holding
+            && self.count >= 2
+            && self.stage != WAITING
+        {
             if self.find_step(c) {
                 self.stage = WAITING;
                 return;
@@ -799,7 +885,11 @@ impl Walk {
 
     /// Velocity skip (switch 9 bit 1): one step of `dt` so that the walk skips into its attack.
     pub fn time_to_decay(&self, c: &Curve) -> f64 {
-        if c.decay < 0 { 0.0 } else { c.time_to(c.decay as usize) }
+        if c.decay < 0 {
+            0.0
+        } else {
+            c.time_to(c.decay as usize)
+        }
     }
 }
 
@@ -835,13 +925,24 @@ const TWO32: f64 = 4_294_967_296.0;
 impl LfoShape {
     pub fn new(c: &Curve, step: f64) -> LfoShape {
         let [speed, tension, skew, pw, offset] = c.lfo;
-        let st = s(f64::from(s(((f64::from(tension.unsigned_abs() as f32) * (1.0 / 128.0)) * 21f64.ln()).exp() - 1.0)) * 0.05);
+        let st = s(f64::from(s(((f64::from(tension.unsigned_abs() as f32)
+            * (1.0 / 128.0))
+            * 21f64.ln())
+        .exp()
+            - 1.0))
+            * 0.05);
         let a = s((f64::from(st) * 999_999_984_306_749_440f64.ln()).exp() - 1.0);
         let e = Expo::new(if tension < 0 { -a } else { a });
         let pwf = pw as f32 * (1.0 / 128.0);
         let sk = skew as f32 * (1.0 / 256.0);
-        let end: u32 = if pwf <= 0.0 { u32::MAX } else { round(f64::from((1.0 - pwf) * TWO32 as f32 - 1.0)) as u32 };
-        let mut r = (f64::from(s((1.0 - f64::from(pwf)) / 2.0)) - f64::from(sk) * (1.0 - f64::from(pwf.abs()))) * TWO32;
+        let end: u32 = if pwf <= 0.0 {
+            u32::MAX
+        } else {
+            round(f64::from((1.0 - pwf) * TWO32 as f32 - 1.0)) as u32
+        };
+        let mut r = (f64::from(s((1.0 - f64::from(pwf)) / 2.0))
+            - f64::from(sk) * (1.0 - f64::from(pwf.abs())))
+            * TWO32;
         if r > f64::from(end) - 1.0 {
             r = f64::from(end) - 1.0;
         }
@@ -849,12 +950,20 @@ impl LfoShape {
             r = 1.0;
         }
         let rise = round(r) as u32;
-        let fall = if pwf >= 0.0 { rise } else { (round(r + f64::from(s(f64::from(pwf) * TWO32)))).max(1) as u32 };
+        let fall = if pwf >= 0.0 {
+            rise
+        } else {
+            (round(r + f64::from(s(f64::from(pwf) * TWO32)))).max(1) as u32
+        };
         let fall_slope = s(2.0 / f64::from(fall));
         let rise_slope = s(2.0 / (f64::from(end) - f64::from(rise)));
-        let x = f64::from(s((f64::from(speed as f32 * (1.0 / 65536.0)) * 10001f64.ln()).exp() - 1.0));
+        let x = f64::from(s((f64::from(speed as f32 * (1.0 / 65536.0))
+            * 10001f64.ln())
+        .exp()
+            - 1.0));
         let dphi = round((x * 6_871_947.673_6 * step).min(805_306_368.0));
-        let start = (u64::from(rise) + (u64::from(end - rise) / 2) + 1).wrapping_add(offset as u32 as u64) as u32;
+        let start = (u64::from(rise) + (u64::from(end - rise) / 2) + 1)
+            .wrapping_add(offset as u32 as u64) as u32;
         LfoShape {
             e,
             end,
@@ -897,14 +1006,24 @@ impl Lfo {
         let shape = LfoShape::new(c, step);
         let walk = Walk::new(c, step, 0.5, true);
         let phase = phase.unwrap_or(shape.start);
-        Lfo { walk, phase, value: 0.0, shape, started: phase }
+        Lfo {
+            walk,
+            phase,
+            value: 0.0,
+            shape,
+            started: phase,
+        }
     }
 
     /// The reset: the walk reset, the phase at its start (a free-running LFO's: the phase it last started with), the
     /// value 0.
     pub fn reset(&mut self, c: &Curve) {
         self.walk.reset(c, 0.0);
-        self.phase = if c.flags & GLOBAL != 0 { self.started } else { self.shape.start };
+        self.phase = if c.flags & GLOBAL != 0 {
+            self.started
+        } else {
+            self.shape.start
+        };
         self.value = 0.0;
     }
 
@@ -913,7 +1032,10 @@ impl Lfo {
     pub fn start_at(&mut self, c: &Curve, s: f64) {
         self.reset(c);
         self.walk.start_at(c, s);
-        self.phase = self.shape.start.wrapping_add(round(s * self.shape.dphi as f64) as u32);
+        self.phase = self
+            .shape
+            .start
+            .wrapping_add(round(s * self.shape.dphi as f64) as u32);
         self.started = self.phase;
         let w = &self.walk;
         if s >= 0.0 && !(w.i == 0 && !w.finished() && w.p < 1.0) {
@@ -924,10 +1046,18 @@ impl Lfo {
     pub fn advance(&mut self, c: &Curve, dt: f64) {
         let w = &self.walk;
         let first = |w: &Walk| w.i == 0 && !w.finished() && w.p < 1.0;
-        let dt2 = if first(w) { (dt + (w.p - 1.0) / w.r).max(0.0) } else { dt };
+        let dt2 = if first(w) {
+            (dt + (w.p - 1.0) / w.r).max(0.0)
+        } else {
+            dt
+        };
         self.walk.advance(c, dt);
         if !first(&self.walk) {
-            let d = if self.shape.frozen { 0 } else { round(dt2 * self.shape.dphi as f64) };
+            let d = if self.shape.frozen {
+                0
+            } else {
+                round(dt2 * self.shape.dphi as f64)
+            };
             self.phase = self.phase.wrapping_add(d as u32);
             self.value = s(f64::from(self.walk.out) * f64::from(self.shape.wave(self.phase)));
         }
@@ -951,14 +1081,27 @@ impl<'a> MapWalk<'a> {
         let d = f64::from(c.points[0].dist);
         let (p, r) = if d == 0.0 { (1.0, 1.0) } else { (0.0, 1.0 / d) };
         let from = s(c.level(0, 0.0, centre, true));
-        MapWalk { c, i: 0, p, r, from, by: 0.0, centre, out: from }
+        MapWalk {
+            c,
+            i: 0,
+            p,
+            r,
+            from,
+            by: 0.0,
+            centre,
+            out: from,
+        }
     }
 
     pub fn advance(&mut self, dt: f64) -> f32 {
         let c = self.c;
         self.p += dt * self.r;
         while self.p >= 1.0 {
-            self.p = if self.r == 0.0 { dt } else { (self.p - 1.0) / self.r };
+            self.p = if self.r == 0.0 {
+                dt
+            } else {
+                (self.p - 1.0) / self.r
+            };
             self.from = s(c.level(self.i, 0.0, self.centre, true));
             let moved = self.i + 1 < c.points.len();
             if moved {
@@ -1000,7 +1143,10 @@ pub fn map_at(c: &Curve, x: f64, centre: f64) -> f32 {
     if c.is_flat() {
         return s(c.level(0, 0.0, centre, true));
     }
-    if c.points.len() == 2 && matches!(c.points[1].mode, 0 | 1 | 7 | 8 | 9 | 11 | 12) && c.points[1].tension.to_bits() == 0 {
+    if c.points.len() == 2
+        && matches!(c.points[1].mode, 0 | 1 | 7 | 8 | 9 | 11 | 12)
+        && c.points[1].tension.to_bits() == 0
+    {
         let t0 = s(c.level(0, 0.0, centre, true));
         let t1 = s(c.level(1, 0.0, centre, true));
         let x = x.clamp(0.0, 1.0);
@@ -1016,7 +1162,16 @@ mod tests {
 
     fn env(points: &[(f32, f32, u8, f32)], decay: i32, sustain: i32) -> Curve {
         let mut c = Curve::default_of(ENVELOPE);
-        c.points = points.iter().map(|&(dist, level, mode, tension)| Point { dist, level, tension, mode, step: 0 }).collect();
+        c.points = points
+            .iter()
+            .map(|&(dist, level, mode, tension)| Point {
+                dist,
+                level,
+                tension,
+                mode,
+                step: 0,
+            })
+            .collect();
         (c.enabled, c.decay, c.sustain) = (true, decay, sustain);
         c.keep_sytrus();
         c
@@ -1041,7 +1196,11 @@ mod tests {
 
     #[test]
     fn a_sustain_point_holds_until_note_off() {
-        let c = env(&[(0.0, 0.0, 0, 0.0), (0.5, 1.0, 0, 0.0), (0.5, 0.0, 0, 0.0)], -1, 1);
+        let c = env(
+            &[(0.0, 0.0, 0, 0.0), (0.5, 1.0, 0, 0.0), (0.5, 0.0, 0, 0.0)],
+            -1,
+            1,
+        );
         let mut w = Walk::new(&c, 0.25, 0.0, true);
         for _ in 0..10 {
             w.advance(&c, 1.0);

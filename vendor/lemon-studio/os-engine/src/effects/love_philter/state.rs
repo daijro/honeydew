@@ -8,7 +8,7 @@
 //!
 // spec: plugins/fruity-love-philter.md ("The state", "The settings"), plugins/image-line-curves.md ("The stream")
 
-use os_dsp::curve::{Curve, Point, ENVELOPE, LFO, MAP};
+use os_dsp::curve::{Curve, ENVELOPE, LFO, MAP, Point};
 use os_dsp::num::Reader;
 
 pub const FILTERS: usize = 8;
@@ -143,7 +143,11 @@ pub struct State {
 
 /// The version a stored int stands for.
 pub fn version_of(stored: i32) -> i32 {
-    if stored >= 0x10000 { stored >> 16 } else { stored }
+    if stored >= 0x10000 {
+        stored >> 16
+    } else {
+        stored
+    }
 }
 
 impl State {
@@ -165,7 +169,9 @@ impl State {
 
     /// The solo filter, or `None`.
     pub fn solo(&self) -> Option<usize> {
-        usize::try_from(self.switch_int(SW_SOLO)).ok().filter(|&f| f < FILTERS)
+        usize::try_from(self.switch_int(SW_SOLO))
+            .ok()
+            .filter(|&f| f < FILTERS)
     }
 
     pub fn oversampling(&self) -> u32 {
@@ -220,14 +226,30 @@ impl State {
             if len == 255 {
                 len = usize::try_from(r.i32()?).ok()?;
             }
-            r.bytes(len.checked_mul(2)?)?.chunks(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect()
+            r.bytes(len.checked_mul(2)?)?
+                .chunks(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect()
         };
         let mut filters = Vec::with_capacity(FILTERS);
         for _ in 0..FILTERS {
             filters.push(read_filter(&mut r)?);
         }
-        let hq_ws = if version >= 12 { r.u8().unwrap_or(0) != 0 } else { false };
-        Some(State { version, globals, switches, follow_filter1, editor, description, filters, hq_ws })
+        let hq_ws = if version >= 12 {
+            r.u8().unwrap_or(0) != 0
+        } else {
+            false
+        };
+        Some(State {
+            version,
+            globals,
+            switches,
+            follow_filter1,
+            editor,
+            description,
+            filters,
+            hq_ws,
+        })
     }
 
     /// The state as FL 2024 writes it (version 12, curves as curve version 3).
@@ -311,7 +333,13 @@ impl State {
     /// Sets setting `k` (the stored value only; the effect applies it).
     pub fn set_param(&mut self, k: usize, v: i32) {
         match k {
-            0..=5 => self.globals[k] = if k == PATTERN { v.clamp(1, PATTERNS as i32) } else { v },
+            0..=5 => {
+                self.globals[k] = if k == PATTERN {
+                    v.clamp(1, PATTERNS as i32)
+                } else {
+                    v
+                }
+            }
             6 => self.set_switch_int(SW_MODX, v),
             7 => self.set_switch_int(SW_MODY, v),
             _ => match filter_param(k) {
@@ -341,7 +369,11 @@ pub fn filter_param(k: usize) -> Option<(usize, FilterParam)> {
     if k >= PARAMS - 8 {
         return None;
     }
-    Some(if n < c { (f, FilterParam::Control(n)) } else { (f, FilterParam::Lfo((n - c) / 4, (n - c) % 4)) })
+    Some(if n < c {
+        (f, FilterParam::Control(n))
+    } else {
+        (f, FilterParam::Lfo((n - c) / 4, (n - c) % 4))
+    })
 }
 
 /// The automation index of filter `f`'s control `n` (`None` for filter 8's "to next").
@@ -372,8 +404,20 @@ pub fn range(k: usize) -> (i32, i32) {
 }
 
 /// The controls' ranges.
-pub const CONTROL_RANGES: [(i32, i32); CONTROLS] =
-    [(0, 256), (0, 256), (0, 256), (0, 128), (0, 128), (0, 128), (64, 192), (0, 128), (-128, 128), (0, 160), (-160, 160), (-160, 160)];
+pub const CONTROL_RANGES: [(i32, i32); CONTROLS] = [
+    (0, 256),
+    (0, 256),
+    (0, 256),
+    (0, 128),
+    (0, 128),
+    (0, 128),
+    (64, 192),
+    (0, 128),
+    (-128, 128),
+    (0, 160),
+    (-160, 160),
+    (-160, 160),
+];
 /// The controls' defaults (the Default preset's filter 1).
 pub const CONTROL_DEFAULTS: [i32; CONTROLS] = [128, 128, 128, 128, 0, 0, 128, 128, 0, 128, 128, 0];
 /// The LFO parameters' ranges: speed, tension, skew, pulse width.
@@ -385,7 +429,18 @@ impl Filter {
     /// A filter of Lemon Studio's starting state: the default controls, Chocolate, order 1, off.
     pub fn new_default() -> Filter {
         let mut ws_curve = Curve::default_of(MAP);
-        ws_curve.points = vec![Point { dist: 0.0, level: 0.0, ..Point::default() }, Point { dist: 1.0, level: 1.0, ..Point::default() }];
+        ws_curve.points = vec![
+            Point {
+                dist: 0.0,
+                level: 0.0,
+                ..Point::default()
+            },
+            Point {
+                dist: 1.0,
+                level: 1.0,
+                ..Point::default()
+            },
+        ];
         ws_curve.enabled = true;
         ws_curve.keep_love_philter();
         Filter {
@@ -408,7 +463,13 @@ impl Articulator {
         let neutral = if additive(t) { 0.5 } else { 1.0 };
         let flat = |kind: i32, level: f32, n: usize| {
             let mut c = Curve::default_of(kind);
-            c.points = (0..n).map(|i| Point { dist: if i == 0 { 0.0 } else { 1.0 }, level, ..Point::default() }).collect();
+            c.points = (0..n)
+                .map(|i| Point {
+                    dist: if i == 0 { 0.0 } else { 1.0 },
+                    level,
+                    ..Point::default()
+                })
+                .collect();
             c.enabled = true;
             c
         };
@@ -426,7 +487,13 @@ impl Articulator {
         let mut lfo = flat(LFO, 1.0, 1);
         lfo.enabled = false;
         lfo.flags = os_dsp::curve::SYNCED;
-        lfo.lfo = [LFO_DEFAULTS[0], LFO_DEFAULTS[1], LFO_DEFAULTS[2], LFO_DEFAULTS[3], 0];
+        lfo.lfo = [
+            LFO_DEFAULTS[0],
+            LFO_DEFAULTS[1],
+            LFO_DEFAULTS[2],
+            LFO_DEFAULTS[3],
+            0,
+        ];
         lfo.keep_love_philter();
         let map = || {
             let mut c = flat(MAP, neutral as f32, 2);
@@ -478,10 +545,32 @@ fn read_filter(r: &mut Reader) -> Option<Filter> {
             patterns.push(read_curve(r, ENVELOPE)?);
         }
         let lfo = read_curve(r, LFO)?;
-        let maps = [read_curve(r, MAP)?, read_curve(r, MAP)?, read_curve(r, MAP)?];
-        arts.push(Articulator { version, base, amount, lfo_amount, patterns, lfo, maps });
+        let maps = [
+            read_curve(r, MAP)?,
+            read_curve(r, MAP)?,
+            read_curve(r, MAP)?,
+        ];
+        arts.push(Articulator {
+            version,
+            base,
+            amount,
+            lfo_amount,
+            patterns,
+            lfo,
+            maps,
+        });
     }
-    Some(Filter { controls, order, kind, alt, enabled, ws, ws_curve, ws_bipolar, arts })
+    Some(Filter {
+        controls,
+        order,
+        kind,
+        alt,
+        enabled,
+        ws,
+        ws_curve,
+        ws_bipolar,
+        arts,
+    })
 }
 
 fn write_filter(w: &mut Vec<u8>, f: &Filter) {
@@ -533,8 +622,14 @@ mod tests {
         assert_eq!(filter_param(51), Some((0, FilterParam::Lfo(7, 3))));
         assert_eq!(filter_param(52), Some((1, FilterParam::Control(0))));
         // Filter 8 has eleven controls: index 8 + 44 * 7 + 11 is its first LFO parameter, 358 the last.
-        assert_eq!(filter_param(8 + 308 + 10), Some((7, FilterParam::Control(10))));
-        assert_eq!(filter_param(8 + 308 + 11), Some((7, FilterParam::Lfo(0, 0))));
+        assert_eq!(
+            filter_param(8 + 308 + 10),
+            Some((7, FilterParam::Control(10)))
+        );
+        assert_eq!(
+            filter_param(8 + 308 + 11),
+            Some((7, FilterParam::Lfo(0, 0)))
+        );
         assert_eq!(filter_param(358), Some((7, FilterParam::Lfo(7, 3))));
         assert_eq!(filter_param(359), None);
         assert_eq!(lfo_index(7, 7, 3), 358);

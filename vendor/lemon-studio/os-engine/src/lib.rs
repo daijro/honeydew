@@ -27,6 +27,9 @@ pub mod voices;
 
 #[cfg(feature = "plugins")]
 pub use clock::Clock;
-pub use instrument::{ChannelLevels, ChannelVoicing, HostedEffect, Instrument, NoteLevels, SharedEffect, SharedInstrument, TransportInfo};
+pub use instrument::{
+    ChannelLevels, ChannelVoicing, HostedEffect, Instrument, NoteLevels, SharedEffect,
+    SharedInstrument, TransportInfo,
+};
 #[cfg(feature = "plugins")]
 pub use sample::{Sample, SampleLibrary};

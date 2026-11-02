@@ -35,7 +35,12 @@ pub struct Color {
 
 impl Color {
     pub const fn rgb(hex: u32) -> Self {
-        Color { r: (hex >> 16) as u8, g: (hex >> 8) as u8, b: hex as u8, a: 255 }
+        Color {
+            r: (hex >> 16) as u8,
+            g: (hex >> 8) as u8,
+            b: hex as u8,
+            a: 255,
+        }
     }
 
     pub const fn with_alpha(self, a: u8) -> Self {
@@ -55,8 +60,17 @@ impl Color {
 
     /// Linear mix toward `other` by `t` (0 = self, 1 = other).
     pub fn mix(self, other: Color, t: f32) -> Color {
-        let l = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * t).round().clamp(0.0, 255.0) as u8;
-        Color { r: l(self.r, other.r), g: l(self.g, other.g), b: l(self.b, other.b), a: l(self.a, other.a) }
+        let l = |a: u8, b: u8| {
+            (f32::from(a) + (f32::from(b) - f32::from(a)) * t)
+                .round()
+                .clamp(0.0, 255.0) as u8
+        };
+        Color {
+            r: l(self.r, other.r),
+            g: l(self.g, other.g),
+            b: l(self.b, other.b),
+            a: l(self.a, other.a),
+        }
     }
 
     /// Lighten (positive) or darken (negative) by mixing with white or black.
@@ -69,7 +83,11 @@ impl Color {
     }
 
     fn to_hsl(self) -> (f32, f32, f32) {
-        let (r, g, b) = (f32::from(self.r) / 255.0, f32::from(self.g) / 255.0, f32::from(self.b) / 255.0);
+        let (r, g, b) = (
+            f32::from(self.r) / 255.0,
+            f32::from(self.g) / 255.0,
+            f32::from(self.b) / 255.0,
+        );
         let max = r.max(g).max(b);
         let min = r.min(g).min(b);
         let l = (max + min) / 2.0;
@@ -77,7 +95,11 @@ impl Color {
             return (0.0, 0.0, l);
         }
         let d = max - min;
-        let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+        let s = if l > 0.5 {
+            d / (2.0 - max - min)
+        } else {
+            d / (max + min)
+        };
         let h = if max == r {
             (g - b) / d + if g < b { 6.0 } else { 0.0 }
         } else if max == g {
@@ -102,7 +124,12 @@ impl Color {
         };
         let m = l - c / 2.0;
         let q = |v: f32| ((v + m) * 255.0).round().clamp(0.0, 255.0) as u8;
-        Color { r: q(r), g: q(g), b: q(b), a }
+        Color {
+            r: q(r),
+            g: q(g),
+            b: q(b),
+            a,
+        }
     }
 
     /// Hue (degrees), saturation and lightness (0..1).
@@ -437,7 +464,12 @@ impl Default for Theme {
 impl Theme {
     pub fn new(name: &str, base: Palette, adjust: Adjust) -> Self {
         let colors = base.map(|c| c.adjust(adjust));
-        Theme { name: name.into(), adjust, base, colors }
+        Theme {
+            name: name.into(),
+            adjust,
+            base,
+            colors,
+        }
     }
 
     pub fn set_adjust(&mut self, adjust: Adjust) {
@@ -453,20 +485,27 @@ impl Theme {
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
-            let (k, rest) = line.split_once('=').ok_or(format!("line {}: expected key = value", n + 1))?;
+            let (k, rest) = line
+                .split_once('=')
+                .ok_or(format!("line {}: expected key = value", n + 1))?;
             // The value is the first word (colors start with `#` too); a trailing `# …` is a comment.
             let mut words = rest.split_whitespace();
             let (k, v) = (k.trim(), words.next().unwrap_or(""));
             if words.next().is_some_and(|w| !w.starts_with('#')) {
                 return Err(format!("line {}: unexpected text after the value", n + 1));
             }
-            let num = || v.parse::<f32>().map_err(|e| format!("line {}: {k}: {e}", n + 1));
+            let num = || {
+                v.parse::<f32>()
+                    .map_err(|e| format!("line {}: {k}: {e}", n + 1))
+            };
             match k {
                 "hue" => adjust.hue = num()?,
                 "saturation" => adjust.saturation = num()?,
                 "lightness" => adjust.lightness = num()?,
                 _ => {
-                    let slot = base.get_mut(k).ok_or(format!("line {}: unknown token {k}", n + 1))?;
+                    let slot = base
+                        .get_mut(k)
+                        .ok_or(format!("line {}: unknown token {k}", n + 1))?;
                     *slot = Color::parse(v).ok_or(format!("line {}: bad color {v}", n + 1))?;
                 }
             }
@@ -493,7 +532,12 @@ mod tests {
 
     #[test]
     fn hsl_round_trip() {
-        for c in [Color::rgb(0x2e3234), Color::rgb(0xa8e44a), Color::rgb(0xfb655e), Color::rgb(0x000000)] {
+        for c in [
+            Color::rgb(0x2e3234),
+            Color::rgb(0xa8e44a),
+            Color::rgb(0xfb655e),
+            Color::rgb(0x000000),
+        ] {
             let (h, s, l) = c.to_hsl();
             let back = Color::from_hsl(h, s, l, 255);
             for (a, b) in [(c.r, back.r), (c.g, back.g), (c.b, back.b)] {
@@ -505,7 +549,11 @@ mod tests {
     #[test]
     fn file_round_trip() {
         let mut t = Theme::default();
-        t.set_adjust(Adjust { hue: 30.0, saturation: 0.2, lightness: -0.05 });
+        t.set_adjust(Adjust {
+            hue: 30.0,
+            saturation: 0.2,
+            lightness: -0.05,
+        });
         let parsed = Theme::parse("Default", &t.to_text()).unwrap();
         assert_eq!(parsed, t);
     }

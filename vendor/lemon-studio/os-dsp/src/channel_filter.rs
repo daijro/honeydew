@@ -144,7 +144,11 @@ impl Filter {
         let ln51 = 51f64.ln() as f32;
         let w = ((e(x, ln51) * f64::from(0.0596f32) + 0.02) * k) as f32;
         let w = w.max((0.02 * k) as f32).min(3.0);
-        let q = if y > 0.0 { (e(y.min(1.0), (0.625 * 51f64.ln()) as f32) * f64::from(0.4f32) + 0.1) as f32 } else { 0.1 };
+        let q = if y > 0.0 {
+            (e(y.min(1.0), (0.625 * 51f64.ln()) as f32) * f64::from(0.4f32) + 0.1) as f32
+        } else {
+            0.1
+        };
         let sn = f64::from(w).sin() as f32;
         let cs = f64::from(f64::from(w).cos() as f32);
         let alpha = sn / (2.0 * q);
@@ -169,7 +173,11 @@ impl Filter {
                 [b1 * 0.5, b1, b1 * 0.5, a1, a2]
             }
         };
-        self.gain = if self.kind == 5 { (1.0 - f64::from(q) * (3.2 - f64::from(w)) * 0.046875) as f32 } else { 1.0 };
+        self.gain = if self.kind == 5 {
+            (1.0 - f64::from(q) * (3.2 - f64::from(w)) * 0.046875) as f32
+        } else {
+            1.0
+        };
     }
 
     /// Types 6 and 7 (spec "Types 6 and 7").
@@ -202,7 +210,9 @@ impl Filter {
                         let mut x = *s;
                         for stage in 0..stages {
                             let m = &mut self.st[stage][ch];
-                            let y = (f64::from(x) * b0 + (((m[1] * b2 + m[0] * b1) - m[2] * a1) - m[3] * a2)) as f32;
+                            let y = (f64::from(x) * b0
+                                + (((m[1] * b2 + m[0] * b1) - m[2] * a1) - m[3] * a2))
+                                as f32;
                             *m = [f64::from(x), m[0], f64::from(y), m[2]];
                             x = y;
                         }
@@ -296,7 +306,11 @@ mod tests {
         for kind in [0, 1, 5, 6, 7] {
             let out = run(kind, 0.3, 0.2, &n, 220);
             assert!(out.iter().all(|s| s.is_finite()));
-            assert!(highs(&out) < base * 0.2, "type {kind}: {} vs {base}", highs(&out));
+            assert!(
+                highs(&out) < base * 0.2,
+                "type {kind}: {} vs {base}",
+                highs(&out)
+            );
         }
         let hp = run(3, 0.3, 0.2, &n, 220);
         assert!(highs(&hp) > base * 0.5);
@@ -313,7 +327,8 @@ mod tests {
     fn the_fast_low_pass_glides_its_cutoff() {
         let mut f = Filter::new(0, 44100);
         f.tick(0, 0.5, 0.0, 220.0);
-        let want = ((f64::from(0.5f32 * 601f64.ln() as f32).exp() - 1.0) * f64::from(1.0f32 / 600.0)) as f32;
+        let want = ((f64::from(0.5f32 * 601f64.ln() as f32).exp() - 1.0)
+            * f64::from(1.0f32 / 600.0)) as f32;
         assert_eq!(f.c, f64::from(want));
         assert!(f.on);
         let mut buf = vec![0.0f32; 440];
@@ -323,7 +338,10 @@ mod tests {
         f.run(&mut buf);
         f.tick(0, 1.0, 0.0, 220.0);
         // After a tick of 220 samples: single(c + 220 * step).
-        assert_eq!(f.c, f64::from((f64::from(want) + 220.0 * 0.001_f32 as f64) as f32));
+        assert_eq!(
+            f.c,
+            f64::from((f64::from(want) + 220.0 * 0.001_f32 as f64) as f32)
+        );
     }
 
     /// Type 5 corrects the voice's gains by `single(1 - Q * (3.2 - w) * 0.046875)`; the other types leave them.

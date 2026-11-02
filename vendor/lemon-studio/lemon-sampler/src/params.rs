@@ -40,7 +40,11 @@ pub fn live_set(addr: usize, norm: f32, host: f32) {
     if let Ok(mut l) = LIVE.lock() {
         l.retain(|e| e.addr != addr);
         if (norm - host).abs() > 1e-7 {
-            l.push(LiveEdit { addr, norm, base: host });
+            l.push(LiveEdit {
+                addr,
+                norm,
+                base: host,
+            });
         }
     }
 }
@@ -93,7 +97,10 @@ pub trait Live {
 impl Live for FloatParam {
     type Plain = f32;
     fn live(&self) -> f32 {
-        match live_norm(self as *const Self as usize, self.unmodulated_normalized_value()) {
+        match live_norm(
+            self as *const Self as usize,
+            self.unmodulated_normalized_value(),
+        ) {
             Some(n) => self.preview_plain(n),
             None => self.value(),
         }
@@ -103,7 +110,10 @@ impl Live for FloatParam {
 impl Live for IntParam {
     type Plain = i32;
     fn live(&self) -> i32 {
-        match live_norm(self as *const Self as usize, self.unmodulated_normalized_value()) {
+        match live_norm(
+            self as *const Self as usize,
+            self.unmodulated_normalized_value(),
+        ) {
             Some(n) => self.preview_plain(n),
             None => self.value(),
         }
@@ -113,13 +123,15 @@ impl Live for IntParam {
 impl Live for BoolParam {
     type Plain = bool;
     fn live(&self) -> bool {
-        match live_norm(self as *const Self as usize, self.unmodulated_normalized_value()) {
+        match live_norm(
+            self as *const Self as usize,
+            self.unmodulated_normalized_value(),
+        ) {
             Some(n) => self.preview_plain(n),
             None => self.value(),
         }
     }
 }
-
 
 fn percent() -> Fmt {
     Arc::new(|v| format!("{:.0}%", v * 100.0))
@@ -138,7 +150,13 @@ fn signed_percent() -> Fmt {
 fn side_text() -> Fmt {
     Arc::new(|v| {
         let p = (v * 100.0).round();
-        if p == 0.0 { "Centered".into() } else if p < 0.0 { format!("{:.0}% left", -p) } else { format!("{p:.0}% right") }
+        if p == 0.0 {
+            "Centered".into()
+        } else if p < 0.0 {
+            format!("{:.0}% left", -p)
+        } else {
+            format!("{p:.0}% right")
+        }
     })
 }
 
@@ -151,18 +169,36 @@ pub const MOD_Y_POLY: u32 = 2;
 
 /// A 0..1 knob shown in percent.
 pub fn knob(name: &str, default: f32) -> FloatParam {
-    FloatParam::new(name, default, FloatRange::Linear { min: 0.0, max: 1.0 }).with_value_to_string(percent())
+    FloatParam::new(name, default, FloatRange::Linear { min: 0.0, max: 1.0 })
+        .with_value_to_string(percent())
 }
 
 /// A -1..1 knob (centre = 0) shown in percent.
 pub fn bi_knob(name: &str, default: f32) -> FloatParam {
-    FloatParam::new(name, default, FloatRange::Linear { min: -1.0, max: 1.0 }).with_value_to_string(signed_percent())
+    FloatParam::new(
+        name,
+        default,
+        FloatRange::Linear {
+            min: -1.0,
+            max: 1.0,
+        },
+    )
+    .with_value_to_string(signed_percent())
 }
 
 /// A choice list stored as an integer (the label is the value text).
 fn choice(name: &str, default: i32, labels: &'static [&'static str]) -> IntParam {
-    IntParam::new(name, default, IntRange::Linear { min: 0, max: labels.len() as i32 - 1 })
-        .with_value_to_string(Arc::new(move |v| labels.get(v as usize).copied().unwrap_or("?").to_string()))
+    IntParam::new(
+        name,
+        default,
+        IntRange::Linear {
+            min: 0,
+            max: labels.len() as i32 - 1,
+        },
+    )
+    .with_value_to_string(Arc::new(move |v| {
+        labels.get(v as usize).copied().unwrap_or("?").to_string()
+    }))
 }
 
 /// Envelope / LFO time knobs: the knob position v is the channel-envelope field v·65536 (minimum 100 = none, spec
@@ -175,11 +211,17 @@ fn field_norm(field: i32) -> f32 {
     field as f32 / 65536.0
 }
 
-pub const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+pub const NOTE_NAMES: [&str; 12] = [
+    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+];
 
 /// FL note naming: key 60 = C5.
 pub fn note_name(key: i32) -> String {
-    format!("{}{}", NOTE_NAMES[key.rem_euclid(12) as usize], key.div_euclid(12))
+    format!(
+        "{}{}",
+        NOTE_NAMES[key.rem_euclid(12) as usize],
+        key.div_euclid(12)
+    )
 }
 
 pub const DECLICK: &[&str] = &[
@@ -191,15 +233,30 @@ pub const DECLICK: &[&str] = &[
     "Crossfade (bleeding)",
 ];
 /// Stretch modes in the order of the mode menu (spec §Menus: two columns with headers).
-pub const STRETCH: &[&str] =
-    &["Resample", "Stretch", "Stretch Pro", "e3 generic", "e3 mono", "Slice stretch", "Slice map", "Auto", "e2 generic", "e2 transient", "e2 mono", "e2 speech"];
+pub const STRETCH: &[&str] = &[
+    "Resample",
+    "Stretch",
+    "Stretch Pro",
+    "e3 generic",
+    "e3 mono",
+    "Slice stretch",
+    "Slice map",
+    "Auto",
+    "e2 generic",
+    "e2 transient",
+    "e2 mono",
+    "e2 speech",
+];
 pub const STRETCH_AUTO: i32 = 7;
 /// The stretch method each mode menu entry stores (event 215 int 27; spec: audio/time-stretch.md "Fields").
 pub const STRETCH_FILE: [i32; 12] = [0, -1, -2, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 /// Mode menu index of a stored stretch method (values not known: Auto).
 pub fn stretch_index(file: i32) -> i32 {
-    STRETCH_FILE.iter().position(|&m| m == file).map_or(STRETCH_AUTO, |i| i as i32)
+    STRETCH_FILE
+        .iter()
+        .position(|&m| m == file)
+        .map_or(STRETCH_AUTO, |i| i as i32)
 }
 
 /// Stretch and Stretch Pro: the voice stretches while it plays, the key and pitch moving only the pitch (spec §5.6).
@@ -211,7 +268,9 @@ pub fn stretch_realtime(index: i32) -> bool {
 pub fn stretch_whole(index: i32) -> bool {
     index >= 3
 }
-pub const FILTERS: &[&str] = &["Fast LP", "LP", "BP", "HP", "BS", "LPx2", "SVF LP", "SVF LPx2"];
+pub const FILTERS: &[&str] = &[
+    "Fast LP", "LP", "BP", "HP", "BS", "LPx2", "SVF LP", "SVF LPx2",
+];
 pub const LFO_SHAPES: &[&str] = &["Sine", "Triangle", "Pulse"];
 pub const REVERB_TYPES: &[&str] = &["A", "B"];
 
@@ -249,7 +308,11 @@ pub fn time_steps(v: f32) -> f64 {
 
 /// Knob position of a TIME value in steps (inverse of `time_steps`).
 pub fn time_norm(steps: f64) -> f32 {
-    let p = if steps < 16.0 { steps.max(0.0) } else { 16.0 + (steps - 16.0) / 16.0 * 36.0 };
+    let p = if steps < 16.0 {
+        steps.max(0.0)
+    } else {
+        16.0 + (steps - 16.0) / 16.0 * 36.0
+    };
     (p / f64::from(TIME_PX)).clamp(0.0, 1.0) as f32
 }
 
@@ -261,7 +324,12 @@ pub fn time_snap(v: f32) -> f32 {
 /// "bars:steps:ticks" as FL shows the TIME value (24 ticks a step; spec §2.1).
 pub fn time_text(steps: f64) -> String {
     let ticks = (steps.max(0.0) * 24.0).round() as u64;
-    format!("{}:{:02}:{:02}", ticks / (16 * 24), ticks / 24 % 16, ticks % 24)
+    format!(
+        "{}:{:02}:{:02}",
+        ticks / (16 * 24),
+        ticks / 24 % 16,
+        ticks % 24
+    )
 }
 
 /// TIME as event 215 int 24 stores it: a single in 1/192 beat (0 = off).
@@ -271,7 +339,11 @@ pub fn time_file(steps: f64) -> f32 {
 
 /// Steps of a stored TIME (1/192 beat).
 pub fn time_from_file(units: f32) -> f64 {
-    if units.is_finite() && units >= 1.0 { f64::from(units) / 48.0 } else { 0.0 }
+    if units.is_finite() && units >= 1.0 {
+        f64::from(units) / 48.0
+    } else {
+        0.0
+    }
 }
 
 /// One envelope / LFO target of the envelope tab (Panning, Volume, Mod X, Mod Y, Pitch).
@@ -516,22 +588,47 @@ impl Default for SamplerParams {
             load_slices: BoolParam::new("Load slice markers", false),
             declick: choice("Declicking mode", 0, DECLICK),
             // A host can start one note further into the sample (a trimmed audio clip, spec §7).
-            start_offset: knob("Sample start offset", 0.0).with_poly_modulation_id(START_OFFSET_POLY),
-            loop_start: FloatParam::new("Loop start position", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
-                .with_value_to_string(samples(frames.clone())),
-            loop_end: FloatParam::new("Loop end position", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 })
-                .with_value_to_string(samples(frames.clone())),
+            start_offset: knob("Sample start offset", 0.0)
+                .with_poly_modulation_id(START_OFFSET_POLY),
+            loop_start: FloatParam::new(
+                "Loop start position",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_value_to_string(samples(frames.clone())),
+            loop_end: FloatParam::new(
+                "Loop end position",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_value_to_string(samples(frames.clone())),
             loop_use: BoolParam::new("Use loop points", true),
             loop_pingpong: BoolParam::new("Ping pong loop", false),
-            ts_pitch: FloatParam::new("Pitch shift", 0.5, FloatRange::Linear { min: 0.0, max: 1.0 })
-                .with_value_to_string(Arc::new(|v| {
-                    let c = ts_cents(v);
-                    if c == 0.0 { "0 cents".into() } else { format!("{c:+.0} cents") }
-                })),
-            ts_mul: FloatParam::new("Time stretch (multiplicator)", 0.5, FloatRange::Linear { min: 0.0, max: 1.0 })
-                .with_value_to_string(Arc::new(|v| format!("{:.2}%", mul_of(v) * 100.0))),
-            ts_time: FloatParam::new("Time stretch (time)", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
-                .with_value_to_string(Arc::new(|v| time_text(time_steps(v)))),
+            ts_pitch: FloatParam::new(
+                "Pitch shift",
+                0.5,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_value_to_string(Arc::new(|v| {
+                let c = ts_cents(v);
+                if c == 0.0 {
+                    "0 cents".into()
+                } else {
+                    format!("{c:+.0} cents")
+                }
+            })),
+            ts_mul: FloatParam::new(
+                "Time stretch (multiplicator)",
+                0.5,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_value_to_string(Arc::new(|v| format!("{:.2}%", mul_of(v) * 100.0))),
+            ts_time: FloatParam::new(
+                "Time stretch (time)",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_value_to_string(Arc::new(|v| time_text(time_steps(v)))),
             ts_mode: choice("Stretching method", 0, STRETCH),
             fx_dc: BoolParam::new("Remove DC offset", false),
             fx_normalize: BoolParam::new("Normalize", false),
@@ -554,7 +651,15 @@ impl Default for SamplerParams {
             fx_clip: BoolParam::new("Clipping", false),
             fx_reverb_type: choice("Reverb type", 1, REVERB_TYPES),
             fx_reverb: knob("Reverb amount", 0.0),
-            fx_sdelay: FloatParam::new("Stereo delay", 0.0, FloatRange::Linear { min: -1.0, max: 1.0 }).with_value_to_string(side_text()),
+            fx_sdelay: FloatParam::new(
+                "Stereo delay",
+                0.0,
+                FloatRange::Linear {
+                    min: -1.0,
+                    max: 1.0,
+                },
+            )
+            .with_value_to_string(side_text()),
             fx_pogo: bi_knob("Pogo effect", 0.0),
             // (Lemon Studio) On for a new channel: what most project files store.
             fx_loop_follows: BoolParam::new("Loop points follow a reversal", true).hide(),
@@ -566,14 +671,46 @@ impl Default for SamplerParams {
             f_cut: knob("Filter frequency (modulation X)", 1.0).with_poly_modulation_id(MOD_X_POLY),
             f_res: knob("Filter bandwidth (modulation Y)", 0.0).with_poly_modulation_id(MOD_Y_POLY),
             f_type: choice("Filter type", 0, FILTERS),
-            root: IntParam::new("Root note", 60, IntRange::Linear { min: 0, max: KEY_MAX }).with_value_to_string(Arc::new(note_name)),
-            fine: IntParam::new("Fine tuning", 0, IntRange::Linear { min: -100, max: 100 }).with_value_to_string(Arc::new(|v| format!("{v} cents"))),
+            root: IntParam::new(
+                "Root note",
+                60,
+                IntRange::Linear {
+                    min: 0,
+                    max: KEY_MAX,
+                },
+            )
+            .with_value_to_string(Arc::new(note_name)),
+            fine: IntParam::new(
+                "Fine tuning",
+                0,
+                IntRange::Linear {
+                    min: -100,
+                    max: 100,
+                },
+            )
+            .with_value_to_string(Arc::new(|v| format!("{v} cents"))),
             main_pitch: BoolParam::new("Affected by the main pitch", true),
             add_key: BoolParam::new("Add root note to key", false),
-            zone_lo: IntParam::new("Zone low key", 0, IntRange::Linear { min: 0, max: KEY_MAX }).with_value_to_string(Arc::new(note_name)).hide(),
-            zone_hi: IntParam::new("Zone high key", KEY_MAX, IntRange::Linear { min: 0, max: KEY_MAX })
-                .with_value_to_string(Arc::new(note_name))
-                .hide(),
+            zone_lo: IntParam::new(
+                "Zone low key",
+                0,
+                IntRange::Linear {
+                    min: 0,
+                    max: KEY_MAX,
+                },
+            )
+            .with_value_to_string(Arc::new(note_name))
+            .hide(),
+            zone_hi: IntParam::new(
+                "Zone high key",
+                KEY_MAX,
+                IntRange::Linear {
+                    min: 0,
+                    max: KEY_MAX,
+                },
+            )
+            .with_value_to_string(Arc::new(note_name))
+            .hide(),
             frames,
         }
     }
@@ -582,7 +719,13 @@ impl Default for SamplerParams {
 impl SamplerParams {
     /// The envelope tab's five targets in sub-tab order.
     pub fn env(&self, target: usize) -> &EnvParams {
-        [&self.env_pan, &self.env_vol, &self.env_modx, &self.env_mody, &self.env_pitch][target.min(4)]
+        [
+            &self.env_pan,
+            &self.env_vol,
+            &self.env_modx,
+            &self.env_mody,
+            &self.env_pitch,
+        ][target.min(4)]
     }
 
     /// True when the ruler selected a key zone (not the full range).
@@ -605,12 +748,21 @@ pub struct Unit {
 
 impl Unit {
     const fn new(base: f64, span: f64, lo: f32, max: f64) -> Unit {
-        Unit { base, span, lo, max }
+        Unit {
+            base,
+            span,
+            lo,
+            max,
+        }
     }
 
     /// The stored value of a knob position.
     pub fn stored(&self, knob: f32) -> u32 {
-        let k = f64::from(if knob.is_finite() { knob.clamp(self.lo, 1.0) } else { 0.0 });
+        let k = f64::from(if knob.is_finite() {
+            knob.clamp(self.lo, 1.0)
+        } else {
+            0.0
+        });
         (self.base + (k * self.span).round_ties_even()).clamp(0.0, self.max) as u32
     }
 
@@ -676,7 +828,10 @@ pub fn fx_text(f: &SampleFx) -> String {
         f.length_bits,
         b(f.loop_follows_reverse),
     ];
-    vals.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",")
+    vals.iter()
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// The inverse of [`fx_text`] (`None` for empty or malformed text).
@@ -758,7 +913,8 @@ pub fn fx_from_knobs(k: &FxKnobs, file: Option<&SampleFx>) -> SampleFx {
             _ => unit.stored(knob),
         }
     };
-    let word = |unit: &Unit, knob: f32, of: fn(&SampleFx) -> u32| keep(unit, knob, of).min(65535) as u16;
+    let word =
+        |unit: &Unit, knob: f32, of: fn(&SampleFx) -> u32| keep(unit, knob, of).min(65535) as u16;
     let flag = |on: bool, bit: u16| if on { bit } else { 0 };
     let range = |knob: f32, bits: Option<u64>| match bits {
         Some(b) if f64::from_bits(b) as f32 == knob => b,
@@ -772,7 +928,9 @@ pub fn fx_from_knobs(k: &FxKnobs, file: Option<&SampleFx>) -> SampleFx {
         boost: word(&unit::BOOST, k.boost, |f| f.boost.into()),
         fade_out: word(&unit::FADE, k.fade_out, |f| f.fade_out.into()),
         fade_in: word(&unit::FADE, k.fade_in, |f| f.fade_in.into()),
-        stereo_delay: word(&unit::STEREO_DELAY, k.stereo_delay, |f| f.stereo_delay.into()),
+        stereo_delay: word(&unit::STEREO_DELAY, k.stereo_delay, |f| {
+            f.stereo_delay.into()
+        }),
         pogo: word(&unit::POGO, k.pogo, |f| f.pogo.into()),
         feedback: word(&unit::FEEDBACK, k.eq, |f| f.feedback.into()),
         cutoff: word(&unit::CUTOFF, k.cutoff, |f| f.cutoff.into()),
@@ -814,7 +972,15 @@ pub struct FxKey {
 impl FxKey {
     /// No setting at all (the file as it is) at 44100 Hz.
     pub fn neutral() -> FxKey {
-        FxKey { fx: SampleFx::default(), knob_loop: None, rate: 44100, stretch: false, ratio: 1.0, time: 0.0, shift: 0.0 }
+        FxKey {
+            fx: SampleFx::default(),
+            knob_loop: None,
+            rate: 44100,
+            stretch: false,
+            ratio: 1.0,
+            time: 0.0,
+            shift: 0.0,
+        }
     }
 
     /// Stretch ratio for a sample of `secs` seconds: TIME's target length when set, else MUL.
@@ -867,7 +1033,10 @@ impl SamplerParams {
 
     /// The project file's settings for the channel, if the host gave them.
     pub fn file_fx(&self) -> Option<SampleFx> {
-        self.file_settings.read().ok().and_then(|t| fx_from_text(&t))
+        self.file_settings
+            .read()
+            .ok()
+            .and_then(|t| fx_from_text(&t))
     }
 
     /// The precomputed settings in the file's units: each from its knob, or the file's own value while the knob stands
@@ -910,16 +1079,28 @@ impl SamplerParams {
     /// Precomputed settings at the host's `tempo` (TIME depends on it) and output `rate`.
     pub fn fx_key(&self, tempo: f64, rate: u32) -> FxKey {
         let stretch = stretch_whole(self.ts_mode.live());
-        let time = if stretch { self.ts_seconds(tempo).unwrap_or(0.0) as f32 } else { 0.0 };
+        let time = if stretch {
+            self.ts_seconds(tempo).unwrap_or(0.0) as f32
+        } else {
+            0.0
+        };
         let (ls, le) = (self.loop_start.live(), self.loop_end.live());
         FxKey {
             fx: self.sample_fx(),
             knob_loop: (ls > 0.0 || le < 1.0).then_some((ls, le)),
             rate,
             stretch,
-            ratio: if stretch { mul_of(self.ts_mul.live()) as f32 } else { 1.0 },
+            ratio: if stretch {
+                mul_of(self.ts_mul.live()) as f32
+            } else {
+                1.0
+            },
             time,
-            shift: if stretch { ts_cents(self.ts_pitch.live()) as f32 } else { 0.0 },
+            shift: if stretch {
+                ts_cents(self.ts_pitch.live()) as f32
+            } else {
+                0.0
+            },
         }
     }
 }

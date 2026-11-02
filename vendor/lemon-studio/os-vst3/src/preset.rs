@@ -25,7 +25,8 @@ pub struct Preset {
 impl Preset {
     /// The `.vstpreset` bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(HEADER + self.component.len() + self.controller.len() + 48);
+        let mut out =
+            Vec::with_capacity(HEADER + self.component.len() + self.controller.len() + 48);
         out.extend_from_slice(b"VST3");
         out.extend_from_slice(&1i32.to_le_bytes());
         let mut id = [b'0'; 32];
@@ -66,7 +67,10 @@ impl Preset {
             return None;
         }
         let count = usize::try_from(i32::from_le_bytes(head[4..8].try_into().ok()?)).ok()?;
-        let mut p = Preset { class_id, ..Preset::default() };
+        let mut p = Preset {
+            class_id,
+            ..Preset::default()
+        };
         let mut comp = false;
         for i in 0..count.min(64) {
             let at = list + 8 + i * 20;
@@ -93,7 +97,11 @@ mod tests {
 
     #[test]
     fn presets_round_trip() {
-        let p = Preset { class_id: "0123456789ABCDEF0123456789ABCDEF".into(), component: b"{\"a\":1}".to_vec(), controller: vec![] };
+        let p = Preset {
+            class_id: "0123456789ABCDEF0123456789ABCDEF".into(),
+            component: b"{\"a\":1}".to_vec(),
+            controller: vec![],
+        };
         let b = p.to_bytes();
         assert_eq!(&b[..4], b"VST3");
         assert_eq!(&b[8..40], b"0123456789ABCDEF0123456789ABCDEF");
@@ -101,7 +109,10 @@ mod tests {
         assert_eq!(b.len(), 48 + 7 + 8 + 20);
         assert_eq!(i64::from_le_bytes(b[40..48].try_into().unwrap()), 55);
         assert_eq!(Preset::parse(&b), Some(p.clone()));
-        let both = Preset { controller: vec![1, 2, 3], ..p };
+        let both = Preset {
+            controller: vec![1, 2, 3],
+            ..p
+        };
         assert_eq!(Preset::parse(&both.to_bytes()), Some(both));
         assert_eq!(Preset::parse(b"VST3"), None);
         let mut bad = b.clone();

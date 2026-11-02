@@ -38,14 +38,28 @@ struct Segment {
 impl Segment {
     /// The segment ending on point `i` of `pts` (place, level), with the points' tensions and modes in `map`.
     fn new(map: &Map, pts: &[(f64, f64)], i: usize) -> Segment {
-        let line = Segment { mode: 0, neg: false, line: true, c0: 0.0, c1: 0.0, c2: 0.0 };
+        let line = Segment {
+            mode: 0,
+            neg: false,
+            line: true,
+            c0: 0.0,
+            c1: 0.0,
+            c2: 0.0,
+        };
         if i == 0 || i >= pts.len() {
             return line;
         }
         let p = &map.points[i];
         let t = f64::from(p.tension);
         let side = if t < 0.0 { -1.0 } else { 1.0 };
-        let mut s = Segment { mode: p.mode, neg: t < 0.0, line: false, c0: 0.0, c1: 0.0, c2: 0.0 };
+        let mut s = Segment {
+            mode: p.mode,
+            neg: t < 0.0,
+            line: false,
+            c0: 0.0,
+            c1: 0.0,
+            c2: 0.0,
+        };
         if t == 0.0 && matches!(p.mode, 0 | 1 | 7 | 8 | 9 | 11 | 12) {
             return line;
         }
@@ -143,7 +157,13 @@ impl Segment {
             return x;
         }
         let (c0, c1, c2, neg) = (self.c0, self.c1, self.c2, self.neg);
-        let single = |x: f64| if neg { ((x * c2).exp() - 1.0) * c1 } else { 1.0 - (((1.0 - x) * c2).exp() - 1.0) * c1 };
+        let single = |x: f64| {
+            if neg {
+                ((x * c2).exp() - 1.0) * c1
+            } else {
+                1.0 - (((1.0 - x) * c2).exp() - 1.0) * c1
+            }
+        };
         let curve2 = |a: f64| {
             let u = if neg { a } else { 1.0 - a };
             a - (u.powi(6) - u) * c0
@@ -155,7 +175,11 @@ impl Segment {
         match self.mode {
             0 => single(x),
             1 => {
-                if x < 0.5 { single(2.0 * x) / 2.0 } else { 1.0 - single(2.0 * (1.0 - x)) / 2.0 }
+                if x < 0.5 {
+                    single(2.0 * x) / 2.0
+                } else {
+                    1.0 - single(2.0 * (1.0 - x)) / 2.0
+                }
             }
             2 => 0.0,
             3 => f64::from((round(x * c0 - c2) as f32) * c1 as f32),
@@ -182,7 +206,11 @@ impl Segment {
             }
             7 => curve2(x),
             8 => {
-                if x < 0.5 { curve2(2.0 * x) / 2.0 } else { 1.0 - curve2(2.0 * (1.0 - x)) / 2.0 }
+                if x < 0.5 {
+                    curve2(2.0 * x) / 2.0
+                } else {
+                    1.0 - curve2(2.0 * (1.0 - x)) / 2.0
+                }
             }
             9 => {
                 let a = x * std::f64::consts::FRAC_PI_2;
@@ -191,11 +219,17 @@ impl Segment {
             }
             10 => {
                 let (x2, x3) = (x * x, x * x * x);
-                x + ((3.0 * x2 - 2.0 * x3) + x2 * (x - 1.0) * c0 + x * (x - 1.0) * (x - 1.0) * c1 - x) * c2
+                x + ((3.0 * x2 - 2.0 * x3) + x2 * (x - 1.0) * c0 + x * (x - 1.0) * (x - 1.0) * c1
+                    - x)
+                    * c2
             }
             11 => curve3(x) - c2,
             12 => {
-                if x < 0.5 { curve3(2.0 * x) - c2 } else { (1.0 - curve3(2.0 * (1.0 - x))) + c2 }
+                if x < 0.5 {
+                    curve3(2.0 * x) - c2
+                } else {
+                    (1.0 - curve3(2.0 * (1.0 - x))) + c2
+                }
             }
             _ => 0.0,
         }
@@ -218,8 +252,21 @@ impl<'a> Walk<'a> {
     fn new(map: &'a Map) -> Option<Walk<'a>> {
         let pts = map.places();
         let first = *pts.first()?;
-        let (p, r) = if first.0 == 0.0 { (1.0, 1.0) } else { (0.0, 1.0 / first.0) };
-        Some(Walk { map, pts, i: 0, p, r, from: first.1, by: 0.0, seg: None })
+        let (p, r) = if first.0 == 0.0 {
+            (1.0, 1.0)
+        } else {
+            (0.0, 1.0 / first.0)
+        };
+        Some(Walk {
+            map,
+            pts,
+            i: 0,
+            p,
+            r,
+            from: first.1,
+            by: 0.0,
+            seg: None,
+        })
     }
 
     fn dist(&self, k: usize) -> f64 {
@@ -229,7 +276,11 @@ impl<'a> Walk<'a> {
     fn step(&mut self, b: f64) {
         self.p += b * self.r;
         while self.p >= 1.0 {
-            let left = if self.r == 0.0 { b } else { (self.p - 1.0) / self.r };
+            let left = if self.r == 0.0 {
+                b
+            } else {
+                (self.p - 1.0) / self.r
+            };
             self.from = self.pts[self.i].1;
             let moved = self.i + 1 < self.pts.len();
             if moved {
@@ -262,7 +313,9 @@ impl<'a> Walk<'a> {
 
 /// The map's level at each of `xs` (places 0..1 in rising order), walked as the table walks it: for drawing the map.
 pub fn levels(map: &Map, xs: &[f64]) -> Vec<f64> {
-    let Some(mut w) = Walk::new(map) else { return vec![0.0; xs.len()] };
+    let Some(mut w) = Walk::new(map) else {
+        return vec![0.0; xs.len()];
+    };
     let mut prev = 0.0;
     xs.iter()
         .map(|&x| {
@@ -316,7 +369,12 @@ impl Table {
             most = most.max(out);
         }
         c[limit + 1] = c[limit];
-        Table { c, limit, top, reach: most / ceiling }
+        Table {
+            c,
+            limit,
+            top,
+            reach: most / ceiling,
+        }
     }
 }
 
@@ -330,7 +388,11 @@ mod tests {
         let t = Table::new(&Map::default_map(), false);
         let ceiling = f64::from(0.975f32);
         // Level 0.5 (-6 dB) is on the rising line: out = level * ceiling.
-        assert!((f64::from(t.c[4096]) - ceiling).abs() < 1e-6, "{}", t.c[4096]);
+        assert!(
+            (f64::from(t.c[4096]) - ceiling).abs() < 1e-6,
+            "{}",
+            t.c[4096]
+        );
         assert!(t.limit < 8192 && t.limit > 7000, "{}", t.limit);
         assert_eq!(t.top, ceiling);
         assert!((t.reach - 1.0).abs() < 1e-12);

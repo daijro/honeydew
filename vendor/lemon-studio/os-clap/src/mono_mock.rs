@@ -6,17 +6,20 @@
 //! output. Its output is half its input plus 0.25 (so an instrument call is heard too), and it records the channel
 //! counts of each process call.
 
-use std::ffi::{c_char, c_void, CStr};
+use std::ffi::{CStr, c_char, c_void};
 use std::ptr;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use clap_sys::entry::clap_plugin_entry;
-use clap_sys::ext::audio_ports::{clap_audio_port_info, clap_plugin_audio_ports, CLAP_AUDIO_PORT_IS_MAIN, CLAP_EXT_AUDIO_PORTS, CLAP_PORT_MONO};
-use clap_sys::factory::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
+use clap_sys::ext::audio_ports::{
+    CLAP_AUDIO_PORT_IS_MAIN, CLAP_EXT_AUDIO_PORTS, CLAP_PORT_MONO, clap_audio_port_info,
+    clap_plugin_audio_ports,
+};
+use clap_sys::factory::plugin_factory::{CLAP_PLUGIN_FACTORY_ID, clap_plugin_factory};
 use clap_sys::host::clap_host;
 use clap_sys::id::CLAP_INVALID_ID;
 use clap_sys::plugin::{clap_plugin, clap_plugin_descriptor};
-use clap_sys::process::{clap_process, clap_process_status, CLAP_PROCESS_CONTINUE};
+use clap_sys::process::{CLAP_PROCESS_CONTINUE, clap_process, clap_process_status};
 use clap_sys::version::CLAP_VERSION;
 
 /// The channel counts of the last process call: input (0 without an input buffer), output.
@@ -48,7 +51,12 @@ unsafe extern "C" fn port_count(_: *const clap_plugin, _is_input: bool) -> u32 {
     1
 }
 
-unsafe extern "C" fn port_get(_: *const clap_plugin, index: u32, is_input: bool, info: *mut clap_audio_port_info) -> bool {
+unsafe extern "C" fn port_get(
+    _: *const clap_plugin,
+    index: u32,
+    is_input: bool,
+    info: *mut clap_audio_port_info,
+) -> bool {
     if index != 0 {
         return false;
     }
@@ -61,7 +69,10 @@ unsafe extern "C" fn port_get(_: *const clap_plugin, index: u32, is_input: bool,
     true
 }
 
-static PORTS: clap_plugin_audio_ports = clap_plugin_audio_ports { count: Some(port_count), get: Some(port_get) };
+static PORTS: clap_plugin_audio_ports = clap_plugin_audio_ports {
+    count: Some(port_count),
+    get: Some(port_get),
+};
 
 unsafe extern "C" fn yes(_: *const clap_plugin) -> bool {
     true
@@ -89,7 +100,9 @@ unsafe extern "C" fn process(_: *const clap_plugin, p: *const clap_process) -> c
     match input {
         Some(b) => {
             let inp = unsafe { std::slice::from_raw_parts(*b.data32, n) };
-            out.iter_mut().zip(inp).for_each(|(o, i)| *o = i * 0.5 + 0.25);
+            out.iter_mut()
+                .zip(inp)
+                .for_each(|(o, i)| *o = i * 0.5 + 0.25);
         }
         None => out.fill(0.25),
     }
@@ -108,11 +121,18 @@ unsafe extern "C" fn count(_: *const clap_plugin_factory) -> u32 {
     1
 }
 
-unsafe extern "C" fn descriptor(_: *const clap_plugin_factory, _: u32) -> *const clap_plugin_descriptor {
+unsafe extern "C" fn descriptor(
+    _: *const clap_plugin_factory,
+    _: u32,
+) -> *const clap_plugin_descriptor {
     &DESC.0
 }
 
-unsafe extern "C" fn create(_: *const clap_plugin_factory, _host: *const clap_host, _id: *const c_char) -> *const clap_plugin {
+unsafe extern "C" fn create(
+    _: *const clap_plugin_factory,
+    _host: *const clap_host,
+    _id: *const c_char,
+) -> *const clap_plugin {
     Box::into_raw(Box::new(clap_plugin {
         desc: &DESC.0,
         plugin_data: ptr::null_mut(),
@@ -129,8 +149,11 @@ unsafe extern "C" fn create(_: *const clap_plugin_factory, _host: *const clap_ho
     }))
 }
 
-static FACTORY: clap_plugin_factory =
-    clap_plugin_factory { get_plugin_count: Some(count), get_plugin_descriptor: Some(descriptor), create_plugin: Some(create) };
+static FACTORY: clap_plugin_factory = clap_plugin_factory {
+    get_plugin_count: Some(count),
+    get_plugin_descriptor: Some(descriptor),
+    create_plugin: Some(create),
+};
 
 unsafe extern "C" fn init(_: *const c_char) -> bool {
     true
@@ -146,4 +169,9 @@ unsafe extern "C" fn get_factory(id: *const c_char) -> *const c_void {
     }
 }
 
-pub static ENTRY: clap_plugin_entry = clap_plugin_entry { clap_version: CLAP_VERSION, init: Some(init), deinit: Some(deinit), get_factory: Some(get_factory) };
+pub static ENTRY: clap_plugin_entry = clap_plugin_entry {
+    clap_version: CLAP_VERSION,
+    init: Some(init),
+    deinit: Some(deinit),
+    get_factory: Some(get_factory),
+};

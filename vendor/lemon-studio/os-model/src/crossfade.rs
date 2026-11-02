@@ -31,7 +31,14 @@ pub fn on(project: &Project) -> bool {
 /// Per channel index, whether its clips are audio clips: sampler and audio clip channels, the clips with fades (the
 /// engine plays both as audio clips).
 fn audio_channels(channels: &[Channel]) -> Vec<bool> {
-    let mut v = vec![false; channels.iter().map(|c| usize::from(c.index) + 1).max().unwrap_or(0)];
+    let mut v = vec![
+        false;
+        channels
+            .iter()
+            .map(|c| usize::from(c.index) + 1)
+            .max()
+            .unwrap_or(0)
+    ];
     for c in channels.iter().filter(|c| c.kind.is_sampler()) {
         v[usize::from(c.index)] = true;
     }
@@ -44,28 +51,39 @@ fn audio(kinds: &[bool], c: &Clip) -> bool {
 
 /// Whether `c` is an audio clip (a clip of a sampler or audio clip channel): only these crossfade.
 pub fn is_audio(channels: &[Channel], c: &Clip) -> bool {
-    let ClipSource::Channel(ch) = c.source else { return false };
-    channels.iter().find(|x| x.index == ch).is_some_and(|x| x.kind.is_sampler())
+    let ClipSource::Channel(ch) = c.source else {
+        return false;
+    };
+    channels
+        .iter()
+        .find(|x| x.index == ch)
+        .is_some_and(|x| x.kind.is_sampler())
 }
 
 /// The overlap two clips of one track make, `a` the earlier: `a` starts first, `b` starts before `a` ends and ends
 /// after it; the overlap is `a`'s end − `b`'s start, in ticks. A clip lying wholly inside the other, or one that only
 /// touches it, makes none (spec: "Lemon Studio" rules).
 fn overlap(a: &Clip, b: &Clip) -> Option<u32> {
-    (a.track == b.track && a.position < b.position && b.position < a.end() && b.end() > a.end()).then(|| a.end() - b.position)
+    (a.track == b.track && a.position < b.position && b.position < a.end() && b.end() > a.end())
+        .then(|| a.end() - b.position)
 }
 
 /// Whether candidate `(clip, ticks)` beats `old`: the longer overlap, on a tie the clip that starts first (then the
 /// first in the list).
 fn better(clips: &[Clip], new: (usize, u32), old: Option<(usize, u32)>) -> bool {
-    old.is_none_or(|old| new.1 > old.1 || (new.1 == old.1 && (clips[new.0].position, new.0) < (clips[old.0].position, old.0)))
+    old.is_none_or(|old| {
+        new.1 > old.1
+            || (new.1 == old.1 && (clips[new.0].position, new.0) < (clips[old.0].position, old.0))
+    })
 }
 
 /// Every clip's overlaps, index-aligned with `clips` (pattern and automation clips have none).
 pub fn overlaps(channels: &[Channel], clips: &[Clip]) -> Vec<Overlaps> {
     let kinds = audio_channels(channels);
     let mut out = vec![Overlaps::default(); clips.len()];
-    let mut order: Vec<usize> = (0..clips.len()).filter(|&i| audio(&kinds, &clips[i])).collect();
+    let mut order: Vec<usize> = (0..clips.len())
+        .filter(|&i| audio(&kinds, &clips[i]))
+        .collect();
     order.sort_by_key(|&i| (clips[i].track, clips[i].position, i));
     for (k, &a) in order.iter().enumerate() {
         let ca = &clips[a];
@@ -74,7 +92,9 @@ pub fn overlaps(channels: &[Channel], clips: &[Clip]) -> Vec<Overlaps> {
             if cb.track != ca.track || cb.position >= ca.end() {
                 break;
             }
-            let Some(ticks) = overlap(ca, cb) else { continue };
+            let Some(ticks) = overlap(ca, cb) else {
+                continue;
+            };
             if better(clips, (a, ticks), out[b].fade_in) {
                 out[b].fade_in = Some((a, ticks));
             }
@@ -89,9 +109,15 @@ pub fn overlaps(channels: &[Channel], clips: &[Clip]) -> Vec<Overlaps> {
 /// Clip `i`'s overlaps alone (as [`overlaps`] gives them, without sorting the list).
 pub fn overlaps_of(channels: &[Channel], clips: &[Clip], i: usize) -> Overlaps {
     let mut out = Overlaps::default();
-    let Some(c) = clips.get(i).filter(|c| is_audio(channels, c)) else { return out };
+    let Some(c) = clips.get(i).filter(|c| is_audio(channels, c)) else {
+        return out;
+    };
     let kinds = audio_channels(channels);
-    for (j, d) in clips.iter().enumerate().filter(|&(j, d)| j != i && audio(&kinds, d)) {
+    for (j, d) in clips
+        .iter()
+        .enumerate()
+        .filter(|&(j, d)| j != i && audio(&kinds, d))
+    {
         if let Some(ticks) = overlap(d, c).filter(|&t| better(clips, (j, t), out.fade_in)) {
             out.fade_in = Some((j, ticks));
         }
@@ -170,7 +196,12 @@ pub fn derive(project: &mut Project, tempo: f64) -> bool {
         return false;
     }
     let tempo = project.tick_tempo(tempo);
-    let Project { channels, arrangements, ppq, .. } = project;
+    let Project {
+        channels,
+        arrangements,
+        ppq,
+        ..
+    } = project;
     let mut changed = false;
     for a in arrangements.iter_mut() {
         changed |= derive_clips(channels, &mut a.clips, tempo, *ppq);
@@ -183,7 +214,12 @@ pub fn derive(project: &mut Project, tempo: f64) -> bool {
 pub fn clear(project: &mut Project) -> bool {
     let kinds = audio_channels(&project.channels);
     let mut changed = false;
-    for c in project.arrangements.iter_mut().flat_map(|a| a.clips.iter_mut()).filter(|c| audio(&kinds, c)) {
+    for c in project
+        .arrangements
+        .iter_mut()
+        .flat_map(|a| a.clips.iter_mut())
+        .filter(|c| audio(&kinds, c))
+    {
         if !c.fade_in_set() && c.f32_at(36) != 0.0 {
             c.set_fade_in_length(0.0);
             changed = true;
@@ -205,7 +241,12 @@ pub fn playing(project: &Project, clips: &[Clip], tempo: f64) -> Vec<(Option<Fad
         return clips.iter().map(fades).collect();
     }
     let mut own = clips.to_vec();
-    derive_clips(&project.channels, &mut own, project.tick_tempo(tempo), project.ppq);
+    derive_clips(
+        &project.channels,
+        &mut own,
+        project.tick_tempo(tempo),
+        project.ppq,
+    );
     own.iter().map(fades).collect()
 }
 
@@ -216,7 +257,10 @@ pub fn partner_before(project: &Project, clips: &[Clip], b: usize) -> Option<usi
         return None;
     }
     let (a, _) = overlaps_of(&project.channels, clips, b).fade_in?;
-    let mutual = overlaps_of(&project.channels, clips, a).fade_out.map(|o| o.0) == Some(b);
+    let mutual = overlaps_of(&project.channels, clips, a)
+        .fade_out
+        .map(|o| o.0)
+        == Some(b);
     (mutual && !clips[a].fade_out_set()).then_some(a)
 }
 
@@ -247,7 +291,7 @@ pub const MAX_TENSION: f64 = 64.0;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{fade_curve, Arrangement, ChannelKind};
+    use crate::{Arrangement, ChannelKind, fade_curve};
 
     fn channel(index: u16, kind: ChannelKind) -> Channel {
         Channel {
@@ -277,8 +321,15 @@ mod tests {
             ppq: 96,
             tempo: Some(130.0),
             auto_crossfades: Some(true),
-            channels: vec![channel(0, ChannelKind::AudioClip), channel(1, ChannelKind::Automation), channel(2, ChannelKind::Plugin)],
-            arrangements: vec![Arrangement { clips, ..Default::default() }],
+            channels: vec![
+                channel(0, ChannelKind::AudioClip),
+                channel(1, ChannelKind::Automation),
+                channel(2, ChannelKind::Plugin),
+            ],
+            arrangements: vec![Arrangement {
+                clips,
+                ..Default::default()
+            }],
             ..Project::default()
         }
     }
@@ -293,7 +344,15 @@ mod tests {
 
     /// (fade-in, fade-out) lengths as the records hold them.
     fn lengths(p: &Project) -> Vec<(f32, f32)> {
-        clips(p).iter().map(|c| (c.stored_fade_in().map_or(0.0, |f| f.0), c.stored_fade_out().map_or(0.0, |f| f.0))).collect()
+        clips(p)
+            .iter()
+            .map(|c| {
+                (
+                    c.stored_fade_in().map_or(0.0, |f| f.0),
+                    c.stored_fade_out().map_or(0.0, |f| f.0),
+                )
+            })
+            .collect()
     }
 
     /// 240 ticks at 130 BPM and PPQ 96 (the spec's measured crossfade).
@@ -304,13 +363,24 @@ mod tests {
         let mut p = project(vec![audio(0, 480, 0), audio(240, 480, 0)]);
         assert!(derive(&mut p, 130.0));
         let l = lengths(&p);
-        assert!((l[0].1 - XF).abs() < 1e-3 && (l[1].0 - XF).abs() < 1e-3, "{l:?}");
-        assert_eq!((l[0].0, l[1].1), (0.0, 0.0), "the outer edges overlap nothing");
+        assert!(
+            (l[0].1 - XF).abs() < 1e-3 && (l[1].0 - XF).abs() < 1e-3,
+            "{l:?}"
+        );
+        assert_eq!(
+            (l[0].0, l[1].1),
+            (0.0, 0.0),
+            "the outer edges overlap nothing"
+        );
         // Written without the bits, at tension 0 (+0, not -0).
         let (a, b) = (clips(&p)[0], clips(&p)[1]);
         assert_eq!(a.raw[56] & 3, 0);
         assert_eq!(b.raw[56] & 3, 0);
-        assert_eq!((a.fade_out(), b.fade_in()), (None, None), "not fades set by hand");
+        assert_eq!(
+            (a.fade_out(), b.fade_in()),
+            (None, None),
+            "not fades set by hand"
+        );
         assert_eq!(&a.raw[48..52], &[0; 4]);
         // Again: nothing to do.
         assert!(!derive(&mut p, 130.0));
@@ -318,16 +388,29 @@ mod tests {
         p.arrangements[0].clips[1].set_fade_in_tension(2.289);
         assert!(derive(&mut p, 130.0));
         assert_eq!(clips(&p)[0].fade_out_tension(), -2.289);
-        assert_eq!(clips(&p)[1].fade_in_tension(), 2.289, "the fade-in keeps its own");
+        assert_eq!(
+            clips(&p)[1].fade_in_tension(),
+            2.289,
+            "the fade-in keeps its own"
+        );
         // Moved apart: both lengths back to 0, the tensions kept; overlapped again: set again.
         p.arrangements[0].clips[1].position = 600;
         assert!(derive(&mut p, 130.0));
         assert_eq!(lengths(&p), vec![(0.0, 0.0); 2]);
-        assert_eq!((clips(&p)[0].fade_out_tension(), clips(&p)[1].fade_in_tension()), (-2.289, 2.289));
+        assert_eq!(
+            (
+                clips(&p)[0].fade_out_tension(),
+                clips(&p)[1].fade_in_tension()
+            ),
+            (-2.289, 2.289)
+        );
         p.arrangements[0].clips[1].position = 360;
         derive(&mut p, 130.0);
         let l = lengths(&p);
-        assert!((l[0].1 - XF / 2.0).abs() < 1e-3 && (l[1].0 - XF / 2.0).abs() < 1e-3, "{l:?}");
+        assert!(
+            (l[0].1 - XF / 2.0).abs() < 1e-3 && (l[1].0 - XF / 2.0).abs() < 1e-3,
+            "{l:?}"
+        );
     }
 
     #[test]
@@ -350,7 +433,11 @@ mod tests {
     #[test]
     fn three_in_a_row() {
         // A 0..480, B 240..720, C 600..900: B fades in from A and out into C.
-        let mut p = project(vec![audio(0, 480, 0), audio(240, 480, 0), audio(600, 300, 0)]);
+        let mut p = project(vec![
+            audio(0, 480, 0),
+            audio(240, 480, 0),
+            audio(600, 300, 0),
+        ]);
         derive(&mut p, 130.0);
         let l = lengths(&p);
         let ms = |t: u32| ms(t, 130.0, 96);
@@ -361,10 +448,18 @@ mod tests {
         derive(&mut p, 130.0);
         let o = overlaps(&p.channels, clips(&p));
         assert_eq!(o[2].fade_in, Some((1, 120)));
-        assert_eq!(o[0].fade_out, Some((1, 380)), "A's fade-out: its longest, B");
+        assert_eq!(
+            o[0].fade_out,
+            Some((1, 380)),
+            "A's fade-out: its longest, B"
+        );
         assert_eq!(lengths(&p)[2].0, ms(120));
         for i in 0..3 {
-            assert_eq!(overlaps_of(&p.channels, clips(&p), i), o[i], "clip {i} alone");
+            assert_eq!(
+                overlaps_of(&p.channels, clips(&p), i),
+                o[i],
+                "clip {i} alone"
+            );
         }
         assert_eq!(partner_before(&p, clips(&p), 1), Some(0));
         assert_eq!(partner_before(&p, clips(&p), 2), Some(1));
@@ -375,7 +470,14 @@ mod tests {
     #[test]
     fn contained_touching_and_other_tracks_make_none() {
         // Contained: B inside A; touching: C starts where A ends; D on another track; E starts with A (and is longer).
-        let mut p = project(vec![audio(0, 480, 0), audio(100, 200, 0), audio(480, 200, 0), audio(240, 480, 1), audio(0, 600, 2), audio(0, 480, 2)]);
+        let mut p = project(vec![
+            audio(0, 480, 0),
+            audio(100, 200, 0),
+            audio(480, 200, 0),
+            audio(240, 480, 1),
+            audio(0, 600, 2),
+            audio(0, 480, 2),
+        ]);
         // Stale lengths without bits: set back to 0.
         for c in &mut p.arrangements[0].clips {
             c.set_fade_in_length(300.0);
@@ -383,7 +485,11 @@ mod tests {
         }
         assert!(derive(&mut p, 130.0));
         assert_eq!(lengths(&p), vec![(0.0, 0.0); 6]);
-        assert!(overlaps(&p.channels, clips(&p)).iter().all(|o| *o == Overlaps::default()));
+        assert!(
+            overlaps(&p.channels, clips(&p))
+                .iter()
+                .all(|o| *o == Overlaps::default())
+        );
     }
 
     #[test]
@@ -407,7 +513,11 @@ mod tests {
 
     #[test]
     fn edges_set_by_hand_are_kept() {
-        let mut p = project(vec![audio(0, 480, 0), audio(240, 480, 0), audio(1000, 100, 0)]);
+        let mut p = project(vec![
+            audio(0, 480, 0),
+            audio(240, 480, 0),
+            audio(1000, 100, 0),
+        ]);
         let c = &mut p.arrangements[0].clips;
         c[0].set_fade_out(Some((100.0, 3.0)));
         c[1].set_fade_in(Some((50.0, -1.0)));
@@ -415,8 +525,15 @@ mod tests {
         let bits: Vec<u8> = clips(&p).iter().map(|c| c.raw[56]).collect();
         derive(&mut p, 130.0);
         let c = clips(&p);
-        assert_eq!((c[0].fade_out(), c[1].fade_in(), c[2].fade_in()), (Some((100.0, 3.0)), Some((50.0, -1.0)), Some((20.0, 0.5))));
-        assert_eq!(c.iter().map(|c| c.raw[56]).collect::<Vec<_>>(), bits, "the bits stay");
+        assert_eq!(
+            (c[0].fade_out(), c[1].fade_in(), c[2].fade_in()),
+            (Some((100.0, 3.0)), Some((50.0, -1.0)), Some((20.0, 0.5)))
+        );
+        assert_eq!(
+            c.iter().map(|c| c.raw[56]).collect::<Vec<_>>(),
+            bits,
+            "the bits stay"
+        );
         // Only one side set by hand: the other still gets the overlap; the fade-out takes the fade-in's tension.
         p.arrangements[0].clips[0].set_fade_out(None);
         derive(&mut p, 130.0);
@@ -428,7 +545,11 @@ mod tests {
 
     #[test]
     fn switch_off_plays_the_records_and_clears_crossfades() {
-        let mut p = project(vec![audio(0, 480, 0), audio(240, 480, 0), audio(2000, 480, 0)]);
+        let mut p = project(vec![
+            audio(0, 480, 0),
+            audio(240, 480, 0),
+            audio(2000, 480, 0),
+        ]);
         p.arrangements[0].clips[1].set_fade_in_tension(4.0);
         derive(&mut p, 130.0);
         // A fade without its bit on an edge that overlaps nothing: not played with the switch on, whatever the record
@@ -437,12 +558,21 @@ mod tests {
         assert_eq!(playing(&p, clips(&p), 130.0)[2].0, None);
         p.auto_crossfades = Some(false);
         assert_eq!(playing(&p, clips(&p), 130.0)[2].0, Some((200.0, 0.0)));
-        assert!(!derive(&mut p, 130.0), "nothing follows the clips while it is off");
+        assert!(
+            !derive(&mut p, 130.0),
+            "nothing follows the clips while it is off"
+        );
         // Turned off: the crossfades' lengths go to 0, their tensions stay; edges set by hand stay.
         p.arrangements[0].clips[2].set_fade_out(Some((80.0, 1.0)));
         assert!(clear(&mut p));
         assert_eq!(lengths(&p), vec![(0.0, 0.0), (0.0, 0.0), (0.0, 80.0)]);
-        assert_eq!((clips(&p)[0].fade_out_tension(), clips(&p)[1].fade_in_tension()), (-4.0, 4.0));
+        assert_eq!(
+            (
+                clips(&p)[0].fade_out_tension(),
+                clips(&p)[1].fade_in_tension()
+            ),
+            (-4.0, 4.0)
+        );
         // A file without event 44: off.
         p.auto_crossfades = None;
         assert!(!on(&p));
@@ -458,7 +588,10 @@ mod tests {
         derive(&mut p, 130.0);
         assert!(derive(&mut p, 65.0));
         assert!((lengths(&p)[1].0 - 2.0 * XF).abs() < 1e-3);
-        assert_eq!(playing(&p, clips(&p), 120.0)[1].0.unwrap().0, ms(240, 120.0, 96));
+        assert_eq!(
+            playing(&p, clips(&p), 120.0)[1].0.unwrap().0,
+            ms(240, 120.0, 96)
+        );
     }
 
     #[test]
@@ -467,8 +600,15 @@ mod tests {
         let mut p = project(vec![audio(0, 480, 0), audio(240, 480, 0)]);
         p.bar = Some((3, 2));
         assert!(derive(&mut p, 130.0));
-        assert!((lengths(&p)[1].0 - 2.0 * XF).abs() < 1e-3, "{:?}", lengths(&p));
-        assert_eq!(playing(&p, clips(&p), 130.0)[1].0.unwrap().0, ms(240, 65.0, 96));
+        assert!(
+            (lengths(&p)[1].0 - 2.0 * XF).abs() < 1e-3,
+            "{:?}",
+            lengths(&p)
+        );
+        assert_eq!(
+            playing(&p, clips(&p), 130.0)[1].0.unwrap().0,
+            ms(240, 65.0, 96)
+        );
     }
 
     #[test]
@@ -479,14 +619,21 @@ mod tests {
         p.arrangements[0].clips[0].set_fade_out_length(fl);
         p.arrangements[0].clips[1].set_fade_in_length(fl);
         assert!(!derive(&mut p, 130.0));
-        assert_eq!(clips(&p)[1].stored_fade_in().unwrap().0.to_bits(), fl.to_bits());
+        assert_eq!(
+            clips(&p)[1].stored_fade_in().unwrap().0.to_bits(),
+            fl.to_bits()
+        );
     }
 
     #[test]
     fn the_handle_inverts_the_middle() {
         for t in [-64.0, -8.0, -1.0, -0.25, 0.0, 0.5, 2.289, 16.0, 64.0] {
             let m = fade_curve(0.5, t);
-            assert!((tension_for_mid(m) - t).abs() < 1e-9 * t.abs().max(1.0), "t {t}: {}", tension_for_mid(m));
+            assert!(
+                (tension_for_mid(m) - t).abs() < 1e-9 * t.abs().max(1.0),
+                "t {t}: {}",
+                tension_for_mid(m)
+            );
         }
         // The two drags measured at 100 % (18 px up from 0, then 40 px down; FL stored 2.289, then -4.736) at 1/120 of
         // the gain per pixel: r = 0.65 / 0.35, then r = (1 - 0.65 + 1/3) / (0.65 - 1/3).
@@ -495,6 +642,9 @@ mod tests {
         let down = tension_for_mid(fade_curve(0.5, up) - 40.0 / 120.0);
         let r = (0.35 + 1.0 / 3.0) / (0.65 - 1.0 / 3.0);
         assert!((down + (r * r - 1.0)).abs() < 1e-9, "{down}");
-        assert_eq!((tension_for_mid(0.99), tension_for_mid(0.01)), (64.0, -64.0));
+        assert_eq!(
+            (tension_for_mid(0.99), tension_for_mid(0.01)),
+            (64.0, -64.0)
+        );
     }
 }
