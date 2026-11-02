@@ -11,6 +11,11 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      # The test binaries' full debug info is big enough that this job's linker dies on the runner with SIGBUS
+      # (`ld terminated with signal 7`) instead of linking them. The dev profile keeps its debug info for local
+      # work; here only the tests' verdict matters, and a failure still names its file and line.
+      CARGO_PROFILE_DEV_DEBUG: '0'
     steps:
       - uses: actions/checkout@v4
       # Keep lint rules aligned with the validated development toolchain.
