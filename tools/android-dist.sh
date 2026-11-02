@@ -1,5 +1,6 @@
 #!/bin/sh
-# Build one APK for 64-bit and 32-bit ARM with the bundled sounds. Release signing uses environment variables, never checked-in keys.
+# Build one APK for 64-bit and 32-bit ARM with the bundled sounds. (A comment touch here is how the `Android APK`
+# workflow is asked to rebuild from the tip.) Release signing uses environment variables, never checked-in keys.
 set -eu
 cd "$(dirname "$0")/.."
 
