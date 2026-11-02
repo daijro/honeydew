@@ -373,7 +373,7 @@ mod tests {
             assert!(out.contains(&e), "{e:?} lost");
         }
         assert_eq!(chord_keys(&out), [48, 52, 55]);
-        // A melody on G and B takes the fifth's triad: G major.
+        // A melody on G and B is covered by G major's triad and by E minor's, and the first one wins: E G B.
         let clip = [note(0.0, 1.0, 67, 200), note(1.0, 1.0, 71, 200)];
         let out = generate(
             &settings(Preset::Pop, 1, 3, Lead::Melody),
@@ -381,6 +381,6 @@ mod tests {
             &clip,
             4.0,
         );
-        assert_eq!(chord_keys(&out), [55, 59, 62]);
+        assert_eq!(chord_keys(&out), [52, 55, 59]);
     }
 }

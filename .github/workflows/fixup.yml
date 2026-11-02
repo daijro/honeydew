@@ -3,7 +3,7 @@ name: fixup
 # Temporary: runs the checks the `CI` workflow runs, writes their own output to `ci-report.txt`, formats the tree and
 # commits both back to the branch, so that the machine writing this branch (no Rust toolchain, no crates.io) can read
 # what the checks say. A push that touches this file runs it again. Delete this file and `ci-report.txt` once the branch
-# is green. Round: Generate, 2.
+# is green. Round: Generate, 3.
 
 on:
   push:
