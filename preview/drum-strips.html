@@ -1,0 +1,180 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Honeydew drum mixer strips: which marks?</title>
+<style>
+  :root {
+    --background: #21272b;
+    --control: #31373b;
+    --module: #394046;
+    --menu: #434c51;
+    --text: #d8dee3;
+    --channel: #e9613f;
+    --t: 2px;   /* a hairline, U = 32 px */
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: var(--background);
+    color: var(--text);
+    font: 13px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+  p  { margin: 0 0 18px; color: #9aa4ab; max-width: 62ch; }
+  b  { color: var(--text); }
+
+  /* The mixer column: a 3 U header cell, then the strip's controls. 15 U across at U = 32 px. */
+  .mixer { width: 480px; border: 1px solid #2b3237; position: relative; }
+  .row { display: flex; height: 62px; position: relative; }
+  .row + .row { margin-top: 1px; }
+  .header {
+    width: 96px; flex: none; padding: 8px 4px 0 4px;
+    font-size: 9px; line-height: 1.25; color: var(--channel); overflow: hidden;
+  }
+  .header small { display: block; font-size: 8px; opacity: .75; }
+  .strip {
+    flex: 1; background: var(--module); position: relative;
+    display: flex; align-items: center; padding: 0 0 1px;  /* the 1 px the band ends short of */
+  }
+  .cell { display: flex; align-items: center; justify-content: center; height: 100%; }
+  .mute  { flex: 1; }
+  .solo  { flex: 1; }
+  .pan   { flex: 2; }
+  .level { flex: 4; }
+
+  /* Mute: a pill toggle (inverted: dot up while audible). */
+  .pill {
+    width: 26px; height: 8px; border-radius: 4px; background: var(--control);
+    position: relative;
+  }
+  .pill::after {
+    content: ""; position: absolute; top: -3px; right: -1px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--module); box-shadow: inset 0 0 0 2px var(--channel);
+  }
+  /* Solo: a disc toggle, k = 0.9. */
+  .disc {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--module);
+    display: grid; place-items: center; font-size: 8px; color: var(--text);
+  }
+  /* Pan and Level: the same slider, the track 3 t thick, inset 0.5 U from the cell's ends. */
+  .slider { width: 100%; height: 100%; position: relative; }
+  .track {
+    position: absolute; left: 16px; right: 16px; top: 50%; height: 6px;
+    margin-top: -3px; background: var(--control);
+  }
+  .fill { position: absolute; top: 0; bottom: 0; background: var(--channel); }
+  .thumb {
+    position: absolute; top: 50%; transform: translate(-50%, -50%);
+    width: 24px; height: 24px; border-radius: 50%; background: var(--control);
+  }
+  .thumb::after {
+    content: ""; position: absolute; inset: 2px; border-radius: 50%; background: var(--channel);
+  }
+  /* The level meter: two 2 t bars at the row's bottom, L over R, a hairline clear of the edge. */
+  .meter { position: absolute; left: 0; right: 0; bottom: 2px; height: 10px; }
+  .meter i {
+    position: absolute; left: 0; height: 4px; border-radius: 2px; background: var(--channel);
+  }
+  .meter i.l { bottom: 6px; }
+  .meter i.r { bottom: 0; }
+
+  /* The letter tags of the parts, one set on the first two rows. */
+  .tag {
+    position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px;
+    border-radius: 50%; background: #e9c46a; color: #21272b;
+    font-size: 11px; font-weight: 700; display: grid; place-items: center;
+    pointer-events: none;
+  }
+  ul.keys { margin: 16px 0 0; padding: 0; list-style: none; color: #9aa4ab; }
+  ul.keys li { margin: 0 0 3px; }
+  ul.keys b { display: inline-grid; place-items: center; width: 16px; height: 16px;
+    border-radius: 50%; background: #e9c46a; color: #21272b; font-size: 10px; margin-right: 6px; }
+  .note { margin-top: 18px; color: #9aa4ab; font-size: 12px; max-width: 62ch; }
+  .note code { color: var(--text); }
+</style>
+
+<h1>Drum editor ▸ Mixer strips</h1>
+<p>A schematic of one mixer column (six pads) at the app's own measurements: U = 32 px, a hairline t = 2 px,
+a row 62 px, and the controls on a layer 75 % as tall, centred. Letters tag the marks.</p>
+
+<div class="mixer" id="mixer"></div>
+
+<ul class="keys">
+  <li><b>A</b> the Mute pill</li>
+  <li><b>B</b> the Solo disc</li>
+  <li><b>C</b> the Pan bar and its dot (centred, it fills either way)</li>
+  <li><b>D</b> the Level bar and its dot (from the left)</li>
+  <li><b>E</b> the level meters: the two thin bars at the row's bottom</li>
+  <li><b>F</b> the row's band and the hairline between rows</li>
+</ul>
+
+<p class="note">Tell me which letters look wrong, or send a crop of the screenshot with the boxes: I will tidy those and
+nothing else. The Open Hat's empty meter stays as it is (the closed hat chokes it, <code>cut group A</code>).</p>
+
+<script>
+  // One row of the Mixer page: Mute (flex 1), Solo (flex 1), Pan (flex 2), Level (flex 4) inside the 12 U the mixer
+  // takes. Each pad at a different level so the meters read.
+  const pads = [
+    ["Kick",     "PowerShardK 11", 0.92, 0.70, 0.30],
+    ["Snare",    "DrumSkrmShort 09", 0.55, 0.62, 0.28],
+    ["Hat",      "FL CLHat 01",   0.20, 0.66, 0.26],
+    ["Snare",    "FL RimSnap Short 1", 0.78, 0.74, 0.64],
+    ["Cymbal",   "FL Jung Ride",  0.35, 0.58, 0.42],
+    ["Perc",     "FL RD Toms 3",  0.62, 0.80, 0.05],
+  ];
+  const tags = [
+    // [row, which part, the tag's letter]
+    [0, "pill", "A"], [0, "disc", "B"],
+    [1, "pan", "C"], [1, "level", "D"],
+    [0, "meter", "E"], [2, "band", "F"],
+  ];
+  const mixer = document.getElementById("mixer");
+  const meter = (l, r) => {
+    const width = 12 * 32;  // the mixer's own width
+    return `<div class="meter">
+      <i class="l" style="width:${(width * l).toFixed(1)}px"></i>
+      <i class="r" style="width:${(width * r).toFixed(1)}px"></i>
+    </div>`;
+  };
+  const slider = (v, bipolar) => {
+    const from = bipolar ? 50 : 0;
+    const left = Math.min(from, v * 100);
+    const width = Math.abs(v * 100 - from);
+    return `<div class="slider">
+      <div class="track">
+        <div class="fill" style="left:${left}%;width:${width}%"></div>
+        <div class="thumb" style="left:${v * 100}%"></div>
+      </div>
+    </div>`;
+  };
+  pads.forEach(([name, sample, mute, pan, level], row) => {
+    const el = document.createElement("div");
+    el.className = "row";
+    el.innerHTML = `
+      <div class="header">${name}<small>${sample}</small></div>
+      <div class="strip">
+        <div class="cell mute"><div class="pill" data-part="pill" style="opacity:${mute > 0.5 ? 1 : .45}"></div></div>
+        <div class="cell solo"><div class="disc" data-part="disc">Solo</div></div>
+        <div class="cell pan" data-part="pan">${slider(pan, true)}</div>
+        <div class="cell level" data-part="level">${slider(level, false)}</div>
+        ${meter(level * 0.9, level * 0.8)}
+      </div>`;
+    mixer.append(el);
+  });
+  // The letters, centred on the part they name (the last row's right edge for the meter and the band).
+  const host = mixer.getBoundingClientRect();
+  for (const [row, part, letter] of tags) {
+    const strip = mixer.children[row].querySelector(".strip");
+    const target = mixer.children[row].querySelector(`[data-part="${part}"]`) || strip;
+    const box = target.getBoundingClientRect();
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = letter;
+    tag.style.left = (box.right - host.left - 10) + "px";
+    tag.style.top = (part === "meter"
+      ? box.bottom - host.top - 8
+      : box.top - host.top + box.height / 2) + "px";
+    mixer.append(tag);
+  }
+</script>
