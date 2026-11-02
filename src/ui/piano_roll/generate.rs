@@ -12,8 +12,8 @@
 use std::hash::{BuildHasher, RandomState};
 
 use eframe::egui::{
-    Align2, Area, Color32, Context, Id, LayerId, Order, Rect, ScrollArea, Sense, Ui, UiBuilder, pos2,
-    scroll_area::ScrollBarVisibility, vec2,
+    Align2, Area, Color32, Context, Id, LayerId, Order, Rect, ScrollArea, Sense, Ui, UiBuilder,
+    pos2, scroll_area::ScrollBarVisibility, vec2,
 };
 
 use super::compose::{self, Lead, PRESETS, Settings};

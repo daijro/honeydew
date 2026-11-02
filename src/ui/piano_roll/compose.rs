@@ -146,8 +146,7 @@ fn fitted(notes: &[Event], offs: &[i32], bars: usize, bpb: f64) -> Vec<u8> {
         }
         let mut best = (0, 1);
         for d in 1..=degree_count {
-            let tones = [d, d + 2, d + 4]
-                .map(|s| offs[(s - 1).rem_euclid(degree_count) as usize]);
+            let tones = [d, d + 2, d + 4].map(|s| offs[(s - 1).rem_euclid(degree_count) as usize]);
             let covered = at
                 .iter()
                 .filter(|pc| tones.iter().any(|t| (**pc - t).rem_euclid(12) == 0))
@@ -182,13 +181,7 @@ fn triads(degrees: &[u8], seventh: bool, base: i32, offs: &[i32], bpb: f64) -> V
 
 /// A melody over `degrees`, `bpb` beats a bar, from the tonic at `base`: the bar's chord tone on the beat, a scale step
 /// from the note before it on the off-beats, a breath at the end of some bars.
-fn melody(
-    degrees: &[u8],
-    base: i32,
-    offs: &[i32],
-    bpb: f64,
-    rng: &mut Rng,
-) -> Vec<Event> {
+fn melody(degrees: &[u8], base: i32, offs: &[i32], bpb: f64, rng: &mut Rng) -> Vec<Event> {
     let mut out = Vec::new();
     let beats = bpb.round().max(1.0) as usize;
     let mut previous = 1;
@@ -233,7 +226,12 @@ fn sorted(mut events: Vec<Event>) -> Vec<Event> {
 }
 
 /// The notes `Apply` writes into `clip`, in the project's key and scale `(root, mask)`, `bpb` beats a bar.
-pub(crate) fn generate(s: &Settings, (root, mask): (u8, u16), clip: &[Event], bpb: f64) -> Vec<Event> {
+pub(crate) fn generate(
+    s: &Settings,
+    (root, mask): (u8, u16),
+    clip: &[Event],
+    bpb: f64,
+) -> Vec<Event> {
     let offs = offsets(mask);
     if offs.is_empty() || bpb <= 0.0 {
         return clip.to_vec();
@@ -248,14 +246,9 @@ pub(crate) fn generate(s: &Settings, (root, mask): (u8, u16), clip: &[Event], bp
     // The chords sit around the tonic at 48 + the root, the melody an octave above them.
     let (chord_base, melody_base) = (48 + i32::from(root % 12), 60 + i32::from(root % 12));
     let played = s.preset.degrees();
-    let degrees: Vec<u8> = (0..bars)
-        .map(|bar| played[bar % played.len()])
-        .collect();
+    let degrees: Vec<u8> = (0..bars).map(|bar| played[bar % played.len()]).collect();
     let (degrees, melody) = if s.lead == Lead::Melody && !existing.is_empty() {
-        (
-            fitted(&existing, &offs, bars, bpb),
-            existing,
-        )
+        (fitted(&existing, &offs, bars, bpb), existing)
     } else {
         (
             degrees.clone(),
@@ -311,7 +304,10 @@ mod tests {
         let offs = offsets(C_MAJOR);
         // I–V–vi–IV: C major, G major, A minor, F major, a bar each.
         let chords = triads(&[1, 5, 6, 4], false, 48, &offs, 4.0);
-        assert_eq!(keys(&chords), [48, 52, 55, 55, 59, 62, 57, 60, 64, 53, 57, 60]);
+        assert_eq!(
+            keys(&chords),
+            [48, 52, 55, 55, 59, 62, 57, 60, 64, 53, 57, 60]
+        );
         let ticks: Vec<u32> = chords
             .iter()
             .map(|e| match e {
@@ -320,7 +316,10 @@ mod tests {
             })
             .collect();
         // One bar = 4 beats = 512 ticks of the song's 128 a beat.
-        assert_eq!(ticks, [0, 0, 0, 512, 512, 512, 1024, 1024, 1024, 1536, 1536, 1536]);
+        assert_eq!(
+            ticks,
+            [0, 0, 0, 512, 512, 512, 1024, 1024, 1024, 1536, 1536, 1536]
+        );
         // The Lo-fi preset's triads take a 7th.
         assert_eq!(triads(&[1], true, 48, &offs, 4.0).len(), 4);
     }
@@ -332,7 +331,12 @@ mod tests {
         assert_eq!(a, generate(&s, (0, C_MAJOR), &[], 4.0), "the same seed");
         assert_ne!(
             a,
-            generate(&settings(Preset::Epic, 2, 8, Lead::Chords), (0, C_MAJOR), &[], 4.0)
+            generate(
+                &settings(Preset::Epic, 2, 8, Lead::Chords),
+                (0, C_MAJOR),
+                &[],
+                4.0
+            )
         );
         let offs = offsets(C_MAJOR);
         for key in keys(&a) {
@@ -346,7 +350,12 @@ mod tests {
         assert_eq!(chord_keys(&a).len(), 6);
         assert!(keys(&a).len() > 6);
         // Eight bars of a 2-bar progression: still one triad a bar.
-        let long = generate(&settings(Preset::Pop, 8, 7, Lead::Chords), (0, C_MAJOR), &[], 4.0);
+        let long = generate(
+            &settings(Preset::Pop, 8, 7, Lead::Chords),
+            (0, C_MAJOR),
+            &[],
+            4.0,
+        );
         assert_eq!(chord_keys(&long).len(), 24);
     }
 
