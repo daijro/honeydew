@@ -1350,6 +1350,68 @@ fn transpose_rounds_its_f32_range_map_halves_away_from_zero() {
     assert_eq!(play(0.5, 0.0625), [49]);
 }
 
+/// Time and Shift place a note early or late: Time is how far (a 16th of a beat at 1) and Shift leans the draw, all
+/// early at 0, an even mix at 0.5, all late at 1. The note keeps its length and never starts before the song.
+#[test]
+fn the_randomizer_times_a_note_early_or_late_by_its_shift() {
+    let timed = |time: f32, shift: f32, beat: f64| {
+        let input = [
+            InputNoteEvent::on(beat, 60, 100),
+            InputNoteEvent::off(beat + 1.0, 60),
+        ];
+        let params = vec![1.0, 0.0, 0.0, 0.0, 1.0, time, shift];
+        run_until(vec![module(49, 5, params)], &input, beat + 2.0)
+    };
+    for beat in [0.0, 4.0, 12.5] {
+        // Time 0 leaves the note where it was.
+        let same = timed(0.0, 0.5, beat);
+        assert_eq!(
+            (same[0].beat, same[1].beat),
+            (beat, beat + 1.0),
+            "at {beat}"
+        );
+        // All late: within a 16th after it, its length kept.
+        let late = timed(1.0, 1.0, beat);
+        assert!(
+            late[0].beat >= beat && late[0].beat <= beat + 0.25,
+            "late at {beat}: {late:?}"
+        );
+        assert!((late[1].beat - late[0].beat - 1.0).abs() < 1e-12, "{late:?}");
+        // All early: within a 16th before it, and never before the song starts.
+        let early = timed(1.0, 0.0, beat);
+        assert!(
+            early[0].beat <= beat && early[0].beat >= (beat - 0.25).max(0.0),
+            "early at {beat}: {early:?}"
+        );
+        assert!((early[1].beat - early[0].beat - 1.0).abs() < 1e-12, "{early:?}");
+    }
+    // An even mix reaches both sides: of 64 notes some before their beat, some after, all within the 16th.
+    let input: Vec<_> = (0..64)
+        .flat_map(|k| {
+            let beat = 8.0 + f64::from(k);
+            [
+                InputNoteEvent::on(beat, 60, 100),
+                InputNoteEvent::off(beat + 0.5, 60),
+            ]
+        })
+        .collect();
+    let mixed = run_until(
+        vec![module(49, 5, vec![1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.5])],
+        &input,
+        80.0,
+    );
+    let ons: Vec<f64> = mixed.iter().filter(|e| e.kind == NoteKind::On).map(|e| e.beat).collect();
+    assert_eq!(ons.len(), 64);
+    let (mut early, mut late) = (0, 0);
+    for &beat in &ons {
+        let d = beat - beat.round();
+        assert!(d.abs() <= 0.25 + 1e-9, "{beat}");
+        early += usize::from(d < 0.0);
+        late += usize::from(d > 0.0);
+    }
+    assert!(early > 0 && late > 0, "{early} early, {late} late");
+}
+
 /// The Randomizer's range is round(f32(24v)): at v = f32(2.5/24) the f32 product is exactly 2.5, a range of 3 (the f64
 /// product, 2.4999999, rounded to 2).
 #[test]

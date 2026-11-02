@@ -72,12 +72,12 @@ struct Note {
 }
 
 impl NoteEffectRack {
-    pub fn new(modules: Vec<NoteEffectModule>) -> Result<Self, NoteEffectError> {
-        for module in &modules {
+    pub fn new(mut modules: Vec<NoteEffectModule>) -> Result<Self, NoteEffectError> {
+        for module in &mut modules {
             let count = match module.type_id {
                 47 => 16,
                 48 => 3,
-                49 => 5,
+                49 => 7,
                 50 => 16,
                 51 => 31,
                 id => return Err(NoteEffectError::UnknownType(id)),
@@ -93,6 +93,12 @@ impl NoteEffectRack {
                     return Err(NoteEffectError::InvalidParameter);
                 }
                 previous = beat;
+            }
+            // A Randomizer saved before Time and Shift (issue: early and late timing) has five params: the two it
+            // lacks take their defaults, 0 (no displacement) and 0.5 (an even mix early and late).
+            if module.type_id == 49 && module.params.len() == 5 {
+                module.params.resize(count, 0.0);
+                module.params[6] = 0.5;
             }
             if module.params.len() < count || !module.params.iter().all(valid) {
                 return Err(NoteEffectError::InvalidParameter);
@@ -362,6 +368,12 @@ fn transpose(module: &NoteEffectModule, note: Note, output: &mut Vec<Note>) {
 
 /// Randomizer: Pitch, Velocity and Pan spread the note; Gate (p4) is the chance it plays at all (100 %: always, 0 %:
 /// never), and a note it drops goes with its note-off (issue #31: a probability, which Gate's 100 % default fits).
+///
+/// Time (p5) and Shift (p6) move the note early or late: Time is how far, as a fraction of [`TIME_BEATS`] (a 16th of a
+/// beat), and Shift leans the draw from all early (0) through an even mix (0.5, the default) to all late (1). The
+/// displacement u is drawn evenly from [−1 + max(b, 0), 1 + min(b, 0)] at b = 2·Shift − 1, so the whole span stays
+/// reachable at an even mix and each end settles on one side; the note keeps its length and its start never goes
+/// before 0. At Time 0 nothing is drawn and the note is untouched.
 fn randomize(module: &NoteEffectModule, note: Note, index: usize, output: &mut Vec<Note>) {
     let mut random = Random::new(module.instance_id, index);
     let range = (24.0 * module.params[1]).round() as i16;
@@ -373,15 +385,31 @@ fn randomize(module: &NoteEffectModule, note: Note, index: usize, output: &mut V
     let plays = random.unit() < f64::from(module.params[4]);
     let pan = (f64::from(note.pan) + random.signed() * f64::from(module.params[3])).clamp(0.0, 1.0)
         as f32;
+    // Early or late: drawn after the other params, and not at all at Time 0, so a Randomizer that does not use it
+    // draws the same notes as before.
+    let far = f64::from(module.params[5]) * TIME_BEATS;
+    let (start, end) = if far > 0.0 {
+        let bias = 2.0 * f64::from(module.params[6]) - 1.0;
+        let (lo, hi) = (-1.0 + bias.max(0.0), 1.0 + bias.min(0.0));
+        let offset = far * (lo + random.unit() * (hi - lo));
+        let start = (note.start + offset).max(0.0);
+        (start, (note.end + offset).max(start))
+    } else {
+        (note.start, note.end)
+    };
     if plays {
         output.push(Note {
             pitch: pitch.clamp(0, 127),
             velocity,
             pan,
-            ..note
+            start,
+            end,
         });
     }
 }
+
+/// The Randomizer's Time at 1, in beats: a 16th of a beat (32 of the song's [`PPQ`](crate::sequencer::PPQ) ticks).
+const TIME_BEATS: f64 = 0.25;
 
 /// `Delay (sync)`'s items in beats.
 const SYNC_ITEMS: [f32; 10] = [0.125, 0.25, 0.375, 0.5, 0.75, 1.0, 2.0, 3.0, 4.0, 8.0];

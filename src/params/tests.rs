@@ -53,7 +53,7 @@ const OVERVIEW: [(u16, &str, &str, usize, bool, Role); 39] = [
     (46, "Tremolo", "Tremolo", 12, false, Role::Effect),
     (47, "Note Echo", "Note Echo", 16, false, Role::NoteEffect),
     (48, "Transpose", "Transpose", 3, false, Role::NoteEffect),
-    (49, "Randomizer", "Randomizer", 5, false, Role::NoteEffect),
+    (49, "Randomizer", "Randomizer", 7, false, Role::NoteEffect),
     (50, "Scale", "Scale", 16, false, Role::NoteEffect),
     (
         51,
