@@ -45,19 +45,11 @@ pub fn curve(v: f64, n: f64, k: f64) -> f64 {
 /// The plugin's single power `single(exp(double(e) * ln double(single(x))))`, 0 for `x = 0`.
 pub fn pow_s(x: f64, e: f64) -> f32 {
     let x = s(x);
-    if x <= 0.0 {
-        0.0
-    } else {
-        s((e * f64::from(x).ln()).exp())
-    }
+    if x <= 0.0 { 0.0 } else { s((e * f64::from(x).ln()).exp()) }
 }
 
 fn sinh(z: f64) -> f64 {
-    if z.abs() <= 1e-12 {
-        0.0
-    } else {
-        (z.exp() - (-z).exp()) / 2.0
-    }
+    if z.abs() <= 1e-12 { 0.0 } else { (z.exp() - (-z).exp()) / 2.0 }
 }
 
 /// What a filter's coefficients are worked out from.
@@ -172,11 +164,7 @@ pub fn work_out(p: &Input) -> [Coef; 3] {
             }
         }
         BAND_PASS | BAND_STOP => {
-            let cp = per_stage(
-                cut(&|| curve(c, 1501.0, 0.00039993334212340415).min(1.0001)),
-                p.order,
-                n,
-            );
+            let cp = per_stage(cut(&|| curve(c, 1501.0, 0.00039993334212340415).min(1.0001)), p.order, n);
             let mut b = if r <= 0.0 {
                 0.01
             } else if r >= 1.0 {
@@ -185,11 +173,7 @@ pub fn work_out(p: &Input) -> [Coef; 3] {
                 curve(r, 101.0, 0.11989999562501907) + 0.01
             };
             let order = p.order as f32;
-            let width = if p.kind == BAND_PASS {
-                order
-            } else {
-                1.0 / order
-            };
+            let width = if p.kind == BAND_PASS { order } else { 1.0 / order };
             b *= f64::from(s(f64::from(width) * (LN_2 / 2.0)));
             for k in 0..n {
                 let w = omega(cp[k], 0.0001, rf);
@@ -199,11 +183,7 @@ pub fn work_out(p: &Input) -> [Coef; 3] {
             }
         }
         LOW_SHELF | PEAKING | HIGH_SHELF => {
-            let cp = per_stage(
-                cut(&|| curve(c, 1501.0, 0.00039993334212340415).min(1.0001)),
-                p.order,
-                n,
-            );
+            let cp = per_stage(cut(&|| curve(c, 1501.0, 0.00039993334212340415).min(1.0001)), p.order, n);
             let u = 1.0 - r;
             let mut a = f64::from(p.gain);
             if n > 1 {
@@ -239,11 +219,7 @@ pub fn work_out(p: &Input) -> [Coef; 3] {
         _ => {
             // Mango, without the "r follows" rule.
             let r = f64::from(p.res);
-            let cp = per_stage(
-                cut(&|| curve(c, 201.0, 0.014949999749660492).min(3.0)),
-                p.order,
-                n,
-            );
+            let cp = per_stage(cut(&|| curve(c, 201.0, 0.014949999749660492).min(3.0)), p.order, n);
             let d = f64::from(s((f64::from(p.drive) * 251f64.ln()).exp() - 1.0)) * 0.12;
             let drive = d >= 0.001;
             let s_inv = f64::from(s(1.0 / ((n as f64 - 1.0) / 4.0 + 1.0)));
@@ -299,13 +275,7 @@ fn biquad(kind: i32, alpha: f64, k: f64, a: f64, gamma: f64) -> [f64; 5] {
         PEAKING => {
             let d = 1.0 / (alpha / a + 1.0);
             let a1 = (d * k) * -2.0;
-            [
-                a1,
-                d * (1.0 - alpha / a),
-                d * (alpha * a + 1.0),
-                a1,
-                d * (1.0 - alpha * a),
-            ]
+            [a1, d * (1.0 - alpha / a), d * (alpha * a + 1.0), a1, d * (1.0 - alpha * a)]
         }
         LOW_SHELF => {
             let t = (a - 1.0) * k;
@@ -357,16 +327,7 @@ mod tests {
     use super::*;
 
     fn input(kind: i32, order: i32) -> Input {
-        Input {
-            kind,
-            order,
-            alt: false,
-            cutoff: 0.5,
-            res: 0.5,
-            gain: 1.0,
-            drive: 0.0,
-            rf: 0.5,
-        }
+        Input { kind, order, alt: false, cutoff: 0.5, res: 0.5, gain: 1.0, drive: 0.0, rf: 0.5 }
     }
 
     /// The gain of a biquad at angular frequency `w`.
@@ -401,15 +362,9 @@ mod tests {
     fn stages_and_orders() {
         assert_eq!((0..6).map(stages).collect::<Vec<_>>(), [0, 1, 2, 3, 2, 3]);
         let c = work_out(&input(CHOCOLATE, 5));
-        assert!(
-            c[0].f > c[1].f && c[1].f > c[2].f,
-            "earlier stages take higher cutoffs: {c:?}"
-        );
+        assert!(c[0].f > c[1].f && c[1].f > c[2].f, "earlier stages take higher cutoffs: {c:?}");
         assert_eq!(c[1].q, 1.0);
-        let m = work_out(&Input {
-            drive: 0.5,
-            ..input(MANGO, 1)
-        })[0];
+        let m = work_out(&Input { drive: 0.5, ..input(MANGO, 1) })[0];
         assert!(m.drive > 0.0 && m.mq < 0.0 && m.k > 0.0);
         assert_eq!(pow_s(0.0, 0.5), 0.0);
         assert_eq!(pow_s(4.0, 0.5), 2.0);

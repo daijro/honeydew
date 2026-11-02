@@ -38,9 +38,7 @@ impl Module {
 
     /// Marks the module crashed with `code` (the first crash is kept) and wakes the UI thread to report it.
     fn trip(&self, code: u32) {
-        let _ = self
-            .crash
-            .compare_exchange(0, code.max(1), Ordering::AcqRel, Ordering::Acquire);
+        let _ = self.crash.compare_exchange(0, code.max(1), Ordering::AcqRel, Ordering::Acquire);
         TRIPPED.store(true, Ordering::Release);
         crate::wake();
     }
@@ -81,10 +79,7 @@ pub fn module_of(addr: *const c_void) -> Arc<Module> {
     if let Some(m) = list.iter().find(|m| m.base == base) {
         return m.clone();
     }
-    let m = Arc::new(Module {
-        base,
-        crash: AtomicU32::new(0),
-    });
+    let m = Arc::new(Module { base, crash: AtomicU32::new(0) });
     list.push(m.clone());
     m
 }
@@ -121,25 +116,15 @@ pub fn catch<R, F: FnOnce() -> R>(f: F) -> Result<R, u32> {
     #[cfg(plugin_guard)]
     {
         let mut slot: (Option<F>, Option<R>) = (Some(f), None);
-        let mut fault = Fault {
-            code: 0,
-            message: [0; 256],
-        };
+        let mut fault = Fault { code: 0, message: [0; 256] };
         // SAFETY: the trampoline gets the slot it was instantiated for, alive for the whole call.
-        let done =
-            unsafe { os_host_guarded_call(trampoline::<R, F>, (&raw mut slot).cast(), &mut fault) }
-                != 0;
+        let done = unsafe { os_host_guarded_call(trampoline::<R, F>, (&raw mut slot).cast(), &mut fault) } != 0;
         match slot.1.take() {
             Some(r) if done => Ok(r),
             _ => {
                 TRIPPED.store(true, Ordering::Release);
-                let len = fault
-                    .message
-                    .iter()
-                    .position(|&c| c == 0)
-                    .unwrap_or(fault.message.len());
-                LAST_MESSAGE
-                    .with(|m| *m.borrow_mut() = String::from_utf16_lossy(&fault.message[..len]));
+                let len = fault.message.iter().position(|&c| c == 0).unwrap_or(fault.message.len());
+                LAST_MESSAGE.with(|m| *m.borrow_mut() = String::from_utf16_lossy(&fault.message[..len]));
                 Err(fault.code.max(1))
             }
         }
@@ -151,11 +136,7 @@ pub fn catch<R, F: FnOnce() -> R>(f: F) -> Result<R, u32> {
 #[cfg(plugin_guard)]
 unsafe extern "C-unwind" {
     /// `guard.c`: calls `f(ctx)`; 0 and what was raised in `fault` when it raised an exception the guard contains.
-    fn os_host_guarded_call(
-        f: extern "C-unwind" fn(*mut c_void),
-        ctx: *mut c_void,
-        fault: *mut Fault,
-    ) -> i32;
+    fn os_host_guarded_call(f: extern "C-unwind" fn(*mut c_void), ctx: *mut c_void, fault: *mut Fault) -> i32;
 }
 
 /// Runs the closure in `catch`'s slot. Rust code between the guard and the plugin unwinds like a panic would.
@@ -223,12 +204,10 @@ fn base_of(addr: *const c_void) -> usize {
     #[cfg(windows)]
     {
         use windows_sys::Win32::System::LibraryLoader::{
-            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-            GetModuleHandleExW,
+            GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
         };
         let mut m = std::ptr::null_mut();
-        let flags =
-            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
+        let flags = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
         // SAFETY: only looks the address up.
         if unsafe { GetModuleHandleExW(flags, addr.cast(), &mut m) } != 0 {
             return m as usize;
@@ -251,12 +230,7 @@ fn guarded_at(addr: *const c_void) -> Option<Arc<Module>> {
     if base == 0 {
         return None;
     }
-    MODULES
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .iter()
-        .find(|m| m.base == base)
-        .cloned()
+    MODULES.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|m| m.base == base).cloned()
 }
 
 /// Puts the windows of guarded plugin files under the guard (UI thread). Every window of this process whose window
@@ -274,13 +248,13 @@ mod windows {
     use super::*;
     use std::cell::Cell;
     #[cfg(not(target_arch = "wasm32"))]
-    use std::time::{Duration, Instant};
-    #[cfg(target_arch = "wasm32")]
-    use web_time::{Duration, Instant};
+use std::time::{Duration, Instant};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Duration, Instant};
+    use windows_sys::core::BOOL;
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::System::Threading::GetCurrentProcessId;
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
-    use windows_sys::core::BOOL;
 
     /// Window properties of a guarded window: its own window procedure, and the `Module` it belongs to.
     const PROC: *const u16 = windows_sys::w!("LemonStudio.GuardedProc");
@@ -291,11 +265,7 @@ mod windows {
     }
 
     pub fn watch(now: bool) {
-        if !now
-            && LAST
-                .get()
-                .is_some_and(|t| t.elapsed() < Duration::from_millis(250))
-        {
+        if !now && LAST.get().is_some_and(|t| t.elapsed() < Duration::from_millis(250)) {
             return;
         }
         LAST.set(Some(Instant::now()));
@@ -352,17 +322,11 @@ mod windows {
                 return;
             }
             let wide = IsWindowUnicode(h) != 0;
-            let proc = if wide {
-                GetWindowLongPtrW(h, GWLP_WNDPROC)
-            } else {
-                GetWindowLongPtrA(h, GWLP_WNDPROC)
-            };
+            let proc = if wide { GetWindowLongPtrW(h, GWLP_WNDPROC) } else { GetWindowLongPtrA(h, GWLP_WNDPROC) };
             if proc == 0 || proc == addr(guarded_w) || proc == addr(guarded_a) {
                 return;
             }
-            let Some(m) = guarded_at(proc as *const c_void) else {
-                return;
-            };
+            let Some(m) = guarded_at(proc as *const c_void) else { return };
             // A window class of this program that a plugin subclassed is left alone: the program's own window procedure
             // is further down its chain, and must keep running after a crash.
             if GetClassLongPtrW(h, GCLP_HMODULE) == own_base() {
@@ -404,13 +368,7 @@ mod windows {
     /// The guard's window procedure: the plugin's own under [`call`], or the default handling once its file crashed.
     unsafe fn guarded(h: HWND, msg: u32, w: WPARAM, l: LPARAM, wide: bool) -> LRESULT {
         unsafe {
-            let default = || {
-                if wide {
-                    DefWindowProcW(h, msg, w, l)
-                } else {
-                    DefWindowProcA(h, msg, w, l)
-                }
-            };
+            let default = || if wide { DefWindowProcW(h, msg, w, l) } else { DefWindowProcA(h, msg, w, l) };
             let proc = GetPropW(h, PROC) as usize;
             let module = GetPropW(h, MODULE) as *const Module;
             if proc == 0 || module.is_null() {
@@ -424,13 +382,7 @@ mod windows {
             let module = &*module;
             // SAFETY: `proc` is the window procedure the window had.
             let proc: WNDPROC = std::mem::transmute::<usize, WNDPROC>(proc);
-            let run = || {
-                if wide {
-                    CallWindowProcW(proc, h, msg, w, l)
-                } else {
-                    CallWindowProcA(proc, h, msg, w, l)
-                }
-            };
+            let run = || if wide { CallWindowProcW(proc, h, msg, w, l) } else { CallWindowProcA(proc, h, msg, w, l) };
             call(module, run).unwrap_or_else(|_| default())
         }
     }
@@ -485,10 +437,7 @@ mod tests {
             len: i32,
             text: [u16; 9],
         }
-        static TEXT: Counted = Counted {
-            len: 9,
-            text: [66, 97, 100, 32, 105, 110, 100, 101, 120],
-        };
+        static TEXT: Counted = Counted { len: 9, text: [66, 97, 100, 32, 105, 110, 100, 101, 120] };
         let obj: [usize; 2] = [0, TEXT.text.as_ptr() as usize];
         let args = [0usize, obj.as_ptr() as usize];
         let r = catch(|| unsafe { RaiseException(RUNTIME_ERROR, 1, 2, args.as_ptr()) });
@@ -530,42 +479,17 @@ mod tests {
         }
         let class = windows_sys::w!("LemonStudioGuardTest");
         unsafe {
-            let wc = WNDCLASSW {
-                lpfnWndProc: Some(faulty),
-                lpszClassName: class,
-                ..std::mem::zeroed()
-            };
+            let wc = WNDCLASSW { lpfnWndProc: Some(faulty), lpszClassName: class, ..std::mem::zeroed() };
             RegisterClassW(&wc);
-            let h = CreateWindowExW(
-                0,
-                class,
-                class,
-                WS_OVERLAPPED,
-                0,
-                0,
-                10,
-                10,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null(),
-            );
+            let h = CreateWindowExW(0, class, class, WS_OVERLAPPED, 0, 0, 10, 10, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null());
             assert!(!h.is_null());
             let m: &'static Arc<Module> = Box::leak(Box::new(Arc::new(Module::default())));
             let proc: unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT = faulty;
             windows::subclass(h, m, proc as isize, true);
-            assert_eq!(
-                SendMessageW(h, WM_USER + 1, 0, 0),
-                7,
-                "the plugin's own handling"
-            );
+            assert_eq!(SendMessageW(h, WM_USER + 1, 0, 0), 7, "the plugin's own handling");
             assert_eq!(SendMessageW(h, WM_USER, 0, 0), 0);
             assert_eq!(m.crashed(), Some(0xC000_0005));
-            assert_eq!(
-                SendMessageW(h, WM_USER + 1, 0, 0),
-                0,
-                "default handling after the crash"
-            );
+            assert_eq!(SendMessageW(h, WM_USER + 1, 0, 0), 0, "default handling after the crash");
             assert!(DestroyWindow(h) != 0);
         }
     }

@@ -9,7 +9,7 @@
 // spec: plugins/fruity-limiter-dsp.md "Settings", audio/sidechain.md
 
 use super::dynamics::{Dynamics, PARAMS};
-use super::{Effect, field, ints};
+use super::{field, ints, Effect};
 
 /// The state's sidechain input number (bytes 164..167, from version 6) and flags byte (168, from version 7).
 const SIDECHAIN_FIELD: usize = 41;
@@ -29,24 +29,9 @@ impl Limiter {
     pub fn from_state(state: &[u8], sample_rate: u32) -> Option<Self> {
         let version = field(state, 0)?;
         let p = ints::<PARAMS>(state, 1)?;
-        let key = if version >= 6 {
-            field(state, SIDECHAIN_FIELD).unwrap_or(0).max(0) as usize
-        } else {
-            0
-        };
-        let flags = if version >= 7 {
-            state.get(FLAGS_BYTE).copied().unwrap_or(0)
-        } else {
-            0
-        };
-        Some(Limiter {
-            d: Dynamics::new(f64::from(sample_rate), p, flags),
-            key,
-            l: Vec::new(),
-            r: Vec::new(),
-            kl: Vec::new(),
-            kr: Vec::new(),
-        })
+        let key = if version >= 6 { field(state, SIDECHAIN_FIELD).unwrap_or(0).max(0) as usize } else { 0 };
+        let flags = if version >= 7 { state.get(FLAGS_BYTE).copied().unwrap_or(0) } else { 0 };
+        Some(Limiter { d: Dynamics::new(f64::from(sample_rate), p, flags), key, l: Vec::new(), r: Vec::new(), kl: Vec::new(), kr: Vec::new() })
     }
 
     fn run(&mut self, buf: &mut [f32], key: Option<&[f32]>) {
@@ -95,7 +80,7 @@ impl Effect for Limiter {
 
 #[cfg(test)]
 mod tests {
-    use super::super::dynamics::{COMP_RATIO, COMP_THRES, DEFAULTS, LIM_ATT};
+    use super::super::dynamics::{DEFAULTS, COMP_RATIO, COMP_THRES, LIM_ATT};
     use super::super::state_of;
     use super::*;
 
@@ -112,12 +97,11 @@ mod tests {
     }
 
     fn sine(n: usize, amp: f32) -> Vec<f32> {
-        (0..n)
-            .flat_map(|i| {
-                let x = amp * (i as f32 * 0.05).sin();
-                [x, x]
-            })
-            .collect()
+        (0..n).flat_map(|i| {
+            let x = amp * (i as f32 * 0.05).sin();
+            [x, x]
+        })
+        .collect()
     }
 
     #[test]
@@ -158,13 +142,7 @@ mod tests {
         let quiet = run(Some(vec![0.0; 8192]));
         let loud = run(Some(sine(4096, 1.0)));
         assert!(own > 0.09, "a quiet input is under the threshold: {own}");
-        assert!(
-            (quiet - own).abs() < 1e-3,
-            "a silent key lowers nothing: {quiet} {own}"
-        );
-        assert!(
-            loud < own * 0.5,
-            "a loud key lowers the input: {loud} {own}"
-        );
+        assert!((quiet - own).abs() < 1e-3, "a silent key lowers nothing: {quiet} {own}");
+        assert!(loud < own * 0.5, "a loud key lowers the input: {loud} {own}");
     }
 }

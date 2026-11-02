@@ -14,14 +14,14 @@ pub mod params;
 pub mod stream;
 pub mod view;
 
-use std::io::{Read, Seek, SeekFrom};
 use std::num::NonZeroU32;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use nih_plug::prelude::*;
-use os_engine::{Sample, envelope};
+use os_engine::{envelope, Sample};
 
 use params::{DiskKey, FxKey, Live, SamplerParams};
 
@@ -151,11 +151,7 @@ pub fn source_info(path: &Path) -> (u32, fx::Source) {
                 }
                 if &id == b"fmt " && d.len() >= 16 {
                     // WAVE_FORMAT_EXTENSIBLE names the format in its sub-format's first two bytes.
-                    let tag = if word(&d, 0) == 0xFFFE && d.len() >= 26 {
-                        word(&d, 24)
-                    } else {
-                        word(&d, 0)
-                    };
+                    let tag = if word(&d, 0) == 0xFFFE && d.len() >= 26 { word(&d, 24) } else { word(&d, 0) };
                     let (channels, depth) = (word(&d, 2), u32::from(word(&d, 14)));
                     bits = depth | if tag == 3 { 0x100 } else { 0 };
                     src.int16_mono = tag == 1 && channels == 1 && depth == 16;
@@ -187,14 +183,8 @@ impl Shared {
         let p = Path::new(path);
         let (bits, source) = source_info(p);
         let layout = stream::Layout::of(p);
-        let on_disk = layout
-            .as_ref()
-            .is_some_and(|l| self.streams(params, &source, l).is_some());
-        let s = if on_disk {
-            None
-        } else {
-            Some(os_engine::sample::load_shared(p).map_err(|e| e.to_string())?)
-        };
+        let on_disk = layout.as_ref().is_some_and(|l| self.streams(params, &source, l).is_some());
+        let s = if on_disk { None } else { Some(os_engine::sample::load_shared(p).map_err(|e| e.to_string())?) };
         self.bits.store(bits, Ordering::Release);
         self.set_loaded(s, path, source, layout, params);
         Ok(())
@@ -202,14 +192,7 @@ impl Shared {
 
     /// Replaces the loaded sample (`path` is what the state remembers), with the file's loop and format in `source`
     /// and, for a file that can play from disk, its layout.
-    fn set_loaded(
-        &self,
-        s: Option<Arc<Sample>>,
-        path: &str,
-        source: fx::Source,
-        layout: Option<stream::Layout>,
-        params: &SamplerParams,
-    ) {
+    fn set_loaded(&self, s: Option<Arc<Sample>>, path: &str, source: fx::Source, layout: Option<stream::Layout>, params: &SamplerParams) {
         {
             // All of it under the lock of `raw`, with the version: a decode made for an earlier load is never kept.
             let mut raw = self.raw.lock().unwrap();
@@ -231,22 +214,12 @@ impl Shared {
 
     /// **(Lemon Studio)** The played sample plays from disk with these settings (Keep on disk on, no realtime stretch
     /// method, no step that changes the file's frames): its loop.
-    fn streams(
-        &self,
-        params: &SamplerParams,
-        source: &fx::Source,
-        layout: &stream::Layout,
-    ) -> Option<Option<(usize, usize)>> {
+    fn streams(&self, params: &SamplerParams, source: &fx::Source, layout: &stream::Layout) -> Option<Option<(usize, usize)>> {
         let dk = params.disk_key();
         if !dk.keep || dk.realtime {
             return None;
         }
-        fx::as_is(
-            source,
-            &params.fx_key(self.tempo(), self.rate()),
-            layout.rate,
-            layout.frames,
-        )
+        fx::as_is(source, &params.fx_key(self.tempo(), self.rate()), layout.rate, layout.frames)
     }
 
     /// The host's output rate (files below 8000 Hz are converted to it).
@@ -297,36 +270,17 @@ impl Shared {
         let key = params.fx_key(self.tempo(), self.rate());
         let dk = params.disk_key();
         // What plays now, when it was made for this load.
-        let now = self
-            .processed
-            .lock()
-            .unwrap()
-            .as_ref()
-            .filter(|p| p.version == version)
-            .map(|p| (p.key, p.disk_key, p.disk.clone(), p.looped));
+        let now = self.processed.lock().unwrap().as_ref().filter(|p| p.version == version).map(|p| (p.key, p.disk_key, p.disk.clone(), p.looped));
         // Notes started where nothing of the file on disk is held: those points are held from now on.
-        let missed = now
-            .as_ref()
-            .and_then(|n| n.2.as_ref())
-            .is_some_and(|d| !d.missed().is_empty());
+        let missed = now.as_ref().and_then(|n| n.2.as_ref()).is_some_and(|d| !d.missed().is_empty());
         if now.as_ref().is_some_and(|n| n.0 == key && n.1 == dk) && !missed {
             return;
         }
-        let (layout, source, path) = (
-            *self.layout.lock().unwrap(),
-            *self.source.lock().unwrap(),
-            self.loaded_path(),
-        );
+        let (layout, source, path) = (*self.layout.lock().unwrap(), *self.source.lock().unwrap(), self.loaded_path());
         let stream = layout.and_then(|l| self.streams(params, &source, &l).map(|lp| (l, lp)));
         // Only the settings it was made for change: what plays stays.
         let restamp = || {
-            if let Some(p) = self
-                .processed
-                .lock()
-                .unwrap()
-                .as_mut()
-                .filter(|p| p.version == version)
-            {
+            if let Some(p) = self.processed.lock().unwrap().as_mut().filter(|p| p.version == version) {
                 (p.key, p.disk_key) = (key, dk);
             }
         };
@@ -340,33 +294,18 @@ impl Shared {
             }
             let points = stream::points(&points, l.frames);
             let old = now.as_ref().and_then(|n| n.2.clone());
-            if old
-                .as_ref()
-                .is_some_and(|d| d.named() == points.as_slice() && !missed)
-                && now.as_ref().is_some_and(|n| n.3 == lp)
-            {
+            if old.as_ref().is_some_and(|d| d.named() == points.as_slice() && !missed) && now.as_ref().is_some_and(|n| n.3 == lp) {
                 restamp();
                 return;
             }
             let disk = match &old {
                 Some(d) => Some(d.disk().clone()),
-                None => stream::Disk::open(Path::new(&path), l)
-                    .map_err(|e| nih_log!("Lemon Sampler: {e}"))
-                    .ok(),
+                None => stream::Disk::open(Path::new(&path), l).map_err(|e| nih_log!("Lemon Sampler: {e}")).ok(),
             };
             if let Some(disk) = disk {
                 let played = stream::Played::new(disk, &points, old.as_deref());
                 params.frames.store(l.frames as u32, Ordering::Relaxed);
-                self.store(Processed {
-                    version,
-                    key,
-                    disk_key: dk,
-                    serial: 0,
-                    sample: None,
-                    disk: Some(Arc::new(played)),
-                    looped: lp,
-                    file_frames: l.frames as f64,
-                });
+                self.store(Processed { version, key, disk_key: dk, serial: 0, sample: None, disk: Some(Arc::new(played)), looped: lp, file_frames: l.frames as f64 });
                 // The file plays from disk: its decoded frames are let go.
                 let mut raw = self.raw.lock().unwrap();
                 if self.raw_version.load(Ordering::Acquire) == version {
@@ -382,28 +321,12 @@ impl Shared {
         }
         let raw = self.decoded(version, &path);
         let built = raw.map(|r| (fx::build(&r, &source, &key), r.frames()));
-        params.frames.store(
-            built.as_ref().map_or(0, |(b, _)| b.sample.frames() as u32),
-            Ordering::Relaxed,
-        );
+        params.frames.store(built.as_ref().map_or(0, |(b, _)| b.sample.frames() as u32), Ordering::Relaxed);
         let (sample, looped, file_frames) = match built {
-            Some((b, raw_frames)) => (
-                Some(Arc::new(b.sample)),
-                b.looped,
-                raw_frames as f64 * b.per_file_frame,
-            ),
+            Some((b, raw_frames)) => (Some(Arc::new(b.sample)), b.looped, raw_frames as f64 * b.per_file_frame),
             None => (None, None, 0.0),
         };
-        self.store(Processed {
-            version,
-            key,
-            disk_key: dk,
-            serial: 0,
-            sample,
-            disk: None,
-            looped,
-            file_frames,
-        });
+        self.store(Processed { version, key, disk_key: dk, serial: 0, sample, disk: None, looped, file_frames });
     }
 
     /// Makes `p` the processed sample, with a serial of its own.
@@ -451,8 +374,7 @@ impl Shared {
 
     /// The loaded file's length in seconds.
     pub fn secs(&self) -> Option<f64> {
-        self.length()
-            .map(|(n, rate)| n as f64 / f64::from(rate.max(1)))
+        self.length().map(|(n, rate)| n as f64 / f64::from(rate.max(1)))
     }
 
     /// The played sample, when it plays from disk.
@@ -486,11 +408,7 @@ impl Shared {
         if slot.version == version && slot.asked {
             return slot.summary.clone();
         }
-        *slot = SummarySlot {
-            version,
-            asked: true,
-            summary: None,
-        };
+        *slot = SummarySlot { version, asked: true, summary: None };
         let (me, path, layout) = (self.clone(), self.loaded_path(), *played.disk().layout());
         drop(played);
         std::thread::spawn(move || {
@@ -523,18 +441,12 @@ impl Shared {
     pub fn stale(&self, params: &SamplerParams) -> bool {
         let version = self.raw_version.load(Ordering::Acquire);
         let (key, dk) = (params.fx_key(self.tempo(), self.rate()), params.disk_key());
-        !self
-            .processed
-            .lock()
-            .unwrap()
-            .as_ref()
-            .is_some_and(|p| p.version == version && p.key == key && p.disk_key == dk)
+        !self.processed.lock().unwrap().as_ref().is_some_and(|p| p.version == version && p.key == key && p.disk_key == dk)
     }
 
     /// Changes whenever the shown sample changes (editor repaint check).
     pub fn version(&self) -> u64 {
-        self.processed_version.load(Ordering::Acquire)
-            ^ (self.raw_version.load(Ordering::Acquire) << 32)
+        self.processed_version.load(Ordering::Acquire) ^ (self.raw_version.load(Ordering::Acquire) << 32)
     }
 
     pub fn loaded_path(&self) -> String {
@@ -612,20 +524,12 @@ pub fn block(p: &SamplerParams, tempo: f64, bend: f64) -> dsp::Block {
     for (i, t) in targets.iter_mut().enumerate() {
         let e = p.env(i);
         // The Panning target has no envelope (spec §3).
-        let mut env = if i == dsp::PAN {
-            None
-        } else {
-            e.envelope(128.0)
-        };
+        let mut env = if i == dsp::PAN { None } else { e.envelope(128.0) };
         if e.tempo.live() {
             // Tempo-based times: the time law at 120 BPM, scaled by the host tempo (Lemon Studio choice).
             env = env.map(|x| x.scaled(120.0 / tempo.max(1.0)));
         }
-        *t = dsp::Target {
-            env,
-            amount: f64::from(e.amt.live()),
-            lfo: lfo(e, tempo),
-        };
+        *t = dsp::Target { env, amount: f64::from(e.amt.live()), lfo: lfo(e, tempo) };
     }
     // Resample and the realtime methods stretch in the voices, the other methods in the processed sample; PITCH plays
     // no part in Resample (spec §5.6).
@@ -634,21 +538,9 @@ pub fn block(p: &SamplerParams, tempo: f64, bend: f64) -> dsp::Block {
     dsp::Block {
         root: p.root.live(),
         cents: f64::from(p.fine.live()) + if p.main_pitch.live() { bend } else { 0.0 },
-        ts_cents: if realtime {
-            params::ts_cents(p.ts_pitch.live())
-        } else {
-            0.0
-        },
-        ts_ratio: if resample || realtime {
-            params::mul_of(p.ts_mul.live())
-        } else {
-            1.0
-        },
-        ts_time: if resample || realtime {
-            p.ts_seconds(tempo)
-        } else {
-            None
-        },
+        ts_cents: if realtime { params::ts_cents(p.ts_pitch.live()) } else { 0.0 },
+        ts_ratio: if resample || realtime { params::mul_of(p.ts_mul.live()) } else { 1.0 },
+        ts_time: if resample || realtime { p.ts_seconds(tempo) } else { None },
         realtime,
         targets,
         f_type: p.f_type.live().clamp(0, 7) as u8,
@@ -676,11 +568,7 @@ impl LemonSampler {
     /// Takes a newer processed sample when the background task has one ready (never blocks).
     fn pick_up_sample(&mut self, ctx: &mut impl ProcessContext<Self>) {
         let p = &self.params;
-        let want = (
-            self.shared.raw_version.load(Ordering::Acquire),
-            p.fx_key(self.shared.tempo(), self.shared.rate()),
-            p.disk_key(),
-        );
+        let want = (self.shared.raw_version.load(Ordering::Acquire), p.fx_key(self.shared.tempo(), self.shared.rate()), p.disk_key());
         if self.requested != Some(want) {
             self.requested = Some(want);
             ctx.execute_background(Task::Precompute);
@@ -702,45 +590,19 @@ impl LemonSampler {
     /// One note event (between the block's renders): `blk` follows a pitch bend.
     fn event(&mut self, ev: NoteEvent<()>, blk: &mut dsp::Block, tempo: f64) {
         match ev {
-            NoteEvent::NoteOn {
-                note,
-                velocity,
-                voice_id,
-                ..
-            } => self.engine.note_on_id(note, velocity, voice_id, blk),
+            NoteEvent::NoteOn { note, velocity, voice_id, .. } => self.engine.note_on_id(note, velocity, voice_id, blk),
             NoteEvent::NoteOff { note, .. } => self.engine.note_off(note, blk),
             NoteEvent::Choke { note, voice_id, .. } => self.engine.choke(voice_id, note, blk),
             // An audio clip's fades and gain, on its own voice.
-            NoteEvent::PolyVolume {
-                voice_id,
-                note,
-                gain,
-                ..
-            } => self.engine.volume(voice_id, note, gain),
+            NoteEvent::PolyVolume { voice_id, note, gain, .. } => self.engine.volume(voice_id, note, gain),
             NoteEvent::PolyTuning { note, tuning, .. } => self.engine.tune(note, f64::from(tuning)),
             // The note's own pan, also while it sounds (spec: audio/voice-levels.md "Final levels").
-            NoteEvent::PolyPan {
-                voice_id,
-                note,
-                pan,
-                ..
-            } => self.engine.pan(voice_id, note, pan),
-            NoteEvent::PolyModulation {
-                voice_id,
-                poly_modulation_id,
-                normalized_offset,
-                ..
-            } => match poly_modulation_id {
-                params::START_OFFSET_POLY => {
-                    self.engine.start_later(voice_id, normalized_offset, blk)
-                }
+            NoteEvent::PolyPan { voice_id, note, pan, .. } => self.engine.pan(voice_id, note, pan),
+            NoteEvent::PolyModulation { voice_id, poly_modulation_id, normalized_offset, .. } => match poly_modulation_id {
+                params::START_OFFSET_POLY => self.engine.start_later(voice_id, normalized_offset, blk),
                 // The note's mod X / mod Y in knob units (the filter knobs' 0..1), added to the knobs for its voice.
-                params::MOD_X_POLY => self
-                    .engine
-                    .modulate(voice_id, Some(normalized_offset), None),
-                params::MOD_Y_POLY => self
-                    .engine
-                    .modulate(voice_id, None, Some(normalized_offset)),
+                params::MOD_X_POLY => self.engine.modulate(voice_id, Some(normalized_offset), None),
+                params::MOD_Y_POLY => self.engine.modulate(voice_id, None, Some(normalized_offset)),
                 _ => {}
             },
             NoteEvent::MidiPitchBend { value, .. } => {
@@ -795,34 +657,17 @@ impl Plugin for LemonSampler {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        Some(Box::new(editor::SamplerEditor::new(
-            self.params.clone(),
-            self.shared.clone(),
-        )))
+        Some(Box::new(editor::SamplerEditor::new(self.params.clone(), self.shared.clone())))
     }
 
-    fn initialize(
-        &mut self,
-        _layout: &AudioIOLayout,
-        config: &BufferConfig,
-        _ctx: &mut impl InitContext<Self>,
-    ) -> bool {
+    fn initialize(&mut self, _layout: &AudioIOLayout, config: &BufferConfig, _ctx: &mut impl InitContext<Self>) -> bool {
         self.engine.set_rate(config.sample_rate);
         self.shared.set_rate(config.sample_rate.round() as u32);
         // An offline render (an export) gets the resampler's exact weights; live playback the tables.
         self.offline = config.process_mode == ProcessMode::Offline;
-        self.engine.quality = if self.offline {
-            os_dsp::resample::Quality::Exact
-        } else {
-            os_dsp::resample::Quality::Table
-        };
+        self.engine.quality = if self.offline { os_dsp::resample::Quality::Exact } else { os_dsp::resample::Quality::Table };
         // A restored state names a sample: load it now (initialize may block).
-        let path = self
-            .params
-            .sample_path
-            .read()
-            .map(|p| p.clone())
-            .unwrap_or_default();
+        let path = self.params.sample_path.read().map(|p| p.clone()).unwrap_or_default();
         if !path.is_empty() && path != self.shared.loaded_path() {
             if let Err(e) = self.shared.load(&path, &self.params) {
                 nih_log!("Lemon Sampler: {e}");
@@ -846,12 +691,7 @@ impl Plugin for LemonSampler {
         self.publish_sounding();
     }
 
-    fn process(
-        &mut self,
-        buffer: &mut Buffer,
-        _aux: &mut AuxiliaryBuffers,
-        ctx: &mut impl ProcessContext<Self>,
-    ) -> ProcessStatus {
+    fn process(&mut self, buffer: &mut Buffer, _aux: &mut AuxiliaryBuffers, ctx: &mut impl ProcessContext<Self>) -> ProcessStatus {
         if let Some(t) = ctx.transport().tempo {
             self.shared.set_tempo(t);
         }
@@ -881,34 +721,23 @@ impl Plugin for LemonSampler {
             let t = (ev.timing() as usize).min(len);
             if t > at {
                 let (left, right) = out.split_at_mut(1);
-                self.engine
-                    .render(&mut left[0][at..t], &mut right[0][at..t], &blk);
+                self.engine.render(&mut left[0][at..t], &mut right[0][at..t], &blk);
                 at = t;
             }
             self.event(ev, &mut blk, tempo);
         }
         if at < len {
             let (left, right) = out.split_at_mut(1);
-            self.engine
-                .render(&mut left[0][at..len], &mut right[0][at..len], &blk);
+            self.engine.render(&mut left[0][at..len], &mut right[0][at..len], &blk);
         }
         // Voice ends go back to the host, at the end of the block (spec: audio/voices.md §4).
         let last = (len as u32).saturating_sub(1);
         for (note, voice_id) in self.engine.take_ended() {
-            ctx.send_event(NoteEvent::VoiceTerminated {
-                timing: last,
-                voice_id,
-                channel: 0,
-                note,
-            });
+            ctx.send_event(NoteEvent::VoiceTerminated { timing: last, voice_id, channel: 0, note });
         }
         self.publish_sounding();
         // A long sample may be quiet for a while: tell the host to keep processing until the voices end.
-        if self.engine.has_voices() {
-            ProcessStatus::KeepAlive
-        } else {
-            ProcessStatus::Normal
-        }
+        if self.engine.has_voices() { ProcessStatus::KeepAlive } else { ProcessStatus::Normal }
     }
 }
 
@@ -919,19 +748,14 @@ impl ClapPlugin for LemonSampler {
     const CLAP_DESCRIPTION: Option<&'static str> = Some("Lemon Studio's sampler instrument");
     const CLAP_MANUAL_URL: Option<&'static str> = None;
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
-    const CLAP_FEATURES: &'static [ClapFeature] = &[
-        ClapFeature::Instrument,
-        ClapFeature::Sampler,
-        ClapFeature::Stereo,
-    ];
+    const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::Instrument, ClapFeature::Sampler, ClapFeature::Stereo];
 }
 
 // Honeydew (vendored change): Honeydew builds it `linked` only, without nih-plug's VST3 wrapper.
 #[cfg(not(feature = "linked"))]
 impl Vst3Plugin for LemonSampler {
     const VST3_CLASS_ID: [u8; 16] = *b"OpenStudioSamplr";
-    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
-        &[Vst3SubCategory::Instrument, Vst3SubCategory::Sampler];
+    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Instrument, Vst3SubCategory::Sampler];
 }
 
 // Built as a plugin module: the C entry points hosts look for. Linked into Lemon Studio (`linked` feature): only the
@@ -950,25 +774,13 @@ mod tests {
     fn plugin(hz: f64) -> LemonSampler {
         let mut p = LemonSampler::default();
         p.engine.set_rate(48000.0);
-        let x: Vec<f32> = (0..48000)
-            .map(|i| (2.0 * std::f64::consts::PI * hz * i as f64 / 48000.0).sin() as f32 * 0.5)
-            .collect();
-        p.engine.sample = Some(Arc::new(Sample {
-            rate: 48000,
-            left: x.clone(),
-            right: x,
-        }));
+        let x: Vec<f32> = (0..48000).map(|i| (2.0 * std::f64::consts::PI * hz * i as f64 / 48000.0).sin() as f32 * 0.5).collect();
+        p.engine.sample = Some(Arc::new(Sample { rate: 48000, left: x.clone(), right: x }));
         p
     }
 
     fn note_on(id: i32) -> NoteEvent<()> {
-        NoteEvent::NoteOn {
-            timing: 0,
-            voice_id: Some(id),
-            channel: 0,
-            note: 60,
-            velocity: 100.0 / 128.0,
-        }
+        NoteEvent::NoteOn { timing: 0, voice_id: Some(id), channel: 0, note: 60, velocity: 100.0 / 128.0 }
     }
 
     fn rms(x: &[f32]) -> f32 {
@@ -993,29 +805,14 @@ mod tests {
     #[test]
     fn a_note_pan_reaches_its_voice() {
         let (l0, r0) = level(1000.0, &[]);
-        assert!(
-            (l0 - 0.5 / 2f32.sqrt()).abs() < 1e-3 && l0 == r0,
-            "{l0} {r0}"
-        );
-        let pan = |voice_id, pan| NoteEvent::PolyPan {
-            timing: 0,
-            voice_id,
-            channel: 0,
-            note: 60,
-            pan,
-        };
+        assert!((l0 - 0.5 / 2f32.sqrt()).abs() < 1e-3 && l0 == r0, "{l0} {r0}");
+        let pan = |voice_id, pan| NoteEvent::PolyPan { timing: 0, voice_id, channel: 0, note: 60, pan };
         let (l, r) = level(1000.0, &[pan(Some(3), -1.0)]);
         assert!((l - l0 * 2f32.sqrt()).abs() < 1e-4 && r < 1e-6, "{l} {r}");
         let (l, r) = level(1000.0, &[pan(Some(3), 0.5)]);
         let a = 1.5 * std::f32::consts::PI / 4.0;
-        assert!(
-            (l * std::f32::consts::FRAC_1_SQRT_2 - l0 * a.cos()).abs() < 1e-4,
-            "{l}"
-        );
-        assert!(
-            (r * std::f32::consts::FRAC_1_SQRT_2 - r0 * a.sin()).abs() < 1e-4,
-            "{r}"
-        );
+        assert!((l * std::f32::consts::FRAC_1_SQRT_2 - l0 * a.cos()).abs() < 1e-4, "{l}");
+        assert!((r * std::f32::consts::FRAC_1_SQRT_2 - r0 * a.sin()).abs() < 1e-4, "{r}");
         // Another note's pan leaves it alone; a pan by key reaches it.
         assert_eq!(level(1000.0, &[pan(Some(4), -1.0)]), (l0, r0));
         assert!(level(1000.0, &[pan(None, 1.0)]).0 < 1e-6);
@@ -1025,30 +822,19 @@ mod tests {
     // knobs for its voice.
     #[test]
     fn a_note_filter_offset_reaches_its_voice() {
-        let modulate =
-            |voice_id, poly_modulation_id, normalized_offset| NoteEvent::PolyModulation {
-                timing: 0,
-                voice_id,
-                poly_modulation_id,
-                normalized_offset,
-            };
+        let modulate = |voice_id, poly_modulation_id, normalized_offset| NoteEvent::PolyModulation {
+            timing: 0,
+            voice_id,
+            poly_modulation_id,
+            normalized_offset,
+        };
         let open = level(1000.0, &[]).0;
         let dull = level(1000.0, &[modulate(3, params::MOD_X_POLY, -0.8)]).0;
         assert!(dull < open * 0.1, "{open} {dull}");
-        assert_eq!(
-            level(1000.0, &[modulate(4, params::MOD_X_POLY, -0.8)]).0,
-            open
-        );
+        assert_eq!(level(1000.0, &[modulate(4, params::MOD_X_POLY, -0.8)]).0, open);
         // Resonance on a closed-down fast low-pass changes the sound.
         let half = level(1000.0, &[modulate(3, params::MOD_X_POLY, -0.5)]).0;
-        let res = level(
-            1000.0,
-            &[
-                modulate(3, params::MOD_X_POLY, -0.5),
-                modulate(3, params::MOD_Y_POLY, 0.9),
-            ],
-        )
-        .0;
+        let res = level(1000.0, &[modulate(3, params::MOD_X_POLY, -0.5), modulate(3, params::MOD_Y_POLY, 0.9)]).0;
         assert!((res - half).abs() > 1e-3, "{half} {res}");
     }
 
@@ -1061,36 +847,12 @@ mod tests {
         let (mut l, mut r) = (vec![0.0; 4800], vec![0.0; 4800]);
         p.engine.render(&mut l, &mut r, &blk);
         assert!(rms(&r) > 0.3);
-        p.event(
-            NoteEvent::PolyPan {
-                timing: 0,
-                voice_id: Some(3),
-                channel: 0,
-                note: 60,
-                pan: 1.0,
-            },
-            &mut blk,
-            130.0,
-        );
+        p.event(NoteEvent::PolyPan { timing: 0, voice_id: Some(3), channel: 0, note: 60, pan: 1.0 }, &mut blk, 130.0);
         let (mut l, mut r) = (vec![0.0; 4800], vec![0.0; 4800]);
         p.engine.render(&mut l, &mut r, &blk);
         // The pan ramps over one control span.
-        assert!(
-            rms(&l[64..]) < 1e-6 && rms(&r[64..]) > 0.45,
-            "{} {}",
-            rms(&l[64..]),
-            rms(&r[64..])
-        );
-        p.event(
-            NoteEvent::PolyModulation {
-                timing: 0,
-                voice_id: 3,
-                poly_modulation_id: params::MOD_X_POLY,
-                normalized_offset: -0.9,
-            },
-            &mut blk,
-            130.0,
-        );
+        assert!(rms(&l[64..]) < 1e-6 && rms(&r[64..]) > 0.45, "{} {}", rms(&l[64..]), rms(&r[64..]));
+        p.event(NoteEvent::PolyModulation { timing: 0, voice_id: 3, poly_modulation_id: params::MOD_X_POLY, normalized_offset: -0.9 }, &mut blk, 130.0);
         let (mut l, mut r) = (vec![0.0; 4800], vec![0.0; 4800]);
         p.engine.render(&mut l, &mut r, &blk);
         assert!(rms(&r[2400..]) < 0.05, "{}", rms(&r[2400..]));
@@ -1136,27 +898,9 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("a.wav");
         std::fs::write(&p, wav(1, 100_001, Some((5, 90_000)))).unwrap();
-        assert_eq!(
-            source_info(&p),
-            (
-                16,
-                fx::Source {
-                    int16_mono: true,
-                    file_loop: Some((5, 90_000))
-                }
-            )
-        );
+        assert_eq!(source_info(&p), (16, fx::Source { int16_mono: true, file_loop: Some((5, 90_000)) }));
         std::fs::write(&p, wav(2, 1000, None)).unwrap();
-        assert_eq!(
-            source_info(&p),
-            (
-                16,
-                fx::Source {
-                    int16_mono: false,
-                    file_loop: None
-                }
-            )
-        );
+        assert_eq!(source_info(&p), (16, fx::Source { int16_mono: false, file_loop: None }));
         assert_eq!(source_bits(&p), 16);
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -1186,9 +930,7 @@ mod tests {
                 x ^= x >> 17;
                 x ^= x << 5;
                 let tau = 2.0 * std::f64::consts::PI * hz * t;
-                let v = 0.4 * tau.sin()
-                    + 0.2 * (3.01 * tau).sin()
-                    + 0.1 * (f64::from(x >> 16) / 65536.0 - 0.5);
+                let v = 0.4 * tau.sin() + 0.2 * (3.01 * tau).sin() + 0.1 * (f64::from(x >> 16) / 65536.0 - 0.5);
                 let at = 44 + (i * 2 + c) * 2;
                 w[at..at + 2].copy_from_slice(&((v * 32767.0) as i16).to_le_bytes());
             }
@@ -1198,21 +940,14 @@ mod tests {
 
     /// Sets a parameter as the editor does (normalised value).
     fn set(p: &impl Param, norm: f32) {
-        params::live_set(
-            params::param_addr(p.as_ptr()),
-            norm,
-            p.unmodulated_normalized_value(),
-        );
+        params::live_set(params::param_addr(p.as_ptr()), norm, p.unmodulated_normalized_value());
     }
 
     /// Waits for the reader to fill every ring as far as it can, as a reader that keeps up has between two blocks.
     fn settle(d: &stream::Disk) {
         let t = Instant::now();
         while !d.settled() {
-            assert!(
-                t.elapsed() < Duration::from_secs(30),
-                "the reader fills the rings"
-            );
+            assert!(t.elapsed() < Duration::from_secs(30), "the reader fills the rings");
             d.wake();
             std::thread::sleep(Duration::from_millis(1));
         }
@@ -1255,24 +990,14 @@ mod tests {
             shared.set_rate(48000);
             shared.load(path.to_str().unwrap(), &params).unwrap();
             let mut engine = dsp::Engine::new(48000.0);
-            take(
-                &mut engine,
-                shared.processed.lock().unwrap().as_ref().unwrap(),
-            );
-            Rig {
-                params,
-                shared,
-                engine,
-            }
+            take(&mut engine, shared.processed.lock().unwrap().as_ref().unwrap());
+            Rig { params, shared, engine }
         }
 
         /// Settings changed: the processed sample is made again and played from now on.
         fn update(&mut self) {
             self.shared.precompute(&self.params);
-            take(
-                &mut self.engine,
-                self.shared.processed.lock().unwrap().as_ref().unwrap(),
-            );
+            take(&mut self.engine, self.shared.processed.lock().unwrap().as_ref().unwrap());
         }
 
         /// Plays `events` (at the start of the block they name) for `blocks` blocks. Live (the voices don't wait), the
@@ -1301,14 +1026,9 @@ mod tests {
     /// Both renders are the same to the bit, and not silence.
     fn same(what: &str, a: &(Vec<f32>, Vec<f32>), b: &(Vec<f32>, Vec<f32>)) {
         assert_eq!(a.0.len(), b.0.len());
-        let differs =
-            |i: usize| a.0[i].to_bits() != b.0[i].to_bits() || a.1[i].to_bits() != b.1[i].to_bits();
+        let differs = |i: usize| a.0[i].to_bits() != b.0[i].to_bits() || a.1[i].to_bits() != b.1[i].to_bits();
         if let Some(i) = (0..a.0.len()).find(|&i| differs(i)) {
-            panic!(
-                "{what}: frame {i} differs: {:?} / {:?}",
-                (a.0[i], a.1[i]),
-                (b.0[i], b.1[i])
-            );
+            panic!("{what}: frame {i} differs: {:?} / {:?}", (a.0[i], a.1[i]), (b.0[i], b.1[i]));
         }
         assert!(rms(&a.0) > 0.05 && rms(&a.1) > 0.05, "{what}: plays");
     }
@@ -1320,14 +1040,7 @@ mod tests {
         let dir = test_dir("live");
         let p = dir.join("a.wav");
         std::fs::write(&p, music(300_000, Some((150_000, 250_000)))).unwrap();
-        let notes = [
-            (0, Ev::On(60, 1)),
-            (3, Ev::On(72, 2)),
-            (10, Ev::On(84, 3)),
-            (12, Ev::On(91, 4)),
-            (40, Ev::Off(72)),
-            (60, Ev::On(48, 5)),
-        ];
+        let notes = [(0, Ev::On(60, 1)), (3, Ev::On(72, 2)), (10, Ev::On(84, 3)), (12, Ev::On(91, 4)), (40, Ev::Off(72)), (60, Ev::On(48, 5))];
         for (start, loop_on) in [(0.0, false), (0.3, true), (0.0, true)] {
             let setup = |p: &SamplerParams| {
                 set(&p.start_offset, start);
@@ -1337,24 +1050,13 @@ mod tests {
             let mut disk = Rig::new(&p, true, setup);
             assert!(ram.shared.on_disk().is_none());
             let played = disk.shared.on_disk().expect("plays from disk");
-            assert!(
-                disk.shared.raw.lock().unwrap().is_none(),
-                "the decoded file is let go"
-            );
-            let points = [
-                0,
-                (start * 300_000.0) as usize,
-                if loop_on { 150_000 } else { 0 },
-            ];
+            assert!(disk.shared.raw.lock().unwrap().is_none(), "the decoded file is let go");
+            let points = [0, (start * 300_000.0) as usize, if loop_on { 150_000 } else { 0 }];
             assert_eq!(played.points(), stream::points(&points, 300_000).as_slice());
             let what = format!("start {start}, loop {loop_on}");
             same(&what, &ram.play(&notes, 250), &disk.play(&notes, 250));
             // The voices read from their rings, beyond the frames held.
-            assert!(
-                played.disk().frames_read() > 300_000,
-                "{what}: {}",
-                played.disk().frames_read()
-            );
+            assert!(played.disk().frames_read() > 300_000, "{what}: {}", played.disk().frames_read());
         }
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -1369,17 +1071,11 @@ mod tests {
         let notes = [(0, Ev::On(60, 1)), (5, Ev::On(67, 2))];
         let reverse = |p: &SamplerParams| set(&p.fx_reverse, 1.0);
         let stretch = |p: &SamplerParams| set(&p.ts_mode, p.ts_mode.preview_normalized(1));
-        for (what, setup) in [
-            ("reverse", &reverse as &dyn Fn(&SamplerParams)),
-            ("stretch", &stretch),
-        ] {
+        for (what, setup) in [("reverse", &reverse as &dyn Fn(&SamplerParams)), ("stretch", &stretch)] {
             let mut ram = Rig::new(&p, false, setup);
             let mut disk = Rig::new(&p, true, setup);
             assert!(disk.shared.on_disk().is_none(), "{what}");
-            assert!(
-                disk.engine.disk().is_none() && disk.engine.sample.is_some(),
-                "{what}"
-            );
+            assert!(disk.engine.disk().is_none() && disk.engine.sample.is_some(), "{what}");
             same(what, &ram.play(&notes, 100), &disk.play(&notes, 100));
         }
         std::fs::remove_dir_all(&dir).ok();
@@ -1392,13 +1088,7 @@ mod tests {
         let dir = test_dir("offline");
         let p = dir.join("a.wav");
         std::fs::write(&p, music(200_000, Some((20_000, 180_000)))).unwrap();
-        let notes = [
-            (0, Ev::On(60, 1)),
-            (2, Ev::On(79, 2)),
-            (5, Ev::On(64, 3)),
-            (5, Ev::Later(3, 0.55)),
-            (30, Ev::Off(79)),
-        ];
+        let notes = [(0, Ev::On(60, 1)), (2, Ev::On(79, 2)), (5, Ev::On(64, 3)), (5, Ev::Later(3, 0.55)), (30, Ev::Off(79))];
         let setup = |p: &SamplerParams| set(&p.start_offset, 0.1);
         let mut ram = Rig::new(&p, false, setup);
         let mut disk = Rig::new(&p, true, setup);
@@ -1418,13 +1108,7 @@ mod tests {
         let dir = test_dir("learn");
         let p = dir.join("a.wav");
         std::fs::write(&p, music(300_000, None)).unwrap();
-        let notes = [
-            (0, Ev::On(60, 1)),
-            (0, Ev::Later(1, 0.6)),
-            (2, Ev::On(67, 2)),
-            (2, Ev::Later(2, 0.25)),
-            (3, Ev::On(62, 3)),
-        ];
+        let notes = [(0, Ev::On(60, 1)), (0, Ev::Later(1, 0.6)), (2, Ev::On(67, 2)), (2, Ev::Later(2, 0.25)), (3, Ev::On(62, 3))];
         let want = Rig::new(&p, false, |_| {}).play(&notes, 100);
         let mut r = Rig::new(&p, true, |_| {});
         r.play(&notes, 100);
@@ -1438,19 +1122,13 @@ mod tests {
         assert_eq!(played.named(), &[0]);
         assert!(played.missed().is_empty());
         r.engine = dsp::Engine::new(48000.0);
-        take(
-            &mut r.engine,
-            r.shared.processed.lock().unwrap().as_ref().unwrap(),
-        );
+        take(&mut r.engine, r.shared.processed.lock().unwrap().as_ref().unwrap());
         same("held clip starts", &want, &r.play(&notes, 100));
         assert!(played.missed().is_empty());
         // Settings that change the named points keep the learned ones.
         set(&r.params.start_offset, 0.5);
         r.update();
-        assert_eq!(
-            r.shared.on_disk().unwrap().points(),
-            &[0, 75_000, 150_000, 180_000]
-        );
+        assert_eq!(r.shared.on_disk().unwrap().points(), &[0, 75_000, 150_000, 180_000]);
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1466,11 +1144,7 @@ mod tests {
         set(&r.params.start_offset, 0.5);
         let blk = block(&r.params, 130.0, 0.0);
         r.engine.note_on_id(60, 0.8, Some(1), &blk);
-        assert_eq!(
-            played.disk().busy(),
-            1,
-            "the voice's ring fills before it plays"
-        );
+        assert_eq!(played.disk().busy(), 1, "the voice's ring fills before it plays");
         r.engine.note_on_id(60, 0.8, Some(2), &blk);
         assert_eq!(played.disk().busy(), 2);
         assert!(played.missed().is_empty() && !played.news());
@@ -1489,38 +1163,17 @@ mod tests {
         let mut r = Rig::new(&p, true, |p| set(&p.start_offset, 0.5));
         let played = r.shared.on_disk().expect("plays from disk");
         assert!(r.shared.raw.lock().unwrap().is_none());
-        assert!(
-            r.shared
-                .processed
-                .lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .sample
-                .is_none()
-        );
+        assert!(r.shared.processed.lock().unwrap().as_ref().unwrap().sample.is_none());
         assert_eq!(played.points(), &[0, 600_000, 1_000_000]);
         let held = played.held_frames();
         assert!(held <= 3 * (stream::HEAD + stream::BEFORE), "{held}");
-        let notes = [
-            (0, Ev::On(84, 1)),
-            (0, Ev::On(86, 2)),
-            (1, Ev::On(88, 3)),
-            (1, Ev::On(90, 4)),
-        ];
+        let notes = [(0, Ev::On(84, 1)), (0, Ev::On(86, 2)), (1, Ev::On(88, 3)), (1, Ev::On(90, 4))];
         r.play(&notes, 200);
         // Each voice read hundreds of thousands of frames through one ring.
-        assert!(
-            played.disk().frames_read() > 1_000_000,
-            "{}",
-            played.disk().frames_read()
-        );
+        assert!(played.disk().frames_read() > 1_000_000, "{}", played.disk().frames_read());
         assert_eq!(played.disk().rings(), 4);
         let bytes = (held + played.disk().rings() * stream::RING) * 2 * std::mem::size_of::<f32>();
-        assert!(
-            bytes * 4 < frames as usize * 2 * std::mem::size_of::<f32>(),
-            "{bytes}"
-        );
+        assert!(bytes * 4 < frames as usize * 2 * std::mem::size_of::<f32>(), "{bytes}");
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1549,45 +1202,23 @@ mod tests {
         set(&r.params.keep_disk, 0.0);
         r.update();
         assert!(r.shared.on_disk().is_none() && r.engine.sample.is_some());
-        eventually("the reader stops when Keep on disk goes off", || {
-            !alive.load(Ordering::Acquire)
-        });
+        eventually("the reader stops when Keep on disk goes off", || !alive.load(Ordering::Acquire));
         // On again: from disk again, until the sampler goes.
         set(&r.params.keep_disk, 1.0);
         r.update();
-        let alive = r
-            .shared
-            .on_disk()
-            .expect("plays from disk again")
-            .disk()
-            .reader_alive();
+        let alive = r.shared.on_disk().expect("plays from disk again").disk().reader_alive();
         assert!(r.shared.raw.lock().unwrap().is_none());
         r.play(&[(0, Ev::On(60, 1))], 2);
         drop(r);
-        eventually("the reader stops with the sampler", || {
-            !alive.load(Ordering::Acquire)
-        });
+        eventually("the reader stops with the sampler", || !alive.load(Ordering::Acquire));
         // The plugin itself.
         let mut plugin = LemonSampler::default();
         set(&plugin.params.keep_disk, 1.0);
-        plugin
-            .shared
-            .load(p.to_str().unwrap(), &plugin.params)
-            .unwrap();
-        take(
-            &mut plugin.engine,
-            plugin.shared.processed.lock().unwrap().as_ref().unwrap(),
-        );
-        let alive = plugin
-            .engine
-            .disk()
-            .expect("plays from disk")
-            .disk()
-            .reader_alive();
+        plugin.shared.load(p.to_str().unwrap(), &plugin.params).unwrap();
+        take(&mut plugin.engine, plugin.shared.processed.lock().unwrap().as_ref().unwrap());
+        let alive = plugin.engine.disk().expect("plays from disk").disk().reader_alive();
         drop(plugin);
-        eventually("the reader stops with the plugin", || {
-            !alive.load(Ordering::Acquire)
-        });
+        eventually("the reader stops with the plugin", || !alive.load(Ordering::Acquire));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

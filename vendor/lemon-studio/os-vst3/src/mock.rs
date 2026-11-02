@@ -16,25 +16,18 @@ use std::sync::{Arc, Mutex};
 
 use vst3_sys as vst3_com;
 use vst3_sys::base::{
-    kInvalidArgument, kNoInterface, kNotImplemented, kResultFalse, kResultOk, tresult, FIDString,
-    IBStream, IPluginBase, IPluginFactory, IPluginFactory2, IUnknown, PClassInfo, PClassInfo2,
-    PFactoryInfo, TBool,
+    kInvalidArgument, kNoInterface, kNotImplemented, kResultFalse, kResultOk, tresult, FIDString, IBStream, IPluginBase, IPluginFactory,
+    IPluginFactory2, IUnknown, PClassInfo, PClassInfo2, PFactoryInfo, TBool,
 };
 use vst3_sys::utils::SharedVstPtr;
 use vst3_sys::vst::{
-    BusDirection, BusInfo, IAttributeList, IAudioProcessor, IComponent, IComponentHandler,
-    IConnectionPoint, IEditController, IHostApplication, IMessage, IParamValueQueue,
-    IParameterChanges, IoMode, MediaType, ParameterInfo, ProcessData, ProcessSetup, RoutingInfo,
-    SpeakerArrangement, TChar,
+    BusDirection, BusInfo, IAttributeList, IAudioProcessor, IComponent, IComponentHandler, IConnectionPoint, IEditController, IHostApplication,
+    IMessage, IParamValueQueue, IParameterChanges, IoMode, MediaType, ParameterInfo, ProcessData, ProcessSetup, RoutingInfo, SpeakerArrangement, TChar,
 };
 use vst3_sys::{c_void, ComInterface, VstPtr, IID, VST3};
 
-pub const COMPONENT_CID: IID = IID {
-    data: *b"OSTestGainComp\0\x01",
-};
-pub const CONTROLLER_CID: IID = IID {
-    data: *b"OSTestGainCtrl\0\x02",
-};
+pub const COMPONENT_CID: IID = IID { data: *b"OSTestGainComp\0\x01" };
+pub const CONTROLLER_CID: IID = IID { data: *b"OSTestGainCtrl\0\x02" };
 
 /// Parameters: gain (-24..+24 dB), mode (three choices), peak (read only, reported by the processor), and an extra
 /// one that appears after a "titles changed" restart.
@@ -67,13 +60,7 @@ impl Probe {
     }
 
     pub fn logged(&self, prefix: &str) -> Vec<String> {
-        self.log
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|l| l.starts_with(prefix))
-            .cloned()
-            .collect()
+        self.log.lock().unwrap().iter().filter(|l| l.starts_with(prefix)).cloned().collect()
     }
 
     /// The controller (valid while the instance lives).
@@ -88,8 +75,7 @@ impl Probe {
 /// Counts a plug-in object as alive until it is freed.
 pub struct Live(Arc<Probe>);
 
-impl Live {
-    // This code is a part of L e m o n S t u d i o.
+impl Live { // This code is a part of L e m o n S t u d i o.
     fn new(p: &Arc<Probe>) -> Live {
         p.live.fetch_add(1, Ordering::AcqRel);
         Live(p.clone())
@@ -109,10 +95,7 @@ fn copy_c(dst: &mut [std::ffi::c_char], s: &str) {
 }
 
 fn copy_w(dst: &mut [TChar], s: &str) {
-    for (d, c) in dst
-        .iter_mut()
-        .zip(s.encode_utf16().chain(std::iter::once(0)))
-    {
+    for (d, c) in dst.iter_mut().zip(s.encode_utf16().chain(std::iter::once(0))) {
         *d = c as TChar;
     }
 }
@@ -121,14 +104,11 @@ unsafe fn read_f64(s: &SharedVstPtr<dyn IBStream>) -> Option<f64> {
     let s = s.upgrade()?;
     let mut b = [0u8; 8];
     let mut n = 0;
-    (unsafe { s.read(b.as_mut_ptr() as *mut c_void, 8, &mut n) } == kResultOk && n == 8)
-        .then(|| f64::from_le_bytes(b))
+    (unsafe { s.read(b.as_mut_ptr() as *mut c_void, 8, &mut n) } == kResultOk && n == 8).then(|| f64::from_le_bytes(b))
 }
 
 unsafe fn write_bytes(s: &SharedVstPtr<dyn IBStream>, b: &[u8]) -> tresult {
-    let Some(s) = s.upgrade() else {
-        return kInvalidArgument;
-    };
+    let Some(s) = s.upgrade() else { return kInvalidArgument };
     let mut n = 0;
     unsafe { s.write(b.as_ptr() as *const c_void, b.len() as i32, &mut n) }
 }
@@ -139,11 +119,7 @@ unsafe fn hand_out<T: IUnknown>(obj: Box<T>, iid: *const IID, out: *mut *mut c_v
     unsafe {
         let r = (*raw).query_interface(iid, out);
         (*raw).release();
-        if r == kResultOk {
-            kResultOk
-        } else {
-            kNoInterface
-        }
+        if r == kResultOk { kResultOk } else { kNoInterface }
     }
 }
 
@@ -176,11 +152,7 @@ impl IPluginFactory for Factory {
         let info = unsafe { &mut *info };
         let (cid, cat, name) = match index {
             0 => (COMPONENT_CID, "Audio Module Class", "Test Gain"),
-            1 => (
-                CONTROLLER_CID,
-                "Component Controller Class",
-                "Test Gain Controller",
-            ),
+            1 => (CONTROLLER_CID, "Component Controller Class", "Test Gain Controller"),
             _ => return kInvalidArgument,
         };
         info.cid = cid;
@@ -190,12 +162,7 @@ impl IPluginFactory for Factory {
         kResultOk
     }
 
-    unsafe fn create_instance(
-        &self,
-        cid: *const IID,
-        iid: *const IID,
-        obj: *mut *mut c_void,
-    ) -> tresult {
+    unsafe fn create_instance(&self, cid: *const IID, iid: *const IID, obj: *mut *mut c_void) -> tresult {
         unsafe {
             *obj = std::ptr::null_mut();
             if *cid == COMPONENT_CID {
@@ -203,9 +170,7 @@ impl IPluginFactory for Factory {
             }
             if *cid == CONTROLLER_CID {
                 let c = Controller::new(&self.probe);
-                self.probe
-                    .controller
-                    .store(&*c as *const Controller as usize, Ordering::Release);
+                self.probe.controller.store(&*c as *const Controller as usize, Ordering::Release);
                 return hand_out(c, iid, obj);
             }
         }
@@ -217,18 +182,8 @@ impl IPluginFactory2 for Factory {
     unsafe fn get_class_info2(&self, index: i32, info: *mut PClassInfo2) -> tresult {
         let info = unsafe { &mut *info };
         let (cid, cat, name, sub) = match index {
-            0 => (
-                COMPONENT_CID,
-                "Audio Module Class",
-                "Test Gain",
-                "Fx|Dynamics",
-            ),
-            1 => (
-                CONTROLLER_CID,
-                "Component Controller Class",
-                "Test Gain Controller",
-                "",
-            ),
+            0 => (COMPONENT_CID, "Audio Module Class", "Test Gain", "Fx|Dynamics"),
+            1 => (CONTROLLER_CID, "Component Controller Class", "Test Gain Controller", ""),
             _ => return kInvalidArgument,
         };
         info.cid = cid;
@@ -255,34 +210,18 @@ pub struct Component {
 
 impl Component {
     fn new(probe: &Arc<Probe>) -> Box<Component> {
-        Component::allocate(
-            probe.clone(),
-            RefCell::new(None),
-            RefCell::new(None),
-            Cell::new(0.5),
-            Live::new(probe),
-        )
+        Component::allocate(probe.clone(), RefCell::new(None), RefCell::new(None), Cell::new(0.5), Live::new(probe))
     }
 
     /// Tells the controller something through a message the host creates.
     unsafe fn send(&self, id: &CStr, latency: i64) {
-        let (Some(host), Some(peer)) = (self.host.borrow().clone(), self.peer.borrow().clone())
-        else {
-            return;
-        };
+        let (Some(host), Some(peer)) = (self.host.borrow().clone(), self.peer.borrow().clone()) else { return };
         let mut obj: *mut c_void = std::ptr::null_mut();
         unsafe {
-            if host.create_instance(
-                &<dyn IMessage as ComInterface>::IID,
-                &<dyn IMessage as ComInterface>::IID,
-                &mut obj,
-            ) != kResultOk
-            {
+            if host.create_instance(&<dyn IMessage as ComInterface>::IID, &<dyn IMessage as ComInterface>::IID, &mut obj) != kResultOk {
                 return;
             }
-            let Some(msg) = VstPtr::<dyn IMessage>::owned(obj as *mut *mut _) else {
-                return;
-            };
+            let Some(msg) = VstPtr::<dyn IMessage>::owned(obj as *mut *mut _) else { return };
             msg.set_message_id(id.as_ptr());
             if let Some(a) = msg.get_attributes().upgrade() {
                 a.set_int(c"latency".as_ptr(), latency);
@@ -294,10 +233,8 @@ impl Component {
 
 impl IPluginBase for Component {
     unsafe fn initialize(&self, context: *mut c_void) -> tresult {
-        let host = unsafe { VstPtr::<dyn IUnknown>::shared(context as *mut *mut _) }
-            .and_then(|u| u.cast::<dyn IHostApplication>());
-        self.probe
-            .log(format!("comp.initialize host={}", host.is_some()));
+        let host = unsafe { VstPtr::<dyn IUnknown>::shared(context as *mut *mut _) }.and_then(|u| u.cast::<dyn IHostApplication>());
+        self.probe.log(format!("comp.initialize host={}", host.is_some()));
         *self.host.borrow_mut() = host;
         kResultOk
     }
@@ -324,13 +261,7 @@ impl IComponent for Component {
         i32::from(type_ == 0)
     }
 
-    unsafe fn get_bus_info(
-        &self,
-        type_: MediaType,
-        dir: BusDirection,
-        index: i32,
-        info: *mut BusInfo,
-    ) -> tresult {
+    unsafe fn get_bus_info(&self, type_: MediaType, dir: BusDirection, index: i32, info: *mut BusInfo) -> tresult {
         if type_ != 0 || index != 0 {
             return kInvalidArgument;
         }
@@ -344,35 +275,19 @@ impl IComponent for Component {
         kResultOk
     }
 
-    unsafe fn get_routing_info(
-        &self,
-        _in_info: *mut RoutingInfo,
-        _out_info: *mut RoutingInfo,
-    ) -> tresult {
+    unsafe fn get_routing_info(&self, _in_info: *mut RoutingInfo, _out_info: *mut RoutingInfo) -> tresult {
         kNotImplemented
     }
 
-    unsafe fn activate_bus(
-        &self,
-        type_: MediaType,
-        dir: BusDirection,
-        index: i32,
-        state: TBool,
-    ) -> tresult {
-        self.probe
-            .log(format!("comp.activate_bus {type_} {dir} {index} {state}"));
+    unsafe fn activate_bus(&self, type_: MediaType, dir: BusDirection, index: i32, state: TBool) -> tresult {
+        self.probe.log(format!("comp.activate_bus {type_} {dir} {index} {state}"));
         kResultOk
     }
 
     unsafe fn set_active(&self, state: TBool) -> tresult {
         self.probe.log(format!("comp.set_active {state}"));
         if state != 0 {
-            unsafe {
-                self.send(
-                    c"activated",
-                    i64::from(self.probe.latency.load(Ordering::Acquire)),
-                )
-            };
+            unsafe { self.send(c"activated", i64::from(self.probe.latency.load(Ordering::Acquire))) };
         }
         kResultOk
     }
@@ -394,28 +309,13 @@ impl IComponent for Component {
 }
 
 impl IAudioProcessor for Component {
-    unsafe fn set_bus_arrangements(
-        &self,
-        inputs: *mut SpeakerArrangement,
-        num_ins: i32,
-        outputs: *mut SpeakerArrangement,
-        num_outs: i32,
-    ) -> tresult {
+    unsafe fn set_bus_arrangements(&self, inputs: *mut SpeakerArrangement, num_ins: i32, outputs: *mut SpeakerArrangement, num_outs: i32) -> tresult {
         let ok = num_ins == 1 && num_outs == 1 && unsafe { *inputs == 3 && *outputs == 3 };
         self.probe.log(format!("comp.set_bus_arrangements {ok}"));
-        if ok {
-            kResultOk
-        } else {
-            kResultFalse
-        }
+        if ok { kResultOk } else { kResultFalse }
     }
 
-    unsafe fn get_bus_arrangement(
-        &self,
-        _dir: BusDirection,
-        index: i32,
-        arr: *mut SpeakerArrangement,
-    ) -> tresult {
+    unsafe fn get_bus_arrangement(&self, _dir: BusDirection, index: i32, arr: *mut SpeakerArrangement) -> tresult {
         if index != 0 {
             return kInvalidArgument;
         }
@@ -424,11 +324,7 @@ impl IAudioProcessor for Component {
     }
 
     unsafe fn can_process_sample_size(&self, symbolic_sample_size: i32) -> tresult {
-        if symbolic_sample_size == 0 {
-            kResultOk
-        } else {
-            kResultFalse
-        }
+        if symbolic_sample_size == 0 { kResultOk } else { kResultFalse }
     }
 
     unsafe fn get_latency_samples(&self) -> u32 {
@@ -437,10 +333,7 @@ impl IAudioProcessor for Component {
 
     unsafe fn setup_processing(&self, setup: *const ProcessSetup) -> tresult {
         let s = unsafe { &*setup };
-        self.probe.log(format!(
-            "comp.setup_processing {} {} {}",
-            s.sample_rate, s.max_samples_per_block, s.symbolic_sample_size
-        ));
+        self.probe.log(format!("comp.setup_processing {} {} {}", s.sample_rate, s.max_samples_per_block, s.symbolic_sample_size));
         kResultOk
     }
 
@@ -453,23 +346,14 @@ impl IAudioProcessor for Component {
         let d = unsafe { &mut *data };
         if !d.context.is_null() {
             let c = unsafe { &*d.context };
-            let e = (
-                c.state,
-                c.tempo,
-                c.project_time_music,
-                c.project_time_samples,
-                c.bar_position_music,
-                c.cycle_end_music,
-            );
+            let e = (c.state, c.tempo, c.project_time_music, c.project_time_samples, c.bar_position_music, c.cycle_end_music);
             self.probe.contexts.lock().unwrap().push(e);
         }
         let mut points: Vec<(i32, f64)> = Vec::new();
         unsafe {
             if let Some(pc) = d.input_param_changes.upgrade() {
                 for i in 0..pc.get_parameter_count() {
-                    let Some(q) = pc.get_parameter_data(i).upgrade() else {
-                        continue;
-                    };
+                    let Some(q) = pc.get_parameter_data(i).upgrade() else { continue };
                     let id = q.get_parameter_id();
                     for k in 0..q.get_point_count() {
                         let (mut o, mut v) = (0, 0.0);
@@ -480,11 +364,7 @@ impl IAudioProcessor for Component {
                 }
             }
         }
-        self.probe
-            .gain_points
-            .lock()
-            .unwrap()
-            .extend_from_slice(&points);
+        self.probe.gain_points.lock().unwrap().extend_from_slice(&points);
         let n = d.num_samples.max(0) as usize;
         let mut peak = 0f32;
         let mut g = self.gain.get();
@@ -493,8 +373,7 @@ impl IAudioProcessor for Component {
                 let (ib, ob) = (&*d.inputs, &*d.outputs);
                 for c in 0..2 {
                     let i = std::slice::from_raw_parts(*(ib.buffers as *mut *mut f32).add(c), n);
-                    let o =
-                        std::slice::from_raw_parts_mut(*(ob.buffers as *mut *mut f32).add(c), n);
+                    let o = std::slice::from_raw_parts_mut(*(ob.buffers as *mut *mut f32).add(c), n);
                     let (mut gc, mut p) = (self.gain.get(), 0);
                     for s in 0..n {
                         while p < points.len() && points[p].0 as usize <= s {
@@ -562,13 +441,7 @@ pub struct Controller {
 
 impl Controller {
     fn new(probe: &Arc<Probe>) -> Box<Controller> {
-        Controller::allocate(
-            probe.clone(),
-            RefCell::new(None),
-            RefCell::new(None),
-            RefCell::new([0.5, 0.0, 0.0, 0.0]),
-            Live::new(probe),
-        )
+        Controller::allocate(probe.clone(), RefCell::new(None), RefCell::new(None), RefCell::new([0.5, 0.0, 0.0, 0.0]), Live::new(probe))
     }
 
     fn slot(id: u32) -> Option<usize> {
@@ -600,8 +473,7 @@ impl Controller {
 
 impl IPluginBase for Controller {
     unsafe fn initialize(&self, context: *mut c_void) -> tresult {
-        self.probe
-            .log(format!("ctrl.initialize host={}", !context.is_null()));
+        self.probe.log(format!("ctrl.initialize host={}", !context.is_null()));
         kResultOk
     }
 
@@ -626,9 +498,7 @@ impl IEditController for Controller {
 
     unsafe fn set_state(&self, state: SharedVstPtr<dyn IBStream>) -> tresult {
         // "MODE" + the mode value.
-        let Some(s) = state.upgrade() else {
-            return kInvalidArgument;
-        };
+        let Some(s) = state.upgrade() else { return kInvalidArgument };
         let mut b = [0u8; 12];
         let mut n = 0;
         unsafe { s.read(b.as_mut_ptr() as *mut c_void, 12, &mut n) };
@@ -648,11 +518,7 @@ impl IEditController for Controller {
     }
 
     unsafe fn get_parameter_count(&self) -> i32 {
-        if self.probe.extra.load(Ordering::Acquire) {
-            4
-        } else {
-            3
-        }
+        if self.probe.extra.load(Ordering::Acquire) { 4 } else { 3 }
     }
 
     unsafe fn get_parameter_info(&self, index: i32, info: *mut ParameterInfo) -> tresult {
@@ -687,12 +553,7 @@ impl IEditController for Controller {
         kResultOk
     }
 
-    unsafe fn get_param_value_by_string(
-        &self,
-        _id: u32,
-        _string: *const TChar,
-        _value: *mut f64,
-    ) -> tresult {
+    unsafe fn get_param_value_by_string(&self, _id: u32, _string: *const TChar, _value: *mut f64) -> tresult {
         kNotImplemented
     }
 
@@ -726,12 +587,8 @@ impl IEditController for Controller {
         }
     }
 
-    unsafe fn set_component_handler(
-        &self,
-        handler: SharedVstPtr<dyn IComponentHandler>,
-    ) -> tresult {
-        self.probe
-            .log(format!("ctrl.set_component_handler {}", !handler.is_null()));
+    unsafe fn set_component_handler(&self, handler: SharedVstPtr<dyn IComponentHandler>) -> tresult {
+        self.probe.log(format!("ctrl.set_component_handler {}", !handler.is_null()));
         *self.handler.borrow_mut() = handler.upgrade();
         kResultOk
     }
@@ -755,13 +612,9 @@ impl IConnectionPoint for Controller {
     }
 
     unsafe fn notify(&self, message: SharedVstPtr<dyn IMessage>) -> tresult {
-        let Some(m) = message.upgrade() else {
-            return kInvalidArgument;
-        };
+        let Some(m) = message.upgrade() else { return kInvalidArgument };
         unsafe {
-            let id = CStr::from_ptr(m.get_message_id())
-                .to_string_lossy()
-                .into_owned();
+            let id = CStr::from_ptr(m.get_message_id()).to_string_lossy().into_owned();
             let mut latency = -1;
             if let Some(a) = m.get_attributes().upgrade() {
                 a.get_int(c"latency".as_ptr(), &mut latency);

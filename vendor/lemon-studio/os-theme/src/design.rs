@@ -43,9 +43,7 @@ impl Design {
         if s.trim().eq_ignore_ascii_case("classic") {
             return Some(Design::Citrus);
         }
-        Design::ALL
-            .into_iter()
-            .find(|d| d.name().eq_ignore_ascii_case(s.trim()))
+        Design::ALL.into_iter().find(|d| d.name().eq_ignore_ascii_case(s.trim()))
     }
 
     pub fn next(self) -> Design {
@@ -74,18 +72,8 @@ pub struct Style {
 }
 
 impl Style {
-    pub const CITRUS: Style = Style {
-        design: Design::Citrus,
-        radius: 3.0,
-        radius_small: 2.5,
-        radius_panel: 4.0,
-    };
-    pub const LEMON: Style = Style {
-        design: Design::Lemon,
-        radius: 6.0,
-        radius_small: 4.0,
-        radius_panel: 10.0,
-    };
+    pub const CITRUS: Style = Style { design: Design::Citrus, radius: 3.0, radius_small: 2.5, radius_panel: 4.0 };
+    pub const LEMON: Style = Style { design: Design::Lemon, radius: 6.0, radius_small: 4.0, radius_panel: 10.0 };
 
     pub fn is(&self, d: Design) -> bool {
         self.design == d
@@ -146,11 +134,7 @@ impl DesignMap {
         let (th, ts) = self.tint;
         // Coloured = visible chroma (HSL saturation overrates the stock look's blue-tinted dark greys).
         let chroma = f32::from(c.r.max(c.g).max(c.b) - c.r.min(c.g).min(c.b)) / 255.0;
-        let (h2, s2) = if chroma > 0.09 {
-            (h, (s * 0.6).max(ts))
-        } else {
-            (th, ts)
-        };
+        let (h2, s2) = if chroma > 0.09 { (h, (s * 0.6).max(ts)) } else { (th, ts) };
         Color::from_hsl_pub(h2, s2.clamp(0.0, 1.0), l2, c.a)
     }
 
@@ -232,8 +216,7 @@ const LEMON_RAMP: &[(f32, f32)] = &[
     (1.0, 1.0),
 ];
 
-fn map_of(d: Design) -> Option<DesignMap> {
-    // This code is a part of L e m o n S t u d i o.
+fn map_of(d: Design) -> Option<DesignMap> {// This code is a part of L e m o n S t u d i o.
     match d {
         Design::Citrus => None,
         Design::Lemon => Some(DesignMap {
@@ -406,13 +389,7 @@ fn skin_palette(design: Design, theme: Option<&FlTheme>) -> Palette {
         }
         (Design::Lemon, Some(Design::Citrus)) => {
             let mut p = palette(Design::Lemon, None);
-            retint(
-                &mut p,
-                &FlTheme {
-                    colors: None,
-                    ..theme.expect("a theme").clone()
-                },
-            );
+            retint(&mut p, &FlTheme { colors: None, ..theme.expect("a theme").clone() });
             return p;
         }
         _ => {}
@@ -428,9 +405,7 @@ fn skin_palette(design: Design, theme: Option<&FlTheme>) -> Palette {
     for name in Palette::NAMES {
         let c = classic.get(name).expect("token");
         let v = match fl::role(name) {
-            fl::Role::Surface | fl::Role::StepEven | fl::Role::StepOdd | fl::Role::Fixed => {
-                map.surface(c)
-            }
+            fl::Role::Surface | fl::Role::StepEven | fl::Role::StepOdd | fl::Role::Fixed => map.surface(c),
             fl::Role::Accent => map.accent_of(c),
             fl::Role::Highlight => map.highlight_of(c),
             fl::Role::Text => map.text_of(c),
@@ -443,10 +418,7 @@ fn skin_palette(design: Design, theme: Option<&FlTheme>) -> Palette {
             *slot = c;
         }
     }
-    p.xf = fl::Xform {
-        design: Some(map),
-        ..fl::Xform::default()
-    };
+    p.xf = fl::Xform { design: Some(map), ..fl::Xform::default() };
     p.style = design.style();
     if let Some(th) = theme.filter(|t| !t.is_stock()) {
         retint(&mut p, th);
@@ -487,11 +459,7 @@ impl Retint {
             text_to: (lemon::TEXT, lemon::DARK),
         };
         let bg = r.surface(lemon::DARK);
-        let text = th.text_color.unwrap_or(if bg.hsl().2 > 0.5 {
-            Color::rgb(0x1e1e1e)
-        } else {
-            lemon::TEXT
-        });
+        let text = th.text_color.unwrap_or(if bg.hsl().2 > 0.5 { Color::rgb(0x1e1e1e) } else { lemon::TEXT });
         r.text_to = (fl::readable(text, bg, 0.38), bg);
         r
     }
@@ -528,19 +496,10 @@ impl Retint {
         let (_, s, l) = c.hsl();
         let ((ft, fb), (tt, tb)) = (self.text_from, self.text_to);
         let (fl_, bl) = (ft.hsl().2, fb.hsl().2);
-        let t = if (fl_ - bl).abs() > 1e-3 {
-            ((l - bl) / (fl_ - bl)).clamp(-0.2, 1.25)
-        } else {
-            1.0
-        };
+        let t = if (fl_ - bl).abs() > 1e-3 { ((l - bl) / (fl_ - bl)).clamp(-0.2, 1.25) } else { 1.0 };
         let (th, ts, tl) = tt.hsl();
         let l2 = tb.hsl().2 + (tl - tb.hsl().2) * t;
-        Color::from_hsl_pub(
-            th,
-            if s > 0.25 { s * 0.6 } else { ts },
-            l2.clamp(0.0, 1.0),
-            c.a,
-        )
+        Color::from_hsl_pub(th, if s > 0.25 { s * 0.6 } else { ts }, l2.clamp(0.0, 1.0), c.a)
     }
 }
 
@@ -591,9 +550,8 @@ fn retint(p: &mut Palette, th: &FlTheme) {
             fl::Role::StepOdd if th.step_odd.is_none() => r.surface(c),
             fl::Role::StepEven | fl::Role::StepOdd => citrus.get(name).expect("token"),
             fl::Role::Fixed => match *name {
-                "step_on" | "note_top" | "note_bottom" | "note_rim" | "note_text"
-                | "note_sel_top" | "note_sel_bottom" | "note_sel_rim" | "note_sel_text"
-                | "key_label" | "clip" | "cat_project" | "velocity" | "velocity_dot" => r.accent(c),
+                "step_on" | "note_top" | "note_bottom" | "note_rim" | "note_text" | "note_sel_top" | "note_sel_bottom"
+                | "note_sel_rim" | "note_sel_text" | "key_label" | "clip" | "cat_project" | "velocity" | "velocity_dot" => r.accent(c),
                 "meter_low" | "meter_high" => r.highlight(c),
                 _ => c,
             },
@@ -625,10 +583,7 @@ mod tests {
             .iter()
             .map(|n| {
                 let (a, b) = (own.get(n).unwrap(), p.get(n).unwrap());
-                let d = [a.r.abs_diff(b.r), a.g.abs_diff(b.g), a.b.abs_diff(b.b)]
-                    .into_iter()
-                    .max()
-                    .unwrap();
+                let d = [a.r.abs_diff(b.r), a.g.abs_diff(b.g), a.b.abs_diff(b.b)].into_iter().max().unwrap();
                 (d, *n)
             })
             .max()
@@ -640,9 +595,7 @@ mod tests {
     #[test]
     fn classic_is_unchanged() {
         assert_eq!(palette(Design::Citrus, None), Palette::default());
-        let th = FlTheme::parse(
-            "Hue=120\nSaturation=60\nLightness=-90\nContrast=0\nSelected=16744576\n",
-        );
+        let th = FlTheme::parse("Hue=120\nSaturation=60\nLightness=-90\nContrast=0\nSelected=16744576\n");
         assert_eq!(palette(Design::Citrus, Some(&th)), fl::palette(&th));
     }
 
@@ -658,11 +611,7 @@ mod tests {
         let g = p.s(0x505355);
         assert!(g.r.abs_diff(0x66) <= 6 && g.r == g.g && g.g == g.b, "{g}");
         let (h, s, _) = p.h(0xfb9244).hsl();
-        assert!(
-            (h - lemon::MAIN.hsl().0).abs() < 4.0 && s > 0.8,
-            "{}",
-            p.h(0xfb9244)
-        );
+        assert!((h - lemon::MAIN.hsl().0).abs() < 4.0 && s > 0.8, "{}", p.h(0xfb9244));
         assert_eq!(p.a(0xa8e44a), lemon::MAIN);
     }
 
@@ -700,16 +649,8 @@ mod tests {
             let citrus = palette(Design::Citrus, Some(&th));
             // Light where Citrus is clearly light, dark where it is clearly dark (a mid-grey theme may sit either side).
             let (l, cl) = (p.toolbar.hsl().2, citrus.toolbar.hsl().2);
-            assert!(
-                !(cl > 0.6 && l <= 0.5) && !(cl < 0.4 && l >= 0.5),
-                "{name}: light like Citrus ({l} vs {cl})"
-            );
-            for (fg, bg) in [
-                (p.text, p.window_title),
-                (p.glyph, p.toolbar),
-                (p.menu_text, p.menu_panel),
-                (p.name_text, p.name_button),
-            ] {
+            assert!(!(cl > 0.6 && l <= 0.5) && !(cl < 0.4 && l >= 0.5), "{name}: light like Citrus ({l} vs {cl})");
+            for (fg, bg) in [(p.text, p.window_title), (p.glyph, p.toolbar), (p.menu_text, p.menu_panel), (p.name_text, p.name_button)] {
                 assert!(contrast(fg, bg) >= 0.3, "{name}: {fg} on {bg}");
             }
         }

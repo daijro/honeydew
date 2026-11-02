@@ -118,11 +118,7 @@ impl InitControl {
     /// A record read from event 216's bytes.
     pub fn from_bytes(b: &[u8; Self::LEN]) -> InitControl {
         let word = |o: usize| [b[o], b[o + 1], b[o + 2], b[o + 3]];
-        InitControl {
-            head: u32::from_le_bytes(word(0)),
-            target: u32::from_le_bytes(word(4)),
-            value: i32::from_le_bytes(word(8)),
-        }
+        InitControl { head: u32::from_le_bytes(word(0)), target: u32::from_le_bytes(word(4)), value: i32::from_le_bytes(word(8)) }
     }
 
     /// The record's 12 bytes.
@@ -151,11 +147,7 @@ impl InitControl {
             Target::Tempo => 10000.0 + 512000.0 * v,
             _ => return None,
         };
-        Some(InitControl {
-            head: 0,
-            target: t,
-            value: value.round() as i32,
-        })
+        Some(InitControl { head: 0, target: t, value: value.round() as i32 })
     }
 
     /// The value as an automation clip hands it on (0..1), for the settings whose stored units are known: the inverse
@@ -204,8 +196,7 @@ impl Project {
 
     /// The bar: beats per bar and steps per beat, each at least 1 ([`Project::bar`] when set).
     pub fn bar(&self) -> (u16, u16) {
-        self.bar
-            .map_or(Self::BAR_DEFAULT, |(b, s)| (b.max(1), s.max(1)))
+        self.bar.map_or(Self::BAR_DEFAULT, |(b, s)| (b.max(1), s.max(1)))
     }
 
     /// Ticks in a bar: beats per bar × steps per beat sixteenths, `17 × 18 × PPQ / 4` (spec: audio/timing.md
@@ -280,11 +271,7 @@ pub fn rescale_tick(t: u32, from: u16, to: u16) -> u32 {
 
 /// A length in ticks at timebase `from` as one at `to` ([`rescale_tick`]); a length that was not 0 stays at least 1.
 pub fn rescale_length(t: u32, from: u16, to: u16) -> u32 {
-    if t == 0 {
-        0
-    } else {
-        rescale_tick(t, from, to).max(1)
-    }
+    if t == 0 { 0 } else { rescale_tick(t, from, to).max(1) }
 }
 
 /// The playlist view a project stores: scroll, time zoom and track height (event 242, 28 bytes; spec:
@@ -360,9 +347,7 @@ pub const UNSORTED_GROUP: &str = "Unsorted";
 impl Project {
     /// Index into `arrangements` of the current arrangement (the first when unset or not found).
     pub fn arrangement_index(&self) -> usize {
-        self.current_arrangement
-            .and_then(|n| self.arrangements.iter().position(|a| a.number == n))
-            .unwrap_or(0)
+        self.current_arrangement.and_then(|n| self.arrangements.iter().position(|a| a.number == n)).unwrap_or(0)
     }
 
     /// The arrangement the playlist shows and Song mode plays.
@@ -405,10 +390,7 @@ impl Project {
         // A bar that makes no signature (3 steps per beat) keeps its beats.
         let sig = self.signature().unwrap_or((self.bar().0, 4));
         let mut regions = vec![(0, self.bar_ticks(), sig)];
-        let mut marks: Vec<&TimeMarker> = markers
-            .iter()
-            .filter(|m| m.kind == TimeMarker::SIGNATURE)
-            .collect();
+        let mut marks: Vec<&TimeMarker> = markers.iter().filter(|m| m.kind == TimeMarker::SIGNATURE).collect();
         marks.sort_by_key(|m| m.position);
         for m in marks {
             let sig = (u16::from(m.numerator), u16::from(m.denominator));
@@ -445,14 +427,7 @@ impl Project {
         if let Some(l) = p.and_then(|p| p.length).filter(|&l| l > 0) {
             return l;
         }
-        let last = p
-            .and_then(|p| {
-                p.notes
-                    .iter()
-                    .map(|n| n.position.saturating_add(n.length.max(1)))
-                    .max()
-            })
-            .unwrap_or(0);
+        let last = p.and_then(|p| p.notes.iter().map(|n| n.position.saturating_add(n.length.max(1))).max()).unwrap_or(0);
         self.pattern_bar_end(number, last)
     }
 
@@ -487,14 +462,10 @@ impl Project {
             })
             .collect();
         for p in &mut self.patterns {
-            p.notes
-                .retain_mut(|x| m(x.channel).map(|c| x.channel = c).is_some());
+            p.notes.retain_mut(|x| m(x.channel).map(|c| x.channel = c).is_some());
             // Only channel parameters (0 volume, 1 pan, 4 pitch) hold a channel; other targets stay as read.
             p.controls.retain_mut(|x| {
-                !matches!(x.param(), 0 | 1 | 4)
-                    || m(x.channel())
-                        .map(|c| *x = ControlPoint::new(x.position, c, x.param(), x.value))
-                        .is_some()
+                !matches!(x.param(), 0 | 1 | 4) || m(x.channel()).map(|c| *x = ControlPoint::new(x.position, c, x.param(), x.value)).is_some()
             });
             p.loops.retain_mut(|l| m(l.0).map(|c| l.0 = c).is_some());
         }
@@ -504,15 +475,8 @@ impl Project {
             .enumerate()
             .filter(|&(new, &o)| map.get(o).copied().flatten() != Some(new as u16))
             .filter_map(|(new, &o)| {
-                let a = self
-                    .automations
-                    .iter()
-                    .find(|a| usize::from(a.channel) == o)?;
-                Some(Automation {
-                    channel: new as u16,
-                    targets: Vec::new(),
-                    ..a.clone()
-                })
+                let a = self.automations.iter().find(|a| usize::from(a.channel) == o)?;
+                Some(Automation { channel: new as u16, targets: Vec::new(), ..a.clone() })
             })
             .collect();
         self.automations.retain_mut(|a| {
@@ -523,9 +487,7 @@ impl Project {
                 if *t >> 16 >= 0x4000 {
                     return true;
                 }
-                m((*t >> 16) as u16)
-                    .map(|c| *t = target::channel(c, *t as u16))
-                    .is_some()
+                m((*t >> 16) as u16).map(|c| *t = target::channel(c, *t as u16)).is_some()
             });
             true
         });
@@ -638,10 +600,7 @@ impl Channel {
     pub fn clear_sample(&mut self) {
         self.sample_path = None;
         self.sound.loop_points = None;
-        self.sound.sampler_flags = self
-            .sound
-            .sampler_flags
-            .map(|f| f & !ChannelSound::RESAMPLE);
+        self.sound.sampler_flags = self.sound.sampler_flags.map(|f| f & !ChannelSound::RESAMPLE);
     }
 }
 
@@ -886,9 +845,7 @@ impl ChannelSound {
         let idle = (factor - 1.0).abs() < 1e-4 && cents == 0.0;
         match self.stretch_mode() {
             stretch_mode::RESAMPLE if (factor - 1.0).abs() < 1e-9 => Stretching::None,
-            stretch_mode::RESAMPLE => Stretching::Resample {
-                speed: 1.0 / factor,
-            },
+            stretch_mode::RESAMPLE => Stretching::Resample { speed: 1.0 / factor },
             m if stretch_mode::realtime(m) => Stretching::Realtime { factor, cents },
             // Auto, the methods that stretch the sample first, and any value not known: nothing to do is plain playback.
             _ if idle => Stretching::None,
@@ -990,13 +947,7 @@ impl Default for ChannelMisc {
             shift: 0.0,
             swing: 1.0,
             full_porta: true,
-            tracking: [
-                Tracking {
-                    mid: 100,
-                    ..Tracking::default()
-                },
-                Tracking::default(),
-            ],
+            tracking: [Tracking { mid: 100, ..Tracking::default() }, Tracking::default()],
             cut: 0,
             cut_by: 0,
             arp: Arpeggio::default(),
@@ -1025,12 +976,7 @@ pub struct Tracking {
 
 impl Default for Tracking {
     fn default() -> Self {
-        Tracking {
-            mid: 60,
-            pan: 0.0,
-            mod_x: 0.0,
-            mod_y: 0.0,
-        }
+        Tracking { mid: 60, pan: 0.0, mod_x: 0.0, mod_y: 0.0 }
     }
 }
 
@@ -1059,15 +1005,7 @@ impl Arpeggio {
 
 impl Default for Arpeggio {
     fn default() -> Self {
-        Arpeggio {
-            direction: 0,
-            time: Arpeggio::TIME_DEFAULT,
-            gate: 1.0,
-            range: 1,
-            repeat: 1,
-            slide: false,
-            chord: -1,
-        }
+        Arpeggio { direction: 0, time: Arpeggio::TIME_DEFAULT, gate: 1.0, range: 1, repeat: 1, slide: false, chord: -1 }
     }
 }
 
@@ -1097,17 +1035,7 @@ impl Echo {
 
 impl Default for Echo {
     fn default() -> Self {
-        Echo {
-            feed: 0.0,
-            time: Echo::TIME_DEFAULT,
-            pan: 0.0,
-            mod_x: 0.0,
-            mod_y: 0.0,
-            pitch: 0.0,
-            echoes: 4,
-            ping_pong: false,
-            fat: false,
-        }
+        Echo { feed: 0.0, time: Echo::TIME_DEFAULT, pan: 0.0, mod_x: 0.0, mod_y: 0.0, pitch: 0.0, echoes: 4, ping_pong: false, fat: false }
     }
 }
 
@@ -1239,11 +1167,7 @@ impl ControlPoint {
     pub const PITCH: u16 = 4;
 
     pub fn new(position: u32, channel: u16, param: u16, value: i32) -> Self {
-        ControlPoint {
-            position,
-            kind: u32::from(channel) << 16 | u32::from(param),
-            value,
-        }
+        ControlPoint { position, kind: u32::from(channel) << 16 | u32::from(param), value }
     }
 
     pub fn channel(&self) -> u16 {
@@ -1585,15 +1509,7 @@ impl Clip {
     };
 
     pub fn new(position: u32, length: u32, track: u16, source: ClipSource) -> Clip {
-        Clip {
-            position,
-            length,
-            track,
-            source,
-            muted: false,
-            window: None,
-            raw: Clip::TEMPLATE,
-        }
+        Clip { position, length, track, source, muted: false, window: None, raw: Clip::TEMPLATE }
     }
 
     pub fn end(&self) -> u32 {
@@ -1630,12 +1546,7 @@ impl Clip {
     }
 
     fn f32_at(&self, o: usize) -> f32 {
-        f32::from_le_bytes([
-            self.raw[o],
-            self.raw[o + 1],
-            self.raw[o + 2],
-            self.raw[o + 3],
-        ])
+        f32::from_le_bytes([self.raw[o], self.raw[o + 1], self.raw[o + 2], self.raw[o + 3]])
     }
 
     fn set_f32(&mut self, o: usize, v: f32) {
@@ -1660,11 +1571,7 @@ impl Clip {
         let (ms, tension) = f.filter(|f| f.0 > 0.0).unwrap_or((0.0, self.f32_at(40)));
         self.set_f32(36, ms);
         self.set_f32(40, tension);
-        self.raw[56] = if ms > 0.0 {
-            self.raw[56] | 1
-        } else {
-            self.raw[56] & !1
-        };
+        self.raw[56] = if ms > 0.0 { self.raw[56] | 1 } else { self.raw[56] & !1 };
     }
 
     /// Sets (or removes) the fade-out.
@@ -1672,11 +1579,7 @@ impl Clip {
         let (ms, tension) = f.filter(|f| f.0 > 0.0).unwrap_or((0.0, self.f32_at(48)));
         self.set_f32(44, ms);
         self.set_f32(48, tension);
-        self.raw[56] = if ms > 0.0 {
-            self.raw[56] | 2
-        } else {
-            self.raw[56] & !2
-        };
+        self.raw[56] = if ms > 0.0 { self.raw[56] | 2 } else { self.raw[56] & !2 };
     }
 
     /// Whether the fade-in / fade-out was set with the clip's own handle (bits 0 and 1 of byte 56). A fade without
@@ -1789,14 +1692,7 @@ impl TimeMarker {
     pub const KEY: u8 = 12;
 
     pub fn new(position: u32, name: &str) -> Self {
-        TimeMarker {
-            position,
-            kind: Self::PLAIN,
-            name: name.into(),
-            numerator: 4,
-            denominator: 4,
-            scale: 0,
-        }
+        TimeMarker { position, kind: Self::PLAIN, name: name.into(), numerator: 4, denominator: 4, scale: 0 }
     }
 
     /// The marker at timebase `to` instead of `from` ([`Project::set_ppq`]).
@@ -1824,15 +1720,7 @@ pub struct PlaylistTrack {
 impl PlaylistTrack {
     /// Track `number` as a new project has it: unnamed, default colour, on, not grouped.
     pub fn new(number: u32) -> Self {
-        PlaylistTrack {
-            number,
-            name: None,
-            color: None,
-            enabled: true,
-            grouped: false,
-            collapsed: false,
-            locked: false,
-        }
+        PlaylistTrack { number, name: None, color: None, enabled: true, grouped: false, collapsed: false, locked: false }
     }
 }
 
@@ -1867,13 +1755,7 @@ pub struct AutoPoint {
 
 impl AutoPoint {
     pub fn new(beat: f64, value: f64) -> Self {
-        AutoPoint {
-            beat,
-            value,
-            tension: 0.0,
-            mode: AutoMode::Single,
-            flag: 2,
-        }
+        AutoPoint { beat, value, tension: 0.0, mode: AutoMode::Single, flag: 2 }
     }
 }
 
@@ -1940,20 +1822,7 @@ impl AutoMode {
     /// Modes whose curve the tension bends (byte 23 = 2 for these).
     pub fn has_tension(self) -> bool {
         use AutoMode::*;
-        matches!(
-            self,
-            Single
-                | Double
-                | Single2
-                | Double2
-                | Single3
-                | Double3
-                | HalfSine
-                | Stairs
-                | SmoothStairs
-                | Pulse
-                | Wave
-        )
+        matches!(self, Single | Double | Single2 | Double2 | Single3 | Double3 | HalfSine | Stairs | SmoothStairs | Pulse | Wave)
     }
 
     /// Menu order (spec: ui/playlist.md §8).
@@ -2050,8 +1919,7 @@ pub mod target {
 
     /// Parameter `k` of the plugin in mixer track `track`'s slot `slot` (0..9).
     pub fn slot_param(track: u16, slot: u8, k: u16) -> u32 {
-        u32::from(0x7000 + track * 64 + u16::from(slot)) << 16
-            | u32::from(PLUGIN_PARAM | (k & 0x7FFF))
+        u32::from(0x7000 + track * 64 + u16::from(slot)) << 16 | u32::from(PLUGIN_PARAM | (k & 0x7FFF))
     }
 
     /// What a target id names.
@@ -2124,8 +1992,9 @@ pub mod target {
                 CHANNEL_VOLUME => Target::ChannelVolume(hi),
                 CHANNEL_PAN => Target::ChannelPan(hi),
                 CHANNEL_PITCH => Target::ChannelPitch(hi),
-                CHANNEL_CUTOFF | CHANNEL_RESONANCE | CHANNEL_PAN_OFFSET | CHANNEL_VOLUME_MULT
-                | CHANNEL_MOD_X | CHANNEL_MOD_Y => Target::ChannelLevel(hi, lo),
+                CHANNEL_CUTOFF | CHANNEL_RESONANCE | CHANNEL_PAN_OFFSET | CHANNEL_VOLUME_MULT | CHANNEL_MOD_X | CHANNEL_MOD_Y => {
+                    Target::ChannelLevel(hi, lo)
+                }
                 _ => Target::Other(t),
             };
         }
@@ -2138,10 +2007,7 @@ pub mod target {
             decode(t),
             Target::ChannelPan(_)
                 | Target::ChannelPitch(_)
-                | Target::ChannelLevel(
-                    _,
-                    CHANNEL_PAN_OFFSET | CHANNEL_VOLUME_MULT | CHANNEL_MOD_X | CHANNEL_MOD_Y
-                )
+                | Target::ChannelLevel(_, CHANNEL_PAN_OFFSET | CHANNEL_VOLUME_MULT | CHANNEL_MOD_X | CHANNEL_MOD_Y)
                 | Target::MixerPan(_)
                 | Target::MixerSeparation(_)
                 | Target::MixerEq(_, _, 0)
@@ -2161,10 +2027,7 @@ pub mod target {
             assert_eq!(slot_param(1, 0, 13), 0x7040_800D);
             assert_eq!(decode(0x7040_800D), Target::SlotParam(1, 0, 13));
             assert_eq!(decode(slot_param(0, 9, 0)), Target::SlotParam(0, 9, 0));
-            assert_eq!(
-                decode(slot_param(125, 3, 0x7FFF)),
-                Target::SlotParam(125, 3, 0x7FFF)
-            );
+            assert_eq!(decode(slot_param(125, 3, 0x7FFF)), Target::SlotParam(125, 3, 0x7FFF));
             // The mixer track's own controls are not slot parameters.
             assert_eq!(decode(mixer(1, MIXER_VOLUME)), Target::MixerVolume(1));
             assert_eq!(decode(channel(3, CHANNEL_PAN)), Target::ChannelPan(3));
@@ -2174,23 +2037,12 @@ pub mod target {
         // spec: flp/events/automation.md "Targets"; flp/layouts.md "Parameter ids in an automation link"
         #[test]
         fn mixer_targets() {
-            assert_eq!(
-                decode(0x7001_1F01),
-                Target::SlotMix(0, 1),
-                "master slot 1 mix"
-            );
+            assert_eq!(decode(0x7001_1F01), Target::SlotMix(0, 1), "master slot 1 mix");
             assert_eq!(slot(0, 1, SLOT_MIX), 0x7001_1F01);
             assert_eq!(decode(slot(3, 9, SLOT_ON)), Target::SlotOn(3, 9));
             assert_eq!(decode(slot(3, 0, SLOT_ON)), Target::SlotOn(3, 0));
-            assert_eq!(
-                decode(0x7280_1FC0),
-                Target::MixerVolume(10),
-                "Insert 10 volume"
-            );
-            assert_eq!(
-                decode(mixer(4, MIXER_SEPARATION)),
-                Target::MixerSeparation(4)
-            );
+            assert_eq!(decode(0x7280_1FC0), Target::MixerVolume(10), "Insert 10 volume");
+            assert_eq!(decode(mixer(4, MIXER_SEPARATION)), Target::MixerSeparation(4));
             assert_eq!(decode(mixer(2, EQ_GAIN + 1)), Target::MixerEq(2, 1, 0));
             assert_eq!(decode(mixer(2, EQ_FREQ + 2)), Target::MixerEq(2, 2, 1));
             assert_eq!(decode(mixer(2, EQ_WIDTH)), Target::MixerEq(2, 0, 2));
@@ -2200,28 +2052,13 @@ pub mod target {
             assert_eq!(send(5, 85) & 0xFFFF, 0x2055);
             assert_eq!(decode(mixer(5, 64 + 126)), Target::MixerSend(5, 126));
             // Track settings at a slot's place are nothing.
-            assert_eq!(
-                decode(slot(1, 2, MIXER_VOLUME)),
-                Target::Other(slot(1, 2, MIXER_VOLUME))
-            );
-            assert!(
-                bipolar(mixer(1, MIXER_SEPARATION))
-                    && bipolar(mixer(1, EQ_GAIN))
-                    && !bipolar(mixer(1, EQ_FREQ))
-            );
+            assert_eq!(decode(slot(1, 2, MIXER_VOLUME)), Target::Other(slot(1, 2, MIXER_VOLUME)));
+            assert!(bipolar(mixer(1, MIXER_SEPARATION)) && bipolar(mixer(1, EQ_GAIN)) && !bipolar(mixer(1, EQ_FREQ)));
             // spec: audio/voice-levels.md "Values from automation"
-            assert_eq!(
-                decode(channel(3, CHANNEL_CUTOFF)),
-                Target::ChannelLevel(3, 2)
-            );
-            assert_eq!(
-                decode(channel(3, CHANNEL_MOD_Y)),
-                Target::ChannelLevel(3, 0x14)
-            );
+            assert_eq!(decode(channel(3, CHANNEL_CUTOFF)), Target::ChannelLevel(3, 2));
+            assert_eq!(decode(channel(3, CHANNEL_MOD_Y)), Target::ChannelLevel(3, 0x14));
             assert_eq!(decode(channel(3, 0x12)), Target::Other(0x0003_0012));
-            assert!(
-                bipolar(channel(0, CHANNEL_VOLUME_MULT)) && !bipolar(channel(0, CHANNEL_CUTOFF))
-            );
+            assert!(bipolar(channel(0, CHANNEL_VOLUME_MULT)) && !bipolar(channel(0, CHANNEL_CUTOFF)));
         }
 
         /// Initial values in stored units and back (spec: ui/settings-choices.md "Advanced: Initialize controls
@@ -2229,16 +2066,8 @@ pub mod target {
         #[test]
         fn initial_values_convert_to_and_from_automation_values() {
             use crate::InitControl;
-            let vol =
-                InitControl::from_unit(channel(0, CHANNEL_VOLUME), 10000.0 / 12800.0).unwrap();
-            assert_eq!(
-                vol,
-                InitControl {
-                    head: 0,
-                    target: 0,
-                    value: 10000
-                }
-            );
+            let vol = InitControl::from_unit(channel(0, CHANNEL_VOLUME), 10000.0 / 12800.0).unwrap();
+            assert_eq!(vol, InitControl { head: 0, target: 0, value: 10000 });
             let bytes = vol.to_bytes();
             assert_eq!(bytes, [0, 0, 0, 0, 0, 0, 0, 0, 0x10, 0x27, 0, 0]);
             assert_eq!(InitControl::from_bytes(&bytes), vol);
@@ -2255,31 +2084,14 @@ pub mod target {
                 (slot(1, 3, SLOT_MIX), 6400),
                 (TEMPO, 140000),
             ] {
-                let c = InitControl {
-                    head: 0,
-                    target: t,
-                    value: stored,
-                };
+                let c = InitControl { head: 0, target: t, value: stored };
                 let v = c.unit().unwrap();
                 assert_eq!(InitControl::from_unit(t, v), Some(c), "{t:#010x}");
             }
             // Units not known: kept, not converted.
-            for t in [
-                channel_param(0, 4),
-                slot_param(1, 0, 2),
-                InitControl::MAIN_VOLUME,
-                channel(0, CHANNEL_CUTOFF),
-            ] {
+            for t in [channel_param(0, 4), slot_param(1, 0, 2), InitControl::MAIN_VOLUME, channel(0, CHANNEL_CUTOFF)] {
                 assert_eq!(InitControl::from_unit(t, 0.5), None);
-                assert_eq!(
-                    InitControl {
-                        head: 0,
-                        target: t,
-                        value: 7
-                    }
-                    .unit(),
-                    None
-                );
+                assert_eq!(InitControl { head: 0, target: t, value: 7 }.unit(), None);
             }
         }
     }
@@ -2300,9 +2112,7 @@ impl Automation {
             return Some(f64::from(first.value as f32));
         }
         let i = pts.partition_point(|p| p.beat <= beat);
-        let Some(b) = pts.get(i) else {
-            return Some(f64::from(pts.last()?.value as f32));
-        };
+        let Some(b) = pts.get(i) else { return Some(f64::from(pts.last()?.value as f32)) };
         let a = pts[i - 1];
         let span = b.beat - a.beat;
         if span <= 0.0 {
@@ -2319,11 +2129,7 @@ mod bar_tests {
     use super::Project;
 
     fn bar(ppq: u16, bar: Option<(u16, u16)>) -> Project {
-        Project {
-            ppq,
-            bar,
-            ..Project::default()
-        }
+        Project { ppq, bar, ..Project::default() }
     }
 
     #[test]
@@ -2331,11 +2137,7 @@ mod bar_tests {
         assert_eq!(bar(96, None).beat_ticks(), 96);
         assert_eq!(bar(96, Some((3, 2))).beat_ticks(), 48, "an eighth in 3/8");
         assert_eq!(bar(96, Some((3, 8))).beat_ticks(), 192, "a half in 3/2");
-        assert_eq!(
-            bar(192, Some((5, 3))).beat_ticks(),
-            144,
-            "3 steps make no signature"
-        );
+        assert_eq!(bar(192, Some((5, 3))).beat_ticks(), 144, "3 steps make no signature");
         assert_eq!(bar(96, Some((3, 2))).bar_ticks(), 3 * 48);
     }
 
@@ -2359,9 +2161,7 @@ mod bar_tests {
 mod fade_tests {
     use super::fade_curve;
 
-    const TENSIONS: [f64; 13] = [
-        -64.0, -32.0, -8.0, -4.736, -1.0, -0.5, 0.0, 0.5, 1.0, 2.289, 3.36, 8.0, 64.0,
-    ];
+    const TENSIONS: [f64; 13] = [-64.0, -32.0, -8.0, -4.736, -1.0, -0.5, 0.0, 0.5, 1.0, 2.289, 3.36, 8.0, 64.0];
 
     #[test]
     fn ends_and_rise() {
@@ -2369,14 +2169,9 @@ mod fade_tests {
             assert_eq!(fade_curve(0.0, t), 0.0, "t {t}");
             assert!((fade_curve(1.0, t) - 1.0).abs() < 1e-15, "t {t}");
             // Rises for any tension (and stays put outside 0..1).
-            let v: Vec<f64> = (0..=1000)
-                .map(|k| fade_curve(f64::from(k) / 1000.0, t))
-                .collect();
+            let v: Vec<f64> = (0..=1000).map(|k| fade_curve(f64::from(k) / 1000.0, t)).collect();
             assert!(v.windows(2).all(|w| w[1] > w[0]), "t {t}");
-            assert_eq!(
-                (fade_curve(-0.5, t), fade_curve(1.5, t)),
-                (fade_curve(0.0, t), fade_curve(1.0, t))
-            );
+            assert_eq!((fade_curve(-0.5, t), fade_curve(1.5, t)), (fade_curve(0.0, t), fade_curve(1.0, t)));
         }
     }
 
@@ -2387,9 +2182,7 @@ mod fade_tests {
             let s = 0.5 - 0.5 * (std::f64::consts::PI * x).cos();
             assert_eq!(fade_curve(x, 0.0), s);
             // The formula's limit near 0, and below 1e-6 the cosine itself.
-            assert!(
-                (fade_curve(x, 1e-5) - s).abs() < 1e-5 && (fade_curve(x, -1e-5) - s).abs() < 1e-5
-            );
+            assert!((fade_curve(x, 1e-5) - s).abs() < 1e-5 && (fade_curve(x, -1e-5) - s).abs() < 1e-5);
             assert_eq!((fade_curve(x, 9e-7), fade_curve(x, -9e-7)), (s, s));
         }
     }
@@ -2398,11 +2191,7 @@ mod fade_tests {
     fn the_middle() {
         for t in TENSIONS.into_iter().filter(|&t| t != 0.0) {
             let r = (1.0 + t.abs()).sqrt();
-            let want = if t > 0.0 {
-                r / (1.0 + r)
-            } else {
-                1.0 / (1.0 + r)
-            };
+            let want = if t > 0.0 { r / (1.0 + r) } else { 1.0 / (1.0 + r) };
             assert!((fade_curve(0.5, t) - want).abs() < 1e-12, "t {t}");
         }
         // The two values measured (spec): +3.36 gives 0.676, -4.83 gives 0.293.
@@ -2415,10 +2204,7 @@ mod fade_tests {
         for t in TENSIONS {
             for k in 0..=100 {
                 let x = f64::from(k) / 100.0;
-                assert!(
-                    (fade_curve(x, -t) - (1.0 - fade_curve(1.0 - x, t))).abs() < 1e-12,
-                    "t {t} x {x}"
-                );
+                assert!((fade_curve(x, -t) - (1.0 - fade_curve(1.0 - x, t))).abs() < 1e-12, "t {t} x {x}");
             }
         }
     }

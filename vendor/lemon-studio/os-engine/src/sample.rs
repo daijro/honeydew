@@ -37,10 +37,7 @@ impl Sample {
 #[derive(Debug, thiserror::Error)]
 pub enum SampleError {
     #[error("{path}: {source}")]
-    Io {
-        path: PathBuf,
-        source: std::io::Error,
-    },
+    Io { path: PathBuf, source: std::io::Error },
     #[error("{path}: {message}")]
     Decode { path: PathBuf, message: String },
 }
@@ -69,24 +66,19 @@ fn probe() -> &'static Probe {
 type Stamp = (u64, Option<std::time::SystemTime>);
 
 fn stamp(path: &Path) -> Option<Stamp> {
-    std::fs::metadata(path)
-        .ok()
-        .map(|m| (m.len(), m.modified().ok()))
+    std::fs::metadata(path).ok().map(|m| (m.len(), m.modified().ok()))
 }
 
 /// The decodes `load_shared` handed out, by file, with the stamp of the file they were made from.
 fn live() -> &'static std::sync::Mutex<HashMap<PathBuf, (std::sync::Weak<Sample>, Stamp)>> {
-    static LIVE: OnceLock<std::sync::Mutex<HashMap<PathBuf, (std::sync::Weak<Sample>, Stamp)>>> =
-        OnceLock::new();
+    static LIVE: OnceLock<std::sync::Mutex<HashMap<PathBuf, (std::sync::Weak<Sample>, Stamp)>>> = OnceLock::new();
     LIVE.get_or_init(Default::default)
 }
 
 /// Whether the last decode `load_shared` made of the file at `path` is still held anywhere (a sampler, the engine's
 /// library, a project loading).
 pub fn held(path: &Path) -> bool {
-    live()
-        .lock()
-        .is_ok_and(|map| map.get(path).is_some_and(|(w, _)| w.strong_count() > 0))
+    live().lock().is_ok_and(|map| map.get(path).is_some_and(|(w, _)| w.strong_count() > 0))
 }
 
 /// `load`, shared: while any holder keeps a decoded file alive, loading the same unchanged file again returns that
@@ -96,11 +88,7 @@ pub fn load_shared(path: &Path) -> Result<Arc<Sample>, SampleError> {
     let live = live();
     let st = stamp(path);
     if let (Some(st), Ok(map)) = (st, live.lock()) {
-        if let Some(s) = map
-            .get(path)
-            .filter(|(_, s)| *s == st)
-            .and_then(|(w, _)| w.upgrade())
-        {
+        if let Some(s) = map.get(path).filter(|(_, s)| *s == st).and_then(|(w, _)| w.upgrade()) {
             return Ok(s);
         }
     }
@@ -114,14 +102,8 @@ pub fn load_shared(path: &Path) -> Result<Arc<Sample>, SampleError> {
 
 /// Decodes a WAV (PCM or Vorbis-in-WAV) / FLAC / Ogg Vorbis / WavPack / MP3 / AIFF file.
 pub fn load(path: &Path) -> Result<Sample, SampleError> {
-    let bytes = std::fs::read(path).map_err(|source| SampleError::Io {
-        path: path.to_owned(),
-        source,
-    })?;
-    let decode_err = |message: String| SampleError::Decode {
-        path: path.to_owned(),
-        message,
-    };
+    let bytes = std::fs::read(path).map_err(|source| SampleError::Io { path: path.to_owned(), source })?;
+    let decode_err = |message: String| SampleError::Decode { path: path.to_owned(), message };
     if let Some(vw) = vorbis_in_wav(&bytes) {
         let mut s = decode(vw.ogg.to_vec(), Some("ogg")).map_err(decode_err)?;
         if let Some(frames) = vw.fact_frames {
@@ -152,21 +134,9 @@ fn header_length(path: &Path) -> Option<(u64, u32)> {
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
     }
-    let format = probe()
-        .probe(
-            &hint,
-            mss,
-            FormatOptions::default(),
-            MetadataOptions::default(),
-        )
-        .ok()?;
+    let format = probe().probe(&hint, mss, FormatOptions::default(), MetadataOptions::default()).ok()?;
     let track = format.default_track(TrackType::Audio)?;
-    let rate = track
-        .codec_params
-        .as_ref()?
-        .audio()?
-        .sample_rate
-        .filter(|&r| r > 0)?;
+    let rate = track.codec_params.as_ref()?.audio()?.sample_rate.filter(|&r| r > 0)?;
     Some((track.num_frames?, rate))
 }
 
@@ -190,18 +160,13 @@ fn vorbis_in_wav(b: &[u8]) -> Option<VorbisInWav<'_>> {
         match id {
             b"fmt " if body.len() >= 2 => tag = Some(u16::from_le_bytes([body[0], body[1]])),
             b"data" => data = Some(body),
-            b"fact" if body.len() >= 4 => {
-                fact = Some(u32::from_le_bytes(body[..4].try_into().ok()?) as usize)
-            }
+            b"fact" if body.len() >= 4 => fact = Some(u32::from_le_bytes(body[..4].try_into().ok()?) as usize),
             _ => {}
         }
         pos += 8 + len + (len & 1);
     }
     match tag? {
-        0x674F | 0x6750 | 0x6751 | 0x676F | 0x6770 | 0x6771 => Some(VorbisInWav {
-            ogg: data?,
-            fact_frames: fact,
-        }),
+        0x674F | 0x6750 | 0x6751 | 0x676F | 0x6770 | 0x6771 => Some(VorbisInWav { ogg: data?, fact_frames: fact }),
         _ => None,
     }
 }
@@ -222,10 +187,7 @@ pub struct WavTags {
 /// The `smpl` and `acid` chunks of the file at `path`. A file that isn't a RIFF WAV, or can't be read, has neither.
 /// Only the chunk headers and those two bodies are read.
 pub fn wav_tags(path: &Path) -> WavTags {
-    std::fs::File::open(path)
-        .ok()
-        .and_then(|f| tags_of(std::io::BufReader::new(f)))
-        .unwrap_or_default()
+    std::fs::File::open(path).ok().and_then(|f| tags_of(std::io::BufReader::new(f))).unwrap_or_default()
 }
 
 fn tags_of(mut r: impl Read + Seek) -> Option<WavTags> {
@@ -248,18 +210,14 @@ fn tags_of(mut r: impl Read + Seek) -> Option<WavTags> {
             skip -= 16;
             let v = u32::from_le_bytes([body[12], body[13], body[14], body[15]]);
             if &chunk[0..4] == b"smpl" {
-                tags.unity_note = tags
-                    .unity_note
-                    .or(u8::try_from(v).ok().filter(|&k| k <= 127));
+                tags.unity_note = tags.unity_note.or(u8::try_from(v).ok().filter(|&k| k <= 127));
             } else if !acid_seen {
                 acid_seen = true;
                 let one_shot = body[0] & 1 != 0;
                 tags.beats = (v > 0 && !one_shot).then_some(v);
             }
         }
-        if r.seek(SeekFrom::Current(i64::try_from(skip).ok()?))
-            .is_err()
-        {
+        if r.seek(SeekFrom::Current(i64::try_from(skip).ok()?)).is_err() {
             break;
         }
     }
@@ -272,21 +230,13 @@ fn tags_of(mut r: impl Read + Seek) -> Option<WavTags> {
 fn mp3_info_frame(b: &[u8]) -> Option<usize> {
     let mut pos = 0;
     if b.len() >= 10 && &b[..3] == b"ID3" {
-        let size = b[6..10]
-            .iter()
-            .fold(0usize, |n, &x| n << 7 | usize::from(x & 0x7F));
+        let size = b[6..10].iter().fold(0usize, |n, &x| n << 7 | usize::from(x & 0x7F));
         pos = 10 + size + if b[5] & 0x10 != 0 { 10 } else { 0 };
     }
     // The first frame header: sync, a valid version, Layer III, a valid bitrate and sample rate.
     let h = b.get(pos..pos + 4)?;
     let version = (h[1] >> 3) & 3;
-    if h[0] != 0xFF
-        || h[1] & 0xE0 != 0xE0
-        || version == 1
-        || (h[1] >> 1) & 3 != 1
-        || h[2] >> 4 == 0xF
-        || (h[2] >> 2) & 3 == 3
-    {
+    if h[0] != 0xFF || h[1] & 0xE0 != 0xE0 || version == 1 || (h[1] >> 1) & 3 != 1 || h[2] >> 4 == 0xF || (h[2] >> 2) & 3 == 3 {
         return None;
     }
     let (mpeg1, mono) = (version == 3, h[3] >> 6 == 3);
@@ -297,10 +247,7 @@ fn mp3_info_frame(b: &[u8]) -> Option<usize> {
         (false, false) => 17,
     };
     let header = if h[1] & 1 == 0 { 6 } else { 4 };
-    let zero = |a: usize, z: usize| {
-        b.get(pos + a..pos + z)
-            .is_some_and(|s| s.iter().all(|&x| x == 0))
-    };
+    let zero = |a: usize, z: usize| b.get(pos + a..pos + z).is_some_and(|s| s.iter().all(|&x| x == 0));
     let id = |at: usize| b.get(pos + at..pos + at + 4);
     let xing = matches!(id(4 + side), Some(b"Xing" | b"Info")) && zero(header, 4 + side);
     let vbri = id(36) == Some(b"VBRI") && zero(header, 36);
@@ -317,16 +264,9 @@ fn decode(bytes: Vec<u8>, ext: Option<&str>) -> Result<Sample, String> {
         hint.with_extension(ext);
     }
     let mut format = probe()
-        .probe(
-            &hint,
-            mss,
-            FormatOptions::default(),
-            MetadataOptions::default(),
-        )
+        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
         .map_err(|e| e.to_string())?;
-    let track = format
-        .default_track(TrackType::Audio)
-        .ok_or("no audio track")?;
+    let track = format.default_track(TrackType::Audio).ok_or("no audio track")?;
     let track_id = track.id;
     let params = track
         .codec_params
@@ -379,8 +319,7 @@ const DATA: &str = "%FLStudioData%";
 /// `text` without `prefix`, compared without regard to ASCII case.
 fn strip_prefix_ignoring_case<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
     let head = text.get(..prefix.len())?;
-    head.eq_ignore_ascii_case(prefix)
-        .then(|| &text[prefix.len()..])
+    head.eq_ignore_ascii_case(prefix).then(|| &text[prefix.len()..])
 }
 
 /// `path` as it is on disk when its parts match existing ones without regard to case (an exact match first): `None`
@@ -395,11 +334,7 @@ fn match_case(path: &Path) -> Option<PathBuf> {
         };
         let want = name.to_string_lossy().to_lowercase();
         let mut found = None;
-        let dir = if out.as_os_str().is_empty() {
-            Path::new(".")
-        } else {
-            &out
-        };
+        let dir = if out.as_os_str().is_empty() { Path::new(".") } else { &out };
         for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
             let n = e.file_name();
             if n == name {
@@ -445,10 +380,7 @@ pub struct SampleLibrary {
 
 impl SampleLibrary {
     pub fn new(factory_dir: Option<PathBuf>) -> Self {
-        SampleLibrary {
-            factory_dir,
-            ..Default::default()
-        }
+        SampleLibrary { factory_dir, ..Default::default() }
     }
 
     /// The FL Studio install folder on this machine, if one is found: the folder named by the environment
@@ -475,11 +407,7 @@ impl SampleLibrary {
         let mut found: Vec<PathBuf> = std::fs::read_dir("/Applications")
             .ok()?
             .flatten()
-            .filter(|e| {
-                e.file_name()
-                    .to_str()
-                    .is_some_and(|n| n.starts_with("FL Studio") && n.ends_with(".app"))
-            })
+            .filter(|e| e.file_name().to_str().is_some_and(|n| n.starts_with("FL Studio") && n.ends_with(".app")))
             .map(|e| e.path().join("Contents/Resources/FL"))
             .filter(|p| p.join("Data/Patches").is_dir())
             .collect();
@@ -493,22 +421,14 @@ impl SampleLibrary {
     }
     #[cfg(not(windows))]
     fn wine_factory_dir() -> Option<PathBuf> {
-        let prefix = std::env::var_os("WINEPREFIX")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".wine")))?;
-        let mut found: Vec<PathBuf> =
-            std::fs::read_dir(prefix.join("drive_c/Program Files/Image-Line"))
-                .ok()?
-                .flatten()
-                .map(|e| e.path())
-                // (Image-Line's ASIO driver installs to "FL Studio ASIO": an install has the factory data.)
-                .filter(|p| {
-                    p.join("Data/Patches").is_dir()
-                        && p.file_name()
-                            .and_then(|n| n.to_str())
-                            .is_some_and(|n| n.starts_with("FL Studio"))
-                })
-                .collect();
+        let prefix = std::env::var_os("WINEPREFIX").map(PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".wine")))?;
+        let mut found: Vec<PathBuf> = std::fs::read_dir(prefix.join("drive_c/Program Files/Image-Line"))
+            .ok()?
+            .flatten()
+            .map(|e| e.path())
+            // (Image-Line's ASIO driver installs to "FL Studio ASIO": an install has the factory data.)
+            .filter(|p| p.join("Data/Patches").is_dir() && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("FL Studio")))
+            .collect();
         found.sort();
         found.pop()
     }
@@ -518,10 +438,7 @@ impl SampleLibrary {
     /// (spec: flp/layouts.md "Older files", flp/sample-paths.md): where the path as written does not exist, each part
     /// is looked for ignoring case.
     pub fn resolve(&self, project_path: &str) -> Option<PathBuf> {
-        let rel = |rest: &str| {
-            rest.trim_start_matches(['\\', '/'])
-                .replace(['\\', '/'], std::path::MAIN_SEPARATOR_STR)
-        };
+        let rel = |rest: &str| rest.trim_start_matches(['\\', '/']).replace(['\\', '/'], std::path::MAIN_SEPARATOR_STR);
         let path = if let Some(rest) = strip_prefix_ignoring_case(project_path, FACTORY) {
             self.factory_dir.as_ref()?.join(rel(rest))
         } else if let Some(rest) = strip_prefix_ignoring_case(project_path, DATA) {
@@ -537,9 +454,7 @@ impl SampleLibrary {
 
     /// Whether a project's sample path starts with one of the install folder's placeholders (in any case).
     pub fn has_placeholder(project_path: &str) -> bool {
-        [FACTORY, DATA]
-            .iter()
-            .any(|p| strip_prefix_ignoring_case(project_path, p).is_some())
+        [FACTORY, DATA].iter().any(|p| strip_prefix_ignoring_case(project_path, p).is_some())
     }
 
     /// The install folder becomes `dir`: samples found through the old one are looked for again.
@@ -561,11 +476,7 @@ impl SampleLibrary {
     #[cfg(not(windows))]
     fn local_path(project_path: &str) -> PathBuf {
         let b = project_path.as_bytes();
-        if b.len() >= 3
-            && b[0].eq_ignore_ascii_case(&b'z')
-            && b[1] == b':'
-            && (b[2] == b'\\' || b[2] == b'/')
-        {
+        if b.len() >= 3 && b[0].eq_ignore_ascii_case(&b'z') && b[1] == b':' && (b[2] == b'\\' || b[2] == b'/') {
             return PathBuf::from(project_path[2..].replace('\\', "/"));
         }
         PathBuf::from(project_path)
@@ -577,8 +488,7 @@ impl SampleLibrary {
         }
         let loaded = match self.resolve(project_path) {
             None => {
-                self.failures
-                    .push((project_path.into(), "factory folder not set".into()));
+                self.failures.push((project_path.into(), "factory folder not set".into()));
                 None
             }
             // Shared with the other users of the file (plugin instances, playlist waveforms).
@@ -621,20 +531,11 @@ impl SampleLibrary {
     /// once per library.
     pub fn stretched(&mut self, raw: &Arc<Sample>, frames: usize, transpose: f64) -> Arc<Sample> {
         let bits = transpose.to_bits();
-        if let Some(e) = self
-            .stretched
-            .iter()
-            .find(|e| Arc::ptr_eq(&e.0, raw) && e.1 == frames && e.2 == bits)
-        {
+        if let Some(e) = self.stretched.iter().find(|e| Arc::ptr_eq(&e.0, raw) && e.1 == frames && e.2 == bits) {
             return e.3.clone();
         }
-        let (left, right) =
-            os_dsp::stretch::whole(&raw.left, &raw.right, raw.rate, frames, transpose);
-        let s = Arc::new(Sample {
-            rate: raw.rate,
-            left,
-            right,
-        });
+        let (left, right) = os_dsp::stretch::whole(&raw.left, &raw.right, raw.rate, frames, transpose);
+        let s = Arc::new(Sample { rate: raw.rate, left, right });
         self.stretched.push((raw.clone(), frames, bits, s.clone()));
         s
     }
@@ -653,17 +554,12 @@ mod tests {
         let s = load(&path).expect("mp3 decodes");
         assert_eq!(s.rate, 44100);
         assert_eq!(s.left, s.right, "mono is duplicated");
-        let peak = (0..s.frames())
-            .max_by(|&a, &b| s.left[a].abs().total_cmp(&s.left[b].abs()))
-            .unwrap();
+        let peak = (0..s.frames()).max_by(|&a, &b| s.left[a].abs().total_cmp(&s.left[b].abs())).unwrap();
         eprintln!("frames {} click at {peak}", s.frames());
         // Every decoded frame plays: the info frame's 1152 frames of silence, then the encoder delay (576) and the
         // decoder's own (529) before the click, and whole MPEG frames to the end.
         assert!(s.left[..1152].iter().all(|&v| v == 0.0));
-        assert!(
-            (4410 + 1152 + 1105 - 5..4410 + 1152 + 1105 + 10).contains(&peak),
-            "click at {peak}"
-        );
+        assert!((4410 + 1152 + 1105 - 5..4410 + 1152 + 1105 + 10).contains(&peak), "click at {peak}");
         assert_eq!(s.frames() % 1152, 0, "length {}", s.frames());
         assert!(s.frames() >= 1152 + 1105 + 13230, "length {}", s.frames());
         let tail = &s.left[9000 + 2257..12000 + 2257];
@@ -674,25 +570,14 @@ mod tests {
     /// A kept decode is handed out again; once every holder dropped it, or the file changed, the file is decoded anew.
     #[test]
     fn shared_loads_reuse_a_live_decode() {
-        let path =
-            std::env::temp_dir().join(format!("os_engine_shared_{}.wav", std::process::id()));
-        crate::wav::write_f32_stereo(
-            &mut std::fs::File::create(&path).unwrap(),
-            48000,
-            &[0.25; 960],
-        )
-        .unwrap();
+        let path = std::env::temp_dir().join(format!("os_engine_shared_{}.wav", std::process::id()));
+        crate::wav::write_f32_stereo(&mut std::fs::File::create(&path).unwrap(), 48000, &[0.25; 960]).unwrap();
         let a = load_shared(&path).unwrap();
         let b = load_shared(&path).unwrap();
         assert!(Arc::ptr_eq(&a, &b), "the live decode is shared");
         drop((a, b));
         let c = load_shared(&path).unwrap();
-        crate::wav::write_f32_stereo(
-            &mut std::fs::File::create(&path).unwrap(),
-            48000,
-            &[0.5; 1920],
-        )
-        .unwrap();
+        crate::wav::write_f32_stereo(&mut std::fs::File::create(&path).unwrap(), 48000, &[0.5; 1920]).unwrap();
         let d = load_shared(&path).unwrap();
         let _ = std::fs::remove_file(&path);
         assert!(!Arc::ptr_eq(&c, &d), "a changed file is decoded again");
@@ -719,16 +604,8 @@ mod tests {
         b.extend(body);
         std::fs::write(&mono, b).unwrap();
         assert_eq!(length(&mono), Some((661_500, 22050)), "30 s at 22.05 kHz");
-        let stereo = dir.join(format!(
-            "os_engine_length_stereo_{}.wav",
-            std::process::id()
-        ));
-        crate::wav::write_f32_stereo(
-            &mut std::fs::File::create(&stereo).unwrap(),
-            96000,
-            &vec![0.1; 2 * 96_000],
-        )
-        .unwrap();
+        let stereo = dir.join(format!("os_engine_length_stereo_{}.wav", std::process::id()));
+        crate::wav::write_f32_stereo(&mut std::fs::File::create(&stereo).unwrap(), 96000, &vec![0.1; 2 * 96_000]).unwrap();
         assert_eq!(length(&stereo), Some((96_000, 96000)), "1 s at 96 kHz");
         for p in [mono, stereo] {
             let _ = std::fs::remove_file(p);
@@ -736,10 +613,7 @@ mod tests {
         let mp3 = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/click_sine.mp3");
         let (frames, rate) = length(&mp3).expect("the mp3's length");
         assert_eq!(rate, 44100);
-        assert!(
-            (13230..=13230 + 2 * 1152).contains(&frames),
-            "about 0.3 s: {frames}"
-        );
+        assert!((13230..=13230 + 2 * 1152).contains(&frames), "about 0.3 s: {frames}");
         assert_eq!(length(Path::new("Z:/no such folder/none.wav")), None);
     }
 
@@ -807,49 +681,17 @@ mod tests {
     fn wav_tags_read_the_sampler_and_loop_chunks() {
         let none = WavTags::default();
         assert_eq!(tags(wav(&[])), Some(none), "no chunks");
-        assert_eq!(
-            tags(wav(&[smpl(72)])),
-            Some(WavTags {
-                unity_note: Some(72),
-                beats: None
-            })
-        );
-        assert_eq!(
-            tags(wav(&[acid(4, 64, 120.0)])),
-            Some(WavTags {
-                unity_note: None,
-                beats: Some(4)
-            }),
-            "acid's root is not read"
-        );
-        assert_eq!(
-            tags(wav(&[smpl(67), acid(4, 60, 95.0)])),
-            Some(WavTags {
-                unity_note: Some(67),
-                beats: Some(4)
-            })
-        );
-        assert_eq!(
-            tags(wav(&[acid(8, 60, 120.0)])),
-            Some(WavTags {
-                unity_note: None,
-                beats: Some(8)
-            }),
-            "the tempo is not used"
-        );
+        assert_eq!(tags(wav(&[smpl(72)])), Some(WavTags { unity_note: Some(72), beats: None }));
+        assert_eq!(tags(wav(&[acid(4, 64, 120.0)])), Some(WavTags { unity_note: None, beats: Some(4) }), "acid's root is not read");
+        assert_eq!(tags(wav(&[smpl(67), acid(4, 60, 95.0)])), Some(WavTags { unity_note: Some(67), beats: Some(4) }));
+        assert_eq!(tags(wav(&[acid(8, 60, 120.0)])), Some(WavTags { unity_note: None, beats: Some(8) }), "the tempo is not used");
         // After `data`, and behind an odd-length chunk with its pad byte.
         let mut b = wav(&[chunk(b"LIST", b"INFOx")]);
         let extra = [smpl(48), acid(16, 0, 0.0)].concat();
         b.extend(&extra);
         let riff = (b.len() - 8) as u32;
         b[4..8].copy_from_slice(&riff.to_le_bytes());
-        assert_eq!(
-            tags(b),
-            Some(WavTags {
-                unity_note: Some(48),
-                beats: Some(16)
-            })
-        );
+        assert_eq!(tags(b), Some(WavTags { unity_note: Some(48), beats: Some(16) }));
         // Unusable values count as no chunk: 0 beats, a unity note above 127; a body too short is skipped.
         assert_eq!(tags(wav(&[acid(0, 60, 120.0), smpl(200)])), Some(none));
         assert_eq!(tags(wav(&[chunk(b"smpl", &[0; 12])])), Some(none));
@@ -857,15 +699,9 @@ mod tests {
         // one-shots stretched to a beat sounded like a feedback loop on every hit).
         assert_eq!(tags(wav(&[acid_flags(1, 4, 60, 120.0)])), Some(none));
         assert_eq!(tags(wav(&[acid_flags(0x13, 2, 60, 120.0)])), Some(none));
-        assert_eq!(
-            tags(wav(&[acid_flags(0, 2, 60, 120.0)])).unwrap().beats,
-            Some(2)
-        );
+        assert_eq!(tags(wav(&[acid_flags(0, 2, 60, 120.0)])).unwrap().beats, Some(2));
         // The first chunk of each kind counts.
-        assert_eq!(
-            tags(wav(&[smpl(50), smpl(70)])).unwrap().unity_note,
-            Some(50)
-        );
+        assert_eq!(tags(wav(&[smpl(50), smpl(70)])).unwrap().unity_note, Some(50));
         // Not a WAV.
         assert_eq!(tags(b"fLaC\0\0\0\x22".to_vec()), None);
         assert_eq!(tags(b"RIFF".to_vec()), None);
@@ -874,16 +710,9 @@ mod tests {
         b.truncate(b.len() - 20);
         assert_eq!(tags(b).unwrap().unity_note, Some(61));
         // From a file; a missing file has none.
-        let path =
-            std::env::temp_dir().join(format!("os_engine_wav_tags_{}.wav", std::process::id()));
+        let path = std::env::temp_dir().join(format!("os_engine_wav_tags_{}.wav", std::process::id()));
         std::fs::write(&path, wav(&[smpl(67), acid(4, 60, 95.0)])).unwrap();
-        assert_eq!(
-            wav_tags(&path),
-            WavTags {
-                unity_note: Some(67),
-                beats: Some(4)
-            }
-        );
+        assert_eq!(wav_tags(&path), WavTags { unity_note: Some(67), beats: Some(4) });
         let _ = std::fs::remove_file(&path);
         assert_eq!(wav_tags(&path), none);
     }
@@ -897,36 +726,13 @@ mod tests {
         let (one, two) = (root.join("FL One"), root.join("FL Two"));
         for d in [&one, &two] {
             std::fs::create_dir_all(d.join("Data").join("Patches").join("Packs")).unwrap();
-            std::fs::write(
-                d.join("Data")
-                    .join("Patches")
-                    .join("Packs")
-                    .join("Kick.WAV"),
-                wav(&[]),
-            )
-            .unwrap();
+            std::fs::write(d.join("Data").join("Patches").join("Packs").join("Kick.WAV"), wav(&[])).unwrap();
         }
-        let file = one
-            .join("Data")
-            .join("Patches")
-            .join("Packs")
-            .join("Kick.WAV");
+        let file = one.join("Data").join("Patches").join("Packs").join("Kick.WAV");
         // Each part found as it is on disk, the exact name first.
-        let asked = one
-            .join("data")
-            .join("PATCHES")
-            .join("packs")
-            .join("kick.wav");
-        let tail = Path::new("FL One")
-            .join("Data")
-            .join("Patches")
-            .join("Packs")
-            .join("Kick.WAV");
-        assert!(
-            match_case(&asked).is_some_and(|p| p.ends_with(&tail)),
-            "{:?}",
-            match_case(&asked)
-        );
+        let asked = one.join("data").join("PATCHES").join("packs").join("kick.wav");
+        let tail = Path::new("FL One").join("Data").join("Patches").join("Packs").join("Kick.WAV");
+        assert!(match_case(&asked).is_some_and(|p| p.ends_with(&tail)), "{:?}", match_case(&asked));
         assert_eq!(match_case(&one.join("Data").join("nothing.wav")), None);
         let mut lib = SampleLibrary::new(Some(one.clone()));
         for path in [
@@ -940,33 +746,20 @@ mod tests {
         }
         assert!(!SampleLibrary::has_placeholder(&file.to_string_lossy()));
         let asked = asked.to_string_lossy().into_owned();
-        assert!(
-            lib.resolve(&asked).is_some_and(|p| p.is_file()),
-            "an absolute path too"
-        );
+        assert!(lib.resolve(&asked).is_some_and(|p| p.is_file()), "an absolute path too");
         // A missing file keeps the path as written, for the message that names it.
-        assert_eq!(
-            lib.resolve("%FLStudioFactoryData%/Data/x.wav"),
-            Some(one.join("Data").join("x.wav"))
-        );
+        assert_eq!(lib.resolve("%FLStudioFactoryData%/Data/x.wav"), Some(one.join("Data").join("x.wav")));
         // Another install folder: the placeholders' samples are looked for there, the other paths stay cached.
         let placeholder = r"%FLStudioFactoryData%\Data\Patches\Packs\Kick.wav";
         let first = lib.get(placeholder).unwrap();
         let direct = lib.get(&asked).unwrap();
         lib.set_factory_dir(Some(two.clone()));
-        assert_eq!(
-            lib.resolve(placeholder)
-                .and_then(|p| p.parent().map(Path::to_path_buf)),
-            Some(two.join("Data").join("Patches").join("Packs"))
-        );
+        assert_eq!(lib.resolve(placeholder).and_then(|p| p.parent().map(Path::to_path_buf)), Some(two.join("Data").join("Patches").join("Packs")));
         assert!(Arc::ptr_eq(&lib.get(&asked).unwrap(), &direct), "kept");
         assert!(lib.get(placeholder).is_some());
         assert!(lib.cache.contains_key(placeholder));
         lib.set_factory_dir(None);
-        assert!(
-            lib.get(placeholder).is_none() && lib.failures.iter().any(|(k, _)| k == placeholder),
-            "no folder: not found"
-        );
+        assert!(lib.get(placeholder).is_none() && lib.failures.iter().any(|(k, _)| k == placeholder), "no folder: not found");
         drop(first);
         let _ = std::fs::remove_dir_all(&root);
     }

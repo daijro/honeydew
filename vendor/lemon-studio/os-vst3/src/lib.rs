@@ -20,20 +20,13 @@ use std::time::Instant;
 
 pub use os_host::{set_waker, wake, Descriptor};
 
-use host::{
-    from_utf16, null_shared, null_static, Com, EventList, Frame, Handler, HostApp, ParamChanges,
-    Shared, Stream,
-};
-use vst3_sys::base::{
-    kResultOk, kResultTrue, IPluginBase, IPluginFactory, IPluginFactory2, IPluginFactory3,
-    PClassInfo, PClassInfo2, PClassInfoW, PFactoryInfo,
-};
+use host::{from_utf16, null_shared, null_static, Com, EventList, Frame, Handler, HostApp, ParamChanges, Shared, Stream};
+use vst3_sys::base::{kResultOk, kResultTrue, IPluginBase, IPluginFactory, IPluginFactory2, IPluginFactory3, PClassInfo, PClassInfo2, PClassInfoW, PFactoryInfo};
 use vst3_sys::gui::{IPlugView, IPlugViewContentScaleSupport, ViewRect};
 use vst3_sys::utils::SharedVstPtr;
 use vst3_sys::vst::{
-    AudioBusBuffers, BusInfo, Event, EventData, IAudioProcessor, IComponent, IConnectionPoint,
-    IEditController, IMidiMapping, IUnitInfo, NoteExpressionValueEvent, NoteOffEvent, NoteOnEvent,
-    ParameterInfo, ProcessContext, ProcessData, ProcessSetup, UnitInfo,
+    AudioBusBuffers, BusInfo, Event, EventData, IAudioProcessor, IComponent, IConnectionPoint, IEditController, IMidiMapping, IUnitInfo,
+    NoteExpressionValueEvent, NoteOffEvent, NoteOnEvent, ParameterInfo, ProcessContext, ProcessData, ProcessSetup, UnitInfo,
 };
 use vst3_sys::{c_void, ComInterface, VstPtr, IID};
 
@@ -86,12 +79,7 @@ pub fn standard_dirs() -> Vec<PathBuf> {
     #[cfg(windows)]
     {
         if let Some(l) = std::env::var_os("LOCALAPPDATA") {
-            v.push(
-                PathBuf::from(l)
-                    .join("Programs")
-                    .join("Common")
-                    .join("VST3"),
-            );
+            v.push(PathBuf::from(l).join("Programs").join("Common").join("VST3"));
         }
         if let Some(c) = std::env::var_os("COMMONPROGRAMFILES") {
             v.push(PathBuf::from(c).join("VST3"));
@@ -116,8 +104,7 @@ pub fn standard_dirs() -> Vec<PathBuf> {
 }
 
 fn is_vst3(p: &Path) -> bool {
-    p.extension()
-        .is_some_and(|x| x.eq_ignore_ascii_case("vst3"))
+    p.extension().is_some_and(|x| x.eq_ignore_ascii_case("vst3"))
 }
 
 /// The plug-ins in the given folders, searched recursively: bundle folders (`Name.vst3\`, not searched inside) and
@@ -156,13 +143,7 @@ const PLATFORM_TYPE: &std::ffi::CStr = if cfg!(windows) {
 pub const BUNDLE_ARCH: &str = if cfg!(target_os = "macos") {
     "MacOS"
 } else if cfg!(windows) {
-    if cfg!(target_arch = "aarch64") {
-        "arm64-win"
-    } else if cfg!(target_arch = "x86") {
-        "x86-win"
-    } else {
-        "x86_64-win"
-    }
+    if cfg!(target_arch = "aarch64") { "arm64-win" } else if cfg!(target_arch = "x86") { "x86-win" } else { "x86_64-win" }
 } else if cfg!(target_arch = "aarch64") {
     "aarch64-linux"
 } else if cfg!(target_arch = "x86") {
@@ -198,10 +179,7 @@ pub fn module_file(path: &Path) -> PathBuf {
 pub fn fuid_string(id: &IID) -> String {
     let d = &id.data;
     let ordered: [u8; 16] = if cfg!(windows) {
-        [
-            d[3], d[2], d[1], d[0], d[5], d[4], d[7], d[6], d[8], d[9], d[10], d[11], d[12], d[13],
-            d[14], d[15],
-        ]
+        [d[3], d[2], d[1], d[0], d[5], d[4], d[7], d[6], d[8], d[9], d[10], d[11], d[12], d[13], d[14], d[15]]
     } else {
         *d
     };
@@ -210,11 +188,7 @@ pub fn fuid_string(id: &IID) -> String {
 
 /// A NUL-terminated `char8` array.
 fn c_arr(a: &[c_char]) -> String {
-    let bytes: Vec<u8> = a
-        .iter()
-        .take_while(|&&c| c != 0)
-        .map(|&c| c as u8)
-        .collect();
+    let bytes: Vec<u8> = a.iter().take_while(|&&c| c != 0).map(|&c| c as u8).collect();
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
@@ -268,12 +242,7 @@ impl Module {
             let lib = module_entry(lib, path).map_err(|e| format!("{}: {e}", file.display()))?;
             let get = lib
                 .get::<unsafe extern "system" fn() -> *mut c_void>(b"GetPluginFactory\0")
-                .map_err(|_| {
-                    format!(
-                        "{}: not a VST 3 module (no GetPluginFactory)",
-                        file.display()
-                    )
-                })?;
+                .map_err(|_| format!("{}: not a VST 3 module (no GetPluginFactory)", file.display()))?;
             let factory = get();
             Module::from_factory(path, factory, Some(lib))
         }
@@ -281,55 +250,26 @@ impl Module {
 
     /// The module of a factory (`GetPluginFactory`'s result, whose reference it takes over) and its audio classes.
     /// `lib` is the loaded module file, unloaded after the factory is released.
-    pub(crate) unsafe fn from_factory(
-        path: &Path,
-        factory: *mut c_void,
-        lib: Option<libloading::Library>,
-    ) -> Result<Arc<Module>, String> {
+    pub(crate) unsafe fn from_factory(path: &Path, factory: *mut c_void, lib: Option<libloading::Library>) -> Result<Arc<Module>, String> {
         let file = module_file(path);
         unsafe {
-            let code = if factory.is_null() {
-                0
-            } else {
-                *(factory as *const usize)
-            };
+            let code = if factory.is_null() { 0 } else { *(factory as *const usize) };
             let factory = owned::<dyn IPluginFactory>(factory);
-            let mut m = Module {
-                path: path.to_path_buf(),
-                plugins: Vec::new(),
-                classes: Vec::new(),
-                factory: None,
-                host: HostApp::create(),
-                lib,
-                code,
-            };
-            let Some(factory) = factory else {
-                return Err(format!("{}: no plug-in factory", file.display()));
-            };
+            let mut m = Module { path: path.to_path_buf(), plugins: Vec::new(), classes: Vec::new(), factory: None, host: HostApp::create(), lib, code };
+            let Some(factory) = factory else { return Err(format!("{}: no plug-in factory", file.display())) };
             if let Some(f3) = factory.cast::<dyn IPluginFactory3>() {
                 f3.set_host_context(m.host.raw());
             }
             let mut finfo: PFactoryInfo = std::mem::zeroed();
-            let fvendor = if factory.get_factory_info(&mut finfo) == kResultOk {
-                c_arr(&finfo.vendor)
-            } else {
-                String::new()
-            };
+            let fvendor = if factory.get_factory_info(&mut finfo) == kResultOk { c_arr(&finfo.vendor) } else { String::new() };
             let f2 = factory.cast::<dyn IPluginFactory2>();
             let f3 = factory.cast::<dyn IPluginFactory3>();
             for i in 0..factory.count_classes() {
                 let mut ci: PClassInfo = std::mem::zeroed();
-                if factory.get_class_info(i, &mut ci) != kResultOk
-                    || c_arr(&ci.category) != "Audio Module Class"
-                {
+                if factory.get_class_info(i, &mut ci) != kResultOk || c_arr(&ci.category) != "Audio Module Class" {
                     continue;
                 }
-                let (mut name, mut vendor, mut version, mut subcats) = (
-                    c_arr(&ci.name),
-                    fvendor.clone(),
-                    String::new(),
-                    String::new(),
-                );
+                let (mut name, mut vendor, mut version, mut subcats) = (c_arr(&ci.name), fvendor.clone(), String::new(), String::new());
                 if let Some(f2) = &f2 {
                     let mut c2: PClassInfo2 = std::mem::zeroed();
                     if f2.get_class_info2(i, &mut c2) == kResultOk {
@@ -353,11 +293,7 @@ impl Module {
                         }
                     }
                 }
-                let features: Vec<String> = subcats
-                    .split('|')
-                    .filter(|s| !s.is_empty())
-                    .map(str::to_owned)
-                    .collect();
+                let features: Vec<String> = subcats.split('|').filter(|s| !s.is_empty()).map(str::to_owned).collect();
                 m.plugins.push(Descriptor {
                     format: os_host::Format::Vst3,
                     id: fuid_string(&ci.cid),
@@ -384,9 +320,7 @@ impl Module {
     }
 
     fn factory(&self) -> &VstPtr<dyn IPluginFactory> {
-        self.factory
-            .as_ref()
-            .expect("factory lives as long as the module")
+        self.factory.as_ref().expect("factory lives as long as the module")
     }
 
     /// Creates class `iid`-interface object `cid`.
@@ -425,10 +359,7 @@ impl Drop for Module {
 /// with the module's `dlopen` handle on Linux, `bundleEntry` with the bundle (`path`, a `CFBundleRef`) on macOS. All
 /// are optional; a module whose set-up fails is not used.
 #[cfg(windows)]
-unsafe fn module_entry(
-    lib: libloading::Library,
-    _path: &Path,
-) -> Result<libloading::Library, String> {
+unsafe fn module_entry(lib: libloading::Library, _path: &Path) -> Result<libloading::Library, String> {
     unsafe {
         if let Ok(init) = lib.get::<unsafe extern "system" fn() -> bool>(b"InitDll\0") {
             if !init() {
@@ -440,10 +371,7 @@ unsafe fn module_entry(
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
-unsafe fn module_entry(
-    lib: libloading::Library,
-    _path: &Path,
-) -> Result<libloading::Library, String> {
+unsafe fn module_entry(lib: libloading::Library, _path: &Path) -> Result<libloading::Library, String> {
     unsafe {
         let handle = libloading::os::unix::Library::from(lib).into_raw();
         let lib: libloading::Library = libloading::os::unix::Library::from_raw(handle).into();
@@ -458,10 +386,7 @@ unsafe fn module_entry(
 
 /// The module keeps its own reference to the bundle (the SDK's `bundleEntry` retains it until `bundleExit`).
 #[cfg(target_os = "macos")]
-unsafe fn module_entry(
-    lib: libloading::Library,
-    path: &Path,
-) -> Result<libloading::Library, String> {
+unsafe fn module_entry(lib: libloading::Library, path: &Path) -> Result<libloading::Library, String> {
     unsafe {
         if let Ok(entry) = lib.get::<unsafe extern "C" fn(*mut c_void) -> bool>(b"bundleEntry\0") {
             let bundle = os_host::bundle::Bundle::open(path).ok_or("not a bundle")?;
@@ -502,13 +427,8 @@ impl os_host::Library for Module {
 
     fn create(self: Arc<Self>, id: &str) -> Result<os_host::SharedPlugin, String> {
         let guard = os_host::guard::module_of(self.code as *const c_void);
-        let name = self
-            .plugins
-            .iter()
-            .find(|d| d.id.eq_ignore_ascii_case(id))
-            .map_or(id, |d| d.name.as_str());
-        let plugin = os_host::guard::call(&guard, || Plugin::new(&self, id))
-            .map_err(|c| os_host::guard::stopped_text(name, c))??;
+        let name = self.plugins.iter().find(|d| d.id.eq_ignore_ascii_case(id)).map_or(id, |d| d.name.as_str());
+        let plugin = os_host::guard::call(&guard, || Plugin::new(&self, id)).map_err(|c| os_host::guard::stopped_text(name, c))??;
         Ok(os_host::share(plugin, guard))
     }
 }
@@ -613,18 +533,12 @@ unsafe impl Send for Plugin {}
 impl Plugin {
     /// Creates and initialises class `id` of `module`; buses are set up, not active yet.
     pub fn new(module: &Arc<Module>, id: &str) -> Result<Plugin, String> {
-        let i = module
-            .plugins
-            .iter()
-            .position(|d| d.id.eq_ignore_ascii_case(id))
-            .ok_or_else(|| format!("no plug-in {id} in {}", module.path.display()))?;
+        let i = module.plugins.iter().position(|d| d.id.eq_ignore_ascii_case(id)).ok_or_else(|| format!("no plug-in {id} in {}", module.path.display()))?;
         let desc = module.plugins[i].clone();
         let cid = module.classes[i];
         let host = module.host.raw();
         unsafe {
-            let component = module
-                .create::<dyn IComponent>(&cid)
-                .ok_or_else(|| format!("{}: could not create the component", desc.name))?;
+            let component = module.create::<dyn IComponent>(&cid).ok_or_else(|| format!("{}: could not create the component", desc.name))?;
             if component.initialize(host) != kResultOk {
                 return Err(format!("{}: the component did not initialise", desc.name));
             }
@@ -637,11 +551,7 @@ impl Plugin {
                 Some(c) => (Some(c), false),
                 None => {
                     let mut ccid: IID = std::mem::zeroed();
-                    let c = if component.get_controller_class_id(&mut ccid) == kResultOk {
-                        module.create::<dyn IEditController>(&ccid)
-                    } else {
-                        None
-                    };
+                    let c = if component.get_controller_class_id(&mut ccid) == kResultOk { module.create::<dyn IEditController>(&ccid) } else { None };
                     match c {
                         Some(c) if c.initialize(host) == kResultOk => (Some(c), true),
                         _ => (None, false),
@@ -678,10 +588,7 @@ impl Plugin {
                 bus_in: Vec::new(),
                 bus_out: Vec::new(),
                 queue: Vec::with_capacity(256),
-                note_ids: NoteIds {
-                    ids: [-1; 128],
-                    next: 0,
-                },
+                note_ids: NoteIds { ids: [-1; 128], next: 0 },
                 fx_in: (Vec::new(), Vec::new()),
                 from_processor: Vec::with_capacity(256),
                 pending_since: None,
@@ -702,10 +609,7 @@ impl Plugin {
             };
             if let Some(c) = &p.controller {
                 if separate {
-                    if let (Some(a), Some(b)) = (
-                        p.component.cast::<dyn IConnectionPoint>(),
-                        c.cast::<dyn IConnectionPoint>(),
-                    ) {
+                    if let (Some(a), Some(b)) = (p.component.cast::<dyn IConnectionPoint>(), c.cast::<dyn IConnectionPoint>()) {
                         a.connect(shared_of(&b));
                         b.connect(shared_of(&a));
                         p.points = Some((a, b));
@@ -722,8 +626,7 @@ impl Plugin {
                 }
                 // An editor that can live in a host window.
                 if let Some(v) = owned::<dyn IPlugView>(c.create_view(c"editor".as_ptr())) {
-                    p.can_edit =
-                        v.is_platform_type_supported(PLATFORM_TYPE.as_ptr()) == kResultTrue;
+                    p.can_edit = v.is_platform_type_supported(PLATFORM_TYPE.as_ptr()) == kResultTrue;
                 }
                 p.read_units();
             }
@@ -754,12 +657,7 @@ impl Plugin {
                     }
                 }
             }
-            let r = self.processor.set_bus_arrangements(
-                arr_in.as_mut_ptr(),
-                n_in as i32,
-                arr_out.as_mut_ptr(),
-                n_out as i32,
-            );
+            let r = self.processor.set_bus_arrangements(arr_in.as_mut_ptr(), n_in as i32, arr_out.as_mut_ptr(), n_out as i32);
             if debug() && r != kResultOk {
                 eprintln!("[os-vst3] {} keeps its own bus arrangement", self.desc.name);
             }
@@ -777,11 +675,7 @@ impl Plugin {
                 (0..n)
                     .map(|b| {
                         let mut info: BusInfo = std::mem::zeroed();
-                        if c.get_bus_info(AUDIO, dir, b as i32, &mut info) == kResultOk {
-                            info.channel_count.max(0) as usize
-                        } else {
-                            2
-                        }
+                        if c.get_bus_info(AUDIO, dir, b as i32, &mut info) == kResultOk { info.channel_count.max(0) as usize } else { 2 }
                     })
                     .collect()
             };
@@ -800,13 +694,7 @@ impl Plugin {
 
     /// Group names of the controller's units (IUnitInfo): parent path, root unit left out.
     fn read_units(&mut self) {
-        let Some(u) = self
-            .controller
-            .as_ref()
-            .and_then(|c| c.cast::<dyn IUnitInfo>())
-        else {
-            return;
-        };
+        let Some(u) = self.controller.as_ref().and_then(|c| c.cast::<dyn IUnitInfo>()) else { return };
         let mut raw: Vec<(i32, i32, String)> = Vec::new();
         unsafe {
             for i in 0..u.get_unit_count() {
@@ -822,9 +710,7 @@ impl Plugin {
                 let mut parts = Vec::new();
                 let mut at = *id;
                 for _ in 0..16 {
-                    let Some((_, parent, name)) = raw.iter().find(|u| u.0 == at) else {
-                        break;
-                    };
+                    let Some((_, parent, name)) = raw.iter().find(|u| u.0 == at) else { break };
                     if at == 0 {
                         break;
                     }
@@ -840,17 +726,10 @@ impl Plugin {
     /// Honeydew (vendored addition): the controllers' parameters, from the controller's IMidiMapping (UI thread).
     fn read_midi_map(&mut self) {
         self.midi_map = vec![u32::MAX; 130];
-        let Some(m) = self
-            .controller
-            .as_ref()
-            .and_then(|c| c.cast::<dyn IMidiMapping>())
-        else {
-            return;
-        };
+        let Some(m) = self.controller.as_ref().and_then(|c| c.cast::<dyn IMidiMapping>()) else { return };
         for (ctrl, slot) in self.midi_map.iter_mut().enumerate() {
             let mut id = 0;
-            if unsafe { m.get_midi_controller_assignment(0, 0, ctrl as i16, &mut id) } == kResultOk
-            {
+            if unsafe { m.get_midi_controller_assignment(0, 0, ctrl as i16, &mut id) } == kResultOk {
                 *slot = id;
             }
         }
@@ -867,11 +746,7 @@ impl Plugin {
             for i in 0..c.get_parameter_count() {
                 let mut info: ParameterInfo = std::mem::zeroed();
                 let ok = c.get_parameter_info(i, &mut info) == kResultOk;
-                self.param_ids.push(if ok {
-                    (info.id, info.step_count.max(0))
-                } else {
-                    (u32::MAX, 0)
-                });
+                self.param_ids.push(if ok { (info.id, info.step_count.max(0)) } else { (u32::MAX, 0) });
             }
         }
     }
@@ -882,12 +757,7 @@ impl Plugin {
             return true;
         }
         self.deactivate();
-        let setup = ProcessSetup {
-            process_mode: 0,
-            symbolic_sample_size: 0,
-            max_samples_per_block: self.max_frames as i32,
-            sample_rate: f64::from(rate),
-        };
+        let setup = ProcessSetup { process_mode: 0, symbolic_sample_size: 0, max_samples_per_block: self.max_frames as i32, sample_rate: f64::from(rate) };
         unsafe {
             if self.processor.setup_processing(&setup) != kResultOk {
                 if debug() {
@@ -917,10 +787,7 @@ impl Plugin {
             ..ProcessContext::default()
         };
         if debug() {
-            eprintln!(
-                "[os-vst3] {} active at {rate} Hz (latency {}, ins {:?}, outs {:?})",
-                self.desc.name, self.latency, self.ins, self.outs
-            );
+            eprintln!("[os-vst3] {} active at {rate} Hz (latency {}, ins {:?}, outs {:?})", self.desc.name, self.latency, self.ins, self.outs);
         }
         true
     }
@@ -981,8 +848,7 @@ impl Plugin {
         }
         // Edits only reach a processor in `process`: without a stream, flush them with an empty block so the sound
         // and the saved state follow.
-        let waiting =
-            !self.auto.is_empty() || self.shared.to_processor.lock().is_ok_and(|q| !q.is_empty());
+        let waiting = !self.auto.is_empty() || self.shared.to_processor.lock().is_ok_and(|q| !q.is_empty());
         if !waiting {
             self.pending_since = None;
         } else if self.rate != 0 {
@@ -1043,9 +909,7 @@ impl Plugin {
     /// Automation (audio thread): parameter `index` of the list to normalized `value`, `offset` frames into the next
     /// process call. A stepped parameter gets its nearest step; unknown indexes are ignored.
     fn automate(&mut self, offset: u32, index: u32, value: f64) {
-        let Some(&(id, steps)) = self.param_ids.get(index as usize) else {
-            return;
-        };
+        let Some(&(id, steps)) = self.param_ids.get(index as usize) else { return };
         if id == u32::MAX || self.auto.len() >= MAX_AUTO {
             return;
         }
@@ -1108,15 +972,10 @@ impl Plugin {
             return Err(format!("{} has no editor", self.desc.name));
         }
         self.close_editor();
-        self.editor_scale = if cfg!(target_os = "macos") && scale > 0.0 {
-            scale
-        } else {
-            1.0
-        };
+        self.editor_scale = if cfg!(target_os = "macos") && scale > 0.0 { scale } else { 1.0 };
         let c = self.controller.as_ref().ok_or("no edit controller")?;
         unsafe {
-            let view = owned::<dyn IPlugView>(c.create_view(c"editor".as_ptr()))
-                .ok_or("the plug-in could not create its editor")?;
+            let view = owned::<dyn IPlugView>(c.create_view(c"editor".as_ptr())).ok_or("the plug-in could not create its editor")?;
             if view.is_platform_type_supported(PLATFORM_TYPE.as_ptr()) != kResultTrue {
                 return Err("the editor cannot be shown in a window".into());
             }
@@ -1149,8 +1008,7 @@ impl Plugin {
             return Some(self.to_px(w, h));
         }
         let mut r = ViewRect::default();
-        (unsafe { v.get_size(&mut r) } == kResultOk)
-            .then(|| self.to_px(r.right - r.left, r.bottom - r.top))
+        (unsafe { v.get_size(&mut r) } == kResultOk).then(|| self.to_px(r.right - r.left, r.bottom - r.top))
     }
 
     /// An editor size as the plug-in gives it (points on macOS) in pixels.
@@ -1177,11 +1035,7 @@ impl Plugin {
             if self.component.get_state(s.shared()) != kResultOk {
                 return None;
             }
-            let mut p = preset::Preset {
-                class_id: self.desc.id.clone(),
-                component: s.get().bytes(),
-                controller: Vec::new(),
-            };
+            let mut p = preset::Preset { class_id: self.desc.id.clone(), component: s.get().bytes(), controller: Vec::new() };
             // A single-component plug-in's controller is the same object: its state is the component's.
             if let (Some(c), true) = (&self.controller, self.separate) {
                 let s = Stream::create(Vec::new());
@@ -1201,11 +1055,7 @@ impl Plugin {
                 _ => return false,
             }
         } else {
-            preset::Preset {
-                class_id: self.desc.id.clone(),
-                component: data.to_vec(),
-                controller: Vec::new(),
-            }
+            preset::Preset { class_id: self.desc.id.clone(), component: data.to_vec(), controller: Vec::new() }
         };
         unsafe {
             let s = Stream::create(p.component.clone());
@@ -1237,11 +1087,7 @@ impl Plugin {
             }
             return;
         };
-        c.state |= CONT_TIME_VALID
-            | TEMPO_VALID
-            | TIME_SIG_VALID
-            | PROJECT_TIME_MUSIC_VALID
-            | BAR_POSITION_VALID;
+        c.state |= CONT_TIME_VALID | TEMPO_VALID | TIME_SIG_VALID | PROJECT_TIME_MUSIC_VALID | BAR_POSITION_VALID;
         if t.playing {
             c.state |= PLAYING;
         }
@@ -1262,12 +1108,7 @@ impl Plugin {
     }
 
     /// Processes up to `max_frames` frames: queued notes inside them, waiting parameter changes, the given audio.
-    fn process_chunk(
-        &mut self,
-        left: &mut [f32],
-        right: &mut [f32],
-        input: Option<(&mut [f32], &mut [f32])>,
-    ) {
+    fn process_chunk(&mut self, left: &mut [f32], right: &mut [f32], input: Option<(&mut [f32], &mut [f32])>) {
         let n = left.len();
         let max = self.max_frames as usize;
         // Notes of this chunk; later ones move on.
@@ -1288,10 +1129,7 @@ impl Plugin {
                     }
                 }
             } else {
-                self.queue[kept] = Note {
-                    time: e.time - n as u32,
-                    ..e
-                };
+                self.queue[kept] = Note { time: e.time - n as u32, ..e };
                 kept += 1;
             }
         }
@@ -1312,11 +1150,7 @@ impl Plugin {
         for (b, &ch) in self.ins.iter().enumerate() {
             let start = self.ptrs.len();
             for c in 0..ch {
-                let host = if b == 0 && !il.is_null() {
-                    [il, ir].get(c).copied()
-                } else {
-                    None
-                };
+                let host = if b == 0 && !il.is_null() { [il, ir].get(c).copied() } else { None };
                 let p = host.unwrap_or_else(|| {
                     // SAFETY: scratch holds max_frames frames for every channel.
                     let s = unsafe { base.add(k * max) };
@@ -1327,30 +1161,18 @@ impl Plugin {
                 self.ptrs.push(p as *mut c_void);
             }
             // SAFETY: `ptrs` has room for every channel, so it never reallocates while these point into it.
-            self.bus_in.push(AudioBusBuffers {
-                num_channels: ch as i32,
-                silence_flags: 0,
-                buffers: unsafe { self.ptrs.as_mut_ptr().add(start) },
-            });
+            self.bus_in.push(AudioBusBuffers { num_channels: ch as i32, silence_flags: 0, buffers: unsafe { self.ptrs.as_mut_ptr().add(start) } });
         }
         let (ol, or) = (left.as_mut_ptr(), right.as_mut_ptr());
         for (b, &ch) in self.outs.iter().enumerate() {
             let start = self.ptrs.len();
             for c in 0..ch {
-                let host = if b == 0 {
-                    [ol, or].get(c).copied()
-                } else {
-                    None
-                };
+                let host = if b == 0 { [ol, or].get(c).copied() } else { None };
                 let p = host.unwrap_or_else(|| unsafe { base.add(k * max) });
                 k += 1;
                 self.ptrs.push(p as *mut c_void);
             }
-            self.bus_out.push(AudioBusBuffers {
-                num_channels: ch as i32,
-                silence_flags: 0,
-                buffers: unsafe { self.ptrs.as_mut_ptr().add(start) },
-            });
+            self.bus_out.push(AudioBusBuffers { num_channels: ch as i32, silence_flags: 0, buffers: unsafe { self.ptrs.as_mut_ptr().add(start) } });
         }
         let mut data = ProcessData {
             process_mode: 0,
@@ -1358,23 +1180,11 @@ impl Plugin {
             num_samples: n as i32,
             num_inputs: self.bus_in.len() as i32,
             num_outputs: self.bus_out.len() as i32,
-            inputs: if self.bus_in.is_empty() {
-                std::ptr::null_mut()
-            } else {
-                self.bus_in.as_mut_ptr()
-            },
-            outputs: if self.bus_out.is_empty() {
-                std::ptr::null_mut()
-            } else {
-                self.bus_out.as_mut_ptr()
-            },
+            inputs: if self.bus_in.is_empty() { std::ptr::null_mut() } else { self.bus_in.as_mut_ptr() },
+            outputs: if self.bus_out.is_empty() { std::ptr::null_mut() } else { self.bus_out.as_mut_ptr() },
             input_param_changes: self.params_in.static_ptr(),
             output_param_changes: self.params_out.static_ptr(),
-            input_events: if self.takes_notes {
-                self.events.static_ptr()
-            } else {
-                null_static()
-            },
+            input_events: if self.takes_notes { self.events.static_ptr() } else { null_static() },
             output_events: null_static(),
             context: &mut self.context,
         };
@@ -1395,10 +1205,7 @@ impl Plugin {
 
     fn debug_level(&mut self, rate: u32, left: &[f32], right: &[f32]) {
         if debug() {
-            self.dbg_peak = left
-                .iter()
-                .chain(right.iter())
-                .fold(self.dbg_peak, |m, v| m.max(v.abs()));
+            self.dbg_peak = left.iter().chain(right.iter()).fold(self.dbg_peak, |m, v| m.max(v.abs()));
             self.dbg_frames += left.len() as u64;
             if self.dbg_frames >= u64::from(rate) {
                 eprintln!("[os-vst3] {} peak {:.3}", self.desc.name, self.dbg_peak);
@@ -1425,28 +1232,12 @@ impl NoteIds {
                 let id = self.next;
                 self.next = (id + 1) & 0x7fff_ffff;
                 self.ids[key] = id;
-                let on = NoteOnEvent {
-                    channel: 0,
-                    pitch: i16::from(n.key),
-                    tuning: 0.0,
-                    velocity: n.velocity,
-                    length: 0,
-                    note_id: id,
-                };
+                let on = NoteOnEvent { channel: 0, pitch: i16::from(n.key), tuning: 0.0, velocity: n.velocity, length: 0, note_id: id };
                 (NOTE_ON_EVENT, EventData { note_on: on })
             }
-            NoteKind::Off => (
-                NOTE_OFF_EVENT,
-                EventData {
-                    note_off: NoteOffEvent {
-                        channel: 0,
-                        pitch: i16::from(n.key),
-                        velocity: 0.0,
-                        note_id: -1,
-                        tuning: 0.0,
-                    },
-                },
-            ),
+            NoteKind::Off => {
+                (NOTE_OFF_EVENT, EventData { note_off: NoteOffEvent { channel: 0, pitch: i16::from(n.key), velocity: 0.0, note_id: -1, tuning: 0.0 } })
+            }
             NoteKind::Tune => {
                 let id = self.ids[key];
                 if id < 0 {
@@ -1454,26 +1245,10 @@ impl NoteIds {
                 }
                 // Normalized tuning: 0.5 = none, plain semitones = 240 * (v - 0.5).
                 let value = (f64::from(n.velocity) / 240.0 + 0.5).clamp(0.0, 1.0);
-                (
-                    NOTE_EXPRESSION_VALUE_EVENT,
-                    EventData {
-                        note_expression_value: NoteExpressionValueEvent {
-                            type_id: TUNING_TYPE_ID,
-                            note_id: id,
-                            value,
-                        },
-                    },
-                )
+                (NOTE_EXPRESSION_VALUE_EVENT, EventData { note_expression_value: NoteExpressionValueEvent { type_id: TUNING_TYPE_ID, note_id: id, value } })
             }
         };
-        Some(Event {
-            bus_index: 0,
-            sample_offset: n.time as i32,
-            ppq_position: 0.0,
-            flags: 0,
-            type_,
-            event,
-        })
+        Some(Event { bus_index: 0, sample_offset: n.time as i32, ppq_position: 0.0, flags: 0, type_, event })
     }
 }
 
@@ -1519,17 +1294,11 @@ impl os_host::Plugin for Plugin {
     }
 
     fn latency(&self) -> u32 {
-        if self.rate == 0 {
-            0
-        } else {
-            self.latency
-        }
+        if self.rate == 0 { 0 } else { self.latency }
     }
 
     fn param_count(&self) -> usize {
-        self.controller
-            .as_ref()
-            .map_or(0, |c| unsafe { c.get_parameter_count() }.max(0) as usize)
+        self.controller.as_ref().map_or(0, |c| unsafe { c.get_parameter_count() }.max(0) as usize)
     }
 
     fn param_info(&self, index: usize) -> Option<os_host::ParamInfo> {
@@ -1544,12 +1313,7 @@ impl os_host::Plugin for Plugin {
                 id: info.id,
                 name: from_utf16(&info.title),
                 unit: from_utf16(&info.units),
-                group: self
-                    .units
-                    .iter()
-                    .find(|u| u.0 == info.unit_id)
-                    .map(|u| u.1.clone())
-                    .unwrap_or_default(),
+                group: self.units.iter().find(|u| u.0 == info.unit_id).map(|u| u.1.clone()).unwrap_or_default(),
                 min: c.normalized_param_to_plain(info.id, 0.0),
                 max: c.normalized_param_to_plain(info.id, 1.0),
                 default: info.default_normalized_value,
@@ -1565,21 +1329,17 @@ impl os_host::Plugin for Plugin {
 
     fn param_value(&self, id: u32) -> Option<f64> {
         let c = self.controller.as_ref()?;
-        self.known(id)
-            .then(|| unsafe { c.get_param_normalized(id) })
+        self.known(id).then(|| unsafe { c.get_param_normalized(id) })
     }
 
     fn param_text(&self, id: u32, value: f64) -> Option<String> {
         let c = self.controller.as_ref()?;
         let mut buf = [0i16; 128];
-        (unsafe { c.get_param_string_by_value(id, value, buf.as_mut_ptr()) } == kResultOk)
-            .then(|| from_utf16(&buf))
+        (unsafe { c.get_param_string_by_value(id, value, buf.as_mut_ptr()) } == kResultOk).then(|| from_utf16(&buf))
     }
 
     fn set_param(&mut self, id: u32, value: f64) -> bool {
-        let Some(c) = &self.controller else {
-            return false;
-        };
+        let Some(c) = &self.controller else { return false };
         if !self.known(id) {
             return false;
         }
@@ -1592,11 +1352,7 @@ impl os_host::Plugin for Plugin {
     }
 
     fn take_param_events(&mut self) -> Vec<os_host::ParamEvent> {
-        self.shared
-            .events
-            .lock()
-            .map(|mut v| std::mem::take(&mut *v))
-            .unwrap_or_default()
+        self.shared.events.lock().map(|mut v| std::mem::take(&mut *v)).unwrap_or_default()
     }
 
     fn attention(&self) -> Option<Arc<os_host::Attention>> {
@@ -1628,12 +1384,7 @@ impl os_engine::Instrument for Plugin {
         let held: Vec<u8> = self.ledger.held().collect();
         for key in held {
             if !std::mem::replace(&mut sent[usize::from(key.min(127))], true) {
-                self.queue.push(Note {
-                    time: 0,
-                    kind: NoteKind::Off,
-                    key,
-                    velocity: 0.0,
-                });
+                self.queue.push(Note { time: 0, kind: NoteKind::Off, key, velocity: 0.0 });
             }
         }
         self.ledger.clear();
@@ -1645,31 +1396,16 @@ impl os_engine::Instrument for Plugin {
     }
 
     fn note_on(&mut self, offset: u32, key: u8, velocity: f32) {
-        self.queue.push(Note {
-            time: offset,
-            kind: NoteKind::On,
-            key,
-            velocity: velocity.clamp(0.0, 1.0),
-        });
+        self.queue.push(Note { time: offset, kind: NoteKind::On, key, velocity: velocity.clamp(0.0, 1.0) });
     }
 
     fn note_off(&mut self, offset: u32, key: u8) {
-        self.queue.push(Note {
-            time: offset,
-            kind: NoteKind::Off,
-            key,
-            velocity: 0.0,
-        });
+        self.queue.push(Note { time: offset, kind: NoteKind::Off, key, velocity: 0.0 });
     }
 
     /// Portamento glides: the tuning note expression of the key's sounding note.
     fn tune(&mut self, offset: u32, key: u8, semitones: f32) {
-        self.queue.push(Note {
-            time: offset,
-            kind: NoteKind::Tune,
-            key,
-            velocity: semitones,
-        });
+        self.queue.push(Note { time: offset, kind: NoteKind::Tune, key, velocity: semitones });
     }
 
     fn param(&mut self, offset: u32, index: u32, value: f64) {
@@ -1684,17 +1420,12 @@ impl os_engine::Instrument for Plugin {
     // parameter each one drives, which takes it as automation.
     fn midi(&mut self, offset: u32, [status, data1, data2]: [u8; 3]) {
         let (ctrl, value) = match status & 0xF0 {
-            0xE0 => (
-                129,
-                f64::from(u16::from(data2 & 0x7F) << 7 | u16::from(data1 & 0x7F)) / 16383.0,
-            ),
+            0xE0 => (129, f64::from(u16::from(data2 & 0x7F) << 7 | u16::from(data1 & 0x7F)) / 16383.0),
             0xD0 => (128, f64::from(data1 & 0x7F) / 127.0),
             0xB0 => (usize::from(data1 & 0x7F), f64::from(data2 & 0x7F) / 127.0),
             _ => return,
         };
-        let Some(&id) = self.midi_map.get(ctrl) else {
-            return;
-        };
+        let Some(&id) = self.midi_map.get(ctrl) else { return };
         if id == u32::MAX || self.auto.len() >= MAX_AUTO {
             return;
         }
@@ -1750,11 +1481,7 @@ impl os_engine::HostedEffect for Plugin {
             ir.clear();
             il.extend_from_slice(&left[at..at + n]);
             ir.extend_from_slice(&right[at..at + n]);
-            self.process_chunk(
-                &mut left[at..at + n],
-                &mut right[at..at + n],
-                Some((&mut il[..], &mut ir[..])),
-            );
+            self.process_chunk(&mut left[at..at + n], &mut right[at..at + n], Some((&mut il[..], &mut ir[..])));
             at += n;
         }
         self.fx_in = (il, ir);

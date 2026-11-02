@@ -14,10 +14,7 @@ use std::time::Instant;
 use web_time::Instant;
 
 use crate::guard::{self, Module};
-use crate::{
-    Attention, Descriptor, HostedEffect, Instrument, Meter, ParamEvent, ParamInfo, Plugin,
-    SharedPlugin,
-};
+use crate::{Attention, Descriptor, HostedEffect, Instrument, Meter, ParamEvent, ParamInfo, Plugin, SharedPlugin};
 use os_engine::{ChannelLevels, ChannelVoicing, TransportInfo};
 
 /// A plugin instance of any format, called through the crash guard. Once its code crashed (this instance, or another
@@ -39,13 +36,7 @@ pub struct Guarded<P: Plugin> {
 /// Shares `plugin`, code of `module`, as a guarded instance (format crates' `Library::create`).
 pub fn share<P: Plugin + 'static>(plugin: P, module: Arc<Module>) -> SharedPlugin {
     let attention = plugin.attention();
-    Arc::new(Mutex::new(Guarded {
-        inner: ManuallyDrop::new(plugin),
-        module,
-        state: RefCell::new(None),
-        meter: Arc::default(),
-        attention,
-    }))
+    Arc::new(Mutex::new(Guarded { inner: ManuallyDrop::new(plugin), module, state: RefCell::new(None), meter: Arc::default(), attention }))
 }
 
 impl<P: Plugin> Guarded<P> {
@@ -87,31 +78,14 @@ impl<P: Plugin> Instrument for Guarded<P> {
     fn note_on_from(&mut self, offset: u32, key: u8, velocity: f32, start: f32) {
         self.run((), |p| p.note_on_from(offset, key, velocity, start))
     }
-    fn note_start(
-        &mut self,
-        offset: u32,
-        key: u8,
-        velocity: f32,
-        start: f32,
-        levels: os_engine::NoteLevels,
-    ) {
+    fn note_start(&mut self, offset: u32, key: u8, velocity: f32, start: f32, levels: os_engine::NoteLevels) {
         self.run((), |p| p.note_start(offset, key, velocity, start, levels))
     }
     fn choke(&mut self, offset: u32, key: u8) {
         self.run((), |p| p.choke(offset, key))
     }
-    fn voice_start(
-        &mut self,
-        offset: u32,
-        key: u8,
-        velocity: f32,
-        start: f32,
-        levels: os_engine::NoteLevels,
-        voice: u32,
-    ) {
-        self.run((), |p| {
-            p.voice_start(offset, key, velocity, start, levels, voice)
-        })
+    fn voice_start(&mut self, offset: u32, key: u8, velocity: f32, start: f32, levels: os_engine::NoteLevels, voice: u32) {
+        self.run((), |p| p.voice_start(offset, key, velocity, start, levels, voice))
     }
     fn voice_gains(&self) -> bool {
         self.look(false, |p| p.voice_gains())
@@ -280,9 +254,7 @@ impl<P: Plugin> Plugin for Guarded<P> {
     /// Its module's crash, else a stop the instance reports itself (a native plugin stops one instance when it raises
     /// an error it does not handle).
     fn stopped(&self) -> Option<u32> {
-        self.module
-            .crashed()
-            .or_else(|| self.look(None, |p| p.stopped()))
+        self.module.crashed().or_else(|| self.look(None, |p| p.stopped()))
     }
     fn meter(&self) -> Option<Arc<Meter>> {
         Some(self.meter.clone())
@@ -381,19 +353,8 @@ mod tests {
             kind: crate::Kind::Effect,
             path: Default::default(),
         };
-        let (crash, dropped) = (
-            Arc::new(AtomicBool::new(false)),
-            Arc::new(AtomicBool::new(false)),
-        );
-        let p = share(
-            Crashy {
-                desc,
-                crash: crash.clone(),
-                dropped: dropped.clone(),
-                attention: Arc::default(),
-            },
-            Arc::new(Module::default()),
-        );
+        let (crash, dropped) = (Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)));
+        let p = share(Crashy { desc, crash: crash.clone(), dropped: dropped.clone(), attention: Arc::default() }, Arc::new(Module::default()));
         (p, crash, dropped)
     }
 
@@ -416,42 +377,23 @@ mod tests {
     fn a_crashed_instance_stops() {
         let (p, crash, dropped) = crashy();
         assert_eq!(p.lock().unwrap().save_state(), Some(vec![1, 2, 3]));
-        let attention = p
-            .lock()
-            .unwrap()
-            .attention()
-            .expect("the instance's count, through the guard");
+        let attention = p.lock().unwrap().attention().expect("the instance's count, through the guard");
         let before = attention.count();
         crash.store(true, Ordering::Relaxed);
         let (mut l, mut r) = ([0.25f32; 4], [0.25f32; 4]);
         p.lock().unwrap().process_fx(48000, &mut l, &mut r);
         assert_eq!(p.lock().unwrap().stopped(), Some(0xC000_0005));
-        assert!(
-            attention.count() > before,
-            "the UI hears of the stop without polling"
-        );
+        assert!(attention.count() > before, "the UI hears of the stop without polling");
         crash.store(false, Ordering::Relaxed);
         p.lock().unwrap().process_fx(48000, &mut l, &mut r);
         assert_eq!((l, r), ([0.25; 4], [0.25; 4]), "passed through");
         p.lock().unwrap().process(48000, &mut l, &mut r);
         assert_eq!((l, r), ([0.0; 4], [0.0; 4]), "silent");
-        assert_eq!(
-            p.lock().unwrap().save_state(),
-            Some(vec![1, 2, 3]),
-            "the last state it saved"
-        );
-        assert!(
-            p.lock()
-                .unwrap()
-                .open_editor(std::ptr::null_mut(), 1.0)
-                .is_err()
-        );
+        assert_eq!(p.lock().unwrap().save_state(), Some(vec![1, 2, 3]), "the last state it saved");
+        assert!(p.lock().unwrap().open_editor(std::ptr::null_mut(), 1.0).is_err());
         assert!(!p.lock().unwrap().has_editor());
         drop(p);
-        assert!(
-            !dropped.load(Ordering::Relaxed),
-            "a crashed instance is left as it is"
-        );
+        assert!(!dropped.load(Ordering::Relaxed), "a crashed instance is left as it is");
     }
 
     /// An instrument that stops itself (it contained an error of its own) and takes the channel's levels into its voices.
@@ -499,8 +441,7 @@ mod tests {
         }
         fn close_editor(&mut self) {}
         fn save_state(&self) -> Option<Vec<u8>> {
-            self.levels
-                .map(|(v, p)| vec![(v * 10.0).round() as u8, ((p + 1.0) * 10.0).round() as u8])
+            self.levels.map(|(v, p)| vec![(v * 10.0).round() as u8, ((p + 1.0) * 10.0).round() as u8])
         }
         fn load_state(&mut self, _: &[u8]) -> bool {
             true
@@ -524,20 +465,9 @@ mod tests {
             kind: crate::Kind::Instrument,
             path: Default::default(),
         };
-        let p = share(
-            SelfStopping {
-                desc,
-                stop: None,
-                levels: None,
-            },
-            Arc::new(Module::default()),
-        );
+        let p = share(SelfStopping { desc, stop: None, levels: None }, Arc::new(Module::default()));
         let mut g = p.lock().unwrap();
-        assert!(g.channel_levels(ChannelLevels {
-            volume: 0.5,
-            pan: -0.3,
-            ..ChannelLevels::default()
-        }));
+        assert!(g.channel_levels(ChannelLevels { volume: 0.5, pan: -0.3, ..ChannelLevels::default() }));
         assert_eq!(g.save_state(), Some(vec![5, 7]));
         assert_eq!(g.stopped(), None);
         g.idle();

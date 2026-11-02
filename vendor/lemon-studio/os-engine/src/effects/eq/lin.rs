@@ -52,18 +52,12 @@ pub struct TableBand {
 fn p2(x: f32) -> f32 {
     let k = x.trunc() as i32;
     let fr = f64::from(x - k as f32);
-    (2f64.powi(k)
-        * (fr * (fr * (fr * 0.079064658211 + 0.224328091473) + 0.69659850257) + 0.999862219597))
-        as f32
+    (2f64.powi(k) * (fr * (fr * (fr * 0.079064658211 + 0.224328091473) + 0.69659850257) + 0.999862219597)) as f32
 }
 
 /// A table entry from the bands' squared magnitude: `2^(dB / 6)`.
 fn gain_of(mag: f32) -> f32 {
-    let v = if mag == 0.0 {
-        -1000.0
-    } else {
-        ((f64::from(mag).log10() * 0.5555555555555556) as f32).clamp(-1000.0, 1000.0)
-    };
+    let v = if mag == 0.0 { -1000.0 } else { ((f64::from(mag).log10() * 0.5555555555555556) as f32).clamp(-1000.0, 1000.0) };
     if v.is_nan() {
         return 1.0;
     }
@@ -94,10 +88,7 @@ pub fn table(n: usize, rate: f64, band_rate: f64, bands: &[TableBand]) -> Vec<f3
         if f < 0.1 {
             f = 0.1;
         }
-        if let Some(b) = bands
-            .iter()
-            .find(|b| b.narrow && prev < b.freq && b.freq <= f)
-        {
+        if let Some(b) = bands.iter().find(|b| b.narrow && prev < b.freq && b.freq <= f) {
             f = b.freq;
         }
         prev = f;
@@ -148,9 +139,7 @@ fn taps(t: &[f32], fft: &Fft, n: usize) -> Vec<f32> {
     let z = response(t, fft, n);
     let h = n / 2;
     let step = 1.0f32 / (h - 1) as f32;
-    (0..h)
-        .map(|i| z[n / 4 + i] * (f64::from((i as f32 * std::f32::consts::PI) * step).sin() as f32))
-        .collect()
+    (0..h).map(|i| z[n / 4 + i] * (f64::from((i as f32 * std::f32::consts::PI) * step).sin() as f32)).collect()
 }
 
 /// The kernel of a table: its taps transformed with `N / 2` zeros after them.
@@ -160,10 +149,7 @@ pub fn kernel(t: &[f32], fft: &Fft, n: usize) -> Kernel {
         *r = f64::from(v);
     }
     fft.run(&mut re, &mut im, false);
-    Kernel {
-        re: re.iter().map(|&v| v as f32).collect(),
-        im: im.iter().map(|&v| v as f32).collect(),
-    }
+    Kernel { re: re.iter().map(|&v| v as f32).collect(), im: im.iter().map(|&v| v as f32).collect() }
 }
 
 /// One convolver: a kernel (none = silence), per channel an input block of `H` and a result of `N`, and the position.
@@ -176,12 +162,7 @@ struct Convolver {
 
 impl Convolver {
     fn new(n: usize) -> Convolver {
-        Convolver {
-            kernel: None,
-            input: [vec![0.0; n / 2], vec![0.0; n / 2]],
-            result: [vec![0.0; n], vec![0.0; n]],
-            pos: 0,
-        }
+        Convolver { kernel: None, input: [vec![0.0; n / 2], vec![0.0; n / 2]], result: [vec![0.0; n], vec![0.0; n]], pos: 0 }
     }
 
     fn empty(&mut self) {
@@ -193,9 +174,7 @@ impl Convolver {
     }
 
     fn frame(&mut self, x: [f32; 2], fft: &Fft, re: &mut [f64], im: &mut [f64]) -> [f32; 2] {
-        let Some(k) = &self.kernel else {
-            return [0.0; 2];
-        };
+        let Some(k) = &self.kernel else { return [0.0; 2] };
         let out = [self.result[0][self.pos], self.result[1][self.pos]];
         self.input[0][self.pos] = x[0];
         self.input[1][self.pos] = x[1];
@@ -330,22 +309,14 @@ mod tests {
     // spec: plugins/fruity-parametric-eq-2.md "LIN": "The transform length"
     #[test]
     fn transform_lengths_and_delays() {
-        assert_eq!(
-            (0..5)
-                .map(|s| transform_len(s, 44100.0))
-                .collect::<Vec<_>>(),
-            vec![512, 1024, 2048, 4096, 8192]
-        );
+        assert_eq!((0..5).map(|s| transform_len(s, 44100.0)).collect::<Vec<_>>(), vec![512, 1024, 2048, 4096, 8192]);
         assert_eq!(transform_len(2, 48000.0), 2048);
         assert_eq!(transform_len(2, 32000.0), 1024);
         assert_eq!(transform_len(2, 62366.0), 2048);
         assert_eq!(transform_len(2, 62367.0), 4096);
         assert_eq!(transform_len(2, 96000.0), 4096);
         assert_eq!(transform_len(7, 192000.0), 65536);
-        assert_eq!(
-            [2048, 512, 1024, 4096, 8192].map(delay),
-            [1536, 384, 768, 3072, 6144]
-        );
+        assert_eq!([2048, 512, 1024, 4096, 8192].map(delay), [1536, 384, 768, 3072, 6144]);
         assert_eq!([0, 1, 2, 3, 9].map(fade_time), [0.1, 0.25, 0.01, 0.02, 0.1]);
     }
 
@@ -365,27 +336,12 @@ mod tests {
     /// A table with one narrow peaking band and a shelf: the narrow band's centre is put into the table.
     #[test]
     fn narrow_bands_enter_the_table() {
-        use super::super::design::{Design, Stored, band};
+        use super::super::design::{band, Design, Stored};
         let rate = 44100.0;
-        let peak = Stored {
-            level: 1200,
-            freq: 30000,
-            width: 4000,
-            kind: super::super::PEAKING,
-            order: 0,
-        };
+        let peak = Stored { level: 1200, freq: 30000, width: 4000, kind: super::super::PEAKING, order: 0 };
         let coefs = band(&peak, Design::Ordinary(rate));
         let freq = super::super::design::freq_hz(peak.freq);
-        let t = table(
-            2048,
-            rate,
-            rate,
-            &[TableBand {
-                freq,
-                narrow: true,
-                sections: Some(coefs),
-            }],
-        );
+        let t = table(2048, rate, rate, &[TableBand { freq, narrow: true, sections: Some(coefs) }]);
         // The entry whose frequency first reaches the centre holds the full +12 dB: 2^2 through the cubic, which reads
         // 4 * 0.999862 at x = 2 and 2 * 1.999854 just below it.
         let i = (f64::from(freq) / (rate / 2048.0)).ceil() as usize;
@@ -397,41 +353,22 @@ mod tests {
     // spec: plugins/fruity-parametric-eq-2.md "LIN": "From a table to a kernel"
     #[test]
     fn kernels_are_symmetric_about_n_4() {
-        use super::super::design::{Design, Stored, band, freq_hz};
+        use super::super::design::{band, freq_hz, Design, Stored};
         let (n, rate) = (2048, 44100.0);
         let fft = Fft::new(n);
-        let bands: Vec<TableBand> = [
-            (900, 20000, 30000, 5),
-            (-1200, 40000, 20000, 6),
-            (0, 60000, 36068, 3),
-        ]
-        .iter()
-        .map(|&(level, freq, width, kind)| {
-            let s = Stored {
-                level,
-                freq,
-                width,
-                kind,
-                order: 0,
-            };
-            TableBand {
-                freq: freq_hz(freq),
-                narrow: false,
-                sections: Some(band(&s, Design::Ordinary(rate))),
-            }
-        })
-        .collect();
+        let bands: Vec<TableBand> = [(900, 20000, 30000, 5), (-1200, 40000, 20000, 6), (0, 60000, 36068, 3)]
+            .iter()
+            .map(|&(level, freq, width, kind)| {
+                let s = Stored { level, freq, width, kind, order: 0 };
+                TableBand { freq: freq_hz(freq), narrow: false, sections: Some(band(&s, Design::Ordinary(rate))) }
+            })
+            .collect();
         let t = table(n, rate, rate, &bands);
         // The zero-phase response is even about N / 2.
         let z = response(&t, &fft, n);
         let big = z.iter().fold(0f32, |m, v| m.max(v.abs()));
         for d in 1..n / 2 {
-            assert!(
-                (z[n / 2 - d] - z[n / 2 + d]).abs() <= big * 1e-6,
-                "{d}: {} {}",
-                z[n / 2 - d],
-                z[n / 2 + d]
-            );
+            assert!((z[n / 2 - d] - z[n / 2 + d]).abs() <= big * 1e-6, "{d}: {} {}", z[n / 2 - d], z[n / 2 + d]);
         }
         // The taps keep it about tap N / 4, up to the window's half-sample offset ((H - 1) / 2 is its centre).
         let k = taps(&t, &fft, n);
@@ -444,11 +381,7 @@ mod tests {
         // A flat table gives a single tap at N / 4 (the window's value there).
         let flat = taps(&vec![1f32; n / 2 + 1], &fft, n);
         assert!((flat[n / 4] - 1.0).abs() < 1e-4, "{}", flat[n / 4]);
-        assert!(
-            flat.iter()
-                .enumerate()
-                .all(|(i, v)| i == n / 4 || v.abs() < 1e-6)
-        );
+        assert!(flat.iter().enumerate().all(|(i, v)| i == n / 4 || v.abs() < 1e-6));
     }
 
     // spec: plugins/fruity-parametric-eq-2.md "LIN": "A convolver", "Frames, and the change of kernel"
@@ -467,16 +400,9 @@ mod tests {
         r[len] = -0.5;
         lin.process(&mut l, &mut r);
         let at = len + delay(n);
-        let peak = (0..total)
-            .max_by(|&a, &b| l[a].abs().total_cmp(&l[b].abs()))
-            .unwrap();
+        let peak = (0..total).max_by(|&a, &b| l[a].abs().total_cmp(&l[b].abs())).unwrap();
         assert_eq!(peak, at);
-        assert!(
-            (l[at] - 1.0).abs() < 1e-4 && (r[at] + 0.5).abs() < 1e-4,
-            "{} {}",
-            l[at],
-            r[at]
-        );
+        assert!((l[at] - 1.0).abs() < 1e-4 && (r[at] + 0.5).abs() < 1e-4, "{} {}", l[at], r[at]);
         assert!(l.iter().enumerate().all(|(i, v)| i == at || v.abs() < 1e-6));
     }
 
@@ -498,15 +424,7 @@ mod tests {
         let mut r = l.clone();
         lin.process(&mut l, &mut r);
         assert!(!lin.fading());
-        assert!(
-            (l[0] - 0.5).abs() < 2e-3
-                && (l[220] - 0.375).abs() < 2e-3
-                && (l[500] - 0.25).abs() < 2e-3,
-            "{} {} {}",
-            l[0],
-            l[220],
-            l[500]
-        );
+        assert!((l[0] - 0.5).abs() < 2e-3 && (l[220] - 0.375).abs() < 2e-3 && (l[500] - 0.25).abs() < 2e-3, "{} {} {}", l[0], l[220], l[500]);
         for w in l[..441].windows(2) {
             assert!(w[1] <= w[0] + 1e-6);
         }

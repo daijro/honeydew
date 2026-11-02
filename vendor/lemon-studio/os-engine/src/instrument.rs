@@ -42,15 +42,7 @@ pub trait Instrument: Send {
     }
     /// Starts an audio clip's voice as `note_start` does, named `voice` for `voice_gain` and `voice_choke` (two clips
     /// of one channel overlap on the same key). Default: `note_start`.
-    fn voice_start(
-        &mut self,
-        offset: u32,
-        key: u8,
-        velocity: f32,
-        start: f32,
-        levels: NoteLevels,
-        voice: u32,
-    ) {
+    fn voice_start(&mut self, offset: u32, key: u8, velocity: f32, start: f32, levels: NoteLevels, voice: u32) {
         let _ = voice;
         self.note_start(offset, key, velocity, start, levels);
     }
@@ -141,12 +133,7 @@ pub struct ChannelLevels {
 
 impl Default for ChannelLevels {
     fn default() -> Self {
-        ChannelLevels {
-            volume: 1.0,
-            pan: 0.0,
-            mod_x: 0.0,
-            mod_y: 0.0,
-        }
+        ChannelLevels { volume: 1.0, pan: 0.0, mod_x: 0.0, mod_y: 0.0 }
     }
 }
 
@@ -168,11 +155,7 @@ pub struct NoteLevels {
 impl NoteLevels {
     /// The levels of a note's pan, mod X and mod Y bytes.
     pub fn of_bytes(pan: u8, mod_x: u8, mod_y: u8) -> NoteLevels {
-        NoteLevels {
-            pan: (f32::from(pan) - 64.0) / 64.0,
-            mod_x: (f32::from(mod_x) - 128.0) / 128.0,
-            mod_y: (f32::from(mod_y) - 128.0) / 128.0,
-        }
+        NoteLevels { pan: (f32::from(pan) - 64.0) / 64.0, mod_x: (f32::from(mod_x) - 128.0) / 128.0, mod_y: (f32::from(mod_y) - 128.0) / 128.0 }
     }
 }
 
@@ -211,13 +194,7 @@ impl TransportInfo {
         let beats = self.beats + frames as f64 / self.frames_per_beat(rate);
         let bar_len = f64::from(self.numerator.max(1)) * 4.0 / f64::from(self.denominator.max(1));
         let bar = (beats / bar_len).floor();
-        TransportInfo {
-            frame: self.frame + frames,
-            beats,
-            bar_start: bar * bar_len,
-            bar: bar as i32,
-            ..*self
-        }
+        TransportInfo { frame: self.frame + frames, beats, bar_start: bar * bar_len, bar: bar as i32, ..*self }
     }
 }
 
@@ -229,11 +206,7 @@ pub struct Slot(pub Option<SharedInstrument>);
 
 impl fmt::Debug for Slot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(if self.0.is_some() {
-            "Slot(instrument)"
-        } else {
-            "Slot(none)"
-        })
+        f.write_str(if self.0.is_some() { "Slot(instrument)" } else { "Slot(none)" })
     }
 }
 

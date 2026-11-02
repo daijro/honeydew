@@ -10,29 +10,29 @@
 //!
 // spec: plugins/lemon-sampler.md §4 (edits apply at once, menus), plugins/lemon-parametric-eq-2.md, plugins/plugin-formats.md
 
-#[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
-pub mod input;
 pub mod linked;
 pub mod live;
-#[cfg(target_os = "macos")]
-pub mod mac;
 pub mod vals;
 #[cfg(windows)]
 pub mod win;
 #[cfg(target_os = "linux")]
 pub mod x11;
+#[cfg(target_os = "macos")]
+pub mod mac;
+#[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
+pub mod input;
 // Honeydew (vendored addition): the editors drawn into Honeydew's own window, on every platform.
 #[cfg(feature = "embed")]
 pub mod embed;
 
-/// Honeydew (vendored change): with `embed`, Honeydew's window.
-#[cfg(feature = "embed")]
-pub use embed as gui;
-#[cfg(all(target_os = "macos", not(feature = "embed")))]
-pub use mac as gui;
 /// The editor window of this platform where it runs the plugins' shared editor loop: `x11` on Linux, `mac` on macOS.
 #[cfg(all(target_os = "linux", not(feature = "embed")))]
 pub use x11 as gui;
+#[cfg(all(target_os = "macos", not(feature = "embed")))]
+pub use mac as gui;
+/// Honeydew (vendored change): with `embed`, Honeydew's window.
+#[cfg(feature = "embed")]
+pub use embed as gui;
 
 /// Honeydew (vendored addition): the clock (`std::time` has none in a browser build).
 #[cfg(not(target_arch = "wasm32"))]
@@ -40,10 +40,10 @@ pub use std::time;
 #[cfg(target_arch = "wasm32")]
 pub use web_time as time;
 
-use os_theme::Palette;
 use os_theme::design::Design;
-use os_ui::Rect;
+use os_theme::Palette;
 use os_ui::kit::menu::{MenuItem, MenuStyle};
+use os_ui::Rect;
 
 /// The palette Lemon Studio's plugin editors draw with: always the Lemon design's, whatever design the app or a saved
 /// setting names (the plugins' Classic look is retired, spec ui/lemon-design.md §11.1). Their menus use it too.
@@ -63,13 +63,7 @@ pub struct MenuDef<C> {
 
 impl<C: Clone> MenuDef<C> {
     pub fn new(style: MenuStyle) -> Self {
-        MenuDef {
-            items: Vec::new(),
-            cmds: Vec::new(),
-            subs: Vec::new(),
-            style,
-            current: None,
-        }
+        MenuDef { items: Vec::new(), cmds: Vec::new(), subs: Vec::new(), style, current: None }
     }
 
     pub fn add(&mut self, it: MenuItem, c: C) -> usize {
@@ -121,10 +115,7 @@ impl Opener {
     pub fn new(menu: [i32; 4], row: Rect, scale: f32) -> Self {
         let top = menu[1] + (row.y * scale).floor() as i32;
         let bottom = menu[1] + ((row.y + row.h) * scale).ceil() as i32;
-        Opener {
-            menu,
-            row: [menu[0], top, menu[2], bottom],
-        }
+        Opener { menu, row: [menu[0], top, menu[2], bottom] }
     }
 
     /// Whether the pointer at screen `at` leaves the submenu at `rect` for the parent: it is over the parent, off the
@@ -145,8 +136,7 @@ pub fn debug() -> bool {
 /// Tests that click at random set `OPENSTUDIO_PLUGIN_NO_MODAL` (or Lemon Sampler's `LEMONSAMPLER_NO_MODAL`): menus and
 /// type-in boxes then return nothing instead of running a modal loop.
 pub fn no_modal() -> bool {
-    std::env::var_os("OPENSTUDIO_PLUGIN_NO_MODAL").is_some()
-        || std::env::var_os("LEMONSAMPLER_NO_MODAL").is_some()
+    std::env::var_os("OPENSTUDIO_PLUGIN_NO_MODAL").is_some() || std::env::var_os("LEMONSAMPLER_NO_MODAL").is_some()
 }
 
 #[cfg(test)]
@@ -167,16 +157,9 @@ mod tests {
             let (o, sub) = menus(left);
             assert_eq!(o.row, [100, 140, 300, 160], "the row's band spans the menu");
             // From the middle of the row, one pixel at a time into the submenu (across the menu's padding too).
-            let path: Vec<i32> = if left {
-                (60..=200).rev().collect()
-            } else {
-                (200..=320).collect()
-            };
+            let path: Vec<i32> = if left { (60..=200).rev().collect() } else { (200..=320).collect() };
             for x in path {
-                assert!(
-                    !o.takes_back(sub, (x, 150)),
-                    "left {left}: at x {x} the submenu stays"
-                );
+                assert!(!o.takes_back(sub, (x, 150)), "left {left}: at x {x} the submenu stays");
             }
         }
     }
@@ -187,10 +170,7 @@ mod tests {
         assert!(o.takes_back(sub, (200, 170)), "the row below");
         assert!(o.takes_back(sub, (200, 139)), "just above the row");
         assert!(o.takes_back(sub, (200, 101)), "the menu's top padding");
-        assert!(
-            !o.takes_back(sub, (296, 200)),
-            "the submenu covers the menu's edge"
-        );
+        assert!(!o.takes_back(sub, (296, 200)), "the submenu covers the menu's edge");
         assert!(!o.takes_back(sub, (500, 150)), "off both menus");
         assert!(!o.takes_back(sub, (200, 320)), "below the menu");
     }

@@ -15,7 +15,7 @@ use std::sync::Arc;
 use os_dsp::resample::{self, Quality};
 use os_dsp::stretch::Stream;
 use os_engine::instrument::VOICE_GAIN_FRAMES;
-use os_engine::{Sample, envelope, laws};
+use os_engine::{envelope, laws, Sample};
 
 use crate::stream::{Feed, Played};
 
@@ -23,11 +23,7 @@ use crate::stream::{Feed, Played};
 pub fn stretch(s: &Sample, ratio: f64, shift: f64) -> Sample {
     let frames = (s.frames() as f64 * ratio).round().max(1.0) as usize;
     let (left, right) = os_dsp::stretch::whole(&s.left, &s.right, s.rate, frames, shift);
-    Sample {
-        rate: s.rate,
-        left,
-        right,
-    }
+    Sample { rate: s.rate, left, right }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -70,11 +66,7 @@ impl Lfo {
         if !self.active() || t < self.delay {
             return 0.0;
         }
-        let fade = if self.attack > 0.0 {
-            ((t - self.delay) / self.attack).min(1.0)
-        } else {
-            1.0
-        };
+        let fade = if self.attack > 0.0 { ((t - self.delay) / self.attack).min(1.0) } else { 1.0 };
         self.amount * fade * self.wave(phase)
     }
 }
@@ -156,24 +148,10 @@ pub struct Declick {
 }
 
 pub fn declick(mode: i32) -> Declick {
-    let d = |open_ms, close_ms, tension, bleed| Declick {
-        open_ms,
-        step_removal: false,
-        close_ms,
-        sweep: false,
-        tension,
-        bleed,
-    };
+    let d = |open_ms, close_ms, tension, bleed| Declick { open_ms, step_removal: false, close_ms, sweep: false, tension, bleed };
     match mode {
-        1 => Declick {
-            step_removal: true,
-            sweep: true,
-            ..d(4.0, 10.0, 0.0, false)
-        },
-        2 => Declick {
-            step_removal: true,
-            ..d(4.0, 20.0, 0.0, true)
-        },
+        1 => Declick { step_removal: true, sweep: true, ..d(4.0, 10.0, 0.0, false) },
+        2 => Declick { step_removal: true, ..d(4.0, 20.0, 0.0, true) },
         3 => d(20.0, 20.0, 0.0, true),
         4 => d(100.0, 100.0, 0.0, true),
         5 => d(200.0, 200.0, 5.0, true),
@@ -220,19 +198,8 @@ struct Close {
 impl Close {
     fn new(d: &Declick, rate: f64) -> Close {
         let n = fade_len(d.close_ms, rate);
-        let sweep = d.sweep.then(|| {
-            (
-                22050f64.ln() / (2f64.ln() * f64::from(n)) * 2f64.ln(),
-                n.min(((rate * 0.001).round() as u32).max(1)),
-            )
-        });
-        Close {
-            i: 0,
-            n,
-            tension: d.tension,
-            sweep,
-            lp: [0.0; 2],
-        }
+        let sweep = d.sweep.then(|| (22050f64.ln() / (2f64.ln() * f64::from(n)) * 2f64.ln(), n.min(((rate * 0.001).round() as u32).max(1))));
+        Close { i: 0, n, tension: d.tension, sweep, lp: [0.0; 2] }
     }
 
     /// Ends every voice quickly (Stop, all notes off): mode 0's 10 ms fade.
@@ -255,12 +222,7 @@ impl Close {
                 let w = if i < self.n - m {
                     1.0
                 } else {
-                    (((f64::from(i + 1 - (self.n - m))
-                        * (1.0 / f64::from(m + 1))
-                        * std::f64::consts::PI)
-                        .cos()
-                        + 1.0)
-                        * 0.5) as f32
+                    (((f64::from(i + 1 - (self.n - m)) * (1.0 / f64::from(m + 1)) * std::f64::consts::PI).cos() + 1.0) * 0.5) as f32
                 };
                 self.lp[0] += c * (l - self.lp[0]);
                 self.lp[1] += c * (r - self.lp[1]);
@@ -279,10 +241,7 @@ impl Close {
 const CTL: usize = 32;
 // The engine sends a voice's gains every `VOICE_GAIN_FRAMES` frames from a block's start, and a voice glides to each over
 // that many frames: equal to `CTL`, they split no control span.
-const _: () = assert!(
-    CTL == VOICE_GAIN_FRAMES as usize,
-    "VOICE_GAIN_FRAMES (os-engine) and CTL must stay equal"
-);
+const _: () = assert!(CTL == VOICE_GAIN_FRAMES as usize, "VOICE_GAIN_FRAMES (os-engine) and CTL must stay equal");
 
 /// A voice's pan gains for a pan position (−1..1, clamped): the constant-power split at √2, so a centred pan is 1 on
 /// both sides. The host applies the channel's own pan split on the instrument's output, so with either pan centred
@@ -290,10 +249,7 @@ const _: () = assert!(
 /// "Pan split").
 pub fn pan_gains(pan: f64) -> (f32, f32) {
     let a = (pan.clamp(-1.0, 1.0) + 1.0) * PI / 4.0;
-    (
-        (std::f64::consts::SQRT_2 * a.cos()) as f32,
-        (std::f64::consts::SQRT_2 * a.sin()) as f32,
-    )
+    ((std::f64::consts::SQRT_2 * a.cos()) as f32, (std::f64::consts::SQRT_2 * a.sin()) as f32)
 }
 
 #[derive(Clone, Copy)]
@@ -353,11 +309,7 @@ impl HostGain {
         let g = self.now;
         if self.left > 0 {
             self.left -= 1;
-            self.now = if self.left == 0 {
-                self.to
-            } else {
-                self.now + self.step
-            };
+            self.now = if self.left == 0 { self.to } else { self.now + self.step };
         }
         g
     }
@@ -476,11 +428,7 @@ impl Rt {
     /// it one analysis interval ahead, so the note is heard at once and at full level.
     fn start(&mut self, s: &Sample, pos: f64, transpose: f64, speed: f64, lp: (f64, Option<f64>)) {
         let fresh = pos < 1.0;
-        let (hist, ahead) = if fresh {
-            (0, 0)
-        } else {
-            (self.st.history(), self.st.interval())
-        };
+        let (hist, ahead) = if fresh { (0, 0) } else { (self.st.history(), self.st.interval()) };
         let back = (ahead as f64 * speed).round() as i64;
         self.rpos = pos.max(0.0).floor() as i64 - back - hist as i64;
         self.owed = 0.0;
@@ -498,13 +446,7 @@ impl Rt {
     }
 
     /// The next output frame: `transpose` = the pitch factor, `speed` = input frames per output frame.
-    fn frame(
-        &mut self,
-        s: &Sample,
-        transpose: f64,
-        speed: f64,
-        lp: (f64, Option<f64>),
-    ) -> (f32, f32) {
+    fn frame(&mut self, s: &Sample, transpose: f64, speed: f64, lp: (f64, Option<f64>)) -> (f32, f32) {
         loop {
             if self.at < RT_BLOCK {
                 let (mut a, mut b) = (self.l[self.at], self.r[self.at]);
@@ -606,8 +548,7 @@ impl Engine {
     /// Plays `disk` (a played sample kept on disk) from now on, or `sample` when `None`. Voices reading another file
     /// let go of their rings.
     pub fn set_disk(&mut self, disk: Option<Arc<Played>>) {
-        let same =
-            matches!((&self.disk, &disk), (Some(a), Some(b)) if Arc::ptr_eq(a.disk(), b.disk()));
+        let same = matches!((&self.disk, &disk), (Some(a), Some(b)) if Arc::ptr_eq(a.disk(), b.disk()));
         if !same {
             self.release_feeds();
         }
@@ -686,10 +627,7 @@ impl Engine {
 
     /// Keys currently sounding.
     pub fn sounding(&self) -> impl Iterator<Item = u8> + '_ {
-        self.voices
-            .iter()
-            .filter(|v| v.close.is_none())
-            .map(|v| v.key)
+        self.voices.iter().filter(|v| v.close.is_none()).map(|v| v.key)
     }
 
     /// The loop the voices play: the played sample's, when "Use loop points" is on and its end lies after its start
@@ -723,11 +661,7 @@ impl Engine {
     }
 
     fn start(&mut self, key: u8, velocity: f32, id: Option<i32>, host: bool, b: &Block) {
-        let zkey = if b.add_key {
-            i32::from(key) - (b.root - 60)
-        } else {
-            i32::from(key)
-        };
+        let zkey = if b.add_key { i32::from(key) - (b.root - 60) } else { i32::from(key) };
         let (frames, rate) = match self.shape() {
             Some((n, rate)) if zkey >= b.zone.0 && zkey <= b.zone.1 && n > 0 => (n, rate),
             _ => {
@@ -748,11 +682,7 @@ impl Engine {
         // FL velocity byte = plugin velocity × 128; 100 = unity (spec: audio/sampler-playback.md).
         let vel = laws::velocity_gain((velocity.clamp(0.0, 1.0) * 128.0).round() as u8) as f32;
         let pos = (b.start_offset.clamp(0.0, 1.0) * frames as f64).floor();
-        let open = if pos > 0.0 {
-            fade_len(declick(b.declick).open_ms, f64::from(self.rate))
-        } else {
-            0
-        };
+        let open = if pos > 0.0 { fade_len(declick(b.declick).open_ms, f64::from(self.rate)) } else { 0 };
         let mut phase = [0.0; 5];
         for (i, t) in b.targets.iter().enumerate() {
             if t.lfo.global {
@@ -760,11 +690,7 @@ impl Engine {
             }
         }
         // The realtime methods stretch a sample in memory (one kept on disk is decoded for them).
-        let rt = if b.realtime && self.disk.is_none() {
-            self.take_stream()
-        } else {
-            None
-        };
+        let rt = if b.realtime && self.disk.is_none() { self.take_stream() } else { None };
         // From disk: START OFFSET's frames are held, unless the knob just moved (the frames there start coming now).
         let mut feed = Feed::default();
         if let Some(d) = &self.disk {
@@ -800,14 +726,8 @@ impl Engine {
     pub fn note_off(&mut self, key: u8, b: &Block) {
         let close = Close::new(&declick(b.declick), f64::from(self.rate));
         let vol_env = b.targets[VOL].env.is_some();
-        let looped = self
-            .shape()
-            .is_some_and(|(n, _)| self.loop_frames(b, n).1.is_some());
-        for v in self
-            .voices
-            .iter_mut()
-            .filter(|v| v.key == key && v.off.is_none())
-        {
+        let looped = self.shape().is_some_and(|(n, _)| self.loop_frames(b, n).1.is_some());
+        for v in self.voices.iter_mut().filter(|v| v.key == key && v.off.is_none()) {
             v.off = Some(v.age);
             // A looping voice without a volume envelope closes at the note's end; a one-shot voice without one
             // ignores it (spec: audio/sampler.md "The end of a voice").
@@ -823,17 +743,9 @@ impl Engine {
     pub fn start_later(&mut self, id: i32, extra: f32, b: &Block) {
         let Some((n, _)) = self.shape() else { return };
         let n = n as f64;
-        let file = if self.file_frames > 0.0 {
-            self.file_frames
-        } else {
-            n
-        };
+        let file = if self.file_frames > 0.0 { self.file_frames } else { n };
         let open = fade_len(declick(b.declick).open_ms, f64::from(self.rate));
-        for v in self
-            .voices
-            .iter_mut()
-            .filter(|v| v.id == Some(id) && v.age == 0)
-        {
+        for v in self.voices.iter_mut().filter(|v| v.id == Some(id) && v.age == 0) {
             let at = b.start_offset.clamp(0.0, 1.0) * n + f64::from(extra.max(0.0)) * file;
             v.pos = at.min(n).floor();
             v.open = if v.pos > 0.0 { open } else { 0 };
@@ -896,18 +808,8 @@ impl Engine {
         let (to, n) = (gain.max(0.0), VOICE_GAIN_FRAMES);
         for v in self.of_note(id, key) {
             v.vol = Some(match v.vol {
-                None => HostGain {
-                    now: to,
-                    to,
-                    step: 0.0,
-                    left: 0,
-                },
-                Some(h) => HostGain {
-                    now: h.now,
-                    to,
-                    step: (to - h.now) / n as f32,
-                    left: n,
-                },
+                None => HostGain { now: to, to, step: 0.0, left: 0 },
+                Some(h) => HostGain { now: h.now, to, step: (to - h.now) / n as f32, left: n },
             });
         }
     }
@@ -953,18 +855,7 @@ impl Engine {
                 Src::Ram(_) => v.rt.and_then(|k| self.streams.get_mut(usize::from(k))),
                 Src::Disk(_) => None,
             };
-            let alive = render_voice(
-                v,
-                rt,
-                &s,
-                b,
-                (rs, speed),
-                lp,
-                rate,
-                (self.quality, self.wait),
-                out_l,
-                out_r,
-            );
+            let alive = render_voice(v, rt, &s, b, (rs, speed), lp, rate, (self.quality, self.wait), out_l, out_r);
             if alive {
                 i += 1;
             } else {
@@ -1020,13 +911,7 @@ fn mods(v: &Voice, b: &Block, t: f64, off: Option<f64>) -> Option<Mods> {
     if let Some(l) = env(MODY) {
         part_y += l.unwrap_or(0.0) * tg[MODY].amount;
     }
-    Some(Mods {
-        gain,
-        pan,
-        cents,
-        part_x: part_x as f32,
-        part_y: part_y as f32,
-    })
+    Some(Mods { gain, pan, cents, part_x: part_x as f32, part_y: part_y as f32 })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1051,9 +936,7 @@ fn render_voice(
         let chunk = CTL.min(len - f);
         let t0 = v.age as f64 * frame_s;
         let off = v.off.map(|o| o as f64 * frame_s);
-        let Some(m0) = mods(v, b, t0, off) else {
-            return false;
-        };
+        let Some(m0) = mods(v, b, t0, off) else { return false };
         let g1 = match mods(v, b, t0 + chunk as f64 * frame_s, off) {
             Some(m) => m.gain,
             None => 0.0,
@@ -1069,9 +952,7 @@ fn render_voice(
         let pan = pan_gains(m0.pan);
         let (p0, p1) = (if v.gain < 0.0 { pan } else { v.pan }, pan);
         // The pitch factor: a resampling step, or a realtime voice's transposition (with the stretch's PITCH).
-        let step = v.key_step
-            * 2f64.powf((b.cents + m0.cents + v.tune * 100.0 + b.ts_cents) / 1200.0)
-            * rs;
+        let step = v.key_step * 2f64.powf((b.cents + m0.cents + v.tune * 100.0 + b.ts_cents) / 1200.0) * rs;
         // A realtime voice plays the sample by resampling while there is nothing to stretch (the root key, no PITCH,
         // MUL 1 or TIME the sample's own duration); its stretcher starts the first time there is, and stays. **(OS)**
         if let (Some(x), Src::Ram(s)) = (rt.as_mut(), src) {
@@ -1214,14 +1095,7 @@ struct Filter {
 
 impl Default for Filter {
     fn default() -> Self {
-        Filter {
-            on: false,
-            c: None,
-            fast: [(0.0, 0.0); 2],
-            bq: Default::default(),
-            sv: Default::default(),
-            coef: Coef::Fast { step: 0.0, r: 0.0 },
-        }
+        Filter { on: false, c: None, fast: [(0.0, 0.0); 2], bq: Default::default(), sv: Default::default(), coef: Coef::Fast { step: 0.0, r: 0.0 } }
     }
 }
 
@@ -1234,14 +1108,9 @@ impl Filter {
             1..=5 => {
                 let ln51 = 51f64.ln() as f32;
                 let lnq = (0.625 * 51f64.ln()) as f32;
-                let w = ((curve(f64::from(x), ln51) * f64::from(0.0596f32) + 0.02) * f64::from(k))
-                    as f32;
+                let w = ((curve(f64::from(x), ln51) * f64::from(0.0596f32) + 0.02) * f64::from(k)) as f32;
                 let w = w.max((0.02 * f64::from(k)) as f32).min(3.0);
-                let q = if y > 0.0 {
-                    (curve(f64::from(y.min(1.0)), lnq) * f64::from(0.4f32) + 0.1) as f32
-                } else {
-                    0.1
-                };
+                let q = if y > 0.0 { (curve(f64::from(y.min(1.0)), lnq) * f64::from(0.4f32) + 0.1) as f32 } else { 0.1 };
                 let (sn, cs) = (f64::from(w).sin() as f32, f64::from(w).cos() as f32);
                 let alpha = sn / (2.0 * q);
                 let nn = 1.0 / (f64::from(alpha) + 1.0);
@@ -1266,10 +1135,7 @@ impl Filter {
                         [b1 * 0.5, b1, b1 * 0.5, a1, a2]
                     }
                 };
-                self.coef = Coef::Biquad {
-                    b,
-                    twice: kind == 5,
-                };
+                self.coef = Coef::Biquad { b, twice: kind == 5 };
                 if kind == 5 {
                     (1.0 - f64::from(q) * (3.2 - f64::from(w)) * 0.046875) as f32
                 } else {
@@ -1277,11 +1143,7 @@ impl Filter {
                 }
             }
             6 | 7 => {
-                let f = if x > 0.0 {
-                    (((f64::from(x) * 26f64.ln()).exp() - 1.0) as f32 * 0.04 * k).min(1.0)
-                } else {
-                    0.0
-                };
+                let f = if x > 0.0 { (((f64::from(x) * 26f64.ln()).exp() - 1.0) as f32 * 0.04 * k).min(1.0) } else { 0.0 };
                 let yd = f64::from(y);
                 let d = if y <= 0.0 {
                     1.0
@@ -1290,11 +1152,7 @@ impl Filter {
                 } else {
                     0.2
                 };
-                self.coef = Coef::Svf {
-                    f: f64::from(f),
-                    d,
-                    d2: (kind == 7).then(|| d + (1.0 - d) * 0.25),
-                };
+                self.coef = Coef::Svf { f: f64::from(f), d, d2: (kind == 7).then(|| d + (1.0 - d) * 0.25) };
                 1.0
             }
             _ => {
@@ -1302,20 +1160,11 @@ impl Filter {
                 let target = if x <= 0.0 {
                     0.0
                 } else if x < 1.0 {
-                    (f64::from((curve(f64::from(x), ln601) * f64::from(INV600)) as f32)
-                        * f64::from(k))
-                    .min(1.0)
+                    (f64::from((curve(f64::from(x), ln601) * f64::from(INV600)) as f32) * f64::from(k)).min(1.0)
                 } else {
                     1.0
                 };
-                let r = if y > 0.0 {
-                    1.0 - f64::from(
-                        (curve(1.0 - 0.625 * f64::from(y.min(1.0)), ln601) * f64::from(INV600))
-                            as f32,
-                    )
-                } else {
-                    0.0
-                };
+                let r = if y > 0.0 { 1.0 - f64::from((curve(1.0 - 0.625 * f64::from(y.min(1.0)), ln601) * f64::from(INV600)) as f32) } else { 0.0 };
                 self.on |= target != 1.0 || r != 0.0;
                 // The voice's first tick sets c; afterwards it glides by a limited step per sample.
                 let step = match self.c {
@@ -1388,19 +1237,13 @@ impl Filter {
 /// A state-variable value at the end of a tick: rounded to single, set to 0 below 2^-24 in magnitude.
 fn round_small(v: f64) -> f64 {
     let s = v as f32;
-    if s.abs() < 5.960_464_5e-8 {
-        0.0
-    } else {
-        f64::from(s)
-    }
+    if s.abs() < 5.960_464_5e-8 { 0.0 } else { f64::from(s) }
 }
 
 #[inline]
 fn biquad(m: &mut Biquad, b: &[f32; 5], x: f32) -> f32 {
     let d = |v: f32| f64::from(v);
-    let y = (d(x) * d(b[0])
-        + (((d(m.x2) * d(b[2]) + d(m.x1) * d(b[1])) - d(m.y1) * d(b[3])) - d(m.y2) * d(b[4])))
-        as f32;
+    let y = (d(x) * d(b[0]) + (((d(m.x2) * d(b[2]) + d(m.x1) * d(b[1])) - d(m.y1) * d(b[3])) - d(m.y2) * d(b[4]))) as f32;
     (m.x2, m.x1, m.y2, m.y1) = (m.x1, x, m.y1, y);
     y
 }
@@ -1418,11 +1261,7 @@ mod tests {
 
     fn ramp(n: usize) -> Sample {
         let left: Vec<f32> = (0..n).map(|i| i as f32 / n as f32).collect();
-        Sample {
-            rate: 48000,
-            right: left.clone(),
-            left,
-        }
+        Sample { rate: 48000, right: left.clone(), left }
     }
 
     #[test]
@@ -1440,19 +1279,11 @@ mod tests {
         e.render(&mut l2, &mut r2, &b);
         assert_eq!(l2[35], s.left[99]);
         // Past the end the last frame is held under the 10 ms closing (spec: audio/declick.md).
-        assert!(
-            (l2[36] - s.left[99]).abs() < 1e-3 && l2[63] < l2[36],
-            "{} {}",
-            l2[36],
-            l2[63]
-        );
+        assert!((l2[36] - s.left[99]).abs() < 1e-3 && l2[63] < l2[36], "{} {}", l2[36], l2[63]);
         assert_eq!(e.sounding().count(), 0, "closing");
         let (mut l3, mut r3) = (vec![0.0; 480], vec![0.0; 480]);
         e.render(&mut l3, &mut r3, &b);
-        assert!(
-            l3[451] > 0.0 && l3[452..].iter().all(|v| *v == 0.0),
-            "480 closing samples"
-        );
+        assert!(l3[451] > 0.0 && l3[452..].iter().all(|v| *v == 0.0), "480 closing samples");
         assert!(!e.has_voices());
     }
 
@@ -1486,10 +1317,7 @@ mod tests {
         assert_eq!(e.voices.len(), 2);
         assert_eq!(e.sounding().count(), 2);
         // A choke closes both through the mode's closing: 20 ms in mode 2.
-        let b2 = Block {
-            declick: 2,
-            ..Block::default()
-        };
+        let b2 = Block { declick: 2, ..Block::default() };
         e.choke(None, 60, &b2);
         for _ in 0..2 {
             l.fill(0.0);
@@ -1508,11 +1336,7 @@ mod tests {
     #[test]
     fn host_gains_and_chokes_reach_one_voice() {
         let mut e = Engine::new(48000.0);
-        e.sample = Some(Arc::new(Sample {
-            rate: 48000,
-            left: vec![0.5; 48000],
-            right: vec![0.5; 48000],
-        }));
+        e.sample = Some(Arc::new(Sample { rate: 48000, left: vec![0.5; 48000], right: vec![0.5; 48000] }));
         let b = Block::default();
         e.note_on_id(60, 100.0 / 128.0, Some(1), &b);
         e.note_on_id(60, 100.0 / 128.0, Some(2), &b);
@@ -1529,15 +1353,8 @@ mod tests {
         e.choke(Some(1), 60, &b);
         let (mut l, mut r) = (vec![0.0; 1440], vec![0.0; 1440]);
         e.render(&mut l, &mut r, &b);
-        assert!(
-            l[960..].iter().all(|v| (v - 0.25).abs() < 1e-6),
-            "the other voice plays on: {}",
-            l[1439]
-        );
-        assert_eq!(
-            e.voices.iter().map(|v| v.id).collect::<Vec<_>>(),
-            vec![Some(2)]
-        );
+        assert!(l[960..].iter().all(|v| (v - 0.25).abs() < 1e-6), "the other voice plays on: {}", l[1439]);
+        assert_eq!(e.voices.iter().map(|v| v.id).collect::<Vec<_>>(), vec![Some(2)]);
     }
 
     // spec: audio/declick.md "Gain fade": the closing falls from just under 1 to just over 0; tension 5 bends it.
@@ -1567,16 +1384,10 @@ mod tests {
         let mut e = Engine::new(48000.0);
         e.sample = Some(Arc::new(ramp(100)));
         e.looped = Some((50, 99));
-        let b = Block {
-            zone: (48, 59),
-            ..Block::default()
-        };
+        let b = Block { zone: (48, 59), ..Block::default() };
         e.note_on(60, 0.78, &b);
         assert!(!e.has_voices(), "outside the zone");
-        let b = Block {
-            loop_on: true,
-            ..Block::default()
-        };
+        let b = Block { loop_on: true, ..Block::default() };
         e.note_on(60, 100.0 / 128.0, &b);
         let (mut l, mut r) = (vec![0.0; 400], vec![0.0; 400]);
         e.render(&mut l, &mut r, &b);
@@ -1586,10 +1397,7 @@ mod tests {
         e.note_off(60, &b);
         let (mut l, mut r) = (vec![0.0; 2000], vec![0.0; 2000]);
         e.render(&mut l, &mut r, &b);
-        assert!(
-            !e.has_voices(),
-            "note-off ends a loop without a volume envelope"
-        );
+        assert!(!e.has_voices(), "note-off ends a loop without a volume envelope");
         // With "Use loop points" off the sample plays once, and the note's end does not cut it.
         let b = Block::default();
         e.note_on(60, 100.0 / 128.0, &b);
@@ -1600,24 +1408,13 @@ mod tests {
     }
 
     fn sine(hz: f64, n: usize) -> Sample {
-        let x: Vec<f32> = (0..n)
-            .map(|i| (2.0 * PI * hz * i as f64 / 48000.0).sin() as f32 * 0.5)
-            .collect();
-        Sample {
-            rate: 48000,
-            left: x.clone(),
-            right: x,
-        }
+        let x: Vec<f32> = (0..n).map(|i| (2.0 * PI * hz * i as f64 / 48000.0).sin() as f32 * 0.5).collect();
+        Sample { rate: 48000, left: x.clone(), right: x }
     }
 
     /// Frequency from the rising zero crossings.
     fn hz(x: &[f32]) -> f64 {
-        let ups: Vec<usize> = x
-            .windows(2)
-            .enumerate()
-            .filter(|(_, w)| w[0] < 0.0 && w[1] >= 0.0)
-            .map(|(i, _)| i)
-            .collect();
+        let ups: Vec<usize> = x.windows(2).enumerate().filter(|(_, w)| w[0] < 0.0 && w[1] >= 0.0).map(|(i, _)| i).collect();
         (ups.len() - 1) as f64 * 48000.0 / (ups[ups.len() - 1] - ups[0]) as f64
     }
 
@@ -1646,19 +1443,11 @@ mod tests {
         e.sample = Some(Arc::new(sine(440.0, 48000)));
         // Twice as long, an octave up by the key; then by PITCH.
         for (key, cents) in [(72u8, 0.0), (60, 1200.0)] {
-            let b = Block {
-                realtime: true,
-                ts_ratio: 2.0,
-                ts_cents: cents,
-                ..Block::default()
-            };
+            let b = Block { realtime: true, ts_ratio: 2.0, ts_cents: cents, ..Block::default() };
             let out = play(&mut e, key, &b, 2.5);
             let f = hz(&out[24000..72000]);
             assert!((f - 880.0).abs() < 4.0, "key {key}: {f} Hz");
-            assert!(
-                rms(&out[80000..92000]) > 0.1,
-                "key {key}: still playing after the sample's own length"
-            );
+            assert!(rms(&out[80000..92000]) > 0.1, "key {key}: still playing after the sample's own length");
             assert!(!e.has_voices(), "key {key}: over after twice its length");
             e.reset();
         }
@@ -1669,47 +1458,21 @@ mod tests {
     // it is, its stretcher never started (here a 44.1 kHz sample at 48 kHz: rate conversion alone).
     #[test]
     fn a_realtime_voice_with_nothing_to_stretch_plays_the_sample_as_it_is() {
-        let x: Vec<f32> = (0..30000)
-            .map(|i| ((i * 7919 % 2003) as f32 / 2003.0 - 0.5) * (-(i as f32) / 9000.0).exp())
-            .collect();
-        let s = Arc::new(Sample {
-            rate: 44100,
-            left: x.clone(),
-            right: x,
-        });
+        let x: Vec<f32> = (0..30000).map(|i| ((i * 7919 % 2003) as f32 / 2003.0 - 0.5) * (-(i as f32) / 9000.0).exp()).collect();
+        let s = Arc::new(Sample { rate: 44100, left: x.clone(), right: x });
         let mut plain = Engine::new(48000.0);
         plain.sample = Some(s.clone());
         let mut e = Engine::new(48000.0);
         e.sample = Some(s);
-        let rt = Block {
-            realtime: true,
-            ts_ratio: 1.0,
-            ..Block::default()
-        };
-        assert_eq!(
-            play(&mut e, 60, &rt, 0.8),
-            play(&mut plain, 60, &Block::default(), 0.8)
-        );
-        assert!(
-            !e.streams.is_empty() && e.streams.iter().all(|r| !r.started),
-            "the stretcher stayed off"
-        );
+        let rt = Block { realtime: true, ts_ratio: 1.0, ..Block::default() };
+        assert_eq!(play(&mut e, 60, &rt, 0.8), play(&mut plain, 60, &Block::default(), 0.8));
+        assert!(!e.streams.is_empty() && e.streams.iter().all(|r| !r.started), "the stretcher stayed off");
         // TIME a little off the duration (0.68 s to 0.6826 s): still nothing to stretch.
         e.reset();
         plain.reset();
-        let near = Block {
-            realtime: true,
-            ts_ratio: 1.004,
-            ..Block::default()
-        };
-        assert_eq!(
-            play(&mut e, 60, &near, 0.8),
-            play(&mut plain, 60, &Block::default(), 0.8)
-        );
-        assert!(
-            e.streams.iter().all(|r| !r.started),
-            "the stretcher stayed off"
-        );
+        let near = Block { realtime: true, ts_ratio: 1.004, ..Block::default() };
+        assert_eq!(play(&mut e, 60, &near, 0.8), play(&mut plain, 60, &Block::default(), 0.8));
+        assert!(e.streams.iter().all(|r| !r.started), "the stretcher stayed off");
         // The same on a long sample is 0.1 s longer: stretched.
         e.reset();
         e.sample = Some(Arc::new(sine(440.0, 1_200_000)));
@@ -1723,21 +1486,14 @@ mod tests {
     fn a_realtime_voice_starts_stretching_when_its_pitch_moves() {
         let mut e = Engine::new(48000.0);
         e.sample = Some(Arc::new(sine(440.0, 48000)));
-        let b = Block {
-            realtime: true,
-            ts_ratio: 1.0,
-            ..Block::default()
-        };
+        let b = Block { realtime: true, ts_ratio: 1.0, ..Block::default() };
         let mut out = play(&mut e, 60, &b, 0.1);
         assert!(e.streams.iter().all(|r| !r.started));
         e.tune(60, 1.0);
         let (mut l, mut r) = (vec![0.0; 480], vec![0.0; 480]);
         for i in 0..110 {
             if i == 85 {
-                assert!(
-                    e.has_voices(),
-                    "still playing before the sample's own length"
-                );
+                assert!(e.has_voices(), "still playing before the sample's own length");
             }
             l.fill(0.0);
             r.fill(0.0);
@@ -1749,10 +1505,7 @@ mod tests {
         let f = hz(&out[14400..43200]);
         assert!((f - 440.0 * 2f64.powf(1.0 / 12.0)).abs() < 3.0, "{f} Hz");
         // No click where it changes over: no step much bigger than the sine's own.
-        let jump = out[4700..5400]
-            .windows(2)
-            .map(|w| (w[1] - w[0]).abs())
-            .fold(0.0, f32::max);
+        let jump = out[4700..5400].windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0, f32::max);
         assert!(jump < 0.05, "{jump}");
         assert!(rms(&out[4800..5400]) > 0.3, "{}", rms(&out[4800..5400]));
     }
@@ -1764,34 +1517,15 @@ mod tests {
         let x: Vec<f32> = (0..24000)
             .map(|i| {
                 let t = i as f64 / 48000.0;
-                ((2.0 * PI * (50.0 * t + 110.0 / 30.0 * (1.0 - (-30.0 * t).exp()))).sin()
-                    * (-12.0 * t).exp()
-                    * 0.9) as f32
+                ((2.0 * PI * (50.0 * t + 110.0 / 30.0 * (1.0 - (-30.0 * t).exp()))).sin() * (-12.0 * t).exp() * 0.9) as f32
             })
             .collect();
-        let s = Sample {
-            rate: 48000,
-            left: x.clone(),
-            right: x,
-        };
+        let s = Sample { rate: 48000, left: x.clone(), right: x };
         let whole = stretch(&s, 2.0, 1.0);
         let mut e = Engine::new(48000.0);
         e.sample = Some(Arc::new(s));
-        let out = play(
-            &mut e,
-            60,
-            &Block {
-                realtime: true,
-                ts_ratio: 2.0,
-                ..Block::default()
-            },
-            0.1,
-        );
-        let err = out
-            .iter()
-            .zip(&whole.left)
-            .map(|(a, b)| (a - b).abs())
-            .fold(0.0, f32::max);
+        let out = play(&mut e, 60, &Block { realtime: true, ts_ratio: 2.0, ..Block::default() }, 0.1);
+        let err = out.iter().zip(&whole.left).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max);
         assert!(err < 1e-4, "{err}");
     }
 
@@ -1803,20 +1537,12 @@ mod tests {
         e.sample = Some(Arc::new(sine(1000.0, 96000)));
         let peak = |x: &[f32]| x.iter().fold(0.0, |m: f32, v| m.max(v.abs()));
         for (ratio, key) in [(2.0, 60u8), (0.5, 60), (1.0, 67)] {
-            let b = Block {
-                realtime: true,
-                ts_ratio: ratio,
-                start_offset: 0.5,
-                ..Block::default()
-            };
+            let b = Block { realtime: true, ts_ratio: ratio, start_offset: 0.5, ..Block::default() };
             let out = play(&mut e, key, &b, 0.1);
             // Peaks over two periods or more.
             for (a, z) in [(0, 96), (96, 240), (240, 480), (480, 1440)] {
                 let db = 20.0 * (peak(&out[a..z]) / 0.5).log10();
-                assert!(
-                    db.abs() < 1.0,
-                    "ratio {ratio} key {key}, frames {a}..{z}: {db} dB"
-                );
+                assert!(db.abs() < 1.0, "ratio {ratio} key {key}, frames {a}..{z}: {db} dB");
             }
             e.reset();
         }
@@ -1827,11 +1553,7 @@ mod tests {
     fn resample_fits_the_time_by_speed() {
         let mut e = Engine::new(48000.0);
         e.sample = Some(Arc::new(sine(440.0, 48000)));
-        let b = Block {
-            ts_time: Some(2.0),
-            ts_cents: 0.0,
-            ..Block::default()
-        };
+        let b = Block { ts_time: Some(2.0), ts_cents: 0.0, ..Block::default() };
         let out = play(&mut e, 60, &b, 1.0);
         assert!((hz(&out[4800..43200]) - 220.0).abs() < 1.0);
     }
@@ -1839,14 +1561,8 @@ mod tests {
     #[test]
     fn stretch_keeps_pitch_and_changes_length() {
         let n = 48000;
-        let sine: Vec<f32> = (0..n)
-            .map(|i| (2.0 * PI * 440.0 * i as f64 / 48000.0).sin() as f32 * 0.5)
-            .collect();
-        let s = Sample {
-            rate: 48000,
-            left: sine.clone(),
-            right: sine,
-        };
+        let sine: Vec<f32> = (0..n).map(|i| (2.0 * PI * 440.0 * i as f64 / 48000.0).sin() as f32 * 0.5).collect();
+        let s = Sample { rate: 48000, left: sine.clone(), right: sine };
         let st = stretch(&s, 2.0, 1.0);
         assert_eq!(st.frames(), 2 * n);
         // A fifth up at the same length.
@@ -1930,17 +1646,11 @@ mod tests {
             assert_eq!(f.tick(kind, 0.7, 0.4, CTL, 44100.0), 1.0, "type {kind}");
         }
         let g = f.tick(5, 1.0, 0.0, CTL, 44100.0);
-        assert!(
-            (g - (1.0 - 0.1 * 0.2 * 0.046875) as f32).abs() < 1e-6,
-            "{g}"
-        );
+        assert!((g - (1.0 - 0.1 * 0.2 * 0.046875) as f32).abs() < 1e-6, "{g}");
         // Full resonance at the lowest cutoff: q = 0.4 * (51^0.625 - 1) + 0.1, w = 0.02.
         let g = f.tick(5, 0.0, 1.0, CTL, 44100.0);
         let q = 0.4 * ((0.625 * 51f64.ln()).exp() - 1.0) + 0.1;
-        assert!(
-            (f64::from(g) - (1.0 - q * 3.18 * 0.046875)).abs() < 1e-4,
-            "{g}"
-        );
+        assert!((f64::from(g) - (1.0 - q * 3.18 * 0.046875)).abs() < 1e-4, "{g}");
     }
 
     /// The level of a voice playing a sine of `hz` with the given block, after it settles.
@@ -1959,11 +1669,7 @@ mod tests {
         let open = level(9000.0, &Block::default(), |_| {}).0;
         assert!((open - 0.5 / 2f32.sqrt()).abs() < 1e-3, "{open}");
         for kind in [0u8, 1, 5, 6, 7] {
-            let b = Block {
-                f_type: kind,
-                f_cut: 0.2,
-                ..Block::default()
-            };
+            let b = Block { f_type: kind, f_cut: 0.2, ..Block::default() };
             let dull = level(9000.0, &b, |_| {}).0;
             assert!(dull < open * 0.1, "type {kind}: {dull}");
         }
@@ -1972,22 +1678,14 @@ mod tests {
     // spec: audio/voice-levels.md "Final levels": the note's mod X adds to the channel's.
     #[test]
     fn a_note_offset_moves_its_voices_filter() {
-        let b = Block {
-            f_type: 1,
-            f_cut: 1.0,
-            ..Block::default()
-        };
+        let b = Block { f_type: 1, f_cut: 1.0, ..Block::default() };
         let open = level(1000.0, &b, |_| {}).0;
         let dull = level(1000.0, &b, |e| e.modulate(7, Some(-0.8), None)).0;
         assert!(open > 0.25 && dull < open * 0.2, "{open} {dull}");
         // Other notes keep theirs; mod Y raises the resonance.
         let other = level(1000.0, &b, |e| e.modulate(8, Some(-0.8), None)).0;
         assert_eq!(other, open);
-        let b = Block {
-            f_type: 1,
-            f_cut: 0.75,
-            ..Block::default()
-        };
+        let b = Block { f_type: 1, f_cut: 0.75, ..Block::default() };
         let plain = level(1000.0, &b, |_| {}).0;
         let res = level(1000.0, &b, |e| e.modulate(7, None, Some(1.0))).0;
         assert!(res != plain, "{plain} {res}");
@@ -2008,10 +1706,7 @@ mod tests {
         assert_eq!(pan_gains(3.0), pan_gains(1.0));
         let (open_l, open_r) = level(9000.0, &Block::default(), |_| {});
         let (left, right) = level(9000.0, &Block::default(), |e| e.pan(Some(7), 60, -1.0));
-        assert!(
-            (left - open_l * 2f32.sqrt()).abs() < 1e-4 && right < 1e-6,
-            "{left} {right} {open_r}"
-        );
+        assert!((left - open_l * 2f32.sqrt()).abs() < 1e-4 && right < 1e-6, "{left} {right} {open_r}");
         // By key when the host names no note.
         let (_, right) = level(9000.0, &Block::default(), |e| e.pan(None, 60, -1.0));
         assert!(right < 1e-6);

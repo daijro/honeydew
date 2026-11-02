@@ -54,9 +54,7 @@ impl Default for Settings {
 impl Settings {
     /// A saved state (20 bytes).
     pub fn from_state(b: &[u8]) -> Option<Settings> {
-        Some(Settings {
-            v: super::ints(b, 0)?,
-        })
+        Some(Settings { v: super::ints(b, 0)? })
     }
 
     /// The saved state (20 bytes).
@@ -88,11 +86,7 @@ pub fn level(i: usize, step: i32, kind: i32) -> f64 {
     let db = 20.0 * u.log10();
     let step = f64::from(step);
     let shaped = if kind == TYPE_A {
-        let k = if db >= -25.0 {
-            (db + 25.0) * (step + 1.0) * 0.1 - 25.0
-        } else {
-            db
-        };
+        let k = if db >= -25.0 { (db + 25.0) * (step + 1.0) * 0.1 - 25.0 } else { db };
         k + (9.0 - step) * 1.6
     } else {
         -(-db).powf(step * 0.02 + 0.8)
@@ -115,9 +109,7 @@ pub fn table(threshold: i32, kind: i32, wet: f32) -> Vec<f64> {
     let (threshold, kind) = curve(threshold, kind);
     let step = 10 - threshold;
     // `value / 32768` is exact as a single (a whole number below 2^15 over 2^15).
-    let mut t: Vec<f64> = (0..TABLE)
-        .map(|i| level(i, step, kind) / 32768.0 * f64::from(wet))
-        .collect();
+    let mut t: Vec<f64> = (0..TABLE).map(|i| level(i, step, kind) / 32768.0 * f64::from(wet)).collect();
     t.push(t[TABLE - 1]);
     t
 }
@@ -152,12 +144,7 @@ impl FastDist {
     }
 
     pub fn with_settings(s: &Settings) -> FastDist {
-        let mut d = FastDist {
-            applied: s.v,
-            table: Vec::new(),
-            scale: 0.0,
-            dry: 0.0,
-        };
+        let mut d = FastDist { applied: s.v, table: Vec::new(), scale: 0.0, dry: 0.0 };
         d.derive();
         d
     }
@@ -234,9 +221,7 @@ mod tests {
     #[test]
     fn states_round_trip() {
         // FL's "fuzz" preset.
-        let s = Settings {
-            v: [192, 10, 1, 128, 80],
-        };
+        let s = Settings { v: [192, 10, 1, 128, 80] };
         let b = s.to_state();
         assert_eq!(b.len(), STATE_LEN);
         assert_eq!(Settings::from_state(&b), Some(s));
@@ -250,10 +235,7 @@ mod tests {
         // Full mix and post: all wet, nothing dry.
         assert_eq!(gains(knob(192), 1.0, 1.0), (1.0, 0.0));
         let (wet, dry) = gains(1.0, knob(64), 1.0);
-        assert!(
-            wet > 0.2 && wet < 0.3 && (dry - (1.0 - wet)).abs() < 1e-7,
-            "{wet} {dry}"
-        );
+        assert!(wet > 0.2 && wet < 0.3 && (dry - (1.0 - wet)).abs() < 1e-7, "{wet} {dry}");
     }
 
     #[test]
@@ -288,9 +270,7 @@ mod tests {
 
     #[test]
     fn samples_interpolate_the_table_and_keep_their_sign() {
-        let d = FastDist::with_settings(&Settings {
-            v: [128, 1, 1, 128, 128],
-        });
+        let d = FastDist::with_settings(&Settings { v: [128, 1, 1, 128, 128] });
         let t = table(1, TYPE_B, 1.0);
         let top = t[8191] as f32;
         assert_eq!(d.sample(0.0), 0.0);
@@ -302,9 +282,7 @@ mod tests {
         let f = p - p.trunc();
         assert_eq!(d.sample(x), chop(t[100] + (t[101] - t[100]) * f));
         // Half mix: the dry part comes back.
-        let h = FastDist::with_settings(&Settings {
-            v: [128, 10, 0, 64, 128],
-        });
+        let h = FastDist::with_settings(&Settings { v: [128, 10, 0, 64, 128] });
         let (wet, dry) = gains(1.0, knob(64), 1.0);
         let tw = table(10, TYPE_A, wet);
         let shaped = tw[2047] + (tw[2048] - tw[2047]) * 0.75;
@@ -344,20 +322,14 @@ mod tests {
             ([128, 11, 0, 128, 128], -0.23921305, -0.2566399),
         ];
         for (v, x, want) in cases {
-            assert_eq!(
-                FastDist::with_settings(&Settings { v }).sample(x),
-                want,
-                "{v:?} {x}"
-            );
+            assert_eq!(FastDist::with_settings(&Settings { v }).sample(x), want, "{v:?} {x}");
         }
         // Very loud input: from |x * pre * 8191| = 2^31 on, only the dry part is left.
         let d = FastDist::new();
         assert_eq!(d.sample(1e4), d.table[8191] as f32);
         assert_eq!(d.sample(1e6), 0.0);
         assert_eq!(d.sample(-1e6), 0.0);
-        let h = FastDist::with_settings(&Settings {
-            v: [128, 10, 0, 64, 128],
-        });
+        let h = FastDist::with_settings(&Settings { v: [128, 10, 0, 64, 128] });
         assert_eq!(h.sample(-1e6), chop(-1e6 * f64::from(h.dry)));
     }
 }

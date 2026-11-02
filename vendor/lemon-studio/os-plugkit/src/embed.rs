@@ -23,9 +23,9 @@ use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock};
 use os_theme::Palette;
 use os_ui::kit::menu::{MenuItem, MenuStyle};
 
-use crate::MenuDef;
-pub use crate::input::{Button, Input, keysym, keysym_char};
+pub use crate::input::{keysym, keysym_char, Button, Input};
 use crate::time::{Duration, Instant};
+use crate::MenuDef;
 
 /// The host's id of an embedded editor: the window handle it gives the plugin.
 #[cfg(target_os = "macos")]
@@ -59,11 +59,7 @@ impl MenuView {
     fn of<C>(def: &MenuDef<C>) -> MenuView {
         MenuView {
             items: def.items.clone(),
-            subs: def
-                .subs
-                .iter()
-                .map(|(i, d)| (*i, MenuView::of(d)))
-                .collect(),
+            subs: def.subs.iter().map(|(i, d)| (*i, MenuView::of(d))).collect(),
             style: def.style,
             current: def.current,
         }
@@ -78,19 +74,9 @@ impl MenuView {
 /// What the editor asks the user, at (`x`, `y`) in its device pixels; `scale` is its display scale.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Modal {
-    Menu {
-        x: i32,
-        y: i32,
-        menu: MenuView,
-        scale: f32,
-    },
+    Menu { x: i32, y: i32, menu: MenuView, scale: f32 },
     /// The "Type in value" box, starting with `text`.
-    TypeIn {
-        x: i32,
-        y: i32,
-        text: String,
-        scale: f32,
-    },
+    TypeIn { x: i32, y: i32, text: String, scale: f32 },
 }
 
 /// The user's answer to a [`Modal`].
@@ -152,11 +138,7 @@ thread_local! {
 }
 
 fn get(id: Parent) -> Option<Arc<State>> {
-    EDITORS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .get(&id)
-        .cloned()
+    EDITORS.lock().unwrap_or_else(|e| e.into_inner()).get(&id).cloned()
 }
 
 fn repaint() {
@@ -205,64 +187,36 @@ impl Drop for EditorThread {
         }
         self.state.closed.store(true, Ordering::Release);
         let mut editors = EDITORS.lock().unwrap_or_else(|e| e.into_inner());
-        if editors
-            .get(&self.id)
-            .is_some_and(|s| Arc::ptr_eq(s, &self.state))
-        {
+        if editors.get(&self.id).is_some_and(|s| Arc::ptr_eq(s, &self.state)) {
             editors.remove(&self.id);
         }
         drop(editors);
         // Parked on this thread, it goes now; on another, at that thread's next `pump`. At the thread's end the parked
         // editors may have gone already.
-        let parked = PARKED
-            .try_with(|p| p.borrow_mut().remove(&self.id))
-            .ok()
-            .flatten();
+        let parked = PARKED.try_with(|p| p.borrow_mut().remove(&self.id)).ok().flatten();
         drop(parked);
     }
 }
 
 /// The display scale the host asked for editor `parent` ([`set_scale`]); 1 if none.
 pub fn backing_scale(parent: Parent) -> f32 {
-    SCALES
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .get(&parent)
-        .copied()
-        .unwrap_or(1.0)
+    SCALES.lock().unwrap_or_else(|e| e.into_inner()).get(&parent).copied().unwrap_or(1.0)
 }
 
 /// Opens editor `parent`, `size` device pixels, and runs `run` with its window until it waits for input.
-pub fn spawn(
-    parent: Parent,
-    size: (u32, u32),
-    slot: &Slot,
-    run: impl FnOnce(Window) + Send + 'static,
-) -> Option<EditorThread> {
+pub fn spawn(parent: Parent, size: (u32, u32), slot: &Slot, run: impl FnOnce(Window) + Send + 'static) -> Option<EditorThread> {
     let state = Arc::new(State::default());
     {
         let mut i = state.lock();
         i.size = size;
         i.events.push_back(Input::Expose);
     }
-    EDITORS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(parent, state.clone());
+    EDITORS.lock().unwrap_or_else(|e| e.into_inner()).insert(parent, state.clone());
     if let Ok(mut s) = slot.lock() {
         *s = Some(Waker(state.clone()));
     }
-    run(Window {
-        id: parent,
-        state: state.clone(),
-        tick: Instant::now(),
-        last: None,
-    });
-    Some(EditorThread {
-        id: parent,
-        state,
-        slot: slot.clone(),
-    })
+    run(Window { id: parent, state: state.clone(), tick: Instant::now(), last: None });
+    Some(EditorThread { id: parent, state, slot: slot.clone() })
 }
 
 /// Parks an editor that waits for input ([`Window::parking`]).
@@ -274,10 +228,7 @@ pub struct Park {
 impl Park {
     /// Keeps `resume` (the editor's loop, from where it waits) for the next [`pump`].
     pub fn park(self, resume: impl FnOnce() + 'static) {
-        let old = PARKED.try_with(|p| {
-            p.borrow_mut()
-                .insert(self.id, (self.state, Box::new(resume)))
-        });
+        let old = PARKED.try_with(|p| p.borrow_mut().insert(self.id, (self.state, Box::new(resume))));
         drop(old);
     }
 }
@@ -330,10 +281,7 @@ impl Window {
 
     /// Where the editor parks when [`Self::next`] had nothing; `None` once it closes.
     pub fn parking(&self) -> Option<Park> {
-        (!self.state.closed.load(Ordering::Acquire)).then(|| Park {
-            id: self.id,
-            state: self.state.clone(),
-        })
+        (!self.state.closed.load(Ordering::Acquire)).then(|| Park { id: self.id, state: self.state.clone() })
     }
 
     /// The painted frame (XRGB rows of `w`).
@@ -389,14 +337,7 @@ impl Window {
 
     /// The menu's picked command: the answer when this input comes again with one, else `None` while the host shows
     /// the menu ([`modal`]).
-    pub fn popup<C: Clone>(
-        &mut self,
-        x: i32,
-        y: i32,
-        def: &MenuDef<C>,
-        _pal: &Palette,
-        scale: f32,
-    ) -> Option<C> {
+    pub fn popup<C: Clone>(&mut self, x: i32, y: i32, def: &MenuDef<C>, _pal: &Palette, scale: f32) -> Option<C> {
         if crate::no_modal() {
             return None;
         }
@@ -405,12 +346,7 @@ impl Window {
             Some(Answer::Pick(path)) => picked(def, &path),
             Some(Answer::Text(_)) => None,
             None => {
-                self.ask(Modal::Menu {
-                    x,
-                    y,
-                    menu: MenuView::of(def),
-                    scale,
-                });
+                self.ask(Modal::Menu { x, y, menu: MenuView::of(def), scale });
                 None
             }
         }
@@ -426,12 +362,7 @@ impl Window {
             Some(Answer::Text(t)) => Some(t),
             Some(Answer::Pick(_)) => None,
             None => {
-                self.ask(Modal::TypeIn {
-                    x,
-                    y,
-                    text: text.to_owned(),
-                    scale,
-                });
+                self.ask(Modal::TypeIn { x, y, text: text.to_owned(), scale });
                 None
             }
         }
@@ -456,11 +387,7 @@ impl Window {
                 None => return,
             },
         };
-        i.modal = Some(Pending {
-            modal,
-            trigger,
-            before,
-        });
+        i.modal = Some(Pending { modal, trigger, before });
         drop(i);
         repaint();
     }
@@ -487,10 +414,7 @@ pub fn set_repaint(f: fn()) {
 
 /// The display scale editor `id` paints at, where the plugin asks the window for it (macOS).
 pub fn set_scale(id: Parent, scale: f32) {
-    SCALES
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(id, scale);
+    SCALES.lock().unwrap_or_else(|e| e.into_inner()).insert(id, scale);
 }
 
 /// Whether editor `id` is open.
@@ -511,11 +435,7 @@ pub fn input(id: Parent, e: Input, mods: (bool, bool, bool)) {
 /// go.
 pub fn pump(id: Parent) {
     let (run, gone) = PARKED.with_borrow_mut(|p| {
-        let closed: Vec<Parent> = p
-            .iter()
-            .filter(|(_, (s, _))| s.closed.load(Ordering::Acquire))
-            .map(|(k, _)| *k)
-            .collect();
+        let closed: Vec<Parent> = p.iter().filter(|(_, (s, _))| s.closed.load(Ordering::Acquire)).map(|(k, _)| *k).collect();
         let gone: Vec<_> = closed.into_iter().filter_map(|k| p.remove(&k)).collect();
         (p.remove(&id), gone)
     });
@@ -561,10 +481,5 @@ pub fn answer(id: Parent, answer: Option<Answer>) {
     for e in events.iter().rev() {
         i.events.push_front(e.clone());
     }
-    i.replay = Some(Replay {
-        answers,
-        used: Vec::new(),
-        trigger: p.trigger,
-        left: events.len(),
-    });
+    i.replay = Some(Replay { answers, used: Vec::new(), trigger: p.trigger, left: events.len() });
 }

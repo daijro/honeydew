@@ -15,23 +15,13 @@ fn at(x: &[f32], step: usize, offset: usize, frames: usize, pos: f64) -> f32 {
 }
 
 /// `left` / `right` resampled to `frames` frames (`rate` and `transpose` unused).
-pub fn whole(
-    left: &[f32],
-    right: &[f32],
-    _rate: u32,
-    frames: usize,
-    _transpose: f64,
-) -> (Vec<f32>, Vec<f32>) {
+pub fn whole(left: &[f32], right: &[f32], _rate: u32, frames: usize, _transpose: f64) -> (Vec<f32>, Vec<f32>) {
     let n = left.len().min(right.len());
     if frames == 0 || n == 0 {
         return (vec![0.0; frames], vec![0.0; frames]);
     }
     let ratio = n as f64 / frames as f64;
-    let side = |x: &[f32]| {
-        (0..frames)
-            .map(|k| at(x, 1, 0, n, k as f64 * ratio))
-            .collect()
-    };
+    let side = |x: &[f32]| (0..frames).map(|k| at(x, 1, 0, n, k as f64 * ratio)).collect();
     (side(left), side(right))
 }
 

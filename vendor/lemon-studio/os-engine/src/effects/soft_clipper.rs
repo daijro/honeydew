@@ -40,9 +40,7 @@ impl Default for Settings {
 impl Settings {
     /// A saved state (8 bytes; longer ones are read from their start).
     pub fn from_state(b: &[u8]) -> Option<Settings> {
-        Some(Settings {
-            v: super::ints(b, 0)?,
-        })
+        Some(Settings { v: super::ints(b, 0)? })
     }
 
     /// The saved state (8 bytes).
@@ -86,11 +84,7 @@ pub fn clip(s: f32, t: f32, k: f32, r: f32) -> f32 {
     let a = s.abs();
     if a > t || a.is_nan() {
         let m = -((f64::from(t) - f64::from(a)) * f64::from(r)).exp_m1();
-        let m = if m <= 0.5 {
-            (m * TWO64).round_ties_even() / TWO64
-        } else {
-            m
-        };
+        let m = if m <= 0.5 { (m * TWO64).round_ties_even() / TWO64 } else { m };
         let y = (m * f64::from(k) + f64::from(t)) as f32;
         y.copysign(s)
     } else {
@@ -112,13 +106,7 @@ impl SoftClipper {
     }
 
     pub fn with_settings(s: &Settings) -> SoftClipper {
-        let mut c = SoftClipper {
-            applied: DEFAULTS,
-            t: 0.0,
-            k: 0.0,
-            r: 0.0,
-            gain: 1.0,
-        };
+        let mut c = SoftClipper { applied: DEFAULTS, t: 0.0, k: 0.0, r: 0.0, gain: 1.0 };
         c.derive(&s.v);
         c
     }
@@ -186,10 +174,7 @@ mod tests {
         assert_eq!(Settings::from_state(&b), Some(s));
         assert_eq!(Settings::from_state(&[100, 0, 0, 0]), None);
         // FL's Default preset: 100 and 128.
-        assert_eq!(
-            Settings::from_state(&[100, 0, 0, 0, 128, 0, 0, 0]),
-            Some(Settings::default())
-        );
+        assert_eq!(Settings::from_state(&[100, 0, 0, 0, 128, 0, 0, 0]), Some(Settings::default()));
     }
 
     #[test]
@@ -237,8 +222,7 @@ mod tests {
     fn the_exponent_is_not_rounded() {
         let c = SoftClipper::with_settings(&Settings { v: [90, 128] });
         let (t, k, r) = constants(90);
-        let want = ((1.0 - ((f64::from(t) - 2.0) * f64::from(r)).exp()) * f64::from(k)
-            + f64::from(t)) as f32;
+        let want = ((1.0 - ((f64::from(t) - 2.0) * f64::from(r)).exp()) * f64::from(k) + f64::from(t)) as f32;
         assert_eq!(c.sample(-2.0), -want);
         let c = SoftClipper::with_settings(&Settings { v: [127, 0] });
         assert_eq!(c.sample(0.999), 0.0);

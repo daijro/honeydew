@@ -28,13 +28,7 @@ pub struct Clock {
 impl Clock {
     /// A clock before its first tick.
     pub fn new(rate: u32, ppq: u16, bpm: f64) -> Self {
-        Clock {
-            spt: samples_per_tick(rate, ppq, bpm),
-            sum: 0.0,
-            start: 0,
-            end: 0,
-            ticks: 0,
-        }
+        Clock { spt: samples_per_tick(rate, ppq, bpm), sum: 0.0, start: 0, end: 0, ticks: 0 }
     }
 
     /// Starts the next tick and returns its first sample and its length (at least 1). Its length is settled with the

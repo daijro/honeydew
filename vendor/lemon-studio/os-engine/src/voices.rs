@@ -35,12 +35,7 @@ pub struct VoiceLedger {
 
 impl Default for VoiceLedger {
     fn default() -> Self {
-        VoiceLedger {
-            voices: Vec::with_capacity(64),
-            reports: false,
-            capacity: None,
-            tail: DEFAULT_TAIL_SECONDS,
-        }
+        VoiceLedger { voices: Vec::with_capacity(64), reports: false, capacity: None, tail: DEFAULT_TAIL_SECONDS }
     }
 }
 
@@ -69,11 +64,7 @@ impl VoiceLedger {
 
     /// A note on: a new voice.
     pub fn start(&mut self, key: u8, id: i32) {
-        self.voices.push(Entry {
-            key,
-            id,
-            left: None,
-        });
+        self.voices.push(Entry { key, id, left: None });
         let limit = self.capacity.unwrap_or(MAX_VOICES).min(MAX_VOICES);
         if self.voices.len() > limit {
             let extra = self.voices.len() - limit;
@@ -92,11 +83,7 @@ impl VoiceLedger {
     /// A note off: the held voices of `key` ring out.
     pub fn release(&mut self, key: u8) {
         let left = self.release_left();
-        for v in self
-            .voices
-            .iter_mut()
-            .filter(|v| v.key == key && v.left.is_none())
-        {
+        for v in self.voices.iter_mut().filter(|v| v.key == key && v.left.is_none()) {
             v.left = Some(left);
         }
     }
@@ -114,11 +101,7 @@ impl VoiceLedger {
     pub fn choke_voice(&mut self, id: i32) {
         if self.reports {
             let left = self.release_left();
-            for v in self
-                .voices
-                .iter_mut()
-                .filter(|v| v.id == id && v.left.is_none())
-            {
+            for v in self.voices.iter_mut().filter(|v| v.id == id && v.left.is_none()) {
                 v.left = Some(left);
             }
         } else {
@@ -136,15 +119,10 @@ impl VoiceLedger {
                 v.left = Some(MAX_TAIL_SECONDS);
             }
         }
-        let by_id = (id >= 0)
-            .then(|| self.voices.iter().position(|v| v.id == id))
-            .flatten();
+        let by_id = (id >= 0).then(|| self.voices.iter().position(|v| v.id == id)).flatten();
         let at = by_id.or_else(|| {
             let key = u8::try_from(key).ok()?;
-            self.voices
-                .iter()
-                .position(|v| v.key == key && v.left.is_some())
-                .or_else(|| self.voices.iter().position(|v| v.key == key))
+            self.voices.iter().position(|v| v.key == key && v.left.is_some()).or_else(|| self.voices.iter().position(|v| v.key == key))
         });
         if let Some(i) = at {
             self.voices.remove(i);
@@ -180,10 +158,7 @@ impl VoiceLedger {
 
     /// Keys of the voices whose notes are still held, oldest first (one per voice).
     pub fn held(&self) -> impl Iterator<Item = u8> + '_ {
-        self.voices
-            .iter()
-            .filter(|v| v.left.is_none())
-            .map(|v| v.key)
+        self.voices.iter().filter(|v| v.left.is_none()).map(|v| v.key)
     }
 
     /// Voices now, within the plugin's capacity.
@@ -191,3 +166,4 @@ impl VoiceLedger {
         self.voices.len().min(self.capacity.unwrap_or(MAX_VOICES))
     }
 }
+

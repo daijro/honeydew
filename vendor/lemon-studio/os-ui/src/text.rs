@@ -65,58 +65,28 @@ pub struct Font {
 impl Font {
     /// Cuprum at `size` px with natural ClearType advances.
     pub const fn new(size: u16) -> Font {
-        Font {
-            face: Face::Ui,
-            size,
-            width: 0,
-            bold: false,
-            italic: false,
-            natural: true,
-        }
+        Font { face: Face::Ui, size, width: 0, bold: false, italic: false, natural: true }
     }
     /// Horizontally condensed: `width` is the average character width in px.
     pub const fn condensed(size: u16, width: u16) -> Font {
-        Font {
-            face: Face::Ui,
-            size,
-            width,
-            bold: false,
-            italic: false,
-            natural: false,
-        }
+        Font { face: Face::Ui, size, width, bold: false, italic: false, natural: false }
     }
     /// The light display face (song position digits).
     pub const fn light(size: u16, width: u16) -> Font {
-        Font {
-            face: Face::Light,
-            size,
-            width,
-            bold: false,
-            italic: false,
-            natural: false,
-        }
+        Font { face: Face::Light, size, width, bold: false, italic: false, natural: false }
     }
     pub const fn natural(self) -> Font {
-        Font {
-            natural: true,
-            ..self
-        }
+        Font { natural: true, ..self }
     }
     pub const fn bold(self) -> Font {
         Font { bold: true, ..self }
     }
     pub const fn italic(self) -> Font {
-        Font {
-            italic: true,
-            ..self
-        }
+        Font { italic: true, ..self }
     }
     /// GDI-compatible advances.
     pub const fn compat(self) -> Font {
-        Font {
-            natural: false,
-            ..self
-        }
+        Font { natural: false, ..self }
     }
 }
 
@@ -181,18 +151,7 @@ impl TextEngine {
     /// Draw `s` with its cell's top-left at device (x, y). `vertical` rotates it 90° counter-clockwise
     /// about that point (the string then reads upward from y, glyph tops facing left at x).
     #[allow(clippy::too_many_arguments)]
-    pub fn draw(
-        &mut self,
-        pix: &mut Pixmap,
-        clip: ClipPx,
-        f: Font,
-        scale: f32,
-        x: i32,
-        y: i32,
-        c: Color,
-        s: &str,
-        vertical: bool,
-    ) {
+    pub fn draw(&mut self, pix: &mut Pixmap, clip: ClipPx, f: Font, scale: f32, x: i32, y: i32, c: Color, s: &str, vertical: bool) {
         if s.is_empty() || c.a == 0 {
             return;
         }
@@ -204,8 +163,7 @@ impl TextEngine {
         if let Some(e) = &mut self.sw {
             return e.draw(pix, clip, f, scale, x, y, c, s, vertical);
         }
-        self.portable
-            .draw(pix, clip, f, scale, x, y, c, s, vertical);
+        self.portable.draw(pix, clip, f, scale, x, y, c, s, vertical);
     }
 }
 
@@ -218,7 +176,7 @@ mod gdi {
     use windows_sys::Win32::Foundation::SIZE;
     use windows_sys::Win32::Graphics::Gdi::*;
 
-    use super::{CUPRUM, ClipPx, Face, Font};
+    use super::{ClipPx, Face, Font, CUPRUM};
     use crate::cache::{Fx, Id, Lru};
     use os_theme::Color;
     use tiny_skia::Pixmap;
@@ -244,14 +202,7 @@ mod gdi {
         *DONE.get_or_init(|| {
             let mut n = 0u32;
             // SAFETY: CUPRUM is 'static; GDI copies the font data.
-            let h = unsafe {
-                AddFontMemResourceEx(
-                    CUPRUM.as_ptr().cast(),
-                    CUPRUM.len() as u32,
-                    std::ptr::null(),
-                    &mut n,
-                )
-            };
+            let h = unsafe { AddFontMemResourceEx(CUPRUM.as_ptr().cast(), CUPRUM.len() as u32, std::ptr::null(), &mut n) };
             !h.is_null() && n > 0
         })
     }
@@ -293,8 +244,7 @@ mod gdi {
                 bits: std::ptr::null_mut(),
                 cap: (0, 0),
                 fonts: HashMap::new(),
-                names: [Face::Ui, Face::Light]
-                    .map(|f| f.gdi_name().encode_utf16().chain(Some(0)).collect()),
+                names: [Face::Ui, Face::Light].map(|f| f.gdi_name().encode_utf16().chain(Some(0)).collect()),
                 metrics: HashMap::new(),
                 extents: HashMap::default(),
                 drawn: Lru::new(32 << 20),
@@ -323,16 +273,7 @@ mod gdi {
             };
             let mut bits: *mut core::ffi::c_void = std::ptr::null_mut();
             // SAFETY: bmi is a valid header; `bits` receives the DIB memory owned by the bitmap.
-            let dib = unsafe {
-                CreateDIBSection(
-                    self.dc,
-                    &bmi,
-                    DIB_RGB_COLORS,
-                    &mut bits,
-                    std::ptr::null_mut(),
-                    0,
-                )
-            };
+            let dib = unsafe { CreateDIBSection(self.dc, &bmi, DIB_RGB_COLORS, &mut bits, std::ptr::null_mut(), 0) };
             if dib.is_null() || bits.is_null() {
                 return Err("CreateDIBSection failed".into());
             }
@@ -357,11 +298,7 @@ mod gdi {
             }
             let px = |v: u16| (f32::from(v) * scale).round() as i32;
             let esc = if vertical { 900 } else { 0 };
-            let quality = if f.natural {
-                CLEARTYPE_NATURAL_QUALITY
-            } else {
-                u32::from(CLEARTYPE_QUALITY)
-            };
+            let quality = if f.natural { CLEARTYPE_NATURAL_QUALITY } else { u32::from(CLEARTYPE_QUALITY) };
             // SAFETY: the face name is NUL-terminated UTF-16.
             let h = unsafe {
                 CreateFontW(
@@ -434,26 +371,12 @@ mod gdi {
         }
 
         #[allow(clippy::too_many_arguments)]
-        pub fn draw(
-            &mut self,
-            pix: &mut Pixmap,
-            clip: ClipPx,
-            f: Font,
-            scale: f32,
-            x: i32,
-            y: i32,
-            c: Color,
-            s: &str,
-            vertical: bool,
-        ) {
+        pub fn draw(&mut self, pix: &mut Pixmap, clip: ClipPx, f: Font, scale: f32, x: i32, y: i32, c: Color, s: &str, vertical: bool) {
             let (tw, th) = self.extent(f, scale, s);
             // Glyphs may overhang their cell (italics, 'j', ClearType fringes).
             let pad = (f32::from(f.size) * scale * 0.35).ceil() as i32 + 2;
-            let (rx0, ry0, rx1, ry1) = if vertical {
-                (x - pad, y - tw - pad, x + th + pad, y + pad)
-            } else {
-                (x - pad, y - pad, x + tw + pad, y + th + pad)
-            };
+            let (rx0, ry0, rx1, ry1) =
+                if vertical { (x - pad, y - tw - pad, x + th + pad, y + pad) } else { (x - pad, y - pad, x + tw + pad, y + th + pad) };
             let (pw, ph) = (pix.width() as i32, pix.height() as i32);
             let (x0, y0) = (rx0.max(clip.0).max(0), ry0.max(clip.1).max(0));
             let (x1, y1) = (rx1.min(clip.2).min(pw), ry1.min(clip.3).min(ph));
@@ -468,9 +391,7 @@ mod gdi {
             let mut bg = std::mem::take(&mut self.bg);
             bg.clear();
             for row in 0..h as usize {
-                bg.extend_from_slice(
-                    &data[(y0 as usize + row) * pstride + x0 as usize * 4..][..row_bytes],
-                );
+                bg.extend_from_slice(&data[(y0 as usize + row) * pstride + x0 as usize * 4..][..row_bytes]);
             }
             let at = (x - x0, y - y0, w, h);
             let mut hs = Fx::default();
@@ -494,8 +415,7 @@ mod gdi {
                 && d.bg == bg
             {
                 for row in 0..h as usize {
-                    data[(y0 as usize + row) * pstride + x0 as usize * 4..][..row_bytes]
-                        .copy_from_slice(&d.out[row * row_bytes..][..row_bytes]);
+                    data[(y0 as usize + row) * pstride + x0 as usize * 4..][..row_bytes].copy_from_slice(&d.out[row * row_bytes..][..row_bytes]);
                 }
                 self.bg = bg;
                 return;
@@ -506,11 +426,9 @@ mod gdi {
             }
             let stride = self.cap.0 as usize * 4;
             // SAFETY: the DIB holds cap.0 × cap.1 BGRA pixels and w ≤ cap.0, h ≤ cap.1.
-            let dib =
-                unsafe { std::slice::from_raw_parts_mut(self.bits, stride * self.cap.1 as usize) };
+            let dib = unsafe { std::slice::from_raw_parts_mut(self.bits, stride * self.cap.1 as usize) };
             for row in 0..h as usize {
-                let src =
-                    &data[(y0 as usize + row) * pstride + x0 as usize * 4..][..w as usize * 4];
+                let src = &data[(y0 as usize + row) * pstride + x0 as usize * 4..][..w as usize * 4];
                 let dst = &mut dib[row * stride..][..w as usize * 4];
                 for (d, s) in dst.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
                     d[0] = s[2];
@@ -524,26 +442,13 @@ mod gdi {
             // SAFETY: valid dc/font; the string buffer outlives the call.
             unsafe {
                 SelectObject(self.dc, font);
-                SetTextColor(
-                    self.dc,
-                    u32::from(c.r) | (u32::from(c.g) << 8) | (u32::from(c.b) << 16),
-                );
-                ExtTextOutW(
-                    self.dc,
-                    x - x0,
-                    y - y0,
-                    0,
-                    std::ptr::null(),
-                    ws.as_ptr(),
-                    ws.len() as u32,
-                    std::ptr::null(),
-                );
+                SetTextColor(self.dc, u32::from(c.r) | (u32::from(c.g) << 8) | (u32::from(c.b) << 16));
+                ExtTextOutW(self.dc, x - x0, y - y0, 0, std::ptr::null(), ws.as_ptr(), ws.len() as u32, std::ptr::null());
                 GdiFlush();
             }
             let a = u32::from(c.a);
             for row in 0..h as usize {
-                let dst =
-                    &mut data[(y0 as usize + row) * pstride + x0 as usize * 4..][..w as usize * 4];
+                let dst = &mut data[(y0 as usize + row) * pstride + x0 as usize * 4..][..w as usize * 4];
                 let src = &dib[row * stride..][..w as usize * 4];
                 for (d, s) in dst.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
                     if a == 255 {
@@ -551,9 +456,7 @@ mod gdi {
                         d[1] = s[1];
                         d[2] = s[0];
                     } else {
-                        let mix = |n: u8, o: u8| {
-                            ((u32::from(n) * a + u32::from(o) * (255 - a)) / 255) as u8
-                        };
+                        let mix = |n: u8, o: u8| ((u32::from(n) * a + u32::from(o) * (255 - a)) / 255) as u8;
                         d[0] = mix(s[2], d[0]);
                         d[1] = mix(s[1], d[1]);
                         d[2] = mix(s[0], d[2]);
@@ -563,21 +466,10 @@ mod gdi {
             }
             let mut out = Vec::with_capacity(bg.len());
             for row in 0..h as usize {
-                out.extend_from_slice(
-                    &data[(y0 as usize + row) * pstride + x0 as usize * 4..][..row_bytes],
-                );
+                out.extend_from_slice(&data[(y0 as usize + row) * pstride + x0 as usize * 4..][..row_bytes]);
             }
             let bytes = bg.len() * 2 + s.len() + 96;
-            let d = Drawn {
-                s: s.into(),
-                f,
-                scale: scale.to_bits(),
-                vertical,
-                c,
-                at,
-                bg: bg.clone(),
-                out,
-            };
+            let d = Drawn { s: s.into(), f, scale: scale.to_bits(), vertical, c, at, bg: bg.clone(), out };
             self.drawn.insert(key, d, bytes);
             self.bg = bg;
         }
@@ -611,7 +503,7 @@ mod sw;
 mod portable {
     use std::collections::HashMap;
 
-    use super::{CUPRUM, ClipPx, Face, Font};
+    use super::{ClipPx, Face, Font, CUPRUM};
     use os_theme::Color;
     use tiny_skia::Pixmap;
 
@@ -648,16 +540,9 @@ mod portable {
     #[cfg_attr(not(unix), allow(dead_code))]
     pub(super) fn os2(data: &[u8]) -> Option<(f32, f32, f32)> {
         let u16_at = |o: usize| data.get(o..o + 2).map(|b| u16::from_be_bytes([b[0], b[1]]));
-        let u32_at = |o: usize| {
-            data.get(o..o + 4)
-                .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
-        };
+        let u32_at = |o: usize| data.get(o..o + 4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]));
         let table = |tag: &[u8; 4]| {
-            (0..usize::from(u16_at(4)?))
-                .map(|i| 12 + 16 * i)
-                .find(|&r| data.get(r..r + 4) == Some(tag))
-                .and_then(|r| u32_at(r + 8))
-                .map(|o| o as usize)
+            (0..usize::from(u16_at(4)?)).map(|i| 12 + 16 * i).find(|&r| data.get(r..r + 4) == Some(tag)).and_then(|r| u32_at(r + 8)).map(|o| o as usize)
         };
         let upem = f32::from(u16_at(table(b"head")? + 18)?);
         let o = table(b"OS/2")?;
@@ -673,16 +558,10 @@ mod portable {
 
     impl Fd {
         pub fn new() -> Result<Fd, String> {
-            let font = fontdue::Font::from_bytes(CUPRUM, fontdue::FontSettings::default())
-                .map_err(|e| e.to_string())?;
+            let font = fontdue::Font::from_bytes(CUPRUM, fontdue::FontSettings::default()).map_err(|e| e.to_string())?;
             let (asc, desc, avg) = os2(CUPRUM).ok_or("the UI font has no OS/2 metrics")?;
             super::FONTS.fetch_add(1, super::Ordering::Relaxed);
-            Ok(Fd {
-                font,
-                ui: (asc, desc),
-                avg,
-                cache: HashMap::new(),
-            })
+            Ok(Fd { font, ui: (asc, desc), avg, cache: HashMap::new() })
         }
 
         /// The em height in device pixels (GDI rounds the requested height).
@@ -742,10 +621,7 @@ mod portable {
                     for y in 0..h {
                         for x in 0..nw {
                             let lo = x.saturating_sub(b);
-                            out[y * nw + x] = (lo..=x.min(w - 1))
-                                .map(|sx| cov[y * w + sx])
-                                .max()
-                                .unwrap_or(0);
+                            out[y * nw + x] = (lo..=x.min(w - 1)).map(|sx| cov[y * w + sx]).max().unwrap_or(0);
                         }
                     }
                     (cov, w) = (out, nw);
@@ -754,8 +630,7 @@ mod portable {
                 // Italic: rows above the baseline shift right in proportion to their height.
                 if f.italic && w > 0 {
                     let top = m.ymin + h as i32;
-                    let shift =
-                        |y: usize| ((top - y as i32) as f32 * SLANT).round().max(0.0) as usize;
+                    let shift = |y: usize| ((top - y as i32) as f32 * SLANT).round().max(0.0) as usize;
                     let extra = shift(0).max(shift(h.saturating_sub(1)));
                     let nw = w + extra;
                     let mut out = vec![0u8; nw * h];
@@ -765,14 +640,7 @@ mod portable {
                     }
                     (cov, w) = (out, nw);
                 }
-                Glyph {
-                    cov,
-                    w,
-                    h,
-                    xmin,
-                    ymin: m.ymin,
-                    advance,
-                }
+                Glyph { cov, w, h, xmin, ymin: m.ymin, advance }
             })
         }
 
@@ -789,18 +657,7 @@ mod portable {
         }
 
         #[allow(clippy::too_many_arguments)]
-        pub fn draw(
-            &mut self,
-            pix: &mut Pixmap,
-            clip: ClipPx,
-            f: Font,
-            scale: f32,
-            x: i32,
-            y: i32,
-            c: Color,
-            s: &str,
-            vertical: bool,
-        ) {
+        pub fn draw(&mut self, pix: &mut Pixmap, clip: ClipPx, f: Font, scale: f32, x: i32, y: i32, c: Color, s: &str, vertical: bool) {
             let asc = self.metrics(f, scale).1;
             let pw = pix.width() as i32;
             let mut pen = 0.0f32;
@@ -817,11 +674,7 @@ mod portable {
                             continue;
                         }
                         let (lx, ly) = (gx0 + i as i32, gy0 + j as i32);
-                        let (dx, dy) = if vertical {
-                            (x + ly, y - lx)
-                        } else {
-                            (x + lx, y + ly)
-                        };
+                        let (dx, dy) = if vertical { (x + ly, y - lx) } else { (x + lx, y + ly) };
                         if dx < clip.0 || dy < clip.1 || dx >= clip.2 || dy >= clip.3 {
                             continue;
                         }
@@ -857,37 +710,13 @@ mod portable {
             let f = Font::new(20);
             let plain = fd.extent(f, 1.0, "Pattern").0;
             assert!(fd.extent(f.bold(), 1.0, "Pattern").0 > plain);
-            assert_eq!(
-                fd.extent(f.italic(), 1.0, "Pattern").0,
-                plain,
-                "italic keeps the advances"
-            );
+            assert_eq!(fd.extent(f.italic(), 1.0, "Pattern").0, plain, "italic keeps the advances");
             assert!(fd.extent(Font::condensed(20, 6), 1.0, "Pattern").0 < plain);
             // Drawing stays inside the pixmap whatever the style.
             let mut pix = Pixmap::new(64, 32).unwrap();
             for f in [f, f.bold(), f.italic(), f.bold().italic()] {
-                fd.draw(
-                    &mut pix,
-                    (0, 0, 64, 32),
-                    f,
-                    1.0,
-                    60,
-                    20,
-                    Color::rgb(0xffffff),
-                    "Wg",
-                    false,
-                );
-                fd.draw(
-                    &mut pix,
-                    (0, 0, 64, 32),
-                    f,
-                    1.0,
-                    2,
-                    30,
-                    Color::rgb(0xffffff),
-                    "Wg",
-                    true,
-                );
+                fd.draw(&mut pix, (0, 0, 64, 32), f, 1.0, 60, 20, Color::rgb(0xffffff), "Wg", false);
+                fd.draw(&mut pix, (0, 0, 64, 32), f, 1.0, 2, 30, Color::rgb(0xffffff), "Wg", true);
             }
         }
     }

@@ -18,15 +18,15 @@ use os_theme::{Color, Palette};
 use os_ui::kit::menu as kmenu;
 use os_ui::{Canvas, Font, Rect};
 use x11rb::connection::{Connection, RequestConnection as _};
-use x11rb::protocol::Event;
 use x11rb::protocol::xinput::{self, ConnectionExt as _};
 use x11rb::protocol::xproto::{
-    ConnectionExt as _, CreateGCAux, CreateWindowAux, EventMask, GrabMode, GrabStatus, ImageFormat,
-    ImageOrder, KeyButMask, NotifyDetail, VisualClass, WindowClass,
+    ConnectionExt as _, CreateGCAux, CreateWindowAux, EventMask, GrabMode, GrabStatus, ImageFormat, ImageOrder, KeyButMask, NotifyDetail,
+    VisualClass, WindowClass,
 };
+use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
 
-pub use crate::input::{Button, Input, keysym, keysym_char};
+pub use crate::input::{keysym, keysym_char, Button, Input};
 use crate::{MenuDef, Opener};
 
 /// The host's window: an X11 window id.
@@ -59,11 +59,7 @@ impl Waker {
         }
         // SAFETY: both descriptors are fresh and owned here.
         let (rx, tx) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
-        Some(Waker(Arc::new(Pipe {
-            rx,
-            tx,
-            quit: AtomicBool::new(false),
-        })))
+        Some(Waker(Arc::new(Pipe { rx, tx, quit: AtomicBool::new(false) })))
     }
 
     /// Asks the GUI thread to look again (a parameter changed). Any thread.
@@ -122,12 +118,7 @@ impl Drop for EditorThread {
 
 /// Opens an editor window of `size` device px in the host's X11 window `parent` and runs `run` with it on a thread of
 /// its own. `None` when there is no X11 display.
-pub fn spawn(
-    parent: Parent,
-    size: (u32, u32),
-    slot: &Slot,
-    run: impl FnOnce(Window) + Send + 'static,
-) -> Option<EditorThread> {
+pub fn spawn(parent: Parent, size: (u32, u32), slot: &Slot, run: impl FnOnce(Window) + Send + 'static) -> Option<EditorThread> {
     let waker = Waker::new()?;
     let win = match Window::open(parent, size, waker.clone()) {
         Ok(w) => w,
@@ -139,15 +130,8 @@ pub fn spawn(
     if let Ok(mut s) = slot.lock() {
         *s = Some(waker.clone());
     }
-    let thread = std::thread::Builder::new()
-        .name("plugin editor".into())
-        .spawn(move || run(win))
-        .ok()?;
-    Some(EditorThread {
-        waker,
-        slot: slot.clone(),
-        thread: Some(thread),
-    })
+    let thread = std::thread::Builder::new().name("plugin editor".into()).spawn(move || run(win)).ok()?;
+    Some(EditorThread { waker, slot: slot.clone(), thread: Some(thread) })
 }
 
 // -------------------------------------------------------------------------------------------------------------------
@@ -163,39 +147,14 @@ struct Keymap {
 impl Keymap {
     fn load(c: &RustConnection) -> Keymap {
         let s = c.setup();
-        let (min, count) = (
-            s.min_keycode,
-            s.max_keycode
-                .saturating_sub(s.min_keycode)
-                .saturating_add(1),
-        );
-        let r = c
-            .get_keyboard_mapping(min, count)
-            .ok()
-            .and_then(|r| r.reply().ok());
-        r.map_or(
-            Keymap {
-                min,
-                per: 0,
-                syms: Vec::new(),
-            },
-            |r| Keymap {
-                min,
-                per: r.keysyms_per_keycode,
-                syms: r.keysyms,
-            },
-        )
+        let (min, count) = (s.min_keycode, s.max_keycode.saturating_sub(s.min_keycode).saturating_add(1));
+        let r = c.get_keyboard_mapping(min, count).ok().and_then(|r| r.reply().ok());
+        r.map_or(Keymap { min, per: 0, syms: Vec::new() }, |r| Keymap { min, per: r.keysyms_per_keycode, syms: r.keysyms })
     }
 
     fn sym(&self, code: u8, state: u16) -> u32 {
         let base = usize::from(code.saturating_sub(self.min)) * usize::from(self.per);
-        let at = |l: usize| {
-            if l < usize::from(self.per) {
-                self.syms.get(base + l).copied().unwrap_or(0)
-            } else {
-                0
-            }
-        };
+        let at = |l: usize| if l < usize::from(self.per) { self.syms.get(base + l).copied().unwrap_or(0) } else { 0 };
         let (lo, hi) = (at(0), at(1));
         let shift = state & u16::from(KeyButMask::SHIFT) != 0;
         // Num Lock (Mod2) picks the keypad's digits.
@@ -246,21 +205,9 @@ impl Window {
         let (c, screen) = RustConnection::connect(None).map_err(|e| err(&e))?;
         let setup = c.setup();
         let s = &setup.roots[screen];
-        let visual = s
-            .allowed_depths
-            .iter()
-            .filter(|d| d.depth == s.root_depth)
-            .flat_map(|d| &d.visuals)
-            .find(|v| v.visual_id == s.root_visual);
-        let fits = visual.is_some_and(|v| {
-            v.class == VisualClass::TRUE_COLOR
-                && v.red_mask == 0xff_0000
-                && v.green_mask == 0xff00
-                && v.blue_mask == 0xff
-        }) && setup
-            .pixmap_formats
-            .iter()
-            .any(|f| f.depth == s.root_depth && f.bits_per_pixel == 32);
+        let visual = s.allowed_depths.iter().filter(|d| d.depth == s.root_depth).flat_map(|d| &d.visuals).find(|v| v.visual_id == s.root_visual);
+        let fits = visual.is_some_and(|v| v.class == VisualClass::TRUE_COLOR && v.red_mask == 0xff_0000 && v.green_mask == 0xff00 && v.blue_mask == 0xff)
+            && setup.pixmap_formats.iter().any(|f| f.depth == s.root_depth && f.bits_per_pixel == 32);
         if !fits {
             return Err(err(&"the screen is not 24-bit true colour"));
         }
@@ -284,37 +231,14 @@ impl Window {
             // so it does not show black while the editor builds that frame.
             let bg = os_ui::kit::lemon::plug::BG;
             let bg = u32::from(bg.r) << 16 | u32::from(bg.g) << 8 | u32::from(bg.b);
-            let aux = CreateWindowAux::new()
-                .event_mask(events)
-                .background_pixel(bg);
-            c.create_window(
-                x11rb::COPY_DEPTH_FROM_PARENT,
-                win,
-                parent,
-                0,
-                0,
-                px(w),
-                px(h),
-                0,
-                WindowClass::INPUT_OUTPUT,
-                x11rb::COPY_FROM_PARENT,
-                &aux,
-            )?;
+            let aux = CreateWindowAux::new().event_mask(events).background_pixel(bg);
+            c.create_window(x11rb::COPY_DEPTH_FROM_PARENT, win, parent, 0, 0, px(w), px(h), 0, WindowClass::INPUT_OUTPUT, x11rb::COPY_FROM_PARENT, &aux)?;
             c.create_gc(gc, win, &CreateGCAux::new().graphics_exposures(0))?;
             // An invisible cursor: a cleared 1 x 1 bitmap as its own mask.
             let (pix, pgc) = (c.generate_id()?, c.generate_id()?);
             c.create_pixmap(1, pix, root, 1, 1)?;
             c.create_gc(pgc, pix, &CreateGCAux::new().foreground(0))?;
-            c.poly_fill_rectangle(
-                pix,
-                pgc,
-                &[x11rb::protocol::xproto::Rectangle {
-                    x: 0,
-                    y: 0,
-                    width: 1,
-                    height: 1,
-                }],
-            )?;
+            c.poly_fill_rectangle(pix, pgc, &[x11rb::protocol::xproto::Rectangle { x: 0, y: 0, width: 1, height: 1 }])?;
             c.create_cursor(blank, pix, pix, 0, 0, 0, 0, 0, 0, 0, 0)?;
             c.free_gc(pgc)?;
             c.free_pixmap(pix)?;
@@ -323,15 +247,8 @@ impl Window {
             Ok(())
         })()
         .map_err(|e| fail(&e))?;
-        let xi = c
-            .extension_information(xinput::X11_EXTENSION_NAME)
-            .ok()
-            .flatten()
-            .is_some()
-            && c.xinput_xi_query_version(2, 0)
-                .ok()
-                .and_then(|r| r.reply().ok())
-                .is_some_and(|r| r.major_version >= 2);
+        let xi = c.extension_information(xinput::X11_EXTENSION_NAME).ok().flatten().is_some()
+            && c.xinput_xi_query_version(2, 0).ok().and_then(|r| r.reply().ok()).is_some_and(|r| r.major_version >= 2);
         let keys = Keymap::load(&c);
         let max_request = c.maximum_request_bytes();
         Ok(Window {
@@ -367,11 +284,7 @@ impl Window {
     /// Ctrl, Shift, Alt held at the last event.
     pub fn mods(&self) -> (bool, bool, bool) {
         let on = |m: KeyButMask| self.state & u16::from(m) != 0;
-        (
-            on(KeyButMask::CONTROL),
-            on(KeyButMask::SHIFT),
-            on(KeyButMask::MOD1),
-        )
+        (on(KeyButMask::CONTROL), on(KeyButMask::SHIFT), on(KeyButMask::MOD1))
     }
 
     /// The next input, waiting for it; `None` when the editor closes (or the display goes).
@@ -404,11 +317,7 @@ impl Window {
             }
             let ms = (self.next_tick - now).as_millis() as i32 + 1;
             if self.wait(ms) {
-                return if self.waker.quitting() {
-                    None
-                } else {
-                    Some(Input::Tick)
-                };
+                return if self.waker.quitting() { None } else { Some(Input::Tick) };
             }
         }
     }
@@ -417,16 +326,8 @@ impl Window {
     fn wait(&self, ms: i32) -> bool {
         let _ = self.c.flush();
         let mut fds = [
-            libc::pollfd {
-                fd: self.c.stream().as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            },
-            libc::pollfd {
-                fd: self.waker.0.rx.as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            },
+            libc::pollfd { fd: self.c.stream().as_raw_fd(), events: libc::POLLIN, revents: 0 },
+            libc::pollfd { fd: self.waker.0.rx.as_raw_fd(), events: libc::POLLIN, revents: 0 },
         ];
         // SAFETY: a valid array of two `pollfd`s.
         unsafe { libc::poll(fds.as_mut_ptr(), 2, ms) };
@@ -470,24 +371,13 @@ impl Window {
                 self.track((e.root_x, e.root_y), e.state);
                 let (x, y) = (f32::from(e.event_x), f32::from(e.event_y));
                 if e.detail == 4 || e.detail == 5 {
-                    return Some(Input::Wheel {
-                        x,
-                        y,
-                        notches: if e.detail == 4 { 1.0 } else { -1.0 },
-                    });
+                    return Some(Input::Wheel { x, y, notches: if e.detail == 4 { 1.0 } else { -1.0 } });
                 }
                 let b = btn(e.detail)?;
                 let dbl = self.last_press.is_some_and(|(t, d, px, py)| {
-                    d == e.detail
-                        && e.time.wrapping_sub(t) < DOUBLE_CLICK_MS
-                        && (px - e.event_x).abs() < 4
-                        && (py - e.event_y).abs() < 4
+                    d == e.detail && e.time.wrapping_sub(t) < DOUBLE_CLICK_MS && (px - e.event_x).abs() < 4 && (py - e.event_y).abs() < 4
                 });
-                self.last_press = if dbl {
-                    None
-                } else {
-                    Some((e.time, e.detail, e.event_x, e.event_y))
-                };
+                self.last_press = if dbl { None } else { Some((e.time, e.detail, e.event_x, e.event_y)) };
                 // The keyboard is left where it is (the host's typing keyboard keeps playing): a type-in box grabs it
                 // while it is open.
                 Some(Input::Down { x, y, btn: b, dbl })
@@ -516,15 +406,9 @@ impl Window {
                             self.warp(a);
                             self.warping = true;
                         }
-                        ((dx, dy) != (0, 0)).then(|| Input::Delta {
-                            dx: f32::from(dx),
-                            dy: f32::from(dy),
-                        })
+                        ((dx, dy) != (0, 0)).then(|| Input::Delta { dx: f32::from(dx), dy: f32::from(dy) })
                     }
-                    None => Some(Input::Move {
-                        x: f32::from(e.event_x),
-                        y: f32::from(e.event_y),
-                    }),
+                    None => Some(Input::Move { x: f32::from(e.event_x), y: f32::from(e.event_y) }),
                 }
             }
             Event::XinputRawMotion(e) if self.lock.is_some() => {
@@ -539,48 +423,29 @@ impl Window {
                 }
                 Some(Input::Delta { dx, dy })
             }
-            Event::LeaveNotify(e) if e.event == self.win && e.detail != NotifyDetail::INFERIOR => {
-                Some(Input::Leave)
-            }
+            Event::LeaveNotify(e) if e.event == self.win && e.detail != NotifyDetail::INFERIOR => Some(Input::Leave),
             Event::KeyPress(e) if e.event == self.win => {
                 self.state = u16::from(e.state);
                 let sym = self.keys.sym(e.detail, self.state);
-                Some(Input::Key {
-                    sym,
-                    text: keysym_char(sym),
-                })
+                Some(Input::Key { sym, text: keysym_char(sym) })
             }
             _ => None,
         }
     }
 
     fn warp(&self, (x, y): (i16, i16)) {
-        let _ = self
-            .c
-            .warp_pointer(x11rb::NONE, self.root, 0, 0, 0, 0, x, y);
+        let _ = self.c.warp_pointer(x11rb::NONE, self.root, 0, 0, 0, 0, x, y);
     }
 
     /// Copies `px` (XRGB rows of `w`) into the window at (0, 0).
     pub fn blit(&self, px: &[u32], w: u32, h: u32) {
-        put(
-            &self.c,
-            self.win,
-            self.gc,
-            self.depth,
-            self.lsb_first,
-            self.max_request,
-            px,
-            w,
-            h,
-        );
+        put(&self.c, self.win, self.gc, self.depth, self.lsb_first, self.max_request, px, w, h);
         let _ = self.c.flush();
     }
 
     /// Resizes the window (device px).
     pub fn resize(&self, w: u32, h: u32) {
-        let aux = x11rb::protocol::xproto::ConfigureWindowAux::new()
-            .width(w.max(1))
-            .height(h.max(1));
+        let aux = x11rb::protocol::xproto::ConfigureWindowAux::new().width(w.max(1)).height(h.max(1));
         let _ = self.c.configure_window(self.win, &aux);
         let _ = self.c.flush();
     }
@@ -589,11 +454,7 @@ impl Window {
     pub fn to_root(&self, x: i32, y: i32) -> (i32, i32) {
         let (x, y) = (x.clamp(-32768, 32767) as i16, y.clamp(-32768, 32767) as i16);
         let t = self.c.translate_coordinates(self.win, self.root, x, y);
-        t.ok()
-            .and_then(|t| t.reply().ok())
-            .map_or((i32::from(x), i32::from(y)), |r| {
-                (i32::from(r.dst_x), i32::from(r.dst_y))
-            })
+        t.ok().and_then(|t| t.reply().ok()).map_or((i32::from(x), i32::from(y)), |r| (i32::from(r.dst_x), i32::from(r.dst_y)))
     }
 
     /// Runs a desktop dialog (a file dialog): here, at once on this thread (`mac` runs it on the main thread).
@@ -611,21 +472,9 @@ impl Window {
             return;
         }
         let mask = EventMask::POINTER_MOTION | EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE;
-        let _ = self.c.grab_pointer(
-            false,
-            self.win,
-            mask,
-            GrabMode::ASYNC,
-            GrabMode::ASYNC,
-            x11rb::NONE,
-            self.blank,
-            x11rb::CURRENT_TIME,
-        );
+        let _ = self.c.grab_pointer(false, self.win, mask, GrabMode::ASYNC, GrabMode::ASYNC, x11rb::NONE, self.blank, x11rb::CURRENT_TIME);
         if self.xi {
-            let m = xinput::EventMask {
-                deviceid: 1,
-                mask: vec![xinput::XIEventMask::RAW_MOTION],
-            };
+            let m = xinput::EventMask { deviceid: 1, mask: vec![xinput::XIEventMask::RAW_MOTION] };
             let _ = self.c.xinput_xi_select_events(self.root, &[m]);
         }
         self.lock = Some(self.pointer);
@@ -637,10 +486,7 @@ impl Window {
     pub fn unlock(&mut self) {
         let Some(a) = self.lock.take() else { return };
         if self.xi {
-            let m = xinput::EventMask {
-                deviceid: 1,
-                mask: vec![xinput::XIEventMask::from(0u32)],
-            };
+            let m = xinput::EventMask { deviceid: 1, mask: vec![xinput::XIEventMask::from(0u32)] };
             let _ = self.c.xinput_xi_select_events(self.root, &[m]);
         }
         self.warp(a);
@@ -654,16 +500,7 @@ impl Window {
         for _ in 0..40 {
             let ok = self
                 .c
-                .grab_pointer(
-                    false,
-                    w,
-                    mask,
-                    GrabMode::ASYNC,
-                    GrabMode::ASYNC,
-                    x11rb::NONE,
-                    x11rb::NONE,
-                    x11rb::CURRENT_TIME,
-                )
+                .grab_pointer(false, w, mask, GrabMode::ASYNC, GrabMode::ASYNC, x11rb::NONE, x11rb::NONE, x11rb::CURRENT_TIME)
                 .ok()
                 .and_then(|r| r.reply().ok())
                 .is_some_and(|r| r.status == GrabStatus::SUCCESS);
@@ -672,17 +509,7 @@ impl Window {
             }
             std::thread::sleep(Duration::from_millis(5));
         }
-        let _ = self
-            .c
-            .grab_keyboard(
-                false,
-                w,
-                x11rb::CURRENT_TIME,
-                GrabMode::ASYNC,
-                GrabMode::ASYNC,
-            )
-            .ok()
-            .and_then(|r| r.reply().ok());
+        let _ = self.c.grab_keyboard(false, w, x11rb::CURRENT_TIME, GrabMode::ASYNC, GrabMode::ASYNC).ok().and_then(|r| r.reply().ok());
     }
 
     fn ungrab(&self) {
@@ -694,28 +521,12 @@ impl Window {
     /// An override-redirect window (popup, box) at screen `r` (x, y, w, h), mapped.
     fn overlay(&self, r: [i32; 4]) -> Option<(u32, u32)> {
         let (win, gc) = (self.c.generate_id().ok()?, self.c.generate_id().ok()?);
-        let aux = CreateWindowAux::new()
-            .override_redirect(1)
-            .event_mask(EventMask::EXPOSURE);
+        let aux = CreateWindowAux::new().override_redirect(1).event_mask(EventMask::EXPOSURE);
         let px = |v: i32| v.clamp(1, i32::from(u16::MAX)) as u16;
         self.c
-            .create_window(
-                x11rb::COPY_DEPTH_FROM_PARENT,
-                win,
-                self.root,
-                r[0] as i16,
-                r[1] as i16,
-                px(r[2]),
-                px(r[3]),
-                0,
-                WindowClass::INPUT_OUTPUT,
-                x11rb::COPY_FROM_PARENT,
-                &aux,
-            )
+            .create_window(x11rb::COPY_DEPTH_FROM_PARENT, win, self.root, r[0] as i16, r[1] as i16, px(r[2]), px(r[3]), 0, WindowClass::INPUT_OUTPUT, x11rb::COPY_FROM_PARENT, &aux)
             .ok()?;
-        self.c
-            .create_gc(gc, win, &CreateGCAux::new().graphics_exposures(0))
-            .ok()?;
+        self.c.create_gc(gc, win, &CreateGCAux::new().graphics_exposures(0)).ok()?;
         self.c.map_window(win).ok()?;
         let _ = self.c.flush();
         Some((win, gc))
@@ -731,17 +542,7 @@ impl Window {
         let (w, h) = (c.pixmap.width(), c.pixmap.height());
         let mut px = vec![0u32; (w * h) as usize];
         c.copy_to_xrgb(&mut px);
-        put(
-            &self.c,
-            win,
-            gc,
-            self.depth,
-            self.lsb_first,
-            self.max_request,
-            &px,
-            w,
-            h,
-        );
+        put(&self.c, win, gc, self.depth, self.lsb_first, self.max_request, &px, w, h);
         let _ = self.c.flush();
     }
 
@@ -749,14 +550,7 @@ impl Window {
     // Popup menus: an override-redirect window painted with `kit::menu`, run modally until a pick or a cancel.
 
     /// Shows a menu at screen (`x`, `y`); the picked entry's command.
-    pub fn popup<C: Clone>(
-        &mut self,
-        x: i32,
-        y: i32,
-        def: &MenuDef<C>,
-        pal: &Palette,
-        scale: f32,
-    ) -> Option<C> {
+    pub fn popup<C: Clone>(&mut self, x: i32, y: i32, def: &MenuDef<C>, pal: &Palette, scale: f32) -> Option<C> {
         if crate::no_modal() {
             return None;
         }
@@ -769,23 +563,10 @@ impl Window {
         r
     }
 
-    fn popup_at<C: Clone>(
-        &mut self,
-        x: i32,
-        y: i32,
-        def: &MenuDef<C>,
-        pal: &Palette,
-        scale: f32,
-        parent: Option<Opener>,
-    ) -> PopRes<C> {
-        let Ok(mut measure) = Canvas::new(8, 8, scale) else {
-            return PopRes::Cancel;
-        };
+    fn popup_at<C: Clone>(&mut self, x: i32, y: i32, def: &MenuDef<C>, pal: &Palette, scale: f32, parent: Option<Opener>) -> PopRes<C> {
+        let Ok(mut measure) = Canvas::new(8, 8, scale) else { return PopRes::Cancel };
         let layout = kmenu::layout(&mut measure, &def.items, def.style);
-        let (w, h) = (
-            (layout.w * scale).ceil() as i32,
-            (layout.h * scale).ceil() as i32,
-        );
+        let (w, h) = ((layout.w * scale).ceil() as i32, (layout.h * scale).ceil() as i32);
         let (mut px, mut py) = (x, y);
         if px + w > self.root_size.0 {
             px = match parent {
@@ -796,47 +577,24 @@ impl Window {
         if py + h > self.root_size.1 {
             py = (self.root_size.1 - h).max(0);
         }
-        let Ok(mut canvas) = Canvas::new(w.max(1) as u32, h.max(1) as u32, scale) else {
-            return PopRes::Cancel;
-        };
-        let Some(pop) = self.overlay([px, py, w, h]) else {
-            return PopRes::Cancel;
-        };
+        let Ok(mut canvas) = Canvas::new(w.max(1) as u32, h.max(1) as u32, scale) else { return PopRes::Cancel };
+        let Some(pop) = self.overlay([px, py, w, h]) else { return PopRes::Cancel };
         self.grab(pop.0);
         let mut hover: Option<usize> = None;
         let paint = |canvas: &mut Canvas, hover: Option<usize>| {
             canvas.begin_frame(None);
-            kmenu::paint(
-                canvas,
-                pal,
-                &def.items,
-                &layout,
-                def.style,
-                0.0,
-                0.0,
-                hover,
-                def.current,
-            );
+            kmenu::paint(canvas, pal, &def.items, &layout, def.style, 0.0, 0.0, hover, def.current);
         };
         paint(&mut canvas, hover);
         self.show(pop, &canvas);
         let rect = [px, py, px + w, py + h];
-        let inside =
-            |r: &[i32; 4], (sx, sy): (i32, i32)| sx >= r[0] && sx < r[2] && sy >= r[1] && sy < r[3];
-        let item_at = |(sx, sy): (i32, i32)| {
-            layout.item_at(
-                &def.items,
-                (sx - px) as f32 / scale,
-                (sy - py) as f32 / scale,
-            )
-        };
+        let inside = |r: &[i32; 4], (sx, sy): (i32, i32)| sx >= r[0] && sx < r[2] && sy >= r[1] && sy < r[3];
+        let item_at = |(sx, sy): (i32, i32)| layout.item_at(&def.items, (sx - px) as f32 / scale, (sy - py) as f32 / scale);
         let opened = Instant::now();
         let start = (i32::from(self.pointer.0), i32::from(self.pointer.1));
         let mut moved = false;
         let result = loop {
-            let Some(e) = self.event() else {
-                break PopRes::Cancel;
-            };
+            let Some(e) = self.event() else { break PopRes::Cancel };
             match e {
                 Event::Expose(e) if e.window == pop.0 => self.show(pop, &canvas),
                 Event::MotionNotify(e) => {
@@ -848,12 +606,7 @@ impl Window {
                     if parent.is_some_and(|p| p.takes_back(rect, cur)) {
                         break PopRes::Back;
                     }
-                    let hov = if inside(&rect, cur) {
-                        item_at(cur)
-                    } else {
-                        None
-                    }
-                    .filter(|&i| def.items[i].clickable());
+                    let hov = if inside(&rect, cur) { item_at(cur) } else { None }.filter(|&i| def.items[i].clickable());
                     if hov != hover {
                         hover = hov;
                         paint(&mut canvas, hover);
@@ -864,14 +617,7 @@ impl Window {
                         let row = layout.rows[i];
                         let sx = px + ((row.x + row.w) * scale) as i32 - 2;
                         let sy = py + (row.y * scale) as i32 - 2;
-                        match self.popup_at(
-                            sx,
-                            sy,
-                            sub,
-                            pal,
-                            scale,
-                            Some(Opener::new(rect, row, scale)),
-                        ) {
+                        match self.popup_at(sx, sy, sub, pal, scale, Some(Opener::new(rect, row, scale))) {
                             PopRes::Pick(c) => break PopRes::Pick(c),
                             PopRes::Cancel => break PopRes::Cancel,
                             PopRes::Back => self.grab(pop.0),
@@ -903,10 +649,7 @@ impl Window {
                         keysym::ESCAPE => break PopRes::Cancel,
                         keysym::DOWN | keysym::UP if n > 0 => {
                             let down = sym == keysym::DOWN;
-                            let mut i =
-                                hover
-                                    .or(def.current)
-                                    .unwrap_or(if down { n - 1 } else { 0 });
+                            let mut i = hover.or(def.current).unwrap_or(if down { n - 1 } else { 0 });
                             for _ in 0..n {
                                 i = if down { (i + 1) % n } else { (i + n - 1) % n };
                                 if def.items[i].clickable() {
@@ -918,9 +661,7 @@ impl Window {
                             self.show(pop, &canvas);
                         }
                         keysym::RETURN | keysym::KP_ENTER => {
-                            if let Some(i) =
-                                hover.filter(|&i| def.items[i].clickable() && def.sub(i).is_none())
-                            {
+                            if let Some(i) = hover.filter(|&i| def.items[i].clickable() && def.sub(i).is_none()) {
                                 break PopRes::Pick(def.cmds[i].clone());
                             }
                         }
@@ -942,10 +683,7 @@ impl Window {
             return None;
         }
         self.unlock();
-        let (w, h) = (
-            (140.0 * scale).round() as i32,
-            (22.0 * scale).round() as i32,
-        );
+        let (w, h) = ((140.0 * scale).round() as i32, (22.0 * scale).round() as i32);
         let x = x.min(self.root_size.0 - w).max(0);
         let y = y.min(self.root_size.1 - h).max(0);
         let mut canvas = Canvas::new(w as u32, h as u32, scale).ok()?;
@@ -960,12 +698,7 @@ impl Window {
             let f = Font::new(14);
             canvas.begin_frame(None);
             canvas.clear(Color::rgb(0xffffff));
-            for r in [
-                Rect::new(0.0, 0.0, lw, 1.0),
-                Rect::new(0.0, lh - 1.0, lw, 1.0),
-                Rect::new(0.0, 0.0, 1.0, lh),
-                Rect::new(lw - 1.0, 0.0, 1.0, lh),
-            ] {
+            for r in [Rect::new(0.0, 0.0, lw, 1.0), Rect::new(0.0, lh - 1.0, lw, 1.0), Rect::new(0.0, 0.0, 1.0, lh), Rect::new(lw - 1.0, 0.0, 1.0, lh)] {
                 canvas.fill_rect(r, Color::rgb(0x646464));
             }
             let text: String = s.iter().collect();
@@ -1021,20 +754,12 @@ impl Window {
                             all = false;
                         }
                         keysym::RIGHT => {
-                            caret = if all {
-                                s.len()
-                            } else {
-                                (caret + 1).min(s.len())
-                            };
+                            caret = if all { s.len() } else { (caret + 1).min(s.len()) };
                             all = false;
                         }
                         keysym::HOME => (caret, all) = (0, false),
                         keysym::END => (caret, all) = (s.len(), false),
-                        _ if ctrl
-                            && keysym_char(sym).is_some_and(|c| c.eq_ignore_ascii_case(&'a')) =>
-                        {
-                            all = true
-                        }
+                        _ if ctrl && keysym_char(sym).is_some_and(|c| c.eq_ignore_ascii_case(&'a')) => all = true,
                         _ if !ctrl => {
                             if let Some(ch) = keysym_char(sym) {
                                 if all {
@@ -1098,45 +823,15 @@ fn raw_xy(e: &xinput::RawMotionEvent) -> (f32, f32) {
 
 /// Puts XRGB pixels into a window in bands of whole rows, each small enough for one request.
 #[allow(clippy::too_many_arguments)]
-fn put(
-    c: &RustConnection,
-    win: u32,
-    gc: u32,
-    depth: u8,
-    lsb_first: bool,
-    max_request: usize,
-    px: &[u32],
-    w: u32,
-    h: u32,
-) {
+fn put(c: &RustConnection, win: u32, gc: u32, depth: u8, lsb_first: bool, max_request: usize, px: &[u32], w: u32, h: u32) {
     let (w, h) = (w as usize, h as usize);
     if w == 0 || h == 0 || px.len() < w * h {
         return;
     }
     let rows = (max_request.saturating_sub(64) / (w * 4)).clamp(1, h);
     for (i, band) in px[..w * h].chunks(w * rows).enumerate() {
-        let bytes: Vec<u8> = band
-            .iter()
-            .flat_map(|p| {
-                if lsb_first {
-                    p.to_le_bytes()
-                } else {
-                    p.to_be_bytes()
-                }
-            })
-            .collect();
-        let _ = c.put_image(
-            ImageFormat::Z_PIXMAP,
-            win,
-            gc,
-            w as u16,
-            (band.len() / w) as u16,
-            0,
-            (i * rows) as i16,
-            0,
-            depth,
-            &bytes,
-        );
+        let bytes: Vec<u8> = band.iter().flat_map(|p| if lsb_first { p.to_le_bytes() } else { p.to_be_bytes() }).collect();
+        let _ = c.put_image(ImageFormat::Z_PIXMAP, win, gc, w as u16, (band.len() / w) as u16, 0, (i * rows) as i16, 0, depth, &bytes);
     }
 }
 
@@ -1153,30 +848,13 @@ mod tests {
         let (c, screen) = RustConnection::connect(None).expect("an X server (DISPLAY)");
         let root = c.setup().roots[screen].root;
         let parent = c.generate_id().unwrap();
-        c.create_window(
-            x11rb::COPY_DEPTH_FROM_PARENT,
-            parent,
-            root,
-            0,
-            0,
-            200,
-            120,
-            0,
-            WindowClass::INPUT_OUTPUT,
-            x11rb::COPY_FROM_PARENT,
-            &CreateWindowAux::new(),
-        )
-        .unwrap();
+        c.create_window(x11rb::COPY_DEPTH_FROM_PARENT, parent, root, 0, 0, 200, 120, 0, WindowClass::INPUT_OUTPUT, x11rb::COPY_FROM_PARENT, &CreateWindowAux::new()).unwrap();
         c.map_window(parent).unwrap();
         c.flush().unwrap();
         let w = Window::open(parent, (160, 100), Waker::new().unwrap()).unwrap();
         c.sync().unwrap();
         std::thread::sleep(Duration::from_millis(100));
-        let img = c
-            .get_image(ImageFormat::Z_PIXMAP, w.win, 80, 50, 1, 1, !0)
-            .unwrap()
-            .reply()
-            .unwrap();
+        let img = c.get_image(ImageFormat::Z_PIXMAP, w.win, 80, 50, 1, 1, !0).unwrap().reply().unwrap();
         let px = u32::from_le_bytes(img.data[..4].try_into().unwrap()) & 0xff_ffff;
         assert_eq!(px, 0x2b2b2b, "the background, not black ({px:06x})");
     }

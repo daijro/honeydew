@@ -10,7 +10,7 @@
 //!
 // spec: plugins/fruity-balance.md, plugins/lemon-balance.md
 
-use os_dsp::glide::{Glide, plugin_limit};
+use os_dsp::glide::{plugin_limit, Glide};
 
 use super::Effect;
 
@@ -43,9 +43,7 @@ impl Default for Settings {
 impl Settings {
     /// A saved state (8 bytes), its values as they are (FL does not clamp them: spec "Checked against FL").
     pub fn from_state(b: &[u8]) -> Option<Settings> {
-        Some(Settings {
-            v: super::ints(b, 0)?,
-        })
+        Some(Settings { v: super::ints(b, 0)? })
     }
 
     /// The saved state (8 bytes).
@@ -69,11 +67,7 @@ pub fn gains(balance: i32, volume: i32) -> [f32; 4] {
     let angle = (b / 128.0 + 1.0) * PI / 4.0;
     let ll = gain * cos(angle);
     let rr = gain * sin(angle);
-    let (rl, lr) = if balance < 0 {
-        (ll - rr, 0.0)
-    } else {
-        (0.0, rr - ll)
-    };
+    let (rl, lr) = if balance < 0 { (ll - rr, 0.0) } else { (0.0, rr - ll) };
     [ll as f32, rr as f32, rl as f32, lr as f32]
 }
 
@@ -160,19 +154,11 @@ impl Balance {
     /// A balance whose gains stand at the settings' values (the start of a song: nothing glides in).
     pub fn with_settings(sample_rate: u32, s: &Settings) -> Balance {
         let target = gains(s.v[BALANCE], s.v[VOLUME]);
-        Balance {
-            applied: s.v,
-            target,
-            gains: target.map(Glide::new),
-            limit: limit(sample_rate),
-        }
+        Balance { applied: s.v, target, gains: target.map(Glide::new), limit: limit(sample_rate) }
     }
 
     pub fn from_state(state: &[u8], sample_rate: u32) -> Option<Balance> {
-        Some(Balance::with_settings(
-            sample_rate,
-            &Settings::from_state(state)?,
-        ))
+        Some(Balance::with_settings(sample_rate, &Settings::from_state(state)?))
     }
 
     /// The stored values applied last.
@@ -202,8 +188,7 @@ impl Balance {
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         let n = left.len().min(right.len());
         let lim = self.limit;
-        let [mut ll, mut rr, mut rl, mut lr] =
-            std::array::from_fn(|k| self.gains[k].block(self.target[k], n, lim));
+        let [mut ll, mut rr, mut rl, mut lr] = std::array::from_fn(|k| self.gains[k].block(self.target[k], n, lim));
         for (l, r) in left.iter_mut().zip(right.iter_mut()) {
             let (a, b, c, d) = (ll.next(), rr.next(), rl.next(), lr.next());
             let (x, y) = (*l, *r);
@@ -217,8 +202,7 @@ impl Effect for Balance {
     fn process(&mut self, buf: &mut [f32]) {
         let n = buf.len() / 2;
         let lim = self.limit;
-        let [mut ll, mut rr, mut rl, mut lr] =
-            std::array::from_fn(|k| self.gains[k].block(self.target[k], n, lim));
+        let [mut ll, mut rr, mut rl, mut lr] = std::array::from_fn(|k| self.gains[k].block(self.target[k], n, lim));
         for f in buf.chunks_exact_mut(2) {
             let (a, b, c, d) = (ll.next(), rr.next(), rl.next(), lr.next());
             let (x, y) = (f[0], f[1]);
@@ -241,11 +225,7 @@ mod tests {
         assert_eq!(Settings::from_state(&[0, 0, 0, 0]), None);
         // FL's render of balance -300, volume 400: the matrix fitted to it is LL 3.62603, RL 10.02686, RR -6.40084.
         let [ll, rr, rl, lr] = gains(-300, 400);
-        assert!(
-            (ll - 3.62603).abs() < 1e-5
-                && (rl - 10.02686).abs() < 1e-5
-                && (rr + 6.40084).abs() < 1e-5
-        );
+        assert!((ll - 3.62603).abs() < 1e-5 && (rl - 10.02686).abs() < 1e-5 && (rr + 6.40084).abs() < 1e-5);
         assert_eq!(lr, 0.0);
     }
 
@@ -278,10 +258,7 @@ mod tests {
         assert!(rr.abs() < 1e-7 && lr == 0.0, "{rr} {lr}");
         assert!((ll - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6 && (rl - ll).abs() < 1e-6);
         let [ll, rr, rl, lr] = gains(128, 256);
-        assert!(
-            ll.abs() < 1e-7 && rl == 0.0 && (lr - rr).abs() < 1e-6,
-            "{ll} {rl} {lr} {rr}"
-        );
+        assert!(ll.abs() < 1e-7 && rl == 0.0 && (lr - rr).abs() < 1e-6, "{ll} {rl} {lr} {rr}");
         // Volume 320: 1.25 on the curve, 1.9033 at centre.
         assert!((gains(0, 320)[0] - 1.9033).abs() < 1e-4);
     }

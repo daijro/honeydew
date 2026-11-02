@@ -45,9 +45,7 @@ pub fn user_file(name: &str) -> Option<PathBuf> {
 
 /// A set, absolute environment variable (empty and relative values are ignored, as XDG asks).
 fn var(name: &str) -> Option<PathBuf> {
-    std::env::var_os(name)
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
+    std::env::var_os(name).map(PathBuf::from).filter(|p| p.is_absolute())
 }
 
 #[cfg(windows)]
@@ -83,10 +81,7 @@ mod tests {
                 assert!(d.is_absolute());
             }
         }
-        assert_eq!(
-            user_file("monitor.txt").map(|f| f.file_name().unwrap().to_owned()),
-            user_dir().map(|_| "monitor.txt".into())
-        );
+        assert_eq!(user_file("monitor.txt").map(|f| f.file_name().unwrap().to_owned()), user_dir().map(|_| "monitor.txt".into()));
         // The old folder sits next to it.
         if let (Some(old), Some(new)) = (legacy_dir(), user_dir()) {
             assert_eq!(old.parent(), new.parent());

@@ -52,9 +52,7 @@ pub const RANGES: [(i32, i32); PARAMS] = [
 ];
 
 /// A fresh instance (FL's Default preset, with its wet level at 100 %).
-pub const DEFAULTS: [i32; PARAMS] = [
-    75, 40, 0, 50, 100, 15, 40, 100, 500, 0, 128, 128, 128, 684, 0,
-];
+pub const DEFAULTS: [i32; PARAMS] = [75, 40, 0, 50, 100, 15, 40, 100, 500, 0, 128, 128, 128, 684, 0];
 
 /// The value that switches a filter off: low cut 19, high cut / high damping 221.
 pub const LOW_CUT_OFF: i32 = 19;
@@ -69,28 +67,10 @@ pub const TEMPO_BYTE: usize = 64;
 pub const MID_SIDE_BYTE: usize = 65;
 
 /// Line lengths for the largest room at 20 kHz (lines 0..3 diffusers, 4..7 tank half A, 8..11 tank half B).
-const LINES: [i32; 12] = [
-    142, 107, 379, 277, 672, 4453, 1800, 3720, 908, 4217, 2656, 3163,
-];
+const LINES: [i32; 12] = [142, 107, 379, 277, 672, 4453, 1800, 3720, 908, 4217, 2656, 3163];
 /// Reverb taps (line, offset at 20 kHz).
-const TAPS_L: [(usize, i32); 7] = [
-    (9, 266),
-    (9, 2974),
-    (10, 1913),
-    (11, 2496),
-    (5, 1690),
-    (6, 187),
-    (7, 1566),
-];
-const TAPS_R: [(usize, i32); 7] = [
-    (5, 3627),
-    (5, 353),
-    (6, 1728),
-    (7, 3173),
-    (9, 1811),
-    (10, 335),
-    (11, 621),
-];
+const TAPS_L: [(usize, i32); 7] = [(9, 266), (9, 2974), (10, 1913), (11, 2496), (5, 1690), (6, 187), (7, 1566)];
+const TAPS_R: [(usize, i32); 7] = [(5, 3627), (5, 353), (6, 1728), (7, 3173), (9, 1811), (10, 335), (11, 621)];
 
 /// Everything the saved state says.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -104,28 +84,19 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings {
-            knobs: DEFAULTS,
-            tempo_sync: false,
-            mid_side: false,
-        }
+        Settings { knobs: DEFAULTS, tempo_sync: false, mid_side: false }
     }
 }
 
 fn int_at(b: &[u8], at: usize) -> Option<i32> {
-    b.get(at..at + 4)
-        .map(|s| i32::from_le_bytes(s.try_into().unwrap()))
+    b.get(at..at + 4).map(|s| i32::from_le_bytes(s.try_into().unwrap()))
 }
 
 impl Settings {
     /// A saved state: version 10001 (fifteen knobs and two switches), 10000 (thirteen knobs, no modulation) or a
     /// state without a version (FL's factory presets: thirteen knobs and one byte).
     pub fn from_state(b: &[u8]) -> Option<Settings> {
-        let mut s = Settings {
-            knobs: DEFAULTS,
-            tempo_sync: false,
-            mid_side: false,
-        };
+        let mut s = Settings { knobs: DEFAULTS, tempo_sync: false, mid_side: false };
         let first = int_at(b, 0)?;
         let (at, n, bytes) = match first {
             VERSION => (4, 15, 2),
@@ -228,18 +199,8 @@ pub fn matrix(v: f32, separation: i32, mid_side: bool) -> [f32; 4] {
         let u = v * (1.0 / (PI / 4.0).cos()) as f32;
         let l = (f64::from(u) * (PI / 4.0).cos()) as f32;
         let r = (f64::from(u) * (PI / 4.0).sin()) as f32;
-        let merge = if sep < 0.0 {
-            sep
-        } else {
-            ((f64::from(sep) * 5f64.ln()).exp() - 1.0) as f32 * 0.25
-        }
-        .min(1.0);
-        [
-            l * (1.0 - merge * 0.5),
-            r * (1.0 - merge * 0.5),
-            l * merge * 0.5,
-            r * merge * 0.5,
-        ]
+        let merge = if sep < 0.0 { sep } else { ((f64::from(sep) * 5f64.ln()).exp() - 1.0) as f32 * 0.25 }.min(1.0);
+        [l * (1.0 - merge * 0.5), r * (1.0 - merge * 0.5), l * merge * 0.5, r * merge * 0.5]
     };
     if mid_side {
         m[1] = -m[1];
@@ -282,12 +243,7 @@ impl Geometry {
         let lo = ol.min(or) as f64;
         let gl = ((lo / ol as f64) * 0.5) as f32;
         let gr = ((lo / or as f64) * 0.36) as f32;
-        Geometry {
-            lengths,
-            taps_l,
-            taps_r,
-            early: (ol, or, gl, gr),
-        }
+        Geometry { lengths, taps_l, taps_r, early: (ol, or, gl, gr) }
     }
 }
 
@@ -374,10 +330,7 @@ struct Line {
 
 impl Line {
     fn new(len: usize) -> Line {
-        Line {
-            buf: vec![0.0; len.max(1)],
-            pos: 0,
-        }
+        Line { buf: vec![0.0; len.max(1)], pos: 0 }
     }
     #[inline]
     fn out(&self) -> f32 {
@@ -426,10 +379,7 @@ struct History {
 
 impl History {
     fn new(len: usize) -> History {
-        History {
-            buf: vec![0.0; len.max(2)],
-            w: 0,
-        }
+        History { buf: vec![0.0; len.max(2)], w: 0 }
     }
     #[inline]
     fn ago(&self, k: usize) -> f32 {
@@ -541,11 +491,7 @@ impl Reverb {
     }
 
     pub fn from_state(state: &[u8], sample_rate: u32) -> Option<Reverb> {
-        Some(Reverb::new(
-            sample_rate,
-            Settings::from_state(state)?,
-            120.0,
-        ))
+        Some(Reverb::new(sample_rate, Settings::from_state(state)?, 120.0))
     }
 
     pub fn settings(&self) -> &Settings {
@@ -580,10 +526,7 @@ impl Reverb {
         self.size_lines();
         self.c = Coefs::new(&self.settings, &self.geom, self.irate, self.bpm);
         if old != self.levels() {
-            self.ramp = Some(Ramp {
-                from: self.current_levels(old),
-                left: RAMP,
-            });
+            self.ramp = Some(Ramp { from: self.current_levels(old), left: RAMP });
         }
     }
 
@@ -592,25 +535,14 @@ impl Reverb {
         if bpm > 0.0 && bpm != self.bpm {
             self.bpm = bpm;
             if self.settings.tempo_sync {
-                self.c.predelay =
-                    predelay_samples(self.settings.knobs[PREDELAY], true, self.irate, bpm);
+                self.c.predelay = predelay_samples(self.settings.knobs[PREDELAY], true, self.irate, bpm);
             }
         }
     }
 
     fn levels(&self) -> [f32; 9] {
         let c = &self.c;
-        [
-            c.dry,
-            c.early[0],
-            c.early[1],
-            c.early[2],
-            c.early[3],
-            c.reverb[0],
-            c.reverb[1],
-            c.reverb[2],
-            c.reverb[3],
-        ]
+        [c.dry, c.early[0], c.early[1], c.early[2], c.early[3], c.reverb[0], c.reverb[1], c.reverb[2], c.reverb[3]]
     }
 
     /// The levels heard right now (a glide in progress counts where it is).
@@ -687,13 +619,8 @@ impl Reverb {
         let c05 = k * 0.5 + c.decay;
         let tl = |i: usize| l[self.geom.taps_l[i].0].tap(self.geom.taps_l[i].1);
         let tr = |i: usize| l[self.geom.taps_r[i].0].tap(self.geom.taps_r[i].1);
-        let left = (((tl(0) - c025 * tl(1)) - c07 * tl(2)) - c02 * tl(3))
-            + c06 * tl(4)
-            + tl(5)
-            + c05 * tl(6);
-        let right = ((((c025 * tr(0) + tr(1)) - c07 * tr(2)) - c02 * tr(3)) - c06 * tr(4))
-            + tr(5)
-            + c05 * tr(6);
+        let left = (((tl(0) - c025 * tl(1)) - c07 * tl(2)) - c02 * tl(3)) + c06 * tl(4) + tl(5) + c05 * tl(6);
+        let right = ((((c025 * tr(0) + tr(1)) - c07 * tr(2)) - c02 * tr(3)) - c06 * tr(4)) + tr(5) + c05 * tr(6);
 
         // 4. Feeding the input.
         let x = ((m + 1e-30) - self.lp) * c.high_cut + self.lp;
@@ -701,11 +628,7 @@ impl Reverb {
         let a = (x - self.lc_a) * c.low_cut + self.lc_x;
         self.lc_x = x;
         self.lc_a = a;
-        let mut x = if c.low_cut != 0.0 {
-            (x - a) * 0.5 + 1e-30
-        } else {
-            x
-        };
+        let mut x = if c.low_cut != 0.0 { (x - a) * 0.5 + 1e-30 } else { x };
         x = l[0].allpass(x, c.diffuser, c.diffuser);
         self.early.push(x);
         x = l[1].allpass(x, c.diffuser, c.diffuser);
@@ -727,17 +650,7 @@ impl Reverb {
                 rp.left -= 1;
                 let a = rp.left as f32 / RAMP as f32;
                 let c = &self.c;
-                let to = [
-                    c.dry,
-                    c.early[0],
-                    c.early[1],
-                    c.early[2],
-                    c.early[3],
-                    c.reverb[0],
-                    c.reverb[1],
-                    c.reverb[2],
-                    c.reverb[3],
-                ];
+                let to = [c.dry, c.early[0], c.early[1], c.early[2], c.early[3], c.reverb[0], c.reverb[1], c.reverb[2], c.reverb[3]];
                 let v: [f32; 9] = std::array::from_fn(|i| rp.from[i] * a + to[i] * (1.0 - a));
                 if rp.left == 0 {
                     self.ramp = None;
@@ -754,12 +667,7 @@ impl Reverb {
         };
         mix(&mut ol, &mut or, el, er, &e);
         mix(&mut ol, &mut or, wl, wr, &w);
-        self.peak = self
-            .peak
-            .max(wl.abs())
-            .max(wr.abs())
-            .max(el.abs())
-            .max(er.abs());
+        self.peak = self.peak.max(wl.abs()).max(wr.abs()).max(el.abs()).max(er.abs());
         (ol, or)
     }
 
@@ -843,13 +751,7 @@ mod tests {
 
     #[test]
     fn states_of_every_version_load() {
-        let s = Settings {
-            knobs: [
-                33, 21, 27, 90, 100, 45, 31, 150, 298, 0, 128, 128, 90, 700, 20,
-            ],
-            tempo_sync: true,
-            mid_side: true,
-        };
+        let s = Settings { knobs: [33, 21, 27, 90, 100, 45, 31, 150, 298, 0, 128, 128, 90, 700, 20], tempo_sync: true, mid_side: true };
         let b = s.to_state();
         assert_eq!(b.len(), STATE_LEN);
         assert_eq!(Settings::from_state(&b), Some(s));
@@ -860,15 +762,7 @@ mod tests {
         }
         old.extend_from_slice(&[0, 1]);
         let o = Settings::from_state(&old).unwrap();
-        assert_eq!(
-            (
-                o.knobs[MOD_SPEED],
-                o.knobs[MOD_DEPTH],
-                o.tempo_sync,
-                o.mid_side
-            ),
-            (684, 0, false, true)
-        );
+        assert_eq!((o.knobs[MOD_SPEED], o.knobs[MOD_DEPTH], o.tempo_sync, o.mid_side), (684, 0, false, true));
         // A factory preset (no version, one byte).
         let mut p = Vec::new();
         for v in [400, 60, 31, 60, 65, 23, 37, 70, 330, 0, 128, 128, 102] {
@@ -906,10 +800,7 @@ mod tests {
         let m = matrix(0.5, -64, false);
         assert!(m[2] < 0.0 && m[0] > 0.5);
         let m = matrix(0.5, 64, false);
-        assert!(
-            (m[0] - m[2]).abs() < 1e-6,
-            "fully merged: the cross terms equal the direct ones"
-        );
+        assert!((m[0] - m[2]).abs() < 1e-6, "fully merged: the cross terms equal the direct ones");
         // The pan's cosine and sine stay double: FL's entries at wet 50 %, half merged and fully separated (fitted to
         // its renders).
         let v = slider(0.5);
@@ -921,18 +812,7 @@ mod tests {
     #[test]
     fn the_output_does_not_depend_on_this_samples_input() {
         let mut a = Reverb::new(44100, Settings::default(), 120.0);
-        let mut b = Reverb::new(
-            44100,
-            Settings {
-                knobs: {
-                    let mut k = DEFAULTS;
-                    k[DRY] = 0;
-                    k
-                },
-                ..Settings::default()
-            },
-            120.0,
-        );
+        let mut b = Reverb::new(44100, Settings { knobs: { let mut k = DEFAULTS; k[DRY] = 0; k }, ..Settings::default() }, 120.0);
         let _ = &mut a;
         let mut l = vec![1.0f32];
         let mut r = vec![0.5f32];

@@ -9,13 +9,8 @@
 
 use std::ptr;
 
-use clap_sys::events::{
-    CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_PARAM_VALUE, clap_event_header, clap_event_param_value,
-};
-use clap_sys::ext::params::{
-    CLAP_PARAM_IS_STEPPED, CLAP_PARAM_RESCAN_ALL, CLAP_PARAM_RESCAN_INFO, clap_param_info,
-    clap_plugin_params,
-};
+use clap_sys::events::{clap_event_header, clap_event_param_value, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_PARAM_VALUE};
+use clap_sys::ext::params::{clap_param_info, clap_plugin_params, CLAP_PARAM_IS_STEPPED, CLAP_PARAM_RESCAN_ALL, CLAP_PARAM_RESCAN_INFO};
 use clap_sys::plugin::clap_plugin;
 
 use crate::Plugin;
@@ -31,10 +26,7 @@ pub(crate) type Range = (u32, f64, f64, bool);
 ///
 /// # Safety
 /// `params` must be the plugin's params extension (or null) and `plugin` the instance.
-pub(crate) unsafe fn read_ranges(
-    params: *const clap_plugin_params,
-    plugin: *const clap_plugin,
-) -> Vec<Range> {
+pub(crate) unsafe fn read_ranges(params: *const clap_plugin_params, plugin: *const clap_plugin) -> Vec<Range> {
     let mut out = Vec::new();
     if params.is_null() {
         return out;
@@ -43,12 +35,7 @@ pub(crate) unsafe fn read_ranges(
         for i in 0..(*params).count.map_or(0, |c| c(plugin)) {
             let mut info: clap_param_info = std::mem::zeroed();
             if (*params).get_info.is_some_and(|g| g(plugin, i, &mut info)) {
-                out.push((
-                    info.id,
-                    info.min_value,
-                    info.max_value,
-                    info.flags & CLAP_PARAM_IS_STEPPED != 0,
-                ));
+                out.push((info.id, info.min_value, info.max_value, info.flags & CLAP_PARAM_IS_STEPPED != 0));
             } else {
                 out.push((u32::MAX, 0.0, 1.0, false));
             }
@@ -80,9 +67,7 @@ impl Plugin {
     /// Automation (audio thread): parameter `index` of the list to normalized `value`, `offset` frames into the next
     /// process call. A stepped parameter gets its nearest step. Unknown indexes are ignored.
     pub(crate) fn automate(&mut self, offset: u32, index: u32, value: f64) {
-        let Some(&(id, lo, hi, stepped)) = self.ranges.get(index as usize) else {
-            return;
-        };
+        let Some(&(id, lo, hi, stepped)) = self.ranges.get(index as usize) else { return };
         if id == u32::MAX || self.auto.len() >= MAX_AUTO {
             return;
         }
@@ -124,10 +109,7 @@ impl Plugin {
     /// Main thread, every `idle`: re-reads the parameter list after a rescan request, and hands automation values
     /// that no process call took (the instance is bypassed or not playing) to the next flush, newest per parameter.
     pub(crate) fn idle_params(&mut self) {
-        let rescan = self
-            .host_data
-            .rescan
-            .swap(0, std::sync::atomic::Ordering::AcqRel);
+        let rescan = self.host_data.rescan.swap(0, std::sync::atomic::Ordering::AcqRel);
         if rescan & (CLAP_PARAM_RESCAN_INFO | CLAP_PARAM_RESCAN_ALL) != 0 {
             self.ranges = unsafe { read_ranges(self.params, self.plugin) };
         }

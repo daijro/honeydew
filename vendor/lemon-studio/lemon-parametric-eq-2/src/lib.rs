@@ -44,11 +44,7 @@ pub struct Scope {
 impl Default for Shared {
     fn default() -> Self {
         Shared {
-            scope: Mutex::new(Scope {
-                buf: vec![0.0; SCOPE_LEN],
-                pos: 0,
-                written: 0,
-            }),
+            scope: Mutex::new(Scope { buf: vec![0.0; SCOPE_LEN], pos: 0, written: 0 }),
             rate: AtomicU32::new(44100),
             editor_open: AtomicBool::new(false),
         }
@@ -59,9 +55,7 @@ impl Scope {
     /// The newest `n` samples, oldest first.
     pub fn latest(&self, n: usize) -> Vec<f32> {
         let n = n.min(self.buf.len());
-        (0..n)
-            .map(|i| self.buf[(self.pos + self.buf.len() - n + i) % self.buf.len()])
-            .collect()
+        (0..n).map(|i| self.buf[(self.pos + self.buf.len() - n + i) % self.buf.len()]).collect()
     }
 }
 
@@ -110,10 +104,7 @@ impl LemonEq {
         }
         if let Ok(b) = self.params.extra.try_read() {
             self.opts = Options::from_image(&b);
-            self.monitor = (
-                params::byte(&b, params::MONITOR_BYTE),
-                params::opt(&b, params::Opt::MonitorInput),
-            );
+            self.monitor = (params::byte(&b, params::MONITOR_BYTE), params::opt(&b, params::Opt::MonitorInput));
             self.extra_seen = v;
         }
     }
@@ -135,13 +126,12 @@ impl LemonEq {
     fn feed_scope(&mut self, l: &[f32], r: &[f32]) {
         self.feed.clear();
         let input = self.monitor.1;
-        self.feed
-            .extend(l.iter().zip(r).map(|(&l, &r)| match input {
-                2 => (l - r) * 0.5,
-                3 => l,
-                4 => r,
-                _ => (l + r) * 0.5,
-            }));
+        self.feed.extend(l.iter().zip(r).map(|(&l, &r)| match input {
+            2 => (l - r) * 0.5,
+            3 => l,
+            4 => r,
+            _ => (l + r) * 0.5,
+        }));
         if let Ok(mut s) = self.shared.scope.try_lock() {
             let n = s.buf.len();
             for &x in &self.feed {
@@ -176,22 +166,12 @@ impl Plugin for LemonEq {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        Some(Box::new(editor::EqEditor::new(
-            self.params.clone(),
-            self.shared.clone(),
-        )))
+        Some(Box::new(editor::EqEditor::new(self.params.clone(), self.shared.clone())))
     }
 
-    fn initialize(
-        &mut self,
-        _layout: &AudioIOLayout,
-        config: &BufferConfig,
-        ctx: &mut impl InitContext<Self>,
-    ) -> bool {
+    fn initialize(&mut self, _layout: &AudioIOLayout, config: &BufferConfig, ctx: &mut impl InitContext<Self>) -> bool {
         self.sr = f64::from(config.sample_rate);
-        self.shared
-            .rate
-            .store(config.sample_rate as u32, Ordering::Relaxed);
+        self.shared.rate.store(config.sample_rate as u32, Ordering::Relaxed);
         self.extra_seen = u64::MAX;
         self.read_extra();
         self.applied = self.params.settings(self.opts.mask).params();
@@ -208,12 +188,7 @@ impl Plugin for LemonEq {
         self.eq.preroll();
     }
 
-    fn process(
-        &mut self,
-        buffer: &mut Buffer,
-        _aux: &mut AuxiliaryBuffers,
-        ctx: &mut impl ProcessContext<Self>,
-    ) -> ProcessStatus {
+    fn process(&mut self, buffer: &mut Buffer, _aux: &mut AuxiliaryBuffers, ctx: &mut impl ProcessContext<Self>) -> ProcessStatus {
         self.apply();
         // The delay is looked at every block and reported when it has changed (LIN on or off, its size, HQ Enhanced).
         let latency = self.eq.latency() as u32;
@@ -246,19 +221,14 @@ impl ClapPlugin for LemonEq {
     const CLAP_DESCRIPTION: Option<&'static str> = Some("Lemon Studio's 7-band parametric EQ");
     const CLAP_MANUAL_URL: Option<&'static str> = None;
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
-    const CLAP_FEATURES: &'static [ClapFeature] = &[
-        ClapFeature::AudioEffect,
-        ClapFeature::Equalizer,
-        ClapFeature::Stereo,
-    ];
+    const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Equalizer, ClapFeature::Stereo];
 }
 
 // Honeydew (vendored change): Honeydew builds it `linked` only, without nih-plug's VST3 wrapper.
 #[cfg(not(feature = "linked"))]
 impl Vst3Plugin for LemonEq {
     const VST3_CLASS_ID: [u8; 16] = *b"OpenStudioParEQ2";
-    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
-        &[Vst3SubCategory::Fx, Vst3SubCategory::Eq];
+    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Fx, Vst3SubCategory::Eq];
 }
 
 // Built as a plugin module: the C entry points hosts look for. Linked into Lemon Studio (`linked` feature): only the

@@ -69,10 +69,7 @@ impl Glide {
     pub fn block(&mut self, target: f32, n: usize, limit: f32) -> Ramp {
         let start = self.current;
         if start == target {
-            return Ramp {
-                value: start,
-                step: 0.0,
-            };
+            return Ramp { value: start, step: 0.0 };
         }
         let nf = n.max(1) as f32;
         let mut step = (target - start) / nf;

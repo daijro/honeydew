@@ -16,23 +16,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use nih_plug::prelude::*;
-use os_engine::effects::eq::{self, BANDS, Band, MASK_BYTE, STATE_LEN, STATE_VERSION, Settings};
+use os_engine::effects::eq::{self, Band, Settings, BANDS, MASK_BYTE, STATE_LEN, STATE_VERSION};
 use os_plugkit::live::LiveEdits;
 
-pub const TYPE_NAMES: [&str; 8] = [
-    "Disabled",
-    "Low pass",
-    "Band pass",
-    "High pass",
-    "Band stop",
-    "Low shelf",
-    "Peaking",
-    "High shelf",
-];
+pub const TYPE_NAMES: [&str; 8] = ["Disabled", "Low pass", "Band pass", "High pass", "Band stop", "Low shelf", "Peaking", "High shelf"];
 /// Order names for stored orders -3..=3.
-pub const ORDER_NAMES: [&str; 7] = [
-    "Steep 8", "Steep 6", "Steep 4", "2", "Gentle 4", "Gentle 6", "Gentle 8",
-];
+pub const ORDER_NAMES: [&str; 7] = ["Steep 8", "Steep 6", "Steep 4", "2", "Gentle 4", "Gentle 6", "Gentle 8"];
 
 pub fn level_id(k: usize) -> String {
     format!("level{}", k + 1)
@@ -65,24 +54,13 @@ pub fn db_text(db: f64) -> String {
 /// Hertz from a typed text: "440", "440Hz", "1.2k", "1.2 kHz".
 pub fn parse_hz(t: &str) -> Option<f64> {
     let l = t.trim().to_ascii_lowercase();
-    let num: String = l
-        .chars()
-        .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '-')
-        .collect();
+    let num: String = l.chars().take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '-').collect();
     let v: f64 = num.parse().ok()?;
-    Some(if l[num.len()..].trim_start().starts_with('k') {
-        v * 1000.0
-    } else {
-        v
-    })
+    Some(if l[num.len()..].trim_start().starts_with('k') { v * 1000.0 } else { v })
 }
 
 fn number(t: &str) -> Option<f32> {
-    let num: String = t
-        .trim()
-        .chars()
-        .take_while(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+'))
-        .collect();
+    let num: String = t.trim().chars().take_while(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+')).collect();
     num.parse().ok()
 }
 
@@ -103,17 +81,10 @@ pub struct EqParams {
 }
 
 fn level_param(name: String) -> FloatParam {
-    FloatParam::new(
-        name,
-        0.0,
-        FloatRange::Linear {
-            min: -18.0,
-            max: 18.0,
-        },
-    )
-    .with_step_size(0.01)
-    .with_value_to_string(Arc::new(|v| db_text(f64::from(v))))
-    .with_string_to_value(Arc::new(number))
+    FloatParam::new(name, 0.0, FloatRange::Linear { min: -18.0, max: 18.0 })
+        .with_step_size(0.01)
+        .with_value_to_string(Arc::new(|v| db_text(f64::from(v))))
+        .with_string_to_value(Arc::new(number))
 }
 
 impl Default for EqParams {
@@ -122,52 +93,24 @@ impl Default for EqParams {
         EqParams {
             level: std::array::from_fn(|k| level_param(format!("{} level", band(k)))),
             freq: std::array::from_fn(|k| {
-                FloatParam::new(
-                    format!("{} freq", band(k)),
-                    eq::default_freq(k) as f32,
-                    FloatRange::Linear { min: 0.0, max: 1.0 },
-                )
-                .with_value_to_string(Arc::new(|v| hz_text(eq::freq_hz(f64::from(v)))))
-                .with_string_to_value(Arc::new(|t| parse_hz(t).map(|hz| eq::freq_pos(hz) as f32)))
+                FloatParam::new(format!("{} freq", band(k)), eq::default_freq(k) as f32, FloatRange::Linear { min: 0.0, max: 1.0 })
+                    .with_value_to_string(Arc::new(|v| hz_text(eq::freq_hz(f64::from(v)))))
+                    .with_string_to_value(Arc::new(|t| parse_hz(t).map(|hz| eq::freq_pos(hz) as f32)))
             }),
             width: std::array::from_fn(|k| {
-                FloatParam::new(
-                    format!("{} width", band(k)),
-                    eq::default_width(eq::DEFAULT_KINDS[k]) as f32,
-                    FloatRange::Linear { min: 0.0, max: 1.0 },
-                )
-                .with_value_to_string(Arc::new(|v| format!("{:.0}%", v * 100.0)))
-                .with_string_to_value(Arc::new(|t| number(t).map(|v| v / 100.0)))
+                FloatParam::new(format!("{} width", band(k)), eq::default_width(eq::DEFAULT_KINDS[k]) as f32, FloatRange::Linear { min: 0.0, max: 1.0 })
+                    .with_value_to_string(Arc::new(|v| format!("{:.0}%", v * 100.0)))
+                    .with_string_to_value(Arc::new(|t| number(t).map(|v| v / 100.0)))
             }),
             kind: std::array::from_fn(|k| {
-                IntParam::new(
-                    format!("{} type", band(k)),
-                    eq::DEFAULT_KINDS[k],
-                    IntRange::Linear { min: 0, max: 7 },
-                )
-                .with_value_to_string(Arc::new(|v| TYPE_NAMES[v.clamp(0, 7) as usize].to_string()))
-                .with_string_to_value(Arc::new(|t| {
-                    TYPE_NAMES
-                        .iter()
-                        .position(|n| n.eq_ignore_ascii_case(t.trim()))
-                        .map(|i| i as i32)
-                }))
+                IntParam::new(format!("{} type", band(k)), eq::DEFAULT_KINDS[k], IntRange::Linear { min: 0, max: 7 })
+                    .with_value_to_string(Arc::new(|v| TYPE_NAMES[v.clamp(0, 7) as usize].to_string()))
+                    .with_string_to_value(Arc::new(|t| TYPE_NAMES.iter().position(|n| n.eq_ignore_ascii_case(t.trim())).map(|i| i as i32)))
             }),
             order: std::array::from_fn(|k| {
-                IntParam::new(
-                    format!("{} order", band(k)),
-                    0,
-                    IntRange::Linear { min: -3, max: 3 },
-                )
-                .with_value_to_string(Arc::new(|v| {
-                    ORDER_NAMES[(v.clamp(-3, 3) + 3) as usize].to_string()
-                }))
-                .with_string_to_value(Arc::new(|t| {
-                    ORDER_NAMES
-                        .iter()
-                        .position(|n| n.eq_ignore_ascii_case(t.trim()))
-                        .map(|i| i as i32 - 3)
-                }))
+                IntParam::new(format!("{} order", band(k)), 0, IntRange::Linear { min: -3, max: 3 })
+                    .with_value_to_string(Arc::new(|v| ORDER_NAMES[(v.clamp(-3, 3) + 3) as usize].to_string()))
+                    .with_string_to_value(Arc::new(|t| ORDER_NAMES.iter().position(|n| n.eq_ignore_ascii_case(t.trim())).map(|i| i as i32 - 3)))
             }),
             main: level_param("Main level".into()),
             extra: RwLock::new(default_state()),
@@ -200,20 +143,13 @@ unsafe impl Params for EqParams {
     }
 
     fn serialize_fields(&self) -> BTreeMap<String, String> {
-        let hex: String = self
-            .extra
-            .read()
-            .map(|b| b.iter().map(|x| format!("{x:02x}")).collect())
-            .unwrap_or_default();
+        let hex: String = self.extra.read().map(|b| b.iter().map(|x| format!("{x:02x}")).collect()).unwrap_or_default();
         // A persisted field is JSON: a string here.
         BTreeMap::from([(STATE_FIELD.to_string(), format!("\"{hex}\""))])
     }
 
     fn deserialize_fields(&self, serialized: &BTreeMap<String, String>) {
-        if let Some(bytes) = serialized
-            .get(STATE_FIELD)
-            .and_then(|s| from_hex(s.trim_matches('"')))
-        {
+        if let Some(bytes) = serialized.get(STATE_FIELD).and_then(|s| from_hex(s.trim_matches('"'))) {
             self.set_extra(normalized(bytes));
         }
     }
@@ -224,10 +160,7 @@ pub const STATE_FIELD: &str = "state";
 
 fn from_hex(s: &str) -> Option<Vec<u8>> {
     (s.len() % 2 == 0).then_some(())?;
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok())
-        .collect()
+    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok()).collect()
 }
 
 /// A state image of the full size (shorter ones are completed with the defaults).
@@ -241,8 +174,7 @@ fn normalized(mut b: Vec<u8>) -> Vec<u8> {
 
 /// Little-endian int32 field `k`.
 pub fn field(b: &[u8], k: usize) -> i32 {
-    b.get(4 * k..4 * k + 4)
-        .map_or(0, |s| i32::from_le_bytes(s.try_into().unwrap()))
+    b.get(4 * k..4 * k + 4).map_or(0, |s| i32::from_le_bytes(s.try_into().unwrap()))
 }
 
 pub fn set_field(b: &mut [u8], k: usize, v: i32) {
@@ -271,9 +203,7 @@ pub fn default_state() -> Vec<u8> {
         set_field(&mut b, 1 + i, v);
         set_field(&mut b, 37 + i, v);
     }
-    let opts = [
-        1, 0, 513, 0, 512, 0, 8347648, 65536, 0, 196608, 65536, 131072, 131072, 131072, 0,
-    ];
+    let opts = [1, 0, 513, 0, 512, 0, 8347648, 65536, 0, 196608, 65536, 131072, 131072, 131072, 0];
     for (i, v) in opts.into_iter().enumerate() {
         set_field(&mut b, 73 + i, v);
     }
@@ -371,10 +301,7 @@ impl EqParams {
     }
 
     pub fn extra_copy(&self) -> Vec<u8> {
-        self.extra
-            .read()
-            .map(|b| b.clone())
-            .unwrap_or_else(|_| default_state())
+        self.extra.read().map(|b| b.clone()).unwrap_or_else(|_| default_state())
     }
 
     /// The band settings the sound uses (live parameter values; mask from the state image when it is free).
@@ -436,36 +363,16 @@ pub fn plugin_state_from_fl(fl: &[u8]) -> Vec<u8> {
     let i = |v: i32| format!("{{\"i32\":{v}}}");
     let mut params = Vec::new();
     for (k, band) in s.bands.iter().enumerate() {
-        params.push(format!(
-            "\"{}\":{}",
-            level_id(k),
-            f(band.db.clamp(-18.0, 18.0))
-        ));
-        params.push(format!(
-            "\"{}\":{}",
-            freq_id(k),
-            f(band.freq.clamp(0.0, 1.0))
-        ));
-        params.push(format!(
-            "\"{}\":{}",
-            width_id(k),
-            f(band.width.clamp(0.0, 1.0))
-        ));
+        params.push(format!("\"{}\":{}", level_id(k), f(band.db.clamp(-18.0, 18.0))));
+        params.push(format!("\"{}\":{}", freq_id(k), f(band.freq.clamp(0.0, 1.0))));
+        params.push(format!("\"{}\":{}", width_id(k), f(band.width.clamp(0.0, 1.0))));
         params.push(format!("\"{}\":{}", type_id(k), i(band.kind.clamp(0, 7))));
-        params.push(format!(
-            "\"{}\":{}",
-            order_id(k),
-            i(band.order.clamp(-3, 3))
-        ));
+        params.push(format!("\"{}\":{}", order_id(k), i(band.order.clamp(-3, 3))));
     }
     params.push(format!("\"{MAIN_ID}\":{}", f(s.main_db.clamp(-18.0, 18.0))));
     let hex: String = b.iter().map(|x| format!("{x:02x}")).collect();
     // The persisted field is a JSON string holding JSON (a string).
-    let state = format!(
-        "{{\"version\":\"{}\",\"params\":{{{}}},\"fields\":{{\"{STATE_FIELD}\":\"\\\"{hex}\\\"\"}}}}",
-        env!("CARGO_PKG_VERSION"),
-        params.join(",")
-    );
+    let state = format!("{{\"version\":\"{}\",\"params\":{{{}}},\"fields\":{{\"{STATE_FIELD}\":\"\\\"{hex}\\\"\"}}}}", env!("CARGO_PKG_VERSION"), params.join(","));
     let mut blob = (state.len() as u64).to_le_bytes().to_vec();
     blob.extend_from_slice(state.as_bytes());
     blob
@@ -473,11 +380,7 @@ pub fn plugin_state_from_fl(fl: &[u8]) -> Vec<u8> {
 
 /// The original's saved state for a plugin state blob (see [`plugin_state_from_fl`]); `None` when it is not one.
 pub fn fl_from_plugin_state(blob: &[u8]) -> Option<Vec<u8>> {
-    let json = if blob.len() > 8 && blob[0] != b'{' {
-        &blob[8..]
-    } else {
-        blob
-    };
+    let json = if blob.len() > 8 && blob[0] != b'{' { &blob[8..] } else { blob };
     let text = std::str::from_utf8(json).ok()?;
     let v: serde_json::Value = serde_json::from_str(text).ok()?;
     let field = v.get("fields")?.get(STATE_FIELD)?.as_str()?;
@@ -485,9 +388,7 @@ pub fn fl_from_plugin_state(blob: &[u8]) -> Option<Vec<u8>> {
     let params = v.get("params")?;
     let num = |id: &str| -> Option<f64> {
         let p = params.get(id)?;
-        p.get("f32")
-            .and_then(|x| x.as_f64())
-            .or_else(|| p.get("i32").and_then(|x| x.as_f64()))
+        p.get("f32").and_then(|x| x.as_f64()).or_else(|| p.get("i32").and_then(|x| x.as_f64()))
     };
     let mut s = settings_at(&extra, 1);
     for (k, band) in s.bands.iter_mut().enumerate() {
@@ -510,10 +411,7 @@ mod tests {
         let b = default_state();
         assert_eq!(b.len(), 354);
         assert_eq!(field(&b, 0), 8);
-        assert_eq!(
-            (8..15).map(|k| field(&b, k)).collect::<Vec<_>>(),
-            vec![10923, 18204, 25486, 32768, 40050, 47332, 54613]
-        );
+        assert_eq!((8..15).map(|k| field(&b, k)).collect::<Vec<_>>(), vec![10923, 18204, 25486, 32768, 40050, 47332, 54613]);
         assert_eq!(field(&b, 15), 40124);
         assert_eq!(field(&b, 16), 25412);
         assert_eq!(byte(&b, HQ_BYTE), 1);
@@ -547,10 +445,7 @@ mod tests {
     fn value_texts() {
         let p = EqParams::default();
         assert_eq!(p.freq[0].to_string(), "63Hz");
-        assert_eq!(
-            p.width[0].normalized_value_to_string(p.width[0].unmodulated_normalized_value(), true),
-            "61%"
-        );
+        assert_eq!(p.width[0].normalized_value_to_string(p.width[0].unmodulated_normalized_value(), true), "61%");
         assert_eq!(p.level[0].to_string(), "0.0dB");
         assert_eq!(p.kind[0].to_string(), "Low shelf");
         assert_eq!(p.order[0].to_string(), "2");

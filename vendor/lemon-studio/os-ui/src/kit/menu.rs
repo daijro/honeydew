@@ -10,7 +10,7 @@
 
 use os_theme::{Color, Palette};
 
-use super::{Dir, tick};
+use super::{tick, Dir};
 use crate::{Canvas, Font, Rect};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,13 +23,7 @@ pub enum Mark {
 /// One row of a menu.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MenuItem {
-    Item {
-        label: String,
-        shortcut: String,
-        mark: Mark,
-        sub: bool,
-        enabled: bool,
-    },
+    Item { label: String, shortcut: String, mark: Mark, sub: bool, enabled: bool },
     /// Section header (not clickable).
     Head(String),
     Sep,
@@ -39,86 +33,32 @@ pub enum MenuItem {
 
 impl MenuItem {
     pub fn item(label: &str) -> MenuItem {
-        MenuItem::Item {
-            label: label.into(),
-            shortcut: String::new(),
-            mark: Mark::None,
-            sub: false,
-            enabled: true,
-        }
+        MenuItem::Item { label: label.into(), shortcut: String::new(), mark: Mark::None, sub: false, enabled: true }
     }
     pub fn head(label: &str) -> MenuItem {
         MenuItem::Head(label.into())
     }
     pub fn shortcut(self, s: &str) -> MenuItem {
         match self {
-            MenuItem::Item {
-                label,
-                mark,
-                sub,
-                enabled,
-                ..
-            } => MenuItem::Item {
-                label,
-                shortcut: s.into(),
-                mark,
-                sub,
-                enabled,
-            },
+            MenuItem::Item { label, mark, sub, enabled, .. } => MenuItem::Item { label, shortcut: s.into(), mark, sub, enabled },
             o => o,
         }
     }
     pub fn mark(self, m: Mark) -> MenuItem {
         match self {
-            MenuItem::Item {
-                label,
-                shortcut,
-                sub,
-                enabled,
-                ..
-            } => MenuItem::Item {
-                label,
-                shortcut,
-                mark: m,
-                sub,
-                enabled,
-            },
+            MenuItem::Item { label, shortcut, sub, enabled, .. } => MenuItem::Item { label, shortcut, mark: m, sub, enabled },
             o => o,
         }
     }
     pub fn sub(self) -> MenuItem {
         match self {
-            MenuItem::Item {
-                label,
-                shortcut,
-                mark,
-                enabled,
-                ..
-            } => MenuItem::Item {
-                label,
-                shortcut,
-                mark,
-                sub: true,
-                enabled,
-            },
+            MenuItem::Item { label, shortcut, mark, enabled, .. } => MenuItem::Item { label, shortcut, mark, sub: true, enabled },
             o => o,
         }
     }
     pub fn enabled(self, on: bool) -> MenuItem {
         match self {
-            MenuItem::Item {
-                label,
-                shortcut,
-                mark,
-                sub,
-                ..
-            } => MenuItem::Item {
-                label,
-                shortcut,
-                mark,
-                sub,
-                enabled: on,
-            },
+            MenuItem::Item { label, shortcut, mark, sub, .. } => MenuItem::Item { label, shortcut, mark, sub, enabled: on },
             o => o,
         }
     }
@@ -162,14 +102,7 @@ pub fn metrics(scale: f32) -> Metrics {
     let k = if scale > 0.0 { scale } else { 1.0 };
     let em = (12.0 * k).round();
     let gap = (3.0 * k).floor();
-    Metrics {
-        row: (em + 7.0) / k,
-        head: (em + 4.0) / k,
-        sep: (2.0 * gap + 1.0) / k,
-        sep_line: gap / k,
-        line: 1.0 / k,
-        border: 2.0 / k,
-    }
+    Metrics { row: (em + 7.0) / k, head: (em + 4.0) / k, sep: (2.0 * gap + 1.0) / k, sep_line: gap / k, line: 1.0 / k, border: 2.0 / k }
 }
 
 fn font(style: MenuStyle) -> Font {
@@ -200,11 +133,7 @@ pub struct MenuLayout {
 impl MenuLayout {
     /// The clickable item under a point (menu-local).
     pub fn item_at(&self, items: &[MenuItem], x: f32, y: f32) -> Option<usize> {
-        self.rows
-            .iter()
-            .enumerate()
-            .find(|(i, r)| r.contains(x, y) && matches!(items[*i], MenuItem::Item { .. }))
-            .map(|(i, _)| i)
+        self.rows.iter().enumerate().find(|(i, r)| r.contains(x, y) && matches!(items[*i], MenuItem::Item { .. })).map(|(i, _)| i)
     }
 }
 
@@ -227,22 +156,9 @@ pub fn layout(c: &mut Canvas, items: &[MenuItem], style: MenuStyle) -> MenuLayou
         let mut w: f32 = 60.0;
         for &i in col {
             w = w.max(match &items[i] {
-                MenuItem::Item {
-                    label,
-                    shortcut,
-                    sub,
-                    ..
-                } => {
-                    let lead = if style == MenuStyle::Context {
-                        20.0
-                    } else {
-                        6.0
-                    };
-                    let sc = if shortcut.is_empty() {
-                        0.0
-                    } else {
-                        c.text_width(f.italic(), shortcut) + 24.0
-                    };
+                MenuItem::Item { label, shortcut, sub, .. } => {
+                    let lead = if style == MenuStyle::Context { 20.0 } else { 6.0 };
+                    let sc = if shortcut.is_empty() { 0.0 } else { c.text_width(f.italic(), shortcut) + 24.0 };
                     lead + c.text_width(f, label) + sc + if *sub { 26.0 } else { 14.0 }
                 }
                 MenuItem::Head(s) => c.text_width(Font::new(12), s) + 16.0,
@@ -259,51 +175,19 @@ pub fn layout(c: &mut Canvas, items: &[MenuItem], style: MenuStyle) -> MenuLayou
         h = h.max(y - m.border);
         x += w;
     }
-    MenuLayout {
-        w: x + m.border,
-        h: h + 2.0 * m.border,
-        rows,
-    }
+    MenuLayout { w: x + m.border, h: h + 2.0 * m.border, rows }
 }
 
 /// Paints a menu at (`ox`, `oy`) (the layout's origin). `hover` = row under the mouse, `current` = lit row of a list
 /// menu (the chosen entry) shown when nothing is hovered.
-pub fn paint(
-    c: &mut Canvas,
-    t: &Palette,
-    items: &[MenuItem],
-    l: &MenuLayout,
-    style: MenuStyle,
-    ox: f32,
-    oy: f32,
-    hover: Option<usize>,
-    current: Option<usize>,
-) {
+pub fn paint(c: &mut Canvas, t: &Palette, items: &[MenuItem], l: &MenuLayout, style: MenuStyle, ox: f32, oy: f32, hover: Option<usize>, current: Option<usize>) {
     let r = Rect::new(ox, oy, l.w, l.h);
     let f = font(style);
     let m = metrics(c.scale);
     let lh = c.line_height(f);
     let (body, border, hi, text, dim, head, head_text, sc) = match style {
-        MenuStyle::Context => (
-            t.menu_pop,
-            t.menu_pop_border,
-            t.menu_pop_hi,
-            t.menu_pop_text,
-            t.menu_pop_dim,
-            t.menu_pop_head,
-            t.menu_pop_head_text,
-            t.menu_pop_shortcut,
-        ),
-        MenuStyle::List => (
-            t.s(0x1d1e1f),
-            t.s(0x101112),
-            t.s(0x89949b),
-            t.tx(0xc5ccd0),
-            t.s(0x6a6e70),
-            t.s(0x303131),
-            t.s(0x7e8486),
-            t.s(0x9ea4a3),
-        ),
+        MenuStyle::Context => (t.menu_pop, t.menu_pop_border, t.menu_pop_hi, t.menu_pop_text, t.menu_pop_dim, t.menu_pop_head, t.menu_pop_head_text, t.menu_pop_shortcut),
+        MenuStyle::List => (t.s(0x1d1e1f), t.s(0x101112), t.s(0x89949b), t.tx(0xc5ccd0), t.s(0x6a6e70), t.s(0x303131), t.s(0x7e8486), t.s(0x9ea4a3)),
     };
     c.fill_rect(r, border);
     c.fill_rect(r.inset(m.border), body);
@@ -315,10 +199,7 @@ pub fn paint(
         }
         if let Some(px) = last_x {
             if row.x > px {
-                c.fill_rect(
-                    Rect::new(ox + row.x - 1.0, oy + m.border, 1.0, l.h - 2.0 * m.border),
-                    head,
-                );
+                c.fill_rect(Rect::new(ox + row.x - 1.0, oy + m.border, 1.0, l.h - 2.0 * m.border), head);
             }
         }
         last_x = Some(row.x);
@@ -331,21 +212,9 @@ pub fn paint(
             MenuItem::Sep => c.fill_rect(Rect::new(rr.x, rr.y + m.sep_line, rr.w, m.line), head),
             MenuItem::Head(s) => {
                 c.fill_rect(rr, head);
-                c.text(
-                    Font::new(12),
-                    rr.x + 4.0,
-                    rr.y + 1.0 + (rr.h - HEAD) / 2.0,
-                    head_text,
-                    s,
-                );
+                c.text(Font::new(12), rr.x + 4.0, rr.y + 1.0 + (rr.h - HEAD) / 2.0, head_text, s);
             }
-            MenuItem::Item {
-                label,
-                shortcut,
-                mark,
-                sub,
-                enabled,
-            } => {
+            MenuItem::Item { label, shortcut, mark, sub, enabled } => {
                 let on = lit == Some(i) && (*enabled || style == MenuStyle::List);
                 if on {
                     c.fill_rect(rr, hi);
@@ -359,52 +228,20 @@ pub fn paint(
                 };
                 let (mx, my) = (rr.x + 10.0, rr.cy());
                 match mark {
-                    Mark::Check(true) => tick(
-                        c,
-                        Rect::new(mx - 6.0, my - 6.0, 12.0, 12.0),
-                        if *enabled { text } else { dim },
-                    ),
-                    Mark::Check(false) => tick(
-                        c,
-                        Rect::new(mx - 6.0, my - 6.0, 12.0, 12.0),
-                        text.with_alpha(40),
-                    ),
+                    Mark::Check(true) => tick(c, Rect::new(mx - 6.0, my - 6.0, 12.0, 12.0), if *enabled { text } else { dim }),
+                    Mark::Check(false) => tick(c, Rect::new(mx - 6.0, my - 6.0, 12.0, 12.0), text.with_alpha(40)),
                     Mark::Radio(true) => c.fill_circle(mx, my, 3.0, text),
                     Mark::Radio(false) => c.stroke_circle(mx, my, 3.5, 1.0, dim),
                     Mark::None => {}
                 }
-                let lead = if style == MenuStyle::Context {
-                    20.0
-                } else {
-                    6.0
-                };
-                c.text_clip(
-                    f,
-                    rr.x + lead,
-                    (rr.cy() - lh / 2.0).round(),
-                    rr.w - lead - 6.0,
-                    col,
-                    label,
-                );
+                let lead = if style == MenuStyle::Context { 20.0 } else { 6.0 };
+                c.text_clip(f, rr.x + lead, (rr.cy() - lh / 2.0).round(), rr.w - lead - 6.0, col, label);
                 let right = rr.right() - if *sub { 16.0 } else { 8.0 };
                 if !shortcut.is_empty() {
-                    c.text_right(
-                        f.italic(),
-                        right,
-                        (rr.cy() - lh / 2.0).round() + 1.0,
-                        if *enabled { sc } else { dim },
-                        shortcut,
-                    );
+                    c.text_right(f.italic(), right, (rr.cy() - lh / 2.0).round() + 1.0, if *enabled { sc } else { dim }, shortcut);
                 }
                 if *sub {
-                    super::chevron(
-                        c,
-                        rr.right() - 9.0,
-                        my,
-                        3.5,
-                        Dir::Right,
-                        if *enabled { text } else { dim },
-                    );
+                    super::chevron(c, rr.right() - 9.0, my, 3.5, Dir::Right, if *enabled { text } else { dim });
                 }
             }
         }
@@ -440,46 +277,17 @@ mod tests {
         // 150 %: rows 25, headers 22, border 2 device px (spec: ui/ui-scaling.md §2).
         let mut c = Canvas::new(600, 450, 1.5).unwrap();
         let l = layout(&mut c, &items, MenuStyle::List);
-        assert_eq!(
-            (
-                (l.h * 1.5).round(),
-                (l.rows[1].h * 1.5).round(),
-                (l.rows[0].h * 1.5).round()
-            ),
-            (2.0 * 25.0 + 22.0 + 4.0, 25.0, 22.0)
-        );
+        assert_eq!(((l.h * 1.5).round(), (l.rows[1].h * 1.5).round(), (l.rows[0].h * 1.5).round()), (2.0 * 25.0 + 22.0 + 4.0, 25.0, 22.0));
         assert_eq!(l.item_at(&items, l.rows[2].cx(), l.rows[2].cy()), Some(2));
         assert_eq!(l.item_at(&items, l.rows[0].cx(), l.rows[0].cy()), None);
         let t = Palette::default();
-        paint(
-            &mut c,
-            &t,
-            &items,
-            &l,
-            MenuStyle::List,
-            0.0,
-            0.0,
-            None,
-            Some(1),
-        );
-        paint(
-            &mut c,
-            &t,
-            &items,
-            &l,
-            MenuStyle::Context,
-            0.0,
-            0.0,
-            Some(2),
-            None,
-        );
+        paint(&mut c, &t, &items, &l, MenuStyle::List, 0.0, 0.0, None, Some(1));
+        paint(&mut c, &t, &items, &l, MenuStyle::Context, 0.0, 0.0, Some(2), None);
     }
 
     #[test]
     fn metrics_follow_the_font_with_fixed_padding() {
-        let px = |m: Metrics, k: f32| {
-            [m.row, m.head, m.sep, m.sep_line, m.border].map(|v| (v * k).round())
-        };
+        let px = |m: Metrics, k: f32| [m.row, m.head, m.sep, m.sep_line, m.border].map(|v| (v * k).round());
         assert_eq!(px(metrics(1.0), 1.0), [19.0, 16.0, 7.0, 3.0, 2.0]);
         assert_eq!(px(metrics(1.5), 1.5), [25.0, 22.0, 9.0, 4.0, 2.0]);
         assert_eq!(px(metrics(2.0), 2.0), [31.0, 28.0, 13.0, 6.0, 2.0]);

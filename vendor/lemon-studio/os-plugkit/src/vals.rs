@@ -24,21 +24,8 @@ pub struct Vals {
 
 impl Vals {
     /// `live` = the edits list of the instance `params` belongs to.
-    pub fn new(
-        params: &dyn Params,
-        live: Arc<LiveEdits>,
-        ctx: Option<Arc<dyn GuiContext>>,
-    ) -> Self {
-        Vals {
-            ptrs: params
-                .param_map()
-                .into_iter()
-                .map(|(id, p, _)| (id, p))
-                .collect(),
-            overlay: HashMap::new(),
-            live,
-            ctx,
-        }
+    pub fn new(params: &dyn Params, live: Arc<LiveEdits>, ctx: Option<Arc<dyn GuiContext>>) -> Self {
+        Vals { ptrs: params.param_map().into_iter().map(|(id, p, _)| (id, p)).collect(), overlay: HashMap::new(), live, ctx }
     }
 
     /// The host's value (normalised).
@@ -57,9 +44,7 @@ impl Vals {
     pub fn plain(&self, id: &str) -> f32 {
         let n = self.norm(id);
         // SAFETY: the pointers come from the params object, which outlives the editor.
-        self.ptrs
-            .get(id)
-            .map_or(0.0, |p| unsafe { p.preview_plain(n) })
+        self.ptrs.get(id).map_or(0.0, |p| unsafe { p.preview_plain(n) })
     }
 
     pub fn text(&self, id: &str) -> String {
@@ -67,28 +52,20 @@ impl Vals {
     }
 
     pub fn text_of(&self, id: &str, norm: f32) -> String {
-        self.ptrs.get(id).map_or_else(String::new, |p| unsafe {
-            p.normalized_value_to_string(norm, true)
-        })
+        self.ptrs.get(id).map_or_else(String::new, |p| unsafe { p.normalized_value_to_string(norm, true) })
     }
 
     pub fn default_norm(&self, id: &str) -> f32 {
-        self.ptrs
-            .get(id)
-            .map_or(0.0, |p| unsafe { p.default_normalized_value() })
+        self.ptrs.get(id).map_or(0.0, |p| unsafe { p.default_normalized_value() })
     }
 
     pub fn plain_to_norm(&self, id: &str, plain: f32) -> f32 {
-        self.ptrs
-            .get(id)
-            .map_or(0.0, |p| unsafe { p.preview_normalized(plain) })
+        self.ptrs.get(id).map_or(0.0, |p| unsafe { p.preview_normalized(plain) })
     }
 
     /// Parses a typed value with the parameter's own parser.
     pub fn parse(&self, id: &str, text: &str) -> Option<f32> {
-        self.ptrs
-            .get(id)
-            .and_then(|p| unsafe { p.string_to_normalized_value(text) })
+        self.ptrs.get(id).and_then(|p| unsafe { p.string_to_normalized_value(text) })
     }
 
     /// Drops overlay entries the host has confirmed (or ignored for a second). True when one went.

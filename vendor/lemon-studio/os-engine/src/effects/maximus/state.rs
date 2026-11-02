@@ -101,13 +101,7 @@ pub struct MapPoint {
 
 impl MapPoint {
     pub fn new(dist: f64, level: f64) -> MapPoint {
-        MapPoint {
-            dist,
-            level,
-            tension: 0.0,
-            mode: 0,
-            rest: [0; 3],
-        }
+        MapPoint { dist, level, tension: 0.0, mode: 0, rest: [0; 3] }
     }
 }
 
@@ -123,21 +117,12 @@ pub struct Map {
 impl Map {
     /// The factory map: rising one to one up to 0 dB, then flat.
     pub fn default_map() -> Map {
-        let mut p = vec![
-            MapPoint::new(0.0, 0.0),
-            MapPoint::new(0.5, 0.5),
-            MapPoint::new(0.5, 0.5),
-        ];
+        let mut p = vec![MapPoint::new(0.0, 0.0), MapPoint::new(0.5, 0.5), MapPoint::new(0.5, 0.5)];
         p[1].rest[2] = 2;
         p[2].rest[2] = 2;
         let mut tail = [0xff; 20];
         tail[..4].fill(0);
-        Map {
-            kind: 3,
-            sub: 3,
-            points: p,
-            tail,
-        }
+        Map { kind: 3, sub: 3, points: p, tail }
     }
 
     fn read(r: &mut Reader) -> Option<Map> {
@@ -154,21 +139,10 @@ impl Map {
             let tension = r.f32()?;
             let mode = r.u8()?;
             let rest = r.bytes(3)?.try_into().ok()?;
-            points.push(MapPoint {
-                dist,
-                level,
-                tension,
-                mode,
-                rest,
-            });
+            points.push(MapPoint { dist, level, tension, mode, rest });
         }
         let tail = r.bytes(20)?.try_into().ok()?;
-        Some(Map {
-            kind,
-            sub,
-            points,
-            tail,
-        })
+        Some(Map { kind, sub, points, tail })
     }
 
     fn write(&self, w: &mut Vec<u8>) {
@@ -188,19 +162,13 @@ impl Map {
     /// Each point's place along the input axis (0..1, the distances scaled to add up to 1) and its level.
     pub fn places(&self) -> Vec<(f64, f64)> {
         let total: f64 = self.points.iter().map(|p| p.dist.max(0.0)).sum();
-        let k = if total > 0.0 && total != 1.0 {
-            1.0 / total
-        } else {
-            1.0
-        };
+        let k = if total > 0.0 && total != 1.0 { 1.0 / total } else { 1.0 };
         let mut x = 0.0;
-        self.points
-            .iter()
-            .map(|p| {
-                x += p.dist.max(0.0) * k;
-                (x, f64::from(p.level as f32))
-            })
-            .collect()
+        self.points.iter().map(|p| {
+            x += p.dist.max(0.0) * k;
+            (x, f64::from(p.level as f32))
+        })
+        .collect()
     }
 }
 
@@ -248,15 +216,7 @@ impl State {
         ext[17] = 2;
         ext[21] = 2;
         ext[25] = 2;
-        State {
-            stored_version: VERSION,
-            params: p,
-            twin: p,
-            rest,
-            ext: Some(ext),
-            ext15: None,
-            maps: vec![Map::default_map(); 2 * BANDS],
-        }
+        State { stored_version: VERSION, params: p, twin: p, rest, ext: Some(ext), ext15: None, maps: vec![Map::default_map(); 2 * BANDS] }
     }
 
     /// The version number: the upper half of a stored value of 0x10000 or more.
@@ -271,15 +231,7 @@ impl State {
         if v < 1 {
             return None;
         }
-        let mut st = State {
-            stored_version: stored,
-            params: [0; PARAMS],
-            twin: [0; PARAMS],
-            rest: Vec::new(),
-            ext: None,
-            ext15: None,
-            maps: Vec::new(),
-        };
+        let mut st = State { stored_version: stored, params: [0; PARAMS], twin: [0; PARAMS], rest: Vec::new(), ext: None, ext15: None, maps: Vec::new() };
         if v <= 2 {
             // Parameters 0..5 are the ints 1..6, no low cut (on at 32768), parameters 7..58 are the ints 7..58; the
             // display block starts at byte 468 and the maps 21 or 22 bytes after it.
@@ -417,11 +369,7 @@ impl State {
     /// Sets the full ceiling; a state older than version 14 has no place for it and stays at 0.975.
     pub fn set_full_ceiling(&mut self, on: bool) {
         if let Some(e) = self.ext.as_mut() {
-            e[8] = if on {
-                e[8] | FLAG_FULL_CEILING
-            } else {
-                e[8] & !FLAG_FULL_CEILING
-            };
+            e[8] = if on { e[8] | FLAG_FULL_CEILING } else { e[8] & !FLAG_FULL_CEILING };
         }
     }
 
@@ -458,11 +406,7 @@ impl State {
 }
 
 fn version_of(stored: i32) -> i32 {
-    if stored >= 0x10000 {
-        stored >> 16
-    } else {
-        stored
-    }
+    if stored >= 0x10000 { stored >> 16 } else { stored }
 }
 
 /// The block's length (parameters, twin and the rest) in version `v` (3 and later).
@@ -493,10 +437,7 @@ mod tests {
         assert_eq!(st.version(), 14);
         assert_eq!(st.shown(), MASTER);
         assert!(!st.full_ceiling());
-        assert_eq!(
-            st.map(LOW).places(),
-            vec![(0.0, 0.0), (0.5, 0.5), (1.0, 0.5)]
-        );
+        assert_eq!(st.map(LOW).places(), vec![(0.0, 0.0), (0.5, 0.5), (1.0, 0.5)]);
     }
 
     #[test]

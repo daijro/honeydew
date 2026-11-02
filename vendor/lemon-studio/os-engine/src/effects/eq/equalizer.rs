@@ -11,7 +11,7 @@
 use super::design::{self, BandCoefs, Coefs, Design, Stored};
 use super::hq::{self, Decimator, HalfBand, TAPS, TINY};
 use super::lin::{self, Lin, TableBand};
-use super::{BAND_PASS, BAND_STOP, BANDS, MASK_BYTE, PEAKING};
+use super::{BANDS, BAND_PASS, BAND_STOP, MASK_BYTE, PEAKING};
 
 /// The 36 parameters: `group * 7 + band` (level, frequency, width, type, order), then the main level.
 pub const PARAMS: usize = 36;
@@ -58,20 +58,12 @@ pub struct Options {
 impl Default for Options {
     /// A state of version 3 or lower with HQ off.
     fn default() -> Self {
-        Options {
-            hq: 0,
-            lin_size: 2,
-            lin_fade: 0,
-            flags: 0,
-            mask: 0x7f,
-        }
+        Options { hq: 0, lin_size: 2, lin_fade: 0, flags: 0, mask: 0x7f }
     }
 }
 
 fn int(state: &[u8], at: usize) -> Option<i32> {
-    state
-        .get(at..at + 4)
-        .map(|b| i32::from_le_bytes(b.try_into().unwrap()))
+    state.get(at..at + 4).map(|b| i32::from_le_bytes(b.try_into().unwrap()))
 }
 
 impl Options {
@@ -87,10 +79,7 @@ impl Options {
     }
 
     fn read(state: &[u8], with_options: bool) -> Options {
-        let mut o = Options {
-            hq: int(state, 292).unwrap_or(0),
-            ..Options::default()
-        };
+        let mut o = Options { hq: int(state, 292).unwrap_or(0), ..Options::default() };
         if with_options {
             o.lin_size = int(state, 309).unwrap_or(2);
             o.lin_fade = int(state, 313).unwrap_or(0);
@@ -101,11 +90,7 @@ impl Options {
     }
 
     pub fn mode(&self) -> Mode {
-        if self.flags & 0x01 != 0 {
-            Mode::Lin
-        } else {
-            self.band_mode()
-        }
+        if self.flags & 0x01 != 0 { Mode::Lin } else { self.band_mode() }
     }
 
     /// The processing of the rows below LIN (which also decides LIN's coefficients).
@@ -284,13 +269,7 @@ impl Equalizer {
     /// Band `k`'s settings (re)set: its coefficients anew and its countdown from the start.
     fn set_band(&mut self, k: usize) {
         let p = &self.params;
-        let stored = Stored {
-            level: p[k],
-            freq: p[BANDS + k],
-            width: p[2 * BANDS + k],
-            kind: p[3 * BANDS + k],
-            order: p[4 * BANDS + k],
-        };
+        let stored = Stored { level: p[k], freq: p[BANDS + k], width: p[2 * BANDS + k], kind: p[3 * BANDS + k], order: p[4 * BANDS + k] };
         let count = (self.band_rate() as i64) / 5;
         let b = &mut self.bands[k];
         b.stored = stored;
@@ -359,11 +338,7 @@ impl Equalizer {
     /// that LIN's first fade is over when the song starts and its blocks fall where FL's do. In the other modes
     /// silence does nothing (the gate closes on the first buffer).
     pub fn preroll(&mut self) {
-        let buffers = if self.mode() == Mode::Lin && self.opts.lin_n(self.rate) >= 8192 {
-            5
-        } else {
-            4
-        };
+        let buffers = if self.mode() == Mode::Lin && self.opts.lin_n(self.rate) >= 8192 { 5 } else { 4 };
         let (mut l, mut r) = (vec![0f32; PREROLL_BLOCK], vec![0f32; PREROLL_BLOCK]);
         for _ in 0..buffers {
             l.fill(0.0);
@@ -380,8 +355,7 @@ impl Equalizer {
             .enumerate()
             .map(|(k, b)| TableBand {
                 freq: design::freq_hz(b.stored.freq.clamp(0, 65536)),
-                narrow: b.stored.width < 8192
-                    && matches!(b.stored.kind, BAND_PASS | BAND_STOP | PEAKING),
+                narrow: b.stored.width < 8192 && matches!(b.stored.kind, BAND_PASS | BAND_STOP | PEAKING),
                 sections: (self.opts.mask & (1 << k) != 0 && b.stored.kind != 0).then_some(b.coefs),
             })
             .collect();
@@ -549,11 +523,7 @@ mod tests {
     }
 
     fn opts(hq: i32, flags: u8) -> Options {
-        Options {
-            hq,
-            flags,
-            ..Options::default()
-        }
+        Options { hq, flags, ..Options::default() }
     }
 
     fn noise(n: usize, seed: u32) -> Vec<f32> {
@@ -596,14 +566,7 @@ mod tests {
         assert_eq!(opts(0, 0x01).design(rate), Design::Ordinary(rate));
         // Reported delays: 3 N / 4 in LIN, 44 in HQ Enhanced, 0 otherwise.
         assert_eq!(opts(1, 0x01).latency(rate), 1536);
-        assert_eq!(
-            Options {
-                lin_size: 4,
-                ..opts(0, 0x01)
-            }
-            .latency(rate),
-            6144
-        );
+        assert_eq!(Options { lin_size: 4, ..opts(0, 0x01) }.latency(rate), 6144);
         assert_eq!(opts(1, 0x02).latency(rate), 44);
         assert_eq!(opts(1, 0x02).latency(48000.0), 44);
         assert_eq!(opts(1, 0).latency(rate), 0);
@@ -620,16 +583,7 @@ mod tests {
         st[313] = 2;
         st[317] = 0x63;
         st[318] = 0x7b;
-        assert_eq!(
-            Options::from_state(&st),
-            Options {
-                hq: 3,
-                lin_size: 1,
-                lin_fade: 2,
-                flags: 0x03,
-                mask: 0x7b
-            }
-        );
+        assert_eq!(Options::from_state(&st), Options { hq: 3, lin_size: 1, lin_fade: 2, flags: 0x03, mask: 0x7b });
     }
 
     // spec: plugins/fruity-parametric-eq-2.md "Which processing a state selects", "Checked against FL" (states that
@@ -639,13 +593,7 @@ mod tests {
         let x = noise(6000, 1);
         let mut plain = Equalizer::new(44100.0, &preset(900), opts(0, 0));
         let want = run(&mut plain, &x, 512);
-        for o in [
-            opts(5, 0),
-            opts(7, 0),
-            opts(2, 0),
-            opts(0, 0x02),
-            opts(0, 0x42),
-        ] {
+        for o in [opts(5, 0), opts(7, 0), opts(2, 0), opts(0, 0x02), opts(0, 0x42)] {
             let mut eq = Equalizer::new(44100.0, &preset(900), o);
             assert_eq!(eq.latency(), 0);
             assert_eq!(run(&mut eq, &x, 512), want, "{o:?}");
@@ -681,14 +629,7 @@ mod tests {
             p[3 * BANDS + k] = 0;
         }
         for (size, n) in [(0, 512), (2, 2048)] {
-            let mut eq = Equalizer::new(
-                44100.0,
-                &p,
-                Options {
-                    lin_size: size,
-                    ..opts(1, 0x01)
-                },
-            );
+            let mut eq = Equalizer::new(44100.0, &p, Options { lin_size: size, ..opts(1, 0x01) });
             eq.preroll();
             let d = 3 * n / 4;
             assert_eq!(eq.latency(), d);
@@ -696,12 +637,7 @@ mod tests {
             let (l, _) = run(&mut eq, &x, 300);
             // The table is flat (gain 1): the kernel is the window's centre value, 1 to within 2e-5.
             for i in d..3 * n {
-                assert!(
-                    (l[i] - x[i - d]).abs() < 2e-5,
-                    "{size} {i}: {} {}",
-                    l[i],
-                    x[i - d]
-                );
+                assert!((l[i] - x[i - d]).abs() < 2e-5, "{size} {i}: {} {}", l[i], x[i - d]);
             }
         }
     }
@@ -713,9 +649,7 @@ mod tests {
         let mut eq = Equalizer::new(44100.0, &preset(1200), opts(0, 0x01));
         eq.preroll();
         let hz = f64::from(design::freq_hz(32768));
-        let x: Vec<f32> = (0..20000)
-            .map(|i| (std::f64::consts::TAU * hz * i as f64 / 44100.0).sin() as f32 * 0.1)
-            .collect();
+        let x: Vec<f32> = (0..20000).map(|i| (std::f64::consts::TAU * hz * i as f64 / 44100.0).sin() as f32 * 0.1).collect();
         let (l, _) = run(&mut eq, &x, 1000);
         let peak = l[10000..].iter().fold(0f32, |m, v| m.max(v.abs()));
         assert!((peak / 0.1 - 4.0 * 0.999862).abs() < 0.02, "{peak}");
@@ -726,9 +660,7 @@ mod tests {
     fn modes_match_their_designs_at_low_frequencies() {
         // A sine well below the Nyquist frequency: plain, HQ Legacy, HQ+ and HQ Enhanced all give the band's gain.
         let hz = 1000.0;
-        let x: Vec<f32> = (0..20000)
-            .map(|i| (std::f64::consts::TAU * hz * i as f64 / 44100.0).sin() as f32 * 0.1)
-            .collect();
+        let x: Vec<f32> = (0..20000).map(|i| (std::f64::consts::TAU * hz * i as f64 / 44100.0).sin() as f32 * 0.1).collect();
         let mut p = preset(0);
         p[3] = 600;
         p[BANDS + 3] = ((hz / 20.0f64).ln() / 1000f64.ln() * 65536.0).round() as i32;
@@ -736,11 +668,7 @@ mod tests {
             let mut eq = Equalizer::new(44100.0, &p, o);
             let (l, _) = run(&mut eq, &x, 512);
             let peak = l[10000..].iter().fold(0f32, |m, v| m.max(v.abs()));
-            assert!(
-                (20.0 * (peak / 0.1).log10() - 6.0).abs() < 0.05,
-                "{o:?}: {}",
-                20.0 * (peak / 0.1).log10()
-            );
+            assert!((20.0 * (peak / 0.1).log10() - 6.0).abs() < 0.05, "{o:?}: {}", 20.0 * (peak / 0.1).log10());
         }
     }
 
@@ -760,13 +688,7 @@ mod tests {
         let (l, _) = run(&mut eq, &x, 1500);
         // By hand: the main level in singles, then band 3 (+3 dB) and band 7's two sections, each rounded to single.
         let gain = ((-650.0f32 * 0.01 * design::db_unit()) as f64).exp() as f32;
-        let stored = |k: usize| Stored {
-            level: p[k],
-            freq: p[BANDS + k],
-            width: p[2 * BANDS + k],
-            kind: p[3 * BANDS + k],
-            order: p[4 * BANDS + k],
-        };
+        let stored = |k: usize| Stored { level: p[k], freq: p[BANDS + k], width: p[2 * BANDS + k], kind: p[3 * BANDS + k], order: p[4 * BANDS + k] };
         let mut secs: Vec<(Coefs, Section)> = Vec::new();
         for k in [2, 6] {
             for c in design::band(&stored(k), Design::Ordinary(48000.0)).as_slice() {
@@ -826,19 +748,7 @@ mod tests {
         let before = eq.bands[3].state;
         eq.set_param(BANDS + 3, 40000);
         assert_eq!(eq.bands[3].state[0][0].y1, before[0][0].y1);
-        assert_ne!(
-            eq.bands[3].coefs,
-            design::band(
-                &Stored {
-                    level: 1200,
-                    freq: 32768,
-                    width: 25412,
-                    kind: PEAKING,
-                    order: 0
-                },
-                Design::Ordinary(44100.0)
-            )
-        );
+        assert_ne!(eq.bands[3].coefs, design::band(&Stored { level: 1200, freq: 32768, width: 25412, kind: PEAKING, order: 0 }, Design::Ordinary(44100.0)));
         eq.set_param(4 * BANDS + 3, 2);
         assert_eq!(eq.bands[3].state[0][0].y1, 0.0);
         assert_eq!(eq.bands[3].coefs.n, 3);

@@ -16,8 +16,8 @@ use std::collections::VecDeque;
 
 use self::map::Table;
 use self::state::*;
-use super::Effect;
 use super::eq::hq::HalfBand;
+use super::Effect;
 
 const TINY: f64 = 1.0 / 16_777_216.0;
 const PI: f64 = std::f64::consts::PI;
@@ -49,10 +49,7 @@ pub fn samples(v: i32, rate: f64) -> f64 {
 
 /// A crossover knob in Hz: 30 Hz .. 16 kHz.
 pub fn crossover_hz(v: i32) -> f32 {
-    s(
-        (f64::from(v) * (533.333_333_333_333_4f64.ln() / (2f64.ln() * 65536.0)) * 2f64.ln()).exp()
-            * 30.0,
-    )
+    s((f64::from(v) * (533.333_333_333_333_4f64.ln() / (2f64.ln() * 65536.0)) * 2f64.ln()).exp() * 30.0)
 }
 
 /// The low cut knob in Hz: 5 .. 80 Hz.
@@ -62,11 +59,7 @@ pub fn low_cut_hz(v: i32) -> f32 {
 
 /// A smoother's coefficient for a time of `t` samples.
 fn coef(t: f64) -> f64 {
-    if t <= 0.0 {
-        0.0
-    } else {
-        (0.01f64.ln() / t.max(1.0)).exp()
-    }
+    if t <= 0.0 { 0.0 } else { (0.01f64.ln() / t.max(1.0)).exp() }
 }
 
 /// Biquad coefficients `(b0, b1, b2, a1, a2)`.
@@ -155,13 +148,7 @@ impl Chain {
     /// Runs the biquads `range` in place.
     fn run(&mut self, range: std::ops::Range<usize>, ch: usize, x: &mut [f32]) {
         let n = range.len();
-        for (c, st) in self
-            .c
-            .iter()
-            .zip(self.st[ch].iter_mut())
-            .skip(range.start)
-            .take(n)
-        {
+        for (c, st) in self.c.iter().zip(self.st[ch].iter_mut()).skip(range.start).take(n) {
             for v in x.iter_mut() {
                 *v = st.run(c, *v);
             }
@@ -200,11 +187,7 @@ impl Detector {
         if self.rms {
             let q = l * l + r * r;
             let old = std::mem::replace(&mut self.ring[self.at], q);
-            self.at = if self.at + 1 == self.w {
-                0
-            } else {
-                self.at + 1
-            };
+            self.at = if self.at + 1 == self.w { 0 } else { self.at + 1 };
             self.sum = (self.sum - f64::from(old)) + f64::from(q);
             let mean = s(self.sum * self.scale).max(0.0);
             mean.sqrt()
@@ -214,11 +197,7 @@ impl Detector {
                 self.peaks.pop_back();
             }
             self.peaks.push_back((self.t, v));
-            while self
-                .peaks
-                .front()
-                .is_some_and(|&(t, _)| t + self.w as u64 <= self.t)
-            {
+            while self.peaks.front().is_some_and(|&(t, _)| t + self.w as u64 <= self.t) {
                 self.peaks.pop_front();
             }
             self.t += 1;
@@ -247,35 +226,22 @@ impl Sat {
             if width <= 0.0 {
                 width = 1.0 / 65536.0;
             }
-            return Sat::Knee {
-                knee,
-                width,
-                r: 1.0 / width,
-            };
+            return Sat::Knee { knee, width, r: 1.0 / width };
         }
         let loud = (reach_used * f64::from(post)).max(f64::from(ceil));
         let depth = f64::from(s(f64::from(threshold) * -0.1) + 1.0);
         let q = s(depth.ln() / 101f64.ln());
         let hardness = f64::from(20.0 - q * 19.0);
         let f = |x: f64| x.powf(hardness).atan().powf(1.0 / hardness);
-        let step = if ceil == 0.0 {
-            1.0
-        } else {
-            loud / (f64::from(ceil) * 65536.0)
-        };
+        let step = if ceil == 0.0 { 1.0 } else { loud / (f64::from(ceil) * 65536.0) };
         let top = f(step * 65536.0);
-        let mut t: Vec<f32> = (0..=65536)
-            .map(|i| {
-                let v = s(f(i as f64 * step) / top);
-                if f64::from(v) < TINY { 0.0 } else { v }
-            })
-            .collect();
+        let mut t: Vec<f32> = (0..=65536).map(|i| {
+            let v = s(f(i as f64 * step) / top);
+            if f64::from(v) < TINY { 0.0 } else { v }
+        })
+        .collect();
         t.push(t[65536]);
-        Sat::Table {
-            t,
-            scale: f64::from(s(1.0 / loud)) * 65536.0,
-            ceil: f64::from(ceil),
-        }
+        Sat::Table { t, scale: f64::from(s(1.0 / loud)) * 65536.0, ceil: f64::from(ceil) }
     }
 
     fn run(&self, x: f32) -> f32 {
@@ -290,11 +256,7 @@ impl Sat {
                 let fr = pos - w;
                 let i = (w.abs() as usize).min(65536);
                 let (a, b) = (f64::from(t[i]), f64::from(t[i + 1]));
-                let y = if w >= 0.0 {
-                    a + (b - a) * fr
-                } else {
-                    -(a - (b - a) * fr)
-                };
+                let y = if w >= 0.0 { a + (b - a) * fr } else { -(a - (b - a) * fr) };
                 to_single_towards_zero(y * ceil)
             }
             Sat::Knee { knee, width, r } => {
@@ -302,12 +264,7 @@ impl Sat {
                 if a <= *knee {
                     return x;
                 }
-                let (k, wd, r, a) = (
-                    f64::from(*knee),
-                    f64::from(*width),
-                    f64::from(*r),
-                    f64::from(a),
-                );
+                let (k, wd, r, a) = (f64::from(*knee), f64::from(*width), f64::from(*r), f64::from(a));
                 s((1.0 - ((k - a) * r).exp()) * wd + k).copysign(x)
             }
         }
@@ -317,11 +274,7 @@ impl Sat {
 /// A double rounded to single towards zero.
 fn to_single_towards_zero(y: f64) -> f32 {
     let v = y as f32;
-    if f64::from(v).abs() > y.abs() {
-        f32::from_bits(v.to_bits() - 1)
-    } else {
-        v
-    }
+    if f64::from(v).abs() > y.abs() { f32::from_bits(v.to_bits() - 1) } else { v }
 }
 
 /// A stereo delay line.
@@ -348,10 +301,7 @@ impl Line {
         if n == 0 {
             return (l, r);
         }
-        let out = (
-            std::mem::replace(&mut self.buf[0][self.at], l),
-            std::mem::replace(&mut self.buf[1][self.at], r),
-        );
+        let out = (std::mem::replace(&mut self.buf[0][self.at], l), std::mem::replace(&mut self.buf[1][self.at], r));
         self.at = if self.at + 1 == n { 0 } else { self.at + 1 };
         out
     }
@@ -367,11 +317,7 @@ fn separation(knob: i32) -> [f32; 4] {
     let u = s(1.0 / q.cos());
     let l = s(q.cos() * f64::from(u));
     let r = s(q.sin() * f64::from(u));
-    let m = if x < 0.0 {
-        x
-    } else {
-        s((f64::from(x) * 5f64.ln()).exp() - 1.0) * 0.25
-    };
+    let m = if x < 0.0 { x } else { s((f64::from(x) * 5f64.ln()).exp() - 1.0) * 0.25 };
     let k = m.min(1.0) * 0.5;
     [l * (1.0 - k), r * (1.0 - k), l * k, r * k]
 }
@@ -423,12 +369,7 @@ impl Band {
             sep: [1.0, 1.0, 0.0, 0.0],
             det: Detector::default(),
             line: Line::default(),
-            table: Table {
-                c: vec![1.0; map::ENTRIES + 2],
-                limit: 0,
-                top: 1.0,
-                reach: 1.0,
-            },
+            table: Table { c: vec![1.0; map::ENTRIES + 2], limit: 0, top: 1.0, reach: 1.0 },
             sat: Sat::Off,
             sat_dirty: true,
             reach_used: 4.0,
@@ -451,21 +392,12 @@ impl Band {
         }
     }
 
+
     /// The chain on `n` samples of `d` (the band, separated in place, feeding the detector). `audio` is the signal the
     /// gain acts on when it is not the band itself (mid trigger: the unsplit input); the result is left there, else
     /// in `d`. `mix` is the LMH mix (`None` for MASTER).
     #[allow(clippy::too_many_arguments)]
-    fn run(
-        &mut self,
-        dl: &mut [f32],
-        dr: &mut [f32],
-        mut audio: Option<(&mut [f32], &mut [f32])>,
-        n: usize,
-        target: [f32; 4],
-        limit: f32,
-        jump: bool,
-        mix: Option<f32>,
-    ) {
+    fn run(&mut self, dl: &mut [f32], dr: &mut [f32], mut audio: Option<(&mut [f32], &mut [f32])>, n: usize, target: [f32; 4], limit: f32, jump: bool, mix: Option<f32>) {
         if self.mode == MODE_OFF {
             // Only MASTER runs in mode 3: its input times post.
             let (l, r) = match audio.as_mut() {
@@ -526,11 +458,7 @@ impl Band {
             if comp {
                 let mut v = self.det.level(sl, sr);
                 for st in self.rel.iter_mut() {
-                    let c = if f64::from(v) >= *st {
-                        0.0
-                    } else {
-                        self.rel_fall
-                    };
+                    let c = if f64::from(v) >= *st { 0.0 } else { self.rel_fall };
                     *st = f64::from(v) + (*st - f64::from(v)) * c;
                     v = s(*st);
                 }
@@ -543,11 +471,7 @@ impl Band {
                     (c0 + (c1 - c0) * (p - j as f32)) * pp
                 };
                 for st in self.att.iter_mut() {
-                    let c = if f64::from(gv) >= *st {
-                        self.att_rise
-                    } else {
-                        self.att_fall
-                    };
+                    let c = if f64::from(gv) >= *st { self.att_rise } else { self.att_fall };
                     *st = f64::from(gv) + (*st - f64::from(gv)) * c;
                     gv = s(*st);
                 }
@@ -614,15 +538,7 @@ impl Fir {
     }
 
     /// The taps of an edge at `f` Hz (`f_lim` limited to half the band rate) with slope `slope`, low- or high-pass.
-    fn edge(
-        len: usize,
-        f: f64,
-        f_lim: f64,
-        slope: i32,
-        ratio: f64,
-        high: bool,
-        rate_b: f64,
-    ) -> Vec<f64> {
+    fn edge(len: usize, f: f64, f_lim: f64, slope: i32, ratio: f64, high: bool, rate_b: f64) -> Vec<f64> {
         let n = ((round(ratio * 27500.0 * f64::from(slope + 1) / f) | 1).max(5) as usize).min(len);
         let fr = f64::from(s(f_lim / rate_b.trunc()));
         let q = 2.0 * PI / (n as f64 - 1.0);
@@ -639,8 +555,7 @@ impl Fir {
             if high {
                 v = -v + if i == mid { 1.0 } else { 0.0 };
             }
-            let w = 0.35875 - 0.48829 * (q * i as f64).cos() + 0.14128 * (2.0 * q * i as f64).cos()
-                - 0.01168 * (3.0 * q * i as f64).cos();
+            let w = 0.35875 - 0.48829 * (q * i as f64).cos() + 0.14128 * (2.0 * q * i as f64).cos() - 0.01168 * (3.0 * q * i as f64).cos();
             h[off + i] = v * w;
         }
         h
@@ -816,10 +731,7 @@ impl Maximus {
         let p = self.st.params;
         let rate_b = self.rate * self.f() as f64;
         let lim = f64::from(s(0.4999 * rate_b));
-        let (mut flo, mut fhi) = (
-            f64::from(crossover_hz(p[P_LOW_FREQ])),
-            f64::from(crossover_hz(p[P_HIGH_FREQ])),
-        );
+        let (mut flo, mut fhi) = (f64::from(crossover_hz(p[P_LOW_FREQ])), f64::from(crossover_hz(p[P_HIGH_FREQ])));
         if self.low_edge && self.high_edge && flo > fhi {
             std::mem::swap(&mut flo, &mut fhi);
         }
@@ -828,40 +740,13 @@ impl Maximus {
         let angle = (1.0 / rate_b) * 2.0 * PI;
         let edge = |f: f64, slope: i32, high: bool| -> Vec<Coefs> {
             let w = f.min(lim) * angle;
-            let (n, alpha) = if slope == 0 {
-                (1, w.sin())
-            } else {
-                (2, w.sin() * k24)
-            };
-            vec![
-                if high {
-                    Coefs::highpass(alpha, w)
-                } else {
-                    Coefs::lowpass(alpha, w)
-                };
-                n
-            ]
+            let (n, alpha) = if slope == 0 { (1, w.sin()) } else { (2, w.sin() * k24) };
+            vec![if high { Coefs::highpass(alpha, w) } else { Coefs::lowpass(alpha, w) }; n]
         };
-        self.low_lp.set(if self.low_edge {
-            edge(flo, slo, false)
-        } else {
-            Vec::new()
-        });
-        self.mid_hp.set(if self.low_edge {
-            edge(flo, slo, true)
-        } else {
-            Vec::new()
-        });
-        self.mid_lp.set(if self.high_edge {
-            edge(fhi, shi, false)
-        } else {
-            Vec::new()
-        });
-        self.high_hp.set(if self.high_edge {
-            edge(fhi, shi, true)
-        } else {
-            Vec::new()
-        });
+        self.low_lp.set(if self.low_edge { edge(flo, slo, false) } else { Vec::new() });
+        self.mid_hp.set(if self.low_edge { edge(flo, slo, true) } else { Vec::new() });
+        self.mid_lp.set(if self.high_edge { edge(fhi, shi, false) } else { Vec::new() });
+        self.high_hp.set(if self.high_edge { edge(fhi, shi, true) } else { Vec::new() });
         let ap = self.high_edge && shi != 0;
         self.low_ap.set(if ap {
             let w = fhi.min(lim) * angle;
@@ -879,24 +764,15 @@ impl Maximus {
             self.fir.set_len(len);
             let ratio = self.f() as f64;
             let half = 0.5 * rate_b;
-            let lo = self
-                .low_edge
-                .then(|| Fir::edge(len, flo, flo.min(half), slo, ratio, false, rate_b));
-            let hi = self
-                .high_edge
-                .then(|| Fir::edge(len, fhi, fhi.min(half), shi, ratio, true, rate_b));
-            let mid: Vec<f64> = (0..len)
-                .map(|i| {
-                    let d = if i == (len - 1) / 2 { 1.0 } else { 0.0 };
-                    d - lo.as_ref().map_or(0.0, |h| h[i]) - hi.as_ref().map_or(0.0, |h| h[i])
-                })
-                .collect();
+            let lo = self.low_edge.then(|| Fir::edge(len, flo, flo.min(half), slo, ratio, false, rate_b));
+            let hi = self.high_edge.then(|| Fir::edge(len, fhi, fhi.min(half), shi, ratio, true, rate_b));
+            let mid: Vec<f64> = (0..len).map(|i| {
+                let d = if i == (len - 1) / 2 { 1.0 } else { 0.0 };
+                d - lo.as_ref().map_or(0.0, |h| h[i]) - hi.as_ref().map_or(0.0, |h| h[i])
+            })
+            .collect();
             let single = |h: &[f64]| h.iter().map(|&v| v as f32).collect::<Vec<f32>>();
-            self.fir.taps = [
-                lo.as_deref().map(single).unwrap_or_else(|| vec![0.0; len]),
-                single(&mid),
-                hi.as_deref().map(single).unwrap_or_else(|| vec![0.0; len]),
-            ];
+            self.fir.taps = [lo.as_deref().map(single).unwrap_or_else(|| vec![0.0; len]), single(&mid), hi.as_deref().map(single).unwrap_or_else(|| vec![0.0; len])];
         }
     }
 
@@ -908,21 +784,13 @@ impl Maximus {
         }
         let w = f64::from(low_cut_hz(v)) * 0.8 * 2.0 * PI / self.rate;
         let ds = [0x3E4A_74F9u32, 0x3F1E_8C43, 0x3F2D_45AF, 0x3F8A_285E];
-        self.low_cut.set(
-            ds.iter()
-                .map(|&d| Coefs::highpass(f64::from(f32::from_bits(d)) * w.sin(), w))
-                .collect(),
-        );
+        self.low_cut.set(ds.iter().map(|&d| Coefs::highpass(f64::from(f32::from_bits(d)) * w.sin(), w)).collect());
     }
 
     /// `reachUsed` for band `b`: the table's reach for a peak detector with mode parameter 0, else 4.
     fn reach_used(&self, b: usize) -> f64 {
         let p = &self.st.params;
-        if p[band(b, B_RMS)] == 0 && p[band(b, B_MODE)] == 0 {
-            self.bands[b].table.reach
-        } else {
-            4.0
-        }
+        if p[band(b, B_RMS)] == 0 && p[band(b, B_MODE)] == 0 { self.bands[b].table.reach } else { 4.0 }
     }
 
     fn gains(&mut self, b: usize) {
@@ -947,33 +815,15 @@ impl Maximus {
         let look = if mode >= 2 || (b == MASTER && mode >= 1) || none {
             0
         } else {
-            let knob = if b == MASTER {
-                k(B_ATT)
-            } else {
-                p[P_LMH_DELAY]
-            };
+            let knob = if b == MASTER { k(B_ATT) } else { p[P_LMH_DELAY] };
             (round(samples(knob, self.rate)) as usize) * f
         };
         let att_n = k(B_ATT_STAGES).clamp(1, 8) as usize;
-        let rel_n = if k(B_REL) == 0 {
-            0
-        } else {
-            k(B_REL_STAGES).clamp(1, 8) as usize
-        };
-        let a = if k(B_ATT) == 0 {
-            look as f64
-        } else {
-            t(k(B_ATT))
-        };
+        let rel_n = if k(B_REL) == 0 { 0 } else { k(B_REL_STAGES).clamp(1, 8) as usize };
+        let a = if k(B_ATT) == 0 { look as f64 } else { t(k(B_ATT)) };
         let attack = a * 0.800_000_011_920_929 / (att_n as f64).sqrt();
-        let rel2 = if k(B_REL2) == 0 {
-            attack
-        } else {
-            t(k(B_REL2)) * 2.0 / (att_n as f64).sqrt()
-        };
-        let w = look
-            .max(1)
-            .max((round(samples(k(B_WINDOW), self.rate)) as usize) * f);
+        let rel2 = if k(B_REL2) == 0 { attack } else { t(k(B_REL2)) * 2.0 / (att_n as f64).sqrt() };
+        let w = look.max(1).max((round(samples(k(B_WINDOW), self.rate)) as usize) * f);
         let rel = t(k(B_REL)) * 2.0 / (rel_n.max(1) as f64).sqrt();
         let rms = k(B_RMS) != 0;
         let bd = &mut self.bands[b];
@@ -998,11 +848,7 @@ impl Maximus {
 
     fn report(&mut self) {
         let f = self.f();
-        let fir = if self.st.fir() {
-            (self.fir.len.saturating_sub(1)) / 2
-        } else {
-            0
-        };
+        let fir = if self.st.fir() { (self.fir.len.saturating_sub(1)) / 2 } else { 0 };
         let lmh = self.bands[..3].iter().map(|b| b.look).max().unwrap_or(0) + fir;
         self.delay = lmh / f + self.bands[MASTER].look;
     }
@@ -1013,14 +859,7 @@ impl Maximus {
         for b in &mut self.bands {
             b.reset();
         }
-        for c in [
-            &mut self.low_lp,
-            &mut self.low_ap,
-            &mut self.mid_hp,
-            &mut self.mid_lp,
-            &mut self.high_hp,
-            &mut self.low_cut,
-        ] {
+        for c in [&mut self.low_lp, &mut self.low_ap, &mut self.mid_hp, &mut self.mid_lp, &mut self.high_hp, &mut self.low_cut] {
             c.clear();
         }
         self.fir.clear();
@@ -1076,13 +915,7 @@ impl Maximus {
     /// (the crossover's biquads cleared when an edge appears or disappears); `reachUsed` of the shown band.
     fn mode_changed(&mut self) {
         if self.modes() && !self.st.fir() {
-            for c in [
-                &mut self.low_lp,
-                &mut self.low_ap,
-                &mut self.mid_hp,
-                &mut self.mid_lp,
-                &mut self.high_hp,
-            ] {
+            for c in [&mut self.low_lp, &mut self.low_ap, &mut self.mid_hp, &mut self.mid_lp, &mut self.high_hp] {
                 c.clear();
             }
         }
@@ -1109,11 +942,7 @@ impl Maximus {
     /// settings take effect as their own changes do.
     pub fn edit(&mut self, new: State) {
         let old = self.st.clone();
-        if new.oversampling() != old.oversampling()
-            || new.fir() != old.fir()
-            || new.params[P_LOW_SLOPE] != old.params[P_LOW_SLOPE]
-            || new.params[P_HIGH_SLOPE] != old.params[P_HIGH_SLOPE]
-        {
+        if new.oversampling() != old.oversampling() || new.fir() != old.fir() || new.params[P_LOW_SLOPE] != old.params[P_LOW_SLOPE] || new.params[P_HIGH_SLOPE] != old.params[P_HIGH_SLOPE] {
             self.apply(new);
             return;
         }
@@ -1123,12 +952,8 @@ impl Maximus {
             }
         }
         let full = new.full_ceiling();
-        let maps_changed: Vec<usize> = (0..BANDS)
-            .filter(|&b| new.map(b) != old.map(b) || full != old.full_ceiling())
-            .collect();
-        let display = new.solo() != old.solo()
-            || new.shown() != old.shown()
-            || new.mid_trigger() != old.mid_trigger();
+        let maps_changed: Vec<usize> = (0..BANDS).filter(|&b| new.map(b) != old.map(b) || full != old.full_ceiling()).collect();
+        let display = new.solo() != old.solo() || new.shown() != old.shown() || new.mid_trigger() != old.mid_trigger();
         self.st = new;
         for b in maps_changed {
             self.bands[b].table = Table::new(self.st.map(b), full);
@@ -1148,11 +973,7 @@ impl Maximus {
         }
         // Silence.
         let floor = s(1e-6);
-        if left[..n]
-            .iter()
-            .chain(&right[..n])
-            .all(|x| x.abs() <= floor)
-        {
+        if left[..n].iter().chain(&right[..n]).all(|x| x.abs() <= floor) {
             self.counter -= n as i64;
             if self.counter <= -(n as i64) {
                 if !self.asleep {
@@ -1170,12 +991,7 @@ impl Maximus {
             if self.bands[b].sat_dirty {
                 let p = &self.st.params;
                 let bd = &mut self.bands[b];
-                bd.sat = Sat::new(
-                    p[band(b, B_THRES)],
-                    p[band(b, B_CEIL)],
-                    bd.reach_used,
-                    bd.post,
-                );
+                bd.sat = Sat::new(p[band(b, B_THRES)], p[band(b, B_CEIL)], bd.reach_used, bd.post);
                 bd.sat_dirty = false;
             }
         }
@@ -1188,13 +1004,7 @@ impl Maximus {
         // Up.
         let f = self.f();
         let ni = n * f;
-        for v in [
-            &mut self.xi,
-            &mut self.sum,
-            &mut self.mid,
-            &mut self.high,
-            &mut self.un,
-        ] {
+        for v in [&mut self.xi, &mut self.sum, &mut self.mid, &mut self.high, &mut self.un] {
             for c in v.iter_mut() {
                 if c.len() < ni {
                     c.resize(ni, 0.0);
@@ -1222,18 +1032,14 @@ impl Maximus {
             let mut len = ni;
             for st in (0..self.stages as usize).rev() {
                 for j in 0..len / 2 {
-                    self.sum[ch][j] =
-                        self.down[st][ch].down(self.sum[ch][2 * j], self.sum[ch][2 * j + 1]);
+                    self.sum[ch][j] = self.down[st][ch].down(self.sum[ch][2 * j], self.sum[ch][2 * j + 1]);
                 }
                 self.down[st][ch].tidy();
                 len /= 2;
             }
         }
         // MASTER.
-        let (target, limit) = (
-            separation(self.st.params[band(MASTER, B_SEP)]),
-            s(44100.0 / self.rate * 0.001),
-        );
+        let (target, limit) = (separation(self.st.params[band(MASTER, B_SEP)]), s(44100.0 / self.rate * 0.001));
         let jump = self.jump;
         let [sl, sr] = &mut self.sum;
         let m = &mut self.bands[MASTER];
@@ -1241,26 +1047,11 @@ impl Maximus {
             left[..n].fill(0.0);
             right[..n].fill(0.0);
         } else {
-            m.run(
-                &mut sl[..n],
-                &mut sr[..n],
-                None,
-                n,
-                target,
-                limit,
-                jump,
-                None,
-            );
+            m.run(&mut sl[..n], &mut sr[..n], None, n, target, limit, jump, None);
             left[..n].copy_from_slice(&sl[..n]);
             right[..n].copy_from_slice(&sr[..n]);
         }
-        for c in [
-            &mut self.low_lp,
-            &mut self.low_ap,
-            &mut self.mid_hp,
-            &mut self.mid_lp,
-            &mut self.high_hp,
-        ] {
+        for c in [&mut self.low_lp, &mut self.low_ap, &mut self.mid_hp, &mut self.mid_lp, &mut self.high_hp] {
             c.tidy();
         }
         for b in &mut self.bands {
@@ -1291,18 +1082,7 @@ impl Maximus {
         let [ml, mr] = &mut self.mid;
         let [hl, hr] = &mut self.high;
         let [ul, ur] = &mut self.un;
-        let (xl, xr, sl, sr, ml, mr, hl, hr, ul, ur) = (
-            &mut xl[..ni],
-            &mut xr[..ni],
-            &mut sl[..ni],
-            &mut sr[..ni],
-            &mut ml[..ni],
-            &mut mr[..ni],
-            &mut hl[..ni],
-            &mut hr[..ni],
-            &mut ul[..ni],
-            &mut ur[..ni],
-        );
+        let (xl, xr, sl, sr, ml, mr, hl, hr, ul, ur) = (&mut xl[..ni], &mut xr[..ni], &mut sl[..ni], &mut sr[..ni], &mut ml[..ni], &mut mr[..ni], &mut hl[..ni], &mut hr[..ni], &mut ul[..ni], &mut ur[..ni]);
         if trig {
             ul.copy_from_slice(xl);
             ur.copy_from_slice(xr);
@@ -1333,10 +1113,7 @@ impl Maximus {
                     self.low_ap.run_all(ch, o);
                 }
             }
-            for (ch, (x, o)) in [(&mut *xl, &mut *ml), (&mut *xr, &mut *mr)]
-                .into_iter()
-                .enumerate()
-            {
+            for (ch, (x, o)) in [(&mut *xl, &mut *ml), (&mut *xr, &mut *mr)].into_iter().enumerate() {
                 let hp = self.mid_hp.c.len();
                 if trig {
                     o.copy_from_slice(x);
@@ -1387,16 +1164,7 @@ impl Maximus {
         let mid_runs = modes[MID] < 2;
         if mid_runs {
             if trig {
-                self.bands[MID].run(
-                    ml,
-                    mr,
-                    Some((&mut *ul, &mut *ur)),
-                    ni,
-                    tm,
-                    limit,
-                    jump,
-                    Some(mix),
-                );
+                self.bands[MID].run(ml, mr, Some((&mut *ul, &mut *ur)), ni, tm, limit, jump, Some(mix));
             } else {
                 self.bands[MID].run(ml, mr, None, ni, tm, limit, jump, Some(mix));
             }

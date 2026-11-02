@@ -16,18 +16,8 @@ type CFIndex = isize;
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
     fn CFRelease(cf: CFTypeRef);
-    fn CFURLCreateFromFileSystemRepresentation(
-        alloc: CFTypeRef,
-        buffer: *const u8,
-        len: CFIndex,
-        is_directory: u8,
-    ) -> CFTypeRef;
-    fn CFURLGetFileSystemRepresentation(
-        url: CFTypeRef,
-        resolve_against_base: u8,
-        buffer: *mut u8,
-        max_len: CFIndex,
-    ) -> u8;
+    fn CFURLCreateFromFileSystemRepresentation(alloc: CFTypeRef, buffer: *const u8, len: CFIndex, is_directory: u8) -> CFTypeRef;
+    fn CFURLGetFileSystemRepresentation(url: CFTypeRef, resolve_against_base: u8, buffer: *mut u8, max_len: CFIndex) -> u8;
     fn CFBundleCreate(alloc: CFTypeRef, url: CFTypeRef) -> CFTypeRef;
     fn CFBundleCopyExecutableURL(bundle: CFTypeRef) -> CFTypeRef;
 }
@@ -43,12 +33,7 @@ impl Bundle {
         }
         let bytes = path.as_os_str().as_bytes();
         unsafe {
-            let url = CFURLCreateFromFileSystemRepresentation(
-                std::ptr::null(),
-                bytes.as_ptr(),
-                bytes.len() as CFIndex,
-                1,
-            );
+            let url = CFURLCreateFromFileSystemRepresentation(std::ptr::null(), bytes.as_ptr(), bytes.len() as CFIndex, 1);
             if url.is_null() {
                 return None;
             }
@@ -71,9 +56,7 @@ impl Bundle {
                 return None;
             }
             let mut buf = vec![0u8; 4096];
-            let ok =
-                CFURLGetFileSystemRepresentation(url, 1, buf.as_mut_ptr(), buf.len() as CFIndex)
-                    != 0;
+            let ok = CFURLGetFileSystemRepresentation(url, 1, buf.as_mut_ptr(), buf.len() as CFIndex) != 0;
             CFRelease(url);
             let end = buf.iter().position(|&b| b == 0)?;
             ok.then(|| PathBuf::from(std::ffi::OsStr::from_bytes(&buf[..end])))
@@ -95,17 +78,12 @@ pub fn module_file(path: &Path) -> PathBuf {
     }
     let dir = path.join("Contents").join("MacOS");
     // Core Foundation gives the path resolved (`/private/var/...`): the name, in the folder as the caller wrote it.
-    let named = Bundle::open(path)
-        .and_then(|b| b.executable())
-        .and_then(|e| e.file_name().map(|n| dir.join(n)));
-    named
-        .filter(|p| p.is_file())
-        .unwrap_or_else(|| dir.join(path.file_stem().unwrap_or_default()))
+    let named = Bundle::open(path).and_then(|b| b.executable()).and_then(|e| e.file_name().map(|n| dir.join(n)));
+    named.filter(|p| p.is_file()).unwrap_or_else(|| dir.join(path.file_stem().unwrap_or_default()))
 }
 
 #[cfg(test)]
-mod tests {
-    // This code is a part of L e m o n S t u d i o.
+mod tests { // This code is a part of L e m o n S t u d i o.
     use super::*;
 
     /// A bundle's executable comes from its `Info.plist`; without one, the bundle's name in `Contents/MacOS`.

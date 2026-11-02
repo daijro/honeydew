@@ -22,20 +22,10 @@ pub struct Surface {
 }
 
 /// The stock "Dark" theme: Lemon Studio's default palette was measured in it.
-pub const DARK: Surface = Surface {
-    hue: 0.0,
-    saturation: 0.0,
-    lightness: -153.0,
-    contrast: -8.0,
-};
+pub const DARK: Surface = Surface { hue: 0.0, saturation: 0.0, lightness: -153.0, contrast: -8.0 };
 
 /// No adjustment (every parameter 0): surfaces stay in FL's base palette (spec §4, §5).
-pub const BASE: Surface = Surface {
-    hue: 0.0,
-    saturation: 0.0,
-    lightness: 0.0,
-    contrast: 0.0,
-};
+pub const BASE: Surface = Surface { hue: 0.0, saturation: 0.0, lightness: 0.0, contrast: 0.0 };
 
 /// The stock Dark theme's file text (its key colours; what Lemon Studio's default palette was measured with). A theme's
 /// `Lightmode` key is ignored: every theme is drawn as FL draws it with Light mode on (spec: ui/settings-choices.md
@@ -45,26 +35,15 @@ pub const DARK_TEXT: &str = "Hue=0\nSaturation=0\nLightness=-153\nContrast=-8\nT
 
 impl Surface {
     fn tc(&self) -> (f32, f32) {
-        (
-            (self.lightness / 255.0).clamp(-1.0, 1.0),
-            (self.contrast / 100.0).clamp(-1.0, 1.0),
-        )
+        ((self.lightness / 255.0).clamp(-1.0, 1.0), (self.contrast / 100.0).clamp(-1.0, 1.0))
     }
 
     /// Lightness map (§4 steps 1–2).
     pub fn map_l(&self, l: f32) -> f32 {
         let (t, c) = self.tc();
         let a = t.abs();
-        let l1 = if t < 0.0 {
-            l * (1.0 - 0.403 * a) - 0.186 * a
-        } else {
-            l + (1.0 - l) * 0.888 * t + 0.099 * t * (1.0 - t)
-        };
-        let k = if c >= 0.0 {
-            (0.941 * c).exp()
-        } else {
-            (1.52 * c.max(-0.5)).exp()
-        };
+        let l1 = if t < 0.0 { l * (1.0 - 0.403 * a) - 0.186 * a } else { l + (1.0 - l) * 0.888 * t + 0.099 * t * (1.0 - t) };
+        let k = if c >= 0.0 { (0.941 * c).exp() } else { (1.52 * c.max(-0.5)).exp() };
         let pivot = 0.490 - 0.134 * t;
         ((l1 - pivot) * k + pivot).clamp(0.0, 1.0)
     }
@@ -72,31 +51,18 @@ impl Surface {
     /// Saturation gain (§4 step 3).
     pub fn sat_gain(&self) -> f32 {
         let (t, c) = self.tc();
-        let mut g = if c >= 0.0 {
-            (2.03 * c).exp()
-        } else {
-            (4.565 * c.max(-0.5)).exp()
-        };
+        let mut g = if c >= 0.0 { (2.03 * c).exp() } else { (4.565 * c.max(-0.5)).exp() };
         if t > 0.0 {
             g /= 1.0 + 9.53 * t;
         }
         let sg = (self.saturation / 256.0).clamp(-1.0, 1.0);
-        g * if sg >= 0.0 {
-            1.0 + 0.925 * sg
-        } else {
-            1.0 + sg
-        }
+        g * if sg >= 0.0 { 1.0 + 0.925 * sg } else { 1.0 + sg }
     }
 
     /// Map a base-look colour through this adjustment.
     pub fn apply(&self, c: Color) -> Color {
         let (h, s, l) = c.hsl();
-        Color::from_hsl_pub(
-            h - self.hue,
-            (s * self.sat_gain()).clamp(0.0, 1.0),
-            self.map_l(l),
-            c.a,
-        )
+        Color::from_hsl_pub(h - self.hue, (s * self.sat_gain()).clamp(0.0, 1.0), self.map_l(l), c.a)
     }
 
     /// Inverse: the base-look colour that this adjustment maps to `c` (where clipped, the edge of the clipped range).
@@ -106,11 +72,7 @@ impl Surface {
         let (mut lo, mut hi) = (0.0f32, 1.0f32);
         for _ in 0..32 {
             let mid = (lo + hi) / 2.0;
-            if self.map_l(mid) < target {
-                lo = mid
-            } else {
-                hi = mid
-            }
+            if self.map_l(mid) < target { lo = mid } else { hi = mid }
         }
         let g = self.sat_gain().max(1e-3);
         Color::from_hsl_pub(h + self.hue, (s / g).clamp(0.0, 1.0), (lo + hi) / 2.0, c.a)
@@ -158,12 +120,7 @@ pub fn rgb_value(v: i64) -> Color {
 /// Decode a COLORREF value (§2): red in the low byte, high byte ignored.
 pub fn colorref(v: i64) -> Color {
     let u = v as u32;
-    Color {
-        r: u as u8,
-        g: (u >> 8) as u8,
-        b: (u >> 16) as u8,
-        a: 255,
-    }
+    Color { r: u as u8, g: (u >> 8) as u8, b: (u >> 16) as u8, a: 255 }
 }
 
 impl FlTheme {
@@ -185,19 +142,9 @@ impl FlTheme {
                 num(&format!("{p}gridcontrast")).unwrap_or(100.0) as f32,
             )
         };
-        let list = |p: &str, n: usize| {
-            (0..n)
-                .map_while(|i| col(&format!("{p}{i}")))
-                .collect::<Vec<_>>()
-        };
-        let mut waves: Vec<(f32, Color)> = (0..6)
-            .filter_map(|i| {
-                Some((
-                    num(&format!("wavespc{i}"))? as f32,
-                    col(&format!("waveclr{i}"))?,
-                ))
-            })
-            .collect();
+        let list = |p: &str, n: usize| (0..n).map_while(|i| col(&format!("{p}{i}"))).collect::<Vec<_>>();
+        let mut waves: Vec<(f32, Color)> =
+            (0..6).filter_map(|i| Some((num(&format!("wavespc{i}"))? as f32, col(&format!("waveclr{i}"))?))).collect();
         waves.sort_by(|a, b| a.0.total_cmp(&b.0));
         FlTheme {
             surface: Surface {
@@ -224,9 +171,7 @@ impl FlTheme {
             back_mode: num("backmode").unwrap_or(2.0) as i32,
             back_color: col("backcolor"),
             back_picture: kv.get("backpicfilename").cloned().unwrap_or_default(),
-            colors: kv
-                .get(&COLORS_KEY.to_ascii_lowercase())
-                .and_then(|v| crate::Design::parse(v)),
+            colors: kv.get(&COLORS_KEY.to_ascii_lowercase()).and_then(|v| crate::Design::parse(v)),
         }
     }
 
@@ -243,10 +188,7 @@ impl FlTheme {
 
     /// Whether the two themes differ at most in their clip note colours option.
     pub fn same_colours(&self, other: &FlTheme) -> bool {
-        let plain = |t: &FlTheme| FlTheme {
-            override_clips: false,
-            ..t.clone()
-        };
+        let plain = |t: &FlTheme| FlTheme { override_clips: false, ..t.clone() };
         plain(self) == plain(other)
     }
 }
@@ -259,16 +201,8 @@ pub fn set_key(text: &str, key: &str, value: &str) -> String {
     let mut lines: Vec<String> = text.split(nl).map(String::from).collect();
     let mut found = false;
     for line in &mut lines {
-        let bom = if line.starts_with('\u{feff}') {
-            "\u{feff}"
-        } else {
-            ""
-        };
-        if line
-            .trim_start_matches('\u{feff}')
-            .split_once('=')
-            .is_some_and(|(k, _)| k.trim().eq_ignore_ascii_case(key))
-        {
+        let bom = if line.starts_with('\u{feff}') { "\u{feff}" } else { "" };
+        if line.trim_start_matches('\u{feff}').split_once('=').is_some_and(|(k, _)| k.trim().eq_ignore_ascii_case(key)) {
             *line = format!("{bom}{key}={value}");
             found = true;
         }
@@ -285,11 +219,7 @@ pub fn set_key(text: &str, key: &str, value: &str) -> String {
 pub fn remove_key(text: &str, key: &str) -> String {
     let nl = if text.contains("\r\n") { "\r\n" } else { "\n" };
     text.split(nl)
-        .filter(|l| {
-            !l.trim_start_matches('\u{feff}')
-                .split_once('=')
-                .is_some_and(|(k, _)| k.trim().eq_ignore_ascii_case(key))
-        })
+        .filter(|l| !l.trim_start_matches('\u{feff}').split_once('=').is_some_and(|(k, _)| k.trim().eq_ignore_ascii_case(key)))
         .collect::<Vec<_>>()
         .join(nl)
 }
@@ -311,21 +241,13 @@ pub fn rgb_key(key: &str) -> bool {
 
 /// `key`'s colour from its file value (§2).
 pub fn colour_of(key: &str, v: i64) -> Color {
-    if rgb_key(key) {
-        rgb_value(v)
-    } else {
-        colorref(v)
-    }
+    if rgb_key(key) { rgb_value(v) } else { colorref(v) }
 }
 
 /// `c` as `key`'s file value (§2), high byte 0.
 pub fn colour_value(key: &str, c: Color) -> u32 {
     let (r, g, b) = (u32::from(c.r), u32::from(c.g), u32::from(c.b));
-    if rgb_key(key) {
-        r << 16 | g << 8 | b
-    } else {
-        b << 16 | g << 8 | r
-    }
+    if rgb_key(key) { r << 16 | g << 8 | b } else { b << 16 | g << 8 | r }
 }
 
 /// What a token is coloured by (spec §3).
@@ -345,51 +267,17 @@ pub(crate) enum Role {
 pub(crate) fn role(name: &str) -> Role {
     match name {
         "accent" | "accent_dim" | "playhead" | "velocity" | "velocity_dot" => Role::Accent,
-        "on_top"
-        | "on_bottom"
-        | "on_glyph"
-        | "pill"
-        | "pill_text"
-        | "add_hover"
-        | "browser_tab_outline"
-        | "browser_search"
-        | "key_lit"
-        | "key_lit_left"
-        | "key_lit_edge"
-        | "key_black_lit"
-        | "key_black_lit_left" => Role::Highlight,
-        "menu_text" | "glyph" | "glyph_dim" | "text" | "text_dim" | "text_faint" | "ruler_text"
-        | "slot_text" | "slot_text_used" | "name_text" | "menu_drop_text"
-        | "menu_drop_disabled" | "menu_pop_text" | "menu_pop_shortcut" | "menu_pop_dim"
-        | "menu_pop_head_text" | "browser_folder" | "version_text" => Role::Text,
+        "on_top" | "on_bottom" | "on_glyph" | "pill" | "pill_text" | "add_hover" | "browser_tab_outline" | "browser_search"
+        | "key_lit" | "key_lit_left" | "key_lit_edge" | "key_black_lit" | "key_black_lit_left" => Role::Highlight,
+        "menu_text" | "glyph" | "glyph_dim" | "text" | "text_dim" | "text_faint" | "ruler_text" | "slot_text"
+        | "slot_text_used" | "name_text" | "menu_drop_text" | "menu_drop_disabled" | "menu_pop_text" | "menu_pop_shortcut"
+        | "menu_pop_dim" | "menu_pop_head_text" | "browser_folder" | "version_text" => Role::Text,
         "step_a" | "step_dim_a" => Role::StepEven,
         "step_b" | "step_dim_b" => Role::StepOdd,
-        "record"
-        | "meter_low"
-        | "meter_high"
-        | "meter_clip"
-        | "cat_project"
-        | "cat_recent"
-        | "cat_plugin_db"
-        | "cat_plugin_presets"
-        | "cat_channel_presets"
-        | "cat_mixer_presets"
-        | "clip"
-        | "note_top"
-        | "note_bottom"
-        | "note_rim"
-        | "note_text"
-        | "note_sel_top"
-        | "note_sel_bottom"
-        | "note_sel_rim"
-        | "note_sel_text"
-        | "key_white"
-        | "key_white_left"
-        | "key_black"
-        | "key_black_left"
-        | "key_c"
-        | "key_label"
-        | "step_on" => Role::Fixed,
+        "record" | "meter_low" | "meter_high" | "meter_clip" | "cat_project" | "cat_recent" | "cat_plugin_db"
+        | "cat_plugin_presets" | "cat_channel_presets" | "cat_mixer_presets" | "clip" | "note_top" | "note_bottom" | "note_rim"
+        | "note_text" | "note_sel_top" | "note_sel_bottom" | "note_sel_rim" | "note_sel_text" | "key_white" | "key_white_left"
+        | "key_black" | "key_black_left" | "key_c" | "key_label" | "step_on" => Role::Fixed,
         _ => Role::Surface,
     }
 }
@@ -401,13 +289,7 @@ pub fn rekey(c: Color, from: Color, to: Color) -> Color {
     let (ht, st, lt) = to.hsl();
     let s2 = if sf > 0.02 { s * st / sf } else { st };
     // Lightness: keep the token's relative position between black / the key / white.
-    let l2 = if l <= lf {
-        if lf > 0.0 { l / lf * lt } else { lt }
-    } else if lf < 1.0 {
-        lt + (l - lf) / (1.0 - lf) * (1.0 - lt)
-    } else {
-        lt
-    };
+    let l2 = if l <= lf { if lf > 0.0 { l / lf * lt } else { lt } } else if lf < 1.0 { lt + (l - lf) / (1.0 - lf) * (1.0 - lt) } else { lt };
     let h2 = if sf > 0.02 { h + (ht - hf) } else { ht };
     Color::from_hsl_pub(h2, s2.clamp(0.0, 1.0), l2.clamp(0.0, 1.0), c.a)
 }
@@ -417,11 +299,7 @@ pub fn shift(c: Color, from: Color, to: Color) -> Color {
     let (h, s, l) = c.hsl();
     let (hf, sf, lf) = from.hsl();
     let (ht, st, lt) = to.hsl();
-    let s2 = if sf > 0.02 {
-        s * st / sf
-    } else {
-        st.max(s * 0.5)
-    };
+    let s2 = if sf > 0.02 { s * st / sf } else { st.max(s * 0.5) };
     let h2 = if sf > 0.02 { h + (ht - hf) } else { ht };
     Color::from_hsl_pub(h2, s2.clamp(0.0, 1.0), (l + lt - lf).clamp(0.0, 1.0), c.a)
 }
@@ -533,31 +411,15 @@ pub fn palette(th: &FlTheme) -> Palette {
     // They take the theme's own adjustment.
     let own = |c: Color| th.surface.apply(DARK.invert(c));
     let own_identity = th.surface == DARK;
-    let panel_th = if own_identity {
-        panel_dark
-    } else {
-        own(panel_dark)
-    };
+    let panel_th = if own_identity { panel_dark } else { own(panel_dark) };
     let step = |c: Color, from: Option<Color>, to: Option<Color>| match (from, to) {
         (Some(f), Some(t)) => shift(c, f.mix(panel_dark, 0.4), t.mix(panel_th, 0.4)),
-        _ => {
-            if own_identity {
-                c
-            } else {
-                own(c)
-            }
-        }
+        _ => if own_identity { c } else { own(c) },
     };
     for name in Palette::NAMES {
         let c = base.get(name).expect("token");
         let v = match role(name) {
-            Role::Surface => {
-                if identity {
-                    c
-                } else {
-                    surf(c)
-                }
-            }
+            Role::Surface => if identity { c } else { surf(c) },
             Role::Accent => key(c, dark.selected, th.selected),
             Role::Highlight => key(c, dark.highlight, th.highlight),
             Role::Text => key(c, dark.text_color, th.text_color),
@@ -586,30 +448,17 @@ pub(crate) fn finish(out: &mut Palette, th: &FlTheme, note_from: Color, guard: b
     // Text: browser text brightness, -255 darker .. +255 brighter (spec §3). On light themes darker = more contrast.
     if th.text != 0.0 {
         let k = (th.text / 255.0).clamp(-1.0, 1.0);
-        let target = if k < 0.0 {
-            Color::rgb(0x000000)
-        } else {
-            Color::rgb(0xffffff)
-        };
+        let target = if k < 0.0 { Color::rgb(0x000000) } else { Color::rgb(0xffffff) };
         out.browser_folder = out.browser_folder.mix(target, k.abs() * 0.6);
     }
     // Readability guard: text-like tokens keep a minimum lightness gap from the surface they sit on
     // (signal colours like category names were measured on a dark list and vanish on light themes).
     let pairs: [(&str, Color); 14] = [
-        ("cat_project", out.browser_list),
-        ("cat_recent", out.browser_list),
-        ("cat_plugin_db", out.browser_list),
-        ("cat_plugin_presets", out.browser_list),
-        ("cat_channel_presets", out.browser_list),
-        ("cat_mixer_presets", out.browser_list),
-        ("browser_folder", out.browser_list),
-        ("text", out.window_title),
-        ("text_dim", out.window_title),
-        ("glyph", out.toolbar),
-        ("menu_text", out.menu_panel),
-        ("name_text", out.name_button),
-        ("ruler_text", out.ruler),
-        ("slot_text_used", out.slot),
+        ("cat_project", out.browser_list), ("cat_recent", out.browser_list), ("cat_plugin_db", out.browser_list),
+        ("cat_plugin_presets", out.browser_list), ("cat_channel_presets", out.browser_list),
+        ("cat_mixer_presets", out.browser_list), ("browser_folder", out.browser_list), ("text", out.window_title),
+        ("text_dim", out.window_title), ("glyph", out.toolbar), ("menu_text", out.menu_panel),
+        ("name_text", out.name_button), ("ruler_text", out.ruler), ("slot_text_used", out.slot),
     ];
     for (name, bg) in pairs.into_iter().filter(|_| guard) {
         let slot = out.get_mut(name).expect("token");
@@ -646,14 +495,7 @@ pub(crate) fn finish(out: &mut Palette, th: &FlTheme, note_from: Color, guard: b
     out.wallpaper = wallpaper(th);
     if let Some(n) = th.note_colors.first() {
         let from = note_from;
-        for slot in [
-            &mut out.note_top,
-            &mut out.note_bottom,
-            &mut out.note_rim,
-            &mut out.note_text,
-            &mut out.velocity,
-            &mut out.velocity_dot,
-        ] {
+        for slot in [&mut out.note_top, &mut out.note_bottom, &mut out.note_rim, &mut out.note_text, &mut out.velocity, &mut out.velocity_dot] {
             *slot = rekey(*slot, from, *n);
         }
     }
@@ -688,45 +530,28 @@ mod tests {
     #[test]
     fn keys_are_read_and_colours_written_in_their_byte_order() {
         let text = "Hue=0\r\nSelected=11068490\r\nHighlight=-12283141\r\nhue=-20\r\n";
-        assert_eq!(
-            get_key(text, "HUE"),
-            Some("-20"),
-            "the last line wins, any case"
-        );
+        assert_eq!(get_key(text, "HUE"), Some("-20"), "the last line wins, any case");
         assert_eq!(get_key(text, "Mute"), None);
         assert_eq!(colour_of("Selected", 11068490), Color::rgb(0xa8e44a));
         assert_eq!(colour_of("Highlight", -12283141), Color::rgb(0xfb9244));
         assert_eq!(colour_value("Selected", Color::rgb(0xa8e44a)), 0xa8e44a);
         assert_eq!(colour_value("Highlight", Color::rgb(0xfb9244)), 0x4492fb);
         assert_eq!(colour_value("textcolor", Color::rgb(0x123456)), 0x123456);
-        let th = FlTheme::parse(&set_key(
-            text,
-            "Highlight",
-            &colour_value("Highlight", Color::rgb(0x102030)).to_string(),
-        ));
+        let th = FlTheme::parse(&set_key(text, "Highlight", &colour_value("Highlight", Color::rgb(0x102030)).to_string()));
         assert_eq!(th.highlight, Some(Color::rgb(0x102030)));
     }
 
     #[test]
     fn waves_gradient_is_read() {
-        let th = FlTheme::parse(
-            "WaveClr0=4661375
+        let th = FlTheme::parse("WaveClr0=4661375
 WaveSpc0=0
 WaveClr1=-7249815
 WaveSpc1=1
 WaveClr2=255
 WaveSpc2=0.5
 WaveClr3=65280
-",
-        );
-        assert_eq!(
-            th.waves,
-            vec![
-                (0.0, Color::rgb(0x7f2047)),
-                (0.5, Color::rgb(0xff0000)),
-                (1.0, Color::rgb(0x696091))
-            ]
-        );
+");
+        assert_eq!(th.waves, vec![(0.0, Color::rgb(0x7f2047)), (0.5, Color::rgb(0xff0000)), (1.0, Color::rgb(0x696091))]);
         assert_eq!(palette(&th).waves, th.waves);
         assert!(FlTheme::dark().waves.is_empty());
     }
@@ -747,10 +572,7 @@ WaveClr3=65280
         // FL default-look grid #34444e becomes #22272b under Dark (spec §5), within a few levels.
         let p = DARK.apply(Color::rgb(0x34444e));
         let want = Color::rgb(0x22272b);
-        assert!(
-            p.r.abs_diff(want.r) <= 6 && p.g.abs_diff(want.g) <= 6 && p.b.abs_diff(want.b) <= 6,
-            "{p}"
-        );
+        assert!(p.r.abs_diff(want.r) <= 6 && p.g.abs_diff(want.g) <= 6 && p.b.abs_diff(want.b) <= 6, "{p}");
     }
 
     /// A theme's Lightmode key is ignored (the Light mode option was removed, owner 2026-10-18): Lightmode=0, 1 or no
@@ -761,24 +583,16 @@ WaveClr3=65280
         let dark = Palette::default();
         assert_eq!(palette(&FlTheme::dark()), dark);
         for v in ["0", "1"] {
-            assert_eq!(
-                palette(&FlTheme::parse(&set_key(DARK_TEXT, "Lightmode", v))),
-                dark,
-                "Lightmode={v}"
-            );
+            assert_eq!(palette(&FlTheme::parse(&set_key(DARK_TEXT, "Lightmode", v))), dark, "Lightmode={v}");
         }
-        let lemon =
-            |t: &str| crate::design::palette(crate::Design::Lemon, Some(&FlTheme::parse(t)));
+        let lemon = |t: &str| crate::design::palette(crate::Design::Lemon, Some(&FlTheme::parse(t)));
         let brand = crate::design::palette(crate::Design::Lemon, None);
         assert_eq!(lemon(&set_key(DARK_TEXT, "Lightmode", "0")), brand);
         assert_eq!(lemon(&set_key(DARK_TEXT, "OverrideClips", "1")), brand);
         let night = "Hue=-18\nSaturation=6\nLightness=-57\nContrast=40\nSelected=-4546441\n";
         assert_eq!(lemon(&set_key(night, "Lightmode", "0")), lemon(night));
         assert_ne!(lemon(night), brand);
-        assert_eq!(
-            FlTheme::parse(&set_key(night, "Lightmode", "0")),
-            FlTheme::parse(night)
-        );
+        assert_eq!(FlTheme::parse(&set_key(night, "Lightmode", "0")), FlTheme::parse(night));
     }
 
     /// Without OverrideClips note colours are off (spec: ui/flstheme.md §3).
@@ -792,14 +606,8 @@ WaveClr3=65280
     #[test]
     fn set_key_rewrites_one_line() {
         let text = "\u{feff}Lightmode=1\r\nHue=4\r\n";
-        assert_eq!(
-            set_key(text, "Lightmode", "0"),
-            "\u{feff}Lightmode=0\r\nHue=4\r\n"
-        );
-        assert_eq!(
-            set_key(text, "OverrideClips", "1"),
-            "\u{feff}Lightmode=1\r\nHue=4\r\nOverrideClips=1\r\n"
-        );
+        assert_eq!(set_key(text, "Lightmode", "0"), "\u{feff}Lightmode=0\r\nHue=4\r\n");
+        assert_eq!(set_key(text, "OverrideClips", "1"), "\u{feff}Lightmode=1\r\nHue=4\r\nOverrideClips=1\r\n");
         assert_eq!(set_key("Hue=4", "lightmode", "0"), "Hue=4\nlightmode=0");
         assert_eq!(set_key("", "Lightmode", "0"), "Lightmode=0\n");
     }
@@ -820,33 +628,14 @@ WaveClr3=65280
             (t.pl_lines, t.pr_lines)
         };
         assert_eq!(lines("PLGridContrast=0\nPRGridContrast=50\n"), (0.0, 0.5));
-        assert_eq!(
-            lines("PLGridContrast=200\nPRGridContrast=900\n"),
-            (2.0, 2.0)
-        );
+        assert_eq!(lines("PLGridContrast=200\nPRGridContrast=900\n"), (2.0, 2.0));
         assert_eq!(lines("PLGridContrast=-20\n"), (0.0, 1.0));
         let strong = p("PLGridContrast=200\nPLGridCustom=1\nPLGridback=-13884384\n");
-        assert_eq!(
-            (strong.grid_gap, strong.grid_bar),
-            (strong.grid.shade(-0.25), strong.grid.shade(-0.6)),
-            "the tokens stay"
-        );
-        assert_eq!(
-            strong.pl_line(strong.grid_bar),
-            strong.grid.mix(strong.grid_bar, 2.0)
-        );
-        assert_eq!(
-            p("PLGridContrast=0\n").pl_line(base.grid_bar),
-            base.grid_bar.with_alpha(0)
-        );
-        assert_eq!(
-            p("PRGridContrast=50\n").pr_line(base.pr_bar),
-            base.pr_bar.with_alpha(128)
-        );
-        assert_eq!(
-            (base.pl_line(base.grid_bar), base.pr_line(base.pr_bar)),
-            (base.grid_bar, base.pr_bar)
-        );
+        assert_eq!((strong.grid_gap, strong.grid_bar), (strong.grid.shade(-0.25), strong.grid.shade(-0.6)), "the tokens stay");
+        assert_eq!(strong.pl_line(strong.grid_bar), strong.grid.mix(strong.grid_bar, 2.0));
+        assert_eq!(p("PLGridContrast=0\n").pl_line(base.grid_bar), base.grid_bar.with_alpha(0));
+        assert_eq!(p("PRGridContrast=50\n").pr_line(base.pr_bar), base.pr_bar.with_alpha(128));
+        assert_eq!((base.pl_line(base.grid_bar), base.pr_line(base.pr_bar)), (base.grid_bar, base.pr_bar));
     }
 
     // spec: ui/flstheme.md §3 (BackMode, BackPicFilename)
@@ -855,45 +644,23 @@ WaveClr3=65280
     #[test]
     fn the_workspace_picture_follows_the_back_mode() {
         let pic = |text: &str| palette(&FlTheme::parse(text)).wallpaper;
-        assert_eq!(
-            pic("BackPicFilename= C:\\Pictures\\wall.jpg \n"),
-            Some("C:\\Pictures\\wall.jpg".to_string())
-        );
+        assert_eq!(pic("BackPicFilename= C:\\Pictures\\wall.jpg \n"), Some("C:\\Pictures\\wall.jpg".to_string()));
         for mode in ["0", "2", "3"] {
-            assert_eq!(
-                pic(&format!("BackMode={mode}\nBackPicFilename=wall.png\n")),
-                Some("wall.png".to_string()),
-                "BackMode={mode}"
-            );
+            assert_eq!(pic(&format!("BackMode={mode}\nBackPicFilename=wall.png\n")), Some("wall.png".to_string()), "BackMode={mode}");
         }
-        assert_eq!(
-            pic("BackMode=1\nBackColor=255\nBackPicFilename=wall.png\n"),
-            None
-        );
+        assert_eq!(pic("BackMode=1\nBackColor=255\nBackPicFilename=wall.png\n"), None);
         assert_eq!(pic("BackMode=2\nBackPicFilename=\n"), None);
         assert_eq!(Palette::default().wallpaper, None);
-        let lemon = crate::design::palette(
-            crate::Design::Lemon,
-            Some(&FlTheme::parse("BackPicFilename=wall.png\n")),
-        );
+        let lemon = crate::design::palette(crate::Design::Lemon, Some(&FlTheme::parse("BackPicFilename=wall.png\n")));
         assert_eq!(lemon.wallpaper.as_deref(), Some("wall.png"), "either skin");
     }
 
     #[test]
     fn night_gold_imports() {
-        let t = FlTheme::parse(
-            "\u{feff}Hue=-18\r\nSaturation=6\r\nLightness=-57\r\nContrast=40\r\nSelected=-4546441\r\nPLGridCustom=1\r\nPLGridback=-13884384\r\nUnknownKey=1\r\n",
-        );
+        let t = FlTheme::parse("\u{feff}Hue=-18\r\nSaturation=6\r\nLightness=-57\r\nContrast=40\r\nSelected=-4546441\r\nPLGridCustom=1\r\nPLGridback=-13884384\r\nUnknownKey=1\r\n");
         assert_eq!(t.selected, Some(Color::rgb(0xbaa077)));
         let p = palette(&t);
         assert_eq!(p.grid, Color::rgb(0x20242c));
-        assert_eq!(
-            p.accent,
-            rekey(
-                Palette::default().accent,
-                Color::rgb(0xa8e44a),
-                Color::rgb(0xbaa077)
-            )
-        );
+        assert_eq!(p.accent, rekey(Palette::default().accent, Color::rgb(0xa8e44a), Color::rgb(0xbaa077)));
     }
 }

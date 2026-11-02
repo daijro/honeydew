@@ -12,7 +12,7 @@ use std::f32::consts::PI;
 use os_theme::design::lemon as brand;
 use os_theme::{Color, Palette};
 
-use super::{Dir, KnobLook, State, chevron};
+use super::{chevron, Dir, KnobLook, State};
 use crate::{Canvas, Font, Rect};
 
 /// Whether `t` draws the Lemon shapes.
@@ -63,31 +63,19 @@ pub fn ink_on_lit(t: &Palette) -> Color {
 
 /// Text colour that reads on `col` (dark on light faces, light on dark ones).
 pub fn ink_on(col: Color) -> Color {
-    if col.hsl().2 > 0.62 {
-        brand::COLORED_DARK
-    } else {
-        Color::rgb(0xf4f4f4)
-    }
+    if col.hsl().2 > 0.62 { brand::COLORED_DARK } else { Color::rgb(0xf4f4f4) }
 }
 
 /// Lit (lemon) face: a soft top-light gradient from the highlight to the main colour (the plugin editors' brand look).
 pub fn lit(c: &mut Canvas, r: Rect, radius: f32, hover: bool) {
-    let (top, bottom) = if hover {
-        (brand::HIGHLIGHT, brand::MAIN.mix(brand::HIGHLIGHT, 0.35))
-    } else {
-        (brand::HIGHLIGHT.mix(brand::MAIN, 0.45), brand::MAIN)
-    };
+    let (top, bottom) = if hover { (brand::HIGHLIGHT, brand::MAIN.mix(brand::HIGHLIGHT, 0.35)) } else { (brand::HIGHLIGHT.mix(brand::MAIN, 0.45), brand::MAIN) };
     c.fill_rect_gradient(r, top, bottom, radius);
 }
 
 /// `lit` in the applied theme's highlight (`Palette::brand_lit`).
 pub fn lit_in(c: &mut Canvas, t: &Palette, r: Rect, radius: f32, hover: bool) {
     let (h, m) = (t.brand_lit(brand::HIGHLIGHT), t.brand_lit(brand::MAIN));
-    let (top, bottom) = if hover {
-        (h, m.mix(h, 0.35))
-    } else {
-        (h.mix(m, 0.45), m)
-    };
+    let (top, bottom) = if hover { (h, m.mix(h, 0.35)) } else { (h.mix(m, 0.45), m) };
     c.fill_rect_gradient(r, top, bottom, radius);
 }
 
@@ -139,65 +127,25 @@ pub fn flat_button(c: &mut Canvas, t: &Palette, r: Rect, st: State) {
 
 pub fn arrow_button(c: &mut Canvas, t: &Palette, r: Rect, dir: Dir, st: State) {
     flat_button(c, t, r, st);
-    let col = if st.hover {
-        t.glyph
-    } else {
-        t.glyph.with_alpha(160)
-    };
+    let col = if st.hover { t.glyph } else { t.glyph.with_alpha(160) };
     chevron(c, r.cx().round(), r.cy().round(), 4.0, dir, col);
 }
 
 /// Dropdown combo: rounded dark field, text, a small down chevron.
 pub fn combo(c: &mut Canvas, t: &Palette, r: Rect, text: &str, font: Font, st: State) {
     let base = t.sunken;
-    outlined(
-        c,
-        r,
-        r_btn(t).min(r.h / 2.0),
-        base.shade(-0.2),
-        face(base, st),
-    );
+    outlined(c, r, r_btn(t).min(r.h / 2.0), base.shade(-0.2), face(base, st));
     let lh = c.line_height(font);
-    c.text_clip(
-        font,
-        r.x + 6.0,
-        (r.cy() - lh / 2.0).round(),
-        r.w - 22.0,
-        if st.hover { t.tx(0xffffff) } else { t.text },
-        text,
-    );
-    chevron(
-        c,
-        r.right() - 10.0,
-        r.cy(),
-        3.5,
-        Dir::Down,
-        if st.hover {
-            t.brand_lit(brand::MAIN)
-        } else {
-            t.text_dim
-        },
-    );
+    c.text_clip(font, r.x + 6.0, (r.cy() - lh / 2.0).round(), r.w - 22.0, if st.hover { t.tx(0xffffff) } else { t.text }, text);
+    chevron(c, r.right() - 10.0, r.cy(), 3.5, Dir::Down, if st.hover { t.brand_lit(brand::MAIN) } else { t.text_dim });
 }
 
 /// Number box with a spin mark.
 pub fn value_box(c: &mut Canvas, t: &Palette, r: Rect, text: &str, font: Font, st: State) {
     let base = t.sunken;
-    outlined(
-        c,
-        r,
-        r_small(t).min(r.h / 2.0),
-        base.shade(-0.2),
-        face(base, st),
-    );
+    outlined(c, r, r_small(t).min(r.h / 2.0), base.shade(-0.2), face(base, st));
     let lh = c.line_height(font);
-    c.text_right(
-        font,
-        r.right() - 9.0,
-        (r.cy() - lh / 2.0).round(),
-        if st.hover { t.glyph } else { t.text },
-        text,
-    );
+    c.text_right(font, r.right() - 9.0, (r.cy() - lh / 2.0).round(), if st.hover { t.glyph } else { t.text }, text);
     super::spin_mark(c, r.right() - 4.5, r.cy(), t.text_dim);
 }
 
@@ -222,26 +170,13 @@ pub fn led(c: &mut Canvas, t: &Palette, cx: f32, cy: f32, radius: f32, st: State
     let h = radius - 0.5;
     let r = Rect::new(cx - h, cy - h, 2.0 * h, 2.0 * h);
     let rad = (radius * 0.45).max(2.0);
-    let rim = if st.hover {
-        t.brand_grey(brand::DARK_HIGHLIGHT).shade(0.15)
-    } else {
-        t.toolbar_line.shade(-0.2)
-    };
+    let rim = if st.hover { t.brand_grey(brand::DARK_HIGHLIGHT).shade(0.15) } else { t.toolbar_line.shade(-0.2) };
     c.fill_rrect(r, rad, rim);
     let inner = r.inset(1.0);
     if st.on {
-        c.fill_rect_gradient(
-            inner,
-            t.brand_led(brand::HIGHLIGHT),
-            t.brand_led(brand::MAIN),
-            rad - 1.0,
-        );
+        c.fill_rect_gradient(inner, t.brand_led(brand::HIGHLIGHT), t.brand_led(brand::MAIN), rad - 1.0);
     } else {
-        c.fill_rrect(
-            inner,
-            rad - 1.0,
-            t.brand_led(brand::COLORED_DARK).mix(t.toolbar_line, 0.35),
-        );
+        c.fill_rrect(inner, rad - 1.0, t.brand_led(brand::COLORED_DARK).mix(t.toolbar_line, 0.35));
     }
 }
 
@@ -254,33 +189,15 @@ pub fn focus_frame(c: &mut Canvas, t: &Palette, r: Rect, width: f32) {
 
 /// Knobs stay round: a dark disc, a track ring, the value as a lemon arc and a light pointer.
 #[allow(clippy::too_many_arguments)]
-pub fn knob(
-    c: &mut Canvas,
-    t: &Palette,
-    cx: f32,
-    cy: f32,
-    r: f32,
-    value: f32,
-    bipolar: bool,
-    look: KnobLook,
-    st: State,
-) {
+pub fn knob(c: &mut Canvas, t: &Palette, cx: f32, cy: f32, r: f32, value: f32, bipolar: bool, look: KnobLook, st: State) {
     let v = value.clamp(0.0, 1.0);
     let start = 0.75 * PI;
     let sweep = 1.5 * PI;
     let a = start + sweep * v;
-    let (a0, a1) = if bipolar {
-        (start + sweep / 2.0, a)
-    } else {
-        (start, a)
-    };
+    let (a0, a1) = if bipolar { (start + sweep / 2.0, a) } else { (start, a) };
     let span = (a1 - a0).abs();
     let off = st.disabled;
-    let value_col = if off {
-        t.brand_grey(brand::DARK_HIGHLIGHT)
-    } else {
-        t.brand_lit(brand::MAIN)
-    };
+    let value_col = if off { t.brand_grey(brand::DARK_HIGHLIGHT) } else { t.brand_lit(brand::MAIN) };
     let track = t.toolbar_line.shade(-0.1);
     // Ring radius, ring width, disc radius.
     let (ring, w, disc) = match look {
@@ -299,33 +216,11 @@ pub fn knob(
     if show_arc && span > 0.01 {
         c.arc(cx, cy, ring, a0.min(a1), span, w, value_col);
     }
-    let base = if st.hover && !off {
-        Color::rgb(0x505050)
-    } else {
-        Color::rgb(0x454545)
-    };
-    c.fill_rect_gradient(
-        Rect::new(cx - disc, cy - disc, 2.0 * disc, 2.0 * disc),
-        base.shade(0.06),
-        base.shade(-0.18),
-        disc,
-    );
-    let pc = if off {
-        t.text_faint
-    } else if st.hover {
-        Color::rgb(0xffffff)
-    } else {
-        t.glyph
-    };
+    let base = if st.hover && !off { Color::rgb(0x505050) } else { Color::rgb(0x454545) };
+    c.fill_rect_gradient(Rect::new(cx - disc, cy - disc, 2.0 * disc, 2.0 * disc), base.shade(0.06), base.shade(-0.18), disc);
+    let pc = if off { t.text_faint } else if st.hover { Color::rgb(0xffffff) } else { t.glyph };
     let (p0, p1) = (disc * 0.25, (disc - 1.5).max(1.0));
-    c.line(
-        cx + p0 * a.cos(),
-        cy + p0 * a.sin(),
-        cx + p1 * a.cos(),
-        cy + p1 * a.sin(),
-        (disc * 0.22).clamp(1.4, 2.2),
-        pc,
-    );
+    c.line(cx + p0 * a.cos(), cy + p0 * a.sin(), cx + p1 * a.cos(), cy + p1 * a.sin(), (disc * 0.22).clamp(1.4, 2.2), pc);
 }
 
 /// Fader cap centred at (cx, cy) (same 14 x 23 footprint as Classic): rounded, with a centre line that turns
@@ -333,57 +228,26 @@ pub fn knob(
 pub fn fader_handle(c: &mut Canvas, t: &Palette, cx: f32, cy: f32, selected: bool, st: State) {
     let h = Rect::new(cx - 7.0, cy - 11.0, 14.0, 23.0);
     c.fill_rrect(h.outset(1.0), 5.0, Color::rgb(0x161616));
-    let base = if st.hover || st.pressed {
-        Color::rgb(0x6a6a6a)
-    } else {
-        Color::rgb(0x5c5c5c)
-    };
+    let base = if st.hover || st.pressed { Color::rgb(0x6a6a6a) } else { Color::rgb(0x5c5c5c) };
     c.fill_rect_gradient(h, base.shade(0.08), base.shade(-0.25), 4.0);
-    let line = if selected {
-        t.brand_sel(brand::MAIN)
-    } else {
-        Color::rgb(0xdedede)
-    };
+    let line = if selected { t.brand_sel(brand::MAIN) } else { Color::rgb(0xdedede) };
     c.fill_rrect(Rect::new(h.x + 2.0, cy - 1.0, h.w - 4.0, 2.0), 1.0, line);
 }
 
 // ---------------------------------------------------------------- scrolling
 
-pub fn scrollbar(
-    c: &mut Canvas,
-    t: &Palette,
-    track: Rect,
-    vertical: bool,
-    pos: f32,
-    view: f32,
-    total: f32,
-    st: State,
-) {
+pub fn scrollbar(c: &mut Canvas, t: &Palette, track: Rect, vertical: bool, pos: f32, view: f32, total: f32, st: State) {
     c.fill_rect(track, t.scrollbar);
     let len = if vertical { track.h } else { track.w };
     let (off, tl) = super::thumb(len, pos, view, total);
-    let r = if vertical {
-        Rect::new(track.x + 2.0, track.y + off + 1.0, track.w - 4.0, tl - 2.0)
-    } else {
-        Rect::new(track.x + off + 1.0, track.y + 2.0, tl - 2.0, track.h - 4.0)
-    };
-    c.fill_rrect(
-        r,
-        (r.w.min(r.h) / 2.0).max(0.0),
-        super::scroll_thumb(t, st, super::high_visibility()),
-    );
+    let r = if vertical { Rect::new(track.x + 2.0, track.y + off + 1.0, track.w - 4.0, tl - 2.0) } else { Rect::new(track.x + off + 1.0, track.y + 2.0, tl - 2.0, track.h - 4.0) };
+    c.fill_rrect(r, (r.w.min(r.h) / 2.0).max(0.0), super::scroll_thumb(t, st, super::high_visibility()));
 }
 
 /// The scroll bar thumb's own colour (`super::scroll_thumb` without high visibility).
 pub fn scroll_thumb(t: &Palette, st: State) -> Color {
     let hi = t.brand_grey(brand::DARK_HIGHLIGHT);
-    if st.pressed {
-        hi.shade(0.15)
-    } else if st.hover {
-        hi
-    } else {
-        t.overview
-    }
+    if st.pressed { hi.shade(0.15) } else if st.hover { hi } else { t.overview }
 }
 
 // ---------------------------------------------------------------- windows and popups
@@ -395,11 +259,7 @@ pub fn window(c: &mut Canvas, t: &Palette, r: Rect) {
 
 /// The client area well inside a floating window frame (rounded at the bottom like the window).
 pub fn client(c: &mut Canvas, t: &Palette, r: Rect) {
-    c.fill_rrect(
-        r,
-        (r_panel(t) - 3.0).max(2.0),
-        t.window_border.mix(t.window_title, 0.3),
-    );
+    c.fill_rrect(r, (r_panel(t) - 3.0).max(2.0), t.window_border.mix(t.window_title, 0.3));
 }
 
 /// Popup / dropdown panel body (no shadow: it would paint outside the popup's damage rect).
@@ -410,24 +270,12 @@ pub fn popup(c: &mut Canvas, t: &Palette, r: Rect) {
 
 /// Hovered row of a list or menu: an inset rounded bar in the coloured dark.
 pub fn row_highlight(c: &mut Canvas, t: &Palette, r: Rect) {
-    c.fill_rrect(
-        Rect::new(r.x + 3.0, r.y, r.w - 6.0, r.h),
-        4.0_f32.min(r.h / 2.0),
-        t.menu_pop_hi,
-    );
+    c.fill_rrect(Rect::new(r.x + 3.0, r.y, r.w - 6.0, r.h), 4.0_f32.min(r.h / 2.0), t.menu_pop_hi);
 }
 
 /// Window button hover face (minimize / maximize / close).
 pub fn window_button_hover(c: &mut Canvas, t: &Palette, b: Rect, close: bool) {
-    c.fill_rrect(
-        b,
-        4.0,
-        if close {
-            t.record.with_alpha(200)
-        } else {
-            t.button_hi
-        },
-    );
+    c.fill_rrect(b, 4.0, if close { t.record.with_alpha(200) } else { t.button_hi });
 }
 
 // ---------------------------------------------------------------- DAW parts
@@ -435,60 +283,24 @@ pub fn window_button_hover(c: &mut Canvas, t: &Palette, b: Rect, close: bool) {
 /// Step button of the channel rack. `odd` = odd group of four, `dim` = past the pattern end, `playing` = the
 /// step playing now.
 #[allow(clippy::too_many_arguments)]
-pub fn step(
-    c: &mut Canvas,
-    t: &Palette,
-    r: Rect,
-    on: bool,
-    odd: bool,
-    dim: bool,
-    hover: bool,
-    playing: bool,
-) {
+pub fn step(c: &mut Canvas, t: &Palette, r: Rect, on: bool, odd: bool, dim: bool, hover: bool, playing: bool) {
     let rad = r_small(t);
-    let (a, b) = if dim {
-        (t.step_dim_a, t.step_dim_b)
-    } else {
-        (t.step_a, t.step_b)
-    };
+    let (a, b) = if dim { (t.step_dim_a, t.step_dim_b) } else { (t.step_a, t.step_b) };
     let off = if odd { b } else { a };
     let (main, high) = (t.brand_sel(brand::MAIN), t.brand_sel(brand::HIGHLIGHT));
     if on {
-        let (top, bottom) = if dim {
-            (main.mix(off, 0.45), main.mix(off, 0.55))
-        } else {
-            (high.mix(main, 0.5), main)
-        };
+        let (top, bottom) = if dim { (main.mix(off, 0.45), main.mix(off, 0.55)) } else { (high.mix(main, 0.5), main) };
         c.fill_rect_gradient(r, if hover { high } else { top }, bottom, rad);
         if playing {
-            c.fill_rrect(
-                Rect::new(r.x + 2.0, r.bottom() - 4.0, r.w - 4.0, 2.0),
-                1.0,
-                t.brand_sel(brand::COLORED_DARK),
-            );
+            c.fill_rrect(Rect::new(r.x + 2.0, r.bottom() - 4.0, r.w - 4.0, 2.0), 1.0, t.brand_sel(brand::COLORED_DARK));
         }
     } else {
-        c.fill_rrect(
-            r,
-            rad,
-            if hover {
-                off.mix(t.brand_grey(brand::DARK_HIGHLIGHT), 0.4)
-            } else {
-                off
-            },
-        );
+        c.fill_rrect(r, rad, if hover { off.mix(t.brand_grey(brand::DARK_HIGHLIGHT), 0.4) } else { off });
     }
 }
 
 /// Channel name button (rack): `col` = the channel colour. Returns the label colour.
-pub fn name_button(
-    c: &mut Canvas,
-    t: &Palette,
-    r: Rect,
-    col: Option<Color>,
-    focused: bool,
-    hover: bool,
-) -> Color {
+pub fn name_button(c: &mut Canvas, t: &Palette, r: Rect, col: Option<Color>, focused: bool, hover: bool) -> Color {
     let base = t.name_button;
     let face_c = match col {
         Some(col) => col.mix(base, 0.6),
@@ -504,33 +316,15 @@ pub fn name_button(
     }
     if let Some(col) = col {
         // A colour tab at the left edge.
-        c.fill_rrect(
-            Rect::new(r.x + 3.0, r.y + 5.0, 3.0, r.h - 10.0),
-            1.5,
-            col.mix(Color::rgb(0xffffff), 0.25),
-        );
+        c.fill_rrect(Rect::new(r.x + 3.0, r.y + 5.0, 3.0, r.h - 10.0), 1.5, col.mix(Color::rgb(0xffffff), 0.25));
     }
     // White on the focused face; dark when a light theme makes the face light.
-    if focused {
-        os_theme::fl::readable(Color::rgb(0xffffff), face_c, 0.45)
-    } else {
-        t.name_text
-    }
+    if focused { os_theme::fl::readable(Color::rgb(0xffffff), face_c, 0.45) } else { t.name_text }
 }
 
 /// A small control box (rack mixer-track and loop boxes, pattern length).
 pub fn small_box(c: &mut Canvas, t: &Palette, r: Rect, face_c: Color, hover: bool) {
-    outlined(
-        c,
-        r,
-        r_small(t).min(r.h / 2.0),
-        face_c.shade(-0.3),
-        if hover {
-            face_c.mix(t.brand_grey(brand::DARK_HIGHLIGHT), 0.3)
-        } else {
-            face_c
-        },
-    );
+    outlined(c, r, r_small(t).min(r.h / 2.0), face_c.shade(-0.3), if hover { face_c.mix(t.brand_grey(brand::DARK_HIGHLIGHT), 0.3) } else { face_c });
 }
 
 /// A piano-roll / mini-roll note body.
@@ -547,22 +341,9 @@ pub fn note(c: &mut Canvas, r: Rect, fill: Color, rim: Color) {
 /// Track header of the playlist: a rounded tile with an optional colour tab.
 pub fn track_header(c: &mut Canvas, t: &Palette, r: Rect, col: Option<Color>, hover: bool) {
     let rad = r_btn(t).min(r.h / 2.0);
-    c.fill_rrect(
-        r,
-        rad,
-        if hover {
-            t.track_header
-                .mix(t.brand_grey(brand::DARK_HIGHLIGHT), 0.25)
-        } else {
-            t.track_header
-        },
-    );
+    c.fill_rrect(r, rad, if hover { t.track_header.mix(t.brand_grey(brand::DARK_HIGHLIGHT), 0.25) } else { t.track_header });
     if let Some(col) = col {
-        c.fill_rrect(
-            Rect::new(r.x + 3.0, r.y + 4.0, 3.0, (r.h - 8.0).max(2.0)),
-            1.5,
-            col,
-        );
+        c.fill_rrect(Rect::new(r.x + 3.0, r.y + 4.0, 3.0, (r.h - 8.0).max(2.0)), 1.5, col);
     }
 }
 
@@ -607,17 +388,7 @@ pub mod plug {
 /// Plugin knob: a full track ring, the value as an arc in `arc` over 270° (from the centre when `bipolar`), a dark disc
 /// and a light pointer. `r` = outer radius, `w` = ring width. Disabled: no arc, a faint pointer.
 #[allow(clippy::too_many_arguments)]
-pub fn dial(
-    c: &mut Canvas,
-    cx: f32,
-    cy: f32,
-    r: f32,
-    w: f32,
-    value: f32,
-    bipolar: bool,
-    arc: Color,
-    st: State,
-) {
+pub fn dial(c: &mut Canvas, cx: f32, cy: f32, r: f32, w: f32, value: f32, bipolar: bool, arc: Color, st: State) {
     let v = value.clamp(0.0, 1.0);
     let (start, sweep) = (0.75 * PI, 1.5 * PI);
     let a = start + sweep * v;
@@ -625,44 +396,20 @@ pub fn dial(
     c.arc(cx, cy, ring, start, sweep, w, plug::TRACK);
     let a0 = if bipolar { start + sweep / 2.0 } else { start };
     if !st.disabled && (a - a0).abs() > 0.01 {
-        let col = if st.hover || st.pressed {
-            arc.mix(Color::rgb(0xffffff), 0.2)
-        } else {
-            arc
-        };
+        let col = if st.hover || st.pressed { arc.mix(Color::rgb(0xffffff), 0.2) } else { arc };
         c.arc(cx, cy, ring, a0.min(a), (a - a0).abs(), w, col);
     }
     let disc = r - w - 1.5;
     dial_disc(c, cx, cy, disc, st);
-    let pc = if st.disabled {
-        plug::FAINT
-    } else {
-        Color::rgb(0xe6e6e6)
-    };
+    let pc = if st.disabled { plug::FAINT } else { Color::rgb(0xe6e6e6) };
     let (p0, p1) = (disc * 0.25, (disc - 1.5).max(1.0));
-    c.line(
-        cx + p0 * a.cos(),
-        cy + p0 * a.sin(),
-        cx + p1 * a.cos(),
-        cy + p1 * a.sin(),
-        (disc * 0.22).clamp(1.4, 2.2),
-        pc,
-    );
+    c.line(cx + p0 * a.cos(), cy + p0 * a.sin(), cx + p1 * a.cos(), cy + p1 * a.sin(), (disc * 0.22).clamp(1.4, 2.2), pc);
 }
 
 /// The dark disc of a plugin knob (lighter on hover).
 pub fn dial_disc(c: &mut Canvas, cx: f32, cy: f32, disc: f32, st: State) {
-    let (top, bottom) = if (st.hover || st.pressed) && !st.disabled {
-        (0x5c5c5c, 0x404040)
-    } else {
-        (0x525252, 0x383838)
-    };
-    c.fill_rect_gradient(
-        Rect::new(cx - disc, cy - disc, 2.0 * disc, 2.0 * disc),
-        Color::rgb(top),
-        Color::rgb(bottom),
-        disc,
-    );
+    let (top, bottom) = if (st.hover || st.pressed) && !st.disabled { (0x5c5c5c, 0x404040) } else { (0x525252, 0x383838) };
+    c.fill_rect_gradient(Rect::new(cx - disc, cy - disc, 2.0 * disc, 2.0 * disc), Color::rgb(top), Color::rgb(bottom), disc);
 }
 
 /// Toggle in place of a round radio (same centre): a 12 px rounded square, lemon when on. Disabled options are an
@@ -670,16 +417,7 @@ pub fn dial_disc(c: &mut Canvas, cx: f32, cy: f32, disc: f32, st: State) {
 pub fn toggle(c: &mut Canvas, cx: f32, cy: f32, on: bool, st: State) {
     let r = Rect::new(cx - 6.0, cy - 6.0, 12.0, 12.0);
     if st.disabled {
-        c.stroke_rrect(
-            r.inset(0.5),
-            3.5,
-            1.0,
-            if st.hover {
-                Color::rgb(0x5f5f5f)
-            } else {
-                Color::rgb(0x4f4f4f)
-            },
-        );
+        c.stroke_rrect(r.inset(0.5), 3.5, 1.0, if st.hover { Color::rgb(0x5f5f5f) } else { Color::rgb(0x4f4f4f) });
         if on {
             c.fill_rrect(r.inset(3.0), 2.0, Color::rgb(0x6e6436));
         }
@@ -687,34 +425,11 @@ pub fn toggle(c: &mut Canvas, cx: f32, cy: f32, on: bool, st: State) {
     }
     if on {
         c.fill_rrect(r, 4.0, brand::DEEP);
-        let (top, bottom) = if st.hover {
-            (
-                Color::rgb(0xffffff).mix(brand::HIGHLIGHT, 0.5),
-                brand::HIGHLIGHT.mix(brand::MAIN, 0.5),
-            )
-        } else {
-            (brand::HIGHLIGHT, brand::MAIN)
-        };
+        let (top, bottom) = if st.hover { (Color::rgb(0xffffff).mix(brand::HIGHLIGHT, 0.5), brand::HIGHLIGHT.mix(brand::MAIN, 0.5)) } else { (brand::HIGHLIGHT, brand::MAIN) };
         c.fill_rect_gradient(r.inset(1.0), top, bottom, 3.0);
     } else {
-        c.fill_rrect(
-            r,
-            4.0,
-            if st.hover {
-                Color::rgb(0x111111)
-            } else {
-                plug::FIELD_LINE
-            },
-        );
-        c.fill_rrect(
-            r.inset(1.0),
-            3.0,
-            if st.hover {
-                Color::rgb(0x363636)
-            } else {
-                Color::rgb(0x2a2a2a)
-            },
-        );
+        c.fill_rrect(r, 4.0, if st.hover { Color::rgb(0x111111) } else { plug::FIELD_LINE });
+        c.fill_rrect(r.inset(1.0), 3.0, if st.hover { Color::rgb(0x363636) } else { Color::rgb(0x2a2a2a) });
     }
 }
 
@@ -736,13 +451,7 @@ pub fn plug_well(c: &mut Canvas, r: Rect, radius: f32) {
 
 /// Field (list box, button group): outlined dark rounded box; hover lifts it, pressed darkens it.
 pub fn field(c: &mut Canvas, r: Rect, st: State) {
-    let fill = if st.pressed {
-        Color::rgb(0x1f1f1f)
-    } else if st.hover {
-        Color::rgb(0x2f2f2f)
-    } else {
-        plug::FIELD
-    };
+    let fill = if st.pressed { Color::rgb(0x1f1f1f) } else if st.hover { Color::rgb(0x2f2f2f) } else { plug::FIELD };
     outlined(c, r, 6.0_f32.min(r.h / 2.0), plug::FIELD_LINE, fill);
 }
 
@@ -750,16 +459,7 @@ pub fn field(c: &mut Canvas, r: Rect, st: State) {
 /// only an outline (olive when on, as a disabled `toggle`). Returns the colour for its label or glyph.
 pub fn plug_button(c: &mut Canvas, r: Rect, radius: f32, st: State) -> Color {
     if st.disabled {
-        c.stroke_rrect(
-            r.inset(0.5),
-            (radius - 0.5).max(0.0),
-            1.0,
-            if st.on {
-                Color::rgb(0x6e6436)
-            } else {
-                plug::FACE
-            },
-        );
+        c.stroke_rrect(r.inset(0.5), (radius - 0.5).max(0.0), 1.0, if st.on { Color::rgb(0x6e6436) } else { plug::FACE });
         return plug::OFF;
     }
     if st.on {
@@ -767,19 +467,9 @@ pub fn plug_button(c: &mut Canvas, r: Rect, radius: f32, st: State) -> Color {
         lit(c, r.inset(1.0), (radius - 1.0).max(0.0), st.hover);
         return brand::COLORED_DARK;
     }
-    let fill = if st.pressed {
-        Color::rgb(0x3a3a3a)
-    } else if st.hover {
-        Color::rgb(0x525252)
-    } else {
-        plug::FACE
-    };
+    let fill = if st.pressed { Color::rgb(0x3a3a3a) } else if st.hover { Color::rgb(0x525252) } else { plug::FACE };
     outlined(c, r, radius, plug::FACE_LINE, fill);
-    if st.hover {
-        Color::rgb(0xffffff)
-    } else {
-        brand::TEXT
-    }
+    if st.hover { Color::rgb(0xffffff) } else { brand::TEXT }
 }
 
 /// Text drawn letter by letter with `track` px between letters, left edge at `x`, top at `y`; returns its width.
@@ -800,10 +490,7 @@ pub fn spaced(c: &mut Canvas, f: Font, x: f32, y: f32, col: Color, s: &str, trac
 /// Width of [`spaced`] text.
 pub fn spaced_width(c: &mut Canvas, f: Font, s: &str, track: f32) -> f32 {
     let n = s.chars().count();
-    s.chars()
-        .map(|ch| c.text_width(f, ch.encode_utf8(&mut [0; 4])))
-        .sum::<f32>()
-        + track * n.saturating_sub(1) as f32
+    s.chars().map(|ch| c.text_width(f, ch.encode_utf8(&mut [0; 4]))).sum::<f32>() + track * n.saturating_sub(1) as f32
 }
 
 /// The small lemon drawn next to plugin wordmarks: a tilted oval with a nub at each end, `s` = half its length.
@@ -826,17 +513,10 @@ pub fn lemon_mark(c: &mut Canvas, cx: f32, cy: f32, s: f32, col: Color) {
 /// A plugin wordmark: the lemon mark and "LEMON" small in lemon above `name` large and grey, right-aligned at
 /// `right` (or left-aligned at `right` when `left`). `top` = top of the small line.
 pub fn wordmark(c: &mut Canvas, x: f32, top: f32, left: bool, name: &str, big: Font, small: Font) {
-    let (wn, ws) = (
-        spaced_width(c, big, name, 3.0),
-        spaced_width(c, small, "LEMON", 3.0),
-    );
+    let (wn, ws) = (spaced_width(c, big, name, 3.0), spaced_width(c, small, "LEMON", 3.0));
     let lh_s = c.line_height(small);
     let x0 = if left { x } else { x - wn };
-    let sx = if left {
-        x0 + 12.0
-    } else {
-        (x - ws).max(x0 + 12.0)
-    };
+    let sx = if left { x0 + 12.0 } else { (x - ws).max(x0 + 12.0) };
     lemon_mark(c, sx - 8.0, top + lh_s / 2.0, 4.5, brand::MAIN);
     spaced(c, small, sx, top, brand::MAIN, "LEMON", 3.0);
     spaced(c, big, x0, top + lh_s - 2.0, plug::WORDMARK, name, 3.0);
@@ -845,29 +525,14 @@ pub fn wordmark(c: &mut Canvas, x: f32, top: f32, left: bool, name: &str, big: F
 /// A text tab of a set (envelope targets), `x` = the text's left edge: the chosen one is a dark rounded pill with its
 /// name in `col`.
 #[allow(clippy::too_many_arguments)]
-pub fn text_tab(
-    c: &mut Canvas,
-    cell: Rect,
-    x: f32,
-    name: &str,
-    font: Font,
-    col: Color,
-    active: bool,
-    st: State,
-) {
+pub fn text_tab(c: &mut Canvas, cell: Rect, x: f32, name: &str, font: Font, col: Color, active: bool, st: State) {
     let pill = Rect::new(cell.x, cell.y + 4.0, cell.w, cell.h - 8.0);
     if active {
         outlined(c, pill, 7.0, plug::FIELD_LINE, plug::FIELD);
     } else if st.hover {
         c.fill_rrect(pill, 7.0, Color::rgb(0x333333));
     }
-    let ink = if active {
-        col
-    } else if st.hover {
-        brand::TEXT
-    } else {
-        plug::DIM
-    };
+    let ink = if active { col } else if st.hover { brand::TEXT } else { plug::DIM };
     let lh = c.line_height(font);
     c.text(font, x, (cell.cy() - lh / 2.0).round(), ink, name);
 }
@@ -886,27 +551,13 @@ pub fn choice_button(c: &mut Canvas, r: Rect, on: bool, col: Color, st: State) -
     } else if st.hover {
         c.fill_rrect(r, 5.0, Color::rgb(0x3d3d3d));
     }
-    if on {
-        col
-    } else if st.hover {
-        brand::TEXT
-    } else {
-        plug::DIM
-    }
+    if on { col } else if st.hover { brand::TEXT } else { plug::DIM }
 }
 
 /// The page strip of a standalone plugin editor (`r` = the strip row): the chosen page's cell lit lemon. `icon`
 /// paints page `i`'s icon centred at (x, y) in the given colour.
 #[allow(clippy::too_many_arguments)]
-pub fn page_strip(
-    c: &mut Canvas,
-    r: Rect,
-    pages: u8,
-    active: u8,
-    hover: Option<u8>,
-    cell_x: &dyn Fn(u8) -> f32,
-    icon: &mut dyn FnMut(&mut Canvas, u8, f32, f32, Color),
-) {
+pub fn page_strip(c: &mut Canvas, r: Rect, pages: u8, active: u8, hover: Option<u8>, cell_x: &dyn Fn(u8) -> f32, icon: &mut dyn FnMut(&mut Canvas, u8, f32, f32, Color)) {
     c.fill_rect(r, plug::STRIP);
     c.fill_rect(Rect::new(r.x, r.bottom() - 1.0, r.w, 1.0), plug::STRIP_LINE);
     for i in 0..pages {
@@ -918,13 +569,7 @@ pub fn page_strip(
         } else if hover == Some(i) {
             c.fill_rrect(cell, 8.0, Color::rgb(0x333333));
         }
-        let col = if on {
-            brand::COLORED_DARK
-        } else if hover == Some(i) {
-            brand::TEXT
-        } else {
-            plug::DIM
-        };
+        let col = if on { brand::COLORED_DARK } else if hover == Some(i) { brand::TEXT } else { plug::DIM };
         icon(c, i, cell.cx(), cell.cy(), col);
     }
 }
@@ -939,63 +584,17 @@ mod tests {
         let mut c = Canvas::new(220, 140, 1.5).unwrap();
         let t = os_theme::design::palette(Design::Lemon, None);
         assert!(on(&t));
-        for st in [
-            State::NORMAL,
-            State::hover(true),
-            State::new(false, true, false),
-            State::new(false, false, true),
-            State::NORMAL.with_disabled(true),
-        ] {
+        for st in [State::NORMAL, State::hover(true), State::new(false, true, false), State::new(false, false, true), State::NORMAL.with_disabled(true)] {
             super::super::button(&mut c, &t, Rect::new(2.0, 2.0, 30.0, 33.0), st);
             super::super::led(&mut c, &t, 50.0, 20.0, 6.0, st);
-            for look in [
-                KnobLook::Ring,
-                KnobLook::Ball,
-                KnobLook::Row,
-                KnobLook::Mixer {
-                    halo: 15.0,
-                    arc: true,
-                },
-            ] {
+            for look in [KnobLook::Ring, KnobLook::Ball, KnobLook::Row, KnobLook::Mixer { halo: 15.0, arc: true }] {
                 super::super::knob(&mut c, &t, 80.0, 30.0, 10.0, 0.3, true, look, st);
             }
-            super::super::combo(
-                &mut c,
-                &t,
-                Rect::new(2.0, 60.0, 100.0, 23.0),
-                "All",
-                Font::new(15),
-                st,
-            );
-            super::super::scrollbar(
-                &mut c,
-                &t,
-                Rect::new(110.0, 2.0, 10.0, 100.0),
-                true,
-                5.0,
-                10.0,
-                40.0,
-                st,
-            );
+            super::super::combo(&mut c, &t, Rect::new(2.0, 60.0, 100.0, 23.0), "All", Font::new(15), st);
+            super::super::scrollbar(&mut c, &t, Rect::new(110.0, 2.0, 10.0, 100.0), true, 5.0, 10.0, 40.0, st);
             super::super::fader_handle(&mut c, &t, 150.0, 50.0, st.on, st);
-            step(
-                &mut c,
-                &t,
-                Rect::new(160.0, 90.0, 13.0, 19.0),
-                st.on,
-                true,
-                false,
-                st.hover,
-                st.on,
-            );
-            name_button(
-                &mut c,
-                &t,
-                Rect::new(10.0, 100.0, 80.0, 26.0),
-                Some(Color::rgb(0x8040c0)),
-                st.on,
-                st.hover,
-            );
+            step(&mut c, &t, Rect::new(160.0, 90.0, 13.0, 19.0), st.on, true, false, st.hover, st.on);
+            name_button(&mut c, &t, Rect::new(10.0, 100.0, 80.0, 26.0), Some(Color::rgb(0x8040c0)), st.on, st.hover);
         }
         popup(&mut c, &t, Rect::new(120.0, 80.0, 90.0, 50.0));
     }

@@ -88,11 +88,7 @@ impl Lfo {
             return 0.0;
         }
         let tl = t - self.delay;
-        let fade = if self.attack > 0.0 {
-            (tl / self.attack).min(1.0)
-        } else {
-            1.0
-        };
+        let fade = if self.attack > 0.0 { (tl / self.attack).min(1.0) } else { 1.0 };
         self.amount * fade * self.wave(self.hz * tl)
     }
 }
@@ -113,9 +109,7 @@ pub struct Target {
 impl Target {
     /// Envelope level × amount plus the LFO at time `t` (stored units), `None` once a volume envelope has ended.
     fn mod_at(&self, t: f64, off: Option<f64>) -> f64 {
-        let e = self
-            .env
-            .map_or(0.0, |e| e.amount * e.level(t, off).unwrap_or(0.0));
+        let e = self.env.map_or(0.0, |e| e.amount * e.level(t, off).unwrap_or(0.0));
         e + self.lfo.value(t)
     }
 
@@ -147,10 +141,7 @@ pub struct Block {
 
 impl Default for Block {
     fn default() -> Self {
-        let osc = |semis: f64| Osc {
-            semis,
-            ..Osc::default()
-        };
+        let osc = |semis: f64| Osc { semis, ..Osc::default() };
         Block {
             osc: [osc(0.0), osc(-12.0), osc(-24.0)],
             m2: 0.5,
@@ -170,10 +161,7 @@ impl Default for Block {
 impl Block {
     /// No filter: cutoff 256, resonance 0 and nothing modulating them (spec §2.7).
     pub fn filter_off(&self) -> bool {
-        self.cutoff >= 256.0
-            && self.resonance <= 0.0
-            && !self.targets[T_CUT].modulates()
-            && !self.targets[T_RES].modulates()
+        self.cutoff >= 256.0 && self.resonance <= 0.0 && !self.targets[T_CUT].modulates() && !self.targets[T_RES].modulates()
     }
 }
 
@@ -345,12 +333,7 @@ impl Wave {
         let n = self.pts.len();
         let x = u * n as f64;
         let i = (x as usize).min(n - 1);
-        (
-            i,
-            x - i as f64,
-            f64::from(self.pts[i]),
-            f64::from(self.pts[(i + 1) % n]),
-        )
+        (i, x - i as f64, f64::from(self.pts[i]), f64::from(self.pts[(i + 1) % n]))
     }
 
     /// The wave at phase `u`.
@@ -391,15 +374,7 @@ fn log_interp(pts: &[(f64, f64)], x: f64) -> f64 {
 
 /// Natural frequency of the LP-family types (1..5) for a stored cutoff.
 pub fn lp_hz(c: f64) -> f64 {
-    log_interp(
-        &[
-            (32.0, 405.0),
-            (64.0, 837.0),
-            (128.0, 2727.0),
-            (192.0, 8203.0),
-        ],
-        c,
-    )
+    log_interp(&[(32.0, 405.0), (64.0, 837.0), (128.0, 2727.0), (192.0, 8203.0)], c)
 }
 
 /// Damping of the LP-family types for a stored resonance.
@@ -443,12 +418,7 @@ impl SvfCoefs {
     fn new(hz: f64, k: f64, sr: f64) -> Self {
         let g = (PI * hz.clamp(5.0, sr * 0.49) / sr).tan();
         let a1 = 1.0 / (1.0 + g * (g + k));
-        SvfCoefs {
-            a1,
-            a2: g * a1,
-            a3: g * g * a1,
-            k,
-        }
+        SvfCoefs { a1, a2: g * a1, a3: g * g * a1, k }
     }
 }
 
@@ -665,11 +635,7 @@ impl Engine {
     }
 
     pub fn note_off(&mut self, key: u8) {
-        for v in self
-            .voices
-            .iter_mut()
-            .filter(|v| v.key == key && v.off.is_none())
-        {
+        for v in self.voices.iter_mut().filter(|v| v.key == key && v.off.is_none()) {
             v.off = Some(v.n);
         }
     }
@@ -677,11 +643,7 @@ impl Engine {
     /// Note-off of one voice by its host id (falls back to the key).
     pub fn note_off_id(&mut self, key: u8, id: Option<i32>) {
         if let Some(i) = id {
-            if let Some(v) = self
-                .voices
-                .iter_mut()
-                .find(|v| v.id == Some(i) && v.off.is_none())
-            {
+            if let Some(v) = self.voices.iter_mut().find(|v| v.id == Some(i) && v.off.is_none()) {
                 v.off = Some(v.n);
                 return;
             }
@@ -706,11 +668,7 @@ impl Engine {
 
     /// Cuts the voices of `key` with the short fade.
     pub fn choke(&mut self, key: u8) {
-        for v in self
-            .voices
-            .iter_mut()
-            .filter(|v| v.key == key && v.cut.is_none())
-        {
+        for v in self.voices.iter_mut().filter(|v| v.key == key && v.cut.is_none()) {
             v.cut = Some(v.n);
         }
     }
@@ -838,11 +796,7 @@ impl Engine {
                         v.ph[n][s] = p - p.floor();
                     }
                     let mix12 = w[0] * osc[0] + w[1] * osc[1];
-                    let y = if b.am {
-                        mix12 * (1.0 - b.m3 * osc[2])
-                    } else {
-                        (1.0 - b.m3) * mix12 + b.m3 * osc[2]
-                    };
+                    let y = if b.am { mix12 * (1.0 - b.m3 * osc[2]) } else { (1.0 - b.m3) * mix12 + b.m3 * osc[2] };
                     *o = v.filt[s].tick(&co, y) * g;
                 }
                 l[i] += out[0] as f32;
@@ -861,13 +815,7 @@ mod tests {
 
     const SR: f32 = 44100.0;
 
-    fn render(
-        b: &Block,
-        key: u8,
-        vel: f32,
-        frames: usize,
-        off_at: Option<usize>,
-    ) -> (Vec<f32>, Vec<f32>) {
+    fn render(b: &Block, key: u8, vel: f32, frames: usize, off_at: Option<usize>) -> (Vec<f32>, Vec<f32>) {
         let mut e = Engine::new(SR);
         e.note_on(key, vel, None, b);
         let (mut l, mut r) = (vec![0.0; frames], vec![0.0; frames]);
@@ -884,11 +832,7 @@ mod tests {
 
     /// Only osc 1 sounds: mix levels 0.
     fn solo(shape: u8) -> Block {
-        let mut b = Block {
-            m2: 0.0,
-            m3: 0.0,
-            ..Block::default()
-        };
+        let mut b = Block { m2: 0.0, m3: 0.0, ..Block::default() };
         b.osc[0].shape = shape;
         b
     }
@@ -959,19 +903,9 @@ mod tests {
         assert!((sum / n as f64 - 0.625).abs() < 0.01, "{}", sum / n as f64);
         // Noise: rms 1/√3, sides independent.
         let (l, r) = render(&solo(NOISE), 60, 100.0 / 128.0, 44100, None);
-        let rms = (l
-            .iter()
-            .map(|x| f64::from(*x / 0.70711).powi(2))
-            .sum::<f64>()
-            / l.len() as f64)
-            .sqrt();
+        let rms = (l.iter().map(|x| f64::from(*x / 0.70711).powi(2)).sum::<f64>() / l.len() as f64).sqrt();
         assert!((rms - 0.5774).abs() < 0.01, "{rms}");
-        let corr: f64 = l
-            .iter()
-            .zip(&r)
-            .map(|(a, b)| f64::from(*a) * f64::from(*b))
-            .sum::<f64>()
-            / (l.len() as f64 * 0.5 * 0.333);
+        let corr: f64 = l.iter().zip(&r).map(|(a, b)| f64::from(*a) * f64::from(*b)).sum::<f64>() / (l.len() as f64 * 0.5 * 0.333);
         assert!(corr.abs() < 0.05);
     }
 
@@ -981,15 +915,8 @@ mod tests {
         for sh in [SINE, TRIANGLE, SQUARE, SAW, ROUNDED_SAW] {
             for &(u, dt) in &[(0.1, 0.01), (0.49, 0.03), (0.98, 0.05), (0.8, 0.07)] {
                 let steps = 2000;
-                let num: f64 = (0..steps)
-                    .map(|i| wave(sh, (u + dt * (i as f64 + 0.5) / steps as f64).fract()))
-                    .sum::<f64>()
-                    / steps as f64;
-                assert!(
-                    (boxed(sh, u, dt) - num).abs() < 2e-3,
-                    "shape {sh} at {u}: {} vs {num}",
-                    boxed(sh, u, dt)
-                );
+                let num: f64 = (0..steps).map(|i| wave(sh, (u + dt * (i as f64 + 0.5) / steps as f64).fract())).sum::<f64>() / steps as f64;
+                assert!((boxed(sh, u, dt) - num).abs() < 2e-3, "shape {sh} at {u}: {} vs {num}", boxed(sh, u, dt));
             }
         }
         assert!(boxed(SAW, 0.99, 0.02) > -0.5 && boxed(SAW, 0.99, 0.02) < 0.5);
@@ -1036,17 +963,10 @@ mod tests {
         let mut b = solo(SINE);
         b.m3 = 1.0;
         b.am = true;
-        b.osc[2] = Osc {
-            shape: SINE,
-            ..Osc::default()
-        };
+        b.osc[2] = Osc { shape: SINE, ..Osc::default() };
         let (l, _) = render(&b, 60, 100.0 / 128.0, 200, None);
         for (i, x) in l.iter().enumerate().skip(1) {
-            let s = boxed(
-                SINE,
-                (i as f64 * KEY60_HZ / 44100.0).fract(),
-                KEY60_HZ / 44100.0,
-            ) * 0.70711;
+            let s = boxed(SINE, (i as f64 * KEY60_HZ / 44100.0).fract(), KEY60_HZ / 44100.0) * 0.70711;
             assert!((f64::from(*x) - s * (1.0 - s)).abs() < 1e-3);
         }
     }
@@ -1056,11 +976,7 @@ mod tests {
         let b = solo(SQUARE);
         let (l, _) = render(&b, 60, 100.0 / 128.0, 4410, Some(2205));
         let ms = |m: f64| 2205 + (m * 44.1) as usize;
-        assert!(
-            (l[ms(5.0)].abs() / 0.70711 - 0.5).abs() < 0.02,
-            "{}",
-            l[ms(5.0)]
-        );
+        assert!((l[ms(5.0)].abs() / 0.70711 - 0.5).abs() < 0.02, "{}", l[ms(5.0)]);
         assert!((l[ms(2.0)].abs() / 0.70711 - 0.905).abs() < 0.02);
         assert!(l[ms(10.5)..].iter().all(|x| *x == 0.0));
     }
@@ -1068,16 +984,7 @@ mod tests {
     #[test]
     fn volume_envelope_shapes_the_voice_and_ends_it() {
         let mut b = solo(SQUARE);
-        let rec = os_model::Envelope {
-            enabled: true,
-            delay: 100,
-            attack: 2000,
-            hold: 100,
-            decay: 12000,
-            sustain: 0,
-            release: 20000,
-            ..Default::default()
-        };
+        let rec = os_model::Envelope { enabled: true, delay: 100, attack: 2000, hold: 100, decay: 12000, sustain: 0, release: 20000, ..Default::default() };
         b.targets[T_VOL].env = envelope::Params::new(&rec);
         let (l, _) = render(&b, 60, 100.0 / 128.0, 44100, None);
         let at = |ms: f64| l[(ms * 44.1) as usize].abs() / 0.70711;
@@ -1096,35 +1003,13 @@ mod tests {
     #[test]
     fn pitch_envelope_and_lfo_move_the_pitch() {
         let mut b = solo(SINE);
-        let rec = os_model::Envelope {
-            enabled: true,
-            delay: 100,
-            attack: 100,
-            hold: 100,
-            decay: 100,
-            sustain: 128,
-            release: 100,
-            amount: 1200,
-            ..Default::default()
-        };
+        let rec = os_model::Envelope { enabled: true, delay: 100, attack: 100, hold: 100, decay: 100, sustain: 128, release: 100, amount: 1200, ..Default::default() };
         b.targets[T_PITCH].env = envelope::Params::new(&rec);
         let (l, _) = render(&b, 60, 0.78, 22050, None);
-        assert!(
-            (freq(&l[4410..]) - 1046.5).abs() < 0.5,
-            "{}",
-            freq(&l[4410..])
-        );
+        assert!((freq(&l[4410..]) - 1046.5).abs() < 0.5, "{}", freq(&l[4410..]));
         assert!((lfo_hz(32950) - 0.505).abs() < 1e-9);
-        let lfo = Lfo {
-            shape: 0,
-            amount: 100.0,
-            hz: 0.505,
-            ..Lfo::default()
-        };
-        assert!(
-            (lfo.value(0.495) - 100.0).abs() < 0.1,
-            "a quarter period after the start: the top"
-        );
+        let lfo = Lfo { shape: 0, amount: 100.0, hz: 0.505, ..Lfo::default() };
+        assert!((lfo.value(0.495) - 100.0).abs() < 0.1, "a quarter period after the start: the top");
     }
 
     /// The host's tuning moves the voices of its key (all of them without an id, one with), released ones too.
@@ -1137,12 +1022,7 @@ mod tests {
         e.note_on(64, 0.78, Some(3), &b);
         e.note_off_id(60, Some(1));
         e.tune(60, None, 7.0);
-        assert!(
-            e.voices
-                .iter()
-                .filter(|v| v.key == 60)
-                .all(|v| v.tune == 7.0)
-        );
+        assert!(e.voices.iter().filter(|v| v.key == 60).all(|v| v.tune == 7.0));
         e.tune(60, Some(2), -2.0);
         let tunes: Vec<f64> = e.voices.iter().map(|v| v.tune).collect();
         assert_eq!(tunes, vec![7.0, -2.0, 0.0]);
@@ -1153,19 +1033,12 @@ mod tests {
         let (mut l, mut r) = (vec![0.0; 22050], vec![0.0; 22050]);
         e.render(&mut l, &mut r, &b);
         let want = KEY60_HZ * 2f64.powf(7.0 / 12.0);
-        assert!(
-            (freq(&l[2205..]) - want).abs() < 0.5,
-            "{}",
-            freq(&l[2205..])
-        );
+        assert!((freq(&l[2205..]) - want).abs() < 0.5, "{}", freq(&l[2205..]));
     }
 
     #[test]
     fn filter_fits_the_measured_points() {
-        assert!(
-            (lp_hz(64.0) - 837.0).abs() < 1e-6
-                && (lp_hz(160.0) - (2727.0f64 * 8203.0).sqrt()).abs() < 1.0
-        );
+        assert!((lp_hz(64.0) - 837.0).abs() < 1e-6 && (lp_hz(160.0) - (2727.0f64 * 8203.0).sqrt()).abs() < 1.0);
         assert!((lp_damping(128.0) - 0.949).abs() < 1e-9);
         assert!((fast_lp_a(128.0) - 0.03914).abs() < 2e-4);
         assert_eq!(fast_lp_a(256.0), 1.0);
@@ -1185,23 +1058,11 @@ mod tests {
             20.0 * (acc / (n / 2 - 1) as f64 * 2.0).sqrt().log10()
         };
         assert!(gain(1, 128.0, 0.0, 50.0).abs() < 0.5);
-        assert!(
-            (gain(1, 128.0, 0.0, 273.0) + 3.0).abs() < 0.6,
-            "{}",
-            gain(1, 128.0, 0.0, 273.0)
-        );
+        assert!((gain(1, 128.0, 0.0, 273.0) + 3.0).abs() < 0.6, "{}", gain(1, 128.0, 0.0, 273.0));
         // Resonance 256: +13.5 dB at f0.
-        assert!(
-            (gain(1, 128.0, 256.0, 2727.0) - 13.5).abs() < 1.0,
-            "{}",
-            gain(1, 128.0, 256.0, 2727.0)
-        );
+        assert!((gain(1, 128.0, 256.0, 2727.0) - 13.5).abs() < 1.0, "{}", gain(1, 128.0, 256.0, 2727.0));
         // Fast LP c 128: −3 dB near 280 Hz.
-        assert!(
-            (gain(0, 128.0, 0.0, 280.0) + 3.0).abs() < 0.6,
-            "{}",
-            gain(0, 128.0, 0.0, 280.0)
-        );
+        assert!((gain(0, 128.0, 0.0, 280.0) + 3.0).abs() < 0.6, "{}", gain(0, 128.0, 0.0, 280.0));
         // HP passes the top; BS notches f0.
         assert!(gain(3, 128.0, 128.0, 12000.0).abs() < 0.5);
         assert!(gain(4, 128.0, 128.0, 2727.0) < -20.0);
@@ -1215,9 +1076,7 @@ mod tests {
         let (l, r) = render(&b, 60, 100.0 / 128.0, 4410, None);
         assert!(peak(&l) == 0.0 && peak(&r) == 0.0, "no wave: silence");
         // One cycle of a sine in 1000 points.
-        let cycle: Vec<f32> = (0..1000)
-            .map(|i| (2.0 * PI * i as f64 / 1000.0).sin() as f32)
-            .collect();
+        let cycle: Vec<f32> = (0..1000).map(|i| (2.0 * PI * i as f64 / 1000.0).sin() as f32).collect();
         let mut e = Engine::new(SR);
         e.custom = Wave::new(&cycle).map(Arc::new);
         e.note_on(60, 100.0 / 128.0, None, &b);
@@ -1228,23 +1087,14 @@ mod tests {
         let dt = KEY60_HZ / 44100.0;
         for (i, x) in l.iter().enumerate().take(200) {
             let want = boxed(SINE, (i as f64 * dt).fract(), dt) * 0.70711;
-            assert!(
-                (f64::from(*x) - want).abs() < 1e-3,
-                "sample {i}: {x} vs {want}"
-            );
+            assert!((f64::from(*x) - want).abs() < 1e-3, "sample {i}: {x} vs {want}");
         }
         // The average over an interval is the integral of the joined points.
         let w = Wave::new(&[0.0, 1.0, 0.0, -1.0]).unwrap();
         assert_eq!(w.at(0.125), 0.5);
         assert!((w.boxed(0.0, 0.25) - 0.5).abs() < 1e-12);
-        assert!(
-            (w.boxed(0.75, 0.5) - (-0.5 + 0.5) / 2.0).abs() < 1e-12,
-            "across the end of the period"
-        );
-        assert!(
-            w.boxed(0.1, 1.0).abs() < 1e-12,
-            "a whole period averages to the mean"
-        );
+        assert!((w.boxed(0.75, 0.5) - (-0.5 + 0.5) / 2.0).abs() < 1e-12, "across the end of the period");
+        assert!(w.boxed(0.1, 1.0).abs() < 1e-12, "a whole period averages to the mean");
     }
 
     #[test]
@@ -1254,14 +1104,9 @@ mod tests {
         let w = Wave::from_sample(&[1.0, 0.0], &[0.0, 0.0]).unwrap();
         assert_eq!(w.points(), &[0.5, 0.0]);
         // A right side of another length is not used.
-        assert_eq!(
-            Wave::from_sample(&[0.25; 3], &[]).unwrap().points(),
-            &[0.25; 3]
-        );
+        assert_eq!(Wave::from_sample(&[0.25; 3], &[]).unwrap().points(), &[0.25; 3]);
         // A long sample: WAVE_POINTS averages of equal shares.
-        let long: Vec<f32> = (0..WAVE_POINTS * 3)
-            .map(|i| if i % 3 == 0 { 0.9 } else { 0.0 })
-            .collect();
+        let long: Vec<f32> = (0..WAVE_POINTS * 3).map(|i| if i % 3 == 0 { 0.9 } else { 0.0 }).collect();
         let w = Wave::new(&long).unwrap();
         assert_eq!(w.points().len(), WAVE_POINTS);
         assert!(w.points().iter().all(|&p| (p - 0.3).abs() < 1e-6));

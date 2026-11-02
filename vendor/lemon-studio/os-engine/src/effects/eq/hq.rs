@@ -88,11 +88,7 @@ pub struct Decimator {
 
 impl Default for Decimator {
     fn default() -> Self {
-        Decimator {
-            buf: [0.0; 2 * TAPS],
-            pos: 0,
-            count: 0,
-        }
+        Decimator { buf: [0.0; 2 * TAPS], pos: 0, count: 0 }
     }
 }
 
@@ -114,11 +110,7 @@ fn piece(h: &[f32], u: &[f32], t: f32) -> f32 {
 
 impl Decimator {
     fn push(&mut self, x: f32) {
-        self.pos = if self.pos == 0 {
-            TAPS - 1
-        } else {
-            self.pos - 1
-        };
+        self.pos = if self.pos == 0 { TAPS - 1 } else { self.pos - 1 };
         self.buf[self.pos] = x;
         self.buf[self.pos + TAPS] = x;
     }
@@ -132,11 +124,7 @@ impl Decimator {
         self.count += 1;
         let n1 = (2 * p + 1).min(TAPS);
         let t = piece(&h[..n1], &u[..n1], 0.0);
-        if n1 < TAPS {
-            piece(&h[n1..], &u[n1..], t)
-        } else {
-            t
-        }
+        if n1 < TAPS { piece(&h[n1..], &u[n1..], t) } else { t }
     }
 }
 
@@ -152,11 +140,7 @@ mod tests {
         assert_eq!(h[0], 0.0);
         assert_eq!(h[89], ((89.0 * 0.017849958259032916f64).sin() * 0.5) as f32);
         // Every other tap away from the centre is (nearly) 0: a half-band filter.
-        assert!(
-            (0..TAPS)
-                .filter(|&i| i != 89 && (i as i32 - 89) % 2 == 0)
-                .all(|i| h[i].abs() < 1e-15)
-        );
+        assert!((0..TAPS).filter(|&i| i != 89 && (i as i32 - 89) % 2 == 0).all(|i| h[i].abs() < 1e-15));
         // Zero-stuffed doubled samples come back 44 outputs later, scaled by 2 h[89].
         let mut d = Decimator::default();
         let x: Vec<f32> = (0..400).map(|i| ((i as f32) * 0.05).sin() * 0.5).collect();
@@ -164,18 +148,11 @@ mod tests {
         assert!(y[..44].iter().all(|&v| v.abs() < 1e-6));
         for i in 44..400 {
             // Low frequencies pass: within the filter's ripple of the delayed input.
-            assert!(
-                (y[i] - x[i - 44] * (2.0 * h[89])).abs() < 2e-3,
-                "{i}: {} {}",
-                y[i],
-                x[i - 44]
-            );
+            assert!((y[i] - x[i - 44] * (2.0 * h[89])).abs() < 2e-3, "{i}: {} {}", y[i], x[i - 44]);
         }
         // An impulse: the output is the taps at the odd positions times 2.
         let mut d = Decimator::default();
-        let y: Vec<f32> = (0..100)
-            .map(|i| d.down(&h, if i == 0 { 2.0 } else { 0.0 }, 0.0))
-            .collect();
+        let y: Vec<f32> = (0..100).map(|i| d.down(&h, if i == 0 { 2.0 } else { 0.0 }, 0.0)).collect();
         for (n, &v) in y.iter().enumerate() {
             let j = 2 * n + 1;
             assert_eq!(v, if j < TAPS { h[j] * 2.0 } else { 0.0 });
@@ -187,18 +164,10 @@ mod tests {
     fn decimator_sums_in_pieces() {
         let h = decimator_taps();
         let mut d = Decimator::default();
-        let u: Vec<f32> = (0..600)
-            .map(|i| ((i * 7919 % 1000) as f32 / 1000.0) - 0.5)
-            .collect();
+        let u: Vec<f32> = (0..600).map(|i| ((i * 7919 % 1000) as f32 / 1000.0) - 0.5).collect();
         for (n, pair) in u.chunks_exact(2).enumerate() {
             let y = d.down(&h, pair[0], pair[1]);
-            let at = |j: usize| {
-                if 2 * n + 1 >= j {
-                    u[2 * n + 1 - j]
-                } else {
-                    0.0
-                }
-            };
+            let at = |j: usize| if 2 * n + 1 >= j { u[2 * n + 1 - j] } else { 0.0 };
             let p: Vec<f32> = (0..TAPS).map(|j| h[j] * at(j)).collect();
             let n1 = (2 * (n % 128) + 1).min(TAPS);
             let sum = |ps: &[f32], t: f32| {

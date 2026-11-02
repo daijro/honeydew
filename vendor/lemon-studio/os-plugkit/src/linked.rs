@@ -19,10 +19,9 @@ macro_rules! linked_clap_entry {
         #[doc(hidden)]
         mod linked_clap {
             use ::nih_plug::wrapper::clap::{
-                CLAP_PLUGIN_FACTORY_ID, PluginDescriptor, Wrapper, clap_host, clap_plugin,
-                clap_plugin_descriptor, clap_plugin_factory,
+                clap_host, clap_plugin, clap_plugin_descriptor, clap_plugin_factory, PluginDescriptor, Wrapper, CLAP_PLUGIN_FACTORY_ID,
             };
-            use ::std::ffi::{CStr, c_void};
+            use ::std::ffi::{c_void, CStr};
             use ::std::os::raw::c_char;
             use ::std::sync::{Arc, OnceLock};
 
@@ -44,35 +43,18 @@ macro_rules! linked_clap_entry {
                 1
             }
 
-            unsafe extern "C" fn get_plugin_descriptor(
-                _factory: *const clap_plugin_factory,
-                index: u32,
-            ) -> *const clap_plugin_descriptor {
-                if index == 0 {
-                    descriptor().clap_plugin_descriptor()
-                } else {
-                    ::std::ptr::null()
-                }
+            unsafe extern "C" fn get_plugin_descriptor(_factory: *const clap_plugin_factory, index: u32) -> *const clap_plugin_descriptor {
+                if index == 0 { descriptor().clap_plugin_descriptor() } else { ::std::ptr::null() }
             }
 
-            unsafe extern "C" fn create_plugin(
-                _factory: *const clap_plugin_factory,
-                host: *const clap_host,
-                plugin_id: *const c_char,
-            ) -> *const clap_plugin {
+            unsafe extern "C" fn create_plugin(_factory: *const clap_plugin_factory, host: *const clap_host, plugin_id: *const c_char) -> *const clap_plugin {
                 // SAFETY: the host passes a valid C string (CLAP factory contract).
-                if plugin_id.is_null()
-                    || unsafe { CStr::from_ptr(plugin_id) } != descriptor().clap_id()
-                {
+                if plugin_id.is_null() || unsafe { CStr::from_ptr(plugin_id) } != descriptor().clap_id() {
                     return ::std::ptr::null();
                 }
                 // The wrapper's `destroy` takes this reference back (as in nih-plug's own factory).
                 // SAFETY: `Wrapper::new` returns a live Arc; its plugin struct outlives the returned pointer.
-                unsafe {
-                    (*Arc::into_raw(Wrapper::<$plugin_ty>::new(host)))
-                        .clap_plugin
-                        .as_ptr()
-                }
+                unsafe { (*Arc::into_raw(Wrapper::<$plugin_ty>::new(host))).clap_plugin.as_ptr() }
             }
 
             pub extern "C" fn init(_plugin_path: *const c_char) -> bool {
@@ -83,9 +65,7 @@ macro_rules! linked_clap_entry {
 
             pub extern "C" fn get_factory(factory_id: *const c_char) -> *const c_void {
                 // SAFETY: the host passes a valid C string (CLAP entry contract).
-                if !factory_id.is_null()
-                    && unsafe { CStr::from_ptr(factory_id) } == CLAP_PLUGIN_FACTORY_ID
-                {
+                if !factory_id.is_null() && unsafe { CStr::from_ptr(factory_id) } == CLAP_PLUGIN_FACTORY_ID {
                     &FACTORY as *const _ as *const c_void
                 } else {
                     ::std::ptr::null()
@@ -94,12 +74,11 @@ macro_rules! linked_clap_entry {
         }
 
         /// The plugin's CLAP entry table for hosting it inside the same program (no exported symbol).
-        pub static LINKED_CLAP_ENTRY: ::nih_plug::wrapper::clap::clap_plugin_entry =
-            ::nih_plug::wrapper::clap::clap_plugin_entry {
-                clap_version: ::nih_plug::wrapper::clap::CLAP_VERSION,
-                init: Some(self::linked_clap::init),
-                deinit: Some(self::linked_clap::deinit),
-                get_factory: Some(self::linked_clap::get_factory),
-            };
+        pub static LINKED_CLAP_ENTRY: ::nih_plug::wrapper::clap::clap_plugin_entry = ::nih_plug::wrapper::clap::clap_plugin_entry {
+            clap_version: ::nih_plug::wrapper::clap::CLAP_VERSION,
+            init: Some(self::linked_clap::init),
+            deinit: Some(self::linked_clap::deinit),
+            get_factory: Some(self::linked_clap::get_factory),
+        };
     };
 }

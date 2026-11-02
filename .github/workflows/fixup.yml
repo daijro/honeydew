@@ -36,8 +36,8 @@ jobs:
         run: |
           set +e
           {
-            echo '# cargo fmt --all --check'
-            cargo fmt --all --check 2>&1 | head -600
+            echo '# cargo fmt --check'
+            cargo fmt --check 2>&1 | head -600
             echo
             echo '# cargo clippy --workspace --all-targets -- -D warnings'
             cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tail -600
@@ -45,8 +45,9 @@ jobs:
             echo '# cargo test --workspace'
             cargo test --workspace 2>&1 | tail -600
           } > ci-report.txt
-          # Apply the formatting here, so the branch is what `cargo fmt` produces.
-          cargo fmt --all
+          # Apply the formatting here, so the branch is what `cargo fmt` produces (as CI checks it; `--all` would reach
+          # into the excluded `vendor/` tree, which is not ours to reformat).
+          cargo fmt
           exit 0
       - name: Commit
         run: |

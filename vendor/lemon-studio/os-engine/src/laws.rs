@@ -115,9 +115,7 @@ pub fn fine_pitch_cents(fine: u8) -> i32 {
 pub fn glide_ticks(slide: f32, ppq: u16) -> u32 {
     let x = slide.clamp(0.0, 1.0);
     let e = ((f64::from(x) * 27f64.ln()).exp() - 1.0) as f32;
-    let r = (f64::from(e * 48.0) * (1.0 / 26.0))
-        .round_ties_even()
-        .max(0.0) as u32;
+    let r = (f64::from(e * 48.0) * (1.0 / 26.0)).round_ties_even().max(0.0) as u32;
     r * u32::from(ppq / 4) / 48
 }
 
@@ -142,27 +140,12 @@ mod tests {
     #[test]
     fn channel_pan_triangular() {
         let centre = channel_pan(0.0).0;
-        for (p, l, r) in [
-            (-1.0, 1.0, 0.0),
-            (-0.5, 1.0, 0.4999),
-            (-0.25, 1.0, 0.7499),
-            (0.25, 0.75, 1.0),
-            (0.5, 0.5001, 1.0),
-        ] {
+        for (p, l, r) in [(-1.0, 1.0, 0.0), (-0.5, 1.0, 0.4999), (-0.25, 1.0, 0.7499), (0.25, 0.75, 1.0), (0.5, 0.5001, 1.0)] {
             let (gl, gr) = channel_pan_law(p, PanLaw::Triangular);
-            assert!(
-                close(gl / centre, l, 2e-4) && close(gr / centre, r, 2e-4),
-                "{p}: {} {}",
-                gl / centre,
-                gr / centre
-            );
+            assert!(close(gl / centre, l, 2e-4) && close(gr / centre, r, 2e-4), "{p}: {} {}", gl / centre, gr / centre);
         }
         assert_eq!(channel_pan_law(0.0, PanLaw::Triangular), channel_pan(0.0));
-        assert_eq!(
-            channel_pan_law(1.5, PanLaw::Triangular),
-            channel_pan_law(1.0, PanLaw::Triangular),
-            "clamped"
-        );
+        assert_eq!(channel_pan_law(1.5, PanLaw::Triangular), channel_pan_law(1.0, PanLaw::Triangular), "clamped");
         for p in [-1.0, -0.5, -0.1, 0.0, 0.3, 0.5, 1.0] {
             assert_eq!(channel_pan_law(p, PanLaw::Circular), channel_pan(p));
         }
@@ -184,17 +167,9 @@ mod tests {
         assert!(close(m[0][0], 1.0, 1e-12) && close(m[1][1], 1.0, 1e-12));
         assert!(close(m[0][1], 0.0, 1e-12) && close(m[1][0], 0.0, 1e-12));
         let m = mixer_pan(-0.5);
-        assert!(
-            close(m[0][0], 1.0068, 1e-4)
-                && close(m[0][1], 0.2997, 1e-3)
-                && close(m[1][1], 0.5412, 1e-4)
-        );
+        assert!(close(m[0][0], 1.0068, 1e-4) && close(m[0][1], 0.2997, 1e-3) && close(m[1][1], 0.5412, 1e-4));
         let m = mixer_pan(0.25);
-        assert!(
-            close(m[1][1], 1.0499, 1e-4)
-                && close(m[1][0], 0.1260, 1e-4)
-                && close(m[0][0], 0.7857, 1e-4)
-        );
+        assert!(close(m[1][1], 1.0499, 1e-4) && close(m[1][0], 0.1260, 1e-4) && close(m[0][0], 0.7857, 1e-4));
         assert!(close(playback_rate(72, 0), 2.0, 1e-12));
         assert!(close(playback_rate(60, 100), 1.0595, 1e-4));
         assert_eq!(tick_to_frame(96.0, 96, 130.0, 44100), 20354);
@@ -202,10 +177,6 @@ mod tests {
         assert!(close(velocity_gain(128), 2.0527, 1e-3));
         assert!(close(note_pan(96), 0.5, 1e-12) && close(note_pan(0), -1.0, 1e-12));
         // Default template chain: channel default × center pan = 0.38961
-        assert!(close(
-            channel_gain(0.78125) * channel_pan(0.0).0,
-            0.38961,
-            1e-4
-        ));
+        assert!(close(channel_gain(0.78125) * channel_pan(0.0).0, 0.38961, 1e-4));
     }
 }

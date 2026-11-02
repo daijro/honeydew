@@ -120,19 +120,11 @@ pub struct Tension {
 impl Tension {
     pub fn new(t: i32) -> Tension {
         if t == 0 {
-            return Tension {
-                v: 0.0,
-                l: 0.0,
-                i: 0.0,
-            };
+            return Tension { v: 0.0, l: 0.0, i: 0.0 };
         }
         let a = f64::from(t.unsigned_abs() as f32 / 128.0);
         let m = ((a * 6347f64.ln()).exp() - 1.0) as f32 * 0.1f32;
-        Tension {
-            v: if t < 0 { -m } else { m },
-            l: (f64::from(m) + 1.0).ln() as f32,
-            i: (1.0 / f64::from(m)) as f32,
-        }
+        Tension { v: if t < 0 { -m } else { m }, l: (f64::from(m) + 1.0).ln() as f32, i: (1.0 / f64::from(m)) as f32 }
     }
 
     /// The level at linear position `x` (0..1).
@@ -196,11 +188,7 @@ impl Timing {
             release_step: step(env(r.release)),
             instant: r.attack == 100,
             sustain: r.sustain as f32 / 128.0,
-            curves: [
-                Tension::new(r.attack_tension),
-                Tension::new(r.decay_tension),
-                Tension::new(r.release_tension),
-            ],
+            curves: [Tension::new(r.attack_tension), Tension::new(r.decay_tension), Tension::new(r.release_tension)],
             lfo_delay: lfo(r.lfo_delay),
             lfo_fade_step: step(lfo(r.lfo_attack)),
             lfo_step: ((1u64 << 32) / u64::from(period)) as u32,
@@ -244,32 +232,13 @@ impl Envelope {
     /// or at its top in the hold (or decay) stage with an instant attack or, switched off, with the flag of value 4.
     pub fn start(r: &Record, t: &Timing) -> Envelope {
         if r.on && t.delay >= 1 {
-            return Envelope {
-                stage: Stage::Delay,
-                count: 0,
-                lin: 0.0,
-                out: 0.0,
-            };
+            return Envelope { stage: Stage::Delay, count: 0, lin: 0.0, out: 0.0 };
         }
         if t.instant || (!r.on && r.flags & Record::ONE_WHILE_OFF != 0) {
-            let stage = if t.hold > 0 {
-                Stage::Hold
-            } else {
-                Stage::Decay
-            };
-            return Envelope {
-                stage,
-                count: 0,
-                lin: 1.0,
-                out: 1.0,
-            };
+            let stage = if t.hold > 0 { Stage::Hold } else { Stage::Decay };
+            return Envelope { stage, count: 0, lin: 1.0, out: 1.0 };
         }
-        Envelope {
-            stage: Stage::Attack,
-            count: 0,
-            lin: 0.0,
-            out: 0.0,
-        }
+        Envelope { stage: Stage::Attack, count: 0, lin: 0.0, out: 0.0 }
     }
 
     /// One tick (only while the envelope is on).
@@ -282,11 +251,7 @@ impl Envelope {
                 if self.lin >= 1.0 {
                     self.lin = 1.0;
                     self.count = 0;
-                    self.stage = if t.hold > 0 {
-                        Stage::Hold
-                    } else {
-                        Stage::Decay
-                    };
+                    self.stage = if t.hold > 0 { Stage::Hold } else { Stage::Decay };
                 }
                 self.out = t.curves[0].shape(self.lin);
             }
@@ -370,12 +335,7 @@ pub struct Lfo {
 
 impl Lfo {
     pub fn start() -> Lfo {
-        Lfo {
-            waited: 0,
-            phase: 0,
-            level: 0.0,
-            value: 0.0,
-        }
+        Lfo { waited: 0, phase: 0, level: 0.0, value: 0.0 }
     }
 
     /// One tick: after its delay the phase moves on by the step (or takes the shared phase of a global LFO), the
@@ -415,13 +375,7 @@ pub struct Parts {
 
 impl Parts {
     /// No change to the levels.
-    pub const NONE: Parts = Parts {
-        pan: 0.0,
-        volume: 1.0,
-        pitch: 0.0,
-        mod_x: 0.0,
-        mod_y: 0.0,
-    };
+    pub const NONE: Parts = Parts { pan: 0.0, volume: 1.0, pitch: 0.0, mod_x: 0.0, mod_y: 0.0 };
 }
 
 /// A voice's five envelopes and LFOs.
@@ -434,10 +388,7 @@ pub struct Voice {
 impl Voice {
     /// At the voice's start, before its first tick.
     pub fn start(records: &[Record; 5], timing: &[Timing; 5]) -> Voice {
-        Voice {
-            env: std::array::from_fn(|k| Envelope::start(&records[k], &timing[k])),
-            lfo: [Lfo::start(); 5],
-        }
+        Voice { env: std::array::from_fn(|k| Envelope::start(&records[k], &timing[k])), lfo: [Lfo::start(); 5] }
     }
 
     /// One tick: every envelope that is on steps, every LFO steps (whether its envelope is on or not). `shared` holds
@@ -476,11 +427,7 @@ impl Voice {
     /// The parts, every operation a single. The pan record's envelope reaches nothing: only its LFO moves the pan.
     pub fn parts(&self, records: &[Record; 5]) -> Parts {
         let over = |a: i32| a as f32 / 128.0;
-        let (pan, vol, pitch) = (
-            &records[Record::PAN],
-            &records[Record::VOLUME],
-            &records[Record::PITCH],
-        );
+        let (pan, vol, pitch) = (&records[Record::PAN], &records[Record::VOLUME], &records[Record::PITCH]);
         let lfo = |k: usize| self.lfo[k].value;
         let env = |k: usize| self.env[k].out;
         let volume = env(Record::VOLUME) * (lfo(Record::VOLUME) * over(vol.lfo_amount) + 1.0);
@@ -488,8 +435,7 @@ impl Voice {
         Parts {
             pan: lfo(Record::PAN) * over(pan.lfo_amount) * 2.0,
             volume: if volume < 0.0 { 0.0 } else { volume },
-            pitch: env(Record::PITCH) * pitch.amount as f32
-                + lfo(Record::PITCH) * pitch.lfo_amount as f32,
+            pitch: env(Record::PITCH) * pitch.amount as f32 + lfo(Record::PITCH) * pitch.lfo_amount as f32,
             mod_x: m(Record::MOD_X),
             mod_y: m(Record::MOD_Y),
         }
@@ -521,9 +467,7 @@ impl Shared {
 
     /// The shared phase of each record that has the global LFO.
     pub fn phases(&self, records: &[Record; 5]) -> [Option<u32>; 5] {
-        std::array::from_fn(|k| {
-            (records[k].flags & Record::GLOBAL_LFO != 0).then_some(self.phase[k])
-        })
+        std::array::from_fn(|k| (records[k].flags & Record::GLOBAL_LFO != 0).then_some(self.phase[k]))
     }
 
     /// A new render or playback: back to 0, waiting for the first note.
@@ -550,24 +494,12 @@ mod tests {
         for knob in [101, 5000, 20000, 32950, 65536] {
             let ms = (1001f64.powf(f64::from(knob) / 65536.0) - 1.0) * 64.0;
             let ticks = ms / 1000.0 * 192.0;
-            assert!(
-                (f64::from(knob_ticks(knob, 96, 120.0, false)) - ticks).abs() <= 0.5 + 1e-3 * ticks,
-                "{knob}"
-            );
-            assert_eq!(
-                knob_ticks(knob, 96, 60.0, true),
-                knob_ticks(knob, 96, 120.0, false)
-            );
+            assert!((f64::from(knob_ticks(knob, 96, 120.0, false)) - ticks).abs() <= 0.5 + 1e-3 * ticks, "{knob}");
+            assert_eq!(knob_ticks(knob, 96, 60.0, true), knob_ticks(knob, 96, 120.0, false));
         }
         // The scale's Floor(PPQ / 4): PPQ 98 counts like 96.
-        assert_eq!(
-            knob_ticks(30000, 98, 140.0, false),
-            knob_ticks(30000, 96, 140.0, false)
-        );
-        assert_eq!(
-            knob_ticks(65536, 96, 120.0, true),
-            (1000.0f64 * 12.288).round() as u32
-        );
+        assert_eq!(knob_ticks(30000, 98, 140.0, false), knob_ticks(30000, 96, 140.0, false));
+        assert_eq!(knob_ticks(65536, 96, 120.0, true), (1000.0f64 * 12.288).round() as u32);
     }
 
     /// Tension 0 is a straight line; the curves meet the ends and their inverses give the position back.
@@ -577,10 +509,7 @@ mod tests {
         assert_eq!((line.shape(0.3), line.inverse(0.3)), (0.3, 0.3));
         for t in [-128, -101, -20, 1, 64, 128] {
             let c = Tension::new(t);
-            assert!(
-                c.shape(0.0).abs() < 1e-6 && (c.shape(1.0) - 1.0).abs() < 1e-6,
-                "{t}"
-            );
+            assert!(c.shape(0.0).abs() < 1e-6 && (c.shape(1.0) - 1.0).abs() < 1e-6, "{t}");
             for x in [0.1f32, 0.5, 0.9] {
                 assert!((c.inverse(c.shape(x)) - x).abs() < 1e-4, "{t} {x}");
             }
@@ -595,23 +524,9 @@ mod tests {
     /// falls to the sustain level, the release falls to 0 and ends the envelope.
     #[test]
     fn an_envelope_goes_through_its_stages() {
-        let r = on(Record {
-            delay: 3000,
-            attack: 2000,
-            hold: 2000,
-            decay: 4000,
-            sustain: 64,
-            release: 3000,
-            ..Record::new_channel(0)
-        });
+        let r = on(Record { delay: 3000, attack: 2000, hold: 2000, decay: 4000, sustain: 64, release: 3000, ..Record::new_channel(0) });
         let t = Timing::new(&r, 96, 120.0);
-        assert_eq!(
-            (t.delay, t.hold),
-            (
-                knob_ticks(3000, 96, 120.0, false),
-                knob_ticks(2000, 96, 120.0, false)
-            )
-        );
+        assert_eq!((t.delay, t.hold), (knob_ticks(3000, 96, 120.0, false), knob_ticks(2000, 96, 120.0, false)));
         let (d, a, h) = (t.delay, knob_ticks(2000, 96, 120.0, false), t.hold);
         assert!(d >= 1 && a >= 1 && h >= 1);
         let mut e = Envelope::start(&r, &t);
@@ -620,20 +535,11 @@ mod tests {
             e.step(&t);
             outs.push(e.out);
         }
-        assert!(
-            outs[..d as usize].iter().all(|&o| o == 0.0),
-            "the delay waits"
-        );
-        assert!(
-            (outs[d as usize] - 1.0 / (a as f32 + 1.0)).abs() < 1e-6,
-            "the attack's first step"
-        );
+        assert!(outs[..d as usize].iter().all(|&o| o == 0.0), "the delay waits");
+        assert!((outs[d as usize] - 1.0 / (a as f32 + 1.0)).abs() < 1e-6, "the attack's first step");
         let top = outs.iter().position(|&o| o == 1.0).unwrap();
         assert!(top >= d as usize + a as usize && top <= d as usize + a as usize + 1);
-        assert!(
-            outs[top..=top + h as usize].iter().all(|&o| o == 1.0),
-            "the hold"
-        );
+        assert!(outs[top..=top + h as usize].iter().all(|&o| o == 1.0), "the hold");
         assert!(outs[top + h as usize + 1] < 1.0, "the decay");
         assert_eq!(*outs.last().unwrap(), 0.5, "the sustain level");
         e.release(&t);
@@ -656,10 +562,7 @@ mod tests {
     #[test]
     fn envelope_starts() {
         let t = |r: &Record| Timing::new(r, 96, 120.0);
-        let instant = on(Record {
-            attack: 100,
-            ..Record::new_channel(0)
-        });
+        let instant = on(Record { attack: 100, ..Record::new_channel(0) });
         assert_eq!(Envelope::start(&instant, &t(&instant)).out, 1.0);
         let off = Record::new_channel(Record::VOLUME);
         assert_eq!(Envelope::start(&off, &t(&off)).out, 1.0);
@@ -681,16 +584,7 @@ mod tests {
         assert_eq!(table(0, 4096), 1.0);
         assert_eq!(table(0, 0), 0.0);
         assert_eq!(table(0, 1), (2.0 * PI / 16384.0).sin() as f32);
-        assert_eq!(
-            [
-                table(1, 0),
-                table(1, 4096),
-                table(1, 8192),
-                table(1, 12288),
-                table(1, 2048)
-            ],
-            [0.0, 1.0, 0.0, -1.0, 0.5]
-        );
+        assert_eq!([table(1, 0), table(1, 4096), table(1, 8192), table(1, 12288), table(1, 2048)], [0.0, 1.0, 0.0, -1.0, 0.5]);
         assert_eq!([table(2, 8191), table(2, 8192)], [1.0, -1.0]);
         assert_eq!(table(-1, 4096), table(0, 4096));
         assert_eq!(table(100, 9000), -1.0);
@@ -700,13 +594,7 @@ mod tests {
     /// reads the shared phase.
     #[test]
     fn lfos_step_their_phase() {
-        let r = Record {
-            lfo_speed: 30000,
-            lfo_attack: 0,
-            lfo_amount: 128,
-            lfo_shape: 1,
-            ..Record::new_channel(0)
-        };
+        let r = Record { lfo_speed: 30000, lfo_attack: 0, lfo_amount: 128, lfo_shape: 1, ..Record::new_channel(0) };
         let t = Timing::new(&r, 96, 120.0);
         let period = knob_ticks(30000, 96, 120.0, false).max(3);
         assert_eq!(t.lfo_step, ((1u64 << 32) / u64::from(period)) as u32);
@@ -717,11 +605,7 @@ mod tests {
             assert_eq!(l.value, table(1, (l.phase >> 18) as usize));
         }
         // With a delay and a fade-in.
-        let slow = Record {
-            lfo_delay: 3000,
-            lfo_attack: 3000,
-            ..r
-        };
+        let slow = Record { lfo_delay: 3000, lfo_attack: 3000, ..r };
         let ts = Timing::new(&slow, 96, 120.0);
         let mut l = Lfo::start();
         for _ in 0..ts.lfo_delay {
@@ -730,10 +614,7 @@ mod tests {
         }
         l.step(&slow, &ts, None);
         assert_eq!(l.level, ts.lfo_fade_step);
-        assert_eq!(
-            l.value,
-            table(1, (ts.lfo_step >> 18) as usize) * ts.lfo_fade_step
-        );
+        assert_eq!(l.value, table(1, (ts.lfo_step >> 18) as usize) * ts.lfo_fade_step);
         // A global LFO.
         let mut l = Lfo::start();
         l.step(&r, &t, Some(12345 << 18));
@@ -756,10 +637,7 @@ mod tests {
         assert_eq!(s.phases(&records)[Record::VOLUME], Some(0));
         for k in 1..=47u32 {
             s.tick(&timing);
-            assert_eq!(
-                s.phases(&records)[Record::VOLUME],
-                Some(step.wrapping_mul(k))
-            );
+            assert_eq!(s.phases(&records)[Record::VOLUME], Some(step.wrapping_mul(k)));
         }
         s.reset();
         s.tick(&timing);
@@ -771,27 +649,11 @@ mod tests {
     #[test]
     fn parts_of_a_voice() {
         let mut records = Record::new_channel_records();
-        records[Record::PAN] = on(Record {
-            attack: 100,
-            amount: 128,
-            lfo_amount: 64,
-            lfo_shape: 2,
-            ..records[Record::PAN]
-        });
+        records[Record::PAN] = on(Record { attack: 100, amount: 128, lfo_amount: 64, lfo_shape: 2, ..records[Record::PAN] });
         records[Record::VOLUME].lfo_amount = -128;
         records[Record::VOLUME].lfo_shape = 2;
-        records[Record::PITCH] = on(Record {
-            attack: 100,
-            amount: 1200,
-            ..records[Record::PITCH]
-        });
-        records[Record::MOD_X] = on(Record {
-            attack: 100,
-            amount: -64,
-            lfo_amount: 32,
-            lfo_shape: 2,
-            ..records[Record::MOD_X]
-        });
+        records[Record::PITCH] = on(Record { attack: 100, amount: 1200, ..records[Record::PITCH] });
+        records[Record::MOD_X] = on(Record { attack: 100, amount: -64, lfo_amount: 32, lfo_shape: 2, ..records[Record::MOD_X] });
         let timing = Timing::all(&records, 96, 120.0);
         let mut v = Voice::start(&records, &timing);
         v.step(&records, &timing, &[None; 5]);
@@ -809,11 +671,7 @@ mod tests {
     #[test]
     fn the_volume_envelope_runs_out_after_the_release() {
         let mut records = Record::new_channel_records();
-        records[Record::VOLUME] = on(Record {
-            attack: 100,
-            release: 2000,
-            ..records[Record::VOLUME]
-        });
+        records[Record::VOLUME] = on(Record { attack: 100, release: 2000, ..records[Record::VOLUME] });
         let timing = Timing::all(&records, 96, 120.0);
         let mut v = Voice::start(&records, &timing);
         for _ in 0..20 {

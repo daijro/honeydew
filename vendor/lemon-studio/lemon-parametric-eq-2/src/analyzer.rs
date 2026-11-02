@@ -86,13 +86,10 @@ impl Analyzer {
         let n = samples.len().next_power_of_two().min(samples.len().max(2));
         if n != self.size {
             self.size = n;
-            self.window = (0..n)
-                .map(|i| 0.5 - 0.5 * (2.0 * PI * i as f32 / n as f32).cos())
-                .collect();
+            self.window = (0..n).map(|i| 0.5 - 0.5 * (2.0 * PI * i as f32 / n as f32).cos()).collect();
         }
         self.re.clear();
-        self.re
-            .extend(samples.iter().zip(&self.window).map(|(x, w)| x * w));
+        self.re.extend(samples.iter().zip(&self.window).map(|(x, w)| x * w));
         self.im.clear();
         self.im.resize(n, 0.0);
         fft(&mut self.re, &mut self.im);
@@ -143,26 +140,13 @@ mod tests {
     fn a_sine_shows_at_its_frequency() {
         let rate = 44100.0;
         let n = 4096;
-        let s: Vec<f32> = (0..n)
-            .map(|i| (2.0 * PI * 1000.0 * i as f32 / rate).sin())
-            .collect();
+        let s: Vec<f32> = (0..n).map(|i| (2.0 * PI * 1000.0 * i as f32 / rate).sin()).collect();
         let mut a = Analyzer::default();
-        let look = Look {
-            precision: 1,
-            slope: 0,
-            smoothing: 0,
-            average: false,
-        };
+        let look = Look { precision: 1, slope: 0, smoothing: 0, average: false };
         a.update(&s, rate, 500, &look);
-        let peak = (0..500)
-            .max_by(|&x, &y| a.cols[x].total_cmp(&a.cols[y]))
-            .unwrap();
+        let peak = (0..500).max_by(|&x, &y| a.cols[x].total_cmp(&a.cols[y])).unwrap();
         let hz = freq_hz(peak as f64 / 500.0);
         assert!((hz - 1000.0).abs() < 40.0, "{hz}");
-        assert!(
-            a.cols[peak] > -3.0 && a.cols[peak] < 1.0,
-            "{}",
-            a.cols[peak]
-        );
+        assert!(a.cols[peak] > -3.0 && a.cols[peak] < 1.0, "{}", a.cols[peak]);
     }
 }

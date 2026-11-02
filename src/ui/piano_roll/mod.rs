@@ -2599,7 +2599,9 @@ fn paint_notes(
                 painter.rect_filled(cell(grown), round, fill.gamma_multiply(eased));
                 painter.ctx().request_repaint();
             }
-            _ => painter.rect_filled(cell(r), round, fill),
+            _ => {
+                painter.rect_filled(cell(r), round, fill);
+            }
         }
     }
 }

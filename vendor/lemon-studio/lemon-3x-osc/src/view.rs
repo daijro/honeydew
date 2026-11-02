@@ -14,10 +14,10 @@
 use std::f32::consts::{PI, TAU};
 use std::sync::Arc;
 
-use os_theme::Palette;
 use os_theme::design::lemon as brand;
+use os_theme::Palette;
 use os_ui::kit::lemon::{self, plug};
-use os_ui::kit::{State, inst};
+use os_ui::kit::{inst, State};
 use os_ui::tabler as tb;
 use os_ui::{Canvas, Color, Font, Rect};
 
@@ -75,16 +75,8 @@ pub fn row_y(n: usize) -> f32 {
 /// Shape button centres: (shape or `INVERT`, x, row offset): top row sine, square, rounded saw, custom; bottom row
 /// triangle, saw, noise, invert. Evenly spaced (the original's last column sits 2 px further right).
 pub const INVERT: i32 = -1;
-pub const SHAPE_BUTTONS: [(i32, f32, f32); 8] = [
-    (0, 60.0, -18.0),
-    (2, 97.0, -18.0),
-    (4, 134.0, -18.0),
-    (6, 171.0, -18.0),
-    (1, 60.0, 18.0),
-    (3, 97.0, 18.0),
-    (5, 134.0, 18.0),
-    (INVERT, 171.0, 18.0),
-];
+pub const SHAPE_BUTTONS: [(i32, f32, f32); 8] =
+    [(0, 60.0, -18.0), (2, 97.0, -18.0), (4, 134.0, -18.0), (6, 171.0, -18.0), (1, 60.0, 18.0), (3, 97.0, 18.0), (5, 134.0, 18.0), (INVERT, 171.0, 18.0)];
 
 /// Oscillator cards, centred on their rows (FL px, inclusive): all three the same, 7 px apart and 7 px below the
 /// strip, each with its captions inside.
@@ -204,13 +196,7 @@ pub struct ViewState {
 
 impl Default for ViewState {
     fn default() -> Self {
-        ViewState {
-            tab: 0,
-            sub: 1,
-            mouse: None,
-            pressed: None,
-            sample: SampleView::default(),
-        }
+        ViewState { tab: 0, sub: 1, mouse: None, pressed: None, sample: SampleView::default() }
     }
 }
 
@@ -235,40 +221,18 @@ impl Ui<'_> {
     /// Hover / pressed look of a control occupying `r`; greyed-out controls (`works`) are disabled and never light up.
     fn state(&self, r: Rect, t: &Target) -> State {
         if !works(t) {
-            return State {
-                disabled: true,
-                ..State::NORMAL
-            };
+            return State { disabled: true, ..State::NORMAL };
         }
         let pressed = self.st.pressed.as_ref() == Some(t);
-        let hover = !pressed
-            && self.st.pressed.is_none()
-            && self.st.mouse.is_some_and(|(x, y)| r.contains(x, y));
-        State {
-            hover,
-            pressed,
-            ..State::NORMAL
-        }
+        let hover = !pressed && self.st.pressed.is_none() && self.st.mouse.is_some_and(|(x, y)| r.contains(x, y));
+        State { hover, pressed, ..State::NORMAL }
     }
 }
 
 /// Paints the editor. `hosted` = the host's strip row carries the page tabs and the hint line (host link); otherwise
 /// the plugin draws its own three tabs and `hint` in the strip row.
-pub fn paint(
-    c: &mut Canvas,
-    t: &Palette,
-    m: &dyn Model,
-    st: &ViewState,
-    hint: &str,
-    hosted: bool,
-) -> Vec<Hit> {
-    let mut ui = Ui {
-        c,
-        t,
-        m,
-        st,
-        hits: Vec::new(),
-    };
+pub fn paint(c: &mut Canvas, t: &Palette, m: &dyn Model, st: &ViewState, hint: &str, hosted: bool) -> Vec<Hit> {
+    let mut ui = Ui { c, t, m, st, hits: Vec::new() };
     ui.c.begin_frame(None);
     ui.c.clear(plug::BG);
     if !hosted {
@@ -278,19 +242,8 @@ pub fn paint(
             let (left, right) = hint.split_once('\t').unwrap_or((hint, ""));
             // Right of the tabs, up to the right-aligned part when there is one.
             let x = 17.0 + 43.0 * f32::from(PAGES);
-            let room = if right.is_empty() {
-                556.0 - x
-            } else {
-                400.0 - x
-            };
-            ui.c.text_clip(
-                LABEL,
-                x,
-                (y(48.0) - lh / 2.0).round(),
-                room,
-                plug::DIM,
-                left,
-            );
+            let room = if right.is_empty() { 556.0 - x } else { 400.0 - x };
+            ui.c.text_clip(LABEL, x, (y(48.0) - lh / 2.0).round(), room, plug::DIM, left);
             if !right.is_empty() {
                 ui.c.text_right(LABEL, 556.0, (y(48.0) - lh / 2.0).round(), plug::DIM, right);
             }
@@ -305,11 +258,7 @@ pub fn paint(
 }
 
 fn icon(c: &mut Canvas, t: &tb::TablerIcon, cx: f32, cy: f32, size: f32, col: Color) {
-    c.icon(
-        t,
-        Rect::new(cx - size / 2.0, cy - size / 2.0, size, size),
-        col,
-    );
+    c.icon(t, Rect::new(cx - size / 2.0, cy - size / 2.0, size, size), col);
 }
 
 /// The page icons (the host draws the same for `os_hostlink::PageIcon` plugin, envelope, sample).
@@ -322,27 +271,8 @@ pub fn page_icon(c: &mut Canvas, page: u8, cx: f32, cy: f32, col: Color) {
 }
 
 fn tab_strip(ui: &mut Ui) {
-    let hover = (0..PAGES).find(|&i| {
-        ui.state(
-            rr(
-                5.0 + 43.0 * f32::from(i),
-                49.0 + 43.0 * f32::from(i),
-                26.0,
-                71.0,
-            ),
-            &Target::Tab(i),
-        )
-        .hover
-    });
-    lemon::page_strip(
-        ui.c,
-        rr(4.0, 563.0, 25.0, 71.0),
-        PAGES,
-        ui.st.tab,
-        hover,
-        &|i| 5.0 + 43.0 * f32::from(i),
-        &mut |c, i, x, yy, col| page_icon(c, i, x, yy, col),
-    );
+    let hover = (0..PAGES).find(|&i| ui.state(rr(5.0 + 43.0 * f32::from(i), 49.0 + 43.0 * f32::from(i), 26.0, 71.0), &Target::Tab(i)).hover);
+    lemon::page_strip(ui.c, rr(4.0, 563.0, 25.0, 71.0), PAGES, ui.st.tab, hover, &|i| 5.0 + 43.0 * f32::from(i), &mut |c, i, x, yy, col| page_icon(c, i, x, yy, col));
     for i in 0..PAGES {
         let x0 = 5.0 + 43.0 * f32::from(i);
         ui.hit(rr(x0, x0 + 44.0, 26.0, 71.0), Target::Tab(i));
@@ -365,46 +295,19 @@ fn metal_knob(ui: &mut Ui, id: &str, cx: f32, cy: f32, r: f32, ticks: usize, val
         for i in 0..ticks {
             let a = 0.75 * PI + 1.5 * PI * i as f32 / (ticks - 1) as f32;
             let (r0, r1) = (r + 3.5, r + 6.5);
-            let col = if i % 12 == 0 {
-                Color::rgb(0x7a7a7a)
-            } else {
-                plug::TICK
-            };
-            ui.c.line(
-                cx + r0 * a.cos(),
-                cy + r0 * a.sin(),
-                cx + r1 * a.cos(),
-                cy + r1 * a.sin(),
-                1.0,
-                col,
-            );
+            let col = if i % 12 == 0 { Color::rgb(0x7a7a7a) } else { plug::TICK };
+            ui.c.line(cx + r0 * a.cos(), cy + r0 * a.sin(), cx + r1 * a.cos(), cy + r1 * a.sin(), 1.0, col);
         }
     }
     let w = (r * 0.12).clamp(2.2, 2.8);
-    lemon::dial(
-        ui.c,
-        cx,
-        cy,
-        r,
-        w,
-        v,
-        !id.ends_with("_mix"),
-        brand::MAIN,
-        st,
-    );
+    lemon::dial(ui.c, cx, cy, r, w, v, !id.ends_with("_mix"), brand::MAIN, st);
     if value_text {
         lemon::dial_disc(ui.c, cx, cy, r - w - 1.5, st);
         let s = format!("{}", ui.m.plain(id).round() as i32);
         let f = Font::new(13).bold();
         let lh = ui.c.line_height(f);
         let w = ui.c.text_width(f, &s);
-        ui.c.text(
-            f,
-            (cx - w / 2.0).round(),
-            (cy - lh / 2.0).round(),
-            brand::TEXT,
-            &s,
-        );
+        ui.c.text(f, (cx - w / 2.0).round(), (cy - lh / 2.0).round(), brand::TEXT, &s);
     }
     ui.hit(hr, target);
 }
@@ -423,28 +326,11 @@ fn fader(ui: &mut Ui, id: &str, x: f32, cy: f32) {
         ui.c.fill_rect(Rect::new(x - 8.0 - w, yy.round(), w, 1.0), plug::TICK);
         ui.c.fill_rect(Rect::new(x + 9.0, yy.round(), w, 1.0), plug::TICK);
     }
-    ui.c.fill_rrect(
-        Rect::new(x - 2.5, top - 2.0, 5.0, bot - top + 4.0),
-        2.5,
-        Color::rgb(0x1a1a1a),
-    );
+    ui.c.fill_rrect(Rect::new(x - 2.5, top - 2.0, 5.0, bot - top + 4.0), 2.5, Color::rgb(0x1a1a1a));
     let hy = (bot - (bot - top) * ui.m.norm(id)).round();
-    ui.c.fill_rrect(
-        Rect::new(x - 12.0, hy - 7.0, 24.0, 14.0),
-        4.5,
-        Color::rgb(0x151515),
-    );
-    let (a, b) = if st.hover || st.pressed {
-        (0x7a7a7a, 0x555555)
-    } else {
-        (0x6c6c6c, 0x4b4b4b)
-    };
-    ui.c.fill_rect_gradient(
-        Rect::new(x - 11.0, hy - 6.0, 22.0, 12.0),
-        Color::rgb(a),
-        Color::rgb(b),
-        3.5,
-    );
+    ui.c.fill_rrect(Rect::new(x - 12.0, hy - 7.0, 24.0, 14.0), 4.5, Color::rgb(0x151515));
+    let (a, b) = if st.hover || st.pressed { (0x7a7a7a, 0x555555) } else { (0x6c6c6c, 0x4b4b4b) };
+    ui.c.fill_rect_gradient(Rect::new(x - 11.0, hy - 6.0, 22.0, 12.0), Color::rgb(a), Color::rgb(b), 3.5);
     ui.c.fill_rrect(Rect::new(x - 8.0, hy - 0.75, 16.0, 1.5), 0.75, brand::MAIN);
     ui.hit(hr, target);
 }
@@ -466,42 +352,16 @@ fn shape_glyph(c: &mut Canvas, shape: i32, cx: f32, cy: f32, col: Color, pips: C
                 (cx - w + 2.0 * w * u, cy - h * (TAU * u).sin())
             })
             .collect(),
-        1 => vec![
-            (cx - w, cy + h * 0.2),
-            (cx - w * 0.5, cy - h),
-            (cx + w * 0.5, cy + h),
-            (cx + w, cy - h * 0.2),
-        ],
-        2 => vec![
-            (cx - w, cy + h),
-            (cx - w, cy - h),
-            (cx, cy - h),
-            (cx, cy + h),
-            (cx + w, cy + h),
-            (cx + w, cy - h),
-        ],
-        3 => vec![
-            (cx - w, cy + h),
-            (cx - w * 0.15, cy - h),
-            (cx - w * 0.15, cy + h),
-            (cx + w * 0.75, cy - h),
-            (cx + w * 0.75, cy + h * 0.2),
-        ],
+        1 => vec![(cx - w, cy + h * 0.2), (cx - w * 0.5, cy - h), (cx + w * 0.5, cy + h), (cx + w, cy - h * 0.2)],
+        2 => vec![(cx - w, cy + h), (cx - w, cy - h), (cx, cy - h), (cx, cy + h), (cx + w, cy + h), (cx + w, cy - h)],
+        3 => vec![(cx - w, cy + h), (cx - w * 0.15, cy - h), (cx - w * 0.15, cy + h), (cx + w * 0.75, cy - h), (cx + w * 0.75, cy + h * 0.2)],
         4 => {
             let mut p = vec![(cx - w, cy + h)];
             for i in 0..=12 {
                 let u = i as f32 / 12.0;
-                p.push((
-                    cx - w + 1.2 * w * u,
-                    cy + h - 2.0 * h * (1.0 - (-u * 5.0).exp()) / (1.0 - (-5.0f32).exp()),
-                ));
+                p.push((cx - w + 1.2 * w * u, cy + h - 2.0 * h * (1.0 - (-u * 5.0).exp()) / (1.0 - (-5.0f32).exp())));
             }
-            p.extend([
-                (cx + 0.3 * w, cy - h),
-                (cx + 0.3 * w, cy + h),
-                (cx + w, cy + h),
-                (cx + w, cy - h * 0.2),
-            ]);
+            p.extend([(cx + 0.3 * w, cy - h), (cx + 0.3 * w, cy + h), (cx + w, cy + h), (cx + w, cy - h * 0.2)]);
             p
         }
         5 => {
@@ -517,11 +377,7 @@ fn shape_glyph(c: &mut Canvas, shape: i32, cx: f32, cy: f32, col: Color, pips: C
             // Custom: a jagged burst.
             let ys = [0.0, -0.3, 0.4, -0.9, 1.0, -1.0, 0.8, -0.5, 0.3, 0.0];
             let n = ys.len() - 1;
-            let pts: Vec<(f32, f32)> = ys
-                .iter()
-                .enumerate()
-                .map(|(i, v)| (cx - w + 2.0 * w * i as f32 / n as f32, cy - h * v))
-                .collect();
+            let pts: Vec<(f32, f32)> = ys.iter().enumerate().map(|(i, v)| (cx - w + 2.0 * w * i as f32 / n as f32, cy - h * v)).collect();
             let mut poly = pts.clone();
             poly.extend(pts.iter().rev().map(|&(x, yy)| (x, 2.0 * cy - yy)));
             c.fill_polygon(&poly, col);
@@ -533,14 +389,8 @@ fn shape_glyph(c: &mut Canvas, shape: i32, cx: f32, cy: f32, col: Color, pips: C
 
 /// Invert switch: two stacked triangles.
 fn invert_glyph(c: &mut Canvas, cx: f32, cy: f32, col: Color) {
-    c.fill_polygon(
-        &[(cx - 8.0, cy - 2.0), (cx, cy - 9.0), (cx + 8.0, cy - 2.0)],
-        col,
-    );
-    c.fill_polygon(
-        &[(cx - 8.0, cy + 2.0), (cx, cy + 9.0), (cx + 8.0, cy + 2.0)],
-        col,
-    );
+    c.fill_polygon(&[(cx - 8.0, cy - 2.0), (cx, cy - 9.0), (cx + 8.0, cy - 2.0)], col);
+    c.fill_polygon(&[(cx - 8.0, cy + 2.0), (cx, cy + 9.0), (cx + 8.0, cy + 2.0)], col);
 }
 
 fn osc_page(ui: &mut Ui) {
@@ -559,64 +409,29 @@ fn osc_page(ui: &mut Ui) {
         let (top, bot) = (y(cy - CARD_HALF + 4.0), y(cy + CARD_HALF - 3.0));
         let s = o.to_string();
         lemon::plug_panel(ui.c, rr(6.0, 561.0, cy - CARD_HALF, cy + CARD_HALF));
-        ui.c.fill_rrect(
-            Rect::new(10.0, top, 30.0, bot - top),
-            7.0,
-            Color::rgb(0x262626),
-        );
+        ui.c.fill_rrect(Rect::new(10.0, top, 30.0, bot - top), 7.0, Color::rgb(0x262626));
         let f = Font::new(28).bold();
         let lh = ui.c.line_height(f);
         let w = ui.c.text_width(f, &s);
-        ui.c.text(
-            f,
-            (25.0 - w / 2.0).round(),
-            ((top + bot) / 2.0 - lh / 2.0 - 1.5).round(),
-            brand::MAIN,
-            &s,
-        );
+        ui.c.text(f, (25.0 - w / 2.0).round(), ((top + bot) / 2.0 - lh / 2.0 - 1.5).round(), brand::MAIN, &s);
         // Shapes and invert.
         let shape = ui.m.plain(&id("shape")).round() as i32;
         for (s, x, dy) in SHAPE_BUTTONS {
             let cyy = y(cy + dy);
-            let target = if s == INVERT {
-                Target::Flag(n)
-            } else {
-                Target::Set(id("shape"), s as f32)
-            };
+            let target = if s == INVERT { Target::Flag(n) } else { Target::Set(id("shape"), s as f32) };
             let hr = Rect::new(x - 17.0, cyy - 17.0, 34.0, 34.0);
             let st = ui.state(hr, &target);
             let sel = if s == INVERT { ui.flag(n) } else { shape == s };
             if s == INVERT {
-                let col = if sel {
-                    brand::MAIN
-                } else if st.hover {
-                    brand::TEXT
-                } else {
-                    Color::rgb(0x8a8a8a)
-                };
+                let col = if sel { brand::MAIN } else if st.hover { brand::TEXT } else { Color::rgb(0x8a8a8a) };
                 invert_glyph(ui.c, x, cyy + 2.0, col);
             } else {
                 if sel {
-                    lemon::lit(
-                        ui.c,
-                        Rect::new(x - 16.0, cyy - 15.0, 32.0, 30.0),
-                        8.0,
-                        st.hover,
-                    );
+                    lemon::lit(ui.c, Rect::new(x - 16.0, cyy - 15.0, 32.0, 30.0), 8.0, st.hover);
                 } else if st.hover {
-                    ui.c.fill_rrect(
-                        Rect::new(x - 16.0, cyy - 15.0, 32.0, 30.0),
-                        8.0,
-                        Color::rgb(0x3d3d3d),
-                    );
+                    ui.c.fill_rrect(Rect::new(x - 16.0, cyy - 15.0, 32.0, 30.0), 8.0, Color::rgb(0x3d3d3d));
                 }
-                let (col, pips) = if sel {
-                    (brand::COLORED_DARK, brand::MAIN)
-                } else if st.hover {
-                    (brand::TEXT, Color::rgb(0x3d3d3d))
-                } else {
-                    (Color::rgb(0x8a8a8a), plug::PANEL)
-                };
+                let (col, pips) = if sel { (brand::COLORED_DARK, brand::MAIN) } else if st.hover { (brand::TEXT, Color::rgb(0x3d3d3d)) } else { (Color::rgb(0x8a8a8a), plug::PANEL) };
                 shape_glyph(ui.c, s, x, cyy, col, pips);
             }
             ui.hit(hr, target);
@@ -650,14 +465,7 @@ fn osc_page(ui: &mut Ui) {
         bowtie(ui.c, 467.0, cap_y, ink);
         if n > 0 {
             // Ramp mark: the mix level.
-            ui.c.fill_polygon(
-                &[
-                    (521.0, cap_y + 4.0),
-                    (533.0, cap_y + 4.0),
-                    (533.0, cap_y - 4.0),
-                ],
-                ink,
-            );
+            ui.c.fill_polygon(&[(521.0, cap_y + 4.0), (533.0, cap_y + 4.0), (533.0, cap_y - 4.0)], ink);
         }
     }
 
@@ -697,17 +505,7 @@ fn dark_knob(ui: &mut Ui, id: &str, cx: f32, cy: f32, r: f32) {
     let target = Target::Knob(id.into());
     let hr = Rect::new(cx - r - 6.0, cy - r - 6.0, 2.0 * r + 12.0, 2.0 * r + 12.0);
     let st = ui.state(hr, &target);
-    lemon::dial(
-        ui.c,
-        cx,
-        cy,
-        r + 3.0,
-        2.6,
-        ui.m.norm(id),
-        false,
-        brand::MAIN,
-        st,
-    );
+    lemon::dial(ui.c, cx, cy, r + 3.0, 2.6, ui.m.norm(id), false, brand::MAIN, st);
     ui.hit(hr, target);
 }
 
@@ -726,53 +524,18 @@ struct KnobLook {
     ring: f32,
 }
 
-const BIG: KnobLook = KnobLook {
-    r: 13.0,
-    ring: 16.0,
-};
-const MID: KnobLook = KnobLook {
-    r: 11.5,
-    ring: 13.5,
-};
+const BIG: KnobLook = KnobLook { r: 13.0, ring: 16.0 };
+const MID: KnobLook = KnobLook { r: 11.5, ring: 13.5 };
 const TINY: KnobLook = KnobLook { r: 8.0, ring: 10.0 };
 
-fn dial(
-    ui: &mut Ui,
-    id: &str,
-    cx: f32,
-    cy: f32,
-    look: KnobLook,
-    accent: u32,
-    bipolar: bool,
-    caption: &str,
-) {
+fn dial(ui: &mut Ui, id: &str, cx: f32, cy: f32, look: KnobLook, accent: u32, bipolar: bool, caption: &str) {
     let cy = y(cy);
     let target = Target::Knob(id.into());
-    let hr = Rect::new(
-        cx - look.ring - 2.0,
-        cy - look.ring - 2.0,
-        2.0 * look.ring + 4.0,
-        2.0 * look.ring + 4.0,
-    );
+    let hr = Rect::new(cx - look.ring - 2.0, cy - look.ring - 2.0, 2.0 * look.ring + 4.0, 2.0 * look.ring + 4.0);
     let st = ui.state(hr, &target);
-    inst::dial(
-        ui.c,
-        ui.t,
-        cx,
-        cy,
-        look.r,
-        look.ring,
-        ui.m.norm(id),
-        bipolar,
-        ui.t.a(accent),
-        st,
-    );
+    inst::dial(ui.c, ui.t, cx, cy, look.r, look.ring, ui.m.norm(id), bipolar, ui.t.a(accent), st);
     if !caption.is_empty() {
-        let dy = if id.ends_with("_amt") && !id.ends_with("lfo_amt") {
-            21.5
-        } else {
-            17.5
-        };
+        let dy = if id.ends_with("_amt") && !id.ends_with("lfo_amt") { 21.5 } else { 17.5 };
         inst::caption(ui.c, ui.t, cx, cy + dy, caption, st.disabled);
     }
     ui.hit(hr, target);
@@ -796,13 +559,7 @@ fn envelope_page(ui: &mut Ui) {
     let t = ui.t;
     ui.c.fill_rect(rr(4.0, 563.0, 72.0, 461.0), plug::BG);
     let sub = ui.st.sub.min(4) as usize;
-    const SPANS: [(f32, f32); 5] = [
-        (16.0, 55.0),
-        (65.0, 103.0),
-        (113.0, 145.0),
-        (155.0, 187.0),
-        (197.0, 220.0),
-    ];
+    const SPANS: [(f32, f32); 5] = [(16.0, 55.0), (65.0, 103.0), (113.0, 145.0), (155.0, 187.0), (197.0, 220.0)];
     for (i, n) in TARGET_NAMES.iter().enumerate() {
         let w = ui.c.text_width(LABEL, n);
         let (x0, x1) = SPANS[i];
@@ -810,16 +567,7 @@ fn envelope_page(ui: &mut Ui) {
         let cell = rr(x0 - 5.0, x1 + 4.0, 78.0, 106.0);
         let target = Target::SubTab(i as u8);
         let st = ui.state(cell, &target);
-        lemon::text_tab(
-            ui.c,
-            cell,
-            x,
-            n,
-            LABEL,
-            t.a(TARGET_COLORS[i].1),
-            sub == i,
-            st,
-        );
+        lemon::text_tab(ui.c, cell, x, n, LABEL, t.a(TARGET_COLORS[i].1), sub == i, st);
         ui.hit(cell, target);
     }
     let p = ENV_PREFIX[sub];
@@ -838,14 +586,7 @@ fn envelope_page(ui: &mut Ui) {
         let g = env_rect();
         inst::graph_bg(ui.c, g);
         env_graph(ui, g, p, t.a(line));
-        for (k, x, cap) in [
-            ("delay", 33.0, "DELAY"),
-            ("att", 67.0, "ATT"),
-            ("hold", 101.0, "HOLD"),
-            ("dec", 135.0, "DEC"),
-            ("sus", 169.0, "SUS"),
-            ("rel", 203.0, "REL"),
-        ] {
+        for (k, x, cap) in [("delay", 33.0, "DELAY"), ("att", 67.0, "ATT"), ("hold", 101.0, "HOLD"), ("dec", 135.0, "DEC"), ("sus", 169.0, "SUS"), ("rel", 203.0, "REL")] {
             dial(ui, &id(k), x, 243.0, MID, arc, false, cap);
         }
         if sub >= 2 {
@@ -875,12 +616,7 @@ fn envelope_page(ui: &mut Ui) {
     let lg = rr(311.0, 442.0, 140.0, 222.0);
     inst::graph_bg(ui.c, lg);
     lfo_graph(ui, lg, p, t.a(line));
-    for (k, x, cap) in [
-        ("lfo_delay", 326.0, "DELAY"),
-        ("lfo_att", 359.0, "ATT"),
-        ("lfo_amt", 393.0, "AMT"),
-        ("lfo_speed", 427.0, "SPEED"),
-    ] {
+    for (k, x, cap) in [("lfo_delay", 326.0, "DELAY"), ("lfo_att", 359.0, "ATT"), ("lfo_amt", 393.0, "AMT"), ("lfo_speed", 427.0, "SPEED")] {
         dial(ui, &id(k), x, 241.0, MID, arc, k == "lfo_amt", cap);
     }
     if !works(&Target::Knob(id("lfo_amt"))) {
@@ -912,20 +648,8 @@ fn lfo_icon(c: &mut Canvas, shape: usize, cx: f32, cy: f32, col: Color) {
                 (cx - 6.0 + 12.0 * u, cy - 4.6 * (TAU * u).sin())
             })
             .collect(),
-        1 => vec![
-            (cx - 8.0, cy),
-            (cx - 5.0, cy - 4.6),
-            (cx + 1.0, cy + 4.6),
-            (cx + 4.0, cy),
-        ],
-        _ => vec![
-            (cx - 4.5, cy + 4.0),
-            (cx - 4.5, cy - 3.5),
-            (cx, cy - 3.5),
-            (cx, cy + 3.5),
-            (cx + 4.5, cy + 3.5),
-            (cx + 4.5, cy - 4.0),
-        ],
+        1 => vec![(cx - 8.0, cy), (cx - 5.0, cy - 4.6), (cx + 1.0, cy + 4.6), (cx + 4.0, cy)],
+        _ => vec![(cx - 4.5, cy + 4.0), (cx - 4.5, cy - 3.5), (cx, cy - 3.5), (cx, cy + 3.5), (cx + 4.5, cy + 3.5), (cx + 4.5, cy - 4.0)],
     };
     c.polyline(&pts, 1.4, col);
 }
@@ -956,39 +680,19 @@ pub fn env_rect() -> Rect {
 
 pub fn env_geom(m: &dyn Model, p: &str, g: Rect) -> EnvGeom {
     let n = |s: &str| m.norm(&format!("{p}_{s}"));
-    let (dl, at, ho, de, su, re) = (
-        n("delay"),
-        n("att"),
-        n("hold"),
-        n("dec"),
-        n("sus"),
-        n("rel"),
-    );
+    let (dl, at, ho, de, su, re) = (n("delay"), n("att"), n("hold"), n("dec"), n("sus"), n("rel"));
     let units = [dl, at, ho, de * (1.0 - su), re];
     let total: f32 = units.iter().sum();
     let x0 = g.x + 1.0;
     let room = g.w - 4.0;
-    let px = if total * ENV_PX > room && total > 0.0 {
-        room / total
-    } else {
-        ENV_PX
-    };
+    let px = if total * ENV_PX > room && total > 0.0 { room / total } else { ENV_PX };
     let mut x = [x0; 6];
     for i in 0..5 {
         x[i + 1] = x[i] + units[i] * px;
     }
     let has_amt = !matches!(p, "pan" | "vol");
-    let amp = if has_amt {
-        ((n("amt") - 0.5) * 2.0).abs()
-    } else {
-        1.0
-    };
-    EnvGeom {
-        x,
-        sus: su,
-        amp,
-        px,
-    }
+    let amp = if has_amt { ((n("amt") - 0.5) * 2.0).abs() } else { 1.0 };
+    EnvGeom { x, sus: su, amp, px }
 }
 
 pub fn env_levels(g: Rect) -> (f32, f32) {
@@ -1019,16 +723,7 @@ fn env_graph(ui: &mut Ui, g: Rect, p: &str, col: Color) {
     curve(xs, xe, su, 0.0, -tk(tension("rel_t")), &mut pts);
     ui.c.push_clip(g);
     ui.c.polyline(&pts, 1.8, col);
-    for (i, (x, yy)) in [
-        (xd, lvl(0.0)),
-        (xa, lvl(1.0)),
-        (xh, lvl(1.0)),
-        (xs, lvl(su)),
-        (xe, lvl(0.0)),
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    for (i, (x, yy)) in [(xd, lvl(0.0)), (xa, lvl(1.0)), (xh, lvl(1.0)), (xs, lvl(su)), (xe, lvl(0.0))].into_iter().enumerate() {
         let target = Target::EnvPoint(i as u8);
         let hr = Rect::new(x - 5.0, yy - 5.0, 10.0, 10.0);
         let st = ui.state(hr, &target);
@@ -1101,21 +796,9 @@ fn sample_page(ui: &mut Ui) {
     lemon::plug_panel(ui.c, card);
     let s = &ui.st.sample;
     let lh = ui.c.line_height(MOD_CAP);
-    ui.c.text(
-        MOD_CAP,
-        18.0,
-        (y(96.0) - lh / 2.0).round(),
-        plug::DIM,
-        "CUSTOM SHAPE",
-    );
+    ui.c.text(MOD_CAP, 18.0, (y(96.0) - lh / 2.0).round(), plug::DIM, "CUSTOM SHAPE");
     let lh = ui.c.line_height(CAP);
-    ui.c.text_right(
-        CAP,
-        549.0,
-        (y(96.0) - lh / 2.0).round(),
-        plug::DIM,
-        "Played as one period of the oscillator",
-    );
+    ui.c.text_right(CAP, 549.0, (y(96.0) - lh / 2.0).round(), plug::DIM, "Played as one period of the oscillator");
     let g = sample_graph();
     inst::graph_bg(ui.c, g);
     let cy = g.y + ((g.h - 1.0) / 2.0).floor() + 0.5;
@@ -1124,40 +807,19 @@ fn sample_page(ui: &mut Ui) {
     match &s.wave {
         Some(w) => wave_graph(ui.c, g, cy, w, brand::MAIN),
         None => {
-            let text = if s.path.is_empty() {
-                "No sample: click to load one".to_string()
-            } else {
-                format!("{} could not be read", file_name(&s.path))
-            };
+            let text = if s.path.is_empty() { "No sample: click to load one".to_string() } else { format!("{} could not be read", file_name(&s.path)) };
             ui.c.text_center(LABEL, Rect::new(g.x, g.y, g.w, g.h * 0.5), plug::DIM, &text);
         }
     }
     ui.c.pop_clip();
     // The file line: a folder (lit on hover), the name, the points the period holds.
     let fy = y(427.0);
-    icon(
-        ui.c,
-        &tb::FOLDER_OPEN,
-        30.0,
-        fy,
-        18.0,
-        if st.hover { brand::MAIN } else { plug::DIM },
-    );
+    icon(ui.c, &tb::FOLDER_OPEN, 30.0, fy, 18.0, if st.hover { brand::MAIN } else { plug::DIM });
     let lh = ui.c.line_height(LABEL);
-    let (name, col) = if s.path.is_empty() {
-        ("Load a sample...", plug::DIM)
-    } else {
-        (file_name(&s.path), brand::TEXT)
-    };
+    let (name, col) = if s.path.is_empty() { ("Load a sample...", plug::DIM) } else { (file_name(&s.path), brand::TEXT) };
     ui.c.text_clip(LABEL, 46.0, (fy - lh / 2.0).round(), 380.0, col, name);
     if let Some(w) = &s.wave {
-        ui.c.text_right(
-            LABEL,
-            549.0,
-            (fy - lh / 2.0).round(),
-            plug::DIM,
-            &format!("{} points", w.points().len()),
-        );
+        ui.c.text_right(LABEL, 549.0, (fy - lh / 2.0).round(), plug::DIM, &format!("{} points", w.points().len()));
     }
     ui.hit(card, Target::LoadSample);
 }
@@ -1170,22 +832,15 @@ fn wave_graph(c: &mut Canvas, g: Rect, cy: f32, w: &dsp::Wave, col: Color) {
     let cols = g.w.max(1.0) as usize;
     let level = |v: f32| cy - a * v.clamp(-1.0, 1.0);
     if pts.len() <= cols * 2 {
-        let line: Vec<(f32, f32)> = (0..=cols)
-            .map(|i| (g.x + i as f32, level(w.at(i as f64 / cols as f64) as f32)))
-            .collect();
+        let line: Vec<(f32, f32)> = (0..=cols).map(|i| (g.x + i as f32, level(w.at(i as f64 / cols as f64) as f32))).collect();
         c.polyline(&line, 1.5, col);
         return;
     }
     for i in 0..cols {
         let part = &pts[i * pts.len() / cols..(i + 1) * pts.len() / cols];
-        let (lo, hi) = part
-            .iter()
-            .fold((f32::MAX, f32::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
+        let (lo, hi) = part.iter().fold((f32::MAX, f32::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
         let (top, bot) = (level(hi), level(lo));
-        c.fill_rect(
-            Rect::new(g.x + i as f32, top, 1.0, (bot - top).max(1.0)),
-            col,
-        );
+        c.fill_rect(Rect::new(g.x + i as f32, top, 1.0, (bot - top).max(1.0)), col);
     }
 }
 
@@ -1207,14 +862,8 @@ pub fn hint(t: &Target, m: &dyn Model, st: &ViewState, names: &dyn Fn(&str) -> S
             format!("{}: {}", names(id), m.text(id))
         }
         // The original names the button only ("Osc 1 shape").
-        Target::Set(id, _) if id.ends_with("_shape") && id.starts_with('o') => {
-            format!("Osc {} shape", &id[1..2])
-        }
-        Target::Set(id, v) => format!(
-            "{}: {}",
-            names(id),
-            LFO_SHAPES.get(*v as usize).copied().unwrap_or("")
-        ),
+        Target::Set(id, _) if id.ends_with("_shape") && id.starts_with('o') => format!("Osc {} shape", &id[1..2]),
+        Target::Set(id, v) => format!("{}: {}", names(id), LFO_SHAPES.get(*v as usize).copied().unwrap_or("")),
         Target::Flag(AM_BYTE) => "Oscillator 3 = amplitude modulation".into(),
         Target::Flag(n) => format!("Invert osc {}", n + 1),
         Target::Tab(0) => "Oscillators".into(),
@@ -1230,13 +879,7 @@ pub fn hint(t: &Target, m: &dyn Model, st: &ViewState, names: &dyn Fn(&str) -> S
 pub fn sample_hint(s: &SampleView) -> String {
     match (&s.wave, s.path.is_empty()) {
         (_, true) => "Custom shape sample: none (click to load one)".into(),
-        (Some(_), false) => format!(
-            "Custom shape sample: {} (click to load another)",
-            file_name(&s.path)
-        ),
-        (None, false) => format!(
-            "Custom shape sample: {} could not be read",
-            file_name(&s.path)
-        ),
+        (Some(_), false) => format!("Custom shape sample: {} (click to load another)", file_name(&s.path)),
+        (None, false) => format!("Custom shape sample: {} could not be read", file_name(&s.path)),
     }
 }

@@ -15,13 +15,13 @@ pub mod state;
 
 use std::f64::consts::FRAC_PI_4;
 
-use os_dsp::curve::{Curve, Lfo, LfoShape, SYNCED, Walk, map_table};
+use os_dsp::curve::{map_table, Curve, Lfo, LfoShape, Walk, SYNCED};
 use os_dsp::glide::Glide;
 use os_dsp::num::{round, s, trunc};
 
-use super::Effect;
 use super::eq::hq::HalfBand;
-use coefs::{Coef, Input, stages, work_out};
+use super::Effect;
+use coefs::{stages, work_out, Coef, Input};
 use state::*;
 
 /// 2^-24.
@@ -32,11 +32,7 @@ fn level(x: f32) -> f32 {
 }
 
 fn slevel(x: f32) -> f32 {
-    if x == 0.0 {
-        0.0
-    } else {
-        level(x.abs()).copysign(x)
-    }
+    if x == 0.0 { 0.0 } else { level(x.abs()).copysign(x) }
 }
 
 /// A map is neutral when all its points have the target's neutral level (1, or 0.5 for an additive target).
@@ -205,10 +201,7 @@ fn ws_table(c: &Curve, bipolar: u8) -> Vec<i32> {
     let vals = map_table(c, f64::from(bipolar) * 0.5, f64::from(s(1.0 / n as f64)), n);
     let mut t = Vec::with_capacity(n + 3);
     t.push(0);
-    t.extend(
-        vals.iter()
-            .map(|&v| round(f64::from(s(f64::from(v) * scale))).clamp(-32768, 32767) as i32),
-    );
+    t.extend(vals.iter().map(|&v| round(f64::from(s(f64::from(v) * scale))).clamp(-32768, 32767) as i32));
     t[0] = t[1];
     t.push(t[n + 1]);
     t
@@ -330,10 +323,7 @@ impl LovePhilter {
 
     /// The output of filter `f`'s target `t` (the editor's playhead).
     pub fn target(&self, f: usize, t: usize) -> f32 {
-        self.units
-            .get(f)
-            .and_then(|u| u.arts.get(t))
-            .map_or(0.0, |a| a.out)
+        self.units.get(f).and_then(|u| u.arts.get(t)).map_or(0.0, |a| a.out)
     }
 
     /// Where filter `f`'s target `t`'s pattern walk is (segment, progress), for the editor.
@@ -374,11 +364,7 @@ impl LovePhilter {
         let coef = |v: i32| {
             let x = s(f64::from(v) * 6.103515625e-05);
             let u = f64::from(s((f64::from(x) * 81f64.ln()).exp() - 1.0)) * (self.ir * 0.0125);
-            if u <= 0.0 {
-                0.0
-            } else {
-                s((0.01f64.ln() / u).exp())
-            }
+            if u <= 0.0 { 0.0 } else { s((0.01f64.ln() / u).exp()) }
         };
         self.att = coef(self.st.globals[FOLLOW_ATTACK]);
         self.rel = coef(self.st.globals[FOLLOW_RELEASE]);
@@ -401,11 +387,7 @@ impl LovePhilter {
     }
 
     fn step_of(&self, c: &Curve) -> f64 {
-        if c.flags & SYNCED != 0 {
-            (self.sec * self.tempo) / 60.0
-        } else {
-            self.sec * 2.0
-        }
+        if c.flags & SYNCED != 0 { (self.sec * self.tempo) / 60.0 } else { self.sec * 2.0 }
     }
 
     /// The patterns' and LFOs' steps from the control tick and tempo; the LFOs set up again.
@@ -414,17 +396,9 @@ impl LovePhilter {
         for (f, u) in self.units.iter_mut().enumerate() {
             for (t, a) in u.arts.iter_mut().enumerate() {
                 let sa = &self.st.filters[f].arts[t];
-                let sp = if sa.patterns[pat].flags & SYNCED != 0 {
-                    (self.sec * self.tempo) / 60.0
-                } else {
-                    self.sec * 2.0
-                };
+                let sp = if sa.patterns[pat].flags & SYNCED != 0 { (self.sec * self.tempo) / 60.0 } else { self.sec * 2.0 };
                 rescale(&mut a.walk, sp);
-                let sl = if sa.lfo.flags & SYNCED != 0 {
-                    (self.sec * self.tempo) / 60.0
-                } else {
-                    self.sec * 2.0
-                };
+                let sl = if sa.lfo.flags & SYNCED != 0 { (self.sec * self.tempo) / 60.0 } else { self.sec * 2.0 };
                 rescale(&mut a.lfo.walk, sl);
                 a.lfo.shape = LfoShape::new(&sa.lfo, sl);
             }
@@ -454,9 +428,7 @@ impl LovePhilter {
                 .enumerate()
                 .map(|(t, a)| {
                     let maps = std::array::from_fn(|m| {
-                        (!neutral(&a.maps[m], t)).then(|| {
-                            map_table(&a.maps[m], centre(t), f64::from(s(1.0 / 1024.0)), 1024)
-                        })
+                        (!neutral(&a.maps[m], t)).then(|| map_table(&a.maps[m], centre(t), f64::from(s(1.0 / 1024.0)), 1024))
                     });
                     let pc = &a.patterns[pat];
                     let running = pc.enabled || a.lfo.enabled || maps.iter().any(Option::is_some);
@@ -492,10 +464,7 @@ impl LovePhilter {
             });
         }
         self.units = units;
-        let fol = self
-            .units
-            .iter()
-            .any(|u| u.arts.iter().any(|a| a.maps[2].is_some()));
+        let fol = self.units.iter().any(|u| u.arts.iter().any(|a| a.maps[2].is_some()));
         if !fol {
             (self.fol_e, self.fol_peak, self.fol_pos) = (0.0, 0.0, 0);
         }
@@ -512,9 +481,7 @@ impl LovePhilter {
     /// again (at the song position while playing, as a reposition does).
     pub fn edit(&mut self, new: State) {
         let old = std::mem::replace(&mut self.st, new);
-        if old.oversampling() != self.st.oversampling()
-            || old.hq_envelopes() != self.st.hq_envelopes()
-        {
+        if old.oversampling() != self.st.oversampling() || old.hq_envelopes() != self.st.hq_envelopes() {
             self.hq_env = self.st.hq_envelopes();
             self.rates();
             self.rf_filters = s(44100.0 / self.ir);
@@ -544,9 +511,7 @@ impl LovePhilter {
                 }
                 let a = &mut u.arts[t];
                 a.maps = std::array::from_fn(|m| {
-                    (!neutral(&na.maps[m], t)).then(|| {
-                        map_table(&na.maps[m], centre(t), f64::from(s(1.0 / 1024.0)), 1024)
-                    })
+                    (!neutral(&na.maps[m], t)).then(|| map_table(&na.maps[m], centre(t), f64::from(s(1.0 / 1024.0)), 1024))
                 });
                 let pc = &na.patterns[pat];
                 a.running = pc.enabled || na.lfo.enabled || a.maps.iter().any(Option::is_some);
@@ -554,16 +519,8 @@ impl LovePhilter {
                     a.out = na.base;
                     continue;
                 }
-                let step_p = if pc.flags & SYNCED != 0 {
-                    (self.sec * self.tempo) / 60.0
-                } else {
-                    self.sec * 2.0
-                };
-                let step_l = if na.lfo.flags & SYNCED != 0 {
-                    (self.sec * self.tempo) / 60.0
-                } else {
-                    self.sec * 2.0
-                };
+                let step_p = if pc.flags & SYNCED != 0 { (self.sec * self.tempo) / 60.0 } else { self.sec * 2.0 };
+                let step_l = if na.lfo.flags & SYNCED != 0 { (self.sec * self.tempo) / 60.0 } else { self.sec * 2.0 };
                 if oa.lfo != na.lfo || !a.running {
                     a.lfo = Lfo::new(&na.lfo, step_l, None);
                     a.lfo.start_at(&na.lfo, sp);
@@ -574,10 +531,7 @@ impl LovePhilter {
                 }
             }
         }
-        let fol = self
-            .units
-            .iter()
-            .any(|u| u.arts.iter().any(|a| a.maps[2].is_some()));
+        let fol = self.units.iter().any(|u| u.arts.iter().any(|a| a.maps[2].is_some()));
         if !fol {
             (self.fol_e, self.fol_peak, self.fol_pos) = (0.0, 0.0, 0);
         }
@@ -609,34 +563,15 @@ impl LovePhilter {
             }
             u.c = v(C_CUT, 1.0 / 256.0);
             u.r = v(C_RES, 1.0 / 256.0);
-            u.svf = [
-                level(v(C_LOW, 1.0 / 128.0)),
-                level(v(C_BAND, 1.0 / 128.0)),
-                level(v(C_HIGH, 1.0 / 128.0)),
-            ];
-            u.gain = s(
-                f64::from(s((f64::from(s(f64::from(c[C_LOW] as f32) * 0.015625))
-                    * 8f64.ln())
-                .exp()
-                    - 1.0))
-                    * 0.125
-                    + 0.125,
-            );
+            u.svf = [level(v(C_LOW, 1.0 / 128.0)), level(v(C_BAND, 1.0 / 128.0)), level(v(C_HIGH, 1.0 / 128.0))];
+            u.gain = s(f64::from(s((f64::from(s(f64::from(c[C_LOW] as f32) * 0.015625)) * 8f64.ln()).exp() - 1.0)) * 0.125 + 0.125);
             u.drive = v(C_LOW, 1.0 / 128.0);
             u.pre = v(C_PRE, 1.0 / 128.0);
             u.mix_v = v(C_WSMIX, 1.0 / 128.0);
             u.pan = v(C_PAN, 1.0 / 128.0);
-            u.vol = if solo.is_some_and(|s| s != f) {
-                0.0
-            } else {
-                level(v(C_VOL, 1.0 / 128.0)) * self.master
-            };
+            u.vol = if solo.is_some_and(|s| s != f) { 0.0 } else { level(v(C_VOL, 1.0 / 128.0)) * self.master };
             u.input = slevel(v(C_IN, 1.0 / 128.0));
-            u.next = if f + 1 < FILTERS {
-                slevel(v(C_NEXT, 1.0 / 128.0))
-            } else {
-                0.0
-            };
+            u.next = if f + 1 < FILTERS { slevel(v(C_NEXT, 1.0 / 128.0)) } else { 0.0 };
         }
     }
 
@@ -671,8 +606,7 @@ impl LovePhilter {
     fn start_time(&self, follows: bool) -> f64 {
         let p = if follows && self.playing {
             let ticks = self.beats * 96.0;
-            ((ticks * self.ir) * 240.0)
-                / f64::from(s(f64::from(s(f64::from(self.tempo as f32) * 96.0)) * 4.0))
+            ((ticks * self.ir) * 240.0) / f64::from(s(f64::from(s(f64::from(self.tempo as f32) * 96.0)) * 4.0))
         } else {
             0.0
         };
@@ -724,11 +658,7 @@ impl LovePhilter {
     pub fn flush(&mut self) {
         for u in &mut self.units {
             for st in &mut u.st {
-                *st = Stage {
-                    f: st.f,
-                    q: st.q,
-                    ..Stage::default()
-                };
+                *st = Stage { f: st.f, q: st.q, ..Stage::default() };
             }
         }
         self.up = vec![[HalfBand::default(); 2]; self.stages as usize];
@@ -743,21 +673,12 @@ impl LovePhilter {
     fn modulate(&mut self) {
         let smooth = self.st.smooth();
         for k in 0..2 {
-            let target = (if k == 0 {
-                self.st.mod_x()
-            } else {
-                self.st.mod_y()
-            }) as f32;
-            self.mod_cur[k] = if smooth {
-                target + (self.mod_cur[k] - target) * self.mod_coef
-            } else {
-                target
-            };
+            let target = (if k == 0 { self.st.mod_x() } else { self.st.mod_y() }) as f32;
+            self.mod_cur[k] = if smooth { target + (self.mod_cur[k] - target) * self.mod_coef } else { target };
             self.mod_pos[k] = round(f64::from(self.mod_cur[k])).clamp(0, 1024) as usize;
         }
         if self.fol_run {
-            self.fol_pos =
-                round(f64::from(s(f64::from(self.fol_peak) * 1024.0))).clamp(0, 1024) as usize;
+            self.fol_pos = round(f64::from(s(f64::from(self.fol_peak) * 1024.0))).clamp(0, 1024) as usize;
             self.fol_peak = 0.0;
         }
         let pos = [self.mod_pos[0], self.mod_pos[1], self.fol_pos];
@@ -783,20 +704,12 @@ impl LovePhilter {
                 if pc.enabled {
                     a.walk.advance(pc, 1.0);
                     let e = a.walk.out;
-                    out = if add {
-                        out + e * a.amount
-                    } else {
-                        (out * e) * a.amount
-                    };
+                    out = if add { out + e * a.amount } else { (out * e) * a.amount };
                 }
                 if sa.lfo.enabled {
                     a.lfo.advance(&sa.lfo, 1.0);
                     let l = a.lfo.value;
-                    out = if add {
-                        out + l * a.lfo_amount
-                    } else {
-                        out * ((l * a.lfo_amount) * 2.0 + 1.0)
-                    };
+                    out = if add { out + l * a.lfo_amount } else { out * ((l * a.lfo_amount) * 2.0 + 1.0) };
                 }
                 a.out = out;
             }
@@ -805,13 +718,7 @@ impl LovePhilter {
 
     /// The follower over one chunk of samples.
     fn follow(&mut self, l: &[f32], r: &[f32]) {
-        follow(
-            &mut self.fol_e,
-            &mut self.fol_peak,
-            [self.follow_level, self.att, self.rel],
-            l,
-            r,
-        );
+        follow(&mut self.fol_e, &mut self.fol_peak, [self.follow_level, self.att, self.rel], l, r);
     }
 
     /// Internal samples `i0..i0 + n` (one chunk).
@@ -840,13 +747,7 @@ impl LovePhilter {
                 prev_on = false;
                 continue;
             }
-            let k = Kind {
-                kind: sf.kind,
-                order: sf.order,
-                alt: sf.alt,
-                ws: sf.ws,
-                bipolar: sf.ws_bipolar != 0,
-            };
+            let k = Kind { kind: sf.kind, order: sf.order, alt: sf.alt, ws: sf.ws, bipolar: sf.ws_bipolar != 0 };
             // The input.
             let u = &self.units[f];
             let (inv, tn) = (u.input, if prev_on { prev_next } else { 0.0 });
@@ -902,12 +803,7 @@ impl LovePhilter {
             }
             for i in 0..n {
                 let (yl, yr) = (cur[0][i], cur[1][i]);
-                let [ll, rr, rl, lr] = [
-                    ramps[0].next(),
-                    ramps[1].next(),
-                    ramps[2].next(),
-                    ramps[3].next(),
-                ];
+                let [ll, rr, rl, lr] = [ramps[0].next(), ramps[1].next(), ramps[2].next(), ramps[3].next()];
                 sum[0][i] += yl * ll + yr * rl;
                 sum[1][i] += yr * rr + yl * lr;
             }
@@ -940,12 +836,7 @@ impl LovePhilter {
             if self.host[ch].len() < ni {
                 self.host[ch].resize(ni, 0.0);
             }
-            for b in [
-                &mut self.sum[ch],
-                &mut self.cur[ch],
-                &mut self.prev[ch],
-                &mut self.z[ch],
-            ] {
+            for b in [&mut self.sum[ch], &mut self.cur[ch], &mut self.prev[ch], &mut self.z[ch]] {
                 if b.len() < tick {
                     b.resize(tick, 0.0);
                 }
@@ -968,10 +859,7 @@ impl LovePhilter {
         let ni = n << self.stages;
         // The silence test.
         let floor = s(1e-6);
-        let quiet = left[..n]
-            .iter()
-            .chain(&right[..n])
-            .all(|x| x.abs() <= floor);
+        let quiet = left[..n].iter().chain(&right[..n]).all(|x| x.abs() <= floor);
         let skip_up = quiet && self.quiet <= 0;
         if quiet {
             self.quiet -= n as i64;
@@ -1097,16 +985,7 @@ fn glide(cur: &mut f32, target: f32, n: usize, limit: f32, jump: bool) -> (f32, 
 
 /// A filter's cascade over a chunk, in place.
 #[allow(clippy::too_many_arguments)]
-fn cascade(
-    u: &mut Unit,
-    k: Kind,
-    rf: f32,
-    limit: f32,
-    jump: bool,
-    buf: &mut [Vec<f32>; 2],
-    n: usize,
-    pat: &mut [Vec<f32>; 4],
-) {
+fn cascade(u: &mut Unit, k: Kind, rf: f32, limit: f32, jump: bool, buf: &mut [Vec<f32>; 2], n: usize, pat: &mut [Vec<f32>; 4]) {
     let ns = stages(k.order);
     if ns == 0 {
         return;
@@ -1171,10 +1050,8 @@ fn cascade(
                         } else {
                             let u0 = sig((xv + f64::from(phi) * q) * fd);
                             let p1 = f64::from(p[0]) + (u0 - sig(f64::from(p[0]) * fd)) * g;
-                            let p2 =
-                                f64::from(p[1]) + (sig(p1 * fd) - sig(f64::from(p[1]) * fd)) * g;
-                            let p3 =
-                                f64::from(p[2]) + (sig(p2 * fd) - sig(f64::from(p[2]) * fd)) * g;
+                            let p2 = f64::from(p[1]) + (sig(p1 * fd) - sig(f64::from(p[1]) * fd)) * g;
+                            let p3 = f64::from(p[2]) + (sig(p2 * fd) - sig(f64::from(p[2]) * fd)) * g;
                             let p4n = p4 + (sig(p3 * fd) - sig(p4 * fd)) * g;
                             [p1, p2, p3, p4n]
                         };
@@ -1192,8 +1069,7 @@ fn cascade(
             for (st, c) in u.st.iter_mut().zip(&co).take(ns) {
                 let [a1, a2, b0, b1, b2] = c.b;
                 for ch in 0..2 {
-                    let (mut x1, mut x2, mut y1, mut y2) =
-                        (st.x1[ch], st.x2[ch], st.y1[ch], st.y2[ch]);
+                    let (mut x1, mut x2, mut y1, mut y2) = (st.x1[ch], st.x2[ch], st.y1[ch], st.y2[ch]);
                     for x in &mut buf[ch][..n] {
                         let xv = f64::from(*x);
                         let y = xv * b0 + (((x1 * b1 - y2 * a2) + x2 * b2) - y1 * a1);
@@ -1232,11 +1108,7 @@ fn chocolate(
     for j in 0..3 {
         let mut g = u.svf[j] * u.arts[tg[j]].out;
         if ns > 1 {
-            g = if g > 0.0 {
-                coefs::pow_s(f64::from(g), f64::from(s(1.0 / ns as f64)))
-            } else {
-                0.0
-            };
+            g = if g > 0.0 { coefs::pow_s(f64::from(g), f64::from(s(1.0 / ns as f64))) } else { 0.0 };
         }
         ramps[j] = glide(&mut u.lv[j], g, n, limit, jump);
     }
@@ -1248,11 +1120,7 @@ fn chocolate(
     }
     for (k, (st, c)) in u.st.iter_mut().zip(co).take(ns).enumerate() {
         let (f0, df) = glide(&mut st.f, c.f, n, limit, jump);
-        let (mut q0, dq) = if k == 0 {
-            glide(&mut st.q, c.q, n, limit, jump)
-        } else {
-            (1.0, 0.0)
-        };
+        let (mut q0, dq) = if k == 0 { glide(&mut st.q, c.q, n, limit, jump) } else { (1.0, 0.0) };
         if alt {
             let x = f0.max(f0 + df * n as f32);
             q0 = if k == 0 { (q0 * rf) / x } else { rf / x };
@@ -1366,12 +1234,11 @@ mod tests {
     use super::*;
 
     fn sine(hz: f64, n: usize) -> Vec<f32> {
-        (0..n)
-            .flat_map(|i| {
-                let v = (0.5 * (i as f64 * hz * std::f64::consts::TAU / 44100.0).sin()) as f32;
-                [v, v]
-            })
-            .collect()
+        (0..n).flat_map(|i| {
+            let v = (0.5 * (i as f64 * hz * std::f64::consts::TAU / 44100.0).sin()) as f32;
+            [v, v]
+        })
+        .collect()
     }
 
     fn rms(b: &[f32]) -> f64 {
@@ -1451,9 +1318,7 @@ mod tests {
             lp.process(&mut b);
             seen.push(lp.target(0, T_CUT));
         }
-        let (lo, hi) = seen
-            .iter()
-            .fold((f32::MAX, f32::MIN), |(a, b), &v| (a.min(v), b.max(v)));
+        let (lo, hi) = seen.iter().fold((f32::MAX, f32::MIN), |(a, b), &v| (a.min(v), b.max(v)));
         assert!(hi - lo > 0.2, "{lo} {hi}");
     }
 

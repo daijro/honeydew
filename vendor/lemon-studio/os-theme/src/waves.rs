@@ -78,11 +78,7 @@ pub fn gradient_at(stops: &[(f32, Color)], t: f32) -> Color {
     for w in stops.windows(2) {
         let ((p0, c0), (p1, c1)) = (w[0], w[1]);
         if t <= p1 {
-            return if p1 > p0 {
-                c0.mix(c1, (t - p0) / (p1 - p0))
-            } else {
-                c1
-            };
+            return if p1 > p0 { c0.mix(c1, (t - p0) / (p1 - p0)) } else { c1 };
         }
     }
     last.1
@@ -96,19 +92,10 @@ pub fn multiband(bands: [f32; 3]) -> Option<Color> {
         return None;
     }
     let mix = |f: fn(Color) -> u8| -> u8 {
-        let v: f32 = [LOW, MID, HIGH]
-            .iter()
-            .zip(bands)
-            .map(|(c, b)| f32::from(f(*c)) * b.max(0.0))
-            .sum();
+        let v: f32 = [LOW, MID, HIGH].iter().zip(bands).map(|(c, b)| f32::from(f(*c)) * b.max(0.0)).sum();
         (v / total).round().clamp(0.0, 255.0) as u8
     };
-    Some(Color {
-        r: mix(|c| c.r),
-        g: mix(|c| c.g),
-        b: mix(|c| c.b),
-        a: 255,
-    })
+    Some(Color { r: mix(|c| c.r), g: mix(|c| c.g), b: mix(|c| c.b), a: 255 })
 }
 
 /// How waveforms are coloured: the setting's mode and the Waves gradient to use.
@@ -122,10 +109,7 @@ pub struct Waves {
 impl Waves {
     /// `mode` with the theme's gradient `theme` (empty = the stock gradient).
     pub fn new(mode: Mode, theme: &[(f32, Color)]) -> Waves {
-        Waves {
-            mode,
-            stops: theme.to_vec(),
-        }
+        Waves { mode, stops: theme.to_vec() }
     }
 
     /// Whether waveforms are coloured at all.
@@ -149,11 +133,7 @@ static GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// The waveform colouring of this process (set by the app; Off until then).
 pub fn current() -> Arc<Waves> {
-    CURRENT
-        .read()
-        .ok()
-        .and_then(|g| g.clone())
-        .unwrap_or_default()
+    CURRENT.read().ok().and_then(|g| g.clone()).unwrap_or_default()
 }
 
 /// Sets the waveform colouring of this process. A change counts up [`generation`], so painters that cache a picture
@@ -211,23 +191,9 @@ mod tests {
         let w = Waves::new(Mode::ColorMap, &[]);
         assert_eq!(w.colour(Some(50.0), None), Some(STOCK[0].1));
         assert_eq!(w.colour(None, Some([1.0, 0.0, 0.0])), None, "silence");
-        assert_eq!(
-            Waves::new(Mode::Multiband, &[]).colour(Some(50.0), Some([0.0, 1.0, 0.0])),
-            Some(MID)
-        );
-        assert_eq!(
-            Waves::default().colour(Some(50.0), Some([1.0, 0.0, 0.0])),
-            None,
-            "Off"
-        );
-        assert_eq!(
-            (
-                Mode::from_index(0),
-                Mode::from_index(1),
-                Mode::from_index(2)
-            ),
-            (Mode::Off, Mode::ColorMap, Mode::Multiband)
-        );
+        assert_eq!(Waves::new(Mode::Multiband, &[]).colour(Some(50.0), Some([0.0, 1.0, 0.0])), Some(MID));
+        assert_eq!(Waves::default().colour(Some(50.0), Some([1.0, 0.0, 0.0])), None, "Off");
+        assert_eq!((Mode::from_index(0), Mode::from_index(1), Mode::from_index(2)), (Mode::Off, Mode::ColorMap, Mode::Multiband));
     }
 
     /// The process-wide setting starts Off; a change counts up the generation, setting the same again does not.

@@ -73,10 +73,8 @@ pub const RANGES: [(i32, i32); PARAMS] = [
 ];
 
 /// A new instance without a state.
-pub const DEFAULTS: [i32; PARAMS] = [
-    6000, 0, 0, 0, 80, 3000, 500, 6000, 3000, 0, 0, 0, 3000, 0, 3000, 0, 3000, 3000, 0, 0, 0,
-    60000, 6000, 6000, 0, 6000,
-];
+pub const DEFAULTS: [i32; PARAMS] =
+    [6000, 0, 0, 0, 80, 3000, 500, 6000, 3000, 0, 0, 0, 3000, 0, 3000, 0, 3000, 3000, 0, 0, 0, 60000, 6000, 6000, 0, 6000];
 
 /// Delay types.
 pub const MONO: i32 = 0;
@@ -97,10 +95,7 @@ pub const STATE_LEN: usize = 108;
 /// The settings that move to a new value in steps (the others take effect at once).
 const SMOOTHED: [bool; PARAMS] = {
     let mut s = [false; PARAMS];
-    let list = [
-        INPUT, SPREAD, MOD_CUTOFF, DIFF_LEVEL, FEEDBACK, CUTOFF, RESONANCE, DRIVE, HARDNESS,
-        SYMMETRY, RATE_RED, BITS, WET, TONE, DRY,
-    ];
+    let list = [INPUT, SPREAD, MOD_CUTOFF, DIFF_LEVEL, FEEDBACK, CUTOFF, RESONANCE, DRIVE, HARDNESS, SYMMETRY, RATE_RED, BITS, WET, TONE, DRY];
     let mut i = 0;
     while i < list.len() {
         s[list[i]] = true;
@@ -131,8 +126,7 @@ impl Default for Settings {
 }
 
 fn int_at(b: &[u8], at: usize) -> Option<i32> {
-    b.get(at..at + 4)
-        .map(|s| i32::from_le_bytes(s.try_into().unwrap()))
+    b.get(at..at + 4).map(|s| i32::from_le_bytes(s.try_into().unwrap()))
 }
 
 impl Settings {
@@ -254,10 +248,7 @@ struct Ring {
 
 impl Ring {
     fn new(len: usize) -> Ring {
-        Ring {
-            buf: vec![0.0; len],
-            pos: 0,
-        }
+        Ring { buf: vec![0.0; len], pos: 0 }
     }
     #[inline]
     fn read(&self, d: f32) -> f32 {
@@ -307,12 +298,7 @@ fn high_pass_10hz() -> OnePole {
     let w = (1.0f64 / 44100.0) as f32 * std::f32::consts::PI;
     let t = (f64::from(w) * 10.0).tan() as f32;
     let b0 = 1.0 / (t + 1.0);
-    OnePole {
-        b0,
-        b1: -b0,
-        a1: -(t - 1.0) / (t + 1.0),
-        ..OnePole::default()
-    }
+    OnePole { b0, b1: -b0, a1: -(t - 1.0) / (t + 1.0), ..OnePole::default() }
 }
 
 /// The state-variable filter's coefficients.
@@ -358,11 +344,7 @@ impl Side {
     fn new(level: f32, hardness: f32) -> Side {
         let knee = level * hardness;
         let r = (level - knee).max(1e-11);
-        Side {
-            knee,
-            span: r + r,
-            curve: 0.25 / r,
-        }
+        Side { knee, span: r + r, curve: 0.25 / r }
     }
     #[inline]
     fn run(&self, x: f32) -> f32 {
@@ -388,15 +370,7 @@ pub struct Distortion {
 
 impl Default for Distortion {
     fn default() -> Self {
-        let mut d = Distortion {
-            thr: 0.0,
-            hardness: 0.0,
-            symmetry: 0.0,
-            gain: 1.0,
-            ceiling: 1.0,
-            pos: Side::default(),
-            neg: Side::default(),
-        };
+        let mut d = Distortion { thr: 0.0, hardness: 0.0, symmetry: 0.0, gain: 1.0, ceiling: 1.0, pos: Side::default(), neg: Side::default() };
         d.design();
         d
     }
@@ -408,9 +382,7 @@ impl Distortion {
         let x = x * 0.95;
         self.thr = x * -30.0;
         self.design();
-        let poly = (((((x * 2.9843) * x) * x) * x - ((x * 7.5177) * x) * x) + (x * 6.8819) * x
-            - (x * 3.1787) * x)
-            + 1.0;
+        let poly = (((((x * 2.9843) * x) * x) * x - ((x * 7.5177) * x) * x) + (x * 6.8819) * x - (x * 3.1787) * x) + 1.0;
         self.gain = (1.0 / f64::from(poly)).powf(f64::from(0.707f32)) as f32;
         self.ceiling = pow10_20(self.thr) * self.gain;
     }
@@ -430,11 +402,7 @@ impl Distortion {
     /// The saturator: linear up to the knee, a parabola up to the side's level, then flat; times the gain.
     #[inline]
     pub fn saturate(&self, y: f32) -> f32 {
-        let v = if y >= 0.0 {
-            self.pos.run(y)
-        } else {
-            -self.neg.run(-y)
-        };
+        let v = if y >= 0.0 { self.pos.run(y) } else { -self.neg.run(-y) };
         v * self.gain
     }
     pub fn ceiling(&self) -> f32 {
@@ -450,11 +418,7 @@ impl Distortion {
     }
     /// The static curve the editor draws: the saturator, or the limiter as a clip at its ceiling.
     pub fn curve(&self, saturate: bool, x: f32) -> f32 {
-        if saturate {
-            self.saturate(x)
-        } else {
-            x.clamp(-self.ceiling, self.ceiling)
-        }
+        if saturate { self.saturate(x) } else { x.clamp(-self.ceiling, self.ceiling) }
     }
 }
 
@@ -648,10 +612,7 @@ impl Delay {
             d.derive(k);
         }
         let t = d.targets(&d.sets[0].target);
-        d.sets = [Set {
-            target: t,
-            live: t.map(f64::from),
-        }; 2];
+        d.sets = [Set { target: t, live: t.map(f64::from) }; 2];
         d.reset();
         d
     }
@@ -665,11 +626,7 @@ impl Delay {
     }
 
     pub fn from_state(state: &[u8], sample_rate: u32) -> Option<Delay> {
-        Some(Delay::with_settings(
-            sample_rate,
-            &Settings::from_state(state)?,
-            120.0,
-        ))
+        Some(Delay::with_settings(sample_rate, &Settings::from_state(state)?, 120.0))
     }
 
     /// The stored values applied last.
@@ -781,13 +738,7 @@ impl Delay {
                 }
                 self.marked = true;
             }
-            SMOOTH => {
-                self.glide = if x == 0.0 {
-                    1.0
-                } else {
-                    1.0 - 0.01f64.powf(1.0 / (f64::from(x) * self.rate))
-                }
-            }
+            SMOOTH => self.glide = if x == 0.0 { 1.0 } else { 1.0 - 0.01f64.powf(1.0 / (f64::from(x) * self.rate)) },
             SPREAD => {
                 self.straight = x * 0.5 + 0.5;
                 self.crossed = 1.0 - self.straight;
@@ -894,13 +845,7 @@ impl Delay {
         let g = f64::from(hz * w).tan() as f32;
         let a1 = 1.0 / ((g + k) * g + 1.0);
         let a2 = a1 * g;
-        self.svf_k = SvfCoefs {
-            a1,
-            a2,
-            a3: a2 * g,
-            m,
-            off: false,
-        };
+        self.svf_k = SvfCoefs { a1, a2, a3: a2 * g, m, off: false };
     }
 
     /// The four delays' integer targets for the current settings (Off makes only A and keeps the rest).
@@ -910,9 +855,7 @@ impl Delay {
         let df = d as f32;
         let rate = self.rate as f32;
         let scale = (self.rate / 44100.0) as f32;
-        let a = ((df / (rate * 0.015)).min(1.0) * (scale * (self.diff_size * 590.0 + 65.0)))
-            .max(1.0)
-            .trunc() as i32;
+        let a = ((df / (rate * 0.015)).min(1.0) * (scale * (self.diff_size * 590.0 + 65.0))).max(1.0).trunc() as i32;
         let mut t = *old;
         t[0] = a;
         let w = ((self.pan - 0.5).abs() + (self.pan - 0.5).abs()) * 0.5;
@@ -982,21 +925,14 @@ impl Delay {
             for i in 0..4 {
                 let (t, l) = (f64::from(s.target[i]), s.live[i]);
                 if l != t {
-                    s.live[i] = if (t - l).abs() < 0.001 {
-                        t
-                    } else {
-                        (t - l) * g + l
-                    };
+                    s.live[i] = if (t - l).abs() < 0.001 { t } else { (t - l) * g + l };
                 }
             }
         } else if self.marked && !self.fading {
             self.marked = false;
             let o = 1 - self.current;
             let t = self.targets(&self.sets[o].target);
-            self.sets[o] = Set {
-                target: t,
-                live: t.map(f64::from),
-            };
+            self.sets[o] = Set { target: t, live: t.map(f64::from) };
             self.fading = true;
             self.fade_pos = 0;
         }
@@ -1022,13 +958,7 @@ impl Delay {
     /// Both sets' reads of `ring` at their delay `i` (plus a sway in frames), added by their gains.
     #[inline]
     fn tap(&self, ring: &Ring, i: usize, sway: f32, mono: bool) -> f32 {
-        let d = |s: &Set| {
-            if mono {
-                s.live[i] as f32 + sway
-            } else {
-                (f64::from(sway) + s.live[i]) as f32
-            }
-        };
+        let d = |s: &Set| if mono { s.live[i] as f32 + sway } else { (f64::from(sway) + s.live[i]) as f32 };
         ring.read(d(&self.sets[0])) * self.gains[0] + ring.read(d(&self.sets[1])) * self.gains[1]
     }
 
@@ -1074,12 +1004,7 @@ impl Delay {
             let mut v = y / self.dist.ceiling;
             let a = v.abs();
             let d = a - s.env;
-            s.env = ftz(s.env
-                + d * if a >= s.env {
-                    self.attack
-                } else {
-                    self.release
-                });
+            s.env = ftz(s.env + d * if a >= s.env { self.attack } else { self.release });
             if s.env > 1.0 {
                 v /= s.env;
             }
@@ -1110,9 +1035,7 @@ impl Delay {
         self.lfo = ((old * 6.283_185_5).sin() + 1.0) * 0.5;
         if self.kind != OFF {
             let half = 0.5 * self.rate as f32;
-            self.depth = ftz(((self.depth_setting * half) * self.lfo_scale - self.depth)
-                * self.depth_c
-                + self.depth);
+            self.depth = ftz(((self.depth_setting * half) * self.lfo_scale - self.depth) * self.depth_c + self.depth);
         }
         if self.frame % 4 == 0 {
             self.make_filter();
@@ -1134,10 +1057,7 @@ impl Delay {
                 self.out_mix(yl, yr, il, ir)
             }
             TRUE_STEREO => {
-                let e = [
-                    self.tap(&self.lines[0], 1, sway, false),
-                    self.tap(&self.lines[1], 1, sway, false),
-                ];
+                let e = [self.tap(&self.lines[0], 1, sway, false), self.tap(&self.lines[1], 1, sway, false)];
                 let inp = [il, ir];
                 let mut x = [0.0f32; 2];
                 for s in 0..2 {
@@ -1155,14 +1075,8 @@ impl Delay {
                 self.out_mix(yl, yr, il, ir)
             }
             PING_PONG => {
-                let e = [
-                    self.tap(&self.lines[0], 1, sway, false),
-                    self.tap(&self.lines[1], 1, sway, false),
-                ];
-                let to = [
-                    ir * self.w_rl + il * self.w_ll,
-                    ir * self.w_rr + il * self.w_lr,
-                ];
+                let e = [self.tap(&self.lines[0], 1, sway, false), self.tap(&self.lines[1], 1, sway, false)];
+                let to = [ir * self.w_rl + il * self.w_ll, ir * self.w_rr + il * self.w_lr];
                 let mut x = [0.0f32; 2];
                 for s in 0..2 {
                     let v = to[s] * self.input + self.hp[s].run(e[s] * self.feedback);
@@ -1174,30 +1088,19 @@ impl Delay {
                 self.lines[1].write(x[0]);
                 self.lines[0].write(x[1]);
                 let y = [self.tone[0].run(e[0]), self.tone[1].run(e[1])];
-                let mut o = [
-                    self.straight * y[0] + self.crossed * y[1],
-                    self.straight * y[1] + self.crossed * y[0],
-                ];
+                let mut o = [self.straight * y[0] + self.crossed * y[1], self.straight * y[1] + self.crossed * y[0]];
                 if self.saturate {
                     for (s, o) in o.iter_mut().enumerate() {
                         let sh = &mut self.shaper[s];
                         let a = o.abs();
                         let d = a - sh.env;
-                        sh.env = ftz(sh.env
-                            + d * if a >= sh.env {
-                                self.attack
-                            } else {
-                                self.release
-                            });
+                        sh.env = ftz(sh.env + d * if a >= sh.env { self.attack } else { self.release });
                         if sh.env > 1.0 {
                             *o /= sh.env;
                         }
                     }
                 }
-                (
-                    (il * self.dry) * 1.0 + o[0] * self.wet,
-                    (ir * self.dry) * 1.0 + o[1] * self.wet,
-                )
+                ((il * self.dry) * 1.0 + o[0] * self.wet, (ir * self.dry) * 1.0 + o[1] * self.wet)
             }
             _ => {
                 let mut y = [0.0f32; 2];
@@ -1206,10 +1109,7 @@ impl Delay {
                     let sh = self.shape(s, f);
                     y[s] = self.tone[s].run(sh);
                 }
-                (
-                    (self.crossed * y[1] + self.straight * y[0]) * self.wet + self.dry * il,
-                    (self.crossed * y[0] + self.straight * y[1]) * self.wet + self.dry * ir,
-                )
+                ((self.crossed * y[1] + self.straight * y[0]) * self.wet + self.dry * il, (self.crossed * y[0] + self.straight * y[1]) * self.wet + self.dry * ir)
             }
         };
         self.advance_fade();
@@ -1298,10 +1198,7 @@ mod tests {
     }
 
     fn first_peak(v: &[f32], from: usize) -> usize {
-        from + v[from..]
-            .iter()
-            .position(|x| x.abs() > 1e-3)
-            .expect("an echo")
+        from + v[from..].iter().position(|x| x.abs() > 1e-3).expect("an echo")
     }
 
     #[test]
@@ -1341,9 +1238,7 @@ mod tests {
     #[test]
     fn echoes_arrive_after_the_delay_time() {
         // True stereo, 100 ms, no feedback, dry off.
-        let x = (0..768)
-            .find(|&v| delay_seconds(norm(TIME, v), false, 120.0) >= 0.1)
-            .unwrap();
+        let x = (0..768).find(|&v| delay_seconds(norm(TIME, v), false, 120.0) >= 0.1).unwrap();
         let s = with(&[(TYPE, TRUE_STEREO), (TIME, x), (FEEDBACK, 0), (DRY, 0)]);
         let mut d = started(&s, 120.0);
         let (l, r) = impulse(&mut d, 10000);
@@ -1357,13 +1252,7 @@ mod tests {
 
     #[test]
     fn feedback_repeats_and_decays() {
-        let s = with(&[
-            (TYPE, TRUE_STEREO),
-            (TIME, 100),
-            (FEEDBACK, 3000),
-            (DRY, 0),
-            (FILTER, FILTER_OFF),
-        ]);
+        let s = with(&[(TYPE, TRUE_STEREO), (TIME, 100), (FEEDBACK, 3000), (DRY, 0), (FILTER, FILTER_OFF)]);
         let mut d = started(&s, 120.0);
         let (l, _) = impulse(&mut d, 44100);
         let e1 = first_peak(&l, 0);
@@ -1375,14 +1264,7 @@ mod tests {
 
     #[test]
     fn ping_pong_alternates_sides() {
-        let s = with(&[
-            (TYPE, PING_PONG),
-            (TIME, 100),
-            (FEEDBACK, 3000),
-            (DRY, 0),
-            (OFFSET, 0),
-            (FILTER, FILTER_OFF),
-        ]);
+        let s = with(&[(TYPE, PING_PONG), (TIME, 100), (FEEDBACK, 3000), (DRY, 0), (OFFSET, 0), (FILTER, FILTER_OFF)]);
         let mut d = started(&s, 120.0);
         let mut l = vec![0.0f32; 44100];
         let mut r = vec![0.0f32; 44100];
@@ -1396,8 +1278,7 @@ mod tests {
 
     #[test]
     fn the_first_reset_keeps_the_delays_the_second_takes_new_ones() {
-        let mut d =
-            Delay::with_settings(44100, &with(&[(TYPE, TRUE_STEREO), (KEEP_PITCH, 1)]), 120.0);
+        let mut d = Delay::with_settings(44100, &with(&[(TYPE, TRUE_STEREO), (KEEP_PITCH, 1)]), 120.0);
         d.start();
         let before = d.live_delay(1);
         d.apply(TIME, 400);
@@ -1418,11 +1299,7 @@ mod tests {
         d.preroll(4410);
         let g = d.set_gains();
         assert_eq!(d.current, 1 - was);
-        assert!(
-            (g[was] - 1.0 / 4410.0).abs() < 1e-7
-                && (g[1 - was] - (1.0 - 1.0 / 4410.0)).abs() < 1e-6,
-            "{g:?}"
-        );
+        assert!((g[was] - 1.0 / 4410.0).abs() < 1e-7 && (g[1 - was] - (1.0 - 1.0 / 4410.0)).abs() < 1e-6, "{g:?}");
     }
 
     #[test]
@@ -1440,19 +1317,11 @@ mod tests {
 
     #[test]
     fn a_tempo_change_moves_synced_echoes() {
-        let mut d = started(
-            &with(&[(TYPE, TRUE_STEREO), (SYNC, 1), (TIME, 192), (SMOOTH, 0)]),
-            120.0,
-        );
+        let mut d = started(&with(&[(TYPE, TRUE_STEREO), (SYNC, 1), (TIME, 192), (SMOOTH, 0)]), 120.0);
         let at120 = d.live_delay(1);
         d.set_tempo(60.0);
         d.preroll(1);
-        assert!(
-            (d.live_delay(1) - (at120 + 22050.0)).abs() < 2.0,
-            "{} {}",
-            at120,
-            d.live_delay(1)
-        );
+        assert!((d.live_delay(1) - (at120 + 22050.0)).abs() < 2.0, "{} {}", at120, d.live_delay(1));
     }
 
     #[test]
@@ -1487,27 +1356,12 @@ mod tests {
     #[test]
     fn every_type_stays_finite_at_extreme_settings() {
         for kind in 0..4 {
-            let s = with(&[
-                (TYPE, kind),
-                (TIME, 2),
-                (FEEDBACK, 6000),
-                (RESONANCE, 6000),
-                (DRIVE, 6000),
-                (RATE_RED, 0),
-                (BITS, 0),
-                (MOD_TIME, 6000),
-                (MOD_RATE, 6000),
-                (DIFF_LEVEL, 6000),
-                (TONE, 3000),
-            ]);
+            let s = with(&[(TYPE, kind), (TIME, 2), (FEEDBACK, 6000), (RESONANCE, 6000), (DRIVE, 6000), (RATE_RED, 0), (BITS, 0), (MOD_TIME, 6000), (MOD_RATE, 6000), (DIFF_LEVEL, 6000), (TONE, 3000)]);
             let mut d = started(&s, 120.0);
             let mut l: Vec<f32> = (0..20000).map(|i| ((i as f32) * 0.05).sin()).collect();
             let mut r = l.clone();
             d.process(&mut l, &mut r);
-            assert!(
-                l.iter().chain(&r).all(|v| v.is_finite() && v.abs() < 100.0),
-                "type {kind}"
-            );
+            assert!(l.iter().chain(&r).all(|v| v.is_finite() && v.abs() < 100.0), "type {kind}");
         }
     }
 }
