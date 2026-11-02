@@ -1008,22 +1008,25 @@ mod tests {
         let mut shift = 0.0;
         let mut s = Offscreen::new();
         s.frame(vec![], &mut tab(&mut lane, &mut shift));
-        // 96 px right: the tab follows the finger and neither opens nor sizes the lane.
+        // The tab rests a hair right of home: its half and a hairline in from the editor's left edge, whichever is
+        // further. 96 px right of there: it follows the finger and neither opens nor sizes the lane.
+        let u = m.u(1.0);
+        let rest = ((AREA.left() + m.u(TAB_W) / 2.0 + 1.0) - 24.0).max(0.0) / u;
         s.drag(
             CLOSED_TAB,
             &[vec2(48.0, 0.0), vec2(96.0, 0.0)],
             &mut tab(&mut lane, &mut shift),
         );
         assert!(!lane.open && lane.moving.is_none(), "{lane:?}");
-        assert!((shift - 96.0 / m.u(1.0)).abs() < 1e-3, "{shift}");
+        assert!((shift - (rest + 96.0 / u)).abs() < 1e-3, "{shift}");
         // Past the editor's right edge it stops there: the tab's half and a hairline inside it.
         s.drag(
             pos2(CLOSED_TAB.x + 96.0, CLOSED_TAB.y),
             &[vec2(200.0, 0.0), vec2(400.0, 0.0)],
             &mut tab(&mut lane, &mut shift),
         );
-        let hi = (AREA.right() - m.u(TAB_W) / 2.0 - 1.0 - 24.0) / m.u(1.0);
-        assert!(hi > 3.0, "{hi}");
+        let hi = (AREA.right() - m.u(TAB_W) / 2.0 - 1.0 - 24.0) / u;
+        assert!(hi > rest + 3.0, "{hi}");
         assert!((shift - hi).abs() < 1e-3, "{shift} {hi}");
         // A tap there still toggles the lane.
         s.click(

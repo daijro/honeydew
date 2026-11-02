@@ -1026,7 +1026,10 @@ impl StepSeqView {
         };
         let live = l.x0 + (drawn / BEAT) as f32 * l.step_w * d as f32;
         let line_x = (self.knob).line_x(ui, m, &at, song_end, live);
-        let bottom = (l.row_top() + rows as f32 * l.pitch).clamp(l.top, l.rect.bottom());
+        // `max` then `min`, not `clamp`: a screen too short for the lane can leave its rect ending above where it
+        // starts, and `clamp` panics with min above max — on Android a panic in the app thread leaves the last frame
+        // up, which is a freeze.
+        let bottom = (l.row_top() + rows as f32 * l.pitch).clamp(l.top, l.rect.bottom().max(l.top));
         let column = Rect::everything_right_of(l.column_right());
         let line = painter.with_clip_rect(painter.clip_rect().intersect(column));
         let span = Rect::from_x_y_ranges(l.grid().x_range(), l.top..=bottom);
