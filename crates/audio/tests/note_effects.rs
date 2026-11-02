@@ -1376,14 +1376,20 @@ fn the_randomizer_times_a_note_early_or_late_by_its_shift() {
             late[0].beat >= beat && late[0].beat <= beat + 0.25,
             "late at {beat}: {late:?}"
         );
-        assert!((late[1].beat - late[0].beat - 1.0).abs() < 1e-12, "{late:?}");
+        assert!(
+            (late[1].beat - late[0].beat - 1.0).abs() < 1e-12,
+            "{late:?}"
+        );
         // All early: within a 16th before it, and never before the song starts.
         let early = timed(1.0, 0.0, beat);
         assert!(
             early[0].beat <= beat && early[0].beat >= (beat - 0.25).max(0.0),
             "early at {beat}: {early:?}"
         );
-        assert!((early[1].beat - early[0].beat - 1.0).abs() < 1e-12, "{early:?}");
+        assert!(
+            (early[1].beat - early[0].beat - 1.0).abs() < 1e-12,
+            "{early:?}"
+        );
     }
     // An even mix reaches both sides: of 64 notes some before their beat, some after, all within the 16th.
     let input: Vec<_> = (0..64)
@@ -1400,7 +1406,11 @@ fn the_randomizer_times_a_note_early_or_late_by_its_shift() {
         &input,
         80.0,
     );
-    let ons: Vec<f64> = mixed.iter().filter(|e| e.kind == NoteKind::On).map(|e| e.beat).collect();
+    let ons: Vec<f64> = mixed
+        .iter()
+        .filter(|e| e.kind == NoteKind::On)
+        .map(|e| e.beat)
+        .collect();
     assert_eq!(ons.len(), 64);
     let (mut early, mut late) = (0, 0);
     for &beat in &ons {
