@@ -680,10 +680,10 @@ impl PianoRoll {
         (ui.painter()).rect_filled(gap, 0.0, cx.theme.colors.background.to_color32());
         let grid_painter = ui.painter_at(grid);
         // The pop-in is over: its mark goes, and with it the animation's id (the next note starts its own).
-        if let Some((_, _, at)) = self.born {
-            if now >= at + f64::from(POP_S) {
-                self.born = None;
-            }
+        if let Some((_, _, at)) = self.born
+            && now >= at + f64::from(POP_S)
+        {
+            self.born = None;
         }
         let rows = self.rows(song, events, opts.sounding);
         paint_grid(&grid_painter, grid, &g, &rows, color, song.time_sig, cx);

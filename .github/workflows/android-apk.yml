@@ -6,7 +6,8 @@ name: Android APK
 # default branch is the only place GitHub looks for it.
 #
 # The sound library is not in this repository: it is fetched from the upstream release of the same version, so the APK
-# plays out of the box. Bump `SOUNDS_TAG` with `Cargo.toml`'s version.
+# plays out of the box. Bump `SOUNDS_TAG` with `Cargo.toml`'s version, and keep the version in `sounds/release.txt` the
+# library's own (that file is what the crate compiles; the rest of the library is not checked in).
 
 on:
   push:
