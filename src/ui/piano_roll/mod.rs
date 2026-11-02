@@ -313,8 +313,9 @@ pub struct PianoRoll {
     /// Each key's press glow in the key column: eased towards 1 while it is the held key and back to 0 once let go
     /// ([`PRESS_TINT`]).
     key_press: [f32; 128],
-    /// The note a tap or `open` added last, as the clip holds it (its start, its key): its pop-in ([`POP_S`]).
-    born: Option<(u32, u8)>,
+    /// The note a tap or `open` added last, as the clip holds it, and when: its start, its key and the egui time of
+    /// the frame that added it, for its pop-in ([`POP_S`]), dropped once that is over.
+    born: Option<(u32, u8, f64)>,
     /// The grid cursor (content tick, key): where `paste` and `open` act ([`Self::keys`]).
     cursor: (f64, u8),
     /// The `Paste` button shows, at this finger (module docs).
@@ -641,7 +642,7 @@ impl PianoRoll {
         let step = crate::ui::anim::step(ui.ctx(), crate::ui::anim::PANEL_KEEP);
         let mut easing = false;
         for (key, glow) in self.key_press.iter_mut().enumerate() {
-            let target = f32::from(self.key_down == Some(key as u8));
+            let target = if self.key_down == Some(key as u8) { 1.0 } else { 0.0 };
             *glow += (target - *glow) * step;
             easing |= (*glow - target).abs() > 0.002;
         }
@@ -674,6 +675,12 @@ impl PianoRoll {
         let gap = Rect::from_x_y_ranges(keys.right()..=grid.left(), body.y_range());
         (ui.painter()).rect_filled(gap, 0.0, cx.theme.colors.background.to_color32());
         let grid_painter = ui.painter_at(grid);
+        // The pop-in is over: its mark goes, and with it the animation's id (the next note starts its own).
+        if let Some((_, _, at)) = self.born {
+            if now >= at + f64::from(POP_S) {
+                self.born = None;
+            }
+        }
         let rows = self.rows(song, events, opts.sounding);
         paint_grid(&grid_painter, grid, &g, &rows, color, song.time_sig, cx);
         let view = g.tick(grid.left())..g.tick(grid.right());
@@ -688,7 +695,7 @@ impl PianoRoll {
             &self.ghosts(song, opts, view, px),
             past,
             color,
-            (self.born, cx),
+            (self.born.map(|(pos, key, _)| (pos, key)), cx),
         );
         // The playhead line's slot: over the notes, under their handles, the marquee and the floating row.
         let line_slot = grid_painter.add(egui::Shape::Noop);
@@ -729,7 +736,7 @@ impl PianoRoll {
             keys,
             &g,
             (opts.middle_c_is_c4, color),
-            (rows, &self.key_press),
+            (&rows, &self.key_press),
             cx,
         );
         if let Some(lane) = lane {
@@ -1477,9 +1484,9 @@ impl PianoRoll {
         {
             (*v, *p, *s) = (velocity, pan.min(254), slide);
         }
-        // The note as the clip holds it, for its pop-in ([`paint_notes`]).
+        // The note as the clip holds it, and this frame's time, for its pop-in ([`paint_notes`]).
         if let Event::Note { pos, .. } = clip.events[i] {
-            self.born = Some((pos, key));
+            self.born = Some((pos, key, now));
         }
         clip.fit_loop(bpb);
         actions.push(PianoRollAction::QuietEdit);
