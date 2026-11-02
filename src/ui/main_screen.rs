@@ -1143,9 +1143,10 @@ impl MainScreen {
     ///   touch area runs from its left edge to the screen's right edge, from the top down to 1.7 U. Hidden while the
     ///   rack is open across the full width.
     /// - Rack tab: a 1.5 U × 2.43 U pill, its left edge 2.1 U from the screen's right edge, centred on the content area
-    ///   top … its bottom + 2 U, at least 5 U below the area top and 0.25 U above its bottom; while its top is under
-    ///   2.75 U from the screen's top it moves right by the difference. Icon 88 in the channel colour; touch area to
-    ///   the screen's right edge. Hidden while the rack is open.
+    ///   top … its bottom + 2 U, at least 5 U below the area top and 0.25 U above its bottom, moved by `tab_shift` U
+    ///   down that edge (a drag up or down moves it, kept inside the area, and the app keeps the place in `Settings`);
+    ///   while its top is under 2.75 U from the screen's top it moves right by the difference. Icon 88 in the channel
+    ///   colour; touch area to the screen's right edge. Hidden while the rack is open. Returns the place it then has.
     pub fn corner_buttons(
         &mut self,
         ui: &mut egui::Ui,
@@ -1153,25 +1154,40 @@ impl MainScreen {
         (selected, ink): (usize, Color32),
         regions: &Regions,
         actions: &mut ScreenActions,
-    ) {
+        tab_shift: f32,
+    ) -> f32 {
         let m = cx.m;
         let text = cx.theme.colors.text.to_color32();
         self.show_keyboard_button(ui, cx, regions.screen);
         let (screen, area) = (regions.screen, regions.area);
         let rack_open = regions.rack.left() < area.right();
+        let mut shift = tab_shift;
 
         if !rack_open {
             let size = vec2(m.u(PANEL_BUTTON_W), m.u(RACK_TAB_H));
             let middle = (area.top() + area.bottom() + m.u(2.0)) / 2.0;
-            let top = (middle - size.y / 2.0)
-                .min(area.bottom() - m.u(0.25) - size.y)
-                .max(area.top() + m.u(5.0));
+            let low = area.top() + m.u(5.0);
+            let high = (area.bottom() - m.u(0.25) - size.y).max(low);
+            let home = (middle - size.y / 2.0).min(high).max(low);
+            let top = (home + m.u(shift)).clamp(low, high);
             let nudge = (m.u(2.75) - (top - screen.top())).max(0.0);
             let pill = Rect::from_min_size(pos2(screen.right() - m.u(2.1) + nudge, top), size);
             let hit = pill.with_max_x(screen.right());
             let icon = (IconId::RackTab, ink);
             let tab = open_panel_button(ui, Id::new("edge_tab"), (pill, hit), icon, cx);
             crate::ui::tooltip::tip(ui, hit, "Channel rack", Some("showRack"));
+            // A drag up or down moves the tab along the edge, kept inside the area; a tap still toggles the rack.
+            let place = Id::new("edge_tab place");
+            if tab.drag_started() {
+                ui.data_mut(|d| d.insert_temp(place, shift));
+            } else if tab.dragged() {
+                let from = ui.data(|d| d.get_temp::<f32>(place)).unwrap_or(shift);
+                let moved = tab.total_drag_delta().unwrap_or_default().y / m.u(1.0);
+                shift = (from + moved).clamp((low - home) / m.u(1.0), (high - home) / m.u(1.0));
+            }
+            if tab.drag_stopped() {
+                ui.data_mut(|d| d.remove::<f32>(place));
+            }
             if tab.clicked() {
                 actions.nav = Some(Nav::Toggle(Overlay::Rack(selected)));
             }
@@ -1195,6 +1211,7 @@ impl MainScreen {
                 actions.nav = Some(Nav::Toggle(Overlay::MainMenu(MenuTab::Songs)));
             }
         }
+        shift
     }
 
     /// The keyboard panel's height this frame: the first frame takes `target` ([`panel_target`]) at once; then it moves
@@ -2699,7 +2716,9 @@ mod tests {
                     let (edit, playhead) = (app.edit, app.playhead);
                     screen.chrome(ui, &cx, input, &regions, &mut actions);
                     let tab = (input.selected, Color32::WHITE);
-                    screen.corner_buttons(ui, &cx, tab, &regions, &mut actions);
+                    let shift = app.settings.rack_tab_shift;
+                    app.settings.rack_tab_shift =
+                        screen.corner_buttons(ui, &cx, tab, &regions, &mut actions, shift);
                     let panel_h = size.y - regions.transport.top();
                     let tracks = band_layout(size.y, m.u(1.0), panel_h, 1).tracks;
                     result = Some(Frame {

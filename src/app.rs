@@ -2183,6 +2183,7 @@ impl HoneydewApp {
                                     (view_rect, shown.top()),
                                     screen,
                                     color,
+                                    &mut app.settings.editor_ribbon_shift,
                                     &cx,
                                 ) {
                                     navs.push(Nav::Collapse);
@@ -2221,12 +2222,19 @@ impl HoneydewApp {
                 // The corner buttons go over the rack and under the other overlays.
                 let hue = app.song.channels.get(input.selected).map_or(0.0, |c| c.hue);
                 let ink = crate::theme::channel_color(hue, cx.theme).to_color32();
-                let corner = |ui: &mut egui::Ui| {
-                    let (selected, screen) = ((input.selected, ink), &mut self.main_screen);
-                    screen.corner_buttons(ui, &cx, selected, &regions, &mut actions);
+                // The rack tab's place, which a drag of it may move: out of the settings for the frame, and back in.
+                let tab_shift = std::cell::Cell::new(app.settings.rack_tab_shift);
+                let overlay_navs = {
+                    let corner = |ui: &mut egui::Ui| {
+                        let (selected, screen) = ((input.selected, ink), &mut self.main_screen);
+                        let shift = tab_shift.get();
+                        tab_shift.set(
+                            screen.corner_buttons(ui, &cx, selected, &regions, &mut actions, shift),
+                        );
+                    };
+                    (self.slots).overlays(&mut self.nav.overlays, ui, &mut app, escape, corner)
                 };
-                let overlay_navs =
-                    (self.slots).overlays(&mut self.nav.overlays, ui, &mut app, escape, corner);
+                app.settings.rack_tab_shift = tab_shift.get();
                 #[cfg(test)]
                 match self.test_edit.take() {
                     Some(SongEdit::Replaced) => app.song_replaced(),
