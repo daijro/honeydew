@@ -391,8 +391,9 @@ fn randomize(module: &NoteEffectModule, note: Note, index: usize, output: &mut V
     let (start, end) = if far > 0.0 {
         let bias = 2.0 * f64::from(module.params[6]) - 1.0;
         let (lo, hi) = (-1.0 + bias.max(0.0), 1.0 + bias.min(0.0));
-        let offset = far * (lo + random.unit() * (hi - lo));
-        let start = (note.start + offset).max(0.0);
+        // A note that would start before the song stays where it is, both ends: it keeps its length.
+        let offset = (far * (lo + random.unit() * (hi - lo))).max(-note.start);
+        let start = note.start + offset;
         (start, (note.end + offset).max(start))
     } else {
         (note.start, note.end)
