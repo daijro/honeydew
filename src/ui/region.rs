@@ -13,7 +13,6 @@ use crate::song::{Channel, Clip, Event, PPQ};
 use crate::ui::clips::{at_pos, end_tick};
 use crate::ui::piano_roll::notes::content_tick;
 use crate::ui::popup::PopupItem;
-use crate::ui::preview;
 
 /// A time range picked on a ruler, `start` < `end`, in the ruler's ticks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,30 +55,30 @@ impl TimeRange {
 }
 
 /// The song tick a clip editor's content tick 0 plays at: the clip's start less its offset, a loop later when that is
-/// before the song start (Preview's span: still negative when the offset passes the start by more than a loop); 0
-/// without a clip.
+/// before the song start (still negative when the offset passes the start by more than a loop); 0 without a clip or a
+/// loop length.
 pub fn clip_origin(clip: Option<&Clip>) -> i64 {
-    clip.and_then(preview::span).map_or(0, |(start, _)| start)
+    clip.and_then(|c| {
+        let lp = c.loop_ticks()?;
+        let s = f64::from(c.start_tick) - c.offset_beats * f64::from(PPQ);
+        Some(if s < 0.0 { s + lp } else { s }.round() as i64)
+    })
+    .unwrap_or(0)
 }
 
-/// The content tick a clip editor shows the transport's song tick `tick` at, if the clip plays then: while Preview
-/// plays the clip (`previewing`), `tick` − s over its span [s, e) ([`preview::solo`] plays the content from s); else
-/// where the clip plays in the song ([`content_tick`]).
-pub fn playhead_tick(clip: Option<&Clip>, tick: u64, previewing: bool) -> Option<f64> {
-    match clip.and_then(preview::span).filter(|_| previewing) {
-        Some((s, e)) => {
-            let tick = tick as i64;
-            (s..e).contains(&tick).then(|| (tick - s) as f64)
-        }
-        None => content_tick(clip, tick),
-    }
+/// The content tick a clip editor shows the transport's song tick `tick` at, if the clip plays then
+/// ([`content_tick`]). Preview plays the clip as the song does (issue #46, [`crate::ui::preview::span`]), so
+/// this holds while it is on too.
+pub fn playhead_tick(clip: Option<&Clip>, tick: u64) -> Option<f64> {
+    content_tick(clip, tick)
 }
 
 /// The song tick a tap on a clip editor's ruler at content tick `tick` seeks to, so that [`playhead_tick`] reads back
-/// there: while Preview plays the clip (`previewing`), its [`clip_origin`] s plus `tick`; else where the clip first
-/// plays that content ([`Clip::song_tick`]), and outside the clip's window s plus `tick` again; never before 0.
-pub fn seek_tick(clip: Option<&Clip>, tick: u32, previewing: bool) -> u64 {
-    (clip.filter(|_| !previewing).and_then(|c| c.song_tick(tick)))
+/// there: where the clip first plays that content ([`Clip::song_tick`]), and outside the clip's window its
+/// [`clip_origin`] plus `tick`, never before 0 (while Preview is on, outside its loop: the engine wraps a playhead past
+/// its end, and the app moves one before its start there).
+pub fn seek_tick(clip: Option<&Clip>, tick: u32) -> u64 {
+    (clip.and_then(|c| c.song_tick(tick)))
         .unwrap_or((clip_origin(clip) + i64::from(tick)).max(0) as u64)
 }
 
@@ -529,50 +528,46 @@ mod tests {
         let mut lane = Lane::new(LaneKind::Notes);
         let clip = lane.add_clip(512, 4.0);
         clip.offset_beats = 2.0;
-        // Content 128 plays 384 ticks into the clip; content 0 two beats in.
-        assert_eq!(seek_tick(Some(clip), 128, false), 896);
-        assert_eq!(seek_tick(Some(clip), 0, false), 768);
-        // Previewed, the content plays from the origin, 256.
-        assert_eq!(seek_tick(Some(clip), 128, true), 384);
+        // Content 128 plays 384 ticks into the clip; content 0 two beats in. Previewed alike (issue #46).
+        assert_eq!(seek_tick(Some(clip), 128), 896);
+        assert_eq!(seek_tick(Some(clip), 0), 768);
         // Shown a beat long, the clip plays content 256..384 only: the rest seeks from its origin, 256.
         clip.visible_len_beats = 1.0;
-        assert_eq!(seek_tick(Some(clip), 300, false), 556);
-        assert_eq!(seek_tick(Some(clip), 0, false), 256);
+        assert_eq!(seek_tick(Some(clip), 300), 556);
+        assert_eq!(seek_tick(Some(clip), 0), 256);
         // No clip: the tick.
-        assert_eq!(seek_tick(None, 128, false), 128);
-        assert_eq!(seek_tick(None, 128, true), 128);
+        assert_eq!(seek_tick(None, 128), 128);
     }
 
     #[test]
-    fn the_playhead_reads_where_the_clip_plays_or_while_previewed_through_its_span() {
+    fn the_playhead_reads_where_the_clip_plays_previewed_or_not() {
         let mut lane = Lane::new(LaneKind::Notes);
         let clip = lane.add_clip(512, 4.0);
         clip.offset_beats = 2.0;
-        // In the song the clip plays content 256.. from 512; previewed, content 0.. from 256 to 768.
-        assert_eq!(playhead_tick(Some(clip), 300, false), None);
-        assert_eq!(playhead_tick(Some(clip), 600, false), Some(344.0));
-        assert_eq!(playhead_tick(Some(clip), 300, true), Some(44.0));
-        assert_eq!(playhead_tick(Some(clip), 600, true), Some(344.0));
-        assert_eq!(playhead_tick(Some(clip), 768, true), None);
-        // Shown a beat long: the song plays 512..640 only, Preview its whole span.
+        // The clip plays content 256.. from 512, wrapping to content 0 at 768, previewed or not (issue #46).
+        assert_eq!(playhead_tick(Some(clip), 300), None);
+        assert_eq!(playhead_tick(Some(clip), 600), Some(344.0));
+        assert_eq!(playhead_tick(Some(clip), 768), Some(0.0));
+        // Shown a beat long: 512..640 only.
         clip.visible_len_beats = 1.0;
-        assert_eq!(playhead_tick(Some(clip), 700, false), None);
-        assert_eq!(playhead_tick(Some(clip), 700, true), Some(444.0));
-        assert_eq!(playhead_tick(None, 700, true), None);
+        assert_eq!(playhead_tick(Some(clip), 600), Some(344.0));
+        assert_eq!(playhead_tick(Some(clip), 700), None);
+        assert_eq!(playhead_tick(None, 700), None);
     }
 
     #[test]
-    fn a_span_before_the_song_start_maps_from_a_negative_origin() {
-        // Five beats into a one-bar clip at 0: Preview's span is [−128, 384) (`preview::span`).
+    fn a_content_origin_before_the_song_start_maps_from_a_negative_origin() {
+        // Five beats into a one-bar clip at 0: content tick 0 is at −128, a loop after −640.
         let mut lane = Lane::new(LaneKind::Notes);
         let clip = lane.add_clip(0, 4.0);
         clip.offset_beats = 5.0;
         assert_eq!(clip_origin(Some(clip)), -128);
-        assert_eq!(playhead_tick(Some(clip), 0, true), Some(128.0));
-        assert_eq!(playhead_tick(Some(clip), 384, true), None);
-        // A tap seeks to s + content, never before 0.
-        assert_eq!(seek_tick(Some(clip), 256, true), 128);
-        assert_eq!(seek_tick(Some(clip), 64, true), 0);
+        // The clip plays content 128.. from 0, wrapping to content 0 at 384.
+        assert_eq!(playhead_tick(Some(clip), 0), Some(128.0));
+        assert_eq!(playhead_tick(Some(clip), 384), Some(0.0));
+        // A tap seeks where the clip plays the content.
+        assert_eq!(seek_tick(Some(clip), 256), 128);
+        assert_eq!(seek_tick(Some(clip), 64), 448);
         // The play loop on the ruler and back.
         assert_eq!(
             TimeRange::in_clip(Some((0, 256)), -128),

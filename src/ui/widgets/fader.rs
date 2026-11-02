@@ -11,6 +11,8 @@ use crate::ui::UiCtx;
 pub const UNITY: f32 = 0.85312;
 /// Fader rects at least this tall (U) are shrunk at both ends and get the tall cap.
 const TALL: f32 = 6.5;
+/// The cap's width in U, centred on the track.
+pub const CAP_W: f32 = 1.25;
 
 /// What a fader paints, in drawing order after the track's fill.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -37,7 +39,7 @@ fn parts(rect: Rect, v: f32, t: f32, u: f32, px: f32) -> Parts {
     };
     let track = track(body, false, t, u);
     let cap_h = if tall { 1.875 } else { 0.625 } * u;
-    let cap = Rect::from_center_size(point(track, false, v), vec2(1.25 * u, cap_h));
+    let cap = Rect::from_center_size(point(track, false, v), vec2(CAP_W * u, cap_h));
     let tick_y = point(track, false, UNITY).y - px;
     let tick = |x: f32| Rect::from_min_size(pos2(x, tick_y), vec2(0.5 * u, 2.0 * px));
     Parts {

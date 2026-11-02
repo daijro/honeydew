@@ -895,9 +895,9 @@ impl HoneydewApp {
     /// current track's current clip whatever the view shows: it moves with it (changing the clip or channel keeps
     /// Preview on and moves it to the new clip), and goes off without one (the editor collapsed for want of
     /// it, taking Preview's button; the X keeps the clip, and Preview on it). While it plays, the engine loops its loop
-    /// ([`preview::looped`]: each play-loop marker inside the clip's span, else the span's; from tick 0 on, and none
-    /// wholly before the song start, s₀ ≤ −2L), and without Preview the song's play loop. A loop that changes without a
-    /// rebuild (a ruler) goes to the engine as `SetLoop`. The engine wraps a playhead at or past the end; Preview jumps
+    /// ([`preview::looped`]: each play-loop marker inside the clip's span, the clip as drawn, else the span's), and
+    /// without Preview the song's play loop. A loop that changes without a rebuild (a ruler) goes to the engine as
+    /// `SetLoop`. The engine wraps a playhead at or past the end; Preview jumps
     /// one before its loop to the loop's start.
     fn preview(&mut self, ctx: &egui::Context, clicked: bool, current: Option<ClipKey>, tick: u64) {
         match (clicked, self.preview, current) {
@@ -2542,8 +2542,18 @@ impl HoneydewApp {
         };
         crate::ui::tooltip::show(ctx, &cx);
         self.keep_settings(ctx);
-        // The playhead follows the audio; otherwise egui repaints only on input.
-        if playing && snapshot.is_some_and(|s| !s.stream_failed) {
+        // The playhead follows the audio, and a lit level meter falls to rest at the meters' release, stopped too (#41);
+        // otherwise egui repaints only on input.
+        let lit = |s: &OutputSnapshot| {
+            (s.module_meters.iter()).any(|m| {
+                m.value
+                    .peak_left
+                    .max(m.value.peak_right)
+                    .max(m.value.input_peak)
+                    > 0.0
+            })
+        };
+        if snapshot.is_some_and(|s| !s.stream_failed && (playing || lit(&s))) {
             ctx.request_repaint();
         }
         #[cfg(debug_assertions)]
@@ -4638,7 +4648,13 @@ mod tests {
         command(&mut rig, egui::Key::O);
         rig.app.add_default_drums(0);
         rig.open_menu(MenuTab::Songs);
-        rig.click_id(songs_id(("big", 1_usize)));
+        // A swipe left on `Save` (a tap asks for the name).
+        let save = rig.ctx.read_response(songs_id(("big", 1_usize))).unwrap();
+        let at = save.rect.center();
+        rig.press(at);
+        rig.drag_to(at - vec2(16.0, 0.0));
+        rig.drag_to(at - vec2(32.0, 0.0));
+        rig.release(at - vec2(32.0, 0.0));
         assert_eq!(
             rig.overlays(),
             [Overlay::MainMenu(MenuTab::Songs)],

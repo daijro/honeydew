@@ -944,10 +944,10 @@ fn restrike_after(between: impl FnOnce(&mut SongAudioEngine)) -> f32 {
 fn stop_drops_the_held_note_offs_and_a_seek_keeps_them() {
     // The note-off held before the stop must not release the key struck after it.
     assert!(restrike_after(|e| e.stop()) > 0.01);
-    // A seek leaves the voices sounding, so the note-offs the pedal holds for them stay held and still
-    // release the key when it lifts, as with no seek.
+    // A seek leaves the voices sounding, so the note-offs the pedal holds for them stay held, as with no seek. The
+    // lift leaves the key struck again and still down sounding (issue #45): they wait for its own release.
     assert_eq!(restrike_after(|e| e.seek(0)), restrike_after(|_| {}));
-    assert!(restrike_after(|e| e.seek(0)) < 1e-6);
+    assert!(restrike_after(|e| e.seek(0)) > 0.01);
 }
 
 /// A MiniSynth channel at 120 BPM playing `notes`, each (key, start beat, length in beats).

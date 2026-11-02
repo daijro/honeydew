@@ -160,6 +160,24 @@ impl Rig {
         action
     }
 
+    /// A press at `from`, a move to `from + by` in two steps and the release there; returns the release frame's action.
+    fn drag(&mut self, from: Pos2, by: egui::Vec2) -> Option<MainMenuAction> {
+        let button = |pos, pressed| Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        self.frame(vec![Event::PointerMoved(from)]);
+        self.frame(vec![button(from, true)]);
+        self.frame(vec![Event::PointerMoved(from + by / 2.0)]);
+        self.frame(vec![Event::PointerMoved(from + by)]);
+        self.frame(vec![button(from + by, false)]);
+        let action = self.action.clone();
+        self.frame(vec![]);
+        action
+    }
+
     /// Texts painted in the last frame, in paint order, with where they were drawn.
     fn texts(&self) -> Vec<(String, Rect)> {
         self.shapes
@@ -339,7 +357,13 @@ fn songs_buttons_return_their_actions() {
         Some(MainMenuAction::NewSong(division))
     );
     assert!(!rig.has(TITLE));
-    assert_eq!(rig.click_text("Save"), Some(MainMenuAction::Save));
+    // `Save` is a swipe button: a tap asks for the name, a swipe left of 0.75 U or more quick-saves; a shorter one, or a
+    // mostly vertical drag, does neither.
+    assert_eq!(rig.click_text("Save"), Some(MainMenuAction::SaveNew));
+    let save = rig.find("Save").center();
+    assert_eq!(rig.drag(save, vec2(-20.0, 0.0)), None);
+    assert_eq!(rig.drag(save, vec2(-32.0, 48.0)), None);
+    assert_eq!(rig.drag(save, vec2(-32.0, 0.0)), Some(MainMenuAction::Save));
     assert_eq!(rig.click_text("Import"), Some(MainMenuAction::Import));
 }
 

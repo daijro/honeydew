@@ -612,7 +612,7 @@ impl AutomationEditor {
             song.play_loop = range.and_then(|r| r.song_loop(origin));
         }
         if let Some(tick) = picked.playhead.or(tap) {
-            out.seek = Some(region::seek_tick(clip_of(song, key), tick, opts.previewing));
+            out.seek = Some(region::seek_tick(clip_of(song, key), tick));
         }
         if let Some((op, range)) = picked.pick {
             if !op.keeps_loop() {
@@ -639,7 +639,7 @@ impl AutomationEditor {
             Some(KnobGesture::Tap) => out.play = true,
             Some(KnobGesture::Drop(x)) => {
                 let tick = self.knob.drop_tick(ui, &ruler_at, loop_ticks - 1.0, x) as u32;
-                out.dropped = Some(region::seek_tick(clip_of(song, key), tick, opts.previewing));
+                out.dropped = Some(region::seek_tick(clip_of(song, key), tick));
             }
             None => {}
         }

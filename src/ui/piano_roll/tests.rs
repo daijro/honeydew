@@ -3549,7 +3549,7 @@ mod component {
     #[test]
     fn a_range_wholly_before_the_song_start_is_no_play_loop() {
         let mut rig = Rig::new(vec![n(0, 64.0, 60)]);
-        // Five beats into its one-bar content: content tick 0 plays at song tick −128 (Preview's span).
+        // Five beats into its one-bar content: content tick 0 plays at song tick −128 (`region::clip_origin`).
         rig.song.channels[1].lanes[0].clips[0].offset_beats = 5.0;
         rig.frame(vec![]);
         // Song ticks −128..0: empty from tick 0, so no range.

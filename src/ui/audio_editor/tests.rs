@@ -744,7 +744,7 @@ fn a_ruler_tap_seeks_before_the_content_end_and_stops_while_playing() {
     // While playing anywhere: the tap stops (the app's playhead rule).
     rig.t.playing = true;
     rig.click(pos2(818.0, 24.0));
-    let seek = region::seek_tick(Some(clip(&rig.song)), 768, false);
+    let seek = region::seek_tick(Some(clip(&rig.song)), 768);
     assert_eq!(rig.take(), [Action::SetPlayhead(seek)]);
 }
 

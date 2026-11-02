@@ -428,8 +428,8 @@ pub struct StepSeqView {
     pub playing: bool,
     /// REC is armed: the playhead disc shows the record icon. The host sets it each frame.
     pub armed: bool,
-    /// Preview plays the shown clip: the playhead maps through its span ([`region::playhead_tick`]). The host sets it
-    /// each frame.
+    /// Preview plays the shown clip. Read by nothing since issue #46: Preview plays a clip as the song does
+    /// ([`region::playhead_tick`]). The host sets it each frame.
     pub previewing: bool,
     /// Per row, its pad's output peaks (L, R), linear, for the row's level meters. The host sets it each frame;
     /// a row past its end is silent.
@@ -807,7 +807,7 @@ impl StepSeqView {
         let ink = color.to_color32();
         let rows = edit::row_count(lane, pads.count());
         // d steps a beat (`TDIV` byte 0); the loop L (a lane without a clip shows one bar), and s, the song tick of
-        // content tick 0 (`Preview`'s span start).
+        // content tick 0 ([`region::clip_origin`]).
         let sig = song.time_sig;
         let d = sig.steps_per_beat() as usize;
         let loop_beats = clip.map_or(f64::from(sig.bar_beats()), |c| c.loop_len_beats);

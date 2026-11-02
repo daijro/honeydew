@@ -18,7 +18,7 @@ use eframe::egui::{Align2, Id, Pos2, Rect, Ui, UiBuilder, Vec2, pos2, vec2};
 use honeydew_audio::device::ModuleMeter;
 
 use crate::icons::draw_icon;
-use crate::metrics::FontSize;
+use crate::metrics::{FontSize, Metrics};
 use crate::midi::links;
 use crate::song::{AutomationTarget, ChannelKind, Song};
 use crate::theme::{DISABLED_ALPHA, channel_color};
@@ -88,6 +88,24 @@ fn strip_tree(h: f32, master: bool) -> Node {
         .visible(h > 10.5),
         Node::leaf(CELL).h(Size::U(1.5)).visible(h > 2.25),
     ])
+}
+
+/// The strip's level meters beside its `fader` rect's cap: two bars 3t wide with a 1t gap, the left peak first, from
+/// 1t right of the cap, over the fader's track (so that the meter law's 0…1 runs along it), each filled from the
+/// track's bottom up by its meter value ([`mini_mixer::meter`]). Empty bars are left out. Wider than the
+/// track headers' two t-wide bars ([`mini_mixer::vertical_meters`]), which read too thin on a phone in the mixer
+/// (#41).
+fn strip_meters(fader: Rect, peaks: [f32; 2], m: &Metrics) -> Vec<Rect> {
+    let (t, track) = (m.t(), widgets::fader_track(fader, m));
+    let left = track.center().x + m.u(widgets::FADER_CAP_W / 2.0) + t;
+    (peaks.into_iter().enumerate())
+        .filter(|&(_, p)| mini_mixer::meter(p) > 0.0)
+        .map(|(i, p)| {
+            let x = left + 4.0 * t * i as f32;
+            let top = track.bottom() - track.height() * mini_mixer::meter(p);
+            Rect::from_x_y_ranges(x..=x + 3.0 * t, top..=track.bottom())
+        })
+        .collect()
 }
 
 /// The rects (device pixels) of the parts a strip in `rect_px` shows, in drawing order, spacers left out.
@@ -211,15 +229,11 @@ pub fn show(
                     );
                     false
                 }
-                // Reset to 0.85312, unity, not the 0.8531 a new channel stores. The level meters at the rect's right
-                // edge span the track, so that the meter law's 0…1 runs along it.
+                // Reset to 0.85312, unity, not the 0.8531 a new channel stores.
                 FADER => {
                     let c = control("", widgets::UNITY);
                     let changed = widgets::fader(&mut ui, cx, &c, &mut params[0]).changed();
-                    let span =
-                        Rect::from_x_y_ranges(r.x_range(), widgets::fader_track(r, m).y_range());
-                    let peaks = mini_mixer::meter_peaks(meters, i);
-                    for bar in mini_mixer::vertical_meters(span, peaks, m.t()) {
+                    for bar in strip_meters(r, mini_mixer::meter_peaks(meters, i), m) {
                         ui.painter().rect_filled(bar, 0.0, color);
                     }
                     changed
@@ -1489,7 +1503,7 @@ mod tests {
     }
 
     #[test]
-    fn each_strip_meters_its_channel_at_the_fader_rects_right_edge() {
+    fn each_strip_meters_its_channel_beside_the_fader_cap() {
         use honeydew_audio::MeterSnapshot;
         use honeydew_audio::device::ModuleKey;
         let theme = theme_by_id(0);
@@ -1510,38 +1524,41 @@ mod tests {
         let quiet = 10_f32.powf(-1.5);
         rig.meters = vec![meter(0, 1.0, 0.0), meter(1, quiet, quiet)];
         rig.frame(vec![]);
-        // Bars t (2) wide at the fader rect's right − 3t and − 2t, over its track (the 6 U fader inset 0.5 U), from the
-        // bottom up by the meter law.
+        // Bars 3t (6) wide with a 1t gap, from 1t right of the 1.25 U cap, over the fader's track (the 6 U fader inset
+        // 0.5 U), from the bottom up by the meter law.
         let bars = |i: usize| {
             let fader = rig.part(i, FADER);
             let color = channel_color(rig.song.channels[i].hue, &theme).to_color32();
-            let (track, right) = (fader.shrink2(vec2(0.0, 0.5 * U)), fader.right());
+            let (track, cap) = (
+                fader.shrink2(vec2(0.0, 0.5 * U)),
+                fader.center().x + 0.625 * U,
+            );
             let rects = rig.shapes.iter().filter_map(|s| match &s.shape {
-                Shape::Rect(r) if r.fill == color && r.rect.left() >= right - 6.0 => Some(r.rect),
+                Shape::Rect(r) if r.fill == color && r.rect.left() > cap => Some(r.rect),
                 _ => None,
             });
-            (rects.collect::<Vec<_>>(), track, right)
+            (rects.collect::<Vec<_>>(), track, cap)
         };
-        let (master, track, right) = bars(0);
+        let (master, track, cap) = bars(0);
         let bar = |x: f32, m: f32| {
             Rect::from_x_y_ranges(
-                x..=x + 2.0,
+                x..=x + 6.0,
                 track.bottom() - track.height() * m..=track.bottom(),
             )
         };
         // 0 dB is (60/66)^1.6667 ≈ 0.853 up the track: about the unity ticks' height.
         let full = crate::ui::mini_mixer::meter(1.0);
         assert!((full - widgets::UNITY).abs() < 1e-3, "{full}");
-        assert_eq!(master, [bar(right - 6.0, full)]);
-        let (one, track, right) = bars(1);
+        assert_eq!(master, [bar(cap + 2.0, full)]);
+        let (one, track, cap) = bars(1);
         let m = crate::ui::mini_mixer::meter(quiet);
         assert!(m > 0.1 && m < 0.5, "{m}");
         let bar = |x: f32| {
             Rect::from_x_y_ranges(
-                x..=x + 2.0,
+                x..=x + 6.0,
                 track.bottom() - track.height() * m..=track.bottom(),
             )
         };
-        assert_eq!(one, [bar(right - 6.0), bar(right - 4.0)]);
+        assert_eq!(one, [bar(cap + 2.0), bar(cap + 10.0)]);
     }
 }

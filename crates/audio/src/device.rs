@@ -332,6 +332,31 @@ impl Visual {
     }
 }
 
+/// The level meters' release (#41), in stream frames: a peak falls ×0.95 per this many, the Leveller's ballistics
+/// (×0.95 per audio buffer, at the 1024-frame block its panel takes). 20.9 dB/s at 48 kHz, 19.2 at
+/// 44.1 kHz, whatever the buffer size and the UI's frame rate.
+const RELEASE_FRAMES: f32 = 1024.0;
+
+/// A released level under −96 dB, the floor of the deepest meter scale (the Compressor's), is silence: a meter comes
+/// to rest.
+const RELEASE_FLOOR: f32 = 1.5849e-5;
+
+/// `m` `frames` stream frames on: both peaks and the input peak fallen at the release ([`RELEASE_FRAMES`]), 0 under
+/// [`RELEASE_FLOOR`], and the gain reduction as it was.
+fn released(m: MeterSnapshot, frames: u64) -> MeterSnapshot {
+    let k = 0.95f32.powf(frames as f32 / RELEASE_FRAMES);
+    let fall = |peak: f32| match peak.abs() * k {
+        p if p > RELEASE_FLOOR => p,
+        _ => 0.0,
+    };
+    MeterSnapshot {
+        peak_left: fall(m.peak_left),
+        peak_right: fall(m.peak_right),
+        input_peak: fall(m.input_peak),
+        ..m
+    }
+}
+
 /// Each value's larger magnitude.
 fn louder(a: MeterSnapshot, b: MeterSnapshot) -> MeterSnapshot {
     let max = |a: f32, b: f32| a.abs().max(b.abs());
@@ -452,34 +477,31 @@ impl MeterBank {
     }
 
     /// The meters as the app shows them at stream frame `upto` (the output clock, [`AudioOutput::snapshot_at`];
-    /// `u64::MAX`: as last published): every meter's peaks and gain reduction over the sub-blocks that ended since the
-    /// last read and by then (item 18: a peak between two reads is not lost), or the last read's with none, and each
-    /// analysis as the last sub-block by then left it.
+    /// `u64::MAX`: as last published), as of the last sub-block that ended by then: every meter's levels the loudest
+    /// peak so far, each fallen at the release ([`released`]) since its sub-block ended (item 18: a peak between two
+    /// reads is not lost), and its gain reduction the largest since the last read, or the last read's with none; and
+    /// each analysis as that sub-block left it.
     fn take(&self, upto: u64) -> Vec<ModuleMeter> {
         let mut reader = self.reader();
         (self.0.iter().zip(reader.iter_mut()))
             .map(|(cell, (seen, last))| {
-                // The newest frame by then, the oldest, and the peaks of those since the last read.
-                let (mut newest, mut oldest, mut peaks) = (None, None, None);
-                for (slot, frame) in cell.frames.iter().enumerate() {
-                    let Some((end, meter)) = frame.read(Visual::meter) else {
-                        continue;
+                let read: [_; SLOTS] =
+                    std::array::from_fn(|slot| cell.frames[slot].read(Visual::meter));
+                // The oldest frame and the newest by then, as (end, slot).
+                let ends =
+                    || (read.iter().enumerate()).filter_map(|(s, r)| Some((r.as_ref()?.0, s)));
+                let oldest = ends().min();
+                let newest = ends().filter(|&(end, _)| end <= upto).max();
+                let now = newest.map_or(*seen, |(end, _)| end.max(*seen));
+                let fresh = (read.iter().flatten()).filter(|(end, _)| *seen < *end && *end <= upto);
+                if let Some(peaks) = fresh.map(|&(end, m)| released(m, now - end)).reduce(louder) {
+                    let held = MeterSnapshot {
+                        gain_reduction_db: 0.0,
+                        ..released(*last, now - *seen)
                     };
-                    if oldest.is_none_or(|(e, _)| end < e) {
-                        oldest = Some((end, slot));
-                    }
-                    if end > upto {
-                        continue;
-                    }
-                    if newest.is_none_or(|(e, _)| end > e) {
-                        newest = Some((end, slot));
-                    }
-                    if end > *seen {
-                        peaks = Some(peaks.map_or(louder(meter, meter), |p| louder(p, meter)));
-                    }
+                    *last = louder(peaks, held);
                 }
-                *last = peaks.unwrap_or(*last);
-                *seen = newest.map_or(*seen, |(end, _)| end.max(*seen));
+                *seen = now;
                 // ponytail: a callback longer than the ring shows its oldest frame until the clock reaches it; widen
                 // the ring if buffers over `SLOTS / 2` sub-blocks ever matter.
                 let analysis = (newest.or(oldest))
@@ -1509,13 +1531,20 @@ mod tests {
         let read = meters.take(u64::MAX);
         assert_eq!(read.len(), 1);
         assert_eq!(read[0].key.instance_id, 2);
+        // The spike, a frame older than the read, has fallen a frame's release.
         let held = read[0].value;
-        assert_eq!((held.peak_left, held.peak_right), (0.9, 0.9));
+        let fallen = |frames: f32| 0.9 * 0.95f32.powf(frames / 1024.0);
+        assert_eq!(
+            (held.peak_left, held.peak_right),
+            (fallen(1.0), fallen(1.0))
+        );
         assert!((held.gain_reduction_db - 10.8).abs() < 1e-5, "{held:?}");
-        // The next read without a callback between reads it again; the next callback starts over.
+        // The next read without a callback between reads it again; after the next callback the spike, still louder
+        // than its 0.1, goes on falling at the release.
         assert_eq!(meters.take(u64::MAX)[0].value, held);
         state.render(&mut output, 2);
-        assert_eq!(meters.take(u64::MAX)[0].value.peak_left, 0.1);
+        let next = meters.take(u64::MAX)[0].value.peak_left;
+        assert!((next - fallen(2.0)).abs() < 1e-6, "{next}");
     }
 
     #[test]
@@ -1535,14 +1564,16 @@ mod tests {
                 .is_ok()
         );
         state.render(&mut output, 2);
-        assert_eq!(meters.take(u64::MAX)[0].value.input_peak, 0.8);
-        assert_eq!(meters.take(u64::MAX)[0].value.input_peak, 0.8);
+        let fallen = |frames: f32| 0.8 * 0.95f32.powf(frames / 1024.0);
+        assert_eq!(meters.take(u64::MAX)[0].value.input_peak, fallen(1.0));
+        assert_eq!(meters.take(u64::MAX)[0].value.input_peak, fallen(1.0));
         state.render(&mut output, 2);
-        assert_eq!(meters.take(u64::MAX)[0].value.input_peak, 0.2);
+        let next = meters.take(u64::MAX)[0].value.input_peak;
+        assert!((next - fallen(2.0)).abs() < 1e-6, "{next}");
     }
 
     /// An edit's replace does not drop the meters to 0 until the new renderer's first callback; they read
-    /// the old bank's last values under the same key, and that callback's own peaks from then on.
+    /// the old bank's last values under the same key, which fall at the release from then on under louder peaks.
     #[test]
     fn a_replace_reads_the_old_meters_until_the_new_renderer_renders() {
         let (mut output, mut state) = output();
@@ -1562,7 +1593,8 @@ mod tests {
         let seeded = output.snapshot().module_meters[0].value;
         assert_eq!((seeded.peak_left, seeded.input_peak), (0.5, 1.0));
         state.render(&mut [0.0; 2], 2);
-        assert_eq!(output.snapshot().module_meters[0].value.peak_left, 0.25);
+        let next = output.snapshot().module_meters[0].value.peak_left;
+        assert_eq!(next, 0.5 * 0.95f32.powf(1.0 / 1024.0));
     }
 
     /// A steady tone's meters must not flicker. The UI takes one snapshot a frame at its own rate and
@@ -1591,6 +1623,42 @@ mod tests {
             assert!(
                 reads.iter().all(|&p| p == 0.5),
                 "{block}-frame blocks, {hz} Hz frames: {reads:?}"
+            );
+        }
+    }
+
+    /// The level meters fall at one release whatever the buffer size and the UI's frame rate (#41): ×0.95 per 1024
+    /// frames from each peak's sub-block on. A full-scale burst over the first 2048 frames reads 0.95^(24064/1024),
+    /// −10.5 dB, at frame 26112, half a second after it ends.
+    #[test]
+    fn a_peak_falls_at_the_meter_release_whatever_the_buffer_and_frame_rate() {
+        let ns = |frames: u64| (frames as f64 / 48_000.0 * 1e9) as i64;
+        let (burst, at) = (2048, 26_112);
+        let expected = 20.0 * 0.95f32.log10() * (at - burst) as f32 / 1024.0;
+        for (block, hz) in [(256, 60), (2048, 60), (256, 144), (2048, 24)] {
+            let (mut output, mut state) = output();
+            state.renderer.gain = 1.0;
+            let mut buffer = vec![0.0; 2 * block as usize];
+            let mut due = 0;
+            // The UI's frames, then one at `at`; every callback due by each first, the burst's at full scale.
+            let frames = (0..).map(|k| k * 48_000 / hz).take_while(|&c| c < at);
+            let mut shown = 0.0;
+            for clock in frames.chain([at]) {
+                while due <= clock {
+                    state.run(&mut buffer, Some(ns(due)));
+                    due += block;
+                    if due >= burst {
+                        state.renderer.gain = 0.0;
+                    }
+                }
+                shown = output.snapshot_at(Some(ns(clock))).module_meters[0]
+                    .value
+                    .peak_left;
+            }
+            let db = 20.0 * shown.log10();
+            assert!(
+                (db - expected).abs() < 0.01,
+                "{block}-frame blocks, {hz} Hz frames: {db} dB, not {expected}"
             );
         }
     }

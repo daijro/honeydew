@@ -3166,7 +3166,7 @@ fn a_ruler_range_is_the_play_loop_and_its_menu_edits_the_pattern_in_one_action()
 #[test]
 fn a_ruler_range_wholly_before_the_song_start_is_no_play_loop() {
     let mut channel = pattern();
-    // Five beats into its one-bar content: content tick 0 plays at song tick −128 (Preview's span).
+    // Five beats into its one-bar content: content tick 0 plays at song tick −128 (`region::clip_origin`).
     channel.lanes[0].clips[0].offset_beats = 5.0;
     let mut rig = Rig::new(channel);
     // Steps 0..4 are song ticks −128..0: empty from tick 0, so no range.

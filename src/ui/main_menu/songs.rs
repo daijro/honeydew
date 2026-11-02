@@ -44,6 +44,11 @@
 //! Song options dialog ([`SongOptionsDialog`]), drawn over the screen: `OK` makes it with the options, `Cancel` or
 //! Escape makes none.
 //!
+//! `Save` is a swipe button: a tap asks for the name ([`MainMenuAction::SaveNew`]), and a swipe left of [`SWIPE_SAVE`]
+//! or more quick-saves ([`MainMenuAction::Save`], Ctrl+S's). The circle follows the pointer left, at most
+//! [`SWIPE_MAX`], and springs back when let go; out of the calm zone a mostly vertical drag does neither. Its tooltip is
+//! `Swipe for quick save`, with Ctrl+S, the keyboard's quick save.
+//!
 //! With imported content in the content folder the root also lists its demo songs as the read-only folder
 //! [`super::library::DEMO_SONGS`] (the library refuses any change in it).
 
@@ -52,7 +57,7 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui::text::{CCursor, CCursorRange};
 use eframe::egui::text_edit::TextEditState;
-use eframe::egui::{Align2, Id, Key, Pos2, Rect, Sense, TextEdit, Ui, pos2, vec2};
+use eframe::egui::{Align2, Context, Id, Key, Pos2, Rect, Sense, TextEdit, Ui, pos2, vec2};
 
 use super::file_ops::{FILE_MANAGER, FileActions, MenuState, Moved, Opt, Step, options_menu};
 use super::library::{BIN_DAYS, RECENTLY_DELETED, SONGS_FOLDER, SongEntry, SongLibrary};
@@ -61,12 +66,12 @@ use crate::content::{self, Factory};
 use crate::icons::IconId;
 use crate::metrics::FontSize;
 use crate::ui::UiCtx;
-use crate::ui::focus;
 use crate::ui::popup::{self, PopupItem};
 use crate::ui::scroller::Scroller;
 use crate::ui::search_bar::{self, Found, ROW_H, RowLook, SearchBar, Walk, matching};
 use crate::ui::song_options::{SongOptionsAction, SongOptionsDialog};
 use crate::ui::widgets::{text_label, truncated};
+use crate::ui::{anim, focus, gesture};
 
 // Sizes in U.
 /// The left column (outline circles) and the right column (big light circles): width, diameter and step.
@@ -93,6 +98,9 @@ const CRUMB_TAIL_K: usize = 40;
 const NAME_TAIL_K: usize = 5;
 /// The longest name, in characters.
 const TEXT_LIMIT: usize = 255;
+/// `Save`'s swipe: let go pulled this far left, it quick-saves; the circle follows the pointer at most `SWIPE_MAX`.
+const SWIPE_SAVE: f32 = 0.75;
+const SWIPE_MAX: f32 = 1.0;
 
 /// The `Sort` menu's orderings, as in the file browsers.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -257,6 +265,48 @@ pub(super) struct SongsTab {
     new_song: Option<SongOptionsDialog>,
     /// The song last opened from the list: the current row, or the folder holding it.
     current: Option<PathBuf>,
+    /// `Save`'s swipe.
+    swipe: Swipe,
+}
+
+/// `Save`'s swipe (a swipe button, `Swipe for quick save`): how far the circle is pulled left, in points, and the
+/// press's direction once it left the calm zone (`true`: sideways).
+#[derive(Default)]
+struct Swipe {
+    dx: f32,
+    sideways: Option<bool>,
+}
+
+impl Swipe {
+    /// This frame of a drag on control `id`, `u` points a U. Out of the calm zone the dominant axis decides: sideways,
+    /// the circle follows the pointer left, at most [`SWIPE_MAX`]; up or down, nothing. Let go, it springs back (the
+    /// panels' ease). Returns whether it was let go pulled [`SWIPE_SAVE`] or more.
+    fn update(&mut self, ctx: &Context, id: Id, u: f32) -> bool {
+        let (origin, pos, released) = ctx.input(|i| {
+            let p = &i.pointer;
+            (p.press_origin(), p.latest_pos(), p.primary_released())
+        });
+        if ctx.dragged_id() == Some(id)
+            && let Some((o, p)) = origin.zip(pos)
+        {
+            let d = p - o;
+            if self.sideways.is_none() && gesture::left_calm(o, Some(p), u) {
+                self.sideways = Some(d.x.abs() > d.y.abs());
+            }
+            if self.sideways == Some(true) {
+                self.dx = (-d.x).clamp(0.0, u * SWIPE_MAX);
+            }
+            return false;
+        }
+        let swiped = self.sideways.take() == Some(true) && self.dx >= u * SWIPE_SAVE;
+        self.dx -= self.dx * anim::step(ctx, anim::PANEL_KEEP);
+        if self.dx < 0.5 / ctx.pixels_per_point() {
+            self.dx = 0.0;
+        } else {
+            ctx.request_repaint();
+        }
+        released && swiped
+    }
 }
 
 impl SongsTab {
@@ -374,22 +424,27 @@ impl SongsTab {
             }
         }
 
-        // Right column.
+        // Right column. `Save` is a swipe button: a tap asks for the name, a swipe quick-saves ([`Swipe`]).
         let x = area.right() - m.u(BIG_COL_W) / 2.0;
         for (i, (name, act)) in [
             ("New", None),
-            ("Save", Some(MainMenuAction::Save)),
+            ("Save", Some(MainMenuAction::SaveNew)),
             ("Import", Some(MainMenuAction::Import)),
         ]
         .into_iter()
         .enumerate()
         {
-            let at = pos2(x, area.top() + m.u(BIG_STEP) * (i as f32 + 0.5));
-            if circle_button(
-                ui,
-                cx,
-                &Circle::new(id.with(("big", i)), at, m.u(BIG_D), name),
-            ) {
+            let big = id.with(("big", i));
+            let mut at = pos2(x, area.top() + m.u(BIG_STEP) * (i as f32 + 0.5));
+            if i == 1 {
+                if self.swipe.update(&ctx, big, m.u(1.0)) {
+                    action = Some(MainMenuAction::Save);
+                }
+                let rest = Rect::from_center_size(at, vec2(m.u(BIG_D), m.u(BIG_D)));
+                crate::ui::tooltip::tip(ui, rest, "Swipe for quick save", Some("saveProject"));
+                at.x -= self.swipe.dx;
+            }
+            if circle_button(ui, cx, &Circle::new(big, at, m.u(BIG_D), name)) {
                 match act {
                     Some(act) => action = Some(act),
                     None => {

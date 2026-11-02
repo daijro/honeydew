@@ -502,6 +502,32 @@ fn while_playing_the_engine_loops_the_span_and_a_playhead_before_it_jumps_to_its
 }
 
 #[test]
+fn solo_clip_loops_a_trimmed_or_offset_clip_as_drawn() {
+    // Issue #46. Clip 1 at 512 has a one-bar loop: trimmed to two beats it is drawn over [512, 768); one
+    // beat into its content it is still drawn over [512, 1024). SOLO CLIP loops that box and nothing outside it.
+    for (visible, offset, end) in [(2.0, 0.0, 768), (0.0, 1.0, 1024)] {
+        let mut rig = Rig::previewable();
+        let clip = &mut rig.app.song.channels[2].lanes[0].clips[0];
+        (clip.visible_len_beats, clip.offset_beats) = (visible, offset);
+        rig.app.song_edited(SongEdit::Final, 0);
+        rig.take();
+        // From tick 0 the playhead jumps to the clip start, and the engine loops the box.
+        rig.preview();
+        assert_eq!(
+            rig.take(),
+            ["ReplaceSong adopting silencing 0,1,2", "Seek 512"],
+            "{end}"
+        );
+        assert_eq!(rig.app.engine_loop(), Some((512, end)));
+        // Played anywhere in the box, up to a tick before its right edge, or past it, it never leaves the box.
+        for from in [512, 600, end - 2, end, end + 300] {
+            let to = rig.engine_from(u64::from(from));
+            assert!((512..u64::from(end)).contains(&to), "{end} {from}: {to}");
+        }
+    }
+}
+
+#[test]
 fn a_play_loop_inside_the_span_is_previews_loop_and_markers_outside_it_are_the_spans() {
     // Inside [512, 1024): beats 1 to 2 of the clip. Turning Preview on at tick 0 jumps to the loop's start.
     let mut rig = Rig::previewable();
@@ -543,7 +569,7 @@ fn a_play_loop_inside_the_span_is_previews_loop_and_markers_outside_it_are_the_s
 
 #[test]
 fn turning_preview_on_clamps_the_play_loop_into_the_clip_and_saves_it_as_no_undo_step() {
-    // Clip 1: s₀ = 512, L = 512, so the markers are clamped into [512, 1024].
+    // Clip 1 is drawn over [512, 1024], so the markers are clamped into it.
     let mut rig = Rig::previewable();
     rig.app.song.play_loop = Some((256, 768));
     rig.app.files.saved();
@@ -599,8 +625,8 @@ fn moving_preview_to_another_clip_or_channel_clamps_the_play_loop_into_that_clip
 }
 
 #[test]
-fn a_span_before_the_song_start_loops_from_0() {
-    // The drum clip at 0, 5 beats into its 4-beat content: s₀ = −640 < −L, so [s, e) = [−128, 384).
+fn an_offset_clip_at_the_song_start_loops_its_box_from_0() {
+    // The drum clip at 0, 5 beats into its 4-beat content: still drawn over [0, 512) (issue #46).
     let mut rig = Rig::previewable();
     rig.app.song.channels[1].lanes[0].clips[0].offset_beats = 5.0;
     rig.app.song_edited(SongEdit::Final, 0);
@@ -617,16 +643,16 @@ fn a_span_before_the_song_start_loops_from_0() {
         rig.frame(vec![]);
         assert_eq!(rig.take(), Vec::<String>::new(), "{tick}");
     }
-    // The engine loops [0, 384).
-    for (from, to) in [(200, 200..208), (384, 0..8), (1000, 0..8)] {
+    // The engine loops [0, 512).
+    for (from, to) in [(200, 200..208), (384, 384..392), (512, 0..8), (1000, 0..8)] {
         assert!(to.contains(&rig.engine_from(from)), "{from}");
     }
 }
 
 #[test]
-fn a_span_wholly_before_the_song_start_never_jumps() {
-    // 8 beats into the 4-beat content, s₀ = −1024 ≤ −2L, so [s, e) = [−512, 0) holds no
-    // tick ≥ 0: a jump to 0 would land outside it again, every frame. The transport plays on instead.
+fn a_clip_offset_by_two_loops_still_loops_its_box() {
+    // 8 beats into the 4-beat content (the old span, [−512, 0), held no tick ≥ 0): drawn over [0, 512), which
+    // holds the playhead at 0, so no jump (issue #46).
     let mut rig = Rig::previewable();
     rig.app.song.channels[1].lanes[0].clips[0].offset_beats = 8.0;
     rig.app.song_edited(SongEdit::Final, 0);
@@ -642,8 +668,8 @@ fn a_span_wholly_before_the_song_start_never_jumps() {
         rig.frame(vec![]);
         assert_eq!(rig.take(), Vec::<String>::new(), "{tick}");
     }
-    // Nor does the engine loop it: with no loop it wraps at the previewed song's end, one bar, like any
-    // transport, so it plays on from the start.
+    // The engine loops [0, 512).
+    assert_eq!(rig.app.engine_loop(), Some((0, 512)));
     assert!((0..8).contains(&rig.engine_from(1000)));
 }
 
@@ -805,40 +831,41 @@ fn a_clips_edit_opens_that_clip_whose_edits_land_in_it_and_preview_follows() {
     assert_eq!(notes, [2, 2]);
 }
 
-/// While Preview plays a clip with a content offset, the editors map the transport through Preview's span
-/// [s, e) (content = tick − s, a ruler tap seeks to s + c), as the engine plays it.
+/// While Preview plays a clip with a content offset, the editors map the transport as in the song (issue
+/// #46: content = (tick − start + offset) mod loop, a ruler tap seeks where the clip plays c), as the engine plays it.
 #[test]
-fn previewing_an_offset_clip_the_roll_maps_the_transport_through_the_span() {
+fn previewing_an_offset_clip_the_roll_maps_the_transport_as_in_the_song() {
     let mut rig = Rig::previewable();
-    // At 512 two beats into its content: the span is [256, 768).
+    // At 512 two beats into its content: the span is its box, [512, 1024).
     rig.app.song.channels[2].lanes[0].clips[0].offset_beats = 2.0;
     rig.app.song_edited(SongEdit::Final, 0);
     rig.take();
     rig.preview();
     assert_eq!(
         rig.take(),
-        ["ReplaceSong adopting silencing 0,1,2", "Seek 256"]
+        ["ReplaceSong adopting silencing 0,1,2", "Seek 512"]
     );
-    // Playing at 300 the engine plays content 44: the handle and the line show it (a beat, 128 ticks, being 2 U).
+    // Playing at 600 the engine plays content 344: the handle and the line show it (a beat, 128 ticks, being 2 U).
     rig.app.main_screen.playing = true;
-    rig.rec.0.borrow_mut().tick = 300;
+    rig.rec.0.borrow_mut().tick = 600;
     rig.frame(vec![]);
     let grid = egui::Id::new("piano_roll").with("grid");
     let left = rig.ctx.read_response(grid).unwrap().rect.left();
-    assert_eq!(rig.playhead(grid), (left + 44.0 / 128.0 * 2.0 * U, true));
-    // Stopped, a tap on content beat 2 (past the play box's touch area) seeks to s + 256, inside the loop.
+    assert_eq!(rig.playhead(grid), (left + 344.0 / 128.0 * 2.0 * U, true));
+    // Stopped, a tap on content beat 1 (left of the play box) seeks where the clip plays it, 512 + 384, inside the
+    // loop.
     rig.app.main_screen.playing = false;
     rig.frame(vec![]);
     rig.take();
     rig.click(pos2(
-        left + 4.0 * U,
+        left + 2.05 * U,
         super::editor_wiring::EDITOR_TOP + 24.0,
     ));
-    assert_eq!(rig.take(), ["Seek 512"]);
+    assert_eq!(rig.take(), ["Seek 896"]);
 }
 
 #[test]
-fn previewing_an_offset_clip_the_drum_editor_maps_the_transport_through_the_span() {
+fn previewing_an_offset_clip_the_drum_editor_maps_the_transport_as_in_the_song() {
     let mut rig = Rig::previewable();
     rig.app.song.channels[1].lanes[0].clips[0].start_tick = 512;
     rig.app.song.channels[1].lanes[0].clips[0].offset_beats = 2.0;
@@ -850,11 +877,11 @@ fn previewing_an_offset_clip_the_drum_editor_maps_the_transport_through_the_span
     rig.preview();
     assert_eq!(
         rig.take(),
-        ["ReplaceSong adopting silencing 0,1,2", "Seek 256"]
+        ["ReplaceSong adopting silencing 0,1,2", "Seek 512"]
     );
-    // Playing at 300: content 44, 1.375 steps in.
+    // Playing at 600: content 344, 10.75 steps in.
     rig.app.main_screen.playing = true;
-    rig.rec.0.borrow_mut().tick = 300;
+    rig.rec.0.borrow_mut().tick = 600;
     rig.frame(vec![]);
     // The step grid's playhead line (`text`, narrower than U, under the ruler) is there.
     let (x0, step) = rig.app.slots.drum_editor.step.time_axis().unwrap();
@@ -866,11 +893,11 @@ fn previewing_an_offset_clip_the_drum_editor_maps_the_transport_through_the_span
     // Centred on the device pixel nearest the playhead's x (MM's line, ppp 1).
     assert_eq!(
         crate::ui::timeline::testing::line_x(line, 1.0),
-        (x0 + 1.375 * step).round(),
+        (x0 + 10.75 * step).round(),
         "{line:?}"
     );
-    // Stopped, a tap on step 8 (content 256, past the play box's touch area) seeks to s + 256 (the ruler maps song
-    // ticks).
+    // Stopped, a tap on step 8 (content 256, left of the play box) seeks to the content origin 256 + 256, the clip
+    // start (the step view's ruler maps song ticks from the content origin, `region::clip_origin`).
     rig.app.main_screen.playing = false;
     rig.frame(vec![]);
     rig.take();
@@ -977,22 +1004,22 @@ fn starting_a_recording_by_playing_with_preview_on_keeps_the_starting_key() {
     }
 }
 
-/// While Preview is on, the song loop holds Preview's markers, which may lie past the song end (a
-/// clip whose loop is longer than it shows). An edit that shortens the song leaves them alone, and Preview loops them.
+/// While Preview is on, the song loop holds Preview's markers, which an edit trimming the previewed clip may leave
+/// past the song end. That edit leaves them alone, and Preview loops its span's edges in their place.
 #[test]
 fn a_shortening_edit_leaves_previews_loop_alone() {
     let mut rig = Rig::previewable();
-    let synth = &mut rig.app.song.channels[2].lanes[0].clips[0];
-    (synth.loop_len_beats, synth.visible_len_beats) = (16.0, 4.0);
+    // Clip 1 shown four bars long, its one-bar loop repeating: drawn over [512, 2560).
+    rig.app.song.channels[2].lanes[0].clips[0].visible_len_beats = 16.0;
     rig.app.song.play_loop = Some((2048, 2304));
     rig.app.song_edited(SongEdit::Final, 0);
     rig.preview();
     assert_eq!(rig.app.preview, Some(SYNTH_1));
     assert_eq!(rig.app.song.play_loop, Some((2048, 2304)));
-    // The clip at 1024 goes: the song ends at 1024, not 1536.
-    rig.app.song.channels[2].lanes[0].clips.pop();
+    // Trimmed back to one bar: the song ends at 1536, before the markers.
+    rig.app.song.channels[2].lanes[0].clips[0].visible_len_beats = 4.0;
     rig.app.song_edited(SongEdit::Final, 0);
     rig.frame(vec![]);
     assert_eq!(rig.app.song.play_loop, Some((2048, 2304)));
-    assert!((2048..2056).contains(&rig.engine_from(2400)));
+    assert!((512..520).contains(&rig.engine_from(2400)));
 }

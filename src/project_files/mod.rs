@@ -733,8 +733,8 @@ impl ProjectFiles {
         }
     }
 
-    /// Quick save (`Ctrl+S`, SONGS and PROJECT `Save`): [`Self::quick_save`], or the Save dialog when the song is
-    /// untitled.
+    /// Quick save (`Ctrl+S`, PROJECT `Save`, a swipe on SONGS `Save`): [`Self::quick_save`], or the Save dialog when
+    /// the song is untitled.
     pub fn save(&mut self, song: &Song) {
         match self.path {
             Some(_) => self.quick_save(song),

@@ -1,8 +1,8 @@
-//! Preview: the current clip of the current track played alone over its span. The engine gets a filtered copy of the
-//! song; the song itself never changes except its play loop, which switching Preview on or moving it saves clamped into
-//! the clip ([`clamped_loop`]).
+//! Preview (SOLO CLIP): the current clip of the current track played alone over its span, the clip as the playlist
+//! draws it (issue #46, [`span`]). The engine gets a filtered copy of the song; the song itself never changes
+//! except its play loop, which switching Preview on or moving it saves clamped into the clip ([`clamped_loop`]).
 
-use crate::song::{Clip, PPQ, Song};
+use crate::song::{Clip, Song};
 use crate::ui::views::{Slots, View};
 
 /// A clip of the song: its channel, its lane in the channel and its id in the lane.
@@ -50,23 +50,16 @@ pub fn current(view: View, slots: &Slots, song: &Song) -> Option<ClipKey> {
     key.clip(song).is_some().then_some(key)
 }
 
-/// s₀ = clip start − content offset (CLHd@16) and the loop length L (CLHd@8), in song ticks. `None` without a loop
-/// ([`Clip::loop_ticks`]).
-fn origin(clip: &Clip) -> Option<(f64, f64)> {
-    let lp = clip.loop_ticks()?;
-    Some((
-        f64::from(clip.start_tick) - clip.offset_beats * f64::from(PPQ),
-        lp,
-    ))
-}
-
-/// The span Preview plays, `[s, e)` in song ticks: s = clip start − content offset (CLHd@16), plus the loop length
-/// (CLHd@8) once if s < 0 (no modulo: s stays negative when s₀ < −L); e = s + loop length. `None` without a loop
-/// length.
+/// The span Preview plays, `[s, e)` in song ticks: the clip as the playlist draws it, from its start over its visible
+/// length (0: the loop length, [`Clip::visible_ticks`]), repeats included.
+///
+/// Issue #46: SOLO CLIP loops the clip as drawn. The old span was one loop length from where the content
+/// starts (clip start − content offset), so a clip trimmed shorter than its loop, or one with a content offset, played
+/// outside its box. `None` without a loop length ([`Clip::loop_ticks`]: nothing plays) or a visible length under a tick.
 pub fn span(clip: &Clip) -> Option<(i64, i64)> {
-    let (s0, lp) = origin(clip)?;
-    let s = if s0 < 0.0 { s0 + lp } else { s0 };
-    Some((s.round() as i64, (s + lp).round() as i64))
+    clip.loop_ticks()?;
+    let s = i64::from(clip.start_tick);
+    Some((s, s + clip.visible_ticks().round() as i64)).filter(|(s, e)| s < e)
 }
 
 /// The range Preview loops over: each song loop marker is kept if it lies in [s, e]; otherwise loop start becomes s and
@@ -85,39 +78,32 @@ pub fn looped(clip: &Clip, play_loop: Option<(u32, u32)>) -> Option<(i64, i64)> 
 }
 
 /// The song's play loop as Preview saves it when it is switched on or moves to another clip: the stored song loop
-/// markers are first clamped into [s₀, s₀ + L] (no loop-length shift) and saved as the song's loop range; an empty
-/// result becomes no range (0, 0). `None` also without a loop length (no [`span`]).
+/// markers are first clamped into the [`span`] [s, e] and saved as the song's loop range; an empty result becomes no
+/// range (0, 0). `None` also without a span.
 pub fn clamped_loop(clip: &Clip, play_loop: Option<(u32, u32)>) -> Option<(u32, u32)> {
-    let (s0, lp) = origin(clip)?;
-    let (lo, hi) = (s0.round() as i64, (s0 + lp).round() as i64);
+    let (s, e) = span(clip)?;
     let (a, b) = play_loop.unwrap_or_default();
-    let at = |m: u32| u32::try_from(i64::from(m).clamp(lo, hi)).ok();
+    let at = |m: u32| u32::try_from(i64::from(m).clamp(s, e)).ok();
     at(a).zip(at(b)).filter(|(a, b)| a < b)
 }
 
-/// Preview's loop as the engine plays it in the [`solo`] song: [`looped`] from tick 0 on, where the solo clip starts at
-/// the latest; a loop wholly before the song start is none, as it is never entered. `None` without a [`span`].
+/// Preview's loop as the engine plays it in the [`solo`] song: [`looped`] in song ticks. `None` without a [`span`].
 pub fn engine_loop(clip: &Clip, play_loop: Option<(u32, u32)>) -> Option<(u32, u32)> {
     let (s, e) = looped(clip, play_loop)?;
     let tick = |t: i64| u32::try_from(t.max(0)).unwrap_or(u32::MAX);
     Some((tick(s), tick(e))).filter(|(s, e)| s < e)
 }
 
-/// What the engine plays while previewing `key`: `song` with every clip but `key`'s removed, and that one moved so that
-/// its content plays once over its [`span`] (start s, no offset, one loop shown; an s before the song start is tick 0
-/// that far into the content). So an audio clip plays its sample from the sample start at s, ignoring its content
-/// offset. A muted clip stays silent: it is removed too, as the engine plays no muted clip anyway. `None` when the clip
-/// is gone. Its play loop is Preview's ([`engine_loop`]), which the engine reads at build.
+/// What the engine plays while previewing `key`: `song` with every clip but `key`'s removed. That one stays as it is,
+/// so inside its [`span`] it plays exactly as in the song (same content offset and repeats, an audio clip's sample
+/// included; issue #46). A muted clip stays silent: it is removed too, as the engine plays no muted clip
+/// anyway. `None` when the clip is gone or has no span. Its play loop is Preview's ([`engine_loop`]), which the engine
+/// reads at build.
 pub fn solo(song: &Song, key: ClipKey) -> Option<Song> {
     let clip = key.clip(song)?;
-    let (s, _) = span(clip)?;
+    span(clip)?;
     let play_loop = engine_loop(clip, song.play_loop);
-    let kept = (!clip.muted).then(|| Clip {
-        start_tick: u32::try_from(s.max(0)).unwrap_or(u32::MAX),
-        offset_beats: s.saturating_neg().max(0) as f64 / f64::from(PPQ),
-        visible_len_beats: 0.0,
-        ..clip.clone()
-    });
+    let kept = (!clip.muted).then(|| clip.clone());
     let mut solo = Song {
         play_loop,
         ..song.clone()
@@ -181,18 +167,19 @@ mod tests {
     }
 
     #[test]
-    fn the_span_is_one_loop_from_where_the_content_starts() {
-        // s = start − offset, e = s + loop (ticks, 128 a beat).
+    fn the_span_is_the_clip_as_drawn() {
+        // Issue #46: s = start, e = s + visible length, 0 being the loop (ticks, 128 a beat).
         assert_eq!(span(&clip(512, 0.0, 4.0)), Some((512, 1024)));
-        assert_eq!(span(&clip(512, 1.0, 4.0)), Some((384, 896)));
-        // Before the song start: one loop later.
-        assert_eq!(span(&clip(0, 1.0, 4.0)), Some((384, 896)));
-        // Once, by the loop length: s₀ = −64, s = −64 + 256.
-        assert_eq!(span(&clip(64, 1.0, 2.0)), Some((192, 448)));
-        // The visible length plays no part.
+        // The content offset plays no part.
+        assert_eq!(span(&clip(512, 1.0, 4.0)), Some((512, 1024)));
+        assert_eq!(span(&clip(0, 1.0, 4.0)), Some((0, 512)));
+        assert_eq!(span(&clip(64, 1.0, 2.0)), Some((64, 320)));
+        // Shown longer than its loop: every repeat; trimmed shorter: only what shows.
         let mut long = clip(512, 0.0, 4.0);
         long.visible_len_beats = 9.0;
-        assert_eq!(span(&long), Some((512, 1024)));
+        assert_eq!(span(&long), Some((512, 1664)));
+        long.visible_len_beats = 2.0;
+        assert_eq!(span(&long), Some((512, 768)));
         // No loop length, no span.
         assert_eq!(span(&clip(512, 0.0, 0.0)), None);
         assert_eq!(span(&clip(512, 0.0, f64::NAN)), None);
@@ -202,12 +189,10 @@ mod tests {
     }
 
     #[test]
-    fn before_the_song_start_the_span_moves_one_loop_only() {
-        // s₀ = −L: one loop later, at 0.
+    fn however_far_the_content_is_offset_the_span_starts_at_the_clip() {
         assert_eq!(span(&clip(0, 4.0, 4.0)), Some((0, 512)));
-        // s₀ < −L: no modulo, s stays negative.
-        assert_eq!(span(&clip(0, 5.0, 4.0)), Some((-128, 384)));
-        assert_eq!(span(&clip(128, 10.0, 4.0)), Some((-640, -128)));
+        assert_eq!(span(&clip(0, 5.0, 4.0)), Some((0, 512)));
+        assert_eq!(span(&clip(128, 10.0, 4.0)), Some((128, 640)));
     }
 
     #[test]
@@ -230,30 +215,29 @@ mod tests {
         ] {
             assert_eq!(looped(&c, play_loop), Some(want), "{play_loop:?}");
         }
-        // A span before the song start, [−128, 384].
+        // An offset clip at 0: its span is [0, 512].
         let early = clip(0, 5.0, 4.0);
         assert_eq!(looped(&early, Some((0, 256))), Some((0, 256)));
-        assert_eq!(looped(&early, Some((128, 512))), Some((128, 384)));
-        assert_eq!(looped(&early, None), Some((-128, 384)));
+        assert_eq!(looped(&early, Some((128, 512))), Some((128, 512)));
+        assert_eq!(looped(&early, None), Some((0, 512)));
         assert_eq!(looped(&clip(512, 0.0, 0.0), Some((640, 768))), None);
     }
 
     #[test]
-    fn the_engine_loops_previews_loop_from_the_song_start_on() {
+    fn the_engine_loops_previews_loop_in_song_ticks() {
         let c = clip(512, 0.0, 4.0);
         assert_eq!(engine_loop(&c, Some((640, 768))), Some((640, 768)));
         assert_eq!(engine_loop(&c, Some((256, 768))), Some((512, 768)));
         assert_eq!(engine_loop(&c, None), Some((512, 1024)));
-        // A span from −128: the solo clip starts at 0, and so does the loop.
-        assert_eq!(engine_loop(&clip(0, 5.0, 4.0), None), Some((0, 384)));
-        // Wholly before the song start ([−512, 0)): never entered, no loop.
-        assert_eq!(engine_loop(&clip(0, 8.0, 4.0), None), None);
+        // However far the content is offset, the clip's box.
+        assert_eq!(engine_loop(&clip(0, 5.0, 4.0), None), Some((0, 512)));
+        assert_eq!(engine_loop(&clip(0, 8.0, 4.0), None), Some((0, 512)));
         assert_eq!(engine_loop(&clip(512, 0.0, 0.0), Some((640, 768))), None);
     }
 
     #[test]
-    fn the_saved_loop_is_the_songs_clamped_into_the_content_loop_from_s0() {
-        // [s₀, s₀ + L] = [512, 1024].
+    fn the_saved_loop_is_the_songs_clamped_into_the_span() {
+        // [s, e] = [512, 1024].
         let c = clip(512, 0.0, 4.0);
         for (play_loop, want) in [
             (Some((640, 768)), Some((640, 768))),
@@ -267,25 +251,31 @@ mod tests {
         ] {
             assert_eq!(clamped_loop(&c, play_loop), want, "{play_loop:?}");
         }
-        // No loop-length shift: s₀ = −128, so [−128, 384], not the span [384, 896].
+        // The offset plays no part: an offset clip at 0 clamps into [0, 512].
         let early = clip(0, 1.0, 4.0);
-        assert_eq!(clamped_loop(&early, Some((0, 512))), Some((0, 384)));
+        assert_eq!(clamped_loop(&early, Some((0, 512))), Some((0, 512)));
         assert_eq!(clamped_loop(&early, Some((512, 640))), None);
-        // Wholly before the song start: none.
-        assert_eq!(clamped_loop(&clip(0, 9.0, 4.0), Some((0, 512))), None);
+        assert_eq!(
+            clamped_loop(&clip(0, 9.0, 4.0), Some((0, 512))),
+            Some((0, 512))
+        );
+        // Trimmed to two beats: [512, 768].
+        let mut trimmed = c;
+        trimmed.visible_len_beats = 2.0;
+        assert_eq!(clamped_loop(&trimmed, Some((640, 1000))), Some((640, 768)));
     }
 
     #[test]
-    fn the_solo_song_keeps_only_the_clip_playing_its_content_once_over_its_span() {
+    fn the_solo_song_keeps_only_the_clip_as_it_is() {
         let mut song = song();
         song.channels[2].lanes[0].clips[0].offset_beats = 1.0;
-        song.channels[2].lanes[0].clips[0].visible_len_beats = 2.0;
+        song.channels[2].lanes[0].clips[0].visible_len_beats = 6.0;
         let solo = solo(&song, SYNTH_1).expect("the clip exists");
         // Channels, racks and everything but the clips and the play loop are the song's.
         assert_eq!(solo.channels.len(), song.channels.len());
-        // The engine loops the span [384, 896), which no play loop narrows.
+        // The engine loops the span [512, 1280), which no play loop narrows.
         assert_eq!(song.play_loop, None);
-        assert_eq!(solo.play_loop, Some((384, 896)));
+        assert_eq!(solo.play_loop, Some((512, 1280)));
         assert_eq!(solo.tempo_bpm, song.tempo_bpm);
         assert_eq!(solo.channels[2].rack, song.channels[2].rack);
         let clips: Vec<(usize, usize, &Clip)> = (solo.channels.iter().enumerate())
@@ -300,33 +290,27 @@ mod tests {
         assert_eq!(clips.len(), 1, "{clips:?}");
         let (c, l, kept) = clips[0];
         assert_eq!((c, l, kept.id), (2, 0, 1));
-        // Content position 0 at s = 512 − 128, the whole loop shown once.
-        assert_eq!(
-            (kept.start_tick, kept.offset_beats, kept.visible_len_beats),
-            (384, 0.0, 0.0)
-        );
-        assert_eq!(kept.loop_len_beats, 4.0);
-        assert_eq!(kept.events, song.channels[2].lanes[0].clips[0].events);
+        // As in the song: its start, offset and visible length, so content 384 at 768 and, wrapped, content 0 at 896.
+        assert_eq!(kept, &song.channels[2].lanes[0].clips[0]);
         let played: Vec<u64> = kept.events_in_song_range(0, 4096).map(|(t, _)| t).collect();
-        assert_eq!(played, [384, 768]);
+        assert_eq!(played, [768, 896]);
     }
 
     #[test]
-    fn before_the_song_start_the_solo_clip_starts_at_0_that_far_into_its_content() {
-        // s = −640 + 512 = −128: content 128 plays at tick 0.
+    fn an_offset_solo_clip_at_the_song_start_keeps_its_offset() {
         let mut song = song();
         let c = &mut song.channels[2].lanes[0].clips[0];
         (c.start_tick, c.offset_beats) = (0, 5.0);
         let solo = solo(&song, SYNTH_1).expect("the clip exists");
         let kept = &solo.channels[2].lanes[0].clips[0];
-        assert_eq!((kept.start_tick, kept.offset_beats), (0, 1.0));
-        // Content 0 plays at −128 (not at all), content 384 at 256; one loop on, content 0 at 384.
+        assert_eq!((kept.start_tick, kept.offset_beats), (0, 5.0));
+        // Five beats into its one-bar content, as in the song: content 384 at 256, content 0 at 384.
         let played: Vec<u64> = kept.events_in_song_range(0, 4096).map(|(t, _)| t).collect();
         assert_eq!(played, [256, 384]);
     }
 
     #[test]
-    fn an_audio_clip_plays_its_sample_from_its_start_at_s_ignoring_its_offset() {
+    fn an_audio_clip_keeps_its_offset() {
         let mut song = song();
         song.add_channel(ChannelKind::AudioClip);
         let key = ClipKey {
@@ -337,18 +321,15 @@ mod tests {
         let lane = &mut song.channels[3].lanes[0];
         assert_eq!(lane.kind, LaneKind::Audio);
         lane.add_clip(512, 4.0).offset_beats = 1.0;
-        // In the song, sample position 128 plays at 512; previewed, the sample's start plays at s = 384.
-        for (start, offset, at, into) in
-            [(512, 1.0, 384, 0.0), (0, 1.0, 384, 0.0), (0, 5.0, 0, 1.0)]
-        {
+        // Issue #46: previewed as in the song, sample position 128 plays at 512.
+        for (start, offset) in [(512, 1.0), (0, 1.0), (0, 5.0)] {
             let clip = &mut song.channels[3].lanes[0].clips[0];
             (clip.start_tick, clip.offset_beats) = (start, offset);
             let solo = solo(&song, key).expect("the clip exists");
             let kept = &solo.channels[3].lanes[0].clips[0];
-            // Before the song start (s = −128), tick 0 plays the sample from 1 beat in.
             assert_eq!(
                 (kept.start_tick, kept.offset_beats),
-                (at, into),
+                (start, offset),
                 "{start} {offset}"
             );
         }

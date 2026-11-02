@@ -512,7 +512,7 @@ impl DrumGridView {
             cx,
         );
         let origin = region::clip_origin(clip);
-        let playhead = region::playhead_tick(clip, self.playhead, self.previewing);
+        let playhead = region::playhead_tick(clip, self.playhead);
         let at = RangeRuler {
             strip: ruler,
             axis,
@@ -538,7 +538,7 @@ impl DrumGridView {
             action = Some(StepAction::PlayLoop(play_loop));
         }
         if let Some(tick) = out.playhead {
-            let tick = region::seek_tick(clip, tick, self.previewing);
+            let tick = region::seek_tick(clip, tick);
             action = Some(StepAction::SetPlayhead(tick));
         }
         if let Some((op, range)) = out.pick {
@@ -556,7 +556,7 @@ impl DrumGridView {
                 .clip_rect()
                 .intersect(Rect::everything_right_of(l.column_right())),
         );
-        let drawn = region::playhead_tick(clip, self.playhead + self.lead, self.previewing);
+        let drawn = region::playhead_tick(clip, self.playhead + self.lead);
         let end = loop_beats * BEAT;
         let x = (self.knob).line_x(ui, cx.m, &at, end, axis.x(drawn.unwrap_or(0.0)));
         timeline::playhead_line(&line, l.grid(), x, cx);
@@ -566,7 +566,7 @@ impl DrumGridView {
             Some(KnobGesture::Tap) => action = Some(StepAction::Play),
             Some(KnobGesture::Drop(x)) => {
                 let tick = self.knob.drop_tick(ui, &at, end, x) as u32;
-                let tick = region::seek_tick(clip, tick, self.previewing);
+                let tick = region::seek_tick(clip, tick);
                 action = Some(StepAction::Seek(tick));
             }
             None => {}

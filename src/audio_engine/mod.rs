@@ -1808,8 +1808,9 @@ impl SongAudioEngine {
     /// Every note-off of `channel`, sequenced or live, goes through here: to its instrument `instance_id` or its pad
     /// sampler ([`KIT`]), or to all of them for `None` (a live key). While its sustain pedal is down (CC #64 > 0.5) the
     /// note-off is held, counted per instrument (and for the pads) and key, until the pedal lifts; an instrument that
-    /// takes the pedal itself ([`Instrument::takes_pedal`], a plugin) gets it at once. An instrument outside whose key
-    /// range the key is, or that is learning one, never gets it.
+    /// takes the pedal itself ([`Instrument::takes_pedal`], a plugin) gets it at once. With the pedal up it goes out
+    /// with those the lift left held for its key, which was down then ([`Self::lift_pedal`]). An instrument outside
+    /// whose key range the key is, or that is learning one, never gets it.
     fn key_up(&mut self, channel: usize, instance_id: Option<i32>, key: u8) {
         let pedal = self.audio.channel_parameter(channel, SUSTAIN_PEDAL);
         let pedal = pedal.is_some_and(|pedal| pedal > 0.5);
@@ -1821,7 +1822,11 @@ impl SongAudioEngine {
         {
             match held.get_mut(usize::from(key)) {
                 Some(count) if pedal => *count = count.saturating_add(1),
-                _ => kit.sampler.note_off(key),
+                // One note-off releases every pad voice of the key, the held ones too.
+                count => {
+                    count.map(std::mem::take);
+                    kit.sampler.note_off(key);
+                }
             }
         }
         let (Some(modules), Some(sustained)) = (
@@ -1838,7 +1843,11 @@ impl SongAudioEngine {
                 Some(count) if pedal && !module.instrument.takes_pedal() => {
                     *count = count.saturating_add(1);
                 }
-                _ => module.instrument.note_off(key),
+                count => {
+                    for _ in 0..=count.map_or(0, std::mem::take) {
+                        module.instrument.note_off(key);
+                    }
+                }
             }
         }
     }
@@ -1873,14 +1882,26 @@ impl SongAudioEngine {
         }
     }
 
-    /// The pedal of `channel` lifted: sends every held note-off to its instrument or the pads, as many times as each
-    /// key was released, so an instrument that releases one voice per note-off releases them all.
+    /// The pedal of `channel` lifted: sends the held note-offs of each key that is up to its instrument or the pads, as
+    /// many times as the key was released, so an instrument that releases one voice per note-off releases them all. A
+    /// key still down, struck again while the pedal held it (the sequencer holds it, or a live key), keeps sounding: an
+    /// instrument's note-off releases every voice of its key, so its held note-offs wait for its own ([`Self::key_up`]).
     fn lift_pedal(&mut self, channel: usize) {
+        // ponytail: a live key counts by its key at the channel input, before the note effects: a live key a note
+        // effect moves leaves the key it moved from held until that key's next note-off or lift. Per-row live keys
+        // from the live chain if that shows up.
+        let live = self.live.get(channel).and_then(Option::as_ref);
+        let live = live.map_or(0, |live| live.chain.keys_down());
+        let Some(down) = self.held.get(channel) else {
+            return;
+        };
+        let up = |row: usize, key: u8| down[row][usize::from(key)] == 0 && live >> key & 1 == 0;
+        let pads = down.len() - 1;
         if let (Some(Some(kit)), Some(held)) = (
             self.kits.get_mut(channel),
             self.kit_sustained.get_mut(channel),
         ) {
-            for key in 0..=127 {
+            for key in (0..=127).filter(|&key| up(pads, key)) {
                 if std::mem::take(&mut held[usize::from(key)]) > 0 {
                     kit.sampler.note_off(key);
                 }
@@ -1892,8 +1913,8 @@ impl SongAudioEngine {
         ) else {
             return;
         };
-        for ((_, module), held) in modules.iter_mut().zip(sustained) {
-            for key in 0..=127 {
+        for (row, ((_, module), held)) in modules.iter_mut().zip(sustained).enumerate() {
+            for key in (0..=127).filter(|&key| up(row, key)) {
                 for _ in 0..std::mem::take(&mut held[usize::from(key)]) {
                     module.instrument.note_off(key);
                 }
@@ -2153,6 +2174,91 @@ mod tests {
         take(&plugin);
         engine.stop();
         assert_eq!(take(&plugin), [("cc64", 0.0), ("cc64", 1.0)]);
+    }
+
+    /// Issue #45: a key struck again while the pedal holds its earlier note, and still down when the pedal lifts, keeps
+    /// sounding; it is caught again when the pedal goes back down before the key lifts, and released with its earlier
+    /// note at the next lift. Sequenced key 60: held from beat 0.5, struck again at 1, down to 3 over the lift at 2 and
+    /// the press at 2.5, lift at 3.5. Live key 64: held from beat 1, struck again at 1.25, down over the lift to 2.25.
+    #[test]
+    fn a_lifted_pedal_leaves_a_key_still_down_sounding() {
+        use std::sync::Mutex;
+
+        /// Frames rendered, and each note-off as (key, frame).
+        type Log = Arc<Mutex<(u64, Vec<(u8, u64)>)>>;
+        struct Offs(Log);
+        impl Instrument for Offs {
+            fn set_parameter(&mut self, _: usize, _: f32) {}
+            fn note_on(&mut self, _: u8, _: f32, _: f32) {}
+            fn note_off(&mut self, key: u8) {
+                let mut log = self.0.lock().unwrap();
+                let frame = log.0;
+                log.1.push((key, frame));
+            }
+            fn all_notes_off(&mut self) {}
+            fn reset(&mut self) {}
+            fn process(&mut self, left: &mut [f32], _: &mut [f32], _: ProcessContext) {
+                self.0.lock().unwrap().0 += left.len() as u64;
+            }
+        }
+        let mut song = Song::default();
+        song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+        let clip = song.channels[1].lanes[0].add_clip(0, 4.0);
+        for (beat, len_beats) in [(0.0, 0.5), (1.0, 2.0)] {
+            clip.events.push(Event::Note {
+                pos: (beat * f64::from(PPQ)) as u32,
+                len_beats,
+                key: 60,
+                velocity: Event::DEFAULT_VELOCITY,
+                pan: Event::DEFAULT_PAN,
+                slide: false,
+            });
+        }
+        let pedal = crate::song::AutomationTarget {
+            instance_id: 0,
+            param: 71,
+        };
+        let clip = song.channels[1].add_automation_lane(pedal).add_clip(0, 4.0);
+        // Steps, as an imported CC #64: two points on each change.
+        let steps = [
+            (0.0, 1.0),
+            (2.0, 1.0),
+            (2.0, 0.0),
+            (2.5, 0.0),
+            (2.5, 1.0),
+            (3.5, 1.0),
+            (3.5, 0.0),
+        ];
+        for (beat, value) in steps {
+            clip.events.push(Event::Automation {
+                pos: (beat * f64::from(PPQ)) as u32,
+                value,
+                control: true,
+            });
+        }
+        let mut engine = SongAudioEngine::new(&song, 48_000.0).unwrap();
+        let log: Log = Default::default();
+        engine.instruments[1][0].1.instrument = Box::new(Offs(log.clone()));
+        engine.play();
+        // 24 000 frames a beat; a live key reaches the instrument at the next render.
+        let mut rendered = 0;
+        let mut render_to = |beat: f64, engine: &mut SongAudioEngine| {
+            let frame = (beat * 24_000.0) as usize;
+            engine.render(&mut vec![0.0; (frame - rendered) * 2], 2);
+            rendered = frame;
+        };
+        for (beat, down) in [(0.75, true), (1.0, false), (1.25, true), (2.25, false)] {
+            render_to(beat, &mut engine);
+            match down {
+                true => engine.note_on(1, 64, 1.0),
+                false => engine.note_off(1, 64),
+            }
+        }
+        render_to(4.0, &mut engine);
+        let offs: Vec<_> = (log.lock().unwrap().1.iter())
+            .map(|&(key, frame)| (key, frame as f64 / 24_000.0))
+            .collect();
+        assert_eq!(offs, [(64, 2.25), (64, 2.25), (60, 3.5), (60, 3.5)]);
     }
 
     /// A re-sync's cover replays at most one checkpoint span of actions, and is what replaying every action up to the

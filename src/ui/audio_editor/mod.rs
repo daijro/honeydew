@@ -805,8 +805,8 @@ impl AudioEditor {
         // The ruler, its range and region menu, and the playhead.
         let rp = ui.painter_at(f.time);
         timeline::ruler(&rp, f.time, f.time, axis.origin, axis.beat_w, sig, cx);
-        let playhead = region::playhead_tick(Some(clip), t.tick, t.previewing)
-            .map(|p| geom::playhead(p, loop_ticks));
+        let playhead =
+            region::playhead_tick(Some(clip), t.tick).map(|p| geom::playhead(p, loop_ticks));
         let ruler = RangeRuler {
             strip: f.time,
             axis,
@@ -836,11 +836,7 @@ impl AudioEditor {
             self.sel.fill(false);
             self.paste = None;
             if t.playing || f64::from(tick) < loop_ticks || loop_ticks <= 0.0 {
-                out.push(Action::SetPlayhead(region::seek_tick(
-                    Some(clip),
-                    tick,
-                    t.previewing,
-                )));
+                out.push(Action::SetPlayhead(region::seek_tick(Some(clip), tick)));
             }
         }
         if let Some((op, range)) = r.pick {
@@ -854,7 +850,7 @@ impl AudioEditor {
         // Clipped at the value column's right edge: at beat 0 the line's left half shows in the t gap. While the knob
         // is dragged, the line and the disc follow the finger.
         let line = ui.painter_at(f.grid.with_min_x(f.column.right()));
-        let drawn = region::playhead_tick(Some(clip), t.tick + t.lead, t.previewing)
+        let drawn = region::playhead_tick(Some(clip), t.tick + t.lead)
             .map(|p| geom::playhead(p, loop_ticks));
         let x = (self.knob).line_x(
             ui,
@@ -883,7 +879,7 @@ impl AudioEditor {
             Some(KnobGesture::Tap) => out.push(Action::Play),
             Some(KnobGesture::Drop(x)) => {
                 let tick = self.knob.drop_tick(ui, &ruler, loop_ticks - 1.0, x) as u32;
-                let tick = region::seek_tick(Some(clip), tick, t.previewing);
+                let tick = region::seek_tick(Some(clip), tick);
                 out.push(Action::Seek(tick));
             }
             None => {}

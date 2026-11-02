@@ -106,9 +106,9 @@ pub enum MainMenuAction {
     /// A template picked from SONGS `New`'s menu: a new untitled song from the `.songtmpl` at this path, in
     /// [`crate::content::factory`] or in the library ([`SongLibrary::templates`]).
     NewFromTemplate(std::path::PathBuf),
-    /// SONGS or PROJECT `Save`.
+    /// PROJECT `Save`, or a swipe on SONGS `Save`.
     Save,
-    /// PROJECT `Save New`: save under a new name.
+    /// PROJECT `Save New`, or a tap on SONGS `Save`: save under a new name.
     SaveNew,
     /// SONGS `Import`: the operating system's file picker.
     Import,

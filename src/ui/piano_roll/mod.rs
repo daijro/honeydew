@@ -98,7 +98,7 @@
 //! The ruler takes the shared gestures ([`RangeSelect`]) in content ticks on the snap grid (whole ticks with snap off):
 //! a tap sets the song's playhead, and the range is the song's play loop, content tick 0 being song tick
 //! [`region::clip_origin`]. The playhead is the transport's, playing or stopped, where it plays the clip
-//! ([`region::playhead_tick`]: in the song, or over Preview's span while Preview plays it); elsewhere it rests on the
+//! ([`region::playhead_tick`]: as in the song, Preview on or off); elsewhere it rests on the
 //! clip's start, and the playhead items are off. Its disc is the playhead knob ([`timeline::PlayheadKnob`], as in every
 //! editor): a tap plays, and a drag seeks to the snapped content tick under the finger within [the view's left edge,
 //! the loop's end], the line and the disc following it. The region items act on every note of the clip ([`region`]);
@@ -241,7 +241,8 @@ pub struct RollOptions {
     pub playing: bool,
     /// REC is armed: the playhead disc shows icon 5 (record).
     pub armed: bool,
-    /// Preview plays this roll's clip: the playhead maps through its span ([`region::playhead_tick`]).
+    /// Preview plays this roll's clip. Read by nothing since issue #46: Preview plays a clip as the song
+    /// does ([`region::playhead_tick`]).
     pub previewing: bool,
     /// The pointer is over an overlay: the wheel, zoom and pinch are not the roll's.
     pub covered: bool,
@@ -495,10 +496,10 @@ impl PianoRoll {
 
     /// The content tick the playhead shows at song tick `tick` ([`region::playhead_tick`]); on a take being recorded
     /// (Honeydew's own, module docs), from the clip's start on, unfolded: the take grows to it.
-    fn playhead_at(&self, song: &Song, tick: u64, opts: &RollOptions) -> Option<f64> {
+    fn playhead_at(&self, song: &Song, tick: u64) -> Option<f64> {
         match self.clip(song).filter(|_| self.recording) {
             Some(clip) => Some(tick as f64 - f64::from(clip.start_tick)),
-            None => region::playhead_tick(self.clip(song), tick, opts.previewing),
+            None => region::playhead_tick(self.clip(song), tick),
         }
     }
 
@@ -720,7 +721,7 @@ impl PianoRoll {
         let sig = song.time_sig;
         timeline::ruler(&bars_painter, bars, bars, g.origin.x, g.beat_w, sig, cx);
         let origin = region::clip_origin(self.clip(song));
-        let playhead = self.playhead_at(song, opts.playhead, opts);
+        let playhead = self.playhead_at(song, opts.playhead);
         let at = RangeRuler {
             strip: bars,
             axis: TimeAxis {
@@ -750,7 +751,7 @@ impl PianoRoll {
             song.play_loop = range.and_then(|r| r.song_loop(origin));
         }
         if let Some(tick) = out.playhead {
-            let at = region::seek_tick(self.clip(song), tick, opts.previewing);
+            let at = region::seek_tick(self.clip(song), tick);
             actions.push(PianoRollAction::SetPlayhead(at));
         }
         if let Some((op, range)) = out.pick {
@@ -758,7 +759,7 @@ impl PianoRoll {
         }
         // Clipped at the key column's right edge: at beat 0 its left half shows in the t gap. While the knob is
         // dragged, the line and the disc follow the finger.
-        let drawn = self.playhead_at(song, opts.playhead + opts.lead, opts);
+        let drawn = self.playhead_at(song, opts.playhead + opts.lead);
         let x = (self.knob).line_x(ui, m, &at, loop_ticks - 1.0, g.x(drawn.unwrap_or(0.0)));
         let line_painter = ui.painter_at(body.with_min_x(keys.right()));
         line_painter.set(line_slot, timeline::playhead_line_shapes(grid, x, cx));
@@ -788,7 +789,7 @@ impl PianoRoll {
             Some(KnobGesture::Tap) => actions.push(PianoRollAction::Play),
             Some(KnobGesture::Drop(x)) => {
                 let tick = self.knob.drop_tick(ui, &at, loop_ticks - 1.0, x) as u32;
-                let at = region::seek_tick(self.clip(song), tick, opts.previewing);
+                let at = region::seek_tick(self.clip(song), tick);
                 actions.push(PianoRollAction::Seek(at));
             }
             None => {}
@@ -983,7 +984,7 @@ impl PianoRoll {
             },
         ];
         // A take being recorded: where its playhead is, in beats; the time scrolls a view past it.
-        let take = (self.playhead_at(song, opts.playhead + opts.lead, opts))
+        let take = (self.playhead_at(song, opts.playhead + opts.lead))
             .filter(|_| self.recording)
             .map(|tick| tick / BEAT);
         if let Some(beat) = take {
