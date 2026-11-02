@@ -92,6 +92,9 @@
 //! - `Transpose by...` turns the popup into a one-cell offset display: a vertical drag anywhere picks the offset (half
 //!   a U a semitone, up is up, kept to what keeps every note in the key range) and its release applies it; a tap,
 //!   Escape or a click outside cancel.
+//! - `Generate...` opens the Generate panel ([`generate`], [`compose`]): a chord progression and a melody for the clip
+//!   in the project's key and scale, from a preset, a bars count, a seed, and who leads (the chords first with the
+//!   melody over them, or the clip's own melody with the chords fitted under it);
 //! - `Humanize` opens the Humanize panel ([`humanize`], issue #29: it used to have no dialog), its seed
 //!   drawn per use from the std hasher's random keys and egui's clock (OS entropy natively; on the web the keys are
 //!   fixed, so the clock varies it). While it is open the roll draws its preview in place of the notes, on the grid
@@ -114,6 +117,8 @@
 //! runs on from the clip's start, unfolded, as the take grows to it; with `Continuous scrolling during playback` on the
 //! view keeps it a quarter in, and with it off the view turns a page whenever it leaves the view.
 
+mod compose;
+mod generate;
 mod humanize;
 pub(crate) mod notes;
 
@@ -393,6 +398,8 @@ enum Menu {
     },
     /// The Humanize panel ([`humanize`]).
     Humanize(humanize::Panel),
+    /// The Generate panel ([`generate`]): chords and a melody for the clip.
+    Generate(generate::Panel),
 }
 
 /// The scale-guess dialog's items.
@@ -413,6 +420,7 @@ enum MoreOp {
     SnapToScale,
     GuessScale,
     Humanize,
+    Generate,
     DoubleUp,
     DoubleDown,
     ToggleSlide,
@@ -668,6 +676,7 @@ impl PianoRoll {
         // ponytail: recomputed every frame the panel shows; keep it by (panel, events) if a huge clip makes that show.
         let preview = match self.menu {
             Some(Menu::Humanize(panel)) => Some(panel.preview(events, &self.selected)),
+            Some(Menu::Generate(panel)) => Some(panel.preview(events, project_scale(song), bpb)),
             _ => None,
         };
         let events = preview.as_deref().unwrap_or(events);
@@ -825,7 +834,7 @@ impl PianoRoll {
             (tab_x, graph_tab_shift),
             ink,
         );
-        if !matches!(self.menu, Some(Menu::Humanize(_))) {
+        if !matches!(self.menu, Some(Menu::Humanize(_) | Menu::Generate(_))) {
             self.floating_buttons(ui, grid, &g, song, cx, &mut actions);
         }
         self.paste_button(ui, id, grid, &g, song, cx, &mut actions);
@@ -2060,6 +2069,20 @@ impl PianoRoll {
                     ctx.request_repaint();
                 }
             }
+            Some(Menu::Generate(mut panel)) => {
+                let hue = song.channels.get(self.channel).map_or(0.0, |c| c.hue);
+                let ink = channel_color(hue, cx.theme).to_color32();
+                let was = panel;
+                let close = generate::show(ctx, cx, id.with("generate"), over, ink, &mut panel);
+                self.menu = close.is_none().then_some(Menu::Generate(panel));
+                if close == Some(generate::Close::Apply) {
+                    self.generate(panel, song, actions);
+                }
+                // The preview was drawn before the panel changed: draw it again.
+                if close.is_some() || panel != was {
+                    ctx.request_repaint();
+                }
+            }
             None => {}
         }
     }
@@ -2141,6 +2164,11 @@ impl PianoRoll {
                 self.menu = Some(Menu::Humanize(panel));
                 return;
             }
+            MoreOp::Generate => {
+                let panel = generate::Panel::new(seed);
+                self.menu = Some(Menu::Generate(panel));
+                return;
+            }
             _ => {}
         }
         let Some(clip) = self.clip_mut(song) else {
@@ -2171,7 +2199,7 @@ impl PianoRoll {
                 }
             }
             // The dialogs opened above.
-            MoreOp::GuessScale | MoreOp::TransposeBy | MoreOp::Humanize => {}
+            MoreOp::GuessScale | MoreOp::TransposeBy | MoreOp::Humanize | MoreOp::Generate => {}
         }
         let changed = clip.events != before;
         if changed {
@@ -2201,6 +2229,29 @@ impl PianoRoll {
         };
         let before = clip.events.clone();
         clip.events = panel.preview(&clip.events, &self.selected);
+        self.selected.fill(false);
+        sort(&mut clip.events, &mut self.selected);
+        if clip.events != before {
+            clip.fit_loop(bpb);
+        }
+        actions.push(PianoRollAction::Resync);
+    }
+
+    /// The `Generate` panel's `Apply`: its chords and melody into the clip (the clip's own notes kept when the melody
+    /// leads), re-sorted with no selection, one final edit that re-syncs what it changed.
+    fn generate(
+        &mut self,
+        panel: generate::Panel,
+        song: &mut Song,
+        actions: &mut Vec<PianoRollAction>,
+    ) {
+        let bpb = song.time_sig.bar_beats();
+        let scale = project_scale(song);
+        let Some(clip) = self.clip_mut(song) else {
+            return;
+        };
+        let before = clip.events.clone();
+        clip.events = panel.preview(&clip.events, scale, bpb);
         self.selected.fill(false);
         sort(&mut clip.events, &mut self.selected);
         if clip.events != before {
@@ -2430,6 +2481,7 @@ fn more_items() -> Vec<PopupItem<MoreOp>> {
         (SnapToScale, "Snap to Scale", true),
         (GuessScale, "Guess Scale...", true),
         (Humanize, "Humanize", true),
+        (Generate, "Generate...", true),
         (DoubleUp, "Double Up", true),
         (DoubleDown, "Double Down", true),
         (ToggleSlide, "Toggle Slide", true),
