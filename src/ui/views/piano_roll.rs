@@ -50,7 +50,14 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     };
     // The graph lane's value snap is an app setting: the snap menu's picks are saved with the settings.
     roll.value_snap = [app.settings.velocity_snap, app.settings.pan_snap];
-    let actions = roll.show(ui, app.regions.editor, &app.cx, app.song, &opts);
+    let actions = roll.show(
+        ui,
+        app.regions.editor,
+        &app.cx,
+        app.song,
+        &opts,
+        &mut app.settings.graph_tab_shift,
+    );
     [app.settings.velocity_snap, app.settings.pan_snap] = roll.value_snap;
     for action in actions {
         match action {

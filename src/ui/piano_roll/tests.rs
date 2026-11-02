@@ -1054,6 +1054,8 @@ mod component {
         shapes: Vec<egui::Shape>,
         /// What shows of each filled rect of the last frame (the rect inside its clip), groups flattened.
         visible: Vec<(Rect, egui::Color32)>,
+        /// The graph lane's tab's sideways offset, as the app keeps it (a drag moves it).
+        graph_tab_shift: f32,
     }
 
     impl Rig {
@@ -1087,6 +1089,7 @@ mod component {
                 modifiers: Modifiers::NONE,
                 shapes: Vec::new(),
                 visible: Vec::new(),
+                graph_tab_shift: 0.0,
             };
             rig.frame(vec![]);
             rig.roll.scroll = Some(vec2(0.0, SCROLL_Y));
@@ -1111,12 +1114,17 @@ mod component {
                 theme: &theme,
                 m: &m,
             };
-            let (roll, song, opts) = (&mut self.roll, &mut self.song, self.opts);
+            let (roll, song, opts, shift) = (
+                &mut self.roll,
+                &mut self.song,
+                self.opts,
+                &mut self.graph_tab_shift,
+            );
             let mut last = Vec::new();
             let output = self.ctx.run(raw, |ctx| {
                 egui::CentralPanel::default()
                     .frame(egui::Frame::NONE)
-                    .show(ctx, |ui| last = roll.show(ui, RECT, &cx, song, &opts));
+                    .show(ctx, |ui| last = roll.show(ui, RECT, &cx, song, &opts, shift));
             });
             for action in std::mem::take(&mut last) {
                 match action {

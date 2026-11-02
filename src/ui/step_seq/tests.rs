@@ -646,7 +646,7 @@ impl Rig {
                 .frame(egui::Frame::NONE)
                 .show(ctx, |ui| {
                     action = view.show(ui, &cx, song, CH, kit);
-                    view.graph_knob(ui, &cx, SCREEN, egui::Color32::WHITE);
+                    view.graph_knob(ui, &cx, SCREEN, egui::Color32::WHITE, &mut 0.0);
                 });
         });
         self.shapes = output.shapes;

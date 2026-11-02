@@ -336,10 +336,11 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
             }
         }
         // Over the strips.
+        let shift = &mut app.settings.graph_tab_shift;
         if steps {
-            state.step.graph_knob(&mut ui, &app.cx, editor, color);
+            state.step.graph_knob(&mut ui, &app.cx, editor, color, shift);
         } else {
-            state.grid.graph_knob(&mut ui, &app.cx, editor, color);
+            state.grid.graph_knob(&mut ui, &app.cx, editor, color, shift);
         }
     }
     state.drawn = true;

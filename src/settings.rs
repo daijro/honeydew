@@ -294,6 +294,12 @@ pub struct Settings {
     /// area ([`crate::ui::main_screen::MainScreen::corner_buttons`]).
     #[serde(rename = "rackTabShift")]
     pub rack_tab_shift: f32,
+    /// The editors' graph-lane tab's place (our own key): the sideways offset a drag gave it, in U from where each
+    /// editor opens it (the piano roll's key column's right edge, the drum editors' 1.4 U in from the left), kept over
+    /// restarts. 0 by default; the drag keeps the tab inside the editor
+    /// ([`crate::ui::graph_lane::GraphLane::tab_below`]).
+    #[serde(rename = "graphTabShift")]
+    pub graph_tab_shift: f32,
 }
 
 /// `Screen orientation:`'s items, each with the `ActivityInfo.SCREEN_ORIENTATION_*` the Android activity requests:
@@ -354,6 +360,7 @@ impl Default for Settings {
             screen_orientation: 0,
             editor_ribbon_shift: 0.0,
             rack_tab_shift: 0.0,
+            graph_tab_shift: 0.0,
         }
     }
 }
@@ -423,6 +430,7 @@ impl Settings {
         for (shift, default) in [
             (&mut s.editor_ribbon_shift, d.editor_ribbon_shift),
             (&mut s.rack_tab_shift, d.rack_tab_shift),
+            (&mut s.graph_tab_shift, d.graph_tab_shift),
         ] {
             if !shift.is_finite() {
                 *shift = default;
@@ -759,6 +767,7 @@ mod tests {
             screen_orientation: 2,
             editor_ribbon_shift: -1.5,
             rack_tab_shift: 2.25,
+            graph_tab_shift: -3.5,
         }
     }
 
@@ -965,6 +974,7 @@ mod tests {
                 "enableAnimations",
                 "enableInertia",
                 "ghostnotes",
+                "graphTabShift",
                 "importNoticeAccepted",
                 "keyboardKind",
                 "lastAudioFileFormat",

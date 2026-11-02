@@ -8,6 +8,10 @@
 //!
 //! - The tab sits with its bottom 2 px below the lane's top, or below the editor's bottom while the lane is closed. It
 //!   is clipped to the editor, so it never covers the transport bar, and its visible part takes the touches.
+//! - A sideways drag moves the tab along the editor, which is how it is kept off what it covers (the step sequencer's
+//!   row headers, the piano roll's keys); the offset is in U from where the editor opens it and the host keeps it
+//!   (`Settings::graph_tab_shift`, so it is remembered). The tab never leaves the editor's band, and a drag down or up
+//!   still sizes the lane.
 //! - The tab's touches win wherever it overlaps what lies under it (a row header cut off at the rows' bottom, whose
 //!   visible part may be a sliver). It holds because the editor interacts the tab last and the tab senses drags: egui
 //!   then gives it every press in its rect, even over a click-only widget thinner than its thin-target rule.
@@ -291,6 +295,17 @@ pub struct GraphLane {
     moving: Option<f32>,
     /// When the tab was pressed (egui time), while it is.
     pressed: Option<f64>,
+    /// The tab's drag, while one runs.
+    drag: Option<TabDrag>,
+}
+
+/// The tab's drag: the shift it started from, and whether it has left the calm zone, sideways (a move along the
+/// editor) or not (a resize).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TabDrag {
+    shift: f32,
+    moved: bool,
+    sideways: bool,
 }
 
 impl Default for GraphLane {
@@ -301,6 +316,7 @@ impl Default for GraphLane {
             f: F_FIRST,
             moving: None,
             pressed: None,
+            drag: None,
         }
     }
 }
@@ -332,10 +348,12 @@ impl GraphLane {
     }
 
     /// The pull-up tab of the lane [`Self::split_below`] places in the `editor` below its top margin (H, and the
-    /// drag's measure), on the part below `y`; centred at `x`, its icon in the channel colour `ink`. A tap (released
-    /// within 0.3 s) opens the lane to f or closes it, animated; a drag sets f = (editor bottom − finger y)/H at once,
-    /// clamped to 0…0.7, closing the lane below min(2.5 U/H, 0.5) and otherwise remembering it. Draw it after the
-    /// grid and the lane.
+    /// drag's measure), on the part below `y`; centred at `x` plus the sideways offset `shift` (in U, kept inside the
+    /// editor and remembered by the host), its icon in the channel colour `ink`. A tap (released within 0.3 s) opens
+    /// the lane to f or closes it, animated; a drag that leaves the calm zone sideways moves the tab along the editor
+    /// and leaves the split (and the lane) as it was; a drag that leaves it down or up sets f = (editor bottom − finger
+    /// y)/H at once, clamped to 0…0.7, closing the lane below min(2.5 U/H, 0.5) and otherwise remembering it. Draw it
+    /// after the grid and the lane.
     pub fn tab_below(
         &mut self,
         ui: &mut Ui,
@@ -343,6 +361,7 @@ impl GraphLane {
         id: Id,
         (editor, y): (Rect, f32),
         x: f32,
+        shift: &mut f32,
         ink: Color32,
     ) {
         let m = cx.m;
@@ -351,6 +370,17 @@ impl GraphLane {
         let (_, strip) = self.split_below(editor, y, m);
         let bottom = strip.map_or(area.bottom(), |s| s.top()) + TAB_DROP_PX * px;
         let half = m.u(TAB_W) / 2.0;
+        // How far a drag may take the tab: its half plus a hairline in from the editor's edges, in U from where the
+        // editor opens it. An editor narrower than the tab keeps the tab at its left edge.
+        let (lo, hi) = (
+            (editor.left() + half + px - x) / m.u(1.0),
+            (editor.right() - half - px - x) / m.u(1.0),
+        );
+        // `max` then `min` rather than `clamp`: a degenerate editor (no room) must not panic, and a NaN in it must not
+        // take the tab with it.
+        let hi = hi.max(lo);
+        *shift = shift.max(lo).min(hi);
+        let x = x + m.u(*shift);
         let tab = Rect::from_x_y_ranges(
             m.round_px(x - half)..=m.round_px(x + half),
             m.round_px(bottom - m.u(TAB_H))..=bottom,
@@ -369,16 +399,41 @@ impl GraphLane {
             self.moving = Some(self.shown());
             self.open = !self.open;
         }
-        if response.dragged()
-            && live
-            && let Some(p) = response.interact_pointer_pos()
-        {
-            let f = ((editor.bottom() - p.y) / editor.height()).clamp(0.0, F_MAX);
-            self.moving = None;
-            self.open = f >= (m.u(CLOSE_U) / editor.height()).min(F_CLOSE_MAX);
-            if self.open {
-                self.f = f;
+        if response.drag_started() {
+            self.drag = Some(TabDrag {
+                shift: *shift,
+                moved: false,
+                sideways: false,
+            });
+        }
+        if response.dragged() && live {
+            let total = response.total_drag_delta().unwrap_or_default();
+            let calm = m.u(gesture::CALM_U);
+            let drag = self.drag.get_or_insert(TabDrag {
+                shift: *shift,
+                moved: false,
+                sideways: false,
+            });
+            if !drag.moved && total.length() > calm {
+                drag.moved = true;
+                drag.sideways = total.x.abs() > total.y.abs();
             }
+            if drag.sideways {
+                // Along the editor: the split and the lane stay where they were.
+                *shift = (drag.shift + total.x / m.u(1.0)).max(lo).min(hi);
+            } else if drag.moved
+                && let Some(p) = response.interact_pointer_pos()
+            {
+                let f = ((editor.bottom() - p.y) / editor.height()).clamp(0.0, F_MAX);
+                self.moving = None;
+                self.open = f >= (m.u(CLOSE_U) / editor.height()).min(F_CLOSE_MAX);
+                if self.open {
+                    self.f = f;
+                }
+            }
+        }
+        if response.drag_stopped() {
+            self.drag = None;
         }
         if !down {
             self.pressed = None;
@@ -824,8 +879,8 @@ mod tests {
     /// In the closed lane's tab, whose bottom hangs 2 px below the editor (x −3..51, y 310..350).
     const CLOSED_TAB: Pos2 = pos2(24.0, 340.0);
 
-    /// The tab of `lane` in [`AREA`] at x 24, for an offscreen frame.
-    fn tab(lane: &mut GraphLane) -> impl FnMut(&mut Ui, &UiCtx) + '_ {
+    /// The tab of `lane` in [`AREA`] at x 24, for an offscreen frame, at the sideways offset `shift`.
+    fn tab<'a>(lane: &'a mut GraphLane, shift: &'a mut f32) -> impl FnMut(&mut Ui, &UiCtx) + 'a {
         move |ui, cx| {
             lane.tab_below(
                 ui,
@@ -833,6 +888,7 @@ mod tests {
                 Id::new("tab"),
                 (AREA, AREA.top()),
                 24.0,
+                shift,
                 Color32::WHITE,
             )
         }
@@ -842,6 +898,7 @@ mod tests {
     fn a_long_press_on_the_tab_toggles_nothing() {
         // Held 0.35 s in place (egui still calls its release a click): past the shared 300 ms, so no tap.
         let mut lane = GraphLane::default();
+        let mut shift = 0.0;
         let mut s = Offscreen::new();
         let button = |pressed| In::PointerButton {
             pos: CLOSED_TAB,
@@ -849,13 +906,13 @@ mod tests {
             pressed,
             modifiers: Default::default(),
         };
-        s.frame(vec![In::PointerMoved(CLOSED_TAB)], &mut tab(&mut lane));
-        s.frame(vec![button(true)], &mut tab(&mut lane));
+        s.frame(vec![In::PointerMoved(CLOSED_TAB)], &mut tab(&mut lane, &mut shift));
+        s.frame(vec![button(true)], &mut tab(&mut lane, &mut shift));
         s.time += 0.35;
-        s.frame(vec![button(false)], &mut tab(&mut lane));
+        s.frame(vec![button(false)], &mut tab(&mut lane, &mut shift));
         assert!(!lane.open);
         // A quick one toggles.
-        s.click(CLOSED_TAB, &mut tab(&mut lane));
+        s.click(CLOSED_TAB, &mut tab(&mut lane, &mut shift));
         assert!(lane.open);
     }
 
@@ -864,6 +921,7 @@ mod tests {
         let m = metrics();
         let top = |lane: &GraphLane| lane.split(AREA, &m).1.map(|s| s.top());
         let mut lane = GraphLane::default();
+        let mut shift = 0.0;
         let mut s = Offscreen::new();
         anim::enable(&s.ctx);
         // Frames until the tap's animation lands.
@@ -876,15 +934,15 @@ mod tests {
             }
             n
         };
-        s.frame(vec![], &mut tab(&mut lane));
+        s.frame(vec![], &mut tab(&mut lane, &mut shift));
         // A tap opens toward f 0.5, half the way each 60 fps frame, landing within 0.002.
-        s.click(CLOSED_TAB, &mut tab(&mut lane));
+        s.click(CLOSED_TAB, &mut tab(&mut lane, &mut shift));
         assert!(lane.open);
         assert!((lane.shown() - 0.25).abs() < 1e-3, "{}", lane.shown());
         assert!((6..=9).contains(&settle(&mut s, &mut lane)));
         assert_eq!(top(&lane), Some(198.0));
         // A tap on the tab (now y 160..200) closes it the same way.
-        s.click(pos2(24.0, 190.0), &mut tab(&mut lane));
+        s.click(pos2(24.0, 190.0), &mut tab(&mut lane, &mut shift));
         assert!(!lane.open && lane.shown() > 0.0);
         settle(&mut s, &mut lane);
         assert_eq!(top(&lane), None);
@@ -892,7 +950,7 @@ mod tests {
         s.drag(
             CLOSED_TAB,
             &[vec2(0.0, -100.0), vec2(0.0, -232.0)],
-            &mut tab(&mut lane),
+            &mut tab(&mut lane, &mut shift),
         );
         assert_eq!((lane.open, lane.f, lane.moving), (true, 0.7, None));
         assert_eq!(top(&lane), Some(138.0));
@@ -901,7 +959,7 @@ mod tests {
         s.drag(
             pos2(24.0, 135.0),
             &[to(150.0), to(228.0)],
-            &mut tab(&mut lane),
+            &mut tab(&mut lane, &mut shift),
         );
         assert!((lane.f - 0.4).abs() < 1e-6, "{}", lane.f);
         assert_eq!(top(&lane), Some(228.0));
@@ -911,11 +969,11 @@ mod tests {
         s.drag(
             pos2(24.0, 225.0),
             &[to(240.0), to(275.0)],
-            &mut tab(&mut lane),
+            &mut tab(&mut lane, &mut shift),
         );
         assert_eq!(top(&lane), None);
         assert!((lane.f - 0.36).abs() < 1e-6, "{}", lane.f);
-        s.click(CLOSED_TAB, &mut tab(&mut lane));
+        s.click(CLOSED_TAB, &mut tab(&mut lane, &mut shift));
         settle(&mut s, &mut lane);
         assert_eq!(top(&lane), Some(240.0));
     }
@@ -923,15 +981,45 @@ mod tests {
     #[test]
     fn a_press_and_release_in_one_frame_is_a_tap() {
         let mut lane = GraphLane::default();
+        let mut shift = 0.0;
         let mut s = Offscreen::new();
-        s.frame(vec![In::PointerMoved(CLOSED_TAB)], &mut tab(&mut lane));
+        s.frame(vec![In::PointerMoved(CLOSED_TAB)], &mut tab(&mut lane, &mut shift));
         let button = |pressed| In::PointerButton {
             pos: CLOSED_TAB,
             button: PointerButton::Primary,
             pressed,
             modifiers: Default::default(),
         };
-        s.frame(vec![button(true), button(false)], &mut tab(&mut lane));
+        s.frame(vec![button(true), button(false)], &mut tab(&mut lane, &mut shift));
+        assert!(lane.open);
+    }
+
+    #[test]
+    fn a_sideways_drag_moves_the_tab_along_the_editor_and_leaves_the_lane_alone() {
+        let m = metrics();
+        let mut lane = GraphLane::default();
+        let mut shift = 0.0;
+        let mut s = Offscreen::new();
+        s.frame(vec![], &mut tab(&mut lane, &mut shift));
+        // 3 U right: the tab follows the finger and neither opens nor sizes the lane.
+        s.drag(
+            CLOSED_TAB,
+            &[vec2(48.0, 0.0), vec2(96.0, 0.0)],
+            &mut tab(&mut lane, &mut shift),
+        );
+        assert!(!lane.open && lane.moving.is_none(), "{lane:?}");
+        assert!((shift - 3.0).abs() < 1e-3, "{shift}");
+        // Past the editor's right edge it stops there: the tab's half and a hairline inside it.
+        s.drag(
+            pos2(CLOSED_TAB.x + 96.0, CLOSED_TAB.y),
+            &[vec2(200.0, 0.0), vec2(400.0, 0.0)],
+            &mut tab(&mut lane, &mut shift),
+        );
+        let hi = (AREA.right() - m.u(TAB_W) / 2.0 - 1.0 - 24.0) / m.u(1.0);
+        assert!(hi > 3.0, "{hi}");
+        assert!((shift - hi).abs() < 1e-3, "{shift} {hi}");
+        // A tap there still toggles the lane.
+        s.click(pos2(24.0 + m.u(shift), CLOSED_TAB.y), &mut tab(&mut lane, &mut shift));
         assert!(lane.open);
     }
 

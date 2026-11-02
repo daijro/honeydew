@@ -567,6 +567,7 @@ impl PianoRoll {
         cx: &UiCtx,
         song: &mut Song,
         opts: &RollOptions,
+        graph_tab_shift: &mut f32,
     ) -> Vec<PianoRollAction> {
         let m = cx.m;
         let u = m.u(1.0);
@@ -812,11 +813,19 @@ impl PianoRoll {
         );
         let snap_center = snap_cell.center();
         self.snap_button(ui, id, snap_cell, color.to_color32(), cx);
-        // The graph lane's tab, centred on the key column's right edge.
+        // The graph lane's tab, centred on the key column's right edge (plus the place a drag gave it).
         let tab_x = rect.left() + m.u(KEYS_W);
         let below = (rect, ruler.bottom());
         let ink = color.to_color32();
-        (self.graph).tab_below(ui, cx, id.with("graph tab"), below, tab_x, ink);
+        (self.graph).tab_below(
+            ui,
+            cx,
+            id.with("graph tab"),
+            below,
+            tab_x,
+            graph_tab_shift,
+            ink,
+        );
         if !matches!(self.menu, Some(Menu::Humanize(_))) {
             self.floating_buttons(ui, grid, &g, song, cx, &mut actions);
         }

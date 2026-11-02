@@ -1262,13 +1262,21 @@ impl DrumGridView {
         None
     }
 
-    /// The graph lane's tab for the view `rect`, as the step view's: centred 1.4 U from its left, over the lane's top
-    /// or the view's bottom edge, its icon in `ink`. The host calls it after the drum mixer's strips.
-    pub fn graph_knob(&mut self, ui: &mut Ui, cx: &UiCtx, rect: Rect, ink: egui::Color32) {
+    /// The graph lane's tab for the view `rect`, as the step view's: centred 1.4 U from its left plus the sideways
+    /// offset `shift` a drag gave it, over the lane's top or the view's bottom edge, its icon in `ink`. The host calls it
+    /// after the drum mixer's strips.
+    pub fn graph_knob(
+        &mut self,
+        ui: &mut Ui,
+        cx: &UiCtx,
+        rect: Rect,
+        ink: egui::Color32,
+        shift: &mut f32,
+    ) {
         let m = cx.m;
         let below = (rect, rect.top() + timeline::ruler_h(m));
         let x = rect.left() + m.u(GRAPH_KNOB_X);
-        (self.graph).tab_below(ui, cx, id().with("graph tab"), below, x, ink);
+        (self.graph).tab_below(ui, cx, id().with("graph tab"), below, x, shift, ink);
     }
 
     /// Closes the popups over the view (the row menu and its prompts, the snap menu, the ruler's region menu and `+`,

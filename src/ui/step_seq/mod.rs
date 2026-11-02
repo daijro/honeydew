@@ -1265,14 +1265,14 @@ impl StepSeqView {
         }
     }
 
-    /// The graph lane's tab for the view `rect`, its icon in the channel colour `ink`: centred 1.4 U from its left,
-    /// over the lane's top or the view's bottom edge. The host calls it after everything it draws over the rows (the
-    /// drum mixer's strips), so that the tab is on top.
-    pub fn graph_knob(&mut self, ui: &mut Ui, cx: &UiCtx, rect: Rect, ink: Color32) {
+    /// The graph lane's tab for the view `rect`, its icon in the channel colour `ink`: centred 1.4 U from its left plus
+    /// the sideways offset `shift` a drag gave it, over the lane's top or the view's bottom edge. The host calls it
+    /// after everything it draws over the rows (the drum mixer's strips), so that the tab is on top.
+    pub fn graph_knob(&mut self, ui: &mut Ui, cx: &UiCtx, rect: Rect, ink: Color32, shift: &mut f32) {
         let m = cx.m;
         let below = (rect, rect.top() + timeline::ruler_h(m));
         let x = rect.left() + m.u(GRAPH_KNOB_X);
-        (self.graph).tab_below(ui, cx, id().with("graph tab"), below, x, ink);
+        (self.graph).tab_below(ui, cx, id().with("graph tab"), below, x, shift, ink);
     }
 
     /// The graph lane in the strip `strip`: its items in the header column, the mixer's room left to the host (the
