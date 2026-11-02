@@ -645,6 +645,9 @@ pub fn header_names(
 /// room empty, for the host's row header. Controls bound to a slot param edit it in the kit and report it, and their
 /// press or parameter menu pick goes to [`DrumsState::touch`]; `links` are the channel's MIDI CC links (its `CCLK`),
 /// which enable a linked param's `Unlink from MIDI CC`.
+/// Each strip paints under a clip of its own row alone (inside the host's), so a control's halo, thumb or pressed disc
+/// stops at the row's edges instead of reaching a neighbour's: the strips read as one row each. Menus are popups on
+/// their own layer, so they still open over anything.
 pub fn show_strips(
     ui: &mut Ui,
     cx: &UiCtx,
@@ -658,9 +661,12 @@ pub fn show_strips(
     let ppp = m.ppp();
     let base = ui.id().with("drum strips");
     let rows = kit.slots.len();
+    let outer = ui.clip_rect();
     let mut actions = Vec::new();
     for (row, slot) in kit.slots.iter_mut().enumerate() {
         let strip = strip_rect(rect, rows, row, ppp);
+        // Its own row only, inside the host's clip: no strip's mark reaches the row above or below it.
+        ui.set_clip_rect(outer.intersect(strip));
         let (_, controls) = place_strip(state.page, strip * ppp, m.u_px());
         let instance_id = -(slot.file.id as i32);
         for (spec, (_, r)) in page_specs(state.page).iter().zip(controls) {
@@ -684,6 +690,7 @@ pub fn show_strips(
             }
         }
     }
+    ui.set_clip_rect(outer);
     actions
 }
 

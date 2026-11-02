@@ -297,7 +297,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         .drum_kit
         .as_mut()
         .expect("checked above");
-    // The strips sit on the step rows and scroll with them, clipped to the rows' area.
+    // The strips sit on the step rows and scroll with them, clipped to the rows' area, and each to its own row.
     let mut actions = Vec::new();
     if let Some((top, pitch)) = band {
         let right = editor.left() + m.u(step_seq::HEADER_W) + mixer_w;

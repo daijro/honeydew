@@ -147,6 +147,23 @@ fn strips_stack_at_the_area_height_over_the_rows_less_a_pixel() {
 }
 
 #[test]
+fn each_strip_paints_inside_a_clip_of_its_own_row() {
+    let rig = Rig::new(View::Strips);
+    let rows = rig.kit.slots.len();
+    // Every strip paints under a clip of its own row alone, so no control's halo, thumb or pressed disc reaches the
+    // row above or below it.
+    for row in 0..rows {
+        let strip = strip_rect(STRIPS, rows, row, 1.0);
+        assert!(
+            rig.shapes
+                .iter()
+                .any(|s| s.clip_rect.y_range() == strip.y_range()),
+            "row {row} paints under a clip of its own row"
+        );
+    }
+}
+
+#[test]
 fn each_page_splits_the_layer_by_the_spec_weights() {
     // A 600 × 60 px strip at U = 32: a 96 px header, then the 504 px layer. Pages are 45 px rows, centred.
     let strip = area(0.0, 0.0, 600.0, 60.0);

@@ -1046,9 +1046,11 @@ fn with_the_mixer_out_each_rows_strip_is_module_fill() {
     // The strip row is `moduleFill`, so an off strip disc is unseen on it.
     let mut rig = Rig::new(pattern());
     let module = theme_by_id(0).colors.module_fill.to_color32();
+    // The strip row, a device pixel short of its row's bottom edge (the gap the strips' controls end at).
     let strip = |rig: &Rig, row: usize| {
         let (l, header) = (rig.layout(), rig.layout().header(row));
-        Rect::from_x_y_ranges(l.header_right()..=l.column_right(), header.y_range())
+        let row = Rect::from_x_y_ranges(l.header_right()..=l.column_right(), header.y_range());
+        row.with_max_y(row.bottom() - 1.0 / l.ppp)
     };
     assert!(
         !rig.rects(module).contains(&strip(&rig, 0)),
@@ -1123,10 +1125,11 @@ fn level_meters_stand_at_the_headers_right_edge_until_the_mixer_is_fully_out() {
     let [l, r] = meter_bars(header, page, false, [1.0, 0.5], t);
     assert_eq!(l, Rect::from_min_max(pos2(86.0, 48.0), pos2(90.0, 111.0)));
     assert_eq!(r, Rect::from_min_max(pos2(92.0, 79.5), pos2(96.0, 111.0)));
-    // Fully out: horizontal bars at the bottom of the page area, filling from the left.
+    // Fully out: horizontal bars at the bottom of the page area, a hairline clear of the row's edge, filling from the
+    // left.
     let [l, r] = meter_bars(header, page, true, [1.0, 0.5], t);
-    assert_eq!(l, Rect::from_min_max(pos2(96.0, 101.0), pos2(480.0, 105.0)));
-    assert_eq!(r, Rect::from_min_max(pos2(96.0, 107.0), pos2(288.0, 111.0)));
+    assert_eq!(l, Rect::from_min_max(pos2(96.0, 99.0), pos2(480.0, 103.0)));
+    assert_eq!(r, Rect::from_min_max(pos2(96.0, 105.0), pos2(288.0, 109.0)));
     // At rest (silence: no meter feed yet) both are empty, either way.
     for full in [false, true] {
         assert!(

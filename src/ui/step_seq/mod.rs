@@ -12,9 +12,10 @@
 //! - c ← c + 0.4·(t − c), snapping to t once |c − t| < 0.05 (t = 0 or 1); the header column is 3 U + c·12 U wide.
 //!   It is stepped by input time, the 0.4 counted per 60 Hz frame, 0.6^(60·dt) left after dt seconds.
 //! - Collapsed or animating, the meters are two thin vertical bars at the header's right edge; fully out they are
-//!   horizontal at the bottom of the page area. Each bar is 2 hairlines thick, 1 apart, in the 5 hairlines the
-//!   header's text leaves; L then R; the header's text colour on it, the channel colour under the page. At rest
-//!   (no level feed) they are empty.
+//!   horizontal at the bottom of the page area, a hairline clear of the row's edge so the row's own rule stays clean.
+//!   Each bar is 2 hairlines thick, 1 apart, in the 5 hairlines the header's text leaves; L then R; the header's text
+//!   colour on it, the channel colour under the page; ends rounded by a hairline, so they read as meters rather than
+//!   as more slider tracks. At rest (no level feed) they are empty.
 //! - The current row's header is filled with the channel colour (texts in `moduleFill`); on press it grows by up to
 //!   10 px and wobbles on release. Other headers have no fill and channel-coloured texts. The growth is the arc
 //!   slider's touch pulse applied to the fill, 10 px · f wider and taller about its centre; the texts stay.
@@ -106,8 +107,8 @@ use std::collections::{BTreeSet, HashMap};
 use eframe::egui::text::{CCursor, CCursorRange};
 use eframe::egui::text_edit::TextEditState;
 use eframe::egui::{
-    self, Align2, Area, Color32, Context, Id, Key, Order, Painter, Pos2, Rangef, Rect, Response,
-    Sense, Ui, pos2, vec2,
+    self, Align2, Area, Color32, Context, CornerRadius, Id, Key, Order, Painter, Pos2, Rangef, Rect,
+    Response, Sense, Ui, pos2, vec2,
 };
 
 use crate::icons::{self, IconId};
@@ -657,7 +658,8 @@ fn header_pulse(ui: &Ui, id: Id, down: bool) -> f32 {
 
 /// The row headers in `l`, with ids from `id`: pad name over sample name. The current row's (`selected`) is filled with
 /// the channel colour `ink` and its texts are `moduleFill`; it grows while pressed (`press`), over the grid. The others
-/// have no fill and channel-coloured texts. The mixer's strip row right of each header is `moduleFill`. The level
+/// have no fill and channel-coloured texts. The mixer's strip row right of each header is `moduleFill`, a device pixel
+/// short of the row's bottom edge (the strips' controls end there too, so the rows read as separate bands). The level
 /// meters show `levels` (per row, its peaks L and R) and follow the drum mixer's `fold`. A tap on the current row's
 /// header folds the drum mixer in or out; on another's, makes it current. Returns the row whose menu a long press (or
 /// right click) asked for, and where.
@@ -683,9 +685,12 @@ pub(crate) fn row_headers(
         let mut response = ui.interact(header, id.with(("row", row)), Sense::click());
         let long = gesture::long_press(ui, &mut response, m);
         // The strip row right of the header, under the mixer's page: `moduleFill`, on which an off strip disc is unseen.
+        // It ends a device pixel short, where the strips' own controls already do: the grid shows through, so each
+        // row's strip reads as its own band instead of one block of rows running together.
         let page = Rect::from_x_y_ranges(l.header_right()..=l.column_right(), header.y_range());
-        if page.is_positive() {
-            painter.rect_filled(page, 0.0, module_fill);
+        let band = page.with_max_y(page.bottom() - 1.0 / l.ppp);
+        if band.is_positive() {
+            painter.rect_filled(band, 0.0, module_fill);
         }
         if selected {
             *press = response.is_pointer_button_down_on();
@@ -704,12 +709,14 @@ pub(crate) fn row_headers(
         let clip = painter.with_clip_rect(header);
         header_names(&clip, m, header, name, sample, color);
         // The level meters: vertical at the header's edge, horizontal under the page once the mixer is out (along
-        // the bottom 5 hairlines of the row, under the strip controls' 75 % high layer).
+        // the bottom 5 hairlines of the row, a hairline clear of its edge, under the strip controls' 75 % high layer).
         let full = fold.c == 1.0;
         let level = levels.get(row).map_or([0.0; 2], |p| p.map(meter_level));
+        // Rounded ends: the bars read as meters, not as a second set of slider tracks over the row's control.
+        let ends = CornerRadius::from(m.t());
         for bar in meter_bars(header, page, full, level, m.t()) {
             if bar.is_positive() {
-                painter.rect_filled(bar, 0.0, if full { ink } else { color });
+                painter.rect_filled(bar, ends, if full { ink } else { color });
             }
         }
         // A tap on the current row's header folds the drum mixer in or out; on another's, makes it current.
@@ -758,8 +765,9 @@ pub(crate) fn add_drum(
 }
 
 /// A row's two level-meter bars (L, R) at `levels`, `t` being the hairline (2 hairlines thick, 1 apart).
-/// `full` (the mixer fully out): horizontal along the bottom of the `page` area, filling from the left. Otherwise two
-/// thin vertical bars at the `header`'s right edge, in the 5 hairlines its text leaves, filling from the bottom.
+/// `full` (the mixer fully out): horizontal along the bottom of the `page` area, a hairline clear of the row's bottom
+/// edge, filling from the left. Otherwise two thin vertical bars at the `header`'s right edge, in the 5 hairlines its
+/// text leaves, filling from the bottom.
 fn meter_bars(header: Rect, page: Rect, full: bool, levels: [f32; 2], t: f32) -> [Rect; 2] {
     let level = |i: usize| levels[i].clamp(0.0, 1.0);
     // Bar i's band: L 5 to 3 hairlines from the edge, R the last 2.
@@ -770,7 +778,7 @@ fn meter_bars(header: Rect, page: Rect, full: bool, levels: [f32; 2], t: f32) ->
     std::array::from_fn(|i| {
         if full {
             let x = Rangef::new(page.left(), page.left() + level(i) * page.width());
-            Rect::from_x_y_ranges(x, band(page.bottom(), i))
+            Rect::from_x_y_ranges(x, band(page.bottom() - t, i))
         } else {
             let y = Rangef::new(
                 header.bottom() - level(i) * header.height(),
