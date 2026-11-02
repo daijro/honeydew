@@ -1,0 +1,20 @@
+# Acoustic toms for the sample pickers: dry close-mic hits (mono) of Big Rusty's 22" floor tom and two of Swirly
+# Drums' extra toms. Each peaks at −1 dBFS and is cut at −60 dB re its peak with a 30 ms fade.
+id = "toms-acoustic"
+kind = "samples"
+path = "Samples/Toms/"
+source = "karoryfer-swirly-drums"
+tail = { floor_db = -60, fade_ms = 30 }
+
+[[sample]]
+name = "Floor Tom"
+source = "karoryfer-big-rusty-drums"
+file = "unpacked/karoryfer.big-rusty-drums-main/Samples/tom_22/center/cl/t22_vl6_rr1.flac"
+
+[[sample]]
+name = "Low Tom"
+file = "unpacked/karoryfer.swirly-drums-main/Samples/tom_mlow/tom_mlow_vl10_rr1.wav"
+
+[[sample]]
+name = "High Tom"
+file = "unpacked/karoryfer.swirly-drums-main/Samples/tom_vhi/tom_vhi_vl8_rr1.wav"

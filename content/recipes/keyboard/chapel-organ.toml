@@ -1,0 +1,11 @@
+# A chapel organ: FreePats' church organ (Aeolus renders), one point per tritone, stereo (the stops are spread wide).
+# The source's own 5–7 s loops give way to found loops of at least 1.5 s inside the first 2.5 s, a third of the size;
+# the stops' slow beating then repeats with each loop, and the 300 ms crossfade keeps each loop's start past the onset.
+id = "organ-chapel"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/Chapel Organ.dwp"
+source = "freepats-church-organ"
+sfz = "unpacked/ChurchOrganEmulation-SFZ-20190924/ChurchOrganEmulation-SFZ-20190924/ChurchOrganEmulation-20190924.sfz"
+loop = { find = true, min_s = 1.5, crossfade_ms = 300, keep_s = 2.5 }
+release = 0.5
+gain = "normalize"

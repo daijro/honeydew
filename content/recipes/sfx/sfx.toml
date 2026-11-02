@@ -1,0 +1,149 @@
+# Sound effects for the sample pickers: 30 of Kenney's game sounds (sci-fi, digital, impacts, interface, RPG), which
+# ship as Ogg only, decoded to FLAC. Mono where the source is (a pair with L = R folds); each peaks at −1 dBFS and is
+# cut at −60 dB re its peak (3 s at most) with a 10 ms fade (a blip keeps its envelope).
+id = "sfx"
+kind = "samples"
+path = "Samples/SFX/"
+source = "kenney-sci-fi-sounds"
+tail = { floor_db = -60, fade_ms = 10, max_s = 3 }
+
+[[sample]]
+name = "Laser Large"
+file = "unpacked/kenney_sci-fi-sounds/Audio/laserLarge_001.ogg"
+
+[[sample]]
+name = "Laser Small"
+file = "unpacked/kenney_sci-fi-sounds/Audio/laserSmall_002.ogg"
+
+[[sample]]
+name = "Laser Retro"
+file = "unpacked/kenney_sci-fi-sounds/Audio/laserRetro_000.ogg"
+
+[[sample]]
+name = "Force Field"
+file = "unpacked/kenney_sci-fi-sounds/Audio/forceField_000.ogg"
+
+[[sample]]
+name = "Explosion"
+file = "unpacked/kenney_sci-fi-sounds/Audio/explosionCrunch_000.ogg"
+
+[[sample]]
+name = "Big Explosion"
+file = "unpacked/kenney_sci-fi-sounds/Audio/explosionCrunch_004.ogg"
+
+[[sample]]
+name = "Low Boom"
+file = "unpacked/kenney_sci-fi-sounds/Audio/lowFrequency_explosion_000.ogg"
+
+[[sample]]
+name = "Airlock"
+file = "unpacked/kenney_sci-fi-sounds/Audio/doorOpen_000.ogg"
+
+[[sample]]
+name = "Metal Clang"
+file = "unpacked/kenney_sci-fi-sounds/Audio/impactMetal_001.ogg"
+
+[[sample]]
+name = "Laser Shot"
+source = "kenney-digital-audio"
+file = "unpacked/kenney_digital-audio/Audio/laser1.ogg"
+
+[[sample]]
+name = "Zap"
+source = "kenney-digital-audio"
+file = "unpacked/kenney_digital-audio/Audio/zap1.ogg"
+
+[[sample]]
+name = "Zap Down"
+source = "kenney-digital-audio"
+file = "unpacked/kenney_digital-audio/Audio/zapThreeToneDown.ogg"
+
+[[sample]]
+name = "Zap Up"
+source = "kenney-digital-audio"
+file = "unpacked/kenney_digital-audio/Audio/zapThreeToneUp.ogg"
+
+[[sample]]
+name = "Phaser Up"
+source = "kenney-digital-audio"
+file = "unpacked/kenney_digital-audio/Audio/phaserUp3.ogg"
+
+[[sample]]
+name = "Phaser Down"
+source = "kenney-digital-audio"
+file = "unpacked/kenney_digital-audio/Audio/phaserDown3.ogg"
+
+[[sample]]
+name = "Power Up"
+source = "kenney-digital-audio"
+file = "unpacked/kenney_digital-audio/Audio/powerUp1.ogg"
+
+[[sample]]
+name = "Space Debris"
+source = "kenney-digital-audio"
+file = "unpacked/kenney_digital-audio/Audio/spaceTrash1.ogg"
+
+[[sample]]
+name = "Bell Strike"
+source = "kenney-impact-sounds"
+file = "unpacked/kenney_impact-sounds/Audio/impactBell_heavy_000.ogg"
+
+[[sample]]
+name = "Glass Hit"
+source = "kenney-impact-sounds"
+file = "unpacked/kenney_impact-sounds/Audio/impactGlass_medium_000.ogg"
+
+[[sample]]
+name = "Punch"
+source = "kenney-impact-sounds"
+file = "unpacked/kenney_impact-sounds/Audio/impactPunch_heavy_000.ogg"
+
+[[sample]]
+name = "Wood Knock"
+source = "kenney-impact-sounds"
+file = "unpacked/kenney_impact-sounds/Audio/impactWood_heavy_000.ogg"
+
+[[sample]]
+name = "Plate Hit"
+source = "kenney-impact-sounds"
+file = "unpacked/kenney_impact-sounds/Audio/impactPlate_heavy_000.ogg"
+
+[[sample]]
+name = "Pickaxe"
+source = "kenney-impact-sounds"
+file = "unpacked/kenney_impact-sounds/Audio/impactMining_000.ogg"
+
+[[sample]]
+name = "Click"
+source = "kenney-interface-sounds"
+file = "unpacked/kenney_interface-sounds/Audio/click_001.ogg"
+
+[[sample]]
+name = "Confirm"
+source = "kenney-interface-sounds"
+file = "unpacked/kenney_interface-sounds/Audio/confirmation_002.ogg"
+
+[[sample]]
+name = "Error"
+source = "kenney-interface-sounds"
+file = "unpacked/kenney_interface-sounds/Audio/error_005.ogg"
+
+[[sample]]
+name = "Glass Ping"
+source = "kenney-interface-sounds"
+file = "unpacked/kenney_interface-sounds/Audio/glass_004.ogg"
+
+[[sample]]
+name = "Door Creak"
+source = "kenney-rpg-audio"
+file = "unpacked/kenney_rpg-audio/Audio/creak1.ogg"
+
+[[sample]]
+name = "Page Flip"
+source = "kenney-rpg-audio"
+file = "unpacked/kenney_rpg-audio/Audio/bookFlip1.ogg"
+
+[[sample]]
+name = "Coins"
+source = "kenney-rpg-audio"
+file = "unpacked/kenney_rpg-audio/Audio/handleCoins.ogg"

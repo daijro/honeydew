@@ -1,0 +1,66 @@
+# Iowa stereo ff recordings; source octaves are standard. Measured intonation is corrected per zone.
+# Pizzicato uses the reliably pitched register; upper keys transpose the last usable sample.
+id = "iowa-pizzicato-solo-violin"
+kind = "program"
+path = "Presets/DW Sampler/Orchestral/Pizzicato Solo Violin (Iowa).dwp"
+source = "iowa-strings"
+channels = "stereo"
+gain = "normalize"
+release = 0.25
+tail = { floor_db = -55, fade_ms = 60, max_s = 6.0 }
+
+[[zone]]
+file = "wav/Violin.pizz.ff.sulG.G3.stereo.wav"
+root = 55
+lokey = 0
+hikey = 56
+tune = -11.5
+
+[[zone]]
+file = "wav/Violin.pizz.ff.sulG.Bb3.stereo.wav"
+root = 58
+lokey = 57
+hikey = 59
+tune = -1.5
+
+[[zone]]
+file = "wav/Violin.pizz.ff.sulG.Db4.stereo.wav"
+root = 61
+lokey = 60
+hikey = 62
+tune = 1.5
+
+[[zone]]
+file = "wav/Violin.pizz.ff.sulD.E4.stereo.wav"
+root = 64
+lokey = 63
+hikey = 65
+tune = -2.5
+
+[[zone]]
+file = "wav/Violin.pizz.ff.sulD.G4.stereo.wav"
+root = 67
+lokey = 66
+hikey = 68
+tune = 19.5
+
+[[zone]]
+file = "wav/Violin.pizz.ff.sulA.Bb4.stereo.wav"
+root = 70
+lokey = 69
+hikey = 71
+tune = 15.0
+
+[[zone]]
+file = "wav/Violin.pizz.ff.sulA.Db5.stereo.wav"
+root = 73
+lokey = 72
+hikey = 74
+tune = -26.5
+
+[[zone]]
+file = "wav/Violin.pizz.ff.sulE.E5.stereo.wav"
+root = 76
+lokey = 75
+hikey = 127
+tune = 7.0

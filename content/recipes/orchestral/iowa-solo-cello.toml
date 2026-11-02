@@ -1,0 +1,122 @@
+# Iowa stereo ff recordings; source octaves are standard. Measured intonation is corrected per zone.
+# Pizzicato uses the reliably pitched register; upper keys transpose the last usable sample.
+id = "iowa-solo-cello"
+kind = "program"
+path = "Presets/DW Sampler/Orchestral/Solo Cello (Iowa).dwp"
+source = "iowa-strings"
+channels = "stereo"
+gain = "normalize"
+release = 0.35
+loop = { find = true, min_s = 0.4, crossfade_ms = 70, keep_s = 1.8 }
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulC.C2.stereo.wav"
+root = 36
+lokey = 0
+hikey = 37
+tune = -27.5
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulC.Eb2.stereo.wav"
+root = 39
+lokey = 38
+hikey = 40
+tune = -20.0
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulC.Gb2.stereo.wav"
+root = 42
+lokey = 41
+hikey = 43
+tune = 20.5
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulG.A2.stereo.wav"
+root = 45
+lokey = 44
+hikey = 46
+tune = -14.5
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulG.C3.stereo.wav"
+root = 48
+lokey = 47
+hikey = 49
+tune = -37.0
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulD.Eb3.stereo.wav"
+root = 51
+lokey = 50
+hikey = 52
+tune = -12.5
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulD.Gb3.stereo.wav"
+root = 54
+lokey = 53
+hikey = 55
+tune = 8.0
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulA.A3.stereo.wav"
+root = 57
+lokey = 56
+hikey = 58
+tune = -6.5
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulA.C4.stereo.wav"
+root = 60
+lokey = 59
+hikey = 61
+tune = 5.0
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulA.Eb4.stereo.wav"
+root = 63
+lokey = 62
+hikey = 64
+tune = 13.5
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulA.Gb4.stereo.wav"
+root = 66
+lokey = 65
+hikey = 67
+tune = 4.0
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulA.A4.stereo.wav"
+root = 69
+lokey = 68
+hikey = 70
+tune = -6.5
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulA.C5.stereo.wav"
+root = 72
+lokey = 71
+hikey = 73
+tune = 19.0
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulA.Eb5.stereo.wav"
+root = 75
+lokey = 74
+hikey = 76
+tune = -2.5
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulA.Gb5.stereo.wav"
+root = 78
+lokey = 77
+hikey = 79
+tune = -90.0
+
+[[zone]]
+file = "wav/Cello.arco.ff.sulA.A5.stereo.wav"
+root = 81
+lokey = 80
+hikey = 127
+tune = -5.5

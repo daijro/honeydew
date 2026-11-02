@@ -1,0 +1,16 @@
+[package]
+name = "os-clap"
+description = "Lemon Studio's CLAP plugin host"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[dependencies]
+clap-sys = "0.5"
+os-engine = { path = "../os-engine" }
+os-host = { path = "../os-host" }
+
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+libloading = "0.8"

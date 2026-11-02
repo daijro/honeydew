@@ -1,0 +1,11 @@
+# FreePats FM Piano 2: a separate bright, bell-like Hexter patch from the existing FM Tines.
+# Its single dynamic and twelve tritone points, extended across the keyboard, mono, with a 6 s decay.
+id = "keys-bright-fm-piano"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/Bright FM Piano.dwp"
+source = "freepats-fm-pianos"
+files = "unpacked/FM-Piano2-SFZ+FLAC-20161112/FM-Piano2 SFZ+FLAC-20161112/samples/{note}v80.flac"
+channels = "mono"
+tail = { floor_db = -60, fade_ms = 400, max_s = 6 }
+release = 0.4
+gain = "normalize"

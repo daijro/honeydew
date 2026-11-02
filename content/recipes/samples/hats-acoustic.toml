@@ -1,0 +1,20 @@
+# Acoustic hi-hats for the sample pickers: close-mic hits (mono, as the sources ship them) from Unruly Drums and Big
+# Rusty Drums. Each peaks at −1 dBFS and is cut at −60 dB re its peak, the open hat at 3 s, with a 300 ms fade.
+id = "hats-acoustic"
+kind = "samples"
+path = "Samples/Hats/"
+source = "karoryfer-big-rusty-drums"
+tail = { floor_db = -60, fade_ms = 300, max_s = 3 }
+
+[[sample]]
+name = "Closed Hat"
+source = "karoryfer-unruly-drums"
+file = "unpacked/karoryfer.unruly-drums-main/Samples/h14/cl/rr1/hh_closed_tip_vl5_rr1.flac"
+
+[[sample]]
+name = "Loose Hat"
+file = "unpacked/karoryfer.big-rusty-drums-main/Samples/hihat_14/lc/cl/ht_lc_vl5_rr1.flac"
+
+[[sample]]
+name = "Open Hat"
+file = "unpacked/karoryfer.big-rusty-drums-main/Samples/hihat_14/open/cl/ht_open_vl5_rr2.flac"

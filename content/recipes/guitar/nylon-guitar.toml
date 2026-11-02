@@ -1,0 +1,11 @@
+# A nylon-string classical guitar: FreePats' Spanish Classical Guitar, one layer, one point per minor third, each cut
+# at −50 dB re its peak or 4 s.
+id = "guitar-nylon"
+kind = "program"
+path = "Presets/DW Sampler/Guitar/Nylon Guitar.dwp"
+source = "freepats-spanish-classical-guitar"
+sfz = "unpacked/SpanishClassicalGuitar-SFZ+FLAC-20190618/SpanishClassicalGuitar-SFZ+FLAC-20190618/SpanishClassicalGuitar-20190618.sfz"
+keys = { every = 3 }
+tail = { floor_db = -50, fade_ms = 300, max_s = 4 }
+release = 0.4
+gain = "normalize"

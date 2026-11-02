@@ -1,0 +1,11 @@
+# A square-wave lead: FreePats' Synth Square, one point per major third, each cut to 2.5 s with a found loop (the
+# source's own loops run 4–5 s).
+id = "lead-square"
+kind = "program"
+path = "Presets/DW Sampler/Lead/Square Lead.dwp"
+source = "freepats-synth-lead"
+sfz = "unpacked/SynthSquare-SFZ+FLAC-20200512/SynthSquare SFZ+FLAC-20200512/SynthSquare 20200512.sfz"
+keys = { every = 4 }
+loop = { find = true, min_s = 1.0, crossfade_ms = 60, keep_s = 2.5 }
+release = 0.3
+gain = "normalize"

@@ -1,0 +1,12 @@
+# A flute: VSCO 2 CE's sustain without vibrato, its softest and loudest layers, one point per minor third or more,
+# each cut to 2.5 s with a found loop.
+id = "woodwinds-flute"
+kind = "program"
+path = "Presets/DW Sampler/Woodwinds/Flute.dwp"
+source = "vsco2-ce"
+files = "unpacked/VSCO-2-CE-master/Woodwinds/Flute/susNV/LDFlute_susNV_{note}_v{layer}_{rr}.wav"
+transpose = 12
+keys = { every = 3 }
+loop = { find = true, min_s = 1.0, crossfade_ms = 100, keep_s = 2.5 }
+release = 0.3
+gain = "even"

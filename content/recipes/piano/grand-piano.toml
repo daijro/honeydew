@@ -1,0 +1,17 @@
+# The grand piano: Salamander Grand V3, its pedal-up attack samples only (no pedal, release or resonance regions).
+# Trimmed hard: all 30 points of its minor-third grid, 3 of its 16 velocity layers (p, mf, f; the
+# app's default velocity plays the f), stereo, each sample cut at −60 dB re its peak or at 6 s with a 0.4 s fade.
+id = "piano-grand"
+kind = "program"
+path = "Presets/DW Sampler/Piano/Grand Piano.dwp"
+source = "salamander-grand-v3"
+sfz = "unpacked/SalamanderGrandPianoV3_44.1khz16bit/SalamanderGrandPianoV3_44.1khz16bit/SalamanderGrandPianoV3.sfz"
+cc = { 64 = 0 }
+keys = { every = 3, from = 21, to = 108 }
+velocity_layers = [4, 9, 14]
+round_robin = 1
+channels = "auto"
+tail = { floor_db = -60, fade_ms = 400, max_s = 6 }
+release = 0.45
+lite = { every = 6, layer = 14 }
+gain = "normalize"

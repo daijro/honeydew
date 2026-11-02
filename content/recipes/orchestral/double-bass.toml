@@ -1,0 +1,14 @@
+# VSCO 2 CE. A solo double bass, bowed without vibrato: soft and hard dynamics, all fourteen roots.
+# The E0 recording sounds the open E1 string, confirmed by its 41 Hz harmonic spacing.
+id = "strings-double-bass"
+kind = "program"
+path = "Presets/DW Sampler/Orchestral/Double Bass.dwp"
+source = "vsco2-ce"
+files = "unpacked/VSCO-2-CE-master/Strings/Solo Contrabass/SusNV/BKCtbss_SusNV_{note}_v{layer}_rr{rr}.wav"
+layers = ["1", "3"]
+transpose = 12
+velocity_layers = [1, 2]
+channels = "auto"
+loop = { find = true, min_s = 1.3, crossfade_ms = 120, keep_s = 3.0 }
+release = 0.35
+gain = "normalize"

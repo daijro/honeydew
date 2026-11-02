@@ -1,0 +1,55 @@
+# Vendored copy of rusty_mp3 1.0.0 from crates.io (Apache-2.0, LICENSE beside this file; upstream
+# https://github.com/Remade-With-Rust/remade_ffmpeg_rs, crates/rusty_mp3 at 7f54c11a9d275c85f63b1cb6f7cfb67cbb5ce7e0,
+# crate checksum 2bc136ac5835a05cd84a7cb8ec91d2ad8e87f7c9120c5c322fb1a7089ccd54d4).
+#
+# Changed from the published crate (M11 X8 source review): every non-test `std::env` read is replaced by its default,
+# because the `MP3_*` / `RFF_MP3_XRPOW` debug knobs change the encoder's output; the `lab` module (feature-gated
+# experiments) is dropped; examples, integration tests and the dev-dependency are not carried. Each edit is marked
+# `Vendored (studio)` in the source. Excluded from the workspace (root Cargo.toml), so its own lints and tests stay
+# its own.
+
+[package]
+edition = "2021"
+rust-version = "1.85"
+name = "rusty_mp3"
+version = "1.0.0"
+authors = ["Mata Network <https://www.mata.network>"]
+description = "Pure-Rust MP3 (MPEG-1/2/2.5 Layer III) decoder + encoder, no C/FFI."
+license = "Apache-2.0"
+repository = "https://github.com/Remade-With-Rust/remade_ffmpeg_rs"
+publish = false
+
+[features]
+prometheus-telemetry = []
+
+[lib]
+name = "rusty_mp3"
+path = "src/lib.rs"
+
+[lints.clippy]
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+excessive_precision = "allow"
+float_cmp = "allow"
+float_cmp_const = "allow"
+imprecise_flops = "allow"
+many_single_char_names = "allow"
+missing_const_for_fn = "allow"
+needless_range_loop = "allow"
+option_if_let_else = "allow"
+redundant_clone = "allow"
+similar_names = "allow"
+suboptimal_flops = "allow"
+too_long_first_doc_paragraph = "allow"
+too_many_lines = "allow"
+unreadable_literal = "allow"
+
+[lints.clippy.nursery]
+level = "warn"
+priority = -1
+
+[lints.clippy.pedantic]
+level = "warn"
+priority = -1

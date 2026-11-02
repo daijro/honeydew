@@ -1,0 +1,15 @@
+# A bright grand: the Splendid Grand (AKAI's public-domain close-miked concert grand), pedal up (no resonance regions),
+# a point about every minor third of its uneven grid, 2 of its 5 velocity groups (mp and ff; the app's default velocity
+# plays the ff), stereo, each sample cut at −60 dB re its peak or at 6 s with a 0.4 s fade.
+id = "piano-bright-grand"
+kind = "program"
+path = "Presets/DW Sampler/Piano/Bright Grand.dwp"
+source = "splendid-grand"
+sfz = "unpacked/SplendidGrandPiano-master/Splendid Grand Piano.sfz"
+cc = { 64 = 0 }
+keys = { every = 3 }
+velocity_layers = [3, 5]
+channels = "auto"
+tail = { floor_db = -60, fade_ms = 400, max_s = 6 }
+release = 0.45
+gain = "normalize"

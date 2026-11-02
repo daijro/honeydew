@@ -1,0 +1,12 @@
+# VCSL Italian harpsichord, stop 1 and first take, one point per major third.
+id = "keys-italian-harpsichord"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/Italian Harpsichord.dwp"
+source = "vcsl"
+files = "unpacked/VCSL-master/Chordophones/Zithers/Harpsichord, Italian/Sustains/stop1/Harpsichord_stop1_{note}_{rr}.wav"
+transpose = 12
+keys = { every = 4 }
+channels = "auto"
+tail = { floor_db = -60, fade_ms = 300, max_s = 4 }
+release = 0.3
+gain = "normalize"

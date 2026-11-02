@@ -1,0 +1,13 @@
+# A glockenspiel: VCSL's, all 6 of its points, its medium hits only (loud is 3 dB louder and alike; soft and loud lack
+# each other's G6/G#6), stereo, unlooped, each cut at −60 dB re its peak or at 4 s with a 0.3 s fade.
+id = "mallets-glockenspiel"
+kind = "program"
+path = "Presets/DW Sampler/Mallets/Glockenspiel.dwp"
+source = "vcsl"
+files = "unpacked/VCSL-master/Idiophones/Struck Idiophones/Glockenspiel/glock_{layer}_{note}_{rr}.wav"
+layers = ["medium"]
+transpose = 12
+channels = "auto"
+tail = { floor_db = -60, fade_ms = 300, max_s = 4 }
+release = 0.5
+gain = "normalize"

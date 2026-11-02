@@ -1,0 +1,87 @@
+# Retro 8-bit sound effects for the sample pickers: 20 from Juhani Junkala's 512 Sound Effects (mono 16-bit WAV).
+# Each peaks at −1 dBFS and is cut at −60 dB re its peak (3 s at most) with a 10 ms fade (a blip keeps its envelope).
+id = "sfx-retro"
+kind = "samples"
+path = "Samples/Retro SFX/"
+source = "oga-512-sfx-8bit"
+tail = { floor_db = -60, fade_ms = 10, max_s = 3 }
+
+[[sample]]
+name = "Coin"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Coins/sfx_coin_double1.wav"
+
+[[sample]]
+name = "Coin Cluster"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Coins/sfx_coin_cluster3.wav"
+
+[[sample]]
+name = "Power Up"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Positive Sounds/sfx_sounds_powerup1.wav"
+
+[[sample]]
+name = "Fanfare"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Fanfares/sfx_sounds_fanfare1.wav"
+
+[[sample]]
+name = "Blip"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Simple Bleeps/sfx_sounds_Blip1.wav"
+
+[[sample]]
+name = "Menu Move"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Menu Sounds/sfx_menu_move1.wav"
+
+[[sample]]
+name = "Menu Select"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Menu Sounds/sfx_menu_select1.wav"
+
+[[sample]]
+name = "Error"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Negative Sounds/sfx_sounds_error1.wav"
+
+[[sample]]
+name = "Damage"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Negative Sounds/sfx_sounds_damage1.wav"
+
+[[sample]]
+name = "Impact"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Impacts/sfx_sounds_impact1.wav"
+
+[[sample]]
+name = "Bling"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Weird Sounds/sfx_sound_bling.wav"
+
+[[sample]]
+name = "Power On"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Weird Sounds/sfx_sound_poweron.wav"
+
+[[sample]]
+name = "Laser"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/Weapons/Lasers/sfx_wpn_laser1.wav"
+
+[[sample]]
+name = "Laser Sweep"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/Weapons/Lasers/sfx_wpn_laser5.wav"
+
+[[sample]]
+name = "Explosion"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/Explosions/Short/sfx_exp_short_hard2.wav"
+
+[[sample]]
+name = "Big Explosion"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/Explosions/Long/sfx_exp_long1.wav"
+
+[[sample]]
+name = "Jump"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/Movement/Jumping and Landing/sfx_movement_jump6.wav"
+
+[[sample]]
+name = "Falling"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/Movement/Falling Sounds/sfx_sounds_falling1.wav"
+
+[[sample]]
+name = "Portal"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/Movement/Portals and Transitions/sfx_movement_portal1.wav"
+
+[[sample]]
+name = "Robot"
+file = "unpacked/The Essential Retro Video Game Sound Effects Collection [512 sounds]/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/Death Screams/Robot/sfx_deathscream_robot1.wav"

@@ -1,0 +1,24 @@
+# Acoustic kicks for the pad and clip sample pickers: single close-mic hits, passed through as the sources ship them
+# (16-bit 44.1 kHz FLAC, peaks −4 to −1 dBFS).
+id = "kick-acoustic"
+kind = "samples"
+path = "Samples/Kick/"
+source = "karoryfer-big-rusty-drums"
+
+[[sample]]
+name = "Tight Kick"
+file = "unpacked/karoryfer.big-rusty-drums-main/Samples/kick_24/kick/kick/k_vl12_rr1.flac"
+
+[[sample]]
+name = "Boom Kick"
+file = "unpacked/karoryfer.big-rusty-drums-main/Samples/kick_24_nodamp/kick/kick/k_nodamp_vl5_rr1.flac"
+
+[[sample]]
+name = "Punch Kick"
+source = "karoryfer-unruly-drums"
+file = "unpacked/karoryfer.unruly-drums-main/Samples/k20/out/rr1/kick_clean_vl7_rr1.flac"
+
+[[sample]]
+name = "Dirty Kick"
+source = "karoryfer-unruly-drums"
+file = "unpacked/karoryfer.unruly-drums-main/Samples/k20/out/rr1/kick_dirtiest_vl7_rr1.flac"

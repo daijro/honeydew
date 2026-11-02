@@ -1,0 +1,20 @@
+# Acoustic cymbals for the sample pickers: overhead pairs from Unruly Drums and Big Rusty Drums. Each peaks at −1 dBFS
+# and is cut at −60 dB re its peak or 4 s, the last second fading out.
+id = "cymbals-acoustic"
+kind = "samples"
+path = "Samples/Cymbals/"
+source = "karoryfer-unruly-drums"
+tail = { floor_db = -60, fade_ms = 1000, max_s = 4 }
+
+[[sample]]
+name = "Crash"
+file = "unpacked/karoryfer.unruly-drums-main/Samples/c16/oh/rr1/cr_edge_vl4_rr1.flac"
+
+[[sample]]
+name = "Ride"
+file = "unpacked/karoryfer.unruly-drums-main/Samples/r20/oh/rr1/ride_bow_vl6_rr1.flac"
+
+[[sample]]
+name = "China"
+source = "karoryfer-big-rusty-drums"
+file = "unpacked/karoryfer.big-rusty-drums-main/Samples/china_18/cn/oh/cn_vl4_rr1.flac"

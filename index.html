@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Honeydew</title>
+    <!-- Copied as they are, not through Trunk's `rel="icon"`, which drops `sizes`. -->
+    <link data-trunk rel="copy-file" href="assets/branding/honeydew-16.png" />
+    <link data-trunk rel="copy-file" href="assets/branding/honeydew-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="honeydew-16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="honeydew-32.png" />
+    <!-- wasm-opt off here: tools/web-dist.sh runs `wasm-opt -O3` itself after Trunk, as OpenPlayground's build does. -->
+    <link data-trunk rel="rust" data-target-name="honeydew" data-cargo-profile-release="web" data-wasm-opt="0" />
+    <!-- The bundled content's index, fetched while the wasm downloads. -->
+    <link rel="preload" href="content/index.json" as="fetch" crossorigin />
+    <script>
+      (() => {
+        // The wasm needs SIMD (`.cargo/config.toml`), and the loader below gunzips it with DecompressionStream. A
+        // browser without either shows the notice instead of failing to compile the app. The probe is the smallest
+        // module that uses a SIMD instruction (i8x16.splat, i8x16.popcnt).
+        const probe = new Uint8Array([
+          0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11,
+        ]);
+        const simd = typeof WebAssembly == "object" && WebAssembly.validate(probe);
+        if (!simd || typeof DecompressionStream != "function") {
+          document.documentElement.classList.add("unsupported");
+          return;
+        }
+        // Fetch `<name>.wasm.gz` (tools/web-dist.sh writes it) and gunzip it as it streams, unless the host sent it
+        // with Content-Encoding, which the browser has undone. No .gz (trunk serve, which answers with index.html):
+        // the plain .wasm. A host page that wrapped fetch first (OpenPlayground's page-prelude.js) does this itself.
+        const fetchPlain = window.fetch;
+        if (!/\[native code\]/.test(fetchPlain)) return;
+        window.fetch = async (input, init) => {
+          const url = new URL(input instanceof Request ? input.url : input, location.href);
+          if (!url.pathname.endsWith(".wasm")) return fetchPlain(input, init);
+          url.pathname += ".gz";
+          const res = await fetchPlain(url, init);
+          if (!res.ok || /html/.test(res.headers.get("content-type"))) return fetchPlain(input, init);
+          const gunzipped = /gzip/.test(res.headers.get("content-encoding"));
+          const body = gunzipped ? res.body : res.body.pipeThrough(new DecompressionStream("gzip"));
+          return new Response(body, { headers: { "content-type": "application/wasm" } });
+        };
+      })();
+    </script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        /* Default theme background, shown until the app paints its first frame. */
+        background: #21272b;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      #unsupported {
+        display: none;
+        box-sizing: border-box;
+        height: 100%;
+        margin: 0;
+        padding: 24px;
+        place-content: center;
+        text-align: center;
+        font: 16px/1.5 system-ui, sans-serif;
+        /* The default theme's text colour. */
+        color: #c7ceda;
+      }
+
+      .unsupported #unsupported {
+        display: grid;
+      }
+
+      .unsupported canvas {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="the_canvas_id"></canvas>
+    <p id="unsupported">Honeydew needs a newer browser: Chrome 96, Firefox 113 or Safari 16.4, or later.</p>
+  </body>
+</html>

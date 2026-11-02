@@ -1,0 +1,5 @@
+# WebAssembly SIMD for the web build: our code and our dependencies autovectorise with it, and
+# every browser the web build supports has it (Chrome 96, Firefox 113, Safari 16.4; index.html tells older ones).
+# Trunk, tools/web-dist.sh and the gates' wasm check all read this; a RUSTFLAGS variable would replace it.
+[target.wasm32-unknown-unknown]
+rustflags = ["-Ctarget-feature=+simd128"]
