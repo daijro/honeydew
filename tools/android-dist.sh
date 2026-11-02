@@ -32,11 +32,23 @@ export CARGO_TARGET_DIR=$(cd "${CARGO_TARGET_DIR:-target}" && pwd)
 export HONEYDEW_ANDROID_BUILD_DIR=$CARGO_TARGET_DIR/android
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-4}
 mkdir -p "$HONEYDEW_ANDROID_BUILD_DIR/assets" "$HONEYDEW_ANDROID_BUILD_DIR/jniLibs"
-cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip"
-# The .gz siblings are for web servers; Android reads the raw packs directly from its APK.
-rm -rf "$HONEYDEW_ANDROID_BUILD_DIR/assets/content"
-unzip -q "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip" 'content/*' -x '*.gz' -d "$HONEYDEW_ANDROID_BUILD_DIR/assets"
-rm "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip"
+# The sound library, which the APK ships (Gradle fails without `assets/content/index.json`): the split zip in `sounds/`,
+# the zip named by `HONEYDEW_SOUNDS_ZIP`, or content already unpacked into the build dir's assets (a checkout without
+# `sounds/`, like a fork that leaves the library out).
+sounds_zip=${HONEYDEW_SOUNDS_ZIP:-}
+if [ -z "$sounds_zip" ] && ls sounds/honeydew-sounds.zip.[0-9][0-9][0-9] >/dev/null 2>&1; then
+    sounds_zip=$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip
+    cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > "$sounds_zip"
+fi
+if [ -n "$sounds_zip" ]; then
+    # The .gz siblings are for web servers; Android reads the raw packs directly from its APK.
+    rm -rf "$HONEYDEW_ANDROID_BUILD_DIR/assets/content"
+    unzip -q "$sounds_zip" 'content/*' -x '*.gz' -d "$HONEYDEW_ANDROID_BUILD_DIR/assets"
+    if [ "$sounds_zip" = "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip" ]; then rm "$sounds_zip"; fi
+elif [ ! -f "$HONEYDEW_ANDROID_BUILD_DIR/assets/content/index.json" ]; then
+    echo 'no sound library: check out `sounds/`, set HONEYDEW_SOUNDS_ZIP to a honeydew-<version>-sounds.zip, or unpack one into assets/content' >&2
+    exit 1
+fi
 # signalsmith-stretch's C++ links libc++_shared.so, which the APK has to ship beside libhoneydew.so.
 cargo ndk -t arm64-v8a -t armeabi-v7a --platform 26 --link-libcxx-shared -o "$HONEYDEW_ANDROID_BUILD_DIR/jniLibs" rustc --release --locked --lib -- -C link-arg=-Wl,-z,max-page-size=16384
 debug_keystore=$PWD/android/debug.keystore

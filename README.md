@@ -209,6 +209,14 @@ tools/android-dist.sh
 
 This writes `target/honeydew-android-<version>-arm-debug.apk`, one APK for 64-bit and 32-bit ARM. The debug app is called Honeydew Debug and installs alongside the release app. Its signing key is kept in `android/debug.keystore`; keep that file so debug builds can update each other.
 
+The APK ships the sound library, and Gradle fails without it. If `sounds/` is not checked out (a fork that leaves the library out), give the script a library zip of the same version instead — the `honeydew-<version>-sounds.zip` on the project's releases page:
+
+```sh
+HONEYDEW_SOUNDS_ZIP=/path/to/honeydew-v0.4.6-sounds.zip tools/android-dist.sh
+```
+
+or unpack one into `target/android/assets/content` yourself, and the script uses what is there. `.github/workflows/android-apk.yml` does this on every change to the Android build: it fetches the release's library, builds the debug APK and publishes it to the `apk-debug` prerelease, so a phone can open that page and install it.
+
 **Release signing:** use the same key for every release, or Android won't install updates over the old version. Back up the keystore and passwords outside the repository.
 
 - **Local release:** set `ANDROID_KEYSTORE_FILE`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`, then run `tools/android-dist.sh --release`.
