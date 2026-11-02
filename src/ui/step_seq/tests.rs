@@ -1134,7 +1134,11 @@ fn level_meters_stand_at_the_headers_right_edge_until_the_mixer_is_fully_out() {
     assert_eq!((l.left(), l.max.x), (96.0, 480.0));
     assert_eq!((r.left(), r.max.x), (96.0, 288.0));
     // The lower bar sits a gap above the row's bottom, the upper one a hairline over it, and the pair takes 5 t.
-    assert!((r.max.y - (page.bottom() - gap)).abs() < 1e-3, "{}", r.max.y);
+    assert!(
+        (r.max.y - (page.bottom() - gap)).abs() < 1e-3,
+        "{}",
+        r.max.y
+    );
     assert!((l.max.y - (r.top() - t)).abs() < 1e-3, "{l:?} {r:?}");
     assert!((l.height() - t).abs() < 1e-3 && (r.height() - t).abs() < 1e-3);
     assert!(

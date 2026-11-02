@@ -1,618 +1,97 @@
 # cargo fmt --check
+Diff in /home/runner/work/DqAqW/DqAqW/src/ui/step_seq/tests.rs:1134:
+     assert_eq!((l.left(), l.max.x), (96.0, 480.0));
+     assert_eq!((r.left(), r.max.x), (96.0, 288.0));
+     // The lower bar sits a gap above the row's bottom, the upper one a hairline over it, and the pair takes 5 t.
+-    assert!((r.max.y - (page.bottom() - gap)).abs() < 1e-3, "{}", r.max.y);
++    assert!(
++        (r.max.y - (page.bottom() - gap)).abs() < 1e-3,
++        "{}",
++        r.max.y
++    );
+     assert!((l.max.y - (r.top() - t)).abs() < 1e-3, "{l:?} {r:?}");
+     assert!((l.height() - t).abs() < 1e-3 && (r.height() - t).abs() < 1e-3);
+     assert!(
 
 # cargo clippy --workspace --all-targets -- -D warnings
-  Downloaded libloading v0.8.9
-  Downloaded wayland-protocols-experimental v20250721.0.1
-  Downloaded unicode-width v0.2.2
-  Downloaded time v0.3.55
-  Downloaded syn v3.0.7
-  Downloaded syn v2.0.119
-  Downloaded signalsmith-stretch v0.1.3
-  Downloaded parking v2.2.1
-  Downloaded libc v0.2.190
-  Downloaded time-macros v0.2.32
-  Downloaded synstructure v0.14.0
-  Downloaded read-fonts v0.41.0
-  Downloaded moxcms v0.8.1
-  Downloaded image v0.25.10
-  Downloaded futures-util v0.3.34
-  Downloaded enumflags2_derive v0.7.12
-  Downloaded widestring v1.2.1
-  Downloaded webbrowser v1.2.4
-  Downloaded wayland-sys v0.31.11
-  Downloaded wayland-protocols-wlr v0.3.12
-  Downloaded wayland-protocols-plasma v0.3.12
-  Downloaded wayland-protocols-misc v0.3.12
-  Downloaded wayland-protocols v0.32.13
-  Downloaded tiny-skia v0.11.4
-  Downloaded syn v1.0.109
-  Downloaded symphonia-metadata v0.5.5
-  Downloaded symphonia-core v0.6.1
-  Downloaded scopeguard v1.2.0
-  Downloaded regex-automata v0.4.18
-  Downloaded num-traits v0.2.19
-  Downloaded num-conv v0.2.2
-  Downloaded itertools v0.13.0
-  Downloaded icu_collections v2.3.0
-  Downloaded hashbrown v0.15.5
-  Downloaded form_urlencoded v1.2.2
-  Downloaded wayland-scanner v0.31.11
-  Downloaded wayland-client v0.31.15
-  Downloaded url v2.5.8
-  Downloaded ttf-parser v0.25.1
-  Downloaded tracing-core v0.1.36
-  Downloaded tracing-attributes v0.1.31
-  Downloaded tiny-skia-path v0.11.4
-  Downloaded thiserror-impl v2.0.21
-  Downloaded thiserror-impl v1.0.69
-  Downloaded thiserror v2.0.21
-  Downloaded thiserror v1.0.69
-  Downloaded termcolor v1.4.1
-  Downloaded symphonia-metadata v0.6.1
-  Downloaded symphonia-format-riff v0.6.1
-  Downloaded symphonia-bundle-mp3 v0.6.1
-  Downloaded symphonia-bundle-mp3 v0.5.5
-  Downloaded swash v0.2.10
-  Downloaded rustix v1.1.5
-  Downloaded parking_lot v0.12.5
-  Downloaded midir v0.10.4
-  Downloaded jobserver v0.1.35
-  Downloaded icu_properties_data v2.3.0
-  Downloaded hashbrown v0.16.1
-  Downloaded gpu-alloc v0.6.2
-  Downloaded glutin_glx_sys v0.6.1
-  Downloaded futures-core v0.3.34
-  Downloaded fontdue v0.9.5
-  Downloaded epaint v0.33.3
-  Downloaded wgpu-core-deps-windows-linux-android v27.0.0
-  Downloaded weezl v0.1.12
-  Downloaded wayland-cursor v0.31.14
-  Downloaded wayland-csd-frame v0.3.0
-  Downloaded version_check v0.9.5
-  Downloaded uuid v1.28.0
-  Downloaded utf8_iter v1.0.4
-  Downloaded type-map v0.5.1
-  Downloaded toml_parser v1.1.5+spec-1.1.0
-  Downloaded toml_edit v0.25.17+spec-1.1.0
-  Downloaded toml_datetime v1.1.2+spec-1.1.0
-  Downloaded tinystr v0.8.4
-  Downloaded time-core v0.1.9
-  Downloaded rustix v0.38.44
-  Downloaded owned_ttf_parser v0.25.1
-  Downloaded minimal-lexical v0.2.1
-  Downloaded midi-consts v0.1.0
-  Downloaded half v2.7.1
-  Downloaded glutin-winit v0.5.0
-  Downloaded getrandom v0.3.4
-  Downloaded foldhash v0.2.0
-  Downloaded flate2 v1.1.10
-  Downloaded fax v0.2.7
-  Downloaded event-listener-strategy v0.5.4
-  Downloaded encoding_rs v0.8.42
-  Downloaded symphonia-codec-wavpack v0.1.1
-  Downloaded symphonia-codec-vorbis v0.6.1
-  Downloaded symphonia-bundle-flac v0.5.5
-  Downloaded symphonia v0.6.1
-  Downloaded smithay-client-toolkit v0.20.0
-  Downloaded skrifa v0.44.0
-  Downloaded regex-syntax v0.8.11
-  Downloaded ordered-stream v0.2.0
-  Downloaded ordered-float v5.5.0
-  Downloaded num-complex v0.4.6
-  Downloaded memoffset v0.9.1
-  Downloaded lock_api v0.4.14
-  Downloaded litrs v1.0.0
-  Downloaded khronos-egl v6.0.0
-  Downloaded itoa v1.0.18
-  Downloaded hexf-parse v0.2.1
-  Downloaded gpu-descriptor v0.3.2
-  Downloaded foldhash v0.1.5
-  Downloaded endi v1.1.1
-  Downloaded egui v0.33.3
-  Downloaded ash v0.38.0+1.3.281
-  Downloaded tiff v0.11.3
-  Downloaded symphonia-utils-xiph v0.5.5
-  Downloaded symphonia-codec-vorbis v0.5.5
-  Downloaded symphonia v0.5.5
-  Downloaded spirv v0.3.0+sdk-1.3.268.0
-  Downloaded smithay-client-toolkit v0.19.2
-  Downloaded smallvec v1.16.3
-  Downloaded serde_json v1.0.152
-  Downloaded serde_derive v1.0.229
-  Downloaded serde_core v1.0.229
-  Downloaded serde v1.0.229
-  Downloaded rayon-core v1.13.0
-  Downloaded quick-xml v0.41.0
-  Downloaded prettyplease v0.2.37
-  Downloaded png v0.17.16
-  Downloaded futures-io v0.3.34
-  Downloaded extended v0.1.0
-  Downloaded symphonia-codec-pcm v0.6.1
-  Downloaded symphonia-bundle-flac v0.6.1
-  Downloaded simd-adler32 v0.3.10
-  Downloaded shlex v2.0.1
-  Downloaded rustc-demangle v0.1.28
-  Downloaded quote v1.0.47
-  Downloaded smithay-clipboard v0.7.3
-  Downloaded scoped-tls v1.0.1
-  Downloaded raw-window-handle v0.5.2
-  Downloaded smol_str v0.2.2
-  Downloaded simdutf8 v0.1.5
-  Downloaded signal-hook-registry v1.4.8
-  Downloaded regex v1.13.1
-  Downloaded rayon v1.12.0
-  Downloaded proc-macro2 v1.0.107
-  Downloaded png v0.18.1
-  Downloaded ecolor v0.33.3
-  Downloaded cpal v0.16.0
-  Downloaded atspi-common v0.9.0
-  Downloaded async-io v2.6.0
-  Downloaded alsa v0.9.1
-  Downloaded rustversion v1.0.23
-  Downloaded rustc-hash v1.1.0
-  Downloaded renderdoc-sys v1.1.0
-  Downloaded regex-lite v0.1.9
-  Downloaded raw-window-handle v0.6.2
-  Downloaded quick-error v2.0.1
-  Downloaded proc-macro-crate v3.5.0
-  Downloaded powerfmt v0.2.1
-  Downloaded polling v3.11.0
-  Downloaded pkg-config v0.3.34
-  Downloaded piper v0.2.5
-  Downloaded egui-winit v0.33.3
-  Downloaded egui-wgpu v0.33.3
-  Downloaded document-features v0.2.12
-  Downloaded dlib v0.5.3
-  Downloaded displaydoc v0.2.7
-  Downloaded deranged v0.5.9
-  Downloaded dasp_slice v0.11.0
-  Downloaded dasp_sample v0.11.0
-  Downloaded dasp_frame v0.11.0
-  Downloaded crossbeam-utils v0.8.23
-  Downloaded crossbeam-queue v0.3.14
-  Downloaded crossbeam-epoch v0.9.21
-  Downloaded crossbeam-channel v0.5.17
-  Downloaded calloop v0.14.5
-  Downloaded calloop v0.13.0
-  Downloaded byteorder-lite v0.1.0
-  Downloaded bit-set v0.8.0
-  Downloaded atomic_refcell v0.1.14
-  Downloaded async-lock v3.4.2
-  Downloaded async-channel v2.5.0
-  Downloaded anymap3 v1.1.0
-  Downloaded alsa-sys v0.3.1
-  Downloaded allocator-api2 v0.2.21
-  Downloaded accesskit_winit v0.29.2
-  Downloaded accesskit_unix v0.17.2
-  Downloaded potential_utf v0.1.6
-  Downloaded pollster v0.4.0
-  Downloaded fdeflate v0.3.7
-  Downloaded downcast-rs v1.2.1
-  Downloaded dasp_window v0.11.1
-  Downloaded dasp_rms v0.11.0
-  Downloaded dasp_ring_buffer v0.11.0
-  Downloaded dasp_peak v0.11.0
-  Downloaded dasp_interpolate v0.11.0
-  Downloaded dasp_envelope v0.11.0
-  Downloaded clap-sys v0.5.0
-  Downloaded cexpr v0.6.0
-  Downloaded atomic_float v0.1.0
-  Downloaded atomic-waker v1.1.2
-  Downloaded concurrent-queue v2.5.0
-  Downloaded blocking v1.7.0
-  Downloaded bit-vec v0.8.0
-  Downloaded atty v0.2.14
-  Downloaded async-task v4.7.1
-  Downloaded async-broadcast v0.7.2
-  Downloaded as-raw-xcb-connection v1.0.1
-  Downloaded arrayvec v0.7.8
-  Downloaded eframe v0.33.3
-  Downloaded dpi v0.1.2
-  Downloaded cc v1.7.0
-  Downloaded calloop-wayland-source v0.4.1
-  Downloaded calloop-wayland-source v0.3.0
-  Downloaded byteorder v1.5.0
-  Downloaded bytemuck_derive v1.12.1
-  Downloaded atspi v0.25.0
-  Downloaded async-trait v0.1.92
-  Downloaded async-recursion v1.2.0
-  Downloaded adler2 v2.0.1
-  Downloaded lazy_static v1.5.1
-  Downloaded egui_glow v0.33.3
-  Downloaded bitflags v1.3.2
-  Downloaded bindgen v0.70.1
-  Downloaded autocfg v1.5.1
-  Downloaded anyhow v1.0.104
-  Downloaded accesskit_consumer v0.31.0
-  Downloaded accesskit_atspi_common v0.14.2
-  Downloaded either v1.19.0
-  Downloaded dasp v0.11.0
-  Downloaded codespan-reporting v0.12.0
-  Downloaded cfg_aliases v0.2.2
-  Downloaded bytemuck v1.25.2
-  Downloaded bitflags v2.13.2
-  Downloaded backtrace v0.3.76
-  Downloaded core_maths v0.1.1
-  Downloaded async-executor v1.14.0
-  Downloaded arboard v3.6.1
-  Downloaded cfg-if v1.0.5
-  Downloaded atspi-proxies v0.9.0
-  Downloaded atspi-connection v0.9.0
-  Downloaded core_detect v1.0.0
-  Downloaded async-process v2.5.0
-  Downloaded arrayref v0.3.9
-  Downloaded ahash v0.8.12
-  Downloaded clang-sys v1.9.1
-  Downloaded ab_glyph v0.2.32
-   Compiling proc-macro2 v1.0.107
-   Compiling quote v1.0.47
-   Compiling unicode-ident v1.0.26
-    Checking cfg-if v1.0.5
-    Checking log v0.4.34
-    Checking bitflags v2.13.2
-   Compiling libc v0.2.190
-    Checking smallvec v1.16.3
-   Compiling syn v3.0.7
-   Compiling syn v2.0.119
-   Compiling bytemuck_derive v1.12.1
-   Compiling autocfg v1.5.1
-   Compiling shlex v2.0.1
-   Compiling find-msvc-tools v0.1.14
-    Checking bytemuck v1.25.2
-   Compiling cc v1.7.0
-   Compiling pkg-config v0.3.34
-   Compiling memchr v2.8.3
-   Compiling crossbeam-utils v0.8.23
-   Compiling num-traits v0.2.19
-    Checking simd-adler32 v0.3.10
-    Checking lazy_static v1.5.1
-    Checking adler2 v2.0.1
-    Checking miniz_oxide v0.8.9
-    Checking bitflags v1.3.2
-    Checking scopeguard v1.2.0
-    Checking dasp_sample v0.11.0
-    Checking num-complex v0.4.6
-    Checking arrayvec v0.7.8
-    Checking dasp_frame v0.11.0
-    Checking symphonia-core v0.6.1
-   Compiling glob v0.3.4
-   Compiling clang-sys v1.9.1
-   Compiling prettyplease v0.2.37
-   Compiling regex-syntax v0.8.11
-    Checking dasp_ring_buffer v0.11.0
-   Compiling minimal-lexical v0.2.1
-    Checking regex-lite v0.1.9
-    Checking symphonia-metadata v0.6.1
-   Compiling regex-automata v0.4.18
-   Compiling libloading v0.8.9
-   Compiling nom v7.1.3
-   Compiling bindgen v0.70.1
-   Compiling thiserror v2.0.21
-   Compiling either v1.19.0
-   Compiling itertools v0.13.0
-   Compiling cexpr v0.6.0
-   Compiling regex v1.13.1
-    Checking dasp_rms v0.11.0
-    Checking dasp_peak v0.11.0
-   Compiling thiserror-impl v2.0.21
-   Compiling rustc-hash v1.1.0
-   Compiling shlex v1.3.0
-    Checking dasp_envelope v0.11.0
-    Checking symphonia-common v0.6.1
-    Checking dasp_interpolate v0.11.0
-    Checking dasp_window v0.11.1
-    Checking dasp_signal v0.11.0
-    Checking dasp_slice v0.11.0
-   Compiling rustversion v1.0.23
-    Checking dasp v0.11.0
-    Checking extended v0.1.0
-    Checking symphonia-format-riff v0.6.1
-    Checking symphonia-format-ogg v0.6.1
-    Checking symphonia-codec-vorbis v0.6.1
-    Checking symphonia-bundle-flac v0.6.1
-    Checking symphonia-codec-pcm v0.6.1
-    Checking symphonia-bundle-mp3 v0.6.1
-    Checking symphonia v0.6.1
-   Compiling encoding_rs v0.8.42
-    Checking symphonia-codec-wavpack v0.1.1
-    Checking os-model v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-model)
-   Compiling multiversion_no_op v1.0.0
-    Checking simdutf8 v0.1.5
-    Checking core_detect v1.0.0
-    Checking symphonia-core v0.5.5
-   Compiling signalsmith-stretch v0.1.3
-    Checking crossbeam-channel v0.5.17
-    Checking symphonia-metadata v0.5.5
-   Compiling alsa-sys v0.3.1
-    Checking once_cell v1.21.4
-    Checking symphonia-utils-xiph v0.5.5
-    Checking alsa v0.9.1
-    Checking zvidlib-core v0.5.0
-   Compiling cpal v0.16.0
-    Checking zvidlib-vorbis-syntax v0.5.0
-    Checking symphonia-bundle-flac v0.5.5
-    Checking symphonia-codec-vorbis v0.5.5
-    Checking symphonia-bundle-mp3 v0.5.5
-    Checking byteorder v1.5.0
-    Checking ogg v0.8.0
-    Checking symphonia v0.5.5
-    Checking zvidlib-vorbis-encoder v0.5.0
-    Checking rusty_mp3 v1.0.0 (/home/runner/work/DqAqW/DqAqW/vendor/rusty_mp3)
-   Compiling rustix v1.1.5
-    Checking linux-raw-sys v0.12.1
+    Updating crates.io index
     Checking os-dsp v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-dsp)
+    Checking os-model v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-model)
+    Checking rusty_mp3 v1.0.0 (/home/runner/work/DqAqW/DqAqW/vendor/rusty_mp3)
     Checking os-engine v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-engine)
-    Checking honeydew-audio v0.1.0 (/home/runner/work/DqAqW/DqAqW/crates/audio)
-   Compiling serde_core v1.0.229
-   Compiling serde v1.0.229
-   Compiling serde_derive v1.0.229
-    Checking pin-project-lite v0.2.17
-    Checking dlib v0.5.3
-   Compiling wayland-sys v0.31.11
-   Compiling winnow v1.0.4
-   Compiling wayland-backend v0.3.17
-   Compiling hashbrown v0.17.1
-   Compiling equivalent v1.0.2
-   Compiling indexmap v2.14.2
-   Compiling toml_parser v1.1.5+spec-1.1.0
-    Checking polling v3.11.0
-    Checking scoped-tls v1.0.1
-   Compiling toml_datetime v1.1.2+spec-1.1.0
-    Checking downcast-rs v1.2.1
-   Compiling toml_edit v0.25.17+spec-1.1.0
-   Compiling quick-xml v0.41.0
-   Compiling enumflags2_derive v0.7.12
-   Compiling wayland-client v0.31.15
-   Compiling proc-macro-crate v3.5.0
-   Compiling wayland-scanner v0.31.11
-   Compiling zvariant_utils v4.2.0
-    Checking slab v0.4.12
-    Checking parking v2.2.1
-   Compiling libm v0.2.16
-   Compiling zvariant_derive v5.15.0
-    Checking futures-core v0.3.34
-   Compiling synstructure v0.14.0
-   Compiling crc32fast v1.5.2
-    Checking core_maths v0.1.1
-   Compiling zerofrom-derive v0.1.8
-    Checking ttf-parser v0.25.1
-    Checking tracing-core v0.1.36
-    Checking miniz_oxide v0.9.1
-   Compiling tracing-attributes v0.1.31
-    Checking fastrand v2.5.0
-    Checking futures-io v0.3.34
-    Checking flate2 v1.1.10
-    Checking zerofrom v0.1.8
-   Compiling yoke-derive v0.8.4
-    Checking tracing v0.1.44
-    Checking wayland-protocols v0.32.13
-    Checking event-listener v5.4.2
-   Compiling enumflags2 v0.7.12
-   Compiling zcheapstr v1.1.0
-    Checking fdeflate v0.3.7
-    Checking concurrent-queue v2.5.0
-    Checking stable_deref_trait v1.2.1
-   Compiling endi v1.1.1
-   Compiling zvariant v5.15.0
-    Checking yoke v0.8.3
-    Checking event-listener-strategy v0.5.4
-    Checking futures-lite v2.6.1
-   Compiling zbus_names v4.3.4
-   Compiling async-io v2.6.0
-   Compiling zerovec-derive v0.11.6
-   Compiling parking_lot_core v0.9.12
-    Checking zerovec v0.11.8
-   Compiling displaydoc v0.2.7
-    Checking errno v0.3.14
-    Checking strict-num v0.1.1
-   Compiling thiserror v1.0.69
-    Checking arrayref v0.3.9
-   Compiling syn v1.0.109
-    Checking async-task v4.7.1
-    Checking foldhash v0.1.5
-    Checking allocator-api2 v0.2.21
-    Checking tiny-skia-path v0.11.4
-    Checking hashbrown v0.15.5
-    Checking signal-hook-registry v1.4.8
-    Checking async-channel v2.5.0
-    Checking png v0.17.16
-    Checking lock_api v0.4.14
-   Compiling thiserror-impl v1.0.69
-   Compiling cfg_aliases v0.2.2
-    Checking percent-encoding v2.3.2
-   Compiling khronos_api v3.1.0
-    Checking atomic-waker v1.1.2
-    Checking piper v0.2.5
-    Checking tiny-skia v0.11.4
-    Checking parking_lot v0.12.5
-    Checking async-signal v0.2.14
-   Compiling zbus_xml v5.2.1
-    Checking async-lock v3.4.2
-    Checking gethostname v1.1.0
-   Compiling version_check v0.9.5
-   Compiling zerocopy v0.8.62
-    Checking x11rb-protocol v0.13.2
-   Compiling rustix v0.38.44
-    Checking as-raw-xcb-connection v1.0.1
-   Compiling crossbeam-epoch v0.9.21
-   Compiling getrandom v0.3.4
-   Compiling ahash v0.8.12
-    Checking async-process v2.5.0
-   Compiling zbus-lockstep v0.5.2
-    Checking blocking v1.7.0
-    Checking async-executor v1.14.0
-    Checking tinystr v0.8.4
-   Compiling zbus_macros v5.19.0
-    Checking async-broadcast v0.7.2
-    Checking owned_ttf_parser v0.25.1
-    Checking ordered-stream v0.2.0
-    Checking uuid v1.28.0
-   Compiling serde_repr v0.1.21
-   Compiling async-recursion v1.2.0
-   Compiling async-trait v0.1.92
-    Checking ab_glyph_rasterizer v0.1.10
-   Compiling crossbeam-deque v0.8.8
-    Checking x11rb v0.13.2
-   Compiling xml-rs v0.8.29
-    Checking xkeysym v0.2.1
-    Checking hex v0.4.3
-    Checking linux-raw-sys v0.4.15
-    Checking cursor-icon v1.2.0
-    Checking xcursor v0.3.11
-    Checking writeable v0.6.4
-    Checking litemap v0.8.3
-    Checking icu_locale_core v2.3.0
-    Checking wayland-cursor v0.31.14
-    Checking wayland-csd-frame v0.3.0
-    Checking zbus v5.19.0
-   Compiling gl_generator v0.14.0
-    Checking ab_glyph v0.2.32
-   Compiling zbus-lockstep-macros v0.5.2
-    Checking zerotrie v0.2.5
-    Checking potential_utf v0.1.6
-    Checking wayland-protocols-wlr v0.3.12
-   Compiling x11-dl v2.21.0
-    Checking memmap2 v0.9.11
-    Checking utf8_iter v1.0.4
-   Compiling icu_properties_data v2.3.0
-    Checking static_assertions v1.1.0
-    Checking raw-window-handle v0.6.2
-   Compiling icu_normalizer_data v2.3.0
-    Checking atspi-common v0.9.0
-    Checking icu_collections v2.3.0
-    Checking icu_provider v2.3.1
-    Checking calloop v0.13.0
-    Checking font-types v0.12.7
-   Compiling zmij v1.0.23
-    Checking accesskit v0.21.1
-   Compiling time-core v0.1.9
-   Compiling object v0.37.3
-   Compiling num-conv v0.2.2
-   Compiling smithay-client-toolkit v0.19.2
-   Compiling time-macros v0.2.32
-    Checking read-fonts v0.41.0
-    Checking calloop-wayland-source v0.3.0
-    Checking powerfmt v0.2.1
-    Checking num_threads v0.1.8
-    Checking deranged v0.5.9
-    Checking gimli v0.32.3
-   Compiling serde_json v1.0.152
-   Compiling anyhow v1.0.104
-    Checking time v0.3.55
-    Checking addr2line v0.25.1
-    Checking skrifa v0.44.0
-    Checking icu_normalizer v2.3.0
-    Checking icu_properties v2.3.0
-    Checking atspi-proxies v0.9.0
    Compiling winit v0.30.13 (/home/runner/work/DqAqW/DqAqW/vendor/winit)
-    Checking crossbeam-queue v0.3.14
-    Checking emath v0.33.3
-    Checking atty v0.2.14
-    Checking yazi v0.2.1
-    Checking itoa v1.0.18
-    Checking termcolor v1.4.1
-    Checking rustc-demangle v0.1.28
-    Checking zeno v0.3.3
-    Checking backtrace v0.3.76
-    Checking swash v0.2.10
-    Checking nih_log v0.3.1
-    Checking ecolor v0.33.3
-    Checking crossbeam v0.8.5
-    Checking atspi-connection v0.9.0
-    Checking sctk-adwaita v0.10.1
-    Checking idna_adapter v1.2.2
-    Checking accesskit_consumer v0.31.0
-   Compiling glutin_egl_sys v0.7.1
-   Compiling glutin_glx_sys v0.6.1
-    Checking xkbcommon-dl v0.4.2
+    Checking honeydew-audio v0.1.0 (/home/runner/work/DqAqW/DqAqW/crates/audio)
    Compiling nih_plug_derive v0.1.0 (/home/runner/work/DqAqW/DqAqW/vendor/nih-plug/nih_plug_derive)
-    Checking fontdue v0.9.5
-    Checking wayland-protocols-plasma v0.3.12
-    Checking calloop v0.14.5
    Compiling os-host v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-host)
-   Compiling futures-macro v0.3.34
-    Checking midi-consts v0.1.0
-    Checking atomic_refcell v0.1.14
-    Checking pxfm v0.1.30
-    Checking smol_str v0.2.2
-    Checking anymap3 v1.1.0
-    Checking futures-task v0.3.34
-    Checking nohash-hasher v0.2.0
-    Checking atomic_float v0.1.0
-    Checking epaint_default_fonts v0.33.3
-    Checking dpi v0.1.2
-    Checking profiling v1.0.18
     Checking os-theme v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-theme)
-    Checking clap-sys v0.5.0 (https://github.com/micahrj/clap-sys.git?rev=25d7f53fdb6363ad63fbd80049cb7a42a97ac156#25d7f53f)
-   Compiling smithay-client-toolkit v0.20.0
-    Checking raw-window-handle v0.5.2
-    Checking widestring v1.2.1
-    Checking moxcms v0.8.1
     Checking nih_plug v0.0.0 (/home/runner/work/DqAqW/DqAqW/vendor/nih-plug)
     Checking os-ui v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-ui)
-    Checking epaint v0.33.3
-    Checking futures-util v0.3.34
-    Checking calloop-wayland-source v0.4.1
-    Checking accesskit_atspi_common v0.14.2
-    Checking idna v1.1.0
-    Checking atspi v0.25.0
-   Compiling vst3-com-macros-support v0.2.0 (https://github.com/robbert-vdh/vst3-sys.git?rev=b3ff4d775940f5b476b9d1cca02a90e07e1922a2#b3ff4d77)
-    Checking form_urlencoded v1.2.2
-   Compiling glutin v0.32.3
-    Checking wayland-protocols-misc v0.3.12
-    Checking wayland-protocols-experimental v20250721.0.1
-    Checking png v0.18.1
-   Compiling memoffset v0.9.1
-    Checking unicode-segmentation v1.13.3
-    Checking byteorder-lite v0.1.0
-   Compiling rfd v0.17.2
-    Checking egui v0.33.3
-    Checking image v0.25.10
-   Compiling vst3-com-macros v0.2.0 (https://github.com/robbert-vdh/vst3-sys.git?rev=b3ff4d775940f5b476b9d1cca02a90e07e1922a2#b3ff4d77)
-    Checking url v2.5.8
-    Checking accesskit_unix v0.17.2
     Checking os-plugkit v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-plugkit)
-   Compiling glutin-winit v0.5.0
     Checking os-hostlink v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-hostlink)
-    Checking pollster v0.4.0
-   Compiling rayon-core v1.13.0
     Checking accesskit_winit v0.29.2
-    Checking webbrowser v1.2.4
-    Checking vst3-com v0.1.0 (https://github.com/robbert-vdh/vst3-sys.git?rev=b3ff4d775940f5b476b9d1cca02a90e07e1922a2#b3ff4d77)
-    Checking smithay-clipboard v0.7.3
-    Checking arboard v3.6.1
-    Checking web-time v1.1.0
-    Checking glow v0.16.0
-   Compiling litrs v1.0.0
-   Compiling document-features v0.2.12
     Checking egui-winit v0.33.3
-    Checking egui_glow v0.33.3
-    Checking vst3-sys v0.1.0 (https://github.com/robbert-vdh/vst3-sys.git?rev=b3ff4d775940f5b476b9d1cca02a90e07e1922a2#b3ff4d77)
+    Checking glutin-winit v0.5.0
    Compiling honeydew v0.4.6 (/home/runner/work/DqAqW/DqAqW)
     Checking os-paths v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-paths)
-    Checking clap-sys v0.5.0
-    Checking lemon-sampler v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-sampler)
     Checking os-clap v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-clap)
-    Checking rayon v1.12.0
-    Checking os-vst3 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-vst3)
+    Checking lemon-sampler v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-sampler)
     Checking eframe v0.33.3
+    Checking os-vst3 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-vst3)
     Checking lemon-3x-osc v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-3x-osc)
     Checking lemon-parametric-eq-2 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-parametric-eq-2)
     Checking os-vst2 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-vst2)
-    Checking midir v0.10.4
-    Finished `dev` profile [unoptimized] target(s) in 2m 41s
+    Finished `dev` profile [unoptimized] target(s) in 1m 13s
 
 # cargo test --workspace
+test ui::settings_tab::tests::restore_default_settings_keeps_the_demo_songs_restored ... ok
+test ui::settings_tab::tests::restore_default_settings_asks_first_and_only_yes_resets ... ok
+test ui::settings_tab::tests::restore_demo_songs_asks_the_app_once_a_tap ... ok
+test ui::settings_tab::tests::rows_follow_the_spec_table_in_order ... ok
+test ui::settings_tab::tests::screen_orientation_shows_after_animation_only_where_the_app_can_lock_it ... ok
+test ui::settings_tab::tests::the_current_input_device_is_highlighted_and_a_missing_one_marks_none ... ok
+test ui::settings_tab::tests::the_full_width_buttons_are_light_text_fills_and_the_bluetooth_row_is_plain ... ok
+test ui::settings_tab::tests::the_full_width_level_slider_follows_the_pointer_over_its_whole_track ... ok
+test ui::settings_tab::tests::rows_are_2_u_apart_in_a_column_2_u_in_from_the_page_and_control_rows_are_1_5_u ... ok
+test ui::settings_tab::tests::the_input_device_button_is_named_after_the_stored_device_for_accessibility_tools ... ok
+test ui::settings_tab::tests::the_input_device_menu_lists_none_any_then_each_device_once ... ok
+test ui::settings_tab::tests::the_input_device_button_shows_the_stored_name_even_when_it_is_not_connected ... ok
+test ui::settings_tab::tests::the_level_slider_fills_from_its_low_end ... ok
+test ui::settings_tab::tests::the_latency_toggle_shows_on_while_unset_and_stores_what_a_tap_sets ... ok
+test ui::settings_tab::tests::the_list_scrolls_to_reach_the_last_rows ... ok
+test ui::settings_tab::tests::the_list_stops_at_its_last_row ... ok
+test ui::settings_tab::tests::the_open_input_device_popup_follows_the_ports ... ok
+test ui::settings_tab::tests::the_original_content_rows_show_the_folder_and_open_it_on_the_desktop_only ... ok
+test ui::settings_tab::tests::the_pill_dots_are_text_when_on_and_menu_fill_when_off_4_t_from_the_middle ... ok
+test ui::settings_tab::tests::the_popup_marks_the_current_item ... ok
+test ui::settings_tab::tests::the_scaling_slider_shows_its_value_while_held_and_applies_it_when_let_go ... ok
+test ui::song_options::tests::escape_closes_an_open_menu_first ... ok
+test ui::settings_tab::tests::the_metronome_label_stops_short_of_its_percent ... ok
+test ui::song_options::tests::the_band_shows_the_title_the_menus_and_the_buttons_top_to_bottom ... ok
+test ui::song_options::tests::the_dialog_base_dims_the_screen_then_paints_the_floating_panel ... ok
+test ui::song_options::tests::the_dialog_opens_on_140_bpm_and_4_4 ... ok
+test ui::song_options::tests::the_menus_list_the_spec_items_with_the_current_one_highlighted ... ok
+test ui::song_options::tests::ok_returns_the_choices_and_cancel_and_escape_return_cancel ... ok
+test ui::song_options::tests::the_menus_pick_their_values_and_the_mode_swaps_the_second_menu ... ok
+test ui::song_options::tests::time_signature_writes_the_first_menu_to_byte_1_and_the_second_to_byte_0_at_the_picked_tempo ... ok
+test ui::song_options::tests::time_division_writes_the_first_menu_and_4_and_scales_the_tempo_by_division_over_4 ... ok
+test ui::soundfont_picker::tests::a_soundfont_cut_off_in_its_samples_is_the_pick_with_a_corrupted_error ... ok
+test ui::soundfont_picker::tests::a_soundfont_that_does_not_read_is_the_pick_with_its_error ... ok
+test ui::soundfont_picker::tests::back_leaves_the_soundfont_for_the_files ... ok
+test ui::soundfont_picker::tests::opened_on_the_modules_soundfont_it_starts_in_its_patches ... ok
+test ui::soundfont_picker::tests::search_keeps_the_patches_whose_name_holds_the_query_in_file_order_or_a_to_z ... ok
+test ui::soundfont_picker::tests::my_files_then_a_soundfont_lists_its_patches_in_file_order_and_a_patch_is_the_pick ... ok
+test ui::split::tests::a_sideways_drag_moves_the_ribbon_along_the_band_and_leaves_the_split ... ok
+test ui::split::tests::every_opening_from_closed_fills_the_view_and_a_switch_keeps_the_split ... ok
 test ui::split::tests::on_a_short_view_the_editor_keeps_its_3_u_and_the_playlist_gives_way ... ok
 test ui::split::tests::opening_halves_the_way_to_the_target_each_frame_and_snaps_within_a_pixel_and_closing_snaps_back ... ok
 test ui::split::tests::the_playlist_takes_f_then_a_4_px_gap_and_the_editor_the_rest_at_ppp_1_and_2 ... ok
-test ui::split::tests::the_ribbon_closes_on_a_tap_and_its_drag_resizes_with_a_rubber_band_and_flicks ... FAILED
-test ui::split::tests::while_it_opens_the_editor_keeps_its_settled_size_and_slides_up_under_the_shrinking_playlist ... ok
-test ui::step_seq::tests::a_clip_id_that_is_gone_edits_nothing_and_makes_no_clip ... ok
-test ui::step_seq::tests::a_copy_stays_on_its_step_at_fractional_step_widths ... ok
 test ui::soundfont_picker::tests::the_root_lists_the_original_soundfonts_after_my_files_and_they_open_under_the_title ... ok
-test ui::step_seq::tests::a_drag_from_the_current_rows_header_scrolls_and_does_not_fold_the_mixer ... ok
+test ui::split::tests::while_it_opens_the_editor_keeps_its_settled_size_and_slides_up_under_the_shrinking_playlist ... ok
+test ui::split::tests::the_ribbon_closes_on_a_tap_and_its_drag_resizes_with_a_rubber_band_and_flicks ... ok
+test ui::step_seq::tests::a_copy_stays_on_its_step_at_fractional_step_widths ... ok
+test ui::step_seq::tests::a_clip_id_that_is_gone_edits_nothing_and_makes_no_clip ... ok
 test ui::step_seq::tests::a_fling_while_following_leaves_nothing_once_playback_stops ... ok
+test ui::step_seq::tests::a_drag_from_the_current_rows_header_scrolls_and_does_not_fold_the_mixer ... ok
 test ui::step_seq::tests::a_focus_loss_ends_a_lane_drag_and_a_stale_press_paints_nothing ... ok
 test ui::step_seq::tests::a_full_kit_has_no_pad_to_clone_into ... ok
 test ui::step_seq::tests::a_hit_alone_in_the_selection_is_remembered_and_new_hits_take_its_velocity_and_pan ... ok
@@ -657,17 +136,17 @@ test ui::step_seq::tests::a_swung_hit_is_drawn_on_its_own_step ... ok
 test ui::step_seq::tests::a_swung_tap_on_the_last_step_doubles_the_loop ... ok
 test ui::step_seq::tests::a_swung_tap_pops_in_on_the_cell_its_hit_shows_on ... ok
 test ui::step_seq::tests::a_tap_on_a_hit_deletes_it_when_it_alone_is_selected_else_only_deselects ... ok
-test ui::step_seq::tests::a_tap_on_a_row_header_selects_the_row ... ok
 test ui::step_seq::tests::a_shrunk_loop_lets_posx_spring_back_over_frames ... ok
-test ui::step_seq::tests::a_tap_on_a_step_toggles_it_in_the_song ... ok
+test ui::step_seq::tests::a_tap_on_a_row_header_selects_the_row ... ok
 test ui::step_seq::tests::a_tap_on_an_offset_clips_drum_ruler_seeks_to_the_song_tick_it_shows ... ok
+test ui::step_seq::tests::a_tap_on_a_step_toggles_it_in_the_song ... ok
 test ui::step_seq::tests::a_tap_on_the_drum_ruler_asks_for_the_playhead_on_a_step ... ok
 test ui::step_seq::tests::a_tap_on_the_current_rows_header_toggles_the_mixer_and_on_another_only_selects ... ok
 test ui::step_seq::tests::a_tap_past_the_loop_grows_it_to_b_2_k_in_one_action_and_deleting_shrinks_it ... ok
 test ui::step_seq::tests::a_tapped_hit_takes_the_lanes_swing_on_odd_steps ... ok
 test ui::step_seq::tests::a_tapped_hit_pops_in_from_text_to_its_colour ... ok
-test ui::step_seq::tests::a_touch_and_each_move_paint_the_current_rows_step_under_x ... ok
 test ui::step_seq::tests::a_touch_long_press_selects_and_a_move_boxes ... ok
+test ui::step_seq::tests::a_touch_and_each_move_paint_the_current_rows_step_under_x ... ok
 test ui::step_seq::tests::a_two_bar_clip_scrolls_to_its_32nd_step ... ok
 test ui::step_seq::tests::an_active_step_is_inset_2_px_and_trunc_r_4_tall_with_its_dashes_at_ppp_1_and_2 ... ok
 test ui::step_seq::tests::a_trackpad_pinch_zooms_the_time_and_two_fingers_zoom_the_rows ... ok
@@ -686,8 +165,8 @@ test ui::step_seq::tests::clone_copies_the_row_below_and_selects_it ... ok
 test ui::step_seq::tests::copy_steps_drops_the_copies_past_the_512_step_cap ... ok
 test ui::step_seq::tests::copy_steps_past_the_loop_end_puts_the_copies_there ... ok
 test ui::step_seq::tests::copy_steps_puts_the_copies_right_after_the_selection_over_what_was_there ... ok
-test ui::step_seq::tests::delete_asks_first ... ok
 test ui::step_seq::tests::copy_fills_the_hit_clipboard_and_a_long_press_or_right_click_on_an_empty_step_pastes_it ... ok
+test ui::step_seq::tests::delete_asks_first ... ok
 test ui::step_seq::tests::delete_steps_removes_every_hit_of_the_selected_cells_only ... ok
 test ui::step_seq::tests::delete_clears_the_selected_steps_and_the_selection ... ok
 test ui::step_seq::tests::each_clip_keeps_its_own_zoom_and_scroll ... ok
@@ -719,8 +198,8 @@ test ui::step_seq::tests::rows_without_a_kit_pad_get_a_plain_name ... ok
 test ui::step_seq::tests::panning_and_pitch_snap_to_the_centre_in_a_1_u_zone_and_repeat_stacks_up_to_7 ... ok
 test ui::step_seq::tests::scrolled_off_a_step_boundary_nothing_paints_into_the_header_column ... ok
 test ui::step_seq::tests::set_midi_note_waits_for_a_key_and_reset_clears_it ... ok
-test ui::step_seq::tests::set_name_prompts_for_the_custom_name ... ok
 test ui::step_seq::tests::swing_has_the_3_u_ruler_cell_to_itself_in_step_sequencer_mode ... ok
+test ui::step_seq::tests::set_name_prompts_for_the_custom_name ... ok
 test ui::step_seq::tests::swing_is_a_button_that_opens_a_popup ... ok
 test ui::step_seq::tests::the_add_drum_button_asks_the_host_until_the_pads_are_all_in_use ... ok
 test ui::step_seq::tests::the_current_header_is_channel_filled_with_module_fill_texts_the_others_channel_texts ... ok
@@ -737,8 +216,8 @@ test ui::step_seq::tests::the_graph_lanes_bars_take_the_hit_colour_too ... ok
 test ui::step_seq::tests::the_grid_starts_a_t_gap_right_of_the_header_column_where_its_zones_start ... ok
 test ui::step_seq::tests::the_graph_tab_wins_over_a_cut_off_header ... ok
 test ui::step_seq::tests::the_knob_shows_the_record_icon_while_rec_is_armed ... ok
-test ui::step_seq::tests::the_lane_is_f_of_the_editor_below_its_top_margin_and_its_knob_drags_f_on_that_height ... ok
 test ui::step_seq::tests::the_knob_shows_stopped_plays_on_a_tap_and_a_drop_seeks_within_the_loop ... ok
+test ui::step_seq::tests::the_lane_is_f_of_the_editor_below_its_top_margin_and_its_knob_drags_f_on_that_height ... ok
 test ui::step_seq::tests::the_playhead_folds_into_the_loop_from_before_the_clip_too ... ok
 test ui::step_seq::tests::the_playhead_line_sits_at_the_folded_playhead_stopped_or_playing_down_to_the_last_row ... ok
 test ui::step_seq::tests::the_playlist_length_follows_l_until_the_clip_is_resized ... ok
@@ -770,8 +249,8 @@ test ui::step_seq::tests::zooming_the_time_past_its_limit_keeps_the_beat_under_t
 test ui::step_seq::tests::twelve_rows_scroll_to_the_last_row_and_the_add_button ... ok
 test ui::tempo::tests::a_full_clockwise_turn_of_the_dial_adds_one_bpm_and_its_release_is_done ... ok
 test ui::tempo::tests::four_taps_set_the_mean_of_their_three_tempos_and_the_next_tap_starts_over ... ok
-test ui::tempo::tests::tap_grows_with_each_tap_of_a_group_and_opening_again_starts_a_new_group ... ok
 test ui::tempo::tests::a_tap_off_the_disc_the_x_escape_and_a_focus_loss_close_and_one_on_the_disc_does_nothing ... ok
+test ui::tempo::tests::tap_grows_with_each_tap_of_a_group_and_opening_again_starts_a_new_group ... ok
 test ui::tempo::tests::the_dial_truncates_to_a_tenth_and_the_transport_rounds_and_drops_a_zero_one ... ok
 test ui::tempo::tests::the_dial_turns_minus_the_angle_over_two_pi_wrapped_to_half_a_turn_and_clamps ... ok
 test ui::tempo::tests::the_steps_round_after_adding_and_keep_to_10_999 ... ok
@@ -852,13 +331,13 @@ test ui::views::preset_picker::tests::opening_the_folders_of_a_tree_the_size_of_
 test ui::views::preset_picker::tests::restore_in_the_instruments_pickers_bin_puts_files_back_into_their_folders ... ok
 test ui::views::preset_picker::tests::the_chord_set_picker_is_titled_and_lists_my_chord_sets_in_the_user_folder_on_disk ... ok
 test ui::views::preset_picker::tests::the_chord_set_picker_lists_my_files_default_and_our_eight_then_the_content_folders ... ok
-test ui::views::preset_picker::tests::a_factory_pick_loads_and_is_named_from_the_content_root ... ok
 test ui::views::preset_picker::tests::the_dw_samplers_presets_list_without_their_zone_sample_folders ... ok
+test ui::views::preset_picker::tests::a_factory_pick_loads_and_is_named_from_the_content_root ... ok
 test ui::views::preset_picker::tests::the_instruments_pickers_file_actions_never_delete_rename_or_move_a_place ... ok
-test ui::views::sample_picker::tests::a_bundled_sample_pick_decodes_on_the_worker ... ok
+test ui::views::preset_picker::tests::the_instruments_picker_indexes_the_content_folders_presets_before_ours ... ok
 test ui::views::sample_picker::tests::a_clips_slot_takes_the_file_and_its_folder_and_a_tempo_turns_sync_on ... ok
 test ui::views::sample_picker::tests::a_new_pad_takes_the_next_free_pad_the_default_params_and_no_custom_name ... ok
-test ui::views::preset_picker::tests::the_instruments_picker_indexes_the_content_folders_presets_before_ours ... ok
+test ui::views::sample_picker::tests::a_bundled_sample_pick_decodes_on_the_worker ... ok
 test ui::views::sample_picker::tests::a_sample_from_the_content_folder_takes_an_app_root_path ... ok
 test ui::views::sample_picker::tests::a_slicer_picker_lists_my_files_then_our_loops_and_names_them_built_in ... ok
 test ui::views::sample_picker::tests::a_three_osc_picker_lists_my_files_then_our_shapes_and_names_them_built_in ... ok
@@ -984,19 +463,19 @@ test ui::widgets::tests::input::a_second_touch_down_within_0_3_s_resets_on_the_t
 test ui::widgets::tests::input::a_secondary_press_is_no_tap ... ok
 test ui::widgets::tests::input::a_slider_thumb_follows_the_pointer_one_to_one ... ok
 test ui::widgets::tests::input::ctrl_or_cmd_is_fine_mode_at_a_quarter_and_shift_is_not ... ok
-test ui::views::sample_picker::tests::a_pick_decodes_into_a_cache_of_its_own_or_says_why_not ... ok
-test ui::widgets::tests::input::drags_clamp_to_the_range ... ok
 test ui::widgets::tests::input::disabled_controls_take_no_hover ... ok
+test ui::widgets::tests::input::drags_clamp_to_the_range ... ok
 test ui::widgets::tests::input::exactly_one_control_is_hovered_and_only_under_the_pointer ... ok
+test ui::widgets::tests::input::only_a_clickable_control_under_the_mouse_changes_the_cursor ... ok
 test ui::widgets::tests::input::the_hover_brightening_clamps_and_keeps_alpha ... ok
 test ui::widgets::tests::input::the_knob_value_text_updates_live_and_nothing_pops_up ... ok
-test ui::widgets::tests::input::only_a_clickable_control_under_the_mouse_changes_the_cursor ... ok
+test ui::views::sample_picker::tests::a_pick_decodes_into_a_cache_of_its_own_or_says_why_not ... ok
 test ui::widgets::tests::input::touching_never_jumps_the_value_and_the_thumb_moves_with_the_pointer ... ok
-test ui::widgets::tests::kit_a::a_bound_controls_press_is_signalled_in_its_frame_only ... ok
 test ui::widgets::tests::input::the_wheel_passes_through_knobs_and_sliders_to_the_scroller ... ok
-test ui::widgets::tests::kit_a::a_double_tap_resets_to_the_default ... ok
-test ui::widgets::tests::kit_a::a_knob_in_a_zero_height_rect_draws_nothing_out_of_bounds ... ok
+test ui::widgets::tests::kit_a::a_bound_controls_press_is_signalled_in_its_frame_only ... ok
 test ui::widgets::tests::kit_a::a_drag_past_the_end_turns_back_at_once ... ok
+test ui::widgets::tests::kit_a::a_knob_in_a_zero_height_rect_draws_nothing_out_of_bounds ... ok
+test ui::widgets::tests::kit_a::a_double_tap_resets_to_the_default ... ok
 test ui::widgets::tests::kit_a::a_knob_paints_ring_inner_disc_halo_and_dot_in_that_order ... ok
 test ui::widgets::tests::kit_a::a_nan_value_draws_as_the_default_and_stays_until_the_user_moves_it ... ok
 test ui::widgets::tests::kit_a::a_supported_knobs_fine_tune_control_is_signalled_as_its_pick ... ok
@@ -1022,37 +501,37 @@ test ui::widgets::tests::kit_a::the_menu_is_reset_then_the_parameter_items_with_
 test ui::widgets::tests::kit_a::the_knob_value_shrinks_to_its_ring_down_to_6_pt_and_is_never_clipped ... ok
 test ui::widgets::tests::kit_a::the_parameter_menu_and_the_spinner_popup_have_their_own_ids ... ok
 test ui::widgets::tests::kit_a::the_menu_reset_item_resets_and_closes ... ok
-test ui::widgets::tests::kit_a::unbound_or_disabled_controls_signal_nothing ... ok
 test ui::widgets::tests::kit_a::toggles_flip_on_click ... ok
+test ui::widgets::tests::kit_a::unbound_or_disabled_controls_signal_nothing ... ok
 test ui::widgets::tests::kit_c::a_boxed_list_boxes_the_selected_cell_in_menu_fill_inset_2t_and_draws_no_bars ... ok
-test ui::widgets::tests::kit_c::a_menu_button_draws_its_caption_then_a_control_fill_box_with_the_value ... ok
 test ui::widgets::tests::kit_c::a_boxed_list_too_small_for_its_box_draws_no_inverted_rect ... ok
+test ui::widgets::tests::kit_c::a_menu_button_draws_its_caption_then_a_control_fill_box_with_the_value ... ok
 test ui::widgets::tests::kit_c::a_menu_button_reads_nan_as_the_first_item_and_ignores_input_when_disabled ... ok
 test ui::widgets::tests::kit_c::a_menu_button_draws_its_texts_in_full_whatever_its_rect ... ok
 test ui::widgets::tests::kit_c::a_pill_bound_to_no_parameter_has_no_menu ... ok
 test ui::widgets::tests::kit_c::a_pill_toggle_is_on_for_any_value_but_0_and_a_tap_writes_1_only_from_0 ... ok
-test ui::widgets::tests::kit_c::a_right_label_toggle_puts_the_pill_0_75_u_in_and_the_label_from_1_7_u ... ok
 test ui::widgets::tests::kit_c::a_right_label_is_drawn_in_full_from_1_7_u_whatever_the_rect ... ok
+test ui::widgets::tests::kit_c::a_right_label_toggle_puts_the_pill_0_75_u_in_and_the_label_from_1_7_u ... ok
 test ui::widgets::tests::kit_c::a_separator_fills_its_rect_with_text_at_a_tenth_alpha ... ok
 test ui::widgets::tests::kit_c::a_right_label_toggle_reserves_no_on_off_strip ... ok
-test ui::widgets::tests::kit_c::a_text_button_is_dim_at_rest_lit_while_pressed_and_reports_the_press ... ok
 test ui::widgets::tests::kit_c::a_tap_on_the_box_opens_the_spinner_popup_and_a_pick_sets_the_value ... ok
+test ui::widgets::tests::kit_c::a_text_button_is_dim_at_rest_lit_while_pressed_and_reports_the_press ... ok
 test ui::widgets::tests::kit_c::a_text_toggle_is_lit_for_any_value_but_0_and_a_tap_writes_1_only_from_0 ... ok
-test ui::widgets::tests::kit_c::a_text_toggle_flips_on_primary_clicks_and_opens_the_parameter_menu_on_secondary ... ok
 test ui::widgets::tests::kit_c::a_text_toggle_is_text_when_on_and_a_quarter_alpha_when_off_with_no_background ... ok
-test ui::widgets::tests::kit_c::an_inverted_toggle_shows_on_for_a_value_below_half_and_still_flips_on_click ... ok
+test ui::widgets::tests::kit_c::a_text_toggle_flips_on_primary_clicks_and_opens_the_parameter_menu_on_secondary ... ok
 test ui::widgets::tests::kit_c::a_toggle_without_a_label_centres_the_pill_in_its_rect_in_either_style ... ok
+test ui::widgets::tests::kit_c::an_inverted_toggle_shows_on_for_a_value_below_half_and_still_flips_on_click ... ok
 test ui::widgets::tests::kit_c::pill_geometry_holds_at_two_pixels_per_point ... ok
-test ui::widgets::tests::kit_c::pill_toggles_flip_on_primary_clicks_only ... ok
 test ui::widgets::tests::kit_c::text_toggles_and_buttons_draw_long_text_in_full_and_survive_empty_rects ... ok
+test ui::widgets::tests::kit_c::pill_toggles_flip_on_primary_clicks_only ... ok
 test ui::widgets::tests::kit_c::the_label_above_style_is_the_effect_toggle ... ok
 test ui::widgets::tests::kit_d::a_click_sets_both_values_with_y_up_and_the_crosshair_reads_back ... ok
 test ui::widgets::tests::kit_d::a_disabled_pad_ignores_input ... ok
 test ui::widgets::tests::kit_d::a_graph_knob_paints_ring_inner_disc_halo_and_dot_in_that_order ... ok
 test ui::widgets::tests::kit_d::a_pad_drag_follows_the_pointer_and_clamps_to_the_pad ... ok
 test ui::widgets::tests::kit_d::a_long_arc_value_shrinks_a_point_at_a_time_to_6_pt_and_is_never_truncated ... ok
-test ui::widgets::tests::kit_d::a_pressed_arc_washes_its_middle_and_swells_until_released ... ok
 test ui::widgets::tests::kit_d::arcs_follow_vertical_drags_up_increasing ... ok
+test ui::widgets::tests::kit_d::a_pressed_arc_washes_its_middle_and_swells_until_released ... ok
 test ui::widgets::tests::kit_d::graph_knobs_turn_like_knobs ... ok
 test ui::widgets::tests::kit_d::kit_d_renders_inside_the_screen_at_ppp_1_and_2 ... ok
 test ui::widgets::tests::kit_d::kit_d_in_empty_rects_draws_nothing_out_of_bounds ... ok
@@ -1066,8 +545,8 @@ test ui::widgets::tests::kit_d::the_arc_label_is_plain_text_and_its_value_is_fit
 test ui::widgets::tests::kit_d::the_dot_is_drawn_whole_at_the_pads_corners ... ok
 test ui::widgets::tests::kit_d::only_the_primary_button_moves_kit_d ... ok
 test ui::widgets::tests::kit_d::the_graph_knob_has_its_label_and_no_value_text ... ok
-test ui::widgets::tests::kit_d::the_graph_knob_plots_its_envelope_in_the_middle_of_the_ring ... ok
 test ui::widgets::tests::kit_d::the_left_arc_rises_on_the_left_and_the_right_arc_on_the_right ... ok
+test ui::widgets::tests::kit_d::the_graph_knob_plots_its_envelope_in_the_middle_of_the_ring ... ok
 test ui::widgets::tests::kit_d::the_pad_draws_an_11_by_11_grid_and_a_halo_while_pressed ... ok
 test ui::widgets::tests::kit_d::the_tag_shows_its_label_centred_beside_the_pointer_and_its_value_while_dragged ... ok
 test ui::widgets::tests::kit_d::the_tag_text_is_10_pt_and_overflows_rather_than_shrinking ... ok
@@ -1077,8 +556,8 @@ test ui::widgets::tests::list::a_click_selects_the_cell_under_it_for_every_direc
 test ui::widgets::tests::list::an_unbound_list_reports_the_selected_index ... ok
 test ui::widgets::tests::list::headers_are_drawn_larger_and_cannot_be_selected ... ok
 test ui::widgets::tests::list::list_items_are_never_truncated_or_clipped ... ok
-test ui::widgets::tests::list::lists_answer_only_the_primary_button_and_ignore_input_when_disabled ... ok
 test ui::widgets::tests::list::the_selected_item_is_text_coloured_with_a_text_bar_and_the_rest_channel_with_menu_fill ... ok
+test ui::widgets::tests::list::lists_answer_only_the_primary_button_and_ignore_input_when_disabled ... ok
 test ui::widgets::tests::long_press::a_long_press_on_a_toggle_does_not_flip_it ... ok
 test ui::widgets::tests::long_press::a_mouse_released_at_250_ms_is_a_click_and_opens_no_menu ... ok
 test ui::widgets::tests::spinner::a_disabled_item_cannot_be_picked_and_the_chevrons_skip_it ... ok
@@ -1140,10 +619,10 @@ test zip::tests::round_trip_stored_and_deflated ... ok
 test zip::tests::symlinks_and_special_files_are_rejected ... ok
 test zip::tests::the_budget_counts_every_entry_and_is_inclusive ... ok
 test zip::tests::the_first_of_duplicate_names_wins_and_a_later_one_is_never_read ... ok
-test zip::tests::the_ratio_cap_stops_a_bomb_the_budget_would_allow ... ok
+test zip::tests::archives_over_the_entry_cap_are_refused ... ok
 test zip::tests::the_writer_refuses_names_the_reader_would ... ok
 test zip::tests::the_writer_refuses_what_does_not_fit_four_gibibytes ... ok
-test zip::tests::archives_over_the_entry_cap_are_refused ... ok
+test zip::tests::the_ratio_cap_stops_a_bomb_the_budget_would_allow ... ok
 test zip::tests::the_writer_says_unix_with_a_regular_file_mode ... ok
 test zip::tests::truncation_at_every_byte_never_panics ... ok
 test zip::tests::what_is_not_a_zip_is_not_a_zip ... ok
@@ -1152,54 +631,15 @@ test zip::tests::the_writer_refuses_what_zip64_would_hold ... ok
 
 failures:
 
----- app::tests::chrome::one_close_ribbon_closes_every_bottom_editor_and_keeps_its_clip stdout ----
-
-thread 'app::tests::chrome::one_close_ribbon_closes_every_bottom_editor_and_keeps_its_clip' (12522) panicked at src/app/tests/chrome.rs:502:9:
-PianoRoll(2) [[971.4 2.0] - [1038.6 53.2]]
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-
----- settings::tests::the_json_uses_the_original_preference_keys stdout ----
-
-thread 'settings::tests::the_json_uses_the_original_preference_keys' (14686) panicked at src/settings.rs:953:9:
-assertion `left == right` failed
-  left: ["MidiDevice", "ModuleBrowserOrdering", "SongBrowserOrdering", "SoundFontPatchOrdering", "automationValueSnap", "bgAudio", "continuousScroll", "demoSongsVersion", "editorRibbonShift", "enableAnimations", "enableInertia", "ghostnotes", "importNoticeAccepted", "keyboardKind", "lastAudioFileFormat", "lockpads", "lowlatency", "mcpEnabled", "mcpPort", "middlec4", "midiApplyNoteEffects", "mtmlevel", "multithreaded", "multitrackrec", "pianoRollPanSnap", "pianoRollVelocitySnap", "pluginFolders", "preferredKbdSizeCells", "rackTabShift", "recMetronome", "reccount", "recentKbdSizeCells", "reclatency", "sampleMemoryLimit", "screenOrientation", "showHardwareMeters", "showHiddenTracks", "showKeyNames", "showRangeIndexLabels", "showTwoRows", "showWheels", "soundModeAndr", "soundsNoticeSeen", "theme", "uiscalefactor", "whatsNewSeen"]
- right: ["MidiDevice", "ModuleBrowserOrdering", "SongBrowserOrdering", "SoundFontPatchOrdering", "automationValueSnap", "bgAudio", "continuousScroll", "demoSongsVersion", "enableAnimations", "enableInertia", "ghostnotes", "importNoticeAccepted", "keyboardKind", "lastAudioFileFormat", "lockpads", "lowlatency", "mcpEnabled", "mcpPort", "middlec4", "midiApplyNoteEffects", "mtmlevel", "multithreaded", "multitrackrec", "pianoRollPanSnap", "pianoRollVelocitySnap", "pluginFolders", "preferredKbdSizeCells", "recMetronome", "reccount", "recentKbdSizeCells", "reclatency", "sampleMemoryLimit", "screenOrientation", "showHardwareMeters", "showHiddenTracks", "showKeyNames", "showRangeIndexLabels", "showTwoRows", "showWheels", "soundModeAndr", "soundsNoticeSeen", "theme", "uiscalefactor", "whatsNewSeen"]
-
----- ui::piano_roll::tests::component::a_chromatic_project_scale_greys_no_key stdout ----
-
-thread 'ui::piano_roll::tests::component::a_chromatic_project_scale_greys_no_key' (15968) panicked at src/ui/piano_roll/tests.rs:2363:9:
-C#6: [([[0.0 0.0] - [1170.0 540.0]], #00_00_00_00), ([[48.0 52.0] - [50.0 349.0]], #21_27_2B_FF), ([[50.0 52.0] - [1170.0 349.0]], #31_37_3B_FF), ([[50.0 52.0] - [1170.0 53.0]], #0A_0C_0D_4D), ([[50.0 67.0] - [1170.0 68.0]], #0A_0C_0D_4D), ([[50.0 68.0] - [1170.0 69.0]], #0A_0C_0D_4D), ([[50.0 83.0] - [1170.0 84.0]], #0A_0C_0D_4D), ([[50.0 84.0] - [1170.0 85.0]], #0A_0C_0D_4D), ([[50.0 99.0] - [1170.0 100.0]], #0A_0C_0D_4D), ([[50.0 100.0] - [1170.0 101.0]], #0A_0C_0D_4D), ([[50.0 115.0] - [1170.0 116.0]], #0A_0C_0D_4D), ([[50.0 116.0] - [1170.0 117.0]], #0A_0C_0D_4D), ([[50.0 131.0] - [1170.0 132.0]], #0A_0C_0D_4D), ([[50.0 132.0] - [1170.0 133.0]], #0A_0C_0D_4D), ([[50.0 147.0] - [1170.0 148.0]], #0A_0C_0D_4D), ([[50.0 148.0] - [1170.0 149.0]], #0A_0C_0D_4D), ([[50.0 163.0] - [1170.0 164.0]], #0A_0C_0D_4D), ([[50.0 164.0] - [1170.0 165.0]], #0A_0C_0D_4D), ([[50.0 179.0] - [1170.0 180.0]], #0A_0C_0D_4D), ([[50.0 180.0] - [1170.0 181.0]], #0A_0C_0D_4D), ([[50.0 195.0] - [1170.0 196.0]], #0A_0C_0D_4D), ([[50.0 196.0] - [1170.0 197.0]], #0A_0C_0D_4D), ([[50.0 211.0] - [1170.0 212.0]], #0A_0C_0D_4D), ([[50.0 212.0] - [1170.0 213.0]], #0A_0C_0D_4D), ([[50.0 227.0] - [1170.0 228.0]], #0A_0C_0D_4D), ([[50.0 228.0] - [1170.0 229.0]], #0A_0C_0D_4D), ([[50.0 243.0] - [1170.0 244.0]], #0A_0C_0D_4D), ([[50.0 244.0] - [1170.0 245.0]], #0A_0C_0D_4D), ([[50.0 259.0] - [1170.0 260.0]], #0A_0C_0D_4D), ([[50.0 260.0] - [1170.0 261.0]], #0A_0C_0D_4D), ([[50.0 275.0] - [1170.0 276.0]], #0A_0C_0D_4D), ([[50.0 276.0] - [1170.0 277.0]], #0A_0C_0D_4D), ([[50.0 291.0] - [1170.0 292.0]], #0A_0C_0D_4D), ([[50.0 292.0] - [1170.0 293.0]], #0A_0C_0D_4D), ([[50.0 307.0] - [1170.0 308.0]], #0A_0C_0D_4D), ([[50.0 308.0] - [1170.0 309.0]], #0A_0C_0D_4D), ([[50.0 323.0] - [1170.0 324.0]], #0A_0C_0D_4D), ([[50.0 324.0] - [1170.0 325.0]], #0A_0C_0D_4D), ([[50.0 339.0] - [1170.0 340.0]], #0A_0C_0D_4D), ([[50.0 340.0] - [1170.0 341.0]], #0A_0C_0D_4D), ([[50.0 355.0] - [1170.0 349.0]], #0A_0C_0D_4D), ([[50.0 52.0] - [52.0 349.0]], #21_27_2B_FF), ([[82.0 52.0] - [83.0 349.0]], #21_27_2B_FF), ([[113.0 52.0] - [115.0 349.0]], #21_27_2B_FF), ([[146.0 52.0] - [147.0 349.0]], #21_27_2B_FF), ([[177.0 52.0] - [179.0 349.0]], #21_27_2B_FF), ([[210.0 52.0] - [211.0 349.0]], #21_27_2B_FF), ([[241.0 52.0] - [243.0 349.0]], #21_27_2B_FF), ([[274.0 52.0] - [275.0 349.0]], #21_27_2B_FF), ([[304.0 52.0] - [308.0 349.0]], #21_27_2B_FF), ([[338.0 52.0] - [339.0 349.0]], #21_27_2B_FF), ([[369.0 52.0] - [371.0 349.0]], #21_27_2B_FF), ([[402.0 52.0] - [403.0 349.0]], #21_27_2B_FF), ([[433.0 52.0] - [435.0 349.0]], #21_27_2B_FF), ([[466.0 52.0] - [467.0 349.0]], #21_27_2B_FF), ([[497.0 52.0] - [499.0 349.0]], #21_27_2B_FF), ([[530.0 52.0] - [531.0 349.0]], #21_27_2B_FF), ([[560.0 52.0] - [564.0 349.0]], #21_27_2B_FF), ([[594.0 52.0] - [595.0 349.0]], #21_27_2B_FF), ([[625.0 52.0] - [627.0 349.0]], #21_27_2B_FF), ([[658.0 52.0] - [659.0 349.0]], #21_27_2B_FF), ([[689.0 52.0] - [691.0 349.0]], #21_27_2B_FF), ([[722.0 52.0] - [723.0 349.0]], #21_27_2B_FF), ([[753.0 52.0] - [755.0 349.0]], #21_27_2B_FF), ([[786.0 52.0] - [787.0 349.0]], #21_27_2B_FF), ([[816.0 52.0] - [820.0 349.0]], #21_27_2B_FF), ([[850.0 52.0] - [851.0 349.0]], #21_27_2B_FF), ([[881.0 52.0] - [883.0 349.0]], #21_27_2B_FF), ([[914.0 52.0] - [915.0 349.0]], #21_27_2B_FF), ([[945.0 52.0] - [947.0 349.0]], #21_27_2B_FF), ([[978.0 52.0] - [979.0 349.0]], #21_27_2B_FF), ([[1009.0 52.0] - [1011.0 349.0]], #21_27_2B_FF), ([[1042.0 52.0] - [1043.0 349.0]], #21_27_2B_FF), ([[1072.0 52.0] - [1076.0 349.0]], #21_27_2B_FF), ([[1106.0 52.0] - [1107.0 349.0]], #21_27_2B_FF), ([[1137.0 52.0] - [1139.0 349.0]], #21_27_2B_FF), ([[1170.0 52.0] - [1170.0 349.0]], #21_27_2B_FF), ([[50.0 66.0] - [1170.0 68.0]], #21_27_2B_FF), ([[50.0 258.0] - [1170.0 260.0]], #21_27_2B_FF), ([[306.0 52.0] - [1170.0 349.0]], #00_00_00_26), ([[48.0 52.0] - [53.0 349.0]], #0A_0C_0D_4D), ([[49.0 52.0] - [52.0 349.0]], #C7_CE_DA_FF), ([[0.0 52.0] - [48.0 349.0]], #21_27_2B_FF), ([[0.0 340.0] - [48.0 349.0]], #21_27_2B_FF), ([[0.0 324.0] - [48.0 340.0]], #C7_CE_DA_FF), ([[0.0 308.0] - [48.0 324.0]], #21_27_2B_FF), ([[0.0 292.0] - [48.0 308.0]], #C7_CE_DA_FF), ([[0.0 276.0] - [48.0 292.0]], #21_27_2B_FF), ([[0.0 260.0] - [48.0 276.0]], #C7_CE_DA_FF), ([[0.0 244.0] - [48.0 260.0]], #C7_CE_DA_FF), ([[0.0 259.0] - [48.0 260.0]], #0A_0C_0D_4D), ([[0.0 228.0] - [48.0 244.0]], #21_27_2B_FF), ([[0.0 212.0] - [48.0 228.0]], #C7_CE_DA_FF), ([[0.0 196.0] - [48.0 212.0]], #21_27_2B_FF), ([[0.0 180.0] - [48.0 196.0]], #C7_CE_DA_FF), ([[0.0 164.0] - [48.0 180.0]], #C7_CE_DA_FF), ([[0.0 179.0] - [48.0 180.0]], #0A_0C_0D_4D), ([[0.0 148.0] - [48.0 164.0]], #21_27_2B_FF), ([[0.0 132.0] - [48.0 148.0]], #C7_CE_DA_FF), ([[0.0 116.0] - [48.0 132.0]], #21_27_2B_FF), ([[0.0 100.0] - [48.0 116.0]], #C7_CE_DA_FF), ([[0.0 84.0] - [48.0 100.0]], #21_27_2B_FF), ([[0.0 68.0] - [48.0 84.0]], #C7_CE_DA_FF), ([[0.0 52.0] - [48.0 68.0]], #C7_CE_DA_FF), ([[0.0 67.0] - [48.0 68.0]], #0A_0C_0D_4D), ([[0.0 244.0] - [4.0 260.0]], #F6_4C_57_FF), ([[0.0 52.0] - [4.0 68.0]], #F6_4C_57_FF), ([[0.0 0.0] - [50.0 52.0]], #21_27_2B_FF), ([[50.0 0.0] - [1170.0 52.0]], #21_27_2B_FF), ([[50.0 47.0] - [1170.0 50.0]], #43_4C_51_FF), ([[50.0 7.0] - [51.0 47.0]], #43_4C_51_FF), ([[81.0 35.2] - [83.0 47.0]], #43_4C_51_FF), ([[113.0 35.2] - [115.0 47.0]], #43_4C_51_FF), ([[145.0 35.2] - [147.0 47.0]], #43_4C_51_FF), ([[177.0 30.6] - [179.0 47.0]], #43_4C_51_FF), ([[209.0 35.2] - [211.0 47.0]], #43_4C_51_FF), ([[241.0 35.2] - [243.0 47.0]], #43_4C_51_FF), ([[273.0 35.2] - [275.0 47.0]], #43_4C_51_FF), ([[305.0 7.0] - [307.0 47.0]], #43_4C_51_FF), ([[337.0 35.2] - [339.0 47.0]], #43_4C_51_FF), ([[369.0 35.2] - [371.0 47.0]], #43_4C_51_FF), ([[401.0 35.2] - [403.0 47.0]], #43_4C_51_FF), ([[433.0 30.6] - [435.0 47.0]], #43_4C_51_FF), ([[465.0 35.2] - [467.0 47.0]], #43_4C_51_FF), ([[497.0 35.2] - [499.0 47.0]], #43_4C_51_FF), ([[529.0 35.2] - [531.0 47.0]], #43_4C_51_FF), ([[561.0 7.0] - [563.0 47.0]], #43_4C_51_FF), ([[593.0 35.2] - [595.0 47.0]], #43_4C_51_FF), ([[625.0 35.2] - [627.0 47.0]], #43_4C_51_FF), ([[657.0 35.2] - [659.0 47.0]], #43_4C_51_FF), ([[689.0 30.6] - [691.0 47.0]], #43_4C_51_FF), ([[721.0 35.2] - [723.0 47.0]], #43_4C_51_FF), ([[753.0 35.2] - [755.0 47.0]], #43_4C_51_FF), ([[785.0 35.2] - [787.0 47.0]], #43_4C_51_FF), ([[817.0 7.0] - [819.0 47.0]], #43_4C_51_FF), ([[849.0 35.2] - [851.0 47.0]], #43_4C_51_FF), ([[881.0 35.2] - [883.0 47.0]], #43_4C_51_FF), ([[913.0 35.2] - [915.0 47.0]], #43_4C_51_FF), ([[945.0 30.6] - [947.0 47.0]], #43_4C_51_FF), ([[977.0 35.2] - [979.0 47.0]], #43_4C_51_FF), ([[1009.0 35.2] - [1011.0 47.0]], #43_4C_51_FF), ([[1041.0 35.2] - [1043.0 47.0]], #43_4C_51_FF), ([[1073.0 7.0] - [1075.0 47.0]], #43_4C_51_FF), ([[1105.0 35.2] - [1107.0 47.0]], #43_4C_51_FF), ([[1137.0 35.2] - [1139.0 47.0]], #43_4C_51_FF), ([[1169.0 35.2] - [1170.0 47.0]], #43_4C_51_FF), ([[26.9 18.2] - [28.4 22.2]], #F6_4C_57_FF), ([[26.9 26.8] - [28.4 30.8]], #F6_4C_57_FF), ([[19.0 309.0] - [77.0 349.0]], #00_00_00_66), ([[21.0 311.0] - [75.0 349.0]], #21_27_2B_FF), ([[21.0 311.0] - [75.0 349.0]], #00_00_00_00), ([[36.7 330.0] - [41.5 341.1]], #F6_4C_57_FF), ([[44.6 320.5] - [49.4 341.1]], #F6_4C_57_FF), ([[52.5 334.8] - [57.3 341.1]], #F6_4C_57_FF), ([[50.0 2.6] - [105.0 49.4]], #43_4C_51_FF), ([[50.0 2.6] - [53.0 61.1]], #0A_0C_0D_4D), ([[50.0 2.6] - [52.0 61.1]], #C7_CE_DA_FF)]
-
----- ui::piano_roll::tests::component::keys_out_of_the_project_scale_take_the_disabled_colours stdout ----
-
-thread 'ui::piano_roll::tests::component::keys_out_of_the_project_scale_take_the_disabled_colours' (16050) panicked at src/ui/piano_roll/tests.rs:2336:9:
-C#6, out of it: [([[0.0 0.0] - [1170.0 540.0]], #00_00_00_00), ([[48.0 52.0] - [50.0 349.0]], #21_27_2B_FF), ([[50.0 52.0] - [1170.0 349.0]], #31_37_3B_FF), ([[50.0 52.0] - [1170.0 53.0]], #0A_0C_0D_4D), ([[50.0 67.0] - [1170.0 68.0]], #0A_0C_0D_4D), ([[50.0 68.0] - [1170.0 69.0]], #0A_0C_0D_4D), ([[50.0 83.0] - [1170.0 84.0]], #0A_0C_0D_4D), ([[50.0 84.0] - [1170.0 85.0]], #0A_0C_0D_4D), ([[50.0 99.0] - [1170.0 100.0]], #0A_0C_0D_4D), ([[50.0 100.0] - [1170.0 101.0]], #0A_0C_0D_4D), ([[50.0 115.0] - [1170.0 116.0]], #0A_0C_0D_4D), ([[50.0 116.0] - [1170.0 117.0]], #0A_0C_0D_4D), ([[50.0 131.0] - [1170.0 132.0]], #0A_0C_0D_4D), ([[50.0 132.0] - [1170.0 133.0]], #0A_0C_0D_4D), ([[50.0 147.0] - [1170.0 148.0]], #0A_0C_0D_4D), ([[50.0 148.0] - [1170.0 149.0]], #0A_0C_0D_4D), ([[50.0 163.0] - [1170.0 164.0]], #0A_0C_0D_4D), ([[50.0 164.0] - [1170.0 165.0]], #0A_0C_0D_4D), ([[50.0 179.0] - [1170.0 180.0]], #0A_0C_0D_4D), ([[50.0 180.0] - [1170.0 181.0]], #0A_0C_0D_4D), ([[50.0 195.0] - [1170.0 196.0]], #0A_0C_0D_4D), ([[50.0 196.0] - [1170.0 197.0]], #0A_0C_0D_4D), ([[50.0 211.0] - [1170.0 212.0]], #0A_0C_0D_4D), ([[50.0 212.0] - [1170.0 213.0]], #0A_0C_0D_4D), ([[50.0 227.0] - [1170.0 228.0]], #0A_0C_0D_4D), ([[50.0 228.0] - [1170.0 229.0]], #0A_0C_0D_4D), ([[50.0 243.0] - [1170.0 244.0]], #0A_0C_0D_4D), ([[50.0 244.0] - [1170.0 245.0]], #0A_0C_0D_4D), ([[50.0 259.0] - [1170.0 260.0]], #0A_0C_0D_4D), ([[50.0 260.0] - [1170.0 261.0]], #0A_0C_0D_4D), ([[50.0 275.0] - [1170.0 276.0]], #0A_0C_0D_4D), ([[50.0 276.0] - [1170.0 277.0]], #0A_0C_0D_4D), ([[50.0 291.0] - [1170.0 292.0]], #0A_0C_0D_4D), ([[50.0 292.0] - [1170.0 293.0]], #0A_0C_0D_4D), ([[50.0 307.0] - [1170.0 308.0]], #0A_0C_0D_4D), ([[50.0 308.0] - [1170.0 309.0]], #0A_0C_0D_4D), ([[50.0 323.0] - [1170.0 324.0]], #0A_0C_0D_4D), ([[50.0 324.0] - [1170.0 325.0]], #0A_0C_0D_4D), ([[50.0 339.0] - [1170.0 340.0]], #0A_0C_0D_4D), ([[50.0 340.0] - [1170.0 341.0]], #0A_0C_0D_4D), ([[50.0 355.0] - [1170.0 349.0]], #0A_0C_0D_4D), ([[50.0 52.0] - [52.0 349.0]], #21_27_2B_FF), ([[82.0 52.0] - [83.0 349.0]], #21_27_2B_FF), ([[113.0 52.0] - [115.0 349.0]], #21_27_2B_FF), ([[146.0 52.0] - [147.0 349.0]], #21_27_2B_FF), ([[177.0 52.0] - [179.0 349.0]], #21_27_2B_FF), ([[210.0 52.0] - [211.0 349.0]], #21_27_2B_FF), ([[241.0 52.0] - [243.0 349.0]], #21_27_2B_FF), ([[274.0 52.0] - [275.0 349.0]], #21_27_2B_FF), ([[304.0 52.0] - [308.0 349.0]], #21_27_2B_FF), ([[338.0 52.0] - [339.0 349.0]], #21_27_2B_FF), ([[369.0 52.0] - [371.0 349.0]], #21_27_2B_FF), ([[402.0 52.0] - [403.0 349.0]], #21_27_2B_FF), ([[433.0 52.0] - [435.0 349.0]], #21_27_2B_FF), ([[466.0 52.0] - [467.0 349.0]], #21_27_2B_FF), ([[497.0 52.0] - [499.0 349.0]], #21_27_2B_FF), ([[530.0 52.0] - [531.0 349.0]], #21_27_2B_FF), ([[560.0 52.0] - [564.0 349.0]], #21_27_2B_FF), ([[594.0 52.0] - [595.0 349.0]], #21_27_2B_FF), ([[625.0 52.0] - [627.0 349.0]], #21_27_2B_FF), ([[658.0 52.0] - [659.0 349.0]], #21_27_2B_FF), ([[689.0 52.0] - [691.0 349.0]], #21_27_2B_FF), ([[722.0 52.0] - [723.0 349.0]], #21_27_2B_FF), ([[753.0 52.0] - [755.0 349.0]], #21_27_2B_FF), ([[786.0 52.0] - [787.0 349.0]], #21_27_2B_FF), ([[816.0 52.0] - [820.0 349.0]], #21_27_2B_FF), ([[850.0 52.0] - [851.0 349.0]], #21_27_2B_FF), ([[881.0 52.0] - [883.0 349.0]], #21_27_2B_FF), ([[914.0 52.0] - [915.0 349.0]], #21_27_2B_FF), ([[945.0 52.0] - [947.0 349.0]], #21_27_2B_FF), ([[978.0 52.0] - [979.0 349.0]], #21_27_2B_FF), ([[1009.0 52.0] - [1011.0 349.0]], #21_27_2B_FF), ([[1042.0 52.0] - [1043.0 349.0]], #21_27_2B_FF), ([[1072.0 52.0] - [1076.0 349.0]], #21_27_2B_FF), ([[1106.0 52.0] - [1107.0 349.0]], #21_27_2B_FF), ([[1137.0 52.0] - [1139.0 349.0]], #21_27_2B_FF), ([[1170.0 52.0] - [1170.0 349.0]], #21_27_2B_FF), ([[50.0 226.0] - [1170.0 228.0]], #21_27_2B_FF), ([[306.0 52.0] - [1170.0 349.0]], #00_00_00_26), ([[48.0 52.0] - [53.0 349.0]], #0A_0C_0D_4D), ([[49.0 52.0] - [52.0 349.0]], #C7_CE_DA_FF), ([[0.0 52.0] - [48.0 349.0]], #21_27_2B_FF), ([[0.0 340.0] - [48.0 349.0]], #71_79_81_FF), ([[0.0 324.0] - [48.0 340.0]], #C7_CE_DA_FF), ([[0.0 308.0] - [48.0 324.0]], #71_79_81_FF), ([[0.0 292.0] - [48.0 308.0]], #C7_CE_DA_FF), ([[0.0 276.0] - [48.0 292.0]], #21_27_2B_FF), ([[0.0 260.0] - [48.0 276.0]], #9F_A6_B0_FF), ([[0.0 244.0] - [48.0 260.0]], #C7_CE_DA_FF), ([[0.0 259.0] - [48.0 260.0]], #0A_0C_0D_4D), ([[0.0 228.0] - [48.0 244.0]], #71_79_81_FF), ([[0.0 212.0] - [48.0 228.0]], #C7_CE_DA_FF), ([[0.0 196.0] - [48.0 212.0]], #71_79_81_FF), ([[0.0 180.0] - [48.0 196.0]], #C7_CE_DA_FF), ([[0.0 164.0] - [48.0 180.0]], #C7_CE_DA_FF), ([[0.0 179.0] - [48.0 180.0]], #0A_0C_0D_4D), ([[0.0 148.0] - [48.0 164.0]], #71_79_81_FF), ([[0.0 132.0] - [48.0 148.0]], #C7_CE_DA_FF), ([[0.0 116.0] - [48.0 132.0]], #71_79_81_FF), ([[0.0 100.0] - [48.0 116.0]], #C7_CE_DA_FF), ([[0.0 84.0] - [48.0 100.0]], #21_27_2B_FF), ([[0.0 68.0] - [48.0 84.0]], #9F_A6_B0_FF), ([[0.0 52.0] - [48.0 68.0]], #C7_CE_DA_FF), ([[0.0 67.0] - [48.0 68.0]], #0A_0C_0D_4D), ([[0.0 244.0] - [4.0 260.0]], #F6_4C_57_FF), ([[0.0 52.0] - [4.0 68.0]], #F6_4C_57_FF), ([[0.0 0.0] - [50.0 52.0]], #21_27_2B_FF), ([[50.0 0.0] - [1170.0 52.0]], #21_27_2B_FF), ([[50.0 47.0] - [1170.0 50.0]], #43_4C_51_FF), ([[50.0 7.0] - [51.0 47.0]], #43_4C_51_FF), ([[81.0 35.2] - [83.0 47.0]], #43_4C_51_FF), ([[113.0 35.2] - [115.0 47.0]], #43_4C_51_FF), ([[145.0 35.2] - [147.0 47.0]], #43_4C_51_FF), ([[177.0 30.6] - [179.0 47.0]], #43_4C_51_FF), ([[209.0 35.2] - [211.0 47.0]], #43_4C_51_FF), ([[241.0 35.2] - [243.0 47.0]], #43_4C_51_FF), ([[273.0 35.2] - [275.0 47.0]], #43_4C_51_FF), ([[305.0 7.0] - [307.0 47.0]], #43_4C_51_FF), ([[337.0 35.2] - [339.0 47.0]], #43_4C_51_FF), ([[369.0 35.2] - [371.0 47.0]], #43_4C_51_FF), ([[401.0 35.2] - [403.0 47.0]], #43_4C_51_FF), ([[433.0 30.6] - [435.0 47.0]], #43_4C_51_FF), ([[465.0 35.2] - [467.0 47.0]], #43_4C_51_FF), ([[497.0 35.2] - [499.0 47.0]], #43_4C_51_FF), ([[529.0 35.2] - [531.0 47.0]], #43_4C_51_FF), ([[561.0 7.0] - [563.0 47.0]], #43_4C_51_FF), ([[593.0 35.2] - [595.0 47.0]], #43_4C_51_FF), ([[625.0 35.2] - [627.0 47.0]], #43_4C_51_FF), ([[657.0 35.2] - [659.0 47.0]], #43_4C_51_FF), ([[689.0 30.6] - [691.0 47.0]], #43_4C_51_FF), ([[721.0 35.2] - [723.0 47.0]], #43_4C_51_FF), ([[753.0 35.2] - [755.0 47.0]], #43_4C_51_FF), ([[785.0 35.2] - [787.0 47.0]], #43_4C_51_FF), ([[817.0 7.0] - [819.0 47.0]], #43_4C_51_FF), ([[849.0 35.2] - [851.0 47.0]], #43_4C_51_FF), ([[881.0 35.2] - [883.0 47.0]], #43_4C_51_FF), ([[913.0 35.2] - [915.0 47.0]], #43_4C_51_FF), ([[945.0 30.6] - [947.0 47.0]], #43_4C_51_FF), ([[977.0 35.2] - [979.0 47.0]], #43_4C_51_FF), ([[1009.0 35.2] - [1011.0 47.0]], #43_4C_51_FF), ([[1041.0 35.2] - [1043.0 47.0]], #43_4C_51_FF), ([[1073.0 7.0] - [1075.0 47.0]], #43_4C_51_FF), ([[1105.0 35.2] - [1107.0 47.0]], #43_4C_51_FF), ([[1137.0 35.2] - [1139.0 47.0]], #43_4C_51_FF), ([[1169.0 35.2] - [1170.0 47.0]], #43_4C_51_FF), ([[26.9 18.2] - [28.4 22.2]], #F6_4C_57_FF), ([[26.9 26.8] - [28.4 30.8]], #F6_4C_57_FF), ([[19.0 309.0] - [77.0 349.0]], #00_00_00_66), ([[21.0 311.0] - [75.0 349.0]], #21_27_2B_FF), ([[21.0 311.0] - [75.0 349.0]], #00_00_00_00), ([[36.7 330.0] - [41.5 341.1]], #F6_4C_57_FF), ([[44.6 320.5] - [49.4 341.1]], #F6_4C_57_FF), ([[52.5 334.8] - [57.3 341.1]], #F6_4C_57_FF), ([[50.0 2.6] - [105.0 49.4]], #43_4C_51_FF), ([[50.0 2.6] - [53.0 61.1]], #0A_0C_0D_4D), ([[50.0 2.6] - [52.0 61.1]], #C7_CE_DA_FF)]
-
----- ui::split::tests::a_sideways_drag_moves_the_ribbon_along_the_band_and_leaves_the_split stdout ----
-
-thread 'ui::split::tests::a_sideways_drag_moves_the_ribbon_along_the_band_and_leaves_the_split' (16570) panicked at src/ui/split.rs:462:9:
-moved left: -1.4999981
-
----- ui::split::tests::the_ribbon_closes_on_a_tap_and_its_drag_resizes_with_a_rubber_band_and_flicks stdout ----
-
-thread 'ui::split::tests::the_ribbon_closes_on_a_tap_and_its_drag_resizes_with_a_rubber_band_and_flicks' (16575) panicked at src/ui/split.rs:392:9:
-assertion failed: run(at(0.5), &[]).0
-
 ---- ui::step_seq::tests::level_meters_stand_at_the_headers_right_edge_until_the_mixer_is_fully_out stdout ----
 
-thread 'ui::step_seq::tests::level_meters_stand_at_the_headers_right_edge_until_the_mixer_is_fully_out' (16672) panicked at src/ui/step_seq/tests.rs:1135:5:
-99.03125
+thread 'ui::step_seq::tests::level_meters_stand_at_the_headers_right_edge_until_the_mixer_is_fully_out' (9672) panicked at src/ui/step_seq/tests.rs:1139:5:
+assertion failed: (l.height() - t).abs() < 1e-3 && (r.height() - t).abs() < 1e-3
 
 
 failures:
-    app::tests::chrome::one_close_ribbon_closes_every_bottom_editor_and_keeps_its_clip
-    settings::tests::the_json_uses_the_original_preference_keys
-    ui::piano_roll::tests::component::a_chromatic_project_scale_greys_no_key
-    ui::piano_roll::tests::component::keys_out_of_the_project_scale_take_the_disabled_colours
-    ui::split::tests::a_sideways_drag_moves_the_ribbon_along_the_band_and_leaves_the_split
-    ui::split::tests::the_ribbon_closes_on_a_tap_and_its_drag_resizes_with_a_rubber_band_and_flicks
     ui::step_seq::tests::level_meters_stand_at_the_headers_right_edge_until_the_mixer_is_fully_out
 
-test result: FAILED. 4410 passed; 7 failed; 2 ignored; 0 measured; 0 filtered out; finished in 206.04s
+test result: FAILED. 4416 passed; 1 failed; 2 ignored; 0 measured; 0 filtered out; finished in 264.91s
 
 error: test failed, to rerun pass `-p honeydew --lib`
