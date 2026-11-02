@@ -964,8 +964,8 @@ mod tests {
         );
         assert!((lane.f - 0.4).abs() < 1e-6, "{}", lane.f);
         assert_eq!(top(&lane), Some(228.0));
-        // Through y 240 (f 0.36) to below min(2.5 U/H, 0.5) = 0.267 (y 268): it closes, keeping the last f above that;
-        // the next tap opens it to 0.36.
+        // Through y 240 (f 0.36) to below min(2.5 U/H, 0.5) = 0.267 (y 275, f 0.243): it closes, and a close keeps
+        // the height it remembers (0.4), so the next tap opens it to that.
         let to = |y: f32| vec2(0.0, y - 225.0);
         s.drag(
             pos2(24.0, 225.0),
@@ -973,10 +973,10 @@ mod tests {
             &mut tab(&mut lane, &mut shift),
         );
         assert_eq!(top(&lane), None);
-        assert!((lane.f - 0.36).abs() < 1e-6, "{}", lane.f);
+        assert!((lane.f - 0.4).abs() < 1e-6, "{}", lane.f);
         s.click(CLOSED_TAB, &mut tab(&mut lane, &mut shift));
         settle(&mut s, &mut lane, &mut shift);
-        assert_eq!(top(&lane), Some(240.0));
+        assert_eq!(top(&lane), Some(228.0));
     }
 
     #[test]
@@ -1008,14 +1008,14 @@ mod tests {
         let mut shift = 0.0;
         let mut s = Offscreen::new();
         s.frame(vec![], &mut tab(&mut lane, &mut shift));
-        // 3 U right: the tab follows the finger and neither opens nor sizes the lane.
+        // 96 px right: the tab follows the finger and neither opens nor sizes the lane.
         s.drag(
             CLOSED_TAB,
             &[vec2(48.0, 0.0), vec2(96.0, 0.0)],
             &mut tab(&mut lane, &mut shift),
         );
         assert!(!lane.open && lane.moving.is_none(), "{lane:?}");
-        assert!((shift - 3.0).abs() < 1e-3, "{shift}");
+        assert!((shift - 96.0 / m.u(1.0)).abs() < 1e-3, "{shift}");
         // Past the editor's right edge it stops there: the tab's half and a hairline inside it.
         s.drag(
             pos2(CLOSED_TAB.x + 96.0, CLOSED_TAB.y),

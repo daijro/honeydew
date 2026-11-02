@@ -3,7 +3,7 @@ name: fixup
 # Temporary: runs the checks the `CI` workflow runs, writes their own output to `ci-report.txt`, formats the tree and
 # commits both back to the branch, so that the machine writing this branch (no Rust toolchain, no crates.io) can read
 # what the checks say. A push that touches this file runs it again. Delete this file and `ci-report.txt` once the branch
-# is green. Round two: clippy's argument count, the tab helper, and `Nav` cloned.
+# is green. Round three: with the rotation panic's backtrace. Round two: clippy's argument count, the tab helper, and `Nav` cloned.
 
 on:
   push:
@@ -42,6 +42,9 @@ jobs:
             echo
             echo '# cargo test --workspace'
             cargo test --workspace 2>&1 || true
+            echo
+            echo '# RUST_BACKTRACE=1 cargo test --lib app::tests::rotation'
+            RUST_BACKTRACE=1 cargo test --lib app::tests::rotation 2>&1 | sed -n '/min > max/,+40p' || true
           } > ci-report.txt
       - name: Format and commit it back
         run: |

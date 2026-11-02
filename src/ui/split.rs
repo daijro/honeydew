@@ -194,7 +194,7 @@ pub fn ribbon(
             }
             if grab.sideways {
                 // Sideways: the ribbon moves along the band, and the split stays where it was.
-                *shift = (grab.shift + total.x / m.u(1.0)).clamp(lo_shift, hi_shift);
+                *shift = (grab.shift + total.x / m.u(1.0)).max(lo_shift).min(hi_shift);
             } else {
                 grab.dragging |= total.y.abs() > calm;
                 if grab.dragging && h > 0.0 {
