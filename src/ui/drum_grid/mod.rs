@@ -1276,7 +1276,7 @@ impl DrumGridView {
         let m = cx.m;
         let below = (rect, rect.top() + timeline::ruler_h(m));
         let x = rect.left() + m.u(GRAPH_KNOB_X);
-        (self.graph).tab_below(ui, cx, id().with("graph tab"), below, x, shift, ink);
+        (self.graph).tab_below(ui, cx, id().with("graph tab"), below, (x, shift), ink);
     }
 
     /// Closes the popups over the view (the row menu and its prompts, the snap menu, the ruler's region menu and `+`,

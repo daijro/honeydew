@@ -822,8 +822,7 @@ impl PianoRoll {
             cx,
             id.with("graph tab"),
             below,
-            tab_x,
-            graph_tab_shift,
+            (tab_x, graph_tab_shift),
             ink,
         );
         if !matches!(self.menu, Some(Menu::Humanize(_))) {

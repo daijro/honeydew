@@ -1279,7 +1279,7 @@ impl StepSeqView {
         let m = cx.m;
         let below = (rect, rect.top() + timeline::ruler_h(m));
         let x = rect.left() + m.u(GRAPH_KNOB_X);
-        (self.graph).tab_below(ui, cx, id().with("graph tab"), below, x, shift, ink);
+        (self.graph).tab_below(ui, cx, id().with("graph tab"), below, (x, shift), ink);
     }
 
     /// The graph lane in the strip `strip`: its items in the header column, the mixer's room left to the host (the

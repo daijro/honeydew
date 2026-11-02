@@ -348,8 +348,8 @@ impl GraphLane {
     }
 
     /// The pull-up tab of the lane [`Self::split_below`] places in the `editor` below its top margin (H, and the
-    /// drag's measure), on the part below `y`; centred at `x` plus the sideways offset `shift` (in U, kept inside the
-    /// editor and remembered by the host), its icon in the channel colour `ink`. A tap (released within 0.3 s) opens
+    /// drag's measure), on the part below `y`; centred at `x`, where the editor opens it, plus the sideways offset
+    /// `shift` (in U, kept inside the editor and remembered by the host), its icon in the channel colour `ink`. A tap (released within 0.3 s) opens
     /// the lane to f or closes it, animated; a drag that leaves the calm zone sideways moves the tab along the editor
     /// and leaves the split (and the lane) as it was; a drag that leaves it down or up sets f = (editor bottom − finger
     /// y)/H at once, clamped to 0…0.7, closing the lane below min(2.5 U/H, 0.5) and otherwise remembering it. Draw it
@@ -360,8 +360,7 @@ impl GraphLane {
         cx: &UiCtx,
         id: Id,
         (editor, y): (Rect, f32),
-        x: f32,
-        shift: &mut f32,
+        (x, shift): (f32, &mut f32),
         ink: Color32,
     ) {
         let m = cx.m;
@@ -887,8 +886,7 @@ mod tests {
                 cx,
                 Id::new("tab"),
                 (AREA, AREA.top()),
-                24.0,
-                shift,
+                (24.0, shift),
                 Color32::WHITE,
             )
         }
@@ -928,10 +926,10 @@ mod tests {
         let mut s = Offscreen::new();
         anim::enable(&s.ctx);
         // Frames until the tap's animation lands.
-        let settle = |s: &mut Offscreen, lane: &mut GraphLane| {
+        let settle = |s: &mut Offscreen, lane: &mut GraphLane, shift: &mut f32| {
             let mut n = 0;
             while lane.moving.is_some() {
-                s.frame(vec![], &mut tab(lane));
+                s.frame(vec![], &mut tab(lane, shift));
                 n += 1;
                 assert!(n < 20, "{lane:?}");
             }
@@ -942,12 +940,12 @@ mod tests {
         s.click(CLOSED_TAB, &mut tab(&mut lane, &mut shift));
         assert!(lane.open);
         assert!((lane.shown() - 0.25).abs() < 1e-3, "{}", lane.shown());
-        assert!((6..=9).contains(&settle(&mut s, &mut lane)));
+        assert!((6..=9).contains(&settle(&mut s, &mut lane, &mut shift)));
         assert_eq!(top(&lane), Some(198.0));
         // A tap on the tab (now y 160..200) closes it the same way.
         s.click(pos2(24.0, 190.0), &mut tab(&mut lane, &mut shift));
         assert!(!lane.open && lane.shown() > 0.0);
-        settle(&mut s, &mut lane);
+        settle(&mut s, &mut lane, &mut shift);
         assert_eq!(top(&lane), None);
         // A drag up to y 108 (f 0.8) opens it at once, capped at 0.7: trunc(0.7·300) = 210 tall.
         s.drag(
@@ -977,7 +975,7 @@ mod tests {
         assert_eq!(top(&lane), None);
         assert!((lane.f - 0.36).abs() < 1e-6, "{}", lane.f);
         s.click(CLOSED_TAB, &mut tab(&mut lane, &mut shift));
-        settle(&mut s, &mut lane);
+        settle(&mut s, &mut lane, &mut shift);
         assert_eq!(top(&lane), Some(240.0));
     }
 

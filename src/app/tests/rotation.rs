@@ -55,7 +55,7 @@ fn the_bottom_editors_draw_on_a_rotated_screen() {
     ] {
         for size in SCREENS {
             rig.screen = size;
-            rig.app.navigate(nav);
+            rig.app.navigate(nav.clone());
             for _ in 0..3 {
                 rig.frame(vec![]);
             }
