@@ -2,7 +2,7 @@ name: fixup
 
 # Temporary: formats the tree the way `cargo fmt` wants it and writes the checks' own output to `ci-report.txt`, both
 # committed back to the branch. A push that touches this file runs it again. It exists because the machine that writes this branch cannot run cargo (no Rust
-# toolchain, no crates.io), so this is how it reads what the checks say. Delete this file and `ci-report.txt` once the
+# toolchain, no crates.io), so this is how it reads what the checks say. # Round three: the ribbon's home and the key rows' colours. Delete this file and `ci-report.txt` once the
 # branch is green.
 
 on:

@@ -1125,24 +1125,27 @@ fn level_meters_stand_at_the_headers_right_edge_until_the_mixer_is_fully_out() {
     let [l, r] = meter_bars(header, page, false, [1.0, 0.5], t);
     assert_eq!(l, Rect::from_min_max(pos2(86.0, 48.0), pos2(90.0, 111.0)));
     assert_eq!(r, Rect::from_min_max(pos2(92.0, 79.5), pos2(96.0, 111.0)));
-    // Fully out: two bars in the band under the strip controls' 75 % layer (12.5 % of the 63 px row, 7.875), a
-    // hairline clear of the row's edge, filling from the left. They thin together to fit that band: 5 of them plus the
-    // gap are exactly the band, so the bar's top is the layer's bottom and no disc or thumb sits on it.
+    // Fully out: two flat bars in the band the strip controls leave free — the bottom quarter of the 63 px row — a
+    // hairline clear of the row's edge, filling from the left. They never thicken past a hairline, so on a row this tall
+    // five of them plus the gap below them take 11.97 of the room's 15.75 and the rest of the room stays empty.
     let [l, r] = meter_bars(header, page, true, [1.0, 0.5], t);
-    let band = page.height() * 0.125;
+    let room = page.height() * 0.25;
+    let gap = (room / 8.0).min(t);
     assert_eq!((l.left(), l.max.x), (96.0, 480.0));
     assert_eq!((r.left(), r.max.x), (96.0, 288.0));
+    // The lower bar sits a gap above the row's bottom, the upper one a hairline over it, and the pair takes 5 t.
+    assert!((r.max.y - (page.bottom() - gap)).abs() < 1e-3, "{}", r.max.y);
+    assert!((l.max.y - (r.top() - t)).abs() < 1e-3, "{l:?} {r:?}");
+    assert!((l.height() - t).abs() < 1e-3 && (r.height() - t).abs() < 1e-3);
     assert!(
-        (l.top() - (page.bottom() - band)).abs() < 1e-3,
+        (page.bottom() - l.top() - (5.0 * t + gap)).abs() < 1e-3,
         "{}",
         l.top()
     );
-    assert!(l.height() > 0.0 && l.height() < t, "{}", l.height());
-    assert!((l.height() - r.height()).abs() < 1e-3);
-    assert!((5.0 * l.height() + (page.bottom() - r.max.y) - band).abs() < 1e-3);
-    // That is below the layer the strips' controls paint in (the middle 75 % of the row): the Solo disc is 0.9 of the
+    assert!(5.0 * t + gap <= room + 1e-3);
+    // That is below the layer the strips' controls paint in (the top 75 % of the row): the Solo disc is 0.9 of the
     // layer's height, so its foot is clear of the bars.
-    let inset = 0.125 * page.height();
+    let inset = 0.25 * page.height();
     let layer = Rect::from_x_y_ranges(
         page.x_range(),
         (page.top() + inset)..=(page.bottom() - inset),

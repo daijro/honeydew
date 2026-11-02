@@ -154,10 +154,10 @@ pub fn ribbon(
     let (c, m) = (&cx.theme.colors, cx.m);
     let size = vec2(m.u(RIBBON[0]), m.u(RIBBON[1]));
     let base = (screen_right - m.u(RIBBON_LOGO)).min(view.right() - m.u(RIBBON_EDGE));
-    // Where the ribbon opens, and how far a drag may take it: inside the band and clear of the logo.
+    // Where the ribbon opens, and how far a drag may take it: in from the band's left edge, and no further right than
+    // home, which already sits next to the logo.
     let lowest = view.left() + m.u(RIBBON_INSET);
-    let highest = (screen_right - m.u(RIBBON_LOGO + RIBBON[0])).max(lowest);
-    let (lo_shift, hi_shift) = ((lowest - base) / m.u(1.0), (highest - base) / m.u(1.0));
+    let (lo_shift, hi_shift) = ((lowest - base) / m.u(1.0), 0.0f32);
     *shift = shift.clamp(lo_shift, hi_shift);
     let left = base + m.u(*shift);
     let rect = Rect::from_min_size(pos2(m.floor_px(left), editor_top), size);

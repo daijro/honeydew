@@ -2312,14 +2312,17 @@ mod component {
         assert!(shows(&rig, c6, c.white_key.to_color32()));
     }
 
-    /// Key `72 − row`'s full row in the key column: `C6` (key 72) is the top one, a row 16 points high.
+    /// Key `72 − row`'s full row in the key column: `C6` (key 72) is the top one and the keys go down in pitch, a row
+    /// 16 points high.
     fn key_row(row: f32) -> Rect {
         Rect::from_x_y_ranges(0.0..=48.0, TOP + row * 16.0..=TOP + (row + 1.0) * 16.0)
     }
 
     #[test]
     fn keys_out_of_the_project_scale_take_the_disabled_colours() {
-        // D minor natural: C6 (72) and D6 (74) are tones of it, C#6 (73) and D#6 (75) are not (`Rows::dim`).
+        // D minor natural, whose tones are C, D, E, F, G, A and B flat (`Rows::dim`). Down from the top row: C6 (72,
+        // a white key and a tone), B5 (71, white, out), B flat 5 (70, black, a tone), A5 (69, white, a tone) and G
+        // sharp 5 (68, black, out).
         let mut song = Song::default();
         song.add_channel(ChannelKind::Instrument);
         let _ = song.channels[1].lanes[0].add_clip(0, 4.0);
@@ -2334,18 +2337,23 @@ mod component {
             rig.visible
         );
         assert!(
-            shows(&rig, key_row(1.0), colors.black_key_disabled.to_color32()),
-            "C#6, out of it: {:?}",
+            shows(&rig, key_row(1.0), colors.white_key_disabled.to_color32()),
+            "B5, out of it: {:?}",
             rig.visible
         );
         assert!(
-            shows(&rig, key_row(2.0), colors.white_key.to_color32()),
-            "D6, the key: {:?}",
+            shows(&rig, key_row(2.0), colors.black_key.to_color32()),
+            "B flat 5, a tone of the scale: {:?}",
             rig.visible
         );
         assert!(
-            shows(&rig, key_row(3.0), colors.black_key_disabled.to_color32()),
-            "D#6, out of it: {:?}",
+            shows(&rig, key_row(3.0), colors.white_key.to_color32()),
+            "A5, a tone of the scale: {:?}",
+            rig.visible
+        );
+        assert!(
+            shows(&rig, key_row(4.0), colors.black_key_disabled.to_color32()),
+            "G sharp 5, out of it: {:?}",
             rig.visible
         );
     }
@@ -2361,8 +2369,8 @@ mod component {
             rig.visible
         );
         assert!(
-            shows(&rig, key_row(1.0), colors.black_key.to_color32()),
-            "C#6: {:?}",
+            shows(&rig, key_row(2.0), colors.black_key.to_color32()),
+            "B flat 5, a black key: {:?}",
             rig.visible
         );
     }
