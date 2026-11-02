@@ -1,0 +1,1237 @@
+# cargo fmt --check
+Diff in /home/runner/work/DqAqW/DqAqW/src/app/tests/rotation.rs:63:
+             assert!(!rig.out.shapes.is_empty(), "{view:?} on {size:?}");
+             // The editor's close ribbon hangs at its top right, inside the screen it is drawn on.
+             let at = rig.ctx.read_response(ribbon).expect("the ribbon").rect;
+-            assert!(screen(&rig).contains_rect(at), "{view:?} on {size:?}: {at:?}");
++            assert!(
++                screen(&rig).contains_rect(at),
++                "{view:?} on {size:?}: {at:?}"
++            );
+         }
+     }
+ }
+Diff in /home/runner/work/DqAqW/DqAqW/src/ui/graph_lane.rs:906:
+             pressed,
+             modifiers: Default::default(),
+         };
+-        s.frame(vec![In::PointerMoved(CLOSED_TAB)], &mut tab(&mut lane, &mut shift));
++        s.frame(
++            vec![In::PointerMoved(CLOSED_TAB)],
++            &mut tab(&mut lane, &mut shift),
++        );
+         s.frame(vec![button(true)], &mut tab(&mut lane, &mut shift));
+         s.time += 0.35;
+         s.frame(vec![button(false)], &mut tab(&mut lane, &mut shift));
+Diff in /home/runner/work/DqAqW/DqAqW/src/ui/graph_lane.rs:983:
+         let mut lane = GraphLane::default();
+         let mut shift = 0.0;
+         let mut s = Offscreen::new();
+-        s.frame(vec![In::PointerMoved(CLOSED_TAB)], &mut tab(&mut lane, &mut shift));
++        s.frame(
++            vec![In::PointerMoved(CLOSED_TAB)],
++            &mut tab(&mut lane, &mut shift),
++        );
+         let button = |pressed| In::PointerButton {
+             pos: CLOSED_TAB,
+             button: PointerButton::Primary,
+Diff in /home/runner/work/DqAqW/DqAqW/src/ui/graph_lane.rs:990:
+             pressed,
+             modifiers: Default::default(),
+         };
+-        s.frame(vec![button(true), button(false)], &mut tab(&mut lane, &mut shift));
++        s.frame(
++            vec![button(true), button(false)],
++            &mut tab(&mut lane, &mut shift),
++        );
+         assert!(lane.open);
+     }
+ 
+Diff in /home/runner/work/DqAqW/DqAqW/src/ui/graph_lane.rs:1019:
+         assert!(hi > 3.0, "{hi}");
+         assert!((shift - hi).abs() < 1e-3, "{shift} {hi}");
+         // A tap there still toggles the lane.
+-        s.click(pos2(24.0 + m.u(shift), CLOSED_TAB.y), &mut tab(&mut lane, &mut shift));
++        s.click(
++            pos2(24.0 + m.u(shift), CLOSED_TAB.y),
++            &mut tab(&mut lane, &mut shift),
++        );
+         assert!(lane.open);
+     }
+ 
+Diff in /home/runner/work/DqAqW/DqAqW/src/ui/piano_roll/tests.rs:1124:
+             let output = self.ctx.run(raw, |ctx| {
+                 egui::CentralPanel::default()
+                     .frame(egui::Frame::NONE)
+-                    .show(ctx, |ui| last = roll.show(ui, RECT, &cx, song, &opts, shift));
++                    .show(ctx, |ui| {
++                        last = roll.show(ui, RECT, &cx, song, &opts, shift)
++                    });
+             });
+             for action in std::mem::take(&mut last) {
+                 match action {
+Diff in /home/runner/work/DqAqW/DqAqW/src/ui/step_seq/mod.rs:1268:
+     /// The graph lane's tab for the view `rect`, its icon in the channel colour `ink`: centred 1.4 U from its left plus
+     /// the sideways offset `shift` a drag gave it, over the lane's top or the view's bottom edge. The host calls it
+     /// after everything it draws over the rows (the drum mixer's strips), so that the tab is on top.
+-    pub fn graph_knob(&mut self, ui: &mut Ui, cx: &UiCtx, rect: Rect, ink: Color32, shift: &mut f32) {
++    pub fn graph_knob(
++        &mut self,
++        ui: &mut Ui,
++        cx: &UiCtx,
++        rect: Rect,
++        ink: Color32,
++        shift: &mut f32,
++    ) {
+         let m = cx.m;
+         let below = (rect, rect.top() + timeline::ruler_h(m));
+         let x = rect.left() + m.u(GRAPH_KNOB_X);
+Diff in /home/runner/work/DqAqW/DqAqW/src/ui/views/drum_editor.rs:338:
+         // Over the strips.
+         let shift = &mut app.settings.graph_tab_shift;
+         if steps {
+-            state.step.graph_knob(&mut ui, &app.cx, editor, color, shift);
++            state
++                .step
++                .graph_knob(&mut ui, &app.cx, editor, color, shift);
+         } else {
+-            state.grid.graph_knob(&mut ui, &app.cx, editor, color, shift);
++            state
++                .grid
++                .graph_knob(&mut ui, &app.cx, editor, color, shift);
+         }
+     }
+     state.drawn = true;
+
+# cargo clippy --workspace --all-targets -- -D warnings
+    Updating crates.io index
+    Updating git repository `https://github.com/robbert-vdh/vst3-sys.git`
+    Updating git repository `https://github.com/micahrj/clap-sys.git`
+ Downloading crates ...
+  Downloaded ab_glyph_rasterizer v0.1.10
+  Downloaded accesskit_consumer v0.31.0
+  Downloaded accesskit v0.21.1
+  Downloaded accesskit_atspi_common v0.14.2
+  Downloaded ab_glyph v0.2.32
+  Downloaded event-listener-strategy v0.5.4
+  Downloaded event-listener v5.4.2
+  Downloaded bit-vec v0.8.0
+  Downloaded enumflags2_derive v0.7.12
+  Downloaded epaint v0.33.3
+  Downloaded gpu-alloc-types v0.3.1
+  Downloaded futures-macro v0.3.34
+  Downloaded itoa v1.0.18
+  Downloaded num-conv v0.2.2
+  Downloaded proc-macro-crate v3.5.0
+  Downloaded potential_utf v0.1.6
+  Downloaded parking v2.2.1
+  Downloaded raw-window-handle v0.6.2
+  Downloaded profiling v1.0.18
+  Downloaded regex-lite v0.1.9
+  Downloaded symphonia-codec-wavpack v0.1.1
+  Downloaded symphonia-metadata v0.5.5
+  Downloaded utf8_iter v1.0.4
+  Downloaded symphonia-utils-xiph v0.5.5
+  Downloaded wayland-sys v0.31.11
+  Downloaded wayland-cursor v0.31.14
+  Downloaded weezl v0.1.12
+  Downloaded zerofrom v0.1.8
+  Downloaded wayland-protocols-experimental v20250721.0.1
+  Downloaded zmij v1.0.23
+  Downloaded zvidlib-core v0.5.0
+  Downloaded zvidlib-vorbis-syntax v0.5.0
+  Downloaded zerovec-derive v0.11.6
+  Downloaded zeno v0.3.3
+  Downloaded wgpu-core v27.0.3
+  Downloaded zune-jpeg v0.5.15
+  Downloaded zvidlib-vorbis-encoder v0.5.0
+  Downloaded gimli v0.32.3
+  Downloaded winnow v1.0.4
+  Downloaded x11rb v0.13.2
+  Downloaded zbus v5.19.0
+  Downloaded x11-dl v2.21.0
+  Downloaded tracing v0.1.44
+  Downloaded khronos_api v3.1.0
+  Downloaded zvariant v5.15.0
+  Downloaded zlib-rs v0.6.8
+  Downloaded naga v27.0.3
+  Downloaded signalsmith-stretch v0.1.3
+  Downloaded icu_normalizer v2.3.0
+  Downloaded zerovec v0.11.8
+  Downloaded libc v0.2.190
+  Downloaded object v0.37.3
+  Downloaded syn v3.0.7
+  Downloaded syn v2.0.119
+  Downloaded swash v0.2.10
+  Downloaded zbus_macros v5.19.0
+  Downloaded zbus-lockstep v0.5.2
+  Downloaded xcursor v0.3.11
+  Downloaded signal-hook-registry v1.4.8
+  Downloaded zvariant_utils v4.2.0
+  Downloaded zune-core v0.5.3
+  Downloaded zbus_names v4.3.4
+  Downloaded wgpu-core-deps-windows-linux-android v27.0.0
+  Downloaded zerotrie v0.2.5
+  Downloaded wgpu v27.0.1
+  Downloaded wgpu-hal v27.0.4
+  Downloaded webbrowser v1.2.4
+  Downloaded tracing-attributes v0.1.31
+  Downloaded wgpu-types v27.0.1
+  Downloaded tiny-skia v0.11.4
+  Downloaded linux-raw-sys v0.4.15
+  Downloaded quick-xml v0.41.0
+  Downloaded widestring v1.2.1
+  Downloaded zvariant_derive v5.15.0
+  Downloaded yoke-derive v0.8.4
+  Downloaded xkbcommon-dl v0.4.2
+  Downloaded wayland-protocols-wlr v0.3.12
+  Downloaded wayland-protocols v0.32.13
+  Downloaded uuid v1.28.0
+  Downloaded rayon v1.12.0
+  Downloaded idna v1.1.0
+  Downloaded zerofrom-derive v0.1.8
+  Downloaded zbus_xml v5.2.1
+  Downloaded zbus-lockstep-macros v0.5.2
+  Downloaded yoke v0.8.3
+  Downloaded yazi v0.2.1
+  Downloaded linux-raw-sys v0.12.1
+  Downloaded xml-rs v0.8.29
+  Downloaded xkeysym v0.2.1
+  Downloaded x11rb-protocol v0.13.2
+  Downloaded web-time v1.1.0
+  Downloaded wayland-scanner v0.31.11
+  Downloaded zerocopy v0.8.62
+  Downloaded wayland-csd-frame v0.3.0
+  Downloaded unicode-width v0.2.2
+  Downloaded moxcms v0.8.1
+  Downloaded zerocopy-derive v0.8.62
+  Downloaded itertools v0.13.0
+  Downloaded hashbrown v0.15.5
+  Downloaded time v0.3.55
+  Downloaded syn v1.0.109
+  Downloaded strict-num v0.1.1
+  Downloaded skrifa v0.44.0
+  Downloaded rustversion v1.0.23
+  Downloaded rustix v0.38.44
+  Downloaded regex-syntax v0.8.11
+  Downloaded regex-automata v0.4.18
+  Downloaded read-fonts v0.41.0
+  Downloaded nom v7.1.3
+  Downloaded icu_collections v2.3.0
+  Downloaded fontdue v0.9.5
+  Downloaded zcheapstr v1.1.0
+  Downloaded writeable v0.6.4
+  Downloaded wayland-protocols-misc v0.3.12
+  Downloaded wayland-backend v0.3.17
+  Downloaded unicode-segmentation v1.13.3
+  Downloaded ttf-parser v0.25.1
+  Downloaded tiff v0.11.3
+  Downloaded smithay-client-toolkit v0.20.0
+  Downloaded prettyplease v0.2.37
+  Downloaded miniz_oxide v0.8.9
+  Downloaded libm v0.2.16
+  Downloaded icu_properties v2.3.0
+  Downloaded hashbrown v0.16.1
+  Downloaded getrandom v0.3.4
+  Downloaded wayland-protocols-plasma v0.3.12
+  Downloaded version_check v0.9.5
+  Downloaded url v2.5.8
+  Downloaded tracing-core v0.1.36
+  Downloaded tinystr v0.8.4
+  Downloaded tiny-skia-path v0.11.4
+  Downloaded time-macros v0.2.32
+  Downloaded thiserror v1.0.69
+  Downloaded termcolor v1.4.1
+  Downloaded symphonia-core v0.6.1
+  Downloaded symphonia-core v0.5.5
+  Downloaded symphonia-bundle-mp3 v0.6.1
+  Downloaded symphonia v0.6.1
+  Downloaded static_assertions v1.1.0
+  Downloaded spirv v0.3.0+sdk-1.3.268.0
+  Downloaded rayon-core v1.13.0
+  Downloaded pollster v0.4.0
+  Downloaded ordered-stream v0.2.0
+  Downloaded num-traits v0.2.19
+  Downloaded nih_log v0.3.1
+  Downloaded memmap2 v0.9.11
+  Downloaded lock_api v0.4.14
+  Downloaded litemap v0.8.3
+  Downloaded libloading v0.8.9
+  Downloaded khronos-egl v6.0.0
+  Downloaded indexmap v2.14.2
+  Downloaded icu_properties_data v2.3.0
+  Downloaded hashbrown v0.17.1
+  Downloaded gpu-alloc v0.6.2
+  Downloaded glutin v0.32.3
+  Downloaded glow v0.16.0
+  Downloaded gl_generator v0.14.0
+  Downloaded fax v0.2.7
+  Downloaded wayland-client v0.31.15
+  Downloaded unicode-ident v1.0.26
+  Downloaded toml_edit v0.25.17+spec-1.1.0
+  Downloaded toml_datetime v1.1.2+spec-1.1.0
+  Downloaded thiserror-impl v2.0.21
+  Downloaded thiserror-impl v1.0.69
+  Downloaded thiserror v2.0.21
+  Downloaded synstructure v0.14.0
+  Downloaded symphonia-metadata v0.6.1
+  Downloaded symphonia-format-riff v0.6.1
+  Downloaded symphonia-common v0.6.1
+  Downloaded symphonia-codec-vorbis v0.5.5
+  Downloaded symphonia-bundle-mp3 v0.5.5
+  Downloaded symphonia-bundle-flac v0.6.1
+  Downloaded symphonia-bundle-flac v0.5.5
+  Downloaded stable_deref_trait v1.2.1
+  Downloaded smallvec v1.16.3
+  Downloaded shlex v2.0.1
+  Downloaded shlex v1.3.0
+  Downloaded serde_json v1.0.152
+  Downloaded serde_derive v1.0.229
+  Downloaded scoped-tls v1.0.1
+  Downloaded rustix v1.1.5
+  Downloaded rustc-hash v1.1.0
+  Downloaded powerfmt v0.2.1
+  Downloaded polling v3.11.0
+  Downloaded percent-encoding v2.3.2
+  Downloaded owned_ttf_parser v0.25.1
+  Downloaded ordered-float v5.5.0
+  Downloaded num-complex v0.4.6
+  Downloaded multiversion_no_op v1.0.0
+  Downloaded miniz_oxide v0.9.1
+  Downloaded minimal-lexical v0.2.1
+  Downloaded midi-consts v0.1.0
+  Downloaded litrs v1.0.0
+  Downloaded gpu-descriptor-types v0.2.0
+  Downloaded extended v0.1.0
+  Downloaded type-map v0.5.1
+  Downloaded toml_parser v1.1.5+spec-1.1.0
+  Downloaded time-core v0.1.9
+  Downloaded symphonia-format-ogg v0.6.1
+  Downloaded symphonia v0.5.5
+  Downloaded smithay-client-toolkit v0.19.2
+  Downloaded serde_repr v0.1.21
+  Downloaded renderdoc-sys v1.1.0
+  Downloaded hex v0.4.3
+  Downloaded gpu-descriptor v0.3.2
+  Downloaded futures-core v0.3.34
+  Downloaded simd-adler32 v0.3.10
+  Downloaded symphonia-codec-pcm v0.6.1
+  Downloaded symphonia-codec-vorbis v0.6.1
+  Downloaded smol_str v0.2.2
+  Downloaded smithay-clipboard v0.7.3
+  Downloaded slab v0.4.12
+  Downloaded serde v1.0.229
+  Downloaded sctk-adwaita v0.10.1
+  Downloaded regex v1.13.1
+  Downloaded simdutf8 v0.1.5
+  Downloaded serde_core v1.0.229
+  Downloaded scopeguard v1.2.0
+  Downloaded rustc-hash v2.1.3
+  Downloaded rustc-demangle v0.1.28
+  Downloaded rfd v0.17.2
+  Downloaded pxfm v0.1.30
+  Downloaded encoding_rs v0.8.42
+  Downloaded egui_glow v0.33.3
+  Downloaded ecolor v0.33.3
+  Downloaded dasp_interpolate v0.11.0
+  Downloaded cursor-icon v1.2.0
+  Downloaded crc32fast v1.5.2
+  Downloaded core_detect v1.0.0
+  Downloaded ash v0.38.0+1.3.281
+  Downloaded raw-window-handle v0.5.2
+  Downloaded quote v1.0.47
+  Downloaded quick-error v2.0.1
+  Downloaded png v0.18.1
+  Downloaded png v0.17.16
+  Downloaded piper v0.2.5
+  Downloaded pin-project-lite v0.2.17
+  Downloaded parking_lot v0.12.5
+  Downloaded once_cell v1.21.4
+  Downloaded memchr v2.8.3
+  Downloaded log v0.4.34
+  Downloaded lazy_static v1.5.1
+  Downloaded idna_adapter v1.2.2
+  Downloaded futures-io v0.3.34
+  Downloaded foldhash v0.2.0
+  Downloaded find-msvc-tools v0.1.14
+  Downloaded egui v0.33.3
+  Downloaded dasp_ring_buffer v0.11.0
+  Downloaded dasp_frame v0.11.0
+  Downloaded cfg-if v1.0.5
+  Downloaded bit-set v0.8.0
+  Downloaded bindgen v0.70.1
+  Downloaded backtrace v0.3.76
+  Downloaded alsa v0.9.1
+  Downloaded aho-corasick v1.1.5
+  Downloaded proc-macro2 v1.0.107
+  Downloaded num_threads v0.1.8
+  Downloaded memoffset v0.9.1
+  Downloaded hexf-parse v0.2.1
+  Downloaded glob v0.3.4
+  Downloaded futures-task v0.3.34
+  Downloaded emath v0.33.3
+  Downloaded eframe v0.33.3
+  Downloaded dpi v0.1.2
+  Downloaded dlib v0.5.3
+  Downloaded crossbeam-utils v0.8.23
+  Downloaded cpal v0.16.0
+  Downloaded cc v1.7.0
+  Downloaded calloop-wayland-source v0.3.0
+  Downloaded byteorder v1.5.0
+  Downloaded atspi-proxies v0.9.0
+  Downloaded atomic-waker v1.1.2
+  Downloaded async-executor v1.14.0
+  Downloaded arrayvec v0.7.8
+  Downloaded accesskit_unix v0.17.2
+  Downloaded parking_lot_core v0.9.12
+  Downloaded futures-lite v2.6.1
+  Downloaded dasp_sample v0.11.0
+  Downloaded crossbeam-queue v0.3.14
+  Downloaded crossbeam-deque v0.8.8
+  Downloaded calloop v0.14.5
+  Downloaded calloop v0.13.0
+  Downloaded bitflags v1.3.2
+  Downloaded ahash v0.8.12
+  Downloaded fastrand v2.5.0
+  Downloaded codespan-reporting v0.12.0
+  Downloaded clap-sys v0.5.0
+  Downloaded midir v0.10.4
+  Downloaded jobserver v0.1.35
+  Downloaded icu_normalizer_data v2.3.0
+  Downloaded glutin-winit v0.5.0
+  Downloaded crossbeam v0.8.5
+  Downloaded clang-sys v1.9.1
+  Downloaded atspi-common v0.9.0
+  Downloaded atomic_refcell v0.1.14
+  Downloaded async-signal v0.2.14
+  Downloaded async-process v2.5.0
+  Downloaded pkg-config v0.3.34
+  Downloaded ogg v0.8.0
+  Downloaded image v0.25.10
+  Downloaded icu_provider v2.3.1
+  Downloaded glutin_egl_sys v0.7.1
+  Downloaded flate2 v1.1.10
+  Downloaded egui-winit v0.33.3
+  Downloaded egui-wgpu v0.33.3
+  Downloaded displaydoc v0.2.7
+  Downloaded dasp_envelope v0.11.0
+  Downloaded crossbeam-epoch v0.9.21
+  Downloaded crossbeam-channel v0.5.17
+  Downloaded cfg_aliases v0.2.2
+  Downloaded calloop-wayland-source v0.4.1
+  Downloaded bytemuck v1.25.2
+  Downloaded atspi v0.25.0
+  Downloaded async-task v4.7.1
+  Downloaded anymap3 v1.1.0
+  Downloaded alsa-sys v0.3.1
+  Downloaded allocator-api2 v0.2.21
+  Downloaded addr2line v0.25.1
+  Downloaded nohash-hasher v0.2.0
+  Downloaded icu_locale_core v2.3.0
+  Downloaded half v2.7.1
+  Downloaded glutin_glx_sys v0.6.1
+  Downloaded gethostname v1.1.0
+  Downloaded epaint_default_fonts v0.33.3
+  Downloaded either v1.19.0
+  Downloaded downcast-rs v1.2.1
+  Downloaded deranged v0.5.9
+  Downloaded dasp_peak v0.11.0
+  Downloaded dasp v0.11.0
+  Downloaded core_maths v0.1.1
+  Downloaded concurrent-queue v2.5.0
+  Downloaded bitflags v2.13.2
+  Downloaded adler2 v2.0.1
+  Downloaded futures-util v0.3.34
+  Downloaded font-types v0.12.7
+  Downloaded foldhash v0.1.5
+  Downloaded fdeflate v0.3.7
+  Downloaded dasp_window v0.11.1
+  Downloaded dasp_slice v0.11.0
+  Downloaded dasp_signal v0.11.0
+  Downloaded bytemuck_derive v1.12.1
+  Downloaded blocking v1.7.0
+  Downloaded arrayref v0.3.9
+  Downloaded form_urlencoded v1.2.2
+  Downloaded document-features v0.2.12
+  Downloaded byteorder-lite v0.1.0
+  Downloaded accesskit_winit v0.29.2
+  Downloaded dasp_rms v0.11.0
+  Downloaded autocfg v1.5.1
+  Downloaded atty v0.2.14
+  Downloaded atomic_float v0.1.0
+  Downloaded async-io v2.6.0
+  Downloaded async-channel v2.5.0
+  Downloaded async-broadcast v0.7.2
+  Downloaded arboard v3.6.1
+  Downloaded endi v1.1.1
+  Downloaded cexpr v0.6.0
+  Downloaded async-recursion v1.2.0
+  Downloaded anyhow v1.0.104
+  Downloaded async-lock v3.4.2
+  Downloaded atspi-connection v0.9.0
+  Downloaded async-trait v0.1.92
+  Downloaded as-raw-xcb-connection v1.0.1
+  Downloaded errno v0.3.14
+  Downloaded enumflags2 v0.7.12
+  Downloaded equivalent v1.0.2
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.26
+    Checking cfg-if v1.0.5
+    Checking log v0.4.34
+    Checking bitflags v2.13.2
+   Compiling libc v0.2.190
+    Checking smallvec v1.16.3
+   Compiling syn v3.0.7
+   Compiling syn v2.0.119
+   Compiling bytemuck_derive v1.12.1
+   Compiling autocfg v1.5.1
+   Compiling shlex v2.0.1
+    Checking bytemuck v1.25.2
+   Compiling find-msvc-tools v0.1.14
+   Compiling cc v1.7.0
+   Compiling pkg-config v0.3.34
+   Compiling memchr v2.8.3
+   Compiling crossbeam-utils v0.8.23
+   Compiling num-traits v0.2.19
+    Checking simd-adler32 v0.3.10
+    Checking adler2 v2.0.1
+    Checking lazy_static v1.5.1
+    Checking miniz_oxide v0.8.9
+    Checking bitflags v1.3.2
+    Checking dasp_sample v0.11.0
+    Checking scopeguard v1.2.0
+    Checking num-complex v0.4.6
+    Checking arrayvec v0.7.8
+    Checking dasp_frame v0.11.0
+    Checking symphonia-core v0.6.1
+   Compiling glob v0.3.4
+   Compiling clang-sys v1.9.1
+   Compiling prettyplease v0.2.37
+   Compiling regex-syntax v0.8.11
+    Checking dasp_ring_buffer v0.11.0
+   Compiling minimal-lexical v0.2.1
+    Checking regex-lite v0.1.9
+    Checking symphonia-metadata v0.6.1
+   Compiling regex-automata v0.4.18
+   Compiling nom v7.1.3
+   Compiling libloading v0.8.9
+   Compiling bindgen v0.70.1
+   Compiling either v1.19.0
+   Compiling thiserror v2.0.21
+   Compiling itertools v0.13.0
+   Compiling cexpr v0.6.0
+   Compiling regex v1.13.1
+    Checking dasp_rms v0.11.0
+    Checking dasp_peak v0.11.0
+   Compiling thiserror-impl v2.0.21
+   Compiling rustc-hash v1.1.0
+   Compiling shlex v1.3.0
+    Checking dasp_envelope v0.11.0
+    Checking symphonia-common v0.6.1
+    Checking dasp_interpolate v0.11.0
+    Checking dasp_window v0.11.1
+    Checking dasp_signal v0.11.0
+    Checking dasp_slice v0.11.0
+   Compiling rustversion v1.0.23
+    Checking dasp v0.11.0
+    Checking extended v0.1.0
+    Checking symphonia-format-riff v0.6.1
+    Checking symphonia-format-ogg v0.6.1
+    Checking symphonia-bundle-flac v0.6.1
+    Checking symphonia-codec-vorbis v0.6.1
+    Checking symphonia-bundle-mp3 v0.6.1
+    Checking symphonia-codec-pcm v0.6.1
+    Checking symphonia v0.6.1
+   Compiling encoding_rs v0.8.42
+    Checking symphonia-codec-wavpack v0.1.1
+    Checking os-model v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-model)
+    Checking core_detect v1.0.0
+    Checking simdutf8 v0.1.5
+   Compiling multiversion_no_op v1.0.0
+    Checking symphonia-core v0.5.5
+   Compiling signalsmith-stretch v0.1.3
+    Checking crossbeam-channel v0.5.17
+    Checking symphonia-metadata v0.5.5
+   Compiling alsa-sys v0.3.1
+    Checking once_cell v1.21.4
+    Checking symphonia-utils-xiph v0.5.5
+    Checking alsa v0.9.1
+   Compiling cpal v0.16.0
+    Checking zvidlib-core v0.5.0
+    Checking zvidlib-vorbis-syntax v0.5.0
+    Checking symphonia-codec-vorbis v0.5.5
+    Checking symphonia-bundle-flac v0.5.5
+    Checking symphonia-bundle-mp3 v0.5.5
+    Checking byteorder v1.5.0
+    Checking ogg v0.8.0
+    Checking symphonia v0.5.5
+    Checking zvidlib-vorbis-encoder v0.5.0
+    Checking rusty_mp3 v1.0.0 (/home/runner/work/DqAqW/DqAqW/vendor/rusty_mp3)
+   Compiling rustix v1.1.5
+    Checking linux-raw-sys v0.12.1
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling serde_derive v1.0.229
+    Checking os-dsp v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-dsp)
+    Checking pin-project-lite v0.2.17
+    Checking dlib v0.5.3
+   Compiling wayland-sys v0.31.11
+    Checking os-engine v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-engine)
+    Checking honeydew-audio v0.1.0 (/home/runner/work/DqAqW/DqAqW/crates/audio)
+   Compiling winnow v1.0.4
+   Compiling wayland-backend v0.3.17
+   Compiling equivalent v1.0.2
+   Compiling hashbrown v0.17.1
+   Compiling toml_parser v1.1.5+spec-1.1.0
+   Compiling indexmap v2.14.2
+    Checking polling v3.11.0
+    Checking downcast-rs v1.2.1
+    Checking scoped-tls v1.0.1
+   Compiling toml_datetime v1.1.2+spec-1.1.0
+   Compiling toml_edit v0.25.17+spec-1.1.0
+   Compiling quick-xml v0.41.0
+   Compiling enumflags2_derive v0.7.12
+   Compiling wayland-client v0.31.15
+   Compiling proc-macro-crate v3.5.0
+   Compiling wayland-scanner v0.31.11
+   Compiling zvariant_utils v4.2.0
+    Checking parking v2.2.1
+   Compiling libm v0.2.16
+    Checking slab v0.4.12
+   Compiling zvariant_derive v5.15.0
+    Checking futures-core v0.3.34
+   Compiling synstructure v0.14.0
+   Compiling crc32fast v1.5.2
+    Checking core_maths v0.1.1
+   Compiling zerofrom-derive v0.1.8
+    Checking ttf-parser v0.25.1
+    Checking tracing-core v0.1.36
+    Checking miniz_oxide v0.9.1
+   Compiling tracing-attributes v0.1.31
+    Checking futures-io v0.3.34
+    Checking fastrand v2.5.0
+    Checking flate2 v1.1.10
+    Checking zerofrom v0.1.8
+   Compiling yoke-derive v0.8.4
+    Checking tracing v0.1.44
+    Checking wayland-protocols v0.32.13
+    Checking event-listener v5.4.2
+   Compiling enumflags2 v0.7.12
+   Compiling zcheapstr v1.1.0
+    Checking fdeflate v0.3.7
+    Checking concurrent-queue v2.5.0
+    Checking stable_deref_trait v1.2.1
+   Compiling endi v1.1.1
+   Compiling zvariant v5.15.0
+    Checking yoke v0.8.3
+    Checking event-listener-strategy v0.5.4
+    Checking futures-lite v2.6.1
+   Compiling zbus_names v4.3.4
+   Compiling async-io v2.6.0
+   Compiling zerovec-derive v0.11.6
+   Compiling parking_lot_core v0.9.12
+    Checking zerovec v0.11.8
+   Compiling displaydoc v0.2.7
+    Checking errno v0.3.14
+    Checking arrayref v0.3.9
+   Compiling syn v1.0.109
+    Checking allocator-api2 v0.2.21
+    Checking async-task v4.7.1
+   Compiling thiserror v1.0.69
+    Checking strict-num v0.1.1
+    Checking foldhash v0.1.5
+    Checking hashbrown v0.15.5
+    Checking tiny-skia-path v0.11.4
+    Checking signal-hook-registry v1.4.8
+    Checking async-channel v2.5.0
+    Checking png v0.17.16
+    Checking lock_api v0.4.14
+   Compiling thiserror-impl v1.0.69
+   Compiling cfg_aliases v0.2.2
+    Checking atomic-waker v1.1.2
+   Compiling khronos_api v3.1.0
+    Checking percent-encoding v2.3.2
+    Checking piper v0.2.5
+    Checking tiny-skia v0.11.4
+    Checking parking_lot v0.12.5
+    Checking async-signal v0.2.14
+   Compiling zbus_xml v5.2.1
+    Checking async-lock v3.4.2
+    Checking gethostname v1.1.0
+   Compiling rustix v0.38.44
+   Compiling getrandom v0.3.4
+   Compiling crossbeam-epoch v0.9.21
+    Checking as-raw-xcb-connection v1.0.1
+   Compiling version_check v0.9.5
+   Compiling zerocopy v0.8.62
+    Checking x11rb-protocol v0.13.2
+   Compiling ahash v0.8.12
+    Checking async-process v2.5.0
+   Compiling zbus-lockstep v0.5.2
+    Checking blocking v1.7.0
+    Checking async-executor v1.14.0
+    Checking tinystr v0.8.4
+   Compiling zbus_macros v5.19.0
+    Checking async-broadcast v0.7.2
+    Checking owned_ttf_parser v0.25.1
+    Checking ordered-stream v0.2.0
+    Checking uuid v1.28.0
+   Compiling async-recursion v1.2.0
+   Compiling serde_repr v0.1.21
+   Compiling async-trait v0.1.92
+    Checking xkeysym v0.2.1
+    Checking x11rb v0.13.2
+   Compiling xml-rs v0.8.29
+   Compiling crossbeam-deque v0.8.8
+    Checking linux-raw-sys v0.4.15
+    Checking writeable v0.6.4
+    Checking litemap v0.8.3
+    Checking xcursor v0.3.11
+    Checking hex v0.4.3
+    Checking ab_glyph_rasterizer v0.1.10
+    Checking cursor-icon v1.2.0
+    Checking wayland-csd-frame v0.3.0
+    Checking zbus v5.19.0
+    Checking ab_glyph v0.2.32
+    Checking wayland-cursor v0.31.14
+    Checking icu_locale_core v2.3.0
+   Compiling gl_generator v0.14.0
+   Compiling zbus-lockstep-macros v0.5.2
+    Checking zerotrie v0.2.5
+    Checking potential_utf v0.1.6
+    Checking wayland-protocols-wlr v0.3.12
+   Compiling x11-dl v2.21.0
+    Checking memmap2 v0.9.11
+   Compiling icu_properties_data v2.3.0
+    Checking raw-window-handle v0.6.2
+    Checking static_assertions v1.1.0
+   Compiling icu_normalizer_data v2.3.0
+    Checking utf8_iter v1.0.4
+    Checking icu_collections v2.3.0
+    Checking atspi-common v0.9.0
+    Checking icu_provider v2.3.1
+    Checking calloop v0.13.0
+    Checking font-types v0.12.7
+    Checking accesskit v0.21.1
+   Compiling object v0.37.3
+   Compiling zmij v1.0.23
+   Compiling smithay-client-toolkit v0.19.2
+   Compiling num-conv v0.2.2
+   Compiling time-core v0.1.9
+    Checking read-fonts v0.41.0
+   Compiling time-macros v0.2.32
+    Checking calloop-wayland-source v0.3.0
+   Compiling anyhow v1.0.104
+    Checking num_threads v0.1.8
+    Checking gimli v0.32.3
+   Compiling serde_json v1.0.152
+    Checking powerfmt v0.2.1
+    Checking deranged v0.5.9
+    Checking time v0.3.55
+    Checking addr2line v0.25.1
+    Checking skrifa v0.44.0
+    Checking icu_normalizer v2.3.0
+    Checking icu_properties v2.3.0
+    Checking atspi-proxies v0.9.0
+   Compiling winit v0.30.13 (/home/runner/work/DqAqW/DqAqW/vendor/winit)
+    Checking crossbeam-queue v0.3.14
+    Checking emath v0.33.3
+    Checking atty v0.2.14
+    Checking termcolor v1.4.1
+    Checking zeno v0.3.3
+    Checking yazi v0.2.1
+    Checking rustc-demangle v0.1.28
+    Checking itoa v1.0.18
+    Checking swash v0.2.10
+    Checking backtrace v0.3.76
+    Checking nih_log v0.3.1
+    Checking ecolor v0.33.3
+    Checking crossbeam v0.8.5
+    Checking atspi-connection v0.9.0
+    Checking sctk-adwaita v0.10.1
+    Checking idna_adapter v1.2.2
+    Checking accesskit_consumer v0.31.0
+   Compiling glutin_egl_sys v0.7.1
+   Compiling glutin_glx_sys v0.6.1
+    Checking xkbcommon-dl v0.4.2
+   Compiling nih_plug_derive v0.1.0 (/home/runner/work/DqAqW/DqAqW/vendor/nih-plug/nih_plug_derive)
+    Checking fontdue v0.9.5
+    Checking wayland-protocols-plasma v0.3.12
+    Checking calloop v0.14.5
+   Compiling os-host v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-host)
+   Compiling futures-macro v0.3.34
+    Checking widestring v1.2.1
+    Checking atomic_refcell v0.1.14
+    Checking anymap3 v1.1.0
+    Checking raw-window-handle v0.5.2
+    Checking atomic_float v0.1.0
+    Checking midi-consts v0.1.0
+    Checking nohash-hasher v0.2.0
+    Checking clap-sys v0.5.0 (https://github.com/micahrj/clap-sys.git?rev=25d7f53fdb6363ad63fbd80049cb7a42a97ac156#25d7f53f)
+   Compiling smithay-client-toolkit v0.20.0
+    Checking os-theme v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-theme)
+    Checking pxfm v0.1.30
+    Checking dpi v0.1.2
+    Checking futures-task v0.3.34
+    Checking profiling v1.0.18
+    Checking epaint_default_fonts v0.33.3
+    Checking smol_str v0.2.2
+    Checking moxcms v0.8.1
+    Checking epaint v0.33.3
+    Checking futures-util v0.3.34
+    Checking os-ui v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-ui)
+    Checking nih_plug v0.0.0 (/home/runner/work/DqAqW/DqAqW/vendor/nih-plug)
+    Checking calloop-wayland-source v0.4.1
+    Checking accesskit_atspi_common v0.14.2
+    Checking idna v1.1.0
+    Checking atspi v0.25.0
+   Compiling vst3-com-macros-support v0.2.0 (https://github.com/robbert-vdh/vst3-sys.git?rev=b3ff4d775940f5b476b9d1cca02a90e07e1922a2#b3ff4d77)
+    Checking form_urlencoded v1.2.2
+   Compiling glutin v0.32.3
+    Checking wayland-protocols-misc v0.3.12
+    Checking wayland-protocols-experimental v20250721.0.1
+    Checking png v0.18.1
+   Compiling memoffset v0.9.1
+   Compiling rfd v0.17.2
+    Checking unicode-segmentation v1.13.3
+    Checking byteorder-lite v0.1.0
+    Checking egui v0.33.3
+    Checking image v0.25.10
+   Compiling vst3-com-macros v0.2.0 (https://github.com/robbert-vdh/vst3-sys.git?rev=b3ff4d775940f5b476b9d1cca02a90e07e1922a2#b3ff4d77)
+    Checking url v2.5.8
+    Checking accesskit_unix v0.17.2
+    Checking os-plugkit v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-plugkit)
+   Compiling glutin-winit v0.5.0
+   Compiling rayon-core v1.13.0
+    Checking os-hostlink v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-hostlink)
+    Checking pollster v0.4.0
+    Checking accesskit_winit v0.29.2
+    Checking webbrowser v1.2.4
+    Checking vst3-com v0.1.0 (https://github.com/robbert-vdh/vst3-sys.git?rev=b3ff4d775940f5b476b9d1cca02a90e07e1922a2#b3ff4d77)
+    Checking smithay-clipboard v0.7.3
+    Checking arboard v3.6.1
+    Checking web-time v1.1.0
+    Checking glow v0.16.0
+   Compiling litrs v1.0.0
+   Compiling document-features v0.2.12
+    Checking egui-winit v0.33.3
+    Checking vst3-sys v0.1.0 (https://github.com/robbert-vdh/vst3-sys.git?rev=b3ff4d775940f5b476b9d1cca02a90e07e1922a2#b3ff4d77)
+    Checking egui_glow v0.33.3
+   Compiling honeydew v0.4.6 (/home/runner/work/DqAqW/DqAqW)
+    Checking clap-sys v0.5.0
+    Checking os-paths v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-paths)
+    Checking lemon-sampler v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-sampler)
+    Checking os-clap v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-clap)
+    Checking rayon v1.12.0
+    Checking os-vst3 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-vst3)
+    Checking eframe v0.33.3
+    Checking lemon-3x-osc v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-3x-osc)
+    Checking lemon-parametric-eq-2 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-parametric-eq-2)
+    Checking os-vst2 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-vst2)
+    Checking midir v0.10.4
+error: this function has too many arguments (8/7)
+   --> src/ui/graph_lane.rs:357:5
+    |
+357 | /     pub fn tab_below(
+358 | |         &mut self,
+359 | |         ui: &mut Ui,
+360 | |         cx: &UiCtx,
+...   |
+365 | |         ink: Color32,
+366 | |     ) {
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.91.0/index.html#too_many_arguments
+    = note: `-D clippy::too-many-arguments` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::too_many_arguments)]`
+
+error: could not compile `honeydew` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/ui/graph_lane.rs:931:38
+    |
+931 |                 s.frame(vec![], &mut tab(lane));
+    |                                      ^^^------ argument #2 of type `&mut f32` is missing
+    |
+note: function defined here
+   --> src/ui/graph_lane.rs:883:8
+    |
+883 |     fn tab<'a>(lane: &'a mut GraphLane, shift: &'a mut f32) -> impl FnMut(&mut Ui, &UiCtx) + 'a {
+    |        ^^^                              ------------------
+help: provide the argument
+    |
+931 |                 s.frame(vec![], &mut tab(lane, /* &mut f32 */));
+    |                                              ++++++++++++++++
+
+error[E0382]: use of moved value: `nav`
+   --> src/app/tests/rotation.rs:58:30
+    |
+ 52 |     for (nav, view) in [
+    |          ---
+    |          |
+    |          this reinitialization might get skipped
+    |          move occurs because `nav` has type `ui::views::Nav`, which does not implement the `Copy` trait
+...
+ 56 |         for size in SCREENS {
+    |         ------------------- inside of this loop
+ 57 |             rig.screen = size;
+ 58 |             rig.app.navigate(nav);
+    |                              ^^^ value moved here, in previous iteration of loop
+    |
+note: consider changing this parameter type in method `navigate` to borrow instead if owning the value isn't necessary
+   --> src/app.rs:524:37
+    |
+524 |     pub fn navigate(&mut self, nav: Nav) {
+    |            -------- in this method  ^^^ this parameter takes ownership of the value
+help: consider moving the expression out of the loop so it is only moved once
+    |
+ 56 ~         let mut value = rig.app.navigate(nav);
+ 57 ~         for size in SCREENS {
+ 58 |             rig.screen = size;
+ 59 ~             value;
+    |
+help: consider cloning the value if the performance cost is acceptable
+    |
+ 58 |             rig.app.navigate(nav.clone());
+    |                                 ++++++++
+
+Some errors have detailed explanations: E0061, E0382.
+For more information about an error, try `rustc --explain E0061`.
+error: could not compile `honeydew` (lib test) due to 2 previous errors
+
+# cargo test --workspace
+   Compiling log v0.4.34
+   Compiling bitflags v2.13.2
+   Compiling smallvec v1.16.3
+   Compiling libc v0.2.190
+   Compiling bytemuck v1.25.2
+   Compiling crossbeam-utils v0.8.23
+   Compiling simd-adler32 v0.3.10
+   Compiling adler2 v2.0.1
+   Compiling lazy_static v1.5.1
+   Compiling num-traits v0.2.19
+   Compiling miniz_oxide v0.8.9
+   Compiling bitflags v1.3.2
+   Compiling scopeguard v1.2.0
+   Compiling dasp_sample v0.11.0
+   Compiling num-complex v0.4.6
+   Compiling arrayvec v0.7.8
+   Compiling dasp_frame v0.11.0
+   Compiling symphonia-core v0.6.1
+   Compiling dasp_ring_buffer v0.11.0
+   Compiling regex-lite v0.1.9
+   Compiling dasp_rms v0.11.0
+   Compiling dasp_peak v0.11.0
+   Compiling thiserror v2.0.21
+   Compiling dasp_envelope v0.11.0
+   Compiling dasp_interpolate v0.11.0
+   Compiling symphonia-metadata v0.6.1
+   Compiling symphonia-common v0.6.1
+   Compiling dasp_window v0.11.1
+   Compiling dasp_signal v0.11.0
+   Compiling dasp_slice v0.11.0
+   Compiling extended v0.1.0
+   Compiling symphonia-format-riff v0.6.1
+   Compiling dasp v0.11.0
+   Compiling signalsmith-stretch v0.1.3
+   Compiling symphonia-codec-vorbis v0.6.1
+   Compiling symphonia-bundle-flac v0.6.1
+   Compiling symphonia-format-ogg v0.6.1
+   Compiling symphonia-bundle-mp3 v0.6.1
+   Compiling symphonia-codec-pcm v0.6.1
+   Compiling symphonia v0.6.1
+   Compiling os-dsp v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-dsp)
+   Compiling symphonia-codec-wavpack v0.1.1
+   Compiling os-model v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-model)
+   Compiling simdutf8 v0.1.5
+   Compiling core_detect v1.0.0
+   Compiling encoding_rs v0.8.42
+   Compiling os-engine v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-engine)
+   Compiling symphonia-core v0.5.5
+   Compiling crossbeam-channel v0.5.17
+   Compiling symphonia-metadata v0.5.5
+   Compiling once_cell v1.21.4
+   Compiling alsa-sys v0.3.1
+   Compiling symphonia-utils-xiph v0.5.5
+   Compiling zvidlib-core v0.5.0
+   Compiling alsa v0.9.1
+   Compiling zvidlib-vorbis-syntax v0.5.0
+   Compiling symphonia-bundle-flac v0.5.5
+   Compiling symphonia-codec-vorbis v0.5.5
+   Compiling symphonia-bundle-mp3 v0.5.5
+   Compiling byteorder v1.5.0
+   Compiling symphonia v0.5.5
+   Compiling ogg v0.8.0
+   Compiling cpal v0.16.0
+   Compiling zvidlib-vorbis-encoder v0.5.0
+   Compiling rusty_mp3 v1.0.0 (/home/runner/work/DqAqW/DqAqW/vendor/rusty_mp3)
+   Compiling honeydew-audio v0.1.0 (/home/runner/work/DqAqW/DqAqW/crates/audio)
+   Compiling linux-raw-sys v0.12.1
+   Compiling rustix v1.1.5
+   Compiling pin-project-lite v0.2.17
+   Compiling dlib v0.5.3
+   Compiling wayland-sys v0.31.11
+   Compiling downcast-rs v1.2.1
+   Compiling scoped-tls v1.0.1
+   Compiling parking v2.2.1
+   Compiling slab v0.4.12
+   Compiling futures-core v0.3.34
+   Compiling libm v0.2.16
+   Compiling polling v3.11.0
+   Compiling wayland-backend v0.3.17
+   Compiling core_maths v0.1.1
+   Compiling ttf-parser v0.25.1
+   Compiling wayland-client v0.31.15
+   Compiling crc32fast v1.5.2
+   Compiling tracing-core v0.1.36
+   Compiling miniz_oxide v0.9.1
+   Compiling fastrand v2.5.0
+   Compiling futures-io v0.3.34
+   Compiling tracing v0.1.44
+   Compiling flate2 v1.1.10
+   Compiling zerofrom v0.1.8
+   Compiling wayland-protocols v0.32.13
+   Compiling event-listener v5.4.2
+   Compiling fdeflate v0.3.7
+   Compiling concurrent-queue v2.5.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling yoke v0.8.3
+   Compiling event-listener-strategy v0.5.4
+   Compiling futures-lite v2.6.1
+   Compiling syn v3.0.7
+   Compiling zvariant_utils v4.2.0
+   Compiling zerovec v0.11.8
+   Compiling zvariant v5.15.0
+   Compiling errno v0.3.14
+   Compiling allocator-api2 v0.2.21
+   Compiling strict-num v0.1.1
+   Compiling arrayref v0.3.9
+   Compiling foldhash v0.1.5
+   Compiling async-task v4.7.1
+   Compiling hashbrown v0.15.5
+   Compiling tiny-skia-path v0.11.4
+   Compiling signal-hook-registry v1.4.8
+   Compiling zbus_names v4.3.4
+   Compiling async-io v2.6.0
+   Compiling parking_lot_core v0.9.12
+   Compiling async-channel v2.5.0
+   Compiling png v0.17.16
+   Compiling lock_api v0.4.14
+   Compiling percent-encoding v2.3.2
+   Compiling atomic-waker v1.1.2
+   Compiling piper v0.2.5
+   Compiling thiserror v1.0.69
+   Compiling parking_lot v0.12.5
+   Compiling tiny-skia v0.11.4
+   Compiling async-signal v0.2.14
+   Compiling async-lock v3.4.2
+   Compiling gethostname v1.1.0
+   Compiling x11rb-protocol v0.13.2
+   Compiling as-raw-xcb-connection v1.0.1
+   Compiling async-process v2.5.0
+   Compiling blocking v1.7.0
+   Compiling zbus_xml v5.2.1
+   Compiling async-executor v1.14.0
+   Compiling tinystr v0.8.4
+   Compiling async-broadcast v0.7.2
+   Compiling owned_ttf_parser v0.25.1
+   Compiling ordered-stream v0.2.0
+   Compiling uuid v1.28.0
+   Compiling xkeysym v0.2.1
+   Compiling writeable v0.6.4
+   Compiling hex v0.4.3
+   Compiling ab_glyph_rasterizer v0.1.10
+   Compiling linux-raw-sys v0.4.15
+   Compiling xcursor v0.3.11
+   Compiling cursor-icon v1.2.0
+   Compiling litemap v0.8.3
+   Compiling icu_locale_core v2.3.0
+   Compiling wayland-csd-frame v0.3.0
+   Compiling wayland-cursor v0.31.14
+   Compiling rustix v0.38.44
+   Compiling x11rb v0.13.2
+   Compiling ab_glyph v0.2.32
+   Compiling zbus v5.19.0
+   Compiling zbus-lockstep v0.5.2
+   Compiling crossbeam-epoch v0.9.21
+   Compiling zerocopy v0.8.62
+   Compiling getrandom v0.3.4
+   Compiling zerotrie v0.2.5
+   Compiling potential_utf v0.1.6
+   Compiling wayland-protocols-wlr v0.3.12
+   Compiling memmap2 v0.9.11
+   Compiling raw-window-handle v0.6.2
+   Compiling utf8_iter v1.0.4
+   Compiling static_assertions v1.1.0
+   Compiling atspi-common v0.9.0
+   Compiling icu_collections v2.3.0
+   Compiling icu_provider v2.3.1
+   Compiling ahash v0.8.12
+   Compiling crossbeam-deque v0.8.8
+   Compiling calloop v0.13.0
+   Compiling font-types v0.12.7
+   Compiling accesskit v0.21.1
+   Compiling memchr v2.8.3
+   Compiling read-fonts v0.41.0
+   Compiling calloop-wayland-source v0.3.0
+   Compiling x11-dl v2.21.0
+   Compiling icu_properties_data v2.3.0
+   Compiling icu_normalizer_data v2.3.0
+   Compiling num_threads v0.1.8
+   Compiling deranged v0.5.9
+   Compiling powerfmt v0.2.1
+   Compiling gimli v0.32.3
+   Compiling addr2line v0.25.1
+   Compiling skrifa v0.44.0
+   Compiling time v0.3.55
+   Compiling icu_normalizer v2.3.0
+   Compiling icu_properties v2.3.0
+   Compiling smithay-client-toolkit v0.19.2
+   Compiling object v0.37.3
+   Compiling zmij v1.0.23
+   Compiling atspi-proxies v0.9.0
+   Compiling atty v0.2.14
+   Compiling crossbeam-queue v0.3.14
+   Compiling emath v0.33.3
+   Compiling termcolor v1.4.1
+   Compiling itoa v1.0.18
+   Compiling zeno v0.3.3
+   Compiling yazi v0.2.1
+   Compiling rustc-demangle v0.1.28
+   Compiling swash v0.2.10
+   Compiling backtrace v0.3.76
+   Compiling serde_json v1.0.152
+   Compiling nih_log v0.3.1
+   Compiling ecolor v0.33.3
+   Compiling crossbeam v0.8.5
+   Compiling atspi-connection v0.9.0
+   Compiling sctk-adwaita v0.10.1
+   Compiling idna_adapter v1.2.2
+   Compiling anyhow v1.0.104
+   Compiling accesskit_consumer v0.31.0
+   Compiling xkbcommon-dl v0.4.2
+   Compiling fontdue v0.9.5
+   Compiling wayland-protocols-plasma v0.3.12
+   Compiling calloop v0.14.5
+   Compiling widestring v1.2.1
+   Compiling raw-window-handle v0.5.2
+   Compiling smol_str v0.2.2
+   Compiling os-theme v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-theme)
+   Compiling atomic_float v0.1.0
+   Compiling epaint_default_fonts v0.33.3
+   Compiling midi-consts v0.1.0
+   Compiling dpi v0.1.2
+   Compiling anymap3 v1.1.0
+   Compiling clap-sys v0.5.0 (https://github.com/micahrj/clap-sys.git?rev=25d7f53fdb6363ad63fbd80049cb7a42a97ac156#25d7f53f)
+   Compiling atomic_refcell v0.1.14
+   Compiling pxfm v0.1.30
+   Compiling profiling v1.0.18
+   Compiling nohash-hasher v0.2.0
+   Compiling futures-task v0.3.34
+   Compiling futures-util v0.3.34
+   Compiling epaint v0.33.3
+   Compiling moxcms v0.8.1
+   Compiling nih_plug v0.0.0 (/home/runner/work/DqAqW/DqAqW/vendor/nih-plug)
+   Compiling winit v0.30.13 (/home/runner/work/DqAqW/DqAqW/vendor/winit)
+   Compiling os-ui v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-ui)
+   Compiling calloop-wayland-source v0.4.1
+   Compiling accesskit_atspi_common v0.14.2
+   Compiling idna v1.1.0
+   Compiling atspi v0.25.0
+   Compiling form_urlencoded v1.2.2
+   Compiling wayland-protocols-experimental v20250721.0.1
+   Compiling wayland-protocols-misc v0.3.12
+   Compiling png v0.18.1
+   Compiling byteorder-lite v0.1.0
+   Compiling unicode-segmentation v1.13.3
+   Compiling image v0.25.10
+   Compiling egui v0.33.3
+   Compiling smithay-client-toolkit v0.20.0
+   Compiling url v2.5.8
+   Compiling accesskit_unix v0.17.2
+   Compiling glutin_glx_sys v0.6.1
+   Compiling glutin_egl_sys v0.7.1
+   Compiling os-plugkit v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-plugkit)
+   Compiling os-host v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-host)
+   Compiling os-hostlink v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-hostlink)
+   Compiling pollster v0.4.0
+   Compiling rfd v0.17.2
+   Compiling accesskit_winit v0.29.2
+   Compiling glutin v0.32.3
+   Compiling vst3-com v0.1.0 (https://github.com/robbert-vdh/vst3-sys.git?rev=b3ff4d775940f5b476b9d1cca02a90e07e1922a2#b3ff4d77)
+   Compiling webbrowser v1.2.4
+   Compiling smithay-clipboard v0.7.3
+   Compiling memoffset v0.9.1
+   Compiling arboard v3.6.1
+   Compiling web-time v1.1.0
+   Compiling glow v0.16.0
+   Compiling egui-winit v0.33.3
+   Compiling glutin-winit v0.5.0
+   Compiling vst3-sys v0.1.0 (https://github.com/robbert-vdh/vst3-sys.git?rev=b3ff4d775940f5b476b9d1cca02a90e07e1922a2#b3ff4d77)
+   Compiling egui_glow v0.33.3
+   Compiling rayon-core v1.13.0
+   Compiling honeydew v0.4.6 (/home/runner/work/DqAqW/DqAqW)
+   Compiling clap-sys v0.5.0
+   Compiling os-paths v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-paths)
+   Compiling os-clap v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-clap)
+   Compiling lemon-sampler v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-sampler)
+   Compiling rayon v1.12.0
+   Compiling eframe v0.33.3
+   Compiling os-vst3 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-vst3)
+   Compiling lemon-3x-osc v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-3x-osc)
+   Compiling lemon-parametric-eq-2 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-parametric-eq-2)
+   Compiling os-vst2 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-vst2)
+   Compiling midir v0.10.4
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/ui/graph_lane.rs:931:38
+    |
+931 |                 s.frame(vec![], &mut tab(lane));
+    |                                      ^^^------ argument #2 of type `&mut f32` is missing
+    |
+note: function defined here
+   --> src/ui/graph_lane.rs:883:8
+    |
+883 |     fn tab<'a>(lane: &'a mut GraphLane, shift: &'a mut f32) -> impl FnMut(&mut Ui, &UiCtx) + 'a {
+    |        ^^^                              ------------------
+help: provide the argument
+    |
+931 |                 s.frame(vec![], &mut tab(lane, /* &mut f32 */));
+    |                                              ++++++++++++++++
+
+error[E0382]: use of moved value: `nav`
+   --> src/app/tests/rotation.rs:58:30
+    |
+ 52 |     for (nav, view) in [
+    |          ---
+    |          |
+    |          this reinitialization might get skipped
+    |          move occurs because `nav` has type `ui::views::Nav`, which does not implement the `Copy` trait
+...
+ 56 |         for size in SCREENS {
+    |         ------------------- inside of this loop
+ 57 |             rig.screen = size;
+ 58 |             rig.app.navigate(nav);
+    |                              ^^^ value moved here, in previous iteration of loop
+    |
+note: consider changing this parameter type in method `navigate` to borrow instead if owning the value isn't necessary
+   --> src/app.rs:524:37
+    |
+524 |     pub fn navigate(&mut self, nav: Nav) {
+    |            -------- in this method  ^^^ this parameter takes ownership of the value
+help: consider moving the expression out of the loop so it is only moved once
+    |
+ 56 ~         let mut value = rig.app.navigate(nav);
+ 57 ~         for size in SCREENS {
+ 58 |             rig.screen = size;
+ 59 ~             value;
+    |
+help: consider cloning the value if the performance cost is acceptable
+    |
+ 58 |             rig.app.navigate(nav.clone());
+    |                                 ++++++++
+
+Some errors have detailed explanations: E0061, E0382.
+For more information about an error, try `rustc --explain E0061`.
+error: could not compile `honeydew` (lib test) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

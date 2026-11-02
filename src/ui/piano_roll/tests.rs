@@ -1124,7 +1124,9 @@ mod component {
             let output = self.ctx.run(raw, |ctx| {
                 egui::CentralPanel::default()
                     .frame(egui::Frame::NONE)
-                    .show(ctx, |ui| last = roll.show(ui, RECT, &cx, song, &opts, shift));
+                    .show(ctx, |ui| {
+                        last = roll.show(ui, RECT, &cx, song, &opts, shift)
+                    });
             });
             for action in std::mem::take(&mut last) {
                 match action {

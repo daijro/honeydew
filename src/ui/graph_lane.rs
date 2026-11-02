@@ -906,7 +906,10 @@ mod tests {
             pressed,
             modifiers: Default::default(),
         };
-        s.frame(vec![In::PointerMoved(CLOSED_TAB)], &mut tab(&mut lane, &mut shift));
+        s.frame(
+            vec![In::PointerMoved(CLOSED_TAB)],
+            &mut tab(&mut lane, &mut shift),
+        );
         s.frame(vec![button(true)], &mut tab(&mut lane, &mut shift));
         s.time += 0.35;
         s.frame(vec![button(false)], &mut tab(&mut lane, &mut shift));
@@ -983,14 +986,20 @@ mod tests {
         let mut lane = GraphLane::default();
         let mut shift = 0.0;
         let mut s = Offscreen::new();
-        s.frame(vec![In::PointerMoved(CLOSED_TAB)], &mut tab(&mut lane, &mut shift));
+        s.frame(
+            vec![In::PointerMoved(CLOSED_TAB)],
+            &mut tab(&mut lane, &mut shift),
+        );
         let button = |pressed| In::PointerButton {
             pos: CLOSED_TAB,
             button: PointerButton::Primary,
             pressed,
             modifiers: Default::default(),
         };
-        s.frame(vec![button(true), button(false)], &mut tab(&mut lane, &mut shift));
+        s.frame(
+            vec![button(true), button(false)],
+            &mut tab(&mut lane, &mut shift),
+        );
         assert!(lane.open);
     }
 
@@ -1019,7 +1028,10 @@ mod tests {
         assert!(hi > 3.0, "{hi}");
         assert!((shift - hi).abs() < 1e-3, "{shift} {hi}");
         // A tap there still toggles the lane.
-        s.click(pos2(24.0 + m.u(shift), CLOSED_TAB.y), &mut tab(&mut lane, &mut shift));
+        s.click(
+            pos2(24.0 + m.u(shift), CLOSED_TAB.y),
+            &mut tab(&mut lane, &mut shift),
+        );
         assert!(lane.open);
     }
 

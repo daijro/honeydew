@@ -63,7 +63,10 @@ fn the_bottom_editors_draw_on_a_rotated_screen() {
             assert!(!rig.out.shapes.is_empty(), "{view:?} on {size:?}");
             // The editor's close ribbon hangs at its top right, inside the screen it is drawn on.
             let at = rig.ctx.read_response(ribbon).expect("the ribbon").rect;
-            assert!(screen(&rig).contains_rect(at), "{view:?} on {size:?}: {at:?}");
+            assert!(
+                screen(&rig).contains_rect(at),
+                "{view:?} on {size:?}: {at:?}"
+            );
         }
     }
 }
