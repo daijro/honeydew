@@ -75,6 +75,15 @@ public final class HoneydewActivity extends NativeActivity {
         onDisplayDpi(getResources().getDisplayMetrics().xdpi);
     }
 
+    // The native side asks for an orientation (Settings' "Screen orientation") from its own thread; the window turns
+    // on the UI thread only, as every other call from that side is posted (see editText and openDocument).
+    public void requestOrientation(final int orientation) {
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            setRequestedOrientation(orientation);
+        });
+    }
+
     // NativeActivity's key events do not carry complete IME composition or pasted text.
     public void editText(long requestId, String text, boolean multiline) {
         runOnUiThread(() -> {

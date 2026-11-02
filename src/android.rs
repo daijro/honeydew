@@ -70,11 +70,15 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onDocumentPicke
 /// Asks the Activity for a screen orientation (`ActivityInfo.SCREEN_ORIENTATION_*`, from
 /// `Settings::android_orientation`). The window then turns and resizes like a rotation (the manifest's `configChanges`
 /// keep the Activity), and the next frame lays out at the new size. A failure is only logged.
+///
+/// The Activity posts the request to its UI thread itself (`HoneydewActivity.requestOrientation`): changing a window's
+/// orientation from the app's own thread is not the UI thread's to do, and on some devices it wedges the window until
+/// the app is killed.
 pub fn request_orientation(orientation: i32) {
     let requested = with_activity(|env, activity| {
         env.call_method(
             activity,
-            "setRequestedOrientation",
+            "requestOrientation",
             "(I)V",
             &[orientation.into()],
         )

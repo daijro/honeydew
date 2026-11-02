@@ -158,7 +158,9 @@ pub fn ribbon(
     // home, which already sits next to the logo.
     let lowest = view.left() + m.u(RIBBON_INSET);
     let (lo_shift, hi_shift) = ((lowest - base) / m.u(1.0), 0.0f32);
-    *shift = shift.clamp(lo_shift, hi_shift);
+    // `max` then `min` rather than `clamp`: a view too narrow for the ribbon's home (a small window) leaves lo above
+    // hi, and `f32::clamp` panics on that.
+    *shift = shift.max(lo_shift).min(hi_shift);
     let left = base + m.u(*shift);
     let rect = Rect::from_min_size(pos2(m.floor_px(left), editor_top), size);
     let reach = m.u(RIBBON_REACH);

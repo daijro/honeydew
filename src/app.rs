@@ -2639,6 +2639,8 @@ mod tests {
     mod bundle_wait;
     // Audio files dropped on the app.
     mod file_drop;
+    // The surface resized between frames (a phone's rotation).
+    mod rotation;
     // A finger's tap in the web build.
     mod web_touch;
 
@@ -2679,6 +2681,8 @@ mod tests {
         out: egui::FullOutput,
         /// The next frame brings the window's close request (its close button).
         close_request: bool,
+        /// The screen the frames are laid out on: a rotation resizes it, as the surface is resized on a phone.
+        screen: egui::Vec2,
     }
 
     const U: f32 = 32.0;
@@ -2770,6 +2774,7 @@ mod tests {
                 no_device: false,
                 out: egui::FullOutput::default(),
                 close_request: false,
+                screen: vec2(1170.0, 540.0),
             };
             // Lets egui learn the widget rects before the first press.
             rig.frame(vec![]);
@@ -2836,8 +2841,9 @@ mod tests {
 
         fn frame(&mut self, events: Vec<egui::Event>) {
             self.time += 0.1;
+            let screen = self.screen;
             let mut input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0))),
+                screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, screen)),
                 events,
                 time: Some(self.time),
                 ..Default::default()
