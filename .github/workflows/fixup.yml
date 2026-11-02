@@ -15,6 +15,9 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: never
+  # The runner's linker dies (SIGBUS) on this build's debug info; the tests do not need it, and CI's own dev profile
+  # keeps it. This file only asks whether the tests pass.
+  CARGO_PROFILE_DEV_DEBUG: '0'
 
 jobs:
   report:
