@@ -214,6 +214,9 @@ const fn spec(
 
 /// The knobs' right margin, in U.
 const KNOB_MR: f32 = 0.25;
+/// The strip's page: this much of the strip's height, as a percentage, at its top. The quarter it leaves below is the
+/// row's level meters' ([`crate::ui::step_seq`] keeps them there, so a control never sits on one).
+pub const CONTROLS_H: f32 = 75.0;
 /// What a double click or `Reset` sets the strip's Level slider to.
 const LEVEL_RESET: f32 = 0.90909;
 
@@ -337,8 +340,10 @@ pub fn strip_rect(area: Rect, rows: usize, row: usize, ppp: f32) -> Rect {
 /// The leaf id of the strip's header cell; controls are numbered by their place on the page.
 const HEADER: u32 = u32::MAX;
 
-/// Lays a strip out (device pixels, `u` per U): a 3 U header cell, then a layer holding the four pages, of which
-/// only `page` shows, as a row 0.75 × the strip height. Returns the header's rect and each control's.
+/// Lays a strip out (device pixels, `u` per U): a 3 U header cell, then the four pages stacked, of which only `page`
+/// shows, as a row [`CONTROLS_H`] % of the strip height at its top. The quarter it leaves at the bottom is
+/// the row's level meters' ([`crate::ui::step_seq`] paints them there), so no control reaches them.
+/// Returns the header's rect and each control's.
 pub fn place_strip(page: StripPage, strip: Rect, u: f32) -> (Rect, Vec<(Ctl, Rect)>) {
     let pages = StripPage::ALL.map(|p| {
         let leaves = page_specs(p)
@@ -346,10 +351,12 @@ pub fn place_strip(page: StripPage, strip: Rect, u: f32) -> (Rect, Vec<(Ctl, Rec
             .enumerate()
             .map(|(i, s)| Node::leaf(i as u32).w(Size::Flex(s.flex)).mr(s.mr));
         Node::hstack(leaves)
-            .h(Size::Percent(75.0))
+            .h(Size::Percent(CONTROLS_H))
             .visible(p == page)
     });
-    let root = Node::hstack([Node::leaf(HEADER).w(Size::U(3.0)), Node::layer(pages)]);
+    // The pages stack down the strip's main axis, so the one that shows is at its top and the rest of the strip (the
+    // row's meter band) stays empty below it.
+    let root = Node::hstack([Node::leaf(HEADER).w(Size::U(3.0)), Node::vstack(pages)]);
     let rects = layout::layout(&root, strip, u);
     let header = layout::rect_of(&rects, HEADER).unwrap_or(Rect::NOTHING);
     let specs = page_specs(page);

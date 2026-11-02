@@ -165,13 +165,14 @@ fn each_strip_paints_inside_a_clip_of_its_own_row() {
 
 #[test]
 fn each_page_splits_the_layer_by_the_spec_weights() {
-    // A 600 × 60 px strip at U = 32: a 96 px header, then the 504 px layer. Pages are 45 px rows, centred.
+    // A 600 × 60 px strip at U = 32: a 96 px header, then the 504 px pages. A page is a 45 px row at the strip's top
+    // (the quarter below it is the row's level meter).
     let strip = area(0.0, 0.0, 600.0, 60.0);
     let widths = |page| {
         let (header, controls) = place_strip(page, strip, 32.0);
         assert_eq!(header, area(0.0, 0.0, 96.0, 60.0));
         for (_, r) in &controls {
-            assert_eq!((r.top(), r.height()), (7.0, 45.0), "{page:?}");
+            assert_eq!((r.top(), r.height()), (0.0, 45.0), "{page:?}");
         }
         controls
             .iter()

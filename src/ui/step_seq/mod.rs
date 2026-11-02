@@ -12,10 +12,11 @@
 //! - c ← c + 0.4·(t − c), snapping to t once |c − t| < 0.05 (t = 0 or 1); the header column is 3 U + c·12 U wide.
 //!   It is stepped by input time, the 0.4 counted per 60 Hz frame, 0.6^(60·dt) left after dt seconds.
 //! - Collapsed or animating, the meters are two thin vertical bars at the header's right edge; fully out they are
-//!   horizontal at the bottom of the page area, a hairline clear of the row's edge so the row's own rule stays clean.
-//!   Each bar is 2 hairlines thick, 1 apart, in the 5 hairlines the header's text leaves; L then R; the header's text
-//!   colour on it, the channel colour under the page; ends rounded by a hairline, so they read as meters rather than
-//!   as more slider tracks. At rest (no level feed) they are empty.
+//!   horizontal in the quarter the strip's pages leave under them (those take the row's top 75 %), a hairline clear of
+//!   the row's edge: no disc or slider thumb ever sits on a bar. Each bar is 2 hairlines thick, 1 apart, in
+//!   the 5 hairlines the header's text leaves; L then R; the header's text colour on it, the channel colour under the
+//!   page; the bars thin together to fit that band in a short row, and their ends are rounded by half a bar, so they
+//!   read as meters rather than as more slider tracks. At rest (no level feed) they are empty.
 //! - The current row's header is filled with the channel colour (texts in `moduleFill`); on press it grows by up to
 //!   10 px and wobbles on release. Other headers have no fill and channel-coloured texts. The growth is the arc
 //!   slider's touch pulse applied to the fill, 10 px · f wider and taller about its centre; the texts stay.
@@ -107,8 +108,8 @@ use std::collections::{BTreeSet, HashMap};
 use eframe::egui::text::{CCursor, CCursorRange};
 use eframe::egui::text_edit::TextEditState;
 use eframe::egui::{
-    self, Align2, Area, Color32, Context, CornerRadius, Id, Key, Order, Painter, Pos2, Rangef, Rect,
-    Response, Sense, Ui, pos2, vec2,
+    self, Align2, Area, Color32, Context, CornerRadius, Id, Key, Order, Painter, Pos2, Rangef,
+    Rect, Response, Sense, Ui, pos2, vec2,
 };
 
 use crate::icons::{self, IconId};
@@ -119,7 +120,7 @@ use crate::ui::clips::{
     FloatingRow, GridView, Marquee, Selection, TimeAxis, hold_square, paint_marquee,
 };
 use crate::ui::drum_grid::{self, ClipView};
-use crate::ui::drums::{PAD_COUNT, header_names, meter_level};
+use crate::ui::drums::{CONTROLS_H, PAD_COUNT, header_names, meter_level};
 use crate::ui::edit_keys::{self, EditKey};
 use crate::ui::gesture;
 use crate::ui::graph_lane::{self, GraphLane, Prop};
@@ -708,14 +709,17 @@ pub(crate) fn row_headers(
         // The drum mixer strip's header lines, kept to the header.
         let clip = painter.with_clip_rect(header);
         header_names(&clip, m, header, name, sample, color);
-        // The level meters: vertical at the header's edge, horizontal under the page once the mixer is out (along
-        // the bottom 5 hairlines of the row, a hairline clear of its edge, under the strip controls' 75 % high layer).
+        // The level meters: vertical at the header's edge, horizontal under the page once the mixer is out (in the
+        // band under the strip controls' 75 % high layer, a hairline clear of the row's edge, so they never reach a
+        // disc or a slider's thumb).
         let full = fold.c == 1.0;
         let level = levels.get(row).map_or([0.0; 2], |p| p.map(meter_level));
-        // Rounded ends: the bars read as meters, not as a second set of slider tracks over the row's control.
-        let ends = CornerRadius::from(m.t());
         for bar in meter_bars(header, page, full, level, m.t()) {
             if bar.is_positive() {
+                // Ends rounded by half the bar's own thickness: a pill, so a bar reads as a meter and never as
+                // another slider track's end.
+                let thick = if full { bar.height() } else { bar.width() };
+                let ends = CornerRadius::from(0.5 * thick);
                 painter.rect_filled(bar, ends, if full { ink } else { color });
             }
         }
@@ -765,26 +769,33 @@ pub(crate) fn add_drum(
 }
 
 /// A row's two level-meter bars (L, R) at `levels`, `t` being the hairline (2 hairlines thick, 1 apart).
-/// `full` (the mixer fully out): horizontal along the bottom of the `page` area, a hairline clear of the row's bottom
-/// edge, filling from the left. Otherwise two thin vertical bars at the `header`'s right edge, in the 5 hairlines its
-/// text leaves, filling from the bottom.
+/// `full` (the mixer fully out): horizontal in the quarter the strip's controls leave under them (they take the top
+/// `CONTROLS_H` % of the row), a hairline clear of the row's bottom edge, filling from the left; the bars thin together
+/// to fit that quarter, so a disc or a slider's thumb never sits on one. Otherwise two thin vertical bars at the
+/// `header`'s right edge, in the 5 hairlines its text leaves, filling from the bottom.
 fn meter_bars(header: Rect, page: Rect, full: bool, levels: [f32; 2], t: f32) -> [Rect; 2] {
     let level = |i: usize| levels[i].clamp(0.0, 1.0);
+    // The band under the controls: the strip's pages take the top `CONTROLS_H` % of the row, so the rest is the
+    // meters'. The hairline the bars keep clear of the row's bottom edge is the gap below them.
+    let room = (page.height() * (100.0 - CONTROLS_H) / 100.0).max(0.0);
+    let gap = (room / 8.0).min(t);
     // Bar i's band: L 5 to 3 hairlines from the edge, R the last 2.
-    let band = |edge: f32, i: usize| {
+    let band = |edge: f32, t: f32, i: usize| {
         let far = edge - if i == 0 { 3.0 * t } else { 0.0 };
         Rangef::new(far - 2.0 * t, far)
     };
+    let thickness = if full { ((room - gap) / 5.0).clamp(0.0, t) } else { t };
+    let edge = if full { page.bottom() - gap } else { header.bottom() };
     std::array::from_fn(|i| {
         if full {
             let x = Rangef::new(page.left(), page.left() + level(i) * page.width());
-            Rect::from_x_y_ranges(x, band(page.bottom() - t, i))
+            Rect::from_x_y_ranges(x, band(edge, thickness, i))
         } else {
             let y = Rangef::new(
                 header.bottom() - level(i) * header.height(),
                 header.bottom(),
             );
-            Rect::from_x_y_ranges(band(header.right(), i), y)
+            Rect::from_x_y_ranges(band(header.right(), thickness, i), y)
         }
     })
 }
