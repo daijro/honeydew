@@ -1125,22 +1125,24 @@ fn level_meters_stand_at_the_headers_right_edge_until_the_mixer_is_fully_out() {
     let [l, r] = meter_bars(header, page, false, [1.0, 0.5], t);
     assert_eq!(l, Rect::from_min_max(pos2(86.0, 48.0), pos2(90.0, 111.0)));
     assert_eq!(r, Rect::from_min_max(pos2(92.0, 79.5), pos2(96.0, 111.0)));
-    // Fully out: two flat bars in the band the strip controls leave free — the bottom quarter of the 63 px row — a
-    // hairline clear of the row's edge, filling from the left. They never thicken past a hairline, so on a row this tall
-    // five of them plus the gap below them take 11.97 of the room's 15.75 and the rest of the room stays empty.
+    // Fully out: two flat bars, a hairline pair each, in the band the strip controls leave free — the bottom quarter
+    // of the 63 px row — a hairline clear of the row's edge, filling from the left. They never thicken past a
+    // hairline, so on a row this tall the two pairs and the hairline between them take 11.97 of the room's 15.75 and
+    // the rest of the room stays empty.
     let [l, r] = meter_bars(header, page, true, [1.0, 0.5], t);
     let room = page.height() * 0.25;
     let gap = (room / 8.0).min(t);
     assert_eq!((l.left(), l.max.x), (96.0, 480.0));
     assert_eq!((r.left(), r.max.x), (96.0, 288.0));
-    // The lower bar sits a gap above the row's bottom, the upper one a hairline over it, and the pair takes 5 t.
+    // The lower bar sits a gap above the row's bottom, the upper one a hairline over it, and the two take 5 t.
     assert!(
         (r.max.y - (page.bottom() - gap)).abs() < 1e-3,
         "{}",
         r.max.y
     );
     assert!((l.max.y - (r.top() - t)).abs() < 1e-3, "{l:?} {r:?}");
-    assert!((l.height() - t).abs() < 1e-3 && (r.height() - t).abs() < 1e-3);
+    // Each bar is a hairline pair deep.
+    assert!((l.height() - 2.0 * t).abs() < 1e-3 && (r.height() - 2.0 * t).abs() < 1e-3);
     assert!(
         (page.bottom() - l.top() - (5.0 * t + gap)).abs() < 1e-3,
         "{}",
