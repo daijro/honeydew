@@ -676,7 +676,9 @@ impl PianoRoll {
         // ponytail: recomputed every frame the panel shows; keep it by (panel, events) if a huge clip makes that show.
         let preview = match self.menu {
             Some(Menu::Humanize(panel)) => Some(panel.preview(events, &self.selected)),
-            Some(Menu::Generate(panel)) => Some(panel.preview(events, project_scale(song), bpb)),
+            Some(Menu::Generate(panel)) => {
+                Some(panel.preview(events, project_scale(song), f64::from(bpb)))
+            }
             _ => None,
         };
         let events = preview.as_deref().unwrap_or(events);
@@ -2251,7 +2253,7 @@ impl PianoRoll {
             return;
         };
         let before = clip.events.clone();
-        clip.events = panel.preview(&clip.events, scale, bpb);
+        clip.events = panel.preview(&clip.events, scale, f64::from(bpb));
         self.selected.fill(false);
         sort(&mut clip.events, &mut self.selected);
         if clip.events != before {
@@ -2476,7 +2478,7 @@ fn drag_edit(edit: &Edit, delta: Vec2, g: &Geom, snap: Option<f64>) -> (Vec<Even
 /// The note menu: two columns, all enabled.
 fn more_items() -> Vec<PopupItem<MoreOp>> {
     use MoreOp::*;
-    let col0 = [
+    let col0 = vec![
         (Legato, "Legato", true),
         (SnapToScale, "Snap to Scale", true),
         (GuessScale, "Guess Scale...", true),
@@ -2486,7 +2488,7 @@ fn more_items() -> Vec<PopupItem<MoreOp>> {
         (DoubleDown, "Double Down", true),
         (ToggleSlide, "Toggle Slide", true),
     ];
-    let col1 = [
+    let col1 = vec![
         (Length(32), "Set length 1/16", true),
         (Length(64), "Set length 1/8", true),
         (Length(128), "Set length 1/4", true),
