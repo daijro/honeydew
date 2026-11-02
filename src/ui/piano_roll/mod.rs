@@ -8,7 +8,10 @@
 //! the note grid in the rest, over the graph lane (`Vel` / `Pan`, [`graph_lane`]) while its tab shows it. The x axis
 //! is the clip's content (tick 0 = content start). The grid background: no beat bands; rows light by scale and
 //! instrument range, lit by selection and sound, the shared adaptive beat marks, root lines, and black α 0.15 past the
-//! loop end ([`paint_grid`], [`paint_notes`]). Note names are not drawn.
+//! loop end ([`paint_grid`], [`paint_notes`]). Note names are not drawn. The key column greys every key out of the
+//! project scale's key lock, and out of the instruments' key ranges, so the scale's tones read at a glance
+//! ([`paint_keys`], [`Rows::dim`]): a tap still lands on the nearest tone (a new note's key is [`snap_key`]'s), while
+//! a note dragged onto a grey key stays there.
 //!
 //! Gestures on the grid, each decided from its touch-down by the shared law ([`gesture::is_long`],
 //! [`gesture::left_calm`]): within the 0.5 U calm zone a release after ≤ 0.3 s is a tap and after > 0.3 s a long press,
@@ -178,6 +181,14 @@ const GUESS_ROWS: [usize; 2] = [5, 12];
 const NEW_VELOCITY: f32 = 1.0;
 const NEW_GATE_S: f64 = 0.15;
 const DRAG_VELOCITY: f32 = 0.7;
+/// A new note's pop-in, in seconds: its row grows from [`POP_MIN`] of its height and its fill fades in.
+const POP_S: f32 = 0.13;
+/// The share of its row a new note pops in from.
+const POP_MIN: f32 = 0.45;
+/// The grid's notes' corner radius, in U: the softer look the rows and notes share.
+const NOTE_ROUND_U: f32 = 0.06;
+/// How far a held key-column key's fill leans towards the channel colour.
+const PRESS_TINT: f32 = 0.5;
 
 /// What the user did this frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -299,6 +310,11 @@ pub struct PianoRoll {
     gate: Option<(u8, f64)>,
     /// The key the key column plays while it is held.
     key_down: Option<u8>,
+    /// Each key's press glow in the key column: eased towards 1 while it is the held key and back to 0 once let go
+    /// ([`PRESS_TINT`]).
+    key_press: [f32; 128],
+    /// The note a tap or `open` added last, as the clip holds it (its start, its key): its pop-in ([`POP_S`]).
+    born: Option<(u32, u8)>,
     /// The grid cursor (content tick, key): where `paste` and `open` act ([`Self::keys`]).
     cursor: (f64, u8),
     /// The `Paste` button shows, at this finger (module docs).
@@ -434,6 +450,8 @@ impl PianoRoll {
             remembered: Remembered::default(),
             gate: None,
             key_down: None,
+            key_press: [0.0; 128],
+            born: None,
             cursor: CURSOR,
             paste: None,
             pending: Vec::new(),
@@ -619,6 +637,17 @@ impl PianoRoll {
             }
             self.key_down = held;
         }
+        // The key column's press glow: every key eases towards being the held one, and back to plain once let go.
+        let step = crate::ui::anim::step(ui.ctx(), crate::ui::anim::PANEL_KEEP);
+        let mut easing = false;
+        for (key, glow) in self.key_press.iter_mut().enumerate() {
+            let target = f32::from(self.key_down == Some(key as u8));
+            *glow += (target - *glow) * step;
+            easing |= (*glow - target).abs() > 0.002;
+        }
+        if easing {
+            ui.ctx().request_repaint();
+        }
         let response = ui.interact(grid, id.with("grid"), Sense::click_and_drag());
         crate::ui::focus::register(ui, id.with("grid"), grid, crate::ui::focus::Kind::Container);
         self.grid_input(ui, &response, grid, m, song, &mut actions);
@@ -659,7 +688,7 @@ impl PianoRoll {
             &self.ghosts(song, opts, view, px),
             past,
             color,
-            cx,
+            (self.born, cx),
         );
         // The playhead line's slot: over the notes, under their handles, the marquee and the floating row.
         let line_slot = grid_painter.add(egui::Shape::Noop);
@@ -699,8 +728,8 @@ impl PianoRoll {
             &ui.painter_at(keys),
             keys,
             &g,
-            opts.middle_c_is_c4,
-            color,
+            (opts.middle_c_is_c4, color),
+            (rows, &self.key_press),
             cx,
         );
         if let Some(lane) = lane {
@@ -879,10 +908,13 @@ impl PianoRoll {
     /// What the grid's key rows show ([`Rows`]): light where the key is in the project scale (Chromatic reads as C
     /// major) and in an instrument's key range on the channel (none without an instrument; a plugin instrument plays
     /// every key); lit where a note is selected, the roll sounds the key (a key-column touch, a new note's gate, a dragged key) or it is in
-    /// `sounding` (the keyboard, typed notes, MIDI and the engine's keys on the channel, [`RollOptions::sounding`]).
+    /// `sounding` (the keyboard, typed notes, MIDI and the engine's keys on the channel, [`RollOptions::sounding`]);
+    /// and dimmed, for the key column ([`Rows::dim`]), where the key is out of the project scale (none while it is
+    /// Chromatic: every key is a tone of it) or out of the instruments' key range (none without one).
     fn rows(&self, song: &Song, events: &[Event], sounding: u128) -> Rows {
         let (root, mask) = project_scale(song);
-        let (from, mask) = if mask == SCALE_MASKS[CHROMATIC] {
+        let chromatic = mask == SCALE_MASKS[CHROMATIC];
+        let (from, mask) = if chromatic {
             (0, SCALE_MASKS[0])
         } else {
             (root, mask)
@@ -894,6 +926,14 @@ impl PianoRoll {
         let light = std::array::from_fn(|k| {
             let key = k as u8;
             in_scale(key, from, mask) && ranges.iter().any(|r| (r.0..=r.1).contains(&(key as i8)))
+        });
+        // The key column's greyed keys: out of the project scale's key lock, or of the instruments' key range.
+        let within = |key: u8| {
+            ranges.is_empty() || ranges.iter().any(|r| (r.0..=r.1).contains(&(key as i8)))
+        };
+        let dim = std::array::from_fn(|k| {
+            let key = k as u8;
+            (!chromatic && !in_scale(key, root, mask)) || !within(key)
         });
         let mut lit = [false; 128];
         let selected = (events.iter().zip(&self.selected)).filter(|(_, s)| **s);
@@ -911,7 +951,12 @@ impl PianoRoll {
         for (k, row) in lit.iter_mut().enumerate() {
             *row |= sounding >> k & 1 == 1;
         }
-        Rows { light, lit, root }
+        Rows {
+            light,
+            lit,
+            root,
+            dim,
+        }
     }
 
     /// Centres the notes (or middle C) vertically, at tick 0.
@@ -1431,6 +1476,10 @@ impl PianoRoll {
         } = &mut clip.events[i]
         {
             (*v, *p, *s) = (velocity, pan.min(254), slide);
+        }
+        // The note as the clip holds it, for its pop-in ([`paint_notes`]).
+        if let Event::Note { pos, .. } = clip.events[i] {
+            self.born = Some((pos, key));
         }
         clip.fit_loop(bpb);
         actions.push(PianoRollAction::QuietEdit);
@@ -2396,7 +2445,7 @@ fn mix(a: Rgba, b: Rgba, t: f32) -> Color32 {
     Rgba::rgb(ch(a.r, b.r), ch(a.g, b.g), ch(a.b, b.b)).to_color32()
 }
 
-/// What the grid's key rows show (grid background steps 2, 4 and 6).
+/// What the grid's key rows show (grid background steps 2, 4 and 6), and what the key column greys.
 pub(crate) struct Rows {
     /// Step 2: `moduleFill`, the key being in the project scale (Chromatic reads as C major) and in the key range of an
     /// instrument on the roll's channel.
@@ -2405,6 +2454,10 @@ pub(crate) struct Rows {
     pub lit: [bool; 128],
     /// Step 6: the project key's pitch class, whose rows get the 2 px root line.
     pub root: u8,
+    /// The key column's greyed keys, in `whiteKeyDisabled` and `blackKeyDisabled`: out of the project scale's key
+    /// lock (none while it is Chromatic, whose every key is a tone of it) or out of the key range of the channel's
+    /// instruments (none without one: those keys play nothing to be out of range for).
+    pub dim: [bool; 128],
 }
 
 /// Grid background steps 1–6: `controlFill` over the 128 key rows (from beat 0 when scrolled before it), the light
@@ -2470,7 +2523,9 @@ fn paint_marks(painter: &egui::Painter, area: Rect, g: &Geom, sig: TimeSig, cx: 
     }
 }
 
-/// Grid background steps 7–9: the ghost notes, black α 0.15 `past` the clip's loop end, then the notes.
+/// Grid background steps 7–9: the ghost notes, black α 0.15 `past` the clip's loop end, then the notes, each a cell
+/// rounded by [`NOTE_ROUND_U`]. `born`'s note, the one a tap or `open` added last, pops in ([`POP_S`]): its row grows
+/// from [`POP_MIN`] of its height and its fill fades in.
 #[allow(clippy::too_many_arguments)]
 fn paint_notes(
     painter: &egui::Painter,
@@ -2480,10 +2535,11 @@ fn paint_notes(
     ghosts: &[Ghost],
     past: Option<Rect>,
     color: Rgba,
-    cx: &UiCtx,
+    (born, cx): (Option<(u32, u8)>, &UiCtx),
 ) {
     let (theme, m) = (cx.theme, cx.m);
     let px = 1.0 / m.ppp();
+    let round = m.u(NOTE_ROUND_U);
     // Flat cells with a 1-px gap right and below, so neighbours stay apart.
     let cell = |r: Rect| {
         Rect::from_min_max(
@@ -2508,27 +2564,48 @@ fn paint_notes(
         mix(color, theme.colors.text, graph_lane::SELECTED_TINT),
     );
     for (i, e) in events.iter().enumerate() {
-        if let Some(r) = g.note_rect(e) {
-            let fill = if selected.get(i) == Some(&true) {
-                pale
-            } else {
-                normal
-            };
-            painter.rect_filled(cell(r), 0.0, fill);
+        let Some(r) = g.note_rect(e) else {
+            continue;
+        };
+        let fill = if selected.get(i) == Some(&true) {
+            pale
+        } else {
+            normal
+        };
+        // The new note's pop-in, on its own id so that the next note pops in too. Off with `Animation` reduced
+        // ([`crate::ui::anim::elapsed`] is past every end then), and in tests unless they turn animations on.
+        let pop = match *e {
+            Event::Note { pos, key, .. } if born == Some((pos, key)) => Some(crate::ui::anim::elapsed(
+                painter.ctx(),
+                Id::new(("roll note born", pos, key)),
+            )),
+            _ => None,
+        };
+        match pop.map(|t| (t / POP_S).min(1.0)) {
+            Some(a) if a < 1.0 => {
+                let eased = a * (2.0 - a);
+                let h = r.height() * (POP_MIN + (1.0 - POP_MIN) * eased);
+                let grown = Rect::from_center_size(r.center(), vec2(r.width(), h));
+                painter.rect_filled(cell(grown), round, fill.gamma_multiply(eased));
+                painter.ctx().request_repaint();
+            }
+            _ => painter.rect_filled(cell(r), round, fill),
         }
     }
 }
 
 /// The key column, vertical. A full-width row per key in `whiteKey` or `blackKey`, and a 1 px `background` α 0.3 line
-/// where two white keys meet (under each C and F). Each C has a channel-colour bar down its left edge (the root marker
-/// colour) and its octave label in `blackKeyDisabled` (as a root white key's label), left-aligned after the bar and
-/// centred on the row.
+/// where two white keys meet (under each C and F). A key [`Rows::dim`] grey marks takes `whiteKeyDisabled` or
+/// `blackKeyDisabled`, so the project scale's tones (the grid's light rows) stand out; a key held there (`press`, one
+/// flag per key, eased) leans [`PRESS_TINT`] of the way towards the channel colour, and eases back once let go. Each C
+/// has a channel-colour bar down its left edge (the root marker colour) and its octave label in `blackKeyDisabled` (as
+/// a root white key's label), left-aligned after the bar and centred on the row.
 fn paint_keys(
     painter: &egui::Painter,
     keys: Rect,
     g: &Geom,
-    middle_c_is_c4: bool,
-    color: Rgba,
+    (middle_c_is_c4, color): (bool, Rgba),
+    (rows, press): (&Rows, &[f32; 128]),
     cx: &UiCtx,
 ) {
     let (c, m) = (&cx.theme.colors, cx.m);
@@ -2536,11 +2613,18 @@ fn paint_keys(
     let px = 1.0 / m.ppp();
     let row = |key: u8| Rect::from_x_y_ranges(keys.x_range(), g.y(key)..=g.y(key) + g.row_h);
     let line = c.background.to_color32().gamma_multiply(0.3);
-    let rows = g.key(keys.bottom()).unwrap_or(0)..=g.key(keys.top()).unwrap_or(TOP_KEY);
-    for key in rows.clone() {
+    let tint = color.to_color32();
+    let shown = g.key(keys.bottom()).unwrap_or(0)..=g.key(keys.top()).unwrap_or(TOP_KEY);
+    for key in shown.clone() {
         let (r, black) = (row(key), matches!(key % 12, 1 | 3 | 6 | 8 | 10));
-        let fill = if black { c.black_key } else { c.white_key };
-        painter.rect_filled(r, 0.0, fill.to_color32());
+        let base = match (black, rows.dim[usize::from(key)]) {
+            (true, false) => c.black_key,
+            (false, false) => c.white_key,
+            (true, true) => c.black_key_disabled,
+            (false, true) => c.white_key_disabled,
+        };
+        let glow = press.get(usize::from(key)).copied().unwrap_or(0.0) * PRESS_TINT;
+        painter.rect_filled(r, 0.0, base.to_color32().lerp_to_gamma(tint, glow));
         if matches!(key % 12, 0 | 5) {
             painter.rect_filled(r.with_min_y(r.bottom() - px), 0.0, line);
         }
@@ -2548,7 +2632,7 @@ fn paint_keys(
     let bar = (m.u_px() * ROOT_BAR).ceil() * px;
     let pts = LABEL_SHARE * g.row_h / m.u(1.0) * 16.0;
     let font = (pts >= LABEL_PT[0]).then(|| m.font_id_pt(pts.min(LABEL_PT[1])));
-    for key in rows.filter(|k| k % 12 == 0) {
+    for key in shown.filter(|k| k % 12 == 0) {
         let r = row(key);
         painter.rect_filled(r.with_max_x(r.left() + bar), 0.0, color.to_color32());
         if let Some(font) = &font {

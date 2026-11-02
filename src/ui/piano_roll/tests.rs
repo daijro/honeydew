@@ -2312,6 +2312,60 @@ mod component {
         assert!(shows(&rig, c6, c.white_key.to_color32()));
     }
 
+    /// Key `72 − row`'s full row in the key column: `C6` (key 72) is the top one, a row 16 points high.
+    fn key_row(row: f32) -> Rect {
+        Rect::from_x_y_ranges(0.0..=48.0, TOP + row * 16.0..=TOP + (row + 1.0) * 16.0)
+    }
+
+    #[test]
+    fn keys_out_of_the_project_scale_take_the_disabled_colours() {
+        // D minor natural: C6 (72) and D6 (74) are tones of it, C#6 (73) and D#6 (75) are not (`Rows::dim`).
+        let mut song = Song::default();
+        song.add_channel(ChannelKind::Instrument);
+        let _ = song.channels[1].lanes[0].add_clip(0, 4.0);
+        song.key_root = 2;
+        song.key_scale = scale_to_stored(SCALES.iter().position(|&s| s == "Minor Natural").unwrap());
+        let rig = Rig::with_song(song);
+        let colors = theme_by_id(0).colors;
+        assert!(
+            shows(&rig, key_row(0.0), colors.white_key.to_color32()),
+            "C6, a tone of the scale: {:?}",
+            rig.visible
+        );
+        assert!(
+            shows(&rig, key_row(1.0), colors.black_key_disabled.to_color32()),
+            "C#6, out of it: {:?}",
+            rig.visible
+        );
+        assert!(
+            shows(&rig, key_row(2.0), colors.white_key.to_color32()),
+            "D6, the key: {:?}",
+            rig.visible
+        );
+        assert!(
+            shows(&rig, key_row(3.0), colors.black_key_disabled.to_color32()),
+            "D#6, out of it: {:?}",
+            rig.visible
+        );
+    }
+
+    #[test]
+    fn a_chromatic_project_scale_greys_no_key() {
+        // Chromatic reads as C major on the grid, but every key is a tone of it: the column stays plain.
+        let rig = Rig::new(vec![]);
+        let colors = theme_by_id(0).colors;
+        assert!(
+            shows(&rig, key_row(0.0), colors.white_key.to_color32()),
+            "C6: {:?}",
+            rig.visible
+        );
+        assert!(
+            shows(&rig, key_row(1.0), colors.black_key.to_color32()),
+            "C#6: {:?}",
+            rig.visible
+        );
+    }
+
     #[test]
     fn a_c_row_has_a_channel_colour_bar_down_its_left_edge() {
         let rig = Rig::new(vec![]);
@@ -4109,6 +4163,7 @@ mod grid {
             light: std::array::from_fn(|k| (48..=72).contains(&k) && white(k)),
             lit: std::array::from_fn(|k| k == 64),
             root: 0,
+            dim: [false; 128],
         }
     }
 
@@ -4209,7 +4264,7 @@ mod grid {
         let past = Rect::from_min_max(pos2(304.0, 48.0), pos2(1170.0, 349.0));
         let events = [n(0, 128.0, 60)];
         let (rects, ..) = painted(1.0, &|p, _, g, cx| {
-            paint_notes(p, g, &events, &[false], &[], Some(past), RED, cx);
+            paint_notes(p, g, &events, &[false], &[], Some(past), RED, (None, cx));
         });
         assert_eq!(
             rects.iter().map(|r| r.1).collect::<Vec<_>>(),
