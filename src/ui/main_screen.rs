@@ -1815,15 +1815,7 @@ impl MainScreen {
             } else {
                 slots.scale
             };
-            widgets::truncated(
-                painter,
-                room,
-                Align2::LEFT_CENTER,
-                name,
-                font,
-                ink,
-                5,
-            );
+            widgets::truncated(painter, room, Align2::LEFT_CENTER, name, font, ink, 5);
         }
 
         // Centre group: REC, REWIND, play, tempo, CONTROL.

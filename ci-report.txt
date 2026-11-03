@@ -1,0 +1,113 @@
+# cargo fmt --check
+Diff in /home/runner/work/DqAqW/DqAqW/src/ui/main_screen.rs:1815:
+             } else {
+                 slots.scale
+             };
+-            widgets::truncated(
+-                painter,
+-                room,
+-                Align2::LEFT_CENTER,
+-                name,
+-                font,
+-                ink,
+-                5,
+-            );
++            widgets::truncated(painter, room, Align2::LEFT_CENTER, name, font, ink, 5);
+         }
+ 
+         // Centre group: REC, REWIND, play, tempo, CONTROL.
+
+# cargo clippy --workspace --all-targets -- -D warnings
+    Updating crates.io index
+    Checking os-dsp v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-dsp)
+    Checking os-model v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-model)
+    Checking rusty_mp3 v1.0.0 (/home/runner/work/DqAqW/DqAqW/vendor/rusty_mp3)
+    Checking os-engine v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-engine)
+   Compiling winit v0.30.13 (/home/runner/work/DqAqW/DqAqW/vendor/winit)
+    Checking honeydew-audio v0.1.0 (/home/runner/work/DqAqW/DqAqW/crates/audio)
+   Compiling nih_plug_derive v0.1.0 (/home/runner/work/DqAqW/DqAqW/vendor/nih-plug/nih_plug_derive)
+   Compiling os-host v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-host)
+    Checking os-theme v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-theme)
+    Checking nih_plug v0.0.0 (/home/runner/work/DqAqW/DqAqW/vendor/nih-plug)
+    Checking os-ui v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-ui)
+    Checking os-hostlink v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-hostlink)
+    Checking os-plugkit v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-plugkit)
+    Checking accesskit_winit v0.29.2
+    Checking egui-winit v0.33.3
+    Checking glutin-winit v0.5.0
+    Checking os-paths v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-paths)
+   Compiling honeydew v0.4.6 (/home/runner/work/DqAqW/DqAqW)
+    Checking lemon-sampler v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-sampler)
+    Checking eframe v0.33.3
+    Checking os-clap v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-clap)
+    Checking os-vst3 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-vst3)
+    Checking lemon-3x-osc v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-3x-osc)
+    Checking lemon-parametric-eq-2 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-parametric-eq-2)
+    Checking os-vst2 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-vst2)
+error[E0599]: no method named `open_generate` found for struct `ui::views::piano_roll::State` in the current scope
+    --> src/app.rs:2253:43
+     |
+2253 |                     self.slots.piano_roll.open_generate(ui.ctx());
+     |                                           ^^^^^^^^^^^^^ method not found in `ui::views::piano_roll::State`
+     |
+    ::: src/ui/views/piano_roll.rs:16:1
+     |
+  16 | pub struct State {
+     | ---------------- method `open_generate` not found for this struct
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `honeydew` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `honeydew` (lib test) due to 1 previous error
+
+# cargo test --workspace
+   Compiling os-dsp v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-dsp)
+   Compiling os-model v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-model)
+   Compiling os-engine v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-engine)
+   Compiling rusty_mp3 v1.0.0 (/home/runner/work/DqAqW/DqAqW/vendor/rusty_mp3)
+   Compiling honeydew-audio v0.1.0 (/home/runner/work/DqAqW/DqAqW/crates/audio)
+   Compiling os-theme v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-theme)
+   Compiling nih_plug v0.0.0 (/home/runner/work/DqAqW/DqAqW/vendor/nih-plug)
+   Compiling os-ui v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-ui)
+   Compiling winit v0.30.13 (/home/runner/work/DqAqW/DqAqW/vendor/winit)
+   Compiling os-host v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-host)
+   Compiling os-plugkit v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-plugkit)
+   Compiling os-hostlink v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-hostlink)
+   Compiling honeydew v0.4.6 (/home/runner/work/DqAqW/DqAqW)
+   Compiling os-paths v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-paths)
+   Compiling lemon-sampler v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-sampler)
+   Compiling accesskit_winit v0.29.2
+   Compiling egui-winit v0.33.3
+   Compiling glutin-winit v0.5.0
+   Compiling eframe v0.33.3
+   Compiling os-clap v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-clap)
+   Compiling os-vst3 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-vst3)
+   Compiling lemon-3x-osc v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-3x-osc)
+   Compiling lemon-parametric-eq-2 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-parametric-eq-2)
+   Compiling os-vst2 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-vst2)
+error[E0599]: no method named `open_generate` found for struct `views::piano_roll::State` in the current scope
+    --> src/app.rs:2253:43
+     |
+2253 |                     self.slots.piano_roll.open_generate(ui.ctx());
+     |                                           ^^^^^^^^^^^^^ method not found in `views::piano_roll::State`
+     |
+    ::: src/ui/views/piano_roll.rs:16:1
+     |
+  16 | pub struct State {
+     | ---------------- method `open_generate` not found for this struct
+
+error[E0599]: no method named `open_generate` found for struct `ui::views::piano_roll::State` in the current scope
+    --> src/app.rs:2253:43
+     |
+2253 |                     self.slots.piano_roll.open_generate(ui.ctx());
+     |                                           ^^^^^^^^^^^^^ method not found in `ui::views::piano_roll::State`
+     |
+    ::: src/ui/views/piano_roll.rs:16:1
+     |
+  16 | pub struct State {
+     | ---------------- method `open_generate` not found for this struct
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `honeydew` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `honeydew` (lib test) due to 1 previous error
