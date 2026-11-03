@@ -108,6 +108,40 @@ impl ProjectFiles {
         }
     }
 
+    /// Keeps an Android plugin editor's picked sample in the app's normal sample folder, so the path saved in plugin
+    /// state remains valid after the document picker's cache copy is removed.
+    #[cfg(target_os = "android")]
+    pub(crate) fn keep_plugin_sample(path: &Path) -> io::Result<PathBuf> {
+        let dir = crate::ui::main_menu::user_dir()
+            .ok_or(io::ErrorKind::NotFound)?
+            .join(SAMPLES_FOLDER);
+        std::fs::create_dir_all(&dir)?;
+        Self::keep_plugin_sample_in(path, &dir)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn keep_plugin_sample_in(path: &Path, dir: &Path) -> io::Result<PathBuf> {
+        let ext = path.extension().ok_or(io::ErrorKind::InvalidInput)?.to_string_lossy();
+        if ext.is_empty() {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        let bytes = std::fs::read(path)?;
+        let base = super::stem(path);
+        for n in 1u32.. {
+            let name = if n == 1 { base.clone() } else { format!("{base} ({n})") };
+            let target = dir.join(format!("{name}.{ext}"));
+            if target.exists() {
+                continue;
+            }
+            match super::write_atomic(&target, &bytes) {
+                Ok(()) => return Ok(target),
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(err) => return Err(err),
+            }
+        }
+        unreachable!("an unbounded range has a free sample name")
+    }
+
     /// An audio file dropped on the window (the web hands its bytes, the desktop its path), kept in the user's
     /// [`SAMPLES_FOLDER`] as `Import` keeps a picked one ([`Self::keep_audio`]), so that songs refer to the copy. Returns
     /// where it is kept; a file that does not read shows [`IMPORT_FAILED`] and gives `None`.
@@ -356,6 +390,25 @@ mod tests {
             b"kick"
         );
         let _ = std::fs::remove_dir_all(&user);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn plugin_samples_are_copied_to_my_samples_without_overwriting() {
+        let root = std::env::temp_dir().join(format!("honeydew-plugin-sample-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let source = root.join("Loop.wav");
+        let dir = root.join(SAMPLES_FOLDER);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&source, b"first").unwrap();
+        let one = ProjectFiles::keep_plugin_sample_in(&source, &dir).unwrap();
+        std::fs::write(&source, b"second").unwrap();
+        let two = ProjectFiles::keep_plugin_sample_in(&source, &dir).unwrap();
+        assert_eq!(one.file_name().unwrap().to_string_lossy(), "Loop.wav");
+        assert_eq!(two.file_name().unwrap().to_string_lossy(), "Loop (2).wav");
+        assert_eq!(std::fs::read(one).unwrap(), b"first");
+        assert_eq!(std::fs::read(two).unwrap(), b"second");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

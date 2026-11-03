@@ -8,7 +8,10 @@ What differs from upstream, all in `src/platform_impl/android/mod.rs` and marked
 `(vendored addition)`: winit 0.30's Android backend sends every pointer as a touch and drops a mouse's wheel, hover and
 buttons (its `TODO mouse events`). With a mouse it now sends `MouseWheel`, `CursorMoved`, `CursorLeft` and the right,
 middle, back and forward buttons as `MouseInput`, as the desktop does; the main button stays a touch, while it is down
-(issue #15: scrolling, zooming and context menus with a mouse on Android). Other platforms build upstream's code.
+(issue #15: scrolling, zooming and context menus with a mouse on Android). Its Android config-change path also reports
+real scale-factor changes only, and reports a nonzero surface size on resume, surface creation and rotation. It skips
+transient zero-size notifications while Android tears down a surface, which can otherwise strand the renderer at a zero
+viewport; it no longer emits a spurious `ScaleFactorChanged` for every rotation. Other platforms build upstream's code.
 
 To update: copy the new release's `src`, `build.rs` and `LICENSE` here, its `Cargo.toml` without the example and test
 targets and the dev-dependencies, and carry the marked change over.

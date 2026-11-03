@@ -1105,7 +1105,7 @@ mod gui {
                         self.link.to_host(Cmd::Automate, i as isize);
                     }
                     Act::OpenDialog => {
-                        if let Some(path) = file_dialog(&self.win) {
+                        if let Some(path) = file_dialog(&mut self.win) {
                             self.logic.load(&path);
                         }
                         self.dirty = true;
@@ -1154,8 +1154,14 @@ mod gui {
         path.flatten().map(|p| p.to_string_lossy().into_owned())
     }
 
-    /// Honeydew (vendored addition): the browser and Android have no file dialog.
-    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
+    /// The browser has no file dialog. On Android, ask the host to use the system document picker.
+    #[cfg(target_os = "android")]
+    fn file_dialog(win: &mut Window) -> Option<String> {
+        win.open_file("Sample for the custom shape", &["wav", "flac", "ogg", "wv", "aif", "aiff", "mp3"])
+    }
+
+    /// Honeydew (vendored addition): the browser has no file dialog.
+    #[cfg(target_arch = "wasm32")]
     fn file_dialog(_: &Window) -> Option<String> {
         None
     }

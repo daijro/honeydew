@@ -2741,7 +2741,7 @@ mod gui {
                         }
                     }
                     Act::OpenDialog => {
-                        if let Some(path) = file_dialog(&self.win, false) {
+                        if let Some(path) = file_dialog(&mut self.win, false) {
                             self.load(&path);
                         }
                         self.dirty = true;
@@ -2763,7 +2763,7 @@ mod gui {
                     }
                     Act::SaveAs => {
                         let s = self.shared.whole();
-                        if let (Some(s), Some(path)) = (s, file_dialog(&self.win, true)) {
+                        if let (Some(s), Some(path)) = (s, file_dialog(&mut self.win, true)) {
                             let path = if path.to_ascii_lowercase().ends_with(".wav") { path } else { format!("{path}.wav") };
                             self.logic.hint = match std::fs::write(&path, super::wav_bytes(&s, true)) {
                                 Ok(()) => format!("Saved {path}"),
@@ -2872,8 +2872,18 @@ mod gui {
         path.flatten().map(|p| p.to_string_lossy().into_owned())
     }
 
-    /// Honeydew (vendored addition): the browser and Android have no file dialog.
-    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
+    /// The browser has no file dialog. On Android, ask the host to use the system document picker.
+    #[cfg(target_os = "android")]
+    fn file_dialog(win: &mut Window, save: bool) -> Option<String> {
+        if save {
+            None
+        } else {
+            win.open_file("Open sample", &["wav", "flac", "ogg", "wv", "aif", "aiff", "mp3"])
+        }
+    }
+
+    /// Honeydew (vendored addition): the browser has no file dialog.
+    #[cfg(target_arch = "wasm32")]
     fn file_dialog(_: &Window, _: bool) -> Option<String> {
         None
     }

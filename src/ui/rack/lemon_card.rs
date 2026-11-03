@@ -3,8 +3,9 @@
 //! the same on every platform.
 //!
 //! - The pointer over it is the editor's, in the editor's pixels: presses (a second one within 0.4 s and 4 px is a
-//!   double click), moves, releases (also outside, while a press it took is held) and the wheel. While the editor holds
-//!   the cursor (a knob drag) the moves go as movement and the cursor hides.
+//!   double click), moves, releases (also outside, while a press it took is held) and the wheel. On touchscreens, a
+//!   stationary long press on a knob opens the same context menu as a right click; moving past the drag slop keeps it a
+//!   normal knob drag. While the editor holds the cursor (a knob drag) the moves go as movement and the cursor hides.
 //! - The editor's menus show over the card in Lemon's own look (`os_ui::kit::menu`), with their submenus; its "Type in
 //!   value" box is a text field there.
 //! - Its edits reach the song as a plugin editor's do (`plugins::idle`): the song's params, undo, REC.
@@ -26,6 +27,14 @@ use crate::plugins::builtin::Builtin;
 /// Two presses closer than this (seconds and points) are a double click.
 const DOUBLE_S: f64 = 0.4;
 const DOUBLE_PT: f32 = 4.0;
+/// The drag slop for deciding whether a touchscreen press is a hold or a knob drag (egui's drag threshold).
+const TOUCH_DRAG_SLOP_PT: f32 = 6.0;
+
+fn touch_context_due(started: f64, now: f64, origin: Pos2, current: Pos2, locked: bool) -> bool {
+    locked
+        && crate::ui::gesture::is_long(now - started)
+        && origin.distance(current) <= TOUCH_DRAG_SLOP_PT
+}
 /// The editor's polling period while it shows and is busy (its own timer on the desktop), and while it rests: busy is
 /// within `BUSY_S` of a painted frame, or with the pointer on it. A parameter change wakes it at once.
 // ponytail: a resting editor polls at 4 Hz (its overlays expire a little late); a wake from the editor itself would let
@@ -37,6 +46,12 @@ const BUSY_S: f64 = 0.5;
 const WHEEL_POINTS: f32 = 50.0;
 /// The type-in box's width in the editor's pixels at scale 1, as Lemon's.
 const TYPE_IN_W: f32 = 140.0;
+
+#[cfg(target_os = "android")]
+enum AndroidPickStage {
+    System(std::sync::mpsc::Receiver<crate::android::Picked>),
+    Copying(std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>),
+}
 
 /// A Lemon card's own state: its editor's texture and the pointer's.
 #[derive(Default)]
@@ -50,6 +65,13 @@ pub(super) struct LemonCard {
     size: (u32, u32),
     /// The button of the press the editor took: its moves and release are the editor's wherever they are.
     pressed: Option<Button>,
+    /// The finger id for a touch press (egui does not always synthesize pointer-button events on Android).
+    finger: Option<u64>,
+    /// A still touch-down can turn into the plugin's context click after the app's long-press threshold.
+    touch_start: Option<(f64, Pos2)>,
+    /// An Android document-picker request and its result channel while a Lemon editor asks for a file.
+    #[cfg(target_os = "android")]
+    file_picker: Option<(Modal, AndroidPickStage)>,
     /// The pointer's last position, and whether it was over the editor.
     last: Pos2,
     over: bool,
@@ -110,8 +132,15 @@ pub(super) fn show(
     // Editor pixels per point.
     let k = card.size.0 as f32 / rect.width();
     let modal = embed::modal(editor);
+    if modal.is_some() {
+        // The popup owns subsequent pointer/touch events. Drop the plugin-control press here so its button/finger
+        // state cannot remain stuck after the modal closes (for example after a long-press context menu).
+        card.pressed = None;
+        card.finger = None;
+        card.touch_start = None;
+    }
     if modal.is_none() && card.size.0 > 0 {
-        forward(ui, card, rect, k, response.hovered());
+        forward(ui, card, id, rect, k, response.hovered());
     }
     embed::pump(editor);
     let mut fresh = None;
@@ -148,6 +177,15 @@ pub(super) fn show(
         Some(Modal::TypeIn { x, y, text, scale }) => {
             type_in(&ctx, id, card, rect, k, (x, y), text, scale)
         }
+        Some(request @ Modal::OpenFile { .. }) => {
+            #[cfg(target_os = "android")]
+            open_android_file(&ctx, card, editor, request);
+            #[cfg(not(target_os = "android"))]
+            {
+                let _ = request;
+                embed::answer(editor, None);
+            }
+        }
         None => (card.menu, card.typed) = (None, None),
     }
     let now = ctx.input(|i| i.time);
@@ -155,6 +193,57 @@ pub(super) fn show(
         now - card.painted < BUSY_S || over(card) || card.menu.is_some() || card.typed.is_some();
     ctx.request_repaint_after(if busy { TICK } else { REST });
     true
+}
+
+/// The Android's system picker runs asynchronously; keep its copy in My Samples before returning the path to a plugin,
+/// since Lemon Sampler and 3x Osc store the path in their state.
+#[cfg(target_os = "android")]
+fn open_android_file(ctx: &egui::Context, card: &mut LemonCard, editor: embed::Parent, request: Modal) {
+    if !card.file_picker.as_ref().is_some_and(|(modal, _)| modal == &request) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        card.file_picker = Some((request.clone(), AndroidPickStage::System(rx)));
+        let repaint = ctx.clone();
+        crate::android::pick_document(crate::project_files::MAX_FILE_BYTES, move |picked| {
+            let _ = tx.send(picked);
+            repaint.request_repaint();
+        });
+    }
+
+    let Some((modal, stage)) = card.file_picker.take() else { return };
+    match stage {
+        AndroidPickStage::System(rx) => match rx.try_recv() {
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                card.file_picker = Some((modal, AndroidPickStage::System(rx)));
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) | Ok(None) | Ok(Some(Err(_))) => {
+                embed::answer(editor, None);
+            }
+            Ok(Some(Ok(temp))) => {
+                let (tx, rx) = std::sync::mpsc::channel();
+                card.file_picker = Some((modal, AndroidPickStage::Copying(rx)));
+                let repaint = ctx.clone();
+                std::thread::spawn(move || {
+                    let result = crate::project_files::ProjectFiles::keep_plugin_sample(&temp)
+                        .map_err(|err| err.to_string());
+                    let _ = std::fs::remove_file(&temp);
+                    let _ = tx.send(result);
+                    repaint.request_repaint();
+                });
+            }
+        },
+        AndroidPickStage::Copying(rx) => match rx.try_recv() {
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                card.file_picker = Some((modal, AndroidPickStage::Copying(rx)));
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) | Ok(Err(_)) => {
+                embed::answer(editor, None);
+            }
+            Ok(Ok(path)) => embed::answer(
+                editor,
+                Some(Answer::File(path.to_string_lossy().into_owned())),
+            ),
+        },
+    }
 }
 
 /// Whether the pointer was over a Lemon editor this frame: the rack's wheel is then the editor's.
@@ -185,13 +274,72 @@ fn mods(m: Modifiers) -> (bool, bool, bool) {
 
 /// This frame's pointer input to the editor shown in `rect` (`k` editor pixels per point); `hovered`: the pointer is
 /// on it, with nothing over it.
-fn forward(ui: &Ui, card: &mut LemonCard, rect: Rect, k: f32, hovered: bool) {
+fn forward(ui: &Ui, card: &mut LemonCard, widget_id: Id, rect: Rect, k: f32, hovered: bool) {
     let editor = card.editor;
     let px = |p: Pos2| ((p.x - rect.left()) * k, (p.y - rect.top()) * k);
     let (events, now, held) = ui.input(|i| (i.events.clone(), i.time, i.modifiers));
+    let has_touch = events.iter().any(|e| matches!(e, Event::Touch { .. }));
+    let touch_downs = crate::ui::fingers(ui, widget_id);
     let send = |e: Input, m: Modifiers| embed::input(editor, e, mods(m));
     for event in events {
         match event {
+            Event::Touch { id, phase: egui::TouchPhase::Start, pos, .. }
+                if has_touch
+                    && card.pressed.is_none()
+                    && rect.contains(pos)
+                    && touch_downs.iter().any(|finger| matches!(
+                        finger,
+                        crate::ui::Finger::Down(f, _) if *f == id.0
+                    )) =>
+            {
+                let dbl = (card.click)
+                    .is_some_and(|(t, at)| now - t < DOUBLE_S && at.distance(pos) < DOUBLE_PT);
+                card.click = (!dbl).then_some((now, pos));
+                let (x, y) = px(pos);
+                send(Input::Down { x, y, btn: Button::Left, dbl }, held);
+                card.pressed = Some(Button::Left);
+                card.finger = Some(id.0);
+                card.touch_start = Some((now, pos));
+                card.last = pos;
+                card.over = true;
+            }
+            Event::Touch { id, phase: egui::TouchPhase::Move, pos, .. }
+                if has_touch && card.finger == Some(id.0) && card.pressed.is_some() =>
+            {
+                if embed::locked(editor) {
+                    if let Some((_, origin)) = card.touch_start {
+                        // Ignore touch jitter while the hold is undecided; once the finger leaves the calm zone, start
+                        // the knob drag from its original position so none of the real movement is lost.
+                        if pos.distance(origin) > TOUCH_DRAG_SLOP_PT {
+                            card.touch_start = None;
+                            let d = (pos - origin) * k;
+                            send(Input::Delta { dx: d.x, dy: d.y }, held);
+                        }
+                    } else {
+                        let d = (pos - card.last) * k;
+                        send(Input::Delta { dx: d.x, dy: d.y }, held);
+                    }
+                } else {
+                    if card.touch_start.is_some_and(|(_, origin)| pos.distance(origin) > TOUCH_DRAG_SLOP_PT) {
+                        card.touch_start = None;
+                    }
+                    let (x, y) = px(pos);
+                    send(Input::Move { x, y }, held);
+                }
+                card.last = pos;
+            }
+            Event::Touch { id, phase, .. }
+                if has_touch
+                    && card.finger == Some(id.0)
+                    && matches!(phase, egui::TouchPhase::End | egui::TouchPhase::Cancel) =>
+            {
+                if let Some(btn) = card.pressed.take() {
+                    send(Input::Up { btn }, held);
+                }
+                card.finger = None;
+                card.touch_start = None;
+            }
+            _ if has_touch => {}
             Event::PointerMoved(p) => {
                 if card.pressed.is_some() && embed::locked(editor) {
                     let d = (p - card.last) * k;
@@ -217,6 +365,7 @@ fn forward(ui: &Ui, card: &mut LemonCard, rect: Rect, k: f32, hovered: bool) {
                 card.click = (!dbl).then_some((now, pos));
                 let (x, y) = px(pos);
                 send(Input::Down { x, y, btn, dbl }, modifiers);
+                card.finger = None;
                 (card.pressed, card.last, card.over) = (Some(btn), pos, true);
             }
             Event::PointerButton {
@@ -240,11 +389,32 @@ fn forward(ui: &Ui, card: &mut LemonCard, rect: Rect, k: f32, hovered: bool) {
                 let (x, y) = px(card.last);
                 send(Input::Wheel { x, y, notches }, modifiers);
             }
+            Event::PointerGone if card.finger.is_some() => {
+                if let Some(btn) = card.pressed.take() {
+                    send(Input::Up { btn }, held);
+                }
+                card.finger = None;
+                card.touch_start = None;
+            }
             Event::PointerGone if card.pressed.is_none() && std::mem::take(&mut card.over) => {
                 send(Input::Leave, held);
             }
             _ => {}
         }
+    }
+    // On touchscreens there is no secondary button. A stationary long press on a cursor-locked plugin knob acts as a
+    // context click, opening the plugin's normal parameter menu (including Reset). Keep ordinary short taps and drags
+    // as left-button input.
+    if let Some((started, at)) = card.touch_start
+        && card.finger.is_some()
+        && card.pressed == Some(Button::Left)
+        && touch_context_due(started, now, at, card.last, embed::locked(editor))
+    {
+        send(Input::Up { btn: Button::Left }, held);
+        let (x, y) = px(at);
+        send(Input::Down { x, y, btn: Button::Right, dbl: false }, held);
+        card.pressed = Some(Button::Right);
+        card.touch_start = None;
     }
 }
 
@@ -331,10 +501,20 @@ fn show_menu(
         let min = min.min(screen.max - size).max(screen.min);
         Rect::from_min_size(min, size)
     };
-    let pointer = ctx.input(|i| i.pointer.latest_pos());
+    let (events, pointer, pointer_delta) = ctx.input(|i| (i.events.clone(), i.pointer.latest_pos(), i.pointer.delta()));
+    let has_touch = events.iter().any(|e| matches!(e, Event::Touch { .. }));
+    let touch_pos = events.iter().rev().find_map(|e| match e {
+        Event::Touch { pos, .. } => Some(*pos),
+        _ => None,
+    });
+    let pointer = if has_touch { touch_pos.or(pointer) } else { pointer };
+    let touch_start = events.iter().any(|e| matches!(e, Event::Touch { phase: egui::TouchPhase::Start, .. }));
+    let touch_move = events.iter().any(|e| matches!(e, Event::Touch { phase: egui::TouchPhase::Move, .. }));
+    let touch_end = events.iter().any(|e| matches!(e, Event::Touch { phase: egui::TouchPhase::End, .. }));
+    let touch_cancel = events.iter().any(|e| matches!(e, Event::Touch { phase: egui::TouchPhase::Cancel, .. }));
     let editor_px = |p: Pos2, l: &Level| l.at + (p - place(l).min) * k;
     if let Some(p) = pointer {
-        m.moved |= ctx.input(|i| i.pointer.delta() != Vec2::ZERO);
+        m.moved |= if has_touch { touch_start || touch_move } else { pointer_delta != Vec2::ZERO };
         // The deepest level under the pointer takes the hover; a row with a submenu opens it.
         if let Some(depth) = (0..m.levels.len())
             .rev()
@@ -358,12 +538,17 @@ fn show_menu(
         }
     }
     // Picks and cancels.
-    let (pressed, released, escape) = ctx.input_mut(|i| {
+    let (pointer_pressed, pointer_released, escape) = ctx.input_mut(|i| {
         let escape = i.consume_key(Modifiers::NONE, Key::Escape);
         (i.pointer.any_pressed(), i.pointer.any_released(), escape)
     });
+    let (pressed, released) = if has_touch {
+        (touch_start, touch_end)
+    } else {
+        (pointer_pressed, pointer_released)
+    };
     let inside = pointer.is_some_and(|p| m.levels.iter().any(|l| place(l).contains(p)));
-    if escape || (pressed && !inside) {
+    if escape || touch_cancel || (pressed && !inside) {
         card.menu = None;
         return embed::answer(editor, None);
     }
@@ -478,7 +663,11 @@ fn type_in(
         .response
         .rect;
     let outside = ctx.input(|i| {
-        i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !shown.contains(p))
+        (i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !shown.contains(p)))
+            || i.events.iter().any(|event| matches!(
+                event,
+                Event::Touch { phase: egui::TouchPhase::Start, pos, .. } if !shown.contains(*pos)
+            ))
     });
     if done {
         let text = card.typed.take().unwrap_or_default();
@@ -486,5 +675,19 @@ fn type_in(
     } else if cancel || outside {
         card.typed = None;
         embed::answer(editor, None);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stationary_long_touch_on_a_locked_knob_becomes_its_context_click() {
+        let at = pos2(10.0, 20.0);
+        assert!(!touch_context_due(0.0, 0.3, at, at, true), "exactly 300 ms is still a tap");
+        assert!(touch_context_due(0.0, 0.301, at, at + vec2(6.0, 0.0), true));
+        assert!(!touch_context_due(0.0, 0.301, at, at + vec2(6.1, 0.0), true), "movement turns it into a drag");
+        assert!(!touch_context_due(0.0, 0.301, at, at, false), "only a knob drag has the plugin's cursor lock");
     }
 }
