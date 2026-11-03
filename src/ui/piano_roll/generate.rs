@@ -16,7 +16,10 @@ use eframe::egui::{
     pos2, scroll_area::ScrollBarVisibility, vec2,
 };
 
-use super::compose::{self, Lead, PRESETS, Settings};
+use super::compose::{
+    self, ARPS, CHORD_MODES, DURATIONS, KEYS, Lead, OCTAVES, PRESETS, RESTS, SCALE_CHOICES, Settings,
+};
+use crate::song::scales::SCALES;
 use crate::metrics::{FontSize, Metrics};
 use crate::song::Event;
 use crate::ui::widgets;
@@ -32,8 +35,8 @@ const HEADER: f32 = 0.75;
 const CHOICE: f32 = 1.25;
 const LABEL_W: f32 = 4.5;
 const BUTTON: [f32; 2] = [4.5, 1.0];
-/// The scrolling rows' height: one header and four choice rows.
-const BODY: f32 = HEADER + 4.0 * CHOICE;
+/// The scrolling rows' height: three headers and eleven choice rows.
+const BODY: f32 = 3.0 * HEADER + 11.0 * CHOICE;
 /// The whole panel, when the screen has room.
 const HEIGHT: f32 = 2.0 * MARGIN + TITLE + BODY + MARGIN + CHOICE;
 /// Seeds run 0..SEEDS.
@@ -43,13 +46,23 @@ const DIM: f32 = 0.5;
 /// The `Bars` choices.
 const BARS: [u8; 4] = [1, 2, 4, 8];
 
-/// The panel's state: the preset, the bars, who leads and the seed.
+/// The panel's state: the preset, the bars, who leads and the seed, then the key, scale and register (0 following the
+/// project) and the rhythm: the note length, the rests, the arpeggios and which chords to write.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Panel {
     preset: usize,
     bars: usize,
     lead: usize,
     seed: u64,
+    /// 0: the project's; else 1 + a [`KEYS`] index.
+    key: usize,
+    /// 0: the project's; else 1 + a [`SCALE_CHOICES`] index.
+    scale: usize,
+    octave: usize,
+    duration: usize,
+    rests: usize,
+    arp: usize,
+    chords: usize,
 }
 
 /// How the panel closed.
@@ -67,6 +80,13 @@ impl Panel {
             bars: 1,
             lead: 0,
             seed: seed % SEEDS,
+            key: 0,
+            scale: 0,
+            octave: 2,
+            duration: 2,
+            rests: 1,
+            arp: 0,
+            chords: 0,
         }
     }
 
@@ -81,6 +101,13 @@ impl Panel {
             } else {
                 Lead::Melody
             },
+            key: (self.key > 0).then(|| (self.key - 1) as u8),
+            scale: (self.scale > 0).then(|| SCALE_CHOICES[self.scale - 1]),
+            octave: OCTAVES[self.octave.min(OCTAVES.len() - 1)].1,
+            duration: DURATIONS[self.duration.min(DURATIONS.len() - 1)].1,
+            rest: RESTS[self.rests.min(RESTS.len() - 1)].1,
+            arp: ARPS[self.arp.min(ARPS.len() - 1)].1,
+            chords: self.chords.min(CHORD_MODES.len() - 1) as u8,
         }
     }
 
@@ -241,5 +268,57 @@ fn rows(ui: &mut Ui, cx: &UiCtx, id: Id, column: Rect, ink: Color32, panel: &mut
     if choice(ui, r, "new seed", "New seed") {
         let now = ui.input(|i| i.time).to_bits();
         panel.seed = RandomState::new().hash_one(now) % SEEDS;
+    }
+    label(
+        ui,
+        next(HEADER),
+        "Key, scale & register",
+        ink.gamma_multiply(DIM),
+    );
+    let r = next(CHOICE);
+    label(ui, r, "Key", text);
+    let key = if panel.key == 0 {
+        "Project"
+    } else {
+        KEYS[panel.key - 1]
+    };
+    if choice(ui, r, "key", key) {
+        panel.key = (panel.key + 1) % (KEYS.len() + 1);
+    }
+    let r = next(CHOICE);
+    label(ui, r, "Scale", text);
+    let scale = if panel.scale == 0 {
+        "Project"
+    } else {
+        SCALES[SCALE_CHOICES[panel.scale - 1]]
+    };
+    if choice(ui, r, "scale", scale) {
+        panel.scale = (panel.scale + 1) % (SCALE_CHOICES.len() + 1);
+    }
+    let r = next(CHOICE);
+    label(ui, r, "Octave", text);
+    if choice(ui, r, "octave", OCTAVES[panel.octave].0) {
+        panel.octave = (panel.octave + 1) % OCTAVES.len();
+    }
+    label(ui, next(HEADER), "Notes & rhythm", ink.gamma_multiply(DIM));
+    let r = next(CHOICE);
+    label(ui, r, "Length", text);
+    if choice(ui, r, "length", DURATIONS[panel.duration].0) {
+        panel.duration = (panel.duration + 1) % DURATIONS.len();
+    }
+    let r = next(CHOICE);
+    label(ui, r, "Rests", text);
+    if choice(ui, r, "rests", RESTS[panel.rests].0) {
+        panel.rests = (panel.rests + 1) % RESTS.len();
+    }
+    let r = next(CHOICE);
+    label(ui, r, "Arpeggios", text);
+    if choice(ui, r, "arps", ARPS[panel.arp].0) {
+        panel.arp = (panel.arp + 1) % ARPS.len();
+    }
+    let r = next(CHOICE);
+    label(ui, r, "Chords", text);
+    if choice(ui, r, "chords", CHORD_MODES[panel.chords]) {
+        panel.chords = (panel.chords + 1) % CHORD_MODES.len();
     }
 }

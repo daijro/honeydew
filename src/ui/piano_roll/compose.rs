@@ -10,6 +10,7 @@
 //!
 //! Everything is drawn from `seed`, so the same settings and seed give the same notes (as the Humanize panel's).
 
+use crate::song::scales::SCALE_MASKS;
 use crate::song::{Event, PPQ};
 
 /// A progression preset: the scale degrees it walks (one a bar) and whether its triads take a 7th.
@@ -30,6 +31,51 @@ pub(crate) const PRESETS: [(&str, Preset); 5] = [
     ("Lo-fi", Preset::Lofi),
     ("Epic", Preset::Epic),
     ("Random", Preset::Random),
+];
+
+/// The keys the panel offers, `KEYS`' index being the pitch class.
+pub(crate) const KEYS: [&str; 12] = [
+    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+];
+
+/// The scales the panel offers: ids into [`crate::song::scales::SCALES`], the common ones (a picker tapped
+/// through wants few).
+pub(crate) const SCALE_CHOICES: [usize; 16] = [
+    0, 12, 17, 18, 6, 7, 19, 9, 11, 3, 14, 22, 32, 27, 21, 20,
+];
+
+/// The dominant note durations, in beats: where the melody's notes fall.
+pub(crate) const DURATIONS: [(&str, f64); 6] = [
+    ("1/16", 0.25),
+    ("1/8", 0.5),
+    ("1/4", 1.0),
+    ("1/2", 2.0),
+    ("1 bar", 4.0),
+    ("2 bars", 8.0),
+];
+
+/// The register, with its offset from the default one: the chords around the tonic at 48, the melody at 60.
+pub(crate) const OCTAVES: [(&str, i32); 5] = [
+    ("Very low", -2),
+    ("Low", -1),
+    ("Medium", 0),
+    ("High", 1),
+    ("Very high", 2),
+];
+
+/// The chance each weak position is left out, as a rest.
+pub(crate) const RESTS: [(&str, f64); 3] = [("None", 0.0), ("Default", 0.2), ("More", 0.4)];
+
+/// How many steps an arpeggio spreads a chord's tones over, a step a note duration long.
+pub(crate) const ARPS: [(&str, f64); 3] = [("None", 0.0), ("Standard", 1.0), ("Fast", 2.0)];
+
+/// Which chords to write, and whether the melody joins them.
+pub(crate) const CHORD_MODES: [&str; 5] = [
+    "Chords + melody",
+    "Rolled + melody",
+    "Chords only",
+    "Rolled only",
+    "No chords",
 ];
 
 impl Preset {
@@ -66,6 +112,20 @@ pub(crate) struct Settings {
     pub bars: u8,
     pub seed: u64,
     pub lead: Lead,
+    /// The panel's key, a pitch class; `None` follows the project's.
+    pub key: Option<u8>,
+    /// The panel's scale, an id into [`crate::song::scales::SCALES`]; `None` follows the project's.
+    pub scale: Option<usize>,
+    /// Octaves from the default register ([`OCTAVES`]).
+    pub octave: i32,
+    /// The dominant note duration, in beats ([`DURATIONS`]).
+    pub duration: f64,
+    /// The chance a weak position is a rest ([`RESTS`]).
+    pub rest: f64,
+    /// The steps an arpeggio spreads a chord over; 0 for none ([`ARPS`]).
+    pub arp: f64,
+    /// Which chords to write ([`CHORD_MODES`]).
+    pub chords: u8,
 }
 
 /// The semitone offsets of the scale's degrees from the root, ascending: 0…11, seven of them in a diatonic scale and
@@ -189,19 +249,44 @@ fn fitted(notes: &[Event], offs: &[i32], bars: usize, bpb: f64) -> Vec<u8> {
     out
 }
 
-/// One triad (a 7th with `seventh`) per bar, each `bpb` beats from the bar's start, from the tonic at `base`.
-fn triads(degrees: &[u8], seventh: bool, base: i32, offs: &[i32], bpb: f64) -> Vec<Event> {
+/// One triad (a 7th with `seventh`) per bar, `bpb` beats from the bar's start, from the tonic at `base`: block, with
+/// each tone a hair after the one before it (`Rolled`), or spread over the bar as an arpeggio (`s.arp`).
+fn chords_for(
+    degrees: &[u8],
+    seventh: bool,
+    base: i32,
+    offs: &[i32],
+    bpb: f64,
+    s: &Settings,
+) -> Vec<Event> {
+    if s.chords == 4 {
+        return Vec::new();
+    }
+    let rolled = s.chords == 1 || s.chords == 3;
+    let steps: &[i32] = if seventh { &[0, 2, 4, 6] } else { &[0, 2, 4] };
     let mut out = Vec::new();
     for (bar, &d) in degrees.iter().enumerate() {
-        let beat = bar as f64 * bpb;
-        let steps: Vec<i32> = if seventh {
-            vec![0, 2, 4, 6]
-        } else {
-            vec![0, 2, 4]
-        };
-        for step in steps {
+        let at = bar as f64 * bpb;
+        for (i, &step) in steps.iter().enumerate() {
             let key = key_of(base, offs, i32::from(d) + step, 0);
-            out.push(note(beat, bpb, key, 168));
+            let before = i as f64;
+            if s.arp > 0.0 {
+                // An arpeggio: a tone a step of its own, each as long as the room it has left.
+                let spacing = (s.duration / s.arp).max(0.0625);
+                let offset = before * spacing;
+                if offset >= bpb {
+                    break;
+                }
+                out.push(note(at + offset, spacing.min(bpb - offset), key, 168));
+            } else {
+                // Block, or rolled: a roll staggers each tone a little after the one before it.
+                let offset = if rolled {
+                    before * (s.duration / 8.0).max(0.0625)
+                } else {
+                    0.0
+                };
+                out.push(note(at + offset, (bpb - offset).max(0.25), key, 168));
+            }
         }
     }
     out
@@ -209,14 +294,19 @@ fn triads(degrees: &[u8], seventh: bool, base: i32, offs: &[i32], bpb: f64) -> V
 
 /// A melody over `degrees`, `bpb` beats a bar, from the tonic at `base`: the bar's chord tone on the beat, a scale step
 /// from the note before it on the off-beats, a breath at the end of some bars.
-fn melody(degrees: &[u8], base: i32, offs: &[i32], bpb: f64, rng: &mut Rng) -> Vec<Event> {
+fn melody(degrees: &[u8], base: i32, offs: &[i32], bpb: f64, s: &Settings, rng: &mut Rng) -> Vec<Event> {
     let mut out = Vec::new();
-    let beats = bpb.round().max(1.0) as usize;
+    // The dominant note duration, one note a step: the beats fitting a bar are the steps it has.
+    let step = s.duration.clamp(1.0 / 16.0, bpb.max(1.0 / 16.0));
+    let beats = (bpb / step).round().max(1.0) as usize;
     let mut previous = 1;
     for (bar, &d) in degrees.iter().enumerate() {
         for k in 0..beats {
-            let beat = bar as f64 * bpb + k as f64;
-            // The last off-beat of every other bar is a breath.
+            let beat = bar as f64 * bpb + k as f64 * step;
+            // A rest where the rests say, and the last of every other bar is a breath.
+            if k > 0 && rng.unit() < s.rest {
+                continue;
+            }
             if k + 1 == beats && bar % 2 == 1 && rng.unit() < 0.6 {
                 continue;
             }
@@ -236,7 +326,7 @@ fn melody(degrees: &[u8], base: i32, offs: &[i32], bpb: f64, rng: &mut Rng) -> V
             } else {
                 key
             };
-            let len = (0.5 + 0.25 * rng.unit()).min(bpb);
+            let len = (step * (0.5 + 0.25 * rng.unit())).min(bpb);
             let velocity = 190 + rng.below(41) as u8;
             out.push(note(beat, len, key, velocity));
         }
@@ -260,6 +350,9 @@ pub(crate) fn generate(
     clip: &[Event],
     bpb: f64,
 ) -> Vec<Event> {
+    // The panel's key and scale win over the project's where it sets them.
+    let root = s.key.unwrap_or(root);
+    let mask = s.scale.map_or(mask, |i| SCALE_MASKS[i.min(SCALE_MASKS.len() - 1)]);
     let offs = offsets(mask);
     if offs.is_empty() || bpb <= 0.0 {
         return clip.to_vec();
@@ -272,7 +365,12 @@ pub(crate) fn generate(
         .copied()
         .collect();
     // The chords sit around the tonic at 48 + the root, the melody an octave above them.
-    let (chord_base, melody_base) = (48 + i32::from(root % 12), 60 + i32::from(root % 12));
+    // The octave's shift, so the register is the panel's.
+    let lift = 12 * s.octave;
+    let (chord_base, melody_base) = (
+        48 + i32::from(root % 12) + lift,
+        60 + i32::from(root % 12) + lift,
+    );
     let played = s.preset.degrees();
     // A Random progression is drawn before the melody, so its seed decides both; it takes 7ths now and then.
     let (degrees, seventh) = if s.preset == Preset::Random {
@@ -281,15 +379,19 @@ pub(crate) fn generate(
         let degrees = (0..bars).map(|bar| played[bar % played.len()]).collect();
         (degrees, s.preset.seventh())
     };
-    let (degrees, melody) = if s.lead == Lead::Melody && !existing.is_empty() {
+    // `Chords only` (or `Rolled only`) writes the chords alone, and `No chords` the melody alone.
+    let chords_alone = s.chords == 2 || s.chords == 3;
+    let (degrees, melody) = if chords_alone {
+        (degrees, Vec::new())
+    } else if s.lead == Lead::Melody && !existing.is_empty() {
         (fitted(&existing, &offs, bars, bpb), existing)
     } else {
         (
             degrees.clone(),
-            melody(&degrees, melody_base, &offs, bpb, &mut rng),
+            melody(&degrees, melody_base, &offs, bpb, s, &mut rng),
         )
     };
-    let mut out = triads(&degrees, seventh, chord_base, &offs, bpb);
+    let mut out = chords_for(&degrees, seventh, chord_base, &offs, bpb, s);
     out.extend(melody);
     sorted(out)
 }
@@ -307,6 +409,13 @@ mod tests {
             bars,
             seed,
             lead,
+            key: None,
+            scale: None,
+            octave: 0,
+            duration: 1.0,
+            rest: 0.15,
+            arp: 0.0,
+            chords: 0,
         }
     }
 
@@ -337,7 +446,14 @@ mod tests {
     fn a_progression_is_the_presets_degrees_one_triad_a_bar_from_the_tonic() {
         let offs = offsets(C_MAJOR);
         // I–V–vi–IV: C major, G major, A minor, F major, a bar each.
-        let chords = triads(&[1, 5, 6, 4], false, 48, &offs, 4.0);
+        let chords = chords_for(
+            &[1, 5, 6, 4],
+            false,
+            48,
+            &offs,
+            4.0,
+            &settings(Preset::Pop, 4, 0, Lead::Chords),
+        );
         assert_eq!(
             keys(&chords),
             [48, 52, 55, 55, 59, 62, 57, 60, 64, 53, 57, 60]
@@ -355,7 +471,18 @@ mod tests {
             [0, 0, 0, 512, 512, 512, 1024, 1024, 1024, 1536, 1536, 1536]
         );
         // The Lo-fi preset's triads take a 7th.
-        assert_eq!(triads(&[1], true, 48, &offs, 4.0).len(), 4);
+        assert_eq!(
+            chords_for(
+                &[1],
+                true,
+                48,
+                &offs,
+                4.0,
+                &settings(Preset::Pop, 1, 0, Lead::Chords)
+            )
+            .len(),
+            4
+        );
     }
 
     #[test]
