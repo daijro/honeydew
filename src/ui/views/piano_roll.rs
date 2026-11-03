@@ -8,6 +8,7 @@ use honeydew_audio::device::AudioCommand;
 
 use super::{AppCtx, Nav, View};
 use crate::ui::clips::LiveTake;
+use crate::song::Song;
 use crate::ui::piano_roll::{PianoRoll, PianoRollAction, RollOptions};
 
 /// What the piano roll keeps between frames: each channel's roll, by channel index (the app re-keys them when
@@ -21,6 +22,18 @@ pub struct State {
     /// The takes being recorded (the app sets them each frame): a roll on one's clip shows it live
     /// ([`RollOptions::recording`]).
     pub(crate) takes: Vec<LiveTake>,
+}
+
+impl State {
+    /// Opens the `Generate` panel of `channel`'s roll from the transport bar's GENERATE button, where the note menu's
+    /// entry needs a note selected first. A channel with no roll yet gets one; a second tap writes another progression.
+    pub(crate) fn open_generate(&mut self, ctx: &egui::Context, song: &Song, channel: usize) {
+        let roll = self
+            .rolls
+            .entry(channel)
+            .or_insert_with(|| PianoRoll::for_channel(song, channel));
+        roll.open_generate(ctx);
+    }
 }
 
 /// Draws the piano roll of `channel`'s note lane in `app.regions.editor`; back to the playlist once the channel is gone

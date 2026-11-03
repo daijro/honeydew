@@ -2250,7 +2250,9 @@ impl HoneydewApp {
                 }
                 // The transport bar's GENERATE (the piano roll only) opens the roll's `Generate` panel.
                 if std::mem::take(&mut actions.generate) {
-                    self.slots.piano_roll.open_generate(ui.ctx());
+                    if let View::PianoRoll(channel) = self.nav.view {
+                        self.slots.piano_roll.open_generate(ui.ctx(), app.song, channel);
+                    }
                 }
                 navs.extend(actions.nav.take());
                 actions.playhead = app.playhead;
