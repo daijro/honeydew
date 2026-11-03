@@ -1791,7 +1791,8 @@ pub const REFERENCE: Reference = Reference {
                 row(TILT, Widget::Spinner, "Tilt", [0.0, 0.0, 9.33, 3.24])
                     .items("White · Pink · Honeydew · Brown · Custom")
                     .w(Size::Flex(2.0)),
-                row(TILT_STEP, Widget::Knob, "dB/oct", [9.33, 0.0, 4.67, 3.24]).value("+4.5 dB/oct"),
+                row(TILT_STEP, Widget::Knob, "dB/oct", [9.33, 0.0, 4.67, 3.24])
+                    .value("+4.5 dB/oct"),
                 row(14, Widget::Spinner, "Channel", [0.0, 3.24, 3.5, 3.5])
                     .items("Left · Right · L + R"),
                 row(15, Widget::Spinner, "Reactivity", [3.5, 3.24, 3.5, 3.5])
