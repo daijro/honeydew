@@ -4,8 +4,8 @@
     Updating crates.io index
     Checking os-dsp v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-dsp)
     Checking os-model v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-model)
-    Checking rusty_mp3 v1.0.0 (/home/runner/work/DqAqW/DqAqW/vendor/rusty_mp3)
     Checking os-engine v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-engine)
+    Checking rusty_mp3 v1.0.0 (/home/runner/work/DqAqW/DqAqW/vendor/rusty_mp3)
    Compiling winit v0.30.13 (/home/runner/work/DqAqW/DqAqW/vendor/winit)
     Checking honeydew-audio v0.1.0 (/home/runner/work/DqAqW/DqAqW/crates/audio)
    Compiling nih_plug_derive v0.1.0 (/home/runner/work/DqAqW/DqAqW/vendor/nih-plug/nih_plug_derive)
@@ -13,21 +13,21 @@
     Checking os-theme v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-theme)
     Checking nih_plug v0.0.0 (/home/runner/work/DqAqW/DqAqW/vendor/nih-plug)
     Checking os-ui v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-ui)
-    Checking os-plugkit v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-plugkit)
     Checking os-hostlink v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-hostlink)
-    Checking os-paths v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-paths)
-   Compiling honeydew v0.4.6 (/home/runner/work/DqAqW/DqAqW)
-    Checking os-clap v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-clap)
-    Checking lemon-sampler v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-sampler)
+    Checking os-plugkit v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-plugkit)
     Checking accesskit_winit v0.29.2
     Checking egui-winit v0.33.3
     Checking glutin-winit v0.5.0
+   Compiling honeydew v0.4.6 (/home/runner/work/DqAqW/DqAqW)
+    Checking os-paths v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-paths)
+    Checking lemon-sampler v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-sampler)
     Checking eframe v0.33.3
+    Checking os-clap v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-clap)
     Checking os-vst3 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-vst3)
     Checking lemon-3x-osc v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-3x-osc)
     Checking lemon-parametric-eq-2 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-parametric-eq-2)
     Checking os-vst2 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-vst2)
-    Finished `dev` profile [unoptimized] target(s) in 1m 12s
+    Finished `dev` profile [unoptimized] target(s) in 1m 14s
 
 # cargo test --workspace
    Compiling os-dsp v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-dsp)
@@ -47,14 +47,14 @@
    Compiling glutin-winit v0.5.0
    Compiling os-paths v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-paths)
    Compiling honeydew v0.4.6 (/home/runner/work/DqAqW/DqAqW)
-   Compiling lemon-sampler v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-sampler)
    Compiling os-clap v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-clap)
+   Compiling lemon-sampler v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-sampler)
    Compiling eframe v0.33.3
    Compiling os-vst3 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-vst3)
    Compiling lemon-3x-osc v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-3x-osc)
    Compiling lemon-parametric-eq-2 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/lemon-parametric-eq-2)
    Compiling os-vst2 v0.0.1 (/home/runner/work/DqAqW/DqAqW/vendor/lemon-studio/os-vst2)
-    Finished `test` profile [unoptimized] target(s) in 2m 13s
+    Finished `test` profile [unoptimized] target(s) in 2m 16s
      Running unittests src/lib.rs (target/debug/deps/honeydew-cd264f5c711da7e2)
 
 running 4427 tests
@@ -67,8 +67,8 @@ test app::audio_edit::tests::a_sample_reached_through_a_link_into_the_original_c
 test app::auto_record::tests::a_change_adds_a_point_only_when_it_differs_from_the_last_one ... ok
 test app::auto_record::tests::a_change_at_the_last_points_tick_replaces_it_and_a_step_pair_keeps_its_step ... ok
 test app::auto_record::tests::a_discrete_change_steps_from_its_old_value_at_the_same_tick ... ok
-test app::auto_record::tests::a_discrete_recording_quantizes_and_steps_and_a_lane_added_before_another_keeps_its_clip ... ok
 test app::auto_record::tests::a_discrete_change_within_one_step_adds_no_step_point ... ok
+test app::auto_record::tests::a_discrete_recording_quantizes_and_steps_and_a_lane_added_before_another_keeps_its_clip ... ok
 test app::auto_record::tests::a_recorded_value_tops_out_at_the_automation_maximum ... ok
 test app::auto_record::tests::a_record_snap_truncates_to_its_steps_and_the_param_stays_continuous ... ok
 test app::auto_record::tests::discrete_params_snap_to_their_steps_and_continuous_ones_stay ... ok
@@ -76,13 +76,13 @@ test app::auto_record::tests::a_recording_makes_its_lane_and_clip_once_and_recor
 test app::auto_record::tests::moved_reports_the_old_value_of_the_same_control_only ... ok
 test app::auto_record::tests::the_clip_being_recorded_is_reused_while_the_playhead_is_not_before_it ... ok
 test app::auto_record::tests::the_clip_starts_on_four_beats_whatever_the_bar ... ok
+test app::auto_record::tests::the_first_lane_of_the_target_free_at_the_start_takes_a_new_clip ... ok
 test app::auto_record::tests::the_current_lanes_empty_clip_at_the_four_beat_start_is_replaced ... ok
 test app::auto_record::tests::the_loop_grows_to_hold_the_points_in_bars_doubled ... ok
-test app::auto_record::tests::the_first_lane_of_the_target_free_at_the_start_takes_a_new_clip ... ok
 test app::auto_record::tests::the_registry_names_each_targets_kind ... ok
 test app::control::tests::arrangement_is_one_valid_song_with_builtin_drum_and_synth ... ok
-test app::control::tests::built_in_parameters_are_read_and_applied_atomically ... ok
 test app::control::tests::control_action_updates_open_song_through_edit_path ... ok
+test app::control::tests::built_in_parameters_are_read_and_applied_atomically ... ok
 test app::control::tests::external_plugin_module_cannot_be_edited_as_built_in ... ok
 test app::control::tests::existing_plugin_sound_is_kept_when_adding_and_replacing_notes ... ok
 test app::control::tests::invalid_note_does_not_change_input_song ... ok
@@ -97,10 +97,10 @@ test app::note_record::tests::a_take_clip_goes_with_its_track_unless_the_take_ma
 test app::note_record::tests::an_automation_first_channel_records_notes_and_an_audio_first_one_nothing ... ok
 test app::note_record::tests::disarming_and_a_channel_change_close_held_notes_now ... ok
 test app::note_record::tests::held_keys_follow_their_channel_and_a_new_song_forgets_them ... ok
-test app::note_record::tests::nothing_records_unless_armed_rolling_past_the_count_in_on_a_channel ... ok
 test app::note_record::tests::stop_and_seeks_leave_held_notes_at_length_0_and_a_seek_still_armed_starts_a_new_take ... ok
-test app::note_record::tests::the_clip_grows_to_each_press_and_release_exactly_and_keeps_that_length ... ok
+test app::note_record::tests::nothing_records_unless_armed_rolling_past_the_count_in_on_a_channel ... ok
 test app::note_record::tests::the_takes_clip_goes_on_the_current_notes_lane_replacing_an_empty_clip_there ... ok
+test app::note_record::tests::the_clip_grows_to_each_press_and_release_exactly_and_keeps_that_length ... ok
 test app::note_record::tests::without_take_leaves_only_the_takes_clip_out ... ok
 test app::tests::a_click_tries_to_start_the_audio_once ... ok
 test app::tests::a_bad_name_keeps_the_dialog_under_the_message_and_escape_closes_it ... ok
@@ -121,8 +121,8 @@ test app::tests::a_fresh_press_after_the_focus_returns_plays_at_once ... ok
 test app::tests::a_failed_stream_warns_once_drops_commands_and_reopens_on_the_next_click ... ok
 test app::tests::a_header_tap_selects_the_track_and_the_edge_tab_opens_the_selected_ones_rack ... ok
 test app::tests::a_long_flash_of_words_wraps_between_words ... ok
-test app::tests::a_message_returns_its_answer_to_the_app ... ok
 test app::tests::a_live_key_on_a_selected_notes_lane_takes_the_notes_lane_path ... ok
+test app::tests::a_message_returns_its_answer_to_the_app ... ok
 test app::tests::a_narrow_window_takes_two_transport_rows_and_keeps_every_button ... ok
 test app::tests::a_new_channel_is_selected_and_a_header_click_selects_the_master_too ... ok
 test app::tests::a_new_song_starts_a_new_history_and_undo_keeps_the_file_name ... ok
@@ -158,9 +158,9 @@ test app::tests::audio_edit::a_pitched_clip_edits_and_saves_its_source ... ok
 test app::tests::audio_edit::an_op_follows_its_clip_when_an_undo_under_the_question_moves_it ... ok
 test app::tests::audio_edit::an_op_that_leaves_no_frames_shows_the_error_and_changes_nothing ... ok
 test app::tests::audio_edit::an_op_that_leaves_the_audio_as_it_was_is_its_envelope_part_at_once ... ok
-test app::tests::audio_edit::a_sync_clip_edits_and_saves_its_source_and_the_engine_gets_the_new_render ... ok
 test app::tests::audio_edit::an_op_whose_clip_changed_sample_under_the_question_is_dropped ... ok
 test app::tests::audio_edit::cancel_or_closing_the_name_dialog_drops_the_whole_op ... ok
+test app::tests::audio_edit::a_sync_clip_edits_and_saves_its_source_and_the_engine_gets_the_new_render ... ok
 test app::tests::audio_edit::preview_on_and_off_decodes_no_clip_sample_again ... ok
 test app::tests::audio_edit::normalize_over_a_quiet_range_writes_a_float_wav_whose_peak_is_1 ... ok
 test app::tests::audio_edit::save_new_writes_the_named_file_repoints_the_slot_and_is_one_undo_step ... ok
@@ -171,8 +171,8 @@ test app::tests::automation::a_dw_samplers_kept_attack_init_follows_a_fine_tune_
 test app::tests::automation::a_fine_tune_drag_of_the_tremolos_max_below_min_lowers_min_with_no_undo_step ... ok
 test app::tests::automation::a_drum_pad_strips_dialog_names_the_pad_and_resets_to_the_spec_value ... ok
 test app::tests::automation::a_held_edit_is_dropped_when_an_undo_under_the_question_changed_its_channel ... ok
-test app::tests::automation::a_held_rack_preset_load_shows_the_modules_it_skipped_once_answered ... ok
 test app::tests::automation::a_knobs_add_automation_track_opens_the_automation_editor_on_a_new_lane_named_param_colon_module ... ok
+test app::tests::automation::a_held_rack_preset_load_shows_the_modules_it_skipped_once_answered ... ok
 test app::tests::automation::a_mixer_faders_dialog_tunes_the_channel_level_on_its_strip ... ok
 test app::tests::automation::a_lane_added_before_others_moves_what_is_kept_on_them ... ok
 test app::tests::automation::a_rack_knob_on_a_stepped_param_does_not_offer_it ... ok
@@ -186,12 +186,12 @@ test app::tests::automation::add_automation_track_adds_an_empty_lane_at_the_song
 test app::tests::automation::add_automation_track_on_the_master_strip_selects_the_master ... ok
 test app::tests::automation::add_midi_cc_track_picks_a_cc_by_name_for_a_lane_on_the_selected_channel_in_one_undo_step ... ok
 test app::tests::automation::clear_rack_asks_once_for_every_automated_module_and_delete_removes_their_lanes ... ok
-test app::tests::automation::delete_keeps_the_playlist_selection_on_a_later_lane ... ok
 test app::tests::automation::delete_follows_the_automation_editor_off_a_removed_lane ... ok
+test app::tests::automation::delete_keeps_the_playlist_selection_on_a_later_lane ... ok
 test app::tests::automation::deleting_a_module_without_lanes_asks_nothing ... ok
 test app::tests::automation::delete_leaves_a_lane_that_already_targeted_nothing ... ok
-test app::tests::automation::deleting_an_automated_module_asks_and_delete_removes_its_lanes_in_one_undo_step ... ok
 test app::tests::automation::escape_closes_the_dialog ... ok
+test app::tests::automation::deleting_an_automated_module_asks_and_delete_removes_its_lanes_in_one_undo_step ... ok
 test app::tests::automation::escape_on_the_question_deletes_the_module_and_keeps_its_lanes_with_no_undo_step ... ok
 test app::tests::automation::fine_tune_control_follows_the_dialogs_support_over_the_three_sources ... ok
 test app::tests::automation::escape_mid_drag_on_a_note_effects_param_still_rebuilds_the_engine ... ok
@@ -206,29 +206,29 @@ test app::tests::automation::the_ctrl_menus_fine_tune_control_opens_the_dialog_o
 test app::tests::automation::the_ctrl_menu_enables_add_automation_track_with_a_recent_control_and_the_link_on_another_param ... ok
 test app::tests::automation_editor::a_tap_adds_a_point_and_a_drag_moves_it_each_in_one_undo_step ... ok
 test app::tests::automation_editor::set_shape_square_on_two_selected_points_is_one_undo_step ... ok
-test app::tests::automation_editor::the_editors_saved_view_follows_its_track ... ok
 test app::tests::automation::the_recent_control_follows_presses_on_rack_mixer_and_drum_strip_controls ... ok
+test app::tests::automation_editor::the_editors_saved_view_follows_its_track ... ok
 test app::tests::bundle_wait::a_song_plays_a_lite_program_once_part_0_is_in_then_upgrades_to_the_full_one ... ok
 test app::tests::chrome::a_bar_drag_resizes_past_1_u_without_a_jump_and_its_release_settles_and_is_kept ... ok
 test app::tests::chrome::a_chord_cell_tapped_within_one_frame_sounds_for_the_tap_gate ... ok
 test app::tests::bundle_wait::a_failing_part_is_tried_after_1_3_and_9_s_then_given_up_and_the_song_says_missing_once ... ok
 test app::tests::chrome::a_chord_held_on_the_editor_stays_stopped_after_the_web_page_hides ... ok
 test app::tests::chrome::a_chord_held_on_the_editor_stops_on_a_focus_loss_and_stays_stopped_until_a_new_press ... ok
+test app::tests::chrome::a_clip_editor_opens_under_the_playlist_and_the_ribbon_moves_it ... ok
 test app::tests::chrome::a_chord_held_on_the_editor_stops_when_the_editor_closes_under_it ... ok
-test app::tests::chrome::a_drag_on_the_strips_velocity_knob_turns_it_and_never_resizes_the_panel ... ok
 test app::tests::chrome::a_held_chord_ends_on_its_channel_after_a_channel_change_and_when_the_close_x_hides_the_panel ... ok
+test app::tests::chrome::a_drag_on_the_strips_velocity_knob_turns_it_and_never_resizes_the_panel ... ok
 test app::tests::chrome::a_held_chord_stops_on_a_focus_loss_on_the_web_pages_hide_and_on_a_song_load ... ok
 test app::tests::chrome::a_mod_wheel_move_records_while_armed_and_rolling ... ok
-test app::tests::chrome::a_clip_editor_opens_under_the_playlist_and_the_ribbon_moves_it ... ok
 test app::tests::chrome::a_pitch_bend_springs_back_when_the_wheels_go_away_mid_drag ... ok
 test app::tests::chrome::a_sideways_drag_on_the_bar_scrolls_the_keys_flings_and_a_key_stops_it_and_the_wheel_zooms ... ok
 test app::tests::chrome::a_tap_on_the_bars_gap_collapses_the_panel_and_another_opens_it_to_the_recent_size ... ok
-test app::tests::chrome::a_tap_on_the_cpu_or_ram_readout_opens_project_scrolled_to_its_performance_graph ... ok
 test app::tests::chrome::a_playlist_dragged_under_its_ruler_is_none_and_takes_no_pinch_or_focus ... ok
-test app::tests::chrome::a_wobbly_upward_drag_at_45_or_58_degrees_resizes_and_never_scrolls_the_keys ... ok
+test app::tests::chrome::a_tap_on_the_cpu_or_ram_readout_opens_project_scrolled_to_its_performance_graph ... ok
 test app::tests::chrome::a_throw_up_fills_the_screen_and_one_down_leaves_the_bar_alone_without_touching_recent ... ok
-test app::tests::chrome::an_armed_strum_slide_records_two_separate_notes ... ok
 test app::tests::chrome::an_armed_chord_held_a_beat_and_a_half_records_one_take_of_its_three_notes ... ok
+test app::tests::chrome::an_armed_strum_slide_records_two_separate_notes ... ok
+test app::tests::chrome::a_wobbly_upward_drag_at_45_or_58_degrees_resizes_and_never_scrolls_the_keys ... ok
 test app::tests::chrome::an_editor_whose_clip_goes_collapses_to_the_playlist ... ok
 test app::tests::chrome::chordset_save_marks_the_set_saved_at_once_and_writes_custom_chord_set_into_my_chord_sets ... ok
 test app::tests::chrome::every_clip_editor_has_the_shared_snap_button_and_a_tap_turns_snap_off ... ok
@@ -236,35 +236,35 @@ test app::tests::chrome::in_the_editors_and_the_mixer_the_close_x_hides_the_pane
 test app::tests::chrome::at_beat_0_the_play_box_takes_the_taps_over_the_snap_button_in_the_playlist_and_every_editor ... ok
 test app::tests::chrome::one_close_ribbon_closes_every_bottom_editor_and_keeps_its_clip ... ok
 test app::tests::chrome::opening_the_chord_editor_moves_the_focus_to_its_first_button_and_closing_it_gives_the_focus_back ... ok
-test app::tests::chrome::over_the_snap_button_the_playlists_playhead_knob_takes_the_tap_while_it_shows ... ok
 test app::tests::chrome::the_add_channel_plus_sits_under_the_last_row_on_the_screen_centre_and_the_rack_covers_it ... ok
+test app::tests::chrome::the_chord_editor_opens_from_chordset_shrinks_the_strips_and_its_edits_play_and_mark_the_set_edited ... ok
+test app::tests::chrome::over_the_snap_button_the_playlists_playhead_knob_takes_the_tap_while_it_shows ... ok
 test app::tests::chrome::the_chord_editor_stays_open_through_escape_a_kind_change_a_hidden_panel_and_a_song_load ... ok
 test app::tests::chrome::the_chord_kinds_keep_one_row_and_a_5_u_panel_shows_none ... ok
-test app::tests::chrome::the_chord_kinds_play_the_set_on_the_live_input_and_the_strips_hold_latches ... ok
 test app::tests::chrome::the_close_x_on_the_playlist_hides_the_panel_and_the_corner_button_brings_it_back ... ok
 test app::tests::chrome::the_corner_button_lies_over_the_open_rack_and_takes_its_taps ... ok
-test app::tests::chrome::the_chord_editor_opens_from_chordset_shrinks_the_strips_and_its_edits_play_and_mark_the_set_edited ... ok
+test app::tests::chrome::the_chord_kinds_play_the_set_on_the_live_input_and_the_strips_hold_latches ... ok
 test app::tests::chrome::the_floating_logo_and_the_menu_header_logo_are_text ... ok
 test app::tests::chrome::the_drum_editor_runs_with_the_panel_hidden ... ok
 test app::tests::chrome::the_keyboard_kind_is_the_persisted_keyboardkind_setting ... ok
 test app::tests::chrome::the_logo_lies_over_the_open_rack_and_takes_its_tap_under_the_main_menu ... ok
-test app::tests::chrome::the_ribbon_drags_the_editor_up_to_the_area_top_and_back_down ... ok
 test app::tests::chrome::the_piano_roll_and_the_drum_editor_open_fully_expanded_and_a_switch_keeps_the_split ... ok
+test app::tests::chrome::the_ribbon_drags_the_editor_up_to_the_area_top_and_back_down ... ok
+test app::tests::chrome::the_rolls_new_note_stops_when_the_x_or_the_mixer_button_takes_the_roll_away ... ok
 test app::tests::chrome::the_scale_kind_with_key_lock_lays_out_only_the_scales_tones_where_classic_keeps_the_piano ... ok
-test app::tests::chrome::the_settings_strips_reset_closes_the_chord_editor_and_resets_the_chord_controls ... ok
 test app::tests::chrome::the_shortcut_reopens_a_collapsed_panel_at_every_density_and_ui_scale ... ok
 test app::tests::chrome::the_shortcuts_toggle_snaps_like_a_release ... ok
-test app::tests::chrome::the_rolls_new_note_stops_when_the_x_or_the_mixer_button_takes_the_roll_away ... ok
 test app::tests::chrome::the_wheels_show_over_5_u_narrow_the_piano_and_drive_pitch_and_cc_1_as_the_recent_control ... ok
-test app::tests::chrome::two_rows_raise_the_panel_to_its_room_a_half_step_a_frame_and_the_second_row_plays_an_octave_up ... ok
+test app::tests::chrome::the_settings_strips_reset_closes_the_chord_editor_and_resets_the_chord_controls ... ok
 test app::tests::chrome::with_the_chord_editor_open_the_bar_works_and_the_strips_take_their_taps_over_it ... ok
-test app::tests::command_o_opens_and_command_s_saves_without_asking ... ok
+test app::tests::chrome::two_rows_raise_the_panel_to_its_room_a_half_step_a_frame_and_the_second_row_plays_an_octave_up ... ok
 test app::tests::closing_the_window_asks_exit_and_closes_on_yes ... ok
+test app::tests::command_s_on_an_untitled_song_shows_the_dialog_and_save_writes_the_file ... ok
 test app::tests::commands_the_full_queue_hands_back_go_first_and_in_order ... ok
 test app::tests::counted_time_is_no_unsaved_change_and_an_undo_or_redo_is ... ok
-test app::tests::command_s_on_an_untitled_song_shows_the_dialog_and_save_writes_the_file ... ok
 test app::tests::ctrl_z_mid_drag_waits_under_the_modal_tempo_editor ... ok
 test app::tests::ctrl_z_undoes_and_ctrl_shift_z_or_ctrl_alt_z_redoes_but_not_in_a_text_field ... ok
+test app::tests::command_o_opens_and_command_s_saves_without_asking ... ok
 test app::tests::demo_songs::a_first_run_that_fails_tries_again_at_the_next_start ... ok
 test app::tests::demo_songs::a_lost_flag_does_not_replace_the_users_copy_but_restore_does ... ok
 test app::tests::demo_songs::songs_lists_demo_songs_after_a_restore_from_settings ... ok
@@ -277,9 +277,9 @@ test app::tests::drumsets::each_factory_kit_reads_back_as_a_kit_on_our_built_in_
 test app::tests::demo_songs::songs_lists_demo_songs_and_the_demo_opens_locked_with_no_notices_and_plays ... ok
 test app::tests::drumsets::every_pad_of_every_kit_reads_the_documented_level_and_pan ... ok
 test app::tests::drumsets::foundry_kit_pad_13_sounds_through_the_rig ... ok
-test app::tests::drumsets::every_pad_of_every_factory_kit_sounds ... ok
-test app::tests::drumsets::the_drumsets_root_lists_my_files_default_and_the_four_kits ... ok
 test app::tests::drumsets::picking_dust_kit_gives_the_channel_its_8_pads_in_one_undo_step ... ok
+test app::tests::drumsets::the_drumsets_root_lists_my_files_default_and_the_four_kits ... ok
+test app::tests::drumsets::every_pad_of_every_factory_kit_sounds ... ok
 test app::tests::drumsets::the_main_pads_hit_together_leave_half_a_db_of_headroom ... ok
 test app::tests::each_finger_sounds_its_own_key_at_its_own_depth_on_the_selected_channel ... ok
 test app::tests::each_guarded_action_asks_save_discard_or_cancel_and_cancel_abandons_it ... ok
@@ -287,18 +287,18 @@ test app::tests::each_overlays_x_closes_that_overlay_only ... ok
 test app::tests::editing_time_counts_the_gaps_between_actions_under_ten_minutes ... ok
 test app::tests::editor_follow::a_header_tap_on_a_track_with_a_current_clip_retargets_the_editor_and_preview ... ok
 test app::tests::editor_follow::a_loaded_songs_stored_current_clip_is_its_tracks_current_clip ... ok
-test app::tests::editor_follow::a_tap_in_the_editor_gives_it_the_keys_over_the_playlists_selection ... ok
 test app::tests::drumsets::the_kits_sit_within_a_few_db_of_each_other ... ok
+test app::tests::editor_follow::a_tap_in_the_editor_gives_it_the_keys_over_the_playlists_selection ... ok
 test app::tests::editor_follow::a_tracks_current_clip_is_no_undo_step_nor_unsaved_change_and_undo_keeps_it ... ok
-test app::tests::editor_follow::an_editor_opened_from_the_focused_playlist_takes_the_editing_keys ... ok
 test app::tests::editor_follow::after_the_x_preview_follows_the_current_tracks_current_clip_and_goes_off_without_one ... ok
+test app::tests::editor_follow::an_editor_opened_from_the_focused_playlist_takes_the_editing_keys ... ok
 test app::tests::editor_follow::deleting_the_open_drum_clip_collapses_instead_of_jumping_to_the_next ... ok
 test app::tests::editor_follow::edit_on_a_clip_less_lane_does_nothing ... ok
 test app::tests::editor_follow::edit_on_a_clip_that_is_not_current_makes_it_current ... ok
 test app::tests::editor_follow::preview_goes_off_when_the_editor_collapses_for_want_of_a_current_clip_but_not_on_the_x ... ok
 test app::tests::editor_follow::select_clip_on_another_tracks_clip_opens_its_editor_on_its_channel ... ok
-test app::tests::editor_follow::the_bottom_editor_follows_the_playlists_current_clip ... ok
 test app::tests::editor_follow::the_close_x_moves_the_focus_from_the_editor_to_the_playlist ... ok
+test app::tests::editor_follow::the_bottom_editor_follows_the_playlists_current_clip ... ok
 test app::tests::editor_follow::the_drum_editor_follows_its_clip_by_id ... ok
 test app::tests::editor_follow::the_editing_keys_go_to_the_focused_container_and_at_the_root_to_the_open_editor ... ok
 test app::tests::editor_follow::the_keyboards_select_clip_retargets_the_editor ... ok
@@ -397,13 +397,13 @@ test app::tests::editor_wiring::the_keyboard_panel_is_control_fill_under_a_1_px_
 test app::tests::editor_wiring::the_keys_outside_the_span_of_the_channels_instrument_ranges_are_disabled ... ok
 test app::tests::editor_wiring::the_keys_take_no_touch_with_the_master_alone_and_key_lock_snaps_a_major_songs_c_sharp ... ok
 test app::tests::editor_wiring::the_owners_kit_addresses_each_slot_by_its_id_not_its_pad ... ok
-test app::tests::editor_wiring::the_pads_replace_the_keyboard_and_play_the_drums_channel ... ok
 test app::tests::editor_wiring::an_undo_to_a_ratio_the_cache_let_go_streams_it_in_with_no_whole_render_on_the_ui_thread ... ok
+test app::tests::editor_wiring::the_pads_replace_the_keyboard_and_play_the_drums_channel ... ok
 test app::tests::editor_wiring::the_playhead_knob_takes_its_own_taps_and_the_ruler_beside_it_keeps_its_gestures ... ok
 test app::tests::editor_wiring::the_piano_roll_edits_the_channels_notes_through_the_funnel_and_its_x_goes_back ... ok
-test app::tests::editor_wiring::the_playlists_view_goes_into_the_song_but_is_no_unsaved_change ... ok
 test app::tests::editor_wiring::the_playlists_playhead_shows_only_over_the_grid_and_fades_in_there ... ok
 test app::tests::editor_wiring::the_rolls_c_labels_follow_the_middle_c_setting ... ok
+test app::tests::editor_wiring::the_playlists_view_goes_into_the_song_but_is_no_unsaved_change ... ok
 test app::tests::editor_wiring::the_rolls_playhead_is_the_transports_and_its_line_shows_stopped_and_playing ... ok
 test app::tests::editor_wiring::the_row_menu_edits_the_pattern_and_the_kit_through_the_funnel ... ok
 test app::tests::editor_wiring::the_step_selections_copy_and_delete_go_through_the_funnel_as_one_undo_step_each ... ok
@@ -528,8 +528,8 @@ test app::tests::midi::a_midi_note_lights_its_key_in_both_rows_until_its_note_of
 test app::tests::midi::a_monitored_channel_plays_along_once_and_each_channel_takes_only_what_its_midi_input_passes ... ok
 test app::tests::midi::a_replaced_song_releases_the_held_keys ... ok
 test app::tests::midi::a_mixer_strips_link_names_the_channel_and_a_drum_pads_its_slot ... ok
-test app::tests::midi::an_armed_midi_note_starts_playback_and_records_on_the_current_channel_at_v_times_0_007874 ... ok
 test app::tests::midi::a_second_cc_linked_to_the_param_adds_a_link_and_unlink_removes_both ... ok
+test app::tests::midi::an_armed_midi_note_starts_playback_and_records_on_the_current_channel_at_v_times_0_007874 ... ok
 test app::tests::midi::an_unplugged_keyboard_releases_its_held_keys_when_the_link_reconnects ... ok
 test app::tests::midi::hiding_the_page_releases_the_held_keys ... ok
 test app::tests::midi::key_lock_snaps_a_midi_note_as_it_sounds_and_records_and_its_off_ends_the_snapped_note ... ok
@@ -612,8 +612,8 @@ test app::tests::peer_live::a_remote_change_keeps_local_work_and_views ... ok
 test app::tests::peer_live::a_remote_change_waits_for_the_gesture_to_end ... ok
 test app::tests::peer_live::another_persons_edit_to_the_clip_keeps_the_note_selection ... ok
 test app::tests::peer_live::only_shared_changes_are_reported_and_undo_goes_to_the_session ... ok
-test app::tests::peer_live::presence_is_in_song_terms_and_shows_the_others_through_this_view ... ok
 test app::tests::new_channel::a_new_drums_channel_added_past_the_first_bar_sounds_where_the_song_plays ... ok
+test app::tests::peer_live::presence_is_in_song_terms_and_shows_the_others_through_this_view ... ok
 test app::tests::performance_monitor::a_tap_on_cpu_or_ram_opens_project_with_the_performance_block_in_view ... ok
 test app::tests::peer_live::user_samples_are_listed_and_arrive_without_a_song_change ... ok
 test app::tests::performance_monitor::the_data_waits_while_a_loading_screen_is_up ... ok
@@ -647,8 +647,8 @@ test app::tests::play_toggles_play_and_stop_and_rev_stops_and_rewinds ... ok
 test app::tests::press_slide_and_release_play_exact_notes_on_the_selected_channel ... ok
 test app::tests::picker_rules::the_modules_picker_stays_open_and_each_later_pick_replaces_the_first_in_its_slot ... ok
 test app::tests::preview::a_clip_offset_by_two_loops_still_loops_its_box ... ok
-test app::tests::preview::a_clips_edit_opens_that_clip_whose_edits_land_in_it_and_preview_follows ... ok
 test app::tests::preview::a_key_held_while_recording_ends_its_recorded_note_when_preview_goes_on ... ok
+test app::tests::preview::a_clips_edit_opens_that_clip_whose_edits_land_in_it_and_preview_follows ... ok
 test app::tests::preview::a_loop_the_engine_never_got_goes_out_once_the_audio_runs_again ... ok
 test app::tests::preview::a_play_loop_inside_the_span_is_previews_loop_and_markers_outside_it_are_the_spans ... ok
 test app::tests::preview::a_shortening_edit_leaves_previews_loop_alone ... ok
@@ -676,14 +676,14 @@ test app::tests::project_tempo_steps_and_title_edits_go_through_the_funnel ... o
 test app::tests::rack_follow::a_clip_tap_on_another_channel_shows_its_rack ... ok
 test app::tests::rack_follow::a_clone_its_undo_and_deletes_take_the_rack_to_the_current_channel_down_to_the_master ... ok
 test app::tests::rack_follow::a_drag_on_a_deleted_channels_rack_moves_nothing_on_the_channel_in_its_place ... ok
-test app::tests::rack_follow::a_header_tap_shows_its_channels_rack_with_no_edit ... ok
 test app::tests::project_shows_the_songs_meta_whose_texts_are_unsaved_changes_its_time_reset_none_and_no_undo_steps ... ok
+test app::tests::rack_follow::a_header_tap_shows_its_channels_rack_with_no_edit ... ok
 test app::tests::rack_follow::a_keyboard_switch_mid_drag_still_rebuilds_a_note_effects_edit ... ok
 test app::tests::rack_follow::a_rack_sliding_in_swaps_its_channel_in_place ... ok
 test app::tests::rack_follow::an_undo_mid_knob_drag_that_takes_the_racks_channel_away_ends_the_drag ... ok
 test app::tests::rack_follow::insert_channel_on_the_current_track_keeps_its_index_and_shows_the_new_channels_rack ... ok
-test app::tests::rack_follow::the_keyboards_select_clip_on_another_channel_shows_its_rack ... ok
 test app::tests::rack_follow::the_fine_tune_and_card_menu_of_a_channel_an_undo_takes_away_go_with_it ... ok
+test app::tests::rack_follow::the_keyboards_select_clip_on_another_channel_shows_its_rack ... ok
 test app::tests::rack_input::a_port_pick_mid_take_with_monitoring_on_hands_the_engine_over_and_the_take_goes_on ... ok
 test app::tests::rack_input::a_calibration_that_hears_no_echo_asks_to_test_again_and_its_progress_message_cancels ... ok
 test app::tests::rack_input::an_audio_record_racks_input_row_shows_a_live_meter_from_pushed_frames ... ok
@@ -711,8 +711,8 @@ test app::tests::rack_wiring::a_note_effect_param_moved_in_the_frame_of_its_rebu
 test app::tests::rack_wiring::a_new_song_clears_the_panel_states_and_seeds_them_from_its_own ... ok
 test app::tests::rack_wiring::a_note_effect_slider_drag_is_sent_at_each_step_rebuilds_the_song_once_the_pointer_is_up_and_saves_no_undo_step ... ok
 test app::tests::rack_wiring::a_panel_setting_saved_and_opened_again_is_in_the_modules_cstm ... ok
-test app::tests::rack_wiring::a_pick_lands_on_its_module_when_a_channel_is_inserted_before_it_applies ... ok
 test app::tests::rack_wiring::a_paste_with_nothing_compatible_flashes_and_changes_nothing ... ok
+test app::tests::rack_wiring::a_pick_lands_on_its_module_when_a_channel_is_inserted_before_it_applies ... ok
 test app::tests::rack_wiring::a_picked_dw_presets_program_samples_decode_on_the_worker_too ... ok
 test app::tests::rack_wiring::a_picked_dwp_loads_off_the_ui_thread_and_sets_only_attack_and_release ... ok
 test app::tests::rack_wiring::a_pitcher_note_press_goes_to_the_audio_as_its_setting ... ok
@@ -721,8 +721,8 @@ test app::tests::rack_wiring::a_playing_automation_moves_its_control_and_the_son
 test app::tests::rack_wiring::a_preset_that_does_not_load_shows_the_load_error_and_changes_nothing ... ok
 test app::tests::rack_wiring::a_rack_preset_for_a_new_channel_past_the_id_limit_adds_nothing_and_says_why ... ok
 test app::tests::rack_wiring::a_rack_preset_loads_its_dw_samplers_program ... ok
-test app::tests::rack_wiring::a_rack_sliding_out_takes_no_wheel ... ok
 test app::tests::rack_wiring::a_racks_value_texts_read_the_song_tempo ... ok
+test app::tests::rack_wiring::a_rack_sliding_out_takes_no_wheel ... ok
 test app::tests::rack_wiring::a_setting_edit_writes_the_cstm_with_no_undo_step ... ok
 test app::tests::rack_wiring::a_rebuild_during_set_range_keeps_the_learning_module_silent ... ok
 test app::tests::rack_wiring::a_slicer_loop_picked_in_the_real_picker_names_its_file_in_its_cstm ... ok
@@ -731,16 +731,16 @@ test app::tests::rack_wiring::a_touched_rack_knob_takes_increment_and_decrement_
 test app::tests::rack_wiring::a_tap_outside_while_a_pick_loads_closes_the_picker_once_the_pick_lands_and_opens_nothing ... ok
 test app::tests::rack_wiring::a_typed_name_that_is_taken_asks_and_replace_files_writes_over_it ... ok
 test app::tests::rack_wiring::a_users_chord_set_loads_by_its_name_and_a_bad_file_shows_the_error_and_changes_nothing ... ok
-test app::tests::rack_wiring::add_module_opens_the_browser_whose_pick_adds_the_module_and_rebuilds_the_song ... ok
 test app::tests::rack_wiring::a_zone_the_worker_found_missing_is_listed_and_not_read_again_at_the_build ... ok
+test app::tests::rack_wiring::add_module_opens_the_browser_whose_pick_adds_the_module_and_rebuilds_the_song ... ok
 test app::tests::rack_wiring::an_instrument_is_added_from_plus_to_a_rack_or_synth_channel_with_its_defaults_and_no_undo_step ... ok
 test app::tests::rack_wiring::an_instrument_preset_renames_a_channel_never_renamed_and_leaves_a_renamed_one ... ok
 test app::tests::rack_wiring::an_undo_after_a_delete_and_a_pick_leaves_the_rack_as_it_is ... ok
 test app::tests::rack_wiring::another_channels_rack_starts_afresh ... ok
 test app::tests::rack_wiring::clear_rack_keeps_the_instrument_rebuilds_the_song_with_no_undo_step ... ok
 test app::tests::rack_wiring::closing_the_picker_the_browser_gave_way_to_goes_back_to_the_rack ... ok
-test app::tests::rack_wiring::copy_rack_then_paste_adds_the_whole_rack_to_another_channel_with_no_undo_step ... ok
 test app::tests::rack_wiring::copy_then_add_module_then_paste_gives_two_identical_modules_with_different_ids ... ok
+test app::tests::rack_wiring::copy_rack_then_paste_adds_the_whole_rack_to_another_channel_with_no_undo_step ... ok
 test app::tests::rack_wiring::default_puts_the_built_in_major_set_back ... ok
 test app::tests::rack_wiring::dragging_the_tremolos_max_below_min_lowers_min_in_the_song_live_with_no_undo_step ... ok
 test app::tests::rack_wiring::default_never_gives_a_channel_another_channels_name ... ok
@@ -840,8 +840,8 @@ test app::tests::search_bar::f8_on_the_open_menu_moves_the_focus_back_into_the_s
 test app::tests::search_bar::f8_opens_songs_with_the_focus_in_its_list_so_ctrl_f_searches_it_and_a_reopening_resets_it ... ok
 test app::tests::search_bar::f8_twice_then_escape_gives_the_focus_back_and_keeps_no_way_back ... ok
 test app::tests::search_bar::reopening_a_picker_resets_its_search ... ok
-test app::tests::search_bar::songs_opened_from_the_logo_gives_the_focus_back_to_it_on_close ... ok
 test app::tests::save_writes_the_song_without_asking_then_runs_the_guarded_action_and_flashes_saved ... ok
+test app::tests::search_bar::songs_opened_from_the_logo_gives_the_focus_back_to_it_on_close ... ok
 test app::tests::settings_changed_mid_drag_are_flushed_once_the_button_is_up ... ok
 test app::tests::song_changed::a_save_mid_gesture_then_an_edit_that_changes_nothing_sets_nothing ... ok
 test app::tests::song_changed::an_edit_undone_is_still_a_change ... ok
@@ -854,13 +854,13 @@ test app::tests::songs_archive::after_unzip_the_extracted_folder_and_its_files_a
 test app::tests::songs_archive::unzip_of_a_file_that_is_no_archive_shows_the_message ... ok
 test app::tests::songs_import_asks_the_file_picker ... ok
 test app::tests::songs_delete_permanently_asks_yes_or_no_and_a_failed_action_shows_its_message ... ok
-test app::tests::songs_save_names_an_untitled_song_and_the_open_list_shows_it ... ok
 test app::tests::songs_new_starts_an_empty_untitled_song ... ok
-test app::tests::songs_save_quick_saves_and_the_library_keeps_the_saved_song ... ok
+test app::tests::songs_save_names_an_untitled_song_and_the_open_list_shows_it ... ok
 test app::tests::soundfont_wiring::a_repick_tries_a_missing_soundfont_again_and_the_next_engine_has_it ... ok
+test app::tests::songs_save_quick_saves_and_the_library_keeps_the_saved_song ... ok
 test app::tests::soundfont_wiring::a_soundfont_cut_off_in_its_samples_shows_the_error_and_the_engine_stays_silent ... ok
-test app::tests::soundfont_wiring::a_soundfont_that_does_not_load_shows_its_error_in_the_panel ... ok
 test app::tests::soundfont_wiring::an_sf2_the_loader_rejects_shows_the_load_error_and_changes_nothing ... ok
+test app::tests::soundfont_wiring::a_soundfont_that_does_not_load_shows_its_error_in_the_panel ... ok
 test app::tests::soundfont_wiring::the_patch_spinner_picks_a_soundfonts_patch_and_prev_and_next_step_each_with_no_undo_step ... ok
 test app::tests::soundfont_wiring::the_preset_button_lists_default_presets_and_soundfonts_and_a_picked_sf2_loads_through_the_soundfont_loader ... ok
 test app::tests::the_app_starts_with_a_song_created_now ... ok
@@ -871,8 +871,8 @@ test app::tests::soundfont_wiring::the_soundfont_picker_follows_its_channel_when
 test app::tests::the_ctrl_menu_lists_its_six_items_disabled_and_a_tap_outside_closes_it ... ok
 test app::tests::the_first_primary_press_starts_audio_and_plays_the_key_it_lands_on ... ok
 test app::tests::the_logo_opens_the_main_menu_whose_tabs_switch_and_whose_close_x_closes_it ... ok
-test app::tests::the_main_menu_takes_the_clicks_on_it_and_a_click_beside_it_only_closes_it ... ok
 test app::tests::the_message_shows_over_the_old_song_blocks_the_shortcuts_and_ok_closes_it ... ok
+test app::tests::the_main_menu_takes_the_clicks_on_it_and_a_click_beside_it_only_closes_it ... ok
 test app::tests::the_meters_setting_shows_or_hides_the_cpu_and_ram_readouts ... ok
 test app::tests::the_mixer_writes_channel_params_and_sends_them_to_the_channel_strip ... ok
 test app::tests::the_press_that_starts_audio_plays_on_the_current_lane ... ok
@@ -940,14 +940,14 @@ test app::tests::track_menu::the_automation_editor_and_its_saved_view_follow_a_m
 test app::tests::track_menu::the_drumset_pickers_default_is_the_built_in_kit_in_one_undo_step ... ok
 test app::tests::track_menu::the_playlists_plus_drums_is_drum_with_one_empty_pad_and_the_drumset_picker ... ok
 test app::tests::track_menu::the_one_channel_import_ignores_a_stray_note_off_on_another_midi_channel ... ok
-test app::tests::track_menu::undoing_a_track_delete_puts_the_drum_editor_back_on_its_track ... ok
 test app::tests::track_menu::undoing_a_track_delete_puts_the_roll_and_preview_back_on_their_track ... ok
+test app::tests::track_menu::undoing_a_track_delete_puts_the_drum_editor_back_on_its_track ... ok
 test app::tests::track_menu::undoing_an_add_track_lets_go_of_what_was_on_the_new_track ... ok
 test app::tests::track_menu::with_split_off_an_import_into_a_channel_gone_under_the_dialog_imports_nothing ... ok
 test app::tests::transport::a_dropped_knob_stays_where_it_was_dropped_until_the_transport_gets_there_or_a_quarter_second ... ok
 test app::tests::transport::a_key_held_across_the_play_that_starts_a_recording_is_not_recorded ... ok
-test app::tests::transport::a_key_held_at_play_goes_dark_and_its_release_sends_only_its_note_off ... ok
 test app::tests::track_menu::with_split_on_an_import_makes_its_channels_though_its_channel_went_under_the_dialog ... ok
+test app::tests::transport::a_key_held_at_play_goes_dark_and_its_release_sends_only_its_note_off ... ok
 test app::tests::transport::a_playhead_drag_seeks_to_the_beat_it_lets_go_on_within_the_song ... ok
 test app::tests::transport::a_playhead_drop_on_a_short_song_clamps_to_its_end ... ok
 test app::tests::transport::a_playhead_drop_on_an_empty_song_seeks_to_0 ... ok
@@ -963,8 +963,8 @@ test app::tests::transport::an_edit_that_shortens_the_song_clips_its_loop_to_the
 test app::tests::transport::a_tap_on_the_playhead_knob_plays ... ok
 test app::tests::transport::an_empty_open_clip_covering_the_takes_start_is_replaced_and_its_editor_shows_the_take ... ok
 test app::tests::transport::an_engine_rebuilt_during_a_take_plays_without_the_takes_clip ... ok
-test app::tests::transport::an_open_automation_editor_stays_open_when_a_note_take_adds_a_notes_lane ... ok
 test app::tests::transport::an_opened_song_keeps_a_loop_past_its_end ... ok
+test app::tests::transport::an_open_automation_editor_stays_open_when_a_note_take_adds_a_notes_lane ... ok
 test app::tests::transport::arming_with_a_typed_press_in_its_frame_sounds_it_and_starts_nothing ... ok
 test app::tests::transport::disarming_with_automation_and_a_held_note_recorded_is_one_undo_step ... ok
 test app::tests::transport::play_starts_at_the_song_position_and_a_second_tap_stops_there_with_recording_off ... ok
@@ -972,8 +972,8 @@ test app::tests::transport::following_the_playlists_line_stands_still_a_quarter_
 test app::tests::transport::playing_outside_a_clipped_loop_seeks_to_its_start_and_a_recording_keeps_its_end ... ok
 test app::tests::transport::playing_the_playlists_line_moves_on_every_frame_between_the_outputs_steps ... ok
 test app::tests::transport::rev_at_the_play_start_point_silences_the_engine ... ok
-test app::tests::transport::space_stopping_a_recording_with_a_typed_press_in_its_frame_stays_stopped ... ok
 test app::tests::transport::rev_stops_and_goes_back_to_the_play_start_point_and_from_there_to_the_song_start ... ok
+test app::tests::transport::space_stopping_a_recording_with_a_typed_press_in_its_frame_stays_stopped ... ok
 test app::tests::transport::the_piano_rolls_playhead_knob_drags_and_seeks_where_it_lets_go ... ok
 test app::tests::transport::the_key_that_starts_playback_keeps_sounding ... ok
 test app::tests::typed::a_focus_loss_ends_the_typed_notes_and_the_next_press_plays ... ok
@@ -987,8 +987,8 @@ test app::tests::typed::key_lock_snaps_a_typed_note_downward_first_and_its_relea
 test app::tests::typed::set_midi_note_learns_a_typed_key ... ok
 test app::tests::typed::space_and_the_silent_keys_play_nothing_and_a_modifier_blocks_and_releases ... ok
 test app::tests::typed::the_piano_lights_a_typed_note_and_fades_it_after_its_release ... ok
-test app::tests::typed::typed_keys_play_over_the_rack_with_the_keyboard_panel_hidden ... ok
 test app::tests::typed::a_typed_note_plays_the_drum_pad_whose_note_matches ... ok
+test app::tests::typed::typed_keys_play_over_the_rack_with_the_keyboard_panel_hidden ... ok
 test app::tests::typed::typed_notes_while_rec_is_on_take_the_touched_keys_path ... ok
 test app::tests::web_touch::a_finger_tap_on_the_web_toggles_the_current_tracks_column_once ... ok
 test app::tests::with_only_the_master_the_keyboard_plays_nothing ... ok
@@ -1105,13 +1105,13 @@ test audio_engine::tests::stop_resets_params_0_to_5_and_keeps_the_midi_ccs ... o
 test audio_engine::tests::the_kept_cc_range_is_params_7_to_133 ... ok
 test audio_engine::tests::the_metronome_clicks_on_each_beat_at_a_live_tempo ... ok
 test audio_engine::tests::the_metronome_flag_clicks_without_rec_and_keeps_the_song_end_wrap ... ok
-test audio_engine::tests::only_a_re_sync_that_finds_something_held_replays_the_events ... ok
+test audio_engine::tests::the_pitch_wheels_bend_holds_through_a_seek_a_wrap_and_stop_and_midis_resets ... ok
 test audio_link::clock::tests::a_transport_that_does_not_move_is_not_run_ahead_of ... ok
 test audio_link::clock::tests::a_wrap_or_a_seek_in_a_snapshot_shows_at_once_and_stopped_it_is_the_snapshot ... ok
 test audio_link::clock::tests::an_engine_that_stalls_after_moving_is_run_ahead_of_by_one_interval_at_most ... ok
 test audio_link::clock::tests::between_snapshots_the_playhead_moves_on_every_frame_at_the_tempo ... ok
 test audio_link::clock::tests::it_never_runs_past_the_tick_the_engine_wraps_at ... ok
-test audio_engine::tests::the_pitch_wheels_bend_holds_through_a_seek_a_wrap_and_stop_and_midis_resets ... ok
+test audio_engine::tests::only_a_re_sync_that_finds_something_held_replays_the_events ... ok
 test audio_link::edits::tests::a_current_clip_tapped_on_another_lane_is_no_lane_change ... ok
 test audio_link::edits::tests::a_deleted_channels_send_lanes_silence_no_other_channel ... ok
 test audio_link::edits::tests::a_clip_created_or_pasted_in_the_playlist_re_syncs ... ok
@@ -1863,8 +1863,8 @@ test panels::fx::analyzer::live::the_views_draw_the_engines_analysis ... ok
 test project_files::archive::tests::a_saved_archive_song_still_finds_its_samples ... ok
 test project_files::archive::tests::an_archive_sorts_its_files_into_the_user_folders_by_type ... ok
 test project_files::archive::tests::archive_failures_show_their_messages_and_change_nothing ... ok
-test project_files::archive::tests::a_single_song_archive_plays_its_own_samples ... ok
 test project_files::archive::tests::error_messages_name_deep_paths_shortened ... ok
+test project_files::archive::tests::a_single_song_archive_plays_its_own_samples ... ok
 test project_files::archive::tests::extracting_over_a_changed_folder_puts_it_in_the_bin ... ok
 test project_files::archive::tests::extracting_over_an_unchanged_folder_keeps_it_and_bins_nothing ... ok
 test project_files::archive::tests::hostile_archives_never_panic ... ok
@@ -2124,8 +2124,8 @@ test render::tests::a_master_gain_changes_a_stem_only_with_master_effects_on ...
 test render::tests::a_one_note_song_renders_sound ... ok
 test render::tests::a_range_over_thirty_minutes_is_refused ... ok
 test render::tests::a_selection_never_ends_before_its_range_end ... ok
-test render::tests::a_selection_with_leave_does_not_replay_its_loop_in_the_tail ... ok
 test project_files::tests::the_last_loads_recent_state_lands_last_after_a_slow_earlier_one ... ok
+test render::tests::a_selection_with_leave_does_not_replay_its_loop_in_the_tail ... ok
 test render::tests::an_empty_song_has_no_sound ... ok
 test render::tests::an_export_does_not_wrap_at_the_song_end ... ok
 test render::tests::cut_is_exactly_the_range ... ok
@@ -2251,7 +2251,7 @@ test sf2::tests::other_files_and_broken_soundfonts_are_errors ... ok
 test sf2::tests::the_patches_are_the_phdr_records_in_file_order_without_eop ... ok
 test smf::import::tests::a_grown_loop_stays_b_times_a_power_of_two ... ok
 test smf::import::tests::a_lane_shared_by_tracks_steps_in_time_order ... ok
-test smf::import::tests::a_tempo_map_imports_as_a_square_tempo_lane_that_plays_and_exports_back ... ok
+test sample_cache::tests::forget_drops_a_custom_table_and_the_next_load_builds_it_again ... ok
 test smf::import::tests::clips_start_on_four_beats_and_grow_over_their_notes ... ok
 test smf::import::tests::controller_lanes ... ok
 test smf::import::tests::controller_lanes_are_reused_by_channel_and_midi_channel ... ok
@@ -2259,7 +2259,7 @@ test smf::import::tests::division_96_and_below_one ... ok
 test smf::import::tests::each_track_starts_a_new_lane ... ok
 test smf::import::tests::export_import_round_trip ... ok
 test smf::import::tests::failures_leave_the_song ... ok
-test sample_cache::tests::forget_drops_a_custom_table_and_the_next_load_builds_it_again ... ok
+test smf::import::tests::a_tempo_map_imports_as_a_square_tempo_lane_that_plays_and_exports_back ... ok
 test smf::import::tests::imported_channels_play_their_program_and_gm_drums_from_running_status ... ok
 test smf::import::tests::note_offs_pair_with_the_latest_note ... ok
 test smf::import::tests::open_as_song_tempo ... ok
@@ -2536,30 +2536,30 @@ test ui::automation::tests::the_playhead_is_the_song_position_wrapped_modulo_the
 test ui::automation::tests::the_point_animations_follow_a_falling_0_6_a_frame ... ok
 test ui::automation::tests::the_rulers_region_menu_runs_the_ops_on_the_points_in_one_edit ... ok
 test ui::automation::tests::the_screen_draws_its_lines_axis_overlay_curve_and_points_at_ppp_1_and_2 ... ok
+test smf::tests::hostile_clips_stay_bounded ... ok
 test ui::automation::tests::the_shared_long_press_time_and_calm_zone_decide_a_touch_on_empty_grid ... ok
 test ui::automation::tests::views_follow_their_tracks_and_go_with_their_clips ... ok
 test ui::automation::tests::while_following_a_dragged_point_keeps_to_the_beat_under_the_finger ... ok
-test ui::automation::tests::while_following_a_ruler_tap_still_moves_the_playhead_but_takes_no_range ... ok
 test ui::automation::tests::with_value_snap_at_10_percent_a_dragged_point_lands_on_a_line_and_off_it_moves_freely ... ok
+test ui::automation::tests::while_following_a_ruler_tap_still_moves_the_playhead_but_takes_no_range ... ok
 test ui::buttons::tests::a_click_counts_on_the_disc_but_not_in_the_squares_corner ... ok
-test ui::buttons::tests::a_hovered_filled_disc_or_tab_is_1_15_times_brighter_on_the_disc_only ... ok
 test ui::buttons::tests::enter_on_the_focused_button_clicks_it_without_a_pointer ... ok
+test ui::buttons::tests::a_hovered_filled_disc_or_tab_is_1_15_times_brighter_on_the_disc_only ... ok
 test ui::chord_editor::tests::a_focus_loss_lets_a_held_button_go_and_the_press_holds_nothing_after_it ... ok
 test ui::chord_editor::tests::a_focus_moved_off_the_button_enter_holds_lets_its_chord_go ... ok
 test ui::chord_editor::tests::a_press_edits_and_holds_the_edited_chord_and_the_buttons_look_lit_or_not ... ok
-test ui::chord_editor::tests::a_touch_held_past_egui_long_press_keeps_its_chord_until_it_lifts ... ok
 test ui::chord_editor::tests::extensions_toggle_and_the_radios_set_quality_root_and_octave_2_to_6 ... ok
-test ui::chord_editor::tests::tab_and_the_arrows_reach_the_cells_and_enter_taps_the_focused_one ... ok
-test smf::tests::hostile_clips_stay_bounded ... ok
+test ui::chord_editor::tests::a_touch_held_past_egui_long_press_keeps_its_chord_until_it_lifts ... ok
 test ui::chord_editor::tests::the_editor_grows_down_from_the_keys_top_under_the_2_5_u_strips_at_k_0_25_5_and_10_u ... ok
 test ui::chord_editor::tests::the_rows_are_four_equal_bands_of_equal_buttons_at_least_1_5_u_tall_inset_0_1_u ... ok
-test ui::chord_keyboard::tests::a_pitch_two_strips_share_retriggers_and_goes_off_with_its_last_holder ... ok
 test ui::chord_keyboard::tests::a_new_octave_shift_or_set_stops_everything_and_so_does_hiding_the_keyboard ... ok
+test ui::chord_editor::tests::tab_and_the_arrows_reach_the_cells_and_enter_taps_the_focused_one ... ok
+test ui::chord_keyboard::tests::a_pitch_two_strips_share_retriggers_and_goes_off_with_its_last_holder ... ok
 test ui::chord_keyboard::tests::a_press_plays_its_inversion_at_once_and_the_release_stops_it ... ok
 test ui::chord_keyboard::tests::a_release_on_the_label_leaves_the_cell_on_and_a_slide_from_the_label_stops_every_strip_first ... ok
-test ui::chord_keyboard::tests::a_slide_to_another_inversion_keeps_the_shared_pitches_and_stays_on_its_strip ... ok
 test ui::chord_keyboard::tests::chord_names_are_the_root_the_quality_and_the_highest_extension ... ok
 test ui::chord_keyboard::tests::chords_cells_play_inversions_3_to_minus_2_and_strum_cells_indices_11_to_0 ... ok
+test ui::chord_keyboard::tests::a_slide_to_another_inversion_keeps_the_shared_pitches_and_stays_on_its_strip ... ok
 test ui::chord_keyboard::tests::strum_cells_are_single_notes_that_slide_off_and_on_with_no_timing ... ok
 test ui::chord_keyboard::tests::the_label_wins_where_it_overlaps_a_cell_and_the_border_is_neither ... ok
 test ui::chord_keyboard::tests::the_strips_are_eight_equal_with_a_u_label_at_the_bottom_and_a_column_of_at_least_6_u ... ok
@@ -2567,14 +2567,14 @@ test ui::chord_keyboard::tests::hold_latches_a_tap_a_new_tap_stops_all_first_a_l
 test ui::clips::tests::a_clip_spans_its_row_from_its_start_to_the_end_of_its_visible_length ... ok
 test ui::clips::tests::a_copy_past_the_last_tick_stops_on_it ... ok
 test ui::chord_keyboard::tests::timing_spaces_the_onsets_low_to_high_or_high_to_low_and_a_release_cancels_the_rest ... ok
+test ui::clips::tests::a_dimmed_repeat_draws_its_miniature_at_the_lowest_stop_and_nothing_else_differently ... ok
 test ui::clips::tests::a_gesture_that_makes_the_selection_shows_the_row_at_its_release ... ok
 test ui::clips::tests::a_group_copy_keeps_its_shape_on_new_ids_and_stops_on_the_last_tick ... ok
-test ui::clips::tests::a_dimmed_repeat_draws_its_miniature_at_the_lowest_stop_and_nothing_else_differently ... ok
 test ui::clips::tests::a_long_samples_miniature_reads_its_summary_not_its_frames ... ok
 test ui::clips::tests::a_marquee_is_a_3_u_square_on_the_finger_selecting_its_point_until_dragged_then_the_rect ... ok
 test ui::clips::tests::a_new_clip_is_one_bar_from_the_grid_line_at_or_before_the_tap ... ok
-test ui::clips::tests::a_notes_bar_is_t_tall_at_its_key_over_the_span_plus_2_from_its_start_cut_at_its_repeats_end ... ok
 test ui::clips::tests::a_loop_narrower_than_a_pixel_paints_no_miniature_and_does_not_unlink ... ok
+test ui::clips::tests::a_notes_bar_is_t_tall_at_its_key_over_the_span_plus_2_from_its_start_cut_at_its_repeats_end ... ok
 test ui::clips::tests::a_notes_or_drum_lane_with_a_label_is_named_by_its_channel ... ok
 test ui::clips::tests::a_press_that_scrolls_or_starts_on_the_row_re_shows_nothing ... ok
 test ui::clips::tests::a_recording_clip_is_a_channel_colour_box_a_pixel_in_and_a_content_colour_box_3_px_in ... ok
@@ -2593,9 +2593,9 @@ test ui::clips::tests::an_automation_loop_narrower_than_a_pixel_draws_nothing ..
 test ui::clips::tests::copy_puts_the_clip_right_after_itself_rounded_up_to_the_grid_with_a_new_id ... ok
 test ui::clips::tests::delete_removes_that_clip_only ... ok
 test ui::clips::tests::before_a_passs_first_point_the_previous_point_holds_from_the_pass_start ... ok
+test ui::clips::tests::each_loop_repeat_from_the_second_has_a_background_triangle_down_at_its_start ... ok
 test ui::clips::tests::every_on_grid_clip_copies_onto_its_end_at_fractional_steps ... ok
 test ui::clips::tests::generated_steps_are_points_of_the_stepped_area ... ok
-test ui::clips::tests::each_loop_repeat_from_the_second_has_a_background_triangle_down_at_its_start ... ok
 test ui::clips::tests::more_enables_slice_inside_unlink_on_a_loop_and_mute_or_unmute_by_the_flag ... ok
 test ui::clips::tests::in_auto_every_drag_lands_on_the_grid_line_nearest_the_finger_at_any_zoom ... ok
 test ui::clips::tests::moving_snaps_the_start_keeps_the_length_and_stops_at_the_song_start ... ok
@@ -2627,9 +2627,9 @@ test ui::clips::tests::unlink_loop_writes_every_pass_out_once ... ok
 test ui::clips::tests::with_room_on_both_sides_one_row_goes_above_and_a_taller_one_on_the_fingers_side ... ok
 test ui::clips::tests::with_room_on_neither_side_the_row_goes_inside_clamped_to_the_viewport ... ok
 test ui::clips::tests::with_room_on_one_side_only_the_row_goes_there ... ok
+test ui::clips::tests::unlink_loop_refuses_more_than_a_file_can_hold ... ok
 test ui::clips::tests::zooming_keeps_the_tick_under_the_pointer ... ok
 test ui::ctrl_menu::tests::a_touch_is_a_press_or_a_parameter_menu_pick ... ok
-test ui::clips::tests::unlink_loop_refuses_more_than_a_file_can_hold ... ok
 test ui::ctrl_menu::tests::items_without_their_feature_are_disabled ... ok
 test ui::ctrl_menu::tests::picking_an_enabled_item_returns_its_action_and_closes ... ok
 test ui::ctrl_menu::tests::seven_items_in_the_spec_order_in_one_column ... ok
@@ -2652,8 +2652,8 @@ test ui::drum_grid::tests::a_graph_paint_that_puts_the_values_back_leaves_a_long
 test ui::drum_grid::tests::a_song_with_subdivision_0_draws_and_takes_a_tap ... ok
 test ui::drum_grid::tests::a_subdivision_of_0_counts_as_1_and_draws_no_marks_at_no_width ... ok
 test ui::drum_grid::tests::a_stationary_hold_on_empty_grid_has_no_marquee_until_dragged ... ok
-test ui::drum_grid::tests::a_tap_on_an_empty_cell_adds_a_hit_with_the_remembered_values_in_one_final_edit ... ok
 test ui::drum_grid::tests::a_tap_on_a_hit_selects_it_with_a_handle_and_copy_delete_snap_and_a_second_tap_deselects_it ... ok
+test ui::drum_grid::tests::a_tap_on_an_empty_cell_adds_a_hit_with_the_remembered_values_in_one_final_edit ... ok
 test ui::drum_grid::tests::a_trackpad_pinch_over_the_free_grid_zooms_the_time_only ... ok
 test ui::drum_grid::tests::a_tapped_hit_pops_in_from_its_centre ... ok
 test ui::drum_grid::tests::a_view_hidden_mid_drag_ends_the_drag_and_drags_nothing_back_on_screen ... ok
@@ -2672,8 +2672,8 @@ test ui::drum_grid::tests::marks_are_4_px_bars_2_px_beats_1_px_finer_never_close
 test ui::drum_grid::tests::hits_are_drawn_over_their_length_2_px_into_the_row_on_a_1_px_background_frame ... ok
 test ui::drum_grid::tests::paste_puts_the_earliest_hit_on_the_tick_and_the_others_at_their_offsets_selected ... ok
 test ui::drum_grid::tests::rows_are_control_fill_bands_under_background_marks ... ok
-test ui::drum_grid::tests::the_beat_is_u_d_over_4k_with_k_from_0_01_to_1_and_a_new_clip_at_4_u_per_beat ... ok
 test ui::drum_grid::tests::one_finger_scrolls_the_rows_from_the_headers_and_both_ways_on_the_grid_and_two_zoom_both ... ok
+test ui::drum_grid::tests::the_beat_is_u_d_over_4k_with_k_from_0_01_to_1_and_a_new_clip_at_4_u_per_beat ... ok
 test ui::drum_grid::tests::the_drum_editors_zones_are_round_21s ... ok
 test ui::drum_grid::tests::the_beat_width_follows_tdiv_byte_0_and_the_bar_lines_byte_1 ... ok
 test ui::drum_grid::tests::the_end_capsule_moves_the_box_end_to_the_snapped_finger_and_every_length_by_as_much ... ok
@@ -2702,8 +2702,8 @@ test ui::drum_grid::tests::the_time_axis_opens_at_4_u_a_beat_pinches_and_scrolls
 test ui::drum_grid::tests::the_view_edits_its_clip_by_id_and_a_gone_id_edits_nothing ... ok
 test ui::drum_grid::tests::while_a_selection_shows_a_tap_on_empty_space_only_clears_it ... ok
 test ui::drums::tests::a_finger_down_again_without_its_lift_lets_go_of_its_pad_first ... ok
-test ui::drums::tests::a_bound_strip_controls_press_is_its_slot_param_touch ... ok
 test ui::drums::tests::a_held_pad_moved_past_trunc_1_5_u_is_picked_up_unless_the_pads_are_locked ... ok
+test ui::drums::tests::a_bound_strip_controls_press_is_its_slot_param_touch ... ok
 test ui::drums::tests::a_hex_pad_shows_the_folder_over_the_file_name_and_never_the_custom_name ... ok
 test ui::drums::tests::a_new_kit_has_only_unused_pads ... ok
 test ui::drums::tests::a_point_hits_the_pad_within_r_of_its_centre ... ok
@@ -2714,8 +2714,8 @@ test ui::drums::tests::a_rearranged_pad_glows_with_the_slot_it_plays ... ok
 test ui::drums::tests::a_stretch_that_lands_on_the_stored_ratio_does_nothing ... ok
 test ui::drums::tests::a_tap_within_one_frame_still_plays_the_pad ... ok
 test ui::drums::tests::create_fx_channel_targets_a_new_effect_channel_from_the_pad ... ok
-test ui::drums::tests::dropping_on_another_pad_swaps_the_two_and_anywhere_else_does_nothing ... ok
 test ui::drums::tests::a_strip_controls_menu_unlinks_only_a_linked_slot_param_and_unbound_knobs_have_no_link_items ... ok
+test ui::drums::tests::dropping_on_another_pad_swaps_the_two_and_anywhere_else_does_nothing ... ok
 test ui::drums::tests::each_page_splits_the_layer_by_the_spec_weights ... ok
 test ui::drums::tests::each_pad_shows_and_plays_the_slot_its_pads_entry_names ... ok
 test ui::drums::tests::each_strip_paints_inside_a_clip_of_its_own_row ... ok
@@ -2758,10 +2758,10 @@ test ui::drums::tests::used_pads_take_the_channel_colour_and_show_their_names ..
 test ui::fine_tune::tests::a_drum_pad_params_scope_is_the_pad_and_its_resets_are_the_spec_list ... ok
 test ui::fine_tune::tests::a_module_params_scope_is_the_module_and_its_reset_the_module_default ... ok
 test ui::fine_tune::tests::a_drag_moves_the_value_along_the_track_and_the_text_follows ... ok
+test ui::fine_tune::tests::a_touch_does_not_jump_and_a_double_tap_resets ... ok
 test ui::fine_tune::tests::at_ppp_2_the_rows_fall_on_half_points ... ok
 test ui::fine_tune::tests::channel_level_pan_and_send_levels_are_supported_and_nothing_else_of_the_channel ... ok
 test ui::fine_tune::tests::drum_pad_params_0_to_10_are_supported_but_mute_and_solo ... ok
-test ui::fine_tune::tests::a_touch_does_not_jump_and_a_double_tap_resets ... ok
 test ui::fine_tune::tests::only_continuous_module_params_without_steps_are_supported ... ok
 test ui::fine_tune::tests::the_box_is_8_u_high_inset_1_u_centred_with_its_close_button_and_three_rows_at_ppp_1 ... ok
 test ui::fine_tune::tests::it_shows_the_title_and_the_value_text_at_18_pt_and_no_other_text_on_the_dialog_panel ... ok
@@ -2777,8 +2777,8 @@ test ui::focus::tests::a_modal_takes_the_focus_and_gives_it_back_when_it_closes 
 test ui::focus::tests::a_modal_without_targets_keeps_the_keys_from_the_control_under_it ... ok
 test ui::focus::tests::a_text_field_with_the_keyboard_keeps_the_arrows_and_enter ... ok
 test ui::focus::tests::a_touch_forgets_every_way_back ... ok
-test ui::focus::tests::an_inner_and_an_outer_modal_closing_at_once_give_the_focus_back_to_the_opener ... ok
 test ui::focus::tests::an_auto_repeat_moves_nothing_steps_nothing_and_presses_nothing ... ok
+test ui::focus::tests::an_inner_and_an_outer_modal_closing_at_once_give_the_focus_back_to_the_opener ... ok
 test ui::focus::tests::an_inner_modal_closing_leaves_the_focus_in_the_outer_one ... ok
 test ui::focus::tests::enter_on_a_focused_knob_stays_in_the_input_for_whatever_offers_open ... ok
 test ui::focus::tests::enter_presses_the_focused_button_and_space_does_not ... ok
@@ -2793,9 +2793,9 @@ test ui::focus::tests::the_cursor_is_painted_after_everything_else ... ok
 test ui::focus::tests::increment_and_decrement_step_the_focused_knob_0_05_or_0_0125_fine_and_an_n_step_one_a_step ... ok
 test ui::focus::tests::the_directional_score_is_the_gap_plus_the_misalignment_of_a_candidate_wholly_to_one_side ... ok
 test ui::focus::tests::the_cursor_snaps_on_first_show_then_eases_and_is_drawn_at_ppp_1_and_2 ... ok
-test ui::gesture::tests::a_finger_held_still_300_ms_is_a_long_press_too ... ok
 test ui::focus::tests::the_focus_goes_back_to_the_opener_after_a_popup_opened_and_closed_in_a_modal ... ok
 test ui::gesture::tests::a_grid_press_is_long_past_300_ms_and_leaves_the_calm_zone_past_half_a_u ... ok
+test ui::gesture::tests::a_finger_held_still_300_ms_is_a_long_press_too ... ok
 test ui::gesture::tests::a_hold_left_by_a_widget_hidden_at_its_release_never_haunts_a_later_click ... ok
 test ui::gesture::tests::a_mouse_held_still_300_ms_is_a_long_press_on_that_frame_and_its_release_no_click ... ok
 test ui::gesture::tests::a_press_released_at_250_ms_is_a_click_and_no_long_press ... ok
@@ -2810,8 +2810,8 @@ test ui::gesture::tests::the_hold_asks_for_the_frame_its_300_ms_come_due ... ok
 test ui::gesture::tests::the_next_quick_tap_after_a_long_press_clicks_again ... ok
 test ui::graph_lane::tests::a_handle_grows_10_px_over_0_1_s_and_wobbles_back_within_0_3_s ... ok
 test ui::gesture::tests::the_vertical_calm_zone_lets_the_pointer_wander_sideways ... ok
-test ui::graph_lane::tests::a_long_press_on_the_tab_toggles_nothing ... ok
 test ui::graph_lane::tests::a_paint_sets_every_eligible_note_whose_extent_holds_the_tick ... ok
+test ui::graph_lane::tests::a_long_press_on_the_tab_toggles_nothing ... ok
 test ui::graph_lane::tests::a_press_and_release_in_one_frame_is_a_tap ... ok
 test ui::graph_lane::tests::a_sideways_drag_moves_the_tab_along_the_editor_and_leaves_the_lane_alone ... ok
 test ui::graph_lane::tests::each_page_places_a_value_on_the_tint_and_pulls_its_bottom_stop ... ok
@@ -2821,8 +2821,8 @@ test ui::graph_lane::tests::the_pointer_gives_v_with_the_drum_centre_dead_zone .
 test ui::graph_lane::tests::the_selectors_list_the_spec_items_and_repeat_only_in_step_sequencer_mode ... ok
 test ui::graph_lane::tests::the_tint_runs_through_the_spec_stops_with_the_bottom_pulled ... ok
 test ui::graph_lane::tests::values_come_from_and_go_to_the_event_fields ... ok
-test ui::keyboard::tests::a_fresh_press_is_as_loud_as_it_is_deep_on_its_key ... ok
 test ui::graph_lane::tests::a_tap_animates_the_lane_open_or_shut_and_a_drag_sizes_closes_and_remembers_it_at_once ... ok
+test ui::keyboard::tests::a_fresh_press_is_as_loud_as_it_is_deep_on_its_key ... ok
 test ui::keyboard::tests::a_held_note_lights_in_every_row_that_shows_it ... ok
 test ui::keyboard::tests::a_key_partly_shown_is_clipped_to_the_keys_sides_only ... ok
 test ui::keyboard::tests::a_held_key_turns_the_channel_colour_by_the_press_law ... ok
@@ -2839,15 +2839,15 @@ test ui::keyboard::tests::a_sounding_note_lights_at_0_7_and_a_live_note_at_1_win
 test ui::keyboard::tests::a_tapped_key_lights_on_its_frame ... ok
 test ui::keyboard::tests::a_typed_note_lights_in_both_rows ... ok
 test ui::keyboard::tests::a_tap_within_one_frame_is_a_tap_of_its_key_and_never_held ... ok
+test ui::keyboard::tests::an_out_of_range_black_key_draws_its_upper_part_only_while_its_note_sounds ... ok
 test ui::keyboard::tests::black_key_wins_where_it_overlaps_a_white_key ... ok
 test ui::keyboard::tests::black_keys_are_0_7_w_centred_on_their_boundary_truncated_with_no_per_key_offsets ... ok
 test ui::keyboard::tests::black_keys_cover_the_top_06_of_the_keyboard ... ok
 test ui::keyboard::tests::black_keys_sit_on_white_key_boundaries ... ok
-test ui::keyboard::tests::an_out_of_range_black_key_draws_its_upper_part_only_while_its_note_sounds ... ok
 test ui::keyboard::tests::disabled_keys_ignore_touches ... ok
-test ui::keyboard::tests::both_rows_play_one_live_input_with_velocity_glissando_and_key_lock ... ok
-test ui::keyboard::tests::in_the_scale_kind_with_key_lock_only_the_scales_tones_are_keys_and_all_count_as_white ... ok
 test ui::keyboard::tests::every_finger_holds_its_own_key ... ok
+test ui::keyboard::tests::in_the_scale_kind_with_key_lock_only_the_scales_tones_are_keys_and_all_count_as_white ... ok
+test ui::keyboard::tests::both_rows_play_one_live_input_with_velocity_glissando_and_key_lock ... ok
 test ui::keyboard::tests::key_names_show_on_in_range_keys_but_not_on_black_keys_under_chromatic ... ok
 test ui::keyboard::tests::key_names_use_sharps_and_a_root_key_adds_its_octave ... ok
 test ui::keyboard::tests::keys_fill_the_width_and_stop_after_it ... ok
@@ -2891,7 +2891,6 @@ test ui::layout::tests::comb_filter_matches_the_reference ... ok
 test ui::layout::tests::cross_axis_is_centred_and_unequal_margins_shift_by_half_the_difference ... ok
 test ui::layout::tests::distortion_matches_the_reference ... ok
 test ui::layout::tests::edges_truncate_on_their_own ... ok
-test ui::keyboard_settings::tests::the_strip_shows_its_parts_by_the_channels_first_lane_and_the_kind ... ok
 test ui::layout::tests::equalizer_band_1_matches_the_reference ... ok
 test ui::layout::tests::every_equalizer_band_page_gets_the_same_rects ... ok
 test ui::layout::tests::flex_children_whose_weights_sum_to_zero_get_no_length_not_nan ... ok
@@ -2904,8 +2903,9 @@ test ui::layout::tests::one_side_margins_set_only_their_side ... ok
 test ui::layout::tests::rect_of_finds_a_placed_leaf_and_nothing_for_a_hidden_one ... ok
 test ui::layout::tests::spreader_matches_the_reference ... ok
 test ui::layout::tests::the_rect_may_sit_anywhere_and_results_follow_it ... ok
-test ui::layout::tests::wow_and_flutter_matches_the_reference ... ok
 test ui::layout::tests::tremolo_matches_the_reference ... ok
+test ui::layout::tests::wow_and_flutter_matches_the_reference ... ok
+test ui::keyboard_settings::tests::the_strip_shows_its_parts_by_the_channels_first_lane_and_the_kind ... ok
 test ui::main_menu::file_ops::tests::a_data_folder_behind_a_link_deletes_into_the_bin_and_for_good ... ok
 test ui::main_menu::file_ops::tests::a_cut_pasted_into_the_bin_is_as_new_as_the_paste ... ok
 test ui::main_menu::file_ops::tests::a_deleted_file_is_as_new_as_its_deletion ... ok
@@ -3040,22 +3040,22 @@ test ui::main_menu::tests::no_tab_shows_the_original_app_s_names ... ok
 test ui::main_menu::tests::only_song_templates_of_the_templates_folder_are_listed ... ok
 test ui::main_menu::tests::open_takes_only_a_web_address_with_a_host ... ok
 test ui::main_menu::tests::original_demo_songs_list_at_the_root_and_new_offers_the_original_templates ... ok
-test ui::main_menu::tests::outside_the_panel_and_escape_close_the_menu ... ok
 test ui::main_menu::library::tests::the_listing_cap_counts_listed_rows_and_a_non_utf8_name_lists ... ok
+test ui::main_menu::tests::outside_the_panel_and_escape_close_the_menu ... ok
 test ui::main_menu::tests::project_info_shows_the_values_it_is_given ... ok
 test ui::main_menu::tests::project_texts_fit_their_meta_fields_in_bytes ... ok
 test ui::main_menu::tests::rename_asks_for_the_name_and_refuses_a_taken_one ... ok
 test ui::main_menu::tests::showing_the_songs_page_again_resets_the_search ... ok
-test ui::main_menu::tests::song_names_are_clipped_to_the_list_they_scroll_in ... ok
 test ui::main_menu::tests::project_buttons_return_their_actions ... ok
+test ui::main_menu::tests::song_names_are_clipped_to_the_list_they_scroll_in ... ok
 test ui::main_menu::tests::sort_and_search_change_the_rows ... ok
 test ui::main_menu::tests::templates_sort_by_their_stems_not_their_file_names ... ok
 test ui::main_menu::tests::songs_buttons_return_their_actions ... ok
 test ui::main_menu::tests::the_folder_title_is_in_the_folder_rows_size_level_with_back_at_the_root ... ok
 test ui::main_menu::tests::the_header_cannot_be_picked_and_empty_asks_for_the_song_options ... ok
-test ui::main_menu::tests::the_cpu_and_ram_tap_scrolls_the_performance_block_into_view ... ok
-test ui::main_menu::tests::the_menu_is_at_most_20_u_wide_on_the_right_with_the_tab_row_under_the_header ... ok
 test ui::main_menu::tests::the_header_names_the_app_and_its_version_and_the_tabs_run_in_order ... ok
+test ui::main_menu::tests::the_menu_is_at_most_20_u_wide_on_the_right_with_the_tab_row_under_the_header ... ok
+test ui::main_menu::tests::the_cpu_and_ram_tap_scrolls_the_performance_block_into_view ... ok
 test ui::main_menu::tests::the_menu_slides_in_from_the_right_over_10_frames_as_the_screen_dims ... ok
 test ui::main_menu::tests::the_menu_takes_touches_at_rest_while_it_slides_in ... ok
 test ui::main_menu::tests::the_metadata_fields_edit_the_project_info_until_locked ... ok
@@ -3125,8 +3125,8 @@ test ui::main_screen::tests::a_tap_makes_a_clip_current_and_selected_and_a_secon
 test ui::main_screen::tests::a_tap_beside_a_clip_deselects_then_toggles_the_insert_menu_whose_new_clip_adds_a_bar ... ok
 test ui::main_screen::tests::a_tap_on_a_clip_makes_its_channel_current_the_masters_too ... ok
 test ui::main_screen::tests::a_tap_on_a_header_selects_its_track_then_toggles_the_column ... ok
-test ui::main_screen::tests::a_tap_on_another_tracks_empty_space_makes_it_current_and_only_note_and_drum_tracks_take_clips ... ok
 test ui::main_screen::tests::a_tap_on_the_ruler_asks_for_the_playhead_on_the_nearest_grid_line ... ok
+test ui::main_screen::tests::a_tap_on_another_tracks_empty_space_makes_it_current_and_only_note_and_drum_tracks_take_clips ... ok
 test ui::main_screen::tests::a_touch_lift_keeps_the_line_and_the_box_on_the_dropped_beat ... ok
 test ui::main_screen::tests::an_empty_lane_touch_calm_on_each_axis_is_a_tap_that_shows_clip_plus ... ok
 test ui::main_screen::tests::a_touch_in_the_groups_frame_hides_its_handles ... ok
@@ -3136,8 +3136,8 @@ test ui::main_screen::tests::at_c_1_only_the_header_part_takes_the_header_gestur
 test ui::main_screen::tests::dragging_a_clip_moves_it_on_the_beat_grid_and_its_release_is_the_final_edit ... ok
 test ui::main_screen::tests::each_channel_gets_its_last_keyboard_view_back ... ok
 test ui::main_screen::tests::each_primary_track_is_followed_by_its_sub_tracks_unless_they_are_hidden ... ok
-test ui::main_screen::tests::escape_deselects_and_enter_selects_the_clip_at_the_cursor_or_adds_one ... ok
 test ui::main_screen::tests::copy_snap_and_delete_edit_the_song_and_edit_opens_the_editor ... ok
+test ui::main_screen::tests::escape_deselects_and_enter_selects_the_clip_at_the_cursor_or_adds_one ... ok
 test ui::main_screen::tests::half_a_u_down_before_the_hold_scrolls_the_playlist_instead ... ok
 test ui::main_screen::tests::icons_follow_the_kind ... ok
 test ui::main_screen::tests::follow_playhead_keeps_the_playhead_a_quarter_in_and_turns_the_one_finger_time_scroll_off ... ok
@@ -3199,18 +3199,18 @@ test ui::main_screen::tests::while_the_knob_is_dragged_the_line_and_the_box_foll
 test ui::midi_import::tests::a_tap_toggles_a_used_channel_and_an_unused_one_takes_none ... ok
 test ui::midi_import::tests::every_option_starts_on_and_the_used_channels_selected ... ok
 test ui::midi_import::tests::cancel_escape_and_a_click_outside_cancel ... ok
-test ui::midi_import::tests::it_draws_its_title_rows_channel_buttons_and_buttons ... ok
 test ui::midi_import::tests::import_automation_and_only_supported_each_flip_their_own_option ... ok
+test ui::midi_import::tests::it_draws_its_title_rows_channel_buttons_and_buttons ... ok
 test ui::midi_import::tests::the_box_fits_its_rows_and_more_than_eight_take_two_columns ... ok
 test ui::midi_import::tests::the_dialog_base_dims_the_screen_then_fills_the_box_with_module_fill ... ok
 test ui::midi_import::tests::the_automation_toggles_are_laid_out_only_with_cc_or_pitch_wheel_data ... ok
 test ui::midi_import::tests::the_toggles_flip_their_options_and_import_returns_them ... ok
 test ui::mini_mixer::tests::a_long_name_is_cut_in_the_middle_keeping_five_characters ... ok
 test ui::mini_mixer::tests::a_sub_track_row_is_a_4_5_u_header_and_an_8_75_u_slider ... ok
-test ui::mini_mixer::tests::a_tremolo_max_tracks_slider_below_min_lowers_min_in_the_song ... ok
+test ui::mini_mixer::tests::a_module_param_track_shows_a_menu_fill_slider_bound_to_the_param ... ok
 test ui::mini_mixer::tests::an_armed_channel_keeps_its_dot_in_the_icons_ink ... ok
 test ui::mini_mixer::tests::at_c_1_the_stack_is_header_mute_solo_pan_and_level_at_their_u ... ok
-test ui::mini_mixer::tests::a_module_param_track_shows_a_menu_fill_slider_bound_to_the_param ... ok
+test ui::mini_mixer::tests::a_tremolo_max_tracks_slider_below_min_lowers_min_in_the_song ... ok
 test ui::mini_mixer::tests::collapsed_or_animating_the_header_is_the_whole_row_and_nothing_else_takes_space ... ok
 test ui::mini_mixer::tests::collapsed_meters_are_two_t_wide_bars_at_the_cells_right_edge ... ok
 test ui::mini_mixer::tests::controls_and_labels_show_only_at_c_1 ... ok
@@ -3226,8 +3226,8 @@ test ui::mini_mixer::tests::pan_and_level_follow_the_finger_one_to_one_and_a_dou
 test ui::mini_mixer::tests::the_current_sub_track_has_a_menu_fill_triangle_pointing_right ... ok
 test ui::mini_mixer::tests::the_masters_unsolo_all_takes_mute_and_solo_so_its_pan_and_level_line_up ... ok
 test ui::mini_mixer::tests::the_meter_law ... ok
-test ui::mini_mixer::tests::the_invisible_disc_behind_the_pill_shows_while_pressed ... ok
 test ui::mini_mixer::tests::the_name_is_8_pt_right_and_top_in_the_channel_colour_with_the_kinds_default ... ok
+test ui::mini_mixer::tests::the_invisible_disc_behind_the_pill_shows_while_pressed ... ok
 test ui::mini_mixer::tests::the_sliders_are_3t_tracks_whose_thumbs_grow_from_4_5t_to_5_985t ... ok
 test ui::mixer::tests::a_double_tap_resets_the_fader_to_unity_and_the_pan_to_the_centre ... ok
 test ui::mixer::tests::a_flick_flings_the_row_slowing_by_0_9_a_frame ... ok
@@ -3247,8 +3247,8 @@ test ui::mixer::tests::a_touch_scrolls_the_row_past_0_5_u_and_then_follows_one_t
 test ui::mixer::tests::ctrl_drags_the_fader_and_the_pan_knob_a_quarter_as_far ... ok
 test ui::mixer::tests::dragging_a_fader_writes_the_level_and_reports_it ... ok
 test ui::mixer::tests::each_part_hides_at_its_height_threshold ... ok
-test ui::mixer::tests::dragging_the_pan_knob_writes_param_1 ... ok
 test ui::mixer::tests::each_strip_meters_its_channel_beside_the_fader_cap ... ok
+test ui::mixer::tests::dragging_the_pan_knob_writes_param_1 ... ok
 test ui::mixer::tests::mute_and_solo_clicks_flip_params_2_and_3 ... ok
 test ui::mixer::tests::mute_and_solo_taps_follow_the_two_state_law ... ok
 test ui::mixer::tests::level_and_pan_offer_fine_tune_control_and_mute_and_solo_do_not ... ok
@@ -3338,18 +3338,18 @@ test ui::piano_roll::tests::component::a_black_keys_row_spans_the_whole_key_colu
 test ui::piano_roll::tests::component::a_c_label_starts_just_right_of_the_bar_centred_on_its_row_in_black_key_disabled ... ok
 test ui::piano_roll::tests::component::a_c_row_has_a_channel_colour_bar_down_its_left_edge ... ok
 test ui::piano_roll::tests::component::a_channel_without_a_clip_takes_no_note_and_gets_no_clip ... ok
-test ui::piano_roll::tests::component::a_chromatic_project_scale_greys_no_key ... ok
 test ui::modules_browser::tests::the_wheel_scrolls_the_list_only_over_it ... ok
-test ui::piano_roll::tests::component::a_drag_back_to_its_start_neither_fits_nor_reports ... ok
+test ui::piano_roll::tests::component::a_chromatic_project_scale_greys_no_key ... ok
 test ui::piano_roll::tests::component::a_drag_back_to_its_start_still_ends_with_one_final_edit ... ok
-test ui::piano_roll::tests::component::a_drag_past_the_end_and_back_restores_loop_and_visible_length ... ok
+test ui::piano_roll::tests::component::a_drag_back_to_its_start_neither_fits_nor_reports ... ok
 test ui::piano_roll::tests::component::a_drum_lane_is_never_edited ... ok
+test ui::piano_roll::tests::component::a_drag_past_the_end_and_back_restores_loop_and_visible_length ... ok
 test ui::piano_roll::tests::component::a_focus_loss_ends_a_lane_drag_and_a_stale_press_paints_nothing ... ok
 test ui::piano_roll::tests::component::a_focus_loss_ends_a_drag_and_a_stale_press_drags_nothing ... ok
 test ui::piano_roll::tests::component::a_gesture_that_changes_nothing_clears_the_selection_and_reports_its_re_sync ... ok
 test ui::piano_roll::tests::component::a_held_touch_on_empty_grid_grows_the_marquee_and_its_drag_selects_live ... ok
-test ui::piano_roll::tests::component::a_hidden_menu_does_not_consume_empty_taps_inside_or_outside_a_selection_frame ... ok
 test ui::piano_roll::tests::component::a_hidden_roll_lets_go_of_its_key_column_key_and_of_a_new_notes_gate ... ok
+test ui::piano_roll::tests::component::a_hidden_menu_does_not_consume_empty_taps_inside_or_outside_a_selection_frame ... ok
 test ui::piano_roll::tests::component::a_huge_loop_scrolled_far_draws_without_overflow ... ok
 test ui::piano_roll::tests::component::a_key_column_press_held_over_a_focus_loss_stops_its_key_for_good ... ok
 test ui::piano_roll::tests::component::a_lane_drag_that_ends_on_the_original_values_closes_its_edit_with_a_re_sync ... ok
@@ -3362,8 +3362,8 @@ test ui::piano_roll::tests::component::a_long_press_on_an_off_grid_note_only_sel
 test ui::piano_roll::tests::component::a_long_press_on_empty_space_then_a_drag_boxes_notes ... ok
 test ui::piano_roll::tests::component::a_long_press_selects_a_note_and_the_floating_delete_removes_it ... ok
 test ui::piano_roll::tests::component::a_marquee_round_one_note_leaves_the_remembered_note ... ok
-test ui::piano_roll::tests::component::a_move_that_arrives_with_the_lift_still_applies ... ok
 test ui::piano_roll::tests::component::a_mouse_hold_of_0_35_s_is_a_long_press_and_of_0_25_s_a_tap ... ok
+test ui::piano_roll::tests::component::a_move_that_arrives_with_the_lift_still_applies ... ok
 test ui::piano_roll::tests::component::a_new_note_snaps_to_the_project_scale ... ok
 test ui::piano_roll::tests::component::a_pinch_before_any_lane_paint_is_a_touch_that_changed_nothing ... ok
 test ui::piano_roll::tests::component::a_pinch_that_starts_on_a_note_zooms_and_leaves_the_note_where_it_was ... ok
@@ -3380,8 +3380,8 @@ test ui::piano_roll::tests::component::a_roll_hidden_mid_lane_touch_ends_it_as_i
 test ui::piano_roll::tests::component::a_ruler_press_dragged_sideways_before_its_long_press_scrolls_and_starts_no_range ... ok
 test ui::piano_roll::tests::component::a_stale_clip_id_never_makes_a_second_clip ... ok
 test ui::piano_roll::tests::component::a_second_finger_puts_a_lane_drag_back_and_nothing_paints_until_the_lift ... ok
-test ui::piano_roll::tests::component::a_tap_on_an_offset_clips_ruler_seeks_where_that_content_plays ... ok
 test ui::piano_roll::tests::component::a_tap_on_a_note_selects_it_silently_and_a_second_tap_deselects_it_never_deleting ... ok
+test ui::piano_roll::tests::component::a_tap_on_an_offset_clips_ruler_seeks_where_that_content_plays ... ok
 test ui::piano_roll::tests::component::a_tap_on_the_ruler_asks_for_the_playhead_on_the_snap_grid_and_the_handle_shows_it ... ok
 test ui::piano_roll::tests::component::a_tap_on_empty_grid_adds_an_unselected_note_in_the_tapped_cell_and_sounds_it_for_150_ms ... ok
 test ui::piano_roll::tests::component::a_touch_down_off_the_selection_drags_the_touched_note_alone_and_inside_its_frame_the_selection ... ok
@@ -3390,8 +3390,8 @@ test ui::piano_roll::tests::component::a_touch_long_press_on_a_note_selects_it_a
 test ui::piano_roll::tests::component::a_touch_in_the_rows_margin_binds_the_note_but_a_tap_there_selects_nothing ... ok
 test ui::piano_roll::tests::component::a_touch_long_press_on_empty_space_then_a_move_boxes_notes ... ok
 test ui::piano_roll::tests::component::a_touch_long_press_on_the_snap_button_opens_the_menu ... ok
-test ui::piano_roll::tests::component::a_touch_on_empty_grid_scrolls_each_axis_past_its_calm_zone_one_to_one_and_flings ... ok
 test ui::piano_roll::tests::component::a_visible_length_of_its_own_is_kept ... ok
+test ui::piano_roll::tests::component::a_touch_on_empty_grid_scrolls_each_axis_past_its_calm_zone_one_to_one_and_flings ... ok
 test ui::piano_roll::tests::component::adding_past_the_pattern_end_grows_the_loop_to_whole_bars ... ok
 test ui::piano_roll::tests::component::an_empty_tap_after_a_move_creates_a_note_without_a_deselection_tap ... ok
 test ui::piano_roll::tests::component::an_outside_change_mid_drag_stops_the_dragged_key ... ok
@@ -3399,16 +3399,16 @@ test ui::piano_roll::tests::component::an_outside_change_to_the_notes_drops_the_
 test ui::piano_roll::tests::component::at_beat_0_the_lines_left_half_shows_in_the_gap_after_the_key_column ... ok
 test ui::piano_roll::tests::component::black_0_15_covers_the_grid_past_the_loop_end_only_while_that_end_is_left_of_the_grid_edge ... ok
 test ui::piano_roll::tests::component::ctrl_a_selects_every_note_and_escape_deselects_without_an_edit ... ok
-test ui::piano_roll::tests::component::ctrl_held_makes_a_touch_on_a_note_a_marquee_instead_of_a_move ... ok
 test ui::piano_roll::tests::component::ctrl_c_copies_the_selection_and_ctrl_v_pastes_it_at_the_touched_notes_cell ... ok
+test ui::piano_roll::tests::component::ctrl_held_makes_a_touch_on_a_note_a_marquee_instead_of_a_move ... ok
 test ui::piano_roll::tests::component::ctrl_x_cuts_and_delete_deletes_the_selection_each_in_one_undo_step ... ok
 test ui::piano_roll::tests::component::deleting_a_note_fits_the_loop ... ok
 test ui::piano_roll::tests::component::dragging_a_note_moves_it_by_whole_snaps_and_reports_the_end ... ok
-test ui::piano_roll::tests::component::dragging_a_selected_note_moves_the_whole_selection ... ok
 test ui::piano_roll::tests::component::dragging_a_one_key_selection_sounds_each_key_it_reaches_until_the_release ... ok
+test ui::piano_roll::tests::component::dragging_a_selected_note_moves_the_whole_selection ... ok
 test ui::piano_roll::tests::component::dragging_empty_space_scrolls ... ok
-test ui::piano_roll::tests::component::enter_adds_a_note_at_the_cursor_cell_in_one_undo_step ... ok
 test ui::piano_roll::tests::component::enter_checks_the_same_floored_visible_cell_that_it_creates_in ... ok
+test ui::piano_roll::tests::component::enter_adds_a_note_at_the_cursor_cell_in_one_undo_step ... ok
 test ui::piano_roll::tests::component::escape_closes_an_open_popup_before_it_deselects ... ok
 test ui::piano_roll::tests::component::every_note_menu_item_is_enabled ... ok
 test ui::piano_roll::tests::component::floating_copy_places_the_copies_after_the_selection ... ok
@@ -3472,8 +3472,8 @@ test ui::piano_roll::tests::ghost_notes_follow_the_clip_offset ... ok
 test ui::piano_roll::tests::ghost_notes_walk_only_the_view_whatever_the_loop_lengths ... ok
 test ui::piano_roll::tests::grid::ghosts_then_black_0_15_past_the_loop_end_then_the_notes ... ok
 test ui::piano_roll::tests::grid::light_rows_are_the_project_scale_chromatic_as_c_major_inside_the_channels_instrument_ranges ... ok
-test ui::piano_roll::tests::grid::rows_are_control_fill_light_rows_module_fill_each_with_its_lines_lit_and_root_rows_and_no_beat_bands ... ok
 test ui::piano_roll::tests::component::with_value_snap_a_lane_paint_lands_on_the_grid_and_off_it_is_continuous ... ok
+test ui::piano_roll::tests::grid::rows_are_control_fill_light_rows_module_fill_each_with_its_lines_lit_and_root_rows_and_no_beat_bands ... ok
 test ui::piano_roll::tests::hits_tell_note_and_empty_apart ... ok
 test ui::piano_roll::tests::humanize_base_adjustments_come_before_the_deviations ... ok
 test ui::piano_roll::tests::humanize_changes_only_the_selected_notes_unless_it_applies_to_all ... ok
@@ -3511,9 +3511,9 @@ test ui::picker_preview::tests::a_finger_holds_its_note_until_it_lifts_and_movin
 test ui::picker_preview::tests::a_sample_strip_plays_its_pick_from_the_start_once_decoded_and_stops_once ... ok
 test ui::picker_preview::tests::a_second_finger_while_one_holds_re_picks_and_sounds_nothing ... ok
 test ui::picker_preview::tests::enter_holds_note_60_and_one_note_sounds_at_a_time ... ok
+test ui::piano_roll::tests::the_normal_generator_has_mean_0_and_deviation_1_and_differs_by_seed ... ok
 test ui::picker_preview::tests::the_loading_fill_pulses_twice_a_second_up_to_half_alpha ... ok
 test ui::picker_preview::tests::the_note_is_24_at_the_left_edge_84_at_the_right_and_54_in_the_middle ... ok
-test ui::piano_roll::tests::the_normal_generator_has_mean_0_and_deviation_1_and_differs_by_seed ... ok
 test ui::picker_preview::tests::the_progress_reads_minutes_and_seconds ... ok
 test ui::picker_preview::tests::turning_it_off_releases_the_held_note_and_no_row_takes_no_touch ... ok
 test ui::picker_preview::tests::the_strips_waveform_is_a_quad_a_device_pixel_a_flat_one_a_1_px_line_each ... ok
@@ -3536,8 +3536,8 @@ test ui::popup::tests::labels_may_be_owned ... ok
 test ui::popup::tests::only_disabled_items_are_dimmed_headers_are_not ... ok
 test ui::popup::tests::placement_centres_then_clamps_inside_the_bounds ... ok
 test ui::popup::tests::rows_never_shrink_below_one_u ... ok
-test ui::popup::tests::selecting_an_item_returns_its_id_and_closes ... ok
 test ui::popup::tests::a_scrolling_popup_opens_with_its_current_item_in_view_each_time_it_opens ... ok
+test ui::popup::tests::selecting_an_item_returns_its_id_and_closes ... ok
 test ui::popup::tests::the_grid_spans_to_the_highest_row_of_any_column ... ok
 test ui::popup::tests::the_current_item_is_a_background_bar_with_a_text_label ... ok
 test ui::preset_picker::categories::tests::a_pick_loads_into_its_files_instrument_and_audio_or_instr_into_none ... ok
@@ -3583,8 +3583,8 @@ test ui::preset_picker::tests::copy_and_paste_over_a_found_folder_and_its_preset
 test ui::preset_picker::tests::copy_paste_keeps_both_and_cut_paste_moves_into_a_folder ... ok
 test ui::preset_picker::tests::create_folder_asks_for_a_name_and_a_taken_one_shows_the_message ... ok
 test ui::preset_picker::tests::ctrl_f_does_nothing_while_a_name_is_asked ... ok
-test ui::preset_picker::tests::ctrl_f_leaves_select_mode ... ok
 test ui::preset_picker::tests::ctrl_f_does_nothing_while_the_options_menu_is_open ... ok
+test ui::preset_picker::tests::ctrl_f_leaves_select_mode ... ok
 test ui::preset_picker::tests::ctrl_up_leaves_the_folder_and_does_nothing_at_the_root ... ok
 test ui::preset_picker::tests::default_picks_the_init_preset ... ok
 test ui::preset_picker::tests::ctrl_up_in_the_name_field_leaves_no_folder ... ok
@@ -3595,17 +3595,17 @@ test ui::preset_picker::tests::enter_holds_note_60_until_it_is_released ... ok
 test ui::preset_picker::tests::enter_plays_on_the_audition_strip_only_while_the_strip_has_the_focus ... ok
 test ui::preset_picker::tests::dw_factory_categories_merge_without_changing_preset_paths ... ok
 test ui::preset_picker::tests::escape_stops_select_mode_before_it_closes_the_picker ... ok
-test ui::preset_picker::tests::escape_with_the_bar_shown_hides_it_and_leaves_select_mode_then_closes ... ok
 test ui::preset_picker::tests::escape_in_the_name_field_drops_only_the_field ... ok
+test ui::preset_picker::tests::escape_with_the_bar_shown_hides_it_and_leaves_select_mode_then_closes ... ok
 test ui::preset_picker::tests::every_row_folder_or_item_is_in_fontsize_4_and_a_long_name_is_cut_to_the_row ... ok
 test ui::preset_picker::tests::in_select_mode_a_found_folder_toggles_and_does_not_open ... ok
 test ui::preset_picker::tests::every_list_refresh_turns_the_strip_off_and_releases_its_note ... ok
+test ui::preset_picker::tests::instrument_rows_are_1_5_u_tall_and_folders_and_presets_alike_in_fontsize_4 ... ok
 test ui::preset_picker::tests::minisynth_and_gmsynth_pickers_list_their_legacy_presets_too ... ok
-test ui::preset_picker::tests::my_files_is_the_whole_user_folder_listing_every_folder_and_only_instrument_files_audio_and_instr ... ok
 test ui::preset_picker::tests::my_files_leave_only_a_dw_programs_sample_folder_out ... ok
 test ui::preset_picker::tests::my_files_lists_the_presets_and_my_soundfonts_the_sf2_files_of_any_case_down_its_folders ... ok
+test ui::preset_picker::tests::my_files_is_the_whole_user_folder_listing_every_folder_and_only_instrument_files_audio_and_instr ... ok
 test ui::preset_picker::tests::my_files_sort_numbers_by_value_and_a_factory_folder_keeps_index_order ... ok
-test ui::preset_picker::tests::instrument_rows_are_1_5_u_tall_and_folders_and_presets_alike_in_fontsize_4 ... ok
 test ui::preset_picker::tests::only_the_scopes_files_are_listed ... ok
 test ui::preset_picker::tests::our_bank_lists_after_default_in_index_order_and_gives_way_to_the_original_content ... ok
 test ui::preset_picker::tests::my_files_then_a_folder_then_a_preset_picks_its_path ... ok
@@ -3646,8 +3646,8 @@ test ui::preview::tests::the_engine_loops_previews_loop_in_song_ticks ... ok
 test ui::preview::tests::the_saved_loop_is_the_songs_clamped_into_the_span ... ok
 test ui::preview::tests::the_solo_song_keeps_only_the_clip_as_it_is ... ok
 test ui::preview::tests::the_span_is_the_clip_as_drawn ... ok
-test ui::rack::tests::a_card_name_wider_than_its_label_is_truncated_keeping_5_tail_characters ... ok
 test ui::preset_picker::tests::while_the_module_loads_the_picked_row_pulses_loading ... ok
+test ui::rack::tests::a_card_name_wider_than_its_label_is_truncated_keeping_5_tail_characters ... ok
 test ui::rack::tests::a_card_shows_its_modules_cstm_and_a_setting_edit_writes_it_back ... ok
 test ui::rack::tests::a_click_opens_an_effect_dialog_but_an_instrument_needs_a_long_press ... ok
 test ui::rack::tests::a_clones_multiband_sends_its_soloed_band_on_its_first_pass ... ok
@@ -3691,8 +3691,8 @@ test ui::rack::tests::above_the_offset_a_step_moves_it_by_the_cards_shift_too ..
 test ui::rack::tests::add_midi_send_offers_the_note_channels_no_midi_send_leads_back_from ... ok
 test ui::rack::tests::add_automation_track_from_a_cards_knob_reports_its_target ... ok
 test ui::rack::tests::add_module_opens_the_browser_at_the_end_and_the_notch_closes ... ok
-test ui::rack::tests::an_audio_record_rack_has_a_4_u_input_row_above_the_first_card ... ok
 test ui::rack::tests::add_send_offers_the_targets_not_sent_to_yet_then_create_fx_channel ... ok
+test ui::rack::tests::an_audio_record_rack_has_a_4_u_input_row_above_the_first_card ... ok
 test ui::rack::tests::an_instrument_preset_names_the_channel_only_while_its_name_is_automatic ... ok
 test ui::rack::tests::an_instrument_the_channel_cannot_take_is_skipped_and_counted ... ok
 test ui::rack::tests::another_audio_record_racks_input_row_fades_in_again ... ok
@@ -3708,13 +3708,13 @@ test ui::rack::tests::copy_leaves_the_rack_and_replace_opens_the_browser_on_the_
 test ui::rack::tests::copy_hands_out_the_module_and_replace_opens_the_browser_on_its_card ... ok
 test ui::rack::tests::create_send_adds_an_effect_channel_and_sends_to_it ... ok
 test ui::rack::tests::copy_rack_hands_out_every_module_top_to_bottom_the_instrument_included_and_changes_nothing ... ok
-test ui::rack::tests::escape_closes_the_dialog_drawing_nothing_so_the_next_press_reaches_the_rack ... ok
 test ui::rack::tests::delete_asks_first_when_automation_lanes_target_the_module ... ok
-test ui::rack::tests::inserting_a_picked_module_always_changes_the_chain_and_its_edits_are_sent ... ok
+test ui::rack::tests::escape_closes_the_dialog_drawing_nothing_so_the_next_press_reaches_the_rack ... ok
+test ui::rack::tests::fine_tune_control_is_offered_on_a_cards_knob_and_the_common_dialogs_slider_which_hands_over ... ok
 test ui::rack::tests::inserts_open_the_browser_at_the_card_or_after_it ... ok
 test ui::rack::tests::instrument_card_menus_add_set_range_or_set_first_note ... ok
 test ui::rack::tests::instruments_take_the_card_heights_of_their_table ... ok
-test ui::rack::tests::fine_tune_control_is_offered_on_a_cards_knob_and_the_common_dialogs_slider_which_hands_over ... ok
+test ui::rack::tests::inserting_a_picked_module_always_changes_the_chain_and_its_edits_are_sent ... ok
 test ui::rack::tests::load_rack_preset_replaces_the_modules_and_the_instrument_if_the_preset_has_one ... ok
 test ui::rack::tests::load_drumset_asks_for_the_drumset_picker ... ok
 test ui::rack::tests::menu_picks_report_a_new_song_or_the_browser ... ok
@@ -3724,8 +3724,8 @@ test ui::rack::tests::minimize_and_maximize_write_add1_byte_0_and_a_load_restore
 test ui::rack::tests::moving_over_0_5_u_vertically_before_300_ms_cancels_the_hold_but_sideways_does_not ... ok
 test ui::rack::tests::moves_within_d_of_a_step_are_dropped_not_queued ... ok
 test ui::rack::tests::next_to_the_held_card_in_the_card_gaps_or_beside_it_nothing_steps ... ok
-test ui::rack::tests::neither_the_finger_nor_the_wheel_scrolls_a_held_rack ... ok
 test ui::rack::tests::only_a_channel_whose_primary_lane_is_a_notes_lane_takes_instruments ... ok
+test ui::rack::tests::neither_the_finger_nor_the_wheel_scrolls_a_held_rack ... ok
 test ui::rack::tests::panel_states_of_removed_modules_are_dropped ... ok
 test ui::rack::tests::past_90_percent_of_the_viewport_a_step_moves_the_offset_by_the_cards_shift ... ok
 test ui::rack::tests::paste_inserts_every_compatible_module_in_clipboard_order_with_fresh_ids_and_settings ... ok
@@ -3755,15 +3755,15 @@ test ui::rack::tests::the_compressor_gr_and_out_bars_ease_to_the_feed_and_in_sta
 test ui::rack::tests::the_enable_toggle_sends_param_0 ... ok
 test ui::rack::tests::the_header_row_follows_section_3_3 ... ok
 test ui::rack::tests::the_held_card_draws_over_the_others ... ok
-test ui::rack::tests::the_held_card_has_a_card_gap_wide_channel_coloured_outline_outside_it_until_release ... ok
-test ui::rack::tests::the_icon_opens_the_common_dialog_whose_sliders_send_negative_indices ... ok
 test ui::rack::tests::the_drag_starts_at_a_0_5_u_vertical_move_and_a_still_finger_steps_nothing ... ok
+test ui::rack::tests::the_held_card_has_a_card_gap_wide_channel_coloured_outline_outside_it_until_release ... ok
+test ui::rack::tests::the_input_menu_lists_the_hosts_devices_and_a_pick_is_the_channels_input ... ok
 test ui::rack::tests::the_input_menu_marks_the_channels_input ... ok
 test ui::rack::tests::the_input_row_fades_in_over_12_frames_each_time_the_rack_shows ... ok
-test ui::rack::tests::the_input_menu_lists_the_hosts_devices_and_a_pick_is_the_channels_input ... ok
 test ui::rack::tests::the_input_rows_mic_button_is_a_light_disc_holding_its_icon ... ok
-test ui::rack::tests::the_level_popup_hangs_from_the_icon_centre_and_moves_up_to_stay_on_screen ... ok
 test ui::rack::tests::the_instruments_picker_names_the_channel_by_the_preset_or_by_instrument_and_id_unless_the_user_renamed_it ... ok
+test ui::rack::tests::the_level_popup_hangs_from_the_icon_centre_and_moves_up_to_stay_on_screen ... ok
+test ui::rack::tests::the_icon_opens_the_common_dialog_whose_sliders_send_negative_indices ... ok
 test ui::rack::tests::the_level_popup_of_a_low_card_moves_up_onto_the_screen_bottom ... ok
 test ui::rack::tests::the_meter_draws_a_ring_per_peak_around_the_mic_button_in_the_channel_colour ... ok
 test ui::rack::tests::the_meter_rings_follow_the_level_law_at_hand_peaks ... ok
@@ -3775,10 +3775,10 @@ test ui::rack::tests::the_patch_spinner_opens_the_picker_with_or_without_patches
 test ui::rack::tests::the_multiband_vu_lines_follow_the_feed_and_come_to_rest ... ok
 test ui::rack::tests::the_preset_button_and_load_rack_preset_ask_for_the_preset_picker ... ok
 test ui::rack::tests::the_preset_button_of_a_soundfont_player_opens_the_preset_picker_like_every_module ... ok
-test ui::rack::tests::the_preset_button_shows_the_modules_preset_name_and_is_as_wide_as_it ... ok
+test ui::rack::tests::the_preset_name_is_truncated_with_an_end_ellipsis ... ok
 test ui::rack::tests::the_rack_is_20_u_wide_capped_at_the_area_width_right_aligned_and_full_height ... ok
 test ui::rack::tests::the_rack_menu_enables_load_drumset_load_and_save_rack_preset_clear_rack_and_the_minimize_items ... ok
-test ui::rack::tests::the_preset_name_is_truncated_with_an_end_ellipsis ... ok
+test ui::rack::tests::the_preset_button_shows_the_modules_preset_name_and_is_as_wide_as_it ... ok
 test ui::rack::tests::the_rack_slides_halfway_each_frame_and_snaps_within_a_pixel ... ok
 test ui::rack::tests::the_remove_button_drops_the_send ... ok
 test ui::rack::tests::the_sends_section_has_one_row_per_send ... ok
@@ -3840,8 +3840,8 @@ test ui::save_dialog::tests::a_title_wider_than_its_room_is_shortened_before_the
 test ui::save_dialog::tests::each_format_has_its_description_folder_and_extension ... ok
 test ui::save_dialog::tests::a_preset_dialog_has_its_title_left_of_the_close_x_its_file_type_and_no_formats ... ok
 test ui::save_dialog::tests::escape_closes ... ok
-test ui::save_dialog::tests::escape_with_a_spinner_popup_open_closes_only_the_popup ... ok
 test ui::save_dialog::tests::enable_master_effects_shows_only_while_split_is_on ... ok
+test ui::save_dialog::tests::escape_with_a_spinner_popup_open_closes_only_the_popup ... ok
 test ui::save_dialog::tests::only_flm_is_underlined_and_send_is_dimmed ... ok
 test ui::save_dialog::tests::save_and_the_close_x_act_and_send_does_nothing ... ok
 test ui::save_dialog::tests::render_returns_the_toggled_options_and_the_close_x_and_escape_close ... ok
@@ -3865,8 +3865,8 @@ test ui::scroller::tests::a_touch_outside_every_touch_zone_or_taken_by_a_child_i
 test ui::scroller::tests::a_trackpad_pinch_zooms_x_over_the_pinch_zone_about_the_gesture_point ... ok
 test ui::scroller::tests::each_axis_stays_calm_for_half_a_u_then_follows_the_finger_one_to_one ... ok
 test ui::scroller::tests::a_touch_that_leaves_neither_calm_zone_is_a_tap_or_a_long_tap ... ok
-test ui::scroller::tests::follow_puts_the_playhead_a_quarter_in_within_the_range ... ok
 test ui::scroller::tests::follow_playhead_turns_the_one_finger_x_scroll_off ... ok
+test ui::scroller::tests::follow_puts_the_playhead_a_quarter_in_within_the_range ... ok
 test ui::scroller::tests::past_either_end_the_finger_moves_the_content_a_fifth_as_far ... ok
 test ui::scroller::tests::let_go_ends_the_touch_and_springs_back_an_axis_past_its_end_only ... ok
 test ui::scroller::tests::the_first_fingers_zone_decides_which_axes_a_pinch_zooms ... ok
@@ -3924,20 +3924,20 @@ test ui::settings_tab::tests::the_popup_marks_the_current_item ... ok
 test ui::settings_tab::tests::the_scaling_slider_shows_its_value_while_held_and_applies_it_when_let_go ... ok
 test ui::song_options::tests::escape_closes_an_open_menu_first ... ok
 test ui::settings_tab::tests::the_metronome_label_stops_short_of_its_percent ... ok
-test ui::song_options::tests::ok_returns_the_choices_and_cancel_and_escape_return_cancel ... ok
 test ui::song_options::tests::the_band_shows_the_title_the_menus_and_the_buttons_top_to_bottom ... ok
+test ui::song_options::tests::the_dialog_base_dims_the_screen_then_paints_the_floating_panel ... ok
 test ui::song_options::tests::the_dialog_opens_on_140_bpm_and_4_4 ... ok
 test ui::song_options::tests::the_menus_list_the_spec_items_with_the_current_one_highlighted ... ok
-test ui::song_options::tests::the_dialog_base_dims_the_screen_then_paints_the_floating_panel ... ok
+test ui::song_options::tests::ok_returns_the_choices_and_cancel_and_escape_return_cancel ... ok
 test ui::song_options::tests::the_menus_pick_their_values_and_the_mode_swaps_the_second_menu ... ok
 test ui::song_options::tests::time_signature_writes_the_first_menu_to_byte_1_and_the_second_to_byte_0_at_the_picked_tempo ... ok
-test ui::song_options::tests::time_division_writes_the_first_menu_and_4_and_scales_the_tempo_by_division_over_4 ... ok
 test ui::soundfont_picker::tests::a_soundfont_cut_off_in_its_samples_is_the_pick_with_a_corrupted_error ... ok
+test ui::song_options::tests::time_division_writes_the_first_menu_and_4_and_scales_the_tempo_by_division_over_4 ... ok
 test ui::soundfont_picker::tests::a_soundfont_that_does_not_read_is_the_pick_with_its_error ... ok
 test ui::soundfont_picker::tests::back_leaves_the_soundfont_for_the_files ... ok
-test ui::soundfont_picker::tests::opened_on_the_modules_soundfont_it_starts_in_its_patches ... ok
-test ui::soundfont_picker::tests::search_keeps_the_patches_whose_name_holds_the_query_in_file_order_or_a_to_z ... ok
 test ui::soundfont_picker::tests::my_files_then_a_soundfont_lists_its_patches_in_file_order_and_a_patch_is_the_pick ... ok
+test ui::soundfont_picker::tests::search_keeps_the_patches_whose_name_holds_the_query_in_file_order_or_a_to_z ... ok
+test ui::soundfont_picker::tests::opened_on_the_modules_soundfont_it_starts_in_its_patches ... ok
 test ui::split::tests::a_sideways_drag_moves_the_ribbon_along_the_band_and_leaves_the_split ... ok
 test ui::split::tests::every_opening_from_closed_fills_the_view_and_a_switch_keeps_the_split ... ok
 test ui::split::tests::on_a_short_view_the_editor_keeps_its_3_u_and_the_playlist_gives_way ... ok
@@ -3945,9 +3945,9 @@ test ui::split::tests::opening_halves_the_way_to_the_target_each_frame_and_snaps
 test ui::split::tests::the_playlist_takes_f_then_a_4_px_gap_and_the_editor_the_rest_at_ppp_1_and_2 ... ok
 test ui::soundfont_picker::tests::the_root_lists_the_original_soundfonts_after_my_files_and_they_open_under_the_title ... ok
 test ui::split::tests::while_it_opens_the_editor_keeps_its_settled_size_and_slides_up_under_the_shrinking_playlist ... ok
-test ui::split::tests::the_ribbon_closes_on_a_tap_and_its_drag_resizes_with_a_rubber_band_and_flicks ... ok
-test ui::step_seq::tests::a_copy_stays_on_its_step_at_fractional_step_widths ... ok
 test ui::step_seq::tests::a_clip_id_that_is_gone_edits_nothing_and_makes_no_clip ... ok
+test ui::step_seq::tests::a_copy_stays_on_its_step_at_fractional_step_widths ... ok
+test ui::split::tests::the_ribbon_closes_on_a_tap_and_its_drag_resizes_with_a_rubber_band_and_flicks ... ok
 test ui::step_seq::tests::a_fling_while_following_leaves_nothing_once_playback_stops ... ok
 test ui::step_seq::tests::a_drag_from_the_current_rows_header_scrolls_and_does_not_fold_the_mixer ... ok
 test ui::step_seq::tests::a_focus_loss_ends_a_lane_drag_and_a_stale_press_paints_nothing ... ok
@@ -3969,8 +3969,8 @@ test ui::step_seq::tests::a_mouse_held_still_300_ms_on_a_row_header_opens_its_me
 test ui::step_seq::tests::a_new_clip_opens_at_3_03_u_a_beat_from_its_earliest_hit_and_lowest_row ... ok
 test ui::step_seq::tests::a_new_swing_popup_starts_from_the_moved_hits ... ok
 test ui::step_seq::tests::a_pinch_before_any_lane_paint_is_a_touch_that_changed_nothing ... ok
-test ui::step_seq::tests::a_pinch_keeps_the_point_under_the_pointer ... ok
 test ui::step_seq::tests::a_non_finite_or_out_of_range_swing_seeds_the_popup_clamped ... ok
+test ui::step_seq::tests::a_pinch_keeps_the_point_under_the_pointer ... ok
 test ui::step_seq::tests::a_pop_stays_with_its_clip ... ok
 test ui::step_seq::tests::a_quick_drag_on_the_ruler_scrolls_the_time_and_seeks_nothing ... ok
 test ui::step_seq::tests::a_press_held_over_a_focus_loss_is_up_and_starts_no_box_and_no_tap ... ok
@@ -3981,8 +3981,8 @@ test ui::step_seq::tests::a_region_edit_drops_the_step_selection ... ok
 test ui::step_seq::tests::a_rows_clone_or_delete_clears_the_selection ... ok
 test ui::step_seq::tests::a_ruler_range_is_the_play_loop_and_its_menu_edits_the_pattern_in_one_action ... ok
 test ui::step_seq::tests::a_ruler_range_wholly_before_the_song_start_is_no_play_loop ... ok
-test ui::step_seq::tests::a_ruler_tap_past_the_loop_end_does_nothing ... ok
 test ui::step_seq::tests::a_ruler_region_on_a_clip_at_bar_2_edits_the_content_ticks_it_shows ... ok
+test ui::step_seq::tests::a_ruler_tap_past_the_loop_end_does_nothing ... ok
 test ui::step_seq::tests::a_second_finger_cancels_the_box_and_starts_none ... ok
 test ui::step_seq::tests::a_selected_hit_takes_the_selected_tint_and_the_others_the_tint ... ok
 test ui::step_seq::tests::a_second_finger_puts_a_lane_drag_back_and_nothing_paints_until_the_lift ... ok
@@ -3994,8 +3994,8 @@ test ui::step_seq::tests::a_swung_hit_is_drawn_on_its_own_step ... ok
 test ui::step_seq::tests::a_swung_tap_on_the_last_step_doubles_the_loop ... ok
 test ui::step_seq::tests::a_swung_tap_pops_in_on_the_cell_its_hit_shows_on ... ok
 test ui::step_seq::tests::a_tap_on_a_hit_deletes_it_when_it_alone_is_selected_else_only_deselects ... ok
-test ui::step_seq::tests::a_tap_on_a_row_header_selects_the_row ... ok
 test ui::step_seq::tests::a_shrunk_loop_lets_posx_spring_back_over_frames ... ok
+test ui::step_seq::tests::a_tap_on_a_row_header_selects_the_row ... ok
 test ui::step_seq::tests::a_tap_on_an_offset_clips_drum_ruler_seeks_to_the_song_tick_it_shows ... ok
 test ui::step_seq::tests::a_tap_on_a_step_toggles_it_in_the_song ... ok
 test ui::step_seq::tests::a_tap_on_the_drum_ruler_asks_for_the_playhead_on_a_step ... ok
@@ -4003,8 +4003,8 @@ test ui::step_seq::tests::a_tap_on_the_current_rows_header_toggles_the_mixer_and
 test ui::step_seq::tests::a_tap_past_the_loop_grows_it_to_b_2_k_in_one_action_and_deleting_shrinks_it ... ok
 test ui::step_seq::tests::a_tapped_hit_takes_the_lanes_swing_on_odd_steps ... ok
 test ui::step_seq::tests::a_tapped_hit_pops_in_from_text_to_its_colour ... ok
-test ui::step_seq::tests::a_touch_and_each_move_paint_the_current_rows_step_under_x ... ok
 test ui::step_seq::tests::a_touch_long_press_selects_and_a_move_boxes ... ok
+test ui::step_seq::tests::a_touch_and_each_move_paint_the_current_rows_step_under_x ... ok
 test ui::step_seq::tests::a_two_bar_clip_scrolls_to_its_32nd_step ... ok
 test ui::step_seq::tests::an_active_step_is_inset_2_px_and_trunc_r_4_tall_with_its_dashes_at_ppp_1_and_2 ... ok
 test ui::step_seq::tests::a_trackpad_pinch_zooms_the_time_and_two_fingers_zoom_the_rows ... ok
@@ -4012,11 +4012,11 @@ test ui::step_seq::tests::an_undo_of_a_swing_that_moved_no_hit_re_seeds_the_popu
 test ui::step_seq::tests::an_undo_under_the_swing_popup_re_seeds_it_from_the_song ... ok
 test ui::step_seq::tests::at_beat_0_the_playhead_lines_left_half_shows_in_the_t_gap ... ok
 test ui::step_seq::tests::beat_groups_alternate_control_and_module_fill ... ok
-test ui::step_seq::tests::cells_alternate_per_beat_in_the_loop_and_are_all_control_fill_past_it ... ok
+test ui::step_seq::tests::another_clip_takes_no_fling_from_the_last_one ... ok
 test ui::step_seq::tests::cells_run_from_content_beat_0_with_1_px_gaps_at_ppp_1_and_2 ... ok
 test ui::step_seq::tests::clear_empties_only_its_row ... ok
+test ui::step_seq::tests::cells_alternate_per_beat_in_the_loop_and_are_all_control_fill_past_it ... ok
 test ui::step_seq::tests::clone_and_delete_shift_the_rows_of_every_drum_clip ... ok
-test ui::step_seq::tests::another_clip_takes_no_fling_from_the_last_one ... ok
 test ui::step_seq::tests::copied_off_grid_hits_stay_in_their_step_and_rotation_goes_by_the_nearest_step ... ok
 test ui::step_seq::tests::copy_duplicates_the_selected_steps_to_the_right_and_selects_the_copies ... ok
 test ui::step_seq::tests::clone_copies_the_row_below_and_selects_it ... ok
@@ -4053,11 +4053,11 @@ test ui::step_seq::tests::row_headers_shrink_the_pad_name_and_truncate_the_sampl
 test ui::step_seq::tests::rows_cover_the_kit_and_every_pad_in_use ... ok
 test ui::step_seq::tests::rows_take_the_zoom_pitch_and_steps_share_the_width ... ok
 test ui::step_seq::tests::rows_without_a_kit_pad_get_a_plain_name ... ok
-test ui::step_seq::tests::panning_and_pitch_snap_to_the_centre_in_a_1_u_zone_and_repeat_stacks_up_to_7 ... ok
 test ui::step_seq::tests::scrolled_off_a_step_boundary_nothing_paints_into_the_header_column ... ok
+test ui::step_seq::tests::panning_and_pitch_snap_to_the_centre_in_a_1_u_zone_and_repeat_stacks_up_to_7 ... ok
 test ui::step_seq::tests::set_midi_note_waits_for_a_key_and_reset_clears_it ... ok
-test ui::step_seq::tests::swing_has_the_3_u_ruler_cell_to_itself_in_step_sequencer_mode ... ok
 test ui::step_seq::tests::set_name_prompts_for_the_custom_name ... ok
+test ui::step_seq::tests::swing_has_the_3_u_ruler_cell_to_itself_in_step_sequencer_mode ... ok
 test ui::step_seq::tests::swing_is_a_button_that_opens_a_popup ... ok
 test ui::step_seq::tests::the_add_drum_button_asks_the_host_until_the_pads_are_all_in_use ... ok
 test ui::step_seq::tests::the_current_header_is_channel_filled_with_module_fill_texts_the_others_channel_texts ... ok
@@ -4115,8 +4115,8 @@ test ui::tempo::tests::the_steps_round_after_adding_and_keep_to_10_999 ... ok
 test ui::tempo::tests::the_value_bpm_the_time_signature_and_the_buttons_are_shown ... ok
 test ui::timeline::tests::knob::a_drop_seeks_to_the_nearest_grid_line_between_the_view_left_and_the_song_end ... ok
 test ui::tempo::tests::the_dial_takes_a_touch_down_within_4_5_u_before_the_buttons ... ok
-test ui::timeline::tests::knob::a_second_finger_cancels_a_drag_which_then_drops_nothing ... ok
 test ui::timeline::tests::knob::a_quick_still_tap_starts_playback_and_a_slow_or_moved_press_does_nothing ... ok
+test ui::timeline::tests::knob::a_second_finger_cancels_a_drag_which_then_drops_nothing ... ok
 test ui::timeline::tests::knob::a_sideways_drag_keeps_the_grab_offset_and_drops_the_playhead_where_it_shows ... ok
 test ui::timeline::tests::law::labels_show_every_bar_at_the_editors_opening_zooms_and_never_left_of_the_marks ... ok
 test ui::timeline::tests::law::the_marks_follow_next_and_its_spacings ... ok
@@ -4192,10 +4192,10 @@ test ui::views::preset_picker::tests::the_chord_set_picker_lists_my_files_defaul
 test ui::views::preset_picker::tests::the_dw_samplers_presets_list_without_their_zone_sample_folders ... ok
 test ui::views::preset_picker::tests::a_factory_pick_loads_and_is_named_from_the_content_root ... ok
 test ui::views::preset_picker::tests::the_instruments_pickers_file_actions_never_delete_rename_or_move_a_place ... ok
-test ui::views::preset_picker::tests::the_instruments_picker_indexes_the_content_folders_presets_before_ours ... ok
+test ui::views::sample_picker::tests::a_bundled_sample_pick_decodes_on_the_worker ... ok
 test ui::views::sample_picker::tests::a_clips_slot_takes_the_file_and_its_folder_and_a_tempo_turns_sync_on ... ok
 test ui::views::sample_picker::tests::a_new_pad_takes_the_next_free_pad_the_default_params_and_no_custom_name ... ok
-test ui::views::sample_picker::tests::a_bundled_sample_pick_decodes_on_the_worker ... ok
+test ui::views::preset_picker::tests::the_instruments_picker_indexes_the_content_folders_presets_before_ours ... ok
 test ui::views::sample_picker::tests::a_sample_from_the_content_folder_takes_an_app_root_path ... ok
 test ui::views::sample_picker::tests::a_slicer_picker_lists_my_files_then_our_loops_and_names_them_built_in ... ok
 test ui::views::sample_picker::tests::a_three_osc_picker_lists_my_files_then_our_shapes_and_names_them_built_in ... ok
@@ -4329,8 +4329,8 @@ test ui::widgets::tests::input::the_hover_brightening_clamps_and_keeps_alpha ...
 test ui::widgets::tests::input::the_knob_value_text_updates_live_and_nothing_pops_up ... ok
 test ui::views::sample_picker::tests::a_pick_decodes_into_a_cache_of_its_own_or_says_why_not ... ok
 test ui::widgets::tests::input::touching_never_jumps_the_value_and_the_thumb_moves_with_the_pointer ... ok
-test ui::widgets::tests::input::the_wheel_passes_through_knobs_and_sliders_to_the_scroller ... ok
 test ui::widgets::tests::kit_a::a_bound_controls_press_is_signalled_in_its_frame_only ... ok
+test ui::widgets::tests::input::the_wheel_passes_through_knobs_and_sliders_to_the_scroller ... ok
 test ui::widgets::tests::kit_a::a_drag_past_the_end_turns_back_at_once ... ok
 test ui::widgets::tests::kit_a::a_knob_in_a_zero_height_rect_draws_nothing_out_of_bounds ... ok
 test ui::widgets::tests::kit_a::a_knob_paints_ring_inner_disc_halo_and_dot_in_that_order ... ok
@@ -4356,9 +4356,9 @@ test ui::widgets::tests::kit_a::only_the_primary_button_drags ... ok
 test ui::widgets::tests::kit_a::strips_are_0_75_u_and_only_there_when_wanted ... ok
 test ui::widgets::tests::kit_a::slider_shapes_follow_the_disabled_and_bipolar_flags ... ok
 test ui::widgets::tests::kit_a::the_menu_is_reset_then_the_parameter_items_with_unlink_only_for_a_linked_param ... ok
+test ui::widgets::tests::kit_a::the_knob_value_shrinks_to_its_ring_down_to_6_pt_and_is_never_clipped ... ok
 test ui::widgets::tests::kit_a::the_menu_reset_item_resets_and_closes ... ok
 test ui::widgets::tests::kit_a::the_parameter_menu_and_the_spinner_popup_have_their_own_ids ... ok
-test ui::widgets::tests::kit_a::the_knob_value_shrinks_to_its_ring_down_to_6_pt_and_is_never_clipped ... ok
 test ui::widgets::tests::kit_a::unbound_or_disabled_controls_signal_nothing ... ok
 test ui::widgets::tests::kit_a::toggles_flip_on_click ... ok
 test ui::widgets::tests::kit_c::a_boxed_list_boxes_the_selected_cell_in_menu_fill_inset_2t_and_draws_no_bars ... ok
@@ -4368,8 +4368,8 @@ test ui::widgets::tests::kit_c::a_menu_button_reads_nan_as_the_first_item_and_ig
 test ui::widgets::tests::kit_c::a_menu_button_draws_its_texts_in_full_whatever_its_rect ... ok
 test ui::widgets::tests::kit_c::a_pill_bound_to_no_parameter_has_no_menu ... ok
 test ui::widgets::tests::kit_c::a_pill_toggle_is_on_for_any_value_but_0_and_a_tap_writes_1_only_from_0 ... ok
-test ui::widgets::tests::kit_c::a_right_label_toggle_puts_the_pill_0_75_u_in_and_the_label_from_1_7_u ... ok
 test ui::widgets::tests::kit_c::a_right_label_is_drawn_in_full_from_1_7_u_whatever_the_rect ... ok
+test ui::widgets::tests::kit_c::a_right_label_toggle_puts_the_pill_0_75_u_in_and_the_label_from_1_7_u ... ok
 test ui::widgets::tests::kit_c::a_separator_fills_its_rect_with_text_at_a_tenth_alpha ... ok
 test ui::widgets::tests::kit_c::a_right_label_toggle_reserves_no_on_off_strip ... ok
 test ui::widgets::tests::kit_c::a_tap_on_the_box_opens_the_spinner_popup_and_a_pick_sets_the_value ... ok
@@ -4404,14 +4404,14 @@ test ui::widgets::tests::kit_d::the_dot_is_drawn_whole_at_the_pads_corners ... o
 test ui::widgets::tests::kit_d::only_the_primary_button_moves_kit_d ... ok
 test ui::widgets::tests::kit_d::the_graph_knob_has_its_label_and_no_value_text ... ok
 test ui::widgets::tests::kit_d::the_left_arc_rises_on_the_left_and_the_right_arc_on_the_right ... ok
-test ui::widgets::tests::kit_d::the_graph_knob_plots_its_envelope_in_the_middle_of_the_ring ... ok
 test ui::widgets::tests::kit_d::the_pad_draws_an_11_by_11_grid_and_a_halo_while_pressed ... ok
+test ui::widgets::tests::kit_d::the_graph_knob_plots_its_envelope_in_the_middle_of_the_ring ... ok
 test ui::widgets::tests::kit_d::the_tag_shows_its_label_centred_beside_the_pointer_and_its_value_while_dragged ... ok
 test ui::widgets::tests::kit_d::the_tag_text_is_10_pt_and_overflows_rather_than_shrinking ... ok
 test ui::widgets::tests::kit_d::the_tag_sits_at_its_value_and_reads_back_both_ways ... ok
 test ui::widgets::tests::list::a_pressed_cell_gets_a_light_wash ... ok
-test ui::widgets::tests::list::a_click_selects_the_cell_under_it_for_every_direction ... ok
 test ui::widgets::tests::list::an_unbound_list_reports_the_selected_index ... ok
+test ui::widgets::tests::list::a_click_selects_the_cell_under_it_for_every_direction ... ok
 test ui::widgets::tests::list::headers_are_drawn_larger_and_cannot_be_selected ... ok
 test ui::widgets::tests::list::list_items_are_never_truncated_or_clipped ... ok
 test ui::widgets::tests::list::the_selected_item_is_text_coloured_with_a_text_bar_and_the_rest_channel_with_menu_fill ... ok
@@ -4491,15 +4491,15 @@ failures:
 
 ---- panels::tests::reference::every_panel_matches_its_reference stdout ----
 
-thread 'panels::tests::reference::every_panel_matches_its_reference' (7077) panicked at src/panels/tests/reference.rs:39:5:
+thread 'panels::tests::reference::every_panel_matches_its_reference' (7097) panicked at src/panels/tests/reference.rs:39:5:
 
-Analyzer [SETTINGS · CUSTOM]: shows [18, 20, 14, 15, 16, 17, 19], the table [18, 20, 14, 15, 16, 17]
-#18 of Analyzer [SETTINGS]: size rule Some(LayoutRecord { w: Flex(2.0), h: Flex(1.0), margins: Margins { t: 0.0, r: 0.0, b: 0.0, l: 0.0 } }), the table Some(LayoutRecord { w: Flex(1.0), h: Flex(1.0), margins: Margins { t: 0.0, r: 0.0, b: 0.0, l: 0.0 } })
+#18 of Analyzer [SETTINGS · CUSTOM]: edges [0.0, 0.0, 933.0, 324.0] px, the table [0.0, 0.0, 1050.0, 324.0] (slack 0 )
+#20 of Analyzer [SETTINGS · CUSTOM]: edges [933.0, 0.0, 1400.0, 324.0] px, the table [1050.0, 0.0, 1400.0, 324.0] (slack 0 )
 
 
 failures:
     panels::tests::reference::every_panel_matches_its_reference
 
-test result: FAILED. 4424 passed; 1 failed; 2 ignored; 0 measured; 0 filtered out; finished in 263.73s
+test result: FAILED. 4424 passed; 1 failed; 2 ignored; 0 measured; 0 filtered out; finished in 264.40s
 
 error: test failed, to rerun pass `-p honeydew --lib`
