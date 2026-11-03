@@ -2,7 +2,7 @@ name: fixup
 
 # Temporary: runs the checks the `CI` workflow runs and writes their own output to `ci-report.txt`, formats the tree and
 # commits both back to the branch. A push that touches this file runs it again. Delete this file and `ci-report.txt`
-# once the branch is green. Run 3: the Analyzer's tilt row and the Android rotation resize.
+# once the branch is green. Run 4: the Analyzer's tilt row and the Android rotation resize.
 
 on:
   push:
