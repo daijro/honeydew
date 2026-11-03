@@ -7,8 +7,8 @@ use eframe::egui;
 use honeydew_audio::device::AudioCommand;
 
 use super::{AppCtx, Nav, View};
-use crate::ui::clips::LiveTake;
 use crate::song::Song;
+use crate::ui::clips::LiveTake;
 use crate::ui::piano_roll::{PianoRoll, PianoRollAction, RollOptions};
 
 /// What the piano roll keeps between frames: each channel's roll, by channel index (the app re-keys them when
