@@ -20,8 +20,8 @@
 //! - The scope's X labels stay relative to the trigger in zoom mode too, where the trigger sits at the selection's
 //!   width × the trigger fraction. Its overlay cycles on a double tap like the generic one.
 //! - `Tilt` on the SETTINGS page is the Spectrum's tilt around 1 kHz, in dB/octave: White (0), Pink (+3), Honeydew
-//!   (+4.5, the default and the card's long-standing display), Brown (+6), or `Custom`, which reads the `dB/oct` step
-//!   beside it (−12…+12). The Spectrogram's columns and the marker read with the same tilt.
+//!   (+4.5, the default and the card's long-standing display), Brown (+6), or `Custom`, which reads the `dB/oct` knob
+//!   beside it continuously from −12 to +12. The Spectrogram's columns and the marker read with the same tilt.
 //! - The marker's value is the drawn curve's at its x (the scope's the middle of a column's extent); without a curve
 //!   point there (no pitch, no feed) neither dot nor readout shows.
 
@@ -90,26 +90,46 @@ pub fn panel() -> Option<Panel> {
         vstack([
             // The Spectrum's tilt. `Custom` shows its own value knob beside it; the other presets hide it.
             hstack([
+                spacer(21)
+                    .w(Size::U(3.75))
+                    .show(Show::Setting(TILT, 4)),
                 spinner(TILT, "Tilt")
                     .items(&TILT_TEXT)
                     .default(2.0)
-                    .w(Size::Flex(2.0)),
+                    .w(Size::Flex(1.0)),
+                spacer(23)
+                    .w(Size::U(2.75))
+                    .show(Show::Setting(TILT, 4)),
                 knob(TILT_STEP, "dB/oct")
                     .default(TILT_STEP_DEFAULT)
                     .value_fn(tilt_text)
+                    .w(Size::U(3.0))
+                    .show(Show::Setting(TILT, 4)),
+                spacer(24)
+                    .w(Size::U(2.5))
                     .show(Show::Setting(TILT, 4)),
             ])
             .h(Size::U(3.24))
             .show(Show::Tab(5)),
             hstack([
+                spacer(22).w(Size::U(0.5)),
                 spinner(14, "Channel")
                     .items(&["Left", "Right", "L + R"])
-                    .default(2.0),
+                    .default(2.0)
+                    .w(Size::U(3.0)),
                 spinner(15, "Reactivity")
                     .items(&["Slow", "Medium", "Fast"])
-                    .default(1.0),
-                spinner(16, "DC Block").items(&["On", "Off"]).default(1.0),
-                knob(17, "Input Gain").default(0.5).value_fn(gain),
+                    .default(1.0)
+                    .w(Size::U(2.5)),
+                spinner(16, "DC Block")
+                    .items(&["On", "Off"])
+                    .default(1.0)
+                    .w(Size::U(3.0)),
+                knob(17, "Input Gain")
+                    .default(0.5)
+                    .value_fn(gain)
+                    .w(Size::U(2.0)),
+                spacer(25).w(Size::U(3.0)),
             ])
             .h(Size::U(3.5))
             .show(Show::Tab(5)),
@@ -869,27 +889,27 @@ const TILT_STEP: u32 = 20;
 const TILTS: [f32; 4] = [0.0, 3.0, 4.5, 6.0];
 /// `Tilt`'s items, in its order.
 const TILT_TEXT: [&str; 5] = ["White", "Pink", "Honeydew", "Brown", "Custom"];
-/// The `dB/oct` steps for `Custom`, dB/octave.
-const TILT_STEPS: [f32; 13] = [
-    -12.0, -9.0, -6.0, -4.5, -3.0, -1.5, 0.0, 1.5, 3.0, 4.5, 6.0, 9.0, 12.0,
-];
-/// `dB/oct`'s default: the knob's fraction of its steps nearest Honeydew's tilt, `+4.5` (step 9 of 12).
-const TILT_STEP_DEFAULT: f32 = 0.75;
+/// `Custom` spans −12…+12 dB/octave; the normalized knob position for Honeydew's long-standing +4.5 default.
+const TILT_STEP_DEFAULT: f32 = (4.5 + 12.0) / 24.0;
 
 /// The Spectrum's tilt around 1 kHz in dB/octave: its `Tilt` preset, [`TILTS`]`[2]` (+4.5, the card's long-standing
-/// display) when unset, or with `Custom` the `dB/oct` step beside it.
+/// display) when unset, or with `Custom` the continuous `dB/oct` value beside it.
+fn custom_tilt(v: f32) -> f32 {
+    let normalized = if v.is_finite() {
+        v.clamp(0.0, 1.0)
+    } else {
+        TILT_STEP_DEFAULT
+    };
+    -12.0 + 24.0 * normalized
+}
+
 fn tilt_text(v: f32) -> String {
-    let v = v.clamp(0.0, 1.0);
-    let i = (v * (TILT_STEPS.len() - 1) as f32).round() as usize;
-    format!("{:+.1} dB/oct", TILT_STEPS[i.min(TILT_STEPS.len() - 1)])
+    format!("{:+.1} dB/oct", custom_tilt(v))
 }
 
 fn tilt(state: &PanelState) -> f32 {
     match setting_item(setting(state, TILT, 2.0)) {
-        4 => {
-            let v = setting(state, TILT_STEP, TILT_STEP_DEFAULT).clamp(0.0, 1.0);
-            TILT_STEPS[(v * (TILT_STEPS.len() - 1) as f32).round() as usize]
-        }
+        4 => custom_tilt(setting(state, TILT_STEP, TILT_STEP_DEFAULT)),
         i => TILTS[i.min(TILTS.len() - 1)],
     }
 }
@@ -1723,7 +1743,7 @@ pub const REFERENCE: Reference = Reference {
         (15, 1.0),
         (16, 1.0),
         (17, 0.5),
-        // The Spectrum's tilt: Honeydew's own, and the `dB/oct` step `Custom` reads.
+        // The Spectrum's tilt: Honeydew's own, and the continuous `dB/oct` value used by `Custom`.
         (TILT, 2.0),
         (TILT_STEP, TILT_STEP_DEFAULT),
     ],
@@ -1788,17 +1808,21 @@ pub const REFERENCE: Reference = Reference {
             tab: 5,
             settings: &[(TILT, 4.0)],
             rows: &[
-                row(TILT, Widget::Spinner, "Tilt", [0.0, 0.0, 9.33, 3.24])
-                    .items("White · Pink · Honeydew · Brown · Custom")
-                    .w(Size::Flex(2.0)),
-                row(TILT_STEP, Widget::Knob, "dB/oct", [9.33, 0.0, 4.67, 3.24])
+                row(21, Widget::Spacer, "", [0.0, 0.0, 3.75, 3.24]),
+                row(TILT, Widget::Spinner, "Tilt", [3.75, 0.0, 2.0, 3.24])
+                    .items("White · Pink · Honeydew · Brown · Custom"),
+                row(23, Widget::Spacer, "", [5.75, 0.0, 2.75, 3.24]),
+                row(TILT_STEP, Widget::Knob, "dB/oct", [8.5, 0.0, 3.0, 3.24])
                     .value("+4.5 dB/oct"),
-                row(14, Widget::Spinner, "Channel", [0.0, 3.24, 3.5, 3.5])
+                row(24, Widget::Spacer, "", [11.5, 0.0, 2.5, 3.24]),
+                row(22, Widget::Spacer, "", [0.0, 3.24, 0.5, 3.5]),
+                row(14, Widget::Spinner, "Channel", [0.5, 3.24, 3.0, 3.5])
                     .items("Left · Right · L + R"),
-                row(15, Widget::Spinner, "Reactivity", [3.5, 3.24, 3.5, 3.5])
+                row(15, Widget::Spinner, "Reactivity", [3.5, 3.24, 2.5, 3.5])
                     .items("Slow · Medium · Fast"),
-                row(16, Widget::Spinner, "DC Block", [7.0, 3.24, 3.5, 3.5]).items("On · Off"),
-                row(17, Widget::Knob, "Input Gain", [10.5, 3.24, 3.5, 3.5]).value("×1.00"),
+                row(16, Widget::Spinner, "DC Block", [6.0, 3.24, 3.0, 3.5]).items("On · Off"),
+                row(17, Widget::Knob, "Input Gain", [9.0, 3.24, 2.0, 3.5]).value("×1.00"),
+                row(25, Widget::Spacer, "", [11.0, 3.24, 3.0, 3.5]),
                 TABS,
             ],
             ..Case::DEFAULT
@@ -1809,13 +1833,15 @@ pub const REFERENCE: Reference = Reference {
             rows: &[
                 row(TILT, Widget::Spinner, "Tilt", [0.0, 0.0, 14.0, 3.24])
                     .items("White · Pink · Honeydew · Brown · Custom")
-                    .w(Size::Flex(2.0)),
-                row(14, Widget::Spinner, "Channel", [0.0, 3.24, 3.5, 3.5])
+                    .w(Size::Flex(1.0)),
+                row(22, Widget::Spacer, "", [0.0, 3.24, 0.5, 3.5]),
+                row(14, Widget::Spinner, "Channel", [0.5, 3.24, 3.0, 3.5])
                     .items("Left · Right · L + R"),
-                row(15, Widget::Spinner, "Reactivity", [3.5, 3.24, 3.5, 3.5])
+                row(15, Widget::Spinner, "Reactivity", [3.5, 3.24, 2.5, 3.5])
                     .items("Slow · Medium · Fast"),
-                row(16, Widget::Spinner, "DC Block", [7.0, 3.24, 3.5, 3.5]).items("On · Off"),
-                row(17, Widget::Knob, "Input Gain", [10.5, 3.24, 3.5, 3.5]).value("×1.00"),
+                row(16, Widget::Spinner, "DC Block", [6.0, 3.24, 3.0, 3.5]).items("On · Off"),
+                row(17, Widget::Knob, "Input Gain", [9.0, 3.24, 2.0, 3.5]).value("×1.00"),
+                row(25, Widget::Spacer, "", [11.0, 3.24, 3.0, 3.5]),
                 TABS,
             ],
             ..Case::DEFAULT
@@ -1871,12 +1897,21 @@ mod live {
         for (item, want) in [(0.0, 0.0), (1.0, 3.0), (2.0, 4.5), (3.0, 6.0)] {
             assert_eq!(tilt(&state(&[(TILT, item)])), want, "{item}");
         }
-        // Custom: the `dB/oct` step, whose own default is +4.5.
+        // Custom is continuous over the full range, with Honeydew's +4.5 as its starting value.
         assert_eq!(tilt(&state(&[(TILT, 4.0)])), 4.5);
-        for (step, want) in [(0.0, -12.0), (0.5, 0.0), (1.0, 12.0)] {
+        for (step, want) in [
+            (0.0, -12.0),
+            (0.25, -6.0),
+            (0.5, 0.0),
+            (0.625, 3.0),
+            (1.0, 12.0),
+        ] {
             let s = state(&[(TILT, 4.0), (TILT_STEP, step)]);
             assert_eq!(tilt(&s), want, "{step}");
         }
+        assert_eq!(tilt_text(0.0), "-12.0 dB/oct");
+        assert_eq!(tilt_text(0.625), "+3.0 dB/oct");
+        assert_eq!(tilt_text(1.0), "+12.0 dB/oct");
     }
 
     /// What view `leaf` on page `tab` draws with `slab` posted, at `ppp`, with `settings`.

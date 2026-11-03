@@ -5,8 +5,8 @@
 //!
 //! The panel is the dialog look without the dim, so the preview shows: 14 U wide at the roll's right edge, centred on
 //! its height and kept inside the screen. Top to bottom: the title, then a row each for `Preset` (Pop, Minor, Lo-fi,
-//! Epic — tapping it steps to the next), `Bars` (1, 2, 4, 8), `Lead` (Chords: a melody written over them; Melody: the
-//! chords fitted under the clip's own notes) and `Seed` (its number and `New seed`), then `Reset`, `Cancel` and
+//! Epic, Random), `Bars` (1, 2, 4, 8), `Lead` (Chords: a melody written over them; Melody: the chords fitted under
+//! the clip's own notes) and `Seed` (its number and `New seed`), then `Reset`, `Cancel` and
 //! `Apply`.
 
 use std::hash::{BuildHasher, RandomState};
@@ -19,9 +19,10 @@ use eframe::egui::{
 use super::compose::{
     self, ARPS, CHORD_MODES, DURATIONS, KEYS, Lead, OCTAVES, PRESETS, RESTS, SCALE_CHOICES, Settings,
 };
-use crate::song::scales::SCALES;
 use crate::metrics::{FontSize, Metrics};
+use crate::params::{menu_index, menu_value};
 use crate::song::Event;
+use crate::song::scales::SCALES;
 use crate::ui::widgets;
 use crate::ui::{UiCtx, dialog};
 
@@ -224,15 +225,50 @@ fn rows(ui: &mut Ui, cx: &UiCtx, id: Id, column: Rect, ink: Color32, panel: &mut
         ui.painter()
             .text(at, Align2::LEFT_CENTER, s, font.clone(), color);
     };
-    // The row's choice button, at its right end: tapping it steps to the next choice.
-    let choice = |ui: &mut Ui, r: Rect, name: &str, s: &str| {
+    // Every choice opens a dropdown instead of stepping through values one tap at a time.
+    let dropdown = |ui: &mut Ui,
+                    r: Rect,
+                    name: &str,
+                    items: &[&str],
+                    current: usize,
+                    columns: Option<usize>| {
+        let width = m.u(7.0).min(r.width());
+        let at = pos2(r.right() - width, r.center().y - m.u(BUTTON[1]) / 2.0);
+        let rect = Rect::from_min_size(at, vec2(width, m.u(BUTTON[1])));
+        let control = widgets::Control {
+            menu: widgets::ParamMenu::Off,
+            column_len: columns,
+            ..widgets::Control::new(id.with(name), rect, "", ink, 0.0)
+        };
+        let mut value = menu_value(current, items.len());
+        if widgets::menu_button(ui, cx, &control, items, &mut value).changed() {
+            menu_index(value, items.len())
+        } else {
+            current.min(items.len().saturating_sub(1))
+        }
+    };
+    let action_button = |ui: &mut Ui, r: Rect, name: &str, text: &str| {
         let at = pos2(
             r.right() - m.u(BUTTON[0]),
             r.center().y - m.u(BUTTON[1]) / 2.0,
         );
-        let b = dialog::button(id.with(name), button_rect(at, m), s, c, m);
+        let b = dialog::button(id.with(name), button_rect(at, m), text, c, m);
         widgets::button(ui, cx, &b, true).clicked()
     };
+    const BAR_LABELS: [&str; 4] = ["1", "2", "4", "8"];
+    const LEADS: [&str; 2] = ["Chords", "Melody"];
+    let presets: Vec<&str> = PRESETS.iter().map(|(name, _)| *name).collect();
+    let keys: Vec<&str> = std::iter::once("Project")
+        .chain(KEYS.iter().copied())
+        .collect();
+    let scales: Vec<&str> = std::iter::once("Project")
+        .chain(SCALE_CHOICES.iter().map(|&i| SCALES[i]))
+        .collect();
+    let octaves: Vec<&str> = OCTAVES.iter().map(|(name, _)| *name).collect();
+    let durations: Vec<&str> = DURATIONS.iter().map(|(name, _)| *name).collect();
+    let rests: Vec<&str> = RESTS.iter().map(|(name, _)| *name).collect();
+    let arps: Vec<&str> = ARPS.iter().map(|(name, _)| *name).collect();
+
     label(
         ui,
         next(HEADER),
@@ -241,20 +277,13 @@ fn rows(ui: &mut Ui, cx: &UiCtx, id: Id, column: Rect, ink: Color32, panel: &mut
     );
     let r = next(CHOICE);
     label(ui, r, "Preset", text);
-    if choice(ui, r, "preset", PRESETS[panel.preset].0) {
-        panel.preset = (panel.preset + 1) % PRESETS.len();
-    }
+    panel.preset = dropdown(ui, r, "preset", &presets, panel.preset, None);
     let r = next(CHOICE);
     label(ui, r, "Bars", text);
-    if choice(ui, r, "bars", &BARS[panel.bars].to_string()) {
-        panel.bars = (panel.bars + 1) % BARS.len();
-    }
+    panel.bars = dropdown(ui, r, "bars", &BAR_LABELS, panel.bars, None);
     let r = next(CHOICE);
     label(ui, r, "Lead", text);
-    let lead = if panel.lead == 0 { "Chords" } else { "Melody" };
-    if choice(ui, r, "lead", lead) {
-        panel.lead = 1 - panel.lead;
-    }
+    panel.lead = dropdown(ui, r, "lead", &LEADS, panel.lead, None);
     let r = next(CHOICE);
     label(ui, r, "Seed", text);
     let at = pos2(r.left() + m.u(LABEL_W), r.center().y);
@@ -265,7 +294,7 @@ fn rows(ui: &mut Ui, cx: &UiCtx, id: Id, column: Rect, ink: Color32, panel: &mut
         font.clone(),
         text,
     );
-    if choice(ui, r, "new seed", "New seed") {
+    if action_button(ui, r, "new seed", "New seed") {
         let now = ui.input(|i| i.time).to_bits();
         panel.seed = RandomState::new().hash_one(now) % SEEDS;
     }
@@ -277,48 +306,24 @@ fn rows(ui: &mut Ui, cx: &UiCtx, id: Id, column: Rect, ink: Color32, panel: &mut
     );
     let r = next(CHOICE);
     label(ui, r, "Key", text);
-    let key = if panel.key == 0 {
-        "Project"
-    } else {
-        KEYS[panel.key - 1]
-    };
-    if choice(ui, r, "key", key) {
-        panel.key = (panel.key + 1) % (KEYS.len() + 1);
-    }
+    panel.key = dropdown(ui, r, "key", &keys, panel.key, Some(7));
     let r = next(CHOICE);
     label(ui, r, "Scale", text);
-    let scale = if panel.scale == 0 {
-        "Project"
-    } else {
-        SCALES[SCALE_CHOICES[panel.scale - 1]]
-    };
-    if choice(ui, r, "scale", scale) {
-        panel.scale = (panel.scale + 1) % (SCALE_CHOICES.len() + 1);
-    }
+    panel.scale = dropdown(ui, r, "scale", &scales, panel.scale, Some(9));
     let r = next(CHOICE);
     label(ui, r, "Octave", text);
-    if choice(ui, r, "octave", OCTAVES[panel.octave].0) {
-        panel.octave = (panel.octave + 1) % OCTAVES.len();
-    }
+    panel.octave = dropdown(ui, r, "octave", &octaves, panel.octave, None);
     label(ui, next(HEADER), "Notes & rhythm", ink.gamma_multiply(DIM));
     let r = next(CHOICE);
     label(ui, r, "Length", text);
-    if choice(ui, r, "length", DURATIONS[panel.duration].0) {
-        panel.duration = (panel.duration + 1) % DURATIONS.len();
-    }
+    panel.duration = dropdown(ui, r, "length", &durations, panel.duration, None);
     let r = next(CHOICE);
     label(ui, r, "Rests", text);
-    if choice(ui, r, "rests", RESTS[panel.rests].0) {
-        panel.rests = (panel.rests + 1) % RESTS.len();
-    }
+    panel.rests = dropdown(ui, r, "rests", &rests, panel.rests, None);
     let r = next(CHOICE);
     label(ui, r, "Arpeggios", text);
-    if choice(ui, r, "arps", ARPS[panel.arp].0) {
-        panel.arp = (panel.arp + 1) % ARPS.len();
-    }
+    panel.arp = dropdown(ui, r, "arps", &arps, panel.arp, None);
     let r = next(CHOICE);
     label(ui, r, "Chords", text);
-    if choice(ui, r, "chords", CHORD_MODES[panel.chords]) {
-        panel.chords = (panel.chords + 1) % CHORD_MODES.len();
-    }
+    panel.chords = dropdown(ui, r, "chords", &CHORD_MODES, panel.chords, None);
 }

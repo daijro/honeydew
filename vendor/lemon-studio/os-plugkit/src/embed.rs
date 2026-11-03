@@ -77,6 +77,8 @@ pub enum Modal {
     Menu { x: i32, y: i32, menu: MenuView, scale: f32 },
     /// The "Type in value" box, starting with `text`.
     TypeIn { x: i32, y: i32, text: String, scale: f32 },
+    /// A file the host should pick, with an optional extension filter.
+    OpenFile { title: String, extensions: Vec<String> },
 }
 
 /// The user's answer to a [`Modal`].
@@ -85,6 +87,8 @@ pub enum Answer {
     /// The menu row picked: its row in the menu, then in each submenu on the way.
     Pick(Vec<usize>),
     Text(String),
+    /// The path of the file the host picked.
+    File(String),
 }
 
 /// A modal waiting for its answer: the input that opened it, and the answers given before it in the chain.
@@ -344,7 +348,7 @@ impl Window {
         self.unlock();
         match self.answer() {
             Some(Answer::Pick(path)) => picked(def, &path),
-            Some(Answer::Text(_)) => None,
+            Some(Answer::Text(_) | Answer::File(_)) => None,
             None => {
                 self.ask(Modal::Menu { x, y, menu: MenuView::of(def), scale });
                 None
@@ -360,9 +364,28 @@ impl Window {
         self.unlock();
         match self.answer() {
             Some(Answer::Text(t)) => Some(t),
-            Some(Answer::Pick(_)) => None,
+            Some(Answer::Pick(_) | Answer::File(_)) => None,
             None => {
                 self.ask(Modal::TypeIn { x, y, text: text.to_owned(), scale });
+                None
+            }
+        }
+    }
+
+    /// Asks the host to pick a file. The input is replayed with its path once the host answers.
+    pub fn open_file(&mut self, title: &str, extensions: &[&str]) -> Option<String> {
+        if crate::no_modal() {
+            return None;
+        }
+        self.unlock();
+        match self.answer() {
+            Some(Answer::File(path)) => Some(path),
+            Some(Answer::Pick(_) | Answer::Text(_)) => None,
+            None => {
+                self.ask(Modal::OpenFile {
+                    title: title.to_owned(),
+                    extensions: extensions.iter().map(|extension| (*extension).to_owned()).collect(),
+                });
                 None
             }
         }
@@ -482,4 +505,35 @@ pub fn answer(id: Parent, answer: Option<Answer>) {
         i.events.push_front(e.clone());
     }
     i.replay = Some(Replay { answers, used: Vec::new(), trigger: p.trigger, left: events.len() });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_file_is_replayed_to_the_editor_with_the_picked_path() {
+        let mut editors = EDITORS.lock().unwrap_or_else(|e| e.into_inner());
+        let id = (1..).find(|id| !editors.contains_key(id)).unwrap();
+        let state = Arc::new(State::default());
+        editors.insert(id, state.clone());
+        drop(editors);
+
+        let down = Input::Down { x: 12.0, y: 18.0, btn: Button::Left, dbl: false };
+        state.lock().events.push_back(down.clone());
+        let mut win = Window { id, state: state.clone(), tick: Instant::now(), last: None };
+        assert_eq!(win.next(), Some(down));
+        assert_eq!(win.open_file("Open sample", &["wav"]), None);
+        assert_eq!(modal(id), Some(Modal::OpenFile {
+            title: "Open sample".into(),
+            extensions: vec!["wav".into()],
+        }));
+
+        answer(id, Some(Answer::File("/samples/Loop.wav".into())));
+        assert!(matches!(win.next(), Some(Input::Down { .. })));
+        assert_eq!(win.open_file("Open sample", &["wav"]), Some("/samples/Loop.wav".into()));
+        assert!(matches!(win.next(), Some(Input::Up { btn: Button::Left })));
+
+        EDITORS.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+    }
 }

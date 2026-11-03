@@ -148,6 +148,8 @@ pub struct EventLoop<T: 'static> {
     mouse_touch: bool,
     // Honeydew (vendored addition): the mouse's buttons as the last press or release left them.
     mouse_buttons: u32,
+    // The last density scale factor, so a rotation does not spuriously emit ScaleFactorChanged.
+    scale_factor: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -163,6 +165,27 @@ impl Default for PlatformSpecificEventLoopAttributes {
 }
 
 impl<T: 'static> EventLoop<T> {
+    fn scale_factor_changed(&mut self) -> Option<event::Event<T>> {
+        let monitor = MonitorHandle::new(self.android_app.clone());
+        let scale_factor = monitor.scale_factor();
+        let size = monitor.size();
+        if (scale_factor - self.scale_factor).abs() < f64::EPSILON
+            || size.width == 0
+            || size.height == 0
+        {
+            return None;
+        }
+        self.scale_factor = scale_factor;
+        let new_inner_size = Arc::new(Mutex::new(size));
+        Some(event::Event::WindowEvent {
+            window_id: window::WindowId(WindowId),
+            event: event::WindowEvent::ScaleFactorChanged {
+                inner_size_writer: InnerSizeWriter::new(Arc::downgrade(&new_inner_size)),
+                scale_factor,
+            },
+        })
+    }
+
     pub(crate) fn new(
         attributes: &PlatformSpecificEventLoopAttributes,
     ) -> Result<Self, EventLoopError> {
@@ -173,6 +196,7 @@ impl<T: 'static> EventLoop<T> {
              Android",
         );
         let redraw_flag = SharedFlag::new();
+        let scale_factor = MonitorHandle::new(android_app.clone()).scale_factor();
 
         Ok(Self {
             android_app: android_app.clone(),
@@ -199,6 +223,7 @@ impl<T: 'static> EventLoop<T> {
             combining_accent: None,
             mouse_touch: false,
             mouse_buttons: 0,
+            scale_factor,
         })
     }
 
@@ -220,6 +245,12 @@ impl<T: 'static> EventLoop<T> {
             match event {
                 MainEvent::InitWindow { .. } => {
                     callback(event::Event::Resumed, self.window_target());
+                    if let Some(event) = self.scale_factor_changed() {
+                        callback(event, self.window_target());
+                    }
+                    // Some Android devices do not deliver WindowResized after the first surface is created. In that
+                    // case launch in landscape would keep a zero or stale viewport until another lifecycle event.
+                    resized = true;
                 },
                 MainEvent::TerminateWindow { .. } => {
                     callback(event::Event::Suspended, self.window_target());
@@ -256,22 +287,9 @@ impl<T: 'static> EventLoop<T> {
                     // events a rotation may not send at all. Report the native window's size either way, so a rotated
                     // app never keeps the viewport it had.
                     resized = true;
-                    let monitor = MonitorHandle::new(self.android_app.clone());
-                    let old_scale_factor = monitor.scale_factor();
-                    let scale_factor = monitor.scale_factor();
-                    if (scale_factor - old_scale_factor).abs() < f64::EPSILON {
-                        let new_inner_size = Arc::new(Mutex::new(
-                            MonitorHandle::new(self.android_app.clone()).size(),
-                        ));
-                        let event = event::Event::WindowEvent {
-                            window_id: window::WindowId(WindowId),
-                            event: event::WindowEvent::ScaleFactorChanged {
-                                inner_size_writer: InnerSizeWriter::new(Arc::downgrade(
-                                    &new_inner_size,
-                                )),
-                                scale_factor,
-                            },
-                        };
+                    // During surface teardown the helper defers a density change until a live, nonzero window size
+                    // can be attached. Resume or InitWindow retries it after the surface returns.
+                    if let Some(event) = self.scale_factor_changed() {
                         callback(event, self.window_target());
                     }
                 },
@@ -285,6 +303,10 @@ impl<T: 'static> EventLoop<T> {
                 MainEvent::Resume { .. } => {
                     debug!("App Resumed - is running");
                     self.running = true;
+                    if let Some(event) = self.scale_factor_changed() {
+                        callback(event, self.window_target());
+                    }
+                    resized = true;
                 },
                 MainEvent::SaveState { .. } => {
                     // XXX: how to forward this state to applications?
@@ -351,11 +373,15 @@ impl<T: 'static> EventLoop<T> {
                 } else {
                     PhysicalSize::new(0, 0)
                 };
-                let event = event::Event::WindowEvent {
-                    window_id: window::WindowId(WindowId),
-                    event: event::WindowEvent::Resized(size),
-                };
-                callback(event, self.window_target());
+                // Rotation can transiently detach the native window. A zero resize can leave graphics backends in an
+                // unusable state; the replacement surface's InitWindow/WindowResized reports its nonzero size.
+                if size.width > 0 && size.height > 0 {
+                    let event = event::Event::WindowEvent {
+                        window_id: window::WindowId(WindowId),
+                        event: event::WindowEvent::Resized(size),
+                    };
+                    callback(event, self.window_target());
+                }
             }
 
             pending_redraw |= self.redraw_flag.get_and_reset();

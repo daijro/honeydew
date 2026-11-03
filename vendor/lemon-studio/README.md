@@ -51,16 +51,17 @@ Honeydew's changes to these files are `honeydew.patch` beside this file, each ma
 
 - `os-plugkit`: the feature `embed` and its window, `src/embed.rs` (Honeydew's own file): the plugins' editor window API
   over a frame and an input queue that Honeydew keeps, run on the app thread with no thread of its own (the browser has
-  none), the editor parked between inputs; menus and the type-in box answered without blocking, by delivering the input
-  that asked again with the answer. `gui` is that window with `embed`; `time` is `std::time`, or `web-time` in the
-  browser, whose `std::time` has no clock (`vals.rs` uses it).
+  none), the editor parked between inputs; menus, type-in boxes and file picks answered without blocking, by delivering
+  the input that asked again with the answer. `gui` is that window with `embed`; `time` is `std::time`, or `web-time` in
+  the browser, whose `std::time` has no clock (`vals.rs` uses it).
 - The plugins' `editor.rs`: with `embed`, their editor runs on every platform and takes every window handle as an
   embedded editor's id (Win32 too); after its input loop it parks. `os-hostlink`: with its `embed`, the link those
   editors use (`Peer`) on Windows too. `lib.rs`: the VST3 impl only without `linked`
   (Honeydew builds no VST3 wrapper).
-- Lemon Sampler: in the browser, a sample's effects are computed at once instead of on a thread, `std::time` is
-  `os_plugkit::time`, and the browser and Android have no sample file dialog. Lemon Trio: the browser and Android have
-  no file dialog for its custom shape's sample.
+- Lemon Sampler: in the browser, a sample's effects are computed at once instead of on a thread, and `std::time` is
+  `os_plugkit::time`; the browser has no sample file dialog. Android uses the host's system document picker and keeps
+  the chosen sample in `My Samples`. Lemon Trio uses the same Android picker for its custom-shape sample; the browser
+  has no dialog.
 - `os-dsp`: in the browser, which cannot compile Signalsmith Stretch (C++), `src/stretch_web.rs` (Honeydew's own file)
   stands in for `stretch.rs`: it resamples, so a stretched sound's pitch follows its speed there.
 - The manifests are Honeydew's (as for the hosts), with `crate-type` lib only, nih-plug by path without its VST3 feature,

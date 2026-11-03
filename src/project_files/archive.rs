@@ -8,8 +8,8 @@
 //!   archive holds now lead into that folder ([`relink`]), so the song plays them, and
 //!   still does once saved and opened again.
 //! - Any other archive's known files ([`import_folder`]) are counted: none is a message, some ask `Import %d files?`,
-//!   and `Yes` copies them into their user folders by type, `name (2)` and so on on a clash, then sums up how many went
-//!   where. No delete-archive question.
+//!   and `Yes` copies them into their user folders by type, preserving nested folders from sample packs;
+//! a clash takes `name (2)` and so on, then the import sums up how many went where. No delete-archive question.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -398,9 +398,9 @@ impl ProjectFiles {
     }
 
     /// Writes the archive's file `entry` into its user folder ([`import_folder`]) and returns where
-    /// ([`Self::import_into`]): below the same folders when the archive has it in that user folder (an archive mirrors
-    /// the user folder), else right in it. A song goes into the songs folder, through the library (the web keeps songs
-    /// there), under a free name.
+    /// ([`Self::import_into`]): samples keep their archive-relative folders (dropping a leading `My Samples` label),
+    /// while other types keep their existing mirrored-user-folder behavior. A song goes into the songs folder, through
+    /// the library (the web keeps songs there), under a free name.
     fn import_file(&mut self, entry: &Entry) -> io::Result<PathBuf> {
         let path = Path::new(&entry.path);
         let folder = import_folder(path).ok_or(io::ErrorKind::Unsupported)?;
@@ -412,8 +412,17 @@ impl ProjectFiles {
         }
         let user = self.user.as_deref().ok_or(io::ErrorKind::NotFound)?;
         let mut dir = user.join(folder);
-        if let Some(sub) = path.parent().and_then(|p| p.strip_prefix(folder).ok()) {
-            dir.push(sub);
+        if let Some(parent) = path.parent() {
+            // An archive can mirror `My Samples/...` or be a sample pack rooted in a folder such as `Drum Pack/Kicks`.
+            // Keep either layout beneath My Samples; the other user-folder types retain their existing import behavior.
+            let sub = if folder == SAMPLES_FOLDER {
+                parent.strip_prefix(folder).unwrap_or(parent)
+            } else {
+                parent.strip_prefix(folder).unwrap_or(Path::new(""))
+            };
+            if !sub.as_os_str().is_empty() {
+                dir.push(sub);
+            }
         }
         self.import_into(&dir, entry, folder == INSTRUMENTS_FOLDER)
     }
@@ -1145,7 +1154,7 @@ mod tests {
             let mine: [(&str, &[u8]); 9] = [
                 ("My Samples/Kicks/kick.wav", b"kick"),
                 ("My Samples/Loop.WAV", b"mine"),
-                ("My Samples/Loop (2).WAV", b"loop"),
+                ("My Samples/loops/Loop.WAV", b"loop"),
                 ("My Presets/Hall.flmpst", b"hall"),
                 ("My Racks/Bus.flmrack", b"rack"),
                 ("My Drumsets/Kit.tmpl", b"kit"),
@@ -1172,6 +1181,20 @@ mod tests {
         assert_eq!(
             files.message,
             lines(&["Imported 1 file", "1 sample in My Samples"])
+        );
+    }
+
+    #[test]
+    fn an_unprefixed_sample_pack_keeps_its_nested_folders_on_import() {
+        let archive = zip_of(&[("Drum Pack/Kicks/Acoustic/kick.wav", b"kick")]);
+        let mut files = web("Drum Pack.zip", &archive);
+        open(&mut files);
+        assert_eq!(files.message, lines(&["Import 1 files?"]));
+        files.import_files(files.importing.take().unwrap());
+        assert_eq!(
+            files.read_user_file(Path::new("My Samples/Drum Pack/Kicks/Acoustic/kick.wav"))
+                .unwrap(),
+            b"kick"
         );
     }
 
