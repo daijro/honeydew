@@ -886,6 +886,14 @@ impl PianoRoll {
         actions
     }
 
+    /// Opens the `Generate` panel from the transport bar's GENERATE button (`View::PianoRoll`), where the note menu's
+    /// entry needs a note selected first. Its seed comes from the clock, so a second tap writes another progression.
+    pub(crate) fn open_generate(&mut self, ctx: &egui::Context) {
+        let seed = RandomState::new().hash_one(ctx.input(|i| i.time).to_bits());
+        self.menu = Some(Menu::Generate(generate::Panel::new(seed)));
+        ctx.request_repaint();
+    }
+
     /// The keys the roll sounds stop now, as at [`Self::hide`] (a hidden web page runs no frame, `app::on_hidden`): its
     /// key column's, a new note's and a dragged one's. A touch under way goes on, and ends with nothing to stop.
     pub(crate) fn silence(&mut self) -> Vec<u8> {

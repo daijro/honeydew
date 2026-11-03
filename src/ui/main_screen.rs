@@ -270,6 +270,8 @@ pub struct ScreenActions {
     pub step: Option<Step>,
     /// SOLO CLIP was clicked.
     pub preview: bool,
+    /// The transport bar's GENERATE was clicked (the piano roll only): open its `Generate` panel.
+    pub generate: bool,
     /// A ruler's tap this frame, in any view ([`AppCtx::set_playhead`]): the playhead's song tick.
     pub playhead: Option<u64>,
     /// A playhead knob's drag let go, the playlist's or an editor's ([`AppCtx::seek`]): seek to this song tick, playing
@@ -1794,14 +1796,28 @@ impl MainScreen {
         if button(ui, "keyboard_settings", slots.keys, strip).clicked() {
             nav = Some(Nav::Toggle(Overlay::KeyboardSettings));
         }
+        // GENERATE (`IconId::Randomize`), only in the piano roll: it opens the roll's `Generate` panel, where the note
+        // menu's own entry needs a note selected first.
+        let generating = matches!(input.view, View::PianoRoll(_));
+        if generating {
+            let look = BarButton::icon(IconId::Randomize).caption("GENERATE");
+            if button(ui, "generate", slots.generate, look).clicked() {
+                actions.generate = true;
+            }
+        }
         if let Some(name) = input.scale_name {
-            // No control: a tap there is a tap on the empty bar.
+            // No control: a tap there is a tap on the empty bar. Its room ends where GENERATE's does.
             let font = m.font_id(FontSize::Pt8);
             let ink = text.gamma_multiply(SCALE_ALPHA);
             let painter = ui.painter();
+            let room = if generating {
+                slots.scale.with_max_x(slots.generate.left())
+            } else {
+                slots.scale
+            };
             widgets::truncated(
                 painter,
-                slots.scale,
+                room,
                 Align2::LEFT_CENTER,
                 name,
                 font,
@@ -2103,6 +2119,8 @@ pub struct TransportSlots {
     pub keys: Rect,
     /// The free space right of the keyboard settings, up to REC (one row) or SOLO CLIP's slot, shown or not (two rows).
     pub scale: Rect,
+    /// GENERATE, in the scale's row at its right end: one slot, only drawn in the piano roll.
+    pub generate: Rect,
     pub rec: Rect,
     pub rewind: Rect,
     pub play: Rect,
@@ -2165,6 +2183,8 @@ pub fn transport_slots(
         let h = row.height() - m.u(0.7);
         Rect::from_center_size(pos2(x, row.center().y), vec2(px, h))
     };
+    let scale = Rect::from_x_y_ranges(keys.right()..=scale_end.max(keys.right()), row.y_range());
+    let generate = slot(scale.right() - b);
     let mut dividers = Vec::new();
     if solo {
         dividers.push(vertical(if two {
@@ -2181,7 +2201,8 @@ pub fn transport_slots(
     TransportSlots {
         mixer,
         keys,
-        scale: Rect::from_x_y_ranges(keys.right()..=scale_end.max(keys.right()), row.y_range()),
+        scale,
+        generate,
         rec,
         rewind: centre(1.0),
         play: centre(2.0),

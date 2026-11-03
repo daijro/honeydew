@@ -2248,6 +2248,10 @@ impl HoneydewApp {
                     Some(edit) => app.song_edited(edit == SongEdit::Final),
                     None => {}
                 }
+                // The transport bar's GENERATE (the piano roll only) opens the roll's `Generate` panel.
+                if std::mem::take(&mut actions.generate) {
+                    self.slots.piano_roll.open_generate(ui.ctx());
+                }
                 navs.extend(actions.nav.take());
                 actions.playhead = app.playhead;
                 actions.seek = app.seek.or(actions.seek);
