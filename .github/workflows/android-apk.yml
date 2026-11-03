@@ -9,13 +9,14 @@ name: Android APK
 # plays out of the box. Bump `SOUNDS_TAG` with `Cargo.toml`'s version, and keep the version in `sounds/release.txt` the
 # library's own (that file is what the crate compiles; the rest of the library is not checked in).
 
+# Nothing but a deliberate ask builds an APK any more: `tools/android-dist.sh` alone changes only when a build is
+# wanted (a comment bump is the ask), so an ordinary push — Android sources, Java, the manifest, this file — costs
+# nothing. `Run workflow` in the Actions tab does the same, by hand.
 on:
   push:
     branches: ["**"]
     paths:
-      - .github/workflows/android-apk.yml
       - tools/android-dist.sh
-      - android/**
   workflow_dispatch:
 
 permissions:
