@@ -3,8 +3,9 @@
 //! the same on every platform.
 //!
 //! - The pointer over it is the editor's, in the editor's pixels: presses (a second one within 0.4 s and 4 px is a
-//!   double click), moves, releases (also outside, while a press it took is held) and the wheel. While the editor holds
-//!   the cursor (a knob drag) the moves go as movement and the cursor hides.
+//!   double click), moves, releases (also outside, while a press it took is held) and the wheel. On touchscreens, a
+//!   stationary long press on a knob opens the same context menu as a right click; moving past the drag slop keeps it a
+//!   normal knob drag. While the editor holds the cursor (a knob drag) the moves go as movement and the cursor hides.
 //! - The editor's menus show over the card in Lemon's own look (`os_ui::kit::menu`), with their submenus; its "Type in
 //!   value" box is a text field there.
 //! - Its edits reach the song as a plugin editor's do (`plugins::idle`): the song's params, undo, REC.
@@ -26,6 +27,14 @@ use crate::plugins::builtin::Builtin;
 /// Two presses closer than this (seconds and points) are a double click.
 const DOUBLE_S: f64 = 0.4;
 const DOUBLE_PT: f32 = 4.0;
+/// The drag slop for deciding whether a touchscreen press is a hold or a knob drag (egui's drag threshold).
+const TOUCH_DRAG_SLOP_PT: f32 = 6.0;
+
+fn touch_context_due(started: f64, now: f64, origin: Pos2, current: Pos2, locked: bool) -> bool {
+    locked
+        && crate::ui::gesture::is_long(now - started)
+        && origin.distance(current) <= TOUCH_DRAG_SLOP_PT
+}
 /// The editor's polling period while it shows and is busy (its own timer on the desktop), and while it rests: busy is
 /// within `BUSY_S` of a painted frame, or with the pointer on it. A parameter change wakes it at once.
 // ponytail: a resting editor polls at 4 Hz (its overlays expire a little late); a wake from the editor itself would let
@@ -58,6 +67,8 @@ pub(super) struct LemonCard {
     pressed: Option<Button>,
     /// The finger id for a touch press (egui does not always synthesize pointer-button events on Android).
     finger: Option<u64>,
+    /// A still touch-down can turn into the plugin's context click after the app's long-press threshold.
+    touch_start: Option<(f64, Pos2)>,
     /// An Android document-picker request and its result channel while a Lemon editor asks for a file.
     #[cfg(target_os = "android")]
     file_picker: Option<(Modal, AndroidPickStage)>,
@@ -121,6 +132,13 @@ pub(super) fn show(
     // Editor pixels per point.
     let k = card.size.0 as f32 / rect.width();
     let modal = embed::modal(editor);
+    if modal.is_some() {
+        // The popup owns subsequent pointer/touch events. Drop the plugin-control press here so its button/finger
+        // state cannot remain stuck after the modal closes (for example after a long-press context menu).
+        card.pressed = None;
+        card.finger = None;
+        card.touch_start = None;
+    }
     if modal.is_none() && card.size.0 > 0 {
         forward(ui, card, id, rect, k, response.hovered());
     }
@@ -281,6 +299,7 @@ fn forward(ui: &Ui, card: &mut LemonCard, widget_id: Id, rect: Rect, k: f32, hov
                 send(Input::Down { x, y, btn: Button::Left, dbl }, held);
                 card.pressed = Some(Button::Left);
                 card.finger = Some(id.0);
+                card.touch_start = Some((now, pos));
                 card.last = pos;
                 card.over = true;
             }
@@ -288,9 +307,22 @@ fn forward(ui: &Ui, card: &mut LemonCard, widget_id: Id, rect: Rect, k: f32, hov
                 if has_touch && card.finger == Some(id.0) && card.pressed.is_some() =>
             {
                 if embed::locked(editor) {
-                    let d = (pos - card.last) * k;
-                    send(Input::Delta { dx: d.x, dy: d.y }, held);
+                    if let Some((_, origin)) = card.touch_start {
+                        // Ignore touch jitter while the hold is undecided; once the finger leaves the calm zone, start
+                        // the knob drag from its original position so none of the real movement is lost.
+                        if pos.distance(origin) > TOUCH_DRAG_SLOP_PT {
+                            card.touch_start = None;
+                            let d = (pos - origin) * k;
+                            send(Input::Delta { dx: d.x, dy: d.y }, held);
+                        }
+                    } else {
+                        let d = (pos - card.last) * k;
+                        send(Input::Delta { dx: d.x, dy: d.y }, held);
+                    }
                 } else {
+                    if card.touch_start.is_some_and(|(_, origin)| pos.distance(origin) > TOUCH_DRAG_SLOP_PT) {
+                        card.touch_start = None;
+                    }
                     let (x, y) = px(pos);
                     send(Input::Move { x, y }, held);
                 }
@@ -305,6 +337,7 @@ fn forward(ui: &Ui, card: &mut LemonCard, widget_id: Id, rect: Rect, k: f32, hov
                     send(Input::Up { btn }, held);
                 }
                 card.finger = None;
+                card.touch_start = None;
             }
             _ if has_touch => {}
             Event::PointerMoved(p) => {
@@ -361,12 +394,27 @@ fn forward(ui: &Ui, card: &mut LemonCard, widget_id: Id, rect: Rect, k: f32, hov
                     send(Input::Up { btn }, held);
                 }
                 card.finger = None;
+                card.touch_start = None;
             }
             Event::PointerGone if card.pressed.is_none() && std::mem::take(&mut card.over) => {
                 send(Input::Leave, held);
             }
             _ => {}
         }
+    }
+    // On touchscreens there is no secondary button. A stationary long press on a cursor-locked plugin knob acts as a
+    // context click, opening the plugin's normal parameter menu (including Reset). Keep ordinary short taps and drags
+    // as left-button input.
+    if let Some((started, at)) = card.touch_start
+        && card.finger.is_some()
+        && card.pressed == Some(Button::Left)
+        && touch_context_due(started, now, at, card.last, embed::locked(editor))
+    {
+        send(Input::Up { btn: Button::Left }, held);
+        let (x, y) = px(at);
+        send(Input::Down { x, y, btn: Button::Right, dbl: false }, held);
+        card.pressed = Some(Button::Right);
+        card.touch_start = None;
     }
 }
 
@@ -627,5 +675,19 @@ fn type_in(
     } else if cancel || outside {
         card.typed = None;
         embed::answer(editor, None);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stationary_long_touch_on_a_locked_knob_becomes_its_context_click() {
+        let at = pos2(10.0, 20.0);
+        assert!(!touch_context_due(0.0, 0.3, at, at, true), "exactly 300 ms is still a tap");
+        assert!(touch_context_due(0.0, 0.301, at, at + vec2(6.0, 0.0), true));
+        assert!(!touch_context_due(0.0, 0.301, at, at + vec2(6.1, 0.0), true), "movement turns it into a drag");
+        assert!(!touch_context_due(0.0, 0.301, at, at, false), "only a knob drag has the plugin's cursor lock");
     }
 }

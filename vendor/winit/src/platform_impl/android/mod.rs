@@ -165,7 +165,10 @@ impl Default for PlatformSpecificEventLoopAttributes {
 }
 
 impl<T: 'static> EventLoop<T> {
-    fn scale_factor_changed(&mut self) -> Option<event::Event<T>> {
+    fn scale_factor_changed<F>(&mut self, callback: &mut F)
+    where
+        F: FnMut(event::Event<T>, &RootAEL),
+    {
         let monitor = MonitorHandle::new(self.android_app.clone());
         let scale_factor = monitor.scale_factor();
         let size = monitor.size();
@@ -173,17 +176,19 @@ impl<T: 'static> EventLoop<T> {
             || size.width == 0
             || size.height == 0
         {
-            return None;
+            return;
         }
         self.scale_factor = scale_factor;
         let new_inner_size = Arc::new(Mutex::new(size));
-        Some(event::Event::WindowEvent {
+        let event = event::Event::WindowEvent {
             window_id: window::WindowId(WindowId),
             event: event::WindowEvent::ScaleFactorChanged {
                 inner_size_writer: InnerSizeWriter::new(Arc::downgrade(&new_inner_size)),
                 scale_factor,
             },
-        })
+        };
+        // Keep the size alive through dispatch: ScaleFactorChanged exposes a weak writer that the callback may use.
+        callback(event, self.window_target());
     }
 
     pub(crate) fn new(
@@ -245,9 +250,7 @@ impl<T: 'static> EventLoop<T> {
             match event {
                 MainEvent::InitWindow { .. } => {
                     callback(event::Event::Resumed, self.window_target());
-                    if let Some(event) = self.scale_factor_changed() {
-                        callback(event, self.window_target());
-                    }
+                    self.scale_factor_changed(callback);
                     // Some Android devices do not deliver WindowResized after the first surface is created. In that
                     // case launch in landscape would keep a zero or stale viewport until another lifecycle event.
                     resized = true;
@@ -289,9 +292,7 @@ impl<T: 'static> EventLoop<T> {
                     resized = true;
                     // During surface teardown the helper defers a density change until a live, nonzero window size
                     // can be attached. Resume or InitWindow retries it after the surface returns.
-                    if let Some(event) = self.scale_factor_changed() {
-                        callback(event, self.window_target());
-                    }
+                    self.scale_factor_changed(callback);
                 },
                 MainEvent::LowMemory => {
                     callback(event::Event::MemoryWarning, self.window_target());
@@ -303,9 +304,7 @@ impl<T: 'static> EventLoop<T> {
                 MainEvent::Resume { .. } => {
                     debug!("App Resumed - is running");
                     self.running = true;
-                    if let Some(event) = self.scale_factor_changed() {
-                        callback(event, self.window_target());
-                    }
+                    self.scale_factor_changed(callback);
                     resized = true;
                 },
                 MainEvent::SaveState { .. } => {
@@ -322,9 +321,12 @@ impl<T: 'static> EventLoop<T> {
                     warn!("TODO: forward onStop notification to application");
                 },
                 MainEvent::Destroy => {
-                    // XXX: maybe exit mainloop to drop things before being
-                    // killed by the OS?
-                    warn!("TODO: forward onDestroy notification to application");
+                    // NativeActivity waits for its app thread to return before unloading the native library. Ignoring
+                    // this event leaves winit's loop alive during Activity teardown (including configuration relaunch),
+                    // so `super.onDestroy()` can block waiting for Rust indefinitely. Exit cleanly on the app thread.
+                    debug!("App Destroyed - exiting event loop");
+                    self.running = false;
+                    self.window_target.exit();
                 },
                 MainEvent::InsetsChanged { .. } => {
                     // XXX: how to forward this state to applications?
