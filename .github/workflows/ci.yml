@@ -4,6 +4,8 @@ on:
   push:
     branches: ["**"]
   pull_request:
+  # The desktop matrix below runs on demand only (`native-multicore`), so a push costs one runner.
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -41,6 +43,9 @@ jobs:
         run: cargo test --manifest-path tools/content-build/Cargo.toml
 
   native-multicore:
+    # Windows and macOS only when asked (`Actions ▸ CI ▸ Run workflow`): Android is the build that ships, and the
+    # desktop pair took two runners on every push for one test.
+    if: github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
