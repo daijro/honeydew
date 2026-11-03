@@ -1789,7 +1789,8 @@ pub const REFERENCE: Reference = Reference {
             settings: &[(TILT, 4.0)],
             rows: &[
                 row(TILT, Widget::Spinner, "Tilt", [0.0, 0.0, 10.5, 3.24])
-                    .items("White · Pink · Honeydew · Brown · Custom"),
+                    .items("White · Pink · Honeydew · Brown · Custom")
+                    .w(Size::Flex(2.0)),
                 row(TILT_STEP, Widget::Knob, "dB/oct", [10.5, 0.0, 3.5, 3.24]).value("+4.5 dB/oct"),
                 row(14, Widget::Spinner, "Channel", [0.0, 3.24, 3.5, 3.5])
                     .items("Left · Right · L + R"),
@@ -1797,6 +1798,7 @@ pub const REFERENCE: Reference = Reference {
                     .items("Slow · Medium · Fast"),
                 row(16, Widget::Spinner, "DC Block", [7.0, 3.24, 3.5, 3.5]).items("On · Off"),
                 row(17, Widget::Knob, "Input Gain", [10.5, 3.24, 3.5, 3.5]).value("×1.00"),
+                TABS,
             ],
             ..Case::DEFAULT
         },
@@ -1805,7 +1807,8 @@ pub const REFERENCE: Reference = Reference {
             tab: 5,
             rows: &[
                 row(TILT, Widget::Spinner, "Tilt", [0.0, 0.0, 14.0, 3.24])
-                    .items("White · Pink · Honeydew · Brown · Custom"),
+                    .items("White · Pink · Honeydew · Brown · Custom")
+                    .w(Size::Flex(2.0)),
                 row(14, Widget::Spinner, "Channel", [0.0, 3.24, 3.5, 3.5])
                     .items("Left · Right · L + R"),
                 row(15, Widget::Spinner, "Reactivity", [3.5, 3.24, 3.5, 3.5])
