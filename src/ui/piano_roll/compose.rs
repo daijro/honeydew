@@ -19,14 +19,17 @@ pub(crate) enum Preset {
     Minor,
     Lofi,
     Epic,
+    /// A walk of its own, drawn from the seed: `New seed` gives another progression.
+    Random,
 }
 
 /// The presets in the panel's order, with their names.
-pub(crate) const PRESETS: [(&str, Preset); 4] = [
+pub(crate) const PRESETS: [(&str, Preset); 5] = [
     ("Pop", Preset::Pop),
     ("Minor", Preset::Minor),
     ("Lo-fi", Preset::Lofi),
     ("Epic", Preset::Epic),
+    ("Random", Preset::Random),
 ];
 
 impl Preset {
@@ -37,6 +40,8 @@ impl Preset {
             Self::Minor => &[1, 6, 3, 7],
             Self::Lofi => &[2, 5, 1, 6],
             Self::Epic => &[1, 6, 4, 5],
+            // Random has no table: it walks from the seed (`walk`).
+            Self::Random => &[1],
         }
     }
 
@@ -119,6 +124,29 @@ fn note(beat: f64, len: f64, key: u8, velocity: u8) -> Event {
         pan: Event::DEFAULT_PAN,
         slide: false,
     }
+}
+
+/// [`Preset::Random`]'s progression: the tonic on the first bar, then a step or two up or down the scale, now and
+/// then a leap to one of the home degrees (1, 4, 5, 6), and the last bar back on the tonic or the fifth — a cadence.
+fn walk(bars: usize, degrees: usize, rng: &mut Rng) -> Vec<u8> {
+    let n = degrees.max(1) as i32;
+    let home = [1, 4, 5, 6];
+    let mut out = Vec::with_capacity(bars);
+    let mut at = 1i32;
+    for bar in 0..bars {
+        if bar > 0 {
+            at = if rng.unit() < 0.3 {
+                home[rng.below(home.len())].min(n)
+            } else {
+                (at + [-2, -1, 1, 2][rng.below(4)]).clamp(1, n)
+            };
+        }
+        out.push(at.clamp(1, n) as u8);
+    }
+    if let Some(last) = out.last_mut() {
+        *last = if rng.unit() < 0.5 { 1 } else { 5.min(n) as u8 };
+    }
+    out
 }
 
 /// The degrees the clip's notes suggest, one a bar: of the scale's triads, the one whose tones cover the bar's notes
@@ -246,7 +274,13 @@ pub(crate) fn generate(
     // The chords sit around the tonic at 48 + the root, the melody an octave above them.
     let (chord_base, melody_base) = (48 + i32::from(root % 12), 60 + i32::from(root % 12));
     let played = s.preset.degrees();
-    let degrees: Vec<u8> = (0..bars).map(|bar| played[bar % played.len()]).collect();
+    // A Random progression is drawn before the melody, so its seed decides both; it takes 7ths now and then.
+    let (degrees, seventh) = if s.preset == Preset::Random {
+        (walk(bars, offs.len(), &mut rng), rng.unit() < 0.4)
+    } else {
+        let degrees = (0..bars).map(|bar| played[bar % played.len()]).collect();
+        (degrees, s.preset.seventh())
+    };
     let (degrees, melody) = if s.lead == Lead::Melody && !existing.is_empty() {
         (fitted(&existing, &offs, bars, bpb), existing)
     } else {
@@ -255,7 +289,7 @@ pub(crate) fn generate(
             melody(&degrees, melody_base, &offs, bpb, &mut rng),
         )
     };
-    let mut out = triads(&degrees, s.preset.seventh(), chord_base, &offs, bpb);
+    let mut out = triads(&degrees, seventh, chord_base, &offs, bpb);
     out.extend(melody);
     sorted(out)
 }
@@ -357,6 +391,32 @@ mod tests {
             4.0,
         );
         assert_eq!(chord_keys(&long).len(), 24);
+    }
+
+    #[test]
+    fn the_random_preset_walks_the_scale_from_the_tonic_and_a_seed_changes_it() {
+        let offs = offsets(C_MAJOR);
+        let mut walks = Vec::new();
+        for seed in 0..6u64 {
+            let s = settings(Preset::Random, 4, seed, Lead::Chords);
+            let out = generate(&s, (0, C_MAJOR), &[], 4.0);
+            let chords = chord_keys(&out);
+            assert!(chords.len() >= 12, "seed {seed}: {chords:?}");
+            // The first bar is the tonic's triad, and the whole walk is in scale.
+            assert_eq!(chords[..3], [48, 52, 55], "seed {seed}");
+            for key in keys(&out) {
+                let pc = i32::from(key % 12);
+                assert!(
+                    offs.iter().any(|o| (pc - o).rem_euclid(12) == 0),
+                    "seed {seed}: {key} is out of C major"
+                );
+            }
+            walks.push(chords);
+        }
+        assert!(
+            walks.windows(2).any(|w| w[0] != w[1]),
+            "a fresh walk for every seed"
+        );
     }
 
     #[test]
