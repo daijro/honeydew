@@ -2,7 +2,7 @@ name: fixup
 
 # Temporary: runs the checks the `CI` workflow runs and writes their own output to `ci-report.txt`, formats the tree and
 # commits both back to the branch. A push that touches this file runs it again. Delete this file and `ci-report.txt`
-# once the branch is green. Run 6: the GENERATE button on the roll view state.
+# once the branch is green. Run 7: the GENERATE button on the roll view state.
 
 on:
   push:
