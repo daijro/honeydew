@@ -1,0 +1,12 @@
+# Choir Aahs: MuseScore_General's GM Choir Aahs (a stereo sampled choir from FluidR3, MIT), rendered through the
+# SoundFont Player at eight of its own sample roots. The roots it attenuates (D#4, F#4, F#5) render 6–8 dB under
+# their neighbours, so they are left out. Stereo, each cut to 2.5 s with a found loop. The samples are sung voices.
+id = "choir-aahs"
+kind = "program"
+path = "Presets/DW Sampler/Choir/Choir Aahs.dwp"
+source = "musescore-general"
+sf2 = { file = "unpacked/MuseScore_General.sf2", preset = 52, keys = [39, 45, 48, 57, 63, 69, 75, 81] }
+channels = "stereo"
+loop = { find = true, min_s = 1.2, crossfade_ms = 120, keep_s = 2.5 }
+release = 0.6
+gain = "even"

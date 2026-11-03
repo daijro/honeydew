@@ -1,0 +1,138 @@
+# A room kit: Karoryfer's Swirly Drums (kick, toms, cymbals: its dry mic plus its "wet" ambience 10 dB down),
+# Frankensnare's 14x5 maple snare and aluminium rimshot (bottom, top and overheads at the source's default balance) and
+# The Hat With The Phat (one stereo pair). One mid-strong hit per pad, peaking at −1 dBFS, cut at −60 dB re its peak or
+# 4 s with a 400 ms fade; Level and Pan follow the Rock Kit's mix.
+id = "kit-room"
+kind = "kit"
+path = "Drumsets/Room Kit.tmpl"
+source = "karoryfer-swirly-drums"
+tail = { floor_db = -60, fade_ms = 400, max_s = 4 }
+
+[[pad]]
+name = "Kick"
+level_db = -7
+mix = [
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/marching_kick/marching_kick_vl16_rr1_reso.wav" },
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/marching_kick/marching_kick_vl16_rr1_beater.wav", gain_db = -3.1 },
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/wet/marching_kick/marching_kick_vl16_rr1_reso.wav", gain_db = -10 },
+]
+
+[[pad]]
+name = "Snare"
+level_db = -8.5
+source = "karoryfer-frankensnare"
+mix = [
+  { file = "unpacked/karoryfer.frankensnare-main/Samples/14d_basic/btm/sn_vl6_rr1.flac" },
+  { file = "unpacked/karoryfer.frankensnare-main/Samples/14d_basic/top/sn_vl6_rr1.flac", gain_db = -4.4 },
+  { file = "unpacked/karoryfer.frankensnare-main/Samples/14d_basic/oh/sn_vl6_rr1.flac" },
+]
+
+[[pad]]
+name = "Side Stick"
+level_db = -11
+pan = -0.08
+source = "karoryfer-frankensnare"
+mix = [
+  { file = "unpacked/karoryfer.frankensnare-main/Samples/14d_basic/btm/ss_vl4_rr1.flac" },
+  { file = "unpacked/karoryfer.frankensnare-main/Samples/14d_basic/top/ss_vl4_rr1.flac", gain_db = -4.4 },
+  { file = "unpacked/karoryfer.frankensnare-main/Samples/14d_basic/oh/ss_vl4_rr1.flac" },
+]
+
+[[pad]]
+name = "Rimshot"
+level_db = -9.5
+source = "karoryfer-frankensnare"
+mix = [
+  { file = "unpacked/karoryfer.frankensnare-main/Samples/14a_rimshot/btm/sr_vl2_rr1.flac" },
+  { file = "unpacked/karoryfer.frankensnare-main/Samples/14a_rimshot/top/sr_vl2_rr1.flac", gain_db = -4.4 },
+  { file = "unpacked/karoryfer.frankensnare-main/Samples/14a_rimshot/oh/sr_vl2_rr1.flac" },
+]
+
+[[pad]]
+name = "Closed Hat"
+level_db = -13
+pan = 0.24
+source = "karoryfer-hat-with-the-phat"
+mix = [
+  { file = "unpacked/Karoryfer.TheHatWithThePhat-master/Samples/squash/hat_20_squash_bow_vl4_rr1.wav" },
+]
+
+[[pad]]
+name = "Pedal Hat"
+level_db = -14
+pan = 0.24
+source = "karoryfer-hat-with-the-phat"
+mix = [
+  { file = "unpacked/Karoryfer.TheHatWithThePhat-master/Samples/chik/hat_20_chik_vl4_rr1.wav" },
+]
+
+[[pad]]
+name = "Open Hat"
+level_db = -12
+pan = 0.24
+source = "karoryfer-hat-with-the-phat"
+mix = [
+  { file = "unpacked/Karoryfer.TheHatWithThePhat-master/Samples/open/hat_20_open_bow_vl4_rr1.wav" },
+]
+
+[[pad]]
+name = "Low Tom"
+level_db = -9
+pan = -0.24
+mix = [
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/tom_floor/tom_floor_vl9_rr1.wav" },
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/wet/tom_floor/tom_floor_vl9_rr1.wav", gain_db = -10 },
+]
+
+[[pad]]
+name = "Mid Tom"
+level_db = -9
+mix = [
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/tom_xmed/tom_xmed_vl8_rr1.wav" },
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/wet/tom_xmed/tom_xmed_vl8_rr1.wav", gain_db = -10 },
+]
+
+[[pad]]
+name = "High Tom"
+level_db = -9
+pan = 0.24
+mix = [
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/tom_mhi/tom_mhi_vl8_rr1.wav" },
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/wet/tom_mhi/tom_mhi_vl8_rr1.wav", gain_db = -10 },
+]
+
+[[pad]]
+name = "Ride"
+level_db = -13
+pan = 0.32
+mix = [
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/ride/ride_vl11_rr1.wav" },
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/wet/ride/ride_vl11_rr1.wav", gain_db = -10 },
+]
+
+[[pad]]
+name = "Crash"
+level_db = -12
+pan = -0.28
+mix = [
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/crash/crash_vl9_rr1.wav" },
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/wet/crash/crash_vl9_rr1.wav", gain_db = -10 },
+]
+
+[[pad]]
+name = "Splash"
+level_db = -13
+pan = 0.28
+mix = [
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/splash/splash_vl9_rr1.wav" },
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/wet/splash/splash_vl9_rr1.wav", gain_db = -10 },
+]
+
+[[pad]]
+name = "China"
+level_db = -13
+pan = -0.32
+mix = [
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/china/china_vl9_rr1.wav" },
+  { file = "unpacked/karoryfer.swirly-drums-main/Samples/wet/china/china_vl9_rr1.wav", gain_db = -10 },
+]

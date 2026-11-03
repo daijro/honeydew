@@ -1,0 +1,19 @@
+# Acoustic snares for the pad and clip sample pickers: Frankensnare's overhead pair, one strong hit each (a 10" piccolo,
+# a 12x5 steel shell, a brush slap). Each peaks at −1 dBFS and is cut at −60 dB re its peak with a 30 ms fade.
+id = "snare-acoustic"
+kind = "samples"
+path = "Samples/Snare/"
+source = "karoryfer-frankensnare"
+tail = { floor_db = -60, fade_ms = 30 }
+
+[[sample]]
+name = "Piccolo Snare"
+file = "unpacked/karoryfer.frankensnare-main/Samples/10_basic/oh/sn_vl5_rr1.flac"
+
+[[sample]]
+name = "Steel Snare"
+file = "unpacked/karoryfer.frankensnare-main/Samples/12_basic/oh/sn_vl6_rr1.flac"
+
+[[sample]]
+name = "Brush Snare"
+file = "unpacked/karoryfer.frankensnare-main/Samples/14d_brush/oh/sb_vl4_rr1.flac"

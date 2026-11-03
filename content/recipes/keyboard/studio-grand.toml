@@ -1,0 +1,13 @@
+# VCSL's close-miked Steinway B, pedal up: its softer and hardest dynamics, stereo.
+# This recording names middle C C4; every other point of its whole-tone grid keeps the original tuning.
+id = "keys-studio-grand"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/Studio Grand.dwp"
+source = "vcsl"
+files = "unpacked/VCSL-master/Chordophones/Zithers/Grand Piano, Steinway B/NoSus/JHPiano_NoSus_Close_{note}_vl{layer}_rr{rr}.wav"
+layers = ["2", "4"]
+keys = { every = 4, from = 21, to = 108 }
+channels = "auto"
+tail = { floor_db = -60, fade_ms = 400, max_s = 6 }
+release = 0.45
+gain = "normalize"

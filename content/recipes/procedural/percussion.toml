@@ -1,0 +1,14 @@
+id = "proc-perc"
+kind = "samples"
+path = "Samples/Electronic Percussion/"
+source = "honeydew"
+render = "rim"
+variant = [
+  { name = "Cowbell", render = "cowbell" },
+  { name = "Cowbell Short", render = "cowbell", tune = 600.0, decay = 0.06 },
+  { name = "Clave", render = "clave" },
+  { name = "Clave Low", render = "clave", tune = 1800.0, decay = 0.04 },
+  { name = "Rim Shot", tune = 1700.0, decay = 0.018, click = 0.5 },
+  { name = "Rim Click", tune = 2300.0, decay = 0.01, click = 0.8 },
+  { name = "Rim Wood", tune = 1200.0, decay = 0.03, click = 0.3 },
+]

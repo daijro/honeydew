@@ -1,0 +1,62 @@
+name: CI
+
+# On demand only (`Actions ▸ CI ▸ Run workflow`): no push, no pull request, no runner spent unless it is asked for.
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # A test that hangs instead of failing fails the job in minutes, not hours.
+    timeout-minutes: 40
+    env:
+      # The test binaries' full debug info is big enough that this job's linker dies on the runner with SIGBUS
+      # (`ld terminated with signal 7`) instead of linking them. The dev profile keeps its debug info for local
+      # work; here only the tests' verdict matters, and a failure still names its file and line.
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+      # Keep lint rules aligned with the validated development toolchain.
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            tools/content-build
+      # libclang: bindgen in signalsmith-stretch's build script (Lemon Sampler's time stretching, C++).
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo check --workspace --target wasm32-unknown-unknown
+      - name: Content tool
+        run: cargo test --manifest-path tools/content-build/Cargo.toml
+
+  native-multicore:
+    # Windows and macOS only when asked (`Actions ▸ CI ▸ Run workflow`): Android is the build that ships, and the
+    # desktop pair took two runners on every push for one test.
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+      - uses: Swatinem/rust-cache@v2
+      - name: libclang
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $llvm = 'C:\Program Files\LLVM\bin'
+          if (-not (Test-Path "$llvm\libclang.dll")) { choco install llvm -y --no-progress }
+          "LIBCLANG_PATH=$llvm" >> $env:GITHUB_ENV
+      - run: cargo test --locked --lib parallel_racks_match_sequential_through_sends_and_live_toggle

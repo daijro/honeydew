@@ -1,0 +1,465 @@
+# Meta reference SFZ channel 6. All recorded pitches and three dynamic layers; finger/light pick/firm pick switch at velocities 43 and 86 instead of crossfading.
+id = "guitar-meta-nylon-b"
+kind = "program"
+path = "Presets/DW Sampler/Guitar/Nylon Guitar B String (Meta).dwp"
+source = "meta-nylon-guitar"
+tail = { floor_db = -60, fade_ms = 30 }
+release = 0.4
+gain = "normalize"
+channels = "stereo"
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_B3_01.wav"
+root = 59
+lokey = 59
+hikey = 59
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_B3_01.wav"
+root = 59
+lokey = 59
+hikey = 59
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_B3_01.wav"
+root = 59
+lokey = 59
+hikey = 59
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_C4_01.wav"
+root = 60
+lokey = 60
+hikey = 60
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_C4_01.wav"
+root = 60
+lokey = 60
+hikey = 60
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_C4_01.wav"
+root = 60
+lokey = 60
+hikey = 60
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_Cs4_01.wav"
+root = 61
+lokey = 61
+hikey = 61
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_Cs4_01.wav"
+root = 61
+lokey = 61
+hikey = 61
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_Cs4_01.wav"
+root = 61
+lokey = 61
+hikey = 61
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_D4_01.wav"
+root = 62
+lokey = 62
+hikey = 62
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_D4_01.wav"
+root = 62
+lokey = 62
+hikey = 62
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_D4_01.wav"
+root = 62
+lokey = 62
+hikey = 62
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_Ds4_01.wav"
+root = 63
+lokey = 63
+hikey = 63
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_Ds4_01.wav"
+root = 63
+lokey = 63
+hikey = 63
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_Ds4_01.wav"
+root = 63
+lokey = 63
+hikey = 63
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_E4_01.wav"
+root = 64
+lokey = 64
+hikey = 64
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_E4_01.wav"
+root = 64
+lokey = 64
+hikey = 64
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_E4_01.wav"
+root = 64
+lokey = 64
+hikey = 64
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_F4_01.wav"
+root = 65
+lokey = 65
+hikey = 65
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_F4_01.wav"
+root = 65
+lokey = 65
+hikey = 65
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_F4_01.wav"
+root = 65
+lokey = 65
+hikey = 65
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_Fs4_01.wav"
+root = 66
+lokey = 66
+hikey = 66
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_Fs4_01.wav"
+root = 66
+lokey = 66
+hikey = 66
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_Fs4_01.wav"
+root = 66
+lokey = 66
+hikey = 66
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_G4_01.wav"
+root = 67
+lokey = 67
+hikey = 67
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_G4_01.wav"
+root = 67
+lokey = 67
+hikey = 67
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_G4_01.wav"
+root = 67
+lokey = 67
+hikey = 67
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_Gs4_01.wav"
+root = 68
+lokey = 68
+hikey = 68
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_Gs4_01.wav"
+root = 68
+lokey = 68
+hikey = 68
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_Gs4_01.wav"
+root = 68
+lokey = 68
+hikey = 68
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_A4_01.wav"
+root = 69
+lokey = 69
+hikey = 69
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_A4_01.wav"
+root = 69
+lokey = 69
+hikey = 69
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_A4_01.wav"
+root = 69
+lokey = 69
+hikey = 69
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_As4_01.wav"
+root = 70
+lokey = 70
+hikey = 70
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_As4_01.wav"
+root = 70
+lokey = 70
+hikey = 70
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_As4_01.wav"
+root = 70
+lokey = 70
+hikey = 70
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_B4_01.wav"
+root = 71
+lokey = 71
+hikey = 71
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_B4_01.wav"
+root = 71
+lokey = 71
+hikey = 71
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_B4_01.wav"
+root = 71
+lokey = 71
+hikey = 71
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_C5_01.wav"
+root = 72
+lokey = 72
+hikey = 72
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_C5_01.wav"
+root = 72
+lokey = 72
+hikey = 72
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_C5_01.wav"
+root = 72
+lokey = 72
+hikey = 72
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_Cs5_01.wav"
+root = 73
+lokey = 73
+hikey = 73
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_Cs5_01.wav"
+root = 73
+lokey = 73
+hikey = 73
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_Cs5_01.wav"
+root = 73
+lokey = 73
+hikey = 73
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_D5_01.wav"
+root = 74
+lokey = 74
+hikey = 74
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_D5_01.wav"
+root = 74
+lokey = 74
+hikey = 74
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_D5_01.wav"
+root = 74
+lokey = 74
+hikey = 74
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_Ds5_01.wav"
+root = 75
+lokey = 75
+hikey = 75
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_Ds5_01.wav"
+root = 75
+lokey = 75
+hikey = 75
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_Ds5_01.wav"
+root = 75
+lokey = 75
+hikey = 75
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_E5_01.wav"
+root = 76
+lokey = 76
+hikey = 76
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_E5_01.wav"
+root = 76
+lokey = 76
+hikey = 76
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_E5_01.wav"
+root = 76
+lokey = 76
+hikey = 76
+lovel = 86
+hivel = 127
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel01Finger_F5_01.wav"
+root = 77
+lokey = 77
+hikey = 77
+lovel = 0
+hivel = 42
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel02Pick_F5_01.wav"
+root = 77
+lokey = 77
+hikey = 77
+lovel = 43
+hivel = 85
+
+[[zone]]
+file = "unpacked/INSGuitarNylon_StringB_Vel03Pick_F5_01.wav"
+root = 77
+lokey = 77
+hikey = 77
+lovel = 86
+hivel = 127

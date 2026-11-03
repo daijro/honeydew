@@ -1,0 +1,100 @@
+# Timpani: VSCO 2 CE's five drums, hit, layers 1 and 3 (p, f), first round robin, each cut at −50 dB re its peak or
+# 4 s. The files name no note: each root is the drum's principal tone (its strongest partial, with others near 1.5 and
+# 2 times it), measured by FFT, and `tune` brings it to the root.
+id = "orchestral-timpani"
+kind = "program"
+path = "Presets/DW Sampler/Orchestral/Timpani.dwp"
+source = "vsco2-ce"
+tail = { floor_db = -50, fade_ms = 300, max_s = 4.0 }
+release = 0.6
+gain = "even"
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Percussion/Timpani/Timpani1_Hit_v1_rr1_Sum.wav"
+root = 41
+tune = -47
+lokey = 36
+hikey = 44
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Percussion/Timpani/Timpani1_Hit_v3_rr1_Sum.wav"
+root = 41
+tune = -47
+lokey = 36
+hikey = 44
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Percussion/Timpani/Timpani2_Hit_v1_rr1_Sum.wav"
+root = 47
+tune = 19
+lokey = 45
+hikey = 48
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Percussion/Timpani/Timpani2_Hit_v3_rr1_Sum.wav"
+root = 47
+tune = 19
+lokey = 45
+hikey = 48
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Percussion/Timpani/Timpani3_Hit_v1_rr1_Sum.wav"
+root = 49
+tune = -49
+lokey = 49
+hikey = 50
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Percussion/Timpani/Timpani3_Hit_v3_rr1_Sum.wav"
+root = 49
+tune = -49
+lokey = 49
+hikey = 50
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Percussion/Timpani/Timpani4_Hit_v1_rr1_Sum.wav"
+root = 52
+tune = -41
+lokey = 51
+hikey = 53
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Percussion/Timpani/Timpani4_Hit_v3_rr1_Sum.wav"
+root = 52
+tune = -41
+lokey = 51
+hikey = 53
+lovel = 64
+hivel = 127
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Percussion/Timpani/Timpani5_Hit_v1_rr1_Sum.wav"
+root = 55
+tune = 43
+lokey = 54
+hikey = 60
+lovel = 0
+hivel = 63
+
+[[zone]]
+file = "unpacked/VSCO-2-CE-master/Percussion/Timpani/Timpani5_Hit_v3_rr1_Sum.wav"
+root = 55
+tune = 43
+lokey = 54
+hikey = 60
+lovel = 64
+hivel = 127

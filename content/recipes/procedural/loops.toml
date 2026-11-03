@@ -1,0 +1,116 @@
+# Sliced loops: synthesized one-shots on a 16th-note grid (tools/content-build/src/procedural/loops.rs). Each voice is
+# { render, steps, level, pan, <model parameters> }; steps: `.` rest, `x` hit, `X` accent, spaces ignored. A loop must
+# be a whole number of frames long at 44.1 kHz.
+id = "proc-loops"
+kind = "samples"
+path = "Loops/"
+source = "honeydew"
+render = "loop"
+
+[[variant]]
+name = "Slow Haze 70"
+bpm = 70
+bars = 1
+voice = [
+  { render = "kick", tune = 50.0, decay = 0.35, steps = "X... .... ..x. ...." },
+  { render = "snare", tune = 175.0, decay = 0.08, snappy = 0.4, rattle = 0.2, tone = 3000.0, steps = ".... X... .... X...", level = 0.8 },
+  { render = "hat", decay = 0.04, tone = 6500.0, steps = "x.x. x.x. x.x. x.xx", level = 0.35, pan = 0.3 },
+  { render = "crackle", length = 3.5, steps = "X... .... .... ....", level = 0.2 },
+]
+
+[[variant]]
+name = "Boom Step 84"
+bpm = 84
+bars = 2
+voice = [
+  { render = "kick", tune = 48.0, decay = 0.4, click = 0.3, steps = "X... ..x. ..x. ....  X... .... X.x. ...." },
+  { render = "snare", tune = 175.0, decay = 0.09, steps = ".... X... .... X...  .... X... .... X..x", level = 0.9 },
+  { render = "hat", steps = "x.x. x.x. x.x. x.x.  x.x. x.x. x.xx x.x.", level = 0.4, pan = 0.25 },
+  { render = "rim", steps = ".... .... ...x ....  .... .... .... ..x.", level = 0.5, pan = -0.3 },
+]
+
+[[variant]]
+name = "Late Night 90"
+bpm = 90
+bars = 2
+voice = [
+  { render = "kick", tune = 46.0, hold = 0.05, decay = 0.5, sub = 0.6, drive = 2.0, steps = "X... .... .X.. ....  X... .... .... ..x." },
+  { render = "clap", steps = ".... X... .... X...  .... X... .... X...", level = 0.8 },
+  { render = "hat", steps = "..x. ..x. ..x. ..x.  ..x. ..x. ..x. .xx.", level = 0.35, pan = 0.3 },
+  { render = "hat", decay = 0.3, steps = ".... .... .... ..X.  .... .... .... ....", level = 0.3, pan = 0.3 },
+]
+
+[[variant]]
+name = "Bounce 98"
+bpm = 98
+bars = 2
+voice = [
+  { render = "kick", tune = 55.0, decay = 0.25, click = 0.4, steps = "X..x ..X. .... X...  X..x ..X. ..x. ...." },
+  { render = "snare", steps = ".... X... .... X...  .... X... .... X...", level = 0.9 },
+  { render = "hat", decay = 0.03, steps = "Xxxx Xxxx Xxxx Xxxx  Xxxx Xxxx Xxxx Xxxx", level = 0.3, pan = 0.2 },
+  { render = "cowbell", steps = "..x. .... ..x. ....  ..x. .... x... ....", level = 0.35, pan = 0.4 },
+]
+
+[[variant]]
+name = "Tin Step 105"
+bpm = 105
+bars = 2
+voice = [
+  { render = "kick", tune = 52.0, decay = 0.3, steps = "X... .... X... ....  X... .... X..x ...." },
+  { render = "snare", tune = 200.0, decay = 0.05, snappy = 0.6, rattle = 0.09, tone = 5500.0, steps = ".... X... .... X...  .... X... .... X.x.", level = 0.9 },
+  { render = "hat", steps = "x.xx x.xx x.xx x.xx  x.xx x.xx x.xx x.xx", level = 0.3, pan = 0.25 },
+  { render = "clave", steps = "X..X ..X. ..X. X...  X..X ..X. ..X. X...", level = 0.35, pan = -0.4 },
+]
+
+[[variant]]
+name = "Neon Pulse 120"
+bpm = 120
+bars = 2
+voice = [
+  { render = "kick", tune = 55.0, decay = 0.3, click = 0.5, steps = "X... X... X... X...  X... X... X... X..." },
+  { render = "clap", tone = 1300.0, decay = 0.12, steps = ".... X... .... X...  .... X... .... X...", level = 0.8 },
+  { render = "hat", decay = 0.15, steps = "..X. ..X. ..X. ..X.  ..X. ..X. ..X. ..X.", level = 0.35, pan = 0.2 },
+  { render = "rim", steps = "...x .... ..x. ...x  .... ..x. .... x...", level = 0.4, pan = -0.35 },
+]
+
+[[variant]]
+name = "Four Floor 128"
+bpm = 128
+bars = 2
+voice = [
+  { render = "kick", tune = 52.0, decay = 0.25, click = 0.4, steps = "X... X... X... X...  X... X... X... X..." },
+  { render = "clap", steps = ".... X... .... X...  .... X... .... X...", level = 0.75 },
+  { render = "hat", steps = "..x. ..x. ..x. ..x.  ..x. ..x. ..x. ..xx", level = 0.35, pan = 0.25 },
+  { render = "cymbal", tune = 380.0, tone = 5500.0, q = 2.0, decay = 0.5, noise = 0.1, steps = "x.x. x.x. x.x. x.x.  x.x. x.x. x.x. x.x.", level = 0.2, pan = -0.3 },
+]
+
+[[variant]]
+name = "Static Step 140"
+bpm = 140
+bars = 2
+voice = [
+  { render = "kick", tune = 46.0, hold = 0.1, decay = 0.6, sub = 0.8, drive = 2.5, steps = "X... .... ..X. ....  X.X. .... .... ...." },
+  { render = "snare", tune = 230.0, decay = 0.05, snappy = 0.9, rattle = 0.12, tone = 7500.0, steps = ".... .... X... ....  .... .... X... ....", level = 0.9 },
+  { render = "hat", decay = 0.03, steps = "x.xx x.x. xxx. x.xx  x.x. xx.x x.xx xxxx", level = 0.35, pan = 0.2 },
+]
+
+[[variant]]
+name = "Rapid 150"
+bpm = 150
+bars = 2
+voice = [
+  { render = "kick", tune = 55.0, decay = 0.22, click = 0.5, steps = "X... ..X. ..X. ....  X... ..X. .... ..X." },
+  { render = "snare", steps = ".... X... .... X...  .... X... .... X...", level = 0.9 },
+  { render = "hat", steps = "x.x. x.x. x.x. x.x.  x.x. x.x. x.x. x.x.", level = 0.35, pan = 0.25 },
+  { render = "tom", tune = 140.0, steps = ".... .... .... ....  .... .... .... XxXx", level = 0.6, pan = -0.2 },
+]
+
+[[variant]]
+name = "Break Run 168"
+bpm = 168
+bars = 2
+voice = [
+  { render = "kick", tune = 50.0, decay = 0.3, click = 0.4, steps = "X... .... ..X. ....  ..X. .... .... ...." },
+  { render = "snare", tune = 200.0, decay = 0.06, snappy = 0.8, rattle = 0.12, steps = ".... X... .... X...  .... X... .... X..x", level = 0.9 },
+  { render = "hat", steps = "x.x. x.xx x.x. x.x.  x.x. x.x. x.xx x.x.", level = 0.35, pan = 0.2 },
+]

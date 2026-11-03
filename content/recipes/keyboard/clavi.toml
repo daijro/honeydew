@@ -1,0 +1,12 @@
+# Clavi: VCSL's FM Clavisynth patch (a hardware FM synth, mono), all 19 of its major-third points, its middle and hard
+# layers (vl1 sits 20 dB under vl3), each cut at 3 s with a 0.3 s fade; the default short release, as its notes ask.
+id = "keys-clavi"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/Clavi.dwp"
+source = "vcsl"
+files = "unpacked/VCSL-master/Electrophones/TX81Z/Clavisynth/Clavisynth_{note}_vl{layer}.wav"
+layers = ["2", "3"]
+transpose = 24
+channels = "mono"
+tail = { floor_db = -60, fade_ms = 300, max_s = 3 }
+gain = "normalize"

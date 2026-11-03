@@ -1,0 +1,72 @@
+name: Android APK
+
+# Builds the debug APK for a phone, and publishes it to the `apk-debug` prerelease, whose download a phone can open and
+# install ("Honeydew Debug", `dev.daijro.honeydew.debug`, so it sits beside a release install). It runs whenever this
+# file, the Android build or the packaging script changes — which is also how to rebuild it on demand, from the tip; `workflow_dispatch` is not available here, because the
+# default branch is the only place GitHub looks for it.
+#
+# The sound library is not in this repository: it is fetched from the upstream release of the same version, so the APK
+# plays out of the box. Bump `SOUNDS_TAG` with `Cargo.toml`'s version, and keep the version in `sounds/release.txt` the
+# library's own (that file is what the crate compiles; the rest of the library is not checked in).
+
+# On demand only: no push triggers a build (`Actions ▸ Android APK ▸ Run workflow`), so an ordinary push — Android
+# sources, Java, the manifest, this file — costs nothing.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  SOUNDS_TAG: v0.4.6
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android-arm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Android build tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y libclang-dev
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.0.13004108'
+          cargo install cargo-ndk --version 4.1.2 --locked
+      # The library the release of this version ships, unpacked where `tools/android-dist.sh` looks for it.
+      - name: Sound library
+        run: |
+          mkdir -p target/android/assets
+          url="https://github.com/daijro/honeydew/releases/download/$SOUNDS_TAG/honeydew-$SOUNDS_TAG-sounds.zip"
+          curl -sSfL --retry 3 -o "$RUNNER_TEMP/sounds.zip" "$url"
+          unzip -q "$RUNNER_TEMP/sounds.zip" 'content/*' -x '*.gz' -d target/android/assets
+          rm -f "$RUNNER_TEMP/sounds.zip"
+      - name: Build the debug APK
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.0.13004108
+        run: tools/android-dist.sh
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-debug
+          name: Honeydew debug APK
+          prerelease: true
+          body: |
+            A debug build of `${{ github.ref_name }}` at ${{ github.sha }}, made by `.github/workflows/android-apk.yml`.
+
+            It installs as **Honeydew Debug** (`dev.daijro.honeydew.debug`), beside a release install. Open this page on
+            the phone and tap the APK to install it; Android asks to allow installing from this source the first time.
+          files: target/honeydew-android-*-arm-debug.apk
+          fail_on_unmatched_files: true

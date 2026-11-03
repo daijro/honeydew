@@ -1,0 +1,552 @@
+# Archtop mic voicing. Four recorded velocity layers, original key/velocity bounds, first random take; dry signal without ARIA tone controls.
+id = "guitar-shiny-acoustic"
+kind = "program"
+path = "Presets/DW Sampler/Guitar/Shinyguitar Mic.dwp"
+source = "karoryfer-shinyguitar"
+tail = { floor_db = -60, fade_ms = 30 }
+release = 0.25
+gain = "normalize"
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/db2_vl1_rr1_1.wav"
+root = 37
+lokey = 33
+hikey = 38
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/db2_vl2_rr1_1.wav"
+root = 37
+lokey = 33
+hikey = 38
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/db2_vl3_rr1_1.wav"
+root = 37
+lokey = 33
+hikey = 38
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/db2_vl4_rr1_1.wav"
+root = 37
+lokey = 33
+hikey = 38
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/e2_vl1_rr1_1.wav"
+root = 40
+lokey = 39
+hikey = 40
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/e2_vl2_rr1_1.wav"
+root = 40
+lokey = 39
+hikey = 40
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/e2_vl3_rr1_1.wav"
+root = 40
+lokey = 39
+hikey = 40
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/e2_vl4_rr1_1.wav"
+root = 40
+lokey = 39
+hikey = 40
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb2_vl1_rr1_1.wav"
+root = 42
+lokey = 41
+hikey = 43
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb2_vl2_rr1_1.wav"
+root = 42
+lokey = 41
+hikey = 43
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb2_vl3_rr1_1.wav"
+root = 42
+lokey = 41
+hikey = 43
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb2_vl4_rr1_1.wav"
+root = 42
+lokey = 41
+hikey = 43
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a2_vl1_rr1_1.wav"
+root = 45
+lokey = 44
+hikey = 46
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a2_vl2_rr1_1.wav"
+root = 45
+lokey = 44
+hikey = 46
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a2_vl3_rr1_1.wav"
+root = 45
+lokey = 44
+hikey = 46
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a2_vl4_rr1_1.wav"
+root = 45
+lokey = 44
+hikey = 46
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c3_vl1_rr1_1.wav"
+root = 48
+lokey = 47
+hikey = 49
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c3_vl2_rr1_1.wav"
+root = 48
+lokey = 47
+hikey = 49
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c3_vl3_rr1_1.wav"
+root = 48
+lokey = 47
+hikey = 49
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c3_vl4_rr1_1.wav"
+root = 48
+lokey = 47
+hikey = 49
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/eb3_vl1_rr1_1.wav"
+root = 51
+lokey = 50
+hikey = 52
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/eb3_vl2_rr1_1.wav"
+root = 51
+lokey = 50
+hikey = 52
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/eb3_vl3_rr1_1.wav"
+root = 51
+lokey = 50
+hikey = 52
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/eb3_vl4_rr1_1.wav"
+root = 51
+lokey = 50
+hikey = 52
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb3_vl1_rr1_1.wav"
+root = 54
+lokey = 53
+hikey = 55
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb3_vl2_rr1_1.wav"
+root = 54
+lokey = 53
+hikey = 55
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb3_vl3_rr1_1.wav"
+root = 54
+lokey = 53
+hikey = 55
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb3_vl4_rr1_1.wav"
+root = 54
+lokey = 53
+hikey = 55
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a3_vl1_rr1_1.wav"
+root = 57
+lokey = 56
+hikey = 58
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a3_vl2_rr1_1.wav"
+root = 57
+lokey = 56
+hikey = 58
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a3_vl3_rr1_1.wav"
+root = 57
+lokey = 56
+hikey = 58
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a3_vl4_rr1_1.wav"
+root = 57
+lokey = 56
+hikey = 58
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c4_vl1_rr1_1.wav"
+root = 60
+lokey = 59
+hikey = 61
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c4_vl2_rr1_1.wav"
+root = 60
+lokey = 59
+hikey = 61
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c4_vl3_rr1_1.wav"
+root = 60
+lokey = 59
+hikey = 61
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c4_vl4_rr1_1.wav"
+root = 60
+lokey = 59
+hikey = 61
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/eb4_vl1_rr1_1.wav"
+root = 63
+lokey = 62
+hikey = 64
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/eb4_vl2_rr1_1.wav"
+root = 63
+lokey = 62
+hikey = 64
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/eb4_vl3_rr1_1.wav"
+root = 63
+lokey = 62
+hikey = 64
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/eb4_vl4_rr1_1.wav"
+root = 63
+lokey = 62
+hikey = 64
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb4_vl1_rr1_1.wav"
+root = 66
+lokey = 65
+hikey = 67
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb4_vl2_rr1_1.wav"
+root = 66
+lokey = 65
+hikey = 67
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb4_vl3_rr1_1.wav"
+root = 66
+lokey = 65
+hikey = 67
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb4_vl4_rr1_1.wav"
+root = 66
+lokey = 65
+hikey = 67
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a4_vl1_rr1_1.wav"
+root = 69
+lokey = 68
+hikey = 70
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a4_vl2_rr1_1.wav"
+root = 69
+lokey = 68
+hikey = 70
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a4_vl3_rr1_1.wav"
+root = 69
+lokey = 68
+hikey = 70
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a4_vl4_rr1_1.wav"
+root = 69
+lokey = 68
+hikey = 70
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c5_vl1_rr1_1.wav"
+root = 72
+lokey = 71
+hikey = 73
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c5_vl2_rr1_1.wav"
+root = 72
+lokey = 71
+hikey = 73
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c5_vl3_rr1_1.wav"
+root = 72
+lokey = 71
+hikey = 73
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c5_vl4_rr1_1.wav"
+root = 72
+lokey = 71
+hikey = 73
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/eb5_vl1_rr1_1.wav"
+root = 75
+lokey = 74
+hikey = 76
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/eb5_vl2_rr1_1.wav"
+root = 75
+lokey = 74
+hikey = 76
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/eb5_vl3_rr1_1.wav"
+root = 75
+lokey = 74
+hikey = 76
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/eb5_vl4_rr1_1.wav"
+root = 75
+lokey = 74
+hikey = 76
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb5_vl1_rr1_1.wav"
+root = 78
+lokey = 77
+hikey = 79
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb5_vl2_rr1_1.wav"
+root = 78
+lokey = 77
+hikey = 79
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb5_vl3_rr1_1.wav"
+root = 78
+lokey = 77
+hikey = 79
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/gb5_vl4_rr1_1.wav"
+root = 78
+lokey = 77
+hikey = 79
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a5_vl1_rr1_1.wav"
+root = 81
+lokey = 80
+hikey = 82
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a5_vl2_rr1_1.wav"
+root = 81
+lokey = 80
+hikey = 82
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a5_vl3_rr1_1.wav"
+root = 81
+lokey = 80
+hikey = 82
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/a5_vl4_rr1_1.wav"
+root = 81
+lokey = 80
+hikey = 82
+lovel = 97
+hivel = 127
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c6_vl1_rr1_1.wav"
+root = 84
+lokey = 83
+hikey = 91
+lovel = 0
+hivel = 32
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c6_vl2_rr1_1.wav"
+root = 84
+lokey = 83
+hikey = 91
+lovel = 33
+hivel = 64
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c6_vl3_rr1_1.wav"
+root = 84
+lokey = 83
+hikey = 91
+lovel = 65
+hivel = 96
+
+[[zone]]
+file = "unpacked/Shinyguitar/Samples/acoustic/c6_vl4_rr1_1.wav"
+root = 84
+lokey = 83
+hikey = 91
+lovel = 97
+hivel = 127

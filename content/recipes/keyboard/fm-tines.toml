@@ -1,0 +1,13 @@
+# FM tines: FreePats' FM Piano 1 (the classic 1980s FM electric piano patch, rendered from a software FM synth), all 12
+# of its tritone points, its soft and hard layers (v60 and v100 of three), mono (the render is), each cut at 6 s with a
+# 0.4 s fade.
+id = "keys-fm-tines"
+kind = "program"
+path = "Presets/DW Sampler/Keyboard/FM Tines.dwp"
+source = "freepats-fm-pianos"
+sfz = "unpacked/FM-Piano1-SFZ+FLAC-20190916/FM-Piano1 SFZ+FLAC-20190916/FM-Piano1 20190916.sfz"
+velocity_layers = [1, 3]
+channels = "mono"
+tail = { floor_db = -60, fade_ms = 400, max_s = 6 }
+release = 0.4
+gain = "normalize"

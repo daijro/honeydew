@@ -1,0 +1,13 @@
+# A violin section, bowed with vibrato: VSCO 2 CE's violin ensemble sustain, both layers (p, f), one point per minor
+# third or more, each cut to 3.5 s with a found loop: the soft layer swells for about 2 s before it holds. VSCO 2 names
+# middle C `C3`.
+id = "strings-section"
+kind = "program"
+path = "Presets/DW Sampler/Strings/String Section.dwp"
+source = "vsco2-ce"
+files = "unpacked/VSCO-2-CE-master/Strings/Violin Section/susVib/VlnEns_susVib_{note}_v{layer}.wav"
+transpose = 12
+keys = { every = 3 }
+loop = { find = true, min_s = 1.0, crossfade_ms = 100, keep_s = 3.5 }
+release = 0.4
+gain = "normalize"

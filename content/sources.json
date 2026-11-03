@@ -1,0 +1,1849 @@
+[
+ {
+  "folder": "akwf-free",
+  "title": "Adventure Kid Waveforms (AKWF-FREE)",
+  "page": "https://github.com/KristofferKarlAxelEkstrand/AKWF-FREE",
+  "author": "Kristoffer Ekstrand (Adventure Kid)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/KristofferKarlAxelEkstrand/AKWF-FREE/archive/refs/heads/main.zip",
+    "sha256": "b891fefd866693f74ece0756a8230f6b0bb7339583d978366abc8a0470207d79",
+    "bytes": 846912586,
+    "git_commit": "8de90bf94376670947369e69de0af6b9fbd19286"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Current repo LICENSE.md is CC0 1.0 (older downloads were CC BY 3.0; use this copy). AKWF--<synth> folders are AKWF converted to those synths' formats. Tree contains 1 .py and 2 .sh helper scripts (not run, not for bundling)."
+ },
+ {
+  "folder": "freepats-bass-guitar-yr",
+  "title": "FreePats Bass Guitar YR",
+  "page": "https://freepats.zenvoid.org/ElectricGuitar/clean-electric-bass.html",
+  "author": "Andrea Biasior (via FreePats)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/electric-bass-YR/releases/download/2019-09-30/PickedBassYR-SFZ+FLAC-20190930.7z",
+    "sha256": "aa7650fc206a7ed83ecafa36a24572e1f4ea041938182b981bf111b99e1b8e85",
+    "bytes": 2819607
+   },
+   {
+    "url": "https://github.com/freepats/electric-bass-YR/releases/download/2019-09-30/FingerBassYR-SFZ+FLAC-20190930.7z",
+    "sha256": "36f87ec9eb086ef25050312522aacf71213c582f46989e0c5a12681304596587",
+    "bytes": 3252347
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Picked and Finger variants, SFZ+FLAC (2019-09-30)."
+ },
+ {
+  "folder": "freepats-church-organ",
+  "title": "FreePats Church Organ Emulation",
+  "page": "https://freepats.zenvoid.org/Organ/pipe-organ.html",
+  "author": "Roberto (FreePats)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://freepats.zenvoid.org/Organ/ChurchOrganEmulation/ChurchOrganEmulation-SFZ-20190924.tar.xz",
+    "sha256": "1f0b70a2c2af14cdf051ef2d256b3bb652e7d64c0fdc8bed06642ad2af916db9",
+    "bytes": 13033856
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Church Organ Emulation (Aeolus render), SFZ+WAV. No small build offered."
+ },
+ {
+  "folder": "freepats-concert-harp",
+  "title": "FreePats Concert Harp",
+  "page": "https://freepats.zenvoid.org/OrchestralStrings/harp.html",
+  "author": "Versilian Studios samples, assembled by Roberto (FreePats)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://freepats.zenvoid.org/OrchestralStrings/ConcertHarp/ConcertHarp-SFZ+FLAC-20200702.tar.gz",
+    "sha256": "7d3a77e4e9501d733a032cb7d93bc7567f47e4078325328efe7b45fb03ac48ad",
+    "bytes": 5039283
+   },
+   {
+    "url": "https://freepats.zenvoid.org/OrchestralStrings/ConcertHarp/ConcertHarp-small-SFZ+FLAC-20200702.tar.gz",
+    "sha256": "4444c00317ab0e5ccb2b3f5454da29c68be9ba3e35bce9535fee4e5f452fc56e",
+    "bytes": 2602719
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Full (2 vl) and small SFZ+FLAC (2020-07-02). Built from VCSL. Harp photo on the page is CC BY-NC (not fetched)."
+ },
+ {
+  "folder": "freepats-electric-organs",
+  "title": "FreePats Electric Organ Emulations",
+  "page": "https://freepats.zenvoid.org/Organ/electric-organ.html",
+  "author": "Roberto (FreePats); Strix SoundFont Team (percussive, rock)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://freepats.zenvoid.org/Organ/DrawbarOrganEmulation/DrawbarOrganEmulation-SFZ-20190712.tar.xz",
+    "sha256": "e2da18b0a4d13be7020037e18e4a719387433357e7603d0773990e794dcf5d0f",
+    "bytes": 6042972
+   },
+   {
+    "url": "https://freepats.zenvoid.org/Organ/PercussiveOrganEmulation/PercussiveOrganEmulation-SFZ-20190715.tar.xz",
+    "sha256": "c4841f2e7f352692cf14a85a96bd1f40a9ea7a9e2a9ce3512606885d000978c8",
+    "bytes": 12423412
+   },
+   {
+    "url": "https://freepats.zenvoid.org/Organ/RockOrganEmulation/RockOrganEmulation-SFZ-20190715.tar.xz",
+    "sha256": "07321d9498dc31982c44ea9483919df3f426e3d392a15bb2947b0e3fe247f718",
+    "bytes": 12576272
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Drawbar, Percussive and Rock organ emulations (setBfree renders). Only SFZ+WAV and SF2 offered; SFZ+WAV fetched. No small build offered."
+ },
+ {
+  "folder": "freepats-fm-pianos",
+  "title": "FreePats FM Pianos",
+  "page": "https://freepats.zenvoid.org/ElectricPiano/synthesized-piano.html",
+  "author": "FreePats project (roberto@zenvoid.org) and contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/fm-piano1/releases/download/2019-09-16/FM-Piano1-SFZ+FLAC-20190916.7z",
+    "sha256": "fa308cead617211b29f500db2f962f34e18c9cd55a94ae9176e1d63babeab083",
+    "bytes": 24932509
+   },
+   {
+    "url": "https://github.com/freepats/fm-piano2/releases/download/2016-11-12/FM-Piano2-SFZ+FLAC-20161112.7z",
+    "sha256": "4e11a442fa9b6b5322e5dfa4eb24abdfc8713bb9a7ec33c99baab1f92967aaaa",
+    "bytes": 9080973
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "FM Piano #1 and #2 (Hexter DX7 renders), SFZ+FLAC. No small build offered."
+ },
+ {
+  "folder": "freepats-fsbs-clean-guitars",
+  "title": "FreePats FSBS Clean Guitars",
+  "page": "https://freepats.zenvoid.org/ElectricGuitar/clean-electric-guitar.html",
+  "author": "FreePats project (roberto@zenvoid.org) and contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/electric-guitar-FSBS-clean/releases/download/2026-08-07/EGuitarFSBS-clean-SFZ+FLAC-20260807.7z",
+    "sha256": "a929a3cbfc8289e325be56dab49f5fd560bbc3995c40b69f8f05caee380e8be3",
+    "bytes": 123736791
+   },
+   {
+    "url": "https://github.com/freepats/electric-guitar-FSBS-clean/releases/download/2026-08-07/EGuitarFSBS-clean-bridge-small-SFZ+FLAC-20260807.7z",
+    "sha256": "07c8cdf94dc9b4875ff6c43e51440d84f939a45530060c0761093a56d4a1f032",
+    "bytes": 3096261
+   },
+   {
+    "url": "https://github.com/freepats/electric-guitar-FSBS-jazz/releases/download/2026-08-07/EGuitarFSBS-jazz-SFZ+FLAC-20260807.7z",
+    "sha256": "c584f2e176575ba78c2ae8f45e04309badd0c912e654582880dba3146715c688",
+    "bytes": 65919794
+   },
+   {
+    "url": "https://github.com/freepats/electric-guitar-FSBS-jazz/releases/download/2026-08-07/EGuitarFSBS-jazz-bridge-small-SFZ+FLAC-20260807.7z",
+    "sha256": "750dd41e4273a2717c0260c5b795c912611175dd61aa3b57fb7c5e2d10d8de75",
+    "bytes": 2479995
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "FSBS Clean #1 and Clean #2 (Jazz), full + bridge-small SFZ+FLAC (2026-08-07). Direct and distorted variants not fetched."
+ },
+ {
+  "folder": "freepats-old-piano-fb",
+  "title": "FreePats Old Piano FB",
+  "page": "https://freepats.zenvoid.org/Piano/honky-tonk-piano.html",
+  "author": "FreePats project (roberto@zenvoid.org) and contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/old-piano-FB/releases/download/2020-04-01/PianoFB-SFZ+FLAC-20200401.7z",
+    "sha256": "da35c93967c421b17f7219c12a37830ffd2b19f54f8a0a71203fc6161b079b45",
+    "bytes": 35745634
+   },
+   {
+    "url": "https://github.com/freepats/old-piano-FB/releases/download/2020-04-01/PianoFB-small-SFZ+FLAC-20200401.7z",
+    "sha256": "a64989e97383bd98ade08519363a73bf9d1991a13253327f527e1db7b9428545",
+    "bytes": 6506014
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Full and small SFZ+FLAC builds (2020-04-01). Honky-tonk."
+ },
+ {
+  "folder": "freepats-spanish-classical-guitar",
+  "title": "FreePats Spanish Classical Guitar",
+  "page": "https://freepats.zenvoid.org/Guitar/acoustic-guitar.html",
+  "author": "Roberto (FreePats)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://freepats.zenvoid.org/Guitar/SpanishClassicalGuitar/SpanishClassicalGuitar-SFZ+FLAC-20190618.7z",
+    "sha256": "903916921a21662d2237ade7f0e98e55de93cb7b86da219e4e10f4ad385b8f5e",
+    "bytes": 4713892
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "SFZ+FLAC. No small build offered."
+ },
+ {
+  "folder": "freepats-synth-bass",
+  "title": "FreePats Synth Bass",
+  "page": "https://freepats.zenvoid.org/Synthesizer/synth-bass.html",
+  "author": "FreePats project (roberto@zenvoid.org) and contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/lately-bass/releases/download/2024-04-09/LatelyBass-SFZ+FLAC-20240409.7z",
+    "sha256": "3cb6d4081b39cea265011a21f05a424fc72845abfd17d7409ac16acc7122a3e0",
+    "bytes": 1181315
+   },
+   {
+    "url": "https://github.com/freepats/synth-bass-1/releases/download/2019-07-23/SynthBass1-SFZ+FLAC-20190723.7z",
+    "sha256": "b3988a78286292200d7fa8d2bbe708a80bb02b28d519f8a7d0c66df7e894f07b",
+    "bytes": 748547
+   },
+   {
+    "url": "https://github.com/freepats/synth-bass-2/releases/download/2021-04-05/SynthBass2-SFZ+FLAC-20210405.7z",
+    "sha256": "3a04fc728197b746d5e82a5ced27bddc57f52db5e5bb5426a07ef14771b2ee4f",
+    "bytes": 2682779
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Lately Bass, Synth Bass #1, Synth Bass #2; SFZ+FLAC. Report prefers Synth Bass #1 (ZynAddSubFX) over the DX7/TX81Z emulations."
+ },
+ {
+  "folder": "freepats-synth-lead",
+  "title": "FreePats Synth Lead",
+  "page": "https://freepats.zenvoid.org/Synthesizer/synth-lead.html",
+  "author": "FreePats project (roberto@zenvoid.org) and contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/synth-bass-lead/releases/download/2020-05-22/SynthBassLead-SFZ+FLAC-20200522.7z",
+    "sha256": "9fd3c113a49902d644167193f421e10fb0c4a35d20cdaa7d8d8d1aebdfd00e8d",
+    "bytes": 3996491
+   },
+   {
+    "url": "https://github.com/freepats/synth-fifths/releases/download/2020-05-19/SynthFifths-SFZ+FLAC-20200519.7z",
+    "sha256": "891660964a4450d32d54b1b96af8004b2a64627cb96598fd9e17d2152be53b10",
+    "bytes": 7928831
+   },
+   {
+    "url": "https://github.com/freepats/synth-square/releases/download/2020-05-12/SynthSquare-SFZ+FLAC-20200512.7z",
+    "sha256": "0d9fba485b3f542d3730a242f213174febc791598fd62ddad144c05d5bb8aa4c",
+    "bytes": 7276902
+   },
+   {
+    "url": "https://github.com/freepats/synth-calliope/releases/download/2020-05-12/SynthCalliope-SFZ+FLAC-20200512.7z",
+    "sha256": "d2fcdee900cf0e19379180e70a1c86c670fdf406d8b4f099c601e3ace2938246",
+    "bytes": 3673604
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Synth Bass & Lead, Fifths, Square, Calliope; SFZ+FLAC (Surge/ZynAddSubFX renders)."
+ },
+ {
+  "folder": "freepats-synth-pad",
+  "title": "FreePats Synth Pad",
+  "page": "https://freepats.zenvoid.org/Synthesizer/synth-pad.html",
+  "author": "FreePats project (roberto@zenvoid.org) and contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/synth-pad-choir/releases/download/2020-05-16/SynthPadChoir-SFZ+FLAC-20200516.7z",
+    "sha256": "703ef30fad4861f85b319f8d549fbeeb0af0860929165c7066410dcbb03da0a3",
+    "bytes": 6815491
+   },
+   {
+    "url": "https://github.com/freepats/sweep-pad/releases/download/2019-08-13/SweepPad-SFZ+FLAC-20190813.7z",
+    "sha256": "b0b3f334dd89d90507142da76f129a6e43369dda92c1a02f4fcdf7af13b05d49",
+    "bytes": 2990559
+   },
+   {
+    "url": "https://github.com/freepats/new-age/releases/download/2019-07-30/NewAge-SFZ+FLAC-20190730.7z",
+    "sha256": "355c686eecaac4d9857a8aecf9962eee7bb6d69bd48c55608f47185da63f5d9e",
+    "bytes": 4480005
+   },
+   {
+    "url": "https://github.com/freepats/synth-pad-bowed/releases/download/2019-07-19/SynthPadBowed-SFZ+FLAC-20190719.7z",
+    "sha256": "6e746986d3dbdcddd2f4ce711882fde1fa16de5a59902b3aec530302281b328c",
+    "bytes": 11906083
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Synth Pad Choir (choir stopgap), Sweep Pad, New Age, Synth Pad Bowed; SFZ+FLAC."
+ },
+ {
+  "folder": "freepats-ukulele",
+  "title": "FreePats Ukulele",
+  "page": "https://freepats.zenvoid.org/GuitarFamily/ukulele.html",
+  "author": "Mateusz Dabrowski (via FreePats)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/freepats/ukulele1/releases/download/2026-08-11/Ukulele-SFZ+FLAC-20260811.7z",
+    "sha256": "d71b66382687175dca8aad53cad3290f6b418d48b6a2c0722af58b372f054bf4",
+    "bytes": 2402413
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "SFZ+FLAC (2026-08-11)."
+ },
+ {
+  "folder": "freepats-upright-piano-kw",
+  "title": "FreePats Upright Piano KW",
+  "page": "https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html",
+  "author": "Gonzalo and Roberto (FreePats)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://freepats.zenvoid.org/Piano/UprightPianoKW/UprightPianoKW-SFZ+FLAC-20220221.7z",
+    "sha256": "3a66da3b25a2fd9499d90bcf09f1aee4431825796e249361b48af59b1201e703",
+    "bytes": 33294287
+   },
+   {
+    "url": "https://freepats.zenvoid.org/Piano/UprightPianoKW/UprightPianoKW-small-SFZ+FLAC-20190703.7z",
+    "sha256": "e346ef198fcda0694fc66ddb80c2db2a1c700e96e3a1801930e3cebfed37047f",
+    "bytes": 3092715
+   },
+   {
+    "url": "https://freepats.zenvoid.org/Piano/UprightPianoKW/UprightPianoKW-small-bright-SFZ+FLAC-20190703.7z",
+    "sha256": "590f8900aec595a4ad6037c373623837bd34d111ab07251fda4a5c704ffa6742",
+    "bytes": 3299501
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Full (2022-02-21), small and small-bright (2019-07-03) SFZ+FLAC builds. Same page also lists YDP Grand (CC BY 3.0) and Salamander (CC BY 3.0 on that page): not fetched from here."
+ },
+ {
+  "folder": "karoryfer-big-rusty-drums",
+  "title": "Big Rusty Drums",
+  "page": "https://github.com/sfzinstruments/karoryfer.big-rusty-drums",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.big-rusty-drums/archive/refs/heads/main.zip",
+    "sha256": "702070b3ddf92c5081ea015c2e5e18cf84b95779bb1eea75010a730571e1c6fe",
+    "bytes": 619051786,
+    "git_commit": "f07ce00df34a46b6b08375be56fe116cf15782bc"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-bigcat-cello",
+  "title": "Bigcat Cello",
+  "page": "https://github.com/sfzinstruments/karoryfer-bigcat.cello",
+  "author": "Karoryfer Lecolds x bigcat instruments (cellist Kamila Borowiak)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer-bigcat.cello/archive/refs/heads/master.zip",
+    "sha256": "75a3a72700f5c53744620a68f99f9aa299215e0036fcc68ef2283db79b7eba7e",
+    "bytes": 132619913,
+    "git_commit": "6fd75fbfc1dbb3109bf26220ba1adea46188a18b"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "LICENSE is CC0. The Kontakt .nki/.nkc/.nkr files embed Robert D. Villwock's WIPS scripts, which have their own terms (readme.txt): do not bundle those; use the samples + SFZ only."
+ },
+ {
+  "folder": "karoryfer-black-and-green-guitars",
+  "title": "Black and Green Guitars",
+  "page": "https://github.com/sfzinstruments/karoryfer.black-and-green-guitars",
+  "author": "Karoryfer Samples; guitar recordings by Brian Wood",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.black-and-green-guitars/archive/refs/heads/main.zip",
+    "sha256": "aa28846a3d9c2f957cc9eceef2d0bc948506a58d0647a1122176f4d269f07219",
+    "bytes": 483678758,
+    "git_commit": "b3b3249d37dc977a1a297bd2dc053e6d9b6b805c"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Publisher free-samples page declares all these libraries CC0, including older archives with less permissive notices. Verified 2026-10-14. This GitHub source ZIP has CRLF conversion inside WAV bytes; new guitar recipes use the intact official release in karoryfer-black-and-green-guitars-release instead.",
+  "license_evidence": "https://shop.karoryfer.com/pages/free-samples"
+ },
+ {
+  "folder": "karoryfer-body-percussion",
+  "title": "Body Percussion",
+  "page": "https://github.com/sfzinstruments/body_percussion",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/body_percussion/archive/refs/heads/main.zip",
+    "sha256": "7f060c01468adfc69acee742238d7d17cd00fd2e4ce1d14a851b1eab3a1fd368",
+    "bytes": 39103737,
+    "git_commit": "4ac9d8966679c648b62fa10a188179e186b97f24"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-caveman-cosmonaut",
+  "title": "Caveman Cosmonaut",
+  "page": "https://github.com/sfzinstruments/karoryfer.caveman-cosmonaut",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.caveman-cosmonaut/archive/refs/heads/master.zip",
+    "sha256": "764e78b5fd302e51e193241736fcc20c4fb1cb8192f25c8c0893a8ae5c7994a2",
+    "bytes": 97567588,
+    "git_commit": "9de9bcfcbc6d2b20bea5c1116cd07a310febc339"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-cowsynth",
+  "title": "Cowsynth",
+  "page": "https://github.com/sfzinstruments/karoryfer.cowsynth",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.cowsynth/archive/refs/heads/master.zip",
+    "sha256": "3b53271f49738c0a650e5648e790e3eed9b96a2bea72126f4525f3527f073b50",
+    "bytes": 14075105,
+    "git_commit": "5a5b5afc2dabbe54cf9d75ab64711ce01862b42c"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-emilyguitar",
+  "title": "Emilyguitar",
+  "page": "https://github.com/sfzinstruments/karoryfer.emilyguitar",
+  "author": "Karoryfer Samples (D. Smolken)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.emilyguitar/archive/refs/heads/master.zip",
+    "sha256": "b791ca234a4a31417633836ec52e7f7ed5ed00c72d439d14254acfe54340be62",
+    "bytes": 103488295,
+    "git_commit": "b4920dc662fd9cad6dcaccdeecffdd91c8725d8c"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Publisher free-samples page declares all these libraries CC0, including older archives with less permissive notices. Verified 2026-10-14.",
+  "license_evidence": "https://shop.karoryfer.com/pages/free-samples",
+  "mappings": [
+   {
+    "file": "unpacked/karoryfer.emilyguitar-master/emily_basic.sfz",
+    "sha256": "6374cae8516592aa50c0bc00de431b9e4ab45d5a8af66ddddc183a3945e907f0"
+   }
+  ]
+ },
+ {
+  "folder": "karoryfer-fashionbass",
+  "title": "Fashionbass",
+  "page": "https://github.com/sfzinstruments/karoryfer.fashionbass",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.fashionbass/archive/refs/heads/master.zip",
+    "sha256": "65808defc8ca0d890a68bbec6103a1b68c5ccf7c58799152d5d10edb81f754bf",
+    "bytes": 316345516,
+    "git_commit": "0703973b300a6bacb837602be9b588ab64732a72"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-frankensnare",
+  "title": "Frankensnare",
+  "page": "https://github.com/sfzinstruments/karoryfer.frankensnare",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.frankensnare/archive/refs/heads/main.zip",
+    "sha256": "82a326f1e00a568912ecdd340b78721403c8f0f4f207095f1026c8ad2a7fc4eb",
+    "bytes": 365695273,
+    "git_commit": "9151c2d79fcbb73c65d63f78918d4ba7abc91a81"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-growlybass",
+  "title": "Growlybass",
+  "page": "https://github.com/sfzinstruments/karoryfer.growlybass",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.growlybass/archive/refs/heads/master.zip",
+    "sha256": "d2e8ade81aa106ace25b14bf511996b99561adb3d76014ac7003c9bd90e4ea61",
+    "bytes": 167466900,
+    "git_commit": "4f483268fc66b5a6d5781d421c0d11b8d08d3fc6"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-hat-with-the-phat",
+  "title": "The Hat With The Phat",
+  "page": "https://github.com/sfzinstruments/Karoryfer.TheHatWithThePhat",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/Karoryfer.TheHatWithThePhat/archive/refs/heads/master.zip",
+    "sha256": "7c72854bfe4dfe5fde31d5175f159ae940d637d967fe9a4fb9c94be81391ef8b",
+    "bytes": 665660421,
+    "git_commit": "afa76f2c9c88e2e27d72a0c2216b1eae3c47b835"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-meatbass",
+  "title": "Meatbass",
+  "page": "https://github.com/sfzinstruments/karoryfer.meatbass",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.meatbass/archive/refs/heads/master.zip",
+    "sha256": "034092bc32bbdeedce24b600d949f06ee1a6be22e22bfa02e3a2a31b6cbc5062",
+    "bytes": 255436373,
+    "git_commit": "ac9e859564bda286ab5ec672d00ff1aa2fef2895"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Upright bass."
+ },
+ {
+  "folder": "karoryfer-sneakybass",
+  "title": "Karoryfer Sneakybass",
+  "page": "https://github.com/sfzinstruments/karoryfer.sneakybass",
+  "author": "Karoryfer Samples (Drogomir Smolken)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.sneakybass/releases/download/v1.000/Sneakybass_v1.000.zip",
+    "sha256": "df57ef935f2d006d83f898f615893cd2e9f93d00d01fb03921c54cd6dd5014dd",
+    "bytes": 340462855,
+    "git_commit": "cc1a67e5c913678b85eaad1a3b5cb180d3be3e2d"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Official download linked by https://shop.karoryfer.com/pages/free-sneakybass. Archive readme explicitly states CC-0; https://shop.karoryfer.com/pages/free-samples also confirms CC0 for all free sample libraries. Pluck, ghost, mute, fingering noise and release noise are separate sampler programs; automatic release triggers, unison and modulation are not reproduced."
+ },
+ {
+  "folder": "karoryfer-string-cyborgs",
+  "title": "String Cyborgs",
+  "page": "https://github.com/sfzinstruments/karoryfer.string-cyborgs",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.string-cyborgs/archive/refs/heads/master.zip",
+    "sha256": "b2b007ccaf62ca512506ea0523ffca6acf2c3154a9ce73ce6e257245c0781458",
+    "bytes": 63777408,
+    "git_commit": "f2238b3e36ae64c6383356221dc89c9c476c7b11"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "CC0 relicensing confirmed by https://shop.karoryfer.com/pages/free-samples on 2026-10-14, including older archives. The sampler bundles single oscillator string textures for Zinc, Blackheart and Ironface, not reproductions of the upstream subtractive synth presets."
+ },
+ {
+  "folder": "karoryfer-string-cyborgs-prepared",
+  "title": "String Cyborgs sampler textures",
+  "page": "https://github.com/sfzinstruments/karoryfer.string-cyborgs",
+  "author": "Karoryfer Samples; sampler maps by Honeydew contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.string-cyborgs/archive/refs/heads/master.zip",
+    "sha256": "b2b007ccaf62ca512506ea0523ffca6acf2c3154a9ce73ce6e257245c0781458",
+    "bytes": 63777408,
+    "git_commit": "f2238b3e36ae64c6383356221dc89c9c476c7b11"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Prepared 2026-10-14 from the pinned karoryfer-string-cyborgs source. WAV files copied byte-for-byte; four minimal SFZ maps expose original smpl loop points and correct measured pitch mappings. PREPARE.py and PREPARATION.json record preparation logic plus original/derived SHA256 hashes. Original archive URL/hash/commit retained as upstream provenance. Official https://shop.karoryfer.com/pages/free-samples confirms CC0 relicensing of older free-library downloads. No upstream synth preset reproduction is claimed."
+ },
+ {
+  "folder": "karoryfer-swagbass",
+  "title": "Swagbass",
+  "page": "https://github.com/sfzinstruments/karoryfer.swagbass",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.swagbass/archive/refs/heads/master.zip",
+    "sha256": "dc457a0934b24b7e1e51b38239b634e7aba089bab101274f7d1e9c72590dace8",
+    "bytes": 144589973,
+    "git_commit": "9d10fcae71af1975988ddecd5af1c95d372c7355"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-swirly-drums",
+  "title": "Swirly Drums",
+  "page": "https://github.com/sfzinstruments/karoryfer.swirly-drums",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.swirly-drums/archive/refs/heads/main.zip",
+    "sha256": "e8f3deb3c14aee5d5ec91441769ae10e35b09f36d5ff579bf4a957da670869e7",
+    "bytes": 861219082,
+    "git_commit": "c40dafe0011cb2e54c0c220ff0fa308a11fc60f5"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Repo also contains Kontakt files (.nki/.nkc/.nkr); not needed for bundling, leave them out."
+ },
+ {
+  "folder": "karoryfer-unruly-drums",
+  "title": "Unruly Drums",
+  "page": "https://github.com/sfzinstruments/karoryfer.unruly-drums",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.unruly-drums/archive/refs/heads/main.zip",
+    "sha256": "4fc73b1864ca6fb8037aca0cc8d1089f97b4c90199d5c52c43a99a6108f9d0b1",
+    "bytes": 676229034,
+    "git_commit": "9bf75c2a1392f190cd1c264645653629f0b3a097"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "karoryfer-war-tuba",
+  "title": "War Tuba",
+  "page": "https://github.com/sfzinstruments/karoryfer.war-tuba",
+  "author": "Karoryfer Samples",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.war-tuba/archive/refs/heads/master.zip",
+    "sha256": "b75e71d6f2567f2be9de9f45f3632854fc1f794031eb78cea448b11cfcdd04b6",
+    "bytes": 109185020,
+    "git_commit": "5b62dd6ef6b00281bb734769e44a63f5e013018a"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": ""
+ },
+ {
+  "folder": "kenney-casino-audio",
+  "title": "Casino Audio",
+  "page": "https://kenney.nl/assets/casino-audio",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/casino-audio/2472606a04-1721639069/kenney_casino-audio.zip",
+    "sha256": "f36250766ac5bc378c13708ddf12a23a8e54a3251f8d482c7536e51b5dbafa18",
+    "bytes": 876839
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "kenney-digital-audio",
+  "title": "Digital Audio",
+  "page": "https://kenney.nl/assets/digital-audio",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/digital-audio/216eac4753-1677590265/kenney_digital-audio.zip",
+    "sha256": "24e6ce28b76a6d8c89cff4d331e0965ff5c3de8a73c612028e9d363cc64e4f06",
+    "bytes": 990367
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "kenney-impact-sounds",
+  "title": "Impact Sounds",
+  "page": "https://kenney.nl/assets/impact-sounds",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip",
+    "sha256": "029d734af1582474edf3a694d1b0cebc97c1c152f2f39fa34d4c2bafc5de77f8",
+    "bytes": 800850
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "kenney-interface-sounds",
+  "title": "Interface Sounds",
+  "page": "https://kenney.nl/assets/interface-sounds",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+    "sha256": "f2193d072726d6758a5f7871b2dcc54dcce0d5c35c6f0a62f92549b327c81232",
+    "bytes": 834536
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "kenney-music-jingles",
+  "title": "Music Jingles",
+  "page": "https://kenney.nl/assets/music-jingles",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/music-jingles/f37e530b9e-1677590399/kenney_music-jingles.zip",
+    "sha256": "b729ba57959bd58793d2c5cafa348aaf2655d354f3da35ec4729e03ec77197b8",
+    "bytes": 1239525
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "kenney-rpg-audio",
+  "title": "RPG Audio",
+  "page": "https://kenney.nl/assets/rpg-audio",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/rpg-audio/8e99002d76-1677590336/kenney_rpg-audio.zip",
+    "sha256": "6dbeaf8544da958d8f2adcb4a4a4b76c1ade34a05f8ab9edccd327da7375f38b",
+    "bytes": 964837
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "kenney-sci-fi-sounds",
+  "title": "Sci-fi Sounds",
+  "page": "https://kenney.nl/assets/sci-fi-sounds",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/sci-fi-sounds/6b296f9ecf-1677589334/kenney_sci-fi-sounds.zip",
+    "sha256": "119340f351a5098ad814f78719438c0da355a9ce8a4c8a3af6a8d48aa3d49e04",
+    "bytes": 5875104
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "kenney-ui-audio",
+  "title": "UI Audio",
+  "page": "https://kenney.nl/assets/ui-audio",
+  "author": "Kenney (kenney.nl)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://kenney.nl/media/pages/assets/ui-audio/490d233f68-1677590494/kenney_ui-audio.zip",
+    "sha256": "946fc23a63d535d693eb31b2eabb80c8c28d6351e2186b344ceb71b2cb1d5eb6",
+    "bytes": 411949
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Credit \"Kenney\" optional; do not use the Kenney logo."
+ },
+ {
+  "folder": "musescore-general",
+  "title": "MuseScore_General",
+  "page": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/",
+  "author": "S. Christian Collins; FluidR3 by Frank Wen; FluidR3Mono by Michael Cowgill; MuseScore",
+  "spdx": "MIT",
+  "archives": [
+   {
+    "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General.sf2",
+    "sha256": "ee51d2c4b1525e70f19a45909c4fd7a2e26d91d115fa89dbf5a6bc413d8b9bf3",
+    "bytes": 215614036
+   },
+   {
+    "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General.sf3",
+    "sha256": "5b85b6c2c61d10b2b91cddd41efcce7b25cd31c8271d511c73afafbef20b6fa3",
+    "bytes": 39900972
+   },
+   {
+    "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General_License.md",
+    "sha256": "5ad8d737e13c7f01f5b9674872a82a92b4ba253603e8ed14b9db12293550b4b9",
+    "bytes": 3419
+   },
+   {
+    "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General_Readme.md",
+    "sha256": "e4ee85d097cda49a7926ea73e59ea8b7bb90d6ad715f82d20c6bfddf5dcfeb4c",
+    "bytes": 5161
+   },
+   {
+    "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General_Changelog.md",
+    "sha256": "19fbda185cbe1492d2525b13ba882ad20fcdbbfa739622bc9edcaa899c46cdb4",
+    "bytes": 15697
+   },
+   {
+    "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General_Sample_Sources.csv",
+    "sha256": "cbec757614fa47d2ba71a2f1276bf010918261d94987cfb678352e9755e9bdd4",
+    "bytes": 12817
+   },
+   {
+    "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/VERSION",
+    "sha256": "1f930dd1f133c1f97a94fe3acb8db34372cf4c01ffdb2b3ff4ca72f9494121e9",
+    "bytes": 6
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "yes (MIT notice + acknowledgements; not owed by songs)",
+  "notes": "SF2 (215.6 MB) and SF3 (39.9 MB), v0.2.0, plus License/Readme/Changelog/Sample_Sources.csv. Licence requires the acknowledgements and copyright notices in any derivative. Per-preset sample credits in the CSV; check individual presets before shipping.",
+  "credit": "Full notice in CREDITS.txt.",
+  "notice": "unpacked/MuseScore_General_License.md"
+ },
+ {
+  "folder": "oga-512-sfx-8bit",
+  "title": "512 Sound Effects (8-bit style)",
+  "page": "https://opengameart.org/content/512-sound-effects-8-bit-style",
+  "author": "SubspaceAudio (Juhani Junkala)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://opengameart.org/sites/default/files/The%20Essential%20Retro%20Video%20Game%20Sound%20Effects%20Collection%20%5B512%20sounds%5D.zip",
+    "sha256": "6d4519229c6e2c9e09502cd4967940052f68664140549a467615b56bdfd1d031",
+    "bytes": 20582855
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "\"The Essential Retro Video Game Sound Effects Collection [512 sounds]\". OGA licence field: CC0."
+ },
+ {
+  "folder": "osiris-piano",
+  "title": "Osiris Piano",
+  "page": "https://shop.karoryfer.com/pages/free-osiris-piano",
+  "author": "Karoryfer Samples x Versilian Studios",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/Osiris_Piano/releases/download/v0.925/Osiris_Piano_0925.zip",
+    "sha256": "54ef210b671ea38c4e77291714b5376af28f35803f7c1338737d0f402de02768",
+    "bytes": 458671376
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Free page links a direct GitHub release (sfzinstruments/Osiris_Piano v0.925), no account needed. Soft Yamaha C2; beta."
+ },
+ {
+  "folder": "salamander-grand-v3",
+  "title": "Salamander Grand Piano V3",
+  "page": "https://archive.org/details/SalamanderGrandPianoV3",
+  "author": "Alexander Holm",
+  "spdx": "LicenseRef-PD-declared",
+  "archives": [
+   {
+    "url": "https://archive.org/download/SalamanderGrandPianoV3/SalamanderGrandPianoV3_44.1khz16bit.tar.bz2",
+    "sha256": "fe595c7722b70860e6377f82948d1c0cfcf27ecebf500dc79534408a78a62892",
+    "bytes": 488713261
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no (credit recommended)",
+  "notes": "Author declared all his sampled instruments public domain on 2022-03-04 (rytmenpinne.wordpress.com/2022/03/04/good-news-everyone/). archive.org metadata and the bundled README still say CC BY 3.0. Report: credit Alexander Holm anyway. 44.1 kHz/16-bit WAV set; 48/24 and Ogg builds not fetched.",
+  "credit": "Declared public domain by the author on 2022-03-04; credited by request."
+ },
+ {
+  "folder": "splendid-grand",
+  "title": "Splendid Grand Piano",
+  "page": "https://github.com/sfzinstruments/SplendidGrandPiano",
+  "author": "AKAI Professional (samples); SFZ by sfzinstruments",
+  "spdx": "LicenseRef-PD-declared",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/SplendidGrandPiano/archive/refs/heads/master.zip",
+    "sha256": "343c4cfd51fa8397ec911255e1407b8bc9b87c0dd264db75f17c2609cd458b52",
+    "bytes": 74508517,
+    "git_commit": "1c595d827b7fd7f0be3134aaed0f90b3662a09cf"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Report: public domain per an AKAI rep, relayed secondhand by S. Christian Collins (MuseScore_General_Sample_Sources.csv: \"Original License: Public Domain (confirmed via AKAI rep.)\"). Repo has no LICENSE file; README.md says \"Public Domain samples by AKAI ... released as public domain in early 2000\" and asks that redistributed derivatives of the SFZ note they derive from it. Counsel should confirm.",
+  "credit": "Samples released to the public domain by AKAI; mapping derived from the sfzinstruments SFZ."
+ },
+ {
+  "folder": "vcsl",
+  "title": "Versilian Community Sample Library",
+  "page": "https://github.com/sgossner/VCSL",
+  "author": "Versilian Studios LLC (Sam Gossner)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sgossner/VCSL/archive/refs/heads/master.zip",
+    "sha256": "7c70ced412948dde51adee384312dfaf7874a44098fc5f2d90c220f00ae75775",
+    "bytes": 4047196001,
+    "git_commit": "c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "README: usable for anything incl. commercial software, no credit required; Pipe Organ credit encouraged. Also has TX81Z Clavisynth/FM piano."
+ },
+ {
+  "folder": "virtuosity-drums",
+  "title": "Virtuosity Drums",
+  "page": "https://github.com/sfzinstruments/virtuosity_drums",
+  "author": "Versilian Studios x Karoryfer Samples (drummer Austin McMahon)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/virtuosity_drums/archive/refs/heads/master.zip",
+    "sha256": "afec253a346cda59b25612e06f4596fb4266db11ebe5778dd917d373a3358117",
+    "bytes": 1226406520,
+    "git_commit": "9f04cf9a734527edfbb0a4eee1f674e45bbf71bc"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Beta 0.924; 6 mics; 17 auxiliary percussion instruments."
+ },
+ {
+  "folder": "vsco2-ce",
+  "title": "VSCO 2 Community Edition",
+  "page": "https://github.com/sgossner/VSCO-2-CE",
+  "author": "Versilian Studios LLC (Sam Gossner)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sgossner/VSCO-2-CE/archive/refs/heads/master.zip",
+    "sha256": "aa94aaf77fadd5f893654eab905ac3df218c3037a6a2ab6f1b587d4d573bea38",
+    "bytes": 2297539442,
+    "git_commit": "440300901dfe9275fd84e0b7763af1f8443ae62e"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notes": "Full tree incl. \"Miscellania Raw\" and \"VSCO 1 Percussion\". Strings include every available bowed/plucked articulation and the separate harp; filenames use different octave conventions by instrument and articulation, checked against recorded pitch."
+ },
+ {
+  "folder": "honeydew",
+  "title": "Honeydew procedural sounds",
+  "page": "",
+  "author": "The Honeydew contributors",
+  "spdx": "CC0-1.0",
+  "notes": "Synthesized at build time by tools/content-build/src/procedural from content/recipes/procedural; no source files."
+ },
+ {
+  "folder": "iowa-strings",
+  "title": "University of Iowa Musical Instrument Samples — Strings",
+  "page": "https://theremin.music.uiowa.edu/MIS.html",
+  "author": "Lawrence Fritts and the University of Iowa Electronic Music Studios",
+  "spdx": "LicenseRef-Iowa-MIS",
+  "notice": "LICENSE.txt",
+  "credit": "Stereo ff violin, viola, cello and double bass recordings, arco and pizzicato. Honeydew selects, retunes, resamples and loops/shortens recordings; no endorsement is implied.",
+  "archives": [
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulG.G3.stereo.aif",
+    "sha256": "57e40d4b85e9d9b57956a991e8a99eb769a6a1bbf160780819464e30e044186f",
+    "bytes": 1131298
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulG.Bb3.stereo.aif",
+    "sha256": "4f22ebf570f0e90a10ab531615f5e85f651797f6a5ea37e3d8a3b917a7cadd02",
+    "bytes": 545824
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulG.Db4.stereo.aif",
+    "sha256": "4f7403687c6567807e2df2ab1147bc90a01147df73f626207c3ae6c18b5216b6",
+    "bytes": 613702
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulD.E4.stereo.aif",
+    "sha256": "9d330bdb4dc79319ca5785c90cd02f5acf604b4654281e539953fce0687ffd7d",
+    "bytes": 763924
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulD.G4.stereo.aif",
+    "sha256": "6ddb0171f0e9e5bd7c69abaaf016ff4849d7e0f7d3f3d65bdcdbbc8634823b2f",
+    "bytes": 719500
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulA.Bb4.stereo.aif",
+    "sha256": "c07a8f6867f293a68f2f36b18f82884217598246e01148c20420965fa93eaaf1",
+    "bytes": 694312
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulA.Db5.stereo.aif",
+    "sha256": "78c40848d0b6060ff6522578da98b8bf9b6729b0a3244f4f08e98c89f2d2d29a",
+    "bytes": 721420
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.E5.stereo.aif",
+    "sha256": "8ab79362114dce87d756aeee428fc46a8f2358b7ce27927420f601a2b9341456",
+    "bytes": 634924
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.G5.stereo.aif",
+    "sha256": "3e5a4baf1f14245919fd75e06c63ac61208491e3986a633123cc343a5aae408c",
+    "bytes": 541582
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.Bb5.stereo.aif",
+    "sha256": "974b9fc0073d2387cc95f64bf857960d9fd405da476b1c25164634f2ea9322a8",
+    "bytes": 335818
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.Db6.stereo.aif",
+    "sha256": "e26a417ed8919119176eb4ec26b54b676c64c1a9f3e6f6903bac93b522d678ff",
+    "bytes": 980686
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.E6.stereo.aif",
+    "sha256": "ccaa015ee819974445e20a594e0ec0d2d0c7f7f99154ab2787722072d6a64c08",
+    "bytes": 864016
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.G6.stereo.aif",
+    "sha256": "0ab0b71362bd95b06eeb339c61ad8f7dcbd3abcf0e0a2f923107dc6ae4f5ae8a",
+    "bytes": 802498
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.Bb6.stereo.aif",
+    "sha256": "d26417fa7d0d4a24edefad16e10398c24abfe16a114de5e7d4bf13071a5a0068",
+    "bytes": 878866
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.Db7.stereo.aif",
+    "sha256": "8093825e420c25438425f7db49d97930445826951b09e7c6855761d381837dc9",
+    "bytes": 252022
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulE.E7.stereo.aif",
+    "sha256": "3c4f5a9050e223e0fa71876e4e1bb4ce64851a6558328c21d4a532f853b53225",
+    "bytes": 370816
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulG.G3.stereo.aif",
+    "sha256": "56a5a43db6a9333823cd96b016d02e9dac703ac3fcbb20510817ef1110dfb77f",
+    "bytes": 823714
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulG.Bb3.stereo.aif",
+    "sha256": "23f9f94c5cffc6d9cdc1e29b8b07a1e4d77da437863a5b9f5e9e38ca1bfb5b09",
+    "bytes": 467338
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulG.Db4.stereo.aif",
+    "sha256": "4d5891a122d0bc108d451451a84ca8db8fe422626b9fdd800cf0962418e792b7",
+    "bytes": 475816
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulD.E4.stereo.aif",
+    "sha256": "494164070b9ad578e191d76e402c7c0d984638836d008c15bd7b3e37051174cf",
+    "bytes": 438700
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulD.G4.stereo.aif",
+    "sha256": "e2c6df48f8e0bdf24b4d624ccbd3b84f5f12283dce64e937e6cd0bb2466da63d",
+    "bytes": 439756
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulA.Bb4.stereo.aif",
+    "sha256": "6a76feeeed9c9a504abf9374b77a71e44deda6162cd4d2b83bd26ee8540911db",
+    "bytes": 598858
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulA.Db5.stereo.aif",
+    "sha256": "de02320a3ca7a5bad329714ecf64d0ad793aa5c7ed181ff728d02789321a45a5",
+    "bytes": 484300
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.E5.stereo.aif",
+    "sha256": "242010836921243b83b26b88585af000a858b684ae91df737944da993334ceee",
+    "bytes": 482188
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.G5.stereo.aif",
+    "sha256": "f5a8a252e1b25930aefe39ba3529787ecf7ad4e73fb340b8927b40c0b03f580d",
+    "bytes": 126220
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.Bb5.stereo.aif",
+    "sha256": "71ae64df9ba09407e28b6afadef6c58403f66325cac96660636feee671f67c00",
+    "bytes": 123340
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.Db6.stereo.aif",
+    "sha256": "5fb2fbc75b6e79eae4e8ba602b502fdf47da5be09e1e1d9640fd0cfbab27cfef",
+    "bytes": 128140
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.E6.stereo.aif",
+    "sha256": "2e9db4468d7c77a8272bc06101c96882e23d5361c99a4c4dc7eaf852b3f59145",
+    "bytes": 115468
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.G6.stereo.aif",
+    "sha256": "93b0d0b99163989e1ef0cade938abfdd92afc5fa377234f732c960d5fab3c37b",
+    "bytes": 75532
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.Bb6.stereo.aif",
+    "sha256": "752e96cb5c3c1a4ad14484bf364696799e0ab406881258b45a601fc642f4cf12",
+    "bytes": 79756
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.Db7.stereo.aif",
+    "sha256": "75c11c8e0c8495f3bdb34922a64bf04223ccbe3d9b97c53486d335faa82bb0ce",
+    "bytes": 74380
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.pizz.ff.sulE.E7.stereo.aif",
+    "sha256": "a8a4e0a33754aaeacc1558ccbc17eee3549005e62b06173521a500aa28861f69",
+    "bytes": 70732
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulC.C3.stereo.aif",
+    "sha256": "c3c3cf1433dba22757b4490a9c89c78629c81c8ef57f7f8cfe665654cc6695da",
+    "bytes": 1182208
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulC.Eb3.stereo.aif",
+    "sha256": "5a5da578d29111384b7fd8668d7a6086fd2210c860fa303f65dc48c0747633ee",
+    "bytes": 876742
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulC.Gb3.stereo.aif",
+    "sha256": "5248dac143480e4dec42922a7a407fc8b448fa7ad11a46fe342731e05e2e3bca",
+    "bytes": 995536
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulG.A3.stereo.aif",
+    "sha256": "3fd07865f5c81c721a838374a78414d2fb829908315ab6fe7b20744f71372e9b",
+    "bytes": 1124938
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulG.C4.stereo.aif",
+    "sha256": "3ffd93b4c5e06d2824323cadf978555be41f75fe278d8a3afda701a309ff6621",
+    "bytes": 1595860
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulD.Eb4.stereo.aif",
+    "sha256": "29b8346d9084b735609d6cad461d0457d16ef9d5bf9c0e395b52288dd5aa6232",
+    "bytes": 1044328
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulD.Gb4.stereo.aif",
+    "sha256": "8999b0b5d4fa27a7efdfece5ae50df174650e245234b71490d0f810f6f1f7ac5",
+    "bytes": 1052812
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.A4.stereo.aif",
+    "sha256": "b4ddcf959f1869260e501d4246ff50c94093bf539474cf39a5dde9379e053534",
+    "bytes": 1231000
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.C5.stereo.aif",
+    "sha256": "c85bae689c2effee6cce76fc6ae1a30a9b93bec1be64c410136eceda079a71ed",
+    "bytes": 1498276
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.Eb5.stereo.aif",
+    "sha256": "a4aa0d7c02ce66cb0f1978670bbab870574d998361f96c3d5ba2b21a1cc36948",
+    "bytes": 645520
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.Gb5.stereo.aif",
+    "sha256": "db4874554d482396c3cd6e69199b66d1ab103cc8e4335cf535912c75e6cb501c",
+    "bytes": 726136
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.A5.stereo.aif",
+    "sha256": "7e42480bf9fbb5d1c41300b7e649adff9d45a0922f565e857579e3294e1a6a93",
+    "bytes": 955234
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.C6.stereo.aif",
+    "sha256": "7e668dd45208d7a054988f8fc100ba1a59c16da487cea07973bbfe4bc0ee0f7b",
+    "bytes": 679468
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.Eb6.stereo.aif",
+    "sha256": "2f1af38061d8738b812369c6aec1be0c4a05ae8e1c70df547770ef60c7e3e3c5",
+    "bytes": 819466
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.Gb6.stereo.aif",
+    "sha256": "1f914de3c93204c38dbe32d204b17765f5c1218ea6036d93045d9a592c538924",
+    "bytes": 738862
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.arco.ff.sulA.A6.stereo.aif",
+    "sha256": "14648abcd93038410c069e8362638cdfbcecfb3528c625163c235b1cc0825e2e",
+    "bytes": 692194
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulC.C3.stereo.aif",
+    "sha256": "33dbe02e98ef0dbb7dc3fd3fadd990b9ae347194abbe6964318ae5e5082e787f",
+    "bytes": 1404946
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulC.Eb3.stereo.aif",
+    "sha256": "7272140a53830b05adbbdce31fc8f6359a1bb7dd19d8f56c9a6cd3f781594a65",
+    "bytes": 467332
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulC.Gb3.stereo.aif",
+    "sha256": "3e10ccce3daaceb85ee5cc2ff79ece0e59b6b9b9c2df453fd8d0b47d05de1f45",
+    "bytes": 530974
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulG.A3.stereo.aif",
+    "sha256": "2a621f2a570d2b68f2de209b1655417fb821b4cf30b916d05141e11e7e1a216a",
+    "bytes": 535216
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulG.C4.stereo.aif",
+    "sha256": "8c787fcebf731fe8ed284acec08a0a7c1018540ac0572b787e2c9569440c0d7f",
+    "bytes": 575518
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulD.Eb4.stereo.aif",
+    "sha256": "f96f1f00cbbfeac54641a082aa84b20d368aa476c3d884e823164cf5269dd6d9",
+    "bytes": 450364
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulD.Gb4.stereo.aif",
+    "sha256": "1cccd39f92128a7ba3751df69d67c72a9e7304d4bddd047c45eccc11b526eca1",
+    "bytes": 501274
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.A4.stereo.aif",
+    "sha256": "785229189f0f620192f5415d9b0b26a1310115cd1cf208b54c5bd8b471d15c73",
+    "bytes": 976444
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.C5.stereo.aif",
+    "sha256": "f9ed235fe9b85296585a8341cfa5f05d86aa9009a2b9a31f9a250e9991fa7eeb",
+    "bytes": 781282
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.Eb5.stereo.aif",
+    "sha256": "da2e990cd0f025d9165a206f174f9bb35c83cc8ecd7148010b8265cc8d57645b",
+    "bytes": 670978
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.Gb5.stereo.aif",
+    "sha256": "5a908cd59ea15406ab120fe04bd99e43550ddb5ffd80be30d478e032ff8ee824",
+    "bytes": 577642
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.A5.stereo.aif",
+    "sha256": "9c65e5757d9bda2ca7519478f17027f6a6b74813edaa2543ba999996b8ae93b2",
+    "bytes": 662494
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.C6.stereo.aif",
+    "sha256": "6bb610279844cab9082c5cff750154964aa4d4f8bb7e66d21e366466371c4b20",
+    "bytes": 518248
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.Eb6.stereo.aif",
+    "sha256": "925d8ff9fdabf73f83ec0f7fad74a25c1d709ccc43c78dccbcd33227de7f423e",
+    "bytes": 518248
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.Gb6.stereo.aif",
+    "sha256": "02d1305db1c460d28f90bb9521c620102ac3e69b33bb569fc8f8f62e2847819f",
+    "bytes": 637036
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Viola/Viola.pizz.ff.sulA.A6.stereo.aif",
+    "sha256": "51b9ca173ecc5d33bd3dd3f39568aac53ed56776822d1695487b46abb8c0362e",
+    "bytes": 654010
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulC.C2.stereo.aif",
+    "sha256": "56798a31bfb79a784baba213e9cffd9ad1565b8bc7f3ce08b557a82f432d6725",
+    "bytes": 1960720
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulC.Eb2.stereo.aif",
+    "sha256": "e90f835a9a9f3a9c26a0d0a9e96d9bb0de94ae0b7dcfa5ef94a2a9a4896aa678",
+    "bytes": 1409188
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulC.Gb2.stereo.aif",
+    "sha256": "6c23be304c3d28b5a4774dfd192714648a6319f639fb08d9800c063f11649880",
+    "bytes": 1264936
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulG.A2.stereo.aif",
+    "sha256": "ee43ca13d652e50be72f037579972277062a1d6012aa76e80beaac3d69a8d446",
+    "bytes": 1655254
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulG.C3.stereo.aif",
+    "sha256": "5b0531e76f14d50c77a16efe40ec27d3fcf0184b2c4991e6fd1eca1f9bb62f47",
+    "bytes": 1392220
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulD.Eb3.stereo.aif",
+    "sha256": "bb36efe02fb2f2054324ba2fd11a7e6979d0186ec1a08985b55846314d9b5e49",
+    "bytes": 1099480
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulD.Gb3.stereo.aif",
+    "sha256": "55638503bd5fb77c109af53028b6b2abad6619f0ca8ea527e113645c3e75ed06",
+    "bytes": 942502
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.A3.stereo.aif",
+    "sha256": "b697c7610dcd80c9958781909b5c7cca4c8850586e80a1c55e8b2892000c534c",
+    "bytes": 1549192
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.C4.stereo.aif",
+    "sha256": "b8d068ad2c79ececa30bd446f3bbe6542fafb5504ec33a36302e2ba88dc5a5e6",
+    "bytes": 1352968
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.Eb4.stereo.aif",
+    "sha256": "cb3b33fc95f69c2e506e9edc1ca9f080ec516b1a9bb944c38ce23dc0047d33e7",
+    "bytes": 1086748
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.Gb4.stereo.aif",
+    "sha256": "bc60af1084de4767194d53d2ee996808253fdf2e0c3c7b0bafcd31852edb239c",
+    "bytes": 972202
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.A4.stereo.aif",
+    "sha256": "21886a202c1afc15a74ba9d709eeca2a41b14275bef2ab58af6ff7caa28d6775",
+    "bytes": 1226752
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.C5.stereo.aif",
+    "sha256": "46c7f2fa1233e11b0af34f92881155adb4957c53e8e934f6714b189f64d0ab94",
+    "bytes": 827956
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.Eb5.stereo.aif",
+    "sha256": "3ecccfdd4e3893ea58b94760deefb60e177155e9f166abbd161323c2ab51c2c8",
+    "bytes": 900076
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.Gb5.stereo.aif",
+    "sha256": "2583b3b5374c6c48fcd7f429f8bb3909e87d5b707d291240f1fbce77db2e59ca",
+    "bytes": 764320
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.arco.ff.sulA.A5.stereo.aif",
+    "sha256": "bea6a39ea3596df086766d4c21e01250650d6e7855491638a4141c070e25140c",
+    "bytes": 708106
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulC.C2.stereo.aif",
+    "sha256": "5424133b9a1ca4143cb84c833c00bd236498934eb94ed4e204b9f6f69738c51e",
+    "bytes": 963718
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulC.Eb2.stereo.aif",
+    "sha256": "7f13a0aacc5a860d1d44c4477bf026f18d5301c339d147d81644f3e95b4679b4",
+    "bytes": 603094
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulC.Gb2.stereo.aif",
+    "sha256": "d7133053b3ae0ee627d490f0aea3e82377c562f563ce36b0f128b27f5c2288d9",
+    "bytes": 494908
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulG.A2.stereo.aif",
+    "sha256": "3d49b8d8560637dc92a4610ae5dd9663c30fd6a0526eb25d9134edd94b9ab681",
+    "bytes": 696436
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulG.C3.stereo.aif",
+    "sha256": "b9fd4768b1e6bb78b43f6341544ae5292a3afedc0ba5ac8d993c1ea5c7cfcf92",
+    "bytes": 840682
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulD.Eb3.stereo.aif",
+    "sha256": "42739eb98c35a5dde5356d36f55bd9ca20a89b711e2d16f3aff85a15547b529e",
+    "bytes": 467332
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulD.Gb3.stereo.aif",
+    "sha256": "87391ce6c3e7f34fcafd033f0f5be11b07ae4bf31c7b87c03fee6b8b912d1a42",
+    "bytes": 637036
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.A3.stereo.aif",
+    "sha256": "d50a238556ef57d0a7c166771a84bdbee766dd8e25a26dcfe9ccbbc2cfe94c05",
+    "bytes": 1010386
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.C4.stereo.aif",
+    "sha256": "9588f8990cec25ccbce1d725de387d9c171b8e5ba2f2e664e34191fb38e31de6",
+    "bytes": 603094
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.Eb4.stereo.aif",
+    "sha256": "70879adbd903de02da9957079d5dc812e68a908aef10de8fa0d073fac4d6d984",
+    "bytes": 611584
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.Gb4.stereo.aif",
+    "sha256": "a47215f8540f9914b65514395e409605faf9a26a6a56e44225be107a4f518760",
+    "bytes": 467332
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.A4.stereo.aif",
+    "sha256": "449b3a7925928b50db5fb9197711c16a706a816f76becf834797952da75e8793",
+    "bytes": 620068
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.C5.stereo.aif",
+    "sha256": "c2c8bf1996d88c8caeb55a346f60a251c1b8d62f8b430af4fb6d19e280d359d6",
+    "bytes": 365512
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.Eb5.stereo.aif",
+    "sha256": "69948bb6418d46346ec04903f7f3c6086d9eb07dc3aea7f3e4f1463958d702ff",
+    "bytes": 335818
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.Gb5.stereo.aif",
+    "sha256": "55fb78502ed6763099ead5b083f3aebd52d58b7ea02d88fdb9ad8e40edf3dbf1",
+    "bytes": 365512
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Cello/Cello.pizz.ff.sulA.A5.stereo.aif",
+    "sha256": "e808ad8d5d7b68cd8bdb82e8f1d0f8dcaeea49ddfc4b599098fc4ad58353e488",
+    "bytes": 658246
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulC.C1.stereo.aif",
+    "sha256": "4cb18629ead44ff8c1dabe0d39a5c1f4394b3e6058a17f5a3d0b9610cc0fbad2",
+    "bytes": 1463278
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulC.Eb1.stereo.aif",
+    "sha256": "3ded4aa2d1c6cc5918b2f234f92e2ac91087a1a98da8dd609e4062ca656e4bcf",
+    "bytes": 1243726
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulE.Gb1.stereo.aif",
+    "sha256": "d3a8db31876e8c7ead047935ddfbace0a2c71d126b34956fc0f185ba96fb0206",
+    "bytes": 924412
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulA.A1.stereo.aif",
+    "sha256": "d9dc02b6374e8d7b9c49b0cba92515f38551fbaad6612345bc14b6925ba8f59c",
+    "bytes": 1821388
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulA.C2.stereo.aif",
+    "sha256": "d4573359904e9cf1e411ff97ec35ce0d94423f8ccaf5aeb5c16e5b35c59ee30e",
+    "bytes": 987334
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulD.Eb2.stereo.aif",
+    "sha256": "77e8b3648bd25464ef8cd0b5d0bead306e775b2691d333a2dd97038f39553a36",
+    "bytes": 1327666
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulD.Gb2.stereo.aif",
+    "sha256": "8dd868d78be7a7dbc47eca507e581f055a3f3672623773dbe546e142cd1f8cf4",
+    "bytes": 1138912
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.A2.stereo.aif",
+    "sha256": "25cc0b5b323cd84339a9a3f46dd00fef12e582f108e5d7f126871382f3fff35c",
+    "bytes": 1762378
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.C3.stereo.aif",
+    "sha256": "ce3d3837b834c23247d5fee885ec0d437a0488c992b19db797fa9b8989332b6b",
+    "bytes": 1047394
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.Eb3.stereo.aif",
+    "sha256": "7cc2bc6e44e95d9fc0b07d167811b22651f3d13daeefcc7995c0ba9ff0df426a",
+    "bytes": 1156066
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.Gb3.stereo.aif",
+    "sha256": "2a5880637c107af4ce1af19de4cc5d49588478eca7d9f957abaf7dc38fa76729",
+    "bytes": 1064548
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.A3.stereo.aif",
+    "sha256": "670df491438b892a13a90c328797d8426bb02b3561762cf50e3e2be5710b1746",
+    "bytes": 1053112
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.C4.stereo.aif",
+    "sha256": "8e6cd7bceeb4d37db408949b0dfa08b3e6013ec992df78b30f884bf76ec7e7ca",
+    "bytes": 870076
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.Eb4.stereo.aif",
+    "sha256": "0f4e6d7de4ea7d9fcdb03656f844e52139460660b67ef537754908ca444b473f",
+    "bytes": 749956
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.Gb4.stereo.aif",
+    "sha256": "a984b637dd59804c221b1f6181f3505db66a6d0d9a0d0678d17334cb588ae3bd",
+    "bytes": 987328
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.arco.ff.sulG.G4.stereo.aif",
+    "sha256": "ff981bc17a675bdbdd75776757685035180c5750e4e63f6e8333beb750316144",
+    "bytes": 724216
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulC.C1.stereo.aif",
+    "sha256": "42b0ce57ad0a551595e2bfb253f9b67c04458babd1e0935652383adf277f9258",
+    "bytes": 1911094
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulC.Eb1.stereo.aif",
+    "sha256": "cfa792ad7a1626a2d625a32e24d5a6d06431480d6c1e85ae2e42c9491f53b2af",
+    "bytes": 1504978
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulE.Gb1.stereo.aif",
+    "sha256": "1abe859c93aaa8d68ebc43d0d0cb5b5949b27bee1cc00a3ae0fb717893871fb3",
+    "bytes": 1333384
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulA.A1.stereo.aif",
+    "sha256": "178ad88c9c36823c6fca75df195405691abd714990b3226d3daa44e9e81ecf0a",
+    "bytes": 2403004
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulA.C2.stereo.aif",
+    "sha256": "10be6a3dce95168057d8a0c9defa1939ffe0f696d04c52c46b7e42daf74894be",
+    "bytes": 1190386
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulD.Eb2.stereo.aif",
+    "sha256": "7bea7bb64287a0942fbd5e410916006af93757a249124a37f48c1e98fe7265e1",
+    "bytes": 1693738
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulD.Gb2.stereo.aif",
+    "sha256": "a91de4b4a2df37cadc8d32181d0552994f2954f97462a75435e9cbf0c81a4b17",
+    "bytes": 1487818
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.A2.stereo.aif",
+    "sha256": "2509228f22256c76f63483b8d5d85d1e6392cdfb20736a2f09c968f28565600c",
+    "bytes": 1499260
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.C3.stereo.aif",
+    "sha256": "b9641d565fb086a742c9750cba153491e2169ed62a848363f97ef3fe70068491",
+    "bytes": 1376284
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.Eb3.stereo.aif",
+    "sha256": "7b422575fa67ee61a5a7d03e15c2957faf6ab769f19a98871476e6c3b08c40e5",
+    "bytes": 1396300
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.Gb3.stereo.aif",
+    "sha256": "f5501367ffe2c65019aef024ed00c556d0497e9a51657d2d4eebac248e515f06",
+    "bytes": 1150348
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.A3.stereo.aif",
+    "sha256": "a71e738f56c947b660e65f0faebe0a2d14ea8176af98c07f5c9c337dd057a216",
+    "bytes": 841474
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.C4.stereo.aif",
+    "sha256": "a58a10e6990dec2bafdb646e7c3d5b11d7e77553df13e0e344663fd2098dfa5b",
+    "bytes": 875794
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.Eb4.stereo.aif",
+    "sha256": "e4388efe58d1d4a15ab07c12e27aca00c5fdfea9db2bbc39a644840f576b19e1",
+    "bytes": 647002
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.Gb4.stereo.aif",
+    "sha256": "3ac3631ce1567547241ee38f92d067191e7f3558ce2400b878765ea94b04b9d0",
+    "bytes": 483982
+   },
+   {
+    "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Double%20Bass/Bass.pizz.ff.sulG.G4.stereo.aif",
+    "sha256": "3d3ade65f1ac806944d63c4be39da896ccfd7a752bc29d213ba12b41d8548c94",
+    "bytes": 576928
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "courtesy",
+  "notes": "Official unrestricted-use grant retained in LICENSE.txt. Individual stereo AIFF recordings linked from the 2012 string pages, downloaded 2026-10-14; recordings are 44.1 kHz. Source filenames are preserved in originals/, converted losslessly to wav/<same stem>.wav using ffmpeg -nostdin -v error -i INPUT.aif -map_metadata -1 -c:a pcm_s24le OUTPUT.wav. Bowed and plucked programs are single ff layers sampled every three semitones. Per-zone tune corrects measured source intonation. High pizzicato notes with unstable/incorrect pitches are omitted: violin above E5, viola above A5, cello above A4, bass above G3; adjacent zones cover their keyboard range. Bowed violin omits Db7 and E7 because their short takes lack useful sustains; the Bb6 zone covers higher notes."
+ },
+ {
+  "folder": "greg-sullivan-epianos",
+  "title": "Greg Sullivan's E-Pianos",
+  "page": "https://github.com/sfzinstruments/GregSullivan.E-Pianos",
+  "author": "Greg Sullivan; SFZ mapping by kinwie",
+  "spdx": "CC-BY-3.0",
+  "archives": [
+   {
+    "url": "https://codeload.github.com/sfzinstruments/GregSullivan.E-Pianos/zip/8c3e581acda3594b553948ff0222d4f84a698376",
+    "sha256": "c36a5c9092688b9419d7d3ab330d9b317856c3752c3696bdc7e0b65dd4d79bdf",
+    "bytes": 19263422,
+    "git_commit": "8c3e581acda3594b553948ff0222d4f84a698376"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "yes",
+  "credit": "Greg Sullivan: Yamaha CP80 Electric Grand Piano, Hohner Pianet T (type 2), Wurlitzer EP200 Electric Piano; SFZ mapping and fixes by kinwie. Licensed under Creative Commons Attribution 3.0 Unported, https://creativecommons.org/licenses/by/3.0/. Source: https://github.com/sfzinstruments/GregSullivan.E-Pianos. Honeydew adaptations: neutral preset names, DW Sampler mapping, resampling and 16-bit FLAC encoding, gain normalization, trimmed decays and note-off envelopes; upstream release samples, per-region gain/start/end controls and ARIA controls are not reproduced. No endorsement is implied.",
+  "notice": "unpacked/GregSullivan.E-Pianos/LICENSE",
+  "notes": "Author permission and CC BY 3.0 declaration are in the pinned upstream README.md. All three sampled instruments are included; no upstream scripts run."
+ },
+ {
+  "folder": "meta-piano",
+  "title": "Meta Piano",
+  "page": "https://github.com/facebookincubator/Meta-open-sound/releases/tag/meta-piano-v1.0.0",
+  "author": "Meta Platforms, Inc., Creative Audio team",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/facebookincubator/Meta-open-sound/releases/download/meta-piano-v1.0.0/meta-open-sound-meta-piano-wav.zip",
+    "sha256": "ee9023dbde849ecab393a098aa0cfbd6f2ef48d4a096b9c08808b72fc913f70e",
+    "bytes": 752311261,
+    "git_commit": "e2ff154845994fe4135becc4d5b857c19f172784"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "notice": "LICENSE",
+  "notes": "Meta Piano v1.0.0: 88-key felt-damped upright, four velocity layers. Source WAV archive includes SFZ and SHA256SUMS. Honeydew keeps all four dynamics at one point per minor third with 6 s tails; no velocity crossfade or random pitch/amplitude."
+ },
+ {
+  "folder": "meta-steel-guitar",
+  "title": "Meta Steel Guitar",
+  "page": "https://github.com/facebookincubator/Meta-open-sound",
+  "author": "Meta Creative Audio, Meta Platforms, Inc.",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/facebookincubator/Meta-open-sound/releases/download/meta-steel-guitar-v1.0.0/meta-open-sound-meta-steel-guitar-wav.zip",
+    "sha256": "caaa8a9c07217f4a82d1dfd9f5657c286155464b66bf4dd27797811c2558a909",
+    "bytes": 663385210,
+    "git_commit": "e2ff154845994fe4135becc4d5b857c19f172784"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "license_evidence": "https://github.com/facebookincubator/Meta-open-sound/blob/e2ff154845994fe4135becc4d5b857c19f172784/LICENSE",
+  "notes": "Official WAV release, 24-bit 48 kHz; upstream SFZ map and all string-specific recordings retained in raw sources.",
+  "mappings": [
+   {
+    "file": "unpacked/meta-steel-guitar.sfz",
+    "sha256": "34d987fc7645329a19dcef947f90a12e3600dce414baf50fdecf379b31315c88"
+   }
+  ]
+ },
+ {
+  "folder": "meta-nylon-guitar",
+  "title": "Meta Nylon Guitar",
+  "page": "https://github.com/facebookincubator/Meta-open-sound",
+  "author": "Meta Creative Audio, Meta Platforms, Inc.",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/facebookincubator/Meta-open-sound/releases/download/meta-nylon-guitar-v1.0.0/meta-open-sound-meta-nylon-guitar-wav.zip",
+    "sha256": "e7fa168b97a72ecc1257917f85cb524fe7c2e1f098dfdcaf8f5c0e29cabe768e",
+    "bytes": 423127309,
+    "git_commit": "e2ff154845994fe4135becc4d5b857c19f172784"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "license_evidence": "https://github.com/facebookincubator/Meta-open-sound/blob/e2ff154845994fe4135becc4d5b857c19f172784/LICENSE",
+  "notes": "Official WAV release, 24-bit 48 kHz; upstream SFZ map and all string-specific recordings retained in raw sources.",
+  "mappings": [
+   {
+    "file": "unpacked/meta-nylon-guitar.sfz",
+    "sha256": "114450c95e3ed948101b7d277c66bc0d5c674c9ada904978222496b1e71ac144"
+   }
+  ]
+ },
+ {
+  "folder": "karoryfer-shinyguitar",
+  "title": "Shinyguitar",
+  "page": "https://github.com/sfzinstruments/karoryfer.shinyguitar",
+  "author": "Karoryfer Samples (D. Smolken)",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.shinyguitar/releases/download/v1.002/Karoryfer.Shinyguitar.v1.002.zip",
+    "sha256": "23cf4030cbf9ce9e2c84d7cbb1c022fbca124bfff0ad118a14eda7cf6c921d7b",
+    "bytes": 368411844,
+    "git_commit": "57243cca85277dbcc120ce17c6178032f93c80f3"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "license_evidence": "https://shop.karoryfer.com/pages/free-samples",
+  "notes": "Official free-shinyguitar page links this GitHub release. Publisher free-samples page declares CC0 for older downloads too; release contains legacy CC-BY text. Mic and pickup recordings, 24-bit 44.1 kHz.",
+  "mappings": [
+   {
+    "file": "unpacked/Shinyguitar/Programs/acoustic_one.sfz",
+    "sha256": "31ca13b9f33c6cdbf2c561e30fd4af58e31b73176d1a02f50bf680ad18b24e91"
+   },
+   {
+    "file": "unpacked/Shinyguitar/Programs/electric_one.sfz",
+    "sha256": "09b6b85e0428d1a78a6f199ec9ee0561758a37df364eaa6bc18c118a1fce05da"
+   }
+  ]
+ },
+ {
+  "folder": "karoryfer-emilyguitar-rendered",
+  "title": "Emilyguitar voiced renders",
+  "page": "https://github.com/sfzinstruments/karoryfer.emilyguitar",
+  "author": "Karoryfer Samples (D. Smolken); offline preparation by Honeydew contributors",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.emilyguitar/archive/refs/heads/master.zip",
+    "sha256": "b791ca234a4a31417633836ec52e7f7ed5ed00c72d439d14254acfe54340be62",
+    "bytes": 103488295,
+    "git_commit": "b4920dc662fd9cad6dcaccdeecffdd91c8725d8c"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "license_evidence": "https://shop.karoryfer.com/pages/free-samples",
+  "notes": "Derived from the pinned karoryfer-emilyguitar source with content/recipes/guitar/prepare-emily.py. Three/five voice and power/minor/major chord programs, including wide variants. Preserves source pitch, pan, note delays, four velocity layers and natural decay. Random take is fixed at zero; release/noise performance controls are not rendered. PROVENANCE.json pins original SFZ/WAV inputs, preparation script, tool versions and derived WAV hashes.",
+  "preparation": {
+   "script": "content/recipes/guitar/prepare-emily.py",
+   "sha256": "94afcae3521ef0ac27fa2934b5317609198e762270a68b5f9165779328e07570",
+   "provenance_sha256": "59e8b9451dce4938eb5b667dc65836a24bd1d861505c3245b210033d88663f99",
+   "numpy": "2.4.2",
+   "scipy": "1.17.1",
+   "wav_count": 1108
+  }
+ },
+ {
+  "folder": "karoryfer-black-and-green-guitars-release",
+  "title": "Black and Green Guitars",
+  "page": "https://github.com/sfzinstruments/karoryfer.black-and-green-guitars",
+  "author": "Karoryfer Samples; guitar recordings by Brian Wood",
+  "spdx": "CC0-1.0",
+  "archives": [
+   {
+    "url": "https://github.com/sfzinstruments/karoryfer.black-and-green-guitars/releases/download/v1.000/Karoryfer_Black_And_Green_Guitars_1000.zip",
+    "sha256": "ba95221d32fb6386c5d0a0799b93904fd55520aca017c5f121da290075c140c0",
+    "bytes": 481838512,
+    "release": "v1.000",
+    "git_commit": "f3cf516cbe50b2d6019c7c8fafec4251e2fa29c9"
+   }
+  ],
+  "retrieved": "2026-10-14",
+  "attrib": "no",
+  "license_evidence": "https://shop.karoryfer.com/pages/free-samples",
+  "notes": "Official v1.000 release with intact WAV bytes, verified RIFF sizes and every WAV header. The older GitHub source ZIP has CRLF-converted audio and is not used. Source pitch/velocity mappings retained; first round robin. Feedback entry contains the recorded noise components; ARIA sine feedback is not rendered.",
+  "mappings": [
+   {
+    "file": "unpacked/Programs/modules/maps_black/ord.sfz",
+    "sha256": "4ea3aebcf2981ebeb35a3c3e5b52029e7672953bf44685f667a7fae457526316"
+   },
+   {
+    "file": "unpacked/Programs/modules/maps_black/stac.sfz",
+    "sha256": "73e9a29d8b19a0f1270f82063e7edef89cf20e938494f53e96dff819539964b8"
+   },
+   {
+    "file": "unpacked/Programs/modules/maps_black/btb.sfz",
+    "sha256": "3fb0ed4a858d71cf3c558b47408a8cfb8dbc3aa2598cc6906d6808d02098760e"
+   },
+   {
+    "file": "unpacked/Programs/modules/maps_green/ord.sfz",
+    "sha256": "585e3967e5df7ba8150ddbee5f1cc1e02d8f87437872a2d3eb0930ed122f167a"
+   },
+   {
+    "file": "unpacked/Programs/modules/maps_green/stac.sfz",
+    "sha256": "979e8033587891a9a1f3a7a0ad62d7493bf71318ad2c591480bc54080fdbcf5d"
+   },
+   {
+    "file": "unpacked/Programs/modules/maps_green/hammer.sfz",
+    "sha256": "75026cdb01f63a61d8a8bb15a25697e4000107d14f8561749588d8f41bc4f44f"
+   }
+  ]
+ }
+]

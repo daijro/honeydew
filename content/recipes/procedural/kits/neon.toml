@@ -1,0 +1,72 @@
+# An electronic kit whose pads are synthesized (tools/content-build/src/procedural): clean and punchy.
+# Pads: level_db and pan (−1 left … 1 right); every pad named `… Hat` is in cut group 1.
+id = "kit-neon"
+kind = "kit"
+path = "Drumsets/Neon Kit.tmpl"
+source = "honeydew"
+
+[[pad]]
+name = "Kick"
+level_db = -7
+render = "kick"
+params = { tune = 55.0, decay = 0.3, click = 0.5 }
+
+[[pad]]
+name = "Snare"
+level_db = -8.5
+render = "snare"
+params = { tune = 200.0, decay = 0.05, snappy = 0.7, rattle = 0.1, tone = 5500.0 }
+
+[[pad]]
+name = "Clap"
+level_db = -10
+pan = -0.08
+render = "clap"
+params = { tone = 1300.0, decay = 0.12 }
+
+[[pad]]
+name = "Closed Hat"
+level_db = -13
+pan = 0.24
+render = "hat"
+params = { decay = 0.04 }
+
+[[pad]]
+name = "Open Hat"
+level_db = -12
+pan = 0.24
+render = "hat"
+params = { decay = 0.3 }
+
+[[pad]]
+name = "Low Tom"
+level_db = -9
+pan = -0.24
+render = "tom"
+params = { tune = 95.0 }
+
+[[pad]]
+name = "High Tom"
+level_db = -9
+pan = 0.24
+render = "tom"
+params = { tune = 160.0 }
+
+[[pad]]
+name = "Rim"
+level_db = -11
+pan = -0.16
+render = "rim"
+
+[[pad]]
+name = "Cowbell"
+level_db = -12
+pan = 0.12
+render = "cowbell"
+
+[[pad]]
+name = "Crash"
+level_db = -12
+pan = -0.28
+render = "cymbal"
+params = { tone = 7500.0, decay = 1.0 }

@@ -1,0 +1,13 @@
+# A French horn: VSCO 2 CE's horn sustain, layers 1 and 3 where a note has them (p, f), one point per minor third or
+# more, each cut to 2.5 s with a found loop.
+id = "brass-french-horn"
+kind = "program"
+path = "Presets/DW Sampler/Brass/French Horn.dwp"
+source = "vsco2-ce"
+files = "unpacked/VSCO-2-CE-master/Brass/F Horn/sus/MOHorn_sus_{note}_v{layer}_{rr}.wav"
+layers = ["1", "3"]
+transpose = 12
+keys = { every = 3 }
+loop = { find = true, min_s = 1.0, crossfade_ms = 100, keep_s = 2.5 }
+release = 0.3
+gain = "even"
