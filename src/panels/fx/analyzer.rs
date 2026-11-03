@@ -1172,7 +1172,17 @@ fn spectrogram(
                 p.bottom() - p.height() * i as f32 / 12.0,
             ),
         );
-        let points = spectrum_points(row, ppp / 4.0, &x, &level, spectrum, rate, log, false, tilt(state));
+        let points = spectrum_points(
+            row,
+            ppp / 4.0,
+            &x,
+            &level,
+            spectrum,
+            rate,
+            log,
+            false,
+            tilt(state),
+        );
         let look = (control, ink.gamma_multiply(1.0 - 0.66 * d), px);
         let below = |a: Pos2, b: Pos2| a.y >= p.top() && b.y >= p.top();
         fill_and_line(ui.painter(), &points, row.bottom(), look, below);
@@ -1780,8 +1790,9 @@ pub const REFERENCE: Reference = Reference {
                 row(17, Widget::Knob, "Input Gain", [10.5, 1.62, 3.5, 3.5]).value("×1.00"),
                 row(TILT, Widget::Spinner, "Tilt", [0.0, 5.12, 7.0, 1.62])
                     .items("White · Pink · Honeydew · Brown · Custom"),
-                row(TILT_STEP, Widget::Spinner, "dB/oct", [7.0, 5.12, 7.0, 1.62])
-                    .items("-12 · -9 · -6 · -4.5 · -3 · -1.5 · 0 · +1.5 · +3 · +4.5 · +6 · +9 · +12"),
+                row(TILT_STEP, Widget::Spinner, "dB/oct", [7.0, 5.12, 7.0, 1.62]).items(
+                    "-12 · -9 · -6 · -4.5 · -3 · -1.5 · 0 · +1.5 · +3 · +4.5 · +6 · +9 · +12",
+                ),
                 TABS,
             ],
             ..Case::DEFAULT
