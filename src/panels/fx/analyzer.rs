@@ -1720,6 +1720,9 @@ pub const REFERENCE: Reference = Reference {
         (15, 1.0),
         (16, 1.0),
         (17, 0.5),
+        // The Spectrum's tilt: Honeydew's own, and the `dB/oct` step `Custom` reads.
+        (TILT, 2.0),
+        (TILT_STEP, TILT_STEP_DEFAULT),
     ],
     cases: &[
         Case {
