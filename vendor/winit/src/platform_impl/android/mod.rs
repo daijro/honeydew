@@ -227,7 +227,9 @@ impl<T: 'static> EventLoop<T> {
                 MainEvent::WindowResized { .. } => resized = true,
                 MainEvent::RedrawNeeded { .. } => pending_redraw = true,
                 MainEvent::ContentRectChanged { .. } => {
-                    warn!("TODO: find a way to notify application of content rect change");
+                    // Honeydew: a rotation changes the surface's rect, and its new size is the only way the app learns
+                    // the viewport moved. Reported below as `Resized`, with the native window's size.
+                    resized = true;
                 },
                 MainEvent::GainedFocus => {
                     HAS_FOCUS.store(true, Ordering::Relaxed);
@@ -250,6 +252,10 @@ impl<T: 'static> EventLoop<T> {
                     );
                 },
                 MainEvent::ConfigChanged { .. } => {
+                    // Honeydew: a rotation is a config change, and winit's own `Resized` only arrives for the surface
+                    // events a rotation may not send at all. Report the native window's size either way, so a rotated
+                    // app never keeps the viewport it had.
+                    resized = true;
                     let monitor = MonitorHandle::new(self.android_app.clone());
                     let old_scale_factor = monitor.scale_factor();
                     let scale_factor = monitor.scale_factor();
