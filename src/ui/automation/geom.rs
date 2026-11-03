@@ -2,6 +2,10 @@
 //! the grid and its value area of 127 fixed rows, the horizontal view (zoom limits, scroll range, the initial view),
 //! the playhead and the value axis.
 //!
+//! The value zoom ([`Frame::rows`], [`value_axis`]) is GitHub issue #60: the value area
+//! always shows the whole range, as the audio editor's still does. The automation editor zooms it from the whole range
+//! (1×) to [`VALUE_ZOOM`]× and scrolls it, as the piano roll does its rows.
+//!
 //! The top margin is 0 here, as in the piano roll and the drum editor: the host passes the rect below its window
 //! margin. The zoom limits take d, [`TimeSig::steps_per_beat`] (TDIV byte 0). Rows and values are
 //! [`crate::song::points::row`] / [`crate::song::points::value_at_row`]; this module turns rows into y.
@@ -21,13 +25,16 @@ pub const BAR: f32 = 1.5;
 pub const HIT_R: f32 = 1.25;
 /// A clip with no saved view opens at this many U per beat.
 const NEW_BEAT_U: f32 = 4.0;
-/// The value range is always 127 rows of V/127.
-const ROWS: f64 = 127.0;
+/// The value range is 127 rows, V/127 each when the whole range shows.
+pub const ROWS: f64 = 127.0;
+/// The value zoom's deepest: 1/64 of the range over V (#60).
+pub const VALUE_ZOOM: f64 = 64.0;
 
 /// The editor's rects. `ruler` is the whole ruler row (the `background` rect over the margin and the ruler); `snap`
 /// its left cell, 1.5 U × (ruler h − 1 px); `time` the time ruler, from x + 1.5 U + ceil(U/16). Below the ruler: `grid`
 /// (G high) from the same x to the right edge, `value` the grid inset by pad at top and bottom (V high), `column` the
-/// 1.5 U column left of the grid (G high) and `axis` its value-axis part (V high).
+/// 1.5 U column left of the grid (G high) and `axis` its value-axis part (V high). `rows` (#60) is the row at the value
+/// area's top and how many rows it holds: [0, 127], the whole range, unless the automation editor zoomed it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Frame {
     pub ruler: Rect,
@@ -37,12 +44,15 @@ pub struct Frame {
     pub value: Rect,
     pub column: Rect,
     pub axis: Rect,
+    pub rows: [f64; 2],
 }
 
-/// One value-axis tick: a 2 px line across `line` at `y`, and its `label` centred in `text`.
+/// One value-axis tick: a 2 px line across `line` at `y`, and its `label` centred in `text`; `frac` is the fraction
+/// of the range there (1 at the top of the whole range).
 #[derive(Clone, Debug, PartialEq)]
 pub struct AxisTick {
     pub y: f32,
+    pub frac: f32,
     pub line: Rangef,
     pub label: String,
     pub text: Rect,
@@ -67,17 +77,38 @@ impl Frame {
             value: Rect::from_x_y_ranges(left..=rect.right(), value),
             column: Rect::from_x_y_ranges(column, below),
             axis: Rect::from_x_y_ranges(column, value),
+            rows: [0.0, ROWS],
         }
     }
 
-    /// The y of row `r`: top + r·V/127. Touches find points here (r without the +0.5).
+    /// The y of row `r`: top + (r − rows₀)·V/rows₁, top + r·V/127 at 1×. Touches find points here (r without the +0.5).
     pub fn row_y(&self, r: f64) -> f32 {
-        self.value.top() + (r * f64::from(self.value.height()) / ROWS) as f32
+        let [r0, n] = self.rows;
+        self.value.top() + ((r - r0) * f64::from(self.value.height()) / n) as f32
     }
 
-    /// The row at `y`: (y − top)·127/V, what a tap creates a point from.
+    /// The row at `y`: rows₀ + (y − top)·rows₁/V, (y − top)·127/V at 1×, what a tap creates a point from.
     pub fn row_at(&self, y: f32) -> f64 {
-        f64::from(y - self.value.top()) * ROWS / f64::from(self.value.height())
+        let [r0, n] = self.rows;
+        r0 + f64::from(y - self.value.top()) * n / f64::from(self.value.height())
+    }
+
+    /// The y of fraction `f` of the range (1 at the top), where the axis ticks and the init line sit: its row is
+    /// (1 − f)·k + o ([`Self::frac_law`]), top + V·(1 − f) at 1×.
+    pub fn frac_y(&self, f: f32) -> f32 {
+        let ([r0, n], (k, o)) = (self.rows, self.frac_law());
+        let r = f64::from(1.0 - f) * k + o;
+        self.value.top() + self.value.height() * ((r - r0) / n) as f32
+    }
+
+    /// The rows of fractions of the range, (1 − f)·k + o: the full range's (1 − f)·127 while the whole range shows, half a
+    /// row off the points' law at the ends, too little to see; zoomed in (#60), where it shows, the points' own
+    /// (1 − f)·126 + 0.5, so that the labels and the init line stay on the points of their values.
+    fn frac_law(&self) -> (f64, f64) {
+        match self.rows[1] < ROWS {
+            true => (points::LAST_ROW, 0.5),
+            false => (ROWS, 0.0),
+        }
     }
 
     /// The drawn centre y of a point of `value`: top + (r + 0.5)·V/127, r = its row of `max`.
@@ -103,23 +134,27 @@ impl Frame {
     }
 
     /// The value axis: N = 5 ticks when V ≥ 3 U, else 3; tick i at top + V·i/(N − 1), a line from x + 3 px to
-    /// x + w − 3 px, labelled 100 − 100·i/(N − 1) in (x + 3 px, y − 0.5 U, w − 6 px, 0.5 U).
+    /// x + w − 3 px, labelled 100 − 100·i/(N − 1) in (x + 3 px, y − 0.5 U, w − 6 px, 0.5 U). Zoomed (#60), the ticks
+    /// keep their places and their `frac` is the range's there.
     pub fn axis_ticks(&self, m: &Metrics) -> Vec<AxisTick> {
         let n = if self.axis.height() >= m.u(3.0) { 5 } else { 3 };
+        let ([r0, rows], (k, o)) = (self.rows, self.frac_law());
         (0..n)
             .map(|i| {
                 let label = (100 - 100 * i / (n - 1)).to_string();
-                self.axis_tick(1.0 - i as f32 / (n - 1) as f32, label, m)
+                let r = r0 + rows * f64::from(i) / f64::from(n - 1);
+                self.axis_tick((1.0 - (r - o) / k) as f32, label, m)
             })
             .collect()
     }
 
-    /// The axis tick at fraction `f` of the range (1 at the top), y = top + V·(1 − f), labelled `label`.
+    /// The axis tick at fraction `f` of the range (1 at the top), y = [`Self::frac_y`], labelled `label`.
     pub fn axis_tick(&self, f: f32, label: String, m: &Metrics) -> AxisTick {
         let (a, px) = (self.axis, 1.0 / m.ppp());
-        let y = a.top() + a.height() * (1.0 - f);
+        let y = self.frac_y(f);
         AxisTick {
             y,
+            frac: f,
             line: Rangef::new(a.left() + 3.0 * px, a.right() - 3.0 * px),
             label,
             text: Rect::from_min_size(
@@ -137,19 +172,22 @@ pub fn zoom_limits(u: f32, sig: TimeSig) -> [f32; 2] {
     [ud / 48.0, ud * 25.0]
 }
 
-/// The horizontal view: the beat at the grid's left edge and the beat width in points.
+/// The view: the beat at the grid's left edge and the beat width in points, and the value view's [`Frame::rows`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct View {
     pub left: f64,
     pub beat_w: f32,
+    pub rows: [f64; 2],
 }
 
 impl View {
-    /// A clip with no saved view: from its first point's beat (`first`, a tick; else 0), at 4 U per beat.
+    /// A clip with no saved view: from its first point's beat (`first`, a tick; else 0), at 4 U per beat, the whole
+    /// value range shown.
     pub fn initial(first: Option<u32>, u: f32) -> Self {
         Self {
             left: f64::from(first.unwrap_or(0)) / f64::from(PPQ),
             beat_w: NEW_BEAT_U * u,
+            rows: [0.0, ROWS],
         }
     }
 
@@ -162,12 +200,14 @@ impl View {
     }
 }
 
-/// The automation and audio editors' input zones: one finger scrolls the time on the ruler band only (no touch y); the
-/// wheel zooms it over the ruler and the grid (the zoom-x zone covers both and comes before the scroll zone), where a
-/// trackpad pinch zooms it too.
+/// The automation and audio editors' input zones: one finger scrolls the time on the ruler band and the grid (no touch
+/// y; the automation editor adds its values', #60); the wheel zooms it over the ruler and the grid (the zoom-x zone
+/// covers both and comes before the scroll zone), where a trackpad pinch zooms it too.
+// Issue #56: the touch x zone was the ruler band only; the grid scrolls too, as the
+// reporter's original does. The editors hand the scroller only their empty-grid presses ([`Scroller::claim`]).
 pub fn zones(f: &Frame) -> Zones {
     Zones {
-        touch: [f.time, Rect::NOTHING],
+        touch: [f.time.union(f.grid), Rect::NOTHING],
         wheel_zoom: [f.time.union(f.grid), Rect::NOTHING],
         wheel_scroll: f.grid,
         pinch: f.grid,
@@ -187,6 +227,37 @@ pub fn axis(view: View, u: f32, sig: TimeSig, loop_beats: f64, grid: Rect) -> Ax
     }
 }
 
+/// `view`'s rows as the scroller's y axis over the `value` area (#60): rows 0 … 127, from all of them down to
+/// 127/[`VALUE_ZOOM`] over V.
+pub fn value_axis(view: View, value: Rect) -> Axis {
+    let v = f64::from(value.height().max(1.0));
+    Axis {
+        pos: view.rows[0],
+        zoom: view.rows[1] / v,
+        range: [0.0, ROWS],
+        zoom_range: [ROWS / VALUE_ZOOM / v, ROWS / v],
+        view: value.y_range(),
+    }
+}
+
+/// `view` with what changed in its y axis since `was` ([`value_axis`]); back at 1× it shows exactly 127 rows.
+pub fn take_rows(view: View, was: Axis, y: Axis) -> View {
+    let n = if y.zoom != was.zoom {
+        y.span()
+    } else {
+        view.rows[1]
+    };
+    let r0 = if y.pos != was.pos {
+        y.pos
+    } else {
+        view.rows[0]
+    };
+    View {
+        rows: [r0, if n > ROWS - 1e-6 { ROWS } else { n }],
+        ..view
+    }
+}
+
 /// `view` with what changed in its axis since `was` ([`axis`]).
 pub fn take(view: View, was: Axis, x: Axis) -> View {
     View {
@@ -196,6 +267,7 @@ pub fn take(view: View, was: Axis, x: Axis) -> View {
         } else {
             view.beat_w
         },
+        ..view
     }
 }
 
@@ -309,6 +381,7 @@ mod tests {
         let axis = View {
             left: 2.0,
             beat_w: 128.0,
+            rows: [0.0, ROWS],
         }
         .axis(f.grid.left());
         let pts = [
@@ -396,17 +469,19 @@ mod tests {
         let wide = View {
             left: 0.0,
             beat_w: 1e6,
+            ..v
         };
         assert_eq!(clamped(wide, 4.0).beat_w, 3200.0);
         let narrow = View {
             left: 0.0,
             beat_w: 1.0,
+            ..v
         };
         assert_eq!(clamped(narrow, 4.0).beat_w, 32.0 / 12.0);
-        // Its zones: one finger on the ruler band only; the wheel zooms over the ruler and the grid.
+        // Its zones: one finger on the ruler band and the grid; the wheel zooms over the ruler and the grid.
         let f = frame(300.0, 1.0);
         let z = zones(&f);
-        assert_eq!(z.touch, [f.time, Rect::NOTHING]);
+        assert_eq!(z.touch, [f.time.union(f.grid), Rect::NOTHING]);
         assert_eq!(z.wheel_zoom, [f.time.union(f.grid), Rect::NOTHING]);
         assert_eq!((z.wheel_scroll, z.pinch), (f.grid, f.grid));
         // The axis puts the view's left beat on the grid's left edge.

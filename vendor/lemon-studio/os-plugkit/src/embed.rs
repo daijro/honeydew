@@ -11,11 +11,13 @@
 //!   threads. A tick comes every 30 ms of pumping, and at once after a [`Waker::wake`] (any thread).
 //! - **Menus and the type-in box don't block.** [`Window::popup`] and [`Window::type_in`] hand the host the request
 //!   ([`modal`]) and return `None`. When the user answers ([`answer`]), the input that opened it comes again, and this
-//!   time the call returns the answer; a chain (a menu's `Type in value...`, then the box) replays its earlier answers
+//!   time the call returns the answer; a chain (a menu's `Enter value...`, then the box) replays its earlier answers
 //!   first.
+//! - **Files come from the host** where the platform has no file dialog (Android, the browser): [`Window::open_file`]
+//!   asks it ([`Modal::OpenFile`]) as a menu does, and the host's own picker answers with a path.
 //! - Positions are the editor's device pixels, also for popups (`to_root` keeps them).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock};
@@ -77,6 +79,8 @@ pub enum Modal {
     Menu { x: i32, y: i32, menu: MenuView, scale: f32 },
     /// The "Type in value" box, starting with `text`.
     TypeIn { x: i32, y: i32, text: String, scale: f32 },
+    /// A sample file to open: the host's own picker answers with its path ([`Answer::Text`]).
+    OpenFile,
 }
 
 /// The user's answer to a [`Modal`].
@@ -135,6 +139,8 @@ static REPAINT: OnceLock<fn()> = OnceLock::new();
 thread_local! {
     /// The parked editors of this thread, by id.
     static PARKED: RefCell<HashMap<Parent, (Arc<State>, Box<dyn FnOnce()>)>> = RefCell::new(HashMap::new());
+    /// This thread's editors ask the host for the files they open ([`host_files`]).
+    static HOST_FILES: Cell<bool> = const { Cell::new(cfg!(any(target_arch = "wasm32", target_os = "android"))) };
 }
 
 fn get(id: Parent) -> Option<Arc<State>> {
@@ -368,8 +374,23 @@ impl Window {
         }
     }
 
+    /// The file the host's own picker picked ([`Modal::OpenFile`]), as [`Self::type_in`].
+    pub fn open_file(&self) -> Option<String> {
+        if crate::no_modal() {
+            return None;
+        }
+        match self.answer() {
+            Some(Answer::Text(path)) => Some(path),
+            Some(Answer::Pick(_)) => None,
+            None => {
+                self.ask(Modal::OpenFile);
+                None
+            }
+        }
+    }
+
     /// The next answer of the replay running, if any.
-    fn answer(&mut self) -> Option<Answer> {
+    fn answer(&self) -> Option<Answer> {
         let mut i = self.state.lock();
         let r = i.replay.as_mut()?;
         let a = r.answers.pop_front()?;
@@ -378,7 +399,7 @@ impl Window {
     }
 
     /// Hands the host `modal`, with the input that asked it (and the answers before it in a replay).
-    fn ask(&mut self, modal: Modal) {
+    fn ask(&self, modal: Modal) {
         let mut i = self.state.lock();
         let (trigger, before) = match &i.replay {
             Some(r) => (r.trigger.clone(), r.used.clone()),
@@ -415,6 +436,17 @@ pub fn set_repaint(f: fn()) {
 /// The display scale editor `id` paints at, where the plugin asks the window for it (macOS).
 pub fn set_scale(id: Parent, scale: f32) {
     SCALES.lock().unwrap_or_else(|e| e.into_inner()).insert(id, scale);
+}
+
+/// Whether the editors of this thread ask the host for the files they open ([`Window::open_file`]) instead of showing
+/// a file dialog: where the platform has none (Android, the browser), or once [`set_host_files`] said so.
+pub fn host_files() -> bool {
+    HOST_FILES.get()
+}
+
+/// Makes the editors of this thread ask the host for files ([`host_files`]) or not: a desktop test's phone.
+pub fn set_host_files(on: bool) {
+    HOST_FILES.set(on);
 }
 
 /// Whether editor `id` is open.

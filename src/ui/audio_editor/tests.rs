@@ -1091,15 +1091,17 @@ fn the_right_edge_handle_scales_two_points_and_delete_removes_the_selection() {
 fn a_scroll_makes_new_columns() {
     let mut s = song();
     s.channels[1].lanes[0].clips[0].loop_len_beats = 32.0;
-    let mut rig = Rig::new(s, Some(sample(1000, vec![0.2; 16_000], None)));
-    rig.run(vec![]);
-    assert_eq!(rig.ed.peaks.misses, 1);
-    // A drag on the ruler band scrolls (the touch x zone): new columns.
-    rig.drag(pos2(600.0, 24.0), pos2(400.0, 24.0));
-    assert_eq!(rig.take(), []);
-    assert!(rig.ed.peaks.misses > 1);
-    // 200 points, and the release frame's fling step (0.9 of the last move's 50).
-    assert_eq!(rig.ed.views[&AT].left, 245.0 / 128.0);
+    // A drag on the ruler band, or on empty grid (issue #56), scrolls (the touch x zone): new columns.
+    for y in [24.0, 200.0] {
+        let mut rig = Rig::new(s.clone(), Some(sample(1000, vec![0.2; 16_000], None)));
+        rig.run(vec![]);
+        assert_eq!(rig.ed.peaks.misses, 1);
+        rig.drag(pos2(600.0, y), pos2(400.0, y));
+        assert_eq!(rig.take(), []);
+        assert!(rig.ed.peaks.misses > 1);
+        // 200 points, and the release frame's fling step (0.9 of the last move's 50).
+        assert_eq!(rig.ed.views[&AT].left, 245.0 / 128.0, "{y}");
+    }
 }
 
 #[test]
@@ -1687,5 +1689,11 @@ fn a_second_finger_cancels_a_stretch_drag() {
     touch(&mut rig, End, handle + vec2(128.0, 0.0));
     rig.run(vec![]);
     assert_eq!(rig.take(), []);
-    assert_eq!(rig.ed.handle.unwrap().center(), handle);
+    // The pinch zoomed (the first finger is in the touch x zone, issue #56): the handle is where an untouched clip's
+    // is in that view.
+    let (mut fresh, ..) = stretch_rig();
+    fresh.ed.views.insert(AT, rig.ed.views[&AT]);
+    fresh.run(vec![]);
+    assert_ne!(rig.ed.handle.unwrap().center(), handle);
+    assert_eq!(rig.ed.handle, fresh.ed.handle);
 }

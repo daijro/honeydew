@@ -6,6 +6,9 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 publish = false
 
+[lib]
+doctest = false
+
 # Upstream code that only Lemon Studio's app uses.
 [lints.rust]
 dead_code = "allow"

@@ -15,7 +15,9 @@
 //! automation and audio editors' 4 U) and every other bar at 0.8 U. In Next, B/n and d/n are whole-number divisions.
 //! Past that at both ends (issue #41): zoomed in, the fine marks split a step in halves down to a
 //! tick and the labels go down to every beat, then every step, as they get room. Every editor's grid lines are these
-//! fine marks (`drum_grid::edit::marks`); Auto snaps to them below a step (`piano_roll::notes::auto_grid`).
+//! fine marks (`drum_grid::edit::marks`); Auto snaps to them below a step (`piano_roll::notes::auto_grid`). Issue
+//! #53: a fixed grid size (`piano_roll::notes::GridSize`, picked in the snap menus) sets the editors'
+//! grid lines and Auto's snap instead (`drum_grid::edit::grid_lines`); the rulers keep these marks.
 //!
 //! It scrolls and zooms: the caller passes tick 0's x and the beat width. Every editor's playhead is the shared grid
 //! line ([`playhead_line`]) and, on the ruler, the play box ([`PlayheadKnob`]) right of it. A tap on the ruler sets

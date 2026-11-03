@@ -2,6 +2,8 @@ use std::collections::HashSet;
 
 pub const TICKS_PER_BEAT: u64 = 128;
 const LEVEL_WIDTH: f64 = 511.984375;
+/// The most steps a [`AutomationClip::fine`] curve takes a segment: one a tick up to 32 beats, evenly spread past that.
+const FINE_STEPS: u64 = 4096;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct AutomationTarget {
@@ -160,6 +162,8 @@ pub struct AutomationClip {
     key: i16,
     points: Vec<AutomationPoint>,
     events: Vec<AutomationEvent>,
+    /// [`Self::fine`].
+    fine: bool,
 }
 
 impl AutomationClip {
@@ -185,9 +189,21 @@ impl AutomationClip {
             key,
             points,
             events: Vec::new(),
+            fine: false,
         };
         clip.rebuild_events();
         Ok(clip)
+    }
+
+    /// Plays its curves finely (#59): a curved segment steps to the drawn value at each tick (at most
+    /// [`FINE_STEPS`] a segment), not once a level. A channel's Pitch Bend plays so: its 128 levels are steps of up to
+    /// 37.5 cents (an audio clip's ±2 octaves). Stepped shapes and jumps stay as they are.
+    // ponytail: a step a tick (≈ 4 ms at 120 BPM) on a continuous pitch; per-sample ramps if a steep sweep ever sounds
+    // stepped.
+    pub fn fine(mut self) -> Self {
+        self.fine = true;
+        self.rebuild_events();
+        self
     }
 
     pub fn points(&self) -> &[AutomationPoint] {
@@ -228,6 +244,23 @@ impl AutomationClip {
                     // Just after the riser: Square at 0 % rises at x = 0, where the segment is still `a`.
                     let after = x.max(f64::MIN_POSITIVE);
                     let value = shape_value(a.shape, f64::from(a.value), f64::from(b.value), after);
+                    let value = value.round().clamp(0.0, 65535.0) as u16;
+                    if value != last {
+                        self.events.push(AutomationEvent {
+                            tick: tick(x),
+                            key: -self.key,
+                            value,
+                        });
+                        last = value;
+                    }
+                }
+            } else if self.fine {
+                // At k/n of the way, n the ticks (at most FINE_STEPS), a step where the rounded value changes.
+                let n = (b.tick - a.tick).min(FINE_STEPS);
+                let mut last = a.value;
+                for k in 1..n {
+                    let x = k as f64 / n as f64;
+                    let value = shape_value(a.shape, f64::from(a.value), f64::from(b.value), x);
                     let value = value.round().clamp(0.0, 65535.0) as u16;
                     if value != last {
                         self.events.push(AutomationEvent {

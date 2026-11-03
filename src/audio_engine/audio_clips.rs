@@ -129,10 +129,13 @@ fn envelope(clip: &Clip, env_param: i16) -> Result<Clip, EngineError> {
             _ => None,
         })
         .collect();
-    automation_clip(&Clip {
-        events,
-        ..clip.clone()
-    })
+    automation_clip(
+        &Clip {
+            events,
+            ..clip.clone()
+        },
+        false,
+    )
 }
 
 /// The actions one loop pass of an audio clip adds, at most: its envelope steps, and a repetition's fade and start.
@@ -146,8 +149,8 @@ pub(super) fn plays_per_pass(clip: &Clip) -> Result<usize, EngineError> {
 
 /// The clips of channel `channel`, `None` without any. A slot plays what `samples` holds for it, its `STR1` stretch
 /// (the ratio while the mode, SYNC, is on) and pitch rendered once at load (`Refs::add_slot`, the pads' render). Its
-/// params apply as on a pad, except the cut group and the beat offset; live notes never play it.
-/// The channel's Pitch Bend does not reach it either (only the drum pads apply 2^w).
+/// params apply as on a pad, except the cut group and the beat offset; live notes never play it. The channel's Pitch
+/// Bend bends it as it does the pads, 2^w (#59).
 pub(super) fn build(
     song: &Song,
     channel: usize,

@@ -397,7 +397,7 @@ impl Logic {
                 m.sep(Cmd::None);
                 m.add(MenuItem::item("Copy value"), Cmd::CopyValue(id.clone()));
                 m.add(MenuItem::item("Paste value").enabled(self.copied.is_some()), Cmd::PasteValue(id.clone()));
-                m.add(MenuItem::item("Type in value..."), Cmd::TypeIn(id.clone()));
+                m.add(MenuItem::item("Enter value..."), Cmd::TypeIn(id.clone()));
                 // Automation belongs to the host: offered when Lemon Studio hosts the editor (host link).
                 m.sep(Cmd::None);
                 m.add(MenuItem::item("Create automation clip").enabled(self.hosted), Cmd::Automate(id.clone()));
@@ -814,7 +814,7 @@ mod win32 {
                     }
                     1
                 }
-                Cmd::Changed | Cmd::Note | Cmd::Automate | Cmd::Audio | Cmd::Resizable | Cmd::SetSize => 0,
+                Cmd::Changed | Cmd::Note | Cmd::Automate | Cmd::Audio | Cmd::Resizable | Cmd::SetSize | Cmd::Notes => 0,
             }
         }
 
@@ -1145,6 +1145,11 @@ mod gui {
         if os_plugkit::no_modal() {
             return None;
         }
+        // Honeydew (vendored addition): the host's own picker opens a file where it answers (`os_plugkit::embed`).
+        #[cfg(feature = "embed")]
+        if os_plugkit::embed::host_files() {
+            return win.open_file();
+        }
         let path = win.dialog(move || {
             rfd::FileDialog::new()
                 .set_title("Sample for the custom shape")
@@ -1154,10 +1159,11 @@ mod gui {
         path.flatten().map(|p| p.to_string_lossy().into_owned())
     }
 
-    /// Honeydew (vendored addition): the browser and Android have no file dialog.
+    /// Honeydew (vendored addition): the browser and Android have no file dialog: the host's own picker opens a sample
+    /// (`os_plugkit::embed`).
     #[cfg(any(target_arch = "wasm32", target_os = "android"))]
-    fn file_dialog(_: &Window) -> Option<String> {
-        None
+    fn file_dialog(win: &Window) -> Option<String> {
+        win.open_file()
     }
 }
 
@@ -1211,7 +1217,7 @@ mod tests {
         let acts = l.down(x, y, Btn::Right, Mods::default(), false);
         assert!(matches!(acts.last(), Some(Act::Menu(MenuReq::Param(id), _, _)) if id == "o2_coarse"));
         let m = l.menu(&MenuReq::Param("o2_coarse".into()));
-        assert_eq!(m.find("Type in value..."), Some(Cmd::TypeIn("o2_coarse".into())));
+        assert_eq!(m.find("Enter value..."), Some(Cmd::TypeIn("o2_coarse".into())));
         l.typed("o2_coarse", "+7");
         assert_eq!(l.vals.plain("o2_coarse"), 7.0);
         l.pick(&MenuReq::Param("o2_coarse".into()), Cmd::CopyValue("o2_coarse".into()), 0.0, 0.0);

@@ -162,6 +162,9 @@ fn engine_render_and_commands_do_not_allocate() {
             },
         });
     }
+    // A De-esser and Denoise (#43): Denoise's Learn goes on and off in the counted render.
+    let de_esser = ch.rack.add(honeydew_audio::de_esser::DE_ESSER);
+    let denoise = ch.rack.add(honeydew_audio::denoise::DENOISE);
     let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
     engine.note_on(2, 45, 1.0);
     let mut output = vec![0.0_f32; 4096 * 2];
@@ -184,6 +187,8 @@ fn engine_render_and_commands_do_not_allocate() {
             match i % 50 {
                 5 => engine.set_param(1, 2, 13, (i % 7) as f32 / 7.0),
                 10 => engine.set_param(1, 2, AutomationTarget::MIX, 0.7),
+                12 => engine.set_param(1, denoise, 3, ((i / 50) % 2) as f32),
+                17 => engine.set_param(1, de_esser, 1, (i % 7) as f32 / 7.0),
                 15 => engine.set_param(1, 3, 2, 0.4),
                 20 => engine.note_on(1, 50 + (i % 20) as u8, 0.8),
                 25 => engine.note_off(1, 50 + ((i - 5) % 20) as u8),
@@ -525,10 +530,16 @@ fn soundfont_player_render_does_not_allocate() {
     soundfont_render("My SoundFonts/sine.sf2", bytes);
 }
 
-/// The same with an SFZ: built-in waves through round robin, a keyswitch, `first`, a release trigger and a choke.
+/// The same with an SFZ: built-in waves through round robin, a keyswitch, `first`, a release trigger and a choke, a
+/// filter, LFOs, envelopes, polyphony and routes of CC 1, curved and smoothed.
 #[test]
 fn sfz_player_render_does_not_allocate() {
-    let sfz = "<global> ampeg_attack=0.01 ampeg_release=0.2 sw_lokey=20 sw_hikey=21 sw_default=20
+    let sfz = "<control> set_cc1=64 label_cc1=Tone
+        <curve> curve_index=9 v000=0 v064=0.8 v127=1
+        <global> ampeg_attack=0.01 ampeg_release=0.2 sw_lokey=20 sw_hikey=21 sw_default=20
+            cutoff=2000 fil_type=lpf_4p resonance=6 cutoff_oncc1=1200 cutoff_curvecc1=9 volume_oncc1=-6
+            volume_smoothcc1=20 xfin_locc1=0 xfin_hicc1=20 pitchlfo_freq=5 pitchlfo_depthcc1=50 fileg_attack=0.1
+            fileg_depth=600 lfo01_freq=3 lfo01_pan=50 eg01_time1=0.2 eg01_level1=1 eg01_amplitude=100 polyphony=24
         <group> seq_length=2 off_by=9 lokey=40 hikey=90
         <region> sample=*sine seq_position=1 sw_last=20
         <region> sample=*saw seq_position=2 loop_mode=loop_sustain
@@ -638,6 +649,8 @@ fn render_soundfont(
                 20 => (0..CHORD).for_each(|k| engine.note_on(1, 40 + k, 0.8)),
                 22 => engine.note_on(1, 20 + (i % 2) as u8, 0.5),
                 25 => (0..CHORD).for_each(|k| engine.note_off(1, 40 + k)),
+                // MIDI CC 1, which an SFZ's routes follow.
+                30 => engine.set_param(1, 0, 8, (i % 5) as f32 / 5.0),
                 35 => engine.seek(((i * 37) % 1024) as u64),
                 40 => engine.stop(),
                 45 => engine.play(),
@@ -986,7 +999,8 @@ fn drum_kit_render_and_commands_do_not_allocate() {
 }
 
 /// Two audio clips on an Audio Clip channel: offsets, loop repetitions, clip ends, all three envelopes, Reverse,
-/// an `STR1` stretch, and a play loop whose wraps relaunch them mid-sample; plus a clip lane on a synth channel.
+/// an `STR1` stretch, a Pitch Bend lane, and a play loop whose wraps relaunch them mid-sample; plus a clip lane on a
+/// synth channel.
 fn audio_clip_song() -> Song {
     let mut song = Song {
         tempo_bpm: 130.0,
@@ -1015,6 +1029,18 @@ fn audio_clip_song() -> Song {
             }));
         }
     }
+    // A Pitch Bend ramp over the clips, a step a tick (#59).
+    let pitch = song.channels[1].add_automation_lane(AutomationTarget::PITCH_BEND);
+    pitch
+        .add_clip(0, 8.0)
+        .events
+        .extend(
+            [(0, 0.2), (512, 0.9)].map(|(pos, value)| Event::Automation {
+                pos,
+                value,
+                control: true,
+            }),
+        );
     song
 }
 

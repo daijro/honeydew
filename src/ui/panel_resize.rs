@@ -14,6 +14,9 @@
 //!   their range. Any touch-down in the panel stops it (as in the mixer), a key's among them.
 //! - The sizes are kept in U ([`crate::settings::Settings`]), not in pixels, so that the panel keeps its
 //!   size in U across UI scales.
+//! - #57: the panel's greatest height M is not the window's: it leaves the ruler (the top bar, with
+//!   the main menu and the logo) and one 2 U track row of the view under it ([`full`]), in either orientation. A
+//!   height kept from a taller window is capped at every layout, so a portrait size never covers a landscape screen.
 
 use eframe::egui::{Id, Pos2, Rect, Sense, Ui, Vec2};
 
@@ -21,6 +24,7 @@ use crate::metrics::Metrics;
 use crate::ui::gesture;
 use crate::ui::main_screen::TRANSPORT_H;
 use crate::ui::scroller::{WHEEL_FLOOR, WHEEL_ZOOM};
+use crate::ui::timeline::RULER_H;
 
 /// The vertical travel, in U, past which a grab resizes.
 const RESIZE_U: f32 = 1.0;
@@ -31,16 +35,25 @@ const THROW: f32 = 10.0;
 /// The least last move, in U, that flings the keys, and the fling's speed kept per frame.
 const FLING_MIN_U: f32 = 0.125;
 const DECAY: f32 = 0.9;
+/// The view the panel always leaves at the window's top, in U: the ruler and one 2 U track row (#57).
+const VIEW_MIN: f32 = RULER_H + 2.0;
 
 /// c, the collapsed panel's height (the transport bar alone, `rows` rows of 1.75 U): trunc(c · U) px, in points.
 pub fn collapsed(rows: u8, m: &Metrics) -> f32 {
     (m.u_px() * TRANSPORT_H * f32::from(rows)).trunc() / m.ppp()
 }
 
+/// M, the panel's greatest height on a screen `screen_h` points tall: the screen less [`VIEW_MIN`] (whole pixels), at
+/// least the collapsed `c`.
+pub fn full(screen_h: f32, c: f32, m: &Metrics) -> f32 {
+    (screen_h - (VIEW_MIN * m.u_px()).ceil() / m.ppp()).max(c)
+}
+
 /// The height a resize let go at `h` settles at, after a last move of `last_dy` points, for the collapsed height `c` on
-/// a screen `screen_h` tall (M): h' = h − 10·Δy within [c, M]; M when h' > M − c, c when h' < c + 0.75 U, else h'.
+/// a screen `screen_h` tall ([`full`] M): h' = h − 10·Δy within [c, M]; M when h' > M − c, c when h' < c + 0.75 U,
+/// else h'.
 pub fn released(h: f32, last_dy: f32, c: f32, screen_h: f32, m: &Metrics) -> f32 {
-    let full = screen_h.max(c);
+    let full = full(screen_h, c, m);
     let thrown = (h - THROW * last_dy).clamp(c, full);
     if thrown > full - c {
         full
@@ -87,7 +100,7 @@ pub fn strip_opened(
     m: &Metrics,
 ) -> Option<f32> {
     let no_keys = (preferred - c - strip) * m.ppp() <= 0.5;
-    (hidden || no_keys).then(|| recent.max(c + strip + m.u(6.5)).min(screen_h.max(c)))
+    (hidden || no_keys).then(|| recent.max(c + strip + m.u(6.5)).min(full(screen_h, c, m)))
 }
 
 /// What the panel's sizes become, in points: the preferred height, and the recent one when it changes.
@@ -301,13 +314,16 @@ mod tests {
             let (u, screen) = (m.u(1.0), 540.0);
             for rows in [1, 2] {
                 let c = collapsed(rows, &m);
+                // M: the screen less the ruler and a track row, ceil(3.65 U) px (#57).
+                let full = full(screen, c, &m);
+                assert_eq!(full, screen - (3.65 * m.u_px()).ceil() / ppp);
                 assert_eq!(c, (1.75 * f32::from(rows) * m.u_px()).trunc() / ppp);
                 // Still: h' = h; the last move 3 points up throws it 30 points taller.
                 assert_eq!(released(8.0 * u, 0.0, c, screen, &m), 8.0 * u);
                 assert_eq!(released(8.0 * u, -3.0, c, screen, &m), 8.0 * u + 30.0);
-                // Past M − c: full screen.
-                assert_eq!(released(screen - c + 1.0, 0.0, c, screen, &m), screen);
-                assert_eq!(released(screen - c, 0.0, c, screen, &m), screen - c);
+                // Past M − c: M.
+                assert_eq!(released(full - c + 1.0, 0.0, c, screen, &m), full);
+                assert_eq!(released(full - c, 0.0, c, screen, &m), full - c);
                 // Under c + 0.75 U: collapsed; at it, it stays.
                 assert_eq!(released(c + 0.75 * u - 0.5, 0.0, c, screen, &m), c);
                 assert_eq!(released(c + 0.75 * u, 0.0, c, screen, &m), c + 0.75 * u);
@@ -315,7 +331,7 @@ mod tests {
                 assert_eq!(toggled(c + 1.0 / ppp, 7.0 * u, c, screen, &m), c);
                 assert_eq!(toggled(c, 7.0 * u, c, screen, &m), 7.0 * u);
                 assert_eq!(toggled(c, 0.0, c, screen, &m), c + 0.75 * u);
-                assert_eq!(toggled(c, 900.0, c, screen, &m), screen);
+                assert_eq!(toggled(c, 900.0, c, screen, &m), full);
             }
         }
     }
@@ -331,7 +347,7 @@ mod tests {
         assert_eq!(rows_changed(4.0 * u, one, two, &m), two + 0.75 * u);
         assert_eq!(rows_changed(8.0 * u, one, two, &m), 8.0 * u);
         // The strip (3 U): a panel with keys keeps its size; hidden, collapsed or without keys it opens to
-        // max(recent, c + strip + 6.5 U), at most the screen.
+        // max(recent, c + strip + 6.5 U), at most M.
         let strip = 3.0 * u;
         assert_eq!(
             strip_opened(8.0 * u, 5.0 * u, one, strip, 540.0, false, &m),
@@ -351,12 +367,12 @@ mod tests {
             opened
         );
         assert_eq!(
-            strip_opened(one, 14.0 * u, one, strip, 540.0, false, &m),
-            Some(14.0 * u)
+            strip_opened(one, 12.0 * u, one, strip, 540.0, false, &m),
+            Some(12.0 * u)
         );
         assert_eq!(
             strip_opened(one, 5.0 * u, one, strip, 300.0, false, &m),
-            Some(300.0)
+            Some(300.0 - (3.65 * u).ceil())
         );
     }
 

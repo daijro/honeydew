@@ -93,11 +93,64 @@ impl SnapMode {
     }
 }
 
-/// The snap button's state: a tap toggles `on`, its long-press menu picks `mode`.
+/// The grid size (GitHub #53): `Auto`, the adaptive grid of #41 (the default), or a
+/// note value 1/n, n = 1, 2 … 64, straight or triplet (2/3 as long). The song's `TDIV` has no note value, so a beat is
+/// a quarter note, as [`PPQ`] and MIDI files count it: 1/4 is a beat whatever the beats a bar or steps a beat, 1/16 a
+/// quarter beat, 1/1 four beats. With a fixed size the editors' grid lines sit at it
+/// ([`crate::ui::drum_grid::edit::grid_lines`]) and Auto snap follows it ([`Snap::grid`]). An app setting
+/// (`Settings::grid_size`), one for every editor; the snap menus' `Grid` columns pick it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum GridSize {
+    #[default]
+    Auto,
+    /// 1/n, a triplet when set.
+    Note(u8, bool),
+}
+
+impl GridSize {
+    /// Auto, the straight sizes, then the triplets.
+    pub const ALL: [Self; 14] = [
+        Self::Auto,
+        Self::Note(1, false),
+        Self::Note(2, false),
+        Self::Note(4, false),
+        Self::Note(8, false),
+        Self::Note(16, false),
+        Self::Note(32, false),
+        Self::Note(64, false),
+        Self::Note(2, true),
+        Self::Note(4, true),
+        Self::Note(8, true),
+        Self::Note(16, true),
+        Self::Note(32, true),
+        Self::Note(64, true),
+    ];
+
+    pub fn label(self) -> String {
+        match self {
+            Self::Auto => "Auto".into(),
+            Self::Note(n, t) => format!("1/{n}{}", if t { "T" } else { "" }),
+        }
+    }
+
+    /// The size in ticks (4 beats / n, 2/3 of it for a triplet), `None` for Auto.
+    pub fn ticks(self) -> Option<f64> {
+        match self {
+            Self::Auto => None,
+            Self::Note(n, t) => {
+                Some(4.0 * BEAT / f64::from(n.max(1)) * if t { 2.0 / 3.0 } else { 1.0 })
+            }
+        }
+    }
+}
+
+/// The snap button's state: a tap toggles `on`, its long-press menu picks `mode` and the grid `size` (the app
+/// setting's copy, #53).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Snap {
     pub on: bool,
     pub mode: SnapMode,
+    pub size: GridSize,
 }
 
 impl Default for Snap {
@@ -105,14 +158,15 @@ impl Default for Snap {
         Self {
             on: true,
             mode: SnapMode::Auto,
+            size: GridSize::Auto,
         }
     }
 }
 
 impl Snap {
-    /// The mode's grid in ticks, with `auto` (from [`auto_grid`]) standing in for Auto.
+    /// The mode's grid in ticks; Auto's is the grid size, or `auto` (from [`auto_grid`]) at size Auto.
     pub fn grid(self, auto: f64, sig: TimeSig) -> f64 {
-        self.mode.ticks(sig).unwrap_or(auto)
+        (self.mode.ticks(sig)).or(self.size.ticks()).unwrap_or(auto)
     }
 
     /// What positions snap to: the grid while on, nothing while off.

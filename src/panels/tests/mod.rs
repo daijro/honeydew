@@ -281,6 +281,7 @@ fn every_panel_fits_its_module() {
     let mut problems = Vec::new();
     for spec in (crate::params::modules().chain(&crate::params::LEMON_MODULES))
         .chain([&crate::params::DYNAMIC_EQ, &crate::params::MODULATOR])
+        .chain([&crate::params::DE_ESSER, &crate::params::DENOISE])
     {
         if let Some(panel) = panel_for(spec.id) {
             problems.extend(check(spec, panel));

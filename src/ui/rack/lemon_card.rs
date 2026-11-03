@@ -7,6 +7,8 @@
 //!   the cursor (a knob drag) the moves go as movement and the cursor hides.
 //! - The editor's menus show over the card in Lemon's own look (`os_ui::kit::menu`), with their submenus; its "Type in
 //!   value" box is a text field there.
+//! - Issue #52: where the editor has no file dialog (Android, the browser), the app's sample picker opens its sample
+//!   ([`wants_file`]).
 //! - Its edits reach the song as a plugin editor's do (`plugins::idle`): the song's params, undo, REC.
 
 use eframe::egui::text::{CCursor, CCursorRange};
@@ -58,6 +60,9 @@ pub(super) struct LemonCard {
     menu: Option<MenuUi>,
     /// The type-in box's text, while it is open.
     typed: Option<String>,
+    /// The editor asks for a file ([`Modal::OpenFile`]), and the request went to the app ([`wants_file`]) or is about to.
+    asked_file: bool,
+    wants_file: bool,
 }
 
 impl std::fmt::Debug for LemonCard {
@@ -105,13 +110,17 @@ pub(super) fn show(
         content.min,
         vec2(content.width(), body_height(plugin.size, content.width())),
     );
-    let id = ui.id().with(("lemon editor", editor));
+    // Global (an editor shows in one card at a time): tests and render harnesses find the card by its editor.
+    let id = Id::new(("lemon editor", editor));
     let response = ui.interact(rect, id, Sense::click_and_drag());
     // Editor pixels per point.
     let k = card.size.0 as f32 / rect.width();
     let modal = embed::modal(editor);
     if modal.is_none() && card.size.0 > 0 {
         forward(ui, card, rect, k, response.hovered());
+    } else {
+        // The press that asked is the modal's (its answer delivers it again, with its release): the next press is new.
+        card.pressed = None;
     }
     embed::pump(editor);
     let mut fresh = None;
@@ -148,13 +157,25 @@ pub(super) fn show(
         Some(Modal::TypeIn { x, y, text, scale }) => {
             type_in(&ctx, id, card, rect, k, (x, y), text, scale)
         }
-        None => (card.menu, card.typed) = (None, None),
+        Some(Modal::OpenFile) => {
+            card.wants_file |= !std::mem::replace(&mut card.asked_file, true);
+            // A new press on the editor: the picker went without answering.
+            if response.hovered() && ctx.input(|i| i.pointer.any_pressed()) {
+                embed::answer(editor, None);
+            }
+        }
+        None => (card.menu, card.typed, card.asked_file) = (None, None, false),
     }
     let now = ctx.input(|i| i.time);
     let busy =
         now - card.painted < BUSY_S || over(card) || card.menu.is_some() || card.typed.is_some();
     ctx.request_repaint_after(if busy { TICK } else { REST });
     true
+}
+
+/// Whether the editor asked for a file to open since the last call: the app's sample picker answers it.
+pub(super) fn wants_file(card: &mut LemonCard) -> bool {
+    std::mem::take(&mut card.wants_file)
 }
 
 /// Whether the pointer was over a Lemon editor this frame: the rack's wheel is then the editor's.
@@ -331,7 +352,8 @@ fn show_menu(
         let min = min.min(screen.max - size).max(screen.min);
         Rect::from_min_size(min, size)
     };
-    let pointer = ctx.input(|i| i.pointer.latest_pos());
+    // A finger's lift takes the pointer away in its own frame: where it was is where it lifted.
+    let pointer = ctx.input(|i| i.pointer.interact_pos());
     let editor_px = |p: Pos2, l: &Level| l.at + (p - place(l).min) * k;
     if let Some(p) = pointer {
         m.moved |= ctx.input(|i| i.pointer.delta() != Vec2::ZERO);
@@ -486,5 +508,134 @@ fn type_in(
     } else if cancel || outside {
         card.typed = None;
         embed::answer(editor, None);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use eframe::egui::{CentralPanel, Frame, RawInput, TouchDeviceId, TouchId, TouchPhase};
+    use lemon_sampler::view;
+
+    use super::*;
+    use crate::plugins::builtin::LEMON_SAMPLER;
+    use crate::song::{ChannelKind, Song};
+
+    /// A finger as Android reports it (egui-winit): the touch, with the pointer's move and press; its moves; its lift,
+    /// with the release and the pointer gone.
+    fn finger(phase: TouchPhase, pos: Pos2) -> Vec<Event> {
+        let touch = Event::Touch {
+            device_id: TouchDeviceId(1),
+            id: TouchId(1),
+            phase,
+            pos,
+            force: None,
+        };
+        let button = |pressed| Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        match phase {
+            TouchPhase::Start => vec![touch, Event::PointerMoved(pos), button(true)],
+            TouchPhase::Move => vec![touch, Event::PointerMoved(pos)],
+            _ => vec![touch, button(false), Event::PointerGone],
+        }
+    }
+
+    /// A Lemon Sampler's card at the screen's top left, one editor pixel a point.
+    struct Rig {
+        ctx: egui::Context,
+        card: LemonCard,
+        /// Its channel's id and its module's instance id.
+        ids: (i32, i32),
+        time: f64,
+    }
+
+    impl Rig {
+        fn new() -> Rig {
+            let mut song = Song::default();
+            song.add_channel(ChannelKind::Instrument);
+            let channel = &mut song.channels[1];
+            let id = channel.id;
+            let module = plugins::add(&mut channel.rack, id, LEMON_SAMPLER.uid, 0).unwrap();
+            plugins::sync(&song);
+            let mut rig = Rig {
+                ctx: egui::Context::default(),
+                card: LemonCard::default(),
+                ids: (id, module),
+                time: 0.0,
+            };
+            // The editor opens, then paints.
+            rig.frame(vec![]);
+            rig.frame(vec![]);
+            rig
+        }
+
+        fn frame(&mut self, events: Vec<Event>) {
+            self.time += 0.1;
+            let input = RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(800.0, 600.0))),
+                events,
+                time: Some(self.time),
+                ..Default::default()
+            };
+            let (card, (channel, module)) = (&mut self.card, self.ids);
+            let _ = self.ctx.run(input, |ctx| {
+                CentralPanel::default().frame(Frame::NONE).show(ctx, |ui| {
+                    let width = LEMON_SAMPLER.size.0 as f32;
+                    let content = Rect::from_min_size(Pos2::ZERO, vec2(width, 500.0));
+                    assert!(show(ui, content, channel, module, &LEMON_SAMPLER, card));
+                });
+            });
+        }
+
+        fn tap(&mut self, at: Pos2) {
+            self.frame(finger(TouchPhase::Start, at));
+            self.frame(finger(TouchPhase::End, at));
+        }
+
+        /// The centre of row `row` of the menu shown (at scale 1, on the screen as it is).
+        fn row(&self, row: usize) -> Pos2 {
+            let level = &self.card.menu.as_ref().expect("a menu shows").levels[0];
+            let r = level.layout.rows[row];
+            Pos2::ZERO + level.at + vec2(r.cx(), r.cy())
+        }
+    }
+
+    /// The centre of the sampler's view rect `r` (`view::rr`) in its editor's pixels.
+    fn centre(r: os_ui::Rect) -> Pos2 {
+        pos2(r.cx() - view::CROP_X as f32, r.cy() - view::CROP_Y as f32)
+    }
+
+    /// Issue #52: on a phone, a list's menu takes the row tapped, and the editor the next tap.
+    #[test]
+    fn a_finger_picks_a_list_row_and_taps_on() {
+        let mut rig = Rig::new();
+        let editor = rig.card.editor;
+        // Time stretching's `Mode` list (`view::sample_tab`).
+        let mode = centre(view::rr(456.0, 548.0, 102.0, 122.0));
+        rig.tap(mode);
+        assert!(matches!(embed::modal(editor), Some(Modal::Menu { .. })));
+        for _ in 0..5 {
+            rig.frame(vec![]);
+        }
+        let level = &rig.card.menu.as_ref().expect("the card shows it").levels[0];
+        let row = (0..level.menu.items.len())
+            .find(|&r| level.menu.items[r].clickable() && Some(r) != level.menu.current)
+            .expect("another mode");
+        let _ = plugins::idle();
+        rig.tap(rig.row(row));
+        rig.frame(vec![]);
+        assert_eq!(embed::modal(editor), None, "the tap picked the row");
+        assert!(
+            plugins::idle().iter().any(|m| m.gesture == 1),
+            "the pick set the mode"
+        );
+        rig.tap(mode);
+        assert!(
+            matches!(embed::modal(editor), Some(Modal::Menu { .. })),
+            "the next tap is the editor's"
+        );
     }
 }

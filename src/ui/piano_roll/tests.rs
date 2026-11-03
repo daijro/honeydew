@@ -115,6 +115,7 @@ fn snap_on_uses_the_mode_or_auto_and_off_snaps_nothing() {
     let beat = Snap {
         on: true,
         mode: SnapMode::Beat,
+        ..Snap::default()
     };
     assert_eq!(beat.active(32.0, sig(4, 4)), Some(128.0));
     let off = Snap { on: false, ..beat };
@@ -4065,7 +4066,7 @@ mod grid {
     use crate::song::{ChannelKind, Song, SynthKind, TimeSig};
     use crate::theme::{Rgba, theme_by_id};
     use crate::ui::UiCtx;
-    use crate::ui::piano_roll::notes::Geom;
+    use crate::ui::piano_roll::notes::{Geom, GridSize};
     use crate::ui::piano_roll::{PianoRoll, Rows, paint_grid, paint_notes};
 
     const RED: Rgba = Rgba::rgb(1.0, 0.0, 0.0);
@@ -4114,7 +4115,15 @@ mod grid {
 
     fn background(ppp: f32) -> (Vec<(Rect, Color32)>, Rect, f32, Geom) {
         painted(ppp, &|p, grid, g, cx| {
-            paint_grid(p, grid, g, &rows(), RED, TimeSig::default(), cx)
+            paint_grid(
+                p,
+                grid,
+                g,
+                &rows(),
+                RED,
+                (TimeSig::default(), GridSize::Auto),
+                cx,
+            )
         })
     }
 

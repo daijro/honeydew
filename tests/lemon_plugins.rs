@@ -159,7 +159,7 @@ fn an_installed_copy_of_a_built_in_plugin_is_hidden() {
 }
 
 /// The card's editor (`os_plugkit::embed`) as the card drives it: a knob drag (the editor holds the cursor and takes
-/// movement), then its menu's `Type in value...` and a typed value, which come back to the song as the plugin's own
+/// movement), then its menu's `Enter value...` and a typed value, which come back to the song as the plugin's own
 /// param moves.
 #[test]
 fn the_lemon_trio_editor_takes_a_drag_a_menu_and_a_typed_value() {
@@ -229,7 +229,7 @@ fn the_lemon_trio_editor_takes_a_drag_a_menu_and_a_typed_value() {
         let is = |it: &os_ui::kit::menu::MenuItem| matches!(it, os_ui::kit::menu::MenuItem::Item { label: l, .. } if l == label);
         menu.items.iter().position(is).unwrap()
     };
-    embed::answer(editor, Some(Answer::Pick(vec![item("Type in value...")])));
+    embed::answer(editor, Some(Answer::Pick(vec![item("Enter value...")])));
     embed::pump(editor);
     assert!(matches!(embed::modal(editor), Some(Modal::TypeIn { .. })));
     embed::answer(editor, Some(Answer::Text("-7".into())));

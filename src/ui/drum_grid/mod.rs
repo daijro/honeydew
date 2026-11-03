@@ -97,14 +97,15 @@ use eframe::egui::{self, Id, Pos2, Rangef, Rect, Response, Sense, Ui, vec2};
 use crate::metrics::Metrics;
 use crate::song::{Event, LaneKind, Song, TimeSig};
 use crate::theme::{Rgba, channel_color};
+use crate::ui::automation::value::time_items;
 use crate::ui::clips::{
     self, FloatingRow, GridView, Marquee, Part, Selection, TimeAxis, hold_square, paint_marquee,
 };
 use crate::ui::edit_keys::{self, EditKey};
 use crate::ui::graph_lane::{self, GraphLane, Prop};
+use crate::ui::piano_roll::Snap;
 use crate::ui::piano_roll::notes::{auto_grid, remove_selected, snap_round};
-use crate::ui::piano_roll::{Snap, SnapMode};
-use crate::ui::popup::{self, PopupItem};
+use crate::ui::popup;
 use crate::ui::region::{self, TimeRange};
 use crate::ui::scroller::{self, Axis, Scroller, X, Y};
 use crate::ui::step_seq::edit as steps;
@@ -1001,7 +1002,8 @@ impl DrumGridView {
         // `background` lines over the rows: w px from ⌊w/2⌋ px left of each mark.
         let ys = Rangef::new(l.row_top(), l.row_top() + place.rows as f32 * l.pitch);
         let (t0, t1) = (axis.tick(grid.left()), axis.tick(grid.right()));
-        for (tick, w) in edit::marks(t0, t1, axis.beat_w, l.u, sig, edit::MARK_GAP) {
+        let size = self.snap.size;
+        for (tick, w) in edit::grid_lines(t0, t1, axis.beat_w, l.u, sig, edit::MARK_GAP, size) {
             let x = l.snap(axis.x(tick)) - (w / 2.0).floor() * px;
             painter.rect_filled(Rect::from_x_y_ranges(x..=x + w * px, ys), 0.0, bg);
         }
@@ -1059,18 +1061,14 @@ impl DrumGridView {
         }
     }
 
-    /// The snap menu, while open: one column, the current mode highlighted; a pick sets it and turns snap on.
+    /// The snap menu, while open: the time modes and the grid sizes ([`time_items`]), the current ones highlighted; a
+    /// mode's pick sets it and turns snap on, a size's sets the grid.
     fn snap_menu(&mut self, ui: &Ui, cell: Rect, cx: &UiCtx) {
         if !self.snap_menu {
             return;
         }
         let ctx = ui.ctx();
-        let items: Vec<PopupItem<SnapMode>> = (SnapMode::ALL.iter().enumerate())
-            .map(|(row, &mode)| PopupItem {
-                current: mode == self.snap.mode,
-                ..PopupItem::new(mode, 0, row, mode.label())
-            })
-            .collect();
+        let items = time_items(self.snap);
         let bounds = ctx.content_rect();
         let result = popup::show(
             ctx,
@@ -1080,8 +1078,8 @@ impl DrumGridView {
             &items,
             cx,
         );
-        if let Some(mode) = result.selected {
-            self.snap = Snap { on: true, mode };
+        if let Some(pick) = result.selected {
+            self.snap = pick.snap(self.snap);
         }
         if result.close {
             self.snap_menu = false;

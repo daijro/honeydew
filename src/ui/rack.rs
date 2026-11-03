@@ -160,6 +160,7 @@ pub fn ui_height(type_id: u16) -> Option<f32> {
         honeydew_audio::lemon::REVERB | honeydew_audio::lemon::LIMITER => 7.0,
         honeydew_audio::dynamic_eq::DYNAMIC_EQ => 11.0,
         honeydew_audio::modulator::MODULATOR => 8.5,
+        honeydew_audio::de_esser::DE_ESSER | honeydew_audio::denoise::DENOISE => 7.5,
         _ => return None,
     })
 }
@@ -433,13 +434,27 @@ fn rect_y(rack: Rect, ppp: f32) -> Rangef {
     Rangef::new(rack.top() / ppp, rack.bottom() / ppp)
 }
 
+/// The rack tab's pill, U.
+const RACK_TAB: Vec2 = vec2(1.5, 2.43);
+
 /// The rack tab's vertical centre over the content area `area` (its y range) at `u` per U: the middle of (top …
-/// bottom + 2 U), its 2.43 U pill at least 5 U below the top and 0.25 U above the bottom.
+/// bottom + 2 U), its 2.43 U pill at least 5 U below the top and 0.25 U above the bottom. On a short area the bottom
+/// wins: the pill moves up with the keyboard panel rather than lie on the transport bar (GitHub #57).
 pub fn rack_tab_y(area: Rangef, u: f32) -> f32 {
-    let half = 2.43 / 2.0 * u;
+    let half = RACK_TAB.y / 2.0 * u;
     let mid = (area.min + area.max + 2.0 * u) / 2.0;
-    mid.min(area.max - 0.25 * u - half)
-        .max(area.min + 5.0 * u + half)
+    mid.max(area.min + 5.0 * u + half)
+        .min(area.max - 0.25 * u - half)
+}
+
+/// The rack tab's pill on `screen` over the content area `area` at `u` per U: its left edge 2.1 U from the screen's
+/// right edge, centred at [`rack_tab_y`]; while its top is under 2.75 U from the screen's top it moves right by the
+/// difference, so on a short area it slides off the right edge.
+pub fn rack_tab(screen: Rect, area: Rect, u: f32) -> Rect {
+    let size = RACK_TAB * u;
+    let top = rack_tab_y(area.y_range(), u) - size.y / 2.0;
+    let nudge = (2.75 * u - (top - screen.top())).max(0.0);
+    Rect::from_min_size(pos2(screen.right() - 2.1 * u + nudge, top), size)
 }
 
 /// Where a held card whose on-screen top is `top` goes with the finger at height `finger_y` (`u` per U and `gap`, the
@@ -1138,6 +1153,9 @@ impl SettingChange {
 pub struct RackActions {
     /// Param edits of this pass, in order.
     pub params: Vec<ParamChange>,
+    /// MIDI CC moves of this pass (channel params 7 + n, instance 0): a SoundFont Player's SFZ controls. The song keeps
+    /// none, so they are no edit: send them to the engine.
+    pub ccs: Vec<ParamChange>,
     /// The rack's chain changed (a module moved or was deleted, the rack cleared), or a note-effect edit or an edit of
     /// a setting the engine reads at build ended (note-effect events, the DW Sampler's zones and the Slicer's slices
     /// are prepared ahead of playback): build a new engine from the song and send `ReplaceSong`.
@@ -1162,8 +1180,9 @@ pub struct RackActions {
     /// A SoundFont Player's `Patch` spinner with no patches to list (or the tap on its error): open the SoundFont picker
     /// for the module with this instance id.
     pub soundfont: Option<i32>,
-    /// `Custom` picked in a 3x Osc oscillator's Shape menu (the Shape edit itself is in [`Self::params`]), or a
-    /// Slicer's `LOAD SAMPLE` or a tap on its waveform: open the sample picker for the module with this instance id.
+    /// `Custom` picked in a 3x Osc oscillator's Shape menu (the Shape edit itself is in [`Self::params`]), a Slicer's
+    /// `LOAD SAMPLE` or a tap on its waveform, or a Lemon plugin's editor asking for a file: open the sample picker for
+    /// the module with this instance id.
     pub module_sample: Option<i32>,
     /// The Slicers whose Sensitivity changed, as [`Self::replace_song`] comes: a slice re-detect, which rewrites the
     /// current clip while the module's AUTO flag is on.
@@ -1211,7 +1230,10 @@ struct CardEdits {
     presets: bool,
     /// What a SoundFont Player's patch selector asked for.
     press: Option<Press>,
-    /// A Slicer asked for a loop ([`slicer::asks_for_loop`]).
+    /// The MIDI CCs a SoundFont Player's SFZ controls sent, as (channel param, value).
+    ccs: Vec<(i32, f32)>,
+    /// A Slicer asked for a loop ([`slicer::asks_for_loop`]), or a Lemon plugin's editor for a file
+    /// ([`lemon_card::wants_file`]).
     sample: bool,
     /// A Slicer's `AUTO` was pressed ([`slicer::auto_pressed`]).
     auto: bool,
@@ -2125,6 +2147,13 @@ impl RackPanel {
         if edits.presets {
             actions.picker = Some(PresetTarget::Module(id));
         }
+        let ccs = edits.ccs.into_iter().map(|(param, value)| ParamChange {
+            channel: index,
+            instance_id: 0,
+            index: param,
+            value,
+        });
+        actions.ccs.extend(ccs);
         match edits.press {
             Some(Press::Picker) => actions.soundfont = Some(id),
             // Another patch: a final edit, as a picked one is.
@@ -2332,6 +2361,7 @@ impl RackPanel {
             let running = lemon_card::show(ui, content, self.channel_id, id, plugin, state);
             self.lemon_wheel |= lemon_card::over(state);
             if running {
+                edits.sample = lemon_card::wants_file(state);
                 return edits;
             }
         }
@@ -2401,7 +2431,7 @@ impl RackPanel {
         state.flags.insert(panels::flag::OCTAVE_OFFSET, offset);
         let soundfont = module.type_id == soundfont_player::TYPE_ID;
         if soundfont {
-            soundfont_player::wire(module, state, &self.soundfonts);
+            edits.ccs = soundfont_player::wire(module, state, &self.soundfonts);
         }
         if module.type_id == three_osc::TYPE_ID {
             three_osc::wire(module, state);
@@ -2479,6 +2509,8 @@ impl RackPanel {
                     let id = base.with("soundfont error");
                     soundfont_player::error_tap(ui, id, content, state)
                 });
+            let moves = soundfont_player::cc_moves(module, state, &shown.settings, fonts);
+            edits.ccs.extend(moves);
         }
     }
 

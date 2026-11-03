@@ -6,6 +6,9 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 publish = false
 
+[lib]
+doctest = false
+
 [features]
 # What Lemon Studio's own plugins use from the engine (`vendor/lemon-studio/README.md`).
 plugins = ["dep:os-model", "dep:thiserror", "dep:symphonia", "dep:symphonia-codec-wavpack"]

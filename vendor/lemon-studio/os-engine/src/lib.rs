@@ -8,7 +8,8 @@
 //!
 //! - [`instrument`]: the traits a hosted plugin implements for the engine (upstream `instrument.rs`).
 //! - [`voices`]: a hosted instrument's voices as the host counts them (upstream `voices.rs`, without its tests).
-//! - [`effects`]: the reverb, the limiter and their siblings (upstream `effects/`, unmodified).
+//! - [`effects`]: the reverb, the limiter and their siblings (upstream `effects/`, unmodified), and [`formula`], the
+//!   formula language Lemon Formula Controller's effect reads (upstream `formula.rs`, unmodified).
 //!
 //! With the `plugins` feature, also what Lemon Studio's own plugins (Lemon Trio, Lemon Sampler, Lemon Parametric EQ)
 //! use from it, upstream's files unmodified: [`clock`], [`envelope`], [`laws`] and [`sample`].
@@ -18,6 +19,7 @@ pub mod clock;
 pub mod effects;
 #[cfg(feature = "plugins")]
 pub mod envelope;
+pub mod formula;
 pub mod instrument;
 #[cfg(feature = "plugins")]
 pub mod laws;

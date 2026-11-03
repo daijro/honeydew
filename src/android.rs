@@ -85,6 +85,21 @@ pub fn request_orientation(orientation: i32) {
     }
 }
 
+/// Opens `folder`, in the user folder, in the system Files app (`HoneydewActivity.showFolder`, through the app's
+/// documents provider, `HoneydewDocuments`), which itself tells the user when no app can.
+pub fn show_folder(folder: &std::path::Path) -> Result<(), String> {
+    with_activity(|env, activity| {
+        let path = env.auto_local(env.new_string(folder.to_string_lossy())?);
+        env.call_method(
+            activity,
+            "showFolder",
+            "(Ljava/lang/String;)V",
+            &[jni::objects::JValue::Object(path.as_ref())],
+        )
+        .map(drop)
+    })
+}
+
 /// Android gives each install an absolute, private data directory; no storage permission is needed.
 pub fn data_dir() -> Option<PathBuf> {
     ACTIVITY

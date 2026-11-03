@@ -246,11 +246,15 @@ pub fn make_user_folders(user: &Path) -> io::Result<()> {
 
 /// The user folder an archive's file of this name is imported into, by its type, in any case: samples, presets of
 /// every kind, SoundFonts, songs ([`SONGS_FOLDER`], the songs folder), MIDI files and instruments. `None` for any other
-/// type, and for a hidden file (`.DS_Store`, or the `__MACOSX/._x.wav` resource forks a macOS archive holds).
+/// type, and for archive junk: a hidden file or one in a hidden folder (`.DS_Store`, `.git/`), and anything in a macOS
+/// archive's `__MACOSX` folder (its `._x.wav` resource forks). Windows' `Thumbs.db` and `desktop.ini` are no known
+/// type.
 pub(crate) fn import_folder(path: &Path) -> Option<&'static str> {
-    let name = path.file_name()?.to_str()?;
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
-    if name.starts_with('.') {
+    let junk = |part: &std::ffi::OsStr| {
+        (part.to_str()).is_none_or(|part| part.starts_with('.') || part == "__MACOSX")
+    };
+    if path.iter().any(junk) {
         return None;
     }
     Some(match ext.as_str() {

@@ -99,10 +99,10 @@ fn includes_stop_at_a_depth_and_a_file_that_includes_itself_ends() {
 #[test]
 fn unknown_opcodes_and_headers_are_skipped_and_counted() {
     let text = "
-        <curve> curve_index=7 v000=0
+        <curve> curve_index=7 v000=0 bogus=1
         <effect> type=reverb
-        <group> cutoff=500 fil_type=lpf_2p lochan=2 hichan=3 loop_mode=loop_sustain
-        <region> sample=a.wav cutoff=800 trigger=release off_by=3 group=2 seq_length=3 seq_position=2
+        <group> eq1_gain=3 width=50 lochan=2 hichan=3 loop_mode=loop_sustain
+        <region> sample=a.wav eq1_gain=6 trigger=release off_by=3 group=2 seq_length=3 seq_position=2
         <region> sample=b.wav lorand=0.5 hirand=1 sw_last=c1 sw_lokey=24 sw_hikey=30 sw_default=25
         <region> sample=c.wav xfin_lovel=10 xfin_hivel=50 amp_velcurve_64=0.3 amp_veltrack=50 loopstart=5 loopend=90 offset=3 end=99
         <bogus> sample=ignored.wav
@@ -110,9 +110,11 @@ fn unknown_opcodes_and_headers_are_skipped_and_counted() {
     ";
     let sfz = parse(text, &no_includes);
     assert_eq!(sfz.regions.len(), 3);
-    // Counted per region that plays: the group's in three, and the first region's own.
-    assert_eq!(sfz.skipped.get("cutoff"), Some(&4), "{:?}", sfz.skipped);
-    assert_eq!(sfz.skipped.get("fil_type"), Some(&3));
+    // Counted per region that plays: the group's in three, and the first region's own; a `<curve>`'s once.
+    assert_eq!(sfz.skipped.get("eq1_gain"), Some(&4), "{:?}", sfz.skipped);
+    assert_eq!(sfz.skipped.get("width"), Some(&3));
+    assert_eq!(sfz.skipped.get("bogus"), Some(&1));
+    assert_eq!(sfz.control.curves[&7], [(0, 0.0)]);
     // Channels are not skipped but ignored: notes reach the player without one.
     assert!(!sfz.skipped.contains_key("lochan") && !sfz.skipped.contains_key("type"));
     let [a, b, c] = [&sfz.regions[0], &sfz.regions[1], &sfz.regions[2]];
@@ -183,7 +185,8 @@ fn levels(text: &str) -> SoundFontPlayer {
             (r, level(n).into())
         })
         .collect();
-    SoundFontPlayer::new(RATE, Some((Arc::new(SoundFont::sfz("Test", regions)), 0)))
+    let font = SoundFont::sfz("Test", regions, &sfz.control);
+    SoundFontPlayer::new(RATE, Some((Arc::new(font), 0)))
 }
 
 /// The regions sounding after `frames`, as the sum of their sample names.
@@ -275,6 +278,128 @@ fn a_keyswitch_picks_the_regions_until_the_next_one() {
     assert_eq!(starts(&mut player, 60, 100), 1);
 }
 
+#[test]
+fn cc_ranges_keyswitch_ranges_held_keys_and_polyphony_pick_the_voices() {
+    let mut player = levels(
+        "<region> sample=1 key=60 locc1=64
+         <region> sample=2 key=60 hicc1=63
+         <region> sample=4 key=62 sw_lolast=36 sw_hilast=38
+         <region> sample=8 key=64 sw_down=40
+         <region> sample=16 key=65 sw_previous=64
+         <region> sample=32 key=67 group=5 polyphony=2",
+    );
+    // CC 1 (channel param 8) picks a range.
+    assert_eq!(starts(&mut player, 60, 100), 2);
+    player.set_controller(8, 1.0);
+    assert_eq!(starts(&mut player, 60, 100), 1);
+    // Without `sw_lokey` and `sw_hikey`, 36…38 are the keyswitches; 39 is not one.
+    assert_eq!(starts(&mut player, 62, 100), 0);
+    starts(&mut player, 37, 100);
+    starts(&mut player, 39, 100);
+    assert_eq!(starts(&mut player, 62, 100), 4);
+    // `sw_down`: with 40 held. `sw_previous`: right after a 64.
+    assert_eq!(starts(&mut player, 64, 100), 0);
+    player.reset();
+    player.note_on(40, 1.0, 0.5);
+    player.note_on(64, 1.0, 0.5);
+    assert_eq!(sounding(&mut player, 64), 8);
+    assert_eq!(starts(&mut player, 65, 100), 16);
+    assert_eq!(starts(&mut player, 65, 100), 0);
+    // Group 5 keeps two voices: a third stops the oldest.
+    player.reset();
+    for _ in 0..3 {
+        player.note_on(67, 1.0, 0.5);
+    }
+    assert_eq!(sounding(&mut player, 4800), 64);
+}
+
+#[test]
+fn a_curve_shapes_its_cc_and_set_cc_gives_the_cc_on_load() {
+    let text = "
+        <control> set_cc20=127 label_cc20=Air Amount label_cc21=Body
+        <curve> curve_index=7 v000=1 v064=1 v127=0
+        <region> sample=128 key=60 amplitude_oncc20=100 amplitude_curvecc20=7
+        <region> sample=64 key=61 amplitude_oncc20=100";
+    let control = parse(text, &no_includes).control;
+    assert_eq!(control.curves[&7], [(0, 1.0), (64, 1.0), (127, 0.0)]);
+    assert_eq!(control.set_cc[&20], 1.0);
+    let labels = [(20, "Air Amount".to_owned()), (21, "Body".to_owned())];
+    assert_eq!(control.labels, labels);
+    let mut player = levels(text);
+    // CC 20 loads at 127, where curve 7 is silent and the linear curve full.
+    assert_eq!(starts(&mut player, 60, 100), 0);
+    assert_eq!(starts(&mut player, 61, 100), 64);
+    // At 95.5, curve 7 is half way down from 64 to 127.
+    player.set_controller(7 + 20, 95.5 / 127.0);
+    assert_eq!(starts(&mut player, 60, 100), 64);
+    assert_eq!(starts(&mut player, 61, 100), 48);
+}
+
+#[test]
+fn cc_routes_move_a_sounding_voices_level_crossfade_and_pitch() {
+    let mut player =
+        levels("<region> sample=64 key=60 volume_oncc30=-6.0206 xfin_locc31=0 xfin_hicc31=127");
+    player.note_on(60, 1.0, 0.5);
+    // CC 31 at 0 has it faded out; a quarter fades in to half (by power), CC 30 then halves it.
+    assert_eq!(sounding(&mut player, 64), 0);
+    player.set_controller(7 + 31, 0.25);
+    assert_eq!(sounding(&mut player, 256), 32);
+    player.set_controller(7 + 30, 1.0);
+    assert_eq!(sounding(&mut player, 256), 16);
+    // `pitch_oncc2`: an octave at CC 2 = 127.
+    let mut player = player_of(
+        "<region> sample=a.wav pitch_keycenter=60 pitch_oncc2=1200",
+        looped(sine(480.0, 48_000, 48_000)),
+    );
+    player.set_controller(7 + 2, 1.0);
+    player.note_on(60, 1.0, 0.5);
+    let (left, _) = render(&mut player, 24_000);
+    let hz = pitch(&left[2_400..]);
+    assert!((hz - 960.0).abs() < 2.0, "{hz} Hz");
+}
+
+#[test]
+fn the_filter_lfos_envelopes_and_velocity_tracking_move_the_sound() {
+    let peak = |x: &[f32]| x.iter().fold(0.0_f32, |m, s| m.max(s.abs()));
+    // A 4.8 kHz tone through a 300 Hz low-pass of 4 poles, and a high-pass of 2.
+    let tone = |text: &str| {
+        let mut player = player_of(text, looped(sine(4_800.0, 48_000, 48_000)));
+        player.note_on(60, 1.0, 0.5);
+        peak(&render(&mut player, 9_600).0[4_800..])
+    };
+    let open = tone("<region> sample=a.wav");
+    let low = tone("<region> sample=a.wav cutoff=300 fil_type=lpf_4p");
+    let high = tone("<region> sample=a.wav cutoff=300 fil_type=hpf_2p resonance=3");
+    assert!(low < 0.01 * open, "{low} of {open}");
+    assert!((high - open).abs() < 0.05 * open, "{high} of {open}");
+    // The pitch over the first and the second half second, at 480 Hz unmoved.
+    let halves = |text: &str, velocity: f32| {
+        let mut player = player_of(text, looped(sine(480.0, 48_000, 48_000)));
+        player.note_on(60, velocity, 0.5);
+        let (left, _) = render(&mut player, 48_000);
+        [pitch(&left[2_400..21_600]), pitch(&left[26_400..45_600])]
+    };
+    let near = |[a, b]: [f32; 2], [x, y]: [f32; 2]| (a - x).abs() < 3.0 && (b - y).abs() < 3.0;
+    // A square LFO (v2) at 1 Hz, an octave each way.
+    let lfo = halves(
+        "<region> sample=a.wav lfo01_wave=3 lfo01_freq=1 lfo01_pitch=1200",
+        1.0,
+    );
+    assert!(near(lfo, [960.0, 240.0]), "{lfo:?}");
+    // v1's pitch envelope: up an octave, held half a second, then down to its sustain (0).
+    let eg = "<region> sample=a.wav pitcheg_hold=0.5 pitcheg_depth=1200";
+    assert!(
+        near(halves(eg, 1.0), [960.0, 480.0]),
+        "{:?}",
+        halves(eg, 1.0)
+    );
+    // `pitch_veltrack`: an octave at velocity 127, half one at half of it.
+    let veltrack = "<region> sample=a.wav pitch_veltrack=1200";
+    assert!(near(halves(veltrack, 1.0), [960.0, 960.0]));
+    let half = 480.0 * 2f32.sqrt();
+    assert!(near(halves(veltrack, 0.5), [half, half]));
+}
+
 // ---- playing: the samples ----
 
 /// The frequency from rising zero crossings over `samples` at `RATE`.
@@ -292,12 +417,26 @@ fn sine(hz: f64, rate: u32, frames: usize) -> Vec<f32> {
         .collect()
 }
 
+/// `left` at 48 kHz, looped whole.
+fn looped(left: Vec<f32>) -> SampleData {
+    let mut sample = SampleData {
+        sample_rate: 48_000,
+        left: left.into(),
+        right: None,
+        meta: Default::default(),
+    };
+    sample.meta.loop_frames = Some((0, sample.left.len() as u32 - 1));
+    sample
+}
+
 fn player_of(text: &str, sample: SampleData) -> SoundFontPlayer {
     let sample = Arc::new(sample);
-    let regions = (parse(text, &no_includes).regions.into_iter())
+    let sfz = parse(text, &no_includes);
+    let regions = (sfz.regions.into_iter())
         .map(|r| (r, sample.clone().into()))
         .collect();
-    SoundFontPlayer::new(RATE, Some((Arc::new(SoundFont::sfz("Test", regions)), 0)))
+    let font = SoundFont::sfz("Test", regions, &sfz.control);
+    SoundFontPlayer::new(RATE, Some((Arc::new(font), 0)))
 }
 
 #[test]

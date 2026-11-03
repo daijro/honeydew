@@ -61,7 +61,10 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
             .id(("audio_editor", channel))
             .max_rect(app.regions.editor),
     );
+    // The grid size is an app setting (#53): the snap menu's pick is saved with the settings.
+    state.editor.snap.size = app.settings.grid_size;
     let actions = (state.editor).show(&mut ui, &app.cx, app.song, at, sample.as_ref(), transport);
+    app.settings.grid_size = state.editor.snap.size;
     for action in actions {
         match action {
             Action::SetPlayhead(tick) => app.set_playhead(tick),

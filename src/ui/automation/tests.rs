@@ -545,7 +545,8 @@ fn a_long_press_on_snap_opens_the_snap_menu_and_a_pick_turns_snap_on() {
         rig.ed.snap,
         Snap {
             on: true,
-            mode: crate::ui::piano_roll::SnapMode::Beat
+            mode: crate::ui::piano_roll::SnapMode::Beat,
+            ..Default::default()
         }
     );
     // A beat's grid: tick 70 rounds to 128.
@@ -914,6 +915,7 @@ fn the_init_line_sits_at_1_minus_v_and_a_tail_past_every_point_spans_the_grid() 
             View {
                 left: 4.0,
                 beat_w: 128.0,
+                rows: [0.0, 127.0],
             },
         );
         rig.ed.sel = vec![false, true];
@@ -1004,58 +1006,93 @@ fn a_drag_moves_whole_rows_from_the_fingers_rows() {
 }
 
 #[test]
-fn one_finger_scrolls_the_time_on_the_ruler_band_only_and_two_need_the_first_there() {
-    // The touch x zone is the ruler band, there is no touch y.
+fn one_finger_scrolls_the_time_on_the_ruler_and_on_empty_grid_a_point_drags_and_two_zoom_there() {
+    // Issue #56: the touch x zone is the ruler band and the grid (#60: the touch y zone is the grid).
     let mut rig = Rig::new(&[p(0, 0), p(1024, MAX)]);
     rig.set_loop(16.0);
     rig.frame(vec![]);
     assert_eq!(rig.view().left, 0.0);
-    // On empty grid: nothing scrolls.
+    // On empty grid, 192 points left, the first move already past the calm zone: 1.5 beats on, 1:1, and no point.
     rig.drag(pos2(600.0, 200.0), &[vec2(-128.0, 0.0), vec2(-192.0, 0.0)]);
-    assert_eq!(rig.view().left, 0.0);
-    // On the ruler, 192 points left, the first move already past the calm zone: 1.5 beats on, 1:1, and no range.
-    rig.drag(pos2(600.0, 24.0), &[vec2(-128.0, 0.0), vec2(-192.0, 0.0)]);
     assert_eq!(rig.view().left, 1.5);
     assert_eq!(rig.radius_at(drawn(p(1024 - 192, MAX))), 6.4);
-    assert_eq!((rig.edits, rig.song.play_loop), (0, None));
-    // Two fingers, the first on the grid: no zoom; the first on the ruler: the time zooms (300 → 200 points: out 1.5
-    // times), about the first.
-    use egui::TouchPhase::{End, Move, Start};
-    let touch = |id, phase, pos| egui::Event::Touch {
-        device_id: egui::TouchDeviceId(1),
-        id: egui::TouchId(id),
-        phase,
-        pos,
-        force: None,
-    };
-    let pinch = |rig: &mut Rig, a: Pos2| {
+    assert_eq!((rig.points().len(), rig.edits), (2, 0));
+    // On a point: the point moves (128 points, a beat), the view stays.
+    rig.drag(touch(p(1024 - 192, MAX)), &[vec2(-128.0, 0.0)]);
+    assert_eq!(rig.points(), [p(0, 0), p(896, MAX)]);
+    assert_eq!((rig.view().left, rig.edits), (1.5, 1));
+    // On the ruler the same, and no range.
+    rig.drag(pos2(600.0, 24.0), &[vec2(-128.0, 0.0), vec2(-192.0, 0.0)]);
+    assert_eq!(rig.view().left, 3.0);
+    assert_eq!((rig.edits, rig.song.play_loop), (1, None));
+    // Two fingers, the first on the grid or on the ruler: the time zooms (300 → 200 points: out 1.5 times), about the
+    // first.
+    for at in [pos2(300.0, 100.0), pos2(300.0, 24.0)] {
+        let before = rig.view();
+        rig.pinch(at, vec2(300.0, 150.0), vec2(200.0, 100.0));
+        assert!(
+            (rig.view().beat_w - before.beat_w / 1.5).abs() < 1e-3,
+            "{at:?} {:?}",
+            rig.view()
+        );
+    }
+    assert_eq!(rig.edits, 1);
+}
+
+impl Rig {
+    /// Two fingers: the first down at `a`, the second at `a + from`, which moves to `a + to`; then both lift.
+    fn pinch(&mut self, a: Pos2, from: Vec2, to: Vec2) {
+        use egui::TouchPhase::{End, Move, Start};
+        let touch = |id, phase, pos| egui::Event::Touch {
+            device_id: egui::TouchDeviceId(1),
+            id: egui::TouchId(id),
+            phase,
+            pos,
+            force: None,
+        };
         let button = |pressed| egui::Event::PointerButton {
             pos: a,
             button: PointerButton::Primary,
             pressed,
             modifiers: Modifiers::NONE,
         };
-        rig.frame(vec![egui::Event::PointerMoved(a)]);
-        rig.frame(vec![touch(1, Start, a), button(true)]);
-        rig.frame(vec![touch(2, Start, a + vec2(300.0, 150.0))]);
-        rig.frame(vec![touch(2, Move, a + vec2(200.0, 100.0))]);
-        rig.frame(vec![
-            touch(2, End, a + vec2(200.0, 100.0)),
+        self.frame(vec![egui::Event::PointerMoved(a)]);
+        self.frame(vec![touch(1, Start, a), button(true)]);
+        self.frame(vec![touch(2, Start, a + from)]);
+        self.frame(vec![touch(2, Move, a + to)]);
+        self.frame(vec![
+            touch(2, End, a + to),
             touch(1, End, a),
             button(false),
             egui::Event::PointerGone,
         ]);
-    };
+    }
+}
+
+#[test]
+fn a_vertical_pinch_zooms_the_values_a_drag_there_moves_finer_and_a_level_one_zooms_the_time() {
+    // Issue #60: two fingers one above the other on the grid zoom the value range about the
+    // still one, side by side the time.
+    let (_, _, _, ink) = colors();
+    let q = p(256, 32767);
+    let mut rig = Rig::new(&[q]);
+    let at = pos2(600.0, touch(q).y);
     let before = rig.view();
-    pinch(&mut rig, pos2(300.0, 200.0));
-    assert_eq!(rig.view(), before);
-    pinch(&mut rig, pos2(300.0, 24.0));
-    assert!(
-        (rig.view().beat_w - before.beat_w / 1.5).abs() < 1e-3,
-        "{:?}",
-        rig.view()
-    );
-    assert_eq!(rig.edits, 0);
+    // 70 points apart, spread to 140: the values zoom in 2×, row 63 staying under the first finger; the time stays.
+    rig.pinch(at, vec2(0.0, 70.0), vec2(0.0, 140.0));
+    let rows = rig.view().rows;
+    assert_eq!((rows, rig.view().beat_w), ([31.5, 63.5], before.beat_w));
+    // The axis labels the values at its ticks in the range shown: 12.5 % apart (25 % at 1×).
+    let names: Vec<String> = rig.texts(ink).into_iter().map(|l| l.0).collect();
+    assert_eq!(names, ["75", "62", "50", "37", "25"]);
+    // 22 points down on the point are 11 rows on screen, 5.5 of the range's (11 at 1×).
+    rig.drag(touch(q), &[vec2(0.0, 22.0)]);
+    let want = (32767.0 - 5.5 * f64::from(MAX) / 126.0).round() as u16;
+    assert_eq!((rig.points(), rig.edits), (vec![p(256, want)], 1));
+    // Side by side: the time zooms in 2×, the values stay.
+    rig.pinch(at, vec2(100.0, 0.0), vec2(200.0, 0.0));
+    assert!((rig.view().beat_w - 2.0 * before.beat_w).abs() < 1e-3);
+    assert_eq!(rig.view().rows, rows);
 }
 
 #[test]

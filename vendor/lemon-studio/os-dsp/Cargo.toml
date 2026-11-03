@@ -6,6 +6,9 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 publish = false
 
+[lib]
+doctest = false
+
 # Time stretching and pitch shifting (MIT): C++, which the browser build has no compiler for (`src/lib.rs`).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 signalsmith-stretch = "0.1.3"

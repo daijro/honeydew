@@ -3,8 +3,9 @@
 //! The icon in an outline circle (issue #41: without the circle it did not read as a button), the icon's size factor
 //! 0.6: on, icon 15 in the caller's `ink` (`text` in the playlist, the channel colour in the clip editors); off, icon
 //! 79 (the magnet with a slash) in `menuFill`. The ring is the icon's colour, 2 px, of radius 0.4 of the cell's smaller
-//! side, as the transport's Play ring. A tap toggles Snap; a long press (300 ms within the 0.5 U
-//! calm zone) or a right click opens the snap-mode menu, which the caller shows. The whole cell takes the touch.
+//! side, as the transport's Play ring. A tap toggles Snap; a long press (300 ms within the 0.5 U calm zone) or a right
+//! click opens the snap-mode menu, which the caller shows: the time modes, and the grid sizes (#53:
+//! `automation::value::time_items`). The whole cell takes the touch.
 //! [`paint_snap_button`] and [`snap_touch`] are its two halves, for a caller that paints and senses at different points
 //! of its draw order; [`snap_button`] does both.
 

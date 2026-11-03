@@ -50,8 +50,11 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     };
     // The graph lane's value snap is an app setting: the snap menu's picks are saved with the settings.
     roll.value_snap = [app.settings.velocity_snap, app.settings.pan_snap];
+    // So is the grid size (#53).
+    roll.snap.size = app.settings.grid_size;
     let actions = roll.show(ui, app.regions.editor, &app.cx, app.song, &opts);
     [app.settings.velocity_snap, app.settings.pan_snap] = roll.value_snap;
+    app.settings.grid_size = roll.snap.size;
     for action in actions {
         match action {
             PianoRollAction::SongEdited { final_edit } => app.song_edited(final_edit),

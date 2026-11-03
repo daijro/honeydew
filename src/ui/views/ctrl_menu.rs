@@ -3,7 +3,7 @@
 use eframe::egui;
 
 use super::{AppCtx, Nav};
-use crate::ui::ctrl_menu::{CtrlMenu, IMPLEMENTED, cc_channel, menu_items};
+use crate::ui::ctrl_menu::{CtrlMenu, IMPLEMENTED, main_lane, menu_items};
 
 /// What the CTRL menu keeps between frames, and the recent control the app gives it.
 pub type State = CtrlMenu;
@@ -13,8 +13,8 @@ pub type State = CtrlMenu;
 /// `state.picked` for the app. A pick, a tap outside it (the CTRL button included) or Escape closes it.
 pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) -> Option<Nav> {
     state.open = true;
-    let cc = cc_channel(app.song, *app.selected);
-    let items = menu_items(state.recent.as_ref(), cc, &IMPLEMENTED);
+    let main = main_lane(app.song, *app.selected);
+    let items = menu_items(state.recent.as_ref(), main, &IMPLEMENTED);
     if let Some(action) = state.show(ui.ctx(), app.regions.ctrl, &items, &app.cx) {
         state.picked = Some(action);
     }

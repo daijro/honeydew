@@ -703,6 +703,12 @@ impl ProjectFiles {
         self.flash = Some(text.into());
     }
 
+    /// The song's file when it is a song (`.flm`), which the next start opens again: none for an
+    /// untitled song, or one from an archive or a MIDI file.
+    pub fn song_file(&self) -> Option<&Path> {
+        (self.path.as_deref()).filter(|p| file_kind(p) == Some(FileKind::Song))
+    }
+
     /// Changes with every save and every copy kept in the library.
     pub fn library_changes(&self) -> u64 {
         self.library_changes

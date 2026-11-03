@@ -42,8 +42,13 @@ jobs:
             mkdir -p "$(dirname "$upstream/${f#"$src"/}")"
             lemon show "HEAD:$f" > "$upstream/${f#"$src"/}"
           done
+          # The engine files the effects use (tools/sync-lemon-effects.sh's `uses`), beside the folder.
+          for f in formula.rs; do
+            lemon show "HEAD:${src%/*}/$f" > "$upstream/../$f" 2>/dev/null || rm -f "$upstream/../$f"
+          done
           changed=()
-          for name in $( (cd "$dst" && find . -type f; cd "$upstream" && find . -type f) | sed 's|^\./||' | sort -u); do
+          for name in $( (cd "$dst" && find . -type f; cd "$upstream" && find . -type f) | sed 's|^\./||' | sort -u) \
+            ../formula.rs; do
             cmp -s "$dst/$name" "$upstream/$name" || changed+=("$name")
           done
           issue=$(gh issue list --state open --limit 100 --json number,title \
@@ -66,7 +71,8 @@ jobs:
             printf -- '- `%s`\n' "${changed[@]}"
             echo
             echo "Upstream commits touching them since the pinned one:"
-            commits=$(lemon log --format='- [`%h`]('"$url"'/commit/%H) %s' "$pinned..$main" -- "$src" 2>/dev/null \
+            commits=$(lemon log --format='- [`%h`]('"$url"'/commit/%H) %s' "$pinned..$main" -- "$src" \
+              "${src%/*}/formula.rs" 2>/dev/null \
               || echo "- (the pinned commit is not in upstream's history)")
             echo "${commits:-- none: the vendored files differ from the pinned commit}"
             echo

@@ -52,7 +52,8 @@
 //!   tall is dragged, each key change stops the old key and plays the new one at velocity 0.7, until the release
 //!   ([`PianoRollAction::Note`]).
 //! - The snap button: a tap toggles snap, a long press or a right click opens the snap menu: the time modes under
-//!   `Time`, beside them (a Honeydew addition, GitHub issue #32) the graph lane's value snap for its shown item under
+//!   `Time`, the grid sizes under `Grid` (#53: [`notes::GridSize`]), then (a Honeydew addition, GitHub
+//!   issue #32) the graph lane's value snap for its shown item under
 //!   `Vel` or `Pan` ([`crate::ui::automation::value::snap_items`]): `Off` (the default), `1 %` … `25 %`, then Vel's
 //!   `MIDI` velocities or Pan's `L/C/R`. Each item keeps its own, an app setting. While it is on, the grid's lines show
 //!   in the lane in place of its guides, and a paint lands on it ([`Prop::landed`]); a lane drag shows its value
@@ -127,7 +128,7 @@ use crate::ui::automation::value::{self, Pick, ValueGrid, ValueSnap};
 use crate::ui::automation::{GRID_ALPHA, GRID_GAP, value_label};
 use crate::ui::clips::{self, Part, TimeAxis};
 use crate::ui::dialog;
-use crate::ui::drum_grid::edit::{MARK_GAP, mark_spacing, marks};
+use crate::ui::drum_grid::edit::{MARK_GAP, grid_lines, mark_spacing};
 use crate::ui::edit_keys::{self, EditKey};
 use crate::ui::graph_lane::{self, GraphLane, Prop};
 use crate::ui::insert;
@@ -140,7 +141,7 @@ use crate::ui::widgets::{self, SnapTouch};
 use crate::ui::{UiCtx, gesture, pinch_press, primary_down_live};
 
 use notes::*;
-pub use notes::{Snap, SnapMode};
+pub use notes::{GridSize, Snap, SnapMode};
 
 const BEAT: f64 = PPQ as f64;
 
@@ -646,7 +647,8 @@ impl PianoRoll {
         (ui.painter()).rect_filled(gap, 0.0, cx.theme.colors.background.to_color32());
         let grid_painter = ui.painter_at(grid);
         let rows = self.rows(song, events, opts.sounding);
-        paint_grid(&grid_painter, grid, &g, &rows, color, song.time_sig, cx);
+        let sig = (song.time_sig, self.snap.size);
+        paint_grid(&grid_painter, grid, &g, &rows, color, sig, cx);
         let view = g.tick(grid.left())..g.tick(grid.right());
         let px = g.tick(grid.left() + 1.0 / m.ppp()) - view.start;
         let end = g.x(loop_ticks).max(grid.left());
@@ -1779,7 +1781,7 @@ impl PianoRoll {
             }
         }
         let bpb = song.time_sig.bar_beats();
-        paint_marks(&painter, values, g, song.time_sig, cx);
+        paint_marks(&painter, values, g, (song.time_sig, self.snap.size), cx);
         let loop_ticks = self
             .clip(song)
             .map_or(BEAT * f64::from(bpb), |c| c.loop_len_beats * BEAT);
@@ -1942,14 +1944,14 @@ impl PianoRoll {
                     _ => (g, g.label()),
                 });
                 let vs = (self.value_snap[item], graph_lane::ROLL_LABELS[item]);
-                let items = value::snap_items(self.snap.mode, vs, grids);
+                let items = value::snap_items(self.snap, vs, grids);
                 let result =
                     popup::show(ctx, id.with("snap_menu"), snap_center, bounds, &items, cx);
                 match result.selected {
-                    Some(Pick::Time(mode)) => self.snap = Snap { on: true, mode },
                     Some(Pick::Value(grid)) => {
                         self.value_snap[item] = self.value_snap[item].picked(grid);
                     }
+                    Some(pick) => self.snap = pick.snap(self.snap),
                     None => {}
                 }
                 if result.close {
@@ -2409,7 +2411,7 @@ pub(crate) struct Rows {
 
 /// Grid background steps 1–6: `controlFill` over the 128 key rows (from beat 0 when scrolled before it), the light
 /// rows, every row's 1 px `background` α 0.3 top and bottom lines, the lit rows, the shared adaptive beat marks
-/// ([`marks`]: `background`, 4 px bar, 2 px beat, 1 px finer, at least 0.6 U apart, w px from ⌊w/2⌋ px left of the
+/// ([`marks`](crate::ui::drum_grid::edit::marks): `background`, 4 px bar, 2 px beat, 1 px finer, at least 0.6 U apart, w px from ⌊w/2⌋ px left of the
 /// mark) and the root rows' 2 px `background` line at trunc(row bottom) − 2 px. Steps 7–9 are [`paint_notes`]'.
 fn paint_grid(
     painter: &egui::Painter,
@@ -2417,7 +2419,7 @@ fn paint_grid(
     g: &Geom,
     rows: &Rows,
     color: Rgba,
-    sig: TimeSig,
+    sig: (TimeSig, GridSize),
     cx: &UiCtx,
 ) {
     let (c, m) = (&cx.theme.colors, cx.m);
@@ -2458,13 +2460,19 @@ fn paint_grid(
 }
 
 /// The shared adaptive beat marks over `area`'s height between its left and right edges, ticks as `g` maps them
-/// ([`marks`]: `background`, 4 px bar, 2 px beat, 1 px finer, at least 0.6 U apart, w px from ⌊w/2⌋ px left of the
-/// mark): the grid's (step 5) and the graph lane's.
-fn paint_marks(painter: &egui::Painter, area: Rect, g: &Geom, sig: TimeSig, cx: &UiCtx) {
+/// ([`marks`](crate::ui::drum_grid::edit::marks): `background`, 4 px bar, 2 px beat, 1 px finer, at least 0.6 U apart, w px from ⌊w/2⌋ px left of the
+/// mark), or a fixed grid size's lines ([`grid_lines`], #53): the grid's (step 5) and the graph lane's.
+fn paint_marks(
+    painter: &egui::Painter,
+    area: Rect,
+    g: &Geom,
+    (sig, size): (TimeSig, GridSize),
+    cx: &UiCtx,
+) {
     let (m, bg) = (cx.m, cx.theme.colors.background.to_color32());
     let px = 1.0 / m.ppp();
     let (t0, t1) = (g.tick(area.left()), g.tick(area.right()));
-    for (tick, w) in marks(t0, t1, g.beat_w, m.u(1.0), sig, MARK_GAP) {
+    for (tick, w) in grid_lines(t0, t1, g.beat_w, m.u(1.0), sig, MARK_GAP, size) {
         let x = m.round_px(g.x(tick)) - (w / 2.0).floor() * px;
         vline_px(painter, x, area.y_range(), w, bg, m);
     }

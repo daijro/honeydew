@@ -7,17 +7,22 @@
 //!
 //! An SFZ ([`crate::sfz`]) plays through the same player as a SoundFont of one patch ([`SoundFont::sfz`]): its regions
 //! read decoded samples (mono or stereo, each at its own rate) instead of `smpl`, follow the SFZ's trigger, round-robin,
-//! random, keyswitch, crossfade and choke rules, and the SFZ's DAHDSR envelope unless the module's Custom envelope is
-//! on. A SoundFont's regions play exactly as before.
+//! random, keyswitch, controller, crossfade, choke and polyphony rules, and the SFZ's DAHDSR envelope unless the module's
+//! Custom envelope is on. An SFZ voice also runs its region's filter, LFOs, envelopes and CC routes, a control block
+//! ([`CONTROL`] frames) at a time; the CCs come in as channel params 7 + n ([`Instrument::set_controller`]). A
+//! SoundFont's regions play exactly as before.
 
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
 use crate::ProcessContext;
+use crate::biquad::flush;
 use crate::instrument::Instrument;
 use crate::sample::SampleData;
-use crate::sfz::{LoopMode, SfzRegion, Trigger};
+use crate::sfz::{
+    Eg, FilterShape, LoopMode, MAX_EGS, MAX_LFOS, SfzControl, SfzRegion, Source, Target, Trigger,
+};
 use crate::stream::{Pcm, Rings, STREAM_VOICES};
 
 /// Why bytes are not a SoundFont.
@@ -282,6 +287,11 @@ pub struct SoundFont {
     pcm: Vec<Pcm>,
     /// Its `amp_velcurve`s, by [`Rules::curve`].
     curves: Vec<[f32; 128]>,
+    /// The CC curves its routes read, by the index [`Self::sfz`] gave each route: the built-in ones and its `<curve>`s.
+    cc_curves: Vec<[f32; 128]>,
+    /// Each CC's value when it loads (`set_ccN`, else 0), and its smoothing: its routes' longest, seconds.
+    cc_defaults: [f32; 128],
+    cc_smooth: [f32; 128],
     /// The keys that are keyswitches (the `sw_lokey`…`sw_hikey` of every region with `sw_last`), and the one in force
     /// before any is played (the first `sw_default`).
     switches: Option<[u8; 2]>,
@@ -366,15 +376,19 @@ impl SoundFont {
             sfz_regions: Vec::new(),
             pcm: Vec::new(),
             curves: Vec::new(),
+            cc_curves: Vec::new(),
+            cc_defaults: [0.0; 128],
+            cc_smooth: [0.0; 128],
             switches: None,
             switch: None,
         })
     }
 
     /// An SFZ as a SoundFont of one patch, `name` (its first 20 bytes): each region with the sample it plays, decoded or
-    /// streamed (regions sharing a file share its `Arc`), at most [`MAX_REGIONS`]. A region that plays no frame (an `offset` at
-    /// or past its `end`) or no key is left out. App thread.
-    pub fn sfz(name: &str, regions: Vec<(SfzRegion, Pcm)>) -> Self {
+    /// streamed (regions sharing a file share its `Arc`), at most [`MAX_REGIONS`], and the SFZ's `control` (its CCs'
+    /// values on load and its curves). A region that plays no frame (an `offset` at or past its `end`) or no key is left
+    /// out. App thread.
+    pub fn sfz(name: &str, regions: Vec<(SfzRegion, Pcm)>, control: &SfzControl) -> Self {
         let mut header = [0; 20];
         let name = &name.as_bytes()[..name.len().min(20)];
         header[..name.len()].copy_from_slice(name);
@@ -396,9 +410,27 @@ impl SoundFont {
             sfz_regions: Vec::new(),
             pcm: Vec::new(),
             curves: Vec::new(),
+            cc_curves: Vec::new(),
+            cc_defaults: [0.0; 128],
+            cc_smooth: [0.0; 128],
             switches: None,
             switch: None,
         };
+        // Curve 0 first, then each other one there is: a route's curve becomes its table's index.
+        let mut curve_at = [0; 256];
+        for index in 0..=255 {
+            let table = match control.curves.get(&index) {
+                Some(points) => Some(velocity_curve(points)),
+                None => builtin_curve(index),
+            };
+            if let Some(table) = table {
+                curve_at[usize::from(index)] = font.cc_curves.len() as u8;
+                font.cc_curves.push(table);
+            }
+        }
+        for (&cc, &value) in &control.set_cc {
+            font.cc_defaults[usize::from(cc.min(127))] = value;
+        }
         let mut index = HashMap::new();
         for (region, data) in regions.into_iter().take(MAX_REGIONS) {
             let pcm = &mut font.pcm;
@@ -410,12 +442,25 @@ impl SoundFont {
                 font.curves.push(velocity_curve(&region.amp_velcurve));
                 font.curves.len() - 1
             });
-            let Some(playable) = sfz_region(&region, &data, sample, curve) else {
+            let mut def = region.clone();
+            for route in &mut def.routes {
+                route.curve = curve_at[usize::from(route.curve)];
+                if let Source::Cc(cc) = route.source {
+                    let smooth = &mut font.cc_smooth[usize::from(cc.min(127))];
+                    *smooth = smooth.max(route.smooth / 1000.0);
+                }
+            }
+            let Some(playable) = sfz_region(&region, &data, sample, curve, Arc::new(def)) else {
                 continue;
             };
             let key = |k: i32| k.clamp(0, 127) as u8;
-            if region.sw_last.is_some() {
-                let [lo, hi] = region.sw_keys.map(key);
+            if let Some(last) = region.sw_last {
+                // Without `sw_lokey` and `sw_hikey`, its own keyswitches are the keys that switch.
+                let keys = match region.sw_keys {
+                    [0, 127] => [last, region.sw_hilast.unwrap_or(last)],
+                    keys => keys,
+                };
+                let [lo, hi] = keys.map(key);
                 font.switches = Some(
                     font.switches
                         .map_or([lo, hi], |[a, b]| [a.min(lo), b.max(hi)]),
@@ -527,6 +572,16 @@ impl SoundFont {
         })
     }
 
+    /// CC curve `index` ([`Self::cc_curves`]) at `x` (0…1), straight between its points.
+    fn curve(&self, index: u8, x: f32) -> f32 {
+        let Some(table) = self.cc_curves.get(usize::from(index)) else {
+            return x;
+        };
+        let at = x.clamp(0.0, 1.0) * 127.0;
+        let i = (at as usize).min(126);
+        table[i] + (table[i + 1] - table[i]) * (at - i as f32)
+    }
+
     /// Sample frame `i` of `smpl`, in −1..1; silence outside it.
     fn frame(&self, i: usize) -> f32 {
         let at = self.smpl.start + 2 * i;
@@ -562,7 +617,7 @@ fn zones<'a>(
 }
 
 /// A preset zone with one of its instrument's zones, resolved: what a voice plays.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Region {
     keys: [u8; 2],
     vels: [u8; 2],
@@ -601,7 +656,7 @@ impl Region {
 }
 
 /// What an SFZ region plays by besides a [`Region`]'s keys, velocities, frames, pitch and level.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct Rules {
     /// Its sample in [`SoundFont::pcm`].
     sample: usize,
@@ -615,7 +670,8 @@ struct Rules {
     /// `seq_length`, and `seq_position` from 0.
     seq: [u32; 2],
     rand: [f32; 2],
-    sw_last: Option<u8>,
+    /// `sw_last` (`sw_lolast`) … `sw_hilast`.
+    sw_last: Option<[u8; 2]>,
     xfin: [u8; 2],
     xfout: [u8; 2],
     /// `amp_veltrack`, −1…1.
@@ -624,6 +680,9 @@ struct Rules {
     curve: Option<usize>,
     /// Delay, attack, hold, decay (seconds), sustain (level), release (seconds).
     ampeg: [f32; 6],
+    /// The region as the SFZ gave it, its routes' curves made [`SoundFont::cc_curves`] indices: what the rest of its
+    /// rules and its modulation read.
+    def: Arc<SfzRegion>,
 }
 
 impl Rules {
@@ -641,21 +700,41 @@ impl Rules {
 
     /// The velocity crossfade's gain at MIDI velocity `velocity`: in over `xfin`, out over `xfout`, by power.
     fn crossfade(&self, velocity: u8) -> f32 {
-        let v = f32::from(velocity);
-        let [lo, hi] = self.xfin.map(f32::from);
-        let fade_in = match v {
-            v if v < lo => 0.0,
-            v if v >= hi => 1.0,
-            v => ((v - lo) / (hi - lo)).sqrt(),
-        };
-        let [lo, hi] = self.xfout.map(f32::from);
-        let fade_out = match v {
-            v if v <= lo => 1.0,
-            v if v > hi => 0.0,
-            v => ((hi - v) / (hi - lo)).sqrt(),
-        };
-        fade_in * fade_out
+        let range = |r: [u8; 2]| r.map(f32::from);
+        crossfade(f32::from(velocity), range(self.xfin), range(self.xfout))
     }
+}
+
+/// A crossfade's gain at `v`: in over `[lo, hi]` of `fade_in`, out over `fade_out`, by power.
+fn crossfade(v: f32, fade_in: [f32; 2], fade_out: [f32; 2]) -> f32 {
+    let [lo, hi] = fade_in;
+    let gain_in = match v {
+        v if v < lo => 0.0,
+        v if v >= hi => 1.0,
+        v => ((v - lo) / (hi - lo)).sqrt(),
+    };
+    let [lo, hi] = fade_out;
+    let gain_out = match v {
+        v if v <= lo => 1.0,
+        v if v > hi => 0.0,
+        v => ((hi - v) / (hi - lo)).sqrt(),
+    };
+    gain_in * gain_out
+}
+
+/// The built-in CC curves: 0 linear, 1 bipolar (−1…1), 2 linear down, 3 bipolar down, 4 x², 5 √x, 6 √(1 − x).
+fn builtin_curve(index: u8) -> Option<[f32; 128]> {
+    let f: fn(f32) -> f32 = match index {
+        0 => |x| x,
+        1 => |x| 2.0 * x - 1.0,
+        2 => |x| 1.0 - x,
+        3 => |x| 1.0 - 2.0 * x,
+        4 => |x| x * x,
+        5 => f32::sqrt,
+        6 => |x| (1.0 - x).sqrt(),
+        _ => return None,
+    };
+    Some(std::array::from_fn(|i| f(i as f32 / 127.0)))
 }
 
 /// `amp_velcurve_N` points as a gain per velocity: straight lines between them, from (0, 0) and to (127, 1) unless
@@ -684,10 +763,16 @@ fn velocity_curve(points: &[(u8, f32)]) -> [f32; 128] {
     curve
 }
 
-/// The [`Region`] of SFZ region `r` playing `data` (sample `sample`, curve `curve`), `None` when it plays nothing. A
-/// loop end is the loop's last frame (the format's, and a WAV `smpl`'s), here exclusive; without `loop_mode` a file
-/// with a loop loops.
-fn sfz_region(r: &SfzRegion, data: &Pcm, sample: usize, curve: Option<usize>) -> Option<Region> {
+/// The [`Region`] of SFZ region `r` (`def` as its modulation reads it) playing `data` (sample `sample`, curve `curve`),
+/// `None` when it plays nothing. A loop end is the loop's last frame (the format's, and a WAV `smpl`'s), here exclusive;
+/// without `loop_mode` a file with a loop loops.
+fn sfz_region(
+    r: &SfzRegion,
+    data: &Pcm,
+    sample: usize,
+    curve: Option<usize>,
+    def: Arc<SfzRegion>,
+) -> Option<Region> {
     let keys = [r.keys[0].max(0), r.keys[1].min(127)];
     if keys[0] > keys[1] || r.end.is_some_and(|e| e <= 0) || data.sample_rate() == 0 {
         return None;
@@ -754,12 +839,14 @@ fn sfz_region(r: &SfzRegion, data: &Pcm, sample: usize, curve: Option<usize>) ->
             off_normal: r.off_normal,
             seq: [r.seq_length.max(1), r.seq_position.max(1) - 1],
             rand: r.rand,
-            sw_last: r.sw_last.map(|k| k.clamp(0, 127) as u8),
+            sw_last: (r.sw_last)
+                .map(|lo| [lo, r.sw_hilast.unwrap_or(lo)].map(|k| k.clamp(0, 127) as u8)),
             xfin: r.xfin,
             xfout: r.xfout,
             veltrack: r.amp_veltrack / 100.0,
             curve,
             ampeg: [delay, attack, hold, decay, sustain / 100.0, release],
+            def,
         }),
     })
 }
@@ -827,6 +914,9 @@ const SFZ_SILENT: f32 = 1.234e-4;
 const SFZ_MIN_RELEASE: f32 = 0.001;
 /// How fast a voice another group's region stops (`off_mode=fast`) fades, in seconds.
 const CHOKE_TIME: f32 = 0.006;
+/// Frames per control block: an SFZ voice's modulation (LFOs, envelopes, CCs, its filter's tuning) moves once a block,
+/// and its gain ramps across the block to where the modulation puts it.
+const CONTROL: usize = 32;
 
 /// The per-frame factor of a fall of e^−9 over `seconds`; 0 (at once) for none.
 fn fall(seconds: f32, rate: f32) -> f32 {
@@ -883,6 +973,211 @@ struct Voice {
     released: bool,
     /// The velocity crossfade's gain, at the note's velocity.
     crossfade: f32,
+    /// An SFZ voice's modulation.
+    m: Motion,
+}
+
+/// What an SFZ voice's modulation keeps.
+#[derive(Clone, Copy, Debug, Default)]
+struct Motion {
+    /// Frames since it started, for its LFOs' delay and fade; frames left before it plays (`delay`).
+    age: u32,
+    idle: u32,
+    /// Its LFOs' phases (0…1), and its envelopes.
+    lfo: [f32; MAX_LFOS],
+    eg: [EgState; MAX_EGS],
+    filter: Filter,
+    /// What its note-on adds: cents, dB, the cutoff's cents, and pan (−100…100).
+    pitch: f32,
+    volume: f32,
+    cutoff: f32,
+    pan: f32,
+    /// The level its amplifier envelope's attack starts from (`ampeg_start`).
+    start: f32,
+    /// Its left and right gains at the end of its last control block, which the next ramps from; `None` before its
+    /// first.
+    gain: Option<[f32; 2]>,
+}
+
+/// An envelope's place in its points: the point it moves to, from which level and how far in (seconds), and its level.
+#[derive(Clone, Copy, Debug, Default)]
+struct EgState {
+    point: usize,
+    from: f32,
+    time: f32,
+    level: f32,
+    /// Its release has begun.
+    released: bool,
+}
+
+impl EgState {
+    fn new(eg: &Eg) -> Self {
+        let level = eg.points.first().map_or(0.0, |p| p.1);
+        Self {
+            from: level,
+            level,
+            ..Self::default()
+        }
+    }
+
+    /// Moves `dt` seconds on through `eg`'s points, straight from each to the next. It holds at the sustain point until
+    /// `released`, which moves on from where it is to the point after.
+    fn advance(&mut self, eg: &Eg, mut dt: f32, released: bool) {
+        if released && !self.released {
+            self.released = true;
+            if let Some(sustain) = eg.sustain
+                && self.point <= sustain + 1
+            {
+                (self.point, self.from, self.time) = (sustain + 1, self.level, 0.0);
+            }
+        }
+        while let Some(&(seconds, to)) = eg.points.get(self.point) {
+            if !self.released && eg.sustain.is_some_and(|s| self.point > s) {
+                return;
+            }
+            let left = seconds - self.time;
+            if dt < left {
+                self.time += dt;
+                self.level = self.from + (to - self.from) * self.time / seconds;
+                return;
+            }
+            dt -= left.max(0.0);
+            (self.point, self.from, self.time, self.level) = (self.point + 1, to, 0.0, to);
+        }
+    }
+}
+
+/// LFO wave `wave` ([`crate::sfz::Lfo::wave`]) at `phase` (0…1), −1…1.
+fn wave(wave: u8, phase: f32) -> f32 {
+    let pulse = |width: f32| if phase < width { 1.0 } else { -1.0 };
+    match wave {
+        0 => 1.0 - 4.0 * ((phase + 0.25).fract() - 0.5).abs(),
+        2 => pulse(0.75),
+        3 => pulse(0.5),
+        4 => pulse(0.25),
+        5 => pulse(0.125),
+        6 => 2.0 * phase - 1.0,
+        7 => 1.0 - 2.0 * phase,
+        _ => (std::f32::consts::TAU * phase).sin(),
+    }
+}
+
+/// An SFZ voice's filter (`fil_type`): one to three biquads in series (transposed direct form II) on one tuning, per
+/// channel.
+#[derive(Clone, Copy, Debug, Default)]
+struct Filter {
+    /// b0, b1, b2, a1, a2, over a0.
+    c: [f32; 5],
+    /// The biquads it runs; 0 passes the sound through.
+    stages: usize,
+    /// Per biquad and channel, its two states.
+    z: [[[f32; 2]; 2]; 3],
+}
+
+impl Filter {
+    /// Tunes it to `shape` and `poles` at `hz`, `resonance` dB over a Butterworth's Q (a shelf's or peak's gain `gain`
+    /// dB), at `rate`. The 1-pole low- and high-pass are first-order; a band's 1 pole plays as 2.
+    fn tune(
+        &mut self,
+        (shape, poles): (FilterShape, u8),
+        hz: f32,
+        resonance: f32,
+        gain: f32,
+        rate: f32,
+    ) {
+        use FilterShape::*;
+        let w = std::f32::consts::TAU * hz.clamp(10.0, 0.45 * rate) / rate;
+        let (sin, cos) = w.sin_cos();
+        let q = std::f32::consts::FRAC_1_SQRT_2 * 10f32.powf(resonance.clamp(-40.0, 40.0) / 20.0);
+        let alpha = sin / (2.0 * q);
+        let a = 10f32.powf(gain.clamp(-96.0, 24.0) / 40.0);
+        let (plus, minus, shelf) = (a + 1.0, a - 1.0, 2.0 * a.sqrt() * alpha);
+        let [b0, b1, b2, a0, a1, a2] = match shape {
+            LowPass | HighPass if poles == 1 => {
+                let k = (w / 2.0).tan();
+                let [b0, b1] = if shape == LowPass {
+                    [k, k]
+                } else {
+                    [1.0, -1.0]
+                };
+                [b0, b1, 0.0, 1.0 + k, k - 1.0, 0.0]
+            }
+            LowPass => [
+                (1.0 - cos) / 2.0,
+                1.0 - cos,
+                (1.0 - cos) / 2.0,
+                1.0 + alpha,
+                -2.0 * cos,
+                1.0 - alpha,
+            ],
+            HighPass => [
+                (1.0 + cos) / 2.0,
+                -1.0 - cos,
+                (1.0 + cos) / 2.0,
+                1.0 + alpha,
+                -2.0 * cos,
+                1.0 - alpha,
+            ],
+            BandPass => [alpha, 0.0, -alpha, 1.0 + alpha, -2.0 * cos, 1.0 - alpha],
+            BandReject => [1.0, -2.0 * cos, 1.0, 1.0 + alpha, -2.0 * cos, 1.0 - alpha],
+            Peak => [
+                1.0 + alpha * a,
+                -2.0 * cos,
+                1.0 - alpha * a,
+                1.0 + alpha / a,
+                -2.0 * cos,
+                1.0 - alpha / a,
+            ],
+            LowShelf => [
+                a * (plus - minus * cos + shelf),
+                2.0 * a * (minus - plus * cos),
+                a * (plus - minus * cos - shelf),
+                plus + minus * cos + shelf,
+                -2.0 * (minus + plus * cos),
+                plus + minus * cos - shelf,
+            ],
+            HighShelf => [
+                a * (plus + minus * cos + shelf),
+                -2.0 * a * (minus + plus * cos),
+                a * (plus + minus * cos - shelf),
+                plus - minus * cos + shelf,
+                2.0 * (minus - plus * cos),
+                plus - minus * cos - shelf,
+            ],
+        };
+        self.c = [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0];
+        // ponytail: 4 and 6 poles are the 2-pole biquad two and three times over, its resonance compounding; give the
+        // later ones a Butterworth Q if a resonant `lpf_4p` ever sounds too sharp.
+        self.stages = match poles {
+            4 => 2,
+            6 => 3,
+            _ => 1,
+        };
+    }
+
+    /// One frame of each channel through it.
+    fn run(&mut self, (l, r): (f32, f32)) -> (f32, f32) {
+        let [b0, b1, b2, a1, a2] = self.c;
+        let mut out = [l, r];
+        for stage in &mut self.z[..self.stages] {
+            for (x, z) in out.iter_mut().zip(stage) {
+                let y = b0 * *x + z[0];
+                z[0] = flush(b1 * *x - a1 * y + z[1]);
+                z[1] = flush(b2 * *x - a2 * y);
+                *x = y;
+            }
+        }
+        (out[0], out[1])
+    }
+}
+
+/// What an SFZ voice's control block reads besides its region: the CCs (0…1) at the process block's start (`then`)
+/// and end (`now`), the pitch bend (−1…1) and the rate.
+struct Controls<'a> {
+    then: &'a [f32; 128],
+    now: &'a [f32; 128],
+    bend: f32,
+    rate: f32,
 }
 
 impl Voice {
@@ -916,7 +1211,7 @@ impl Voice {
     fn dahdsr(&mut self) -> bool {
         match self.stage {
             Stage::Delay | Stage::Hold if self.wait > 0 => self.wait -= 1,
-            Stage::Delay => self.stage = Stage::Attack,
+            Stage::Delay => (self.stage, self.level) = (Stage::Attack, self.m.start),
             Stage::Hold => self.stage = Stage::Decay,
             Stage::Attack => {
                 self.level += self.attack;
@@ -971,6 +1266,89 @@ impl Voice {
         }
     }
 
+    /// An SFZ voice's next control block, `frames` frames ending `at` (0…1) through the process block: moves its LFOs
+    /// and envelopes on, sums its routes, tunes its filter, and gives its step and its left and right gains there.
+    fn control(
+        &mut self,
+        region: &Region,
+        rules: &Rules,
+        font: &SoundFont,
+        ctl: &Controls,
+        at: f32,
+        frames: usize,
+    ) -> (f64, [f32; 2]) {
+        let def = &*rules.def;
+        let cc = |c: u8| {
+            let c = usize::from(c.min(127));
+            ctl.then[c] + (ctl.now[c] - ctl.then[c]) * at
+        };
+        let dt = frames as f32 / ctl.rate;
+        let age = self.m.age as f32 / ctl.rate;
+        let mut lfo = [0.0; MAX_LFOS];
+        for ((out, phase), l) in lfo.iter_mut().zip(&mut self.m.lfo).zip(&def.lfos) {
+            let fade = match age - l.delay {
+                t if t < 0.0 => 0.0,
+                t if l.fade > 0.0 => (t / l.fade).min(1.0),
+                _ => 1.0,
+            };
+            *out = wave(l.wave, *phase) * fade;
+            let hz = l.freq + l.freq_cc.map_or(0.0, |(c, d)| cc(c) * d);
+            *phase = (*phase + hz * dt).rem_euclid(1.0);
+        }
+        for (state, eg) in self.m.eg.iter_mut().zip(&def.egs) {
+            state.advance(eg, dt, self.released);
+        }
+        self.m.age = self.m.age.saturating_add(frames as u32);
+        // By [`Target`]: volume, (amplitude), pan, pitch, cutoff and resonance add up; the amplitude multiplies.
+        let (mut sum, mut amplitude) = ([0.0_f32; 6], 1.0_f32);
+        for r in &def.routes {
+            let x = match r.source {
+                Source::Cc(c) => font.curve(r.curve, cc(c)),
+                Source::Lfo(i) => lfo.get(i).copied().unwrap_or(0.0),
+                Source::Eg(i) => self.m.eg.get(i).map_or(0.0, |e| e.level),
+            };
+            let depth = r.depth + r.depth_cc.map_or(0.0, |(c, d)| cc(c) * d);
+            match (r.target, r.source) {
+                (Target::Amplitude, Source::Lfo(_)) => amplitude *= 1.0 + x * depth / 100.0,
+                (Target::Amplitude, _) => amplitude *= x * depth / 100.0,
+                (target, _) => sum[target as usize] += x * depth,
+            }
+        }
+        for &(c, fade_in, fade_out) in &def.xf_cc {
+            amplitude *= crossfade(cc(c), fade_in, fade_out);
+        }
+        let amplitude = if amplitude.is_finite() {
+            amplitude.clamp(-16.0, 16.0)
+        } else {
+            0.0
+        };
+        let [volume, _, pan, pitch, cutoff, resonance] = sum;
+        let bend = match ctl.bend >= 0.0 {
+            true => ctl.bend * def.bend[0],
+            false => -ctl.bend * def.bend[1],
+        };
+        let cents = pitch + self.m.pitch + bend + 100.0 * self.slide[0];
+        // `min` also turns an infinite or NaN step into the cap.
+        let step = (self.step * 2f64.powf(f64::from(cents) / 1200.0)).min(MAX_STEP);
+        if let (Some(hz), Some(fil)) = (def.cutoff, def.fil_type) {
+            let hz = hz * 2f32.powf((cutoff + self.m.cutoff) / 1200.0);
+            (self.m.filter).tune(fil, hz, def.resonance + resonance, def.fil_gain, ctl.rate);
+        }
+        let velocity = (self.velocity + self.slide[2]).clamp(0.0, 1.0);
+        let db = (volume + self.m.volume).clamp(-144.0, 24.0);
+        let gain = rules.velocity_gain(&font.curves, velocity)
+            * self.crossfade
+            * region.gain
+            * amplitude
+            * 10f32.powf(db / 20.0);
+        let p =
+            (self.pan + self.slide[1] + region.pan + (pan + self.m.pan) / 200.0).clamp(0.0, 1.0);
+        (
+            step,
+            [gain * (2.0 - 2.0 * p).min(1.0), gain * (2.0 * p).min(1.0)],
+        )
+    }
+
     /// Moves `step` frames on through `region`'s sample: round its loop, or up to its last frame, where it fades.
     fn advance(&mut self, region: &Region, step: f64) {
         self.position += step;
@@ -984,6 +1362,78 @@ impl Voice {
             self.position = (region.end - 1) as f64;
             self.stage = Stage::Release;
             self.release = END_FADE;
+        }
+    }
+}
+
+/// Renders SFZ voice `voice` (slot `slot`) of `region` into `left` and `right`, a control block at a time
+/// ([`Voice::control`]): its sample, from memory or `rings`, through its filter, at its envelope's level and its gains
+/// ramped across each block.
+#[allow(clippy::too_many_arguments)]
+fn render_sfz(
+    voice: &mut Voice,
+    slot: usize,
+    region: &Region,
+    rules: &Rules,
+    font: &SoundFont,
+    rings: Option<&Rings>,
+    controls: &Controls,
+    left: &mut [f32],
+    right: &mut [f32],
+) {
+    let sample = &font.pcm[rules.sample];
+    let disk = rings.filter(|_| matches!(sample, Pcm::Disk(_)));
+    if let Some(rings) = disk {
+        rings.advance(slot, voice.position as usize);
+    }
+    let (frames, mut short, mut at) = (left.len(), false, 0);
+    while at < frames && voice.on {
+        let n = CONTROL.min(frames - at);
+        let end = (at + n) as f32 / frames as f32;
+        let (step, gain) = voice.control(region, rules, font, controls, end, n);
+        let mut g = voice.m.gain.unwrap_or(gain);
+        let ramp = [0, 1].map(|c| (gain[c] - g[c]) / n as f32);
+        let looping = voice.loops(region, rules);
+        for (l, r) in left[at..at + n].iter_mut().zip(&mut right[at..at + n]) {
+            g = [g[0] + ramp[0], g[1] + ramp[1]];
+            if voice.m.idle > 0 {
+                voice.m.idle -= 1;
+                continue;
+            }
+            if !voice.on || !voice.envelope() {
+                break;
+            }
+            let (a, b) = match (sample, disk) {
+                (Pcm::Ram(data), _) => read_pcm(data, region, looping, voice.position),
+                (Pcm::Disk(_), Some(rings)) => {
+                    let read = read_disk(rings, slot, region, looping, voice.position);
+                    short |= read.is_none();
+                    read.unwrap_or_default()
+                }
+                (Pcm::Disk(_), None) => (0.0, 0.0),
+            };
+            let (a, b) = voice.m.filter.run((a, b));
+            *l += a * voice.level * g[0];
+            *r += b * voice.level * g[1];
+            let before = voice.position;
+            voice.advance_pcm(region, looping, step);
+            // A wrap reads the loop from its start: its head, then a new segment, unless it is all in memory.
+            if let Some(rings) = disk
+                && voice.position < before
+                && !rings.in_memory(rules.sample, region.loop_start, region.loop_end)
+            {
+                rings.start(slot, rules.sample, region.loop_start, false);
+            }
+        }
+        voice.m.gain = Some(gain);
+        at += n;
+    }
+    if let Some(rings) = rings {
+        if short {
+            rings.underrun();
+        }
+        if !voice.on {
+            rings.stop(slot);
         }
     }
 }
@@ -1017,17 +1467,34 @@ pub struct SoundFontPlayer {
     started: u64,
     sample_rate: f32,
     params: [f32; 6],
-    /// Pitch bend in semitones.
+    /// Pitch bend in semitones, and as the wheel stands (−1…1), which an SFZ's `bend_up` and `bend_down` scale.
     bend: f32,
+    wheel: f32,
     // An SFZ's state.
     /// The notes each region has met, for its round robin.
     seq: Vec<u32>,
-    /// The keys held, with their note-on velocity and pan: for release triggers, `first` and `legato`.
-    held: [Option<(f32, f32)>; 128],
-    /// The keyswitch in force.
+    /// The keys held, with their note-on velocity, pan and frame: for release triggers, `first`, `legato`, `sw_down`
+    /// and `sw_up`.
+    held: [Option<(f32, f32, u64)>; 128],
+    /// The keyswitch in force, and the last note-on's key (`sw_previous`).
     switch: Option<u8>,
+    previous: Option<u8>,
     /// The random layers' generator (xorshift32).
     random: u32,
+    /// The frames rendered.
+    clock: u64,
+    /// The CCs (0…1): as last set, where their smoothing stood at the last block's start, and where at its end.
+    cc: [f32; 128],
+    cc_then: [f32; 128],
+    cc_now: [f32; 128],
+}
+
+/// The next of xorshift32 `state`, 0…1.
+fn dice(state: &mut u32) -> f32 {
+    *state ^= *state << 13;
+    *state ^= *state >> 17;
+    *state ^= *state << 5;
+    (*state >> 8) as f32 / (1 << 24) as f32
 }
 
 impl SoundFontPlayer {
@@ -1042,6 +1509,9 @@ impl SoundFontPlayer {
         let disk = bank
             .as_ref()
             .map(|(font, _)| font.pcm.iter().map(Pcm::disk).collect());
+        let cc = bank
+            .as_ref()
+            .map_or([0.0; 128], |(font, _)| font.cc_defaults);
         Self {
             rings: disk.and_then(Rings::new),
             switch: bank.as_ref().and_then(|(font, _)| font.switch),
@@ -1053,8 +1523,14 @@ impl SoundFontPlayer {
             sample_rate,
             params: DEFAULTS,
             bend: 0.0,
+            wheel: 0.0,
             held: [None; 128],
+            previous: None,
             random: 0x9E37_79B9,
+            clock: 0,
+            cc,
+            cc_then: cc,
+            cc_now: cc,
         }
     }
 
@@ -1071,13 +1547,16 @@ impl SoundFontPlayer {
             .is_some_and(|font| !font.sfz_regions.is_empty())
     }
 
-    /// Starts the SFZ regions that a note-on of `key` at `velocity` (0…1) and `pan` plays, or with `release` its
-    /// note-off (at the note-on's velocity). Of the regions it plays, past [`VOICES`] only the last ones start. Each
-    /// stops the voices whose region's `off_by` names its group first.
-    fn sfz_note(&mut self, key: u8, velocity: f32, pan: f32, release: bool) {
+    /// Starts the SFZ regions that a note-on of `key` at `velocity` (0…1) and `pan` plays, or with `held` (the seconds
+    /// since its note-on) its note-off, at the note-on's velocity. A region plays when its key, velocity, round robin,
+    /// random, keyswitch (`sw_last`, `sw_down`, `sw_up`, `sw_previous`), CC (`loccN`) and bend ranges all hold. Of the
+    /// regions it plays, past [`VOICES`] only the last ones start. Each stops the voices whose region's `off_by` names
+    /// its group first.
+    fn sfz_note(&mut self, key: u8, velocity: f32, pan: f32, held: Option<f32>) {
         let Some(font) = &self.font else {
             return;
         };
+        let release = held.is_some();
         let steps = (127.0 * velocity).round() as u8;
         if !release
             && font
@@ -1089,12 +1568,13 @@ impl SoundFontPlayer {
         let others =
             (self.held.iter().enumerate()).any(|(k, h)| h.is_some() && k != usize::from(key));
         if !release && let Some(held) = self.held.get_mut(usize::from(key)) {
-            *held = Some((velocity, pan));
+            *held = Some((velocity, pan, self.clock));
         }
-        self.random ^= self.random << 13;
-        self.random ^= self.random >> 17;
-        self.random ^= self.random << 5;
-        let dice = (self.random >> 8) as f32 / (1 << 24) as f32;
+        let dice = dice(&mut self.random);
+        let down = |k: i32| {
+            usize::try_from(k).is_ok_and(|k| self.held.get(k).is_some_and(Option::is_some))
+        };
+        let bend = (self.wheel * 8192.0).round() as i32;
         // A ring of the last [`VOICES`] chosen (4 KiB of stack), the `count`th at `count % VOICES`.
         let (mut chosen, mut count) = ([0; VOICES], 0);
         for (index, region) in self.regions.iter().enumerate() {
@@ -1112,49 +1592,116 @@ impl SoundFontPlayer {
             }
             let turn = self.seq[index];
             self.seq[index] = turn.wrapping_add(1);
+            let def = &rules.def;
+            let switched = |[lo, hi]: [u8; 2]| self.switch.is_some_and(|s| (lo..=hi).contains(&s));
+            let in_range = |&(c, [lo, hi]): &(u8, [f32; 2])| {
+                let v = self.cc[usize::from(c.min(127))];
+                lo - 1e-4 <= v && v <= hi + 1e-4
+            };
             let plays = turn % rules.seq[0] == rules.seq[1]
                 && (rules.rand[0] <= dice && dice < rules.rand[1])
-                && rules.sw_last.is_none_or(|s| self.switch == Some(s));
+                && rules.sw_last.is_none_or(switched)
+                && def.sw_down.is_none_or(down)
+                && def.sw_up.is_none_or(|k| !down(k))
+                && (def.sw_previous).is_none_or(|k| self.previous.map(i32::from) == Some(k))
+                && def.cc_ranges.iter().all(in_range)
+                && (def.bends[0]..=def.bends[1]).contains(&bend);
             if plays {
                 chosen[count % VOICES] = index;
                 count += 1;
             }
         }
+        if !release {
+            self.previous = Some(key);
+        }
         let chosen = (count.saturating_sub(VOICES)..count).map(|i| chosen[i % VOICES]);
         for index in chosen.clone() {
-            let group = self.regions[index].sfz.map(|r| r.group);
+            let group = self.regions[index].sfz.as_ref().map(|r| r.group);
             for voice in self.voices.iter_mut().filter(|v| v.on) {
-                let rules = self.regions[voice.region].sfz;
+                let rules = self.regions[voice.region].sfz.as_ref();
                 if let Some(rules) = rules.filter(|r| r.off_by.is_some() && r.off_by == group) {
                     voice.choke(rules.off_normal, self.sample_rate);
                 }
             }
         }
         for index in chosen {
-            self.sfz_start(index, key, velocity, pan, release);
+            self.sfz_start(index, key, velocity, pan, held);
         }
     }
 
-    /// Starts a voice of SFZ region `index` (a release trigger's with `release`).
-    fn sfz_start(&mut self, index: usize, key: u8, velocity: f32, pan: f32, release: bool) {
+    /// Starts a voice of SFZ region `index` (a release trigger's with `held`, the seconds since its note-on). Past its
+    /// group's `polyphony` (and `note_polyphony` on its key) the oldest of its group's voices still held stop first.
+    fn sfz_start(&mut self, index: usize, key: u8, velocity: f32, pan: f32, held: Option<f32>) {
         let region = &self.regions[index];
-        let Some(rules) = region.sfz else {
+        let Some(rules) = &region.sfz else {
             return;
         };
+        let def = &*rules.def;
         let rate = self.sample_rate;
+        let regions = &self.regions;
+        let group = rules.group;
+        for (limit, one_key) in [(def.polyphony, false), (def.note_polyphony, true)] {
+            let Some(limit) = limit else {
+                continue;
+            };
+            let ours = |v: &Voice| {
+                v.on && v.stage != Stage::Release
+                    && (!one_key || v.key == key)
+                    && regions[v.region]
+                        .sfz
+                        .as_ref()
+                        .is_some_and(|r| r.group == group)
+            };
+            let sounding = self.voices.iter().filter(|v| ours(v)).count();
+            for _ in limit as usize..=sounding {
+                let oldest = self.voices.iter_mut().filter(|v| ours(v));
+                if let Some(voice) = oldest.min_by_key(|v| v.started) {
+                    voice.choke(false, rate);
+                }
+            }
+        }
         let cents = (f64::from(key) - f64::from(region.root)) * region.scale + rules.cents;
         let step = 2f64.powf(cents / 1200.0) * region.rate / f64::from(rate);
         let custom = self.params[5] != 0.0;
-        let [delay, attack, hold, decay, sustain, release_time] = rules.ampeg;
+        // The stages as velocity (`ampeg_vel2*`) and the CCs (`ampeg_*ccN`) move them; sustain is a level, the rest
+        // seconds.
+        let mut ampeg = rules.ampeg;
+        let scale = |stage: usize| if stage == 4 { 0.01 } else { 1.0 };
+        for (stage, add) in def.ampeg_vel2.iter().enumerate() {
+            ampeg[stage] += add * velocity * scale(stage);
+        }
+        for &(stage, cc, add) in &def.ampeg_cc {
+            ampeg[stage] += add * self.cc[usize::from(cc.min(127))] * scale(stage);
+        }
+        let [delay, attack, hold, decay, sustain, release_time] = ampeg.map(|x| x.max(0.0));
+        let start = if custom { 0.0 } else { def.ampeg_start / 100.0 };
         let frames = |seconds: f32| (seconds * rate) as u32;
         let envelope = match custom {
             true => self.envelope(region),
             false => [
-                (1.0 / (attack * rate)).min(1.0),
+                ((1.0 - start) / (attack * rate)).min(1.0),
                 fall(decay, rate),
-                sustain,
+                sustain.min(1.0),
                 fall(release_time.max(SFZ_MIN_RELEASE), rate),
             ],
+        };
+        let mut spread = |x: f32| x * (2.0 * dice(&mut self.random) - 1.0);
+        let [amp_random, pitch_random, fil_random, pan_random] = def.random;
+        let from_center = |center: i32| f32::from(key) - center as f32;
+        let m = Motion {
+            idle: frames(def.delay),
+            lfo: std::array::from_fn(|i| def.lfos.get(i).map_or(0.0, |l| l.phase)),
+            eg: std::array::from_fn(|i| def.egs.get(i).map(EgState::new).unwrap_or_default()),
+            pitch: def.pitch_veltrack * velocity + spread(pitch_random),
+            volume: def.amp_keytrack * from_center(def.amp_keycenter)
+                + amp_random * (spread(0.5) + 0.5)
+                - def.rt_decay * held.unwrap_or(0.0),
+            cutoff: def.fil_keytrack * from_center(def.fil_keycenter)
+                + def.fil_veltrack * velocity
+                + spread(fil_random),
+            pan: spread(pan_random),
+            start,
+            ..Motion::default()
         };
         let slot = slot(&self.voices, self.rings.as_deref(), Some(rules.sample));
         if let Some(rings) = &self.rings {
@@ -1170,6 +1717,7 @@ impl SoundFontPlayer {
             step,
             velocity,
             pan,
+            level: if custom || delay > 0.0 { 0.0 } else { start },
             stage: if custom || delay <= 0.0 {
                 Stage::Attack
             } else {
@@ -1182,9 +1730,10 @@ impl SoundFontPlayer {
             dahdsr: !custom,
             wait: frames(delay),
             hold: frames(hold),
-            one_shot: release || rules.mode == LoopMode::OneShot,
-            released: release,
+            one_shot: held.is_some() || rules.mode == LoopMode::OneShot,
+            released: held.is_some(),
             crossfade: rules.crossfade((127.0 * velocity).round() as u8),
+            m,
             ..Voice::default()
         };
     }
@@ -1252,7 +1801,7 @@ impl Instrument for SoundFontPlayer {
             0.5
         };
         if self.is_sfz() {
-            return self.sfz_note(key, velocity, pan, false);
+            return self.sfz_note(key, velocity, pan, None);
         }
         let steps = (127.0 * velocity) as u8;
         let matches = self.regions.iter().filter(|r| r.plays(key, steps));
@@ -1295,10 +1844,11 @@ impl Instrument for SoundFontPlayer {
             voice.released = true;
         }
         if sfz
-            && let Some((velocity, pan)) =
+            && let Some((velocity, pan, on)) =
                 self.held.get_mut(usize::from(key)).and_then(Option::take)
         {
-            self.sfz_note(key, velocity, pan, true);
+            let held = self.clock.saturating_sub(on) as f32 / self.sample_rate;
+            self.sfz_note(key, velocity, pan, Some(held));
         }
     }
 
@@ -1324,60 +1874,39 @@ impl Instrument for SoundFontPlayer {
         let Some(font) = &self.font else {
             return;
         };
+        let frames = left.len();
+        self.clock += frames as u64;
+        // The CCs' smoothing, one block on: the voices read them between where this block starts and ends.
+        self.cc_then = self.cc_now;
+        let smoothing = (self.cc_now.iter_mut()).zip(&self.cc).zip(&font.cc_smooth);
+        for ((now, &to), &seconds) in smoothing {
+            *now = match seconds > 0.0 {
+                true => {
+                    *now + (to - *now)
+                        * (1.0 - (-(frames as f32) / (seconds * self.sample_rate)).exp())
+                }
+                false => to,
+            };
+        }
+        let controls = Controls {
+            then: &self.cc_then,
+            now: &self.cc_now,
+            bend: self.wheel,
+            rate: self.sample_rate,
+        };
         for (slot, voice) in self.voices.iter_mut().enumerate().filter(|(_, v)| v.on) {
             let region = &self.regions[voice.region];
+            if let Some(rules) = &region.sfz {
+                let rings = self.rings.as_deref();
+                render_sfz(
+                    voice, slot, region, rules, font, rings, &controls, left, right,
+                );
+                continue;
+            }
             let bend = 2f64.powf(f64::from(self.bend + voice.slide[0]) / 12.0);
             // `min` also turns a hostile file's infinite or NaN step into the cap.
             let step = (voice.step * bend).min(MAX_STEP);
             let p = (voice.pan + voice.slide[1] + region.pan).clamp(0.0, 1.0);
-            if let Some(rules) = &region.sfz {
-                let sample = &font.pcm[rules.sample];
-                let velocity = (voice.velocity + voice.slide[2]).clamp(0.0, 1.0);
-                let gain =
-                    rules.velocity_gain(&font.curves, velocity) * voice.crossfade * region.gain;
-                let (gain_l, gain_r) = (gain * (2.0 - 2.0 * p).min(1.0), gain * (2.0 * p).min(1.0));
-                let looping = voice.loops(region, rules);
-                let rings = self.rings.as_deref();
-                let disk = rings.filter(|_| matches!(sample, Pcm::Disk(_)));
-                if let Some(rings) = disk {
-                    rings.advance(slot, voice.position as usize);
-                }
-                let mut short = false;
-                for (l, r) in left.iter_mut().zip(right.iter_mut()) {
-                    if !voice.on || !voice.envelope() {
-                        break;
-                    }
-                    let (a, b) = match (sample, disk) {
-                        (Pcm::Ram(data), _) => read_pcm(data, region, looping, voice.position),
-                        (Pcm::Disk(_), Some(rings)) => {
-                            let read = read_disk(rings, slot, region, looping, voice.position);
-                            short |= read.is_none();
-                            read.unwrap_or_default()
-                        }
-                        (Pcm::Disk(_), None) => (0.0, 0.0),
-                    };
-                    *l += a * voice.level * gain_l;
-                    *r += b * voice.level * gain_r;
-                    let before = voice.position;
-                    voice.advance_pcm(region, looping, step);
-                    // A wrap reads the loop from its start: its head, then a new segment, unless it is all in memory.
-                    if let Some(rings) = disk
-                        && voice.position < before
-                        && !rings.in_memory(rules.sample, region.loop_start, region.loop_end)
-                    {
-                        rings.start(slot, rules.sample, region.loop_start, false);
-                    }
-                }
-                if let Some(rings) = rings {
-                    if short {
-                        rings.underrun();
-                    }
-                    if !voice.on {
-                        rings.stop(slot);
-                    }
-                }
-                continue;
-            }
             let gain = (voice.velocity + voice.slide[2]).clamp(0.0, 1.0) * region.gain;
             let (gain_l, gain_r) = (gain * (2.0 - 2.0 * p).min(1.0), gain * (2.0 * p).min(1.0));
             for (l, r) in left.iter_mut().zip(right.iter_mut()) {
@@ -1401,10 +1930,18 @@ impl Instrument for SoundFontPlayer {
         SoundFontPlayer::set_slide(self, pitch, pan, velocity);
     }
 
-    /// Channel param 4, Pitch Bend: ±2 semitones. Others do nothing here.
+    /// Channel param 4, Pitch Bend: ±2 semitones (an SFZ's `bend_up` and `bend_down`). 7 + n, MIDI CC n: an SFZ's
+    /// controllers. Others do nothing here.
     fn set_controller(&mut self, index: usize, value: f32) {
-        if index == PITCH_BEND && value.is_finite() {
-            self.bend = BEND_RANGE * (2.0 * value.clamp(0.0, 1.0) - 1.0);
+        if !value.is_finite() {
+            return;
+        }
+        let value = value.clamp(0.0, 1.0);
+        if index == PITCH_BEND {
+            self.wheel = 2.0 * value - 1.0;
+            self.bend = BEND_RANGE * self.wheel;
+        } else if let Some(cc) = index.checked_sub(7).and_then(|n| self.cc.get_mut(n)) {
+            *cc = value;
         }
     }
 }

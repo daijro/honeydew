@@ -1004,6 +1004,17 @@ pub fn lemon_editor(channel_id: i32, instance_id: i32, scale: f32) -> Option<u32
     })
 }
 
+/// The id of the open editor of built-in plugin module `instance_id` on the channel with id `channel_id` ([`lemon_editor`]),
+/// if it is open.
+pub fn lemon_open(channel_id: i32, instance_id: i32) -> Option<u32> {
+    with(|host| {
+        host.live
+            .get(&(channel_id, instance_id))?
+            .embedded
+            .map(|(id, _)| id)
+    })
+}
+
 /// While `f` runs, the engines built get fresh instances of their plugins (an export renders on its own, twice): each
 /// with the live instance's state now, else the module's, at the build's rate, rendering offline.
 pub fn rendering<T>(f: impl FnOnce() -> T) -> T {

@@ -1,6 +1,6 @@
 [package]
 name = "honeydew"
-version = "0.4.6"
+version = "0.4.7"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
@@ -39,7 +39,8 @@ lemon-parametric-eq-2 = { path = "vendor/lemon-studio/lemon-parametric-eq-2", fe
 os-plugkit = { path = "vendor/lemon-studio/os-plugkit", features = ["embed"] }
 os-ui = { path = "vendor/lemon-studio/os-ui" }
 os-theme = { path = "vendor/lemon-studio/os-theme" }
-os-engine = { path = "vendor/lemon-studio/os-engine" }
+# `plugins`: the sample files the app hands the plugins (`os_engine::sample::provide`).
+os-engine = { path = "vendor/lemon-studio/os-engine", features = ["plugins"] }
 os-host = { path = "vendor/lemon-studio/os-host" }
 os-clap = { path = "vendor/lemon-studio/os-clap" }
 

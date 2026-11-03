@@ -113,9 +113,10 @@ pub fn wheel_rects(keys: Rect, m: &Metrics) -> [Rect; 2] {
 }
 
 /// The keyboard panel's height for a preferred height of `preferred` U on a screen `screen_h` points tall:
-/// trunc(preferred · U) px, within the collapsed height `c` … the screen's height.
+/// trunc(preferred · U) px, within the collapsed height `c` … M ([`crate::ui::panel_resize::full`]).
 pub fn panel_target(preferred: f32, screen_h: f32, c: f32, m: &Metrics) -> f32 {
-    ((preferred * m.u_px()).trunc() / m.ppp()).clamp(c, screen_h.max(c))
+    let full = crate::ui::panel_resize::full(screen_h, c, m);
+    ((preferred * m.u_px()).trunc() / m.ppp()).clamp(c, full)
 }
 
 /// The panel's height `h` (points) one frame on toward `target`, going `k` of the way ([`crate::ui::anim::step`] at
@@ -1118,11 +1119,12 @@ mod tests {
         for ppp in [1.0, 2.0] {
             let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
             let u = m.u(1.0);
-            // c … the screen height.
+            // c … M (the screen less the ruler and a track row, #57).
             let min = crate::ui::panel_resize::collapsed(1, &m);
             assert_eq!(panel_target(5.0, 540.0, min, &m), 5.0 * u);
             assert_eq!(panel_target(0.0, 540.0, min, &m), min);
-            assert_eq!(panel_target(100.0, 540.0, min, &m), 540.0);
+            let full = crate::ui::panel_resize::full(540.0, min, &m);
+            assert_eq!(panel_target(100.0, 540.0, min, &m), full);
             // h ← h + 0.5·(t − h) a frame at 60 fps, snapping within 2 px.
             let (from, to) = (5.0 * u, 6.0 * u);
             let mut h = from;
