@@ -2358,7 +2358,7 @@ impl RackPanel {
         if let (true, Some(plugin)) = (shown, lemon) {
             let content = content_rect(card * ppp, self.card_height(module), u) / ppp;
             let state = self.lemon_cards.entry((self.channel, id)).or_default();
-            let running = lemon_card::show(ui, content, self.channel_id, id, plugin, state);
+            let running = lemon_card::show(ui, content, self.channel_id, id, plugin, state, m);
             self.lemon_wheel |= lemon_card::over(state);
             if running {
                 edits.sample = lemon_card::wants_file(state);
