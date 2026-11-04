@@ -804,7 +804,7 @@ pub fn rename(
 
 /// `Export` on the desktop. One song: the system's save dialog, which asks before it replaces a file. Anything
 /// else: a folder to copy into, under free names.
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 pub fn export(lib: &mut dyn SongLibrary, entries: &[SongEntry]) -> Done {
     if let [e] = entries
         && !e.is_folder
@@ -832,7 +832,7 @@ pub fn export(lib: &mut dyn SongLibrary, entries: &[SongEntry]) -> Done {
     Ok(())
 }
 
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 fn export_into(lib: &mut dyn SongLibrary, entries: &[SongEntry], dir: &Path) -> Done {
     for e in entries {
         let to = free_path(lib, dir, raw_name(e), e.is_folder);
@@ -844,7 +844,7 @@ fn export_into(lib: &mut dyn SongLibrary, entries: &[SongEntry], dir: &Path) -> 
 
 /// `Show in file browser...`: opens the system's file manager on `path` (the folder that holds it on Linux, where
 /// `xdg-open` cannot point at a file).
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 pub fn reveal(path: &Path) -> Done {
     let mut child = reveal_command(path)
         .spawn()
@@ -912,7 +912,7 @@ fn strip_ext<'a>(name: &'a str, ext: &str) -> &'a str {
 }
 
 /// The system's file manager, as `Show in %s...` names it. `None` on the web, which has none.
-pub const FILE_MANAGER: Option<&str> = if cfg!(any(target_arch = "wasm32", target_os = "android")) {
+pub const FILE_MANAGER: Option<&str> = if cfg!(any(target_arch = "wasm32", mobile)) {
     None
 } else if cfg!(windows) {
     Some("Explorer")
@@ -929,7 +929,13 @@ pub fn reveal(path: &Path) -> Done {
     crate::android::show_folder(path.parent().unwrap_or(path))
 }
 
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+/// On iOS, the same in the Files app ([`crate::ios::show_folder`]).
+#[cfg(target_os = "ios")]
+pub fn reveal(path: &Path) -> Done {
+    crate::ios::show_folder(path.parent().unwrap_or(path))
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 fn reveal_command(path: &Path) -> std::process::Command {
     use std::process::Command;
     let mut command;
@@ -3174,7 +3180,7 @@ mod tests {
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 pub fn export(_: &mut dyn SongLibrary, _: &[SongEntry]) -> Done {
-    Err("External file export is not available in this Android preview.".into())
+    Err("External file export is not available on this device.".into())
 }

@@ -107,6 +107,9 @@ pub struct SongFileState {
     pub meta: MetaState,
     pub keyboard: KeyboardState,
     pub unknown_chunks: Vec<RawChunk>,
+    /// The project versions (#69, Honeydew's own `HDVb` chunks): shared, as every undo step holds them. No edit
+    /// ([`super::Song::keep_unedited`]).
+    pub versions: std::sync::Arc<crate::versions::Versions>,
 }
 
 impl Default for SongFileState {
@@ -126,6 +129,7 @@ impl Default for SongFileState {
             meta: MetaState::default(),
             keyboard: KeyboardState::default(),
             unknown_chunks: Vec::new(),
+            versions: Default::default(),
         }
     }
 }

@@ -1673,15 +1673,11 @@ impl Rig {
 // ---- edge cases ----
 
 #[test]
-fn a_click_opens_an_effect_dialog_but_an_instrument_needs_a_long_press() {
-    // An effect: a plain click (the common-dialog test above). An instrument: a click does nothing ...
+fn a_click_opens_an_instruments_level_popup_as_an_effects_dialog() {
+    // Issue #68: an effect's dialog opens on a plain click (the common-dialog test above), and so does an instrument's.
     let mut rig = Rig::synth(SynthKind::MiniSynth);
     let icon = rig.header(0, 2.25);
     rig.open(icon);
-    assert!(!rig.drawn("Wet Pan"));
-    // ... a secondary click (the long press of a mouse) opens it.
-    rig.secondary_click(icon);
-    rig.frame(vec![]);
     assert!(rig.drawn("Wet Pan"));
 }
 
@@ -3726,13 +3722,16 @@ impl Rig {
 
 #[test]
 fn a_mouse_held_still_300_ms_on_the_instrument_icon_opens_the_level_popup_but_250_ms_does_not() {
+    // Held: at 300 ms, before the release (a click opens it too, issue #68).
     let mut rig = Rig::synth(SynthKind::MiniSynth);
     let icon = rig.header(0, 2.25);
-    rig.hold(icon, 0.25, true);
+    rig.hold(icon, 0.25, false);
     rig.frame(vec![]);
     assert!(!rig.drawn("Wet Pan"));
-    rig.hold(icon, 0.3, false);
-    rig.frame(vec![]);
+    // On to 0.3 s and one frame more.
+    for _ in 0..4 {
+        rig.frame(vec![]);
+    }
     assert!(rig.drawn("Wet Pan"));
     rig.button(icon, false);
     rig.frame(vec![]);

@@ -61,7 +61,7 @@ impl ProjectFiles {
     /// The pickers that list audio files offer `Import`: where this session keeps the files (the web) or the app's
     /// private storage holds them (Android), as nothing else puts audio there. The desktop's pickers list its folders.
     pub fn imports_audio(&self) -> bool {
-        self.copies || cfg!(target_os = "android")
+        self.copies || cfg!(mobile)
     }
 
     /// `Import` in a picker that lists audio files: asks for one (the web's `<input type="file">`), which

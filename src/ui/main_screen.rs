@@ -964,7 +964,10 @@ impl MainScreen {
             .as_mut()
             .filter(|h| h.row == i && (p.held || p.long_released))
         {
-            let pos = ui.input(|i| i.pointer.latest_pos()).unwrap_or(hold.origin);
+            // The interact position: a finger's lift clears the latest one in its release frame (`PointerGone`, #68).
+            let pos = ui
+                .input(|i| i.pointer.interact_pos())
+                .unwrap_or(hold.origin);
             let dy = pos.y - hold.origin.y;
             // Only a channel's first row drags (its primary's, unless that is hidden), any channel's.
             let first = tracks.iter().position(|t| t.channel == channel) == Some(i);
@@ -4503,7 +4506,7 @@ mod tests {
         assert!(rig.rect_of(Id::new(("clip_button", 0_usize))).is_some());
         // The group's Delete takes both, as one edit.
         assert_eq!(
-            rig.click_id(Id::new(("clip_button", 1_usize))).0,
+            rig.click_id(Id::new(("clip_button", 2_usize))).0,
             Some(SongEdit::Final)
         );
         assert!(rig.clips(1).is_empty() && rig.clips(2).is_empty());
@@ -4554,7 +4557,7 @@ mod tests {
         rig.frame(vec![button(CLIP, true)]);
         let shown = rig.frame(vec![button(CLIP, false)]);
         let first = radii(&shown);
-        assert_eq!(first.len(), 5, "{first:?}");
+        assert_eq!(first.len(), 6, "{first:?}");
         assert!(first.iter().all(|&r| r < 1.0), "{first:?}");
         // 0.1 s on (6 frames at 60 Hz): past full size; then radius 22.4 points (diameter 1.4 U).
         let next = radii(&rig.frame(vec![]));
@@ -5029,13 +5032,16 @@ mod tests {
         );
     }
 
+    /// `Copy` fills the clipboard and edits nothing; `Duplicate` (#68) puts the copy right after.
     #[test]
-    fn copy_snap_and_delete_edit_the_song_and_edit_opens_the_editor() {
+    fn copy_duplicate_snap_and_delete_edit_the_song_and_edit_opens_the_editor() {
         let button = |i: usize| Id::new(("clip_button", i));
         let mut rig = Rig::new(song_with_a_clip());
         rig.click(CLIP);
         rig.frame(vec![]);
-        assert_eq!(rig.click_id(button(0)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(0)).0, None);
+        assert_eq!(rig.clips(2).len(), 1);
+        assert_eq!(rig.click_id(button(1)).0, Some(SongEdit::Final));
         let starts: Vec<_> = rig.clips(2).iter().map(|c| (c.id, c.start_tick)).collect();
         assert_eq!(starts, [(1, 512), (2, 1024)]);
         assert_eq!(
@@ -5049,15 +5055,15 @@ mod tests {
         // Snap puts the copy back on the beat grid.
         rig.song.channels[2].lanes[0].clips[1].start_tick = 1000;
         rig.frame(vec![]);
-        assert_eq!(rig.click_id(button(2)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(3)).0, Some(SongEdit::Final));
         assert_eq!(rig.clips(2)[1].start_tick, 1024);
         let copy = ClipKey {
             channel: 2,
             lane: 0,
             id: 2,
         };
-        assert_eq!(rig.click_id(button(3)), (None, Some(Nav::EditClip(copy))));
-        assert_eq!(rig.click_id(button(1)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(4)), (None, Some(Nav::EditClip(copy))));
+        assert_eq!(rig.click_id(button(2)).0, Some(SongEdit::Final));
         assert_eq!(rig.clips(2).iter().map(|c| c.id).collect::<Vec<_>>(), [1]);
         assert_eq!(rig.screen.clips.selected, None);
         // Without a selection there are no buttons.
@@ -5072,7 +5078,7 @@ mod tests {
         let mut rig = Rig::new(song);
         rig.click(CLIP);
         rig.frame(vec![]);
-        rig.click_id(Id::new(("clip_button", 4_usize)));
+        rig.click_id(Id::new(("clip_button", 5_usize)));
         rig.frame(vec![]);
         let unlink = Id::new("clip_more").with((0_usize, 1_usize));
         assert_eq!(rig.click_id(unlink).0, Some(SongEdit::Final));
@@ -5084,7 +5090,7 @@ mod tests {
     fn more_mutes_and_unmutes_the_clip_as_final_edits() {
         let mut rig = Rig::new(song_with_a_clip());
         rig.click(CLIP);
-        let more = Id::new(("clip_button", 4_usize));
+        let more = Id::new(("clip_button", 5_usize));
         let item = |row: usize| Id::new("clip_more").with((0_usize, row));
         rig.click_id(more);
         assert_eq!(rig.click_id(item(3)).0, Some(SongEdit::Final));
@@ -5758,7 +5764,7 @@ mod tests {
         assert_eq!(rig.rect_of(track_item(1, 3)), None, "the menu closed");
         // A disabled item (`Delete Track`, the only notes track) picks nothing and keeps the menu open.
         secondary_click(&mut rig, header_at(2));
-        // A disabled cell has no widget: it sits between `Insert Channel` and `Delete Channel`.
+        // A disabled cell has no widget: it sits between `Insert Channel` and `Hide track`.
         let (above, below) = (track_item(0, 3), track_item(0, 5));
         let above = rig.rect_of(above).expect("the menu is open").center();
         let below = rig.rect_of(below).expect("the menu is open").center();
@@ -5924,6 +5930,38 @@ mod tests {
         rig.frame(vec![egui::Event::PointerMoved(header_at(2))]);
         let f = rig.frame(vec![button(header_at(2), false)]);
         assert_eq!(f.reorder, Some(vec![2, 1, 0, 3]));
+    }
+
+    #[test]
+    fn a_finger_held_on_a_header_drags_its_channel_and_drops_it_where_it_lifts() {
+        // As Android's integration sends a finger (#68): a touch event with the pointer's, and the lift's `PointerGone`,
+        // which clears the latest position in the release frame.
+        use egui::TouchPhase::{End, Move, Start};
+        let finger = |phase, pos| {
+            let touch = egui::Event::Touch {
+                device_id: egui::TouchDeviceId(1),
+                id: egui::TouchId(1),
+                phase,
+                pos,
+                force: None,
+            };
+            let pointer = match phase {
+                Start => vec![egui::Event::PointerMoved(pos), button(pos, true)],
+                Move => vec![egui::Event::PointerMoved(pos)],
+                _ => vec![button(pos, false), egui::Event::PointerGone],
+            };
+            [vec![touch], pointer].concat()
+        };
+        let mut rig = four_rows();
+        rig.frame(finger(Start, header_at(1)));
+        for _ in 0..3 {
+            rig.frame(vec![]);
+        }
+        rig.frame(finger(Move, header_at(2)));
+        rig.frame(finger(Move, header_at(3)));
+        let f = rig.frame(finger(End, header_at(3)));
+        // A row at a time: the Drums swap with row 2's channel, then row 3's (it dropped back in row 1 before).
+        assert_eq!(f.reorder, Some(vec![0, 2, 3, 1]));
     }
 
     #[test]
@@ -6737,26 +6775,26 @@ mod tests {
     }
 
     #[test]
-    fn plus_clip_copy_and_the_floating_snap_take_the_snap_unit() {
+    fn plus_clip_duplicate_and_the_floating_snap_take_the_snap_unit() {
         let bar = crate::ui::piano_roll::notes::Snap {
             on: true,
             mode: crate::ui::piano_roll::notes::SnapMode::Bar,
             ..Default::default()
         };
         let button = |i: usize| Id::new(("clip_button", i));
-        // The MiniSynth's clip shows 6 beats from beat 4: Copy rounds its length up to the unit, 2 bars.
+        // The MiniSynth's clip shows 6 beats from beat 4: Duplicate rounds its length up to the unit, 2 bars.
         let mut song = song_with_a_clip();
         song.channels[2].lanes[0].clips[0].visible_len_beats = 6.0;
         let mut rig = Rig::new(song);
         rig.screen.snap = bar;
         rig.click(CLIP);
         rig.frame(vec![]);
-        assert_eq!(rig.click_id(button(0)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(1)).0, Some(SongEdit::Final));
         assert_eq!(rig.clips(2)[1].start_tick, 512 + 1024);
         // The floating Snap: to the nearest bar (900 → 1024; a beat would be 896).
         rig.song.channels[2].lanes[0].clips[1].start_tick = 900;
         rig.frame(vec![]);
-        assert_eq!(rig.click_id(button(2)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(3)).0, Some(SongEdit::Final));
         assert_eq!(rig.clips(2)[1].start_tick, 1024);
         // `New Clip` at beat 13.6: the nearest bar line, beat 12 (a beat would be 14).
         let mut rig = Rig::new(song_with_a_clip());
@@ -6831,10 +6869,10 @@ mod tests {
         assert_eq!(rig.paste(), None);
         rig.right_click(EMPTY_2);
         assert!(rig.paste().is_some());
-        // The clip copied, then deselected.
+        // The clip copied (the clipboard alone), then deselected.
         rig.click(CLIP);
         rig.frame(vec![]);
-        rig.click_id(Id::new(("clip_button", 0_usize)));
+        assert_eq!(rig.click_id(Id::new(("clip_button", 0_usize))).0, None);
         rig.click(EMPTY_2 + vec2(BEAT_PT, 0.0));
         assert_eq!(rig.screen.clips.selected, None);
         let held_at = EMPTY_2 + vec2(BEAT_PT, 10.0);
@@ -6850,9 +6888,9 @@ mod tests {
         let paste = rig.paste().expect("the Paste button");
         // Its tap pastes the clip on that track at the snapped beat (13): one final edit, the copy selected.
         assert_eq!(rig.click(paste.center()).0, Some(SongEdit::Final));
-        assert_eq!(rig.starts(2), [(1, 512), (2, 1024), (3, 1664)]);
+        assert_eq!(rig.starts(2), [(1, 512), (2, 1664)]);
         let pasted = ClipRef {
-            id: 3,
+            id: 2,
             ..SYNTH_CLIP
         };
         assert_eq!(rig.screen.clips.selected, Some(pasted));

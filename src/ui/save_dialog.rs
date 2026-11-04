@@ -11,6 +11,8 @@
 //! the project also holds each channel's render as an audio clip. With MIDI selected (and in `Save as MIDI`), an `Apply
 //! note effects` toggle (on by default, kept in the settings) sits there: on, the notes are written as the channels'
 //! note effects play them.
+//! The song's dialog with FLM selected has `Save project version` in the right column level with `Save` (#69): it saves
+//! as `Save` does, with the song as a new project version ([`crate::versions`]), and opens the versions window.
 //! `Save` with FLM, FLP (an FL Studio project and its samples, as a `.zip`), ZIP or MIDI saves; with WAV, FLAC, OGG or
 //! MP3 it turns the band into
 //! the render page: the title `<name>.<ext>` (with Split on, the stems' folder `<name> - Multitrack <ext>`) over a dim
@@ -67,6 +69,8 @@ const FIELD_W: f32 = 10.0;
 /// A format tab's cell: the row is 16 U, which the narrowest screen (20 U) holds.
 const FORMAT_W: f32 = 2.0;
 const BUTTON_W: f32 = 3.0;
+/// `Save project version`'s width.
+const VERSION_W: f32 = 5.5;
 const BUTTON_GAP: f32 = 0.5;
 /// The close X: the transport's round button size, inset from the band's top-right corner.
 const CLOSE_D: f32 = 1.25;
@@ -224,6 +228,8 @@ pub enum DialogAction {
     Render(RenderPage),
     /// The close X, or Escape.
     Close,
+    /// `Save project version`: save FLM with the song as a new version.
+    SaveVersion,
 }
 
 /// The dialog's state while it is open. The caller keeps it from frame to frame.
@@ -378,7 +384,7 @@ impl SaveDialog {
         crate::android_text::edit(&mut field, &mut self.name, usize::MAX);
         if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
             action = self.save();
-        } else if ui.memory(|mem| mem.focused().is_none()) {
+        } else if crate::android_text::REFOCUS && ui.memory(|mem| mem.focused().is_none()) {
             field.request_focus();
         }
 
@@ -429,6 +435,14 @@ impl SaveDialog {
         let save = crate::ui::dialog::button(id.with("save"), l.save, "Save", c, m);
         if button(ui, cx, &save, true).clicked() {
             action = self.save();
+        }
+        if title.is_none() && self.format == ExportFormat::Flm {
+            let label = "Save project version";
+            let version =
+                crate::ui::dialog::button(id.with("version"), l.save_version, label, c, m);
+            if button(ui, cx, &version, true).clicked() {
+                action = Some(DialogAction::SaveVersion);
+            }
         }
         let send = Button {
             fill_on: text.gamma_multiply(DISABLED_ALPHA),
@@ -609,6 +623,8 @@ pub struct DialogLayout {
     pub send: Rect,
     /// FLP's `Include rendered audio` (MIDI's `Apply note effects`), in the left column level with `Save`.
     pub flp_audio: Rect,
+    /// FLM's `Save project version`, at the right column's left, level with `Save`.
+    pub save_version: Rect,
     /// The render page: the `<name>.<ext>` title line and the `Estimated length:` line under it.
     pub heading: Rect,
     pub estimate: Rect,
@@ -694,6 +710,10 @@ pub fn layout(screen: Rect, m: &Metrics) -> DialogLayout {
         save: buttons[0],
         send: buttons[1],
         flp_audio: toggle(left, BUTTON_ROW),
+        save_version: Rect::from_min_size(
+            pos2(right, top(BUTTON_ROW.0)),
+            vec2(m.round_px(m.u(VERSION_W)), m.round_px(m.u(BUTTON_ROW.1))),
+        ),
         heading: heading(HEADING_ROW),
         estimate: heading(ESTIMATE_ROW),
         toggles: [
@@ -1315,11 +1335,12 @@ mod tests {
             assert!(drawn("File Name").is_some() && drawn("Save").is_some());
             assert_eq!(rig.click(l.save.center()), Some(DialogAction::Save(Flm)));
         }
-        // The song's dialog keeps its look: no title.
+        // The song's dialog keeps its look: no title (`Save project version` is a button).
         let (_, shapes) = Rig::new().run(vec![]);
         let texts = texts(&shapes);
         assert!(texts.iter().any(|(t, ..)| t == FLM_DESCRIPTION));
-        assert!(!texts.iter().any(|(t, ..)| t.starts_with("Save ")));
+        let title = |t: &str| t.starts_with("Save ") && t != "Save project version";
+        assert!(!texts.iter().any(|(t, ..)| title(t)));
     }
 
     #[test]

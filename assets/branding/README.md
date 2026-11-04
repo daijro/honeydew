@@ -9,6 +9,8 @@ licensed as Free for commercial use WITH ATTRIBUTION, credited in the README and
   the window icon the 256 (`src/main.rs`).
 - `../linux/icons/hicolor/`: the Linux desktop icons (`<n>x<n>/apps/honeydew.png` for n = 16, 32, 48, 64, 128, 256 and
   512, and the cropped `scalable/apps/honeydew.svg`), which `tools/install-desktop-entry.sh` installs.
+- `honeydew-ios-512.png`: the iOS app icon, the melon at about 72 % on an opaque honeydew `#F0FFF0` square (iOS draws an
+  icon's transparency black), which `tools/ios-dist.sh` scales to each icon size.
 - `honeydew-mono.svg`: the silhouette (a copy of the owner's file).
 - `honeydew-mono-{48,64,128,256}.png`: its rasterisations, white on transparency: the in-app logo (`AppLogo`, tinted by
   the draw: `menuFill` on the main screen's logo button, `text` in the main menu header; `src/icons/logo.rs`).
@@ -29,6 +31,8 @@ for n in 16 32 48 64 128 256 512; do
   sed "$BOX" honeydew.svg | rsvg-convert -w $n -h $n -o $H/${n}x$n/apps/honeydew.png
 done
 mkdir -p $H/scalable/apps && sed "$BOX" honeydew.svg > $H/scalable/apps/honeydew.svg
+sed 's/viewBox="0 0 1200 1000"/viewBox="13 -94.25 1167 1167"/' honeydew.svg |
+  rsvg-convert -w 512 -h 512 --background-color '#F0FFF0' | magick - -alpha off honeydew-ios-512.png
 MONO='s/viewBox="0 0 1200 1000"/viewBox="160.875 69.25 840 840"/'
 for n in 48 64 128 256; do
   sed -e "$MONO" -e 's/color="#1C1B1F"/color="#FFFFFF"/' honeydew-mono.svg | rsvg-convert -w $n -h $n -o honeydew-mono-$n.png

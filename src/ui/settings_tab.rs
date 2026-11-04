@@ -30,6 +30,16 @@
 //! dropdown asks the app, once, to list the ports again ([`SettingsTab::take_midi_rescan`]). The button shows the stored
 //! name even when its device is not connected, shrunk into the button as a device name can be any length.
 //!
+//! `Theme:` lists the built-in themes, then the user's ([`SettingsTab::user_themes`], which the main menu keeps current);
+//! one of the user's, or the theme creator's work, is stored whole (`Settings::custom_theme`) and shows its own name.
+//! `Theme creator` has an `Edit` button, which opens the theme creator ([`SettingsTab::take_creator`]). While the theme
+//! in use is the creator's unsaved work ([`SettingsTab::creator_unsaved`]), a `Theme:` pick first asks
+//! [`THEME_WARNING`], `OK` / `Cancel`, in the popup style of `Restore default settings`' question.
+//!
+//! `Audio input:` (#65) is the same kind of dropdown over the audio inputs: `Default` (the system's, stored as "")
+//! then each input the app lists when it opens ([`SettingsTab::wants_audio_inputs`]), the pick stored by name in
+//! `Settings::audio_input`. Not on the web, which has no input.
+//!
 //! `Restore demo songs` asks the app to write our demo songs into the songs folder again
 //! ([`SettingsTab::take_restore_demos`]), with no question first.
 //!
@@ -56,7 +66,7 @@ use crate::icons::{IconId, draw_icon};
 use crate::metrics::{FontSize, UI_SCALE_RANGE};
 use crate::midi::device::menu as midi_menu;
 use crate::settings::{BUFFER_SIZES, SOUND_MODES, Settings};
-use crate::theme::{DISABLED_ALPHA, builtin_themes};
+use crate::theme::{DISABLED_ALPHA, Theme, builtin_themes};
 use crate::ui::popup::{self, PopupItem};
 use crate::ui::scroller::Scroller;
 use crate::ui::widgets::{
@@ -142,6 +152,8 @@ enum Kind {
     Dropdown(Choice),
     /// `Input device:`: a dropdown over the MIDI ports, showing the stored name (shrunk to fit).
     MidiDropdown,
+    /// `Audio input:`: a dropdown over the audio inputs, showing the stored name (shrunk to fit) or `Default`.
+    AudioInput,
     /// A disabled wide light button with this text.
     FixedDropdown(&'static str),
     /// The Bluetooth icon and the label, disabled.
@@ -174,6 +186,8 @@ enum Kind {
     PluginScan,
     /// `Forget my plugin folders`: a full-width light button, enabled while there are some.
     ForgetPluginFolders,
+    /// `Theme creator`: the label and an `Edit` button, which opens the theme creator ([`SettingsTab::take_creator`]).
+    ThemeCreator,
 }
 
 /// What the plugin rows asked the app for ([`SettingsTab::take_plugin_action`]).
@@ -207,6 +221,8 @@ enum Choice {
     SampleMemory,
     /// `Screen orientation:` (#41): `Auto`, `Portrait` or `Landscape` ([`crate::settings::ORIENTATIONS`]).
     Orientation,
+    /// `Project version size limit:` (#69), in MB ([`crate::settings::VERSION_SIZE_LIMITS`]).
+    VersionSize,
 }
 
 /// `Screen orientation:`, after `Animation:` where the app can lock the screen's orientation
@@ -223,13 +239,13 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 }
 
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 49] = {
+const ROWS: [Row; 52] = {
     use Kind::*;
     [
         row("MIDI:", Header),
         row(
             "Input device:",
-            if cfg!(target_os = "android") {
+            if cfg!(mobile) {
                 FixedDropdown("Not available")
             } else {
                 MidiDropdown
@@ -251,6 +267,7 @@ const ROWS: [Row; 49] = {
         row("Sound mode:", Dropdown(Choice::SoundMode)),
         row("Sample memory limit:", Dropdown(Choice::SampleMemory)),
         row("Recording:", Header),
+        row("Audio input:", AudioInput),
         row("Enable audio recording latency compensation", Latency),
         row(
             "Enable multitrack recording",
@@ -264,6 +281,7 @@ const ROWS: [Row; 49] = {
         row("Metronome level", Level),
         row("User interface:", Header),
         row("Theme:", Dropdown(Choice::Theme)),
+        row("Theme creator", ThemeCreator),
         row("Scaling:", Scaling),
         row("Scale is currently limited to", ScaleLimit),
         row("Animation:", Dropdown(Choice::Animation)),
@@ -287,6 +305,7 @@ const ROWS: [Row; 49] = {
             "Show CPU and RAM meters",
             Toggle(|s| &mut s.hardware_meters),
         ),
+        row("Project version size limit:", Dropdown(Choice::VersionSize)),
         row(
             "Enable sharing files with nearby devices",
             FixedToggle(false),
@@ -321,16 +340,29 @@ enum Menu {
     Choice(Choice),
     /// The `Input device:` items: the MIDI device [`menu`], each carrying its index.
     Midi,
+    /// The `Audio input:` items: `Default` (0), then each input, carrying its index + 1.
+    AudioInput,
     /// The Yes / No confirm of `Restore default settings`.
     Restore,
+    /// The `OK` / `Cancel` confirm of a `Theme:` pick over the theme creator's unsaved edits.
+    ThemeConfirm,
 }
 
 /// The confirm's question, and the values its `Yes` and `No` items return.
 const RESTORE_QUESTION: &str = "Are you sure you want to restore default settings?";
 const CONFIRM_YES: usize = 1;
 const CONFIRM_NO: usize = 0;
+/// The warning a `Theme:` pick over the theme creator's unsaved edits asks first.
+pub const THEME_WARNING: [&str; 2] = [
+    "Warning",
+    "Setting the theme will undo changes made in the theme creator!",
+];
+/// The `Theme:` popup's value of the first user theme ([`SettingsTab::user_themes`]); the built-ins' are their ids.
+const USER_THEMES: usize = 1000;
 /// The tail a shortened device name keeps in the `Input device:` popup, as shrink drawing keeps on its button.
 const DEVICE_TAIL_K: usize = 5;
+/// `Audio input:`'s first item, the system's input.
+const DEFAULT_INPUT: &str = "Default";
 
 /// The tab's own state: the open popup, if any, where it is centred, the last frame the tab was shown in, and how far
 /// the list is scrolled.
@@ -350,6 +382,8 @@ pub struct SettingsTab {
     midi_ports: Vec<String>,
     /// The `Input device:` dropdown opened since [`Self::take_midi_rescan`].
     midi_rescan: bool,
+    /// The audio inputs the open `Audio input:` menu lists, once the app has listed them ([`Self::set_audio_inputs`]).
+    audio_inputs: Option<Vec<String>>,
     /// The Original Content folder the last rows show, in the user folder they show too; `None` hides them. The
     /// caller keeps it current.
     pub content: Option<PathBuf>,
@@ -374,6 +408,15 @@ pub struct SettingsTab {
     mcp_status: &'static str,
     /// A new scale was applied: the next frame, at the new `U`, scrolls `Scaling:` back into view.
     reveal_scaling: bool,
+    /// The user's themes, which `Theme:` lists after the built-ins. The caller keeps them current.
+    pub user_themes: Vec<Theme>,
+    /// `Theme creator`'s `Edit` was tapped, until [`Self::take_creator`].
+    creator: bool,
+    /// The theme in use is the theme creator's unsaved work: a `Theme:` pick asks first ([`THEME_WARNING`]). The
+    /// caller keeps it current.
+    pub creator_unsaved: bool,
+    /// The `Theme:` pick waiting for the warning's `OK`.
+    pending_theme: Option<usize>,
 }
 
 impl SettingsTab {
@@ -392,6 +435,16 @@ impl SettingsTab {
     /// also the user gesture the web needs to ask for MIDI access.
     pub fn take_midi_rescan(&mut self) -> bool {
         std::mem::take(&mut self.midi_rescan)
+    }
+
+    /// The `Audio input:` menu opened and waits for its inputs: the app lists them ([`Self::set_audio_inputs`]).
+    pub fn wants_audio_inputs(&self) -> bool {
+        matches!(self.menu, Some((Menu::AudioInput, _))) && self.audio_inputs.is_none()
+    }
+
+    /// The audio inputs for the open `Audio input:` menu (`InputLink::choices`), by name.
+    pub fn set_audio_inputs(&mut self, inputs: Vec<String>) {
+        self.audio_inputs = Some(inputs);
     }
 
     /// What to show in the file manager once `Open folder` or `Open user folder` was tapped, once: the content
@@ -415,6 +468,11 @@ impl SettingsTab {
         std::mem::take(&mut self.install_sounds)
     }
 
+    /// Whether `Theme creator`'s `Edit` was tapped since the last call, once a tap: the main menu shows the creator.
+    pub fn take_creator(&mut self) -> bool {
+        std::mem::take(&mut self.creator)
+    }
+
     /// What a plugin row asked for since the last call, once a tap.
     pub fn take_plugin_action(&mut self) -> Option<PluginAction> {
         self.plugin_action.take()
@@ -431,7 +489,11 @@ impl SettingsTab {
             .iter()
             .filter(|r| {
                 let web = cfg!(target_arch = "wasm32");
-                !(web && matches!(r.kind, Kind::Dropdown(Choice::SampleMemory)))
+                !(web
+                    && matches!(
+                        r.kind,
+                        Kind::Dropdown(Choice::SampleMemory) | Kind::AudioInput
+                    ))
                     && (cfg!(desktop)
                         || (!matches!(
                             r.kind,
@@ -664,7 +726,7 @@ impl SettingsTab {
                 if latency && s.latency_compensation == Some(false) {
                     let at = right(CALIBRATE_W, BUTTON_H);
                     let b = Button::new(id.with("calibrate"), at, "Calibrate", false, colors);
-                    self.calibrate |= button(ui, cx, &b, !cfg!(target_os = "android")).clicked();
+                    self.calibrate |= button(ui, cx, &b, !cfg!(mobile)).clicked();
                 }
                 let (on, field) = match row.kind {
                     Kind::Toggle(field) => (*field(s), Some(field)),
@@ -712,7 +774,12 @@ impl SettingsTab {
             }
             Kind::Dropdown(choice) => {
                 label(ui, before(button_rect), FontSize::Pt10);
-                if light_button(ui, button_rect, &choice.label(s), true) {
+                // A theme of the user's, or the theme creator's work, is no item of the built-ins: its own name.
+                let current = match choice {
+                    Choice::Theme if !s.custom_theme.is_empty() => cx.theme.name.clone(),
+                    _ => choice.label(s),
+                };
+                if light_button(ui, button_rect, &current, true) {
                     self.menu = Some((Menu::Choice(choice), button_rect.center()));
                 }
                 if matches!(choice, Choice::SoundMode) {
@@ -726,24 +793,35 @@ impl SettingsTab {
                     let tip = "The most memory SFZ and DW Sampler samples take. Past it, each keeps its start in memory and plays the rest from disk. Auto: the memory available, less a margin.";
                     crate::ui::tooltip::tip(ui, button_rect, tip, None);
                 }
+                if matches!(choice, Choice::VersionSize) {
+                    let tip = "The most memory the undo history takes, and the most each branch of the project versions keeps. Past it, the oldest steps and versions go.";
+                    crate::ui::tooltip::tip(ui, button_rect, tip, None);
+                }
             }
-            Kind::MidiDropdown => {
+            Kind::MidiDropdown | Kind::AudioInput => {
                 label(ui, before(button_rect), FontSize::Pt10);
                 let b = Button::new(id, button_rect, "", false, colors);
                 let response = button(ui, cx, &b, true);
+                let name = match row.kind {
+                    Kind::MidiDropdown => &s.midi_device,
+                    _ if s.audio_input.is_empty() => DEFAULT_INPUT,
+                    _ => &s.audio_input,
+                };
                 // The name it draws itself (shrunk) is its name for accessibility tools too.
-                response
-                    .widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &s.midi_device));
+                response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, name));
                 if response.clicked() {
-                    self.menu = Some((Menu::Midi, button_rect.center()));
-                    self.midi_rescan = true;
+                    let midi = matches!(row.kind, Kind::MidiDropdown);
+                    let menu = if midi { Menu::Midi } else { Menu::AudioInput };
+                    self.menu = Some((menu, button_rect.center()));
+                    self.midi_rescan |= midi;
+                    self.audio_inputs = None;
                 }
                 // A device name is the device's, of any length: shrink drawing in the button, in the ink the button
                 // would give a label of its own.
                 let room = button_rect.shrink2(vec2(m.u(BUTTON_PAD), 0.0));
                 let ink = colors.menu_fill.to_color32();
                 let (align, pt) = (Align2::CENTER_CENTER, FontSize::Pt10.points() as u8);
-                shrink(ui.painter(), m, room, align, &s.midi_device, pt, ink);
+                shrink(ui.painter(), m, room, align, name, pt, ink);
             }
             Kind::FixedDropdown(value) => {
                 label(ui, before(button_rect), FontSize::Pt10);
@@ -917,6 +995,10 @@ impl SettingsTab {
                 label(ui, before(button_rect), FontSize::Pt10);
                 light_button(ui, button_rect, "Sign In", false);
             }
+            Kind::ThemeCreator => {
+                label(ui, before(button_rect), FontSize::Pt10);
+                self.creator |= light_button(ui, button_rect, "Edit", true);
+            }
             Kind::PluginFolders => {
                 let folders = match s.plugin_folders.len() {
                     0 => "The standard folders, and yabridge's".to_owned(),
@@ -1006,8 +1088,24 @@ impl SettingsTab {
             return;
         };
         let ctx = ui.ctx();
-        let mut items = popup_items(menu, s, &self.midi_ports);
-        if menu == Menu::Midi {
+        // `Audio input:` shows once the app has listed the inputs, after the frame that opened it.
+        let inputs = match (menu, &self.audio_inputs) {
+            (Menu::AudioInput, None) => return ctx.request_repaint(),
+            (_, inputs) => inputs.as_deref().unwrap_or_default(),
+        };
+        let mut items = popup_items(menu, s, &self.midi_ports, inputs);
+        // The user's themes after the built-ins, the one in use marked.
+        if menu == Menu::Choice(Choice::Theme) {
+            for (i, theme) in self.user_themes.iter().enumerate() {
+                let current = !s.custom_theme.is_empty() && theme.name == cx.theme.name;
+                let row = items.len();
+                items.push(PopupItem {
+                    current,
+                    ..PopupItem::new(USER_THEMES + i, 0, row, theme.name.clone())
+                });
+            }
+        }
+        if matches!(menu, Menu::Midi | Menu::AudioInput) {
             // A device name of any length: one too wide for the screen keeps its head and tail (the pick goes by
             // index, so it stores the whole name). The room leaves the item's side padding (1 U).
             let (font, room) = (
@@ -1022,11 +1120,25 @@ impl SettingsTab {
         }
         let result = popup::show(ctx, popup_id(), at, ctx.content_rect(), &items, cx);
         match (menu, result.selected) {
+            (Menu::Choice(Choice::Theme), Some(value)) if self.creator_unsaved => {
+                self.pending_theme = Some(value);
+            }
+            (Menu::Choice(Choice::Theme), Some(value)) => self.set_theme(s, value),
+            (Menu::ThemeConfirm, Some(CONFIRM_YES)) => {
+                if let Some(value) = self.pending_theme.take() {
+                    self.set_theme(s, value);
+                }
+            }
             (Menu::Choice(choice), Some(value)) => choice.set(s, value),
             (Menu::Midi, Some(index)) => {
                 if let Some(pick) = midi_menu(&self.midi_ports).get(index) {
                     s.midi_device = pick.label().to_owned();
                 }
+            }
+            (Menu::AudioInput, Some(index)) => {
+                s.audio_input = index
+                    .checked_sub(1)
+                    .map_or_else(String::new, |i| inputs[i].clone());
             }
             // What the first run did stays done: the demos are not written over the user's copies at the next start,
             // and What's New does not show again.
@@ -1040,7 +1152,26 @@ impl SettingsTab {
             _ => {}
         }
         if result.close {
-            self.menu = None;
+            // A pick waiting for the warning opens it; the warning closed drops the pick (`Cancel`).
+            self.menu = match menu {
+                Menu::ThemeConfirm => {
+                    self.pending_theme = None;
+                    None
+                }
+                _ => self.pending_theme.map(|_| (Menu::ThemeConfirm, at)),
+            };
+        }
+    }
+
+    /// Puts the `Theme:` item `value` in use: a built-in theme by its id, else one of [`Self::user_themes`].
+    fn set_theme(&self, s: &mut Settings, value: usize) {
+        match value.checked_sub(USER_THEMES) {
+            Some(i) => {
+                if let Some(theme) = self.user_themes.get(i) {
+                    s.custom_theme = theme.to_json();
+                }
+            }
+            None => Choice::Theme.set(s, value),
         }
     }
 }
@@ -1084,6 +1215,9 @@ impl Choice {
                 .map(|&(label, _)| label.to_owned())
                 .enumerate()
                 .collect(),
+            Choice::VersionSize => (crate::settings::VERSION_SIZE_LIMITS.iter())
+                .map(|&mb| (mb as usize, format!("{mb} MB")))
+                .collect(),
         }
     }
 
@@ -1091,11 +1225,14 @@ impl Choice {
     fn get(self, s: &Settings) -> usize {
         match self {
             Choice::SoundMode => usize::from(s.sound_mode),
+            // A theme of the user's is no built-in one.
+            Choice::Theme if !s.custom_theme.is_empty() => usize::MAX,
             Choice::Theme => s.theme as usize,
             Choice::Animation if !s.inertia => 2,
             Choice::Animation => usize::from(!s.animations),
             Choice::SampleMemory => usize::from(s.sample_memory_limit),
             Choice::Orientation => usize::from(s.screen_orientation),
+            Choice::VersionSize => s.version_size_limit as usize,
         }
     }
 
@@ -1103,10 +1240,11 @@ impl Choice {
     fn set(self, s: &mut Settings, value: usize) {
         match self {
             Choice::SoundMode => s.sound_mode = value as u8,
-            Choice::Theme => s.theme = value as u32,
+            Choice::Theme => (s.theme, s.custom_theme) = (value as u32, String::new()),
             Choice::Animation => (s.animations, s.inertia) = (value == 0, value != 2),
             Choice::SampleMemory => s.sample_memory_limit = value as u8,
             Choice::Orientation => s.screen_orientation = value as u8,
+            Choice::VersionSize => s.version_size_limit = value as u32,
         }
     }
 
@@ -1130,8 +1268,14 @@ fn level_control(id: Id, rect: Rect, color: Color32) -> Control<'static> {
 }
 
 /// The popup's items. A dropdown's: one column in menu order, the current one marked, each carrying its stored value
-/// (the `Input device:` menu's, over `midi_ports`, its index). A stored device that is not connected marks none.
-fn popup_items(menu: Menu, s: &Settings, midi_ports: &[String]) -> Vec<PopupItem<usize>> {
+/// (the `Input device:` menu's, over `midi_ports`, its index; `Audio input:`'s, over `inputs`, its index + 1). A stored
+/// device that is not connected marks none.
+fn popup_items(
+    menu: Menu,
+    s: &Settings,
+    midi_ports: &[String],
+    inputs: &[String],
+) -> Vec<PopupItem<usize>> {
     // (stored value, label, current) per item.
     let items: Vec<(usize, String, bool)> = match menu {
         Menu::Choice(choice) => {
@@ -1143,12 +1287,32 @@ fn popup_items(menu: Menu, s: &Settings, midi_ports: &[String]) -> Vec<PopupItem
         Menu::Midi => (midi_menu(midi_ports).iter().enumerate())
             .map(|(i, c)| (i, c.label().to_owned(), c.label() == s.midi_device))
             .collect(),
+        Menu::AudioInput => (std::iter::once(DEFAULT_INPUT)
+            .chain(inputs.iter().map(String::as_str)))
+        .enumerate()
+        .map(|(i, name)| {
+            (
+                i,
+                name.to_owned(),
+                (i == 0 && s.audio_input.is_empty()) || name == s.audio_input,
+            )
+        })
+        .collect(),
         Menu::Restore => {
             // The confirm: the question as a header, then `Yes` and `No`.
             return vec![
                 PopupItem::header(0, 0, RESTORE_QUESTION),
                 PopupItem::new(CONFIRM_YES, 0, 1, "Yes"),
                 PopupItem::new(CONFIRM_NO, 0, 2, "No"),
+            ];
+        }
+        Menu::ThemeConfirm => {
+            let [warning, line] = THEME_WARNING;
+            return vec![
+                PopupItem::header(0, 0, warning),
+                PopupItem::header(0, 1, line),
+                PopupItem::new(CONFIRM_YES, 0, 2, "OK"),
+                PopupItem::new(CONFIRM_NO, 0, 3, "Cancel"),
             ];
         }
     };
@@ -1200,6 +1364,7 @@ mod tests {
                 "Sound mode:",
                 "Sample memory limit:",
                 "Recording:",
+                "Audio input:",
                 "Enable audio recording latency compensation",
                 "Enable multitrack recording",
                 "Enable count-in when recording",
@@ -1207,6 +1372,7 @@ mod tests {
                 "Metronome level",
                 "User interface:",
                 "Theme:",
+                "Theme creator",
                 "Scaling:",
                 "Scale is currently limited to",
                 "Animation:",
@@ -1218,6 +1384,7 @@ mod tests {
                 "Continuous scrolling during playback",
                 "Show hidden tracks",
                 "Show CPU and RAM meters",
+                "Project version size limit:",
                 "Enable sharing files with nearby devices",
                 "MCP:",
                 "Enable MCP control",
@@ -1245,7 +1412,11 @@ mod tests {
             let header = matches!(r.kind, Kind::Header);
             let dropdown = matches!(
                 r.kind,
-                Kind::Dropdown(_) | Kind::MidiDropdown | Kind::FixedDropdown(_) | Kind::Scaling
+                Kind::Dropdown(_)
+                    | Kind::MidiDropdown
+                    | Kind::AudioInput
+                    | Kind::FixedDropdown(_)
+                    | Kind::Scaling
             );
             assert_eq!(r.label.ends_with(':'), header || dropdown, "{}", r.label);
         }
@@ -1343,7 +1514,7 @@ mod tests {
             inertia: false,
             ..Settings::default()
         };
-        let items = popup_items(Menu::Choice(Choice::Animation), &s, &[]);
+        let items = popup_items(Menu::Choice(Choice::Animation), &s, &[], &[]);
         let current: Vec<_> = items
             .iter()
             .filter(|i| i.current)
@@ -1417,7 +1588,7 @@ mod tests {
             let u = Metrics::from_pixels_per_point(ppp, scale).u(1.0);
             let mut rig = Self::new();
             (rig.ppp, rig.scale, rig.width, rig.left) = (ppp, scale, tab_u * u, 0.0);
-            rig.height = 100.0 * u;
+            rig.height = ROWS.len() as f32 * ROW_PITCH * u;
             // The first frame at a new size settles egui's layout memory; the second reads it.
             rig.frame(vec![]);
             rig.frame(vec![]);
@@ -1569,7 +1740,11 @@ mod tests {
             for r in ROWS.iter().filter(|r| {
                 matches!(
                     r.kind,
-                    Kind::Dropdown(_) | Kind::MidiDropdown | Kind::FixedDropdown(_) | Kind::SignIn
+                    Kind::Dropdown(_)
+                        | Kind::MidiDropdown
+                        | Kind::AudioInput
+                        | Kind::FixedDropdown(_)
+                        | Kind::SignIn
                 )
             }) {
                 let control = rig.rect_of(row_id(index(r.label)));
@@ -2274,6 +2449,39 @@ mod tests {
         assert_eq!(rig.settings, Settings::default());
     }
 
+    #[test]
+    fn a_theme_pick_over_unsaved_creator_edits_asks_first() {
+        let mut rig = Rig::new();
+        let edits = theme_by_id(3).to_json();
+        rig.settings.custom_theme.clone_from(&edits);
+        rig.tab.creator_unsaved = true;
+        let item = |rig: &Rig, row: usize| rig.rect_of(popup_id().with((0_usize, row))).center();
+        let pick_mint = |rig: &mut Rig| {
+            rig.click_row("Theme:");
+            rig.click(item(rig, 6));
+            // The warning shows the next frame, and takes input once laid out.
+            rig.frame(vec![]);
+            rig.frame(vec![]);
+            assert_eq!(rig.tab.menu.map(|(m, _)| m), Some(Menu::ThemeConfirm));
+            assert_eq!(rig.settings.custom_theme, edits);
+        };
+        // `Cancel` keeps the edits; `OK` puts Mint in use.
+        pick_mint(&mut rig);
+        rig.click(item(&rig, 3));
+        assert_eq!(
+            (rig.settings.theme, &rig.settings.custom_theme),
+            (0, &edits)
+        );
+        assert_eq!(rig.tab.menu, None);
+        pick_mint(&mut rig);
+        rig.click(item(&rig, 2));
+        assert_eq!(
+            (rig.settings.theme, rig.settings.custom_theme.as_str()),
+            (6, "")
+        );
+        assert_eq!(rig.tab.menu, None);
+    }
+
     // The `Input device:` row.
 
     fn ports(names: &[&str]) -> Vec<String> {
@@ -2282,7 +2490,7 @@ mod tests {
 
     /// The labels of the `Input device:` popup over `names`, and the labels marked current.
     fn midi_menu_of(s: &Settings, names: &[&str]) -> (Vec<String>, Vec<String>) {
-        let items = popup_items(Menu::Midi, s, &ports(names));
+        let items = popup_items(Menu::Midi, s, &ports(names), &[]);
         let labels = |marked: bool| {
             (items.iter())
                 .filter(|i| i.current || !marked)
@@ -2308,7 +2516,7 @@ mod tests {
         let (labels, _) = midi_menu_of(&s, &["Keys 49 20:0", "Pad Box 24:0", "Keys 49 20:1"]);
         assert_eq!(labels.len(), 4);
         // Every item is a cell of one column, carrying its index.
-        let items = popup_items(Menu::Midi, &s, &ports(&["Keys 49 20:0"]));
+        let items = popup_items(Menu::Midi, &s, &ports(&["Keys 49 20:0"]), &[]);
         assert!(
             items
                 .iter()

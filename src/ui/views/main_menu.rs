@@ -22,6 +22,10 @@
 //!   and a failure shows its message.
 //!   `Restore demo songs` asks the app to write our demo songs into the library's `Demo songs` folder again, behind
 //!   its loading screen (`app/demo_restore.rs`).
+//! - The theme creator (SETTINGS' `Theme creator`): `Save` writes the theme into the user's themes and flashes where,
+//!   `Export` writes it where the user puts it ([`ProjectFiles::export_theme`]), `Import` picks a theme file, which joins
+//!   the user's themes and is put in use; a file that is no theme, or a write that fails, shows why. SETTINGS'
+//!   `Theme:` and `Load themes` list the user's themes, read again as the menu opens and after each of those.
 //! - The SONGS file actions act on the library themselves; a failure shows its message, and `Delete permanently`
 //!   asks `Yes` / `No` first. The song's file follows what they move or delete
 //!   ([`ProjectFiles::path_moved`](crate::project_files::ProjectFiles::path_moved)).
@@ -29,6 +33,7 @@
 //! [`ProjectFiles::replace`]: crate::project_files::ProjectFiles::replace
 //! [`ProjectFiles::unzip_archive`]: crate::project_files::ProjectFiles::unzip_archive
 //! [`ProjectFiles::content_dir`]: crate::project_files::ProjectFiles::content_dir
+//! [`ProjectFiles::export_theme`]: crate::project_files::ProjectFiles::export_theme
 
 use std::path::Path;
 
@@ -51,6 +56,8 @@ pub const QUIT_TAG: &str = "main_menu_quit";
 /// SONGS `Delete permanently`'s question, and the SONGS messages.
 const PURGE_TAG: &str = "main_menu_purge";
 const SONGS_TAG: &str = "main_menu_songs";
+/// The theme creator's messages.
+const THEME_TAG: &str = "main_menu_theme";
 
 /// What the main menu keeps between frames. The app resets it with the song.
 #[derive(Default)]
@@ -80,6 +87,21 @@ impl State {
 
 /// The sound library question's tag ([`sounds_question`]): the app takes its answer (`app/sounds.rs`).
 pub const SOUNDS_TAG: &str = "main_menu_sounds";
+
+/// The question at start without a sound library ([`sounds_start_question`]): the app takes its answer
+/// (`app/sounds.rs`).
+pub const SOUNDS_START_TAG: &str = "main_menu_sounds_start";
+
+/// At start without a sound library (#66): `why`, then `Download` (yes: from its release, `update::download_sounds`),
+/// `Later` (no) or `From file…` (extra: [`sounds_question`]), tagged [`SOUNDS_START_TAG`].
+pub fn sounds_start_question(why: String) -> Nav {
+    Nav::Open(Overlay::Message {
+        tag: SOUNDS_START_TAG,
+        lines: vec![why, "Download it, or install it from a file?".into()],
+        confirm: Some(("Download".into(), "Later".into())),
+        extra: Some("From file…".into()),
+    })
+}
 
 /// Where to install the sound library from, after `why` (none for SETTINGS `Install sound library…`): `ZIP file…`
 /// (the extra choice), `Folder…` (yes) or `Cancel`, tagged [`SOUNDS_TAG`].
@@ -116,6 +138,7 @@ pub fn show(
     if frame > state.shown_frame + 1 || state.library_changes != app.files.library_changes() {
         state.menu.refresh();
         state.library_changes = app.files.library_changes();
+        settings.user_themes = app.files.user_themes();
     }
     // An `.obb` or `.apk` dropped into the content folder imports when SETTINGS, which shows the folder,
     // comes up.
@@ -140,6 +163,24 @@ pub fn show(
         }
     }
 
+    // The theme file the theme creator's `Import` picked: it joins the user's themes and is put in use.
+    if let Some((path, bytes)) = app.files.take_theme_pick() {
+        let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+        let file = path.file_name().unwrap_or_default().to_string_lossy();
+        let lines = match crate::theme::import(&stem, &bytes) {
+            Ok(theme) => {
+                let saved = app.files.save_theme(&theme);
+                app.files.flash(format!("Imported theme {}", theme.name));
+                state.menu.theme_imported(theme, app.settings);
+                settings.user_themes = app.files.user_themes();
+                saved
+                    .err()
+                    .map(|err| vec!["Could not save theme".into(), err])
+            }
+            Err(err) => Some(vec![format!("Could not load theme \"{file}\""), err]),
+        };
+        nav = lines.map(theme_message);
+    }
     let info = &mut state.info;
     let song = &*app.song;
     let meta = &song.file.meta;
@@ -236,6 +277,7 @@ pub fn show(
             nav = Some(message(PURGE_TAG, vec![question], "Yes", "No"));
         }
         MainMenuAction::WhatsNew => nav = Some(Nav::Open(Overlay::WhatsNew)),
+        MainMenuAction::ViewVersions => nav = Some(Nav::Open(Overlay::Versions)),
         // On Linux the file manager opens the folder that holds the file, elsewhere it selects it.
         #[cfg(not(target_arch = "wasm32"))]
         MainMenuAction::Reveal(file) => {
@@ -253,6 +295,21 @@ pub fn show(
         MainMenuAction::Reveal(_) => {}
         // Behind its loading screen, in the app (`app/demo_restore.rs`).
         MainMenuAction::RestoreDemoSongs => app.files.restore_demos = true,
+        MainMenuAction::SaveTheme(theme) => match app.files.save_theme(&theme) {
+            Ok(path) => {
+                let file = path.file_name().unwrap_or_default().to_string_lossy();
+                let folder = crate::theme::THEMES_FOLDER;
+                app.files.flash(format!("Saved theme to {folder}/{file}"));
+                settings.user_themes = app.files.user_themes();
+            }
+            Err(err) => nav = Some(theme_message(vec!["Could not save theme".into(), err])),
+        },
+        MainMenuAction::ExportTheme(theme) => {
+            if let Err(err) = app.files.export_theme(&theme) {
+                nav = Some(theme_message(vec!["Could not save theme".into(), err]));
+            }
+        }
+        MainMenuAction::ImportTheme => app.files.pick_theme(),
     }
     nav
 }
@@ -298,6 +355,16 @@ fn ask(asked: &mut Option<&'static str>, tag: &'static str) -> Nav {
         ),
     };
     message(tag, lines.iter().map(|l| l.to_string()).collect(), yes, no)
+}
+
+/// The theme creator's message, with `OK`.
+fn theme_message(lines: Vec<String>) -> Nav {
+    Nav::Open(Overlay::Message {
+        tag: THEME_TAG,
+        lines,
+        confirm: None,
+        extra: None,
+    })
 }
 
 fn message(tag: &'static str, lines: Vec<String>, yes: &str, no: &str) -> Nav {

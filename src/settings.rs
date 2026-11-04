@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::metrics::{DEFAULT_UI_SCALE, UI_SCALE_FACTORS, UI_SCALE_RANGE};
 use crate::midi::device::ANY;
-use crate::theme::builtin_themes;
+use crate::theme::{Theme, builtin_themes, theme_by_id};
 use crate::ui::automation::value::ValueSnap;
 use crate::ui::keyboard_settings::KeyboardMode;
 use crate::ui::main_menu::Sort;
@@ -176,6 +176,10 @@ pub struct Settings {
     pub metronome_level: f32,
     /// `Theme:`, a built-in theme id.
     pub theme: u32,
+    /// The theme JSON of the theme in use when it is no built-in one (our own key, #67): a user theme picked in
+    /// `Theme:`, or the theme creator's work. "" for none: [`Self::theme`] is the built-in one then.
+    #[serde(rename = "customTheme", skip_serializing_if = "String::is_empty")]
+    pub custom_theme: String,
     /// `Scaling:`, the UI scale in percent, kept in [`UI_SCALE_RANGE`]. A missing one is the older `uiscale` index's
     /// factor ([`UI_SCALE_FACTORS`]), once.
     #[serde(rename = "uiscalefactor")]
@@ -295,7 +299,26 @@ pub struct Settings {
     /// The editors' grid size (our own key; #53): `Auto` by default, the snap menus' `Grid` columns pick it.
     #[serde(rename = "gridSize")]
     pub grid_size: GridSize,
+    /// `Project version size limit:` (our own key; #69), in MB, one of [`VERSION_SIZE_LIMITS`]: what the undo history
+    /// and each branch of the project versions hold at most ([`crate::history::set_size_limit`]). 256 by default.
+    #[serde(rename = "projectVersionSizeLimit")]
+    pub version_size_limit: u32,
+    /// `Audio input:` (our own key; #65): the input device recording takes when a channel has no `INPUT` pick of its
+    /// own, by its name in the menu; "" is `Default`, the system's. A device that is gone sets it back to "".
+    #[serde(rename = "audioInput")]
+    pub audio_input: String,
+    /// UPDATES `Check for updates automatically` (our own key; #66): a start asks GitHub for the latest release (`update`).
+    /// On by default.
+    #[serde(rename = "checkForUpdates")]
+    pub check_updates: bool,
+    /// UPDATES `Download sounds over mobile data` (our own key; #66, Android): the sound library's download goes on
+    /// over a metered network. Off by default: it waits for Wi-Fi.
+    #[serde(rename = "soundsOverMobileData")]
+    pub sounds_mobile_data: bool,
 }
+
+/// `Project version size limit:`'s items, in MB.
+pub const VERSION_SIZE_LIMITS: [u32; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
 
 /// `Screen orientation:`'s items, each with the `ActivityInfo.SCREEN_ORIENTATION_*` the Android activity requests:
 /// `Auto` turns all four ways unless the system's rotation lock is on (`FULL_USER`), `Portrait` and `Landscape` either
@@ -322,6 +345,7 @@ impl Default for Settings {
             rec_metronome: true,
             metronome_level: 0.5,
             theme: 0,
+            custom_theme: String::new(),
             ui_scale: DEFAULT_UI_SCALE,
             animations: true,
             inertia: true,
@@ -356,6 +380,10 @@ impl Default for Settings {
             last_song: String::new(),
             interrupted_loading: false,
             grid_size: GridSize::Auto,
+            version_size_limit: 256,
+            audio_input: String::new(),
+            check_updates: true,
+            sounds_mobile_data: false,
         }
     }
 }
@@ -402,6 +430,9 @@ impl Settings {
         if s.theme as usize >= builtin_themes().len() {
             s.theme = d.theme;
         }
+        if Theme::from_json(&s.custom_theme).is_err() {
+            s.custom_theme.clear();
+        }
         s.ui_scale = s
             .ui_scale
             .clamp(*UI_SCALE_RANGE.start(), *UI_SCALE_RANGE.end());
@@ -443,7 +474,15 @@ impl Settings {
         if usize::from(s.screen_orientation) >= ORIENTATIONS.len() {
             s.screen_orientation = d.screen_orientation;
         }
+        if !VERSION_SIZE_LIMITS.contains(&s.version_size_limit) {
+            s.version_size_limit = d.version_size_limit;
+        }
         s
+    }
+
+    /// The theme in use: [`Self::custom_theme`]'s, else the built-in one `theme` names.
+    pub fn theme(&self) -> Theme {
+        Theme::from_json(&self.custom_theme).unwrap_or_else(|_| theme_by_id(self.theme))
     }
 
     /// The `ActivityInfo.SCREEN_ORIENTATION_*` constant `Screen orientation:` asks the Android activity for (an
@@ -529,7 +568,9 @@ pub fn storage() -> Option<Box<dyn eframe::Storage>> {
     {
         #[cfg(target_os = "android")]
         let dir = crate::android::data_dir();
-        #[cfg(not(target_os = "android"))]
+        #[cfg(target_os = "ios")]
+        let dir = crate::ios::data_dir();
+        #[cfg(not(mobile))]
         let dir = config_dir(|key| std::env::var_os(key));
         dir.map(|dir| open_storage(&dir))
     }
@@ -555,7 +596,7 @@ fn open_storage(dir: &std::path::Path) -> Box<dyn eframe::Storage> {
 
 /// The user's config directory, from the environment variables `var` reads: `XDG_CONFIG_HOME`, else `APPDATA`, else
 /// `HOME/.config`. Unset, empty and relative values are skipped (the XDG spec ignores a relative `XDG_CONFIG_HOME`).
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 fn config_dir(var: impl Fn(&str) -> Option<std::ffi::OsString>) -> Option<std::path::PathBuf> {
     // ponytail: ~/.config on macOS too, rather than ~/Library/Application Support.
     let path = |key| {
@@ -718,6 +759,7 @@ mod tests {
             rec_metronome: !d.rec_metronome,
             metronome_level: 0.25,
             theme: 6,
+            custom_theme: crate::theme::theme_by_id(4).to_json(),
             ui_scale: 145,
             animations: false,
             inertia: false,
@@ -761,6 +803,10 @@ mod tests {
             last_song: "/songs/Beat.flm".into(),
             interrupted_loading: true,
             grid_size: GridSize::Note(16, true),
+            version_size_limit: 4096,
+            audio_input: "USB".into(),
+            check_updates: !d.check_updates,
+            sounds_mobile_data: !d.sounds_mobile_data,
         }
     }
 
@@ -959,8 +1005,10 @@ mod tests {
                 "ModuleBrowserOrdering",
                 "SongBrowserOrdering",
                 "SoundFontPatchOrdering",
+                "audioInput",
                 "automationValueSnap",
                 "bgAudio",
+                "checkForUpdates",
                 "continuousScroll",
                 "demoSongsVersion",
                 "enableAnimations",
@@ -985,6 +1033,7 @@ mod tests {
                 "pianoRollVelocitySnap",
                 "pluginFolders",
                 "preferredKbdSizeCells",
+                "projectVersionSizeLimit",
                 "recMetronome",
                 "reccount",
                 "recentKbdSizeCells",
@@ -999,6 +1048,7 @@ mod tests {
                 "showWheels",
                 "soundModeAndr",
                 "soundsNoticeSeen",
+                "soundsOverMobileData",
                 "theme",
                 "uiscalefactor",
                 "whatsNewSeen"

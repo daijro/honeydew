@@ -1,9 +1,10 @@
 //! Playlist clips. Each track row shows its lane's clips as [`paint_clip`] draws them, rounded boxes: the current clip
 //! has the light outline. The selection (one clip, or a marquee's group) is one pulsing `text` box with its capsule
 //! handles (start, end, and a bar under an audio clip that does not loop, [`paint_handle`]) and the floating `Copy`,
-//! `Delete`, `Snap`, `Edit`, `More...` above it. Dragging a clip moves it, dragging a handle resizes it (each clip of a
+//! `Duplicate`, `Delete`, `Snap`, `Edit`, `More...` above it: `Copy` fills the clipboard, `Duplicate` (#68)
+//! puts a copy right after the selection. Dragging a clip moves it, dragging a handle resizes it (each clip of a
 //! group). Positions snap to the ruler's Snap unit (its mode, Auto by the zoom); with Snap off, drags go to whole ticks
-//! while the insert menu, `Copy` and `Snap` keep the mode's unit. Clips drag between tracks of any channel by lane
+//! while the insert menu, `Duplicate` and `Snap` keep the mode's unit. Clips drag between tracks of any channel by lane
 //! kind ([`Clips::drag_rows`]).
 //!
 //! Gestures, each decided from its touch-down by the shared law ([`gesture::is_long`], [`gesture::left_calm`]):
@@ -449,14 +450,16 @@ impl Drag {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ClipOp {
     Copy,
+    Duplicate,
     Delete,
     Snap,
     Edit,
     More,
 }
 
-const OPS: [(ClipOp, &str); 5] = [
+const OPS: [(ClipOp, &str); 6] = [
     (ClipOp::Copy, "Copy"),
+    (ClipOp::Duplicate, "Duplicate"),
     (ClipOp::Delete, "Delete"),
     (ClipOp::Snap, "Snap"),
     (ClipOp::Edit, "Edit"),
@@ -470,7 +473,7 @@ impl Clips {
     /// ([`paint_take`]), a notes or drums take's clip with its notes as they record ([`paint_live`], Honeydew's own).
     /// Song edits are reported through `app.song_edited`; a clip's `Edit`, or a double tap on it, returns its editor's
     /// navigation, as does `New Clip` on an audio track (the sample picker). The insert menu,
-    /// `Copy` and `Snap` round to `snap`'s unit (round(beat/unit)·unit), and drags too while it is on (whole ticks
+    /// `Duplicate` and `Snap` round to `snap`'s unit (round(beat/unit)·unit), and drags too while it is on (whole ticks
     /// while off).
     #[allow(clippy::too_many_arguments)]
     pub fn show(
@@ -1568,8 +1571,8 @@ impl Clips {
         let targets = self.targets();
         let &first = targets.first()?;
         match OPS[i].0 {
-            ClipOp::Copy => {
-                self.copy_selection(app.song);
+            ClipOp::Copy => self.copy_selection(app.song),
+            ClipOp::Duplicate => {
                 let copies = copy_clips(app.song, &targets, snap);
                 self.set_selection(copies);
                 app.song_edited(true);
@@ -1605,7 +1608,7 @@ impl Clips {
         };
         let playhead = app.snapshot.map_or(0, |s| s.transport_tick);
         let clips: Vec<&Clip> = targets.iter().filter_map(|&r| find(app.song, r)).collect();
-        let items = more_items(&clips, playhead);
+        let items = more_items(&clips, playhead, can_combine(app.song, &targets));
         let result = popup::show(
             ui.ctx(),
             Id::new("clip_more"),
@@ -1620,7 +1623,7 @@ impl Clips {
             ui.ctx().request_repaint();
         }
         let mut edited = false;
-        for r in targets {
+        for &r in &targets {
             let Some(lane) = lane_mut(app.song, r.channel, r.lane) else {
                 continue;
             };
@@ -1636,6 +1639,13 @@ impl Clips {
                 }
                 _ => false,
             };
+        }
+        if result.selected == Some(MoreOp::Combine) {
+            let combined = combine(app.song, &targets);
+            edited = !combined.is_empty();
+            if edited {
+                self.set_selection(combined);
+            }
         }
         if edited {
             app.song_edited(true);
@@ -2298,7 +2308,7 @@ pub(crate) fn mix(a: Rgba, b: Rgba, t: f32) -> Rgba {
 /// The content colour of a clip in `color` and its miniature's tint stops at 0, [`TINT_MID`] and 1: the channel colour
 /// × playlistTrackNoteBrightness (÷ on a theme with a dark text colour); then the background mixed 75 % (25 % on a
 /// light theme) toward it, itself, and itself 40 % toward the text colour. Stop 0's alpha is left opaque.
-fn tint(theme: &Theme, color: Rgba) -> (Rgba, [Rgba; 3]) {
+pub(crate) fn tint(theme: &Theme, color: Rgba) -> (Rgba, [Rgba; 3]) {
     let (colors, b) = (&theme.colors, theme.options.playlist_track_note_brightness);
     let max = |c: Rgba| c.r.max(c.g).max(c.b);
     let lightness = |c: Rgba| (max(c) + c.r.min(c.g).min(c.b)) / 2.0;
@@ -2809,6 +2819,101 @@ pub fn unlink_loop(clip: &mut Clip) -> bool {
     true
 }
 
+/// `Combine`'s tracks: each notes track holding two or more of `clips`, with their ids, the earliest clip's first. A
+/// track whose merged clip would not fit what a file holds (as [`can_unlink`]: content positions within u32 ticks, at
+/// most [`MAX_UNLINKED`] plays) is left out.
+fn combine_groups(song: &Song, clips: &[ClipRef]) -> Vec<(usize, usize, Vec<u32>)> {
+    let mut groups: Vec<(usize, usize, Vec<u32>)> = Vec::new();
+    for &r in clips {
+        let notes = song
+            .channels
+            .get(r.channel)
+            .and_then(|c| c.lanes.get(r.lane));
+        if notes.is_none_or(|l| l.kind != LaneKind::Notes) || find(song, r).is_none() {
+            continue;
+        }
+        match groups
+            .iter_mut()
+            .find(|g| (g.0, g.1) == (r.channel, r.lane))
+        {
+            Some(group) if !group.2.contains(&r.id) => group.2.push(r.id),
+            Some(_) => {}
+            None => groups.push((r.channel, r.lane, vec![r.id])),
+        }
+    }
+    groups.retain_mut(|(channel, lane, ids)| {
+        let clip = |id: &u32| {
+            let r = ClipRef {
+                channel: *channel,
+                lane: *lane,
+                id: *id,
+            };
+            find(song, r).expect("checked above")
+        };
+        ids.sort_by_key(|id| clip(id).start_tick);
+        let start = f64::from(clip(&ids[0]).start_tick);
+        let end = ids
+            .iter()
+            .map(|id| end_tick(clip(id)))
+            .fold(start, f64::max);
+        let plays: f64 = (ids.iter().map(clip))
+            .filter_map(|c| {
+                let passes = (c.visible_ticks() / c.loop_ticks()?).ceil() + 1.0;
+                Some(passes * c.events.len() as f64)
+            })
+            .sum();
+        ids.len() > 1 && end - start <= f64::from(u32::MAX) && plays <= MAX_UNLINKED as f64
+    });
+    groups
+}
+
+/// `Combine` applies: some notes track holds two or more of `clips` ([`combine_groups`]).
+pub fn can_combine(song: &Song, clips: &[ClipRef]) -> bool {
+    !combine_groups(song, clips).is_empty()
+}
+
+/// `Combine`: on each notes track holding two or more of `clips`, those clips become one: the earliest (its id, name
+/// and flags) from the earliest start to the latest end, every note playing where it played (each clip's passes
+/// written out, as `Unlink loop` does), one pass as long as the clip. Returns the combined clips.
+pub fn combine(song: &mut Song, clips: &[ClipRef]) -> Vec<ClipRef> {
+    let mut combined = Vec::new();
+    for (channel, lane, ids) in combine_groups(song, clips) {
+        let Some(lane_ref) = lane_mut(song, channel, lane) else {
+            continue;
+        };
+        let first = ids[0];
+        let start = (lane_ref.clips.iter().find(|c| c.id == first)).map_or(0, |c| c.start_tick);
+        let mut end = f64::from(start);
+        let mut events = Vec::new();
+        for clip in lane_ref.clips.iter().filter(|c| ids.contains(&c.id)) {
+            end = end.max(end_tick(clip));
+            let plays =
+                clip.events_in_song_range(u64::from(clip.start_tick), end_tick(clip).ceil() as u64);
+            events.extend(plays.map(|(tick, e)| at_pos(*e, (tick - u64::from(start)) as u32)));
+        }
+        events.sort_by_key(Event::pos);
+        lane_ref
+            .clips
+            .retain(|c| c.id == first || !ids.contains(&c.id));
+        let Some(clip) = lane_ref.clips.iter_mut().find(|c| c.id == first) else {
+            continue;
+        };
+        let visible = (end - f64::from(start)) / f64::from(PPQ);
+        (
+            clip.events,
+            clip.loop_len_beats,
+            clip.visible_len_beats,
+            clip.offset_beats,
+        ) = (events, visible, visible, 0.0);
+        combined.push(ClipRef {
+            channel,
+            lane,
+            id: first,
+        });
+    }
+    combined
+}
+
 /// `event` moved to content position `at`.
 pub fn at_pos(mut event: Event, at: u32) -> Event {
     match &mut event {
@@ -2831,10 +2936,11 @@ pub enum MoreOp {
     ReplaceSample,
 }
 
-/// The `More...` dropdown for the selected clip, one column, with the playhead at song tick `playhead`. Issue
-/// #64: one audio clip with a sample also lists `Replace sample...` last, which opens
-/// the sample picker for every clip playing that sample ([`crate::ui::views::sample_picker::show_replace`]).
-pub fn more_items(clips: &[&Clip], playhead: u64) -> Vec<PopupItem<MoreOp>> {
+/// The `More...` dropdown for the selected clip, one column, with the playhead at song tick `playhead`; `combine`:
+/// `Combine` applies ([`can_combine`]). Issue #64: one audio clip with a sample also
+/// lists `Replace sample...` last, which opens the sample picker for every clip playing that sample
+/// ([`crate::ui::views::sample_picker::show_replace`]).
+pub fn more_items(clips: &[&Clip], playhead: u64, combine: bool) -> Vec<PopupItem<MoreOp>> {
     let any = |f: &dyn Fn(&Clip) -> bool| clips.iter().any(|c| f(c));
     let one = (clips.len() == 1).then(|| clips[0]);
     [
@@ -2844,8 +2950,7 @@ pub fn more_items(clips: &[&Clip], playhead: u64) -> Vec<PopupItem<MoreOp>> {
             "Unlink loop",
             one.is_some_and(can_unlink),
         ),
-        // Not built: it needs a track with two selected note clips merged.
-        (MoreOp::Combine, "Combine", false),
+        (MoreOp::Combine, "Combine", combine),
         (MoreOp::Mute, "Mute", any(&|c| !c.muted)),
         (MoreOp::Unmute, "Unmute", any(&|c| c.muted)),
     ]
@@ -2913,6 +3018,17 @@ impl FloatingRow {
     /// Hides the row until a later gesture re-shows it (the keymap's editing actions, `ui/edit_keys.rs`).
     pub(crate) fn hide(&mut self) {
         self.anchor = None;
+    }
+
+    /// A box's release that selected something: the row shows, anchored at the release `p`, even where the box caught
+    /// a selection with the bounds of the one before (the marquee law; the bounds alone cannot tell).
+    pub(crate) fn boxed(&mut self, p: Pos2) {
+        (self.anchor, self.press) = (Some(p), None);
+    }
+
+    /// A drag of the selection started: hidden, and its release, which is no tap or long press, shows nothing.
+    pub(crate) fn dragged(&mut self) {
+        (self.anchor, self.press) = (None, None);
     }
 
     /// The row as drawn last frame.
@@ -3596,7 +3712,7 @@ mod tests {
 
     #[test]
     fn unlink_loop_refuses_more_than_a_file_can_hold() {
-        let unlink_on = |c: &Clip| !more_items(&[c], 0)[1].disabled;
+        let unlink_on = |c: &Clip| !more_items(&[c], 0, false)[1].disabled;
         // A crafted visible length: a billion beats of a one-bar loop, past the u32 ticks a content position has.
         let mut hostile = clip(512, 1e9, 4.0, 0.0);
         hostile.events = vec![note(0, 60)];
@@ -3620,10 +3736,62 @@ mod tests {
         assert_eq!(long.events.len(), 1000);
     }
 
+    /// `Combine` (#68): each notes track with two or more selected clips gets one clip from the earliest start to the
+    /// latest end that plays every note where it played, loops written out; a lone clip and an audio track are left.
+    #[test]
+    fn combine_merges_each_notes_tracks_selected_clips_into_one_playing_the_same() {
+        let mut song = Song::default();
+        song.add_channel(ChannelKind::Synth(crate::song::SynthKind::MiniSynth));
+        song.add_channel(ChannelKind::AudioClip);
+        // Two passes of a one-beat loop, then a later clip starting half a beat into its content, then a third.
+        let mut a = clip(512, 2.0, 1.0, 0.0);
+        a.events = vec![note(0, 60)];
+        let mut b = clip(1024, 1.0, 4.0, 0.5);
+        b.events = vec![note(64, 62), note(128, 64)];
+        let notes = &mut song.channels[1].lanes[0];
+        for (id, mut c) in (1..).zip([a, b, clip(2048, 0.0, 4.0, 0.0)]) {
+            c.id = id;
+            notes.clips.push(c);
+        }
+        notes.last_clip_id = 3;
+        song.channels[2].lanes[0].add_clip(0, 4.0);
+        let refs = |channel, ids: &[u32]| -> Vec<ClipRef> {
+            (ids.iter())
+                .map(|&id| ClipRef {
+                    channel,
+                    lane: 0,
+                    id,
+                })
+                .collect()
+        };
+        let before = plays(&song.channels[1].lanes[0].clips[..2]);
+        assert!(!can_combine(
+            &song,
+            &[refs(1, &[3]), refs(2, &[1])].concat()
+        ));
+        let selected = [refs(1, &[2, 1]), refs(2, &[1])].concat();
+        assert!(can_combine(&song, &selected));
+        assert_eq!(combine(&mut song, &selected), refs(1, &[1]));
+        let clips = &song.channels[1].lanes[0].clips;
+        assert_eq!(clips.iter().map(|c| c.id).collect::<Vec<_>>(), [1, 3]);
+        let c = &clips[0];
+        assert_eq!(
+            (
+                c.start_tick,
+                c.visible_len_beats,
+                c.loop_len_beats,
+                c.offset_beats
+            ),
+            (512, 5.0, 5.0, 0.0)
+        );
+        assert_eq!(plays(&clips[..1]), before);
+        assert_eq!(song.channels[2].lanes[0].clips.len(), 1, "audio untouched");
+    }
+
     #[test]
     fn more_enables_slice_inside_unlink_on_a_loop_and_mute_or_unmute_by_the_flag() {
         let enabled = |c: &Clip, playhead| {
-            more_items(&[c], playhead)
+            more_items(&[c], playhead, false)
                 .iter()
                 .map(|i| (i.label.to_string(), !i.disabled))
                 .collect::<Vec<_>>()

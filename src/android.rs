@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use android_activity::{AndroidApp, ndk::asset::Asset};
 
 use crate::audio_engine::RecordTap;
-use crate::recording::input::Mic;
+use crate::recording::input::{InputRing, Mic};
 
 static ACTIVITY: Mutex<Option<AndroidApp>> = Mutex::new(None);
 static DISPLAY_DPI: AtomicU32 = AtomicU32::new(0);
@@ -98,6 +98,70 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onHeadphones(
     on: jni::sys::jboolean,
 ) {
     HEADPHONES.store(on != 0, Ordering::Release);
+}
+
+/// The inputs `Audio input:` lists (`HoneydewActivity.inputs`), as (device id, label): the phone's mics, a wired
+/// headset's and USB audio. None when the Activity cannot say.
+pub fn inputs() -> Vec<(i32, String)> {
+    let mut list = String::new();
+    let listed = with_activity(|env, activity| {
+        let got = env.call_method(activity, "inputs", "()Ljava/lang/String;", &[])?;
+        list = text(env, &got.l()?.into()).unwrap_or_default();
+        Ok(())
+    });
+    if let Err(err) = listed {
+        eprintln!("audio inputs not listed: {err}");
+    }
+    let parts: Vec<&str> = list.split_terminator('\0').collect();
+    let pairs = parts.chunks_exact(2);
+    pairs
+        .filter_map(|p| Some((p[0].parse().ok()?, p[1].to_owned())))
+        .collect()
+}
+
+/// Opens the input labelled `label` (one of [`inputs`]) at `rate` into a new ring: stereo float, else mono, at the
+/// default input preset as cpal's default input. Through AAudio by its device id, as cpal opens a device by its name
+/// only, which a headset's mic shares with its earphones. (ndk's `audio` feature is cpal's, for its AAudio host.)
+pub fn open_input(
+    label: &str,
+    rate: u32,
+) -> Result<(Arc<InputRing>, android_activity::ndk::audio::AudioStream), String> {
+    use android_activity::ndk::audio::{
+        AudioCallbackResult, AudioDirection, AudioFormat, AudioStreamBuilder,
+    };
+    let (id, _) = (inputs().into_iter())
+        .find(|(_, l)| l == label)
+        .ok_or_else(|| format!("{label} is not connected."))?;
+    let mut error = String::new();
+    for channels in [2_usize, 1] {
+        // Two seconds, as cpal's: the engine drains it once per render call.
+        let ring = Arc::new(InputRing::new(channels, rate, 2 * rate as usize));
+        let (fill, failed) = (ring.clone(), ring.clone());
+        let builder = AudioStreamBuilder::new().map_err(|err| format!("{err:?}"))?;
+        let opened = builder
+            .direction(AudioDirection::Input)
+            .device_id(id)
+            .channel_count(channels as i32)
+            .format(AudioFormat::PCM_Float)
+            .sample_rate(rate as i32)
+            .data_callback(Box::new(move |_, data, frames| {
+                let len = frames.max(0) as usize * channels;
+                // SAFETY: AAudio hands `frames` frames of `channels` floats, the format asked for.
+                let samples = unsafe { std::slice::from_raw_parts(data.cast::<f32>(), len) };
+                fill.push(samples.iter().copied());
+                AudioCallbackResult::Continue
+            }))
+            .error_callback(Box::new(move |_, _| failed.set_failed()))
+            .open_stream();
+        match opened {
+            Ok(stream) => {
+                stream.request_start().map_err(|err| format!("{err:?}"))?;
+                return Ok((ring, stream));
+            }
+            Err(err) => error = format!("{err:?}"),
+        }
+    }
+    Err(error)
 }
 
 /// The tap of the recording under way. No frame runs while the app is in the background, so an interruption ends the
@@ -294,6 +358,87 @@ pub fn show_folder(folder: &std::path::Path) -> Result<(), String> {
     })
 }
 
+/// The network the phone is on: the sound library's download waits for an unmetered one (`update`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Network {
+    /// None, or none that reaches the internet.
+    None,
+    /// Wi-Fi or Ethernet.
+    Unmetered,
+    /// Mobile data, or a hotspot.
+    Metered,
+}
+
+/// The network the phone is on (`HoneydewActivity.network`).
+pub fn network() -> Network {
+    let mut kind = 0;
+    let asked = with_activity(|env, activity| {
+        kind = env.call_method(activity, "network", "()I", &[])?.i()?;
+        Ok(())
+    });
+    match (asked, kind) {
+        (Ok(()), 1) => Network::Unmetered,
+        (Ok(()), 2) => Network::Metered,
+        _ => Network::None,
+    }
+}
+
+/// Downloads `url` into the file at `path`, going on from the bytes it holds (`HoneydewActivity.download`), on this
+/// thread, which it blocks for as long: `None` once it is in, else why not (`offline` without a network).
+pub fn download(url: &str, path: &str) -> Option<String> {
+    let mut failed = None;
+    let called = with_activity_unlocked(|env, activity| {
+        let url = env.auto_local(env.new_string(url)?);
+        let path = env.auto_local(env.new_string(path)?);
+        let why = env.call_method(
+            activity,
+            "download",
+            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+            &[
+                jni::objects::JValue::Object(url.as_ref()),
+                jni::objects::JValue::Object(path.as_ref()),
+            ],
+        )?;
+        let why = env.auto_local(jni::objects::JString::from(why.l()?));
+        failed = text(env, &why);
+        Ok(())
+    });
+    called.err().or(failed)
+}
+
+/// The bytes free for the app's files (`HoneydewActivity.usableSpace`): what the sounds' copy out of the full APK
+/// checks first (`update`).
+pub fn usable_space() -> Option<u64> {
+    let mut free = -1;
+    with_activity(|env, activity| {
+        free = env.call_method(activity, "usableSpace", "()J", &[])?.j()?;
+        Ok(())
+    })
+    .ok()?;
+    u64::try_from(free).ok()
+}
+
+/// Where an update's APK downloads to (`update`): `update` in the app's files, which `HoneydewUpdate` serves to the
+/// system's installer.
+pub fn update_dir() -> Option<PathBuf> {
+    Some(data_dir()?.join("update"))
+}
+
+/// Hands the APK at `path`, in [`update_dir`], to the system's installer (`HoneydewActivity.installApk`): `false` when
+/// the app may not install apps yet, and the setting that allows it opened instead.
+pub fn install_apk(path: &std::path::Path) -> Result<bool, String> {
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned());
+    let name = name.ok_or("no APK")?;
+    let mut opened = false;
+    with_activity(|env, activity| {
+        let name = env.auto_local(env.new_string(&name)?);
+        let args = [jni::objects::JValue::Object(name.as_ref())];
+        opened = (env.call_method(activity, "installApk", "(Ljava/lang/String;)Z", &args)?).z()?;
+        Ok(())
+    })?;
+    Ok(opened)
+}
+
 /// Android gives each install an absolute, private data directory; no storage permission is needed.
 pub fn data_dir() -> Option<PathBuf> {
     ACTIVITY
@@ -358,6 +503,31 @@ fn android_main(app: AndroidApp) {
     }
     crate::android_text::reset();
     *ACTIVITY.lock().expect("activity lock") = None;
+}
+
+/// [`with_activity`] for a call that blocks (a download): the activity lock is not held through it, and a global
+/// reference keeps the activity object alive.
+fn with_activity_unlocked(
+    f: impl FnOnce(&mut jni::JNIEnv<'_>, &jni::objects::JObject<'_>) -> jni::errors::Result<()>,
+) -> Result<(), String> {
+    let (vm, activity) = {
+        let held = ACTIVITY.lock().map_err(|err| err.to_string())?;
+        let app = held.as_ref().ok_or("No Android Activity")?;
+        // SAFETY: as in `with_activity`, while the lock is held.
+        let vm = unsafe { jni::JavaVM::from_raw(app.vm_as_ptr().cast()) }
+            .map_err(|err| err.to_string())?;
+        let object = unsafe { jni::objects::JObject::from_raw(app.activity_as_ptr().cast()) };
+        let env = vm.attach_current_thread().map_err(|err| err.to_string())?;
+        let global = env.new_global_ref(&object).map_err(|err| err.to_string())?;
+        drop(env);
+        (vm, global)
+    };
+    let mut env = vm.attach_current_thread().map_err(|err| err.to_string())?;
+    let result = f(&mut env, activity.as_obj()).map_err(|err| err.to_string());
+    if result.is_err() {
+        let _ = env.exception_clear();
+    }
+    result
 }
 
 /// Runs a JNI call while the matching Activity remains alive.

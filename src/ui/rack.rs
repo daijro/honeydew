@@ -67,7 +67,7 @@ use crate::ui::scroller::{self, Axis, Scroller, Y, Zones};
 use crate::ui::widgets::{self, Button, Control, ParamMenu};
 use crate::ui::{UiCtx, focus_lost};
 
-mod lemon_card;
+pub(crate) mod lemon_card;
 mod plugin_card;
 #[cfg(test)]
 mod tests;
@@ -197,7 +197,9 @@ fn module_icon(type_id: u16) -> IconId {
 }
 
 /// The built-in Lemon plugin module `module` hosts, if any ([`crate::plugins::builtin`]).
-fn lemon_plugin(module: &ModuleInstance) -> Option<&'static crate::plugins::builtin::Builtin> {
+pub(crate) fn lemon_plugin(
+    module: &ModuleInstance,
+) -> Option<&'static crate::plugins::builtin::Builtin> {
     let plugin = module.file.plugin.as_deref()?;
     (crate::song::plugin::is_plugin(module.type_id))
         .then(|| crate::plugins::builtin::of(plugin))
@@ -897,7 +899,7 @@ fn modulator_menu(recent: bool, target: bool, controller: bool) -> [PopupItem<Ca
 fn builder_item(full: bool) -> Option<PopupItem<CardAction>> {
     let row = if full { 5 } else { 6 };
     let label = "New from samples…";
-    let desktop = cfg!(not(any(target_arch = "wasm32", target_os = "android")));
+    let desktop = cfg!(not(any(target_arch = "wasm32", mobile)));
     desktop.then(|| PopupItem::new(CardAction::NewFromSamples, 0, row, label))
 }
 
@@ -1216,6 +1218,8 @@ pub struct RackActions {
     pub create_send: Option<usize>,
     /// A DW Sampler's `New from samples…`: open the instrument builder for the module with this instance id.
     pub builder: Option<i32>,
+    /// Issue #68: a Lemon card's full screen button: show the editor of the module with this instance id full screen.
+    pub lemon_full: Option<i32>,
 }
 
 /// A card's panel state, and its module's `CSTM` blob as the state last matched it: a card is seeded from the blob
@@ -1253,6 +1257,8 @@ struct CardEdits {
     header: gesture::Press,
     /// A double tap on the module-name label.
     double_tap: bool,
+    /// Issue #68: a Lemon card's full screen button was clicked.
+    full: bool,
 }
 
 /// A card held to reorder it.
@@ -1349,6 +1355,9 @@ pub struct RackPanel {
     column: (f32, f32),
     /// The pointer was over a Lemon card's editor last frame: the wheel is the editor's, not the rack's.
     lemon_wheel: bool,
+    /// Issue #68: the Lemon card (channel index, instance id) whose editor shows full screen, which drives it: the card
+    /// shows its last frame meanwhile.
+    pub lemon_full: Option<(usize, i32)>,
 }
 
 impl RackPanel {
@@ -2157,6 +2166,9 @@ impl RackPanel {
         if edits.presets {
             actions.picker = Some(PresetTarget::Module(id));
         }
+        if edits.full {
+            actions.lemon_full = Some(id);
+        }
         let ccs = edits.ccs.into_iter().map(|(param, value)| ParamChange {
             channel: index,
             instance_id: 0,
@@ -2245,7 +2257,9 @@ impl RackPanel {
             }
             _ => None,
         };
-        let has_popout = window.is_some();
+        // Issue #68: a Lemon card showing its editor has the full screen button in that cell.
+        let full = lemon.is_some() && crate::plugins::lemon_open(self.channel_id, id).is_some();
+        let has_popout = window.is_some() || full;
         let preset = module.file.preset_name.clone();
         let preset_w = preset_width(text_width(ui, &preset, m.font_id(FontSize::Pt10)), m.u(1.0));
         let [toggle, icon, name, preset_rect, menu, popout] =
@@ -2294,11 +2308,10 @@ impl RackPanel {
         };
         let b = icon_button(base.with("icon"), icon, module_icon(module.type_id));
         let mut r = widgets::button(ui, cx, &b, true);
-        // An instrument's level popup opens on a long press (mouse or touch) or a secondary click only; an
-        // effect's dialog on a plain click too.
-        let effect = module_spec(module.type_id).is_some_and(|s| s.role != Role::Instrument);
+        // The dialog opens on a tap, a long press (mouse or touch) or a secondary click. Issue #68: an
+        // instrument's level popup on a tap too, as an effect's.
         let long = gesture::long_press(ui, &mut r, m);
-        if r.clicked_by(eframe::egui::PointerButton::Secondary) || long || (effect && r.clicked()) {
+        if r.clicked_by(eframe::egui::PointerButton::Secondary) || long || r.clicked() {
             self.dialog = Some((id, icon.center()));
         }
         // Truncated, keeping 5 tail characters.
@@ -2359,6 +2372,11 @@ impl RackPanel {
             }
             crate::ui::tooltip::tip(ui, popout, "Open editor", None);
         }
+        if full {
+            let b = icon_button(base.with("full screen"), popout, IconId::Expand);
+            edits.full = widgets::button(ui, cx, &b, true).clicked();
+            crate::ui::tooltip::tip(ui, popout, "Full screen", None);
+        }
         let b = icon_button(base.with("menu"), menu, IconId::Menu);
         if widgets::button(ui, cx, &b, true).clicked() {
             self.card_menu = Some((id, menu.center()));
@@ -2368,6 +2386,10 @@ impl RackPanel {
         if let (true, Some(plugin)) = (shown, lemon) {
             let content = content_rect(card * ppp, self.card_height(module), u) / ppp;
             let state = self.lemon_cards.entry((self.channel, id)).or_default();
+            if self.lemon_full == Some((self.channel, id)) {
+                lemon_card::paint(ui, content, state);
+                return edits;
+            }
             let running = lemon_card::show(ui, content, self.channel_id, id, plugin, state);
             self.lemon_wheel |= lemon_card::over(state);
             if running {

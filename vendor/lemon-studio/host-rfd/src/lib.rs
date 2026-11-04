@@ -3,7 +3,7 @@
 
 //! Honeydew (vendored addition): `rfd`'s `FileDialog` for Lemon Studio's plugin editors, whose manifests name this crate
 //! `rfd`, so that their own dialog code (`win.dialog(|| rfd::FileDialog::new()….pick_file())`) builds on every platform
-//! and asks Honeydew where it answers ([`embed::host_files`]: Android and the browser, which have no file dialog): a
+//! and asks Honeydew where it answers ([`embed::host_files`]: Android, iOS and the browser, which have no file dialog): a
 //! file to open comes from Honeydew's own picker ([`embed::open_file`]), and a file to save is the name the editor
 //! proposes, which Honeydew keeps in its user folder when the editor writes it with `os_plugkit::save_file`. Elsewhere
 //! it is rfd's dialog. It has what the editors use.
@@ -14,7 +14,7 @@ use os_plugkit::embed;
 
 /// A file dialog's settings, shown by [`Self::pick_file`] or [`Self::save_file`].
 #[derive(Clone, Debug, Default)]
-#[cfg_attr(any(target_arch = "wasm32", target_os = "android"), allow(dead_code))]
+#[cfg_attr(any(target_arch = "wasm32", target_os = "android", target_os = "ios"), allow(dead_code))]
 pub struct FileDialog {
     title: Option<String>,
     filters: Vec<(String, Vec<String>)>,
@@ -43,7 +43,7 @@ impl FileDialog {
 
     /// The file to open: Honeydew's pick where it answers, else the one picked in rfd's dialog.
     pub fn pick_file(self) -> Option<PathBuf> {
-        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
         if !embed::host_files() {
             return self.rfd().pick_file();
         }
@@ -53,14 +53,14 @@ impl FileDialog {
     /// The file to save: the one named in rfd's dialog; where Honeydew answers, the name proposed (`Untitled` without
     /// one), for `os_plugkit::save_file`.
     pub fn save_file(self) -> Option<PathBuf> {
-        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
         if !embed::host_files() {
             return self.rfd().save_file();
         }
         Some(PathBuf::from(self.file_name.unwrap_or_else(|| "Untitled".into())))
     }
 
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
     fn rfd(self) -> rfd::FileDialog {
         let mut d = rfd::FileDialog::new();
         if let Some(title) = self.title {

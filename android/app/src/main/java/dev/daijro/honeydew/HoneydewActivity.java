@@ -12,12 +12,16 @@ import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.DocumentsContract;
 import android.provider.DocumentsContract.Document;
 import android.provider.OpenableColumns;
+import android.provider.Settings;
 import android.text.InputType;
 import android.view.View;
 import android.view.Window;
@@ -32,6 +36,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.ConnectException;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.UnknownHostException;
 
 public final class HoneydewActivity extends NativeActivity {
     static { System.loadLibrary("honeydew"); }
@@ -91,6 +99,33 @@ public final class HoneydewActivity extends NativeActivity {
             }
         }
         return false;
+    }
+
+    // The inputs the Audio input setting lists, as "id\0label\0" pairs: the phone's mics, a wired headset's and USB
+    // audio. A Bluetooth headset's mic is left out: it records only over a call link (SCO).
+    public String inputs() {
+        StringBuilder list = new StringBuilder();
+        for (AudioDeviceInfo device : getSystemService(AudioManager.class).getDevices(AudioManager.GET_DEVICES_INPUTS)) {
+            String label;
+            switch (device.getType()) {
+                case AudioDeviceInfo.TYPE_BUILTIN_MIC:
+                    String at = device.getAddress();
+                    label = at.isEmpty() || at.equals("bottom") ? "Built-in mic" : "Built-in mic (" + at + ")";
+                    break;
+                case AudioDeviceInfo.TYPE_WIRED_HEADSET:
+                    label = "Headset mic";
+                    break;
+                case AudioDeviceInfo.TYPE_USB_DEVICE:
+                case AudioDeviceInfo.TYPE_USB_HEADSET:
+                case AudioDeviceInfo.TYPE_USB_ACCESSORY:
+                    label = "USB: " + device.getProductName();
+                    break;
+                default:
+                    continue;
+            }
+            list.append(device.getId()).append('\0').append(label).append('\0');
+        }
+        return list.toString();
     }
 
     // The microphone, the first time recording needs it: true when it is allowed already, else the system's question
@@ -355,6 +390,66 @@ public final class HoneydewActivity extends NativeActivity {
                     .setPositiveButton("OK", null)
                     .show();
         });
+    }
+
+    // The network the phone is on, for the sound library's download (Rust `update`): 0 none that reaches the internet,
+    // 1 unmetered (Wi-Fi, Ethernet), 2 metered (mobile data, a hotspot).
+    public int network() {
+        ConnectivityManager connectivity = getSystemService(ConnectivityManager.class);
+        Network network = connectivity.getActiveNetwork();
+        NetworkCapabilities caps = network == null ? null : connectivity.getNetworkCapabilities(network);
+        if (caps == null || !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return 0;
+        return connectivity.isActiveNetworkMetered() ? 2 : 1;
+    }
+
+    // A download for Rust (`update::get`), on Rust's worker thread, which it blocks: `url` (HTTPS, redirects followed)
+    // into `path`, going on from the bytes the file holds. Returns why it failed ("offline" without a network), or null.
+    public String download(String url, String path) {
+        File file = new File(path);
+        try {
+            HttpURLConnection http = (HttpURLConnection) new URL(url).openConnection();
+            http.setConnectTimeout(30000);
+            http.setReadTimeout(60000);
+            http.setRequestProperty("User-Agent", "Honeydew");
+            long have = file.length();
+            if (have > 0) http.setRequestProperty("Range", "bytes=" + have + "-");
+            int code = http.getResponseCode();
+            // A file that is whole already.
+            if (code == 416 && have > 0) return null;
+            if (code != 200 && code != 206) return "The server answered " + code + " (" + http.getResponseMessage() + ")";
+            if (!"https".equals(http.getURL().getProtocol())) return "The download left HTTPS";
+            try (InputStream in = http.getInputStream(); OutputStream out = new FileOutputStream(file, code == 206)) {
+                copy(in, out, Long.MAX_VALUE);
+            } finally {
+                http.disconnect();
+            }
+            return null;
+        } catch (UnknownHostException | ConnectException e) {
+            return "offline";
+        } catch (Exception e) {
+            return String.valueOf(e.getMessage());
+        }
+    }
+
+    // The bytes free for the app's files, before the sounds are copied out of the full APK (Rust `update`).
+    public long usableSpace() {
+        return getFilesDir().getUsableSpace();
+    }
+
+    // An update's APK that Rust downloaded into files/update (`update::install`), to the system's installer through
+    // HoneydewUpdate. Until the user allows this app to install apps, Android's setting for it opens instead and this
+    // returns false: Rust then asks to tap Install again.
+    public boolean installApk(String name) {
+        if (!getPackageManager().canRequestPackageInstalls()) {
+            Uri app = Uri.parse("package:" + getPackageName());
+            runOnUiThread(() -> startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, app)));
+            return false;
+        }
+        Intent install = new Intent(Intent.ACTION_VIEW)
+                .setDataAndType(HoneydewUpdate.uri(this, name), HoneydewUpdate.APK)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        runOnUiThread(() -> startActivity(install));
+        return true;
     }
 
     @Override

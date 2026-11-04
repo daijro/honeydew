@@ -110,6 +110,18 @@ pub fn shadow(painter: &Painter, playlist: Rect, m: &Metrics) {
     gradient(&painter, rect, Color32::TRANSPARENT, edge);
 }
 
+/// Where the close ribbon's touch area starts, its reach left of the ribbon ([`ribbon`]), in an editor area whose right
+/// edge is `view_right` on a window whose right edge is `screen_right`: an editor's top strip is free left of it (the
+/// drum mixer's page tabs end there, GitHub #71).
+pub fn ribbon_room(view_right: f32, screen_right: f32, m: &Metrics) -> f32 {
+    ribbon_x(view_right, screen_right, m) - m.u(RIBBON_REACH)
+}
+
+/// The close ribbon's left edge: min(screen right − 4.4 U, view right − 1.8 U), on a device pixel.
+fn ribbon_x(view_right: f32, screen_right: f32, m: &Metrics) -> f32 {
+    m.floor_px((screen_right - m.u(RIBBON_LOGO)).min(view_right - m.u(RIBBON_EDGE)))
+}
+
 /// A ribbon press, between frames: the playlist's height at the press, whether it has gone more than 0.5 U up or down
 /// (a drag, no tap), the finger's height for the playlist (unclamped) and its last move, in points.
 #[derive(Clone, Copy, Debug)]
@@ -141,9 +153,11 @@ pub fn ribbon(
 ) -> bool {
     let (c, m) = (&cx.theme.colors, cx.m);
     let size = vec2(m.u(RIBBON[0]), m.u(RIBBON[1]));
-    let left = (screen_right - m.u(RIBBON_LOGO)).min(view.right() - m.u(RIBBON_EDGE));
-    let rect = Rect::from_min_size(pos2(m.floor_px(left), editor_top), size);
     let reach = m.u(RIBBON_REACH);
+    let rect = Rect::from_min_size(
+        pos2(ribbon_x(view.right(), screen_right, m), editor_top),
+        size,
+    );
     let touch = Rect::from_min_max(rect.min - vec2(reach, 0.0), rect.max + vec2(reach, reach));
     let id = Id::new("editor_close");
     let response = crate::ui::focus::interact(ui, touch, id, Sense::click_and_drag());

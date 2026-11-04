@@ -332,6 +332,51 @@ fn an_input_pick_is_kept_for_the_channel_opens_its_device_and_feeds_the_monitor_
     assert_eq!(app.routing, a.rig.app.routing);
 }
 
+#[test]
+fn the_audio_input_setting_opens_its_device_is_stored_and_a_device_gone_falls_back_to_default() {
+    let mut a = InputRig::new("setting");
+    let spy = Spy::default();
+    a.rig.app.storage = Some(Box::new(spy.clone()));
+    // The USB device can go: then it does not open.
+    let gone = Rc::new(std::cell::Cell::new(false));
+    let (log, unplugged) = (a.opens.clone(), gone.clone());
+    a.rig.app.input = InputLink::new(move |device, rate| {
+        if unplugged.get() && device == Some("USB") {
+            return Err("NoDevice".into());
+        }
+        log.borrow_mut().push(device.map(str::to_owned));
+        let ring = Arc::new(InputRing::new(2, rate, 2 * rate as usize));
+        Ok((ring, Box::new(()) as Box<dyn Any>))
+    })
+    .listing(devices);
+    a.rig.app.navigate(Nav::Open(Overlay::Rack(1)));
+    a.rig.frame(vec![]);
+    assert_eq!(
+        a.opens.borrow().last(),
+        Some(&None),
+        "Default: the system's"
+    );
+    // Picked in SETTINGS: the input reopens on it, and it is stored.
+    a.rig.app.settings.audio_input = "USB".into();
+    a.rig.frame(vec![]);
+    assert_eq!(a.opens.borrow().last(), Some(&Some("USB".to_owned())));
+    assert_eq!(Settings::load(&spy).audio_input, "USB");
+    // Unplugged, its stream fails and it opens no more: back to Default, said once, and stored.
+    gone.set(true);
+    a.ring().set_failed();
+    a.rig.frame(vec![]);
+    let lines = vec![
+        "USB is not available.".to_owned(),
+        "Audio input is set back to Default.".to_owned(),
+    ];
+    assert_eq!(message(&a.rig), Some(("audio input", lines)));
+    assert_eq!(a.rig.app.settings.audio_input, "");
+    assert_eq!(a.opens.borrow().last(), Some(&None));
+    assert!(a.rig.app.input.ring().is_some_and(|r| !r.failed()));
+    a.rig.frame(vec![]);
+    assert_eq!(Settings::load(&spy).audio_input, "");
+}
+
 /// Answers the calibration's question with its first choice (`Calibrate`, `Test again`): the next frame shows the
 /// progress message, and the one after opens the input for it and starts the engine's measurement.
 fn start_calibration(a: &mut InputRig) {

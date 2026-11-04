@@ -45,11 +45,23 @@ impl HoneydewApp {
     }
 
     /// The rack's `INPUT` menu: when it opens, the input devices, with the channel's input marked among them; a pick is
-    /// kept for the channel of this song, stored at once. Not a song edit.
+    /// kept for the channel of this song, stored at once. Not a song edit. Android's one input is named after
+    /// `Audio input:`. SETTINGS' `Audio input:` menu gets its devices when it opens too.
     pub(super) fn rack_input(&mut self) {
+        if self.slots.settings_tab.wants_audio_inputs() {
+            let inputs = self.input.choices();
+            self.slots.settings_tab.set_audio_inputs(inputs);
+        }
         let rack = self.rack_channel().and_then(|c| self.song.channels.get(c));
         if std::mem::take(&mut self.slots.rack.list_inputs) {
-            let devices = self.input.devices();
+            let mut devices = self.input.devices();
+            let android = cfg!(target_os = "android");
+            if android
+                && !self.settings.audio_input.is_empty()
+                && let [device] = &mut devices[..]
+            {
+                device.name.clone_from(&self.settings.audio_input);
+            }
             let route = rack.and_then(|channel| self.routing.get(&self.song, channel));
             let current = route.and_then(|route| route.choice(&devices));
             self.slots.rack.inputs(devices, current);
@@ -64,6 +76,30 @@ impl HoneydewApp {
                 self.settings_unflushed = true;
             }
         }
+    }
+
+    /// Opens `device` at `rate` ([`InputLink::open`]). `Audio input:`'s device (`chosen`) that does not open is gone:
+    /// the setting goes back to `Default`, which opens instead, and a message says so.
+    ///
+    /// [`InputLink::open`]: crate::recording::input::InputLink::open
+    pub(super) fn open_device(
+        &mut self,
+        device: Option<&str>,
+        chosen: Option<&str>,
+        rate: u32,
+    ) -> Result<(), String> {
+        let opened = self.input.open(device, rate);
+        let Some(name) = chosen.filter(|_| opened.is_err() && device == chosen) else {
+            return opened;
+        };
+        self.settings.audio_input.clear();
+        self.navigate(Nav::Open(Overlay::Message {
+            tag: super::INPUT_TAG,
+            lines: super::input_gone(name),
+            confirm: None,
+            extra: None,
+        }));
+        self.input.open(None, rate)
     }
 
     /// The latency calibration: the settings tab's `Calibrate` asks first; its `Calibrate` stops playback (held stopped

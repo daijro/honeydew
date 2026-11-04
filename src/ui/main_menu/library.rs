@@ -474,7 +474,8 @@ pub fn songs_dir() -> Option<PathBuf> {
 /// - Linux and other Unixes: `Honeydew` in the XDG documents folder, or `~/Documents/Honeydew`;
 /// - macOS: `~/Documents/Honeydew`;
 /// - Windows: `Honeydew` in the Documents known folder, or `%USERPROFILE%\Documents\Honeydew`;
-/// - Android: the app's external files folder (`Android/data/<package>/files`).
+/// - Android: the app's external files folder (`Android/data/<package>/files`);
+/// - iOS: the app's `Documents` folder, which the Files app shows.
 ///
 /// The first time, what [`app_data_dir`], the user folder before, holds moves here ([`migrate_user_dir`]), unless it
 /// cannot: then that folder stays the user folder. [`app_data_dir`] too where there is no documents folder (or no
@@ -498,7 +499,12 @@ fn new_user_dir() -> Option<PathBuf> {
     crate::android::external_dir().filter(|dir| std::fs::create_dir_all(dir).is_ok())
 }
 
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(target_os = "ios")]
+fn new_user_dir() -> Option<PathBuf> {
+    crate::ios::documents_dir()
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 fn new_user_dir() -> Option<PathBuf> {
     #[cfg(windows)]
     if let Some(documents) = known_documents() {
@@ -517,7 +523,7 @@ fn new_user_dir() -> Option<PathBuf> {
 /// home folder (`%USERPROFILE%` on Windows), but on Linux and other Unixes the XDG documents folder first
 /// (`XDG_DOCUMENTS_DIR` in `user-dirs.dirs` in the config folder, unless it is the home folder itself). `None` without
 /// an absolute home folder.
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 fn documents_dir_from(
     var: impl Fn(&str) -> Option<std::ffi::OsString>,
     read: impl Fn(&Path) -> Option<String>,
@@ -661,13 +667,15 @@ fn migrate_user_dir(
 }
 
 /// The app's own files in the app data folder, which stay there when the user folder moves out of it: the installed
-/// sound library ([`SOUND_LIBRARY_FOLDER`]), and Android's settings file ([`SETTINGS_FILE`]) with the temp file a cut
-/// short write of it leaves ([`crate::project_files::replace_file`]).
+/// sound library ([`SOUND_LIBRARY_FOLDER`]), Android's settings file ([`SETTINGS_FILE`]) with the temp file a cut
+/// short write of it leaves ([`crate::project_files::replace_file`]), and the kept update check
+/// ([`crate::update::CACHE`]).
 #[cfg(not(target_arch = "wasm32"))]
 fn app_file(name: &std::ffi::OsStr) -> bool {
     use crate::settings::SETTINGS_FILE;
     let tmp = |n: &str| n == format!(".{SETTINGS_FILE}.tmp");
-    name == SOUND_LIBRARY_FOLDER || name == SETTINGS_FILE || name.to_str().is_some_and(tmp)
+    let own = [SOUND_LIBRARY_FOLDER, SETTINGS_FILE, crate::update::CACHE];
+    own.iter().any(|n| name == *n) || name.to_str().is_some_and(tmp)
 }
 
 /// Moves the files below the folder `from` into the same places below `to`, each by `rename`, else (another file
@@ -711,7 +719,8 @@ fn move_files(
 /// - Linux and other Unixes: `$XDG_DATA_HOME/honeydew`, or `~/.local/share/honeydew`;
 /// - macOS: `~/Library/Application Support/Honeydew`;
 /// - Windows: `%APPDATA%\Honeydew\data`;
-/// - Android: `Honeydew` in the app's internal data folder.
+/// - Android: `Honeydew` in the app's internal data folder;
+/// - iOS: `Honeydew` in the app's `Library/Application Support`.
 ///
 /// The app's folder named after its former name ([`crate::LEGACY_APP_NAME`]) becomes this one the first time
 /// ([`crate::migrate_legacy_dir_once`]), before [`user_dir`] moves what it holds. `None` when the home or app-data
@@ -721,7 +730,12 @@ pub fn app_data_dir() -> Option<PathBuf> {
     Some(crate::android::data_dir()?.join(crate::APP_NAME))
 }
 
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(target_os = "ios")]
+pub fn app_data_dir() -> Option<PathBuf> {
+    Some(crate::ios::data_dir()?.join(crate::APP_NAME))
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 pub fn app_data_dir() -> Option<PathBuf> {
     #[cfg(not(test))]
     let migrate = crate::migrate_legacy_dir_once;
@@ -733,7 +747,7 @@ pub fn app_data_dir() -> Option<PathBuf> {
 
 /// [`app_data_dir`] with the environment variables `var` reads, the app's folder of its former name becoming the new
 /// one through `migrate` (old, new).
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 fn app_data_dir_from(
     var: impl Fn(&str) -> Option<std::ffi::OsString>,
     migrate: fn(&Path, &Path) -> PathBuf,

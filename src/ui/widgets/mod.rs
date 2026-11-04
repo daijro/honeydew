@@ -15,7 +15,8 @@
 //! than 0.3 s after the previous one on the same control sets its reset value, [`Control::default`]; a tap never steps
 //! the value. The primary button only, and no wheel: it goes to the enclosing scroller. Toggles flip on click. A NaN
 //! value is drawn as the default and an out-of-range one as the nearest end; neither is written back until the user
-//! changes it.
+//! changes it. Issue #68: a finger other than the first (egui's pointer follows that one only) drags a knob or slider
+//! too, while the first plays keys ([`other_finger`]).
 //!
 //! Desktop hover: the one control under the mouse that takes input ([`hovered`]) is lit: a button's fill × 1.15, a
 //! slider's track halo, a knob's wash with its dot × 1.05. The cursor never changes.
@@ -50,7 +51,7 @@ use crate::params::{menu_index, menu_value};
 use crate::ui::ctrl_menu::{self, CtrlAction};
 use crate::ui::focus::{self, Kind};
 use crate::ui::popup::{self, PopupItem};
-use crate::ui::{UiCtx, gesture, primary_down_live};
+use crate::ui::{Finger, MOUSE, UiCtx, fingers, focus_lost, gesture, primary_down_live};
 
 mod button;
 pub(crate) use button::{brighter, pressed};
@@ -383,6 +384,12 @@ fn drag_control(
         v = snap(acc, c.steps, c.item);
         edited = true;
     }
+    if !c.disabled
+        && let Some(acc) = other_finger(ui, cx, c, &response, v, law)
+    {
+        v = snap(acc, c.steps, c.item);
+        edited = true;
+    }
     // The menu first: it must be drawn every frame it is open, whatever else happened.
     let action = context_menu(ui, cx, c.id, c.menu, true, c.fine_tune, &mut response);
     if action == Some(MenuAction::Reset) || double_tap(ui, c.id, &response) {
@@ -396,6 +403,73 @@ fn drag_control(
     }
     response.widget_info(|| WidgetInfo::slider(!c.disabled, f64::from(v), c.label));
     (response, v)
+}
+
+/// A finger that is not the pointer's on a knob or slider: its id, where it went down, its last point, whether it has
+/// left the click distance (and so drags), the drag value, and the pass it was last seen in.
+#[derive(Clone, Copy)]
+struct OtherFinger {
+    finger: u64,
+    origin: Pos2,
+    last: Pos2,
+    dragging: bool,
+    acc: f32,
+    pass: u64,
+}
+
+/// Issue #68: egui's pointer follows the first finger down only, so a knob or slider turns with a later one by its touch
+/// events, while the first plays keys or notes: by `law` as a drag of the pointer does (from egui's click distance on,
+/// that travel counted), with no double tap or menu. Returns the drag value when it moved this frame. A focus loss or a
+/// frame without the control lets go of the finger.
+fn other_finger(
+    ui: &Ui,
+    cx: &UiCtx,
+    c: &Control,
+    response: &Response,
+    v: f32,
+    law: Law,
+) -> Option<f32> {
+    let (key, pass) = (c.id.with("other finger"), ui.ctx().cumulative_pass_nr());
+    let mut held = (ui.data(|d| d.get_temp::<OtherFinger>(key)))
+        .filter(|h| h.pass + 1 == pass && !ui.input(focus_lost));
+    // The pointer's own finger, which the drag above takes.
+    let pointer = ui.input(|i| i.pointer.primary_pressed()) && response.is_pointer_button_down_on();
+    let click = ui.ctx().options(|o| o.input_options.max_click_dist);
+    let fine = crate::keymap::held(ui.ctx(), "fineTweak");
+    let mut moved = None;
+    for f in fingers(ui, c.id) {
+        match f {
+            Finger::Down(finger, at) if finger != MOUSE && !pointer => {
+                held = Some(OtherFinger {
+                    finger,
+                    origin: at,
+                    last: at,
+                    dragging: false,
+                    acc: v,
+                    pass,
+                });
+                if matches!(c.menu, ParamMenu::Bound | ParamMenu::Linked) {
+                    post(ui, c.id, |s| s.pressed = true);
+                }
+            }
+            Finger::Move(finger, at) => {
+                let Some(h) = held.as_mut().filter(|h| h.finger == finger) else {
+                    continue;
+                };
+                if h.dragging || at.distance(h.origin) > click {
+                    h.acc = drag(h.acc, law.delta(at - h.last, cx.m), fine);
+                    (h.last, h.dragging, moved) = (at, true, Some(h.acc));
+                }
+            }
+            Finger::Up(finger, _) if held.is_some_and(|h| h.finger == finger) => held = None,
+            _ => {}
+        }
+    }
+    ui.data_mut(|d| match held {
+        Some(h) => d.insert_temp(key, OtherFinger { pass, ..h }),
+        None => d.remove::<OtherFinger>(key),
+    });
+    moved
 }
 
 /// `v` after one `increment` / `decrement` key press: ± [`KEY_STEP`], × [`FINE`] when fine, kept in [0, 1]; a control

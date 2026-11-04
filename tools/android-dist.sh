@@ -1,15 +1,19 @@
 #!/bin/sh
 # Build one APK for 64-bit and 32-bit ARM with the bundled sounds. Release signing uses environment variables, never checked-in keys.
+# --base leaves the sounds out (-base.apk): the app downloads them from the sound library's release (#66).
 set -eu
 cd "$(dirname "$0")/.."
 
 variant=debug
 task=assembleDebug
-case ${1:-} in
-    '') ;;
-    --release) variant=release; task=assembleRelease ;;
-    *) echo "usage: tools/android-dist.sh [--release]" >&2; exit 2 ;;
-esac
+base=
+for arg in "$@"; do
+    case $arg in
+        --release) variant=release; task=assembleRelease ;;
+        --base) base=-base ;;
+        *) echo "usage: tools/android-dist.sh [--release] [--base]" >&2; exit 2 ;;
+    esac
+done
 if [ "$variant" = release ]; then
     : "${ANDROID_KEYSTORE_FILE:?set the path to your release keystore}"
     : "${ANDROID_KEYSTORE_PASSWORD:?set your keystore password}"
@@ -32,11 +36,14 @@ export CARGO_TARGET_DIR=$(cd "${CARGO_TARGET_DIR:-target}" && pwd)
 export HONEYDEW_ANDROID_BUILD_DIR=$CARGO_TARGET_DIR/android
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-4}
 mkdir -p "$HONEYDEW_ANDROID_BUILD_DIR/assets" "$HONEYDEW_ANDROID_BUILD_DIR/jniLibs"
-cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip"
-# The .gz siblings are for web servers; Android reads the raw packs directly from its APK.
 rm -rf "$HONEYDEW_ANDROID_BUILD_DIR/assets/content"
-unzip -q "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip" 'content/*' -x '*.gz' -d "$HONEYDEW_ANDROID_BUILD_DIR/assets"
-rm "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip"
+export HONEYDEW_ANDROID_BASE=$base
+if [ -z "$base" ]; then
+    cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip"
+    # The .gz siblings are for web servers; Android reads the raw packs directly from its APK.
+    unzip -q "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip" 'content/*' -x '*.gz' -d "$HONEYDEW_ANDROID_BUILD_DIR/assets"
+    rm "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip"
+fi
 # signalsmith-stretch's C++ links libc++_shared.so, which the APK has to ship beside libhoneydew.so.
 cargo ndk -t arm64-v8a -t armeabi-v7a --platform 26 --link-libcxx-shared -o "$HONEYDEW_ANDROID_BUILD_DIR/jniLibs" rustc --release --locked --lib -- -C link-arg=-Wl,-z,max-page-size=16384
 debug_keystore=$PWD/android/debug.keystore
@@ -50,12 +57,14 @@ if [ "$variant" = debug ] && [ ! -f "$debug_keystore" ]; then
             -validity 10000 -dname 'CN=Android Debug,O=Android,C=US' >/dev/null 2>&1
     fi
 fi
+# Packaged afresh: Gradle's incremental packaging would keep the space of the sounds a --base build drops.
+rm -rf "$HONEYDEW_ANDROID_BUILD_DIR/outputs/apk/$variant"
 android/gradlew -p android --no-daemon "$task"
 
 apk=$HONEYDEW_ANDROID_BUILD_DIR/outputs/apk/$variant/app-$variant.apk
 "$sdk_tools/apksigner" verify "$apk"
 "$sdk_tools/zipalign" -c -P 16 4 "$apk"
-python3 - "$apk" <<'PY'
+python3 - "$apk" "$base" <<'PY'
 import base64
 import hashlib
 import json
@@ -66,6 +75,10 @@ with zipfile.ZipFile(sys.argv[1]) as apk:
     for abi in ('arm64-v8a', 'armeabi-v7a'):
         for lib in ('libhoneydew.so', 'libc++_shared.so'):
             assert apk.getinfo(f'lib/{abi}/{lib}').compress_type == zipfile.ZIP_STORED, abi + '/' + lib
+    if sys.argv[2]:
+        assert not any(name.startswith('assets/content/') for name in apk.namelist()), 'sounds in the base APK'
+        print('Verified APK signature and alignment, without sounds')
+        sys.exit()
     assert apk.read('assets/content/CREDITS.txt'), 'missing sound credits'
     index = json.loads(apk.read('assets/content/index.json'))
     parts = {part['file']: part for entry in index['entries'] for part in entry['parts']}
@@ -81,6 +94,6 @@ PY
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
 suffix=
 [ "$variant" = release ] || suffix=-debug
-out=$CARGO_TARGET_DIR/honeydew-android-$version-arm$suffix.apk
+out=$CARGO_TARGET_DIR/honeydew-android-$version-arm$base$suffix.apk
 cp "$apk" "$out"
 echo "wrote $out"

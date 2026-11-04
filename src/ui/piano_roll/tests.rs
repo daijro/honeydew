@@ -1949,6 +1949,13 @@ mod component {
         rig.release(to);
         assert_eq!(rig.roll.selected, [true, true, false]);
         assert!(rig.all.is_empty());
+        assert!(rig.text("Copy").is_some());
+        // A second box catching the same notes, the same outline: its release shows the row again.
+        rig.hold(from);
+        rig.frame(vec![In::PointerMoved(to)]);
+        rig.release(to);
+        assert_eq!(rig.roll.selected, [true, true, false]);
+        assert!(rig.text("Copy").is_some());
     }
 
     #[test]

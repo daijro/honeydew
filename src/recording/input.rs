@@ -1,7 +1,8 @@
 //! The app's audio input: the `INPUT` menu and the [`InputLink`] seam that opens
 //! one input device into an [`InputRing`]. Tests hand the link a fake opener and push frames into its ring; no test
-//! opens a device. The web has no input: its menu is `<no input>` and every open fails. Android opens its default
-//! input (the system routes it: a headset's mic when one is plugged in) once the user allows the microphone ([`Mic`]).
+//! opens a device. The web has no input: its menu is `<no input>` and every open fails. Android opens the input the
+//! `Audio input:` setting picks, else its default one (the system routes it: a headset's mic when one is plugged in),
+//! once the user allows the microphone ([`Mic`]).
 
 use std::any::Any;
 use std::sync::Arc;
@@ -58,8 +59,8 @@ pub fn input_menu(devices: &[InputDevice]) -> Vec<PopupItem<Option<InputChoice>>
     items
 }
 
-/// Whether the app may use the microphone. Android asks the user the first time the input is wanted
-/// (`crate::android::mic`); elsewhere it is always granted.
+/// Whether the app may use the microphone. Android and iOS ask the user the first time the input is wanted
+/// (`crate::android::mic`, `crate::ios::mic`); elsewhere it is always granted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mic {
     Granted,
@@ -69,12 +70,14 @@ pub enum Mic {
     Denied,
 }
 
-/// Whether monitoring may sound: Android plays the input in headphones only, never through the phone's speaker, which
-/// the microphone would pick up again (feedback).
+/// Whether monitoring may sound: Android and iOS play the input in headphones only, never through the phone's speaker,
+/// which the microphone would pick up again (feedback).
 pub fn may_monitor() -> bool {
     #[cfg(target_os = "android")]
     return crate::android::headphones();
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "ios")]
+    return crate::ios::headphones();
+    #[cfg(not(mobile))]
     true
 }
 
@@ -102,14 +105,20 @@ impl Default for InputLink {
             mic: Box::new(crate::android::mic),
             ..Self::new(open_device).listing(android_input)
         };
-        #[cfg(not(target_os = "android"))]
+        // The session records only while the input is open (`ios::open_input`).
+        #[cfg(target_os = "ios")]
+        return Self {
+            mic: Box::new(crate::ios::mic),
+            ..Self::new(crate::ios::open_input).listing(android_input)
+        };
+        #[cfg(not(mobile))]
         Self::new(open_device).listing(input_devices)
     }
 }
 
-/// Android's one input, its default one: cpal's device list there holds the outputs too, and the system picks the
-/// microphone itself. Stereo: cpal opens it with two channels.
-#[cfg(target_os = "android")]
+/// A phone's one input, its default one: cpal's device list there holds the outputs too (Android), and the system
+/// picks the microphone itself. Stereo: cpal opens it with two channels.
+#[cfg(mobile)]
 fn android_input() -> Vec<InputDevice> {
     vec![InputDevice {
         name: "Microphone".to_owned(),
@@ -147,6 +156,21 @@ impl InputLink {
         (self.list)()
     }
 
+    /// The `Audio input:` menu's devices after `Default`: the `INPUT` menu's but ALSA's `default` (that is `Default`),
+    /// or on Android, whose `INPUT` menu lists one input, each the system has ([`crate::android::inputs`]).
+    pub fn choices(&self) -> Vec<String> {
+        #[cfg(target_os = "android")]
+        return crate::android::inputs()
+            .into_iter()
+            .map(|(_, label)| label)
+            .collect();
+        #[cfg(not(target_os = "android"))]
+        (self.devices().into_iter())
+            .map(|d| d.name)
+            .filter(|name| name != "default")
+            .collect()
+    }
+
     /// The open device's ring.
     pub fn ring(&self) -> Option<&Arc<InputRing>> {
         self.current.as_ref().map(|(_, _, (ring, _))| ring)
@@ -175,9 +199,17 @@ impl InputLink {
     }
 }
 
-/// The real opener: cpal natively (Android's AAudio, always on its default input), none on the web.
+/// The real opener: cpal natively, none on the web. On Android cpal opens the default input; a named one, an
+/// `Audio input:` pick, opens through AAudio by its device id ([`crate::android::open_input`]).
 pub fn open_device(device: Option<&str>, rate: u32) -> Result<Opened, String> {
-    let device = device.filter(|_| !cfg!(target_os = "android"));
+    #[cfg(target_os = "android")]
+    if let Some(label) = device {
+        return crate::android::open_input(label, rate)
+            .map(|(ring, stream)| (ring, Box::new(stream) as Box<dyn Any>));
+    }
+    // iOS opens its default input: the system routes it (a headset's mic when one is plugged in).
+    #[cfg(target_os = "ios")]
+    let device = device.filter(|_| false);
     #[cfg(not(target_arch = "wasm32"))]
     return honeydew_audio::input::open_input(device, rate)
         .map(|(ring, stream)| (ring, Box::new(stream) as Box<dyn Any>))

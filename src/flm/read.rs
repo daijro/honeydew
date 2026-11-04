@@ -404,6 +404,13 @@ impl Reader {
                     self.charge(2 * size_of::<Chunk>() + chunk.path.len(), &chunk.path)?;
                     chnls.push(chunk);
                 }
+                b"HDVb" => {
+                    self.charge(chunk.payload.len(), &chunk.path)?;
+                    let versions = std::sync::Arc::make_mut(&mut song.file.versions);
+                    if crate::versions::read(chunk.payload, &chunk.path, versions).is_err() {
+                        self.unknown(&chunk, &mut song.file.unknown_chunks)?;
+                    }
+                }
                 _ => self.unknown(&chunk, &mut song.file.unknown_chunks)?,
             }
         }

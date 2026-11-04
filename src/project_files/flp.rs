@@ -15,7 +15,7 @@
 
 use std::path::{Path, PathBuf};
 
-#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+#[cfg(not(any(target_arch = "wasm32", mobile)))]
 use super::FileEvent;
 use super::{LOAD_FAILED, ProjectFiles, UNZIPPED_FOLDER, created_now, stand_ins, stem};
 #[cfg(not(target_arch = "wasm32"))]
@@ -468,7 +468,7 @@ fn read(path: &Path) -> Option<Vec<u8>> {
 }
 
 /// The desktop's `Locate samples…`: a folder dialog, then each file named one of `names` in it or below.
-#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+#[cfg(not(any(target_arch = "wasm32", mobile)))]
 pub(super) fn locate_native(names: &[String]) -> Option<FileEvent> {
     let dir = rfd::FileDialog::new().pick_folder()?;
     let found = (names.iter())

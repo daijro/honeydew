@@ -1,12 +1,72 @@
-//! App-level undo/redo: snapshots of the [`Song`], one per completed edit.
+//! App-level undo/redo: snapshots of the [`Song`], one per completed edit, as many as the `Project version size limit`
+//! holds (SETTINGS, #69; [`set_size_limit`]): past it, the oldest steps go.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
+use std::mem::size_of;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use eframe::egui::Context;
 
 use crate::keymap;
-use crate::song::{Channel, SamplerSlot, SlotFileState, Song};
+use crate::song::{
+    Channel, Clip, Event, Lane, ModuleInstance, RawChunk, SamplerSlot, SlotFileState, Song,
+};
+
+/// The `Project version size limit` in force, in bytes: what the undo history holds at most ([`History::limit`]), and
+/// each branch of the project versions ([`crate::versions::commit`]). 256 MB until the settings say.
+static SIZE_LIMIT: AtomicUsize = AtomicUsize::new(256 << 20);
+
+/// Sets the `Project version size limit` to `mb` MB, for the histories made from now on; returns it in bytes.
+pub fn set_size_limit(mb: u32) -> usize {
+    let bytes = (mb as usize).saturating_mul(1 << 20);
+    SIZE_LIMIT.store(bytes, Ordering::Relaxed);
+    bytes
+}
+
+/// The `Project version size limit` in force, in bytes.
+pub fn size_limit() -> usize {
+    SIZE_LIMIT.load(Ordering::Relaxed)
+}
+
+fn raw_bytes(chunks: &[RawChunk]) -> usize {
+    chunks.iter().map(|c| c.payload.len()).sum()
+}
+
+/// About the memory `song` holds without its channels: its kept bytes and long texts.
+fn head_bytes(song: &Song) -> usize {
+    let f = &song.file;
+    size_of::<Song>()
+        + f.keyboard.chord_json.len()
+        + f.meta.extra.len()
+        + raw_bytes(&f.unknown_chunks)
+}
+
+/// About the memory `channel` holds: its events and the event bytes kept from its file, which are most of it, its
+/// modules' params and data, and its pads.
+// ponytail: the big parts only; count the strings and smaller tails too if the limit shows far off.
+fn channel_bytes(channel: &Channel) -> usize {
+    let clip = |c: &Clip| {
+        let kept = c.file.raw_events.0.as_ref().map_or(0, Vec::len);
+        size_of::<Clip>()
+            + c.events.len() * size_of::<Event>()
+            + kept
+            + raw_bytes(&c.file.unknown_chunks)
+    };
+    let lane = |l: &Lane| size_of::<Lane>() + l.clips.iter().map(clip).sum::<usize>();
+    let module = |m: &ModuleInstance| {
+        let data = m.file.custom_data.as_ref().map_or(0, Vec::len);
+        size_of::<ModuleInstance>() + 4 * m.params.len() + data + raw_bytes(&m.file.unknown_chunks)
+    };
+    let pads = channel
+        .drum_kit
+        .as_ref()
+        .map_or(0, |k| k.slots.len() * size_of::<SamplerSlot>());
+    size_of::<Channel>()
+        + channel.lanes.iter().map(lane).sum::<usize>()
+        + channel.rack.modules.iter().map(module).sum::<usize>()
+        + pads
+}
 
 /// An undo or redo request, from the transport's Undo control or [`shortcut`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,6 +84,8 @@ struct Snapshot {
     /// The song without its channels.
     head: Song,
     channels: Vec<Arc<Channel>>,
+    /// A version restored ([`History::replaced`]): an undo or redo across it restores a whole song.
+    restored: bool,
 }
 
 impl Snapshot {
@@ -62,7 +124,19 @@ impl Snapshot {
                 same.map_or_else(|| Arc::new(c.clone()), Arc::clone)
             })
             .collect();
-        Self { head, channels }
+        Self {
+            head,
+            channels,
+            restored: false,
+        }
+    }
+
+    /// About the memory it holds: its head, and its channels that `counted` says to count.
+    fn bytes(&self, counted: impl FnMut(&&Arc<Channel>) -> bool) -> usize {
+        let channels = self.channels.iter().filter(counted);
+        head_bytes(&self.head)
+            + self.channels.len() * size_of::<Arc<Channel>>()
+            + channels.map(|c| channel_bytes(c)).sum::<usize>()
     }
 
     fn song(&self) -> Song {
@@ -92,12 +166,14 @@ impl Snapshot {
 pub struct History {
     /// The song after the last completed edit, or the last restored one.
     current: Snapshot,
-    /// Oldest first, at most [`Self::CAP`].
+    /// Oldest first, all the steps together within [`Self::limit`].
     undo: VecDeque<Snapshot>,
     /// The last undone on top.
     redo: Vec<Snapshot>,
     /// A gesture's edits are in, but not its final one.
     open: bool,
+    /// The memory the steps may hold, in bytes ([`set_size_limit`]): past it a new step drops the oldest ones.
+    pub limit: usize,
 }
 
 #[cfg(test)]
@@ -236,9 +312,6 @@ fn take_untracked(to: &Channel, from: &Channel, was: &Channel) -> Option<Channel
 }
 
 impl History {
-    /// Undo entries kept.
-    pub const CAP: usize = 100;
-
     /// A history starting at `song`, with nothing to undo (a new or loaded song).
     pub fn new(song: &Song) -> Self {
         Self {
@@ -246,6 +319,29 @@ impl History {
             undo: VecDeque::new(),
             redo: Vec::new(),
             open: false,
+            limit: size_limit(),
+        }
+    }
+
+    /// About the memory the steps hold: each step's head, and each channel once however many steps share it.
+    fn bytes(&self) -> usize {
+        let mut seen = HashSet::new();
+        let steps = self.undo.iter().chain(&self.redo);
+        (steps.chain(std::iter::once(&self.current)))
+            .map(|s| s.bytes(|c| seen.insert(Arc::as_ptr(c))))
+            .sum()
+    }
+
+    /// Drops the oldest undo steps while the steps hold more than [`Self::limit`]; the current step always stays.
+    // ponytail: counts every step's channels each time, O(steps × channels) per edit; keep a running count if long
+    // histories show it.
+    fn trim(&mut self) {
+        let mut bytes = self.bytes();
+        while bytes > self.limit
+            && let Some(old) = self.undo.pop_front()
+        {
+            // What it held alone goes with it.
+            bytes = bytes.saturating_sub(old.bytes(|c| Arc::strong_count(c) == 1));
         }
     }
 
@@ -265,11 +361,33 @@ impl History {
         }
         self.undo
             .push_back(std::mem::replace(&mut self.current, next));
-        if self.undo.len() > Self::CAP {
-            self.undo.pop_front();
-        }
         self.redo.clear();
+        self.trim();
         true
+    }
+
+    /// The app replaced the song with `song`, a version restored, as one step. An undo or a redo across it restores a
+    /// song whole ([`Self::crosses`]): it keeps nothing of the live one ([`keep_live`]), so the song the restore
+    /// replaced comes back as it was, its rack state too. The current step must hold the live song first
+    /// ([`Self::edited`]).
+    pub fn replaced(&mut self, song: &Song) {
+        self.open = false;
+        let next = Snapshot {
+            restored: true,
+            ..Snapshot::new(song, &self.current.channels)
+        };
+        self.undo
+            .push_back(std::mem::replace(&mut self.current, next));
+        self.redo.clear();
+        self.trim();
+    }
+
+    /// Whether `step` crosses a restore ([`Self::replaced`]) and so restores a whole song.
+    pub fn crosses(&self, step: Step) -> bool {
+        match step {
+            Step::Undo => !self.open && self.current.restored && !self.undo.is_empty(),
+            Step::Redo => self.redo.last().is_some_and(|s| s.restored),
+        }
     }
 
     /// The app changed its song from `before` to `song` with no undo step (an audio recording's clips):
@@ -281,7 +399,10 @@ impl History {
         if self.open {
             self.edited(before, true);
         }
-        self.current = Snapshot::new(song, &self.current.channels);
+        self.current = Snapshot {
+            restored: self.current.restored,
+            ..Snapshot::new(song, &self.current.channels)
+        };
         self.redo.clear();
     }
 
@@ -312,7 +433,10 @@ impl History {
         RACK_STATE.set(RACK_STATE.get() + 1);
         let was = self.current.channels.clone();
         let stepped = self.open && self.edited(song, true);
-        let next = Snapshot::new(song, &self.current.channels);
+        let next = Snapshot {
+            restored: self.current.restored,
+            ..Snapshot::new(song, &self.current.channels)
+        };
         self.carry(song, &was, (!stepped).then_some(&next));
         self.current = next;
         stepped
@@ -322,9 +446,9 @@ impl History {
     /// channel, given `was`, the history's channels before the change; nothing else changes. Steps that shared a
     /// channel share its new copy. With `next`, a step that held a channel of `was` takes `next`'s same-id one whole:
     /// it was the song the change found.
-    // ponytail: each version of a moved channel the steps hold (up to 2 × `CAP` + 1) has its kit copied, and the whole
-    // channel, clips too, when it takes something, per strip release or pick; keep kits beside the channels in
-    // `Snapshot` if that shows.
+    // ponytail: each version of a moved channel the steps hold (as many as the size limit keeps) has its kit copied, and
+    // the whole channel, clips too, when it takes something, per strip release or pick; keep kits beside the channels
+    // in `Snapshot` if that shows.
     fn carry(&mut self, song: &Song, was: &[Arc<Channel>], next: Option<&Snapshot>) {
         let old = |id: i32| was.iter().find(|w| w.id == id);
         // The channels it moved: (the song's, the history's).
@@ -355,13 +479,15 @@ impl History {
     }
 
     /// The current step's song, which an undo or redo restores, keeping what no undo step covers from `live`, the
-    /// channels before it ([`keep_live`], by id): a channel only the step has (a delete undone) keeps its own. A pad's AUX
-    /// target that names no channel of it (carried from a later step by [`take_moved`]) goes back to the channel output,
-    /// as when its target is deleted (`Song::delete_channel`): else a new channel that takes the id back gets the pad.
-    fn restore(&mut self, live: &[Arc<Channel>]) -> Song {
+    /// channels before it ([`keep_live`], by id), unless the step is `whole` ([`Self::crosses`]): a channel only the step
+    /// has (a delete undone) keeps its own. A pad's AUX target that names no channel of it (carried from a later step by
+    /// [`take_moved`]) goes back to the channel output, as when its target is deleted (`Song::delete_channel`): else a new
+    /// channel that takes the id back gets the pad.
+    fn restore(&mut self, live: &[Arc<Channel>], whole: bool) -> Song {
         // (old, new): the undo and redo steps that held a channel this gives the live state share its new copy, as
         // `carry`'s do; that is the live channel itself when it differed in nothing else.
         let mut done: Vec<(Arc<Channel>, Arc<Channel>)> = Vec::new();
+        let live = if whole { &[][..] } else { live };
         for ch in &mut self.current.channels {
             let Some(from) = live.iter().find(|l| l.id == ch.id) else {
                 continue;
@@ -399,21 +525,23 @@ impl History {
     /// the app must also cancel the drag, or its next frame applies the edit again.
     pub fn undo(&mut self) -> Option<Song> {
         let live = self.current.channels.clone();
+        let whole = self.crosses(Step::Undo);
         if !std::mem::take(&mut self.open) {
             let prev = self.undo.pop_back()?;
             self.redo.push(std::mem::replace(&mut self.current, prev));
         }
-        Some(self.restore(&live))
+        Some(self.restore(&live, whole))
     }
 
     /// The song to restore, `None` when there is nothing to redo. It drops a gesture in progress.
     pub fn redo(&mut self) -> Option<Song> {
+        let whole = self.crosses(Step::Redo);
         let next = self.redo.pop()?;
         self.open = false;
         let live = self.current.channels.clone();
         self.undo
             .push_back(std::mem::replace(&mut self.current, next));
-        Some(self.restore(&live))
+        Some(self.restore(&live, whole))
     }
 
     /// The undo steps kept.
@@ -797,19 +925,66 @@ mod tests {
     }
 
     #[test]
-    fn history_is_capped() {
+    fn history_is_bounded_by_size_not_by_count() {
+        // Small steps: more than any fixed count kept before (100).
         let start = Song::default();
         let mut history = History::new(&start);
-        for i in 1..=History::CAP + 50 {
-            history.edited(&with_tempo(&start, i as f64), true);
+        for i in 1..=300 {
+            history.edited(&with_tempo(&start, f64::from(i)), true);
         }
-        let mut last = None;
-        for _ in 0..History::CAP {
-            last = history.undo();
-            assert!(last.is_some());
+        assert_eq!(history.steps(), 300);
+        // Big ones: each copies a channel of 10,000 notes, and the limit holds two copies more than the song.
+        let mut song = song_with(1);
+        let n = song.channels.len() - 1;
+        let note = NoteEvent::Note {
+            pos: 0,
+            len_beats: 1.0,
+            key: 60,
+            velocity: NoteEvent::DEFAULT_VELOCITY,
+            pan: NoteEvent::DEFAULT_PAN,
+            slide: false,
+        };
+        song.channels[n].lanes[0].add_clip(0, 4.0).events = vec![note; 10_000];
+        let mut history = History::new(&song);
+        let one = channel_bytes(&song.channels[n]);
+        history.limit = history.bytes() + 2 * one + one / 2;
+        for i in 1..=10 {
+            song.channels[n].name = i.to_string();
+            history.edited(&song, true);
+            assert!(history.bytes() <= history.limit, "{i}");
         }
-        assert_eq!(last.map(|s| s.tempo_bpm), Some(50.0));
+        assert_eq!(history.steps(), 2);
+        history.undo();
+        assert_eq!(
+            history.undo().map(|s| s.channels[n].name.clone()),
+            Some("8".into())
+        );
         assert_eq!(history.undo(), None);
+    }
+
+    #[test]
+    fn an_undo_across_a_restored_version_brings_back_the_rack_state_it_replaced() {
+        // Rack state has no undo steps (`keep_live`), but a restore replaced it with the version's: its undo puts the
+        // song before back whole, and its redo the version.
+        let (start, n) = rack_song();
+        let mut history = History::new(&start);
+        let mut version = start.clone();
+        version.channels[n].params.0[0] = 0.3;
+        version.channels[n].name = "Version".into();
+        history.replaced(&version);
+        assert!(history.crosses(Step::Undo));
+        let undone = history.undo().unwrap();
+        assert_eq!(undone, start);
+        assert!(history.crosses(Step::Redo));
+        assert_eq!(history.redo().unwrap(), version);
+        // A later edit is an ordinary step again, its undo keeping the live rack state.
+        let mut after = version.clone();
+        after.channels[n].name = "After".into();
+        history.edited(&after, true);
+        after.channels[n].params.0[0] = 0.9;
+        assert!(!history.crosses(Step::Undo));
+        history.sync(&after);
+        assert_eq!(history.undo().unwrap().channels[n].params.0[0], 0.9);
     }
 
     #[test]

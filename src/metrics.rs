@@ -105,7 +105,10 @@ impl Metrics {
     fn on_surface(ppp: f32, percent: u32, surface_w_px: f32) -> Self {
         #[cfg(target_os = "android")]
         let display_dpi = Some(crate::android::display_dpi());
-        #[cfg(not(target_os = "android"))]
+        // iPhones and iPads have about 163 points an inch (iPad Pro 132); UIKit gives no physical density.
+        #[cfg(target_os = "ios")]
+        let display_dpi = Some(163.0 * ppp);
+        #[cfg(not(mobile))]
         let display_dpi = None;
         Self::from_display_dpi(ppp, percent, surface_w_px, display_dpi)
     }

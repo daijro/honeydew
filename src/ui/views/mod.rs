@@ -57,6 +57,10 @@ pub mod whats_new;
 pub mod cc_picker;
 // A DW Sampler's `New from samples…`.
 pub mod instrument_builder;
+// The project versions window (#69).
+pub mod versions;
+// A Lemon plugin's editor full screen (#68).
+pub mod lemon_editor;
 
 /// What fills the editor area, between the top of the screen and the transport bar.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -166,6 +170,11 @@ pub enum Overlay {
     /// The sample picker of the playlist clip's `More...` `Replace sample...` (issue #64): its last
     /// pick goes to every clip playing this clip's sample once its close is confirmed ([`sample_picker::show_replace`]).
     ReplaceSamplePicker(ClipKey),
+    /// The project versions window (#69): PROJECT `View project versions`, or the Save dialog's `Save project version`.
+    Versions,
+    /// The editor of the built-in Lemon plugin module with instance id `module` on `channel`, full screen (#68, its rack
+    /// card's full screen button).
+    LemonEditor { channel: usize, module: i32 },
 }
 
 /// `Link to MIDI CC`'s prompt.
@@ -373,6 +382,9 @@ pub enum SongEdit {
     /// (it undoes its own snapshot, and that undo re-syncs), the piano roll's Quantize, Humanize and Snap to
     /// scale. An undo step only if the song changed, as [`Self::Final`].
     Resync,
+    /// A project version restored: the versions window's song replaces the song as one undo step
+    /// ([`versions::State::restored`]).
+    Restored,
     /// A whole new song (open, new song).
     Replaced,
 }
@@ -455,6 +467,11 @@ impl AppCtx<'_> {
     /// takes it in.
     pub fn pick_loaded(&mut self) {
         self.edit = self.edit.max(Some(SongEdit::Untracked));
+    }
+
+    /// Reports a project version restored: the app takes the song from [`versions::State::restored`].
+    pub fn version_restored(&mut self) {
+        self.edit = self.edit.max(Some(SongEdit::Restored));
     }
 
     /// Reports that [`Self::song`] was replaced by a whole new song. After the frame the app resets the
@@ -547,6 +564,10 @@ pub struct Slots {
     pub cc_picker: cc_picker::State,
     /// The instrument builder's separator, roles and panel.
     pub instrument_builder: instrument_builder::State,
+    /// The project versions window's pick, and a version restored for the app.
+    pub versions: versions::State,
+    /// The full screen Lemon editor's texture and pointer.
+    pub lemon_editor: lemon_editor::State,
 }
 
 impl Slots {
@@ -633,6 +654,10 @@ impl Slots {
         let (state, rack) = (&mut self.preset_picker, &mut self.rack);
         preset_picker::land_close_grands(state, rack, ui.ctx(), app, asking);
         let top = overlays.len().saturating_sub(1);
+        self.rack.full = overlays.iter().find_map(|o| match o {
+            Overlay::LemonEditor { channel, module } => Some((*channel, *module)),
+            _ => None,
+        });
         let above = (overlays.iter())
             .rposition(|o| matches!(o, Overlay::Rack(_)))
             .map_or(0, |i| i + 1);
@@ -782,6 +807,12 @@ impl Slots {
             }
             Overlay::ReplaceSamplePicker(key) => {
                 sample_picker::show_replace(&mut self.sample_picker, ui, app, *key)
+            }
+            // Modal like the Save dialog.
+            Overlay::Versions => top.then(|| versions::show(&mut self.versions, ui, app))?,
+            // Hidden while what it opened (the sample picker) or a message shows over it.
+            Overlay::LemonEditor { channel, module } => {
+                top.then(|| lemon_editor::show(&mut self.lemon_editor, ui, app, *channel, *module))?
             }
         }
     }
@@ -1260,7 +1291,7 @@ mod tests {
     #[test]
     fn tab_labels_follow_the_strip_order() {
         let labels = MenuTab::ALL.map(MenuTab::label);
-        // No SHOP and no SYNC tab.
-        assert_eq!(labels, ["SONGS", "PROJECT", "SETTINGS"]);
+        // No SHOP and no SYNC tab; UPDATES (#66) natively.
+        assert_eq!(labels, ["SONGS", "PROJECT", "SETTINGS", "UPDATES"]);
     }
 }

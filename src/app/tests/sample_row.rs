@@ -367,7 +367,7 @@ fn replace_sample_swaps_it_in_every_clip_playing_it_keeping_their_params_in_one_
     // close takes.
     rig.click(lane(1));
     rig.frame(vec![]);
-    rig.click_id(egui::Id::new(("clip_button", 4_usize)));
+    rig.click_id(egui::Id::new(("clip_button", 5_usize)));
     rig.frame(vec![]);
     rig.click_id(egui::Id::new("clip_more").with((0_usize, 5_usize)));
     picker_row(&mut rig, 0);

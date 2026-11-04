@@ -47,13 +47,16 @@ Get the latest build from [Releases](https://github.com/daijro/honeydew/releases
 | Linux | `linux-x86_64.AppImage` or `.tar.gz`, also for `aarch64` |
 | Alpine and other musl distros | `linux-x86_64-musl.tar.gz` or `linux-aarch64-musl.tar.gz` |
 | FreeBSD | `freebsd-x86_64.tar.gz` |
-| Android | the `.apk` (64-bit or 32-bit ARM, Android 8 or later) |
+| Android | `-arm-base.apk`, which downloads its sounds, or `-arm.apk` with them inside (64-bit or 32-bit ARM, Android 8 or later) |
+| iOS (experimental) | `honeydew-ios-<version>.ipa` (iOS 14 or later). It's unsigned: install it with AltStore, SideStore or Sideloadly using your own Apple ID |
 | Web | `honeydew-web-<version>.zip`, a static site you can host anywhere |
 
 Extract the archive and run `honeydew-native`. The AppImage is a single file. Run `chmod +x` on it, then start it (add `--appimage-extract-and-run` if your system has no FUSE).
 
 - `-avx2` builds can be faster on CPUs from 2013 onward. If unsure, take the plain one.
-- `-no-sounds` builds are just the app, 10 to 15 MB. Honeydew keeps its sounds in its own data folder, so run a full build once (or install `honeydew-<version>-sounds.zip` from Settings > Install sound library) and later updates can be the small download.
+- `-no-sounds` builds are just the app, 10 to 15 MB. Honeydew keeps its sounds in its own data folder: a full build puts them there, and without one Honeydew offers to download them (or install `honeydew-<version>-sounds.zip` from Settings > Install sound library). Later updates can be the small download. On iOS, `-no-sounds.ipa` simply leaves the built-in sounds out.
+- **Updates:** Main menu > UPDATES shows whether there's a newer version and what's new in it, and installs it on Android or downloads it on the desktop (an AppImage replaces itself). Honeydew checks at most every 6 hours, unless you turn off `Check for updates automatically`. The web version is always current.
+- **Sounds:** the sound library has its own version and its own release (`sounds-<version>`). The base APK and `-no-sounds` builds download it once, about 740 MB (on Android over Wi-Fi unless you allow mobile data in UPDATES), and after that only the packs that changed, so an update that doesn't change the sounds downloads none. UPDATES shows the installed sound library and offers a newer one on its own, whatever build you started from; updating from the full APK to the base one keeps the sounds it had.
 - Linux builds need glibc 2.35 or newer (Ubuntu 22.04, Debian 12). Alpine needs `apk add libstdc++ alsa-lib`. FreeBSD needs `pkg install alsa-lib alsa-plugins` and has no MIDI input yet.
 - Your songs, samples and exports go in `Documents/Honeydew`. Settings > Open user folder takes you there.
 
@@ -173,10 +176,10 @@ cargo run --release
 The sound library lives in `sounds/`, split into 90 MB parts to stay under GitHub's file size limit. To rebuild it from the raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.4.9
+tools/release-content.sh 0.4.10
 ```
 
-Commit the updated `sounds/honeydew-sounds.zip.*` parts and `sounds/release.txt` (the library's version: the app warns when an installed library is older) with your changes. Add `--web` to also build the web ZIP. Tagged releases include the sounds automatically.
+Commit the updated `sounds/honeydew-sounds.zip.*` parts and `sounds/release.txt` (the library's version: the app updates an installed library that is older) with your changes. Add `--web` to also build the web ZIP. Tagged releases include the sounds automatically, and the first release with a new library version also publishes it as its own release, `sounds-<version>`, which the apps download from. Give every changed library a new version.
 
 ### Web
 
@@ -206,7 +209,7 @@ tools/web-dist.sh --zip    # also write target/honeydew-web-<version>.zip
 
 ### Android
 
-The Android version plays, saves and exports songs into its Honeydew folder, which also shows in the Files app, so you can copy songs, renders and samples in and out there. SONGS → Import opens a song, archive, MIDI or FLP file from anywhere the system picker reaches, like Downloads or an SD card, and Import folder copies a whole sound folder in. Recording asks for the microphone the first time. A wired or USB headset's mic is used while it's plugged in, and you hear yourself (input monitoring) only in headphones, never through the phone's speaker. A call or leaving the app stops a recording and keeps what was recorded. MIDI devices aren't supported yet, and uninstalling the app deletes the Honeydew folder with your songs.
+The Android version plays, saves and exports songs into its Honeydew folder, which also shows in the Files app, so you can copy songs, renders and samples in and out there. SONGS → Import opens a song, archive, MIDI or FLP file from anywhere the system picker reaches, like Downloads or an SD card, and Import folder copies a whole sound folder in. Recording asks for the microphone the first time. A wired or USB headset's mic is used while it's plugged in, and Settings → Audio input picks another one, like a USB audio interface. You hear yourself (input monitoring) only in headphones, never through the phone's speaker. A call or leaving the app stops a recording and keeps what was recorded. MIDI devices aren't supported yet, and uninstalling the app deletes the Honeydew folder with your songs.
 
 You need Java 21, Android SDK platform 36, Build Tools 36.0.0, NDK 28.0.13004108, Python 3 and `unzip`. Set `ANDROID_HOME` to your SDK, then:
 
@@ -216,7 +219,7 @@ cargo install cargo-ndk --version 4.1.2 --locked
 tools/android-dist.sh
 ```
 
-This writes `target/honeydew-android-<version>-arm-debug.apk`, one APK for 64-bit and 32-bit ARM. The debug app is called Honeydew Debug and installs alongside the release app. Its signing key is kept in `android/debug.keystore`; keep that file so debug builds can update each other.
+This writes `target/honeydew-android-<version>-arm-debug.apk`, one APK for 64-bit and 32-bit ARM. Add `--base` for the APK without sounds (`-arm-base-debug.apk`), which downloads them. The debug app is called Honeydew Debug and installs alongside the release app. Its signing key is kept in `android/debug.keystore`; keep that file so debug builds can update each other.
 
 **Release signing:** use the same key for every release, or Android won't install updates over the old version. Back up the keystore and passwords outside the repository.
 
@@ -224,6 +227,19 @@ This writes `target/honeydew-android-<version>-arm-debug.apk`, one APK for 64-bi
 - **GitHub releases:** add the repository secrets `ANDROID_KEYSTORE_BASE64` (the keystore as base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Without them the Android job fails rather than publishing an unsigned APK.
 
 See Android's [app-signing guide](https://developer.android.com/studio/publish/app-signing) for creating a key.
+
+### iOS
+
+The iOS version is experimental. As on Android, your songs, renders and samples go in its Honeydew folder, which shows in the Files app under On My iPhone, and SONGS → Import and Import folder open the system's file picker. Recording asks for the microphone the first time. If you said no, the message has a button to the app's page in Settings. You hear yourself only in headphones, and a call or leaving the app stops a recording and keeps what was recorded. MIDI devices aren't supported yet, and there's no UPDATES tab: install a newer IPA the same way.
+
+Build it on a Mac with Xcode:
+
+```sh
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+tools/ios-dist.sh
+```
+
+This writes `target/honeydew-ios-<version>.ipa` and `target/honeydew-ios-<version>-no-sounds.ipa`. `tools/ios-dist.sh --sim` builds the Simulator's app, and `tools/ios-selftest.sh target/ios-sim/Honeydew.app selftest` runs its self-test in the Simulator.
 
 ---
 

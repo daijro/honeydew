@@ -998,6 +998,7 @@ impl HoneydewApp {
             | Overlay::FineTune { channel, .. }
             | Overlay::ModuleSamplePicker { channel, .. }
             | Overlay::InstrumentBuilder { channel, .. }
+            | Overlay::LemonEditor { channel, .. }
             | Overlay::CcPicker(channel) => rekey(channel),
             // The clip's track.
             Overlay::ClipSamplePicker(key) | Overlay::ReplaceSamplePicker(key) => rk
@@ -1022,7 +1023,8 @@ impl HoneydewApp {
             // Its channel is kept by id.
             | Overlay::MidiImport
             | Overlay::Credits
-            | Overlay::WhatsNew => true,
+            | Overlay::WhatsNew
+            | Overlay::Versions => true,
         });
         // The audio editor's op waiting to be saved (`app/audio_edit.rs`) follows its clip, or goes with it.
         self.audio_edit = (self.audio_edit.take()).and_then(|p| p.moved(|c, l| rk.track(c, l)));
