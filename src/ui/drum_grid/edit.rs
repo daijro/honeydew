@@ -8,7 +8,7 @@ use super::Remembered;
 use crate::song::{Clip, Event, PPQ, TimeSig};
 use crate::ui::clips::TimeAxis;
 use crate::ui::graph_lane::Prop;
-use crate::ui::piano_roll::notes::{box_end, snap_round, sort};
+use crate::ui::piano_roll::notes::{GridSize, box_end, snap_round, sort};
 use crate::ui::step_seq::edit as steps;
 use crate::ui::timeline::{self, Level};
 
@@ -19,6 +19,8 @@ pub const K_RANGE: [f32; 2] = [0.01, 1.0];
 const NEW_BEAT_U: f32 = 4.0;
 /// The drum grid's marks are never closer than this, in U.
 pub const MARK_GAP: f32 = 0.6;
+/// A fixed grid size's lines are never closer than this, in U: about 4 px at ppp 1 (#53).
+const SIZE_GAP: f32 = 0.125;
 
 /// A beat's width in points at U = `u` points, subdivision `d` (`TDIV` byte 0; 0, which a file may hold, counts as
 /// 1) and zoom `k` (clamped).
@@ -61,6 +63,54 @@ pub fn marks(t0: f64, t1: f64, beat_w: f32, u: f32, sig: TimeSig, gap: f32) -> V
             (j as f64 * unit, w)
         })
         .collect()
+}
+
+/// The grid lines of grid size `size` (#53) between ticks `t0` and `t1`, as (tick, width in device pixels): Auto's are
+/// [`marks`]; a fixed size's sit on its multiples, doubled while closer than [`SIZE_GAP`] (so every line drawn is one
+/// the size snaps to), with the bar lines when the size skips them (1/1 in 3/4); 4 px on a bar, 2 on a beat, 1 finer.
+pub fn grid_lines(
+    t0: f64,
+    t1: f64,
+    beat_w: f32,
+    u: f32,
+    sig: TimeSig,
+    gap: f32,
+    size: GridSize,
+) -> Vec<(f64, f32)> {
+    let Some(mut len) = size.ticks() else {
+        return marks(t0, t1, beat_w, u, sig, gap);
+    };
+    // NaN too.
+    if beat_w.is_nan() || beat_w <= 0.0 {
+        return Vec::new();
+    }
+    let min = f64::from(SIZE_GAP * u / beat_w) * BEAT;
+    // A bound past any zoom stops the doubling (and NaN never starts it).
+    while len < min.min(1e9) {
+        len *= 2.0;
+    }
+    let bar = BEAT * f64::from(sig.bar_beats());
+    let on = |t: f64, unit: f64| ((t / unit).round() * unit - t).abs() < 1e-6;
+    let every = |unit: f64| {
+        let (from, to) = ((t0.max(0.0) / unit).ceil(), (t1 / unit).floor());
+        (from as i64..=to as i64).map(move |k| k as f64 * unit)
+    };
+    let mut ticks: Vec<f64> = every(len).collect();
+    if bar >= min && !on(bar, len) {
+        ticks.extend(every(bar));
+        ticks.sort_by(f64::total_cmp);
+        ticks.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+    }
+    let width = |t| {
+        if on(t, bar) {
+            4.0
+        } else if on(t, BEAT) {
+            2.0
+        } else {
+            1.0
+        }
+    };
+    ticks.into_iter().map(|t| (t, width(t))).collect()
 }
 
 /// The distance in ticks between the visible grid lines ([`marks`]): Auto's unit below a step.

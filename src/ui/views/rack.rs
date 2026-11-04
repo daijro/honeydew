@@ -219,6 +219,9 @@ pub fn show(
         }
         app.audio.send(change.command());
     }
+    for change in actions.ccs {
+        app.audio.send(change.command());
+    }
     for change in actions.setting_changes {
         // A GMSynth's new OSC shape is built here, on the app thread, before the audio thread takes it.
         if let Some(module) = app.song.channels[channel].rack.get(change.instance_id) {

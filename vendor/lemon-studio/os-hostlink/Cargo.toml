@@ -6,6 +6,9 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 publish = false
 
+[lib]
+doctest = false
+
 [features]
 # Honeydew (vendored addition): the editors' link on Windows as elsewhere (`src/lib.rs`), for `os-plugkit`'s `embed`.
 embed = []

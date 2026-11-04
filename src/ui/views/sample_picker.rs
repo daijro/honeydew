@@ -562,6 +562,9 @@ pub fn show_track(
 /// now another type close it; only a pick changes the song (a cancelled `Custom` stays, silent without a file). A file
 /// that does not decode shows `Failed to load project file` with its error in the picker's place and changes nothing (a
 /// failure leaves the old table). The app re-keys `channel` when channels move.
+///
+/// Issue #52: a built-in Lemon plugin's editor asks for its sample this way where there is no file dialog (Android, the
+/// browser): its pick or its close answers the editor ([`lemon_pick`]), which opens the file itself.
 pub fn show_module(
     state: &mut State,
     ui: &mut egui::Ui,
@@ -587,10 +590,17 @@ pub fn show_module(
     };
     let (path, decoded) = match pick(state, ui, app, make, (false, shape), into) {
         Shown::Open => return None,
-        Shown::Closed => return Some(Nav::Close),
+        Shown::Closed => {
+            lemon_pick(app, channel, module, None);
+            return Some(Nav::Close);
+        }
         Shown::Picked(path, decoded) => (path, *decoded),
     };
     close(state, app.audio);
+    // ponytail: the picker decoded the pick for nothing here (the plugin decodes it again); skip that if it ever drags.
+    if lemon_pick(app, channel, module, Some(&path)) {
+        return Some(Nav::Close);
+    }
     // Ours always render; any other file must decode.
     if let Some(err) = decoded.error {
         return Some(outcome(Err(err)));
@@ -611,6 +621,31 @@ pub fn show_module(
         app.song_edited(true);
     }
     Some(Nav::Close)
+}
+
+/// Answers the file request of the editor of module `module` on `channel` with `path` (`None`: cancelled) when it is a
+/// built-in Lemon plugin's: the plugin opens the file itself, handed over first when this session keeps it in memory
+/// (the web's). Whether it is one.
+fn lemon_pick(app: &mut AppCtx, channel: usize, module: i32, path: Option<&Path>) -> bool {
+    let Some(channel) = app.song.channels.get(channel) else {
+        return false;
+    };
+    let lemon = (channel.rack.get(module))
+        .and_then(|m| m.file.plugin.as_deref())
+        .and_then(crate::plugins::builtin::of);
+    let editor = crate::plugins::lemon_open(channel.id, module);
+    let (Some(_), Some(editor)) = (lemon, editor) else {
+        return false;
+    };
+    if let Some(path) = path
+        && app.files.disk_user_dir().is_none()
+        && let Ok(bytes) = app.files.read_user_file(path)
+    {
+        os_engine::sample::provide(path, bytes);
+    }
+    let answer = path.map(|p| os_plugkit::embed::Answer::Text(p.to_string_lossy().into_owned()));
+    os_plugkit::embed::answer(editor as _, answer);
+    true
 }
 
 /// A clip's or audio track's pick into its slot (`slot`, the default one when it has none): the slot takes the file

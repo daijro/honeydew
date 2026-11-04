@@ -5,6 +5,8 @@ pub mod builtin_drums;
 pub mod builtin_loops;
 pub mod builtin_shapes;
 mod comb;
+pub mod de_esser;
+pub mod denoise;
 pub mod device;
 pub mod drums;
 pub mod dw_sampler;
@@ -105,6 +107,8 @@ pub fn effect_info(id: u16) -> Option<EffectInfo> {
         lemon::LIMITER => ("Lemon Limiter", lemon::LIMITER_SAFETY + 1),
         dynamic_eq::DYNAMIC_EQ => ("Dynamic EQ", dynamic_eq::PARAMS),
         modulator::MODULATOR => ("Modulator", modulator::PARAMS),
+        de_esser::DE_ESSER => ("De-esser", de_esser::PARAMS),
+        denoise::DENOISE => ("Denoise", denoise::PARAMS),
         _ => return None,
     };
     Some(EffectInfo {
@@ -491,6 +495,20 @@ impl AudioEffect {
                 modulator::DEFAULTS.to_vec(),
                 Processor::Modulator(Box::default()),
             ),
+            de_esser::DE_ESSER => {
+                let state = de_esser::DeEsserState::new(&de_esser::DEFAULTS, sample_rate);
+                (
+                    de_esser::DEFAULTS.to_vec(),
+                    Processor::DeEsser(Box::new(state)),
+                )
+            }
+            denoise::DENOISE => {
+                let state = denoise::DenoiseState::new(&denoise::DEFAULTS, sample_rate);
+                (
+                    denoise::DEFAULTS.to_vec(),
+                    Processor::Denoise(Box::new(state)),
+                )
+            }
             _ => return Err(EffectError::UnsupportedEffect(id)),
         };
         let mut effect = Self {
@@ -556,6 +574,7 @@ impl AudioEffect {
             Processor::Pitcher(state) => state.latency_samples(),
             Processor::Pitcher2(state) => state.latency_samples(),
             Processor::LemonLimiter(state) => state.latency(),
+            Processor::Denoise(state) => state.latency(),
             _ => 0,
         }
     }
@@ -887,6 +906,8 @@ enum Processor {
     LemonLimiter(Box<lemon::LimiterFx>),
     DynamicEq(Box<dynamic_eq::DynamicEqState>),
     Modulator(Box<modulator::ModulatorState>),
+    DeEsser(Box<de_esser::DeEsserState>),
+    Denoise(Box<denoise::DenoiseState>),
     Monitor,
 }
 
@@ -930,6 +951,8 @@ impl Processor {
             Self::LemonLimiter(state) => state.set(params, sample_rate),
             Self::DynamicEq(state) => state.refresh(params, sample_rate),
             Self::Modulator(state) => state.refresh(params, sample_rate),
+            Self::DeEsser(state) => state.refresh(params, sample_rate),
+            Self::Denoise(state) => state.refresh(params, sample_rate),
             Self::Monitor => {}
         }
     }
@@ -1006,6 +1029,8 @@ impl Processor {
             // Its own input is the key until the sidechain feeds one.
             Self::DynamicEq(state) => state.process_frame(l, r, (l, r)),
             Self::Modulator(state) => state.process_frame(l, r, (l, r)),
+            Self::DeEsser(state) => state.process_frame(l, r),
+            Self::Denoise(state) => state.process_frame(l, r),
             Self::Monitor => (l, r),
         }
     }
@@ -1064,6 +1089,8 @@ impl Processor {
             Self::LemonLimiter(state) => state.reset(),
             Self::DynamicEq(state) => state.reset(),
             Self::Modulator(state) => state.reset(),
+            Self::DeEsser(state) => state.reset(),
+            Self::Denoise(state) => state.reset(),
             Self::Monitor => {}
         }
     }
@@ -1071,6 +1098,8 @@ impl Processor {
     fn gain_reduction_db(&self) -> f32 {
         match self {
             Self::Compressor(state) => state.gain_reduction_db,
+            Self::DeEsser(state) => state.reduction_db(),
+            Self::Denoise(state) => state.reduction_db(),
             _ => 0.0,
         }
     }

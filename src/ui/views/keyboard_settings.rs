@@ -47,11 +47,11 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) -> Option<Na
     match action? {
         A::ChordSet(item) => return chord_set_item(item, app),
         action => {
-            // Two rows on raise the panel to the bar, 4.25 U and the open strip, within the screen.
+            // Two rows on raise the panel to the bar, 4.25 U and the open strip, within M.
             let (r, m) = (&app.regions, app.cx.m);
-            let two_rows = (r.transport.height() + m.u(TWO_ROWS_KEYS) + r.strip.height())
-                .min(r.screen.height())
-                / m.u(1.0);
+            let full = crate::ui::panel_resize::full(r.screen.height(), r.transport.height(), m);
+            let two_rows =
+                (r.transport.height() + m.u(TWO_ROWS_KEYS) + r.strip.height()).min(full) / m.u(1.0);
             if apply(action, state, &mut *app.song, app.settings, two_rows) {
                 app.param_edited();
             }

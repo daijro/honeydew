@@ -19,6 +19,7 @@ use crate::ui::automation::value::ValueSnap;
 use crate::ui::keyboard_settings::KeyboardMode;
 use crate::ui::main_menu::Sort;
 use crate::ui::modules_browser::ModuleOrdering;
+use crate::ui::piano_roll::GridSize;
 use crate::ui::save_dialog::ExportFormat;
 use crate::ui::soundfont_picker::PatchOrdering;
 use serde_json::{Map, Value};
@@ -300,6 +301,16 @@ pub struct Settings {
     /// ([`crate::ui::graph_lane::GraphLane::tab_below`]).
     #[serde(rename = "graphTabShift")]
     pub graph_tab_shift: f32,
+    /// The song file open at the last exit (our own key; #58), which the next start opens again; ""
+    /// for none.
+    #[serde(rename = "lastSong")]
+    pub last_song: String,
+    /// A start is opening [`Self::last_song`]: still set at the next start, that one was cut short, and it opens no song.
+    #[serde(rename = "interruptedWhenLoadingSong")]
+    pub interrupted_loading: bool,
+    /// The editors' grid size (our own key; #53): `Auto` by default, the snap menus' `Grid` columns pick it.
+    #[serde(rename = "gridSize")]
+    pub grid_size: GridSize,
 }
 
 /// `Screen orientation:`'s items, each with the `ActivityInfo.SCREEN_ORIENTATION_*` the Android activity requests:
@@ -361,6 +372,9 @@ impl Default for Settings {
             editor_ribbon_shift: 0.0,
             rack_tab_shift: 0.0,
             graph_tab_shift: 0.0,
+            last_song: String::new(),
+            interrupted_loading: false,
+            grid_size: GridSize::Auto,
         }
     }
 }
@@ -444,6 +458,9 @@ impl Settings {
         }
         if Sort::from_id(s.song_browser_ordering).is_none() {
             s.song_browser_ordering = d.song_browser_ordering;
+        }
+        if !GridSize::ALL.contains(&s.grid_size) {
+            s.grid_size = d.grid_size;
         }
         // No device is called "": it would never connect.
         if s.midi_device.is_empty() {
@@ -547,6 +564,11 @@ pub fn storage() -> Option<Box<dyn eframe::Storage>> {
     }
 }
 
+/// The settings file's name in the app's folder. On Android that folder is the app data folder, the user folder before
+/// it moved out ([`crate::ui::main_menu::user_dir`]), which leaves the file there.
+#[cfg(not(target_arch = "wasm32"))]
+pub const SETTINGS_FILE: &str = "storage.json";
+
 /// The settings file in the app's folder in the config folder `dir`, which the folder of the app's former name becomes
 /// the first time ([`crate::migrate_legacy_dir_once`]), with the values of the former keys carried over.
 #[cfg(not(target_arch = "wasm32"))]
@@ -555,7 +577,7 @@ fn open_storage(dir: &std::path::Path) -> Box<dyn eframe::Storage> {
         &dir.join(crate::LEGACY_APP_NAME),
         &dir.join(crate::APP_NAME),
     );
-    let mut storage = FileStorage::open(app.join("storage.json"));
+    let mut storage = FileStorage::open(app.join(SETTINGS_FILE));
     migrate_legacy_keys(&mut storage);
     Box::new(storage)
 }
@@ -768,6 +790,9 @@ mod tests {
             editor_ribbon_shift: -1.5,
             rack_tab_shift: 2.25,
             graph_tab_shift: -3.5,
+            last_song: "/songs/Beat.flm".into(),
+            interrupted_loading: true,
+            grid_size: GridSize::Note(16, true),
         }
     }
 
@@ -975,9 +1000,12 @@ mod tests {
                 "enableInertia",
                 "ghostnotes",
                 "graphTabShift",
+                "gridSize",
                 "importNoticeAccepted",
+                "interruptedWhenLoadingSong",
                 "keyboardKind",
                 "lastAudioFileFormat",
+                "lastSong",
                 "lockpads",
                 "lowlatency",
                 "mcpEnabled",

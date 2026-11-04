@@ -383,9 +383,12 @@ fn save(
     let (Some(shorthand), Some(module)) = (shorthand, module) else {
         return Nav::Close;
     };
-    if !pick_dw_program(module, &shorthand, None) {
+    let mut picked = module.clone();
+    super::preset_picker::renew_close_grand(app.files, &mut picked);
+    if !pick_dw_program(&mut picked, &shorthand, None) {
         return failed(path.display().to_string());
     }
+    *module = picked;
     app.files.name_module(module, &path);
     let name = module.file.preset_name.clone();
     crate::ui::rack::name_song_channel(app.song, channel, name);

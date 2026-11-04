@@ -12,7 +12,7 @@ use honeydew_audio::soundfont::{ParseError, PresetHeader, preset_headers};
 use honeydew_audio::soundfont::{MAX_PATCHES, PHDR_SIZE as RECORD};
 
 /// One `phdr` record: a patch of the SoundFont.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Preset {
     /// `achPresetName`, up to its first NUL.
     pub name: String,
@@ -20,6 +20,16 @@ pub struct Preset {
     pub preset: u16,
     /// `wBank`.
     pub bank: u16,
+    /// An SFZ's named controls (`label_ccN`), in the order written; none for a SoundFont's patch.
+    pub controls: Vec<Control>,
+}
+
+/// A control an SFZ names: MIDI CC `cc`, its `label`, and its value when the SFZ loads (`set_ccN`, else 0), 0…1.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Control {
+    pub cc: u8,
+    pub label: String,
+    pub value: f32,
 }
 
 /// Why a SoundFont's patches could not be listed. Its text is what the SoundFont Player's panel shows in its error
@@ -63,26 +73,42 @@ pub fn presets(bytes: &[u8]) -> Result<Vec<Preset>, Sf2Error> {
         name: crate::flm::chunk::text(header.name()),
         preset: header.preset,
         bank: header.bank,
+        controls: Vec::new(),
     };
     Ok(headers.iter().map(preset).collect())
 }
 
 /// The patches of the file at `path`, `bytes`: a SoundFont's ([`presets`]), or for an `.sfz` one patch named after
-/// the file. An SFZ is text that the engine reads with its samples; any that reads lists.
+/// the file, with the controls it names ([`sfz_patch`], its `#include`s not read). An SFZ is text that the engine reads
+/// with its samples; any that reads lists.
 pub fn patches(path: &std::path::Path, bytes: &[u8]) -> Result<Vec<Preset>, Sf2Error> {
     if !crate::project_files::is_sfz(path) {
         return presets(bytes);
     }
-    let name = path
-        .file_stem()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .into_owned();
-    Ok(vec![Preset {
-        name,
-        preset: 0,
-        bank: 0,
-    }])
+    Ok(vec![sfz_patch(path, bytes, &|_| None)])
+}
+
+/// The one patch of the SFZ at `path`, `bytes`: named after the file, with the controls its `<control>` names
+/// (`label_ccN`, at their `set_ccN`), its `#include`s read through `include` as the engine reads them.
+pub fn sfz_patch(
+    path: &std::path::Path,
+    bytes: &[u8],
+    include: &dyn Fn(&str) -> Option<String>,
+) -> Preset {
+    let name = path.file_stem().unwrap_or_default().to_string_lossy();
+    let control = honeydew_audio::sfz::parse(&String::from_utf8_lossy(bytes), include).control;
+    let controls = (control.labels.into_iter())
+        .map(|(cc, label)| Control {
+            cc,
+            label,
+            value: control.set_cc.get(&cc).copied().unwrap_or(0.0),
+        })
+        .collect();
+    Preset {
+        name: name.into_owned(),
+        controls,
+        ..Preset::default()
+    }
 }
 
 #[cfg(test)]
@@ -184,6 +210,7 @@ pub(crate) mod tests {
                 name: name.into(),
                 preset,
                 bank,
+                controls: Vec::new(),
             })
             .collect();
         assert_eq!(got, want);

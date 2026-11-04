@@ -169,6 +169,8 @@ const SECTIONS: [(Option<&str>, &[Entry]); 7] = [
         &[
             M(29),
             M(8),
+            M(honeydew_audio::de_esser::DE_ESSER),
+            M(honeydew_audio::denoise::DENOISE),
             M(6),
             M(27),
             M(20),

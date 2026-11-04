@@ -354,7 +354,6 @@ impl HoneydewApp {
         // Samples past the memory limit stream from the user and content folders (not in tests' rigs).
         let disk = sample_cache::disk_locator(&app.files);
         app.audio.samples.set_disk(disk);
-        app.whats_new_at_start(fresh);
         #[cfg(target_os = "android")]
         crate::android::request_orientation(app.settings.android_orientation());
         app.midi.link = crate::midi::device::MidiLink::platform(cc.egui_ctx.clone());
@@ -368,6 +367,9 @@ impl HoneydewApp {
             );
         }
         app.extract_demo_songs(cfg!(target_arch = "wasm32"));
+        // Before the questions a start may ask, which a song load closes.
+        app.restore_last_song(&cc.egui_ctx);
+        app.whats_new_at_start(fresh);
         #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
         app.sounds_at_start();
         // Once per start, before the purge (whose end every move waits for): a folder of the songs folder named as a row
@@ -434,6 +436,29 @@ impl HoneydewApp {
             Ok(()) => self.settings.demo_songs_version = settings::DEMO_SONGS_VERSION,
             Err(e) => eprintln!("{}: {e}", crate::content::DEMO_FOLDER),
         }
+    }
+
+    /// Reopening the last song (#58): the song file open at the last exit ([`Settings::last_song`]) opens again, as its SONGS
+    /// row would; without one, or when it is gone, the new song stays. `interruptedWhenLoadingSong` is stored set while
+    /// it opens: a start that ends there (a song that brings the app down) leaves it set, and the next opens no song.
+    fn restore_last_song(&mut self, ctx: &egui::Context) {
+        let path = std::path::PathBuf::from(&self.settings.last_song);
+        let interrupted = std::mem::take(&mut self.settings.interrupted_loading);
+        if interrupted || path.as_os_str().is_empty() || !self.files.library.exists(&path) {
+            return;
+        }
+        self.settings.interrupted_loading = true;
+        if let Some(storage) = self.storage.as_deref_mut() {
+            self.settings.save(storage);
+            storage.flush();
+        }
+        // As stored: the first frame's end stores the flag cleared.
+        self.settings_saved = self.settings.clone();
+        if let Some(song) = self.files.replace(Replace::Open(path)) {
+            self.song = song;
+            self.song_replaced(ctx);
+        }
+        self.settings.interrupted_loading = false;
     }
 
     /// Applies and keeps what the frame changed in the settings: the theme and the metronome level at once (the UI
@@ -2561,6 +2586,11 @@ impl HoneydewApp {
             m: &metrics,
         };
         crate::ui::tooltip::show(ctx, &cx);
+        // The song file the next start opens again.
+        let file = self.files.song_file().unwrap_or(std::path::Path::new(""));
+        if std::path::Path::new(&self.settings.last_song) != file {
+            self.settings.last_song = file.to_string_lossy().into_owned();
+        }
         self.keep_settings(ctx);
         // The playhead follows the audio, and a lit level meter falls to rest at the meters' release, stopped too (#41);
         // otherwise egui repaints only on input.
@@ -2650,6 +2680,9 @@ mod tests {
     mod rotation;
     // A finger's tap in the web build.
     mod web_touch;
+    // A start opens the last song again.
+    #[cfg(not(target_arch = "wasm32"))]
+    mod last_song;
 
     impl HoneydewApp {
         /// A Drums channel as the model makes it (the default kit, no picker open), added at the end and selected:
@@ -5976,9 +6009,9 @@ mod tests {
         ] {
             assert_eq!(rig.color_of(item), Some(dim), "{item}");
         }
-        // Standing on the CTRL button (x 669..725, on the panel's top), seven rows of 1.25 U: a disabled item (`Add
-        // automation track`) does nothing.
-        rig.click(pos2(697.0, PANEL_TOP - 3.5 * 40.0));
+        // Standing on the CTRL button (x 669..725, on the panel's top), eight rows of 1.25 U: a disabled item (`Add
+        // automation track`, row 3) does nothing.
+        rig.click(pos2(697.0, PANEL_TOP - 4.5 * 40.0));
         assert_eq!(rig.overlays(), [Overlay::CtrlMenu]);
         // A tap outside closes it and reaches nothing below.
         rig.click(E4);

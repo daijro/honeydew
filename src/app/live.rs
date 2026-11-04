@@ -12,7 +12,7 @@ use crate::sample_cache::SampleKey;
 use crate::song::TimeSig;
 use crate::song::points::{self, Point, PointKey};
 use crate::song::{Event, PPQ};
-use crate::ui::automation::geom::Frame;
+use crate::ui::automation::geom::{Frame, ROWS};
 use crate::ui::clips::{ClipRef, TimeAxis, clip_rect, find};
 use crate::ui::drum_grid::{self, edit::Place};
 use crate::ui::main_screen::track_rows;
@@ -1011,7 +1011,8 @@ pub(crate) fn points(
             return;
         }
         if let Some(at) = hovered(ui, f.grid, covered) {
-            let y = f64::from((at.y - span.top()) / span.height());
+            // Down the whole range, through the automation editor's value zoom (#60).
+            let y = f.row_at(at.y) / ROWS;
             live.drawn.pointer = Some(Pointer {
                 tick: fine(axis.tick(at.x)),
                 track: None,
@@ -1036,12 +1037,12 @@ pub(crate) fn points(
         live.drawn.range = range.map(|(a, b)| (fine(a), fine(b)));
         live.drawn.stretch = stretch.map(fine);
         let here = |s: &Presence| s.view == view && s.clip == Some(editing);
-        // A value's place down the span, as a fraction of it: its drawn centre's.
-        let level = |value: u16| (points::row(value, max) + 0.5) / 127.0;
-        let at = |t: f64, v: f64| pos2(axis.x(t), span.top() + v as f32 * span.height());
+        // A value's place down the whole range, as a fraction of it: its drawn centre's.
+        let level = |value: u16| (points::row(value, max) + 0.5) / ROWS;
+        let at = |t: f64, v: f64| pos2(axis.x(t), f.row_y(v * ROWS));
         let px = [
             f64::from(axis.beat_w) / f64::from(PPQ),
-            f64::from(span.height()),
+            f64::from(f.row_y(ROWS) - f.row_y(0.0)),
         ];
         let (dt, far) = pace(ui, f.grid);
         let base = points::points(clip, plot.key);

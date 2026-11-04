@@ -11,11 +11,13 @@
 //!   threads. A tick comes every 30 ms of pumping, and at once after a [`Waker::wake`] (any thread).
 //! - **Menus and the type-in box don't block.** [`Window::popup`] and [`Window::type_in`] hand the host the request
 //!   ([`modal`]) and return `None`. When the user answers ([`answer`]), the input that opened it comes again, and this
-//!   time the call returns the answer; a chain (a menu's `Type in value...`, then the box) replays its earlier answers
+//!   time the call returns the answer; a chain (a menu's `Enter value...`, then the box) replays its earlier answers
 //!   first.
+//! - **Files come from the host** where the platform has no file dialog (Android, the browser): [`Window::open_file`]
+//!   asks it ([`Modal::OpenFile`]) as a menu does, and the host's own picker answers with a path.
 //! - Positions are the editor's device pixels, also for popups (`to_root` keeps them).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock};
@@ -77,8 +79,8 @@ pub enum Modal {
     Menu { x: i32, y: i32, menu: MenuView, scale: f32 },
     /// The "Type in value" box, starting with `text`.
     TypeIn { x: i32, y: i32, text: String, scale: f32 },
-    /// A file the host should pick, with an optional extension filter.
-    OpenFile { title: String, extensions: Vec<String> },
+    /// A sample file to open: the host's own picker answers with its path ([`Answer::Text`]).
+    OpenFile,
 }
 
 /// The user's answer to a [`Modal`].
@@ -87,8 +89,6 @@ pub enum Answer {
     /// The menu row picked: its row in the menu, then in each submenu on the way.
     Pick(Vec<usize>),
     Text(String),
-    /// The path of the file the host picked.
-    File(String),
 }
 
 /// A modal waiting for its answer: the input that opened it, and the answers given before it in the chain.
@@ -139,6 +139,8 @@ static REPAINT: OnceLock<fn()> = OnceLock::new();
 thread_local! {
     /// The parked editors of this thread, by id.
     static PARKED: RefCell<HashMap<Parent, (Arc<State>, Box<dyn FnOnce()>)>> = RefCell::new(HashMap::new());
+    /// This thread's editors ask the host for the files they open ([`host_files`]).
+    static HOST_FILES: Cell<bool> = const { Cell::new(cfg!(any(target_arch = "wasm32", target_os = "android"))) };
 }
 
 fn get(id: Parent) -> Option<Arc<State>> {
@@ -348,7 +350,7 @@ impl Window {
         self.unlock();
         match self.answer() {
             Some(Answer::Pick(path)) => picked(def, &path),
-            Some(Answer::Text(_) | Answer::File(_)) => None,
+            Some(Answer::Text(_)) => None,
             None => {
                 self.ask(Modal::Menu { x, y, menu: MenuView::of(def), scale });
                 None
@@ -364,7 +366,7 @@ impl Window {
         self.unlock();
         match self.answer() {
             Some(Answer::Text(t)) => Some(t),
-            Some(Answer::Pick(_) | Answer::File(_)) => None,
+            Some(Answer::Pick(_)) => None,
             None => {
                 self.ask(Modal::TypeIn { x, y, text: text.to_owned(), scale });
                 None
@@ -372,27 +374,23 @@ impl Window {
         }
     }
 
-    /// Asks the host to pick a file. The input is replayed with its path once the host answers.
-    pub fn open_file(&mut self, title: &str, extensions: &[&str]) -> Option<String> {
+    /// The file the host's own picker picked ([`Modal::OpenFile`]), as [`Self::type_in`].
+    pub fn open_file(&self) -> Option<String> {
         if crate::no_modal() {
             return None;
         }
-        self.unlock();
         match self.answer() {
-            Some(Answer::File(path)) => Some(path),
-            Some(Answer::Pick(_) | Answer::Text(_)) => None,
+            Some(Answer::Text(path)) => Some(path),
+            Some(Answer::Pick(_)) => None,
             None => {
-                self.ask(Modal::OpenFile {
-                    title: title.to_owned(),
-                    extensions: extensions.iter().map(|extension| (*extension).to_owned()).collect(),
-                });
+                self.ask(Modal::OpenFile);
                 None
             }
         }
     }
 
     /// The next answer of the replay running, if any.
-    fn answer(&mut self) -> Option<Answer> {
+    fn answer(&self) -> Option<Answer> {
         let mut i = self.state.lock();
         let r = i.replay.as_mut()?;
         let a = r.answers.pop_front()?;
@@ -401,7 +399,7 @@ impl Window {
     }
 
     /// Hands the host `modal`, with the input that asked it (and the answers before it in a replay).
-    fn ask(&mut self, modal: Modal) {
+    fn ask(&self, modal: Modal) {
         let mut i = self.state.lock();
         let (trigger, before) = match &i.replay {
             Some(r) => (r.trigger.clone(), r.used.clone()),
@@ -438,6 +436,17 @@ pub fn set_repaint(f: fn()) {
 /// The display scale editor `id` paints at, where the plugin asks the window for it (macOS).
 pub fn set_scale(id: Parent, scale: f32) {
     SCALES.lock().unwrap_or_else(|e| e.into_inner()).insert(id, scale);
+}
+
+/// Whether the editors of this thread ask the host for the files they open ([`Window::open_file`]) instead of showing
+/// a file dialog: where the platform has none (Android, the browser), or once [`set_host_files`] said so.
+pub fn host_files() -> bool {
+    HOST_FILES.get()
+}
+
+/// Makes the editors of this thread ask the host for files ([`host_files`]) or not: a desktop test's phone.
+pub fn set_host_files(on: bool) {
+    HOST_FILES.set(on);
 }
 
 /// Whether editor `id` is open.
@@ -505,35 +514,4 @@ pub fn answer(id: Parent, answer: Option<Answer>) {
         i.events.push_front(e.clone());
     }
     i.replay = Some(Replay { answers, used: Vec::new(), trigger: p.trigger, left: events.len() });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn open_file_is_replayed_to_the_editor_with_the_picked_path() {
-        let mut editors = EDITORS.lock().unwrap_or_else(|e| e.into_inner());
-        let id = (1..).find(|id| !editors.contains_key(id)).unwrap();
-        let state = Arc::new(State::default());
-        editors.insert(id, state.clone());
-        drop(editors);
-
-        let down = Input::Down { x: 12.0, y: 18.0, btn: Button::Left, dbl: false };
-        state.lock().events.push_back(down.clone());
-        let mut win = Window { id, state: state.clone(), tick: Instant::now(), last: None };
-        assert_eq!(win.next(), Some(down));
-        assert_eq!(win.open_file("Open sample", &["wav"]), None);
-        assert_eq!(modal(id), Some(Modal::OpenFile {
-            title: "Open sample".into(),
-            extensions: vec!["wav".into()],
-        }));
-
-        answer(id, Some(Answer::File("/samples/Loop.wav".into())));
-        assert!(matches!(win.next(), Some(Input::Down { .. })));
-        assert_eq!(win.open_file("Open sample", &["wav"]), Some("/samples/Loop.wav".into()));
-        assert!(matches!(win.next(), Some(Input::Up { btn: Button::Left })));
-
-        EDITORS.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
-    }
 }

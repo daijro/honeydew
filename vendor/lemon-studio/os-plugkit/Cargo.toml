@@ -6,6 +6,9 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 publish = false
 
+[lib]
+doctest = false
+
 [features]
 # Honeydew (vendored addition): the editors draw into Honeydew's own window (`src/embed.rs`) on every platform.
 embed = []

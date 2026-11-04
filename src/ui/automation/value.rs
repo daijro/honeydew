@@ -11,6 +11,7 @@ use crate::params::{CHANNEL_PARAMS, ParamKind, ParamSpec, TextCx, menu_value};
 use crate::song::points::{self, Point, unit};
 use crate::song::{AutomationTarget, Song, automated_tempo};
 use crate::ui::piano_roll::SnapMode;
+use crate::ui::piano_roll::notes::{GridSize, Snap};
 use crate::ui::popup::PopupItem;
 use crate::ui::tempo::transport_bpm_text;
 
@@ -88,37 +89,69 @@ impl ValueSnap {
     }
 }
 
-/// A pick in a snap menu with a value column: a time mode, or a value grid (`None`: value snap off).
+/// A pick in a snap menu: a time mode, a grid size (#53), or a value grid (`None`: value snap off).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Pick {
     Time(SnapMode),
+    Grid(GridSize),
     Value(Option<ValueGrid>),
 }
 
-/// A snap menu's items: the time modes under `Time`, `mode` highlighted; beside them the value snap `vs` under `head`:
-/// `Off`, then `grids` with their labels, the current one highlighted.
+impl Pick {
+    /// `snap` after this pick: a time mode turns snap on at it, a grid size becomes the grid; a value pick leaves it.
+    pub fn snap(self, snap: Snap) -> Snap {
+        match self {
+            Self::Time(mode) => Snap {
+                on: true,
+                mode,
+                ..snap
+            },
+            Self::Grid(size) => Snap { size, ..snap },
+            Self::Value(_) => snap,
+        }
+    }
+}
+
+/// Every snap menu's time items: the modes under `Time`, then the grid sizes under `Grid` (#53), Auto and the straight
+/// ones in a column, each triplet beside its straight size; `snap`'s mode and size highlighted.
+pub fn time_items(snap: Snap) -> Vec<PopupItem<Pick>> {
+    let time = (SnapMode::ALL.iter().enumerate()).map(|(row, &m)| PopupItem {
+        current: m == snap.mode,
+        ..PopupItem::new(Pick::Time(m), 0, row + 1, m.label())
+    });
+    let sizes = (GridSize::ALL.iter().enumerate()).map(|(i, &g)| {
+        let (col, row) = if i < 8 { (1, i + 1) } else { (2, i - 5) };
+        PopupItem {
+            current: g == snap.size,
+            ..PopupItem::new(Pick::Grid(g), col, row, g.label())
+        }
+    });
+    let heads = [
+        PopupItem::header(0, 0, "Time"),
+        PopupItem::header(1, 0, "Grid"),
+    ];
+    heads.into_iter().chain(time).chain(sizes).collect()
+}
+
+/// A snap menu with a value column: the [`time_items`] of `snap`, then the value snap `vs` under `head`: `Off`, then
+/// `grids` with their labels, the current one highlighted.
 pub fn snap_items(
-    mode: SnapMode,
+    snap: Snap,
     (vs, head): (ValueSnap, &'static str),
     grids: impl IntoIterator<Item = (ValueGrid, String)>,
 ) -> Vec<PopupItem<Pick>> {
-    let time = (SnapMode::ALL.iter().enumerate()).map(|(row, &m)| PopupItem {
-        current: m == mode,
-        ..PopupItem::new(Pick::Time(m), 0, row + 1, m.label())
-    });
     let off = [(None, "Off".to_owned())];
     let values = off
         .into_iter()
         .chain(grids.into_iter().map(|(g, l)| (Some(g), l)));
     let values = values.enumerate().map(|(row, (g, label))| PopupItem {
         current: g == vs.on.then_some(vs.grid),
-        ..PopupItem::new(Pick::Value(g), 1, row + 1, label)
+        ..PopupItem::new(Pick::Value(g), 3, row + 1, label)
     });
-    let heads = [
-        PopupItem::header(0, 0, "Time"),
-        PopupItem::header(1, 0, head),
-    ];
-    heads.into_iter().chain(time).chain(values).collect()
+    let head = PopupItem::header(3, 0, head);
+    let mut items = time_items(snap);
+    items.extend([head].into_iter().chain(values));
+    items
 }
 
 /// How the selected points' values move this frame: snap on or off, and the grid step in stored units (`None`: rows).

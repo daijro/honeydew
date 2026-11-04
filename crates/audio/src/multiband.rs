@@ -38,13 +38,14 @@ impl Biquad {
     }
 }
 
-struct Splitter {
+/// A Linkwitz–Riley crossover (two Butterworth sections a side), stereo; the De-esser splits with it too.
+pub(crate) struct Splitter {
     low: [Biquad; 2],
     high: [Biquad; 2],
 }
 
 impl Splitter {
-    fn new(frequency: f32, sample_rate: f32) -> Self {
+    pub(crate) fn new(frequency: f32, sample_rate: f32) -> Self {
         let (low, high) = crossover_coefficients(frequency, sample_rate);
         Self {
             low: [Biquad::new(low); 2],
@@ -52,7 +53,7 @@ impl Splitter {
         }
     }
 
-    fn set_frequency(&mut self, frequency: f32, sample_rate: f32) {
+    pub(crate) fn set_frequency(&mut self, frequency: f32, sample_rate: f32) {
         let (low, high) = crossover_coefficients(frequency, sample_rate);
         for filter in &mut self.low {
             filter.coeffs = low;
@@ -62,7 +63,8 @@ impl Splitter {
         }
     }
 
-    fn process(&mut self, left: f32, right: f32) -> ((f32, f32), (f32, f32)) {
+    /// The (low, high) bands of a frame.
+    pub(crate) fn process(&mut self, left: f32, right: f32) -> ((f32, f32), (f32, f32)) {
         let mut low = [left, right];
         let mut high = low;
         for stage in 0..2 {
@@ -74,7 +76,7 @@ impl Splitter {
         ((low[0], low[1]), (high[0], high[1]))
     }
 
-    fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         for filter in self.low.iter_mut().chain(self.high.iter_mut()) {
             filter.clear();
         }

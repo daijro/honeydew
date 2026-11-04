@@ -1,6 +1,6 @@
 diff -ruN a/vendor/lemon-studio/lemon-3x-osc/src/editor.rs b/vendor/lemon-studio/lemon-3x-osc/src/editor.rs
---- a/vendor/lemon-studio/lemon-3x-osc/src/editor.rs	2026-11-03 13:00:31.943386741 +0000
-+++ b/vendor/lemon-studio/lemon-3x-osc/src/editor.rs	2026-11-03 13:00:32.039387225 +0000
+--- a/vendor/lemon-studio/lemon-3x-osc/src/editor.rs	2026-11-03 14:59:06.763675066 -0600
++++ b/vendor/lemon-studio/lemon-3x-osc/src/editor.rs	2026-11-03 14:59:07.663681548 -0600
 @@ -31,7 +31,7 @@
      #[cfg_attr(not(windows), allow(dead_code))]
      hwnd: Arc<AtomicIsize>,
@@ -69,16 +69,7 @@ diff -ruN a/vendor/lemon-studio/lemon-3x-osc/src/editor.rs b/vendor/lemon-studio
          }
  
          fn mods(&self) -> Mods {
-@@ -1095,7 +1105,7 @@
-                         self.link.to_host(Cmd::Automate, i as isize);
-                     }
-                     Act::OpenDialog => {
--                        if let Some(path) = file_dialog(&self.win) {
-+                        if let Some(path) = file_dialog(&mut self.win) {
-                             self.logic.load(&path);
-                         }
-                         self.dirty = true;
-@@ -1130,6 +1140,7 @@
+@@ -1130,10 +1140,16 @@
  
      /// The open sample dialog: the desktop's own (through its portal on Linux; on macOS AppKit's, run on the main
      /// thread), as Lemon Sampler's.
@@ -86,28 +77,32 @@ diff -ruN a/vendor/lemon-studio/lemon-3x-osc/src/editor.rs b/vendor/lemon-studio
      fn file_dialog(win: &Window) -> Option<String> {
          if os_plugkit::no_modal() {
              return None;
-@@ -1142,6 +1153,18 @@
+         }
++        // Honeydew (vendored addition): the host's own picker opens a file where it answers (`os_plugkit::embed`).
++        #[cfg(feature = "embed")]
++        if os_plugkit::embed::host_files() {
++            return win.open_file();
++        }
+         let path = win.dialog(move || {
+             rfd::FileDialog::new()
+                 .set_title("Sample for the custom shape")
+@@ -1142,6 +1158,13 @@
          });
          path.flatten().map(|p| p.to_string_lossy().into_owned())
      }
 +
-+    /// The browser has no file dialog. On Android, ask the host to use the system document picker.
-+    #[cfg(target_os = "android")]
-+    fn file_dialog(win: &mut Window) -> Option<String> {
-+        win.open_file("Sample for the custom shape", &["wav", "flac", "ogg", "wv", "aif", "aiff", "mp3"])
-+    }
-+
-+    /// Honeydew (vendored addition): the browser has no file dialog.
-+    #[cfg(target_arch = "wasm32")]
-+    fn file_dialog(_: &Window) -> Option<String> {
-+        None
++    /// Honeydew (vendored addition): the browser and Android have no file dialog: the host's own picker opens a sample
++    /// (`os_plugkit::embed`).
++    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
++    fn file_dialog(win: &Window) -> Option<String> {
++        win.open_file()
 +    }
  }
  
  #[cfg(test)]
 diff -ruN a/vendor/lemon-studio/lemon-3x-osc/src/lib.rs b/vendor/lemon-studio/lemon-3x-osc/src/lib.rs
---- a/vendor/lemon-studio/lemon-3x-osc/src/lib.rs	2026-11-03 13:00:31.943386741 +0000
-+++ b/vendor/lemon-studio/lemon-3x-osc/src/lib.rs	2026-11-03 13:00:32.039387225 +0000
+--- a/vendor/lemon-studio/lemon-3x-osc/src/lib.rs	2026-11-03 14:59:06.767675095 -0600
++++ b/vendor/lemon-studio/lemon-3x-osc/src/lib.rs	2026-11-03 14:59:07.667681577 -0600
 @@ -299,6 +299,8 @@
      const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::Instrument, ClapFeature::Synthesizer, ClapFeature::Stereo];
  }
@@ -118,8 +113,8 @@ diff -ruN a/vendor/lemon-studio/lemon-3x-osc/src/lib.rs b/vendor/lemon-studio/le
      const VST3_CLASS_ID: [u8; 16] = *b"OpenStudio3xOsc!";
      const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Instrument, Vst3SubCategory::Synth];
 diff -ruN a/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs b/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs
---- a/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs	2026-11-03 13:00:31.959386821 +0000
-+++ b/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs	2026-11-03 13:00:32.047387266 +0000
+--- a/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs	2026-11-03 14:59:06.879675902 -0600
++++ b/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs	2026-11-03 14:59:07.715681923 -0600
 @@ -35,7 +35,7 @@
      #[cfg_attr(not(windows), allow(dead_code))]
      hwnd: Arc<AtomicIsize>,
@@ -189,8 +184,8 @@ diff -ruN a/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs b/vendor/lem
  
          fn mods(&self) -> Mods {
 diff -ruN a/vendor/lemon-studio/lemon-parametric-eq-2/src/lib.rs b/vendor/lemon-studio/lemon-parametric-eq-2/src/lib.rs
---- a/vendor/lemon-studio/lemon-parametric-eq-2/src/lib.rs	2026-11-03 13:00:31.959386821 +0000
-+++ b/vendor/lemon-studio/lemon-parametric-eq-2/src/lib.rs	2026-11-03 13:00:32.047387266 +0000
+--- a/vendor/lemon-studio/lemon-parametric-eq-2/src/lib.rs	2026-11-03 14:59:06.883675930 -0600
++++ b/vendor/lemon-studio/lemon-parametric-eq-2/src/lib.rs	2026-11-03 14:59:07.759682240 -0600
 @@ -224,6 +224,8 @@
      const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Equalizer, ClapFeature::Stereo];
  }
@@ -201,8 +196,8 @@ diff -ruN a/vendor/lemon-studio/lemon-parametric-eq-2/src/lib.rs b/vendor/lemon-
      const VST3_CLASS_ID: [u8; 16] = *b"OpenStudioParEQ2";
      const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Fx, Vst3SubCategory::Eq];
 diff -ruN a/vendor/lemon-studio/lemon-sampler/src/editor.rs b/vendor/lemon-studio/lemon-sampler/src/editor.rs
---- a/vendor/lemon-studio/lemon-sampler/src/editor.rs	2026-11-03 13:00:31.951386781 +0000
-+++ b/vendor/lemon-studio/lemon-sampler/src/editor.rs	2026-11-03 13:00:32.043387246 +0000
+--- a/vendor/lemon-studio/lemon-sampler/src/editor.rs	2026-11-03 14:59:06.827675527 -0600
++++ b/vendor/lemon-studio/lemon-sampler/src/editor.rs	2026-11-03 14:59:07.679681663 -0600
 @@ -15,7 +15,8 @@
  use std::path::PathBuf;
  use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
@@ -290,25 +285,7 @@ diff -ruN a/vendor/lemon-studio/lemon-sampler/src/editor.rs b/vendor/lemon-studi
          }
  
          fn mods(&self) -> Mods {
-@@ -2730,7 +2741,7 @@
-                         }
-                     }
-                     Act::OpenDialog => {
--                        if let Some(path) = file_dialog(&self.win, false) {
-+                        if let Some(path) = file_dialog(&mut self.win, false) {
-                             self.load(&path);
-                         }
-                         self.dirty = true;
-@@ -2752,7 +2763,7 @@
-                     }
-                     Act::SaveAs => {
-                         let s = self.shared.whole();
--                        if let (Some(s), Some(path)) = (s, file_dialog(&self.win, true)) {
-+                        if let (Some(s), Some(path)) = (s, file_dialog(&mut self.win, true)) {
-                             let path = if path.to_ascii_lowercase().ends_with(".wav") { path } else { format!("{path}.wav") };
-                             self.logic.hint = match std::fs::write(&path, super::wav_bytes(&s, true)) {
-                                 Ok(()) => format!("Saved {path}"),
-@@ -2845,6 +2856,7 @@
+@@ -2845,10 +2856,16 @@
  
      /// The open / save sample dialog: the desktop's own (through its portal on Linux; on macOS AppKit's, run on the main
      /// thread).
@@ -316,33 +293,33 @@ diff -ruN a/vendor/lemon-studio/lemon-sampler/src/editor.rs b/vendor/lemon-studi
      fn file_dialog(win: &Window, save: bool) -> Option<String> {
          if os_plugkit::no_modal() {
              return None;
-@@ -2859,6 +2871,22 @@
+         }
++        // Honeydew (vendored addition): the host's own picker opens a file where it answers (`os_plugkit::embed`).
++        #[cfg(feature = "embed")]
++        if os_plugkit::embed::host_files() {
++            return (!save).then(|| win.open_file()).flatten();
++        }
+         let path = win.dialog(move || {
+             let d = rfd::FileDialog::new();
+             if save {
+@@ -2859,6 +2876,13 @@
          });
          path.flatten().map(|p| p.to_string_lossy().into_owned())
      }
 +
-+    /// The browser has no file dialog. On Android, ask the host to use the system document picker.
-+    #[cfg(target_os = "android")]
-+    fn file_dialog(win: &mut Window, save: bool) -> Option<String> {
-+        if save {
-+            None
-+        } else {
-+            win.open_file("Open sample", &["wav", "flac", "ogg", "wv", "aif", "aiff", "mp3"])
-+        }
-+    }
-+
-+    /// Honeydew (vendored addition): the browser has no file dialog.
-+    #[cfg(target_arch = "wasm32")]
-+    fn file_dialog(_: &Window, _: bool) -> Option<String> {
-+        None
++    /// Honeydew (vendored addition): the browser and Android have no file dialog: the host's own picker opens a sample
++    /// (`os_plugkit::embed`), and nothing saves one.
++    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
++    fn file_dialog(win: &Window, save: bool) -> Option<String> {
++        (!save).then(|| win.open_file()).flatten()
 +    }
  }
  
  #[cfg(test)]
 diff -ruN a/vendor/lemon-studio/lemon-sampler/src/lib.rs b/vendor/lemon-studio/lemon-sampler/src/lib.rs
---- a/vendor/lemon-studio/lemon-sampler/src/lib.rs	2026-11-03 13:00:31.951386781 +0000
-+++ b/vendor/lemon-studio/lemon-sampler/src/lib.rs	2026-11-03 13:00:32.043387246 +0000
-@@ -430,6 +430,10 @@
+--- a/vendor/lemon-studio/lemon-sampler/src/lib.rs	2026-11-03 14:59:06.835675585 -0600
++++ b/vendor/lemon-studio/lemon-sampler/src/lib.rs	2026-11-03 14:59:07.699681807 -0600
+@@ -543,6 +543,10 @@
              return;
          }
          let (s, p) = (self.clone(), params.clone());
@@ -353,7 +330,7 @@ diff -ruN a/vendor/lemon-studio/lemon-sampler/src/lib.rs b/vendor/lemon-studio/l
          std::thread::spawn(move || s.precompute(&p));
      }
  
-@@ -747,6 +751,8 @@
+@@ -834,6 +838,8 @@
      const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::Instrument, ClapFeature::Sampler, ClapFeature::Stereo];
  }
  
@@ -363,11 +340,11 @@ diff -ruN a/vendor/lemon-studio/lemon-sampler/src/lib.rs b/vendor/lemon-studio/l
      const VST3_CLASS_ID: [u8; 16] = *b"OpenStudioSamplr";
      const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Instrument, Vst3SubCategory::Sampler];
 diff -ruN a/vendor/lemon-studio/os-dsp/src/lib.rs b/vendor/lemon-studio/os-dsp/src/lib.rs
---- a/vendor/lemon-studio/os-dsp/src/lib.rs	2026-11-03 13:00:32.023387145 +0000
-+++ b/vendor/lemon-studio/os-dsp/src/lib.rs	2026-11-03 13:00:32.071387387 +0000
-@@ -27,5 +27,11 @@
- pub mod mixer;
+--- a/vendor/lemon-studio/os-dsp/src/lib.rs	2026-11-03 14:59:07.563680828 -0600
++++ b/vendor/lemon-studio/os-dsp/src/lib.rs	2026-11-03 14:59:08.199685408 -0600
+@@ -30,6 +30,12 @@
  pub mod num;
+ pub mod pitch;
  pub mod resample;
 +#[cfg(not(target_arch = "wasm32"))]
 +pub mod stretch;
@@ -377,9 +354,10 @@ diff -ruN a/vendor/lemon-studio/os-dsp/src/lib.rs b/vendor/lemon-studio/os-dsp/s
 +#[path = "stretch_web.rs"]
  pub mod stretch;
  pub mod tone;
+ pub mod transients;
 diff -ruN a/vendor/lemon-studio/os-dsp/src/stretch_web.rs b/vendor/lemon-studio/os-dsp/src/stretch_web.rs
---- a/vendor/lemon-studio/os-dsp/src/stretch_web.rs	1970-01-01 00:00:00.000000000 +0000
-+++ b/vendor/lemon-studio/os-dsp/src/stretch_web.rs	2026-11-03 13:00:32.071387387 +0000
+--- a/vendor/lemon-studio/os-dsp/src/stretch_web.rs	1969-12-31 18:00:00.000000000 -0600
++++ b/vendor/lemon-studio/os-dsp/src/stretch_web.rs	2026-11-03 14:59:08.123684861 -0600
 @@ -0,0 +1,76 @@
 +// Copyright (C) 2026 The Honeydew contributors
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -457,10 +435,44 @@ diff -ruN a/vendor/lemon-studio/os-dsp/src/stretch_web.rs b/vendor/lemon-studio/
 +        }
 +    }
 +}
+diff -ruN a/vendor/lemon-studio/os-engine/src/sample.rs b/vendor/lemon-studio/os-engine/src/sample.rs
+--- a/vendor/lemon-studio/os-engine/src/sample.rs	2026-11-03 14:59:07.643681404 -0600
++++ b/vendor/lemon-studio/os-engine/src/sample.rs	2026-11-03 14:59:08.443687166 -0600
+@@ -100,9 +100,29 @@
+     Ok(s)
+ }
+ 
++/// Honeydew (vendored addition): the files the host keeps in memory, by path (the browser's, which has no file
++/// system), which [`load`] reads before the disk.
++// ponytail: each kept for the session, as the browser's copies themselves are.
++fn provided() -> &'static std::sync::Mutex<HashMap<PathBuf, Arc<[u8]>>> {
++    static PROVIDED: OnceLock<std::sync::Mutex<HashMap<PathBuf, Arc<[u8]>>>> = OnceLock::new();
++    PROVIDED.get_or_init(Default::default)
++}
++
++/// Honeydew (vendored addition): `bytes` are the file at `path` from now on, for [`load`].
++pub fn provide(path: &Path, bytes: Vec<u8>) {
++    if let Ok(mut map) = provided().lock() {
++        map.insert(path.to_owned(), bytes.into());
++    }
++}
++
+ /// Decodes a WAV (PCM or Vorbis-in-WAV) / FLAC / Ogg Vorbis / WavPack / MP3 / AIFF file.
+ pub fn load(path: &Path) -> Result<Sample, SampleError> {
+-    let bytes = std::fs::read(path).map_err(|source| SampleError::Io { path: path.to_owned(), source })?;
++    // Honeydew (vendored change): a file the host [`provide`]d first.
++    let held = provided().lock().ok().and_then(|map| map.get(path).cloned());
++    let bytes = match held {
++        Some(bytes) => bytes.to_vec(),
++        None => std::fs::read(path).map_err(|source| SampleError::Io { path: path.to_owned(), source })?,
++    };
+     let decode_err = |message: String| SampleError::Decode { path: path.to_owned(), message };
+     if let Some(vw) = vorbis_in_wav(&bytes) {
+         let mut s = decode(vw.ogg.to_vec(), Some("ogg")).map_err(decode_err)?;
 diff -ruN a/vendor/lemon-studio/os-hostlink/src/lib.rs b/vendor/lemon-studio/os-hostlink/src/lib.rs
---- a/vendor/lemon-studio/os-hostlink/src/lib.rs	2026-11-03 13:00:32.007387064 +0000
-+++ b/vendor/lemon-studio/os-hostlink/src/lib.rs	2026-11-03 13:00:32.067387367 +0000
-@@ -279,7 +279,10 @@
+--- a/vendor/lemon-studio/os-hostlink/src/lib.rs	2026-11-03 14:59:07.411679733 -0600
++++ b/vendor/lemon-studio/os-hostlink/src/lib.rs	2026-11-03 14:59:08.091684631 -0600
+@@ -335,7 +335,10 @@
  #[cfg(windows)]
  pub use win::{message, to_host, Link};
  
@@ -472,7 +484,7 @@ diff -ruN a/vendor/lemon-studio/os-hostlink/src/lib.rs b/vendor/lemon-studio/os-
  mod local {
      use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
      use std::sync::{Arc, Mutex, OnceLock, Weak};
-@@ -476,6 +479,8 @@
+@@ -532,6 +535,8 @@
  
  #[cfg(not(windows))]
  pub use local::{set_host_waker, take_host_messages, Link, Peer};
@@ -482,9 +494,9 @@ diff -ruN a/vendor/lemon-studio/os-hostlink/src/lib.rs b/vendor/lemon-studio/os-
  #[cfg(test)]
  mod tests {
 diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os-plugkit/src/embed.rs
---- a/vendor/lemon-studio/os-plugkit/src/embed.rs	1970-01-01 00:00:00.000000000 +0000
-+++ b/vendor/lemon-studio/os-plugkit/src/embed.rs	2026-11-03 13:00:32.047387266 +0000
-@@ -0,0 +1,539 @@
+--- a/vendor/lemon-studio/os-plugkit/src/embed.rs	1969-12-31 18:00:00.000000000 -0600
++++ b/vendor/lemon-studio/os-plugkit/src/embed.rs	2026-11-03 14:59:07.819682672 -0600
+@@ -0,0 +1,517 @@
 +// Copyright (C) 2026 The Honeydew contributors
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +
@@ -498,11 +510,13 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +//!   threads. A tick comes every 30 ms of pumping, and at once after a [`Waker::wake`] (any thread).
 +//! - **Menus and the type-in box don't block.** [`Window::popup`] and [`Window::type_in`] hand the host the request
 +//!   ([`modal`]) and return `None`. When the user answers ([`answer`]), the input that opened it comes again, and this
-+//!   time the call returns the answer; a chain (a menu's `Type in value...`, then the box) replays its earlier answers
++//!   time the call returns the answer; a chain (a menu's `Enter value...`, then the box) replays its earlier answers
 +//!   first.
++//! - **Files come from the host** where the platform has no file dialog (Android, the browser): [`Window::open_file`]
++//!   asks it ([`Modal::OpenFile`]) as a menu does, and the host's own picker answers with a path.
 +//! - Positions are the editor's device pixels, also for popups (`to_root` keeps them).
 +
-+use std::cell::RefCell;
++use std::cell::{Cell, RefCell};
 +use std::collections::{HashMap, VecDeque};
 +use std::sync::atomic::{AtomicBool, Ordering};
 +use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock};
@@ -564,8 +578,8 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    Menu { x: i32, y: i32, menu: MenuView, scale: f32 },
 +    /// The "Type in value" box, starting with `text`.
 +    TypeIn { x: i32, y: i32, text: String, scale: f32 },
-+    /// A file the host should pick, with an optional extension filter.
-+    OpenFile { title: String, extensions: Vec<String> },
++    /// A sample file to open: the host's own picker answers with its path ([`Answer::Text`]).
++    OpenFile,
 +}
 +
 +/// The user's answer to a [`Modal`].
@@ -574,8 +588,6 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    /// The menu row picked: its row in the menu, then in each submenu on the way.
 +    Pick(Vec<usize>),
 +    Text(String),
-+    /// The path of the file the host picked.
-+    File(String),
 +}
 +
 +/// A modal waiting for its answer: the input that opened it, and the answers given before it in the chain.
@@ -626,6 +638,8 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +thread_local! {
 +    /// The parked editors of this thread, by id.
 +    static PARKED: RefCell<HashMap<Parent, (Arc<State>, Box<dyn FnOnce()>)>> = RefCell::new(HashMap::new());
++    /// This thread's editors ask the host for the files they open ([`host_files`]).
++    static HOST_FILES: Cell<bool> = const { Cell::new(cfg!(any(target_arch = "wasm32", target_os = "android"))) };
 +}
 +
 +fn get(id: Parent) -> Option<Arc<State>> {
@@ -835,7 +849,7 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +        self.unlock();
 +        match self.answer() {
 +            Some(Answer::Pick(path)) => picked(def, &path),
-+            Some(Answer::Text(_) | Answer::File(_)) => None,
++            Some(Answer::Text(_)) => None,
 +            None => {
 +                self.ask(Modal::Menu { x, y, menu: MenuView::of(def), scale });
 +                None
@@ -851,7 +865,7 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +        self.unlock();
 +        match self.answer() {
 +            Some(Answer::Text(t)) => Some(t),
-+            Some(Answer::Pick(_) | Answer::File(_)) => None,
++            Some(Answer::Pick(_)) => None,
 +            None => {
 +                self.ask(Modal::TypeIn { x, y, text: text.to_owned(), scale });
 +                None
@@ -859,27 +873,23 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +        }
 +    }
 +
-+    /// Asks the host to pick a file. The input is replayed with its path once the host answers.
-+    pub fn open_file(&mut self, title: &str, extensions: &[&str]) -> Option<String> {
++    /// The file the host's own picker picked ([`Modal::OpenFile`]), as [`Self::type_in`].
++    pub fn open_file(&self) -> Option<String> {
 +        if crate::no_modal() {
 +            return None;
 +        }
-+        self.unlock();
 +        match self.answer() {
-+            Some(Answer::File(path)) => Some(path),
-+            Some(Answer::Pick(_) | Answer::Text(_)) => None,
++            Some(Answer::Text(path)) => Some(path),
++            Some(Answer::Pick(_)) => None,
 +            None => {
-+                self.ask(Modal::OpenFile {
-+                    title: title.to_owned(),
-+                    extensions: extensions.iter().map(|extension| (*extension).to_owned()).collect(),
-+                });
++                self.ask(Modal::OpenFile);
 +                None
 +            }
 +        }
 +    }
 +
 +    /// The next answer of the replay running, if any.
-+    fn answer(&mut self) -> Option<Answer> {
++    fn answer(&self) -> Option<Answer> {
 +        let mut i = self.state.lock();
 +        let r = i.replay.as_mut()?;
 +        let a = r.answers.pop_front()?;
@@ -888,7 +898,7 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    }
 +
 +    /// Hands the host `modal`, with the input that asked it (and the answers before it in a replay).
-+    fn ask(&mut self, modal: Modal) {
++    fn ask(&self, modal: Modal) {
 +        let mut i = self.state.lock();
 +        let (trigger, before) = match &i.replay {
 +            Some(r) => (r.trigger.clone(), r.used.clone()),
@@ -925,6 +935,17 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +/// The display scale editor `id` paints at, where the plugin asks the window for it (macOS).
 +pub fn set_scale(id: Parent, scale: f32) {
 +    SCALES.lock().unwrap_or_else(|e| e.into_inner()).insert(id, scale);
++}
++
++/// Whether the editors of this thread ask the host for the files they open ([`Window::open_file`]) instead of showing
++/// a file dialog: where the platform has none (Android, the browser), or once [`set_host_files`] said so.
++pub fn host_files() -> bool {
++    HOST_FILES.get()
++}
++
++/// Makes the editors of this thread ask the host for files ([`host_files`]) or not: a desktop test's phone.
++pub fn set_host_files(on: bool) {
++    HOST_FILES.set(on);
 +}
 +
 +/// Whether editor `id` is open.
@@ -993,40 +1014,9 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    }
 +    i.replay = Some(Replay { answers, used: Vec::new(), trigger: p.trigger, left: events.len() });
 +}
-+
-+#[cfg(test)]
-+mod tests {
-+    use super::*;
-+
-+    #[test]
-+    fn open_file_is_replayed_to_the_editor_with_the_picked_path() {
-+        let mut editors = EDITORS.lock().unwrap_or_else(|e| e.into_inner());
-+        let id = (1..).find(|id| !editors.contains_key(id)).unwrap();
-+        let state = Arc::new(State::default());
-+        editors.insert(id, state.clone());
-+        drop(editors);
-+
-+        let down = Input::Down { x: 12.0, y: 18.0, btn: Button::Left, dbl: false };
-+        state.lock().events.push_back(down.clone());
-+        let mut win = Window { id, state: state.clone(), tick: Instant::now(), last: None };
-+        assert_eq!(win.next(), Some(down));
-+        assert_eq!(win.open_file("Open sample", &["wav"]), None);
-+        assert_eq!(modal(id), Some(Modal::OpenFile {
-+            title: "Open sample".into(),
-+            extensions: vec!["wav".into()],
-+        }));
-+
-+        answer(id, Some(Answer::File("/samples/Loop.wav".into())));
-+        assert!(matches!(win.next(), Some(Input::Down { .. })));
-+        assert_eq!(win.open_file("Open sample", &["wav"]), Some("/samples/Loop.wav".into()));
-+        assert!(matches!(win.next(), Some(Input::Up { btn: Button::Left })));
-+
-+        EDITORS.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
-+    }
-+}
 diff -ruN a/vendor/lemon-studio/os-plugkit/src/lib.rs b/vendor/lemon-studio/os-plugkit/src/lib.rs
---- a/vendor/lemon-studio/os-plugkit/src/lib.rs	2026-11-03 13:00:31.967386862 +0000
-+++ b/vendor/lemon-studio/os-plugkit/src/lib.rs	2026-11-03 13:00:32.047387266 +0000
+--- a/vendor/lemon-studio/os-plugkit/src/lib.rs	2026-11-03 14:59:06.959676478 -0600
++++ b/vendor/lemon-studio/os-plugkit/src/lib.rs	2026-11-03 14:59:07.791682470 -0600
 @@ -19,14 +19,26 @@
  pub mod x11;
  #[cfg(target_os = "macos")]
@@ -1058,8 +1048,8 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/lib.rs b/vendor/lemon-studio/os-p
  use os_theme::design::Design;
  use os_theme::Palette;
 diff -ruN a/vendor/lemon-studio/os-plugkit/src/vals.rs b/vendor/lemon-studio/os-plugkit/src/vals.rs
---- a/vendor/lemon-studio/os-plugkit/src/vals.rs	2026-11-03 13:00:31.967386862 +0000
-+++ b/vendor/lemon-studio/os-plugkit/src/vals.rs	2026-11-03 13:00:32.051387286 +0000
+--- a/vendor/lemon-studio/os-plugkit/src/vals.rs	2026-11-03 14:59:06.971676565 -0600
++++ b/vendor/lemon-studio/os-plugkit/src/vals.rs	2026-11-03 14:59:07.815682643 -0600
 @@ -7,7 +7,8 @@
  
  use std::collections::HashMap;

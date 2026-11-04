@@ -362,6 +362,24 @@ fn add_midi_cc_track_picks_a_cc_by_name_for_a_lane_on_the_selected_channel_in_on
 }
 
 #[test]
+fn add_pitch_bend_track_adds_a_pitch_bend_lane_on_the_selected_audio_channel_in_one_undo_step() {
+    let mut rig = Rig::with_synth();
+    rig.app.add_channel(ChannelKind::AudioClip, 0);
+    rig.app.selected_channel = 2;
+    let (undos, lanes) = (rig.undos(), rig.app.song.channels[2].lanes.len());
+    rig.ctrl_pick("Add Pitch Bend track");
+    let ch = &rig.app.song.channels[2];
+    assert_eq!(ch.lanes.len(), lanes + 1);
+    let lane = ch.lanes.last().unwrap();
+    assert_eq!(
+        (lane.target, lane.label.as_str(), lane.clips.len()),
+        (Some(AutomationTarget::PITCH_BEND), "Pitch Bend", 1)
+    );
+    assert_eq!(rig.app.nav.view, View::AutomationEditor(2));
+    assert_eq!(rig.undos(), undos + 1);
+}
+
+#[test]
 fn a_send_lane_is_named_after_its_target_channel() {
     // `Send Level (to <name>)`: the name of the channel the send goes to.
     let mut rig = effects_rig();

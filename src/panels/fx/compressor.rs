@@ -112,8 +112,9 @@ fn gr_fraction(gain: f32) -> f32 {
     1.0 - gain.clamp(0.0, 1.0).powf(1.0 / 2.3)
 }
 
-/// The meter (#9) from the module's meter feed, smoothed; it repaints while it moves or OUT is non-silent.
-fn level_meter(
+/// The meter (#9) from the module's meter feed, smoothed; it repaints while it moves or OUT is non-silent. The De-esser
+/// and Denoise show it too.
+pub(super) fn level_meter(
     ui: &mut Ui,
     cx: &UiCtx,
     id: Id,

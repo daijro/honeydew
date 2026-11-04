@@ -1406,7 +1406,10 @@ fn load_sfz(
     };
     let missing = missing_names.chain(unplayed).map(named).collect();
     let stem = relative.file_stem().unwrap_or_default().to_string_lossy();
-    (Some(SoundFont::sfz(&stem, playing)), missing)
+    (
+        Some(SoundFont::sfz(&stem, playing, &parsed.control)),
+        missing,
+    )
 }
 
 /// SFZ region `r`'s first frame, and its loop start when it may loop, in `source` (as the player reads them).
@@ -1506,7 +1509,7 @@ fn plan(costs: &[Cost], room: usize) -> Vec<Keep> {
 
 /// The file `name` that the SFZ at `sfz` names, from the SFZ's folder (`..` included); `None` when that would leave
 /// the user or content folder it is in, or `sfz` is in neither.
-fn sfz_file(sfz: &ContentPath, name: &str) -> Option<ContentPath> {
+pub(crate) fn sfz_file(sfz: &ContentPath, name: &str) -> Option<ContentPath> {
     let (Some(relative), ContentPath::Shorthand { root, .. }) = (in_library(sfz), sfz) else {
         return None;
     };

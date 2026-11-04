@@ -571,15 +571,15 @@ fn the_play_budget_counts_each_pass_of_a_clips_envelopes() {
 }
 
 #[test]
-fn channel_pitch_bend_does_not_reach_clip_slots() {
-    // The channel bend reaches only drum pads, not audio-clip slots.
+fn channel_pitch_bend_bends_clip_slots_as_on_pads() {
+    // #59: the channel bend reaches audio-clip slots too, 2^(4v − 2): v = 1 plays four times as fast.
     let mut song = song();
     clip(&mut song, 0, 4.0, "ramp");
     let mut engine = engine(&song);
     engine.set_param(1, 0, 4, 1.0);
     engine.play();
     let out = render(&mut engine, 1000);
-    assert_at(&out, 500, 500.0);
+    assert_at(&out, 500, 2000.0);
 }
 
 /// Clips an edit's engine takes over at another tempo without a re-sync (a Quiet handover at the
@@ -610,5 +610,30 @@ fn clips_taken_over_at_another_tempo_are_timed_at_it() {
     assert!(expected.iter().all(|&s| s > 0.1), "a silent reference");
     for (frame, (a, e)) in actual.iter().zip(&expected).enumerate() {
         assert!(close(*a, *e, 1e-6), "frame {frame}: {a} vs {e}");
+    }
+}
+
+/// #59: an audio channel's Pitch Bend bends its clips as it does the pads, 2^w (w = 4v − 2), and its
+/// lane plays a step a tick: over a ramp from 0.5 to 0.75 across two beats, the ramp sample plays at 2^(beat/2) times
+/// its speed all the way, within a tick's change (0.3 %), where a step a level would be 2.2 % apart.
+#[test]
+fn a_pitch_bend_lane_bends_the_clips_along_its_curve() {
+    let mut song = song();
+    clip(&mut song, 0, 8.0, "ramp");
+    let lane = song.channels[1].add_automation_lane(honeydew::song::AutomationTarget::PITCH_BEND);
+    let points = &mut lane.add_clip(0, 8.0).events;
+    for (pos, value) in [(0, 0.5), (256, 0.75)] {
+        points.push(Event::Automation {
+            pos,
+            value,
+            control: true,
+        });
+    }
+    let out = play(&song, 2 * BEAT);
+    for k in 1..20 {
+        let frame = k * BEAT / 10;
+        let rate = (at(out[frame + 64]) - at(out[frame])) / 64.0;
+        let want = ((frame + 32) as f32 / BEAT as f32 / 2.0).exp2();
+        assert!(close(rate / want, 1.0, 0.005), "{k}: {rate}, not {want}");
     }
 }
