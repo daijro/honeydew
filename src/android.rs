@@ -165,6 +165,19 @@ pub fn request_orientation(orientation: i32) {
     }
 }
 
+/// Whether the app may record audio: the microphone permission the Activity asks for when it starts
+/// (`HoneydewActivity.hasRecordPermission`). `false` when there is no Activity to ask.
+pub fn record_permission() -> bool {
+    let mut granted = false;
+    let _ = with_activity(|env, activity| {
+        granted = env
+            .call_method(activity, "hasRecordPermission", "()Z", &[])?
+            .z()?;
+        Ok(())
+    });
+    granted
+}
+
 /// Opens `folder`, in the user folder, in the system Files app (`HoneydewActivity.showFolder`, through the app's
 /// documents provider, `HoneydewDocuments`), which itself tells the user when no app can.
 pub fn show_folder(folder: &std::path::Path) -> Result<(), String> {

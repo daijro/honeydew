@@ -96,9 +96,9 @@
 //! - `Transpose by...` turns the popup into a one-cell offset display: a vertical drag anywhere picks the offset (half
 //!   a U a semitone, up is up, kept to what keeps every note in the key range) and its release applies it; a tap,
 //!   Escape or a click outside cancel.
-//! - `Generate...` opens the Generate panel ([`generate`], [`compose`]): a chord progression and a melody for the clip
-//!   in the project's key and scale, from a preset, a bars count, a seed, and who leads (the chords first with the
-//!   melody over them, or the clip's own melody with the chords fitted under it);
+//! - The transport bar's GENERATE opens the Generate panel ([`generate`], [`compose`]): a chord progression and a melody
+//!   for the clip in the project's key and scale, from a preset, a bars count, a seed, and who leads (the chords first
+//!   with the melody over them, or the clip's own melody with the chords fitted under it);
 //! - `Humanize` opens the Humanize panel ([`humanize`], issue #29: it used to have no dialog), its seed
 //!   drawn per use from the std hasher's random keys and egui's clock (OS entropy natively; on the web the keys are
 //!   fixed, so the clock varies it). While it is open the roll draws its preview in place of the notes, on the grid
@@ -173,6 +173,8 @@ const LABEL_PT: [f32; 2] = [6.0, 12.0];
 // Colour treatments of theme roles.
 /// Ghost notes: their channel colour at this alpha.
 pub(crate) const GHOST_ALPHA: f32 = 0.35;
+/// The opacity of a note off the project scale ([`paint_notes`]).
+const OFF_SCALE_ALPHA: f32 = 0.35;
 /// Rows that sound or hold a selected note: the channel colour at this alpha.
 const LIT_ALPHA: f32 = 0.1;
 /// The graph lane: its guides' and its (and the grid's) past-the-end overlay's black alpha (0.2 and 0.15).
@@ -425,7 +427,6 @@ enum MoreOp {
     SnapToScale,
     GuessScale,
     Humanize,
-    Generate,
     DoubleUp,
     DoubleDown,
     ToggleSlide,
@@ -712,6 +713,9 @@ impl PianoRoll {
         let px = g.tick(grid.left() + 1.0 / m.ppp()) - view.start;
         let end = g.x(loop_ticks).max(grid.left());
         let past = (end < grid.right()).then(|| grid.with_min_x(end));
+        // The project scale's (none on Chromatic, where every key is a tone): a note off it is faded.
+        let scale = project_scale(song);
+        let scale = (scale.1 != SCALE_MASKS[CHROMATIC]).then_some(scale);
         paint_notes(
             &grid_painter,
             &g,
@@ -720,6 +724,7 @@ impl PianoRoll {
             &self.ghosts(song, opts, view, px),
             past,
             color,
+            scale,
             (self.born.map(|(pos, key, _)| (pos, key)), cx),
         );
         // The playhead line's slot: over the notes, under their handles, the marquee and the floating row.
@@ -2194,11 +2199,6 @@ impl PianoRoll {
                 self.menu = Some(Menu::Humanize(panel));
                 return;
             }
-            MoreOp::Generate => {
-                let panel = generate::Panel::new(seed);
-                self.menu = Some(Menu::Generate(panel));
-                return;
-            }
             _ => {}
         }
         let Some(clip) = self.clip_mut(song) else {
@@ -2233,7 +2233,6 @@ impl PianoRoll {
             MoreOp::GuessScale
             | MoreOp::TransposeBy
             | MoreOp::Humanize
-            | MoreOp::Generate
             | MoreOp::SliceBy => {}
         }
         let changed = clip.events != before;
@@ -2516,7 +2515,6 @@ fn more_items() -> Vec<PopupItem<MoreOp>> {
         (SnapToScale, "Snap to Scale", true),
         (GuessScale, "Guess Scale...", true),
         (Humanize, "Humanize", true),
-        (Generate, "Generate...", true),
         (DoubleUp, "Double Up", true),
         (DoubleDown, "Double Down", true),
         (ToggleSlide, "Toggle Slide", true),
@@ -2678,6 +2676,7 @@ fn paint_notes(
     ghosts: &[Ghost],
     past: Option<Rect>,
     color: Rgba,
+    scale: Option<(u8, u16)>,
     (born, cx): (Option<(u32, u8)>, &UiCtx),
 ) {
     let (theme, m) = (cx.theme, cx.m);
@@ -2710,11 +2709,17 @@ fn paint_notes(
         let Some(r) = g.note_rect(e) else {
             continue;
         };
-        let fill = if selected.get(i) == Some(&true) {
+        let mut fill = if selected.get(i) == Some(&true) {
             pale
         } else {
             normal
         };
+        // A note off the project scale is faded, so the notes in the key stand out.
+        if let (Event::Note { key, .. }, Some((root, mask))) = (*e, scale)
+            && !in_scale(key, root, mask)
+        {
+            fill = fill.gamma_multiply(OFF_SCALE_ALPHA);
+        }
         // The new note's pop-in, on its own id so that the next note pops in too. Off with `Animation` reduced
         // ([`crate::ui::anim::elapsed`] is past every end then), and in tests unless they turn animations on.
         let pop = match *e {

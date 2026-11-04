@@ -1,8 +1,10 @@
 package dev.daijro.honeydew;
 
 import android.app.AlertDialog;
+import android.Manifest;
 import android.app.NativeActivity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.database.Cursor;
 import android.net.Uri;
@@ -40,6 +42,7 @@ public final class HoneydewActivity extends NativeActivity {
 
     private static final int OPEN_DOCUMENT = 1;
     private static final int OPEN_FOLDER = 2;
+    private static final int RECORD_AUDIO = 3;
     private long openLimit;
 
     @Override
@@ -48,6 +51,19 @@ public final class HoneydewActivity extends NativeActivity {
         onDisplayDpi(getResources().getDisplayMetrics().xdpi);
         super.onCreate(state);
         hideSystemBars();
+        askForMicrophone();
+    }
+
+    // Audio recording reads the microphone: asked for once when the app starts, as the system asks for any permission.
+    private void askForMicrophone() {
+        if (!hasRecordPermission()) {
+            requestPermissions(new String[] {Manifest.permission.RECORD_AUDIO}, RECORD_AUDIO);
+        }
+    }
+
+    // The native side opens the input only with this granted (the request's answer comes back to the next open).
+    public boolean hasRecordPermission() {
+        return checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
     }
 
     // Immersive: the status and navigation bars stay hidden, so an edge touch can't press them; a swipe from the edge

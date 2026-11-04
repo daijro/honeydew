@@ -1605,11 +1605,7 @@ impl HoneydewApp {
             if armed && !cfg!(target_arch = "wasm32") {
                 self.navigate(Nav::Open(Overlay::Message {
                     tag: INPUT_TAG,
-                    lines: vec![if cfg!(target_os = "android") {
-                        "Audio recording is not available in this Android preview.".into()
-                    } else {
-                        MIC_PERMISSION.into()
-                    }],
+                    lines: vec![MIC_PERMISSION.into()],
                     confirm: None,
                     extra: None,
                 }));

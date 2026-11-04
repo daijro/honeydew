@@ -446,14 +446,16 @@ impl Drag {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ClipOp {
     Copy,
+    Duplicate,
     Delete,
     Snap,
     Edit,
     More,
 }
 
-const OPS: [(ClipOp, &str); 5] = [
+const OPS: [(ClipOp, &str); 6] = [
     (ClipOp::Copy, "Copy"),
+    (ClipOp::Duplicate, "Duplicate"),
     (ClipOp::Delete, "Delete"),
     (ClipOp::Snap, "Snap"),
     (ClipOp::Edit, "Edit"),
@@ -467,7 +469,7 @@ impl Clips {
     /// ([`paint_take`]), a notes or drums take's clip with its notes as they record ([`paint_live`], Honeydew's own).
     /// Song edits are reported through `app.song_edited`; a clip's `Edit`, or a double tap on it, returns its editor's
     /// navigation, as does `New Clip` on an audio track (the sample picker). The insert menu,
-    /// `Copy` and `Snap` round to `snap`'s unit (round(beat/unit)·unit), and drags too while it is on (whole ticks
+    /// `Duplicate` and `Snap` round to `snap`'s unit (round(beat/unit)·unit), and drags too while it is on (whole ticks
     /// while off).
     #[allow(clippy::too_many_arguments)]
     pub fn show(
@@ -1191,7 +1193,7 @@ impl Clips {
     /// The insert menu while it shows ([`insert::show`]): `New Clip` and `Paste` over its track's row at its snapped
     /// tick, the insert cursor across the row. `New Clip` adds a one-bar clip there on a note or drum track
     /// ([`add_clip`]), the current, selected clip; on an audio track it opens the sample picker, whose first pick makes
-    /// the clip there. An automation track takes no new clip, so there it is dimmed. `Paste` pastes the clip clipboard
+    /// the clip there (an automation track's too). `Paste` pastes the clip clipboard
     /// there ([`paste_clips`]), selecting the copies; it is dimmed while the clipboard is empty. Any other press hides
     /// the menu, as does a track that went. Returns whether this frame's press is on it, and the picker to open.
     #[allow(clippy::too_many_arguments)]
@@ -1217,7 +1219,7 @@ impl Clips {
             .map(|l| l.kind);
         let new = matches!(
             kind,
-            Some(LaneKind::Notes | LaneKind::Drums | LaneKind::Audio)
+            Some(LaneKind::Notes | LaneKind::Drums | LaneKind::Audio | LaneKind::Automation)
         );
         let items = [("New Clip", new), ("Paste", !self.clipboard.is_empty())];
         let at = (axis.x(tick), row.y_range(), row.y_range());
@@ -1552,8 +1554,10 @@ impl Clips {
         let targets = self.targets();
         let &first = targets.first()?;
         match OPS[i].0 {
-            ClipOp::Copy => {
-                self.copy_selection(app.song);
+            // Copy only puts the clips on the clipboard (`paste` adds them where the cursor is).
+            ClipOp::Copy => self.copy_selection(app.song),
+            // Duplicate adds a copy of each clip right after it, and selects the copies.
+            ClipOp::Duplicate => {
                 let copies = copy_clips(app.song, &targets, snap);
                 self.set_selection(copies);
                 app.song_edited(true);
