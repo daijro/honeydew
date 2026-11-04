@@ -37,11 +37,11 @@ jobs:
         run: |
           set -o pipefail
           if ! cargo fmt --check > "$RUNNER_TEMP/fmt.log" 2>&1; then
-            { sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/fmt.log" | grep -E '^Diff in|^error' | head -20
-              tail -n 10 "$RUNNER_TEMP/fmt.log"; } | sed 's/^/::error title=fmt::/'
+            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/fmt.log" | grep -v '^Diff in' | head -120 | sed 's/^/::error title=fmt::/'
             exit 1
           fi
       - name: clippy
+        if: always()
         run: |
           set -o pipefail
           if ! cargo clippy --workspace --all-targets -- -D warnings > "$RUNNER_TEMP/clippy.log" 2>&1; then
@@ -50,6 +50,7 @@ jobs:
             exit 1
           fi
       - name: test
+        if: always()
         run: |
           set -o pipefail
           if ! cargo test --workspace > "$RUNNER_TEMP/test.log" 2>&1; then
@@ -58,8 +59,11 @@ jobs:
             exit 1
           fi
           sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test.log" | grep -E 'test result:' | tail -5
-      - run: cargo check --workspace --target wasm32-unknown-unknown
+      - name: wasm check
+        if: always()
+        run: cargo check --workspace --target wasm32-unknown-unknown
       - name: Content tool
+        if: always()
         run: cargo test --manifest-path tools/content-build/Cargo.toml
 
   native-multicore:
