@@ -495,11 +495,11 @@ fn without_a_clip_ghosts_come_from_the_first_bar() {
 fn the_playhead_maps_into_the_clip_content() {
     let song = ghost_song();
     let clip = &song.channels[1].lanes[0].clips[0];
-    assert_eq!(content_tick(Some(clip), 1000), None);
+    // Before the clip and past its visible length (one 4-beat loop), the loop folds on.
+    assert_eq!(content_tick(Some(clip), 1000), Some(488.0));
     assert_eq!(content_tick(Some(clip), 1024), Some(0.0));
     assert_eq!(content_tick(Some(clip), 1100), Some(76.0));
-    // Past the visible length (one 4-beat loop).
-    assert_eq!(content_tick(Some(clip), 1024 + 512), None);
+    assert_eq!(content_tick(Some(clip), 1024 + 512), Some(0.0));
     let mut looped = clip.clone();
     looped.visible_len_beats = 8.0;
     looped.offset_beats = 1.0;
@@ -2902,8 +2902,30 @@ mod component {
     #[test]
     fn every_note_menu_item_is_enabled() {
         let items = crate::ui::piano_roll::more_items();
-        assert_eq!(items.len(), 14);
+        assert_eq!(items.len(), 15);
         assert!(items.iter().all(|i| !i.disabled));
+    }
+
+    #[test]
+    fn slice_cuts_each_selected_note_into_selected_pieces_in_one_undo_step() {
+        // #62: a bar at 1/16 makes sixteen sixteenths covering it exactly; a note no longer than a piece stays whole.
+        let mut rig = Rig::new(vec![n(0, 16.0, 64), n(0, 512.0, 60)]);
+        more(&mut rig, "Slice...");
+        rig.tap(rig.text("1/16").unwrap());
+        let mut expect = vec![(0, 16.0, 64)];
+        expect.extend((0..16).map(|i| (i * 32, 32.0, 60)));
+        assert_eq!(spans(rig.events()), expect);
+        assert_eq!(rig.roll.selected, [true; 17]);
+        assert_eq!(rig.all, [DONE], "one undo step");
+        // Into 3: whole-tick cuts at round(i·512/3), so the parts sum to the bar.
+        let mut rig = Rig::new(vec![n(0, 512.0, 60)]);
+        more(&mut rig, "Slice...");
+        rig.tap(rig.text("3 parts").unwrap());
+        assert_eq!(
+            spans(rig.events()),
+            [(0, 171.0, 60), (171, 170.0, 60), (341, 171.0, 60)]
+        );
+        assert_eq!(rig.all, [DONE], "one undo step");
     }
 
     #[test]
@@ -3542,6 +3564,8 @@ mod component {
         // The clip a bar into the song, two beats into its content: content tick 0 plays at song tick 256.
         let clip = &mut rig.song.channels[1].lanes[0].clips[0];
         (clip.start_tick, clip.offset_beats) = (512, 2.0);
+        // The transport there: the play box on content tick 0, clear of the range.
+        rig.opts.playhead = 256;
         rig.frame(vec![]);
         select(&mut rig, 256.0, 128.0);
         assert_eq!(rig.song.play_loop, Some((384, 512)));
@@ -3598,9 +3622,9 @@ mod component {
 
     #[test]
     fn the_playhead_items_follow_the_transports_playhead_in_the_clip() {
-        // Inside the range, or past the clip: both are off. The range is made from its end, clear of the play box's
-        // touch area.
-        for playhead in [160, 5000] {
+        // Inside the range, also folded from a later loop pass: both are off. The range is made from its end, clear of
+        // the play box's touch area.
+        for playhead in [160, 9 * 512 + 160] {
             let mut rig = Rig::new(vec![n(128, 64.0, 62)]);
             rig.opts.playhead = playhead;
             region(&mut rig, 384.0, 128.0);
@@ -3636,6 +3660,8 @@ mod component {
         let mut rig = Rig::new(vec![]);
         let clip = &mut rig.song.channels[1].lanes[0].clips[0];
         (clip.start_tick, clip.offset_beats) = (512, 2.0);
+        // The transport where content tick 0 plays: the play box there, clear of the tap.
+        rig.opts.playhead = 256;
         rig.frame(vec![]);
         rig.tap(ruler(384.0));
         assert_eq!(rig.all, [PianoRollAction::SetPlayhead(640)]);

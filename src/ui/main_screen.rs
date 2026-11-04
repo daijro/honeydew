@@ -1080,6 +1080,8 @@ impl MainScreen {
             app.song.play_loop = range.map(|r| (r.start, r.end));
         }
         if let Some(tick) = out.playhead {
+            // A ruler tap deselects: the floating row goes and the play box shows.
+            self.clips.deselect();
             app.set_playhead(tick.into());
         }
         let Some((op, range)) = out.pick else {

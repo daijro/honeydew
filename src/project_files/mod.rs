@@ -262,6 +262,11 @@ pub enum FileEvent {
     Failed(&'static str, String),
     /// `Locate samples…` found these files (name, bytes) in the folder the user picked.
     Located(Vec<(String, Vec<u8>)>),
+    /// `Import folder` picked a folder: each file in it or below, as its path from the folder's parent
+    /// (`Drums/Kit/Kick.wav`) and where the provider reads it (a path on the desktop, a document URI on Android).
+    Folder(Vec<(String, String)>),
+    /// A folder import's copy ([`FileProvider::copy`]) ended: `None` once every file is in, else why it stopped.
+    Copied(Option<String>),
 }
 
 /// Where project files come from and go to. Requests may finish later (the web reads files asynchronously, and the
@@ -293,6 +298,12 @@ pub trait FileProvider {
     /// `Locate samples…`: asks for a folder and finishes with [`FileEvent::Located`], the files in it or below named one
     /// of `names` (any case). A provider without folders does nothing.
     fn locate(&mut self, _names: Vec<String>) {}
+    /// `Import folder`: asks for a folder and finishes with [`FileEvent::Folder`]. A provider without folders does
+    /// nothing.
+    fn open_folder(&mut self) {}
+    /// Copies a folder import's files, each from where [`FileEvent::Folder`] said to the user file it becomes, off the
+    /// UI thread, and finishes with [`FileEvent::Copied`].
+    fn copy(&mut self, _files: Vec<(String, PathBuf)>) {}
 }
 
 /// Open / save state: the song's file, the Save dialog and the message popup.
@@ -371,6 +382,10 @@ pub struct ProjectFiles {
     stem_writes: export::StemWrites,
     /// An archive's files, while `Import %d files?` waits for its answer ([`IMPORT_TAG`]).
     importing: Option<Vec<Entry>>,
+    /// The picked folder those files are from, if they are ([`Self::pick_folder`]).
+    folder: Option<archive::FolderImport>,
+    /// A folder import's summary while its copy runs.
+    copying: Option<Vec<String>>,
     /// Where the audio file an `Import` asked for goes ([`Self::import_audio`]).
     import_dir: Option<PathBuf>,
     /// The archive import running on a worker ([`Self::import_archives`]).
@@ -481,6 +496,8 @@ impl ProjectFiles {
             export_left_out: 0,
             stem_writes: export::StemWrites::default(),
             importing: None,
+            folder: None,
+            copying: None,
             import_dir: None,
             #[cfg(not(target_arch = "wasm32"))]
             import: None,
@@ -796,6 +813,7 @@ impl ProjectFiles {
     fn taken(&self, file: &Path) -> bool {
         self.provider.exists(file)
             || self.copies && (self.library.exists(file) || self.user_copies.exists(file))
+            || self.folder.as_ref().is_some_and(|f| f.takes(file))
     }
 
     fn write(&mut self, song: &Song, path: &Path, ask: bool) {
@@ -969,6 +987,8 @@ impl ProjectFiles {
                 }
                 FileEvent::Failed(title, err) => self.fail(title, err),
                 FileEvent::Located(files) => self.located(song, files),
+                FileEvent::Folder(files) => self.folder_picked(files),
+                FileEvent::Copied(error) => self.folder_copied(error),
             }
         }
         opened
@@ -1320,10 +1340,12 @@ impl ProjectFiles {
                     Some(asked) => self.export_answered(asked, answer),
                     None => self.overwrite_answered(name, answer),
                 }
-            } else if let Some(entries) = self.importing.take()
-                && answer == Answer::Yes
-            {
-                self.import_files(entries);
+            } else if let Some(entries) = self.importing.take() {
+                if answer == Answer::Yes {
+                    self.import_files(entries);
+                }
+                // A picked folder's routing that failed or was not wanted.
+                self.folder = None;
             } else if self.locate_asked {
                 self.locate_answered(answer == Answer::Yes);
             }

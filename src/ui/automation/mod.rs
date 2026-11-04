@@ -644,6 +644,9 @@ impl AutomationEditor {
             song.play_loop = range.and_then(|r| r.song_loop(origin));
         }
         if let Some(tick) = picked.playhead.or(tap) {
+            // A ruler tap deselects, as the audio editor's: the floating row goes and the play box shows.
+            self.sel.fill(false);
+            self.paste = None;
             out.seek = Some(region::seek_tick(clip_of(song, key), tick));
         }
         if let Some((op, range)) = picked.pick {

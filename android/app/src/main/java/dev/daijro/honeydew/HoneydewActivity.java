@@ -9,6 +9,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.DocumentsContract;
+import android.provider.DocumentsContract.Document;
 import android.provider.OpenableColumns;
 import android.text.InputType;
 import android.view.View;
@@ -21,6 +22,7 @@ import android.widget.EditText;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
@@ -33,8 +35,11 @@ public final class HoneydewActivity extends NativeActivity {
     private static native void onTextResult(long requestId, String text, boolean accepted);
     private static native void onDisplayDpi(float dpi);
     private static native void onDocumentPicked(String path, String error);
+    private static native void onFolderPicked(String files, String error);
+    private static native void onFilesCopied(String error);
 
     private static final int OPEN_DOCUMENT = 1;
+    private static final int OPEN_FOLDER = 2;
     private long openLimit;
 
     @Override
@@ -147,6 +152,95 @@ public final class HoneydewActivity extends NativeActivity {
         });
     }
 
+    // SONGS `Import folder`: the system folder picker, which reaches Downloads, an SD card and other providers' folders.
+    public void openFolder() {
+        runOnUiThread(() -> {
+            try {
+                startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), OPEN_FOLDER);
+            } catch (RuntimeException e) {
+                onFolderPicked(null, String.valueOf(e.getMessage()));
+            }
+        });
+    }
+
+    // The picked folder's files, listed on their own thread (a big folder takes a while), go back to Rust.
+    private void folderPicked(Uri tree) {
+        new Thread(() -> {
+            try {
+                String root = DocumentsContract.getTreeDocumentId(tree);
+                String name = displayName(DocumentsContract.buildDocumentUriUsingTree(tree, root));
+                StringBuilder files = new StringBuilder();
+                list(tree, root, name + "/", 0, files);
+                onFolderPicked(files.toString(), null);
+            } catch (Exception e) {
+                onFolderPicked(null, String.valueOf(e.getMessage()));
+            }
+        }).start();
+    }
+
+    // Appends the files below the document `id` of the picked `tree` (`path` is its own) to `files`: each one's path
+    // from the picked folder's parent and its URI, each ending in '\0'. Hidden files and folders are left out, as the
+    // import skips them, and so is anything more than 32 folders down (a link loop).
+    private void list(Uri tree, String id, String path, int depth, StringBuilder files) {
+        if (depth > 32) return;
+        String[] columns = {Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE};
+        Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, id);
+        try (Cursor c = getContentResolver().query(children, columns, null, null, null)) {
+            while (c != null && c.moveToNext()) {
+                String child = c.getString(0), name = part(c.getString(1));
+                if (name.startsWith(".")) continue;
+                if (Document.MIME_TYPE_DIR.equals(c.getString(2))) {
+                    list(tree, child, path + name + "/", depth + 1, files);
+                } else {
+                    Uri uri = DocumentsContract.buildDocumentUriUsingTree(tree, child);
+                    files.append(path).append(name).append('\0').append(uri).append('\0');
+                }
+            }
+        }
+    }
+
+    // A folder import's copy, on its own thread: `files` alternates a document URI and the user file it becomes, each
+    // ending in '\0'. The first file that fails stops it.
+    public void copyFiles(String files) {
+        String[] parts = files.split("\0");
+        new Thread(() -> {
+            try {
+                for (int i = 0; i + 1 < parts.length; i += 2) copyFile(Uri.parse(parts[i]), new File(parts[i + 1]));
+                onFilesCopied(null);
+            } catch (Exception e) {
+                onFilesCopied(String.valueOf(e.getMessage()));
+            }
+        }).start();
+    }
+
+    // Copies the document `from` to `to`, making its folder: whole or not at all (beside it first, then renamed).
+    private void copyFile(Uri from, File to) throws IOException {
+        File dir = to.getParentFile(), part = new File(dir, "." + to.getName() + ".part");
+        if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException(dir + ": the folder cannot be made");
+        try (InputStream in = getContentResolver().openInputStream(from);
+             OutputStream out = new FileOutputStream(part)) {
+            if (in == null) throw new IOException(from + ": the file cannot be read");
+            copy(in, out, Long.MAX_VALUE);
+        } catch (IOException | RuntimeException e) {
+            part.delete();
+            throw e;
+        }
+        if (!part.renameTo(to)) {
+            part.delete();
+            throw new IOException(to + ": the file cannot be written");
+        }
+    }
+
+    // Copies at most `left` bytes.
+    private static void copy(InputStream in, OutputStream out, long left) throws IOException {
+        byte[] buffer = new byte[1 << 16];
+        for (int n; left > 0; left -= n) {
+            n = in.read(buffer, 0, (int) Math.min(buffer.length, left));
+            if (n < 0) break;
+            out.write(buffer, 0, n);
+        }
+    }
+
     // SETTINGS `Open user folder` / `Open folder`: `path`, a folder in the user folder, in the system Files app through
     // HoneydewDocuments; else the folder picker open there; else a message with the path.
     public void showFolder(String path) {
@@ -174,11 +268,16 @@ public final class HoneydewActivity extends NativeActivity {
 
     @Override
     protected void onActivityResult(int request, int result, Intent data) {
-        if (request != OPEN_DOCUMENT) {
+        if (request != OPEN_DOCUMENT && request != OPEN_FOLDER) {
             super.onActivityResult(request, result, data);
             return;
         }
         Uri uri = result == RESULT_OK && data != null ? data.getData() : null;
+        if (request == OPEN_FOLDER) {
+            if (uri == null) onFolderPicked(null, null);
+            else folderPicked(uri);
+            return;
+        }
         if (uri == null) {
             onDocumentPicked(null, null);
             return;
@@ -194,13 +293,7 @@ public final class HoneydewActivity extends NativeActivity {
                 try (InputStream in = getContentResolver().openInputStream(uri);
                      OutputStream out = new FileOutputStream(file)) {
                     if (in == null) throw new java.io.IOException("The file cannot be read");
-                    byte[] buffer = new byte[1 << 16];
-                    long left = limit + 1;
-                    for (int n; left > 0; left -= n) {
-                        n = in.read(buffer, 0, (int) Math.min(buffer.length, left));
-                        if (n < 0) break;
-                        out.write(buffer, 0, n);
-                    }
+                    copy(in, out, limit + 1);
                 }
                 onDocumentPicked(file.getPath(), null);
             } catch (Exception e) {
@@ -218,8 +311,13 @@ public final class HoneydewActivity extends NativeActivity {
         } catch (RuntimeException ignored) {
         }
         if (name == null) name = uri.getLastPathSegment();
-        name = name == null ? "" : name.replace('/', '_').replace('\\', '_');
+        name = part(name);
         return name.isEmpty() || name.equals(".") || name.equals("..") ? "file" : name;
+    }
+
+    // A provider's name as one part of a path: no separators, and no '\0' (the lists to Rust end their parts in it).
+    private static String part(String name) {
+        return name == null ? "" : name.replace('/', '_').replace('\\', '_').replace('\0', '_');
     }
 
     @Override

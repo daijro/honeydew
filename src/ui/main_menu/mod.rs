@@ -110,8 +110,11 @@ pub enum MainMenuAction {
     Save,
     /// PROJECT `Save New`, or a tap on SONGS `Save`: save under a new name.
     SaveNew,
-    /// SONGS `Import`: the operating system's file picker.
+    /// SONGS `Import` (`Import file` in its menu, where there is one): the operating system's file picker.
     Import,
+    /// SONGS `Import`'s `Import folder` (not on the web): the folder picker, then the folder's files into the user
+    /// folder ([`crate::project_files::ProjectFiles::pick_folder`]).
+    ImportFolder,
     /// A song or an archive in the SONGS list: open the file at this [`SongEntry::path`] (read it with
     /// [`SongLibrary::read`]).
     Open(std::path::PathBuf),

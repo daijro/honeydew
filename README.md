@@ -63,6 +63,8 @@ Extract the archive and run `honeydew-native`. The AppImage is a single file. Ru
 
 Open a file from SONGS → Import, with `Ctrl+O`, or by dropping it on the window. Audio files dropped on the playlist become clips.
 
+On the desktop and Android, SONGS → Import → Import folder copies a whole folder in, as importing a `.zip` of it would: samples go to My Samples, SoundFonts to My SoundFonts and so on, keeping the folder and its subfolders.
+
 | Format | Open | Save |
 |---|---|---|
 | FL Studio Mobile songs (`.flm`) and project archives (`.zip`) | Yes | Yes |
@@ -88,7 +90,7 @@ The desktop app can use VST3, VST2 and CLAP plugins as instruments and effects.
 
 Plugin settings are saved with the project, and their controls can be automated.
 
-**Built-in plugins, on every platform:** Lemon Studio's Lemon Trio and Lemon Sampler are under SYNTH, and Lemon Parametric EQ under FILTER. Their own controls show right in the rack card, on the web and Android too. If you have them installed separately, Honeydew uses the built-in ones. On the web and Android, Lemon Sampler can't open sample files yet, and on the web its time stretching only resamples.
+**Built-in plugins, on every platform:** Lemon Studio's Lemon Trio and Lemon Sampler are under SYNTH, and Lemon Parametric EQ under FILTER. Their own controls show right in the rack card, on the web and Android too. If you have them installed separately, Honeydew uses the built-in ones. On the web, Lemon Sampler's time stretching only resamples.
 
 **Where Honeydew looks:**
 
@@ -164,7 +166,7 @@ cargo run --release
 The sound library lives in `sounds/`, split into 90 MB parts to stay under GitHub's file size limit. To rebuild it from the raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.4.7
+tools/release-content.sh 0.4.8
 ```
 
 Commit the updated `sounds/honeydew-sounds.zip.*` parts and `sounds/release.txt` (the library's version: the app warns when an installed library is older) with your changes. Add `--web` to also build the web ZIP. Tagged releases include the sounds automatically.
@@ -197,7 +199,7 @@ tools/web-dist.sh --zip    # also write target/honeydew-web-<version>.zip
 
 ### Android
 
-The Android version plays songs and saves them inside the app. Microphone recording, MIDI devices and importing or exporting files aren't supported yet, and uninstalling the app deletes its songs.
+The Android version plays, saves and exports songs into its Honeydew folder, which also shows in the Files app, so you can copy songs, renders and samples in and out there. SONGS → Import opens a song, archive, MIDI or FLP file from anywhere the system picker reaches, like Downloads or an SD card, and Import folder copies a whole sound folder in. Microphone recording and MIDI devices aren't supported yet, and uninstalling the app deletes the Honeydew folder with your songs.
 
 You need Java 21, Android SDK platform 36, Build Tools 36.0.0, NDK 28.0.13004108, Python 3 and `unzip`. Set `ANDROID_HOME` to your SDK, then:
 

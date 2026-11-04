@@ -210,6 +210,7 @@ pub fn show(
             app.files.quick_render(app.song, format);
         }
         MainMenuAction::Import => replace(app, Replace::Pick),
+        MainMenuAction::ImportFolder => app.files.pick_folder(),
         MainMenuAction::Open(path) => replace(app, Replace::Open(path)),
         // The files extract the archive; they flash where it went, or show why not, and SONGS reads again.
         MainMenuAction::Unzip(path) => app.files.unzip_archive(&path),

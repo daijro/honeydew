@@ -539,6 +539,9 @@ impl DrumGridView {
             action = Some(StepAction::PlayLoop(play_loop));
         }
         if let Some(tick) = out.playhead {
+            // A ruler tap deselects, as the audio editor's: the floating row goes and the play box shows.
+            self.sel.fill(false);
+            self.paste = None;
             let tick = region::seek_tick(clip, tick);
             action = Some(StepAction::SetPlayhead(tick));
         }
