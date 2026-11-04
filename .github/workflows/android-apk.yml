@@ -47,7 +47,15 @@ jobs:
       - name: Build the debug APK
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.0.13004108
-        run: tools/android-dist.sh
+        run: |
+          set -o pipefail
+          if ! tools/android-dist.sh > "$RUNNER_TEMP/build.log" 2>&1; then
+            tail -n 100 "$RUNNER_TEMP/build.log"
+            # The compiler's errors and their locations as annotations, so they read without the full log.
+            grep -E '^error|^ *-->' "$RUNNER_TEMP/build.log" | head -60 | sed 's/^/::error title=android build::/'
+            exit 1
+          fi
+          tail -n 30 "$RUNNER_TEMP/build.log"
       - name: Upload test APK
         uses: actions/upload-artifact@v4
         with:
