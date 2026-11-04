@@ -1144,6 +1144,9 @@ impl StepSeqView {
             .playhead
             .filter(|&t| loop_beats <= 0.0 || f64::from(t) < song_end)
         {
+            // It deselects, as the audio editor's: the floating row goes and the play box shows.
+            self.selection.clear();
+            self.paste = None;
             action = Some(StepAction::SetPlayhead(tick.into()));
         }
         if let Some((op, range)) = out.pick

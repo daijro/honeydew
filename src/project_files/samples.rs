@@ -119,7 +119,8 @@ impl ProjectFiles {
         Self::keep_plugin_sample_in(path, &dir)
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    // Only the Android entry point and the test use it; on a host build it would be dead code.
+    #[cfg(any(target_os = "android", test))]
     fn keep_plugin_sample_in(path: &Path, dir: &Path) -> io::Result<PathBuf> {
         let ext = path.extension().ok_or(io::ErrorKind::InvalidInput)?.to_string_lossy();
         if ext.is_empty() {

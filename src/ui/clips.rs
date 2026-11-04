@@ -986,8 +986,8 @@ impl Clips {
     }
 
     /// Clears the selection and what goes with it; the current clip and track, the double-tap timer, the cursor and the
-    /// clipboard stay.
-    fn deselect(&mut self) {
+    /// clipboard stay. Also a ruler tap's (`MainScreen::region`).
+    pub(crate) fn deselect(&mut self) {
         *self = Self {
             track: self.track,
             last_tap: self.last_tap,

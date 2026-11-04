@@ -364,7 +364,14 @@ fn songs_buttons_return_their_actions() {
     assert_eq!(rig.drag(save, vec2(-20.0, 0.0)), None);
     assert_eq!(rig.drag(save, vec2(-32.0, 48.0)), None);
     assert_eq!(rig.drag(save, vec2(-32.0, 0.0)), Some(MainMenuAction::Save));
-    assert_eq!(rig.click_text("Import"), Some(MainMenuAction::Import));
+    // `Import` opens its menu: `Import file` picks a file, `Import folder` a folder.
+    assert_eq!(rig.click_text("Import"), None);
+    assert_eq!(rig.click_text("Import file"), Some(MainMenuAction::Import));
+    rig.click_text("Import");
+    assert_eq!(
+        rig.click_text("Import folder"),
+        Some(MainMenuAction::ImportFolder)
+    );
 }
 
 #[test]

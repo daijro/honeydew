@@ -90,6 +90,9 @@
 //!   the project key and scale; `Disable` sets the scale to Chromatic. Without an exact fit, `Choose` lists the closest
 //!   ones.
 //! - `Toggle Slide` flips each note's slide flag. Slide notes have no look of their own: they are drawn as other notes.
+//! - `Slice...` (GitHub #62) turns the popup into the slice choices
+//!   ([`slice_items`]): a piece length (1/4 … 1/32, 1/8T, 1/16T) or 2, 3, 4 or 8 equal parts. Each selected note
+//!   becomes consecutive selected notes covering it, as [`slice_selected`] cuts them; a tap outside or Escape cancel.
 //! - `Transpose by...` turns the popup into a one-cell offset display: a vertical drag anywhere picks the offset (half
 //!   a U a semitone, up is up, kept to what keeps every note in the key range) and its release applies it; a tap,
 //!   Escape or a click outside cancel.
@@ -104,13 +107,12 @@
 //!
 //! The ruler takes the shared gestures ([`RangeSelect`]) in content ticks on the snap grid (whole ticks with snap off):
 //! a tap sets the song's playhead, and the range is the song's play loop, content tick 0 being song tick
-//! [`region::clip_origin`]. The playhead is the transport's, playing or stopped, where it plays the clip
-//! ([`region::playhead_tick`]: as in the song, Preview on or off); elsewhere it rests on the
-//! clip's start, and the playhead items are off. Its disc is the playhead knob ([`timeline::PlayheadKnob`], as in every
-//! editor): a tap plays, and a drag seeks to the snapped content tick under the finger within [the view's left edge,
-//! the loop's end], the line and the disc following it. The region items act on every note of the clip ([`region`]);
-//! `Snap to Scale` and `Guess Scale...` on the notes that start in the range. A region edit is one final edit and drops
-//! the note selection.
+//! [`region::clip_origin`]. The playhead is the transport's, playing or stopped, folded into the clip's loop
+//! ([`region::playhead_tick`]: where the clip plays, as in the song, Preview on or off). A ruler tap deselects. Its
+//! disc is the playhead knob ([`timeline::PlayheadKnob`], as in every editor): a tap plays, and a drag seeks to the
+//! snapped content tick under the finger within [the view's left edge, the loop's end], the line and the disc following
+//! it. The region items act on every note of the clip ([`region`]); `Snap to Scale` and `Guess Scale...` on the notes
+//! that start in the range. A region edit is one final edit and drops the note selection.
 //!
 //! A Honeydew addition (issue #26): on a take being recorded ([`RollOptions::recording`]; the app opens the take's clip
 //! in a roll open on its channel) the roll shows the clip as it records ([`crate::app::note_record::live`]: each held
@@ -384,6 +386,8 @@ enum Menu {
     Snap,
     /// The note menu, centred on the `More...` button.
     More(Pos2),
+    /// The note menu in slice mode, at the same place (`Slice...`, #62).
+    Slice(Pos2),
     /// The note menu in transpose mode, at the same place: the offset so far, and where this drag started.
     Transpose {
         at: Pos2,
@@ -427,6 +431,9 @@ enum MoreOp {
     ToggleSlide,
     /// Set length to this many ticks.
     Length(u32),
+    /// `Slice...` opens the slice choices; a choice slices (#62).
+    SliceBy,
+    Slice(Slice),
     TransposeBy,
     SelectAll,
 }
@@ -767,7 +774,7 @@ impl PianoRoll {
         }
 
         // The ruler: a plain corner over the keys, bars over the grid, the range (the song's play loop, in the clip's
-        // content ticks), and the playhead: the transport's where it plays the clip, else resting on its start.
+        // content ticks), and the playhead: the transport's, folded into the clip's loop.
         let (corner, bars) = ruler.split_left_right_at_x(grid.left());
         ui.painter()
             .rect_filled(corner, 0.0, cx.theme.colors.background.to_color32());
@@ -805,6 +812,9 @@ impl PianoRoll {
             song.play_loop = range.and_then(|r| r.song_loop(origin));
         }
         if let Some(tick) = out.playhead {
+            // A ruler tap deselects, as the audio editor's: the floating row goes and the play box shows.
+            self.selected.fill(false);
+            self.paste = None;
             let at = region::seek_tick(self.clip(song), tick);
             actions.push(PianoRollAction::SetPlayhead(at));
         }
@@ -2046,8 +2056,12 @@ impl PianoRoll {
                     ctx.request_repaint();
                 }
             }
-            Some(Menu::More(at)) => {
-                let result = popup::show(ctx, id.with("note_menu"), at, bounds, &more_items(), cx);
+            Some(menu @ (Menu::More(at) | Menu::Slice(at))) => {
+                let (name, items) = match menu {
+                    Menu::Slice(_) => ("slice_menu", slice_items()),
+                    _ => ("note_menu", more_items()),
+                };
+                let result = popup::show(ctx, id.with(name), at, bounds, &items, cx);
                 if result.close {
                     self.menu = None;
                     ctx.request_repaint();
@@ -2163,6 +2177,10 @@ impl PianoRoll {
                 });
                 return;
             }
+            MoreOp::SliceBy => {
+                self.menu = Some(Menu::Slice(at));
+                return;
+            }
             MoreOp::GuessScale => {
                 self.menu = Some(Menu::Guess {
                     more: false,
@@ -2194,6 +2212,7 @@ impl PianoRoll {
             MoreOp::DoubleUp => double_selected(&mut clip.events, sel, 12),
             MoreOp::DoubleDown => double_selected(&mut clip.events, sel, -12),
             MoreOp::Length(ticks) => set_length_selected(&mut clip.events, sel, f64::from(ticks)),
+            MoreOp::Slice(by) => slice_selected(&mut clip.events, sel, by),
             MoreOp::SelectAll => {
                 for (s, e) in sel.iter_mut().zip(&clip.events) {
                     *s = note(e).is_some();
@@ -2211,7 +2230,7 @@ impl PianoRoll {
                 }
             }
             // The dialogs opened above.
-            MoreOp::GuessScale | MoreOp::TransposeBy | MoreOp::Humanize | MoreOp::Generate => {}
+            MoreOp::GuessScale | MoreOp::TransposeBy | MoreOp::Humanize | MoreOp::Generate | MoreOp::SliceBy => {}
         }
         let changed = clip.events != before;
         if changed {
@@ -2485,7 +2504,7 @@ fn drag_edit(edit: &Edit, delta: Vec2, g: &Geom, snap: Option<f64>) -> (Vec<Even
     (events, sel)
 }
 
-/// The note menu: two columns, all enabled.
+/// The note menu: two columns, all enabled. `Slice...` is #62.
 fn more_items() -> Vec<PopupItem<MoreOp>> {
     use MoreOp::*;
     let col0 = vec![
@@ -2504,22 +2523,53 @@ fn more_items() -> Vec<PopupItem<MoreOp>> {
         (Length(128), "Set length 1/4", true),
         (Length(256), "Set length 1/2", true),
         (Length(512), "Set length 1/1", true),
+        (SliceBy, "Slice...", true),
         (TransposeBy, "Transpose by...", true),
         (SelectAll, "Select All", true),
     ];
-    [col0, col1]
+    [&col0[..], &col1[..]]
         .into_iter()
         .enumerate()
         .flat_map(|(col, items)| {
             items
-                .into_iter()
+                .iter()
                 .enumerate()
-                .map(move |(row, (op, label, enabled))| PopupItem {
+                .map(move |(row, &(op, label, enabled))| PopupItem {
                     disabled: !enabled,
                     ..PopupItem::new(op, col, row, label)
                 })
         })
         .collect()
+}
+
+/// `Slice...`'s choices in place of the note menu (#62): the piece lengths under `Every`, each triplet beside its
+/// straight size (as in the snap menu's `Grid`), the equal parts under `Into`.
+fn slice_items() -> Vec<PopupItem<MoreOp>> {
+    let sizes = [
+        (0, 1, 4, false),
+        (0, 2, 8, false),
+        (1, 2, 8, true),
+        (0, 3, 16, false),
+        (1, 3, 16, true),
+        (0, 4, 32, false),
+    ];
+    let sizes = sizes.map(|(col, row, n, triplet)| {
+        let size = GridSize::Note(n, triplet);
+        PopupItem::new(MoreOp::Slice(Slice::Every(size)), col, row, size.label())
+    });
+    let parts = ([2, 3, 4, 8].into_iter().enumerate()).map(|(i, n)| {
+        PopupItem::new(
+            MoreOp::Slice(Slice::Into(n)),
+            2,
+            i + 1,
+            format!("{n} parts"),
+        )
+    });
+    let heads = [
+        PopupItem::header(0, 0, "Every"),
+        PopupItem::header(2, 0, "Into"),
+    ];
+    heads.into_iter().chain(sizes).chain(parts).collect()
 }
 
 /// `a` moved `t` of the way toward `b`.

@@ -27,7 +27,26 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onDisplayDpi(
 
 /// What a document pick finishes with: the copy of the picked file, an error, or `None` when it was cancelled.
 pub type Picked = Option<Result<PathBuf, String>>;
-static PICKING: Mutex<Option<Box<dyn FnOnce(Picked) + Send>>> = Mutex::new(None);
+/// What a folder pick finishes with: each file in the picked folder or below, as its path from the folder's parent
+/// (`Drums/Kit/Kick.wav`) and its document URI; an error; or `None` when it was cancelled.
+pub type PickedFolder = Option<Result<Vec<(String, String)>, String>>;
+/// Where a Java call's result goes once it comes, on a Java thread.
+type Waiting<T> = Mutex<Option<Box<dyn FnOnce(T) + Send>>>;
+static PICKING: Waiting<Picked> = Mutex::new(None);
+static PICKING_FOLDER: Waiting<PickedFolder> = Mutex::new(None);
+static COPYING: Waiting<Option<String>> = Mutex::new(None);
+
+fn finish<T>(waiting: &Waiting<T>, result: T) {
+    let done = waiting.lock().ok().and_then(|mut done| done.take());
+    if let Some(done) = done {
+        done(result);
+    }
+}
+
+/// A Java string, `None` for `null`.
+fn text(env: &mut jni::JNIEnv<'_>, s: &jni::objects::JString<'_>) -> Option<String> {
+    (!s.is_null()).then(|| env.get_string(s).map(String::from).unwrap_or_default())
+}
 
 /// Opens the system document picker (`HoneydewActivity.openDocument`); `done` gets the pick, copied into the app's
 /// cache (at most `max_bytes` + 1 bytes), on a Java thread.
@@ -39,14 +58,7 @@ pub fn pick_document(max_bytes: u64, done: impl FnOnce(Picked) + Send + 'static)
             .map(drop)
     });
     if let Err(err) = opened {
-        picked(Some(Err(err)));
-    }
-}
-
-fn picked(result: Picked) {
-    let done = PICKING.lock().ok().and_then(|mut done| done.take());
-    if let Some(done) = done {
-        done(result);
+        finish(&PICKING, Some(Err(err)));
     }
 }
 
@@ -57,14 +69,78 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onDocumentPicke
     path: jni::objects::JString<'_>,
     error: jni::objects::JString<'_>,
 ) {
-    let mut text = |s: &jni::objects::JString<'_>| {
-        (!s.is_null()).then(|| env.get_string(s).map(String::from).unwrap_or_default())
-    };
-    picked(match (text(&path), text(&error)) {
+    let picked = match (text(&mut env, &path), text(&mut env, &error)) {
         (Some(path), _) => Some(Ok(path.into())),
         (None, Some(error)) => Some(Err(error)),
         (None, None) => None,
+    };
+    finish(&PICKING, picked);
+}
+
+/// Opens the system folder picker (`HoneydewActivity.openFolder`); `done` gets the files of the folder picked, listed
+/// on a Java thread.
+pub fn pick_folder(done: impl FnOnce(PickedFolder) + Send + 'static) {
+    *PICKING_FOLDER.lock().expect("picker lock") = Some(Box::new(done));
+    let opened = with_activity(|env, activity| {
+        env.call_method(activity, "openFolder", "()V", &[])
+            .map(drop)
     });
+    if let Err(err) = opened {
+        finish(&PICKING_FOLDER, Some(Err(err)));
+    }
+}
+
+/// `files` alternates a path and its URI, each ending in `\0` (no name holds one).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onFolderPicked(
+    mut env: jni::JNIEnv<'_>,
+    _class: jni::objects::JClass<'_>,
+    files: jni::objects::JString<'_>,
+    error: jni::objects::JString<'_>,
+) {
+    let picked = match (text(&mut env, &files), text(&mut env, &error)) {
+        (Some(files), _) => {
+            let parts: Vec<&str> = files.split_terminator('\0').collect();
+            let pairs = parts
+                .chunks_exact(2)
+                .map(|p| (p[0].to_owned(), p[1].to_owned()));
+            Some(Ok(pairs.collect()))
+        }
+        (None, Some(error)) => Some(Err(error)),
+        (None, None) => None,
+    };
+    finish(&PICKING_FOLDER, picked);
+}
+
+/// Copies each file `(document URI, user file)` on a Java thread (`HoneydewActivity.copyFiles`); `done` gets `None`
+/// once all are in, else why the copy stopped.
+pub fn copy_files(files: &[(String, PathBuf)], done: impl FnOnce(Option<String>) + Send + 'static) {
+    *COPYING.lock().expect("copy lock") = Some(Box::new(done));
+    let list: String = (files.iter())
+        .map(|(from, to)| format!("{from}\0{}\0", to.display()))
+        .collect();
+    let started = with_activity(|env, activity| {
+        let list = env.auto_local(env.new_string(list)?);
+        env.call_method(
+            activity,
+            "copyFiles",
+            "(Ljava/lang/String;)V",
+            &[jni::objects::JValue::Object(list.as_ref())],
+        )
+        .map(drop)
+    });
+    if let Err(err) = started {
+        finish(&COPYING, Some(err));
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onFilesCopied(
+    mut env: jni::JNIEnv<'_>,
+    _class: jni::objects::JClass<'_>,
+    error: jni::objects::JString<'_>,
+) {
+    finish(&COPYING, text(&mut env, &error));
 }
 
 /// Asks the Activity for a screen orientation (`ActivityInfo.SCREEN_ORIENTATION_*`, from

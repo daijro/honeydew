@@ -1,6 +1,7 @@
 //! Disk saves and, on desktop, system file dialogs (`rfd`).
-//! Android saves into its private library and opens files through the system document picker
-//! ([`crate::android::pick_document`]); external export awaits a document-provider bridge.
+//! Android saves into its private library and opens files and folders through the system document pickers
+//! ([`crate::android::pick_document`], [`crate::android::pick_folder`]); external export awaits a document-provider
+//! bridge. A folder import's copy runs on a worker (Android's on a Java thread).
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -15,49 +16,89 @@ use super::{
 pub struct NativeFiles {
     event: Option<FileEvent>,
     opening: Option<Receiver<Option<FileEvent>>>,
+    /// A folder import's copy under way.
+    copying: Option<Receiver<FileEvent>>,
     ctx: Option<eframe::egui::Context>,
+}
+
+impl NativeFiles {
+    /// A channel for a result that another thread sends later: sending repaints, so it shows at once.
+    fn later<T: Send + 'static>(&self) -> (impl FnOnce(T) + Send + 'static, Receiver<T>) {
+        let (tx, rx) = mpsc::channel();
+        let ctx = self.ctx.clone();
+        let send = move |result| {
+            let _ = tx.send(result);
+            if let Some(ctx) = ctx {
+                ctx.request_repaint();
+            }
+        };
+        (send, rx)
+    }
 }
 
 impl FileProvider for NativeFiles {
     #[cfg(not(target_os = "android"))]
     fn open(&mut self, accept: &'static [&'static str]) {
-        let (tx, rx) = mpsc::channel();
+        let (done, rx) = self.later();
         self.opening = Some(rx);
-        let ctx = self.ctx.clone();
         std::thread::spawn(move || {
-            let result = pollster::block_on(
-                rfd::AsyncFileDialog::new()
-                    .add_filter("Supported files", &dialog_extensions(accept))
-                    .pick_file(),
-            )
-            .map(|file| open_path(file.path().to_path_buf(), accept));
-            let _ = tx.send(result);
-            if let Some(ctx) = ctx {
-                ctx.request_repaint();
-            }
+            let dialog = rfd::AsyncFileDialog::new()
+                .add_filter("Supported files", &dialog_extensions(accept))
+                .pick_file();
+            done(
+                pollster::block_on(dialog).map(|file| open_path(file.path().to_path_buf(), accept)),
+            );
         });
     }
 
     /// The picked document arrives as a cache copy, read like a desktop pick and then removed.
     #[cfg(target_os = "android")]
     fn open(&mut self, accept: &'static [&'static str]) {
-        let (tx, rx) = mpsc::channel();
+        let (done, rx) = self.later();
         self.opening = Some(rx);
-        let ctx = self.ctx.clone();
         crate::android::pick_document(MAX_FILE_BYTES, move |picked| {
-            let event = picked.map(|picked| match picked {
+            done(picked.map(|picked| match picked {
                 Ok(path) => {
                     let event = open_path(path.clone(), accept);
                     let _ = std::fs::remove_file(&path);
                     event
                 }
                 Err(err) => FileEvent::Failed(OPEN_FAILED, err),
-            });
-            let _ = tx.send(event);
-            if let Some(ctx) = ctx {
-                ctx.request_repaint();
-            }
+            }));
         });
+    }
+
+    /// The folder dialog, then its files listed, on a worker.
+    #[cfg(not(target_os = "android"))]
+    fn open_folder(&mut self) {
+        let (done, rx) = self.later();
+        self.opening = Some(rx);
+        std::thread::spawn(move || {
+            let dir = pollster::block_on(rfd::AsyncFileDialog::new().pick_folder());
+            done(dir.map(|dir| FileEvent::Folder(folder_files(dir.path()))));
+        });
+    }
+
+    /// The system folder picker; Java lists the files of the folder picked.
+    #[cfg(target_os = "android")]
+    fn open_folder(&mut self) {
+        let (done, rx) = self.later();
+        self.opening = Some(rx);
+        crate::android::pick_folder(move |picked| {
+            done(picked.map(|picked| match picked {
+                Ok(files) => FileEvent::Folder(files),
+                Err(err) => FileEvent::Failed(OPEN_FAILED, err),
+            }));
+        });
+    }
+
+    fn copy(&mut self, files: Vec<(String, PathBuf)>) {
+        let (done, rx) = self.later();
+        self.copying = Some(rx);
+        #[cfg(not(target_os = "android"))]
+        std::thread::spawn(move || done(FileEvent::Copied(copy_files(&files).err())));
+        #[cfg(target_os = "android")]
+        crate::android::copy_files(&files, move |error| done(FileEvent::Copied(error)));
     }
 
     fn save(&mut self, path: &Path, ask: bool, bytes: Vec<u8>) {
@@ -110,6 +151,13 @@ impl FileProvider for NativeFiles {
         if let Some(event) = self.event.take() {
             return Some(event);
         }
+        match self.copying.as_ref().map(Receiver::try_recv) {
+            None | Some(Err(TryRecvError::Empty)) => {}
+            Some(done) => {
+                self.copying = None;
+                return Some(done.unwrap_or(FileEvent::Copied(Some("the copy stopped".into()))));
+            }
+        }
         match self.opening.as_ref()?.try_recv() {
             Ok(result) => {
                 self.opening = None;
@@ -149,6 +197,56 @@ fn dialog_extensions(accept: &[&str]) -> Vec<String> {
         .iter()
         .flat_map(|e| [e.to_string(), e.to_ascii_uppercase()])
         .collect()
+}
+
+/// The files in `dir` and below, each as its path from `dir`'s parent (`Drums/Kit/Kick.wav`) and on disk. Hidden files
+/// and folders are left out, as the import skips them, and so are links (never followed, so no loop) and names that
+/// are not UTF-8.
+#[cfg(not(target_os = "android"))]
+pub(super) fn folder_files(dir: &Path) -> Vec<(String, String)> {
+    let base = dir.parent().unwrap_or(dir);
+    let (mut files, mut todo) = (Vec::new(), vec![dir.to_owned()]);
+    while let Some(at) = todo.pop() {
+        for entry in std::fs::read_dir(&at).into_iter().flatten().flatten() {
+            let (path, kind) = (entry.path(), entry.file_type());
+            if entry
+                .file_name()
+                .to_str()
+                .is_none_or(|n| n.starts_with('.'))
+            {
+                continue;
+            }
+            match kind {
+                Ok(kind) if kind.is_dir() => todo.push(path),
+                Ok(kind) if kind.is_file() => {
+                    let rel = path.strip_prefix(base).unwrap_or(&path).to_str();
+                    if let (Some(rel), Some(from)) = (rel, path.to_str()) {
+                        files.push((rel.to_owned(), from.to_owned()));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    files
+}
+
+/// Copies each file `(from, to)`, making its folder: whole or not at all (beside it first, then renamed into place).
+/// The first that fails stops the copy, and says why.
+#[cfg(not(target_os = "android"))]
+fn copy_files(files: &[(String, PathBuf)]) -> Result<(), String> {
+    for (from, to) in files {
+        let name = to.file_name().unwrap_or_default().to_string_lossy();
+        let part = to.with_file_name(format!(".{name}.part"));
+        let copied = (to.parent().map_or(Ok(()), std::fs::create_dir_all))
+            .and_then(|()| std::fs::copy(from, &part))
+            .and_then(|_| std::fs::rename(&part, to));
+        if let Err(err) = copied {
+            let _ = std::fs::remove_file(&part);
+            return Err(format!("{from}: {err}"));
+        }
+    }
+    Ok(())
 }
 
 /// Reads the picked file, if its type is one of `accept`.

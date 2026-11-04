@@ -1448,10 +1448,11 @@ fn the_rolls_playhead_is_the_transports_and_its_line_shows_stopped_and_playing()
     rig.click(PLAY);
     rig.frame(vec![]);
     assert_eq!(rig.playhead(roll("grid")), (at, true));
-    // A transport outside the clip: it rests at the clip's start, its line with it.
+    // A transport past the clip: folded into its 8-beat loop, its line with it.
     rig.rec.0.borrow_mut().tick = 5000;
     rig.frame(vec![]);
-    assert_eq!(rig.playhead(roll("grid")), (left, true));
+    let folded = left + (5000 % 1024) as f32 / 128.0 * 2.0 * U;
+    assert_eq!(rig.playhead(roll("grid")), (folded, true));
 }
 
 /// Every editor's play box fades as the drum editor's (`timeline::knob_shown`): out while playing, so that only the
