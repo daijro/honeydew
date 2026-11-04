@@ -8,6 +8,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.text.InputType;
 import android.view.View;
@@ -152,6 +153,31 @@ public final class HoneydewActivity extends NativeActivity {
             } catch (RuntimeException e) {
                 onDocumentPicked(null, String.valueOf(e.getMessage()));
             }
+        });
+    }
+
+    // SETTINGS `Open user folder` / `Open folder`: `path`, a folder in the user folder, in the system Files app through
+    // HoneydewDocuments; else the folder picker open there; else a message with the path.
+    public void showFolder(String path) {
+        runOnUiThread(() -> {
+            Uri uri = HoneydewDocuments.folderUri(this, path);
+            Intent view = new Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(uri, DocumentsContract.Document.MIME_TYPE_DIR)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            Intent tree = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                    .putExtra(DocumentsContract.EXTRA_INITIAL_URI, uri);
+            for (Intent intent : new Intent[] {view, tree}) {
+                try {
+                    startActivity(intent);
+                    return;
+                } catch (RuntimeException ignored) {
+                }
+            }
+            if (isFinishing() || isDestroyed()) return;
+            new AlertDialog.Builder(this)
+                    .setMessage("No app on this phone can open folders. The folder is " + path)
+                    .setPositiveButton("OK", null)
+                    .show();
         });
     }
 

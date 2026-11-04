@@ -11,15 +11,20 @@
 //! patches, or of the SoundFont files while there are none to list (no SoundFont chosen yet, one still loading, or
 //! one that failed). Another SoundFont is also the card's preset button's: the module has one preset picker, whose
 //! `.sf2` files its own loader takes (`ui::views::preset_picker`, `My SoundFonts` beside `My Files`).
+//!
+//! Issue #51: an SFZ that names controls (`label_ccN`) gets a `PATCH · CONTROLS` tab strip; `CONTROLS` shows the first
+//! [`SLOTS`] as knobs under their names, each at its `set_ccN` value when the SFZ is first shown, its moves sent to the
+//! instrument as MIDI CC N ([`wire`], [`cc_moves`]). The song keeps none of them, as it keeps no CC.
 
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 use eframe::egui::{Id, Rect, Sense, Ui};
 
 use crate::flm::chunk::ContentPath;
 use crate::flm::sf2d::Sf2d;
 use crate::panels::build::*;
-use crate::sf2::{Preset, Sf2Error};
+use crate::sf2::{Control, Preset, Sf2Error};
 
 /// The SoundFont Player's module type.
 pub const TYPE_ID: u16 = 52;
@@ -29,6 +34,19 @@ pub const PREV: u32 = 1100;
 pub const PATCH: u32 = 1200;
 pub const NEXT: u32 = 1300;
 pub const MESSAGE: u32 = 3000;
+/// The `PATCH · CONTROLS` tab strip, and the first named control's knob (the next ones follow by 100).
+pub const TABS: u32 = 4000;
+pub const KNOBS: u32 = 4100;
+/// The named controls the card shows.
+pub const SLOTS: usize = 8;
+
+/// The SFZ names controls; and the knobs that show one, each 1.
+const HAS_CONTROLS: &str = "sfz_controls";
+const SHOWN: [&str; SLOTS] = [
+    "sfz_cc_0", "sfz_cc_1", "sfz_cc_2", "sfz_cc_3", "sfz_cc_4", "sfz_cc_5", "sfz_cc_6", "sfz_cc_7",
+];
+/// What the knobs were last set to their `set_ccN` values for: the controls' hash.
+const SEEDED: &str = "sfz_controls_seeded";
 
 /// The patches of each SoundFont the rack's SoundFont Players name, by their `SF2D` path, as read
 /// ([`crate::project_files::ProjectFiles::soundfont`]): the host reads each one once.
@@ -37,10 +55,17 @@ pub type SoundFonts = HashMap<ContentPath, Result<Vec<Preset>, Sf2Error>>;
 /// Sets a card's `state` for `module`'s `SF2D` before the panel draws:
 /// - no SoundFont: the spinner's `Load Patch`;
 /// - a SoundFont `fonts` holds the patches of: the patch's name on the spinner (an index past either end reads as
-///   the patch at that end);
+///   the patch at that end), and the patch's named controls on the knobs;
 /// - one it could not read: the error state (flag `loading` 2), its message in place of `...`;
 /// - one `fonts` lacks: loading (flag `loading` 1).
-pub fn wire(module: &ModuleInstance, state: &mut PanelState, fonts: &SoundFonts) {
+///
+/// Controls other than the last ones shown set their knobs to their `set_ccN` values: the CC moves (channel param,
+/// value) that sends to the instrument too, so it plays as they read.
+pub fn wire(
+    module: &ModuleInstance,
+    state: &mut PanelState,
+    fonts: &SoundFonts,
+) -> Vec<(i32, f32)> {
     state.texts.clear();
     let sf2d = module.file.custom_data.as_deref().and_then(Sf2d::read);
     let loading = match sf2d.map(|s| (fonts.get(&s.path), s.patch)) {
@@ -58,6 +83,60 @@ pub fn wire(module: &ModuleInstance, state: &mut PanelState, fonts: &SoundFonts)
         }
     };
     state.flags.insert(flag::LOADING, loading);
+    let controls = controls(module, fonts);
+    state
+        .flags
+        .insert(HAS_CONTROLS, usize::from(!controls.is_empty()));
+    for (slot, key) in SHOWN.iter().enumerate() {
+        state.flags.insert(key, usize::from(slot < controls.len()));
+    }
+    for (slot, control) in controls.iter().enumerate() {
+        state.texts.insert(knob_id(slot), control.label.clone());
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for control in controls {
+        (control.cc, &control.label, control.value.to_bits()).hash(&mut hasher);
+    }
+    let seeded = hasher.finish() as usize;
+    if state.flags.insert(SEEDED, seeded) == Some(seeded) {
+        return Vec::new();
+    }
+    let seed = |(slot, control): (usize, &Control)| {
+        state.settings.insert(knob_id(slot), control.value);
+        (cc_param(control.cc), control.value)
+    };
+    controls.iter().enumerate().map(seed).collect()
+}
+
+/// The knob of control slot `slot`.
+fn knob_id(slot: usize) -> u32 {
+    KNOBS + 100 * slot as u32
+}
+
+/// The channel param of MIDI CC `cc`.
+fn cc_param(cc: u8) -> i32 {
+    7 + i32::from(cc)
+}
+
+/// The named controls of the patch `module` plays, as `fonts` read it, the first [`SLOTS`].
+fn controls<'a>(module: &ModuleInstance, fonts: &'a SoundFonts) -> &'a [Control] {
+    let controls = patches(module, fonts).map_or(&[][..], |(p, i)| &p[i].controls);
+    &controls[..controls.len().min(SLOTS)]
+}
+
+/// The CC moves (channel param, value) of the control knobs this pass edited (`edited`).
+pub fn cc_moves(
+    module: &ModuleInstance,
+    state: &PanelState,
+    edited: &[u32],
+    fonts: &SoundFonts,
+) -> Vec<(i32, f32)> {
+    let controls = controls(module, fonts).iter().enumerate();
+    let moved = controls.filter(|(slot, _)| edited.contains(&knob_id(*slot)));
+    let value = |slot| state.settings.get(&knob_id(slot)).copied().unwrap_or(0.0);
+    moved
+        .map(|(slot, c)| (cc_param(c.cc), value(slot)))
+        .collect()
 }
 
 /// Patch `patch` of `len`, an index past either end read as the patch at that end.
@@ -132,6 +211,10 @@ pub fn error_tap(ui: &Ui, id: Id, rect: Rect, state: &PanelState) -> Option<Pres
 
 /// Loaded, or nothing to load: the controls show.
 const IDLE: Show = Show::Flag(flag::LOADING, 0);
+/// The SFZ names controls, and `CONTROLS` is the page.
+const CONTROLS_PAGE: Show = Show::All(&[Show::Flag(HAS_CONTROLS, 1), Show::Tab(1)]);
+const PATCH_SHOWN: Show = Show::All(&[IDLE, Show::Not(&CONTROLS_PAGE)]);
+const CONTROLS_SHOWN: Show = Show::All(&[IDLE, CONTROLS_PAGE]);
 
 /// `Envelope` is `Custom` (above 0.5): the sliders' envelope, which only then takes their input.
 const CUSTOM: Show = Show::Above(5, 0.5);
@@ -141,8 +224,21 @@ fn envelope_text(v: f32) -> String {
     if v > 0.5 { "Custom" } else { "Original" }.to_owned()
 }
 
+/// A control knob's value text: the CC value, 0…127.
+fn cc_text(v: f32) -> String {
+    format!("{}", (127.0 * v).round())
+}
+
 pub fn panel() -> Option<Panel> {
+    let knobs = (0..SLOTS).map(|slot| {
+        knob(knob_id(slot), "")
+            .value_fn(cc_text)
+            .show(Show::Flag(SHOWN[slot], 1))
+    });
     Some(Panel::new(vstack([
+        tabs(TABS, "PATCH · CONTROLS")
+            .h(Size::U(1.25))
+            .show(Show::All(&[IDLE, Show::Flag(HAS_CONTROLS, 1)])),
         hstack([
             text_toggle(1100, "Prev")
                 .momentary()
@@ -153,7 +249,9 @@ pub fn panel() -> Option<Panel> {
                 .momentary()
                 .margins(0.75, 0.75, 0.75, 0.75),
         ])
-        .show(IDLE),
+        // Its 1 : 1.5 share of the card, fixed: the tab strip takes its room from the envelope's row.
+        .h(Size::U(2.596))
+        .show(PATCH_SHOWN),
         hstack([
             toggle(2100, "Envelope")
                 .p(5)
@@ -165,7 +263,8 @@ pub fn panel() -> Option<Panel> {
             v_slider(2500, "Release").p(4).value_text().enabled(CUSTOM),
         ])
         .h(Size::Flex(1.5))
-        .show(IDLE),
+        .show(PATCH_SHOWN),
+        hstack(knobs).show(CONTROLS_SHOWN),
         text(3000, "...")
             .font(FontSize::Pt18)
             .align(Align2::CENTER_CENTER)
@@ -177,8 +276,54 @@ pub fn panel() -> Option<Panel> {
 #[cfg(test)]
 pub const REFERENCE: Reference = Reference {
     size: [16.96, 6.49],
-    settings: &[(1100, 0.0), (1200, 0.0), (1300, 0.0)],
+    settings: &[
+        (1100, 0.0),
+        (1200, 0.0),
+        (1300, 0.0),
+        (4100, 0.0),
+        (4200, 0.0),
+        (4300, 0.0),
+        (4400, 0.0),
+        (4500, 0.0),
+        (4600, 0.0),
+        (4700, 0.0),
+        (4800, 0.0),
+    ],
     cases: &[
+        // An SFZ that names eight controls, on its `CONTROLS` page.
+        Case {
+            name: "controls",
+            tab: 1,
+            flags: &[
+                (HAS_CONTROLS, 1),
+                (SHOWN[0], 1),
+                (SHOWN[1], 1),
+                (SHOWN[2], 1),
+                (SHOWN[3], 1),
+                (SHOWN[4], 1),
+                (SHOWN[5], 1),
+                (SHOWN[6], 1),
+                (SHOWN[7], 1),
+            ],
+            rows: &[
+                row(
+                    TABS,
+                    Widget::Tabs,
+                    "PATCH · CONTROLS",
+                    [0.0, 0.0, 16.96, 1.25],
+                )
+                .h(Size::U(1.25)),
+                row(4100, Widget::Knob, "", [0.00, 1.25, 2.12, 5.24]).value("0"),
+                row(4200, Widget::Knob, "", [2.12, 1.25, 2.12, 5.24]).value("0"),
+                row(4300, Widget::Knob, "", [4.24, 1.25, 2.12, 5.24]).value("0"),
+                row(4400, Widget::Knob, "", [6.36, 1.25, 2.12, 5.24]).value("0"),
+                row(4500, Widget::Knob, "", [8.48, 1.25, 2.12, 5.24]).value("0"),
+                row(4600, Widget::Knob, "", [10.60, 1.25, 2.12, 5.24]).value("0"),
+                row(4700, Widget::Knob, "", [12.72, 1.25, 2.12, 5.24]).value("0"),
+                row(4800, Widget::Knob, "", [14.84, 1.25, 2.12, 5.24]).value("0"),
+            ],
+            ..Case::DEFAULT
+        },
         Case {
             name: "loaded",
             rows: &[
@@ -426,7 +571,7 @@ mod tests {
         let patch = |(i, name): (usize, &&str)| Preset {
             name: (*name).into(),
             preset: i as u16,
-            bank: 0,
+            ..Preset::default()
         };
         let read = read.map(|names| names.iter().enumerate().map(patch).collect());
         SoundFonts::from([(piano(), read)])
@@ -457,6 +602,49 @@ mod tests {
             (2, None, some("Corrupted SoundFont file"))
         );
         assert_eq!(wired(&player(0), &SoundFonts::new()), (1, None, None));
+    }
+
+    #[test]
+    fn an_sfzs_named_controls_are_knobs_set_once_to_their_set_cc_that_send_their_ccs() {
+        // The patch an SFZ lists: its `label_ccN`s, at their `set_ccN`.
+        let text = b"<control> label_cc1=Vibrato set_cc74=127 label_cc74=Bright Ness\n<region> sample=*sine";
+        let path = std::path::Path::new("My SoundFonts/Lead.sfz");
+        let preset = crate::sf2::patches(path, text).unwrap().remove(0);
+        let control = |cc, label: &str, value| Control {
+            cc,
+            label: label.into(),
+            value,
+        };
+        let want = [control(1, "Vibrato", 0.0), control(74, "Bright Ness", 1.0)];
+        assert_eq!(
+            (preset.name.as_str(), &preset.controls[..]),
+            ("Lead", &want[..])
+        );
+        let fonts = SoundFonts::from([(piano(), Ok(vec![preset]))]);
+        let module = player(0);
+        let mut state = PanelState::default();
+        // The first wiring names the knobs, sets them and sends their CCs (channel params 7 + n); later ones keep them.
+        assert_eq!(wire(&module, &mut state, &fonts), [(8, 0.0), (81, 1.0)]);
+        let knob = |n: u32| KNOBS + 100 * n;
+        assert_eq!(
+            [&state.texts[&knob(0)], &state.texts[&knob(1)]],
+            ["Vibrato", "Bright Ness"]
+        );
+        assert_eq!(state.settings[&knob(1)], 1.0);
+        state.settings.insert(knob(1), 0.5);
+        assert_eq!(wire(&module, &mut state, &fonts), []);
+        assert_eq!(state.settings[&knob(1)], 0.5);
+        assert_eq!(cc_moves(&module, &state, &[knob(1)], &fonts), [(81, 0.5)]);
+        // `CONTROLS` shows the two knobs under their names, in place of the patch's controls.
+        let mut rig = rig();
+        (rig.module, rig.state) = (module, state);
+        rig.state.tab = 1;
+        rig.frame(vec![]);
+        assert_eq!(drawn(&rig, "Bright Ness").len(), 1);
+        assert_eq!(drawn(&rig, "Prev"), []);
+        let placed = crate::panels::place(&rig.panel, &rig.module, &rig.state, RECT, U);
+        let ids: Vec<u32> = placed.iter().map(|(l, _)| l.id).collect();
+        assert_eq!(ids, [TABS, knob(0), knob(1)]);
     }
 
     #[test]

@@ -315,12 +315,16 @@ impl HoneydewApp {
             Some(CtrlAction::AddCcTrack) => {
                 self.navigate(Nav::Open(Overlay::CcPicker(self.selected_channel)))
             }
+            Some(CtrlAction::AddPitchTrack) if self.selected_channel < self.song.channels.len() => {
+                let pitch = AutomationTarget::PITCH_BEND;
+                self.add_automation_track(self.selected_channel, pitch, tick);
+            }
             Some(CtrlAction::LinkRecentControl) => self.link_recent_control(tick),
             Some(CtrlAction::LinkMidiCc) => self.learn_cc(),
             Some(CtrlAction::LinkModWheel) => self.link_cc(Some(1), tick),
             Some(CtrlAction::UnlinkMidiCc) => self.link_cc(None, tick),
             Some(CtrlAction::FineTune) => self.fine_tune(),
-            None => {}
+            Some(CtrlAction::AddPitchTrack) | None => {}
         }
         // The CC picker's pick: a lane of the CC's channel param.
         if let Some((channel, target)) = self.slots.cc_picker.picked.take()
@@ -358,10 +362,16 @@ impl HoneydewApp {
         }));
     }
 
-    /// `Add automation track` for `target` on `channel` (the recent control, or `Add MIDI CC track…`'s pick): a new lane
+    /// `Add automation track` for `target` on `channel` (the recent control, `Add MIDI CC track…`'s pick or
+    /// `Add Pitch Bend track`'s Pitch Bend): a new lane
     /// with one empty clip at floor(song beat), b beats long; the lanes re-keyed, the channel selected and the
     /// automation editor opened on the clip.
-    fn add_automation_track(&mut self, channel: usize, target: AutomationTarget, tick: u64) {
+    pub(super) fn add_automation_track(
+        &mut self,
+        channel: usize,
+        target: AutomationTarget,
+        tick: u64,
+    ) {
         let start = u32::try_from(tick / u64::from(PPQ) * u64::from(PPQ)).unwrap_or(u32::MAX);
         let beats = f64::from(self.song.time_sig.bar_beats());
         let label = self

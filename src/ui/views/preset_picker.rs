@@ -971,6 +971,23 @@ pub(crate) fn land_close_grands(
     }
 }
 
+/// A DW program (`.dwp`, `.sfz`, audio file) is about to load into `module`. Where that still holds [`CLOSE_GRAND`] as
+/// the content has it (its params, common params and `CSTM`, whenever the song was opened), which every new DW Sampler
+/// loads, it goes back to `Default` first: the program then plays as on a new module, not with the
+/// piano's Lowpass, Sustain 0 or `MIDI`, which a program pick keeps.
+pub(crate) fn renew_close_grand(files: &ProjectFiles, module: &mut ModuleInstance) {
+    if module.type_id != DW || module.file.preset_name != CLOSE_GRAND {
+        return;
+    }
+    let library = files.preset_library(&categories::EXTS);
+    let bytes = close_grand(files).and_then(|path| library.read(&path).ok());
+    let grand = bytes.and_then(|bytes| crate::flm::read_preset(&bytes, Some(DW)).ok());
+    let settings = |m: &ModuleInstance| (m.params.clone(), m.common, m.file.custom_data.clone());
+    if grand.is_some_and(|grand| settings(&grand) == settings(module)) {
+        module.load_default();
+    }
+}
+
 /// Sends the audition strip's notes to `channel`: live notes, velocity 1, pan centre.
 fn sound(picker: &mut PresetPicker, audio: &mut AudioLink, channel: usize) {
     for sound in picker.take_sounds() {
@@ -1121,10 +1138,15 @@ fn finish(
     };
     match done.picked {
         Picked::Program(sets) => {
-            if !(shorthand.as_ref()).is_some_and(|program| pick_dw_program(module, program, sets)) {
+            let mut picked = module.clone();
+            renew_close_grand(app.files, &mut picked);
+            if !(shorthand.as_ref())
+                .is_some_and(|program| pick_dw_program(&mut picked, program, sets))
+            {
                 let path = path.display();
                 return Err(format!("{path}: outside the user and content folders"));
             }
+            *module = picked;
         }
         Picked::Preset(preset) => {
             module.load_preset(*preset);

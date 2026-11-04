@@ -44,10 +44,11 @@
 //!   re-sync sets @28 to L/speed (Speed in its law), then the clip-update rule sets the loop (@8: b·2ᵏ over the
 //!   envelopes, 4·2ᵐ over @28, never below 4 or b; the visible length is left as it is).
 //! - The content end of the ruler-tap rule is the loop length.
-//! - The view is the scroller's ([`scroller`]): one finger scrolls the time on the ruler band only (a drag on empty
-//!   grid moves nothing), two zoom it there; the wheel zooms it over the ruler and the grid, as does a trackpad pinch
-//!   over the grid. The view (zoom, scroll) is kept per clip in memory, and a new one starts at beat 0; the app re-keys
-//!   the views when tracks move ([`AudioEditor::rekey`]), and a view whose clip is gone goes.
+//! - The view is the scroller's ([`scroller`]): one finger scrolls the time on the ruler band and on empty grid
+//!   (issue #56; a press on a point, a handle or the selection is the edit's), two zoom it there; the wheel zooms it
+//!   over the ruler and the grid, as does a trackpad pinch over the grid. The view (zoom, scroll) is kept per clip in
+//!   memory, and a new one starts at beat 0; the app re-keys the views when tracks move ([`AudioEditor::rekey`]), and
+//!   a view whose clip is gone goes.
 //! - The other lanes draw only their curves (1.5 px), no points. The right-edge handle is the end capsule of the
 //!   selection box grown by the point radius, mid-height. A touch inside the selection's touch frame (the box grown by
 //!   1.25 U) that binds no point drags the selection.
@@ -69,13 +70,14 @@ use crate::song::points::{self, Point, PointKey};
 use crate::song::{Channel, Clip, LaneKind, PPQ, SamplerSlot, Song};
 use crate::theme::channel_color;
 use crate::ui::automation::geom::{self, Frame, HIT_R, View};
+use crate::ui::automation::value::time_items;
 use crate::ui::automation::{clipboard, set_clipboard};
 use crate::ui::clips::{FloatingRow, GridView, Selection, TimeAxis, mix};
-use crate::ui::drum_grid::edit::marks;
+use crate::ui::drum_grid::edit::grid_lines;
 use crate::ui::graph_lane::{grow, press_growth};
+use crate::ui::piano_roll::Snap;
 use crate::ui::piano_roll::notes::{auto_grid, snap_round};
-use crate::ui::piano_roll::{Snap, SnapMode};
-use crate::ui::popup::{self, PopupItem};
+use crate::ui::popup;
 use crate::ui::region::{self, RegionOp, TimeRange};
 use crate::ui::scroller::{self, Axis, Scroller, X};
 use crate::ui::step_seq::pop_in;
@@ -622,8 +624,8 @@ impl AudioEditor {
             self.seen = Some((at, self.lane, pts.clone()));
         }
 
-        // The clip's view, by the scroller (no y): one finger scrolls the time on the ruler band only, two zoom it
-        // there; the wheel zooms it over the ruler and the grid, where a trackpad pinch zooms it too.
+        // The clip's view, by the scroller (no y): one finger scrolls the time on the ruler band and on empty grid,
+        // two zoom it there; the wheel zooms it over the ruler and the grid, where a trackpad pinch zooms it too.
         // Views of gone clips go.
         (self.views).retain(|&clip, _| find(song, clip).is_some());
         let view = (self.views.get(&at).copied()).unwrap_or_else(|| View::initial(None, u));
@@ -692,7 +694,8 @@ impl AudioEditor {
         }
         let (t0, t1) = (axis.tick(f.grid.left()), axis.tick(f.grid.right()));
         let control = c.control_fill.to_color32();
-        for (tick, w) in marks(t0.max(0.0), t1, axis.beat_w, u, sig, MARK_GAP) {
+        let size = self.snap.size;
+        for (tick, w) in grid_lines(t0.max(0.0), t1, axis.beat_w, u, sig, MARK_GAP, size) {
             let x = m.floor_px(axis.x(tick)) - (w / 2.0).floor() * px;
             let r = Rect::from_x_y_ranges(x..=x + w * px, f.grid.y_range());
             gp.rect_filled(r, 0.0, control);
@@ -1031,6 +1034,10 @@ impl AudioEditor {
         {
             self.paste = None;
             self.gesture = self.press(f, axis, pts, max, p, m, now);
+            // Empty grid is the scroller's until a long press holds it.
+            if matches!(self.gesture, Gesture::Press { .. }) {
+                self.scroller.claim();
+            }
         }
         if !matches!(self.gesture, Gesture::Idle) {
             ui.ctx().request_repaint();
@@ -1041,13 +1048,14 @@ impl AudioEditor {
                 Gesture::Press { at, since } => {
                     let moved = gesture::left_calm(*at, Some(p), u);
                     if gesture::is_long(now - *since) {
+                        self.scroller.yield_touch();
                         Some(if moved {
                             Gesture::Marquee { from: *at, to: p }
                         } else {
                             Gesture::Hold { at: *at }
                         })
                     } else if moved {
-                        // A drag: nothing scrolls here (the touch x zone is the ruler band).
+                        // A drag: the scroller scrolls it.
                         Some(Gesture::Pan { last: p })
                     } else {
                         None
@@ -1377,18 +1385,14 @@ impl AudioEditor {
         }
     }
 
-    /// The snap menu while open: one column, the current mode highlighted; a pick sets it and turns snap on.
+    /// The snap menu while open: the time modes and the grid sizes ([`time_items`]), the current ones highlighted; a
+    /// mode's pick sets it and turns snap on, a size's sets the grid.
     fn snap_menu(&mut self, ui: &Ui, id: Id, cell: Rect, cx: &UiCtx) {
         if !self.snap_menu {
             return;
         }
         let ctx = ui.ctx();
-        let items: Vec<PopupItem<SnapMode>> = (SnapMode::ALL.iter().enumerate())
-            .map(|(row, &mode)| PopupItem {
-                current: mode == self.snap.mode,
-                ..PopupItem::new(mode, 0, row, mode.label())
-            })
-            .collect();
+        let items = time_items(self.snap);
         let result = popup::show(
             ctx,
             id.with("snap menu"),
@@ -1397,8 +1401,8 @@ impl AudioEditor {
             &items,
             cx,
         );
-        if let Some(mode) = result.selected {
-            self.snap = Snap { on: true, mode };
+        if let Some(pick) = result.selected {
+            self.snap = pick.snap(self.snap);
         }
         if result.close {
             self.snap_menu = false;

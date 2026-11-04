@@ -6,6 +6,9 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 publish = false
 
+[lib]
+doctest = false
+
 [features]
 # Compiled into Lemon Studio: no exported plugin entry points (they would clash with the other built-in plugins).
 linked = []

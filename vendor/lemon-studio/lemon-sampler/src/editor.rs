@@ -1086,19 +1086,19 @@ impl Logic {
         }
         // Automation and remote control belong to the host: shown; "Create automation clip" goes to Lemon Studio (host link).
         m.head("Automation");
-        for l in ["Edit events", "Edit events in new window", "Edit events in piano roll", "Init song with this position", "Delete initial value"] {
+        for l in ["Edit automation", "Edit automation in a window", "Edit automation in piano roll", "Set as song start value", "Remove start value"] {
             m.add(MenuItem::item(l).enabled(false), Cmd::None);
         }
         m.sep();
         m.add(MenuItem::item("Create automation clip").enabled(self.hosted), Cmd::Automate);
         m.add(MenuItem::item("Edit automation clip...").enabled(false), Cmd::None);
         m.head("Remote control");
-        m.add(MenuItem::item("Link to controller...").enabled(false), Cmd::None);
-        m.add(MenuItem::item("Override global link...").enabled(false), Cmd::None);
+        m.add(MenuItem::item("MIDI learn...").enabled(false), Cmd::None);
+        m.add(MenuItem::item("Override global mapping...").enabled(false), Cmd::None);
         m.head("Value");
         m.add(MenuItem::item("Copy value"), Cmd::CopyValue);
         m.add(MenuItem::item("Paste value").enabled(self.copied.is_some()), Cmd::PasteValue);
-        m.add(MenuItem::item("Type in value..."), Cmd::TypeIn);
+        m.add(MenuItem::item("Enter value..."), Cmd::TypeIn);
         m.add(MenuItem::item("Set..."), Cmd::TypeIn);
         m
     }
@@ -2020,7 +2020,7 @@ mod win32 {
                     }
                     1
                 }
-                Cmd::Changed | Cmd::Note | Cmd::Automate | Cmd::Audio | Cmd::Resizable | Cmd::SetSize => 0,
+                Cmd::Changed | Cmd::Note | Cmd::Automate | Cmd::Audio | Cmd::Resizable | Cmd::SetSize | Cmd::Notes => 0,
             }
         }
 
@@ -2741,7 +2741,7 @@ mod gui {
                         }
                     }
                     Act::OpenDialog => {
-                        if let Some(path) = file_dialog(&mut self.win, false) {
+                        if let Some(path) = file_dialog(&self.win, false) {
                             self.load(&path);
                         }
                         self.dirty = true;
@@ -2763,7 +2763,7 @@ mod gui {
                     }
                     Act::SaveAs => {
                         let s = self.shared.whole();
-                        if let (Some(s), Some(path)) = (s, file_dialog(&mut self.win, true)) {
+                        if let (Some(s), Some(path)) = (s, file_dialog(&self.win, true)) {
                             let path = if path.to_ascii_lowercase().ends_with(".wav") { path } else { format!("{path}.wav") };
                             self.logic.hint = match std::fs::write(&path, super::wav_bytes(&s, true)) {
                                 Ok(()) => format!("Saved {path}"),
@@ -2861,6 +2861,11 @@ mod gui {
         if os_plugkit::no_modal() {
             return None;
         }
+        // Honeydew (vendored addition): the host's own picker opens a file where it answers (`os_plugkit::embed`).
+        #[cfg(feature = "embed")]
+        if os_plugkit::embed::host_files() {
+            return (!save).then(|| win.open_file()).flatten();
+        }
         let path = win.dialog(move || {
             let d = rfd::FileDialog::new();
             if save {
@@ -2872,20 +2877,11 @@ mod gui {
         path.flatten().map(|p| p.to_string_lossy().into_owned())
     }
 
-    /// The browser has no file dialog. On Android, ask the host to use the system document picker.
-    #[cfg(target_os = "android")]
-    fn file_dialog(win: &mut Window, save: bool) -> Option<String> {
-        if save {
-            None
-        } else {
-            win.open_file("Open sample", &["wav", "flac", "ogg", "wv", "aif", "aiff", "mp3"])
-        }
-    }
-
-    /// Honeydew (vendored addition): the browser has no file dialog.
-    #[cfg(target_arch = "wasm32")]
-    fn file_dialog(_: &Window, _: bool) -> Option<String> {
-        None
+    /// Honeydew (vendored addition): the browser and Android have no file dialog: the host's own picker opens a sample
+    /// (`os_plugkit::embed`), and nothing saves one.
+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
+    fn file_dialog(win: &Window, save: bool) -> Option<String> {
+        (!save).then(|| win.open_file()).flatten()
     }
 }
 

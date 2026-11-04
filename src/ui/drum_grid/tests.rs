@@ -5,6 +5,7 @@ use super::*;
 use crate::song::{Clip, Event, Lane, LaneKind, TimeSig};
 use crate::ui::clips::TimeAxis;
 use crate::ui::graph_lane::Prop;
+use crate::ui::piano_roll::SnapMode;
 
 /// A drum hit of `pad` at `pos` ticks, `ticks` long, velocity 100, pan 10.
 fn drum(pad: u8, pos: u32, ticks: f64) -> Event {
@@ -156,6 +157,75 @@ fn finer_marks_split_the_beat_by_the_subdivision_first() {
     assert_eq!(
         in_units(marks(0.0, 128.0, 64.0, 32.0, sig(6), MARK_GAP), 3.0),
         [(0, 4), (1, 1), (2, 1), (3, 2)]
+    );
+}
+
+#[test]
+fn a_fixed_grid_size_draws_its_lines_and_auto_snaps_to_them_a_triplet_too() {
+    // #53, at 2 U a beat (64 pt), where Auto is a step (32 ticks).
+    use crate::ui::piano_roll::notes::{GridSize, Snap, auto_grid};
+    let (u, sig) = (32.0, TimeSig::default());
+    let auto = auto_grid(64.0, u, sig);
+    let lines = |size, to, beat_w, sig| grid_lines(0.0, to, beat_w, u, sig, MARK_GAP, size);
+    // In `unit`s of a tick, every line on one.
+    let units = |m: Vec<(f64, f32)>, unit: f64| {
+        (m.into_iter())
+            .map(|(t, w)| {
+                assert!(((t / unit).round() * unit - t).abs() < 1e-6, "{t}");
+                ((t / unit).round() as u32, w as u32)
+            })
+            .collect::<Vec<_>>()
+    };
+    // 1/32 (16 ticks, 8 pt apart): its lines, 4 px on the bar and 2 on the beat; Auto snaps to it, Beat keeps a beat.
+    let size = GridSize::Note(32, false);
+    assert_eq!(
+        units(lines(size, 128.0, 64.0, sig), 16.0),
+        [
+            (0, 4),
+            (1, 1),
+            (2, 1),
+            (3, 1),
+            (4, 1),
+            (5, 1),
+            (6, 1),
+            (7, 1),
+            (8, 2)
+        ]
+    );
+    let snap = Snap {
+        size,
+        ..Snap::default()
+    };
+    assert_eq!(snap.active(auto, sig), Some(16.0));
+    let beat = Snap {
+        mode: SnapMode::Beat,
+        ..snap
+    };
+    assert_eq!(beat.grid(auto, sig), 128.0);
+    // 1/8T: a third of a beat (21.3 pt), the beats among its lines; Auto snaps to it.
+    let size = GridSize::Note(8, true);
+    assert_eq!(
+        units(lines(size, 256.0, 64.0, sig), 128.0 / 3.0),
+        [(0, 4), (1, 1), (2, 1), (3, 2), (4, 1), (5, 1), (6, 2)]
+    );
+    assert_eq!(Snap { size, ..snap }.grid(auto, sig), 128.0 / 3.0);
+    // 1/64T lines 2.7 pt apart are too dense: every other one (1/32T, 5.3 pt) is drawn; Auto still snaps to 1/64T.
+    let size = GridSize::Note(64, true);
+    assert_eq!(units(lines(size, 128.0, 64.0, sig), 32.0 / 3.0).len(), 13);
+    assert_eq!(Snap { size, ..snap }.grid(auto, sig), 16.0 / 3.0);
+    // 1/1 (4 beats) in 3/4 at 16 pt a beat: the bar lines too.
+    let three = TimeSig {
+        subdivision: 4,
+        beats_per_bar: 3,
+    };
+    assert_eq!(
+        units(lines(GridSize::Note(1, false), 1536.0, 16.0, three), 128.0),
+        [(0, 4), (3, 4), (4, 2), (6, 4), (8, 2), (9, 4), (12, 4)]
+    );
+    // Auto is the adaptive marks.
+    assert_eq!(
+        lines(GridSize::Auto, 512.0, 64.0, sig),
+        marks(0.0, 512.0, 64.0, u, sig, MARK_GAP)
     );
 }
 
@@ -1199,7 +1269,8 @@ fn the_snap_button_has_the_ruler_cell_in_place_of_swing() {
         rig.view.snap,
         Snap {
             on: true,
-            mode: SnapMode::Beat
+            mode: SnapMode::Beat,
+            ..Snap::default()
         }
     );
     rig.click(at(0, 100.0));

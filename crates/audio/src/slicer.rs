@@ -209,8 +209,8 @@ fn zero_crossing(x: impl Fn(usize) -> f64, pos: usize) -> usize {
         .unwrap_or(pos)
 }
 
-/// In-place radix-2 FFT (decimation in time) of `re` + i·`im`, whose equal length is a power of two.
-fn fft(re: &mut [f64], im: &mut [f64]) {
+/// In-place radix-2 FFT (decimation in time) of `re` + i·`im`, whose equal length is a power of two. Denoise uses it too.
+pub(crate) fn fft(re: &mut [f64], im: &mut [f64]) {
     let n = re.len();
     debug_assert!(n.is_power_of_two() && im.len() == n);
     let mut j = 0;

@@ -17,11 +17,11 @@ pub mod view;
 use std::num::NonZeroU32;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use nih_plug::prelude::*;
-use os_engine::{envelope, Sample};
+use os_engine::Sample;
 
 use params::{DiskKey, FxKey, Live, SamplerParams};
 
@@ -112,6 +112,13 @@ impl Default for Shared {
     }
 }
 
+/// Whether a sample file has a loop of its own that the voices play while "Use loop points" is on (the `smpl` loop
+/// `source_info` reads): the host's note rules hand such a voice its note's end (`os_engine::SampleLibrary::
+/// loop_reader`).
+pub fn file_loops(path: &Path) -> bool {
+    source_info(path).1.file_loop.is_some_and(|(a, b)| b > a)
+}
+
 /// Bit depth of a sample file's data (WAV `fmt `, FLAC STREAMINFO), | 0x100 for floating point; 16 when unknown.
 pub fn source_bits(path: &Path) -> u32 {
     source_info(path).0
@@ -175,24 +182,131 @@ pub fn source_info(path: &Path) -> (u32, fx::Source) {
     (16, src)
 }
 
+thread_local! {
+    /// **(Lemon Studio)** While the host opens a project, instances it starts from a saved state on this thread build
+    /// their played sample on build threads instead of in `initialize` (spec: ui/project-loading.md §2): the host's
+    /// window keeps painting.
+    static DEFER_BUILDS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+/// Ticks per quarter note of the project when Lemon Studio hosts the plugin (0: another host). Lemon Studio hands its
+/// instruments one tick per `process` call (spec: audio/conventions.md "Tick"), and the voices then step on those calls
+/// (`dsp::Time::host_ticks`). **(OS)**
+static HOST_PPQ: AtomicU32 = AtomicU32::new(0);
+
+/// Lemon Studio plays a project of `ppq` ticks per quarter note, one tick per `process` call, through the instances of
+/// this process.
+pub fn set_host_ticks(ppq: u16) {
+    HOST_PPQ.store(u32::from(ppq), Ordering::Relaxed);
+}
+
+/// The song's timing for the voices from the transport: steps per beat from the time signature's denominator (16 /
+/// denominator), the song tick from the position in beats.
+fn time(t: &Transport) -> dsp::Time {
+    let host = HOST_PPQ.load(Ordering::Relaxed);
+    let ppq = if host > 0 { host as u16 } else { 96 };
+    let steps = match t.time_sig_denominator {
+        Some(d @ (1 | 2 | 4 | 8 | 16)) => 16 / d as u32,
+        _ => 4,
+    };
+    let song_tick = t.pos_beats().filter(|_| t.playing).map(|b| (b * f64::from(ppq) * f64::from(steps) / 4.0).round().max(0.0) as u64);
+    dsp::Time { tempo: t.tempo.unwrap_or(130.0), ppq, steps, song_tick, host_ticks: host > 0 }
+}
+
+/// Deferred builds queued or running, in every instance of the process.
+static PENDING_BUILDS: AtomicUsize = AtomicUsize::new(0);
+/// Deferred builds waiting for a thread, and how many threads take them.
+static BUILD_QUEUE: Mutex<(std::collections::VecDeque<Box<dyn FnOnce() + Send>>, usize)> = Mutex::new((std::collections::VecDeque::new(), 0));
+
+/// The host opens a project on this thread (on) or has opened it (off): see `DEFER_BUILDS`.
+pub fn set_deferred_builds(on: bool) {
+    DEFER_BUILDS.with(|d| d.set(on));
+}
+
+/// Deferred builds not finished yet: the host's project is ready when there are none.
+pub fn pending_builds() -> usize {
+    PENDING_BUILDS.load(Ordering::Acquire)
+}
+
+/// Runs `job` on one of up to 4 build threads (as many as the machine runs at once): long samples are built side by
+/// side, without holding every copy in memory at once.
+fn queue_build(job: Box<dyn FnOnce() + Send>) {
+    PENDING_BUILDS.fetch_add(1, Ordering::AcqRel);
+    let most = std::thread::available_parallelism().map_or(2, |n| n.get()).clamp(1, 4);
+    let mut q = BUILD_QUEUE.lock().unwrap();
+    q.0.push_back(job);
+    if q.1 >= most {
+        return;
+    }
+    q.1 += 1;
+    let spawned = std::thread::Builder::new().name("sampler-build".into()).spawn(|| loop {
+        let job = {
+            let mut q = BUILD_QUEUE.lock().unwrap();
+            match q.0.pop_front() {
+                Some(j) => j,
+                None => {
+                    q.1 -= 1;
+                    return;
+                }
+            }
+        };
+        // A build that panics still counts as done, so the host's loading ends.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
+        PENDING_BUILDS.fetch_sub(1, Ordering::AcqRel);
+    });
+    if spawned.is_err() {
+        // No thread: the jobs run here, as they would without deferring.
+        q.1 -= 1;
+        let jobs: Vec<_> = q.0.drain(..).collect();
+        drop(q);
+        for job in jobs {
+            job();
+            PENDING_BUILDS.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+}
+
 impl Shared {
     /// Loads a sample file and makes it the current one (UI / initialize thread). A decode the host already holds
     /// (it decodes a project's samples ahead, spec: ui/project-loading.md) is taken as it is. A file that plays from
     /// disk with the current settings (Keep on disk) is not decoded.
     pub fn load(&self, path: &str, params: &SamplerParams) -> Result<(), String> {
+        self.load_file(path, params)?;
+        self.precompute(params);
+        Ok(())
+    }
+
+    /// `load`, with the played sample built on a build thread while the host opens a project (`set_deferred_builds`).
+    pub fn load_for_host(self: &Arc<Self>, path: &str, params: &Arc<SamplerParams>) -> Result<(), String> {
+        if !DEFER_BUILDS.with(|d| d.get()) {
+            return self.load(path, params);
+        }
+        self.load_file(path, params)?;
+        let (s, p) = (self.clone(), params.clone());
+        queue_build(Box::new(move || s.precompute(&p)));
+        Ok(())
+    }
+
+    /// `load` without building the played sample.
+    fn load_file(&self, path: &str, params: &SamplerParams) -> Result<(), String> {
         let p = Path::new(path);
         let (bits, source) = source_info(p);
         let layout = stream::Layout::of(p);
         let on_disk = layout.as_ref().is_some_and(|l| self.streams(params, &source, l).is_some());
         let s = if on_disk { None } else { Some(os_engine::sample::load_shared(p).map_err(|e| e.to_string())?) };
         self.bits.store(bits, Ordering::Release);
-        self.set_loaded(s, path, source, layout, params);
+        self.set_file(s, path, source, layout, params);
         Ok(())
     }
 
     /// Replaces the loaded sample (`path` is what the state remembers), with the file's loop and format in `source`
     /// and, for a file that can play from disk, its layout.
     fn set_loaded(&self, s: Option<Arc<Sample>>, path: &str, source: fx::Source, layout: Option<stream::Layout>, params: &SamplerParams) {
+        self.set_file(s, path, source, layout, params);
+        self.precompute(params);
+    }
+
+    /// `set_loaded` without building the played sample.
+    fn set_file(&self, s: Option<Arc<Sample>>, path: &str, source: fx::Source, layout: Option<stream::Layout>, params: &SamplerParams) {
         {
             // All of it under the lock of `raw`, with the version: a decode made for an earlier load is never kept.
             let mut raw = self.raw.lock().unwrap();
@@ -205,7 +319,6 @@ impl Shared {
         if let Ok(mut p) = params.sample_path.write() {
             *p = path.to_string();
         }
-        self.precompute(params);
     }
 
     pub fn clear(&self, params: &SamplerParams) {
@@ -499,38 +612,10 @@ impl Default for LemonSampler {
     }
 }
 
-/// An envelope target's LFO (spec §5.2): times from the envelope time law, speed `0.1·2^(8v)` Hz or tempo-synced.
-fn lfo(e: &params::EnvParams, tempo: f64) -> dsp::Lfo {
-    let n = |v: f32| envelope::knob_seconds(params::time_field(v));
-    let sp = f64::from(e.lfo_speed.live());
-    let hz = if e.lfo_tempo.live() {
-        16.0 * tempo / (60.0 * 2f64.powf(8.0 * (1.0 - sp)))
-    } else {
-        0.1 * 2f64.powf(8.0 * sp)
-    };
-    dsp::Lfo {
-        shape: e.lfo_shape.live().clamp(0, 2) as u8,
-        delay: n(e.lfo_delay.live()),
-        attack: n(e.lfo_att.live()),
-        amount: f64::from(e.lfo_amt.live()),
-        hz,
-        global: e.lfo_global.live(),
-    }
-}
-
-/// The per-block settings of the voices from the parameters.
+/// The per-block settings of the voices from the parameters. The envelopes and LFOs are the channel's records, which
+/// the voices step once per tick (spec: audio/envelopes-and-lfos.md).
 pub fn block(p: &SamplerParams, tempo: f64, bend: f64) -> dsp::Block {
-    let mut targets = [dsp::Target::default(); 5];
-    for (i, t) in targets.iter_mut().enumerate() {
-        let e = p.env(i);
-        // The Panning target has no envelope (spec §3).
-        let mut env = if i == dsp::PAN { None } else { e.envelope(128.0) };
-        if e.tempo.live() {
-            // Tempo-based times: the time law at 120 BPM, scaled by the host tempo (Lemon Studio choice).
-            env = env.map(|x| x.scaled(120.0 / tempo.max(1.0)));
-        }
-        *t = dsp::Target { env, amount: f64::from(e.amt.live()), lfo: lfo(e, tempo) };
-    }
+    let records = std::array::from_fn(|i| p.env(i).record(i));
     // Resample and the realtime methods stretch in the voices, the other methods in the processed sample; PITCH plays
     // no part in Resample (spec §5.6).
     let mode = p.ts_mode.live();
@@ -542,7 +627,7 @@ pub fn block(p: &SamplerParams, tempo: f64, bend: f64) -> dsp::Block {
         ts_ratio: if resample || realtime { params::mul_of(p.ts_mul.live()) } else { 1.0 },
         ts_time: if resample || realtime { p.ts_seconds(tempo) } else { None },
         realtime,
-        targets,
+        records,
         f_type: p.f_type.live().clamp(0, 7) as u8,
         f_cut: p.f_cut.live(),
         f_res: p.f_res.live(),
@@ -666,10 +751,11 @@ impl Plugin for LemonSampler {
         // An offline render (an export) gets the resampler's exact weights; live playback the tables.
         self.offline = config.process_mode == ProcessMode::Offline;
         self.engine.quality = if self.offline { os_dsp::resample::Quality::Exact } else { os_dsp::resample::Quality::Table };
-        // A restored state names a sample: load it now (initialize may block).
+        // A restored state names a sample: load it now (initialize may block); while the host opens a project, the
+        // played sample is built on a build thread and taken when it is ready (`pick_up_sample`).
         let path = self.params.sample_path.read().map(|p| p.clone()).unwrap_or_default();
         if !path.is_empty() && path != self.shared.loaded_path() {
-            if let Err(e) = self.shared.load(&path, &self.params) {
+            if let Err(e) = self.shared.load_for_host(&path, &self.params) {
                 nih_log!("Lemon Sampler: {e}");
             }
         } else if path.is_empty() && !self.shared.loaded_path().is_empty() {
@@ -699,6 +785,7 @@ impl Plugin for LemonSampler {
         // An offline render or an export waits for frames from disk (spec: plugins/lemon-sampler.md "Keep on disk
         // (Lemon Studio)").
         self.engine.wait = self.offline || stream::exporting();
+        self.engine.begin(buffer.samples(), time(ctx.transport()));
         let tempo = self.shared.tempo();
         let mut blk = block(&self.params, tempo, self.bend);
         // Notes the editor plays itself.
@@ -850,8 +937,10 @@ mod tests {
         p.event(NoteEvent::PolyPan { timing: 0, voice_id: Some(3), channel: 0, note: 60, pan: 1.0 }, &mut blk, 130.0);
         let (mut l, mut r) = (vec![0.0; 4800], vec![0.0; 4800]);
         p.engine.render(&mut l, &mut r, &blk);
-        // The pan ramps over one control span.
-        assert!(rms(&l[64..]) < 1e-6 && rms(&r[64..]) > 0.45, "{} {}", rms(&l[64..]), rms(&r[64..]));
+        // The gains move at most `single(44100 / rate) * 0.001` per sample (spec: audio/sampler.md "Gains"): the left
+        // side's 1 takes some 1090 samples at 48 kHz to reach 0.
+        assert!(rms(&l[..200]) > 0.25, "{}", rms(&l[..200]));
+        assert!(rms(&l[1200..]) < 1e-6 && rms(&r[1200..]) > 0.45, "{} {}", rms(&l[1200..]), rms(&r[1200..]));
         p.event(NoteEvent::PolyModulation { timing: 0, voice_id: 3, poly_modulation_id: params::MOD_X_POLY, normalized_offset: -0.9 }, &mut blk, 130.0);
         let (mut l, mut r) = (vec![0.0; 4800], vec![0.0; 4800]);
         p.engine.render(&mut l, &mut r, &blk);

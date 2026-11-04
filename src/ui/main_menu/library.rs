@@ -568,15 +568,18 @@ fn known_documents() -> Option<PathBuf> {
 /// The installed sound library's folder in [`app_data_dir`] (`content::install`): it stays there, as the app's.
 pub const SOUND_LIBRARY_FOLDER: &str = "content";
 
-/// The marker an earlier user folder holds once it stays the user folder ([`migrate_user_dir`]): why it does.
+/// The marker an earlier user folder holds once it stays the user folder ([`migrate_user_dir`]): why it does. Android's
+/// documents provider (`HoneydewDocuments.java`) looks for it too, to show the folder the app uses.
 #[cfg(not(target_arch = "wasm32"))]
 const STAYS: &str = ".user-folder-stays-here";
 
 /// Moves what the earlier user folder `old` holds into the user folder `new` and returns `new`, or returns `old` where
-/// it stays the user folder. Each entry of `old` but the installed sound library ([`SOUND_LIBRARY_FOLDER`]) is renamed
-/// into `new` with `rename` (one rename each, nothing copied), and nothing is deleted or written over:
+/// it stays the user folder. Each entry of `old` but the app's own files ([`app_file`]) is renamed into `new` with
+/// `rename` (one rename each, nothing copied), and nothing is deleted or written over:
 /// - `old` missing or holding nothing to move: `new`;
-/// - `old` marked ([`STAYS`]) by an earlier start: `old`;
+/// - `old` marked ([`STAYS`]) by an earlier start: `old`. Marked for one of the app's own files (#58: up to 0.4.6
+///   Android's settings file kept `old` the user folder from the second start on), the folders `new` holds come over
+///   too ([`move_files`]), with what the first start saved in them;
 /// - a name in both: nothing moves, both keep their files, and `old` stays (marked);
 /// - a rename fails (another file system, no permission): what moved goes back, and `old` stays (marked, so the next
 ///   start does not try again).
@@ -602,14 +605,26 @@ fn migrate_user_dir(
     if old == new {
         return new.to_owned();
     }
-    if old.join(STAYS).exists() {
+    let marker = old.join(STAYS);
+    if marker.exists() {
+        let why = std::fs::read_to_string(&marker).unwrap_or_default();
+        let named = why.split([':', ' ']).next().unwrap_or_default();
+        if app_file(std::ffi::OsStr::new(named)) {
+            let folders = std::fs::read_dir(new).into_iter().flatten().flatten();
+            for folder in folders.filter(|e| e.file_type().is_ok_and(|t| t.is_dir())) {
+                let (from, to) = (folder.path(), old.join(folder.file_name()));
+                if let Err(err) = move_files(&from, &to, &rename) {
+                    eprintln!("{} not moved to {}: {err}", from.display(), to.display());
+                }
+            }
+        }
         return old.to_owned();
     }
     let Ok(listed) = std::fs::read_dir(old) else {
         return new.to_owned();
     };
     let names: Vec<_> = (listed.flatten().map(|e| e.file_name()))
-        .filter(|name| name != SOUND_LIBRARY_FOLDER)
+        .filter(|name| !app_file(name))
         .collect();
     if names.is_empty() {
         return new.to_owned();
@@ -643,6 +658,51 @@ fn migrate_user_dir(
         new.display()
     );
     new.to_owned()
+}
+
+/// The app's own files in the app data folder, which stay there when the user folder moves out of it: the installed
+/// sound library ([`SOUND_LIBRARY_FOLDER`]), and Android's settings file ([`SETTINGS_FILE`]) with the temp file a cut
+/// short write of it leaves ([`crate::project_files::replace_file`]).
+#[cfg(not(target_arch = "wasm32"))]
+fn app_file(name: &std::ffi::OsStr) -> bool {
+    use crate::settings::SETTINGS_FILE;
+    let tmp = |n: &str| n == format!(".{SETTINGS_FILE}.tmp");
+    name == SOUND_LIBRARY_FOLDER || name == SETTINGS_FILE || name.to_str().is_some_and(tmp)
+}
+
+/// Moves the files below the folder `from` into the same places below `to`, each by `rename`, else (another file
+/// system) by a copy that is synced before the file goes. A name `to` has takes a free number
+/// ([`free_path`](super::file_ops::free_path)). The folders emptied go; links stay where they are.
+#[cfg(not(target_arch = "wasm32"))]
+fn move_files(
+    from: &Path,
+    to: &Path,
+    rename: &impl Fn(&Path, &Path) -> io::Result<()>,
+) -> io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let (path, kind) = (entry.path(), entry.file_type()?);
+        if kind.is_dir() {
+            move_files(&path, &to.join(entry.file_name()), rename)?;
+        } else if kind.is_file() {
+            let taken = NativeLibrary::at(to.to_owned());
+            let target = super::file_ops::free_path(&taken, to, &entry.file_name(), false);
+            if rename(&path, &target).is_err() {
+                let copied = std::fs::copy(&path, &target)
+                    .and_then(|_| std::fs::File::open(&target)?.sync_all())
+                    .and_then(|()| std::fs::remove_file(&path));
+                if let Err(err) = copied {
+                    // The file stays where it was, whole, for the next start.
+                    let _ = std::fs::remove_file(&target);
+                    return Err(err);
+                }
+            }
+        }
+    }
+    // Only an empty folder goes.
+    let _ = std::fs::remove_dir(from);
+    Ok(())
 }
 
 /// The folder eframe keeps app data in (`eframe::storage_dir`'s layout, which needs eframe's `persistence` feature,
@@ -2253,6 +2313,54 @@ mod tests {
         assert_eq!(std::fs::read(new.join("My Songs/A.flm")).unwrap(), b"other");
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// #58: Android keeps its settings file in the app data folder, the user folder before, on another file system than
+    /// the user folder now, where no rename works. The file stays there and keeps that folder from coming back into use:
+    /// the song the first start saved is listed after a restart. An install an earlier version kept in the app data
+    /// folder for that file (marked so) gets that start's songs back, a name it has numbered.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_song_saved_at_the_first_start_is_listed_after_a_restart() {
+        use crate::project_files::content::tests::{Temp, put};
+        use crate::settings::{FileStorage, SETTINGS_FILE};
+        let base = Temp::new("settings-userdir");
+        let (old, new) = (
+            base.0.join("files").join(crate::APP_NAME),
+            base.0.join("external"),
+        );
+        let other_disk = |_: &Path, _: &Path| Err(io::ErrorKind::CrossesDevices.into());
+
+        // The first start: no app data folder yet. A song is saved, then the settings.
+        assert_eq!(migrate_user_dir(&old, &new, other_disk), new);
+        let mut songs = NativeLibrary::at(new.join(SONGS_FOLDER));
+        songs.store("Beat.flm", b"beat").unwrap();
+        eframe::Storage::flush(&mut FileStorage::open(old.join(SETTINGS_FILE)));
+        // The restart keeps the user folder, and SONGS lists the song.
+        assert_eq!(migrate_user_dir(&old, &new, other_disk), new);
+        let listed = songs.list(None).unwrap();
+        assert_eq!(
+            listed.iter().map(|e| &e.name[..]).collect::<Vec<_>>(),
+            ["Beat.flm"]
+        );
+
+        // Kept in the app data folder for the settings file, with a song saved there since.
+        std::fs::write(
+            old.join(STAYS),
+            "storage.json: Invalid cross-device link (os error 18)",
+        )
+        .unwrap();
+        put(&old.join("My Songs/Beat.flm"), b"later");
+        put(&new.join("My Songs/Demo Songs/Demo.flm"), b"demo");
+        assert_eq!(migrate_user_dir(&old, &new, other_disk), old);
+        let songs = old.join(SONGS_FOLDER);
+        assert_eq!(
+            tree(&songs),
+            ["Beat (1).flm", "Beat.flm", "Demo Songs/Demo.flm"]
+        );
+        assert_eq!(std::fs::read(songs.join("Beat (1).flm")).unwrap(), b"beat");
+        assert_eq!(std::fs::read(songs.join("Beat.flm")).unwrap(), b"later");
+        assert!(!new.join(SONGS_FOLDER).exists(), "moved, not copied");
     }
 
     /// The folders a deeper file implies list (the web's `My Files`) and exist, so the file actions take them.

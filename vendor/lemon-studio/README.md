@@ -13,18 +13,21 @@ tests need Lemon's engine and plugins, so their dev-dependencies are not carried
 ## The effects (Lemon Reverb and Lemon Limiter)
 
 `os-engine/src/effects/` is upstream's `crates/os-engine/src/effects/`, every file unmodified (Lemon's own comments and
-tests included), at its own commit:
+tests included), with `os-engine/src/formula.rs` (the formula language Lemon Formula Controller's effect reads), at its
+own commit:
 
-- Effects commit: `a6ce2dd443d75abf424a50fb5dd68526f87bed9d`
+- Effects commit: `d4ebee544468bab1240ba85f74f64d7e2dd4e173`
 
 Honeydew runs `reverb.rs` and `dynamics.rs` as the built-in effects Lemon Reverb and Lemon Limiter
 (`crates/audio/src/lemon.rs`, on every platform); the others come along so that `mod.rs` stays upstream's (they use
 `os-dsp` and `miniz_oxide`, so `os-engine` always depends on those), and Lemon Parametric EQ runs `eq` (below), so the
 effects and the plugins are synced to the same commit. Honeydew's own code reads them only through their public items,
-so an upstream change that keeps those compiles as it is.
+so an upstream change that keeps those compiles as it is. The effects Honeydew does not run (Lemon Filter, Flanger,
+Phaser, Vocoder, Peak Controller and Formula Controller among them) are only built, not offered in the app.
 
 **Syncing.** In the development repo, `tools/sync-lemon-effects.sh [commit]` (default: upstream's `main`) fetches Lemon
-Studio, copies the effect files here (removing those upstream removed), prints the diff and pins the new commit above.
+Studio, copies the effect files and `formula.rs` here (removing those upstream removed), prints the diff and pins the
+new commit above.
 Then build, run `cargo test -p honeydew-audio lemon` and the audio tests (`--test rt_alloc` checks that they never
 allocate on the audio thread), and commit. Set `LEMON_REPO` to a local clone to skip the fetch. The public repository's
 `lemon-effects` workflow checks every week whether upstream's `main` changed these files since the pinned commit, and
@@ -37,7 +40,7 @@ compiled in with their `linked` feature (no exported entry points) and hosted th
 tables (`src/plugins/builtin.rs`). Their editors draw into the rack cards (`embed`, below). From upstream, at its own
 commit:
 
-- Plugins commit: `a6ce2dd443d75abf424a50fb5dd68526f87bed9d`
+- Plugins commit: `d4ebee544468bab1240ba85f74f64d7e2dd4e173`
 
 - `plugins/lemon-3x-osc`, `plugins/lemon-sampler` and `plugins/lemon-parametric-eq-2`: their `src/` (no examples).
 - What they use that the hosts did not bring: `crates/os-plugkit`, `os-ui` (with its fonts and icon notice), `os-theme`
@@ -51,17 +54,19 @@ Honeydew's changes to these files are `honeydew.patch` beside this file, each ma
 
 - `os-plugkit`: the feature `embed` and its window, `src/embed.rs` (Honeydew's own file): the plugins' editor window API
   over a frame and an input queue that Honeydew keeps, run on the app thread with no thread of its own (the browser has
-  none), the editor parked between inputs; menus, type-in boxes and file picks answered without blocking, by delivering
-  the input that asked again with the answer. `gui` is that window with `embed`; `time` is `std::time`, or `web-time` in
-  the browser, whose `std::time` has no clock (`vals.rs` uses it).
+  none), the editor parked between inputs; menus, the type-in box and the file to open (`open_file`, where the host
+  answers it: Android and the browser, which have no file dialog) answered without blocking, by delivering the input
+  that asked again with the answer. `gui` is that window with `embed`; `time` is `std::time`, or `web-time` in the
+  browser, whose `std::time` has no clock (`vals.rs` uses it).
 - The plugins' `editor.rs`: with `embed`, their editor runs on every platform and takes every window handle as an
   embedded editor's id (Win32 too); after its input loop it parks. `os-hostlink`: with its `embed`, the link those
   editors use (`Peer`) on Windows too. `lib.rs`: the VST3 impl only without `linked`
   (Honeydew builds no VST3 wrapper).
 - Lemon Sampler: in the browser, a sample's effects are computed at once instead of on a thread, and `std::time` is
-  `os_plugkit::time`; the browser has no sample file dialog. Android uses the host's system document picker and keeps
-  the chosen sample in `My Samples`. Lemon Trio uses the same Android picker for its custom-shape sample; the browser
-  has no dialog.
+  `os_plugkit::time`. Lemon Sampler and Lemon Trio: where the host answers (Android and the browser, which have no file
+  dialog), their sample comes from Honeydew's own sample picker (`open_file`), and nothing saves one.
+- `os-engine`'s `sample.rs`: a file the host keeps in memory (`provide`: the browser's, which has no file system) is
+  read before the disk.
 - `os-dsp`: in the browser, which cannot compile Signalsmith Stretch (C++), `src/stretch_web.rs` (Honeydew's own file)
   stands in for `stretch.rs`: it resamples, so a stretched sound's pitch follows its speed there.
 - The manifests are Honeydew's (as for the hosts), with `crate-type` lib only, nih-plug by path without its VST3 feature,

@@ -1,14 +1,16 @@
 //! SFZ (sfzformat.com), the text instrument format, read for the SoundFont Player: v1's mapping, tuning, level, loop,
-//! envelope and trigger opcodes and the common v2 ones ([`SfzRegion`]).
+//! envelope, filter, LFO, trigger and controller opcodes and the common v2 ones ([`SfzRegion`]), with v2's numbered LFOs
+//! and envelopes and its CC modulation ([`Route`]).
 //!
 //! [`parse`] is pure: text in, and an `#include` reader; regions out. `<control>`, `<global>`, `<master>`, `<group>` and
 //! `<region>` nest as the format says (a region starts from its group, which starts from its master, then its global;
-//! a new header of a level drops the levels below it). `<curve>`, `<effect>`, `<midi>`, `<sample>` and unknown headers
-//! are read past, their opcodes dropped. `#define $NAME value` substitutes `$NAME` in later lines; `#include "file"` reads
-//! the file through the reader (depth [`MAX_INCLUDE_DEPTH`]; the reader keeps it inside the library). `//` and `/* */`
-//! are comments. A `sample=` or `default_path=` value runs to the end of its line or the next `opcode=`, so paths may
-//! hold spaces; other values are one word. Opcodes this player does not play are counted in [`Sfz::skipped`], never an
-//! error. Input is hostile: regions, include depth and the text read are bounded.
+//! a new header of a level drops the levels below it). `<control>` and `<curve>` give the whole instrument's
+//! [`SfzControl`]; `<effect>`, `<midi>`, `<sample>` and unknown headers are read past, their opcodes dropped.
+//! `#define $NAME value` substitutes `$NAME` in later lines; `#include "file"` reads the file through the reader (depth
+//! [`MAX_INCLUDE_DEPTH`]; the reader keeps it inside the library). `//` and `/* */` are comments. A `sample=`,
+//! `default_path=` or label value runs to the end of its line or the next `opcode=`, so it may hold spaces; other values
+//! are one word. Opcodes this player does not play are counted in [`Sfz::skipped`], never an error. Input is hostile:
+//! regions, include depth and the text read are bounded, and so are each region's LFOs, envelopes and routes.
 
 use std::collections::BTreeMap;
 
@@ -47,6 +49,153 @@ pub enum Trigger {
     First,
     /// On note-on with another key held.
     Legato,
+}
+
+/// The most LFOs, envelopes (besides the amplifier's) and routes one region has: past them an opcode is skipped.
+pub const MAX_LFOS: usize = 8;
+pub const MAX_EGS: usize = 6;
+pub const MAX_ROUTES: usize = 64;
+
+/// What a [`Route`] moves, in the target's units.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Target {
+    /// dB, added.
+    Volume,
+    /// Percent: a CC or an envelope scales the gain by it, an LFO swings it around full.
+    Amplitude,
+    /// −100 (left) … 100 (right), added.
+    Pan,
+    /// Cents, added.
+    Pitch,
+    /// Cents, added (`cutoff`'s Hz).
+    Cutoff,
+    /// dB, added.
+    Resonance,
+}
+
+impl Target {
+    /// The target an opcode's stem names (`volume_oncc7`, `lfo01_pitch`, `eg02_cutoff`).
+    fn named(stem: &str) -> Option<Self> {
+        Some(match stem {
+            "volume" | "gain" => Self::Volume,
+            "amplitude" => Self::Amplitude,
+            "pan" => Self::Pan,
+            "pitch" | "tune" => Self::Pitch,
+            "cutoff" => Self::Cutoff,
+            "resonance" => Self::Resonance,
+            _ => return None,
+        })
+    }
+}
+
+/// What drives a [`Route`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Source {
+    /// MIDI CC N (0…1), through the route's curve.
+    Cc(u8),
+    /// The region's LFO at this index of [`SfzRegion::lfos`] (−1…1).
+    Lfo(usize),
+    /// Its envelope at this index of [`SfzRegion::egs`] (its level).
+    Eg(usize),
+}
+
+/// A modulation: `source` moves `target` by `depth` at its full value.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Route {
+    pub source: Source,
+    pub target: Target,
+    pub depth: f32,
+    /// A CC's `<curve>` (`*_curveccN`), 0 (linear) by default. [`crate::soundfont::SoundFont::sfz`] turns it into its
+    /// table's index.
+    pub curve: u8,
+    /// A CC's smoothing (`*_smoothccN`), milliseconds.
+    pub smooth: f32,
+    /// A CC that adds to `depth`, its amount at CC 127 (`pitchlfo_depthccN`, `lfo01_pitch_onccN`).
+    pub depth_cc: Option<(u8, f32)>,
+}
+
+/// An LFO: v1's `amplfo_*`, `fillfo_*`, `pitchlfo_*`, or v2's `lfoN_*`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Lfo {
+    /// Hz.
+    pub freq: f32,
+    /// Seconds silent, then seconds fading in.
+    pub delay: f32,
+    pub fade: f32,
+    /// Its start in the cycle, 0…1.
+    pub phase: f32,
+    /// `lfoN_wave`: 0 triangle, 1 sine, 2 pulse 75 %, 3 square, 4 pulse 25 %, 5 pulse 12.5 %, 6 saw up, 7 saw down; any
+    /// other plays the sine.
+    pub wave: u8,
+    /// A CC that adds to `freq`, its Hz at CC 127.
+    pub freq_cc: Option<(u8, f32)>,
+    /// Which one: v2's number, or v1's from [`V1`].
+    id: u8,
+}
+
+/// An envelope: v1's `fileg_*` and `pitcheg_*` as their DAHDSR's points, or v2's `egN_*`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Eg {
+    /// Per point, the seconds it takes from the point before and its level; the level starts at the first point's.
+    pub points: Vec<(f32, f32)>,
+    /// The point it holds at while the key is down, then a release moves on from there; `None` runs through.
+    pub sustain: Option<usize>,
+    id: u8,
+}
+
+/// The ids v1's LFOs and envelopes start from, past v2's numbers.
+const V1: u8 = 0xF0;
+/// v1's LFOs and envelopes, by opcode prefix (the v2 aliases `fil_` and `pitch_` too), with their target.
+const V1_LFOS: [(&str, Target); 3] = [
+    ("amplfo_", Target::Volume),
+    ("fillfo_", Target::Cutoff),
+    ("pitchlfo_", Target::Pitch),
+];
+const V1_EGS: [(&str, Target); 4] = [
+    ("fileg_", Target::Cutoff),
+    ("pitcheg_", Target::Pitch),
+    ("fil_", Target::Cutoff),
+    ("pitch_", Target::Pitch),
+];
+/// A v1 envelope's DAHDSR stages, by its points: the delay at the start level, the attack to full, the hold, the decay
+/// to the sustain level (where it holds), the release to 0.
+const DAHDSR: [&str; 5] = ["delay", "attack", "hold", "decay", "release"];
+
+/// `fil_type`'s response.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FilterShape {
+    LowPass,
+    HighPass,
+    BandPass,
+    BandReject,
+    LowShelf,
+    HighShelf,
+    Peak,
+}
+
+/// `fil_type`: its response and poles (1, 2, 4 or 6), `None` for a type this player lacks (`apf_1p`, `pink`).
+fn filter_type(value: &str) -> Option<(FilterShape, u8)> {
+    use FilterShape::*;
+    let mut parts = value.split('_');
+    let shape = match parts.next()? {
+        "lpf" => LowPass,
+        "hpf" => HighPass,
+        "bpf" => BandPass,
+        "brf" => BandReject,
+        "lsh" => return Some((LowShelf, 2)),
+        "hsh" => return Some((HighShelf, 2)),
+        "peq" | "pkf" => return Some((Peak, 2)),
+        _ => return None,
+    };
+    // `_sv`, a state-variable filter, plays as the same response.
+    let poles = match parts.next()? {
+        "1p" => 1,
+        "2p" => 2,
+        "4p" => 4,
+        "6p" => 6,
+        _ => return None,
+    };
+    Some((shape, poles))
 }
 
 /// One `<region>`, with what its headers gave it. Values are as written, bounded to the format's ranges; keys are MIDI
@@ -105,6 +254,53 @@ pub struct SfzRegion {
     pub xfin: [u8; 2],
     /// `xfout_lovel`, `xfout_hivel`.
     pub xfout: [u8; 2],
+    /// `cutoff` (Hz), without which it has no filter; `resonance` (dB); `fil_type`; `fil_gain` (dB, the shelves' and
+    /// the peak's).
+    pub cutoff: Option<f32>,
+    pub resonance: f32,
+    pub fil_type: Option<(FilterShape, u8)>,
+    pub fil_gain: f32,
+    /// `fil_keytrack` (cents per key from `fil_keycenter`) and `fil_veltrack` (cents at velocity 127).
+    pub fil_keytrack: f32,
+    pub fil_keycenter: i32,
+    pub fil_veltrack: f32,
+    /// `pitch_veltrack`: cents at velocity 127.
+    pub pitch_veltrack: f32,
+    /// `amp_keytrack`: dB per key from `amp_keycenter`.
+    pub amp_keytrack: f32,
+    pub amp_keycenter: i32,
+    /// `amp_random` (dB, 0 … x), `pitch_random` (cents, ±x), `fil_random` (cents, ±x), `pan_random` (±x).
+    pub random: [f32; 4],
+    /// `ampeg_start`: the level the attack starts from, percent.
+    pub ampeg_start: f32,
+    /// `ampeg_vel2delay` … `_vel2release`: added to [`Self::ampeg`] at velocity 127.
+    pub ampeg_vel2: [f32; 6],
+    /// `ampeg_*ccN`: the stage (as [`Self::ampeg`]), CC N, and what it adds at CC 127.
+    pub ampeg_cc: Vec<(usize, u8, f32)>,
+    /// `bend_up`, `bend_down`: cents at the bend's ends.
+    pub bend: [f32; 2],
+    /// `lobend`, `hibend`: the bend (−8192…8192) a note-on needs.
+    pub bends: [i32; 2],
+    /// `polyphony`, `note_polyphony`: the voices its `group` (of one key) keeps; a new one stops the oldest past it.
+    pub polyphony: Option<u32>,
+    pub note_polyphony: Option<u32>,
+    /// `delay`: seconds before it plays.
+    pub delay: f32,
+    /// `rt_decay`: a release trigger's fall, dB per second since its note-on.
+    pub rt_decay: f32,
+    /// `sw_hilast`: with it, [`Self::sw_last`] (`sw_lolast`) is the low end of a range of keyswitches.
+    pub sw_hilast: Option<i32>,
+    /// `sw_down`, `sw_up`: a key that must be held, or up; `sw_previous`: the note-on before.
+    pub sw_down: Option<i32>,
+    pub sw_up: Option<i32>,
+    pub sw_previous: Option<i32>,
+    /// `loccN`, `hiccN` (`lohdccN`, `hihdccN`): the CCs a note-on needs, their ranges 0…1.
+    pub cc_ranges: Vec<(u8, [f32; 2])>,
+    /// `xfin_loccN` … `xfout_hiccN`: a crossfade by CC N, in over the first range, out over the second (0…1).
+    pub xf_cc: Vec<(u8, [f32; 2], [f32; 2])>,
+    pub routes: Vec<Route>,
+    pub lfos: Vec<Lfo>,
+    pub egs: Vec<Eg>,
 }
 
 impl Default for SfzRegion {
@@ -141,6 +337,35 @@ impl Default for SfzRegion {
             sw_default: None,
             xfin: [0, 0],
             xfout: [127, 127],
+            cutoff: None,
+            resonance: 0.0,
+            fil_type: Some((FilterShape::LowPass, 2)),
+            fil_gain: 0.0,
+            fil_keytrack: 0.0,
+            fil_keycenter: 60,
+            fil_veltrack: 0.0,
+            pitch_veltrack: 0.0,
+            amp_keytrack: 0.0,
+            amp_keycenter: 60,
+            random: [0.0; 4],
+            ampeg_start: 0.0,
+            ampeg_vel2: [0.0; 6],
+            ampeg_cc: Vec::new(),
+            bend: [200.0, -200.0],
+            bends: [-8192, 8192],
+            polyphony: None,
+            note_polyphony: None,
+            delay: 0.0,
+            rt_decay: 0.0,
+            sw_hilast: None,
+            sw_down: None,
+            sw_up: None,
+            sw_previous: None,
+            cc_ranges: Vec::new(),
+            xf_cc: Vec::new(),
+            routes: Vec::new(),
+            lfos: Vec::new(),
+            egs: Vec::new(),
         }
     }
 }
@@ -193,6 +418,10 @@ impl SfzRegion {
                     _ => return false,
                 }
             }
+            "fil_type" => {
+                self.fil_type = filter_type(value);
+                return self.fil_type.is_some();
+            }
             // Notes reach the player without a MIDI channel.
             "lochan" | "hichan" => {}
             _ => return self.set_number(name, value),
@@ -220,7 +449,7 @@ impl SfzRegion {
             "hikey" => self.keys[1] = key,
             "key" => (self.keys, self.pitch_keycenter) = ([key, key], key),
             "pitch_keycenter" => self.pitch_keycenter = key,
-            "pitch_keytrack" => self.pitch_keytrack = within(-1200.0, 1200.0),
+            "pitch_keytrack" | "tune_keytrack" => self.pitch_keytrack = within(-1200.0, 1200.0),
             "lovel" => self.vels[0] = byte,
             "hivel" => self.vels[1] = byte,
             "transpose" => self.transpose = x.round().clamp(-127.0, 127.0) as i32,
@@ -233,13 +462,14 @@ impl SfzRegion {
             "end" => self.end = Some(x as i64),
             "loop_start" | "loopstart" => self.loop_start = Some(frames),
             "loop_end" | "loopend" => self.loop_end = Some(frames),
-            "ampeg_delay" => self.ampeg[0] = within(0.0, 100.0),
-            "ampeg_attack" => self.ampeg[1] = within(0.0, 100.0),
-            "ampeg_hold" => self.ampeg[2] = within(0.0, 100.0),
-            "ampeg_decay" => self.ampeg[3] = within(0.0, 100.0),
-            "ampeg_sustain" => self.ampeg[4] = within(0.0, 100.0),
-            "ampeg_release" => self.ampeg[5] = within(0.0, 100.0),
-            "group" => self.group = x as i64,
+            "ampeg_delay" | "amp_delay" => self.ampeg[0] = within(0.0, 100.0),
+            "ampeg_attack" | "amp_attack" => self.ampeg[1] = within(0.0, 100.0),
+            "ampeg_hold" | "amp_hold" => self.ampeg[2] = within(0.0, 100.0),
+            "ampeg_decay" | "amp_decay" => self.ampeg[3] = within(0.0, 100.0),
+            "ampeg_sustain" | "amp_sustain" => self.ampeg[4] = within(0.0, 100.0),
+            "ampeg_release" | "amp_release" => self.ampeg[5] = within(0.0, 100.0),
+            "ampeg_start" => self.ampeg_start = within(0.0, 100.0),
+            "group" | "polyphony_group" => self.group = x as i64,
             "off_by" => self.off_by = Some(x as i64),
             "seq_length" => self.seq_length = x.round().clamp(1.0, 100.0) as u32,
             "seq_position" => self.seq_position = x.round().clamp(1.0, 100.0) as u32,
@@ -247,15 +477,308 @@ impl SfzRegion {
             "hirand" => self.rand[1] = within(0.0, 1.0),
             "sw_lokey" => self.sw_keys[0] = key,
             "sw_hikey" => self.sw_keys[1] = key,
-            "sw_last" => self.sw_last = Some(key),
+            "sw_last" | "sw_lolast" => self.sw_last = Some(key),
+            "sw_hilast" => self.sw_hilast = Some(key),
+            "sw_down" => self.sw_down = Some(key),
+            "sw_up" => self.sw_up = Some(key),
+            "sw_previous" => self.sw_previous = Some(key),
             "sw_default" => self.sw_default = Some(key),
             "xfin_lovel" => self.xfin[0] = byte,
             "xfin_hivel" => self.xfin[1] = byte,
             "xfout_lovel" => self.xfout[0] = byte,
             "xfout_hivel" => self.xfout[1] = byte,
+            "cutoff" => self.cutoff = Some(within(0.0, 100_000.0)),
+            "resonance" => self.resonance = within(0.0, 40.0),
+            "fil_gain" => self.fil_gain = within(-96.0, 24.0),
+            "fil_keytrack" => self.fil_keytrack = within(-1200.0, 1200.0),
+            "fil_keycenter" => self.fil_keycenter = key,
+            "fil_veltrack" => self.fil_veltrack = within(-9600.0, 9600.0),
+            "pitch_veltrack" | "tune_veltrack" => self.pitch_veltrack = within(-9600.0, 9600.0),
+            "amp_keytrack" => self.amp_keytrack = within(-96.0, 12.0),
+            "amp_keycenter" => self.amp_keycenter = key,
+            "amp_random" | "gain_random" => self.random[0] = within(0.0, 24.0),
+            "pitch_random" | "tune_random" => self.random[1] = within(0.0, 9600.0),
+            "fil_random" | "cutoff_random" => self.random[2] = within(0.0, 9600.0),
+            "pan_random" => self.random[3] = within(-100.0, 100.0).abs(),
+            "bend_up" => self.bend[0] = within(-9600.0, 9600.0),
+            "bend_down" => self.bend[1] = within(-9600.0, 9600.0),
+            "lobend" => self.bends[0] = x.round().clamp(-8192.0, 8192.0) as i32,
+            "hibend" => self.bends[1] = x.round().clamp(-8192.0, 8192.0) as i32,
+            "polyphony" => self.polyphony = Some(x.round().clamp(1.0, 512.0) as u32),
+            "note_polyphony" => self.note_polyphony = Some(x.round().clamp(1.0, 512.0) as u32),
+            "delay" => self.delay = within(0.0, 100.0),
+            "rt_decay" => self.rt_decay = within(0.0, 200.0),
+            _ => {
+                let vel2 = name
+                    .strip_prefix("ampeg_vel2")
+                    .or(name.strip_prefix("amp_vel2"));
+                if let Some(stage) = vel2.and_then(|s| STAGES.iter().position(|&n| n == s)) {
+                    self.ampeg_vel2[stage] = within(-100.0, 100.0);
+                    return true;
+                }
+                return self.set_mod(name, x as f32);
+            }
+        }
+        true
+    }
+
+    /// Sets a modulation opcode: an LFO's or envelope's, a route's, or one by a CC. False for any other.
+    fn set_mod(&mut self, name: &str, v: f32) -> bool {
+        if let Some((stem, kind, cc)) = cc_opcode(name) {
+            return self.set_cc(stem, kind, cc, v);
+        }
+        let had = (self.lfos.len(), self.egs.len());
+        let set = self.set_unit(name, v);
+        if !set {
+            // A unit this opcode made, which it then did not set, goes again.
+            self.lfos.truncate(had.0);
+            self.egs.truncate(had.1);
+        }
+        set
+    }
+
+    fn set_unit(&mut self, name: &str, v: f32) -> bool {
+        let Some((source, v1, rest)) = self.unit(name) else {
+            return false;
+        };
+        let v2 = Target::named(rest).filter(|_| v1.is_none());
+        if let Some(target) = v1.filter(|_| rest == "depth").or(v2) {
+            let Some(route) = self.route(source, target) else {
+                return false;
+            };
+            route.depth = v.clamp(-12_000.0, 12_000.0);
+            return true;
+        }
+        let time = v.clamp(0.0, 100.0);
+        match source {
+            Source::Lfo(i) => {
+                let lfo = &mut self.lfos[i];
+                match rest {
+                    "freq" => lfo.freq = v.clamp(0.0, 100.0),
+                    "delay" => lfo.delay = time,
+                    "fade" => lfo.fade = time,
+                    "phase" if v1.is_none() => lfo.phase = v.rem_euclid(1.0),
+                    "wave" if v1.is_none() => lfo.wave = v.clamp(0.0, 255.0) as u8,
+                    _ => return false,
+                }
+            }
+            Source::Eg(i) => {
+                let eg = &mut self.egs[i];
+                if v1.is_some() {
+                    let level = (v / 100.0).clamp(0.0, 1.0);
+                    match rest {
+                        "start" => eg.points[0].1 = level,
+                        "sustain" => eg.points[3].1 = level,
+                        _ => match DAHDSR.iter().position(|&s| s == rest) {
+                            Some(point) => eg.points[point].0 = time,
+                            None => return false,
+                        },
+                    }
+                } else if rest == "sustain" {
+                    eg.sustain = Some(v.clamp(0.0, 31.0) as usize);
+                } else {
+                    let (level, point) = match (numbered(rest, "time"), numbered(rest, "level")) {
+                        (Some((point, "")), _) => (false, point),
+                        (_, Some((point, ""))) => (true, point),
+                        _ => return false,
+                    };
+                    let Some(point) = usize::try_from(point).ok().filter(|&p| p < 32) else {
+                        return false;
+                    };
+                    if eg.points.len() <= point {
+                        eg.points.resize(point + 1, (0.0, 0.0));
+                    }
+                    match level {
+                        true => eg.points[point].1 = v.clamp(-1.0, 1.0),
+                        false => eg.points[point].0 = time,
+                    }
+                }
+            }
+            Source::Cc(_) => return false,
+        }
+        true
+    }
+
+    /// Sets an opcode by CC `cc` (`stem` and `kind` as [`cc_opcode`] reads them): a note-on's range, a crossfade, a
+    /// route of the CC (its depth, curve or smoothing), a CC on an LFO's or envelope's depth or an LFO's frequency, or on
+    /// an amplifier envelope stage.
+    fn set_cc(&mut self, stem: &str, kind: &str, cc: u8, v: f32) -> bool {
+        if let Some(target) = Target::named(stem) {
+            let Some(route) = self.route(Source::Cc(cc), target) else {
+                return false;
+            };
+            match kind {
+                "_on" => route.depth = v.clamp(-12_000.0, 12_000.0),
+                "_curve" => route.curve = v.clamp(0.0, 255.0) as u8,
+                "_smooth" => route.smooth = v.clamp(0.0, 10_000.0),
+                _ => return false,
+            }
+            return true;
+        }
+        if kind != "_on" {
+            return false;
+        }
+        let midi = (v / 127.0).clamp(0.0, 1.0);
+        match stem {
+            "lo" | "hi" | "lohd" | "hihd" => {
+                let value = if stem.ends_with("hd") {
+                    v.clamp(0.0, 1.0)
+                } else {
+                    midi
+                };
+                let at = (self.cc_ranges.iter().position(|r| r.0 == cc)).unwrap_or_else(|| {
+                    self.cc_ranges.push((cc, [0.0, 1.0]));
+                    self.cc_ranges.len() - 1
+                });
+                self.cc_ranges[at].1[usize::from(stem.starts_with("hi"))] = value;
+            }
+            "xfin_lo" | "xfin_hi" | "xfout_lo" | "xfout_hi" => {
+                let at = (self.xf_cc.iter().position(|r| r.0 == cc)).unwrap_or_else(|| {
+                    self.xf_cc.push((cc, [0.0, 0.0], [1.0, 1.0]));
+                    self.xf_cc.len() - 1
+                });
+                let (_, fade_in, fade_out) = &mut self.xf_cc[at];
+                let range = if stem.starts_with("xfin") {
+                    fade_in
+                } else {
+                    fade_out
+                };
+                range[usize::from(stem.ends_with("hi"))] = midi;
+            }
+            _ => {
+                if let Some(stage) = stem.strip_prefix("ampeg_")
+                    && let Some(stage) = STAGES.iter().position(|&s| s == stage)
+                {
+                    let amount = v.clamp(-100.0, 100.0);
+                    let at = self.ampeg_cc.iter().position(|e| (e.0, e.1) == (stage, cc));
+                    match at {
+                        Some(at) => self.ampeg_cc[at].2 = amount,
+                        None if self.ampeg_cc.len() < MAX_ROUTES => {
+                            self.ampeg_cc.push((stage, cc, amount))
+                        }
+                        None => return false,
+                    }
+                    return true;
+                }
+                let had = (self.lfos.len(), self.egs.len());
+                let set = self.set_unit_cc(stem, cc, v);
+                if !set {
+                    self.lfos.truncate(had.0);
+                    self.egs.truncate(had.1);
+                }
+                return set;
+            }
+        }
+        true
+    }
+
+    /// A CC on an LFO's or envelope's route depth (`pitchlfo_depthccN`, `lfo01_cutoff_onccN`) or an LFO's frequency.
+    fn set_unit_cc(&mut self, stem: &str, cc: u8, v: f32) -> bool {
+        let Some((source, v1, rest)) = self.unit(stem) else {
+            return false;
+        };
+        let v2 = Target::named(rest).filter(|_| v1.is_none());
+        if let Some(target) = v1.filter(|_| rest == "depth").or(v2) {
+            let Some(route) = self.route(source, target) else {
+                return false;
+            };
+            route.depth_cc = Some((cc, v.clamp(-12_000.0, 12_000.0)));
+            return true;
+        }
+        match (source, rest) {
+            (Source::Lfo(i), "freq") => self.lfos[i].freq_cc = Some((cc, v.clamp(-100.0, 100.0))),
             _ => return false,
         }
         true
+    }
+
+    /// The LFO or envelope opcode `name` sets (made when new, while there is room), its v1 target, and the rest of the
+    /// name: `pitchlfo_freq` (LFO, pitch, `freq`), `eg02_time1` (envelope, none, `time1`).
+    fn unit<'a>(&mut self, name: &'a str) -> Option<(Source, Option<Target>, &'a str)> {
+        for (i, (prefix, target)) in V1_LFOS.iter().enumerate() {
+            if let Some(rest) = name.strip_prefix(prefix) {
+                return Some((Source::Lfo(self.lfo(V1 + i as u8)?), Some(*target), rest));
+            }
+        }
+        for (i, (prefix, target)) in V1_EGS.iter().enumerate() {
+            if let Some(rest) = name.strip_prefix(prefix) {
+                // `fil_` and `pitch_` are `fileg_`'s and `pitcheg_`'s.
+                return Some((Source::Eg(self.eg(V1 + i as u8 % 2)?), Some(*target), rest));
+            }
+        }
+        let numbered = |prefix| {
+            let (n, rest) = numbered(name, prefix)?;
+            let id = u8::try_from(n).ok().filter(|n| (1..V1).contains(n))?;
+            Some((id, rest.strip_prefix('_')?))
+        };
+        if let Some((id, rest)) = numbered("lfo") {
+            return Some((Source::Lfo(self.lfo(id)?), None, rest));
+        }
+        let (id, rest) = numbered("eg")?;
+        Some((Source::Eg(self.eg(id)?), None, rest))
+    }
+
+    /// The index of LFO `id`, made when new; `None` when [`MAX_LFOS`] are there.
+    fn lfo(&mut self, id: u8) -> Option<usize> {
+        if let Some(at) = self.lfos.iter().position(|l| l.id == id) {
+            return Some(at);
+        }
+        (self.lfos.len() < MAX_LFOS).then(|| {
+            self.lfos.push(Lfo {
+                freq: 0.0,
+                delay: 0.0,
+                fade: 0.0,
+                phase: 0.0,
+                wave: 1,
+                freq_cc: None,
+                id,
+            });
+            self.lfos.len() - 1
+        })
+    }
+
+    /// The index of envelope `id`, made when new (v1's as its DAHDSR at the format's defaults); `None` when
+    /// [`MAX_EGS`] are there.
+    fn eg(&mut self, id: u8) -> Option<usize> {
+        if let Some(at) = self.egs.iter().position(|e| e.id == id) {
+            return Some(at);
+        }
+        let v1 = id >= V1;
+        (self.egs.len() < MAX_EGS).then(|| {
+            self.egs.push(Eg {
+                points: match v1 {
+                    true => vec![(0.0, 0.0), (0.0, 1.0), (0.0, 1.0), (0.0, 0.0), (0.0, 0.0)],
+                    false => Vec::new(),
+                },
+                sustain: v1.then_some(3),
+                id,
+            });
+            self.egs.len() - 1
+        })
+    }
+
+    /// The route of `source` to `target`, made when new; `None` when [`MAX_ROUTES`] are there.
+    fn route(&mut self, source: Source, target: Target) -> Option<&mut Route> {
+        let at = self
+            .routes
+            .iter()
+            .position(|r| r.source == source && r.target == target);
+        let at = match at {
+            Some(at) => at,
+            None if self.routes.len() < MAX_ROUTES => {
+                self.routes.push(Route {
+                    source,
+                    target,
+                    depth: 0.0,
+                    curve: 0,
+                    smooth: 0.0,
+                    depth_cc: None,
+                });
+                self.routes.len() - 1
+            }
+            None => return None,
+        };
+        Some(&mut self.routes[at])
     }
 
     /// Moves every key it names by `by` semitones (`note_offset`, `octave_offset`).
@@ -270,9 +793,50 @@ impl SfzRegion {
         self.keys = self.keys.map(moved);
         self.sw_keys = self.sw_keys.map(moved);
         self.pitch_keycenter = moved(self.pitch_keycenter);
-        self.sw_last = self.sw_last.map(moved);
-        self.sw_default = self.sw_default.map(moved);
+        self.fil_keycenter = moved(self.fil_keycenter);
+        self.amp_keycenter = moved(self.amp_keycenter);
+        for key in [
+            &mut self.sw_last,
+            &mut self.sw_hilast,
+            &mut self.sw_default,
+            &mut self.sw_down,
+            &mut self.sw_up,
+            &mut self.sw_previous,
+        ] {
+            *key = key.map(moved);
+        }
     }
+}
+
+/// The amplifier envelope's stages, as [`SfzRegion::ampeg`] holds them.
+const STAGES: [&str; 6] = ["delay", "attack", "hold", "decay", "sustain", "release"];
+
+/// `name` as `prefix`, a number and the rest: the number and the rest (`eg02_time1`, `eg` → 2, `_time1`).
+fn numbered<'a>(name: &'a str, prefix: &str) -> Option<(u32, &'a str)> {
+    let rest = name.strip_prefix(prefix)?;
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    Some((rest[..digits].parse().ok()?, &rest[digits..]))
+}
+
+/// `name` as a head and the number that ends it (`v064` → `v`, 64).
+fn trailing(name: &str) -> Option<(&str, u32)> {
+    let at = name.len() - name.bytes().rev().take_while(u8::is_ascii_digit).count();
+    Some((&name[..at], name[at..].parse().ok()?))
+}
+
+/// An opcode by a CC as its stem, its kind and the CC: `cutoff_oncc74` (`cutoff`, `_on`, 74), `pan_curvecc10`
+/// (`_curve`), `volume_smoothcc7` (`_smooth`), `_stepccN` (`_step`). v1's `XccN` and `X_ccN` are `_on`s, and so are
+/// `loccN` (`lo`), `set_ccN` (`set`) and `label_ccN` (`label`).
+fn cc_opcode(name: &str) -> Option<(&str, &str, u8)> {
+    let (head, n) = trailing(name)?;
+    let head = head.strip_suffix("cc")?;
+    let cc = u8::try_from(n).ok().filter(|&cc| cc < 128)?;
+    let kinds = ["_on", "_curve", "_smooth", "_step"].into_iter();
+    let found = kinds
+        .clone()
+        .find_map(|kind| Some((head.strip_suffix(kind)?, kind)));
+    let (stem, kind) = found.unwrap_or((head.strip_suffix('_').unwrap_or(head), "_on"));
+    Some((stem, kind, cc))
 }
 
 /// A number, finite.
@@ -311,6 +875,18 @@ pub struct Sfz {
     /// The opcodes this player does not play, by name, with the number of regions they were given to (a `<control>`
     /// one: the times it was met).
     pub skipped: BTreeMap<String, usize>,
+    pub control: SfzControl,
+}
+
+/// What the whole instrument shares: its `<control>` and `<curve>`s.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SfzControl {
+    /// `set_ccN` (`set_hdccN`): CC N's value when the instrument loads, 0…1.
+    pub set_cc: BTreeMap<u8, f32>,
+    /// `label_ccN`: the controls it names, CC N and its name, in the order written.
+    pub labels: Vec<(u8, String)>,
+    /// The `<curve>`s by `curve_index`: their `vNNN` points (N 0…127, the value −1…1), in the order written.
+    pub curves: BTreeMap<u8, Vec<(u8, f32)>>,
 }
 
 /// Parses the SFZ `text`, reading each `#include` through `include` (its path as written, `/`-separated: the caller
@@ -325,10 +901,11 @@ pub fn parse(text: &str, include: &dyn Fn(&str) -> Option<String>) -> Sfz {
         region: None,
         default_path: String::new(),
         offset: [0, 0],
+        curve: None,
         sfz: Sfz::default(),
     };
     parser.file(text, 0);
-    parser.end_region();
+    parser.end_header();
     parser.sfz
 }
 
@@ -337,12 +914,15 @@ enum Scope {
     /// Before any header, and in a header whose opcodes are dropped.
     None,
     Control,
+    Curve,
     /// `<global>`, `<master>`, `<group>`: an index into [`Parser::levels`].
     Level(usize),
     Region,
 }
 
 type Opcodes = Vec<(String, String)>;
+/// A curve's `vNNN` points.
+type Points = Vec<(u8, f32)>;
 
 struct Parser<'a> {
     include: &'a dyn Fn(&str) -> Option<String>,
@@ -357,6 +937,8 @@ struct Parser<'a> {
     default_path: String,
     /// `note_offset`, `octave_offset`.
     offset: [i32; 2],
+    /// The open `<curve>`: its `curve_index` and points.
+    curve: Option<(Option<u8>, Points)>,
     sfz: Sfz,
 }
 
@@ -430,8 +1012,10 @@ impl Parser<'_> {
             }
             let end = value_end(after);
             let value = after[..end].trim();
+            let label = name.starts_with("label_cc") || name.ends_with("_label");
             let value = match name {
                 "sample" | "default_path" => value,
+                _ if label => value,
                 _ => value.split_whitespace().next().unwrap_or_default(),
             };
             self.opcode(name, value);
@@ -440,9 +1024,13 @@ impl Parser<'_> {
     }
 
     fn header(&mut self, name: &str) {
-        self.end_region();
+        self.end_header();
         self.scope = match name {
             "control" => Scope::Control,
+            "curve" => {
+                self.curve = Some((None, Vec::new()));
+                Scope::Curve
+            }
             "global" => Scope::Level(0),
             "master" => Scope::Level(1),
             "group" => Scope::Level(2),
@@ -465,11 +1053,61 @@ impl Parser<'_> {
                 "default_path" => self.default_path = value.replace('\\', "/"),
                 "note_offset" => self.offset[0] = clamped(value, 127),
                 "octave_offset" => self.offset[1] = clamped(value, 10),
-                _ => *self.sfz.skipped.entry(pair.0).or_default() += 1,
+                _ => {
+                    if !self.control(name, value) {
+                        *self.sfz.skipped.entry(pair.0).or_default() += 1;
+                    }
+                }
             },
+            Scope::Curve => {
+                if !self.curve_point(name, value) {
+                    *self.sfz.skipped.entry(pair.0).or_default() += 1;
+                }
+            }
             Scope::Level(level) => self.levels[level].push(pair),
             Scope::Region => self.region.get_or_insert_default().push(pair),
         }
+    }
+
+    /// A `<control>` CC opcode: `set_ccN`, `set_hdccN`, `label_ccN`.
+    fn control(&mut self, name: &str, value: &str) -> bool {
+        let Some((stem, "_on", cc)) = cc_opcode(name) else {
+            return false;
+        };
+        let control = &mut self.sfz.control;
+        match (stem, number(value)) {
+            ("set" | "set_hd", Some(x)) => {
+                let x = if stem == "set" { x / 127.0 } else { x };
+                control.set_cc.insert(cc, x.clamp(0.0, 1.0) as f32);
+            }
+            ("label", _) => {
+                control.labels.retain(|(c, _)| *c != cc);
+                control.labels.push((cc, value.to_owned()));
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// A `<curve>` opcode: `curve_index`, or a point `vNNN`.
+    fn curve_point(&mut self, name: &str, value: &str) -> bool {
+        let (Some((index, points)), Some(x)) = (self.curve.as_mut(), number(value)) else {
+            return false;
+        };
+        match trailing(name) {
+            _ if name == "curve_index" => *index = Some(x.clamp(0.0, 255.0) as u8),
+            Some(("v", n @ 0..=127)) => points.push((n as u8, x.clamp(-1.0, 1.0) as f32)),
+            _ => return false,
+        }
+        true
+    }
+
+    /// Ends the open region or curve.
+    fn end_header(&mut self) {
+        if let Some((Some(index), points)) = self.curve.take() {
+            self.sfz.control.curves.insert(index, points);
+        }
+        self.end_region();
     }
 
     /// Ends the open region, if any: its opcodes over its levels', in order.

@@ -998,26 +998,33 @@ fn a_bar_drag_resizes_past_1_u_without_a_jump_and_its_release_settles_and_is_kep
 }
 
 #[test]
-fn a_throw_up_fills_the_screen_and_one_down_leaves_the_bar_alone_without_touching_recent() {
+fn a_throw_up_stops_under_the_ruler_and_a_track_row_and_one_down_leaves_the_bar_alone() {
     let mut rig = Rig::with_synth();
+    // #57: M leaves the ruler and one 2 U track row, 540 − ceil(3.65 U) = 423 pt.
+    let full = 540.0 - (3.65 * U).ceil();
     let at = bar_gap(5.0 * U);
-    // A last move of 40 points up throws it 400 points taller: past H − min, the whole screen.
+    // A last move of 40 points up throws it 400 points taller: past M − min, M.
     rig.press(at);
     rig.drag_to(at - vec2(0.0, 40.0));
     rig.drag_to(at - vec2(0.0, 80.0));
     rig.release(at - vec2(0.0, 80.0));
-    assert_eq!(rig.app.settings.preferred_kbd_size, 540.0 / U);
-    assert_eq!(rig.app.settings.recent_kbd_size, 540.0 / U);
+    assert_eq!(rig.app.settings.preferred_kbd_size, full / U);
+    assert_eq!(rig.app.settings.recent_kbd_size, full / U);
     rig.settle_panel();
-    assert_eq!(rig.panel(), 540.0);
+    assert_eq!(rig.panel(), full);
+    // A height kept from a taller (portrait) window, and the live one it was at: capped in the next frame.
+    rig.app.settings.preferred_kbd_size = 40.0;
+    rig.app.main_screen.panel = Some(40.0 * U);
+    rig.frame(vec![]);
+    assert_eq!(rig.panel(), full);
     // From the top, a throw down: under 2.5 U, the bar alone (56 pt); recent stays.
-    let at = bar_gap(540.0);
+    let at = bar_gap(full);
     rig.press(at);
     rig.drag_to(at + vec2(0.0, 40.0));
     rig.drag_to(at + vec2(0.0, 120.0));
     rig.release(at + vec2(0.0, 120.0));
     assert_eq!(rig.app.settings.preferred_kbd_size, 1.75);
-    assert_eq!(rig.app.settings.recent_kbd_size, 540.0 / U);
+    assert_eq!(rig.app.settings.recent_kbd_size, full / U);
     rig.settle_panel();
     assert_eq!(rig.panel(), 56.0);
 }
@@ -1070,9 +1077,10 @@ fn the_shortcuts_toggle_snaps_like_a_release() {
     };
     // Over the bar: collapse, recent kept.
     assert_eq!(at(5.0, 7.0), (1.75, None));
-    // At the bar: the recent size, which stays recent; one within min of the screen fills it.
+    // At the bar: the recent size, which stays recent; one within min of M (#57: 423 pt) goes to M.
     assert_eq!(at(1.75, 7.0), (7.0, Some(7.0)));
-    assert_eq!(at(1.75, 16.0), (540.0 / U, Some(540.0 / U)));
+    let full = (540.0 - (3.65 * U).ceil()) / U;
+    assert_eq!(at(1.75, 16.0), (full, Some(full)));
     // A recent size under c + 0.75 U opens to c + 0.75 U.
     assert_eq!(at(1.75, 2.0), (2.5, Some(2.5)));
 }

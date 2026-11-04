@@ -42,7 +42,7 @@
 //! then `Original content:` and a row with the Original Content folder's path
 //! ([`crate::project_files::CONTENT_FOLDER`]) and an `Open folder` light button. Each button asks the app to show its
 //! folder in the system's file manager ([`SettingsTab::take_reveal`]). They show only where there is such a folder
-//! ([`SettingsTab::content`]): natively, not on the web; the buttons work on the desktop.
+//! ([`SettingsTab::content`]): natively, not on the web; on Android the system Files app shows it.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -992,7 +992,7 @@ impl SettingsTab {
                     size,
                     text,
                 );
-                let native = cfg!(all(not(target_arch = "wasm32"), not(target_os = "android")));
+                let native = cfg!(not(target_arch = "wasm32"));
                 if light_button(ui, button_rect, button, native) {
                     self.reveal = folder.map(|f| f.join(shown));
                 }
@@ -2784,7 +2784,7 @@ mod tests {
     }
 
     #[test]
-    fn the_original_content_rows_show_the_folder_and_open_it_on_the_desktop_only() {
+    fn the_original_content_rows_show_the_folder_and_open_it() {
         let folder = std::path::PathBuf::from("/home/me/.local/share/honeydew/Original Content");
         let mut rig = Rig::at(1.0, DEFAULT_UI_SCALE, 20.0);
         // Without a content folder (the web) the rows are not there.

@@ -58,6 +58,8 @@ pub(super) fn panel_layout(
     }
     ms.strip_open = strip;
     let target = panel_target(preferred, screen_h, c, m);
+    // A live height from a taller window (a rotation) is capped at once, not eased down over the screen (#57).
+    ms.panel = ms.panel.map(|h| h.min(panel_resize::full(screen_h, c, m)));
     let panel_h = ms.panel_h(ctx, target, m);
     let mut regions = Regions::sized(screen, panel_h, rows, m);
     if ms.panel_hidden {

@@ -19,7 +19,8 @@ pub fn is_plugin(type_id: u16) -> bool {
 }
 
 /// Whether module type `type_id` is Honeydew's own, outside the song format's module types: a plugin module, one of
-/// Lemon Studio's effects (`honeydew_audio::lemon`) or the Dynamic EQ. The `.flm` writer keeps these in `HDPm` chunks.
+/// Lemon Studio's effects (`honeydew_audio::lemon`), the Dynamic EQ, the Modulator, the De-esser or Denoise. The `.flm`
+/// writer keeps these in `HDPm` chunks.
 pub fn is_own(type_id: u16) -> bool {
     type_id >= PLUGIN_INSTRUMENT
 }

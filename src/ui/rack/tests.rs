@@ -3266,7 +3266,7 @@ fn soundfont_rig(patch: i32, count: Option<usize>) -> Rig {
         let voice = |i| crate::sf2::Preset {
             name: format!("Voice {i:02}"),
             preset: i as u16,
-            bank: 0,
+            ..Default::default()
         };
         let patches = (0..count).map(voice).collect();
         rig.rack.soundfonts.insert(path, Ok(patches));
@@ -4687,4 +4687,30 @@ fn add_midi_send_offers_the_note_channels_no_midi_send_leads_back_from() {
     assert_eq!(offered(2), [0; 0]);
     assert_eq!(offered(3), [2]);
     assert_eq!(offered(4), [2, 3]);
+}
+
+/// GitHub #57: the rack tab rides above the keyboard panel. Centred on a tall area; on a short one it moves up to stay
+/// 0.25 U above the area's bottom (it never lies on the transport bar); with no room its top passes 2.75 U and it
+/// slides right by the difference, a sliver left at the screen's edge.
+#[test]
+fn the_rack_tab_moves_up_with_the_keyboard_panel_and_slides_off_the_right_edge() {
+    let u = 32.0;
+    let screen = Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 900.0));
+    let tab = |bottom: f32| rack_tab(screen, screen.with_max_y(bottom), u);
+    let near = |a: f32, b: f32| (a - b).abs() < 1e-3;
+    let x = 1170.0 - 2.1 * u;
+    // Tall: centred on 0 … 600 + 2 U.
+    let tall = tab(600.0);
+    assert!(near(tall.center().y, (600.0 + 2.0 * u) / 2.0) && near(tall.left(), x));
+    assert!(near(tall.width(), 1.5 * u) && near(tall.height(), 2.43 * u));
+    // Short: up off the 5 U floor, 0.25 U above the bottom; still 2.75 U clear of the top, so in place.
+    let short = tab(200.0);
+    assert!(
+        near(short.bottom(), 200.0 - 0.25 * u) && near(short.left(), x),
+        "{short:?}"
+    );
+    // No room (ruler + one row, the panel at its cap): right by 2.75 U − top, a sliver still on screen.
+    let full = tab((1.65 + 2.0) * u);
+    assert!(near(full.bottom(), 3.4 * u), "{full:?}");
+    assert!(near(full.left(), x + 2.75 * u - full.top()) && full.left() < 1170.0);
 }

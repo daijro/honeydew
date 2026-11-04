@@ -17,10 +17,11 @@ use crate::settings::Settings;
 use crate::song::{ChannelKind, LaneKind, PPQ, Song, TimeSig};
 use crate::theme::{RECORD_COLOR, channel_color};
 use crate::ui::add_channel_menu::{AddChannelPick, add_channel_menu};
+use crate::ui::automation::value::time_items;
 use crate::ui::buttons::{filled_circle_button, floating_button, gradient};
 use crate::ui::clips::{Clips, LiveTake, TimeAxis, grid_ticks, song_end_beats};
 use crate::ui::ctrl_menu::Touch;
-use crate::ui::drum_grid::edit::{MARK_GAP, marks};
+use crate::ui::drum_grid::edit::{MARK_GAP, grid_lines};
 use crate::ui::focus;
 use crate::ui::keyboard_settings::{
     KeyboardMode, PANEL_H, keys_rect, knob_rects, panel_target, panel_tick, piano_rect, strip_rect,
@@ -28,7 +29,7 @@ use crate::ui::keyboard_settings::{
 };
 use crate::ui::mini_mixer::{self, RowKind};
 use crate::ui::panel_resize::{self, PanelGrab, Sizes, Zone};
-use crate::ui::piano_roll::notes::{Snap, SnapMode};
+use crate::ui::piano_roll::notes::{GridSize, Snap};
 use crate::ui::preview::ClipKey;
 use crate::ui::region::{self, TimeRange};
 use crate::ui::sample_row;
@@ -61,9 +62,8 @@ const SONG_NAME_X: f32 = 2.0;
 /// edge, as the browser's, grabbable within half a U.
 const BAR_W: f32 = 0.15;
 const BAR_HIT: f32 = 0.5;
-/// The floating panel buttons: the logo's diameter and the rack tab's width, and the rack tab's height.
+/// The floating panel buttons: the logo's diameter.
 const PANEL_BUTTON_W: f32 = 1.5;
-const RACK_TAB_H: f32 = 2.43;
 /// The add-channel `+`: the disc diameter, and the length of each bar of the plus inside it, tip to tip.
 const ADD_D: f32 = 2.0;
 const PLUS_LEN: f32 = 1.12;
@@ -562,6 +562,7 @@ impl MainScreen {
         let c = &theme.colors;
         let text = c.text.to_color32();
         let editor = app.regions.editor;
+        self.snap.size = app.settings.grid_size;
         let (ruler_area, track_area) =
             editor.split_top_bottom_at_y(editor.top() + timeline::ruler_h(m));
         self.column.0 = column_step(self.column.0, self.column.1);
@@ -639,7 +640,7 @@ impl MainScreen {
             grid.left(),
             &shown,
             axis,
-            (app.song.time_sig, row_h, current),
+            (app.song.time_sig, row_h, current, self.snap.size),
             &cx,
         );
         // Headers sense clicks only, so a drag starting on one still scrolls once it leaves the calm zone. A header keeps
@@ -806,8 +807,10 @@ impl MainScreen {
         actions.track = self.track_menu(ui.ctx(), app.song, screen, &cx);
         actions.insert = self.insert_popup(ui.ctx(), screen, &cx);
 
-        // Before the knob, which covers it at beat 0 and takes the touches there while it shows.
+        // Before the knob, which covers it at beat 0 and takes the touches there while it shows. The grid size is an
+        // app setting (#53): its menu's pick is saved with the settings.
         self.snap_input(ui, ruler_area, &cx);
+        app.settings.grid_size = self.snap.size;
         // The playhead knob rides the live playhead on the time ruler's middle line (`timeline::PlayheadKnob`), fading
         // in while the playhead is on the grid and the drum editor's rule holds ([`timeline::knob_shown`]), out
         // otherwise. A tap plays; a drag shows and seeks to the snapped beat above.
@@ -900,17 +903,12 @@ impl MainScreen {
             None => {}
         }
         if self.snap_menu {
-            let items: Vec<popup::PopupItem<SnapMode>> = (SnapMode::ALL.iter().enumerate())
-                .map(|(row, &mode)| popup::PopupItem {
-                    current: mode == self.snap.mode,
-                    ..popup::PopupItem::new(mode, 0, row, mode.label())
-                })
-                .collect();
+            let items = time_items(self.snap);
             let ctx = ui.ctx();
             let id = Id::new("playlist_snap_menu");
             let result = popup::show(ctx, id, rect.center(), ctx.content_rect(), &items, cx);
-            if let Some(mode) = result.selected {
-                self.snap = Snap { on: true, mode };
+            if let Some(pick) = result.selected {
+                self.snap = pick.snap(self.snap);
             }
             if result.close {
                 self.snap_menu = false;
@@ -1167,10 +1165,10 @@ impl MainScreen {
 
         if !rack_open {
             let size = vec2(m.u(PANEL_BUTTON_W), m.u(RACK_TAB_H));
-            let middle = (area.top() + area.bottom() + m.u(2.0)) / 2.0;
             let low = area.top() + m.u(5.0);
             let high = (area.bottom() - m.u(0.25) - size.y).max(low);
-            let home = (middle - size.y / 2.0).min(high).max(low);
+            // The tab's home place on the edge (#57), moved `shift` U down it.
+            let home = crate::ui::rack::rack_tab_y(area.y_range(), m.u(1.0)) - size.y / 2.0;
             let top = (home + m.u(shift)).clamp(low, high);
             let nudge = (m.u(2.75) - (top - screen.top())).max(0.0);
             let pill = Rect::from_min_size(pos2(screen.right() - m.u(2.1) + nudge, top), size);
@@ -1276,7 +1274,7 @@ impl MainScreen {
         let h = self.panel?;
         let c = self.collapsed(m);
         if grabbed.grow != 0.0 {
-            self.panel = Some((h + grabbed.grow).clamp(c, screen_h.max(c)));
+            self.panel = Some((h + grabbed.grow).clamp(c, panel_resize::full(screen_h, c, m)));
             ui.ctx().request_repaint();
         }
         let last_dy = grabbed.released?;
@@ -2343,14 +2341,15 @@ fn open_panel_button(
 /// from `grid_left` on. The header column left of it is [`mini_mixer::show`]'s. Each row is filled from the grid's left
 /// edge (or beat 0's x when scrolled before it) to its right edge, a device pixel short of the next row, in
 /// `moduleFill` for the `current` track and `controlFill` for the others; the beat lines over them are `background`,
-/// 4 px at bars, 2 px at beats and 1 px finer, centred, at least 0.6 U apart (the drum free grid's [`marks`]).
+/// 4 px at bars, 2 px at beats and 1 px finer, centred, at least 0.6 U apart (the drum free grid's
+/// [`marks`](crate::ui::drum_grid::edit::marks)), or at the grid `size` ([`grid_lines`], #53).
 fn paint_track_rows(
     painter: &Painter,
     rect: Rect,
     grid_left: f32,
     tracks: &[(TrackRow, f32)],
     axis: TimeAxis,
-    (sig, row_h, current): (TimeSig, f32, Option<(usize, usize)>),
+    (sig, row_h, current, size): (TimeSig, f32, Option<(usize, usize)>, GridSize),
     cx: &UiCtx,
 ) {
     let UiCtx { theme, m } = *cx;
@@ -2360,7 +2359,7 @@ fn paint_track_rows(
     let grid = rect.with_min_x(grid_left);
     let px = 1.0 / m.ppp();
     let (t0, t1) = (axis.tick(grid.left()), axis.tick(grid.right()));
-    let lines: Vec<(f32, f32)> = marks(t0, t1, axis.beat_w, m.u(1.0), sig, MARK_GAP)
+    let lines: Vec<(f32, f32)> = grid_lines(t0, t1, axis.beat_w, m.u(1.0), sig, MARK_GAP, size)
         .into_iter()
         .map(|(tick, w)| (m.round_px(axis.x(tick)) - (w / 2.0).floor() * px, w * px))
         .collect();
@@ -3608,7 +3607,7 @@ mod tests {
             beat_w: BEAT_PT,
         };
         let rect = Rect::from_min_max(pos2(0.0, 48.0), pos2(1170.0, 380.0));
-        let rows = (TimeSig::default(), 64.0, None);
+        let rows = (TimeSig::default(), 64.0, None, GridSize::Auto);
         let out = egui::Context::default().run(egui::RawInput::default(), |ctx| {
             let panel = egui::CentralPanel::default().frame(egui::Frame::NONE);
             panel.show(ctx, |ui| {
@@ -6468,7 +6467,8 @@ mod tests {
             rig.screen.snap,
             crate::ui::piano_roll::notes::Snap {
                 on: true,
-                mode: crate::ui::piano_roll::notes::SnapMode::Bar
+                mode: crate::ui::piano_roll::notes::SnapMode::Bar,
+                ..Default::default()
             }
         );
     }
@@ -6747,6 +6747,7 @@ mod tests {
         rig.screen.snap = crate::ui::piano_roll::notes::Snap {
             on: true,
             mode: crate::ui::piano_roll::notes::SnapMode::Bar,
+            ..Default::default()
         };
         let x = beat(4.0);
         assert_eq!(
@@ -6773,6 +6774,7 @@ mod tests {
         let bar = crate::ui::piano_roll::notes::Snap {
             on: true,
             mode: crate::ui::piano_roll::notes::SnapMode::Bar,
+            ..Default::default()
         };
         let button = |i: usize| Id::new(("clip_button", i));
         // The MiniSynth's clip shows 6 beats from beat 4: Copy rounds its length up to the unit, 2 bars.

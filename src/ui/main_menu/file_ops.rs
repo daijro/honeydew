@@ -844,7 +844,7 @@ fn export_into(lib: &mut dyn SongLibrary, entries: &[SongEntry], dir: &Path) -> 
 
 /// `Show in file browser...`: opens the system's file manager on `path` (the folder that holds it on Linux, where
 /// `xdg-open` cannot point at a file).
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 pub fn reveal(path: &Path) -> Done {
     let mut child = reveal_command(path)
         .spawn()
@@ -922,7 +922,14 @@ pub const FILE_MANAGER: Option<&str> = if cfg!(any(target_arch = "wasm32", targe
     Some("file browser")
 };
 
-#[cfg(not(target_arch = "wasm32"))]
+/// On Android the folder that holds `path`, which must be in the user folder, opens in the system Files app
+/// ([`crate::android::show_folder`]).
+#[cfg(target_os = "android")]
+pub fn reveal(path: &Path) -> Done {
+    crate::android::show_folder(path.parent().unwrap_or(path))
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 fn reveal_command(path: &Path) -> std::process::Command {
     use std::process::Command;
     let mut command;

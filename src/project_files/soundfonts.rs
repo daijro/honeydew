@@ -53,13 +53,22 @@ impl ProjectFiles {
 
     /// The patches of the SoundFont (or SFZ, [`crate::sf2::patches`]) `path` (an `SF2D` path) names. Only a user-folder
     /// or content-folder shorthand can name one: `SF2D` holds no other path.
-    pub fn soundfont(&self, path: &ContentPath) -> Result<Vec<Preset>, Sf2Error> {
-        let path = self.library_path(path).ok_or(Sf2Error::NotFound)?;
+    pub fn soundfont(&self, sf2d_path: &ContentPath) -> Result<Vec<Preset>, Sf2Error> {
+        let path = self.library_path(sf2d_path).ok_or(Sf2Error::NotFound)?;
         // ponytail: reads the whole file for its headers, once per SoundFont (the rack keeps what it read); seek
         // past the `sdta` samples if large banks stall the frame.
         let read = self.read_user_file(&path);
         let bytes = read.map_err(|e| read_error(&e, !self.copies && path.exists()))?;
-        crate::sf2::patches(&path, &bytes)
+        if !is_sfz(&path) {
+            return crate::sf2::patches(&path, &bytes);
+        }
+        // Its `#include`s as the engine reads them, from its folder and inside the library.
+        let include = |name: &str| {
+            let file = crate::sample_cache::sfz_file(sf2d_path, name)?;
+            let bytes = self.read_user_file(&self.library_path(&file)?).ok()?;
+            Some(String::from_utf8_lossy(&bytes).into_owned())
+        };
+        Ok(vec![crate::sf2::sfz_patch(&path, &bytes, &include)])
     }
 }
 

@@ -355,6 +355,10 @@ impl HoneydewApp {
             }
             // Its pick is [`Self::automation`]'s.
             TrackOp::AddCcTrack => self.navigate(Nav::Open(Overlay::CcPicker(channel))),
+            TrackOp::AddPitchTrack => {
+                let pitch = crate::song::AutomationTarget::PITCH_BEND;
+                self.add_automation_track(channel, pitch, tick)
+            }
             // Disabled in the menu (see `TrackOp`).
             TrackOp::SyncAllSamples => {}
             // The playlist lets go of a selected clip that no longer shows (`Clips::show`); the audio never reads it:

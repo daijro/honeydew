@@ -663,10 +663,14 @@ impl SongAudioEngine {
                 }
             }
             Ok(controller) => {
-                if controller == PITCH_BEND
-                    && let Some(kit) = self.kit(channel)
-                {
-                    kit.set_bend(value);
+                if controller == PITCH_BEND {
+                    if let Some(kit) = self.kit(channel) {
+                        kit.set_bend(value);
+                    }
+                    // An audio channel's clips bend as the pads do (#59).
+                    if let Some(clips) = self.clips[channel].as_mut() {
+                        clips.sampler.set_bend(value);
+                    }
                 }
                 for instrument in self.instruments_of(channel) {
                     instrument.set_controller(controller, value);
@@ -850,6 +854,9 @@ impl SongAudioEngine {
     }
 
     fn process_racks(&mut self, context: ProcessContext, frames: usize) -> bool {
+        // Only the desktop's multi-core path reads the block size.
+        #[cfg(not(desktop))]
+        let _ = frames;
         #[cfg(desktop)]
         if self.multi_core
             && frames >= 128
@@ -2922,5 +2929,34 @@ mod tests {
         engine.render(&mut vec![0.0; 36_000 * 2], 2);
         engine.seek(u64::from(PPQ) / 2);
         assert_eq!(limits(&engine), (Some(0.8), Some(0.5)), "a seek");
+    }
+
+    /// #59: a Pitch Bend lane plays its curve a step a tick, not a step a level (128 of them): over a
+    /// ramp from 0.5 to 1 across four beats, the bend the engine holds stays within a tick's change of the line.
+    #[test]
+    fn a_pitch_bend_ramp_steps_every_tick() {
+        let mut song = Song {
+            tempo_bpm: 120.0,
+            ..Song::default()
+        };
+        song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+        let lane = song.channels[1].add_automation_lane(crate::song::AutomationTarget::PITCH_BEND);
+        let clip = lane.add_clip(0, 8.0);
+        for (pos, value) in [(0, 0.5), (4 * PPQ, 1.0)] {
+            clip.events.push(Event::Automation {
+                pos,
+                value,
+                control: true,
+            });
+        }
+        let mut engine = SongAudioEngine::new(&song, 48_000.0).unwrap();
+        engine.play();
+        // 24 000 frames a beat, a tick 187.5: the bend after each 1000 frames against the line there.
+        for block in 1..=90 {
+            engine.render(&mut vec![0.0; 1000 * 2], 2);
+            let line = 0.5 + 0.5 * block as f32 / 96.0;
+            let bend = engine.audio.channel_parameter(1, 4).unwrap();
+            assert!((bend - line).abs() < 0.0015, "{block}: {bend}, not {line}");
+        }
     }
 }

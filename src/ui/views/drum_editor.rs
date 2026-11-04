@@ -270,9 +270,11 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     } else {
         let at = (state.step.lane, state.step.clip);
         let remembered = &mut state.step.remembered;
-        state
-            .grid
-            .show(&mut ui, &app.cx, app.song, channel, at, kit, remembered)
+        // The grid size is an app setting (#53): the snap menu's pick is saved with the settings.
+        state.grid.snap.size = app.settings.grid_size;
+        let shown = (state.grid).show(&mut ui, &app.cx, app.song, channel, at, kit, remembered);
+        app.settings.grid_size = state.grid.snap.size;
+        shown
     };
     // The mixer as the shown view laid it out this frame: its room, and the tabs once it is fully out.
     let (mixer_w, c, band, graph) = if steps {
