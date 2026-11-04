@@ -32,9 +32,32 @@ jobs:
       # libclang: bindgen in signalsmith-stretch's build script (Lemon Sampler's time stretching, C++).
       - name: System libraries
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
-      - run: cargo fmt --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      # Failures surface as annotations (ANSI-stripped): the full logs live on hosts this sandbox cannot reach.
+      - name: fmt
+        run: |
+          set -o pipefail
+          if ! cargo fmt --check > "$RUNNER_TEMP/fmt.log" 2>&1; then
+            { sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/fmt.log" | grep -E '^Diff in|^error' | head -20
+              tail -n 10 "$RUNNER_TEMP/fmt.log"; } | sed 's/^/::error title=fmt::/'
+            exit 1
+          fi
+      - name: clippy
+        run: |
+          set -o pipefail
+          if ! cargo clippy --workspace --all-targets -- -D warnings > "$RUNNER_TEMP/clippy.log" 2>&1; then
+            { sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/clippy.log" | grep -E '^error|^warning: unused|--> ' | head -40
+              tail -n 15 "$RUNNER_TEMP/clippy.log"; } | sed 's/^/::error title=clippy::/'
+            exit 1
+          fi
+      - name: test
+        run: |
+          set -o pipefail
+          if ! cargo test --workspace > "$RUNNER_TEMP/test.log" 2>&1; then
+            { sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test.log" | grep -E '^error|panicked at|^test .* \.\.\. FAILED|^failures:$|^    [a-z_0-9:]+$' | head -80
+              tail -n 15 "$RUNNER_TEMP/test.log"; } | sed 's/^/::error title=test::/'
+            exit 1
+          fi
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test.log" | grep -E 'test result:' | tail -5
       - run: cargo check --workspace --target wasm32-unknown-unknown
       - name: Content tool
         run: cargo test --manifest-path tools/content-build/Cargo.toml
