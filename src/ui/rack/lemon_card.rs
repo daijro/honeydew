@@ -221,7 +221,7 @@ fn forward(ui: &Ui, card: &mut LemonCard, rect: Rect, k: f32, hovered: bool, m: 
     let editor = card.editor;
     let px = |p: Pos2| ((p.x - rect.left()) * k, (p.y - rect.top()) * k);
     let (events, now, held) = ui.input(|i| (i.events.clone(), i.time, i.modifiers));
-    let send = |e: Input, m: Modifiers| embed::input(editor, e, mods(m));
+    let send = |e: Input, md: Modifiers| embed::input(editor, e, mods(md));
     for event in events {
         match event {
             Event::PointerMoved(p) => {
@@ -290,7 +290,7 @@ fn forward(ui: &Ui, card: &mut LemonCard, rect: Rect, k: f32, hovered: bool, m: 
     // about where it went down. Where it lands on a widget with a menu (a knob, a fader), the editor asks for the
     // menu ([`embed::modal`]); where it lands on nothing, the click is paired on release.
     if card.pressed == Some(Button::Left) && !card.long_menu && !card.long_cancel {
-        let (origin, pos, start, now, second_finger) = ui.input(|i| {
+        let (origin, pos, start, now_s, second_finger) = ui.input(|i| {
             (
                 i.pointer.press_origin(),
                 i.pointer.latest_pos(),
@@ -302,12 +302,12 @@ fn forward(ui: &Ui, card: &mut LemonCard, rect: Rect, k: f32, hovered: bool, m: 
         if let (Some(origin), Some(pos), Some(start)) = (origin, pos, start)
             && rect.contains(origin)
         {
-            let held = now - start;
+            let held_s = now_s - start;
             if second_finger || gesture::left_calm(origin, Some(pos), m.u(1.0)) {
                 // A second finger, or the calm zone left before its long press: never a menu (as [`gesture::press`]
                 // cancels it).
                 card.long_cancel = true;
-            } else if gesture::is_long(held) {
+            } else if gesture::is_long(held_s) {
                 let (x, y) = px(origin);
                 send(Input::Down { x, y, btn: Button::Right, dbl: false }, held);
                 // The left press is released with it: where the right click opened a menu, its answer replays the
@@ -316,7 +316,7 @@ fn forward(ui: &Ui, card: &mut LemonCard, rect: Rect, k: f32, hovered: bool, m: 
                 card.long_menu = true;
             } else {
                 // Wake when the long press comes due, as [`gesture::press`] does.
-                ui.ctx().request_repaint_after_secs((gesture::LONG_PRESS_S - held) as f32);
+                ui.ctx().request_repaint_after_secs((gesture::LONG_PRESS_S - held_s) as f32);
             }
         }
     }
