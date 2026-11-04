@@ -101,8 +101,12 @@ pub fn panel() -> Option<Panel> {
             .h(Size::U(3.37))
             .show(Show::Tab(5)),
             hstack([
-                spinner(14, "Channel").items(&["Left", "Right", "L + R"]).default(2.0),
-                spinner(15, "Reactivity").items(&["Slow", "Medium", "Fast"]).default(1.0),
+                spinner(14, "Channel")
+                    .items(&["Left", "Right", "L + R"])
+                    .default(2.0),
+                spinner(15, "Reactivity")
+                    .items(&["Slow", "Medium", "Fast"])
+                    .default(1.0),
                 knob(17, "Input Gain").default(0.5).value_fn(gain),
             ])
             .h(Size::U(3.37))

@@ -2507,7 +2507,7 @@ fn drag_edit(edit: &Edit, delta: Vec2, g: &Geom, snap: Option<f64>) -> (Vec<Even
 /// The note menu: two columns, all enabled. `Slice...` is #62.
 fn more_items() -> Vec<PopupItem<MoreOp>> {
     use MoreOp::*;
-    let col0 = vec![
+    let col0 = [
         (Legato, "Legato", true),
         (SnapToScale, "Snap to Scale", true),
         (GuessScale, "Guess Scale...", true),
@@ -2517,7 +2517,7 @@ fn more_items() -> Vec<PopupItem<MoreOp>> {
         (DoubleDown, "Double Down", true),
         (ToggleSlide, "Toggle Slide", true),
     ];
-    let col1 = vec![
+    let col1 = [
         (Length(32), "Set length 1/16", true),
         (Length(64), "Set length 1/8", true),
         (Length(128), "Set length 1/4", true),

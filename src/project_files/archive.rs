@@ -1288,7 +1288,8 @@ mod tests {
         let entries = files.importing.take().unwrap();
         files.import_files(entries);
         assert_eq!(
-            files.read_user_file(Path::new("My Samples/Drum Pack/Kicks/Acoustic/kick.wav"))
+            files
+                .read_user_file(Path::new("My Samples/Drum Pack/Kicks/Acoustic/kick.wav"))
                 .unwrap(),
             b"kick"
         );

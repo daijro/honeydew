@@ -38,7 +38,7 @@ jobs:
           set -o pipefail
           if ! cargo fmt --check > "$RUNNER_TEMP/fmt.log" 2>&1; then
             # One annotation with the whole diff joined (annotations cap at 10 per step).
-            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/fmt.log" | tr '\n' '~' | sed 's/~/\%0A/g' | head -c 4000 | sed 's/^/::error title=fmt::/'
+            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/fmt.log" | tr '\n' '~' | sed 's/~/\%0A/g' | head -c 20000 | sed 's/^/::error title=fmt::/'
             exit 1
           fi
       - name: clippy
@@ -46,8 +46,8 @@ jobs:
         run: |
           set -o pipefail
           if ! cargo clippy --workspace --all-targets -- -D warnings > "$RUNNER_TEMP/clippy.log" 2>&1; then
-            { sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/clippy.log" | grep -E '^error|^warning: unused|--> ' | head -40
-              sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/clippy.log" | tail -n 15; } | sed 's/^/::error title=clippy::/'
+            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/clippy.log" | grep -E '^error|^warning|--> ' | head -60 \
+              | tr '\n' '~' | sed 's/~/\%0A/g' | head -c 8000 | sed 's/^/::error title=clippy::/'
             exit 1
           fi
       - name: test
@@ -55,8 +55,8 @@ jobs:
         run: |
           set -o pipefail
           if ! cargo test --workspace > "$RUNNER_TEMP/test.log" 2>&1; then
-            { sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test.log" | grep -E '^error|panicked at|^test .* \.\.\. FAILED|^failures:$|^    [a-z_0-9:]+$' | head -80
-              sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test.log" | tail -n 15; } | sed 's/^/::error title=test::/'
+            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test.log" | grep -E '^error|panicked at|FAILED|^failures:$|^    [a-z_0-9:]+$|stdout ----' -A 3 | head -120 \
+              | tr '\n' '~' | sed 's/~/\%0A/g' | head -c 8000 | sed 's/^/::error title=test::/'
             exit 1
           fi
           sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test.log" | grep -E 'test result:' | tail -5
