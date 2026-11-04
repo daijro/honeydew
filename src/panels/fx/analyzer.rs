@@ -89,50 +89,23 @@ pub fn panel() -> Option<Panel> {
         .show(Show::Tab(4)),
         vstack([
             // The Spectrum's tilt. `Custom` shows its own value knob beside it; the other presets hide it.
+            // Both rows share the width evenly and are equally tall, so the knobs line up.
             hstack([
-                spacer(21).w(Size::U(0.5)),
-                spinner(16, "DC Block")
-                    .items(&["On", "Off"])
-                    .default(1.0)
-                    .w(Size::U(2.75)),
-                spacer(26).w(Size::U(0.25)),
-                spinner(TILT, "Tilt")
-                    .items(&TILT_TEXT)
-                    .default(2.0)
-                    .w(Size::U(2.0)),
-                spacer(27)
-                    .w(Size::U(2.75))
-                    .show(Show::Setting(TILT, 4)),
+                spinner(16, "DC Block").items(&["On", "Off"]).default(1.0),
+                spinner(TILT, "Tilt").items(&TILT_TEXT).default(2.0),
                 knob(TILT_STEP, "dB/oct")
                     .default(TILT_STEP_DEFAULT)
                     .value_fn(tilt_text)
-                    .w(Size::U(3.0))
-                    .show(Show::Setting(TILT, 4)),
-                spacer(28)
-                    .w(Size::U(2.75))
                     .show(Show::Setting(TILT, 4)),
             ])
-            .h(Size::U(3.24))
+            .h(Size::U(3.37))
             .show(Show::Tab(5)),
             hstack([
-                spacer(22).w(Size::U(0.5)),
-                spinner(14, "Channel")
-                    .items(&["Left", "Right", "L + R"])
-                    .default(2.0)
-                    .w(Size::U(3.0)),
-                spacer(29).w(Size::U(0.5)),
-                spinner(15, "Reactivity")
-                    .items(&["Slow", "Medium", "Fast"])
-                    .default(1.0)
-                    .w(Size::U(2.5)),
-                spacer(30).w(Size::U(3.5)),
-                knob(17, "Input Gain")
-                    .default(0.5)
-                    .value_fn(gain)
-                    .w(Size::U(2.0)),
-                spacer(25).w(Size::U(2.0)),
+                spinner(14, "Channel").items(&["Left", "Right", "L + R"]).default(2.0),
+                spinner(15, "Reactivity").items(&["Slow", "Medium", "Fast"]).default(1.0),
+                knob(17, "Input Gain").default(0.5).value_fn(gain),
             ])
-            .h(Size::U(3.5))
+            .h(Size::U(3.37))
             .show(Show::Tab(5)),
         ])
         .show(Show::Tab(5)),
@@ -1809,24 +1782,16 @@ pub const REFERENCE: Reference = Reference {
             tab: 5,
             settings: &[(TILT, 4.0)],
             rows: &[
-                row(21, Widget::Spacer, "", [0.0, 0.0, 0.5, 3.24]),
-                row(16, Widget::Spinner, "DC Block", [0.5, 0.0, 2.75, 3.24]).items("On · Off"),
-                row(26, Widget::Spacer, "", [3.25, 0.0, 0.25, 3.24]),
-                row(TILT, Widget::Spinner, "Tilt", [3.5, 0.0, 2.0, 3.24])
+                row(16, Widget::Spinner, "DC Block", [0.0, 0.0, 4.66, 3.37]).items("On · Off"),
+                row(TILT, Widget::Spinner, "Tilt", [4.66, 0.0, 4.67, 3.37])
                     .items("White · Pink · Honeydew · Brown · Custom"),
-                row(27, Widget::Spacer, "", [5.5, 0.0, 2.75, 3.24]),
-                row(TILT_STEP, Widget::Knob, "dB/oct", [8.25, 0.0, 3.0, 3.24])
+                row(TILT_STEP, Widget::Knob, "dB/oct", [9.33, 0.0, 4.67, 3.37])
                     .value("+4.5 dB/oct"),
-                row(28, Widget::Spacer, "", [11.25, 0.0, 2.75, 3.24]),
-                row(22, Widget::Spacer, "", [0.0, 3.24, 0.5, 3.5]),
-                row(14, Widget::Spinner, "Channel", [0.5, 3.24, 3.0, 3.5])
+                row(14, Widget::Spinner, "Channel", [0.0, 3.37, 4.66, 3.37])
                     .items("Left · Right · L + R"),
-                row(29, Widget::Spacer, "", [3.5, 3.24, 0.5, 3.5]),
-                row(15, Widget::Spinner, "Reactivity", [4.0, 3.24, 2.5, 3.5])
+                row(15, Widget::Spinner, "Reactivity", [4.66, 3.37, 4.67, 3.37])
                     .items("Slow · Medium · Fast"),
-                row(30, Widget::Spacer, "", [6.5, 3.24, 3.5, 3.5]),
-                row(17, Widget::Knob, "Input Gain", [10.0, 3.24, 2.0, 3.5]).value("×1.00"),
-                row(25, Widget::Spacer, "", [12.0, 3.24, 2.0, 3.5]),
+                row(17, Widget::Knob, "Input Gain", [9.33, 3.37, 4.67, 3.37]).value("×1.00"),
                 TABS,
             ],
             ..Case::DEFAULT
@@ -1835,21 +1800,14 @@ pub const REFERENCE: Reference = Reference {
             name: "SETTINGS",
             tab: 5,
             rows: &[
-                row(21, Widget::Spacer, "", [0.0, 0.0, 0.5, 3.24]),
-                row(16, Widget::Spinner, "DC Block", [0.5, 0.0, 2.75, 3.24]).items("On · Off"),
-                row(26, Widget::Spacer, "", [3.25, 0.0, 0.25, 3.24]),
-                row(TILT, Widget::Spinner, "Tilt", [3.5, 0.0, 2.0, 3.24])
+                row(16, Widget::Spinner, "DC Block", [0.0, 0.0, 7.0, 3.37]).items("On · Off"),
+                row(TILT, Widget::Spinner, "Tilt", [7.0, 0.0, 7.0, 3.37])
                     .items("White · Pink · Honeydew · Brown · Custom"),
-                row(27, Widget::Spacer, "", [5.5, 0.0, 8.5, 3.24]),
-                row(22, Widget::Spacer, "", [0.0, 3.24, 0.5, 3.5]),
-                row(14, Widget::Spinner, "Channel", [0.5, 3.24, 3.0, 3.5])
+                row(14, Widget::Spinner, "Channel", [0.0, 3.37, 4.66, 3.37])
                     .items("Left · Right · L + R"),
-                row(29, Widget::Spacer, "", [3.5, 3.24, 0.5, 3.5]),
-                row(15, Widget::Spinner, "Reactivity", [4.0, 3.24, 2.5, 3.5])
+                row(15, Widget::Spinner, "Reactivity", [4.66, 3.37, 4.67, 3.37])
                     .items("Slow · Medium · Fast"),
-                row(30, Widget::Spacer, "", [6.5, 3.24, 3.5, 3.5]),
-                row(17, Widget::Knob, "Input Gain", [10.0, 3.24, 2.0, 3.5]).value("×1.00"),
-                row(25, Widget::Spacer, "", [12.0, 3.24, 2.0, 3.5]),
+                row(17, Widget::Knob, "Input Gain", [9.33, 3.37, 4.67, 3.37]).value("×1.00"),
                 TABS,
             ],
             ..Case::DEFAULT
