@@ -10,7 +10,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  SOUNDS_TAG: v0.4.6
+  SOUNDS_TAG: v0.4.7
 
 jobs:
   apk:
@@ -47,7 +47,17 @@ jobs:
       - name: Build the debug APK
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.0.13004108
-        run: tools/android-dist.sh
+        run: |
+          set -o pipefail
+          strip() { sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/build.log"; }
+          if ! tools/android-dist.sh > "$RUNNER_TEMP/build.log" 2>&1; then
+            # The compiler's errors and their locations, and the log's tail, as annotations (ANSI-stripped),
+            # so they read without downloading the full log.
+            { strip | grep -E '^error|^ *-->' | head -30
+              strip | tail -n 25; } | sed 's/^/::error title=android build::/'
+            exit 1
+          fi
+          strip | tail -n 30
       - name: Upload test APK
         uses: actions/upload-artifact@v4
         with:

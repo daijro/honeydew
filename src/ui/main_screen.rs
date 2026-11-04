@@ -64,6 +64,8 @@ const BAR_W: f32 = 0.15;
 const BAR_HIT: f32 = 0.5;
 /// The floating panel buttons: the logo's diameter.
 const PANEL_BUTTON_W: f32 = 1.5;
+/// The rack tab's pill height, U (the rack's `RACK_TAB.y`).
+const RACK_TAB_H: f32 = 2.43;
 /// The add-channel `+`: the disc diameter, and the length of each bar of the plus inside it, tip to tip.
 const ADD_D: f32 = 2.0;
 const PLUS_LEN: f32 = 1.12;
