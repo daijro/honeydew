@@ -1284,7 +1284,8 @@ impl AutomationEditor {
                 let mut response = ui.put(field, edit);
                 crate::android_text::edit(&mut response, &mut text, usize::MAX);
                 ok = response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                if !response.has_focus() && !response.lost_focus() {
+                let unfocused = !response.has_focus() && !response.lost_focus();
+                if crate::android_text::REFOCUS && unfocused {
                     response.request_focus();
                     let mut state = TextEditState::load(ui.ctx(), field_id).unwrap_or_default();
                     let all =

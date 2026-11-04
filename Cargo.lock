@@ -1234,6 +1234,7 @@ dependencies = [
  "objc2-foundation 0.2.2",
  "parking_lot",
  "percent-encoding",
+ "pollster",
  "profiling",
  "raw-window-handle 0.6.2",
  "static_assertions",
@@ -1241,6 +1242,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "web-time",
+ "wgpu",
  "windows-sys 0.61.2",
  "winit",
 ]
@@ -1865,6 +1867,7 @@ name = "honeydew"
 version = "0.4.9"
 dependencies = [
  "android-activity",
+ "block2 0.5.1",
  "citrus",
  "crc32fast",
  "eframe",
@@ -1893,9 +1896,12 @@ dependencies = [
  "libc",
  "midir",
  "miniz_oxide 0.9.1",
+ "objc2 0.5.3",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.2.2",
  "objc2-foundation 0.3.2",
+ "objc2-ui-kit",
  "os-clap",
  "os-engine",
  "os-host",
@@ -1917,6 +1923,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "webbrowser",
+ "wgpu",
  "windows-sys 0.61.2",
  "x11rb",
 ]
@@ -2434,9 +2441,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.190"
+version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce5d3ddc6d3fa000eb1536d85e147bfe31aacaba692ed6a876f95cb7c855be78"
+checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
 name = "libloading"

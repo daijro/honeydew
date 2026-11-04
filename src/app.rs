@@ -40,7 +40,7 @@ use crate::ui::{panel_resize, wheels};
 mod audio_edit;
 pub(crate) mod auto_record;
 pub(crate) mod automation;
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 mod control;
 mod demo_restore;
 mod export;
@@ -60,8 +60,11 @@ pub(crate) mod live;
 // Audio files dropped on the app.
 mod file_drop;
 // The desktop's sound library: its install and the notice at start.
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 mod sounds;
+// The iOS self-test (`--selftest`), which the iOS workflow runs in the Simulator.
+#[cfg(target_os = "ios")]
+mod selftest;
 
 /// How long a flash (`Saved!`) shows.
 const FLASH_SECS: f64 = 1.5;
@@ -70,17 +73,23 @@ const IDLE_SECS: f64 = 600.0;
 
 /// What an input that fails to open shows.
 const MIC_PERMISSION: &str = "Please grant microphone permission to enable audio recording.";
-/// What Android shows when the user did not allow the microphone, and where to allow it.
+/// What Android and iOS show when the user did not allow the microphone, and where to allow it.
 fn mic_denied() -> Vec<String> {
     let app = crate::APP_NAME;
-    vec![
-        format!("{app} needs the microphone to record."),
-        format!("Allow it in Settings > Apps > {app} > Permissions > Microphone."),
-    ]
+    let settings = match cfg!(target_os = "ios") {
+        true => format!("Allow it in Settings > {app} > Microphone."),
+        false => format!("Allow it in Settings > Apps > {app} > Permissions > Microphone."),
+    };
+    vec![format!("{app} needs the microphone to record."), settings]
 }
-/// What an input that fails to open shows: the permission message; on Android, which asked already, the error.
+/// iOS asks only once: its denial offers the app's page in the Settings app (`ios::open_settings`).
+const MIC_SETTINGS: Option<(&str, &str)> = match cfg!(target_os = "ios") {
+    true => Some(("Open Settings", "Close")),
+    false => None,
+};
+/// What an input that fails to open shows: the permission message; on a phone, which asked already, the error.
 fn mic_failed(err: String) -> Vec<String> {
-    match cfg!(target_os = "android") {
+    match cfg!(mobile) {
         true => vec!["The microphone could not be opened.".into(), err],
         false => vec![MIC_PERMISSION.into()],
     }
@@ -254,10 +263,10 @@ pub struct HoneydewApp {
     gated: Vec<(f64, usize, u8)>,
     /// Audio files dropped on the app, decoding (`app/file_drop.rs`).
     importing: Option<file_drop::Importing>,
-    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+    #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
     control: Option<control::Bridge>,
     /// `Install sound library…` running (`app/sounds.rs`).
-    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+    #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
     sounds: Option<crate::content::install::Job>,
 }
 
@@ -334,9 +343,9 @@ impl Default for HoneydewApp {
             fresh: Vec::new(),
             gated: Vec::new(),
             importing: None,
-            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
             control: None,
-            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
             sounds: None,
         }
     }
@@ -373,7 +382,7 @@ impl HoneydewApp {
         crate::android::request_orientation(app.settings.android_orientation());
         app.midi.link = crate::midi::device::MidiLink::platform(cc.egui_ctx.clone());
         app.start_plugins(&cc.egui_ctx);
-        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
         {
             app.control = control::Bridge::start(
                 cc.egui_ctx.clone(),
@@ -385,7 +394,7 @@ impl HoneydewApp {
         // Before the questions a start may ask, which a song load closes.
         app.restore_last_song(&cc.egui_ctx);
         app.whats_new_at_start(fresh);
-        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
         app.sounds_at_start();
         // Once per start, before the purge (whose end every move waits for): a folder of the songs folder named as a row
         // beside it (`My Songs/Demo Songs`) gets a free numbered name, so that it is listed, not hidden.
@@ -433,7 +442,7 @@ impl HoneydewApp {
         if !views::whats_new::due(&self.settings.whats_new_seen) {
             return;
         }
-        if !fresh && cfg!(target_os = "android") {
+        if !fresh && cfg!(mobile) {
             self.nav.overlays.push(Overlay::WhatsNew);
         }
         self.settings.whats_new_seen = views::whats_new::NOTES_VERSION.into();
@@ -1592,6 +1601,10 @@ impl HoneydewApp {
     ///
     /// [`may_monitor`]: crate::recording::input::may_monitor
     fn open_input(&mut self, tick: u64) {
+        #[cfg(target_os = "ios")]
+        if self.nav.take_answer(INPUT_TAG) == Some(true) {
+            crate::ios::open_settings();
+        }
         let records = |c: &Channel| c.kind == ChannelKind::AudioRecord;
         let channels = &self.song.channels;
         let rack = self.rack_channel();
@@ -1620,19 +1633,20 @@ impl HoneydewApp {
         if !wanted {
             self.input.close();
         } else if let Some(rate) = self.audio.sample_rate().filter(|_| !self.input_failed) {
-            // Android asks the user for the microphone first; it opens once allowed.
+            // Android and iOS ask the user for the microphone first; it opens once allowed.
             let failed = match self.input.mic() {
                 Mic::Asking => None,
-                Mic::Denied => Some(mic_denied()),
-                Mic::Granted => (self.input.open(device.as_deref(), rate).err()).map(mic_failed),
+                Mic::Denied => Some((mic_denied(), MIC_SETTINGS)),
+                Mic::Granted => (self.input.open(device.as_deref(), rate).err())
+                    .map(|err| (mic_failed(err), None)),
             };
-            if let Some(lines) = failed {
+            if let Some((lines, choices)) = failed {
                 self.input_failed = true;
                 if armed && !cfg!(target_arch = "wasm32") {
                     self.navigate(Nav::Open(Overlay::Message {
                         tag: INPUT_TAG,
                         lines,
-                        confirm: None,
+                        confirm: choices.map(|(yes, no)| (yes.into(), no.into())),
                         extra: None,
                     }));
                 }
@@ -1882,17 +1896,39 @@ impl eframe::App for HoneydewApp {
         });
         #[cfg(target_os = "android")]
         crate::android_text::end_frame(ctx);
+        #[cfg(target_os = "ios")]
+        self.selftest(ctx);
     }
 
     /// The settings not flushed yet (a drag's, or a failed flush's) get a last try (native only: the web has no exit).
+    #[cfg(not(target_os = "ios"))]
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        // The plugins' editors close before their windows go.
-        crate::plugins::song_replaced();
-        if self.settings_unflushed
-            && let Some(storage) = self.storage.as_deref_mut()
-        {
-            storage.flush();
+        self.exit();
+    }
+
+    /// iOS draws with wgpu: no GL context.
+    #[cfg(target_os = "ios")]
+    fn on_exit(&mut self) {
+        self.exit();
+    }
+
+    /// iOS: the safe area on the notch's side only ([`crate::ios::notch_only`]), and the self-test's taps
+    /// (`app/selftest.rs`).
+    #[cfg(all(target_os = "ios", not(test)))]
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if let Some(insets) = &mut raw.safe_area_insets {
+            *insets = crate::ios::notch_only(*insets);
         }
+        selftest::input(ctx, raw);
+    }
+
+    /// The theme's background, also where the app does not draw: iOS's notch side.
+    fn clear_color(&self, _: &egui::Visuals) -> [f32; 4] {
+        self.theme
+            .colors
+            .background
+            .to_color32()
+            .to_normalized_gamma_f32()
     }
 
     /// For `WebRunner::app_mut` (`lib.rs`).
@@ -1923,6 +1959,17 @@ impl eframe::App for HoneydewApp {
 }
 
 impl HoneydewApp {
+    /// [`eframe::App::on_exit`].
+    fn exit(&mut self) {
+        // The plugins' editors close before their windows go.
+        crate::plugins::song_replaced();
+        if self.settings_unflushed
+            && let Some(storage) = self.storage.as_deref_mut()
+        {
+            storage.flush();
+        }
+    }
+
     /// One frame. `open` starts the audio output for the song; it is called on a click (its press natively,
     /// its release on the web) while the audio is not running.
     pub fn frame(
@@ -1953,8 +2000,14 @@ impl HoneydewApp {
         // this click. The start is before the screen, so a press that lands on a key is heard natively.
         let mut snapshot = self.audio.poll();
         // Android drops its streams when headphones come or go: an output that fails while the song plays (a take
-        // records) restarts by itself.
-        let rerouted = cfg!(target_os = "android")
+        // records) restarts by itself. iOS keeps them, but a call or Siri stops them: they reopen once it ends, and
+        // when a device comes or goes (`ios::take_reopen`), the transport kept.
+        #[cfg(target_os = "ios")]
+        if crate::ios::take_reopen() {
+            self.audio.reopen(&self.song);
+            self.input.close();
+        }
+        let rerouted = cfg!(mobile)
             && self.main_screen.playing
             && snapshot.as_ref().is_some_and(|s| s.stream_failed);
         if !self.audio.running() && (rerouted || ctx.input(|i| audio_gesture(i, START_ON_RELEASE)))
@@ -2000,9 +2053,14 @@ impl HoneydewApp {
             self.main_screen.playing = false;
         }
         // A call, another app taking the sound, or the app leaving the screen ended Android's take there and then
-        // (`android::recording`): the transport stops, which leaves the clips.
+        // (`android::recording`), a call, Siri or an alarm iOS's (`ios::recording`): the transport stops, which leaves
+        // the clips.
         #[cfg(target_os = "android")]
-        if crate::android::interrupted() && self.main_screen.playing {
+        let interrupted = crate::android::interrupted();
+        #[cfg(target_os = "ios")]
+        let interrupted = crate::ios::interrupted();
+        #[cfg(mobile)]
+        if interrupted && self.main_screen.playing {
             self.main_screen.playing = false;
             self.navigate(Nav::Open(Overlay::Message {
                 tag: RECORD_TAG,
@@ -2333,7 +2391,7 @@ impl HoneydewApp {
         // As drawn: the channel indices the bound controls' touches name.
         let add_automation = self.take_touches();
         let tick = snapshot.as_ref().map_or(0, |s| s.transport_tick);
-        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
         self.control_frame(tick);
         // The chord editor's edit: the set in use with the new chord, marked edited, an undo step.
         if let Some((strip, chord)) = actions.chord_edit.take() {
@@ -2473,6 +2531,8 @@ impl HoneydewApp {
         self.audio_record(ctx, tick, was_recording);
         #[cfg(target_os = "android")]
         crate::android::recording(self.recorder.as_ref().map(Recorder::tap));
+        #[cfg(target_os = "ios")]
+        crate::ios::recording(self.recorder.as_ref().map(Recorder::tap));
         self.calibrate(ctx, snapshot.as_ref().and_then(|s| s.ping), tick);
         // After every live key of the frame, and the channel the header picked.
         self.record_notes(jumped, tick);
@@ -2602,7 +2662,7 @@ impl HoneydewApp {
         self.midi_import(ctx, tick);
         self.export_started(ctx);
         self.demo_restore(ctx);
-        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
         self.sounds(ctx, &metrics);
         self.burn_notes(ctx, tick);
         self.bundle_wait(ctx, tick);

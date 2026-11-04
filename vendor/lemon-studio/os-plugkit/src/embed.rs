@@ -13,7 +13,7 @@
 //!   ([`modal`]) and return `None`. When the user answers ([`answer`]), the input that opened it comes again, and this
 //!   time the call returns the answer; a chain (a menu's `Enter value...`, then the box) replays its earlier answers
 //!   first.
-//! - **Files come from the host** where the platform has no file dialog (Android, the browser): the editors' file
+//! - **Files come from the host** where the platform has no file dialog (Android, iOS, the browser): the editors' file
 //!   dialog (`rfd`, which is `host-rfd` for them) asks it from their [`Window::dialog`] ([`open_file`],
 //!   [`Modal::OpenFile`]) as a menu does, and the host's own picker answers with a path.
 //! - Positions are the editor's device pixels, also for popups (`to_root` keeps them).
@@ -141,7 +141,8 @@ thread_local! {
     /// The parked editors of this thread, by id.
     static PARKED: RefCell<HashMap<Parent, (Arc<State>, Box<dyn FnOnce()>)>> = RefCell::new(HashMap::new());
     /// This thread's editors ask the host for the files they open ([`host_files`]).
-    static HOST_FILES: Cell<bool> = const { Cell::new(cfg!(any(target_arch = "wasm32", target_os = "android"))) };
+    static HOST_FILES: Cell<bool> =
+        const { Cell::new(cfg!(any(target_arch = "wasm32", target_os = "android", target_os = "ios"))) };
     /// The window whose [`Window::dialog`] runs, which [`open_file`] asks for.
     static DIALOG: RefCell<Option<Window>> = const { RefCell::new(None) };
 }
@@ -460,7 +461,7 @@ pub fn set_scale(id: Parent, scale: f32) {
 }
 
 /// Whether the editors of this thread ask the host for the files they open ([`open_file`]) instead of showing a file
-/// dialog: where the platform has none (Android, the browser), or once [`set_host_files`] said so.
+/// dialog: where the platform has none (Android, iOS, the browser), or once [`set_host_files`] said so.
 pub fn host_files() -> bool {
     HOST_FILES.get()
 }

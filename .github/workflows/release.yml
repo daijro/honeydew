@@ -245,3 +245,24 @@ jobs:
           tag_name: ${{ env.TAG }}
           files: target/honeydew-android-*-arm.apk
           fail_on_unmatched_files: true
+
+  # iOS (experimental): two unsigned IPAs, with and without the sounds (tools/ios-dist.sh), which AltStore, SideStore and
+  # Sideloadly sign with the user's own Apple ID.
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ios
+      - run: tools/ios-dist.sh
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          files: target/honeydew-ios-*.ipa
+          fail_on_unmatched_files: true

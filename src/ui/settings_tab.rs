@@ -229,7 +229,7 @@ const ROWS: [Row; 49] = {
         row("MIDI:", Header),
         row(
             "Input device:",
-            if cfg!(target_os = "android") {
+            if cfg!(mobile) {
                 FixedDropdown("Not available")
             } else {
                 MidiDropdown
@@ -664,7 +664,7 @@ impl SettingsTab {
                 if latency && s.latency_compensation == Some(false) {
                     let at = right(CALIBRATE_W, BUTTON_H);
                     let b = Button::new(id.with("calibrate"), at, "Calibrate", false, colors);
-                    self.calibrate |= button(ui, cx, &b, !cfg!(target_os = "android")).clicked();
+                    self.calibrate |= button(ui, cx, &b, !cfg!(mobile)).clicked();
                 }
                 let (on, field) = match row.kind {
                     Kind::Toggle(field) => (*field(s), Some(field)),

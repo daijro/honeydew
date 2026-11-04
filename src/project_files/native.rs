@@ -1,7 +1,8 @@
 //! Disk saves and, on desktop, system file dialogs (`rfd`).
 //! Android saves into its private library and opens files and folders through the system document pickers
 //! ([`crate::android::pick_document`], [`crate::android::pick_folder`]); external export awaits a document-provider
-//! bridge. A folder import's copy runs on a worker (Android's on a Java thread).
+//! bridge. iOS saves into its user folder and opens through its document picker ([`crate::ios::pick`]). A folder
+//! import's copy runs on a worker (Android's on a Java thread).
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -37,7 +38,7 @@ impl NativeFiles {
 }
 
 impl FileProvider for NativeFiles {
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     fn open(&mut self, accept: &'static [&'static str]) {
         let (done, rx) = self.later();
         self.opening = Some(rx);
@@ -68,14 +69,41 @@ impl FileProvider for NativeFiles {
         });
     }
 
+    /// iOS copies the picked file into the app's `tmp`, read like a desktop pick and then removed.
+    #[cfg(target_os = "ios")]
+    fn open(&mut self, accept: &'static [&'static str]) {
+        let (done, rx) = self.later();
+        self.opening = Some(rx);
+        crate::ios::pick(false, move |picked| {
+            done(picked.map(|path| {
+                let event = open_path(path.clone(), accept);
+                let _ = std::fs::remove_file(&path);
+                event
+            }));
+        });
+    }
+
     /// The folder dialog, then its files listed, on a worker.
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     fn open_folder(&mut self) {
         let (done, rx) = self.later();
         self.opening = Some(rx);
         std::thread::spawn(move || {
             let dir = pollster::block_on(rfd::AsyncFileDialog::new().pick_folder());
             done(dir.map(|dir| FileEvent::Folder(folder_files(dir.path()))));
+        });
+    }
+
+    /// iOS's folder picker, then its files listed in place, on a worker; the copy reads them there too.
+    #[cfg(target_os = "ios")]
+    fn open_folder(&mut self) {
+        let (done, rx) = self.later();
+        self.opening = Some(rx);
+        crate::ios::pick(true, move |picked| match picked {
+            Some(dir) => drop(std::thread::spawn(move || {
+                done(Some(FileEvent::Folder(folder_files(&dir))))
+            })),
+            None => done(None),
         });
     }
 
@@ -102,9 +130,9 @@ impl FileProvider for NativeFiles {
     }
 
     fn save(&mut self, path: &Path, ask: bool, bytes: Vec<u8>) {
-        #[cfg(target_os = "android")]
+        #[cfg(mobile)]
         let (path, _) = (path.to_owned(), ask);
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(mobile))]
         let path = {
             let filter = save_filter(path);
             if ask {
@@ -183,7 +211,7 @@ impl FileProvider for NativeFiles {
         path.exists()
     }
 
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     fn locate(&mut self, names: Vec<String>) {
         self.event = super::flp::locate_native(&names);
     }
@@ -191,7 +219,7 @@ impl FileProvider for NativeFiles {
 
 /// `accept` for the open dialog: each extension and its upper-case form, because GTK's patterns are case-sensitive
 /// (`Tune.MID` would not be offered by `mid`). [`accepts`] still checks the picked file case-insensitively.
-#[cfg(not(target_os = "android"))]
+#[cfg(not(mobile))]
 fn dialog_extensions(accept: &[&str]) -> Vec<String> {
     accept
         .iter()
@@ -262,7 +290,7 @@ fn open_path(path: PathBuf, accept: &[&str]) -> FileEvent {
 
 /// The save dialog's filter for a save suggested as `path`: its label and its extension (lower case). None for a
 /// name with no extension.
-#[cfg(not(target_os = "android"))]
+#[cfg(not(mobile))]
 fn save_filter(path: &Path) -> Option<(String, String)> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     let label = match ext.as_str() {
@@ -274,7 +302,7 @@ fn save_filter(path: &Path) -> Option<(String, String)> {
 
 /// The path the save dialog returned, with `.ext` added unless it ends in `.ext` (any case): a name edited to
 /// `Beat v1.3` is `Beat v1.3.flm`, not a file of type "3".
-#[cfg(not(target_os = "android"))]
+#[cfg(not(mobile))]
 fn with_extension(path: PathBuf, ext: &str) -> PathBuf {
     if path
         .extension()

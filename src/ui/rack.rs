@@ -897,7 +897,7 @@ fn modulator_menu(recent: bool, target: bool, controller: bool) -> [PopupItem<Ca
 fn builder_item(full: bool) -> Option<PopupItem<CardAction>> {
     let row = if full { 5 } else { 6 };
     let label = "New from samples…";
-    let desktop = cfg!(not(any(target_arch = "wasm32", target_os = "android")));
+    let desktop = cfg!(not(any(target_arch = "wasm32", mobile)));
     desktop.then(|| PopupItem::new(CardAction::NewFromSamples, 0, row, label))
 }
 

@@ -48,12 +48,13 @@ Get the latest build from [Releases](https://github.com/daijro/honeydew/releases
 | Alpine and other musl distros | `linux-x86_64-musl.tar.gz` or `linux-aarch64-musl.tar.gz` |
 | FreeBSD | `freebsd-x86_64.tar.gz` |
 | Android | the `.apk` (64-bit or 32-bit ARM, Android 8 or later) |
+| iOS (experimental) | `honeydew-ios-<version>.ipa` (iOS 14 or later). It's unsigned: install it with AltStore, SideStore or Sideloadly using your own Apple ID |
 | Web | `honeydew-web-<version>.zip`, a static site you can host anywhere |
 
 Extract the archive and run `honeydew-native`. The AppImage is a single file. Run `chmod +x` on it, then start it (add `--appimage-extract-and-run` if your system has no FUSE).
 
 - `-avx2` builds can be faster on CPUs from 2013 onward. If unsure, take the plain one.
-- `-no-sounds` builds are just the app, 10 to 15 MB. Honeydew keeps its sounds in its own data folder, so run a full build once (or install `honeydew-<version>-sounds.zip` from Settings > Install sound library) and later updates can be the small download.
+- `-no-sounds` builds are just the app, 10 to 15 MB. Honeydew keeps its sounds in its own data folder, so run a full build once (or install `honeydew-<version>-sounds.zip` from Settings > Install sound library) and later updates can be the small download. On iOS, `-no-sounds.ipa` leaves the built-in sounds out.
 - Linux builds need glibc 2.35 or newer (Ubuntu 22.04, Debian 12). Alpine needs `apk add libstdc++ alsa-lib`. FreeBSD needs `pkg install alsa-lib alsa-plugins` and has no MIDI input yet.
 - Your songs, samples and exports go in `Documents/Honeydew`. Settings > Open user folder takes you there.
 
@@ -224,6 +225,19 @@ This writes `target/honeydew-android-<version>-arm-debug.apk`, one APK for 64-bi
 - **GitHub releases:** add the repository secrets `ANDROID_KEYSTORE_BASE64` (the keystore as base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Without them the Android job fails rather than publishing an unsigned APK.
 
 See Android's [app-signing guide](https://developer.android.com/studio/publish/app-signing) for creating a key.
+
+### iOS
+
+The iOS version is experimental. As on Android, your songs, renders and samples go in its Honeydew folder, which shows in the Files app under On My iPhone, and SONGS → Import and Import folder open the system's file picker. Recording asks for the microphone the first time. If you said no, the message has a button to the app's page in Settings. You hear yourself only in headphones, and a call or leaving the app stops a recording and keeps what was recorded. MIDI devices aren't supported yet.
+
+Build it on a Mac with Xcode:
+
+```sh
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+tools/ios-dist.sh
+```
+
+This writes `target/honeydew-ios-<version>.ipa` and `target/honeydew-ios-<version>-no-sounds.ipa`. `tools/ios-dist.sh --sim` builds the Simulator's app, and `tools/ios-selftest.sh target/ios-sim/Honeydew.app selftest` runs its self-test in the Simulator.
 
 ---
 

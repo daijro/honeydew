@@ -15,6 +15,8 @@ pub mod flp;
 pub mod fonts;
 pub mod history;
 pub mod icons;
+#[cfg(target_os = "ios")]
+pub mod ios;
 pub mod keymap;
 pub mod metrics;
 pub mod midi;

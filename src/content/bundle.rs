@@ -239,11 +239,14 @@ impl Bundle {
     /// The desktop's bundle ([`Self::find_in`]) of `$HONEYDEW_CONTENT_DIR`, the installed library
     /// ([`super::install::dir`]) and the one beside the app: `<exe dir>/content` or `<exe dir>/../share/honeydew/content`
     /// (macOS `../Resources/content`), which then syncs into the installed one on a worker. Never in unit tests, which
-    /// build their own. On the web and Android, the one [`install`]ed.
+    /// build their own. On the web and Android, the one [`install`]ed; on iOS the app's own, `content` beside it in its
+    /// bundle (none in the build without sounds).
     pub fn find() -> Option<Self> {
         #[cfg(any(target_arch = "wasm32", target_os = "android"))]
         return INSTALLED.lock().ok()?.take();
-        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+        #[cfg(target_os = "ios")]
+        return Self::open(&std::env::current_exe().ok()?.parent()?.join("content"));
+        #[cfg(not(any(target_arch = "wasm32", mobile)))]
         {
             if cfg!(test) {
                 return None;
@@ -271,7 +274,7 @@ impl Bundle {
     /// while it is complete and, with a library beside the app, of that one's index; the first beside the app, and its
     /// folder to sync the installed one from, unless its release is older than the installed one's; or the installed
     /// one as it is (a sync cut short leaves one that works).
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    #[cfg(not(any(target_arch = "wasm32", mobile)))]
     fn find_in(
         var: Option<&Path>,
         installed: Option<&Path>,
@@ -472,7 +475,7 @@ pub(crate) mod tests {
         assert!(Index::parse(big.as_bytes()).is_none());
     }
 
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    #[cfg(not(any(target_arch = "wasm32", mobile)))]
     #[test]
     fn the_installed_library_serves_while_complete_and_one_beside_the_app_syncs_into_it() {
         use crate::content::install::{MANIFEST, Progress, sync};

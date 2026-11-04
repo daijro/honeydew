@@ -724,7 +724,7 @@ impl SongsTab {
                         wav: false,
                         in_trash,
                         paste: self.actions.can_paste(),
-                        export: !cfg!(target_os = "android")
+                        export: !cfg!(mobile)
                             && (cfg!(not(target_arch = "wasm32"))
                                 || picked.iter().all(|e| !e.is_folder)),
                         reveal: FILE_MANAGER,

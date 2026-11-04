@@ -600,6 +600,20 @@ impl AudioLink {
         self.stream_failed = false;
     }
 
+    /// Reopens the running output in place, the transport kept (iOS: after an interruption, or when a device came or
+    /// went).
+    #[cfg(target_os = "ios")]
+    pub fn reopen(&mut self, song: &Song) {
+        let mode = self.buffer_mode();
+        let Some(sink) = &mut self.sink else { return };
+        self.seeking = None;
+        let reopened = sink.reopen(song, &self.samples, self.input.as_ref(), mode);
+        if let Err(err) = &reopened {
+            warn(&format!("could not reopen the audio stream: {err}"));
+        }
+        self.stream_failed = reopened.is_err();
+    }
+
     /// Records the preference before the first stream exists; an active stream is changed by [`Self::set_low_latency`].
     pub fn set_low_latency_preference(&mut self, low_latency: u8) {
         self.low_latency = low_latency;

@@ -1199,8 +1199,8 @@ impl ProjectFiles {
         let Some(name) = self.typed_name(name, "flm") else {
             return false;
         };
-        // Without a system save dialog (web and Android), keep other songs under the name and take a free name.
-        let name = match self.copies || cfg!(target_os = "android") {
+        // Without a system save dialog (web and phones), keep other songs under the name and take a free name.
+        let name = match self.copies || cfg!(mobile) {
             true => {
                 let dir = self.dir.as_deref().unwrap_or(Path::new(""));
                 self.free_name(Some(dir), &name, "flm", self.path.as_deref())

@@ -1,0 +1,60 @@
+name: iOS
+
+# The iOS test build, on the `ios` branch and on demand (not on every push to main): both unsigned IPAs, then the
+# Simulator's app runs its self-test (`tools/ios-selftest.sh`) with a screenshot at each step.
+on:
+  push:
+    branches: [ios]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ios
+          cache-on-failure: true
+      - name: Names
+        id: names
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          echo "ipa=honeydew-ios-$version-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: IPAs
+        run: tools/ios-dist.sh "${{ steps.names.outputs.ipa }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.names.outputs.ipa }}.ipa
+          path: target/${{ steps.names.outputs.ipa }}.ipa
+          retention-days: 30
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.names.outputs.ipa }}-no-sounds.ipa
+          path: target/${{ steps.names.outputs.ipa }}-no-sounds.ipa
+          retention-days: 30
+          compression-level: 0
+      - name: Simulator app
+        run: tools/ios-dist.sh --sim
+      # The runners have no sound card: a virtual one gives the Simulator an output to play to and a microphone.
+      - name: Audio device
+        run: |
+          brew install --cask blackhole-2ch
+          sudo killall coreaudiod || true
+          sleep 5
+      - name: Self-test
+        run: tools/ios-selftest.sh target/ios-sim/Honeydew.app selftest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: honeydew-ios-selftest-${{ github.sha }}
+          path: selftest/
+          retention-days: 30
