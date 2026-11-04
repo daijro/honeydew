@@ -2359,6 +2359,17 @@ impl RackPanel {
             let content = content_rect(card * ppp, self.card_height(module), u) / ppp;
             let state = self.lemon_cards.entry((self.channel, id)).or_default();
             let running = lemon_card::show(ui, content, self.channel_id, id, plugin, state, m);
+            // The editor's `Create automation clip`: the parameter's automation track, as a knob's menu makes it. The
+            // editor's list position is the module's param index less one (`module.params[0]` is not a plugin's).
+            if let Some(index) = state.automate.take() {
+                edits.touch = Some(Touch {
+                    target: AutomationTarget {
+                        instance_id: id,
+                        param: index + 1,
+                    },
+                    pick: Some(CtrlAction::AddAutomationTrack),
+                });
+            }
             self.lemon_wheel |= lemon_card::over(state);
             if running {
                 edits.sample = lemon_card::wants_file(state);

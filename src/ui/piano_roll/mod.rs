@@ -440,7 +440,7 @@ enum MoreOp {
 }
 
 /// The floating buttons over a selection.
-const FLOATING: [&str; 4] = ["Copy", "Delete", "Snap", "More..."];
+const FLOATING: [&str; 5] = ["Copy", "Duplicate", "Snap", "Delete", "More..."];
 
 impl PianoRoll {
     pub fn new(channel: usize, lane: usize, clip_id: Option<u32>) -> Self {
@@ -1989,6 +1989,7 @@ impl PianoRoll {
         let before = clip.events.clone();
         let sel = &mut self.selected;
         match FLOATING[i] {
+            // Copy only fills the note clipboard (`Paste` and Ctrl+V put the notes back).
             "Copy" => {
                 let copied = clip
                     .events
@@ -1998,6 +1999,8 @@ impl PianoRoll {
                     .map(|(e, _)| *e)
                     .collect();
                 set_note_clipboard(ui.ctx(), copied);
+            }
+            "Duplicate" => {
                 duplicate_selected(&mut clip.events, sel, grid_ticks);
             }
             "Delete" => {

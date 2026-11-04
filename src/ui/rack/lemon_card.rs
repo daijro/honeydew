@@ -47,6 +47,9 @@ const TYPE_IN_W: f32 = 140.0;
 pub(super) struct LemonCard {
     /// The editor shown ([`plugins::lemon_editor`]).
     editor: embed::Parent,
+    /// The editor's `Create automation clip` pick since the rack last read it: the parameter's list position
+    /// ([`show`] sets it, the rack makes the parameter's automation track).
+    pub(super) automate: Option<i32>,
     texture: Option<TextureHandle>,
     /// The frame shown, its size in pixels and when it came.
     version: u64,
@@ -113,6 +116,10 @@ pub(super) fn show(
             editor,
             ..LemonCard::default()
         };
+    }
+    // The editor's "Create automation clip" picks (the Lemon editors share the link's queue; this card's are its own).
+    if let Some(&index) = lemon_sampler::take_automation_requests(editor as u64).last() {
+        card.automate = Some(index as i32);
     }
     let rect = Rect::from_min_size(
         content.min,

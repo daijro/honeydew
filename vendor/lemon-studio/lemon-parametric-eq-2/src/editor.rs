@@ -631,7 +631,7 @@ impl Logic {
                 m.add(MenuItem::item("Enter value..."), Cmd::TypeIn(id.clone()));
                 // Automation belongs to the host: offered when Lemon Studio hosts the editor (host link).
                 m.sep(Cmd::None);
-                m.add(MenuItem::item("Create automation clip").enabled(self.hosted), Cmd::Automate(id.clone()));
+                m.add(MenuItem::item("Create automation clip").enabled(self.hosted || cfg!(feature = "embed")), Cmd::Automate(id.clone()));
             }
             MenuReq::Options => {
                 m.head("Options", Cmd::None);
@@ -1392,7 +1392,7 @@ mod tests {
             let i = m.items.iter().position(|it| matches!(it, MenuItem::Item { label, .. } if label == "Create automation clip")).unwrap();
             (matches!(&m.items[i], MenuItem::Item { enabled: true, .. }), m.cmds[i].clone())
         };
-        assert!(!entry(&l).0, "another host: disabled");
+        assert_eq!(entry(&l).0, cfg!(feature = "embed"), "another host: disabled, unless embedded");
         l.hosted = true;
         let (enabled, cmd) = entry(&l);
         assert!(enabled);

@@ -125,7 +125,7 @@ const POP_RATE: f32 = 0.6;
 const POP_GAIN: f32 = 1.0515;
 const POP_W: f32 = 1.885;
 /// The floating buttons over the selection (free note-grid mode).
-const OPS: [&str; 3] = ["Copy", "Delete", "Snap"];
+const OPS: [&str; 4] = ["Copy", "Duplicate", "Snap", "Delete"];
 
 fn id() -> Id {
     Id::new("drum_grid")
@@ -1130,14 +1130,19 @@ impl DrumGridView {
         let (i, _) = self.row.show(ui, "grid_button", sel, view, &OPS, cx)?;
         let (mut events, mut sel) = (events.to_vec(), self.sel.clone());
         match i {
+            // Copy only fills the hit clipboard.
             0 => {
                 step_seq::set_hit_clipboard(ui.ctx(), chosen.iter().map(|&&e| e).collect());
-                edit::copy_selected(&mut events, &mut sel, grid);
             }
             1 => {
+                edit::copy_selected(&mut events, &mut sel, grid);
+            }
+            2 => {
+                edit::quantize_selected(&mut events, &mut sel, grid);
+            }
+            _ => {
                 remove_selected(&mut events, &mut sel);
             }
-            _ => edit::quantize_selected(&mut events, &mut sel, grid),
         }
         ui.ctx().request_repaint();
         Some((events, sel))

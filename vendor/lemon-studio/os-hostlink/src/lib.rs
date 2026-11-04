@@ -438,7 +438,10 @@ mod local {
         /// Plugin -> host (`Changed`, `Note`, `Automate`): queued for the host's next tick, which is woken. 1 when a host
         /// is there, 0 otherwise (as unanswered messages on Windows).
         pub fn to_host(&self, cmd: Cmd, arg: isize) -> isize {
-            if !self.hosted() {
+            // Honeydew (vendored change): an embedded editor has no host, but its \"Create automation clip\" is the app's,
+            // queued for it ([`take_host_messages_for`]).
+            let for_app = cfg!(feature = "embed") && cmd == Cmd::Automate;
+            if !self.hosted() && !for_app {
                 return 0;
             }
             if let Ok(mut q) = QUEUE.lock() {
@@ -463,6 +466,22 @@ mod local {
     /// Host: the plugins' messages since the last call: (editor's host window, command, argument).
     pub fn take_host_messages() -> Vec<(u64, Cmd, isize)> {
         QUEUE.lock().map(|mut q| std::mem::take(&mut *q)).unwrap_or_default()
+    }
+
+    /// Honeydew: the arguments of the `cmd` messages from editor window `parent`, taken; the other messages stay queued.
+    pub fn take_host_messages_for(parent: u64, cmd: Cmd) -> Vec<isize> {
+        let Ok(mut q) = QUEUE.lock() else {
+            return Vec::new();
+        };
+        let mut taken = Vec::new();
+        q.retain(|&(p, c, arg)| {
+            let mine = p == parent && c == cmd;
+            if mine {
+                taken.push(arg);
+            }
+            !mine
+        });
+        taken
     }
 
     /// Host side: a connection to the editor of a Lemon plugin.
@@ -534,7 +553,7 @@ mod local {
 }
 
 #[cfg(not(windows))]
-pub use local::{set_host_waker, take_host_messages, Link, Peer};
+pub use local::{set_host_waker, take_host_messages, take_host_messages_for, Link, Peer};
 #[cfg(all(windows, feature = "embed"))]
 pub use local::Peer;
 

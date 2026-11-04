@@ -1,7 +1,7 @@
 //! Playlist clips. Each track row shows its lane's clips as [`paint_clip`] draws them, rounded boxes: the current clip
 //! has the light outline. The selection (one clip, or a marquee's group) is one pulsing `text` box with its capsule
 //! handles (start, end, and a bar under an audio clip that does not loop, [`paint_handle`]) and the floating `Copy`,
-//! `Delete`, `Snap`, `Edit`, `More...` above it. Dragging a clip moves it, dragging a handle resizes it (each clip of a
+//! `Duplicate`, `Snap`, `Edit`, `Delete`, `More...` above it. Dragging a clip moves it, dragging a handle resizes it (each clip of a
 //! group). Positions snap to the ruler's Snap unit (its mode, Auto by the zoom); with Snap off, drags go to whole ticks
 //! while the insert menu, `Copy` and `Snap` keep the mode's unit. Clips drag between tracks of any channel by lane
 //! kind ([`Clips::drag_rows`]).
@@ -456,9 +456,9 @@ enum ClipOp {
 const OPS: [(ClipOp, &str); 6] = [
     (ClipOp::Copy, "Copy"),
     (ClipOp::Duplicate, "Duplicate"),
-    (ClipOp::Delete, "Delete"),
     (ClipOp::Snap, "Snap"),
     (ClipOp::Edit, "Edit"),
+    (ClipOp::Delete, "Delete"),
     (ClipOp::More, "More..."),
 ];
 

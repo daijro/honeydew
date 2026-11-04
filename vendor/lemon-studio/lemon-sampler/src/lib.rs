@@ -199,6 +199,13 @@ pub fn set_host_ticks(ppq: u16) {
     HOST_PPQ.store(u32::from(ppq), Ordering::Relaxed);
 }
 
+/// Honeydew: the \"Create automation clip\" picks of the embedded Lemon editor in window `editor` since the last call,
+/// each the parameter's position in its plugin's list (the Lemon editors share the link's queue).
+#[cfg(feature = "embed")]
+pub fn take_automation_requests(editor: u64) -> Vec<isize> {
+    os_hostlink::take_host_messages_for(editor, os_hostlink::Cmd::Automate)
+}
+
 /// The song's timing for the voices from the transport: steps per beat from the time signature's denominator (16 /
 /// denominator), the song tick from the position in beats.
 fn time(t: &Transport) -> dsp::Time {

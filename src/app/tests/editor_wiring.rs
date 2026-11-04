@@ -2053,8 +2053,8 @@ fn the_step_selections_copy_and_delete_go_through_the_funnel_as_one_undo_step_ea
     rig.frame(vec![]);
     assert_eq!(rig.take(), Vec::<String>::new(), "selecting edits nothing");
 
-    // Copy: the two hits again three steps on, one rebuild, and a re-sync as the piano roll's Copy at interval.
-    rig.click(rig.text_center("Copy"));
+    // Duplicate: the two hits again three steps on, one rebuild, and a re-sync as the piano roll's Duplicate at interval.
+    rig.click(rig.text_center("Duplicate"));
     assert_eq!(rig.hits(), [(0, 0), (1, 64), (0, 96), (1, 160)]);
     assert_eq!(rig.take(), ["ReplaceSong adopting"]);
     // The selection is the copies now: Delete takes them away again.
