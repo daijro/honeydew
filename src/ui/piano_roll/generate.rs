@@ -17,7 +17,8 @@ use eframe::egui::{
 };
 
 use super::compose::{
-    self, ARPS, CHORD_MODES, DURATIONS, KEYS, Lead, OCTAVES, PRESETS, RESTS, SCALE_CHOICES, Settings,
+    self, ARPS, CHORD_MODES, DURATIONS, KEYS, Lead, OCTAVES, PRESETS, RESTS, SCALE_CHOICES,
+    Settings,
 };
 use crate::metrics::{FontSize, Metrics};
 use crate::params::{menu_index, menu_value};

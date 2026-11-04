@@ -2230,7 +2230,11 @@ impl PianoRoll {
                 }
             }
             // The dialogs opened above.
-            MoreOp::GuessScale | MoreOp::TransposeBy | MoreOp::Humanize | MoreOp::Generate | MoreOp::SliceBy => {}
+            MoreOp::GuessScale
+            | MoreOp::TransposeBy
+            | MoreOp::Humanize
+            | MoreOp::Generate
+            | MoreOp::SliceBy => {}
         }
         let changed = clip.events != before;
         if changed {
