@@ -537,7 +537,7 @@ fn type_in(
         .order(Order::Foreground)
         .fixed_pos(min)
         .show(ctx, |ui| {
-            let r = ui.add(TextEdit::singleline(typed).id(field).desired_width(width));
+            let mut r = ui.add(TextEdit::singleline(typed).id(field).desired_width(width));
             // The whole text starts selected: typing replaces it.
             if fresh {
                 r.request_focus();
@@ -546,6 +546,9 @@ fn type_in(
                 state.cursor.set_char_range(Some(all));
                 state.store(ui.ctx(), field);
             }
+            // On Android the native text dialog is the keyboard (eframe's IME is off there), so the box alone
+            // would show no keys.
+            crate::android_text::edit(&mut r, typed, usize::MAX);
             done = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
             cancel = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
                 || (r.lost_focus() && !done && !fresh);

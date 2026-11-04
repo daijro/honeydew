@@ -965,7 +965,11 @@ impl MainScreen {
             .as_mut()
             .filter(|h| h.row == i && (p.held || p.long_released))
         {
-            let pos = ui.input(|i| i.pointer.latest_pos()).unwrap_or(hold.origin);
+            // Unlike `latest_pos`, `interact_pos` is kept through a `PointerGone` in the release frame (a touch's
+            // lift), so the drop is where the finger was, not where it went down.
+            let pos = ui
+                .input(|i| i.pointer.interact_pos().or(i.pointer.latest_pos()))
+                .unwrap_or(hold.origin);
             let dy = pos.y - hold.origin.y;
             // Only a channel's first row drags (its primary's, unless that is hidden), any channel's.
             let first = tracks.iter().position(|t| t.channel == channel) == Some(i);
@@ -5961,6 +5965,20 @@ mod tests {
         rig.frame(vec![egui::Event::PointerMoved(header_at(2))]);
         let f = rig.frame(vec![button(header_at(2), false)]);
         assert_eq!(f.reorder, Some(vec![2, 1, 0, 3]));
+    }
+
+    /// A touch's lift frame ends with `PointerGone`, which clears `latest_pos`: the drop must still be where the
+    /// finger was (`interact_pos` survives it), not where it went down.
+    #[test]
+    fn a_touch_drag_drops_where_the_finger_was_the_lift_frame_ends_with_pointer_gone() {
+        let mut rig = four_rows();
+        hold(&mut rig, header_at(1), 0.3);
+        rig.frame(vec![]);
+        assert!(rig.screen.hold.is_some(), "the long press held");
+        let to = header_at(3);
+        rig.frame(finger(1, egui::TouchPhase::Move, to));
+        let f = rig.frame(finger(1, egui::TouchPhase::End, to));
+        assert_eq!(f.reorder, Some(vec![0, 3, 2, 1]), "dropped where the finger lifted");
     }
 
     #[test]
