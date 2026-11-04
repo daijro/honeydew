@@ -1,10 +1,17 @@
 package dev.daijro.honeydew;
 
+import android.Manifest;
 import android.app.AlertDialog;
 import android.app.NativeActivity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.database.Cursor;
+import android.media.AudioAttributes;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -37,10 +44,29 @@ public final class HoneydewActivity extends NativeActivity {
     private static native void onDocumentPicked(String path, String error);
     private static native void onFolderPicked(String files, String error);
     private static native void onFilesCopied(String error);
+    private static native void onMic(boolean granted);
+    private static native void onHeadphones(boolean on);
+    private static native void onInterrupted();
 
     private static final int OPEN_DOCUMENT = 1;
     private static final int OPEN_FOLDER = 2;
+    private static final int RECORD_AUDIO = 3;
     private long openLimit;
+    private AudioFocusRequest focus;
+
+    // Headphones among the outputs go to Rust whenever a device comes or goes (and once at registration): monitoring
+    // plays the microphone only in headphones, never through the speaker it would feed back from.
+    private final AudioDeviceCallback outputs = new AudioDeviceCallback() {
+        @Override
+        public void onAudioDevicesAdded(AudioDeviceInfo[] devices) {
+            onHeadphones(headphones());
+        }
+
+        @Override
+        public void onAudioDevicesRemoved(AudioDeviceInfo[] devices) {
+            onHeadphones(headphones());
+        }
+    };
 
     @Override
     protected void onCreate(Bundle state) {
@@ -48,6 +74,71 @@ public final class HoneydewActivity extends NativeActivity {
         onDisplayDpi(getResources().getDisplayMetrics().xdpi);
         super.onCreate(state);
         hideSystemBars();
+        getSystemService(AudioManager.class).registerAudioDeviceCallback(outputs, null);
+    }
+
+    // Wired, USB or Bluetooth headphones. A Bluetooth headset's own mic needs a call link (SCO), so recording keeps
+    // to the phone's mic then; a wired or USB headset's mic is Android's default input while it is plugged in.
+    private boolean headphones() {
+        for (AudioDeviceInfo device : getSystemService(AudioManager.class).getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+            switch (device.getType()) {
+                case AudioDeviceInfo.TYPE_WIRED_HEADSET:
+                case AudioDeviceInfo.TYPE_WIRED_HEADPHONES:
+                case AudioDeviceInfo.TYPE_USB_HEADSET:
+                case AudioDeviceInfo.TYPE_BLUETOOTH_A2DP:
+                case AudioDeviceInfo.TYPE_BLE_HEADSET:
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    // The microphone, the first time recording needs it: true when it is allowed already, else the system's question
+    // shows and its answer goes to Rust (onMic).
+    public boolean askMic() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) return true;
+        runOnUiThread(() -> requestPermissions(new String[] {Manifest.permission.RECORD_AUDIO}, RECORD_AUDIO));
+        return false;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
+        if (request != RECORD_AUDIO) {
+            super.onRequestPermissionsResult(request, permissions, results);
+            return;
+        }
+        onMic(results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED);
+    }
+
+    // While a recording runs the app holds the audio focus, so other apps keep quiet, and a call or another app
+    // taking it back ends the take (onInterrupted). A notification that only ducks does not.
+    public void recording(boolean on) {
+        runOnUiThread(() -> {
+            AudioManager audio = getSystemService(AudioManager.class);
+            if (focus != null) audio.abandonAudioFocusRequest(focus);
+            focus = null;
+            if (!on) return;
+            AudioAttributes music = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build();
+            focus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+                    .setAudioAttributes(music)
+                    .setOnAudioFocusChangeListener(change -> {
+                        if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                            onInterrupted();
+                        }
+                    })
+                    .build();
+            if (audio.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_FAILED) onInterrupted();
+        });
+    }
+
+    // Leaving the screen ends a take too: Android gives an app in the background silence for its microphone.
+    @Override
+    protected void onPause() {
+        super.onPause();
+        onInterrupted();
     }
 
     // Immersive: the status and navigation bars stay hidden, so an edge touch can't press them; a swipe from the edge
@@ -323,6 +414,7 @@ public final class HoneydewActivity extends NativeActivity {
     @Override
     protected void onDestroy() {
         if (editorDialog != null) editorDialog.dismiss();
+        getSystemService(AudioManager.class).unregisterAudioDeviceCallback(outputs);
         super.onDestroy();
         onDisplayDpi(0);
     }

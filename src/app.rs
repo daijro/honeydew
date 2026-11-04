@@ -9,7 +9,7 @@ use crate::fonts;
 use crate::history::{self, History, Step};
 use crate::metrics::{FontSize, Metrics};
 use crate::project_files::{ProjectFiles, Replace};
-use crate::recording::input::{InputChoice, InputLink};
+use crate::recording::input::{InputChoice, InputLink, Mic};
 use crate::recording::recorder::{Recorder, Take, compensates, latency, recording_channels};
 use crate::recording::routing::{Routing, input_channel};
 use crate::sample_cache::{self, SampleCache};
@@ -70,6 +70,21 @@ const IDLE_SECS: f64 = 600.0;
 
 /// What an input that fails to open shows.
 const MIC_PERMISSION: &str = "Please grant microphone permission to enable audio recording.";
+/// What Android shows when the user did not allow the microphone, and where to allow it.
+fn mic_denied() -> Vec<String> {
+    let app = crate::APP_NAME;
+    vec![
+        format!("{app} needs the microphone to record."),
+        format!("Allow it in Settings > Apps > {app} > Permissions > Microphone."),
+    ]
+}
+/// What an input that fails to open shows: the permission message; on Android, which asked already, the error.
+fn mic_failed(err: String) -> Vec<String> {
+    match cfg!(target_os = "android") {
+        true => vec!["The microphone could not be opened.".into(), err],
+        false => vec![MIC_PERMISSION.into()],
+    }
+}
 /// The tags of that message and of a recording's file error.
 const INPUT_TAG: &str = "audio input";
 const RECORD_TAG: &str = "recording";
@@ -1569,19 +1584,25 @@ impl HoneydewApp {
     /// they record), while such a channel monitors, while the rack shows one, or while the calibration runs; closed
     /// otherwise. It opens on the input channel's device ([`input_channel`]: the default one without a stored input;
     /// The calibration's is always the default one) at the output's rate. The engines monitor the open ring with each
-    /// channel's stored ports, and record it: one channel monitoring, the engine is rebuilt when they change, and
-    /// with REC armed whenever the engine playing was not built with it. An open that fails is not tried again until
-    /// what needs it changes (REC armed again, another device) or an `Audio Record` channel is added
+    /// channel's stored ports (on Android only with headphones in, [`may_monitor`]), and record it: one channel
+    /// monitoring, the engine is rebuilt when they change, and with REC armed whenever the engine playing was not built
+    /// with it. Android opens it once the user allows the microphone ([`Mic`]). An open that fails, or a denial, is not
+    /// tried again until what needs it changes (REC armed again, another device) or an `Audio Record` channel is added
     /// ([`Self::input_failed`]); for REC it shows the permission message (natively: the web has no input).
+    ///
+    /// [`may_monitor`]: crate::recording::input::may_monitor
     fn open_input(&mut self, tick: u64) {
         let records = |c: &Channel| c.kind == ChannelKind::AudioRecord;
         let channels = &self.song.channels;
         let rack = self.rack_channel();
         let calibrating = matches!(self.calibration, Some(input::Calibrating::Running(_)));
         let armed = self.main_screen.armed && channels.iter().any(records);
-        let monitors = channels
+        let monitoring = channels
             .iter()
             .any(|c| records(c) && c.file.input_monitoring);
+        // Not through a phone's speaker: monitoring alone then needs no input.
+        let monitor = crate::recording::input::may_monitor();
+        let monitors = monitor && monitoring;
         let wanted = armed
             || monitors
             || rack.and_then(|c| channels.get(c)).is_some_and(records)
@@ -1598,27 +1619,30 @@ impl HoneydewApp {
         }
         if !wanted {
             self.input.close();
-        } else if let Some(rate) = self.audio.sample_rate().filter(|_| !self.input_failed)
-            && self.input.open(device.as_deref(), rate).is_err()
-        {
-            self.input_failed = true;
-            if armed && !cfg!(target_arch = "wasm32") {
-                self.navigate(Nav::Open(Overlay::Message {
-                    tag: INPUT_TAG,
-                    lines: vec![if cfg!(target_os = "android") {
-                        "Audio recording is not available in this Android preview.".into()
-                    } else {
-                        MIC_PERMISSION.into()
-                    }],
-                    confirm: None,
-                    extra: None,
-                }));
+        } else if let Some(rate) = self.audio.sample_rate().filter(|_| !self.input_failed) {
+            // Android asks the user for the microphone first; it opens once allowed.
+            let failed = match self.input.mic() {
+                Mic::Asking => None,
+                Mic::Denied => Some(mic_denied()),
+                Mic::Granted => (self.input.open(device.as_deref(), rate).err()).map(mic_failed),
+            };
+            if let Some(lines) = failed {
+                self.input_failed = true;
+                if armed && !cfg!(target_arch = "wasm32") {
+                    self.navigate(Nav::Open(Overlay::Message {
+                        tag: INPUT_TAG,
+                        lines,
+                        confirm: None,
+                        extra: None,
+                    }));
+                }
             }
         }
         let ring = self.input.ring().cloned();
         let ports = self.input_ports();
-        let built = (self.audio.input.as_ref()).map(|i| (Arc::as_ptr(&i.ring), &i.ports));
-        let changed = ring.as_ref().map(|r| (Arc::as_ptr(r), &ports)) != built;
+        let built =
+            (self.audio.input.as_ref()).map(|i| (Arc::as_ptr(&i.ring), &i.ports, i.monitor));
+        let changed = ring.as_ref().map(|r| (Arc::as_ptr(r), &ports, monitor)) != built;
         if changed {
             // An input of the same width and rate keeps its tap (all a tap is made of), so a take records on through a
             // port pick (the engine's take goes on), a reopen or another device (the new ring's engine starts a take on
@@ -1632,8 +1656,16 @@ impl HoneydewApp {
                 })
                 .map(|i| i.tap.clone());
             self.audio.input = ring.map(|ring| match tap {
-                Some(tap) => LiveInput { ring, ports, tap },
-                None => LiveInput::new(ring, ports),
+                Some(tap) => LiveInput {
+                    ring,
+                    ports,
+                    tap,
+                    monitor,
+                },
+                None => LiveInput {
+                    monitor,
+                    ..LiveInput::new(ring, ports)
+                },
             });
         }
         // The monitors' new ports or ring, a running measurement's new ring (its first engine the calibration builds),
@@ -1641,7 +1673,7 @@ impl HoneydewApp {
         // sound, a running take and the measurement go on).
         let measuring = matches!(self.calibration, Some(input::Calibrating::Running(Some(_))));
         let unrecorded = armed && self.audio.input.is_some() && !self.audio.records();
-        if (changed && (monitors || measuring)) || (unrecorded && self.audio.running()) {
+        if (changed && (monitoring || measuring)) || (unrecorded && self.audio.running()) {
             self.rebuild_as(tick, Handover::Edit);
         }
     }
@@ -1920,7 +1952,13 @@ impl HoneydewApp {
         // The snapshot first: a stream that failed while egui was idle (no frames) must count as not running for
         // this click. The start is before the screen, so a press that lands on a key is heard natively.
         let mut snapshot = self.audio.poll();
-        if !self.audio.running() && ctx.input(|i| audio_gesture(i, START_ON_RELEASE)) {
+        // Android drops its streams when headphones come or go: an output that fails while the song plays (a take
+        // records) restarts by itself.
+        let rerouted = cfg!(target_os = "android")
+            && self.main_screen.playing
+            && snapshot.as_ref().is_some_and(|s| s.stream_failed);
+        if !self.audio.running() && (rerouted || ctx.input(|i| audio_gesture(i, START_ON_RELEASE)))
+        {
             self.audio
                 .set_low_latency_preference(self.settings.low_latency);
             self.audio
@@ -1960,6 +1998,21 @@ impl HoneydewApp {
         // The latency calibration's test stops the transport and holds it.
         if matches!(self.calibration, Some(input::Calibrating::Running(_))) {
             self.main_screen.playing = false;
+        }
+        // A call, another app taking the sound, or the app leaving the screen ended Android's take there and then
+        // (`android::recording`): the transport stops, which leaves the clips.
+        #[cfg(target_os = "android")]
+        if crate::android::interrupted() && self.main_screen.playing {
+            self.main_screen.playing = false;
+            self.navigate(Nav::Open(Overlay::Message {
+                tag: RECORD_TAG,
+                lines: vec![
+                    "The recording was interrupted.".into(),
+                    "What was recorded so far is kept.".into(),
+                ],
+                confirm: None,
+                extra: None,
+            }));
         }
         self.main_screen.takes = self.live_takes(snapshot.as_ref().map_or(0, |s| s.transport_tick));
         self.slots.piano_roll.takes = self.main_screen.takes.clone();
@@ -2418,6 +2471,8 @@ impl HoneydewApp {
         self.rack_input();
         self.auto_record(moved, was_playing, tick);
         self.audio_record(ctx, tick, was_recording);
+        #[cfg(target_os = "android")]
+        crate::android::recording(self.recorder.as_ref().map(Recorder::tap));
         self.calibrate(ctx, snapshot.as_ref().and_then(|s| s.ping), tick);
         // After every live key of the frame, and the channel the header picked.
         self.record_notes(jumped, tick);
@@ -2492,6 +2547,8 @@ impl HoneydewApp {
         }
         // After its step: a playlist delete asks whether what it emptied goes too (`app/tracks.rs`).
         self.ask_emptied();
+        // `Replace sample...`'s closed picker asks before it replaces (`app/tracks.rs`).
+        self.ask_replace();
         // Removing a drum row clears the undo history, the removal's step too.
         if std::mem::take(&mut self.slots.drum_editor.row_removed) {
             self.history = History::new(&self.song);

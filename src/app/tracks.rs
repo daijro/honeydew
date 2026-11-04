@@ -3,6 +3,7 @@
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use honeydew_audio::device::AudioCommand;
 
@@ -10,6 +11,7 @@ use eframe::egui;
 
 use super::HoneydewApp;
 use crate::project_files::{MESSAGE_TAG, PresetSource};
+use crate::sample_cache::SampleKey;
 use crate::smf::{self, import::ImportOpts};
 use crate::song::{
     Channel, ChannelKind, DrumGrid, DrumKit, Lane, LaneKind, PPQ, SamplerSlot, Song,
@@ -18,11 +20,13 @@ use crate::ui::clips::{ClipRef, Emptied};
 use crate::ui::preview::ClipKey;
 use crate::ui::rack::PresetTarget;
 use crate::ui::track_menu::TrackOp;
+use crate::ui::views::sample_picker::{playing, replace_sample};
 use crate::ui::views::{self, Nav, Overlay, SongEdit, View};
 
 const DELETE_CHANNEL_TAG: &str = "delete channel";
 const DELETE_TRACK_TAG: &str = "delete empty tracks";
 const EMPTIED_TAG: &str = "delete emptied";
+const REPLACE_TAG: &str = "replace sample";
 /// `Burn Notes to Track`'s loading screen.
 const BURNING: &str = "Burning notes to track...";
 /// The channel names the question lists, then `and N more`.
@@ -30,7 +34,7 @@ const LISTED: usize = 4;
 
 /// A question the track menu asked, until it is answered. The channel is named by its id, which no index shift
 /// changes.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) enum Asked {
     /// `Delete channel?` (or the FX channel's question): yes deletes it.
     DeleteChannel(i32),
@@ -39,6 +43,13 @@ pub(super) enum Asked {
     /// What a playlist `Delete` left empty, asked after its step: yes deletes it into that step. By index: any change
     /// of the channels or tracks drops the question ([`HoneydewApp::rekey`]).
     Emptied(Emptied),
+    /// `Replace sample...`'s `Replace the sample in N clips?` (issue #64): yes gives every clip playing `from` the file
+    /// at `path` ([`replace_sample`]).
+    ReplaceSample {
+        from: SampleKey,
+        path: PathBuf,
+        tempo: Option<f32>,
+    },
 }
 
 impl Asked {
@@ -48,6 +59,7 @@ impl Asked {
             Self::DeleteChannel(_) => DELETE_CHANNEL_TAG,
             Self::DeleteTrack { .. } => DELETE_TRACK_TAG,
             Self::Emptied(_) => EMPTIED_TAG,
+            Self::ReplaceSample { .. } => REPLACE_TAG,
         }
     }
 }
@@ -600,13 +612,9 @@ impl HoneydewApp {
             .find(|p| p.uid == uid && p.kind == crate::plugins::PluginKind::Instrument)
             .map(|p| p.name)
             .or_else(|| {
-                [
-                    crate::plugins::builtin::LEMON_TRIO,
-                    crate::plugins::builtin::LEMON_SAMPLER,
-                ]
-                .into_iter()
-                .find(|p| p.uid == uid)
-                .map(|p| p.name.to_owned())
+                (crate::plugins::builtin::all().iter())
+                    .find(|p| p.uid == uid && p.instrument())
+                    .map(|p| p.name.to_owned())
             });
         let Some(plugin_name) = name else {
             return self.navigate(Nav::Open(Overlay::Message {
@@ -737,7 +745,49 @@ impl HoneydewApp {
             }
             Asked::Emptied(e) if yes => self.delete_emptied(&e, tick),
             Asked::Emptied(_) => {}
+            Asked::ReplaceSample { from, path, tempo } if yes => {
+                let (song, samples) = (&mut self.song, &mut self.audio.samples);
+                if replace_sample(song, &from, &path, &self.files, tempo, samples) {
+                    self.song_edited(SongEdit::Final, tick);
+                }
+            }
+            Asked::ReplaceSample { .. } => {}
         }
+    }
+
+    /// After the frame: `Replace sample...`'s picker closed on a pick ([`views::sample_picker::show_replace`]). The
+    /// playlist marks every clip playing its clip's sample, in place of the selection, and `Replace the sample in N
+    /// clips?` asks, `Replace` / `Cancel`. The marks last while the question does.
+    pub(super) fn ask_replace(&mut self) {
+        if !matches!(self.asked, Some(Asked::ReplaceSample { .. })) {
+            self.main_screen.clips.marked.clear();
+        }
+        let Some(r) = self.slots.sample_picker.replace.take() else {
+            return;
+        };
+        let slot = r
+            .key
+            .clip(&self.song)
+            .and_then(|c| c.file.sample.as_deref());
+        let Some(from) = slot.and_then(SampleKey::of_slot) else {
+            return;
+        };
+        let clips = playing(&self.song, &from);
+        let n = clips.len();
+        self.main_screen.clips.set_selection(Vec::new());
+        self.main_screen.clips.marked = clips;
+        let s = if n == 1 { "" } else { "s" };
+        self.asked = Some(Asked::ReplaceSample {
+            from,
+            path: r.path,
+            tempo: r.tempo,
+        });
+        self.navigate(Nav::Open(Overlay::Message {
+            tag: REPLACE_TAG,
+            lines: vec![format!("Replace the sample in {n} clip{s}?")],
+            confirm: Some(("Replace".into(), "Cancel".into())),
+            extra: None,
+        }));
     }
 
     /// After the frame's edit: what a playlist `Delete` left empty ([`crate::ui::clips::emptied`]) asks whether it goes
@@ -950,7 +1000,7 @@ impl HoneydewApp {
             | Overlay::InstrumentBuilder { channel, .. }
             | Overlay::CcPicker(channel) => rekey(channel),
             // The clip's track.
-            Overlay::ClipSamplePicker(key) => rk
+            Overlay::ClipSamplePicker(key) | Overlay::ReplaceSamplePicker(key) => rk
                 .track(key.channel, key.lane)
                 .map(|(channel, lane)| (key.channel, key.lane) = (channel, lane))
                 .is_some(),

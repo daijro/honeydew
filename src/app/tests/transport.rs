@@ -506,35 +506,30 @@ fn an_empty_open_clip_covering_the_takes_start_is_replaced_and_its_editor_shows_
 }
 
 #[test]
-fn a_playhead_drop_on_a_short_song_clamps_to_its_end() {
-    // A song whose last clip ends at beat 2 (shorter than a bar): a drop at beat 3.6 seeks to the song end, beat 2
-    // (the knob's range is [0, song end]), not to the one bar the playlist's view counts.
+fn a_playhead_drag_on_an_empty_song_moves_within_its_first_bar() {
+    // With no clips the knob's range is the first bar (bar 1 to bar 2), not [0, 0]; a song shorter
+    // than a bar keeps that bar; a longer one stops at its end.
     let mut rig = Rig::with_synth();
     rig.app.settings.count_in = false;
+    rig.frame(vec![]);
+    rig.take();
+    let drag = |rig: &mut Rig, from: Pos2, to: Pos2| {
+        rig.press(from);
+        rig.drag_to(from + (to - from) / 2.0);
+        rig.drag_to(to);
+        rig.release(to);
+        rig.transport()
+    };
+    assert_eq!(drag(&mut rig, knob(0), ruler(2.0)), ["Seek 256"]);
+    rig.at(2 * BEAT);
+    assert_eq!(drag(&mut rig, knob(2 * BEAT), ruler(7.0)), ["Seek 512"]);
+    // A clip ending at beat 2: still the first bar.
+    rig.at(4 * BEAT);
     rig.app.song.channels[1].lanes[0].add_clip(0, 2.0);
-    rig.frame(vec![]);
-    rig.take();
-    let (from, to) = (knob(0), ruler(3.6));
-    rig.press(from);
-    rig.drag_to(from + (to - from) / 2.0);
-    rig.drag_to(to);
-    rig.release(to);
-    assert_eq!(rig.transport(), ["Seek 256"]);
-}
-
-#[test]
-fn a_playhead_drop_on_an_empty_song_seeks_to_0() {
-    // The knob clamps to the song's own end, 0 without clips (the view's one bar is the view's).
-    let mut rig = Rig::with_synth();
-    rig.app.settings.count_in = false;
-    rig.frame(vec![]);
-    rig.take();
-    let (from, to) = (knob(0), ruler(3.6));
-    rig.press(from);
-    rig.drag_to(from + (to - from) / 2.0);
-    rig.drag_to(to);
-    rig.release(to);
-    assert_eq!(rig.transport(), ["Seek 0"]);
+    assert_eq!(drag(&mut rig, knob(4 * BEAT), ruler(7.0)), ["Seek 512"]);
+    // A clip ending at beat 6: the song end.
+    rig.app.song.channels[1].lanes[0].add_clip(2 * BEAT as u32, 4.0);
+    assert_eq!(drag(&mut rig, knob(4 * BEAT), ruler(9.0)), ["Seek 768"]);
 }
 
 /// Channel 1's Level (instance 0).

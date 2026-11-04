@@ -60,6 +60,8 @@ pub(super) struct LemonCard {
     menu: Option<MenuUi>,
     /// The type-in box's text, while it is open.
     typed: Option<String>,
+    /// The press that opened the type-in box (a text field opens it at a press) lasts: its release is not a click away.
+    typing_press: bool,
     /// The editor asks for a file ([`Modal::OpenFile`]), and the request went to the app ([`wants_file`]) or is about to.
     asked_file: bool,
     wants_file: bool,
@@ -79,6 +81,14 @@ pub(super) fn body_height(size: (u32, u32), width: f32) -> f32 {
     width * size.1 as f32 / size.0.max(1) as f32
 }
 
+/// The size whose aspect the card shows `plugin`'s editor at: its last frame's, as an editor may resize itself (Tesla,
+/// from its grip or its saved size), else the plugin's own.
+pub(super) fn shown_size(card: Option<&LemonCard>, plugin: &Builtin) -> (u32, u32) {
+    (card.map(|c| c.size))
+        .filter(|&(w, h)| w > 0 && h > 0)
+        .unwrap_or_else(|| plugin.size())
+}
+
 /// Draws module `instance_id`'s editor (built-in plugin `plugin`, on the channel with id `channel_id`) in the card body
 /// `content` (points). `false` while the plugin is not running: the caller shows the plugin card instead.
 pub(super) fn show(
@@ -93,7 +103,7 @@ pub(super) fn show(
     let ppp = ctx.pixels_per_point();
     // The editor at the card's width in device pixels, so that it is sharp ([`plugins::lemon_editor`] opens it again
     // only when that moves by more than a little).
-    let scale = (content.width() * ppp / plugin.size.0 as f32).clamp(0.5, 4.0);
+    let scale = (content.width() * ppp / plugin.size().0 as f32).clamp(0.5, 4.0);
     // The handle's type is the platform's (`embed::Parent`: `usize` on macOS).
     let Some(editor) = plugins::lemon_editor(channel_id, instance_id, scale)
         .map(|id| -> embed::Parent { id as _ })
@@ -106,9 +116,10 @@ pub(super) fn show(
             ..LemonCard::default()
         };
     }
+    let size = shown_size(Some(card), plugin);
     let rect = Rect::from_min_size(
         content.min,
-        vec2(content.width(), body_height(plugin.size, content.width())),
+        vec2(content.width(), body_height(size, content.width())),
     );
     // Global (an editor shows in one card at a time): tests and render harnesses find the card by its editor.
     let id = Id::new(("lemon editor", editor));
@@ -475,6 +486,9 @@ fn type_in(
 ) {
     let editor = card.editor;
     let fresh = card.typed.is_none();
+    let down = ctx.input(|i| i.pointer.any_down());
+    let opening = card.typing_press;
+    card.typing_press = (fresh || opening) && down;
     let typed = card.typed.get_or_insert(text);
     let width = TYPE_IN_W * scale / k;
     let min = rect.min + vec2(at.0 as f32, at.1 as f32) / k;
@@ -485,8 +499,8 @@ fn type_in(
         .fixed_pos(min)
         .show(ctx, |ui| {
             let r = ui.add(TextEdit::singleline(typed).id(field).desired_width(width));
-            // The whole text starts selected: typing replaces it.
-            if fresh {
+            // The whole text starts selected: typing replaces it. The release of the press that opened it keeps it.
+            if fresh || (opening && r.lost_focus()) {
                 r.request_focus();
                 let mut state = TextEditState::load(ui.ctx(), field).unwrap_or_default();
                 let all = CCursorRange::two(CCursor::new(0), CCursor::new(typed.chars().count()));
@@ -495,7 +509,7 @@ fn type_in(
             }
             done = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
             cancel = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
-                || (r.lost_focus() && !done && !fresh);
+                || (r.lost_focus() && !done && !fresh && !opening);
         })
         .response
         .rect;
@@ -517,7 +531,7 @@ mod tests {
     use lemon_sampler::view;
 
     use super::*;
-    use crate::plugins::builtin::LEMON_SAMPLER;
+    use crate::plugins::builtin::named;
     use crate::song::{ChannelKind, Song};
 
     /// A finger as Android reports it (egui-winit): the touch, with the pointer's move and press; its moves; its lift,
@@ -543,8 +557,9 @@ mod tests {
         }
     }
 
-    /// A Lemon Sampler's card at the screen's top left, one editor pixel a point.
+    /// A Lemon Sampler's card (or `name`'s) at the screen's top left, one editor pixel a point.
     struct Rig {
+        name: &'static str,
         ctx: egui::Context,
         card: LemonCard,
         /// Its channel's id and its module's instance id.
@@ -553,14 +568,15 @@ mod tests {
     }
 
     impl Rig {
-        fn new() -> Rig {
+        fn new(name: &'static str) -> Rig {
             let mut song = Song::default();
             song.add_channel(ChannelKind::Instrument);
             let channel = &mut song.channels[1];
             let id = channel.id;
-            let module = plugins::add(&mut channel.rack, id, LEMON_SAMPLER.uid, 0).unwrap();
+            let module = plugins::add(&mut channel.rack, id, named(name).uid, 0).unwrap();
             plugins::sync(&song);
             let mut rig = Rig {
+                name,
                 ctx: egui::Context::default(),
                 card: LemonCard::default(),
                 ids: (id, module),
@@ -580,12 +596,13 @@ mod tests {
                 time: Some(self.time),
                 ..Default::default()
             };
-            let (card, (channel, module)) = (&mut self.card, self.ids);
+            let (card, (channel, module), name) = (&mut self.card, self.ids, self.name);
             let _ = self.ctx.run(input, |ctx| {
                 CentralPanel::default().frame(Frame::NONE).show(ctx, |ui| {
-                    let width = LEMON_SAMPLER.size.0 as f32;
+                    let sampler = named(name);
+                    let width = sampler.size().0 as f32;
                     let content = Rect::from_min_size(Pos2::ZERO, vec2(width, 500.0));
-                    assert!(show(ui, content, channel, module, &LEMON_SAMPLER, card));
+                    assert!(show(ui, content, channel, module, sampler, card));
                 });
             });
         }
@@ -611,7 +628,7 @@ mod tests {
     /// Issue #52: on a phone, a list's menu takes the row tapped, and the editor the next tap.
     #[test]
     fn a_finger_picks_a_list_row_and_taps_on() {
-        let mut rig = Rig::new();
+        let mut rig = Rig::new("Lemon Sampler");
         let editor = rig.card.editor;
         // Time stretching's `Mode` list (`view::sample_tab`).
         let mode = centre(view::rr(456.0, 548.0, 102.0, 122.0));
@@ -637,5 +654,40 @@ mod tests {
             matches!(embed::modal(editor), Some(Modal::Menu { .. })),
             "the next tap is the editor's"
         );
+    }
+
+    /// A text field the editor opens a type-in for at a press (Lemon Formula Controller's
+    /// formula) keeps it open past that press's release, for the finger's typing.
+    #[test]
+    fn a_text_fields_type_in_outlasts_the_tap_that_opened_it() {
+        let mut rig = Rig::new("Lemon Formula Controller");
+        let editor = rig.card.editor;
+        // The formula field (`lemon_small_fx::formula_controller`: x 192…467, y 58…81), held a few frames.
+        let at = pos2(330.0, 70.0);
+        rig.frame(finger(TouchPhase::Start, at));
+        rig.frame(vec![]);
+        rig.frame(vec![]);
+        rig.frame(finger(TouchPhase::End, at));
+        for _ in 0..3 {
+            rig.frame(vec![]);
+        }
+        assert!(matches!(embed::modal(editor), Some(Modal::TypeIn { .. })));
+        // It has the keys: a formula, then Enter.
+        let enter = Event::Key {
+            key: Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        };
+        rig.frame(vec![Event::Text("t".into())]);
+        rig.frame(vec![enter]);
+        rig.frame(vec![]);
+        assert_eq!(embed::modal(editor), None, "Enter answered it");
+        // The editor took it: the next type-in starts from it.
+        rig.frame(finger(TouchPhase::Start, at));
+        rig.frame(vec![]);
+        let typed = matches!(embed::modal(editor), Some(Modal::TypeIn { text, .. }) if text == "t");
+        assert!(typed, "{:?}", embed::modal(editor));
     }
 }

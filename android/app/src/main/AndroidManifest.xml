@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+    <!-- Recording; asked for the first time the app needs the microphone. Phones without one still install it. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <application
         android:allowBackup="false"
         android:icon="@drawable/honeydew"

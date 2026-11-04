@@ -713,7 +713,7 @@ fn the_rack_menu_enables_load_drumset_load_and_save_rack_preset_clear_rack_and_t
 #[test]
 fn the_card_menu_has_two_columns_with_every_item_enabled() {
     let cells = |minimized| -> Vec<(usize, usize, String, bool)> {
-        card_menu(minimized, 6, true)
+        card_menu(minimized, 6, true, false)
             .into_iter()
             .map(|i| (i.col, i.row, i.label.into_owned(), i.disabled))
             .collect()
@@ -1441,7 +1441,7 @@ fn the_level_popup_hangs_from_the_icon_centre_and_moves_up_to_stay_on_screen() {
 #[test]
 fn instrument_card_menus_add_set_range_or_set_first_note() {
     let row = |type_id, full, row| {
-        card_menu(false, type_id, full)
+        card_menu(false, type_id, full, false)
             .into_iter()
             .find(|i| (i.col, i.row) == (0, row))
             .map(|i| (i.id, i.label.into_owned(), i.disabled))
@@ -1468,9 +1468,9 @@ fn instrument_card_menus_add_set_range_or_set_first_note() {
     assert_eq!(row(33, false, 5), None, "never on a Slicer");
     // Effects keep the nine items.
     assert_eq!(row(6, true, 4), None);
-    assert_eq!(card_menu(false, 6, false).len(), 9);
-    assert_eq!(card_menu(false, 0, true).len(), 10);
-    assert_eq!(card_menu(false, 0, false).len(), 11);
+    assert_eq!(card_menu(false, 6, false, false).len(), 9);
+    assert_eq!(card_menu(false, 0, true, false).len(), 10);
+    assert_eq!(card_menu(false, 0, false, false).len(), 11);
     // `Set Range` starts a key-learn, panel state: the rack is unchanged. `Set Full Range` resets the range.
     let mut r = rack();
     assert_eq!(apply(&mut r, 2, CardAction::SetRange), Outcome::Nothing);
@@ -1484,7 +1484,7 @@ fn instrument_card_menus_add_set_range_or_set_first_note() {
     assert_eq!(r, rack());
     // All items are always enabled.
     let disabled = |type_id, action| {
-        let items = card_menu(false, type_id, true);
+        let items = card_menu(false, type_id, true, false);
         items
             .into_iter()
             .find(|i| i.id == Some(action))

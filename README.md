@@ -92,6 +92,13 @@ Plugin settings are saved with the project, and their controls can be automated.
 
 **Built-in plugins, on every platform:** Lemon Studio's Lemon Trio and Lemon Sampler are under SYNTH, and Lemon Parametric EQ under FILTER. Their own controls show right in the rack card, on the web and Android too. If you have them installed separately, Honeydew uses the built-in ones. On the web, Lemon Sampler's time stretching only resamples.
 
+**Built-in effects:** Lemon Studio's small effects (Lemon Soft Clipper, Fast Distortion, Balance, Stereo Enhancer, Transient Processor, Chorus, Stereo Shaper, Filter, Flanger and Phaser), Lemon Delay, Lemon Vocoder, the multiband maximiser Press and the pattern filter Pulp Filter, in their sections of the Modules browser. Pulp Filter's patterns follow the song's tempo and position. Lemon Vocoder's carrier is the channel its card's `Sidechain` menu picks.
+**Controllers:** Lemon Peak Controller (a peak follower and LFO) and Lemon Formula Controller (a formula over time and its knobs), under MISC, make no sound of their own: their output drives a param of the song. Touch the param to drive (any automatable control, on any channel), then pick `Link recent control` in the controller card's ≡ menu; `Clear target` unlinks it. While the song plays the param follows the output, smoothed, and its control shows it. The link is saved with the song.
+
+**Tesla**, Lemon Studio's audio editor and recorder, is under MISC: put it on a channel's rack to record what reaches it, then edit the take in its card. On Android and the web its `Save sample as` goes to the user folder's My Recordings. Sending a sample to the playlist, a channel or a new Lemon Slicer channel works only in Lemon Studio. On the web its time stretch and pitch shift only resample.
+
+Also under SYNTH: Citrus, a six-operator FM synth; Lemon Drum Sampler, with 32 pads (bank A on the General MIDI drum keys, pad 1 on C#3; bank B from C5 up); and Lemon Slicer, which cuts a loop into slices that play from C5 up, listed just below Honeydew's own Slicer. On Android and the web their Load buttons open Honeydew's sample picker. Put them on an Instrument channel and play the pads or slices from the piano roll.
+
 **Where Honeydew looks:**
 
 - **Linux:** `~/.vst3`, `~/.vst` and `~/.clap`, the same folders under `/usr/lib` and `/usr/local/lib`, and `VST_PATH` / `CLAP_PATH`.
@@ -166,7 +173,7 @@ cargo run --release
 The sound library lives in `sounds/`, split into 90 MB parts to stay under GitHub's file size limit. To rebuild it from the raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.4.8
+tools/release-content.sh 0.4.9
 ```
 
 Commit the updated `sounds/honeydew-sounds.zip.*` parts and `sounds/release.txt` (the library's version: the app warns when an installed library is older) with your changes. Add `--web` to also build the web ZIP. Tagged releases include the sounds automatically.
@@ -199,7 +206,7 @@ tools/web-dist.sh --zip    # also write target/honeydew-web-<version>.zip
 
 ### Android
 
-The Android version plays, saves and exports songs into its Honeydew folder, which also shows in the Files app, so you can copy songs, renders and samples in and out there. SONGS → Import opens a song, archive, MIDI or FLP file from anywhere the system picker reaches, like Downloads or an SD card, and Import folder copies a whole sound folder in. Microphone recording and MIDI devices aren't supported yet, and uninstalling the app deletes the Honeydew folder with your songs.
+The Android version plays, saves and exports songs into its Honeydew folder, which also shows in the Files app, so you can copy songs, renders and samples in and out there. SONGS → Import opens a song, archive, MIDI or FLP file from anywhere the system picker reaches, like Downloads or an SD card, and Import folder copies a whole sound folder in. Recording asks for the microphone the first time. A wired or USB headset's mic is used while it's plugged in, and you hear yourself (input monitoring) only in headphones, never through the phone's speaker. A call or leaving the app stops a recording and keeps what was recorded. MIDI devices aren't supported yet, and uninstalling the app deletes the Honeydew folder with your songs.
 
 You need Java 21, Android SDK platform 36, Build Tools 36.0.0, NDK 28.0.13004108, Python 3 and `unzip`. Set `ANDROID_HOME` to your SDK, then:
 
@@ -231,7 +238,8 @@ Honeydew is an independent project, not affiliated with or endorsed by Image-Lin
 ## License and credits
 
 - **Code:** [GPL-3.0-or-later](LICENSE). Copyright (c) 2026 The Honeydew contributors.
-- **Plugin hosting, FLP support, Lemon Reverb, Lemon Limiter, Lemon Trio, Lemon Sampler and Lemon Parametric EQ:** from Lemon Studio by ItsAlphaNeon; see [Code from Lemon Studio](#code-from-lemon-studio) below.
+- **Plugin hosting, FLP support, Lemon Reverb, Lemon Limiter, Lemon Trio, Lemon Sampler, Lemon Parametric EQ, Citrus, Lemon Drum Sampler and Lemon Slicer:** from Lemon Studio by ItsAlphaNeon; see [Code from Lemon Studio](#code-from-lemon-studio) below.
+- **Lemon Studio's small effects, Lemon Delay, Lemon Vocoder, Press and Pulp Filter:** from Lemon Studio by ItsAlphaNeon too.
 - **Font:** Open Sans SemiCondensed SemiBold, SIL Open Font License 1.1 ([`assets/fonts/OFL.txt`](assets/fonts/OFL.txt)).
 - **Icon:** a derivative of "Melon" by afitrose, licensed as Free for commercial use WITH ATTRIBUTION.
 - **Sounds:** the bundled instruments, drum kits, one-shots, effects, loops and waveforms come from the sources below. Full notices are in the app under SETTINGS → Sound credits.
@@ -311,6 +319,11 @@ GPL-3.0-or-later. Each file keeps its original copyright and license header, and
 - **Lemon Sampler** (`vendor/lemon-studio/lemon-sampler/`): Lemon Studio's sampler, built in with its own editor.
 - **Lemon Parametric EQ** (`vendor/lemon-studio/lemon-parametric-eq-2/`): Lemon Studio's seven-band EQ, built in with its
   own editor.
+- **Lemon Studio's small effects, Lemon Delay, Lemon Vocoder, Press and Pulp Filter** (`vendor/lemon-studio/lemon-small-fx/`,
+  its ten plugins' folders, `lemon-delay/`, `lemon-vocoder/`, `press/`, `pulp-filter/`): built in with their own editors.
+- **Lemon Peak Controller and Lemon Formula Controller** (`vendor/lemon-studio/lemon-peak-controller/`,
+  `lemon-formula-controller/`, with `lemon-small-fx/`): Lemon Studio's controllers, built in with their own editors.
+- **Tesla** (`vendor/lemon-studio/tesla/`): Lemon Studio's audio editor and recorder, built in with its own editor.
 - **Plugin UI and support code** (`vendor/lemon-studio/`): the editor kit, theme, drawing and fonts these three plugins use
   (`os-plugkit`, `os-ui`, `os-theme`), the host link and data model (`os-hostlink`, `os-model`), and the DSP and path
   helpers (`os-dsp`, `os-paths`).

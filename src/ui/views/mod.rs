@@ -163,6 +163,9 @@ pub enum Overlay {
         module: i32,
         files: Vec<std::path::PathBuf>,
     },
+    /// The sample picker of the playlist clip's `More...` `Replace sample...` (issue #64): its last
+    /// pick goes to every clip playing this clip's sample once its close is confirmed ([`sample_picker::show_replace`]).
+    ReplaceSamplePicker(ClipKey),
 }
 
 /// `Link to MIDI CC`'s prompt.
@@ -776,6 +779,9 @@ impl Slots {
             } => {
                 let state = &mut self.instrument_builder;
                 instrument_builder::show(state, ui, app, (*channel, *module), files)
+            }
+            Overlay::ReplaceSamplePicker(key) => {
+                sample_picker::show_replace(&mut self.sample_picker, ui, app, *key)
             }
         }
     }

@@ -28,10 +28,11 @@
 //! ([`RackPanel::key_played`]); the SENDS section edits the channel's `SEND`s by the channels the host names
 //! ([`RackPanel::targets`], [`send_targets`]); `Create FX Channel` asks the host ([`create_send`]).
 //!
-//! Honeydew's own: a dynamics card (a module that [takes a key](honeydew_audio::takes_key)) has `Sidechain` in its ≡
-//! menu, which picks the channel whose output keys its detector, or `Sidechain: Off` ([`RackPanel::key_menu`]); its
-//! header shows the source's name. A Modulator's ≡ menu adds `Modulate recent control` and `Clear target`, which set
-//! the param it drives ([`retarget`], a final song edit and so an undo step); its header shows the target's name.
+//! Honeydew's own: a dynamics card (a module that [takes a key](crate::song::ModuleInstance::takes_key), Lemon
+//! Vocoder's too) has `Sidechain` in its ≡ menu, which picks the channel whose output keys its detector, or `Sidechain:
+//! Off` ([`RackPanel::key_menu`]); its header shows the source's name. A Modulator's ≡ menu adds `Modulate recent
+//! control` and `Clear target`, which set the param it drives ([`retarget`], a final song edit and so an undo step); its
+//! header shows the target's name.
 
 use std::collections::HashMap;
 
@@ -499,7 +500,8 @@ pub enum CardAction {
     SetFullRange,
     /// `Sidechain`: a module that takes a key; opens its source menu ([`RackPanel::key_menu`]).
     Sidechain,
-    /// A Modulator's `Modulate recent control` and `Clear target` ([`modulator_menu`]).
+    /// A Modulator's `Modulate recent control` (a controller's `Link recent control`) and `Clear target`
+    /// ([`modulator_menu`]).
     Modulate,
     ClearTarget,
     /// A DW Sampler's `New from samples…`: the instrument builder ([`builder_item`]).
@@ -836,8 +838,8 @@ fn attaches(module: &ModuleInstance, notes: bool) -> bool {
 
 /// The ≡ menu of a card of module type `type_id`, two columns, every item enabled. An instrument's adds `Set Range`
 /// (`Set First Note` on a Slicer) at the foot of the first column, and under it `Set Full Range` while its key range is
-/// not `full` (never on a Slicer); a module that takes a key adds `Sidechain` there.
-fn card_menu(minimized: bool, type_id: u16, full: bool) -> Vec<PopupItem<CardAction>> {
+/// not `full` (never on a Slicer); a module that takes a key (`keyed`) adds `Sidechain` there.
+fn card_menu(minimized: bool, type_id: u16, full: bool, keyed: bool) -> Vec<PopupItem<CardAction>> {
     use CardAction::*;
     let minimize = if minimized { "Maximize" } else { "Minimize" };
     let (set_range, full_range) = match instrument(type_id) {
@@ -846,7 +848,7 @@ fn card_menu(minimized: bool, type_id: u16, full: bool) -> Vec<PopupItem<CardAct
             Some((SetRange, 0, 4, "Set Range")),
             (!full).then_some((SetFullRange, 0, 5, "Set Full Range")),
         ),
-        None if honeydew_audio::takes_key(type_id) => (Some((Sidechain, 0, 4, "Sidechain")), None),
+        None if keyed => (Some((Sidechain, 0, 4, "Sidechain")), None),
         None => (None, None),
     };
     [
@@ -872,15 +874,21 @@ fn card_menu(minimized: bool, type_id: u16, full: bool) -> Vec<PopupItem<CardAct
 }
 
 /// A Modulator's ≡ menu items after [`card_menu`]'s, under `Sidechain`: `Modulate recent control`, enabled while there
-/// is a recent control, and `Clear target`, while it has one.
-fn modulator_menu(recent: bool, target: bool) -> [PopupItem<CardAction>; 2] {
+/// is a recent control, and `Clear target`, while it has one. A `controller` plugin's (0.4.9: its output
+/// drives the param, `audio_engine::modulation`), which has no `Sidechain`, are `Link recent control` and `Clear
+/// target` there.
+fn modulator_menu(recent: bool, target: bool, controller: bool) -> [PopupItem<CardAction>; 2] {
     let item = |action, row, label, enabled: bool| PopupItem {
         disabled: !enabled,
         ..PopupItem::new(action, 0, row, label)
     };
+    let (row, link) = match controller {
+        true => (4, "Link recent control"),
+        false => (5, "Modulate recent control"),
+    };
     [
-        item(CardAction::Modulate, 5, "Modulate recent control", recent),
-        item(CardAction::ClearTarget, 6, "Clear target", target),
+        item(CardAction::Modulate, row, link, recent),
+        item(CardAction::ClearTarget, row + 1, "Clear target", target),
     ]
 }
 
@@ -1414,7 +1422,9 @@ impl RackPanel {
         match lemon_plugin(module) {
             Some(b) if !module.minimized && u > 0.0 => {
                 // The body is 4 px narrower than the column and its rect 1 px shorter than its rows ([`content_rect`]).
-                2.0 + (lemon_card::body_height(b.size, column - 4.0) + 1.0) / u
+                let card = self.lemon_cards.get(&(self.channel, module.instance_id));
+                let size = lemon_card::shown_size(card, b);
+                2.0 + (lemon_card::body_height(size, column - 4.0) + 1.0) / u
             }
             _ => card_height(module),
         }
@@ -2645,10 +2655,13 @@ impl RackPanel {
                 self.card_menu = None;
                 return;
             };
-            let mut items = card_menu(module.minimized, module.type_id, full_range(module));
-            if module.type_id == honeydew_audio::modulator::MODULATOR {
+            let keyed = module.takes_key();
+            let mut items = card_menu(module.minimized, module.type_id, full_range(module), keyed);
+            let plugin = module.file.plugin.as_deref();
+            let controller = plugin.is_some_and(crate::plugins::builtin::controller);
+            if module.type_id == honeydew_audio::modulator::MODULATOR || controller {
                 let target = self.modulations.iter().any(|(m, _)| *m == id);
-                items.extend(modulator_menu(self.recent.is_some(), target));
+                items.extend(modulator_menu(self.recent.is_some(), target, controller));
             }
             if instrument(module.type_id) == Some(SynthKind::DwSampler) {
                 items.extend(builder_item(full_range(module)));

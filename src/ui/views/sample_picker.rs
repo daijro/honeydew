@@ -13,6 +13,8 @@
 //! - A tap on an empty cell of the current audio track ([`show_track`]): the first pick makes an audio clip there.
 //!   An audio file dropped on the playlist (`ui::file_drag`) decodes and makes its clip the same way ([`drop_decode`],
 //!   [`drop_clip`]).
+//! - `Replace sample...` in the playlist clip's `More...` ([`show_replace`], issue #64): every clip playing the clip's
+//!   sample takes the pick, once confirmed.
 //! - A module's sample ([`show_module`]): `Custom` picked in a 3x Osc Shape menu, or the Slicer's `LOAD SAMPLE` or a
 //!   tap on its waveform. The root lists `My Files`, then our own factory folder (3x Osc `Shapes`, Slicer `Loops`:
 //!   listed from code, rendered only when played) and imported content's (`3xOsc Shapes`, `Loop Samples`) when it
@@ -54,7 +56,8 @@ use crate::flm::chunk::{ContentPath, ContentRoot};
 use crate::panels::inst::{slicer, three_osc};
 use crate::project_files::{DRUM_SAMPLES, ProjectFiles, SAMPLE_EXTS, SAMPLES_FOLDER, load_pick};
 use crate::sample_cache::{self, SampleCache, SampleKey, Waveform, disk_reader};
-use crate::song::{DrumKit, Lane, LaneKind, ModuleInstance, SamplerSlot, Song};
+use crate::song::{Clip, DrumKit, Lane, LaneKind, ModuleInstance, PPQ, SamplerSlot, Song};
+use crate::ui::clips::ClipRef;
 use crate::ui::drums::PAD_COUNT;
 use crate::ui::picker_preview::{Play, SampleStrip};
 use crate::ui::preset_picker::{PickerAction, PresetPicker};
@@ -84,6 +87,18 @@ pub struct State {
     /// The picker was closed while its pick decodes: it stays, drawing nothing and taking every click, until the pick
     /// lands.
     closing: bool,
+    /// `Replace sample...`'s last pick and its file's tempo, until the picker closes ([`show_replace`]).
+    picked: Option<(PathBuf, Option<f32>)>,
+    /// `Replace sample...`'s pick once its picker closed, for the app to confirm.
+    pub(crate) replace: Option<Replace>,
+}
+
+/// `Replace sample...`'s pick ([`show_replace`]): the clip whose sample it replaces, the file and its tempo.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Replace {
+    pub key: ClipKey,
+    pub path: PathBuf,
+    pub tempo: Option<f32>,
 }
 
 impl State {
@@ -114,7 +129,7 @@ fn opening(state: &mut State, ui: &egui::Ui) -> bool {
     let pass = ui.ctx().cumulative_pass_nr();
     if state.pass + 1 != pass {
         state.picker = None;
-        state.made = None;
+        (state.made, state.picked) = (None, None);
         (state.loading, state.closing) = (None, false);
     }
     state.pass = pass;
@@ -490,6 +505,122 @@ pub fn show_clip(
         }
     }
     landed(state, app.audio)
+}
+
+/// Issue #64: the picker of the playlist clip's `More...` `Replace sample...` for
+/// the audio clip `key`, as [`show_clip`]'s, but a pick only plays in the sample strip, so picks can be compared. Its
+/// close (the X, a click outside, Escape) hands the last pick that decoded to the app ([`State::replace`]), which
+/// marks every clip playing the clip's sample on the playlist, asks `Replace the sample in N clips?`, and on `Replace` gives them the
+/// file ([`replace_sample`]), one undo step. Only this clip's sample stays the sample row's icon ([`show_clip`]). The
+/// clip being gone closes it with no pick.
+pub fn show_replace(
+    state: &mut State,
+    ui: &mut egui::Ui,
+    app: &mut AppCtx,
+    key: ClipKey,
+) -> Option<Nav> {
+    opening(state, ui);
+    if key.clip(app.song).is_none() {
+        close(state, app.audio);
+        return Some(Nav::Close);
+    }
+    let slot = |song: &Song, path: &Path, files: &ProjectFiles| {
+        clip_pick(
+            key.clip(song)?.file.sample.as_deref().cloned(),
+            song,
+            path,
+            files,
+        )
+    };
+    let nav = match pick(state, ui, app, picker, (true, false), slot) {
+        Shown::Open => return None,
+        Shown::Closed => Some(Nav::Close),
+        Shown::Picked(path, decoded) => {
+            let tempo = decoded.wave.as_ref().and_then(|w| w.data.meta.tempo);
+            state.picked = decoded.error.is_none().then_some((path, tempo));
+            app.audio.samples.forget_missing();
+            app.audio.samples.absorb(decoded.samples);
+            landed(state, app.audio)
+        }
+    };
+    if nav.is_some() {
+        let picked = state.picked.take();
+        state.replace = picked.map(|(path, tempo)| Replace { key, path, tempo });
+    }
+    nav
+}
+
+/// The audio clips of `song` playing the sample `key` ([`SampleKey::of_slot`]), in song order.
+pub(crate) fn playing(song: &Song, key: &SampleKey) -> Vec<ClipRef> {
+    let plays = |c: &&Clip| {
+        c.file
+            .sample
+            .as_deref()
+            .and_then(SampleKey::of_slot)
+            .as_ref()
+            == Some(key)
+    };
+    let mut clips = Vec::new();
+    for (channel, c) in song.channels.iter().enumerate() {
+        for (lane, l) in (c.lanes.iter().enumerate()).filter(|(_, l)| l.kind == LaneKind::Audio) {
+            let at = |c: &Clip| ClipRef {
+                channel,
+                lane,
+                id: c.id,
+            };
+            clips.extend(l.clips.iter().filter(plays).map(at));
+        }
+    }
+    clips
+}
+
+/// `Replace sample...`'s `Replace` ([`show_replace`]): every audio clip of `song` playing the sample `from` takes the
+/// file at `path` as a clip's own pick gives it ([`load_clip_sample`]: SYNC by the file's `tempo`; its folder and rate
+/// are the loader's). What is the clip's stays: its place, its length (one that followed its sample is pinned to what
+/// it showed), its Level, Pan, Speed, Pitch and REV, its envelopes, and its channel's effects and automation. Each is
+/// then fitted to its new sample ([`fit_audio_clip`]: @28 and the loop, which `samples` loads), and a content offset at
+/// or past the new sample's end goes back to its start (clamped to the end, it would play nothing until its loop comes
+/// round). Returns whether any clip took the file: none does for a file outside the user and content folders.
+pub(crate) fn replace_sample(
+    song: &mut Song,
+    from: &SampleKey,
+    path: &Path,
+    files: &ProjectFiles,
+    tempo: Option<f32>,
+    samples: &mut SampleCache,
+) -> bool {
+    let (bpm, bar, clips) = (
+        song.tempo_bpm,
+        song.time_sig.bar_beats(),
+        playing(song, from),
+    );
+    for &r in &clips {
+        let Some(clip) = sample_row::clip_mut(song, r.into()) else {
+            continue;
+        };
+        let shown = clip.visible_ticks() / f64::from(PPQ);
+        let Some(slot) = clip.file.sample.as_deref_mut() else {
+            continue;
+        };
+        // The same file for each: the first one not taking it is the first clip, unchanged.
+        if !load_clip_sample(slot, path, files, tempo, bpm) {
+            return false;
+        }
+        if clip.visible_len_beats <= 0.0 {
+            clip.visible_len_beats = shown;
+        }
+    }
+    samples.load_live(song, song, &sample_cache::reader(files));
+    for &r in &clips {
+        if let Some(clip) = sample_row::clip_mut(song, r.into()) {
+            fit_audio_clip(clip, samples, bpm, bar);
+            // ponytail: the offset is source time, the length Speed-scaled; exact at the centred Speed.
+            if clip.offset_beats >= clip.file.source_len_beats {
+                clip.offset_beats = 0.0;
+            }
+        }
+    }
+    !clips.is_empty()
 }
 
 /// Draws the picker a tap on an empty cell of the current audio track opens, for `channel`'s audio lane `lane` at song

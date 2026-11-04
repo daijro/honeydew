@@ -108,6 +108,23 @@ impl ProjectFiles {
         }
     }
 
+    /// A file a built-in plugin's editor saved where there is no save dialog (Android, the web;
+    /// `os_plugkit::save_file`), `path` its proposed name: kept in the user's [`RECORDINGS_FOLDER`] as `Import` keeps
+    /// one ([`Self::keep_audio`]), under that name or a free `name (n)`, nothing overwritten. Returns where it is kept.
+    pub fn keep_saved(&mut self, path: &Path, bytes: Vec<u8>) -> Option<PathBuf> {
+        let dir = match self.recordings_dir() {
+            Some(Ok(dir)) => dir,
+            _ => self
+                .user_dir()
+                .unwrap_or(Path::new(""))
+                .join(RECORDINGS_FOLDER),
+        };
+        let name = Path::new(path.file_name()?);
+        let kept = self.keep_audio(&dir, name, bytes)?;
+        self.flash = Some(format!("Saved to {RECORDINGS_FOLDER}"));
+        Some(kept)
+    }
+
     /// An audio file dropped on the window (the web hands its bytes, the desktop its path), kept in the user's
     /// [`SAMPLES_FOLDER`] as `Import` keeps a picked one ([`Self::keep_audio`]), so that songs refer to the copy. Returns
     /// where it is kept; a file that does not read shows [`IMPORT_FAILED`] and gives `None`.

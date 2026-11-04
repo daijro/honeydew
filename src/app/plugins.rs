@@ -82,5 +82,9 @@ impl HoneydewApp {
         if let Some(after) = plugins::idle_after() {
             ctx.request_repaint_after(after);
         }
+        // What a built-in plugin's editor saved where there is no save dialog (Tesla's `Save`, on Android and the web).
+        for (path, bytes) in os_plugkit::embed::take_saved() {
+            self.files.keep_saved(&path, bytes);
+        }
     }
 }

@@ -725,8 +725,11 @@ impl MainScreen {
         // finger: its beat clamped to [view-left beat, song end] and rounded to the Snap unit; the drop seeks there,
         // and the playhead stays on it until the output reports a tick in that beat, or for a quarter second
         // (`PlayheadKnob::line_x`).
+        // The upper clamp is never under one bar (the time signature's), so that with no
+        // clips the knob moves between bar 1 and bar 2 rather than locking to 0. Ruling: a song ending inside the
+        // first bar keeps that bar too. Rendering and export keep the song's own end.
         let tick = audio.map(|s| s.transport_tick);
-        let end = end * f64::from(PPQ);
+        let end = end.max(f64::from(app.song.time_sig.bar_beats())) * f64::from(PPQ);
         let ruler_at = RangeRuler {
             playhead: tick.map(|t| t as f64),
             ..ruler_at

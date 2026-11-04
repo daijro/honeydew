@@ -55,7 +55,7 @@ use crate::ui::piano_roll::notes::{Snap, auto_grid};
 use crate::ui::popup::{self, PopupItem};
 use crate::ui::preview::ClipKey;
 use crate::ui::step_seq::pop_in;
-use crate::ui::views::{AppCtx, Nav, Overlay};
+use crate::ui::views::{AppCtx, Nav, Overlay, message};
 use crate::ui::widgets::truncated;
 use crate::ui::{UiCtx, gesture, primary_down_live};
 
@@ -331,6 +331,9 @@ pub struct Clips {
     pub(crate) left_calm: Option<bool>,
     /// What the last `Delete` left empty, for the app to ask about after the frame ([`emptied`]).
     pub(crate) emptied: Option<Emptied>,
+    /// Issue #64: the clips `Replace sample...` asks about, while it asks (the app keeps it). Each
+    /// shows over the question's dim, outlined in `text` ([`message::lift_layer`]); the other clips stay dimmed.
+    pub(crate) marked: Vec<ClipRef>,
 }
 
 /// The channels and tracks a playlist `Delete` left with no clip, by index: the app asks whether they go too.
@@ -612,17 +615,30 @@ impl Clips {
                 if look.current {
                     outline = Some((clip_box(rect, m), look.dimmed));
                 }
-                paint_clip(
-                    &painter,
-                    &app.cx,
-                    channel,
-                    &channel.lanes[r.lane],
-                    clip,
-                    wave.as_ref().map(|(source, wave)| (source, *wave)),
-                    look,
-                    clip_box(rect, m),
-                    axis,
-                );
+                let draw = |painter: &Painter| {
+                    let wave = wave.as_ref().map(|(source, wave)| (source, *wave));
+                    let lane = &channel.lanes[r.lane];
+                    paint_clip(
+                        painter,
+                        &app.cx,
+                        channel,
+                        lane,
+                        clip,
+                        wave,
+                        look,
+                        clip_box(rect, m),
+                        axis,
+                    );
+                };
+                draw(&painter);
+                // A marked clip again over the message's dim, outlined in `text` 2 px wide.
+                if self.marked.contains(&r) {
+                    let lifted = painter.clone().with_layer_id(message::lift_layer());
+                    draw(&lifted);
+                    let text = app.cx.theme.colors.text.to_color32();
+                    let stroke = Stroke::new(2.0 / m.ppp(), text);
+                    lifted.rect_stroke(clip_box(rect, m), m.u(CORNER), stroke, StrokeKind::Inside);
+                }
             }
             let response = ui.interact(
                 rect.intersect(grid),
@@ -878,8 +894,8 @@ impl Clips {
             let let_go = self.held.take().map(|(part, t)| (part, now, grow(now - t)));
             self.released = let_go.or(self.released);
         }
-        self.more_menu(ui, app);
-        button.or(nav).or(picker)
+        let more = self.more_menu(ui, app);
+        button.or(nav).or(picker).or(more)
     }
 
     /// Handle `part`'s animation now (as the other editor handles', e.g. the audio editor's stretch handle):
@@ -1087,7 +1103,7 @@ impl Clips {
     }
 
     /// Selects `clips`: one is the selected clip, with its handles; several are the group.
-    fn set_selection(&mut self, clips: Vec<ClipRef>) {
+    pub(crate) fn set_selection(&mut self, clips: Vec<ClipRef>) {
         self.quiet = false;
         (self.selected, self.group) = match clips.len() {
             1 => (clips.first().copied(), Vec::new()),
@@ -1579,12 +1595,13 @@ impl Clips {
         None
     }
 
-    /// The `More...` dropdown while it is open, for the selected clip or the group.
-    fn more_menu(&mut self, ui: &egui::Ui, app: &mut AppCtx) {
+    /// The `More...` dropdown while it is open, for the selected clip or the group. Returns `Replace sample...`'s
+    /// picker.
+    fn more_menu(&mut self, ui: &egui::Ui, app: &mut AppCtx) -> Option<Nav> {
         let targets = self.targets();
-        let (Some(center), false) = (self.more, targets.is_empty()) else {
+        let (Some(center), Some(&first)) = (self.more, targets.first()) else {
             self.more = None;
-            return;
+            return None;
         };
         let playhead = app.snapshot.map_or(0, |s| s.transport_tick);
         let clips: Vec<&Clip> = targets.iter().filter_map(|&r| find(app.song, r)).collect();
@@ -1623,6 +1640,8 @@ impl Clips {
         if edited {
             app.song_edited(true);
         }
+        (result.selected == Some(MoreOp::ReplaceSample))
+            .then(|| Nav::Open(Overlay::ReplaceSamplePicker(first.into())))
     }
 }
 
@@ -2809,9 +2828,12 @@ pub enum MoreOp {
     Combine,
     Mute,
     Unmute,
+    ReplaceSample,
 }
 
-/// The `More...` dropdown for the selected clip, one column, with the playhead at song tick `playhead`.
+/// The `More...` dropdown for the selected clip, one column, with the playhead at song tick `playhead`. Issue
+/// #64: one audio clip with a sample also lists `Replace sample...` last, which opens
+/// the sample picker for every clip playing that sample ([`crate::ui::views::sample_picker::show_replace`]).
 pub fn more_items(clips: &[&Clip], playhead: u64) -> Vec<PopupItem<MoreOp>> {
     let any = |f: &dyn Fn(&Clip) -> bool| clips.iter().any(|c| f(c));
     let one = (clips.len() == 1).then(|| clips[0]);
@@ -2828,6 +2850,11 @@ pub fn more_items(clips: &[&Clip], playhead: u64) -> Vec<PopupItem<MoreOp>> {
         (MoreOp::Unmute, "Unmute", any(&|c| c.muted)),
     ]
     .into_iter()
+    .chain(
+        (one.and_then(|c| c.file.sample.as_deref()))
+            .and_then(sample_cache::SampleKey::of_slot)
+            .map(|_| (MoreOp::ReplaceSample, "Replace sample...", true)),
+    )
     .enumerate()
     .map(|(row, (op, label, enabled))| PopupItem {
         disabled: !enabled,

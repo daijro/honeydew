@@ -374,13 +374,19 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 - Source: Lemon Studio (<https://github.com/ItsAlphaNeon/Lemon-Studio>), at the commit `vendor/lemon-studio/README.md`
   pins (`6e9c3b9d7c7cfa5a31dc2dc087358ba04eebc96e` at first): `plugins/lemon-3x-osc`, `plugins/lemon-sampler`,
   `plugins/lemon-parametric-eq-2`, the crates they use (`os-plugkit`, `os-ui`, `os-theme`, `os-hostlink`, `os-model`,
-  `os-dsp`, `os-paths`) and four files of `os-engine`.
+  `os-dsp`, `os-paths`) and four files of `os-engine`. Since 0.4.9 also `plugins/lemon-small-fx` and its ten plugins
+  (`plugins/lemon-soft-clipper` … `plugins/lemon-phaser`), `plugins/lemon-delay`, `plugins/lemon-vocoder`,
+  `plugins/press`, `plugins/pulp-filter`, `plugins/lemon-peak-controller` and `plugins/lemon-formula-controller`.
+- Also `plugins/tesla` (Tesla), from the same repository at the same commit, under the same terms.
+- Also (0.4.9): `plugins/citrus` (Citrus), `plugins/lemon-drum-sampler` (Lemon Drum Sampler) and `plugins/lemon-slicer`
+  (Lemon Slicer).
 - Copyright (C) 2026 ItsAlphaNeon, and thacer13 for parts of `os-engine`.
 - License: GPL-3.0-or-later, the license of Honeydew itself ([`LICENSE`](LICENSE)); every file keeps its copyright and
   SPDX header.
-- Modified: a copy lives in `vendor/lemon-studio`; Honeydew's changes are `vendor/lemon-studio/honeydew.patch`, listed in
-  that folder's `README.md` and marked `Honeydew (vendored change)` or `(vendored addition)` (the editors drawn into
-  Honeydew's window on every platform, the browser build without threads or C++).
+- Modified: a copy lives in `vendor/lemon-studio`; Honeydew's changes are `vendor/lemon-studio/honeydew.patch`, marked
+  `Honeydew (vendored change)` or `(vendored addition)`, and one uniform change to each plugin's editor made by
+  `tools/sync-lemon-plugins.sh` (`feature = "embed"`, `os_plugkit::park!`), all listed in that folder's `README.md` (the
+  editors drawn into Honeydew's window on every platform, the browser build without threads or C++).
 
 ## nih-plug (the built-in plugins' framework)
 
@@ -388,7 +394,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   and its derive macros.
 - License: ISC, reproduced below.
 - Modified: a copy lives in `vendor/nih-plug` without its VST3 and standalone wrappers; in the browser build its
-  background tasks run without a thread and it takes Lemon Studio's `lemon-web` editor window (`vendor/nih-plug/README.md`).
+  background tasks run without a thread and it takes Lemon Studio's `lemon-web` editor window, and on Windows it gives
+  an editor its window as an X11 window id (`vendor/nih-plug/README.md`).
 
 ```text
 ISC License

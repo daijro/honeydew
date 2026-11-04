@@ -11,13 +11,22 @@
 //!
 //! The engine reports each target's value as the last segment set it, NaN while stopped ([`Modulations::shown`]), so
 //! that its controls show it.
+//!
+//! **Controller links** (0.4.9). A plugin effect may be a source too: a
+//! controller (Lemon Peak Controller, Lemon Formula Controller) whose output 0 ([`AudioEffect::control`]) its target
+//! takes as its value, in place of its base, smoothed over [`SMOOTH_SECS`]; Modulators' offsets add to it. Saved as a
+//! Modulator's target is (`HDMd`).
 
 use honeydew_audio::AudioEffect;
 use honeydew_audio::device::{Modulated, ModuleKey};
 use honeydew_audio::modulator::MODULATOR;
 
 use super::{SongAudioEngine, position, strip_param};
+use crate::song::plugin::PLUGIN_EFFECT;
 use crate::song::{AutomationTarget, Song};
+
+/// A controller link's smoothing time: a one-pole that covers 63 % of a step in it.
+const SMOOTH_SECS: f32 = 0.01;
 
 /// A Modulator of the song wired to its target: its channel index and instance id, and its target's channel index and
 /// target ([`wired`]).
@@ -27,17 +36,18 @@ pub(super) struct Wire {
     pub target: AutomationTarget,
 }
 
-/// Each Modulator on its channel's rack whose target names a channel of the song. Whether the param exists is the
-/// engine's `initial` business ([`Modulations::new`]).
+/// Each Modulator (or plugin effect: a controller) on its channel's rack whose target names a channel of the song.
+/// Whether the param exists is the engine's `initial` business ([`Modulations::new`]).
 pub(super) fn wired(song: &Song) -> Vec<Wire> {
     let mut wires = Vec::new();
     for (c, ch) in song.channels.iter().enumerate() {
         for m in &ch.file.modulations {
             let modulator = ch.rack.get(m.modulator);
             let channel = song.channels.iter().position(|t| t.id == m.channel);
-            if let (Some(_), Some(channel)) =
-                (modulator.filter(|x| x.type_id == MODULATOR), channel)
-            {
+            if let (Some(_), Some(channel)) = (
+                modulator.filter(|x| matches!(x.type_id, MODULATOR | PLUGIN_EFFECT)),
+                channel,
+            ) {
                 wires.push(Wire {
                     source: (c, m.modulator),
                     channel,
@@ -57,6 +67,8 @@ struct Target {
     at: usize,
     /// Its Modulators' offsets, summed.
     sum: f32,
+    /// A controller's smoothed output, its value in place of the base.
+    driven: Option<f32>,
     /// The value last set here; NaN once the base was set since.
     sent: f32,
 }
@@ -64,8 +76,9 @@ struct Target {
 /// The engine's modulated params and their Modulators.
 #[derive(Default)]
 pub(super) struct Modulations {
-    /// Each Modulator: its channel, its instance id and its target's index in `targets`.
-    sources: Vec<(usize, i32, usize)>,
+    /// Each Modulator: its channel, its instance id, its target's index in `targets` and, for a controller, its
+    /// smoothed output (NaN until it has one).
+    sources: Vec<(usize, i32, usize, f32)>,
     targets: Vec<Target>,
     /// By target, its value as the last segment set it; NaN while not modulated (the engine's
     /// `AudioRenderer::modulated`).
@@ -95,6 +108,7 @@ impl Modulations {
                         param,
                         at,
                         sum: 0.0,
+                        driven: None,
                         sent: f32::NAN,
                     });
                     this.shown.push(Modulated {
@@ -108,7 +122,8 @@ impl Modulations {
                     this.targets.len() - 1
                 }
             };
-            this.sources.push((wire.source.0, wire.source.1, t));
+            this.sources
+                .push((wire.source.0, wire.source.1, t, f32::NAN));
         }
         this
     }
@@ -127,24 +142,41 @@ impl Modulations {
 }
 
 impl SongAudioEngine {
-    /// The start of a segment, before any rack runs: with `on`, each target at its base plus its Modulators' offsets as
-    /// their last segment left them; else, once, at its base. Sets only what changed.
-    pub(super) fn modulate(&mut self, on: bool) {
+    /// The start of a segment of `frames`, before any rack runs: with `on`, each target at its base (or its
+    /// controller's output, smoothed) plus its Modulators' offsets as their last segment left them; else, once, at its
+    /// base. Sets only what changed.
+    pub(super) fn modulate(&mut self, on: bool, frames: usize) {
         if !on && !self.modulation.on {
             return;
         }
         self.modulation.on = on;
         for t in &mut self.modulation.targets {
             t.sum = 0.0;
+            t.driven = None;
         }
-        for k in (0..self.modulation.sources.len()).filter(|_| on) {
-            let (channel, id, t) = self.modulation.sources[k];
-            let offset = (self.audio.effect(channel, id)).map_or(0.0, AudioEffect::modulation);
-            self.modulation.targets[t].sum += offset;
+        let step = 1.0 - (-(frames as f32) / (SMOOTH_SECS * self.sample_rate)).exp();
+        for source in &mut self.modulation.sources {
+            let (channel, id, t, held) = source;
+            let effect = self.audio.effect(*channel, *id);
+            match effect.and_then(AudioEffect::control).filter(|_| on) {
+                Some(v) => {
+                    *held = if held.is_nan() {
+                        v
+                    } else {
+                        *held + (v - *held) * step
+                    };
+                    self.modulation.targets[*t].driven = Some(*held);
+                }
+                None if on => {
+                    self.modulation.targets[*t].sum += effect.map_or(0.0, AudioEffect::modulation)
+                }
+                // Stopped: the next start takes the output as it is.
+                None => *held = f32::NAN,
+            }
         }
         for k in 0..self.modulation.targets.len() {
             let t = self.modulation.targets[k];
-            let value = (self.applied[t.at] + t.sum).clamp(0.0, 1.0);
+            let value = (t.driven.unwrap_or(self.applied[t.at]) + t.sum).clamp(0.0, 1.0);
             self.modulation.shown[k].value = if on { value } else { f32::NAN };
             if value.is_finite() && value != t.sent {
                 self.modulation.targets[k].sent = value;
@@ -255,6 +287,50 @@ mod tests {
             let expected = 0.5 - 0.5 * (std::f32::consts::TAU * t).sin();
             assert!((p - expected).abs() < 1e-3, "block {k}: {p} vs {expected}");
         }
+    }
+
+    /// A Lemon Peak Controller after B's MiniSynth, linked to B's Volume, sets it to its output
+    /// (the peak it follows), smoothed: down near 0 while B is quiet, up while a note plays. The link is saved.
+    #[test]
+    fn a_peak_controller_fed_a_burst_drives_its_linked_volume_and_the_link_is_saved() {
+        const VOLUME: AutomationTarget = AutomationTarget {
+            instance_id: 0,
+            param: 0,
+        };
+        let mut song = Song::default();
+        song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+        let b = song.channels[1].id;
+        let ch = &mut song.channels[1];
+        let uid = crate::plugins::builtin::named("Lemon Peak Controller").uid;
+        let id = crate::plugins::add(&mut ch.rack, b, uid, 1).unwrap();
+        ch.file.modulations.push(Modulation {
+            modulator: id,
+            channel: b,
+            target: VOLUME,
+        });
+        let read = crate::flm::read(&crate::flm::write(&song).unwrap()).unwrap();
+        assert_eq!(
+            read.channels[1].file.modulations,
+            song.channels[1].file.modulations
+        );
+        crate::plugins::sync(&read);
+        let mut engine = SongAudioEngine::new(&read, RATE).unwrap();
+        let base = value(&engine, VOLUME);
+        engine.play();
+        let quiet = values(&mut engine, 8192, VOLUME);
+        engine.note_on(1, 57, 1.0);
+        let loud = values(&mut engine, 8192, VOLUME);
+        let (low, high) = (
+            quiet[quiet.len() - 1],
+            loud.iter().copied().fold(0.0, f32::max),
+        );
+        assert!(low < 0.05 && low < base, "quiet: {quiet:?}");
+        assert!(high > low + 0.3, "loud: {loud:?}");
+        // Smoothed: no block jumps all the way at once.
+        assert!(
+            loud.windows(2).all(|w| (w[1] - w[0]).abs() < 0.3),
+            "{loud:?}"
+        );
     }
 
     #[test]

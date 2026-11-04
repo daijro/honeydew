@@ -13,8 +13,9 @@
 //!   ([`modal`]) and return `None`. When the user answers ([`answer`]), the input that opened it comes again, and this
 //!   time the call returns the answer; a chain (a menu's `Enter value...`, then the box) replays its earlier answers
 //!   first.
-//! - **Files come from the host** where the platform has no file dialog (Android, the browser): [`Window::open_file`]
-//!   asks it ([`Modal::OpenFile`]) as a menu does, and the host's own picker answers with a path.
+//! - **Files come from the host** where the platform has no file dialog (Android, the browser): the editors' file
+//!   dialog (`rfd`, which is `host-rfd` for them) asks it from their [`Window::dialog`] ([`open_file`],
+//!   [`Modal::OpenFile`]) as a menu does, and the host's own picker answers with a path.
 //! - Positions are the editor's device pixels, also for popups (`to_root` keeps them).
 
 use std::cell::{Cell, RefCell};
@@ -141,6 +142,8 @@ thread_local! {
     static PARKED: RefCell<HashMap<Parent, (Arc<State>, Box<dyn FnOnce()>)>> = RefCell::new(HashMap::new());
     /// This thread's editors ask the host for the files they open ([`host_files`]).
     static HOST_FILES: Cell<bool> = const { Cell::new(cfg!(any(target_arch = "wasm32", target_os = "android"))) };
+    /// The window whose [`Window::dialog`] runs, which [`open_file`] asks for.
+    static DIALOG: RefCell<Option<Window>> = const { RefCell::new(None) };
 }
 
 fn get(id: Parent) -> Option<Arc<State>> {
@@ -221,7 +224,7 @@ pub fn spawn(parent: Parent, size: (u32, u32), slot: &Slot, run: impl FnOnce(Win
     if let Ok(mut s) = slot.lock() {
         *s = Some(Waker(state.clone()));
     }
-    run(Window { id: parent, state: state.clone(), tick: Instant::now(), last: None });
+    run(Window { id: parent, state: state.clone(), tick: Instant::now(), last: None, ticked: false });
     Some(EditorThread { id: parent, state, slot: slot.clone() })
 }
 
@@ -240,12 +243,16 @@ impl Park {
 }
 
 /// The editor's window.
+#[derive(Clone)]
 pub struct Window {
     id: Parent,
     state: Arc<State>,
     tick: Instant,
     /// The input being handled, which a modal asks again with its answer.
     last: Option<Input>,
+    /// The last input was a tick: with nothing else waiting the editor parks before its next tick, so one that paints
+    /// for longer than a tick still hands the host its frame (it ticks at most once a [`pump`]).
+    ticked: bool,
 }
 
 impl Window {
@@ -274,12 +281,17 @@ impl Window {
                 r.left -= 1;
             }
             self.last = Some(e.clone());
+            self.ticked = false;
             return Some(e);
         }
         drop(i);
+        if std::mem::take(&mut self.ticked) {
+            return None;
+        }
         if self.state.woken.swap(false, Ordering::AcqRel) || self.tick.elapsed() >= TICK {
             self.tick = Instant::now();
             self.last = Some(Input::Tick);
+            self.ticked = true;
             return Some(Input::Tick);
         }
         None
@@ -311,9 +323,12 @@ impl Window {
         (x, y)
     }
 
-    /// Runs a desktop dialog (a file dialog) at once.
+    /// Runs a desktop dialog (a file dialog) at once; a file it asks the host for ([`open_file`]) is this window's.
     pub fn dialog<R: Send + 'static>(&self, f: impl FnOnce() -> R + Send + 'static) -> Option<R> {
-        Some(f())
+        let was = DIALOG.replace(Some(self.clone()));
+        let r = f();
+        DIALOG.set(was);
+        Some(r)
     }
 
     /// Files dropped on the editor: none come.
@@ -375,7 +390,7 @@ impl Window {
     }
 
     /// The file the host's own picker picked ([`Modal::OpenFile`]), as [`Self::type_in`].
-    pub fn open_file(&self) -> Option<String> {
+    fn open_file(&self) -> Option<String> {
         if crate::no_modal() {
             return None;
         }
@@ -414,6 +429,12 @@ impl Window {
     }
 }
 
+/// The file the host's own picker picked for the editor whose [`Window::dialog`] runs ([`Modal::OpenFile`]): the answer
+/// when the input that asked comes again with one, else `None` while the host shows its picker (and outside a dialog).
+pub fn open_file() -> Option<String> {
+    DIALOG.with_borrow(|w| w.as_ref().and_then(Window::open_file))
+}
+
 /// The command of the row `path` names in `def`.
 fn picked<C: Clone>(def: &MenuDef<C>, path: &[usize]) -> Option<C> {
     let (&last, subs) = path.split_last()?;
@@ -438,8 +459,8 @@ pub fn set_scale(id: Parent, scale: f32) {
     SCALES.lock().unwrap_or_else(|e| e.into_inner()).insert(id, scale);
 }
 
-/// Whether the editors of this thread ask the host for the files they open ([`Window::open_file`]) instead of showing
-/// a file dialog: where the platform has none (Android, the browser), or once [`set_host_files`] said so.
+/// Whether the editors of this thread ask the host for the files they open ([`open_file`]) instead of showing a file
+/// dialog: where the platform has none (Android, the browser), or once [`set_host_files`] said so.
 pub fn host_files() -> bool {
     HOST_FILES.get()
 }
@@ -447,6 +468,23 @@ pub fn host_files() -> bool {
 /// Makes the editors of this thread ask the host for files ([`host_files`]) or not: a desktop test's phone.
 pub fn set_host_files(on: bool) {
     HOST_FILES.set(on);
+}
+
+thread_local! {
+    /// The files this thread's editors saved where the host keeps the user's files ([`crate::save_file`]), oldest
+    /// first: the editors run on the host's thread, which takes them, so another thread's host (a test's) never does.
+    static SAVED: RefCell<Vec<(std::path::PathBuf, Vec<u8>)>> = const { RefCell::new(Vec::new()) };
+}
+
+pub(crate) fn keep_saved(path: &std::path::Path, bytes: Vec<u8>) {
+    SAVED.with_borrow_mut(|s| s.push((path.to_owned(), bytes)));
+    repaint();
+}
+
+/// The files this thread's editors saved since the last call ([`crate::save_file`]): the path they named (its file
+/// name is the file's) and the bytes. The host keeps each in its own folder.
+pub fn take_saved() -> Vec<(std::path::PathBuf, Vec<u8>)> {
+    SAVED.with_borrow_mut(std::mem::take)
 }
 
 /// Whether editor `id` is open.

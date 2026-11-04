@@ -357,6 +357,8 @@ pub(crate) struct PluginEffect {
     rate: u32,
     numerator: u16,
     reset: bool,
+    /// A controller plugin's output 0 as its last block left it ([`ExternalEffect::control`]).
+    control: Option<f32>,
 }
 
 impl PluginEffect {
@@ -372,6 +374,7 @@ impl PluginEffect {
             rate,
             numerator,
             reset: false,
+            control: None,
         }
     }
 }
@@ -384,6 +387,17 @@ impl ExternalEffect for PluginEffect {
     }
 
     fn process(&mut self, left: &mut [f32], right: &mut [f32], context: ProcessContext) {
+        self.process_keyed(left, right, None, context);
+    }
+
+    /// The key goes to the plugin's sidechain input (`os_host::Plugin::sidechain`).
+    fn process_keyed(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        key: Option<(&[f32], &[f32])>,
+        context: ProcessContext,
+    ) {
         let Some(mut plugin) = lock_plugin(&self.plugin) else {
             return;
         };
@@ -394,11 +408,16 @@ impl ExternalEffect for PluginEffect {
         if context.playing {
             plugin.transport_fx(&transport(&context, self.numerator));
         }
-        plugin.process_fx(self.rate, left, right);
+        plugin.process_fx_keyed(self.rate, left, right, key);
+        self.control = plugin.control_fx(0);
     }
 
     fn reset(&mut self) {
         self.reset = true;
+    }
+
+    fn control(&self) -> Option<f32> {
+        self.control
     }
 }
 

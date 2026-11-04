@@ -1,6 +1,6 @@
 [package]
 name = "honeydew"
-version = "0.4.8"
+version = "0.4.9"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
@@ -30,12 +30,33 @@ png = "0.18.1"
 # wasm32, so they add no package: deflate/inflate and the CRC-32 of the container.
 miniz_oxide = "0.9"
 crc32fast = "1"
-# Lemon Studio's own plugins (Lemon Trio, Lemon Sampler, Lemon Parametric EQ) built into the app on every platform,
-# hosted through Lemon Studio's CLAP host, their editors drawn into the rack cards (`vendor/lemon-studio/README.md`,
-# `src/plugins/builtin.rs`).
+# Lemon Studio's own plugins (Lemon Trio, Lemon Sampler, Lemon Parametric EQ) built into the
+# app on every platform, hosted through Lemon Studio's CLAP host, their editors drawn into the rack cards
+# (`vendor/lemon-studio/README.md`, `src/plugins/builtin.rs`). A new one is a line here and its crate in
+# `src/plugins/builtin.rs`'s `lemon_plugins!` list.
 lemon-3x-osc = { path = "vendor/lemon-studio/lemon-3x-osc", features = ["linked", "embed"] }
 lemon-sampler = { path = "vendor/lemon-studio/lemon-sampler", features = ["linked", "embed"] }
 lemon-parametric-eq-2 = { path = "vendor/lemon-studio/lemon-parametric-eq-2", features = ["linked", "embed"] }
+lemon-soft-clipper = { path = "vendor/lemon-studio/lemon-soft-clipper", features = ["linked", "embed"] }
+lemon-fast-distortion = { path = "vendor/lemon-studio/lemon-fast-distortion", features = ["linked", "embed"] }
+lemon-balance = { path = "vendor/lemon-studio/lemon-balance", features = ["linked", "embed"] }
+lemon-stereo-enhancer = { path = "vendor/lemon-studio/lemon-stereo-enhancer", features = ["linked", "embed"] }
+lemon-transient-processor = { path = "vendor/lemon-studio/lemon-transient-processor", features = ["linked", "embed"] }
+lemon-chorus = { path = "vendor/lemon-studio/lemon-chorus", features = ["linked", "embed"] }
+lemon-stereo-shaper = { path = "vendor/lemon-studio/lemon-stereo-shaper", features = ["linked", "embed"] }
+lemon-filter = { path = "vendor/lemon-studio/lemon-filter", features = ["linked", "embed"] }
+lemon-flanger = { path = "vendor/lemon-studio/lemon-flanger", features = ["linked", "embed"] }
+lemon-phaser = { path = "vendor/lemon-studio/lemon-phaser", features = ["linked", "embed"] }
+lemon-delay = { path = "vendor/lemon-studio/lemon-delay", features = ["linked", "embed"] }
+lemon-vocoder = { path = "vendor/lemon-studio/lemon-vocoder", features = ["linked", "embed"] }
+press = { path = "vendor/lemon-studio/press", features = ["linked", "embed"] }
+pulp-filter = { path = "vendor/lemon-studio/pulp-filter", features = ["linked", "embed"] }
+lemon-formula-controller = { path = "vendor/lemon-studio/lemon-formula-controller", features = ["linked", "embed"] }
+lemon-peak-controller = { path = "vendor/lemon-studio/lemon-peak-controller", features = ["linked", "embed"] }
+tesla = { path = "vendor/lemon-studio/tesla", features = ["linked", "embed"] }
+citrus = { path = "vendor/lemon-studio/citrus", features = ["linked", "embed"] }
+lemon-drum-sampler = { path = "vendor/lemon-studio/lemon-drum-sampler", features = ["linked", "embed"] }
+lemon-slicer = { path = "vendor/lemon-studio/lemon-slicer", features = ["linked", "embed"] }
 os-plugkit = { path = "vendor/lemon-studio/os-plugkit", features = ["embed"] }
 os-ui = { path = "vendor/lemon-studio/os-ui" }
 os-theme = { path = "vendor/lemon-studio/os-theme" }

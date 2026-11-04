@@ -301,7 +301,8 @@ pub struct ChannelFileState {
 }
 
 /// A Modulator's target (Honeydew's own, `honeydew_audio::modulator`): the param its signal moves, any automatable
-/// param of any channel. Saved in an `HDMd`, which FL Studio Mobile skips. One whose Modulator or target is gone does
+/// param of any channel. A controller plugin's link too (0.4.9; `crate::plugins::builtin::controller`):
+/// the param its output sets. Saved in an `HDMd`, which other readers skip. One whose Modulator or target is gone does
 /// nothing (ids are never reused).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Modulation {

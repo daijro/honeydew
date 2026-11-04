@@ -3,10 +3,13 @@
 use std::ffi::CString;
 use std::io::Read;
 use std::path::PathBuf;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 
 use android_activity::{AndroidApp, ndk::asset::Asset};
+
+use crate::audio_engine::RecordTap;
+use crate::recording::input::Mic;
 
 static ACTIVITY: Mutex<Option<AndroidApp>> = Mutex::new(None);
 static DISPLAY_DPI: AtomicU32 = AtomicU32::new(0);
@@ -23,6 +26,121 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onDisplayDpi(
     dpi: jni::sys::jfloat,
 ) {
     DISPLAY_DPI.store(dpi.to_bits(), Ordering::Relaxed);
+}
+
+/// The microphone permission (`RECORD_AUDIO`): not asked (or the last answer was no, already told), asking, allowed,
+/// denied.
+static MIC: AtomicU8 = AtomicU8::new(UNASKED);
+const UNASKED: u8 = 0;
+const ASKING: u8 = 1;
+const GRANTED: u8 = 2;
+const DENIED: u8 = 3;
+
+/// Whether the app may record. The first call asks (`HoneydewActivity.askMic`): allowed already, else the system's
+/// question shows and its answer comes back (`onMic`). A denial is told once; the next call asks again (after two
+/// denials Android answers at once, without the question).
+pub fn mic() -> Mic {
+    match MIC.load(Ordering::Acquire) {
+        GRANTED => Mic::Granted,
+        ASKING => Mic::Asking,
+        DENIED => {
+            let _ = MIC.compare_exchange(DENIED, UNASKED, Ordering::AcqRel, Ordering::Acquire);
+            Mic::Denied
+        }
+        _ => {
+            MIC.store(ASKING, Ordering::Release);
+            let mut granted = false;
+            let asked = with_activity(|env, activity| {
+                granted = env.call_method(activity, "askMic", "()Z", &[])?.z()?;
+                Ok(())
+            });
+            match asked {
+                Ok(()) if granted => {
+                    MIC.store(GRANTED, Ordering::Release);
+                    Mic::Granted
+                }
+                Ok(()) => Mic::Asking,
+                Err(err) => {
+                    eprintln!("microphone permission not asked: {err}");
+                    MIC.store(UNASKED, Ordering::Release);
+                    Mic::Denied
+                }
+            }
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onMic(
+    _env: jni::JNIEnv<'_>,
+    _class: jni::objects::JClass<'_>,
+    granted: jni::sys::jboolean,
+) {
+    MIC.store(
+        if granted != 0 { GRANTED } else { DENIED },
+        Ordering::Release,
+    );
+}
+
+/// Headphones are among the outputs (wired, USB or Bluetooth), as the Activity's device callback last said.
+static HEADPHONES: AtomicBool = AtomicBool::new(false);
+
+/// Whether headphones play the sound, not the phone's speaker: monitoring may sound then
+/// (`recording::input::may_monitor`).
+pub fn headphones() -> bool {
+    HEADPHONES.load(Ordering::Acquire)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onHeadphones(
+    _env: jni::JNIEnv<'_>,
+    _class: jni::objects::JClass<'_>,
+    on: jni::sys::jboolean,
+) {
+    HEADPHONES.store(on != 0, Ordering::Release);
+}
+
+/// The tap of the recording under way. No frame runs while the app is in the background, so an interruption ends the
+/// take from Java's thread by disarming it (`onInterrupted`), and the app's next frame stops the transport
+/// ([`interrupted`]).
+static RECORDING: Mutex<Option<Arc<RecordTap>>> = Mutex::new(None);
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+/// The recording under way, `tap` (each frame): while one runs, the app holds the audio focus
+/// (`HoneydewActivity.recording`), and a call, another app taking the focus, or the app leaving the screen ends its
+/// take there and then.
+pub fn recording(tap: Option<&Arc<RecordTap>>) {
+    let mut held = RECORDING.lock().expect("recording lock");
+    if held.as_ref().map(Arc::as_ptr) == tap.map(Arc::as_ptr) {
+        return;
+    }
+    *held = tap.cloned();
+    drop(held);
+    INTERRUPTED.store(false, Ordering::Release);
+    let on = tap.is_some();
+    let focus = with_activity(|env, activity| {
+        env.call_method(activity, "recording", "(Z)V", &[on.into()])
+            .map(drop)
+    });
+    if let Err(err) = focus {
+        eprintln!("audio focus not changed: {err}");
+    }
+}
+
+/// An interruption ended the recording's take since the last call.
+pub fn interrupted() -> bool {
+    INTERRUPTED.swap(false, Ordering::AcqRel)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onInterrupted(
+    _env: jni::JNIEnv<'_>,
+    _class: jni::objects::JClass<'_>,
+) {
+    if let Some(tap) = RECORDING.lock().ok().as_deref().and_then(Option::as_ref) {
+        tap.disarm();
+        INTERRUPTED.store(true, Ordering::Release);
+    }
 }
 
 /// What a document pick finishes with: the copy of the picked file, an error, or `None` when it was cancelled.

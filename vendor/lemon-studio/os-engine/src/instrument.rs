@@ -216,6 +216,13 @@ impl fmt::Debug for Slot {
 pub trait HostedEffect: Send {
     /// Processes `left.len()` frames at `rate` in place.
     fn process_fx(&mut self, rate: u32, left: &mut [f32], right: &mut [f32]);
+    // Honeydew (vendored addition): a sidechain.
+    /// [`Self::process_fx`] with `key` (left, right, as long as the block) at the plugin's sidechain input, if it has
+    /// one (`os_host::Plugin::sidechain`); the input gets silence without a key.
+    fn process_fx_keyed(&mut self, rate: u32, left: &mut [f32], right: &mut [f32], key: Option<(&[f32], &[f32])>) {
+        let _ = key;
+        self.process_fx(rate, left, right);
+    }
     /// Drops tails and delay lines (Stop).
     fn reset_fx(&mut self) {}
     /// [`Instrument::param`] for effects: parameter `index` to normalized `value`, `offset` frames into the next
@@ -230,6 +237,12 @@ pub trait HostedEffect: Send {
     /// [`Instrument::transport`] for effects: the song position during the next `process_fx` call.
     fn transport_fx(&mut self, info: &TransportInfo) {
         let _ = info;
+    }
+    /// Honeydew (vendored addition, upstream's since 6dc00dd): a controller plugin's output `k` (0..1) as its last
+    /// block left it, for the links that read it. `None`: no such output (yet).
+    fn control_fx(&self, k: usize) -> Option<f32> {
+        let _ = k;
+        None
     }
 }
 
