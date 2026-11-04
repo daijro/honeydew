@@ -556,6 +556,45 @@ pub fn set_length_selected(events: &mut [Event], sel: &[bool], len: f64) {
     events.copy_from_slice(&new);
 }
 
+/// How `Slice...` cuts a note (GitHub #62): into pieces of a grid size, or into this many equal parts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Slice {
+    Every(GridSize),
+    Into(u8),
+}
+
+/// `Slice...` (#62): each selected note becomes consecutive notes covering it, each
+/// keeping its key, velocity, pan and slide flag: pieces of the grid size (the last one what is left) or equal parts.
+/// The cuts fall on whole ticks, the i-th at round(i·piece) after the start, so rounding never adds up and the pieces
+/// sum to the note exactly (1/16T, 21⅓ ticks, cuts 21, 22, 21 …). No cut lies within half a tick of the end, and a
+/// note shorter than a tick a part is not cut, so a note no longer than a piece stays whole and no piece is empty.
+/// The pieces are selected; re-sorted.
+pub fn slice_selected(events: &mut Vec<Event>, sel: &mut Vec<bool>, by: Slice) {
+    sel.resize(events.len(), false);
+    let (mut out, mut out_sel) = (Vec::new(), Vec::new());
+    for (e, &s) in events.iter().zip(sel.iter()) {
+        let Some((pos, len, key)) = note(e).filter(|_| s) else {
+            out.push(*e);
+            out_sel.push(s);
+            continue;
+        };
+        let piece = match by {
+            Slice::Every(size) => size.ticks().unwrap_or(len),
+            Slice::Into(n) if len >= f64::from(n) => len / f64::from(n),
+            Slice::Into(_) => len,
+        };
+        let cuts = (1..).map(|i| pos + (f64::from(i) * piece).round());
+        let mut start = pos;
+        for end in cuts.take_while(|&c| c < pos + len - 0.5).chain([pos + len]) {
+            out.push(with(*e, start, end - start, key));
+            out_sel.push(true);
+            start = end;
+        }
+    }
+    (*events, *sel) = (out, out_sel);
+    sort(events, sel);
+}
+
 /// The flags of the notes a note-menu item acts on: the selection, or every note when nothing is selected.
 pub fn targets(events: &[Event], sel: &[bool]) -> Vec<bool> {
     if sel.contains(&true) {
@@ -852,13 +891,13 @@ fn window(clip: &Clip) -> Option<(f64, f64, f64, f64)> {
     ))
 }
 
-/// The content tick that plays at `song_tick`, if the clip plays then.
+/// The content tick of the clip's loop at `song_tick`: where the clip plays, the content it plays then; elsewhere the
+/// same loop folded on from the clip's start and offset, as the other editors fold the playhead (before 0.4.8 a ruler tap on content the song never plays left
+/// the playhead resting on the clip's start). `None` without a
+/// loop ([`Clip::loop_ticks`]).
 pub fn content_tick(clip: Option<&Clip>, song_tick: u64) -> Option<f64> {
-    let (start, lp, visible, offset) = window(clip?)?;
-    let rel = song_tick as f64 - start;
-    (0.0..visible)
-        .contains(&rel)
-        .then(|| (rel + offset).rem_euclid(lp))
+    let (start, lp, _, offset) = window(clip?)?;
+    Some((song_tick as f64 - start + offset).rem_euclid(lp))
 }
 
 /// A note of another channel drawn faintly behind the edited clip's notes, at the content tick it plays against.

@@ -1448,10 +1448,11 @@ fn the_rolls_playhead_is_the_transports_and_its_line_shows_stopped_and_playing()
     rig.click(PLAY);
     rig.frame(vec![]);
     assert_eq!(rig.playhead(roll("grid")), (at, true));
-    // A transport outside the clip: it rests at the clip's start, its line with it.
+    // A transport past the clip: folded into its 8-beat loop, its line with it.
     rig.rec.0.borrow_mut().tick = 5000;
     rig.frame(vec![]);
-    assert_eq!(rig.playhead(roll("grid")), (left, true));
+    let folded = left + (5000 % 1024) as f32 / 128.0 * 2.0 * U;
+    assert_eq!(rig.playhead(roll("grid")), (folded, true));
 }
 
 /// Every editor's play box fades as the drum editor's (`timeline::knob_shown`): out while playing, so that only the
@@ -2052,8 +2053,8 @@ fn the_step_selections_copy_and_delete_go_through_the_funnel_as_one_undo_step_ea
     rig.frame(vec![]);
     assert_eq!(rig.take(), Vec::<String>::new(), "selecting edits nothing");
 
-    // Copy: the two hits again three steps on, one rebuild, and a re-sync as the piano roll's Copy at interval.
-    rig.click(rig.text_center("Copy"));
+    // Duplicate: the two hits again three steps on, one rebuild, and a re-sync as the piano roll's Duplicate at interval.
+    rig.click(rig.text_center("Duplicate"));
     assert_eq!(rig.hits(), [(0, 0), (1, 64), (0, 96), (1, 160)]);
     assert_eq!(rig.take(), ["ReplaceSong adopting"]);
     // The selection is the copies now: Delete takes them away again.

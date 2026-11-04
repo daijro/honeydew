@@ -119,16 +119,24 @@ impl ProjectFiles {
         Self::keep_plugin_sample_in(path, &dir)
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    // Only the Android entry point and the test use it; on a host build it would be dead code.
+    #[cfg(any(target_os = "android", test))]
     fn keep_plugin_sample_in(path: &Path, dir: &Path) -> io::Result<PathBuf> {
-        let ext = path.extension().ok_or(io::ErrorKind::InvalidInput)?.to_string_lossy();
+        let ext = path
+            .extension()
+            .ok_or(io::ErrorKind::InvalidInput)?
+            .to_string_lossy();
         if ext.is_empty() {
             return Err(io::ErrorKind::InvalidInput.into());
         }
         let bytes = std::fs::read(path)?;
         let base = super::stem(path);
         for n in 1u32.. {
-            let name = if n == 1 { base.clone() } else { format!("{base} ({n})") };
+            let name = if n == 1 {
+                base.clone()
+            } else {
+                format!("{base} ({n})")
+            };
             let target = dir.join(format!("{name}.{ext}"));
             if target.exists() {
                 continue;
@@ -399,7 +407,8 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn plugin_samples_are_copied_to_my_samples_without_overwriting() {
-        let root = std::env::temp_dir().join(format!("honeydew-plugin-sample-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("honeydew-plugin-sample-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let source = root.join("Loop.wav");
         let dir = root.join(SAMPLES_FOLDER);

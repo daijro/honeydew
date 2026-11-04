@@ -1605,11 +1605,7 @@ impl HoneydewApp {
             if armed && !cfg!(target_arch = "wasm32") {
                 self.navigate(Nav::Open(Overlay::Message {
                     tag: INPUT_TAG,
-                    lines: vec![if cfg!(target_os = "android") {
-                        "Audio recording is not available in this Android preview.".into()
-                    } else {
-                        MIC_PERMISSION.into()
-                    }],
+                    lines: vec![MIC_PERMISSION.into()],
                     confirm: None,
                     extra: None,
                 }));
@@ -4649,6 +4645,19 @@ mod tests {
         egui::Id::new("main_menu_songs").with(part)
     }
 
+    /// SONGS `Import` (#63: a menu of `Import file` and `Import folder`), then `Import file` once the menu is drawn.
+    fn songs_import_file(rig: &mut Rig) {
+        rig.click_id(songs_id(("big", 2_usize)));
+        let item = songs_id("import").with((0_usize, 0_usize));
+        for _ in 0..40 {
+            if rig.ctx.read_response(item).is_some() {
+                break;
+            }
+            rig.frame(vec![]);
+        }
+        rig.click_id(item);
+    }
+
     fn project_id(part: impl std::hash::Hash) -> egui::Id {
         egui::Id::new("main_menu_project").with(part)
     }
@@ -4794,7 +4803,7 @@ mod tests {
         let (mut rig, _) = rig_with_file("/songs/Beat.flm", &synthetic_file(1, FORMAT_VERSION, ""));
         rig.open_menu(MenuTab::Songs);
         rig.take();
-        rig.click_id(songs_id(("big", 2_usize)));
+        songs_import_file(&mut rig);
         assert_eq!(rig.app.song.title, "Beat");
         assert_eq!(rig.overlays(), []);
         assert_eq!(rig.take(), ["Stop", "ReplaceSong"]);
@@ -5411,7 +5420,10 @@ mod tests {
                 Guarded::CtrlO => return command(rig, egui::Key::O),
                 Guarded::New => songs_id(("big", 0_usize)),
                 Guarded::Row => row("Groove.flm"),
-                Guarded::Import => songs_id(("big", 2_usize)),
+                Guarded::Import => {
+                    rig.open_menu(MenuTab::Songs);
+                    return songs_import_file(rig);
+                }
             };
             rig.open_menu(MenuTab::Songs);
             rig.click_id(id);

@@ -108,7 +108,7 @@ const POP_GAIN: f32 = 1.0515;
 const POP_W: f32 = 1.885;
 const DRAG_FLOOR: f32 = 0.01;
 /// The floating buttons over a point selection, as over automation points.
-const OPS: [&str; 2] = ["Copy", "Delete"];
+const OPS: [&str; 3] = ["Copy", "Duplicate", "Delete"];
 
 /// A clip as the editor addresses it: (channel, lane, clip id).
 pub type At = (usize, usize, u32);
@@ -1340,16 +1340,22 @@ impl AudioEditor {
             .row
             .show(ui, "audio_point_button", sel, view, &OPS, cx)?;
         ui.ctx().request_repaint();
-        if i == 0 {
-            set_clipboard(ui.ctx(), points::copy(pts, &self.sel, max));
-            return None;
+        match i {
+            // Copy only fills the clipboard.
+            0 => {
+                set_clipboard(ui.ctx(), points::copy(pts, &self.sel, max));
+                None
+            }
+            1 => points::duplicate_selected(pts, &self.sel),
+            _ => {
+                let kept: Vec<Point> = (pts.iter().zip(&self.sel))
+                    .filter(|(_, s)| !**s)
+                    .map(|(p, _)| *p)
+                    .collect();
+                let n = kept.len();
+                Some((kept, vec![false; n]))
+            }
         }
-        let kept: Vec<Point> = (pts.iter().zip(&self.sel))
-            .filter(|(_, s)| !**s)
-            .map(|(p, _)| *p)
-            .collect();
-        let n = kept.len();
-        Some((kept, vec![false; n]))
     }
 
     /// The `Paste` insert menu ([`crate::ui::automation::paste_menu`]); a separate tap commits the clipboard.

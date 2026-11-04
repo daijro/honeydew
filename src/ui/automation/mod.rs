@@ -125,7 +125,7 @@ const PAST_END: u8 = 38;
 const ANIM_RATE: f32 = 0.6;
 const DRAG_FLOOR: f32 = 0.01;
 /// The floating buttons over a selection.
-const OPS: [&str; 4] = ["Copy", "Delete", "Edit\nvalue", "Set shape"];
+const OPS: [&str; 5] = ["Copy", "Duplicate", "Delete", "Edit\nvalue", "Set shape"];
 /// The value grid's lines: at least this many U apart, `text` at this alpha.
 pub(crate) const GRID_GAP: f32 = 0.25;
 pub(crate) const GRID_ALPHA: f32 = 0.15;
@@ -581,15 +581,17 @@ impl AutomationEditor {
             .show(ui, "automation_button", selection, grid_view, &OPS, cx)
         {
             match i {
+                // Copy only fills the clipboard.
                 0 => set_clipboard(ui.ctx(), points::copy(&pts, &self.sel, max)),
-                1 => {
+                1 => edit = points::duplicate_selected(&pts, &self.sel).or(edit),
+                2 => {
                     let keep = (pts.iter().zip(&self.sel)).filter(|(_, s)| !**s);
                     let keep: Vec<Point> = keep.map(|(p, _)| *p).collect();
                     let n = keep.len();
                     edit = Some((keep, vec![false; n]));
                 }
-                2 => self.open_value(&target, &pts),
-                3 => self.shaping = Some(shape::Shaping::default()),
+                3 => self.open_value(&target, &pts),
+                4 => self.shaping = Some(shape::Shaping::default()),
                 _ => {}
             }
             ui.ctx().request_repaint();
@@ -644,6 +646,9 @@ impl AutomationEditor {
             song.play_loop = range.and_then(|r| r.song_loop(origin));
         }
         if let Some(tick) = picked.playhead.or(tap) {
+            // A ruler tap deselects, as the audio editor's: the floating row goes and the play box shows.
+            self.sel.fill(false);
+            self.paste = None;
             out.seek = Some(region::seek_tick(clip_of(song, key), tick));
         }
         if let Some((op, range)) = picked.pick {

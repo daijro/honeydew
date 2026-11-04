@@ -163,7 +163,7 @@ const NEW_BEAT_U: f32 = 3.0;
 pub(crate) const STEP_POP: f32 = 0.9;
 const POP_FLOOR: f32 = 0.01;
 /// The floating buttons over the selected steps (step-sequencer mode).
-const STEP_OPS: [&str; 2] = ["Copy", "Delete"];
+const STEP_OPS: [&str; 3] = ["Copy", "Duplicate", "Delete"];
 /// The `Set Name` box.
 const PROMPT_W: f32 = 8.0;
 const PROMPT_ROW_H: f32 = 1.25;
@@ -1083,17 +1083,18 @@ impl StepSeqView {
         self.row.covered = self.covered;
         if let Some((i, _)) = self.row.show(ui, "step_button", sel, shown, &STEP_OPS, cx) {
             let cells: Vec<_> = self.selection.iter().copied().collect();
-            if i == 0 {
-                let chosen = |e: &&Event| edit::cell_of(e, sig).is_some_and(|c| cells.contains(&c));
-                let hits = clip.map_or_else(Vec::new, |c| {
-                    c.events.iter().filter(chosen).copied().collect()
-                });
-                set_hit_clipboard(ui.ctx(), hits);
+            match i {
+                // Copy only fills the hit clipboard.
+                0 => {
+                    let chosen = |e: &&Event| edit::cell_of(e, sig).is_some_and(|c| cells.contains(&c));
+                    let hits = clip.map_or_else(Vec::new, |c| {
+                        c.events.iter().filter(chosen).copied().collect()
+                    });
+                    set_hit_clipboard(ui.ctx(), hits);
+                }
+                1 => action = Some(StepAction::CopySteps { cells }),
+                _ => action = Some(StepAction::DeleteSteps { cells }),
             }
-            action = Some(match i {
-                0 => StepAction::CopySteps { cells },
-                _ => StepAction::DeleteSteps { cells },
-            });
         }
         if hit_clipboard(ui.ctx()).is_empty() {
             self.paste = None;
@@ -1144,6 +1145,9 @@ impl StepSeqView {
             .playhead
             .filter(|&t| loop_beats <= 0.0 || f64::from(t) < song_end)
         {
+            // It deselects, as the audio editor's: the floating row goes and the play box shows.
+            self.selection.clear();
+            self.paste = None;
             action = Some(StepAction::SetPlayhead(tick.into()));
         }
         if let Some((op, range)) = out.pick

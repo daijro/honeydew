@@ -1,5 +1,5 @@
 //! The `Generate` panel: chords and a melody for the clip, in the project's key and scale ([`super::compose`]). The
-//! note menu's `Generate...` opens it over the piano roll, and the roll draws its result ([`super::compose::generate`])
+//! transport bar's GENERATE opens it over the piano roll, and the roll draws its result ([`super::compose::generate`])
 //! in place of the notes while it is open, recomputed from the clip every frame: the song itself waits for `Apply`, so
 //! a preview is no edit and makes no undo step (as the Humanize panel's).
 //!
@@ -17,7 +17,8 @@ use eframe::egui::{
 };
 
 use super::compose::{
-    self, ARPS, CHORD_MODES, DURATIONS, KEYS, Lead, OCTAVES, PRESETS, RESTS, SCALE_CHOICES, Settings,
+    self, ARPS, CHORD_MODES, DURATIONS, KEYS, Lead, OCTAVES, PRESETS, RESTS, SCALE_CHOICES,
+    Settings,
 };
 use crate::metrics::{FontSize, Metrics};
 use crate::params::{menu_index, menu_value};

@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+    <!-- Audio recording (the take's input); the app runs without it, and asks for it when it starts. -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <application
         android:allowBackup="false"
         android:icon="@drawable/honeydew"
