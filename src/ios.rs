@@ -1,5 +1,6 @@
-//! iOS: the app's folders, the audio session, the microphone permission and the system document picker, through UIKit
-//! and AVFAudio (objc2). The app starts from `main.rs` as on the desktop: winit runs UIKit's application there.
+//! iOS: the app's folders, the audio session, the microphone permission, the system document picker and share sheet,
+//! through UIKit and AVFAudio (objc2). The app starts from `main.rs` as on the desktop: winit runs UIKit's application
+//! there.
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -14,8 +15,8 @@ use objc2::rc::{Allocated, Retained};
 use objc2::runtime::{AnyClass, AnyObject, Bool, NSObject, NSObjectProtocol};
 use objc2::{ClassType, DeclaredClass, class, declare_class, msg_send, msg_send_id, mutability};
 use objc2_foundation::{
-    CGRect, MainThreadMarker, NSArray, NSDictionary, NSNotification, NSNotificationCenter,
-    NSString, NSURL,
+    CGPoint, CGRect, CGSize, MainThreadMarker, NSArray, NSDictionary, NSNotification,
+    NSNotificationCenter, NSString, NSURL,
 };
 use objc2_ui_kit::{UIDocumentPickerDelegate, UIDocumentPickerViewController};
 
@@ -112,9 +113,11 @@ pub fn start() {
             false => resume(),
         },
     );
-    // As on Android, leaving the app ends a take; the streams start again on the way back.
+    // As on Android, leaving the app ends a take, and the next frame writes the song's unsaved changes; the streams
+    // start again on the way back.
     observe(unsafe { UIApplicationWillResignActiveNotification }, |_| {
-        interrupt()
+        interrupt();
+        crate::project_files::leave();
     });
     observe(unsafe { UIApplicationDidBecomeActiveNotification }, |_| {
         resume()
@@ -444,6 +447,38 @@ pub fn pick(folder: bool, done: impl FnOnce(Picked) + Send + 'static) {
     unsafe {
         let _: () = msg_send![&root, presentViewController: &*picker, animated: Bool::YES, completion: None::<&Block<dyn Fn()>>];
     }
+}
+
+/// `Send` (#72): `files` in the system's share sheet (`UIActivityViewController`, which reads their types from their
+/// names), over the key window's root view controller; an iPad shows it as a popover from the middle of the screen.
+pub fn share(files: &[PathBuf], _mime: &str) -> Result<(), String> {
+    MainThreadMarker::new().ok_or("Send runs on the main thread")?;
+    let urls = (files.iter())
+        .map(|file| unsafe { NSURL::fileURLWithPath(&NSString::from_str(&file.to_string_lossy())) })
+        .collect();
+    let items = NSArray::from_vec(urls);
+    let root = key_window().and_then(|window| unsafe { msg_send_id![&window, rootViewController] });
+    let root: Retained<AnyObject> = root.ok_or("There is no window to share from")?;
+    unsafe {
+        let sheet: Allocated<AnyObject> = msg_send_id![class!(UIActivityViewController), alloc];
+        let none = None::<&NSArray<AnyObject>>;
+        let sheet: Retained<AnyObject> =
+            msg_send_id![sheet, initWithActivityItems: &*items, applicationActivities: none];
+        let popover: Option<Retained<AnyObject>> =
+            msg_send_id![&sheet, popoverPresentationController];
+        if let Some(popover) = popover {
+            let view: Retained<AnyObject> = msg_send_id![&root, view];
+            let bounds: CGRect = msg_send![&view, bounds];
+            let middle = CGPoint::new(bounds.size.width / 2.0, bounds.size.height / 2.0);
+            let _: () = msg_send![&popover, setSourceView: &*view];
+            let _: () =
+                msg_send![&popover, setSourceRect: CGRect::new(middle, CGSize::new(0.0, 0.0))];
+            // `UIPopoverArrowDirection`: none.
+            let _: () = msg_send![&popover, setPermittedArrowDirections: 0usize];
+        }
+        let _: () = msg_send![&root, presentViewController: &*sheet, animated: Bool::YES, completion: None::<&Block<dyn Fn()>>];
+    }
+    Ok(())
 }
 
 /// The app's window (winit's one).

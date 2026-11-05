@@ -148,16 +148,24 @@ pub(crate) fn show(
         (card.pressed, card.finger) = (None, None);
     }
     embed::pump(editor);
+    // Issue #72: only what changed goes into the texture (a whole frame is megabytes, a knob turn a small patch of
+    // it); all of it into a new texture or at a new size.
+    let (shown, whole) = (card.size, card.texture.is_none());
     let mut fresh = None;
     if let Some(v) = embed::frame(editor, card.version, |f| {
-        fresh = Some(image(&f.pixels, f.width, f.height))
+        let size = (f.width, f.height);
+        let area = (whole || size != shown).then_some((0, 0, size.0, size.1));
+        fresh = (area.or(f.changed)).map(|a| (size, a, image(&f.pixels, f.width, a)));
     }) {
         card.version = v;
         card.painted = ctx.input(|i| i.time);
     }
-    if let Some(image) = fresh {
-        card.size = (image.size[0] as u32, image.size[1] as u32);
+    if let Some((size, (x, y, ..), image)) = fresh {
+        card.size = size;
         match &mut card.texture {
+            Some(t) if size == shown => {
+                t.set_partial([x as usize, y as usize], image, TextureOptions::LINEAR)
+            }
             Some(t) => t.set(image, TextureOptions::LINEAR),
             None => {
                 card.texture = Some(ctx.load_texture(
@@ -226,12 +234,19 @@ pub(super) fn over(card: &LemonCard) -> bool {
     card.over || card.pressed.is_some()
 }
 
-/// XRGB rows of `w` as an image.
-fn image(px: &[u32], w: u32, h: u32) -> ColorImage {
-    let pixels = (px.iter())
-        .map(|&p| Color32::from_rgb((p >> 16) as u8, (p >> 8) as u8, p as u8))
-        .collect();
-    ColorImage::new([w as usize, h as usize], pixels)
+/// The pixels (x0, y0, x1, y1) of XRGB rows of `w` as an image.
+fn image(px: &[u32], w: u32, (x0, y0, x1, y1): (u32, u32, u32, u32)) -> ColorImage {
+    let size = [(x1 - x0) as usize, (y1 - y0) as usize];
+    let mut pixels = Vec::with_capacity(size[0] * size[1]);
+    for row in px
+        .chunks_exact(w.max(1) as usize)
+        .take(y1 as usize)
+        .skip(y0 as usize)
+    {
+        let rgb = |&p: &u32| Color32::from_rgb((p >> 16) as u8, (p >> 8) as u8, p as u8);
+        pixels.extend(row[x0 as usize..x1 as usize].iter().map(rgb));
+    }
+    ColorImage::new(size, pixels)
 }
 
 fn button(b: PointerButton) -> Option<Button> {
@@ -551,7 +566,7 @@ fn show_menu(
             );
             let mut px = vec![0u32; (size.x * size.y) as usize];
             canvas.copy_to_xrgb(&mut px);
-            let img = image(&px, size.x as u32, size.y as u32);
+            let img = image(&px, size.x as u32, (0, 0, size.x as u32, size.y as u32));
             match &mut l.texture {
                 Some((t, h)) => {
                     t.set(img, TextureOptions::LINEAR);

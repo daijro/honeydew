@@ -104,10 +104,17 @@ pub trait SongLibrary {
     }
     /// The folders listed at the root that are places, not items: never selected, deleted, renamed or moved, as they
     /// hold what the user keeps in them. [`RECENTLY_DELETED`], and in the songs library `Unzipped songs`
-    /// ([`crate::project_files::UNZIPPED_FOLDER`]); in the whole user folder also every fixed folder ([`SONGS_FOLDER`],
-    /// the user folders, the Original Content folder). The default has the bin alone.
+    /// ([`crate::project_files::UNZIPPED_FOLDER`]); in the whole user folder, and in the songs library that goes up to
+    /// it ([`Self::user_folder`]), also every fixed folder ([`SONGS_FOLDER`], the user folders, the Original Content
+    /// folder). The default has the bin alone.
     fn places(&self) -> Vec<PathBuf> {
         self.trash().into_iter().collect()
+    }
+    /// The folder SONGS goes up to from its root (#73): the user folder, which holds the root (`My Songs`) and the
+    /// other `My …` folders. It lists its folders only (its files are the app's), and every folder below it but the
+    /// root lists every file. `None`: SONGS stops at its root.
+    fn user_folder(&self) -> Option<PathBuf> {
+        None
     }
     /// Where deleting `path` puts it in [`Self::trash`]: its place relative to the user folder, the folder that holds
     /// the root and the bin. `None`: deleting it is for good, because it is in the bin or outside the user folder.
@@ -863,11 +870,13 @@ impl NativeLibrary {
         }
     }
 
-    /// The folders the root lists from beside it ([`row_owns`]): its places, and the Original Content folder's
+    /// The folders the root lists from beside it ([`row_owns`]): the bin, `Unzipped songs`, and the Original Content folder's
     /// [`DEMO_SONGS`] once it is there.
     fn root_rows(&self) -> Vec<PathBuf> {
         let demos = self.content_folder(DEMO_SONGS_PATH);
-        self.places().into_iter().chain(demos).collect()
+        (self.trash().into_iter().chain(self.unzipped()))
+            .chain(demos)
+            .collect()
     }
 
     /// The Original Content folder, beside the root as the bin is.
@@ -918,6 +927,10 @@ impl SongLibrary for NativeLibrary {
         // lossily; its path is the real one. The cap counts what is listed, not what the folder holds; the scan stops
         // after [`MAX_SCANNED`] entries. Only a row kept is asked for its time.
         let scanned = entries.into_iter().flatten().take(MAX_SCANNED).flatten();
+        let user = self.user_folder();
+        let top = user.as_deref() == Some(dir);
+        let every =
+            user.is_some() && !top && self.root.as_deref().is_some_and(|r| !dir.starts_with(r));
         let listed = scanned.filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
             // `DirEntry::file_type` does not follow links, and most systems give it with the entry.
@@ -926,8 +939,9 @@ impl SongLibrary for NativeLibrary {
             let is_song = Path::new(&name)
                 .extension()
                 .is_some_and(|e| self.exts.iter().any(|x| e.eq_ignore_ascii_case(x)))
-                || self.exts.is_empty();
-            if name.starts_with('.') || !(is_folder || is_song && kind.is_file()) {
+                || self.exts.is_empty()
+                || every;
+            if name.starts_with('.') || !(is_folder || is_song && kind.is_file() && !top) {
                 return None;
             }
             let meta = entry.metadata().ok()?;
@@ -1027,9 +1041,9 @@ impl SongLibrary for NativeLibrary {
 
     fn places(&self) -> Vec<PathBuf> {
         let mut places: Vec<_> = self.trash().into_iter().chain(self.unzipped()).collect();
-        // The whole user folder holds every fixed folder as its own: deleting one (`My Presets`) could not be restored,
+        // The whole user folder (and SONGS, which goes up to it) holds every fixed folder as its own: deleting one (`My Presets`) could not be restored,
         // and renaming one (`My Samples`) would break the songs' paths into it. What they hold stays the user's.
-        if self.whole
+        if (self.whole || self.user_folder().is_some())
             && let Some(user) = self.user()
         {
             use crate::project_files as pf;
@@ -1038,6 +1052,12 @@ impl SongLibrary for NativeLibrary {
             places.extend(fixed.map(|f| user.join(f)));
         }
         places
+    }
+
+    fn user_folder(&self) -> Option<PathBuf> {
+        (self.is_songs() && !self.whole)
+            .then(|| self.user().map(Path::to_owned))
+            .flatten()
     }
 
     fn bin_path(&self, path: &Path) -> Option<PathBuf> {
@@ -1616,7 +1636,10 @@ mod tests {
             names(&listed),
             [("Song.flm", false), ("Unzipped songs", true)]
         );
-        assert_eq!(songs.places(), [songs.trash().unwrap(), unzipped.clone()]);
+        // With the user folder's fixed folders, which SONGS goes up to (#73).
+        let places = songs.places();
+        assert!(places.contains(&songs.trash().unwrap()) && places.contains(&unzipped));
+        assert!(places.contains(&user.join("My Samples")) && places.contains(&root));
         // Browsable: the extraction's folder, then its songs and the folders its samples are in.
         let pack = songs.list(Some(&unzipped)).unwrap();
         assert_eq!(names(&pack), [("Pack", true)]);

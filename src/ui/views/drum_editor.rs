@@ -263,7 +263,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     (step_view.playing, grid.playing) = (app.playing, app.playing);
     (step_view.armed, grid.armed) = (app.armed, app.armed);
     (step_view.previewing, grid.previewing) = (app.previewing, app.previewing);
-    let levels = slot_peaks(ui.ctx(), app, channel, kit);
+    let levels = slot_peaks(app, channel, kit);
     grid.levels.clone_from(&levels);
     step_view.levels = levels;
     step_view.follow = app.settings.continuous_scroll;
@@ -691,7 +691,7 @@ fn show_pads(pads: &mut Pads, ui: &mut egui::Ui, app: &mut AppCtx, channel: usiz
             .id(("drum pads", channel))
             .max_rect(keyboard),
     );
-    let peaks = slot_peaks(ui.ctx(), app, channel, kit).into_iter();
+    let peaks = slot_peaks(app, channel, kit).into_iter();
     pads.drums.peaks = peaks.map(|[l, r]| l.max(r)).collect();
     let locked = app.settings.lock_pads;
     let actions = drums::show_pads(
@@ -750,13 +750,12 @@ fn show_pads(pads: &mut Pads, ui: &mut egui::Ui, app: &mut AppCtx, channel: usiz
 }
 
 /// Each slot's output peaks (L, R) in `channel`'s `kit`, in slot order, from this frame's meters: the engine keys them
-/// (channel, −slot id). None without a running stream; while there is one, the next frame comes within 50 ms, as for
-/// the rack's meters: the audio moves with no input to repaint for.
-fn slot_peaks(ctx: &egui::Context, app: &AppCtx, channel: usize, kit: &DrumKit) -> Vec<[f32; 2]> {
+/// (channel, −slot id). None without a running stream. The app asks for the frames that show them move (a lit meter's,
+/// and those after a note sent).
+fn slot_peaks(app: &AppCtx, channel: usize, kit: &DrumKit) -> Vec<[f32; 2]> {
     let Some(snapshot) = app.snapshot.filter(|s| !s.stream_failed) else {
         return Vec::new();
     };
-    ctx.request_repaint_after(std::time::Duration::from_millis(50));
     let meters = &snapshot.module_meters;
     let peak = |id: u32| {
         // The engine keys no slot without an id: −0 would be the channel's own meter.

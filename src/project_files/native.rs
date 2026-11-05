@@ -2,7 +2,8 @@
 //! Android saves into its private library and opens files and folders through the system document pickers
 //! ([`crate::android::pick_document`], [`crate::android::pick_folder`]); external export awaits a document-provider
 //! bridge. iOS saves into its user folder and opens through its document picker ([`crate::ios::pick`]). A folder
-//! import's copy runs on a worker (Android's on a Java thread).
+//! import's copy runs on a worker (Android's on a Java thread). `Send` shares through the phones' share sheets; the
+//! desktop shows the file in its file manager.
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -216,6 +217,22 @@ impl FileProvider for NativeFiles {
     fn locate(&mut self, names: Vec<String>) {
         self.event = super::flp::locate_native(&names);
     }
+
+    fn share(&mut self, files: &[PathBuf], mime: &str) -> Result<(), String> {
+        share(files, mime)
+    }
+}
+
+/// `Send` (#72: the Save dialog's, SONGS') on a phone: the system's share sheet ([`crate::android::share`], [`crate::ios::share`]).
+#[cfg(target_os = "android")]
+pub(crate) use crate::android::share;
+#[cfg(target_os = "ios")]
+pub(crate) use crate::ios::share;
+
+/// `Send` on the desktop, which has no share sheet: the file manager shows the first file.
+#[cfg(not(mobile))]
+pub(crate) fn share(files: &[PathBuf], _mime: &str) -> Result<(), String> {
+    crate::ui::main_menu::reveal(files.first().ok_or("Nothing to send")?)
 }
 
 /// `accept` for the open dialog: each extension and its upper-case form, because GTK's patterns are case-sensitive

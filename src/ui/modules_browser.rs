@@ -1135,6 +1135,7 @@ impl SidePanel {
                         pressed: false,
                         hovered: false,
                         select: None,
+                        bold: false,
                     };
                     match row.kind {
                         RowKind::Section => {

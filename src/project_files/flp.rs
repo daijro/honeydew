@@ -101,7 +101,7 @@ impl ProjectFiles {
         song.file.meta.created = created_now();
         self.path = None;
         self.saved();
-        self.autosave(&song);
+        self.autosave(song.clone());
         // The missing samples first: they are what `Locate samples…` is for.
         missing.extend(notices);
         self.message = stand_ins(missing);

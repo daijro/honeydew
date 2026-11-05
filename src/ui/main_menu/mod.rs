@@ -290,6 +290,12 @@ impl MainMenu {
         self.songs.take_moves()
     }
 
+    /// SONGS on the root's folder that holds the render `file` (`My Tracks`), `file` current: the render message's
+    /// `Open My Tracks` (#72). The caller opens the menu on SONGS.
+    pub fn show_render(&mut self, file: &std::path::Path, library: &dyn SongLibrary) {
+        self.songs.show_render(file, library);
+    }
+
     /// Paints the menu over `ui`'s rect (the screen) and handles its input. `library` feeds the SONGS tab (whose file
     /// actions change it), `project` the PROJECT tab, and `settings` the SETTINGS tab (the tab's state and the
     /// settings it edits). Returns what the user asked for this frame.

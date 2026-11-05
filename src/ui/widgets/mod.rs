@@ -644,7 +644,7 @@ pub use xy_pad::xy_pad;
 
 mod text;
 
-pub use text::{shrink, truncated, truncated_text};
+pub use text::{shrink, truncated, truncated_bold, truncated_text};
 
 /// Whether a toggle or a two-state button bound to `v` is on: for any value but 0, so 0.5 and 0.001 too.
 /// NaN (a corrupt file) is off, as 0 is. The inverted pill swaps the sides, and a tap writes 1 from off and 0 from on.

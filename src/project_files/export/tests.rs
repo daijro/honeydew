@@ -72,6 +72,7 @@ fn export(format: ExportFormat, path: &str) -> Export {
         format,
         path: path.into(),
         split: Split::Off,
+        send: false,
     }
 }
 
@@ -516,17 +517,37 @@ fn a_test_slice_is_spent_after_a_fixed_number_of_blocks() {
     assert!(spent[TEST_SLICE_BLOCKS - 1]);
 }
 
+/// #72: the message says where the render went, and its `Open My Tracks` hands the render to the app, once.
 #[test]
-fn a_written_render_flashes_render_complete_with_where_it_went() {
+fn a_written_render_says_where_it_went_with_a_way_to_open_my_tracks() {
     let (mut files, mem) = files();
     let mut song = note_song();
     let flac = export(Flac, "My Tracks/Song.flac");
     files.write_export(&flac, b"fLaC".to_vec());
     update(&mut files, &mut song, None);
+    assert_eq!(files.take_flash(), None);
     assert_eq!(
-        files.take_flash().as_deref(),
-        Some("Render complete\nSaved to: My Tracks/Song.flac")
+        files.take_overlay(),
+        Some(Overlay::Message {
+            tag: RENDERED_TAG,
+            lines: vec![
+                RENDER_COMPLETE.into(),
+                "Saved to: My Tracks/Song.flac".into()
+            ],
+            confirm: Some((OPEN_TRACKS.into(), "OK".into())),
+            extra: None,
+        })
     );
+    assert_eq!(files.waiting(), Some(RENDERED_TAG));
+    update(&mut files, &mut song, Some(Answer::Yes));
+    assert_eq!(files.take_open_tracks(), Some("My Tracks/Song.flac".into()));
+    assert_eq!((files.take_open_tracks(), files.waiting()), (None, None));
+    // `OK` opens nothing.
+    files.write_export(&flac, b"fLaC".to_vec());
+    update(&mut files, &mut song, None);
+    assert!(files.take_overlay().is_some());
+    update(&mut files, &mut song, Some(Answer::No));
+    assert_eq!(files.take_open_tracks(), None);
     assert_eq!(written(&mem, "My Tracks/Song.flac"), Some(b"fLaC".to_vec()));
     // The web reports the name it downloaded under.
     mem.0.borrow_mut().names_only = true;
@@ -803,21 +824,24 @@ fn an_existing_stem_folder_asks_and_keep_both_numbers_the_folder() {
 }
 
 #[test]
-fn the_stems_are_written_into_their_folder_and_flash_it_once_all_are_written() {
+fn the_stems_are_written_into_their_folder_and_say_so_once_all_are_written() {
     let (mut files, mem) = files();
     let mut song = stems_song(&[("Lead", true)]);
     files.export(&song, Wav, "Song", true);
     let export = files.take_export().unwrap();
     files.write_stem(&export, "Lead.wav", b"lead".to_vec());
     update(&mut files, &mut song, None);
-    assert_eq!(files.take_flash(), None, "more stems may come");
+    assert_eq!(message(&mut files), None, "more stems may come");
     files.write_stem(&export, "Bass.wav", b"bass".to_vec());
     files.stems_rendered();
-    assert_eq!(files.take_flash(), None, "a write is under way");
+    assert_eq!(message(&mut files), None, "a write is under way");
     update(&mut files, &mut song, None);
     assert_eq!(
-        files.take_flash().as_deref(),
-        Some("Render complete\nSaved to: My Tracks/Song - Multitrack wav")
+        message(&mut files),
+        Some(vec![
+            RENDER_COMPLETE.into(),
+            "Saved to: My Tracks/Song - Multitrack wav".into()
+        ])
     );
     for (path, bytes) in [("Lead.wav", &b"lead"[..]), ("Bass.wav", b"bass")] {
         let path = format!("My Tracks/Song - Multitrack wav/{path}");

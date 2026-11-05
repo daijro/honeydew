@@ -3185,8 +3185,8 @@ fn common_dialog(
             let rows = layout::layout(&column, content, u);
             let row = |i: u32| layout::rect_of(&rows, i).expect("shown") / ppp;
             // The 12 pt title is taller than its row; it may spill over the dialog's padding, not out of it.
-            let title = module_name(module.type_id);
-            dialog_title(&ui.painter_at(rect), cx, row(0), title, text);
+            // A plugin module by its plugin's name, as its card.
+            dialog_title(&ui.painter_at(rect), cx, row(0), module.title(), text);
             let (mut changed, mut touch) = (Vec::new(), None);
             let linked = panels::cc_links(ui);
             for (&(index, spec), i) in COMMON.iter().zip(1..) {

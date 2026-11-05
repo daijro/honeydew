@@ -83,6 +83,11 @@ impl State {
     pub fn songs_folder(&self) -> Option<&Path> {
         self.menu.songs_folder()
     }
+
+    /// [`MainMenu::show_render`].
+    pub fn show_render(&mut self, file: &Path, library: &dyn crate::ui::main_menu::SongLibrary) {
+        self.menu.show_render(file, library);
+    }
 }
 
 /// The sound library question's tag ([`sounds_question`]): the app takes its answer (`app/sounds.rs`).

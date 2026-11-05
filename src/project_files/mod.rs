@@ -38,6 +38,8 @@ use crate::zip::Entry;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use native::share;
 mod presets;
 pub use presets::{
     CHORD_SETS_FOLDER, CHORDS_EXT, DRUMSET_EXT, DRUMSETS_FOLDER, FLGSYNTH_EXT, FLMS_EXT,
@@ -171,7 +173,8 @@ pub enum Replace {
 /// What a file dialog was asked for ([`ProjectFiles`] remembers it until the file arrives).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pick {
-    /// A song, template, archive or MIDI file to open (`Ctrl+O`, SONGS `Import`).
+    /// A song, template, archive or MIDI file to open (`Ctrl+O`, SONGS `Import`), or a file a user folder takes
+    /// (a sample, a SoundFont, a preset), which is imported there.
     Song,
     /// An audio file for a picker's user folder (its `Import`, [`ProjectFiles::import_audio`]).
     Sample,
@@ -183,11 +186,31 @@ pub enum Pick {
 }
 
 impl Pick {
-    /// The extensions (no dot, any case) the dialog offers and the provider reads: every [`FileKind`] for a song, the
-    /// sample ones for a sample, the MIDI ones for `Import MIDI Tracks`.
+    /// The extensions (no dot, any case) the dialog offers and the provider reads: every [`FileKind`] and every type
+    /// a user folder takes ([`samples::import_folder`]) for a song, the sample ones for a sample, the MIDI ones for
+    /// `Import MIDI Tracks`.
     pub const fn accept(self) -> &'static [&'static str] {
         match self {
-            Pick::Song => &["flm", "songtmpl", "zip", "mid", "midi", "flp"],
+            Pick::Song => &[
+                "flm",
+                "songtmpl",
+                "zip",
+                "mid",
+                "midi",
+                "flp",
+                "wav",
+                "flac",
+                "mp3",
+                "ogg",
+                SF2_EXT,
+                SFZ_EXT,
+                PRESET_EXT,
+                FLMS_EXT,
+                FLGSYNTH_EXT,
+                RACK_EXT,
+                DRUMSET_EXT,
+                DWP_EXT,
+            ],
             Pick::Sample => &SAMPLE_EXTS,
             Pick::MidiTracks(_) => FileKind::Midi.extensions(),
             Pick::Theme => &["json"],
@@ -311,6 +334,11 @@ pub trait FileProvider {
     /// Copies a folder import's files, each from where [`FileEvent::Folder`] said to the user file it becomes, off the
     /// UI thread, and finishes with [`FileEvent::Copied`].
     fn copy(&mut self, _files: Vec<(String, PathBuf)>) {}
+    /// Send: `files`, just written, of the media type `mime`, to the system's share sheet (the desktop shows the first
+    /// in the file manager). Nothing where a save is a download (the web). An error says why it could not.
+    fn share(&mut self, _files: &[PathBuf], _mime: &str) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// Open / save state: the song's file, the Save dialog and the message popup.
@@ -324,9 +352,9 @@ pub struct ProjectFiles {
     pub factory: &'static crate::content::Factory,
     /// Keep a copy of every song opened or saved in `library` (the web's, in memory).
     copies: bool,
-    /// The save under way: the path it asked for, its bytes for the library's copy (where it keeps copies), and the
-    /// song as written (stamped), whose stamp the song takes once it is done.
-    saving: Option<(PathBuf, Option<Vec<u8>>, Song)>,
+    /// The save under way: the path it asked for, its bytes for the library's copy (where it keeps copies), the
+    /// song as written (stamped), whose stamp the song takes once it is done, and whether it is a `Send`.
+    saving: Option<(PathBuf, Option<Vec<u8>>, Song, bool)>,
     /// Counts the saves and copies: SONGS reads its folder again when it changes.
     library_changes: u64,
     /// The song's file. `None`: untitled, and `Ctrl+S` asks.
@@ -410,15 +438,27 @@ pub struct ProjectFiles {
     /// A MIDI export runs each channel's notes through its note effects at this engine sample rate (`Apply note
     /// effects`, [`crate::smf::smf_with`]); `None`: the raw notes. The Save dialog sets it before each export.
     pub midi_note_effects: Option<f32>,
+    /// The Save dialog's `Send` (#72): the next [`Self::dialog_save`] or [`Self::export`] takes it, and shares what it
+    /// writes once written ([`FileProvider::share`]). The Save dialog sets it before each; [`Self::update`] drops one
+    /// not taken (a dialog that closed without writing).
+    pub send: bool,
     /// The MIDI file `Import MIDI Tracks` picked, until [`Self::take_midi_tracks`] hands it over.
     midi_tracks: Option<MidiTracks>,
     /// The last [`RECENT_STATE`] write, on its worker: the next waits for it, so the last load's lands last.
     #[cfg(not(target_arch = "wasm32"))]
     autosave: Option<std::thread::JoinHandle<()>>,
+    /// The song changed since the last frame ([`Self::keep_recent`]).
+    recent_touched: bool,
+    /// When the recent state takes the changes not written yet, if any ([`Self::keep_recent`]).
+    recent_due: Option<f64>,
     /// The samples the last FLP open could not find, for `Locate samples…`.
     missing: Vec<flp::Missing>,
     /// The FLP summary with `Locate samples…` waits for its answer ([`LOCATE_TAG`]).
     locate_asked: bool,
+    /// The render (its file, or its stems' folder) whose message waits for `Open My Tracks` / `OK`
+    /// ([`export::RENDERED_TAG`]), then for the app once it was `Open My Tracks` ([`Self::take_open_tracks`]).
+    rendered: Option<PathBuf>,
+    open_tracks: Option<PathBuf>,
     /// Samples were located into the song ([`Self::take_relinked`]).
     relinked: bool,
     /// What the FLP export under way could not write, shown once it is saved.
@@ -518,11 +558,16 @@ impl ProjectFiles {
             import_notice: None,
             import_accepted: false,
             midi_note_effects: None,
+            send: false,
             midi_tracks: None,
             #[cfg(not(target_arch = "wasm32"))]
             autosave: None,
+            recent_touched: false,
+            recent_due: None,
             missing: Vec::new(),
             locate_asked: false,
+            rendered: None,
+            open_tracks: None,
             relinked: false,
             export_notices: Vec::new(),
             drop_waiting: None,
@@ -580,9 +625,9 @@ impl ProjectFiles {
 
     /// Sets the song-changed flag: an undo step saved, an undo or
     /// redo, a param control's value change, a preset pick, a drum strip's new `Stretch` ratio, a recorded take. A save,
-    /// a new song and a load clear it.
+    /// a new song and a load clear it. The recent state takes the change once the edits settle ([`Self::keep_recent`]).
     pub fn song_changed(&mut self) {
-        self.changed = true;
+        (self.changed, self.recent_touched) = (true, true);
     }
 
     /// Replaces the song with `what`; when it has unsaved changes ([`Self::modified`]), only once the [`DISCARD_TAG`]
@@ -611,32 +656,38 @@ impl ProjectFiles {
         }
     }
 
-    /// Autosave: the whole project just loaded is written to [`RECENT_STATE`] in the user
-    /// root, encoded and written whole ([`write_atomic`]) on a worker, as a big song takes a while. Only on disk: where
-    /// The session keeps copies (the web) there is none. Nothing reads it back. A failure is logged.
-    fn autosave(&mut self, song: &Song) {
+    /// The recent state: the whole song is written to [`RECENT_STATE`] in the user root after every load and save,
+    /// and once edits settle ([`Self::keep_recent`]), encoded and written whole ([`replace_file`]) on a worker, as a big
+    /// song takes a while; each write waits for the one before, so the last lands last. Before the project it holds
+    /// whether the song had unsaved changes and its file's path ([`RECENT_HEAD`]), which a start restores
+    /// ([`Self::restore_recent`]). Only on disk: where the session keeps copies (the web) there is none. A failure is
+    /// logged.
+    fn autosave(&mut self, song: Song) {
+        (self.recent_touched, self.recent_due) = (false, None);
         #[cfg(not(target_arch = "wasm32"))]
         {
-            // Tests write into temp folders only, never the user's.
-            let allowed = |u: &&Path| {
-                u.is_absolute() && (cfg!(not(test)) || u.starts_with(std::env::temp_dir()))
-            };
-            let Some(user) = self
-                .user
-                .as_deref()
-                .filter(allowed)
-                .filter(|_| !self.copies)
-            else {
+            use std::io::Write;
+            let Some(path) = self.recent_path() else {
                 return;
             };
-            let (path, song, write) = (user.join(RECENT_STATE), song.clone(), self.codec.write);
-            let previous = self.autosave.take();
+            let mut head = RECENT_HEAD.to_vec();
+            head.push(if self.changed { b'1' } else { b'0' });
+            if let Some(file) = &self.path {
+                head.extend(file.to_string_lossy().as_bytes());
+            }
+            head.push(0);
+            let (write, previous) = (self.codec.write, self.autosave.take());
             self.autosave = Some(std::thread::spawn(move || {
                 if let Some(previous) = previous {
                     let _ = previous.join();
                 }
-                let written =
-                    write(&song).and_then(|b| write_atomic(&path, &b).map_err(|e| e.to_string()));
+                let written = write(&song).and_then(|project| {
+                    let written = replace_file(&path, |f| {
+                        f.write_all(&head)?;
+                        f.write_all(&project)
+                    });
+                    written.map_err(|e| e.to_string())
+                });
                 if let Err(err) = written {
                     eprintln!("{} not written: {err}", path.display());
                 }
@@ -646,11 +697,71 @@ impl ProjectFiles {
         let _ = song;
     }
 
-    /// Waits for the [`RECENT_STATE`] write under way.
-    #[cfg(all(test, not(target_arch = "wasm32")))]
+    /// Where the recent state goes: [`RECENT_STATE`] in the user root, on disk only. Tests write into temp folders
+    /// only, never the user's.
+    fn recent_path(&self) -> Option<PathBuf> {
+        let allowed =
+            |u: &&Path| u.is_absolute() && (cfg!(not(test)) || u.starts_with(std::env::temp_dir()));
+        let user = self.user.as_deref().filter(allowed);
+        Some(user.filter(|_| !self.copies)?.join(RECENT_STATE))
+    }
+
+    /// The recent state follows the song's edits ([`Self::song_changed`]), at the end of every frame at `now`
+    /// (seconds): it is written once they settle, [`AUTOSAVE_SECS`] after the last one and not while the write before
+    /// is still under way, so a drag's many changes make one write; at once when `leaving` (the app leaves the screen:
+    /// a focus loss, a close, Android's `onPause`, iOS's resign-active). Nothing is written while nothing changed.
+    /// Returns how long until it is due, for a repaint then.
+    pub fn keep_recent(&mut self, song: &Song, now: f64, leaving: bool) -> Option<f64> {
+        if std::mem::take(&mut self.recent_touched) && self.recent_path().is_some() {
+            self.recent_due = Some(now + AUTOSAVE_SECS);
+        }
+        let due = self.recent_due?;
+        #[cfg(not(target_arch = "wasm32"))]
+        let busy = self.autosave.as_ref().is_some_and(|w| !w.is_finished());
+        #[cfg(target_arch = "wasm32")]
+        let busy = false;
+        if leaving || now >= due && !busy {
+            let mut song = song.clone();
+            // As a save writes them ([`stamped`]).
+            crate::plugins::store_states(&mut song);
+            self.autosave(song);
+            return None;
+        }
+        Some((due - now).max(0.25))
+    }
+
+    /// [`RECENT_STATE`] when the song it holds had unsaved changes (the app left without a save), for
+    /// [`Self::restore_recent`].
+    pub fn unsaved_recent(&self) -> Option<Vec<u8>> {
+        let state = std::fs::read(self.recent_path()?).ok()?;
+        recent_parts(&state)?.0.then_some(state)
+    }
+
+    /// The song [`Self::unsaved_recent`] holds, as the app left it (#72): its file's path again, and its changes still
+    /// unsaved (the song-changed flag set), so that its file stays as saved until a save. `None` when it does not read.
+    pub fn restore_recent(&mut self, state: &[u8]) -> Option<Song> {
+        let (_, path, project) = recent_parts(state)?;
+        let (mut song, _) = (self.codec.read)(project).ok()?;
+        if song.channels.is_empty() {
+            return None;
+        }
+        crate::panels::cstm::load_dw_programs(&mut song, &crate::sample_cache::reader(self));
+        match path {
+            Some(path) => {
+                song.title = stem(&path);
+                self.set_path(path);
+            }
+            None => self.path = None,
+        }
+        (self.changed, self.recent_touched) = (true, false);
+        Some(song)
+    }
+
+    /// Waits for the [`RECENT_STATE`] write under way (at exit, before the process ends).
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn join_autosave(&mut self) {
         if let Some(worker) = self.autosave.take() {
-            worker.join().unwrap();
+            let _ = worker.join();
         }
     }
 
@@ -687,6 +798,8 @@ impl ProjectFiles {
         }
         song.file.meta.created = created_now();
         self.saved();
+        // Not written at once: at the app's start the recent state is still to be restored.
+        self.recent_touched = true;
         song
     }
 
@@ -829,14 +942,15 @@ impl ProjectFiles {
             || self.folder.as_ref().is_some_and(|f| f.takes(file))
     }
 
-    fn write(&mut self, song: &Song, path: &Path, ask: bool) {
+    /// Writes `song` to `path` (with `ask`, where the user picks), and with `send` shares the file once written.
+    fn write(&mut self, song: &Song, path: &Path, ask: bool, send: bool) {
         let stamped = stamped(song, stem(path));
         match (self.codec.write)(&stamped) {
             // What could never be opened again is not saved (on the web, a download past its 128 MiB).
             Ok(bytes) if bytes.len() as u64 > MAX_FILE_BYTES => self.save_failed(too_large()),
             Ok(bytes) => {
                 let copy = self.copies.then(|| bytes.clone());
-                self.saving = Some((path.to_owned(), copy, stamped));
+                self.saving = Some((path.to_owned(), copy, stamped, send));
                 self.provider.save(path, ask, bytes);
             }
             Err(err) => self.save_failed(err),
@@ -882,7 +996,7 @@ impl ProjectFiles {
             own.as_deref().map_or_else(|| NEW_SONG.to_owned(), stem)
         };
         let name = self.free_name(Some(&folder), &base, "flm", own.as_deref());
-        self.write(song, &folder.join(format!("{name}.flm")), false);
+        self.write(song, &folder.join(format!("{name}.flm")), false, false);
     }
 
     /// A picked file's path. On the web, where it is kept in the library under its name ([`Self::keep`]), a name the
@@ -920,6 +1034,13 @@ impl ProjectFiles {
 
     fn fail(&mut self, title: &str, detail: String) {
         self.message = Some(vec![title.into(), detail]);
+    }
+
+    /// `Send`: `files`, just written, to the system's share sheet ([`FileProvider::share`]); one that cannot says why.
+    fn share(&mut self, files: &[PathBuf]) {
+        if let Err(err) = self.provider.share(files, mime(files)) {
+            self.message = Some(vec![err]);
+        }
     }
 
     /// `event` finishes the write of `path`: its `Saved` (on the web, of a file of its name), or a failed write that
@@ -969,7 +1090,9 @@ impl ProjectFiles {
                     .or(opened);
                 }
                 FileEvent::Saved(mut path) => {
-                    if let Some((asked, copy, stamped)) = self.saving.take() {
+                    let mut send = false;
+                    if let Some((asked, copy, stamped, sending)) = self.saving.take() {
+                        send = sending;
                         if let Some(bytes) = copy {
                             // The web reports only the name it downloaded under: in the library, the song is where
                             // the save asked (its own folder).
@@ -989,7 +1112,11 @@ impl ProjectFiles {
                     // ponytail: an edit made between the write and this event counts as saved; the native and
                     // web providers answer within the frame that writes.
                     self.saved();
+                    if send {
+                        self.share(std::slice::from_ref(&path));
+                    }
                     self.set_path(path);
+                    self.autosave(song.clone());
                     // Every song save flashes, a quick save too (issue #44: a resave showed nothing).
                     self.flash = Some(SAVED.into());
                     if let Some(what) = self.after_save.take() {
@@ -1015,7 +1142,8 @@ impl ProjectFiles {
 
     /// Checks the file type and version, then loads it; a newer version asks first. `.mid` opens as a new song
     /// ([`Self::open_midi`]). Of a `.zip`, its one song is checked and loaded; an archive without exactly one asks to
-    /// import its files instead (`archive`).
+    /// import its files instead (`archive`). A file a user folder takes (a sample, a SoundFont) goes there as an
+    /// archive's would, and the song stays (#72).
     fn opened(&mut self, path: PathBuf, bytes: Vec<u8>) -> Option<Song> {
         // The providers check first; this keeps a provider that does not from loading anything.
         let mut entries = match file_kind(&path) {
@@ -1023,6 +1151,15 @@ impl ProjectFiles {
             Some(FileKind::Midi) => return self.open_midi(&path, &bytes),
             Some(FileKind::Flp) => return self.open_flp(&path, &bytes, None),
             Some(FileKind::Archive) => Some(self.unzip(&bytes)?),
+            None if samples::import_folder(&path).is_some() => {
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                let entry = Entry {
+                    path: name.into_owned(),
+                    data: bytes,
+                };
+                self.import_files(vec![entry]);
+                return None;
+            }
             None => {
                 self.message = Some(vec![UNKNOWN_TYPE.into()]);
                 return None;
@@ -1149,7 +1286,7 @@ impl ProjectFiles {
                         .collect()
                 });
                 self.saved();
-                self.autosave(&song);
+                self.autosave(song.clone());
                 Some(song)
             }
             Err(err) => {
@@ -1209,7 +1346,7 @@ impl ProjectFiles {
         song.file.meta.created = created_now();
         self.path = None;
         self.saved();
-        self.autosave(&song);
+        self.autosave(song.clone());
         Some(song)
     }
 
@@ -1217,6 +1354,7 @@ impl ProjectFiles {
     /// starting in the song folder. Returns whether the dialog closes: a bad name keeps it open (behind the
     /// message), an empty one does nothing.
     pub fn dialog_save(&mut self, song: &Song, name: &str) -> bool {
+        let send = std::mem::take(&mut self.send);
         let Some(name) = self.typed_name(name, "flm") else {
             return false;
         };
@@ -1233,7 +1371,7 @@ impl ProjectFiles {
             .dir
             .as_ref()
             .map_or_else(|| file.clone().into(), |d| d.join(&file));
-        self.write(song, &path, true);
+        self.write(song, &path, true, send);
         true
     }
 
@@ -1274,6 +1412,11 @@ impl ProjectFiles {
             Some(NEWER_TAG) => (NEWER_TAG, Some(("Yes", CANCEL)), None),
             Some(IMPORT_TAG) => (IMPORT_TAG, Some(("Yes", "No")), None),
             Some(LOCATE_TAG) => (LOCATE_TAG, Some((LOCATE, "OK")), None),
+            Some(export::RENDERED_TAG) => (
+                export::RENDERED_TAG,
+                Some((export::OPEN_TRACKS, "OK")),
+                None,
+            ),
             #[cfg(not(target_arch = "wasm32"))]
             Some(NOTICE_TAG) => (NOTICE_TAG, Some((IMPORT, NOT_NOW)), None),
             // Top to bottom: `Replace files`, `Keep both`, `Cancel`.
@@ -1294,8 +1437,8 @@ impl ProjectFiles {
     }
 
     /// The tag of the shown question whose answer [`Self::update`] waits for: a project from a newer version
-    /// ([`NEWER_TAG`]), a song to replace ([`DISCARD_TAG`]), a preset to write over ([`OVERWRITE_TAG`]) or an
-    /// archive's files to import ([`IMPORT_TAG`]).
+    /// ([`NEWER_TAG`]), a song to replace ([`DISCARD_TAG`]), a preset to write over ([`OVERWRITE_TAG`]), an
+    /// archive's files to import ([`IMPORT_TAG`]) or a render to show ([`export::RENDERED_TAG`]).
     pub fn waiting(&self) -> Option<&'static str> {
         self.waiting_for().filter(|_| self.message.is_none())
     }
@@ -1313,8 +1456,10 @@ impl ProjectFiles {
             Some(OVERWRITE_TAG)
         } else if self.importing.is_some() {
             Some(IMPORT_TAG)
+        } else if self.locate_asked {
+            Some(LOCATE_TAG)
         } else {
-            self.locate_asked.then_some(LOCATE_TAG)
+            self.rendered.as_ref().map(|_| export::RENDERED_TAG)
         }
     }
 
@@ -1332,6 +1477,7 @@ impl ProjectFiles {
         answer: Option<Answer>,
     ) -> Option<Song> {
         self.provider.attach(ctx);
+        self.send = false;
         if shortcuts {
             if ctx.input_mut(|i| i.consume_shortcut(&OPEN_KEY)) {
                 self.replace(Replace::Pick);
@@ -1369,6 +1515,8 @@ impl ProjectFiles {
                 self.folder = None;
             } else if self.locate_asked {
                 self.locate_answered(answer == Answer::Yes);
+            } else if let Some(render) = self.rendered.take() {
+                self.open_tracks = (answer == Answer::Yes).then_some(render);
             }
         }
         // A project file dropped on the window opens as a picked one does (asking first with unsaved changes), once
@@ -1417,9 +1565,51 @@ pub(crate) fn read_limited(reader: impl Read, max: u64) -> Result<Vec<u8>, Strin
     Ok(bytes)
 }
 
-/// The file in the user root every load writes the whole project to.
-#[cfg(not(target_arch = "wasm32"))]
+/// The file in the user root the recent state goes to ([`ProjectFiles::autosave`]).
 pub(crate) const RECENT_STATE: &str = "recent.state";
+
+/// How long after the last edit the recent state is written ([`ProjectFiles::keep_recent`]).
+pub const AUTOSAVE_SECS: f64 = 1.0;
+
+/// What a [`RECENT_STATE`] file starts with: then `1` when the song had unsaved changes (else `0`), its file's path
+/// (empty for an untitled song) ended by a NUL, and the project.
+const RECENT_HEAD: &[u8] = b"HDRS1";
+
+/// A [`RECENT_STATE`] file's unsaved flag, path and project ([`RECENT_HEAD`]); `None` for any other file (an older
+/// version's, which is the project alone).
+pub(crate) fn recent_parts(state: &[u8]) -> Option<(bool, Option<PathBuf>, &[u8])> {
+    let (&unsaved, rest) = state.strip_prefix(RECENT_HEAD)?.split_first()?;
+    let end = rest.iter().position(|&b| b == 0)?;
+    let path = std::str::from_utf8(&rest[..end])
+        .ok()
+        .filter(|p| !p.is_empty());
+    Some((unsaved == b'1', path.map(PathBuf::from), &rest[end + 1..]))
+}
+
+/// The app leaves the screen: Android's `onPause` and iOS's resign-active set it from their own threads ([`leave`]),
+/// and the next frame takes it ([`take_leaving`]) and writes the recent state at once.
+static LEAVING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The app's context, which [`leave`] wakes for that frame: egui runs one only on input.
+static APP: std::sync::OnceLock<Context> = std::sync::OnceLock::new();
+
+/// The app is leaving the screen: the next frame, which this asks for, writes the recent state at once.
+pub fn leave() {
+    LEAVING.store(true, std::sync::atomic::Ordering::Release);
+    if let Some(ctx) = APP.get() {
+        ctx.request_repaint();
+    }
+}
+
+/// A [`leave`] waits for its frame still.
+pub fn leaving() -> bool {
+    LEAVING.load(std::sync::atomic::Ordering::Acquire)
+}
+
+/// Whether the app left the screen since the last frame ([`leave`]); `ctx` is the app's, which [`leave`] wakes.
+pub fn take_leaving(ctx: &Context) -> bool {
+    APP.get_or_init(|| ctx.clone());
+    LEAVING.swap(false, std::sync::atomic::Ordering::AcqRel)
+}
 
 /// Writes `bytes` to `path` whole or not at all (see [`replace_file`]): a crash or a full disk never leaves half
 /// a song.
@@ -1532,6 +1722,29 @@ pub fn stand_ins(mut notices: Vec<String>) -> Option<Vec<String>> {
             .chain(notices)
             .collect()
     })
+}
+
+/// The media type `Send` gives `files` (`*/*` for a mix): the share sheet offers the apps that take it.
+pub fn mime(files: &[PathBuf]) -> &'static str {
+    let of = |file: &PathBuf| {
+        let ext = file
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase());
+        match ext.as_deref() {
+            Some("zip") => "application/zip",
+            Some("mid" | "midi") => "audio/midi",
+            Some("wav") => "audio/x-wav",
+            Some("flac") => "audio/flac",
+            Some("ogg") => "audio/ogg",
+            Some("mp3") => "audio/mpeg",
+            _ => "application/octet-stream",
+        }
+    };
+    let first = files.first().map_or("*/*", of);
+    match files.iter().all(|f| of(f) == first) {
+        true => first,
+        false => "*/*",
+    }
 }
 
 /// The kind of project file `path` names: `.flm`, `.songtmpl`, `.zip`, `.mid`, `.midi` or `.flp`, in any case.

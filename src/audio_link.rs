@@ -287,6 +287,11 @@ impl AudioLink {
             .is_some_and(|(i, b)| Arc::ptr_eq(&i.ring, &b.ring) && Arc::ptr_eq(&i.tap, &b.tap))
     }
 
+    /// The commands queued for the audio thread so far ([`AudioSink::sent`]); 0 without an output.
+    pub fn sent(&self) -> u64 {
+        self.sink.as_ref().map_or(0, |s| s.sent())
+    }
+
     /// There is an output and its stream works.
     pub fn running(&self) -> bool {
         self.sink.is_some() && !self.stream_failed

@@ -176,7 +176,7 @@ cargo run --release
 The sound library lives in `sounds/`, split into 90 MB parts to stay under GitHub's file size limit. To rebuild it from the raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.4.10
+tools/release-content.sh 0.5.0
 ```
 
 Commit the updated `sounds/honeydew-sounds.zip.*` parts and `sounds/release.txt` (the library's version: the app updates an installed library that is older) with your changes. Add `--web` to also build the web ZIP. Tagged releases include the sounds automatically, and the first release with a new library version also publishes it as its own release, `sounds-<version>`, which the apps download from. Give every changed library a new version.

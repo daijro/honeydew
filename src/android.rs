@@ -207,6 +207,62 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onInterrupted(
     }
 }
 
+/// `onPause`, before Android pauses the app thread, which then runs no frame until the app is back: the frame that
+/// writes the song's unsaved changes ([`crate::project_files::leave`]) runs first, waited for up to half a second.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onLeaving(
+    _env: jni::JNIEnv<'_>,
+    _class: jni::objects::JClass<'_>,
+) {
+    crate::project_files::leave();
+    // ponytail: polled every 5 ms; a condvar if the wait ever shows.
+    for _ in 0..100 {
+        if !crate::project_files::leaving() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+/// Back was pressed (Android 13 and up hand it to `HoneydewActivity`'s back callback, not as a key) and waits for
+/// the next frame ([`take_back`]), which [`BACK_WAKE`] asks for.
+static BACK: AtomicBool = AtomicBool::new(false);
+static BACK_WAKE: std::sync::OnceLock<eframe::egui::Context> = std::sync::OnceLock::new();
+
+/// Back was pressed since the last call. `ctx` is the context a later press wakes.
+pub fn take_back(ctx: &eframe::egui::Context) -> bool {
+    BACK_WAKE.get_or_init(|| ctx.clone());
+    BACK.swap(false, Ordering::AcqRel)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onBack(
+    _env: jni::JNIEnv<'_>,
+    _class: jni::objects::JClass<'_>,
+) {
+    BACK.store(true, Ordering::Release);
+    if let Some(ctx) = BACK_WAKE.get() {
+        ctx.request_repaint();
+    }
+}
+
+/// Android sends Back to the activity's back callback (Android 13 and up, `HoneydewActivity.onCreate`): its key event,
+/// which comes too, is then not a second press.
+pub fn back_callback() -> bool {
+    AndroidApp::sdk_version() >= 33
+}
+
+/// Back's default with nothing open: the app goes to the background, as Android's own Back does for it.
+pub fn move_to_back() {
+    let moved = with_activity(|env, activity| {
+        env.call_method(activity, "moveTaskToBack", "(Z)Z", &[true.into()])
+            .map(drop)
+    });
+    if let Err(err) = moved {
+        eprintln!("could not move to the background: {err}");
+    }
+}
+
 /// What a document pick finishes with: the copy of the picked file, an error, or `None` when it was cancelled.
 pub type Picked = Option<Result<PathBuf, String>>;
 /// What a folder pick finishes with: each file in the picked folder or below, as its path from the folder's parent
@@ -356,6 +412,30 @@ pub fn show_folder(folder: &std::path::Path) -> Result<(), String> {
         )
         .map(drop)
     })
+}
+
+/// `Send` (#72): `files`, in the user folder, to the system's chooser as `mime` (`HoneydewActivity.share`), each by
+/// its document in `HoneydewDocuments` with a read grant only. Why not, when one is not in the user folder.
+pub fn share(files: &[PathBuf], mime: &str) -> Result<(), String> {
+    let list: String = files.iter().map(|f| format!("{}\0", f.display())).collect();
+    let mut failed = None;
+    with_activity(|env, activity| {
+        let list = env.auto_local(env.new_string(list)?);
+        let mime = env.auto_local(env.new_string(mime)?);
+        let why = env.call_method(
+            activity,
+            "share",
+            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+            &[
+                jni::objects::JValue::Object(list.as_ref()),
+                jni::objects::JValue::Object(mime.as_ref()),
+            ],
+        )?;
+        let why = env.auto_local(jni::objects::JString::from(why.l()?));
+        failed = text(env, &why);
+        Ok(())
+    })?;
+    failed.map_or(Ok(()), Err)
 }
 
 /// The network the phone is on: the sound library's download waits for an unmetered one (`update`).

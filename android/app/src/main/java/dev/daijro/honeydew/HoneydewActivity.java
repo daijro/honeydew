@@ -3,6 +3,7 @@ package dev.daijro.honeydew;
 import android.Manifest;
 import android.app.AlertDialog;
 import android.app.NativeActivity;
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
@@ -40,6 +41,7 @@ import java.net.ConnectException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 
 public final class HoneydewActivity extends NativeActivity {
     static { System.loadLibrary("honeydew"); }
@@ -55,6 +57,8 @@ public final class HoneydewActivity extends NativeActivity {
     private static native void onMic(boolean granted);
     private static native void onHeadphones(boolean on);
     private static native void onInterrupted();
+    private static native void onLeaving();
+    private static native void onBack();
 
     private static final int OPEN_DOCUMENT = 1;
     private static final int OPEN_FOLDER = 2;
@@ -83,6 +87,13 @@ public final class HoneydewActivity extends NativeActivity {
         super.onCreate(state);
         hideSystemBars();
         getSystemService(AudioManager.class).registerAudioDeviceCallback(outputs, null);
+        // Back goes to the app (Android 13 and up; older ones send it as a key): it closes the topmost message, popup
+        // or panel, and with none open the app moves to the background (Rust's `android::move_to_back`), as Android's
+        // own Back did. Without it Android 16 left the app with a message open.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, HoneydewActivity::onBack);
+        }
     }
 
     // Wired, USB or Bluetooth headphones. A Bluetooth headset's own mic needs a call link (SCO), so recording keeps
@@ -169,9 +180,11 @@ public final class HoneydewActivity extends NativeActivity {
         });
     }
 
-    // Leaving the screen ends a take too: Android gives an app in the background silence for its microphone.
+    // Leaving the screen ends a take too: Android gives an app in the background silence for its microphone. Before
+    // the app thread pauses, it writes the song's unsaved changes (onLeaving waits for that frame).
     @Override
     protected void onPause() {
+        onLeaving();
         super.onPause();
         onInterrupted();
     }
@@ -390,6 +403,28 @@ public final class HoneydewActivity extends NativeActivity {
                     .setPositiveButton("OK", null)
                     .show();
         });
+    }
+
+    // Send (#72, Rust `android::share`): `paths`, files in the user folder each ending in '\0', to the system's chooser
+    // as `type`, each by its document in HoneydewDocuments with a read grant only (the clip carries it to the app
+    // picked). Returns why not, or null.
+    public String share(String paths, String type) {
+        ArrayList<Uri> uris = new ArrayList<>();
+        for (String path : paths.split("\0")) {
+            Uri uri = HoneydewDocuments.documentUri(this, path);
+            if (uri == null) return path + ": not in the user folder";
+            uris.add(uri);
+        }
+        Intent send = new Intent(uris.size() == 1 ? Intent.ACTION_SEND : Intent.ACTION_SEND_MULTIPLE)
+                .setType(type)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        if (uris.size() == 1) send.putExtra(Intent.EXTRA_STREAM, uris.get(0));
+        else send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+        ClipData clip = ClipData.newRawUri(null, uris.get(0));
+        for (int i = 1; i < uris.size(); i++) clip.addItem(new ClipData.Item(uris.get(i)));
+        send.setClipData(clip);
+        runOnUiThread(() -> startActivity(Intent.createChooser(send, null)));
+        return null;
     }
 
     // The network the phone is on, for the sound library's download (Rust `update`): 0 none that reaches the internet,
