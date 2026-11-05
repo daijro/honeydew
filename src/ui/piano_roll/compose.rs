@@ -335,6 +335,9 @@ fn melody(
     let motif_len = motif_len.max(4).min(slots.len());
     // The scale tones of the register window, for the walk's index and the tonic.
     let tones = scale_tones(base, offs);
+    if tones.is_empty() {
+        return out;
+    }
     let tonic = tones
         .iter()
         .copied()
