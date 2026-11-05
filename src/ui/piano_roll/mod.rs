@@ -441,7 +441,8 @@ enum MoreOp {
 }
 
 /// The floating buttons over a selection.
-const FLOATING: [&str; 5] = ["Copy", "Duplicate", "Snap", "Delete", "More..."];
+/// Copy and Delete first, Duplicate last before `More...` (as every editor's row).
+const FLOATING: [&str; 5] = ["Copy", "Delete", "Snap", "Duplicate", "More..."];
 
 impl PianoRoll {
     pub fn new(channel: usize, lane: usize, clip_id: Option<u32>) -> Self {
@@ -1967,7 +1968,7 @@ impl PianoRoll {
         }
     }
 
-    /// `Copy`, `Delete`, `Snap` and `More...` over the selection, in a [`clips::FloatingRow`].
+    /// `Copy`, `Delete`, `Snap`, `Duplicate` and `More...` over the selection, in a [`clips::FloatingRow`].
     fn floating_buttons(
         &mut self,
         ui: &mut egui::Ui,

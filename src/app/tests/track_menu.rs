@@ -1566,7 +1566,7 @@ fn a_marquee_group_follows_its_clips_through_undos_made_while_the_playlist_is_aw
     }
     rig.release(on);
     rig.frame(vec![]);
-    rig.click_id(Id::new(("clip_button", 2_usize)));
+    rig.click_id(Id::new(("clip_button", 1_usize)));
     let clips = |c: usize| rig.app.song.channels[c].lanes[0].clips.len();
     assert_eq!((clips(1), clips(2)), (2, 0));
 }

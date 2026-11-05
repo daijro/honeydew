@@ -170,7 +170,7 @@ const NEW_BEAT_U: f32 = 3.0;
 pub(crate) const STEP_POP: f32 = 0.9;
 const POP_FLOOR: f32 = 0.01;
 /// The floating buttons over the selected steps (step-sequencer mode).
-const STEP_OPS: [&str; 3] = ["Copy", "Duplicate", "Delete"];
+const STEP_OPS: [&str; 3] = ["Copy", "Delete", "Duplicate"];
 /// The `Set Name` box.
 const PROMPT_W: f32 = 8.0;
 const PROMPT_ROW_H: f32 = 1.25;
@@ -1110,9 +1110,9 @@ impl StepSeqView {
         self.row.covered = self.covered;
         if let Some((i, _)) = self.row.show(ui, "step_button", sel, shown, &STEP_OPS, cx) {
             let cells: Vec<_> = self.selection.iter().copied().collect();
-            match i {
+            match STEP_OPS[i] {
                 // Copy only fills the hit clipboard.
-                0 => {
+                "Copy" => {
                     let chosen =
                         |e: &&Event| edit::cell_of(e, sig).is_some_and(|c| cells.contains(&c));
                     let hits = clip.map_or_else(Vec::new, |c| {
@@ -1120,7 +1120,7 @@ impl StepSeqView {
                     });
                     set_hit_clipboard(ui.ctx(), hits);
                 }
-                1 => action = Some(StepAction::CopySteps { cells }),
+                "Duplicate" => action = Some(StepAction::CopySteps { cells }),
                 _ => action = Some(StepAction::DeleteSteps { cells }),
             }
         }

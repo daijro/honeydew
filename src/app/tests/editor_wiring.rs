@@ -2127,7 +2127,7 @@ fn a_clips_edit_opens_that_drum_clip_whose_steps_land_in_it() {
     // `Edit` on the second clip (bar 2: a beat is 38.4 points from x 48).
     rig.click(pos2(48.0 + 6.0 * 38.4, header(1).y));
     rig.frame(vec![]);
-    rig.click_id(egui::Id::new(("clip_button", 4_usize)));
+    rig.click_id(egui::Id::new(("clip_button", 3_usize)));
     assert_eq!(rig.app.nav.view, View::DrumEditor(1));
     rig.slide_split();
     rig.click(rig.step(0, 1));
@@ -3660,7 +3660,7 @@ mod editors {
             let mut rig = two_clips();
             rig.click(clip(row));
             rig.frame(vec![]);
-            rig.click_id(egui::Id::new(("clip_button", 4_usize)));
+            rig.click_id(egui::Id::new(("clip_button", 3_usize)));
             rig.frame(vec![]);
             assert_eq!(shown(&rig), (view, Some(first(row, 0))));
             assert!(rig.painted("SOLO CLIP"), "{view:?}");

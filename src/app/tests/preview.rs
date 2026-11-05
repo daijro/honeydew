@@ -820,7 +820,7 @@ fn a_clips_edit_opens_that_clip_whose_edits_land_in_it_and_preview_follows() {
     // `Edit` on the second clip.
     rig.click(clip_at(2, 1024));
     rig.frame(vec![]);
-    rig.click_id(egui::Id::new(("clip_button", 4_usize)));
+    rig.click_id(egui::Id::new(("clip_button", 3_usize)));
     assert_eq!(rig.app.nav.view, View::PianoRoll(2));
     rig.slide_split();
     assert_eq!(rig.app.preview, Some(SYNTH_2));

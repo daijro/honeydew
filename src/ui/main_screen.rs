@@ -4378,8 +4378,7 @@ mod tests {
     }
 
     #[test]
-    fn a_tap_on_another_tracks_empty_space_makes_it_current_and_only_note_and_drum_tracks_take_clips()
-     {
+    fn a_tap_on_another_tracks_empty_space_makes_it_current_and_its_new_clip_adds_one_there() {
         let mut rig = Rig::new(song_with_a_clip());
         rig.selected = 2;
         // The drums' track is not current: the first tap makes it so (its channel takes the keyboard).
@@ -4390,8 +4389,8 @@ mod tests {
         rig.click(drums);
         assert_eq!(rig.plus().0, Some(SongEdit::Final));
         assert_eq!(rig.clips(1)[0].start_tick, 0);
-        // The master's automation track (current, its keys silent) takes no new clip: on it the menu's `New Clip` is
-        // dimmed and adds nothing.
+        // The master's automation track (current, its keys silent) takes a new clip too, as Honeydew's automation
+        // tracks do: `New Clip` adds an automation clip there.
         let master = pos2(600.0, 80.0);
         for _ in 0..2 {
             assert_eq!(rig.click(master), (None, None));
@@ -4399,9 +4398,12 @@ mod tests {
         }
         rig.click(master);
         assert!(rig.plus_shown());
-        assert_eq!(rig.plus(), (None, None));
-        assert!(rig.plus_shown());
-        assert_eq!(rig.clips(0).len(), 1, "only the rig's own clip at beat 60");
+        assert_eq!(rig.plus(), (Some(SongEdit::Final), None));
+        assert_eq!(
+            rig.clips(0).len(),
+            2,
+            "the rig's own clip at beat 60 and the new one"
+        );
         assert_eq!(rig.selected, 0);
     }
 
@@ -4547,7 +4549,7 @@ mod tests {
         assert!(rig.rect_of(Id::new(("clip_button", 0_usize))).is_some());
         // The group's Delete takes both, as one edit.
         assert_eq!(
-            rig.click_id(Id::new(("clip_button", 2_usize))).0,
+            rig.click_id(Id::new(("clip_button", 1_usize))).0,
             Some(SongEdit::Final)
         );
         assert!(rig.clips(1).is_empty() && rig.clips(2).is_empty());
@@ -5082,7 +5084,7 @@ mod tests {
         rig.frame(vec![]);
         assert_eq!(rig.click_id(button(0)).0, None);
         assert_eq!(rig.clips(2).len(), 1);
-        assert_eq!(rig.click_id(button(1)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(4)).0, Some(SongEdit::Final));
         let starts: Vec<_> = rig.clips(2).iter().map(|c| (c.id, c.start_tick)).collect();
         assert_eq!(starts, [(1, 512), (2, 1024)]);
         assert_eq!(
@@ -5096,15 +5098,15 @@ mod tests {
         // Snap puts the copy back on the beat grid.
         rig.song.channels[2].lanes[0].clips[1].start_tick = 1000;
         rig.frame(vec![]);
-        assert_eq!(rig.click_id(button(3)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(2)).0, Some(SongEdit::Final));
         assert_eq!(rig.clips(2)[1].start_tick, 1024);
         let copy = ClipKey {
             channel: 2,
             lane: 0,
             id: 2,
         };
-        assert_eq!(rig.click_id(button(4)), (None, Some(Nav::EditClip(copy))));
-        assert_eq!(rig.click_id(button(2)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(3)), (None, Some(Nav::EditClip(copy))));
+        assert_eq!(rig.click_id(button(1)).0, Some(SongEdit::Final));
         assert_eq!(rig.clips(2).iter().map(|c| c.id).collect::<Vec<_>>(), [1]);
         assert_eq!(rig.screen.clips.selected, None);
         // Without a selection there are no buttons.
@@ -6848,12 +6850,12 @@ mod tests {
         rig.screen.snap = bar;
         rig.click(CLIP);
         rig.frame(vec![]);
-        assert_eq!(rig.click_id(button(1)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(4)).0, Some(SongEdit::Final));
         assert_eq!(rig.clips(2)[1].start_tick, 512 + 1024);
         // The floating Snap: to the nearest bar (900 → 1024; a beat would be 896).
         rig.song.channels[2].lanes[0].clips[1].start_tick = 900;
         rig.frame(vec![]);
-        assert_eq!(rig.click_id(button(3)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(2)).0, Some(SongEdit::Final));
         assert_eq!(rig.clips(2)[1].start_tick, 1024);
         // `New Clip` at beat 13.6: the nearest bar line, beat 12 (a beat would be 14).
         let mut rig = Rig::new(song_with_a_clip());

@@ -450,19 +450,20 @@ impl Drag {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ClipOp {
     Copy,
-    Duplicate,
     Delete,
     Snap,
     Edit,
+    Duplicate,
     More,
 }
 
+/// Copy and Delete first, Duplicate last before `More...` (as every editor's row).
 const OPS: [(ClipOp, &str); 6] = [
     (ClipOp::Copy, "Copy"),
-    (ClipOp::Duplicate, "Duplicate"),
+    (ClipOp::Delete, "Delete"),
     (ClipOp::Snap, "Snap"),
     (ClipOp::Edit, "Edit"),
-    (ClipOp::Delete, "Delete"),
+    (ClipOp::Duplicate, "Duplicate"),
     (ClipOp::More, "More..."),
 ];
 

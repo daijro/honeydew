@@ -126,7 +126,7 @@ const POP_RATE: f32 = 0.6;
 const POP_GAIN: f32 = 1.0515;
 const POP_W: f32 = 1.885;
 /// The floating buttons over the selection (free note-grid mode).
-const OPS: [&str; 4] = ["Copy", "Duplicate", "Snap", "Delete"];
+const OPS: [&str; 4] = ["Copy", "Delete", "Snap", "Duplicate"];
 
 fn id() -> Id {
     Id::new("drum_grid")
@@ -1094,8 +1094,9 @@ impl DrumGridView {
         }
     }
 
-    /// `Copy`, `Delete` and `Snap` over the selection, in a [`FloatingRow`] (waiting for a marquee); `grid` is the
-    /// snap mode's unit, on or off. Returns the hits and selection a button left.
+    /// `Copy`, `Delete`, `Snap` and `Duplicate` over the selection, in a [`FloatingRow`] (waiting for a marquee); `grid`
+    /// is the snap mode's unit, on or off. Returns the hits and selection a button left: none for `Copy`, which only
+    /// fills the hit clipboard.
     #[allow(clippy::too_many_arguments)]
     fn floating_row(
         &mut self,
@@ -1132,23 +1133,24 @@ impl DrumGridView {
         };
         self.row.covered = self.covered;
         let (i, _) = self.row.show(ui, "grid_button", sel, view, &OPS, cx)?;
+        ui.ctx().request_repaint();
         let (mut events, mut sel) = (events.to_vec(), self.sel.clone());
-        match i {
-            // Copy only fills the hit clipboard.
-            0 => {
+        match OPS[i] {
+            // Copy only fills the hit clipboard: no edit.
+            "Copy" => {
                 step_seq::set_hit_clipboard(ui.ctx(), chosen.iter().map(|&&e| e).collect());
+                return None;
             }
-            1 => {
+            "Duplicate" => {
                 edit::copy_selected(&mut events, &mut sel, grid);
             }
-            2 => {
+            "Snap" => {
                 edit::quantize_selected(&mut events, &mut sel, grid);
             }
             _ => {
                 remove_selected(&mut events, &mut sel);
             }
         }
-        ui.ctx().request_repaint();
         Some((events, sel))
     }
 

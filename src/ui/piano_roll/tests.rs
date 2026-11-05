@@ -1523,7 +1523,7 @@ mod component {
         let mut rig = Rig::new(vec![n(128, 64.0, 70), n(256, 64.0, 60)]);
         rig.tap(at(140.0, 70));
         assert_eq!(rig.roll.selected, [true, false]);
-        for label in ["Copy", "Duplicate", "Snap", "Delete", "More..."] {
+        for label in ["Copy", "Delete", "Snap", "Duplicate", "More..."] {
             assert!(rig.text(label).is_some(), "no {label}");
         }
         rig.tap(at(140.0, 70));
@@ -1895,7 +1895,7 @@ mod component {
         rig.release(at(140.0, 70));
         assert_eq!(rig.roll.selected, [true, false]);
         assert!(rig.all.is_empty());
-        for label in ["Copy", "Duplicate", "Snap", "Delete", "More..."] {
+        for label in ["Copy", "Delete", "Snap", "Duplicate", "More..."] {
             assert!(rig.text(label).is_some(), "no {label}");
         }
         let delete = rig.text("Delete").unwrap();
@@ -2091,7 +2091,7 @@ mod component {
                 _ => assert_eq!(row.top(), note.bottom() + 6.4, "key {key}"),
             }
             // The labels sit in the row's 51.2-point slots, left to right.
-            for (i, label) in ["Copy", "Duplicate", "Snap", "Delete", "More..."]
+            for (i, label) in ["Copy", "Delete", "Snap", "Duplicate", "More..."]
                 .into_iter()
                 .enumerate()
             {
@@ -4105,7 +4105,7 @@ mod component {
         rig.release(at(132.0, 66));
         rig.frame(vec![]);
         assert!(rig.text("Paste").is_some());
-        for label in ["Copy", "Duplicate", "Snap", "Delete", "More..."] {
+        for label in ["Copy", "Delete", "Snap", "Duplicate", "More..."] {
             assert_eq!(rig.text(label), None, "{label} must not accompany Paste");
         }
         assert_eq!(spans(rig.events()), [(128, 64.0, 66)]);

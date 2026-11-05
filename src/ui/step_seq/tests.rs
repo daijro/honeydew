@@ -2292,12 +2292,14 @@ fn a_long_press_on_a_hit_selects_it_and_floats_copy_and_delete_over_it() {
     rig.release(at);
     assert_eq!(rig.selection(), [(1, 4)]);
     assert!(rig.actions.is_empty(), "{:?}", rig.actions);
-    // Step-sequencer mode: no `Snap`. The row sits centred above the selected step.
-    let (copy, delete) = (rig.text_at("Copy").unwrap(), rig.text_at("Delete").unwrap());
+    // Step-sequencer mode: no `Snap`. The row, `Copy` `Delete` `Duplicate`, sits centred above the selected step.
+    let [copy, delete, duplicate] =
+        ["Copy", "Delete", "Duplicate"].map(|t| rig.text_at(t).unwrap());
     assert_eq!(rig.text_at("Snap"), None);
     let cell = rig.layout().cell(1, 4);
     assert!(copy.y < cell.top() && delete.y < cell.top());
-    assert!(((copy.x + delete.x) / 2.0 - cell.center().x).abs() < 1.0);
+    assert!(copy.x < delete.x && delete.x < duplicate.x);
+    assert!(((copy.x + duplicate.x) / 2.0 - cell.center().x).abs() < 1.0);
 }
 
 #[test]
@@ -2553,15 +2555,18 @@ fn a_right_click_deletes_the_hit_under_it_in_one_undo_step_and_on_an_empty_step_
 }
 
 #[test]
-fn copy_duplicates_the_selected_steps_to_the_right_and_selects_the_copies() {
+fn duplicate_copies_the_selected_steps_to_the_right_and_selects_the_copies() {
     let mut rig = Rig::new(pattern());
     // The box from an empty step (a hit's move drags it), over the same hits.
     let (from, to) = (rig.cell(3, 0), rig.cell(0, 4));
     rig.hold(from);
     rig.frame(vec![egui::Event::PointerMoved(to)]);
     rig.release(to);
-    let copy = rig.text_at("Copy").unwrap();
-    rig.click(copy);
+    // `Copy` only fills the hit clipboard; `Duplicate` copies.
+    rig.click(rig.text_at("Copy").unwrap());
+    assert_eq!(rig.actions, []);
+    let duplicate = rig.text_at("Duplicate").unwrap();
+    rig.click(duplicate);
     let cells = vec![(0, 0), (1, 4), (2, 2)];
     assert_eq!(rig.actions, [StepAction::CopySteps { cells }]);
     // Steps 0 to 4 are five steps.
@@ -3529,14 +3534,14 @@ fn a_hit_alone_in_the_selection_is_remembered_and_new_hits_take_its_velocity_and
 }
 
 #[test]
-fn a_lone_copy_is_remembered() {
+fn a_lone_duplicate_is_remembered() {
     let mut rig = Rig::new(odd_hit());
     let at = rig.cell(1, 4);
     rig.hold(at);
     rig.release(at);
     rig.view.remembered = Remembered::default();
-    let copy = rig.text_at("Copy").unwrap();
-    rig.click(copy);
+    let duplicate = rig.text_at("Duplicate").unwrap();
+    rig.click(duplicate);
     assert_eq!(rig.selection(), [(1, 5)]);
     assert_eq!(rig.view.remembered.velocity, 102);
 }

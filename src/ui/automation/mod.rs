@@ -125,7 +125,8 @@ const PAST_END: u8 = 38;
 const ANIM_RATE: f32 = 0.6;
 const DRAG_FLOOR: f32 = 0.01;
 /// The floating buttons over a selection.
-const OPS: [&str; 5] = ["Copy", "Duplicate", "Delete", "Edit\nvalue", "Set shape"];
+/// Copy and Delete first, Duplicate last (as the other editors' rows, before their `More...`).
+const OPS: [&str; 5] = ["Copy", "Delete", "Edit\nvalue", "Set shape", "Duplicate"];
 /// The value grid's lines: at least this many U apart, `text` at this alpha.
 pub(crate) const GRID_GAP: f32 = 0.25;
 pub(crate) const GRID_ALPHA: f32 = 0.15;
@@ -580,18 +581,22 @@ impl AutomationEditor {
             .row
             .show(ui, "automation_button", selection, grid_view, &OPS, cx)
         {
-            match i {
+            match OPS[i] {
                 // Copy only fills the clipboard.
-                0 => set_clipboard(ui.ctx(), points::copy(&pts, &self.sel, max)),
-                1 => edit = points::duplicate_selected(&pts, &self.sel).or(edit),
-                2 => {
+                "Copy" => set_clipboard(ui.ctx(), points::copy(&pts, &self.sel, max)),
+                "Delete" => {
                     let keep = (pts.iter().zip(&self.sel)).filter(|(_, s)| !**s);
                     let keep: Vec<Point> = keep.map(|(p, _)| *p).collect();
                     let n = keep.len();
                     edit = Some((keep, vec![false; n]));
                 }
-                3 => self.open_value(&target, &pts),
-                4 => self.shaping = Some(shape::Shaping::default()),
+                "Edit\nvalue" => self.open_value(&target, &pts),
+                "Set shape" => self.shaping = Some(shape::Shaping::default()),
+                // A copy right after the selection, by the snap grid (Auto's while Snap is off), as the piano roll's.
+                "Duplicate" => {
+                    let grid = self.snap.grid(auto_grid(ax.beat_w, u, sig), sig);
+                    edit = points::duplicate_selected(&pts, &self.sel, grid).or(edit);
+                }
                 _ => {}
             }
             ui.ctx().request_repaint();

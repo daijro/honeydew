@@ -3805,7 +3805,7 @@ mod tests {
     #[test]
     fn a_clips_edit_button_opens_its_channels_editor_and_the_close_x_goes_back() {
         let mut rig = Rig::with_drums_and_synth();
-        let edit = egui::Id::new(("clip_button", 4_usize));
+        let edit = egui::Id::new(("clip_button", 3_usize));
         let plus = egui::Id::new("clip_insert").with(0);
         // A tap on the empty drum lane makes its track current, the next shows the insert menu, whose `New Clip` adds a
         // clip and selects it; its Edit opens the drum editor.
