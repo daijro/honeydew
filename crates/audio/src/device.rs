@@ -649,11 +649,42 @@ impl<R: AudioRenderer> AudioOutput<R> {
     where
         F: FnOnce(u32) -> Result<R, E>,
     {
+        Self::start_with_mode_at(mode, 0, make_renderer)
+    }
+
+    /// Starts the output with an explicit buffer profile, requesting `rate` as the stream's sample rate when the
+    /// device supports it (0: the device's default). The renderer is built at the rate the stream actually runs,
+    /// so a renderer always matches its stream.
+    pub fn start_with_mode_at<F, E>(
+        mode: BufferMode,
+        rate: u32,
+        make_renderer: F,
+    ) -> Result<Self, StartError<E>>
+    where
+        F: FnOnce(u32) -> Result<R, E>,
+    {
         let device = cpal::default_host()
             .default_output_device()
             .ok_or(StartError::NoDevice)?;
         let supported = device.default_output_config().map_err(StartError::Config)?;
-        let sample_rate = supported.sample_rate().0;
+        let default_rate = supported.sample_rate().0;
+        let sample_rate = if rate > 0
+            && device
+                .supported_output_configs()
+                .ok()
+                .into_iter()
+                .flatten()
+                .any(|range| {
+                    range.channels() == supported.channels()
+                        && range.sample_format() == supported.sample_format()
+                        && range.min_sample_rate() <= rate
+                        && rate <= range.max_sample_rate()
+                })
+        {
+            rate
+        } else {
+            default_rate
+        };
         let channels = usize::from(supported.channels());
         let renderer = make_renderer(sample_rate).map_err(StartError::Renderer)?;
         let (mut output, state) = Self::unstarted(renderer, sample_rate);
@@ -662,7 +693,8 @@ impl<R: AudioRenderer> AudioOutput<R> {
         let error = move |_| {
             error_shared.failed.store(true, Ordering::Release);
         };
-        let config = output_config(&device, &supported, mode);
+        let mut config = output_config(&device, &supported, mode);
+        config.sample_rate = cpal::SampleRate(sample_rate);
         let stream = match supported.sample_format() {
             cpal::SampleFormat::I8 => {
                 build_stream::<i8, _, _>(&device, &config, channels, state, error)
@@ -790,11 +822,24 @@ impl<R: AudioRenderer> AudioOutput<R> {
     where
         F: FnOnce(u32) -> Result<R, E>,
     {
+        self.reopen_with_mode_at(mode, 0, make_renderer)
+    }
+
+    /// [`Self::reopen_with_mode`], requesting `rate` as the new stream's sample rate when supported (0: default).
+    pub fn reopen_with_mode_at<F, E>(
+        &mut self,
+        mode: BufferMode,
+        rate: u32,
+        make_renderer: F,
+    ) -> Result<(), StartError<E>>
+    where
+        F: FnOnce(u32) -> Result<R, E>,
+    {
         let tick = self.shared.tick.load(Ordering::Acquire);
         let playing = self.transport_playing;
         drop(self.stream.take());
         self.shared.failed.store(true, Ordering::Release);
-        let mut replacement = Self::start_with_mode(mode, make_renderer)?;
+        let mut replacement = Self::start_with_mode_at(mode, rate, make_renderer)?;
         let _ = replacement.send(AudioCommand::Seek(tick));
         if playing {
             let _ = replacement.send(AudioCommand::Play);

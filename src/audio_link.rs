@@ -93,7 +93,7 @@ impl AudioSink for AudioOutput<SongAudioEngine> {
         input: Option<&LiveInput>,
         mode: BufferMode,
     ) -> Result<(), String> {
-        AudioOutput::reopen_with_mode(self, mode, |rate| {
+        AudioOutput::reopen_with_mode_at(self, mode, song.sample_rate, |rate| {
             SongAudioEngine::with_input(song, rate as f32, samples, input)
         })
         .map_err(|err| format!("{err:?}"))
@@ -112,7 +112,12 @@ pub fn open_device_with_latency(
     samples: &SampleCache,
     low_latency: bool,
 ) -> Option<Box<dyn AudioSink>> {
-    match AudioOutput::start_with_latency(low_latency, |rate| {
+    let mode = if low_latency {
+        BufferMode::Fast
+    } else {
+        BufferMode::Native
+    };
+    match AudioOutput::start_with_mode_at(mode, song.sample_rate, |rate| {
         SongAudioEngine::with_samples(song, rate as f32, samples)
     }) {
         Ok(output) => Some(Box::new(output)),
@@ -128,7 +133,7 @@ pub fn open_device_with_mode(
     samples: &SampleCache,
     mode: BufferMode,
 ) -> Option<Box<dyn AudioSink>> {
-    match AudioOutput::start_with_mode(mode, |rate| {
+    match AudioOutput::start_with_mode_at(mode, song.sample_rate, |rate| {
         SongAudioEngine::with_samples(song, rate as f32, samples)
     }) {
         Ok(output) => Some(Box::new(output)),
@@ -637,6 +642,23 @@ impl AudioLink {
 
     pub fn set_sound_mode_preference(&mut self, sound_mode: u8) {
         self.sound_mode = sound_mode;
+    }
+
+    /// Reopens the running output at the project's sample rate (`song.sample_rate`, already set), the transport
+    /// kept. Without a stream the next one opens at it ([`open_device`]).
+    pub fn set_sample_rate(&mut self, song: &Song, rate: u32) {
+        if song.sample_rate == rate {
+            return;
+        }
+        let mode = self.buffer_mode();
+        let Some(sink) = &mut self.sink else { return };
+        self.seeking = None;
+        if let Err(err) = sink.reopen(song, &self.samples, self.input.as_ref(), mode) {
+            warn(&format!("could not change the sample rate: {err}"));
+            self.stream_failed = true;
+        } else {
+            self.stream_failed = false;
+        }
     }
 
     fn buffer_mode(&self) -> BufferMode {
