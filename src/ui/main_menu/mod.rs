@@ -138,6 +138,8 @@ pub enum MainMenuAction {
     Unzip(std::path::PathBuf),
     /// PROJECT `-` / `+`: the new tempo in BPM, already kept in [`TEMPO_RANGE`].
     SetTempo(f64),
+    /// PROJECT `Samplerate:` dropdown: the project's new sample rate in Hz, one of [`crate::song::SAMPLE_RATES`].
+    SetSampleRate(u32),
     /// PROJECT `Reset` next to the time spent. The app asks, then sets it to 0.
     ResetTimeSpent,
     /// PROJECT `Hide` next to the time spent. The app asks, then sets it to −1 (META@256).

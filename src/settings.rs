@@ -341,6 +341,10 @@ pub struct Settings {
     /// over a metered network. Off by default: it waits for Wi-Fi.
     #[serde(rename = "soundsOverMobileData")]
     pub sounds_mobile_data: bool,
+    /// Whether the first-open question about downloading the sound library was asked (our own key; #66, Android):
+    /// the base APK asks once, then leaves the download to UPDATES and Settings `Install sound library…`.
+    #[serde(rename = "soundsAsked")]
+    pub sounds_asked: bool,
 }
 
 /// `Project version size limit:`'s items, in MB.
@@ -413,6 +417,7 @@ impl Default for Settings {
             audio_input: String::new(),
             check_updates: true,
             sounds_mobile_data: false,
+            sounds_asked: false,
         }
     }
 }
@@ -849,6 +854,7 @@ mod tests {
             audio_input: "USB".into(),
             check_updates: !d.check_updates,
             sounds_mobile_data: !d.sounds_mobile_data,
+            sounds_asked: !d.sounds_asked,
         }
     }
 

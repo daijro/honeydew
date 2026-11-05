@@ -21,7 +21,7 @@
 //!   while the link is empty, and the `Lock metadata forever` button hides.
 //! - `Open` shows whenever the link is non-empty, locked or not.
 
-use eframe::egui::{Align2, Id, Rect, TextEdit, Ui, pos2, vec2};
+use eframe::egui::{Align2, ComboBox, Id, Rect, TextEdit, Ui, pos2, vec2};
 
 use super::{
     Circle, CircleStyle, MainMenuAction, PAD, circle_button, light_button, scroll, text_field,
@@ -397,6 +397,7 @@ impl ProjectTab {
         let rows = rows
             .into_iter()
             .filter(|(name, _)| !(locked && hidden && time_row(name)));
+        let mut rate = info.sample_rate.unwrap_or(44_100);
         for (name, value) in rows {
             let row = band(INFO_ROW_H);
             let (left, right) = row.split_left_right_at_x(value_x);
@@ -409,15 +410,17 @@ impl ProjectTab {
                 Align2::LEFT_CENTER,
                 text,
             );
-            label(
-                ui,
-                cx,
-                right,
-                &value,
-                FontSize::Pt10,
-                Align2::LEFT_CENTER,
-                text,
-            );
+            if name != "Samplerate:" {
+                label(
+                    ui,
+                    cx,
+                    right,
+                    &value,
+                    FontSize::Pt10,
+                    Align2::LEFT_CENTER,
+                    text,
+                );
+            }
             match name {
                 "Time spent on project:" => {
                     let d = m.u(BUTTON_D);
@@ -443,6 +446,22 @@ impl ProjectTab {
                         if circle_button(ui, cx, &circle) {
                             action = Some(act);
                         }
+                    }
+                }
+                "Samplerate:" => {
+                    ComboBox::from_id_salt(id.with("sample_rate"))
+                        .selected_text(format!("{} Hz", thousands(rate.into())))
+                        .show_ui(ui, |ui| {
+                            for &r in &crate::song::SAMPLE_RATES {
+                                ui.selectable_value(
+                                    &mut rate,
+                                    r,
+                                    format!("{} Hz", thousands(r.into())),
+                                );
+                            }
+                        });
+                    if rate != info.sample_rate.unwrap_or(0) {
+                        action = Some(MainMenuAction::SetSampleRate(rate));
                     }
                 }
                 "Tempo:" => {

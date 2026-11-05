@@ -16,17 +16,12 @@ fn item(col: usize, row: usize) -> Id {
     Id::new("track_menu").with((col, row))
 }
 
-/// `Hide tracks` / `Show Tracks` is no longer a menu item (the channel dropdown's extra hide button is gone);
-/// the zip is toggled through the op directly here.
-const SETTINGS: (usize, usize) = (0, 0);
-const CLONE: (usize, usize) = (0, 1);
-const INSERT: (usize, usize) = (0, 2);
-const DELETE_TRACK: (usize, usize) = (0, 3);
-const DELETE_CHANNEL: (usize, usize) = (0, 4);
-/// Toggles the channel's zip, as the removed `Hide tracks` item did.
-fn hide_tracks(rig: &mut Rig, channel: usize) {
-    rig.app.track_op(channel, 0, TrackOp::ToggleZip, 0);
-}
+const HIDE: (usize, usize) = (0, 0);
+const SETTINGS: (usize, usize) = (0, 2);
+const CLONE: (usize, usize) = (0, 3);
+const INSERT: (usize, usize) = (0, 4);
+const DELETE_TRACK: (usize, usize) = (0, 5);
+const DELETE_CHANNEL: (usize, usize) = (0, 6);
 /// `Add Track` of an instrument, `Add StepSeq Track` and `Add Notes Track` of a drums channel.
 const ADD_TRACK: (usize, usize) = (1, 3);
 const ADD_STEP_SEQ: (usize, usize) = (1, 2);
@@ -283,7 +278,7 @@ fn hide_tracks_hides_the_sub_track_rows_and_show_tracks_brings_them_back() {
     rig.click(lane(2));
     let selected = |rig: &Rig| (rig.app.main_screen.clips.selected).map(|r| (r.channel, r.lane));
     assert_eq!(selected(&rig), Some((1, 1)));
-    hide_tracks(&mut rig, 1);
+    rig.track_menu(1, HIDE);
     assert!(rig.app.song.channels[1].zipped);
     assert_eq!(track_rows(&rig.app.song, false).len(), 3);
     assert_eq!(rig.app.main_screen.clips.selected, None);
@@ -302,11 +297,11 @@ fn hide_tracks_hides_the_sub_track_rows_and_show_tracks_brings_them_back() {
     );
     rig.frame(redo());
     rig.take();
-    hide_tracks(&mut rig, 1);
+    rig.track_menu(1, HIDE);
     assert!(!rig.app.song.channels[1].zipped, "Show Tracks");
     assert_eq!(rig.take(), Vec::<String>::new());
     // Adding a track shows the hidden ones.
-    hide_tracks(&mut rig, 1);
+    rig.track_menu(1, HIDE);
     rig.track_menu(1, ADD_NOTES);
     assert!(!rig.app.song.channels[1].zipped);
 }
