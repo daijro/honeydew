@@ -57,14 +57,23 @@ jobs:
           if ! cargo test --workspace > "$RUNNER_TEMP/test.log" 2>&1; then
             # Every annotation goes out, whatever a grep finds.
             set +e +o pipefail
+            # An annotation shows about 4 KB: a file goes out in 3.5 KB pieces, at most $3 of them (10 a step).
+            annotate() {
+              split -C 3500 -d "$2" "$RUNNER_TEMP/piece."
+              for f in $(ls "$RUNNER_TEMP"/piece.* | head -"$3"); do
+                printf '::error title=%s %s::' "$1" "${f##*.}"
+                tr '\n' '~' < "$f" | sed 's/~/%0A/g'
+                echo
+              done
+              rm -f "$RUNNER_TEMP"/piece.*
+            }
             sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test.log" > "$RUNNER_TEMP/plain.log"
-            # The failing tests' names (and compile errors) in one annotation, then their panics in two more.
-            grep -E '^error|\.\.\. FAILED$' "$RUNNER_TEMP/plain.log" | head -150 \
-              | tr '\n' '~' | sed 's/~/\%0A/g' | head -c 12000 | sed 's/^/::error title=failed::/'
-            grep -E '^---- .* stdout ----$|panicked at|^  left|^ right|^error|^  -->' -A 2 "$RUNNER_TEMP/plain.log" | grep -v '^note: run with' \
-              | head -400 | tr '\n' '~' | sed 's/~/\%0A/g' > "$RUNNER_TEMP/panics.txt"
-            head -c 12000 "$RUNNER_TEMP/panics.txt" | sed 's/^/::error title=panics 1::/'
-            tail -c +12001 "$RUNNER_TEMP/panics.txt" | head -c 12000 | sed 's/^/::error title=panics 2::/'
+            # The failing tests' names (and compile errors), then their panics.
+            grep -E '^error|\.\.\. FAILED$' "$RUNNER_TEMP/plain.log" | head -150 > "$RUNNER_TEMP/failed.txt"
+            annotate failed "$RUNNER_TEMP/failed.txt" 2
+            grep -E '^---- .* stdout ----$|panicked at|^  left|^ right|^error|^  -->' -A 2 "$RUNNER_TEMP/plain.log" \
+              | grep -v '^note: run with' | head -400 > "$RUNNER_TEMP/panics.txt"
+            annotate panics "$RUNNER_TEMP/panics.txt" 7
             exit 1
           fi
           sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test.log" | grep -E 'test result:' | tail -5
