@@ -239,7 +239,7 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 }
 
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 52] = {
+const ROWS: [Row; 51] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -300,7 +300,6 @@ const ROWS: [Row; 52] = {
             "Continuous scrolling during playback",
             Toggle(|s| &mut s.continuous_scroll),
         ),
-        row("Show hidden tracks", Toggle(|s| &mut s.show_hidden_tracks)),
         row(
             "Show CPU and RAM meters",
             Toggle(|s| &mut s.hardware_meters),
@@ -1382,7 +1381,6 @@ mod tests {
                 "Set middle C to C4",
                 "Show range labels on keyboard",
                 "Continuous scrolling during playback",
-                "Show hidden tracks",
                 "Show CPU and RAM meters",
                 "Project version size limit:",
                 "Enable sharing files with nearby devices",

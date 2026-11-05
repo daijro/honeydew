@@ -5805,7 +5805,7 @@ mod tests {
         assert_eq!(rig.rect_of(track_item(1, 3)), None, "the menu closed");
         // A disabled item (`Delete Track`, the only notes track) picks nothing and keeps the menu open.
         secondary_click(&mut rig, header_at(2));
-        // A disabled cell has no widget: it sits between `Insert Channel` and `Hide track`.
+        // A disabled cell has no widget: it sits between `Insert Channel` and `Delete Channel`.
         let (above, below) = (track_item(0, 3), track_item(0, 5));
         let above = rig.rect_of(above).expect("the menu is open").center();
         let below = rig.rect_of(below).expect("the menu is open").center();

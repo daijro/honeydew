@@ -205,7 +205,8 @@ pub struct Settings {
     /// `Continuous scrolling during playback`.
     #[serde(rename = "continuousScroll")]
     pub continuous_scroll: bool,
-    /// `Show hidden tracks` (our own key): the playlist shows the tracks `Hide track` hid, dimmed. Off by default.
+    /// `Show hidden tracks` (our own key): the playlist shows the tracks `Hide track` hid, dimmed. Off by default. The
+    /// fork has neither the row nor `Hide track`, and a song reads its hidden tracks back shown (`flm::read`).
     #[serde(rename = "showHiddenTracks")]
     pub show_hidden_tracks: bool,
     /// `Show CPU and RAM meters`.

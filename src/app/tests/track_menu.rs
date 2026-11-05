@@ -21,7 +21,7 @@ const SETTINGS: (usize, usize) = (0, 1);
 const CLONE: (usize, usize) = (0, 2);
 const INSERT: (usize, usize) = (0, 3);
 const DELETE_TRACK: (usize, usize) = (0, 4);
-const DELETE_CHANNEL: (usize, usize) = (0, 6);
+const DELETE_CHANNEL: (usize, usize) = (0, 5);
 /// `Add Track` of an instrument, `Add StepSeq Track` and `Add Notes Track` of a drums channel.
 const ADD_TRACK: (usize, usize) = (1, 3);
 const ADD_STEP_SEQ: (usize, usize) = (1, 2);
@@ -2160,86 +2160,4 @@ fn save_as_midi_proposes_the_channel_name_made_a_file_name() {
         saved(&mem).0,
         std::path::Path::new("My MIDI").join(format!("{name}.mid"))
     );
-}
-
-/// `Hide track`, above `Delete Channel`, hides a track everywhere but in playback, one undo step: its row goes and the
-/// rows below it move up, its notes are no ghost notes in another channel's roll, and the song sounds the same.
-/// The current track moves off it, so paste goes elsewhere. Settings `Show hidden tracks` brings its row back, where its
-/// menu reads `Show track`. An editor open on the track closes as it hides.
-#[test]
-fn hide_track_takes_its_row_and_ghost_notes_but_not_its_sound() {
-    use crate::audio_engine::SongAudioEngine;
-    use crate::theme::channel_color;
-    use honeydew_audio::device::AudioRenderer;
-    const HIDE_TRACK: (usize, usize) = (0, 5);
-    let mut rig = Rig::with_drums_and_synth();
-    rig.app
-        .add_channel(ChannelKind::Synth(SynthKind::MiniSynth), 0);
-    rig.app.song.channels[3].lanes[0]
-        .add_clip(0, 4.0)
-        .events
-        .push(note(0));
-    rig.app.song_edited(SongEdit::Final, 0);
-    let rows = |rig: &Rig| -> Vec<usize> {
-        let show = rig.app.settings.show_hidden_tracks;
-        (track_rows(&rig.app.song, show).iter())
-            .map(|t| t.channel)
-            .collect()
-    };
-    let ghost = channel_color(rig.app.song.channels[3].hue, &rig.app.theme)
-        .to_color32()
-        .gamma_multiply(crate::ui::piano_roll::GHOST_ALPHA);
-    // The synth's roll, open and closed again.
-    let ghosts = |rig: &mut Rig| {
-        rig.edit(2);
-        rig.slide_split();
-        let n = rig.rects(ghost).len();
-        rig.app.navigate(Nav::Collapse);
-        rig.frame(vec![]);
-        n
-    };
-    let sound = |rig: &Rig| {
-        let mut engine = SongAudioEngine::new(&rig.app.song, 48_000.0).unwrap();
-        engine.play();
-        let mut output = vec![0.0; 8192 * 2];
-        engine.render(&mut output, 2);
-        output
-    };
-    let before = sound(&rig);
-    assert!(before.iter().any(|s| s.abs() > 0.01));
-    assert_eq!(rows(&rig), [0, 1, 2, 3]);
-    assert_eq!(ghosts(&mut rig), 1);
-    // The bass clip tapped (its track current, the grid cursor on it) and copied.
-    rig.click(pos2(48.0 + 2.0 * 38.4, header(3).y));
-    rig.frame(key_tap(egui::Key::C, egui::Modifiers::COMMAND));
-    assert_eq!(rig.app.selected_channel, 3);
-    rig.track_menu(3, HIDE_TRACK);
-    assert!(rig.app.song.channels[3].lanes[0].hidden);
-    assert_eq!(rows(&rig), [0, 1, 2]);
-    // The current track moves to the nearest one shown, where a paste lands: the hidden track takes nothing.
-    assert_eq!(rig.app.selected_channel, 2);
-    let clips = |rig: &Rig| [2, 3].map(|c| rig.app.song.channels[c].lanes[0].clips.len());
-    let [synth, bass] = clips(&rig);
-    rig.frame(key_tap(egui::Key::V, egui::Modifiers::COMMAND));
-    assert_eq!(clips(&rig), [synth + 1, bass]);
-    rig.frame(undo());
-    assert_eq!(ghosts(&mut rig), 0);
-    assert!(sound(&rig) == before, "a hidden track plays as before");
-    rig.frame(undo());
-    assert_eq!(rows(&rig), [0, 1, 2, 3]);
-    rig.frame(redo());
-    assert_eq!(rows(&rig), [0, 1, 2]);
-    rig.app.settings.show_hidden_tracks = true;
-    rig.frame(vec![]);
-    assert_eq!(rows(&rig), [0, 1, 2, 3]);
-    rig.track_menu(3, HIDE_TRACK);
-    assert!(!rig.app.song.channels[3].lanes[0].hidden, "`Show track`");
-    // Hidden under its open editor, the editor closes.
-    rig.app.settings.show_hidden_tracks = false;
-    rig.edit(3);
-    rig.slide_split();
-    assert_eq!(rig.app.nav.view, View::PianoRoll(3));
-    rig.app.track_op(3, 0, TrackOp::ToggleHidden, 0);
-    rig.frame(vec![]);
-    assert_eq!(rig.app.nav.view, View::Playlist);
 }
