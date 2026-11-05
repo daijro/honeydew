@@ -306,14 +306,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         let g = &state.grid;
         (g.mixer_w, g.fold.c, g.row_band(), g.graph)
     };
-    let room = crate::ui::split::ribbon_room(
-        editor.right(),
-        app.regions.screen.right(),
-        app.settings.editor_ribbon_shift,
-        editor.left() + m.u(step_seq::HEADER_W),
-        m,
-    );
-    if let Some(tabs) = tabs(editor, c, m, room) {
+    if let Some(tabs) = tabs(editor, c, m) {
         let mut page = StripPage::ALL
             .iter()
             .position(|&p| p == state.drums.page)
@@ -884,13 +877,12 @@ fn send_slot_setting(audio: &mut AudioLink, channel: usize, slot: u32, key: u32,
 }
 
 /// The page tabs for the mixer folded out to `c`, in `editor`'s ruler row: (x + 3 U, top, column width − 3 U,
-/// 1.5 U − 1 px), only when it is fully out (c = 1). They end at `room`, where the close ribbon's touch area starts: on
-/// an editor narrower than about 19.4 U (portrait, or beside the rack) the ribbon would cover `Seq` (GitHub
-/// #71). None without room.
-fn tabs(editor: Rect, c: f32, m: &Metrics, room: f32) -> Option<Rect> {
+/// 1.5 U − 1 px), only when it is fully out (c = 1). They keep the column's full width — the ribbon may slide over
+/// them (it is movable), but never squeezes the tabs' labels.
+fn tabs(editor: Rect, c: f32, m: &Metrics) -> Option<Rect> {
     let at = editor.min + vec2(m.u(step_seq::HEADER_W), 0.0);
     let size = vec2(
-        m.u(step_seq::MIXER_W).min(room - at.x),
+        m.u(step_seq::MIXER_W),
         crate::ui::timeline::ruler_h(m) - 1.0 / m.ppp(),
     );
     (c == 1.0 && size.x > 0.0).then(|| Rect::from_min_size(at, size))

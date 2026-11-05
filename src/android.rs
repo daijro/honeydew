@@ -207,6 +207,45 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onInterrupted(
     }
 }
 
+/// Back was pressed (Android 13 and up hand it to `HoneydewActivity`'s back callback, not as a key) and waits for
+/// the next frame ([`take_back`]), which [`BACK_WAKE`] asks for.
+static BACK: AtomicBool = AtomicBool::new(false);
+static BACK_WAKE: std::sync::OnceLock<eframe::egui::Context> = std::sync::OnceLock::new();
+
+/// Back was pressed since the last call. `ctx` is the context a later press wakes.
+pub fn take_back(ctx: &eframe::egui::Context) -> bool {
+    BACK_WAKE.get_or_init(|| ctx.clone());
+    BACK.swap(false, Ordering::AcqRel)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onBack(
+    _env: jni::JNIEnv<'_>,
+    _class: jni::objects::JClass<'_>,
+) {
+    BACK.store(true, Ordering::Release);
+    if let Some(ctx) = BACK_WAKE.get() {
+        ctx.request_repaint();
+    }
+}
+
+/// Android sends Back to the activity's back callback (Android 13 and up, `HoneydewActivity.onCreate`): its key event,
+/// which comes too, is then not a second press.
+pub fn back_callback() -> bool {
+    AndroidApp::sdk_version() >= 33
+}
+
+/// Back's default with nothing open: the app goes to the background, as Android's own Back does for it.
+pub fn move_to_back() {
+    let moved = with_activity(|env, activity| {
+        env.call_method(activity, "moveTaskToBack", "(Z)Z", &[true.into()])
+            .map(drop)
+    });
+    if let Err(err) = moved {
+        eprintln!("could not move to the background: {err}");
+    }
+}
+
 /// What a document pick finishes with: the copy of the picked file, an error, or `None` when it was cancelled.
 pub type Picked = Option<Result<PathBuf, String>>;
 /// What a folder pick finishes with: each file in the picked folder or below, as its path from the folder's parent

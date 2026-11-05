@@ -102,6 +102,11 @@ pub trait SongLibrary {
     fn trash(&self) -> Option<PathBuf> {
         None
     }
+    /// The user folder above the root (`My Songs`), which SONGS' `Back` at the root goes up to (#73). `None`: no
+    /// going up.
+    fn user_folder(&self) -> Option<PathBuf> {
+        None
+    }
     /// The folders listed at the root that are places, not items: never selected, deleted, renamed or moved, as they
     /// hold what the user keeps in them. [`RECENTLY_DELETED`], and in the songs library `Unzipped songs`
     /// ([`crate::project_files::UNZIPPED_FOLDER`]); in the whole user folder also every fixed folder ([`SONGS_FOLDER`],
@@ -905,6 +910,13 @@ impl Default for NativeLibrary {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl SongLibrary for NativeLibrary {
+    fn user_folder(&self) -> Option<PathBuf> {
+        match self.whole {
+            true => self.root.clone(),
+            false => self.root.as_ref().and_then(|root| root.parent().map(Path::to_owned)),
+        }
+    }
+
     fn list(&self, folder: Option<&Path>) -> io::Result<Vec<SongEntry>> {
         let Some(dir) = folder.or(self.root.as_deref()) else {
             return Ok(Vec::new());

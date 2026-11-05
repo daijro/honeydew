@@ -344,7 +344,8 @@ impl SongLibrary for Samples<'_> {
                 is_folder: true,
                 recency: 0,
             };
-            return Ok(vec![folder(SAMPLES_FOLDER), folder(RECORDINGS_FOLDER)]);
+            // The whole user folder as `My Files`: every `My …` folder, not only the sample ones.
+            return Ok(MY_FOLDERS.iter().map(|name| folder(name)).collect());
         }
         let mut entries = self.0.preset_library(&SAMPLE_EXTS).list(Some(dir))?;
         entries.sort_by(|a, b| a.path.cmp(&b.path));

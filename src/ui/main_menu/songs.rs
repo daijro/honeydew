@@ -245,6 +245,9 @@ pub(super) fn all_templates(factory: &Factory, library: &dyn SongLibrary) -> Vec
 pub(super) struct SongsTab {
     /// The folders opened from the root, outermost first.
     folders: Vec<SongEntry>,
+    /// Above `My Songs` (#73): the user folder ([`SongLibrary::user_folder`]) the list shows when the root's `Back`
+    /// goes up to it; `None` at `My Songs`.
+    up: Option<PathBuf>,
     /// The open folder's entries, read once; `None` reads them again.
     listing: Option<Vec<SongEntry>>,
     /// The search's songs below the open folder, walked once a query needs them, until the folder is read again.
@@ -319,8 +322,9 @@ impl Swipe {
 
 impl SongsTab {
     /// The open folder, `None` at the root.
+    /// The open folder, `None` at the root (`My Songs`).
     pub(super) fn folder(&self) -> Option<&std::path::Path> {
-        self.folders.last().map(|f| f.path.as_path())
+        (self.folders.last().map(|f| f.path.as_path())).or(self.up.as_deref())
     }
 
     /// Sets the list's order: its menu's pick, or the stored `SongBrowserOrdering`, which `Restore default settings`
@@ -385,7 +389,12 @@ impl SongsTab {
         let x = area.left() + m.u(SIDE_COL_W) / 2.0;
         let side = |i: usize| pos2(x, area.top() + m.u(SIDE_STEP) * (i as f32 + 0.5));
         let toggles = [
-            ("Back", None, false, !self.folders.is_empty()),
+            (
+                "Back",
+                None,
+                false,
+                !self.folders.is_empty() || self.up.is_none() && library.user_folder().is_some(),
+            ),
             ("Search", None, self.search.shown(), true),
             ("Sort", None, false, true),
             ("Select", None, self.selection.is_some(), true),
@@ -416,7 +425,9 @@ impl SongsTab {
             }
             match i {
                 0 => {
-                    self.folders.pop();
+                    if self.folders.pop().is_none() {
+                        self.up = library.user_folder();
+                    }
                     self.open_folder_changed();
                 }
                 1 => {
@@ -920,7 +931,11 @@ impl SongsTab {
 
     /// The open folder's name.
     fn title(&self) -> &str {
-        self.folders.last().map_or(SONGS_FOLDER, |f| &f.name)
+        match self.folders.last() {
+            Some(f) => &f.name,
+            None if self.up.is_some() => crate::APP_NAME,
+            None => SONGS_FOLDER,
+        }
     }
 }
 
