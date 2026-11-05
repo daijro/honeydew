@@ -37,8 +37,8 @@ const HEADER: f32 = 0.75;
 const CHOICE: f32 = 1.25;
 const LABEL_W: f32 = 4.5;
 const BUTTON: [f32; 2] = [4.5, 1.0];
-/// The scrolling rows' height: three headers and eleven choice rows.
-const BODY: f32 = 3.0 * HEADER + 11.0 * CHOICE;
+/// The scrolling rows' height: three headers and twelve choice rows.
+const BODY: f32 = 3.0 * HEADER + 12.0 * CHOICE;
 /// The whole panel, when the screen has room.
 const HEIGHT: f32 = 2.0 * MARGIN + TITLE + BODY + MARGIN + CHOICE;
 /// Seeds run 0..SEEDS.
@@ -47,6 +47,8 @@ const SEEDS: u64 = 100_000;
 const DIM: f32 = 0.5;
 /// The `Bars` choices.
 const BARS: [u8; 4] = [1, 2, 4, 8];
+/// The `Tempo` choices, BPM.
+const TEMPOS: [u16; 9] = [60, 80, 100, 110, 120, 128, 140, 160, 180];
 
 /// The panel's state: the preset, the bars, who leads and the seed, then the key, scale and register (0 following the
 /// project) and the rhythm: the note length, the rests, the arpeggios and which chords to write.
@@ -65,6 +67,8 @@ pub(crate) struct Panel {
     rests: usize,
     arp: usize,
     chords: usize,
+    /// 0: the project's tempo; else 1 + a [`TEMPOS`] index.
+    tempo: usize,
 }
 
 /// How the panel closed.
@@ -89,6 +93,7 @@ impl Panel {
             rests: 1,
             arp: 0,
             chords: 0,
+            tempo: 0,
         }
     }
 
@@ -108,6 +113,7 @@ impl Panel {
             octave: OCTAVES[self.octave.min(OCTAVES.len() - 1)].1,
             duration: DURATIONS[self.duration.min(DURATIONS.len() - 1)].1,
             rest: RESTS[self.rests.min(RESTS.len() - 1)].1,
+            tempo: (self.tempo > 0).then(|| f64::from(TEMPOS[self.tempo.min(TEMPOS.len()) - 1])),
             arp: ARPS[self.arp.min(ARPS.len() - 1)].1,
             chords: self.chords.min(CHORD_MODES.len() - 1) as u8,
         }
@@ -299,6 +305,13 @@ fn rows(ui: &mut Ui, cx: &UiCtx, id: Id, column: Rect, ink: Color32, panel: &mut
         let now = ui.input(|i| i.time).to_bits();
         panel.seed = RandomState::new().hash_one(now) % SEEDS;
     }
+    let tempo_labels: Vec<String> = std::iter::once("Project".to_owned())
+        .chain(TEMPOS.iter().map(|t| format!("{t} BPM")))
+        .collect();
+    let tempos: Vec<&str> = tempo_labels.iter().map(String::as_str).collect();
+    let r = next(CHOICE);
+    label(ui, r, "Tempo", text);
+    panel.tempo = dropdown(ui, r, "tempo", &tempos, panel.tempo, None);
     label(
         ui,
         next(HEADER),

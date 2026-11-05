@@ -2309,6 +2309,9 @@ impl PianoRoll {
     ) {
         let bpb = song.time_sig.bar_beats();
         let scale = project_scale(song);
+        if let Some(tempo) = panel.settings().tempo {
+            song.set_tempo(tempo);
+        }
         let Some(clip) = self.clip_mut(song) else {
             return;
         };

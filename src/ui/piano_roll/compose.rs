@@ -125,6 +125,8 @@ pub(crate) struct Settings {
     pub arp: f64,
     /// Which chords to write ([`CHORD_MODES`]).
     pub chords: u8,
+    /// The tempo `Apply` sets on the song, BPM; `None` keeps the project's.
+    pub tempo: Option<f64>,
 }
 
 /// The semitone offsets of the scale's degrees from the root, ascending: 0…11, seven of them in a diatonic scale and
@@ -503,6 +505,7 @@ mod tests {
             rest: 0.15,
             arp: 0.0,
             chords: 0,
+            tempo: None,
         }
     }
 
