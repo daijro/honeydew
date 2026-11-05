@@ -239,11 +239,29 @@ impl Bundle {
     /// The desktop's bundle ([`Self::find_in`]) of `$HONEYDEW_CONTENT_DIR`, the installed library
     /// ([`super::install::dir`]) and the one beside the app: `<exe dir>/content` or `<exe dir>/../share/honeydew/content`
     /// (macOS `../Resources/content`), which then syncs into the installed one on a worker. Never in unit tests, which
-    /// build their own. On the web and Android, the one [`install`]ed.
+    /// build their own. On the web and Android, the one [`install`]ed; on Android the installed library
+    /// ([`super::install::download`], #66) when it is complete and newer than the APK's, or the APK has none (the base
+    /// APK; one cut short then still works). On iOS the app's own, `content` beside it in its bundle (none in the build
+    /// without sounds).
     pub fn find() -> Option<Self> {
-        #[cfg(any(target_arch = "wasm32", target_os = "android"))]
+        #[cfg(target_arch = "wasm32")]
         return INSTALLED.lock().ok()?.take();
-        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+        #[cfg(target_os = "ios")]
+        return Self::open(&std::env::current_exe().ok()?.parent()?.join("content"));
+        #[cfg(target_os = "android")]
+        {
+            let apk = INSTALLED.lock().ok()?.take();
+            let installed = super::install::dir();
+            let complete = installed
+                .as_deref()
+                .filter(|dir| super::install::complete(dir));
+            let newer = complete.and_then(Self::open).filter(|i| {
+                (apk.as_ref())
+                    .is_none_or(|apk| super::install::older(&apk.index.release, &i.index.release))
+            });
+            return newer.or(apk).or_else(|| Self::open(&installed?));
+        }
+        #[cfg(not(any(target_arch = "wasm32", mobile)))]
         {
             if cfg!(test) {
                 return None;
@@ -271,7 +289,7 @@ impl Bundle {
     /// while it is complete and, with a library beside the app, of that one's index; the first beside the app, and its
     /// folder to sync the installed one from, unless its release is older than the installed one's; or the installed
     /// one as it is (a sync cut short leaves one that works).
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    #[cfg(not(any(target_arch = "wasm32", mobile)))]
     fn find_in(
         var: Option<&Path>,
         installed: Option<&Path>,
@@ -472,7 +490,7 @@ pub(crate) mod tests {
         assert!(Index::parse(big.as_bytes()).is_none());
     }
 
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    #[cfg(not(any(target_arch = "wasm32", mobile)))]
     #[test]
     fn the_installed_library_serves_while_complete_and_one_beside_the_app_syncs_into_it() {
         use crate::content::install::{MANIFEST, Progress, sync};

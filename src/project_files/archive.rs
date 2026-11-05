@@ -8,9 +8,15 @@
 //!   archive holds now lead into that folder ([`relink`]), so the song plays them, and
 //!   still does once saved and opened again.
 //! - Any other archive's known files ([`import_folder`]) are counted: none is a message, some ask `Import %d files?`,
-//!   and `Yes` copies them into their user folders by type, `name (2)` and so on on a clash, then sums up how many went
-//!   where. No delete-archive question.
+//!   and `Yes` copies them into their user folders by type, in the archive's folders there, `name (2)` and so on on a
+//!   clash, then sums up how many went where. No delete-archive question.
+//! - SONGS `Import folder` ([`ProjectFiles::pick_folder`], not on the web) imports a picked folder the same way, as an
+//!   archive of it would: `Import %d files?`, then each known file into its user folder by type, below the picked
+//!   folder's own name (`Drums/Kit/Kick.wav`: `My Samples/Drums/Kit/Kick.wav`). `Yes` only routes the files; the
+//!   provider copies them off the UI thread ([`super::FileProvider::copy`]), which a big folder needs, and `Imported %d
+//!   file%s` shows once it is done.
 
+use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -31,6 +37,9 @@ use crate::zip::{self, Entry, ZipError};
 pub const ARCHIVE_FAILED: &str = "Failed to open project archive";
 pub const DECOMPRESS_FAILED: &str = "Failed to decompress project archive";
 pub const NOTHING_KNOWN: &str = "The archive doesn't contain any files this app knows how to open";
+/// [`NOTHING_KNOWN`] for a picked folder.
+pub const NOTHING_KNOWN_IN_FOLDER: &str =
+    "The folder doesn't contain any files this app knows how to open";
 pub const IMPORT_FAILED: &str = "Import failed";
 /// The tag of the `Import %d files?` question.
 pub const IMPORT_TAG: &str = "project_files_import";
@@ -38,6 +47,24 @@ pub const IMPORT_TAG: &str = "project_files_import";
 pub const UNZIPPED_FOLDER: &str = "Unzipped songs";
 /// The extracted folder of an archive whose name makes no folder name (`..zip`).
 const UNNAMED: &str = "Archive";
+
+/// A picked folder's import: where each of its files is read from, by its path in the import, and, as `Yes` routes
+/// them ([`ProjectFiles::import_files`]), each user file it becomes and where that is read from.
+#[derive(Default)]
+pub(super) struct FolderImport {
+    sources: HashMap<String, String>,
+    targets: BTreeMap<PathBuf, String>,
+}
+
+impl FolderImport {
+    /// A file routed here is `path`, or below it: a free name is free of those too.
+    pub(super) fn takes(&self, path: &Path) -> bool {
+        let mut after = self.targets.range(path.to_owned()..);
+        after
+            .next()
+            .is_some_and(|(target, _)| target.starts_with(path))
+    }
+}
 
 /// The archive's song, if it holds exactly one: a `.flm` that is no hidden file.
 pub(super) fn the_song(entries: &[Entry]) -> Option<usize> {
@@ -340,12 +367,74 @@ impl ProjectFiles {
         self.importing = Some(known);
     }
 
+    /// SONGS `Import folder`: the provider's folder picker, unless a picker or a folder's copy is under way.
+    pub fn pick_folder(&mut self) {
+        if !self.provider.opening() && self.copying.is_none() {
+            self.provider.open_folder();
+        }
+    }
+
+    /// The folder picked ([`FileEvent::Folder`]): its known files ask `Import %d files?`, as an archive's do.
+    pub(super) fn folder_picked(&mut self, files: Vec<(String, String)>) {
+        let entries = files.iter().map(|(path, _)| Entry {
+            path: path.clone(),
+            data: Vec::new(),
+        });
+        self.ask_import(entries.collect());
+        if self.importing.is_none() {
+            self.message = Some(vec![NOTHING_KNOWN_IN_FOLDER.into()]);
+            return;
+        }
+        let sources = files.into_iter().collect();
+        self.folder = Some(FolderImport {
+            sources,
+            ..FolderImport::default()
+        });
+    }
+
+    /// The folder's copy ended: `Imported %d file%s` and where they went, or why it stopped. SONGS and the pickers
+    /// read their folders again either way, as some may be in.
+    pub(super) fn folder_copied(&mut self, error: Option<String>) {
+        self.library_changes += 1;
+        let lines = self.copying.take().unwrap_or_default();
+        match error {
+            None => self.message = Some(lines),
+            Some(err) => self.fail(IMPORT_FAILED, err),
+        }
+    }
+
+    /// Writes the import's file `entry` as the user file `target`; for a picked folder, only notes where it goes.
+    fn put(&mut self, target: &Path, entry: &Entry) -> io::Result<()> {
+        if self.folder.is_some() && self.in_content(target) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "original content is read-only",
+            ));
+        }
+        match &mut self.folder {
+            Some(folder) => {
+                let source = folder.sources.get(&entry.path).cloned().unwrap_or_default();
+                folder.targets.insert(target.to_owned(), source);
+                Ok(())
+            }
+            None => self.write_user_file(target, entry.data.clone()),
+        }
+    }
+
     /// `Import %d files?` answered `Yes`: each file goes into its user folder ([`Self::import_file`]), an audio file
     /// that goes with a DirectWave program ([`program_of`]) into the program's sample folder, an SFZ and the audio files
     /// of its archive folder ([`sfz_pack`]) into a folder of `My SoundFonts` in their layout, then `Imported %d
     /// file%s` shows, with a line per folder that took some ([`imported_lines`]). The first that cannot be written
-    /// stops the import with `Import failed`.
-    pub(super) fn import_files(&mut self, entries: Vec<Entry>) {
+    /// stops the import with `Import failed`. A picked folder's files are routed so, then copied, and the summary shows
+    /// once they are ([`Self::folder_copied`]).
+    pub(super) fn import_files(&mut self, mut entries: Vec<Entry>) {
+        // `zip::read` refuses every name that leaves the folder; checked again where the names meet the disk.
+        if let Some(e) = (entries.iter()).find(|e| !Self::stays_inside(Path::new(&e.path))) {
+            let path = shown(Path::new(&e.path));
+            return self.fail(IMPORT_FAILED, format!("{path}: not inside the archive"));
+        }
+        // Archive junk and unknown types are skipped, as `ask_import` counted them.
+        entries.retain(|e| import_folder(Path::new(&e.path)).is_some());
         let is_program = |e: &Entry| import_folder(Path::new(&e.path)) == Some(INSTRUMENTS_FOLDER);
         // The programs first: their samples go into the folder named after the name each one takes.
         let (programs, rest): (Vec<_>, Vec<_>) =
@@ -374,7 +463,7 @@ impl ProjectFiles {
                     };
                     dir.and_then(|dir| {
                         let target = dir.join(mirrored(at).strip_prefix(&pack).unwrap_or(at));
-                        self.write_user_file(&target, entry.data.clone())?;
+                        self.put(&target, entry)?;
                         packs.insert(pack, dir);
                         Ok(target)
                     })
@@ -392,29 +481,44 @@ impl ProjectFiles {
                 }
             }
         }
+        if let Some(folder) = self.folder.take() {
+            let n = entries.len();
+            self.flash = Some(format!(
+                "Importing {n} file{}…",
+                if n == 1 { "" } else { "s" }
+            ));
+            self.copying = Some(imported_lines(&entries));
+            let files = folder.targets.into_iter().map(|(to, from)| (from, to));
+            return self.provider.copy(files.collect());
+        }
         // SONGS reads its folder again: songs may have come in.
         self.library_changes += 1;
         self.message = Some(imported_lines(&entries));
     }
 
     /// Writes the archive's file `entry` into its user folder ([`import_folder`]) and returns where
-    /// ([`Self::import_into`]): below the same folders when the archive has it in that user folder (an archive mirrors
-    /// the user folder), else right in it. A song goes into the songs folder, through the library (the web keeps songs
-    /// there), under a free name.
+    /// ([`Self::import_into`]): below the archive's folders it is in (`Kit/Kick.wav`: `My Samples/Kit/Kick.wav`),
+    /// less a leading folder of that user folder's name (an archive that mirrors the user folder). A song goes into the
+    /// songs folder, through the library (the web keeps songs there), under a free name.
     fn import_file(&mut self, entry: &Entry) -> io::Result<PathBuf> {
         let path = Path::new(&entry.path);
         let folder = import_folder(path).ok_or(io::ErrorKind::Unsupported)?;
         if folder == SONGS_FOLDER {
             let name = self.free_name_from(2, self.root.as_deref(), &stem(path), "flm", None);
             let name = format!("{name}.flm");
-            self.library.store(&name, &entry.data)?;
+            if self.folder.is_some() {
+                let root = self.root.clone().ok_or(io::ErrorKind::NotFound)?;
+                self.put(&root.join(&name), entry)?;
+            } else {
+                self.library.store(&name, &entry.data)?;
+            }
             return Ok(name.into());
         }
         let user = self.user.as_deref().ok_or(io::ErrorKind::NotFound)?;
-        let mut dir = user.join(folder);
-        if let Some(sub) = path.parent().and_then(|p| p.strip_prefix(folder).ok()) {
-            dir.push(sub);
-        }
+        let parent = path.parent().unwrap_or(Path::new(""));
+        let dir = user
+            .join(folder)
+            .join(parent.strip_prefix(folder).unwrap_or(parent));
         self.import_into(&dir, entry, folder == INSTRUMENTS_FOLDER)
     }
 
@@ -448,7 +552,7 @@ impl ProjectFiles {
             .find(|name| !taken(name))
             .expect("an unbounded range has a free number");
         let target = dir.join(format!("{name}.{ext}"));
-        self.write_user_file(&target, entry.data.clone())?;
+        self.put(&target, entry)?;
         Ok(target)
     }
 }
@@ -1145,7 +1249,7 @@ mod tests {
             let mine: [(&str, &[u8]); 9] = [
                 ("My Samples/Kicks/kick.wav", b"kick"),
                 ("My Samples/Loop.WAV", b"mine"),
-                ("My Samples/Loop (2).WAV", b"loop"),
+                ("My Samples/loops/Loop.WAV", b"loop"),
                 ("My Presets/Hall.flmpst", b"hall"),
                 ("My Racks/Bus.flmrack", b"rack"),
                 ("My Drumsets/Kit.tmpl", b"kit"),
@@ -1175,11 +1279,28 @@ mod tests {
         );
     }
 
-    /// On disk, an archive that is no single song sorts its files into the user folder's own folders by type, a taken
-    /// name numbered from 2, and sums up where they went; one with a name that leaves the folder imports nothing. A
-    /// DirectWave program takes the audio files of its folder along into `My Instruments`, into the folder named after
-    /// the name it takes, where it plays them (`sample_cache::zone_file`). An SFZ takes the audio files of its archive
-    /// folder along into `My SoundFonts`, in their layout, where its `sample=` paths find them.
+    #[test]
+    fn an_unprefixed_sample_pack_keeps_its_nested_folders_on_import() {
+        let archive = zip_of(&[("Drum Pack/Kicks/Acoustic/kick.wav", b"kick")]);
+        let mut files = web("Drum Pack.zip", &archive);
+        open(&mut files);
+        assert_eq!(files.message, lines(&["Import 1 files?"]));
+        let entries = files.importing.take().unwrap();
+        files.import_files(entries);
+        assert_eq!(
+            files
+                .read_user_file(Path::new("My Samples/Drum Pack/Kicks/Acoustic/kick.wav"))
+                .unwrap(),
+            b"kick"
+        );
+    }
+
+    /// On disk, an archive that is no single song sorts its files into the user folder's own folders by type, in the
+    /// archive's folders, a taken name numbered from 2, and sums up where they went; one with a name that leaves the
+    /// folder imports nothing. A DirectWave program takes the audio files of its folder along into `My Instruments`,
+    /// into the folder named after the name it takes, where it plays them (`sample_cache::zone_file`). An SFZ takes the
+    /// audio files of its archive folder along into `My SoundFonts`, in their layout, where its `sample=` paths find
+    /// them.
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn an_archive_sorts_its_files_into_the_user_folders_by_type() {
@@ -1187,11 +1308,11 @@ mod tests {
         let (user, songs, mut files) = unzip_on_disk(&home.0);
         files.root = Some(songs.clone());
         std::fs::write(songs.join("A.flm"), b"mine").unwrap();
-        std::fs::create_dir_all(user.join("My Samples")).unwrap();
-        std::fs::write(user.join("My Samples/kick.wav"), b"my kick").unwrap();
+        std::fs::create_dir_all(user.join("My Samples/Pack")).unwrap();
+        std::fs::write(user.join("My Samples/Pack/kick.wav"), b"my kick").unwrap();
         // The user's own folder of that name: the program takes another name, and the folder of it.
-        std::fs::create_dir_all(user.join("My Instruments/Keys")).unwrap();
-        std::fs::write(user.join("My Instruments/Keys/C4.wav"), b"mine").unwrap();
+        std::fs::create_dir_all(user.join("My Instruments/Keys/Keys")).unwrap();
+        std::fs::write(user.join("My Instruments/Keys/Keys/C4.wav"), b"mine").unwrap();
         let mine = tree(&user);
         // A name that leaves the folder (`../`; `renamed` keeps the length) refuses the archive whole.
         let slip = zip_of(&[("A.flm", b"a"), ("B.flm", b"b"), ("xx/evil.wav", b"evil")]);
@@ -1235,17 +1356,17 @@ mod tests {
         );
         let read = |path: &str| std::fs::read(user.join(path)).unwrap();
         let imported: [(&str, &[u8]); 14] = [
-            ("My Samples/kick.wav", b"my kick"),
-            ("My Samples/kick (2).wav", b"kick"),
-            ("My MIDI/Tune.mid", b"tune"),
+            ("My Samples/Pack/kick.wav", b"my kick"),
+            ("My Samples/Pack/kick (2).wav", b"kick"),
+            ("My MIDI/Pack/Tune.mid", b"tune"),
             ("My Songs/A.flm", b"mine"),
             ("My Songs/A (2).flm", b"song a"),
             ("My Songs/B.flm", b"song b"),
-            ("My Instruments/Keys/C4.wav", b"mine"),
-            ("My Instruments/Keys (2).dwp", &one_zone_dwp()),
-            ("My Instruments/Keys (2)/C4.wav", &wav(6)),
-            ("My SoundFonts/Piano.sf2", b"sf2"),
-            ("My Presets/Hall.flmpst", b"hall"),
+            ("My Instruments/Keys/Keys/C4.wav", b"mine"),
+            ("My Instruments/Keys/Keys (2).dwp", &one_zone_dwp()),
+            ("My Instruments/Keys/Keys (2)/C4.wav", &wav(6)),
+            ("My SoundFonts/Pack/Piano.sf2", b"sf2"),
+            ("My Presets/Pack/Hall.flmpst", b"hall"),
             ("My SoundFonts/Grand/Grand.sfz", GRAND_SFZ),
             ("My SoundFonts/Grand/samples/C4.wav", &wav(6)),
             ("My SoundFonts/Grand/samples/Soft/C4.wav", &wav(7)),
@@ -1262,7 +1383,7 @@ mod tests {
         // A DW Sampler on the imported program plays its sample.
         let mut song = Song::default();
         song.add_channel(ChannelKind::Synth(SynthKind::DwSampler));
-        let program = chunk(b"PATh", &vstr(b"@L@\0My Instruments/Keys (2).dwp"));
+        let program = chunk(b"PATh", &vstr(b"@L@\0My Instruments/Keys/Keys (2).dwp"));
         song.channels[1].rack.modules[0].file.custom_data = Some([&b"10WD"[..], &program].concat());
         // A SoundFont Player on the imported SFZ plays both its samples.
         song.add_channel(ChannelKind::Synth(SynthKind::SoundFontPlayer));
@@ -1280,7 +1401,7 @@ mod tests {
         assert_eq!(cache.soundfont(&grand).map(|f| f.regions(0).len()), Some(2));
         let keys = ContentPath::Shorthand {
             root: ContentRoot::User,
-            relative: "My Instruments/Keys (2).dwp".into(),
+            relative: "My Instruments/Keys/Keys (2).dwp".into(),
         };
         let zones = cache.program(&keys).expect("the program loads");
         assert_eq!(cache.get(&zones[0].1).map(|s| s.frames()), Some(6));
@@ -1288,6 +1409,113 @@ mod tests {
 
     const GRAND_SFZ: &[u8] =
         b"<region> sample=samples/C4.wav key=60\n<region> sample=samples/Soft/C4.wav key=61";
+
+    /// Issue #63: a picked folder imports as an archive of it would: its known files into their user folders by type,
+    /// below the folder's own name, hidden, junk and unknown files left out, a taken name numbered, on disk or by a
+    /// file of the folder routed there first; then the copy, on a worker, and the summary once it is done.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_picked_folder_is_copied_into_the_user_folders_by_type_in_its_own_folder() {
+        let home = Temp::new("import-folder");
+        let (user, songs, mut files) = unzip_on_disk(&home.0);
+        files.root = Some(songs);
+        std::fs::create_dir_all(user.join("My Samples/Drums")).unwrap();
+        std::fs::write(user.join("My Samples/Drums/Kick.wav"), b"mine").unwrap();
+        let picked = home.0.join("Download/Drums");
+        for (path, bytes) in [
+            ("Kick.wav", &b"kick"[..]),
+            ("Kit/Snare.wav", b"snare"),
+            ("Beat.flm", b"beat"),
+            ("Old/Beat.flm", b"old beat"),
+            ("Tune.mid", b"tune"),
+            ("notes.txt", b"notes"),
+            (".DS_Store", b"junk"),
+            ("__MACOSX/._Kick.wav", b"fork"),
+        ] {
+            let path = picked.join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, bytes).unwrap();
+        }
+        let mut listed = super::super::native::folder_files(&picked);
+        listed.sort();
+        files.folder_picked(listed);
+        assert_eq!(files.message.take(), lines(&["Import 5 files?"]));
+        let entries = files.importing.take().unwrap();
+        files.import_files(entries);
+        assert_eq!(files.flash.take().as_deref(), Some("Importing 5 files…"));
+        let mut song = Song::default();
+        for _ in 0..500 {
+            if files.message.is_some() {
+                break;
+            }
+            files.poll(&mut song);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(
+            files.message,
+            lines(&[
+                "Imported 5 files",
+                "2 samples in My Samples",
+                "1 MIDI file in My MIDI",
+                "2 songs in My Songs",
+            ])
+        );
+        let imported: [(&str, &[u8]); 6] = [
+            ("My Samples/Drums/Kick.wav", b"mine"),
+            ("My Samples/Drums/Kick (2).wav", b"kick"),
+            ("My Samples/Drums/Kit/Snare.wav", b"snare"),
+            ("My MIDI/Drums/Tune.mid", b"tune"),
+            ("My Songs/Beat.flm", b"beat"),
+            ("My Songs/Beat (2).flm", b"old beat"),
+        ];
+        for (path, bytes) in imported {
+            assert_eq!(
+                std::fs::read(user.join(path)).ok().as_deref(),
+                Some(bytes),
+                "{path}"
+            );
+        }
+        assert_eq!(tree(&user).len(), imported.len(), "{:?}", tree(&user));
+    }
+
+    /// Issue #52: an imported archive's folders stay below the folder each file goes into by type, merging into one of
+    /// the same name there (a taken name numbered file by file); one that mirrors the user folder is not nested twice.
+    /// Archive junk (`__MACOSX`, hidden files and folders) is skipped.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn an_imported_archive_keeps_its_folders() {
+        let home = Temp::new("import-folders");
+        let (user, _, mut files) = unzip_on_disk(&home.0);
+        std::fs::create_dir_all(user.join("My Samples/808 Kit")).unwrap();
+        std::fs::write(user.join("My Samples/808 Kit/Kick.wav"), b"mine").unwrap();
+        let archive = zip_of(&[
+            ("808 Kit/Kick.wav", b"kick"),
+            ("808 Kit/Hats/Open.wav", b"open"),
+            ("808 Kit/Fill.mid", b"fill"),
+            ("My Samples/Loops/Groove.wav", b"groove"),
+            // Archive junk: a Mac's resource forks and folder files, hidden folders, Windows' thumbnails.
+            ("__MACOSX/._Kick.wav", b"fork"),
+            ("__MACOSX/808 Kit/Snare.wav", b"fork"),
+            (".DS_Store", b"ds"),
+            ("808 Kit/.cache/Hat.wav", b"hidden"),
+            ("808 Kit/Thumbs.db", b"thumbs"),
+        ]);
+        let entries = files.unzip(&archive).unwrap();
+        files.import_files(entries);
+        assert_eq!(files.message.unwrap()[0], "Imported 4 files");
+        let imported: [(&str, &[u8]); 5] = [
+            ("My Samples/808 Kit/Kick.wav", b"mine"),
+            ("My Samples/808 Kit/Kick (2).wav", b"kick"),
+            ("My Samples/808 Kit/Hats/Open.wav", b"open"),
+            ("My MIDI/808 Kit/Fill.mid", b"fill"),
+            ("My Samples/Loops/Groove.wav", b"groove"),
+        ];
+        let read = |path: &str| std::fs::read(user.join(path)).ok();
+        for (path, bytes) in imported {
+            assert_eq!(read(path).as_deref(), Some(bytes), "{path}");
+        }
+        assert_eq!(tree(&user).len(), imported.len(), "{:?}", tree(&user));
+    }
 
     #[test]
     fn a_failed_import_says_so() {

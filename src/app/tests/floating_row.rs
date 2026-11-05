@@ -58,7 +58,7 @@ fn every_editor_hides_its_floating_row_on_a_zoom_and_shows_it_again_on_the_selec
 #[test]
 fn the_playlists_row_waits_at_the_grids_right_edge_while_the_selected_copy_is_past_it() {
     // Horizontally off-screen, the row is held at the viewport edge (x = … right edge − W). The
-    // grid is x 48..1170; a beat is 38.4 points; the 5-button row is 256 wide (51.2 a button), its buttons 44.8 across.
+    // grid is x 48..1170; a beat is 38.4 points; the 6-button row is 307.2 wide (51.2 a button), its buttons 44.8 across.
     let mut rig = Rig::with_drums_and_synth();
     rig.app.song.channels[1].lanes[0].add_clip(24 * crate::song::PPQ, 4.0);
     rig.frame(vec![]);
@@ -66,16 +66,17 @@ fn the_playlists_row_waits_at_the_grids_right_edge_while_the_selected_copy_is_pa
     rig.click(pos2(1000.0, header(1).y));
     rig.frame(vec![]);
     let copy = egui::Id::new(("clip_button", 0_usize));
+    let duplicate = egui::Id::new(("clip_button", 4_usize));
     let row_left = |rig: &Rig| (rig.ctx.read_response(copy)).map(|r| r.rect.center().x - 25.6);
     assert_eq!(
         row_left(&rig),
-        Some(1000.0 - 128.0),
+        Some(1000.0 - 153.6),
         "centred on the finger"
     );
-    // Copy puts the copy right after the clip and selects it: beat 28 (still partly in view), then beat 32
+    // Duplicate puts the copy right after the clip and selects it: beat 28 (still partly in view), then beat 32
     // (x 1276.8, past the grid). The row stays shown, the finger where it was.
     for _ in 0..2 {
-        rig.click_id(copy);
+        rig.click_id(duplicate);
         rig.frame(vec![]);
     }
     let starts: Vec<u32> = (rig.app.song.channels[1].lanes[0].clips.iter())
@@ -85,7 +86,7 @@ fn the_playlists_row_waits_at_the_grids_right_edge_while_the_selected_copy_is_pa
     rig.frame(vec![]);
     assert_eq!(
         row_left(&rig),
-        Some(1170.0 - 256.0),
+        Some(1170.0 - 307.2),
         "held at the right edge"
     );
 }
@@ -295,4 +296,70 @@ fn a_scroll_of_the_track_list_hides_the_row_whether_by_a_few_points_or_by_whole_
         rig.frame(vec![]);
         assert!(rig.painted("Copy"), "{by}: back on a long press");
     }
+}
+
+/// A tap on a ruler at `tap` (`one_frame`: pressed and released in one frame, a touchpad's tap-to-click) seeks to
+/// `tick`; once the output reports it there, no floating row shows and the play box sits on the ruler (y 0 down: the
+/// editors fill the window) with its left edge on `x`, the new playhead's.
+fn ruler_tap(rig: &mut Rig, editor: &str, tap: Pos2, one_frame: bool, (tick, x): (u64, f32)) {
+    rig.take();
+    if one_frame {
+        rig.frame(vec![egui::Event::PointerMoved(tap)]);
+        rig.frame(vec![button_event(tap, true), button_event(tap, false)]);
+    } else {
+        rig.click(tap);
+    }
+    assert_eq!(rig.take(), [format!("Seek {tick}")], "{editor}");
+    rig.rec.0.borrow_mut().tick = tick;
+    // The play box fades in, a fifth of the way a frame.
+    for _ in 0..40 {
+        rig.frame(vec![]);
+    }
+    assert!(!rig.painted("Copy"), "{editor}: no row");
+    let shown = rig.play_box_in(0.0..RULER);
+    assert_eq!(shown, Some((r3(x), 255)), "{editor}: the play box");
+}
+
+#[test]
+fn a_ruler_tap_deselects_seeks_and_shows_the_play_box_where_it_tapped() {
+    let mut rig = Rig::with_drums_and_synth();
+    // The playlist: a tap on a clip selects it. Its ruler: tick 0 on the grid's left edge (1.5 U + t, t = 2 points),
+    // a beat 1.2 U.
+    rig.app.song.channels[2].lanes[0].add_clip(0, 16.0);
+    rig.frame(vec![]);
+    rig.click(lane(2));
+    rig.frame(vec![]);
+    assert!(rig.painted("Copy"), "playlist: shown");
+    let left = 1.5 * U + 2.0;
+    let beat = |b: f32| pos2(left + b * 1.2 * U, 0.75 * U);
+    ruler_tap(&mut rig, "playlist", beat(5.0), false, (640, beat(5.0).x));
+    // The piano roll, a beat 2 U: a tap on an empty cell adds a note, a long press selects it.
+    rig.edit(2);
+    rig.slide_split();
+    let cell = pos2(60.0, 200.0);
+    rig.click(cell);
+    long_press(&mut rig, cell + vec2(10.0, 0.0));
+    rig.frame(vec![]);
+    assert!(rig.painted("Copy"), "piano roll: shown");
+    let beat = |b: f32| pos2(left + b * 2.0 * U, 0.75 * U);
+    ruler_tap(&mut rig, "piano roll", beat(3.0), false, (384, beat(3.0).x));
+    // Nothing selected (the note made the loop a bar), a touchpad's tap.
+    let b1 = beat(1.0);
+    ruler_tap(&mut rig, "roll, one frame", b1, true, (128, b1.x));
+    // Content the song never plays (the clip shows only its first two beats): the seek goes where the clip's origin
+    // plays it, and the playhead shows there, folded into the loop.
+    rig.app.song.channels[2].lanes[0].clips[0].visible_len_beats = 2.0;
+    let b3 = beat(3.0);
+    ruler_tap(&mut rig, "roll, unplayed", b3, false, (384, b3.x));
+    // The drum editor: a tap on a step adds a hit, a long press selects it. On the ruler, step 4 is tick 128.
+    rig.edit(1);
+    rig.slide_split();
+    let step = rig.step(0, 2);
+    rig.click(step);
+    long_press(&mut rig, step);
+    rig.frame(vec![]);
+    assert!(rig.painted("Copy"), "drum editor: shown");
+    let (x0, step_w) = (rig.app.slots.drum_editor.step.time_axis()).expect("drawn");
+    let (tap, x) = (pos2(rig.step(0, 4).x, 0.75 * U), x0 + 4.0 * step_w);
+    ruler_tap(&mut rig, "drum editor", tap, false, (128, x));
 }

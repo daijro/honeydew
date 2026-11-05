@@ -24,9 +24,14 @@ use crate::song::{ChannelKind, PPQ, Song};
 /// The input's backlog, in frames, past which a block read skips ahead to half of it. The input and output clocks
 /// drift apart, and a late first block leaves a backlog too; this bounds the monitoring latency to about this plus one
 /// block. It must exceed the input and output callback periods together, or the reads keep skipping: 2048 frames is
-/// 43 ms at 48 kHz.
+/// 43 ms at 48 kHz. Android's are longer (cpal opens AAudio without its low-latency mode, and its callbacks come in
+/// bursts): 8192 frames, 171 ms.
 // ponytail: a fixed bound and a hard skip (one discontinuity per skip); a resampler would follow drift smoothly.
-pub const MONITOR_MAX_LAG_FRAMES: u64 = 2048;
+pub const MONITOR_MAX_LAG_FRAMES: u64 = if cfg!(target_os = "android") {
+    8192
+} else {
+    2048
+};
 
 /// The most frames one input block holds. The device renders at most 1024 a call; a longer call (an offline caller's)
 /// reads its input in blocks this long.
@@ -40,20 +45,26 @@ const STARTS: usize = 64;
 const SAME_BEAT: f64 = 1e-6;
 
 /// What an engine build takes from the open input device: its ring, each monitoring channel's ports by
-/// [`crate::song::Channel::id`] as (first, second) (a monitoring channel without an entry takes `Input 1`), and where it
-/// records.
+/// [`crate::song::Channel::id`] as (first, second) (a monitoring channel without an entry takes `Input 1`), where it
+/// records, and whether monitoring may sound (not through a phone's speaker: [`crate::recording::input::may_monitor`]).
 #[derive(Clone)]
 pub struct LiveInput {
     pub ring: Arc<InputRing>,
     pub ports: Vec<(i32, usize, Option<usize>)>,
     pub tap: Arc<RecordTap>,
+    pub monitor: bool,
 }
 
 impl LiveInput {
-    /// `ring` and `ports`, with a new tap.
+    /// `ring` and `ports`, with a new tap; monitoring sounds.
     pub fn new(ring: Arc<InputRing>, ports: Vec<(i32, usize, Option<usize>)>) -> Self {
         let tap = Arc::new(RecordTap::new(&ring));
-        Self { ring, ports, tap }
+        Self {
+            ring,
+            ports,
+            tap,
+            monitor: true,
+        }
     }
 }
 
@@ -213,7 +224,9 @@ impl Monitor {
             return None;
         }
         let channels = (song.channels.iter().enumerate())
-            .filter(|(_, c)| c.kind == ChannelKind::AudioRecord && c.file.input_monitoring)
+            .filter(|(_, c)| {
+                input.monitor && c.kind == ChannelKind::AudioRecord && c.file.input_monitoring
+            })
             .map(|(index, channel)| {
                 let ports = input.ports.iter().find(|(id, ..)| *id == channel.id);
                 let (first, second) =

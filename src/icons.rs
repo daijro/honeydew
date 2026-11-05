@@ -102,12 +102,14 @@ pub enum IconId {
     GraphLane = 86,
     ChevronDown = 87,
     RackTab = 88,
+    /// Issue #68: a Lemon card's full screen button.
+    Expand = 89,
 }
 
 impl IconId {
     /// Every icon, in ID order (`ALL[n] as u8 == n`).
     #[rustfmt::skip]
-    pub const ALL: [IconId; 89] = {
+    pub const ALL: [IconId; 90] = {
         use IconId::*;
         [
             Browser, StepSeq, Piano, Play, Rewind, Record, AppLogo, More, Mixer, Tempo, Collapse,
@@ -120,6 +122,7 @@ impl IconId {
             RightStickHorizontal, LeftStickClick, RightStickClick, PadMenu, PadView, FavoriteOff,
             FavoriteOn, AddSmall, Confirm, Done, Filter, Music, Download, Randomize, CloudSync,
             SnapOff, SoloClip, Undo, Redo, Knob, Hide, Stop, GraphLane, ChevronDown, RackTab,
+            Expand,
         ]
     };
 }
@@ -779,6 +782,17 @@ pub fn icon_shapes(id: IconId, square: Rect, color: Color32) -> Vec<Shape> {
         RackTab => {
             p.rect(12.0, 12.0, 36.0, 23.0, 3.5);
             p.rect(12.0, 25.0, 36.0, 36.0, 3.5);
+        }
+        // Four corners pointing out.
+        Expand => {
+            for (x, y, dx, dy) in [
+                (12.0, 12.0, 1.0, 1.0),
+                (36.0, 12.0, -1.0, 1.0),
+                (12.0, 36.0, 1.0, -1.0),
+                (36.0, 36.0, -1.0, -1.0),
+            ] {
+                p.line(&[(x, y + 8.0 * dy), (x, y), (x + 8.0 * dx, y)], 3.0);
+            }
         }
     }
     p.shapes

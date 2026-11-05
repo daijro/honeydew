@@ -81,7 +81,7 @@ enum Split {
 }
 
 /// The files can be picked here: the desktop's dialogs.
-const PICKS: bool = cfg!(not(any(target_arch = "wasm32", target_os = "android")));
+const PICKS: bool = cfg!(not(any(target_arch = "wasm32", mobile)));
 
 /// Draws the builder for the DW Sampler `module` on `channel`, over `files` (the overlay's, which `Files` and `Folder`
 /// replace).
@@ -383,9 +383,12 @@ fn save(
     let (Some(shorthand), Some(module)) = (shorthand, module) else {
         return Nav::Close;
     };
-    if !pick_dw_program(module, &shorthand, None) {
+    let mut picked = module.clone();
+    super::preset_picker::renew_close_grand(app.files, &mut picked);
+    if !pick_dw_program(&mut picked, &shorthand, None) {
         return failed(path.display().to_string());
     }
+    *module = picked;
     app.files.name_module(module, &path);
     let name = module.file.preset_name.clone();
     crate::ui::rack::name_song_channel(app.song, channel, name);
@@ -396,20 +399,20 @@ fn save(
 }
 
 /// The desktop's dialogs. Elsewhere nothing is picked: the card's menu offers no builder there.
-#[cfg(any(target_arch = "wasm32", target_os = "android"))]
+#[cfg(any(target_arch = "wasm32", mobile))]
 fn pick_files() -> Option<Vec<PathBuf>> {
     None
 }
 
-#[cfg(any(target_arch = "wasm32", target_os = "android"))]
+#[cfg(any(target_arch = "wasm32", mobile))]
 fn pick_folder() -> Option<(String, Vec<PathBuf>)> {
     None
 }
 
-#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+#[cfg(not(any(target_arch = "wasm32", mobile)))]
 use desktop::{pick_files, pick_folder};
 
-#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+#[cfg(not(any(target_arch = "wasm32", mobile)))]
 mod desktop {
     use std::path::{Path, PathBuf};
 

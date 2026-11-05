@@ -17,10 +17,11 @@ use crate::settings::Settings;
 use crate::song::{ChannelKind, LaneKind, PPQ, Song, TimeSig};
 use crate::theme::{RECORD_COLOR, channel_color};
 use crate::ui::add_channel_menu::{AddChannelPick, add_channel_menu};
+use crate::ui::automation::value::time_items;
 use crate::ui::buttons::{filled_circle_button, floating_button, gradient};
 use crate::ui::clips::{Clips, LiveTake, TimeAxis, grid_ticks, song_end_beats};
 use crate::ui::ctrl_menu::Touch;
-use crate::ui::drum_grid::edit::{MARK_GAP, marks};
+use crate::ui::drum_grid::edit::{MARK_GAP, grid_lines};
 use crate::ui::focus;
 use crate::ui::keyboard_settings::{
     KeyboardMode, PANEL_H, keys_rect, knob_rects, panel_target, panel_tick, piano_rect, strip_rect,
@@ -28,7 +29,7 @@ use crate::ui::keyboard_settings::{
 };
 use crate::ui::mini_mixer::{self, RowKind};
 use crate::ui::panel_resize::{self, PanelGrab, Sizes, Zone};
-use crate::ui::piano_roll::notes::{Snap, SnapMode};
+use crate::ui::piano_roll::notes::{GridSize, Snap};
 use crate::ui::preview::ClipKey;
 use crate::ui::region::{self, TimeRange};
 use crate::ui::sample_row;
@@ -61,8 +62,9 @@ const SONG_NAME_X: f32 = 2.0;
 /// edge, as the browser's, grabbable within half a U.
 const BAR_W: f32 = 0.15;
 const BAR_HIT: f32 = 0.5;
-/// The floating panel buttons: the logo's diameter and the rack tab's width, and the rack tab's height.
+/// The floating panel buttons: the logo's diameter.
 const PANEL_BUTTON_W: f32 = 1.5;
+/// The rack tab's pill height, U (the rack's `RACK_TAB.y`).
 const RACK_TAB_H: f32 = 2.43;
 /// The add-channel `+`: the disc diameter, and the length of each bar of the plus inside it, tip to tip.
 const ADD_D: f32 = 2.0;
@@ -562,6 +564,7 @@ impl MainScreen {
         let c = &theme.colors;
         let text = c.text.to_color32();
         let editor = app.regions.editor;
+        self.snap.size = app.settings.grid_size;
         let (ruler_area, track_area) =
             editor.split_top_bottom_at_y(editor.top() + timeline::ruler_h(m));
         self.column.0 = column_step(self.column.0, self.column.1);
@@ -639,7 +642,7 @@ impl MainScreen {
             grid.left(),
             &shown,
             axis,
-            (app.song.time_sig, row_h, current),
+            (app.song.time_sig, row_h, current, self.snap.size),
             &cx,
         );
         // Headers sense clicks only, so a drag starting on one still scrolls once it leaves the calm zone. A header keeps
@@ -726,8 +729,11 @@ impl MainScreen {
         // finger: its beat clamped to [view-left beat, song end] and rounded to the Snap unit; the drop seeks there,
         // and the playhead stays on it until the output reports a tick in that beat, or for a quarter second
         // (`PlayheadKnob::line_x`).
+        // The upper clamp is never under one bar (the time signature's), so that with no
+        // clips the knob moves between bar 1 and bar 2 rather than locking to 0. Ruling: a song ending inside the
+        // first bar keeps that bar too. Rendering and export keep the song's own end.
         let tick = audio.map(|s| s.transport_tick);
-        let end = end * f64::from(PPQ);
+        let end = end.max(f64::from(app.song.time_sig.bar_beats())) * f64::from(PPQ);
         let ruler_at = RangeRuler {
             playhead: tick.map(|t| t as f64),
             ..ruler_at
@@ -806,8 +812,10 @@ impl MainScreen {
         actions.track = self.track_menu(ui.ctx(), app.song, screen, &cx);
         actions.insert = self.insert_popup(ui.ctx(), screen, &cx);
 
-        // Before the knob, which covers it at beat 0 and takes the touches there while it shows.
+        // Before the knob, which covers it at beat 0 and takes the touches there while it shows. The grid size is an
+        // app setting (#53): its menu's pick is saved with the settings.
         self.snap_input(ui, ruler_area, &cx);
+        app.settings.grid_size = self.snap.size;
         // The playhead knob rides the live playhead on the time ruler's middle line (`timeline::PlayheadKnob`), fading
         // in while the playhead is on the grid and the drum editor's rule holds ([`timeline::knob_shown`]), out
         // otherwise. A tap plays; a drag shows and seeks to the snapped beat above.
@@ -900,17 +908,12 @@ impl MainScreen {
             None => {}
         }
         if self.snap_menu {
-            let items: Vec<popup::PopupItem<SnapMode>> = (SnapMode::ALL.iter().enumerate())
-                .map(|(row, &mode)| popup::PopupItem {
-                    current: mode == self.snap.mode,
-                    ..popup::PopupItem::new(mode, 0, row, mode.label())
-                })
-                .collect();
+            let items = time_items(self.snap);
             let ctx = ui.ctx();
             let id = Id::new("playlist_snap_menu");
             let result = popup::show(ctx, id, rect.center(), ctx.content_rect(), &items, cx);
-            if let Some(mode) = result.selected {
-                self.snap = Snap { on: true, mode };
+            if let Some(pick) = result.selected {
+                self.snap = pick.snap(self.snap);
             }
             if result.close {
                 self.snap_menu = false;
@@ -965,7 +968,11 @@ impl MainScreen {
             .as_mut()
             .filter(|h| h.row == i && (p.held || p.long_released))
         {
-            let pos = ui.input(|i| i.pointer.latest_pos()).unwrap_or(hold.origin);
+            // Unlike `latest_pos`, `interact_pos` is kept through a `PointerGone` in the release frame (a touch's
+            // lift, #68), so the drop is where the finger was, not where it went down.
+            let pos = ui
+                .input(|i| i.pointer.interact_pos().or(i.pointer.latest_pos()))
+                .unwrap_or(hold.origin);
             let dy = pos.y - hold.origin.y;
             // Only a channel's first row drags (its primary's, unless that is hidden), any channel's.
             let first = tracks.iter().position(|t| t.channel == channel) == Some(i);
@@ -1084,6 +1091,8 @@ impl MainScreen {
             app.song.play_loop = range.map(|r| (r.start, r.end));
         }
         if let Some(tick) = out.playhead {
+            // A ruler tap deselects: the floating row goes and the play box shows.
+            self.clips.deselect();
             app.set_playhead(tick.into());
         }
         let Some((op, range)) = out.pick else {
@@ -1167,10 +1176,10 @@ impl MainScreen {
 
         if !rack_open {
             let size = vec2(m.u(PANEL_BUTTON_W), m.u(RACK_TAB_H));
-            let middle = (area.top() + area.bottom() + m.u(2.0)) / 2.0;
             let low = area.top() + m.u(5.0);
             let high = (area.bottom() - m.u(0.25) - size.y).max(low);
-            let home = (middle - size.y / 2.0).min(high).max(low);
+            // The tab's home place on the edge (#57), moved `shift` U down it.
+            let home = crate::ui::rack::rack_tab_y(area.y_range(), m.u(1.0)) - size.y / 2.0;
             let top = (home + m.u(shift)).clamp(low, high);
             let nudge = (m.u(2.75) - (top - screen.top())).max(0.0);
             let pill = Rect::from_min_size(pos2(screen.right() - m.u(2.1) + nudge, top), size);
@@ -1276,7 +1285,7 @@ impl MainScreen {
         let h = self.panel?;
         let c = self.collapsed(m);
         if grabbed.grow != 0.0 {
-            self.panel = Some((h + grabbed.grow).clamp(c, screen_h.max(c)));
+            self.panel = Some((h + grabbed.grow).clamp(c, panel_resize::full(screen_h, c, m)));
             ui.ctx().request_repaint();
         }
         let last_dy = grabbed.released?;
@@ -2343,14 +2352,15 @@ fn open_panel_button(
 /// from `grid_left` on. The header column left of it is [`mini_mixer::show`]'s. Each row is filled from the grid's left
 /// edge (or beat 0's x when scrolled before it) to its right edge, a device pixel short of the next row, in
 /// `moduleFill` for the `current` track and `controlFill` for the others; the beat lines over them are `background`,
-/// 4 px at bars, 2 px at beats and 1 px finer, centred, at least 0.6 U apart (the drum free grid's [`marks`]).
+/// 4 px at bars, 2 px at beats and 1 px finer, centred, at least 0.6 U apart (the drum free grid's
+/// [`marks`](crate::ui::drum_grid::edit::marks)), or at the grid `size` ([`grid_lines`], #53).
 fn paint_track_rows(
     painter: &Painter,
     rect: Rect,
     grid_left: f32,
     tracks: &[(TrackRow, f32)],
     axis: TimeAxis,
-    (sig, row_h, current): (TimeSig, f32, Option<(usize, usize)>),
+    (sig, row_h, current, size): (TimeSig, f32, Option<(usize, usize)>, GridSize),
     cx: &UiCtx,
 ) {
     let UiCtx { theme, m } = *cx;
@@ -2360,7 +2370,7 @@ fn paint_track_rows(
     let grid = rect.with_min_x(grid_left);
     let px = 1.0 / m.ppp();
     let (t0, t1) = (axis.tick(grid.left()), axis.tick(grid.right()));
-    let lines: Vec<(f32, f32)> = marks(t0, t1, axis.beat_w, m.u(1.0), sig, MARK_GAP)
+    let lines: Vec<(f32, f32)> = grid_lines(t0, t1, axis.beat_w, m.u(1.0), sig, MARK_GAP, size)
         .into_iter()
         .map(|(tick, w)| (m.round_px(axis.x(tick)) - (w / 2.0).floor() * px, w * px))
         .collect();
@@ -3608,7 +3618,7 @@ mod tests {
             beat_w: BEAT_PT,
         };
         let rect = Rect::from_min_max(pos2(0.0, 48.0), pos2(1170.0, 380.0));
-        let rows = (TimeSig::default(), 64.0, None);
+        let rows = (TimeSig::default(), 64.0, None, GridSize::Auto);
         let out = egui::Context::default().run(egui::RawInput::default(), |ctx| {
             let panel = egui::CentralPanel::default().frame(egui::Frame::NONE);
             panel.show(ctx, |ui| {
@@ -4368,8 +4378,7 @@ mod tests {
     }
 
     #[test]
-    fn a_tap_on_another_tracks_empty_space_makes_it_current_and_only_note_and_drum_tracks_take_clips()
-     {
+    fn a_tap_on_another_tracks_empty_space_makes_it_current_and_its_new_clip_adds_one_there() {
         let mut rig = Rig::new(song_with_a_clip());
         rig.selected = 2;
         // The drums' track is not current: the first tap makes it so (its channel takes the keyboard).
@@ -4380,8 +4389,8 @@ mod tests {
         rig.click(drums);
         assert_eq!(rig.plus().0, Some(SongEdit::Final));
         assert_eq!(rig.clips(1)[0].start_tick, 0);
-        // The master's automation track (current, its keys silent) takes no new clip: on it the menu's `New Clip` is
-        // dimmed and adds nothing.
+        // The master's automation track (current, its keys silent) takes a new clip too, as Honeydew's automation
+        // tracks do: `New Clip` adds an automation clip there.
         let master = pos2(600.0, 80.0);
         for _ in 0..2 {
             assert_eq!(rig.click(master), (None, None));
@@ -4389,9 +4398,12 @@ mod tests {
         }
         rig.click(master);
         assert!(rig.plus_shown());
-        assert_eq!(rig.plus(), (None, None));
-        assert!(rig.plus_shown());
-        assert_eq!(rig.clips(0).len(), 1, "only the rig's own clip at beat 60");
+        assert_eq!(rig.plus(), (Some(SongEdit::Final), None));
+        assert_eq!(
+            rig.clips(0).len(),
+            2,
+            "the rig's own clip at beat 60 and the new one"
+        );
         assert_eq!(rig.selected, 0);
     }
 
@@ -4588,7 +4600,7 @@ mod tests {
         rig.frame(vec![button(CLIP, true)]);
         let shown = rig.frame(vec![button(CLIP, false)]);
         let first = radii(&shown);
-        assert_eq!(first.len(), 5, "{first:?}");
+        assert_eq!(first.len(), 6, "{first:?}");
         assert!(first.iter().all(|&r| r < 1.0), "{first:?}");
         // 0.1 s on (6 frames at 60 Hz): past full size; then radius 22.4 points (diameter 1.4 U).
         let next = radii(&rig.frame(vec![]));
@@ -5063,13 +5075,16 @@ mod tests {
         );
     }
 
+    /// `Copy` fills the clipboard and edits nothing; `Duplicate` (#68) puts the copy right after.
     #[test]
-    fn copy_snap_and_delete_edit_the_song_and_edit_opens_the_editor() {
+    fn copy_duplicate_snap_and_delete_edit_the_song_and_edit_opens_the_editor() {
         let button = |i: usize| Id::new(("clip_button", i));
         let mut rig = Rig::new(song_with_a_clip());
         rig.click(CLIP);
         rig.frame(vec![]);
-        assert_eq!(rig.click_id(button(0)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(0)).0, None);
+        assert_eq!(rig.clips(2).len(), 1);
+        assert_eq!(rig.click_id(button(4)).0, Some(SongEdit::Final));
         let starts: Vec<_> = rig.clips(2).iter().map(|c| (c.id, c.start_tick)).collect();
         assert_eq!(starts, [(1, 512), (2, 1024)]);
         assert_eq!(
@@ -5106,7 +5121,7 @@ mod tests {
         let mut rig = Rig::new(song);
         rig.click(CLIP);
         rig.frame(vec![]);
-        rig.click_id(Id::new(("clip_button", 4_usize)));
+        rig.click_id(Id::new(("clip_button", 5_usize)));
         rig.frame(vec![]);
         let unlink = Id::new("clip_more").with((0_usize, 1_usize));
         assert_eq!(rig.click_id(unlink).0, Some(SongEdit::Final));
@@ -5118,7 +5133,7 @@ mod tests {
     fn more_mutes_and_unmutes_the_clip_as_final_edits() {
         let mut rig = Rig::new(song_with_a_clip());
         rig.click(CLIP);
-        let more = Id::new(("clip_button", 4_usize));
+        let more = Id::new(("clip_button", 5_usize));
         let item = |row: usize| Id::new("clip_more").with((0_usize, row));
         rig.click_id(more);
         assert_eq!(rig.click_id(item(3)).0, Some(SongEdit::Final));
@@ -5960,6 +5975,56 @@ mod tests {
         assert_eq!(f.reorder, Some(vec![2, 1, 0, 3]));
     }
 
+    /// A touch's lift frame ends with `PointerGone`, which clears `latest_pos`: the drop must still be where the
+    /// finger was (`interact_pos` survives it), not where it went down.
+    #[test]
+    fn a_touch_drag_drops_where_the_finger_was_the_lift_frame_ends_with_pointer_gone() {
+        let mut rig = four_rows();
+        hold(&mut rig, header_at(1), 0.3);
+        rig.frame(vec![]);
+        assert!(rig.screen.hold.is_some(), "the long press held");
+        let to = header_at(3);
+        rig.frame(finger(1, egui::TouchPhase::Move, to));
+        let f = rig.frame(finger(1, egui::TouchPhase::End, to));
+        assert_eq!(
+            f.reorder,
+            Some(vec![0, 3, 2, 1]),
+            "dropped where the finger lifted"
+        );
+    }
+
+    #[test]
+    fn a_finger_held_on_a_header_drags_its_channel_and_drops_it_where_it_lifts() {
+        // As Android's integration sends a finger (#68): a touch event with the pointer's, and the lift's `PointerGone`,
+        // which clears the latest position in the release frame.
+        use egui::TouchPhase::{End, Move, Start};
+        let finger = |phase, pos| {
+            let touch = egui::Event::Touch {
+                device_id: egui::TouchDeviceId(1),
+                id: egui::TouchId(1),
+                phase,
+                pos,
+                force: None,
+            };
+            let pointer = match phase {
+                Start => vec![egui::Event::PointerMoved(pos), button(pos, true)],
+                Move => vec![egui::Event::PointerMoved(pos)],
+                _ => vec![button(pos, false), egui::Event::PointerGone],
+            };
+            [vec![touch], pointer].concat()
+        };
+        let mut rig = four_rows();
+        rig.frame(finger(Start, header_at(1)));
+        for _ in 0..3 {
+            rig.frame(vec![]);
+        }
+        rig.frame(finger(Move, header_at(2)));
+        rig.frame(finger(Move, header_at(3)));
+        let f = rig.frame(finger(End, header_at(3)));
+        // A row at a time: the Drums swap with row 2's channel, then row 3's (it dropped back in row 1 before).
+        assert_eq!(f.reorder, Some(vec![0, 2, 3, 1]));
+    }
+
     #[test]
     fn the_target_row_is_the_start_row_plus_the_travel_rounded() {
         // Pressed low in row 1 (start row 1.9, floor 1): 0.4 rows down rounds back to row 1, though the finger is in
@@ -6468,7 +6533,8 @@ mod tests {
             rig.screen.snap,
             crate::ui::piano_roll::notes::Snap {
                 on: true,
-                mode: crate::ui::piano_roll::notes::SnapMode::Bar
+                mode: crate::ui::piano_roll::notes::SnapMode::Bar,
+                ..Default::default()
             }
         );
     }
@@ -6747,6 +6813,7 @@ mod tests {
         rig.screen.snap = crate::ui::piano_roll::notes::Snap {
             on: true,
             mode: crate::ui::piano_roll::notes::SnapMode::Bar,
+            ..Default::default()
         };
         let x = beat(4.0);
         assert_eq!(
@@ -6769,20 +6836,21 @@ mod tests {
     }
 
     #[test]
-    fn plus_clip_copy_and_the_floating_snap_take_the_snap_unit() {
+    fn plus_clip_duplicate_and_the_floating_snap_take_the_snap_unit() {
         let bar = crate::ui::piano_roll::notes::Snap {
             on: true,
             mode: crate::ui::piano_roll::notes::SnapMode::Bar,
+            ..Default::default()
         };
         let button = |i: usize| Id::new(("clip_button", i));
-        // The MiniSynth's clip shows 6 beats from beat 4: Copy rounds its length up to the unit, 2 bars.
+        // The MiniSynth's clip shows 6 beats from beat 4: Duplicate rounds its length up to the unit, 2 bars.
         let mut song = song_with_a_clip();
         song.channels[2].lanes[0].clips[0].visible_len_beats = 6.0;
         let mut rig = Rig::new(song);
         rig.screen.snap = bar;
         rig.click(CLIP);
         rig.frame(vec![]);
-        assert_eq!(rig.click_id(button(0)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(4)).0, Some(SongEdit::Final));
         assert_eq!(rig.clips(2)[1].start_tick, 512 + 1024);
         // The floating Snap: to the nearest bar (900 → 1024; a beat would be 896).
         rig.song.channels[2].lanes[0].clips[1].start_tick = 900;
@@ -6862,10 +6930,10 @@ mod tests {
         assert_eq!(rig.paste(), None);
         rig.right_click(EMPTY_2);
         assert!(rig.paste().is_some());
-        // The clip copied, then deselected.
+        // The clip copied (the clipboard alone), then deselected.
         rig.click(CLIP);
         rig.frame(vec![]);
-        rig.click_id(Id::new(("clip_button", 0_usize)));
+        assert_eq!(rig.click_id(Id::new(("clip_button", 0_usize))).0, None);
         rig.click(EMPTY_2 + vec2(BEAT_PT, 0.0));
         assert_eq!(rig.screen.clips.selected, None);
         let held_at = EMPTY_2 + vec2(BEAT_PT, 10.0);
@@ -6881,9 +6949,9 @@ mod tests {
         let paste = rig.paste().expect("the Paste button");
         // Its tap pastes the clip on that track at the snapped beat (13): one final edit, the copy selected.
         assert_eq!(rig.click(paste.center()).0, Some(SongEdit::Final));
-        assert_eq!(rig.starts(2), [(1, 512), (2, 1024), (3, 1664)]);
+        assert_eq!(rig.starts(2), [(1, 512), (2, 1664)]);
         let pasted = ClipRef {
-            id: 3,
+            id: 2,
             ..SYNTH_CLIP
         };
         assert_eq!(rig.screen.clips.selected, Some(pasted));

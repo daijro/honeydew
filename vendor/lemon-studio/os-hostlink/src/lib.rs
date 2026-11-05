@@ -19,8 +19,14 @@
 //! compiled into Lemon Studio share this crate with the app; a copy loaded from a bundle has its own registry and is never
 //! hosted, as in another DAW.
 //!
+//! On the audio side, [`levels`] hands a Lemon instrument the channel's volume and pan. Both sides read a plugin's
+//! saved state with [`state`].
+//!
 //! Spec: `plugins/host-link.md`. This is a Lemon Studio design, not FL's protocol.
 // spec: plugins/host-link.md
+
+pub mod levels;
+pub mod state;
 
 /// Name passed to `RegisterWindowMessageW`.
 pub const MESSAGE_NAME: &str = "OpenStudio.HostLink.1";
@@ -57,9 +63,10 @@ pub enum Cmd {
     /// instance and answers 1; 0 = not handled (a plugin that never got the hello keeps the entry disabled).
     Automate = 10,
     /// Plugin -> host: an audio file for the project (Tesla's "Send to playlist as audio clip" / "Send to selected
-    /// channel"), `lparam` 0 = to the playlist as an audio clip, 1 = into the selected channel. The file's path waits in
-    /// the process's outbox ([`post_audio`]; the host takes it with [`take_audio`]). The host answers 1; 0 = not
-    /// handled (the plugin empties the outbox again).
+    /// channel" / "Send to new Lemon Slicer channel"), `lparam` = [`AudioTo`]: 0 = to the playlist as an audio clip,
+    /// 1 = into the selected channel, 2 = into a new Lemon Slicer channel (sliced at the file's cue points). The file's
+    /// path waits in the process's outbox ([`post_audio`]; the host takes it with [`take_audio`]). The host answers 1;
+    /// 0 = not handled (the plugin empties the outbox again).
     Audio = 11,
     /// Host -> plugin: whether the editor can be resized by the host's frame. Answer: its smallest content size in
     /// logical px ([`pack_size`]); 0 = a fixed size (unanswered messages return 0 too).
@@ -68,6 +75,10 @@ pub enum Cmd {
     /// ([`pack_size`]). The plugin resizes its editor (to at least its smallest size) and answers 1; [`Cmd::Metrics`]
     /// then gives the size it took, and the frame follows.
     SetSize = 13,
+    /// Plugin -> host: notes for the plugin's channel in the current pattern (Lemon Slicer's dump), replacing the
+    /// channel's notes there. `lparam` = the token [`post_notes`] gave; the host takes the notes with [`take_notes`]
+    /// and answers 1; 0 = not handled (the plugin takes them back).
+    Notes = 14,
 }
 
 impl Cmd {
@@ -86,24 +97,75 @@ impl Cmd {
             11 => Cmd::Audio,
             12 => Cmd::Resizable,
             13 => Cmd::SetSize,
+            14 => Cmd::Notes,
             _ => return None,
         })
     }
 }
 
-static OUTBOX: std::sync::Mutex<Vec<(String, bool)>> = std::sync::Mutex::new(Vec::new());
+/// Where an audio file sent with [`Cmd::Audio`] goes (the message's `lparam`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AudioTo {
+    /// The playlist, as an audio clip at the song position.
+    Playlist = 0,
+    /// The selected channel's sample (a new sampler channel when it isn't a sampler).
+    Channel = 1,
+    /// A new Lemon Slicer channel, sliced at the file's cue points.
+    Slicer = 2,
+}
 
-/// Plugin: a file for the host to take with the next [`Cmd::Audio`] (`channel`: into the selected channel rather than
-/// the playlist). Plugins built into the host share its process, so the path need not travel in the message.
-pub fn post_audio(path: &str, channel: bool) {
+impl AudioTo {
+    pub fn from_isize(v: isize) -> AudioTo {
+        match v {
+            1 => AudioTo::Channel,
+            2 => AudioTo::Slicer,
+            _ => AudioTo::Playlist,
+        }
+    }
+}
+
+static OUTBOX: std::sync::Mutex<Vec<(String, AudioTo)>> = std::sync::Mutex::new(Vec::new());
+
+/// Plugin: a file for the host to take with the next [`Cmd::Audio`], and where it goes. Plugins built into the host
+/// share its process, so the path need not travel in the message.
+pub fn post_audio(path: &str, to: AudioTo) {
     if let Ok(mut o) = OUTBOX.lock() {
-        o.push((path.to_string(), channel));
+        o.push((path.to_string(), to));
     }
 }
 
 /// Host (or a plugin whose message went unanswered): the files posted since the last call, oldest first.
-pub fn take_audio() -> Vec<(String, bool)> {
+pub fn take_audio() -> Vec<(String, AudioTo)> {
     OUTBOX.lock().map(|mut o| std::mem::take(&mut *o)).unwrap_or_default()
+}
+
+/// A note for [`Cmd::Notes`]: start and end in beats from the pattern's start, key (60 = C5), velocity (0..=127).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NoteOut {
+    pub start: f64,
+    pub end: f64,
+    pub key: u8,
+    pub velocity: u8,
+}
+
+static NOTES: std::sync::Mutex<(isize, Vec<(isize, Vec<NoteOut>)>)> = std::sync::Mutex::new((0, Vec::new()));
+
+/// Plugin: notes for the host to take with the next [`Cmd::Notes`]; the token to send as its `lparam`.
+pub fn post_notes(notes: Vec<NoteOut>) -> isize {
+    let Ok(mut o) = NOTES.lock() else { return 0 };
+    o.0 = o.0 % 0x7fff_ffff + 1;
+    let token = o.0;
+    o.1.push((token, notes));
+    token
+}
+
+/// Host (or the plugin whose message went unanswered): the notes posted under `token` (empty when there are none).
+pub fn take_notes(token: isize) -> Vec<NoteOut> {
+    let Ok(mut o) = NOTES.lock() else { return Vec::new() };
+    match o.1.iter().position(|(t, _)| *t == token) {
+        Some(i) => o.1.remove(i).1,
+        None => Vec::new(),
+    }
 }
 
 /// The icon of a page tab. The ids are the protocol; the host maps them to its icon set.
@@ -382,7 +444,10 @@ mod local {
         /// Plugin -> host (`Changed`, `Note`, `Automate`): queued for the host's next tick, which is woken. 1 when a host
         /// is there, 0 otherwise (as unanswered messages on Windows).
         pub fn to_host(&self, cmd: Cmd, arg: isize) -> isize {
-            if !self.hosted() {
+            // Honeydew (vendored change): an embedded editor has no host, but its \"Create automation clip\" is the app's,
+            // queued for it ([`take_host_messages_for`]).
+            let for_app = cfg!(feature = "embed") && cmd == Cmd::Automate;
+            if !self.hosted() && !for_app {
                 return 0;
             }
             if let Ok(mut q) = QUEUE.lock() {
@@ -407,6 +472,22 @@ mod local {
     /// Host: the plugins' messages since the last call: (editor's host window, command, argument).
     pub fn take_host_messages() -> Vec<(u64, Cmd, isize)> {
         QUEUE.lock().map(|mut q| std::mem::take(&mut *q)).unwrap_or_default()
+    }
+
+    /// Honeydew: the arguments of the `cmd` messages from editor window `parent`, taken; the other messages stay queued.
+    pub fn take_host_messages_for(parent: u64, cmd: Cmd) -> Vec<isize> {
+        let Ok(mut q) = QUEUE.lock() else {
+            return Vec::new();
+        };
+        let mut taken = Vec::new();
+        q.retain(|&(p, c, arg)| {
+            let mine = p == parent && c == cmd;
+            if mine {
+                taken.push(arg);
+            }
+            !mine
+        });
+        taken
     }
 
     /// Host side: a connection to the editor of a Lemon plugin.
@@ -478,9 +559,10 @@ mod local {
 }
 
 #[cfg(not(windows))]
-pub use local::{set_host_waker, take_host_messages, Link, Peer};
+pub use local::{set_host_waker, take_host_messages, take_host_messages_for, Link, Peer};
+// Honeydew (vendored change): the embedded Lemon editors' `Create automation clip` reaches the app on Windows too.
 #[cfg(all(windows, feature = "embed"))]
-pub use local::Peer;
+pub use local::{take_host_messages_for, Peer};
 
 #[cfg(test)]
 mod tests {
@@ -532,6 +614,7 @@ mod tests {
         assert_eq!(Cmd::from_usize(Cmd::SetPage as usize), Some(Cmd::SetPage));
         assert_eq!(Cmd::from_usize(10), Some(Cmd::Automate));
         assert_eq!(Cmd::from_usize(13), Some(Cmd::SetSize));
+        assert_eq!(Cmd::from_usize(14), Some(Cmd::Notes));
         assert_eq!(PageIcon::from_id(99), PageIcon::Plugin);
         assert_eq!(unpack_note(pack_note(67, 100, true)), (67, 100, true));
         assert_eq!(unpack_note(pack_note(0, 0, false)), (0, 0, false));

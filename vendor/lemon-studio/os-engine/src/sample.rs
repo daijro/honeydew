@@ -100,9 +100,32 @@ pub fn load_shared(path: &Path) -> Result<Arc<Sample>, SampleError> {
     Ok(s)
 }
 
-/// Decodes a WAV (PCM or Vorbis-in-WAV) / FLAC / Ogg Vorbis / WavPack / MP3 / AIFF file.
+/// Honeydew (vendored addition): the files the host keeps in memory, by path (the browser's, which has no file
+/// system), which [`load`] reads before the disk.
+// ponytail: each kept for the session, as the browser's copies themselves are.
+fn provided() -> &'static std::sync::Mutex<HashMap<PathBuf, Arc<[u8]>>> {
+    static PROVIDED: OnceLock<std::sync::Mutex<HashMap<PathBuf, Arc<[u8]>>>> = OnceLock::new();
+    PROVIDED.get_or_init(Default::default)
+}
+
+/// Honeydew (vendored addition): `bytes` are the file at `path` from now on, for [`load`].
+pub fn provide(path: &Path, bytes: Vec<u8>) {
+    if let Ok(mut map) = provided().lock() {
+        map.insert(path.to_owned(), bytes.into());
+    }
+}
+
+/// Honeydew (vendored addition): the bytes of the file at `path`, one the host [`provide`]d first (for a plugin that
+/// reads a file itself, as Tesla does).
+pub fn read(path: &Path) -> std::io::Result<Vec<u8>> {
+    let held = provided().lock().ok().and_then(|map| map.get(path).cloned());
+    held.map_or_else(|| std::fs::read(path), |bytes| Ok(bytes.to_vec()))
+}
+
+/// Decodes a WAV (PCM or Vorbis-in-WAV) / FLAC / Ogg Vorbis / WavPack / MP3 / AIFF / M4A (AAC or ALAC) file.
 pub fn load(path: &Path) -> Result<Sample, SampleError> {
-    let bytes = std::fs::read(path).map_err(|source| SampleError::Io { path: path.to_owned(), source })?;
+    // Honeydew (vendored change): a file the host [`provide`]d first.
+    let bytes = read(path).map_err(|source| SampleError::Io { path: path.to_owned(), source })?;
     let decode_err = |message: String| SampleError::Decode { path: path.to_owned(), message };
     if let Some(vw) = vorbis_in_wav(&bytes) {
         let mut s = decode(vw.ogg.to_vec(), Some("ogg")).map_err(decode_err)?;
@@ -112,8 +135,45 @@ pub fn load(path: &Path) -> Result<Sample, SampleError> {
         }
         return Ok(s);
     }
+    if let Some(audio) = wavpack_audio_first(&bytes) {
+        return decode(audio.to_vec(), Some("wv")).map_err(decode_err);
+    }
     let ext = path.extension().and_then(|e| e.to_str());
     decode(bytes, ext).map_err(decode_err)
+}
+
+/// The frames of a WavPack packet whose blocks all have magnitude 0 (flag bits 18 to 22): digital silence, which
+/// the WavPack decoder refuses in some encoders' files, kept as that many frames of silence. `None` for any other.
+fn wavpack_quiet_frames(p: &[u8]) -> Option<usize> {
+    let (mut pos, mut frames) = (0, None);
+    while pos < p.len() {
+        if p.get(pos..pos + 4)? != b"wvpk" {
+            return None;
+        }
+        let word = |at: usize| p.get(pos + at..pos + at + 4).and_then(|b| b.try_into().ok()).map(u32::from_le_bytes);
+        if (word(24)? >> 18) & 0x1f != 0 {
+            return None;
+        }
+        frames = Some(word(20)? as usize);
+        pos += word(4)? as usize + 8;
+    }
+    frames.filter(|&n| n > 0)
+}
+
+/// A WavPack file whose first blocks hold no audio (a block carrying only the original RIFF header, its flags all 0,
+/// as in many sample packs): the WavPack reader takes the stream's rate, channels and depth from the first block, so
+/// those blocks are dropped and the rest decoded. `None` for any other file.
+fn wavpack_audio_first(b: &[u8]) -> Option<&[u8]> {
+    let mut pos = 0;
+    while b.get(pos..pos + 4)? == b"wvpk" {
+        let size = u32::from_le_bytes(b.get(pos + 4..pos + 8)?.try_into().ok()?) as usize + 8;
+        let samples = u32::from_le_bytes(b.get(pos + 20..pos + 24)?.try_into().ok()?);
+        if samples != 0 {
+            return (pos > 0).then(|| &b[pos..]);
+        }
+        pos += size;
+    }
+    None
 }
 
 /// The length of the audio file at `path`: its frames and their rate. Read from the file's headers where they give it
@@ -128,7 +188,16 @@ pub fn length(path: &Path) -> Option<(u64, u32)> {
 
 /// The length the file's headers give, without decoding it.
 fn header_length(path: &Path) -> Option<(u64, u32)> {
-    let file = std::fs::File::open(path).ok()?;
+    let mut file = std::fs::File::open(path).ok()?;
+    // A WavPack file that starts with a block without audio: that block's format is not the stream's.
+    let mut head = [0u8; 24];
+    if file.read_exact(&mut head).is_ok() && &head[..4] == b"wvpk" && head[20..24] == [0; 4] {
+        return None;
+    }
+    // An M4A's track counts the encoder's priming and padding: its length is the one its edit list or tag gives
+    // (`mp4_trim`), else it is found by decoding it.
+    let moov = mp4_moov(&mut file);
+    file.rewind().ok()?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
@@ -137,6 +206,9 @@ fn header_length(path: &Path) -> Option<(u64, u32)> {
     let format = probe().probe(&hint, mss, FormatOptions::default(), MetadataOptions::default()).ok()?;
     let track = format.default_track(TrackType::Audio)?;
     let rate = track.codec_params.as_ref()?.audio()?.sample_rate.filter(|&r| r > 0)?;
+    if let Some(moov) = moov {
+        return Some((mp4_trim(&moov, rate)?.1? as u64, rate));
+    }
     Some((track.num_frames?, rate))
 }
 
@@ -254,10 +326,107 @@ fn mp3_info_frame(b: &[u8]) -> Option<usize> {
     (xing || vbri).then_some(if mpeg1 { 1152 } else { 576 })
 }
 
+/// The atoms of an MP4 (ISO/QuickTime) atom body, as (type, body). Iteration stops at the first atom that doesn't fit.
+fn mp4_atoms(b: &[u8]) -> impl Iterator<Item = (&[u8], &[u8])> {
+    let mut pos = 0;
+    std::iter::from_fn(move || {
+        let size = u32::from_be_bytes(b.get(pos..pos + 4)?.try_into().ok()?) as usize;
+        let id = b.get(pos + 4..pos + 8)?;
+        let (head, size) = match size {
+            0 => (8, b.len() - pos),
+            1 => (16, usize::try_from(u64::from_be_bytes(b.get(pos + 8..pos + 16)?.try_into().ok()?)).ok()?),
+            n => (8, n),
+        };
+        let body = b.get(pos + head..pos.checked_add(size)?)?;
+        pos += size;
+        Some((id, body))
+    })
+}
+
+/// The first atom of type `id` in `b`, an atom body.
+fn mp4_child<'a>(b: &'a [u8], id: &[u8]) -> Option<&'a [u8]> {
+    mp4_atoms(b).find(|(i, _)| *i == id).map(|(_, body)| body)
+}
+
+/// The body of an MP4 (M4A) file's `moov` atom, reading only the top-level atom headers and that atom: `None` for a
+/// file that doesn't start with `ftyp`.
+fn mp4_moov(mut r: impl Read + Seek) -> Option<Vec<u8>> {
+    let mut head = [0u8; 16];
+    let mut pos = 0u64;
+    loop {
+        r.seek(SeekFrom::Start(pos)).ok()?;
+        r.read_exact(&mut head[..8]).ok()?;
+        if pos == 0 && &head[4..8] != b"ftyp" {
+            return None;
+        }
+        let (mut size, mut len) = (u64::from(u32::from_be_bytes(head[..4].try_into().ok()?)), 8);
+        if size == 1 {
+            r.read_exact(&mut head[8..16]).ok()?;
+            (size, len) = (u64::from_be_bytes(head[8..16].try_into().ok()?), 16);
+        }
+        if &head[4..8] == b"moov" {
+            let mut body = Vec::new();
+            let want = if size == 0 { u64::MAX } else { size.checked_sub(len)? };
+            r.take(want).read_to_end(&mut body).ok()?;
+            return (size == 0 || body.len() as u64 == want).then_some(body);
+        }
+        if size < len {
+            return None;
+        }
+        pos += size;
+    }
+}
+
+/// Where the audio lies among the frames an MP4 (M4A) file's audio track decodes to, at `rate`: the encoder's priming
+/// to skip, then the audio's length when the file gives it. From the track's edit list (ffmpeg's encoders), else the
+/// iTunes `iTunSMPB` tag (Apple's), whose length is used rather than its padding (Apple's ALAC files give a padding
+/// that isn't there). Symphonia's MP4 reader reads neither, so an AAC file would start with the encoder's 1024 or
+/// 2112 frames of priming and end with its padding to a whole AAC frame.
+fn mp4_trim(moov: &[u8], rate: u32) -> Option<(usize, Option<usize>)> {
+    // A time in `scale` units as frames at `rate`.
+    let frames = |t: u64, scale: u32| usize::try_from(u128::from(t) * u128::from(rate) / u128::from(scale).max(1)).ok();
+    // `mvhd` and `mdhd` keep their timescale after the version, flags and times (32 or 64 bits each).
+    let timescale = |b: &[u8]| {
+        let at = if b.first() == Some(&1) { 20 } else { 12 };
+        Some(u32::from_be_bytes(b.get(at..at + 4)?.try_into().ok()?))
+    };
+    let movie = timescale(mp4_child(moov, b"mvhd")?)?;
+    // The first sound track, as Symphonia's default track.
+    let (trak, mdia) = mp4_atoms(moov).filter(|(id, _)| *id == b"trak").find_map(|(_, trak)| {
+        let mdia = mp4_child(trak, b"mdia")?;
+        (mp4_child(mdia, b"hdlr")?.get(8..12)? == b"soun").then_some((trak, mdia))
+    })?;
+    let media = timescale(mp4_child(mdia, b"mdhd")?)?;
+    // One edit, of media: its start in the media's time, its length in the movie's (0: the whole media).
+    if let Some(elst) = mp4_child(trak, b"edts").and_then(|e| mp4_child(e, b"elst")) {
+        let v1 = elst.first() == Some(&1);
+        let count = u32::from_be_bytes(elst.get(4..8)?.try_into().ok()?);
+        let e = elst.get(8..if v1 { 24 } else { 16 })?;
+        let (length, start) = if v1 {
+            (u64::from_be_bytes(e[..8].try_into().ok()?), i64::from_be_bytes(e[8..16].try_into().ok()?))
+        } else {
+            (u64::from(u32::from_be_bytes(e[..4].try_into().ok()?)), i64::from(i32::from_be_bytes(e[4..8].try_into().ok()?)))
+        };
+        if count == 1 && start >= 0 {
+            return Some((frames(start as u64, media)?, (length > 0).then(|| frames(length, movie)).flatten()));
+        }
+    }
+    // `iTunSMPB`: hex words, the second the priming, the fourth the length, in frames.
+    let meta = mp4_child(mp4_child(moov, b"udta")?, b"meta")?;
+    // A full atom in MP4 files (version and flags first), a plain one in QuickTime files.
+    let meta = if meta.get(4..8) == Some(b"hdlr") { meta } else { meta.get(4..)? };
+    let smpb = mp4_atoms(mp4_child(meta, b"ilst")?).filter(|(id, _)| *id == b"----").find_map(|(_, tag)| {
+        (mp4_child(tag, b"name")?.get(4..)? == b"iTunSMPB").then(|| mp4_child(tag, b"data")?.get(8..)).flatten()
+    })?;
+    let words: Vec<u64> = std::str::from_utf8(smpb).ok()?.split_whitespace().map_while(|w| u64::from_str_radix(w, 16).ok()).collect();
+    Some((usize::try_from(*words.get(1)?).ok()?, usize::try_from(*words.get(3)?).ok().filter(|&n| n > 0)))
+}
+
 fn decode(bytes: Vec<u8>, ext: Option<&str>) -> Result<Sample, String> {
     // MP3 plays every decoded frame, the encoder's info frame as silence in front (spec: audio/sampler.md, the table
     // of formats; audio/sample-formats.md).
     let info_frame = mp3_info_frame(&bytes);
+    let moov = mp4_moov(Cursor::new(&bytes));
     let mss = MediaSourceStream::new(Box::new(Cursor::new(bytes)), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = ext {
@@ -274,6 +443,7 @@ fn decode(bytes: Vec<u8>, ext: Option<&str>) -> Result<Sample, String> {
         .and_then(|p| p.audio())
         .ok_or("no audio codec parameters")?;
     let mp3 = format.format_info().short_name == "mp3";
+    let wavpack = format.format_info().short_name == "wavpack";
     let mut decoder = codecs()
         .make_audio_decoder(params, &AudioDecoderOptions::default().gapless(!mp3))
         .map_err(|e| e.to_string())?;
@@ -294,7 +464,13 @@ fn decode(bytes: Vec<u8>, ext: Option<&str>) -> Result<Sample, String> {
         }
         let audio = match decoder.decode(&packet) {
             Ok(a) => a,
-            Err(SymError::DecodeError(_)) => continue,
+            Err(SymError::DecodeError(_)) => {
+                if let Some(n) = wavpack.then(|| wavpack_quiet_frames(&packet.data)).flatten() {
+                    left.resize(left.len() + n, 0.0);
+                    right.resize(right.len() + n, 0.0);
+                }
+                continue;
+            }
             Err(e) => return Err(e.to_string()),
         };
         rate = audio.spec().rate();
@@ -308,6 +484,14 @@ fn decode(bytes: Vec<u8>, ext: Option<&str>) -> Result<Sample, String> {
     }
     if rate == 0 {
         return Err("no audio decoded".into());
+    }
+    // An M4A plays its audio without the encoder's priming and padding (`mp4_trim`).
+    if let Some((skip, n)) = moov.as_deref().and_then(|m| mp4_trim(m, rate)) {
+        let end = n.map_or(left.len(), |n| left.len().min(skip.saturating_add(n)));
+        for side in [&mut left, &mut right] {
+            side.truncate(end);
+            side.drain(..skip.min(end));
+        }
     }
     Ok(Sample { rate, left, right })
 }
@@ -352,6 +536,111 @@ fn match_case(path: &Path) -> Option<PathBuf> {
     Some(out)
 }
 
+/// The folders a missing sample is looked for in by its file name (spec: flp/sample-paths.md "Missing samples"): the
+/// opened project's folder and data folder, then the folders the user picked for this project.
+fn search() -> &'static std::sync::RwLock<Vec<PathBuf>> {
+    static SEARCH: OnceLock<std::sync::RwLock<Vec<PathBuf>>> = OnceLock::new();
+    SEARCH.get_or_init(Default::default)
+}
+
+thread_local! {
+    /// The folders as the thread that set them last gave them: a host that opens several projects at once on threads
+    /// of their own (tests) keeps each thread's.
+    static SEARCH_HERE: std::cell::RefCell<Option<Vec<PathBuf>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The folders missing samples are looked for in, in order (`SampleLibrary::resolve`), for every thread.
+pub fn set_search_folders(dirs: Vec<PathBuf>) {
+    SEARCH_HERE.with(|h| *h.borrow_mut() = Some(dirs.clone()));
+    if let Ok(mut s) = search().write() {
+        *s = dirs;
+    }
+}
+
+/// The folders for this thread only (other threads keep theirs): a test starts its own empty.
+pub fn set_thread_search_folders(dirs: Vec<PathBuf>) {
+    SEARCH_HERE.with(|h| *h.borrow_mut() = Some(dirs));
+}
+
+/// The search folders: this thread's own when it set them, else the last ones set.
+pub fn search_folders() -> Vec<PathBuf> {
+    if let Some(d) = SEARCH_HERE.with(|h| h.borrow().clone()) {
+        return d;
+    }
+    search().read().map(|s| s.clone()).unwrap_or_default()
+}
+
+/// The file of `path`'s name in the first search folder that has one (its name matched without regard to case). A
+/// Windows path's name is found off Windows too, where `\` does not separate folders.
+fn by_name(path: &Path) -> Option<PathBuf> {
+    let name = path.to_str().map_or(path.file_name(), |p| p.rsplit(['\\', '/']).next().map(std::ffi::OsStr::new))?;
+    if name.is_empty() {
+        return None;
+    }
+    search_folders().iter().filter(|d| reachable(d)).find_map(|d| {
+        let p = d.join(name);
+        if p.is_file() {
+            return Some(p);
+        }
+        match_case(&p).filter(|p| p.is_file())
+    })
+}
+
+/// How long the first look at a drive or network share may take before its samples count as missing.
+pub const REACH_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(1500);
+/// How long a drive or share that did not answer in time is skipped before it is tried again.
+const UNREACHABLE_FOR: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The drive or network share a path is on (`C:\`, `\\server\share\`), or `/` off Windows; `None` for a relative path.
+fn root_of(path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    let mut root = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::Prefix(_) | Component::RootDir => root.push(c.as_os_str()),
+            _ => break,
+        }
+    }
+    (!root.as_os_str().is_empty()).then_some(root)
+}
+
+/// Whether the drive or share `path` is on answers (spec: flp/sample-paths.md "Missing samples"). A sample path names
+/// a drive or share of the machine the project was made on, which here can be a network location that is gone or a
+/// drive that blocks every look at it for many seconds. Each root is looked at once, on a thread of its own, for at
+/// most `REACH_TIMEOUT`; one that did not answer counts as missing for `UNREACHABLE_FOR`, without waiting again.
+pub fn reachable(path: &Path) -> bool {
+    use std::sync::mpsc;
+    use std::time::Instant;
+    /// A root's last look: when, and whether it answered (`None`: still looking).
+    type Roots = HashMap<PathBuf, (Instant, Option<bool>)>;
+    static ROOTS: OnceLock<std::sync::Mutex<Roots>> = OnceLock::new();
+    let Some(root) = root_of(path) else { return true };
+    let roots = ROOTS.get_or_init(Default::default);
+    if let Some(&(at, answer)) = roots.lock().ok().as_ref().and_then(|r| r.get(&root)) {
+        match answer {
+            Some(true) => return true,
+            Some(false) if at.elapsed() < UNREACHABLE_FOR => return false,
+            // A look still running from before: the root has not answered for that long.
+            None if at.elapsed() >= REACH_TIMEOUT => return false,
+            _ => {}
+        }
+    }
+    let (tx, rx) = mpsc::channel();
+    let probe = root.clone();
+    if std::thread::Builder::new().name("sample-root".into()).spawn(move || tx.send(probe.exists()).ok()).is_err() {
+        return true;
+    }
+    if let Ok(mut r) = roots.lock() {
+        r.insert(root.clone(), (Instant::now(), None));
+    }
+    // A root that does not exist answers at once (false): its paths are simply missing, not slow.
+    let answer = rx.recv_timeout(REACH_TIMEOUT).ok();
+    if let Ok(mut r) = roots.lock() {
+        r.insert(root, (Instant::now(), Some(answer.is_some())));
+    }
+    answer.is_some()
+}
+
 /// Resolves project sample paths (with `%FLStudioFactoryData%` / `%FLStudioData%`
 /// placeholders) and caches decoded samples.
 #[derive(Debug, Default)]
@@ -376,6 +665,12 @@ pub struct SampleLibrary {
     pub length_reader: Option<fn(&Path) -> Option<(usize, u32)>>,
     /// Lengths read so far, by project path, with the stamp of the file they were read from.
     lengths: HashMap<String, (Stamp, Option<(usize, u32)>)>,
+    /// Tells whether the host's sampler plugin plays a file with a sustain loop of its own (a WAV `smpl` loop), for a
+    /// host whose sampler plays the channels' samples itself (Lemon Studio gives Lemon Sampler's): such a channel's
+    /// voices sound until their notes end, so the note rules must hand them their note ends (`file_loops`).
+    pub loop_reader: Option<fn(&Path) -> bool>,
+    /// Loops read so far, by project path, with the stamp of the file they were read from.
+    loops: HashMap<String, (Stamp, bool)>,
 }
 
 impl SampleLibrary {
@@ -446,10 +741,13 @@ impl SampleLibrary {
         } else {
             Self::local_path(project_path)
         };
+        if !reachable(&path) {
+            return Some(by_name(&path).unwrap_or(path));
+        }
         if path.exists() {
             return Some(path);
         }
-        Some(match_case(&path).unwrap_or(path))
+        Some(match_case(&path).or_else(|| by_name(&path)).unwrap_or(path))
     }
 
     /// Whether a project's sample path starts with one of the install folder's placeholders (in any case).
@@ -527,6 +825,22 @@ impl SampleLibrary {
         n
     }
 
+    /// Whether the sample at `project_path` has a loop of its own the host's sampler plugin plays (`loop_reader`, read
+    /// once per version of the file). False without a reader, or for a file that is not found.
+    pub fn file_loops(&mut self, project_path: &str) -> bool {
+        let Some(read) = self.loop_reader else { return false };
+        let Some(path) = self.resolve(project_path) else { return false };
+        let Some(st) = stamp(&path) else { return false };
+        match self.loops.get(project_path) {
+            Some(&(s, l)) if s == st => l,
+            _ => {
+                let l = read(&path);
+                self.loops.insert(project_path.into(), (st, l));
+                l
+            }
+        }
+    }
+
     /// `raw` stretched to `frames` frames with its pitch multiplied by `transpose` (spec: audio/time-stretch.md), made
     /// once per library.
     pub fn stretched(&mut self, raw: &Arc<Sample>, frames: usize, transpose: f64) -> Arc<Sample> {
@@ -544,6 +858,31 @@ impl SampleLibrary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `tests/data/empty_first_block.wv`: 0.1 s of a 441 Hz sine at 44.1 kHz, mono 16-bit (made with ffmpeg), behind a
+    /// first block that holds only a RIFF header, its flags all 0, as in many sample packs' WavPack files.
+    #[test]
+    fn wavpack_with_an_empty_first_block_decodes() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/empty_first_block.wv");
+        let s = load(&path).expect("decodes");
+        assert_eq!((s.frames(), s.rate), (4410, 44100));
+        let peak = s.left.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!(peak > 0.1, "peak {peak}");
+        let crossings = s.left.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count();
+        assert!((43..=45).contains(&crossings), "{crossings} upward zero crossings");
+        assert_eq!(length(&path), Some((4410, 44100)));
+    }
+
+    /// `tests/data/quiet_tail.wv`: 0.1 s of a 441 Hz sine at 44.1 kHz, mono 16-bit (made with ffmpeg), then a block of
+    /// 0.1 s of silence (magnitude 0) that the WavPack decoder refuses: it stays, as silence.
+    #[test]
+    fn wavpack_silence_the_decoder_refuses_stays() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/quiet_tail.wv");
+        let s = load(&path).expect("decodes");
+        assert_eq!((s.frames(), s.rate), (8820, 44100));
+        assert!(s.left[..4410].iter().any(|v| v.abs() > 0.1));
+        assert!(s.left[4410..].iter().chain(&s.right[4410..]).all(|&v| v == 0.0));
+    }
 
     /// `tests/data/click_sine.mp3` (made with ffmpeg + LAME, 64 kbit/s mono, ID3v2 tag, LAME info frame): 0.3 s at
     /// 44.1 kHz, a 10-frame click of 0.9 at frame 4410, then a 440 Hz sine of 0.25 from frame 8820.
@@ -565,6 +904,29 @@ mod tests {
         let tail = &s.left[9000 + 2257..12000 + 2257];
         let rms = (tail.iter().map(|v| v * v).sum::<f32>() / tail.len() as f32).sqrt();
         assert!((rms - 0.25 / 2f32.sqrt()).abs() < 0.02, "sine rms {rms}");
+    }
+
+    /// `tests/data/sine_*.m4a`: 0.1 s of a 441 Hz sine of 0.5 at 44.1 kHz, mono, in AAC-LC (64 kbit/s) and ALAC
+    /// (16-bit), made with ffmpeg (an edit list skips the AAC encoder's 1024 frames of priming) and with macOS's
+    /// `afconvert` (`_itunes`: an `iTunSMPB` tag gives 2112 frames of priming and the length). Each decodes to just the
+    /// sine, a length the header gives as well.
+    #[test]
+    fn m4a_aac_and_alac_decode() {
+        for name in ["sine_aac.m4a", "sine_alac.m4a", "sine_aac_itunes.m4a", "sine_alac_itunes.m4a"] {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data").join(name);
+            let s = load(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!((s.frames(), s.rate), (4410, 44100), "{name}");
+            assert_eq!(s.left, s.right, "{name}: mono is duplicated");
+            let peak = s.left.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+            assert!((0.4..0.6).contains(&peak), "{name}: peak {peak}");
+            let crossings = s.left.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count();
+            assert!((43..=45).contains(&crossings), "{name}: {crossings} upward zero crossings");
+            // In phase with the sine that was encoded: the priming skipped is the encoder's, no more and no less.
+            let sine = |i: usize| 0.5 * (std::f32::consts::TAU * 441.0 * i as f32 / 44100.0).sin();
+            let err = (500..3900).map(|i| (s.left[i] - sine(i)).powi(2)).sum::<f32>() / 3400.0;
+            assert!(err.sqrt() < 0.02, "{name}: rms error {}", err.sqrt());
+            assert_eq!(length(&path), Some((4410, 44100)), "{name}");
+        }
     }
 
     /// A kept decode is handed out again; once every holder dropped it, or the file changed, the file is decoded anew.

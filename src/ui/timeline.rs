@@ -15,7 +15,9 @@
 //! automation and audio editors' 4 U) and every other bar at 0.8 U. In Next, B/n and d/n are whole-number divisions.
 //! Past that at both ends (issue #41): zoomed in, the fine marks split a step in halves down to a
 //! tick and the labels go down to every beat, then every step, as they get room. Every editor's grid lines are these
-//! fine marks (`drum_grid::edit::marks`); Auto snaps to them below a step (`piano_roll::notes::auto_grid`).
+//! fine marks (`drum_grid::edit::marks`); Auto snaps to them below a step (`piano_roll::notes::auto_grid`). Issue
+//! #53: a fixed grid size (`piano_roll::notes::GridSize`, picked in the snap menus) sets the editors'
+//! grid lines and Auto's snap instead (`drum_grid::edit::grid_lines`); the rulers keep these marks.
 //!
 //! It scrolls and zooms: the caller passes tick 0's x and the beat width. Every editor's playhead is the shared grid
 //! line ([`playhead_line`]) and, on the ruler, the play box ([`PlayheadKnob`]) right of it. A tap on the ruler sets
@@ -343,8 +345,8 @@ pub fn knob_shown(playing: bool, menu: bool) -> bool {
 }
 
 /// The rulers' time range and its region menu, the same in the playlist, the piano roll and the drum editor:
-/// - a tap (released within 0.3 s) sets the playhead to the grid line nearest it (the host stops a playing transport
-///   instead);
+/// - a tap (released within 0.3 s, or pressed and released in one frame: a touchpad's tap-to-click) sets the playhead
+///   to the grid line nearest it (the host stops a playing transport instead, and deselects);
 /// - a long press (0.3 s) starts a range on the grid line nearest the press, and the finger drags the other edge
 ///   along the grid; moving more than 0.5 U up or down first cancels it, moving sideways does not. A press on an
 ///   edge's 1 U handle drags that edge at once;
@@ -474,20 +476,22 @@ impl RangeSelect {
         });
         let tick = |x: f32| snap_round(at.axis.tick(x).max(0.0), at.grid) as u32;
         let x = |tick: u32| at.axis.x(tick.into());
-
-        if pressed
-            && response.is_pointer_button_down_on()
-            && let Some(p) = pos
-        {
-            // On an edge's handle, the nearer edge.
-            let handle = at.range.and_then(|r| {
+        // On an edge's handle at `p`, the nearer edge.
+        let handle = |p: Pos2| {
+            at.range.and_then(|r| {
                 [(r.start, r.end), (r.end, r.start)]
                     .into_iter()
                     .map(|(edge, other)| ((p.x - x(edge)).abs(), edge, other))
                     .filter(|&(d, ..)| d <= m.u(HANDLE_W) / 2.0)
                     .min_by(|a, b| a.0.total_cmp(&b.0))
-            });
-            self.gesture = match handle {
+            })
+        };
+
+        if pressed
+            && response.is_pointer_button_down_on()
+            && let Some(p) = pos
+        {
+            self.gesture = match handle(p) {
                 Some((_, moving, fixed)) => Gesture::Edge {
                     fixed,
                     moving,
@@ -498,6 +502,13 @@ impl RangeSelect {
                     since: now,
                 },
             };
+        } else if pressed
+            && !pinch
+            && response.clicked()
+            && let Some(p) = pos.filter(|&p| handle(p).is_none())
+        {
+            // Pressed and let go in one frame (a touchpad's tap-to-click): egui reports only its click, a tap.
+            out.playhead = Some(tick(p.x));
         }
         if pinch && self.gesture != Gesture::Idle {
             // A half-dragged range goes back to what it was.
@@ -672,7 +683,8 @@ pub enum KnobGesture {
 ///   0.001, tracking the live playhead as it fades (jumping with SETTINGS `Animation` reduced). At a = 0 it takes no
 ///   touch.
 /// - Touch area: 0.56 U left to 2.29 U right of the playhead x, 0.29 U above to 0.29 U below the ruler. A tap
-///   (released within 0.3 s, within the 0.5 U calm zone: the shared law, [`gesture`]) is [`KnobGesture::Tap`].
+///   (released within 0.3 s, within the 0.5 U calm zone: the shared law, [`gesture`]; or pressed and released in one
+///   frame) is [`KnobGesture::Tap`].
 /// - Moving more than 0.5 U sideways makes the press a drag: the playhead follows the finger less its grab offset (the
 ///   box does not jump under the finger; the host maps [`PlayheadKnob::dragging`] to the snapped beat), and the
 ///   release is [`KnobGesture::Drop`]. A press that moved only up or down does nothing.
@@ -790,6 +802,7 @@ impl PlayheadKnob {
             ruler.top() - m.u(BOX_TOUCH_Y)..=ruler.bottom() + m.u(BOX_TOUCH_Y),
         );
         let response = live.then(|| ui.interact(hit, id, Sense::click_and_drag()));
+        let mut out = None;
         if pressed
             && response
                 .as_ref()
@@ -803,8 +816,10 @@ impl PlayheadKnob {
                 moved: false,
                 drag: false,
             });
+        } else if pressed && response.as_ref().is_some_and(|r| r.clicked()) {
+            // Pressed and let go in one frame (a touchpad's tap-to-click): egui reports only its click, a tap.
+            out = Some(KnobGesture::Tap);
         }
-        let mut out = None;
         if let Some(press) = &mut self.press {
             if let Some(p) = pos.filter(|_| down) {
                 press.moved |= gesture::left_calm(press.origin, Some(p), m.u(1.0));

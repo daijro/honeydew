@@ -40,9 +40,8 @@ pub(crate) const KEYS: [&str; 12] = [
 
 /// The scales the panel offers: ids into [`crate::song::scales::SCALES`], the common ones (a picker tapped
 /// through wants few).
-pub(crate) const SCALE_CHOICES: [usize; 16] = [
-    0, 12, 17, 18, 6, 7, 19, 9, 11, 3, 14, 22, 32, 27, 21, 20,
-];
+pub(crate) const SCALE_CHOICES: [usize; 16] =
+    [0, 12, 17, 18, 6, 7, 19, 9, 11, 3, 14, 22, 32, 27, 21, 20];
 
 /// The dominant note durations, in beats: where the melody's notes fall.
 pub(crate) const DURATIONS: [(&str, f64); 6] = [
@@ -294,7 +293,14 @@ fn chords_for(
 
 /// A melody over `degrees`, `bpb` beats a bar, from the tonic at `base`: the bar's chord tone on the beat, a scale step
 /// from the note before it on the off-beats, a breath at the end of some bars.
-fn melody(degrees: &[u8], base: i32, offs: &[i32], bpb: f64, s: &Settings, rng: &mut Rng) -> Vec<Event> {
+fn melody(
+    degrees: &[u8],
+    base: i32,
+    offs: &[i32],
+    bpb: f64,
+    s: &Settings,
+    rng: &mut Rng,
+) -> Vec<Event> {
     let mut out = Vec::new();
     // The dominant note duration, one note a step: the beats fitting a bar are the steps it has.
     let step = s.duration.clamp(1.0 / 16.0, bpb.max(1.0 / 16.0));
@@ -352,7 +358,9 @@ pub(crate) fn generate(
 ) -> Vec<Event> {
     // The panel's key and scale win over the project's where it sets them.
     let root = s.key.unwrap_or(root);
-    let mask = s.scale.map_or(mask, |i| SCALE_MASKS[i.min(SCALE_MASKS.len() - 1)]);
+    let mask = s
+        .scale
+        .map_or(mask, |i| SCALE_MASKS[i.min(SCALE_MASKS.len() - 1)]);
     let offs = offsets(mask);
     if offs.is_empty() || bpb <= 0.0 {
         return clip.to_vec();

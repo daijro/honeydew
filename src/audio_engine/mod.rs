@@ -663,10 +663,14 @@ impl SongAudioEngine {
                 }
             }
             Ok(controller) => {
-                if controller == PITCH_BEND
-                    && let Some(kit) = self.kit(channel)
-                {
-                    kit.set_bend(value);
+                if controller == PITCH_BEND {
+                    if let Some(kit) = self.kit(channel) {
+                        kit.set_bend(value);
+                    }
+                    // An audio channel's clips bend as the pads do (#59).
+                    if let Some(clips) = self.clips[channel].as_mut() {
+                        clips.sampler.set_bend(value);
+                    }
                 }
                 for instrument in self.instruments_of(channel) {
                     instrument.set_controller(controller, value);
@@ -791,7 +795,7 @@ impl SongAudioEngine {
 
     fn render_segment(&mut self, output: &mut [f32], channels: usize, frames: usize) {
         // The Modulators' last segment, before anything renders ([`modulation`]).
-        self.modulate(self.rolling());
+        self.modulate(self.rolling(), frames);
         for buffer in &mut self.buffers {
             buffer.left.resize(frames, 0.0);
             buffer.right.resize(frames, 0.0);
@@ -850,6 +854,9 @@ impl SongAudioEngine {
     }
 
     fn process_racks(&mut self, context: ProcessContext, frames: usize) -> bool {
+        // Only the desktop's multi-core path reads the block size.
+        #[cfg(not(desktop))]
+        let _ = frames;
         #[cfg(desktop)]
         if self.multi_core
             && frames >= 128
@@ -1114,7 +1121,7 @@ impl AudioRenderer for SongAudioEngine {
         self.take_input(old);
         if self.adopt {
             // What it takes over holds its bases: a Modulator it drops moves nothing any more.
-            old.modulate(false);
+            old.modulate(false, 0);
             self.merge(old);
         }
     }
@@ -1783,15 +1790,20 @@ impl SongAudioEngine {
     /// position re-sync at the start, which finds nothing left to release: a note spanning the start stays silent, one
     /// starting on it plays. At a live tempo the transport goes past the end by up to an output frame's worth of
     /// frames, which it carries on from the start; the actions it passes there play next. A transport further past the
-    /// end (a seek, a loop moved before it) starts at the start.
+    /// end (a seek, a loop moved before it) starts at the start. So does one before the loop's start (a Play or a seek
+    /// there, a loop drawn after it): whenever the transport is outside the loop, it goes back into it at once.
     fn wrap_at_loop_end(&mut self) {
         let Some((start, end)) = self.wrap_range() else {
             return;
         };
-        if self.frame < end {
+        let before = self.loop_frames.is_some() && self.frame < start;
+        if self.frame < end && !before {
             return;
         }
-        let over = (self.frame - end) as f64 + self.phase;
+        let over = match before {
+            true => f64::INFINITY,
+            false => (self.frame - end) as f64 + self.phase,
+        };
         self.release_held();
         for clips in self.clips.iter_mut().flatten() {
             clips.sampler.all_notes_off();
@@ -2118,6 +2130,36 @@ mod tests {
         assert_eq!(engine.cover_replays, 0);
         engine.seek(u64::from(PPQ));
         assert_eq!(engine.cover_replays, 1);
+    }
+
+    /// A playing transport outside the play loop goes back into it at once, from before its start (Play or a seek
+    /// there, which used to play the gap up to it first) as from past its end; stopped, it stays where it is.
+    #[test]
+    fn a_playing_transport_outside_the_loop_goes_back_to_its_start() {
+        let mut song = Song {
+            tempo_bpm: 120.0,
+            play_loop: Some((2 * PPQ, 4 * PPQ)),
+            ..Song::default()
+        };
+        song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+        let mut engine = SongAudioEngine::new(&song, 48_000.0).unwrap();
+        let start = beat_frame(2.0, 48_000.0, engine.built_bpm).unwrap();
+        let mut output = vec![0.0; 64 * 2];
+        engine.render(&mut output, 2);
+        assert_eq!(engine.frame, 0, "stopped, it stays");
+        engine.play();
+        engine.render(&mut output, 2);
+        assert_eq!(engine.frame, start + 64, "Play before the loop");
+        for (tick, why) in [(PPQ, "a seek before it"), (5 * PPQ, "a seek past it")] {
+            engine.seek(u64::from(tick));
+            engine.render(&mut output, 2);
+            assert_eq!(engine.frame, start + 64, "{why}");
+        }
+        // Inside it, it plays on.
+        engine.seek(u64::from(3 * PPQ));
+        let at = engine.frame;
+        engine.render(&mut output, 2);
+        assert_eq!(engine.frame, at + 64);
     }
 
     /// Issue #33: an instrument that takes the sustain pedal itself (a plugin) gets CC #64 as it moves, a half-pedal
@@ -2922,5 +2964,34 @@ mod tests {
         engine.render(&mut vec![0.0; 36_000 * 2], 2);
         engine.seek(u64::from(PPQ) / 2);
         assert_eq!(limits(&engine), (Some(0.8), Some(0.5)), "a seek");
+    }
+
+    /// #59: a Pitch Bend lane plays its curve a step a tick, not a step a level (128 of them): over a
+    /// ramp from 0.5 to 1 across four beats, the bend the engine holds stays within a tick's change of the line.
+    #[test]
+    fn a_pitch_bend_ramp_steps_every_tick() {
+        let mut song = Song {
+            tempo_bpm: 120.0,
+            ..Song::default()
+        };
+        song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+        let lane = song.channels[1].add_automation_lane(crate::song::AutomationTarget::PITCH_BEND);
+        let clip = lane.add_clip(0, 8.0);
+        for (pos, value) in [(0, 0.5), (4 * PPQ, 1.0)] {
+            clip.events.push(Event::Automation {
+                pos,
+                value,
+                control: true,
+            });
+        }
+        let mut engine = SongAudioEngine::new(&song, 48_000.0).unwrap();
+        engine.play();
+        // 24 000 frames a beat, a tick 187.5: the bend after each 1000 frames against the line there.
+        for block in 1..=90 {
+            engine.render(&mut vec![0.0; 1000 * 2], 2);
+            let line = 0.5 + 0.5 * block as f32 / 96.0;
+            let bend = engine.audio.channel_parameter(1, 4).unwrap();
+            assert!((bend - line).abs() < 0.0015, "{block}: {bend}, not {line}");
+        }
     }
 }

@@ -404,6 +404,13 @@ impl Reader {
                     self.charge(2 * size_of::<Chunk>() + chunk.path.len(), &chunk.path)?;
                     chnls.push(chunk);
                 }
+                b"HDVb" => {
+                    self.charge(chunk.payload.len(), &chunk.path)?;
+                    let versions = std::sync::Arc::make_mut(&mut song.file.versions);
+                    if crate::versions::read(chunk.payload, &chunk.path, versions).is_err() {
+                        self.unknown(&chunk, &mut song.file.unknown_chunks)?;
+                    }
+                }
                 _ => self.unknown(&chunk, &mut song.file.unknown_chunks)?,
             }
         }
@@ -966,8 +973,9 @@ impl Reader {
                     lane.clips.push(clip);
                 }
                 b"DESc" if !seen_desc => seen_desc = true,
-                // A hidden track (`flm::write`).
-                b"HDHd" => lane.hidden = true,
+                // A track an upstream build hid (`flm::write`): this fork has no `Hide track` (nor Settings
+                // `Show hidden tracks` to show one again), so it reads back shown, and saves without it.
+                b"HDHd" => {}
                 _ => self.unknown(&child, &mut lane.file.unknown_chunks)?,
             }
         }

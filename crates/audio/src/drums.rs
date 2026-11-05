@@ -313,7 +313,9 @@ impl PadSampler {
     }
 
     /// [`Self::hit`] from source time `offset` seconds, added to Sample Start and not scaled by Speed: an audio clip
-    /// starts its slot at its content offset this way.
+    /// starts its slot at its content offset this way. The voice starts on the nearest whole frame of the sample: one
+    /// between two frames would read every frame interpolated at that phase, a low-pass where the sample plays at the
+    /// output's rate (a clip relaunched by a re-sync, a clip with a content offset; #68).
     pub fn hit_at(&mut self, pad: usize, velocity: f32, pan: f32, pitch: f32, offset: f64) {
         let valid = velocity.is_finite() && pan.is_finite() && pitch.is_finite() && pitch > 0.0;
         let Some(p) = self.pads.get(pad).filter(|_| valid && offset.is_finite()) else {
@@ -343,7 +345,7 @@ impl PadSampler {
             stage: Stage::Attack,
             env: 0.0,
             attack: coefficient(params[EG_A], 500.0),
-            pos: (sample_start_seconds(params[SAMPLE_START]) + offset) * f64::from(rate),
+            pos: ((sample_start_seconds(params[SAMPLE_START]) + offset) * f64::from(rate)).round(),
             reverse,
             pitch: f64::from(pitch),
             gain: [

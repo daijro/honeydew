@@ -93,11 +93,64 @@ impl SnapMode {
     }
 }
 
-/// The snap button's state: a tap toggles `on`, its long-press menu picks `mode`.
+/// The grid size (GitHub #53): `Auto`, the adaptive grid of #41 (the default), or a
+/// note value 1/n, n = 1, 2 … 64, straight or triplet (2/3 as long). The song's `TDIV` has no note value, so a beat is
+/// a quarter note, as [`PPQ`] and MIDI files count it: 1/4 is a beat whatever the beats a bar or steps a beat, 1/16 a
+/// quarter beat, 1/1 four beats. With a fixed size the editors' grid lines sit at it
+/// ([`crate::ui::drum_grid::edit::grid_lines`]) and Auto snap follows it ([`Snap::grid`]). An app setting
+/// (`Settings::grid_size`), one for every editor; the snap menus' `Grid` columns pick it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum GridSize {
+    #[default]
+    Auto,
+    /// 1/n, a triplet when set.
+    Note(u8, bool),
+}
+
+impl GridSize {
+    /// Auto, the straight sizes, then the triplets.
+    pub const ALL: [Self; 14] = [
+        Self::Auto,
+        Self::Note(1, false),
+        Self::Note(2, false),
+        Self::Note(4, false),
+        Self::Note(8, false),
+        Self::Note(16, false),
+        Self::Note(32, false),
+        Self::Note(64, false),
+        Self::Note(2, true),
+        Self::Note(4, true),
+        Self::Note(8, true),
+        Self::Note(16, true),
+        Self::Note(32, true),
+        Self::Note(64, true),
+    ];
+
+    pub fn label(self) -> String {
+        match self {
+            Self::Auto => "Auto".into(),
+            Self::Note(n, t) => format!("1/{n}{}", if t { "T" } else { "" }),
+        }
+    }
+
+    /// The size in ticks (4 beats / n, 2/3 of it for a triplet), `None` for Auto.
+    pub fn ticks(self) -> Option<f64> {
+        match self {
+            Self::Auto => None,
+            Self::Note(n, t) => {
+                Some(4.0 * BEAT / f64::from(n.max(1)) * if t { 2.0 / 3.0 } else { 1.0 })
+            }
+        }
+    }
+}
+
+/// The snap button's state: a tap toggles `on`, its long-press menu picks `mode` and the grid `size` (the app
+/// setting's copy, #53).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Snap {
     pub on: bool,
     pub mode: SnapMode,
+    pub size: GridSize,
 }
 
 impl Default for Snap {
@@ -105,14 +158,15 @@ impl Default for Snap {
         Self {
             on: true,
             mode: SnapMode::Auto,
+            size: GridSize::Auto,
         }
     }
 }
 
 impl Snap {
-    /// The mode's grid in ticks, with `auto` (from [`auto_grid`]) standing in for Auto.
+    /// The mode's grid in ticks; Auto's is the grid size, or `auto` (from [`auto_grid`]) at size Auto.
     pub fn grid(self, auto: f64, sig: TimeSig) -> f64 {
-        self.mode.ticks(sig).unwrap_or(auto)
+        (self.mode.ticks(sig)).or(self.size.ticks()).unwrap_or(auto)
     }
 
     /// What positions snap to: the grid while on, nothing while off.
@@ -502,6 +556,45 @@ pub fn set_length_selected(events: &mut [Event], sel: &[bool], len: f64) {
     events.copy_from_slice(&new);
 }
 
+/// How `Slice...` cuts a note (GitHub #62): into pieces of a grid size, or into this many equal parts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Slice {
+    Every(GridSize),
+    Into(u8),
+}
+
+/// `Slice...` (#62): each selected note becomes consecutive notes covering it, each
+/// keeping its key, velocity, pan and slide flag: pieces of the grid size (the last one what is left) or equal parts.
+/// The cuts fall on whole ticks, the i-th at round(i·piece) after the start, so rounding never adds up and the pieces
+/// sum to the note exactly (1/16T, 21⅓ ticks, cuts 21, 22, 21 …). No cut lies within half a tick of the end, and a
+/// note shorter than a tick a part is not cut, so a note no longer than a piece stays whole and no piece is empty.
+/// The pieces are selected; re-sorted.
+pub fn slice_selected(events: &mut Vec<Event>, sel: &mut Vec<bool>, by: Slice) {
+    sel.resize(events.len(), false);
+    let (mut out, mut out_sel) = (Vec::new(), Vec::new());
+    for (e, &s) in events.iter().zip(sel.iter()) {
+        let Some((pos, len, key)) = note(e).filter(|_| s) else {
+            out.push(*e);
+            out_sel.push(s);
+            continue;
+        };
+        let piece = match by {
+            Slice::Every(size) => size.ticks().unwrap_or(len),
+            Slice::Into(n) if len >= f64::from(n) => len / f64::from(n),
+            Slice::Into(_) => len,
+        };
+        let cuts = (1..).map(|i| pos + (f64::from(i) * piece).round());
+        let mut start = pos;
+        for end in cuts.take_while(|&c| c < pos + len - 0.5).chain([pos + len]) {
+            out.push(with(*e, start, end - start, key));
+            out_sel.push(true);
+            start = end;
+        }
+    }
+    (*events, *sel) = (out, out_sel);
+    sort(events, sel);
+}
+
 /// The flags of the notes a note-menu item acts on: the selection, or every note when nothing is selected.
 pub fn targets(events: &[Event], sel: &[bool]) -> Vec<bool> {
     if sel.contains(&true) {
@@ -798,13 +891,13 @@ fn window(clip: &Clip) -> Option<(f64, f64, f64, f64)> {
     ))
 }
 
-/// The content tick that plays at `song_tick`, if the clip plays then.
+/// The content tick of the clip's loop at `song_tick`: where the clip plays, the content it plays then; elsewhere the
+/// same loop folded on from the clip's start and offset, as the other editors fold the playhead (before 0.4.8 a ruler tap on content the song never plays left
+/// the playhead resting on the clip's start). `None` without a
+/// loop ([`Clip::loop_ticks`]).
 pub fn content_tick(clip: Option<&Clip>, song_tick: u64) -> Option<f64> {
-    let (start, lp, visible, offset) = window(clip?)?;
-    let rel = song_tick as f64 - start;
-    (0.0..visible)
-        .contains(&rel)
-        .then(|| (rel + offset).rem_euclid(lp))
+    let (start, lp, _, offset) = window(clip?)?;
+    Some((song_tick as f64 - start + offset).rem_euclid(lp))
 }
 
 /// A note of another channel drawn faintly behind the edited clip's notes, at the content tick it plays against.

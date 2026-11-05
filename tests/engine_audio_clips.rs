@@ -216,7 +216,8 @@ fn each_loop_repetition_fades_the_voice_and_relaunches_from_source_time_0() {
     // With an offset of 0.25 beats the repetitions fall at start − 0.25 + n beats: 0.75, 1.75 …
     song.channels[1].lanes[0].clips[0].offset_beats = 0.25;
     let out = play(&song, 3 * BEAT);
-    let quarter = BEAT as f32 / 4.0;
+    // A whole source frame (#68).
+    let quarter = (BEAT as f32 / 4.0).round();
     assert_at(&out, 1000, quarter + 1000.0);
     let repeat = 3 * BEAT / 4 + 1;
     assert_at(&out, repeat + 1500, 1500.0);
@@ -262,9 +263,10 @@ fn a_seek_while_playing_cuts_and_relaunches_mid_sample() {
     render(&mut engine, 5000);
     engine.seek(320);
     let out = render(&mut engine, 1000);
-    // Cut instantly: no fading voice adds to the first frame.
-    assert_at(&out, 0, 0.75 * BEAT as f32);
-    assert_at(&out, 999, 0.75 * BEAT as f32 + 999.0);
+    // Cut instantly: no fading voice adds to the first frame. A relaunch starts on a whole source frame (#68: no
+    // low-pass from reading between frames), so the half frame at 0.75 beats rounds.
+    assert_at(&out, 0, (0.75 * BEAT as f32).round());
+    assert_at(&out, 999, (0.75 * BEAT as f32).round() + 999.0);
     // 0.75 into the clip, c = 1.0 − L = 0.
     engine.seek(128 + 96);
     assert_at(&render(&mut engine, 100), 50, 50.0);
@@ -273,13 +275,17 @@ fn a_seek_while_playing_cuts_and_relaunches_mid_sample() {
     assert_at(
         &render(&mut engine, 100),
         0,
-        40_827.0 - BEAT as f32 - 0.75 * BEAT as f32,
+        (40_827.0 - BEAT as f32 - 0.75 * BEAT as f32).round(),
     );
     // A seek outside the clip leaves it silent; one onto its start starts it through its start hit.
     engine.seek(64);
     assert!(render(&mut engine, 100).iter().all(|&s| s == 0.0));
     engine.seek(128);
-    assert_at(&render(&mut engine, 100), 50, 0.25 * BEAT as f32 + 50.0);
+    assert_at(
+        &render(&mut engine, 100),
+        50,
+        (0.25 * BEAT as f32).round() + 50.0,
+    );
 }
 
 #[test]
@@ -571,15 +577,15 @@ fn the_play_budget_counts_each_pass_of_a_clips_envelopes() {
 }
 
 #[test]
-fn channel_pitch_bend_does_not_reach_clip_slots() {
-    // The channel bend reaches only drum pads, not audio-clip slots.
+fn channel_pitch_bend_bends_clip_slots_as_on_pads() {
+    // #59: the channel bend reaches audio-clip slots too, 2^(4v − 2): v = 1 plays four times as fast.
     let mut song = song();
     clip(&mut song, 0, 4.0, "ramp");
     let mut engine = engine(&song);
     engine.set_param(1, 0, 4, 1.0);
     engine.play();
     let out = render(&mut engine, 1000);
-    assert_at(&out, 500, 500.0);
+    assert_at(&out, 500, 2000.0);
 }
 
 /// Clips an edit's engine takes over at another tempo without a re-sync (a Quiet handover at the
@@ -610,5 +616,30 @@ fn clips_taken_over_at_another_tempo_are_timed_at_it() {
     assert!(expected.iter().all(|&s| s > 0.1), "a silent reference");
     for (frame, (a, e)) in actual.iter().zip(&expected).enumerate() {
         assert!(close(*a, *e, 1e-6), "frame {frame}: {a} vs {e}");
+    }
+}
+
+/// #59: an audio channel's Pitch Bend bends its clips as it does the pads, 2^w (w = 4v − 2), and its
+/// lane plays a step a tick: over a ramp from 0.5 to 0.75 across two beats, the ramp sample plays at 2^(beat/2) times
+/// its speed all the way, within a tick's change (0.3 %), where a step a level would be 2.2 % apart.
+#[test]
+fn a_pitch_bend_lane_bends_the_clips_along_its_curve() {
+    let mut song = song();
+    clip(&mut song, 0, 8.0, "ramp");
+    let lane = song.channels[1].add_automation_lane(honeydew::song::AutomationTarget::PITCH_BEND);
+    let points = &mut lane.add_clip(0, 8.0).events;
+    for (pos, value) in [(0, 0.5), (256, 0.75)] {
+        points.push(Event::Automation {
+            pos,
+            value,
+            control: true,
+        });
+    }
+    let out = play(&song, 2 * BEAT);
+    for k in 1..20 {
+        let frame = k * BEAT / 10;
+        let rate = (at(out[frame + 64]) - at(out[frame])) / 64.0;
+        let want = ((frame + 32) as f32 / BEAT as f32 / 2.0).exp2();
+        assert!(close(rate / want, 1.0, 0.005), "{k}: {rate}, not {want}");
     }
 }

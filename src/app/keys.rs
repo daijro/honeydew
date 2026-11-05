@@ -98,7 +98,8 @@ pub(crate) fn bar_jump(song: &Song, tick: u64, next: bool) -> u64 {
     } else {
         current
     } * bar;
-    let end = crate::ui::clips::song_end_beats(song);
+    // As the playlist knob: an empty or short song still reaches the end of its first bar.
+    let end = crate::ui::clips::song_end_beats(song).max(bar);
     (to.min(end).max(0.0) * ppq).round() as u64
 }
 

@@ -15,7 +15,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
 use std::sync::Arc;
-// Honeydew (vendored change): `std::time` has no clock in a browser build.
 use os_plugkit::time::{Duration, Instant};
 
 use nih_plug::prelude::*;
@@ -64,16 +63,12 @@ impl Editor for SamplerEditor {
     fn spawn(&self, parent: ParentWindowHandle, context: Arc<dyn GuiContext>) -> Box<dyn Any + Send> {
         let scale = f32::from_bits(self.scale.load(Ordering::Relaxed));
         match parent {
-            #[cfg(all(windows, not(feature = "embed")))]
+            #[cfg(windows)]
             ParentWindowHandle::Win32Hwnd(hwnd) => {
                 Box::new(win32::open(hwnd, scale, self.params.clone(), self.shared.clone(), context, self.hwnd.clone()))
             }
-            // Honeydew (vendored change): built in with `embed`, the editor draws into Honeydew's own window
-            // (`os_plugkit::embed`) on every platform, and the window handle is that editor's id.
             #[cfg(any(target_os = "linux", all(feature = "embed", not(target_os = "macos"))))]
             ParentWindowHandle::X11Window(window) => Box::new(gui::open(window, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
-            #[cfg(all(windows, feature = "embed"))]
-            ParentWindowHandle::Win32Hwnd(id) => Box::new(gui::open(id as usize as u32, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
             // macOS hosts set no scale (sizes are points): the editor paints at its window's backing scale.
             #[cfg(target_os = "macos")]
             ParentWindowHandle::AppKitNsView(view) => {
@@ -1086,19 +1081,20 @@ impl Logic {
         }
         // Automation and remote control belong to the host: shown; "Create automation clip" goes to Lemon Studio (host link).
         m.head("Automation");
-        for l in ["Edit events", "Edit events in new window", "Edit events in piano roll", "Init song with this position", "Delete initial value"] {
+        for l in ["Edit automation", "Edit automation in a window", "Edit automation in piano roll", "Set as song start value", "Remove start value"] {
             m.add(MenuItem::item(l).enabled(false), Cmd::None);
         }
         m.sep();
-        m.add(MenuItem::item("Create automation clip").enabled(self.hosted), Cmd::Automate);
+        // Honeydew (vendored change): an embedded editor's clip is the app's ([`take_automation_requests`]).
+        m.add(MenuItem::item("Create automation clip").enabled(self.hosted || cfg!(feature = "embed")), Cmd::Automate);
         m.add(MenuItem::item("Edit automation clip...").enabled(false), Cmd::None);
         m.head("Remote control");
-        m.add(MenuItem::item("Link to controller...").enabled(false), Cmd::None);
-        m.add(MenuItem::item("Override global link...").enabled(false), Cmd::None);
+        m.add(MenuItem::item("MIDI learn...").enabled(false), Cmd::None);
+        m.add(MenuItem::item("Override global mapping...").enabled(false), Cmd::None);
         m.head("Value");
         m.add(MenuItem::item("Copy value"), Cmd::CopyValue);
         m.add(MenuItem::item("Paste value").enabled(self.copied.is_some()), Cmd::PasteValue);
-        m.add(MenuItem::item("Type in value..."), Cmd::TypeIn);
+        m.add(MenuItem::item("Enter value..."), Cmd::TypeIn);
         m.add(MenuItem::item("Set..."), Cmd::TypeIn);
         m
     }
@@ -2020,7 +2016,7 @@ mod win32 {
                     }
                     1
                 }
-                Cmd::Changed | Cmd::Note | Cmd::Automate | Cmd::Audio | Cmd::Resizable | Cmd::SetSize => 0,
+                Cmd::Changed | Cmd::Note | Cmd::Automate | Cmd::Audio | Cmd::Resizable | Cmd::SetSize | Cmd::Notes => 0,
             }
         }
 
@@ -2387,7 +2383,7 @@ mod win32 {
             return None;
         }
         let mut file = vec![0u16; 1024];
-        let filter: Vec<u16> = if save { "WAV files\0*.wav\0\0" } else { "Audio files\0*.wav;*.flac;*.ogg;*.wv;*.aif;*.aiff;*.mp3\0All files\0*.*\0\0" }
+        let filter: Vec<u16> = if save { "WAV files\0*.wav\0\0" } else { "Audio files\0*.wav;*.flac;*.ogg;*.wv;*.aif;*.aiff;*.mp3;*.m4a\0All files\0*.*\0\0" }
             .encode_utf16()
             .collect();
         let title = wide(if save { "Save sample as" } else { "Open sample" });
@@ -2606,12 +2602,7 @@ mod gui {
                     self.paint();
                 }
             }
-            // Honeydew (vendored addition): embedded, the editor has no thread of its own; with no input waiting, it
-            // waits parked until Honeydew brings more (`os_plugkit::embed`).
-            #[cfg(feature = "embed")]
-            if let Some(park) = self.win.parking() {
-                park.park(move || self.run());
-            }
+            os_plugkit::park!(self);
         }
 
         fn mods(&self) -> Mods {
@@ -2765,7 +2756,8 @@ mod gui {
                         let s = self.shared.whole();
                         if let (Some(s), Some(path)) = (s, file_dialog(&self.win, true)) {
                             let path = if path.to_ascii_lowercase().ends_with(".wav") { path } else { format!("{path}.wav") };
-                            self.logic.hint = match std::fs::write(&path, super::wav_bytes(&s, true)) {
+                            // Honeydew (vendored change): Honeydew keeps it in its user folder where it has no save dialog.
+                            self.logic.hint = match os_plugkit::save_file(std::path::Path::new(&path), super::wav_bytes(&s, true)) {
                                 Ok(()) => format!("Saved {path}"),
                                 Err(e) => format!("Could not save: {e}"),
                             };
@@ -2856,7 +2848,6 @@ mod gui {
 
     /// The open / save sample dialog: the desktop's own (through its portal on Linux; on macOS AppKit's, run on the main
     /// thread).
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     fn file_dialog(win: &Window, save: bool) -> Option<String> {
         if os_plugkit::no_modal() {
             return None;
@@ -2866,16 +2857,10 @@ mod gui {
             if save {
                 d.set_title("Save sample as").add_filter("WAV files", &["wav"]).save_file()
             } else {
-                d.set_title("Open sample").add_filter("Audio files", &["wav", "flac", "ogg", "wv", "aif", "aiff", "mp3"]).pick_file()
+                d.set_title("Open sample").add_filter("Audio files", &["wav", "flac", "ogg", "wv", "aif", "aiff", "mp3", "m4a"]).pick_file()
             }
         });
         path.flatten().map(|p| p.to_string_lossy().into_owned())
-    }
-
-    /// Honeydew (vendored addition): the browser and Android have no file dialog.
-    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
-    fn file_dialog(_: &Window, _: bool) -> Option<String> {
-        None
     }
 }
 

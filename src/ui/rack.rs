@@ -28,10 +28,11 @@
 //! ([`RackPanel::key_played`]); the SENDS section edits the channel's `SEND`s by the channels the host names
 //! ([`RackPanel::targets`], [`send_targets`]); `Create FX Channel` asks the host ([`create_send`]).
 //!
-//! Honeydew's own: a dynamics card (a module that [takes a key](honeydew_audio::takes_key)) has `Sidechain` in its ≡
-//! menu, which picks the channel whose output keys its detector, or `Sidechain: Off` ([`RackPanel::key_menu`]); its
-//! header shows the source's name. A Modulator's ≡ menu adds `Modulate recent control` and `Clear target`, which set
-//! the param it drives ([`retarget`], a final song edit and so an undo step); its header shows the target's name.
+//! Honeydew's own: a dynamics card (a module that [takes a key](crate::song::ModuleInstance::takes_key), Lemon
+//! Vocoder's too) has `Sidechain` in its ≡ menu, which picks the channel whose output keys its detector, or `Sidechain:
+//! Off` ([`RackPanel::key_menu`]); its header shows the source's name. A Modulator's ≡ menu adds `Modulate recent
+//! control` and `Clear target`, which set the param it drives ([`retarget`], a final song edit and so an undo step); its
+//! header shows the target's name.
 
 use std::collections::HashMap;
 
@@ -66,7 +67,7 @@ use crate::ui::scroller::{self, Axis, Scroller, Y, Zones};
 use crate::ui::widgets::{self, Button, Control, ParamMenu};
 use crate::ui::{UiCtx, focus_lost};
 
-mod lemon_card;
+pub(crate) mod lemon_card;
 mod plugin_card;
 #[cfg(test)]
 mod tests;
@@ -160,6 +161,7 @@ pub fn ui_height(type_id: u16) -> Option<f32> {
         honeydew_audio::lemon::REVERB | honeydew_audio::lemon::LIMITER => 7.0,
         honeydew_audio::dynamic_eq::DYNAMIC_EQ => 11.0,
         honeydew_audio::modulator::MODULATOR => 8.5,
+        honeydew_audio::de_esser::DE_ESSER | honeydew_audio::denoise::DENOISE => 7.5,
         _ => return None,
     })
 }
@@ -195,7 +197,9 @@ fn module_icon(type_id: u16) -> IconId {
 }
 
 /// The built-in Lemon plugin module `module` hosts, if any ([`crate::plugins::builtin`]).
-fn lemon_plugin(module: &ModuleInstance) -> Option<&'static crate::plugins::builtin::Builtin> {
+pub(crate) fn lemon_plugin(
+    module: &ModuleInstance,
+) -> Option<&'static crate::plugins::builtin::Builtin> {
     let plugin = module.file.plugin.as_deref()?;
     (crate::song::plugin::is_plugin(module.type_id))
         .then(|| crate::plugins::builtin::of(plugin))
@@ -433,13 +437,27 @@ fn rect_y(rack: Rect, ppp: f32) -> Rangef {
     Rangef::new(rack.top() / ppp, rack.bottom() / ppp)
 }
 
+/// The rack tab's pill, U.
+const RACK_TAB: Vec2 = vec2(1.5, 2.43);
+
 /// The rack tab's vertical centre over the content area `area` (its y range) at `u` per U: the middle of (top …
-/// bottom + 2 U), its 2.43 U pill at least 5 U below the top and 0.25 U above the bottom.
+/// bottom + 2 U), its 2.43 U pill at least 5 U below the top and 0.25 U above the bottom. On a short area the bottom
+/// wins: the pill moves up with the keyboard panel rather than lie on the transport bar (GitHub #57).
 pub fn rack_tab_y(area: Rangef, u: f32) -> f32 {
-    let half = 2.43 / 2.0 * u;
+    let half = RACK_TAB.y / 2.0 * u;
     let mid = (area.min + area.max + 2.0 * u) / 2.0;
-    mid.min(area.max - 0.25 * u - half)
-        .max(area.min + 5.0 * u + half)
+    mid.max(area.min + 5.0 * u + half)
+        .min(area.max - 0.25 * u - half)
+}
+
+/// The rack tab's pill on `screen` over the content area `area` at `u` per U: its left edge 2.1 U from the screen's
+/// right edge, centred at [`rack_tab_y`]; while its top is under 2.75 U from the screen's top it moves right by the
+/// difference, so on a short area it slides off the right edge.
+pub fn rack_tab(screen: Rect, area: Rect, u: f32) -> Rect {
+    let size = RACK_TAB * u;
+    let top = rack_tab_y(area.y_range(), u) - size.y / 2.0;
+    let nudge = (2.75 * u - (top - screen.top())).max(0.0);
+    Rect::from_min_size(pos2(screen.right() - 2.1 * u + nudge, top), size)
 }
 
 /// Where a held card whose on-screen top is `top` goes with the finger at height `finger_y` (`u` per U and `gap`, the
@@ -484,7 +502,8 @@ pub enum CardAction {
     SetFullRange,
     /// `Sidechain`: a module that takes a key; opens its source menu ([`RackPanel::key_menu`]).
     Sidechain,
-    /// A Modulator's `Modulate recent control` and `Clear target` ([`modulator_menu`]).
+    /// A Modulator's `Modulate recent control` (a controller's `Link recent control`) and `Clear target`
+    /// ([`modulator_menu`]).
     Modulate,
     ClearTarget,
     /// A DW Sampler's `New from samples…`: the instrument builder ([`builder_item`]).
@@ -821,8 +840,8 @@ fn attaches(module: &ModuleInstance, notes: bool) -> bool {
 
 /// The ≡ menu of a card of module type `type_id`, two columns, every item enabled. An instrument's adds `Set Range`
 /// (`Set First Note` on a Slicer) at the foot of the first column, and under it `Set Full Range` while its key range is
-/// not `full` (never on a Slicer); a module that takes a key adds `Sidechain` there.
-fn card_menu(minimized: bool, type_id: u16, full: bool) -> Vec<PopupItem<CardAction>> {
+/// not `full` (never on a Slicer); a module that takes a key (`keyed`) adds `Sidechain` there.
+fn card_menu(minimized: bool, type_id: u16, full: bool, keyed: bool) -> Vec<PopupItem<CardAction>> {
     use CardAction::*;
     let minimize = if minimized { "Maximize" } else { "Minimize" };
     let (set_range, full_range) = match instrument(type_id) {
@@ -831,7 +850,7 @@ fn card_menu(minimized: bool, type_id: u16, full: bool) -> Vec<PopupItem<CardAct
             Some((SetRange, 0, 4, "Set Range")),
             (!full).then_some((SetFullRange, 0, 5, "Set Full Range")),
         ),
-        None if honeydew_audio::takes_key(type_id) => (Some((Sidechain, 0, 4, "Sidechain")), None),
+        None if keyed => (Some((Sidechain, 0, 4, "Sidechain")), None),
         None => (None, None),
     };
     [
@@ -857,15 +876,21 @@ fn card_menu(minimized: bool, type_id: u16, full: bool) -> Vec<PopupItem<CardAct
 }
 
 /// A Modulator's ≡ menu items after [`card_menu`]'s, under `Sidechain`: `Modulate recent control`, enabled while there
-/// is a recent control, and `Clear target`, while it has one.
-fn modulator_menu(recent: bool, target: bool) -> [PopupItem<CardAction>; 2] {
+/// is a recent control, and `Clear target`, while it has one. A `controller` plugin's (0.4.9: its output
+/// drives the param, `audio_engine::modulation`), which has no `Sidechain`, are `Link recent control` and `Clear
+/// target` there.
+fn modulator_menu(recent: bool, target: bool, controller: bool) -> [PopupItem<CardAction>; 2] {
     let item = |action, row, label, enabled: bool| PopupItem {
         disabled: !enabled,
         ..PopupItem::new(action, 0, row, label)
     };
+    let (row, link) = match controller {
+        true => (4, "Link recent control"),
+        false => (5, "Modulate recent control"),
+    };
     [
-        item(CardAction::Modulate, 5, "Modulate recent control", recent),
-        item(CardAction::ClearTarget, 6, "Clear target", target),
+        item(CardAction::Modulate, row, link, recent),
+        item(CardAction::ClearTarget, row + 1, "Clear target", target),
     ]
 }
 
@@ -874,7 +899,7 @@ fn modulator_menu(recent: bool, target: bool) -> [PopupItem<CardAction>; 2] {
 fn builder_item(full: bool) -> Option<PopupItem<CardAction>> {
     let row = if full { 5 } else { 6 };
     let label = "New from samples…";
-    let desktop = cfg!(not(any(target_arch = "wasm32", target_os = "android")));
+    let desktop = cfg!(not(any(target_arch = "wasm32", mobile)));
     desktop.then(|| PopupItem::new(CardAction::NewFromSamples, 0, row, label))
 }
 
@@ -1138,6 +1163,9 @@ impl SettingChange {
 pub struct RackActions {
     /// Param edits of this pass, in order.
     pub params: Vec<ParamChange>,
+    /// MIDI CC moves of this pass (channel params 7 + n, instance 0): a SoundFont Player's SFZ controls. The song keeps
+    /// none, so they are no edit: send them to the engine.
+    pub ccs: Vec<ParamChange>,
     /// The rack's chain changed (a module moved or was deleted, the rack cleared), or a note-effect edit or an edit of
     /// a setting the engine reads at build ended (note-effect events, the DW Sampler's zones and the Slicer's slices
     /// are prepared ahead of playback): build a new engine from the song and send `ReplaceSong`.
@@ -1162,8 +1190,9 @@ pub struct RackActions {
     /// A SoundFont Player's `Patch` spinner with no patches to list (or the tap on its error): open the SoundFont picker
     /// for the module with this instance id.
     pub soundfont: Option<i32>,
-    /// `Custom` picked in a 3x Osc oscillator's Shape menu (the Shape edit itself is in [`Self::params`]), or a
-    /// Slicer's `LOAD SAMPLE` or a tap on its waveform: open the sample picker for the module with this instance id.
+    /// `Custom` picked in a 3x Osc oscillator's Shape menu (the Shape edit itself is in [`Self::params`]), a Slicer's
+    /// `LOAD SAMPLE` or a tap on its waveform, or a Lemon plugin's editor asking for a file: open the sample picker for
+    /// the module with this instance id.
     pub module_sample: Option<i32>,
     /// The Slicers whose Sensitivity changed, as [`Self::replace_song`] comes: a slice re-detect, which rewrites the
     /// current clip while the module's AUTO flag is on.
@@ -1189,6 +1218,8 @@ pub struct RackActions {
     pub create_send: Option<usize>,
     /// A DW Sampler's `New from samples…`: open the instrument builder for the module with this instance id.
     pub builder: Option<i32>,
+    /// Issue #68: a Lemon card's full screen button: show the editor of the module with this instance id full screen.
+    pub lemon_full: Option<i32>,
 }
 
 /// A card's panel state, and its module's `CSTM` blob as the state last matched it: a card is seeded from the blob
@@ -1211,7 +1242,10 @@ struct CardEdits {
     presets: bool,
     /// What a SoundFont Player's patch selector asked for.
     press: Option<Press>,
-    /// A Slicer asked for a loop ([`slicer::asks_for_loop`]).
+    /// The MIDI CCs a SoundFont Player's SFZ controls sent, as (channel param, value).
+    ccs: Vec<(i32, f32)>,
+    /// A Slicer asked for a loop ([`slicer::asks_for_loop`]), or a Lemon plugin's editor for a file
+    /// ([`lemon_card::wants_file`]).
     sample: bool,
     /// A Slicer's `AUTO` was pressed ([`slicer::auto_pressed`]).
     auto: bool,
@@ -1223,6 +1257,8 @@ struct CardEdits {
     header: gesture::Press,
     /// A double tap on the module-name label.
     double_tap: bool,
+    /// Issue #68: a Lemon card's full screen button was clicked.
+    full: bool,
 }
 
 /// A card held to reorder it.
@@ -1319,6 +1355,9 @@ pub struct RackPanel {
     column: (f32, f32),
     /// The pointer was over a Lemon card's editor last frame: the wheel is the editor's, not the rack's.
     lemon_wheel: bool,
+    /// Issue #68: the Lemon card (channel index, instance id) whose editor shows full screen, which drives it: the card
+    /// shows its last frame meanwhile.
+    pub lemon_full: Option<(usize, i32)>,
 }
 
 impl RackPanel {
@@ -1392,7 +1431,9 @@ impl RackPanel {
         match lemon_plugin(module) {
             Some(b) if !module.minimized && u > 0.0 => {
                 // The body is 4 px narrower than the column and its rect 1 px shorter than its rows ([`content_rect`]).
-                2.0 + (lemon_card::body_height(b.size, column - 4.0) + 1.0) / u
+                let card = self.lemon_cards.get(&(self.channel, module.instance_id));
+                let size = lemon_card::shown_size(card, b);
+                2.0 + (lemon_card::body_height(size, column - 4.0) + 1.0) / u
             }
             _ => card_height(module),
         }
@@ -2125,6 +2166,16 @@ impl RackPanel {
         if edits.presets {
             actions.picker = Some(PresetTarget::Module(id));
         }
+        if edits.full {
+            actions.lemon_full = Some(id);
+        }
+        let ccs = edits.ccs.into_iter().map(|(param, value)| ParamChange {
+            channel: index,
+            instance_id: 0,
+            index: param,
+            value,
+        });
+        actions.ccs.extend(ccs);
         match edits.press {
             Some(Press::Picker) => actions.soundfont = Some(id),
             // Another patch: a final edit, as a picked one is.
@@ -2206,7 +2257,9 @@ impl RackPanel {
             }
             _ => None,
         };
-        let has_popout = window.is_some();
+        // Issue #68: a Lemon card showing its editor has the full screen button in that cell.
+        let full = lemon.is_some() && crate::plugins::lemon_open(self.channel_id, id).is_some();
+        let has_popout = window.is_some() || full;
         let preset = module.file.preset_name.clone();
         let preset_w = preset_width(text_width(ui, &preset, m.font_id(FontSize::Pt10)), m.u(1.0));
         let [toggle, icon, name, preset_rect, menu, popout] =
@@ -2255,11 +2308,10 @@ impl RackPanel {
         };
         let b = icon_button(base.with("icon"), icon, module_icon(module.type_id));
         let mut r = widgets::button(ui, cx, &b, true);
-        // An instrument's level popup opens on a long press (mouse or touch) or a secondary click only; an
-        // effect's dialog on a plain click too.
-        let effect = module_spec(module.type_id).is_some_and(|s| s.role != Role::Instrument);
+        // The dialog opens on a tap, a long press (mouse or touch) or a secondary click. Issue #68: an
+        // instrument's level popup on a tap too, as an effect's.
         let long = gesture::long_press(ui, &mut r, m);
-        if r.clicked_by(eframe::egui::PointerButton::Secondary) || long || (effect && r.clicked()) {
+        if r.clicked_by(eframe::egui::PointerButton::Secondary) || long || r.clicked() {
             self.dialog = Some((id, icon.center()));
         }
         // Truncated, keeping 5 tail characters.
@@ -2320,6 +2372,11 @@ impl RackPanel {
             }
             crate::ui::tooltip::tip(ui, popout, "Open editor", None);
         }
+        if full {
+            let b = icon_button(base.with("full screen"), popout, IconId::Expand);
+            edits.full = widgets::button(ui, cx, &b, true).clicked();
+            crate::ui::tooltip::tip(ui, popout, "Full screen", None);
+        }
         let b = icon_button(base.with("menu"), menu, IconId::Menu);
         if widgets::button(ui, cx, &b, true).clicked() {
             self.card_menu = Some((id, menu.center()));
@@ -2329,9 +2386,25 @@ impl RackPanel {
         if let (true, Some(plugin)) = (shown, lemon) {
             let content = content_rect(card * ppp, self.card_height(module), u) / ppp;
             let state = self.lemon_cards.entry((self.channel, id)).or_default();
-            let running = lemon_card::show(ui, content, self.channel_id, id, plugin, state);
+            if self.lemon_full == Some((self.channel, id)) {
+                lemon_card::paint(ui, content, state);
+                return edits;
+            }
+            let running = lemon_card::show(ui, content, self.channel_id, id, plugin, state, m);
+            // The editor's `Create automation clip`: the parameter's automation track, as a knob's menu makes it. The
+            // editor's list position is the module's param index less one (`module.params[0]` is not a plugin's).
+            if let Some(index) = state.automate.take() {
+                edits.touch = Some(Touch {
+                    target: AutomationTarget {
+                        instance_id: id,
+                        param: index + 1,
+                    },
+                    pick: Some(CtrlAction::AddAutomationTrack),
+                });
+            }
             self.lemon_wheel |= lemon_card::over(state);
             if running {
+                edits.sample = lemon_card::wants_file(state);
                 return edits;
             }
         }
@@ -2401,7 +2474,7 @@ impl RackPanel {
         state.flags.insert(panels::flag::OCTAVE_OFFSET, offset);
         let soundfont = module.type_id == soundfont_player::TYPE_ID;
         if soundfont {
-            soundfont_player::wire(module, state, &self.soundfonts);
+            edits.ccs = soundfont_player::wire(module, state, &self.soundfonts);
         }
         if module.type_id == three_osc::TYPE_ID {
             three_osc::wire(module, state);
@@ -2479,6 +2552,8 @@ impl RackPanel {
                     let id = base.with("soundfont error");
                     soundfont_player::error_tap(ui, id, content, state)
                 });
+            let moves = soundfont_player::cc_moves(module, state, &shown.settings, fonts);
+            edits.ccs.extend(moves);
         }
     }
 
@@ -2613,10 +2688,13 @@ impl RackPanel {
                 self.card_menu = None;
                 return;
             };
-            let mut items = card_menu(module.minimized, module.type_id, full_range(module));
-            if module.type_id == honeydew_audio::modulator::MODULATOR {
+            let keyed = module.takes_key();
+            let mut items = card_menu(module.minimized, module.type_id, full_range(module), keyed);
+            let plugin = module.file.plugin.as_deref();
+            let controller = plugin.is_some_and(crate::plugins::builtin::controller);
+            if module.type_id == honeydew_audio::modulator::MODULATOR || controller {
                 let target = self.modulations.iter().any(|(m, _)| *m == id);
-                items.extend(modulator_menu(self.recent.is_some(), target));
+                items.extend(modulator_menu(self.recent.is_some(), target, controller));
             }
             if instrument(module.type_id) == Some(SynthKind::DwSampler) {
                 items.extend(builder_item(full_range(module)));

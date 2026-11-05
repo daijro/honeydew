@@ -474,7 +474,8 @@ pub fn songs_dir() -> Option<PathBuf> {
 /// - Linux and other Unixes: `Honeydew` in the XDG documents folder, or `~/Documents/Honeydew`;
 /// - macOS: `~/Documents/Honeydew`;
 /// - Windows: `Honeydew` in the Documents known folder, or `%USERPROFILE%\Documents\Honeydew`;
-/// - Android: the app's external files folder (`Android/data/<package>/files`).
+/// - Android: the app's external files folder (`Android/data/<package>/files`);
+/// - iOS: the app's `Documents` folder, which the Files app shows.
 ///
 /// The first time, what [`app_data_dir`], the user folder before, holds moves here ([`migrate_user_dir`]), unless it
 /// cannot: then that folder stays the user folder. [`app_data_dir`] too where there is no documents folder (or no
@@ -498,7 +499,12 @@ fn new_user_dir() -> Option<PathBuf> {
     crate::android::external_dir().filter(|dir| std::fs::create_dir_all(dir).is_ok())
 }
 
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(target_os = "ios")]
+fn new_user_dir() -> Option<PathBuf> {
+    crate::ios::documents_dir()
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 fn new_user_dir() -> Option<PathBuf> {
     #[cfg(windows)]
     if let Some(documents) = known_documents() {
@@ -517,7 +523,7 @@ fn new_user_dir() -> Option<PathBuf> {
 /// home folder (`%USERPROFILE%` on Windows), but on Linux and other Unixes the XDG documents folder first
 /// (`XDG_DOCUMENTS_DIR` in `user-dirs.dirs` in the config folder, unless it is the home folder itself). `None` without
 /// an absolute home folder.
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 fn documents_dir_from(
     var: impl Fn(&str) -> Option<std::ffi::OsString>,
     read: impl Fn(&Path) -> Option<String>,
@@ -568,15 +574,18 @@ fn known_documents() -> Option<PathBuf> {
 /// The installed sound library's folder in [`app_data_dir`] (`content::install`): it stays there, as the app's.
 pub const SOUND_LIBRARY_FOLDER: &str = "content";
 
-/// The marker an earlier user folder holds once it stays the user folder ([`migrate_user_dir`]): why it does.
+/// The marker an earlier user folder holds once it stays the user folder ([`migrate_user_dir`]): why it does. Android's
+/// documents provider (`HoneydewDocuments.java`) looks for it too, to show the folder the app uses.
 #[cfg(not(target_arch = "wasm32"))]
 const STAYS: &str = ".user-folder-stays-here";
 
 /// Moves what the earlier user folder `old` holds into the user folder `new` and returns `new`, or returns `old` where
-/// it stays the user folder. Each entry of `old` but the installed sound library ([`SOUND_LIBRARY_FOLDER`]) is renamed
-/// into `new` with `rename` (one rename each, nothing copied), and nothing is deleted or written over:
+/// it stays the user folder. Each entry of `old` but the app's own files ([`app_file`]) is renamed into `new` with
+/// `rename` (one rename each, nothing copied), and nothing is deleted or written over:
 /// - `old` missing or holding nothing to move: `new`;
-/// - `old` marked ([`STAYS`]) by an earlier start: `old`;
+/// - `old` marked ([`STAYS`]) by an earlier start: `old`. Marked for one of the app's own files (#58: up to 0.4.6
+///   Android's settings file kept `old` the user folder from the second start on), the folders `new` holds come over
+///   too ([`move_files`]), with what the first start saved in them;
 /// - a name in both: nothing moves, both keep their files, and `old` stays (marked);
 /// - a rename fails (another file system, no permission): what moved goes back, and `old` stays (marked, so the next
 ///   start does not try again).
@@ -602,14 +611,26 @@ fn migrate_user_dir(
     if old == new {
         return new.to_owned();
     }
-    if old.join(STAYS).exists() {
+    let marker = old.join(STAYS);
+    if marker.exists() {
+        let why = std::fs::read_to_string(&marker).unwrap_or_default();
+        let named = why.split([':', ' ']).next().unwrap_or_default();
+        if app_file(std::ffi::OsStr::new(named)) {
+            let folders = std::fs::read_dir(new).into_iter().flatten().flatten();
+            for folder in folders.filter(|e| e.file_type().is_ok_and(|t| t.is_dir())) {
+                let (from, to) = (folder.path(), old.join(folder.file_name()));
+                if let Err(err) = move_files(&from, &to, &rename) {
+                    eprintln!("{} not moved to {}: {err}", from.display(), to.display());
+                }
+            }
+        }
         return old.to_owned();
     }
     let Ok(listed) = std::fs::read_dir(old) else {
         return new.to_owned();
     };
     let names: Vec<_> = (listed.flatten().map(|e| e.file_name()))
-        .filter(|name| name != SOUND_LIBRARY_FOLDER)
+        .filter(|name| !app_file(name))
         .collect();
     if names.is_empty() {
         return new.to_owned();
@@ -645,13 +666,61 @@ fn migrate_user_dir(
     new.to_owned()
 }
 
+/// The app's own files in the app data folder, which stay there when the user folder moves out of it: the installed
+/// sound library ([`SOUND_LIBRARY_FOLDER`]), Android's settings file ([`SETTINGS_FILE`]) with the temp file a cut
+/// short write of it leaves ([`crate::project_files::replace_file`]), and the kept update check
+/// ([`crate::update::CACHE`]).
+#[cfg(not(target_arch = "wasm32"))]
+fn app_file(name: &std::ffi::OsStr) -> bool {
+    use crate::settings::SETTINGS_FILE;
+    let tmp = |n: &str| n == format!(".{SETTINGS_FILE}.tmp");
+    let own = [SOUND_LIBRARY_FOLDER, SETTINGS_FILE, crate::update::CACHE];
+    own.iter().any(|n| name == *n) || name.to_str().is_some_and(tmp)
+}
+
+/// Moves the files below the folder `from` into the same places below `to`, each by `rename`, else (another file
+/// system) by a copy that is synced before the file goes. A name `to` has takes a free number
+/// ([`free_path`](super::file_ops::free_path)). The folders emptied go; links stay where they are.
+#[cfg(not(target_arch = "wasm32"))]
+fn move_files(
+    from: &Path,
+    to: &Path,
+    rename: &impl Fn(&Path, &Path) -> io::Result<()>,
+) -> io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let (path, kind) = (entry.path(), entry.file_type()?);
+        if kind.is_dir() {
+            move_files(&path, &to.join(entry.file_name()), rename)?;
+        } else if kind.is_file() {
+            let taken = NativeLibrary::at(to.to_owned());
+            let target = super::file_ops::free_path(&taken, to, &entry.file_name(), false);
+            if rename(&path, &target).is_err() {
+                let copied = std::fs::copy(&path, &target)
+                    .and_then(|_| std::fs::File::open(&target)?.sync_all())
+                    .and_then(|()| std::fs::remove_file(&path));
+                if let Err(err) = copied {
+                    // The file stays where it was, whole, for the next start.
+                    let _ = std::fs::remove_file(&target);
+                    return Err(err);
+                }
+            }
+        }
+    }
+    // Only an empty folder goes.
+    let _ = std::fs::remove_dir(from);
+    Ok(())
+}
+
 /// The folder eframe keeps app data in (`eframe::storage_dir`'s layout, which needs eframe's `persistence` feature,
 /// so it is repeated here): the installed sound library's ([`SOUND_LIBRARY_FOLDER`]), and the user folder before it
 /// moved to the documents folder ([`user_dir`]):
 /// - Linux and other Unixes: `$XDG_DATA_HOME/honeydew`, or `~/.local/share/honeydew`;
 /// - macOS: `~/Library/Application Support/Honeydew`;
 /// - Windows: `%APPDATA%\Honeydew\data`;
-/// - Android: `Honeydew` in the app's internal data folder.
+/// - Android: `Honeydew` in the app's internal data folder;
+/// - iOS: `Honeydew` in the app's `Library/Application Support`.
 ///
 /// The app's folder named after its former name ([`crate::LEGACY_APP_NAME`]) becomes this one the first time
 /// ([`crate::migrate_legacy_dir_once`]), before [`user_dir`] moves what it holds. `None` when the home or app-data
@@ -661,7 +730,12 @@ pub fn app_data_dir() -> Option<PathBuf> {
     Some(crate::android::data_dir()?.join(crate::APP_NAME))
 }
 
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(target_os = "ios")]
+pub fn app_data_dir() -> Option<PathBuf> {
+    Some(crate::ios::data_dir()?.join(crate::APP_NAME))
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 pub fn app_data_dir() -> Option<PathBuf> {
     #[cfg(not(test))]
     let migrate = crate::migrate_legacy_dir_once;
@@ -673,7 +747,7 @@ pub fn app_data_dir() -> Option<PathBuf> {
 
 /// [`app_data_dir`] with the environment variables `var` reads, the app's folder of its former name becoming the new
 /// one through `migrate` (old, new).
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 fn app_data_dir_from(
     var: impl Fn(&str) -> Option<std::ffi::OsString>,
     migrate: fn(&Path, &Path) -> PathBuf,
@@ -2253,6 +2327,54 @@ mod tests {
         assert_eq!(std::fs::read(new.join("My Songs/A.flm")).unwrap(), b"other");
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// #58: Android keeps its settings file in the app data folder, the user folder before, on another file system than
+    /// the user folder now, where no rename works. The file stays there and keeps that folder from coming back into use:
+    /// the song the first start saved is listed after a restart. An install an earlier version kept in the app data
+    /// folder for that file (marked so) gets that start's songs back, a name it has numbered.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_song_saved_at_the_first_start_is_listed_after_a_restart() {
+        use crate::project_files::content::tests::{Temp, put};
+        use crate::settings::{FileStorage, SETTINGS_FILE};
+        let base = Temp::new("settings-userdir");
+        let (old, new) = (
+            base.0.join("files").join(crate::APP_NAME),
+            base.0.join("external"),
+        );
+        let other_disk = |_: &Path, _: &Path| Err(io::ErrorKind::CrossesDevices.into());
+
+        // The first start: no app data folder yet. A song is saved, then the settings.
+        assert_eq!(migrate_user_dir(&old, &new, other_disk), new);
+        let mut songs = NativeLibrary::at(new.join(SONGS_FOLDER));
+        songs.store("Beat.flm", b"beat").unwrap();
+        eframe::Storage::flush(&mut FileStorage::open(old.join(SETTINGS_FILE)));
+        // The restart keeps the user folder, and SONGS lists the song.
+        assert_eq!(migrate_user_dir(&old, &new, other_disk), new);
+        let listed = songs.list(None).unwrap();
+        assert_eq!(
+            listed.iter().map(|e| &e.name[..]).collect::<Vec<_>>(),
+            ["Beat.flm"]
+        );
+
+        // Kept in the app data folder for the settings file, with a song saved there since.
+        std::fs::write(
+            old.join(STAYS),
+            "storage.json: Invalid cross-device link (os error 18)",
+        )
+        .unwrap();
+        put(&old.join("My Songs/Beat.flm"), b"later");
+        put(&new.join("My Songs/Demo Songs/Demo.flm"), b"demo");
+        assert_eq!(migrate_user_dir(&old, &new, other_disk), old);
+        let songs = old.join(SONGS_FOLDER);
+        assert_eq!(
+            tree(&songs),
+            ["Beat (1).flm", "Beat.flm", "Demo Songs/Demo.flm"]
+        );
+        assert_eq!(std::fs::read(songs.join("Beat (1).flm")).unwrap(), b"beat");
+        assert_eq!(std::fs::read(songs.join("Beat.flm")).unwrap(), b"later");
+        assert!(!new.join(SONGS_FOLDER).exists(), "moved, not copied");
     }
 
     /// The folders a deeper file implies list (the web's `My Files`) and exist, so the file actions take them.

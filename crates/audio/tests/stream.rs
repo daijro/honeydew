@@ -43,7 +43,10 @@ fn sfz_player(text: &str, pcm: Pcm) -> SoundFontPlayer {
         .collect();
     SoundFontPlayer::new(
         RATE as f32,
-        Some((Arc::new(SoundFont::sfz("Test", regions)), 0)),
+        Some((
+            Arc::new(SoundFont::sfz("Test", regions, &Default::default())),
+            0,
+        )),
     )
 }
 
@@ -197,7 +200,7 @@ fn only_the_stream_voices_have_rings_and_a_streamed_note_steals_among_them() {
     let regions = (parse(text, &|_| None).regions.into_iter())
         .zip([disk, ram])
         .collect();
-    let font = Arc::new(SoundFont::sfz("Test", regions));
+    let font = Arc::new(SoundFont::sfz("Test", regions, &Default::default()));
     let mut player = SoundFontPlayer::new(RATE as f32, Some((font, 0)));
     let rings = player.rings().expect("it streams").voices();
     assert!((rings, VOICES) == (STREAM_VOICES, 512) && rings < VOICES);

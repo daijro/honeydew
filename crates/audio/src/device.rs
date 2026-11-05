@@ -934,9 +934,10 @@ fn output_config(
                 && range.min_sample_rate() <= default.sample_rate()
                 && default.sample_rate() <= range.max_sample_rate()
         })
+        // cpal's iOS host says `0..=0` (no fixed size: the audio session's buffer applies) and rejects a fixed one.
         .filter_map(|range| match *range.buffer_size() {
-            SupportedBufferSize::Range { min, max } => Some((min, max)),
-            SupportedBufferSize::Unknown => None,
+            SupportedBufferSize::Range { min, max } if max > 0 => Some((min, max)),
+            _ => None,
         })
         .min_by_key(|(min, _)| *min)
     else {

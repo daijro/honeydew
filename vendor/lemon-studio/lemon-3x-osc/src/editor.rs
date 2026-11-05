@@ -59,16 +59,12 @@ impl Editor for Osc3Editor {
     fn spawn(&self, parent: ParentWindowHandle, context: Arc<dyn GuiContext>) -> Box<dyn Any + Send> {
         let scale = f32::from_bits(self.scale.load(Ordering::Relaxed));
         match parent {
-            #[cfg(all(windows, not(feature = "embed")))]
+            #[cfg(windows)]
             ParentWindowHandle::Win32Hwnd(hwnd) => {
                 Box::new(win32::open(hwnd, scale, self.params.clone(), self.shared.clone(), context, self.hwnd.clone()))
             }
-            // Honeydew (vendored change): built in with `embed`, the editor draws into Honeydew's own window
-            // (`os_plugkit::embed`) on every platform, and the window handle is that editor's id.
             #[cfg(any(target_os = "linux", all(feature = "embed", not(target_os = "macos"))))]
             ParentWindowHandle::X11Window(window) => Box::new(gui::open(window, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
-            #[cfg(all(windows, feature = "embed"))]
-            ParentWindowHandle::Win32Hwnd(id) => Box::new(gui::open(id as usize as u32, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
             // macOS hosts set no scale (sizes are points): the editor paints at its window's backing scale.
             #[cfg(target_os = "macos")]
             ParentWindowHandle::AppKitNsView(view) => {
@@ -397,10 +393,10 @@ impl Logic {
                 m.sep(Cmd::None);
                 m.add(MenuItem::item("Copy value"), Cmd::CopyValue(id.clone()));
                 m.add(MenuItem::item("Paste value").enabled(self.copied.is_some()), Cmd::PasteValue(id.clone()));
-                m.add(MenuItem::item("Type in value..."), Cmd::TypeIn(id.clone()));
+                m.add(MenuItem::item("Enter value..."), Cmd::TypeIn(id.clone()));
                 // Automation belongs to the host: offered when Lemon Studio hosts the editor (host link).
                 m.sep(Cmd::None);
-                m.add(MenuItem::item("Create automation clip").enabled(self.hosted), Cmd::Automate(id.clone()));
+                m.add(MenuItem::item("Create automation clip").enabled(self.hosted || cfg!(feature = "embed")), Cmd::Automate(id.clone()));
                 m
             }
             MenuReq::List(id) => {
@@ -814,7 +810,7 @@ mod win32 {
                     }
                     1
                 }
-                Cmd::Changed | Cmd::Note | Cmd::Automate | Cmd::Audio | Cmd::Resizable | Cmd::SetSize => 0,
+                Cmd::Changed | Cmd::Note | Cmd::Automate | Cmd::Audio | Cmd::Resizable | Cmd::SetSize | Cmd::Notes => 0,
             }
         }
 
@@ -849,7 +845,7 @@ mod win32 {
             return None;
         }
         let mut file = vec![0u16; 1024];
-        let filter: Vec<u16> = "Audio files\0*.wav;*.flac;*.ogg;*.wv;*.aif;*.aiff;*.mp3\0All files\0*.*\0\0".encode_utf16().collect();
+        let filter: Vec<u16> = "Audio files\0*.wav;*.flac;*.ogg;*.wv;*.aif;*.aiff;*.mp3;*.m4a\0All files\0*.*\0\0".encode_utf16().collect();
         let title = pw::wide("Sample for the custom shape");
         unsafe {
             let mut ofn: OPENFILENAMEW = std::mem::zeroed();
@@ -1003,12 +999,7 @@ mod gui {
                     self.paint();
                 }
             }
-            // Honeydew (vendored addition): embedded, the editor has no thread of its own; with no input waiting, it
-            // waits parked until Honeydew brings more (`os_plugkit::embed`).
-            #[cfg(feature = "embed")]
-            if let Some(park) = self.win.parking() {
-                park.park(move || self.run());
-            }
+            os_plugkit::park!(self);
         }
 
         fn mods(&self) -> Mods {
@@ -1140,7 +1131,6 @@ mod gui {
 
     /// The open sample dialog: the desktop's own (through its portal on Linux; on macOS AppKit's, run on the main
     /// thread), as Lemon Sampler's.
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     fn file_dialog(win: &Window) -> Option<String> {
         if os_plugkit::no_modal() {
             return None;
@@ -1148,16 +1138,10 @@ mod gui {
         let path = win.dialog(move || {
             rfd::FileDialog::new()
                 .set_title("Sample for the custom shape")
-                .add_filter("Audio files", &["wav", "flac", "ogg", "wv", "aif", "aiff", "mp3"])
+                .add_filter("Audio files", &["wav", "flac", "ogg", "wv", "aif", "aiff", "mp3", "m4a"])
                 .pick_file()
         });
         path.flatten().map(|p| p.to_string_lossy().into_owned())
-    }
-
-    /// Honeydew (vendored addition): the browser and Android have no file dialog.
-    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
-    fn file_dialog(_: &Window) -> Option<String> {
-        None
     }
 }
 
@@ -1211,7 +1195,7 @@ mod tests {
         let acts = l.down(x, y, Btn::Right, Mods::default(), false);
         assert!(matches!(acts.last(), Some(Act::Menu(MenuReq::Param(id), _, _)) if id == "o2_coarse"));
         let m = l.menu(&MenuReq::Param("o2_coarse".into()));
-        assert_eq!(m.find("Type in value..."), Some(Cmd::TypeIn("o2_coarse".into())));
+        assert_eq!(m.find("Enter value..."), Some(Cmd::TypeIn("o2_coarse".into())));
         l.typed("o2_coarse", "+7");
         assert_eq!(l.vals.plain("o2_coarse"), 7.0);
         l.pick(&MenuReq::Param("o2_coarse".into()), Cmd::CopyValue("o2_coarse".into()), 0.0, 0.0);
@@ -1224,7 +1208,7 @@ mod tests {
             let i = m.items.iter().position(|it| matches!(it, MenuItem::Item { label, .. } if label == "Create automation clip")).unwrap();
             (matches!(&m.items[i], MenuItem::Item { enabled: true, .. }), m.cmds[i].clone())
         };
-        assert!(!entry(&l).0);
+        assert_eq!(entry(&l).0, cfg!(feature = "embed"), "disabled unless embedded");
         l.hosted = true;
         let (enabled, cmd) = entry(&l);
         assert!(enabled);

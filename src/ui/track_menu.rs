@@ -31,22 +31,22 @@ pub enum TrackOp {
     AddNotesTrack,
     /// `Add MIDI CC track…`: the MIDI CC picker, whose pick is an automation lane of that CC on the channel.
     AddCcTrack,
+    /// `Add Pitch Bend track`: an automation lane of the channel's Pitch Bend (#59).
+    AddPitchTrack,
     /// Disabled: resyncing the audio clips is not implemented.
     SyncAllSamples,
-    /// `Hide track` / `Show track` (Honeydew's own): this track hidden ([`crate::song::Lane::hidden`]) or shown again.
-    ToggleHidden,
 }
 
 /// The menu for track `lane` of channel `channel`. The primary track is the channel's lane 0.
 /// - Column 0: `Show Tracks` while the sub-tracks are hidden, else `Hide tracks`, enabled with more than one track;
 ///   `Channel Settings`; `Clone Channel` and `Insert Channel` (not on the master); `Delete Track`, enabled when the
-///   channel has more than one track of the primary's kind or this track's kind differs from it; `Delete Channel`
-///   (not on the master); then Honeydew's `Hide track`, `Show track` on a hidden track (which shows with Settings
-///   `Show hidden tracks`). The master's menu is items 1, 2, 5 and `Hide track`.
+///   channel has more than one track of the primary's kind or this track's kind differs from it; then
+///   `Delete Channel` (not on the master), last (#68). The master's menu is items 1, 2 and 5.
 /// - Column 1, generator channels only (not the master, not a send), by the primary track's kind: notes
 ///   `Import MIDI Tracks`, `Save as MIDI`, `Burn Notes to Track`, `Add Track`; audio `Add Track`, `Sync All Samples`; drums `Load Drumset`,
 ///   `Save Drumset`, `Add StepSeq Track`, `Add Notes Track`, `Save as MIDI`. `Sync All Samples` is disabled (see
-///   [`TrackOp`]). Notes and drums end with `Add MIDI CC track…` (issue #19).
+///   [`TrackOp`]). Notes and drums then have `Add MIDI CC track…` (issue #19); all three end with
+///   `Add Pitch Bend track` (issue #59).
 ///
 /// Empty when there is no such track.
 pub fn track_menu(song: &Song, channel: usize, lane: usize) -> Vec<PopupItem<TrackOp>> {
@@ -76,10 +76,6 @@ pub fn track_menu(song: &Song, channel: usize, lane: usize) -> Vec<PopupItem<Tra
             of_primary > 1 || this.kind != primary,
         )),
         (!master).then_some((DeleteChannel, "Delete Channel", true)),
-        Some(match this.hidden {
-            true => (ToggleHidden, "Show track", true),
-            false => (ToggleHidden, "Hide track", true),
-        }),
     ];
     let generator = !matches!(ch.kind, ChannelKind::Master | ChannelKind::EffectTrack);
     let kind_items: &[(TrackOp, &'static str, bool)] = match primary {
@@ -90,10 +86,12 @@ pub fn track_menu(song: &Song, channel: usize, lane: usize) -> Vec<PopupItem<Tra
             (BurnNotes, "Burn Notes to Track", true),
             (AddTrack, "Add Track", true),
             (AddCcTrack, "Add MIDI CC track…", true),
+            (AddPitchTrack, "Add Pitch Bend track", true),
         ],
         LaneKind::Audio => &[
             (AddTrack, "Add Track", true),
             (SyncAllSamples, "Sync All Samples", false),
+            (AddPitchTrack, "Add Pitch Bend track", true),
         ],
         LaneKind::Drums => &[
             (LoadDrumset, "Load Drumset", true),
@@ -102,6 +100,7 @@ pub fn track_menu(song: &Song, channel: usize, lane: usize) -> Vec<PopupItem<Tra
             (AddNotesTrack, "Add Notes Track", true),
             (SaveMidi, "Save as MIDI", true),
             (AddCcTrack, "Add MIDI CC track…", true),
+            (AddPitchTrack, "Add Pitch Bend track", true),
         ],
         LaneKind::Automation => &[],
     };
@@ -163,14 +162,13 @@ mod tests {
         song
     }
 
-    const CHANNEL: [(usize, &str, bool); 7] = [
+    const CHANNEL: [(usize, &str, bool); 6] = [
         (0, "Hide tracks", false),
         (0, "Channel Settings", true),
         (0, "Clone Channel", true),
         (0, "Insert Channel", true),
         (0, "Delete Track", false),
         (0, "Delete Channel", true),
-        (0, "Hide track", true),
     ];
 
     #[test]
@@ -184,6 +182,7 @@ mod tests {
                     (1, "Burn Notes to Track", true),
                     (1, "Add Track", true),
                     (1, "Add MIDI CC track…", true),
+                    (1, "Add Pitch Bend track", true),
                 ])
                 .collect();
             assert_eq!(menu(&song, channel, 0), want, "{channel}");
@@ -200,6 +199,7 @@ mod tests {
                 (1, "Add Notes Track", true),
                 (1, "Save as MIDI", true),
                 (1, "Add MIDI CC track…", true),
+                (1, "Add Pitch Bend track", true),
             ])
             .collect();
         assert_eq!(menu(&song(), 2, 0), want);
@@ -210,18 +210,22 @@ mod tests {
         let song = song();
         for channel in [3, 6] {
             let want: Vec<_> = (CHANNEL.iter().copied())
-                .chain([(1, "Add Track", true), (1, "Sync All Samples", false)])
+                .chain([
+                    (1, "Add Track", true),
+                    (1, "Sync All Samples", false),
+                    (1, "Add Pitch Bend track", true),
+                ])
                 .collect();
             assert_eq!(menu(&song, channel, 0), want, "{channel}");
         }
     }
 
     #[test]
-    fn the_master_has_items_1_2_5_and_hide_track_and_a_send_no_column_1() {
+    fn the_master_has_items_1_2_5_and_a_send_no_column_1() {
         let song = song();
         assert_eq!(
             menu(&song, 0, 0),
-            [CHANNEL[0], CHANNEL[1], CHANNEL[4], CHANNEL[6]],
+            [CHANNEL[0], CHANNEL[1], CHANNEL[4]],
             "the master"
         );
         assert_eq!(menu(&song, 4, 0), CHANNEL, "the send");
@@ -300,13 +304,13 @@ mod tests {
                 InsertChannel,
                 DeleteTrack,
                 DeleteChannel,
-                ToggleHidden,
                 LoadDrumset,
                 SaveDrumset,
                 AddStepSeqTrack,
                 AddNotesTrack,
                 SaveMidi,
-                AddCcTrack
+                AddCcTrack,
+                AddPitchTrack
             ]
         );
     }

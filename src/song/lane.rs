@@ -40,6 +40,11 @@ impl AutomationTarget {
     pub const POST_GAIN: i32 = -1;
     pub const MIX: i32 = -2;
     pub const WET_PAN: i32 = -3;
+    /// The channel's Pitch Bend (channel param 4), which plays its curves finely (#59).
+    pub const PITCH_BEND: Self = Self {
+        instance_id: 0,
+        param: 4,
+    };
 
     /// The model param of a file (`DESc` @8) param.
     pub fn model_param(instance_id: i32, file: i32) -> i32 {

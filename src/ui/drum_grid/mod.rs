@@ -47,15 +47,16 @@
 //!   start; rows move in whole steps (changing the pad), clamped to existing rows; overlaps allowed; release = one undo
 //!   step ([`edit::moved`]). A drag on a selected hit moves the selection, a drag on another makes it the selection
 //!   first, "touched"; the group keeps its shape at the clip start and the row edges.
-//! - **The selection frame** is the piano roll's without the ↔ bar. The free note-grid is the one drum editor mode
-//!   that has it; step mode keeps its own look. The selected hits' box (their earliest start to their
-//!   latest end, the top hit's row top to the bottom one's row bottom) pulses whenever a hit is selected
+//! - **The selection frame** is the piano roll's without the ↔ bar; step mode has its box, not its capsule. The selected
+//!   hits' box (their earliest start to their latest end, the top hit's row top to the bottom one's row bottom) pulses
+//!   whenever a hit is selected
 //!   ([`clips::paint_pulse`]), a marquee's catch, a quiet selection and a drag's hits too. Its end capsule, 0.15 U right of the box and vertically centred on it
 //!   ([`clips::editor_handles`]), shows while the selection does and no touch holds its hits; it grows while held and
 //!   wobbles at its release. Dragging it (no grab offset) puts the box's end on the finger's tick, snapped to the
 //!   nearest snap unit, the box at least snap unit/8 wide, or 1/128 beat with Snap off; every selected hit's length
 //!   changes by as much, one undo step ([`edit::resized`]).
-//! - **Marquee and long press.** The marquee selects hits whose extent overlaps it and then shows the end capsule.
+//! - **Marquee and long press.** The marquee selects hits whose extent overlaps it and then shows the end capsule and
+//!   the floating row, whatever showed before.
 //!   Hit-testing uses [start, start + length] (no minimum touch width). A long press on empty grid without dragging
 //!   shows the Paste button when the clipboard is set. As in the automation editor, the floating `Copy` also stores the
 //!   copied hits in the drum editors' clipboard ([`step_seq::hit_clipboard`], shared with step mode); while it is set,
@@ -97,14 +98,15 @@ use eframe::egui::{self, Id, Pos2, Rangef, Rect, Response, Sense, Ui, vec2};
 use crate::metrics::Metrics;
 use crate::song::{Event, LaneKind, Song, TimeSig};
 use crate::theme::{Rgba, channel_color};
+use crate::ui::automation::value::time_items;
 use crate::ui::clips::{
     self, FloatingRow, GridView, Marquee, Part, Selection, TimeAxis, hold_square, paint_marquee,
 };
 use crate::ui::edit_keys::{self, EditKey};
 use crate::ui::graph_lane::{self, GraphLane, Prop};
+use crate::ui::piano_roll::Snap;
 use crate::ui::piano_roll::notes::{auto_grid, remove_selected, snap_round};
-use crate::ui::piano_roll::{Snap, SnapMode};
-use crate::ui::popup::{self, PopupItem};
+use crate::ui::popup;
 use crate::ui::region::{self, TimeRange};
 use crate::ui::scroller::{self, Axis, Scroller, X, Y};
 use crate::ui::step_seq::edit as steps;
@@ -124,7 +126,7 @@ const POP_RATE: f32 = 0.6;
 const POP_GAIN: f32 = 1.0515;
 const POP_W: f32 = 1.885;
 /// The floating buttons over the selection (free note-grid mode).
-const OPS: [&str; 3] = ["Copy", "Delete", "Snap"];
+const OPS: [&str; 4] = ["Copy", "Delete", "Snap", "Duplicate"];
 
 fn id() -> Id {
     Id::new("drum_grid")
@@ -538,6 +540,9 @@ impl DrumGridView {
             action = Some(StepAction::PlayLoop(play_loop));
         }
         if let Some(tick) = out.playhead {
+            // A ruler tap deselects, as the audio editor's: the floating row goes and the play box shows.
+            self.sel.fill(false);
+            self.paste = None;
             let tick = region::seek_tick(clip, tick);
             action = Some(StepAction::SetPlayhead(tick));
         }
@@ -886,6 +891,9 @@ impl DrumGridView {
                     (!stale && !multi && !marquee.dragged && clipboard()).then_some(marquee.from);
                 if !up {
                     self.gesture = Gesture::Box(marquee);
+                } else if let Some(p) = pos.filter(|_| self.sel.contains(&true)) {
+                    // Its release shows the floating row over what it caught, whatever showed before.
+                    self.row.boxed(p);
                 }
             }
             Gesture::Edit(mut edit) => {
@@ -1001,7 +1009,8 @@ impl DrumGridView {
         // `background` lines over the rows: w px from ⌊w/2⌋ px left of each mark.
         let ys = Rangef::new(l.row_top(), l.row_top() + place.rows as f32 * l.pitch);
         let (t0, t1) = (axis.tick(grid.left()), axis.tick(grid.right()));
-        for (tick, w) in edit::marks(t0, t1, axis.beat_w, l.u, sig, edit::MARK_GAP) {
+        let size = self.snap.size;
+        for (tick, w) in edit::grid_lines(t0, t1, axis.beat_w, l.u, sig, edit::MARK_GAP, size) {
             let x = l.snap(axis.x(tick)) - (w / 2.0).floor() * px;
             painter.rect_filled(Rect::from_x_y_ranges(x..=x + w * px, ys), 0.0, bg);
         }
@@ -1059,18 +1068,14 @@ impl DrumGridView {
         }
     }
 
-    /// The snap menu, while open: one column, the current mode highlighted; a pick sets it and turns snap on.
+    /// The snap menu, while open: the time modes and the grid sizes ([`time_items`]), the current ones highlighted; a
+    /// mode's pick sets it and turns snap on, a size's sets the grid.
     fn snap_menu(&mut self, ui: &Ui, cell: Rect, cx: &UiCtx) {
         if !self.snap_menu {
             return;
         }
         let ctx = ui.ctx();
-        let items: Vec<PopupItem<SnapMode>> = (SnapMode::ALL.iter().enumerate())
-            .map(|(row, &mode)| PopupItem {
-                current: mode == self.snap.mode,
-                ..PopupItem::new(mode, 0, row, mode.label())
-            })
-            .collect();
+        let items = time_items(self.snap);
         let bounds = ctx.content_rect();
         let result = popup::show(
             ctx,
@@ -1080,8 +1085,8 @@ impl DrumGridView {
             &items,
             cx,
         );
-        if let Some(mode) = result.selected {
-            self.snap = Snap { on: true, mode };
+        if let Some(pick) = result.selected {
+            self.snap = pick.snap(self.snap);
         }
         if result.close {
             self.snap_menu = false;
@@ -1089,8 +1094,9 @@ impl DrumGridView {
         }
     }
 
-    /// `Copy`, `Delete` and `Snap` over the selection, in a [`FloatingRow`] (waiting for a marquee); `grid` is the
-    /// snap mode's unit, on or off. Returns the hits and selection a button left.
+    /// `Copy`, `Delete`, `Snap` and `Duplicate` over the selection, in a [`FloatingRow`] (waiting for a marquee); `grid`
+    /// is the snap mode's unit, on or off. Returns the hits and selection a button left: none for `Copy`, which only
+    /// fills the hit clipboard.
     #[allow(clippy::too_many_arguments)]
     fn floating_row(
         &mut self,
@@ -1127,18 +1133,24 @@ impl DrumGridView {
         };
         self.row.covered = self.covered;
         let (i, _) = self.row.show(ui, "grid_button", sel, view, &OPS, cx)?;
+        ui.ctx().request_repaint();
         let (mut events, mut sel) = (events.to_vec(), self.sel.clone());
-        match i {
-            0 => {
+        match OPS[i] {
+            // Copy only fills the hit clipboard: no edit.
+            "Copy" => {
                 step_seq::set_hit_clipboard(ui.ctx(), chosen.iter().map(|&&e| e).collect());
+                return None;
+            }
+            "Duplicate" => {
                 edit::copy_selected(&mut events, &mut sel, grid);
             }
-            1 => {
+            "Snap" => {
+                edit::quantize_selected(&mut events, &mut sel, grid);
+            }
+            _ => {
                 remove_selected(&mut events, &mut sel);
             }
-            _ => edit::quantize_selected(&mut events, &mut sel, grid),
         }
-        ui.ctx().request_repaint();
         Some((events, sel))
     }
 

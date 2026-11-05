@@ -58,15 +58,15 @@ struct Entry {
     builtin: bool,
 }
 
-/// The built-in plugins' entries ([`builtin::libraries`]), listed before the scan's.
+/// The built-in plugins' entries ([`builtin::all`]), listed before the scan's.
 fn builtin_entries() -> Vec<Entry> {
-    (builtin::libraries().iter())
-        .map(|(desc, lib)| Entry {
-            desc: desc.clone(),
+    (builtin::all().iter())
+        .map(|b| Entry {
+            desc: b.desc.clone(),
             file: Arc::new(FileLib {
-                path: desc.path.clone(),
-                format: desc.format,
-                lib: OnceLock::from(Ok(lib.clone())),
+                path: b.desc.path.clone(),
+                format: b.desc.format,
+                lib: OnceLock::from(Ok(b.lib.clone())),
             }),
             builtin: true,
         })
@@ -1004,6 +1004,17 @@ pub fn lemon_editor(channel_id: i32, instance_id: i32, scale: f32) -> Option<u32
     })
 }
 
+/// The id of the open editor of built-in plugin module `instance_id` on the channel with id `channel_id` ([`lemon_editor`]),
+/// if it is open.
+pub fn lemon_open(channel_id: i32, instance_id: i32) -> Option<u32> {
+    with(|host| {
+        host.live
+            .get(&(channel_id, instance_id))?
+            .embedded
+            .map(|(id, _)| id)
+    })
+}
+
 /// While `f` runs, the engines built get fresh instances of their plugins (an export renders on its own, twice): each
 /// with the live instance's state now, else the module's, at the build's rate, rendering offline.
 pub fn rendering<T>(f: impl FnOnce() -> T) -> T {
@@ -1124,7 +1135,8 @@ mod card_tests {
     fn busy_plugin_lock_keeps_the_last_card_status_and_value_text() {
         let channel_id = 3901;
         let instance_id = 7;
-        let module = instantiate(channel_id, instance_id, builtin::LEMON_TRIO.uid).unwrap();
+        let module =
+            instantiate(channel_id, instance_id, builtin::named("Lemon Trio").uid).unwrap();
         let status = state(channel_id, instance_id).expect("plugin is running");
         let (param, value, label) = (1..module.params.len())
             .find_map(|index| {

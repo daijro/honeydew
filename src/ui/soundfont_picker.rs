@@ -57,7 +57,7 @@ impl PatchOrdering {
 }
 
 /// What the user did in the picker this frame. A close or a failed SoundFont is the end of it: drop it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SoundFontAction {
     /// The close X, a click outside the panel, or Escape.
     Close,

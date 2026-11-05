@@ -44,6 +44,9 @@
 //! Song options dialog ([`SongOptionsDialog`]), drawn over the screen: `OK` makes it with the options, `Cancel` or
 //! Escape makes none.
 //!
+//! `Import` opens its menu, `Import file` and `Import folder`, where a folder can be imported ([`IMPORT_FOLDER`]);
+//! on the web it picks a file at once.
+//!
 //! `Save` is a swipe button: a tap asks for the name ([`MainMenuAction::SaveNew`]), and a swipe left of [`SWIPE_SAVE`]
 //! or more quick-saves ([`MainMenuAction::Save`], Ctrl+S's). The circle follows the pointer left, at most
 //! [`SWIPE_MAX`], and springs back when let go; out of the calm zone a mostly vertical drag does neither. Its tooltip is
@@ -101,6 +104,9 @@ const TEXT_LIMIT: usize = 255;
 /// `Save`'s swipe: let go pulled this far left, it quick-saves; the circle follows the pointer at most `SWIPE_MAX`.
 const SWIPE_SAVE: f32 = 0.75;
 const SWIPE_MAX: f32 = 1.0;
+
+/// `Import` has a menu with `Import folder`: everywhere but the web, which picks no folders to copy.
+const IMPORT_FOLDER: bool = cfg!(not(target_arch = "wasm32"));
 
 /// The `Sort` menu's orderings, as in the file browsers.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -197,6 +203,8 @@ enum Popup {
     Options,
     /// `New`'s menu, over [`SongsTab::templates`].
     New,
+    /// `Import`'s menu ([`IMPORT_FOLDER`]).
+    Import,
 }
 
 /// `New`'s menu: `Empty`, the header `Templates`, then the `templates`; an item holds the index of
@@ -446,6 +454,9 @@ impl SongsTab {
             }
             if circle_button(ui, cx, &Circle::new(big, at, m.u(BIG_D), name)) {
                 match act {
+                    Some(MainMenuAction::Import) if IMPORT_FOLDER => {
+                        self.popup = Some((Popup::Import, at))
+                    }
                     Some(act) => action = Some(act),
                     None => {
                         let factory = self.factory.unwrap_or_else(content::factory);
@@ -683,6 +694,19 @@ impl SongsTab {
                     }
                     result.close
                 }
+                Popup::Import => {
+                    let items = [
+                        PopupItem::new(false, 0, 0, "Import file"),
+                        PopupItem::new(true, 0, 1, "Import folder"),
+                    ];
+                    let result = popup::show(&ctx, id.with("import"), at, area, &items, cx);
+                    action = match result.selected {
+                        Some(true) => Some(MainMenuAction::ImportFolder),
+                        Some(false) => Some(MainMenuAction::Import),
+                        None => action,
+                    };
+                    result.close
+                }
                 Popup::Sort => {
                     let result =
                         popup::show(&ctx, id.with("sort"), at, area, &sort_menu(self.sort), cx);
@@ -700,7 +724,7 @@ impl SongsTab {
                         wav: false,
                         in_trash,
                         paste: self.actions.can_paste(),
-                        export: !cfg!(target_os = "android")
+                        export: !cfg!(mobile)
                             && (cfg!(not(target_arch = "wasm32"))
                                 || picked.iter().all(|e| !e.is_folder)),
                         reveal: FILE_MANAGER,

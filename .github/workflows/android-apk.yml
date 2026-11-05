@@ -1,25 +1,27 @@
 name: Android APK
 
-# Builds the debug APK for a phone, and publishes it to the `apk-debug` prerelease, whose download a phone can open and
-# install ("Honeydew Debug", `dev.daijro.honeydew.debug`, so it sits beside a release install). It runs whenever this
-# file, the Android build or the packaging script changes — which is also how to rebuild it on demand, from the tip; `workflow_dispatch` is not available here, because the
-# default branch is the only place GitHub looks for it.
-#
-# The sound library is not in this repository: it is fetched from the upstream release of the same version, so the APK
-# plays out of the box. Bump `SOUNDS_TAG` with `Cargo.toml`'s version, and keep the version in `sounds/release.txt` the
-# library's own (that file is what the crate compiles; the rest of the library is not checked in).
-
-# On demand only: no push triggers a build (`Actions ▸ Android APK ▸ Run workflow`), so an ordinary push — Android
-# sources, Java, the manifest, this file — costs nothing.
+# Build a testable debug APK on demand. Download it from the workflow run's Artifacts section;
+# it installs beside the release app as Honeydew Debug. `base` (the default) leaves the sound library out
+# (-arm-base-debug.apk, about 50 MB): the app downloads the sounds once, from the sound library's release (#66).
+# `full` ships them (-arm-debug.apk).
 on:
   workflow_dispatch:
+    inputs:
+      variant:
+        description: APK to build
+        required: true
+        default: base
+        type: choice
+        options:
+          - base
+          - full
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
-  SOUNDS_TAG: v0.4.6
+  SOUNDS_TAG: v0.4.7
 
 jobs:
   apk:
@@ -45,8 +47,10 @@ jobs:
           sudo apt-get update && sudo apt-get install -y libclang-dev
           sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.0.13004108'
           cargo install cargo-ndk --version 4.1.2 --locked
-      # The library the release of this version ships, unpacked where `tools/android-dist.sh` looks for it.
+      # The library the release of this version ships, unpacked where `tools/android-dist.sh` looks for it. A base
+      # APK has none.
       - name: Sound library
+        if: inputs.variant == 'full'
         run: |
           mkdir -p target/android/assets
           url="https://github.com/daijro/honeydew/releases/download/$SOUNDS_TAG/honeydew-$SOUNDS_TAG-sounds.zip"
@@ -56,17 +60,23 @@ jobs:
       - name: Build the debug APK
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.0.13004108
-        run: tools/android-dist.sh
-      - name: Publish
-        uses: softprops/action-gh-release@v2
+        run: |
+          set -o pipefail
+          strip() { sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/build.log"; }
+          base=
+          if [ "${{ inputs.variant }}" != full ]; then base=--base; fi
+          if ! tools/android-dist.sh $base > "$RUNNER_TEMP/build.log" 2>&1; then
+            # The compiler's errors and their locations, and the log's tail, as annotations (ANSI-stripped),
+            # so they read without downloading the full log.
+            { strip | grep -E '^error|^ *-->' | head -30
+              strip | tail -n 25; } | sed 's/^/::error title=android build::/'
+            exit 1
+          fi
+          strip | tail -n 30
+      - name: Upload test APK
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: apk-debug
-          name: Honeydew debug APK
-          prerelease: true
-          body: |
-            A debug build of `${{ github.ref_name }}` at ${{ github.sha }}, made by `.github/workflows/android-apk.yml`.
-
-            It installs as **Honeydew Debug** (`dev.daijro.honeydew.debug`), beside a release install. Open this page on
-            the phone and tap the APK to install it; Android asks to allow installing from this source the first time.
-          files: target/honeydew-android-*-arm-debug.apk
-          fail_on_unmatched_files: true
+          name: honeydew-android-${{ inputs.variant }}-apk-${{ github.sha }}
+          path: target/honeydew-android-*-arm*-debug.apk
+          if-no-files-found: error
+          retention-days: 14

@@ -23,7 +23,7 @@ use crate::params::{self, byte, flag, freq_id, level_id, order_id, set_byte, set
 use crate::view::{self, Hit, Target, ViewState, MAIN_FADER};
 use crate::Shared;
 
-/// "Lock spare state" (Options menu) is not saved; it lasts while the plugin instance lives.
+/// "Lock B" (Options menu) is not saved; it lasts while the plugin instance lives.
 static LOCK_SPARE: AtomicBool = AtomicBool::new(false);
 
 pub struct EqEditor {
@@ -63,16 +63,12 @@ impl Editor for EqEditor {
     fn spawn(&self, parent: ParentWindowHandle, context: Arc<dyn GuiContext>) -> Box<dyn Any + Send> {
         let scale = f32::from_bits(self.scale.load(Ordering::Relaxed));
         match parent {
-            #[cfg(all(windows, not(feature = "embed")))]
+            #[cfg(windows)]
             ParentWindowHandle::Win32Hwnd(hwnd) => {
                 Box::new(win32::open(hwnd, scale, self.params.clone(), self.shared.clone(), context, self.hwnd.clone()))
             }
-            // Honeydew (vendored change): built in with `embed`, the editor draws into Honeydew's own window
-            // (`os_plugkit::embed`) on every platform, and the window handle is that editor's id.
             #[cfg(any(target_os = "linux", all(feature = "embed", not(target_os = "macos"))))]
             ParentWindowHandle::X11Window(window) => Box::new(gui::open(window, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
-            #[cfg(all(windows, feature = "embed"))]
-            ParentWindowHandle::Win32Hwnd(id) => Box::new(gui::open(id as usize as u32, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
             // macOS hosts set no scale (sizes are points): the editor paints at its window's backing scale.
             #[cfg(target_os = "macos")]
             ParentWindowHandle::AppKitNsView(view) => {
@@ -330,8 +326,8 @@ impl Logic {
             Some(Target::Tokens) => "View band tokens".into(),
             Some(Target::Phones) => "Band solo on shift".into(),
             Some(Target::Monitor(m)) => format!("Monitor: {}", ["off", "input", "output"][usize::from(m.min(2))]),
-            Some(Target::Store) => if LOCK_SPARE.load(Ordering::Relaxed) { "Store in spare state (locked)".into() } else { "Store in spare state".into() },
-            Some(Target::Flip) => "Flip with spare state (A/B compare)".into(),
+            Some(Target::Store) => if LOCK_SPARE.load(Ordering::Relaxed) { "Copy to B (locked)".into() } else { "Copy to B".into() },
+            Some(Target::Flip) => "Swap A / B".into(),
             _ => {
                 let _ = extra;
                 String::new()
@@ -628,14 +624,14 @@ impl Logic {
                 m.sep(Cmd::None);
                 m.add(MenuItem::item("Copy value"), Cmd::CopyValue(id.clone()));
                 m.add(MenuItem::item("Paste value").enabled(self.copied.is_some()), Cmd::PasteValue(id.clone()));
-                m.add(MenuItem::item("Type in value..."), Cmd::TypeIn(id.clone()));
+                m.add(MenuItem::item("Enter value..."), Cmd::TypeIn(id.clone()));
                 // Automation belongs to the host: offered when Lemon Studio hosts the editor (host link).
                 m.sep(Cmd::None);
-                m.add(MenuItem::item("Create automation clip").enabled(self.hosted), Cmd::Automate(id.clone()));
+                m.add(MenuItem::item("Create automation clip").enabled(self.hosted || cfg!(feature = "embed")), Cmd::Automate(id.clone()));
             }
             MenuReq::Options => {
                 m.head("Options", Cmd::None);
-                check(&mut m, "Lock spare state", LOCK_SPARE.load(Ordering::Relaxed), Cmd::LockSpare);
+                check(&mut m, "Lock B", LOCK_SPARE.load(Ordering::Relaxed), Cmd::LockSpare);
                 m.submenu("Band solo on Shift", self.solo_menu(&extra), Cmd::None);
                 // Greyed out: nothing reads the minimum phase mod speed (parameter smoothing), phase rotation or the
                 // heatmap's enhanced frequency and high precision yet. The linear phase mod speed is LIN's crossfade time.
@@ -1086,7 +1082,7 @@ mod win32 {
                     }
                     1
                 }
-                Cmd::Changed | Cmd::Note | Cmd::Automate | Cmd::Audio | Cmd::Resizable | Cmd::SetSize => 0,
+                Cmd::Changed | Cmd::Note | Cmd::Automate | Cmd::Audio | Cmd::Resizable | Cmd::SetSize | Cmd::Notes => 0,
             }
         }
 
@@ -1251,12 +1247,7 @@ mod gui {
                     self.paint();
                 }
             }
-            // Honeydew (vendored addition): embedded, the editor has no thread of its own; with no input waiting, it
-            // waits parked until Honeydew brings more (`os_plugkit::embed`).
-            #[cfg(feature = "embed")]
-            if let Some(park) = self.win.parking() {
-                park.park(move || self.run());
-            }
+            os_plugkit::park!(self);
         }
 
         fn mods(&self) -> Mods {
@@ -1392,7 +1383,7 @@ mod tests {
             let i = m.items.iter().position(|it| matches!(it, MenuItem::Item { label, .. } if label == "Create automation clip")).unwrap();
             (matches!(&m.items[i], MenuItem::Item { enabled: true, .. }), m.cmds[i].clone())
         };
-        assert!(!entry(&l).0, "another host: disabled");
+        assert_eq!(entry(&l).0, cfg!(feature = "embed"), "another host: disabled, unless embedded");
         l.hosted = true;
         let (enabled, cmd) = entry(&l);
         assert!(enabled);
@@ -1488,7 +1479,7 @@ mod tests {
         for label in ["Phase rotation", "Enhanced frequency", "High precision", "Smooth", "Adaptive", "Inherit bandwidth"] {
             assert!(!clickable(&o, label), "{label}");
         }
-        for label in ["Lock spare state", "-120dB", "Average mode", "Highest", "Ultra"] {
+        for label in ["Lock B", "-120dB", "Average mode", "Highest", "Ultra"] {
             assert!(clickable(&o, label), "{label}");
         }
         assert!(l.menu(&MenuReq::Phones).items.iter().all(|it| !it.clickable()));

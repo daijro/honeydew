@@ -5,6 +5,8 @@ pub mod builtin_drums;
 pub mod builtin_loops;
 pub mod builtin_shapes;
 mod comb;
+pub mod de_esser;
+pub mod denoise;
 pub mod device;
 pub mod drums;
 pub mod dw_sampler;
@@ -105,6 +107,8 @@ pub fn effect_info(id: u16) -> Option<EffectInfo> {
         lemon::LIMITER => ("Lemon Limiter", lemon::LIMITER_SAFETY + 1),
         dynamic_eq::DYNAMIC_EQ => ("Dynamic EQ", dynamic_eq::PARAMS),
         modulator::MODULATOR => ("Modulator", modulator::PARAMS),
+        de_esser::DE_ESSER => ("De-esser", de_esser::PARAMS),
+        denoise::DENOISE => ("Denoise", denoise::PARAMS),
         _ => return None,
     };
     Some(EffectInfo {
@@ -256,8 +260,25 @@ pub trait ExternalEffect: Send {
     fn set_parameter(&mut self, index: usize, value: f32);
     /// Processes one block in place.
     fn process(&mut self, left: &mut [f32], right: &mut [f32], context: ProcessContext);
+    /// [`Self::process`] with a sidechain `key` (left, right, as long as the block) for a plugin with a sidechain input
+    /// (Lemon Vocoder's carrier); one without ignores it.
+    fn process_keyed(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        key: Option<(&[f32], &[f32])>,
+        context: ProcessContext,
+    ) {
+        let _ = key;
+        self.process(left, right, context);
+    }
     /// Clears its tails and delay lines (ResetSound).
     fn reset(&mut self);
+    /// A controller plugin's output (0…1) as its last block left it, which its link sets its target to; `None` for
+    /// any other effect, or before its first output.
+    fn control(&self) -> Option<f32> {
+        None
+    }
 }
 
 /// An external effect and its dry copy, for the common params' mix.
@@ -491,6 +512,20 @@ impl AudioEffect {
                 modulator::DEFAULTS.to_vec(),
                 Processor::Modulator(Box::default()),
             ),
+            de_esser::DE_ESSER => {
+                let state = de_esser::DeEsserState::new(&de_esser::DEFAULTS, sample_rate);
+                (
+                    de_esser::DEFAULTS.to_vec(),
+                    Processor::DeEsser(Box::new(state)),
+                )
+            }
+            denoise::DENOISE => {
+                let state = denoise::DenoiseState::new(&denoise::DEFAULTS, sample_rate);
+                (
+                    denoise::DEFAULTS.to_vec(),
+                    Processor::Denoise(Box::new(state)),
+                )
+            }
             _ => return Err(EffectError::UnsupportedEffect(id)),
         };
         let mut effect = Self {
@@ -556,6 +591,7 @@ impl AudioEffect {
             Processor::Pitcher(state) => state.latency_samples(),
             Processor::Pitcher2(state) => state.latency_samples(),
             Processor::LemonLimiter(state) => state.latency(),
+            Processor::Denoise(state) => state.latency(),
             _ => 0,
         }
     }
@@ -710,6 +746,12 @@ impl AudioEffect {
         }
     }
 
+    /// A controller plugin's output for its link's target ([`ExternalEffect::control`]); `None` while it is bypassed.
+    pub fn control(&self) -> Option<f32> {
+        let runs = self.common.runs(self.params[0] >= 0.5);
+        self.external.as_ref().filter(|_| runs)?.effect.control()
+    }
+
     /// What the effect's panel draws from the audio besides the meter, in its type's layout ([`analysis`]); empty for
     /// an effect without one.
     pub fn analysis(&self) -> &[f32] {
@@ -735,8 +777,8 @@ impl AudioEffect {
     }
 
     /// [`Self::process`] with a sidechain: a module that [takes a key](takes_key) detects on `key` (left, right, as long
-    /// as the block) instead of its own input, while it still processes its input. Every other effect, an external one
-    /// included, ignores it.
+    /// as the block) instead of its own input, while it still processes its input; an external one hands it to the
+    /// plugin ([`ExternalEffect::process_keyed`]). Every other effect ignores it.
     pub fn process_keyed(
         &mut self,
         left: &mut [f32],
@@ -765,7 +807,7 @@ impl AudioEffect {
         self.common.fresh = false;
         let runs = self.common.runs(self.params[0] >= 0.5);
         if let Some(external) = &mut self.external {
-            self.meter = external.process(&mut self.common, runs, left, right, context);
+            self.meter = external.process(&mut self.common, runs, left, right, key, context);
             return Ok(());
         }
         // A bypassed processor stands still: MultiFX's free LFO, too, advanced by each prepared block. Tape Stop still
@@ -809,14 +851,15 @@ impl AudioEffect {
 }
 
 impl External {
-    /// [`AudioEffect::process`] for an external effect: in parts of at most the dry copy's length, the effect in place,
-    /// then the common params against the dry copy. Bypassed, the effect does not run.
+    /// [`AudioEffect::process_keyed`] for an external effect: in parts of at most the dry copy's length, the effect in
+    /// place (with that part of `key`), then the common params against the dry copy. Bypassed, the effect does not run.
     fn process(
         &mut self,
         common: &mut CommonModule,
         runs: bool,
         left: &mut [f32],
         right: &mut [f32],
+        key: Option<(&[f32], &[f32])>,
         context: ProcessContext,
     ) -> MeterSnapshot {
         let mut peak = MeterSnapshot::default();
@@ -841,7 +884,9 @@ impl External {
                     start_beat: context.start_beat + offset as f64 * beats_per_frame,
                     ..context
                 };
-                self.effect.process(out_l, out_r, context);
+                let start = part * block;
+                let key = key.map(|(l, r)| (&l[start..start + frames], &r[start..start + frames]));
+                self.effect.process_keyed(out_l, out_r, key, context);
                 for (frame, (l, r)) in out_l.iter_mut().zip(out_r.iter_mut()).enumerate() {
                     (*l, *r) = common.frame((dry_l[frame], dry_r[frame]), (*l, *r));
                 }
@@ -887,6 +932,8 @@ enum Processor {
     LemonLimiter(Box<lemon::LimiterFx>),
     DynamicEq(Box<dynamic_eq::DynamicEqState>),
     Modulator(Box<modulator::ModulatorState>),
+    DeEsser(Box<de_esser::DeEsserState>),
+    Denoise(Box<denoise::DenoiseState>),
     Monitor,
 }
 
@@ -930,6 +977,8 @@ impl Processor {
             Self::LemonLimiter(state) => state.set(params, sample_rate),
             Self::DynamicEq(state) => state.refresh(params, sample_rate),
             Self::Modulator(state) => state.refresh(params, sample_rate),
+            Self::DeEsser(state) => state.refresh(params, sample_rate),
+            Self::Denoise(state) => state.refresh(params, sample_rate),
             Self::Monitor => {}
         }
     }
@@ -1006,6 +1055,8 @@ impl Processor {
             // Its own input is the key until the sidechain feeds one.
             Self::DynamicEq(state) => state.process_frame(l, r, (l, r)),
             Self::Modulator(state) => state.process_frame(l, r, (l, r)),
+            Self::DeEsser(state) => state.process_frame(l, r),
+            Self::Denoise(state) => state.process_frame(l, r),
             Self::Monitor => (l, r),
         }
     }
@@ -1064,6 +1115,8 @@ impl Processor {
             Self::LemonLimiter(state) => state.reset(),
             Self::DynamicEq(state) => state.reset(),
             Self::Modulator(state) => state.reset(),
+            Self::DeEsser(state) => state.reset(),
+            Self::Denoise(state) => state.reset(),
             Self::Monitor => {}
         }
     }
@@ -1071,6 +1124,8 @@ impl Processor {
     fn gain_reduction_db(&self) -> f32 {
         match self {
             Self::Compressor(state) => state.gain_reduction_db,
+            Self::DeEsser(state) => state.reduction_db(),
+            Self::Denoise(state) => state.reduction_db(),
             _ => 0.0,
         }
     }

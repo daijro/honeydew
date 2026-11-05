@@ -3,8 +3,9 @@
 //!
 //! **Drawing**: 1 `background`; 2 the grid in `controlFill`; 3 five 1 px `background` lines at value
 //! top − 0.5 px + V·{0, ¼, ½, ¾, 1}; 4 the piano roll's vertical marks; 5 black α 0.15 over the value area past the
-//! loop end; 6 a 1 px `menuFill` line at the target's init value v, y = top + V·(1 − v) − 0.5 px; 7 the curve (1.5 px
-//! lines; nothing left of the first point, a level line from the last to the right edge), then the points
+//! loop end; 6 a 1 px `menuFill` line at the target's init value v (the tempo lane's: the song's tempo), y = top +
+//! V·(1 − v) − 0.5 px; 7 the curve (1.5 px lines; nothing left of the first point, a level line from the last to the
+//! right edge), then the points
 //! (radius 0.2 U). A segment is `text` when either end is selected, a point when it is; else the channel colour. The
 //! value axis left of the grid: N = 5 ticks from V ≥ 3 U, else 3, in the channel colour.
 //!
@@ -46,9 +47,23 @@
 //!   checked before the points), grows while held and wobbles at its release; a point's touch hides it. The touch
 //!   frame (the box grown by 1.25 U) is the selection the floating row is placed over and re-shown by; it is not
 //!   drawn. The row hides while a point or the bar is held and from a completed long press on.
-//! - The view is the scroller's ([`scroller`]): one finger scrolls the time on the ruler band only (a drag on empty
-//!   grid moves nothing), two zoom it there; the wheel zooms it over the ruler and the grid, as does a trackpad pinch
-//!   over the grid.
+//! - The view is the scroller's ([`scroller`]): one finger scrolls the time on the ruler band and on empty grid
+//!   (issue #56; a press on a point or the selection is the edit's), two zoom it there; the wheel zooms it over the
+//!   ruler and the grid, as does a trackpad pinch over the grid.
+//! - **The value zoom** (GitHub issue #60; it used to show the whole range): the value range
+//!   zooms from all of it (1×) to 1/64 ([`geom::VALUE_ZOOM`]) and scrolls, the piano roll's rows' law on the shared
+//!   scroller. On empty grid one finger scrolls both the time and the values (the piano roll's free drag; at 1× the
+//!   values only stretch and spring back), two zoom each axis their separation along it passes 2 U (6 U while the
+//!   other axis zoomed: a mostly vertical pinch zooms only the values); the wheel zooms the values over the value
+//!   column, as the piano roll's over its key column, and the keymap's `zoomInVertical`/`zoomOutVertical` keys zoom
+//!   them about the middle. There is no reset gesture, as the piano roll has none. The view is kept per clip with
+//!   the time's, in memory, never saved. Everything maps through it ([`Frame::rows`]): the points, the curve, the
+//!   init line, the value grid, touches, created points and marquees. The axis ticks keep their places and label the
+//!   values there, finer as it zooms in; a discrete target's step ticks follow their steps. Zoomed in, the ticks and
+//!   the init line take the points' row law, (1 − v)·126 + 0.5, not (1 − v)·127, whose half-row gap
+//!   at the ends the zoom would show ([`Frame::frac_y`]). Zoomed in, the `Rows`
+//!   value snap moves by whole rows on screen (1/zoom of a value row each), so a drag sets the value as finely as the
+//!   zoom shows it.
 //! - Created and pasted points pop in; every point of a drag (or scale) grows while it lasts and wobbles at its
 //!   release; animations are keyed by the point's tick and value.
 //! - The `Paste` menu hides at any other press; it pastes at its snapped beat.
@@ -81,7 +96,7 @@ use crate::ui::clips::{
     self, FloatingRow, GridView, HandlePress, Marquee, Part, Selection, TimeAxis, hold_square,
     paint_marquee,
 };
-use crate::ui::drum_grid::edit::{MARK_GAP, marks};
+use crate::ui::drum_grid::edit::{MARK_GAP, grid_lines};
 use crate::ui::edit_keys::{self, EditKey};
 use crate::ui::insert;
 use crate::ui::piano_roll::Snap;
@@ -89,7 +104,7 @@ use crate::ui::piano_roll::notes::{auto_grid, box_end, snap_round};
 use crate::ui::popup;
 use crate::ui::preview::ClipKey;
 use crate::ui::region::{self, RegionOp, TimeRange};
-use crate::ui::scroller::{self, Axis, Scroller, X};
+use crate::ui::scroller::{self, Scroller, X, Y, Zones};
 use crate::ui::step_seq::pop_in;
 use crate::ui::timeline::{self, KnobGesture, PlayheadKnob, RangeRuler, RangeSelect, vline_px};
 use crate::ui::widgets::{self, SnapTouch};
@@ -110,7 +125,8 @@ const PAST_END: u8 = 38;
 const ANIM_RATE: f32 = 0.6;
 const DRAG_FLOOR: f32 = 0.01;
 /// The floating buttons over a selection.
-const OPS: [&str; 4] = ["Copy", "Delete", "Edit\nvalue", "Set shape"];
+/// Copy and Delete first, Duplicate last (as the other editors' rows, before their `More...`).
+const OPS: [&str; 5] = ["Copy", "Delete", "Edit\nvalue", "Set shape", "Duplicate"];
 /// The value grid's lines: at least this many U apart, `text` at this alpha.
 pub(crate) const GRID_GAP: f32 = 0.25;
 pub(crate) const GRID_ALPHA: f32 = 0.15;
@@ -385,13 +401,14 @@ impl AutomationEditor {
         // The view: the clip's saved one, the wheel and zoom, continuous scrolling. Views of gone clips go.
         (self.views)
             .retain(|&(channel, lane, id), _| ClipKey { channel, lane, id }.clip(song).is_some());
-        let f = Frame::new(rect, m);
+        let mut f = Frame::new(rect, m);
         let vkey = (key.channel, key.lane, key.id);
         let mut view = (self.views.get(&vkey).copied())
             .unwrap_or_else(|| View::initial(pts.first().map(|p| p.tick), u));
-        // The scroller (no y): one finger scrolls the time on the ruler band only, two zoom it there; the wheel zooms
-        // it over the ruler and the grid, where a trackpad pinch zooms it too. Continuous scrolling keeps the playhead
-        // a quarter in, one finger scrolling no time.
+        // The scroller: one finger scrolls the time on the ruler band and on empty grid, two zoom it there; the wheel
+        // zooms it over the ruler and the grid, where a trackpad pinch zooms it too. The values (#60) scroll and zoom
+        // on the grid and zoom by the wheel over the value column. Continuous scrolling keeps the playhead a quarter
+        // in, one finger scrolling no time.
         let playhead = geom::playhead(
             opts.playhead as f64 - origin as f64,
             loop_beats * f64::from(PPQ),
@@ -400,19 +417,30 @@ impl AutomationEditor {
             (opts.playhead + opts.lead) as f64 - origin as f64,
             loop_beats * f64::from(PPQ),
         );
-        let mut axes = [geom::axis(view, u, sig, loop_beats, f.grid), Axis::OFF];
-        let was = axes[X];
+        let mut axes = [
+            geom::axis(view, u, sig, loop_beats, f.grid),
+            geom::value_axis(view, f.value),
+        ];
+        let was = axes;
         let follow = opts.continuous && opts.playing && loop_beats > axes[X].span();
         let options = scroller::Options {
             covered: opts.covered,
             follow,
         };
-        let zones = geom::zones(&f);
+        // The values too (#60): touches on the grid, the wheel over the value column.
+        let x = geom::zones(&f);
+        let zones = Zones {
+            touch: [x.touch[X], f.grid],
+            wheel_zoom: [x.wheel_zoom[X], f.column],
+            ..x
+        };
         let report = (self.scroller).update(ui, id().with("scroll"), u, &zones, &mut axes, options);
         if follow {
             scroller::follow(&mut axes[X], drawn / f64::from(PPQ));
         }
-        view = geom::take(view, was, axes[X]);
+        view = geom::take(view, was[X], axes[X]);
+        view = geom::take_rows(view, was[Y], axes[Y]);
+        f.rows = view.rows;
         let ax = view.axis(f.grid.left());
         let snap = self.snap.active(auto_grid(ax.beat_w, u, sig), sig);
 
@@ -470,7 +498,12 @@ impl AutomationEditor {
             Some(shaping) => shaping.on(&shown_pts, &shown_sel),
             None => shown_pts,
         };
-        let init = (opts.init).or_else(|| (ch.lanes[key.lane].target).and_then(|t| ch.param(t)));
+        // The master's tempo is no channel param: its init value is the song's tempo.
+        let own = |t| match song.is_tempo(key.channel, t) {
+            true => Some(crate::song::tempo_value(song.tempo_bpm)),
+            false => ch.param(t),
+        };
+        let init = (opts.init).or_else(|| (ch.lanes[key.lane].target).and_then(own));
         self.paint(
             ui,
             cx,
@@ -541,23 +574,29 @@ impl AutomationEditor {
         });
         let grid_view = GridView {
             grid: f.grid,
-            map: [ax.origin, f.value.top(), ax.beat_w, f.value.height()],
+            map: [ax.origin, f.row_y(0.0), ax.beat_w, f.row_y(geom::ROWS)],
         };
         self.row.covered = opts.covered;
         if let Some((i, _)) = self
             .row
             .show(ui, "automation_button", selection, grid_view, &OPS, cx)
         {
-            match i {
-                0 => set_clipboard(ui.ctx(), points::copy(&pts, &self.sel, max)),
-                1 => {
+            match OPS[i] {
+                // Copy only fills the clipboard.
+                "Copy" => set_clipboard(ui.ctx(), points::copy(&pts, &self.sel, max)),
+                "Delete" => {
                     let keep = (pts.iter().zip(&self.sel)).filter(|(_, s)| !**s);
                     let keep: Vec<Point> = keep.map(|(p, _)| *p).collect();
                     let n = keep.len();
                     edit = Some((keep, vec![false; n]));
                 }
-                2 => self.open_value(&target, &pts),
-                3 => self.shaping = Some(shape::Shaping::default()),
+                "Edit\nvalue" => self.open_value(&target, &pts),
+                "Set shape" => self.shaping = Some(shape::Shaping::default()),
+                // A copy right after the selection, by the snap grid (Auto's while Snap is off), as the piano roll's.
+                "Duplicate" => {
+                    let grid = self.snap.grid(auto_grid(ax.beat_w, u, sig), sig);
+                    edit = points::duplicate_selected(&pts, &self.sel, grid).or(edit);
+                }
                 _ => {}
             }
             ui.ctx().request_repaint();
@@ -612,6 +651,9 @@ impl AutomationEditor {
             song.play_loop = range.and_then(|r| r.song_loop(origin));
         }
         if let Some(tick) = picked.playhead.or(tap) {
+            // A ruler tap deselects, as the audio editor's: the floating row goes and the play box shows.
+            self.sel.fill(false);
+            self.paste = None;
             out.seek = Some(region::seek_tick(clip_of(song, key), tick));
         }
         if let Some((op, range)) = picked.pick {
@@ -794,6 +836,10 @@ impl AutomationEditor {
                     since: now,
                 },
             };
+            // Empty grid is the scroller's until a long press makes it a marquee.
+            if matches!(self.gesture, Gesture::Press { .. }) {
+                self.scroller.claim();
+            }
         }
 
         let mut edit = None;
@@ -803,6 +849,7 @@ impl AutomationEditor {
                 self.gesture = if held && down {
                     // The marquee, following the finger from now on: what it touches is the selection (under the
                     // finger: nothing on empty grid).
+                    self.scroller.yield_touch();
                     let mut marquee = Marquee::at(origin, false);
                     marquee.follow(pos, u);
                     (self.sel, self.quiet) = (marquee_sel(marquee, f, ax, pts), false);
@@ -811,7 +858,7 @@ impl AutomationEditor {
                     }
                     Gesture::Box(marquee)
                 } else if moved(origin) {
-                    // A drag: no tap and no marquee, and nothing scrolls here (the touch x zone is the ruler band).
+                    // A drag: no tap and no marquee; the scroller scrolls it.
                     Gesture::Pan
                 } else if !down {
                     if held {
@@ -846,6 +893,9 @@ impl AutomationEditor {
                 }
                 if down {
                     self.gesture = Gesture::Box(marquee);
+                } else if let Some(p) = pos.filter(|_| self.sel.contains(&true)) {
+                    // Its release shows the floating row over what it caught, whatever showed before.
+                    self.row.boxed(p);
                 }
             }
             Gesture::Drag(mut d) => {
@@ -931,9 +981,15 @@ impl AutomationEditor {
             // No grab offset: the box's end goes to the finger's tick.
             points::scaled_to(&d.orig, &d.sel, |left| box_end(ax.tick(p.x), left, snap))
         } else {
-            let (dr, max) = (f.row_at(p.y) - f.row_at(d.origin.y), KEY.max());
-            if self.land.on && self.land.step.is_none() {
+            let (mut dr, max) = (f.row_at(p.y) - f.row_at(d.origin.y), KEY.max());
+            // The rows' law moves by whole rows on screen: zoomed in (#60), 1/zoom of a value row each, by the
+            // continuous law below.
+            let rows = self.land.on && self.land.step.is_none();
+            let fine = f.rows[1] / geom::ROWS;
+            if rows && fine >= 1.0 {
                 return points::moved(&d.orig, &d.sel, dt, dr, snap, max);
+            } else if rows {
+                dr = (dr / fine).round() * fine;
             }
             // Snap off or a grid: the time moves as with rows, the values continuously or onto the grid.
             let (mut pts, sel) = points::moved(&d.orig, &d.sel, dt, 0.0, snap, max)
@@ -1022,7 +1078,7 @@ impl AutomationEditor {
         }
         // 4.
         let (t0, t1) = (ax.tick(grid.left()), ax.tick(grid.right()));
-        for (tick, w) in marks(t0, t1, ax.beat_w, m.u(1.0), sig, MARK_GAP) {
+        for (tick, w) in grid_lines(t0, t1, ax.beat_w, m.u(1.0), sig, MARK_GAP, self.snap.size) {
             vline(ax.x(tick), w, bg);
         }
         // 5.
@@ -1033,7 +1089,7 @@ impl AutomationEditor {
         }
         // 6.
         if let Some(v) = init {
-            let y = value.top() + value.height() * (1.0 - v) - 0.5 * px;
+            let y = f.frac_y(v) - 0.5 * px;
             hline(&gp, grid.x_range(), y, 1.0, c.menu_fill.to_color32(), m);
         }
         // The selection guides: left and top, right and bottom too once the box is wider or taller than 1 px.
@@ -1105,17 +1161,18 @@ impl AutomationEditor {
         painter.rect_filled(f.axis, 0.0, bg);
         // In the target's units ([`Target::axis_text`]): the value at each tick's fraction of the range, fitted from
         // FontSize 1 down to 6 pt, then truncated keeping 5 tail characters. A discrete target with no more steps than
-        // ticks has a tick at each step instead; no label repeats one above it.
+        // ticks has a tick at each step instead (zoomed, those in view); no label repeats one above it.
         let ticks = f.axis_ticks(m);
         let fracs: Vec<f32> = match target.steps() {
             Some(n) if n <= ticks.len() => (0..n).rev().map(|k| menu_value(k, n)).collect(),
-            _ => (0..ticks.len())
-                .map(|i| 1.0 - i as f32 / (ticks.len() - 1) as f32)
-                .collect(),
+            _ => ticks.iter().map(|t| t.frac).collect(),
         };
         let mut shown: Vec<String> = Vec::new();
         for v in fracs {
             let t = f.axis_tick(v, target.axis_text(v), m);
+            if !f.axis.y_range().expand(px).contains(t.y) {
+                continue;
+            }
             hline(&painter, t.line, t.y, 2.0, color, m);
             if !shown.contains(&t.label) {
                 widgets::shrink(
@@ -1237,7 +1294,8 @@ impl AutomationEditor {
                 let mut response = ui.put(field, edit);
                 crate::android_text::edit(&mut response, &mut text, usize::MAX);
                 ok = response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                if !response.has_focus() && !response.lost_focus() {
+                let unfocused = !response.has_focus() && !response.lost_focus();
+                if crate::android_text::REFOCUS && unfocused {
                     response.request_focus();
                     let mut state = TextEditState::load(ui.ctx(), field_id).unwrap_or_default();
                     let all =
@@ -1286,8 +1344,9 @@ impl AutomationEditor {
     }
 
     /// The snap menu while open: the time modes under `Time`, the current one highlighted, a pick sets it and turns
-    /// snap on; beside them (a Honeydew addition) the value snap under `Value`: `Off`, then the grid sizes (`Steps` only
-    /// on a discrete target), the current one highlighted, a pick sets it and turns value snap on.
+    /// snap on; the grid sizes under `Grid` (#53, [`value::time_items`]), a pick sets the grid; beside them (a Honeydew
+    /// addition) the value snap under `Value`: `Off`, then the value grid sizes (`Steps` only on a discrete target), the
+    /// current one highlighted, a pick sets it and turns value snap on.
     fn snap_menu(&mut self, ui: &Ui, cell: Rect, cx: &UiCtx, discrete: bool) {
         if !self.snap_menu {
             return;
@@ -1295,7 +1354,7 @@ impl AutomationEditor {
         let ctx = ui.ctx();
         let grids = (ValueGrid::ALL.into_iter()).filter(|&g| discrete || g != ValueGrid::Steps);
         let grids = grids.map(|g| (g, g.label()));
-        let items = value::snap_items(self.snap.mode, (self.value_snap, "Value"), grids);
+        let items = value::snap_items(self.snap, (self.value_snap, "Value"), grids);
         let result = popup::show(
             ctx,
             id().with("snap menu"),
@@ -1305,8 +1364,8 @@ impl AutomationEditor {
             cx,
         );
         match result.selected {
-            Some(Pick::Time(mode)) => self.snap = Snap { on: true, mode },
             Some(Pick::Value(grid)) => self.value_snap = self.value_snap.picked(grid),
+            Some(pick) => self.snap = pick.snap(self.snap),
             None => {}
         }
         if result.close {

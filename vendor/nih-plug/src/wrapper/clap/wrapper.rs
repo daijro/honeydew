@@ -2788,7 +2788,9 @@ impl<P: ClapPlugin> Wrapper<P> {
                 } else if api == CLAP_WINDOW_API_COCOA {
                     ParentWindowHandle::AppKitNsView(window.specific.cocoa)
                 } else if api == CLAP_WINDOW_API_WIN32 {
-                    ParentWindowHandle::Win32Hwnd(window.specific.win32)
+                    // Honeydew (vendored change): Honeydew embeds every editor built on this copy (Lemon Studio's,
+                    // `os_plugkit::embed`), whose window is an id: on Windows too it comes as an X11 window id.
+                    ParentWindowHandle::X11Window(window.specific.win32 as usize as u32)
                 } else {
                     nih_debug_assert_failure!("Host passed an invalid API");
                     return false;

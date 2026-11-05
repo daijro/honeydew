@@ -211,6 +211,11 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onTextResult(
 #[cfg(not(target_os = "android"))]
 pub fn edit(_: &mut eframe::egui::Response, _: &mut String, _: usize) {}
 
+/// Whether a dialog's text field takes the focus back whenever nothing has it, so that typing goes there: on the
+/// desktop. On a phone a tap elsewhere drops the field and its keyboard (Android's text editor) until the field is
+/// tapped again, and the dialog stays: focus put back would bring the keyboard straight back.
+pub const REFOCUS: bool = cfg!(not(mobile));
+
 #[cfg(test)]
 mod tests {
     use super::*;

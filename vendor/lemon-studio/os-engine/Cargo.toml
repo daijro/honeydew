@@ -6,6 +6,9 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 publish = false
 
+[lib]
+doctest = false
+
 [features]
 # What Lemon Studio's own plugins use from the engine (`vendor/lemon-studio/README.md`).
 plugins = ["dep:os-model", "dep:thiserror", "dep:symphonia", "dep:symphonia-codec-wavpack"]
@@ -16,7 +19,7 @@ os-model = { path = "../os-model", optional = true }
 os-dsp = { path = "../os-dsp" }
 miniz_oxide = "0.8"
 thiserror = { version = "2", optional = true }
-symphonia = { version = "0.6", default-features = false, features = ["wav", "pcm", "flac", "ogg", "vorbis", "mp3", "aiff", "id3v1", "id3v2"], optional = true }
+symphonia = { version = "0.6", default-features = false, features = ["wav", "pcm", "flac", "ogg", "vorbis", "mp3", "aiff", "isomp4", "aac", "alac", "id3v1", "id3v2"], optional = true }
 symphonia-codec-wavpack = { version = "0.1", optional = true }
 
 # What only upstream's engine, which is not carried, reads.

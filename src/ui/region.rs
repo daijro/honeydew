@@ -66,7 +66,7 @@ pub fn clip_origin(clip: Option<&Clip>) -> i64 {
     .unwrap_or(0)
 }
 
-/// The content tick a clip editor shows the transport's song tick `tick` at, if the clip plays then
+/// The content tick a clip editor shows the transport's song tick `tick` at, folded into the clip's loop
 /// ([`content_tick`]). Preview plays the clip as the song does (issue #46, [`crate::ui::preview::span`]), so
 /// this holds while it is on too.
 pub fn playhead_tick(clip: Option<&Clip>, tick: u64) -> Option<f64> {
@@ -74,9 +74,9 @@ pub fn playhead_tick(clip: Option<&Clip>, tick: u64) -> Option<f64> {
 }
 
 /// The song tick a tap on a clip editor's ruler at content tick `tick` seeks to, so that [`playhead_tick`] reads back
-/// there: where the clip first plays that content ([`Clip::song_tick`]), and outside the clip's window its
-/// [`clip_origin`] plus `tick`, never before 0 (while Preview is on, outside its loop: the engine wraps a playhead past
-/// its end, and the app moves one before its start there).
+/// there (within the loop): where the clip first plays that content ([`Clip::song_tick`]), and outside the clip's
+/// window its [`clip_origin`] plus `tick`, never before 0 (while Preview is on, outside its loop: the engine wraps a
+/// playhead past its end, and the app moves one before its start there).
 pub fn seek_tick(clip: Option<&Clip>, tick: u32) -> u64 {
     (clip.and_then(|c| c.song_tick(tick)))
         .unwrap_or((clip_origin(clip) + i64::from(tick)).max(0) as u64)
@@ -540,18 +540,19 @@ mod tests {
     }
 
     #[test]
-    fn the_playhead_reads_where_the_clip_plays_previewed_or_not() {
+    fn the_playhead_reads_where_the_clip_plays_and_folds_into_its_loop_elsewhere() {
         let mut lane = Lane::new(LaneKind::Notes);
         let clip = lane.add_clip(512, 4.0);
         clip.offset_beats = 2.0;
-        // The clip plays content 256.. from 512, wrapping to content 0 at 768, previewed or not (issue #46).
-        assert_eq!(playhead_tick(Some(clip), 300), None);
+        // The clip plays content 256.. from 512, wrapping to content 0 at 768, previewed or not (issue #46);
+        // before it, the loop folds on back from there.
+        assert_eq!(playhead_tick(Some(clip), 300), Some(44.0));
         assert_eq!(playhead_tick(Some(clip), 600), Some(344.0));
         assert_eq!(playhead_tick(Some(clip), 768), Some(0.0));
-        // Shown a beat long: 512..640 only.
+        // Shown a beat long, it plays 512..640 only; past that the loop still folds on.
         clip.visible_len_beats = 1.0;
         assert_eq!(playhead_tick(Some(clip), 600), Some(344.0));
-        assert_eq!(playhead_tick(Some(clip), 700), None);
+        assert_eq!(playhead_tick(Some(clip), 700), Some(444.0));
         assert_eq!(playhead_tick(None, 700), None);
     }
 

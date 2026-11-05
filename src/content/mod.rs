@@ -25,7 +25,7 @@ use crate::ui::main_menu::{SongEntry, SongLibrary};
 pub mod bundle;
 mod chord_sets;
 mod demo;
-#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+#[cfg(not(target_arch = "wasm32"))]
 pub mod install;
 pub mod kits;
 mod presets;

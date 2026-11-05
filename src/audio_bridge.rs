@@ -153,7 +153,7 @@ impl SongAudioBridge {
                     let lookback = (clip.loop_len_beats * f64::from(PPQ)).ceil() as u64;
                     let lookback = lookback.saturating_add(1);
                     let from = song_tick.saturating_sub(lookback).max(clip_start);
-                    let playback = playback_clip(clip)?;
+                    let playback = playback_clip(clip, fine(lane))?;
                     for (tick, event) in playback.events_in_song_range(from, end_tick) {
                         if let Event::Automation { value, .. } = event {
                             valid_value(*value)?;
@@ -221,7 +221,7 @@ impl SongAudioBridge {
                 };
                 for clip in playing_clips(lane) {
                     validate_clip(clip)?;
-                    let playback = playback_clip(clip)?;
+                    let playback = playback_clip(clip, fine(lane))?;
                     for (tick, event) in playback.events_in_song_range(start_tick, end_tick as u64)
                     {
                         if let Event::Automation { value, .. } = event {
@@ -387,7 +387,13 @@ fn valid_value(value: f32) -> Result<(), SongAudioError> {
     }
 }
 
-fn playback_clip(clip: &Clip) -> Result<Clip, SongAudioError> {
+/// Whether `lane` plays its curves finely ([`AutomationClip::fine`]): a channel's Pitch Bend.
+pub(crate) fn fine(lane: &Lane) -> bool {
+    lane.target == Some(SongTarget::PITCH_BEND)
+}
+
+/// `clip`'s playback events: its points and the steps between them, [`fine`] ones if so.
+fn playback_clip(clip: &Clip, fine: bool) -> Result<Clip, SongAudioError> {
     validate_clip(clip)?;
     let mut points = Vec::new();
     for event in &clip.events {
@@ -408,8 +414,11 @@ fn playback_clip(clip: &Clip) -> Result<Clip, SongAudioError> {
     if points.is_empty() {
         return Ok(clip.clone());
     }
-    let generated =
+    let mut generated =
         AutomationClip::new(0, 1, 1, 0, 1, points).map_err(|_| SongAudioError::InvalidValue)?;
+    if fine {
+        generated = generated.fine();
+    }
     let mut playback = clip.clone();
     playback.events = generated
         .events()

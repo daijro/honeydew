@@ -363,7 +363,11 @@ impl ProjectFiles {
                 }
             }
             FileEvent::Failed(_, detail) => self.fail(failure(export.format), detail),
-            FileEvent::Opened(..) | FileEvent::Located(_) => {}
+            FileEvent::Opened(..)
+            | FileEvent::Located(_)
+            | FileEvent::Folder(_)
+            | FileEvent::Copied(_)
+            | FileEvent::SaveCancelled(_) => {}
         }
     }
 

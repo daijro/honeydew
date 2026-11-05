@@ -9,7 +9,8 @@ use crate::prelude::{
 };
 
 pub mod clap;
-#[cfg(feature = "vst3")]
+// Honeydew (vendored change): the VST3 metadata trait without the VST3 wrapper, so that a plugin's `impl Vst3Plugin`
+// builds here too.
 pub mod vst3;
 
 /// A function that can execute a plugin's [`BackgroundTask`][Plugin::BackgroundTask]s. A plugin can

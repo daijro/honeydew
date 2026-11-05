@@ -6,10 +6,11 @@
 //! confirms them ([`live`]), menu definitions shown with the app's own popup look ([`MenuDef`], `os_ui::kit::menu`),
 //! and the native parts every editor needs: popups, type-in boxes, painting a canvas into a window ([`win`] on Windows,
 //! `x11` on Linux, `mac` on macOS). Linux and macOS share one API and input type ([`gui`]), so a plugin's editor loop
-//! is the same on both.
+//! is the same on both. A Lemon instrument takes the channel's volume and pan as [`levels::Levels`].
 //!
 // spec: plugins/lemon-sampler.md §4 (edits apply at once, menus), plugins/lemon-parametric-eq-2.md, plugins/plugin-formats.md
 
+pub mod levels;
 pub mod linked;
 pub mod live;
 pub mod vals;
@@ -39,6 +40,53 @@ pub use embed as gui;
 pub use std::time;
 #[cfg(target_arch = "wasm32")]
 pub use web_time as time;
+
+/// Honeydew (vendored addition): writes a file an editor saves. Where the host keeps the user's files (Android and the
+/// browser, which have no save dialog: `embed::host_files`), the host takes it into its own folder under its file name
+/// (`embed::take_saved`); elsewhere it goes to `path`.
+pub fn save_file(path: &std::path::Path, bytes: Vec<u8>) -> std::io::Result<()> {
+    #[cfg(feature = "embed")]
+    if embed::host_files() {
+        embed::keep_saved(path, bytes);
+        return Ok(());
+    }
+    std::fs::write(path, bytes)
+}
+
+/// Honeydew (vendored addition): `std::env::temp_dir`, which panics in a browser build (no file system): there an
+/// empty path, where nothing writes.
+pub fn temp_dir() -> std::path::PathBuf {
+    #[cfg(target_arch = "wasm32")]
+    return std::path::PathBuf::new();
+    #[cfg(not(target_arch = "wasm32"))]
+    std::env::temp_dir()
+}
+
+/// Honeydew (vendored addition): `std::thread::spawn`, the work done at once in a browser build (it has no threads).
+pub fn spawn(f: impl FnOnce() + Send + 'static) {
+    #[cfg(target_arch = "wasm32")]
+    f();
+    #[cfg(not(target_arch = "wasm32"))]
+    std::thread::spawn(f);
+}
+
+/// Honeydew (vendored addition): ends an editor's input loop, `park!(self)` after `while let Some(input) =
+/// self.win.next() { … }` in `fn run(mut self)`. Embedded, the editor has no thread of its own: with no input waiting
+/// it parks, and runs on when Honeydew brings more (`embed`). Elsewhere the window closed: nothing to do.
+#[cfg(feature = "embed")]
+#[macro_export]
+macro_rules! park {
+    ($ed:ident) => {
+        if let Some(park) = $ed.win.parking() {
+            park.park(move || $ed.run());
+        }
+    };
+}
+#[cfg(not(feature = "embed"))]
+#[macro_export]
+macro_rules! park {
+    ($ed:ident) => {};
+}
 
 use os_theme::design::Design;
 use os_theme::Palette;

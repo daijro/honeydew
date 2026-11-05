@@ -58,8 +58,11 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     let rect = app.regions.editor;
     // The value snap is an app setting: the snap menu's pick is saved with the settings.
     state.editor.value_snap = app.settings.automation_value_snap;
+    // So is the grid size (#53).
+    state.editor.snap.size = app.settings.grid_size;
     let out = (state.editor).show(ui, &app.cx, rect, app.song, key, &opts);
     app.settings.automation_value_snap = state.editor.value_snap;
+    app.settings.grid_size = state.editor.snap.size;
     if out.edited {
         app.song_edited(true);
     }

@@ -713,7 +713,7 @@ fn the_rack_menu_enables_load_drumset_load_and_save_rack_preset_clear_rack_and_t
 #[test]
 fn the_card_menu_has_two_columns_with_every_item_enabled() {
     let cells = |minimized| -> Vec<(usize, usize, String, bool)> {
-        card_menu(minimized, 6, true)
+        card_menu(minimized, 6, true, false)
             .into_iter()
             .map(|i| (i.col, i.row, i.label.into_owned(), i.disabled))
             .collect()
@@ -1441,7 +1441,7 @@ fn the_level_popup_hangs_from_the_icon_centre_and_moves_up_to_stay_on_screen() {
 #[test]
 fn instrument_card_menus_add_set_range_or_set_first_note() {
     let row = |type_id, full, row| {
-        card_menu(false, type_id, full)
+        card_menu(false, type_id, full, false)
             .into_iter()
             .find(|i| (i.col, i.row) == (0, row))
             .map(|i| (i.id, i.label.into_owned(), i.disabled))
@@ -1468,9 +1468,9 @@ fn instrument_card_menus_add_set_range_or_set_first_note() {
     assert_eq!(row(33, false, 5), None, "never on a Slicer");
     // Effects keep the nine items.
     assert_eq!(row(6, true, 4), None);
-    assert_eq!(card_menu(false, 6, false).len(), 9);
-    assert_eq!(card_menu(false, 0, true).len(), 10);
-    assert_eq!(card_menu(false, 0, false).len(), 11);
+    assert_eq!(card_menu(false, 6, false, false).len(), 9);
+    assert_eq!(card_menu(false, 0, true, false).len(), 10);
+    assert_eq!(card_menu(false, 0, false, false).len(), 11);
     // `Set Range` starts a key-learn, panel state: the rack is unchanged. `Set Full Range` resets the range.
     let mut r = rack();
     assert_eq!(apply(&mut r, 2, CardAction::SetRange), Outcome::Nothing);
@@ -1484,7 +1484,7 @@ fn instrument_card_menus_add_set_range_or_set_first_note() {
     assert_eq!(r, rack());
     // All items are always enabled.
     let disabled = |type_id, action| {
-        let items = card_menu(false, type_id, true);
+        let items = card_menu(false, type_id, true, false);
         items
             .into_iter()
             .find(|i| i.id == Some(action))
@@ -1673,15 +1673,11 @@ impl Rig {
 // ---- edge cases ----
 
 #[test]
-fn a_click_opens_an_effect_dialog_but_an_instrument_needs_a_long_press() {
-    // An effect: a plain click (the common-dialog test above). An instrument: a click does nothing ...
+fn a_click_opens_an_instruments_level_popup_as_an_effects_dialog() {
+    // Issue #68: an effect's dialog opens on a plain click (the common-dialog test above), and so does an instrument's.
     let mut rig = Rig::synth(SynthKind::MiniSynth);
     let icon = rig.header(0, 2.25);
     rig.open(icon);
-    assert!(!rig.drawn("Wet Pan"));
-    // ... a secondary click (the long press of a mouse) opens it.
-    rig.secondary_click(icon);
-    rig.frame(vec![]);
     assert!(rig.drawn("Wet Pan"));
 }
 
@@ -3266,7 +3262,7 @@ fn soundfont_rig(patch: i32, count: Option<usize>) -> Rig {
         let voice = |i| crate::sf2::Preset {
             name: format!("Voice {i:02}"),
             preset: i as u16,
-            bank: 0,
+            ..Default::default()
         };
         let patches = (0..count).map(voice).collect();
         rig.rack.soundfonts.insert(path, Ok(patches));
@@ -3726,13 +3722,16 @@ impl Rig {
 
 #[test]
 fn a_mouse_held_still_300_ms_on_the_instrument_icon_opens_the_level_popup_but_250_ms_does_not() {
+    // Held: at 300 ms, before the release (a click opens it too, issue #68).
     let mut rig = Rig::synth(SynthKind::MiniSynth);
     let icon = rig.header(0, 2.25);
-    rig.hold(icon, 0.25, true);
+    rig.hold(icon, 0.25, false);
     rig.frame(vec![]);
     assert!(!rig.drawn("Wet Pan"));
-    rig.hold(icon, 0.3, false);
-    rig.frame(vec![]);
+    // On to 0.3 s and one frame more.
+    for _ in 0..4 {
+        rig.frame(vec![]);
+    }
     assert!(rig.drawn("Wet Pan"));
     rig.button(icon, false);
     rig.frame(vec![]);
@@ -4687,4 +4686,30 @@ fn add_midi_send_offers_the_note_channels_no_midi_send_leads_back_from() {
     assert_eq!(offered(2), [0; 0]);
     assert_eq!(offered(3), [2]);
     assert_eq!(offered(4), [2, 3]);
+}
+
+/// GitHub #57: the rack tab rides above the keyboard panel. Centred on a tall area; on a short one it moves up to stay
+/// 0.25 U above the area's bottom (it never lies on the transport bar); with no room its top passes 2.75 U and it
+/// slides right by the difference, a sliver left at the screen's edge.
+#[test]
+fn the_rack_tab_moves_up_with_the_keyboard_panel_and_slides_off_the_right_edge() {
+    let u = 32.0;
+    let screen = Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 900.0));
+    let tab = |bottom: f32| rack_tab(screen, screen.with_max_y(bottom), u);
+    let near = |a: f32, b: f32| (a - b).abs() < 1e-3;
+    let x = 1170.0 - 2.1 * u;
+    // Tall: centred on 0 … 600 + 2 U.
+    let tall = tab(600.0);
+    assert!(near(tall.center().y, (600.0 + 2.0 * u) / 2.0) && near(tall.left(), x));
+    assert!(near(tall.width(), 1.5 * u) && near(tall.height(), 2.43 * u));
+    // Short: up off the 5 U floor, 0.25 U above the bottom; still 2.75 U clear of the top, so in place.
+    let short = tab(200.0);
+    assert!(
+        near(short.bottom(), 200.0 - 0.25 * u) && near(short.left(), x),
+        "{short:?}"
+    );
+    // No room (ruler + one row, the panel at its cap): right by 2.75 U − top, a sliver still on screen.
+    let full = tab((1.65 + 2.0) * u);
+    assert!(near(full.bottom(), 3.4 * u), "{full:?}");
+    assert!(near(full.left(), x + 2.75 * u - full.top()) && full.left() < 1170.0);
 }

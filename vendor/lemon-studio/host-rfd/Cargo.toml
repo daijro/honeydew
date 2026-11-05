@@ -1,0 +1,19 @@
+# Honeydew's own (vendor/lemon-studio/README.md): rfd's file dialog for Lemon Studio's plugin editors, whose manifests
+# name it `rfd`. Where Honeydew answers (Android, iOS, the browser), its own picker opens the file.
+[package]
+name = "host-rfd"
+description = "rfd's FileDialog for Lemon Studio's plugin editors built into Honeydew: the host's own picker where it answers"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+os-plugkit = { path = "../os-plugkit", features = ["embed"] }
+
+# The desktop's file dialog (the browser, Android and iOS have none).
+[target.'cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))'.dependencies]
+rfd = "0.17"

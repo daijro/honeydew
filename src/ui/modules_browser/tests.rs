@@ -2,7 +2,9 @@ use super::*;
 
 /// The Modules browser's list: `Paste`, `Rack Preset`, `Instrument`, then the sections. The NOTE EFFECT section's five entries are
 /// all the note effects of the registry. Lemon Reverb and Lemon Limiter are Honeydew's own (`honeydew_audio::lemon`), as is
-/// the Dynamic EQ, and Lemon Trio, Lemon Sampler and Lemon Parametric EQ its built-in plugins (`crate::plugins::builtin`).
+/// the Dynamic EQ, the De-esser and Denoise, and Lemon Trio, Lemon Sampler, Lemon Parametric EQ, Tesla, the controllers,
+/// 0.4.9's effects and Citrus, Lemon Drum Sampler and Lemon Slicer its built-in plugins (`crate::plugins::builtin`), a
+/// Lemon plugin after its counterpart, the others by name.
 const SPEC: &[(&str, &[&str])] = &[
     ("", &["Paste", "Rack Preset", "Instrument"]),
     (
@@ -10,11 +12,14 @@ const SPEC: &[(&str, &[&str])] = &[
         &[
             "3x Osc",
             "Lemon Trio",
+            "Citrus",
             "DW Sampler",
             "Lemon Sampler",
             "GMSynth",
+            "Lemon Drum Sampler",
             "MiniSynth",
             "Slicer",
+            "Lemon Slicer",
             "SoundFont Player",
             "SuperSaw",
             "Transistor Bass",
@@ -23,6 +28,7 @@ const SPEC: &[(&str, &[&str])] = &[
     (
         "ECHO",
         &[
+            "Lemon Delay",
             "Reverb",
             "Reverb 2",
             "Lemon Reverb",
@@ -35,12 +41,18 @@ const SPEC: &[(&str, &[&str])] = &[
         &[
             "Autoduck",
             "Compressor",
+            "De-esser",
+            "Denoise",
             "Distortion",
             "Gate",
+            "Lemon Fast Distortion",
+            "Lemon Soft Clipper",
+            "Lemon Transient Processor",
             "Leveller",
             "Limiter",
             "Lemon Limiter",
             "Multiband Compressor",
+            "Press",
             "Waveshaper",
         ],
     ),
@@ -52,7 +64,9 @@ const SPEC: &[(&str, &[&str])] = &[
             "Equalizer",
             "Lemon Parametric EQ",
             "Filter",
+            "Lemon Filter",
             "Graphic EQ",
+            "Pulp Filter",
             "Spacer",
             "Spreader",
             "Stereoizer",
@@ -64,13 +78,23 @@ const SPEC: &[(&str, &[&str])] = &[
         &[
             "Analyzer",
             "Chorus",
+            "Lemon Chorus",
             "Flanger",
+            "Lemon Flanger",
+            "Lemon Balance",
+            "Lemon Formula Controller",
+            "Lemon Peak Controller",
+            "Lemon Stereo Enhancer",
+            "Lemon Stereo Shaper",
+            "Lemon Vocoder",
             "Modulator",
             "MultiFX",
             "Phaser",
+            "Lemon Phaser",
             "Pitcher",
             "Pitcher 2",
             "Tape Stop",
+            "Tesla",
             "Tremolo",
             "Tuner",
             "Wow & Flutter",
@@ -140,6 +164,7 @@ fn every_current_effect_is_listed_once_and_legacy_ids_never() {
     listed_sorted.sort();
     let current: Vec<u16> = (params::modules().chain(&params::LEMON_MODULES))
         .chain([&params::DYNAMIC_EQ, &params::MODULATOR])
+        .chain([&params::DE_ESSER, &params::DENOISE])
         .filter(|m| !m.legacy)
         .map(|m| m.id)
         .collect();
@@ -191,7 +216,13 @@ fn where_no_instrument_goes_the_list_leaves_out_instrument_the_synths_and_the_no
         let all = names(&super::rows("", sort, Takes::Instruments));
         let some = names(&super::rows("", sort, Takes::Effects));
         let synths = SYNTH_IDS.map(|(name, _)| name);
-        let lemon = ["Lemon Trio", "Lemon Sampler"];
+        let lemon = [
+            "Lemon Trio",
+            "Lemon Sampler",
+            "Citrus",
+            "Lemon Drum Sampler",
+            "Lemon Slicer",
+        ];
         let notes = [
             "NOTE EFFECT",
             "Arpeggiator",
@@ -226,7 +257,7 @@ fn where_no_instrument_goes_the_list_leaves_out_instrument_the_synths_and_the_no
 fn search_keeps_matching_entries_and_hides_empty_sections() {
     assert_eq!(
         names(&rows("delay")),
-        ["ECHO", "Tape Delay", "Trance Delay"]
+        ["ECHO", "Lemon Delay", "Tape Delay", "Trance Delay"]
     );
     // Case is ignored, on both sides.
     assert_eq!(names(&rows("DeLaY")), names(&rows("delay")));
@@ -257,12 +288,17 @@ fn search_keeps_matching_entries_and_hides_empty_sections() {
             "Instrument",
             "SYNTH",
             "Lemon Trio",
+            "Citrus",
             "Transistor Bass",
             "ECHO",
             "Trance Delay",
+            "LEVEL",
+            "Lemon Transient Processor",
             "FILTER",
             "Lemon Parametric EQ",
             "MISC",
+            "Lemon Formula Controller",
+            "Lemon Peak Controller",
             "Tremolo",
             "NOTE EFFECT",
             "Transpose",
@@ -631,10 +667,17 @@ fn the_rows_are_drawn_in_order_down_the_list() {
     let rig = Rig::new();
     assert!(rig.shows("Modules") && rig.shows("Search") && rig.shows("Sort"));
     let list = rig.layout().list;
-    let ys: Vec<f32> = ["Paste", "Rack Preset", "SYNTH", "3x Osc", "ECHO", "Reverb"]
-        .iter()
-        .map(|t| rig.text_at(t).y)
-        .collect();
+    let ys: Vec<f32> = [
+        "Paste",
+        "Rack Preset",
+        "SYNTH",
+        "3x Osc",
+        "Lemon Trio",
+        "DW Sampler",
+    ]
+    .iter()
+    .map(|t| rig.text_at(t).y)
+    .collect();
     assert!(ys.windows(2).all(|w| w[1] > w[0]), "{ys:?}");
     // One row per 1.5 U, the first at the top of the list.
     assert_eq!(ys[0], list.top() + 24.0);
@@ -645,10 +688,10 @@ fn the_rows_are_drawn_in_order_down_the_list() {
 
 #[test]
 fn picking_an_effect_returns_its_id() {
-    // ECHO in view: the list scrolled 200 points.
+    // ECHO in view: the list scrolled 360 points.
     let scrolled = || {
         let mut rig = Rig::new();
-        rig.drag(pos2(200.0, 480.0), pos2(200.0, 280.0));
+        rig.drag(pos2(200.0, 480.0), pos2(200.0, 120.0));
         rig
     };
     let mut rig = scrolled();
@@ -662,10 +705,15 @@ fn picking_an_effect_returns_its_id() {
 #[test]
 fn section_headers_pick_nothing_and_an_instrument_row_picks_its_module_id() {
     let mut rig = Rig::new();
-    let at = rig.text_at("ECHO");
+    let at = rig.text_at("SYNTH");
     assert_eq!(rig.click(at), None);
     for (name, id) in SYNTH_IDS {
         let mut rig = Rig::new();
+        // The last rows scrolled into view.
+        let bottom = rig.layout().list.bottom() - 48.0;
+        if !rig.shows(name) || rig.text_at(name).y > bottom {
+            rig.drag(pos2(200.0, 480.0), pos2(200.0, 280.0));
+        }
         let at = rig.text_at(name);
         assert_eq!(rig.click(at), Some(BrowserAction::Pick(id)), "{name}");
     }
@@ -791,7 +839,7 @@ fn search_filters_as_you_type_and_hides_again_keeping_its_text() {
     assert!(!rig.shows("Paste"));
     rig.click(search);
     rig.frame(vec![]);
-    assert!(rig.shows("Paste") && rig.shows("Reverb") && !rig.shows("zzz"));
+    assert!(rig.shows("Paste") && rig.shows("3x Osc") && !rig.shows("zzz"));
     rig.click(search);
     rig.frame(vec![]);
     assert!(rig.shows("zzz") && !rig.shows("Paste"));
@@ -839,7 +887,10 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             "3x Osc",
             "SoundFont Player",
             // The built-in plugins, which have no type id of their own: by name.
+            "Citrus",
+            "Lemon Drum Sampler",
             "Lemon Sampler",
+            "Lemon Slicer",
             "Lemon Trio",
             // Effects: 3 … 46, then the note effects 47 … 51.
             "Equalizer",
@@ -878,12 +929,31 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             "Randomizer",
             "Scale",
             "Arpeggiator",
-            // Honeydew's own: 1002, 1003, 1004, 1005, then the built-in plugin.
+            // Honeydew's own: 1002 … 1007, then the built-in plugin.
             "Lemon Reverb",
             "Lemon Limiter",
             "Dynamic EQ",
             "Modulator",
+            "De-esser",
+            "Denoise",
+            "Lemon Balance",
+            "Lemon Chorus",
+            "Lemon Delay",
+            "Lemon Fast Distortion",
+            "Lemon Filter",
+            "Lemon Flanger",
+            "Lemon Formula Controller",
             "Lemon Parametric EQ",
+            "Lemon Peak Controller",
+            "Lemon Phaser",
+            "Lemon Soft Clipper",
+            "Lemon Stereo Enhancer",
+            "Lemon Stereo Shaper",
+            "Lemon Transient Processor",
+            "Lemon Vocoder",
+            "Press",
+            "Pulp Filter",
+            "Tesla",
         ]
     );
     // The search filters it, in the same order.
@@ -893,7 +963,7 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             ModuleOrdering::TopLevel,
             Takes::Instruments
         )),
-        ["Trance Delay", "Tape Delay"]
+        ["Trance Delay", "Tape Delay", "Lemon Delay"]
     );
 }
 
@@ -967,7 +1037,7 @@ fn sort_offers_a_z_and_category_whose_pick_reorders_the_list() {
 fn dragging_scrolls_to_the_end_of_the_list_and_no_further() {
     let mut rig = Rig::new();
     let list = rig.layout().list;
-    for _ in 0..6 {
+    for _ in 0..12 {
         rig.drag(pos2(200.0, 480.0), pos2(200.0, 80.0));
     }
     // The drags pick nothing, and the last row now sits at the bottom of the list.
@@ -1007,7 +1077,7 @@ fn a_narrower_query_clamps_the_scroll_to_the_shorter_list() {
         let mut rig = Rig::new();
         let search = rig.layout().button(0);
         rig.click(search);
-        for _ in 0..7 {
+        for _ in 0..12 {
             rig.drag(pos2(200.0, 480.0), pos2(200.0, 120.0));
         }
         assert!(rig.shows("Transpose"));
@@ -1094,9 +1164,9 @@ fn every_row_is_in_fontsize_4_and_the_button_labels_in_8_pt() {
     let rig = Rig::new();
     let m = metrics();
     let pt = |s: FontSize| m.font_id(s).size;
-    assert_eq!(rig.font_size("Reverb"), pt(FontSize::Pt18));
+    assert_eq!(rig.font_size("3x Osc"), pt(FontSize::Pt18));
     assert_eq!(rig.font_size("Paste"), pt(FontSize::Pt18));
-    assert_eq!(rig.font_size("ECHO"), pt(FontSize::Pt12));
+    assert_eq!(rig.font_size("SYNTH"), pt(FontSize::Pt12));
     let d = m.u(BUTTON_D);
     for label in ["Search", "Sort"] {
         let size = rig.font_size(label);

@@ -115,6 +115,7 @@ fn snap_on_uses_the_mode_or_auto_and_off_snaps_nothing() {
     let beat = Snap {
         on: true,
         mode: SnapMode::Beat,
+        ..Snap::default()
     };
     assert_eq!(beat.active(32.0, sig(4, 4)), Some(128.0));
     let off = Snap { on: false, ..beat };
@@ -494,11 +495,11 @@ fn without_a_clip_ghosts_come_from_the_first_bar() {
 fn the_playhead_maps_into_the_clip_content() {
     let song = ghost_song();
     let clip = &song.channels[1].lanes[0].clips[0];
-    assert_eq!(content_tick(Some(clip), 1000), None);
+    // Before the clip and past its visible length (one 4-beat loop), the loop folds on.
+    assert_eq!(content_tick(Some(clip), 1000), Some(488.0));
     assert_eq!(content_tick(Some(clip), 1024), Some(0.0));
     assert_eq!(content_tick(Some(clip), 1100), Some(76.0));
-    // Past the visible length (one 4-beat loop).
-    assert_eq!(content_tick(Some(clip), 1024 + 512), None);
+    assert_eq!(content_tick(Some(clip), 1024 + 512), Some(0.0));
     let mut looped = clip.clone();
     looped.visible_len_beats = 8.0;
     looped.offset_beats = 1.0;
@@ -1522,7 +1523,7 @@ mod component {
         let mut rig = Rig::new(vec![n(128, 64.0, 70), n(256, 64.0, 60)]);
         rig.tap(at(140.0, 70));
         assert_eq!(rig.roll.selected, [true, false]);
-        for label in ["Copy", "Delete", "Snap", "More..."] {
+        for label in ["Copy", "Delete", "Snap", "Duplicate", "More..."] {
             assert!(rig.text(label).is_some(), "no {label}");
         }
         rig.tap(at(140.0, 70));
@@ -1894,7 +1895,7 @@ mod component {
         rig.release(at(140.0, 70));
         assert_eq!(rig.roll.selected, [true, false]);
         assert!(rig.all.is_empty());
-        for label in ["Copy", "Delete", "Snap", "More..."] {
+        for label in ["Copy", "Delete", "Snap", "Duplicate", "More..."] {
             assert!(rig.text(label).is_some(), "no {label}");
         }
         let delete = rig.text("Delete").unwrap();
@@ -1958,10 +1959,17 @@ mod component {
         rig.release(to);
         assert_eq!(rig.roll.selected, [true, true, false]);
         assert!(rig.all.is_empty());
+        assert!(rig.text("Copy").is_some());
+        // A second box catching the same notes, the same outline: its release shows the row again.
+        rig.hold(from);
+        rig.frame(vec![In::PointerMoved(to)]);
+        rig.release(to);
+        assert_eq!(rig.roll.selected, [true, true, false]);
+        assert!(rig.text("Copy").is_some());
     }
 
     #[test]
-    fn floating_copy_places_the_copies_after_the_selection() {
+    fn floating_copy_only_copies_and_floating_duplicate_places_the_copies_after_the_selection() {
         let mut rig = Rig::new(vec![n(128, 64.0, 70)]);
         rig.select(vec![true]);
         let copy = rig.text("Copy").unwrap();
@@ -1970,6 +1978,10 @@ mod component {
             spans(&super::super::note_clipboard(&rig.ctx)),
             [(128, 64.0, 70)]
         );
+        assert_eq!(spans(rig.events()), [(128, 64.0, 70)], "Copy edits nothing");
+        rig.frame(vec![]);
+        let duplicate = rig.text("Duplicate").unwrap();
+        rig.tap(duplicate);
         assert_eq!(spans(rig.events()), [(128, 64.0, 70), (192, 64.0, 70)]);
         assert_eq!(rig.roll.selected, [false, true]);
         assert_eq!(rig.all, [DONE]);
@@ -1997,7 +2009,7 @@ mod component {
     }
 
     /// The first note's rect in the roll's current view, and where the shared rule puts the floating row over it
-    /// with the finger at `finger` (at U = 32 a 4-button row is 204.8 × 48, m 6.4).
+    /// with the finger at `finger` (at U = 32 the 5-button row is 256 × 48, m 6.4).
     fn shared_row(rig: &Rig, finger: Pos2) -> (Rect, Option<Rect>) {
         let g = rig.roll.geom(GRID.min, 32.0);
         let e = &rig.events()[0];
@@ -2011,7 +2023,7 @@ mod component {
         };
         (
             rect,
-            place_row(&sel, finger, GRID, vec2(204.8, 48.0), 6.4, 1.0),
+            place_row(&sel, finger, GRID, vec2(256.0, 48.0), 6.4, 1.0),
         )
     }
 
@@ -2079,7 +2091,7 @@ mod component {
                 _ => assert_eq!(row.top(), note.bottom() + 6.4, "key {key}"),
             }
             // The labels sit in the row's 51.2-point slots, left to right.
-            for (i, label) in ["Copy", "Delete", "Snap", "More..."]
+            for (i, label) in ["Copy", "Delete", "Snap", "Duplicate", "More..."]
                 .into_iter()
                 .enumerate()
             {
@@ -2884,7 +2896,7 @@ mod component {
         rig.frame(vec![]);
         rig.tap(rig.text("Select All").unwrap());
         assert_eq!(rig.roll.selected, [true, false]);
-        rig.tap(rig.text("Copy").unwrap());
+        rig.tap(rig.text("Duplicate").unwrap());
         assert_eq!(
             spans(rig.events()),
             [(0, 64.0, 0), (64, 64.0, 200), (64, 64.0, 0)]
@@ -2976,6 +2988,28 @@ mod component {
         let items = crate::ui::piano_roll::more_items();
         assert_eq!(items.len(), 15);
         assert!(items.iter().all(|i| !i.disabled));
+    }
+
+    #[test]
+    fn slice_cuts_each_selected_note_into_selected_pieces_in_one_undo_step() {
+        // #62: a bar at 1/16 makes sixteen sixteenths covering it exactly; a note no longer than a piece stays whole.
+        let mut rig = Rig::new(vec![n(0, 16.0, 64), n(0, 512.0, 60)]);
+        more(&mut rig, "Slice...");
+        rig.tap(rig.text("1/16").unwrap());
+        let mut expect = vec![(0, 16.0, 64)];
+        expect.extend((0..16).map(|i| (i * 32, 32.0, 60)));
+        assert_eq!(spans(rig.events()), expect);
+        assert_eq!(rig.roll.selected, [true; 17]);
+        assert_eq!(rig.all, [DONE], "one undo step");
+        // Into 3: whole-tick cuts at round(i·512/3), so the parts sum to the bar.
+        let mut rig = Rig::new(vec![n(0, 512.0, 60)]);
+        more(&mut rig, "Slice...");
+        rig.tap(rig.text("3 parts").unwrap());
+        assert_eq!(
+            spans(rig.events()),
+            [(0, 171.0, 60), (171, 170.0, 60), (341, 171.0, 60)]
+        );
+        assert_eq!(rig.all, [DONE], "one undo step");
     }
 
     #[test]
@@ -3614,6 +3648,8 @@ mod component {
         // The clip a bar into the song, two beats into its content: content tick 0 plays at song tick 256.
         let clip = &mut rig.song.channels[1].lanes[0].clips[0];
         (clip.start_tick, clip.offset_beats) = (512, 2.0);
+        // The transport there: the play box on content tick 0, clear of the range.
+        rig.opts.playhead = 256;
         rig.frame(vec![]);
         select(&mut rig, 256.0, 128.0);
         assert_eq!(rig.song.play_loop, Some((384, 512)));
@@ -3670,9 +3706,9 @@ mod component {
 
     #[test]
     fn the_playhead_items_follow_the_transports_playhead_in_the_clip() {
-        // Inside the range, or past the clip: both are off. The range is made from its end, clear of the play box's
-        // touch area.
-        for playhead in [160, 5000] {
+        // Inside the range, also folded from a later loop pass: both are off. The range is made from its end, clear of
+        // the play box's touch area.
+        for playhead in [160, 9 * 512 + 160] {
             let mut rig = Rig::new(vec![n(128, 64.0, 62)]);
             rig.opts.playhead = playhead;
             region(&mut rig, 384.0, 128.0);
@@ -3708,6 +3744,8 @@ mod component {
         let mut rig = Rig::new(vec![]);
         let clip = &mut rig.song.channels[1].lanes[0].clips[0];
         (clip.start_tick, clip.offset_beats) = (512, 2.0);
+        // The transport where content tick 0 plays: the play box there, clear of the tap.
+        rig.opts.playhead = 256;
         rig.frame(vec![]);
         rig.tap(ruler(384.0));
         assert_eq!(rig.all, [PianoRollAction::SetPlayhead(640)]);
@@ -4067,7 +4105,7 @@ mod component {
         rig.release(at(132.0, 66));
         rig.frame(vec![]);
         assert!(rig.text("Paste").is_some());
-        for label in ["Copy", "Delete", "Snap", "More..."] {
+        for label in ["Copy", "Delete", "Snap", "Duplicate", "More..."] {
             assert_eq!(rig.text(label), None, "{label} must not accompany Paste");
         }
         assert_eq!(spans(rig.events()), [(128, 64.0, 66)]);
@@ -4138,7 +4176,7 @@ mod grid {
     use crate::song::{ChannelKind, Song, SynthKind, TimeSig};
     use crate::theme::{Rgba, theme_by_id};
     use crate::ui::UiCtx;
-    use crate::ui::piano_roll::notes::Geom;
+    use crate::ui::piano_roll::notes::{Geom, GridSize};
     use crate::ui::piano_roll::{PianoRoll, Rows, paint_grid, paint_notes};
 
     const RED: Rgba = Rgba::rgb(1.0, 0.0, 0.0);
@@ -4188,7 +4226,15 @@ mod grid {
 
     fn background(ppp: f32) -> (Vec<(Rect, Color32)>, Rect, f32, Geom) {
         painted(ppp, &|p, grid, g, cx| {
-            paint_grid(p, grid, g, &rows(), RED, TimeSig::default(), cx)
+            paint_grid(
+                p,
+                grid,
+                g,
+                &rows(),
+                RED,
+                (TimeSig::default(), GridSize::Auto),
+                cx,
+            )
         })
     }
 
@@ -4283,7 +4329,17 @@ mod grid {
         let past = Rect::from_min_max(pos2(304.0, 48.0), pos2(1170.0, 349.0));
         let events = [n(0, 128.0, 60)];
         let (rects, ..) = painted(1.0, &|p, _, g, cx| {
-            paint_notes(p, g, &events, &[false], &[], Some(past), RED, (None, cx));
+            paint_notes(
+                p,
+                g,
+                &events,
+                &[false],
+                &[],
+                Some(past),
+                RED,
+                None,
+                (None, cx),
+            );
         });
         assert_eq!(
             rects.iter().map(|r| r.1).collect::<Vec<_>>(),

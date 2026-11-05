@@ -529,9 +529,9 @@ impl Song {
     /// the title (a save sets it), the META display title, author and link (the PROJECT tab types them), the play loop
     /// (the rulers set it), the save stamp ([`Self::stamp_save`]: version, song GUID, created and modified dates), the
     /// view state a file keeps (HEAD @0, @288, @296, META editing time; per channel by id, CHHD @1040/@1048 and its
-    /// GUID), and the META@776 lock (PROJECT confirms it "forever"). So none of them is ever an undo step. (Each track's
-    /// current clip is view state too: the app carries it across a step wherever the step moved the track,
-    /// `app/tracks.rs` `carry_current_clips`.)
+    /// GUID), the META@776 lock (PROJECT confirms it "forever") and the project versions. So none of them is ever an undo
+    /// step. (Each track's current clip is view state too: the app carries it across a step wherever the step moved the
+    /// track, `app/tracks.rs` `carry_current_clips`.)
     pub fn keep_unedited(&mut self, current: &Song) {
         self.title.clone_from(&current.title);
         (self.file.meta.display_title).clone_from(&current.file.meta.display_title);
@@ -551,6 +551,7 @@ impl Song {
         file.meta.modified.clone_from(&from.meta.modified);
         file.meta.editing_seconds = from.meta.editing_seconds;
         file.meta.locked = from.meta.locked;
+        file.versions.clone_from(&from.versions);
         for c in &mut self.channels {
             if let Some(from) = current.channels.iter().find(|f| f.id == c.id) {
                 c.file.guid = from.file.guid;

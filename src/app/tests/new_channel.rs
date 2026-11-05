@@ -110,7 +110,7 @@ fn drums_and_instrument_prompt_for_their_sound_from_the_plus_and_from_insert_cha
 
 #[test]
 fn a_plugin_pick_from_the_add_menu_creates_a_ready_instrument_track() {
-    let uid = crate::plugins::builtin::LEMON_TRIO.uid;
+    let uid = crate::plugins::builtin::named("Lemon Trio").uid;
     let item = add_channel_menu()
         .into_iter()
         .find(|item| item.id == Some(AddChannelPick::Plugin(uid)))
@@ -179,6 +179,10 @@ fn close_grand_rig(zone: bool) -> (Rig, crate::project_files::content::tests::Te
     let cstm = [&b"10WDZONE"[..], &(path.len() as u32).to_le_bytes(), &path].concat();
     let mut preset = ModuleInstance::new(1, 2);
     preset.file.custom_data = Some(cstm);
+    // As the Essential Pianos presets have it: Lowpass at Cutoff 0.4, Vel Trk 1, Sustain 0.
+    for (index, value) in [(16, 1.0 / 3.0), (12, 0.4), (15, 1.0), (6, 0.0)] {
+        preset.params[index] = value;
+    }
     let exp = tmp.0.join(CONTENT_FOLDER).join("DirectWave Samples EXP");
     let dw = crate::flm::write_preset(&preset).unwrap();
     put(&exp.join("Essential Pianos EXP/Close Grand.flmpst"), &dw);
@@ -231,6 +235,56 @@ fn a_new_instrument_loads_close_grand_from_the_content_and_a_later_pick_renames_
     assert_eq!(rig.app.song.channels[2].name, "Ice Pluck");
 }
 
+/// A `.dwp` picked over the automatic Close Grand plays as it does picked over a new module: every param at
+/// its default but the program's Attack and Release, no Lowpass or Sustain 0 of the piano's (#48), also once the song
+/// was saved and opened again.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn a_program_picked_over_the_automatic_close_grand_loads_as_into_a_new_dw_sampler() {
+    use crate::project_files::CONTENT_FOLDER;
+    use crate::project_files::content::tests::put;
+    use honeydew_audio::dwp::{self, Zone};
+    let (mut rig, tmp) = close_grand_rig(true);
+    let pad = tmp
+        .0
+        .join(CONTENT_FOLDER)
+        .join("DirectWave Samples/Acoustic");
+    let zone = Zone {
+        floats: [0.25, 1.0, 1.0, 0.6],
+        ..Zone::default()
+    };
+    put(
+        &pad.join("Soft Pad.dwp"),
+        &dwp::write(&[(zone, "C4.wav", 3, false)]),
+    );
+    put(
+        &pad.join("Soft Pad/C4.wav"),
+        &crate::sample_cache::tests::wav(&[0, 900, 0]),
+    );
+    rig.app.add_channel(ChannelKind::Instrument, 0);
+    rig.frame(vec![]);
+    worker_done(&mut rig);
+    assert_eq!(rig.app.song.channels[2].rack.modules[0].params[6], 0.0);
+    // Saved and opened again in a later session, the picker afresh.
+    rig.frame(escape());
+    rig.frame(vec![]);
+    let bytes = crate::flm::write(&rig.app.song).unwrap();
+    rig.app.song = crate::flm::read(&bytes).unwrap();
+    rig.app.song_edited(SongEdit::Replaced, 0);
+    rig.app.slots.preset_picker = Default::default();
+    rig.app
+        .navigate(Nav::Open(picker(2, PresetTarget::Instruments)));
+    // `My Files`, `Acoustic` › `Soft Pad`.
+    click_row(&mut rig, 1);
+    click_row(&mut rig, 0);
+    worker_done(&mut rig);
+    let module = &rig.app.song.channels[2].rack.modules[0];
+    let mut params = ModuleInstance::new(1, 0).params;
+    (params[1], params[2]) = (0.25, 0.6);
+    assert_eq!(module.params, params);
+    assert_eq!(rig.app.song.channels[2].name, "Soft Pad");
+}
+
 /// A Close Grand none of whose zones decode would be a silent channel: the SuperSaw stays, and so does the name.
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
@@ -247,8 +301,8 @@ fn a_close_grand_whose_zones_do_not_decode_leaves_the_supersaw_and_the_name() {
 // ---- Every new DW Sampler loads Close Grand ----
 
 /// The Modules browser's DW Sampler row ([`super::rack_wiring::browser_row`]: `Paste` 0, `Rack Preset` 1, `Instrument`
-/// 2, SYNTH 3, 3x Osc 4, Lemon Trio 5, DW Sampler 6).
-const DW_ROW: usize = 6;
+/// 2, SYNTH 3, 3x Osc 4, Lemon Trio 5, Citrus 6, DW Sampler 7).
+const DW_ROW: usize = 7;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]

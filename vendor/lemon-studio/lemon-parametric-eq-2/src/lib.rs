@@ -224,8 +224,6 @@ impl ClapPlugin for LemonEq {
     const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Equalizer, ClapFeature::Stereo];
 }
 
-// Honeydew (vendored change): Honeydew builds it `linked` only, without nih-plug's VST3 wrapper.
-#[cfg(not(feature = "linked"))]
 impl Vst3Plugin for LemonEq {
     const VST3_CLASS_ID: [u8; 16] = *b"OpenStudioParEQ2";
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Fx, Vst3SubCategory::Eq];

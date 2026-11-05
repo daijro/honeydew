@@ -162,6 +162,9 @@ fn engine_render_and_commands_do_not_allocate() {
             },
         });
     }
+    // A De-esser and Denoise (#43): Denoise's Learn goes on and off in the counted render.
+    let de_esser = ch.rack.add(honeydew_audio::de_esser::DE_ESSER);
+    let denoise = ch.rack.add(honeydew_audio::denoise::DENOISE);
     let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
     engine.note_on(2, 45, 1.0);
     let mut output = vec![0.0_f32; 4096 * 2];
@@ -184,6 +187,8 @@ fn engine_render_and_commands_do_not_allocate() {
             match i % 50 {
                 5 => engine.set_param(1, 2, 13, (i % 7) as f32 / 7.0),
                 10 => engine.set_param(1, 2, AutomationTarget::MIX, 0.7),
+                12 => engine.set_param(1, denoise, 3, ((i / 50) % 2) as f32),
+                17 => engine.set_param(1, de_esser, 1, (i % 7) as f32 / 7.0),
                 15 => engine.set_param(1, 3, 2, 0.4),
                 20 => engine.note_on(1, 50 + (i % 20) as u8, 0.8),
                 25 => engine.note_off(1, 50 + ((i - 5) % 20) as u8),
@@ -240,6 +245,74 @@ fn loop_wraps_and_transport_commands_do_not_allocate() {
     });
     assert_eq!(events, 0, "allocator calls on the audio thread");
     assert!(energy > 0.0, "the counted render was silent");
+}
+
+/// Tesla (a built-in Lemon plugin, `honeydew::plugins::builtin`) after the MiniSynth records what reaches it and plays
+/// its takes back: arming and disarming (its Record param), the frames handed to its own thread, a new take picked up
+/// and its playback (its Play param) allocate nothing on the audio thread.
+#[test]
+fn tesla_recording_and_playback_do_not_allocate() {
+    use honeydew::plugins::{self, builtin};
+    let mut song = song();
+    let ch = &mut song.channels[1];
+    let (id, at) = (ch.id, ch.rack.modules.len());
+    let uid = (builtin::all().iter().find(|b| b.name == "Tesla"))
+        .unwrap()
+        .uid;
+    let tesla = plugins::add(&mut ch.rack, id, uid, at).unwrap();
+    plugins::sync(&song);
+    let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
+    let mut output = vec![0.0_f32; 4096 * 2];
+    // Its params after the module's own: 1 Play / pause, 2 Record, each toggling on a change.
+    let (play, record) = (1, 2);
+    // Warm-up: a first take, recorded, committed by Tesla's thread, then played.
+    engine.play();
+    engine.set_param(1, tesla, record, 1.0);
+    for frames in BLOCKS.iter().cycle().take(14) {
+        engine.render(&mut output[..frames * 2], 2);
+    }
+    engine.set_param(1, tesla, record, 0.0);
+    engine.render(&mut output[..64 * 2], 2);
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    engine.set_param(1, tesla, play, 1.0);
+    for frames in BLOCKS {
+        engine.render(&mut output[..frames * 2], 2);
+    }
+
+    let mut energy = 0.0_f32;
+    let events = events_during(|| {
+        let mut rendered = 0;
+        let mut i = 0;
+        while rendered < 10 * RATE as usize {
+            let frames = BLOCKS[i % BLOCKS.len()];
+            engine.render(&mut output[..frames * 2], 2);
+            energy += output[..frames * 2].iter().map(|s| s * s).sum::<f32>();
+            rendered += frames;
+            match i % 40 {
+                // Armed for a while, then disarmed: Tesla's thread commits the take, which playback picks up.
+                5 => engine.set_param(1, tesla, record, 1.0),
+                25 => engine.set_param(1, tesla, record, 0.0),
+                30 => engine.set_param(1, tesla, play, ((i / 40) % 2) as f32),
+                _ => {}
+            }
+            // Room for Tesla's thread to run between blocks.
+            if i % 10 == 0 {
+                std::thread::sleep(std::time::Duration::from_millis(15));
+            }
+            i += 1;
+        }
+    });
+    assert_eq!(events, 0, "allocator calls on the audio thread");
+    assert!(energy > 0.0, "the counted render was silent");
+    // It recorded: its state holds the takes.
+    plugins::store_states(&mut song);
+    let module = song.channels[1].rack.get(tesla).unwrap();
+    let state = &module.file.plugin.as_ref().unwrap().state;
+    assert!(
+        state.len() > 100_000,
+        "a take is kept: {} bytes",
+        state.len()
+    );
 }
 
 /// A Transistor Bass channel with distortion on: its render, legato notes, params and seek allocate nothing.
@@ -525,10 +598,16 @@ fn soundfont_player_render_does_not_allocate() {
     soundfont_render("My SoundFonts/sine.sf2", bytes);
 }
 
-/// The same with an SFZ: built-in waves through round robin, a keyswitch, `first`, a release trigger and a choke.
+/// The same with an SFZ: built-in waves through round robin, a keyswitch, `first`, a release trigger and a choke, a
+/// filter, LFOs, envelopes, polyphony and routes of CC 1, curved and smoothed.
 #[test]
 fn sfz_player_render_does_not_allocate() {
-    let sfz = "<global> ampeg_attack=0.01 ampeg_release=0.2 sw_lokey=20 sw_hikey=21 sw_default=20
+    let sfz = "<control> set_cc1=64 label_cc1=Tone
+        <curve> curve_index=9 v000=0 v064=0.8 v127=1
+        <global> ampeg_attack=0.01 ampeg_release=0.2 sw_lokey=20 sw_hikey=21 sw_default=20
+            cutoff=2000 fil_type=lpf_4p resonance=6 cutoff_oncc1=1200 cutoff_curvecc1=9 volume_oncc1=-6
+            volume_smoothcc1=20 xfin_locc1=0 xfin_hicc1=20 pitchlfo_freq=5 pitchlfo_depthcc1=50 fileg_attack=0.1
+            fileg_depth=600 lfo01_freq=3 lfo01_pan=50 eg01_time1=0.2 eg01_level1=1 eg01_amplitude=100 polyphony=24
         <group> seq_length=2 off_by=9 lokey=40 hikey=90
         <region> sample=*sine seq_position=1 sw_last=20
         <region> sample=*saw seq_position=2 loop_mode=loop_sustain
@@ -638,6 +717,8 @@ fn render_soundfont(
                 20 => (0..CHORD).for_each(|k| engine.note_on(1, 40 + k, 0.8)),
                 22 => engine.note_on(1, 20 + (i % 2) as u8, 0.5),
                 25 => (0..CHORD).for_each(|k| engine.note_off(1, 40 + k)),
+                // MIDI CC 1, which an SFZ's routes follow.
+                30 => engine.set_param(1, 0, 8, (i % 5) as f32 / 5.0),
                 35 => engine.seek(((i * 37) % 1024) as u64),
                 40 => engine.stop(),
                 45 => engine.play(),
@@ -986,7 +1067,8 @@ fn drum_kit_render_and_commands_do_not_allocate() {
 }
 
 /// Two audio clips on an Audio Clip channel: offsets, loop repetitions, clip ends, all three envelopes, Reverse,
-/// an `STR1` stretch, and a play loop whose wraps relaunch them mid-sample; plus a clip lane on a synth channel.
+/// an `STR1` stretch, a Pitch Bend lane, and a play loop whose wraps relaunch them mid-sample; plus a clip lane on a
+/// synth channel.
 fn audio_clip_song() -> Song {
     let mut song = Song {
         tempo_bpm: 130.0,
@@ -1015,6 +1097,18 @@ fn audio_clip_song() -> Song {
             }));
         }
     }
+    // A Pitch Bend ramp over the clips, a step a tick (#59).
+    let pitch = song.channels[1].add_automation_lane(AutomationTarget::PITCH_BEND);
+    pitch
+        .add_clip(0, 8.0)
+        .events
+        .extend(
+            [(0, 0.2), (512, 0.9)].map(|(pos, value)| Event::Automation {
+                pos,
+                value,
+                control: true,
+            }),
+        );
     song
 }
 
@@ -2107,4 +2201,218 @@ fn the_device_callback_publishes_its_visuals_without_allocating_and_sounds_as_th
         }
     });
     assert_eq!(events, 0);
+}
+
+/// Built-in Lemon Drum Sampler and Lemon Slicer (`honeydew::plugins::builtin`), each with a sample loaded as on a phone
+/// (its load button asks the app's picker, which answers with the file): sequenced and live notes, their voice ends,
+/// seek and Play/Stop. The plugins and their CLAP host run inside the engine's render.
+#[test]
+fn lemon_drum_sampler_and_lemon_slicer_play_without_allocating() {
+    use honeydew::plugins::{self, builtin};
+    use os_plugkit::embed::{self, Answer, Button, Input, Modal};
+    let dir = std::env::temp_dir().join(format!("rt-alloc-lemon-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("loop.wav");
+    // A burst every 100 ms.
+    let samples: Vec<i16> = (0..44_100)
+        .map(|i| match i % 4410 {
+            t if t < 2000 => ((t as f32 * 0.07).sin() * 20_000.0) as i16,
+            _ => 0,
+        })
+        .collect();
+    std::fs::write(&file, wav(&samples)).unwrap();
+    embed::set_host_files(true);
+    let plugins = [
+        ("Lemon Drum Sampler", lemon_drum_sampler::view::LOAD),
+        ("Lemon Slicer", lemon_slicer::view::LOAD),
+    ];
+    for (name, load) in plugins {
+        let uid = builtin::all().iter().find(|b| b.name == name).unwrap().uid;
+        let mut song = Song {
+            tempo_bpm: 120.0,
+            ..Song::default()
+        };
+        song.add_channel(ChannelKind::Instrument);
+        let channel = &mut song.channels[1];
+        let id = channel.id;
+        let module = plugins::add(&mut channel.rack, id, uid, 0).unwrap();
+        // Pads A1 (C#3, where the load puts the sample), A2 and A3, and the slices from C5 up.
+        let clip = channel.lanes[0].add_clip(0, 8.0);
+        for i in 0..32 {
+            clip.events.push(Event::Note {
+                pos: i * 32,
+                len_beats: 0.3 + f64::from(i % 3),
+                key: [37, 36, 37, 42, 60, 61, 62, 63][i as usize % 8],
+                velocity: 200,
+                pan: 127,
+                slide: false,
+            });
+        }
+        plugins::sync(&song);
+        let editor = plugins::lemon_editor(id, module, 1.0).expect("the editor opens");
+        let (btn, none) = (Button::Left, (false, false, false));
+        let (x, y) = (load.cx(), load.cy());
+        embed::input(
+            editor,
+            Input::Down {
+                x,
+                y,
+                btn,
+                dbl: false,
+            },
+            none,
+        );
+        embed::input(editor, Input::Up { btn }, none);
+        embed::pump(editor);
+        assert_eq!(embed::modal(editor), Some(Modal::OpenFile), "{name}");
+        embed::answer(editor, Some(Answer::Text(file.to_string_lossy().into())));
+        embed::pump(editor);
+        let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
+        let mut output = vec![0.0_f32; 4096 * 2];
+        engine.play();
+        for frames in BLOCKS {
+            engine.render(&mut output[..frames * 2], 2);
+        }
+        engine.seek(0);
+
+        let mut energy = 0.0_f32;
+        let events = events_during(|| {
+            let mut rendered = 0;
+            let mut i = 0;
+            while rendered < 10 * RATE as usize {
+                let frames = BLOCKS[i % BLOCKS.len()];
+                engine.render(&mut output[..frames * 2], 2);
+                energy += output[..frames * 2].iter().map(|s| s * s).sum::<f32>();
+                rendered += frames;
+                match i % 50 {
+                    20 => engine.note_on(1, 36 + (i % 30) as u8, 0.8),
+                    25 => engine.note_off(1, 36 + ((i - 5) % 30) as u8),
+                    35 => engine.seek(((i * 37) % 1024) as u64),
+                    40 => engine.stop(),
+                    45 => engine.play(),
+                    _ => {}
+                }
+                i += 1;
+            }
+        });
+        assert_eq!(events, 0, "{name}: allocator calls on the audio thread");
+        assert!(
+            energy > 0.0 && energy.is_finite(),
+            "{name}: the counted render was silent or NaN"
+        );
+    }
+}
+
+/// A Lemon Peak Controller after the MiniSynth and a Lemon Formula Controller on a second
+/// channel, each linked to its channel's Volume: their outputs reach the engine and drive their targets, smoothed,
+/// without allocating.
+#[test]
+fn controller_links_do_not_allocate() {
+    use honeydew::plugins::{self, builtin};
+    let uid = |name: &str| builtin::all().iter().find(|b| b.name == name).unwrap().uid;
+    let mut song = song();
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    let (a, b) = (song.channels[1].id, song.channels[2].id);
+    for (channel, id, name) in [
+        (1, a, "Lemon Peak Controller"),
+        (2, b, "Lemon Formula Controller"),
+    ] {
+        let rack = &mut song.channels[channel].rack;
+        let controller = plugins::add(rack, id, uid(name), 9).unwrap();
+        song.channels[channel]
+            .file
+            .modulations
+            .push(honeydew::song::Modulation {
+                modulator: controller,
+                channel: id,
+                target: AutomationTarget {
+                    instance_id: 0,
+                    param: 0,
+                },
+            });
+    }
+    plugins::sync(&song);
+    let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
+    let mut output = vec![0.0_f32; 4096 * 2];
+    engine.play();
+    for frames in BLOCKS.into_iter().cycle().take(70) {
+        engine.render(&mut output[..frames * 2], 2);
+    }
+    // The app's idle, between blocks, takes what the plugins put out.
+    let mut events = 0;
+    for i in 0..200 {
+        let frames = BLOCKS[i % BLOCKS.len()];
+        events += events_during(|| engine.render(&mut output[..frames * 2], 2));
+        plugins::idle();
+    }
+    assert_eq!(events, 0, "allocator calls on the audio thread");
+}
+
+/// The built-in Lemon effects (0.4.9: Lemon Small FX's ten, Lemon Delay and Lemon Vocoder keyed by a sidechain) under a
+/// MiniSynth: notes, seek, stop and play, finite. Left out, as upstream's sound allocates (`os_engine::effects`): Press's
+/// peak detector grows its queue up to its window while it plays (`maximus`), Pulp Filter's reset (every stop) makes its
+/// half-bands again (`love_philter`), Lemon Parametric EQ's reset its preroll's buffers (`eq`).
+#[test]
+fn the_built_in_lemon_effects_render_keyed_and_with_the_transport_without_allocating() {
+    use honeydew::plugins::{self, builtin};
+    const EFFECTS: [&str; 12] = [
+        "Lemon Soft Clipper",
+        "Lemon Fast Distortion",
+        "Lemon Balance",
+        "Lemon Stereo Enhancer",
+        "Lemon Transient Processor",
+        "Lemon Chorus",
+        "Lemon Stereo Shaper",
+        "Lemon Filter",
+        "Lemon Flanger",
+        "Lemon Phaser",
+        "Lemon Delay",
+        "Lemon Vocoder",
+    ];
+    let mut song = song();
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    let key = song.channels[2].id;
+    let ch = &mut song.channels[1];
+    let id = ch.id;
+    for b in builtin::all().iter().filter(|b| EFFECTS.contains(&b.name)) {
+        let at = ch.rack.modules.len();
+        let module = plugins::add(&mut ch.rack, id, b.uid, at).unwrap();
+        if b.sidechain() {
+            ch.rack.get_mut(module).unwrap().sidechain = Some(key);
+        }
+    }
+    plugins::sync(&song);
+    let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
+    let mut output = vec![0.0_f32; 4096 * 2];
+    engine.note_on(2, 60, 0.8);
+    engine.play();
+    for frames in BLOCKS {
+        engine.render(&mut output[..frames * 2], 2);
+    }
+    engine.seek(0);
+
+    let mut energy = 0.0_f32;
+    let events = events_during(|| {
+        let (mut rendered, mut i) = (0, 0);
+        while rendered < 3 * RATE as usize {
+            let frames = BLOCKS[i % BLOCKS.len()];
+            engine.render(&mut output[..frames * 2], 2);
+            energy += output[..frames * 2].iter().map(|s| s * s).sum::<f32>();
+            rendered += frames;
+            match i % 30 {
+                5 => engine.note_on(1, 48 + (i % 12) as u8, 0.8),
+                10 => engine.note_off(1, 48 + ((i - 5) % 12) as u8),
+                15 => engine.seek(((i * 37) % 1024) as u64),
+                20 => engine.stop(),
+                25 => engine.play(),
+                _ => {}
+            }
+            i += 1;
+        }
+    });
+    assert_eq!(events, 0, "allocator calls on the audio thread");
+    assert!(
+        energy > 0.0 && energy.is_finite(),
+        "the counted render: {energy}"
+    );
 }

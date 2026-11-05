@@ -55,7 +55,8 @@
 //!   tall is dragged, each key change stops the old key and plays the new one at velocity 0.7, until the release
 //!   ([`PianoRollAction::Note`]).
 //! - The snap button: a tap toggles snap, a long press or a right click opens the snap menu: the time modes under
-//!   `Time`, beside them (a Honeydew addition, GitHub issue #32) the graph lane's value snap for its shown item under
+//!   `Time`, the grid sizes under `Grid` (#53: [`notes::GridSize`]), then (a Honeydew addition, GitHub
+//!   issue #32) the graph lane's value snap for its shown item under
 //!   `Vel` or `Pan` ([`crate::ui::automation::value::snap_items`]): `Off` (the default), `1 %` … `25 %`, then Vel's
 //!   `MIDI` velocities or Pan's `L/C/R`. Each item keeps its own, an app setting. While it is on, the grid's lines show
 //!   in the lane in place of its guides, and a paint lands on it ([`Prop::landed`]); a lane drag shows its value
@@ -89,12 +90,15 @@
 //!   the project key and scale; `Disable` sets the scale to Chromatic. Without an exact fit, `Choose` lists the closest
 //!   ones.
 //! - `Toggle Slide` flips each note's slide flag. Slide notes have no look of their own: they are drawn as other notes.
+//! - `Slice...` (GitHub #62) turns the popup into the slice choices
+//!   ([`slice_items`]): a piece length (1/4 … 1/32, 1/8T, 1/16T) or 2, 3, 4 or 8 equal parts. Each selected note
+//!   becomes consecutive selected notes covering it, as [`slice_selected`] cuts them; a tap outside or Escape cancel.
 //! - `Transpose by...` turns the popup into a one-cell offset display: a vertical drag anywhere picks the offset (half
 //!   a U a semitone, up is up, kept to what keeps every note in the key range) and its release applies it; a tap,
 //!   Escape or a click outside cancel.
-//! - `Generate...` opens the Generate panel ([`generate`], [`compose`]): a chord progression and a melody for the clip
-//!   in the project's key and scale, from a preset, a bars count, a seed, and who leads (the chords first with the
-//!   melody over them, or the clip's own melody with the chords fitted under it);
+//! - The transport bar's GENERATE opens the Generate panel ([`generate`], [`compose`]): a chord progression and a melody
+//!   for the clip in the project's key and scale, from a preset, a bars count, a seed, and who leads (the chords first
+//!   with the melody over them, or the clip's own melody with the chords fitted under it);
 //! - `Humanize` opens the Humanize panel ([`humanize`], issue #29: it used to have no dialog), its seed
 //!   drawn per use from the std hasher's random keys and egui's clock (OS entropy natively; on the web the keys are
 //!   fixed, so the clock varies it). While it is open the roll draws its preview in place of the notes, on the grid
@@ -103,13 +107,12 @@
 //!
 //! The ruler takes the shared gestures ([`RangeSelect`]) in content ticks on the snap grid (whole ticks with snap off):
 //! a tap sets the song's playhead, and the range is the song's play loop, content tick 0 being song tick
-//! [`region::clip_origin`]. The playhead is the transport's, playing or stopped, where it plays the clip
-//! ([`region::playhead_tick`]: as in the song, Preview on or off); elsewhere it rests on the
-//! clip's start, and the playhead items are off. Its disc is the playhead knob ([`timeline::PlayheadKnob`], as in every
-//! editor): a tap plays, and a drag seeks to the snapped content tick under the finger within [the view's left edge,
-//! the loop's end], the line and the disc following it. The region items act on every note of the clip ([`region`]);
-//! `Snap to Scale` and `Guess Scale...` on the notes that start in the range. A region edit is one final edit and drops
-//! the note selection.
+//! [`region::clip_origin`]. The playhead is the transport's, playing or stopped, folded into the clip's loop
+//! ([`region::playhead_tick`]: where the clip plays, as in the song, Preview on or off). A ruler tap deselects. Its
+//! disc is the playhead knob ([`timeline::PlayheadKnob`], as in every editor): a tap plays, and a drag seeks to the
+//! snapped content tick under the finger within [the view's left edge, the loop's end], the line and the disc following
+//! it. The region items act on every note of the clip ([`region`]); `Snap to Scale` and `Guess Scale...` on the notes
+//! that start in the range. A region edit is one final edit and drops the note selection.
 //!
 //! A Honeydew addition (issue #26): on a take being recorded ([`RollOptions::recording`]; the app opens the take's clip
 //! in a roll open on its channel) the roll shows the clip as it records ([`crate::app::note_record::live`]: each held
@@ -135,7 +138,7 @@ use crate::ui::automation::value::{self, Pick, ValueGrid, ValueSnap};
 use crate::ui::automation::{GRID_ALPHA, GRID_GAP, value_label};
 use crate::ui::clips::{self, Part, TimeAxis};
 use crate::ui::dialog;
-use crate::ui::drum_grid::edit::{MARK_GAP, mark_spacing, marks};
+use crate::ui::drum_grid::edit::{MARK_GAP, grid_lines, mark_spacing};
 use crate::ui::edit_keys::{self, EditKey};
 use crate::ui::graph_lane::{self, GraphLane, Prop};
 use crate::ui::insert;
@@ -145,10 +148,10 @@ use crate::ui::region::{self, RegionOp, TimeRange};
 use crate::ui::scroller::{self, Axis, Scroller, X, Y, Zones};
 use crate::ui::timeline::{self, KnobGesture, PlayheadKnob, RangeRuler, RangeSelect, vline_px};
 use crate::ui::widgets::{self, SnapTouch};
-use crate::ui::{UiCtx, gesture, pinch_press, primary_down_live};
+use crate::ui::{Finger, UiCtx, fingers, focus_lost, gesture, pinch_press, primary_down_live};
 
 use notes::*;
-pub use notes::{Snap, SnapMode};
+pub use notes::{GridSize, Snap, SnapMode};
 
 const BEAT: f64 = PPQ as f64;
 
@@ -170,6 +173,8 @@ const LABEL_PT: [f32; 2] = [6.0, 12.0];
 // Colour treatments of theme roles.
 /// Ghost notes: their channel colour at this alpha.
 pub(crate) const GHOST_ALPHA: f32 = 0.35;
+/// The opacity of a note off the project scale ([`paint_notes`]).
+const OFF_SCALE_ALPHA: f32 = 0.35;
 /// Rows that sound or hold a selected note: the channel colour at this alpha.
 const LIT_ALPHA: f32 = 0.1;
 /// The graph lane: its guides' and its (and the grid's) past-the-end overlay's black alpha (0.2 and 0.15).
@@ -313,14 +318,15 @@ pub struct PianoRoll {
     pub(crate) remembered: Remembered,
     /// A new note's sound: its key and when it stops (egui time).
     gate: Option<(u8, f64)>,
-    /// The key the key column plays while it is held.
-    key_down: Option<u8>,
-    /// Each key's press glow in the key column: eased towards 1 while it is the held key and back to 0 once let go
-    /// ([`PRESS_TINT`]).
+    /// Each key's press glow in the key column: eased towards 1 while a finger holds the key and back to 0 once let
+    /// go ([`PRESS_TINT`]).
     key_press: [f32; 128],
     /// The note a tap or `open` added last, as the clip holds it, and when: its start, its key and the egui time of
     /// the frame that added it, for its pop-in ([`POP_S`]), dropped once that is over.
     born: Option<(u32, u8, f64)>,
+    /// The fingers on the key column, each with the key it plays (none off the rows), and the pass it last showed in.
+    keys_down: Vec<(u64, Option<u8>)>,
+    keys_pass: u64,
     /// The grid cursor (content tick, key): where `paste` and `open` act ([`Self::keys`]).
     cursor: (f64, u8),
     /// The `Paste` button shows, at this finger (module docs).
@@ -383,6 +389,8 @@ enum Menu {
     Snap,
     /// The note menu, centred on the `More...` button.
     More(Pos2),
+    /// The note menu in slice mode, at the same place (`Slice...`, #62).
+    Slice(Pos2),
     /// The note menu in transpose mode, at the same place: the offset so far, and where this drag started.
     Transpose {
         at: Pos2,
@@ -420,18 +428,21 @@ enum MoreOp {
     SnapToScale,
     GuessScale,
     Humanize,
-    Generate,
     DoubleUp,
     DoubleDown,
     ToggleSlide,
     /// Set length to this many ticks.
     Length(u32),
+    /// `Slice...` opens the slice choices; a choice slices (#62).
+    SliceBy,
+    Slice(Slice),
     TransposeBy,
     SelectAll,
 }
 
 /// The floating buttons over a selection.
-const FLOATING: [&str; 4] = ["Copy", "Delete", "Snap", "More..."];
+/// Copy and Delete first, Duplicate last before `More...` (as every editor's row).
+const FLOATING: [&str; 5] = ["Copy", "Delete", "Snap", "Duplicate", "More..."];
 
 impl PianoRoll {
     pub fn new(channel: usize, lane: usize, clip_id: Option<u32>) -> Self {
@@ -458,9 +469,10 @@ impl PianoRoll {
             press: clips::HandlePress::default(),
             remembered: Remembered::default(),
             gate: None,
-            key_down: None,
             key_press: [0.0; 128],
             born: None,
+            keys_down: Vec::new(),
+            keys_pass: 0,
             cursor: CURSOR,
             paste: None,
             pending: Vec::new(),
@@ -484,6 +496,7 @@ impl PianoRoll {
     pub fn open(&mut self, lane: usize, clip_id: u32) {
         if (self.lane, self.clip_id) != (lane, Some(clip_id)) {
             let pending = self.end_touch();
+            let keys_down = std::mem::take(&mut self.keys_down);
             *self = Self {
                 pending,
                 snap: self.snap,
@@ -492,7 +505,8 @@ impl PianoRoll {
                 graph: self.graph,
                 remembered: self.remembered,
                 gate: self.gate,
-                key_down: self.key_down,
+                keys_down,
+                keys_pass: self.keys_pass,
                 ..Self::new(self.channel, lane, Some(clip_id))
             };
         }
@@ -625,33 +639,47 @@ impl PianoRoll {
         self.row.covered = opts.covered;
         // The scroll and zoom controller first; the gestures then hand it empty-grid touches.
         let report = self.scroll(ui, id, (ruler, keys, grid), song, opts, u);
-        // Touches on the key column play its keys and never scroll.
+        // Touches on the key column play its keys and never scroll. Issue #68: each finger its own key, sliding from
+        // key to key, as on the keyboard ([`fingers`]), so that one plays while another turns a rack knob. A focus
+        // loss or a frame without the column lets go of every finger (their lifts may never come), and a finger
+        // already down as the column shows plays nothing until it presses again.
         let keys_touch = ui.interact(keys, keys_id(), Sense::click_and_drag());
-        // A press held over a focus loss, or over a hide ([`keys_id`]), is up (see `primary_down_live`): its key stops,
-        // and it plays no other.
-        let live = primary_down_live(ui, keys_touch.id);
-        let held = (keys_touch.is_pointer_button_down_on() && live)
-            .then(|| ui.input(|i| i.pointer.interact_pos()))
-            .flatten()
-            .and_then(|p| self.geom(grid.min, u).key(p.y));
-        if held != self.key_down {
-            if let Some(key) = self.key_down {
-                actions.push(PianoRollAction::Note {
-                    key,
-                    velocity: None,
-                });
+        let before = column_keys(&self.keys_down);
+        let pass = ui.ctx().cumulative_pass_nr();
+        if std::mem::replace(&mut self.keys_pass, pass) + 1 != pass || ui.input(focus_lost) {
+            self.keys_down.clear();
+        }
+        let g = self.geom(grid.min, u);
+        for finger in fingers(ui, keys_touch.id) {
+            match finger {
+                Finger::Down(id, p) => {
+                    self.keys_down.retain(|k| k.0 != id);
+                    self.keys_down.push((id, g.key(p.y)));
+                }
+                Finger::Move(id, p) => {
+                    if let Some(k) = self.keys_down.iter_mut().find(|k| k.0 == id) {
+                        k.1 = g.key(p.y);
+                    }
+                }
+                Finger::Up(id, _) => self.keys_down.retain(|k| k.0 != id),
             }
-            if let Some(key) = held {
-                let velocity = Some(crate::app::KEY_VELOCITY);
-                actions.push(PianoRollAction::Note { key, velocity });
-            }
-            self.key_down = held;
+        }
+        let after = column_keys(&self.keys_down);
+        for &key in before.iter().filter(|k| !after.contains(k)) {
+            actions.push(PianoRollAction::Note {
+                key,
+                velocity: None,
+            });
+        }
+        for &key in after.iter().filter(|k| !before.contains(k)) {
+            let velocity = Some(crate::app::KEY_VELOCITY);
+            actions.push(PianoRollAction::Note { key, velocity });
         }
         // The key column's press glow: every key eases towards being the held one, and back to plain once let go.
         let step = crate::ui::anim::step(ui.ctx(), crate::ui::anim::PANEL_KEEP);
         let mut easing = false;
         for (key, glow) in self.key_press.iter_mut().enumerate() {
-            let target = if self.key_down == Some(key as u8) {
+            let target = if after.contains(&(key as u8)) {
                 1.0
             } else {
                 0.0
@@ -698,11 +726,15 @@ impl PianoRoll {
             self.born = None;
         }
         let rows = self.rows(song, events, opts.sounding);
-        paint_grid(&grid_painter, grid, &g, &rows, color, song.time_sig, cx);
+        let sig = (song.time_sig, self.snap.size);
+        paint_grid(&grid_painter, grid, &g, &rows, color, sig, cx);
         let view = g.tick(grid.left())..g.tick(grid.right());
         let px = g.tick(grid.left() + 1.0 / m.ppp()) - view.start;
         let end = g.x(loop_ticks).max(grid.left());
         let past = (end < grid.right()).then(|| grid.with_min_x(end));
+        // The project scale's (none on Chromatic, where every key is a tone): a note off it is faded.
+        let scale = project_scale(song);
+        let scale = (scale.1 != SCALE_MASKS[CHROMATIC]).then_some(scale);
         paint_notes(
             &grid_painter,
             &g,
@@ -711,6 +743,7 @@ impl PianoRoll {
             &self.ghosts(song, opts, view, px),
             past,
             color,
+            scale,
             (self.born.map(|(pos, key, _)| (pos, key)), cx),
         );
         // The playhead line's slot: over the notes, under their handles, the marquee and the floating row.
@@ -765,7 +798,7 @@ impl PianoRoll {
         }
 
         // The ruler: a plain corner over the keys, bars over the grid, the range (the song's play loop, in the clip's
-        // content ticks), and the playhead: the transport's where it plays the clip, else resting on its start.
+        // content ticks), and the playhead: the transport's, folded into the clip's loop.
         let (corner, bars) = ruler.split_left_right_at_x(grid.left());
         ui.painter()
             .rect_filled(corner, 0.0, cx.theme.colors.background.to_color32());
@@ -803,6 +836,9 @@ impl PianoRoll {
             song.play_loop = range.and_then(|r| r.song_loop(origin));
         }
         if let Some(tick) = out.playhead {
+            // A ruler tap deselects, as the audio editor's: the floating row goes and the play box shows.
+            self.selected.fill(false);
+            self.paste = None;
             let at = region::seek_tick(self.clip(song), tick);
             actions.push(PianoRollAction::SetPlayhead(at));
         }
@@ -877,11 +913,12 @@ impl PianoRoll {
     /// key the key column holds and a new note's sound stop now.
     pub(crate) fn hide(&mut self) -> Vec<PianoRollAction> {
         let mut actions = self.end_touch();
-        for key in [self.key_down.take(), self.gate.take().map(|g| g.0)] {
-            actions.extend(key.map(|key| PianoRollAction::Note {
+        let column = column_keys(&std::mem::take(&mut self.keys_down));
+        for key in column.into_iter().chain(self.gate.take().map(|g| g.0)) {
+            actions.push(PianoRollAction::Note {
                 key,
                 velocity: None,
-            }));
+            });
         }
         actions
     }
@@ -901,8 +938,12 @@ impl PianoRoll {
             Gesture::Edit(edit) => edit.sound.take(),
             _ => None,
         };
-        let keys = [self.key_down.take(), self.gate.take().map(|g| g.0), drag];
-        keys.into_iter().flatten().collect()
+        let column = column_keys(&std::mem::take(&mut self.keys_down));
+        let keys = [self.gate.take().map(|g| g.0), drag];
+        column
+            .into_iter()
+            .chain(keys.into_iter().flatten())
+            .collect()
     }
 
     /// Ends a touch on the grid or the graph lane as its release would, before the roll stops seeing it: a dragged
@@ -979,9 +1020,10 @@ impl PianoRoll {
             Gesture::Edit(edit) => edit.sound,
             _ => None,
         };
-        let own = [self.key_down, self.gate.map(|g| g.0), drag];
+        let own = [self.gate.map(|g| g.0), drag];
         let keys = selected.filter_map(|(e, _)| note(e).map(|n| n.2));
-        for key in keys.chain(own.into_iter().flatten()) {
+        let column = column_keys(&self.keys_down);
+        for key in keys.chain(own.into_iter().flatten()).chain(column) {
             if let Some(row) = lit.get_mut(usize::from(key)) {
                 *row = true;
             }
@@ -1255,6 +1297,9 @@ impl PianoRoll {
                         .then_some(marquee.from);
                 if !up {
                     self.gesture = Gesture::Box(marquee);
+                } else if let Some(p) = pos.filter(|_| self.selected.contains(&true)) {
+                    // Its release shows the floating row over what it caught, whatever showed before.
+                    self.row.boxed(p);
                 }
             }
             Gesture::Edit(mut edit) => {
@@ -1866,7 +1911,7 @@ impl PianoRoll {
             }
         }
         let bpb = song.time_sig.bar_beats();
-        paint_marks(&painter, values, g, song.time_sig, cx);
+        paint_marks(&painter, values, g, (song.time_sig, self.snap.size), cx);
         let loop_ticks = self
             .clip(song)
             .map_or(BEAT * f64::from(bpb), |c| c.loop_len_beats * BEAT);
@@ -1923,7 +1968,7 @@ impl PianoRoll {
         }
     }
 
-    /// `Copy`, `Delete`, `Snap` and `More...` over the selection, in a [`clips::FloatingRow`].
+    /// `Copy`, `Delete`, `Snap`, `Duplicate` and `More...` over the selection, in a [`clips::FloatingRow`].
     fn floating_buttons(
         &mut self,
         ui: &mut egui::Ui,
@@ -1972,6 +2017,7 @@ impl PianoRoll {
         let before = clip.events.clone();
         let sel = &mut self.selected;
         match FLOATING[i] {
+            // Copy only fills the note clipboard (`Paste` and Ctrl+V put the notes back).
             "Copy" => {
                 let copied = clip
                     .events
@@ -1981,6 +2027,8 @@ impl PianoRoll {
                     .map(|(e, _)| *e)
                     .collect();
                 set_note_clipboard(ui.ctx(), copied);
+            }
+            "Duplicate" => {
                 duplicate_selected(&mut clip.events, sel, grid_ticks);
             }
             "Delete" => {
@@ -2029,14 +2077,14 @@ impl PianoRoll {
                     _ => (g, g.label()),
                 });
                 let vs = (self.value_snap[item], graph_lane::ROLL_LABELS[item]);
-                let items = value::snap_items(self.snap.mode, vs, grids);
+                let items = value::snap_items(self.snap, vs, grids);
                 let result =
                     popup::show(ctx, id.with("snap_menu"), snap_center, bounds, &items, cx);
                 match result.selected {
-                    Some(Pick::Time(mode)) => self.snap = Snap { on: true, mode },
                     Some(Pick::Value(grid)) => {
                         self.value_snap[item] = self.value_snap[item].picked(grid);
                     }
+                    Some(pick) => self.snap = pick.snap(self.snap),
                     None => {}
                 }
                 if result.close {
@@ -2044,8 +2092,12 @@ impl PianoRoll {
                     ctx.request_repaint();
                 }
             }
-            Some(Menu::More(at)) => {
-                let result = popup::show(ctx, id.with("note_menu"), at, bounds, &more_items(), cx);
+            Some(menu @ (Menu::More(at) | Menu::Slice(at))) => {
+                let (name, items) = match menu {
+                    Menu::Slice(_) => ("slice_menu", slice_items()),
+                    _ => ("note_menu", more_items()),
+                };
+                let result = popup::show(ctx, id.with(name), at, bounds, &items, cx);
                 if result.close {
                     self.menu = None;
                     ctx.request_repaint();
@@ -2161,6 +2213,10 @@ impl PianoRoll {
                 });
                 return;
             }
+            MoreOp::SliceBy => {
+                self.menu = Some(Menu::Slice(at));
+                return;
+            }
             MoreOp::GuessScale => {
                 self.menu = Some(Menu::Guess {
                     more: false,
@@ -2172,11 +2228,6 @@ impl PianoRoll {
             MoreOp::Humanize => {
                 let panel = humanize::Panel::new(seed, self.selected.contains(&true));
                 self.menu = Some(Menu::Humanize(panel));
-                return;
-            }
-            MoreOp::Generate => {
-                let panel = generate::Panel::new(seed);
-                self.menu = Some(Menu::Generate(panel));
                 return;
             }
             _ => {}
@@ -2192,6 +2243,7 @@ impl PianoRoll {
             MoreOp::DoubleUp => double_selected(&mut clip.events, sel, 12),
             MoreOp::DoubleDown => double_selected(&mut clip.events, sel, -12),
             MoreOp::Length(ticks) => set_length_selected(&mut clip.events, sel, f64::from(ticks)),
+            MoreOp::Slice(by) => slice_selected(&mut clip.events, sel, by),
             MoreOp::SelectAll => {
                 for (s, e) in sel.iter_mut().zip(&clip.events) {
                     *s = note(e).is_some();
@@ -2209,7 +2261,7 @@ impl PianoRoll {
                 }
             }
             // The dialogs opened above.
-            MoreOp::GuessScale | MoreOp::TransposeBy | MoreOp::Humanize | MoreOp::Generate => {}
+            MoreOp::GuessScale | MoreOp::TransposeBy | MoreOp::Humanize | MoreOp::SliceBy => {}
         }
         let changed = clip.events != before;
         if changed {
@@ -2431,10 +2483,17 @@ impl PianoRoll {
 /// The grid cursor before any note is touched: content tick 0, key 60.
 const CURSOR: (f64, u8) = (0.0, 60);
 
-/// The key column's touch: one id for every channel's roll, so a press latched stale on one is stale on all (the app's
-/// `left_view`).
+/// The key column's touch: one id for every channel's roll.
 pub(crate) fn keys_id() -> Id {
     Id::new("piano_roll").with("keys")
+}
+
+/// The keys the key column's `fingers` play, each once.
+fn column_keys(fingers: &[(u64, Option<u8>)]) -> Vec<u8> {
+    let mut keys: Vec<u8> = fingers.iter().filter_map(|k| k.1).collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys
 }
 
 /// The piano roll's note clipboard (`copy`, `cut`): the notes last copied, at their positions, in egui's memory, so
@@ -2483,41 +2542,71 @@ fn drag_edit(edit: &Edit, delta: Vec2, g: &Geom, snap: Option<f64>) -> (Vec<Even
     (events, sel)
 }
 
-/// The note menu: two columns, all enabled.
+/// The note menu: two columns, all enabled. `Slice...` is #62.
 fn more_items() -> Vec<PopupItem<MoreOp>> {
     use MoreOp::*;
-    let col0 = vec![
+    let col0 = [
         (Legato, "Legato", true),
         (SnapToScale, "Snap to Scale", true),
         (GuessScale, "Guess Scale...", true),
         (Humanize, "Humanize", true),
-        (Generate, "Generate...", true),
         (DoubleUp, "Double Up", true),
         (DoubleDown, "Double Down", true),
         (ToggleSlide, "Toggle Slide", true),
     ];
-    let col1 = vec![
+    let col1 = [
         (Length(32), "Set length 1/16", true),
         (Length(64), "Set length 1/8", true),
         (Length(128), "Set length 1/4", true),
         (Length(256), "Set length 1/2", true),
         (Length(512), "Set length 1/1", true),
+        (SliceBy, "Slice...", true),
         (TransposeBy, "Transpose by...", true),
         (SelectAll, "Select All", true),
     ];
-    [col0, col1]
+    [&col0[..], &col1[..]]
         .into_iter()
         .enumerate()
         .flat_map(|(col, items)| {
             items
-                .into_iter()
+                .iter()
                 .enumerate()
-                .map(move |(row, (op, label, enabled))| PopupItem {
+                .map(move |(row, &(op, label, enabled))| PopupItem {
                     disabled: !enabled,
                     ..PopupItem::new(op, col, row, label)
                 })
         })
         .collect()
+}
+
+/// `Slice...`'s choices in place of the note menu (#62): the piece lengths under `Every`, each triplet beside its
+/// straight size (as in the snap menu's `Grid`), the equal parts under `Into`.
+fn slice_items() -> Vec<PopupItem<MoreOp>> {
+    let sizes = [
+        (0, 1, 4, false),
+        (0, 2, 8, false),
+        (1, 2, 8, true),
+        (0, 3, 16, false),
+        (1, 3, 16, true),
+        (0, 4, 32, false),
+    ];
+    let sizes = sizes.map(|(col, row, n, triplet)| {
+        let size = GridSize::Note(n, triplet);
+        PopupItem::new(MoreOp::Slice(Slice::Every(size)), col, row, size.label())
+    });
+    let parts = ([2, 3, 4, 8].into_iter().enumerate()).map(|(i, n)| {
+        PopupItem::new(
+            MoreOp::Slice(Slice::Into(n)),
+            2,
+            i + 1,
+            format!("{n} parts"),
+        )
+    });
+    let heads = [
+        PopupItem::header(0, 0, "Every"),
+        PopupItem::header(2, 0, "Into"),
+    ];
+    heads.into_iter().chain(sizes).chain(parts).collect()
 }
 
 /// `a` moved `t` of the way toward `b`.
@@ -2543,7 +2632,7 @@ pub(crate) struct Rows {
 
 /// Grid background steps 1–6: `controlFill` over the 128 key rows (from beat 0 when scrolled before it), the light
 /// rows, every row's 1 px `background` α 0.3 top and bottom lines, the lit rows, the shared adaptive beat marks
-/// ([`marks`]: `background`, 4 px bar, 2 px beat, 1 px finer, at least 0.6 U apart, w px from ⌊w/2⌋ px left of the
+/// ([`marks`](crate::ui::drum_grid::edit::marks): `background`, 4 px bar, 2 px beat, 1 px finer, at least 0.6 U apart, w px from ⌊w/2⌋ px left of the
 /// mark) and the root rows' 2 px `background` line at trunc(row bottom) − 2 px. Steps 7–9 are [`paint_notes`]'.
 fn paint_grid(
     painter: &egui::Painter,
@@ -2551,7 +2640,7 @@ fn paint_grid(
     g: &Geom,
     rows: &Rows,
     color: Rgba,
-    sig: TimeSig,
+    sig: (TimeSig, GridSize),
     cx: &UiCtx,
 ) {
     let (c, m) = (&cx.theme.colors, cx.m);
@@ -2592,13 +2681,19 @@ fn paint_grid(
 }
 
 /// The shared adaptive beat marks over `area`'s height between its left and right edges, ticks as `g` maps them
-/// ([`marks`]: `background`, 4 px bar, 2 px beat, 1 px finer, at least 0.6 U apart, w px from ⌊w/2⌋ px left of the
-/// mark): the grid's (step 5) and the graph lane's.
-fn paint_marks(painter: &egui::Painter, area: Rect, g: &Geom, sig: TimeSig, cx: &UiCtx) {
+/// ([`marks`](crate::ui::drum_grid::edit::marks): `background`, 4 px bar, 2 px beat, 1 px finer, at least 0.6 U apart, w px from ⌊w/2⌋ px left of the
+/// mark), or a fixed grid size's lines ([`grid_lines`], #53): the grid's (step 5) and the graph lane's.
+fn paint_marks(
+    painter: &egui::Painter,
+    area: Rect,
+    g: &Geom,
+    (sig, size): (TimeSig, GridSize),
+    cx: &UiCtx,
+) {
     let (m, bg) = (cx.m, cx.theme.colors.background.to_color32());
     let px = 1.0 / m.ppp();
     let (t0, t1) = (g.tick(area.left()), g.tick(area.right()));
-    for (tick, w) in marks(t0, t1, g.beat_w, m.u(1.0), sig, MARK_GAP) {
+    for (tick, w) in grid_lines(t0, t1, g.beat_w, m.u(1.0), sig, MARK_GAP, size) {
         let x = m.round_px(g.x(tick)) - (w / 2.0).floor() * px;
         vline_px(painter, x, area.y_range(), w, bg, m);
     }
@@ -2616,6 +2711,7 @@ fn paint_notes(
     ghosts: &[Ghost],
     past: Option<Rect>,
     color: Rgba,
+    scale: Option<(u8, u16)>,
     (born, cx): (Option<(u32, u8)>, &UiCtx),
 ) {
     let (theme, m) = (cx.theme, cx.m);
@@ -2648,11 +2744,17 @@ fn paint_notes(
         let Some(r) = g.note_rect(e) else {
             continue;
         };
-        let fill = if selected.get(i) == Some(&true) {
+        let mut fill = if selected.get(i) == Some(&true) {
             pale
         } else {
             normal
         };
+        // A note off the project scale is faded, so the notes in the key stand out.
+        if let (Event::Note { key, .. }, Some((root, mask))) = (*e, scale)
+            && !in_scale(key, root, mask)
+        {
+            fill = fill.gamma_multiply(OFF_SCALE_ALPHA);
+        }
         // The new note's pop-in, on its own id so that the next note pops in too. Off with `Animation` reduced
         // ([`crate::ui::anim::elapsed`] is past every end then), and in tests unless they turn animations on.
         let pop = match *e {

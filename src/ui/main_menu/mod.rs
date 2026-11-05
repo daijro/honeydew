@@ -2,12 +2,15 @@
 //! screen if that is narrower:
 //! - a header with `Help` at the left, the close X at the right, and centred between them the logo glyph, [`APP_NAME`]
 //!   and our version;
-//! - the tab row `SONGS PROJECT SETTINGS` across the panel in equal cells, the active tab underlined in `text`;
+//! - the tab row `SONGS PROJECT SETTINGS UPDATES` across the panel in equal cells, the active tab underlined in `text`
+//!   (no UPDATES on the web, which is always current; #66);
 //! - the active tab below.
 //!
 //! [`MainMenu::show`] paints it and returns what the user asked for as a [`MainMenuAction`]; the app routes those
 //! (opening, saving …). The close X, a click outside the panel, or Escape closes the menu; the header itself does not.
-//! SETTINGS shows the [`SettingsTab`] in [`shell_layout`]'s content rect. `Help` opens the Help menu.
+//! SETTINGS shows the [`SettingsTab`] in [`shell_layout`]'s content rect; its `Theme creator` `Edit` shows the THEME
+//! CREATOR page there ([`theme_creator`]), with SETTINGS still underlined and the app behind undimmed. `Help` opens
+//! the Help menu.
 
 use eframe::egui::{
     Align, Align2, Color32, Id, Painter, Pos2, Rect, Response, RichText, Sense, Stroke, TextEdit,
@@ -32,6 +35,10 @@ mod file_ops;
 pub mod library;
 mod project;
 mod songs;
+mod theme_creator;
+// Not on the web, always current, nor on iOS, which a sideloading app updates.
+#[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
+mod updates;
 
 pub(crate) use file_ops::rename_shadowed_folders;
 #[cfg(not(target_arch = "wasm32"))]
@@ -81,9 +88,16 @@ pub enum Tab {
     Project,
     /// The settings page ([`SettingsTab`]).
     Settings,
+    /// In-app updates (`updates.rs`); not on the web.
+    Updates,
+    /// SETTINGS' theme creator ([`theme_creator`]): no cell of the tab row, which keeps SETTINGS underlined.
+    ThemeCreator,
 }
 
 impl Tab {
+    #[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
+    pub const ALL: [Tab; 4] = [Tab::Songs, Tab::Project, Tab::Settings, Tab::Updates];
+    #[cfg(any(target_arch = "wasm32", target_os = "ios"))]
     pub const ALL: [Tab; 3] = [Tab::Songs, Tab::Project, Tab::Settings];
 
     pub fn label(self) -> &'static str {
@@ -91,6 +105,8 @@ impl Tab {
             Tab::Songs => "SONGS",
             Tab::Project => "PROJECT",
             Tab::Settings => "SETTINGS",
+            Tab::Updates => "UPDATES",
+            Tab::ThemeCreator => "THEME CREATOR",
         }
     }
 }
@@ -110,8 +126,11 @@ pub enum MainMenuAction {
     Save,
     /// PROJECT `Save New`, or a tap on SONGS `Save`: save under a new name.
     SaveNew,
-    /// SONGS `Import`: the operating system's file picker.
+    /// SONGS `Import` (`Import file` in its menu, where there is one): the operating system's file picker.
     Import,
+    /// SONGS `Import`'s `Import folder` (not on the web): the folder picker, then the folder's files into the user
+    /// folder ([`crate::project_files::ProjectFiles::pick_folder`]).
+    ImportFolder,
     /// A song or an archive in the SONGS list: open the file at this [`SongEntry::path`] (read it with
     /// [`SongLibrary::read`]).
     Open(std::path::PathBuf),
@@ -143,6 +162,14 @@ pub enum MainMenuAction {
     RestoreDemoSongs,
     /// Help → `What's new`: show the What's New dialog.
     WhatsNew,
+    /// The theme creator's `Save`: write this theme into the user's themes ([`crate::theme::THEMES_FOLDER`]).
+    SaveTheme(crate::theme::Theme),
+    /// The theme creator's `Export`: write this theme where the user puts it.
+    ExportTheme(crate::theme::Theme),
+    /// The theme creator's `Import`: the file picker, then [`MainMenu::theme_imported`].
+    ImportTheme,
+    /// PROJECT `View project versions` (#69): the versions window.
+    ViewVersions,
 }
 
 /// The Help menu's links, after `What's new`: the project's own pages.
@@ -206,8 +233,11 @@ pub struct MainMenu {
     pub tab: Tab,
     songs: songs::SongsTab,
     project: project::ProjectTab,
+    #[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
+    updates: updates::UpdatesTab,
     /// The Help menu, open at this point (the `Help` button's centre).
     help_menu: Option<Pos2>,
+    creator: theme_creator::ThemeCreator,
 }
 
 impl MainMenu {
@@ -222,6 +252,11 @@ impl MainMenu {
     /// Shows PROJECT and scrolls its Performance block into view as it draws (the CPU / RAM labels' tap).
     pub fn show_performance(&mut self) {
         self.project.show_performance();
+    }
+
+    /// The theme `Import` read: the theme creator loads it, as the theme in use.
+    pub fn theme_imported(&mut self, theme: crate::theme::Theme, settings: &mut Settings) {
+        self.creator.load(theme, false, settings);
     }
 
     /// Reads the SONGS folder again on the next frame: call it after the library changed (a song was saved).
@@ -289,7 +324,11 @@ impl MainMenu {
         }
         // Modal: everything left of the panel closes it ([`Self::panel`]), and undo and redo wait.
         crate::ui::modal_shown(&ctx);
-        let dim = anim::DIM_ALPHA * (1.0 - ease(n));
+        // The theme creator leaves the app undimmed: it shows the theme being made.
+        let dim = match self.tab {
+            Tab::ThemeCreator => 0.0,
+            _ => anim::DIM_ALPHA * (1.0 - ease(n)),
+        };
         (ui.painter()).rect_filled(screen, 0.0, anim::dim(c.background.to_color32(), dim));
         let slide = |x: f32| TSTransform::from_translation(vec2(x, 0.0));
         ui.with_visual_transform(slide(dx), |ui| {
@@ -400,7 +439,7 @@ impl MainMenu {
                 text,
                 TAB_TAIL_K,
             );
-            if tab == self.tab {
+            if tab == self.tab || (tab, self.tab) == (Tab::Settings, Tab::ThemeCreator) {
                 let line = cell.with_min_y(cell.bottom() - 2.0 * m.t());
                 painter.rect_filled(line, 0.0, text);
             }
@@ -429,11 +468,24 @@ impl MainMenu {
                         .content
                         .with_min_x(l.panel.left())
                         .with_max_x(l.panel.right());
+                    tab.creator_unsaved = self.creator.unsaved(settings);
                     tab.show(ui, cx, page, settings);
+                    if tab.take_creator() {
+                        self.creator.open(cx.theme, settings);
+                        self.tab = Tab::ThemeCreator;
+                    }
                     let restore = tab.take_restore_demos();
                     (tab.take_reveal().map(MainMenuAction::Reveal))
                         .or(restore.then_some(MainMenuAction::RestoreDemoSongs))
                 }
+                Tab::ThemeCreator => {
+                    let (tab, settings) = settings;
+                    (self.creator).show(ui, cx, l.content, settings, &tab.user_themes)
+                }
+                #[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
+                Tab::Updates => self.updates.show(ui, cx, l.content, settings.1),
+                #[cfg(any(target_arch = "wasm32", target_os = "ios"))]
+                Tab::Updates => None,
             })
             .inner;
         action = tab_action.or(action);
@@ -586,7 +638,14 @@ fn circle_button(ui: &mut Ui, cx: &UiCtx, c: &Circle) -> bool {
 
 /// A light rectangular button: a `text` rect with a `menuFill` `FontSize::Pt10` label, dimmed and inert when
 /// disabled. Returns whether it was clicked.
-fn light_button(ui: &mut Ui, cx: &UiCtx, id: Id, rect: Rect, label: &str, enabled: bool) -> bool {
+pub(crate) fn light_button(
+    ui: &mut Ui,
+    cx: &UiCtx,
+    id: Id,
+    rect: Rect,
+    label: &str,
+    enabled: bool,
+) -> bool {
     let colors = &cx.theme.colors;
     let mut b = Button::new(id, rect, label, false, colors);
     if !enabled {
@@ -609,7 +668,13 @@ fn pressed_box(painter: &Painter, rect: Rect, cx: &UiCtx) {
 
 /// A dark (`background`) one-line text field filling `rect`, in `text` at `FontSize::Pt10`, with `hint` dimmed while
 /// it is empty. `edit` brings the text, id, limits and whether it is interactive.
-fn text_field(ui: &mut Ui, cx: &UiCtx, rect: Rect, hint: &str, edit: TextEdit) -> Response {
+pub(crate) fn text_field(
+    ui: &mut Ui,
+    cx: &UiCtx,
+    rect: Rect,
+    hint: &str,
+    edit: TextEdit,
+) -> Response {
     let m = cx.m;
     let colors = &cx.theme.colors;
     let text = colors.text.to_color32();

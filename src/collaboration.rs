@@ -80,7 +80,7 @@ fn views(song: &mut Song, local: Option<&Song>) {
     let to = &mut song.file;
     let from = &from.file;
     local_fields!(SongFileState, to, from;
-        version, selected_channel, playhead_beats, playlist_view, show_sharps;
+        version, selected_channel, playhead_beats, playlist_view, show_sharps, versions;
         last_send_bus, guid, play_truncated_notes, next_channel_id, head_extra,
         time_sig_extra, meta, keyboard, unknown_chunks);
     let to = &mut song.file.meta;
@@ -267,7 +267,7 @@ fn merge_file(
     fields!(SongFileState, b, c, e, out, "song.file";
         version, selected_channel, playhead_beats, playlist_view, guid, show_sharps,
         play_truncated_notes, head_extra, time_sig_extra, keyboard, unknown_chunks;
-        last_send_bus, next_channel_id, meta);
+        last_send_bus, next_channel_id, meta, versions);
     out.last_send_bus = b.last_send_bus.max(c.last_send_bus).max(e.last_send_bus);
     out.next_channel_id = b
         .next_channel_id

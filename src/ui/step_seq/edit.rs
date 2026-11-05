@@ -220,7 +220,7 @@ pub fn copy_steps(clip: &mut Clip, cells: &[(u8, usize)], sig: TimeSig) -> Vec<(
         .filter(|(_, c)| cells.contains(c) && c.1 + shift < MAX_STEPS)
         .map(|(e, c)| with_pos(e, to_step(e.pos(), c.1, c.1 + shift, sig)))
         .collect();
-    land(clip, copies, sig)
+    land(&mut clip.events, copies, sig)
 }
 
 /// `Paste` at step `at` (as the automation editor's): the first step of the clipboard's `hits` lands on `at`, the
@@ -237,20 +237,60 @@ pub fn paste_steps(clip: &mut Clip, hits: &[Event], at: usize, sig: TimeSig) -> 
         .filter(|&(_, _, to)| to < MAX_STEPS)
         .map(|(e, from, to)| with_pos(e, to_step(e.pos(), from, to, sig)))
         .collect();
-    land(clip, pasted, sig)
+    land(&mut clip.events, pasted, sig)
 }
 
-/// Puts `hits` into the clip, each replacing what its cell held; returns their cells, sorted.
-fn land(clip: &mut Clip, hits: Vec<Event>, sig: TimeSig) -> Vec<(u8, usize)> {
+/// Puts `hits` into `events`, each replacing what its cell held; returns their cells, sorted.
+fn land(events: &mut Vec<Event>, hits: Vec<Event>, sig: TimeSig) -> Vec<(u8, usize)> {
     let mut targets: Vec<(u8, usize)> = hits.iter().filter_map(|e| cell_of(e, sig)).collect();
     targets.sort_unstable();
     targets.dedup();
-    clip.events
-        .retain(|e| cell_of(e, sig).is_none_or(|c| !targets.contains(&c)));
+    events.retain(|e| cell_of(e, sig).is_none_or(|c| !targets.contains(&c)));
     for e in hits {
-        insert(&mut clip.events, e);
+        insert(events, e);
     }
     targets
+}
+
+/// A drag of the hits in `cells` by (`rows`, `steps`) in step mode: each goes to the start of its new step with the
+/// lane's Swing re-applied (`swing` is the song's `TDIV` and the amount), one step long, and replaces what its new
+/// cell held. The group keeps its shape: the shift stops at step 0 and at the rows `0..row_count`. Returns the moved
+/// hits' cells, sorted.
+pub fn move_steps(
+    events: &mut Vec<Event>,
+    cells: &[(u8, usize)],
+    (rows, steps): (i64, i64),
+    row_count: usize,
+    (sig, amount): (TimeSig, f64),
+) -> Vec<(u8, usize)> {
+    let pads = cells.iter().map(|c| i64::from(c.0));
+    let (Some(top), Some(bottom)) = (pads.clone().min(), pads.max()) else {
+        return Vec::new();
+    };
+    let first = cells.iter().map(|c| c.1).min().unwrap_or(0) as i64;
+    let rows = rows.min(row_count as i64 - 1 - bottom).max(-top);
+    let steps = steps.max(-first);
+    let len = 1.0 / f64::from(sig.steps_per_beat());
+    let mut moved = Vec::new();
+    events.retain(|e| match cell_of(e, sig) {
+        Some(c) if cells.contains(&c) => {
+            moved.push(*e);
+            false
+        }
+        _ => true,
+    });
+    let moved = (moved.into_iter())
+        .filter_map(|e| {
+            let (pad, step) = cell_of(&e, sig)?;
+            let to = (step as i64 + steps) as usize;
+            let mut e = with_pad(e, (i64::from(pad) + rows) as u8);
+            if let Event::Drum { len_beats, .. } = &mut e {
+                *len_beats = len;
+            }
+            Some(with_pos(e, swung(sig.step_start(to), sig, amount)))
+        })
+        .collect();
+    land(events, moved, sig)
 }
 
 /// The floating `Delete`: removes every hit in `cells`.

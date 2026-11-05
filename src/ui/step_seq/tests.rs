@@ -2292,12 +2292,14 @@ fn a_long_press_on_a_hit_selects_it_and_floats_copy_and_delete_over_it() {
     rig.release(at);
     assert_eq!(rig.selection(), [(1, 4)]);
     assert!(rig.actions.is_empty(), "{:?}", rig.actions);
-    // Step-sequencer mode: no `Snap`. The row sits centred above the selected step.
-    let (copy, delete) = (rig.text_at("Copy").unwrap(), rig.text_at("Delete").unwrap());
+    // Step-sequencer mode: no `Snap`. The row, `Copy` `Delete` `Duplicate`, sits centred above the selected step.
+    let [copy, delete, duplicate] =
+        ["Copy", "Delete", "Duplicate"].map(|t| rig.text_at(t).unwrap());
     assert_eq!(rig.text_at("Snap"), None);
     let cell = rig.layout().cell(1, 4);
     assert!(copy.y < cell.top() && delete.y < cell.top());
-    assert!(((copy.x + delete.x) / 2.0 - cell.center().x).abs() < 1.0);
+    assert!(copy.x < delete.x && delete.x < duplicate.x);
+    assert!(((copy.x + duplicate.x) / 2.0 - cell.center().x).abs() < 1.0);
 }
 
 #[test]
@@ -2463,13 +2465,14 @@ fn a_touch_long_press_selects_and_a_move_boxes() {
     rig.touch(0.1, End, at);
     rig.frame(vec![]);
     assert_eq!(rig.selection(), [(2, 2)]);
-    let (from, to) = (rig.cell(0, 0), rig.cell(1, 12));
+    // From an empty step: a held hit's move drags it instead.
+    let (from, to) = (rig.cell(0, 1), rig.cell(1, 12));
     rig.touch(0.1, Start, from);
     rig.touch(1.0, Move, from);
     rig.touch(0.1, Move, to);
     rig.touch(0.1, End, to);
     rig.frame(vec![]);
-    assert_eq!(rig.selection(), [(0, 0), (1, 4), (1, 12)]);
+    assert_eq!(rig.selection(), [(1, 4), (1, 12)]);
     assert!(rig.actions.is_empty());
 }
 
@@ -2501,14 +2504,15 @@ fn a_tap_on_a_hit_deletes_it_when_it_alone_is_selected_else_only_deselects() {
     rig.click(snare);
     assert_eq!(rig.selection(), []);
     assert!(rig.actions.is_empty(), "{:?}", rig.actions);
-    // A tap on an empty step while a selection shows only deselects; then it toggles.
+    // A tap on an empty step while a selection shows only deselects; then it toggles. (Clear of the floating row,
+    // which floats over the box's release.)
     rig.boxed(rig.cell(1, 1), rig.cell(2, 5));
-    let empty = rig.cell(3, 7);
+    let empty = rig.cell(3, 0);
     rig.click(empty);
     assert_eq!(rig.selection(), []);
     assert!(rig.actions.is_empty());
     rig.click(empty);
-    assert_eq!(rig.actions, [StepAction::Toggle { pad: 3, step: 7 }]);
+    assert_eq!(rig.actions, [StepAction::Toggle { pad: 3, step: 0 }]);
 }
 
 #[test]
@@ -2552,14 +2556,18 @@ fn a_right_click_deletes_the_hit_under_it_in_one_undo_step_and_on_an_empty_step_
 }
 
 #[test]
-fn copy_duplicates_the_selected_steps_to_the_right_and_selects_the_copies() {
+fn duplicate_copies_the_selected_steps_to_the_right_and_selects_the_copies() {
     let mut rig = Rig::new(pattern());
-    let (from, to) = (rig.cell(0, 0), rig.cell(2, 4));
+    // The box from an empty step (a hit's move drags it), over the same hits.
+    let (from, to) = (rig.cell(3, 0), rig.cell(0, 4));
     rig.hold(from);
     rig.frame(vec![egui::Event::PointerMoved(to)]);
     rig.release(to);
-    let copy = rig.text_at("Copy").unwrap();
-    rig.click(copy);
+    // `Copy` only fills the hit clipboard; `Duplicate` copies.
+    rig.click(rig.text_at("Copy").unwrap());
+    assert_eq!(rig.actions, []);
+    let duplicate = rig.text_at("Duplicate").unwrap();
+    rig.click(duplicate);
     let cells = vec![(0, 0), (1, 4), (2, 2)];
     assert_eq!(rig.actions, [StepAction::CopySteps { cells }]);
     // Steps 0 to 4 are five steps.
@@ -2572,7 +2580,7 @@ fn copy_duplicates_the_selected_steps_to_the_right_and_selects_the_copies() {
 
 #[test]
 fn copy_fills_the_hit_clipboard_and_a_long_press_or_right_click_on_an_empty_step_pastes_it() {
-    // As in the automation editor, `Copy` also stores the hits; lifted in place on an empty step, a long press shows
+    // As in the automation editor, `Copy` stores the hits (and changes nothing); lifted in place on an empty step, a long press shows
     // `Paste` while the clipboard is set, and its tap lands the first copied step on the step under it, the others
     // keeping their pads and distances, selected.
     let mut rig = Rig::new(pattern());
@@ -2582,7 +2590,7 @@ fn copy_fills_the_hit_clipboard_and_a_long_press_or_right_click_on_an_empty_step
     assert_eq!(rig.text_at("Paste"), None, "nothing to paste");
     rig.click_with(empty, PointerButton::Secondary);
     assert_eq!(rig.text_at("Paste"), None);
-    rig.boxed(rig.cell(0, 0), rig.cell(2, 4));
+    rig.boxed(rig.cell(3, 0), rig.cell(0, 4));
     rig.click(rig.text_at("Copy").unwrap());
     let copied: Vec<_> = (rig.channel().lanes[0].clips[0].events.iter())
         .filter(|e| [0, 2 * STEP_TICKS, 4 * STEP_TICKS].contains(&e.pos()))
@@ -2606,17 +2614,7 @@ fn copy_fills_the_hit_clipboard_and_a_long_press_or_right_click_on_an_empty_step
     // Over the Snare on 12.
     assert_eq!(
         rig.hits(),
-        on(&[
-            (0, 0),
-            (2, 2),
-            (1, 4),
-            (0, 5),
-            (2, 7),
-            (0, 8),
-            (1, 9),
-            (2, 10),
-            (1, 12)
-        ])
+        on(&[(0, 0), (2, 2), (1, 4), (0, 8), (2, 10), (1, 12)])
     );
     assert_eq!(rig.selection(), [(0, 8), (1, 12), (2, 10)]);
     assert_eq!(rig.text_at("Paste"), None);
@@ -2631,7 +2629,7 @@ fn copy_fills_the_hit_clipboard_and_a_long_press_or_right_click_on_an_empty_step
 #[test]
 fn delete_clears_the_selected_steps_and_the_selection() {
     let mut rig = Rig::new(pattern());
-    rig.boxed(rig.cell(0, 0), rig.cell(1, 4));
+    rig.boxed(rig.cell(1, 0), rig.cell(0, 4));
     let delete = rig.text_at("Delete").unwrap();
     rig.click(delete);
     let cells = vec![(0, 0), (1, 4)];
@@ -2677,7 +2675,7 @@ fn the_selection_stays_with_its_clip() {
 #[test]
 fn the_floating_row_hides_on_a_scroll_or_zoom_and_a_tap_on_the_selection_brings_it_back() {
     // The same rule as the playlist and the piano roll: the shared placement, hidden by any scroll or zoom, back after
-    // a release on the selection. At U = 32: a 2-button row is 102.4 × 48, m 6.4.
+    // a release on the selection. At U = 32: the 3-button row (`Copy`, `Delete`, `Duplicate`) is 153.6 × 48, m 6.4.
     let shared = |rig: &Rig, cell: (usize, usize), finger: Pos2| {
         let l = rig.layout();
         let sel = Selection {
@@ -2685,7 +2683,7 @@ fn the_floating_row_hides_on_a_scroll_or_zoom_and_a_tap_on_the_selection_brings_
             one_row: true,
             handles: &[],
         };
-        place_row(&sel, finger, l.grid(), vec2(102.4, 48.0), 6.4, 1.0)
+        place_row(&sel, finger, l.grid(), vec2(3.0 * 51.2, 48.0), 6.4, 1.0)
     };
     let mut rig = Rig::new(pattern());
     rig.kit = twelve();
@@ -2736,9 +2734,43 @@ fn the_floating_row_of_a_box_selection_shows_at_its_release() {
         one_row: false,
         handles: &[],
     };
-    let want = place_row(&sel, to, l.grid(), vec2(102.4, 48.0), 6.4, 1.0);
+    let want = place_row(&sel, to, l.grid(), vec2(3.0 * 51.2, 48.0), 6.4, 1.0);
     assert!(want.is_some());
     assert_eq!(rig.view.row.rect(), want);
+    // A second box over the same steps catches a selection with the same bounds: its release shows the row again.
+    rig.boxed(from, to);
+    assert_eq!(rig.selection(), [(1, 4), (2, 2)]);
+    assert_eq!(rig.view.row.rect(), want);
+}
+
+#[test]
+fn a_drag_on_a_hit_moves_the_selection_by_whole_steps_and_rows_in_one_undo_step() {
+    // The Snare on 4, dragged a row down and two steps back, lands on the Hat's step 2, which it replaces.
+    let mut rig = Rig::new(pattern());
+    let (from, to) = (rig.cell(1, 4), rig.cell(2, 2));
+    rig.frame(vec![egui::Event::PointerMoved(from)]);
+    rig.press(from, PointerButton::Primary, true);
+    for i in 1..=4 {
+        rig.frame(vec![egui::Event::PointerMoved(
+            from + (to - from) * i as f32 / 4.0,
+        )]);
+    }
+    rig.press(to, PointerButton::Primary, false);
+    rig.frame(vec![]);
+    assert_eq!(rig.hits(), on(&[(0, 0), (2, 2), (1, 12)]));
+    assert_eq!(rig.selection(), [(2, 2)]);
+    // Live edits while it moves, closed by its release's one final edit; the rows did not scroll.
+    let finals: Vec<bool> = (rig.actions.iter())
+        .map(|a| match a {
+            StepAction::Hits { final_edit, .. } => *final_edit,
+            other => panic!("not a move: {other:?}"),
+        })
+        .collect();
+    assert_eq!(finals.iter().filter(|f| **f).count(), 1);
+    assert_eq!(finals.last(), Some(&true));
+    assert_eq!(rig.row_view().scroll, 0.0);
+    // No floating row after a drag.
+    assert_eq!(rig.text_at("Copy"), None);
 }
 
 #[test]
@@ -3480,7 +3512,8 @@ fn a_hit_alone_in_the_selection_is_remembered_and_new_hits_take_its_velocity_and
     rig.release(at);
     assert_eq!(rig.view.remembered.velocity, 255);
     rig.view.remembered = default;
-    rig.boxed(rig.cell(0, 0), rig.cell(1, 4));
+    // From an empty step clear of the floating row under the Kick.
+    rig.boxed(rig.cell(0, 4), rig.cell(1, 0));
     assert_eq!(rig.selection(), [(0, 0), (1, 4)]);
     assert_eq!(rig.view.remembered, default);
     rig.click(rig.cell(2, 7));
@@ -3492,14 +3525,14 @@ fn a_hit_alone_in_the_selection_is_remembered_and_new_hits_take_its_velocity_and
 }
 
 #[test]
-fn a_lone_copy_is_remembered() {
+fn a_lone_duplicate_is_remembered() {
     let mut rig = Rig::new(odd_hit());
     let at = rig.cell(1, 4);
     rig.hold(at);
     rig.release(at);
     rig.view.remembered = Remembered::default();
-    let copy = rig.text_at("Copy").unwrap();
-    rig.click(copy);
+    let duplicate = rig.text_at("Duplicate").unwrap();
+    rig.click(duplicate);
     assert_eq!(rig.selection(), [(1, 5)]);
     assert_eq!(rig.view.remembered.velocity, 102);
 }

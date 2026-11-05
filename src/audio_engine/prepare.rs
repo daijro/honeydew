@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use super::midi_sends::MidiSends;
 use super::{EngineError, strip_param};
-use crate::audio_bridge::{SongAudioBridge, playing_clips};
+use crate::audio_bridge::{SongAudioBridge, fine, playing_clips};
 use crate::panels::couple_scale;
 use crate::params::snap_echo_delay;
 use crate::song::{Clip, Event, Lane, LaneKind, ModuleInstance, PPQ, Song};
@@ -583,7 +583,7 @@ fn lane_points(lane: &Lane, end_beat: f64) -> Result<Vec<(u64, f32)>, EngineErro
     let end_tick = (end_beat * f64::from(PPQ)).ceil() as u64;
     let mut points = Vec::new();
     for clip in playing_clips(lane) {
-        let playback = automation_clip(clip)?;
+        let playback = automation_clip(clip, false)?;
         for (tick, event) in playback.events_in_song_range(0, end_tick) {
             if let Event::Automation { value, .. } = event {
                 points.push((tick, *value));
@@ -604,7 +604,7 @@ fn plays(song: &Song) -> Result<f64, EngineError> {
                 continue;
             };
             let events = match lane.kind {
-                LaneKind::Automation => automation_clip(clip)?.events.len(),
+                LaneKind::Automation => automation_clip(clip, fine(lane))?.events.len(),
                 // A drum hit plays once plus its Repeat hits.
                 LaneKind::Drums => (clip.events.iter())
                     .map(|event| match *event {
@@ -683,7 +683,8 @@ pub(super) fn song_end_beat(song: &Song) -> Result<f64, EngineError> {
     }
 }
 
-pub(super) fn automation_clip(clip: &Clip) -> Result<Clip, EngineError> {
+/// `clip`'s playback events, `fine` ones for a Pitch Bend lane (`audio_bridge::fine`): what the bridge plays.
+pub(super) fn automation_clip(clip: &Clip, fine: bool) -> Result<Clip, EngineError> {
     let mut points = Vec::new();
     for event in &clip.events {
         if let Event::Automation {
@@ -705,8 +706,11 @@ pub(super) fn automation_clip(clip: &Clip) -> Result<Clip, EngineError> {
     if points.is_empty() {
         return Ok(clip.clone());
     }
-    let generated =
+    let mut generated =
         AutomationClip::new(0, 1, 1, 0, 1, points).map_err(|_| EngineError::InvalidTiming)?;
+    if fine {
+        generated = generated.fine();
+    }
     let mut playback = clip.clone();
     playback.events = generated
         .events()

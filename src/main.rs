@@ -12,6 +12,8 @@ fn main() -> eframe::Result {
             honeydew::plugins::scan::child_main(&args[1..]);
         }
     }
+    #[cfg(target_os = "ios")]
+    honeydew::ios::start();
     let icon = include_bytes!("../assets/branding/honeydew-256.png");
     let options = eframe::NativeOptions {
         // A landscape phone shape: about 36.6 U x 16.9 U at U = 32.

@@ -61,7 +61,7 @@ impl ProjectFiles {
     /// The pickers that list audio files offer `Import`: where this session keeps the files (the web) or the app's
     /// private storage holds them (Android), as nothing else puts audio there. The desktop's pickers list its folders.
     pub fn imports_audio(&self) -> bool {
-        self.copies || cfg!(target_os = "android")
+        self.copies || cfg!(mobile)
     }
 
     /// `Import` in a picker that lists audio files: asks for one (the web's `<input type="file">`), which
@@ -106,6 +106,65 @@ impl ProjectFiles {
                 None
             }
         }
+    }
+
+    /// Keeps an Android plugin editor's picked sample in the app's normal sample folder, so the path saved in plugin
+    /// state remains valid after the document picker's cache copy is removed.
+    #[cfg(target_os = "android")]
+    pub(crate) fn keep_plugin_sample(path: &Path) -> io::Result<PathBuf> {
+        let dir = crate::ui::main_menu::user_dir()
+            .ok_or(io::ErrorKind::NotFound)?
+            .join(SAMPLES_FOLDER);
+        std::fs::create_dir_all(&dir)?;
+        Self::keep_plugin_sample_in(path, &dir)
+    }
+
+    // Only the Android entry point and the test use it; on a host build it would be dead code.
+    #[cfg(any(target_os = "android", test))]
+    fn keep_plugin_sample_in(path: &Path, dir: &Path) -> io::Result<PathBuf> {
+        let ext = path
+            .extension()
+            .ok_or(io::ErrorKind::InvalidInput)?
+            .to_string_lossy();
+        if ext.is_empty() {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        let bytes = std::fs::read(path)?;
+        let base = super::stem(path);
+        for n in 1u32.. {
+            let name = if n == 1 {
+                base.clone()
+            } else {
+                format!("{base} ({n})")
+            };
+            let target = dir.join(format!("{name}.{ext}"));
+            if target.exists() {
+                continue;
+            }
+            match super::write_atomic(&target, &bytes) {
+                Ok(()) => return Ok(target),
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(err) => return Err(err),
+            }
+        }
+        unreachable!("an unbounded range has a free sample name")
+    }
+
+    /// A file a built-in plugin's editor saved where there is no save dialog (Android, the web;
+    /// `os_plugkit::save_file`), `path` its proposed name: kept in the user's [`RECORDINGS_FOLDER`] as `Import` keeps
+    /// one ([`Self::keep_audio`]), under that name or a free `name (n)`, nothing overwritten. Returns where it is kept.
+    pub fn keep_saved(&mut self, path: &Path, bytes: Vec<u8>) -> Option<PathBuf> {
+        let dir = match self.recordings_dir() {
+            Some(Ok(dir)) => dir,
+            _ => self
+                .user_dir()
+                .unwrap_or(Path::new(""))
+                .join(RECORDINGS_FOLDER),
+        };
+        let name = Path::new(path.file_name()?);
+        let kept = self.keep_audio(&dir, name, bytes)?;
+        self.flash = Some(format!("Saved to {RECORDINGS_FOLDER}"));
+        Some(kept)
     }
 
     /// An audio file dropped on the window (the web hands its bytes, the desktop its path), kept in the user's
@@ -246,11 +305,15 @@ pub fn make_user_folders(user: &Path) -> io::Result<()> {
 
 /// The user folder an archive's file of this name is imported into, by its type, in any case: samples, presets of
 /// every kind, SoundFonts, songs ([`SONGS_FOLDER`], the songs folder), MIDI files and instruments. `None` for any other
-/// type, and for a hidden file (`.DS_Store`, or the `__MACOSX/._x.wav` resource forks a macOS archive holds).
+/// type, and for archive junk: a hidden file or one in a hidden folder (`.DS_Store`, `.git/`), and anything in a macOS
+/// archive's `__MACOSX` folder (its `._x.wav` resource forks). Windows' `Thumbs.db` and `desktop.ini` are no known
+/// type.
 pub(crate) fn import_folder(path: &Path) -> Option<&'static str> {
-    let name = path.file_name()?.to_str()?;
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
-    if name.starts_with('.') {
+    let junk = |part: &std::ffi::OsStr| {
+        (part.to_str()).is_none_or(|part| part.starts_with('.') || part == "__MACOSX")
+    };
+    if path.iter().any(junk) {
         return None;
     }
     Some(match ext.as_str() {
@@ -356,6 +419,26 @@ mod tests {
             b"kick"
         );
         let _ = std::fs::remove_dir_all(&user);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn plugin_samples_are_copied_to_my_samples_without_overwriting() {
+        let root =
+            std::env::temp_dir().join(format!("honeydew-plugin-sample-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let source = root.join("Loop.wav");
+        let dir = root.join(SAMPLES_FOLDER);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&source, b"first").unwrap();
+        let one = ProjectFiles::keep_plugin_sample_in(&source, &dir).unwrap();
+        std::fs::write(&source, b"second").unwrap();
+        let two = ProjectFiles::keep_plugin_sample_in(&source, &dir).unwrap();
+        assert_eq!(one.file_name().unwrap().to_string_lossy(), "Loop.wav");
+        assert_eq!(two.file_name().unwrap().to_string_lossy(), "Loop (2).wav");
+        assert_eq!(std::fs::read(one).unwrap(), b"first");
+        assert_eq!(std::fs::read(two).unwrap(), b"second");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

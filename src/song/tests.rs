@@ -2084,9 +2084,10 @@ fn a_channels_midi_input_is_saved_apart_and_a_song_without_one_writes_none() {
     assert_eq!(read.channels[1].file.channel_unknown_chunks, []);
 }
 
+/// The fork has no `Hide track`: a track an upstream build hid (an `HDHd` in its `TRKH`, which FL Studio Mobile skips
+/// as an unknown chunk) reads back shown, as in FL Studio Mobile, and saves without the chunk.
 #[test]
-fn a_hidden_track_is_saved_apart_and_a_song_with_none_hidden_writes_as_before() {
-    // An `HDHd` in the track's `TRKH`, which FL Studio Mobile skips as an unknown chunk: there the track shows.
+fn a_hidden_track_is_saved_apart_and_reads_back_shown() {
     let mut song = Song::default();
     song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
     song.channels[1].add_lane(LaneKind::Notes);
@@ -2100,8 +2101,10 @@ fn a_hidden_track_is_saved_apart_and_a_song_with_none_hidden_writes_as_before() 
     let hidden: Vec<Vec<bool>> = (read.channels.iter())
         .map(|c| c.lanes.iter().map(|l| l.hidden).collect())
         .collect();
-    assert_eq!(hidden, [vec![false], vec![false, true]]);
+    assert_eq!(hidden, [vec![false], vec![false, false]]);
     assert_eq!(read.channels[1].lanes[1].clips.len(), 1);
+    let again = crate::flm::write(&read).unwrap();
+    assert!(!again.windows(4).any(|w| w == b"HDHd"), "saved without it");
     // Shown again, the song writes what it wrote before it was hidden.
     song.channels[1].lanes[1].hidden = false;
     assert_eq!(crate::flm::write(&song).unwrap(), before);

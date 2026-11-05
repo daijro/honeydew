@@ -471,6 +471,8 @@ pub fn panel_for(type_id: u16) -> Option<&'static Panel> {
                 fx::dynamic_eq::panel(),
             ),
             (honeydew_audio::modulator::MODULATOR, fx::modulator::panel()),
+            (honeydew_audio::de_esser::DE_ESSER, fx::de_esser::panel()),
+            (honeydew_audio::denoise::DENOISE, fx::denoise::panel()),
         ];
         fx.chain(inst).chain(lemon).collect()
     });
@@ -699,7 +701,11 @@ pub fn show(
         let kind = pspec.map(|s| s.kind);
         let menu = kind.map_or(&[][..], ParamKind::items);
         let items = if bound { menu } else { leaf.items };
-        let label = leaf.label_for(&module.params);
+        // A knob the wiring names (a SoundFont Player's SFZ control) shows that name.
+        let label = match state.texts.get(&leaf.id) {
+            Some(name) if leaf.widget == Widget::Knob => Cow::Owned(name.clone()),
+            _ => leaf.label_for(&module.params),
+        };
         let enabled = leaf.enabled.holds(module, state);
         // Labels are FontSize 1, but text toggles and right labels FontSize 2.
         let label_font = match leaf.widget {
