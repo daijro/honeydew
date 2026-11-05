@@ -287,6 +287,22 @@ impl HoneydewApp {
                 // The audio never reads it: an undo step with no rebuild.
                 self.song_edited(SongEdit::Param, tick);
             }
+            TrackOp::ToggleHide => {
+                let Some(lane_ref) = ch.lanes.get_mut(lane) else {
+                    return;
+                };
+                lane_ref.hidden = !lane_ref.hidden;
+                let hiding = lane_ref.hidden;
+                // A clip selected on the track that hides goes with it, as do such clips of the group.
+                let clips = &mut self.main_screen.clips;
+                let hidden = |r: &ClipRef| hiding && r.channel == channel && r.lane == lane;
+                if clips.selected.as_ref().is_some_and(hidden) {
+                    *clips = Default::default();
+                }
+                clips.group.retain(|r| !hidden(r));
+                // The audio never reads it: an undo step with no rebuild.
+                self.song_edited(SongEdit::Param, tick);
+            }
             TrackOp::ChannelSettings => {
                 let name = ch.name.clone();
                 self.navigate(Nav::Open(Overlay::ChannelSettings { channel, name }));

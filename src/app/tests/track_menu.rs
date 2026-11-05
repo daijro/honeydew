@@ -17,11 +17,12 @@ fn item(col: usize, row: usize) -> Id {
 }
 
 const HIDE: (usize, usize) = (0, 0);
-const SETTINGS: (usize, usize) = (0, 1);
-const CLONE: (usize, usize) = (0, 2);
-const INSERT: (usize, usize) = (0, 3);
-const DELETE_TRACK: (usize, usize) = (0, 4);
-const DELETE_CHANNEL: (usize, usize) = (0, 5);
+const HIDE_TRACK: (usize, usize) = (0, 1);
+const SETTINGS: (usize, usize) = (0, 2);
+const CLONE: (usize, usize) = (0, 3);
+const INSERT: (usize, usize) = (0, 4);
+const DELETE_TRACK: (usize, usize) = (0, 5);
+const DELETE_CHANNEL: (usize, usize) = (0, 6);
 /// `Add Track` of an instrument, `Add StepSeq Track` and `Add Notes Track` of a drums channel.
 const ADD_TRACK: (usize, usize) = (1, 3);
 const ADD_STEP_SEQ: (usize, usize) = (1, 2);
@@ -304,6 +305,20 @@ fn hide_tracks_hides_the_sub_track_rows_and_show_tracks_brings_them_back() {
     rig.track_menu(1, HIDE);
     rig.track_menu(1, ADD_NOTES);
     assert!(!rig.app.song.channels[1].zipped);
+}
+
+#[test]
+fn hide_track_hides_the_whole_track_and_show_track_brings_it_back() {
+    let mut rig = Rig::with_drums_and_synth();
+    // Rows: master, drums, synth.
+    assert_eq!(track_rows(&rig.app.song, false).len(), 3);
+    rig.track_menu(1, HIDE_TRACK);
+    assert!(rig.app.song.channels[1].lanes[0].hidden);
+    assert_eq!(track_rows(&rig.app.song, false).len(), 2, "the channel's row is gone");
+    // The row is gone, so the op goes straight (as the menu's `Show track` would read while hidden).
+    rig.app.track_op(1, 0, TrackOp::ToggleHide, 0);
+    assert!(!rig.app.song.channels[1].lanes[0].hidden);
+    assert_eq!(track_rows(&rig.app.song, false).len(), 3);
 }
 
 #[test]

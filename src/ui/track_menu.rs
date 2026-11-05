@@ -8,8 +8,11 @@ use crate::ui::popup::PopupItem;
 /// The menu's items.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TrackOp {
-    /// `Show Tracks` / `Hide tracks`.
+    /// `Show Tracks` / `Hide tracks` (zipping the sub-tracks inside the channel).
     ToggleZip,
+    /// `Hide track` / `Show track`: hides the whole track (the channel's row goes, with Settings `Show hidden tracks`
+    /// it shows dimmed).
+    ToggleHide,
     ChannelSettings,
     CloneChannel,
     InsertChannel,
@@ -38,10 +41,12 @@ pub enum TrackOp {
 }
 
 /// The menu for track `lane` of channel `channel`. The primary track is the channel's lane 0.
-/// - Column 0: `Show Tracks` while the sub-tracks are hidden, else `Hide tracks`, enabled with more than one track;
-///   `Channel Settings`; `Clone Channel` and `Insert Channel` (not on the master); `Delete Track`, enabled when the
-///   channel has more than one track of the primary's kind or this track's kind differs from it; then
-///   `Delete Channel` (not on the master), last (#68). The master's menu is items 1, 2 and 5.
+/// - Column 0: `Show Tracks` while the sub-tracks are hidden, else `Hide tracks`, enabled with more than one track
+///   (hides the tracks inside the channel); `Hide track` while the track shows, else `Show track` (hides the whole
+///   channel's row); `Channel Settings`; `Clone Channel` and `Insert Channel` (not on the master); `Delete Track`,
+///   enabled when the channel has more than one track of the primary's kind or this track's kind differs from it;
+///   then `Delete Channel` (not on the master), last (#68). The master's menu is the zip and hide items (disabled on
+///   one track), `Channel Settings` and `Delete Track`.
 /// - Column 1, generator channels only (not the master, not a send), by the primary track's kind: notes
 ///   `Import MIDI Tracks`, `Save as MIDI`, `Burn Notes to Track`, `Add Track`; audio `Add Track`, `Sync All Samples`; drums `Load Drumset`,
 ///   `Save Drumset`, `Add StepSeq Track`, `Add Notes Track`, `Save as MIDI`. `Sync All Samples` is disabled (see
@@ -65,8 +70,10 @@ pub fn track_menu(song: &Song, channel: usize, lane: usize) -> Vec<PopupItem<Tra
     } else {
         "Hide tracks"
     };
+    let hide = if this.hidden { "Show track" } else { "Hide track" };
     let channel_items = [
         Some((ToggleZip, zip, ch.lanes.len() > 1)),
+        Some((ToggleHide, hide, true)),
         Some((ChannelSettings, "Channel Settings", true)),
         (!master).then_some((CloneChannel, "Clone Channel", true)),
         (!master).then_some((InsertChannel, "Insert Channel", true)),
@@ -162,8 +169,9 @@ mod tests {
         song
     }
 
-    const CHANNEL: [(usize, &str, bool); 6] = [
+    const CHANNEL: [(usize, &str, bool); 7] = [
         (0, "Hide tracks", false),
+        (0, "Hide track", true),
         (0, "Channel Settings", true),
         (0, "Clone Channel", true),
         (0, "Insert Channel", true),
@@ -221,20 +229,21 @@ mod tests {
     }
 
     #[test]
-    fn the_master_has_items_1_2_5_and_a_send_no_column_1() {
+    fn the_master_has_the_zip_and_hide_items_channel_settings_and_delete_track() {
         let song = song();
         assert_eq!(
             menu(&song, 0, 0),
-            [CHANNEL[0], CHANNEL[1], CHANNEL[4]],
+            [CHANNEL[0], CHANNEL[1], CHANNEL[2], CHANNEL[5]],
             "the master"
         );
         assert_eq!(menu(&song, 4, 0), CHANNEL, "the send");
     }
 
     #[test]
-    fn hide_tracks_needs_two_tracks_and_reads_show_tracks_while_they_are_hidden() {
+    fn hide_tracks_needs_two_tracks_and_hide_track_reads_show_track_while_hidden() {
         let mut song = song();
         let first = |song: &Song| menu(song, 1, 0)[0];
+        let second = |song: &Song| menu(song, 1, 0)[1];
         song.channels[1].add_lane(LaneKind::Notes);
         assert_eq!(first(&song), (0, "Hide tracks", true));
         song.channels[1].zipped = true;
@@ -242,6 +251,10 @@ mod tests {
         // A single track: nothing to hide or show.
         song.channels[2].zipped = true;
         assert_eq!(menu(&song, 2, 0)[0], (0, "Show Tracks", false));
+        // `Hide track` hides the whole track; while hidden it reads `Show track`.
+        assert_eq!(second(&song), (0, "Hide track", true));
+        song.channels[1].lanes[0].hidden = true;
+        assert_eq!(second(&song), (0, "Show track", true));
     }
 
     #[test]
@@ -299,6 +312,7 @@ mod tests {
             ops,
             [
                 ToggleZip,
+                ToggleHide,
                 ChannelSettings,
                 CloneChannel,
                 InsertChannel,

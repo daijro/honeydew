@@ -1452,10 +1452,9 @@ mod tests {
             assert_eq!(values(Choice::SoundMode), [0, 1]);
         }
         #[cfg(not(desktop))]
-        #[cfg(not(desktop))]
         {
-            assert_eq!(labels(Choice::SoundMode), ["NATIVE"]);
-            assert_eq!(values(Choice::SoundMode), [3]);
+            assert_eq!(labels(Choice::SoundMode), ["FAST", "SAFE", "ULTRASAFE", "NATIVE"]);
+            assert_eq!(values(Choice::SoundMode), [1, 0, 2, 3]);
         }
         assert_eq!(
             labels(Choice::Theme),

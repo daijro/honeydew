@@ -5808,7 +5808,7 @@ mod tests {
         // A disabled item (`Delete Track`, the only notes track) picks nothing and keeps the menu open.
         secondary_click(&mut rig, header_at(2));
         // A disabled cell has no widget: it sits between `Insert Channel` and `Delete Channel`.
-        let (above, below) = (track_item(0, 3), track_item(0, 5));
+        let (above, below) = (track_item(0, 4), track_item(0, 6));
         let above = rig.rect_of(above).expect("the menu is open").center();
         let below = rig.rect_of(below).expect("the menu is open").center();
         let disabled = above + (below - above) / 2.0;
@@ -5821,7 +5821,7 @@ mod tests {
             track = track.or(rig.frame(events).track);
         }
         assert_eq!(track, None);
-        assert!(rig.rect_of(track_item(0, 5)).is_some(), "still open");
+        assert!(rig.rect_of(track_item(0, 6)).is_some(), "still open");
     }
 
     /// Presses `pos` with the mouse and holds it still, a frame every 0.1 s, until just before `secs`: the next
@@ -5857,7 +5857,7 @@ mod tests {
             let f = rig.frame(vec![button(at, false)]);
             assert_eq!((f.nav, f.track, f.reorder), (None, None, None), "no click");
             assert_eq!(rig.screen.track_menu, Some((channel, 0, at)));
-            assert!(rig.rect_of(track_item(0, 1)).is_some(), "Channel Settings");
+            assert!(rig.rect_of(track_item(0, 2)).is_some(), "Channel Settings");
         }
     }
 
@@ -6174,7 +6174,7 @@ mod tests {
         let mut rig = Rig::new(song_with_a_clip());
         secondary_click(&mut rig, header_at(1));
         rig.frame(vec![]);
-        let rect = rig.rect_of(track_item(0, 3)).expect("Insert Channel");
+        let rect = rig.rect_of(track_item(0, 4)).expect("Insert Channel");
         let mut track = None;
         for events in [
             vec![egui::Event::PointerMoved(rect.center())],
@@ -6232,7 +6232,7 @@ mod tests {
         secondary_click(&mut rig, header_at(3));
         rig.frame(vec![]);
         let mut track = None;
-        let rect = rig.rect_of(track_item(0, 4)).expect("the menu is open");
+        let rect = rig.rect_of(track_item(0, 5)).expect("the menu is open");
         for events in [
             vec![egui::Event::PointerMoved(rect.center())],
             vec![button(rect.center(), true)],
