@@ -336,8 +336,8 @@ fn melody(
     let tonic = tones
         .iter()
         .copied()
-        .filter(|k| (k - i32::from(base % 12)).rem_euclid(12) == 0)
-        .min_by_key(|k| (k - 60).abs())
+        .filter(|k| (*k - i32::from(base % 12)).rem_euclid(12) == 0)
+        .min_by_key(|k| (*k - 60).abs())
         .unwrap_or(base);
     let mut idx = nearest(&tones, tonic);
     let mut motif: Vec<usize> = Vec::new();
@@ -409,7 +409,7 @@ fn nearest(tones: &[i32], key: i32) -> usize {
     tones
         .iter()
         .enumerate()
-        .min_by_key(|(_, k)| (k - key).abs())
+        .min_by_key(|(_, k)| (*k - key).abs())
         .map(|(i, _)| i)
         .unwrap_or(0)
 }
