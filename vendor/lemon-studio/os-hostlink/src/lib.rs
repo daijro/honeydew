@@ -560,8 +560,9 @@ mod local {
 
 #[cfg(not(windows))]
 pub use local::{set_host_waker, take_host_messages, take_host_messages_for, Link, Peer};
+// Honeydew (vendored change): the embedded Lemon editors' `Create automation clip` reaches the app on Windows too.
 #[cfg(all(windows, feature = "embed"))]
-pub use local::Peer;
+pub use local::{take_host_messages_for, Peer};
 
 #[cfg(test)]
 mod tests {
