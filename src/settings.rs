@@ -61,8 +61,17 @@ pub fn migrate_legacy_keys(storage: &mut dyn eframe::Storage) {
 /// driver modes `Standard` and `Multitrack` instead.
 #[cfg(desktop)]
 pub const SOUND_MODES: [(u8, &str); 2] = [(0, "STANDARD"), (1, "MULTITRACK")];
+/// FL Studio Mobile's Android `Sound mode:` items, in its menu order: `FAST` (smallest buffer, lowest latency, most
+/// CPU/dropout risk), `SAFE` and `ULTRASAFE` (larger buffers, fewer glitches, more latency), and `NATIVE` (the
+/// device/OS default, recommended on Android 9+). A mode changes only the output buffering and latency — the
+/// rendered audio is exactly the same in every mode.
 #[cfg(not(desktop))]
-pub const SOUND_MODES: [(u8, &str); 1] = [(3, "NATIVE")];
+pub const SOUND_MODES: [(u8, &str); 4] = [
+    (1, "FAST"),
+    (0, "SAFE"),
+    (2, "ULTRASAFE"),
+    (3, "NATIVE"),
+];
 
 /// Buffer-size slider positions. Zero keeps the audio device's native/default buffer;
 /// positive values are targets that the backend clamps to the device's supported range.
