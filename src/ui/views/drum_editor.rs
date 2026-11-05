@@ -1114,15 +1114,12 @@ mod tests {
             let m = Metrics::from_pixels_per_point(ppp, crate::metrics::DEFAULT_UI_SCALE);
             let editor = Rect::from_min_size(pos2(10.0, 20.0), egui::vec2(1170.0, 349.0));
             for c in [0.0, 0.4, 0.99] {
-                assert_eq!(tabs(editor, c, &m, f32::INFINITY), None, "c = {c}");
+                assert_eq!(tabs(editor, c, &m), None, "c = {c}");
             }
             let h = crate::ui::timeline::ruler_h(&m);
             let want = Rect::from_min_size(pos2(10.0 + 96.0, 20.0), egui::vec2(384.0, h - px));
-            assert_eq!(tabs(editor, 1.0, &m, f32::INFINITY), Some(want));
-            // They end where the close ribbon's touch area starts (GitHub #71), and need some room.
-            let short = tabs(editor, 1.0, &m, want.left() + 300.0);
-            assert_eq!(short, Some(want.with_max_x(want.left() + 300.0)));
-            assert_eq!(tabs(editor, 1.0, &m, want.left()), None);
+            // Full column width whatever the ribbon's room: it may slide over the tabs, never squeeze them.
+            assert_eq!(tabs(editor, 1.0, &m), Some(want));
         }
     }
 
