@@ -323,3 +323,92 @@ fn a_slider_drag_whose_row_goes_is_a_change_and_ends_at_the_lift() {
     assert!(log.iter().any(|c| c.starts_with("ReplaceSong")), "{log:?}");
     assert_eq!(rig.app.history.steps(), steps + 1);
 }
+
+#[test]
+fn replace_sample_swaps_it_in_every_clip_playing_it_keeping_their_params_in_one_undo_step() {
+    // Issue #64: clips 1 and 3 on Audio Clip (1) and clip 1 on Audio Clip (2) play A, clip 2 on (1) plays B, each with a
+    // Level of its own.
+    use crate::ui::clips::ClipRef;
+    let mut rig = Rig::new();
+    for _ in 0..2 {
+        rig.app.add_bare_channel(ChannelKind::AudioClip, 0);
+    }
+    for name in ["A", "B", "C"] {
+        let wav = crate::sample_cache::tests::wav(&[0, 9000, 0, -9000]);
+        (rig.app.files).keep_user_file(Path::new(&format!("My Samples/{name}.wav")), wav);
+    }
+    let file = |name: &str| {
+        Some(ContentPath::Shorthand {
+            root: ContentRoot::User,
+            relative: format!("My Samples/{name}.wav"),
+        })
+    };
+    for (i, (channel, beat, name)) in [(1, 0, "A"), (1, 16, "B"), (1, 32, "A"), (2, 0, "A")]
+        .into_iter()
+        .enumerate()
+    {
+        let clip = rig.app.song.channels[channel].lanes[0].add_clip(beat * crate::song::PPQ, 16.0);
+        let mut slot = SamplerSlot::default();
+        (slot.file.path, slot.params[0]) = (file(name), i as f32 / 10.0);
+        clip.file.sample = Some(Box::new(slot));
+    }
+    rig.app.song_edited(SongEdit::Final, 0);
+    let played = |rig: &Rig| {
+        (rig.app.song.channels[1..].iter())
+            .flat_map(|c| &c.lanes[0].clips)
+            .map(|c| {
+                let slot = c.file.sample.as_deref().expect("a slot");
+                (slot.file.path.clone(), slot.params[0])
+            })
+            .collect::<Vec<_>>()
+    };
+    let before = played(&rig);
+    // A tap selects clip 1: its `More...` `Replace sample...` opens the picker, whose pick (C, after A and B) the
+    // close takes.
+    rig.click(lane(1));
+    rig.frame(vec![]);
+    rig.click_id(egui::Id::new(("clip_button", 5_usize)));
+    rig.frame(vec![]);
+    rig.click_id(egui::Id::new("clip_more").with((0_usize, 5_usize)));
+    picker_row(&mut rig, 0);
+    picker_row(&mut rig, 1);
+    picker_row(&mut rig, 2);
+    rig.frame(escape());
+    rig.frame(vec![]);
+    // Nothing replaced yet: the three are marked under the question.
+    assert_eq!(played(&rig), before);
+    let first = ClipRef {
+        channel: 1,
+        lane: 0,
+        id: 1,
+    };
+    let third = ClipRef { id: 3, ..first };
+    let other = ClipRef {
+        channel: 2,
+        ..first
+    };
+    assert_eq!(rig.app.main_screen.clips.marked, [first, third, other]);
+    let Some(Overlay::Message { lines, .. }) = rig.overlays().pop() else {
+        panic!("no question: {:?}", rig.overlays());
+    };
+    assert_eq!(lines, ["Replace the sample in 3 clips?"]);
+    // `Replace`: exactly the three take C, each keeping its Level, in one undo step that brings A back.
+    let steps = rig.app.history.steps();
+    rig.frame(vec![]);
+    rig.frame(vec![]);
+    rig.click(rig.text_rect("Replace").center());
+    rig.frame(vec![]);
+    assert_eq!(
+        played(&rig),
+        [
+            (file("C"), 0.0),
+            (file("B"), 0.1),
+            (file("C"), 0.2),
+            (file("C"), 0.3)
+        ]
+    );
+    assert_eq!(rig.app.history.steps(), steps + 1);
+    assert_eq!(rig.app.main_screen.clips.marked, []);
+    rig.undo();
+    assert_eq!(played(&rig), before);
+}

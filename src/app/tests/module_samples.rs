@@ -1016,6 +1016,54 @@ fn every_auto_write_takes_the_clip_the_piano_roll_edits() {
     written(&rig, "the AUTO button");
 }
 
+/// Where there is no file dialog (Android, the browser; here a phone's, its files in memory as the browser's), Tesla
+/// opens a sample from the sample picker and saves it into the user folder's My Recordings, never over a file there.
+#[test]
+fn tesla_opens_from_the_picker_and_saves_into_my_recordings() {
+    use os_plugkit::embed::{self, Input};
+    /// Ctrl and `key` on Tesla's editor `editor` (its shortcuts).
+    fn ctrl(rig: &mut Rig, editor: embed::Parent, key: char) {
+        let input = Input::Key {
+            sym: key as u32,
+            text: Some(key),
+        };
+        embed::input(editor, input, (true, false, false));
+        rig.frame(vec![]);
+        rig.frame(vec![]);
+    }
+    embed::set_host_files(true);
+    let mut rig = Rig::with_synth();
+    rig.app.add_bare_channel(ChannelKind::Instrument, 0);
+    let channel = &mut rig.app.song.channels[CHANNEL];
+    let id = channel.id;
+    let uid = crate::plugins::builtin::named("Tesla").uid;
+    let module = crate::plugins::add(&mut channel.rack, id, uid, 0).unwrap();
+    rig.app.song_edited(SongEdit::Final, 0);
+    rig.app
+        .files
+        .keep_user_file(Path::new("My Samples/Kick.wav"), wav(&[0, 9000, 0, -9000]));
+    rig.open_rack(CHANNEL);
+    rig.slide_rack();
+    let editor = crate::plugins::lemon_open(id, module).expect("its card shows its editor") as _;
+    ctrl(&mut rig, editor, 'o');
+    let picker = Overlay::ModuleSamplePicker {
+        channel: CHANNEL,
+        module,
+    };
+    assert_eq!(rig.overlays(), [Overlay::Rack(CHANNEL), picker]);
+    // My Files, My Samples, the file.
+    for row in [0, 1, 0] {
+        picker_row(&mut rig, row);
+    }
+    rig.frame(vec![]);
+    ctrl(&mut rig, editor, 's');
+    ctrl(&mut rig, editor, 's');
+    let user = (rig.app.files.user_dir().unwrap()).join(crate::project_files::RECORDINGS_FOLDER);
+    for name in ["Kick.wav", "Kick (1).wav"] {
+        assert!(rig.app.files.user_file_exists(&user.join(name)), "{name}");
+    }
+}
+
 /// Issue #52: where there is no file dialog (Android, the browser; here a phone's), Lemon Trio's sample page opens the
 /// sample picker, and the plugin opens its pick (one the session keeps in memory, as the browser's are).
 #[test]
@@ -1027,7 +1075,7 @@ fn a_lemon_trios_sample_page_opens_the_sample_picker() {
     rig.app.add_bare_channel(ChannelKind::Instrument, 0);
     let channel = &mut rig.app.song.channels[CHANNEL];
     let id = channel.id;
-    let uid = crate::plugins::builtin::LEMON_TRIO.uid;
+    let uid = crate::plugins::builtin::named("Lemon Trio").uid;
     let module = crate::plugins::add(&mut channel.rack, id, uid, 0).unwrap();
     rig.app.song_edited(SongEdit::Final, 0);
     let file = "My Samples/Kick.wav";

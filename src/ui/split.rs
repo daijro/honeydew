@@ -113,6 +113,32 @@ pub fn shadow(painter: &Painter, playlist: Rect, m: &Metrics) {
     gradient(&painter, rect, Color32::TRANSPARENT, edge);
 }
 
+/// Where an editor's top strip that starts at `strip_left` ends, clear of the close ribbon's touch area ([`ribbon`]) in
+/// an editor area whose right edge is `view_right` on a window whose right edge is `screen_right`: the touch area's left
+/// edge, its reach left of the ribbon (the drum mixer's page tabs end there, GitHub #71). The ribbon sits `shift` U
+/// along the band from its home (`Settings::editor_ribbon_shift`, never right of home); moved wholly left of the strip,
+/// it leaves the strip the room up to its home.
+pub fn ribbon_room(
+    view_right: f32,
+    screen_right: f32,
+    shift: f32,
+    strip_left: f32,
+    m: &Metrics,
+) -> f32 {
+    let (home, reach) = (ribbon_x(view_right, screen_right, m), m.u(RIBBON_REACH));
+    let left = m.floor_px(home + m.u(shift.min(0.0)));
+    if left + m.u(RIBBON[0]) + reach <= strip_left {
+        home - reach
+    } else {
+        left - reach
+    }
+}
+
+/// The close ribbon's home left edge: min(screen right − 4.4 U, view right − 1.8 U), on a device pixel.
+fn ribbon_x(view_right: f32, screen_right: f32, m: &Metrics) -> f32 {
+    m.floor_px((screen_right - m.u(RIBBON_LOGO)).min(view_right - m.u(RIBBON_EDGE)))
+}
+
 /// A ribbon press, between frames: the playlist's height at the press and the ribbon's place then, whether the touch
 /// has left its calm zone and which way it went (sideways moves the ribbon, up and down resizes the split), the
 /// finger's height for the playlist (unclamped) and its last move, in points.
@@ -153,7 +179,7 @@ pub fn ribbon(
 ) -> bool {
     let (c, m) = (&cx.theme.colors, cx.m);
     let size = vec2(m.u(RIBBON[0]), m.u(RIBBON[1]));
-    let base = (screen_right - m.u(RIBBON_LOGO)).min(view.right() - m.u(RIBBON_EDGE));
+    let base = ribbon_x(view.right(), screen_right, m);
     // Where the ribbon opens, and how far a drag may take it: in from the band's left edge, and no further right than
     // home, which already sits next to the logo.
     let lowest = view.left() + m.u(RIBBON_INSET);

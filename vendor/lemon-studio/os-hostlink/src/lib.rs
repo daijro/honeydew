@@ -19,8 +19,14 @@
 //! compiled into Lemon Studio share this crate with the app; a copy loaded from a bundle has its own registry and is never
 //! hosted, as in another DAW.
 //!
+//! On the audio side, [`levels`] hands a Lemon instrument the channel's volume and pan. Both sides read a plugin's
+//! saved state with [`state`].
+//!
 //! Spec: `plugins/host-link.md`. This is a Lemon Studio design, not FL's protocol.
 // spec: plugins/host-link.md
+
+pub mod levels;
+pub mod state;
 
 /// Name passed to `RegisterWindowMessageW`.
 pub const MESSAGE_NAME: &str = "OpenStudio.HostLink.1";
@@ -554,8 +560,9 @@ mod local {
 
 #[cfg(not(windows))]
 pub use local::{set_host_waker, take_host_messages, take_host_messages_for, Link, Peer};
+// Honeydew (vendored change): the embedded Lemon editors' `Create automation clip` reaches the app on Windows too.
 #[cfg(all(windows, feature = "embed"))]
-pub use local::Peer;
+pub use local::{take_host_messages_for, Peer};
 
 #[cfg(test)]
 mod tests {

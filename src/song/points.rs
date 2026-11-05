@@ -470,20 +470,31 @@ pub fn duplicate(pts: &mut Vec<Point>, s: u32, e: u32) {
     to_playhead(pts, s, e, e, false);
 }
 
-/// `Duplicate` of a point selection: the span from its first to its last selected point is copied to the last one
-/// ([`duplicate`]), and the copies are the selection. `None` when the selection spans no time (nothing to copy after).
-pub fn duplicate_selected(pts: &[Point], sel: &[bool]) -> Option<(Vec<Point>, Vec<bool>)> {
-    let ticks = pts.iter().zip(sel).filter(|(_, s)| **s).map(|(p, _)| p.tick);
-    let (s, e) = (ticks.clone().min()?, ticks.max()?);
-    if e <= s {
-        return None;
-    }
-    let mut new = pts.to_vec();
-    duplicate(&mut new, s, e);
-    let copies: Vec<bool> = new
-        .iter()
-        .map(|p| p.tick > e && p.tick <= e + (e - s))
+/// The floating `Duplicate` of a point selection (the automation and audio editors'), as the piano roll's of notes: a
+/// copy of each selected point right after the selection, by its span rounded up to `grid` (at least a `grid` step, so
+/// a lone point's copy is a step on; a span on the grid repeats right where it ends, a jump from its last value back to
+/// its first). The copies join the curve as a paste's do ([`paste`]: after any point at their tick), the other points
+/// staying where they are, and the copies are the selection. `None` without a selection.
+pub fn duplicate_selected(
+    pts: &[Point],
+    sel: &[bool],
+    grid: f64,
+) -> Option<(Vec<Point>, Vec<bool>)> {
+    let chosen: Vec<Point> = (pts.iter().zip(sel))
+        .filter(|(_, s)| **s)
+        .map(|(p, _)| *p)
         .collect();
+    let s = chosen.iter().map(|p| p.tick).min()?;
+    let e = chosen.iter().map(|p| p.tick).max()?;
+    let grid = grid.max(1.0);
+    let after = ((f64::from(e - s) - 0.5) / grid).ceil().max(1.0) * grid;
+    let (mut new, mut copies) = (pts.to_vec(), vec![false; pts.len()]);
+    for p in chosen {
+        // `as` saturates at the last tick.
+        let tick = (f64::from(p.tick) + after).round() as u32;
+        let i = insert(&mut new, Point { tick, ..p });
+        copies.insert(i, true);
+    }
     Some((new, copies))
 }
 

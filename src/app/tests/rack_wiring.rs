@@ -230,6 +230,90 @@ fn a_knob_drag_writes_the_song_sends_each_step_without_a_rebuild_and_saves_no_un
     assert_eq!(rig.app.song.channels[2].rack.modules[0].params[1], value);
 }
 
+/// Issue #68: in the piano roll with the side rack open, one finger plays the roll's keys while another turns a knob,
+/// whichever went down first (egui's pointer follows only the first finger).
+#[test]
+fn a_finger_turns_a_rack_knob_while_another_plays_the_rolls_keys() {
+    use egui::TouchPhase::{End, Move, Start};
+    let mut rig = Rig::with_synth();
+    let rack = &mut rig.app.song.channels[1].rack;
+    add_module(rack, 6, InsertAt::End);
+    rack.modules[0].minimized = true;
+    rig.app.song_edited(SongEdit::Final, 0);
+    rig.edit(1);
+    rig.slide_split();
+    rig.open_rack(1);
+    rig.slide_rack();
+    let keys = (rig.ctx.read_response(Id::new("piano_roll").with("keys")))
+        .expect("the roll's keys")
+        .rect
+        .center();
+    let module = rig.app.song.channels[1].rack.modules[1].clone();
+    let content = content_rect(layout(&rig, 1).cards[1], 5.5, U);
+    let placed = panels::place(
+        panels::panel_for(6).unwrap(),
+        &module,
+        &PanelState::default(),
+        content,
+        U,
+    );
+    // Distortion's Drive.
+    let drive = placed.iter().find(|(l, _)| l.id == 3).unwrap().1.center();
+    let up = drive - vec2(0.0, 100.0);
+    // A finger as Android reports it: its touch, with the pointer's events for the first finger down only.
+    let finger = |id: u64, phase, pos: Pos2, pointer: bool| {
+        let touch = Event::Touch {
+            device_id: egui::TouchDeviceId(0),
+            id: egui::TouchId(id),
+            phase,
+            pos,
+            force: None,
+        };
+        let mut events = vec![touch];
+        if pointer {
+            events.extend(match phase {
+                Start => vec![Event::PointerMoved(pos), button_event(pos, true)],
+                Move => vec![Event::PointerMoved(pos)],
+                _ => vec![button_event(pos, false), Event::PointerGone],
+            });
+        }
+        events
+    };
+    let drive_value = |rig: &Rig| rig.app.song.channels[1].rack.modules[1].params[1];
+    let kinds = |log: Vec<String>| -> Vec<String> {
+        let kind = |c: &String| c.split(' ').next().unwrap_or_default().to_owned();
+        log.iter()
+            .filter(|c| !c.starts_with("SetParam 1 "))
+            .map(kind)
+            .collect()
+    };
+    rig.take();
+    // The key first: the knob is the second finger.
+    let before = drive_value(&rig);
+    rig.frame(finger(0, Start, keys, true));
+    rig.frame(finger(1, Start, drive, false));
+    rig.frame(finger(1, Move, up, false));
+    assert!(drive_value(&rig) > before, "the knob turned");
+    rig.frame(finger(1, End, up, false));
+    rig.frame(finger(0, End, keys, true));
+    let log = rig.take();
+    assert!(
+        log.iter()
+            .any(|c| c.starts_with(&format!("SetParam 1 {} 1 ", module.instance_id))),
+        "{log:?}"
+    );
+    assert_eq!(kinds(log), ["NoteOn", "NoteOff"]);
+    // The knob first: the key is the second finger.
+    let before = drive_value(&rig);
+    rig.frame(finger(0, Start, drive, true));
+    rig.frame(finger(1, Start, keys, false));
+    rig.frame(finger(1, End, keys, false));
+    rig.frame(finger(0, Move, up, true));
+    rig.frame(finger(0, End, up, true));
+    assert!(drive_value(&rig) > before, "the knob turned");
+    assert_eq!(kinds(rig.take()), ["NoteOn", "NoteOff"]);
+}
+
 #[test]
 fn minimizing_a_card_or_all_of_them_marks_the_song_changed_with_no_undo_step_or_rebuild() {
     let mut rig = with_effects(&[6, 11]);
@@ -1652,11 +1736,11 @@ fn with_rack_channel(types: &[u16]) -> Rig {
 }
 
 /// The browser's rows without a search: `Paste` 0, `Rack Preset` 1, `Instrument` 2, SYNTH 3, then 3x Osc 4, Lemon Trio
-/// 5, DW Sampler 6, Lemon Sampler 7, GMSynth 8, MiniSynth 9, Slicer 10, SoundFont Player 11, SuperSaw 12, Transistor
-/// Bass 13.
+/// 5, Citrus 6, DW Sampler 7, Lemon Sampler 8, GMSynth 9, Lemon Drum Sampler 10, MiniSynth 11, Slicer 12, Lemon Slicer
+/// 13, SoundFont Player 14, SuperSaw 15, Transistor Bass 16.
 const THREE_X_OSC: usize = 4;
-const DW_SAMPLER: usize = 6;
-const GM_SYNTH: usize = 8;
+const DW_SAMPLER: usize = 7;
+const GM_SYNTH: usize = 9;
 const INSERT_BELOW: (usize, usize) = (1, 2);
 
 #[test]

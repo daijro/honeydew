@@ -102,6 +102,30 @@ pub fn show(
             None
         }
         DialogAction::Close => Some(Nav::Close),
+        // Saved with the song as a new version, the versions window shows it; a bad name keeps the dialog and no
+        // version.
+        DialogAction::SaveVersion => {
+            let before = std::sync::Arc::clone(&app.song.file.versions);
+            let (time, limit) = (
+                crate::project_files::now_secs(),
+                crate::history::size_limit(),
+            );
+            if let Err(e) = crate::versions::commit(app.song, None, time, limit) {
+                return Some(Nav::Open(super::Overlay::Message {
+                    tag: super::versions::ERROR_TAG,
+                    lines: vec![e.to_string()],
+                    confirm: None,
+                    extra: None,
+                }));
+            }
+            if app.files.dialog_save(app.song, name) {
+                // Saved, the flag clears; a save the system dialog cancels leaves the version, unsaved.
+                app.files.song_changed();
+                return Some(Nav::Swap(super::Overlay::Versions));
+            }
+            app.song.file.versions = before;
+            None
+        }
     }
 }
 
@@ -125,7 +149,8 @@ pub fn show_preset(
     *name = dialog.name;
     match action? {
         DialogAction::Save(_) => app.files.save_preset(name).then_some(Nav::Close),
-        DialogAction::Render(_) => None,
+        // Neither shows here.
+        DialogAction::Render(_) | DialogAction::SaveVersion => None,
         DialogAction::Close => {
             app.files.close_preset();
             Some(Nav::Close)
@@ -150,7 +175,7 @@ pub fn show_sample(
     *name = dialog.name;
     match action? {
         DialogAction::Save(_) => state.named = Some(app.files.typed_name(name, "wav")?),
-        DialogAction::Render(_) => return None,
+        DialogAction::Render(_) | DialogAction::SaveVersion => return None,
         DialogAction::Close => {}
     }
     Some(Nav::Close)

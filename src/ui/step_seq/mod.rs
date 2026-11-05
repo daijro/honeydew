@@ -30,12 +30,18 @@
 //! later):
 //! - Touch-down on a hit makes it the selection, unless it lands inside the showing selection's frame (the selected
 //!   cells' bounds). A tap on a hit then deletes it when it alone is selected (the one just touched), else only
-//!   deselects. A long press on a hit shows the touch-down's selection, never toggling. A move before 0.3 s is a drag,
-//!   which scrolls the rows (step mode has no hit drag here).
+//!   deselects. A long press on a hit shows the touch-down's selection, never toggling.
+//! - Out of the calm zone, held or not, a touch on a hit drags that selection (GitHub #71,
+//!   step mode): by whole rows and steps from the touch-down, the group keeping its shape at step 0 and the rows' ends;
+//!   each moved hit goes to its new step's start with the lane's Swing re-applied, one step long, and replaces what
+//!   that cell held ([`edit::move_steps`]). Live while it moves ([`StepAction::Hits`], an ongoing edit), one undo step
+//!   at its release, which fits the loop; the moved hits stay selected and the floating row stays hidden (a drag is no
+//!   tap or long press).
 //! - A tap on an empty step only deselects a showing selection, else toggles the step. A long press there starts a
 //!   selection box at once; moving on without lifting stretches it, and the release selects the hits of every step
-//!   it touches (lifted in place: nothing; `Paste` shows while the hit clipboard is set, below). A
-//!   long press on a hit that then moves boxes too.
+//!   it touches and shows the floating row over them, even when they have the bounds of the selection before
+//!   (lifted in place: nothing; `Paste` shows while the hit clipboard is set, below). A move sooner is a drag, which
+//!   scrolls the rows.
 //! - The right button ([`gesture::Erase`]): a press on a step with a hit deletes
 //!   its hits, and dragging on deletes those of every step the pointer's path crosses, with no box, all one undo step;
 //!   a right click on an empty step that deleted nothing is `Paste` (below).
@@ -44,7 +50,8 @@
 //!   right click on an empty step shows the `Paste` button, which any other press hides. Its tap lands the
 //!   clipboard's first step on the step under it, the others keeping their pads and distances in steps, in one final
 //!   edit ([`StepAction::PasteSteps`]); the pasted hits are the selection.
-//! - Selected hits take the selected tint (see below), and the floating buttons sit above them:
+//! - Selected hits take the selected tint (see below), and their box (the selected cells' bounds) pulses over them as
+//!   the other editors' selection box does ([`paint_pulse`]; GitHub #71), a box's live catch and a drag's hits too. The floating buttons sit above them:
 //!   `Copy` and `Delete`. This view is the step-sequencer mode (`DrumGrid::Steps`), so `Snap`, which only the free
 //!   note-grid view shows, never does here. Each is one final edit ([`StepAction::CopySteps`],
 //!   [`StepAction::DeleteSteps`]). A selected step whose hit goes (an undo, a row edit) leaves the selection.
@@ -117,7 +124,7 @@ use crate::metrics::{FontSize, Metrics};
 use crate::song::{Channel, Clip, Event, Lane, LaneKind, Song, TimeSig};
 use crate::theme::{DISABLED_ALPHA, Rgba, channel_color};
 use crate::ui::clips::{
-    FloatingRow, GridView, Marquee, Selection, TimeAxis, hold_square, paint_marquee,
+    FloatingRow, GridView, Marquee, Selection, TimeAxis, hold_square, paint_marquee, paint_pulse,
 };
 use crate::ui::drum_grid::{self, ClipView};
 use crate::ui::drums::{CONTROLS_H, PAD_COUNT, header_names, meter_level};
@@ -163,7 +170,7 @@ const NEW_BEAT_U: f32 = 3.0;
 pub(crate) const STEP_POP: f32 = 0.9;
 const POP_FLOOR: f32 = 0.01;
 /// The floating buttons over the selected steps (step-sequencer mode).
-const STEP_OPS: [&str; 3] = ["Copy", "Duplicate", "Delete"];
+const STEP_OPS: [&str; 3] = ["Copy", "Delete", "Duplicate"];
 /// The `Set Name` box.
 const PROMPT_W: f32 = 8.0;
 const PROMPT_ROW_H: f32 = 1.25;
@@ -333,9 +340,9 @@ pub enum StepAction {
     Play,
     /// A playhead knob's drop: seek to this song tick, playing or stopped, as the playlist's knob does. The host's.
     Seek(u64),
-    /// The free note-grid's gestures ([`crate::ui::drum_grid`]): the edited clip's hits become `events`, with one
-    /// selection flag each. `final_edit` is false while a drag goes on (the host keeps the undo step open). The step
-    /// view makes no such edit.
+    /// The free note-grid's gestures ([`crate::ui::drum_grid`]) and the step view's drag: the edited clip's hits
+    /// become `events`, with one selection flag each. `final_edit` is false while a drag goes on (the host keeps the
+    /// undo step open).
     Hits {
         events: Vec<Event>,
         selected: Vec<bool>,
@@ -461,6 +468,12 @@ pub struct StepSeqView {
     boxing: Option<Marquee>,
     /// A touch on the grid until it is decided.
     touch: Option<StepTouch>,
+    /// A drag of the selection, from a touch on a hit; and the clip's hits before its first edit, which
+    /// [`Self::apply`] keeps until its release.
+    drag: Option<StepDrag>,
+    hits_from: Option<Vec<Event>>,
+    /// The selection box's pulse ([`paint_pulse`]).
+    pulse: f32,
     /// A right-button swipe under way.
     erase: Option<gesture::Erase>,
     /// The clip the selection and the box belong to: another clip drops them. The host re-keys it with
@@ -496,6 +509,17 @@ struct StepTouch {
     since: f64,
     on: Option<(u8, usize)>,
     shown: bool,
+}
+
+/// A drag of the selected `cells` from the touch at `origin`, over the clip's hits `orig` as they were at its start: by
+/// (rows, steps) so far; `reported`: it has sent an edit, which its release closes.
+#[derive(Clone, Debug, PartialEq)]
+struct StepDrag {
+    origin: Pos2,
+    orig: Vec<Event>,
+    cells: Vec<(u8, usize)>,
+    by: (i64, i64),
+    reported: bool,
 }
 
 /// The values new hits take, shared by the step sequencer and the free note-grid: set whenever exactly one hit
@@ -963,7 +987,7 @@ impl StepSeqView {
         self.selection.retain(|&c| is_hit(c));
         let before = self.selection.clone();
         let events = clip.map_or(&[][..], |c| &c.events);
-        let mut action = self.grid_input(ui, &grid, &l, is_hit, (events, sig));
+        let mut action = self.grid_input(ui, &grid, &l, is_hit, (events, sig, lane_swing(lane)));
         if self.selection != before {
             self.remember_lone(clip.map_or(&[], |c| &c.events), sig);
         }
@@ -1003,6 +1027,11 @@ impl StepSeqView {
             self.paint_row(&cells, &l, self.selected, grow, &look);
             ui.ctx().request_repaint();
         }
+        // The selected steps' box pulses over them (a box's live catch and a drag's hits too), as in the other editors.
+        let frame = (self.selection.iter())
+            .map(|&(pad, step)| l.cell(usize::from(pad), step))
+            .reduce(Rect::union);
+        paint_pulse(&cells, cx, frame, 0.0, &mut self.pulse);
         // The playhead line at the folded playhead, playing or stopped, from the grid top to the last row's bottom. It
         // lies under the header column, which hides what lies left of its right edge: at beat 0 its left half shows in
         // the t gap.
@@ -1066,9 +1095,7 @@ impl StepSeqView {
             paint_marquee(&painter, rect, cx);
         }
         // The floating row waits for the box. Its view is the grid and the steps' and rows' zoom and scroll.
-        let sel = (self.selection.iter())
-            .map(|&(pad, step)| l.cell(usize::from(pad), step))
-            .reduce(Rect::union)
+        let sel = frame
             .filter(|_| self.boxing.is_none() && self.paste.is_none())
             .map(|rect| Selection {
                 rect,
@@ -1083,16 +1110,17 @@ impl StepSeqView {
         self.row.covered = self.covered;
         if let Some((i, _)) = self.row.show(ui, "step_button", sel, shown, &STEP_OPS, cx) {
             let cells: Vec<_> = self.selection.iter().copied().collect();
-            match i {
+            match STEP_OPS[i] {
                 // Copy only fills the hit clipboard.
-                0 => {
-                    let chosen = |e: &&Event| edit::cell_of(e, sig).is_some_and(|c| cells.contains(&c));
+                "Copy" => {
+                    let chosen =
+                        |e: &&Event| edit::cell_of(e, sig).is_some_and(|c| cells.contains(&c));
                     let hits = clip.map_or_else(Vec::new, |c| {
                         c.events.iter().filter(chosen).copied().collect()
                     });
                     set_hit_clipboard(ui.ctx(), hits);
                 }
-                1 => action = Some(StepAction::CopySteps { cells }),
+                "Duplicate" => action = Some(StepAction::CopySteps { cells }),
                 _ => action = Some(StepAction::DeleteSteps { cells }),
             }
         }
@@ -1420,15 +1448,15 @@ impl StepSeqView {
         None
     }
 
-    /// Touches and right-button swipes on the grid, and the selection box (module docs). A tap that toggles its step
-    /// returns it.
+    /// Touches and right-button swipes on the grid, the selection box and a drag of the selection (module docs), the
+    /// lane's Swing `amount` re-applied to the moved hits. A tap that toggles its step returns it.
     fn grid_input(
         &mut self,
         ui: &Ui,
         grid: &Response,
         l: &Layout,
         is_hit: impl Fn((u8, usize)) -> bool,
-        (events, sig): (&[Event], TimeSig),
+        (events, sig, amount): (&[Event], TimeSig, f64),
     ) -> Option<StepAction> {
         let (held, pressed, pos, now) = ui.input(|i| {
             let p = &i.pointer;
@@ -1485,8 +1513,11 @@ impl StepSeqView {
                     on,
                     shown: !self.selection.is_empty() && on.is_none(),
                 });
-                // Until it is a box, the touch is the scroller's too (a drag scrolls the rows).
-                self.scroller.claim();
+                // On a hit the touch is the hit's (a drag moves the selection); on an empty step, until it is a box, the
+                // scroller's too (a drag scrolls the rows).
+                if on.is_none() {
+                    self.scroller.claim();
+                }
             }
         }
         if let Some(t) = self.touch.take() {
@@ -1499,7 +1530,18 @@ impl StepSeqView {
                 self.scroller.yield_touch();
             }
             match pos {
-                // Held, then moved: a box (on an empty step it starts as the hold comes due). Moved sooner: a drag,
+                // From a hit, moved (held or not): a drag of the selection the touch-down left.
+                Some(_) if moved && t.on.is_some() => {
+                    self.row.dragged();
+                    self.drag = Some(StepDrag {
+                        origin: t.origin,
+                        orig: events.to_vec(),
+                        cells: self.selection.iter().copied().collect(),
+                        by: (0, 0),
+                        reported: false,
+                    });
+                }
+                // From an empty step, held, then moved: a box (it starts as the hold comes due). Moved sooner: a drag,
                 // which scrolls the rows.
                 Some(_) if moved && long => self.boxing = Some(Marquee::at(t.origin, false)),
                 _ if moved => {}
@@ -1533,10 +1575,41 @@ impl StepSeqView {
                 },
             }
         }
+        // The drag moves the selected hits by whole rows and steps from the touch-down, live (an ongoing edit); its
+        // release, a second finger or a focus loss ends it, closing its one undo step.
+        if let Some(mut drag) = self.drag.take() {
+            let end = !down || pinch || stale;
+            if let Some(p) = pos.filter(|_| !pinch) {
+                let d = p - drag.origin;
+                drag.by = (
+                    (d.y / l.pitch).round() as i64,
+                    (d.x / l.step_w).round() as i64,
+                );
+            }
+            let mut new = drag.orig.clone();
+            let cells = edit::move_steps(&mut new, &drag.cells, drag.by, l.rows, (sig, amount));
+            let changed = new != events;
+            drag.reported |= changed;
+            if changed || end && drag.reported {
+                let selected = (new.iter())
+                    .map(|e| edit::cell_of(e, sig).is_some_and(|c| cells.contains(&c)))
+                    .collect();
+                action = Some(StepAction::Hits {
+                    events: new,
+                    selected,
+                    final_edit: end,
+                    quiet: false,
+                });
+            }
+            if !end {
+                self.drag = Some(drag);
+            }
+        }
         // A right press starts a swipe that deletes the hits of every step it crosses (module docs): a step's whole
         // cell, in the grid.
         if self.touch.is_none()
             && self.boxing.is_none()
+            && self.drag.is_none()
             && self.erase.is_none()
             && let Some(erase) = gesture::Erase::start(ui, grid, pos, events, &[])
         {
@@ -1582,6 +1655,10 @@ impl StepSeqView {
                 (!marquee.dragged && !stale && !pinch && clipboard()).then_some(marquee.from);
             if !down {
                 self.boxing = None;
+                // Its release shows the floating row over what it caught, whatever showed before.
+                if let Some(p) = pos.filter(|_| !self.selection.is_empty()) {
+                    self.row.boxed(p);
+                }
             }
         }
         action
@@ -1747,6 +1824,24 @@ impl StepSeqView {
                 self.remember_lone(&clip.events, sig);
             }
             StepAction::GraphCancel(orig) => clip.events.clone_from(orig),
+            StepAction::Hits {
+                events,
+                selected,
+                final_edit,
+                ..
+            } => {
+                if !*final_edit {
+                    self.hits_from.get_or_insert_with(|| clip.events.clone());
+                }
+                clip.events.clone_from(events);
+                let chosen = (events.iter().zip(selected)).filter(|(_, s)| **s);
+                self.selection = chosen.filter_map(|(e, _)| edit::cell_of(e, sig)).collect();
+                // The drag's release fits the loop to where it left the hits, unless it left them as they were: a move
+                // back to its start is no edit, so it makes no undo step.
+                if *final_edit && self.hits_from.take().as_ref() != Some(events) {
+                    clip.fit_loop(bar);
+                }
+            }
             _ => {}
         }
         // Every hit edit fits the loop to the hits (recomputed on every clip update), as the row menu's `Delete` and
@@ -1767,13 +1862,16 @@ impl StepSeqView {
     }
 
     /// Closes the popups over the view (the row menu and its prompts, the swing popup, the ruler's region menu and
-    /// `+`): the editor stopped showing. A graph-lane drag under way ends with it. Returns whether that drag had sent
-    /// edits: the host closes their undo step (a final edit), as its release would.
+    /// `+`): the editor stopped showing. A graph-lane drag, a swipe or a step drag under way ends with it. Returns
+    /// whether it had sent edits: the host closes their undo step (a final edit), as its release would.
     pub(crate) fn close_popups(&mut self) -> bool {
         (self.overlay, self.paste) = (None, None);
         self.region.close_popups();
         let erased = self.erase.take().is_some_and(|e| e.erased());
-        self.graph_drag.take().is_some_and(|(_, sent)| sent) || erased
+        // A step drag under way ends too, its edits as they are.
+        let moved = self.drag.take().is_some_and(|d| d.reported);
+        self.hits_from = None;
+        self.graph_drag.take().is_some_and(|(_, sent)| sent) || erased || moved
     }
 }
 

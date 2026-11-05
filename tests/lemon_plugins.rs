@@ -5,11 +5,11 @@ use honeydew::plugins::{self, builtin};
 use honeydew::render::{Remainder, Render, RenderRange, RenderSpec};
 use honeydew::sample_cache::SampleCache;
 use honeydew::song::plugin::{PLUGIN_EFFECT, PLUGIN_INSTRUMENT};
-use honeydew::song::{ChannelKind, Event, Song};
+use honeydew::song::{ChannelKind, Event, Song, SynthKind};
 
 /// The uid of built-in plugin `name`.
 fn uid(name: &str) -> String {
-    builtin::ALL
+    builtin::all()
         .iter()
         .find(|b| b.name == name)
         .unwrap()
@@ -41,29 +41,85 @@ fn rendered_energy(song: &Song) -> f32 {
     energy
 }
 
+/// A note on each built-in synth sounds, with no NaN (the samplers play their samples in `tests/rt_alloc.rs`).
 #[test]
 fn a_built_in_lemon_trio_note_makes_sound() {
-    let mut song = Song {
-        tempo_bpm: 120.0,
-        ..Song::default()
+    for name in ["Lemon Trio", "Citrus"] {
+        let mut song = Song {
+            tempo_bpm: 120.0,
+            ..Song::default()
+        };
+        song.add_channel(ChannelKind::Instrument);
+        let ch = &mut song.channels[1];
+        let id = ch.id;
+        plugins::add(&mut ch.rack, id, &uid(name), 0).unwrap();
+        assert_eq!(ch.rack.modules[0].type_id, PLUGIN_INSTRUMENT, "{name}");
+        let clip = ch.lanes[0].add_clip(0, 4.0);
+        clip.events.push(Event::Note {
+            pos: 0,
+            len_beats: 2.0,
+            key: 60,
+            velocity: 204,
+            pan: 127,
+            slide: false,
+        });
+        plugins::sync(&song);
+        let energy = rendered_energy(&song);
+        assert!(
+            energy.is_finite() && energy > 1.0,
+            "{name} plays: energy {energy}"
+        );
+    }
+}
+
+/// Lemon Vocoder's carrier is its sidechain input (0.4.9): keyed by a channel, it plays that channel's chord through its
+/// own channel's note (the key is the source's rack output: its strip is silent); without the key, next to nothing.
+#[test]
+fn the_lemon_vocoder_plays_its_sidechain_through_the_note() {
+    let song = |keyed: bool| {
+        let mut song = Song {
+            tempo_bpm: 120.0,
+            ..Song::default()
+        };
+        song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+        song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+        let carrier = song.channels[2].id;
+        song.channels[2].params.0[0] = 0.0;
+        for (c, keys) in [(1, &[48][..]), (2, &[60, 64, 67][..])] {
+            let clip = song.channels[c].lanes[0].add_clip(0, 4.0);
+            for &key in keys {
+                clip.events.push(Event::Note {
+                    pos: 0,
+                    len_beats: 2.0,
+                    key,
+                    velocity: 204,
+                    pan: 127,
+                    slide: false,
+                });
+            }
+        }
+        let ch = &mut song.channels[1];
+        let id = ch.id;
+        let vocoder = plugins::add(&mut ch.rack, id, &uid("Lemon Vocoder"), 1).unwrap();
+        let module = ch.rack.get_mut(vocoder).unwrap();
+        assert!(module.takes_key());
+        // The modulator's own sound off: only the vocoded carrier is heard.
+        let names = &module.file.plugin.as_ref().unwrap().params;
+        let pass = names
+            .iter()
+            .position(|p| p.name == "Modulator pass-through level")
+            .unwrap();
+        module.params[1 + pass] = 0.0;
+        module.sidechain = keyed.then_some(carrier);
+        song
     };
-    song.add_channel(ChannelKind::Instrument);
-    let ch = &mut song.channels[1];
-    let id = ch.id;
-    plugins::add(&mut ch.rack, id, &uid("Lemon Trio"), 0).unwrap();
-    assert_eq!(ch.rack.modules[0].type_id, PLUGIN_INSTRUMENT);
-    let clip = ch.lanes[0].add_clip(0, 4.0);
-    clip.events.push(Event::Note {
-        pos: 0,
-        len_beats: 2.0,
-        key: 60,
-        velocity: 204,
-        pan: 127,
-        slide: false,
-    });
-    plugins::sync(&song);
-    let energy = rendered_energy(&song);
-    assert!(energy > 1.0, "Lemon Trio plays: energy {energy}");
+    let (keyed, plain) = (song(true), song(false));
+    plugins::sync(&keyed);
+    let (heard, silent) = (rendered_energy(&keyed), rendered_energy(&plain));
+    assert!(
+        heard > 1.0 && silent < heard * 1e-3,
+        "keyed {heard}, without {silent}"
+    );
 }
 
 #[test]
@@ -238,4 +294,42 @@ fn the_lemon_trio_editor_takes_a_drag_a_menu_and_a_typed_value() {
     let typed = moved().expect("the typed value moved Coarse");
     // -7 of -24..24 semitones.
     assert!((typed - 17.0 / 48.0).abs() < 1e-3, "{typed}");
+}
+
+/// An editor slower to paint than its tick (Lemon Chorus's card at ppp 2 in a debug build, a slow phone) parks after each
+/// tick, so opening or pumping it hands the app its frame instead of ticking on (`os_plugkit::embed::Window::next`).
+#[test]
+fn an_editor_slower_than_its_tick_parks_after_each_tick() {
+    use os_plugkit::embed::{self, Input, Window};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct Ed {
+        win: Window,
+        ticks: Arc<AtomicUsize>,
+    }
+    impl Ed {
+        fn run(mut self) {
+            while let Some(input) = self.win.next() {
+                // A paint for every input, longer than a tick; without parking it would tick on (cut at 4).
+                let n = self.ticks.load(Ordering::Relaxed);
+                if matches!(input, Input::Tick) {
+                    self.ticks.store(n + 1, Ordering::Relaxed);
+                }
+                if n < 4 {
+                    std::thread::sleep(std::time::Duration::from_millis(40));
+                }
+            }
+            os_plugkit::park!(self);
+        }
+    }
+    let ticks = Arc::new(AtomicUsize::new(0));
+    let t = ticks.clone();
+    let id = 0xADDF_0049;
+    let _editor = embed::spawn(id, (8, 8), &Default::default(), move |win| {
+        Ed { win, ticks: t }.run()
+    });
+    assert_eq!(ticks.load(Ordering::Relaxed), 1, "one tick, then parked");
+    std::thread::sleep(std::time::Duration::from_millis(40));
+    embed::pump(id);
+    assert_eq!(ticks.load(Ordering::Relaxed), 2);
 }

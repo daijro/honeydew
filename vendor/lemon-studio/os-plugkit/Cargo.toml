@@ -15,6 +15,7 @@ embed = []
 
 [dependencies]
 nih_plug = { path = "../../nih-plug" }
+os-hostlink = { path = "../os-hostlink" }
 os-ui = { path = "../os-ui" }
 os-theme = { path = "../os-theme" }
 

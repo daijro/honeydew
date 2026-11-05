@@ -1523,7 +1523,7 @@ mod component {
         let mut rig = Rig::new(vec![n(128, 64.0, 70), n(256, 64.0, 60)]);
         rig.tap(at(140.0, 70));
         assert_eq!(rig.roll.selected, [true, false]);
-        for label in ["Copy", "Duplicate", "Snap", "Delete", "More..."] {
+        for label in ["Copy", "Delete", "Snap", "Duplicate", "More..."] {
             assert!(rig.text(label).is_some(), "no {label}");
         }
         rig.tap(at(140.0, 70));
@@ -1895,7 +1895,7 @@ mod component {
         rig.release(at(140.0, 70));
         assert_eq!(rig.roll.selected, [true, false]);
         assert!(rig.all.is_empty());
-        for label in ["Copy", "Duplicate", "Snap", "Delete", "More..."] {
+        for label in ["Copy", "Delete", "Snap", "Duplicate", "More..."] {
             assert!(rig.text(label).is_some(), "no {label}");
         }
         let delete = rig.text("Delete").unwrap();
@@ -1959,6 +1959,13 @@ mod component {
         rig.release(to);
         assert_eq!(rig.roll.selected, [true, true, false]);
         assert!(rig.all.is_empty());
+        assert!(rig.text("Copy").is_some());
+        // A second box catching the same notes, the same outline: its release shows the row again.
+        rig.hold(from);
+        rig.frame(vec![In::PointerMoved(to)]);
+        rig.release(to);
+        assert_eq!(rig.roll.selected, [true, true, false]);
+        assert!(rig.text("Copy").is_some());
     }
 
     #[test]
@@ -2002,7 +2009,7 @@ mod component {
     }
 
     /// The first note's rect in the roll's current view, and where the shared rule puts the floating row over it
-    /// with the finger at `finger` (at U = 32 a 4-button row is 204.8 × 48, m 6.4).
+    /// with the finger at `finger` (at U = 32 the 5-button row is 256 × 48, m 6.4).
     fn shared_row(rig: &Rig, finger: Pos2) -> (Rect, Option<Rect>) {
         let g = rig.roll.geom(GRID.min, 32.0);
         let e = &rig.events()[0];
@@ -2016,7 +2023,7 @@ mod component {
         };
         (
             rect,
-            place_row(&sel, finger, GRID, vec2(204.8, 48.0), 6.4, 1.0),
+            place_row(&sel, finger, GRID, vec2(256.0, 48.0), 6.4, 1.0),
         )
     }
 
@@ -2084,7 +2091,7 @@ mod component {
                 _ => assert_eq!(row.top(), note.bottom() + 6.4, "key {key}"),
             }
             // The labels sit in the row's 51.2-point slots, left to right.
-            for (i, label) in ["Copy", "Duplicate", "Snap", "Delete", "More..."]
+            for (i, label) in ["Copy", "Delete", "Snap", "Duplicate", "More..."]
                 .into_iter()
                 .enumerate()
             {
@@ -4098,7 +4105,7 @@ mod component {
         rig.release(at(132.0, 66));
         rig.frame(vec![]);
         assert!(rig.text("Paste").is_some());
-        for label in ["Copy", "Duplicate", "Snap", "Delete", "More..."] {
+        for label in ["Copy", "Delete", "Snap", "Duplicate", "More..."] {
             assert_eq!(rig.text(label), None, "{label} must not accompany Paste");
         }
         assert_eq!(spans(rig.events()), [(128, 64.0, 66)]);
@@ -4322,7 +4329,17 @@ mod grid {
         let past = Rect::from_min_max(pos2(304.0, 48.0), pos2(1170.0, 349.0));
         let events = [n(0, 128.0, 60)];
         let (rects, ..) = painted(1.0, &|p, _, g, cx| {
-            paint_notes(p, g, &events, &[false], &[], Some(past), RED, None, (None, cx));
+            paint_notes(
+                p,
+                g,
+                &events,
+                &[false],
+                &[],
+                Some(past),
+                RED,
+                None,
+                (None, cx),
+            );
         });
         assert_eq!(
             rects.iter().map(|r| r.1).collect::<Vec<_>>(),

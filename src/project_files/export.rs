@@ -366,7 +366,8 @@ impl ProjectFiles {
             FileEvent::Opened(..)
             | FileEvent::Located(_)
             | FileEvent::Folder(_)
-            | FileEvent::Copied(_) => {}
+            | FileEvent::Copied(_)
+            | FileEvent::SaveCancelled(_) => {}
         }
     }
 

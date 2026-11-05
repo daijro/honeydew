@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
-    <!-- Audio recording (the take's input); the app runs without it, and asks for it when it starts. -->
-    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- Recording; asked for the first time the app needs the microphone. Phones without one still install it. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- In-app updates and the sound library's download (#66): the network, whether it is metered (Wi-Fi only by
+         default), and the system's installer for an update's APK. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application
         android:allowBackup="false"
         android:icon="@drawable/honeydew"
@@ -31,5 +36,11 @@
                 <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
             </intent-filter>
         </provider>
+        <!-- An update's APK for the system's installer (HoneydewUpdate): read grants only, never exported. -->
+        <provider
+            android:name="dev.daijro.honeydew.HoneydewUpdate"
+            android:authorities="${applicationId}.update"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

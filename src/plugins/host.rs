@@ -58,15 +58,15 @@ struct Entry {
     builtin: bool,
 }
 
-/// The built-in plugins' entries ([`builtin::libraries`]), listed before the scan's.
+/// The built-in plugins' entries ([`builtin::all`]), listed before the scan's.
 fn builtin_entries() -> Vec<Entry> {
-    (builtin::libraries().iter())
-        .map(|(desc, lib)| Entry {
-            desc: desc.clone(),
+    (builtin::all().iter())
+        .map(|b| Entry {
+            desc: b.desc.clone(),
             file: Arc::new(FileLib {
-                path: desc.path.clone(),
-                format: desc.format,
-                lib: OnceLock::from(Ok(lib.clone())),
+                path: b.desc.path.clone(),
+                format: b.desc.format,
+                lib: OnceLock::from(Ok(b.lib.clone())),
             }),
             builtin: true,
         })
@@ -1135,7 +1135,8 @@ mod card_tests {
     fn busy_plugin_lock_keeps_the_last_card_status_and_value_text() {
         let channel_id = 3901;
         let instance_id = 7;
-        let module = instantiate(channel_id, instance_id, builtin::LEMON_TRIO.uid).unwrap();
+        let module =
+            instantiate(channel_id, instance_id, builtin::named("Lemon Trio").uid).unwrap();
         let status = state(channel_id, instance_id).expect("plugin is running");
         let (param, value, label) = (1..module.params.len())
             .find_map(|index| {

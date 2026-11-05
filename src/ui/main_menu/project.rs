@@ -1,5 +1,5 @@
 //! The PROJECT tab: `Save`, `Save New` and `Quick Render`, then the `Project info`, `Metadata` and `Performance`
-//! sections, scrolling as one page.
+//! sections, scrolling as one page. `View project versions` (#69) ends the Metadata section, before `Performance`.
 //!
 //! The tab shows a [`ProjectInfo`] the app fills in. It edits the metadata texts in place and reports everything else
 //! as a [`MainMenuAction`].
@@ -484,8 +484,6 @@ impl ProjectTab {
             Align2::LEFT_CENTER,
             text,
         );
-        // The gap above `Performance:`, which holds its divider.
-        let mut gap = Rect::NOTHING;
         for (name, value, limit) in [
             ("Title:", &mut info.title, TEXT_LIMIT),
             ("Author:", &mut info.author, TEXT_LIMIT),
@@ -530,7 +528,7 @@ impl ProjectTab {
             crate::android_text::edit(&mut response, value, limit);
             // The field counts characters; the file counts bytes.
             value.truncate(value.floor_char_boundary(limit));
-            gap = band(GAP);
+            band(GAP);
         }
         if !locked {
             let lock = band(BUTTON_H);
@@ -538,8 +536,15 @@ impl ProjectTab {
             if light_button(ui, cx, id.with("lock"), lock, name, true) {
                 action = Some(MainMenuAction::LockMetadata);
             }
-            gap = band(GAP);
+            band(GAP);
         }
+        let versions = band(BUTTON_H);
+        let name = "View project versions";
+        if light_button(ui, cx, id.with("versions"), versions, name, true) {
+            action = Some(MainMenuAction::ViewVersions);
+        }
+        // The gap above `Performance:`, which holds its divider.
+        let gap = band(GAP);
         divider(ui, cx, gap);
 
         // Performance: the header row, then the block 2 U in from the page's sides.

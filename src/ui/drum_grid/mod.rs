@@ -47,15 +47,16 @@
 //!   start; rows move in whole steps (changing the pad), clamped to existing rows; overlaps allowed; release = one undo
 //!   step ([`edit::moved`]). A drag on a selected hit moves the selection, a drag on another makes it the selection
 //!   first, "touched"; the group keeps its shape at the clip start and the row edges.
-//! - **The selection frame** is the piano roll's without the ↔ bar. The free note-grid is the one drum editor mode
-//!   that has it; step mode keeps its own look. The selected hits' box (their earliest start to their
-//!   latest end, the top hit's row top to the bottom one's row bottom) pulses whenever a hit is selected
+//! - **The selection frame** is the piano roll's without the ↔ bar; step mode has its box, not its capsule. The selected
+//!   hits' box (their earliest start to their latest end, the top hit's row top to the bottom one's row bottom) pulses
+//!   whenever a hit is selected
 //!   ([`clips::paint_pulse`]), a marquee's catch, a quiet selection and a drag's hits too. Its end capsule, 0.15 U right of the box and vertically centred on it
 //!   ([`clips::editor_handles`]), shows while the selection does and no touch holds its hits; it grows while held and
 //!   wobbles at its release. Dragging it (no grab offset) puts the box's end on the finger's tick, snapped to the
 //!   nearest snap unit, the box at least snap unit/8 wide, or 1/128 beat with Snap off; every selected hit's length
 //!   changes by as much, one undo step ([`edit::resized`]).
-//! - **Marquee and long press.** The marquee selects hits whose extent overlaps it and then shows the end capsule.
+//! - **Marquee and long press.** The marquee selects hits whose extent overlaps it and then shows the end capsule and
+//!   the floating row, whatever showed before.
 //!   Hit-testing uses [start, start + length] (no minimum touch width). A long press on empty grid without dragging
 //!   shows the Paste button when the clipboard is set. As in the automation editor, the floating `Copy` also stores the
 //!   copied hits in the drum editors' clipboard ([`step_seq::hit_clipboard`], shared with step mode); while it is set,
@@ -125,7 +126,7 @@ const POP_RATE: f32 = 0.6;
 const POP_GAIN: f32 = 1.0515;
 const POP_W: f32 = 1.885;
 /// The floating buttons over the selection (free note-grid mode).
-const OPS: [&str; 4] = ["Copy", "Duplicate", "Snap", "Delete"];
+const OPS: [&str; 4] = ["Copy", "Delete", "Snap", "Duplicate"];
 
 fn id() -> Id {
     Id::new("drum_grid")
@@ -890,6 +891,9 @@ impl DrumGridView {
                     (!stale && !multi && !marquee.dragged && clipboard()).then_some(marquee.from);
                 if !up {
                     self.gesture = Gesture::Box(marquee);
+                } else if let Some(p) = pos.filter(|_| self.sel.contains(&true)) {
+                    // Its release shows the floating row over what it caught, whatever showed before.
+                    self.row.boxed(p);
                 }
             }
             Gesture::Edit(mut edit) => {
@@ -1090,8 +1094,9 @@ impl DrumGridView {
         }
     }
 
-    /// `Copy`, `Delete` and `Snap` over the selection, in a [`FloatingRow`] (waiting for a marquee); `grid` is the
-    /// snap mode's unit, on or off. Returns the hits and selection a button left.
+    /// `Copy`, `Delete`, `Snap` and `Duplicate` over the selection, in a [`FloatingRow`] (waiting for a marquee); `grid`
+    /// is the snap mode's unit, on or off. Returns the hits and selection a button left: none for `Copy`, which only
+    /// fills the hit clipboard.
     #[allow(clippy::too_many_arguments)]
     fn floating_row(
         &mut self,
@@ -1128,23 +1133,24 @@ impl DrumGridView {
         };
         self.row.covered = self.covered;
         let (i, _) = self.row.show(ui, "grid_button", sel, view, &OPS, cx)?;
+        ui.ctx().request_repaint();
         let (mut events, mut sel) = (events.to_vec(), self.sel.clone());
-        match i {
-            // Copy only fills the hit clipboard.
-            0 => {
+        match OPS[i] {
+            // Copy only fills the hit clipboard: no edit.
+            "Copy" => {
                 step_seq::set_hit_clipboard(ui.ctx(), chosen.iter().map(|&&e| e).collect());
+                return None;
             }
-            1 => {
+            "Duplicate" => {
                 edit::copy_selected(&mut events, &mut sel, grid);
             }
-            2 => {
+            "Snap" => {
                 edit::quantize_selected(&mut events, &mut sel, grid);
             }
             _ => {
                 remove_selected(&mut events, &mut sel);
             }
         }
-        ui.ctx().request_repaint();
         Some((events, sel))
     }
 

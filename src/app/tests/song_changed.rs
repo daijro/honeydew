@@ -149,3 +149,22 @@ fn a_save_mid_gesture_then_an_edit_that_changes_nothing_sets_nothing() {
     rig.app.song_edited(SongEdit::Final, 0);
     assert!(!rig.app.files.modified());
 }
+
+#[test]
+fn a_version_restored_is_a_change_and_one_undo_step() {
+    // #69: the versions window's `Restore` replaces the song, and one undo puts the song before it back.
+    let mut rig = Rig::with_synth();
+    let old = rig.app.song.tempo_bpm;
+    crate::versions::commit(&mut rig.app.song, None, 0, usize::MAX).unwrap();
+    rig.app.song.tempo_bpm = old + 10.0;
+    rig.app.song_edited(SongEdit::Final, 0);
+    rig.app.files.saved();
+    let restored = crate::versions::restored(&rig.app.song, (0, 0)).unwrap();
+    rig.app.slots.versions.restored = Some(restored);
+    rig.app.song_edited(SongEdit::Restored, 0);
+    assert_eq!(rig.app.song.tempo_bpm, old);
+    assert!(rig.app.files.modified());
+    rig.frame(z(egui::Modifiers::NONE));
+    assert_eq!(rig.app.song.tempo_bpm, old + 10.0);
+    assert_eq!(rig.app.song.file.versions.branches[0].versions.len(), 1);
+}

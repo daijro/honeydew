@@ -889,7 +889,7 @@ impl PresetPicker {
             in_trash: self.in_trash(),
             paste: self.actions.can_paste(),
             // The web downloads each file: a folder cannot be.
-            export: !cfg!(target_os = "android")
+            export: !cfg!(mobile)
                 && (cfg!(not(target_arch = "wasm32")) || picked.iter().all(|e| !e.is_folder)),
             reveal: FILE_MANAGER,
             ..MenuState::default()

@@ -342,7 +342,7 @@ mod audio {
     use std::rc::Rc;
 
     use super::*;
-    use crate::recording::input::{InputLink, InputRing};
+    use crate::recording::input::{InputLink, InputRing, Mic};
     use crate::ui::clips::LiveTake;
 
     /// 150 BPM at the Recorder's 48 kHz: 150 frames a tick, 19 200 a beat.
@@ -457,6 +457,33 @@ mod audio {
         a.rig.app.add_channel(ChannelKind::AudioRecord, 0);
         assert_eq!(a.opens.get(), 3);
         assert!(a.rig.app.input.ring().is_some() && a.message().is_none());
+    }
+
+    #[test]
+    fn the_microphone_is_asked_for_first_and_a_denial_says_where_to_allow_it() {
+        let mut a = AudioRig::new("mic", false);
+        let mic = Rc::new(Cell::new(Mic::Asking));
+        let m = mic.clone();
+        a.rig.app.input.set_mic(move || m.get());
+        // Armed again while Android asks: nothing opens and nothing is said, frame after frame.
+        a.rig.click(REC);
+        a.rig.click(REC);
+        a.rig.frame(vec![]);
+        assert_eq!((a.opens.get(), a.message()), (1, None));
+        assert!(a.rig.app.input.ring().is_none());
+        // Denied: where to allow it, once.
+        mic.set(Mic::Denied);
+        a.rig.frame(vec![]);
+        assert_eq!((a.opens.get(), a.message()), (1, Some(mic_denied())));
+        a.rig.app.nav.overlays.clear();
+        a.rig.frame(vec![]);
+        assert_eq!(a.message(), None);
+        // Armed again, it asks again; allowed, it opens.
+        mic.set(Mic::Granted);
+        a.rig.click(REC);
+        a.rig.click(REC);
+        assert_eq!((a.opens.get(), a.message()), (2, None));
+        assert!(a.rig.app.input.ring().is_some());
     }
 
     #[test]

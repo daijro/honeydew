@@ -9,6 +9,11 @@ pub(crate) mod util;
 pub mod standalone;
 #[cfg(feature = "vst3")]
 pub mod vst3;
+// Honeydew (vendored addition): the VST3 subcategories without the VST3 wrapper, for `Vst3Plugin` (`plugin::vst3`).
+#[cfg(not(feature = "vst3"))]
+pub mod vst3 {
+    pub mod subcategories;
+}
 
 // This is used by the wrappers.
 pub use util::setup_logger;

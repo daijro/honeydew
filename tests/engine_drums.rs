@@ -265,11 +265,12 @@ fn reverse_plays_the_slot_backwards() {
 
 #[test]
 fn a_negative_sample_start_delays_the_hit() {
-    // v = 0.25: s = -0.125 s, 5512.5 frames of source silence first.
+    // v = 0.25: s = -0.125 s, 5512.5 frames of source silence first; a voice starts on a whole source frame (#68),
+    // so the half frame rounds away from the start.
     let mut song = kit(&["dc"]);
     hits(&mut song, [hit(0, 0)]);
     slots(&mut song)[0].params[10] = 0.25;
-    assert_eq!(onset(&play(&song, BEAT)), 5513);
+    assert_eq!(onset(&play(&song, BEAT)), 5514);
 }
 
 #[test]

@@ -198,20 +198,24 @@ struct RawOptions {
     playlist_track_background_transparency: Option<f32>,
 }
 
+/// A file may leave out anything: the id and name too (an imported file is named after itself, [`import`]).
 #[derive(Clone, Debug, Deserialize)]
 struct RawTheme {
+    #[serde(default)]
     id: u32,
+    #[serde(default)]
     name: String,
-    #[serde(default)]
-    colors: RawColors,
-    #[serde(default)]
-    options: RawOptions,
+    colors: Option<RawColors>,
+    options: Option<RawOptions>,
 }
 
 impl RawTheme {
     /// Applies the defaults table.
     fn resolve(self) -> Theme {
-        let (c, o) = (self.colors, self.options);
+        let (c, o) = (
+            self.colors.unwrap_or_default(),
+            self.options.unwrap_or_default(),
+        );
         let text = c.text.unwrap_or(Rgba::hex(0xC7CEDA));
         Theme {
             id: self.id,
@@ -261,7 +265,7 @@ pub fn builtin_themes() -> Vec<Theme> {
         RawTheme {
             id,
             name: name.to_owned(),
-            colors: RawColors {
+            colors: Some(RawColors {
                 background: c(main[0]),
                 control_fill: c(main[1]),
                 module_fill: c(main[2]),
@@ -273,13 +277,13 @@ pub fn builtin_themes() -> Vec<Theme> {
                 black_key: key(1),
                 white_key_disabled: key(2),
                 black_key_disabled: key(3),
-            },
-            options: RawOptions {
+            }),
+            options: Some(RawOptions {
                 accent_saturation: opt(0),
                 accent_lightness: opt(1),
                 playlist_track_note_brightness: opt(2),
                 playlist_track_background_transparency: opt(3),
-            },
+            }),
         }
     };
     const ACCENT: u32 = 0xFB8B3F;
@@ -355,6 +359,27 @@ pub fn builtin_themes() -> Vec<Theme> {
     .into_iter()
     .map(RawTheme::resolve)
     .collect()
+}
+
+/// The user folder's folder of theme files, each `<name>.json` in the theme JSON: the theme creator's `Save` writes
+/// there, and the `Theme:` list shows them after the built-ins.
+pub const THEMES_FOLDER: &str = "My Themes";
+/// The id a user theme is saved with, the first after the built-ins.
+pub const USER_THEME_ID: u32 = 9;
+
+/// The theme in the file `bytes` (`Load themes`, `Import`): what it leaves out falls back to the defaults, and a file
+/// without a name takes `stem`, its own. Not JSON, a colour that is no `RRGGBB`, or no colours or options at all, is
+/// an error that says so.
+pub fn import(stem: &str, bytes: &[u8]) -> Result<Theme, String> {
+    let raw: RawTheme = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+    if raw.colors.is_none() && raw.options.is_none() {
+        return Err("The file has no theme colours.".into());
+    }
+    let mut theme = raw.resolve();
+    if theme.name.trim().is_empty() {
+        stem.clone_into(&mut theme.name);
+    }
+    Ok(theme)
 }
 
 /// Theme by ID; an unknown ID gives theme 0 (Classic Gray).
@@ -510,6 +535,33 @@ mod tests {
         assert_eq!(load("-0.5"), MIN_NOTE_BRIGHTNESS);
         assert!(load("0") > 0.0);
         assert_eq!(load("0.4"), 0.4);
+    }
+
+    #[test]
+    fn a_partial_theme_file_imports_over_the_defaults() {
+        // No id and no name, one colour (`#` and lower case tolerated) and one option.
+        let json = br##"{"colors": {"accent": "#00ff80"}, "options": {"accentLightness": 0.4}}"##;
+        let t = import("Sunset", json).unwrap();
+        assert_eq!(t.name, "Sunset");
+        assert_eq!(t.colors.accent.to_hex(), "00FF80");
+        assert_eq!(t.colors.background.to_hex(), "21272B");
+        assert_eq!(t.colors.black_key.to_hex(), "21272B");
+        assert_eq!(t.options.accent_lightness, 0.4);
+        assert_eq!(t.options.accent_saturation, 0.9);
+        let named = import("x", br#"{"name": "Dusk", "colors": {}}"#).unwrap();
+        assert_eq!(named.name, "Dusk");
+        // Not JSON, a colour that is no hex, and a file with nothing of a theme in it.
+        for bad in [
+            &b"not json"[..],
+            br#"{"colors": {"accent": "orange"}}"#,
+            br#"{"id": 9, "name": "x"}"#,
+        ] {
+            assert!(
+                import("x", bad).is_err(),
+                "{}",
+                String::from_utf8_lossy(bad)
+            );
+        }
     }
 
     #[test]

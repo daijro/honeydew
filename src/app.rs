@@ -9,7 +9,7 @@ use crate::fonts;
 use crate::history::{self, History, Step};
 use crate::metrics::{FontSize, Metrics};
 use crate::project_files::{ProjectFiles, Replace};
-use crate::recording::input::{InputChoice, InputLink};
+use crate::recording::input::{InputChoice, InputLink, Mic};
 use crate::recording::recorder::{Recorder, Take, compensates, latency, recording_channels};
 use crate::recording::routing::{Routing, input_channel};
 use crate::sample_cache::{self, SampleCache};
@@ -40,7 +40,7 @@ use crate::ui::{panel_resize, wheels};
 mod audio_edit;
 pub(crate) mod auto_record;
 pub(crate) mod automation;
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 mod control;
 mod demo_restore;
 mod export;
@@ -52,6 +52,7 @@ mod panel;
 mod plugins;
 mod tracks;
 mod typed;
+mod versions;
 // A song load on the web waits for its bundled sounds.
 mod bundle_wait;
 // Live editing in a Playground session (web only).
@@ -60,8 +61,14 @@ pub(crate) mod live;
 // Audio files dropped on the app.
 mod file_drop;
 // The desktop's sound library: its install and the notice at start.
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
 mod sounds;
+// The iOS self-test (`--selftest`), which the iOS workflow runs in the Simulator.
+#[cfg(target_os = "ios")]
+mod selftest;
+// In-app updates and the sound library's download (#66). Not on iOS, which a sideloading app updates.
+#[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
+mod updates;
 
 /// How long a flash (`Saved!`) shows.
 const FLASH_SECS: f64 = 1.5;
@@ -70,6 +77,34 @@ const IDLE_SECS: f64 = 600.0;
 
 /// What an input that fails to open shows.
 const MIC_PERMISSION: &str = "Please grant microphone permission to enable audio recording.";
+/// What Android and iOS show when the user did not allow the microphone, and where to allow it.
+fn mic_denied() -> Vec<String> {
+    let app = crate::APP_NAME;
+    let settings = match cfg!(target_os = "ios") {
+        true => format!("Allow it in Settings > {app} > Microphone."),
+        false => format!("Allow it in Settings > Apps > {app} > Permissions > Microphone."),
+    };
+    vec![format!("{app} needs the microphone to record."), settings]
+}
+/// iOS asks only once: its denial offers the app's page in the Settings app (`ios::open_settings`).
+const MIC_SETTINGS: Option<(&str, &str)> = match cfg!(target_os = "ios") {
+    true => Some(("Open Settings", "Close")),
+    false => None,
+};
+/// What an input that fails to open shows: the permission message; on a phone, which asked already, the error.
+fn mic_failed(err: String) -> Vec<String> {
+    match cfg!(mobile) {
+        true => vec!["The microphone could not be opened.".into(), err],
+        false => vec![MIC_PERMISSION.into()],
+    }
+}
+/// What `Audio input:`'s device that does not open shows: the setting is back to `Default`.
+fn input_gone(name: &str) -> Vec<String> {
+    vec![
+        format!("{name} is not available."),
+        "Audio input is set back to Default.".into(),
+    ]
+}
 /// The tags of that message and of a recording's file error.
 const INPUT_TAG: &str = "audio input";
 const RECORD_TAG: &str = "recording";
@@ -239,10 +274,10 @@ pub struct HoneydewApp {
     gated: Vec<(f64, usize, u8)>,
     /// Audio files dropped on the app, decoding (`app/file_drop.rs`).
     importing: Option<file_drop::Importing>,
-    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+    #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
     control: Option<control::Bridge>,
     /// `Install sound library…` running (`app/sounds.rs`).
-    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+    #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
     sounds: Option<crate::content::install::Job>,
 }
 
@@ -319,9 +354,9 @@ impl Default for HoneydewApp {
             fresh: Vec::new(),
             gated: Vec::new(),
             importing: None,
-            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
             control: None,
-            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
             sounds: None,
         }
     }
@@ -358,7 +393,7 @@ impl HoneydewApp {
         crate::android::request_orientation(app.settings.android_orientation());
         app.midi.link = crate::midi::device::MidiLink::platform(cc.egui_ctx.clone());
         app.start_plugins(&cc.egui_ctx);
-        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
         {
             app.control = control::Bridge::start(
                 cc.egui_ctx.clone(),
@@ -370,8 +405,10 @@ impl HoneydewApp {
         // Before the questions a start may ask, which a song load closes.
         app.restore_last_song(&cc.egui_ctx);
         app.whats_new_at_start(fresh);
-        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
         app.sounds_at_start();
+        #[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
+        app.updates_at_start();
         // Once per start, before the purge (whose end every move waits for): a folder of the songs folder named as a row
         // beside it (`My Songs/Demo Songs`) gets a free numbered name, so that it is listed, not hidden.
         if let Err(err) = crate::ui::main_menu::rename_shadowed_folders(&mut *app.files.library) {
@@ -395,7 +432,7 @@ impl HoneydewApp {
             settings.mcp_token = token;
         }
         let mut app = Self {
-            theme: theme_by_id(settings.theme),
+            theme: settings.theme(),
             routing: storage.as_deref().map(Routing::load).unwrap_or_default(),
             settings_saved: settings.clone(),
             settings,
@@ -404,6 +441,7 @@ impl HoneydewApp {
         };
         app.audio.set_multi_core(app.settings.multi_core);
         sample_cache::set_memory_limit(app.settings.sample_memory_limit);
+        app.history.limit = history::set_size_limit(app.settings.version_size_limit);
         // The song the app starts with is created now (MET`created`).
         if let Some(song) = app.files.replace(Replace::New) {
             app.history = History::new(&song);
@@ -418,7 +456,7 @@ impl HoneydewApp {
         if !views::whats_new::due(&self.settings.whats_new_seen) {
             return;
         }
-        if !fresh && cfg!(target_os = "android") {
+        if !fresh && cfg!(mobile) {
             self.nav.overlays.push(Overlay::WhatsNew);
         }
         self.settings.whats_new_seen = views::whats_new::NOTES_VERSION.into();
@@ -466,8 +504,9 @@ impl HoneydewApp {
     /// drag writes the file once, at its end.
     fn keep_settings(&mut self, ctx: &egui::Context) {
         if self.settings != self.settings_saved {
-            if self.theme.id != self.settings.theme {
-                self.theme = theme_by_id(self.settings.theme);
+            let theme = self.settings.theme();
+            if self.theme != theme {
+                self.theme = theme;
             }
             // The click level, heard at once (the engine keeps one level for REC's clicks and the flag's).
             let level = self.settings.metronome_level;
@@ -493,6 +532,7 @@ impl HoneydewApp {
             }
             // The next loads plan with it.
             sample_cache::set_memory_limit(self.settings.sample_memory_limit);
+            self.history.limit = history::set_size_limit(self.settings.version_size_limit);
             #[cfg(target_os = "android")]
             if self.settings.screen_orientation != self.settings_saved.screen_orientation {
                 crate::android::request_orientation(self.settings.android_orientation());
@@ -633,6 +673,7 @@ impl HoneydewApp {
                 self.record();
                 self.rebuild_as(tick, Handover::Undo);
             }
+            SongEdit::Restored => self.restore_version(tick),
             SongEdit::Replaced => {
                 // A new song counts from its own first action, and no slider drag of the old one goes on.
                 (self.last_action, self.row_drag) = (None, false);
@@ -717,8 +758,12 @@ impl HoneydewApp {
         if live::undo(matches!(step, Step::Redo)) {
             return;
         }
-        // What the step keeps.
+        // What the step keeps. Across a version restored, the whole song, the plugins' states too.
         self.params_moved = false;
+        let whole = self.history.crosses(step);
+        if whole {
+            crate::plugins::store_states(&mut self.song);
+        }
         self.history.sync(&self.song);
         let restored = match step {
             Step::Undo => self.history.undo(),
@@ -747,6 +792,9 @@ impl HoneydewApp {
         self.main_screen.forget_keys_views(gone);
         // The selected channel may be gone.
         self.selected_channel = self.selected_channel.min(self.song.channels.len() - 1);
+        if whole {
+            crate::plugins::song_replaced();
+        }
         self.rebuild_as(tick, Handover::Undo);
     }
 
@@ -833,15 +881,15 @@ impl HoneydewApp {
 
     /// Before the frame and after its navigation: a view other than the one last recorded ends what that one left
     /// under way, however the view went (the X, the mixer button or F9, `Select clip`, a nav between frames), for it
-    /// will not see the release: a piano roll's new note within its gate, its key column's key (its press stale for every
-    /// roll) and its drag ([`PianoRoll::hide`]: the dragged key stops, and a move or paint that reported edits is a final edit, a lane
+    /// will not see the release: a piano roll's new note within its gate, its key column's keys and its drag
+    /// ([`PianoRoll::hide`]: the dragged key stops, and a move or paint that reported edits is a final edit, a lane
     /// touch that changed nothing a re-sync, returned for the caller to make); the automation and audio editors' drags end with no edit (their `end_touch`). The drum
     /// editor's end with its popups (`views::drum_editor::after_chrome`). The playlist goes with the mixer: its clip
     /// drag ends where it left the clips, a final edit ([`Clips::end_drag`]). So does a tempo dial drag whose editor
     /// went another way than its own Close (the `showTempo` toggle, [`views::tempo_editor::closed`]).
     ///
     /// [`Clips::end_drag`]: crate::ui::clips::Clips::end_drag
-    fn left_view(&mut self, ctx: &egui::Context) -> Option<SongEdit> {
+    fn left_view(&mut self) -> Option<SongEdit> {
         let tempo = !self.nav.overlays.contains(&Overlay::TempoEditor)
             && views::tempo_editor::closed(&mut self.slots.tempo_editor, self.song.tempo_bpm);
         let mut edit = tempo.then_some(SongEdit::Final);
@@ -852,9 +900,6 @@ impl HoneydewApp {
         let slots = &mut self.slots;
         match drawn {
             View::PianoRoll(channel) => {
-                // The key column's press is stale, so no roll shown under it (this one again
-                // or another channel's) plays it until it lifts and presses again.
-                crate::ui::let_go_press(ctx, crate::ui::piano_roll::keys_id());
                 let roll = slots.piano_roll.rolls.get_mut(&channel);
                 for action in roll.map(PianoRoll::hide).into_iter().flatten() {
                     match action {
@@ -1567,30 +1612,44 @@ impl HoneydewApp {
 
     /// The input follows what needs it: open while REC is armed in a song with an Audio Record channel (only
     /// they record), while such a channel monitors, while the rack shows one, or while the calibration runs; closed
-    /// otherwise. It opens on the input channel's device ([`input_channel`]: the default one without a stored input;
-    /// The calibration's is always the default one) at the output's rate. The engines monitor the open ring with each
-    /// channel's stored ports, and record it: one channel monitoring, the engine is rebuilt when they change, and
-    /// with REC armed whenever the engine playing was not built with it. An open that fails is not tried again until
-    /// what needs it changes (REC armed again, another device) or an `Audio Record` channel is added
-    /// ([`Self::input_failed`]); for REC it shows the permission message (natively: the web has no input).
+    /// otherwise. It opens on the input channel's device ([`input_channel`]: `Audio input:`'s without a stored input;
+    /// The calibration's is always that one) at the output's rate; that setting's device gone, back to `Default`
+    /// ([`Self::open_device`]). The engines monitor the open ring with each channel's stored ports (on Android only
+    /// with headphones in, [`may_monitor`]), and record it: one channel monitoring, the engine is rebuilt when they
+    /// change, and with REC armed whenever the engine playing was not built with it. Android opens it once the user
+    /// allows the microphone ([`Mic`]). An open that fails, or a denial, is not tried again until what needs it
+    /// changes (REC armed again, another device) or an `Audio Record` channel is added ([`Self::input_failed`]); for
+    /// REC it shows the permission message (natively: the web has no input).
+    ///
+    /// [`may_monitor`]: crate::recording::input::may_monitor
     fn open_input(&mut self, tick: u64) {
+        #[cfg(target_os = "ios")]
+        if self.nav.take_answer(INPUT_TAG) == Some(true) {
+            crate::ios::open_settings();
+        }
         let records = |c: &Channel| c.kind == ChannelKind::AudioRecord;
         let channels = &self.song.channels;
         let rack = self.rack_channel();
         let calibrating = matches!(self.calibration, Some(input::Calibrating::Running(_)));
         let armed = self.main_screen.armed && channels.iter().any(records);
-        let monitors = channels
+        let monitoring = channels
             .iter()
             .any(|c| records(c) && c.file.input_monitoring);
+        // Not through a phone's speaker: monitoring alone then needs no input.
+        let monitor = crate::recording::input::may_monitor();
+        let monitors = monitor && monitoring;
         let wanted = armed
             || monitors
             || rack.and_then(|c| channels.get(c)).is_some_and(records)
             || calibrating;
-        // The calibration listens to the first input device.
+        // A channel's own `INPUT` device, else `Audio input:`'s (the calibration's always). On Android a channel's pick
+        // is its ports only, on the one input the setting picks.
+        let chosen = Some(self.settings.audio_input.clone()).filter(|d| !d.is_empty());
         let device = input_channel(&self.song, rack, self.selected_channel)
-            .filter(|_| !calibrating)
+            .filter(|_| !calibrating && !cfg!(target_os = "android"))
             .and_then(|c| self.routing.get(&self.song, &self.song.channels[c]))
-            .map(|route| route.device.clone());
+            .map(|route| route.device.clone())
+            .or_else(|| chosen.clone());
         let need = wanted.then(|| (device.clone(), armed));
         if need != self.input_need {
             self.input_failed = false;
@@ -1598,23 +1657,32 @@ impl HoneydewApp {
         }
         if !wanted {
             self.input.close();
-        } else if let Some(rate) = self.audio.sample_rate().filter(|_| !self.input_failed)
-            && self.input.open(device.as_deref(), rate).is_err()
-        {
-            self.input_failed = true;
-            if armed && !cfg!(target_arch = "wasm32") {
-                self.navigate(Nav::Open(Overlay::Message {
-                    tag: INPUT_TAG,
-                    lines: vec![MIC_PERMISSION.into()],
-                    confirm: None,
-                    extra: None,
-                }));
+        } else if let Some(rate) = self.audio.sample_rate().filter(|_| !self.input_failed) {
+            // Android and iOS ask the user for the microphone first; it opens once allowed.
+            let failed = match self.input.mic() {
+                Mic::Asking => None,
+                Mic::Denied => Some((mic_denied(), MIC_SETTINGS)),
+                Mic::Granted => (self.open_device(device.as_deref(), chosen.as_deref(), rate))
+                    .err()
+                    .map(|err| (mic_failed(err), None)),
+            };
+            if let Some((lines, choices)) = failed {
+                self.input_failed = true;
+                if armed && !cfg!(target_arch = "wasm32") {
+                    self.navigate(Nav::Open(Overlay::Message {
+                        tag: INPUT_TAG,
+                        lines,
+                        confirm: choices.map(|(yes, no)| (yes.into(), no.into())),
+                        extra: None,
+                    }));
+                }
             }
         }
         let ring = self.input.ring().cloned();
         let ports = self.input_ports();
-        let built = (self.audio.input.as_ref()).map(|i| (Arc::as_ptr(&i.ring), &i.ports));
-        let changed = ring.as_ref().map(|r| (Arc::as_ptr(r), &ports)) != built;
+        let built =
+            (self.audio.input.as_ref()).map(|i| (Arc::as_ptr(&i.ring), &i.ports, i.monitor));
+        let changed = ring.as_ref().map(|r| (Arc::as_ptr(r), &ports, monitor)) != built;
         if changed {
             // An input of the same width and rate keeps its tap (all a tap is made of), so a take records on through a
             // port pick (the engine's take goes on), a reopen or another device (the new ring's engine starts a take on
@@ -1628,8 +1696,16 @@ impl HoneydewApp {
                 })
                 .map(|i| i.tap.clone());
             self.audio.input = ring.map(|ring| match tap {
-                Some(tap) => LiveInput { ring, ports, tap },
-                None => LiveInput::new(ring, ports),
+                Some(tap) => LiveInput {
+                    ring,
+                    ports,
+                    tap,
+                    monitor,
+                },
+                None => LiveInput {
+                    monitor,
+                    ..LiveInput::new(ring, ports)
+                },
             });
         }
         // The monitors' new ports or ring, a running measurement's new ring (its first engine the calibration builds),
@@ -1637,7 +1713,7 @@ impl HoneydewApp {
         // sound, a running take and the measurement go on).
         let measuring = matches!(self.calibration, Some(input::Calibrating::Running(Some(_))));
         let unrecorded = armed && self.audio.input.is_some() && !self.audio.records();
-        if (changed && (monitors || measuring)) || (unrecorded && self.audio.running()) {
+        if (changed && (monitoring || measuring)) || (unrecorded && self.audio.running()) {
             self.rebuild_as(tick, Handover::Edit);
         }
     }
@@ -1846,17 +1922,39 @@ impl eframe::App for HoneydewApp {
         });
         #[cfg(target_os = "android")]
         crate::android_text::end_frame(ctx);
+        #[cfg(target_os = "ios")]
+        self.selftest(ctx);
     }
 
     /// The settings not flushed yet (a drag's, or a failed flush's) get a last try (native only: the web has no exit).
+    #[cfg(not(target_os = "ios"))]
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        // The plugins' editors close before their windows go.
-        crate::plugins::song_replaced();
-        if self.settings_unflushed
-            && let Some(storage) = self.storage.as_deref_mut()
-        {
-            storage.flush();
+        self.exit();
+    }
+
+    /// iOS draws with wgpu: no GL context.
+    #[cfg(target_os = "ios")]
+    fn on_exit(&mut self) {
+        self.exit();
+    }
+
+    /// iOS: the safe area on the notch's side only ([`crate::ios::notch_only`]), and the self-test's taps
+    /// (`app/selftest.rs`).
+    #[cfg(all(target_os = "ios", not(test)))]
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if let Some(insets) = &mut raw.safe_area_insets {
+            *insets = crate::ios::notch_only(*insets);
         }
+        selftest::input(ctx, raw);
+    }
+
+    /// The theme's background, also where the app does not draw: iOS's notch side.
+    fn clear_color(&self, _: &egui::Visuals) -> [f32; 4] {
+        self.theme
+            .colors
+            .background
+            .to_color32()
+            .to_normalized_gamma_f32()
     }
 
     /// For `WebRunner::app_mut` (`lib.rs`).
@@ -1887,6 +1985,17 @@ impl eframe::App for HoneydewApp {
 }
 
 impl HoneydewApp {
+    /// [`eframe::App::on_exit`].
+    fn exit(&mut self) {
+        // The plugins' editors close before their windows go.
+        crate::plugins::song_replaced();
+        if self.settings_unflushed
+            && let Some(storage) = self.storage.as_deref_mut()
+        {
+            storage.flush();
+        }
+    }
+
     /// One frame. `open` starts the audio output for the song; it is called on a click (its press natively,
     /// its release on the web) while the audio is not running.
     pub fn frame(
@@ -1916,7 +2025,19 @@ impl HoneydewApp {
         // The snapshot first: a stream that failed while egui was idle (no frames) must count as not running for
         // this click. The start is before the screen, so a press that lands on a key is heard natively.
         let mut snapshot = self.audio.poll();
-        if !self.audio.running() && ctx.input(|i| audio_gesture(i, START_ON_RELEASE)) {
+        // Android drops its streams when headphones come or go: an output that fails while the song plays (a take
+        // records) restarts by itself. iOS keeps them, but a call or Siri stops them: they reopen once it ends, and
+        // when a device comes or goes (`ios::take_reopen`), the transport kept.
+        #[cfg(target_os = "ios")]
+        if crate::ios::take_reopen() {
+            self.audio.reopen(&self.song);
+            self.input.close();
+        }
+        let rerouted = cfg!(mobile)
+            && self.main_screen.playing
+            && snapshot.as_ref().is_some_and(|s| s.stream_failed);
+        if !self.audio.running() && (rerouted || ctx.input(|i| audio_gesture(i, START_ON_RELEASE)))
+        {
             self.audio
                 .set_low_latency_preference(self.settings.low_latency);
             self.audio
@@ -1935,7 +2056,7 @@ impl HoneydewApp {
         // Last frame's leftovers go before this frame's commands.
         self.audio.flush();
         // What a view gone between frames left under way ends first, ahead of the frame's held live notes.
-        if let Some(edit) = self.left_view(ctx) {
+        if let Some(edit) = self.left_view() {
             self.song_edited(edit, snapshot.as_ref().map_or(0, |s| s.transport_tick));
         }
         // This frame's live notes wait for the transport's Play or Stop below, which goes out first: while REC is armed
@@ -1956,6 +2077,26 @@ impl HoneydewApp {
         // The latency calibration's test stops the transport and holds it.
         if matches!(self.calibration, Some(input::Calibrating::Running(_))) {
             self.main_screen.playing = false;
+        }
+        // A call, another app taking the sound, or the app leaving the screen ended Android's take there and then
+        // (`android::recording`), a call, Siri or an alarm iOS's (`ios::recording`): the transport stops, which leaves
+        // the clips.
+        #[cfg(target_os = "android")]
+        let interrupted = crate::android::interrupted();
+        #[cfg(target_os = "ios")]
+        let interrupted = crate::ios::interrupted();
+        #[cfg(mobile)]
+        if interrupted && self.main_screen.playing {
+            self.main_screen.playing = false;
+            self.navigate(Nav::Open(Overlay::Message {
+                tag: RECORD_TAG,
+                lines: vec![
+                    "The recording was interrupted.".into(),
+                    "What was recorded so far is kept.".into(),
+                ],
+                confirm: None,
+                extra: None,
+            }));
         }
         self.main_screen.takes = self.live_takes(snapshot.as_ref().map_or(0, |s| s.transport_tick));
         self.slots.piano_roll.takes = self.main_screen.takes.clone();
@@ -2158,11 +2299,6 @@ impl HoneydewApp {
                             navs.push(Nav::Collapse);
                         }
                         Some(Some(view)) => {
-                            // Followed to another view, which draws before `left_view`: the key column's press is
-                            // stale there at once.
-                            if view != self.shown {
-                                crate::ui::let_go_press(ui.ctx(), crate::ui::piano_roll::keys_id());
-                            }
                             self.nav.view = view;
                             if let View::PianoRoll(channel) = view {
                                 self.slots.piano_roll.sounding =
@@ -2296,7 +2432,7 @@ impl HoneydewApp {
         // As drawn: the channel indices the bound controls' touches name.
         let add_automation = self.take_touches();
         let tick = snapshot.as_ref().map_or(0, |s| s.transport_tick);
-        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
         self.control_frame(tick);
         // The chord editor's edit: the set in use with the new chord, marked edited, an undo step.
         if let Some((strip, chord)) = actions.chord_edit.take() {
@@ -2434,6 +2570,10 @@ impl HoneydewApp {
         self.rack_input();
         self.auto_record(moved, was_playing, tick);
         self.audio_record(ctx, tick, was_recording);
+        #[cfg(target_os = "android")]
+        crate::android::recording(self.recorder.as_ref().map(Recorder::tap));
+        #[cfg(target_os = "ios")]
+        crate::ios::recording(self.recorder.as_ref().map(Recorder::tap));
         self.calibrate(ctx, snapshot.as_ref().and_then(|s| s.ping), tick);
         // After every live key of the frame, and the channel the header picked.
         self.record_notes(jumped, tick);
@@ -2474,7 +2614,7 @@ impl HoneydewApp {
             self.navigate(nav);
         }
         // The frame's edit takes in what ending a drag the view took away made.
-        let edit = edit.max(self.left_view(ctx));
+        let edit = edit.max(self.left_view());
         // The sample row: its picker, or an edit of its clip's slot, ongoing while a slider drags.
         match (actions.sample_row, row_clip) {
             (Some(RowAction::Pick), Some(key)) => {
@@ -2508,6 +2648,8 @@ impl HoneydewApp {
         }
         // After its step: a playlist delete asks whether what it emptied goes too (`app/tracks.rs`).
         self.ask_emptied();
+        // `Replace sample...`'s closed picker asks before it replaces (`app/tracks.rs`).
+        self.ask_replace();
         // Removing a drum row clears the undo history, the removal's step too.
         if std::mem::take(&mut self.slots.drum_editor.row_removed) {
             self.history = History::new(&self.song);
@@ -2561,8 +2703,10 @@ impl HoneydewApp {
         self.midi_import(ctx, tick);
         self.export_started(ctx);
         self.demo_restore(ctx);
-        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+        #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
         self.sounds(ctx, &metrics);
+        #[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
+        self.updates();
         self.burn_notes(ctx, tick);
         self.bundle_wait(ctx, tick);
         self.file_drop(ctx, &metrics, tick);

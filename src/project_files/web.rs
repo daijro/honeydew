@@ -199,7 +199,9 @@ impl WebFiles {
         };
         wasm_bindgen_futures::spawn_local(async move {
             let event = match JsFuture::from(web_sys::js_sys::Promise::resolve(&promise)).await {
-                Ok(answer) if answer.is_null() || answer.is_undefined() => None,
+                Ok(answer) if answer.is_null() || answer.is_undefined() => {
+                    Some(FileEvent::SaveCancelled(PathBuf::from(&name)))
+                }
                 Ok(_) => Some(FileEvent::Saved(PathBuf::from(&name))),
                 Err(err) => Some(FileEvent::Failed(
                     SAVE_FAILED,

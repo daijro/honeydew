@@ -22,8 +22,15 @@ const PLUGIN_HOSTS: &str = "VST3, VST2 and CLAP plugin hosting: Lemon Studio by 
                             https://github.com/ItsAlphaNeon/Lemon-Studio";
 /// The credit of the Lemon Reverb and Lemon Limiter effects (`vendor/lemon-studio/os-engine/src/effects`) and the
 /// built-in Lemon plugins (`crate::plugins::builtin`).
-const EFFECTS: &str = "Lemon Reverb, Lemon Limiter, Lemon Trio, Lemon Sampler and Lemon Parametric EQ: Lemon Studio by \
-                       ItsAlphaNeon (GPL-3.0-or-later), https://github.com/ItsAlphaNeon/Lemon-Studio";
+fn effects() -> String {
+    let mut names = vec!["Lemon Reverb", "Lemon Limiter"];
+    names.extend(crate::plugins::builtin::all().iter().map(|b| b.name));
+    let last = names.pop().unwrap_or_default();
+    format!(
+        "{} and {last}: Lemon Studio by ItsAlphaNeon (GPL-3.0-or-later), https://github.com/ItsAlphaNeon/Lemon-Studio",
+        names.join(", ")
+    )
+}
 /// The repo's notices for the third-party code the app includes.
 const THIRD_PARTY: &str = "Third-party software notices: THIRD_PARTY_NOTICES.md";
 /// The bundled sounds' section, and its only line without a bundle.
@@ -71,7 +78,7 @@ fn lines(bundle: Option<&Bundle>, loading: &mut bool) -> Vec<String> {
         "",
         &format!("{APP_NAME}:"),
         LOGO,
-        EFFECTS,
+        &effects(),
         THIRD_PARTY,
         "",
         SOUNDS,

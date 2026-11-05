@@ -1,8 +1,10 @@
-//! The desktop's sound library (`content::install`) in the app. At start, while there is none, or the one found is
-//! older than this version's, the question [`sounds_question`] says so, once per shipped sound release; SETTINGS
-//! `Install sound library…` asks it too. `ZIP file…` or `Folder…` opens the system's picker, then the sync runs on a worker behind the loading screen,
-//! [`INSTALLING`] with its percent and the abort X; an abort leaves the library as it was. Once done, a message says
-//! to restart: the factory loads the content once ([`crate::content::factory`]).
+//! The desktop's sound library (`content::install`) in the app. At start, where one is to be fetched
+//! (`install::needed`): one installed before, or a download begun, downloads from the sound library's release without
+//! asking (#66, `crate::update`; only the parts that changed); with none, [`sounds_start_question`] asks once per
+//! shipped sound release: `Download`, `Later`, or `From file…`, which is SETTINGS `Install sound library…`'s
+//! [`sounds_question`]. `ZIP file…` or `Folder…` opens the system's picker, then the sync runs on a worker behind the
+//! loading screen, [`INSTALLING`] with its percent and the abort X; an abort leaves the library as it was. Once done, a
+//! message says to restart: the factory loads the content once ([`crate::content::factory`]).
 
 use std::time::Duration;
 
@@ -12,7 +14,9 @@ use super::HoneydewApp;
 use crate::content::install::{self, Job};
 use crate::metrics::Metrics;
 use crate::ui::UiCtx;
-use crate::ui::views::main_menu::{SOUNDS_TAG, sounds_question};
+use crate::ui::views::main_menu::{
+    SOUNDS_START_TAG, SOUNDS_TAG, sounds_question, sounds_start_question,
+};
 use crate::ui::views::{self, Answer, Nav, Overlay};
 
 /// The loading screen's title, before the percent.
@@ -21,29 +25,43 @@ pub(super) const INSTALLING: &str = "Installing sound library...";
 const DONE_TAG: &str = "sounds_installed";
 
 impl HoneydewApp {
-    /// At start, the question while the sound library is missing or older than this version's: once per shipped sound
-    /// release (`soundsNoticeSeen`), as some do without the sounds.
+    /// At start, where the sound library is to be fetched: its download goes on without asking from one installed
+    /// before or a download begun; with none, the question, once per shipped sound release (`soundsNoticeSeen`), as
+    /// some do without the sounds.
     pub(super) fn sounds_at_start(&mut self) {
+        let bundle = self.files.factory.bundle.as_deref();
+        if !install::needed(bundle) {
+            return;
+        }
+        if bundle.is_some() || install::dir().is_some_and(|dir| dir.exists()) {
+            self.download_sounds();
+            return;
+        }
         let shipped = install::SHIPPED_RELEASE.trim();
         let seen = &self.settings.sounds_notice_seen;
         if !seen.is_empty() && !install::older(seen, shipped) {
             return;
         }
-        let why = match &self.files.factory.bundle {
-            None => "The sound library is missing.".to_owned(),
-            Some(bundle) if install::older(&bundle.index.release, shipped) => format!(
-                "The sound library ({}) is older than this version's ({shipped}).",
-                bundle.index.release
-            ),
-            Some(_) => return,
-        };
         self.settings.sounds_notice_seen = shipped.into();
-        self.navigate(sounds_question(Some(why)));
+        self.navigate(sounds_start_question(
+            "The sound library is missing.".into(),
+        ));
     }
 
     /// After the screens, each frame: the question's answer picks the source and starts the install, then its loading
     /// screen shows until it ends.
     pub(super) fn sounds(&mut self, ctx: &egui::Context, m: &Metrics) {
+        if self
+            .nav
+            .answer()
+            .is_some_and(|(tag, _)| tag == SOUNDS_START_TAG)
+        {
+            match self.nav.take_choice(SOUNDS_START_TAG) {
+                Some(Answer::Yes) => self.download_sounds(),
+                Some(Answer::Extra) => self.navigate(sounds_question(None)),
+                _ => {}
+            }
+        }
         if self.nav.answer().is_some_and(|(tag, _)| tag == SOUNDS_TAG) {
             let source = match self.nav.take_choice(SOUNDS_TAG) {
                 Some(Answer::Extra) => (rfd::FileDialog::new())

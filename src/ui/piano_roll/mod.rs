@@ -148,7 +148,7 @@ use crate::ui::region::{self, RegionOp, TimeRange};
 use crate::ui::scroller::{self, Axis, Scroller, X, Y, Zones};
 use crate::ui::timeline::{self, KnobGesture, PlayheadKnob, RangeRuler, RangeSelect, vline_px};
 use crate::ui::widgets::{self, SnapTouch};
-use crate::ui::{UiCtx, gesture, pinch_press, primary_down_live};
+use crate::ui::{Finger, UiCtx, fingers, focus_lost, gesture, pinch_press, primary_down_live};
 
 use notes::*;
 pub use notes::{GridSize, Snap, SnapMode};
@@ -318,14 +318,15 @@ pub struct PianoRoll {
     pub(crate) remembered: Remembered,
     /// A new note's sound: its key and when it stops (egui time).
     gate: Option<(u8, f64)>,
-    /// The key the key column plays while it is held.
-    key_down: Option<u8>,
-    /// Each key's press glow in the key column: eased towards 1 while it is the held key and back to 0 once let go
-    /// ([`PRESS_TINT`]).
+    /// Each key's press glow in the key column: eased towards 1 while a finger holds the key and back to 0 once let
+    /// go ([`PRESS_TINT`]).
     key_press: [f32; 128],
     /// The note a tap or `open` added last, as the clip holds it, and when: its start, its key and the egui time of
     /// the frame that added it, for its pop-in ([`POP_S`]), dropped once that is over.
     born: Option<(u32, u8, f64)>,
+    /// The fingers on the key column, each with the key it plays (none off the rows), and the pass it last showed in.
+    keys_down: Vec<(u64, Option<u8>)>,
+    keys_pass: u64,
     /// The grid cursor (content tick, key): where `paste` and `open` act ([`Self::keys`]).
     cursor: (f64, u8),
     /// The `Paste` button shows, at this finger (module docs).
@@ -440,7 +441,8 @@ enum MoreOp {
 }
 
 /// The floating buttons over a selection.
-const FLOATING: [&str; 5] = ["Copy", "Duplicate", "Snap", "Delete", "More..."];
+/// Copy and Delete first, Duplicate last before `More...` (as every editor's row).
+const FLOATING: [&str; 5] = ["Copy", "Delete", "Snap", "Duplicate", "More..."];
 
 impl PianoRoll {
     pub fn new(channel: usize, lane: usize, clip_id: Option<u32>) -> Self {
@@ -467,9 +469,10 @@ impl PianoRoll {
             press: clips::HandlePress::default(),
             remembered: Remembered::default(),
             gate: None,
-            key_down: None,
             key_press: [0.0; 128],
             born: None,
+            keys_down: Vec::new(),
+            keys_pass: 0,
             cursor: CURSOR,
             paste: None,
             pending: Vec::new(),
@@ -493,6 +496,7 @@ impl PianoRoll {
     pub fn open(&mut self, lane: usize, clip_id: u32) {
         if (self.lane, self.clip_id) != (lane, Some(clip_id)) {
             let pending = self.end_touch();
+            let keys_down = std::mem::take(&mut self.keys_down);
             *self = Self {
                 pending,
                 snap: self.snap,
@@ -501,7 +505,8 @@ impl PianoRoll {
                 graph: self.graph,
                 remembered: self.remembered,
                 gate: self.gate,
-                key_down: self.key_down,
+                keys_down,
+                keys_pass: self.keys_pass,
                 ..Self::new(self.channel, lane, Some(clip_id))
             };
         }
@@ -634,33 +639,47 @@ impl PianoRoll {
         self.row.covered = opts.covered;
         // The scroll and zoom controller first; the gestures then hand it empty-grid touches.
         let report = self.scroll(ui, id, (ruler, keys, grid), song, opts, u);
-        // Touches on the key column play its keys and never scroll.
+        // Touches on the key column play its keys and never scroll. Issue #68: each finger its own key, sliding from
+        // key to key, as on the keyboard ([`fingers`]), so that one plays while another turns a rack knob. A focus
+        // loss or a frame without the column lets go of every finger (their lifts may never come), and a finger
+        // already down as the column shows plays nothing until it presses again.
         let keys_touch = ui.interact(keys, keys_id(), Sense::click_and_drag());
-        // A press held over a focus loss, or over a hide ([`keys_id`]), is up (see `primary_down_live`): its key stops,
-        // and it plays no other.
-        let live = primary_down_live(ui, keys_touch.id);
-        let held = (keys_touch.is_pointer_button_down_on() && live)
-            .then(|| ui.input(|i| i.pointer.interact_pos()))
-            .flatten()
-            .and_then(|p| self.geom(grid.min, u).key(p.y));
-        if held != self.key_down {
-            if let Some(key) = self.key_down {
-                actions.push(PianoRollAction::Note {
-                    key,
-                    velocity: None,
-                });
+        let before = column_keys(&self.keys_down);
+        let pass = ui.ctx().cumulative_pass_nr();
+        if std::mem::replace(&mut self.keys_pass, pass) + 1 != pass || ui.input(focus_lost) {
+            self.keys_down.clear();
+        }
+        let g = self.geom(grid.min, u);
+        for finger in fingers(ui, keys_touch.id) {
+            match finger {
+                Finger::Down(id, p) => {
+                    self.keys_down.retain(|k| k.0 != id);
+                    self.keys_down.push((id, g.key(p.y)));
+                }
+                Finger::Move(id, p) => {
+                    if let Some(k) = self.keys_down.iter_mut().find(|k| k.0 == id) {
+                        k.1 = g.key(p.y);
+                    }
+                }
+                Finger::Up(id, _) => self.keys_down.retain(|k| k.0 != id),
             }
-            if let Some(key) = held {
-                let velocity = Some(crate::app::KEY_VELOCITY);
-                actions.push(PianoRollAction::Note { key, velocity });
-            }
-            self.key_down = held;
+        }
+        let after = column_keys(&self.keys_down);
+        for &key in before.iter().filter(|k| !after.contains(k)) {
+            actions.push(PianoRollAction::Note {
+                key,
+                velocity: None,
+            });
+        }
+        for &key in after.iter().filter(|k| !before.contains(k)) {
+            let velocity = Some(crate::app::KEY_VELOCITY);
+            actions.push(PianoRollAction::Note { key, velocity });
         }
         // The key column's press glow: every key eases towards being the held one, and back to plain once let go.
         let step = crate::ui::anim::step(ui.ctx(), crate::ui::anim::PANEL_KEEP);
         let mut easing = false;
         for (key, glow) in self.key_press.iter_mut().enumerate() {
-            let target = if self.key_down == Some(key as u8) {
+            let target = if after.contains(&(key as u8)) {
                 1.0
             } else {
                 0.0
@@ -894,11 +913,12 @@ impl PianoRoll {
     /// key the key column holds and a new note's sound stop now.
     pub(crate) fn hide(&mut self) -> Vec<PianoRollAction> {
         let mut actions = self.end_touch();
-        for key in [self.key_down.take(), self.gate.take().map(|g| g.0)] {
-            actions.extend(key.map(|key| PianoRollAction::Note {
+        let column = column_keys(&std::mem::take(&mut self.keys_down));
+        for key in column.into_iter().chain(self.gate.take().map(|g| g.0)) {
+            actions.push(PianoRollAction::Note {
                 key,
                 velocity: None,
-            }));
+            });
         }
         actions
     }
@@ -918,8 +938,12 @@ impl PianoRoll {
             Gesture::Edit(edit) => edit.sound.take(),
             _ => None,
         };
-        let keys = [self.key_down.take(), self.gate.take().map(|g| g.0), drag];
-        keys.into_iter().flatten().collect()
+        let column = column_keys(&std::mem::take(&mut self.keys_down));
+        let keys = [self.gate.take().map(|g| g.0), drag];
+        column
+            .into_iter()
+            .chain(keys.into_iter().flatten())
+            .collect()
     }
 
     /// Ends a touch on the grid or the graph lane as its release would, before the roll stops seeing it: a dragged
@@ -996,9 +1020,10 @@ impl PianoRoll {
             Gesture::Edit(edit) => edit.sound,
             _ => None,
         };
-        let own = [self.key_down, self.gate.map(|g| g.0), drag];
+        let own = [self.gate.map(|g| g.0), drag];
         let keys = selected.filter_map(|(e, _)| note(e).map(|n| n.2));
-        for key in keys.chain(own.into_iter().flatten()) {
+        let column = column_keys(&self.keys_down);
+        for key in keys.chain(own.into_iter().flatten()).chain(column) {
             if let Some(row) = lit.get_mut(usize::from(key)) {
                 *row = true;
             }
@@ -1272,6 +1297,9 @@ impl PianoRoll {
                         .then_some(marquee.from);
                 if !up {
                     self.gesture = Gesture::Box(marquee);
+                } else if let Some(p) = pos.filter(|_| self.selected.contains(&true)) {
+                    // Its release shows the floating row over what it caught, whatever showed before.
+                    self.row.boxed(p);
                 }
             }
             Gesture::Edit(mut edit) => {
@@ -1940,7 +1968,7 @@ impl PianoRoll {
         }
     }
 
-    /// `Copy`, `Delete`, `Snap` and `More...` over the selection, in a [`clips::FloatingRow`].
+    /// `Copy`, `Delete`, `Snap`, `Duplicate` and `More...` over the selection, in a [`clips::FloatingRow`].
     fn floating_buttons(
         &mut self,
         ui: &mut egui::Ui,
@@ -2233,10 +2261,7 @@ impl PianoRoll {
                 }
             }
             // The dialogs opened above.
-            MoreOp::GuessScale
-            | MoreOp::TransposeBy
-            | MoreOp::Humanize
-            | MoreOp::SliceBy => {}
+            MoreOp::GuessScale | MoreOp::TransposeBy | MoreOp::Humanize | MoreOp::SliceBy => {}
         }
         let changed = clip.events != before;
         if changed {
@@ -2458,10 +2483,17 @@ impl PianoRoll {
 /// The grid cursor before any note is touched: content tick 0, key 60.
 const CURSOR: (f64, u8) = (0.0, 60);
 
-/// The key column's touch: one id for every channel's roll, so a press latched stale on one is stale on all (the app's
-/// `left_view`).
+/// The key column's touch: one id for every channel's roll.
 pub(crate) fn keys_id() -> Id {
     Id::new("piano_roll").with("keys")
+}
+
+/// The keys the key column's `fingers` play, each once.
+fn column_keys(fingers: &[(u64, Option<u8>)]) -> Vec<u8> {
+    let mut keys: Vec<u8> = fingers.iter().filter_map(|k| k.1).collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys
 }
 
 /// The piano roll's note clipboard (`copy`, `cut`): the notes last copied, at their positions, in egui's memory, so

@@ -1,0 +1,26 @@
+[package]
+name = "lemon-formula-controller"
+description = "Lemon Formula Controller: Lemon Studio's formula controller as a VST3 / CLAP plugin"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[lib]
+doctest = false
+
+[features]
+# Compiled into Lemon Studio: no exported plugin entry points (they would clash with the other built-in plugins).
+linked = []
+# Honeydew (vendored addition): the editor draws into Honeydew's own window (`os-plugkit`'s `embed`).
+embed = ["os-plugkit/embed", "lemon-small-fx/embed"]
+
+[dependencies]
+nih_plug = { path = "../../nih-plug" }
+os-engine = { path = "../os-engine" }
+lemon-small-fx = { path = "../lemon-small-fx" }
+os-plugkit = { path = "../os-plugkit" }
+
+# Upstream allows a lint that Rust 1.91 (Honeydew's CI) does not know yet.
+[lints.rust]
+unknown_lints = "allow"

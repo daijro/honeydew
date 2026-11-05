@@ -25,6 +25,11 @@ pub fn whole(left: &[f32], right: &[f32], _rate: u32, frames: usize, _transpose:
     (side(left), side(right))
 }
 
+/// [`whole`]: the formants follow the resampling too (`formant` unused).
+pub fn whole_formant(left: &[f32], right: &[f32], rate: u32, frames: usize, transpose: f64, _formant: Option<f64>) -> (Vec<f32>, Vec<f32>) {
+    whole(left, right, rate, frames, transpose)
+}
+
 /// The input of each call resampled to the output's length: no latency, the pitch following the speed.
 pub struct Stream {
     rate: u32,

@@ -284,7 +284,22 @@ fn the_drum_editor_toggles_and_swings_steps_through_the_funnel() {
     let mut rig = drum_rig();
     rig.click(rig.step(0, 1));
     assert_eq!(rig.hits(), [(0, 32)]);
-    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
+    // The new hit sounds its pad (the Kick, no MIDI note: 48) for a tapped pad's gate.
+    assert_eq!(
+        rig.take(),
+        ["NoteOn 1 48 127", "ReplaceSong adopting no-resync"]
+    );
+    rig.frame(vec![]);
+    assert_eq!(rig.take(), ["NoteOff 1 48"]);
+    // A tap on another row's header makes it current and sounds its pad (the Hat, 50); the step's deletion is silent.
+    rig.click_id(egui::Id::new("step_seq").with(("row", 2_usize)));
+    rig.frame(vec![]);
+    assert_eq!(rig.take(), ["NoteOn 1 50 127", "NoteOff 1 50"]);
+    rig.click(rig.step(0, 1));
+    assert_eq!(rig.take(), ["ReplaceSong adopting"]);
+    rig.click(rig.step(0, 1));
+    rig.frame(vec![]);
+    rig.take();
     // Half the swing slider's travel swings the offbeat hit once, on the release.
     rig.click_id(steps("swing button"));
     rig.frame(vec![]);
@@ -469,7 +484,15 @@ fn removing_a_drum_row_clears_the_undo_history() {
     rig.frame(vec![]);
     rig.click_id(steps("delete").with((0_usize, 1_usize)));
     assert_eq!(rig.kit().slots.len(), 3);
-    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
+    // The menu made the Hat's row current, which sounded it.
+    assert_eq!(
+        rig.take(),
+        [
+            "NoteOn 1 50 127",
+            "NoteOff 1 50",
+            "ReplaceSong adopting no-resync"
+        ]
+    );
     assert!(!rig.app.history.can_undo());
     assert!(!rig.app.history.can_redo());
 }
@@ -480,11 +503,19 @@ fn clear_and_fill_take_hits_away_with_no_re_sync() {
     let mut rig = drum_rig();
     rig.click(rig.step(1, 1));
     assert_eq!(rig.hits(), [(1, 32)]);
+    rig.frame(vec![]);
     rig.take();
-    // Fill each 4 step: the hit on step 1 goes.
+    // Fill each 4 step: the hit on step 1 goes. The menu makes the Snare's row current, which sounds it.
     rig.row_menu(1, (1, 2));
     assert_eq!(rig.hits(), [(1, 0), (1, 128), (1, 256), (1, 384)]);
-    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
+    assert_eq!(
+        rig.take(),
+        [
+            "NoteOn 1 49 127",
+            "NoteOff 1 49",
+            "ReplaceSong adopting no-resync"
+        ]
+    );
     rig.row_menu(1, (1, 3));
     assert_eq!(rig.hits(), []);
     assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
@@ -503,19 +534,29 @@ fn a_step_tapped_on_does_not_re_sync_though_it_shrinks_the_loop() {
     assert_eq!(rig.hits(), [(0, 32)]);
     let clip = &rig.app.song.channels[1].lanes[0].clips[0];
     assert_eq!(clip.loop_len_beats, 4.0);
-    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
+    assert_eq!(
+        rig.take(),
+        ["NoteOn 1 48 127", "ReplaceSong adopting no-resync"]
+    );
     rig.click(rig.step(0, 1));
     assert_eq!(rig.hits(), []);
-    assert_eq!(rig.take(), ["ReplaceSong adopting"]);
+    assert_eq!(rig.take(), ["NoteOff 1 48", "ReplaceSong adopting"]);
 }
 
 #[test]
 fn the_row_menu_edits_the_pattern_and_the_kit_through_the_funnel() {
     let mut rig = drum_rig();
-    // Fill each 4 step, on the Snare.
+    // Fill each 4 step, on the Snare, whose row the menu makes current (it sounds).
     rig.row_menu(1, (1, 2));
     assert_eq!(rig.hits(), [(1, 0), (1, 128), (1, 256), (1, 384)]);
-    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
+    assert_eq!(
+        rig.take(),
+        [
+            "NoteOn 1 49 127",
+            "NoteOff 1 49",
+            "ReplaceSong adopting no-resync"
+        ]
+    );
     // Clone: the Snare's copy is the kit's pad 2 and gets the Snare's hits; the later pads move down.
     rig.row_menu(1, (0, 3));
     let names =
@@ -2041,9 +2082,12 @@ fn the_step_selections_copy_and_delete_go_through_the_funnel_as_one_undo_step_ea
     let mut rig = drum_rig();
     rig.click(rig.step(0, 0));
     rig.click(rig.step(1, 2));
+    // The new hits' sounds end with their gates.
+    rig.frame(vec![]);
     rig.take();
-    // A long press (a second held still) on the Kick's hit, then a drag to the Snare's: a box over both.
-    let (from, to) = (rig.step(0, 0), rig.step(1, 2));
+    // A long press (a second held still) on the empty step under the Kick's hit, then a drag to the step over the
+    // Snare's: a box over both (a hit's own move would drag it).
+    let (from, to) = (rig.step(1, 0), rig.step(0, 2));
     rig.press(from);
     for _ in 0..10 {
         rig.frame(vec![]);
@@ -2276,6 +2320,7 @@ fn piano_roll_and_drum_editor_region_edits_go_through_the_funnel_as_one_undo_ste
     let mut rig = drum_rig();
     rig.click(rig.step(0, 0));
     rig.click(rig.step(1, 2));
+    rig.frame(vec![]);
     rig.take();
     let step = |s: usize| pos2(rig.step(0, s).x, EDITOR_TOP + 24.0);
     rig.region(step(4), step(2), "Trim selection");
@@ -2452,6 +2497,7 @@ fn a_drag_in_the_drum_editors_graph_lane_is_heard_once_and_undone_in_one_step() 
     let hits = |rig: &Rig| rig.app.song.channels[1].lanes[0].clips[0].events.clone();
     rig.click(rig.step(0, 0));
     rig.click(rig.step(0, 2));
+    rig.frame(vec![]);
     rig.take();
     // The selected row (Kick), whose tapped hits are velocity 255: halfway up on step 0, then below the lane on step 2.
     let bars = rig.rect_of(steps("graph"));
@@ -2488,6 +2534,7 @@ fn an_undo_mid_drag_in_the_drum_lane_reverts_it_and_ends_it() {
     let hits = |rig: &Rig| rig.app.song.channels[1].lanes[0].clips[0].events.clone();
     rig.click(rig.step(0, 0));
     rig.click(rig.step(0, 2));
+    rig.frame(vec![]);
     rig.take();
     let bars = rig.rect_of(steps("graph"));
     let (a, b) = (rig.step(0, 0).x, rig.step(0, 2).x);
@@ -2526,6 +2573,7 @@ fn a_graph_lane_touch_that_changes_nothing_re_syncs() {
     rig.click(DRUM_KNOB);
     rig.frame(vec![]);
     rig.click(rig.step(0, 0));
+    rig.frame(vec![]);
     rig.take();
     let bars = rig.rect_of(steps("graph"));
     // Step 5 holds no hit; step 0's hit is at 255 already, the lane's top.
@@ -2843,8 +2891,15 @@ fn the_free_grid_adds_and_moves_hits_in_one_undo_step_each() {
     rig.click(at(1.0, 47.0));
     rig.frame(vec![]);
     assert_eq!(hits(&rig), [(1, 32)]);
-    // The tap's edit is final: the audio is rebuilt at once.
-    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
+    // The tap's edit is final: the audio is rebuilt at once. The new hit sounds its pad (the Snare) for a pad's gate.
+    assert_eq!(
+        rig.take(),
+        [
+            "NoteOn 1 49 127",
+            "ReplaceSong adopting no-resync",
+            "NoteOff 1 49"
+        ]
+    );
     undo(&mut rig);
     assert_eq!(hits(&rig), []);
     rig.click(at(1.0, 47.0));
@@ -2863,6 +2918,53 @@ fn the_free_grid_adds_and_moves_hits_in_one_undo_step_each() {
     assert_eq!(rig.take(), ["ReplaceSong adopting"]);
     undo(&mut rig);
     assert_eq!(hits(&rig), [(1, 32)]);
+}
+
+/// A move dragged back to where it started changes nothing: no undo step, and a loop longer than its hits (which an
+/// edit would refit) stays as it was. In the step view and the free grid (#71).
+#[test]
+fn a_move_dragged_back_to_its_start_makes_no_undo_step_in_both_drum_modes() {
+    use crate::song::{DrumGrid, LaneKind};
+    let mut rig = drum_rig();
+    rig.click(rig.step(0, 1));
+    let drums = &mut rig.app.song.channels[1];
+    drums.lanes[0].clips[0].loop_len_beats = 8.0;
+    let events = drums.lanes[0].clips[0].events.clone();
+    let notes = drums.add_lane(LaneKind::Drums);
+    drums.lanes[notes].grid = DrumGrid::Notes;
+    let clip = drums.lanes[notes].add_clip(0, 8.0);
+    clip.events = events;
+    let id = clip.id;
+    rig.app.song_edited(SongEdit::Final, 0);
+    rig.frame(vec![]);
+    let there_and_back = |rig: &mut Rig, from: Pos2, away: Pos2, lane: usize| {
+        let steps = rig.app.history.steps();
+        let before = rig.app.song.channels[1].lanes[lane].clips[0].clone();
+        rig.press(from);
+        rig.drag_to(away);
+        assert_ne!(
+            rig.app.song.channels[1].lanes[lane].clips[0].events,
+            before.events
+        );
+        rig.drag_to(from);
+        rig.release(from);
+        rig.frame(vec![]);
+        assert_eq!(rig.app.song.channels[1].lanes[lane].clips[0], before);
+        assert_eq!(rig.app.history.steps(), steps, "lane {lane}");
+    };
+    let (from, away) = (rig.step(0, 1), rig.step(0, 3));
+    there_and_back(&mut rig, from, away, 0);
+    rig.app.navigate(Nav::EditClip(ClipKey {
+        channel: 1,
+        lane: notes,
+        id,
+    }));
+    rig.slide_split();
+    rig.frame(vec![]);
+    // At a new clip's 4 U a beat, a point is a tick; rows are 2 U: the hit on tick 32 of row 0.
+    let grid = rig.rect_of(egui::Id::new("drum_grid").with("grid"));
+    let from = grid.min + vec2(40.0, U);
+    there_and_back(&mut rig, from, from + vec2(64.0, 0.0), notes);
 }
 
 #[test]
@@ -3066,9 +3168,14 @@ mod samples {
                 pad: Some(1),
             };
             assert_eq!(rig.overlays(), [open]);
+            // The menu made the Snare's row current, which sounded it.
             assert_eq!(
                 rig.take(),
-                ["ReplaceSong adopting no-resync"],
+                [
+                    "NoteOn 1 49 127",
+                    "NoteOff 1 49",
+                    "ReplaceSong adopting no-resync"
+                ],
                 "grid {grid}"
             );
             super::rack_wiring::close_picker(&mut rig);
@@ -3157,6 +3264,8 @@ mod samples {
         assert_eq!(
             rig.take(),
             [
+                "NoteOn 1 49 127",
+                "NoteOff 1 49",
                 "Preview 4410 frames from 0",
                 "ReplaceSong adopting no-resync"
             ]
@@ -3270,7 +3379,11 @@ mod samples {
             rig.frame(vec![]);
             assert_eq!(
                 rig.take(),
-                ["ReplaceSong adopting no-resync"],
+                [
+                    "NoteOn 1 49 127",
+                    "NoteOff 1 49",
+                    "ReplaceSong adopting no-resync"
+                ],
                 "grid {grid}"
             );
             let slot = &rig.kit().slots[1];
@@ -3320,7 +3433,7 @@ mod samples {
             let file = crate::flm::read_drumset(&rig.app.files.read_user_file(path).unwrap());
             assert_eq!(names(&file.unwrap()), names(rig.kit()));
             assert_eq!(rig.app.song, song);
-            assert_eq!(rig.take(), Vec::<String>::new());
+            assert_eq!(rig.take(), ["NoteOn 1 50 127", "NoteOff 1 50"]);
         }
     }
 
@@ -3355,7 +3468,11 @@ mod samples {
             assert_eq!(rig.overlays(), []);
             assert_eq!(
                 rig.take(),
-                ["ReplaceSong adopting no-resync"],
+                [
+                    "NoteOn 1 49 127",
+                    "NoteOff 1 49",
+                    "ReplaceSong adopting no-resync"
+                ],
                 "grid {grid}"
             );
             assert_eq!(names(rig.kit()), names(&kit));
@@ -4159,10 +4276,13 @@ fn create_fx_channel_is_a_change() {
 fn clear_and_fill_are_changes() {
     // Their step (the `Quiet` edit) is an undo step saved, which sets the flag.
     let mut rig = drum_rig();
-    for item in [(1, 2), (1, 3)] {
+    // The first menu makes the Snare's row current, which sounds it.
+    let sound = ["NoteOn 1 49 127", "NoteOff 1 49"];
+    for (item, sounds) in [((1, 2), &sound[..]), ((1, 3), &[])] {
         rig.app.files.saved();
         rig.row_menu(1, item);
-        assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
+        let log = [sounds, &["ReplaceSong adopting no-resync"]].concat();
+        assert_eq!(rig.take(), log);
         assert!(rig.app.files.modified(), "{item:?}");
     }
 }
