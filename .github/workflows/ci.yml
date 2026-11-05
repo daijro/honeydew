@@ -55,8 +55,16 @@ jobs:
         run: |
           set -o pipefail
           if ! cargo test --workspace > "$RUNNER_TEMP/test.log" 2>&1; then
-            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test.log" | grep -E '^error|panicked at|FAILED|^failures:$|^    [a-z_0-9:]+$|stdout ----' -A 3 | head -120 \
-              | tr '\n' '~' | sed 's/~/\%0A/g' | head -c 8000 | sed 's/^/::error title=test::/'
+            # Every annotation goes out, whatever a grep finds.
+            set +e +o pipefail
+            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test.log" > "$RUNNER_TEMP/plain.log"
+            # The failing tests' names (and compile errors) in one annotation, then their panics in two more.
+            grep -E '^error|\.\.\. FAILED$' "$RUNNER_TEMP/plain.log" | head -150 \
+              | tr '\n' '~' | sed 's/~/\%0A/g' | head -c 12000 | sed 's/^/::error title=failed::/'
+            grep -E '^---- .* stdout ----$|panicked at|^  left|^ right|^error|^  -->' -A 2 "$RUNNER_TEMP/plain.log" | grep -v '^note: run with' \
+              | head -400 | tr '\n' '~' | sed 's/~/\%0A/g' > "$RUNNER_TEMP/panics.txt"
+            head -c 12000 "$RUNNER_TEMP/panics.txt" | sed 's/^/::error title=panics 1::/'
+            tail -c +12001 "$RUNNER_TEMP/panics.txt" | head -c 12000 | sed 's/^/::error title=panics 2::/'
             exit 1
           fi
           sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test.log" | grep -E 'test result:' | tail -5
@@ -87,4 +95,14 @@ jobs:
           $llvm = 'C:\Program Files\LLVM\bin'
           if (-not (Test-Path "$llvm\libclang.dll")) { choco install llvm -y --no-progress }
           "LIBCLANG_PATH=$llvm" >> $env:GITHUB_ENV
-      - run: cargo test --locked --lib parallel_racks_match_sequential_through_sends_and_live_toggle
+      # Failures surface as annotations, as the test job's (the logs live on hosts the sandbox cannot reach).
+      - name: test
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! cargo test --locked --lib parallel_racks_match_sequential_through_sends_and_live_toggle > "$RUNNER_TEMP/test.log" 2>&1; then
+            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/test.log" | grep -E '^error|panicked at|FAILED|^failures:$|stdout ----|--> ' -A 3 | head -120 \
+              | tr '\n' '~' | sed 's/~/\%0A/g' | head -c 8000 | sed 's/^/::error title=test::/'
+            tail -c 4000 "$RUNNER_TEMP/test.log" | sed 's/\x1b\[[0-9;]*m//g' | tr '\n' '~' | sed 's/~/\%0A/g' | sed 's/^/::error title=tail::/'
+            exit 1
+          fi
