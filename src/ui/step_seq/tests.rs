@@ -2504,14 +2504,15 @@ fn a_tap_on_a_hit_deletes_it_when_it_alone_is_selected_else_only_deselects() {
     rig.click(snare);
     assert_eq!(rig.selection(), []);
     assert!(rig.actions.is_empty(), "{:?}", rig.actions);
-    // A tap on an empty step while a selection shows only deselects; then it toggles.
+    // A tap on an empty step while a selection shows only deselects; then it toggles. (Clear of the floating row,
+    // which floats over the box's release.)
     rig.boxed(rig.cell(1, 1), rig.cell(2, 5));
-    let empty = rig.cell(3, 7);
+    let empty = rig.cell(3, 0);
     rig.click(empty);
     assert_eq!(rig.selection(), []);
     assert!(rig.actions.is_empty());
     rig.click(empty);
-    assert_eq!(rig.actions, [StepAction::Toggle { pad: 3, step: 7 }]);
+    assert_eq!(rig.actions, [StepAction::Toggle { pad: 3, step: 0 }]);
 }
 
 #[test]
@@ -2579,7 +2580,7 @@ fn duplicate_copies_the_selected_steps_to_the_right_and_selects_the_copies() {
 
 #[test]
 fn copy_fills_the_hit_clipboard_and_a_long_press_or_right_click_on_an_empty_step_pastes_it() {
-    // As in the automation editor, `Copy` also stores the hits; lifted in place on an empty step, a long press shows
+    // As in the automation editor, `Copy` stores the hits (and changes nothing); lifted in place on an empty step, a long press shows
     // `Paste` while the clipboard is set, and its tap lands the first copied step on the step under it, the others
     // keeping their pads and distances, selected.
     let mut rig = Rig::new(pattern());
@@ -2613,17 +2614,7 @@ fn copy_fills_the_hit_clipboard_and_a_long_press_or_right_click_on_an_empty_step
     // Over the Snare on 12.
     assert_eq!(
         rig.hits(),
-        on(&[
-            (0, 0),
-            (2, 2),
-            (1, 4),
-            (0, 5),
-            (2, 7),
-            (0, 8),
-            (1, 9),
-            (2, 10),
-            (1, 12)
-        ])
+        on(&[(0, 0), (2, 2), (1, 4), (0, 8), (2, 10), (1, 12)])
     );
     assert_eq!(rig.selection(), [(0, 8), (1, 12), (2, 10)]);
     assert_eq!(rig.text_at("Paste"), None);
@@ -2684,7 +2675,7 @@ fn the_selection_stays_with_its_clip() {
 #[test]
 fn the_floating_row_hides_on_a_scroll_or_zoom_and_a_tap_on_the_selection_brings_it_back() {
     // The same rule as the playlist and the piano roll: the shared placement, hidden by any scroll or zoom, back after
-    // a release on the selection. At U = 32: a 2-button row is 102.4 × 48, m 6.4.
+    // a release on the selection. At U = 32: the 3-button row (`Copy`, `Delete`, `Duplicate`) is 153.6 × 48, m 6.4.
     let shared = |rig: &Rig, cell: (usize, usize), finger: Pos2| {
         let l = rig.layout();
         let sel = Selection {
@@ -2692,7 +2683,7 @@ fn the_floating_row_hides_on_a_scroll_or_zoom_and_a_tap_on_the_selection_brings_
             one_row: true,
             handles: &[],
         };
-        place_row(&sel, finger, l.grid(), vec2(102.4, 48.0), 6.4, 1.0)
+        place_row(&sel, finger, l.grid(), vec2(3.0 * 51.2, 48.0), 6.4, 1.0)
     };
     let mut rig = Rig::new(pattern());
     rig.kit = twelve();
@@ -2743,7 +2734,7 @@ fn the_floating_row_of_a_box_selection_shows_at_its_release() {
         one_row: false,
         handles: &[],
     };
-    let want = place_row(&sel, to, l.grid(), vec2(102.4, 48.0), 6.4, 1.0);
+    let want = place_row(&sel, to, l.grid(), vec2(3.0 * 51.2, 48.0), 6.4, 1.0);
     assert!(want.is_some());
     assert_eq!(rig.view.row.rect(), want);
     // A second box over the same steps catches a selection with the same bounds: its release shows the row again.

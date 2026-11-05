@@ -2009,7 +2009,7 @@ mod component {
     }
 
     /// The first note's rect in the roll's current view, and where the shared rule puts the floating row over it
-    /// with the finger at `finger` (at U = 32 a 4-button row is 204.8 × 48, m 6.4).
+    /// with the finger at `finger` (at U = 32 the 5-button row is 256 × 48, m 6.4).
     fn shared_row(rig: &Rig, finger: Pos2) -> (Rect, Option<Rect>) {
         let g = rig.roll.geom(GRID.min, 32.0);
         let e = &rig.events()[0];
@@ -2023,7 +2023,7 @@ mod component {
         };
         (
             rect,
-            place_row(&sel, finger, GRID, vec2(204.8, 48.0), 6.4, 1.0),
+            place_row(&sel, finger, GRID, vec2(256.0, 48.0), 6.4, 1.0),
         )
     }
 

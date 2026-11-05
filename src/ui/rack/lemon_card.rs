@@ -964,6 +964,10 @@ mod tests {
         rig.tap(knob);
         rig.frame(vec![]);
         assert!(embed::modal(editor).is_none(), "a tap opens no menu");
+        // Past the double tap's 0.4 s (a second press within it resets the knob instead).
+        for _ in 0..4 {
+            rig.frame(vec![]);
+        }
         // A long press: down, then 0.4 s of frames with the finger unmoved.
         rig.frame(finger(TouchPhase::Start, knob));
         for _ in 0..4 {
