@@ -400,7 +400,7 @@ impl ProjectTab {
         let rows = rows
             .into_iter()
             .filter(|(name, _)| !(locked && hidden && time_row(name)));
-        let mut rate = info.sample_rate.unwrap_or(44_100);
+        let rate = info.sample_rate.unwrap_or(44_100);
         for (name, value) in rows {
             let row = band(INFO_ROW_H);
             let (left, right) = row.split_left_right_at_x(value_x);
