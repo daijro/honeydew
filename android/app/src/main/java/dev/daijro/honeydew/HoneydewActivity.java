@@ -55,6 +55,7 @@ public final class HoneydewActivity extends NativeActivity {
     private static native void onMic(boolean granted);
     private static native void onHeadphones(boolean on);
     private static native void onInterrupted();
+    private static native void onBack();
 
     private static final int OPEN_DOCUMENT = 1;
     private static final int OPEN_FOLDER = 2;
@@ -83,6 +84,13 @@ public final class HoneydewActivity extends NativeActivity {
         super.onCreate(state);
         hideSystemBars();
         getSystemService(AudioManager.class).registerAudioDeviceCallback(outputs, null);
+        // Back goes to the app (Android 13 and up; older ones send it as a key): it closes the topmost message, popup
+        // or panel, and with none open the app moves to the background (Rust's `android::move_to_back`), as Android's
+        // own Back did. Without it Android 16 left the app with a message open.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, HoneydewActivity::onBack);
+        }
     }
 
     // Wired, USB or Bluetooth headphones. A Bluetooth headset's own mic needs a call link (SCO), so recording keeps

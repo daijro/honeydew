@@ -291,8 +291,10 @@ fn chords_for(
     out
 }
 
-/// A melody over `degrees`, `bpb` beats a bar, from the tonic at `base`: the bar's chord tone on the beat, a scale step
-/// from the note before it on the off-beats, a breath at the end of some bars.
+/// A melody over `degrees`, `bpb` beats a bar, from the tonic at `base`, in the midigen.app shape: the dominant note
+/// duration `s.duration` fills the piece in slots of one or two units, a short motif (the first bar's slots, at least
+/// four) is then repeated with a small chance of each note drifting, and the walk has tonic gravity — every so often
+/// it snaps back to the tonic. A rest where the rests say; an arpeggio run replaces a slot now and then.
 fn melody(
     degrees: &[u8],
     base: i32,
@@ -302,42 +304,119 @@ fn melody(
     rng: &mut Rng,
 ) -> Vec<Event> {
     let mut out = Vec::new();
-    // The dominant note duration, one note a step: the beats fitting a bar are the steps it has.
-    let step = s.duration.clamp(1.0 / 16.0, bpb.max(1.0 / 16.0));
-    let beats = (bpb / step).round().max(1.0) as usize;
-    let mut previous = 1;
-    for (bar, &d) in degrees.iter().enumerate() {
-        for k in 0..beats {
-            let beat = bar as f64 * bpb + k as f64 * step;
-            // A rest where the rests say, and the last of every other bar is a breath.
-            if k > 0 && rng.unit() < s.rest {
-                continue;
-            }
-            if k + 1 == beats && bar % 2 == 1 && rng.unit() < 0.6 {
-                continue;
-            }
-            let strong = k % 4 == 0;
-            let degree = if strong {
-                let tones = [0, 2, 4];
-                i32::from(d) + tones[rng.below(tones.len())]
-            } else {
-                let step = [-2, -1, 1, 2][rng.below(4)];
-                previous + step
-            };
-            previous = degree;
-            // An octave up from the chords, and one up again when the line runs off the top of its range.
-            let key = key_of(base, offs, degree, 0);
-            let key = if key > 96 {
-                key_of(base, offs, degree, -1)
-            } else {
-                key
-            };
-            let len = (step * (0.5 + 0.25 * rng.unit())).min(bpb);
-            let velocity = 190 + rng.below(41) as u8;
-            out.push(note(beat, len, key, velocity));
+    let unit = s.duration.clamp(1.0 / 16.0, bpb.max(1.0 / 16.0));
+    let total = degrees.len() as f64 * bpb;
+    // The slots: each one or two units long, the longer only when it fits.
+    let mut slots: Vec<(f64, f64)> = Vec::new();
+    let mut t = 0.0;
+    while t < total {
+        let mut dur = unit;
+        if rng.unit() < 0.3 && t + 2.0 * unit <= total {
+            dur = 2.0 * unit;
+        }
+        if t + dur > total {
+            dur = total - t;
+        }
+        slots.push((t, dur));
+        t += dur;
+    }
+    // The motif: the first bar's slots, at least four.
+    let mut motif_len = 0;
+    let mut acc = 0.0;
+    for (_, dur) in &slots {
+        acc += dur;
+        motif_len += 1;
+        if acc >= bpb {
+            break;
         }
     }
+    let motif_len = motif_len.max(4).min(slots.len());
+    // The scale tones of the register window, for the walk's index and the tonic.
+    let tones = scale_tones(base, offs);
+    let tonic = tones
+        .iter()
+        .copied()
+        .filter(|k| (*k - i32::from(base % 12)).rem_euclid(12) == 0)
+        .min_by_key(|k| (*k - 60).abs())
+        .unwrap_or(base);
+    let mut idx = nearest(&tones, tonic);
+    let mut motif: Vec<usize> = Vec::new();
+    for (i, &(at, dur)) in slots.iter().enumerate() {
+        // A rest where the rests say.
+        if i > 0 && rng.unit() < s.rest {
+            continue;
+        }
+        // An arpeggio: a scale run filling the slot, a sixteenth at a time, or a sixth of a beat when fast.
+        if s.arp > 0.0 && rng.unit() < 0.10 {
+            let step = if s.arp >= 2.0 { 1.0 / 6.0 } else { 0.25 };
+            let n = ((dur / step).round() as usize).max(1);
+            let dir = if rng.unit() < 2.0 / 3.0 { 1 } else { -1 };
+            for j in 0..n {
+                let k = key_of_tone(tones[clamp_idx(idx as i32 + dir * j as i32, tones.len())]);
+                out.push(note(
+                    at + j as f64 * step,
+                    (step * (0.5 + 0.25 * rng.unit())).min(dur),
+                    k,
+                    190 + rng.below(41) as u8,
+                ));
+            }
+            continue;
+        }
+        // A fresh walk step for the motif and most of the rest; the motif repeated, mutated now and then, after.
+        let degree_idx = if i < motif_len || rng.unit() < 0.55 {
+            if rng.unit() < 0.08 {
+                nearest(&tones, tonic)
+            } else {
+                clamp_idx(
+                    idx as i32 + [-2, -1, -1, 0, 1, 1, 2][rng.below(7)] as i32,
+                    tones.len(),
+                )
+            }
+        } else {
+            let mut m = motif[i % motif_len];
+            if rng.unit() < 0.25 {
+                m = clamp_idx(m as i32 + [-2, -1, 1, 2][rng.below(4)] as i32, tones.len());
+            }
+            m
+        };
+        idx = degree_idx;
+        if i < motif_len {
+            motif.push(degree_idx);
+        }
+        let key = key_of_tone(tones[degree_idx]);
+        let len = (dur * (0.5 + 0.25 * rng.unit())).min(bpb);
+        let velocity = 190 + rng.below(41) as u8;
+        out.push(note(at, len, key, velocity));
+    }
     out
+}
+
+/// The scale's tones from `base` up through one octave and a bit, as keys.
+fn scale_tones(base: i32, offs: &[i32]) -> Vec<i32> {
+    let mut tones: Vec<i32> = offs.iter().map(|o| base + o).collect();
+    tones.sort_unstable();
+    tones.dedup();
+    tones
+}
+
+/// `i` clamped into `0..len`.
+fn clamp_idx(i: i32, len: usize) -> usize {
+    (i.max(0) as usize).min(len - 1)
+}
+
+/// The index of the tone nearest `key`.
+fn nearest(tones: &[i32], key: i32) -> usize {
+    tones
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, k)| (*k - key).abs())
+        .map(|(i, _)| i)
+        .unwrap_or(0)
+}
+
+/// `tones[i]` as a MIDI key, an octave down when it runs past the top of the range.
+fn key_of_tone(tone: i32) -> u8 {
+    if tone > 96 { (tone - 12) as u8 } else { tone as u8 }
 }
 
 /// `events` sorted by tick, then by key.
