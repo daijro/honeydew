@@ -677,8 +677,8 @@ impl<R: AudioRenderer> AudioOutput<R> {
                 .any(|range| {
                     range.channels() == supported.channels()
                         && range.sample_format() == supported.sample_format()
-                        && range.min_sample_rate() <= rate
-                        && rate <= range.max_sample_rate()
+                        && range.min_sample_rate().0 <= rate
+                        && rate <= range.max_sample_rate().0
                 })
         {
             rate
