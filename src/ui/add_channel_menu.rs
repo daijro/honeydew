@@ -32,12 +32,9 @@ pub fn add_channel_menu() -> Vec<PopupItem<AddChannelPick>> {
     ]
     .concat();
     items.push(PopupItem::header(2, 0, "Plugins:"));
-    let bundled = [
-        plugins::builtin::LEMON_TRIO,
-        plugins::builtin::LEMON_SAMPLER,
-    ]
-    .into_iter()
-    .map(|p| (p.uid.to_owned(), p.name.to_owned(), "CLAP"));
+    let bundled = (plugins::builtin::all().iter())
+        .filter(|p| p.instrument())
+        .map(|p| (p.uid.to_owned(), p.name.to_owned(), "CLAP"));
     let installed = plugins::available()
         .into_iter()
         .filter(|p| p.kind == PluginKind::Instrument)
@@ -133,7 +130,7 @@ mod tests {
     fn installed_instrument_plugins_have_selectable_rows() {
         let menu = add_channel_menu();
         assert!(menu.iter().any(|item| matches!(item.id,
-            Some(AddChannelPick::Plugin(uid)) if uid == crate::plugins::builtin::LEMON_TRIO.uid)));
+            Some(AddChannelPick::Plugin(uid)) if uid == crate::plugins::builtin::named("Lemon Trio").uid)));
         assert!(
             menu.iter()
                 .filter(|item| item.col == 2 && !item.is_header())

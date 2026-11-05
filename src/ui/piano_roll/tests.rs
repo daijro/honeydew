@@ -1959,6 +1959,13 @@ mod component {
         rig.release(to);
         assert_eq!(rig.roll.selected, [true, true, false]);
         assert!(rig.all.is_empty());
+        assert!(rig.text("Copy").is_some());
+        // A second box catching the same notes, the same outline: its release shows the row again.
+        rig.hold(from);
+        rig.frame(vec![In::PointerMoved(to)]);
+        rig.release(to);
+        assert_eq!(rig.roll.selected, [true, true, false]);
+        assert!(rig.text("Copy").is_some());
     }
 
     #[test]
@@ -4322,7 +4329,17 @@ mod grid {
         let past = Rect::from_min_max(pos2(304.0, 48.0), pos2(1170.0, 349.0));
         let events = [n(0, 128.0, 60)];
         let (rects, ..) = painted(1.0, &|p, _, g, cx| {
-            paint_notes(p, g, &events, &[false], &[], Some(past), RED, None, (None, cx));
+            paint_notes(
+                p,
+                g,
+                &events,
+                &[false],
+                &[],
+                Some(past),
+                RED,
+                None,
+                (None, cx),
+            );
         });
         assert_eq!(
             rects.iter().map(|r| r.1).collect::<Vec<_>>(),

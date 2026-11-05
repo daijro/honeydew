@@ -107,6 +107,9 @@ pub struct SongFileState {
     pub meta: MetaState,
     pub keyboard: KeyboardState,
     pub unknown_chunks: Vec<RawChunk>,
+    /// The project versions (#69, Honeydew's own `HDVb` chunks): shared, as every undo step holds them. No edit
+    /// ([`super::Song::keep_unedited`]).
+    pub versions: std::sync::Arc<crate::versions::Versions>,
 }
 
 impl Default for SongFileState {
@@ -126,6 +129,7 @@ impl Default for SongFileState {
             meta: MetaState::default(),
             keyboard: KeyboardState::default(),
             unknown_chunks: Vec::new(),
+            versions: Default::default(),
         }
     }
 }
@@ -301,7 +305,8 @@ pub struct ChannelFileState {
 }
 
 /// A Modulator's target (Honeydew's own, `honeydew_audio::modulator`): the param its signal moves, any automatable
-/// param of any channel. Saved in an `HDMd`, which FL Studio Mobile skips. One whose Modulator or target is gone does
+/// param of any channel. A controller plugin's link too (0.4.9; `crate::plugins::builtin::controller`):
+/// the param its output sets. Saved in an `HDMd`, which other readers skip. One whose Modulator or target is gone does
 /// nothing (ids are never reused).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Modulation {

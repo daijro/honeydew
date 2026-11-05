@@ -27,6 +27,12 @@ const TEXT_SHARE: f32 = 0.6;
 /// The gap in U between the panel and the screen's top and bottom.
 const MARGIN: f32 = 1.0;
 
+/// The layer whose shapes the message shows over its dim and under its panel, taking them each frame it shows: what
+/// the screen under it lifts (the playlist's clips that `Replace sample...` asks about, issue #64).
+pub(crate) fn lift_layer() -> LayerId {
+    LayerId::new(Order::Foreground, Id::new("message lift"))
+}
+
 /// Shows `lines` centred on the screen, then `OK`, or the `extra` choice (if any) and the `(yes, no)` choices of
 /// `confirm`, side by side. `OK` returns `Nav::Close`; a choice returns `Nav::Answer(tag, ..)` or `Nav::Extra(tag)`,
 /// and Escape or a click outside answers no. Choice `i`'s id is `message` with `(0, lines.len() + i)`.
@@ -96,6 +102,11 @@ pub fn show_wrapped(
     let painter = ctx.layer_painter(LayerId::new(Order::Foreground, id));
     let bg = c.background.to_color32();
     painter.rect_filled(screen, 0.0, anim::dim(bg, anim::DIM_ALPHA * (1.0 - a)));
+    // What the screen under it lifted, over the dim.
+    let lifted = ctx.graphics_mut(|g| std::mem::take(g.entry(lift_layer())));
+    for s in lifted.all_entries() {
+        painter.with_clip_rect(s.clip_rect).add(s.shape.clone());
+    }
     let grown = Rect::from_center_size(full.center(), full.size() * (1.0 - a));
     if grown.width() >= 1.0 / m.ppp() && grown.height() >= 1.0 / m.ppp() {
         dialog::panel(&painter, c, m, grown);

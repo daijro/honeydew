@@ -20,7 +20,9 @@
 //! The rows are the kit's pads, through [`DrumKit::slot_on_pad`]. Steps, swing and the row menu edit the song through
 //! the funnel; the strips write their slot fields and send them live, or have the engine rebuilt, with no undo step
 //! (pad params are rack state); the pads play their slots' effective notes ([`DrumKit::pad_note`]), a tap for at least
-//! [`TAP_GATE`].
+//! [`TAP_GATE`]. The editor sounds a pad the same way (GitHub #71, after the piano roll's new note)
+//! when a gesture in it makes the pad's row current (a header's tap, its row menu) or a tap adds the pad's hit;
+//! nothing for REC.
 
 use std::sync::mpsc::{Receiver, TryRecvError};
 
@@ -265,6 +267,14 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     grid.levels.clone_from(&levels);
     step_view.levels = levels;
     step_view.follow = app.settings.continuous_scroll;
+    let row = |state: &State| {
+        if steps {
+            state.step.selected
+        } else {
+            state.grid.current
+        }
+    };
+    let was = row(state);
     let step = if steps {
         state.step.show(&mut ui, &app.cx, app.song, channel, kit)
     } else {
@@ -276,6 +286,18 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         app.settings.grid_size = state.grid.snap.size;
         shown
     };
+    // A row made current in the view (a header's touch) sounds its pad; not a row a removal left past the kit.
+    let now = ui.input(|i| i.time);
+    let current = row(state);
+    if current != was && was < kit.slots.len() {
+        audition(
+            &mut state.pads,
+            app.audio,
+            channel,
+            kit.pad_note(current),
+            now,
+        );
+    }
     // The mixer as the shown view laid it out this frame: its room, and the tabs once it is fully out.
     let (mixer_w, c, band, graph) = if steps {
         let s = &state.step;
@@ -284,7 +306,14 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         let g = &state.grid;
         (g.mixer_w, g.fold.c, g.row_band(), g.graph)
     };
-    if let Some(tabs) = tabs(editor, c, m) {
+    let room = crate::ui::split::ribbon_room(
+        editor.right(),
+        app.regions.screen.right(),
+        app.settings.editor_ribbon_shift,
+        editor.left() + m.u(step_seq::HEADER_W),
+        m,
+    );
+    if let Some(tabs) = tabs(editor, c, m, room) {
         let mut page = StripPage::ALL
             .iter()
             .position(|&p| p == state.drums.page)
@@ -440,11 +469,38 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
             clips.map(|c| c.events.len()).sum::<usize>()
         };
         let before = hits(app.song);
+        // A tap's new hit sounds its pad: the step's, or the free grid's one hit that was not in the clip.
+        let tapped = match &action {
+            StepAction::Toggle { pad, .. } => Some(*pad),
+            StepAction::Hits {
+                events,
+                quiet: true,
+                ..
+            } => {
+                let lane = app.song.channels[channel].lanes.get(state.step.lane);
+                let clip =
+                    lane.and_then(|l| l.clips.iter().find(|c| Some(c.id) == state.step.clip));
+                let old = clip.map_or(&[][..], |c| &c.events);
+                events
+                    .iter()
+                    .find(|e| !old.contains(e))
+                    .and_then(|e| match *e {
+                        crate::song::Event::Drum { pad, .. } => Some(pad),
+                        _ => None,
+                    })
+            }
+            _ => None,
+        };
         if steps {
             state.step.apply(app.song, channel, &action);
         } else {
             let at = (state.step.lane, state.step.clip);
             state.grid.apply(app.song, channel, at, &action);
+        }
+        if let Some(pad) = tapped.filter(|_| hits(app.song) > before) {
+            let kit = app.song.channels[channel].drum_kit.as_ref();
+            let key = kit.and_then(|k| k.pad_note(usize::from(pad)));
+            audition(&mut state.pads, app.audio, channel, key, now);
         }
         let kit = app.song.channels[channel]
             .drum_kit
@@ -747,6 +803,21 @@ pub(crate) fn silenced(state: &mut State) {
     }
 }
 
+/// Sounds `key` on `channel` as a tapped pad does (a pad's velocity, for [`TAP_GATE`], its note-off at the gate's end in
+/// [`after_chrome`]): a row made current or a tap's new hit in the editor. Not a live key: REC records none of it.
+fn audition(pads: &mut Pads, audio: &mut AudioLink, channel: usize, key: Option<u8>, now: f64) {
+    let Some(key) = key else {
+        return;
+    };
+    end_tap(pads, audio);
+    audio.send(AudioCommand::NoteOn {
+        channel,
+        key,
+        velocity: PAD_VELOCITY,
+    });
+    pads.tap = Some((channel, key, now + TAP_GATE));
+}
+
 /// Stops the tapped pad's note still in its gate, if any.
 fn end_tap(pads: &mut Pads, audio: &mut AudioLink) {
     if let Some((channel, key, _)) = pads.tap.take() {
@@ -813,14 +884,16 @@ fn send_slot_setting(audio: &mut AudioLink, channel: usize, slot: u32, key: u32,
 }
 
 /// The page tabs for the mixer folded out to `c`, in `editor`'s ruler row: (x + 3 U, top, column width − 3 U,
-/// 1.5 U − 1 px), only when it is fully out (c = 1).
-fn tabs(editor: Rect, c: f32, m: &Metrics) -> Option<Rect> {
+/// 1.5 U − 1 px), only when it is fully out (c = 1). They end at `room`, where the close ribbon's touch area starts: on
+/// an editor narrower than about 19.4 U (portrait, or beside the rack) the ribbon would cover `Seq` (GitHub
+/// #71). None without room.
+fn tabs(editor: Rect, c: f32, m: &Metrics, room: f32) -> Option<Rect> {
     let at = editor.min + vec2(m.u(step_seq::HEADER_W), 0.0);
     let size = vec2(
-        m.u(step_seq::MIXER_W),
+        m.u(step_seq::MIXER_W).min(room - at.x),
         crate::ui::timeline::ruler_h(m) - 1.0 / m.ppp(),
     );
-    (c == 1.0).then(|| Rect::from_min_size(at, size))
+    (c == 1.0 && size.x > 0.0).then(|| Rect::from_min_size(at, size))
 }
 
 /// The rows' area in `editor`, between the top strip and the graph lane, if it shows.
@@ -1049,11 +1122,15 @@ mod tests {
             let m = Metrics::from_pixels_per_point(ppp, crate::metrics::DEFAULT_UI_SCALE);
             let editor = Rect::from_min_size(pos2(10.0, 20.0), egui::vec2(1170.0, 349.0));
             for c in [0.0, 0.4, 0.99] {
-                assert_eq!(tabs(editor, c, &m), None, "c = {c}");
+                assert_eq!(tabs(editor, c, &m, f32::INFINITY), None, "c = {c}");
             }
             let h = crate::ui::timeline::ruler_h(&m);
             let want = Rect::from_min_size(pos2(10.0 + 96.0, 20.0), egui::vec2(384.0, h - px));
-            assert_eq!(tabs(editor, 1.0, &m), Some(want));
+            assert_eq!(tabs(editor, 1.0, &m, f32::INFINITY), Some(want));
+            // They end where the close ribbon's touch area starts (GitHub #71), and need some room.
+            let short = tabs(editor, 1.0, &m, want.left() + 300.0);
+            assert_eq!(short, Some(want.with_max_x(want.left() + 300.0)));
+            assert_eq!(tabs(editor, 1.0, &m, want.left()), None);
         }
     }
 

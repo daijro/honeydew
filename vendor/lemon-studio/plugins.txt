@@ -1,0 +1,32 @@
+# Lemon Studio's plugins Honeydew vendors (README.md beside this file), read by tools/sync-lemon-plugins.sh and the
+# lemon-effects workflow. One upstream plugins/<name> per line: its folders are vendored as <name>/ (not examples,
+# tests or benches), with every plugin and crates/<name> its manifest depends on, worked out from upstream's
+# Cargo.toml files. os-engine is Honeydew's own subset: the lines os-engine/src/<file> are its upstream files the
+# plugins use (declare a new one in os-engine/src/lib.rs).
+lemon-3x-osc
+lemon-sampler
+lemon-parametric-eq-2
+lemon-soft-clipper
+lemon-fast-distortion
+lemon-balance
+lemon-stereo-enhancer
+lemon-transient-processor
+lemon-chorus
+lemon-stereo-shaper
+lemon-filter
+lemon-flanger
+lemon-phaser
+lemon-delay
+lemon-vocoder
+press
+pulp-filter
+lemon-formula-controller
+lemon-peak-controller
+citrus
+lemon-drum-sampler
+lemon-slicer
+os-engine/src/clock.rs
+os-engine/src/envelope.rs
+os-engine/src/laws.rs
+os-engine/src/sample.rs
+tesla

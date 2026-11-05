@@ -167,6 +167,34 @@ jobs:
           tag_name: ${{ env.TAG }}
           files: honeydew-${{ env.TAG }}-sounds.zip
           fail_on_unmatched_files: true
+      # The sound library's own release, `sounds-<version>` (sounds/release.txt), made once per library version: its
+      # index (the manifest: every part's name, size and SHA-256), its credits, and each part as a download of its own,
+      # flat (`p/<hash>.tar` is `<hash>.tar`). The apps download from it only the parts they lack (src/update.rs), so
+      # an app release that leaves the sounds as they were costs no one a download. A prerelease, so never the latest
+      # release the apps' update check reads. Only what is missing is uploaded before it is published: a run cut short
+      # is finished by the next.
+      - name: Sound library release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          rel=sounds-$(tr -d '[:space:]' < sounds/release.txt)
+          unzip -q "honeydew-${TAG}-sounds.zip" content/index.json content/CREDITS.txt 'content/p/*.tar' -d library
+          if ! gh release view "$rel" >/dev/null 2>&1; then
+            gh release create "$rel" --draft --prerelease --target "$(git rev-parse HEAD)" --title "Sound library ${rel#sounds-}" \
+              --notes "The sound library the apps download, only the parts they lack. Not an app release: get Honeydew from the latest release."
+          fi
+          have=$(gh release view "$rel" --json assets --jq '.assets[].name')
+          # A library version is never published twice with other sounds.
+          if printf '%s\n' "$have" | grep -qxF index.json; then
+            gh release download "$rel" --pattern index.json --output published-index.json
+            cmp -s published-index.json library/content/index.json ||
+              { echo "::error::$rel has another index.json: give the new sound library a new version"; exit 1; }
+          fi
+          for file in library/content/p/*.tar library/content/CREDITS.txt library/content/index.json; do
+            printf '%s\n' "$have" | grep -qxF "$(basename "$file")" || gh release upload "$rel" "$file"
+          done
+          gh release edit "$rel" --draft=false
 
   web:
     runs-on: ubuntu-latest
@@ -229,18 +257,46 @@ jobs:
           sudo apt-get update && sudo apt-get install -y libclang-dev
           sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.0.13004108'
           cargo install cargo-ndk --version 4.1.2 --locked
-      - name: Build signed APK with sounds
+      # Twice: with the sounds (-arm.apk), and without them (-arm-base.apk), which downloads them from the sound
+      # library's release and is what the in-app updater installs.
+      - name: Build signed APKs with and without sounds
         env:
           ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/honeydew-release.jks
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.0.13004108" tools/android-dist.sh --release
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.0.13004108"
+          tools/android-dist.sh --release
+          tools/android-dist.sh --release --base
       - name: Remove signing key
         if: always()
         run: rm -f "$RUNNER_TEMP/honeydew-release.jks"
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
-          files: target/honeydew-android-*-arm.apk
+          files: |
+            target/honeydew-android-*-arm.apk
+            target/honeydew-android-*-arm-base.apk
+          fail_on_unmatched_files: true
+
+  # iOS (experimental): two unsigned IPAs, with and without the sounds (tools/ios-dist.sh), which AltStore, SideStore and
+  # Sideloadly sign with the user's own Apple ID.
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ios
+      - run: tools/ios-dist.sh
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          files: target/honeydew-ios-*.ipa
           fail_on_unmatched_files: true

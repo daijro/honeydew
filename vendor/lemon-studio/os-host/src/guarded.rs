@@ -155,6 +155,12 @@ impl<P: Plugin> HostedEffect for Guarded<P> {
         self.run((), |p| p.process_fx(rate, left, right));
         self.meter.add(t0.elapsed());
     }
+    // Honeydew (vendored addition): a sidechain.
+    fn process_fx_keyed(&mut self, rate: u32, left: &mut [f32], right: &mut [f32], key: Option<(&[f32], &[f32])>) {
+        let t0 = Instant::now();
+        self.run((), |p| p.process_fx_keyed(rate, left, right, key));
+        self.meter.add(t0.elapsed());
+    }
     fn reset_fx(&mut self) {
         self.run((), |p| p.reset_fx())
     }
@@ -166,6 +172,10 @@ impl<P: Plugin> HostedEffect for Guarded<P> {
     }
     fn transport_fx(&mut self, info: &TransportInfo) {
         self.run((), |p| p.transport_fx(info))
+    }
+    // Honeydew (vendored addition, upstream's since 6dc00dd).
+    fn control_fx(&self, k: usize) -> Option<f32> {
+        self.look(None, |p| p.control_fx(k))
     }
 }
 
@@ -195,6 +205,10 @@ impl<P: Plugin> Plugin for Guarded<P> {
     }
     fn editor_size(&self) -> Option<(u32, u32)> {
         self.look(None, |p| p.editor_size())
+    }
+    // Honeydew (vendored addition): a sidechain.
+    fn sidechain(&self) -> bool {
+        self.look(false, |p| p.sidechain())
     }
     fn close_editor(&mut self) {
         self.run((), |p| p.close_editor())

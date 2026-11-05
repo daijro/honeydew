@@ -795,7 +795,7 @@ impl SongAudioEngine {
 
     fn render_segment(&mut self, output: &mut [f32], channels: usize, frames: usize) {
         // The Modulators' last segment, before anything renders ([`modulation`]).
-        self.modulate(self.rolling());
+        self.modulate(self.rolling(), frames);
         for buffer in &mut self.buffers {
             buffer.left.resize(frames, 0.0);
             buffer.right.resize(frames, 0.0);
@@ -1121,7 +1121,7 @@ impl AudioRenderer for SongAudioEngine {
         self.take_input(old);
         if self.adopt {
             // What it takes over holds its bases: a Modulator it drops moves nothing any more.
-            old.modulate(false);
+            old.modulate(false, 0);
             self.merge(old);
         }
     }

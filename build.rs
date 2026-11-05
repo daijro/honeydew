@@ -3,19 +3,21 @@ use std::path::Path;
 fn main() {
     println!("cargo::rustc-check-cfg=cfg(has_app_font)");
     println!("cargo::rustc-check-cfg=cfg(plugin_host)");
-    // Third-party plugins (VST3, VST2, CLAP) are hosted on the desktop only: not on the web, not on Android.
+    // Third-party plugins (VST3, VST2, CLAP) are hosted on the desktop only: not on the web, Android or iOS.
     let arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-    if arch != "wasm32" && os != "android" {
+    if arch != "wasm32" && os != "android" && os != "ios" {
         println!("cargo::rustc-cfg=plugin_host");
     }
     // `desktop`: the desktop sound modes, the MCP token and multi-core mixing (rayon, getrandom). `x11`: plugin editor
     // windows are X11 ones (x11rb). `native_midi`: midir has a MIDI input backend (its ALSA one is Linux only). Each
-    // set matches its dependencies' target in Cargo.toml.
+    // set matches its dependencies' target in Cargo.toml. `mobile`: the phones (Android, iOS), which have no file
+    // dialogs, file manager or desktop sound library.
     for (name, systems) in [
         ("desktop", &["linux", "freebsd", "macos", "windows"][..]),
         ("x11", &["linux", "freebsd"]),
         ("native_midi", &["linux", "macos", "windows"]),
+        ("mobile", &["android", "ios"]),
     ] {
         println!("cargo::rustc-check-cfg=cfg({name})");
         if systems.contains(&os.as_str()) {

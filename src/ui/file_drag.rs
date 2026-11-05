@@ -157,7 +157,8 @@ pub fn playlist(
     let ctx = ui.ctx();
     let mut s = state(ctx);
     let pos = ui.input(|i| match &s.dragged {
-        Some(_) => i.pointer.latest_pos(),
+        // Not the latest position, which a finger's lift clears in its release frame (`PointerGone`).
+        Some(_) => i.pointer.interact_pos(),
         None if hovering(i, is_audio) || !audio_dropped(i).is_empty() => i.pointer.hover_pos(),
         None => None,
     });

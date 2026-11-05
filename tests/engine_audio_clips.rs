@@ -216,7 +216,8 @@ fn each_loop_repetition_fades_the_voice_and_relaunches_from_source_time_0() {
     // With an offset of 0.25 beats the repetitions fall at start − 0.25 + n beats: 0.75, 1.75 …
     song.channels[1].lanes[0].clips[0].offset_beats = 0.25;
     let out = play(&song, 3 * BEAT);
-    let quarter = BEAT as f32 / 4.0;
+    // A whole source frame (#68).
+    let quarter = (BEAT as f32 / 4.0).round();
     assert_at(&out, 1000, quarter + 1000.0);
     let repeat = 3 * BEAT / 4 + 1;
     assert_at(&out, repeat + 1500, 1500.0);
@@ -262,9 +263,10 @@ fn a_seek_while_playing_cuts_and_relaunches_mid_sample() {
     render(&mut engine, 5000);
     engine.seek(320);
     let out = render(&mut engine, 1000);
-    // Cut instantly: no fading voice adds to the first frame.
-    assert_at(&out, 0, 0.75 * BEAT as f32);
-    assert_at(&out, 999, 0.75 * BEAT as f32 + 999.0);
+    // Cut instantly: no fading voice adds to the first frame. A relaunch starts on a whole source frame (#68: no
+    // low-pass from reading between frames), so the half frame at 0.75 beats rounds.
+    assert_at(&out, 0, (0.75 * BEAT as f32).round());
+    assert_at(&out, 999, (0.75 * BEAT as f32).round() + 999.0);
     // 0.75 into the clip, c = 1.0 − L = 0.
     engine.seek(128 + 96);
     assert_at(&render(&mut engine, 100), 50, 50.0);
@@ -273,13 +275,17 @@ fn a_seek_while_playing_cuts_and_relaunches_mid_sample() {
     assert_at(
         &render(&mut engine, 100),
         0,
-        40_827.0 - BEAT as f32 - 0.75 * BEAT as f32,
+        (40_827.0 - BEAT as f32 - 0.75 * BEAT as f32).round(),
     );
     // A seek outside the clip leaves it silent; one onto its start starts it through its start hit.
     engine.seek(64);
     assert!(render(&mut engine, 100).iter().all(|&s| s == 0.0));
     engine.seek(128);
-    assert_at(&render(&mut engine, 100), 50, 0.25 * BEAT as f32 + 50.0);
+    assert_at(
+        &render(&mut engine, 100),
+        50,
+        (0.25 * BEAT as f32).round() + 50.0,
+    );
 }
 
 #[test]

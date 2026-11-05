@@ -1,16 +1,20 @@
 #!/bin/sh
 # Build one APK for 64-bit and 32-bit ARM with the bundled sounds. (A comment touch here is how the `Android APK`
-# workflow is asked to rebuild from the tip. Generate + Randomizer Time/Shift, Random preset, Analyzer tilt row and its Custom knob, a rotation reporting its new size, the piano roll's GENERATE button.) Release signing uses environment variables, never checked-in keys.
+# workflow is asked to rebuild from the tip.) Release signing uses environment variables, never checked-in keys.
+# --base leaves the sounds out (-base.apk): the app downloads them from the sound library's release (#66).
 set -eu
 cd "$(dirname "$0")/.."
 
 variant=debug
 task=assembleDebug
-case ${1:-} in
-    '') ;;
-    --release) variant=release; task=assembleRelease ;;
-    *) echo "usage: tools/android-dist.sh [--release]" >&2; exit 2 ;;
-esac
+base=
+for arg in "$@"; do
+    case $arg in
+        --release) variant=release; task=assembleRelease ;;
+        --base) base=-base ;;
+        *) echo "usage: tools/android-dist.sh [--release] [--base]" >&2; exit 2 ;;
+    esac
+done
 if [ "$variant" = release ]; then
     : "${ANDROID_KEYSTORE_FILE:?set the path to your release keystore}"
     : "${ANDROID_KEYSTORE_PASSWORD:?set your keystore password}"
@@ -33,22 +37,33 @@ export CARGO_TARGET_DIR=$(cd "${CARGO_TARGET_DIR:-target}" && pwd)
 export HONEYDEW_ANDROID_BUILD_DIR=$CARGO_TARGET_DIR/android
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-4}
 mkdir -p "$HONEYDEW_ANDROID_BUILD_DIR/assets" "$HONEYDEW_ANDROID_BUILD_DIR/jniLibs"
-# The sound library, which the APK ships (Gradle fails without `assets/content/index.json`): the split zip in `sounds/`,
-# the zip named by `HONEYDEW_SOUNDS_ZIP`, or content already unpacked into the build dir's assets (a checkout without
-# `sounds/`, like a fork that leaves the library out).
-sounds_zip=${HONEYDEW_SOUNDS_ZIP:-}
-if [ -z "$sounds_zip" ] && ls sounds/honeydew-sounds.zip.[0-9][0-9][0-9] >/dev/null 2>&1; then
-    sounds_zip=$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip
-    cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > "$sounds_zip"
-fi
-if [ -n "$sounds_zip" ]; then
-    # The .gz siblings are for web servers; Android reads the raw packs directly from its APK.
-    rm -rf "$HONEYDEW_ANDROID_BUILD_DIR/assets/content"
-    unzip -q "$sounds_zip" 'content/*' -x '*.gz' -d "$HONEYDEW_ANDROID_BUILD_DIR/assets"
-    if [ "$sounds_zip" = "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip" ]; then rm "$sounds_zip"; fi
-elif [ ! -f "$HONEYDEW_ANDROID_BUILD_DIR/assets/content/index.json" ]; then
-    echo 'no sound library: check out `sounds/`, set HONEYDEW_SOUNDS_ZIP to a honeydew-<version>-sounds.zip, or unpack one into assets/content' >&2
-    exit 1
+rm -rf "$HONEYDEW_ANDROID_BUILD_DIR/assets/content.base-hold"
+export HONEYDEW_ANDROID_BASE=$base
+if [ -n "$base" ]; then
+    # No sounds in a base APK: whatever an earlier full build unpacked is moved aside (and back afterwards), so it
+    # is neither packaged nor lost.
+    if [ -d "$HONEYDEW_ANDROID_BUILD_DIR/assets/content" ]; then
+        mv "$HONEYDEW_ANDROID_BUILD_DIR/assets/content" "$HONEYDEW_ANDROID_BUILD_DIR/assets/content.base-hold"
+        trap 'mv "$HONEYDEW_ANDROID_BUILD_DIR/assets/content.base-hold" "$HONEYDEW_ANDROID_BUILD_DIR/assets/content" 2>/dev/null || true' EXIT
+    fi
+else
+    # The sound library, which the APK ships (Gradle fails without `assets/content/index.json`): the split zip in
+    # `sounds/`, the zip named by `HONEYDEW_SOUNDS_ZIP`, or content already unpacked into the build dir's assets (a
+    # checkout without `sounds/`, like a fork that leaves the library out).
+    sounds_zip=${HONEYDEW_SOUNDS_ZIP:-}
+    if [ -z "$sounds_zip" ] && ls sounds/honeydew-sounds.zip.[0-9][0-9][0-9] >/dev/null 2>&1; then
+        sounds_zip=$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip
+        cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > "$sounds_zip"
+    fi
+    if [ -n "$sounds_zip" ]; then
+        # The .gz siblings are for web servers; Android reads the raw packs directly from its APK.
+        rm -rf "$HONEYDEW_ANDROID_BUILD_DIR/assets/content"
+        unzip -q "$sounds_zip" 'content/*' -x '*.gz' -d "$HONEYDEW_ANDROID_BUILD_DIR/assets"
+        if [ "$sounds_zip" = "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip" ]; then rm "$sounds_zip"; fi
+    elif [ ! -f "$HONEYDEW_ANDROID_BUILD_DIR/assets/content/index.json" ]; then
+        echo 'no sound library: check out `sounds/`, set HONEYDEW_SOUNDS_ZIP to a honeydew-<version>-sounds.zip, or unpack one into assets/content (or build with --base)' >&2
+        exit 1
+    fi
 fi
 # signalsmith-stretch's C++ links libc++_shared.so, which the APK has to ship beside libhoneydew.so.
 cargo ndk -t arm64-v8a -t armeabi-v7a --platform 26 --link-libcxx-shared -o "$HONEYDEW_ANDROID_BUILD_DIR/jniLibs" rustc --release --locked --lib -- -C link-arg=-Wl,-z,max-page-size=16384
@@ -63,12 +78,14 @@ if [ "$variant" = debug ] && [ ! -f "$debug_keystore" ]; then
             -validity 10000 -dname 'CN=Android Debug,O=Android,C=US' >/dev/null 2>&1
     fi
 fi
+# Packaged afresh: Gradle's incremental packaging would keep the space of the sounds a --base build drops.
+rm -rf "$HONEYDEW_ANDROID_BUILD_DIR/outputs/apk/$variant"
 android/gradlew -p android --no-daemon "$task"
 
 apk=$HONEYDEW_ANDROID_BUILD_DIR/outputs/apk/$variant/app-$variant.apk
 "$sdk_tools/apksigner" verify "$apk"
 "$sdk_tools/zipalign" -c -P 16 4 "$apk"
-python3 - "$apk" <<'PY'
+python3 - "$apk" "$base" <<'PY'
 import base64
 import hashlib
 import json
@@ -79,6 +96,10 @@ with zipfile.ZipFile(sys.argv[1]) as apk:
     for abi in ('arm64-v8a', 'armeabi-v7a'):
         for lib in ('libhoneydew.so', 'libc++_shared.so'):
             assert apk.getinfo(f'lib/{abi}/{lib}').compress_type == zipfile.ZIP_STORED, abi + '/' + lib
+    if sys.argv[2]:
+        assert not any(name.startswith('assets/content/') for name in apk.namelist()), 'sounds in the base APK'
+        print('Verified APK signature and alignment, without sounds')
+        sys.exit()
     assert apk.read('assets/content/CREDITS.txt'), 'missing sound credits'
     index = json.loads(apk.read('assets/content/index.json'))
     parts = {part['file']: part for entry in index['entries'] for part in entry['parts']}
@@ -94,6 +115,6 @@ PY
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
 suffix=
 [ "$variant" = release ] || suffix=-debug
-out=$CARGO_TARGET_DIR/honeydew-android-$version-arm$suffix.apk
+out=$CARGO_TARGET_DIR/honeydew-android-$version-arm$base$suffix.apk
 cp "$apk" "$out"
 echo "wrote $out"

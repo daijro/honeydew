@@ -49,6 +49,7 @@ mod web;
 #[cfg(target_arch = "wasm32")]
 pub(crate) use web::download;
 mod soundfonts;
+mod themes;
 pub use soundfonts::{SF2_EXT, SFZ_EXT, SOUNDFONT_EXTS, SOUNDFONTS_FOLDER};
 pub(crate) use soundfonts::{in_library, in_user_folder, is_sfz, is_soundfont};
 mod samples;
@@ -177,6 +178,8 @@ pub enum Pick {
     /// The track menu's `Import MIDI Tracks` on the channel with this id: a MIDI file
     /// ([`ProjectFiles::pick_midi_tracks`]).
     MidiTracks(i32),
+    /// The theme creator's `Import`: a theme JSON file ([`ProjectFiles::pick_theme`]).
+    Theme,
 }
 
 impl Pick {
@@ -187,6 +190,7 @@ impl Pick {
             Pick::Song => &["flm", "songtmpl", "zip", "mid", "midi", "flp"],
             Pick::Sample => &SAMPLE_EXTS,
             Pick::MidiTracks(_) => FileKind::Midi.extensions(),
+            Pick::Theme => &["json"],
         }
     }
 }
@@ -257,6 +261,9 @@ pub enum FileEvent {
     /// Written to this path (on the web: downloaded under this name, a bare name that is taken to be in the folder
     /// the save asked for).
     Saved(PathBuf),
+    /// The user cancelled the save dialog of a save asked for at this path ([`FileProvider::save`] with `ask`): nothing
+    /// was written. Only the theme creator's export waits for it ([`ProjectFiles::export_theme`]).
+    SaveCancelled(PathBuf),
     /// A request failed: the popup's title ([`OPEN_FAILED`], [`READ_FAILED`] or [`SAVE_FAILED`]) and what went
     /// wrong where.
     Failed(&'static str, String),
@@ -418,6 +425,10 @@ pub struct ProjectFiles {
     export_notices: Vec<String>,
     /// A file dropped on the window, until no dialog or message is open.
     drop_waiting: Option<eframe::egui::DroppedFile>,
+    /// The theme file the theme creator's `Import` picked, until [`Self::take_theme_pick`] hands it over.
+    theme_pick: Option<(PathBuf, Vec<u8>)>,
+    /// The theme creator's `Export` is being written ([`Self::export_theme`]).
+    theme_export: bool,
 }
 
 /// With the platform's provider and library. On the desktop the library is the songs folder, and saving starts
@@ -515,6 +526,8 @@ impl ProjectFiles {
             relinked: false,
             export_notices: Vec::new(),
             drop_waiting: None,
+            theme_pick: None,
+            theme_export: false,
         }
     }
 
@@ -933,6 +946,7 @@ impl ProjectFiles {
             match event {
                 event if self.is_preset_event(&event) => self.preset_done(event, song),
                 event if self.is_export_event(&event) => self.export_done(event),
+                event if self.is_theme_export(&event) => self.theme_exported(event),
                 FileEvent::Opened(path, bytes) => {
                     opened = match self.pick.take() {
                         Some(Pick::Sample) => {
@@ -941,6 +955,10 @@ impl ProjectFiles {
                         }
                         Some(Pick::MidiTracks(channel)) => {
                             self.midi_picked(channel, bytes);
+                            None
+                        }
+                        Some(Pick::Theme) => {
+                            self.theme_pick = Some((path, bytes));
                             None
                         }
                         Some(Pick::Song) | None => {
@@ -989,6 +1007,7 @@ impl ProjectFiles {
                 FileEvent::Located(files) => self.located(song, files),
                 FileEvent::Folder(files) => self.folder_picked(files),
                 FileEvent::Copied(error) => self.folder_copied(error),
+                FileEvent::SaveCancelled(_) => {}
             }
         }
         opened
@@ -1107,6 +1126,8 @@ impl ProjectFiles {
                     song.new_guids();
                     song.file.meta.created = created_now();
                     song.file.meta.modified = MetaState::default().modified;
+                    // And no project versions of the template's.
+                    song.file.versions = Default::default();
                     self.path = None;
                 } else {
                     // The library keeps songs; an archive's song is no file of its own.
@@ -1199,8 +1220,8 @@ impl ProjectFiles {
         let Some(name) = self.typed_name(name, "flm") else {
             return false;
         };
-        // Without a system save dialog (web and Android), keep other songs under the name and take a free name.
-        let name = match self.copies || cfg!(target_os = "android") {
+        // Without a system save dialog (web and phones), keep other songs under the name and take a free name.
+        let name = match self.copies || cfg!(mobile) {
             true => {
                 let dir = self.dir.as_deref().unwrap_or(Path::new(""));
                 self.free_name(Some(dir), &name, "flm", self.path.as_deref())
@@ -1461,17 +1482,22 @@ fn stamped(song: &Song, title: String) -> Song {
 
 /// Now, as `META` writes it (the format names no time zone).
 fn now() -> String {
-    #[cfg(target_arch = "wasm32")]
-    let secs = {
-        let date = web_sys::js_sys::Date::new_0();
-        (date.get_time() / 1000.0 - date.get_timezone_offset() * 60.0) as i64
-    };
-    // UTC on the desktop (std has no time zones), local time on the web.
-    #[cfg(not(target_arch = "wasm32"))]
-    let secs = std::time::SystemTime::now()
+    crate::ui::main_menu::meta_time(now_secs())
+}
+
+/// Now, in seconds since 1970 as `META` counts them: local time on the web.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn now_secs() -> i64 {
+    let date = web_sys::js_sys::Date::new_0();
+    (date.get_time() / 1000.0 - date.get_timezone_offset() * 60.0) as i64
+}
+
+/// Now, in seconds since 1970 as `META` counts them: UTC on the desktop (std has no time zones).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn now_secs() -> i64 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs() as i64);
-    crate::ui::main_menu::meta_time(secs)
+        .map_or(0, |d| d.as_secs() as i64)
 }
 
 /// Now, as `META` `created` has it: dashes in the time.

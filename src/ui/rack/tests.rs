@@ -713,7 +713,7 @@ fn the_rack_menu_enables_load_drumset_load_and_save_rack_preset_clear_rack_and_t
 #[test]
 fn the_card_menu_has_two_columns_with_every_item_enabled() {
     let cells = |minimized| -> Vec<(usize, usize, String, bool)> {
-        card_menu(minimized, 6, true)
+        card_menu(minimized, 6, true, false)
             .into_iter()
             .map(|i| (i.col, i.row, i.label.into_owned(), i.disabled))
             .collect()
@@ -1441,7 +1441,7 @@ fn the_level_popup_hangs_from_the_icon_centre_and_moves_up_to_stay_on_screen() {
 #[test]
 fn instrument_card_menus_add_set_range_or_set_first_note() {
     let row = |type_id, full, row| {
-        card_menu(false, type_id, full)
+        card_menu(false, type_id, full, false)
             .into_iter()
             .find(|i| (i.col, i.row) == (0, row))
             .map(|i| (i.id, i.label.into_owned(), i.disabled))
@@ -1468,9 +1468,9 @@ fn instrument_card_menus_add_set_range_or_set_first_note() {
     assert_eq!(row(33, false, 5), None, "never on a Slicer");
     // Effects keep the nine items.
     assert_eq!(row(6, true, 4), None);
-    assert_eq!(card_menu(false, 6, false).len(), 9);
-    assert_eq!(card_menu(false, 0, true).len(), 10);
-    assert_eq!(card_menu(false, 0, false).len(), 11);
+    assert_eq!(card_menu(false, 6, false, false).len(), 9);
+    assert_eq!(card_menu(false, 0, true, false).len(), 10);
+    assert_eq!(card_menu(false, 0, false, false).len(), 11);
     // `Set Range` starts a key-learn, panel state: the rack is unchanged. `Set Full Range` resets the range.
     let mut r = rack();
     assert_eq!(apply(&mut r, 2, CardAction::SetRange), Outcome::Nothing);
@@ -1484,7 +1484,7 @@ fn instrument_card_menus_add_set_range_or_set_first_note() {
     assert_eq!(r, rack());
     // All items are always enabled.
     let disabled = |type_id, action| {
-        let items = card_menu(false, type_id, true);
+        let items = card_menu(false, type_id, true, false);
         items
             .into_iter()
             .find(|i| i.id == Some(action))
@@ -1673,15 +1673,11 @@ impl Rig {
 // ---- edge cases ----
 
 #[test]
-fn a_click_opens_an_effect_dialog_but_an_instrument_needs_a_long_press() {
-    // An effect: a plain click (the common-dialog test above). An instrument: a click does nothing ...
+fn a_click_opens_an_instruments_level_popup_as_an_effects_dialog() {
+    // Issue #68: an effect's dialog opens on a plain click (the common-dialog test above), and so does an instrument's.
     let mut rig = Rig::synth(SynthKind::MiniSynth);
     let icon = rig.header(0, 2.25);
     rig.open(icon);
-    assert!(!rig.drawn("Wet Pan"));
-    // ... a secondary click (the long press of a mouse) opens it.
-    rig.secondary_click(icon);
-    rig.frame(vec![]);
     assert!(rig.drawn("Wet Pan"));
 }
 
@@ -3726,13 +3722,16 @@ impl Rig {
 
 #[test]
 fn a_mouse_held_still_300_ms_on_the_instrument_icon_opens_the_level_popup_but_250_ms_does_not() {
+    // Held: at 300 ms, before the release (a click opens it too, issue #68).
     let mut rig = Rig::synth(SynthKind::MiniSynth);
     let icon = rig.header(0, 2.25);
-    rig.hold(icon, 0.25, true);
+    rig.hold(icon, 0.25, false);
     rig.frame(vec![]);
     assert!(!rig.drawn("Wet Pan"));
-    rig.hold(icon, 0.3, false);
-    rig.frame(vec![]);
+    // On to 0.3 s and one frame more.
+    for _ in 0..4 {
+        rig.frame(vec![]);
+    }
     assert!(rig.drawn("Wet Pan"));
     rig.button(icon, false);
     rig.frame(vec![]);

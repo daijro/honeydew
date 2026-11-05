@@ -34,10 +34,16 @@ impl Route {
         })
     }
 
-    /// This input as an item of the menu built from `devices`: `None` when its device is not listed.
+    /// This input as an item of the menu built from `devices`: `None` when its device is not listed. Android and iOS
+    /// list one input (Android's the one `Audio input:` picks): its ports are the channel's whatever that input was
+    /// called.
     pub fn choice(&self, devices: &[InputDevice]) -> Option<InputChoice> {
+        let device = match cfg!(mobile) {
+            true => (!devices.is_empty()).then_some(0),
+            false => devices.iter().position(|d| d.name == self.device),
+        };
         Some(InputChoice {
-            device: devices.iter().position(|d| d.name == self.device)?,
+            device: device?,
             first: self.first,
             second: self.second,
         })

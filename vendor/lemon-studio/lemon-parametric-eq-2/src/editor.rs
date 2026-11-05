@@ -63,16 +63,12 @@ impl Editor for EqEditor {
     fn spawn(&self, parent: ParentWindowHandle, context: Arc<dyn GuiContext>) -> Box<dyn Any + Send> {
         let scale = f32::from_bits(self.scale.load(Ordering::Relaxed));
         match parent {
-            #[cfg(all(windows, not(feature = "embed")))]
+            #[cfg(windows)]
             ParentWindowHandle::Win32Hwnd(hwnd) => {
                 Box::new(win32::open(hwnd, scale, self.params.clone(), self.shared.clone(), context, self.hwnd.clone()))
             }
-            // Honeydew (vendored change): built in with `embed`, the editor draws into Honeydew's own window
-            // (`os_plugkit::embed`) on every platform, and the window handle is that editor's id.
             #[cfg(any(target_os = "linux", all(feature = "embed", not(target_os = "macos"))))]
             ParentWindowHandle::X11Window(window) => Box::new(gui::open(window, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
-            #[cfg(all(windows, feature = "embed"))]
-            ParentWindowHandle::Win32Hwnd(id) => Box::new(gui::open(id as usize as u32, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
             // macOS hosts set no scale (sizes are points): the editor paints at its window's backing scale.
             #[cfg(target_os = "macos")]
             ParentWindowHandle::AppKitNsView(view) => {
@@ -1251,12 +1247,7 @@ mod gui {
                     self.paint();
                 }
             }
-            // Honeydew (vendored addition): embedded, the editor has no thread of its own; with no input waiting, it
-            // waits parked until Honeydew brings more (`os_plugkit::embed`).
-            #[cfg(feature = "embed")]
-            if let Some(park) = self.win.parking() {
-                park.park(move || self.run());
-            }
+            os_plugkit::park!(self);
         }
 
         fn mods(&self) -> Mods {

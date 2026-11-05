@@ -131,14 +131,84 @@ impl Row {
     }
 }
 
-/// Lemon Studio's built-in plugins ([`crate::plugins::builtin`]), each listed after the module it is Lemon's
-/// counterpart of (as Lemon Reverb and Lemon Limiter are), on every platform.
-const fn lemon(b: crate::plugins::builtin::Builtin, instrument: bool) -> Entry {
-    Entry::Plugin(PluginEntry {
-        uid: b.uid,
-        name: b.name,
-        instrument,
-    })
+/// Lemon Studio's built-in plugins ([`crate::plugins::builtin`]), on every platform, each
+/// listed after the module it is Lemon's counterpart of (as Lemon Reverb and Lemon Limiter are), by CLAP id. One not
+/// here goes into its section ([`section_of`]) by name.
+const COUNTERPARTS: &[(&str, Entry)] = &[
+    ("org.openstudio.open-3x-osc", Entry::Synth(S::ThreeXOsc)),
+    ("org.openstudio.open-sampler", Entry::Synth(S::DwSampler)),
+    ("org.openstudio.open-parametric-eq-2", M(3)),
+    ("org.openstudio.lemon-filter", M(9)),
+    ("org.openstudio.lemon-chorus", M(11)),
+    ("org.openstudio.lemon-flanger", M(13)),
+    ("org.openstudio.lemon-phaser", M(14)),
+    // Under the Slicer, so that the two slicers read as two.
+    ("org.openstudio.lemon-slicer", Entry::Synth(S::Slicer)),
+];
+
+/// The name a section's entry sorts by when a built-in plugin goes in by name: a plugin listed after its counterpart
+/// sorts as that counterpart, so that the pair stays together.
+fn sort_name(entry: &Entry) -> &'static str {
+    let counterpart = |p: &PluginEntry| {
+        let of = COUNTERPARTS
+            .iter()
+            .find(|(id, _)| p.uid.strip_prefix("clap:") == Some(*id));
+        of.map(|(_, of)| of.name())
+    };
+    match entry {
+        Entry::Plugin(p) => counterpart(p).unwrap_or(p.name),
+        e => e.name(),
+    }
+}
+
+/// The section a built-in plugin goes into, by its CLAP features: an instrument into SYNTH, an effect by what it does
+/// as the sections' modules (distortion is LEVEL's, as Distortion and Waveshaper), else MISC (modulation, pitch,
+/// analyzers, utilities). `stereo` is a CLAP channel layout, not the Stereoizer's kind.
+fn section_of(plugin: &crate::plugins::builtin::Builtin) -> &'static str {
+    let has = |kinds: &[&str]| (plugin.desc.features.iter()).any(|f| kinds.contains(&f.as_str()));
+    if plugin.instrument() {
+        "SYNTH"
+    } else if has(&["delay", "reverb"]) {
+        "ECHO"
+    } else if has(&[
+        "compressor",
+        "limiter",
+        "gate",
+        "expander",
+        "transient-shaper",
+        "distortion",
+        "restoration",
+    ]) {
+        "LEVEL"
+    } else if has(&["equalizer", "filter"]) {
+        "FILTER"
+    } else {
+        "MISC"
+    }
+}
+
+/// The Modules sections: [`SECTIONS`] with the built-in plugins in theirs.
+fn sections() -> Vec<(Option<&'static str>, Vec<Entry>)> {
+    let mut sections: Vec<_> = (SECTIONS.iter())
+        .map(|&(header, entries)| (header, entries.to_vec()))
+        .collect();
+    for plugin in crate::plugins::builtin::all() {
+        let header = Some(section_of(plugin));
+        let Some((_, entries)) = sections.iter_mut().find(|(h, _)| *h == header) else {
+            continue;
+        };
+        let after = (COUNTERPARTS.iter().find(|(id, _)| *id == plugin.clap_id()))
+            .and_then(|(_, of)| entries.iter().position(|e| e == of));
+        let by_name = || (entries.iter()).position(|e| natural(sort_name(e), plugin.name).is_gt());
+        let at = (after.map(|i| i + 1).or_else(by_name)).unwrap_or(entries.len());
+        let entry = Entry::Plugin(PluginEntry {
+            uid: plugin.uid,
+            name: plugin.name,
+            instrument: plugin.instrument(),
+        });
+        entries.insert(at, entry);
+    }
+    sections
 }
 
 /// The Modules sections, in order. The first group has no header. Ids by display name; where a name is shared
@@ -149,9 +219,7 @@ const SECTIONS: [(Option<&str>, &[Entry]); 7] = [
         Some("SYNTH"),
         &[
             Entry::Synth(S::ThreeXOsc),
-            lemon(crate::plugins::builtin::LEMON_TRIO, true),
             Entry::Synth(S::DwSampler),
-            lemon(crate::plugins::builtin::LEMON_SAMPLER, true),
             Entry::Synth(S::GmSynth),
             Entry::Synth(S::MiniSynth),
             Entry::Synth(S::Slicer),
@@ -186,7 +254,6 @@ const SECTIONS: [(Option<&str>, &[Entry]); 7] = [
             M(40),
             M(honeydew_audio::dynamic_eq::DYNAMIC_EQ),
             M(3),
-            lemon(crate::plugins::builtin::LEMON_EQ, false),
             M(9),
             M(7),
             M(34),
@@ -281,8 +348,9 @@ pub fn rows(query: &str, sort: ModuleOrdering, takes: Takes) -> Vec<Row> {
     let query = query.to_lowercase();
     let hit = |e: &&Entry| e.fits(takes) && e.name().to_lowercase().contains(&query);
     let plugins = plugin_sections();
+    let sections = sections();
     if sort != ModuleOrdering::Category {
-        let entries = SECTIONS.iter().flat_map(|(_, entries)| entries.iter());
+        let entries = sections.iter().flat_map(|(_, entries)| entries.iter());
         let entries = entries.chain(plugins.iter().flat_map(|(_, entries)| entries));
         let mut entries: Vec<Entry> = entries.filter(hit).copied().collect();
         let key = |e: &Entry| match sort {
@@ -296,7 +364,10 @@ pub fn rows(query: &str, sort: ModuleOrdering, takes: Takes) -> Vec<Row> {
     let plugins = plugins
         .iter()
         .map(|(header, entries)| (Some(*header), &entries[..]));
-    for (header, entries) in SECTIONS.into_iter().chain(plugins) {
+    let sections = sections
+        .iter()
+        .map(|(header, entries)| (*header, &entries[..]));
+    for (header, entries) in sections.chain(plugins) {
         let mut hits = entries.iter().filter(hit).map(|&e| Row::Item(e)).peekable();
         if let (Some(header), Some(_)) = (header, hits.peek()) {
             rows.push(Row::Section(header));

@@ -192,6 +192,10 @@ impl ControllerLink {
     pub fn set_target(&mut self, t: u32) {
         self.bytes[8..12].copy_from_slice(&t.to_le_bytes());
     }
+
+    pub fn set_source(&mut self, place: u16) {
+        self.bytes[2..4].copy_from_slice(&place.to_le_bytes());
+    }
 }
 
 /// One of the project's initial values: a control and the value it takes when the song starts (spec:
@@ -216,7 +220,7 @@ impl InitControl {
     /// (spec: flp/layouts.md "Parameter ids in an automation link").
     pub const MAIN_VOLUME: u32 = 0x4000_0000;
     pub const MAIN_SWING: u32 = target::MAIN_SWING;
-    pub const MAIN_PITCH: u32 = 0x4000_0002;
+    pub const MAIN_PITCH: u32 = target::MAIN_PITCH;
 
     /// A record read from event 216's bytes.
     pub fn from_bytes(b: &[u8; Self::LEN]) -> InitControl {
@@ -242,6 +246,7 @@ impl InitControl {
         let v = v.clamp(0.0, 1.0);
         let value = match target::decode(t) {
             Target::MainSwing => f64::from(target::swing_of(v)),
+            Target::MainPitch => f64::from(target::main_pitch_of(v)),
             Target::ChannelMixerTrack(_) => f64::from(target::mixer_track_of(v, u16::MAX)),
             Target::ChannelOn(_) => f64::from(u8::from(target::channel_on(v))),
             Target::ChannelVolume(_) | Target::ChannelPan(_) | Target::SlotMix(..) => 12800.0 * v,
@@ -261,12 +266,13 @@ impl InitControl {
     /// The value as an automation clip hands it on (0..1), for the settings whose stored units are known: the inverse
     /// of [`InitControl::from_unit`] (spec: audio/voice-levels.md "Values from automation", audio/mixer.md "Changes
     /// while the song plays", audio/timing.md "Tempo that changes"). Plugin parameters, a channel's other levels and
-    /// the project's main volume and pitch give `None`.
+    /// the project's main volume give `None`.
     pub fn unit(&self) -> Option<f64> {
         use target::Target;
         let v = f64::from(self.value);
         let unit = match target::decode(self.target) {
             Target::MainSwing => v / 128.0,
+            Target::MainPitch => (v + 1200.0) / 2400.0,
             Target::ChannelMixerTrack(_) => target::mixer_track_level(self.value.clamp(0, 500) as u16),
             Target::ChannelOn(_) => f64::from(u8::from(self.value != 0)),
             Target::ChannelVolume(_) | Target::ChannelPan(_) | Target::SlotMix(..) => v / 12800.0,
@@ -1231,6 +1237,32 @@ impl Envelope {
     pub const CUTOFF: usize = 2;
     pub const RESONANCE: usize = 3;
     pub const PITCH: usize = 4;
+
+    /// The record's 17 ints in stored order (spec: audio/channel-envelopes.md): flags, on (−1) / off (0), delay,
+    /// attack, hold, decay, sustain, release, amount, the LFO's delay, attack, amount, speed and shape, then the
+    /// attack, decay and release tensions.
+    pub fn fields(&self) -> [i32; 17] {
+        [
+            self.flags,
+            // FL writes -1 for an envelope that is on (spec: audio/envelopes-and-lfos.md).
+            -i32::from(self.enabled),
+            self.delay,
+            self.attack,
+            self.hold,
+            self.decay,
+            self.sustain,
+            self.release,
+            self.amount,
+            self.lfo_delay,
+            self.lfo_attack,
+            self.lfo_amount,
+            self.lfo_speed,
+            self.lfo_shape,
+            self.attack_tension,
+            self.decay_tension,
+            self.release_tension,
+        ]
+    }
 }
 
 impl Default for Envelope {
@@ -1367,6 +1399,11 @@ impl Note {
     /// "Slide notes").
     pub fn slide(&self) -> bool {
         self.flags & Self::SLIDE != 0
+    }
+
+    /// The note's colour group, 0..=15 (the low nibble of byte 19).
+    pub fn colour(&self) -> u8 {
+        self.group & 0x0F
     }
 
     /// Byte-19 value of a note's own portamento switch (spec: audio/note-rules.md, "A note's own portamento switch").
@@ -2087,6 +2124,32 @@ impl Project {
         }
     }
 
+    /// The automation targets follow mixer places that moved ([`target::moved`]: `track` and `slot` give a place's new
+    /// one, `None` for one that went): the automation clips', recorded pattern events', initial values' and controller
+    /// links', and a controller's own place in a slot. A target whose place went goes (its clip stays), and so does a
+    /// controller link whose controller went.
+    pub fn follow_mixer_places(&mut self, track: &dyn Fn(u16) -> Option<u16>, slot: &dyn Fn(u16, u8) -> Option<(u16, u8)>) {
+        let moved = |t: &mut u32| target::moved(*t, track, slot).map(|n| *t = n).is_some();
+        for a in &mut self.automations {
+            a.targets.retain_mut(moved);
+        }
+        for p in &mut self.patterns {
+            p.controls.retain_mut(|c| moved(&mut c.kind));
+        }
+        self.init_controls.retain_mut(|c| moved(&mut c.target));
+        self.controller_links.retain_mut(|l| {
+            let mut t = l.target();
+            if !moved(&mut t) {
+                return false;
+            }
+            l.set_target(t);
+            match l.source_slot() {
+                Some((tr, k)) => slot(tr, k).map(|(tr, k)| l.set_source(0x7000 + tr * 64 + u16::from(k))).is_some(),
+                None => true,
+            }
+        });
+    }
+
     /// Every track link's channel follows `m` (`None`: the channel is gone, and an instrument track's link with it).
     pub fn remap_link_channels(&mut self, m: impl Fn(u16) -> Option<u16>) {
         for t in self.arrangements.iter_mut().flat_map(|a| a.tracks.iter_mut()) {
@@ -2309,6 +2372,8 @@ pub mod target {
     pub const TEMPO: u32 = 0x4000_0005;
     /// The project's main swing, the channel rack's swing knob (event 11's unit 0..128).
     pub const MAIN_SWING: u32 = 0x4000_0001;
+    /// The project's main pitch, the toolbar's master pitch knob (event 80's cents, -1200..1200).
+    pub const MAIN_PITCH: u32 = 0x4000_0002;
     pub const MIXER_VOLUME: u8 = 0xC0;
     pub const MIXER_PAN: u8 = 0xC1;
     pub const MIXER_SEPARATION: u8 = 0xC2;
@@ -2404,11 +2469,18 @@ pub mod target {
             Target::SlotOn(..) | Target::ChannelOn(_) => (0.0, 1.0),
             Target::Tempo => (10000.0, 522000.0),
             Target::MainSwing => (0.0, 128.0),
+            Target::MainPitch => (-1200.0, 1200.0),
             // The track number on a clip's scale (`mixer_track_of`): level 1 is track 500, past any project's last
             // insert, so events turned into a clip play the same tracks (Lemon Studio's design).
             Target::ChannelMixerTrack(_) => (0.0, 500.0),
             _ => return None,
         })
+    }
+
+    /// The main pitch (cents) an automation value `v` (0..1) gives: `-1200 + Round(2400 v)` (spec:
+    /// audio/voice-levels.md "The main pitch").
+    pub fn main_pitch_of(v: f64) -> i32 {
+        -1200 + (v.clamp(0.0, 1.0) * 2400.0).round_ties_even() as i32
     }
 
     /// The main swing (0..=128, event 11's unit) an automation value `v` (0..1) gives: `v × 128` to the nearest step
@@ -2467,6 +2539,8 @@ pub mod target {
         Tempo,
         /// The main swing ([`MAIN_SWING`]).
         MainSwing,
+        /// The main pitch ([`MAIN_PITCH`]).
+        MainPitch,
         /// Channel, parameter index of its plugin.
         ChannelParam(u16, u16),
         /// Mixer track, slot, parameter index of the slot's plugin.
@@ -2480,6 +2554,9 @@ pub mod target {
         }
         if t == MAIN_SWING {
             return Target::MainSwing;
+        }
+        if t == MAIN_PITCH {
+            return Target::MainPitch;
         }
         let hi = (t >> 16) as u16;
         let lo = t as u16;
@@ -2531,6 +2608,25 @@ pub mod target {
         Target::Other(t)
     }
 
+    /// Target `t` after mixer places moved: `track` gives a track's new index (its own settings: volume, pan, stereo
+    /// separation, equaliser, sends, and a send's destination), `slot` a slot's new track and slot (its switch, mix
+    /// level and plugin parameters). `None` from either: the place is gone, and so is the target. Other targets stay.
+    pub fn moved(t: u32, track: &dyn Fn(u16) -> Option<u16>, slot: &dyn Fn(u16, u8) -> Option<(u16, u8)>) -> Option<u32> {
+        let place = |track: u16| u32::from(0x7000 + track * 64) << 16;
+        Some(match decode(t) {
+            Target::SlotParam(tr, k, p) => slot(tr, k).map(|(tr, k)| slot_param(tr, k, p))?,
+            Target::SlotOn(tr, k) => slot(tr, k).map(|(tr, k)| self::slot(tr, k, SLOT_ON))?,
+            Target::SlotMix(tr, k) => slot(tr, k).map(|(tr, k)| self::slot(tr, k, SLOT_MIX))?,
+            Target::MixerVolume(tr) | Target::MixerPan(tr) | Target::MixerSeparation(tr) | Target::MixerEq(tr, ..) => place(track(tr)?) | (t & 0xFFFF),
+            // Both forms of a send keep theirs: 0x2000 + d, or 0x1F00 + 64 + d.
+            Target::MixerSend(tr, d) => {
+                let d = track(d)?;
+                place(track(tr)?) | u32::from(if (t >> 8) as u8 == 0x20 { SEND + d } else { 0x1F00 | (64 + d) })
+            }
+            _ => t,
+        })
+    }
+
     /// Bipolar targets centre at 0.5.
     pub fn bipolar(t: u32) -> bool {
         matches!(
@@ -2541,12 +2637,43 @@ pub mod target {
                 | Target::MixerPan(_)
                 | Target::MixerSeparation(_)
                 | Target::MixerEq(_, _, 0)
+                | Target::MainPitch
         )
     }
 
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        /// Targets follow mixer places that move: a slot's to its new track and slot, a track's own (and a send's
+        /// destination) to its new index; a place that goes takes its targets with it; other targets stay.
+        #[test]
+        fn targets_follow_moved_mixer_places() {
+            // Track 3 and 5 swap; slot 2 of track 3 moves to slot 7 of track 4; track 6 goes.
+            let track = |t: u16| match t {
+                3 => Some(5),
+                5 => Some(3),
+                6 => None,
+                t => Some(t),
+            };
+            let slot = |t: u16, k: u8| if (t, k) == (3, 2) { Some((4, 7)) } else { track(t).map(|t| (t, k)) };
+            let m = |t: u32| moved(t, &track, &slot);
+            assert_eq!(m(slot_param(3, 2, 40)), Some(slot_param(4, 7, 40)));
+            assert_eq!(m(self::slot(3, 2, SLOT_MIX)), Some(self::slot(4, 7, SLOT_MIX)));
+            assert_eq!(m(self::slot(3, 0, SLOT_ON)), Some(self::slot(5, 0, SLOT_ON)), "slot 0 is a slot, not the track");
+            assert_eq!(m(self::slot(5, 9, SLOT_ON)), Some(self::slot(3, 9, SLOT_ON)));
+            assert_eq!(m(mixer(3, MIXER_VOLUME)), Some(mixer(5, MIXER_VOLUME)));
+            assert_eq!(m(mixer(5, EQ_FREQ + 1)), Some(mixer(3, EQ_FREQ + 1)));
+            assert_eq!(m(send(3, 5)), Some(send(5, 3)), "the send's destination too");
+            let old_send = u32::from(0x7000 + 3 * 64u16) << 16 | 0x1F00 | (64 + 1);
+            assert_eq!(decode(m(old_send).unwrap()), Target::MixerSend(5, 1));
+            assert_eq!(m(mixer(6, MIXER_PAN)), None);
+            assert_eq!(m(send(1, 6)), None);
+            assert_eq!(m(slot_param(6, 1, 0)), None);
+            for t in [channel(3, CHANNEL_VOLUME), channel_param(5, 2), TEMPO, mixer(1, MIXER_VOLUME)] {
+                assert_eq!(m(t), Some(t));
+            }
+        }
 
         // spec: plugins/plugin-parameters.md §3
         #[test]
@@ -2611,7 +2738,7 @@ pub mod target {
             assert_eq!(channel(2, CHANNEL_ON), 0x0002_0007);
             assert_eq!(decode(0x0002_0007), Target::ChannelOn(2));
             // Neighbours stay what they were.
-            assert_eq!(decode(0x4000_0002), Target::Other(0x4000_0002), "the main pitch");
+            assert_eq!(decode(0x4000_0003), Target::Other(0x4000_0003));
             assert_eq!(decode(channel(2, 9)), Target::Other(0x0002_0009));
             for t in [MAIN_SWING, channel(0, CHANNEL_ON), channel(0, CHANNEL_MIXER_TRACK)] {
                 assert!(!bipolar(t), "{t:#010x}");

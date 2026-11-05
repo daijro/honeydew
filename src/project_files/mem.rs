@@ -60,7 +60,11 @@ impl FileProvider for MemFiles {
         let mut s = self.0.borrow_mut();
         s.saves.push((path.to_owned(), ask));
         let target = if ask {
-            let Some(dir) = &s.save_dir else { return };
+            let Some(dir) = &s.save_dir else {
+                s.events
+                    .push_back(FileEvent::SaveCancelled(path.to_owned()));
+                return;
+            };
             dir.join(path.file_name().unwrap_or_default())
         } else {
             path.to_owned()

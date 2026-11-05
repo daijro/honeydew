@@ -817,6 +817,60 @@ mod tests {
         assert_close(&render(&mut new, 0.1), &render(&mut heard, 0.1));
     }
 
+    /// A clip copied mid-play (a re-sync) relaunches the audio clip under the playhead as bright as it played (#68).
+    /// At 128 BPM and 44.1 kHz the clip at beat 4 starts half-way between two frames, where the relaunch would read
+    /// the sample, a low-pass. Brightness: the first difference's energy over the energy (2 for white noise).
+    #[test]
+    fn a_relaunched_audio_clip_keeps_its_top_end() {
+        use crate::flm::chunk::ContentPath;
+        use crate::sample_cache::SampleCache;
+        use crate::song::{PPQ, SamplerSlot};
+        let mut song = Song {
+            tempo_bpm: 128.0,
+            ..Song::default()
+        };
+        song.add_channel(ChannelKind::AudioClip);
+        let mut slot = SamplerSlot::default();
+        slot.file.path = Some(ContentPath::Plain("noise".into()));
+        let lane = &mut song.channels[1].lanes[0];
+        lane.add_clip(4 * PPQ, 8.0).file.sample = Some(Box::new(slot.clone()));
+        let mut copied = song.clone();
+        let lane = &mut copied.channels[1].lanes[0];
+        lane.add_clip(12 * PPQ, 8.0).file.sample = Some(Box::new(slot));
+        let mut x = 1u32;
+        let noise: Vec<i16> = (0..200_000)
+            .map(|_| {
+                x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (x >> 18) as i16 - 8192
+            })
+            .collect();
+        let wav = crate::sample_cache::tests::wav(&noise);
+        let mut samples = SampleCache::default();
+        samples.load(&song, &|_| Some(wav.clone()));
+        let engine = |song: &Song| {
+            let mut engine = SongAudioEngine::with_samples(song, 44_100.0, &samples).unwrap();
+            engine.play();
+            // To beat 5 (24 000 frames a "beat" here).
+            render(&mut engine, 4.3);
+            engine
+        };
+        let (mut old, mut heard) = (engine(&song), engine(&song));
+        let mut new = SongAudioEngine::with_samples(&copied, 44_100.0, &samples)
+            .unwrap()
+            .adopting_edit(true, Vec::new());
+        new.take_over(&mut old);
+        let bright = |x: &[f32]| {
+            let diff: f32 = x.windows(2).map(|w| (w[1] - w[0]).powi(2)).sum();
+            diff / energy(x)
+        };
+        let (got, want) = (
+            bright(&render(&mut new, 0.5)),
+            bright(&render(&mut heard, 0.5)),
+        );
+        assert!(want > 1.9, "white noise: {want}");
+        assert!(got > 0.98 * want, "{got} vs {want}");
+    }
+
     /// CC #1, which automation sets to 1.0 from beat 2 (the song holds no CC), keeps the playing engine's value through
     /// An edit's take-over, whatever set it, stopped or before the lane's point; only a re-sync's automation at the
     /// playhead sets it. The lane is on channel 2, which a deleted channel 1 moves to index 1; a channel the edit adds

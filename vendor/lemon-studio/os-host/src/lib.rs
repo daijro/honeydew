@@ -197,6 +197,13 @@ pub trait Plugin: Instrument + HostedEffect + Send {
         0
     }
 
+    // Honeydew (vendored addition): a sidechain.
+    /// The plugin has a sidechain input, an audio input besides its main one (UI thread), which
+    /// `HostedEffect::process_fx_keyed` feeds.
+    fn sidechain(&self) -> bool {
+        false
+    }
+
     /// Sends each note's sample start (`Instrument::note_on_from`) as per-note modulation of the parameter named
     /// `name`. False when the plugin or format cannot (notes play from the top).
     fn use_start_param(&mut self, name: &str) -> bool {

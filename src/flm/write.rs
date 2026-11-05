@@ -62,6 +62,7 @@ pub fn write(song: &Song) -> Result<Vec<u8>, FlmError> {
         })?;
     }
     write_raw(&mut writer, &song.file.unknown_chunks)?;
+    crate::versions::write(&mut writer, &song.file.versions)?;
     Ok(writer.into_bytes())
 }
 

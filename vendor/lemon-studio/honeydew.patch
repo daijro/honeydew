@@ -1,347 +1,217 @@
-diff -ruN a/vendor/lemon-studio/lemon-3x-osc/src/editor.rs b/vendor/lemon-studio/lemon-3x-osc/src/editor.rs
---- a/vendor/lemon-studio/lemon-3x-osc/src/editor.rs	2026-11-03 14:59:06.763675066 -0600
-+++ b/vendor/lemon-studio/lemon-3x-osc/src/editor.rs	2026-11-03 14:59:07.663681548 -0600
-@@ -31,7 +31,7 @@
-     #[cfg_attr(not(windows), allow(dead_code))]
-     hwnd: Arc<AtomicIsize>,
-     /// Linux and macOS: the open editor's thread waker, for the same.
--    #[cfg(any(target_os = "linux", target_os = "macos"))]
-+    #[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
-     slot: os_plugkit::gui::Slot,
- }
- 
-@@ -42,7 +42,7 @@
-             shared,
-             scale: AtomicU32::new(1f32.to_bits()),
-             hwnd: Arc::new(AtomicIsize::new(0)),
--            #[cfg(any(target_os = "linux", target_os = "macos"))]
-+            #[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
-             slot: Default::default(),
-         }
-     }
-@@ -50,7 +50,7 @@
-     fn notify(&self) {
-         #[cfg(windows)]
-         win32::post_changed(self.hwnd.load(Ordering::Acquire));
--        #[cfg(any(target_os = "linux", target_os = "macos"))]
-+        #[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
-         os_plugkit::gui::notify(&self.slot);
-     }
- }
-@@ -59,12 +59,16 @@
-     fn spawn(&self, parent: ParentWindowHandle, context: Arc<dyn GuiContext>) -> Box<dyn Any + Send> {
-         let scale = f32::from_bits(self.scale.load(Ordering::Relaxed));
-         match parent {
--            #[cfg(windows)]
-+            #[cfg(all(windows, not(feature = "embed")))]
-             ParentWindowHandle::Win32Hwnd(hwnd) => {
-                 Box::new(win32::open(hwnd, scale, self.params.clone(), self.shared.clone(), context, self.hwnd.clone()))
+diff -ruN a/vendor/lemon-studio/lemon-delay/src/editor.rs b/vendor/lemon-studio/lemon-delay/src/editor.rs
+--- a/vendor/lemon-studio/lemon-delay/src/editor.rs
++++ b/vendor/lemon-studio/lemon-delay/src/editor.rs
+@@ -350,7 +350,8 @@
+                 let mut m = MenuDef::new(MenuStyle::Context);
+                 m.head("Lemon Delay", Cmd::None);
+                 m.add(MenuItem::item(&format!("Version {}", env!("CARGO_PKG_VERSION"))).enabled(false), Cmd::None);
+-                m.add(MenuItem::item("Lemon Studio's recreation of Fruity Delay 3").enabled(false), Cmd::None);
++                // Honeydew (vendored change): no other maker's product names in the app.
++                m.add(MenuItem::item("Lemon Studio's stereo delay").enabled(false), Cmd::None);
+                 m
              }
--            #[cfg(target_os = "linux")]
-+            // Honeydew (vendored change): built in with `embed`, the editor draws into Honeydew's own window
-+            // (`os_plugkit::embed`) on every platform, and the window handle is that editor's id.
-+            #[cfg(any(target_os = "linux", all(feature = "embed", not(target_os = "macos"))))]
-             ParentWindowHandle::X11Window(window) => Box::new(gui::open(window, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
-+            #[cfg(all(windows, feature = "embed"))]
-+            ParentWindowHandle::Win32Hwnd(id) => Box::new(gui::open(id as usize as u32, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
-             // macOS hosts set no scale (sizes are points): the editor paints at its window's backing scale.
-             #[cfg(target_os = "macos")]
-             ParentWindowHandle::AppKitNsView(view) => {
-@@ -865,7 +869,7 @@
-     }
+         }
+diff -ruN a/vendor/lemon-studio/lemon-drum-sampler/src/dsp.rs b/vendor/lemon-studio/lemon-drum-sampler/src/dsp.rs
+--- a/vendor/lemon-studio/lemon-drum-sampler/src/dsp.rs
++++ b/vendor/lemon-studio/lemon-drum-sampler/src/dsp.rs
+@@ -159,13 +159,12 @@
+ /// The layers of `pad` that hold note velocity `v` (the host's 0..128): `lo <= v < hi`, and a range up to 127 holds
+ /// every velocity from its low end (measured: 0–63 / 64–127 sounds neither layer at 63; 10–20 sounds at 10, not at
+ /// 20; 64–127 sounds at 127 and 128). Every layer that holds it plays.
+-pub fn layers_for(pad: &PadKit, v: i32) -> Vec<usize> {
+-    (0..pad.layers.len())
+-        .filter(|&j| {
+-            let l = &pad.layers[j];
+-            l.sample.is_some() && l.lo <= v && (v < l.hi || l.hi >= 127)
+-        })
+-        .collect()
++// Honeydew (vendored change): the layers as an iterator, with no list made on the audio thread.
++pub fn layers_for(pad: &PadKit, v: i32) -> impl Iterator<Item = usize> + '_ {
++    (0..pad.layers.len()).filter(move |&j| {
++        let l = &pad.layers[j];
++        l.sample.is_some() && l.lo <= v && (v < l.hi || l.hi >= 127)
++    })
  }
  
--#[cfg(any(target_os = "linux", target_os = "macos"))]
-+#[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
- mod gui {
-     use std::sync::atomic::Ordering;
-     use std::sync::Arc;
-@@ -999,6 +1003,12 @@
-                     self.paint();
+ /// A host note still sounding: its own voice id across the layers, its key and host id, and the layers still playing it.
+@@ -192,7 +191,8 @@
+ 
+ impl Engine {
+     pub fn new(rate: f32) -> Self {
+-        Engine { rate: rate.max(1.0), kit: None, voices: Vec::new(), blocks: Vec::new(), turn: Vec::new(), live: Vec::new(), next_id: 0, ended: Vec::new() }
++        // Honeydew (vendored change): room for the notes made here, not on the audio thread.
++        Engine { rate: rate.max(1.0), kit: None, voices: Vec::new(), blocks: Vec::new(), turn: Vec::new(), live: Vec::with_capacity(256), next_id: 0, ended: Vec::with_capacity(256) }
+     }
+ 
+     pub fn set_rate(&mut self, rate: f32) {
+@@ -246,8 +246,9 @@
+     }
+ 
+     /// Host voices that ended since the last call (key, host voice id).
+-    pub fn take_ended(&mut self) -> Vec<(u8, Option<i32>)> {
+-        std::mem::take(&mut self.ended)
++    // Honeydew (vendored change): drained, so that the list keeps its room (the audio thread's).
++    pub fn take_ended(&mut self) -> std::vec::Drain<'_, (u8, Option<i32>)> {
++        self.ended.drain(..)
+     }
+ 
+     /// A note: every pad on `key` plays; keys without a pad are silent (and their note ends at once).
+@@ -278,14 +279,13 @@
+                     }
                  }
              }
-+            // Honeydew (vendored addition): embedded, the editor has no thread of its own; with no input waiting, it
-+            // waits parked until Honeydew brings more (`os_plugkit::embed`).
-+            #[cfg(feature = "embed")]
-+            if let Some(park) = self.win.parking() {
-+                park.park(move || self.run());
-+            }
-         }
- 
-         fn mods(&self) -> Mods {
-@@ -1130,10 +1140,16 @@
- 
-     /// The open sample dialog: the desktop's own (through its portal on Linux; on macOS AppKit's, run on the main
-     /// thread), as Lemon Sampler's.
-+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-     fn file_dialog(win: &Window) -> Option<String> {
-         if os_plugkit::no_modal() {
-             return None;
-         }
-+        // Honeydew (vendored addition): the host's own picker opens a file where it answers (`os_plugkit::embed`).
-+        #[cfg(feature = "embed")]
-+        if os_plugkit::embed::host_files() {
-+            return win.open_file();
-+        }
-         let path = win.dialog(move || {
-             rfd::FileDialog::new()
-                 .set_title("Sample for the custom shape")
-@@ -1142,6 +1158,13 @@
-         });
-         path.flatten().map(|p| p.to_string_lossy().into_owned())
-     }
-+
-+    /// Honeydew (vendored addition): the browser and Android have no file dialog: the host's own picker opens a sample
-+    /// (`os_plugkit::embed`).
-+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
-+    fn file_dialog(win: &Window) -> Option<String> {
-+        win.open_file()
-+    }
- }
- 
- #[cfg(test)]
-diff -ruN a/vendor/lemon-studio/lemon-3x-osc/src/lib.rs b/vendor/lemon-studio/lemon-3x-osc/src/lib.rs
---- a/vendor/lemon-studio/lemon-3x-osc/src/lib.rs	2026-11-03 14:59:06.767675095 -0600
-+++ b/vendor/lemon-studio/lemon-3x-osc/src/lib.rs	2026-11-03 14:59:07.667681577 -0600
-@@ -299,6 +299,8 @@
-     const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::Instrument, ClapFeature::Synthesizer, ClapFeature::Stereo];
- }
- 
-+// Honeydew (vendored change): Honeydew builds it `linked` only, without nih-plug's VST3 wrapper.
-+#[cfg(not(feature = "linked"))]
- impl Vst3Plugin for LemonTrio {
-     const VST3_CLASS_ID: [u8; 16] = *b"OpenStudio3xOsc!";
-     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Instrument, Vst3SubCategory::Synth];
-diff -ruN a/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs b/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs
---- a/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs	2026-11-03 14:59:06.879675902 -0600
-+++ b/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs	2026-11-03 14:59:07.715681923 -0600
-@@ -35,7 +35,7 @@
-     #[cfg_attr(not(windows), allow(dead_code))]
-     hwnd: Arc<AtomicIsize>,
-     /// Linux and macOS: the open editor's thread waker, for the same.
--    #[cfg(any(target_os = "linux", target_os = "macos"))]
-+    #[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
-     slot: os_plugkit::gui::Slot,
- }
- 
-@@ -46,7 +46,7 @@
-             shared,
-             scale: AtomicU32::new(1f32.to_bits()),
-             hwnd: Arc::new(AtomicIsize::new(0)),
--            #[cfg(any(target_os = "linux", target_os = "macos"))]
-+            #[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
-             slot: Default::default(),
-         }
-     }
-@@ -54,7 +54,7 @@
-     fn notify(&self) {
-         #[cfg(windows)]
-         win32::post_changed(self.hwnd.load(Ordering::Acquire));
--        #[cfg(any(target_os = "linux", target_os = "macos"))]
-+        #[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
-         os_plugkit::gui::notify(&self.slot);
-     }
- }
-@@ -63,12 +63,16 @@
-     fn spawn(&self, parent: ParentWindowHandle, context: Arc<dyn GuiContext>) -> Box<dyn Any + Send> {
-         let scale = f32::from_bits(self.scale.load(Ordering::Relaxed));
-         match parent {
--            #[cfg(windows)]
-+            #[cfg(all(windows, not(feature = "embed")))]
-             ParentWindowHandle::Win32Hwnd(hwnd) => {
-                 Box::new(win32::open(hwnd, scale, self.params.clone(), self.shared.clone(), context, self.hwnd.clone()))
+-            let mut layers = layers_for(pad, v128);
+-            if pad.take_turns && layers.len() > 1 {
+-                let n = layers.len();
+-                let pick = layers[self.turn[p] % n];
++            let n = layers_for(pad, v128).count();
++            let mut pick = None;
++            if pad.take_turns && n > 1 {
++                pick = layers_for(pad, v128).nth(self.turn[p] % n);
+                 self.turn[p] = (self.turn[p] + 1) % n;
+-                layers = vec![pick];
              }
--            #[cfg(target_os = "linux")]
-+            // Honeydew (vendored change): built in with `embed`, the editor draws into Honeydew's own window
-+            // (`os_plugkit::embed`) on every platform, and the window handle is that editor's id.
-+            #[cfg(any(target_os = "linux", all(feature = "embed", not(target_os = "macos"))))]
-             ParentWindowHandle::X11Window(window) => Box::new(gui::open(window, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
-+            #[cfg(all(windows, feature = "embed"))]
-+            ParentWindowHandle::Win32Hwnd(id) => Box::new(gui::open(id as usize as u32, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
-             // macOS hosts set no scale (sizes are points): the editor paints at its window's backing scale.
-             #[cfg(target_os = "macos")]
-             ParentWindowHandle::AppKitNsView(view) => {
-@@ -1104,7 +1108,7 @@
-     }
- }
- 
--#[cfg(any(target_os = "linux", target_os = "macos"))]
-+#[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
- mod gui {
-     use std::sync::atomic::Ordering;
-     use std::sync::Arc;
-@@ -1247,6 +1251,12 @@
-                     self.paint();
-                 }
-             }
-+            // Honeydew (vendored addition): embedded, the editor has no thread of its own; with no input waiting, it
-+            // waits parked until Honeydew brings more (`os_plugkit::embed`).
-+            #[cfg(feature = "embed")]
-+            if let Some(park) = self.win.parking() {
-+                park.park(move || self.run());
-+            }
+-            for j in layers {
++            for j in layers_for(pad, v128).filter(|&j| pick.is_none_or(|k| k == j)) {
+                 let l = &pad.layers[j];
+                 let (v, b) = (&mut self.voices[p][j], &self.blocks[p][j]);
+                 let (pan, g) = pan_pair(pad.pan, l.pan);
+@@ -358,7 +358,7 @@
+         let mut e = Engine::new(44100.0);
+         e.set_kit(Some(kit()));
+         e.note_on(60, 1.0, Some(7));
+-        assert_eq!(e.take_ended(), [(60, Some(7))], "no pad on C5: the note ends at once");
++        assert_eq!(e.take_ended().collect::<Vec<_>>(), [(60, Some(7))], "no pad on C5: the note ends at once");
+         assert!(peak(&mut e, 512) == 0.0);
+         e.note_on(36, 100.0 / 127.0, Some(8));
+         let p = peak(&mut e, 512);
+@@ -368,7 +368,7 @@
+             peak(&mut e, 512);
          }
+         assert!(!e.has_voices());
+-        assert_eq!(e.take_ended(), [(36, Some(8))]);
++        assert_eq!(e.take_ended().collect::<Vec<_>>(), [(36, Some(8))]);
+     }
  
-         fn mods(&self) -> Mods {
-diff -ruN a/vendor/lemon-studio/lemon-parametric-eq-2/src/lib.rs b/vendor/lemon-studio/lemon-parametric-eq-2/src/lib.rs
---- a/vendor/lemon-studio/lemon-parametric-eq-2/src/lib.rs	2026-11-03 14:59:06.883675930 -0600
-+++ b/vendor/lemon-studio/lemon-parametric-eq-2/src/lib.rs	2026-11-03 14:59:07.759682240 -0600
-@@ -224,6 +224,8 @@
-     const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Equalizer, ClapFeature::Stereo];
- }
+     #[test]
+@@ -383,7 +383,7 @@
+         assert!(soft > 0.0 && hard > 4.0 * soft, "{soft} {hard}");
+         // Soft 0–63, hard 64–127: 63 is in neither (the high end is not held), 127 and 128 in the hard one.
+         let k = kit();
+-        let at = |v| layers_for(&k.pads[0], v);
++        let at = |v| layers_for(&k.pads[0], v).collect::<Vec<_>>();
+         assert_eq!((at(0), at(62), at(63), at(64), at(127), at(128)), (vec![0], vec![0], vec![], vec![1], vec![1], vec![1]));
+     }
  
-+// Honeydew (vendored change): Honeydew builds it `linked` only, without nih-plug's VST3 wrapper.
-+#[cfg(not(feature = "linked"))]
- impl Vst3Plugin for LemonEq {
-     const VST3_CLASS_ID: [u8; 16] = *b"OpenStudioParEQ2";
-     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Fx, Vst3SubCategory::Eq];
+@@ -408,7 +408,7 @@
+             peak(&mut e, 256);
+         }
+         // The open hat ended (cut); the kick and the closed hat play on.
+-        assert_eq!(e.take_ended(), [(46, Some(1))]);
++        assert_eq!(e.take_ended().collect::<Vec<_>>(), [(46, Some(1))]);
+     }
+ 
+     #[test]
+diff -ruN a/vendor/lemon-studio/lemon-drum-sampler/src/lib.rs b/vendor/lemon-studio/lemon-drum-sampler/src/lib.rs
+--- a/vendor/lemon-studio/lemon-drum-sampler/src/lib.rs
++++ b/vendor/lemon-studio/lemon-drum-sampler/src/lib.rs
+@@ -204,7 +204,6 @@
+             return ProcessStatus::Normal;
+         }
+         let mut at = 0;
+-        let mut ended = Vec::new();
+         while let Some(ev) = ctx.next_event() {
+             let t = (ev.timing() as usize).min(len);
+             if t > at {
+@@ -217,16 +216,15 @@
+                 NoteEvent::Choke { .. } | NoteEvent::MidiCC { cc: 120 | 123, .. } => self.engine.all_off(),
+                 _ => {}
+             }
+-            ended.extend(self.engine.take_ended());
+         }
+         if at < len {
+             let (left, right) = out.split_at_mut(1);
+             self.engine.render(&mut left[0][at..len], &mut right[0][at..len]);
+         }
+-        ended.extend(self.engine.take_ended());
+         // Voice ends go back to the host, at the end of the block (spec: audio/voices.md §4).
++        // Honeydew (vendored change): read from the engine's own list, with no list made on the audio thread.
+         let last = (len as u32).saturating_sub(1);
+-        for (note, voice_id) in ended {
++        for (note, voice_id) in self.engine.take_ended() {
+             ctx.send_event(NoteEvent::VoiceTerminated { timing: last, voice_id, channel: 0, note });
+         }
+         if self.engine.has_voices() { ProcessStatus::KeepAlive } else { ProcessStatus::Normal }
 diff -ruN a/vendor/lemon-studio/lemon-sampler/src/editor.rs b/vendor/lemon-studio/lemon-sampler/src/editor.rs
---- a/vendor/lemon-studio/lemon-sampler/src/editor.rs	2026-11-03 14:59:06.827675527 -0600
-+++ b/vendor/lemon-studio/lemon-sampler/src/editor.rs	2026-11-03 14:59:07.679681663 -0600
-@@ -15,7 +15,8 @@
- use std::path::PathBuf;
- use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
- use std::sync::Arc;
--use std::time::{Duration, Instant};
-+// Honeydew (vendored change): `std::time` has no clock in a browser build.
-+use os_plugkit::time::{Duration, Instant};
- 
- use nih_plug::prelude::*;
- use os_ui::kit::menu::{Mark, MenuItem, MenuStyle};
-@@ -35,7 +36,7 @@
-     #[cfg_attr(not(windows), allow(dead_code))]
-     hwnd: Arc<AtomicIsize>,
-     /// Linux and macOS: the open editor's thread waker, for the same.
--    #[cfg(any(target_os = "linux", target_os = "macos"))]
-+    #[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
-     slot: os_plugkit::gui::Slot,
- }
- 
-@@ -46,7 +47,7 @@
-             shared,
-             scale: AtomicU32::new(1f32.to_bits()),
-             hwnd: Arc::new(AtomicIsize::new(0)),
--            #[cfg(any(target_os = "linux", target_os = "macos"))]
-+            #[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
-             slot: Default::default(),
-         }
-     }
-@@ -54,7 +55,7 @@
-     fn notify(&self) {
-         #[cfg(windows)]
-         win32::post_changed(self.hwnd.load(Ordering::Acquire));
--        #[cfg(any(target_os = "linux", target_os = "macos"))]
-+        #[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
-         os_plugkit::gui::notify(&self.slot);
-     }
- }
-@@ -63,12 +64,16 @@
-     fn spawn(&self, parent: ParentWindowHandle, context: Arc<dyn GuiContext>) -> Box<dyn Any + Send> {
-         let scale = f32::from_bits(self.scale.load(Ordering::Relaxed));
-         match parent {
--            #[cfg(windows)]
-+            #[cfg(all(windows, not(feature = "embed")))]
-             ParentWindowHandle::Win32Hwnd(hwnd) => {
-                 Box::new(win32::open(hwnd, scale, self.params.clone(), self.shared.clone(), context, self.hwnd.clone()))
-             }
--            #[cfg(target_os = "linux")]
-+            // Honeydew (vendored change): built in with `embed`, the editor draws into Honeydew's own window
-+            // (`os_plugkit::embed`) on every platform, and the window handle is that editor's id.
-+            #[cfg(any(target_os = "linux", all(feature = "embed", not(target_os = "macos"))))]
-             ParentWindowHandle::X11Window(window) => Box::new(gui::open(window, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
-+            #[cfg(all(windows, feature = "embed"))]
-+            ParentWindowHandle::Win32Hwnd(id) => Box::new(gui::open(id as usize as u32, scale, self.params.clone(), self.shared.clone(), context, &self.slot)),
-             // macOS hosts set no scale (sizes are points): the editor paints at its window's backing scale.
-             #[cfg(target_os = "macos")]
-             ParentWindowHandle::AppKitNsView(view) => {
-@@ -347,7 +352,7 @@
-     }
- 
-     /// The same menu as the shared editor kit's (its popups take that one).
--    #[cfg(any(target_os = "linux", target_os = "macos"))]
-+    #[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
-     fn kit(&self) -> os_plugkit::MenuDef<Cmd> {
-         os_plugkit::MenuDef {
-             items: self.items.clone(),
-@@ -2444,7 +2449,7 @@
-     }
- }
- 
--#[cfg(any(target_os = "linux", target_os = "macos"))]
-+#[cfg(any(target_os = "linux", target_os = "macos", feature = "embed"))]
- mod gui {
-     use std::sync::atomic::Ordering;
-     use std::sync::Arc;
-@@ -2601,6 +2606,12 @@
-                     self.paint();
-                 }
-             }
-+            // Honeydew (vendored addition): embedded, the editor has no thread of its own; with no input waiting, it
-+            // waits parked until Honeydew brings more (`os_plugkit::embed`).
-+            #[cfg(feature = "embed")]
-+            if let Some(park) = self.win.parking() {
-+                park.park(move || self.run());
-+            }
-         }
- 
-         fn mods(&self) -> Mods {
-@@ -2845,10 +2856,16 @@
- 
-     /// The open / save sample dialog: the desktop's own (through its portal on Linux; on macOS AppKit's, run on the main
-     /// thread).
-+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
-     fn file_dialog(win: &Window, save: bool) -> Option<String> {
-         if os_plugkit::no_modal() {
-             return None;
-         }
-+        // Honeydew (vendored addition): the host's own picker opens a file where it answers (`os_plugkit::embed`).
-+        #[cfg(feature = "embed")]
-+        if os_plugkit::embed::host_files() {
-+            return (!save).then(|| win.open_file()).flatten();
-+        }
-         let path = win.dialog(move || {
-             let d = rfd::FileDialog::new();
-             if save {
-@@ -2859,6 +2876,13 @@
-         });
-         path.flatten().map(|p| p.to_string_lossy().into_owned())
-     }
-+
-+    /// Honeydew (vendored addition): the browser and Android have no file dialog: the host's own picker opens a sample
-+    /// (`os_plugkit::embed`), and nothing saves one.
-+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
-+    fn file_dialog(win: &Window, save: bool) -> Option<String> {
-+        (!save).then(|| win.open_file()).flatten()
-+    }
- }
- 
- #[cfg(test)]
+--- a/vendor/lemon-studio/lemon-sampler/src/editor.rs
++++ b/vendor/lemon-studio/lemon-sampler/src/editor.rs
+@@ -2755,7 +2755,8 @@
+                         let s = self.shared.whole();
+                         if let (Some(s), Some(path)) = (s, file_dialog(&self.win, true)) {
+                             let path = if path.to_ascii_lowercase().ends_with(".wav") { path } else { format!("{path}.wav") };
+-                            self.logic.hint = match std::fs::write(&path, super::wav_bytes(&s, true)) {
++                            // Honeydew (vendored change): Honeydew keeps it in its user folder where it has no save dialog.
++                            self.logic.hint = match os_plugkit::save_file(std::path::Path::new(&path), super::wav_bytes(&s, true)) {
+                                 Ok(()) => format!("Saved {path}"),
+                                 Err(e) => format!("Could not save: {e}"),
+                             };
 diff -ruN a/vendor/lemon-studio/lemon-sampler/src/lib.rs b/vendor/lemon-studio/lemon-sampler/src/lib.rs
---- a/vendor/lemon-studio/lemon-sampler/src/lib.rs	2026-11-03 14:59:06.835675585 -0600
-+++ b/vendor/lemon-studio/lemon-sampler/src/lib.rs	2026-11-03 14:59:07.699681807 -0600
-@@ -543,6 +543,10 @@
+--- a/vendor/lemon-studio/lemon-sampler/src/lib.rs
++++ b/vendor/lemon-studio/lemon-sampler/src/lib.rs
+@@ -544,7 +544,8 @@
              return;
          }
          let (s, p) = (self.clone(), params.clone());
-+        // Honeydew (vendored change): a browser build has no threads; it computes at once.
-+        #[cfg(target_arch = "wasm32")]
-+        s.precompute(&p);
-+        #[cfg(not(target_arch = "wasm32"))]
-         std::thread::spawn(move || s.precompute(&p));
+-        std::thread::spawn(move || s.precompute(&p));
++        // Honeydew (vendored change): at once in a browser build, which has no threads.
++        os_plugkit::spawn(move || s.precompute(&p));
      }
  
-@@ -834,6 +838,8 @@
-     const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::Instrument, ClapFeature::Sampler, ClapFeature::Stereo];
- }
+     /// True when the processed sample is out of date for the current settings.
+diff -ruN a/vendor/lemon-studio/lemon-slicer/src/dsp.rs b/vendor/lemon-studio/lemon-slicer/src/dsp.rs
+--- a/vendor/lemon-studio/lemon-slicer/src/dsp.rs
++++ b/vendor/lemon-studio/lemon-slicer/src/dsp.rs
+@@ -95,7 +95,7 @@
  
-+// Honeydew (vendored change): Honeydew builds it `linked` only, without nih-plug's VST3 wrapper.
-+#[cfg(not(feature = "linked"))]
- impl Vst3Plugin for LemonSampler {
-     const VST3_CLASS_ID: [u8; 16] = *b"OpenStudioSamplr";
-     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Instrument, Vst3SubCategory::Sampler];
+ impl Engine {
+     pub fn new(rate: f32) -> Self {
+-        Engine { rate: rate.max(1.0), voices: Vec::with_capacity(VOICES), clock: 0, ended: Vec::new() }
++        Engine { rate: rate.max(1.0), voices: Vec::with_capacity(VOICES), clock: 0, ended: Vec::with_capacity(4 * VOICES) }
+     }
+ 
+     pub fn set_rate(&mut self, rate: f32) {
+@@ -115,8 +115,9 @@
+     }
+ 
+     /// Voices that ended since the last call (key, host voice id).
+-    pub fn take_ended(&mut self) -> Vec<(u8, Option<i32>)> {
+-        std::mem::take(&mut self.ended)
++    // Honeydew (vendored change): drained, so that the list keeps its room (the audio thread's).
++    pub fn take_ended(&mut self) -> std::vec::Drain<'_, (u8, Option<i32>)> {
++        self.ended.drain(..)
+     }
+ 
+     /// Starts a voice for `key`; keys without a slice are silent.
+@@ -252,7 +253,7 @@
+         // Frames 100..300, the last one excepted (the interpolation needs the next frame): 199 output samples.
+         assert!(out[198] > 0.29 && out[199] == 0.0, "{} {}", out[198], out[199]);
+         assert!(!e.has_voices());
+-        assert_eq!(e.take_ended(), vec![(61, None)]);
++        assert_eq!(e.take_ended().collect::<Vec<_>>(), vec![(61, None)]);
+         // Keys without a slice are silent.
+         e.note_on(Some(&k), 63, 1.0, None);
+         assert!(!e.has_voices());
+@@ -298,6 +299,6 @@
+             e.note_on(Some(&k), 60, 1.0, None);
+         }
+         assert_eq!(e.voices.len(), VOICES);
+-        assert_eq!(e.take_ended().len(), 1);
++        assert_eq!(e.take_ended().count(), 1);
+     }
+ }
 diff -ruN a/vendor/lemon-studio/os-dsp/src/lib.rs b/vendor/lemon-studio/os-dsp/src/lib.rs
---- a/vendor/lemon-studio/os-dsp/src/lib.rs	2026-11-03 14:59:07.563680828 -0600
-+++ b/vendor/lemon-studio/os-dsp/src/lib.rs	2026-11-03 14:59:08.199685408 -0600
+--- a/vendor/lemon-studio/os-dsp/src/lib.rs
++++ b/vendor/lemon-studio/os-dsp/src/lib.rs
 @@ -30,6 +30,12 @@
  pub mod num;
  pub mod pitch;
@@ -356,9 +226,9 @@ diff -ruN a/vendor/lemon-studio/os-dsp/src/lib.rs b/vendor/lemon-studio/os-dsp/s
  pub mod tone;
  pub mod transients;
 diff -ruN a/vendor/lemon-studio/os-dsp/src/stretch_web.rs b/vendor/lemon-studio/os-dsp/src/stretch_web.rs
---- a/vendor/lemon-studio/os-dsp/src/stretch_web.rs	1969-12-31 18:00:00.000000000 -0600
-+++ b/vendor/lemon-studio/os-dsp/src/stretch_web.rs	2026-11-03 14:59:08.123684861 -0600
-@@ -0,0 +1,76 @@
+--- a/vendor/lemon-studio/os-dsp/src/stretch_web.rs
++++ b/vendor/lemon-studio/os-dsp/src/stretch_web.rs
+@@ -0,0 +1,81 @@
 +// Copyright (C) 2026 The Honeydew contributors
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +
@@ -384,6 +254,11 @@ diff -ruN a/vendor/lemon-studio/os-dsp/src/stretch_web.rs b/vendor/lemon-studio/
 +    let ratio = n as f64 / frames as f64;
 +    let side = |x: &[f32]| (0..frames).map(|k| at(x, 1, 0, n, k as f64 * ratio)).collect();
 +    (side(left), side(right))
++}
++
++/// [`whole`]: the formants follow the resampling too (`formant` unused).
++pub fn whole_formant(left: &[f32], right: &[f32], rate: u32, frames: usize, transpose: f64, _formant: Option<f64>) -> (Vec<f32>, Vec<f32>) {
++    whole(left, right, rate, frames, transpose)
 +}
 +
 +/// The input of each call resampled to the output's length: no latency, the pitch following the speed.
@@ -436,9 +311,9 @@ diff -ruN a/vendor/lemon-studio/os-dsp/src/stretch_web.rs b/vendor/lemon-studio/
 +    }
 +}
 diff -ruN a/vendor/lemon-studio/os-engine/src/sample.rs b/vendor/lemon-studio/os-engine/src/sample.rs
---- a/vendor/lemon-studio/os-engine/src/sample.rs	2026-11-03 14:59:07.643681404 -0600
-+++ b/vendor/lemon-studio/os-engine/src/sample.rs	2026-11-03 14:59:08.443687166 -0600
-@@ -100,9 +100,29 @@
+--- a/vendor/lemon-studio/os-engine/src/sample.rs
++++ b/vendor/lemon-studio/os-engine/src/sample.rs
+@@ -100,9 +100,32 @@
      Ok(s)
  }
  
@@ -457,22 +332,25 @@ diff -ruN a/vendor/lemon-studio/os-engine/src/sample.rs b/vendor/lemon-studio/os
 +    }
 +}
 +
- /// Decodes a WAV (PCM or Vorbis-in-WAV) / FLAC / Ogg Vorbis / WavPack / MP3 / AIFF file.
++/// Honeydew (vendored addition): the bytes of the file at `path`, one the host [`provide`]d first (for a plugin that
++/// reads a file itself, as Tesla does).
++pub fn read(path: &Path) -> std::io::Result<Vec<u8>> {
++    let held = provided().lock().ok().and_then(|map| map.get(path).cloned());
++    held.map_or_else(|| std::fs::read(path), |bytes| Ok(bytes.to_vec()))
++}
++
+ /// Decodes a WAV (PCM or Vorbis-in-WAV) / FLAC / Ogg Vorbis / WavPack / MP3 / AIFF / M4A (AAC or ALAC) file.
  pub fn load(path: &Path) -> Result<Sample, SampleError> {
 -    let bytes = std::fs::read(path).map_err(|source| SampleError::Io { path: path.to_owned(), source })?;
 +    // Honeydew (vendored change): a file the host [`provide`]d first.
-+    let held = provided().lock().ok().and_then(|map| map.get(path).cloned());
-+    let bytes = match held {
-+        Some(bytes) => bytes.to_vec(),
-+        None => std::fs::read(path).map_err(|source| SampleError::Io { path: path.to_owned(), source })?,
-+    };
++    let bytes = read(path).map_err(|source| SampleError::Io { path: path.to_owned(), source })?;
      let decode_err = |message: String| SampleError::Decode { path: path.to_owned(), message };
      if let Some(vw) = vorbis_in_wav(&bytes) {
          let mut s = decode(vw.ogg.to_vec(), Some("ogg")).map_err(decode_err)?;
 diff -ruN a/vendor/lemon-studio/os-hostlink/src/lib.rs b/vendor/lemon-studio/os-hostlink/src/lib.rs
---- a/vendor/lemon-studio/os-hostlink/src/lib.rs	2026-11-03 14:59:07.411679733 -0600
-+++ b/vendor/lemon-studio/os-hostlink/src/lib.rs	2026-11-03 14:59:08.091684631 -0600
-@@ -335,7 +335,10 @@
+--- a/vendor/lemon-studio/os-hostlink/src/lib.rs
++++ b/vendor/lemon-studio/os-hostlink/src/lib.rs
+@@ -341,7 +341,10 @@
  #[cfg(windows)]
  pub use win::{message, to_host, Link};
  
@@ -484,7 +362,7 @@ diff -ruN a/vendor/lemon-studio/os-hostlink/src/lib.rs b/vendor/lemon-studio/os-
  mod local {
      use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
      use std::sync::{Arc, Mutex, OnceLock, Weak};
-@@ -532,6 +535,8 @@
+@@ -538,6 +541,8 @@
  
  #[cfg(not(windows))]
  pub use local::{set_host_waker, take_host_messages, Link, Peer};
@@ -494,9 +372,9 @@ diff -ruN a/vendor/lemon-studio/os-hostlink/src/lib.rs b/vendor/lemon-studio/os-
  #[cfg(test)]
  mod tests {
 diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os-plugkit/src/embed.rs
---- a/vendor/lemon-studio/os-plugkit/src/embed.rs	1969-12-31 18:00:00.000000000 -0600
-+++ b/vendor/lemon-studio/os-plugkit/src/embed.rs	2026-11-03 14:59:07.819682672 -0600
-@@ -0,0 +1,517 @@
+--- a/vendor/lemon-studio/os-plugkit/src/embed.rs
++++ b/vendor/lemon-studio/os-plugkit/src/embed.rs
+@@ -0,0 +1,555 @@
 +// Copyright (C) 2026 The Honeydew contributors
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +
@@ -512,8 +390,9 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +//!   ([`modal`]) and return `None`. When the user answers ([`answer`]), the input that opened it comes again, and this
 +//!   time the call returns the answer; a chain (a menu's `Enter value...`, then the box) replays its earlier answers
 +//!   first.
-+//! - **Files come from the host** where the platform has no file dialog (Android, the browser): [`Window::open_file`]
-+//!   asks it ([`Modal::OpenFile`]) as a menu does, and the host's own picker answers with a path.
++//! - **Files come from the host** where the platform has no file dialog (Android, the browser): the editors' file
++//!   dialog (`rfd`, which is `host-rfd` for them) asks it from their [`Window::dialog`] ([`open_file`],
++//!   [`Modal::OpenFile`]) as a menu does, and the host's own picker answers with a path.
 +//! - Positions are the editor's device pixels, also for popups (`to_root` keeps them).
 +
 +use std::cell::{Cell, RefCell};
@@ -640,6 +519,8 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    static PARKED: RefCell<HashMap<Parent, (Arc<State>, Box<dyn FnOnce()>)>> = RefCell::new(HashMap::new());
 +    /// This thread's editors ask the host for the files they open ([`host_files`]).
 +    static HOST_FILES: Cell<bool> = const { Cell::new(cfg!(any(target_arch = "wasm32", target_os = "android"))) };
++    /// The window whose [`Window::dialog`] runs, which [`open_file`] asks for.
++    static DIALOG: RefCell<Option<Window>> = const { RefCell::new(None) };
 +}
 +
 +fn get(id: Parent) -> Option<Arc<State>> {
@@ -720,7 +601,7 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    if let Ok(mut s) = slot.lock() {
 +        *s = Some(Waker(state.clone()));
 +    }
-+    run(Window { id: parent, state: state.clone(), tick: Instant::now(), last: None });
++    run(Window { id: parent, state: state.clone(), tick: Instant::now(), last: None, ticked: false });
 +    Some(EditorThread { id: parent, state, slot: slot.clone() })
 +}
 +
@@ -739,12 +620,16 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +}
 +
 +/// The editor's window.
++#[derive(Clone)]
 +pub struct Window {
 +    id: Parent,
 +    state: Arc<State>,
 +    tick: Instant,
 +    /// The input being handled, which a modal asks again with its answer.
 +    last: Option<Input>,
++    /// The last input was a tick: with nothing else waiting the editor parks before its next tick, so one that paints
++    /// for longer than a tick still hands the host its frame (it ticks at most once a [`pump`]).
++    ticked: bool,
 +}
 +
 +impl Window {
@@ -773,12 +658,17 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +                r.left -= 1;
 +            }
 +            self.last = Some(e.clone());
++            self.ticked = false;
 +            return Some(e);
 +        }
 +        drop(i);
++        if std::mem::take(&mut self.ticked) {
++            return None;
++        }
 +        if self.state.woken.swap(false, Ordering::AcqRel) || self.tick.elapsed() >= TICK {
 +            self.tick = Instant::now();
 +            self.last = Some(Input::Tick);
++            self.ticked = true;
 +            return Some(Input::Tick);
 +        }
 +        None
@@ -810,9 +700,12 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +        (x, y)
 +    }
 +
-+    /// Runs a desktop dialog (a file dialog) at once.
++    /// Runs a desktop dialog (a file dialog) at once; a file it asks the host for ([`open_file`]) is this window's.
 +    pub fn dialog<R: Send + 'static>(&self, f: impl FnOnce() -> R + Send + 'static) -> Option<R> {
-+        Some(f())
++        let was = DIALOG.replace(Some(self.clone()));
++        let r = f();
++        DIALOG.set(was);
++        Some(r)
 +    }
 +
 +    /// Files dropped on the editor: none come.
@@ -874,7 +767,7 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    }
 +
 +    /// The file the host's own picker picked ([`Modal::OpenFile`]), as [`Self::type_in`].
-+    pub fn open_file(&self) -> Option<String> {
++    fn open_file(&self) -> Option<String> {
 +        if crate::no_modal() {
 +            return None;
 +        }
@@ -913,6 +806,12 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    }
 +}
 +
++/// The file the host's own picker picked for the editor whose [`Window::dialog`] runs ([`Modal::OpenFile`]): the answer
++/// when the input that asked comes again with one, else `None` while the host shows its picker (and outside a dialog).
++pub fn open_file() -> Option<String> {
++    DIALOG.with_borrow(|w| w.as_ref().and_then(Window::open_file))
++}
++
 +/// The command of the row `path` names in `def`.
 +fn picked<C: Clone>(def: &MenuDef<C>, path: &[usize]) -> Option<C> {
 +    let (&last, subs) = path.split_last()?;
@@ -937,8 +836,8 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    SCALES.lock().unwrap_or_else(|e| e.into_inner()).insert(id, scale);
 +}
 +
-+/// Whether the editors of this thread ask the host for the files they open ([`Window::open_file`]) instead of showing
-+/// a file dialog: where the platform has none (Android, the browser), or once [`set_host_files`] said so.
++/// Whether the editors of this thread ask the host for the files they open ([`open_file`]) instead of showing a file
++/// dialog: where the platform has none (Android, the browser), or once [`set_host_files`] said so.
 +pub fn host_files() -> bool {
 +    HOST_FILES.get()
 +}
@@ -946,6 +845,23 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +/// Makes the editors of this thread ask the host for files ([`host_files`]) or not: a desktop test's phone.
 +pub fn set_host_files(on: bool) {
 +    HOST_FILES.set(on);
++}
++
++thread_local! {
++    /// The files this thread's editors saved where the host keeps the user's files ([`crate::save_file`]), oldest
++    /// first: the editors run on the host's thread, which takes them, so another thread's host (a test's) never does.
++    static SAVED: RefCell<Vec<(std::path::PathBuf, Vec<u8>)>> = const { RefCell::new(Vec::new()) };
++}
++
++pub(crate) fn keep_saved(path: &std::path::Path, bytes: Vec<u8>) {
++    SAVED.with_borrow_mut(|s| s.push((path.to_owned(), bytes)));
++    repaint();
++}
++
++/// The files this thread's editors saved since the last call ([`crate::save_file`]): the path they named (its file
++/// name is the file's) and the bytes. The host keeps each in its own folder.
++pub fn take_saved() -> Vec<(std::path::PathBuf, Vec<u8>)> {
++    SAVED.with_borrow_mut(std::mem::take)
 +}
 +
 +/// Whether editor `id` is open.
@@ -1015,9 +931,9 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    i.replay = Some(Replay { answers, used: Vec::new(), trigger: p.trigger, left: events.len() });
 +}
 diff -ruN a/vendor/lemon-studio/os-plugkit/src/lib.rs b/vendor/lemon-studio/os-plugkit/src/lib.rs
---- a/vendor/lemon-studio/os-plugkit/src/lib.rs	2026-11-03 14:59:06.959676478 -0600
-+++ b/vendor/lemon-studio/os-plugkit/src/lib.rs	2026-11-03 14:59:07.791682470 -0600
-@@ -19,14 +19,26 @@
+--- a/vendor/lemon-studio/os-plugkit/src/lib.rs
++++ b/vendor/lemon-studio/os-plugkit/src/lib.rs
+@@ -20,14 +20,73 @@
  pub mod x11;
  #[cfg(target_os = "macos")]
  pub mod mac;
@@ -1044,12 +960,59 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/lib.rs b/vendor/lemon-studio/os-p
 +pub use std::time;
 +#[cfg(target_arch = "wasm32")]
 +pub use web_time as time;
++
++/// Honeydew (vendored addition): writes a file an editor saves. Where the host keeps the user's files (Android and the
++/// browser, which have no save dialog: `embed::host_files`), the host takes it into its own folder under its file name
++/// (`embed::take_saved`); elsewhere it goes to `path`.
++pub fn save_file(path: &std::path::Path, bytes: Vec<u8>) -> std::io::Result<()> {
++    #[cfg(feature = "embed")]
++    if embed::host_files() {
++        embed::keep_saved(path, bytes);
++        return Ok(());
++    }
++    std::fs::write(path, bytes)
++}
++
++/// Honeydew (vendored addition): `std::env::temp_dir`, which panics in a browser build (no file system): there an
++/// empty path, where nothing writes.
++pub fn temp_dir() -> std::path::PathBuf {
++    #[cfg(target_arch = "wasm32")]
++    return std::path::PathBuf::new();
++    #[cfg(not(target_arch = "wasm32"))]
++    std::env::temp_dir()
++}
++
++/// Honeydew (vendored addition): `std::thread::spawn`, the work done at once in a browser build (it has no threads).
++pub fn spawn(f: impl FnOnce() + Send + 'static) {
++    #[cfg(target_arch = "wasm32")]
++    f();
++    #[cfg(not(target_arch = "wasm32"))]
++    std::thread::spawn(f);
++}
++
++/// Honeydew (vendored addition): ends an editor's input loop, `park!(self)` after `while let Some(input) =
++/// self.win.next() { … }` in `fn run(mut self)`. Embedded, the editor has no thread of its own: with no input waiting
++/// it parks, and runs on when Honeydew brings more (`embed`). Elsewhere the window closed: nothing to do.
++#[cfg(feature = "embed")]
++#[macro_export]
++macro_rules! park {
++    ($ed:ident) => {
++        if let Some(park) = $ed.win.parking() {
++            park.park(move || $ed.run());
++        }
++    };
++}
++#[cfg(not(feature = "embed"))]
++#[macro_export]
++macro_rules! park {
++    ($ed:ident) => {};
++}
  
  use os_theme::design::Design;
  use os_theme::Palette;
 diff -ruN a/vendor/lemon-studio/os-plugkit/src/vals.rs b/vendor/lemon-studio/os-plugkit/src/vals.rs
---- a/vendor/lemon-studio/os-plugkit/src/vals.rs	2026-11-03 14:59:06.971676565 -0600
-+++ b/vendor/lemon-studio/os-plugkit/src/vals.rs	2026-11-03 14:59:07.815682643 -0600
+--- a/vendor/lemon-studio/os-plugkit/src/vals.rs
++++ b/vendor/lemon-studio/os-plugkit/src/vals.rs
 @@ -7,7 +7,8 @@
  
  use std::collections::HashMap;
@@ -1060,3 +1023,51 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/vals.rs b/vendor/lemon-studio/os-
  
  use nih_plug::prelude::*;
  
+diff -ruN a/vendor/lemon-studio/tesla/src/editor.rs b/vendor/lemon-studio/tesla/src/editor.rs
+--- a/vendor/lemon-studio/tesla/src/editor.rs
++++ b/vendor/lemon-studio/tesla/src/editor.rs
+@@ -98,7 +98,8 @@
+ /// A sample file: WAV with its chunks (Edison's and Tesla's own), else whatever the host's decoders read (AIFF, FLAC,
+ /// OGG...); a decoded file whose channels are equal comes in mono.
+ pub fn load_file(path: &str) -> Result<Sample, String> {
+-    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
++    // Honeydew (vendored change): a file the host keeps in memory (the browser's) first.
++    let bytes = os_engine::sample::read(Path::new(path)).map_err(|e| e.to_string())?;
+     if wav::is_wav(&bytes) {
+         if let Ok(s) = wav::read(&bytes) {
+             return Ok(s);
+@@ -123,7 +124,8 @@
+ }
+ 
+ fn out_path(title: &str) -> PathBuf {
+-    let dir = std::env::temp_dir().join("Tesla");
++    // Honeydew (vendored change): the browser has no temporary folder.
++    let dir = os_plugkit::temp_dir().join("Tesla");
+     let _ = std::fs::create_dir_all(&dir);
+     let stem = file_stem(title);
+     let mut p = dir.join(format!("{stem}.wav"));
+@@ -2536,7 +2538,8 @@
+         if !path.to_ascii_lowercase().ends_with(".wav") {
+             path.push_str(".wav");
+         }
+-        match std::fs::write(&path, wav::write(&s, depth)) {
++        // Honeydew (vendored change): Honeydew keeps it in its user folder where it has no save dialog.
++        match os_plugkit::save_file(Path::new(&path), wav::write(&s, depth)) {
+             Ok(()) => {
+                 self.doc(|d| d.path = path.clone());
+                 self.hint = format!("Saved {}", Path::new(&path).file_name().map_or(path.clone().into(), |f| f.to_string_lossy()));
+diff -ruN a/vendor/lemon-studio/tesla/src/lib.rs b/vendor/lemon-studio/tesla/src/lib.rs
+--- a/vendor/lemon-studio/tesla/src/lib.rs
++++ b/vendor/lemon-studio/tesla/src/lib.rs
+@@ -608,6 +608,11 @@
+             s.capturing.store(false, Ordering::Relaxed);
+         }
+ 
++        // Honeydew (vendored change): with no thread to build the take (the browser has none), this one does.
++        if !self.drain_started {
++            s.drain();
++        }
++
+         if s.mute.load(Ordering::Relaxed) {
+             l.fill(0.0);
+             r.fill(0.0);

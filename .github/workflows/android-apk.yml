@@ -1,9 +1,20 @@
 name: Android APK
 
 # Build a testable debug APK on demand. Download it from the workflow run's Artifacts section;
-# it installs beside the release app as Honeydew Debug.
+# it installs beside the release app as Honeydew Debug. `base` (the default) leaves the sound library out
+# (-arm-base-debug.apk, about 50 MB): the app downloads the sounds once, from the sound library's release (#66).
+# `full` ships them (-arm-debug.apk).
 on:
   workflow_dispatch:
+    inputs:
+      variant:
+        description: APK to build
+        required: true
+        default: base
+        type: choice
+        options:
+          - base
+          - full
 
 permissions:
   contents: read
@@ -36,8 +47,10 @@ jobs:
           sudo apt-get update && sudo apt-get install -y libclang-dev
           sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.0.13004108'
           cargo install cargo-ndk --version 4.1.2 --locked
-      # The library the release of this version ships, unpacked where `tools/android-dist.sh` looks for it.
+      # The library the release of this version ships, unpacked where `tools/android-dist.sh` looks for it. A base
+      # APK has none.
       - name: Sound library
+        if: inputs.variant == 'full'
         run: |
           mkdir -p target/android/assets
           url="https://github.com/daijro/honeydew/releases/download/$SOUNDS_TAG/honeydew-$SOUNDS_TAG-sounds.zip"
@@ -50,7 +63,9 @@ jobs:
         run: |
           set -o pipefail
           strip() { sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/build.log"; }
-          if ! tools/android-dist.sh > "$RUNNER_TEMP/build.log" 2>&1; then
+          base=
+          if [ "${{ inputs.variant }}" != full ]; then base=--base; fi
+          if ! tools/android-dist.sh $base > "$RUNNER_TEMP/build.log" 2>&1; then
             # The compiler's errors and their locations, and the log's tail, as annotations (ANSI-stripped),
             # so they read without downloading the full log.
             { strip | grep -E '^error|^ *-->' | head -30
@@ -61,7 +76,7 @@ jobs:
       - name: Upload test APK
         uses: actions/upload-artifact@v4
         with:
-          name: honeydew-android-apk-${{ github.sha }}
-          path: target/honeydew-android-*-arm-debug.apk
+          name: honeydew-android-${{ inputs.variant }}-apk-${{ github.sha }}
+          path: target/honeydew-android-*-arm*-debug.apk
           if-no-files-found: error
           retention-days: 14

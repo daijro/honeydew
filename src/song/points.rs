@@ -473,7 +473,11 @@ pub fn duplicate(pts: &mut Vec<Point>, s: u32, e: u32) {
 /// `Duplicate` of a point selection: the span from its first to its last selected point is copied to the last one
 /// ([`duplicate`]), and the copies are the selection. `None` when the selection spans no time (nothing to copy after).
 pub fn duplicate_selected(pts: &[Point], sel: &[bool]) -> Option<(Vec<Point>, Vec<bool>)> {
-    let ticks = pts.iter().zip(sel).filter(|(_, s)| **s).map(|(p, _)| p.tick);
+    let ticks = pts
+        .iter()
+        .zip(sel)
+        .filter(|(_, s)| **s)
+        .map(|(p, _)| p.tick);
     let (s, e) = (ticks.clone().min()?, ticks.max()?);
     if e <= s {
         return None;

@@ -21,7 +21,7 @@ const SETTINGS: (usize, usize) = (0, 1);
 const CLONE: (usize, usize) = (0, 2);
 const INSERT: (usize, usize) = (0, 3);
 const DELETE_TRACK: (usize, usize) = (0, 4);
-const DELETE_CHANNEL: (usize, usize) = (0, 5);
+const DELETE_CHANNEL: (usize, usize) = (0, 6);
 /// `Add Track` of an instrument, `Add StepSeq Track` and `Add Notes Track` of a drums channel.
 const ADD_TRACK: (usize, usize) = (1, 3);
 const ADD_STEP_SEQ: (usize, usize) = (1, 2);
@@ -1566,7 +1566,7 @@ fn a_marquee_group_follows_its_clips_through_undos_made_while_the_playlist_is_aw
     }
     rig.release(on);
     rig.frame(vec![]);
-    rig.click_id(Id::new(("clip_button", 1_usize)));
+    rig.click_id(Id::new(("clip_button", 2_usize)));
     let clips = |c: usize| rig.app.song.channels[c].lanes[0].clips.len();
     assert_eq!((clips(1), clips(2)), (2, 0));
 }
@@ -2162,7 +2162,7 @@ fn save_as_midi_proposes_the_channel_name_made_a_file_name() {
     );
 }
 
-/// `Hide track`, column 0's last item, hides a track everywhere but in playback, one undo step: its row goes and the
+/// `Hide track`, above `Delete Channel`, hides a track everywhere but in playback, one undo step: its row goes and the
 /// rows below it move up, its notes are no ghost notes in another channel's roll, and the song sounds the same.
 /// The current track moves off it, so paste goes elsewhere. Settings `Show hidden tracks` brings its row back, where its
 /// menu reads `Show track`. An editor open on the track closes as it hides.
@@ -2171,7 +2171,7 @@ fn hide_track_takes_its_row_and_ghost_notes_but_not_its_sound() {
     use crate::audio_engine::SongAudioEngine;
     use crate::theme::channel_color;
     use honeydew_audio::device::AudioRenderer;
-    const HIDE_TRACK: (usize, usize) = (0, 6);
+    const HIDE_TRACK: (usize, usize) = (0, 5);
     let mut rig = Rig::with_drums_and_synth();
     rig.app
         .add_channel(ChannelKind::Synth(SynthKind::MiniSynth), 0);

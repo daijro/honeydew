@@ -28,6 +28,7 @@ use clap_sys::fixedpoint::{CLAP_BEATTIME_FACTOR, CLAP_SECTIME_FACTOR};
 use clap_sys::ext::audio_ports::{clap_audio_port_info, clap_plugin_audio_ports, CLAP_EXT_AUDIO_PORTS};
 use clap_sys::ext::gui::{clap_host_gui, clap_plugin_gui, clap_window, clap_window_handle, CLAP_EXT_GUI, CLAP_WINDOW_API_COCOA, CLAP_WINDOW_API_WIN32, CLAP_WINDOW_API_X11};
 use clap_sys::ext::latency::{clap_plugin_latency, CLAP_EXT_LATENCY};
+use clap_sys::ext::note_ports::{clap_plugin_note_ports, CLAP_EXT_NOTE_PORTS};
 use clap_sys::ext::params::{
     clap_host_params, clap_param_info, clap_plugin_params, CLAP_EXT_PARAMS, CLAP_PARAM_IS_AUTOMATABLE, CLAP_PARAM_IS_BYPASS,
     CLAP_PARAM_IS_ENUM, CLAP_PARAM_IS_HIDDEN, CLAP_PARAM_IS_MODULATABLE_PER_NOTE_ID, CLAP_PARAM_IS_READONLY, CLAP_PARAM_IS_STEPPED,
@@ -615,6 +616,10 @@ pub struct Plugin {
     midis: Vec<clap_event_midi>,
     /// This chunk's events in time order (pointers into `notes` / `mods`).
     order: Vec<*const clap_event_header>,
+    /// Honeydew (vendored change): a chunk's event order, and the queue's events left for the next chunk, kept here
+    /// with their room so that the audio thread does not allocate them for each chunk.
+    seq: Vec<Seq>,
+    rest: Vec<Ev>,
     /// Parameter that takes a note's sample start as per-note modulation (`use_start_param`).
     start_param: Option<u32>,
     /// Notes carry their own pan and mod X / Y (`use_note_levels`).
@@ -653,6 +658,9 @@ pub struct Plugin {
     /// audio-ports extension is taken as stereo in and out.
     ins: usize,
     outs: usize,
+    /// Honeydew (vendored addition): channels of the sidechain input, the input port after the main one (0 without),
+    /// read at activation: fed the key, or silence (`process_fx_keyed`).
+    side: usize,
     /// Buffers for channels the host has no audio for (a mono input's mix of both sides, channels beyond two), and the
     /// channel pointers of the current process call: sized at activation, so the audio thread never allocates.
     scratch: Vec<f32>,
@@ -671,6 +679,12 @@ pub struct Plugin {
     pvals: Vec<clap_event_param_value>,
     /// Changes the plugin reported (its editor): gesture begin / end and values, plain.
     param_out: Vec<OutEv>,
+    /// Honeydew (vendored addition, upstream's since 6dc00dd): the controller outputs the plugin sent last, per MIDI
+    /// channel: a pitch bend's bits and the CC's finer bits.
+    controls: [Option<(u16, Option<u8>)>; 16],
+    /// Honeydew (vendored addition): it has a note output port. What it puts out there (a controller's outputs) runs on
+    /// its own clock as well as its input, so it never sleeps.
+    note_out: bool,
     _lib: Arc<Library>,
 }
 
@@ -681,10 +695,21 @@ enum OutEv {
     Value(u32, f64),
     End(u32),
     NoteEnd(i16, i32),
+    /// Honeydew (vendored addition, upstream's since 6dc00dd): a controller output as MIDI (channel = output): a pitch
+    /// bend's 14 bits, or the 7 bits below them as CC 63.
+    Bend(u8, u16),
+    Fine(u8, u8),
 }
+
+/// Honeydew (vendored addition, upstream's since 6dc00dd): the CC number that carries a controller output's 7 bits
+/// below its pitch bend.
+pub const CONTROL_FINE_CC: u8 = 63;
 
 /// Most plugin -> host parameter events kept until the app takes them.
 const MAX_OUT: usize = 4096;
+/// Honeydew (vendored addition): the room the queue of those events always has, so the audio thread does not grow it
+/// for a block's worth (a controller's outputs, taken right after the call).
+const OUT_ROOM: usize = 256;
 /// Room for voice ends on top of a full parameter queue (one call's worth; they never stay in the queue).
 const MAX_ENDS: usize = 4096;
 
@@ -709,6 +734,19 @@ unsafe extern "C" fn push_out(l: *const clap_output_events, e: *const clap_event
             if v.len() < MAX_OUT + MAX_ENDS {
                 let n = &*(e as *const clap_event_note);
                 v.push(OutEv::NoteEnd(n.key, n.note_id));
+            }
+            return true;
+        }
+        // Honeydew (vendored addition, upstream's since 6dc00dd): controller outputs (taken right after the call, as
+        // voice ends).
+        if (*e).type_ == CLAP_EVENT_MIDI {
+            let d = (*(e as *const clap_event_midi)).data;
+            if v.len() < MAX_OUT + MAX_ENDS {
+                match d[0] & 0xF0 {
+                    0xE0 => v.push(OutEv::Bend(d[0] & 0x0F, u16::from(d[1] & 0x7F) | u16::from(d[2] & 0x7F) << 7)),
+                    0xB0 if d[1] == CONTROL_FINE_CC => v.push(OutEv::Fine(d[0] & 0x0F, d[2] & 0x7F)),
+                    _ => {}
+                }
             }
             return true;
         }
@@ -797,6 +835,8 @@ impl Plugin {
             let render = ext(CLAP_EXT_RENDER) as *const clap_plugin_render;
             let voice_info = ext(CLAP_EXT_VOICE_INFO) as *const clap_plugin_voice_info;
             let audio_ports = ext(CLAP_EXT_AUDIO_PORTS) as *const clap_plugin_audio_ports;
+            let note_ports = ext(CLAP_EXT_NOTE_PORTS) as *const clap_plugin_note_ports;
+            let note_out = note_ports.as_ref().and_then(|p| p.count).is_some_and(|count| count(plugin, false) > 0);
             let ranges = params::read_ranges(params, plugin);
             Ok(Plugin {
                 desc,
@@ -816,6 +856,8 @@ impl Plugin {
                 exprs: Vec::with_capacity(64),
                 midis: Vec::with_capacity(64),
                 order: Vec::with_capacity(320),
+                seq: Vec::with_capacity(320),
+                rest: Vec::with_capacity(256),
                 start_param: None,
                 note_levels: None,
                 chan_mods: [0.0; 2],
@@ -847,6 +889,7 @@ impl Plugin {
                 audio_ports,
                 ins: 2,
                 outs: 2,
+                side: 0,
                 scratch: Vec::new(),
                 in_ptrs: Vec::new(),
                 out_ptrs: Vec::new(),
@@ -860,7 +903,9 @@ impl Plugin {
                 auto: Vec::with_capacity(params::MAX_AUTO),
                 processed: false,
                 pvals: Vec::with_capacity(params::MAX_AUTO + 64),
-                param_out: Vec::new(),
+                param_out: Vec::with_capacity(OUT_ROOM),
+                controls: [None; 16],
+                note_out,
                 _lib: lib.clone(),
             })
         }
@@ -904,20 +949,25 @@ impl Plugin {
     /// The channels of the plugin's main input and output ports (main thread, inactive: ports only change then), and
     /// buffers for them. Without the audio-ports extension the plugin is taken as stereo in and out.
     fn read_ports(&mut self) {
-        let main = |is_input: bool| -> Option<usize> {
+        // Honeydew (vendored change): port `index`, for the sidechain's too.
+        let port = |is_input: bool, index: u32| -> Option<usize> {
             let ports = unsafe { self.audio_ports.as_ref() }?;
-            if unsafe { ports.count.map_or(0, |c| c(self.plugin, is_input)) } == 0 {
+            if unsafe { ports.count.map_or(0, |c| c(self.plugin, is_input)) } <= index {
                 return Some(0);
             }
             // SAFETY: plain data the plugin fills.
             let mut info: clap_audio_port_info = unsafe { std::mem::zeroed() };
-            let ok = unsafe { ports.get.is_some_and(|g| g(self.plugin, 0, is_input, &mut info)) };
+            let ok = unsafe { ports.get.is_some_and(|g| g(self.plugin, index, is_input, &mut info)) };
             Some(if ok { (info.channel_count as usize).min(64) } else { 2 })
         };
-        (self.ins, self.outs) = (main(true).unwrap_or(2), main(false).unwrap_or(2));
-        self.scratch = vec![0.0; (self.ins + self.outs) * self.max_frames as usize];
-        self.in_ptrs = Vec::with_capacity(self.ins);
+        (self.ins, self.outs) = (port(true, 0).unwrap_or(2), port(false, 0).unwrap_or(2));
+        self.side = port(true, 1).unwrap_or(0);
+        self.scratch = vec![0.0; (self.ins + self.outs + self.side) * self.max_frames as usize];
+        self.in_ptrs = Vec::with_capacity(self.ins + self.side);
         self.out_ptrs = Vec::with_capacity(self.outs);
+        // Honeydew (vendored change): an effect's input copy is room made here, so the audio thread never grows it.
+        let max = self.max_frames as usize;
+        self.fx_in = (Vec::with_capacity(max), Vec::with_capacity(max));
     }
 
     /// The voice list's limit from the plugin's voice info (main thread, active): the voices its patch can use.
@@ -988,6 +1038,17 @@ impl Plugin {
                     if id >= 0 {
                         self.level_voices.retain(|v| v.id != id);
                         self.named.retain(|v| v.1 != id);
+                    }
+                }
+                // Honeydew (vendored addition, upstream's since 6dc00dd).
+                OutEv::Bend(ch, bits) => {
+                    if let Some(c) = self.controls.get_mut(usize::from(ch)) {
+                        *c = Some((bits, None));
+                    }
+                }
+                OutEv::Fine(ch, bits) => {
+                    if let Some(Some(c)) = self.controls.get_mut(usize::from(ch)) {
+                        c.1 = Some(bits);
                     }
                 }
                 e => {
@@ -1254,7 +1315,7 @@ impl Plugin {
 
     /// Processes `n` frames (≤ max) with the queued events whose time falls inside them.
     fn process_chunk(&mut self, left: &mut [f32], right: &mut [f32]) {
-        self.process_chunk_in(left, right, None);
+        self.process_chunk_in(left, right, None, None);
     }
 
     /// The plugin reported that it is done (no CONTINUE / TAIL, and quiet output with CONTINUE_IF_NOT_QUIET) and
@@ -1264,14 +1325,15 @@ impl Plugin {
     /// from the editor's own keyboard reach it without the host, and not every plugin asks to be processed for them.
     fn asleep(&self) -> bool {
         !self.sounding
+            && !self.note_out
             && !self.editor
             && !self.host_data.process.load(Ordering::Acquire)
             && self.queue.is_empty() && self.param_queue.is_empty() && self.auto.is_empty() && self.mod_resend.is_empty()
     }
 
     /// `process_chunk` with an audio input (effects): `input` holds the frames to process, `left` / `right` receive
-    /// the output.
-    fn process_chunk_in(&mut self, left: &mut [f32], right: &mut [f32], input: Option<(&mut [f32], &mut [f32])>) {
+    /// the output. Honeydew (vendored addition): `key` goes to the sidechain input, if it has one.
+    fn process_chunk_in(&mut self, left: &mut [f32], right: &mut [f32], input: Option<(&mut [f32], &mut [f32])>, key: Option<(&[f32], &[f32])>) {
         let n = left.len() as u32;
         // This block answers a request to be processed; one made while it runs asks for the next.
         self.host_data.process.store(false, Ordering::Release);
@@ -1279,9 +1341,10 @@ impl Plugin {
         self.mods.clear();
         self.exprs.clear();
         self.midis.clear();
-        let mut rest = Vec::new();
+        let mut rest = std::mem::take(&mut self.rest);
         // Event order; a note's modulation follows its note on at the same time.
-        let mut seq: Vec<Seq> = Vec::new();
+        let mut seq = std::mem::take(&mut self.seq);
+        seq.clear();
         // Sounding voices' new mod amounts (the channel's mods changed) go first.
         for (id, key, param, amount) in self.mod_resend.drain(..) {
             self.mods.push(param_mod(0, param, id, key, amount));
@@ -1430,7 +1493,7 @@ impl Plugin {
                 rest.push(Ev { time: e.time - n, ..e });
             }
         }
-        self.queue = rest;
+        self.rest = std::mem::replace(&mut self.queue, rest);
         // `queue` is sorted by time, so `seq` already is. Host parameter changes go first, at time 0, then automation
         // in time order; parameter values go before the notes at the same frame.
         self.fill_param_events();
@@ -1452,6 +1515,7 @@ impl Plugin {
             self.order.push(h);
         }
         self.order.extend(self.pvals[pi..].iter().map(|e| &e.header as *const clap_event_header));
+        self.seq = seq;
         self.processed = true;
         let ins = clap_input_events { ctx: &self.order as *const Vec<*const clap_event_header> as *mut c_void, size: Some(events_size), get: Some(events_get) };
         let outs = clap_output_events { ctx: &mut self.param_out as *mut Vec<OutEv> as *mut c_void, try_push: Some(push_out) };
@@ -1491,8 +1555,29 @@ impl Plugin {
                 }
             }
         }
+        // Honeydew (vendored addition): an effect's sidechain input gets the key (a mono one their average), or
+        // silence: a plugin is given a buffer for every input port (nih-plug reads past the ports it is given).
+        let side = if has_in { self.side } else { 0 };
+        for c in 0..side {
+            let s = spare(self.ins + self.outs + c);
+            // SAFETY: `spare` gave `frames` zeroed frames.
+            let ch = unsafe { std::slice::from_raw_parts_mut(s, frames) };
+            match key {
+                Some((l, r)) if side == 1 => ch.iter_mut().zip(l.iter().zip(r.iter())).for_each(|(m, (a, b))| *m = (a + b) * 0.5),
+                Some((l, _)) if c == 0 => ch.copy_from_slice(&l[..frames]),
+                Some((_, r)) if c == 1 => ch.copy_from_slice(&r[..frames]),
+                _ => {}
+            }
+            self.in_ptrs.push(s);
+        }
         let mut buf = clap_audio_buffer { data32: self.out_ptrs.as_mut_ptr(), data64: ptr::null_mut(), channel_count: self.outs as u32, latency: 0, constant_mask: 0 };
-        let in_buf = clap_audio_buffer { data32: self.in_ptrs.as_mut_ptr(), data64: ptr::null_mut(), channel_count: self.ins as u32, latency: 0, constant_mask: 0 };
+        let main_in = self.in_ptrs.as_mut_ptr();
+        // SAFETY: `in_ptrs` holds the main input's channels, then the sidechain's.
+        let side_in = unsafe { main_in.add(self.in_ptrs.len() - side) };
+        let in_bufs = [
+            clap_audio_buffer { data32: main_in, data64: ptr::null_mut(), channel_count: self.ins as u32, latency: 0, constant_mask: 0 },
+            clap_audio_buffer { data32: side_in, data64: ptr::null_mut(), channel_count: side as u32, latency: 0, constant_mask: 0 },
+        ];
         // The engine's transport while playing; without one the host is free running.
         let transport = match self.chunk_song {
             Some(t) => {
@@ -1505,9 +1590,9 @@ impl Plugin {
             steady_time: self.steady,
             frames_count: n,
             transport,
-            audio_inputs: if has_in { &in_buf } else { ptr::null() },
+            audio_inputs: if has_in { in_bufs.as_ptr() } else { ptr::null() },
             audio_outputs: if self.outs > 0 { &mut buf } else { ptr::null_mut() },
-            audio_inputs_count: u32::from(has_in),
+            audio_inputs_count: u32::from(has_in) + u32::from(side > 0),
             audio_outputs_count: u32::from(self.outs > 0),
             in_events: &ins,
             out_events: &outs,
@@ -1578,6 +1663,12 @@ impl os_host::Plugin for Plugin {
             return 0;
         }
         unsafe { (*self.latency).get.map_or(0, |g| g(self.plugin)) }
+    }
+
+    // Honeydew (vendored addition): an input port after the main one.
+    fn sidechain(&self) -> bool {
+        let Some(ports) = (unsafe { self.audio_ports.as_ref() }) else { return false };
+        unsafe { ports.count.is_some_and(|c| c(self.plugin, true) >= 2) }
     }
 
     fn use_start_param(&mut self, name: &str) -> bool {
@@ -1668,13 +1759,17 @@ impl os_host::Plugin for Plugin {
     }
 
     fn take_param_events(&mut self) -> Vec<os_host::ParamEvent> {
-        let raw = std::mem::take(&mut self.param_out);
+        // Honeydew (vendored change): the queue keeps its room ([`OUT_ROOM`]).
+        if self.param_out.is_empty() {
+            return Vec::new();
+        }
+        let raw = std::mem::replace(&mut self.param_out, Vec::with_capacity(OUT_ROOM));
         raw.into_iter()
             .filter_map(|e| match e {
                 OutEv::Begin(id) => Some(os_host::ParamEvent::Begin(id)),
                 OutEv::Value(id, v) => Some(os_host::ParamEvent::Value(id, self.normalize(id, v))),
                 OutEv::End(id) => Some(os_host::ParamEvent::End(id)),
-                OutEv::NoteEnd(..) => None,
+                OutEv::NoteEnd(..) | OutEv::Bend(..) | OutEv::Fine(..) => None,
             })
             .collect()
     }
@@ -1847,6 +1942,11 @@ impl os_engine::Instrument for Plugin {
 // activated it at the stream's rate the sound passes through unchanged.
 impl os_engine::HostedEffect for Plugin {
     fn process_fx(&mut self, rate: u32, left: &mut [f32], right: &mut [f32]) {
+        self.process_fx_keyed(rate, left, right, None);
+    }
+
+    // Honeydew (vendored change): `process_fx` with a sidechain key.
+    fn process_fx_keyed(&mut self, rate: u32, left: &mut [f32], right: &mut [f32], key: Option<(&[f32], &[f32])>) {
         if self.rate != rate {
             self.wanted_rate.store(rate, Ordering::Release);
             self.host_data.attention.raise();
@@ -1859,7 +1959,8 @@ impl os_engine::HostedEffect for Plugin {
             }
         }
         // Quiet input to a sleeping effect passes through as it is.
-        if self.asleep() && left.iter().chain(right.iter()).all(|v| v.abs() <= QUIET) {
+        let keys = key.into_iter().flat_map(|(l, r)| l.iter().chain(r));
+        if self.asleep() && left.iter().chain(right.iter()).chain(keys).all(|v| v.abs() <= QUIET) {
             self.song = None;
             self.steady += left.len() as i64;
             return;
@@ -1875,7 +1976,8 @@ impl os_engine::HostedEffect for Plugin {
             ir.clear();
             il.extend_from_slice(&left[at..at + n]);
             ir.extend_from_slice(&right[at..at + n]);
-            self.process_chunk_in(&mut left[at..at + n], &mut right[at..at + n], Some((&mut il[..], &mut ir[..])));
+            let key = key.map(|(l, r)| (&l[at..at + n], &r[at..at + n]));
+            self.process_chunk_in(&mut left[at..at + n], &mut right[at..at + n], Some((&mut il[..], &mut ir[..])), key);
             at += n;
         }
         self.fx_in = (il, ir);
@@ -1891,6 +1993,21 @@ impl os_engine::HostedEffect for Plugin {
 
     fn transport_fx(&mut self, info: &os_engine::TransportInfo) {
         self.song = Some(*info);
+    }
+
+    // Honeydew (vendored addition, upstream's since 6dc00dd).
+    fn control_fx(&self, k: usize) -> Option<f32> {
+        let (bend, fine) = (*self.controls.get(k)?)?;
+        Some(control_value(bend, fine))
+    }
+}
+
+/// Honeydew (vendored addition, upstream's since 6dc00dd): a controller output from its MIDI: the pitch bend's 14 bits
+/// over 0..16383, or with the CC's 7 bits below them the 21 bits over 0..2^21 - 1.
+fn control_value(bend: u16, fine: Option<u8>) -> f32 {
+    match fine {
+        Some(f) => ((f64::from(bend) * 128.0 + f64::from(f)) / f64::from((1u32 << 21) - 1)) as f32,
+        None => (f64::from(bend) / 16383.0) as f32,
     }
 }
 

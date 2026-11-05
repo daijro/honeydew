@@ -2463,13 +2463,14 @@ fn a_touch_long_press_selects_and_a_move_boxes() {
     rig.touch(0.1, End, at);
     rig.frame(vec![]);
     assert_eq!(rig.selection(), [(2, 2)]);
-    let (from, to) = (rig.cell(0, 0), rig.cell(1, 12));
+    // From an empty step: a held hit's move drags it instead.
+    let (from, to) = (rig.cell(0, 1), rig.cell(1, 12));
     rig.touch(0.1, Start, from);
     rig.touch(1.0, Move, from);
     rig.touch(0.1, Move, to);
     rig.touch(0.1, End, to);
     rig.frame(vec![]);
-    assert_eq!(rig.selection(), [(0, 0), (1, 4), (1, 12)]);
+    assert_eq!(rig.selection(), [(1, 4), (1, 12)]);
     assert!(rig.actions.is_empty());
 }
 
@@ -2554,7 +2555,8 @@ fn a_right_click_deletes_the_hit_under_it_in_one_undo_step_and_on_an_empty_step_
 #[test]
 fn copy_duplicates_the_selected_steps_to_the_right_and_selects_the_copies() {
     let mut rig = Rig::new(pattern());
-    let (from, to) = (rig.cell(0, 0), rig.cell(2, 4));
+    // The box from an empty step (a hit's move drags it), over the same hits.
+    let (from, to) = (rig.cell(3, 0), rig.cell(0, 4));
     rig.hold(from);
     rig.frame(vec![egui::Event::PointerMoved(to)]);
     rig.release(to);
@@ -2582,7 +2584,7 @@ fn copy_fills_the_hit_clipboard_and_a_long_press_or_right_click_on_an_empty_step
     assert_eq!(rig.text_at("Paste"), None, "nothing to paste");
     rig.click_with(empty, PointerButton::Secondary);
     assert_eq!(rig.text_at("Paste"), None);
-    rig.boxed(rig.cell(0, 0), rig.cell(2, 4));
+    rig.boxed(rig.cell(3, 0), rig.cell(0, 4));
     rig.click(rig.text_at("Copy").unwrap());
     let copied: Vec<_> = (rig.channel().lanes[0].clips[0].events.iter())
         .filter(|e| [0, 2 * STEP_TICKS, 4 * STEP_TICKS].contains(&e.pos()))
@@ -2631,7 +2633,7 @@ fn copy_fills_the_hit_clipboard_and_a_long_press_or_right_click_on_an_empty_step
 #[test]
 fn delete_clears_the_selected_steps_and_the_selection() {
     let mut rig = Rig::new(pattern());
-    rig.boxed(rig.cell(0, 0), rig.cell(1, 4));
+    rig.boxed(rig.cell(1, 0), rig.cell(0, 4));
     let delete = rig.text_at("Delete").unwrap();
     rig.click(delete);
     let cells = vec![(0, 0), (1, 4)];
@@ -2739,6 +2741,40 @@ fn the_floating_row_of_a_box_selection_shows_at_its_release() {
     let want = place_row(&sel, to, l.grid(), vec2(102.4, 48.0), 6.4, 1.0);
     assert!(want.is_some());
     assert_eq!(rig.view.row.rect(), want);
+    // A second box over the same steps catches a selection with the same bounds: its release shows the row again.
+    rig.boxed(from, to);
+    assert_eq!(rig.selection(), [(1, 4), (2, 2)]);
+    assert_eq!(rig.view.row.rect(), want);
+}
+
+#[test]
+fn a_drag_on_a_hit_moves_the_selection_by_whole_steps_and_rows_in_one_undo_step() {
+    // The Snare on 4, dragged a row down and two steps back, lands on the Hat's step 2, which it replaces.
+    let mut rig = Rig::new(pattern());
+    let (from, to) = (rig.cell(1, 4), rig.cell(2, 2));
+    rig.frame(vec![egui::Event::PointerMoved(from)]);
+    rig.press(from, PointerButton::Primary, true);
+    for i in 1..=4 {
+        rig.frame(vec![egui::Event::PointerMoved(
+            from + (to - from) * i as f32 / 4.0,
+        )]);
+    }
+    rig.press(to, PointerButton::Primary, false);
+    rig.frame(vec![]);
+    assert_eq!(rig.hits(), on(&[(0, 0), (2, 2), (1, 12)]));
+    assert_eq!(rig.selection(), [(2, 2)]);
+    // Live edits while it moves, closed by its release's one final edit; the rows did not scroll.
+    let finals: Vec<bool> = (rig.actions.iter())
+        .map(|a| match a {
+            StepAction::Hits { final_edit, .. } => *final_edit,
+            other => panic!("not a move: {other:?}"),
+        })
+        .collect();
+    assert_eq!(finals.iter().filter(|f| **f).count(), 1);
+    assert_eq!(finals.last(), Some(&true));
+    assert_eq!(rig.row_view().scroll, 0.0);
+    // No floating row after a drag.
+    assert_eq!(rig.text_at("Copy"), None);
 }
 
 #[test]
@@ -3480,7 +3516,8 @@ fn a_hit_alone_in_the_selection_is_remembered_and_new_hits_take_its_velocity_and
     rig.release(at);
     assert_eq!(rig.view.remembered.velocity, 255);
     rig.view.remembered = default;
-    rig.boxed(rig.cell(0, 0), rig.cell(1, 4));
+    // From an empty step clear of the floating row under the Kick.
+    rig.boxed(rig.cell(0, 4), rig.cell(1, 0));
     assert_eq!(rig.selection(), [(0, 0), (1, 4)]);
     assert_eq!(rig.view.remembered, default);
     rig.click(rig.cell(2, 7));

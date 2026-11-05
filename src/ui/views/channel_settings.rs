@@ -32,8 +32,8 @@ const CLOSE: f32 = 1.5;
 /// The monitor and arm buttons' disc: 0.7 × half the rect height, as the rack's input row; and the gap after each.
 const ICON_DISC: f32 = 0.7;
 const BUTTON_GAP: f32 = 0.25;
-/// MIDI input names its devices: not on Android, which has no MIDI input yet.
-const MIDI_DEVICES: bool = cfg!(not(target_os = "android"));
+/// MIDI input names its devices: not on Android or iOS, which have no MIDI input yet.
+const MIDI_DEVICES: bool = cfg!(not(mobile));
 /// The `MIDI Channel` menu: All, then 1…16, six to a column.
 const MIDI_CHANNELS: [&str; 17] = [
     "All", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16",
@@ -138,7 +138,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut AppCtx, channel: usize, name: &mut Stri
             crate::android_text::edit(&mut response, name, usize::MAX);
             if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                 close = true;
-            } else if ui.memory(|mem| mem.focused().is_none()) {
+            } else if crate::android_text::REFOCUS && ui.memory(|mem| mem.focused().is_none()) {
+                // On Android a focused field opens the system text editor over the dialog, on iOS the keyboard:
+                // there a tap on the field renames (#68).
                 response.request_focus();
             }
 

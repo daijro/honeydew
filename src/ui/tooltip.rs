@@ -116,7 +116,7 @@ fn under(tips: &[Tip], at: Pos2) -> Option<&Tip> {
 
 /// Draws the tooltip of the control under the pointer, if it is due. Call it once a frame, after every control drew.
 pub fn show(ctx: &Context, cx: &UiCtx) {
-    if cfg!(target_os = "android") {
+    if cfg!(mobile) {
         return;
     }
     let frame = ctx.cumulative_frame_nr();

@@ -42,9 +42,10 @@ pub enum TrackOp {
 /// The menu for track `lane` of channel `channel`. The primary track is the channel's lane 0.
 /// - Column 0: `Show Tracks` while the sub-tracks are hidden, else `Hide tracks`, enabled with more than one track;
 ///   `Channel Settings`; `Clone Channel` and `Insert Channel` (not on the master); `Delete Track`, enabled when the
-///   channel has more than one track of the primary's kind or this track's kind differs from it; `Delete Channel`
-///   (not on the master); then Honeydew's `Hide track`, `Show track` on a hidden track (which shows with Settings
-///   `Show hidden tracks`). The master's menu is items 1, 2, 5 and `Hide track`.
+///   channel has more than one track of the primary's kind or this track's kind differs from it; Honeydew's
+///   `Hide track`, `Show track` on a hidden track (which shows with Settings `Show hidden tracks`); then
+///   `Delete Channel` (not on the master), last (#68). The master's menu is items 1, 2, 5 and
+///   `Hide track`.
 /// - Column 1, generator channels only (not the master, not a send), by the primary track's kind: notes
 ///   `Import MIDI Tracks`, `Save as MIDI`, `Burn Notes to Track`, `Add Track`; audio `Add Track`, `Sync All Samples`; drums `Load Drumset`,
 ///   `Save Drumset`, `Add StepSeq Track`, `Add Notes Track`, `Save as MIDI`. `Sync All Samples` is disabled (see
@@ -78,11 +79,11 @@ pub fn track_menu(song: &Song, channel: usize, lane: usize) -> Vec<PopupItem<Tra
             "Delete Track",
             of_primary > 1 || this.kind != primary,
         )),
-        (!master).then_some((DeleteChannel, "Delete Channel", true)),
         Some(match this.hidden {
             true => (ToggleHidden, "Show track", true),
             false => (ToggleHidden, "Hide track", true),
         }),
+        (!master).then_some((DeleteChannel, "Delete Channel", true)),
     ];
     let generator = !matches!(ch.kind, ChannelKind::Master | ChannelKind::EffectTrack);
     let kind_items: &[(TrackOp, &'static str, bool)] = match primary {
@@ -175,8 +176,8 @@ mod tests {
         (0, "Clone Channel", true),
         (0, "Insert Channel", true),
         (0, "Delete Track", false),
-        (0, "Delete Channel", true),
         (0, "Hide track", true),
+        (0, "Delete Channel", true),
     ];
 
     #[test]
@@ -233,7 +234,7 @@ mod tests {
         let song = song();
         assert_eq!(
             menu(&song, 0, 0),
-            [CHANNEL[0], CHANNEL[1], CHANNEL[4], CHANNEL[6]],
+            [CHANNEL[0], CHANNEL[1], CHANNEL[4], CHANNEL[5]],
             "the master"
         );
         assert_eq!(menu(&song, 4, 0), CHANNEL, "the send");
@@ -311,8 +312,8 @@ mod tests {
                 CloneChannel,
                 InsertChannel,
                 DeleteTrack,
-                DeleteChannel,
                 ToggleHidden,
+                DeleteChannel,
                 LoadDrumset,
                 SaveDrumset,
                 AddStepSeqTrack,

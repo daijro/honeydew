@@ -110,7 +110,7 @@ fn drums_and_instrument_prompt_for_their_sound_from_the_plus_and_from_insert_cha
 
 #[test]
 fn a_plugin_pick_from_the_add_menu_creates_a_ready_instrument_track() {
-    let uid = crate::plugins::builtin::LEMON_TRIO.uid;
+    let uid = crate::plugins::builtin::named("Lemon Trio").uid;
     let item = add_channel_menu()
         .into_iter()
         .find(|item| item.id == Some(AddChannelPick::Plugin(uid)))
@@ -301,8 +301,8 @@ fn a_close_grand_whose_zones_do_not_decode_leaves_the_supersaw_and_the_name() {
 // ---- Every new DW Sampler loads Close Grand ----
 
 /// The Modules browser's DW Sampler row ([`super::rack_wiring::browser_row`]: `Paste` 0, `Rack Preset` 1, `Instrument`
-/// 2, SYNTH 3, 3x Osc 4, Lemon Trio 5, DW Sampler 6).
-const DW_ROW: usize = 6;
+/// 2, SYNTH 3, 3x Osc 4, Lemon Trio 5, Citrus 6, DW Sampler 7).
+const DW_ROW: usize = 7;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]

@@ -15,6 +15,8 @@ pub mod flp;
 pub mod fonts;
 pub mod history;
 pub mod icons;
+#[cfg(target_os = "ios")]
+pub mod ios;
 pub mod keymap;
 pub mod metrics;
 pub mod midi;
@@ -32,7 +34,11 @@ pub mod song;
 pub mod theme;
 pub mod token_map;
 pub mod ui;
+pub mod versions;
 pub mod zip;
+// In-app updates and the sound library's download (#66); the web is always current.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod update;
 
 /// Display name, used for the window title, and the name of the app's data and settings folders.
 pub const APP_NAME: &str = "Honeydew";
