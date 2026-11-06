@@ -88,7 +88,10 @@ impl Rig {
             menu: MainMenu::new(tab),
             library: Box::new(Fake),
             info: ProjectInfo::default(),
-            settings: Default::default(),
+            settings: (
+                crate::ui::settings_tab::SettingsTab::all_sections_open(),
+                Settings::default(),
+            ),
             screen: SIZE.into(),
             ppp: 1.0,
             time: 0.0,

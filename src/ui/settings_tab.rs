@@ -373,9 +373,11 @@ pub struct SettingsTab {
     /// How far the list is scrolled up, in points, and its touch and fling ([`crate::ui::main_menu::scroll`]).
     offset: f32,
     kinetic: Scroller,
-    /// Section headers the user has collapsed (all start open). This is UI state, so it is kept for the lifetime of
-    /// the settings tab rather than saved as an application preference.
+    /// Section headers the user has collapsed. This is UI state, so it is kept for the lifetime of the settings tab
+    /// rather than saved as an application preference.
     collapsed_sections: HashSet<&'static str>,
+    /// Whether the initial collapsed state has been seeded for the current tab instance.
+    sections_initialized: bool,
     /// `Calibrate` was tapped: the app starts the latency calibration and clears it.
     pub calibrate: bool,
     /// The MIDI input ports the `Input device:` menu lists ([`Self::set_midi_ports`]).
@@ -420,6 +422,13 @@ pub struct SettingsTab {
 }
 
 impl SettingsTab {
+    #[cfg(test)]
+    pub(crate) fn all_sections_open() -> Self {
+        let mut tab = Self::default();
+        tab.sections_initialized = true;
+        tab
+    }
+
     pub fn set_mcp_status(&mut self, status: &'static str) {
         self.mcp_status = status;
     }
@@ -551,6 +560,16 @@ impl SettingsTab {
         }
         self.shown_frame = frame;
         let m = cx.m;
+        if !self.sections_initialized {
+            let headers: Vec<_> = self
+                .rows()
+                .into_iter()
+                .filter(|row| matches!(row.kind, Kind::Header))
+                .map(|row| row.label)
+                .collect();
+            self.collapsed_sections.extend(headers);
+            self.sections_initialized = true;
+        }
         let rows = self.visible_rows(&self.rows());
         let pitch = m.u(ROW_PITCH);
         // The scale note's row takes no room while the scale is not limited.
@@ -1565,7 +1584,7 @@ mod tests {
         fn with_height(height: f32) -> Self {
             let mut rig = Self {
                 ctx: egui::Context::default(),
-                tab: SettingsTab::default(),
+                tab: SettingsTab::all_sections_open(),
                 settings: Settings::default(),
                 width: 1170.0,
                 height,

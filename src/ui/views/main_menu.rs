@@ -432,7 +432,7 @@ mod tests {
         let mut files = ProjectFiles::with_provider(Box::new(MemFiles::default()));
         let (mut state, mut settings, mut tab) = (
             State::default(),
-            settings_tab::State::default(),
+            settings_tab::State::all_sections_open(),
             MenuTab::Project,
         );
         let mut screen = Offscreen::new();
@@ -495,7 +495,7 @@ mod tests {
         let mut stored = Settings::default();
         let (mut state, mut tab_state, mut tab) = (
             State::default(),
-            settings_tab::State::default(),
+            settings_tab::State::all_sections_open(),
             MenuTab::Settings,
         );
         let mut screen = Offscreen::new();

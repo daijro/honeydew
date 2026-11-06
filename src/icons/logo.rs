@@ -1,28 +1,19 @@
-//! Our logo glyph (`assets/branding/honeydew-mono.svg`), which [`IconId::AppLogo`](super::IconId::AppLogo) draws as a
-//! tinted image: the one-colour silhouette of the coloured app icon (`honeydew.svg`). Each egui context loads a
-//! rasterisation once, the first time it draws the logo at that size.
+//! Our logo glyph (`assets/branding/honeydew.svg`), which [`IconId::AppLogo`](super::IconId::AppLogo) draws as a
+//! coloured image. Each egui context loads a rasterisation once, the first time it draws the logo at that size.
 
 use eframe::egui::{
     Color32, ColorImage, Context, Id, Rect, Shape, TextureHandle, TextureOptions, pos2,
 };
 
-/// The silhouette's rasterisations (white on transparency) by edge in pixels, smallest first.
-const PNGS: [(usize, &[u8]); 4] = [
+/// The logo's rasterisations by edge in pixels, smallest first.
+const PNGS: [(usize, &[u8]); 2] = [
     (
-        48,
-        include_bytes!("../../assets/branding/honeydew-mono-48.png"),
-    ),
-    (
-        64,
-        include_bytes!("../../assets/branding/honeydew-mono-64.png"),
-    ),
-    (
-        128,
-        include_bytes!("../../assets/branding/honeydew-mono-128.png"),
+        32,
+        include_bytes!("../../assets/branding/honeydew-32.png"),
     ),
     (
         256,
-        include_bytes!("../../assets/branding/honeydew-mono-256.png"),
+        include_bytes!("../../assets/branding/honeydew-256.png"),
     ),
 ];
 
@@ -50,11 +41,41 @@ fn decode_rgba(png: &[u8], size: [usize; 2]) -> Option<ColorImage> {
     }
     let mut pixels = vec![0; reader.output_buffer_size()?];
     reader.next_frame(&mut pixels).ok()?;
-    Some(ColorImage::from_rgba_unmultiplied(size, &pixels))
+    let mut image = ColorImage::from_rgba_unmultiplied(size, &pixels);
+    recolor(&mut image);
+    Some(image)
 }
 
-/// The logo on `square` in `ctx`, tinted `color`.
-pub(super) fn logo_shape(ctx: &Context, square: Rect, color: Color32) -> Shape {
+/// Recolors the original melon artwork to the requested orange-flesh/green-rind palette.
+fn recolor(image: &mut ColorImage) {
+    for pixel in &mut image.pixels {
+        let [r, g, b, a] = pixel.to_srgba_unmultiplied();
+        if a == 0 {
+            continue;
+        }
+
+        let green_rind = g > r && g > b;
+        let lightness = (u16::from(r) + u16::from(g) + u16::from(b)) as f32 / (3.0 * 255.0);
+        let (base, shadow) = if green_rind {
+            ([74.0, 145.0, 48.0], [20.0, 65.0, 35.0])
+        } else {
+            ([244.0, 105.0, 28.0], [168.0, 48.0, 12.0])
+        };
+        let amount = lightness.clamp(0.15, 0.95);
+        let mix = (amount - 0.15) / 0.8;
+        let [br, bg, bb] = base;
+        let [sr, sg, sb] = shadow;
+        *pixel = Color32::from_rgba_unmultiplied(
+            (sr + (br - sr) * mix).round() as u8,
+            (sg + (bg - sg) * mix).round() as u8,
+            (sb + (bb - sb) * mix).round() as u8,
+            a,
+        );
+    }
+}
+
+/// The logo on `square` in `ctx`.
+pub(super) fn logo_shape(ctx: &Context, square: Rect, _color: Color32) -> Shape {
     let (n, png) = source_for(square.width() * ctx.pixels_per_point());
     let id = Id::new(("honeydew_logo", n));
     let texture = ctx
@@ -66,7 +87,7 @@ pub(super) fn logo_shape(ctx: &Context, square: Rect, color: Color32) -> Shape {
             handle
         });
     let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-    Shape::image(texture.id(), square, uv, color)
+    Shape::image(texture.id(), square, uv, Color32::WHITE)
 }
 
 #[cfg(test)]
@@ -84,25 +105,27 @@ mod tests {
     }
 
     #[test]
-    fn every_rasterisation_is_a_white_mask_of_the_silhouette() {
-        // The in-app logo is the one-colour silhouette (`honeydew-mono.svg`), white on transparency so that the draw's
-        // tint is its colour; the coloured melon has no white pixel.
+    fn every_rasterisation_has_orange_and_green_pixels() {
         for (n, png) in PNGS {
             let image = decode_rgba(png, [n, n]).unwrap();
             let px = &image.pixels;
-            let white = px.iter().all(|c| {
+            let orange = px.iter().any(|c| {
                 let [r, g, b, a] = c.to_srgba_unmultiplied();
-                [r, g, b] == [255; 3] || a == 0
+                a > 0 && r > g && g > b
             });
-            assert!(white, "honeydew-mono-{n}.png");
-            let opaque = px.iter().filter(|c| c.a() == 255).count();
+            let green = px.iter().any(|c| {
+                let [r, g, b, a] = c.to_srgba_unmultiplied();
+                a > 0 && g > r && g > b
+            });
+            assert!(orange && green, "honeydew-{n}.png");
+            let opaque = px.iter().filter(|c| c.a() > 0).count();
             assert!(
                 opaque > px.len() / 4,
-                "honeydew-mono-{n}.png: {opaque} opaque"
+                "honeydew-{n}.png: {opaque} opaque"
             );
             assert!(
-                opaque < px.len() * 3 / 4,
-                "honeydew-mono-{n}.png: {opaque} opaque"
+                opaque < px.len(),
+                "honeydew-{n}.png: {opaque} opaque"
             );
         }
     }
@@ -111,12 +134,12 @@ mod tests {
     fn the_logo_is_drawn_from_the_smallest_rasterisation_at_least_its_size() {
         // 4/3 U at U = 32: 42.7 px at ppp 1, 85.3 px at ppp 2.
         for (px, n) in [
-            (10.0, 48),
-            (42.7, 48),
-            (48.0, 48),
-            (85.3, 128),
-            (128.0, 128),
-            (170.7, 256),
+            (10.0, 32),
+            (31.9, 32),
+            (32.0, 32),
+            (48.0, 256),
+            (128.0, 256),
+            (256.0, 256),
             (900.0, 256),
         ] {
             assert_eq!(source_for(px).0, n, "{px} px");
@@ -124,22 +147,22 @@ mod tests {
     }
 
     #[test]
-    fn the_app_logo_paints_the_silhouette_tinted_once_loaded() {
+    fn the_app_logo_paints_the_colored_artwork_once_loaded() {
         let ctx = Context::default();
         let square = Rect::from_min_size(pos2(10.0, 10.0), vec2(42.0, 42.0));
         let mesh = |color| match &painted_shapes(&ctx, IconId::AppLogo, square, color)[..] {
             [Shape::Mesh(mesh)] => mesh.clone(),
             other => panic!("{other:?}"),
         };
-        let (a, b) = (mesh(Color32::RED), mesh(Color32::from_black_alpha(128)));
+        let (a, b) = (mesh(Color32::WHITE), mesh(Color32::from_black_alpha(128)));
         assert_eq!(a.texture_id, b.texture_id, "loaded once");
         assert_eq!(a.calc_bounds(), square);
-        // The tint is the glyph's colour, a translucent one fades it.
-        assert!(a.vertices.iter().all(|v| v.color == Color32::RED));
+        // The full-color artwork stays unchanged by the requested tint.
+        assert!(a.vertices.iter().all(|v| v.color == Color32::WHITE));
         assert!(
             b.vertices
                 .iter()
-                .all(|v| v.color == Color32::from_black_alpha(128))
+                .all(|v| v.color == Color32::WHITE)
         );
     }
 }

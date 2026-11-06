@@ -65,8 +65,10 @@ pub const SOUND_MODES: [(u8, &str); 2] = [(0, "STANDARD"), (1, "MULTITRACK")];
 pub const SOUND_MODES: [(u8, &str); 1] = [(3, "NATIVE")];
 
 /// Buffer-size slider positions. Zero keeps the audio device's native/default buffer;
-/// positive values are targets that the backend clamps to the device's supported range.
-pub const BUFFER_SIZES: [u32; 7] = [0, 64, 128, 256, 512, 1024, 2048];
+/// positive values are 512-frame targets that the backend clamps to the device's supported range.
+pub const BUFFER_SIZES: [u32; 11] = [
+    0, 512, 1024, 1536, 2048, 2560, 3072, 3584, 4096, 4608, 5120,
+];
 pub const MCP_DEFAULT_PORT: u16 = 57831;
 
 #[cfg(desktop)]

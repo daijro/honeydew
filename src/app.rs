@@ -3003,6 +3003,7 @@ mod tests {
                 out: egui::FullOutput::default(),
                 close_request: false,
             };
+            rig.app.slots.settings_tab = crate::ui::settings_tab::SettingsTab::all_sections_open();
             // Lets egui learn the widget rects before the first press.
             rig.frame(vec![]);
             // Fixed-coordinate input fixtures start at MIDI 48; startup centering has its own test.
