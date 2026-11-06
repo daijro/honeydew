@@ -466,8 +466,8 @@ fn turning_preview_on_silences_the_held_note_and_sends_the_clip_alone_from_its_s
 
 #[test]
 fn while_playing_the_engine_loops_the_span_and_a_playhead_before_it_jumps_to_its_start() {
-    // The engine loops, so a playhead at or past the end needs no Seek from the app; one before the loop still jumps
-    // to its start.
+    // The engine loops, so a playhead at or past the end needs no Seek from the app; one before the loop jumps to its
+    // start (the app's Seek, and the engine's own jump for a playhead it finds before the loop).
     let mut rig = Rig::previewable();
     rig.preview();
     rig.app.main_screen.playing = true;
@@ -484,12 +484,12 @@ fn while_playing_the_engine_loops_the_span_and_a_playhead_before_it_jumps_to_its
         rig.frame(vec![]);
         assert_eq!(rig.take(), sent, "{tick}");
     }
-    // The solo engine loops [512, 1024): at or past its end it goes on from 512; before it, it plays into it.
+    // The solo engine loops [512, 1024): at or past its end, or before it, it goes on from 512; inside, from where it is.
     for (from, to) in [
         (1024, 512..520),
         (1500, 512..520),
         (600, 600..608),
-        (100, 100..108),
+        (100, 512..520),
     ] {
         assert!(to.contains(&rig.engine_from(from)), "{from}");
     }
@@ -820,7 +820,7 @@ fn a_clips_edit_opens_that_clip_whose_edits_land_in_it_and_preview_follows() {
     // `Edit` on the second clip.
     rig.click(clip_at(2, 1024));
     rig.frame(vec![]);
-    rig.click_id(egui::Id::new(("clip_button", 4_usize)));
+    rig.click_id(egui::Id::new(("clip_button", 3_usize)));
     assert_eq!(rig.app.nav.view, View::PianoRoll(2));
     rig.slide_split();
     assert_eq!(rig.app.preview, Some(SYNTH_2));

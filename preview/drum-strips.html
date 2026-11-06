@@ -1,0 +1,144 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Honeydew drum mixer strips: the level meters</title>
+<style>
+  :root {
+    --background: #21272b;
+    --control: #31373b;
+    --module: #394046;
+    --text: #d8dee3;
+    --channel: #e9613f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 24px 40px;
+    background: var(--background); color: var(--text);
+    font: 13px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+  .lead { margin: 0 0 20px; color: #9aa4ab; max-width: 74ch; }
+  .pair { display: flex; gap: 28px; flex-wrap: wrap; }
+  figure { margin: 0; }
+  figcaption { margin: 0 0 8px; color: #9aa4ab; font-size: 12px; }
+  figcaption b { color: var(--text); }
+
+  /* One mixer column: a 3 U header cell, then the 12 U the strip's controls take. U = 32 px, hairline t = 2 px,
+     a row 62 px, the strip one pixel shorter. */
+  .mixer { width: 480px; border: 1px solid #2b3237; position: relative; }
+  .row { display: flex; height: 62px; position: relative; }
+  .row + .row { margin-top: 1px; }
+  .header {
+    width: 96px; flex: none; padding: 7px 4px 0;
+    font-size: 9px; line-height: 1.25; color: var(--channel); overflow: hidden;
+  }
+  .header small { display: block; font-size: 8px; opacity: .75; }
+  .strip { flex: 1; background: var(--module); position: relative; }
+
+  /* The strip's pages: 75 % of the row, at its top (this change), or centred (before). */
+  .controls { position: absolute; left: 0; right: 0; display: flex; align-items: center; }
+  .after  .controls { top: 0; height: 75%; }
+  .before .controls { top: 12.5%; height: 75%; }
+  .cell { display: flex; align-items: center; justify-content: center; height: 100%; }
+  .mute  { flex: 1; } .solo { flex: 1; } .pan { flex: 2; } .level { flex: 4; }
+
+  .pill { width: 26px; height: 8px; border-radius: 4px; background: var(--control); position: relative; }
+  .pill::after {
+    content: ""; position: absolute; top: -3px; right: -1px; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--module); box-shadow: inset 0 0 0 2px var(--channel);
+  }
+  .disc {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--module);
+    display: grid; place-items: center; font-size: 8px;
+  }
+  .slider { width: 100%; height: 100%; position: relative; }
+  .track {
+    position: absolute; left: 16px; right: 16px; top: 50%; height: 6px;
+    margin-top: -3px; background: var(--control);
+  }
+  .fill { position: absolute; top: 0; bottom: 0; background: var(--channel); }
+  .thumb {
+    position: absolute; top: 50%; transform: translate(-50%, -50%);
+    width: 24px; height: 24px; border-radius: 50%; background: var(--control);
+  }
+  .thumb::after { content: ""; position: absolute; inset: 2px; border-radius: 50%; background: var(--channel); }
+
+  /* The level meters: two bars, L over R, a hairline apart, filling from the left.
+     After: in the quarter the controls leave, thinned so they fit, rounded ends.
+     Before: 2 hairlines thick each, flush with the row's bottom, so they run into the disc and the dots. */
+  .meter { position: absolute; left: 0; right: 0; bottom: 0; }
+  .after  .meter { height: 25%; padding-bottom: 2px; }
+  .before .meter { height: 10px; }
+  .meter i { position: absolute; left: 0; background: var(--channel); }
+  .after  .meter i { height: 2px; border-radius: 1px; }
+  .before .meter i { height: 4px; }
+  .meter i.l { bottom: 3px; }
+  .meter i.r { bottom: 0; }
+  .before .meter i.l { bottom: 6px; }
+
+  .note { margin: 22px 0 0; color: #9aa4ab; font-size: 12px; max-width: 74ch; }
+  .note code { color: var(--text); }
+</style>
+
+<h1>Drum editor ▸ Mixer strips ▸ the level meters</h1>
+<p class="lead">The meters are the two thin bars that fill from the left in each row. Before, they sat along the row's
+bottom edge, two hairlines thick each, and reached up into the strip's controls: the Solo disc's foot and the Pan and
+Level dots sat on them. Now the controls take the row's top 75 %, and the meters keep to the quarter below, thinned to
+fit it, with rounded ends. Drawn at the app's measurements (U = 32 px, a hairline 2 px, a row 62 px).</p>
+
+<div class="pair">
+  <figure>
+    <figcaption><b>Before</b> — the bars overlap the Solo disc and the dots</figcaption>
+    <div class="mixer before" data-variant="before"></div>
+  </figure>
+  <figure>
+    <figcaption><b>This change</b> — the meters have the row's bottom quarter to themselves</figcaption>
+    <div class="mixer after" data-variant="after"></div>
+  </figure>
+</div>
+
+<p class="note">The Open Hat's empty meter is left as it is: the closed hat chokes it (<code>cut group A</code>).</p>
+
+<script>
+  const pads = [
+    ["Kick",   "PowerShardK 11",    0.92],
+    ["Snare",  "DrumSkrmShort 09",  0.55],
+    ["Hat",    "FL CLHat 01",       0.20],
+    ["Snare",  "FL RimSnap Short 1", 0.78],
+    ["Cymbal", "FL Jung Ride",      0.35],
+    ["Perc",   "FL RD Toms 3",      0.62],
+  ];
+  const slider = (v, bipolar) => {
+    const from = bipolar ? 50 : 0;
+    const left = Math.min(from, v * 100);
+    const width = Math.abs(v * 100 - from);
+    return `<div class="slider"><div class="track">
+      <div class="fill" style="left:${left}%;width:${width}%"></div>
+      <div class="thumb" style="left:${v * 100}%"></div>
+    </div></div>`;
+  };
+  for (const mixer of document.querySelectorAll(".mixer")) {
+    const after = mixer.dataset.variant === "after";
+    const width = 12 * 32;  // the 12 U the strip's controls take
+    for (const [name, sample, level] of pads) {
+      const pan = 0.5 + (level - 0.5) * 0.6;
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = `
+        <div class="header">${name}<small>${sample}</small></div>
+        <div class="strip">
+          <div class="controls">
+            <div class="cell mute"><div class="pill"></div></div>
+            <div class="cell solo"><div class="disc">Solo</div></div>
+            <div class="cell pan">${slider(pan, true)}</div>
+            <div class="cell level">${slider(level, false)}</div>
+          </div>
+          <div class="meter">
+            <i class="l" style="width:${(width * level * 0.9).toFixed(1)}px"></i>
+            <i class="r" style="width:${(width * level * 0.8).toFixed(1)}px"></i>
+          </div>
+        </div>`;
+      mixer.append(row);
+    }
+    void after;
+  }
+</script>

@@ -53,6 +53,11 @@ fn thumb_radius(growth: f32, t: f32) -> f32 {
     (4.5 + 1.485 * growth) * t
 }
 
+/// The radius `r` held inside `body`: a thumb never reaches past the strip it sits in, however thin the strip is.
+fn fitted_radius(r: f32, body: Rect) -> f32 {
+    r.min(0.5 * body.width().min(body.height())).max(0.0)
+}
+
 /// The thumb's centre and outer radius at value `v`: it sits on the value and grows away from rest (the low end,
 /// or the middle when bipolar).
 fn thumb(track: Rect, horizontal: bool, v: f32, bipolar: bool, t: f32) -> (Pos2, f32) {
@@ -114,7 +119,10 @@ fn slider(
         None => (colors.control_fill.to_color32(), c.channel),
     };
     if primary_down_on(ui, &response) || hovered(ui, &response) {
-        painter.rect_filled(
+        // The halo stays in the strip: 2 device pixels out from the track, or the strip's own edge (and never out of
+        // the clip the control was given).
+        let inside = painter.clip_rect().intersect(body);
+        painter.with_clip_rect(inside).rect_filled(
             track.expand(HALO_PX / m.ppp()),
             0.0,
             c.channel.gamma_multiply(HALO),
@@ -123,8 +131,11 @@ fn slider(
     painter.rect_filled(track, 0.0, body_ink);
     painter.rect_filled(fill(track, horizontal, v, c.bipolar), 0.0, ink);
     let (center, r) = thumb(track, horizontal, v, c.bipolar, t);
+    let r = fitted_radius(r, body);
     painter.circle_filled(center, r, body_ink);
-    painter.circle_filled(center, r - 2.0 * t, ink);
+    if r > 2.0 * t {
+        painter.circle_filled(center, r - 2.0 * t, ink);
+    }
     response
 }
 
@@ -195,6 +206,18 @@ mod tests {
         assert_eq!(point(tr, true, 0.0), pos2(0.0, 2.0));
         assert_eq!(point(tr, true, 0.25), pos2(25.0, 2.0));
         assert_eq!(point(tr, true, 1.0), pos2(100.0, 2.0));
+    }
+
+    #[test]
+    fn a_thumb_never_reaches_past_its_strip() {
+        // A strip 12 px across holds a thumb of radius 6 at most, however far it grew: the row keeps its own mark.
+        let body = rect(0.0, 0.0, 100.0, 12.0);
+        assert_eq!(fitted_radius(9.0, body), 6.0);
+        assert_eq!(fitted_radius(4.0, body), 4.0);
+        // Turned on its side the narrow way is the width.
+        assert_eq!(fitted_radius(9.0, rect(0.0, 0.0, 8.0, 300.0)), 4.0);
+        // A strip too thin for the inner disc still leaves a radius to draw with, never a negative one.
+        assert_eq!(fitted_radius(9.0, rect(0.0, 0.0, 100.0, 0.0)), 0.0);
     }
 
     #[test]

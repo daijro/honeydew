@@ -17,7 +17,8 @@
 //! - While an editor shows, a 0.5 U shadow lies over the playlist's bottom edge, clipped to the playlist ([`shadow`]).
 //!
 //! The close ribbon on the band serves every bottom editor ([`ribbon`]): a tap closes the editor, a vertical drag
-//! resizes the split.
+//! resizes the split, and a sideways drag moves the ribbon along the band, out of the way of the editor's tabs (its
+//! place is kept in `Settings`).
 
 use eframe::egui::{Color32, CornerRadius, Id, Painter, Rect, Sense, Ui, pos2, vec2};
 
@@ -39,6 +40,8 @@ const RIBBON_R: f32 = 0.3;
 const RIBBON_REACH: f32 = 0.3;
 const RIBBON_LOGO: f32 = 4.4;
 const RIBBON_EDGE: f32 = 1.8;
+/// How far in from the editor area's left edge a sideways drag keeps the ribbon, in U.
+const RIBBON_INSET: f32 = 0.5;
 /// A ribbon drag's playlist floor, in U; the rubber band's give past either floor; a last move longer than this many
 /// U is a flick, which counts ten times.
 const PLAYLIST_MIN_U: f32 = 2.5;
@@ -110,23 +113,41 @@ pub fn shadow(painter: &Painter, playlist: Rect, m: &Metrics) {
     gradient(&painter, rect, Color32::TRANSPARENT, edge);
 }
 
-/// Where the close ribbon's touch area starts, its reach left of the ribbon ([`ribbon`]), in an editor area whose right
-/// edge is `view_right` on a window whose right edge is `screen_right`: an editor's top strip is free left of it (the
-/// drum mixer's page tabs end there, GitHub #71).
-pub fn ribbon_room(view_right: f32, screen_right: f32, m: &Metrics) -> f32 {
-    ribbon_x(view_right, screen_right, m) - m.u(RIBBON_REACH)
+/// Where an editor's top strip that starts at `strip_left` ends, clear of the close ribbon's touch area ([`ribbon`]) in
+/// an editor area whose right edge is `view_right` on a window whose right edge is `screen_right`: the touch area's left
+/// edge, its reach left of the ribbon (the drum mixer's page tabs end there, GitHub #71). The ribbon sits `shift` U
+/// along the band from its home (`Settings::editor_ribbon_shift`, never right of home); moved wholly left of the strip,
+/// it leaves the strip the room up to its home.
+pub fn ribbon_room(
+    view_right: f32,
+    screen_right: f32,
+    shift: f32,
+    strip_left: f32,
+    m: &Metrics,
+) -> f32 {
+    let (home, reach) = (ribbon_x(view_right, screen_right, m), m.u(RIBBON_REACH));
+    let left = m.floor_px(home + m.u(shift.min(0.0)));
+    if left + m.u(RIBBON[0]) + reach <= strip_left {
+        home - reach
+    } else {
+        left - reach
+    }
 }
 
-/// The close ribbon's left edge: min(screen right − 4.4 U, view right − 1.8 U), on a device pixel.
+/// The close ribbon's home left edge: min(screen right − 4.4 U, view right − 1.8 U), on a device pixel.
 fn ribbon_x(view_right: f32, screen_right: f32, m: &Metrics) -> f32 {
     m.floor_px((screen_right - m.u(RIBBON_LOGO)).min(view_right - m.u(RIBBON_EDGE)))
 }
 
-/// A ribbon press, between frames: the playlist's height at the press, whether it has gone more than 0.5 U up or down
-/// (a drag, no tap), the finger's height for the playlist (unclamped) and its last move, in points.
+/// A ribbon press, between frames: the playlist's height at the press and the ribbon's place then, whether the touch
+/// has left its calm zone and which way it went (sideways moves the ribbon, up and down resizes the split), the
+/// finger's height for the playlist (unclamped) and its last move, in points.
 #[derive(Clone, Copy, Debug)]
 struct Grab {
     from: f32,
+    shift: f32,
+    moved: bool,
+    sideways: bool,
     dragging: bool,
     raw: f32,
     last: f32,
@@ -135,29 +156,40 @@ struct Grab {
 /// The close ribbon of the bottom editors, under the colour band over the editor at `editor_top` in `view` (the editor
 /// area, left of the rack), `screen_right` the window's right edge, in the channel colour `fill`:
 /// - 1.5 U × 1.3 U from the band's bottom, its left edge at min(screen right − 4.4 U, view right − 1.8 U) (just left
-///   of the logo at full width); square top corners and 0.3 U bottom ones; icon 87 (down chevron) in the best-contrasting
-///   theme colour of the fill; hovered, the fill × 1.25. Its touch area reaches 0.3 U past it left, right and below.
-/// - A tap (no vertical move over 0.5 U) returns true: the host closes the editor (the playlist alone, the clip kept,
-///   no undo step).
-/// - A vertical drag over 0.5 U moves the split: the playlist's height at the press plus the drag, with a rubber band
-///   (× 0.1) below the 2.5 U playlist floor and past the 3 U editor floor. The last move counts ten times when over
-///   0.25 U (a flick). Let go below the playlist floor the editor fills the view (f = 0); past the editor floor it
-///   closes (returns true); else the split stays there.
+///   of the logo at full width) moved by `shift` U along the band; square top corners and 0.3 U bottom ones; icon 87
+///   (down chevron) in the best-contrasting theme colour of the fill; hovered, the fill × 1.25. Its touch area reaches
+///   0.3 U past it left, right and below.
+/// - A tap (no move past 0.5 U) returns true: the host closes the editor (the playlist alone, the clip kept, no undo
+///   step).
+/// - The first axis past the calm zone decides what a drag does. More sideways than up and down moves the ribbon along
+///   the band, kept between 0.5 U in from the editor area's left edge and the logo's left edge less the ribbon's own
+///   width, and writes its place to `shift`, which the host keeps in `Settings`. More up and down moves the split: the
+///   playlist's height at the press plus the drag, with a rubber band (× 0.1) below the 2.5 U playlist floor and past
+///   the 3 U editor floor. The last move counts ten times when over 0.25 U (a flick). Let go below the playlist floor
+///   the editor fills the view (f = 0); past the editor floor it closes (returns true); else the split stays there.
+#[allow(clippy::too_many_arguments)]
 pub fn ribbon(
     ui: &mut Ui,
     split: &mut Split,
     (view, editor_top): (Rect, f32),
     screen_right: f32,
     color: Rgba,
+    shift: &mut f32,
     cx: &UiCtx,
 ) -> bool {
     let (c, m) = (&cx.theme.colors, cx.m);
     let size = vec2(m.u(RIBBON[0]), m.u(RIBBON[1]));
+    let base = ribbon_x(view.right(), screen_right, m);
+    // Where the ribbon opens, and how far a drag may take it: in from the band's left edge, and no further right than
+    // home, which already sits next to the logo.
+    let lowest = view.left() + m.u(RIBBON_INSET);
+    let (lo_shift, hi_shift) = ((lowest - base) / m.u(1.0), 0.0f32);
+    // `max` then `min` rather than `clamp`: a view too narrow for the ribbon's home (a small window) leaves lo above
+    // hi, and `f32::clamp` panics on that.
+    *shift = shift.max(lo_shift).min(hi_shift);
+    let left = base + m.u(*shift);
+    let rect = Rect::from_min_size(pos2(m.floor_px(left), editor_top), size);
     let reach = m.u(RIBBON_REACH);
-    let rect = Rect::from_min_size(
-        pos2(ribbon_x(view.right(), screen_right, m), editor_top),
-        size,
-    );
     let touch = Rect::from_min_max(rect.min - vec2(reach, 0.0), rect.max + vec2(reach, reach));
     let id = Id::new("editor_close");
     let response = crate::ui::focus::interact(ui, touch, id, Sense::click_and_drag());
@@ -170,6 +202,9 @@ pub fn ribbon(
         let from = split_rects(view, split.f, m).0.height();
         let grab = Grab {
             from,
+            shift: *shift,
+            moved: false,
+            sideways: false,
             dragging: false,
             raw: from,
             last: 0.0,
@@ -177,24 +212,36 @@ pub fn ribbon(
         ui.data_mut(|d| d.insert_temp(id, grab));
     } else if let Some(mut grab) = grab {
         if response.dragged() {
-            let total = response.total_drag_delta().unwrap_or_default().y;
-            grab.dragging |= total.abs() > m.u(crate::ui::gesture::CALM_U);
-            if grab.dragging && h > 0.0 {
-                grab.last = grab.from + total - grab.raw;
-                grab.raw = grab.from + total;
-                let shown = rubber(grab.raw, lo, hi);
-                *split = Split {
-                    f: shown / h,
-                    target: shown / h,
-                };
+            let total = response.total_drag_delta().unwrap_or_default();
+            let calm = m.u(crate::ui::gesture::CALM_U);
+            if !grab.moved && total.length() > calm {
+                grab.moved = true;
+                grab.sideways = total.x.abs() > total.y.abs();
+            }
+            if grab.sideways {
+                // Sideways: the ribbon moves along the band, and the split stays where it was.
+                *shift = (grab.shift + total.x / m.u(1.0))
+                    .max(lo_shift)
+                    .min(hi_shift);
+            } else {
+                grab.dragging |= total.y.abs() > calm;
+                if grab.dragging && h > 0.0 {
+                    grab.last = grab.from + total.y - grab.raw;
+                    grab.raw = grab.from + total.y;
+                    let shown = rubber(grab.raw, lo, hi);
+                    *split = Split {
+                        f: shown / h,
+                        target: shown / h,
+                    };
+                }
             }
             ui.data_mut(|d| d.insert_temp(id, grab));
         }
         if response.drag_stopped() {
             ui.data_mut(|d| d.remove::<Grab>(id));
-            if !grab.dragging {
+            if !grab.moved {
                 closed = true;
-            } else if h > 0.0 {
+            } else if grab.dragging && h > 0.0 {
                 let flick = if grab.last.abs() > m.u(FLICK_U) {
                     9.0 * grab.last
                 } else {
@@ -342,12 +389,13 @@ mod tests {
         // One gesture from `split`, through `ys` (finger y, from the press), on the rig: (closed, the split after).
         let run = |split: Split, ys: &[f32]| {
             let (mut rig, mut split, mut closed) = (Offscreen::new(), split, false);
+            let mut shift = 0.0;
             let from = ribbon_at(split);
             let mut frame = |rig: &mut Offscreen, split: &mut Split, events: Vec<Event>| {
                 rig.frame(events, &mut |ui, cx| {
                     let top = split.layout(VIEW, &m).1.top();
                     let red = Rgba::rgb(1.0, 0.0, 0.0);
-                    closed |= ribbon(ui, split, (VIEW, top), 1170.0, red, cx);
+                    closed |= ribbon(ui, split, (VIEW, top), 1170.0, red, &mut shift, cx);
                 });
             };
             let button = |pos: Pos2, pressed| Event::PointerButton {
@@ -391,6 +439,57 @@ mod tests {
         let (closed, split) = run(at(100.0 / 349.0), &[10.0, 20.0, 30.0, 40.0]);
         assert!(!closed);
         assert!((split.f * 349.0 - 230.0).abs() < 1e-3, "{split:?}");
+    }
+
+    /// The first axis past the calm zone decides: a sideways drag moves the ribbon along the band (left of where it
+    /// opens, which is already at the logo), kept inside it, and leaves the split where it was, while a tap still
+    /// closes. The place it lands on is what the host keeps in `Settings`.
+    #[test]
+    fn a_sideways_drag_moves_the_ribbon_along_the_band_and_leaves_the_split() {
+        let m = metrics(1.0);
+        let (mut rig, mut closed) = (Offscreen::new(), false);
+        let mut split = Split {
+            f: 0.4,
+            target: 0.4,
+        };
+        let mut shift = 0.0;
+        let red = Rgba::rgb(1.0, 0.0, 0.0);
+        let from = pos2(
+            1170.0 - 4.4 * 32.0 + 24.0,
+            split.layout(VIEW, &m).1.top() + 20.0,
+        );
+        let button = |pos: Pos2, pressed| Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        {
+            let mut frame = |rig: &mut Offscreen, events: Vec<Event>| {
+                rig.frame(events, &mut |ui, cx| {
+                    let top = split.layout(VIEW, &m).1.top();
+                    closed |= ribbon(ui, &mut split, (VIEW, top), 1170.0, red, &mut shift, cx);
+                });
+            };
+            frame(&mut rig, vec![Event::PointerMoved(from)]);
+            frame(&mut rig, vec![button(from, true)]);
+            // 40 points left is past the calm zone, more sideways than down: the ribbon follows the finger.
+            for dx in [-40.0, -80.0, -160.0] {
+                frame(&mut rig, vec![Event::PointerMoved(from + vec2(dx, 0.0))]);
+            }
+            frame(&mut rig, vec![button(from + vec2(-160.0, 0.0), false)]);
+        }
+        assert!(!closed, "a sideways drag is no tap");
+        assert_eq!(
+            split,
+            Split {
+                f: 0.4,
+                target: 0.4
+            },
+            "the split stayed"
+        );
+        // 160 points is 5 U at U = 32, and it opens at the logo: it can only go left.
+        assert!((shift + 5.0).abs() < 1e-3, "moved left: {shift}");
     }
 
     #[test]

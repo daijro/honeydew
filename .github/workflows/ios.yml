@@ -1,10 +1,8 @@
 name: iOS
 
-# The iOS test build, on the `ios` branch and on demand (not on every push to main): both unsigned IPAs, then the
-# Simulator's app runs its self-test (`tools/ios-selftest.sh`) with a screenshot at each step.
+# The iOS test build, on demand only (`Actions ▸ iOS ▸ Run workflow`): both unsigned IPAs, then the Simulator's app
+# runs its self-test (`tools/ios-selftest.sh`) with a screenshot at each step.
 on:
-  push:
-    branches: [ios]
   workflow_dispatch:
 
 env:

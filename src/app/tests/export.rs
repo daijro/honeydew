@@ -121,42 +121,20 @@ fn save_wav_render_writes_a_file_that_decodes_back() {
             "Encoding \"New Song.wav\""
         ]
     );
+    assert_eq!(rig.overlays(), []);
     let file = written(&mem, "My Tracks/New Song.wav").expect("written");
     let decoded = decode(&file).unwrap();
     assert_eq!(decoded.sample_rate, 44_100);
     assert!(decoded.right.is_some());
     assert!(decoded.left.iter().any(|x| x.abs() > 0.01), "it has sound");
-    // #72: a message says where it went, and `Open My Tracks` opens SONGS. A message's first frame only sizes it.
-    rig.frame(vec![]);
-    rig.frame(vec![]);
-    assert!(rig.shows("Render complete") && rig.shows("Saved to: My Tracks/New Song.wav"));
-    rig.click(rig.text_rect("Open My Tracks").center());
     assert_eq!(
-        rig.overlays(),
-        [Overlay::MainMenu(crate::ui::views::MenuTab::Songs)]
+        rig.flash_text(),
+        Some("Render complete\nSaved to: My Tracks/New Song.wav")
     );
-    // `Render` stores the format for `Quick Render`; an export is no song edit. `Save` shares nothing.
+    // `Render` stores the format for `Quick Render`; an export is no song edit.
     assert_eq!(rig.app.settings.last_audio_format, ExportFormat::Wav.id());
     assert!(!rig.app.files.modified());
     assert!(!rig.app.history.can_undo());
-    assert_eq!(mem.0.borrow().shares, []);
-}
-
-/// `Send` (#72) saves as `Save` does, through the render page for audio, then shares the file once it is written.
-#[test]
-fn send_renders_as_save_does_then_shares_the_written_file() {
-    let (mut rig, mem) = Rig::exporting();
-    rig.no_device = true;
-    rig.open_dialog();
-    rig.click(dialog().formats[WAV].center());
-    rig.click(dialog().send.center());
-    rig.frame(vec![]);
-    assert!(rig.shows("New Song.wav"), "the render page");
-    rig.click(dialog().render.center());
-    rig.finish_export();
-    assert!(written(&mem, "My Tracks/New Song.wav").is_some());
-    let wav = vec![PathBuf::from("My Tracks/New Song.wav")];
-    assert_eq!(mem.0.borrow().shares, [(wav, "audio/x-wav".to_owned())]);
 }
 
 #[test]
@@ -298,10 +276,7 @@ fn quick_render_renders_the_last_format_with_the_kept_options_and_no_dialog() {
     let decoded = decode(&written(&mem, "My Tracks/Beat.flac").unwrap()).unwrap();
     // Cut: exactly the song's bar (its 2-beat clip rounded up), at the rate of the output the first click opened.
     assert_eq!(decoded.left.len(), 96_000);
-    assert!(matches!(
-        rig.overlays()[..],
-        [Overlay::MainMenu(MenuTab::Project), Overlay::Message { .. }]
-    ));
+    assert_eq!(rig.overlays(), [Overlay::MainMenu(MenuTab::Project)]);
 }
 
 #[test]
@@ -321,7 +296,7 @@ fn a_silent_song_shows_the_song_has_no_sound() {
 }
 
 #[test]
-fn split_writes_each_stem_into_its_folder_with_its_progress_and_says_where() {
+fn split_writes_each_stem_into_its_folder_with_its_progress_and_flashes_the_folder() {
     let (mut rig, mem) = Rig::exporting();
     rig.app.slots.export.page.remainder = Remainder::Cut;
     // A second synth playing the same note, under the same name.
@@ -377,10 +352,11 @@ fn split_writes_each_stem_into_its_folder_with_its_progress_and_says_where() {
         "stems only"
     );
     rig.frame(vec![]);
-    assert!(matches!(
-        &rig.overlays()[..],
-        [Overlay::Message { lines, .. }] if lines[1] == format!("Saved to: {folder}")
-    ));
+    assert_eq!(
+        rig.flash_text(),
+        Some(format!("Render complete\nSaved to: {folder}").as_str())
+    );
+    assert_eq!(rig.overlays(), []);
     assert!(!rig.app.files.modified());
 }
 

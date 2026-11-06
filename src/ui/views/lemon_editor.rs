@@ -68,7 +68,7 @@ pub fn show(
         .fade_in(false)
         .show(&ctx, |ui| {
             ui.allocate_exact_size(screen.size(), Sense::hover());
-            running = lemon_card::show(ui, rect, ch.id, module, plugin, &mut state.card);
+            running = lemon_card::show(ui, rect, ch.id, module, plugin, &mut state.card, m);
             // The busy screen's abort: a `background` disc, the X in `text`.
             let x = filled_circle_button(ui, id.with("close"), disc.center(), disc.width(), bg);
             draw_icon(

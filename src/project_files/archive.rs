@@ -1279,6 +1279,22 @@ mod tests {
         );
     }
 
+    #[test]
+    fn an_unprefixed_sample_pack_keeps_its_nested_folders_on_import() {
+        let archive = zip_of(&[("Drum Pack/Kicks/Acoustic/kick.wav", b"kick")]);
+        let mut files = web("Drum Pack.zip", &archive);
+        open(&mut files);
+        assert_eq!(files.message, lines(&["Import 1 files?"]));
+        let entries = files.importing.take().unwrap();
+        files.import_files(entries);
+        assert_eq!(
+            files
+                .read_user_file(Path::new("My Samples/Drum Pack/Kicks/Acoustic/kick.wav"))
+                .unwrap(),
+            b"kick"
+        );
+    }
+
     /// On disk, an archive that is no single song sorts its files into the user folder's own folders by type, in the
     /// archive's folders, a taken name numbered from 2, and sums up where they went; one with a name that leaves the
     /// folder imports nothing. A DirectWave program takes the audio files of its folder along into `My Instruments`,

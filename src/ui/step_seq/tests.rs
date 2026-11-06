@@ -646,7 +646,7 @@ impl Rig {
                 .frame(egui::Frame::NONE)
                 .show(ctx, |ui| {
                     action = view.show(ui, &cx, song, CH, kit);
-                    view.graph_knob(ui, &cx, SCREEN, egui::Color32::WHITE);
+                    view.graph_knob(ui, &cx, SCREEN, egui::Color32::WHITE, &mut 0.0);
                 });
         });
         self.shapes = output.shapes;
@@ -1046,9 +1046,11 @@ fn with_the_mixer_out_each_rows_strip_is_module_fill() {
     // The strip row is `moduleFill`, so an off strip disc is unseen on it.
     let mut rig = Rig::new(pattern());
     let module = theme_by_id(0).colors.module_fill.to_color32();
+    // The strip row, a device pixel short of its row's bottom edge (the gap the strips' controls end at).
     let strip = |rig: &Rig, row: usize| {
         let (l, header) = (rig.layout(), rig.layout().header(row));
-        Rect::from_x_y_ranges(l.header_right()..=l.column_right(), header.y_range())
+        let row = Rect::from_x_y_ranges(l.header_right()..=l.column_right(), header.y_range());
+        row.with_max_y(row.bottom() - 1.0 / l.ppp)
     };
     assert!(
         !rig.rects(module).contains(&strip(&rig, 0)),
@@ -1123,10 +1125,38 @@ fn level_meters_stand_at_the_headers_right_edge_until_the_mixer_is_fully_out() {
     let [l, r] = meter_bars(header, page, false, [1.0, 0.5], t);
     assert_eq!(l, Rect::from_min_max(pos2(86.0, 48.0), pos2(90.0, 111.0)));
     assert_eq!(r, Rect::from_min_max(pos2(92.0, 79.5), pos2(96.0, 111.0)));
-    // Fully out: horizontal bars at the bottom of the page area, filling from the left.
+    // Fully out: two flat bars, a hairline pair each, in the band the strip controls leave free — the bottom quarter
+    // of the 63 px row — a hairline clear of the row's edge, filling from the left. They never thicken past a
+    // hairline, so on a row this tall the two pairs and the hairline between them take 11.97 of the room's 15.75 and
+    // the rest of the room stays empty.
     let [l, r] = meter_bars(header, page, true, [1.0, 0.5], t);
-    assert_eq!(l, Rect::from_min_max(pos2(96.0, 101.0), pos2(480.0, 105.0)));
-    assert_eq!(r, Rect::from_min_max(pos2(96.0, 107.0), pos2(288.0, 111.0)));
+    let room = page.height() * 0.25;
+    let gap = (room / 8.0).min(t);
+    assert_eq!((l.left(), l.max.x), (96.0, 480.0));
+    assert_eq!((r.left(), r.max.x), (96.0, 288.0));
+    // The lower bar sits a gap above the row's bottom, the upper one a hairline over it, and the two take 5 t.
+    assert!(
+        (r.max.y - (page.bottom() - gap)).abs() < 1e-3,
+        "{}",
+        r.max.y
+    );
+    assert!((l.max.y - (r.top() - t)).abs() < 1e-3, "{l:?} {r:?}");
+    // Each bar is a hairline pair deep.
+    assert!((l.height() - 2.0 * t).abs() < 1e-3 && (r.height() - 2.0 * t).abs() < 1e-3);
+    assert!(
+        (page.bottom() - l.top() - (5.0 * t + gap)).abs() < 1e-3,
+        "{}",
+        l.top()
+    );
+    assert!(5.0 * t + gap <= room + 1e-3);
+    // That is below the layer the strips' controls paint in (the top 75 % of the row): the Solo disc is 0.9 of the
+    // layer's height, so its foot is clear of the bars.
+    let inset = 0.25 * page.height();
+    let layer = Rect::from_x_y_ranges(
+        page.x_range(),
+        (page.top() + inset)..=(page.bottom() - inset),
+    );
+    assert!(!layer.contains(l.center()) && !layer.contains(r.center()));
     // At rest (silence: no meter feed yet) both are empty, either way.
     for full in [false, true] {
         assert!(
@@ -2262,12 +2292,14 @@ fn a_long_press_on_a_hit_selects_it_and_floats_copy_and_delete_over_it() {
     rig.release(at);
     assert_eq!(rig.selection(), [(1, 4)]);
     assert!(rig.actions.is_empty(), "{:?}", rig.actions);
-    // Step-sequencer mode: no `Snap`. The row sits centred above the selected step.
-    let (copy, delete) = (rig.text_at("Copy").unwrap(), rig.text_at("Delete").unwrap());
+    // Step-sequencer mode: no `Snap`. The row, `Copy` `Delete` `Duplicate`, sits centred above the selected step.
+    let [copy, delete, duplicate] =
+        ["Copy", "Delete", "Duplicate"].map(|t| rig.text_at(t).unwrap());
     assert_eq!(rig.text_at("Snap"), None);
     let cell = rig.layout().cell(1, 4);
     assert!(copy.y < cell.top() && delete.y < cell.top());
-    assert!(((copy.x + delete.x) / 2.0 - cell.center().x).abs() < 1.0);
+    assert!(copy.x < delete.x && delete.x < duplicate.x);
+    assert!(((copy.x + duplicate.x) / 2.0 - cell.center().x).abs() < 1.0);
 }
 
 #[test]
@@ -2472,14 +2504,15 @@ fn a_tap_on_a_hit_deletes_it_when_it_alone_is_selected_else_only_deselects() {
     rig.click(snare);
     assert_eq!(rig.selection(), []);
     assert!(rig.actions.is_empty(), "{:?}", rig.actions);
-    // A tap on an empty step while a selection shows only deselects; then it toggles.
+    // A tap on an empty step while a selection shows only deselects; then it toggles. (Clear of the floating row,
+    // which floats over the box's release.)
     rig.boxed(rig.cell(1, 1), rig.cell(2, 5));
-    let empty = rig.cell(3, 7);
+    let empty = rig.cell(3, 0);
     rig.click(empty);
     assert_eq!(rig.selection(), []);
     assert!(rig.actions.is_empty());
     rig.click(empty);
-    assert_eq!(rig.actions, [StepAction::Toggle { pad: 3, step: 7 }]);
+    assert_eq!(rig.actions, [StepAction::Toggle { pad: 3, step: 0 }]);
 }
 
 #[test]
@@ -2523,15 +2556,18 @@ fn a_right_click_deletes_the_hit_under_it_in_one_undo_step_and_on_an_empty_step_
 }
 
 #[test]
-fn copy_duplicates_the_selected_steps_to_the_right_and_selects_the_copies() {
+fn duplicate_copies_the_selected_steps_to_the_right_and_selects_the_copies() {
     let mut rig = Rig::new(pattern());
     // The box from an empty step (a hit's move drags it), over the same hits.
     let (from, to) = (rig.cell(3, 0), rig.cell(0, 4));
     rig.hold(from);
     rig.frame(vec![egui::Event::PointerMoved(to)]);
     rig.release(to);
-    let copy = rig.text_at("Copy").unwrap();
-    rig.click(copy);
+    // `Copy` only fills the hit clipboard; `Duplicate` copies.
+    rig.click(rig.text_at("Copy").unwrap());
+    assert_eq!(rig.actions, []);
+    let duplicate = rig.text_at("Duplicate").unwrap();
+    rig.click(duplicate);
     let cells = vec![(0, 0), (1, 4), (2, 2)];
     assert_eq!(rig.actions, [StepAction::CopySteps { cells }]);
     // Steps 0 to 4 are five steps.
@@ -2544,7 +2580,7 @@ fn copy_duplicates_the_selected_steps_to_the_right_and_selects_the_copies() {
 
 #[test]
 fn copy_fills_the_hit_clipboard_and_a_long_press_or_right_click_on_an_empty_step_pastes_it() {
-    // As in the automation editor, `Copy` also stores the hits; lifted in place on an empty step, a long press shows
+    // As in the automation editor, `Copy` stores the hits (and changes nothing); lifted in place on an empty step, a long press shows
     // `Paste` while the clipboard is set, and its tap lands the first copied step on the step under it, the others
     // keeping their pads and distances, selected.
     let mut rig = Rig::new(pattern());
@@ -2578,17 +2614,7 @@ fn copy_fills_the_hit_clipboard_and_a_long_press_or_right_click_on_an_empty_step
     // Over the Snare on 12.
     assert_eq!(
         rig.hits(),
-        on(&[
-            (0, 0),
-            (2, 2),
-            (1, 4),
-            (0, 5),
-            (2, 7),
-            (0, 8),
-            (1, 9),
-            (2, 10),
-            (1, 12)
-        ])
+        on(&[(0, 0), (2, 2), (1, 4), (0, 8), (2, 10), (1, 12)])
     );
     assert_eq!(rig.selection(), [(0, 8), (1, 12), (2, 10)]);
     assert_eq!(rig.text_at("Paste"), None);
@@ -2649,7 +2675,7 @@ fn the_selection_stays_with_its_clip() {
 #[test]
 fn the_floating_row_hides_on_a_scroll_or_zoom_and_a_tap_on_the_selection_brings_it_back() {
     // The same rule as the playlist and the piano roll: the shared placement, hidden by any scroll or zoom, back after
-    // a release on the selection. At U = 32: a 2-button row is 102.4 × 48, m 6.4.
+    // a release on the selection. At U = 32: the 3-button row (`Copy`, `Delete`, `Duplicate`) is 153.6 × 48, m 6.4.
     let shared = |rig: &Rig, cell: (usize, usize), finger: Pos2| {
         let l = rig.layout();
         let sel = Selection {
@@ -2657,7 +2683,7 @@ fn the_floating_row_hides_on_a_scroll_or_zoom_and_a_tap_on_the_selection_brings_
             one_row: true,
             handles: &[],
         };
-        place_row(&sel, finger, l.grid(), vec2(102.4, 48.0), 6.4, 1.0)
+        place_row(&sel, finger, l.grid(), vec2(3.0 * 51.2, 48.0), 6.4, 1.0)
     };
     let mut rig = Rig::new(pattern());
     rig.kit = twelve();
@@ -2708,7 +2734,7 @@ fn the_floating_row_of_a_box_selection_shows_at_its_release() {
         one_row: false,
         handles: &[],
     };
-    let want = place_row(&sel, to, l.grid(), vec2(102.4, 48.0), 6.4, 1.0);
+    let want = place_row(&sel, to, l.grid(), vec2(3.0 * 51.2, 48.0), 6.4, 1.0);
     assert!(want.is_some());
     assert_eq!(rig.view.row.rect(), want);
     // A second box over the same steps catches a selection with the same bounds: its release shows the row again.
@@ -3499,14 +3525,14 @@ fn a_hit_alone_in_the_selection_is_remembered_and_new_hits_take_its_velocity_and
 }
 
 #[test]
-fn a_lone_copy_is_remembered() {
+fn a_lone_duplicate_is_remembered() {
     let mut rig = Rig::new(odd_hit());
     let at = rig.cell(1, 4);
     rig.hold(at);
     rig.release(at);
     rig.view.remembered = Remembered::default();
-    let copy = rig.text_at("Copy").unwrap();
-    rig.click(copy);
+    let duplicate = rig.text_at("Duplicate").unwrap();
+    rig.click(duplicate);
     assert_eq!(rig.selection(), [(1, 5)]);
     assert_eq!(rig.view.remembered.velocity, 102);
 }

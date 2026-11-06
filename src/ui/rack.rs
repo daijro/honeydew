@@ -2390,7 +2390,18 @@ impl RackPanel {
                 lemon_card::paint(ui, content, state);
                 return edits;
             }
-            let running = lemon_card::show(ui, content, self.channel_id, id, plugin, state);
+            let running = lemon_card::show(ui, content, self.channel_id, id, plugin, state, m);
+            // The editor's `Create automation clip`: the parameter's automation track, as a knob's menu makes it. The
+            // editor's list position is the module's param index less one (`module.params[0]` is not a plugin's).
+            if let Some(index) = state.automate.take() {
+                edits.touch = Some(Touch {
+                    target: AutomationTarget {
+                        instance_id: id,
+                        param: index + 1,
+                    },
+                    pick: Some(CtrlAction::AddAutomationTrack),
+                });
+            }
             self.lemon_wheel |= lemon_card::over(state);
             if running {
                 edits.sample = lemon_card::wants_file(state);
@@ -3185,8 +3196,8 @@ fn common_dialog(
             let rows = layout::layout(&column, content, u);
             let row = |i: u32| layout::rect_of(&rows, i).expect("shown") / ppp;
             // The 12 pt title is taller than its row; it may spill over the dialog's padding, not out of it.
-            // A plugin module by its plugin's name, as its card.
-            dialog_title(&ui.painter_at(rect), cx, row(0), module.title(), text);
+            let title = module_name(module.type_id);
+            dialog_title(&ui.painter_at(rect), cx, row(0), title, text);
             let (mut changed, mut touch) = (Vec::new(), None);
             let linked = panels::cc_links(ui);
             for (&(index, spec), i) in COMMON.iter().zip(1..) {

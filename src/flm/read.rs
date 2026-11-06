@@ -973,8 +973,9 @@ impl Reader {
                     lane.clips.push(clip);
                 }
                 b"DESc" if !seen_desc => seen_desc = true,
-                // A hidden track (`flm::write`).
-                b"HDHd" => lane.hidden = true,
+                // A track an upstream build hid (`flm::write`): this fork has no `Hide track` (nor Settings
+                // `Show hidden tracks` to show one again), so it reads back shown, and saves without it.
+                b"HDHd" => {}
                 _ => self.unknown(&child, &mut lane.file.unknown_chunks)?,
             }
         }

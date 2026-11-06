@@ -210,11 +210,17 @@ impl TimeSig {
     }
 }
 
+/// The project sample rates the PROJECT `Samplerate:` dropdown offers.
+pub const SAMPLE_RATES: [u32; 5] = [22_050, 44_100, 48_000, 88_200, 96_000];
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Song {
     /// `HEAD` song title.
     pub title: String,
     pub tempo_bpm: f64,
+    /// The project's sample rate, one of [`SAMPLE_RATES`]: the preview engine and renders run at it, so what you
+    /// hear live is what the exported file contains.
+    pub sample_rate: u32,
     /// `TDIV`: the subdivision and the beats per bar.
     pub time_sig: TimeSig,
     /// In playlist order (a file's `CHHD` playlist rows). The master channel is always `channels[0]`. A file keeps
@@ -239,6 +245,7 @@ impl Default for Song {
         Self {
             title: String::new(),
             tempo_bpm: 120.0,
+            sample_rate: 44_100,
             time_sig: TimeSig::default(),
             channels: vec![Channel::master()],
             key_root: 0,

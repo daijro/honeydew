@@ -73,25 +73,6 @@ pub fn truncated(
     painter.text(align.pos_in_rect(&rect), align, shown, font, color);
 }
 
-/// [`truncated`] in a heavier stroke (#73: folder names and the folder title): the app's one font has no bold weight,
-/// so the text is drawn twice, the second [`BOLD_SHIFT`] of the font's size to the right.
-pub fn truncated_bold(
-    painter: &Painter,
-    rect: Rect,
-    align: Align2,
-    text: &str,
-    font: FontId,
-    color: Color32,
-    k: usize,
-) {
-    let shift = rect.translate(eframe::egui::vec2(font.size * BOLD_SHIFT, 0.0));
-    truncated(painter, rect, align, text, font.clone(), color, k);
-    truncated(painter, shift, align, text, font, color, k);
-}
-
-/// How far [`truncated_bold`] draws its second stroke to the right, in font sizes.
-const BOLD_SHIFT: f32 = 0.035;
-
 /// What [`truncated`] draws of `text` at `font` in `max_w`: for a label laid out elsewhere (a popup item).
 pub fn truncated_text(painter: &Painter, text: &str, font: FontId, max_w: f32, k: usize) -> String {
     let color = Color32::PLACEHOLDER;

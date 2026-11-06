@@ -272,9 +272,7 @@ fn the_union_has_the_user_librarys_places() {
     let factory = fake(&["Presets/Reverb 2/Hall.flmpst"]);
     let mut user = crate::ui::main_menu::NativeLibrary::at("/home/u/data/My Songs".into());
     let places = user.places();
-    // The bin, Unzipped songs and, as SONGS goes up to the user folder (#73), its fixed folders.
-    let unzipped = Path::new("/home/u/data/Unzipped songs");
-    assert!(places.iter().any(|p| p == unzipped), "{places:?}");
+    assert_eq!(places.len(), 2, "the bin and Unzipped songs");
     let union = Union {
         user: &mut user,
         factory: &factory,
