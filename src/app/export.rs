@@ -5,7 +5,7 @@
 use eframe::egui;
 
 use super::HoneydewApp;
-use crate::project_files::export::{Done, Job, NO_AUDIO_RATE, Split, slice};
+use crate::project_files::export::{Done, Job, Split, slice};
 use crate::sample_cache;
 use crate::ui::views::{Nav, Overlay};
 
@@ -33,7 +33,8 @@ impl HoneydewApp {
         self.audio
             .samples
             .load(&self.song, &sample_cache::reader(&self.files));
-        let rate = self.audio.sample_rate().unwrap_or(NO_AUDIO_RATE);
+        // The project's rate: the same the preview engine runs at, so the render matches what was heard.
+        let rate = self.song.sample_rate;
         let page = self.slots.export.page;
         match Job::new(&self.song, &self.audio.samples, export, page, rate) {
             Ok(job) => {

@@ -12,9 +12,11 @@
 //! - c ← c + 0.4·(t − c), snapping to t once |c − t| < 0.05 (t = 0 or 1); the header column is 3 U + c·12 U wide.
 //!   It is stepped by input time, the 0.4 counted per 60 Hz frame, 0.6^(60·dt) left after dt seconds.
 //! - Collapsed or animating, the meters are two thin vertical bars at the header's right edge; fully out they are
-//!   horizontal at the bottom of the page area. Each bar is 2 hairlines thick, 1 apart, in the 5 hairlines the
-//!   header's text leaves; L then R; the header's text colour on it, the channel colour under the page. At rest
-//!   (no level feed) they are empty.
+//!   horizontal in the quarter the strip's pages leave under them (those take the row's top 75 %), a hairline clear of
+//!   the row's edge: no disc or slider thumb ever sits on a bar. Each bar is 2 hairlines thick, 1 apart, in
+//!   the 5 hairlines the header's text leaves; L then R; the header's text colour on it, the channel colour under the
+//!   page; the bars thin together to fit that band in a short row, and their ends are rounded by half a bar, so they
+//!   read as meters rather than as more slider tracks. At rest (no level feed) they are empty.
 //! - The current row's header is filled with the channel colour (texts in `moduleFill`); on press it grows by up to
 //!   10 px and wobbles on release. Other headers have no fill and channel-coloured texts. The growth is the arc
 //!   slider's touch pulse applied to the fill, 10 px · f wider and taller about its centre; the texts stay.
@@ -113,8 +115,8 @@ use std::collections::{BTreeSet, HashMap};
 use eframe::egui::text::{CCursor, CCursorRange};
 use eframe::egui::text_edit::TextEditState;
 use eframe::egui::{
-    self, Align2, Area, Color32, Context, Id, Key, Order, Painter, Pos2, Rangef, Rect, Response,
-    Sense, Ui, pos2, vec2,
+    self, Align2, Area, Color32, Context, CornerRadius, Id, Key, Order, Painter, Pos2, Rangef,
+    Rect, Response, Sense, Ui, pos2, vec2,
 };
 
 use crate::icons::{self, IconId};
@@ -125,7 +127,7 @@ use crate::ui::clips::{
     FloatingRow, GridView, Marquee, Selection, TimeAxis, hold_square, paint_marquee, paint_pulse,
 };
 use crate::ui::drum_grid::{self, ClipView};
-use crate::ui::drums::{PAD_COUNT, header_names, meter_level};
+use crate::ui::drums::{CONTROLS_H, PAD_COUNT, header_names, meter_level};
 use crate::ui::edit_keys::{self, EditKey};
 use crate::ui::gesture;
 use crate::ui::graph_lane::{self, GraphLane, Prop};
@@ -168,7 +170,7 @@ const NEW_BEAT_U: f32 = 3.0;
 pub(crate) const STEP_POP: f32 = 0.9;
 const POP_FLOOR: f32 = 0.01;
 /// The floating buttons over the selected steps (step-sequencer mode).
-const STEP_OPS: [&str; 2] = ["Copy", "Delete"];
+const STEP_OPS: [&str; 3] = ["Copy", "Delete", "Duplicate"];
 /// The `Set Name` box.
 const PROMPT_W: f32 = 8.0;
 const PROMPT_ROW_H: f32 = 1.25;
@@ -681,7 +683,8 @@ fn header_pulse(ui: &Ui, id: Id, down: bool) -> f32 {
 
 /// The row headers in `l`, with ids from `id`: pad name over sample name. The current row's (`selected`) is filled with
 /// the channel colour `ink` and its texts are `moduleFill`; it grows while pressed (`press`), over the grid. The others
-/// have no fill and channel-coloured texts. The mixer's strip row right of each header is `moduleFill`. The level
+/// have no fill and channel-coloured texts. The mixer's strip row right of each header is `moduleFill`, a device pixel
+/// short of the row's bottom edge (the strips' controls end there too, so the rows read as separate bands). The level
 /// meters show `levels` (per row, its peaks L and R) and follow the drum mixer's `fold`. A tap on the current row's
 /// header folds the drum mixer in or out; on another's, makes it current. Returns the row whose menu a long press (or
 /// right click) asked for, and where.
@@ -707,9 +710,12 @@ pub(crate) fn row_headers(
         let mut response = ui.interact(header, id.with(("row", row)), Sense::click());
         let long = gesture::long_press(ui, &mut response, m);
         // The strip row right of the header, under the mixer's page: `moduleFill`, on which an off strip disc is unseen.
+        // It ends a device pixel short, where the strips' own controls already do: the grid shows through, so each
+        // row's strip reads as its own band instead of one block of rows running together.
         let page = Rect::from_x_y_ranges(l.header_right()..=l.column_right(), header.y_range());
-        if page.is_positive() {
-            painter.rect_filled(page, 0.0, module_fill);
+        let band = page.with_max_y(page.bottom() - 1.0 / l.ppp);
+        if band.is_positive() {
+            painter.rect_filled(band, 0.0, module_fill);
         }
         if selected {
             *press = response.is_pointer_button_down_on();
@@ -727,13 +733,18 @@ pub(crate) fn row_headers(
         // The drum mixer strip's header lines, kept to the header.
         let clip = painter.with_clip_rect(header);
         header_names(&clip, m, header, name, sample, color);
-        // The level meters: vertical at the header's edge, horizontal under the page once the mixer is out (along
-        // the bottom 5 hairlines of the row, under the strip controls' 75 % high layer).
+        // The level meters: vertical at the header's edge, horizontal under the page once the mixer is out (in the
+        // band under the strip controls' 75 % high layer, a hairline clear of the row's edge, so they never reach a
+        // disc or a slider's thumb).
         let full = fold.c == 1.0;
         let level = levels.get(row).map_or([0.0; 2], |p| p.map(meter_level));
         for bar in meter_bars(header, page, full, level, m.t()) {
             if bar.is_positive() {
-                painter.rect_filled(bar, 0.0, if full { ink } else { color });
+                // Ends rounded by half the bar's own thickness: a pill, so a bar reads as a meter and never as
+                // another slider track's end.
+                let thick = if full { bar.height() } else { bar.width() };
+                let ends = CornerRadius::from(0.5 * thick);
+                painter.rect_filled(bar, ends, if full { ink } else { color });
             }
         }
         // A tap on the current row's header folds the drum mixer in or out; on another's, makes it current.
@@ -782,25 +793,41 @@ pub(crate) fn add_drum(
 }
 
 /// A row's two level-meter bars (L, R) at `levels`, `t` being the hairline (2 hairlines thick, 1 apart).
-/// `full` (the mixer fully out): horizontal along the bottom of the `page` area, filling from the left. Otherwise two
-/// thin vertical bars at the `header`'s right edge, in the 5 hairlines its text leaves, filling from the bottom.
+/// `full` (the mixer fully out): horizontal in the quarter the strip's controls leave under them (they take the top
+/// `CONTROLS_H` % of the row), a hairline clear of the row's bottom edge, filling from the left; the bars thin together
+/// to fit that quarter, so a disc or a slider's thumb never sits on one. Otherwise two thin vertical bars at the
+/// `header`'s right edge, in the 5 hairlines its text leaves, filling from the bottom.
 fn meter_bars(header: Rect, page: Rect, full: bool, levels: [f32; 2], t: f32) -> [Rect; 2] {
     let level = |i: usize| levels[i].clamp(0.0, 1.0);
+    // The band under the controls: the strip's pages take the top `CONTROLS_H` % of the row, so the rest is the
+    // meters'. The hairline the bars keep clear of the row's bottom edge is the gap below them.
+    let room = (page.height() * (100.0 - CONTROLS_H) / 100.0).max(0.0);
+    let gap = (room / 8.0).min(t);
     // Bar i's band: L 5 to 3 hairlines from the edge, R the last 2.
-    let band = |edge: f32, i: usize| {
+    let band = |edge: f32, t: f32, i: usize| {
         let far = edge - if i == 0 { 3.0 * t } else { 0.0 };
         Rangef::new(far - 2.0 * t, far)
+    };
+    let thickness = if full {
+        ((room - gap) / 5.0).clamp(0.0, t)
+    } else {
+        t
+    };
+    let edge = if full {
+        page.bottom() - gap
+    } else {
+        header.bottom()
     };
     std::array::from_fn(|i| {
         if full {
             let x = Rangef::new(page.left(), page.left() + level(i) * page.width());
-            Rect::from_x_y_ranges(x, band(page.bottom(), i))
+            Rect::from_x_y_ranges(x, band(edge, thickness, i))
         } else {
             let y = Rangef::new(
                 header.bottom() - level(i) * header.height(),
                 header.bottom(),
             );
-            Rect::from_x_y_ranges(band(header.right(), i), y)
+            Rect::from_x_y_ranges(band(header.right(), thickness, i), y)
         }
     })
 }
@@ -1028,7 +1055,10 @@ impl StepSeqView {
         };
         let live = l.x0 + (drawn / BEAT) as f32 * l.step_w * d as f32;
         let line_x = (self.knob).line_x(ui, m, &at, song_end, live);
-        let bottom = (l.row_top() + rows as f32 * l.pitch).clamp(l.top, l.rect.bottom());
+        // `max` then `min`, not `clamp`: a screen too short for the lane can leave its rect ending above where it
+        // starts, and `clamp` panics with min above max — on Android a panic in the app thread leaves the last frame
+        // up, which is a freeze.
+        let bottom = (l.row_top() + rows as f32 * l.pitch).clamp(l.top, l.rect.bottom().max(l.top));
         let column = Rect::everything_right_of(l.column_right());
         let line = painter.with_clip_rect(painter.clip_rect().intersect(column));
         let span = Rect::from_x_y_ranges(l.grid().x_range(), l.top..=bottom);
@@ -1080,17 +1110,19 @@ impl StepSeqView {
         self.row.covered = self.covered;
         if let Some((i, _)) = self.row.show(ui, "step_button", sel, shown, &STEP_OPS, cx) {
             let cells: Vec<_> = self.selection.iter().copied().collect();
-            if i == 0 {
-                let chosen = |e: &&Event| edit::cell_of(e, sig).is_some_and(|c| cells.contains(&c));
-                let hits = clip.map_or_else(Vec::new, |c| {
-                    c.events.iter().filter(chosen).copied().collect()
-                });
-                set_hit_clipboard(ui.ctx(), hits);
+            match STEP_OPS[i] {
+                // Copy only fills the hit clipboard.
+                "Copy" => {
+                    let chosen =
+                        |e: &&Event| edit::cell_of(e, sig).is_some_and(|c| cells.contains(&c));
+                    let hits = clip.map_or_else(Vec::new, |c| {
+                        c.events.iter().filter(chosen).copied().collect()
+                    });
+                    set_hit_clipboard(ui.ctx(), hits);
+                }
+                "Duplicate" => action = Some(StepAction::CopySteps { cells }),
+                _ => action = Some(StepAction::DeleteSteps { cells }),
             }
-            action = Some(match i {
-                0 => StepAction::CopySteps { cells },
-                _ => StepAction::DeleteSteps { cells },
-            });
         }
         if hit_clipboard(ui.ctx()).is_empty() {
             self.paste = None;
@@ -1268,14 +1300,21 @@ impl StepSeqView {
         }
     }
 
-    /// The graph lane's tab for the view `rect`, its icon in the channel colour `ink`: centred 1.4 U from its left,
-    /// over the lane's top or the view's bottom edge. The host calls it after everything it draws over the rows (the
-    /// drum mixer's strips), so that the tab is on top.
-    pub fn graph_knob(&mut self, ui: &mut Ui, cx: &UiCtx, rect: Rect, ink: Color32) {
+    /// The graph lane's tab for the view `rect`, its icon in the channel colour `ink`: centred 1.4 U from its left plus
+    /// the sideways offset `shift` a drag gave it, over the lane's top or the view's bottom edge. The host calls it
+    /// after everything it draws over the rows (the drum mixer's strips), so that the tab is on top.
+    pub fn graph_knob(
+        &mut self,
+        ui: &mut Ui,
+        cx: &UiCtx,
+        rect: Rect,
+        ink: Color32,
+        shift: &mut f32,
+    ) {
         let m = cx.m;
         let below = (rect, rect.top() + timeline::ruler_h(m));
         let x = rect.left() + m.u(GRAPH_KNOB_X);
-        (self.graph).tab_below(ui, cx, id().with("graph tab"), below, x, ink);
+        (self.graph).tab_below(ui, cx, id().with("graph tab"), below, (x, shift), ink);
     }
 
     /// The graph lane in the strip `strip`: its items in the header column, the mixer's room left to the host (the

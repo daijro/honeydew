@@ -1,7 +1,7 @@
 //! Playlist clips. Each track row shows its lane's clips as [`paint_clip`] draws them, rounded boxes: the current clip
 //! has the light outline. The selection (one clip, or a marquee's group) is one pulsing `text` box with its capsule
 //! handles (start, end, and a bar under an audio clip that does not loop, [`paint_handle`]) and the floating `Copy`,
-//! `Duplicate`, `Delete`, `Snap`, `Edit`, `More...` above it: `Copy` fills the clipboard, `Duplicate` (#68)
+//! `Duplicate`, `Snap`, `Edit`, `Delete`, `More...` above it: `Copy` fills the clipboard, `Duplicate` (#68)
 //! puts a copy right after the selection. Dragging a clip moves it, dragging a handle resizes it (each clip of a
 //! group). Positions snap to the ruler's Snap unit (its mode, Auto by the zoom); with Snap off, drags go to whole ticks
 //! while the insert menu, `Duplicate` and `Snap` keep the mode's unit. Clips drag between tracks of any channel by lane
@@ -450,19 +450,20 @@ impl Drag {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ClipOp {
     Copy,
-    Duplicate,
     Delete,
     Snap,
     Edit,
+    Duplicate,
     More,
 }
 
+/// Copy and Delete first, Duplicate last before `More...` (as every editor's row).
 const OPS: [(ClipOp, &str); 6] = [
     (ClipOp::Copy, "Copy"),
-    (ClipOp::Duplicate, "Duplicate"),
     (ClipOp::Delete, "Delete"),
     (ClipOp::Snap, "Snap"),
     (ClipOp::Edit, "Edit"),
+    (ClipOp::Duplicate, "Duplicate"),
     (ClipOp::More, "More..."),
 ];
 
@@ -1210,7 +1211,7 @@ impl Clips {
     /// The insert menu while it shows ([`insert::show`]): `New Clip` and `Paste` over its track's row at its snapped
     /// tick, the insert cursor across the row. `New Clip` adds a one-bar clip there on a note or drum track
     /// ([`add_clip`]), the current, selected clip; on an audio track it opens the sample picker, whose first pick makes
-    /// the clip there. An automation track takes no new clip, so there it is dimmed. `Paste` pastes the clip clipboard
+    /// the clip there (an automation track's too). `Paste` pastes the clip clipboard
     /// there ([`paste_clips`]), selecting the copies; it is dimmed while the clipboard is empty. Any other press hides
     /// the menu, as does a track that went. Returns whether this frame's press is on it, and the picker to open.
     #[allow(clippy::too_many_arguments)]
@@ -1236,7 +1237,7 @@ impl Clips {
             .map(|l| l.kind);
         let new = matches!(
             kind,
-            Some(LaneKind::Notes | LaneKind::Drums | LaneKind::Audio)
+            Some(LaneKind::Notes | LaneKind::Drums | LaneKind::Audio | LaneKind::Automation)
         );
         let items = [("New Clip", new), ("Paste", !self.clipboard.is_empty())];
         let at = (axis.x(tick), row.y_range(), row.y_range());
@@ -1571,7 +1572,9 @@ impl Clips {
         let targets = self.targets();
         let &first = targets.first()?;
         match OPS[i].0 {
+            // Copy only puts the clips on the clipboard (`paste` adds them where the cursor is).
             ClipOp::Copy => self.copy_selection(app.song),
+            // Duplicate adds a copy of each clip right after it, and selects the copies.
             ClipOp::Duplicate => {
                 let copies = copy_clips(app.song, &targets, snap);
                 self.set_selection(copies);

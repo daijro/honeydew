@@ -398,6 +398,8 @@ pub const ROWS: &[Row] = &[
     (49, 2, r#"Velocity"#, 0.0, r#"0%"#, r#"0…100 (v×100)"#),
     (49, 3, r#"Pan"#, 0.0, r#"0%"#, r#"0…100 (v×100)"#),
     (49, 4, r#"Gate"#, 1.0, r#"100%"#, r#"0…100 (v×100)"#),
+    (49, 5, r#"Time"#, 0.0, r#"0%"#, r#"0…100 (v×100) of a 16th of a beat"#),
+    (49, 6, r#"Shift"#, 0.5, r#"Even"#, r#"100% early … Even … 100% late"#),
     (50, 0, r#"Enable"#, 1.0, r#"On"#, r#"options: Off, On"#),
     (50, 1, r#"Key"#, 0.0, r#"C"#, r#"C … F# … B"#),
     (50, 2, r#"Scale"#, 0.0, r#"Major"#, r#"options: Major, Major Bebop, Major Bulgarian, Major Pentatonic, Major Persian, Major Polymode, Lydian, Mixolydian, Phrygian Dominant, Minor Harmonic, Minor Hungarian, Minor Melodic, Minor Natural, Minor Neapolitan, Minor Pentatonic, Minor Polymode, Minor Romanian, Dorian, Phrygian, Locrian, Chromatic, Arabic, Blues, Diminished, Dominant Bebop, Egyptian, Enigmatic, Hirajoshi, Iwato, Japanese Insen, Locrian Super, Neapolitan, Whole Tone, Custom"#),

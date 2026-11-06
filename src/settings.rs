@@ -61,8 +61,13 @@ pub fn migrate_legacy_keys(storage: &mut dyn eframe::Storage) {
 /// driver modes `Standard` and `Multitrack` instead.
 #[cfg(desktop)]
 pub const SOUND_MODES: [(u8, &str); 2] = [(0, "STANDARD"), (1, "MULTITRACK")];
+/// FL Studio Mobile's Android `Sound mode:` items, in its menu order: `FAST` (smallest buffer, lowest latency, most
+/// CPU/dropout risk), `SAFE` and `ULTRASAFE` (larger buffers, fewer glitches, more latency), and `NATIVE` (the
+/// device/OS default, recommended on Android 9+). A mode changes only the output buffering and latency — the
+/// rendered audio is exactly the same in every mode.
 #[cfg(not(desktop))]
-pub const SOUND_MODES: [(u8, &str); 1] = [(3, "NATIVE")];
+pub const SOUND_MODES: [(u8, &str); 4] =
+    [(1, "FAST"), (0, "SAFE"), (2, "ULTRASAFE"), (3, "NATIVE")];
 
 /// Buffer-size slider positions. Zero keeps the audio device's native/default buffer;
 /// positive values are targets that the backend clamps to the device's supported range.
@@ -205,7 +210,8 @@ pub struct Settings {
     /// `Continuous scrolling during playback`.
     #[serde(rename = "continuousScroll")]
     pub continuous_scroll: bool,
-    /// `Show hidden tracks` (our own key): the playlist shows the tracks `Hide track` hid, dimmed. Off by default.
+    /// `Show hidden tracks` (our own key): the playlist shows the tracks `Hide track` hid, dimmed. Off by default. The
+    /// fork has neither the row nor `Hide track`, and a song reads its hidden tracks back shown (`flm::read`).
     #[serde(rename = "showHiddenTracks")]
     pub show_hidden_tracks: bool,
     /// `Show CPU and RAM meters`.
@@ -289,6 +295,22 @@ pub struct Settings {
     /// `Screen orientation:` (our own key; #41, Android only): an index into [`ORIENTATIONS`], `Auto` (0) by default.
     #[serde(rename = "screenOrientation")]
     pub screen_orientation: u8,
+    /// The bottom editors' close ribbon's place (our own key): the sideways offset a drag gave it, in U from where it
+    /// opens (left of the logo, else in from the editor's right edge), kept over restarts. 0 by default; the drag
+    /// keeps it inside the editor's band ([`crate::ui::split::ribbon`]).
+    #[serde(rename = "editorRibbonShift")]
+    pub editor_ribbon_shift: f32,
+    /// The channel rack's edge tab's place (our own key): the offset a drag gave it, in U from where it opens
+    /// (centred on the content area), kept over restarts. 0 by default; the drag keeps the tab inside the content
+    /// area ([`crate::ui::main_screen::MainScreen::corner_buttons`]).
+    #[serde(rename = "rackTabShift")]
+    pub rack_tab_shift: f32,
+    /// The editors' graph-lane tab's place (our own key): the sideways offset a drag gave it, in U from where each
+    /// editor opens it (the piano roll's key column's right edge, the drum editors' 1.4 U in from the left), kept over
+    /// restarts. 0 by default; the drag keeps the tab inside the editor
+    /// ([`crate::ui::graph_lane::GraphLane::tab_below`]).
+    #[serde(rename = "graphTabShift")]
+    pub graph_tab_shift: f32,
     /// The song file open at the last exit (our own key; #58), which the next start opens again; ""
     /// for none.
     #[serde(rename = "lastSong")]
@@ -315,6 +337,10 @@ pub struct Settings {
     /// over a metered network. Off by default: it waits for Wi-Fi.
     #[serde(rename = "soundsOverMobileData")]
     pub sounds_mobile_data: bool,
+    /// Whether the first-open question about downloading the sound library was asked (our own key; #66, Android):
+    /// the base APK asks once, then leaves the download to UPDATES and Settings `Install sound library…`.
+    #[serde(rename = "soundsAsked")]
+    pub sounds_asked: bool,
 }
 
 /// `Project version size limit:`'s items, in MB.
@@ -377,6 +403,9 @@ impl Default for Settings {
             pan_snap: ValueSnap::OFF,
             sample_memory_limit: 0,
             screen_orientation: 0,
+            editor_ribbon_shift: 0.0,
+            rack_tab_shift: 0.0,
+            graph_tab_shift: 0.0,
             last_song: String::new(),
             interrupted_loading: false,
             grid_size: GridSize::Auto,
@@ -384,6 +413,7 @@ impl Default for Settings {
             audio_input: String::new(),
             check_updates: true,
             sounds_mobile_data: false,
+            sounds_asked: false,
         }
     }
 }
@@ -450,6 +480,16 @@ impl Settings {
         ] {
             if !(h.is_finite() && *h >= 0.0) {
                 *h = default;
+            }
+        }
+        // A hand-moved control's place must be a number of U; a corrupt one opens at its default.
+        for (shift, default) in [
+            (&mut s.editor_ribbon_shift, d.editor_ribbon_shift),
+            (&mut s.rack_tab_shift, d.rack_tab_shift),
+            (&mut s.graph_tab_shift, d.graph_tab_shift),
+        ] {
+            if !shift.is_finite() {
+                *shift = default;
             }
         }
         if !ExportFormat::from_id(s.last_audio_format).is_some_and(ExportFormat::is_audio) {
@@ -800,6 +840,9 @@ mod tests {
             },
             sample_memory_limit: 3,
             screen_orientation: 2,
+            editor_ribbon_shift: -1.5,
+            rack_tab_shift: 2.25,
+            graph_tab_shift: -3.5,
             last_song: "/songs/Beat.flm".into(),
             interrupted_loading: true,
             grid_size: GridSize::Note(16, true),
@@ -807,6 +850,7 @@ mod tests {
             audio_input: "USB".into(),
             check_updates: !d.check_updates,
             sounds_mobile_data: !d.sounds_mobile_data,
+            sounds_asked: !d.sounds_asked,
         }
     }
 
@@ -1011,9 +1055,11 @@ mod tests {
                 "checkForUpdates",
                 "continuousScroll",
                 "demoSongsVersion",
+                "editorRibbonShift",
                 "enableAnimations",
                 "enableInertia",
                 "ghostnotes",
+                "graphTabShift",
                 "gridSize",
                 "importNoticeAccepted",
                 "interruptedWhenLoadingSong",
@@ -1034,6 +1080,7 @@ mod tests {
                 "pluginFolders",
                 "preferredKbdSizeCells",
                 "projectVersionSizeLimit",
+                "rackTabShift",
                 "recMetronome",
                 "reccount",
                 "recentKbdSizeCells",

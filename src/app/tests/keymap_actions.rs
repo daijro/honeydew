@@ -530,28 +530,3 @@ fn shift_ctrl_t_mid_drag_closes_the_tempo_dialog_and_ends_the_drag_as_one_edit()
     rig.frame(z(Modifiers::SHIFT));
     assert_eq!(rig.app.song.tempo_bpm, 120.25);
 }
-
-/// Android's Back (#72: Android 16 left the app with a message open) closes the topmost message first, then the menu
-/// under it, as Escape does; with nothing open it closes nothing (Android then puts the app in the background).
-#[test]
-fn back_closes_the_topmost_message_then_the_menu_under_it() {
-    let mut rig = rig();
-    rig.app
-        .navigate(Nav::Open(Overlay::MainMenu(MenuTab::Project)));
-    rig.app.navigate(Nav::Open(Overlay::Message {
-        tag: "back",
-        lines: vec!["A message".into()],
-        confirm: None,
-        extra: None,
-    }));
-    rig.frame(vec![]);
-    rig.frame(vec![]);
-    rig.key(Key::BrowserBack, NONE);
-    rig.frame(vec![]);
-    assert_eq!(rig.overlays(), [Overlay::MainMenu(MenuTab::Project)]);
-    rig.key(Key::BrowserBack, NONE);
-    rig.frame(vec![]);
-    assert_eq!(rig.overlays(), []);
-    rig.key(Key::BrowserBack, NONE);
-    assert_eq!(rig.overlays(), []);
-}

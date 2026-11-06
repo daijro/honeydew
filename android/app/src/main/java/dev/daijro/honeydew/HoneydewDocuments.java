@@ -45,19 +45,13 @@ public final class HoneydewDocuments extends DocumentsProvider {
 
     // The folder at `path` as a document (`HoneydewActivity.showFolder`); the root, when it is not in the user folder.
     static Uri folderUri(Context context, String path) {
-        Uri uri = documentUri(context, path);
-        return uri != null ? uri : DocumentsContract.buildDocumentUri(authority(context), ROOT);
-    }
-
-    // The file or folder at `path` as a document (and `HoneydewActivity.share`'s file); null when it is not in the user
-    // folder.
-    static Uri documentUri(Context context, String path) {
+        String id = ROOT;
         try {
-            File root = userFolder(context), file = new File(path).getCanonicalFile();
-            if (inside(root, file)) return DocumentsContract.buildDocumentUri(authority(context), id(root, file));
+            File root = userFolder(context), folder = new File(path).getCanonicalFile();
+            if (inside(root, folder)) id = id(root, folder);
         } catch (IOException ignored) {
         }
-        return null;
+        return DocumentsContract.buildDocumentUri(authority(context), id);
     }
 
     @Override

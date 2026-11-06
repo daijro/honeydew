@@ -593,3 +593,31 @@ fn trim_keeps_only_the_range_from_zero() {
     trim(&mut pts, 0, 512, 512);
     assert_eq!(pts, ramp());
 }
+
+#[test]
+fn the_floating_duplicate_puts_the_copies_right_after_the_selection_by_its_span_on_the_grid() {
+    // A lone point: its copy a grid step on, the others where they were; the copy is the selection.
+    let (new, sel) = duplicate_selected(&ramp(), &[false, true, false], 128.0).unwrap();
+    assert_eq!(new, [pt(0, 0), pt(256, 1000), pt(384, 1000), pt(512, 3000)]);
+    assert_eq!(sel, [false, false, true, false]);
+    // A span on the grid repeats right where it ends, a jump at 256 back to its first value; each copy goes after the
+    // points at its tick.
+    let (new, sel) = duplicate_selected(&ramp(), &[true, true, false], 128.0).unwrap();
+    assert_eq!(
+        new,
+        [
+            pt(0, 0),
+            pt(256, 1000),
+            pt(256, 0),
+            pt(512, 3000),
+            pt(512, 1000)
+        ]
+    );
+    assert_eq!(sel, [false, false, true, false, true]);
+    // Off the grid the span rounds up: 100 ticks to two 96-tick steps.
+    let pts = [pt(0, 0), pt(100, 1000)];
+    let (new, _) = duplicate_selected(&pts, &[true, true], 96.0).unwrap();
+    assert_eq!(new, [pt(0, 0), pt(100, 1000), pt(192, 0), pt(292, 1000)]);
+    // Nothing selected, nothing to copy.
+    assert_eq!(duplicate_selected(&ramp(), &[false; 3], 128.0), None);
+}

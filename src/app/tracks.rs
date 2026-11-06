@@ -373,14 +373,6 @@ impl HoneydewApp {
             }
             // Disabled in the menu (see `TrackOp`).
             TrackOp::SyncAllSamples => {}
-            // The playlist lets go of a selected clip that no longer shows (`Clips::show`); the audio never reads it:
-            // an undo step with no rebuild.
-            TrackOp::ToggleHidden => {
-                if let Some(l) = ch.lanes.get_mut(lane) {
-                    l.hidden = !l.hidden;
-                    self.song_edited(SongEdit::Param, tick);
-                }
-            }
         }
     }
 
