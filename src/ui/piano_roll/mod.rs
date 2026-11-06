@@ -142,7 +142,7 @@ use crate::ui::drum_grid::edit::{MARK_GAP, grid_lines, mark_spacing};
 use crate::ui::edit_keys::{self, EditKey};
 use crate::ui::graph_lane::{self, GraphLane, Prop};
 use crate::ui::insert;
-use crate::ui::keyboard::octave_label;
+use crate::ui::keyboard::{key_name, octave_label};
 use crate::ui::popup::{self, PopupItem};
 use crate::ui::region::{self, RegionOp, TimeRange};
 use crate::ui::scroller::{self, Axis, Scroller, X, Y, Zones};
@@ -253,6 +253,8 @@ pub struct RollOptions {
     pub ghost_notes: bool,
     /// Setting "Set middle C to C4" (the C labels).
     pub middle_c_is_c4: bool,
+    /// Setting "Show key names on keyboard and piano roll".
+    pub key_names: bool,
     /// The transport's song tick, playing or stopped (every editor's playhead); 0 without an output.
     pub playhead: u64,
     /// How far past `playhead` the playhead is drawn ([`crate::audio_link::AudioLink::playhead_lead`]): the line, the
@@ -784,7 +786,7 @@ impl PianoRoll {
             &ui.painter_at(keys),
             keys,
             &g,
-            (opts.middle_c_is_c4, color),
+            (opts.middle_c_is_c4, opts.key_names, color),
             (&rows, &self.key_press),
             cx,
         );
@@ -2791,7 +2793,7 @@ fn paint_keys(
     painter: &egui::Painter,
     keys: Rect,
     g: &Geom,
-    (middle_c_is_c4, color): (bool, Rgba),
+    (middle_c_is_c4, key_names, color): (bool, bool, Rgba),
     (rows, press): (&Rows, &[f32; 128]),
     cx: &UiCtx,
 ) {
@@ -2819,14 +2821,22 @@ fn paint_keys(
     let bar = (m.u_px() * ROOT_BAR).ceil() * px;
     let pts = LABEL_SHARE * g.row_h / m.u(1.0) * 16.0;
     let font = (pts >= LABEL_PT[0]).then(|| m.font_id_pt(pts.min(LABEL_PT[1])));
-    for key in shown.filter(|k| k % 12 == 0) {
+    for key in shown.filter(|k| key_names || k % 12 == 0) {
         let r = row(key);
-        painter.rect_filled(r.with_max_x(r.left() + bar), 0.0, color.to_color32());
+        if key % 12 == 0 {
+            painter.rect_filled(r.with_max_x(r.left() + bar), 0.0, color.to_color32());
+        }
         if let Some(font) = &font {
+            // With `Show key names` on, every row's name, the C rows' with their octave; else the C octave labels.
+            let text = if key_names {
+                key_name(key, key % 12 == 0, middle_c_is_c4)
+            } else {
+                octave_label(key, middle_c_is_c4)
+            };
             painter.text(
                 pos2(r.left() + bar + m.u(LABEL_GAP), r.center().y),
                 Align2::LEFT_CENTER,
-                octave_label(key, middle_c_is_c4),
+                text,
                 font.clone(),
                 c.black_key_disabled.to_color32(),
             );
