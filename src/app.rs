@@ -182,6 +182,9 @@ pub struct HoneydewApp {
     hidden: bool,
     /// A message, popup or panel was open at the end of the last frame: Android's Back closes it ([`Self::back`]).
     back_closes: bool,
+    /// The first-open sound-library question was shown: its answer is polled until it is taken
+    /// ([`Self::updates`]).
+    sounds_ask_open: bool,
     /// Debug view of the whole icon set, toggled with F2.
     #[cfg(debug_assertions)]
     show_icon_sheet: bool,
@@ -308,6 +311,7 @@ impl Default for HoneydewApp {
             bar_jump: None,
             hidden: false,
             back_closes: false,
+            sounds_ask_open: false,
             #[cfg(debug_assertions)]
             show_icon_sheet: false,
             files: ProjectFiles::default(),

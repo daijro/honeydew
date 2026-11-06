@@ -21,7 +21,7 @@
 //!   while the link is empty, and the `Lock metadata forever` button hides.
 //! - `Open` shows whenever the link is non-empty, locked or not.
 
-use eframe::egui::{Align2, ComboBox, Id, Rect, TextEdit, Ui, pos2, vec2};
+use eframe::egui::{Align2, Id, Pos2, Rect, TextEdit, Ui, pos2, vec2};
 
 use super::{
     Circle, CircleStyle, MainMenuAction, PAD, circle_button, light_button, scroll, text_field,
@@ -29,6 +29,7 @@ use super::{
 use crate::metrics::FontSize;
 use crate::ui::UiCtx;
 use crate::ui::performance::{self, Performance};
+use crate::ui::popup::{self, PopupItem};
 use crate::ui::scroller::Scroller;
 use crate::ui::widgets::text_label as label;
 
@@ -267,6 +268,8 @@ pub(super) struct ProjectTab {
     content_h: f32,
     /// The Performance block is to be scrolled into view ([`Self::show_performance`]).
     scroll_to_performance: bool,
+    /// The `Samplerate:` dropdown is open, centred here.
+    rate_popup: Option<Pos2>,
 }
 
 impl ProjectTab {
@@ -397,7 +400,7 @@ impl ProjectTab {
         let rows = rows
             .into_iter()
             .filter(|(name, _)| !(locked && hidden && time_row(name)));
-        let mut rate = info.sample_rate.unwrap_or(44_100);
+        let rate = info.sample_rate.unwrap_or(44_100);
         for (name, value) in rows {
             let row = band(INFO_ROW_H);
             let (left, right) = row.split_left_right_at_x(value_x);
@@ -449,19 +452,9 @@ impl ProjectTab {
                     }
                 }
                 "Samplerate:" => {
-                    ComboBox::from_id_salt(id.with("sample_rate"))
-                        .selected_text(format!("{} Hz", thousands(rate.into())))
-                        .show_ui(ui, |ui| {
-                            for &r in &crate::song::SAMPLE_RATES {
-                                ui.selectable_value(
-                                    &mut rate,
-                                    r,
-                                    format!("{} Hz", thousands(r.into())),
-                                );
-                            }
-                        });
-                    if rate != info.sample_rate.unwrap_or(0) {
-                        action = Some(MainMenuAction::SetSampleRate(rate));
+                    let caption = format!("{} Hz", thousands(rate.into()));
+                    if light_button(ui, cx, id.with("sample_rate"), right, &caption, true) {
+                        self.rate_popup = Some(right.center());
                     }
                 }
                 "Tempo:" => {
@@ -601,6 +594,33 @@ impl ProjectTab {
             ui.ctx().request_repaint();
         }
         ui.set_clip_rect(outer_clip);
+        // The `Samplerate:` dropdown, over everything.
+        if let Some(at) = self.rate_popup {
+            let items: Vec<PopupItem<u32>> = crate::song::SAMPLE_RATES
+                .iter()
+                .enumerate()
+                .map(|(i, &r)| PopupItem {
+                    current: r == rate,
+                    ..PopupItem::new(r, 0, i, format!("{} Hz", thousands(r.into())))
+                })
+                .collect();
+            let result = popup::show(
+                &ui.ctx().clone(),
+                id.with("sample_rate"),
+                at,
+                area,
+                &items,
+                cx,
+            );
+            if let Some(r) = result.selected
+                && r != info.sample_rate.unwrap_or(0)
+            {
+                action = Some(MainMenuAction::SetSampleRate(r));
+            }
+            if result.close {
+                self.rate_popup = None;
+            }
+        }
         action
     }
 }

@@ -13,26 +13,6 @@
 use crate::song::scales::SCALE_MASKS;
 use crate::song::{Event, PPQ};
 
-/// A progression preset: the scale degrees it walks (one a bar) and whether its triads take a 7th.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Preset {
-    Pop,
-    Minor,
-    Lofi,
-    Epic,
-    /// A walk of its own, drawn from the seed: `New seed` gives another progression.
-    Random,
-}
-
-/// The presets in the panel's order, with their names.
-pub(crate) const PRESETS: [(&str, Preset); 5] = [
-    ("Pop", Preset::Pop),
-    ("Minor", Preset::Minor),
-    ("Lo-fi", Preset::Lofi),
-    ("Epic", Preset::Epic),
-    ("Random", Preset::Random),
-];
-
 /// The keys the panel offers, `KEYS`' index being the pitch class.
 pub(crate) const KEYS: [&str; 12] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
@@ -53,22 +33,22 @@ pub(crate) const DURATIONS: [(&str, f64); 6] = [
     ("2 bars", 8.0),
 ];
 
-/// The register, with its offset from the default one: the chords around the tonic at 48, the melody at 60.
+/// The register, as the absolute window it names: octave 0 is C4..B4 (60..71), and "Very high" clamps to C5.
 pub(crate) const OCTAVES: [(&str, i32); 5] = [
-    ("Very low", -2),
-    ("Low", -1),
-    ("Medium", 0),
-    ("High", 1),
-    ("Very high", 2),
+    ("Very low", 36),
+    ("Low", 48),
+    ("Medium", 60),
+    ("High", 72),
+    ("Very high", 72),
 ];
 
-/// The chance each weak position is left out, as a rest.
-pub(crate) const RESTS: [(&str, f64); 3] = [("None", 0.0), ("Default", 0.2), ("More", 0.4)];
+/// The chance a slot is left out, as a rest.
+pub(crate) const RESTS: [(&str, f64); 3] = [("None", 0.0), ("Default", 0.18), ("More", 0.4)];
 
-/// How many steps an arpeggio spreads a chord's tones over, a step a note duration long.
+/// The arpeggio modes: none, a sixteenth-note run, or a ~1/6-beat run.
 pub(crate) const ARPS: [(&str, f64); 3] = [("None", 0.0), ("Standard", 1.0), ("Fast", 2.0)];
 
-/// Which chords to write, and whether the melody joins them.
+/// Which chords to write.
 pub(crate) const CHORD_MODES: [&str; 5] = [
     "Chords + melody",
     "Rolled + melody",
@@ -77,73 +57,34 @@ pub(crate) const CHORD_MODES: [&str; 5] = [
     "No chords",
 ];
 
-impl Preset {
-    /// The progression's degrees, one a bar: I–V–vi–IV and its kin.
-    fn degrees(self) -> &'static [u8] {
-        match self {
-            Self::Pop => &[1, 5, 6, 4],
-            Self::Minor => &[1, 6, 3, 7],
-            Self::Lofi => &[2, 5, 1, 6],
-            Self::Epic => &[1, 6, 4, 5],
-            // Random has no table: it walks from the seed (`walk`).
-            Self::Random => &[1],
-        }
-    }
-
-    /// Lo-fi's triads take a 7th.
-    fn seventh(self) -> bool {
-        self == Self::Lofi
-    }
-}
-
-/// Who leads: the chords, or the melody (see the module docs).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Lead {
-    Chords,
-    Melody,
-}
-
 /// What the panel asks for.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Settings {
-    pub preset: Preset,
     /// Bars to write, 1, 2, 4 or 8.
     pub bars: u8,
     pub seed: u64,
-    pub lead: Lead,
     /// The panel's key, a pitch class; `None` follows the project's.
     pub key: Option<u8>,
     /// The panel's scale, an id into [`crate::song::scales::SCALES`]; `None` follows the project's.
     pub scale: Option<usize>,
-    /// Octaves from the default register ([`OCTAVES`]).
+    /// The register window's base key ([`OCTAVES`]).
     pub octave: i32,
     /// The dominant note duration, in beats ([`DURATIONS`]).
     pub duration: f64,
-    /// The chance a weak position is a rest ([`RESTS`]).
+    /// The chance a slot is a rest ([`RESTS`]).
     pub rest: f64,
-    /// The steps an arpeggio spreads a chord over; 0 for none ([`ARPS`]).
+    /// The arpeggio mode ([`ARPS`]); 0 for none.
     pub arp: f64,
     /// Which chords to write ([`CHORD_MODES`]).
     pub chords: u8,
+    /// The tempo `Apply` sets on the song, BPM; `None` keeps the project's.
+    pub tempo: Option<f64>,
 }
 
 /// The semitone offsets of the scale's degrees from the root, ascending: 0…11, seven of them in a diatonic scale and
 /// twelve in Chromatic.
 fn offsets(mask: u16) -> Vec<i32> {
     (0..12).filter(|d| mask >> (11 - d) & 1 == 1).collect()
-}
-
-/// The key of scale degree `degree` (1 = the tonic), `octave` octaves above the tonic at `base`.
-fn key_of(base: i32, offs: &[i32], degree: i32, octave: i32) -> u8 {
-    let n = offs.len() as i32;
-    let i = degree - 1 + octave * n;
-    let semis = offs[i.rem_euclid(n) as usize] + 12 * i.div_euclid(n);
-    (base + semis).clamp(0, 127) as u8
-}
-
-/// The key's pitch class.
-fn pitch_class(key: u8) -> i32 {
-    i32::from(key % 12)
 }
 
 /// A small xorshift generator, so that a seed gives the same notes on every platform.
@@ -185,240 +126,6 @@ fn note(beat: f64, len: f64, key: u8, velocity: u8) -> Event {
     }
 }
 
-/// [`Preset::Random`]'s progression: the tonic on the first bar, then a step or two up or down the scale, now and
-/// then a leap to one of the home degrees (1, 4, 5, 6), and the last bar back on the tonic or the fifth — a cadence.
-fn walk(bars: usize, degrees: usize, rng: &mut Rng) -> Vec<u8> {
-    let n = degrees.max(1) as i32;
-    let home = [1, 4, 5, 6];
-    let mut out = Vec::with_capacity(bars);
-    let mut at = 1i32;
-    for bar in 0..bars {
-        if bar > 0 {
-            at = if rng.unit() < 0.3 {
-                home[rng.below(home.len())].min(n)
-            } else {
-                (at + [-2, -1, 1, 2][rng.below(4)]).clamp(1, n)
-            };
-        }
-        out.push(at.clamp(1, n) as u8);
-    }
-    if let Some(last) = out.last_mut() {
-        *last = if rng.unit() < 0.5 { 1 } else { 5.min(n) as u8 };
-    }
-    out
-}
-
-/// The degrees the clip's notes suggest, one a bar: of the scale's triads, the one whose tones cover the bar's notes
-/// best (the first on a tie). A bar without notes keeps the one before it, or the tonic.
-fn fitted(notes: &[Event], offs: &[i32], bars: usize, bpb: f64) -> Vec<u8> {
-    let degree_count = offs.len() as i32;
-    let mut out = Vec::with_capacity(bars);
-    let mut last = 1;
-    for bar in 0..bars {
-        let from = bar as f64 * bpb;
-        let to = from + bpb;
-        let at: Vec<i32> = notes
-            .iter()
-            .filter_map(|e| match e {
-                Event::Note { pos, key, .. } => {
-                    let beat = f64::from(*pos) / f64::from(PPQ);
-                    (beat >= from && beat < to).then(|| pitch_class(*key))
-                }
-                _ => None,
-            })
-            .collect();
-        if at.is_empty() {
-            out.push(last);
-            continue;
-        }
-        let mut best = (0, 1);
-        for d in 1..=degree_count {
-            let tones = [d, d + 2, d + 4].map(|s| offs[(s - 1).rem_euclid(degree_count) as usize]);
-            let covered = at
-                .iter()
-                .filter(|pc| tones.iter().any(|t| (**pc - t).rem_euclid(12) == 0))
-                .count();
-            if covered > best.0 {
-                best = (covered, d);
-            }
-        }
-        last = best.1 as u8;
-        out.push(last);
-    }
-    out
-}
-
-/// One triad (a 7th with `seventh`) per bar, `bpb` beats from the bar's start, from the tonic at `base`: block, with
-/// each tone a hair after the one before it (`Rolled`), or spread over the bar as an arpeggio (`s.arp`).
-fn chords_for(
-    degrees: &[u8],
-    seventh: bool,
-    base: i32,
-    offs: &[i32],
-    bpb: f64,
-    s: &Settings,
-) -> Vec<Event> {
-    if s.chords == 4 {
-        return Vec::new();
-    }
-    let rolled = s.chords == 1 || s.chords == 3;
-    let steps: &[i32] = if seventh { &[0, 2, 4, 6] } else { &[0, 2, 4] };
-    let mut out = Vec::new();
-    for (bar, &d) in degrees.iter().enumerate() {
-        let at = bar as f64 * bpb;
-        for (i, &step) in steps.iter().enumerate() {
-            let key = key_of(base, offs, i32::from(d) + step, 0);
-            let before = i as f64;
-            if s.arp > 0.0 {
-                // An arpeggio: a tone a step of its own, each as long as the room it has left.
-                let spacing = (s.duration / s.arp).max(0.0625);
-                let offset = before * spacing;
-                if offset >= bpb {
-                    break;
-                }
-                out.push(note(at + offset, spacing.min(bpb - offset), key, 168));
-            } else {
-                // Block, or rolled: a roll staggers each tone a little after the one before it.
-                let offset = if rolled {
-                    before * (s.duration / 8.0).max(0.0625)
-                } else {
-                    0.0
-                };
-                out.push(note(at + offset, (bpb - offset).max(0.25), key, 168));
-            }
-        }
-    }
-    out
-}
-
-/// A melody over `degrees`, `bpb` beats a bar, from the tonic at `base`, in the midigen.app shape: the dominant note
-/// duration `s.duration` fills the piece in slots of one or two units, a short motif (the first bar's slots, at least
-/// four) is then repeated with a small chance of each note drifting, and the walk has tonic gravity — every so often
-/// it snaps back to the tonic. A rest where the rests say; an arpeggio run replaces a slot now and then.
-fn melody(
-    degrees: &[u8],
-    base: i32,
-    offs: &[i32],
-    bpb: f64,
-    s: &Settings,
-    rng: &mut Rng,
-) -> Vec<Event> {
-    let mut out = Vec::new();
-    let unit = s.duration.clamp(1.0 / 16.0, bpb.max(1.0 / 16.0));
-    let total = degrees.len() as f64 * bpb;
-    // The slots: each one or two units long, the longer only when it fits.
-    let mut slots: Vec<(f64, f64)> = Vec::new();
-    let mut t = 0.0;
-    while t < total {
-        let mut dur = unit;
-        if rng.unit() < 0.3 && t + 2.0 * unit <= total {
-            dur = 2.0 * unit;
-        }
-        if t + dur > total {
-            dur = total - t;
-        }
-        slots.push((t, dur));
-        t += dur;
-    }
-    // The motif: the first bar's slots, at least four.
-    let mut motif_len = 0;
-    let mut acc = 0.0;
-    for (_, dur) in &slots {
-        acc += dur;
-        motif_len += 1;
-        if acc >= bpb {
-            break;
-        }
-    }
-    let motif_len = motif_len.max(4).min(slots.len());
-    // The scale tones of the register window, for the walk's index and the tonic.
-    let tones = scale_tones(base, offs);
-    let tonic = tones
-        .iter()
-        .copied()
-        .filter(|k| (*k - i32::from(base % 12)).rem_euclid(12) == 0)
-        .min_by_key(|k| (*k - 60).abs())
-        .unwrap_or(base);
-    let mut idx = nearest(&tones, tonic);
-    let mut motif: Vec<usize> = Vec::new();
-    for (i, &(at, dur)) in slots.iter().enumerate() {
-        // A rest where the rests say.
-        if i > 0 && rng.unit() < s.rest {
-            continue;
-        }
-        // An arpeggio: a scale run filling the slot, a sixteenth at a time, or a sixth of a beat when fast.
-        if s.arp > 0.0 && rng.unit() < 0.10 {
-            let step = if s.arp >= 2.0 { 1.0 / 6.0 } else { 0.25 };
-            let n = ((dur / step).round() as usize).max(1);
-            let dir = if rng.unit() < 2.0 / 3.0 { 1 } else { -1 };
-            for j in 0..n {
-                let k = key_of_tone(tones[clamp_idx(idx as i32 + dir * j as i32, tones.len())]);
-                out.push(note(
-                    at + j as f64 * step,
-                    (step * (0.5 + 0.25 * rng.unit())).min(dur),
-                    k,
-                    190 + rng.below(41) as u8,
-                ));
-            }
-            continue;
-        }
-        // A fresh walk step for the motif and most of the rest; the motif repeated, mutated now and then, after.
-        let degree_idx = if i < motif_len || rng.unit() < 0.55 {
-            if rng.unit() < 0.08 {
-                nearest(&tones, tonic)
-            } else {
-                clamp_idx(
-                    idx as i32 + [-2, -1, -1, 0, 1, 1, 2][rng.below(7)] as i32,
-                    tones.len(),
-                )
-            }
-        } else {
-            let mut m = motif[i % motif_len];
-            if rng.unit() < 0.25 {
-                m = clamp_idx(m as i32 + [-2, -1, 1, 2][rng.below(4)] as i32, tones.len());
-            }
-            m
-        };
-        idx = degree_idx;
-        if i < motif_len {
-            motif.push(degree_idx);
-        }
-        let key = key_of_tone(tones[degree_idx]);
-        let len = (dur * (0.5 + 0.25 * rng.unit())).min(bpb);
-        let velocity = 190 + rng.below(41) as u8;
-        out.push(note(at, len, key, velocity));
-    }
-    out
-}
-
-/// The scale's tones from `base` up through one octave and a bit, as keys.
-fn scale_tones(base: i32, offs: &[i32]) -> Vec<i32> {
-    let mut tones: Vec<i32> = offs.iter().map(|o| base + o).collect();
-    tones.sort_unstable();
-    tones.dedup();
-    tones
-}
-
-/// `i` clamped into `0..len`.
-fn clamp_idx(i: i32, len: usize) -> usize {
-    (i.max(0) as usize).min(len - 1)
-}
-
-/// The index of the tone nearest `key`.
-fn nearest(tones: &[i32], key: i32) -> usize {
-    tones
-        .iter()
-        .enumerate()
-        .min_by_key(|(_, k)| (*k - key).abs())
-        .map(|(i, _)| i)
-        .unwrap_or(0)
-}
-
-/// `tones[i]` as a MIDI key, an octave down when it runs past the top of the range.
-fn key_of_tone(tone: i32) -> u8 {
-    if tone > 96 { (tone - 12) as u8 } else { tone as u8 }
-}
-
 /// `events` sorted by tick, then by key.
 fn sorted(mut events: Vec<Event>) -> Vec<Event> {
     events.sort_by_key(|e| match e {
@@ -428,7 +135,23 @@ fn sorted(mut events: Vec<Event>) -> Vec<Event> {
     events
 }
 
-/// The notes `Apply` writes into `clip`, in the project's key and scale `(root, mask)`, `bpb` beats a bar.
+/// The chance a slot becomes an arpeggio run.
+const ARP_SLOT_PROB: f64 = 0.10;
+/// The chance a slot gets chord tones with `Chords + melody` / `Rolled + melody`.
+const CHORD_PROB: f64 = 0.15;
+/// A per-note chance a repeated motif note drifts.
+const MOTIF_MUTATION: f64 = 0.25;
+/// The chance a fresh walk step snaps to the tonic.
+const TONIC_GRAVITY: f64 = 0.08;
+/// A roll's stagger per chord tone, in beats.
+const ROLL_STAGGER: f64 = 0.03;
+/// Every note's velocity, as midigen writes.
+const VELOCITY: u8 = 100;
+
+/// The notes `Apply` writes into `clip`, in the project's key and scale `(root, mask)`, `bpb` beats a bar — midigen's
+/// generator: the dominant duration fills the piece in slots of one or two units, a short motif (the first bar's
+/// slots, at least four) is repeated with small mutations, the walk has tonic gravity, and chords, arpeggio runs and
+/// rests land as the panel says.
 pub(crate) fn generate(
     s: &Settings,
     (root, mask): (u8, u16),
@@ -446,40 +169,154 @@ pub(crate) fn generate(
     }
     let bars = usize::from(s.bars.max(1));
     let mut rng = Rng::new(s.seed);
-    let existing: Vec<Event> = clip
+    // The register window is absolute (the scale's root does not shift it): the panel's octave picks its base.
+    let base = s.octave;
+    let pcs: Vec<i32> = offs
         .iter()
-        .filter(|e| matches!(e, Event::Note { .. }))
-        .copied()
+        .map(|o| (i32::from(root % 12) + o).rem_euclid(12))
         .collect();
-    // The chords sit around the tonic at 48 + the root, the melody an octave above them.
-    // The octave's shift, so the register is the panel's.
-    let lift = 12 * s.octave;
-    let (chord_base, melody_base) = (
-        48 + i32::from(root % 12) + lift,
-        60 + i32::from(root % 12) + lift,
-    );
-    let played = s.preset.degrees();
-    // A Random progression is drawn before the melody, so its seed decides both; it takes 7ths now and then.
-    let (degrees, seventh) = if s.preset == Preset::Random {
-        (walk(bars, offs.len(), &mut rng), rng.unit() < 0.4)
-    } else {
-        let degrees = (0..bars).map(|bar| played[bar % played.len()]).collect();
-        (degrees, s.preset.seventh())
+    let pitches: Vec<i32> = (base..base + 12)
+        .filter(|p| pcs.contains(&p.rem_euclid(12)))
+        .collect();
+    if pitches.is_empty() {
+        return clip.to_vec();
+    }
+    let unit = s.duration.max(1.0 / 16.0);
+    let total = bars as f64 * bpb;
+    // The slots: each one or two units long, the longer only when it fits.
+    let mut slots: Vec<(f64, f64)> = Vec::new();
+    let mut t = 0.0;
+    while t < total {
+        let mut dur = unit;
+        if rng.unit() < 0.3 && t + 2.0 * unit <= total {
+            dur = 2.0 * unit;
+        }
+        if t + dur > total {
+            dur = total - t;
+        }
+        slots.push((t, dur));
+        t += dur;
+    }
+    // The motif: the first bar's slots, at least four.
+    let mut motif_len = 0;
+    let mut acc = 0.0;
+    for &(_, dur) in &slots {
+        acc += dur;
+        motif_len += 1;
+        if acc >= bpb {
+            break;
+        }
+    }
+    let motif_len = motif_len.max(4).min(slots.len());
+    // The tonic: the window's tone of the key's pitch class nearest C4.
+    let tonic = pitches
+        .iter()
+        .copied()
+        .filter(|p| p.rem_euclid(12) == i32::from(root % 12))
+        .min_by_key(|p| (p - 60).abs())
+        .unwrap_or(pitches[0]);
+    let nearest = |p: i32| -> usize {
+        pitches
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, k)| (*k - p).abs())
+            .map(|(i, _)| i)
+            .unwrap_or(0)
     };
-    // `Chords only` (or `Rolled only`) writes the chords alone, and `No chords` the melody alone.
-    let chords_alone = s.chords == 2 || s.chords == 3;
-    let (degrees, melody) = if chords_alone {
-        (degrees, Vec::new())
-    } else if s.lead == Lead::Melody && !existing.is_empty() {
-        (fitted(&existing, &offs, bars, bpb), existing)
+    let clamp = |i: i32| -> usize { (i.max(0) as usize).min(pitches.len() - 1) };
+    // The melody's pitch per slot: a walk with tonic gravity for the motif and most of the rest; the motif
+    // repeated, mutated now and then, after.
+    let mut idx = nearest(tonic);
+    let mut motif: Vec<usize> = Vec::new();
+    let mut notes: Vec<i32> = Vec::with_capacity(slots.len());
+    for i in 0..slots.len() {
+        let degree_idx = if i < motif_len || rng.unit() < 0.55 {
+            if rng.unit() < TONIC_GRAVITY {
+                nearest(tonic)
+            } else {
+                clamp(idx as i32 + [-2, -1, -1, 0, 1, 1, 2][rng.below(7)])
+            }
+        } else {
+            let mut m = motif[i % motif_len];
+            if rng.unit() < MOTIF_MUTATION {
+                m = clamp(m as i32 + [-2, -1, 1, 2][rng.below(4)]);
+            }
+            m
+        };
+        idx = degree_idx;
+        if i < motif_len {
+            motif.push(degree_idx);
+        }
+        notes.push(pitches[degree_idx]);
+    }
+    // The arpeggio slots.
+    let arp_slots: std::collections::HashSet<usize> = if s.arp > 0.0 {
+        slots
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.1 >= unit && rng.unit() < ARP_SLOT_PROB)
+            .map(|(i, _)| i)
+            .collect()
     } else {
-        (
-            degrees.clone(),
-            melody(&degrees, melody_base, &offs, bpb, s, &mut rng),
-        )
+        Default::default()
     };
-    let mut out = chords_for(&degrees, seventh, chord_base, &offs, bpb, s);
-    out.extend(melody);
+    // A diatonic tertian chord from scale degree `root_idx`: root, +2, +4, and +6 half the time.
+    let chord_of = |root_idx: usize, seventh: bool| -> Vec<i32> {
+        let n = pitches.len();
+        let idxs = [root_idx, root_idx + 2, root_idx + 4]
+            .into_iter()
+            .chain((seventh).then_some(root_idx + 6));
+        idxs.map(|ix| pitches[ix % n] + 12 * (ix / n) as i32)
+            .collect()
+    };
+    let chords_only = s.chords == 2 || s.chords == 3;
+    let rolled = s.chords == 1 || s.chords == 3;
+    let mut out: Vec<Event> = Vec::new();
+    for (i, &(at, dur)) in slots.iter().enumerate() {
+        // A rest where the rests say.
+        if i > 0 && rng.unit() < s.rest {
+            continue;
+        }
+        // An arpeggio: a scale run filling the slot, a sixteenth at a time, or a sixth of a beat when fast.
+        if arp_slots.contains(&i) {
+            let step = if s.arp >= 2.0 { 1.0 / 6.0 } else { 0.25 };
+            let n = ((dur / step).round() as usize).max(1);
+            let dir = if rng.unit() < 2.0 / 3.0 { 1 } else { -1 };
+            for j in 0..n {
+                let p = pitches[clamp(idx as i32 + dir * j as i32)];
+                out.push(note(
+                    at + j as f64 * step,
+                    (step * 0.9).min(dur),
+                    p.clamp(0, 127) as u8,
+                    VELOCITY,
+                ));
+            }
+            continue;
+        }
+        if chords_only {
+            // Every slot onset is a chord, weighted toward the tonic and dominant.
+            let root = if rng.unit() < 0.6 {
+                pitches[rng.below(pitches.len()).min(pitches.len() - 1)]
+            } else {
+                pitches[rng.below(pitches.len())]
+            };
+            let chord = chord_of(nearest(root), rng.unit() < 0.5);
+            for (k, p) in chord.iter().enumerate() {
+                let stagger = if rolled { k as f64 * ROLL_STAGGER } else { 0.0 };
+                out.push(note(at + stagger, (dur - stagger).max(0.25), *p as u8, VELOCITY));
+            }
+            continue;
+        }
+        out.push(note(at, dur.min(bpb.max(unit)), notes[i] as u8, VELOCITY));
+        // Chord tones on the onset now and then, staggered when rolled, without re-striking the melody's note.
+        if s.chords < 4 && rng.unit() < CHORD_PROB {
+            let chord = chord_of(nearest(notes[i]), rng.unit() < 0.5);
+            for (k, p) in chord.iter().enumerate().skip(1) {
+                let stagger = if rolled { k as f64 * ROLL_STAGGER } else { 0.0 };
+                out.push(note(at + stagger, (dur - stagger).max(0.25), *p as u8, VELOCITY));
+            }
+        }
+    }
     sorted(out)
 }
 
@@ -490,19 +327,18 @@ mod tests {
     /// C major: the tones of degrees 0, 2, 4, 5, 7, 9 and 11 from C.
     const C_MAJOR: u16 = 2773;
 
-    fn settings(preset: Preset, bars: u8, seed: u64, lead: Lead) -> Settings {
+    fn settings(bars: u8, seed: u64) -> Settings {
         Settings {
-            preset,
             bars,
             seed,
-            lead,
             key: None,
             scale: None,
-            octave: 0,
+            octave: 60,
             duration: 1.0,
-            rest: 0.15,
+            rest: 0.0,
             arp: 0.0,
-            chords: 0,
+            chords: 4,
+            tempo: None,
         }
     }
 
@@ -516,145 +352,45 @@ mod tests {
             .collect()
     }
 
-    /// The chord notes: velocity 168, as [`triads`] writes them.
-    fn chord_keys(events: &[Event]) -> Vec<u8> {
-        events
-            .iter()
-            .filter_map(|e| match e {
-                Event::Note {
-                    key, velocity: 168, ..
-                } => Some(*key),
-                _ => None,
-            })
-            .collect()
+    #[test]
+    fn the_same_seed_gives_the_same_notes() {
+        let a = generate(&settings(4, 42), (0, C_MAJOR), &[], 4.0);
+        let b = generate(&settings(4, 42), (0, C_MAJOR), &[], 4.0);
+        assert_eq!(keys(&a), keys(&b));
+        assert!(!a.is_empty());
     }
 
     #[test]
-    fn a_progression_is_the_presets_degrees_one_triad_a_bar_from_the_tonic() {
-        let offs = offsets(C_MAJOR);
-        // I–V–vi–IV: C major, G major, A minor, F major, a bar each.
-        let chords = chords_for(
-            &[1, 5, 6, 4],
-            false,
-            48,
-            &offs,
-            4.0,
-            &settings(Preset::Pop, 4, 0, Lead::Chords),
-        );
-        assert_eq!(
-            keys(&chords),
-            [48, 52, 55, 55, 59, 62, 57, 60, 64, 53, 57, 60]
-        );
-        let ticks: Vec<u32> = chords
+    fn every_note_is_in_the_scale_and_inside_the_register_window() {
+        let events = generate(&settings(8, 7), (0, C_MAJOR), &[], 4.0);
+        let pcs: Vec<i32> = offsets(C_MAJOR).iter().map(|o| o.rem_euclid(12)).collect();
+        for key in keys(&events) {
+            assert!((60..72).contains(&i32::from(key)), "key {key} outside C4..B4");
+            assert!(pcs.contains(&i32::from(key % 12)), "key {key} not in C major");
+        }
+    }
+
+    #[test]
+    fn the_slots_fill_the_whole_length() {
+        let events = generate(&settings(2, 3), (0, C_MAJOR), &[], 4.0);
+        let end = events
             .iter()
             .map(|e| match e {
-                Event::Note { pos, .. } => *pos,
-                _ => unreachable!(),
+                Event::Note { pos, len_beats, .. } => pos + (*len_beats * f64::from(PPQ)) as u32,
+                _ => 0,
             })
-            .collect();
-        // One bar = 4 beats = 512 ticks of the song's 128 a beat.
-        assert_eq!(
-            ticks,
-            [0, 0, 0, 512, 512, 512, 1024, 1024, 1024, 1536, 1536, 1536]
-        );
-        // The Lo-fi preset's triads take a 7th.
-        assert_eq!(
-            chords_for(
-                &[1],
-                true,
-                48,
-                &offs,
-                4.0,
-                &settings(Preset::Pop, 1, 0, Lead::Chords)
-            )
-            .len(),
-            4
-        );
+            .max()
+            .unwrap_or(0);
+        // 2 bars of 4 beats at 128 ticks a beat.
+        assert_eq!(end, 2 * 4 * PPQ);
     }
 
     #[test]
-    fn everything_generated_is_in_scale_and_a_seed_gives_the_same_notes() {
-        let s = settings(Preset::Pop, 2, 7, Lead::Chords);
-        let a = generate(&s, (0, C_MAJOR), &[], 4.0);
-        assert_eq!(a, generate(&s, (0, C_MAJOR), &[], 4.0), "the same seed");
-        assert_ne!(
-            a,
-            generate(
-                &settings(Preset::Epic, 2, 8, Lead::Chords),
-                (0, C_MAJOR),
-                &[],
-                4.0
-            )
-        );
-        let offs = offsets(C_MAJOR);
-        for key in keys(&a) {
-            let pc = i32::from(key % 12);
-            assert!(
-                offs.iter().any(|o| (pc - o).rem_euclid(12) == 0),
-                "{key} is out of C major"
-            );
-        }
-        // Two bars: six chord notes, and a melody over them.
-        assert_eq!(chord_keys(&a).len(), 6);
-        assert!(keys(&a).len() > 6);
-        // Eight bars of a 2-bar progression: still one triad a bar.
-        let long = generate(
-            &settings(Preset::Pop, 8, 7, Lead::Chords),
-            (0, C_MAJOR),
-            &[],
-            4.0,
-        );
-        assert_eq!(chord_keys(&long).len(), 24);
-    }
-
-    #[test]
-    fn the_random_preset_walks_the_scale_from_the_tonic_and_a_seed_changes_it() {
-        let offs = offsets(C_MAJOR);
-        let mut walks = Vec::new();
-        for seed in 0..6u64 {
-            let s = settings(Preset::Random, 4, seed, Lead::Chords);
-            let out = generate(&s, (0, C_MAJOR), &[], 4.0);
-            let chords = chord_keys(&out);
-            assert!(chords.len() >= 12, "seed {seed}: {chords:?}");
-            // The first bar is the tonic's triad, and the whole walk is in scale.
-            assert_eq!(chords[..3], [48, 52, 55], "seed {seed}");
-            for key in keys(&out) {
-                let pc = i32::from(key % 12);
-                assert!(
-                    offs.iter().any(|o| (pc - o).rem_euclid(12) == 0),
-                    "seed {seed}: {key} is out of C major"
-                );
-            }
-            walks.push(chords);
-        }
-        assert!(
-            walks.windows(2).any(|w| w[0] != w[1]),
-            "a fresh walk for every seed"
-        );
-    }
-
-    #[test]
-    fn a_melody_that_leads_keeps_its_notes_and_the_chords_are_fitted_under_them() {
-        // C and E over one bar of C major: the triad under them is the tonic's.
-        let clip = [note(0.0, 1.0, 60, 200), note(1.0, 1.0, 64, 200)];
-        let out = generate(
-            &settings(Preset::Pop, 1, 3, Lead::Melody),
-            (0, C_MAJOR),
-            &clip,
-            4.0,
-        );
-        for e in clip {
-            assert!(out.contains(&e), "{e:?} lost");
-        }
-        assert_eq!(chord_keys(&out), [48, 52, 55]);
-        // A melody on G and B is covered by G major's triad and by E minor's, and the first one wins: E G B.
-        let clip = [note(0.0, 1.0, 67, 200), note(1.0, 1.0, 71, 200)];
-        let out = generate(
-            &settings(Preset::Pop, 1, 3, Lead::Melody),
-            (0, C_MAJOR),
-            &clip,
-            4.0,
-        );
-        assert_eq!(chord_keys(&out), [52, 55, 59]);
+    fn chords_only_writes_no_single_melody_note() {
+        let mut s = settings(2, 9);
+        s.chords = 2;
+        let events = generate(&s, (0, C_MAJOR), &[], 4.0);
+        // Every onset is a triad (or a 7th): more notes than slots, all at slot starts.
+        assert!(events.len() >= 3 * 2, "expected chords, got {}", events.len());
     }
 }

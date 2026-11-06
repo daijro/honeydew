@@ -679,8 +679,7 @@ impl<R: AudioRenderer> AudioOutput<R> {
                         && range.sample_format() == supported.sample_format()
                         && range.min_sample_rate().0 <= rate
                         && rate <= range.max_sample_rate().0
-                })
-        {
+                }) {
             rate
         } else {
             default_rate

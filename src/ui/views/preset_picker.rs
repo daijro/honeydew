@@ -1234,7 +1234,9 @@ fn picker(files: &ProjectFiles, target: PresetTarget, module_type: Option<u16>) 
             .instruments(index)
         }
         (_, Some(t)) => {
-            let picker = PresetPicker::new(module_name(t), files.presets_dir(t), exts[0], true)
+            // `My Files` is the whole user folder, as the Instruments picker's is: `My Presets/<module>` and the
+            // other `My …` folders are folders in it.
+            let picker = PresetPicker::new(module_name(t), files.user_dir().map(Path::to_owned), exts[0], true)
                 .of_exts(exts)
                 .of_type(t)
                 .with_factory(ours.into_iter().chain(files.factory_presets(t)))

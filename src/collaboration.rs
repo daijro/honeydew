@@ -7,7 +7,7 @@ pub mod checkpoint;
 // Exhaustive patterns make a new upstream field require a shared/local decision here.
 macro_rules! local_fields {
     ($ty:ident, $to:ident, $from:ident; $($local:ident),*; $($shared:ident),* $(,)?) => {
-        let $ty { $($local: _,)* $($shared: _,)* } = &*$to;
+        let $ty { $($local: _,)* $($shared: _,)* .. } = &*$to;
         $($to.$local.clone_from(&$from.$local);)*
     };
 }
@@ -174,7 +174,7 @@ fn choose<T: Clone + PartialEq>(
 
 macro_rules! fields {
     ($ty:ident, $b:ident, $c:ident, $e:ident, $out:ident, $path:expr; $($field:ident),*; $($separate:ident),* $(,)?) => {
-        let $ty { $($field: _,)* $($separate: _,)* } = $b;
+        let $ty { $($field: _,)* $($separate: _,)* .. } = $b;
         $($out.$field = choose(&$b.$field, &$c.$field, &$e.$field, &format!("{}.{}", $path, stringify!($field)))?;)*
     };
 }
