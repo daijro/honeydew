@@ -234,12 +234,12 @@ pub(crate) fn generate(
             if rng.unit() < TONIC_GRAVITY {
                 nearest(tonic)
             } else {
-                clamp(idx as i32 + [-2, -1, -1, 0, 1, 1, 2][rng.below(7)] as i32)
+                clamp(idx as i32 + [-2, -1, -1, 0, 1, 1, 2][rng.below(7)])
             }
         } else {
             let mut m = motif[i % motif_len];
             if rng.unit() < MOTIF_MUTATION {
-                m = clamp(m as i32 + [-2, -1, 1, 2][rng.below(4)] as i32);
+                m = clamp(m as i32 + [-2, -1, 1, 2][rng.below(4)]);
             }
             m
         };
@@ -254,7 +254,7 @@ pub(crate) fn generate(
         slots
             .iter()
             .enumerate()
-            .filter(|(i, s)| s.1 >= unit && rng.unit() < ARP_SLOT_PROB)
+            .filter(|(_, s)| s.1 >= unit && rng.unit() < ARP_SLOT_PROB)
             .map(|(i, _)| i)
             .collect()
     } else {
@@ -295,7 +295,7 @@ pub(crate) fn generate(
         if chords_only {
             // Every slot onset is a chord, weighted toward the tonic and dominant.
             let root = if rng.unit() < 0.6 {
-                pitches[rng.below(pitches.len()).min(pitches.len() - 1) / 1]
+                pitches[rng.below(pitches.len()).min(pitches.len() - 1)]
             } else {
                 pitches[rng.below(pitches.len())]
             };

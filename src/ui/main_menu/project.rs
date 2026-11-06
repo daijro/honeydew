@@ -605,10 +605,10 @@ impl ProjectTab {
                 })
                 .collect();
             let result = popup::show(&ui.ctx().clone(), id.with("sample_rate"), at, area, &items, cx);
-            if let Some(r) = result.selected {
-                if r != info.sample_rate.unwrap_or(0) {
-                    action = Some(MainMenuAction::SetSampleRate(r));
-                }
+            if let Some(r) = result.selected
+                && r != info.sample_rate.unwrap_or(0)
+            {
+                action = Some(MainMenuAction::SetSampleRate(r));
             }
             if result.close {
                 self.rate_popup = None;
