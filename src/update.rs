@@ -24,8 +24,8 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -173,6 +173,8 @@ pub struct Status {
     pub sounds: Job,
     /// The sound library's download waits for Wi-Fi.
     pub waiting_for_wifi: bool,
+    /// The sound library's download is paused (it goes on from what it has when continued).
+    pub paused: bool,
     /// The progress shown ([`Self::update`], [`Self::sounds`]) is the sound library's copy out of the full APK
     /// ([`keep_sounds`]).
     pub copying_sounds: bool,
@@ -191,6 +193,7 @@ static STATUS: Mutex<Status> = Mutex::new(Status {
     update: Job::Idle,
     sounds: Job::Idle,
     waiting_for_wifi: false,
+    paused: false,
     copying_sounds: false,
     sounds_latest: None,
     sounds_ended: false,
@@ -507,6 +510,19 @@ pub fn sounds_wanted() -> String {
     found.unwrap_or_else(|| SHIPPED_RELEASE.trim().to_owned())
 }
 
+/// The running sound library download's progress, while one runs, so [`pause_sounds`] can reach it.
+static SOUNDS_PROGRESS: Mutex<Option<Arc<Progress>>> = Mutex::new(None);
+
+/// Pauses (`on`) or continues the sound library's download. Paused, it waits before its next part and goes on from
+/// the `.part` it left, so continuing downloads only what is missing.
+pub fn pause_sounds(on: bool) {
+    with(|s| s.paused = on);
+    let held = SOUNDS_PROGRESS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(p) = held.as_ref() {
+        p.paused.store(on, Relaxed);
+    }
+}
+
 /// Downloads the sound library ([`sounds_wanted`]) into its folder on a worker, unless it is running: only the parts
 /// the folder lacks. On Android's full APK the folder first gets the APK's own sounds ([`keep_sounds`]), so that only
 /// what changed downloads.
@@ -521,7 +537,8 @@ pub fn download_sounds() {
         let _ = keep_sounds(0, |done, total| {
             with(|s| s.sounds = Job::Running(done, total))
         });
-        let progress = Progress::default();
+        let progress = Arc::new(Progress::default());
+        *SOUNDS_PROGRESS.lock().unwrap_or_else(|e| e.into_inner()) = Some(progress.clone());
         let tell = || {
             let (done, total) = (progress.done.load(Relaxed), progress.total.load(Relaxed));
             with(|s| s.sounds = Job::Running(done, total));
@@ -534,8 +551,10 @@ pub fn download_sounds() {
             })
         };
         let result = install::download(&sounds_url(&version), &target, &progress, &fetch);
+        *SOUNDS_PROGRESS.lock().unwrap_or_else(|e| e.into_inner()) = None;
         with(|s| {
             s.waiting_for_wifi = false;
+            s.paused = false;
             s.sounds_ended = true;
             s.sounds = match result {
                 Ok(_) => Job::Done(format!(

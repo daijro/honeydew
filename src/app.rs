@@ -180,6 +180,11 @@ pub struct HoneydewApp {
     bar_jump: Option<bool>,
     /// The web page was hidden since the last frame ([`Self::on_hidden`]): the next frame counts as a focus loss.
     hidden: bool,
+    /// A message, popup or panel was open at the end of the last frame: Android's Back closes it ([`Self::back`]).
+    back_closes: bool,
+    /// The first-open sound-library question was shown: its answer is polled until it is taken
+    /// ([`Self::updates`]).
+    sounds_ask_open: bool,
     /// Debug view of the whole icon set, toggled with F2.
     #[cfg(debug_assertions)]
     show_icon_sheet: bool,
@@ -305,6 +310,8 @@ impl Default for HoneydewApp {
             tap_off: None,
             bar_jump: None,
             hidden: false,
+            back_closes: false,
+            sounds_ask_open: false,
             #[cfg(debug_assertions)]
             show_icon_sheet: false,
             files: ProjectFiles::default(),
@@ -2009,6 +2016,7 @@ impl HoneydewApp {
             ctx.input_mut(|i| i.events.push(egui::Event::WindowFocused(false)));
         }
         self.now = ctx.input(|i| i.time);
+        self.back(ctx);
         // A song new to the app keeps its view zooms per U: a file without the zoom-units flag has them per device
         // pixel, converted at this frame's U, so a save writes the current layout. A replaced song is converted as it
         // comes in (`SongEdit::Replaced`); the one the app starts with on its first frame, where its undo history
@@ -2748,6 +2756,29 @@ impl HoneydewApp {
         }
         #[cfg(debug_assertions)]
         self.icon_sheet(ctx, &metrics);
+        self.back_closes = !self.nav.overlays.is_empty() || crate::ui::modal_open(ctx);
+    }
+
+    /// Android's Back: a key before Android 13, the activity's back callback since ([`crate::android::take_back`];
+    /// its key event then is no second press). With a message, popup or panel open it is Escape, which closes the
+    /// topmost; with none, the app goes to the background, as Android's own Back did. Before anything reads the keys.
+    fn back(&mut self, ctx: &egui::Context) {
+        let back = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::BrowserBack));
+        #[cfg(target_os = "android")]
+        let back = crate::android::take_back(ctx) || (back && !crate::android::back_callback());
+        if back && self.back_closes {
+            let escape = |pressed| egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            };
+            ctx.input_mut(|i| i.events.extend([escape(true), escape(false)]));
+        } else if back {
+            #[cfg(target_os = "android")]
+            crate::android::move_to_back();
+        }
     }
 }
 

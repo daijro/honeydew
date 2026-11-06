@@ -17,8 +17,7 @@ use eframe::egui::{
 };
 
 use super::compose::{
-    self, ARPS, CHORD_MODES, DURATIONS, KEYS, Lead, OCTAVES, PRESETS, RESTS, SCALE_CHOICES,
-    Settings,
+    self, ARPS, CHORD_MODES, DURATIONS, KEYS, OCTAVES, RESTS, SCALE_CHOICES, Settings,
 };
 use crate::metrics::{FontSize, Metrics};
 use crate::params::{menu_index, menu_value};
@@ -37,8 +36,8 @@ const HEADER: f32 = 0.75;
 const CHOICE: f32 = 1.25;
 const LABEL_W: f32 = 4.5;
 const BUTTON: [f32; 2] = [4.5, 1.0];
-/// The scrolling rows' height: three headers and eleven choice rows.
-const BODY: f32 = 3.0 * HEADER + 11.0 * CHOICE;
+/// The scrolling rows' height: three headers and ten choice rows.
+const BODY: f32 = 3.0 * HEADER + 10.0 * CHOICE;
 /// The whole panel, when the screen has room.
 const HEIGHT: f32 = 2.0 * MARGIN + TITLE + BODY + MARGIN + CHOICE;
 /// Seeds run 0..SEEDS.
@@ -47,14 +46,14 @@ const SEEDS: u64 = 100_000;
 const DIM: f32 = 0.5;
 /// The `Bars` choices.
 const BARS: [u8; 4] = [1, 2, 4, 8];
+/// The `Tempo` choices, BPM.
+const TEMPOS: [u16; 9] = [60, 80, 100, 110, 120, 128, 140, 160, 180];
 
 /// The panel's state: the preset, the bars, who leads and the seed, then the key, scale and register (0 following the
 /// project) and the rhythm: the note length, the rests, the arpeggios and which chords to write.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Panel {
-    preset: usize,
     bars: usize,
-    lead: usize,
     seed: u64,
     /// 0: the project's; else 1 + a [`KEYS`] index.
     key: usize,
@@ -65,6 +64,8 @@ pub(crate) struct Panel {
     rests: usize,
     arp: usize,
     chords: usize,
+    /// 0: the project's tempo; else 1 + a [`TEMPOS`] index.
+    tempo: usize,
 }
 
 /// How the panel closed.
@@ -75,12 +76,10 @@ pub(crate) enum Close {
 }
 
 impl Panel {
-    /// Pop, 2 bars, the chords leading, on seed `seed` (kept to 0..100 000).
+    /// 2 bars, on seed `seed` (kept to 0..100 000).
     pub(crate) fn new(seed: u64) -> Self {
         Self {
-            preset: 0,
             bars: 1,
-            lead: 0,
             seed: seed % SEEDS,
             key: 0,
             scale: 0,
@@ -89,25 +88,21 @@ impl Panel {
             rests: 1,
             arp: 0,
             chords: 0,
+            tempo: 0,
         }
     }
 
     /// What the rows say ([module docs](self)).
     pub(crate) fn settings(&self) -> Settings {
         Settings {
-            preset: PRESETS[self.preset.min(PRESETS.len() - 1)].1,
             bars: BARS[self.bars.min(BARS.len() - 1)],
             seed: self.seed,
-            lead: if self.lead == 0 {
-                Lead::Chords
-            } else {
-                Lead::Melody
-            },
             key: (self.key > 0).then(|| (self.key - 1) as u8),
             scale: (self.scale > 0).then(|| SCALE_CHOICES[self.scale - 1]),
             octave: OCTAVES[self.octave.min(OCTAVES.len() - 1)].1,
             duration: DURATIONS[self.duration.min(DURATIONS.len() - 1)].1,
             rest: RESTS[self.rests.min(RESTS.len() - 1)].1,
+            tempo: (self.tempo > 0).then(|| f64::from(TEMPOS[self.tempo.min(TEMPOS.len()) - 1])),
             arp: ARPS[self.arp.min(ARPS.len() - 1)].1,
             chords: self.chords.min(CHORD_MODES.len() - 1) as u8,
         }
@@ -257,8 +252,6 @@ fn rows(ui: &mut Ui, cx: &UiCtx, id: Id, column: Rect, ink: Color32, panel: &mut
         widgets::button(ui, cx, &b, true).clicked()
     };
     const BAR_LABELS: [&str; 4] = ["1", "2", "4", "8"];
-    const LEADS: [&str; 2] = ["Chords", "Melody"];
-    let presets: Vec<&str> = PRESETS.iter().map(|(name, _)| *name).collect();
     let keys: Vec<&str> = std::iter::once("Project")
         .chain(KEYS.iter().copied())
         .collect();
@@ -270,21 +263,10 @@ fn rows(ui: &mut Ui, cx: &UiCtx, id: Id, column: Rect, ink: Color32, panel: &mut
     let rests: Vec<&str> = RESTS.iter().map(|(name, _)| *name).collect();
     let arps: Vec<&str> = ARPS.iter().map(|(name, _)| *name).collect();
 
-    label(
-        ui,
-        next(HEADER),
-        "Progression & melody",
-        ink.gamma_multiply(DIM),
-    );
-    let r = next(CHOICE);
-    label(ui, r, "Preset", text);
-    panel.preset = dropdown(ui, r, "preset", &presets, panel.preset, None);
+    label(ui, next(HEADER), "Melody", ink.gamma_multiply(DIM));
     let r = next(CHOICE);
     label(ui, r, "Bars", text);
     panel.bars = dropdown(ui, r, "bars", &BAR_LABELS, panel.bars, None);
-    let r = next(CHOICE);
-    label(ui, r, "Lead", text);
-    panel.lead = dropdown(ui, r, "lead", &LEADS, panel.lead, None);
     let r = next(CHOICE);
     label(ui, r, "Seed", text);
     let at = pos2(r.left() + m.u(LABEL_W), r.center().y);
@@ -299,6 +281,13 @@ fn rows(ui: &mut Ui, cx: &UiCtx, id: Id, column: Rect, ink: Color32, panel: &mut
         let now = ui.input(|i| i.time).to_bits();
         panel.seed = RandomState::new().hash_one(now) % SEEDS;
     }
+    let tempo_labels: Vec<String> = std::iter::once("Project".to_owned())
+        .chain(TEMPOS.iter().map(|t| format!("{t} BPM")))
+        .collect();
+    let tempos: Vec<&str> = tempo_labels.iter().map(String::as_str).collect();
+    let r = next(CHOICE);
+    label(ui, r, "Tempo", text);
+    panel.tempo = dropdown(ui, r, "tempo", &tempos, panel.tempo, None);
     label(
         ui,
         next(HEADER),

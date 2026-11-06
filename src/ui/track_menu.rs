@@ -8,8 +8,7 @@ use crate::ui::popup::PopupItem;
 /// The menu's items.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TrackOp {
-    /// `Show Tracks` / `Hide tracks` (zipping the sub-tracks). No menu item offers it any more; a file may still
-    /// load a channel zipped.
+    /// `Show Tracks` / `Hide tracks` (zipping the sub-tracks inside the channel).
     ToggleZip,
     ChannelSettings,
     CloneChannel,
@@ -39,11 +38,10 @@ pub enum TrackOp {
 }
 
 /// The menu for track `lane` of channel `channel`. The primary track is the channel's lane 0.
-/// - Column 0: `Channel Settings`; `Clone Channel` and `Insert Channel` (not on the master); `Delete Track`, enabled
-///   when the channel has more than one track of the primary's kind or this track's kind differs from it; then
-///   `Delete Channel` (not on the master), last (#68). The master's menu is items 0, 1 and 4. (No `Hide tracks` here:
-///   the fork hides a track through its file only, `song::Lane::hidden`, shown by Settings `Show hidden tracks`.)
-///   `ToggleZip` stays in the enum for file-loaded zipped channels, but no menu item offers it.
+/// - Column 0: `Show Tracks` while the sub-tracks are hidden, else `Hide tracks`, enabled with more than one track;
+///   `Channel Settings`; `Clone Channel` and `Insert Channel` (not on the master); `Delete Track`, enabled when the
+///   channel has more than one track of the primary's kind or this track's kind differs from it; then
+///   `Delete Channel` (not on the master), last (#68). The master's menu is items 0, 2 and 5.
 /// - Column 1, generator channels only (not the master, not a send), by the primary track's kind: notes
 ///   `Import MIDI Tracks`, `Save as MIDI`, `Burn Notes to Track`, `Add Track`; audio `Add Track`, `Sync All Samples`; drums `Load Drumset`,
 ///   `Save Drumset`, `Add StepSeq Track`, `Add Notes Track`, `Save as MIDI`. `Sync All Samples` is disabled (see
@@ -62,7 +60,13 @@ pub fn track_menu(song: &Song, channel: usize, lane: usize) -> Vec<PopupItem<Tra
     let primary = primary.kind;
     let master = ch.kind == ChannelKind::Master;
     let of_primary = ch.lanes.iter().filter(|l| l.kind == primary).count();
+    let zip = if ch.zipped {
+        "Show Tracks"
+    } else {
+        "Hide tracks"
+    };
     let channel_items = [
+        Some((ToggleZip, zip, ch.lanes.len() > 1)),
         Some((ChannelSettings, "Channel Settings", true)),
         (!master).then_some((CloneChannel, "Clone Channel", true)),
         (!master).then_some((InsertChannel, "Insert Channel", true)),
@@ -158,7 +162,8 @@ mod tests {
         song
     }
 
-    const CHANNEL: [(usize, &str, bool); 5] = [
+    const CHANNEL: [(usize, &str, bool); 6] = [
+        (0, "Hide tracks", false),
         (0, "Channel Settings", true),
         (0, "Clone Channel", true),
         (0, "Insert Channel", true),
@@ -227,13 +232,16 @@ mod tests {
     }
 
     #[test]
-    fn the_menu_has_no_hide_tracks_item() {
-        let song = song();
-        assert!(
-            track_menu(&song, 1, 0)
-                .iter()
-                .all(|i| i.id != Some(ToggleZip))
-        );
+    fn hide_tracks_needs_two_tracks_and_reads_show_tracks_while_they_are_hidden() {
+        let mut song = song();
+        let first = |song: &Song| menu(song, 1, 0)[0];
+        song.channels[1].add_lane(LaneKind::Notes);
+        assert_eq!(first(&song), (0, "Hide tracks", true));
+        song.channels[1].zipped = true;
+        assert_eq!(first(&song), (0, "Show Tracks", true));
+        // A single track: nothing to hide or show.
+        song.channels[2].zipped = true;
+        assert_eq!(menu(&song, 2, 0)[0], (0, "Show Tracks", false));
     }
 
     #[test]
@@ -290,6 +298,7 @@ mod tests {
         assert_eq!(
             ops,
             [
+                ToggleZip,
                 ChannelSettings,
                 CloneChannel,
                 InsertChannel,

@@ -47,6 +47,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         .entry(channel)
         .or_insert_with(|| PianoRoll::for_channel(app.song, channel));
     let opts = RollOptions {
+        key_names: app.settings.key_names,
         ghost_notes: app.ghost_notes,
         middle_c_is_c4: app.middle_c_is_c4,
         playhead: app.snapshot.map_or(0, |s| s.transport_tick),
