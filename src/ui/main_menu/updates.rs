@@ -88,11 +88,7 @@ fn sounds(status: &Status) -> (String, Option<String>) {
         }
         Job::Running(done, total) if status.paused => {
             let percent = Job::percent(*done, *total);
-            format!(
-                "Paused at {percent} ({} of {} MB).",
-                mb(*done),
-                mb(*total)
-            )
+            format!("Paused at {percent} ({} of {} MB).", mb(*done), mb(*total))
         }
         Job::Running(done, total) => {
             let percent = Job::percent(*done, *total);
@@ -266,7 +262,11 @@ impl UpdatesTab {
             band(m.u(GAP));
             let row = band(m.u(BUTTON_H));
             let at = Rect::from_x_y_ranges(row.left()..=row.left() + button_w, row.y_range());
-            let label = if status.paused { "Continue download" } else { "Pause download" };
+            let label = if status.paused {
+                "Continue download"
+            } else {
+                "Pause download"
+            };
             if light_button(ui, cx, id.with("sounds_pause"), at, label, true) {
                 update::pause_sounds(!status.paused);
             }

@@ -913,7 +913,10 @@ impl SongLibrary for NativeLibrary {
     fn user_folder(&self) -> Option<PathBuf> {
         match self.whole {
             true => self.root.clone(),
-            false => self.root.as_ref().and_then(|root| root.parent().map(Path::to_owned)),
+            false => self
+                .root
+                .as_ref()
+                .and_then(|root| root.parent().map(Path::to_owned)),
         }
     }
 

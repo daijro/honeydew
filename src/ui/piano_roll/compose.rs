@@ -266,7 +266,8 @@ pub(crate) fn generate(
         let idxs = [root_idx, root_idx + 2, root_idx + 4]
             .into_iter()
             .chain((seventh).then_some(root_idx + 6));
-        idxs.map(|ix| pitches[ix % n] + 12 * (ix / n) as i32).collect()
+        idxs.map(|ix| pitches[ix % n] + 12 * (ix / n) as i32)
+            .collect()
     };
     let chords_only = s.chords == 2 || s.chords == 3;
     let rolled = s.chords == 1 || s.chords == 3;
