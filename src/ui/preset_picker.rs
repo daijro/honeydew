@@ -1373,7 +1373,10 @@ fn read(
         .collect();
     let keep = |mut entry: SongEntry| {
         // The DW Sampler's sample picker does not list `My Instruments` (programs load from their own picker).
-        if module_type == Some(1) && entry.is_folder && entry.name == crate::project_files::INSTRUMENTS_FOLDER {
+        if module_type == Some(1)
+            && entry.is_folder
+            && entry.name == crate::project_files::INSTRUMENTS_FOLDER
+        {
             return None;
         }
         if !entry.is_folder {

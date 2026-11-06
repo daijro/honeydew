@@ -303,7 +303,12 @@ pub(crate) fn generate(
             let chord = chord_of(nearest(root), rng.unit() < 0.5);
             for (k, p) in chord.iter().enumerate() {
                 let stagger = if rolled { k as f64 * ROLL_STAGGER } else { 0.0 };
-                out.push(note(at + stagger, (dur - stagger).max(0.25), *p as u8, VELOCITY));
+                out.push(note(
+                    at + stagger,
+                    (dur - stagger).max(0.25),
+                    *p as u8,
+                    VELOCITY,
+                ));
             }
             continue;
         }
@@ -313,7 +318,12 @@ pub(crate) fn generate(
             let chord = chord_of(nearest(notes[i]), rng.unit() < 0.5);
             for (k, p) in chord.iter().enumerate().skip(1) {
                 let stagger = if rolled { k as f64 * ROLL_STAGGER } else { 0.0 };
-                out.push(note(at + stagger, (dur - stagger).max(0.25), *p as u8, VELOCITY));
+                out.push(note(
+                    at + stagger,
+                    (dur - stagger).max(0.25),
+                    *p as u8,
+                    VELOCITY,
+                ));
             }
         }
     }
@@ -365,8 +375,14 @@ mod tests {
         let events = generate(&settings(8, 7), (0, C_MAJOR), &[], 4.0);
         let pcs: Vec<i32> = offsets(C_MAJOR).iter().map(|o| o.rem_euclid(12)).collect();
         for key in keys(&events) {
-            assert!((60..72).contains(&i32::from(key)), "key {key} outside C4..B4");
-            assert!(pcs.contains(&i32::from(key % 12)), "key {key} not in C major");
+            assert!(
+                (60..72).contains(&i32::from(key)),
+                "key {key} outside C4..B4"
+            );
+            assert!(
+                pcs.contains(&i32::from(key % 12)),
+                "key {key} not in C major"
+            );
         }
     }
 
@@ -391,6 +407,10 @@ mod tests {
         s.chords = 2;
         let events = generate(&s, (0, C_MAJOR), &[], 4.0);
         // Every onset is a triad (or a 7th): more notes than slots, all at slot starts.
-        assert!(events.len() >= 3 * 2, "expected chords, got {}", events.len());
+        assert!(
+            events.len() >= 3 * 2,
+            "expected chords, got {}",
+            events.len()
+        );
     }
 }
