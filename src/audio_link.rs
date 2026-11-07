@@ -646,10 +646,7 @@ impl AudioLink {
 
     /// Reopens the running output at the project's sample rate (`song.sample_rate`, already set), the transport
     /// kept. Without a stream the next one opens at it ([`open_device`]).
-    pub fn set_sample_rate(&mut self, song: &Song, rate: u32) {
-        if song.sample_rate == rate {
-            return;
-        }
+    pub fn set_sample_rate(&mut self, song: &Song) {
         let mode = self.buffer_mode();
         let Some(sink) = &mut self.sink else { return };
         self.seeking = None;
@@ -933,6 +930,8 @@ pub(crate) mod testing {
         pub(crate) no_device: bool,
         /// Reopen attempts, failed ones included.
         pub(crate) reopens: usize,
+        /// Project rates requested when reopening, including failed attempts.
+        pub(crate) reopen_rates: Vec<u32>,
         /// Each `SetParam` sent, as (channel, instance id, index, value).
         pub(crate) params: Vec<(usize, i32, i32, f32)>,
         /// Each `LiveLane` sent, as (channel, notes lane); kept out of `log`, which tests read command by command.
@@ -1152,6 +1151,7 @@ pub(crate) mod testing {
         ) -> Result<(), String> {
             let mut r = self.0.borrow_mut();
             r.reopens += 1;
+            r.reopen_rates.push(song.sample_rate);
             if r.no_device {
                 return Err("no device".into());
             }
@@ -1569,6 +1569,31 @@ mod tests {
         rec.0.borrow_mut().failed = true;
         link.poll();
         assert_eq!(link.sample_rate(), None);
+    }
+
+    #[test]
+    fn changing_project_rate_reopens_output_with_updated_song() {
+        let rec = Recorder::default();
+        let mut link = started(&rec);
+        let mut song = Song::default();
+        song.sample_rate = 96_000;
+        link.set_sample_rate(&song);
+        assert_eq!(rec.0.borrow().reopen_rates, vec![96_000]);
+        assert!(!link.stream_failed);
+
+        rec.0.borrow_mut().no_device = true;
+        song.sample_rate = 44_100;
+        link.set_sample_rate(&song);
+        assert_eq!(rec.0.borrow().reopen_rates, vec![96_000, 44_100]);
+        assert!(link.stream_failed);
+
+        rec.0.borrow_mut().no_device = false;
+        link.set_sample_rate(&song);
+        assert!(!link.stream_failed);
+        assert_eq!(rec.0.borrow().reopen_rates, vec![96_000, 44_100, 44_100]);
+
+        // With no output, the updated song is used when one is opened later.
+        AudioLink::default().set_sample_rate(&song);
     }
 
     #[test]
