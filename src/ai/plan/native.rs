@@ -10,7 +10,7 @@ use base64::{
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
-    io::{BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     net::TcpListener,
     path::PathBuf,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -137,9 +137,11 @@ fn dir() -> Result<PathBuf, String> {
     Ok(p)
 }
 fn host_id() -> Result<String, String> {
-    let path = dir()?.join("chatgpt-host-id");
+    host_id_at(&dir()?.join("chatgpt-host-id"))
+}
+fn host_id_at(path: &std::path::Path) -> Result<String, String> {
     let file = file_options()
-        .open(&path)
+        .open(path)
         .map_err(|_| "Could not persist the ChatGPT host identity.")?;
     fs2::FileExt::lock_exclusive(&file).map_err(|_| "Could not lock the ChatGPT host identity.")?;
     let mut file = &file;
@@ -147,17 +149,52 @@ fn host_id() -> Result<String, String> {
     file.take(256)
         .read_to_string(&mut old)
         .map_err(|_| "Could not read the ChatGPT host identity.")?;
-    if !old.is_empty() {
-        if old.starts_with("honeydew-") && old.len() < 128 {
-            return Ok(old);
-        }
+    if valid_host_id(&old) {
+        return Ok(old);
+    }
+    // Migrate the unsupported identifier written by the first implementation before retrying OAuth.
+    if !old.is_empty() && !(old.starts_with("honeydew-") && old.len() < 128) {
         return Err("Invalid ChatGPT host identity file.".into());
     }
-    let id = format!("honeydew-{}", random()?);
-    file.write_all(id.as_bytes())
+    let id = new_host_id()?;
+    file.seek(SeekFrom::Start(0))
+        .and_then(|_| file.write_all(id.as_bytes()))
+        .and_then(|_| file.set_len(id.len() as u64))
         .and_then(|_| file.sync_all())
         .map_err(|_| "Could not save the ChatGPT host identity.")?;
     Ok(id)
+}
+// RFC 9562 UUIDv4, encoded as the UUID URN required by OpenAI's host identifier contract.
+fn new_host_id() -> Result<String, String> {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes)
+        .map_err(|_| "Could not generate a secure ChatGPT host identity.")?;
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    Ok(format!(
+        "urn:uuid:{}-{}-{}-{}-{}",
+        &hex[..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..]
+    ))
+}
+fn valid_host_id(id: &str) -> bool {
+    let Some(uuid) = id.strip_prefix("urn:uuid:") else {
+        return false;
+    };
+    uuid.len() == 36
+        && uuid.bytes().enumerate().all(|(i, b)| {
+            if [8, 13, 18, 23].contains(&i) {
+                b == b'-'
+            } else {
+                b.is_ascii_hexdigit()
+            }
+        })
+        && uuid.as_bytes()[14] == b'4'
+        && matches!(uuid.as_bytes()[19], b'8' | b'9' | b'a' | b'b')
 }
 fn session_lock(account: &Account) -> Result<std::fs::File, String> {
     let p = dir()?.join(format!("chatgpt-{}.lock", vault_id(account)));
@@ -1074,6 +1111,32 @@ mod tests {
             returning: None,
             cancel: Arc::new(AtomicBool::new(false)),
             remember: false,
+        }
+    }
+    #[test]
+    fn host_identity_is_a_stable_uuid_urn_and_migrates_the_rejected_legacy_value() {
+        let path =
+            std::env::temp_dir().join(format!("honeydew-host-id-test-{}", random().unwrap()));
+        let id = host_id_at(&path).unwrap();
+        assert!(valid_host_id(&id));
+        assert_eq!(host_id_at(&path).unwrap(), id);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), id);
+        assert_ne!(new_host_id().unwrap(), id);
+        std::fs::write(&path, format!("honeydew-{}", "x".repeat(43))).unwrap();
+        let migrated = host_id_at(&path).unwrap();
+        assert!(valid_host_id(&migrated));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), migrated);
+        assert_eq!(host_id_at(&path).unwrap(), migrated);
+        std::fs::write(&path, "unexpected malformed identity").unwrap();
+        assert!(host_id_at(&path).is_err());
+        std::fs::remove_file(path).unwrap();
+        for bad in [
+            "honeydew-example",
+            "urn:uuid:123",
+            "urn:uuid:00000000-0000-1000-8000-000000000000",
+            "urn:uuid:00000000-0000-4000-0000-000000000000",
+        ] {
+            assert!(!valid_host_id(bad));
         }
     }
     #[test]
