@@ -25,8 +25,9 @@ use nih_plug::prelude::*;
 use os_plugkit::vals::Vals;
 use os_ui::Canvas;
 
-use crate::params::{CHOICE_MAX, RindParams};
-use crate::view::{self, Hit, Kind};
+use crate::ids::{Kind as Range, SPECS};
+use crate::params::RindParams;
+use crate::view::{self, Hit, Kind, Ui, Values};
 
 /// The modifier keys that matter here, as held at an input: Ctrl (fine steps) and Alt (reset).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -50,105 +51,187 @@ pub enum Act {
     Lock,
 }
 
+/// Which way a drag runs: up raises a knob or bar, right raises a slider.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Axis {
+    Up,
+    Right,
+}
+
 /// A drag: `v` is the unrounded normalised value it has reached, over `px` for the whole range.
 #[derive(Clone, Copy, Debug)]
 struct Drag {
-    id: &'static str,
+    param: usize,
     v: f32,
     px: f32,
+    axis: Axis,
+}
+
+/// The values of a [`Vals`], by table index.
+struct Shown<'a>(&'a Vals);
+
+impl Values for Shown<'_> {
+    fn norm(&self, p: usize) -> f32 {
+        self.0.norm(SPECS[p].id)
+    }
+    fn plain(&self, p: usize) -> f32 {
+        self.0.plain(SPECS[p].id)
+    }
+    fn text(&self, p: usize) -> String {
+        self.0.text(SPECS[p].id)
+    }
 }
 
 /// The editor's logic.
 pub struct Logic {
     pub vals: Vals,
+    ui: Ui,
     hits: Vec<Hit>,
     drag: Option<Drag>,
-    pressed: Option<&'static str>,
+    pressed: Option<usize>,
+    last: Option<usize>,
 }
 
 /// A fine drag or wheel step (Ctrl) is this share of a normal one.
 const FINE: f32 = 0.25;
-/// A wheel notch moves a knob or fader this much of its range.
+/// A wheel notch moves a knob or slider this much of its range.
 const WHEEL_STEP: f32 = 0.02;
 
 impl Logic {
     pub fn new(vals: Vals) -> Self {
+        let ui = Ui::default();
         Logic {
             vals,
-            hits: Vec::new(),
+            hits: view::layout(&ui),
+            ui,
             drag: None,
             pressed: None,
+            last: None,
         }
     }
 
     /// Paints the editor and keeps its hit regions.
     pub fn paint(&mut self, c: &mut Canvas) {
-        let hits = {
-            let vals = &self.vals;
-            view::paint(c, &|id| vals.norm(id), self.pressed)
-        };
+        let hits = view::paint(c, &Shown(&self.vals), &self.ui, self.pressed, self.last);
         self.hits = hits;
     }
 
-    fn hit(&self, x: f32, y: f32) -> Option<(&'static str, Kind)> {
-        self.hits
-            .iter()
-            .rev()
-            .find(|h| h.r.contains(x, y))
-            .map(|h| (h.id, h.kind))
+    fn hit(&self, x: f32, y: f32) -> Option<Hit> {
+        self.hits.iter().rev().find(|h| h.r.contains(x, y)).copied()
     }
 
-    fn reset(&mut self, id: &str) {
+    fn reset(&mut self, p: usize) {
+        let id = SPECS[p].id;
         let default = self.vals.default_norm(id);
         self.vals.edit(id, default);
     }
 
-    fn begin_drag(&mut self, id: &'static str, px: f32) -> Vec<Act> {
+    fn begin_drag(&mut self, p: usize, px: f32, axis: Axis, at: Option<f32>) -> Vec<Act> {
+        let id = SPECS[p].id;
         self.vals.begin(id);
+        if let Some(v) = at {
+            self.vals.set(id, v);
+        }
         self.drag = Some(Drag {
-            id,
-            v: self.vals.norm(id),
+            param: p,
+            v: at.unwrap_or_else(|| self.vals.norm(id)),
             px,
+            axis,
         });
-        self.pressed = Some(id);
+        self.pressed = Some(p);
         vec![Act::Repaint, Act::Lock]
+    }
+
+    /// The next (`step` 1) or previous (-1) whole value of `p`, wrapping when `wrap`.
+    fn step(&mut self, p: usize, step: i32, wrap: bool) {
+        let Range::Int(lo, hi) = SPECS[p].kind else {
+            return;
+        };
+        let now = self.vals.plain(SPECS[p].id).round() as i32;
+        let mut to = now + step;
+        if to > hi {
+            to = if wrap { lo } else { hi };
+        }
+        if to < lo {
+            to = if wrap { hi } else { lo };
+        }
+        self.vals.edit_plain(SPECS[p].id, to as f32);
     }
 
     /// A press at (`x`, `y`) in logical px.
     pub fn down(&mut self, x: f32, y: f32, btn: Btn, m: Mods) -> Vec<Act> {
-        let Some((id, kind)) = self.hit(x, y) else {
+        let Some(h) = self.hit(x, y) else {
             return Vec::new();
         };
-        match (kind, btn) {
-            (_, Btn::Middle) => self.reset(id),
-            (_, Btn::Left) if m.alt => self.reset(id),
-            (Kind::Choice(value), Btn::Left) => {
-                let norm = self.vals.plain_to_norm(id, value as f32);
-                self.vals.edit(id, norm);
+        let p = h.param;
+        match h.kind {
+            Kind::Tab(i) => {
+                if btn == Btn::Left {
+                    self.ui.tab = i;
+                    self.hits = view::layout(&self.ui);
+                    return vec![Act::Repaint];
+                }
+                return Vec::new();
             }
-            (Kind::Knob, Btn::Left) => return self.begin_drag(id, view::KNOB_PX),
-            (Kind::Fader, Btn::Left) => return self.begin_drag(id, view::FADER_PX),
-            (_, Btn::Right) => return Vec::new(),
+            Kind::Sub(i) => {
+                if btn == Btn::Left {
+                    let tab = self.ui.tab;
+                    self.ui.subs[tab] = i;
+                    self.hits = view::layout(&self.ui);
+                    return vec![Act::Repaint];
+                }
+                return Vec::new();
+            }
+            _ => {}
+        }
+        self.last = Some(p);
+        match (btn, m.alt) {
+            (Btn::Middle, _) | (Btn::Left, true) => self.reset(p),
+            (Btn::Right, _) => {
+                if h.kind == Kind::Cycle {
+                    self.step(p, -1, true);
+                } else {
+                    return vec![Act::Repaint];
+                }
+            }
+            (Btn::Left, false) => match h.kind {
+                Kind::Cycle => self.step(p, 1, true),
+                Kind::Toggle => self.step(p, 1, true),
+                Kind::Knob => return self.begin_drag(p, view::KNOB_PX, Axis::Up, None),
+                Kind::Slider => {
+                    let at = view::slider_norm(h.r, x);
+                    return self.begin_drag(p, h.r.w - 12.0, Axis::Right, Some(at));
+                }
+                Kind::Bar => {
+                    let at = view::bar_norm(h.r, y);
+                    return self.begin_drag(p, h.r.h - 4.0, Axis::Up, Some(at));
+                }
+                Kind::Tab(_) | Kind::Sub(_) => {}
+            },
         }
         vec![Act::Repaint]
     }
 
-    /// Movement of a locked drag in logical px since the last event: up raises the value.
-    pub fn delta(&mut self, dy: f32, m: Mods) -> Vec<Act> {
-        let Some(Drag { id, v, px }) = self.drag else {
+    /// Movement of a locked drag in logical px since the last event.
+    pub fn delta(&mut self, dx: f32, dy: f32, m: Mods) -> Vec<Act> {
+        let Some(Drag { param, v, px, axis }) = self.drag else {
             return Vec::new();
         };
         let fine = if m.ctrl { FINE } else { 1.0 };
-        let v = (v - dy * fine / px).clamp(0.0, 1.0);
-        self.vals.set(id, v);
-        self.drag = Some(Drag { id, v, px });
+        let moved = match axis {
+            Axis::Up => -dy,
+            Axis::Right => dx,
+        };
+        let v = (v + moved * fine / px).clamp(0.0, 1.0);
+        self.vals.set(SPECS[param].id, v);
+        self.drag = Some(Drag { param, v, px, axis });
         vec![Act::Repaint]
     }
 
     /// The press ends.
     pub fn up(&mut self) -> Vec<Act> {
         if let Some(drag) = self.drag.take() {
-            self.vals.end(drag.id);
+            self.vals.end(SPECS[drag.param].id);
         }
         self.pressed = None;
         vec![Act::Repaint]
@@ -156,20 +239,20 @@ impl Logic {
 
     /// The wheel over a control: `notches` up are positive.
     pub fn wheel(&mut self, x: f32, y: f32, notches: f32, m: Mods) -> Vec<Act> {
-        let Some((id, kind)) = self.hit(x, y) else {
+        let Some(h) = self.hit(x, y) else {
             return Vec::new();
         };
-        if notches == 0.0 {
+        if notches == 0.0 || matches!(h.kind, Kind::Tab(_) | Kind::Sub(_)) {
             return Vec::new();
         }
-        match kind {
-            Kind::Choice(_) => {
-                let to =
-                    (self.vals.plain(id).round() + notches.signum()).clamp(0.0, CHOICE_MAX as f32);
-                let norm = self.vals.plain_to_norm(id, to);
-                self.vals.edit(id, norm);
-            }
-            Kind::Knob | Kind::Fader => {
+        let p = h.param;
+        self.last = Some(p);
+        let sign = notches.signum() as i32;
+        match h.kind {
+            Kind::Cycle | Kind::Toggle => self.step(p, sign, false),
+            _ if view::is_int(p) => self.step(p, sign, false),
+            _ => {
+                let id = SPECS[p].id;
                 let fine = if m.ctrl { FINE } else { 1.0 };
                 let v = (self.vals.norm(id) + notches * WHEEL_STEP * fine).clamp(0.0, 1.0);
                 self.vals.edit(id, v);
@@ -358,8 +441,10 @@ mod gui {
                                 .down(x / self.scale, y / self.scale, btn(b), self.mods());
                         self.act(acts);
                     }
-                    Input::Delta { dx: _, dy } => {
-                        let acts = self.logic.delta(dy / self.scale, self.mods());
+                    Input::Delta { dx, dy } => {
+                        let acts = self
+                            .logic
+                            .delta(dx / self.scale, dy / self.scale, self.mods());
                         self.act(acts);
                     }
                     Input::Up { .. } => {
@@ -420,7 +505,7 @@ mod gui {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::params::{CHOICE, FADER, KNOB};
+    use crate::ids;
 
     fn logic() -> (Logic, Arc<RindParams>) {
         let params = Arc::new(RindParams::default());
@@ -436,122 +521,208 @@ mod tests {
         c
     }
 
-    fn knob() -> (f32, f32) {
-        view::knob_center()
+    fn open(l: &mut Logic, tab: usize, sub: usize) {
+        let r = view::layout(&Ui::default())
+            .into_iter()
+            .find(|h| h.kind == Kind::Tab(tab))
+            .unwrap()
+            .r;
+        l.down(r.cx(), r.cy(), Btn::Left, Mods::default());
+        if sub > 0 {
+            let r = l.hits.iter().find(|h| h.kind == Kind::Sub(sub)).unwrap().r;
+            l.down(r.cx(), r.cy(), Btn::Left, Mods::default());
+        }
+        paint(l);
     }
 
+    /// The centre of the control of parameter `p` on the current page.
+    fn at(l: &Logic, p: usize) -> (f32, f32) {
+        let h = l
+            .hits
+            .iter()
+            .find(|h| h.param == p && !matches!(h.kind, Kind::Tab(_) | Kind::Sub(_)))
+            .unwrap_or_else(|| panic!("no control for {}", SPECS[p].id));
+        (h.r.cx(), h.r.cy())
+    }
+
+    fn live(params: &RindParams, p: usize) -> f32 {
+        let mut snap = RindParams::defaults();
+        params.snapshot(&mut snap);
+        snap[p]
+    }
+
+    const NONE: Mods = Mods {
+        ctrl: false,
+        alt: false,
+    };
+
     #[test]
-    fn painting_draws_every_control_and_the_regions_do_not_overlap() {
-        let (l, _) = logic();
-        // The knob, the fader and the choice's four cells.
-        assert_eq!(l.hits.len(), 6);
-        for (i, a) in l.hits.iter().enumerate() {
-            for b in &l.hits[i + 1..] {
-                assert!(a.r.intersect(&b.r).is_empty(), "{a:?} overlaps {b:?}");
-            }
+    fn every_page_paints_something_and_the_tabs_switch_pages() {
+        let (mut l, _) = logic();
+        for tab in 0..view::TABS.len() {
+            open(&mut l, tab, 0);
+            let c = paint(&mut l);
+            let mut px = vec![0u32; (view::W * view::H) as usize];
+            c.copy_to_xrgb(&mut px);
+            let distinct: std::collections::HashSet<_> = px.iter().copied().collect();
+            assert!(distinct.len() > 8, "tab {tab} is blank");
+            assert_eq!(l.ui.tab, tab);
         }
-        let mut l = l;
-        let c = paint(&mut l);
-        let mut px = vec![0u32; (view::W * view::H) as usize];
-        c.copy_to_xrgb(&mut px);
-        assert!(px.iter().any(|&p| p != px[0]), "the frame is blank");
+        open(&mut l, view::TAB_FX, 6);
+        assert_eq!(l.ui.sub(), 6);
+        paint(&mut l);
     }
 
     #[test]
     fn a_knob_drag_sounds_at_once_and_a_middle_click_resets_it() {
         let (mut l, params) = logic();
-        let (x, y) = knob();
-        assert_eq!(
-            l.down(x, y, Btn::Left, Mods::default()),
-            [Act::Repaint, Act::Lock]
-        );
+        open(&mut l, view::TAB_MAIN, 0);
+        let (x, y) = at(&l, ids::MASTER_VOL);
+        assert_eq!(l.down(x, y, Btn::Left, NONE), [Act::Repaint, Act::Lock]);
         assert!(l.drag.is_some());
-        // 30 px up of the knob's whole-range drag: a fifth of the range.
-        l.delta(-30.0, Mods::default());
+        // 30 px up of 150: a fifth of the range, from the default 0.7.
+        l.delta(0.0, -30.0, NONE);
         l.up();
         assert!(l.drag.is_none());
-        let heard = params.live.value(&params.knob);
-        assert!((heard - 0.7).abs() < 1e-4, "{heard}");
-        // The middle button (a double tap on Honeydew's card) puts it back.
-        l.down(x, y, Btn::Middle, Mods::default());
-        assert_eq!(params.live.value(&params.knob), 0.5);
-        // So does Alt-click.
-        l.down(x, y, Btn::Left, Mods::default());
-        l.delta(-30.0, Mods::default());
+        let heard = live(&params, ids::MASTER_VOL);
+        assert!((heard - 0.9).abs() < 1e-3, "{heard}");
+        l.down(x, y, Btn::Middle, NONE);
+        assert!((live(&params, ids::MASTER_VOL) - 0.7).abs() < 1e-4);
+        // Alt-click resets too.
+        l.down(x, y, Btn::Left, NONE);
+        l.delta(0.0, -30.0, NONE);
         l.up();
-        l.down(
-            x,
-            y,
-            Btn::Left,
-            Mods {
-                alt: true,
-                ..Mods::default()
-            },
-        );
-        assert_eq!(params.live.value(&params.knob), 0.5);
+        l.down(x, y, Btn::Left, Mods { alt: true, ..NONE });
+        assert!((live(&params, ids::MASTER_VOL) - 0.7).abs() < 1e-4);
     }
 
     #[test]
     fn a_fine_drag_moves_a_quarter_as_far() {
         let (mut l, params) = logic();
-        let (x, y) = knob();
-        l.down(x, y, Btn::Left, Mods::default());
-        l.delta(
-            -30.0,
-            Mods {
-                ctrl: true,
-                ..Mods::default()
-            },
-        );
+        open(&mut l, view::TAB_MAIN, 0);
+        let (x, y) = at(&l, ids::MASTER_VOL);
+        l.down(x, y, Btn::Left, NONE);
+        l.delta(0.0, -30.0, Mods { ctrl: true, ..NONE });
         l.up();
-        let heard = params.live.value(&params.knob);
-        assert!((heard - 0.55).abs() < 1e-4, "{heard}");
+        assert!((live(&params, ids::MASTER_VOL) - 0.75).abs() < 1e-3);
     }
 
     #[test]
-    fn the_fader_drags_through_its_skewed_range_and_resets() {
+    fn a_selector_steps_on_a_tap_wraps_and_goes_back_on_a_right_click() {
         let (mut l, params) = logic();
-        let r = view::fader_rect();
-        l.down(r.cx(), r.cy(), Btn::Left, Mods::default());
-        l.delta(60.0, Mods::default());
+        open(&mut l, view::TAB_OSC_A, 0);
+        let wave = ids::OSC_BASE + ids::osc::WAVE;
+        let (x, y) = at(&l, wave);
+        assert_eq!(live(&params, wave), 1.0);
+        l.down(x, y, Btn::Left, NONE);
         l.up();
-        // Half the range down from the default (1.0): a normalised 0.5, which the skew maps to another plain value.
-        let heard = params.live.value(&params.fader);
-        assert!(heard > 0.0 && heard < 1.0, "{heard}");
-        l.down(r.cx(), r.cy(), Btn::Middle, Mods::default());
-        assert_eq!(params.live.value(&params.fader), 1.0);
+        assert_eq!(live(&params, wave), 2.0);
+        l.down(x, y, Btn::Right, NONE);
+        l.down(x, y, Btn::Right, NONE);
+        assert_eq!(live(&params, wave), 0.0);
+        l.down(x, y, Btn::Right, NONE);
+        assert_eq!(live(&params, wave), 7.0, "wraps below the first");
+        l.down(x, y, Btn::Left, NONE);
+        assert_eq!(live(&params, wave), 0.0, "wraps past the last");
     }
 
     #[test]
-    fn a_choice_cell_picks_its_value_and_the_wheel_steps_it() {
+    fn a_switch_flips_and_the_wheel_holds_at_the_ends() {
         let (mut l, params) = logic();
-        let r = view::choice_rect(2);
-        l.down(r.cx(), r.cy(), Btn::Left, Mods::default());
-        assert_eq!(params.live.value(&params.choice), 2);
-        l.wheel(r.cx(), r.cy(), 1.0, Mods::default());
-        assert_eq!(params.live.value(&params.choice), 3);
-        l.wheel(r.cx(), r.cy(), 1.0, Mods::default());
-        assert_eq!(
-            params.live.value(&params.choice),
-            3,
-            "held at the last value"
+        open(&mut l, view::TAB_ARP, 0);
+        let (x, y) = at(&l, ids::ARP_ON);
+        assert_eq!(live(&params, ids::ARP_ON), 0.0);
+        l.down(x, y, Btn::Left, NONE);
+        assert_eq!(live(&params, ids::ARP_ON), 1.0);
+        l.down(x, y, Btn::Left, NONE);
+        assert_eq!(live(&params, ids::ARP_ON), 0.0);
+        let (mx, my) = at(&l, ids::ARP_MODE);
+        l.wheel(mx, my, 1.0, NONE);
+        assert_eq!(live(&params, ids::ARP_MODE), 1.0);
+        l.wheel(mx, my, -5.0, NONE);
+        l.wheel(mx, my, -5.0, NONE);
+        assert_eq!(live(&params, ids::ARP_MODE), 0.0);
+    }
+
+    #[test]
+    fn whole_number_knobs_step_by_the_wheel() {
+        let (mut l, params) = logic();
+        open(&mut l, view::TAB_ARP, 0);
+        let (x, y) = at(&l, ids::ARP_OCT);
+        l.wheel(x, y, 1.0, NONE);
+        assert_eq!(live(&params, ids::ARP_OCT), 2.0);
+        l.wheel(x, y, 1.0, NONE);
+        assert_eq!(live(&params, ids::ARP_OCT), 3.0);
+    }
+
+    #[test]
+    fn a_matrix_slider_takes_a_press_then_a_drag() {
+        let (mut l, params) = logic();
+        open(&mut l, view::TAB_MATRIX, 1);
+        let amt = ids::MAT_BASE + 8 * ids::MAT_STRIDE + ids::mat::AMT;
+        let h = *l.hits.iter().find(|h| h.param == amt).unwrap();
+        // A press at the far left sets -1, at the middle 0.
+        l.down(h.r.x + 1.0, h.r.cy(), Btn::Left, NONE);
+        assert_eq!(live(&params, amt), -1.0);
+        l.up();
+        l.down(h.r.cx(), h.r.cy(), Btn::Left, NONE);
+        assert!(live(&params, amt).abs() < 0.02);
+        // Then a drag right over half the slider's travel: from the middle to the top.
+        l.delta((h.r.w - 12.0) / 2.0, 0.0, NONE);
+        l.up();
+        assert!(
+            (live(&params, amt) - 1.0).abs() < 0.05,
+            "{}",
+            live(&params, amt)
         );
-        l.wheel(r.cx(), r.cy(), -2.0, Mods::default());
-        assert_eq!(params.live.value(&params.choice), 2);
+        // The slider's source and target selectors are on the same row.
+        let src = ids::MAT_BASE + 8 * ids::MAT_STRIDE + ids::mat::SRC;
+        let (x, y) = at(&l, src);
+        l.down(x, y, Btn::Left, NONE);
+        assert_eq!(live(&params, src), 1.0);
+    }
+
+    #[test]
+    fn an_arp_bar_is_set_where_it_is_pressed() {
+        let (mut l, params) = logic();
+        open(&mut l, view::TAB_ARP, 0);
+        let step = ids::ARP_STEP_BASE + 2;
+        let h = *l.hits.iter().find(|h| h.param == step).unwrap();
+        l.down(h.r.cx(), h.r.y + 2.0, Btn::Left, NONE);
+        l.up();
+        assert!((live(&params, step) - 1.0).abs() < 1e-4);
+        l.down(h.r.cx(), h.r.bottom() - 2.0, Btn::Left, NONE);
+        l.up();
+        assert!(live(&params, step).abs() < 1e-4);
+        // The transpose bar is bipolar: its middle is 0 semitones.
+        let tr = *l
+            .hits
+            .iter()
+            .find(|h| h.param == ids::ARP_TR_BASE + 2)
+            .unwrap();
+        l.down(tr.r.cx(), tr.r.cy(), Btn::Left, NONE);
+        l.up();
+        assert!(live(&params, ids::ARP_TR_BASE + 2).abs() <= 1.0);
+        // A tie toggles.
+        let (x, y) = at(&l, ids::ARP_HOLD_BASE + 2);
+        l.down(x, y, Btn::Left, NONE);
+        assert_eq!(live(&params, ids::ARP_HOLD_BASE + 2), 1.0);
     }
 
     #[test]
     fn a_press_off_every_control_does_nothing() {
         let (mut l, params) = logic();
-        assert!(l.down(2.0, 2.0, Btn::Left, Mods::default()).is_empty());
-        assert!(l.delta(-10.0, Mods::default()).is_empty());
-        assert_eq!(params.live.value(&params.knob), 0.5);
+        assert!(l.down(2.0, 100.0, Btn::Left, NONE).is_empty());
+        assert!(l.delta(0.0, -10.0, NONE).is_empty());
+        assert_eq!(live(&params, ids::MASTER_VOL), 0.7);
     }
 
     #[test]
-    fn the_regions_name_the_parameters() {
-        let (l, _) = logic();
-        let ids: Vec<_> = l.hits.iter().map(|h| h.id).collect();
-        assert_eq!(ids, [KNOB, FADER, CHOICE, CHOICE, CHOICE, CHOICE]);
+    fn a_page_change_ends_no_drag_and_keeps_each_tabs_sub_page() {
+        let (mut l, _) = logic();
+        open(&mut l, view::TAB_FX, 3);
+        open(&mut l, view::TAB_MAIN, 0);
+        open(&mut l, view::TAB_FX, 0);
+        assert_eq!(l.ui.sub(), 3, "the FX tab remembers its effect");
     }
 }

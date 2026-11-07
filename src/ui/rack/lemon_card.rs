@@ -862,21 +862,41 @@ mod tests {
         );
     }
 
-    /// Rind's spike editor (Honeydew's own, `crates/rind`) takes the same touch gestures as the Lemon plugins': a double
-    /// tap puts its knob back at its default, the second tap a few points off the first.
+    /// Opens Rind's MAIN page and returns the centre of its master volume knob (the editor's pixels are points here).
+    fn rind_knob(rig: &mut Rig) -> Pos2 {
+        use rind::view::{self, Kind, Ui};
+        let tab = (view::layout(&Ui::default()).into_iter())
+            .find(|h| h.kind == Kind::Tab(view::TAB_MAIN))
+            .unwrap();
+        rig.tap(pos2(tab.r.cx(), tab.r.cy()));
+        for _ in 0..3 {
+            rig.frame(vec![]);
+        }
+        let ui = Ui {
+            tab: view::TAB_MAIN,
+            ..Ui::default()
+        };
+        let knob = (view::layout(&ui).into_iter())
+            .find(|h| h.param == rind::ids::MASTER_VOL && h.kind == Kind::Knob)
+            .unwrap();
+        pos2(knob.r.cx(), knob.r.cy())
+    }
+
+    /// Rind's editor (Honeydew's own, `crates/rind`) takes the same touch gestures as the Lemon plugins': a double tap
+    /// puts its knob back at its default, the second tap a few points off the first.
     #[test]
     fn a_double_tap_resets_rinds_knob() {
         let mut rig = Rig::new("Rind");
-        let at = pos2(90.0, 100.0);
+        let at = rind_knob(&mut rig);
         let _ = plugins::idle();
         rig.frame(finger(TouchPhase::Start, at));
         let default = (plugins::idle().iter().find(|m| m.gesture == 0))
             .expect("a press")
             .value;
-        for y in [80.0, 60.0] {
+        for y in [at.y - 20.0, at.y - 40.0] {
             rig.frame(finger(TouchPhase::Move, pos2(at.x, y)));
         }
-        rig.frame(finger(TouchPhase::End, pos2(at.x, 60.0)));
+        rig.frame(finger(TouchPhase::End, pos2(at.x, at.y - 40.0)));
         let last =
             |moves: &[plugins::PluginMove]| moves.iter().rfind(|m| m.gesture == 1).map(|m| m.value);
         let moves = plugins::idle();
@@ -892,7 +912,7 @@ mod tests {
     #[test]
     fn a_second_finger_turns_rinds_knob() {
         let mut rig = Rig::new("Rind");
-        let (at, key) = (pos2(90.0, 100.0), pos2(790.0, 590.0));
+        let (at, key) = (rind_knob(&mut rig), pos2(790.0, 590.0));
         let second = |phase, pos| {
             vec![Event::Touch {
                 device_id: TouchDeviceId(1),
@@ -905,7 +925,7 @@ mod tests {
         let _ = plugins::idle();
         rig.frame(finger(TouchPhase::Start, key));
         rig.frame(second(TouchPhase::Start, at));
-        for y in [80.0, 60.0] {
+        for y in [at.y - 20.0, at.y - 40.0] {
             rig.frame(second(TouchPhase::Move, pos2(at.x, y)));
         }
         rig.frame(finger(TouchPhase::End, key));
@@ -914,7 +934,7 @@ mod tests {
             moves.iter().any(|m| m.gesture == 1) && !moves.iter().any(|m| m.gesture == 2),
             "{moves:?}"
         );
-        rig.frame(second(TouchPhase::End, pos2(at.x, 60.0)));
+        rig.frame(second(TouchPhase::End, pos2(at.x, at.y - 40.0)));
         assert!(
             plugins::idle().iter().any(|m| m.gesture == 2),
             "the lift ends the press"

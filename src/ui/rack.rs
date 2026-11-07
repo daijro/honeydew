@@ -2353,11 +2353,13 @@ impl RackPanel {
             text,
             5,
         );
-        if !plugin {
+        // A plugin keeps its presets itself, but Rind's are Honeydew's: the module's picker and Save preset.
+        let presets = !plugin || crate::project_files::sylenth::is_rind(module);
+        if presets {
             preset_button(ui, cx, preset_rect, &preset, text);
         }
         edits.presets =
-            !plugin && (ui.interact(preset_rect, base.with("preset"), Sense::click())).clicked();
+            presets && (ui.interact(preset_rect, base.with("preset"), Sense::click())).clicked();
         // The pop-out (icon 11) opens the plugin's own editor window, or brings it to the front; lit as a button is on
         // (`text`, its icon `moduleFill`) while the window is open.
         if let Some(open) = window {
@@ -2679,6 +2681,15 @@ impl RackPanel {
             };
             let keyed = module.takes_key();
             let mut items = card_menu(module.minimized, module.type_id, full_range(module), keyed);
+            // Rind saves presets like any module with them.
+            if crate::project_files::sylenth::is_rind(module) {
+                for item in items
+                    .iter_mut()
+                    .filter(|i| i.id == Some(CardAction::SavePreset))
+                {
+                    item.disabled = false;
+                }
+            }
             let plugin = module.file.plugin.as_deref();
             let controller = plugin.is_some_and(crate::plugins::builtin::controller);
             if module.type_id == honeydew_audio::modulator::MODULATOR || controller {

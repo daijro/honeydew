@@ -42,9 +42,9 @@ mod native;
 pub(crate) use native::share;
 mod presets;
 pub use presets::{
-    CHORD_SETS_FOLDER, CHORDS_EXT, DRUMSET_EXT, DRUMSETS_FOLDER, FLGSYNTH_EXT, FLMS_EXT,
-    PRESET_EXT, PRESETS_FOLDER, PresetKind, PresetSource, RACK_EXT, RACKS_FOLDER, preset_exts,
-    preset_folder,
+    CHORD_SETS_FOLDER, CHORDS_EXT, DRUMSET_EXT, DRUMSETS_FOLDER, FLGSYNTH_EXT, FLMS_EXT, FXB_EXT,
+    FXP_EXT, PRESET_EXT, PRESETS_FOLDER, PresetKind, PresetSource, RACK_EXT, RACKS_FOLDER,
+    preset_exts, preset_folder,
 };
 #[cfg(target_arch = "wasm32")]
 mod web;
@@ -65,6 +65,7 @@ pub use content::{
 };
 pub(crate) use content::{in_content_folder, resolve_in};
 mod picks;
+pub(crate) mod sylenth;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod verify;
 pub use picks::{DWP_EXT, SPECTRA_EXT, WAVESHAPES_FOLDER, fits, is_audio, load_pick, read_spectra};
