@@ -232,13 +232,14 @@ pub fn status_line_with_locks(p: &Performance) -> String {
 }
 
 /// Where the parts go inside a monitor rect, from the line height `fh` and the hairline unit `t`: the status line, the
-/// bar (2 t tall), the graph, the footer.
+/// bar (2 t tall), the graph, the memory footer and the Clear row.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Layout {
     pub status: Rect,
     pub bar: Rect,
     pub graph: Rect,
     pub footer: Rect,
+    pub clear: Rect,
 }
 
 /// The parts of the monitor rect `rect`; both views share it.
@@ -248,8 +249,9 @@ pub fn layout(rect: Rect, fh: f32, t: f32) -> Layout {
     Layout {
         status: part(0.0, fh),
         bar: part(fh + t, 2.0 * t),
-        graph: part(fh + 8.0 * t, rect.height() - 2.0 * fh - 9.0 * t),
-        footer: part(rect.height() - fh, fh),
+        graph: part(fh + 8.0 * t, (rect.height() - 3.0 * fh - 11.0 * t).max(0.0)),
+        footer: part(rect.height() - 2.0 * fh - 2.0 * t, fh),
+        clear: part(rect.height() - fh, fh),
     }
 }
 
@@ -321,13 +323,13 @@ pub fn show(ui: &mut Ui, cx: &UiCtx, rect: Rect, p: &Performance) -> bool {
     let text = c.text.to_color32();
     let line = status_line_with_locks(p);
     let clear_w = m.u(3.5);
-    let clear_gap = m.u(0.5);
-    let clear = parts.status.with_min_x(parts.status.right() - clear_w);
-    let status = parts.status.with_max_x(clear.left() - clear_gap);
+    let clear = parts
+        .clear
+        .with_max_x(parts.clear.left() + clear_w.min(parts.clear.width()));
     label(
         ui,
         cx,
-        status,
+        parts.status,
         &line,
         FontSize::Pt10,
         Align2::LEFT_CENTER,
@@ -475,9 +477,9 @@ mod tests {
     }
 
     #[test]
-    fn a_monitor_rect_is_laid_out_as_screens_md_says() {
+    fn monitor_layout_puts_clear_below_the_memory_footer() {
         // (x, y, w, h), fh = the line height, t = the hairline: status (x, y, w, fh), bar (x, y + fh + t, w, 2t), graph
-        // (x, y + fh + 8t, w, h - 2fh - 9t), footer (x, y + h - fh, w, fh).
+        // (x, y + fh + 8t, w, h - 3fh - 11t), memory footer and then a separate Clear row.
         let rect = Rect::from_min_size(pos2(10.0, 20.0), vec2(500.0, 160.0));
         let (fh, t) = (16.0, 2.0);
         let l = layout(rect, fh, t);
@@ -486,9 +488,11 @@ mod tests {
         assert_eq!(l.bar, at(10.0, 20.0 + 16.0 + 2.0, 500.0, 4.0));
         assert_eq!(
             l.graph,
-            at(10.0, 20.0 + 16.0 + 16.0, 500.0, 160.0 - 32.0 - 18.0)
+            at(10.0, 20.0 + 16.0 + 16.0, 500.0, 160.0 - 48.0 - 22.0)
         );
-        assert_eq!(l.footer, at(10.0, 20.0 + 160.0 - 16.0, 500.0, 16.0));
+        assert_eq!(l.footer, at(10.0, 20.0 + 160.0 - 32.0 - 4.0, 500.0, 16.0));
+        assert_eq!(l.clear, at(10.0, 20.0 + 160.0 - 16.0, 500.0, 16.0));
+        assert!(l.clear.top() > l.footer.bottom());
     }
 
     #[test]
@@ -802,7 +806,9 @@ mod tests {
             };
             let (shapes, m) = painted(ppp, rect, &p);
             let parts = layout(rect, fh(ppp), m.t());
-            let clear = parts.status.with_min_x(parts.status.right() - m.u(3.5));
+            let clear = parts
+                .clear
+                .with_max_x(parts.clear.left() + m.u(3.5).min(parts.clear.width()));
             for (r, fill) in rects(&shapes)
                 .into_iter()
                 .filter(|(_, f)| *f != Color32::TRANSPARENT)

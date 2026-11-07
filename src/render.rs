@@ -64,6 +64,8 @@ pub enum RenderError {
     TooLong,
     /// The web's archive of the stems could not be made (past zip's 4 GiB).
     Archive,
+    /// AUv3 requires asynchronous offline instance preparation, not supported yet.
+    Auv3Offline,
 }
 
 /// The engine renders in blocks of this many frames.
@@ -240,6 +242,15 @@ impl Render {
             for (index, channel) in song.channels.iter_mut().enumerate() {
                 channel.params.0[3] = if index == stem { 1.0 } else { 0.0 };
             }
+        }
+        #[cfg(any(target_os = "ios", target_os = "macos"))]
+        if song
+            .channels
+            .iter()
+            .flat_map(|c| &c.rack.modules)
+            .any(|m| m.file.plugin.as_ref().is_some_and(|p| p.format == "auv3"))
+        {
+            return Err(RenderError::Auv3Offline);
         }
         let (start, end) = ticks(&song, spec.range);
         let engine = engine(&song, samples, spec.rate, start)?;

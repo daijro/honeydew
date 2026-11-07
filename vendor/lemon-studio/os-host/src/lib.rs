@@ -42,6 +42,8 @@ pub enum Format {
     Vst2,
     /// Plugins written against the native SDK of the DAW whose projects Lemon Studio opens (`os-native`).
     Native,
+    /// iOS Audio Unit extensions, discovered through the system component manager.
+    Auv3,
 }
 
 impl Format {
@@ -52,12 +54,13 @@ impl Format {
             Format::Vst3 => "vst3",
             Format::Vst2 => "vst2",
             Format::Native => "native",
+            Format::Auv3 => "auv3",
         }
     }
 
     /// The format named by `as_str`.
     pub fn parse(s: &str) -> Option<Format> {
-        [Format::Clap, Format::Vst3, Format::Vst2, Format::Native].into_iter().find(|f| f.as_str() == s)
+        [Format::Clap, Format::Vst3, Format::Vst2, Format::Native, Format::Auv3].into_iter().find(|f| f.as_str() == s)
     }
 }
 
@@ -184,6 +187,13 @@ pub trait Plugin: Instrument + HostedEffect + Send {
     fn open_editor(&mut self, parent: *mut c_void, scale: f32) -> Result<(u32, u32), String>;
     /// The editor's current size in pixels (when open). The host polls it: a plugin that resizes itself is followed.
     fn editor_size(&self) -> Option<(u32, u32)>;
+    /// The open editor accepts host-initiated resizing.
+    fn editor_resizable(&self) -> bool { false }
+    /// Negotiate and apply a host size in physical pixels; return the accepted size.
+    fn resize_editor(&mut self, size: (u32, u32)) -> Option<(u32, u32)> {
+        let _ = size;
+        None
+    }
     fn close_editor(&mut self);
 
     /// The plugin's whole state as bytes, in the format's own layout (UI thread). Round-trips through `load_state`

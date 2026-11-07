@@ -1292,6 +1292,6 @@ mod tests {
     fn tab_labels_follow_the_strip_order() {
         let labels = MenuTab::ALL.map(MenuTab::label);
         // No SHOP and no SYNC tab; UPDATES (#66) natively.
-        assert_eq!(labels, ["SONGS", "PROJECT", "SETTINGS", "UPDATES"]);
+        assert_eq!(labels, ["SONGS", "PROJECT", "SETTINGS", "DEWEY", "UPDATES"]);
     }
 }

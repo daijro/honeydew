@@ -126,6 +126,36 @@ mod tests {
         assert_eq!(synth("Rack"), Some(AddChannelPick::Kind(ChannelKind::Rack)));
     }
 
+    #[cfg(plugin_host)]
+    #[test]
+    fn auv3_synths_appear_in_add_channel_but_effects_do_not() {
+        // Exercise the shared menu with the same descriptors iOS discovery supplies.
+        let previous = plugins::cache_json();
+        plugins::load_cache(&serde_json::json!({"files": [{
+            "path": "test-auv3-components", "format": "auv3", "status": "ok",
+            "plugins": [
+                {"id": "61756D75-53594E54-54455354", "name": "Test AU Synth", "kind": "instrument"},
+                {"id": "61756678-45464658-54455354", "name": "Test AU Effect", "kind": "effect"}
+            ]
+        }]}).to_string());
+        let menu = add_channel_menu();
+        let synth = menu
+            .iter()
+            .find(|item| item.label == "Test AU Synth (AUv3)")
+            .unwrap();
+        assert!(!synth.disabled);
+        assert_eq!(
+            synth.id,
+            Some(AddChannelPick::Plugin("auv3:61756D75-53594E54-54455354"))
+        );
+        assert!(
+            !menu
+                .iter()
+                .any(|item| item.label == "Test AU Effect (AUv3)")
+        );
+        plugins::load_cache(&previous);
+    }
+
     #[test]
     fn installed_instrument_plugins_have_selectable_rows() {
         let menu = add_channel_menu();

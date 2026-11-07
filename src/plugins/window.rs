@@ -170,14 +170,23 @@ mod win {
 mod mac {
     use objc2::rc::Retained;
     use objc2::{MainThreadMarker, MainThreadOnly};
-    use objc2_app_kit::{NSBackingStoreType, NSView, NSWindow, NSWindowStyleMask};
+    use objc2_app_kit::{
+        NSApplication, NSBackingStoreType, NSView, NSWindow, NSWindowOrderingMode,
+        NSWindowStyleMask,
+    };
     use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+    use std::cell::Cell;
     use std::sync::Mutex;
 
     pub struct Native {
         pub window: Retained<NSWindow>,
+        parent: Option<Retained<NSWindow>>,
         pub view: Retained<NSView>,
         pub shown: bool,
+        // Format backends convert logical editor dimensions to physical pixels
+        // using this opening scale. Keep the inverse conversion stable across displays.
+        pub pixels_per_point: f64,
+        pub last_size: Cell<(u32, u32)>,
     }
     static WINDOWS: Mutex<Vec<(usize, usize, bool)>> = Mutex::new(Vec::new());
 
@@ -185,6 +194,12 @@ mod mac {
         let Some(mtm) = MainThreadMarker::new() else {
             return Err("plugin editor windows must open on the macOS main thread".into());
         };
+        let app = NSApplication::sharedApplication(mtm);
+        let mut parent = app.mainWindow().or_else(|| app.keyWindow());
+        // Another plugin editor may currently be main. All editors belong above the DAW's root window.
+        while let Some(ancestor) = parent.as_ref().and_then(|window| window.parentWindow()) {
+            parent = Some(ancestor);
+        }
         let rect = NSRect::new(NSPoint::new(100.0, 100.0), NSSize::new(400.0, 300.0));
         // SAFETY: a fresh allocation on the main thread; the window is not released when closed (below), so the
         // `Retained` stays the only owner.
@@ -208,10 +223,17 @@ mod mac {
             NSRect::new(NSPoint::new(0.0, 0.0), rect.size),
         );
         window.setContentView(Some(&view));
+        let pixels_per_point = window.backingScaleFactor().max(1.0);
         let native = Native {
             window,
+            parent,
             view,
             shown: false,
+            pixels_per_point,
+            last_size: Cell::new((
+                (rect.size.width * pixels_per_point) as u32,
+                (rect.size.height * pixels_per_point) as u32,
+            )),
         };
         WINDOWS.lock().unwrap().push((
             Retained::as_ptr(&native.window) as usize,
@@ -221,23 +243,87 @@ mod mac {
         Ok(native)
     }
     pub fn resize(native: &Native, (w, h): (u32, u32)) {
-        native
-            .window
-            .setContentSize(NSSize::new(f64::from(w.max(1)), f64::from(h.max(1))));
+        // Plugin::editor_size is physical pixels; AppKit content sizes are points.
+        let size = NSSize::new(
+            f64::from(w.max(1)) / native.pixels_per_point,
+            f64::from(h.max(1)) / native.pixels_per_point,
+        );
+        native.last_size.set((w, h));
+        let bounds = native.view.bounds();
+        let changes_size = (bounds.size.width - size.width).abs() >= 0.5
+            || (bounds.size.height - size.height).abs() >= 0.5;
+        // Most plugins attach one root view. Some anchor it to the initial
+        // parent's top (Vital), while others start at (0, 0) (Surge XT).
+        // A single root always belongs at the top of the final content area;
+        // preserving a negative old margin moves Surge partly off-screen.
+        let top = bounds.origin.y + bounds.size.height;
+        let subviews = native.view.subviews();
+        let single_root = subviews.len() == 1;
+        let children: Vec<_> = subviews
+            .into_iter()
+            .map(|child| {
+                let frame = child.frame();
+                let margin = if single_root {
+                    0.0
+                } else {
+                    (top - frame.origin.y - frame.size.height).max(0.0)
+                };
+                (child, margin)
+            })
+            .collect();
+        if changes_size {
+            native.window.setContentSize(size);
+        }
+        let bounds = native.view.bounds();
+        let top = bounds.origin.y + bounds.size.height;
+        for (child, margin) in children {
+            let frame = child.frame();
+            let y = top - margin - frame.size.height;
+            if (frame.origin.y - y).abs() >= 0.5 {
+                child.setFrameOrigin(NSPoint::new(frame.origin.x, y));
+            }
+        }
+    }
+    pub fn set_resizable(native: &Native, enabled: bool) {
+        let style = native.window.styleMask();
+        let wanted = if enabled {
+            style | NSWindowStyleMask::Resizable
+        } else {
+            style & !NSWindowStyleMask::Resizable
+        };
+        if style != wanted {
+            native.window.setStyleMask(wanted);
+        }
+    }
+    pub fn take_resize(native: &Native) -> Option<(u32, u32)> {
+        let size = native.view.bounds().size;
+        let size = (
+            (size.width * native.pixels_per_point).round().max(1.0) as u32,
+            (size.height * native.pixels_per_point).round().max(1.0) as u32,
+        );
+        (native.last_size.replace(size) != size).then_some(size)
     }
     pub fn show(native: &mut Native) {
         native.shown = true;
-        if let Ok(mut windows) = WINDOWS.lock() {
-            if let Some(w) = windows
+        if let Ok(mut windows) = WINDOWS.lock()
+            && let Some(w) = windows
                 .iter_mut()
                 .find(|w| w.0 == Retained::as_ptr(&native.window) as usize)
-            {
-                w.2 = true;
+        {
+            w.2 = true;
+        }
+        if let Some(parent) = &native.parent {
+            // SAFETY: distinct windows created/accessed on the AppKit main thread, with no parent cycle.
+            unsafe {
+                parent.addChildWindow_ordered(&native.window, NSWindowOrderingMode::Above);
             }
         }
         native.window.makeKeyAndOrderFront(None);
     }
     pub fn destroy(native: &Native) {
+        if let Some(parent) = native.window.parentWindow() {
+            parent.removeChildWindow(&native.window);
+        }
         native.window.orderOut(None);
         native.window.close();
         if let Ok(mut windows) = WINDOWS.lock() {
@@ -245,7 +331,7 @@ mod mac {
         }
     }
     pub fn scale(native: &Native) -> f32 {
-        native.window.backingScaleFactor() as f32
+        native.pixels_per_point as f32
     }
     pub fn pump() -> Vec<usize> {
         let Some(_) = MainThreadMarker::new() else {
@@ -884,6 +970,26 @@ impl EditorWindow {
         mac::resize(&self.native, size);
         #[cfg(not(any(x11, target_os = "macos", windows)))]
         let _ = size;
+    }
+
+    /// Enable native edge dragging where implemented, only for resizable plugins.
+    pub fn set_resizable(&self, enabled: bool) {
+        #[cfg(target_os = "macos")]
+        mac::set_resizable(&self.native, enabled);
+        #[cfg(not(target_os = "macos"))]
+        let _ = enabled;
+    }
+
+    /// A user resize since the last host resize (physical pixels).
+    pub fn take_resize(&self) -> Option<(u32, u32)> {
+        #[cfg(target_os = "macos")]
+        {
+            mac::take_resize(&self.native)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            None
+        }
     }
 
     /// Shows the window in front.

@@ -557,3 +557,42 @@ pub fn screen_size() -> eframe::egui::Vec2 {
     };
     eframe::egui::vec2(bounds.size.width as f32, bounds.size.height as f32)
 }
+
+// System Safari UI stays inside the foreground app, allowing its loopback OAuth listener to complete on iPad.
+#[link(name = "SafariServices", kind = "framework")]
+unsafe extern "C" {}
+thread_local! {
+    static AUTH_BROWSER: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
+}
+pub fn present_auth_browser(url: &str) -> Result<(), String> {
+    let _main = MainThreadMarker::new().ok_or("Open sign-in on the main thread.")?;
+    let root = key_window().and_then(|window| unsafe { msg_send_id![&window, rootViewController] });
+    let mut root: Retained<AnyObject> = root.ok_or("No window is available for sign-in.")?;
+    loop {
+        let next: Option<Retained<AnyObject>> =
+            unsafe { msg_send_id![&root, presentedViewController] };
+        if let Some(next) = next {
+            root = next;
+        } else {
+            break;
+        }
+    }
+    let url =
+        unsafe { NSURL::URLWithString(&NSString::from_str(url)) }.ok_or("Invalid sign-in URL.")?;
+    let allocated: Allocated<AnyObject> =
+        unsafe { msg_send_id![class!(SFSafariViewController), alloc] };
+    let browser: Retained<AnyObject> = unsafe { msg_send_id![allocated, initWithURL: &*url] };
+    unsafe {
+        let _: () = msg_send![&root, presentViewController: &*browser, animated: Bool::YES, completion: None::<&Block<dyn Fn()>>];
+    }
+    AUTH_BROWSER.with(|slot| *slot.borrow_mut() = Some(browser));
+    Ok(())
+}
+pub fn dismiss_auth_browser() {
+    if MainThreadMarker::new().is_none() {
+        return;
+    }
+    AUTH_BROWSER.with(|slot| if let Some(browser)=slot.borrow_mut().take() {
+        unsafe { let _: () = msg_send![&browser, dismissViewControllerAnimated: Bool::YES, completion: None::<&Block<dyn Fn()>>]; }
+    });
+}

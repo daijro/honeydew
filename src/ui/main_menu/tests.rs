@@ -88,7 +88,10 @@ impl Rig {
             menu: MainMenu::new(tab),
             library: Box::new(Fake),
             info: ProjectInfo::default(),
-            settings: Default::default(),
+            settings: (
+                crate::ui::settings_tab::SettingsTab::all_sections_open(),
+                Settings::default(),
+            ),
             screen: SIZE.into(),
             ppp: 1.0,
             time: 0.0,
@@ -336,6 +339,7 @@ fn clicking_a_tab_shows_it() {
     for (tab, marker) in [
         (Tab::Project, "Project info:"),
         (Tab::Settings, "MIDI:"),
+        (Tab::Ai, "Dewey music assistant"),
         (Tab::Songs, "My Songs"),
     ] {
         assert_eq!(rig.click_text(tab.label()), None);
@@ -1548,9 +1552,9 @@ fn page(rig: &Rig, ppp: f32) -> (Metrics, Rect, f32) {
 }
 
 #[test]
-fn the_performance_block_is_one_5_u_block_2_u_in_from_the_page_and_1_3_u_under_its_header() {
-    // x = page left + 2 U, width = page width - 4 U, top = the header row + 1.3 U, 5.0 U tall; the status line is at
-    // its top and the footer at its bottom, both FontSize 2.
+fn the_performance_block_keeps_clear_below_memory_and_is_inset_under_its_header() {
+    // x = page left + 2 U, width = page width - 4 U, top = the header row + 1.3 U, 6.0 U tall; the status line is at
+    // its top, and memory and Clear have their own rows at its bottom.
     for ppp in [1.0, 2.0] {
         let mut rig = Rig::at_ppp(Tab::Project, ppp);
         rig.scroll_down();
@@ -1571,7 +1575,7 @@ fn the_performance_block_is_one_5_u_block_2_u_in_from_the_page_and_1_3_u_under_i
         );
         assert!((status.height() - fh).abs() < 1.0, "{at}");
         assert!(
-            (footer.center().y + fh / 2.0 - (top + 5.0 * u)).abs() < 0.3,
+            (footer.center().y + fh / 2.0 - (top + 6.0 * u - fh - 2.0 * m.t())).abs() < 0.3,
             "{at}: {}",
             footer.center().y + fh / 2.0
         );
@@ -1579,6 +1583,8 @@ fn the_performance_block_is_one_5_u_block_2_u_in_from_the_page_and_1_3_u_under_i
             (status_font.clone(), footer_font),
             (m.font_id(FontSize::Pt10), m.font_id(FontSize::Pt10))
         );
+        let clear = rig.find("Clear");
+        assert!(clear.top() > footer.bottom(), "Clear is below App memory");
         // The block is 2 U in from the panel's sides (the bar, `background`, spans its width).
         let colors = theme_by_id(0).colors;
         let bar = rig
@@ -1609,7 +1615,7 @@ fn the_performance_block_is_one_5_u_block_2_u_in_from_the_page_and_1_3_u_under_i
             (status.left() - bar.left()).abs() < 1.0 && (footer.left() - bar.left()).abs() < 1.0,
             "{at}"
         );
-        // The graph box starts at y + fh + 8t and runs to h - fh - t.
+        // The graph box leaves space below for memory and Clear.
         let graph = rig
             .shapes
             .iter()
@@ -1621,7 +1627,7 @@ fn the_performance_block_is_one_5_u_block_2_u_in_from_the_page_and_1_3_u_under_i
             .expect("the graph box");
         let want = Rect::from_min_max(
             pos2(bar.left(), top + fh + 8.0 * m.t()),
-            pos2(bar.right(), top + 5.0 * u - fh - m.t()),
+            pos2(bar.right(), top + 6.0 * u - 2.0 * fh - 3.0 * m.t()),
         );
         assert!(
             (graph.min - want.min).abs().max_elem() < 1.0,
@@ -2397,4 +2403,76 @@ fn a_sort_changed_outside_the_page_reorders_the_search_results() {
     rig.frame(vec![]);
     rig.frame(vec![]);
     assert_eq!(rig.rows(), ["beta.flm", "Alpha.flm"]);
+}
+
+#[test]
+fn ai_setup_fits_phone_and_ipad_menu_widths() {
+    for width in [360.0, 768.0, 1170.0] {
+        let mut rig = Rig::new(Tab::Ai);
+        rig.screen = vec2(width, 900.0);
+        rig.frame(vec![]);
+        rig.frame(vec![]);
+        assert!(!rig.has("API base URL"), "Provider setup starts collapsed");
+        rig.click_text("Provider setup");
+        rig.frame(vec![]);
+        let content = shell_layout(Rect::from_min_size(Pos2::ZERO, rig.screen), &m()).content;
+        for label in [
+            "Dewey music assistant",
+            "Provider setup",
+            "API base URL",
+            "Refresh models",
+        ] {
+            let rect = rig.find(label);
+            assert!(
+                rect.left() >= content.left() - 1.0 && rect.right() <= content.right() + 1.0,
+                "{label} at width {width}: {rect:?}, content {content:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn ai_text_uses_menu_colors_and_scales_with_the_rest_of_honeydew() {
+    for scale in [100, 150] {
+        let mut rig = Rig::new(Tab::Ai);
+        rig.screen = vec2(1170.0, 2400.0);
+        rig.settings.1.ui_scale = scale;
+        rig.frame(vec![]);
+        rig.frame(vec![]);
+        rig.click_text("Provider setup");
+        rig.frame(vec![]);
+        let metrics = Metrics::from_pixels_per_point(1.0, scale);
+        let color = theme_by_id(0).colors.text.to_color32();
+        for (label, size) in [
+            ("Dewey music assistant", FontSize::Pt12),
+            ("API base URL", FontSize::Pt10),
+            (
+                "Use a provider API key with API billing/access. A chat subscription is not an API key.",
+                FontSize::Pt10,
+            ),
+        ] {
+            let shape = rig
+                .shapes
+                .iter()
+                .find_map(|s| match &s.shape {
+                    Shape::Text(t) if t.galley.text() == label => Some(t),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("missing {label}"));
+            let format = &shape.galley.job.sections[0].format;
+            assert_eq!(
+                format.font_id.size,
+                metrics.font_id(size).size,
+                "{label}, scale {scale}"
+            );
+            let painted = shape.override_text_color.unwrap_or_else(|| {
+                if format.color == Color32::PLACEHOLDER {
+                    shape.fallback_color
+                } else {
+                    format.color
+                }
+            });
+            assert_eq!(painted, color, "{label}, scale {scale}");
+        }
+    }
 }

@@ -162,6 +162,8 @@ impl<T: 'static> EventLoop<T> {
         let mtm = MainThreadMarker::new()
             .expect("On iOS, `EventLoop` must be created on the main thread");
 
+        super::scene::register_class();
+
         static mut SINGLETON_INIT: bool = false;
         unsafe {
             assert!(

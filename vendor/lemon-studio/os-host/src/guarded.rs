@@ -210,6 +210,12 @@ impl<P: Plugin> Plugin for Guarded<P> {
     fn sidechain(&self) -> bool {
         self.look(false, |p| p.sidechain())
     }
+    fn editor_resizable(&self) -> bool {
+        self.look(false, |p| p.editor_resizable())
+    }
+    fn resize_editor(&mut self, size: (u32, u32)) -> Option<(u32, u32)> {
+        self.run(None, |p| p.resize_editor(size))
+    }
     fn close_editor(&mut self) {
         self.run((), |p| p.close_editor())
     }

@@ -1281,6 +1281,27 @@ impl os_host::Plugin for Plugin {
         Plugin::editor_size(self)
     }
 
+    fn editor_resizable(&self) -> bool {
+        self.view.as_ref().is_some_and(|v| unsafe { v.can_resize() == kResultTrue })
+    }
+
+    fn resize_editor(&mut self, size: (u32, u32)) -> Option<(u32, u32)> {
+        if !os_host::Plugin::editor_resizable(self) { return None; }
+        let view = self.view.as_ref()?;
+        let scale = self.editor_scale.max(1.0);
+        let mut rect = ViewRect {
+            left: 0, top: 0,
+            right: (size.0 as f32 / scale).round().max(1.0).min(i32::MAX as f32) as i32,
+            bottom: (size.1 as f32 / scale).round().max(1.0).min(i32::MAX as f32) as i32,
+        };
+        unsafe {
+            view.check_size_constraint(&mut rect);
+            if view.on_size(&mut rect) != kResultOk { return None; }
+        }
+        if let Ok(mut size) = self.shared.size.lock() { *size = None; }
+        self.editor_size()
+    }
+
     fn close_editor(&mut self) {
         Plugin::close_editor(self)
     }

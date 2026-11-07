@@ -361,6 +361,9 @@ impl ProjectFiles {
     pub fn render_failed(&mut self, error: &RenderError) {
         let line = match error {
             RenderError::Silent => NO_SOUND,
+            RenderError::Auv3Offline => {
+                "Audio export with AUv3 plugins is not supported yet. Save the project to keep its plugins and settings."
+            }
             _ => RENDER_FAILED,
         };
         self.message = Some(vec![line.into()]);

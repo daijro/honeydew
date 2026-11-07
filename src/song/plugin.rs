@@ -1,6 +1,6 @@
-//! Third-party plugin modules (VST3, VST2, CLAP): which plugin a rack module hosts and its saved state. Pure data on
+//! Third-party plugin modules (VST3, VST2, CLAP, AUv3): which plugin a rack module hosts and its saved state. Pure data on
 //! every platform, so a song keeps its plugins where none can be hosted (the web, Android, a machine without the
-//! plugin) and saves them back unchanged. The hosting is `crate::plugins` (desktop only).
+//! plugin) and saves them back unchanged. Hosting is `crate::plugins` (desktop formats and AUv3 on macOS/iOS).
 //!
 //! A plugin module is a [`super::ModuleInstance`] of type [`PLUGIN_INSTRUMENT`] or [`PLUGIN_EFFECT`]: `params[0]` is
 //! Enable, as on every module, and `params[1 + i]` is the plugin's parameter `i` (normalized), what automation targets.
@@ -44,9 +44,9 @@ pub(crate) fn intern(s: &str) -> &'static str {
 /// The plugin a module hosts and its state, as the project keeps them.
 #[derive(Clone, Debug, Default)]
 pub struct PluginRef {
-    /// "clap", "vst3" or "vst2".
+    /// "clap", "vst3", "vst2" or "auv3".
     pub format: String,
-    /// The format's id: the CLAP plugin id, the VST3 class id (32 hex digits), the VST2 unique id (8 hex digits).
+    /// The format's stable id. AUv3 uses TYPE-SUBTYPE-MANUFACTURER (three eight-digit hex codes).
     pub id: String,
     pub name: String,
     pub vendor: String,
@@ -105,6 +105,7 @@ impl PluginRef {
             "clap" => "CLAP",
             "vst3" => "VST3",
             "vst2" => "VST2",
+            "auv3" => "AUv3",
             _ => "Plugin",
         }
     }

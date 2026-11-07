@@ -387,6 +387,10 @@ features = [
     "UIView",
     "UIViewController",
     "UIWindow",
+    "UIScene",
+    "UISceneOptions",
+    "UISceneSession",
+    "UIWindowScene",
 ]
 
 [target.'cfg(target_os = "macos")'.dependencies.core-graphics]

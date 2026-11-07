@@ -61,6 +61,13 @@ cat > "$app/Info.plist" <<PLIST
     <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
     <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string><string>metal</string></array>
     <key>UILaunchScreen</key><dict/>
+    <key>UIApplicationSceneManifest</key><dict>
+        <key>UIApplicationSupportsMultipleScenes</key><false/>
+        <key>UISceneConfigurations</key><dict><key>UIWindowSceneSessionRoleApplication</key><array><dict>
+            <key>UISceneConfigurationName</key><string>Honeydew</string>
+            <key>UISceneDelegateClassName</key><string>WinitSceneDelegate</string>
+        </dict></array></dict>
+    </dict>
     <key>UIStatusBarHidden</key><true/>
     <key>UIViewControllerBasedStatusBarAppearance</key><false/>
     <key>UISupportedInterfaceOrientations</key><array>
@@ -91,7 +98,13 @@ add_sounds() {
     test -s "$app/content/index.json"
 }
 sign() {
-    codesign --force --sign - --timestamp=none "$app"
+    if [ "$platform" = iPhoneSimulator ]; then
+        codesign --force --sign - --timestamp=none "$app"
+    else
+        # The final device signer must preserve this entitlement and use a profile
+        # whose App ID enables Inter-App Audio; AUv3 discovery needs it as well.
+        codesign --force --sign - --timestamp=none --entitlements tools/ios.entitlements "$app"
+    fi
 }
 if [ "$platform" = iPhoneSimulator ]; then
     add_sounds

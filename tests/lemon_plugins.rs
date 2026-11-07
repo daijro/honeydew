@@ -239,7 +239,8 @@ fn the_lemon_trio_editor_takes_a_drag_a_menu_and_a_typed_value() {
         .position(|p| p.name == "Osc 1 coarse pitch")
         .unwrap() as i32;
     plugins::sync(&song);
-    let editor = plugins::lemon_editor(id, module, 1.0).expect("the editor opens");
+    let editor = plugins::lemon_editor(id, module, 1.0).expect("the editor opens")
+        as os_plugkit::embed::Parent;
     let moved = || {
         let moves = plugins::idle();
         (moves.iter().rev())

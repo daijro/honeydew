@@ -216,7 +216,7 @@ fn stamp(path: &Path, format: Format) -> (u64, u64) {
         Format::Vst3 => os_vst3::module_file(path),
         Format::Clap => os_clap::module_file(path),
         Format::Vst2 => os_vst2::module_file(path),
-        Format::Native => path.to_path_buf(),
+        Format::Native | Format::Auv3 => path.to_path_buf(),
     };
     let file = if module.exists() {
         module
@@ -435,7 +435,9 @@ pub fn load_file(path: &Path, format: Format) -> Result<Arc<dyn Library>, String
             Format::Clap => os_clap::Library::load(path).map(|l| l as Arc<dyn Library>),
             Format::Vst3 => os_vst3::Module::load(path).map(|l| l as Arc<dyn Library>),
             Format::Vst2 => os_vst2::Module::load(path).map(|l| l as Arc<dyn Library>),
-            Format::Native => Err(format!("{}: not a supported plugin format", path.display())),
+            Format::Native | Format::Auv3 => {
+                Err(format!("{}: not a supported plugin format", path.display()))
+            }
         }
     };
     os_host::guard::catch(load).unwrap_or_else(|c| {
