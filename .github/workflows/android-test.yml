@@ -1,0 +1,60 @@
+# A test build of the current branch: a debug-signed Android APK (no secrets, no release tag, no sounds: they download
+# on first run) and Rind's own unit tests. Runs on pushes to `rind/**` branches and by hand (Actions > Android test
+# build > Run workflow, then pick the branch). The release workflow is untouched.
+name: Android test build
+
+on:
+  push:
+    branches: ["rind/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rind-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: rind-tests
+      - name: Rind unit tests
+        run: cargo test -p rind --locked
+
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android-arm-test
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Android build tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y libclang-dev
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.0.13004108'
+          cargo install cargo-ndk --version 4.1.2 --locked
+      - name: Build the debug APK (no sounds)
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.0.13004108"
+          tools/android-dist.sh --base
+      - uses: actions/upload-artifact@v4
+        with:
+          name: honeydew-android-debug-apk
+          path: target/honeydew-android-*-arm-base-debug.apk
+          if-no-files-found: error
