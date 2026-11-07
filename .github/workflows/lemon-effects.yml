@@ -8,9 +8,9 @@ name: Lemon Studio effects
 # The built-in plugins (those vendor/lemon-studio/plugins.txt lists and the plugins and crates they use, which Honeydew
 # patches) the same way: their own issue lists what upstream's main changed in them since their pinned commit. Syncing
 # is tools/sync-lemon-plugins.sh, which also names the upstream paths compared.
+# On demand only: the weekly run spent a runner every Monday whether or not the plugins moved, and this fork ships
+# for Android.
 on:
-  schedule:
-    - cron: "17 6 * * 1"
   workflow_dispatch:
 
 permissions:

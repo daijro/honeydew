@@ -7,6 +7,7 @@ use eframe::egui;
 use honeydew_audio::device::AudioCommand;
 
 use super::{AppCtx, Nav, View};
+use crate::song::Song;
 use crate::ui::clips::LiveTake;
 use crate::ui::piano_roll::{PianoRoll, PianoRollAction, RollOptions};
 
@@ -23,6 +24,18 @@ pub struct State {
     pub(crate) takes: Vec<LiveTake>,
 }
 
+impl State {
+    /// Opens the `Generate` panel of `channel`'s roll from the transport bar's GENERATE button, where the note menu's
+    /// entry needs a note selected first. A channel with no roll yet gets one; a second tap writes another progression.
+    pub(crate) fn open_generate(&mut self, ctx: &egui::Context, song: &Song, channel: usize) {
+        let roll = self
+            .rolls
+            .entry(channel)
+            .or_insert_with(|| PianoRoll::for_channel(song, channel));
+        roll.open_generate(ctx);
+    }
+}
+
 /// Draws the piano roll of `channel`'s note lane in `app.regions.editor`; back to the playlist once the channel is gone
 /// (the app collapses an editor whose clip goes).
 pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usize) -> Option<Nav> {
@@ -34,6 +47,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         .entry(channel)
         .or_insert_with(|| PianoRoll::for_channel(app.song, channel));
     let opts = RollOptions {
+        key_names: app.settings.key_names,
         ghost_notes: app.ghost_notes,
         middle_c_is_c4: app.middle_c_is_c4,
         playhead: app.snapshot.map_or(0, |s| s.transport_tick),
@@ -52,7 +66,14 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     roll.value_snap = [app.settings.velocity_snap, app.settings.pan_snap];
     // So is the grid size (#53).
     roll.snap.size = app.settings.grid_size;
-    let actions = roll.show(ui, app.regions.editor, &app.cx, app.song, &opts);
+    let actions = roll.show(
+        ui,
+        app.regions.editor,
+        &app.cx,
+        app.song,
+        &opts,
+        &mut app.settings.graph_tab_shift,
+    );
     [app.settings.velocity_snap, app.settings.pan_snap] = roll.value_snap;
     app.settings.grid_size = roll.snap.size;
     for action in actions {

@@ -126,7 +126,7 @@ const POP_RATE: f32 = 0.6;
 const POP_GAIN: f32 = 1.0515;
 const POP_W: f32 = 1.885;
 /// The floating buttons over the selection (free note-grid mode).
-const OPS: [&str; 3] = ["Copy", "Delete", "Snap"];
+const OPS: [&str; 4] = ["Copy", "Delete", "Snap", "Duplicate"];
 
 fn id() -> Id {
     Id::new("drum_grid")
@@ -1094,8 +1094,9 @@ impl DrumGridView {
         }
     }
 
-    /// `Copy`, `Delete` and `Snap` over the selection, in a [`FloatingRow`] (waiting for a marquee); `grid` is the
-    /// snap mode's unit, on or off. Returns the hits and selection a button left.
+    /// `Copy`, `Delete`, `Snap` and `Duplicate` over the selection, in a [`FloatingRow`] (waiting for a marquee); `grid`
+    /// is the snap mode's unit, on or off. Returns the hits and selection a button left: none for `Copy`, which only
+    /// fills the hit clipboard.
     #[allow(clippy::too_many_arguments)]
     fn floating_row(
         &mut self,
@@ -1132,18 +1133,24 @@ impl DrumGridView {
         };
         self.row.covered = self.covered;
         let (i, _) = self.row.show(ui, "grid_button", sel, view, &OPS, cx)?;
+        ui.ctx().request_repaint();
         let (mut events, mut sel) = (events.to_vec(), self.sel.clone());
-        match i {
-            0 => {
+        match OPS[i] {
+            // Copy only fills the hit clipboard: no edit.
+            "Copy" => {
                 step_seq::set_hit_clipboard(ui.ctx(), chosen.iter().map(|&&e| e).collect());
+                return None;
+            }
+            "Duplicate" => {
                 edit::copy_selected(&mut events, &mut sel, grid);
             }
-            1 => {
+            "Snap" => {
+                edit::quantize_selected(&mut events, &mut sel, grid);
+            }
+            _ => {
                 remove_selected(&mut events, &mut sel);
             }
-            _ => edit::quantize_selected(&mut events, &mut sel, grid),
         }
-        ui.ctx().request_repaint();
         Some((events, sel))
     }
 
@@ -1267,13 +1274,21 @@ impl DrumGridView {
         None
     }
 
-    /// The graph lane's tab for the view `rect`, as the step view's: centred 1.4 U from its left, over the lane's top
-    /// or the view's bottom edge, its icon in `ink`. The host calls it after the drum mixer's strips.
-    pub fn graph_knob(&mut self, ui: &mut Ui, cx: &UiCtx, rect: Rect, ink: egui::Color32) {
+    /// The graph lane's tab for the view `rect`, as the step view's: centred 1.4 U from its left plus the sideways
+    /// offset `shift` a drag gave it, over the lane's top or the view's bottom edge, its icon in `ink`. The host calls it
+    /// after the drum mixer's strips.
+    pub fn graph_knob(
+        &mut self,
+        ui: &mut Ui,
+        cx: &UiCtx,
+        rect: Rect,
+        ink: egui::Color32,
+        shift: &mut f32,
+    ) {
         let m = cx.m;
         let below = (rect, rect.top() + timeline::ruler_h(m));
         let x = rect.left() + m.u(GRAPH_KNOB_X);
-        (self.graph).tab_below(ui, cx, id().with("graph tab"), below, x, ink);
+        (self.graph).tab_below(ui, cx, id().with("graph tab"), below, (x, shift), ink);
     }
 
     /// Closes the popups over the view (the row menu and its prompts, the snap menu, the ruler's region menu and `+`,

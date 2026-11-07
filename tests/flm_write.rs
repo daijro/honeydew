@@ -1199,3 +1199,16 @@ fn a_slots_main_flags_and_beat_offset_round_trip() {
         (true, 0.375, 0.7, 3, false)
     );
 }
+
+#[test]
+fn project_sample_rate_survives_save_and_load() {
+    for rate in honeydew::song::SAMPLE_RATES {
+        let mut song = honeydew::song::Song::default();
+        song.sample_rate = rate;
+        let loaded = read(&write(&song).unwrap()).unwrap();
+        assert_eq!(loaded.sample_rate, rate);
+    }
+    // Legacy files omit the extension and retain the default.
+    let bytes = write(&honeydew::song::Song::default()).unwrap();
+    assert_eq!(read(&bytes).unwrap().sample_rate, 44_100);
+}

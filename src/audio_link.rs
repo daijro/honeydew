@@ -93,7 +93,7 @@ impl AudioSink for AudioOutput<SongAudioEngine> {
         input: Option<&LiveInput>,
         mode: BufferMode,
     ) -> Result<(), String> {
-        AudioOutput::reopen_with_mode(self, mode, |rate| {
+        AudioOutput::reopen_with_mode_at(self, mode, song.sample_rate, |rate| {
             SongAudioEngine::with_input(song, rate as f32, samples, input)
         })
         .map_err(|err| format!("{err:?}"))
@@ -112,7 +112,12 @@ pub fn open_device_with_latency(
     samples: &SampleCache,
     low_latency: bool,
 ) -> Option<Box<dyn AudioSink>> {
-    match AudioOutput::start_with_latency(low_latency, |rate| {
+    let mode = if low_latency {
+        BufferMode::Fast
+    } else {
+        BufferMode::Native
+    };
+    match AudioOutput::start_with_mode_at(mode, song.sample_rate, |rate| {
         SongAudioEngine::with_samples(song, rate as f32, samples)
     }) {
         Ok(output) => Some(Box::new(output)),
@@ -128,7 +133,7 @@ pub fn open_device_with_mode(
     samples: &SampleCache,
     mode: BufferMode,
 ) -> Option<Box<dyn AudioSink>> {
-    match AudioOutput::start_with_mode(mode, |rate| {
+    match AudioOutput::start_with_mode_at(mode, song.sample_rate, |rate| {
         SongAudioEngine::with_samples(song, rate as f32, samples)
     }) {
         Ok(output) => Some(Box::new(output)),
@@ -182,6 +187,8 @@ pub struct AudioLink {
     sink: Option<Box<dyn AudioSink>>,
     /// The output's stream failed (its snapshot says so). Commands are dropped until a [`Self::start`] reopens it.
     stream_failed: bool,
+    /// The project rate most recently requested for the output (which may have fallen back).
+    requested_rate: Option<u32>,
     /// The selected output buffer target index; zero keeps the device default.
     low_latency: u8,
     /// Stored sound-mode id; 2=UltraSafe, 0=Safe, 1=Fast, 3=Native.
@@ -285,11 +292,6 @@ impl AudioLink {
     pub fn records(&self) -> bool {
         (self.input.as_ref().zip(self.built_input.as_ref()))
             .is_some_and(|(i, b)| Arc::ptr_eq(&i.ring, &b.ring) && Arc::ptr_eq(&i.tap, &b.tap))
-    }
-
-    /// The commands queued for the audio thread so far ([`AudioSink::sent`]); 0 without an output.
-    pub fn sent(&self) -> u64 {
-        self.sink.as_ref().map_or(0, |s| s.sent())
     }
 
     /// There is an output and its stream works.
@@ -560,6 +562,9 @@ impl AudioLink {
         let mode = self.buffer_mode();
         let Some(sink) = &mut self.sink else {
             self.sink = open(song, &self.samples, low_latency);
+            if self.sink.is_some() {
+                self.requested_rate = Some(song.sample_rate);
+            }
             // The arm before Play: a recording's engine does not wrap at the song end.
             self.resend_metronome();
             // The play button works without audio; the new engine starts stopped.
@@ -574,6 +579,7 @@ impl AudioLink {
         match sink.reopen(song, &self.samples, self.input.as_ref(), mode) {
             Ok(()) => {
                 self.stream_failed = false;
+                self.requested_rate = Some(song.sample_rate);
                 self.built_input.clone_from(&self.input);
                 self.resend_metronome();
                 // The reopen restores the transport as last sent; the play button may have changed since.
@@ -603,6 +609,7 @@ impl AudioLink {
             return;
         }
         self.stream_failed = false;
+        self.requested_rate = Some(song.sample_rate);
     }
 
     /// Reopens the running output in place, the transport kept (iOS: after an interruption, or when a device came or
@@ -617,6 +624,9 @@ impl AudioLink {
             warn(&format!("could not reopen the audio stream: {err}"));
         }
         self.stream_failed = reopened.is_err();
+        if reopened.is_ok() {
+            self.requested_rate = Some(song.sample_rate);
+        }
     }
 
     /// Records the preference before the first stream exists; an active stream is changed by [`Self::set_low_latency`].
@@ -637,11 +647,27 @@ impl AudioLink {
             self.stream_failed = true;
         } else {
             self.stream_failed = false;
+            self.requested_rate = Some(song.sample_rate);
         }
     }
 
     pub fn set_sound_mode_preference(&mut self, sound_mode: u8) {
         self.sound_mode = sound_mode;
+    }
+
+    /// Reopens the running output at the project's sample rate (`song.sample_rate`, already set), the transport
+    /// kept. Without a stream the next one opens at it ([`open_device`]).
+    pub fn set_sample_rate(&mut self, song: &Song) {
+        let mode = self.buffer_mode();
+        let Some(sink) = &mut self.sink else { return };
+        self.seeking = None;
+        if let Err(err) = sink.reopen(song, &self.samples, self.input.as_ref(), mode) {
+            warn(&format!("could not change the sample rate: {err}"));
+            self.stream_failed = true;
+        } else {
+            self.stream_failed = false;
+            self.requested_rate = Some(song.sample_rate);
+        }
     }
 
     fn buffer_mode(&self) -> BufferMode {
@@ -772,6 +798,12 @@ impl AudioLink {
         read: &Reader<'_>,
         how: Handover,
     ) -> bool {
+        if self.running() && self.requested_rate != Some(song.sample_rate) {
+            // Load the new song's samples before constructing the reopened engine.
+            self.samples.load_live(song, keep, read);
+            crate::plugins::sync(keep);
+            self.set_sample_rate(song);
+        }
         let rate = match &self.sink {
             Some(sink) if self.running() => sink.sample_rate(),
             _ => {
@@ -916,6 +948,8 @@ pub(crate) mod testing {
         pub(crate) no_device: bool,
         /// Reopen attempts, failed ones included.
         pub(crate) reopens: usize,
+        /// Project rates requested when reopening, including failed attempts.
+        pub(crate) reopen_rates: Vec<u32>,
         /// Each `SetParam` sent, as (channel, instance id, index, value).
         pub(crate) params: Vec<(usize, i32, i32, f32)>,
         /// Each `LiveLane` sent, as (channel, notes lane); kept out of `log`, which tests read command by command.
@@ -1135,6 +1169,7 @@ pub(crate) mod testing {
         ) -> Result<(), String> {
             let mut r = self.0.borrow_mut();
             r.reopens += 1;
+            r.reopen_rates.push(song.sample_rate);
             if r.no_device {
                 return Err("no device".into());
             }
@@ -1552,6 +1587,48 @@ mod tests {
         rec.0.borrow_mut().failed = true;
         link.poll();
         assert_eq!(link.sample_rate(), None);
+    }
+
+    #[test]
+    fn changing_project_rate_reopens_output_with_updated_song() {
+        let rec = Recorder::default();
+        let mut link = started(&rec);
+        let mut song = Song::default();
+        song.sample_rate = 96_000;
+        link.set_sample_rate(&song);
+        assert_eq!(rec.0.borrow().reopen_rates, vec![96_000]);
+        assert!(!link.stream_failed);
+
+        rec.0.borrow_mut().no_device = true;
+        song.sample_rate = 44_100;
+        link.set_sample_rate(&song);
+        assert_eq!(rec.0.borrow().reopen_rates, vec![96_000, 44_100]);
+        assert!(link.stream_failed);
+
+        rec.0.borrow_mut().no_device = false;
+        link.set_sample_rate(&song);
+        assert!(!link.stream_failed);
+        assert_eq!(rec.0.borrow().reopen_rates, vec![96_000, 44_100, 44_100]);
+
+        // With no output, the updated song is used when one is opened later.
+        AudioLink::default().set_sample_rate(&song);
+    }
+
+    #[test]
+    fn rebuilding_a_different_project_rate_requests_it_once_even_after_fallback() {
+        let rec = Recorder::default();
+        let mut link = started(&rec);
+        let mut song = Song::default();
+        song.sample_rate = 96_000;
+        assert!(fresh(&mut link, &song, false, 0));
+        assert_eq!(rec.0.borrow().reopen_rates, vec![96_000]);
+        // The fake device remains at 48 kHz, simulating fallback. An ordinary edit must not reopen repeatedly.
+        assert!(fresh(&mut link, &song, false, 0));
+        assert_eq!(rec.0.borrow().reopen_rates, vec![96_000]);
+        // Undo or opening another song requests its own rate.
+        song.sample_rate = 44_100;
+        assert!(fresh(&mut link, &song, false, 0));
+        assert_eq!(rec.0.borrow().reopen_rates, vec![96_000, 44_100]);
     }
 
     #[test]

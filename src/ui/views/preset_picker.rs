@@ -1234,11 +1234,18 @@ fn picker(files: &ProjectFiles, target: PresetTarget, module_type: Option<u16>) 
             .instruments(index)
         }
         (_, Some(t)) => {
-            let picker = PresetPicker::new(module_name(t), files.presets_dir(t), exts[0], true)
-                .of_exts(exts)
-                .of_type(t)
-                .with_factory(ours.into_iter().chain(files.factory_presets(t)))
-                .with_import(import_dir(files, t).is_some());
+            // `My Files` is the whole user folder, as the Instruments picker's is: `My Presets/<module>` and the
+            // other `My …` folders are folders in it.
+            let picker = PresetPicker::new(
+                module_name(t),
+                files.user_dir().map(Path::to_owned),
+                exts[0],
+                true,
+            )
+            .of_exts(exts)
+            .of_type(t)
+            .with_factory(ours.into_iter().chain(files.factory_presets(t)))
+            .with_import(import_dir(files, t).is_some());
             // The SoundFont Player's `.sf2` files are in `My SoundFonts`, beside `My Files`; the DW Sampler's programs
             // (`.dwp`, `.sfz`) in `My Instruments`, where archives and the instrument builder put them.
             match t {

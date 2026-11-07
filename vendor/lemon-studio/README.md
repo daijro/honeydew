@@ -71,8 +71,7 @@ change)` or `(vendored addition)` in the code:
   open answered without blocking, by delivering the input that asked again with the answer. `gui` is that window with
   `embed`; `time` is `std::time`, or `web-time` in the browser, whose `std::time` has no clock (`vals.rs` uses it);
   `spawn` is `std::thread::spawn`, the work done at once in the browser, which has no threads. The editor also parks
-  after each tick (its polling period), so one slower to paint than a tick still hands the app its frame. A frame names
-  the pixels that changed since the app took the last (`Frame::changed`), which the card's texture takes alone (#72).
+  after each tick (its polling period), so one slower to paint than a tick still hands the app its frame.
 - Files: where the host answers (`embed::host_files`: Android and the browser, which have no file dialog), an editor's
   own file dialog code asks it from its window's `dialog` (`embed::open_file`): Honeydew's own sample picker opens the
   file. The plugins' `rfd` is `host-rfd` (below), so that code builds everywhere unchanged.

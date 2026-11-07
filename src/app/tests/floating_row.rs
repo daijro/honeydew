@@ -66,7 +66,7 @@ fn the_playlists_row_waits_at_the_grids_right_edge_while_the_selected_copy_is_pa
     rig.click(pos2(1000.0, header(1).y));
     rig.frame(vec![]);
     let copy = egui::Id::new(("clip_button", 0_usize));
-    let duplicate = egui::Id::new(("clip_button", 1_usize));
+    let duplicate = egui::Id::new(("clip_button", 4_usize));
     let row_left = |rig: &Rig| (rig.ctx.read_response(copy)).map(|r| r.rect.center().x - 25.6);
     assert_eq!(
         row_left(&rig),

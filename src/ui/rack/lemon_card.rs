@@ -23,9 +23,10 @@ use os_plugkit::embed::{self, Answer, Button, Input, MenuView, Modal};
 use os_ui::Canvas;
 use os_ui::kit::menu::{self as kmenu, MenuLayout};
 
+use crate::metrics::Metrics;
 use crate::plugins;
 use crate::plugins::builtin::Builtin;
-use crate::ui::{Finger, MOUSE, fingers, focus_lost};
+use crate::ui::{Finger, MOUSE, fingers, focus_lost, gesture};
 
 /// Two presses closer than this (seconds and points) are a double click: a finger's second tap lands a little off.
 const DOUBLE_S: f64 = 0.4;
@@ -47,6 +48,9 @@ const TYPE_IN_W: f32 = 140.0;
 pub(crate) struct LemonCard {
     /// The editor shown ([`plugins::lemon_editor`]).
     editor: embed::Parent,
+    /// The editor's `Create automation clip` pick since the rack last read it: the parameter's list position
+    /// ([`show`] sets it, the rack makes the parameter's automation track).
+    pub(super) automate: Option<i32>,
     texture: Option<TextureHandle>,
     /// The frame shown, its size in pixels and when it came.
     version: u64,
@@ -54,6 +58,11 @@ pub(crate) struct LemonCard {
     size: (u32, u32),
     /// The button of the press the editor took: its moves and release are the editor's wherever they are.
     pressed: Option<Button>,
+    /// The press's long press was sent as a right click ([`forward`]); the left press was released with it, and the
+    /// release of a press whose right click opened no modal pairs the right click with an up.
+    long_menu: bool,
+    /// The press left the calm zone before its long press came due: a drag, never a menu.
+    long_cancel: bool,
     /// That press is a finger's other than the pointer's ([`other_finger`]): its id and the pass it was last seen in.
     finger: Option<(u64, u64)>,
     /// The pointer's last position, and whether it was over the editor.
@@ -109,6 +118,7 @@ pub(crate) fn show(
     instance_id: i32,
     plugin: &Builtin,
     card: &mut LemonCard,
+    m: &Metrics,
 ) -> bool {
     let ctx = ui.ctx().clone();
     let ppp = ctx.pixels_per_point();
@@ -129,6 +139,10 @@ pub(crate) fn show(
             ..LemonCard::default()
         };
     }
+    // The editor's "Create automation clip" picks (the Lemon editors share the link's queue; this card's are its own).
+    if let Some(&index) = lemon_sampler::take_automation_requests(editor as u64).last() {
+        card.automate = Some(index as i32);
+    }
     let size = shown_size(Some(card), plugin);
     let rect = Rect::from_min_size(
         content.min,
@@ -142,30 +156,23 @@ pub(crate) fn show(
     let modal = embed::modal(editor);
     if modal.is_none() && card.size.0 > 0 {
         other_finger(ui, card, &response, rect, k);
-        forward(ui, card, rect, k, response.hovered());
+        forward(ui, card, rect, k, response.hovered(), m);
     } else {
         // The press that asked is the modal's (its answer delivers it again, with its release): the next press is new.
         (card.pressed, card.finger) = (None, None);
+        card.long_menu = false;
     }
     embed::pump(editor);
-    // Issue #72: only what changed goes into the texture (a whole frame is megabytes, a knob turn a small patch of
-    // it); all of it into a new texture or at a new size.
-    let (shown, whole) = (card.size, card.texture.is_none());
     let mut fresh = None;
     if let Some(v) = embed::frame(editor, card.version, |f| {
-        let size = (f.width, f.height);
-        let area = (whole || size != shown).then_some((0, 0, size.0, size.1));
-        fresh = (area.or(f.changed)).map(|a| (size, a, image(&f.pixels, f.width, a)));
+        fresh = Some(image(&f.pixels, f.width, f.height))
     }) {
         card.version = v;
         card.painted = ctx.input(|i| i.time);
     }
-    if let Some((size, (x, y, ..), image)) = fresh {
-        card.size = size;
+    if let Some(image) = fresh {
+        card.size = (image.size[0] as u32, image.size[1] as u32);
         match &mut card.texture {
-            Some(t) if size == shown => {
-                t.set_partial([x as usize, y as usize], image, TextureOptions::LINEAR)
-            }
             Some(t) => t.set(image, TextureOptions::LINEAR),
             None => {
                 card.texture = Some(ctx.load_texture(
@@ -234,19 +241,12 @@ pub(super) fn over(card: &LemonCard) -> bool {
     card.over || card.pressed.is_some()
 }
 
-/// The pixels (x0, y0, x1, y1) of XRGB rows of `w` as an image.
-fn image(px: &[u32], w: u32, (x0, y0, x1, y1): (u32, u32, u32, u32)) -> ColorImage {
-    let size = [(x1 - x0) as usize, (y1 - y0) as usize];
-    let mut pixels = Vec::with_capacity(size[0] * size[1]);
-    for row in px
-        .chunks_exact(w.max(1) as usize)
-        .take(y1 as usize)
-        .skip(y0 as usize)
-    {
-        let rgb = |&p: &u32| Color32::from_rgb((p >> 16) as u8, (p >> 8) as u8, p as u8);
-        pixels.extend(row[x0 as usize..x1 as usize].iter().map(rgb));
-    }
-    ColorImage::new(size, pixels)
+/// XRGB rows of `w` as an image.
+fn image(px: &[u32], w: u32, h: u32) -> ColorImage {
+    let pixels = (px.iter())
+        .map(|&p| Color32::from_rgb((p >> 16) as u8, (p >> 8) as u8, p as u8))
+        .collect();
+    ColorImage::new([w as usize, h as usize], pixels)
 }
 
 fn button(b: PointerButton) -> Option<Button> {
@@ -315,15 +315,18 @@ fn other_finger(ui: &Ui, card: &mut LemonCard, response: &Response, rect: Rect, 
 }
 
 /// This frame's pointer input to the editor shown in `rect` (`k` editor pixels per point); `hovered`: the pointer is
-/// on it, with nothing over it. Nothing while another finger holds the editor ([`other_finger`]).
-fn forward(ui: &Ui, card: &mut LemonCard, rect: Rect, k: f32, hovered: bool) {
+/// on it, with nothing over it. Nothing while another finger holds the editor ([`other_finger`]). A long press on the
+/// editor ([`gesture::is_long`], in the calm zone) is sent as a right click (`Input::Down` with [`Button::Right`]),
+/// which opens the editor's own menu (Reset, …) on the widget under the finger, as a secondary click does on the
+/// desktop.
+fn forward(ui: &Ui, card: &mut LemonCard, rect: Rect, k: f32, hovered: bool, m: &Metrics) {
     let editor = card.editor;
     if card.finger.is_some() {
         return;
     }
     let px = |p: Pos2| ((p.x - rect.left()) * k, (p.y - rect.top()) * k);
     let (events, now, held) = ui.input(|i| (i.events.clone(), i.time, i.modifiers));
-    let send = |e: Input, m: Modifiers| embed::input(editor, e, mods(m));
+    let send = |e: Input, md: Modifiers| embed::input(editor, e, mods(md));
     for event in events {
         match event {
             Event::PointerMoved(p) => {
@@ -373,6 +376,8 @@ fn forward(ui: &Ui, card: &mut LemonCard, rect: Rect, k: f32, hovered: bool) {
                     }
                 }
                 (card.pressed, card.last, card.over) = (Some(btn), pos, true);
+                card.long_menu = false;
+                card.long_cancel = false;
             }
             Event::PointerButton {
                 button: b,
@@ -381,6 +386,12 @@ fn forward(ui: &Ui, card: &mut LemonCard, rect: Rect, k: f32, hovered: bool) {
                 ..
             } if card.pressed.is_some() && card.pressed == button(b) => {
                 let btn = card.pressed.take().expect("held");
+                // The long press's right click that opened no modal (a menu's answer replays it when one did; the
+                // left up after a long press repeats the one sent with the right click, harmlessly).
+                if card.long_menu {
+                    send(Input::Up { btn: Button::Right }, modifiers);
+                    card.long_menu = false;
+                }
                 send(Input::Up { btn }, modifiers);
             }
             Event::MouseWheel {
@@ -399,6 +410,49 @@ fn forward(ui: &Ui, card: &mut LemonCard, rect: Rect, k: f32, hovered: bool) {
                 send(Input::Leave, held);
             }
             _ => {}
+        }
+    }
+    // A long press on the editor is a right click: once per press, held [`gesture::LONG_PRESS_S`] in the calm zone
+    // about where it went down. Where it lands on a widget with a menu (a knob, a fader), the editor asks for the
+    // menu ([`embed::modal`]); where it lands on nothing, the click is paired on release.
+    if card.pressed == Some(Button::Left) && !card.long_menu && !card.long_cancel {
+        let (origin, pos, start, now_s, second_finger) = ui.input(|i| {
+            (
+                i.pointer.press_origin(),
+                i.pointer.latest_pos(),
+                i.pointer.press_start_time(),
+                i.time,
+                i.multi_touch().is_some(),
+            )
+        });
+        if let (Some(origin), Some(pos), Some(start)) = (origin, pos, start)
+            && rect.contains(origin)
+        {
+            let held_s = now_s - start;
+            if second_finger || gesture::left_calm(origin, Some(pos), m.u(1.0)) {
+                // A second finger, or the calm zone left before its long press: never a menu (as [`gesture::press`]
+                // cancels it).
+                card.long_cancel = true;
+            } else if gesture::is_long(held_s) {
+                let (x, y) = px(origin);
+                send(
+                    Input::Down {
+                        x,
+                        y,
+                        btn: Button::Right,
+                        dbl: false,
+                    },
+                    held,
+                );
+                // The left press is released with it: where the right click opened a menu, its answer replays the
+                // right click only, and a cancelled menu replays nothing — either way no up would reach the left press.
+                send(Input::Up { btn: Button::Left }, held);
+                card.long_menu = true;
+            } else {
+                // Wake when the long press comes due, as [`gesture::press`] does.
+                ui.ctx()
+                    .request_repaint_after_secs((gesture::LONG_PRESS_S - held_s) as f32);
+            }
         }
     }
 }
@@ -566,7 +620,7 @@ fn show_menu(
             );
             let mut px = vec![0u32; (size.x * size.y) as usize];
             canvas.copy_to_xrgb(&mut px);
-            let img = image(&px, size.x as u32, (0, 0, size.x as u32, size.y as u32));
+            let img = image(&px, size.x as u32, size.y as u32);
             match &mut l.texture {
                 Some((t, h)) => {
                     t.set(img, TextureOptions::LINEAR);
@@ -621,7 +675,7 @@ fn type_in(
         .order(Order::Foreground)
         .fixed_pos(min)
         .show(ctx, |ui| {
-            let r = ui.add(TextEdit::singleline(typed).id(field).desired_width(width));
+            let mut r = ui.add(TextEdit::singleline(typed).id(field).desired_width(width));
             // The whole text starts selected: typing replaces it. The release of the press that opened it keeps it.
             if fresh || (opening && r.lost_focus()) {
                 r.request_focus();
@@ -630,6 +684,9 @@ fn type_in(
                 state.cursor.set_char_range(Some(all));
                 state.store(ui.ctx(), field);
             }
+            // On Android the native text dialog is the keyboard (eframe's IME is off there), so the box alone
+            // would show no keys.
+            crate::android_text::edit(&mut r, typed, usize::MAX);
             done = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
             cancel = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
                 || (r.lost_focus() && !done && !fresh && !opening);
@@ -654,6 +711,7 @@ mod tests {
     use lemon_sampler::view;
 
     use super::*;
+    use crate::metrics::DEFAULT_UI_SCALE;
     use crate::plugins::builtin::named;
     use crate::song::{ChannelKind, Song};
 
@@ -723,6 +781,7 @@ mod tests {
                 ..Default::default()
             };
             let (card, (channel, module), name) = (&mut self.card, self.ids, self.name);
+            let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
             let full = self.full;
             let _ = self.ctx.run(input, |ctx| {
                 CentralPanel::default().frame(Frame::NONE).show(ctx, |ui| {
@@ -732,7 +791,7 @@ mod tests {
                         Some(screen) => fit(screen, shown_size(Some(card), sampler)),
                         None => Rect::from_min_size(Pos2::ZERO, vec2(width, 500.0)),
                     };
-                    assert!(show(ui, content, channel, module, sampler, card));
+                    assert!(show(ui, content, channel, module, sampler, card, &m));
                 });
             });
         }
@@ -890,6 +949,56 @@ mod tests {
         assert!(
             matches!(embed::modal(editor), Some(Modal::Menu { .. })),
             "the next tap is the editor's"
+        );
+    }
+
+    /// A long press on a knob is a right click: the editor's menu (Reset, …) opens at the knob, and a quick tap
+    /// does not. The lift of the press that opened it does not pick; a press outside cancels.
+    #[test]
+    fn a_long_press_on_a_knob_opens_its_menu_but_a_tap_does_not() {
+        let mut rig = Rig::new("Lemon Sampler");
+        let editor = rig.card.editor;
+        // The sample page's `START OFFSET` knob, in editor pixels (the card shows the view cropped).
+        let knob = pos2(45.0 - view::CROP_X as f32, 286.0 - view::CROP_Y as f32);
+        // A tap: down, up 0.1 s later — no menu.
+        rig.tap(knob);
+        rig.frame(vec![]);
+        assert!(embed::modal(editor).is_none(), "a tap opens no menu");
+        // Past the double tap's 0.4 s (a second press within it resets the knob instead).
+        for _ in 0..4 {
+            rig.frame(vec![]);
+        }
+        // A long press: down, then 0.4 s of frames with the finger unmoved.
+        rig.frame(finger(TouchPhase::Start, knob));
+        for _ in 0..4 {
+            rig.frame(vec![]);
+        }
+        assert!(
+            matches!(embed::modal(editor), Some(Modal::Menu { .. })),
+            "the long press opened the knob's menu"
+        );
+        assert!(rig.card.menu.is_some(), "the card shows it");
+        // Lifting the finger that opened it does not pick the row under it.
+        rig.frame(finger(TouchPhase::End, knob));
+        rig.frame(vec![]);
+        assert!(
+            matches!(embed::modal(editor), Some(Modal::Menu { .. })),
+            "the lift left the menu open"
+        );
+        // A press outside cancels it.
+        rig.tap(pos2(700.0, 550.0));
+        rig.frame(vec![]);
+        assert_eq!(embed::modal(editor), None, "the outside press cancelled");
+        // A long press elsewhere but moving on opens nothing: the finger left the calm zone before 300 ms.
+        rig.frame(finger(TouchPhase::Start, knob));
+        rig.frame(finger(TouchPhase::Move, knob + vec2(30.0, 0.0)));
+        for _ in 0..4 {
+            rig.frame(vec![]);
+        }
+        rig.frame(finger(TouchPhase::End, knob + vec2(30.0, 0.0)));
+        assert!(
+            embed::modal(editor).is_none(),
+            "a moved press is a drag, not a menu"
         );
     }
 
