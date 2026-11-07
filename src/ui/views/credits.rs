@@ -24,7 +24,9 @@ const PLUGIN_HOSTS: &str = "VST3, VST2 and CLAP plugin hosting: Lemon Studio by 
 /// built-in Lemon plugins (`crate::plugins::builtin`).
 fn effects() -> String {
     let mut names = vec!["Lemon Reverb", "Lemon Limiter"];
-    names.extend(crate::plugins::builtin::all().iter().map(|b| b.name));
+    // Rind is Honeydew's own, not Lemon Studio's (`crates/rind`).
+    let lemon = (crate::plugins::builtin::all().iter()).filter(|b| b.clap_id() != rind::CLAP_ID);
+    names.extend(lemon.map(|b| b.name));
     let last = names.pop().unwrap_or_default();
     format!(
         "{} and {last}: Lemon Studio by ItsAlphaNeon (GPL-3.0-or-later), https://github.com/ItsAlphaNeon/Lemon-Studio",

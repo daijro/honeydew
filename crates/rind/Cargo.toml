@@ -1,0 +1,25 @@
+[package]
+name = "rind"
+description = "Rind: Honeydew's own subtractive synthesizer, a built-in CLAP instrument"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[lib]
+doctest = false
+
+[features]
+# Compiled into Honeydew: no exported plugin entry points (they would clash with the other built-in plugins).
+linked = []
+# The editor draws into Honeydew's own window (`os-plugkit`'s `embed`). Rind has no other editor.
+embed = ["os-plugkit/embed"]
+
+[dependencies]
+nih_plug = { path = "../../vendor/nih-plug" }
+os-plugkit = { path = "../../vendor/lemon-studio/os-plugkit" }
+os-ui = { path = "../../vendor/lemon-studio/os-ui" }
+
+# nih-plug's export macros expand to a lint that newer compilers no longer know (the Lemon plugins allow it too).
+[lints.rust]
+unknown_lints = "allow"

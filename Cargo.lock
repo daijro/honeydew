@@ -1964,6 +1964,7 @@ dependencies = [
  "pulp-filter",
  "rayon",
  "rfd",
+ "rind",
  "serde",
  "serde_json",
  "sha2",
@@ -3801,6 +3802,15 @@ dependencies = [
  "wayland-protocols",
  "web-sys",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "rind"
+version = "0.0.1"
+dependencies = [
+ "nih_plug",
+ "os-plugkit",
+ "os-ui",
 ]
 
 [[package]]

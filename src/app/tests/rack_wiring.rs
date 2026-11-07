@@ -1736,8 +1736,8 @@ fn with_rack_channel(types: &[u16]) -> Rig {
 }
 
 /// The browser's rows without a search: `Paste` 0, `Rack Preset` 1, `Instrument` 2, SYNTH 3, then 3x Osc 4, Lemon Trio
-/// 5, Citrus 6, DW Sampler 7, Lemon Sampler 8, GMSynth 9, Lemon Drum Sampler 10, MiniSynth 11, Slicer 12, Lemon Slicer
-/// 13, SoundFont Player 14, SuperSaw 15, Transistor Bass 16.
+/// 5, Citrus 6, DW Sampler 7, Lemon Sampler 8, GMSynth 9, Lemon Drum Sampler 10, MiniSynth 11, Rind 12, Slicer 13, Lemon
+/// Slicer 14, SoundFont Player 15, SuperSaw 16, Transistor Bass 17.
 const THREE_X_OSC: usize = 4;
 const DW_SAMPLER: usize = 7;
 const GM_SYNTH: usize = 9;

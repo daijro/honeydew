@@ -60,6 +60,7 @@ tesla = { path = "vendor/lemon-studio/tesla", features = ["linked", "embed"] }
 citrus = { path = "vendor/lemon-studio/citrus", features = ["linked", "embed"] }
 lemon-drum-sampler = { path = "vendor/lemon-studio/lemon-drum-sampler", features = ["linked", "embed"] }
 lemon-slicer = { path = "vendor/lemon-studio/lemon-slicer", features = ["linked", "embed"] }
+rind = { path = "crates/rind", features = ["linked", "embed"] }
 os-plugkit = { path = "vendor/lemon-studio/os-plugkit", features = ["embed"] }
 os-ui = { path = "vendor/lemon-studio/os-ui" }
 os-theme = { path = "vendor/lemon-studio/os-theme" }

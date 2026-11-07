@@ -862,6 +862,65 @@ mod tests {
         );
     }
 
+    /// Rind's spike editor (Honeydew's own, `crates/rind`) takes the same touch gestures as the Lemon plugins': a double
+    /// tap puts its knob back at its default, the second tap a few points off the first.
+    #[test]
+    fn a_double_tap_resets_rinds_knob() {
+        let mut rig = Rig::new("Rind");
+        let at = pos2(90.0, 100.0);
+        let _ = plugins::idle();
+        rig.frame(finger(TouchPhase::Start, at));
+        let default = (plugins::idle().iter().find(|m| m.gesture == 0))
+            .expect("a press")
+            .value;
+        for y in [80.0, 60.0] {
+            rig.frame(finger(TouchPhase::Move, pos2(at.x, y)));
+        }
+        rig.frame(finger(TouchPhase::End, pos2(at.x, 60.0)));
+        let last =
+            |moves: &[plugins::PluginMove]| moves.iter().rfind(|m| m.gesture == 1).map(|m| m.value);
+        let moves = plugins::idle();
+        assert!(last(&moves).is_some_and(|v| v != default), "{moves:?}");
+        rig.tap(at);
+        rig.tap(at + vec2(6.0, 3.0));
+        rig.frame(vec![]);
+        assert_eq!(last(&plugins::idle()), Some(default));
+    }
+
+    /// Rind's knob turns under a second finger while the first holds something elsewhere, which then lifts and moves
+    /// nothing in the editor.
+    #[test]
+    fn a_second_finger_turns_rinds_knob() {
+        let mut rig = Rig::new("Rind");
+        let (at, key) = (pos2(90.0, 100.0), pos2(790.0, 590.0));
+        let second = |phase, pos| {
+            vec![Event::Touch {
+                device_id: TouchDeviceId(1),
+                id: TouchId(2),
+                phase,
+                pos,
+                force: None,
+            }]
+        };
+        let _ = plugins::idle();
+        rig.frame(finger(TouchPhase::Start, key));
+        rig.frame(second(TouchPhase::Start, at));
+        for y in [80.0, 60.0] {
+            rig.frame(second(TouchPhase::Move, pos2(at.x, y)));
+        }
+        rig.frame(finger(TouchPhase::End, key));
+        let moves = plugins::idle();
+        assert!(
+            moves.iter().any(|m| m.gesture == 1) && !moves.iter().any(|m| m.gesture == 2),
+            "{moves:?}"
+        );
+        rig.frame(second(TouchPhase::End, pos2(at.x, 60.0)));
+        assert!(
+            plugins::idle().iter().any(|m| m.gesture == 2),
+            "the lift ends the press"
+        );
+    }
+
     /// Issue #52: on a phone, a list's menu takes the row tapped, and the editor the next tap.
     #[test]
     fn a_finger_picks_a_list_row_and_taps_on() {

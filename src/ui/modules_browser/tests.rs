@@ -3,7 +3,7 @@ use super::*;
 /// The Modules browser's list: `Paste`, `Rack Preset`, `Instrument`, then the sections. The NOTE EFFECT section's five entries are
 /// all the note effects of the registry. Lemon Reverb and Lemon Limiter are Honeydew's own (`honeydew_audio::lemon`), as is
 /// the Dynamic EQ, the De-esser and Denoise, and Lemon Trio, Lemon Sampler, Lemon Parametric EQ, Tesla, the controllers,
-/// 0.4.9's effects and Citrus, Lemon Drum Sampler and Lemon Slicer its built-in plugins (`crate::plugins::builtin`), a
+/// 0.4.9's effects and Citrus, Lemon Drum Sampler and Lemon Slicer its built-in plugins (`crate::plugins::builtin`), and Rind Honeydew's own (`crates/rind`), a
 /// Lemon plugin after its counterpart, the others by name.
 const SPEC: &[(&str, &[&str])] = &[
     ("", &["Paste", "Rack Preset", "Instrument"]),
@@ -18,6 +18,7 @@ const SPEC: &[(&str, &[&str])] = &[
             "GMSynth",
             "Lemon Drum Sampler",
             "MiniSynth",
+            "Rind",
             "Slicer",
             "Lemon Slicer",
             "SoundFont Player",
@@ -222,6 +223,7 @@ fn where_no_instrument_goes_the_list_leaves_out_instrument_the_synths_and_the_no
             "Citrus",
             "Lemon Drum Sampler",
             "Lemon Slicer",
+            "Rind",
         ];
         let notes = [
             "NOTE EFFECT",
@@ -892,6 +894,7 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             "Lemon Sampler",
             "Lemon Slicer",
             "Lemon Trio",
+            "Rind",
             // Effects: 3 … 46, then the note effects 47 … 51.
             "Equalizer",
             "MultiFX",

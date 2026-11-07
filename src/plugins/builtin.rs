@@ -53,6 +53,8 @@ const ENTRIES: &[*const c_void] = &lemon_plugins![
     lemon_vocoder,
     press,
     pulp_filter,
+    // Honeydew's own, not Lemon Studio's: `crates/rind`.
+    rind,
 ];
 
 /// Each one's VST3 copy's class id, by CLAP id: upstream's `Vst3Plugin::VST3_CLASS_ID` (`plugins/*/src/lib.rs`), which
@@ -294,7 +296,7 @@ mod tests {
         );
         // 0.4.9's effects: Lemon Small FX's ten, one plugin each, Lemon Delay, Lemon Vocoder, Press and Pulp Filter, each
         // with its VST3 copy's class id and its editor's size; only Lemon Vocoder has a sidechain input.
-        let added: Vec<_> = (got[9..].iter())
+        let added: Vec<_> = (got[9..23].iter())
             .map(|&(name, uid, class, _)| {
                 (
                     name,
@@ -350,6 +352,16 @@ mod tests {
             .map(|(n, u, c)| (*n, u.as_str(), c.clone()))
             .collect();
         assert_eq!(added, want);
+        // Honeydew's own Rind, last: embed-only, so with no VST3 copy.
+        assert_eq!(
+            got[23..],
+            [(
+                "Rind",
+                "clap:org.honeydew.rind",
+                None,
+                (rind::view::W, rind::view::H)
+            )]
+        );
         for &(name, _, _, size) in &got[9..] {
             assert!(
                 size != super::FALLBACK_SIZE && size.0 > 0 && size.1 > 0,
