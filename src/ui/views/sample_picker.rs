@@ -857,9 +857,6 @@ pub fn module_picker(files: &ProjectFiles, type_id: u16) -> PresetPicker {
     let folders = match type_id {
         three_osc::TYPE_ID => Some((SHAPES, "3xOsc Shapes")),
         slicer::TYPE_ID => Some((LOOPS, "Loop Samples")),
-        // The DW Sampler (module type 1) loads any one-shot: its picker lists the bundled `Samples` categories
-        // (kick, snare, hi-hat, …) as `Drum Samples`, like the content folder's.
-        1 => Some((SAMPLES, DRUM_SAMPLES)),
         _ => None,
     };
     let factory = folders.into_iter().flat_map(|(ours, original)| {

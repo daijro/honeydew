@@ -33,6 +33,10 @@ pub fn write(song: &Song) -> Result<Vec<u8>, FlmError> {
     let buses = song.send_buses();
     let mut writer = ChunkWriter::new_file();
     writer.chunk(*b"HEAD", |writer| write_head(writer, song))?;
+    // Honeydew extension: omitted for legacy/default-rate files.
+    if song.sample_rate != 44_100 {
+        writer.chunk(*b"HDSR", |writer| writer.u32(song.sample_rate))?;
+    }
     writer.chunk(*b"KEYB", |writer| write_keyboard(writer, song))?;
     writer.chunk(*b"META", |writer| write_meta(writer, song))?;
     writer.chunk(*b"TDIV", |writer| {

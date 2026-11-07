@@ -194,7 +194,7 @@ pub fn show(
     info.tempo_bpm = song.tempo_bpm;
     // Where the last clip ends, as the playlist's song end, at the song tempo.
     info.length_secs = song_end_beats(song) * 60.0 / song.tempo_bpm.max(1.0);
-    // `Samplerate:` is the running output's (`-` without one).
+    // `Samplerate:` is the saved project rate, which can differ from the output's rate.
     info.sample_rate = Some(app.song.sample_rate);
     // The block reads the shared data, which the app updates; it draws `Detach` or `Attach` by it.
     info.performance.clone_from(perf);
@@ -264,7 +264,6 @@ pub fn show(
             if app.song.sample_rate != rate {
                 app.song.sample_rate = rate;
                 app.song_edited(true);
-                app.audio.set_sample_rate(app.song);
             }
         }
         MainMenuAction::LockMetadata => nav = Some(ask(&mut state.asked, LOCK_TAG)),

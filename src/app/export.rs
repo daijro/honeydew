@@ -16,7 +16,7 @@ fn dialog(o: &Overlay) -> bool {
 impl HoneydewApp {
     /// After the files, each frame: a closed Save dialog lets go of its state. An export that went ahead closes the
     /// dialog; an audio one starts rendering with the page's options, the samples loaded as a rebuild loads them, at
-    /// The engine rate (no resampling; 44 100 Hz without an output).
+    /// the project rate, independent of the output device.
     pub(super) fn export_started(&mut self, ctx: &egui::Context) {
         let Some(export) = self.files.take_export() else {
             if !self.nav.overlays.iter().any(dialog) {
@@ -33,7 +33,7 @@ impl HoneydewApp {
         self.audio
             .samples
             .load(&self.song, &sample_cache::reader(&self.files));
-        // The project's rate: the same the preview engine runs at, so the render matches what was heard.
+        // The project's rate, independent of any output-device fallback.
         let rate = self.song.sample_rate;
         let page = self.slots.export.page;
         match Job::new(&self.song, &self.audio.samples, export, page, rate) {

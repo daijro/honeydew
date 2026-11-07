@@ -218,8 +218,8 @@ pub struct Song {
     /// `HEAD` song title.
     pub title: String,
     pub tempo_bpm: f64,
-    /// The project's sample rate, one of [`SAMPLE_RATES`]: the preview engine and renders run at it, so what you
-    /// hear live is what the exported file contains.
+    /// The project's sample rate, one of [`SAMPLE_RATES`]. Offline renders use it; preview requests it but can
+    /// fall back to the output device's default rate.
     pub sample_rate: u32,
     /// `TDIV`: the subdivision and the beats per bar.
     pub time_sig: TimeSig,
