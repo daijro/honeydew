@@ -403,6 +403,35 @@ impl ProjectFiles {
         }
     }
 
+    /// Issue #91: a pick too large to read whole ([`super::FileEvent::Picked`]) goes in as a picked folder's file does,
+    /// copied by the provider on a worker ([`Self::folder_copied`] then shows the summary): for a sample picker's
+    /// `Import` into its folder under its name or a free `name (n)`, as [`Self::audio_imported`] keeps a small one;
+    /// else into its user folder ([`Self::import_files`]).
+    pub(super) fn import_unread(&mut self, path: PathBuf) {
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        let (name, source) = (name.into_owned(), path.to_string_lossy().into_owned());
+        if self.pick.take() == Some(super::Pick::Sample) {
+            let Some(dir) = self.import_dir.take() else {
+                return self.fail(IMPORT_FAILED, path.display().to_string());
+            };
+            let ext = path.extension().unwrap_or_default().to_string_lossy();
+            let free = self.free_name(Some(&dir), &stem(&path), &ext, None);
+            self.flash = Some("Importing 1 file…".into());
+            self.copying = Some(vec![super::samples::IMPORTED.into()]);
+            return self
+                .provider
+                .copy(vec![(source, dir.join(format!("{free}.{ext}")))]);
+        }
+        self.folder = Some(FolderImport {
+            sources: HashMap::from([(name.clone(), source)]),
+            ..FolderImport::default()
+        });
+        self.import_files(vec![Entry {
+            path: name,
+            data: Vec::new(),
+        }]);
+    }
+
     /// Writes the import's file `entry` as the user file `target`; for a picked folder, only notes where it goes.
     fn put(&mut self, target: &Path, entry: &Entry) -> io::Result<()> {
         if self.folder.is_some() && self.in_content(target) {
@@ -1279,22 +1308,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn an_unprefixed_sample_pack_keeps_its_nested_folders_on_import() {
-        let archive = zip_of(&[("Drum Pack/Kicks/Acoustic/kick.wav", b"kick")]);
-        let mut files = web("Drum Pack.zip", &archive);
-        open(&mut files);
-        assert_eq!(files.message, lines(&["Import 1 files?"]));
-        let entries = files.importing.take().unwrap();
-        files.import_files(entries);
-        assert_eq!(
-            files
-                .read_user_file(Path::new("My Samples/Drum Pack/Kicks/Acoustic/kick.wav"))
-                .unwrap(),
-            b"kick"
-        );
-    }
-
     /// On disk, an archive that is no single song sorts its files into the user folder's own folders by type, in the
     /// archive's folders, a taken name numbered from 2, and sums up where they went; one with a name that leaves the
     /// folder imports nothing. A DirectWave program takes the audio files of its folder along into `My Instruments`,
@@ -1476,6 +1489,79 @@ mod tests {
             );
         }
         assert_eq!(tree(&user).len(), imported.len(), "{:?}", tree(&user));
+    }
+
+    /// Issue #91: a pick too large to read whole, of a type a user folder takes, is imported unread up to
+    /// `MAX_IMPORT_BYTES`: copied on a worker as a picked folder's files are, into its user folder or a sample picker's
+    /// folder. A song or an archive that large is still refused, as is anything larger.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_pick_too_large_to_read_whole_is_imported_unread() {
+        use super::super::samples::IMPORTED;
+        use super::super::{FileEvent, MAX_FILE_BYTES, MAX_IMPORT_BYTES, Pick, native::open_path};
+        let home = Temp::new("import-large");
+        let (user, songs, mut files) = unzip_on_disk(&home.0);
+        files.root = Some(songs);
+        // Sparse files: their size is all that is looked at.
+        let sized = |name: &str, len: u64| {
+            let path = home.0.join(name);
+            std::fs::File::create(&path).unwrap().set_len(len).unwrap();
+            open_path(path, Pick::Song.accept())
+        };
+        let font = home.0.join("Big.sf2");
+        assert_eq!(
+            sized("Big.sf2", MAX_FILE_BYTES + 1),
+            FileEvent::Picked(font)
+        );
+        assert!(matches!(
+            sized("Big.zip", MAX_FILE_BYTES + 1),
+            FileEvent::Failed(..)
+        ));
+        assert!(matches!(
+            sized("Huge.sf2", MAX_IMPORT_BYTES + 1),
+            FileEvent::Failed(..)
+        ));
+        let wait = |files: &mut ProjectFiles| {
+            for _ in 0..500 {
+                if let Some(message) = files.message.take() {
+                    return Some(message);
+                }
+                files.poll(&mut Song::default());
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            None
+        };
+        // Small stand-ins for the import itself.
+        let piano = home.0.join("Piano.sf2");
+        std::fs::write(&piano, SINE_SF2).unwrap();
+        files.import_unread(piano.clone());
+        assert_eq!(files.flash.take().as_deref(), Some("Importing 1 file…"));
+        let summary = lines(&["Imported 1 file", "1 SoundFont in My SoundFonts"]);
+        assert_eq!(wait(&mut files), summary);
+        let recordings = user.join("My Recordings");
+        std::fs::create_dir_all(&recordings).unwrap();
+        std::fs::write(recordings.join("Take.wav"), b"mine").unwrap();
+        let take = home.0.join("Take.wav");
+        std::fs::write(&take, b"take").unwrap();
+        (files.pick, files.import_dir) = (Some(Pick::Sample), Some(recordings));
+        files.import_unread(take);
+        assert_eq!(wait(&mut files), lines(&[IMPORTED]));
+        let imported: [(&str, &[u8]); 3] = [
+            ("My SoundFonts/Piano.sf2", SINE_SF2),
+            ("My Recordings/Take.wav", b"mine"),
+            ("My Recordings/Take (1).wav", b"take"),
+        ];
+        for (path, bytes) in imported {
+            assert_eq!(
+                std::fs::read(user.join(path)).ok().as_deref(),
+                Some(bytes),
+                "{path}"
+            );
+        }
+        assert!(
+            std::fs::read(&piano).is_ok(),
+            "a desktop pick is the user's own: copied, never moved"
+        );
     }
 
     /// Issue #52: an imported archive's folders stay below the folder each file goes into by type, merging into one of

@@ -44,7 +44,7 @@ use crate::ui::UiCtx;
 use crate::ui::focus::{self, Dir, Kind};
 use crate::ui::main_menu::SongEntry;
 use crate::ui::main_menu::library::MAX_LISTED;
-use crate::ui::widgets::{Button, button, truncated};
+use crate::ui::widgets::{Button, button, truncated, truncated_bold};
 
 /// How far the bar moves the breadcrumbs and the list down while it shows, in U.
 pub(crate) const DROP: f32 = 1.75;
@@ -194,6 +194,8 @@ pub(crate) struct RowLook<'a> {
     pub hovered: bool,
     /// Select mode: how far its checkbox has grown in (0 to 1), and whether the row is selected.
     pub select: Option<(f32, bool)>,
+    /// The name in a heavier stroke ([`truncated_bold`]): SONGS' folders.
+    pub bold: bool,
 }
 
 /// Paints a browser row in `rect` (see the module docs).
@@ -222,6 +224,7 @@ pub(crate) fn paint_row(painter: &Painter, cx: &UiCtx, rect: Rect, row: &RowLook
         label.min.x += m.u(CHECK_SHIFT) * t;
     }
     let left = Align2::LEFT_CENTER;
+    let draw = if row.bold { truncated_bold } else { truncated };
     match row.place.filter(|p| !p.is_empty()) {
         Some(place) => {
             let top = label.center().y - m.u(NAME_LINE + PLACE_LINE) / 2.0;
@@ -230,11 +233,11 @@ pub(crate) fn paint_row(painter: &Painter, cx: &UiCtx, rect: Rect, row: &RowLook
                 .with_min_y(name.bottom())
                 .with_max_y(name.bottom() + m.u(PLACE_LINE));
             let font = m.font_id(FontSize::Pt12);
-            truncated(painter, name, left, row.name, font, ink, 0);
+            draw(painter, name, left, row.name, font, ink, 0);
             let (font, dim) = (m.font_id(FontSize::Pt8), ink.gamma_multiply(PLACE_ALPHA));
             truncated(painter, line, left, place, font, dim, 0);
         }
-        None => truncated(painter, label, left, row.name, m.font_id(row.font), ink, 0),
+        None => draw(painter, label, left, row.name, m.font_id(row.font), ink, 0),
     }
 }
 

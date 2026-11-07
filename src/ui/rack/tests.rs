@@ -4695,7 +4695,7 @@ fn add_midi_send_offers_the_note_channels_no_midi_send_leads_back_from() {
 fn the_rack_tab_moves_up_with_the_keyboard_panel_and_slides_off_the_right_edge() {
     let u = 32.0;
     let screen = Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 900.0));
-    let tab = |bottom: f32| rack_tab(screen, screen.with_max_y(bottom), u);
+    let tab = |bottom: f32| rack_tab(screen, screen.with_max_y(bottom), u, 0.0);
     let near = |a: f32, b: f32| (a - b).abs() < 1e-3;
     let x = 1170.0 - 2.1 * u;
     // Tall: centred on 0 … 600 + 2 U.
@@ -4712,4 +4712,31 @@ fn the_rack_tab_moves_up_with_the_keyboard_panel_and_slides_off_the_right_edge()
     let full = tab((1.65 + 2.0) * u);
     assert!(near(full.bottom(), 3.4 * u), "{full:?}");
     assert!(near(full.left(), x + 2.75 * u - full.top()) && full.left() < 1170.0);
+}
+
+/// PR #87: a drag moves the rack tab down (or up) its edge by `shift` U, held 5 U below the area's top and 0.25 U above
+/// its bottom as its home is; on an area too short for both the bottom still wins (#57), whatever the shift.
+#[test]
+fn a_moved_rack_tab_keeps_to_its_bounds() {
+    let u = 32.0;
+    let screen = Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 900.0));
+    let area = screen.with_max_y(600.0);
+    let near = |a: f32, b: f32| (a - b).abs() < 1e-3;
+    let home = rack_tab(screen, area, u, 0.0);
+    assert!(near(
+        rack_tab(screen, area, u, 2.0).top(),
+        home.top() + 2.0 * u
+    ));
+    assert!(near(
+        rack_tab(screen, area, u, 99.0).bottom(),
+        600.0 - 0.25 * u
+    ));
+    assert!(near(rack_tab(screen, area, u, -99.0).top(), 5.0 * u));
+    let (lo, hi) = rack_tab_shift_range(area.y_range(), u);
+    assert!(near(home.top() + lo * u, 5.0 * u) && near(home.bottom() + hi * u, 600.0 - 0.25 * u));
+    let short = screen.with_max_y(200.0);
+    for shift in [-99.0, 0.0, 99.0] {
+        let tab = rack_tab(screen, short, u, shift);
+        assert!(near(tab.bottom(), 200.0 - 0.25 * u), "{shift}: {tab:?}");
+    }
 }

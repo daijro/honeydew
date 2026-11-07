@@ -15,6 +15,7 @@ pub mod dynamic_eq;
 pub mod flac_writer;
 pub mod gm_waveshapes;
 pub mod gmsynth;
+pub mod half_time;
 pub mod input;
 pub mod instrument;
 pub mod lemon;
@@ -109,6 +110,7 @@ pub fn effect_info(id: u16) -> Option<EffectInfo> {
         modulator::MODULATOR => ("Modulator", modulator::PARAMS),
         de_esser::DE_ESSER => ("De-esser", de_esser::PARAMS),
         denoise::DENOISE => ("Denoise", denoise::PARAMS),
+        half_time::HALF_TIME => ("Half Time", half_time::PARAMS),
         _ => return None,
     };
     Some(EffectInfo {
@@ -526,6 +528,13 @@ impl AudioEffect {
                     Processor::Denoise(Box::new(state)),
                 )
             }
+            half_time::HALF_TIME => {
+                let state = half_time::HalfTimeState::new(&half_time::DEFAULTS, sample_rate);
+                (
+                    half_time::DEFAULTS.to_vec(),
+                    Processor::HalfTime(Box::new(state)),
+                )
+            }
             _ => return Err(EffectError::UnsupportedEffect(id)),
         };
         let mut effect = Self {
@@ -614,7 +623,7 @@ impl AudioEffect {
         Ok(())
     }
 
-    /// Sizes the tempo-dependent buffers (Tape Stop's ring) for `tempo_bpm`; a new effect
+    /// Sizes the tempo-dependent buffers (Tape Stop's and Half Time's rings) for `tempo_bpm`; a new effect
     /// assumes 120 BPM. Like [`Self::configure_sample_rate`] it may allocate, so the host calls it off the audio
     /// thread, at build with the song tempo. Nothing resizes on the audio thread: an edit's engine hands its buffers to
     /// the running effect it takes over ([`Self::take_buffers`]), and a Tape Stop ramp at a dragged tempo slower than
@@ -623,8 +632,10 @@ impl AudioEffect {
         if !tempo_bpm.is_finite() || tempo_bpm <= 0.0 {
             return Err(EffectError::InvalidContext);
         }
-        if let Processor::TapeStop(state) = &mut self.processor {
-            state.prepare(tempo_bpm);
+        match &mut self.processor {
+            Processor::TapeStop(state) => state.prepare(tempo_bpm),
+            Processor::HalfTime(state) => state.prepare(tempo_bpm),
+            _ => {}
         }
         Ok(())
     }
@@ -636,6 +647,7 @@ impl AudioEffect {
             (Processor::TapeStop(state), Processor::TapeStop(theirs)) => state.take_ring(theirs),
             // A room size the running reverb held back (`lemon::ReverbFx`).
             (Processor::LemonReverb(state), Processor::LemonReverb(theirs)) => state.take(theirs),
+            (Processor::HalfTime(state), Processor::HalfTime(theirs)) => state.take_ring(theirs),
             _ => {}
         }
     }
@@ -934,6 +946,7 @@ enum Processor {
     Modulator(Box<modulator::ModulatorState>),
     DeEsser(Box<de_esser::DeEsserState>),
     Denoise(Box<denoise::DenoiseState>),
+    HalfTime(Box<half_time::HalfTimeState>),
     Monitor,
 }
 
@@ -979,6 +992,7 @@ impl Processor {
             Self::Modulator(state) => state.refresh(params, sample_rate),
             Self::DeEsser(state) => state.refresh(params, sample_rate),
             Self::Denoise(state) => state.refresh(params, sample_rate),
+            Self::HalfTime(state) => state.refresh(params, sample_rate),
             Self::Monitor => {}
         }
     }
@@ -1009,6 +1023,7 @@ impl Processor {
             Self::TapeStop(state) => state.prepare_block(context.tempo_bpm),
             Self::LemonReverb(state) => state.set_tempo(context.tempo_bpm),
             Self::Modulator(state) => state.prepare_block(context),
+            Self::HalfTime(state) => state.prepare_block(context),
             Self::Waveshaper(state) => {
                 state
                     .prepare_block(
@@ -1057,6 +1072,7 @@ impl Processor {
             Self::Modulator(state) => state.process_frame(l, r, (l, r)),
             Self::DeEsser(state) => state.process_frame(l, r),
             Self::Denoise(state) => state.process_frame(l, r),
+            Self::HalfTime(state) => state.process_frame(l, r),
             Self::Monitor => (l, r),
         }
     }
@@ -1117,6 +1133,7 @@ impl Processor {
             Self::Modulator(state) => state.reset(),
             Self::DeEsser(state) => state.reset(),
             Self::Denoise(state) => state.reset(),
+            Self::HalfTime(state) => state.reset(),
             Self::Monitor => {}
         }
     }

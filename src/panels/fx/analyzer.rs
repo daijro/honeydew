@@ -19,9 +19,11 @@
 //!   range), as is its frequency range of the x part.
 //! - The scope's X labels stay relative to the trigger in zoom mode too, where the trigger sits at the selection's
 //!   width × the trigger fraction. Its overlay cycles on a double tap like the generic one.
-//! - `Tilt` on the SETTINGS page is the Spectrum's tilt around 1 kHz, in dB/octave: White (0), Pink (+3), Honeydew
-//!   (+4.5, the default and the card's long-standing display), Brown (+6), or `Custom`, which reads the `dB/oct` knob
-//!   beside it continuously from −12 to +12. The Spectrogram's columns and the marker read with the same tilt.
+//! - Contributor feature (PR #87): `Tilt` on the SETTINGS page is the Spectrum's tilt around 1 kHz, in
+//!   dB/octave: White (0), Pink (+3), Default (+4.5, the default), Brown (+6), or `Custom`, which
+//!   reads the `dB/oct` knob beside it continuously from −12 to +12. The Spectrogram's columns and the marker read with
+//!   the same tilt. It takes the place of the two SETTINGS spacers: DC Block and Tilt (and the knob)
+//!   share the first row, Channel, Reactivity and Input Gain the second.
 //! - The marker's value is the drawn curve's at its x (the scope's the middle of a column's extent); without a curve
 //!   point there (no pitch, no feed) neither dot nor readout shows.
 
@@ -862,15 +864,15 @@ fn setting(state: &PanelState, n: u32, default: f32) -> f32 {
 const TILT: u32 = 18;
 /// The `dB/oct` setting, the `Tilt`'s value while it is `Custom`.
 const TILT_STEP: u32 = 20;
-/// The `Tilt` presets, dB/octave around 1 kHz: white noise reads flat at 0, pink at +3, Honeydew's long-standing
-/// display at +4.5, brown at +6.
+/// The `Tilt` presets, dB/octave around 1 kHz: white noise reads flat at 0, pink at +3, the default display at +4.5,
+/// brown at +6.
 const TILTS: [f32; 4] = [0.0, 3.0, 4.5, 6.0];
 /// `Tilt`'s items, in its order.
-const TILT_TEXT: [&str; 5] = ["White", "Pink", "Honeydew", "Brown", "Custom"];
-/// `Custom` spans −12…+12 dB/octave; the normalized knob position for Honeydew's long-standing +4.5 default.
+const TILT_TEXT: [&str; 5] = ["White", "Pink", "Default", "Brown", "Custom"];
+/// `Custom` spans −12…+12 dB/octave; the normalized knob position for the default +4.5.
 const TILT_STEP_DEFAULT: f32 = (4.5 + 12.0) / 24.0;
 
-/// The Spectrum's tilt around 1 kHz in dB/octave: its `Tilt` preset, [`TILTS`]`[2]` (+4.5, the card's long-standing
+/// The Spectrum's tilt around 1 kHz in dB/octave: its `Tilt` preset, [`TILTS`]`[2]` (+4.5, the default
 /// display) when unset, or with `Custom` the continuous `dB/oct` value beside it.
 fn custom_tilt(v: f32) -> f32 {
     let normalized = if v.is_finite() {
@@ -1721,7 +1723,7 @@ pub const REFERENCE: Reference = Reference {
         (15, 1.0),
         (16, 1.0),
         (17, 0.5),
-        // The Spectrum's tilt: Honeydew's own, and the continuous `dB/oct` value used by `Custom`.
+        // The Spectrum's tilt: the default, and the continuous `dB/oct` value used by `Custom`.
         (TILT, 2.0),
         (TILT_STEP, TILT_STEP_DEFAULT),
     ],
@@ -1788,7 +1790,7 @@ pub const REFERENCE: Reference = Reference {
             rows: &[
                 row(16, Widget::Spinner, "DC Block", [0.0, 0.0, 4.66, 3.37]).items("On · Off"),
                 row(TILT, Widget::Spinner, "Tilt", [4.66, 0.0, 4.67, 3.37])
-                    .items("White · Pink · Honeydew · Brown · Custom"),
+                    .items("White · Pink · Default · Brown · Custom"),
                 row(TILT_STEP, Widget::Knob, "dB/oct", [9.33, 0.0, 4.67, 3.37])
                     .value("+4.5 dB/oct"),
                 row(14, Widget::Spinner, "Channel", [0.0, 3.37, 4.66, 3.37])
@@ -1806,7 +1808,7 @@ pub const REFERENCE: Reference = Reference {
             rows: &[
                 row(16, Widget::Spinner, "DC Block", [0.0, 0.0, 7.0, 3.37]).items("On · Off"),
                 row(TILT, Widget::Spinner, "Tilt", [7.0, 0.0, 7.0, 3.37])
-                    .items("White · Pink · Honeydew · Brown · Custom"),
+                    .items("White · Pink · Default · Brown · Custom"),
                 row(14, Widget::Spinner, "Channel", [0.0, 3.37, 4.66, 3.37])
                     .items("Left · Right · L + R"),
                 row(15, Widget::Spinner, "Reactivity", [4.66, 3.37, 4.67, 3.37])
@@ -1862,12 +1864,12 @@ mod live {
             settings: settings.iter().copied().collect(),
             ..PanelState::default()
         };
-        // Unset, the card reads with Honeydew's own +4.5 dB/octave.
+        // Unset, the card reads with the default +4.5 dB/octave.
         assert_eq!(tilt(&state(&[])), 4.5);
         for (item, want) in [(0.0, 0.0), (1.0, 3.0), (2.0, 4.5), (3.0, 6.0)] {
             assert_eq!(tilt(&state(&[(TILT, item)])), want, "{item}");
         }
-        // Custom is continuous over the full range, with Honeydew's +4.5 as its starting value.
+        // Custom is continuous over the full range, with the default +4.5 as its starting value.
         assert_eq!(tilt(&state(&[(TILT, 4.0)])), 4.5);
         for (step, want) in [
             (0.0, -12.0),

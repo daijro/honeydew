@@ -15,7 +15,9 @@
 //!   ([`Render::finish`]), then `Encoding "<file>"` (pass 2, [`Stream::step`]: the same audio rendered again and
 //!   processed), 1024 frames per push into a streaming encoder: 16-bit
 //!   [`WavWriter`] or 32-bit float WAV, 16- or 24-bit [`FlacEncoder`], 192 or 320 kbps [`Mp3Encoder`], Vorbis quality
-//!   0.4 or 1.0 [`OggEncoder`], per `High quality`. Once written, `Render complete\nSaved to: <path>` flashes.
+//!   0.4 or 1.0 [`OggEncoder`], per `High quality`. Once written, the message `Render complete` / `Saved to: <path
+//!   below the user folder>` shows, with `Open My Tracks` (SONGS on the render) and `OK` (#72: a flash
+//!   was gone before Android users found the file). The web, which downloads, flashes the two lines.
 //! - **Errors.** No audible frame: `The song has no sound`. A render that cannot be built, is too long or cannot be
 //!   written: `An error occurred while rendering`. MIDI with no lane to write: `Error: no data to save`. ZIP: the
 //!   export messages (`Failed to save project` for the song, `Failed to compress files`, `Failed to export
@@ -67,6 +69,10 @@ pub const ARCHIVE_FAILED: &str = "Failed to export archive";
 pub const COMPRESS_FAILED: &str = "Failed to compress files";
 /// The message after an FLP export that did not carry everything over exactly; a line for each follows.
 pub const FLP_NOTICES: &str = "Saved. These parts differ in the .flp:";
+/// The message after an audio export, its tag and its button that shows the render in SONGS (#72).
+pub const RENDER_COMPLETE: &str = "Render complete";
+pub const RENDERED_TAG: &str = "project_files_rendered";
+pub const OPEN_TRACKS: &str = "Open My Tracks";
 /// The render rate when no audio output runs.
 pub const NO_AUDIO_RATE: u32 = 44_100;
 /// Frames a slice renders at least: the render's block.
@@ -86,6 +92,8 @@ pub struct Export {
     /// The file, or with [`Split::Folder`] the stems' folder.
     pub path: PathBuf,
     pub split: Split,
+    /// `Send` (#72): the file, or the stems, are shared once written ([`super::FileProvider::share`]).
+    pub send: bool,
 }
 
 /// `Split mixer tracks`: where the stems go.
@@ -102,11 +110,14 @@ pub enum Split {
     Flp,
 }
 
-/// A split export's stems being written ([`ProjectFiles::write_stem`]): their folder, the files whose writes have not
-/// finished, whether every stem is rendered, and whether a write failed. `Render complete` flashes once all are done.
+/// A split export's stems being written ([`ProjectFiles::write_stem`]): their folder, every stem file (for `Send`), the
+/// files whose writes have not finished, whether every stem is rendered, and whether a write failed. `Render complete`
+/// flashes once all are done.
 #[derive(Default)]
 pub(super) struct StemWrites {
     folder: PathBuf,
+    files: Vec<PathBuf>,
+    send: bool,
     writing: Vec<PathBuf>,
     rendered: bool,
     failed: bool,
@@ -171,6 +182,7 @@ impl ProjectFiles {
         split: bool,
         only: Option<usize>,
     ) {
+        let send = std::mem::take(&mut self.send);
         if format == ExportFormat::Flm || !format.available() {
             return;
         }
@@ -218,6 +230,7 @@ impl ProjectFiles {
             format,
             path,
             split,
+            send,
         };
         if self.provider.exists(&export.path) {
             self.message = Some(vec![OVERWRITE.into(), file]);
@@ -287,6 +300,8 @@ impl ProjectFiles {
     pub fn write_stem(&mut self, export: &Export, name: &str, bytes: Vec<u8>) {
         let path = export.path.join(name);
         self.stem_writes.folder.clone_from(&export.path);
+        self.stem_writes.send = export.send;
+        self.stem_writes.files.push(path.clone());
         self.stem_writes.writing.push(path.clone());
         self.provider.save(&path, false, bytes);
     }
@@ -308,10 +323,38 @@ impl ProjectFiles {
         if writes.rendered && writes.writing.is_empty() {
             writes.rendered = false;
             if !std::mem::take(&mut writes.failed) {
-                let folder = writes.folder.display();
-                self.flash = Some(format!("Render complete\nSaved to: {folder}"));
+                let folder = writes.folder.clone();
+                let stems = writes.send.then(|| std::mem::take(&mut writes.files));
+                self.render_complete(folder);
+                if let Some(stems) = stems {
+                    self.share(&stems);
+                }
             }
         }
+    }
+
+    /// `Render complete` and where `path` (the file, or the stems' folder) is, below the user folder. Where saves keep
+    /// their folders it is a message whose `Open My Tracks` shows the render in SONGS ([`Self::take_open_tracks`], #72),
+    /// else (the web's download) the flash.
+    fn render_complete(&mut self, path: PathBuf) {
+        let user = self.user.as_deref().unwrap_or(Path::new(""));
+        let shown = path
+            .strip_prefix(user)
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+        let lines = vec![RENDER_COMPLETE.to_owned(), format!("Saved to: {shown}")];
+        if self.provider.folders() {
+            self.message = Some(lines);
+            self.rendered = Some(path);
+        } else {
+            self.flash = Some(lines.join("\n"));
+        }
+    }
+
+    /// The render the user asked to see with the render message's `Open My Tracks`, once: the app shows it in SONGS.
+    pub fn take_open_tracks(&mut self) -> Option<PathBuf> {
+        self.open_tracks.take()
     }
 
     /// A render failed: `The song has no sound` with no audible frame, else `An error occurred while rendering`.
@@ -344,10 +387,11 @@ impl ProjectFiles {
         let Some(export) = self.export_saving.take() else {
             return;
         };
+        if let (FileEvent::Saved(path), true) = (&event, export.send) {
+            self.share(std::slice::from_ref(path));
+        }
         match event {
-            FileEvent::Saved(path) if export.format.is_audio() => {
-                self.flash = Some(format!("Render complete\nSaved to: {}", path.display()));
-            }
+            FileEvent::Saved(path) if export.format.is_audio() => self.render_complete(path),
             FileEvent::Saved(_) => {
                 self.flash = Some(saved(std::mem::take(&mut self.export_left_out)));
                 // What the FLP had no counterpart for.
@@ -364,6 +408,7 @@ impl ProjectFiles {
             }
             FileEvent::Failed(_, detail) => self.fail(failure(export.format), detail),
             FileEvent::Opened(..)
+            | FileEvent::Picked(_)
             | FileEvent::Located(_)
             | FileEvent::Folder(_)
             | FileEvent::Copied(_)

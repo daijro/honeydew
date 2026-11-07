@@ -702,28 +702,6 @@ fn copy_fills_the_clipboard_and_delete_removes_the_selection_in_one_edit() {
     assert_eq!((rig.selected(), rig.edits), (vec![false; 2], 1));
 }
 
-/// `Duplicate`, last in the row: a lone point's copy a snap step on (a beat here), the copy the selection, in one edit.
-#[test]
-fn duplicate_puts_a_copy_of_the_selection_right_after_it_in_one_edit() {
-    let pts = [p(0, 0), p(256, 32767), p(448, 0)];
-    let mut rig = Rig::new(&pts);
-    rig.ed.snap = Snap {
-        on: true,
-        mode: crate::ui::piano_roll::SnapMode::Beat,
-        ..Default::default()
-    };
-    rig.tap(touch(pts[1]));
-    let duplicate = rig.text_at("Duplicate").expect("Duplicate");
-    let delete = rig.text_at("Delete").expect("Delete");
-    assert!(delete.x < duplicate.x, "Delete before Duplicate");
-    rig.tap(duplicate);
-    assert_eq!(rig.points(), [pts[0], pts[1], p(384, 32767), pts[2]]);
-    assert_eq!(
-        (rig.selected(), rig.edits),
-        (vec![false, false, true, false], 1)
-    );
-}
-
 #[test]
 fn a_long_press_shows_paste_where_the_finger_is_and_paste_lands_the_earliest_point_on_the_snapped_beat()
  {

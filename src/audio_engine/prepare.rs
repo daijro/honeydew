@@ -579,7 +579,7 @@ fn instrument_automation(
 }
 
 /// The values automation `lane` plays up to `end_beat`, as (song tick, value), clip by clip.
-fn lane_points(lane: &Lane, end_beat: f64) -> Result<Vec<(u64, f32)>, EngineError> {
+pub(super) fn lane_points(lane: &Lane, end_beat: f64) -> Result<Vec<(u64, f32)>, EngineError> {
     let end_tick = (end_beat * f64::from(PPQ)).ceil() as u64;
     let mut points = Vec::new();
     for clip in playing_clips(lane) {
@@ -596,7 +596,7 @@ fn lane_points(lane: &Lane, end_beat: f64) -> Result<Vec<(u64, f32)>, EngineErro
 /// How many event plays the song's playing clips expand to, at most, over all their loop passes (a hostile file: a
 /// 1-tick loop shown for 10⁹ beats), counted before any is expanded. A pass may be cut by the offset, hence the + 1.
 /// An automation clip counts the events its control points generate.
-fn plays(song: &Song) -> Result<f64, EngineError> {
+pub(super) fn plays(song: &Song) -> Result<f64, EngineError> {
     let mut plays = 0.0;
     for lane in song.channels.iter().flat_map(|channel| &channel.lanes) {
         for clip in playing_clips(lane) {

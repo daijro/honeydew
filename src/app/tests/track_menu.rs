@@ -21,7 +21,7 @@ const SETTINGS: (usize, usize) = (0, 1);
 const CLONE: (usize, usize) = (0, 2);
 const INSERT: (usize, usize) = (0, 3);
 const DELETE_TRACK: (usize, usize) = (0, 4);
-const DELETE_CHANNEL: (usize, usize) = (0, 5);
+const DELETE_CHANNEL: (usize, usize) = (0, 7);
 /// `Add Track` of an instrument, `Add StepSeq Track` and `Add Notes Track` of a drums channel.
 const ADD_TRACK: (usize, usize) = (1, 3);
 const ADD_STEP_SEQ: (usize, usize) = (1, 2);
@@ -999,6 +999,10 @@ fn a_track_that_has_clips_again_when_the_question_is_answered_stays() {
 // ---- Load Drumset / Save Drumset ----
 
 use super::rack_wiring::{dialog_save, picker_row};
+
+/// Right of the 18 U picker panel: a click there closes it, also after a pick, whose audition strip holds the focus
+/// (an Escape then only takes the focus).
+const RIGHT_OF_PICKER: Pos2 = pos2(1000.0, 300.0);
 use crate::project_files::mem::MemFiles;
 use crate::project_files::{LOAD_FAILED, PresetKind, ProjectFiles};
 use crate::song::DrumKit;
@@ -1102,12 +1106,14 @@ fn save_drumset_then_load_drumset_brings_the_kit_back_in_one_undo_step() {
         channel: 1,
         target: PresetTarget::Drumset,
     };
-    assert_eq!(rig.overlays(), [picker]);
+    assert_eq!(rig.overlays(), std::slice::from_ref(&picker));
     picker_row(&mut rig, 0);
     assert!(rig.color_of("Drumsets").is_some(), "the picker's title");
     picker_row(&mut rig, 0);
-    assert_eq!(rig.overlays(), []);
+    // The picker stays for the next kit (#88).
+    assert_eq!(rig.overlays(), [picker]);
     assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
+    rig.click(RIGHT_OF_PICKER);
     // The saved kit, its slots with new ids after the channel's last (9): ids are never reused. The send
     // names a channel of the song it was saved from: the pad plays into its channel.
     let loaded = kit(&rig);
@@ -1170,10 +1176,13 @@ fn closing_the_drumset_picker_or_a_kit_that_does_not_read_changes_nothing() {
     assert_eq!(rig.app.song, song);
     assert_eq!(rig.take(), Vec::<String>::new());
     rig.answer(true);
-    // The empty kit loads nothing, and says nothing.
+    // The empty kit loads nothing, and says nothing: the picker stays (#88).
     rig.track_menu(1, LOAD_DRUMSET);
     picker_row(&mut rig, 0);
     picker_row(&mut rig, 1);
+    assert_eq!(rig.overlays().len(), 1);
+    assert!(rig.color_of("Drumsets").is_none(), "inside My Files");
+    rig.click(RIGHT_OF_PICKER);
     assert_eq!(rig.overlays(), []);
     assert_eq!(rig.app.song, song);
     assert_eq!(rig.take(), Vec::<String>::new());
@@ -1240,7 +1249,9 @@ fn the_drumset_pickers_default_is_the_built_in_kit_in_one_undo_step() {
     assert!(rig.color_of("Default").is_some(), "listed at the root");
     picker_row(&mut rig, 1);
     rig.frame(vec![]);
-    assert_eq!(rig.overlays(), []);
+    // The picker stays for the next kit (#88).
+    assert_eq!(rig.overlays().len(), 1);
+    rig.click(RIGHT_OF_PICKER);
     // The built-in kit, its slots with new ids after the empty pad's (1): ids are never reused.
     let loaded = kit(&rig);
     let ids: Vec<u32> = loaded.slots.iter().map(|s| s.file.id).collect();
@@ -1566,7 +1577,7 @@ fn a_marquee_group_follows_its_clips_through_undos_made_while_the_playlist_is_aw
     }
     rig.release(on);
     rig.frame(vec![]);
-    rig.click_id(Id::new(("clip_button", 1_usize)));
+    rig.click_id(Id::new(("clip_button", 2_usize)));
     let clips = |c: usize| rig.app.song.channels[c].lanes[0].clips.len();
     assert_eq!((clips(1), clips(2)), (2, 0));
 }
@@ -2160,4 +2171,129 @@ fn save_as_midi_proposes_the_channel_name_made_a_file_name() {
         saved(&mem).0,
         std::path::Path::new("My MIDI").join(format!("{name}.mid"))
     );
+}
+
+/// `Hide track`, above `Delete Channel`, hides a track everywhere but in playback, one undo step: its row goes and the
+/// rows below it move up, its notes are no ghost notes in another channel's roll, and the song sounds the same.
+/// The current track moves off it, so paste goes elsewhere. Settings `Show hidden tracks` brings its row back, where its
+/// menu reads `Show track`. An editor open on the track closes as it hides.
+#[test]
+fn hide_track_takes_its_row_and_ghost_notes_but_not_its_sound() {
+    use crate::audio_engine::SongAudioEngine;
+    use crate::theme::channel_color;
+    use honeydew_audio::device::AudioRenderer;
+    const HIDE_TRACK: (usize, usize) = (0, 5);
+    let mut rig = Rig::with_drums_and_synth();
+    rig.app
+        .add_channel(ChannelKind::Synth(SynthKind::MiniSynth), 0);
+    rig.app.song.channels[3].lanes[0]
+        .add_clip(0, 4.0)
+        .events
+        .push(note(0));
+    rig.app.song_edited(SongEdit::Final, 0);
+    let rows = |rig: &Rig| -> Vec<usize> {
+        let show = rig.app.settings.show_hidden_tracks;
+        (track_rows(&rig.app.song, show).iter())
+            .map(|t| t.channel)
+            .collect()
+    };
+    let ghost = channel_color(rig.app.song.channels[3].hue, &rig.app.theme)
+        .to_color32()
+        .gamma_multiply(crate::ui::piano_roll::GHOST_ALPHA);
+    // The synth's roll, open and closed again.
+    let ghosts = |rig: &mut Rig| {
+        rig.edit(2);
+        rig.slide_split();
+        let n = rig.rects(ghost).len();
+        rig.app.navigate(Nav::Collapse);
+        rig.frame(vec![]);
+        n
+    };
+    let sound = |rig: &Rig| {
+        let mut engine = SongAudioEngine::new(&rig.app.song, 48_000.0).unwrap();
+        engine.play();
+        let mut output = vec![0.0; 8192 * 2];
+        engine.render(&mut output, 2);
+        output
+    };
+    let before = sound(&rig);
+    assert!(before.iter().any(|s| s.abs() > 0.01));
+    assert_eq!(rows(&rig), [0, 1, 2, 3]);
+    assert_eq!(ghosts(&mut rig), 1);
+    // The bass clip tapped (its track current, the grid cursor on it) and copied.
+    rig.click(pos2(48.0 + 2.0 * 38.4, header(3).y));
+    rig.frame(key_tap(egui::Key::C, egui::Modifiers::COMMAND));
+    assert_eq!(rig.app.selected_channel, 3);
+    rig.track_menu(3, HIDE_TRACK);
+    assert!(rig.app.song.channels[3].lanes[0].hidden);
+    assert_eq!(rows(&rig), [0, 1, 2]);
+    // The current track moves to the nearest one shown, where a paste lands: the hidden track takes nothing.
+    assert_eq!(rig.app.selected_channel, 2);
+    let clips = |rig: &Rig| [2, 3].map(|c| rig.app.song.channels[c].lanes[0].clips.len());
+    let [synth, bass] = clips(&rig);
+    rig.frame(key_tap(egui::Key::V, egui::Modifiers::COMMAND));
+    assert_eq!(clips(&rig), [synth + 1, bass]);
+    rig.frame(undo());
+    assert_eq!(ghosts(&mut rig), 0);
+    assert!(sound(&rig) == before, "a hidden track plays as before");
+    rig.frame(undo());
+    assert_eq!(rows(&rig), [0, 1, 2, 3]);
+    rig.frame(redo());
+    assert_eq!(rows(&rig), [0, 1, 2]);
+    rig.app.settings.show_hidden_tracks = true;
+    rig.frame(vec![]);
+    assert_eq!(rows(&rig), [0, 1, 2, 3]);
+    rig.track_menu(3, HIDE_TRACK);
+    assert!(!rig.app.song.channels[3].lanes[0].hidden, "`Show track`");
+    // Hidden under its open editor, the editor closes.
+    rig.app.settings.show_hidden_tracks = false;
+    rig.edit(3);
+    rig.slide_split();
+    assert_eq!(rig.app.nav.view, View::PianoRoll(3));
+    rig.app.track_op(3, 0, TrackOp::ToggleHidden, 0);
+    rig.frame(vec![]);
+    assert_eq!(rig.app.nav.view, View::Playlist);
+}
+
+/// `Collapse` (#83), above `Delete Channel`, makes a track's row thin (3/8 of a row), one undo step: the rows below move
+/// up. Its menu then reads `Expand`, which makes the row whole again.
+#[test]
+fn collapse_makes_a_tracks_row_thin_and_expand_makes_it_whole() {
+    const COLLAPSE: (usize, usize) = (0, 6);
+    let mut rig = Rig::with_drums_and_synth();
+    let rect = |rig: &Rig, row: usize| {
+        let id = Id::new(("track_header", row));
+        rig.ctx
+            .read_response(id)
+            .expect("the header was drawn")
+            .rect
+    };
+    let collapsed = |rig: &Rig| rig.app.song.channels[1].lanes[0].collapsed;
+    let full = rect(&rig, 1);
+    rig.track_menu(1, COLLAPSE);
+    assert!(collapsed(&rig));
+    // egui keeps the rects of the last two frames.
+    rig.frame(vec![]);
+    let thin = rect(&rig, 1);
+    assert!(
+        (thin.height() - 0.375 * full.height()).abs() < 0.5,
+        "{thin:?}"
+    );
+    assert!((rect(&rig, 2).top() - thin.bottom()).abs() < 0.5);
+    let labels: Vec<_> = (crate::ui::track_menu::track_menu(&rig.app.song, 1, 0).into_iter())
+        .map(|i| i.label.into_owned())
+        .collect();
+    assert_eq!(labels[6], "Expand");
+    rig.frame(undo());
+    assert!(!collapsed(&rig));
+    rig.frame(redo());
+    assert!(collapsed(&rig));
+    rig.frame(vec![]);
+    rig.secondary_click(thin.center());
+    rig.frame(vec![]);
+    rig.click_id(item(COLLAPSE.0, COLLAPSE.1));
+    rig.frame(vec![]);
+    rig.frame(vec![]);
+    assert!(!collapsed(&rig), "`Expand`");
+    assert_eq!(rect(&rig, 1), full);
 }

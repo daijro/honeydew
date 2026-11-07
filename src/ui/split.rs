@@ -17,8 +17,8 @@
 //! - While an editor shows, a 0.5 U shadow lies over the playlist's bottom edge, clipped to the playlist ([`shadow`]).
 //!
 //! The close ribbon on the band serves every bottom editor ([`ribbon`]): a tap closes the editor, a vertical drag
-//! resizes the split, and a sideways drag moves the ribbon along the band, out of the way of the editor's tabs (its
-//! place is kept in `Settings`).
+//! resizes the split, and (PR #87) a sideways drag moves the ribbon along the band, out of the way of the editor's
+//! tabs (its place is kept in `Settings`).
 
 use eframe::egui::{Color32, CornerRadius, Id, Painter, Rect, Sense, Ui, pos2, vec2};
 
@@ -185,9 +185,10 @@ pub fn ribbon(
     let lowest = view.left() + m.u(RIBBON_INSET);
     let (lo_shift, hi_shift) = ((lowest - base) / m.u(1.0), 0.0f32);
     // `max` then `min` rather than `clamp`: a view too narrow for the ribbon's home (a small window) leaves lo above
-    // hi, and `f32::clamp` panics on that.
-    *shift = shift.max(lo_shift).min(hi_shift);
-    let left = base + m.u(*shift);
+    // hi, and `f32::clamp` panics on that. Only a drag writes the place: a narrow window (or a rotation) shows it
+    // clamped and keeps it.
+    let shown = shift.max(lo_shift).min(hi_shift);
+    let left = base + m.u(shown);
     let rect = Rect::from_min_size(pos2(m.floor_px(left), editor_top), size);
     let reach = m.u(RIBBON_REACH);
     let touch = Rect::from_min_max(rect.min - vec2(reach, 0.0), rect.max + vec2(reach, reach));
@@ -202,7 +203,7 @@ pub fn ribbon(
         let from = split_rects(view, split.f, m).0.height();
         let grab = Grab {
             from,
-            shift: *shift,
+            shift: shown,
             moved: false,
             sideways: false,
             dragging: false,

@@ -1,7 +1,8 @@
 name: Release
 
-# On demand only: a `v*` tag no longer builds by itself (`Actions ▸ Release ▸ Run workflow`, with the tag).
 on:
+  push:
+    tags: ["v*"]
   # Builds an existing tag's source with this workflow and replaces its release's downloads.
   workflow_dispatch:
     inputs:

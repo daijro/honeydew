@@ -261,6 +261,8 @@ pub fn panel() -> Option<Panel> {
             v_slider(2300, "Decay").p(2).value_text().enabled(CUSTOM),
             v_slider(2400, "Sustain").p(3).value_text().enabled(CUSTOM),
             v_slider(2500, "Release").p(4).value_text().enabled(CUSTOM),
+            // Issue #90: Fine Tune, a Honeydew addition; it tunes either envelope.
+            v_slider(2600, "Fine Tune").p(6).value_text(),
         ])
         .h(Size::Flex(1.5))
         .show(PATCH_SHOWN),
@@ -339,26 +341,35 @@ pub const REFERENCE: Reference = Reference {
                     .margins(0.75, 0.75, 0.75, 0.75)
                     .momentary()
                     .slack(1.0, "spec f32 trace"),
-                row(2100, Widget::Toggle, "Envelope", [0.00, 2.59, 3.39, 3.90])
+                // Six columns: Fine Tune is a Honeydew addition (#90).
+                row(2100, Widget::Toggle, "Envelope", [0.00, 2.59, 2.82, 3.90])
                     .p(5)
                     .value_text()
                     .value("Original"),
-                row(2200, Widget::VSlider, "Attack", [3.39, 2.59, 3.39, 3.90])
+                row(2200, Widget::VSlider, "Attack", [2.82, 2.59, 2.83, 3.90])
                     .p(1)
                     .value_text()
                     .enabled(CUSTOM),
-                row(2300, Widget::VSlider, "Decay", [6.78, 2.59, 3.39, 3.90])
+                row(2300, Widget::VSlider, "Decay", [5.65, 2.59, 2.83, 3.90])
                     .p(2)
                     .value_text()
                     .enabled(CUSTOM),
-                row(2400, Widget::VSlider, "Sustain", [10.17, 2.59, 3.39, 3.90])
+                row(2400, Widget::VSlider, "Sustain", [8.48, 2.59, 2.82, 3.90])
                     .p(3)
                     .value_text()
                     .enabled(CUSTOM),
-                row(2500, Widget::VSlider, "Release", [13.56, 2.59, 3.40, 3.90])
+                row(2500, Widget::VSlider, "Release", [11.30, 2.59, 2.83, 3.90])
                     .p(4)
                     .value_text()
                     .enabled(CUSTOM),
+                row(
+                    2600,
+                    Widget::VSlider,
+                    "Fine Tune",
+                    [14.13, 2.59, 2.82, 3.90],
+                )
+                .p(6)
+                .value_text(),
             ],
             ..Case::DEFAULT
         },

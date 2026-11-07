@@ -49,7 +49,9 @@ pub(crate) use file_ops::{
 pub use library::{MemoryLibrary, SONGS_FOLDER, SongEntry, SongLibrary};
 #[cfg(not(target_arch = "wasm32"))]
 pub use library::{NativeLibrary, app_data_dir, songs_dir, user_dir};
-pub use project::{ProjectInfo, TEMPO_RANGE, duration, link_url, meta_secs, meta_time, tempo_step};
+pub use project::{
+    ProjectInfo, TEMPO_RANGE, duration, link_url, meta_secs, meta_time, tempo_step, thousands,
+};
 pub use songs::Sort;
 pub(crate) use songs::bin_crumb;
 pub use songs::visible;
@@ -138,7 +140,8 @@ pub enum MainMenuAction {
     Unzip(std::path::PathBuf),
     /// PROJECT `-` / `+`: the new tempo in BPM, already kept in [`TEMPO_RANGE`].
     SetTempo(f64),
-    /// PROJECT `Samplerate:` dropdown: the project's new sample rate in Hz, one of [`crate::song::SAMPLE_RATES`].
+    /// PROJECT `Samplerate:` (PR #87): the project's new sample rate in Hz, one of [`crate::song::SAMPLE_RATES`], or 0
+    /// for the output's own.
     SetSampleRate(u32),
     /// PROJECT `Reset` next to the time spent. The app asks, then sets it to 0.
     ResetTimeSpent,
@@ -290,6 +293,12 @@ impl MainMenu {
     /// open song's file to follow ([`ProjectFiles::path_moved`](crate::project_files::ProjectFiles::path_moved)).
     pub fn take_moves(&mut self) -> Vec<(std::path::PathBuf, Option<std::path::PathBuf>)> {
         self.songs.take_moves()
+    }
+
+    /// SONGS on the root's folder that holds the render `file` (`My Tracks`), `file` current: the render message's
+    /// `Open My Tracks` (#72). The caller opens the menu on SONGS.
+    pub fn show_render(&mut self, file: &std::path::Path, library: &dyn SongLibrary) {
+        self.songs.show_render(file, library);
     }
 
     /// Paints the menu over `ui`'s rect (the screen) and handles its input. `library` feeds the SONGS tab (whose file

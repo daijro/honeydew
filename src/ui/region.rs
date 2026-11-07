@@ -101,6 +101,8 @@ pub enum RegionOp {
     Normalize,
     FadeIn,
     FadeOut,
+    /// The playlist's own last item (#80): the range's song section, in its dialog ([`crate::ui::sections`]).
+    Section,
 }
 
 impl RegionOp {
@@ -365,7 +367,8 @@ fn apply<T: Item>(items: &mut Vec<T>, op: RegionOp, range: TimeRange, playhead: 
         | RegionOp::Clear
         | RegionOp::Normalize
         | RegionOp::FadeIn
-        | RegionOp::FadeOut => {}
+        | RegionOp::FadeOut
+        | RegionOp::Section => {}
     }
 }
 

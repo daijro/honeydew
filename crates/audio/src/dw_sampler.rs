@@ -754,6 +754,8 @@ impl Instrument for DwSampler {
             let mut short = false;
             let rate_ratio = f64::from(sample.sample_rate()) / f64::from(rate);
             let root = f32::from(zone.zone.root);
+            // Semitones a key: exactly 1 but for an SFZ's `pitch_keytrack`.
+            let track = zone.zone.keytrack / 100.0;
             let decay_ramp = zone.zone.floats[1] > 0.0;
             let zone_gain = if block.looping { zone.zone.gain } else { 1.0 };
             let looped = zone.looped.filter(|_| block.looping && !voice.reverse);
@@ -856,7 +858,7 @@ impl Instrument for DwSampler {
                 } else {
                     0.0
                 };
-                let octaves = (pitch - root + zone.zone.tune / 100.0) / 12.0
+                let octaves = ((pitch - root) * track + zone.zone.tune / 100.0) / 12.0
                     + block.pitch_env_octaves * pitch_env.powi(3)
                     + lfo_octaves;
                 let step = rate_ratio * f64::from(octaves.exp2()) * f64::from(block.pitch_ratio);

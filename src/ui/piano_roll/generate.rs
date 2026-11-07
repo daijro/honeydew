@@ -1,13 +1,16 @@
-//! The `Generate` panel: chords and a melody for the clip, in the project's key and scale ([`super::compose`]). The
-//! transport bar's GENERATE opens it over the piano roll, and the roll draws its result ([`super::compose::generate`])
-//! in place of the notes while it is open, recomputed from the clip every frame: the song itself waits for `Apply`, so
-//! a preview is no edit and makes no undo step (as the Humanize panel's).
+//! The `Generate` panel, a contributor feature (PR #87): chords and a melody for the clip, in the
+//! project's key and scale or the panel's own ([`super::compose`]). The transport bar's GENERATE opens it over the
+//! piano roll, and the roll draws its result ([`super::compose::generate`]) in place of the notes while it is open,
+//! recomputed from the clip every frame: the song itself waits for `Apply`, so a preview is no edit and makes no undo
+//! step (as the Humanize panel's).
 //!
 //! The panel is the dialog look without the dim, so the preview shows: 14 U wide at the roll's right edge, centred on
-//! its height and kept inside the screen. Top to bottom: the title, then a row each for `Preset` (Pop, Minor, Lo-fi,
-//! Epic, Random), `Bars` (1, 2, 4, 8), `Lead` (Chords: a melody written over them; Melody: the chords fitted under
-//! the clip's own notes) and `Seed` (its number and `New seed`), then `Reset`, `Cancel` and
-//! `Apply`.
+//! its height and kept inside the screen. Top to bottom, scrolling when the screen is short: the title; under
+//! `Progression & melody` a row each for `Preset` (Pop, Minor, Lo-fi, Epic, Random), `Bars` (1, 2, 4, 8), `Lead`
+//! (Chords: a melody written over them; Melody: the chords fitted under the clip's own notes) and `Seed` (its number
+//! and `New seed`); under `Key, scale & register` the `Key` and `Scale` (`Project` follows the song's) and the
+//! `Octave`; under `Notes & rhythm` the `Length`, `Rests`, `Arpeggios` and `Chords`. Each choice is a dropdown. Then
+//! `Reset`, `Cancel` and `Apply`.
 
 use std::hash::{BuildHasher, RandomState};
 
@@ -17,7 +20,8 @@ use eframe::egui::{
 };
 
 use super::compose::{
-    self, ARPS, CHORD_MODES, DURATIONS, KEYS, OCTAVES, RESTS, SCALE_CHOICES, Settings,
+    self, ARPS, CHORD_MODES, DURATIONS, KEYS, Lead, OCTAVES, PRESETS, RESTS, SCALE_CHOICES,
+    Settings,
 };
 use crate::metrics::{FontSize, Metrics};
 use crate::params::{menu_index, menu_value};
@@ -35,9 +39,10 @@ const HEADER: f32 = 0.75;
 /// A row with its choice button.
 const CHOICE: f32 = 1.25;
 const LABEL_W: f32 = 4.5;
-const BUTTON: [f32; 2] = [4.5, 1.0];
-/// The scrolling rows' height: three headers and ten choice rows.
-const BODY: f32 = 3.0 * HEADER + 10.0 * CHOICE;
+/// As the Humanize panel's: three fit the 13 U row with their gaps.
+const BUTTON: [f32; 2] = [3.5, 1.0];
+/// The scrolling rows' height: three headers and eleven choice rows.
+const BODY: f32 = 3.0 * HEADER + 11.0 * CHOICE;
 /// The whole panel, when the screen has room.
 const HEIGHT: f32 = 2.0 * MARGIN + TITLE + BODY + MARGIN + CHOICE;
 /// Seeds run 0..SEEDS.
@@ -46,14 +51,17 @@ const SEEDS: u64 = 100_000;
 const DIM: f32 = 0.5;
 /// The `Bars` choices.
 const BARS: [u8; 4] = [1, 2, 4, 8];
-/// The `Tempo` choices, BPM.
-const TEMPOS: [u16; 9] = [60, 80, 100, 110, 120, 128, 140, 160, 180];
+/// The `Lead` choices ([`Lead`]).
+const LEADS: [&str; 2] = ["Chords", "Melody"];
 
 /// The panel's state: the preset, the bars, who leads and the seed, then the key, scale and register (0 following the
 /// project) and the rhythm: the note length, the rests, the arpeggios and which chords to write.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Panel {
+    preset: usize,
     bars: usize,
+    /// 0: the chords lead; 1: the melody.
+    lead: usize,
     seed: u64,
     /// 0: the project's; else 1 + a [`KEYS`] index.
     key: usize,
@@ -64,8 +72,6 @@ pub(crate) struct Panel {
     rests: usize,
     arp: usize,
     chords: usize,
-    /// 0: the project's tempo; else 1 + a [`TEMPOS`] index.
-    tempo: usize,
 }
 
 /// How the panel closed.
@@ -76,10 +82,12 @@ pub(crate) enum Close {
 }
 
 impl Panel {
-    /// 2 bars, on seed `seed` (kept to 0..100 000).
+    /// Pop, 2 bars, the chords leading, on seed `seed` (kept to 0..100 000).
     pub(crate) fn new(seed: u64) -> Self {
         Self {
+            preset: 0,
             bars: 1,
+            lead: 0,
             seed: seed % SEEDS,
             key: 0,
             scale: 0,
@@ -88,21 +96,25 @@ impl Panel {
             rests: 1,
             arp: 0,
             chords: 0,
-            tempo: 0,
         }
     }
 
     /// What the rows say ([module docs](self)).
     pub(crate) fn settings(&self) -> Settings {
         Settings {
+            preset: PRESETS[self.preset.min(PRESETS.len() - 1)].1,
             bars: BARS[self.bars.min(BARS.len() - 1)],
             seed: self.seed,
+            lead: if self.lead == 0 {
+                Lead::Chords
+            } else {
+                Lead::Melody
+            },
             key: (self.key > 0).then(|| (self.key - 1) as u8),
             scale: (self.scale > 0).then(|| SCALE_CHOICES[self.scale - 1]),
             octave: OCTAVES[self.octave.min(OCTAVES.len() - 1)].1,
             duration: DURATIONS[self.duration.min(DURATIONS.len() - 1)].1,
             rest: RESTS[self.rests.min(RESTS.len() - 1)].1,
-            tempo: (self.tempo > 0).then(|| f64::from(TEMPOS[self.tempo.min(TEMPOS.len()) - 1])),
             arp: ARPS[self.arp.min(ARPS.len() - 1)].1,
             chords: self.chords.min(CHORD_MODES.len() - 1) as u8,
         }
@@ -207,7 +219,7 @@ fn button_rect(at: eframe::egui::Pos2, m: &Metrics) -> Rect {
     Rect::from_min_size(at, vec2(m.u(BUTTON[0]), m.u(BUTTON[1])))
 }
 
-/// The scrolling rows in `column`: the preset, bars, lead and seed.
+/// The scrolling rows in `column` ([module docs](self)).
 fn rows(ui: &mut Ui, cx: &UiCtx, id: Id, column: Rect, ink: Color32, panel: &mut Panel) {
     let (m, c) = (cx.m, &cx.theme.colors);
     let (font, text) = (m.font_id(FontSize::Pt10), c.text.to_color32());
@@ -262,11 +274,23 @@ fn rows(ui: &mut Ui, cx: &UiCtx, id: Id, column: Rect, ink: Color32, panel: &mut
     let durations: Vec<&str> = DURATIONS.iter().map(|(name, _)| *name).collect();
     let rests: Vec<&str> = RESTS.iter().map(|(name, _)| *name).collect();
     let arps: Vec<&str> = ARPS.iter().map(|(name, _)| *name).collect();
+    let presets: Vec<&str> = PRESETS.iter().map(|(name, _)| *name).collect();
 
-    label(ui, next(HEADER), "Melody", ink.gamma_multiply(DIM));
+    label(
+        ui,
+        next(HEADER),
+        "Progression & melody",
+        ink.gamma_multiply(DIM),
+    );
+    let r = next(CHOICE);
+    label(ui, r, "Preset", text);
+    panel.preset = dropdown(ui, r, "preset", &presets, panel.preset, None);
     let r = next(CHOICE);
     label(ui, r, "Bars", text);
     panel.bars = dropdown(ui, r, "bars", &BAR_LABELS, panel.bars, None);
+    let r = next(CHOICE);
+    label(ui, r, "Lead", text);
+    panel.lead = dropdown(ui, r, "lead", &LEADS, panel.lead, None);
     let r = next(CHOICE);
     label(ui, r, "Seed", text);
     let at = pos2(r.left() + m.u(LABEL_W), r.center().y);
@@ -281,13 +305,6 @@ fn rows(ui: &mut Ui, cx: &UiCtx, id: Id, column: Rect, ink: Color32, panel: &mut
         let now = ui.input(|i| i.time).to_bits();
         panel.seed = RandomState::new().hash_one(now) % SEEDS;
     }
-    let tempo_labels: Vec<String> = std::iter::once("Project".to_owned())
-        .chain(TEMPOS.iter().map(|t| format!("{t} BPM")))
-        .collect();
-    let tempos: Vec<&str> = tempo_labels.iter().map(String::as_str).collect();
-    let r = next(CHOICE);
-    label(ui, r, "Tempo", text);
-    panel.tempo = dropdown(ui, r, "tempo", &tempos, panel.tempo, None);
     label(
         ui,
         next(HEADER),

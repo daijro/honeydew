@@ -765,12 +765,11 @@ fn strip_mute_and_solo_follow_the_bus_routing() {
     assert_eq!(audible(&[]), [true, true, true]);
     assert_eq!(audible(&[(1, 2, 1.0)]), [false, true, false]);
     assert_eq!(audible(&[(1, 3, 1.0)]), [true, false, true]);
-    assert_eq!(audible(&[(3, 3, 1.0)]), [true, false, true]);
+    assert_eq!(audible(&[(3, 3, 1.0)]), [false, false, false]);
     assert_eq!(audible(&[(2, 3, 1.0)]), [false, true, false]);
     assert_eq!(audible(&[(2, 3, 1.0), (2, 3, 0.0)]), [true, true, true]);
-    // Under channel 2's solo, a soloed bus lifts channel 1, which feeds it; a bus Solo of 0.5 or 0.001 is off.
-    assert_eq!(audible(&[(2, 3, 1.0), (3, 3, 1.0)]), [true, true, true]);
-    for value in [0.5, 0.001] {
+    // Under channel 2's solo, a soloed bus never lifts channel 1, which feeds it (#82).
+    for value in [1.0, 0.5, 0.001] {
         let heard = audible(&[(2, 3, 1.0), (3, 3, value)]);
         assert_eq!(heard, [false, true, false], "bus Solo {value}");
     }

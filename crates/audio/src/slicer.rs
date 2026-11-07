@@ -295,6 +295,99 @@ pub fn auto_clip(slices: &[usize], frames: usize, first: u8, clip_beats: f64) ->
         .collect()
 }
 
+/// Issue #91: the tempos [`tempo`] detects, in BPM.
+pub const TEMPO_RANGE: (f64, f64) = (70.0, 180.0);
+/// [`tempo`] reads at most this many seconds of a sample.
+// ponytail: detector D on 30 s is ~80k 128-point FFTs on the app thread; a coarser hop if a phone ever stalls on it.
+const TEMPO_SECONDS: usize = 30;
+/// Detector D frames per envelope bin: 16 hops, 256 file frames (5.8 ms at 44.1 kHz).
+const TEMPO_BIN: usize = 16;
+/// D is capped here before its log: a first hit after silence rises from ε, and would outweigh every other.
+const TEMPO_D_CAP: f64 = 100.0;
+/// The weight toward 120 BPM: a log-normal, this many octaves wide (σ).
+const TEMPO_PRIOR_OCTAVES: f64 = 1.0;
+
+/// Issue #91: the tempo the playlist's `Match tempo...` starts from, in BPM, to
+/// 0.01. The file's own (`meta.tempo`), else one detected from the onsets:
+/// - the envelope is ln(1 + min(D, 100)) of detector D on the first channel (as [`detect`]'s), its maximum per 16 hops,
+///   smoothed by one circular [¼ ½ ¼] pass, less its mean, over the first 30 s;
+/// - its circular autocorrelation, summed at every half beat from ½ to 4 beats and weighted toward 120 BPM (a
+///   log-normal, σ one octave), peaks at the tempo, searched over [`TEMPO_RANGE`] in steps of 0.01 BPM (the half beats
+///   keep a groove in 8ths from reading at ⅔ of its tempo);
+/// - a sample within 1 % (at most a quarter beat) of a whole number of beats at that tempo, a loop, gets the tempo of
+///   exactly that many.
+///
+/// `None` for silence or no beat at all.
+// ponytail: one tempo, octave errors included (a half-time groove can read at half its BPM); `Match tempo...` lets
+// the user halve or double it.
+pub fn tempo(sample: &SampleData) -> Option<f64> {
+    if let Some(bpm) = sample.meta.tempo {
+        return Some(f64::from(bpm));
+    }
+    let rate = f64::from(sample.sample_rate);
+    let frames = sample
+        .frames()
+        .min(TEMPO_SECONDS * sample.sample_rate as usize);
+    let bin = HOP * TEMPO_BIN;
+    let bins = frames / bin;
+    let peak = (sample.left[..frames].iter()).fold(0.0_f32, |peak, s| peak.max(s.abs()));
+    if peak == 0.0 || bins < 2 {
+        return None;
+    }
+    let mut y: Vec<f64> = (sample.left[..frames].iter())
+        .map(|&s| f64::from(s / peak))
+        .collect();
+    for _ in 0..3 {
+        high_pass(&mut y);
+    }
+    let d = detection(&y);
+    let mut env: Vec<f64> = (d.chunks(TEMPO_BIN).take(bins))
+        .map(|c| {
+            c.iter()
+                .fold(0.0_f64, |m, &v| m.max(v.min(TEMPO_D_CAP).ln_1p()))
+        })
+        .collect();
+    // One [¼ ½ ¼] pass, circular: a hit a bin early or late still meets its repeats.
+    let raw = env.clone();
+    for (i, e) in env.iter_mut().enumerate() {
+        *e = 0.25 * raw[(i + bins - 1) % bins] + 0.5 * raw[i] + 0.25 * raw[(i + 1) % bins];
+    }
+    let mean = env.iter().sum::<f64>() / bins as f64;
+    env.iter_mut().for_each(|e| *e -= mean);
+    // Envelope bins a beat at `bpm`.
+    let per_beat = |bpm: f64| 60.0 * rate / bin as f64 / bpm;
+    let lags = (4.0 * per_beat(TEMPO_RANGE.0)).ceil() as usize + 2;
+    let acf: Vec<f64> = (0..lags)
+        .map(|l| (0..bins).map(|i| env[i] * env[(i + l) % bins]).sum())
+        .collect();
+    let at = |lag: f64| {
+        let i = lag as usize;
+        acf[i] + (acf[i + 1] - acf[i]) * (lag - i as f64)
+    };
+    let score = |bpm: f64| {
+        let p = per_beat(bpm);
+        let prior = (-0.5 * ((bpm / 120.0).log2() / TEMPO_PRIOR_OCTAVES).powi(2)).exp();
+        (1..=8).map(|k| at(f64::from(k) * p / 2.0)).sum::<f64>() * prior
+    };
+    let (lo, hi) = TEMPO_RANGE;
+    let steps = ((hi - lo) * 100.0).round() as u32;
+    let best = (0..=steps)
+        .map(|i| lo + f64::from(i) / 100.0)
+        .max_by(|a, b| score(*a).total_cmp(&score(*b)))?;
+    if score(best) <= 0.0 {
+        return None;
+    }
+    // A loop: a whole number of beats.
+    let beats = sample.frames() as f64 / rate * best / 60.0;
+    let whole = beats.round();
+    let bpm = if whole >= 1.0 && (beats - whole).abs() <= (0.01 * beats).min(0.25) {
+        best * whole / beats
+    } else {
+        best
+    };
+    Some((bpm * 100.0).round() / 100.0)
+}
+
 /// Voices in the pool, all allocated at build.
 // Polyphony uses a fixed pool; beyond it a new slice takes the oldest voice.
 // ponytail: fixed pool of 256; grow it if a song ever stacks more slices at once.
@@ -607,5 +700,27 @@ mod tests {
             let got = band.detect(&raw)[hold + m + 1];
             assert!((got - want).abs() < 1e-9, "{got} vs {want}");
         }
+    }
+
+    /// `tempo` (#91): a factory loop's tempo marker wins; without it, each loop's onsets give its own BPM exactly,
+    /// but the two-step at 172 reads at half time (its snare is every 2 beats), which `Match tempo...`'s `Double`
+    /// fixes. Silence has none.
+    #[test]
+    fn tempo_is_the_markers_else_each_factory_loops_from_its_onsets() {
+        for l in &crate::builtin_loops::LOOPS {
+            let mut sample = l.render().unwrap();
+            let bpm = f64::from(l.bpm);
+            assert_eq!(tempo(&sample), Some(bpm), "{}: marker", l.name);
+            sample.meta.tempo = None;
+            let want = if l.bpm == 172 { bpm / 2.0 } else { bpm };
+            assert_eq!(tempo(&sample), Some(want), "{}: detected", l.name);
+        }
+        let silence = SampleData {
+            sample_rate: 44_100,
+            left: vec![0.0; 44_100 * 4].into(),
+            right: None,
+            meta: Default::default(),
+        };
+        assert_eq!(tempo(&silence), None);
     }
 }

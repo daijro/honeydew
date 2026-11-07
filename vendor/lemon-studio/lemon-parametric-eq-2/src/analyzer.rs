@@ -10,6 +10,7 @@
 use std::f32::consts::PI;
 
 use os_engine::effects::eq::freq_hz;
+use os_plugkit::time::Instant;
 
 /// FFT sizes by "Frequency precision" (Low .. Highest).
 pub const SIZES: [usize; 4] = [2048, 4096, 8192, 16384];
@@ -132,9 +133,71 @@ impl Analyzer {
     }
 }
 
+/// Honeydew (vendored addition, #95): where the analyzer's window ends, in samples written. The audio thread writes the
+/// signal a block at a time, and a Bluetooth output's blocks come large and at uneven times: read at the newest sample,
+/// the spectrum jumps with each block and stands still between them. This moves on with the time at the sample rate
+/// instead, behind the newest sample by up to the longest wait between blocks lately (each one's weight falling 10 %
+/// a second), so that it never runs dry between them.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Reader {
+    /// The position, and when it was last read.
+    pos: f64,
+    at: Option<Instant>,
+    /// The samples written at the last block, when it came, and the longest wait between blocks lately (seconds).
+    written: u64,
+    since: Option<Instant>,
+    wait: f64,
+}
+
+impl Reader {
+    /// The position at `now`, with `written` samples written at `rate` Hz: `written` or up to `most` before it.
+    pub fn read(&mut self, now: Instant, written: u64, rate: f64, most: u64) -> u64 {
+        let since = *self.since.get_or_insert(now);
+        if written != self.written {
+            let wait = now.duration_since(since).as_secs_f64();
+            self.wait = wait.max(self.wait * 0.9f64.powf(wait));
+            (self.written, self.since) = (written, Some(now));
+        }
+        let step = self.at.map_or(f64::INFINITY, |at| now.duration_since(at).as_secs_f64() * rate);
+        let newest = written as f64;
+        self.pos = (self.pos + step).clamp(newest - (self.wait * rate).min(most as f64), newest);
+        self.at = Some(now);
+        self.pos as u64
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #95: blocks of 20 ms written at uneven times, 20 to 100 ms apart, a read every 30 ms: once it has seen the
+    /// longest wait, the window moves on by a read's samples at every read, and never past what was written.
+    #[test]
+    fn the_window_moves_on_evenly_while_the_blocks_come_unevenly() {
+        let (rate, block, read) = (48_000.0, 960, 1_440);
+        let start = Instant::now();
+        let waits = [3, 1, 5, 2, 4, 1, 1, 5, 3, 2];
+        let (mut reader, mut written, mut wake, mut woke, mut last) = (Reader::default(), 0, 0, 0, 0);
+        for tick in 0..200 {
+            let now = tick * read;
+            // Each wake writes every block its buffer lacks: it holds the next 100 ms.
+            while woke <= now {
+                while written <= woke + 5 * block {
+                    written += block;
+                }
+                woke += waits[wake % waits.len()] * block;
+                wake += 1;
+            }
+            let at = start + std::time::Duration::from_secs_f64(now as f64 / rate);
+            let end = reader.read(at, written, rate, 16_384);
+            assert!(end <= written);
+            if tick >= 15 {
+                let step = end - last;
+                assert!((1_400..=1_480).contains(&step), "tick {tick}: {last} to {end} ({written} written)");
+            }
+            last = end;
+        }
+    }
 
     #[test]
     fn a_sine_shows_at_its_frequency() {

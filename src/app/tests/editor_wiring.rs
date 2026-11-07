@@ -1317,8 +1317,10 @@ fn a_new_drums_channels_default_drumset_shows_and_its_pads_play_it() {
     rig.app.add_channel(ChannelKind::Drums, 0);
     super::rack_wiring::picker_row(&mut rig, 1);
     rig.frame(vec![]);
+    // The picker stays for the next kit (#88): a click right of it closes it.
+    assert_eq!(rig.app.nav.overlays.len(), 1);
+    rig.click(pos2(1000.0, 300.0));
     assert!(rig.app.nav.overlays.is_empty());
-    rig.click(OUTSIDE);
     rig.edit(1);
     rig.slide_split();
     rig.frame(vec![]);
@@ -1459,7 +1461,7 @@ fn a_held_keyboard_key_lights_its_row_in_the_roll() {
 }
 
 #[test]
-fn the_rolls_c_labels_follow_the_middle_c_setting() {
+fn the_rolls_key_labels_follow_the_middle_c_and_key_names_settings() {
     let mut rig = Rig::with_synth();
     rig.edit(1);
     rig.slide_split();
@@ -1469,6 +1471,15 @@ fn the_rolls_c_labels_follow_the_middle_c_setting() {
     rig.app.settings.middle_c_is_c4 = true;
     rig.frame(vec![]);
     assert_eq!(rig.texts_in(keys), ["C4"]);
+    // `Show key names on keyboard and piano roll` (#77): the other keys' names too, with no octave, and under
+    // Chromatic none on a black key, as on the keyboard.
+    rig.app.settings.key_names = true;
+    rig.frame(vec![]);
+    let names = rig.texts_in(keys);
+    for name in ["E", "D", "C4", "B", "A"] {
+        assert!(names.contains(&name.to_owned()), "{name}: {names:?}");
+    }
+    assert!(!names.iter().any(|n| n.contains('#')), "{names:?}");
 }
 
 #[test]
@@ -2097,8 +2108,8 @@ fn the_step_selections_copy_and_delete_go_through_the_funnel_as_one_undo_step_ea
     rig.frame(vec![]);
     assert_eq!(rig.take(), Vec::<String>::new(), "selecting edits nothing");
 
-    // Duplicate: the two hits again three steps on, one rebuild, and a re-sync as the piano roll's Duplicate at interval.
-    rig.click(rig.text_center("Duplicate"));
+    // Copy: the two hits again three steps on, one rebuild, and a re-sync as the piano roll's Copy at interval.
+    rig.click(rig.text_center("Copy"));
     assert_eq!(rig.hits(), [(0, 0), (1, 64), (0, 96), (1, 160)]);
     assert_eq!(rig.take(), ["ReplaceSong adopting"]);
     // The selection is the copies now: Delete takes them away again.
@@ -2127,7 +2138,7 @@ fn a_clips_edit_opens_that_drum_clip_whose_steps_land_in_it() {
     // `Edit` on the second clip (bar 2: a beat is 38.4 points from x 48).
     rig.click(pos2(48.0 + 6.0 * 38.4, header(1).y));
     rig.frame(vec![]);
-    rig.click_id(egui::Id::new(("clip_button", 3_usize)));
+    rig.click_id(egui::Id::new(("clip_button", 4_usize)));
     assert_eq!(rig.app.nav.view, View::DrumEditor(1));
     rig.slide_split();
     rig.click(rig.step(0, 1));
@@ -2262,6 +2273,46 @@ fn a_playlist_region_edit_rebuilds_once_and_is_one_undo_step_that_keeps_the_loop
     rig.frame(z(egui::Modifiers::NONE));
     assert_eq!(rig.clip_spans(), [(512, 512.0)]);
     assert_eq!(rig.app.song.play_loop, Some((0, 128)));
+}
+
+/// `Section…`, the playlist region menu's last item (#80), makes the range's song section, one undo step, and opens its
+/// dialog; a tap on its name on the ruler opens the dialog again, whose `Delete` removes it.
+#[test]
+fn the_playlist_region_menus_section_item_makes_a_section_whose_name_on_the_ruler_opens_it() {
+    let mut rig = Rig::with_synth();
+    rig.frame(vec![]);
+    let beat = |b: f32| pos2(48.0 + b * 38.4, 24.0);
+    rig.region(beat(2.0), beat(6.0), "Section…");
+    rig.frame(vec![]);
+    let sections = |rig: &Rig| -> Vec<(u32, u32, String)> {
+        (rig.app.song.sections.iter())
+            .map(|s| (s.start, s.end, s.name.clone()))
+            .collect()
+    };
+    let made = [(256, 768, "Section 1".to_owned())];
+    assert_eq!(sections(&rig), made);
+    assert_eq!(rig.app.song.play_loop, None);
+    let open = |rig: &Rig| {
+        matches!(
+            rig.overlays().last(),
+            Some(Overlay::SectionSettings { section: 0, .. })
+        )
+    };
+    assert!(open(&rig));
+    rig.frame(key_tap(egui::Key::Escape, egui::Modifiers::NONE));
+    rig.frame(vec![]);
+    assert!(!open(&rig));
+    rig.frame(z(egui::Modifiers::NONE));
+    assert_eq!(sections(&rig), []);
+    rig.frame(z(egui::Modifiers::SHIFT));
+    assert_eq!(sections(&rig), made);
+    rig.frame(vec![]);
+    rig.click(rig.text_center("Section 1"));
+    rig.frame(vec![]);
+    assert!(open(&rig));
+    rig.click_id(egui::Id::new("section_settings").with("delete"));
+    rig.frame(vec![]);
+    assert_eq!((sections(&rig), open(&rig)), (vec![], false));
 }
 
 #[test]
@@ -3178,7 +3229,7 @@ mod samples {
                 ],
                 "grid {grid}"
             );
-            super::rack_wiring::close_picker(&mut rig);
+            rig.click(pos2(1000.0, 300.0));
             assert_eq!(rig.overlays(), []);
             let slot = &rig.kit().slots[1];
             assert_eq!(slot.file.path, user("My Samples/Kick 01.wav"));
@@ -3461,11 +3512,12 @@ mod samples {
                 channel: 1,
                 target: PresetTarget::Drumset,
             };
-            assert_eq!(rig.overlays(), [picker]);
+            assert_eq!(rig.overlays(), std::slice::from_ref(&picker));
             picker_row(&mut rig, 0);
             picker_row(&mut rig, 0);
             rig.frame(vec![]);
-            assert_eq!(rig.overlays(), []);
+            // The picker stays for the next kit (#88).
+            assert_eq!(rig.overlays(), [picker]);
             assert_eq!(
                 rig.take(),
                 [
@@ -3475,6 +3527,7 @@ mod samples {
                 ],
                 "grid {grid}"
             );
+            rig.click(pos2(1000.0, 300.0));
             assert_eq!(names(rig.kit()), names(&kit));
             // The kit's last id is not undone, so no pad id comes back.
             let last = rig.kit().file.last_slot_id;
@@ -3660,7 +3713,7 @@ mod editors {
             let mut rig = two_clips();
             rig.click(clip(row));
             rig.frame(vec![]);
-            rig.click_id(egui::Id::new(("clip_button", 3_usize)));
+            rig.click_id(egui::Id::new(("clip_button", 4_usize)));
             rig.frame(vec![]);
             assert_eq!(shown(&rig), (view, Some(first(row, 0))));
             assert!(rig.painted("SOLO CLIP"), "{view:?}");
@@ -4285,4 +4338,30 @@ fn clear_and_fill_are_changes() {
         assert_eq!(rig.take(), log);
         assert!(rig.app.files.modified(), "{item:?}");
     }
+}
+
+/// PR #87: GENERATE shows in the transport bar in the piano roll only and opens the roll's Generate panel, which
+/// previews in place of the notes and whose `Apply` writes chords and a melody into the clip as one undo step.
+#[test]
+fn generate_writes_chords_and_a_melody_into_the_rolls_clip_in_one_undo_step() {
+    let mut rig = Rig::with_drums_and_synth();
+    rig.click(OUTSIDE);
+    let generate = egui::Id::new(("transport", "generate"));
+    assert!(
+        rig.ctx.read_response(generate).is_none(),
+        "the playlist has none"
+    );
+    rig.edit(2);
+    rig.slide_split();
+    let notes = |rig: &Rig| rig.app.song.channels[2].lanes[0].clips[0].events.len();
+    assert_eq!(notes(&rig), 0);
+    rig.click_id(generate);
+    rig.frame(vec![]);
+    assert_eq!(notes(&rig), 0, "the preview is no edit");
+    rig.click_id(roll("generate").with("apply"));
+    // Two bars of Pop: a triad a bar and a melody over them.
+    assert!(notes(&rig) > 6, "{}", notes(&rig));
+    let before = rig.app.history.undo().expect("an undo step");
+    let clips = &before.channels[2].lanes[0].clips;
+    assert_eq!(clips.iter().map(|c| c.events.len()).sum::<usize>(), 0);
 }

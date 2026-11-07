@@ -1023,4 +1023,17 @@ fn an_sfz_region_plays_at_its_key_center_tuned_and_from_its_offset() {
     );
     close(pitch(&out[..9000]), 441.0 * 2f64.powf(50.0 / 1200.0), 1e-4);
     assert!(out[9700..].iter().all(|x| *x == 0.0), "ends at `end`");
+    // `pitch_keytrack` is cents per key from the key center: 0 holds the pitch on every key, 50 is half the distance.
+    for (track, cents) in [(0.0, 0.0), (50.0, 150.0)] {
+        let text = format!(
+            "<region> sample=c.wav lokey=60 hikey=72 pitch_keycenter=69 pitch_keytrack={track}"
+        );
+        let held = Zone::of_sfz(&sfz::parse(&text, &|_| None).regions[0]).unwrap();
+        let mut dw = sampler(vec![zone(sine(441.0, 48_000, 1.0), held)]);
+        close(
+            pitch(&play(&mut dw, 72, 1.0, 9600)),
+            441.0 * 2f64.powf(cents / 1200.0),
+            1e-4,
+        );
+    }
 }

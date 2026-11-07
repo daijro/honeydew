@@ -5,7 +5,7 @@
 use eframe::egui;
 
 use super::HoneydewApp;
-use crate::project_files::export::{Done, Job, Split, slice};
+use crate::project_files::export::{Done, Job, NO_AUDIO_RATE, Split, slice};
 use crate::sample_cache;
 use crate::ui::views::{Nav, Overlay};
 
@@ -16,7 +16,8 @@ fn dialog(o: &Overlay) -> bool {
 impl HoneydewApp {
     /// After the files, each frame: a closed Save dialog lets go of its state. An export that went ahead closes the
     /// dialog; an audio one starts rendering with the page's options, the samples loaded as a rebuild loads them, at
-    /// the project rate, independent of the output device.
+    /// the project's sample rate where the song has one (PR #87), else the engine rate (no resampling; 44 100 Hz without
+    /// an output).
     pub(super) fn export_started(&mut self, ctx: &egui::Context) {
         let Some(export) = self.files.take_export() else {
             if !self.nav.overlays.iter().any(dialog) {
@@ -33,8 +34,10 @@ impl HoneydewApp {
         self.audio
             .samples
             .load(&self.song, &sample_cache::reader(&self.files));
-        // The project's rate, independent of any output-device fallback.
-        let rate = self.song.sample_rate;
+        let rate = match self.song.sample_rate {
+            0 => self.audio.sample_rate().unwrap_or(NO_AUDIO_RATE),
+            rate => rate,
+        };
         let page = self.slots.export.page;
         match Job::new(&self.song, &self.audio.samples, export, page, rate) {
             Ok(job) => {

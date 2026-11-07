@@ -3,10 +3,17 @@
 //! (the armed instrument and drum channels, else the current channel: Honeydew's own) records that channel's keys as
 //! played (no quantize) into one clip of its own; a song-position jump, a change of the recording channels, arming
 //! and disarming each end the takes, and the app makes the takes that recorded and end in one frame one undo step.
+//!
+//! Extended monitoring (#74): a monitoring instrument or drum channel that a MIDI send reaches has
+//! a take of its own too, which records what the sends bring it as if it were played there: its sources' sequenced
+//! notes at their own song ticks, past their note effects, their live keys as played (along sends with no note effect
+//! on the way), and their CCs and Pitch Bend, sequenced or live, as a controller's ([`HoneydewApp::receive`]). The
+//! sources' own takes stay out of what it hears, as the engine plays without them: nothing records twice.
 
 use super::HoneydewApp;
 use super::auto_record::start;
 use super::tracks::LaneShift;
+use crate::audio_engine::{Received, midi_reach, midi_received};
 use crate::song::{Channel, Clip, DrumGrid, Event, Lane, LaneKind, PPQ, Song};
 use crate::ui::clips::ClipRef;
 use crate::ui::preview;
@@ -32,6 +39,8 @@ pub(super) struct Now {
     pub jumped: bool,
     /// The song position, in ticks.
     pub tick: u64,
+    /// The channels that record what MIDI sends bring them ([`HoneydewApp::monitor_channels`]).
+    pub monitors: Vec<usize>,
 }
 
 #[derive(Default)]
@@ -48,6 +57,18 @@ pub(super) struct NoteRecord {
     /// A take made a track this frame and holds its index as it is now: the app's re-key of that change, which comes
     /// next, leaves the takes' clips where they are ([`Self::rekey`]).
     shifted: bool,
+    /// What MIDI sends brought the monitoring channels since the last frame, in order: (channel, key, the velocity
+    /// byte at a press, `None` at a release, the song tick it came at; `None` for a live key, which records at the
+    /// frame's).
+    pub(super) sent: Vec<(usize, u8, Option<u8>, Option<u64>)>,
+    /// The live keys MIDI sends hold on the monitoring channels now: (channel, key, velocity byte). Play's cut drops
+    /// its keys, as from [`Self::held`].
+    pub(super) sent_held: Vec<(usize, u8, u8)>,
+    /// What MIDI sends bring each channel over the song as it was when the takes began, until one ends.
+    received: Option<Vec<Received>>,
+    /// The song position of the last frame, while the transport played with REC armed: where this frame's sent notes
+    /// begin.
+    played: Option<u64>,
 }
 
 /// A take under way.
@@ -68,9 +89,10 @@ impl NoteRecord {
     /// them where the take last was; disarming and its channel no longer recording close them now. Whether an ended
     /// take recorded anything, which the app closes as one undo step before the next takes record.
     pub(super) fn end(&mut self, song: &mut Song, now: &Now) -> bool {
-        let recording: Vec<i32> = (now.channels.iter())
+        let recording: Vec<i32> = (now.channels.iter().chain(&now.monitors))
             .filter_map(|&c| song.channels.get(c).map(|c| c.id))
             .collect();
+        let takes = self.takes.len();
         let bar = song.time_sig.bar_beats();
         let mut recorded = false;
         self.takes.retain_mut(|take| {
@@ -91,6 +113,9 @@ impl NoteRecord {
             recorded |= take.clip.is_some();
             false
         });
+        if self.takes.len() < takes {
+            self.received = None;
+        }
         recorded
     }
 
@@ -102,7 +127,8 @@ impl NoteRecord {
         debug_assert!(!self.shifted, "a lane added without the app's re-key");
         let mut changed = None;
         let recording = now.armed && now.playing && !now.counting_in;
-        for &channel in now.channels.iter().filter(|&&c| c > 0 && recording) {
+        let channels = now.channels.iter().chain(&now.monitors);
+        for &channel in channels.filter(|&&c| c > 0 && recording) {
             let Some(ch) = song.channels.get(channel) else {
                 continue;
             };
@@ -116,10 +142,28 @@ impl NoteRecord {
                 clip: None,
                 open: Vec::new(),
             });
-            for (c, key, velocity) in self.held.clone() {
+            let own = self.held.iter().filter(|_| now.channels.contains(&channel));
+            let own = own.map(|&(c, key, v)| (c, key, byte(v)));
+            let sent = self
+                .sent_held
+                .iter()
+                .filter(|_| now.monitors.contains(&channel));
+            let held: Vec<_> = own.chain(sent.copied()).collect();
+            for (c, key, velocity) in held {
                 if c == channel {
-                    self.press(song, now, channel, key, velocity, &mut changed);
+                    self.press(song, now, channel, key, velocity, now.tick, &mut changed);
                 }
+            }
+        }
+        // What the sends brought first: a sequenced note's tick lies before the frame's.
+        for (channel, key, velocity, tick) in std::mem::take(&mut self.sent) {
+            if tick.is_none() {
+                self.sent_held.retain(|h| (h.0, h.1) != (channel, key));
+                self.sent_held.extend(velocity.map(|v| (channel, key, v)));
+            }
+            if now.monitors.contains(&channel) {
+                let tick = tick.unwrap_or(now.tick);
+                self.key(song, now, (channel, key, velocity), tick, &mut changed);
             }
         }
         for (channel, key, velocity) in std::mem::take(&mut self.keys) {
@@ -127,21 +171,37 @@ impl NoteRecord {
             if let Some(v) = velocity {
                 self.held.push((channel, key, v));
             }
-            let id = song.channels.get(channel).map(|c| c.id);
-            let Some(take) = self.takes.iter_mut().find(|t| Some(t.channel) == id) else {
-                continue;
-            };
-            match velocity {
-                Some(v) => self.press(song, now, channel, key, v, &mut changed),
-                None => {
-                    let bar = song.time_sig.bar_beats();
-                    if close(&mut song.channels[channel], take, Some(key), now.tick, bar) {
-                        changed.get_or_insert_with(Vec::new);
-                    }
-                }
+            if now.channels.contains(&channel) {
+                let key = (channel, key, velocity.map(byte));
+                self.key(song, now, key, now.tick, &mut changed);
             }
         }
         changed
+    }
+
+    /// `key` (channel, key, its velocity byte at a press, `None` at a release) at song tick `tick`, on a channel with
+    /// a take.
+    fn key(
+        &mut self,
+        song: &mut Song,
+        now: &Now,
+        (channel, key, velocity): (usize, u8, Option<u8>),
+        tick: u64,
+        changed: &mut Option<Vec<LaneShift>>,
+    ) {
+        let id = song.channels.get(channel).map(|c| c.id);
+        let Some(take) = self.takes.iter_mut().find(|t| Some(t.channel) == id) else {
+            return;
+        };
+        match velocity {
+            Some(v) => self.press(song, now, channel, key, v, tick, changed),
+            None => {
+                let bar = song.time_sig.bar_beats();
+                if close(&mut song.channels[channel], take, Some(key), tick, bar) {
+                    changed.get_or_insert_with(Vec::new);
+                }
+            }
+        }
     }
 
     /// The takes' clips while they record, as (channel, lane, clip id).
@@ -173,6 +233,8 @@ impl NoteRecord {
             .retain_mut(|h| channel(h.0).map(|c| h.0 = c).is_some());
         self.keys
             .retain_mut(|k| channel(k.0).map(|c| k.0 = c).is_some());
+        (self.sent).retain_mut(|k| channel(k.0).map(|c| k.0 = c).is_some());
+        (self.sent_held).retain_mut(|k| channel(k.0).map(|c| k.0 = c).is_some());
         // Takes on other channels than the one a take added a track to keep their tracks.
         let shifted = std::mem::take(&mut self.shifted);
         for take in self.takes.iter_mut().filter(|_| !shifted) {
@@ -196,16 +258,20 @@ impl NoteRecord {
         Some(song)
     }
 
-    /// `key` pressed at `velocity` during the take of `channel`: what its first lane records ("When notes are
-    /// recorded"), a note, or a hit on each slot the key plays; nothing on an audio or automation channel. A key still
-    /// open closes first. Only the current channel has a current lane.
+    /// `key` pressed at velocity byte `velocity` at song tick `tick` during the take of `channel`: what its first lane
+    /// records ("When notes are recorded"), a note, or a hit on each slot the key plays; nothing on an audio or
+    /// automation channel. A key still open closes first, unless it was pressed at this tick: the same key reaching the
+    /// channel twice at once (played into it and through a MIDI send) is one note. Only the current channel has a
+    /// current lane.
+    #[allow(clippy::too_many_arguments)]
     fn press(
         &mut self,
         song: &mut Song,
         now: &Now,
         channel: usize,
         key: u8,
-        velocity: f32,
+        velocity: u8,
+        tick: u64,
         changed: &mut Option<Vec<LaneShift>>,
     ) {
         let ch = &mut song.channels[channel];
@@ -229,7 +295,15 @@ impl NoteRecord {
         if rows.is_empty() {
             return;
         }
-        close(ch, take, Some(key), now.tick, bar);
+        let clip = (take.clip).and_then(|(l, id)| clip_mut(ch, drums, l, id));
+        let at = clip.map(|c| tick.checked_sub(c.start_tick.into()));
+        if at
+            .flatten()
+            .is_some_and(|at| take.open.iter().any(|o| (o.0, u64::from(o.1)) == (key, at)))
+        {
+            return;
+        }
+        close(ch, take, Some(key), tick, bar);
         let shifts = changed.get_or_insert_with(Vec::new);
         let (lane, id) = match take
             .clip
@@ -238,7 +312,7 @@ impl NoteRecord {
             Some(clip) => clip,
             None => {
                 // A drum take's clip starts from the take's start.
-                let from = start(if drums { take.start } else { now.tick });
+                let from = start(if drums { take.start.min(tick) } else { tick });
                 let current = now.lane.filter(|_| channel == now.channel);
                 let (lane, id, new) = choose(ch, drums, from, current, bar);
                 shifts.extend(new.map(|lane| LaneShift::new(channel, lane, true)));
@@ -248,10 +322,8 @@ impl NoteRecord {
         };
         take.clip = Some((lane, id));
         let clip = clip_mut(ch, drums, lane, id).expect("chosen");
-        let pos =
-            u32::try_from(now.tick.saturating_sub(clip.start_tick.into())).unwrap_or(u32::MAX);
-        // clamp(trunc(255·v), 1, 255): `as` truncates and saturates.
-        let velocity = ((255.0 * velocity) as u8).max(1);
+        let pos = u32::try_from(tick.saturating_sub(clip.start_tick.into())).unwrap_or(u32::MAX);
+        let velocity = velocity.max(1);
         for row in rows {
             let event = if drums {
                 Event::Drum {
@@ -277,7 +349,7 @@ impl NoteRecord {
             clip.events.insert(i, event);
             take.open.push((key, pos, row));
         }
-        grow(clip, now.tick, bar);
+        grow(clip, tick, bar);
     }
 }
 
@@ -295,12 +367,90 @@ impl HoneydewApp {
         }
     }
 
+    /// The channels that record what MIDI sends bring them (#74): every monitoring
+    /// instrument or drum channel (CHHD@1056) a send reaches.
+    pub(super) fn monitor_channels(&self) -> Vec<usize> {
+        let channels = &self.song.channels;
+        if !channels.iter().any(|c| c.file.input_monitoring) {
+            return Vec::new();
+        }
+        let reach = midi_reach(&self.song, false);
+        let monitors = |&c: &usize| {
+            let ch = &channels[c];
+            ch.kind.plays_notes()
+                && ch.file.input_monitoring
+                && reach.iter().any(|r| r.contains(&c))
+        };
+        (1..channels.len()).filter(monitors).collect()
+    }
+
     /// A live key after it sounded, the drum pads' too: REC hears it at the frame's end ([`Self::record_notes`]), and a
-    /// press while REC is armed and the transport stopped starts playback.
+    /// press while REC is armed and the transport stopped starts playback. Where its channel's MIDI sends take it on as
+    /// played, a monitoring channel hears it too ([`NoteRecord::sent`]).
     pub(super) fn live_key(&mut self, key: Key) {
+        self.record_key(key);
+        let monitors = self.monitor_channels();
+        if monitors.is_empty() {
+            return;
+        }
+        let reach = midi_reach(&self.song, true);
+        let reached = reach.get(key.0).into_iter().flatten();
+        for &target in reached.filter(|t| monitors.contains(t)) {
+            (self.note_record.sent).push((target, key.1, key.2.map(byte), None));
+        }
+    }
+
+    /// [`Self::live_key`] for a key REC alone hears (an armed channel's that does not sound): no MIDI send takes it on.
+    pub(super) fn record_key(&mut self, key: Key) {
         let screen = &self.main_screen;
         self.note_record.start |= key.2.is_some() && screen.armed && !screen.playing;
         self.note_record.keys.push(key);
+    }
+
+    /// What the MIDI sends brought the monitoring channels since the last frame, while REC records (`now`): their
+    /// sources' sequenced notes go to [`NoteRecord::sent`] at their own ticks, and their sequenced CCs and Pitch Bend
+    /// record as a controller's ([`Self::record_controller`]). From the last frame's song position (the count-in holds
+    /// it at the Play position), or the loop start past a loop wrap; nothing in a frame that jumped or armed. What the sends bring is read from the song as the engine plays
+    /// it when the takes begin, without the takes' clips ([`NoteRecord::without_take`]).
+    // ponytail: a source edited mid-take is heard as edited but records as it was until the next take (a loop wrap);
+    // a song copy per take start, and nothing sent in the frame a loop wraps in before the wrap.
+    fn receive(&mut self, now: &Now) {
+        let played = (now.playing && now.armed).then_some(now.tick);
+        let last = std::mem::replace(&mut self.note_record.played, played);
+        let recording = now.armed && now.playing && !now.counting_in && !now.jumped;
+        let Some(last) = last.filter(|_| recording && !now.monitors.is_empty()) else {
+            return;
+        };
+        let from = match self.engine_loop() {
+            Some((start, _)) if now.tick < last => u64::from(start),
+            _ => last,
+        };
+        if self.note_record.received.is_none() {
+            let song = self.note_record.without_take(&self.song);
+            let rate = self.audio.sample_rate().unwrap_or(48_000) as f32;
+            let received = midi_received(song.as_ref().unwrap_or(&self.song), rate);
+            self.note_record.received = Some(received.unwrap_or_default());
+        }
+        let span = from..now.tick;
+        let mut params = Vec::new();
+        for &channel in &now.monitors {
+            let rec = &mut self.note_record;
+            let Some(received) = rec.received.as_ref().and_then(|r| r.get(channel)) else {
+                continue;
+            };
+            let notes = received.notes.iter().filter(|n| span.contains(&n.0));
+            rec.sent
+                .extend(notes.map(|&(tick, key, v)| (channel, key, v, Some(tick))));
+            let sent = received.params.iter().filter(|p| span.contains(&p.0));
+            params.extend(sent.map(|&(tick, param, value)| (channel, param, value, tick)));
+        }
+        let mut changed = false;
+        for (channel, param, value, tick) in params {
+            changed |= self.record_controller(channel, param, value, tick);
+        }
+        if changed {
+            self.song_edited(SongEdit::Ongoing, now.tick);
+        }
     }
 
     /// Live note recording after the frame's keys, at song tick `tick`; `jumped`: the frame seeked. A
@@ -325,6 +475,7 @@ impl HoneydewApp {
             counting_in: self.audio.counting_in(),
             jumped,
             tick,
+            monitors: self.monitor_channels(),
         };
         // An automation take that ended this frame closes in the same step ([`Self::auto_record`]).
         let automation = std::mem::take(&mut self.auto_record.ended);
@@ -345,6 +496,7 @@ impl HoneydewApp {
         let take =
             |rec: &NoteRecord, song: &Song| rec.clips(song).into_iter().find(|t| Some(t.0) == roll);
         let had = take(&self.note_record, &self.song).is_some();
+        self.receive(&now);
         let Some(added) = self.note_record.record(&mut self.song, &now) else {
             return;
         };
@@ -357,6 +509,11 @@ impl HoneydewApp {
         self.files.song_changed();
         self.song_edited(SongEdit::Ongoing, tick);
     }
+}
+
+/// A live key's velocity in [0, 1] as a note's byte: clamp(trunc(255·v), 1, 255) (`as` truncates and saturates).
+fn byte(velocity: f32) -> u8 {
+    ((255.0 * velocity) as u8).max(1)
 }
 
 /// A notes lane: kind 0, or on a drum channel kind 3 with flag 1.
@@ -527,6 +684,7 @@ mod tests {
             counting_in: false,
             jumped: false,
             tick,
+            monitors: Vec::new(),
         }
     }
 

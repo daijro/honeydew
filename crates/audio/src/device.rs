@@ -56,6 +56,9 @@ pub struct OutputSnapshot {
     /// The commands the audio thread has taken from the queue so far: those up to [`AudioOutput::sent`]'s count then
     /// have reached the renderer.
     pub taken: u64,
+    /// The transport tick at the frame heard now, on the output clock as the meters ([`AudioOutput::snapshot_at`]):
+    /// the drawn playhead's. Behind [`Self::transport_tick`] by the output's latency (most with Bluetooth).
+    pub heard_tick: u64,
 }
 
 /// Why a latency calibration failed.
@@ -239,9 +242,28 @@ enum CallbackCommand<R> {
     Replace(Box<R>, Arc<MeterBank>),
 }
 
-/// A callback's visual frames each meter keeps: a callback of up to `SLOTS / 2` sub-blocks plays back whole with the
-/// one before it.
-const SLOTS: usize = 16;
+/// The visual frames each meter keeps (and the transport, [`OutputSnapshot::heard_tick`]): 680 ms at 48 kHz, for the
+/// output's latency (a Bluetooth headset's 200 ms or more, #92) and a callback beside it.
+const SLOTS: usize = 64;
+
+/// The most latency the output clock takes, in sub-blocks: the rest of the ring holds the callback being heard.
+const LATENCY_SLOTS: usize = SLOTS * 3 / 4;
+
+/// How fast the output clock may run ahead of the latest callback's: 1000 ppm, a device clock running fast.
+const DRIFT: f64 = 1e-3;
+
+/// A presentation timestamp the platform reports ([`AudioOutput::presented`]): stream frame `frame` is heard at `at`,
+/// ns on [`clock`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Presented {
+    frame: i64,
+    at: i64,
+}
+
+/// A presentation timestamp older than this (ns) is stale.
+const STALE_NS: i64 = 1_000_000_000;
+/// How far before the callbacks' clock a timestamp may put frame 0 (their jitter), ns; further is wrong.
+const EARLY_NS: i64 = 20_000_000;
 
 /// One sub-block's visuals for a meter ([`MeterCell::frames`]), under a seqlock: one writer, the audio thread, which
 /// never waits.
@@ -250,6 +272,8 @@ struct Visual {
     version: AtomicU32,
     /// The stream frame its sub-block ended at; 0 before the first write.
     end: AtomicU64,
+    /// The transport tick its sub-block ended at.
+    tick: AtomicU64,
     /// Peak left, peak right, gain reduction and input peak over the sub-block, as f32 bits.
     meter: [AtomicU32; 4],
     /// The analysis as the sub-block left it, as f32 bits.
@@ -261,18 +285,20 @@ impl Visual {
         Self {
             version: AtomicU32::new(0),
             end: AtomicU64::new(0),
+            tick: AtomicU64::new(0),
             meter: Default::default(),
             analysis: (0..analysis).map(|_| AtomicU32::new(0)).collect(),
         }
     }
 
     /// The audio thread's write. Extra analysis values are dropped.
-    fn write(&self, end: u64, meter: MeterSnapshot, analysis: &[f32]) {
+    fn write(&self, end: u64, tick: u64, meter: MeterSnapshot, analysis: &[f32]) {
         let version = self.version.load(Ordering::Relaxed);
         self.version
             .store(version.wrapping_add(1), Ordering::Relaxed);
         fence(Ordering::Release);
         self.end.store(end, Ordering::Relaxed);
+        self.tick.store(tick, Ordering::Relaxed);
         let values = [
             meter.peak_left,
             meter.peak_right,
@@ -442,7 +468,7 @@ impl MeterBank {
     /// The audio thread's write of a sub-block's visuals, ending at stream frame `end`, into `slot`.
     fn publish<R: AudioRenderer>(&self, renderer: &R, slot: usize, end: u64) {
         for (index, cell) in self.0.iter().enumerate() {
-            cell.frames[slot].write(end, renderer.meter(index), renderer.analysis(index));
+            cell.frames[slot].write(end, 0, renderer.meter(index), renderer.analysis(index));
         }
     }
 
@@ -502,8 +528,8 @@ impl MeterBank {
                     *last = louder(peaks, held);
                 }
                 *seen = now;
-                // ponytail: a callback longer than the ring shows its oldest frame until the clock reaches it; widen
-                // the ring if buffers over `SLOTS / 2` sub-blocks ever matter.
+                // ponytail: a callback longer than the ring beside the latency shows its oldest frame until the clock
+                // reaches it; widen the ring if buffers over `SLOTS - LATENCY_SLOTS` sub-blocks ever matter.
                 let analysis = (newest.or(oldest))
                     .and_then(|(_, slot)| cell.frames[slot].read(Visual::analysis))
                     .map_or_else(|| cell.rest.to_vec(), |(_, analysis)| analysis);
@@ -528,12 +554,14 @@ struct Shared {
     ping: AtomicU64,
     /// [`AudioRenderer::set_buffer_frames`]: the first callback's frames, 0 before it.
     buffer_frames: AtomicU32,
-    /// The output clock, once a callback has set it: when stream frame 0 would have started at the last callback's
-    /// pace, ns since [`clock`]'s epoch ([`AudioOutput::snapshot_at`]).
+    /// The output clock, once a callback has set it: when stream frame 0 is heard at the callbacks' pace, ns since
+    /// [`clock`]'s epoch ([`AudioOutput::snapshot_at`], [`CallbackState::callback`]).
     clocked: AtomicBool,
     origin: AtomicI64,
     /// The commands the audio thread has taken from the queue ([`OutputSnapshot::taken`]).
     taken: AtomicU64,
+    /// Each sub-block's transport tick, as the meters' visual frames ([`OutputSnapshot::heard_tick`]).
+    ticks: Box<[Visual]>,
 }
 
 /// Now, ns since the first call: the output clock's time base. `None` on the web, which has no clock to read here
@@ -616,6 +644,14 @@ pub struct AudioOutput<R: AudioRenderer> {
     buffer_mode: BufferMode,
     /// The commands queued so far ([`OutputSnapshot::taken`]).
     sent: u64,
+    /// The stream frame the last snapshot showed on the output clock: a clock that moves later (a callback later than
+    /// any before it, or the presentation timestamp taking over) holds the visuals there, never back.
+    heard: u64,
+    /// The last presentation timestamp the clock took ([`Self::origin`]): a later one behind it is wrong.
+    presented: Option<Presented>,
+    /// The tests' presentation timestamps, one a snapshot (`None`: an error).
+    #[cfg(test)]
+    stamps: std::collections::VecDeque<Option<Presented>>,
 }
 
 impl<R: AudioRenderer> AudioOutput<R> {
@@ -652,9 +688,9 @@ impl<R: AudioRenderer> AudioOutput<R> {
         Self::start_with_mode_at(mode, 0, make_renderer)
     }
 
-    /// Starts the output with an explicit buffer profile, requesting `rate` as the stream's sample rate when the
-    /// device supports it (0: the device's default). The renderer is built at the rate the stream actually runs,
-    /// so a renderer always matches its stream.
+    /// [`Self::start_with_mode`] at `rate` Hz (PR #87: a project's sample rate) where the device takes it in its
+    /// default format and channel count; else, and for 0, at the device's default rate. The renderer is built at the
+    /// rate the stream runs, so a fallback shows as [`Self::sample_rate`] differing from `rate`.
     pub fn start_with_mode_at<F, E>(
         mode: BufferMode,
         rate: u32,
@@ -666,24 +702,21 @@ impl<R: AudioRenderer> AudioOutput<R> {
         let device = cpal::default_host()
             .default_output_device()
             .ok_or(StartError::NoDevice)?;
-        let supported = device.default_output_config().map_err(StartError::Config)?;
-        let default_rate = supported.sample_rate().0;
-        let sample_rate = if rate > 0
-            && device
-                .supported_output_configs()
-                .ok()
-                .into_iter()
-                .flatten()
-                .any(|range| {
-                    range.channels() == supported.channels()
-                        && range.sample_format() == supported.sample_format()
-                        && range.min_sample_rate().0 <= rate
-                        && rate <= range.max_sample_rate().0
-                }) {
-            rate
-        } else {
-            default_rate
+        let default = device.default_output_config().map_err(StartError::Config)?;
+        let takes = |r: &cpal::SupportedStreamConfigRange| {
+            r.channels() == default.channels()
+                && r.sample_format() == default.sample_format()
+                && (r.min_sample_rate().0..=r.max_sample_rate().0).contains(&rate)
         };
+        let asked = (rate > 0 && rate != default.sample_rate().0)
+            .then(|| device.supported_output_configs().ok())
+            .flatten()
+            .and_then(|mut ranges| ranges.find(takes));
+        let supported = match asked {
+            Some(range) => range.with_sample_rate(cpal::SampleRate(rate)),
+            None => default,
+        };
+        let sample_rate = supported.sample_rate().0;
         let channels = usize::from(supported.channels());
         let renderer = make_renderer(sample_rate).map_err(StartError::Renderer)?;
         let (mut output, state) = Self::unstarted(renderer, sample_rate);
@@ -692,8 +725,7 @@ impl<R: AudioRenderer> AudioOutput<R> {
         let error = move |_| {
             error_shared.failed.store(true, Ordering::Release);
         };
-        let mut config = output_config(&device, &supported, mode);
-        config.sample_rate = cpal::SampleRate(sample_rate);
+        let config = output_config(&device, &supported, mode);
         let stream = match supported.sample_format() {
             cpal::SampleFormat::I8 => {
                 build_stream::<i8, _, _>(&device, &config, channels, state, error)
@@ -743,6 +775,7 @@ impl<R: AudioRenderer> AudioOutput<R> {
         let meters = Arc::new(MeterBank::new(&renderer));
         let shared = Arc::new(Shared {
             tick: AtomicU64::new(renderer.transport_tick()),
+            ticks: (0..SLOTS).map(|_| Visual::new(0)).collect(),
             ..Shared::default()
         });
         let (sender, receiver) = bounded(1024);
@@ -757,6 +790,7 @@ impl<R: AudioRenderer> AudioOutput<R> {
             taken: 0,
             frames: 0,
             visuals: 0,
+            clock: None,
             load: 0.0,
         };
         let output = Self {
@@ -770,6 +804,10 @@ impl<R: AudioRenderer> AudioOutput<R> {
             transport_playing: false,
             buffer_mode: BufferMode::Native,
             sent: 0,
+            heard: 0,
+            presented: None,
+            #[cfg(test)]
+            stamps: Default::default(),
         };
         (output, state)
     }
@@ -824,7 +862,7 @@ impl<R: AudioRenderer> AudioOutput<R> {
         self.reopen_with_mode_at(mode, 0, make_renderer)
     }
 
-    /// [`Self::reopen_with_mode`], requesting `rate` as the new stream's sample rate when supported (0: default).
+    /// [`Self::reopen_with_mode`] at `rate` Hz, as [`Self::start_with_mode_at`] takes it (PR #87).
     pub fn reopen_with_mode_at<F, E>(
         &mut self,
         mode: BufferMode,
@@ -915,16 +953,19 @@ impl<R: AudioRenderer> AudioOutput<R> {
         self.snapshot_at(clock())
     }
 
-    /// [`Self::snapshot`] at `now`, ns on [`clock`]. The meters and analyses play back on the output clock, one buffer
-    /// late: a callback publishes its sub-blocks' visuals at once, and they show as its frames' time goes by, from its
-    /// start, as the audio does (each sub-block once the clock has passed its end). Without a clock (`now` or the
-    /// callbacks' `None`), as last published. The transport tick and the rest are always as last published.
+    /// [`Self::snapshot`] at `now`, ns on [`clock`]. The meters, analyses and [`OutputSnapshot::heard_tick`] play back
+    /// on the output clock, as the audio is heard: a callback publishes its sub-blocks' visuals at once, and they show
+    /// as its frames' time goes by (each sub-block once the clock has passed its end), from when its first frame is
+    /// heard ([`Self::origin`]). The frame shown never goes back. Without a clock (`now` or the callbacks' `None`), as
+    /// last published. The transport tick and the rest are always as last published.
     pub fn snapshot_at(&mut self, now: Option<i64>) -> OutputSnapshot {
         let rate = f64::from(self.sample_rate) / 1e9;
         let upto = match now {
             Some(now) if self.shared.clocked.load(Ordering::Acquire) => {
-                let since = now - self.shared.origin.load(Ordering::Acquire);
-                (since.max(0) as f64 * rate).round() as u64
+                let origin = self.origin(now);
+                let upto = ((now - origin).max(0) as f64 * rate).round() as u64;
+                self.heard = self.heard.max(upto);
+                self.heard
             }
             _ => u64::MAX,
         };
@@ -935,8 +976,17 @@ impl<R: AudioRenderer> AudioOutput<R> {
         let sounding = self.replaced.as_ref().unwrap_or(&self.meters).sounding();
         // Before the tick ([`CallbackState::render`]).
         let taken = self.shared.taken.load(Ordering::Acquire);
+        let transport_tick = self.shared.tick.load(Ordering::Acquire);
+        let ticks: Vec<_> = (self.shared.ticks.iter())
+            .filter_map(|v| v.read(|v| v.tick.load(Ordering::Relaxed)))
+            .collect();
+        // The sub-block heard last, else the oldest kept (as the meters).
+        let heard = ticks.iter().filter(|(end, _)| *end <= upto).max();
         OutputSnapshot {
-            transport_tick: self.shared.tick.load(Ordering::Acquire),
+            transport_tick,
+            heard_tick: heard
+                .or(ticks.iter().min())
+                .map_or(transport_tick, |&(_, t)| t),
             cpu_load: f32::from_bits(self.shared.cpu.load(Ordering::Acquire)),
             underruns: self.shared.underruns.load(Ordering::Acquire),
             stream_failed: self.shared.failed.load(Ordering::Acquire),
@@ -952,6 +1002,67 @@ impl<R: AudioRenderer> AudioOutput<R> {
             sounding,
             taken,
         }
+    }
+
+    /// When stream frame 0 is heard at `now`, ns on [`clock`]: from the platform's presentation timestamp while it is
+    /// sound (#92: a Bluetooth headset's latency is in it), else the callbacks' clock, as without one. A timestamp is
+    /// unsound when there is none (an error), it is zero or stale ([`STALE_NS`]), it goes back from the last one taken,
+    /// or it puts frame 0 more than [`EARLY_NS`] before the callbacks' clock (frames heard before they were made) or
+    /// more than the ring reaches ([`LATENCY_SLOTS`]) after it.
+    fn origin(&mut self, now: i64) -> i64 {
+        let callbacks = self.shared.origin.load(Ordering::Acquire);
+        let rate = f64::from(self.sample_rate);
+        let ns = |frames: f64| (frames * 1e9 / rate) as i64;
+        let most = callbacks + ns((LATENCY_SLOTS * SUB_BLOCK) as f64);
+        let last = self.presented;
+        let sound = (self.presented(now)).filter(|p| {
+            p.frame > 0
+                && now - p.at <= STALE_NS
+                && last.is_none_or(|l| p.frame >= l.frame && p.at >= l.at)
+        });
+        let origin = sound
+            .map(|p| p.at - ns(p.frame as f64))
+            .filter(|o| (callbacks - EARLY_NS..=most).contains(o));
+        if origin.is_some() {
+            self.presented = sound;
+        }
+        origin.map_or(callbacks, |o| o.max(callbacks))
+    }
+
+    /// The presentation timestamp Android's AAudio reports now, on [`clock`]; `None` on an error, or none yet.
+    #[cfg(all(target_os = "android", not(test)))]
+    fn presented(&mut self, now: i64) -> Option<Presented> {
+        use cpal::platform::{AAudioStream, StreamInner};
+        let StreamInner::AAudio(AAudioStream::Output(stream)) = self.stream.as_ref()?.as_inner()
+        else {
+            return None;
+        };
+        let stamp = stream.timestamp(ndk::audio::Clockid::Monotonic).ok()?;
+        let mut mono = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        // SAFETY: `mono` is a timespec to fill. AAudio's timestamps are on CLOCK_MONOTONIC.
+        (unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut mono) } == 0).then_some(())?;
+        // i32 fields on the 32-bit ABIs.
+        #[allow(clippy::useless_conversion)]
+        let mono = i64::from(mono.tv_sec) * 1_000_000_000 + i64::from(mono.tv_nsec);
+        (stamp.time_nanoseconds > 0).then_some(Presented {
+            frame: stamp.frame_position,
+            at: now - (mono - stamp.time_nanoseconds),
+        })
+    }
+
+    /// Elsewhere the callbacks bring the latency themselves ([`build_stream`]).
+    #[cfg(not(any(target_os = "android", test)))]
+    fn presented(&mut self, _now: i64) -> Option<Presented> {
+        None
+    }
+
+    /// The tests' next timestamp.
+    #[cfg(test)]
+    fn presented(&mut self, _now: i64) -> Option<Presented> {
+        self.stamps.pop_front().flatten()
     }
 }
 
@@ -1011,6 +1122,8 @@ struct CallbackState<R: AudioRenderer> {
     frames: u64,
     /// The sub-blocks published so far: the next one's visuals go to slot `visuals % SLOTS`.
     visuals: usize,
+    /// The output clock's origin ([`Shared::origin`]) and the callback that last set it, ns on [`clock`].
+    clock: Option<(i64, i64)>,
     /// The load the snapshot reads, averaged (none on the web, which has no clock here).
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     load: f32,
@@ -1040,10 +1153,16 @@ impl<R: AudioRenderer> OfflineCallback<R> {
 const LOAD_AVERAGE_S: f32 = 0.5;
 
 impl<R: AudioRenderer> CallbackState<R> {
-    /// One device callback of `frames` frames, started at `now` (ns on [`clock`]; `None` without one): rendered into
-    /// `scratch` a sub-block at a time ([`SUB_BLOCK`] frames of `channels`; `scratch` holds one), each handed to `out`
-    /// with its first frame. Every sub-block publishes its visuals; `now` sets the output clock they play back on. The
-    /// CPU load is the callback's time over its buffer's, averaged ([`LOAD_AVERAGE_S`]).
+    /// One device callback of `frames` frames, whose first frame is heard at `now` (ns on [`clock`]: the callback's
+    /// start and the latency the host reports; `None` without a clock): rendered into `scratch` a sub-block at a time
+    /// ([`SUB_BLOCK`] frames of `channels`; `scratch` holds one), each handed to `out` with its first frame. Every
+    /// sub-block publishes its visuals; `now` sets the output clock they play back on. The CPU load is the callback's
+    /// time over its buffer's, averaged ([`LOAD_AVERAGE_S`]).
+    ///
+    /// #95: the clock follows the callback latest for its frames, the one nearest its deadline. Callbacks that come in
+    /// bursts (a Bluetooth output's) run early by up to a burst and set it no earlier: the visuals then move on at the
+    /// audio's pace between bursts instead of jumping with each. It falls back only at [`DRIFT`], for a device clock
+    /// that runs fast.
     fn callback(
         &mut self,
         frames: usize,
@@ -1057,9 +1176,12 @@ impl<R: AudioRenderer> CallbackState<R> {
         let start = Instant::now();
         if let Some(now) = now {
             let ahead = self.frames as f64 * 1e9 / f64::from(sample_rate);
-            self.shared
-                .origin
-                .store(now - ahead as i64, Ordering::Release);
+            let mut origin = now - ahead as i64;
+            if let Some((last, at)) = self.clock {
+                origin = origin.max(last - ((now - at).max(0) as f64 * DRIFT) as i64);
+            }
+            self.clock = Some((origin, now));
+            self.shared.origin.store(origin, Ordering::Release);
             self.shared.clocked.store(true, Ordering::Release);
         }
         let mut at = 0;
@@ -1101,7 +1223,10 @@ impl<R: AudioRenderer> CallbackState<R> {
         let frames = output.len() / channels.max(1);
         if frames > 0 {
             self.frames += frames as u64;
-            (self.meters).publish(&*self.renderer, self.visuals % SLOTS, self.frames);
+            let (slot, tick) = (self.visuals % SLOTS, self.renderer.transport_tick());
+            (self.meters).publish(&*self.renderer, slot, self.frames);
+            let rest = MeterSnapshot::default();
+            self.shared.ticks[slot].write(self.frames, tick, rest, &[]);
             self.visuals = self.visuals.wrapping_add(1);
         }
         self.meters.publish_sounding(&*self.renderer);
@@ -1198,7 +1323,7 @@ where
     let mut scratch = vec![0.0_f32; SUB_BLOCK * channels];
     device.build_output_stream(
         config,
-        move |data: &mut [T], _| {
+        move |data: &mut [T], info: &cpal::OutputCallbackInfo| {
             // The first callback's size is the stream's buffer size.
             let frames = data.len() / channels.max(1);
             let _ = (state.shared.buffer_frames).compare_exchange(
@@ -1216,7 +1341,13 @@ where
                     });
                 }
             };
-            state.callback(frames, channels, sample_rate, clock(), &mut scratch, out);
+            // When its first frame is heard: the latency the host reports, up to a second (not AAudio's, whose two
+            // times are on two clocks: `AudioOutput::reported_origin` reads it).
+            let stamp = info.timestamp();
+            let latency = (stamp.playback.duration_since(&stamp.callback))
+                .filter(|l| cfg!(not(target_os = "android")) && l.as_secs() < 1);
+            let heard = clock().map(|now| now + latency.map_or(0, |l| l.as_nanos() as i64));
+            state.callback(frames, channels, sample_rate, heard, &mut scratch, out);
         },
         error,
         None,
@@ -1421,6 +1552,98 @@ mod tests {
                 );
             }
             last = shown;
+        }
+    }
+
+    /// #95: a Bluetooth output asks for its callbacks in bursts, now one, now several at once, at uneven times. The
+    /// visuals still move on at every frame of a 60 Hz UI, by about a frame's worth of audio and never back, and the
+    /// heard tick with them.
+    #[test]
+    fn callbacks_in_uneven_bursts_still_reach_the_ui_evenly() {
+        let (mut output, mut state) = output();
+        (state.renderer.stamp, state.renderer.playing) = (true, true);
+        let (block, rate) = (960_u64, 48_000.0);
+        let ns = |frames: u64| (frames as f64 / rate * 1e9) as i64;
+        let mut buffer = vec![0.0; 2 * block as usize];
+        // The device wakes after 1 to 5 blocks' time and asks for every block its buffer lacks: it holds 6.
+        let wakes = [3, 1, 5, 2, 4, 1, 1, 5, 3, 2];
+        let (mut due, mut wake, mut woke, mut last) = (0, 0, 0, 0.0);
+        for frame in 0..180 {
+            let clock = (frame as f64 * rate / 60.0) as u64;
+            while woke <= clock {
+                while due <= woke + 5 * block {
+                    state.run(&mut buffer, Some(ns(woke)));
+                    due += block;
+                }
+                woke += wakes[wake % wakes.len()] * block;
+                wake += 1;
+            }
+            let snapshot = output.snapshot_at(Some(ns(clock)));
+            let shown = snapshot.module_meters[0].analysis[0];
+            // Playing from 0, the tick counts the frames.
+            assert_eq!(snapshot.heard_tick as f32, shown, "UI frame {frame}");
+            if frame >= 30 {
+                let step = shown - last;
+                assert!(
+                    step > 0.0 && step <= 2.0 * SUB_BLOCK as f32,
+                    "UI frame {frame} at {clock}: shows {shown}, after {last}"
+                );
+            }
+            last = shown;
+        }
+    }
+
+    /// #92: the presentation timestamp sets the clock only while it is sound. An error, a zero, a stale, a backwards or
+    /// a too far one falls back to the callbacks' clock; the frame shown never goes back.
+    #[test]
+    fn an_unsound_presentation_timestamp_falls_back_to_the_callbacks_clock() {
+        let (mut output, mut state) = output();
+        state.renderer.stamp = true;
+        let (block, rate) = (960_u64, 48_000.0);
+        let ns = |frames: u64| (frames as f64 / rate * 1e9) as i64;
+        let mut buffer = vec![0.0; 2 * block as usize];
+        // Heard 200 ms after it is made.
+        let heard = |clock: u64, late: u64| Presented {
+            frame: clock as i64 - late as i64,
+            at: ns(clock),
+        };
+        let (mut due, mut last) = (0, 0.0);
+        for frame in 0..80_u64 {
+            let clock = frame * 800;
+            while due <= clock {
+                state.run(&mut buffer, Some(ns(due)));
+                due += block;
+            }
+            let stamp = match frame {
+                0..10 if frame % 2 == 0 => None,
+                0..10 => Some(Presented { frame: 0, at: 0 }),
+                10..30 | 50..65 => Some(heard(clock, 9_600)),
+                // Stale: a second and a half old.
+                30..40 => Some(Presented {
+                    frame: clock as i64 - 72_000 - 9_600,
+                    at: ns(clock) - 1_500_000_000,
+                }),
+                // Back from the last one taken (frame 29's).
+                40..50 => Some(heard(29 * 800, 0)),
+                // Two seconds late: past the ring.
+                _ => Some(heard(clock, 96_000)),
+            };
+            output.stamps.push_back(stamp);
+            let shown = output.snapshot_at(Some(ns(clock))).module_meters[0].analysis[0];
+            assert!(shown >= last, "frame {frame}: {shown} after {last}");
+            last = shown;
+            let behind = clock as f32 - shown;
+            let expect = match frame {
+                // The callbacks' clock, as before.
+                9 | 39 | 49 | 79 => 0.0,
+                // The timestamp's, once it has caught up (it held the frame shown till then).
+                29 | 64 => 9_600.0,
+                _ => continue,
+            };
+            assert!(
+                (expect..expect + SUB_BLOCK as f32).contains(&behind),
+                "frame {frame}: {behind} behind"
+            );
         }
     }
 
@@ -1756,7 +1979,7 @@ mod tests {
             std::thread::spawn(move || {
                 for n in 0..2_000 {
                     let frame = &bank.0[0].frames[n % SLOTS];
-                    frame.write(n as u64 + 1, MeterSnapshot::default(), &[n as f32; 512]);
+                    frame.write(n as u64 + 1, 0, MeterSnapshot::default(), &[n as f32; 512]);
                     std::thread::sleep(std::time::Duration::from_micros(20));
                 }
             })
@@ -1777,7 +2000,10 @@ mod tests {
         let (retired_sender, retired) = bounded(8);
         let initial = renderer();
         let meters = Arc::new(MeterBank::new(&initial));
-        let shared = Arc::new(Shared::default());
+        let shared = Arc::new(Shared {
+            ticks: (0..SLOTS).map(|_| Visual::new(0)).collect(),
+            ..Shared::default()
+        });
         let mut state = CallbackState {
             renderer: Box::new(initial),
             meters: meters.clone(),
@@ -1788,6 +2014,7 @@ mod tests {
             taken: 0,
             frames: 0,
             visuals: 0,
+            clock: None,
             load: 0.0,
         };
         assert!(

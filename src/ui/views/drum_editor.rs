@@ -263,7 +263,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     (step_view.playing, grid.playing) = (app.playing, app.playing);
     (step_view.armed, grid.armed) = (app.armed, app.armed);
     (step_view.previewing, grid.previewing) = (app.previewing, app.previewing);
-    let levels = slot_peaks(ui.ctx(), app, channel, kit);
+    let levels = slot_peaks(app, channel, kit);
     grid.levels.clone_from(&levels);
     step_view.levels = levels;
     step_view.follow = app.settings.continuous_scroll;
@@ -306,7 +306,10 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         let g = &state.grid;
         (g.mixer_w, g.fold.c, g.row_band(), g.graph)
     };
-    if let Some(tabs) = tabs(editor, c, m) {
+    let (screen, shift) = (app.regions.screen.right(), app.settings.editor_ribbon_shift);
+    let strip_left = editor.left() + m.u(step_seq::HEADER_W);
+    let room = crate::ui::split::ribbon_room(editor.right(), screen, shift, strip_left, m);
+    if let Some(tabs) = tabs(editor, c, m, room) {
         let mut page = StripPage::ALL
             .iter()
             .position(|&p| p == state.drums.page)
@@ -321,7 +324,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         .drum_kit
         .as_mut()
         .expect("checked above");
-    // The strips sit on the step rows and scroll with them, clipped to the rows' area, and each to its own row.
+    // The strips sit on the step rows and scroll with them, clipped to the rows' area.
     let mut actions = Vec::new();
     if let Some((top, pitch)) = band {
         let right = editor.left() + m.u(step_seq::HEADER_W) + mixer_w;
@@ -695,7 +698,7 @@ fn show_pads(pads: &mut Pads, ui: &mut egui::Ui, app: &mut AppCtx, channel: usiz
             .id(("drum pads", channel))
             .max_rect(keyboard),
     );
-    let peaks = slot_peaks(ui.ctx(), app, channel, kit).into_iter();
+    let peaks = slot_peaks(app, channel, kit).into_iter();
     pads.drums.peaks = peaks.map(|[l, r]| l.max(r)).collect();
     let locked = app.settings.lock_pads;
     let actions = drums::show_pads(
@@ -754,13 +757,12 @@ fn show_pads(pads: &mut Pads, ui: &mut egui::Ui, app: &mut AppCtx, channel: usiz
 }
 
 /// Each slot's output peaks (L, R) in `channel`'s `kit`, in slot order, from this frame's meters: the engine keys them
-/// (channel, −slot id). None without a running stream; while there is one, the next frame comes within 50 ms, as for
-/// the rack's meters: the audio moves with no input to repaint for.
-fn slot_peaks(ctx: &egui::Context, app: &AppCtx, channel: usize, kit: &DrumKit) -> Vec<[f32; 2]> {
+/// (channel, −slot id). None without a running stream. The app asks for the frames that show them move (a lit meter's,
+/// and those after a note sent).
+fn slot_peaks(app: &AppCtx, channel: usize, kit: &DrumKit) -> Vec<[f32; 2]> {
     let Some(snapshot) = app.snapshot.filter(|s| !s.stream_failed) else {
         return Vec::new();
     };
-    ctx.request_repaint_after(std::time::Duration::from_millis(50));
     let meters = &snapshot.module_meters;
     let peak = |id: u32| {
         // The engine keys no slot without an id: −0 would be the channel's own meter.
@@ -877,12 +879,13 @@ fn send_slot_setting(audio: &mut AudioLink, channel: usize, slot: u32, key: u32,
 }
 
 /// The page tabs for the mixer folded out to `c`, in `editor`'s ruler row: (x + 3 U, top, column width − 3 U,
-/// 1.5 U − 1 px), only when it is fully out (c = 1). They keep the column's full width — the ribbon may slide over
-/// them (it is movable), but never squeezes the tabs' labels.
-fn tabs(editor: Rect, c: f32, m: &Metrics) -> Option<Rect> {
+/// 1.5 U − 1 px), only when it is fully out (c = 1). They end at `room`, where the close ribbon's touch area starts: on
+/// an editor narrower than about 19.4 U (portrait, or beside the rack) the ribbon would cover `Seq` (GitHub
+/// #71). None without room.
+fn tabs(editor: Rect, c: f32, m: &Metrics, room: f32) -> Option<Rect> {
     let at = editor.min + vec2(m.u(step_seq::HEADER_W), 0.0);
     let size = vec2(
-        m.u(step_seq::MIXER_W),
+        m.u(step_seq::MIXER_W).min(room - at.x),
         crate::ui::timeline::ruler_h(m) - 1.0 / m.ppp(),
     );
     (c == 1.0 && size.x > 0.0).then(|| Rect::from_min_size(at, size))
@@ -1114,12 +1117,15 @@ mod tests {
             let m = Metrics::from_pixels_per_point(ppp, crate::metrics::DEFAULT_UI_SCALE);
             let editor = Rect::from_min_size(pos2(10.0, 20.0), egui::vec2(1170.0, 349.0));
             for c in [0.0, 0.4, 0.99] {
-                assert_eq!(tabs(editor, c, &m), None, "c = {c}");
+                assert_eq!(tabs(editor, c, &m, f32::INFINITY), None, "c = {c}");
             }
             let h = crate::ui::timeline::ruler_h(&m);
             let want = Rect::from_min_size(pos2(10.0 + 96.0, 20.0), egui::vec2(384.0, h - px));
-            // Full column width whatever the ribbon's room: it may slide over the tabs, never squeeze them.
-            assert_eq!(tabs(editor, 1.0, &m), Some(want));
+            assert_eq!(tabs(editor, 1.0, &m, f32::INFINITY), Some(want));
+            // They end where the close ribbon's touch area starts (GitHub #71), and need some room.
+            let short = tabs(editor, 1.0, &m, want.left() + 300.0);
+            assert_eq!(short, Some(want.with_max_x(want.left() + 300.0)));
+            assert_eq!(tabs(editor, 1.0, &m, want.left()), None);
         }
     }
 

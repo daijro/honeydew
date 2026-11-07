@@ -142,6 +142,143 @@ diff -ruN a/vendor/lemon-studio/lemon-drum-sampler/src/lib.rs b/vendor/lemon-stu
              ctx.send_event(NoteEvent::VoiceTerminated { timing: last, voice_id, channel: 0, note });
          }
          if self.engine.has_voices() { ProcessStatus::KeepAlive } else { ProcessStatus::Normal }
+diff -ruN a/vendor/lemon-studio/lemon-parametric-eq-2/src/analyzer.rs b/vendor/lemon-studio/lemon-parametric-eq-2/src/analyzer.rs
+--- a/vendor/lemon-studio/lemon-parametric-eq-2/src/analyzer.rs
++++ b/vendor/lemon-studio/lemon-parametric-eq-2/src/analyzer.rs
+@@ -10,6 +10,7 @@
+ use std::f32::consts::PI;
+ 
+ use os_engine::effects::eq::freq_hz;
++use os_plugkit::time::Instant;
+ 
+ /// FFT sizes by "Frequency precision" (Low .. Highest).
+ pub const SIZES: [usize; 4] = [2048, 4096, 8192, 16384];
+@@ -132,10 +133,72 @@
+     }
+ }
+ 
++/// Honeydew (vendored addition, #95): where the analyzer's window ends, in samples written. The audio thread writes the
++/// signal a block at a time, and a Bluetooth output's blocks come large and at uneven times: read at the newest sample,
++/// the spectrum jumps with each block and stands still between them. This moves on with the time at the sample rate
++/// instead, behind the newest sample by up to the longest wait between blocks lately (each one's weight falling 10 %
++/// a second), so that it never runs dry between them.
++#[derive(Clone, Copy, Debug, Default)]
++pub struct Reader {
++    /// The position, and when it was last read.
++    pos: f64,
++    at: Option<Instant>,
++    /// The samples written at the last block, when it came, and the longest wait between blocks lately (seconds).
++    written: u64,
++    since: Option<Instant>,
++    wait: f64,
++}
++
++impl Reader {
++    /// The position at `now`, with `written` samples written at `rate` Hz: `written` or up to `most` before it.
++    pub fn read(&mut self, now: Instant, written: u64, rate: f64, most: u64) -> u64 {
++        let since = *self.since.get_or_insert(now);
++        if written != self.written {
++            let wait = now.duration_since(since).as_secs_f64();
++            self.wait = wait.max(self.wait * 0.9f64.powf(wait));
++            (self.written, self.since) = (written, Some(now));
++        }
++        let step = self.at.map_or(f64::INFINITY, |at| now.duration_since(at).as_secs_f64() * rate);
++        let newest = written as f64;
++        self.pos = (self.pos + step).clamp(newest - (self.wait * rate).min(most as f64), newest);
++        self.at = Some(now);
++        self.pos as u64
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+ 
++    /// #95: blocks of 20 ms written at uneven times, 20 to 100 ms apart, a read every 30 ms: once it has seen the
++    /// longest wait, the window moves on by a read's samples at every read, and never past what was written.
++    #[test]
++    fn the_window_moves_on_evenly_while_the_blocks_come_unevenly() {
++        let (rate, block, read) = (48_000.0, 960, 1_440);
++        let start = Instant::now();
++        let waits = [3, 1, 5, 2, 4, 1, 1, 5, 3, 2];
++        let (mut reader, mut written, mut wake, mut woke, mut last) = (Reader::default(), 0, 0, 0, 0);
++        for tick in 0..200 {
++            let now = tick * read;
++            // Each wake writes every block its buffer lacks: it holds the next 100 ms.
++            while woke <= now {
++                while written <= woke + 5 * block {
++                    written += block;
++                }
++                woke += waits[wake % waits.len()] * block;
++                wake += 1;
++            }
++            let at = start + std::time::Duration::from_secs_f64(now as f64 / rate);
++            let end = reader.read(at, written, rate, 16_384);
++            assert!(end <= written);
++            if tick >= 15 {
++                let step = end - last;
++                assert!((1_400..=1_480).contains(&step), "tick {tick}: {last} to {end} ({written} written)");
++            }
++            last = end;
++        }
++    }
++
+     #[test]
+     fn a_sine_shows_at_its_frequency() {
+         let rate = 44100.0;
+diff -ruN a/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs b/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs
+--- a/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs
++++ b/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs
+@@ -1116,7 +1116,7 @@
+     use os_ui::Canvas;
+ 
+     use super::{Act, Btn, Logic, Mods};
+-    use crate::analyzer::{Analyzer, Look as ALook};
++    use crate::analyzer::{Analyzer, Look as ALook, Reader};
+     use crate::params::{self, EqParams, Opt};
+     use crate::view::{self, Look, ViewState};
+     use crate::Shared;
+@@ -1134,6 +1134,8 @@
+         palette: Palette,
+         analyzer: Analyzer,
+         scope_seen: u64,
++        /// Honeydew (vendored addition, #95): where the analyzer reads the signal.
++        reader: Reader,
+         last_sig: u64,
+         last_extra: u64,
+         last_view: ViewState,
+@@ -1183,6 +1185,7 @@
+                 palette: os_plugkit::palette(),
+                 analyzer: Analyzer::default(),
+                 scope_seen: 0,
++                reader: Reader::default(),
+                 last_sig: 0,
+                 last_extra: u64::MAX,
+                 last_view: ViewState::default(),
+@@ -1277,10 +1280,19 @@
+             let mut dirty = self.logic.vals.expire();
+             if let Some(look) = self.analyzer_look() {
+                 let n = Analyzer::size_for(&look);
+-                let fresh = self.shared.scope.lock().ok().filter(|s| s.written != self.scope_seen).map(|s| (s.written, s.latest(n)));
+-                if let Some((written, samples)) = fresh {
+-                    self.scope_seen = written;
+-                    let rate = self.shared.rate.load(Ordering::Relaxed) as f32;
++                let rate = self.shared.rate.load(Ordering::Relaxed) as f32;
++                // Honeydew (vendored change, #95): the window ends where the reader is, not at the newest sample.
++                let (reader, seen) = (&mut self.reader, self.scope_seen);
++                let fresh = self.shared.scope.lock().ok().and_then(|s| {
++                    let end = reader.read(os_plugkit::time::Instant::now(), s.written, f64::from(rate), (s.buf.len() - n) as u64);
++                    (end != seen).then(|| {
++                        let mut window = s.latest(n + (s.written - end) as usize);
++                        window.truncate(n);
++                        (end, window)
++                    })
++                });
++                if let Some((end, samples)) = fresh {
++                    self.scope_seen = end;
+                     self.analyzer.update(&samples, rate, view::COLS, &look);
+                     dirty = true;
+                 }
 diff -ruN a/vendor/lemon-studio/lemon-sampler/src/editor.rs b/vendor/lemon-studio/lemon-sampler/src/editor.rs
 --- a/vendor/lemon-studio/lemon-sampler/src/editor.rs
 +++ b/vendor/lemon-studio/lemon-sampler/src/editor.rs
@@ -374,7 +511,7 @@ diff -ruN a/vendor/lemon-studio/os-hostlink/src/lib.rs b/vendor/lemon-studio/os-
 diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os-plugkit/src/embed.rs
 --- a/vendor/lemon-studio/os-plugkit/src/embed.rs
 +++ b/vendor/lemon-studio/os-plugkit/src/embed.rs
-@@ -0,0 +1,555 @@
+@@ -0,0 +1,589 @@
 +// Copyright (C) 2026 The Honeydew contributors
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +
@@ -390,7 +527,7 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +//!   ([`modal`]) and return `None`. When the user answers ([`answer`]), the input that opened it comes again, and this
 +//!   time the call returns the answer; a chain (a menu's `Enter value...`, then the box) replays its earlier answers
 +//!   first.
-+//! - **Files come from the host** where the platform has no file dialog (Android, the browser): the editors' file
++//! - **Files come from the host** where the platform has no file dialog (Android, iOS, the browser): the editors' file
 +//!   dialog (`rfd`, which is `host-rfd` for them) asks it from their [`Window::dialog`] ([`open_file`],
 +//!   [`Modal::OpenFile`]) as a menu does, and the host's own picker answers with a path.
 +//! - Positions are the editor's device pixels, also for popups (`to_root` keeps them).
@@ -424,6 +561,10 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    pub height: u32,
 +    /// Counts the frames painted.
 +    pub version: u64,
++    /// The pixels (x0, y0, x1, y1) that changed since the host last took a frame ([`frame`]): all of them at a new
++    /// size, `None` if nothing did. A host that keeps the last frame (a texture) needs to update only those: a whole
++    /// frame is megabytes a repaint, a knob turn a small patch of it.
++    pub changed: Option<(u32, u32, u32, u32)>,
 +}
 +
 +/// A menu as the host shows it: [`MenuDef`] without its commands.
@@ -518,7 +659,8 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    /// The parked editors of this thread, by id.
 +    static PARKED: RefCell<HashMap<Parent, (Arc<State>, Box<dyn FnOnce()>)>> = RefCell::new(HashMap::new());
 +    /// This thread's editors ask the host for the files they open ([`host_files`]).
-+    static HOST_FILES: Cell<bool> = const { Cell::new(cfg!(any(target_arch = "wasm32", target_os = "android"))) };
++    static HOST_FILES: Cell<bool> =
++        const { Cell::new(cfg!(any(target_arch = "wasm32", target_os = "android", target_os = "ios"))) };
 +    /// The window whose [`Window::dialog`] runs, which [`open_file`] asks for.
 +    static DIALOG: RefCell<Option<Window>> = const { RefCell::new(None) };
 +}
@@ -683,9 +825,23 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    pub fn blit(&self, px: &[u32], w: u32, h: u32) {
 +        let mut i = self.state.lock();
 +        let f = &mut i.frame;
-+        f.pixels.clear();
-+        f.pixels.extend_from_slice(px);
-+        (f.width, f.height) = (w, h);
++        let changed = if (f.width, f.height) == (w, h) && f.pixels.len() == px.len() {
++            let changed = changed(&f.pixels, px, w as usize);
++            if let Some((_, y0, _, y1)) = changed {
++                let rows = y0 as usize * w as usize..y1 as usize * w as usize;
++                f.pixels[rows.clone()].copy_from_slice(&px[rows]);
++            }
++            changed
++        } else {
++            f.pixels.clear();
++            f.pixels.extend_from_slice(px);
++            (f.width, f.height) = (w, h);
++            Some((0, 0, w, h))
++        };
++        f.changed = match (f.changed, changed) {
++            (Some(a), Some(b)) => Some((a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3))),
++            (a, b) => a.or(b),
++        };
 +        f.version += 1;
 +        drop(i);
 +        repaint();
@@ -837,7 +993,7 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +}
 +
 +/// Whether the editors of this thread ask the host for the files they open ([`open_file`]) instead of showing a file
-+/// dialog: where the platform has none (Android, the browser), or once [`set_host_files`] said so.
++/// dialog: where the platform has none (Android, iOS, the browser), or once [`set_host_files`] said so.
 +pub fn host_files() -> bool {
 +    HOST_FILES.get()
 +}
@@ -897,14 +1053,29 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    get(id).is_some_and(|s| s.lock().locked)
 +}
 +
-+/// Editor `id`'s frame, when it painted one after version `since`: `f` gets it, and its version is returned.
++/// Editor `id`'s frame, when it painted one after version `since`: `f` gets it, and its version is returned. Its
++/// [`Frame::changed`] starts over.
 +pub fn frame(id: Parent, since: u64, f: impl FnOnce(&Frame)) -> Option<u64> {
 +    let s = get(id)?;
-+    let i = s.lock();
++    let mut i = s.lock();
 +    (i.frame.version > since).then(|| {
 +        f(&i.frame);
++        i.frame.changed = None;
 +        i.frame.version
 +    })
++}
++
++/// The pixels (x0, y0, x1, y1) where `new` differs from `old`, both rows of `w` pixels; `None` where none does.
++fn changed(old: &[u32], new: &[u32], w: usize) -> Option<(u32, u32, u32, u32)> {
++    let rows = || old.chunks_exact(w.max(1)).zip(new.chunks_exact(w.max(1)));
++    let y0 = rows().position(|(a, b)| a != b)?;
++    let y1 = old.len() / w.max(1) - rows().rev().position(|(a, b)| a != b)?;
++    let (mut x0, mut x1) = (w, 0);
++    for (a, b) in rows().take(y1).skip(y0).filter(|(a, b)| a != b) {
++        x0 = x0.min(a.iter().zip(b).position(|(p, q)| p != q).unwrap_or(w));
++        x1 = x1.max(w - a.iter().rev().zip(b.iter().rev()).position(|(p, q)| p != q).unwrap_or(w));
++    }
++    Some((x0 as u32, y0 as u32, x1 as u32, y1 as u32))
 +}
 +
 +/// What editor `id` asks the user, if anything.

@@ -94,8 +94,8 @@ impl NoteEffectRack {
                 }
                 previous = beat;
             }
-            // A Randomizer saved before Time and Shift (issue: early and late timing) has five params: the two it
-            // lacks take their defaults, 0 (no displacement) and 0.5 (an even mix early and late).
+            // A Randomizer of five params (before Time and Shift): the two it lacks take their defaults, 0
+            // (no displacement) and 0.5 (an even mix early and late).
             if module.type_id == 49 && module.params.len() == 5 {
                 module.params.resize(count, 0.0);
                 module.params[6] = 0.5;
@@ -369,8 +369,8 @@ fn transpose(module: &NoteEffectModule, note: Note, output: &mut Vec<Note>) {
 /// Randomizer: Pitch, Velocity and Pan spread the note; Gate (p4) is the chance it plays at all (100 %: always, 0 %:
 /// never), and a note it drops goes with its note-off (issue #31: a probability, which Gate's 100 % default fits).
 ///
-/// Time (p5) and Shift (p6) move the note early or late: Time is how far, as a fraction of [`TIME_BEATS`] (a 16th of a
-/// beat), and Shift leans the draw from all early (0) through an even mix (0.5, the default) to all late (1). The
+/// Contributor feature (PR #87): Time (p5) and Shift (p6) move the note early or late.
+/// Time is how far, as a fraction of [`TIME_BEATS`] (a 16th note), and Shift leans the draw from all early (0) through an even mix (0.5, the default) to all late (1). The
 /// displacement u is drawn evenly from [−1 + max(b, 0), 1 + min(b, 0)] at b = 2·Shift − 1, so the whole span stays
 /// reachable at an even mix and each end settles on one side; the note keeps its length and its start never goes
 /// before 0. At Time 0 nothing is drawn and the note is untouched.
@@ -409,7 +409,7 @@ fn randomize(module: &NoteEffectModule, note: Note, index: usize, output: &mut V
     }
 }
 
-/// The Randomizer's Time at 1, in beats: a 16th of a beat (32 of the song's [`PPQ`](crate::sequencer::PPQ) ticks).
+/// The Randomizer's Time at 1, in beats: a 16th note (32 of the song's 128 ticks a beat).
 const TIME_BEATS: f64 = 0.25;
 
 /// `Delay (sync)`'s items in beats.

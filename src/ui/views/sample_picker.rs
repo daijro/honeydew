@@ -20,12 +20,15 @@
 //!   listed from code, rendered only when played) and imported content's (`3xOsc Shapes`, `Loop Samples`) when it
 //!   is there, its folders first at the root as every factory folder is. Ours list in index order (a factory folder
 //!   keeps it). The pick sets the module's `CSTM` `PATH`.
+//! - Issue #93: a Slicer's loop and a built-in Lemon plugin's sample
+//!   ([`show_module`]) preview each pick on the sample strip, as a pad's do, and the picker stays open; its close loads
+//!   the last pick.
 //!
 //! Every picker stays open after a pick, which applies once it is decoded and shows the sample strip, playing the file
 //! once on the preview player (not the channel); the X, a click outside or Escape closes it and keeps the last pick. A
-//! pad's or a clip's pick makes no undo step; the audio track's browse makes one, its clip. A module's sample
-//! ([`show_module`]) closes on a pick, as the 3x Osc's custom-sample pick does, with no strip: a final edit; the rack
-//! is not in its step, but a Slicer's AUTO clip is. Playing the sample in the song is the engine's: a slot with a path
+//! pad's or a clip's pick makes no undo step; the audio track's browse makes one, its clip. A 3x Osc's custom sample
+//! closes on a pick, with no strip; a module's sample loads, a final edit, on that close ([`show_module`]): the rack is
+//! not in its step, but a Slicer's AUTO clip is. Playing the sample in the song is the engine's: a slot with a path
 //! plays its file, whatever its folder.
 //!
 //! A pick decodes on the preset picker's worker ([`decode_pick`]), which reads the file from disk on the desktop (the
@@ -34,8 +37,8 @@
 //! follows decodes, renders and slices nothing. Meanwhile the picked row pulses `LOADING...` (as the preset picker's)
 //! and the strip shows the file's name only, its play button, waveform and progress label disabled or hidden; a new
 //! pick replaces the one decoding, whose result is dropped; a close waits for it, drawing nothing and taking every
-//! click (closing never reverts a pick), and so does a module's picker, which closes on its pick. On the web, which has
-//! no threads, the decode runs at the pick and lands in its own frame, as before.
+//! click (closing never reverts a pick), and so does a 3x Osc's custom-sample picker, which closes on its pick. On the
+//! web, which has no threads, the decode runs at the pick and lands in its own frame, as before.
 //!
 //! [`ProjectFiles::sample_library`]: crate::project_files::ProjectFiles::sample_library
 
@@ -91,6 +94,8 @@ pub struct State {
     picked: Option<(PathBuf, Option<f32>)>,
     /// `Replace sample...`'s pick once its picker closed, for the app to confirm.
     pub(crate) replace: Option<Replace>,
+    /// A module's last pick that landed, which its picker's close loads ([`show_module`]).
+    last: Option<(PathBuf, Box<Decoded>)>,
 }
 
 /// `Replace sample...`'s pick ([`show_replace`]): the clip whose sample it replaces, the file and its tempo.
@@ -129,7 +134,7 @@ fn opening(state: &mut State, ui: &egui::Ui) -> bool {
     let pass = ui.ctx().cumulative_pass_nr();
     if state.pass + 1 != pass {
         state.picker = None;
-        (state.made, state.picked) = (None, None);
+        (state.made, state.picked, state.last) = (None, None, None);
         (state.loading, state.closing) = (None, false);
     }
     state.pass = pass;
@@ -259,8 +264,8 @@ enum Shown {
 /// [`ProjectFiles::sample_library`]: `Import` asks for a file, which it lists once it is in. A pick decodes on the
 /// worker (as a 3x Osc table with `shape`), with what it goes `into` (of the song, the file and the files) made ready
 /// there too, its row pulsing, and is [`Shown::Picked`] once it lands. With `strip`, it shows the sample strip, which
-/// plays it on the preview player ([`preview`]) once decoded; without (a module's sample), the picker closes on the
-/// pick, waiting for it.
+/// plays it on the preview player ([`preview`]) once decoded; without (a 3x Osc's custom sample), the picker closes on
+/// the pick, waiting for it.
 fn pick(
     state: &mut State,
     ui: &egui::Ui,
@@ -305,7 +310,7 @@ fn pick(
             }
             state.loading = Some((path, done));
             if !strip {
-                // A module's sample closes on the pick, as the 3x Osc's custom-sample pick does.
+                // A 3x Osc's custom sample closes on the pick.
                 close_waiting(state, app.audio);
             }
         }
@@ -689,13 +694,17 @@ pub fn show_track(
 /// ([`load_pick`], as the preset picker's shape pick), one final song edit: a new engine, which plays it, and no undo
 /// step for the module (the rack is not covered by undo); a Slicer with its AUTO flag on also gets AUTO's clip, an undo
 /// step, into `held` (the channel's piano roll clip) first ([`write_auto_clip`]). `Import` keeps a file in `My Samples`
-/// and stays open, as [`show`]'s. A pick (once it lands), the X, a click outside, Escape, or the module being gone or
-/// now another type close it; only a pick changes the song (a cancelled `Custom` stays, silent without a file). A file
-/// that does not decode shows `Failed to load project file` with its error in the picker's place and changes nothing (a
-/// failure leaves the old table). The app re-keys `channel` when channels move.
+/// and stays open, as [`show`]'s. A 3x Osc's pick (once it lands), the X, a click outside, Escape, or the module being
+/// gone or now another type close it; only a pick changes the song (a cancelled `Custom` stays, silent without a file).
+/// A file that does not decode shows `Failed to load project file` with its error in the picker's place and changes
+/// nothing (a failure leaves the old table). The app re-keys `channel` when channels move.
 ///
 /// Issue #52: a built-in Lemon plugin's editor asks for its sample this way where there is no file dialog (Android, the
 /// browser): its pick or its close answers the editor ([`lemon_pick`]), which opens the file itself.
+///
+/// Issue #93: any other module's picker (a Slicer's, a Lemon plugin's) stays open, each pick playing
+/// once in the sample strip, as a pad's; its close (the X, a click outside, Escape) loads the last pick that landed, as
+/// above: one edit, and one undo step for the whole browse. The module going drops it.
 pub fn show_module(
     state: &mut State,
     ui: &mut egui::Ui,
@@ -713,21 +722,29 @@ pub fn show_module(
         return Some(Nav::Close);
     };
     let make = |files: &ProjectFiles| module_picker(files, type_id);
-    // It closes on a pick, as the 3x Osc's custom-sample pick does, so no sample strip: hidden, it waits for the pick
-    // to land.
+    // A 3x Osc's closes on a pick, so no sample strip: hidden, it waits for the pick to land. Any other previews its
+    // picks in the strip and loads the last one on its close.
     let shape = type_id == three_osc::TYPE_ID;
     let into = |song: &Song, path: &Path, files: &ProjectFiles| {
         slicer_pick(song.find_module(channel, module)?, path, files)
     };
-    let (path, decoded) = match pick(state, ui, app, make, (false, shape), into) {
+    let (path, decoded) = match pick(state, ui, app, make, (!shape, shape), into) {
         Shown::Open => return None,
-        Shown::Closed => {
-            lemon_pick(app, channel, module, None);
-            return Some(Nav::Close);
+        Shown::Picked(path, decoded) if !state.closing => {
+            state.last = Some((path, decoded));
+            return None;
         }
         Shown::Picked(path, decoded) => (path, *decoded),
+        Shown::Closed => match state.last.take() {
+            Some((path, decoded)) => (path, *decoded),
+            None => {
+                lemon_pick(app, channel, module, None);
+                return Some(Nav::Close);
+            }
+        },
     };
     close(state, app.audio);
+    state.last = None;
     // ponytail: the picker decoded the pick for nothing here (the plugin decodes it again); skip that if it ever drags.
     if lemon_pick(app, channel, module, Some(&path)) {
         return Some(Nav::Close);

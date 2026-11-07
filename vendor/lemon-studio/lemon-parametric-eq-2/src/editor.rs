@@ -627,7 +627,7 @@ impl Logic {
                 m.add(MenuItem::item("Enter value..."), Cmd::TypeIn(id.clone()));
                 // Automation belongs to the host: offered when Lemon Studio hosts the editor (host link).
                 m.sep(Cmd::None);
-                m.add(MenuItem::item("Create automation clip").enabled(self.hosted || cfg!(feature = "embed")), Cmd::Automate(id.clone()));
+                m.add(MenuItem::item("Create automation clip").enabled(self.hosted), Cmd::Automate(id.clone()));
             }
             MenuReq::Options => {
                 m.head("Options", Cmd::None);
@@ -1116,7 +1116,7 @@ mod gui {
     use os_ui::Canvas;
 
     use super::{Act, Btn, Logic, Mods};
-    use crate::analyzer::{Analyzer, Look as ALook};
+    use crate::analyzer::{Analyzer, Look as ALook, Reader};
     use crate::params::{self, EqParams, Opt};
     use crate::view::{self, Look, ViewState};
     use crate::Shared;
@@ -1134,6 +1134,8 @@ mod gui {
         palette: Palette,
         analyzer: Analyzer,
         scope_seen: u64,
+        /// Honeydew (vendored addition, #95): where the analyzer reads the signal.
+        reader: Reader,
         last_sig: u64,
         last_extra: u64,
         last_view: ViewState,
@@ -1183,6 +1185,7 @@ mod gui {
                 palette: os_plugkit::palette(),
                 analyzer: Analyzer::default(),
                 scope_seen: 0,
+                reader: Reader::default(),
                 last_sig: 0,
                 last_extra: u64::MAX,
                 last_view: ViewState::default(),
@@ -1277,10 +1280,19 @@ mod gui {
             let mut dirty = self.logic.vals.expire();
             if let Some(look) = self.analyzer_look() {
                 let n = Analyzer::size_for(&look);
-                let fresh = self.shared.scope.lock().ok().filter(|s| s.written != self.scope_seen).map(|s| (s.written, s.latest(n)));
-                if let Some((written, samples)) = fresh {
-                    self.scope_seen = written;
-                    let rate = self.shared.rate.load(Ordering::Relaxed) as f32;
+                let rate = self.shared.rate.load(Ordering::Relaxed) as f32;
+                // Honeydew (vendored change, #95): the window ends where the reader is, not at the newest sample.
+                let (reader, seen) = (&mut self.reader, self.scope_seen);
+                let fresh = self.shared.scope.lock().ok().and_then(|s| {
+                    let end = reader.read(os_plugkit::time::Instant::now(), s.written, f64::from(rate), (s.buf.len() - n) as u64);
+                    (end != seen).then(|| {
+                        let mut window = s.latest(n + (s.written - end) as usize);
+                        window.truncate(n);
+                        (end, window)
+                    })
+                });
+                if let Some((end, samples)) = fresh {
+                    self.scope_seen = end;
                     self.analyzer.update(&samples, rate, view::COLS, &look);
                     dirty = true;
                 }
@@ -1383,7 +1395,7 @@ mod tests {
             let i = m.items.iter().position(|it| matches!(it, MenuItem::Item { label, .. } if label == "Create automation clip")).unwrap();
             (matches!(&m.items[i], MenuItem::Item { enabled: true, .. }), m.cmds[i].clone())
         };
-        assert_eq!(entry(&l).0, cfg!(feature = "embed"), "another host: disabled, unless embedded");
+        assert!(!entry(&l).0, "another host: disabled");
         l.hosted = true;
         let (enabled, cmd) = entry(&l);
         assert!(enabled);

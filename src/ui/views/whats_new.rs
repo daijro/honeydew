@@ -1,15 +1,19 @@
-//! The What's New dialog: what changed in this version of the app, in its own words. Help → `What's new` opens it, and
-//! on phones and tablets it opens once by itself at the first start of a new notes version ([`due`]), but not on a
-//! fresh install.
+//! The What's New dialog: this version's release notes, the ones its release page shows (#81). Help → `What's new`
+//! opens it, and on phones and tablets it opens once by itself at the first start of a new version ([`due`]), but not
+//! on a fresh install.
+//!
+//! The notes are `RELEASE_NOTES.md`, built in: a release's notes on its page are that file
+//! (`gh release edit <tag> --notes-file RELEASE_NOTES.md`), so there is one copy, and the dialog needs no network. Its
+//! first line names the version.
 //!
 //! A floating dialog, centred: `menuFill`, corners min(0.4 U, half the short side), in a 2 px border of
 //! 0.55·`menuFill` + 0.45·`text`, over the screen dimmed to α 0.6. It is min(12 U, W − 2.5 U) wide, padded
 //! round(max(0.8 U, a 10 pt line)), and as tall as its content and padding, at most the window less 1.25 U at the top and
 //! bottom (0.5 U in portrait); past that the content scrolls (wheel or drag) with a `text` scrollbar. The content, all
-//! FontSize 2 in `text`: `What's new` left and the notes version right (α 0.6), 0.55 U, a divider, 0.55 U, then each
-//! section's title, 0.2 U and its wrapped body (α 0.8), 0.55 U apart, then 0.85 U and `Get started`, the content's
-//! width and 1.35 U tall, an `accent` fill with a `textOnAccent` label and corners 0.25 U. `Get started`, a tap outside
-//! and Escape close it.
+//! FontSize 2 in `text`: `What's new` left and `v<version>` right (α 0.6), 0.55 U, a divider, 0.55 U, then the notes,
+//! a paragraph per line (`#` heading marks and blank lines dropped, each wrapped): the first, 0.55 U, then the others
+//! (α 0.8) 0.2 U apart; then 0.85 U and `Get started`, the content's width and 1.35 U tall, an `accent` fill with a
+//! `textOnAccent` label and corners 0.25 U. `Get started`, a tap outside and Escape close it.
 
 use std::sync::Arc;
 
@@ -22,47 +26,11 @@ use crate::metrics::FontSize;
 use crate::ui::anim;
 use crate::ui::widgets::pressed;
 
-/// The notes' version: the dialog opens by itself once while the stored `whatsNewSeen` is older.
-pub const NOTES_VERSION: &str = "0.3";
+/// The notes' version, this build's: the dialog opens by itself once while the stored `whatsNewSeen` is older.
+pub const NOTES_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// The sections, title and body.
-const SECTIONS: [(&str, &str); 7] = [
-    (
-        "Refreshed look",
-        "A new transport bar with Undo and Redo always at hand and a Solo clip button, a play box on every ruler, \
-         rounded clips and new icons. Editors close with a ribbon, the logo and the rack tab float over the playlist, \
-         the rack has rounded cards, the main menu has a new header, and dialogs float over the screen.",
-    ),
-    (
-        "Lemon Studio, built in",
-        "Lemon Trio, Lemon Sampler and Lemon Parametric EQ come built in on every platform, with Lemon's own \
-         controls right in their rack cards. Lemon Reverb and Lemon Limiter are new effects under ECHO and LEVEL.",
-    ),
-    (
-        "Any window, any orientation",
-        "The layout follows the window it has. On a narrow or portrait screen the transport bar takes two rows, and \
-         the rack, the browsers and the main menu take the full width.",
-    ),
-    (
-        "Scale and animation",
-        "SETTINGS has a Scaling slider from 60 to 200 % and an Animation setting: Full, Reduced or Minimal.",
-    ),
-    (
-        "Smart solo",
-        "Soloing a channel in the mixer also solos the effect channels it sends to. Unsolo All, on the master, \
-         clears every solo at once.",
-    ),
-    (
-        "New tools",
-        "Burn Notes to Track bakes a channel's note effects into a new track. Convert to FLAC shrinks a WAV file in \
-         the browser. Drag audio files from your computer or the sample browser onto the playlist to make clips.",
-    ),
-    (
-        "Desktop",
-        "Tooltips name the buttons and their shortcuts, and Ctrl+[ and Ctrl+] jump a bar back and forth. An \
-         installed plugin's pop-out button opens its own window.",
-    ),
-];
+/// This version's release notes (see the module docs).
+const NOTES: &str = include_str!("../../../RELEASE_NOTES.md");
 
 // Sizes in U.
 const WIDTH: f32 = 12.0;
@@ -72,7 +40,7 @@ const RADIUS: f32 = 0.4;
 const MARGIN_LANDSCAPE: f32 = 1.25;
 const MARGIN_PORTRAIT: f32 = 0.5;
 const GAP: f32 = 0.55;
-const TITLE_GAP: f32 = 0.2;
+const ITEM_GAP: f32 = 0.2;
 const BUTTON_GAP: f32 = 0.85;
 const BUTTON_H: f32 = 1.35;
 const BUTTON_RADIUS: f32 = 0.25;
@@ -133,20 +101,20 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) -> Option<Na
     let wrapped = |s: &str, color: Color32| -> Arc<Galley> {
         ctx.fonts_mut(|f| f.layout(s.to_owned(), font.clone(), color, inner_w))
     };
-    let sections: Vec<(Arc<Galley>, Arc<Galley>)> = (SECTIONS.iter())
-        .map(|(title, body)| {
-            (
-                wrapped(title, text),
-                wrapped(body, text.gamma_multiply(BODY_ALPHA)),
-            )
+    let lines = (NOTES.lines()).map(|line| line.trim_start_matches('#').trim());
+    let paragraphs: Vec<Arc<Galley>> = (lines.filter(|line| !line.is_empty()).enumerate())
+        .map(|(i, line)| match i {
+            0 => wrapped(line, text),
+            _ => wrapped(line, text.gamma_multiply(BODY_ALPHA)),
         })
         .collect();
-    let sections_h: f32 = (sections.iter())
-        .map(|(t, b)| t.size().y + m.u(TITLE_GAP) + b.size().y)
-        .sum::<f32>()
-        + m.u(GAP) * (sections.len().saturating_sub(1)) as f32;
+    // The gap above paragraph `i`.
+    let gap = |i: usize| m.u(if i == 1 { GAP } else { ITEM_GAP });
+    let notes_h: f32 = (paragraphs.iter().enumerate())
+        .map(|(i, p)| p.size().y + if i > 0 { gap(i) } else { 0.0 })
+        .sum();
     let content_h =
-        line_h + 2.0 * m.u(GAP) + 1.0 / m.ppp() + sections_h + m.u(BUTTON_GAP) + m.u(BUTTON_H);
+        line_h + 2.0 * m.u(GAP) + 1.0 / m.ppp() + notes_h + m.u(BUTTON_GAP) + m.u(BUTTON_H);
     let margin = m.u(if crate::metrics::is_portrait(screen) {
         MARGIN_PORTRAIT
     } else {
@@ -210,16 +178,13 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) -> Option<Na
             let divider = Rect::from_x_y_ranges(left..=right, y..=y + 1.0 / m.ppp());
             clipped.rect_filled(divider, 0.0, text.gamma_multiply(DIVIDER_ALPHA));
             y += 1.0 / m.ppp() + m.u(GAP);
-            for (i, (title, body)) in sections.into_iter().enumerate() {
+            for (i, paragraph) in paragraphs.into_iter().enumerate() {
                 if i > 0 {
-                    y += m.u(GAP);
+                    y += gap(i);
                 }
-                let title_h = title.size().y;
-                clipped.galley(pos2(left, y), title, text);
-                y += title_h + m.u(TITLE_GAP);
-                let body_h = body.size().y;
-                clipped.galley(pos2(left, y), body, text);
-                y += body_h;
+                let h = paragraph.size().y;
+                clipped.galley(pos2(left, y), paragraph, text);
+                y += h;
             }
             y += m.u(BUTTON_GAP);
             let button = Rect::from_x_y_ranges(left..=right, y..=y + m.u(BUTTON_H));
@@ -267,13 +232,16 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) -> Option<Na
 mod tests {
     use super::*;
 
+    /// The notes are this version's (#81): an older version's are due once.
     #[test]
     fn the_notes_are_due_for_an_empty_or_older_seen_version_only() {
         assert!(due(""));
-        assert!(due("0.2"));
-        assert!(due("0.2.9"));
+        assert!(due("0.3"));
+        assert!(due("0.4.10"));
         assert!(!due(NOTES_VERSION));
-        assert!(!due("0.3.1"));
-        assert!(!due("1.0"));
+        assert!(!due("99.0"));
+        // A release's notes name it in their first line: a version without its own notes fails here.
+        let first = NOTES.lines().next().unwrap_or_default();
+        assert!(first.contains(NOTES_VERSION), "{first}");
     }
 }

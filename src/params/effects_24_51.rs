@@ -856,7 +856,7 @@ const RANDOMIZER: &[P] = &[
     P::cont("Velocity", 0.0, PERCENT_TIGHT),
     P::cont("Pan", 0.0, PERCENT_TIGHT),
     P::cont("Gate", 1.0, PERCENT_TIGHT),
-    // Early or late: a fraction of a 16th of a beat (32 ticks).
+    // PR #87: early or late, a fraction of a 16th note (32 ticks).
     P::cont("Time", 0.0, PERCENT_TIGHT),
     // All early, an even mix (the default), all late.
     P::cont(

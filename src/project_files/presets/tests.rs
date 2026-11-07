@@ -301,7 +301,7 @@ fn only_the_preset_saves_own_events_finish_it() {
     let failed = |detail: &str| FileEvent::Failed(SAVE_FAILED, detail.into());
     // While no song save waits, a failed save is the preset's, whatever it names.
     assert!(files.is_preset_event(&failed("disk full")));
-    files.saving = Some((PathBuf::from("Beat.flm"), None, Song::default()));
+    files.saving = Some((PathBuf::from("Beat.flm"), None, Song::default(), false));
     assert!(!files.is_preset_event(&failed("Beat.flm: disk full")));
     assert!(!files.is_preset_event(&failed("disk full")));
     assert!(files.is_preset_event(&failed("Lead.flmrack: disk full")));

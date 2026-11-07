@@ -7,7 +7,7 @@ pub mod checkpoint;
 // Exhaustive patterns make a new upstream field require a shared/local decision here.
 macro_rules! local_fields {
     ($ty:ident, $to:ident, $from:ident; $($local:ident),*; $($shared:ident),* $(,)?) => {
-        let $ty { $($local: _,)* $($shared: _,)* .. } = &*$to;
+        let $ty { $($local: _,)* $($shared: _,)* } = &*$to;
         $($to.$local.clone_from(&$from.$local);)*
     };
 }
@@ -29,8 +29,9 @@ fn lane_key(lane: &Lane) -> (LaneKind, Option<AutomationTarget>, &str) {
 }
 
 fn lane_views(lane: &mut Lane, from: &Lane) {
-    // Hidden, as a zipped channel: each person's own view.
+    // Hidden or collapsed, as a zipped channel: each person's own view.
     lane.hidden = from.hidden;
+    lane.collapsed = from.collapsed;
     let to = &mut lane.file;
     let old = &from.file;
     local_fields!(LaneFileState, to, old; current_clip_id; flag, custom_label, unknown_chunks, desc_extra);
@@ -76,7 +77,8 @@ fn views(song: &mut Song, local: Option<&Song>) {
     let default = Song::default();
     let from = local.unwrap_or(&default);
     local_fields!(Song, song, from; play_loop;
-        title, tempo_bpm, time_sig, channels, key_root, key_scale, file, master_below);
+        title, tempo_bpm, time_sig, channels, key_root, key_scale, file, master_below, sections,
+        sample_rate);
     let to = &mut song.file;
     let from = &from.file;
     local_fields!(SongFileState, to, from;
@@ -174,7 +176,7 @@ fn choose<T: Clone + PartialEq>(
 
 macro_rules! fields {
     ($ty:ident, $b:ident, $c:ident, $e:ident, $out:ident, $path:expr; $($field:ident),*; $($separate:ident),* $(,)?) => {
-        let $ty { $($field: _,)* $($separate: _,)* .. } = $b;
+        let $ty { $($field: _,)* $($separate: _,)* } = $b;
         $($out.$field = choose(&$b.$field, &$c.$field, &$e.$field, &format!("{}.{}", $path, stringify!($field)))?;)*
     };
 }
@@ -185,7 +187,8 @@ pub fn merge(base: &Song, current: &Song, edited: &Song) -> Result<Song, Conflic
     let (b, c, e) = (shared(base), shared(current), shared(edited));
     let mut out = c.clone();
     fields!(Song, b, c, e, out, "song";
-        title, tempo_bpm, time_sig, key_root, key_scale, play_loop, master_below; channels, file);
+        title, tempo_bpm, time_sig, key_root, key_scale, play_loop, master_below, sections, sample_rate;
+        channels, file);
     out.file = merge_file(&b.file, &c.file, &e.file)?;
     let bar = out.time_sig.bar_beats();
     out.channels = keyed(
@@ -377,7 +380,7 @@ fn merge_channel(
 
 fn merge_lane(b: &Lane, c: &Lane, e: &Lane, path: &str, bar: u32) -> Result<Lane, Conflict> {
     let mut out = c.clone();
-    fields!(Lane, b, c, e, out, path; kind, target, label, swing, grid, hidden, file; clips, last_clip_id);
+    fields!(Lane, b, c, e, out, path; kind, target, label, swing, grid, hidden, file, collapsed; clips, last_clip_id);
     out.last_clip_id = b.last_clip_id.max(c.last_clip_id).max(e.last_clip_id);
     out.clips = keyed(
         &b.clips,

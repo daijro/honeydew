@@ -998,10 +998,11 @@ fn a_bar_drag_resizes_past_1_u_without_a_jump_and_its_release_settles_and_is_kep
 }
 
 #[test]
-fn a_throw_up_stops_under_the_ruler_and_a_track_row_and_one_down_leaves_the_bar_alone() {
+fn a_throw_up_stops_under_the_ruler_and_one_down_leaves_the_bar_alone() {
     let mut rig = Rig::with_synth();
-    // #57: M leaves the ruler and one 2 U track row, 540 − ceil(3.65 U) = 423 pt.
-    let full = 540.0 - (3.65 * U).ceil();
+    // #57, #92: M leaves the ruler alone, under an editor's colour band t, 540 − ceil(1.65 U) − 2 =
+    // 485 pt.
+    let full = 540.0 - (1.65 * U).ceil() - 2.0;
     let at = bar_gap(5.0 * U);
     // A last move of 40 points up throws it 400 points taller: past M − min, M.
     rig.press(at);
@@ -1027,6 +1028,32 @@ fn a_throw_up_stops_under_the_ruler_and_a_track_row_and_one_down_leaves_the_bar_
     assert_eq!(rig.app.settings.recent_kbd_size, full / U);
     rig.settle_panel();
     assert_eq!(rig.panel(), 56.0);
+}
+
+#[test]
+fn the_bottom_editors_lay_out_under_a_panel_at_its_greatest_height() {
+    // At M (#92) a bottom editor keeps only its colour band and ruler: no row shows, and nothing panics.
+    let mut rig = Rig::with_drums_and_synth();
+    rig.app.add_channel(ChannelKind::AudioClip, 0);
+    rig.app.song.channels[3].lanes[0].add_clip(0, 4.0);
+    rig.app.song_edited(SongEdit::Final, 0);
+    rig.app.settings.preferred_kbd_size = 40.0;
+    for channel in [1, 2, 3] {
+        if channel == 3 {
+            let key = crate::ui::preview::ClipKey {
+                channel,
+                lane: 0,
+                id: 1,
+            };
+            rig.app.navigate(Nav::EditClip(key));
+        } else {
+            rig.edit(channel);
+        }
+        rig.slide_split();
+        rig.settle_panel();
+        assert_eq!(rig.panel(), 540.0 - (1.65 * U).ceil() - 2.0);
+    }
+    assert_eq!(rig.app.nav.view, View::AudioEditor(3));
 }
 
 #[test]
@@ -1077,9 +1104,9 @@ fn the_shortcuts_toggle_snaps_like_a_release() {
     };
     // Over the bar: collapse, recent kept.
     assert_eq!(at(5.0, 7.0), (1.75, None));
-    // At the bar: the recent size, which stays recent; one within min of M (#57: 423 pt) goes to M.
+    // At the bar: the recent size, which stays recent; one within min of M (#92: 485 pt) goes to M.
     assert_eq!(at(1.75, 7.0), (7.0, Some(7.0)));
-    let full = (540.0 - (3.65 * U).ceil()) / U;
+    let full = (540.0 - (1.65 * U).ceil() - 2.0) / U;
     assert_eq!(at(1.75, 16.0), (full, Some(full)));
     // A recent size under c + 0.75 U opens to c + 0.75 U.
     assert_eq!(at(1.75, 2.0), (2.5, Some(2.5)));

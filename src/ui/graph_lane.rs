@@ -8,7 +8,7 @@
 //!
 //! - The tab sits with its bottom 2 px below the lane's top, or below the editor's bottom while the lane is closed. It
 //!   is clipped to the editor, so it never covers the transport bar, and its visible part takes the touches.
-//! - A sideways drag moves the tab along the editor, which is how it is kept off what it covers (the step sequencer's
+//! - PR #87: a sideways drag moves the tab along the editor, which is how it is kept off what it covers (the step sequencer's
 //!   row headers, the piano roll's keys); the offset is in U from where the editor opens it and the host keeps it
 //!   (`Settings::graph_tab_shift`, so it is remembered). The tab never leaves the editor's band, and a drag down or up
 //!   still sizes the lane.
@@ -376,10 +376,11 @@ impl GraphLane {
             (editor.right() - half - px - x) / m.u(1.0),
         );
         // `max` then `min` rather than `clamp`: a degenerate editor (no room) must not panic, and a NaN in it must not
-        // take the tab with it.
+        // take the tab with it. Only a drag writes the place: an editor that shows it clamped (another editor's home,
+        // a narrow window, a rotation) keeps it.
         let hi = hi.max(lo);
-        *shift = shift.max(lo).min(hi);
-        let x = x + m.u(*shift);
+        let shown = shift.max(lo).min(hi);
+        let x = x + m.u(shown);
         let tab = Rect::from_x_y_ranges(
             m.round_px(x - half)..=m.round_px(x + half),
             m.round_px(bottom - m.u(TAB_H))..=bottom,
@@ -400,7 +401,7 @@ impl GraphLane {
         }
         if response.drag_started() {
             self.drag = Some(TabDrag {
-                shift: *shift,
+                shift: shown,
                 moved: false,
                 sideways: false,
             });
@@ -409,7 +410,7 @@ impl GraphLane {
             let total = response.total_drag_delta().unwrap_or_default();
             let calm = m.u(gesture::CALM_U);
             let drag = self.drag.get_or_insert(TabDrag {
-                shift: *shift,
+                shift: shown,
                 moved: false,
                 sideways: false,
             });

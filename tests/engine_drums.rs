@@ -422,23 +422,26 @@ fn strip_peak(engine: &SongAudioEngine, channel: usize) -> f32 {
     engine.meter(index).peak_left
 }
 
-/// A pad's send target makes its drum channel a source of the target, so soloing the target
-/// keeps the drum channel audible; an unrelated channel goes silent.
+/// A pad's send target is on its drum channel's path to the master: soloing the drum channel keeps
+/// the target audible, and soloing the target leaves the drum channel out, with its pad that plays
+/// into the target (#82). An unrelated channel goes silent either way.
 #[test]
-fn soloing_a_pads_send_target_keeps_the_drum_channel_audible() {
+fn a_pads_send_target_follows_its_drum_channels_solo() {
     let mut song = kit(&["dc", "dc"]);
     song.add_channel(ChannelKind::EffectTrack);
     song.add_channel(ChannelKind::Synth(honeydew::song::SynthKind::MiniSynth));
     slots(&mut song)[0].file.send_target = song.channels[2].id;
     hits(&mut song, [hit(0, 0), hit(0, 1)]);
-    let mut engine = engine(&song);
-    engine.set_param(2, 0, 3, 1.0);
-    engine.note_on(3, 69, 1.0);
-    engine.play();
-    render(&mut engine, 1000);
-    assert!(strip_peak(&engine, 2) > 0.1, "the soloed target");
-    assert!(strip_peak(&engine, 1) > 0.1, "the drum channel's own pad");
-    assert_eq!(strip_peak(&engine, 3), 0.0, "an unrelated channel");
+    let heard = |soloed: usize| {
+        let mut engine = engine(&song);
+        engine.set_param(soloed, 0, 3, 1.0);
+        engine.note_on(3, 69, 1.0);
+        engine.play();
+        render(&mut engine, 1000);
+        [1, 2, 3].map(|channel| strip_peak(&engine, channel) > 0.1)
+    };
+    assert_eq!(heard(1), [true, true, false], "the drum channel soloed");
+    assert_eq!(heard(2), [false, false, false], "its pad's target soloed");
 }
 
 #[test]

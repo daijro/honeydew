@@ -24,6 +24,7 @@ use super::chunk::{
     MAGIC_TMPL, MAX_FILE_SIZE, Prefix, PrefixKind, file_chunks, text,
 };
 use crate::params;
+use crate::song::Section;
 use crate::song::plugin::{self, PluginParam, PluginRef};
 use crate::song::points::{Shape, ShapeKind};
 use crate::song::{
@@ -391,15 +392,6 @@ impl Reader {
                     };
                     song.file.time_sig_extra = extra.to_vec();
                 }
-                b"HDSR" => {
-                    // A malformed or unsupported extension leaves the legacy default in place.
-                    if let Ok(bytes) = <[u8; 4]>::try_from(chunk.payload) {
-                        let rate = u32::from_le_bytes(bytes);
-                        if crate::song::SAMPLE_RATES.contains(&rate) {
-                            song.sample_rate = rate;
-                        }
-                    }
-                }
                 b"META" => song.file.meta = meta(chunk.payload),
                 // A broken KEYB is only logged.
                 b"KEYB" => song.file.keyboard = keyboard(&chunk).unwrap_or_default(),
@@ -420,6 +412,20 @@ impl Reader {
                         self.unknown(&chunk, &mut song.file.unknown_chunks)?;
                     }
                 }
+                b"HDSe" => {
+                    self.charge(2 * size_of::<Section>() + chunk.payload.len(), &chunk.path)?;
+                    match section(&chunk) {
+                        Some(section) => song.sections.push(section),
+                        None => self.unknown(&chunk, &mut song.file.unknown_chunks)?,
+                    }
+                }
+                // The project sample rate (PR #87, `flm::write`): a rate it does not offer is kept as unknown.
+                b"HDSR" => match <[u8; 4]>::try_from(chunk.payload).map(u32::from_le_bytes) {
+                    Ok(rate) if crate::song::SAMPLE_RATES.contains(&rate) => {
+                        song.sample_rate = rate
+                    }
+                    _ => self.unknown(&chunk, &mut song.file.unknown_chunks)?,
+                },
                 _ => self.unknown(&chunk, &mut song.file.unknown_chunks)?,
             }
         }
@@ -982,9 +988,10 @@ impl Reader {
                     lane.clips.push(clip);
                 }
                 b"DESc" if !seen_desc => seen_desc = true,
-                // A track an upstream build hid (`flm::write`): this fork has no `Hide track` (nor Settings
-                // `Show hidden tracks` to show one again), so it reads back shown, and saves without it.
-                b"HDHd" => {}
+                // A hidden track (`flm::write`).
+                b"HDHd" => lane.hidden = true,
+                // A collapsed track (`flm::write`).
+                b"HDCo" => lane.collapsed = true,
                 _ => self.unknown(&child, &mut lane.file.unknown_chunks)?,
             }
         }
@@ -1193,6 +1200,19 @@ fn head(chunk: &Chunk<'_>, song: &mut Song) -> Result<Option<i32>, FlmError> {
 }
 
 /// `META`: fields that are cut short take their loader defaults.
+/// An `HDSe` (`flm::write`); `None` for a short one or one with no range or hue, which the reader keeps as unknown.
+fn section(chunk: &Chunk<'_>) -> Option<Section> {
+    let mut r = chunk.reader();
+    let (start, end, hue) = (r.u32().ok()?, r.u32().ok()?, r.f32().ok()?);
+    let name = text(r.vstr32().ok()?);
+    (start < end && hue.is_finite()).then_some(Section {
+        start,
+        end,
+        name,
+        hue,
+    })
+}
+
 fn meta(bytes: &[u8]) -> MetaState {
     let field = |offset: usize, size: usize| {
         let field = bytes.get(offset..)?;

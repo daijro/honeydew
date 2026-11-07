@@ -6,7 +6,7 @@
 //!
 //! Adding one is its crate in [`lemon_plugins!`]'s list and its dependency line in Cargo.toml
 //! (features `linked` and `embed`). Everything else is read from the plugin, once: at the first use its name, CLAP id
-//! and kind from its CLAP descriptor (no instance), its picker section from the descriptor's features
+//! and kind from its CLAP descriptor (no instance), which the picker lists in its LEMON STUDIO section
 //! (`crate::ui::modules_browser`); its editor size from CLAP's `gui.get_size` only when a card of it first shows
 //! ([`Builtin::size`]). Only its VST3 copy's class id is not there ([`VST3_CLASSES`]).
 //!

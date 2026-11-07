@@ -160,6 +160,25 @@ impl Rig {
         action
     }
 
+    /// A press at `pos` held 0.4 s (past the 0.3 s long press), then released; returns the release frame's action.
+    fn long_press(&mut self, pos: Pos2) -> Option<MainMenuAction> {
+        let button = |pressed| Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        self.frame(vec![Event::PointerMoved(pos)]);
+        self.frame(vec![button(true)]);
+        for _ in 0..4 {
+            self.frame(vec![]);
+        }
+        self.frame(vec![button(false)]);
+        let action = self.action.clone();
+        self.frame(vec![]);
+        action
+    }
+
     /// A press at `from`, a move to `from + by` in two steps and the release there; returns the release frame's action.
     fn drag(&mut self, from: Pos2, by: egui::Vec2) -> Option<MainMenuAction> {
         let button = |pos, pressed| Event::PointerButton {
@@ -180,16 +199,20 @@ impl Rig {
 
     /// Texts painted in the last frame, in paint order, with where they were drawn.
     fn texts(&self) -> Vec<(String, Rect)> {
-        self.shapes
-            .iter()
-            .filter_map(|c| match &c.shape {
-                egui::Shape::Text(t) => Some((
-                    t.galley.text().to_owned(),
-                    t.galley.rect.translate(t.pos.to_vec2()),
-                )),
-                _ => None,
-            })
-            .collect()
+        let mut texts: Vec<(String, Rect)> = Vec::new();
+        for c in &self.shapes {
+            if let egui::Shape::Text(t) = &c.shape {
+                let (text, rect) = (t.galley.text(), t.galley.rect.translate(t.pos.to_vec2()));
+                // A bold name's second stroke (`truncated_bold`): the same text a hair to the right.
+                let stroke = |(l, r): &(String, Rect)| {
+                    l == text && r.top() == rect.top() && (rect.left() - r.left()).abs() < 2.0
+                };
+                if !texts.last().is_some_and(stroke) {
+                    texts.push((text.to_owned(), rect));
+                }
+            }
+        }
+        texts
     }
 
     fn has(&self, text: &str) -> bool {
@@ -419,16 +442,20 @@ fn font_size(rig: &Rig, text: &str) -> f32 {
         .unwrap_or_else(|| panic!("{text:?} not drawn"))
 }
 
-/// The folder title is in the folder rows' size, with no gap above it: at the root it is level with `Back`, the left
+/// The folder title is larger than the rows (#73), with no gap above it: at the root it is level with `Back`, the left
 /// column's first button; inside a folder the breadcrumb is over it.
 #[test]
-fn the_folder_title_is_in_the_folder_rows_size_level_with_back_at_the_root() {
+fn the_folder_title_is_large_and_level_with_back_at_the_root() {
     let mut rig = Rig::new(Tab::Songs);
     let content = shell_layout(Rect::from_min_size(Pos2::ZERO, SIZE.into()), &m()).content;
     let back = Id::new("main_menu_songs").with(("side", 0_usize));
     let back = rig.ctx.read_response(back).expect("drawn").rect;
     let title = rig.find("My Songs");
-    assert_eq!(font_size(&rig, "My Songs"), font_size(&rig, "Demo songs"));
+    // #73: set apart from the rows.
+    assert_eq!(
+        font_size(&rig, "My Songs"),
+        m().font_id(FontSize::Pt18).size
+    );
     assert!(
         (title.center().y - back.center().y).abs() < 1.0,
         "{title:?} {back:?}"
@@ -440,18 +467,23 @@ fn the_folder_title_is_in_the_folder_rows_size_level_with_back_at_the_root() {
     assert!(content.top() <= crumb.top() && crumb.bottom() <= title.top() + 1.0);
     assert_eq!(
         font_size(&rig, "Demo songs"),
-        m().font_id(FontSize::Pt12).size
+        m().font_id(FontSize::Pt18).size
     );
 }
 
-/// One row size. Every row, folder or song, is in the title's 12 pt; a long name is cut with an end ellipsis and stops
-/// before the big circles.
+/// A song's row is in 12 pt, a folder's in 14 pt (#79); a long name is cut with an end ellipsis and stops before the
+/// big circles.
 #[test]
-fn every_row_is_in_12_pt_and_a_long_name_is_cut_before_the_big_circles() {
+fn songs_are_in_12_pt_folders_in_14_pt_and_a_long_name_is_cut_before_the_big_circles() {
     let mut rig = Rig::new(Tab::Songs);
     let pt12 = m().font_id(FontSize::Pt12).size;
-    for name in ["My Songs", "Demo songs", "Alpha.flm", "beta.flm"] {
-        assert_eq!(font_size(&rig, name), pt12, "{name}");
+    let pt14 = m().font_id(FontSize::Pt14).size;
+    for (name, size) in [
+        ("Demo songs", pt14),
+        ("Alpha.flm", pt12),
+        ("beta.flm", pt12),
+    ] {
+        assert_eq!(font_size(&rig, name), size, "{name}");
     }
     let mut library = MemoryLibrary::default();
     let long = "A Very Long Song Name That Runs On Far Past The Big Circles Column Tail.flm";
@@ -581,6 +613,96 @@ fn in_select_mode_rows_toggle_and_select_all_selects_every_row() {
     ));
 }
 
+/// #72: a long press starts select mode with the row, without the menu; taps add rows; the bar under the list counts
+/// them and offers the actions that apply; `Delete` of several asks first.
+#[test]
+fn a_long_press_selects_and_the_bar_counts_the_selection_and_acts_on_it() {
+    let mut library = MemoryLibrary::default();
+    for name in ["A.flm", "B.flm", "C.flm"] {
+        library.store(name, b"x").unwrap();
+    }
+    let mut rig = Rig::new(Tab::Songs);
+    rig.library = Box::new(library);
+    rig.menu.refresh();
+    rig.frame(vec![]);
+    assert_eq!(rig.long_press(rig.find("A.flm").center()), None);
+    let selection = |rig: &Rig| rig.menu.songs.selection.clone().unwrap();
+    assert_eq!(selection(&rig), [PathBuf::from("A.flm")]);
+    assert!(rig.has("1 selected"));
+    let copies = rig.texts().into_iter().filter(|(t, _)| t == "Copy");
+    assert_eq!(copies.count(), 1, "the bar's: no menu opened");
+    rig.click_text("B.flm");
+    assert!(rig.has("2 selected"));
+    // `Rename` takes one item: the bar leaves it out.
+    assert!(rig.has("Delete") && !rig.has("Rename"));
+    let question = "Move 2 items to Recently Deleted?";
+    assert_eq!(
+        rig.click_text("Delete"),
+        Some(MainMenuAction::ConfirmDelete(question.into()))
+    );
+    assert_eq!(rig.names(None), ["A.flm", "B.flm", "C.flm"]);
+    assert_eq!(rig.menu.delete_answered(true, &mut *rig.library), None);
+    assert_eq!(rig.names(None), ["C.flm", "Recently Deleted"]);
+}
+
+/// #72: `Open My Tracks` shows the user folder's `My Tracks` with the render current; a tap on a render selects it (it
+/// opens no song).
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn my_tracks_lists_the_renders_and_a_tap_selects_one() {
+    use crate::project_files::content::tests::Temp;
+    let tmp = Temp::new("songs-tracks");
+    let tracks = tmp.0.join("My Tracks");
+    std::fs::create_dir_all(&tracks).unwrap();
+    for file in ["Mix.wav", "Mix.MP3"] {
+        std::fs::write(tracks.join(file), b"x").unwrap();
+    }
+    let mut rig = Rig::new(Tab::Songs);
+    rig.library = Box::new(NativeLibrary::at(tmp.0.join(SONGS_FOLDER)));
+    rig.menu.show_render(&tracks.join("Mix.wav"), &*rig.library);
+    rig.frame(vec![]);
+    assert_eq!(rig.menu.songs_folder(), Some(tracks.as_path()));
+    assert!(rig.has("Mix.wav") && rig.has("Mix.MP3"));
+    assert_eq!(rig.click_text("Mix.wav"), None);
+    assert_eq!(
+        rig.menu.songs.selection.clone().unwrap(),
+        [tracks.join("Mix.wav")]
+    );
+}
+
+/// #73: `Back` at `My Songs` goes up to the user folder, which lists its folders (not the app's files) and is the top;
+/// the other folders list every file, and `My Songs` there is the root again.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn back_at_my_songs_goes_up_to_the_user_folder_and_my_songs_comes_back() {
+    use crate::project_files::content::tests::Temp;
+    let tmp = Temp::new("songs-up");
+    let user = tmp.0.clone();
+    for (file, bytes) in [
+        ("My Songs/Beat.flm", &b"s"[..]),
+        ("My Samples/Kick.wav", b"k"),
+        ("recent.state", b"r"),
+    ] {
+        crate::project_files::content::tests::put(&user.join(file), bytes);
+    }
+    let mut rig = Rig::new(Tab::Songs);
+    rig.library = Box::new(NativeLibrary::at(user.join(SONGS_FOLDER)));
+    rig.menu.refresh();
+    rig.frame(vec![]);
+    rig.click_text("Back");
+    assert_eq!(rig.menu.songs_folder(), Some(user.as_path()));
+    assert!(rig.has("My Samples") && rig.has("My Songs") && !rig.has("recent.state"));
+    // The top: `Back` goes no higher.
+    rig.click_text("Back");
+    assert_eq!(rig.menu.songs_folder(), Some(user.as_path()));
+    rig.click_text("My Samples");
+    assert!(rig.has("Kick.wav"));
+    rig.click_text("Back");
+    rig.click_text("My Songs");
+    assert_eq!(rig.menu.songs_folder(), None);
+    assert!(rig.has("Beat.flm"));
+}
+
 #[test]
 fn project_buttons_return_their_actions() {
     let mut rig = Rig::new(Tab::Project);
@@ -646,9 +768,10 @@ fn project_info_shows_the_values_it_is_given() {
     ] {
         assert!(rig.has(text), "{text}");
     }
-    // The values start at 40 % of the content width.
+    // The values start at 40 % of the column's width, the column 2 U in from the 20 U page (#78).
     let content = shell_layout(Rect::from_min_size(Pos2::ZERO, SIZE.into()), &m()).content;
-    let value_x = content.left() + 0.4 * content.width();
+    let column = content.shrink2(vec2(m().u(1.5), 0.0));
+    let value_x = column.left() + 0.4 * column.width();
     assert!((rig.find("13m 2s").left() - value_x).abs() < 1.0);
 }
 
@@ -1191,6 +1314,9 @@ fn delete_permanently_asks_first_and_removes_on_yes_only() {
     rig.click_text("A.flm");
     rig.click_text("B.flm");
     rig.pick("Delete");
+    // A `Delete` of several asks first too (#72).
+    rig.menu.delete_answered(true, &mut *rig.library);
+    rig.frame(vec![]);
     rig.click_text("Recently Deleted");
     rig.pick("Select all");
     assert_eq!(
@@ -1890,8 +2016,9 @@ fn unzip_is_offered_for_exactly_one_selected_archive_between_delete_and_copy() {
         rig.click_text("Unzip"),
         Some(MainMenuAction::Unzip(PathBuf::from("Pack.zip")))
     );
-    // The menu closed; the selection stays.
-    assert!(!rig.has("Unzip"));
+    // The menu closed (only select mode's bar offers `Unzip`); the selection stays.
+    let unzips = rig.texts().into_iter().filter(|(t, _)| t == "Unzip");
+    assert_eq!(unzips.count(), 1);
     assert_eq!(
         rig.menu.songs.selection.clone().unwrap(),
         [PathBuf::from("Pack.zip")]

@@ -108,7 +108,7 @@ const POP_GAIN: f32 = 1.0515;
 const POP_W: f32 = 1.885;
 const DRAG_FLOOR: f32 = 0.01;
 /// The floating buttons over a point selection, as over automation points.
-const OPS: [&str; 3] = ["Copy", "Delete", "Duplicate"];
+const OPS: [&str; 2] = ["Copy", "Delete"];
 
 /// A clip as the editor addresses it: (channel, lane, clip id).
 pub type At = (usize, usize, u32);
@@ -120,7 +120,7 @@ pub struct Transport {
     pub tick: u64,
     /// How far past `tick` the playhead is drawn ([`crate::audio_link::AudioLink::playhead_lead`]): the line and the
     /// disc only, never an edit.
-    pub lead: u64,
+    pub lead: i64,
     pub playing: bool,
     /// REC is armed: the playhead disc shows the record icon.
     pub armed: bool,
@@ -641,8 +641,6 @@ impl AudioEditor {
         let view = geom::take(view, was, axes[X]);
         let axis = view.axis(f.grid.left());
         let snap = self.snap.active(auto_grid(view.beat_w, u, sig), sig);
-        // The floating `Duplicate`'s step, while Snap is off too.
-        let unit = self.snap.grid(auto_grid(view.beat_w, u, sig), sig);
 
         // The gestures: the grid's first, then the widgets over it.
         let grid = ui.interact(f.grid, id.with("grid"), Sense::click_and_drag());
@@ -855,7 +853,7 @@ impl AudioEditor {
         // Clipped at the value column's right edge: at beat 0 the line's left half shows in the t gap. While the knob
         // is dragged, the line and the disc follow the finger.
         let line = ui.painter_at(f.grid.with_min_x(f.column.right()));
-        let drawn = region::playhead_tick(Some(clip), t.tick + t.lead)
+        let drawn = region::playhead_tick(Some(clip), t.tick.saturating_add_signed(t.lead))
             .map(|p| geom::playhead(p, loop_ticks));
         let x = (self.knob).line_x(
             ui,
@@ -868,7 +866,7 @@ impl AudioEditor {
 
         // Over the grid: the floating row, `Paste`, the Snap button and its menu.
         self.row.covered = t.covered;
-        if let Some((new, sel)) = self.floating_row(ui, cx, &f, (axis, unit), &pts, max, boxing) {
+        if let Some((new, sel)) = self.floating_row(ui, cx, &f, axis, &pts, max, boxing) {
             self.commit(at, key, new, sel, Anim::Wobble, now, &mut out);
         }
         if let Some((new, sel)) = self.paste_button(ui, cx, (&f, axis), &pts, max, snap) {
@@ -1308,16 +1306,15 @@ impl AudioEditor {
         }
     }
 
-    /// `Copy`, `Delete` and `Duplicate` over the point selection in a [`FloatingRow`] (waiting for a marquee). `Copy`
-    /// fills the clipboard; returns the points `Delete` leaves, or `Duplicate`'s, its copies a `grid` step on at least
-    /// ([`points::duplicate_selected`]).
+    /// `Copy` and `Delete` over the point selection in a [`FloatingRow`] (waiting for a marquee). `Copy` fills the
+    /// clipboard; returns the points `Delete` leaves.
     #[allow(clippy::too_many_arguments)]
     fn floating_row(
         &mut self,
         ui: &mut Ui,
         cx: &UiCtx,
         f: &Frame,
-        (axis, grid): (TimeAxis, f64),
+        axis: TimeAxis,
         pts: &[Point],
         max: u16,
         boxing: bool,
@@ -1343,22 +1340,16 @@ impl AudioEditor {
             .row
             .show(ui, "audio_point_button", sel, view, &OPS, cx)?;
         ui.ctx().request_repaint();
-        match OPS[i] {
-            // Copy only fills the clipboard.
-            "Copy" => {
-                set_clipboard(ui.ctx(), points::copy(pts, &self.sel, max));
-                None
-            }
-            "Duplicate" => points::duplicate_selected(pts, &self.sel, grid),
-            _ => {
-                let kept: Vec<Point> = (pts.iter().zip(&self.sel))
-                    .filter(|(_, s)| !**s)
-                    .map(|(p, _)| *p)
-                    .collect();
-                let n = kept.len();
-                Some((kept, vec![false; n]))
-            }
+        if i == 0 {
+            set_clipboard(ui.ctx(), points::copy(pts, &self.sel, max));
+            return None;
         }
+        let kept: Vec<Point> = (pts.iter().zip(&self.sel))
+            .filter(|(_, s)| !**s)
+            .map(|(p, _)| *p)
+            .collect();
+        let n = kept.len();
+        Some((kept, vec![false; n]))
     }
 
     /// The `Paste` insert menu ([`crate::ui::automation::paste_menu`]); a separate tap commits the clipboard.

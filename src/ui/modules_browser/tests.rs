@@ -2,24 +2,18 @@ use super::*;
 
 /// The Modules browser's list: `Paste`, `Rack Preset`, `Instrument`, then the sections. The NOTE EFFECT section's five entries are
 /// all the note effects of the registry. Lemon Reverb and Lemon Limiter are Honeydew's own (`honeydew_audio::lemon`), as is
-/// the Dynamic EQ, the De-esser and Denoise, and Lemon Trio, Lemon Sampler, Lemon Parametric EQ, Tesla, the controllers,
-/// 0.4.9's effects and Citrus, Lemon Drum Sampler and Lemon Slicer its built-in plugins (`crate::plugins::builtin`), a
-/// Lemon plugin after its counterpart, the others by name.
+/// the Dynamic EQ, the De-esser, Denoise and Half Time. The built-in plugins (`crate::plugins::builtin`) are LEMON STUDIO,
+/// last (#86): the instruments, then the effects, each by name.
 const SPEC: &[(&str, &[&str])] = &[
     ("", &["Paste", "Rack Preset", "Instrument"]),
     (
         "SYNTH",
         &[
             "3x Osc",
-            "Lemon Trio",
-            "Citrus",
             "DW Sampler",
-            "Lemon Sampler",
             "GMSynth",
-            "Lemon Drum Sampler",
             "MiniSynth",
             "Slicer",
-            "Lemon Slicer",
             "SoundFont Player",
             "SuperSaw",
             "Transistor Bass",
@@ -28,7 +22,6 @@ const SPEC: &[(&str, &[&str])] = &[
     (
         "ECHO",
         &[
-            "Lemon Delay",
             "Reverb",
             "Reverb 2",
             "Lemon Reverb",
@@ -45,14 +38,10 @@ const SPEC: &[(&str, &[&str])] = &[
             "Denoise",
             "Distortion",
             "Gate",
-            "Lemon Fast Distortion",
-            "Lemon Soft Clipper",
-            "Lemon Transient Processor",
             "Leveller",
             "Limiter",
             "Lemon Limiter",
             "Multiband Compressor",
-            "Press",
             "Waveshaper",
         ],
     ),
@@ -62,11 +51,8 @@ const SPEC: &[(&str, &[&str])] = &[
             "Comb Filter",
             "Dynamic EQ",
             "Equalizer",
-            "Lemon Parametric EQ",
             "Filter",
-            "Lemon Filter",
             "Graphic EQ",
-            "Pulp Filter",
             "Spacer",
             "Spreader",
             "Stereoizer",
@@ -78,23 +64,14 @@ const SPEC: &[(&str, &[&str])] = &[
         &[
             "Analyzer",
             "Chorus",
-            "Lemon Chorus",
             "Flanger",
-            "Lemon Flanger",
-            "Lemon Balance",
-            "Lemon Formula Controller",
-            "Lemon Peak Controller",
-            "Lemon Stereo Enhancer",
-            "Lemon Stereo Shaper",
-            "Lemon Vocoder",
+            "Half Time",
             "Modulator",
             "MultiFX",
             "Phaser",
-            "Lemon Phaser",
             "Pitcher",
             "Pitcher 2",
             "Tape Stop",
-            "Tesla",
             "Tremolo",
             "Tuner",
             "Wow & Flutter",
@@ -108,6 +85,34 @@ const SPEC: &[(&str, &[&str])] = &[
             "Randomizer",
             "Scale",
             "Transpose",
+        ],
+    ),
+    (
+        "LEMON STUDIO",
+        &[
+            "Citrus",
+            "Lemon Drum Sampler",
+            "Lemon Sampler",
+            "Lemon Slicer",
+            "Lemon Trio",
+            "Lemon Balance",
+            "Lemon Chorus",
+            "Lemon Delay",
+            "Lemon Fast Distortion",
+            "Lemon Filter",
+            "Lemon Flanger",
+            "Lemon Formula Controller",
+            "Lemon Parametric EQ",
+            "Lemon Peak Controller",
+            "Lemon Phaser",
+            "Lemon Soft Clipper",
+            "Lemon Stereo Enhancer",
+            "Lemon Stereo Shaper",
+            "Lemon Transient Processor",
+            "Lemon Vocoder",
+            "Press",
+            "Pulp Filter",
+            "Tesla",
         ],
     ),
 ];
@@ -144,7 +149,15 @@ fn the_list_is_the_spec_table() {
         .collect();
     assert_eq!(
         headers,
-        ["SYNTH", "ECHO", "LEVEL", "FILTER", "MISC", "NOTE EFFECT"]
+        [
+            "SYNTH",
+            "ECHO",
+            "LEVEL",
+            "FILTER",
+            "MISC",
+            "NOTE EFFECT",
+            "LEMON STUDIO"
+        ]
     );
 }
 
@@ -164,7 +177,7 @@ fn every_current_effect_is_listed_once_and_legacy_ids_never() {
     listed_sorted.sort();
     let current: Vec<u16> = (params::modules().chain(&params::LEMON_MODULES))
         .chain([&params::DYNAMIC_EQ, &params::MODULATOR])
-        .chain([&params::DE_ESSER, &params::DENOISE])
+        .chain([&params::DE_ESSER, &params::DENOISE, &params::HALF_TIME])
         .filter(|m| !m.legacy)
         .map(|m| m.id)
         .collect();
@@ -257,7 +270,13 @@ fn where_no_instrument_goes_the_list_leaves_out_instrument_the_synths_and_the_no
 fn search_keeps_matching_entries_and_hides_empty_sections() {
     assert_eq!(
         names(&rows("delay")),
-        ["ECHO", "Lemon Delay", "Tape Delay", "Trance Delay"]
+        [
+            "ECHO",
+            "Tape Delay",
+            "Trance Delay",
+            "LEMON STUDIO",
+            "Lemon Delay"
+        ]
     );
     // Case is ignored, on both sides.
     assert_eq!(names(&rows("DeLaY")), names(&rows("delay")));
@@ -268,7 +287,13 @@ fn search_keeps_matching_entries_and_hides_empty_sections() {
     );
     assert_eq!(
         names(&rows("pa")),
-        ["Paste", "FILTER", "Lemon Parametric EQ", "Spacer"],
+        [
+            "Paste",
+            "FILTER",
+            "Spacer",
+            "LEMON STUDIO",
+            "Lemon Parametric EQ"
+        ],
         "the actions are entries too"
     );
     assert_eq!(
@@ -277,9 +302,10 @@ fn search_keeps_matching_entries_and_hides_empty_sections() {
             "FILTER",
             "Dynamic EQ",
             "Equalizer",
-            "Lemon Parametric EQ",
             "Graphic EQ",
-            "Tuned EQ"
+            "Tuned EQ",
+            "LEMON STUDIO",
+            "Lemon Parametric EQ"
         ]
     );
     assert_eq!(
@@ -287,21 +313,20 @@ fn search_keeps_matching_entries_and_hides_empty_sections() {
         [
             "Instrument",
             "SYNTH",
-            "Lemon Trio",
-            "Citrus",
             "Transistor Bass",
             "ECHO",
             "Trance Delay",
-            "LEVEL",
-            "Lemon Transient Processor",
-            "FILTER",
-            "Lemon Parametric EQ",
             "MISC",
-            "Lemon Formula Controller",
-            "Lemon Peak Controller",
             "Tremolo",
             "NOTE EFFECT",
             "Transpose",
+            "LEMON STUDIO",
+            "Citrus",
+            "Lemon Trio",
+            "Lemon Formula Controller",
+            "Lemon Parametric EQ",
+            "Lemon Peak Controller",
+            "Lemon Transient Processor",
         ]
     );
     assert!(rows("zzz").is_empty());
@@ -672,8 +697,8 @@ fn the_rows_are_drawn_in_order_down_the_list() {
         "Rack Preset",
         "SYNTH",
         "3x Osc",
-        "Lemon Trio",
         "DW Sampler",
+        "GMSynth",
     ]
     .iter()
     .map(|t| rig.text_at(t).y)
@@ -929,13 +954,14 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             "Randomizer",
             "Scale",
             "Arpeggiator",
-            // Honeydew's own: 1002 … 1007, then the built-in plugin.
+            // Honeydew's own: 1002 … 1008, then the built-in plugin.
             "Lemon Reverb",
             "Lemon Limiter",
             "Dynamic EQ",
             "Modulator",
             "De-esser",
             "Denoise",
+            "Half Time",
             "Lemon Balance",
             "Lemon Chorus",
             "Lemon Delay",
@@ -1043,9 +1069,10 @@ fn dragging_scrolls_to_the_end_of_the_list_and_no_further() {
     // The drags pick nothing, and the last row now sits at the bottom of the list.
     assert_eq!(rig.action, None);
     assert!(!rig.shows("Paste"));
-    assert_eq!(rig.text_at("Transpose").y, list.bottom() - 24.0);
-    let at = rig.text_at("Transpose");
-    assert_eq!(rig.click(at), Some(BrowserAction::Pick(48)));
+    assert_eq!(rig.text_at("Tesla").y, list.bottom() - 24.0);
+    let at = rig.text_at("Tesla");
+    let tesla = "clap:org.openstudio.tesla";
+    assert_eq!(rig.click(at), Some(BrowserAction::Plugin(tesla)));
 }
 
 #[test]
@@ -1067,7 +1094,7 @@ fn the_wheel_scrolls_the_list_only_over_it() {
     assert_eq!(rig.text_at("3x Osc").y, first);
     // And at the end.
     rig.wheel(pos2(200.0, 400.0), -5000.0);
-    assert_eq!(rig.text_at("Transpose").y, list.bottom() - 24.0);
+    assert_eq!(rig.text_at("Tesla").y, list.bottom() - 24.0);
 }
 
 #[test]
@@ -1080,7 +1107,7 @@ fn a_narrower_query_clamps_the_scroll_to_the_shorter_list() {
         for _ in 0..12 {
             rig.drag(pos2(200.0, 480.0), pos2(200.0, 120.0));
         }
-        assert!(rig.shows("Transpose"));
+        assert!(rig.shows("Tesla"));
         rig
     };
 

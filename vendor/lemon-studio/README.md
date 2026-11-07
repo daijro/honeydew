@@ -71,7 +71,8 @@ change)` or `(vendored addition)` in the code:
   open answered without blocking, by delivering the input that asked again with the answer. `gui` is that window with
   `embed`; `time` is `std::time`, or `web-time` in the browser, whose `std::time` has no clock (`vals.rs` uses it);
   `spawn` is `std::thread::spawn`, the work done at once in the browser, which has no threads. The editor also parks
-  after each tick (its polling period), so one slower to paint than a tick still hands the app its frame.
+  after each tick (its polling period), so one slower to paint than a tick still hands the app its frame. A frame names
+  the pixels that changed since the app took the last (`Frame::changed`), which the card's texture takes alone (#72).
 - Files: where the host answers (`embed::host_files`: Android and the browser, which have no file dialog), an editor's
   own file dialog code asks it from its window's `dialog` (`embed::open_file`): Honeydew's own sample picker opens the
   file. The plugins' `rfd` is `host-rfd` (below), so that code builds everywhere unchanged.
@@ -85,6 +86,8 @@ change)` or `(vendored addition)` in the code:
 - `os-hostlink`: with its `embed`, the link the editors use (`Peer`) on Windows too.
 - Lemon Sampler: in the browser, a sample's effects are computed at once instead of on a thread (`os_plugkit::spawn`).
 - Lemon Delay: its About menu's line names no other maker's product (Honeydew shows none).
+- Lemon Parametric EQ (#95): its embedded editor's spectrum reads the signal behind the newest sample on a clock at
+  the sample rate (`analyzer::Reader`), so that blocks written in uneven bursts (a Bluetooth output's) move it on evenly.
 - Lemon Drum Sampler and Lemon Slicer: their voices' ended-note lists are drained instead of taken, keep their room,
   and the drum pads' velocity layers are found without making a list, so that a note never allocates on the audio
   thread (`tests/rt_alloc.rs`). Citrus is upstream's: it still allocates its voices (its unison list and each voice's

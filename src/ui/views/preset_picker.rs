@@ -5,7 +5,8 @@
 //!   the add-channel `Rack` makes a new Rack channel of them, selected.
 //! - `Load Drumset` (the rack ≡ menu's, the drums track menu's and the drum row menu's, and a new Drums channel's): the
 //!   `Drumsets` picker over `My Drumsets`, `Default`, the built-in kit ([`DrumKit::default_kit`]), and our factory
-//!   kits; a drum kit template replaces the channel's kit.
+//!   kits; a drum kit template replaces the channel's kit. The picker stays open and the audition strip plays the
+//!   kit's pads (#88).
 //! - `ChordSet`: the chord set picker, titled `Chord Sets`, over `My Chord Sets`, `Default` (the built-in `Major` set,
 //!   [`KeyboardState::default`]), our eight sets and the content folder's `Chord Sets`. A pick is parsed
 //!   ([`ChordSet::parse`]) and stored as its normalised JSON, under the file's name, in the song's `KEYB`: one undo
@@ -54,8 +55,9 @@
 //! first picks `Close Grand` where the content has it, else our bundled grand piano ([`close_grand`]), as a tap would.
 //!
 //! A load is a final song edit with a new engine: a module's or a rack's preset makes no undo step (the rack and
-//! presets are not covered by undo), a new Rack channel, a drum kit or a chord set one. A module's preset button and a
-//! rack preset opened from the rack keep the picker open after a pick; the others close it ([`stays_open`]). A preset
+//! presets are not covered by undo), a new Rack channel, a drum kit or a chord set one. A module's preset button, a
+//! rack preset opened from the rack and a drum kit keep the picker open after a pick; the others close it
+//! ([`stays_open`]). A preset
 //! that cannot be read or does not fit leaves the song as it was and shows `Failed to load project file`; skipped
 //! modules show `Skipped N incompatible module(s)`. A rack preset with no modules, or a kit with no pads, loads
 //! nothing.
@@ -98,6 +100,7 @@ use crate::sf2::Preset;
 use crate::song::Rack;
 use crate::song::chords::ChordSet;
 use crate::song::{ChannelKind, DrumKit, KeyboardState, ModuleInstance};
+use crate::ui::drums::PAD_COUNT;
 use crate::ui::modules_browser::{InsertAt, add_module};
 use crate::ui::picker_preview::Sound;
 use crate::ui::preset_picker::categories;
@@ -385,8 +388,8 @@ pub(super) fn spawn<T: Send + 'static>(job: impl FnOnce() -> T + Send + 'static)
 }
 
 /// Whether a pick in `target`'s picker keeps it open: a module's presets (its preset button), a rack preset opened
-/// from the rack and the Instruments do; the drumsets, the chord sets and a new Rack channel's preset (the playlist's)
-/// close on a pick.
+/// from the rack, the Instruments and (#88) the drumsets do; the chord sets and a
+/// new Rack channel's preset (the playlist's) close on a pick.
 fn stays_open(target: PresetTarget) -> bool {
     matches!(
         target,
@@ -395,6 +398,7 @@ fn stays_open(target: PresetTarget) -> bool {
             | PresetTarget::ModulesRack(_)
             | PresetTarget::Instruments
             | PresetTarget::ModulesInstrument(_)
+            | PresetTarget::Drumset
     )
 }
 
@@ -675,6 +679,11 @@ pub fn show(
             };
             if audition {
                 picker.audition_on();
+            }
+            // A kit auditions its pads, across the row in pad order (#88).
+            let kit = (app.song.channels.get(channel)).and_then(|c| c.drum_kit.as_ref());
+            if let (PresetTarget::Drumset, Some(kit)) = (target, kit) {
+                picker.audition_pads((0..PAD_COUNT).filter_map(|p| kit.pad_note(p)).collect());
             }
             sample_picker::preview(picker, app.audio);
             None
@@ -1234,18 +1243,11 @@ fn picker(files: &ProjectFiles, target: PresetTarget, module_type: Option<u16>) 
             .instruments(index)
         }
         (_, Some(t)) => {
-            // `My Files` is the whole user folder, as the Instruments picker's is: `My Presets/<module>` and the
-            // other `My …` folders are folders in it.
-            let picker = PresetPicker::new(
-                module_name(t),
-                files.user_dir().map(Path::to_owned),
-                exts[0],
-                true,
-            )
-            .of_exts(exts)
-            .of_type(t)
-            .with_factory(ours.into_iter().chain(files.factory_presets(t)))
-            .with_import(import_dir(files, t).is_some());
+            let picker = PresetPicker::new(module_name(t), files.presets_dir(t), exts[0], true)
+                .of_exts(exts)
+                .of_type(t)
+                .with_factory(ours.into_iter().chain(files.factory_presets(t)))
+                .with_import(import_dir(files, t).is_some());
             // The SoundFont Player's `.sf2` files are in `My SoundFonts`, beside `My Files`; the DW Sampler's programs
             // (`.dwp`, `.sfz`) in `My Instruments`, where archives and the instrument builder put them.
             match t {
@@ -2149,21 +2151,18 @@ mod tests {
 
     #[test]
     fn a_modules_or_a_racks_picker_stays_open_on_a_pick_and_the_others_close() {
-        // The module preset button, a rack preset opened from the rack and the Modules browser's lists stay open; the
-        // drumsets, the chord sets and a new Rack channel's preset (the playlist's) close.
+        // The module preset button, a rack preset opened from the rack, the Modules browser's lists and the drumsets
+        // (#88) stay open; the chord sets and a new Rack channel's preset (the playlist's) close.
         for target in [
             PresetTarget::Module(2),
             PresetTarget::RackReplace,
             PresetTarget::ModulesRack(InsertAt::End),
             PresetTarget::ModulesInstrument(InsertAt::End),
+            PresetTarget::Drumset,
         ] {
             assert!(stays_open(target), "{target:?}");
         }
-        for target in [
-            PresetTarget::Drumset,
-            PresetTarget::ChordSet,
-            PresetTarget::NewChannel(None),
-        ] {
+        for target in [PresetTarget::ChordSet, PresetTarget::NewChannel(None)] {
             assert!(!stays_open(target), "{target:?}");
         }
     }

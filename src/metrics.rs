@@ -55,6 +55,7 @@ pub enum FontSize {
     Pt8,
     Pt10,
     Pt12,
+    Pt14,
     Pt18,
     Pt64,
 }
@@ -66,6 +67,7 @@ impl FontSize {
             Self::Pt8 => 8.0,
             Self::Pt10 => 10.0,
             Self::Pt12 => 12.0,
+            Self::Pt14 => 14.0,
             Self::Pt18 => 18.0,
             Self::Pt64 => 64.0,
         }

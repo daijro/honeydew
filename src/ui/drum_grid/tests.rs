@@ -1207,27 +1207,19 @@ fn a_long_press_then_a_drag_is_a_marquee_selecting_hits_by_extent() {
 }
 
 #[test]
-fn the_floating_snap_duplicate_and_delete_are_each_one_final_edit_and_copy_none() {
+fn the_floating_snap_copy_and_delete_are_each_one_final_edit() {
     let mut rig = Rig::new(notes_lane(&[drum(0, 40, 32.0)]));
     rig.click(at(0, 50.0));
     let pick = |rig: &mut Rig, label: &str| {
         let p = rig.text_at(label).expect(label);
         rig.click(p);
     };
-    // The row: Copy, Delete, Snap, then Duplicate.
-    let x = |rig: &Rig, label: &str| rig.text_at(label).expect(label).x;
-    let xs = ["Copy", "Delete", "Snap", "Duplicate"].map(|label| x(&rig, label));
-    assert!(xs.windows(2).all(|w| w[0] < w[1]), "{xs:?}");
     // Snap: the nearest step.
     pick(&mut rig, "Snap");
     assert_eq!(rig.hits(), [(0, 32.0, 32.0)]);
-    // Copy only fills the hit clipboard.
-    pick(&mut rig, "Copy");
-    assert_eq!(rig.hits(), [(0, 32.0, 32.0)]);
-    assert_eq!(crate::ui::step_seq::hit_clipboard(&rig.ctx).len(), 1);
-    // Duplicate (the row stays over the selection): right after it, the copy alone selected and remembered.
+    // Copy (the row stays over the selection): right after it, the copy alone selected and remembered.
     rig.remembered = Remembered::default();
-    pick(&mut rig, "Duplicate");
+    pick(&mut rig, "Copy");
     assert_eq!(rig.hits(), [(0, 32.0, 32.0), (0, 64.0, 32.0)]);
     assert_eq!(rig.selected(), [false, true]);
     assert_eq!(rig.remembered.velocity, 100);

@@ -148,7 +148,8 @@ pub struct EventLoop<T: 'static> {
     mouse_touch: bool,
     // Honeydew (vendored addition): the mouse's buttons as the last press or release left them.
     mouse_buttons: u32,
-    // The last density scale factor, so a rotation does not spuriously emit ScaleFactorChanged.
+    // Honeydew (vendored change, PR #87): the last density scale factor, so a rotation does not spuriously emit
+    // ScaleFactorChanged.
     scale_factor: f64,
 }
 
@@ -165,6 +166,8 @@ impl Default for PlatformSpecificEventLoopAttributes {
 }
 
 impl<T: 'static> EventLoop<T> {
+    // Honeydew (vendored change, PR #87): a `ScaleFactorChanged` only when the density did change, and only with a
+    // live, nonzero window size.
     fn scale_factor_changed<F>(&mut self, callback: &mut F)
     where
         F: FnMut(event::Event<T>, &RootAEL),
@@ -250,6 +253,7 @@ impl<T: 'static> EventLoop<T> {
             match event {
                 MainEvent::InitWindow { .. } => {
                     callback(event::Event::Resumed, self.window_target());
+                    // Honeydew (vendored change, PR #87): the density, and the size, once the surface is there.
                     self.scale_factor_changed(callback);
                     // Some Android devices do not deliver WindowResized after the first surface is created. In that
                     // case launch in landscape would keep a zero or stale viewport until another lifecycle event.
@@ -261,8 +265,9 @@ impl<T: 'static> EventLoop<T> {
                 MainEvent::WindowResized { .. } => resized = true,
                 MainEvent::RedrawNeeded { .. } => pending_redraw = true,
                 MainEvent::ContentRectChanged { .. } => {
-                    // Honeydew: a rotation changes the surface's rect, and its new size is the only way the app learns
-                    // the viewport moved. Reported below as `Resized`, with the native window's size.
+                    // Honeydew (vendored change, PR #87): a rotation changes the surface's rect, and its new size
+                    // is the only way the app learns the viewport moved. Reported below as `Resized`, with the
+                    // native window's size.
                     resized = true;
                 },
                 MainEvent::GainedFocus => {
@@ -286,9 +291,9 @@ impl<T: 'static> EventLoop<T> {
                     );
                 },
                 MainEvent::ConfigChanged { .. } => {
-                    // Honeydew: a rotation is a config change, and winit's own `Resized` only arrives for the surface
-                    // events a rotation may not send at all. Report the native window's size either way, so a rotated
-                    // app never keeps the viewport it had.
+                    // Honeydew (vendored change, PR #87): a rotation is a config change, and winit's own `Resized`
+                    // only arrives for the surface events a rotation may not send at all. Report the native window's
+                    // size either way, so a rotated app never keeps the viewport it had.
                     resized = true;
                     // During surface teardown the helper defers a density change until a live, nonzero window size
                     // can be attached. Resume or InitWindow retries it after the surface returns.
@@ -304,6 +309,7 @@ impl<T: 'static> EventLoop<T> {
                 MainEvent::Resume { .. } => {
                     debug!("App Resumed - is running");
                     self.running = true;
+                    // Honeydew (vendored change, PR #87): as at InitWindow.
                     self.scale_factor_changed(callback);
                     resized = true;
                 },
@@ -321,9 +327,10 @@ impl<T: 'static> EventLoop<T> {
                     warn!("TODO: forward onStop notification to application");
                 },
                 MainEvent::Destroy => {
-                    // NativeActivity waits for its app thread to return before unloading the native library. Ignoring
-                    // this event leaves winit's loop alive during Activity teardown (including configuration relaunch),
-                    // so `super.onDestroy()` can block waiting for Rust indefinitely. Exit cleanly on the app thread.
+                    // Honeydew (vendored change, PR #87): NativeActivity waits for its app thread to return before
+                    // unloading the native library. Ignoring this event leaves winit's loop alive during Activity
+                    // teardown (including configuration relaunch), so `super.onDestroy()` can block waiting for Rust
+                    // indefinitely. Exit cleanly on the app thread.
                     debug!("App Destroyed - exiting event loop");
                     self.running = false;
                     self.window_target.exit();
@@ -375,8 +382,9 @@ impl<T: 'static> EventLoop<T> {
                 } else {
                     PhysicalSize::new(0, 0)
                 };
-                // Rotation can transiently detach the native window. A zero resize can leave graphics backends in an
-                // unusable state; the replacement surface's InitWindow/WindowResized reports its nonzero size.
+                // Honeydew (vendored change, PR #87): rotation can transiently detach the native window. A zero
+                // resize can leave graphics backends in an unusable state; the replacement surface's
+                // InitWindow/WindowResized reports its nonzero size.
                 if size.width > 0 && size.height > 0 {
                     let event = event::Event::WindowEvent {
                         window_id: window::WindowId(WindowId),

@@ -426,6 +426,12 @@ impl PresetPicker {
         self.panel.auditioned = false;
     }
 
+    /// [`Self::audition_on`] over a drum kit's pick: the strip plays the kit's pads, their notes `pads` in pad order.
+    pub fn audition_pads(&mut self, pads: Vec<u8>) {
+        self.panel.audition.pads = pads;
+        self.audition_on();
+    }
+
     /// Releases the audition strip's held note (take it after).
     pub fn release(&mut self) {
         self.panel.audition.release();
@@ -1372,13 +1378,6 @@ fn read(
         .filter_map(|name| Some(name.file_stem()?.to_string_lossy().to_lowercase()))
         .collect();
     let keep = |mut entry: SongEntry| {
-        // The DW Sampler's sample picker does not list `My Instruments` (programs load from their own picker).
-        if module_type == Some(1)
-            && entry.is_folder
-            && entry.name == crate::project_files::INSTRUMENTS_FOLDER
-        {
-            return None;
-        }
         if !entry.is_folder {
             let name = Path::new(&entry.name);
             if !name

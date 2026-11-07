@@ -57,29 +57,27 @@ fn frame(tick: u64, rate: f32) -> usize {
 
 #[test]
 fn the_wrap_lands_on_the_loop_end_frame_for_any_block_size() {
-    // Loop beats 1 to 3; a short note at the loop start that has died away well before the end.
+    // Loop beats 1 to 3; a short note at the loop start that has died away well before the end. Play before the loop
+    // starts at its start (PR #87): the output's frame 0 is the loop start's, and pass 2 starts a pass later.
     let mut song = song(&[note(128, 0.25)]);
     song.play_loop = Some((128, 384));
     for rate in [44_100.0, 48_000.0] {
-        let (start, end) = (frame(128, rate), frame(384, rate));
+        let pass = frame(384, rate) - frame(128, rate);
         let mut reference: Option<Vec<f32>> = None;
         for block in [1, 64, 1024, 4096] {
             let mut engine = SongAudioEngine::new(&song, rate).unwrap();
             engine.play();
-            let out = render(&mut engine, end + start, block);
+            let out = render(&mut engine, 2 * pass, block);
             let onset = first_sound(&out, 0);
-            assert!(
-                (start..start + 8).contains(&onset),
-                "{rate} {block}: {onset}"
-            );
-            assert_eq!(energy(&out[end - 4000..end]), 0.0, "{rate} {block}");
+            assert!((0..8).contains(&onset), "{rate} {block}: {onset}");
+            assert_eq!(energy(&out[pass - 4000..pass]), 0.0, "{rate} {block}");
             // Pass 2 starts at the end frame exactly: the note sounds again as far after it as it did after the start.
             assert_eq!(
-                first_sound(&out, end - 4000) - end,
-                onset - start,
+                first_sound(&out, pass - 4000) - pass,
+                onset,
                 "{rate} {block}"
             );
-            assert!(energy(&out[end..end + 4000]) > 0.01);
+            assert!(energy(&out[pass..pass + 4000]) > 0.01);
             match &reference {
                 Some(reference) => assert!(out == *reference, "{rate} {block}"),
                 None => reference = Some(out),
@@ -125,10 +123,11 @@ fn the_automation_value_at_the_loop_start_is_restored_after_a_wrap() {
     let rate = 48_000.0;
     let mut engine = SongAudioEngine::new(&song, rate).unwrap();
     engine.play();
-    let end = frame(384, rate);
+    // Play before the loop starts at its start (PR #87): the output's frame 0 is tick 128's.
+    let start = frame(128, rate);
+    let (end, mix_off) = (frame(384, rate) - start, frame(256, rate) - start);
     let out = render(&mut engine, end + 12_000, 1024);
-    let mix_off = frame(256, rate);
-    assert!(energy(&out[frame(128, rate)..mix_off]) > 0.01);
+    assert!(energy(&out[..mix_off]) > 0.01);
     assert_eq!(energy(&out[mix_off + 100..end]), 0.0);
     assert!(energy(&out[end..]) > 0.01, "Mix stayed 0 after the wrap");
 }
@@ -158,9 +157,10 @@ fn no_voice_is_stuck_across_a_wrap() {
     engine.play();
     let (start, end, on) = (frame(128, rate), frame(384, rate), frame(300, rate));
     let pass = end - start;
-    let out = render(&mut engine, start + 4 * pass, 777);
+    // Play before the loop starts at its start (PR #87): pass k starts k passes in.
+    let out = render(&mut engine, 4 * pass, 777);
     for k in 0..4 {
-        let at = start + k * pass;
+        let at = k * pass;
         assert!(
             energy(&out[at + (on - start)..at + pass]) > 0.01,
             "pass {k}"
@@ -204,10 +204,10 @@ fn a_playhead_at_or_past_the_loop_end_jumps_to_its_start() {
         render(&mut engine, 64, 64);
         assert_eq!(engine.transport_tick(), 128, "{at}");
     }
-    // Before the start it plays into the loop.
+    // Before the start too (PR #87).
     engine.seek(100);
     render(&mut engine, 64, 64);
-    assert_eq!(engine.transport_tick(), 100);
+    assert_eq!(engine.transport_tick(), 128);
     // Stopped, nothing moves.
     engine.stop();
     engine.seek(400);

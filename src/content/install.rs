@@ -124,27 +124,12 @@ fn manifest(dir: &Path) -> Manifest {
     text.lines().filter_map(line).collect()
 }
 
-/// How far a sync is, in bytes, whether it is to stop, and whether it is paused (a paused download waits before its
-/// next part and goes on from the `.part` it left, so continuing downloads only what is missing).
+/// How far a sync is, in bytes, and whether it is to stop.
 #[derive(Default)]
 pub struct Progress {
     pub done: AtomicU64,
     pub total: AtomicU64,
     pub cancel: AtomicBool,
-    pub paused: AtomicBool,
-}
-
-impl Progress {
-    /// Waits while the download is paused; false once it is to stop.
-    pub fn wait_out_pause(&self) -> bool {
-        while self.paused.load(Relaxed) {
-            if self.cancel.load(Relaxed) {
-                return false;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        }
-        true
-    }
 }
 
 /// What a sync stopped with on [`Progress::cancel`].
@@ -451,10 +436,6 @@ pub fn download(
     progress.total.store(lacking(&parsed, target), Relaxed);
     let (old, mut new, mut fetched) = (manifest(target), Manifest::new(), Vec::new());
     for (&name, &(size, sha256)) in &parts {
-        // A paused download waits here, then goes on; the part it left resumes from its `.part`.
-        if !progress.wait_out_pause() {
-            return Err(io::Error::other(CANCELLED));
-        }
         let at = target.join(name);
         if kept(name, size) {
             let crc = old.get(name).filter(|f| f.0 == size).map(|f| f.1);

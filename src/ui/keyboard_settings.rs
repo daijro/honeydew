@@ -1119,7 +1119,7 @@ mod tests {
         for ppp in [1.0, 2.0] {
             let m = Metrics::from_pixels_per_point(ppp, DEFAULT_UI_SCALE);
             let u = m.u(1.0);
-            // c … M (the screen less the ruler and a track row, #57).
+            // c … M (the screen less the ruler, #57, #92).
             let min = crate::ui::panel_resize::collapsed(1, &m);
             assert_eq!(panel_target(5.0, 540.0, min, &m), 5.0 * u);
             assert_eq!(panel_target(0.0, 540.0, min, &m), min);

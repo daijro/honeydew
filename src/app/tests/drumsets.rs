@@ -158,8 +158,9 @@ fn picking_dust_kit_gives_the_channel_its_8_pads_in_one_undo_step() {
     let before = rig.app.song.clone();
     rig.take();
     load_drumset(&mut rig);
+    let open = rig.overlays();
     picker_row(&mut rig, 2);
-    assert_eq!(rig.overlays(), []);
+    assert_eq!(rig.overlays(), open, "the picker stays (#88)");
     // One new engine, no other command.
     assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
     let loaded = kit(&rig);
@@ -196,10 +197,37 @@ fn picking_dust_kit_gives_the_channel_its_8_pads_in_one_undo_step() {
 }
 
 #[test]
+fn a_kit_pick_keeps_the_picker_open_and_a_touch_on_its_row_plays_its_pads_left_to_right() {
+    let mut rig = drums_on_the_web();
+    load_drumset(&mut rig);
+    let open = rig.overlays();
+    picker_row(&mut rig, 2);
+    assert_eq!(kit(&rig).slots.len(), 8);
+    // As an instrument preset (#88): the pick loads silently and the picker stays.
+    assert_eq!(rig.overlays(), open);
+    rig.take();
+    // The picked row plays the kit's 8 pads across its width, velocity 1, held until the lift.
+    let dust = rig
+        .ctx
+        .read_response(Id::new(super::rack_wiring::PICKER).with(("row", 2_usize)))
+        .expect("the row is drawn")
+        .rect;
+    for (x, note) in [(dust.left(), 48), (dust.right() - 1.0, 55)] {
+        let at = pos2(x, dust.center().y);
+        rig.press(at);
+        rig.frame(vec![]);
+        assert_eq!(rig.take(), [format!("NoteOn 1 {note} 127")]);
+        rig.release(at);
+        assert_eq!(rig.take(), [format!("NoteOff 1 {note}")]);
+    }
+}
+
+#[test]
 fn foundry_kit_pad_13_sounds_through_the_rig() {
     let mut rig = drums_on_the_web();
     load_drumset(&mut rig);
     picker_row(&mut rig, 3);
+    super::rack_wiring::close_picker(&mut rig);
     assert_eq!(kit(&rig).slots.len(), 14);
     assert_eq!(kit(&rig).slots[13].name, "Foundry Noise Hit");
     // The drums channel is the current one: its pads are the keyboard band. Hex pad 13 is in the second pad row,
@@ -225,8 +253,9 @@ fn foundry_kit_pad_13_sounds_through_the_rig() {
 #[test]
 fn every_pad_of_every_factory_kit_sounds() {
     let mut rig = drums_on_the_web();
+    // One browse of the picker, which stays open (#88).
+    load_drumset(&mut rig);
     for (row, (key, pads)) in [(2, KITS[1]), (3, KITS[3]), (4, KITS[0]), (5, KITS[2])] {
-        load_drumset(&mut rig);
         picker_row(&mut rig, row);
         assert_eq!(kit(&rig).slots.len(), pads.len(), "{key}");
         let samples = &rig.app.audio.samples;

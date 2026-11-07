@@ -24,7 +24,7 @@
 use eframe::egui::{Align2, Color32, Id, Rect, Shape, Stroke, Ui, UiBuilder, pos2, vec2};
 use honeydew_audio::device::ModuleMeter;
 
-use crate::icons::draw_icon;
+use crate::icons::{draw_icon, icon_edge};
 use crate::metrics::{FontSize, Metrics};
 use crate::midi::links;
 use crate::song::{AutomationTarget, ChannelKind, LaneKind, Song};
@@ -192,7 +192,7 @@ pub fn show(
     for &(row, top) in order {
         let rect = Rect::from_x_y_ranges(
             col.left..=col.left + col.width,
-            top..=top + row_h - 1.0 / m.ppp(),
+            top..=top + row_h * row.rows() - 1.0 / m.ppp(),
         );
         let kind = RowKind::of(song, &row);
         let ink = channel_color(song.channels[row.channel].hue, cx.theme).to_color32();
@@ -220,7 +220,9 @@ pub fn show(
             } else {
                 ink
             };
-            draw_icon(&painter, cell, row.icon, icon_ink, 1.0, m);
+            // Smaller on a collapsed track's thin row (#83).
+            let scale = (cell.height() / icon_edge(1.0, m)).min(1.0);
+            draw_icon(&painter, cell, row.icon, icon_ink, scale, m);
             if col.multitrack && row.armed {
                 let (center, radius) = armed_dot(cell, m);
                 painter.circle_filled(center, radius, icon_ink);
@@ -246,6 +248,10 @@ pub fn show(
         let label = rect.shrink2(vec2(m.u(LABEL_INSET), m.t()));
         let font = m.font_id(FontSize::Pt8);
         widgets::truncated(&painter, label, Align2::RIGHT_TOP, name, font, ink, 5);
+        // A collapsed track's thin row (#83) shows its name alone.
+        if row.collapsed {
+            continue;
+        }
         let placed = parts(kind, rect, true, m);
         if kind == RowKind::Sub {
             sub_slider(&mut ui, cx, song, row, &placed, ink, &mut out);

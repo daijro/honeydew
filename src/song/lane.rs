@@ -97,6 +97,9 @@ pub struct Lane {
     /// `Show hidden tracks` is off. It plays all the same.
     pub hidden: bool,
     pub file: LaneFileState,
+    /// `Collapse` (Honeydew's own, #83, an `HDCo` in the file): a thin playlist row whose clips show their names only,
+    /// no notes, hits, curves or waveforms. It plays all the same.
+    pub collapsed: bool,
 }
 
 impl Lane {
@@ -112,6 +115,7 @@ impl Lane {
             grid: DrumGrid::Steps,
             hidden: false,
             file: LaneFileState::default(),
+            collapsed: false,
         }
     }
 

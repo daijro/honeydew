@@ -2084,10 +2084,9 @@ fn a_channels_midi_input_is_saved_apart_and_a_song_without_one_writes_none() {
     assert_eq!(read.channels[1].file.channel_unknown_chunks, []);
 }
 
-/// The fork has no `Hide track`: a track an upstream build hid (an `HDHd` in its `TRKH`, which FL Studio Mobile skips
-/// as an unknown chunk) reads back shown, as in FL Studio Mobile, and saves without the chunk.
 #[test]
-fn a_hidden_track_is_saved_apart_and_reads_back_shown() {
+fn a_hidden_track_is_saved_apart_and_a_song_with_none_hidden_writes_as_before() {
+    // An `HDHd` in the track's `TRKH`, which FL Studio Mobile skips as an unknown chunk: there the track shows.
     let mut song = Song::default();
     song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
     song.channels[1].add_lane(LaneKind::Notes);
@@ -2101,10 +2100,8 @@ fn a_hidden_track_is_saved_apart_and_reads_back_shown() {
     let hidden: Vec<Vec<bool>> = (read.channels.iter())
         .map(|c| c.lanes.iter().map(|l| l.hidden).collect())
         .collect();
-    assert_eq!(hidden, [vec![false], vec![false, false]]);
+    assert_eq!(hidden, [vec![false], vec![false, true]]);
     assert_eq!(read.channels[1].lanes[1].clips.len(), 1);
-    let again = crate::flm::write(&read).unwrap();
-    assert!(!again.windows(4).any(|w| w == b"HDHd"), "saved without it");
     // Shown again, the song writes what it wrote before it was hidden.
     song.channels[1].lanes[1].hidden = false;
     assert_eq!(crate::flm::write(&song).unwrap(), before);
@@ -2176,4 +2173,45 @@ fn midi_sends_are_saved_apart_and_go_with_their_target() {
     // Deleting a target takes its MIDI send.
     song.delete_channel(3);
     assert_eq!(song.channels[1].file.midi_sends, [send(b, true)]);
+}
+
+#[test]
+fn sections_are_saved_apart_and_a_song_with_none_writes_as_before() {
+    // An `HDSe` per section (#80), which FL Studio Mobile skips as an unknown chunk.
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    let before = crate::flm::write(&song).unwrap();
+    assert!(!before.windows(4).any(|w| w == b"HDSe"));
+    let intro = song.section_at(0, 16 * PPQ);
+    song.sections[intro].name = "Intro ✓".into();
+    let verse = song.section_at(16 * PPQ, 48 * PPQ);
+    assert_eq!(song.section_at(0, 16 * PPQ), intro, "a range's own section");
+    assert_eq!(song.sections[verse].name, "Section 2");
+    assert_ne!(song.sections[intro].hue, song.sections[verse].hue);
+    let bytes = crate::flm::write(&song).unwrap();
+    assert_eq!(bytes.windows(4).filter(|w| *w == b"HDSe").count(), 2);
+    assert_eq!(crate::flm::read(&bytes).unwrap().sections, song.sections);
+    song.sections.clear();
+    assert_eq!(crate::flm::write(&song).unwrap(), before);
+}
+
+#[test]
+fn a_collapsed_track_is_saved_apart_and_a_song_with_none_collapsed_writes_as_before() {
+    // An empty `HDCo` in the track's `TRKH` (#83), which FL Studio Mobile skips as an unknown chunk.
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    song.channels[1].lanes[0].add_clip(0, 4.0);
+    let before = crate::flm::write(&song).unwrap();
+    song.channels[1].lanes[0].collapsed = true;
+    let bytes = crate::flm::write(&song).unwrap();
+    assert_eq!(bytes.windows(4).filter(|w| *w == b"HDCo").count(), 1);
+    let read = crate::flm::read(&bytes).unwrap();
+    let collapsed: Vec<bool> = (read.channels.iter())
+        .map(|c| c.lanes[0].collapsed)
+        .collect();
+    assert_eq!(collapsed, [false, true]);
+    assert_eq!(read.channels[1].lanes[0].clips.len(), 1);
+    // Expanded again, the song writes what it wrote before.
+    song.channels[1].lanes[0].collapsed = false;
+    assert_eq!(crate::flm::write(&song).unwrap(), before);
 }

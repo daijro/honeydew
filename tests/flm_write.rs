@@ -1200,15 +1200,18 @@ fn a_slots_main_flags_and_beat_offset_round_trip() {
     );
 }
 
+/// PR #87: a project sample rate goes into an `HDSR` and back; a song that follows the output (0) writes none, as
+/// before.
 #[test]
-fn project_sample_rate_survives_save_and_load() {
+fn a_project_sample_rate_round_trips_and_the_outputs_own_writes_nothing() {
     for rate in honeydew::song::SAMPLE_RATES {
-        let mut song = honeydew::song::Song::default();
-        song.sample_rate = rate;
-        let loaded = read(&write(&song).unwrap()).unwrap();
-        assert_eq!(loaded.sample_rate, rate);
+        let song = honeydew::song::Song {
+            sample_rate: rate,
+            ..Default::default()
+        };
+        assert_eq!(read(&write(&song).unwrap()).unwrap().sample_rate, rate);
     }
-    // Legacy files omit the extension and retain the default.
     let bytes = write(&honeydew::song::Song::default()).unwrap();
-    assert_eq!(read(&bytes).unwrap().sample_rate, 44_100);
+    assert!(!bytes.windows(4).any(|w| w == b"HDSR"));
+    assert_eq!(read(&bytes).unwrap().sample_rate, 0);
 }

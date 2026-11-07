@@ -7,7 +7,8 @@
 //! - PROJECT: the tempo steps are song edits; the title, author and link (META@520, @264, @777) are param edits with
 //!   no undo step and no rebuild. The title is the display title, not the file name (`Song::title`, HEAD@8), which
 //!   names the file a quick save writes. The times and the lock come from `META`.
-//!   `Samplerate:` is the project's sample rate (`Song::sample_rate`), the dropdown that changes it.
+//!   `Samplerate:` is the running audio output's (`AudioLink::sample_rate`), `-` without one; PR #87: its dropdown
+//!   sets the project's own rate (`Song::sample_rate`, a song edit), which the row then shows.
 //!   `Reset`, `Hide` and `Lock metadata forever` each ask once, then set the time spent to 0, the time spent to −1
 //!   (META@256) or the lock (META@776): no unsaved changes (they set no song-changed flag) and no undo steps
 //!   ([`Song::keep_unedited`](crate::song::Song::keep_unedited)).
@@ -82,6 +83,11 @@ impl State {
     /// The folder open in the SONGS tab, `None` at its root.
     pub fn songs_folder(&self) -> Option<&Path> {
         self.menu.songs_folder()
+    }
+
+    /// [`MainMenu::show_render`].
+    pub fn show_render(&mut self, file: &Path, library: &dyn crate::ui::main_menu::SongLibrary) {
+        self.menu.show_render(file, library);
     }
 }
 
@@ -194,8 +200,9 @@ pub fn show(
     info.tempo_bpm = song.tempo_bpm;
     // Where the last clip ends, as the playlist's song end, at the song tempo.
     info.length_secs = song_end_beats(song) * 60.0 / song.tempo_bpm.max(1.0);
-    // `Samplerate:` is the saved project rate, which can differ from the output's rate.
-    info.sample_rate = Some(app.song.sample_rate);
+    // `Samplerate:` is the running output's (`-` without one), or the project's own where it has one (PR #87).
+    info.sample_rate = app.audio.sample_rate();
+    info.project_rate = app.song.sample_rate;
     // The block reads the shared data, which the app updates; it draws `Detach` or `Attach` by it.
     info.performance.clone_from(perf);
     state.menu.tab = *tab;
@@ -260,11 +267,10 @@ pub fn show(
             app.song.set_tempo(bpm);
             app.song_edited(true);
         }
+        // PR #87: an edit, whose rebuild reopens the output at the new rate (`AudioLink::replace_song_keeping`).
         MainMenuAction::SetSampleRate(rate) => {
-            if app.song.sample_rate != rate {
-                app.song.sample_rate = rate;
-                app.song_edited(true);
-            }
+            app.song.sample_rate = rate;
+            app.song_edited(true);
         }
         MainMenuAction::LockMetadata => nav = Some(ask(&mut state.asked, LOCK_TAG)),
         MainMenuAction::HideTimeSpent => nav = Some(ask(&mut state.asked, HIDE_TAG)),

@@ -373,6 +373,21 @@ impl HoneydewApp {
             }
             // Disabled in the menu (see `TrackOp`).
             TrackOp::SyncAllSamples => {}
+            // The playlist lets go of a selected clip that no longer shows (`Clips::show`); the audio never reads it:
+            // an undo step with no rebuild.
+            TrackOp::ToggleHidden => {
+                if let Some(l) = ch.lanes.get_mut(lane) {
+                    l.hidden = !l.hidden;
+                    self.song_edited(SongEdit::Param, tick);
+                }
+            }
+            // View state the audio never reads, as a hidden track's: an undo step with no rebuild (#83).
+            TrackOp::ToggleCollapsed => {
+                if let Some(l) = ch.lanes.get_mut(lane) {
+                    l.collapsed = !l.collapsed;
+                    self.song_edited(SongEdit::Param, tick);
+                }
+            }
         }
     }
 
@@ -1016,7 +1031,8 @@ impl HoneydewApp {
             | Overlay::MidiImport
             | Overlay::Credits
             | Overlay::WhatsNew
-            | Overlay::Versions => true,
+            | Overlay::Versions
+            | Overlay::SectionSettings { .. } => true,
         });
         // The audio editor's op waiting to be saved (`app/audio_edit.rs`) follows its clip, or goes with it.
         self.audio_edit = (self.audio_edit.take()).and_then(|p| p.moved(|c, l| rk.track(c, l)));

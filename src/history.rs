@@ -102,6 +102,7 @@ impl Snapshot {
             play_loop,
             file,
             master_below,
+            sections,
             sample_rate,
         } = song;
         let head = Song {
@@ -114,6 +115,7 @@ impl Snapshot {
             play_loop: *play_loop,
             file: file.clone(),
             master_below: *master_below,
+            sections: sections.clone(),
             sample_rate: *sample_rate,
         };
         // The same index first, so that identical channels keep their own.

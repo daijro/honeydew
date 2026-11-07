@@ -1,6 +1,6 @@
-//! The screen resized between frames: what a phone's rotation does to the surface. The rig's screen is the surface, so
-//! a test turns it and lays the next frames out on the new one — the app must draw there and take its touches there,
-//! and the views whose layout is the tightest on a short screen must draw on it too.
+//! The screen resized between frames (PR #87): what a phone's rotation does to the surface. The rig's screen is the
+//! surface, so a test turns it and lays the next frames out on the new one — the app must draw there and take its
+//! touches there, and the views whose layout is the tightest on a short screen must draw on it too.
 
 use super::*;
 

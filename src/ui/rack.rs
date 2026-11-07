@@ -162,6 +162,7 @@ pub fn ui_height(type_id: u16) -> Option<f32> {
         honeydew_audio::dynamic_eq::DYNAMIC_EQ => 11.0,
         honeydew_audio::modulator::MODULATOR => 8.5,
         honeydew_audio::de_esser::DE_ESSER | honeydew_audio::denoise::DENOISE => 7.5,
+        honeydew_audio::half_time::HALF_TIME => 6.0,
         _ => return None,
     })
 }
@@ -451,13 +452,24 @@ pub fn rack_tab_y(area: Rangef, u: f32) -> f32 {
 }
 
 /// The rack tab's pill on `screen` over the content area `area` at `u` per U: its left edge 2.1 U from the screen's
-/// right edge, centred at [`rack_tab_y`]; while its top is under 2.75 U from the screen's top it moves right by the
-/// difference, so on a short area it slides off the right edge.
-pub fn rack_tab(screen: Rect, area: Rect, u: f32) -> Rect {
+/// right edge, centred at [`rack_tab_y`] moved `shift` U down the edge (PR #87: a drag moves it,
+/// [`rack_tab_shift_range`]) and kept in the same bounds; while its top is under 2.75 U from the screen's top it moves
+/// right by the difference, so on a short area it slides off the right edge.
+pub fn rack_tab(screen: Rect, area: Rect, u: f32, shift: f32) -> Rect {
     let size = RACK_TAB * u;
-    let top = rack_tab_y(area.y_range(), u) - size.y / 2.0;
+    let (lo, hi) = rack_tab_shift_range(area.y_range(), u);
+    let top = rack_tab_y(area.y_range(), u) + shift.max(lo).min(hi) * u - size.y / 2.0;
     let nudge = (2.75 * u - (top - screen.top())).max(0.0);
     Rect::from_min_size(pos2(screen.right() - 2.1 * u + nudge, top), size)
+}
+
+/// How far, in U, a drag may move the rack tab from [`rack_tab_y`] over `area` (PR #87): up to 5 U below the top and
+/// down to 0.25 U above the bottom, as its home is kept; on an area too short for both the bottom wins (GitHub #57).
+pub fn rack_tab_shift_range(area: Rangef, u: f32) -> (f32, f32) {
+    let (home, half) = (rack_tab_y(area, u), RACK_TAB.y / 2.0 * u);
+    let hi = (area.max - 0.25 * u - half - home) / u;
+    let lo = ((area.min + 5.0 * u + half - home) / u).min(hi);
+    (lo, hi)
 }
 
 /// Where a held card whose on-screen top is `top` goes with the finger at height `finger_y` (`u` per U and `gap`, the
@@ -2391,17 +2403,6 @@ impl RackPanel {
                 return edits;
             }
             let running = lemon_card::show(ui, content, self.channel_id, id, plugin, state, m);
-            // The editor's `Create automation clip`: the parameter's automation track, as a knob's menu makes it. The
-            // editor's list position is the module's param index less one (`module.params[0]` is not a plugin's).
-            if let Some(index) = state.automate.take() {
-                edits.touch = Some(Touch {
-                    target: AutomationTarget {
-                        instance_id: id,
-                        param: index + 1,
-                    },
-                    pick: Some(CtrlAction::AddAutomationTrack),
-                });
-            }
             self.lemon_wheel |= lemon_card::over(state);
             if running {
                 edits.sample = lemon_card::wants_file(state);
@@ -3196,8 +3197,8 @@ fn common_dialog(
             let rows = layout::layout(&column, content, u);
             let row = |i: u32| layout::rect_of(&rows, i).expect("shown") / ppp;
             // The 12 pt title is taller than its row; it may spill over the dialog's padding, not out of it.
-            let title = module_name(module.type_id);
-            dialog_title(&ui.painter_at(rect), cx, row(0), title, text);
+            // A plugin module by its plugin's name, as its card.
+            dialog_title(&ui.painter_at(rect), cx, row(0), module.title(), text);
             let (mut changed, mut touch) = (Vec::new(), None);
             let linked = panels::cc_links(ui);
             for (&(index, spec), i) in COMMON.iter().zip(1..) {

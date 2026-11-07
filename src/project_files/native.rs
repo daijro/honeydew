@@ -2,15 +2,16 @@
 //! Android saves into its private library and opens files and folders through the system document pickers
 //! ([`crate::android::pick_document`], [`crate::android::pick_folder`]); external export awaits a document-provider
 //! bridge. iOS saves into its user folder and opens through its document picker ([`crate::ios::pick`]). A folder
-//! import's copy runs on a worker (Android's on a Java thread).
+//! import's copy runs on a worker (Android's on a Java thread). `Send` shares through the phones' share sheets; the
+//! desktop shows the file in its file manager.
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 use super::{
-    FileEvent, FileProvider, MAX_FILE_BYTES, OPEN_FAILED, READ_FAILED, SAVE_FAILED, UNKNOWN_TYPE,
-    accepts, read_file_limited,
+    FileEvent, FileProvider, MAX_FILE_BYTES, MAX_IMPORT_BYTES, OPEN_FAILED, READ_FAILED,
+    SAVE_FAILED, UNKNOWN_TYPE, accepts, file_kind, read_file_limited, samples::import_folder,
 };
 
 #[derive(Default)]
@@ -52,16 +53,19 @@ impl FileProvider for NativeFiles {
         });
     }
 
-    /// The picked document arrives as a cache copy, read like a desktop pick and then removed.
+    /// The picked document arrives as a cache copy (streamed, up to [`MAX_IMPORT_BYTES`]), read like a desktop pick and
+    /// then removed; one too large to read stays for its import to move ([`FileEvent::Picked`]).
     #[cfg(target_os = "android")]
     fn open(&mut self, accept: &'static [&'static str]) {
         let (done, rx) = self.later();
         self.opening = Some(rx);
-        crate::android::pick_document(MAX_FILE_BYTES, move |picked| {
+        crate::android::pick_document(MAX_IMPORT_BYTES, move |picked| {
             done(picked.map(|picked| match picked {
                 Ok(path) => {
                     let event = open_path(path.clone(), accept);
-                    let _ = std::fs::remove_file(&path);
+                    if !matches!(event, FileEvent::Picked(_)) {
+                        let _ = std::fs::remove_file(&path);
+                    }
                     event
                 }
                 Err(err) => FileEvent::Failed(OPEN_FAILED, err),
@@ -69,7 +73,8 @@ impl FileProvider for NativeFiles {
         });
     }
 
-    /// iOS copies the picked file into the app's `tmp`, read like a desktop pick and then removed.
+    /// iOS copies the picked file into the app's `tmp`, read like a desktop pick and then removed; one too large to read
+    /// stays for its import to copy ([`FileEvent::Picked`]).
     #[cfg(target_os = "ios")]
     fn open(&mut self, accept: &'static [&'static str]) {
         let (done, rx) = self.later();
@@ -77,7 +82,9 @@ impl FileProvider for NativeFiles {
         crate::ios::pick(false, move |picked| {
             done(picked.map(|path| {
                 let event = open_path(path.clone(), accept);
-                let _ = std::fs::remove_file(&path);
+                if !matches!(event, FileEvent::Picked(_)) {
+                    let _ = std::fs::remove_file(&path);
+                }
                 event
             }));
         });
@@ -120,13 +127,16 @@ impl FileProvider for NativeFiles {
         });
     }
 
+    /// Android's folder sources are documents, which Java copies; a path is a big pick's cache copy, which moves.
     fn copy(&mut self, files: Vec<(String, PathBuf)>) {
         let (done, rx) = self.later();
         self.copying = Some(rx);
-        #[cfg(not(target_os = "android"))]
-        std::thread::spawn(move || done(FileEvent::Copied(copy_files(&files).err())));
         #[cfg(target_os = "android")]
-        crate::android::copy_files(&files, move |error| done(FileEvent::Copied(error)));
+        if !files.iter().all(|(from, _)| Path::new(from).is_absolute()) {
+            return crate::android::copy_files(&files, move |error| done(FileEvent::Copied(error)));
+        }
+        let moves = cfg!(target_os = "android");
+        std::thread::spawn(move || done(FileEvent::Copied(copy_files(&files, moves).err())));
     }
 
     fn save(&mut self, path: &Path, ask: bool, bytes: Vec<u8>) {
@@ -216,6 +226,22 @@ impl FileProvider for NativeFiles {
     fn locate(&mut self, names: Vec<String>) {
         self.event = super::flp::locate_native(&names);
     }
+
+    fn share(&mut self, files: &[PathBuf], mime: &str) -> Result<(), String> {
+        share(files, mime)
+    }
+}
+
+/// `Send` (#72: the Save dialog's, SONGS') on a phone: the system's share sheet ([`crate::android::share`], [`crate::ios::share`]).
+#[cfg(target_os = "android")]
+pub(crate) use crate::android::share;
+#[cfg(target_os = "ios")]
+pub(crate) use crate::ios::share;
+
+/// `Send` on the desktop, which has no share sheet: the file manager shows the first file.
+#[cfg(not(mobile))]
+pub(crate) fn share(files: &[PathBuf], _mime: &str) -> Result<(), String> {
+    crate::ui::main_menu::reveal(files.first().ok_or("Nothing to send")?)
 }
 
 /// `accept` for the open dialog: each extension and its upper-case form, because GTK's patterns are case-sensitive
@@ -260,15 +286,20 @@ pub(super) fn folder_files(dir: &Path) -> Vec<(String, String)> {
     files
 }
 
-/// Copies each file `(from, to)`, making its folder: whole or not at all (beside it first, then renamed into place).
-/// The first that fails stops the copy, and says why.
-#[cfg(not(target_os = "android"))]
-fn copy_files(files: &[(String, PathBuf)]) -> Result<(), String> {
+/// Copies each file `(from, to)`, making its folder: whole or not at all (beside it first, then renamed into place); with
+/// `moves`, moved where it can be. The first that fails stops the copy, and says why.
+fn copy_files(files: &[(String, PathBuf)], moves: bool) -> Result<(), String> {
     for (from, to) in files {
         let name = to.file_name().unwrap_or_default().to_string_lossy();
         let part = to.with_file_name(format!(".{name}.part"));
-        let copied = (to.parent().map_or(Ok(()), std::fs::create_dir_all))
-            .and_then(|()| std::fs::copy(from, &part))
+        let folder = to.parent().map_or(Ok(()), std::fs::create_dir_all);
+        // A move of the provider's own copy: no second copy on a phone's storage, where one file system holds both.
+        let moved = moves && folder.is_ok() && std::fs::rename(from, &part).is_ok();
+        let copied = folder
+            .and_then(|()| match moved {
+                true => Ok(0),
+                false => std::fs::copy(from, &part),
+            })
             .and_then(|_| std::fs::rename(&part, to));
         if let Err(err) = copied {
             let _ = std::fs::remove_file(&part);
@@ -278,10 +309,28 @@ fn copy_files(files: &[(String, PathBuf)]) -> Result<(), String> {
     Ok(())
 }
 
-/// Reads the picked file, if its type is one of `accept`.
-fn open_path(path: PathBuf, accept: &[&str]) -> FileEvent {
+/// Reads the picked file, if its type is one of `accept`. One past [`MAX_FILE_BYTES`] that a user folder takes (not a
+/// song or an archive, which load whole) is left unread up to [`MAX_IMPORT_BYTES`], for its import to copy.
+pub(super) fn open_path(path: PathBuf, accept: &[&str]) -> FileEvent {
     if !accepts(&path, accept) {
         return FileEvent::Failed(UNKNOWN_TYPE, path.display().to_string());
+    }
+    let len = std::fs::metadata(&path).map_or(0, |m| m.len());
+    // By its name: the folders the pick came from are no archive's, so a hidden one (`~/.local`) is no junk.
+    let named = Path::new(path.file_name().unwrap_or_default());
+    let copied = file_kind(&path).is_none() && import_folder(named).is_some();
+    if copied && len > MAX_FILE_BYTES {
+        return match len <= MAX_IMPORT_BYTES {
+            true => FileEvent::Picked(path),
+            false => {
+                let detail = format!(
+                    "{}: larger than {} MiB",
+                    path.display(),
+                    MAX_IMPORT_BYTES >> 20
+                );
+                FileEvent::Failed(READ_FAILED, detail)
+            }
+        };
     }
     match read(&path) {
         Ok(bytes) => FileEvent::Opened(path, bytes),

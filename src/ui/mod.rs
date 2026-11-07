@@ -263,3 +263,5 @@ pub mod tooltip;
 pub mod file_drag;
 // The insert menu (`New Clip`, `Paste`) and its cursor.
 pub mod insert;
+// The playlist's song sections (#80).
+pub mod sections;

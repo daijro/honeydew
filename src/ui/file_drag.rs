@@ -243,7 +243,9 @@ pub fn place(
             .find(|&c| c != 0)
             .unwrap_or(song.channels.len())
     };
-    let Some(&(channel, lane, top)) = rows.iter().find(|r| (r.2..r.2 + row_h).contains(&pos.y))
+    // The lowest row starting above `pos`: a collapsed one above is less than `row_h` tall (#83).
+    let Some(&(channel, lane, top)) =
+        (rows.iter().rev()).find(|r| (r.2..r.2 + row_h).contains(&pos.y))
     else {
         let bottom = rows.last()?.2 + row_h;
         let below = (bottom..bottom + row_h / 2.0).contains(&pos.y);

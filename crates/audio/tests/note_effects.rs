@@ -1350,7 +1350,7 @@ fn transpose_rounds_its_f32_range_map_halves_away_from_zero() {
     assert_eq!(play(0.5, 0.0625), [49]);
 }
 
-/// Time and Shift place a note early or late: Time is how far (a 16th of a beat at 1) and Shift leans the draw, all
+/// Time and Shift (PR #87) place a note early or late: Time is how far (a 16th note at 1) and Shift leans the draw, all
 /// early at 0, an even mix at 0.5, all late at 1. The note keeps its length and never starts before the song.
 #[test]
 fn the_randomizer_times_a_note_early_or_late_by_its_shift() {

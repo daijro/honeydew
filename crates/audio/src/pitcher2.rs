@@ -1,5 +1,7 @@
 use std::f32::consts::{PI, TAU};
 
+use crate::pitcher::{Search, Tracker};
+
 pub const DEFAULT_PARAMS: [f32; 27] = [
     1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5, 1.0,
     0.5, 0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 0.0,
@@ -22,15 +24,13 @@ pub struct Pitcher2State {
     weights: Vec<f32>,
     write_index: usize,
     frames: usize,
-    analysis: Vec<f32>,
-    analysis_index: usize,
-    analysis_count: usize,
-    decimation: usize,
-    decimation_count: usize,
-    scores: Vec<f32>,
+    tracker: Tracker,
     tracked_frequency: f32,
     target_frequency: f32,
     stable_target: f32,
+    /// The ratio the last analysis aims at, and the per-frame glide toward it (from Speed).
+    desired_ratio: f32,
+    coefficient: f32,
     ratio: f32,
     grain_countdown: f32,
     vibrato_phase: f32,
@@ -50,15 +50,12 @@ impl Pitcher2State {
             weights: Vec::new(),
             write_index: 0,
             frames: 0,
-            analysis: vec![0.0; 2048],
-            analysis_index: 0,
-            analysis_count: 0,
-            decimation: 1,
-            decimation_count: 0,
-            scores: Vec::new(),
+            tracker: Tracker::new(sample_rate, LOWEST),
             tracked_frequency: 0.0,
             target_frequency: 0.0,
             stable_target: 0.0,
+            desired_ratio: 1.0,
+            coefficient: 0.0,
             ratio: 1.0,
             grain_countdown: 0.0,
             vibrato_phase: 0.0,
@@ -95,6 +92,16 @@ impl Pitcher2State {
         2.0 * self.params[17] - 1.0
     }
 
+    /// How far Formants moves the formants: 2^shift (½ to 2 over F-Shift's −100 … +100 %) while on, else 1, the
+    /// grains' own (PSOLA keeps them where the voice has them).
+    pub fn formant_factor(&self) -> f32 {
+        if self.params[16] >= 0.5 {
+            2.0_f32.powf(self.formant_shift())
+        } else {
+            1.0
+        }
+    }
+
     pub fn speed_factor(&self) -> f32 {
         200.0_f32.powf(self.params[13]) - 0.9
     }
@@ -107,7 +114,6 @@ impl Pitcher2State {
         validate(params, sample_rate)?;
         let window = analysis_window(params[25], sample_rate);
         if self.sample_rate != sample_rate || self.window != window {
-            self.sample_rate = sample_rate;
             self.window = window;
             self.latency = latency_for(window);
             // Room for the larger (normal) window at this rate, so a Low Latency switch on the audio thread never
@@ -123,14 +129,14 @@ impl Pitcher2State {
                 channel.resize(output_len, 0.0);
                 channel.reserve(largest - output_len);
             }
-            self.decimation = ((sample_rate / 12_000.0).floor() as usize).max(1);
-            self.scores.resize(
-                (sample_rate / self.decimation as f32 / 65.0).ceil() as usize + 2,
-                0.0,
-            );
+            if self.sample_rate != sample_rate {
+                self.tracker = Tracker::new(sample_rate, LOWEST);
+            }
+            self.sample_rate = sample_rate;
             self.reset();
         }
         self.params.copy_from_slice(params);
+        self.coefficient = (self.speed_factor() / sample_rate).min(1.0);
         Ok(())
     }
 
@@ -174,34 +180,14 @@ impl Pitcher2State {
         self.history[1][index] = right;
         self.history[2][index] = reference;
         self.observe_pitch(reference);
-        let target = self.target_for(self.tracked_frequency);
-        if target > 0.0 {
-            let hysteresis = self.params[19] * 0.5;
-            if self.stable_target == 0.0
-                || (12.0 * (target / self.stable_target).log2()).abs() > hysteresis
-            {
-                self.stable_target = target;
-            }
-            self.target_frequency = self.stable_target;
-        } else {
-            self.target_frequency = 0.0;
-        }
-        let desired_ratio = if self.tracked_frequency > 0.0 && self.target_frequency > 0.0 {
-            let attraction = 1.0 - 0.5 * self.params[20];
-            (self.target_frequency / self.tracked_frequency)
-                .powf(attraction)
-                .clamp(0.5, 2.0)
-        } else {
-            1.0
-        };
-        let coefficient = (self.speed_factor() / self.sample_rate).min(1.0);
-        self.ratio += coefficient * (desired_ratio - self.ratio);
+        self.ratio += self.coefficient * (self.desired_ratio - self.ratio);
         self.vibrato_phase = (self.vibrato_phase + 5.0 / self.sample_rate).fract();
-        let vibrato = 2.0_f32.powf(self.params[24] * 0.3 * (TAU * self.vibrato_phase).sin() / 12.0);
         if self.tracked_frequency > 0.0 && self.params[0] >= 0.5 {
             self.grain_countdown -= 1.0;
             if self.grain_countdown <= 0.0 {
                 self.emit_grain();
+                let vibrato =
+                    2.0_f32.powf(self.params[24] * 0.3 * (TAU * self.vibrato_phase).sin() / 12.0);
                 self.grain_countdown += (self.sample_rate
                     / (self.tracked_frequency * self.ratio * vibrato))
                     .clamp(8.0, self.sample_rate / 65.0);
@@ -211,22 +197,17 @@ impl Pitcher2State {
         }
         let output_index = self.frames % self.output[0].len();
         let weight = self.weights[output_index];
-        let dry_index = (index + self.history[0].len() - self.latency % self.history[0].len())
-            % self.history[0].len();
+        let dry_index = self.back(self.latency);
         let dry = [self.history[0][dry_index], self.history[1][dry_index]];
         let mix = if self.params[0] >= 0.5 {
             self.params[22]
         } else {
             0.0
         };
-        let wet = if weight > 1e-5 {
-            [
-                self.output[0][output_index] / weight,
-                self.output[1][output_index] / weight,
-            ]
-        } else {
-            dry
-        };
+        // The grains, normalized by their weight; where they thin out (a voice's start and end) they fade to the dry
+        // signal instead of switching to it, which clicked.
+        let fade = (1.0 - weight / FULL).max(0.0);
+        let wet = [0, 1].map(|c| self.output[c][output_index] / weight.max(FULL) + fade * dry[c]);
         let result = (
             dry[0] + mix * (wet[0] - dry[0]),
             dry[1] + mix * (wet[1] - dry[1]),
@@ -242,101 +223,93 @@ impl Pitcher2State {
     fn emit_grain(&mut self) {
         let period = (self.sample_rate / self.tracked_frequency).round() as usize;
         let period = period.clamp(8, self.window / 2);
-        let search_start = period;
-        let search_end = period * 2;
+        // The grain is read `formant` times as fast as it plays, which moves its formants by that factor; its pitch
+        // mark lies far enough back for the faster read.
+        let formant = self.formant_factor();
+        let search_start = (period as f32 * formant.max(1.0)).ceil() as usize;
         let mut lag = search_start;
         let mut peak = f32::NEG_INFINITY;
-        for candidate in search_start..=search_end {
-            let value = self.read_history(2, candidate);
+        for candidate in search_start..=search_start + period {
+            let value = self.history[2][self.back(candidate)];
             if value > peak {
                 peak = value;
                 lag = candidate;
             }
         }
-        let radius = period.min(self.latency.saturating_sub(lag + 1));
+        // It plays from `latency − period − radius` frames on, never before the next one.
+        let radius = period.min(self.latency.saturating_sub(period + 1));
         if radius < 8 {
             return;
         }
         let output_len = self.output[0].len();
+        let mut at = (self.frames + self.latency - period - radius) % output_len;
         for offset in -(radius as isize)..=(radius as isize) {
             let phase = (offset + radius as isize) as f32 / (2 * radius) as f32;
             let weight = (PI * phase).sin().powi(2);
-            let source_lag = (lag as isize - offset) as usize;
-            let output_time =
-                (self.frames as isize + self.latency as isize - period as isize + offset) as usize;
-            let output_index = output_time % output_len;
+            let source = lag as f32 - offset as f32 * formant;
+            let (whole, fraction) = (source as usize, source.fract());
+            let (newer, older) = (self.back(whole), self.back(whole + 1));
             for channel in 0..2 {
-                self.output[channel][output_index] +=
-                    self.read_history(channel, source_lag) * weight;
+                let history = &self.history[channel];
+                let sample = history[newer] + (history[older] - history[newer]) * fraction;
+                self.output[channel][at] += sample * weight;
             }
-            self.weights[output_index] += weight;
+            self.weights[at] += weight;
+            at = if at + 1 == output_len { 0 } else { at + 1 };
         }
     }
 
-    fn read_history(&self, channel: usize, lag: usize) -> f32 {
-        let history = &self.history[channel];
-        history[(self.write_index + history.len() - lag % history.len()) % history.len()]
+    /// The history index `lag` frames back; `lag` is under the history's length.
+    fn back(&self, lag: usize) -> usize {
+        let len = self.history[0].len();
+        if lag > self.write_index {
+            self.write_index + len - lag
+        } else {
+            self.write_index - lag
+        }
     }
 
     fn observe_pitch(&mut self, sample: f32) {
-        self.decimation_count += 1;
-        if self.decimation_count == self.decimation {
-            self.decimation_count = 0;
-            self.analysis[self.analysis_index] = sample;
-            self.analysis_index = (self.analysis_index + 1) % self.analysis.len();
-            self.analysis_count = (self.analysis_count + 1).min(self.analysis.len());
-        }
+        self.tracker.push(sample);
         if !self.frames.is_multiple_of(256) {
             return;
         }
-        let rate = self.sample_rate / self.decimation as f32;
-        let min_lag = (rate / 1000.0).floor().max(2.0) as usize;
-        let max_lag = (rate / 65.0).ceil() as usize;
-        let window = max_lag * 2;
-        if self.analysis_count < window + max_lag {
-            return;
-        }
-        let mut best_lag = 0;
-        let mut best_score = 0.15 + 0.3 / self.sensitivity_factor();
-        for lag in min_lag..=max_lag {
-            let mut cross = 0.0;
-            let mut energy_a = 0.0;
-            let mut energy_b = 0.0;
-            for i in 0..window {
-                let a = self.analysis
-                    [(self.analysis_index + self.analysis.len() - 1 - i) % self.analysis.len()];
-                let b = self.analysis[(self.analysis_index + self.analysis.len() - 1 - i - lag)
-                    % self.analysis.len()];
-                cross += a * b;
-                energy_a += a * a;
-                energy_b += b * b;
+        match self
+            .tracker
+            .search(1000.0, LOWEST, 0.15 + 0.3 / self.sensitivity_factor())
+        {
+            Search::Pitch(hz) => self.tracked_frequency = hz,
+            Search::Unvoiced => {
+                self.tracked_frequency = 0.0;
+                self.stable_target = 0.0;
             }
-            if energy_a < 0.001 || energy_b < 0.001 {
-                continue;
-            }
-            let score = cross / (energy_a * energy_b).sqrt();
-            self.scores[lag] = score;
-            let preferred = score - 0.0005 * lag as f32;
-            if preferred > best_score {
-                best_score = preferred;
-                best_lag = lag;
-            }
+            Search::Waiting | Search::Edge => {}
         }
-        if best_lag > min_lag && best_lag < max_lag {
-            let previous = self.scores[best_lag - 1];
-            let current = self.scores[best_lag];
-            let next = self.scores[best_lag + 1];
-            let denominator = previous - 2.0 * current + next;
-            let offset = if denominator.abs() > 1e-6 {
-                0.5 * (previous - next) / denominator
-            } else {
-                0.0
-            };
-            self.tracked_frequency = rate / (best_lag as f32 + offset.clamp(-0.5, 0.5));
-        } else if best_lag == 0 {
-            self.tracked_frequency = 0.0;
-            self.stable_target = 0.0;
+        self.hold_target();
+    }
+
+    /// The target the analysis leads to, held while Stability covers a new one, and the ratio toward it.
+    fn hold_target(&mut self) {
+        let target = self.target_for(self.tracked_frequency);
+        if target > 0.0 {
+            let hysteresis = self.params[19] * 0.5;
+            if self.stable_target == 0.0
+                || (12.0 * (target / self.stable_target).log2()).abs() > hysteresis
+            {
+                self.stable_target = target;
+            }
+            self.target_frequency = self.stable_target;
+        } else {
+            self.target_frequency = 0.0;
         }
+        self.desired_ratio = if self.tracked_frequency > 0.0 && self.target_frequency > 0.0 {
+            let attraction = 1.0 - 0.5 * self.params[20];
+            (self.target_frequency / self.tracked_frequency)
+                .powf(attraction)
+                .clamp(0.5, 2.0)
+        } else {
+            1.0
+        };
     }
 
     pub fn reset(&mut self) {
@@ -347,20 +320,25 @@ impl Pitcher2State {
             channel.fill(0.0);
         }
         self.weights.fill(0.0);
-        self.analysis.fill(0.0);
+        self.tracker.reset();
         self.write_index = 0;
         self.frames = 0;
-        self.analysis_index = 0;
-        self.analysis_count = 0;
-        self.decimation_count = 0;
         self.tracked_frequency = 0.0;
         self.target_frequency = 0.0;
         self.stable_target = 0.0;
+        self.desired_ratio = 1.0;
         self.ratio = 1.0;
         self.grain_countdown = 0.0;
         self.vibrato_phase = 0.0;
     }
 }
+
+/// The grain weight from which the grains play alone; under it they fade to the dry signal. Overlapping grains weigh
+/// about 1, and over 0.25 for corrections up to 6 semitones down.
+const FULL: f32 = 0.25;
+
+/// The lowest pitch Pitcher 2 tracks, Hz.
+const LOWEST: f32 = 65.0;
 
 fn validate(params: &[f32], sample_rate: f32) -> Result<(), Pitcher2Error> {
     if !sample_rate.is_finite() || sample_rate < 2000.0 {

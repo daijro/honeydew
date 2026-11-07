@@ -25,13 +25,11 @@ pub struct State {
 }
 
 impl State {
-    /// Opens the `Generate` panel of `channel`'s roll from the transport bar's GENERATE button, where the note menu's
-    /// entry needs a note selected first. A channel with no roll yet gets one; a second tap writes another progression.
+    /// Opens the `Generate` panel of `channel`'s roll from the transport bar's GENERATE button (PR #87). A channel
+    /// with no roll yet gets one; a second tap writes another progression.
     pub(crate) fn open_generate(&mut self, ctx: &egui::Context, song: &Song, channel: usize) {
-        let roll = self
-            .rolls
-            .entry(channel)
-            .or_insert_with(|| PianoRoll::for_channel(song, channel));
+        let roll =
+            (self.rolls.entry(channel)).or_insert_with(|| PianoRoll::for_channel(song, channel));
         roll.open_generate(ctx);
     }
 }
@@ -47,9 +45,9 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         .entry(channel)
         .or_insert_with(|| PianoRoll::for_channel(app.song, channel));
     let opts = RollOptions {
-        key_names: app.settings.key_names,
         ghost_notes: app.ghost_notes,
         middle_c_is_c4: app.middle_c_is_c4,
+        key_names: app.settings.key_names,
         playhead: app.snapshot.map_or(0, |s| s.transport_tick),
         lead: app.audio.playhead_lead(),
         playing: app.playing,
@@ -66,16 +64,12 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     roll.value_snap = [app.settings.velocity_snap, app.settings.pan_snap];
     // So is the grid size (#53).
     roll.snap.size = app.settings.grid_size;
-    let actions = roll.show(
-        ui,
-        app.regions.editor,
-        &app.cx,
-        app.song,
-        &opts,
-        &mut app.settings.graph_tab_shift,
-    );
+    // And the graph lane tab's place (PR #87).
+    roll.graph_tab_shift = app.settings.graph_tab_shift;
+    let actions = roll.show(ui, app.regions.editor, &app.cx, app.song, &opts);
     [app.settings.velocity_snap, app.settings.pan_snap] = roll.value_snap;
     app.settings.grid_size = roll.snap.size;
+    app.settings.graph_tab_shift = roll.graph_tab_shift;
     for action in actions {
         match action {
             PianoRollAction::SongEdited { final_edit } => app.song_edited(final_edit),

@@ -330,18 +330,20 @@ fn a_count_in_holds_the_clips_until_the_song_rolls() {
 
 #[test]
 fn a_song_loop_wrap_relaunches_the_clip_at_the_loop_start() {
-    // Loop [0.5, 1.5) beats over a 4-beat clip: after the wrap it plays from 0.5 beats in again.
+    // Loop [0.5, 1.5) beats over a 4-beat clip: Play before it goes to its start at once (PR #87), and after the wrap,
+    // a beat on, it plays from 0.5 beats in again.
     let mut song = song();
     song.play_loop = Some((64, 192));
     clip(&mut song, 0, 4.0, "ramp");
     let mut engine = engine(&song);
     engine.play();
-    let out = render(&mut engine, BEAT * 3 / 2 + 1000);
-    let end = BEAT * 3 / 2;
-    assert_at(&out, end - 1, (end - 1) as f32);
+    let out = render(&mut engine, BEAT + 1000);
+    let start = BEAT as f32 / 2.0;
+    assert_at(&out, 0, start);
+    assert_at(&out, BEAT - 1, start + (BEAT - 1) as f32);
     // The channel's first lane is audio: the old voice is cut, not faded.
-    assert_at(&out, end, BEAT as f32 / 2.0);
-    assert_at(&out, end + 999, BEAT as f32 / 2.0 + 999.0);
+    assert_at(&out, BEAT, start);
+    assert_at(&out, BEAT + 999, start + 999.0);
 }
 
 #[test]

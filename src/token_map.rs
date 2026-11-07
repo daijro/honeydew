@@ -100,14 +100,14 @@ pub fn separator(name: &str) -> &'static str {
 
 /// Roles guessed from `tokens`: the first note name is the root, `v64` or `Vel1-100` the velocities, `RR2` the round
 /// robin; the rest are ignored.
-pub fn guess(tokens: &[&str], c4: bool) -> Vec<Role> {
+pub fn guess(tokens: &[&str]) -> Vec<Role> {
     let mut root = false;
     let numbered = |t: &str, prefix: &str| {
         let lower = t.to_ascii_lowercase();
         (lower.strip_prefix(prefix))
             .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
     };
-    let named = |t: &str| note(t, c4).is_some() && !t.bytes().all(|b| b.is_ascii_digit());
+    let named = |t: &str| note(t).is_some() && !t.bytes().all(|b| b.is_ascii_digit());
     (tokens.iter())
         .map(|&t| match t {
             t if numbered(t, "rr") || numbered(t, "seq") => Role::RoundRobin,
@@ -121,14 +121,14 @@ pub fn guess(tokens: &[&str], c4: bool) -> Vec<Role> {
         .collect()
 }
 
-/// A MIDI note: a name (`C4`, `C#4`, `Db4`, any case; 60 is `C4` with `c4`, the app's `Set middle C to C4`, else
-/// `C5`) or a number 0–127.
-pub fn note(token: &str, c4: bool) -> Option<u8> {
+/// A MIDI note: a name (`C4`, `C#4`, `Db4`, any case) or a number 0–127. Names are scientific pitch, `C4` 60 (middle
+/// C, 261.6 Hz), as sample libraries and SFZ name them, whatever `Set middle C to C4` says the app shows.
+pub fn note(token: &str) -> Option<u8> {
     if token.bytes().all(|b| b.is_ascii_digit()) {
         return token.parse().ok().filter(|n| *n <= 127);
     }
-    let key = honeydew_audio::sfz::note(&token.to_ascii_lowercase())? as i32 - 12 * i32::from(!c4);
-    u8::try_from(key).ok().filter(|k| *k <= 127)
+    let key = honeydew_audio::sfz::note(&token.to_ascii_lowercase())?;
+    u8::try_from(key as i32).ok().filter(|k| *k <= 127)
 }
 
 /// A velocity token's value: a range (`Vel1-100`, `64-127`), or one value (`v64`), the top of its layer.
@@ -181,7 +181,7 @@ impl Parsed {
 }
 
 /// The file `name`'s tokens read by `roles`; `Err` with the position of one that does not parse, or is not there.
-fn parse(name: &str, separator: &str, roles: &[Role], c4: bool) -> Result<Parsed, usize> {
+fn parse(name: &str, separator: &str, roles: &[Role]) -> Result<Parsed, usize> {
     let tokens = tokens(name, separator);
     let mut p = Parsed::default();
     for (i, &role) in roles
@@ -190,7 +190,7 @@ fn parse(name: &str, separator: &str, roles: &[Role], c4: bool) -> Result<Parsed
         .filter(|(_, r)| **r != Role::Ignore)
     {
         let t = *tokens.get(i).ok_or(i)?;
-        let note = || note(t, c4);
+        let note = || note(t);
         let read = match role {
             Role::Ignore => Some(()),
             Role::Root => note().map(|k| p.root = Some(k)),
@@ -229,17 +229,14 @@ fn share(values: &[u8], value: u8, (first, last): (u8, u8), midpoint: bool) -> [
     [low, high]
 }
 
-/// The regions of the files `names`, their tokens at `separator` read by `roles` (by position; past them, ignored);
-/// `c4` is `Set middle C to C4`. A file with only a root shares the keyboard with the other roots of its group, split
+/// The regions of the files `names`, their tokens at `separator` read by `roles` (by position; past them, ignored).
+/// A file with only a root shares the keyboard with the other roots of its group, split
 /// at the midpoints; one with only a top velocity shares 1–127 with the other layers of its keys; one with neither
 /// plays all keys at root 60, or all velocities. Round robins of one zone count from 1. A file whose token does not
 /// parse is flagged and keeps those defaults; regions that overlap, round robins of one zone aside, are flagged too.
 // ponytail: the overlap check is O(n²); a sweep by key if thousands of files ever map at once.
-pub fn map(names: &[String], separator: &str, roles: &[Role], c4: bool) -> Vec<Region> {
-    let parsed: Vec<_> = names
-        .iter()
-        .map(|n| parse(n, separator, roles, c4))
-        .collect();
+pub fn map(names: &[String], separator: &str, roles: &[Role]) -> Vec<Region> {
+    let parsed: Vec<_> = names.iter().map(|n| parse(n, separator, roles)).collect();
     let ok = || parsed.iter().flatten();
     let mut regions: Vec<Region> = names
         .iter()
@@ -445,16 +442,13 @@ mod tests {
             tokens("Piano_C4_Vel1-100.flac", "_"),
             ["Piano", "C4", "Vel1-100"]
         );
-        // Note names in any case, with sharps or flats, and MIDI numbers; `Set middle C to C4` says which C is 60.
-        let c4 = ["C4", "c4", "C#4", "Db4", "B3", "60", "127"].map(|t| note(t, true));
-        assert_eq!(c4, [60, 60, 61, 61, 59, 60, 127].map(Some));
-        assert_eq!((note("C5", false), note("C4", false)), (Some(60), Some(48)));
+        // Note names in any case, with sharps or flats, and MIDI numbers. `C4` is middle C (60), as libraries name
+        // their samples, under either middle C setting: an FL-style 48 played them an octave high (issue #90).
+        let notes = ["C4", "c4", "C#4", "Db4", "B3", "C5", "60", "127"].map(note);
+        assert_eq!(notes, [60, 60, 61, 61, 59, 72, 60, 127].map(Some));
+        assert_eq!([note("128"), note("X9"), note("C")], [None; 3]);
         assert_eq!(
-            [note("128", true), note("X9", true), note("C", true)],
-            [None; 3]
-        );
-        assert_eq!(
-            guess(&["Piano", "C4", "v100", "RR1"], true),
+            guess(&["Piano", "C4", "v100", "RR1"]),
             [Ignore, Root, Velocity, RoundRobin]
         );
 
@@ -469,7 +463,7 @@ mod tests {
             "Piano_X9_Vel1-127_RR1.wav",
             "Piano_C4_Vel50-110_RR1.flac",
         ]);
-        let got = map(&files, "_", &[Ignore, Root, Velocity, RoundRobin], true);
+        let got = map(&files, "_", &[Ignore, Root, Velocity, RoundRobin]);
         // Roots 60, 64, 67 and 73 share the keyboard at the midpoints; one value is the top of its layer.
         let rr = |r: Region, seq| Region {
             seq: Some(seq),
@@ -506,7 +500,6 @@ mod tests {
             &names(&["Strings_C3_B3_1_90.wav"]),
             "_",
             &[Group, LowKey, HighKey, LowVel, HighVel],
-            true,
         );
         let group = |r: Region| Region {
             group: "Strings".into(),
@@ -521,7 +514,7 @@ mod tests {
                 [1, 90]
             ))]
         );
-        let kick = map(&names(&["Kick-36.wav"]), "-", &[Ignore, Key], true);
+        let kick = map(&names(&["Kick-36.wav"]), "-", &[Ignore, Key]);
         assert_eq!(kick, [region("Kick-36.wav", 36, [36, 36], [1, 127])]);
     }
 
@@ -534,7 +527,7 @@ mod tests {
             "Grand Piano_C4_v127_RR1.flac",
             "Grand Piano_G4_v127_RR1.flac",
         ]);
-        let regions = map(&files, "_", &[Group, Root, Velocity, RoundRobin], true);
+        let regions = map(&files, "_", &[Group, Root, Velocity, RoundRobin]);
         let text = sfz("My Grand", &regions);
         let parsed = honeydew_audio::sfz::parse(&text, &|_| None);
         assert!(

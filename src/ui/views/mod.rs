@@ -61,6 +61,8 @@ pub mod instrument_builder;
 pub mod versions;
 // A Lemon plugin's editor full screen (#68).
 pub mod lemon_editor;
+// A song section's dialog (#80).
+pub mod section_settings;
 
 /// What fills the editor area, between the top of the screen and the transport bar.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -175,6 +177,9 @@ pub enum Overlay {
     /// The editor of the built-in Lemon plugin module with instance id `module` on `channel`, full screen (#68, its rack
     /// card's full screen button).
     LemonEditor { channel: usize, module: i32 },
+    /// Song section `section`'s dialog (#80: the playlist ruler's `Section…`, or a tap on its name), with its name field's
+    /// text.
+    SectionSettings { section: usize, name: String },
 }
 
 /// `Link to MIDI CC`'s prompt.
@@ -813,6 +818,9 @@ impl Slots {
             // Hidden while what it opened (the sample picker) or a message shows over it.
             Overlay::LemonEditor { channel, module } => {
                 top.then(|| lemon_editor::show(&mut self.lemon_editor, ui, app, *channel, *module))?
+            }
+            Overlay::SectionSettings { section, name } => {
+                section_settings::show(ui, app, *section, name)
             }
         }
     }

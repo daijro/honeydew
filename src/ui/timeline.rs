@@ -58,7 +58,7 @@ const THUMB_END: f32 = 0.15;
 const THUMB_ALPHA: f32 = 0.3;
 /// The play box: its width, its inset from the ruler's top and bottom, its right corners' radius, the icon's scale and
 /// alpha, how far its line reaches below the ruler (in ruler heights), and its touch area around the playhead x.
-const BOX_W: f32 = 1.72;
+pub(crate) const BOX_W: f32 = 1.72;
 const BOX_INSET: f32 = 0.08;
 const BOX_R: f32 = 0.15;
 const BOX_ICON: f32 = 0.82;

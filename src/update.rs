@@ -24,8 +24,8 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -33,13 +33,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::content::install::{self, Progress, SHIPPED_RELEASE};
 
-/// This build's GitHub repository, whose releases are its updates: the fork's own (upstream's APKs are another app, with
-/// another signature, and lack the fork's changes).
-pub const REPO: &str = "RememberedA/DqAqW";
+/// The project's GitHub repository.
+pub const REPO: &str = "daijro/honeydew";
 /// Its latest release, in GitHub's API.
-const LATEST: &str = "https://api.github.com/repos/RememberedA/DqAqW/releases/latest";
-/// The repository whose releases hold the sound library (`sounds-<version>`): upstream's, which the fork shares.
-pub const SOUNDS_REPO: &str = "daijro/honeydew";
+const LATEST: &str = "https://api.github.com/repos/daijro/honeydew/releases/latest";
 /// Its sound library releases' tags (`sounds-<version>`), each made when its release is published.
 const SOUNDS_TAGS: &str =
     "https://api.github.com/repos/daijro/honeydew/git/matching-refs/tags/sounds-";
@@ -173,8 +170,6 @@ pub struct Status {
     pub sounds: Job,
     /// The sound library's download waits for Wi-Fi.
     pub waiting_for_wifi: bool,
-    /// The sound library's download is paused (it goes on from what it has when continued).
-    pub paused: bool,
     /// The progress shown ([`Self::update`], [`Self::sounds`]) is the sound library's copy out of the full APK
     /// ([`keep_sounds`]).
     pub copying_sounds: bool,
@@ -193,7 +188,6 @@ static STATUS: Mutex<Status> = Mutex::new(Status {
     update: Job::Idle,
     sounds: Job::Idle,
     waiting_for_wifi: false,
-    paused: false,
     copying_sounds: false,
     sounds_latest: None,
     sounds_ended: false,
@@ -317,10 +311,6 @@ pub fn check(auto: bool) {
             s.sounds_latest = Some(sounds);
             match found {
                 Ok(release) => (s.latest, s.check_failed) = (Some(release), None),
-                // GitHub's answer for a repository without a release yet.
-                Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                    s.check_failed = Some(format!("{REPO} has no release yet."));
-                }
                 Err(err) => s.check_failed = Some(err.to_string()),
             }
         });
@@ -500,7 +490,7 @@ fn installed(to: &Path) -> io::Result<String> {
 /// The sound library release `version`, published as its own release (`sounds-<version>`, from
 /// `.github/workflows/release.yml`): `index.json`, `CREDITS.txt` and the parts.
 pub fn sounds_url(version: &str) -> String {
-    format!("https://github.com/{SOUNDS_REPO}/releases/download/sounds-{version}")
+    format!("https://github.com/{REPO}/releases/download/sounds-{version}")
 }
 
 /// The sound library to download: the newest this build reads, of those a check found ([`newest_sounds`]), else the
@@ -508,19 +498,6 @@ pub fn sounds_url(version: &str) -> String {
 pub fn sounds_wanted() -> String {
     let found = with(|s| s.sounds_latest.clone());
     found.unwrap_or_else(|| SHIPPED_RELEASE.trim().to_owned())
-}
-
-/// The running sound library download's progress, while one runs, so [`pause_sounds`] can reach it.
-static SOUNDS_PROGRESS: Mutex<Option<Arc<Progress>>> = Mutex::new(None);
-
-/// Pauses (`on`) or continues the sound library's download. Paused, it waits before its next part and goes on from
-/// the `.part` it left, so continuing downloads only what is missing.
-pub fn pause_sounds(on: bool) {
-    with(|s| s.paused = on);
-    let held = SOUNDS_PROGRESS.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(p) = held.as_ref() {
-        p.paused.store(on, Relaxed);
-    }
 }
 
 /// Downloads the sound library ([`sounds_wanted`]) into its folder on a worker, unless it is running: only the parts
@@ -537,8 +514,7 @@ pub fn download_sounds() {
         let _ = keep_sounds(0, |done, total| {
             with(|s| s.sounds = Job::Running(done, total))
         });
-        let progress = Arc::new(Progress::default());
-        *SOUNDS_PROGRESS.lock().unwrap_or_else(|e| e.into_inner()) = Some(progress.clone());
+        let progress = Progress::default();
         let tell = || {
             let (done, total) = (progress.done.load(Relaxed), progress.total.load(Relaxed));
             with(|s| s.sounds = Job::Running(done, total));
@@ -551,10 +527,8 @@ pub fn download_sounds() {
             })
         };
         let result = install::download(&sounds_url(&version), &target, &progress, &fetch);
-        *SOUNDS_PROGRESS.lock().unwrap_or_else(|e| e.into_inner()) = None;
         with(|s| {
             s.waiting_for_wifi = false;
-            s.paused = false;
             s.sounds_ended = true;
             s.sounds = match result {
                 Ok(_) => Job::Done(format!(

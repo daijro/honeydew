@@ -33,10 +33,6 @@ pub fn write(song: &Song) -> Result<Vec<u8>, FlmError> {
     let buses = song.send_buses();
     let mut writer = ChunkWriter::new_file();
     writer.chunk(*b"HEAD", |writer| write_head(writer, song))?;
-    // Honeydew extension: omitted for legacy/default-rate files.
-    if song.sample_rate != 44_100 {
-        writer.chunk(*b"HDSR", |writer| writer.u32(song.sample_rate))?;
-    }
     writer.chunk(*b"KEYB", |writer| write_keyboard(writer, song))?;
     writer.chunk(*b"META", |writer| write_meta(writer, song))?;
     writer.chunk(*b"TDIV", |writer| {
@@ -64,6 +60,20 @@ pub fn write(song: &Song) -> Result<Vec<u8>, FlmError> {
         writer.chunk(*b"CHNL", |writer| {
             write_channel(writer, channel, rows[*index])
         })?;
+    }
+    // Honeydew's sections (#80): an `HDSe` each, `u32` start and end ticks, `f32` hue and `vstr32` name, which a reader
+    // that does not know it skips as an unknown chunk.
+    for section in &song.sections {
+        writer.chunk(*b"HDSe", |writer| {
+            writer.u32(section.start)?;
+            writer.u32(section.end)?;
+            writer.f32(section.hue)?;
+            writer.vstr32(section.name.as_bytes())
+        })?;
+    }
+    // The project sample rate (PR #87): an `HDSR`, `u32` Hz, only when the song has one (0 follows the output).
+    if song.sample_rate != 0 {
+        writer.chunk(*b"HDSR", |writer| writer.u32(song.sample_rate))?;
     }
     write_raw(&mut writer, &song.file.unknown_chunks)?;
     crate::versions::write(&mut writer, &song.file.versions)?;
@@ -522,6 +532,10 @@ fn write_lane(writer: &mut ChunkWriter, lane: &Lane) -> Result<(), FlmError> {
     // A hidden track (Honeydew's own) holds an empty `HDHd`, which a reader that does not know it skips.
     if lane.hidden {
         writer.chunk(*b"HDHd", |_| Ok(()))?;
+    }
+    // A collapsed track (#83) holds an empty `HDCo`, which a reader that does not know it skips.
+    if lane.collapsed {
+        writer.chunk(*b"HDCo", |_| Ok(()))?;
     }
     write_raw(writer, &lane.file.unknown_chunks)
 }

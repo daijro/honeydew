@@ -219,15 +219,18 @@ fn a_seek_sets_each_param_to_its_initial_value_plus_its_automation_at_the_beat()
 }
 
 /// The loop wrap: a note-off for each key the sequencer holds (a live key sounds on), then a re-sync at the loop start,
-/// which starts no note spanning it. Loop beats 1 to 3; A3 from beat 0 for 4 beats spans the loop start.
+/// which starts no note spanning it. Loop beats 1 to 3; C4 from beat 0 for 4 beats spans the loop start, A3 from beat 2
+/// for 2 beats its end. Play before the loop starts at its start (PR #87), so the output begins at beat 1.
 #[test]
 fn the_loop_wrap_releases_the_sequencers_keys_and_starts_no_spanning_note() {
-    let mut song = synth(&[note(0.0, 4.0, 57)]);
+    let mut song = synth(&[note(0.0, 4.0, 60), note(2.0, 2.0, 57)]);
     song.play_loop = Some((128, 3 * 128));
-    let output = played(&song, 5.0);
-    assert!(energy(&output[2 * BEAT..3 * BEAT]) > 0.01);
-    // AMP Rel 0.07 releases within 0.14 s (6720 frames); the second pass is silent after that.
-    assert_eq!(energy(&output[3 * BEAT + 8000..5 * BEAT]), 0.0);
+    let output = played(&song, 4.0);
+    assert_eq!(energy(&output[..BEAT]), 0.0, "C4 spans the start");
+    assert!(energy(&output[BEAT..2 * BEAT]) > 0.01);
+    // The wrap releases A3 (AMP Rel 0.07: within 0.14 s, 6720 frames) and starts no C4: silent until A3 again.
+    assert_eq!(energy(&output[2 * BEAT + 8000..3 * BEAT]), 0.0);
+    assert!(energy(&output[3 * BEAT..4 * BEAT]) > 0.01);
 
     // A live key held across wraps sounds as it does with no loop.
     let live = |looped: bool| {

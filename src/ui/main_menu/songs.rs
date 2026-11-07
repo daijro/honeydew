@@ -2,10 +2,16 @@
 //! breadcrumb, the folder title and the song list, and the big light circles `New`, `Save` and `Import` at the right
 //! edge.
 //!
-//! The folder title is in the folder rows' size ([`ROW_FONT`]), with no gap above it: the breadcrumb's line is there
-//! only inside a folder, so at the root the title is level with `Back`. One row size: song rows too are in
-//! [`ROW_FONT`], as the side browsers' rows are all one size. The rows are the browsers' ([`search_bar::paint_row`]):
-//! the current one is the song last opened here, or the folder holding it.
+//! The folder title is large and bold ([`TITLE_FONT`], #73), with no gap above it: the breadcrumb's line is there only
+//! inside a folder, so at the root the title is level with `Back`. One row height; the songs' names are in
+//! [`ROW_FONT`], the folders' bold and a little larger, [`FOLDER_FONT`] (#79). The rows are the browsers'
+//! ([`search_bar::paint_row`]): the current one is the song last opened here, or the folder holding it.
+//!
+//! `Back` at `My Songs` goes up to the user folder ([`SongLibrary::user_folder`], #73), titled [`crate::APP_NAME`]: its
+//! folders (`My Songs`, `My Tracks`, `My Samples`, …, the bin, `Original Content`), which are places, never its files,
+//! and nothing is made or pasted there. `Back` stops there. Below it every folder but `My Songs` lists every file, and
+//! a tap on a file that opens no song (a render, a sample) selects it, for its actions. `My Songs` there is the root
+//! again. Every file action stays inside the user folder.
 //!
 //! Folders come first, then songs and project archives (`.zip`, in the same row style), each group in the chosen order
 //! (`A-Z` by default, case-insensitive). The search bar ([`SearchBar`]) keeps the rows whose name holds the query,
@@ -23,8 +29,16 @@
 //!
 //! A secondary tap (right click) on a row enters select mode, selects the row and opens the ≡ menu at the pointer.
 //!
+//! Touch (#72, after Android reports): a long press on a row ([`gesture::long_press`]) enters select
+//! mode and selects the row, without the menu (egui's own long touch opens none either); taps then add or remove rows. In select mode a bar under the list shows
+//! `N selected` and the ≡ menu's enabled actions as buttons ([`BAR_H`]), wrapping into more lines when they do not fit.
+//! `Delete` of more than one item asks first (`Move N items to Recently Deleted?`).
+//!
+//! [`MainMenu::show_render`](super::MainMenu::show_render) opens the user folder's folder that holds a render
+//! (`My Tracks`), the render current: the render message's `Open My Tracks`.
+//!
 //! The ≡ menu has the file actions that apply to songs, archives and folders ([`file_ops`]); `Send to playlist` and
-//! `Insert at playhead` never do (SONGS lists no audio files). `Unzip` is there while exactly one archive is selected:
+//! `Insert at playhead` never do. `Unzip` is there while exactly one archive is selected:
 //! it is [`MainMenuAction::Unzip`], which the app does, and the list is read again once it has. `Create folder` and
 //! `Rename` ask for the name in a field under the title (`Enter folder name`, `Enter name`): Enter does it, Escape or a
 //! click elsewhere drops it. `Delete` copies into `Recently Deleted` (at its place below the user folder) and removes
@@ -34,7 +48,8 @@
 //! message. The folder is read again after every action.
 //!
 //! On the web `Export` downloads each song, and is disabled while a folder is selected (the browser cannot download
-//! a folder); `Show in file browser...` is left out there, as there is no file manager.
+//! a folder); `Show in file browser...` is left out there, as there is no file manager. A phone's menu ends in `Send`
+//! (#72), the selected files to the system's share sheet, disabled while a folder is selected.
 //!
 //! `New` opens its menu: `Empty`, the header `Templates`, then the template names in byte order ([`all_templates`]):
 //! our factory's `Templates` folder ([`crate::content::factory`]) and, with imported content in the content folder
@@ -60,7 +75,9 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui::text::{CCursor, CCursorRange};
 use eframe::egui::text_edit::TextEditState;
-use eframe::egui::{Align2, Context, Id, Key, Pos2, Rect, Sense, TextEdit, Ui, pos2, vec2};
+use eframe::egui::{
+    Align2, Context, Id, Key, PointerButton, Pos2, Rect, Sense, TextEdit, Ui, pos2, vec2,
+};
 
 use super::file_ops::{FILE_MANAGER, FileActions, MenuState, Moved, Opt, Step, options_menu};
 use super::library::{BIN_DAYS, RECENTLY_DELETED, SONGS_FOLDER, SongEntry, SongLibrary};
@@ -73,7 +90,7 @@ use crate::ui::popup::{self, PopupItem};
 use crate::ui::scroller::Scroller;
 use crate::ui::search_bar::{self, Found, ROW_H, RowLook, SearchBar, Walk, matching};
 use crate::ui::song_options::{SongOptionsAction, SongOptionsDialog};
-use crate::ui::widgets::{text_label, truncated};
+use crate::ui::widgets::{Button, button, text_label, truncated, truncated_bold};
 use crate::ui::{anim, focus, gesture};
 
 // Sizes in U.
@@ -91,8 +108,11 @@ const TITLE_H: f32 = SIDE_STEP;
 const SEARCH_H: f32 = 1.0;
 /// The gap under the name field.
 const FIELD_GAP: f32 = 0.25;
-/// Every row's font, folder or song, and the folder title's: one row size, and the title in it.
+/// A song's row font, and a folder's: a third of the way to the title's (#79).
 const ROW_FONT: FontSize = FontSize::Pt12;
+const FOLDER_FONT: FontSize = FontSize::Pt14;
+/// The folder title's font, set apart from the rows (#73).
+const TITLE_FONT: FontSize = FontSize::Pt18;
 /// The characters a too-long breadcrumb keeps after its middle ellipsis, at most: far more than the modules browser's
 /// 5, as the nearest parent folder is what the trail is for. The middle ellipsis then settles at about half the line
 /// for the end.
@@ -104,6 +124,12 @@ const TEXT_LIMIT: usize = 255;
 /// `Save`'s swipe: let go pulled this far left, it quick-saves; the circle follows the pointer at most `SWIPE_MAX`.
 const SWIPE_SAVE: f32 = 0.75;
 const SWIPE_MAX: f32 = 1.0;
+/// Select mode's bar under the list: its buttons' height, its lines' step, the gap after the count and between buttons,
+/// and a button's padding each side of its label.
+const BAR_H: f32 = 1.0;
+const BAR_STEP: f32 = 1.25;
+const BAR_GAP: f32 = 0.25;
+const BAR_PAD: f32 = 0.25;
 
 /// `Import` has a menu with `Import folder`: everywhere but the web, which picks no folders to copy.
 const IMPORT_FOLDER: bool = cfg!(not(target_arch = "wasm32"));
@@ -245,8 +271,7 @@ pub(super) fn all_templates(factory: &Factory, library: &dyn SongLibrary) -> Vec
 pub(super) struct SongsTab {
     /// The folders opened from the root, outermost first.
     folders: Vec<SongEntry>,
-    /// Above `My Songs` (#73): the user folder ([`SongLibrary::user_folder`]) the list shows when the root's `Back`
-    /// goes up to it; `None` at `My Songs`.
+    /// Above `My Songs` (#73): the user folder ([`SongLibrary::user_folder`]) the folders are opened from, the top.
     up: Option<PathBuf>,
     /// The open folder's entries, read once; `None` reads them again.
     listing: Option<Vec<SongEntry>>,
@@ -278,6 +303,8 @@ pub(super) struct SongsTab {
     current: Option<PathBuf>,
     /// `Save`'s swipe.
     swipe: Swipe,
+    /// `Delete` of several items, waiting for its question's answer.
+    deleting: Option<Vec<SongEntry>>,
 }
 
 /// `Save`'s swipe (a swipe button, `Swipe for quick save`): how far the circle is pulled left, in points, and the
@@ -321,7 +348,6 @@ impl Swipe {
 }
 
 impl SongsTab {
-    /// The open folder, `None` at the root.
     /// The open folder, `None` at the root (`My Songs`).
     pub(super) fn folder(&self) -> Option<&std::path::Path> {
         (self.folders.last().map(|f| f.path.as_path())).or(self.up.as_deref())
@@ -514,12 +540,12 @@ impl SongsTab {
             );
         }
         // So is the title, which would run under the big circles.
-        truncated(
+        truncated_bold(
             ui.painter(),
             line(TITLE_H),
             Align2::LEFT_CENTER,
             self.title(),
-            m.font_id(ROW_FONT),
+            m.font_id(TITLE_FONT),
             text,
             NAME_TAIL_K,
         );
@@ -562,8 +588,6 @@ impl SongsTab {
                 commit = commit.or(Some(ui.input(|i| i.key_pressed(Key::Enter))));
             }
         }
-        let list = Rect::from_x_y_ranges(mid.x_range(), y..=mid.bottom());
-
         // The list: the open folder's rows, or the search's songs below it, each with its folder's path.
         let query = self.search.query();
         if !query.is_empty() && self.found.is_none() {
@@ -579,6 +603,36 @@ impl SongsTab {
                     .map(|e| (e, None))
                     .collect(),
             };
+        // Select mode's bar under the list: `N selected`, then the ≡ menu's enabled actions, each placed at its left,
+        // line and width, a line holding what fits.
+        let bar = (self.selection.as_ref()).map(|s| {
+            let items = options_menu(self.menu_state(library, in_trash));
+            let enabled: Vec<_> = items.into_iter().filter(|i| !i.disabled).collect();
+            (format!("{} selected", s.len()), enabled)
+        });
+        let (gap, pad, step) = (m.u(BAR_GAP), m.u(BAR_PAD), m.u(BAR_STEP));
+        let width = |label: &str| {
+            let font = m.font_id(FontSize::Pt8);
+            ui.painter()
+                .layout_no_wrap(label.to_owned(), font, text)
+                .size()
+                .x
+        };
+        let (mut placed, mut lines) = (Vec::new(), 0);
+        if let Some((count, items)) = &bar {
+            let mut x = mid.left() + width(count) + gap;
+            for item in items {
+                let w = width(&item.label) + 2.0 * pad;
+                if x + w > mid.right() && x > mid.left() {
+                    (lines, x) = (lines + 1, mid.left());
+                }
+                placed.push((x, lines, w));
+                x += w + gap;
+            }
+            lines += 1;
+        }
+        let bar_top = (mid.bottom() - lines as f32 * step).max(y);
+        let list = Rect::from_x_y_ranges(mid.x_range(), y..=bar_top);
         let row_h = m.u(ROW_H);
         // Select mode's checkboxes grow in.
         let checks = (self.selection.as_ref()).map(|_| {
@@ -612,12 +666,13 @@ impl SongsTab {
             if !rect.intersects(list) {
                 continue;
             }
-            let response = crate::ui::focus::interact(
+            let mut response = crate::ui::focus::interact(
                 ui,
                 rect.intersect(list),
                 id.with(("row", &entry.path)),
                 Sense::click(),
             );
+            let long = gesture::long_press(ui, &mut response, m);
             let selected = (self.selection.as_ref()).is_some_and(|s| s.contains(&entry.path));
             let current = self
                 .current
@@ -626,11 +681,15 @@ impl SongsTab {
                     true => c.starts_with(&entry.path),
                     false => *c == entry.path,
                 });
-            // Centred in the whole row: the clip cuts a half-scrolled one. One row size for songs and folders.
+            // Centred in the whole row: the clip cuts a half-scrolled one. One row height for songs and folders.
             let look = RowLook {
                 name: &entry.name,
                 place: found.map(|f| f.place.as_str()),
-                font: ROW_FONT,
+                font: if entry.is_folder {
+                    FOLDER_FONT
+                } else {
+                    ROW_FONT
+                },
                 ink: text,
                 current,
                 pressed: response.is_pointer_button_down_on(),
@@ -638,11 +697,14 @@ impl SongsTab {
                 select: checks
                     .filter(|_| !is_place(&entry.path))
                     .map(|t| (t, selected)),
+                bold: entry.is_folder,
             };
             search_bar::paint_row(&painter, cx, rect, &look);
-            if response.secondary_clicked() && !is_place(&entry.path) {
+            // A right click, not egui's long touch (`secondary_clicked`): a touch's long press only selects.
+            let right = response.clicked_by(PointerButton::Secondary);
+            if (right || long) && !is_place(&entry.path) {
                 let at = response.interact_pointer_pos().unwrap_or(rect.center());
-                context = Some((entry.path.clone(), at));
+                context = Some((entry.path.clone(), (!long).then_some(at)));
             }
             if response.clicked() {
                 // A found folder opens through the folders above it.
@@ -652,6 +714,31 @@ impl SongsTab {
         }
         focus::close(&ctx, Id::new(focus::SONGS));
         ui.set_clip_rect(outer_clip);
+        let mut bar_pick = None;
+        if let Some((count, items)) = &bar {
+            let line = |i: usize| bar_top + (i as f32 + 0.5) * step;
+            let first = Rect::from_x_y_ranges(mid.x_range(), bar_top..=bar_top + step);
+            text_label(
+                ui,
+                cx,
+                first,
+                count,
+                FontSize::Pt8,
+                Align2::LEFT_CENTER,
+                text,
+            );
+            for (item, &(x, i, w)) in items.iter().zip(&placed) {
+                let at = pos2(x, line(i) - m.u(BAR_H) / 2.0);
+                let rect = Rect::from_min_size(at, vec2(w, m.u(BAR_H)));
+                let b = Button {
+                    font: FontSize::Pt8,
+                    ..Button::new(id.with(("bar", item.row)), rect, &item.label, false, c)
+                };
+                if button(ui, cx, &b, true).clicked() {
+                    bar_pick = item.id;
+                }
+            }
+        }
         focus::close(&ctx, browser_id);
         let all: Vec<PathBuf> = rows
             .iter()
@@ -669,23 +756,39 @@ impl SongsTab {
                 }
             } else if entry.is_folder {
                 self.folders.extend(folders);
+                // `My Songs` from above it is the root again, with its places.
+                if self.up.is_some()
+                    && self.folders.first().map(|f| f.path.as_path()) == library.root()
+                {
+                    self.up = None;
+                    self.folders.remove(0);
+                }
                 self.open_folder_changed();
                 // A found folder ends the search.
                 if found {
                     self.search.end();
                 }
+            } else if !crate::project_files::is_project(&entry.path) {
+                // A render opens no song: a tap selects it, for its actions.
+                self.selection = Some(vec![entry.path]);
             } else {
                 self.current = Some(entry.path.clone());
                 action = Some(MainMenuAction::Open(entry.path));
             }
         }
-        // A secondary tap: select mode with the row selected, and the ≡ menu at the pointer.
+        // A secondary tap or a long press: select mode with the row selected; a secondary tap also opens the ≡ menu at
+        // the pointer.
         if let Some((path, at)) = context {
             let selection = self.selection.get_or_insert_default();
             if !selection.contains(&path) {
                 selection.push(path);
             }
-            self.popup = Some((Popup::Options, at));
+            if let Some(at) = at {
+                self.popup = Some((Popup::Options, at));
+            }
+        }
+        if let Some(opt) = bar_pick {
+            action = self.apply(opt, library, all.clone()).or(action);
         }
 
         // Popups last, over everything.
@@ -727,24 +830,7 @@ impl SongsTab {
                     result.close
                 }
                 Popup::Options => {
-                    let picked = self.picked();
-                    let state = MenuState {
-                        selected: picked.len(),
-                        archive: matches!(&picked[..], [e] if e.is_archive()),
-                        // SONGS lists no audio files.
-                        wav: false,
-                        in_trash,
-                        paste: self.actions.can_paste(),
-                        export: !cfg!(mobile)
-                            && (cfg!(not(target_arch = "wasm32"))
-                                || picked.iter().all(|e| !e.is_folder)),
-                        reveal: FILE_MANAGER,
-                        // Original content (`Demo Songs`): what would change it is dimmed.
-                        locked_folder: (self.open_dir(library))
-                            .is_some_and(|d| library.read_only(&d)),
-                        locked_picked: picked.iter().any(|e| library.read_only(&e.path)),
-                    };
-                    let items = options_menu(state);
+                    let items = options_menu(self.menu_state(library, in_trash));
                     let result = popup::show(&ctx, id.with("options"), at, area, &items, cx);
                     if let Some(opt) = result.selected {
                         action = self.apply(opt, library, all).or(action);
@@ -802,6 +888,28 @@ impl SongsTab {
         true
     }
 
+    /// What the ≡ menu (and select mode's bar) depends on; `in_trash`: the open folder is in the bin.
+    fn menu_state(&self, library: &dyn SongLibrary, in_trash: bool) -> MenuState {
+        let picked = self.picked();
+        MenuState {
+            selected: picked.len(),
+            archive: matches!(&picked[..], [e] if e.is_archive()),
+            // `Convert to FLAC` needs the pickers' loading screen.
+            wav: false,
+            in_trash,
+            paste: self.actions.can_paste(),
+            export: !cfg!(mobile)
+                && (cfg!(not(target_arch = "wasm32")) || picked.iter().all(|e| !e.is_folder)),
+            reveal: FILE_MANAGER,
+            // Original content (`Demo Songs`): what would change it is dimmed.
+            // The user folder's top holds the app's files: nothing is made or pasted there.
+            locked_folder: (self.open_dir(library)).is_some_and(|d| library.read_only(&d))
+                || self.up.is_some() && self.folders.is_empty(),
+            locked_picked: picked.iter().any(|e| library.read_only(&e.path)),
+            send: cfg!(mobile).then(|| picked.iter().all(|e| !e.is_folder)),
+        }
+    }
+
     /// The selected rows, in the folder's order, or the search's.
     fn picked(&self) -> Vec<SongEntry> {
         let Some(selection) = &self.selection else {
@@ -831,7 +939,7 @@ impl SongsTab {
         };
         let list = |folder: &Path| ordered(&library.list(Some(folder)).unwrap_or_default());
         let names = self.folders.iter().map(|f| f.name.as_str());
-        let place: Vec<&str> = std::iter::once(SONGS_FOLDER).chain(names).collect();
+        let place: Vec<&str> = std::iter::once(self.top()).chain(names).collect();
         let mut walk = Walk::skipping(library.trash());
         let rows = ordered(self.listing.as_deref().unwrap_or_default());
         walk.add(&list, rows, &place.join("/"));
@@ -859,7 +967,13 @@ impl SongsTab {
                 _ => None,
             };
         }
-        match self.actions.apply(opt, self.picked(), dir, library) {
+        let picked = self.picked();
+        if opt == Opt::Delete && picked.len() > 1 {
+            let question = format!("Move {} items to {RECENTLY_DELETED}?", picked.len());
+            self.deleting = Some(picked);
+            return Some(MainMenuAction::ConfirmDelete(question));
+        }
+        match self.actions.apply(opt, picked, dir, library) {
             Step::SelectAll => self.selection = Some(all),
             Step::Nothing => {}
             Step::Ask(rename, text) => self.prompt = Some(Prompt::new(rename, text)),
@@ -874,14 +988,36 @@ impl SongsTab {
         None
     }
 
-    /// `Delete permanently`'s question was answered: `yes` removes what it asked about.
+    /// `Delete permanently`'s question, or that of a `Delete` of several, was answered: `yes` removes what it asked
+    /// about.
     pub(super) fn delete_answered(
         &mut self,
         yes: bool,
         library: &mut dyn SongLibrary,
     ) -> Option<MainMenuAction> {
+        if let Some(picked) = self.deleting.take() {
+            let dir = self.open_dir(library);
+            let step = yes.then(|| self.actions.apply(Opt::Delete, picked, dir, library));
+            return match step {
+                Some(Step::Changed(done)) => self.changed(done),
+                _ => None,
+            };
+        }
         let done = self.actions.answered(yes, library)?;
         self.changed(done)
+    }
+
+    /// Opens the user folder's folder that holds `file` (`My Tracks`, for a render) from its top, with `file` current.
+    pub(super) fn show_render(&mut self, file: &Path, library: &dyn SongLibrary) {
+        let user = library.user_folder();
+        let listed = user.as_deref().and_then(|u| library.list(Some(u)).ok());
+        let place =
+            (listed.into_iter().flatten()).find(|e| e.is_folder && file.starts_with(&e.path));
+        self.up = place.as_ref().and(user);
+        self.folders = place.into_iter().collect();
+        self.current = Some(file.to_owned());
+        self.selection = None;
+        self.open_folder_changed();
     }
 
     /// What the file actions moved (`Some` where to) or deleted since the last call, oldest first.
@@ -921,7 +1057,7 @@ impl SongsTab {
         };
         let (first, below) = match in_trash {
             true => (bin_crumb(), above.get(1..).unwrap_or_default()),
-            false => (SONGS_FOLDER.to_owned(), above),
+            false => (self.top().to_owned(), above),
         };
         std::iter::once(first.as_str())
             .chain(below.iter().map(|f| f.name.as_str()))
@@ -931,9 +1067,13 @@ impl SongsTab {
 
     /// The open folder's name.
     fn title(&self) -> &str {
-        match self.folders.last() {
-            Some(f) => &f.name,
-            None if self.up.is_some() => crate::APP_NAME,
+        self.folders.last().map_or(self.top(), |f| &f.name)
+    }
+
+    /// Where the folders are opened from: `My Songs`, or the user folder above it.
+    fn top(&self) -> &'static str {
+        match self.up {
+            Some(_) => crate::APP_NAME,
             None => SONGS_FOLDER,
         }
     }

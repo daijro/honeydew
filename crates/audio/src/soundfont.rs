@@ -902,8 +902,10 @@ const MIN_TIME: f32 = 0.005;
 const SILENT: f32 = 0.01;
 /// The release coefficient of a sample without a loop once it has played to its end.
 const END_FADE: f32 = 0.01;
-/// The param defaults: Enable, Attack, Decay, Sustain, Release, Envelope (Original).
-const DEFAULTS: [f32; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+/// The param defaults: Enable, Attack, Decay, Sustain, Release, Envelope (Original), Fine Tune (0 cents).
+const DEFAULTS: [f32; 7] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5];
+/// Fine Tune, 200v − 100 cents on every voice: a Honeydew addition (#90).
+const FINE_TUNE: usize = 6;
 /// Channel param 4, Pitch Bend: v = 1 is 2 semitones up.
 const PITCH_BEND: usize = 4;
 const BEND_RANGE: f32 = 2.0;
@@ -1172,11 +1174,12 @@ impl Filter {
 }
 
 /// What an SFZ voice's control block reads besides its region: the CCs (0…1) at the process block's start (`then`)
-/// and end (`now`), the pitch bend (−1…1) and the rate.
+/// and end (`now`), the pitch bend (−1…1), Fine Tune (cents) and the rate.
 struct Controls<'a> {
     then: &'a [f32; 128],
     now: &'a [f32; 128],
     bend: f32,
+    fine: f32,
     rate: f32,
 }
 
@@ -1327,7 +1330,7 @@ impl Voice {
             true => ctl.bend * def.bend[0],
             false => -ctl.bend * def.bend[1],
         };
-        let cents = pitch + self.m.pitch + bend + 100.0 * self.slide[0];
+        let cents = pitch + self.m.pitch + bend + ctl.fine + 100.0 * self.slide[0];
         // `min` also turns an infinite or NaN step into the cap.
         let step = (self.step * 2f64.powf(f64::from(cents) / 1200.0)).min(MAX_STEP);
         if let (Some(hz), Some(fil)) = (def.cutoff, def.fil_type) {
@@ -1466,7 +1469,7 @@ pub struct SoundFontPlayer {
     voices: Box<[Voice]>,
     started: u64,
     sample_rate: f32,
-    params: [f32; 6],
+    params: [f32; DEFAULTS.len()],
     /// Pitch bend in semitones, and as the wheel stands (−1…1), which an SFZ's `bend_up` and `bend_down` scale.
     bend: f32,
     wheel: f32,
@@ -1780,9 +1783,9 @@ impl SoundFontPlayer {
 }
 
 impl Instrument for SoundFontPlayer {
-    /// Params 1–4 (Attack, Decay, Sustain, Release) and 5 (Envelope).
+    /// Params 1–4 (Attack, Decay, Sustain, Release), 5 (Envelope) and 6 (Fine Tune).
     fn set_parameter(&mut self, index: usize, value: f32) {
-        if let Some(param) = self.params.get_mut(index) {
+        if let Some(param) = self.params.get_mut(index).filter(|_| value.is_finite()) {
             *param = value;
         }
     }
@@ -1888,10 +1891,12 @@ impl Instrument for SoundFontPlayer {
                 false => to,
             };
         }
+        let fine = 200.0 * self.params[FINE_TUNE] - 100.0;
         let controls = Controls {
             then: &self.cc_then,
             now: &self.cc_now,
             bend: self.wheel,
+            fine,
             rate: self.sample_rate,
         };
         for (slot, voice) in self.voices.iter_mut().enumerate().filter(|(_, v)| v.on) {
@@ -1903,7 +1908,7 @@ impl Instrument for SoundFontPlayer {
                 );
                 continue;
             }
-            let bend = 2f64.powf(f64::from(self.bend + voice.slide[0]) / 12.0);
+            let bend = 2f64.powf(f64::from(self.bend + voice.slide[0] + fine / 100.0) / 12.0);
             // `min` also turns a hostile file's infinite or NaN step into the cap.
             let step = (voice.step * bend).min(MAX_STEP);
             let p = (voice.pan + voice.slide[1] + region.pan).clamp(0.0, 1.0);

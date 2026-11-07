@@ -206,7 +206,7 @@ impl HoneydewApp {
                 if sound {
                     self.key_on(channel, played, velocity);
                 } else {
-                    self.live_key((channel, played, Some(velocity)));
+                    self.record_key((channel, played, Some(velocity)));
                 }
             }
             Out::Note {
@@ -220,7 +220,7 @@ impl HoneydewApp {
                 if sound {
                     self.key_off(channel, played);
                 } else {
-                    self.live_key((channel, played, None));
+                    self.record_key((channel, played, None));
                 }
             }
             Out::ChannelParam {

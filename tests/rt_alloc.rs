@@ -165,6 +165,8 @@ fn engine_render_and_commands_do_not_allocate() {
     // A De-esser and Denoise (#43): Denoise's Learn goes on and off in the counted render.
     let de_esser = ch.rack.add(honeydew_audio::de_esser::DE_ESSER);
     let denoise = ch.rack.add(honeydew_audio::denoise::DENOISE);
+    // A Half Time (#91): its ring is sized at build, for the song tempo.
+    ch.rack.add(honeydew_audio::half_time::HALF_TIME);
     let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
     engine.note_on(2, 45, 1.0);
     let mut output = vec![0.0_f32; 4096 * 2];

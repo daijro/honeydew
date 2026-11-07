@@ -18,6 +18,10 @@ use crate::song::{DrumGrid, DrumKit, Event, LaneKind, PPQ, Song};
 /// A channel's pads as the engine plays them.
 pub(super) struct Kit {
     pub sampler: PadSampler,
+    /// Its channel is out of the mix (Mute, Solo): the pads that play into another channel are silent too.
+    pub out: bool,
+    /// Its channel.
+    channel: usize,
     /// Per pad, its slot's `LINk` id, which a negative instance names.
     ids: Vec<u32>,
     /// Per pad, the channel whose buffer it plays into: its send target, else its own channel.
@@ -54,7 +58,8 @@ impl Kit {
     }
 
     /// Adds one block of every pad into its output channel's buffer, before that channel's rack runs, and keeps its
-    /// peak. A pad with a send target (`LINk`@10 ≥ 0) skips its own channel entirely: rack, strip and sends.
+    /// peak. A pad with a send target (`LINk`@10 ≥ 0) skips its own channel entirely (rack, strip and sends) but for
+    /// its channel being out of the mix ([`Self::out`]).
     pub fn render(&mut self, buffers: &mut [OwnedStereoBuffer]) {
         for (pad, &output) in self.outputs.iter().enumerate() {
             let buffer = &mut buffers[output];
@@ -66,6 +71,10 @@ impl Kit {
             left.fill(0.0);
             right.fill(0.0);
             self.sampler.process(pad, left, right);
+            if self.out && output != self.channel {
+                self.peaks[pad] = [0.0; 2];
+                continue;
+            }
             let mut peak = [0.0_f32; 2];
             let out = buffer.left.iter_mut().zip(buffer.right.iter_mut());
             for ((l, r), (pl, pr)) in out.zip(left.iter().zip(right.iter())) {
@@ -126,6 +135,8 @@ pub(super) fn build(
     let count = kit.slots.len();
     Some(Kit {
         sampler: PadSampler::new(pads, sample_rate),
+        out: false,
+        channel,
         ids: kit.slots.iter().map(|slot| slot.file.id).collect(),
         outputs: (kit.slots.iter())
             .map(|slot| output(slot.file.send_target))

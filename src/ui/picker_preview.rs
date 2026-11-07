@@ -6,7 +6,8 @@
 //! plays note trunc(24 + 60u) (u: where across the row, clamped to [0, 1]) at velocity 1 until it lifts, one note at a
 //! time; while one finger holds, another touch falls through and re-picks the row. Enter (action `open`, `Preview`)
 //! holds note 60 while the strip has the keyboard focus (it takes it after each pick); the focus leaving it lets the
-//! note go. While the module loads it draws the `LOADING...` pulse over the row.
+//! note go. While the module loads it draws the `LOADING...` pulse over the row. Over a drum kit's pick it plays the
+//! kit's pads instead, across the row in pad order (#88).
 //!
 //! **Sample strip.** 1.75 U at the bottom of the panel, `menuFill`: the play button (icon 3, 1.2 U, centred in a 2 U
 //! column), the waveform (from x + 2 U, max(W − 2.4 U, 0) wide, 1 U tall, `text` at 0.85), and under it the sample's
@@ -35,11 +36,15 @@ const LOADING_INSET: f32 = 0.25;
 const LOADING_ALPHA: f32 = 0.5;
 pub const LOADING: &str = "LOADING...";
 
-/// The note a touch at `x` plays over `row`: trunc(24 + 60u), u = clamp((x − left)/width, 0, 1).
+/// The note a touch at `x` plays over `row`: trunc(24 + 60u) ([`across`]).
 pub fn note_at(x: f32, row: Rect) -> u8 {
+    (LOW + SPAN * across(x, row)) as u8
+}
+
+/// Where `x` is across `row`: u = clamp((x − left)/width, 0, 1).
+fn across(x: f32, row: Rect) -> f32 {
     let u = ((x - row.left()) / row.width()).clamp(0.0, 1.0);
-    let u = if u.is_nan() { 0.0 } else { u };
-    (LOW + SPAN * u) as u8
+    if u.is_nan() { 0.0 } else { u }
 }
 
 /// The loading fill's `text` alpha at `t` seconds: 0.5·|sin(2π·frac(t))|, two pulses a second.
@@ -67,6 +72,9 @@ pub(crate) struct Audition {
     /// `LOADING...`'s alpha, a ← 0.95a + 0.05 a frame while loading, else 0.
     text_alpha: f32,
     sounds: Vec<Sound>,
+    /// A drum kit's pad notes, in pad order (#88): a touch plays pad trunc(n·u) of the n, not [`note_at`]; Enter the
+    /// first. Empty for an instrument.
+    pub pads: Vec<u8>,
 }
 
 impl Audition {
@@ -104,7 +112,11 @@ impl Audition {
                 Finger::Down(..) if self.held.is_some_and(|(by, _)| by != KEY) => repick = true,
                 Finger::Down(id, pos) => {
                     if let Some(row) = row {
-                        self.trigger(id, note_at(pos.x, row));
+                        let key = match self.pads.len() {
+                            0 => note_at(pos.x, row),
+                            n => self.pads[((n as f32 * across(pos.x, row)) as usize).min(n - 1)],
+                        };
+                        self.trigger(id, key);
                     }
                 }
                 Finger::Up(id, _) if self.held.is_some_and(|(by, _)| by == id) => self.release(),
@@ -118,7 +130,7 @@ impl Audition {
     pub fn key(&mut self, pressed: bool, down: bool) {
         let holding = self.held.is_some_and(|(by, _)| by == KEY);
         if pressed && !holding {
-            self.trigger(KEY, KEY_NOTE);
+            self.trigger(KEY, self.pads.first().copied().unwrap_or(KEY_NOTE));
         } else if holding && !down {
             self.release();
         }

@@ -1017,8 +1017,8 @@ fn soundfont_time(v: f32) -> String {
 
 const SOUNDFONT_TIME: Display = Display::Custom(soundfont_time);
 
-// The UI binds indices 1-5. The Envelope toggle is off (Original: the SoundFont's own envelopes), and reads
-// Original up to 0.5, Custom above.
+// The UI binds indices 1-6. The Envelope toggle is off (Original: the SoundFont's own envelopes), and reads
+// Original up to 0.5, Custom above. Fine Tune (6) is a Honeydew addition (#90).
 const SOUNDFONT_PLAYER: &[P] = &[
     P::ENABLE,
     P::cont("Attack", 0.0, SOUNDFONT_TIME),
@@ -1033,6 +1033,11 @@ const SOUNDFONT_PLAYER: &[P] = &[
         items: &["Original", "Custom"],
         index: |v| usize::from(v > 0.5),
     }),
+    P::cont(
+        "Fine Tune",
+        0.5,
+        Display::linear(-100.0, 100.0, 0, " cents"),
+    ),
 ];
 
 pub static MODULES: &[ModuleSpec] = &[

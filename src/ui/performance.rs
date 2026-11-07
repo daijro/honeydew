@@ -17,7 +17,10 @@
 //!   draws one per 2 px of its plot, each taken from the bin under it.
 //! - The footer is `App memory:` and the transport `RAM` readout's value, `-` where unknown.
 
-use eframe::egui::{Align2, Id, Pos2, Rect, Stroke, Ui, pos2, vec2};
+use eframe::egui::{
+    Align2, Area, Color32, Context, Id, Order, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2,
+    pos2, vec2,
+};
 
 use crate::metrics::FontSize;
 use crate::theme::{RECORD_COLOR, Rgba, hsl_to_rgb};
@@ -449,6 +452,125 @@ fn curve(ui: &Ui, cx: &UiCtx, plot: Rect, p: &Performance) {
     }
 }
 
+/// #89: the performance overlay's count, over windows of [`WINDOW_S`]: the frames a second while the app draws one
+/// after another (each within [`BUSY_S`] of the last: at rest it draws nothing, which is no lag), and the mean time
+/// the app takes to make one.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct FrameCount {
+    /// The window: when it began (egui time), the last frame's time, the frames that came within [`BUSY_S`] of the one
+    /// before and the time between them, and every frame with its time to make (seconds).
+    start: f64,
+    last: Option<f64>,
+    busy: u32,
+    busy_s: f64,
+    frames: u32,
+    work_s: f64,
+    /// The last window's frames a second (`None`: at rest) and mean frame time in ms.
+    pub shown: (Option<f32>, f32),
+    /// Where a drag has the overlay, until it ends.
+    dragged: Option<Pos2>,
+}
+
+/// The overlay counts over this long, in seconds.
+const WINDOW_S: f64 = 0.5;
+/// Frames further apart than this are the app at rest, not a slow frame rate.
+const BUSY_S: f64 = 0.25;
+
+impl FrameCount {
+    /// A frame at `now` (egui time) that took `work_s` seconds to make.
+    pub fn frame(&mut self, now: f64, work_s: f64) {
+        if let Some(last) = self.last.filter(|&l| now - l <= BUSY_S) {
+            (self.busy, self.busy_s) = (self.busy + 1, self.busy_s + (now - last));
+        }
+        (self.last, self.frames, self.work_s) = (Some(now), self.frames + 1, self.work_s + work_s);
+        if now - self.start >= WINDOW_S {
+            let fps = (self.busy > 0).then(|| (f64::from(self.busy) / self.busy_s) as f32);
+            self.shown = (fps, (self.work_s / f64::from(self.frames) * 1e3) as f32);
+            (self.start, self.busy, self.busy_s, self.frames, self.work_s) = (now, 0, 0.0, 0, 0.0);
+        }
+    }
+}
+
+/// The overlay's lines: `60 FPS  4.2 ms` (`- FPS` at rest), and the audio's `CPU 12 %  Underruns 0`.
+pub fn overlay_lines(count: &FrameCount, p: &Performance) -> [String; 2] {
+    let (fps, ms) = count.shown;
+    let fps = fps.map_or("-".to_owned(), |f| format!("{f:.0}"));
+    let cpu = p.smoothed.clamp(0.0, 1.0) * 100.0;
+    [
+        format!("{fps} FPS  {ms:.1} ms"),
+        format!("CPU {cpu:.0} %  Underruns {}", p.underruns),
+    ]
+}
+
+/// #89: Settings `Show performance overlay`, osu!'s kind of counter: a small box over every screen with the frames a
+/// second and the time one takes ([`FrameCount`], this frame's `work_s`), and the audio's load and underruns as the
+/// Performance block shows them (`p`). Bottom right at first; a drag moves it anywhere on screen, and `at` keeps where
+/// it ends (a share of the room the window leaves it, across and down). The app calls it only while the setting is on.
+pub fn overlay(
+    ctx: &Context,
+    cx: &UiCtx,
+    now: f64,
+    work_s: f64,
+    p: &Performance,
+    at: &mut Option<[f32; 2]>,
+) {
+    let id = Id::new("performance overlay");
+    let mut count = ctx.data_mut(|d| *d.get_temp_mut_or_default::<FrameCount>(id));
+    count.frame(now, work_s);
+    let (m, c) = (cx.m, &cx.theme.colors);
+    let font = m.font_id(FontSize::Pt8);
+    let lines = overlay_lines(&count, p)
+        .map(|l| ctx.fonts_mut(|f| f.layout_no_wrap(l, font.clone(), Color32::PLACEHOLDER)));
+    let pad = m.u(0.25);
+    let width = lines[0].size().x.max(lines[1].size().x);
+    let size = vec2(width, lines[0].size().y + lines[1].size().y) + Vec2::splat(2.0 * pad);
+    // Inside the window, half a U off its edges.
+    let room = ctx.content_rect().shrink(m.u(0.5));
+    let span = (room.size() - size).max(Vec2::ZERO);
+    let share = |pos: Pos2| {
+        ((pos - room.min) / span.max(Vec2::splat(1.0))).clamp(Vec2::ZERO, Vec2::splat(1.0))
+    };
+    let [x, y] = at.unwrap_or([1.0, 1.0]);
+    let pos = count.dragged.unwrap_or(room.min + span * vec2(x, y));
+    Area::new(id)
+        .order(Order::Tooltip)
+        .fixed_pos(pos)
+        .show(ctx, |ui| {
+            let rect = Rect::from_min_size(pos, size);
+            let drag = ui.interact(rect, id.with("drag"), Sense::drag());
+            let painter = ui.painter();
+            let radius = m.u(0.25);
+            painter.rect_filled(rect, radius, c.menu_fill.to_color32());
+            let outline = Stroke::new(1.0 / m.ppp(), c.text.to_color32().gamma_multiply(0.15));
+            painter.rect_stroke(rect, radius, outline, StrokeKind::Inside);
+            let warn = if p.underruns > 0 {
+                RECORD_COLOR
+            } else {
+                c.text
+            };
+            let top = lines[0].size().y;
+            painter.galley(
+                rect.min + Vec2::splat(pad),
+                lines[0].clone(),
+                c.text.to_color32(),
+            );
+            painter.galley(
+                rect.min + vec2(pad, pad + top),
+                lines[1].clone(),
+                warn.to_color32(),
+            );
+            if drag.dragged() {
+                let to = pos + drag.drag_delta();
+                count.dragged = Some(room.min + span * share(to));
+            }
+            if drag.drag_stopped() {
+                let s = share(count.dragged.take().unwrap_or(pos));
+                *at = Some([s.x, s.y]);
+            }
+        });
+    ctx.data_mut(|d| d.insert_temp(id, count));
+}
+
 #[cfg(test)]
 mod tests {
     use eframe::egui::{
@@ -456,6 +578,23 @@ mod tests {
     };
 
     use super::*;
+
+    /// #89: at 60 Hz the overlay counts 60 frames a second and their mean time; at rest, with frames seconds apart, no
+    /// frame rate (the app draws only when something moves).
+    #[test]
+    fn the_overlay_counts_the_frames_drawn_in_a_row_and_their_time() {
+        let mut count = FrameCount::default();
+        for i in 0..60 {
+            count.frame(f64::from(i) / 60.0, if i % 2 == 0 { 0.002 } else { 0.004 });
+        }
+        let (fps, ms) = count.shown;
+        assert!(fps.is_some_and(|f| (f - 60.0).abs() < 0.5), "{fps:?}");
+        assert!((ms - 3.0).abs() < 0.1, "{ms}");
+        for i in 0..3 {
+            count.frame(2.0 + f64::from(i), 0.003);
+        }
+        assert_eq!(count.shown.0, None);
+    }
     use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
     use crate::theme::{Theme, theme_by_id};
 

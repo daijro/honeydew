@@ -47,6 +47,10 @@ pub struct Frame {
     pub height: u32,
     /// Counts the frames painted.
     pub version: u64,
+    /// The pixels (x0, y0, x1, y1) that changed since the host last took a frame ([`frame`]): all of them at a new
+    /// size, `None` if nothing did. A host that keeps the last frame (a texture) needs to update only those: a whole
+    /// frame is megabytes a repaint, a knob turn a small patch of it.
+    pub changed: Option<(u32, u32, u32, u32)>,
 }
 
 /// A menu as the host shows it: [`MenuDef`] without its commands.
@@ -307,9 +311,23 @@ impl Window {
     pub fn blit(&self, px: &[u32], w: u32, h: u32) {
         let mut i = self.state.lock();
         let f = &mut i.frame;
-        f.pixels.clear();
-        f.pixels.extend_from_slice(px);
-        (f.width, f.height) = (w, h);
+        let changed = if (f.width, f.height) == (w, h) && f.pixels.len() == px.len() {
+            let changed = changed(&f.pixels, px, w as usize);
+            if let Some((_, y0, _, y1)) = changed {
+                let rows = y0 as usize * w as usize..y1 as usize * w as usize;
+                f.pixels[rows.clone()].copy_from_slice(&px[rows]);
+            }
+            changed
+        } else {
+            f.pixels.clear();
+            f.pixels.extend_from_slice(px);
+            (f.width, f.height) = (w, h);
+            Some((0, 0, w, h))
+        };
+        f.changed = match (f.changed, changed) {
+            (Some(a), Some(b)) => Some((a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3))),
+            (a, b) => a.or(b),
+        };
         f.version += 1;
         drop(i);
         repaint();
@@ -521,14 +539,29 @@ pub fn locked(id: Parent) -> bool {
     get(id).is_some_and(|s| s.lock().locked)
 }
 
-/// Editor `id`'s frame, when it painted one after version `since`: `f` gets it, and its version is returned.
+/// Editor `id`'s frame, when it painted one after version `since`: `f` gets it, and its version is returned. Its
+/// [`Frame::changed`] starts over.
 pub fn frame(id: Parent, since: u64, f: impl FnOnce(&Frame)) -> Option<u64> {
     let s = get(id)?;
-    let i = s.lock();
+    let mut i = s.lock();
     (i.frame.version > since).then(|| {
         f(&i.frame);
+        i.frame.changed = None;
         i.frame.version
     })
+}
+
+/// The pixels (x0, y0, x1, y1) where `new` differs from `old`, both rows of `w` pixels; `None` where none does.
+fn changed(old: &[u32], new: &[u32], w: usize) -> Option<(u32, u32, u32, u32)> {
+    let rows = || old.chunks_exact(w.max(1)).zip(new.chunks_exact(w.max(1)));
+    let y0 = rows().position(|(a, b)| a != b)?;
+    let y1 = old.len() / w.max(1) - rows().rev().position(|(a, b)| a != b)?;
+    let (mut x0, mut x1) = (w, 0);
+    for (a, b) in rows().take(y1).skip(y0).filter(|(a, b)| a != b) {
+        x0 = x0.min(a.iter().zip(b).position(|(p, q)| p != q).unwrap_or(w));
+        x1 = x1.max(w - a.iter().rev().zip(b.iter().rev()).position(|(p, q)| p != q).unwrap_or(w));
+    }
+    Some((x0 as u32, y0 as u32, x1 as u32, y1 as u32))
 }
 
 /// What editor `id` asks the user, if anything.

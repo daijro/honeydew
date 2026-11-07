@@ -12,6 +12,8 @@ pub mod points;
 mod rack;
 pub mod scales;
 mod tempo;
+// Song sections (#80).
+mod section;
 
 pub use channel::{Channel, ChannelParams};
 pub use drum_kit::{DrumKit, SamplerSlot};
@@ -23,6 +25,7 @@ pub use file::{
 pub use lane::MAX_PLAYS_A_PIXEL;
 pub use lane::{AutomationTarget, Clip, DrumGrid, Event, Lane, LaneKind};
 pub use rack::{CommonParams, ModuleInstance, Rack};
+pub use section::Section;
 pub use tempo::{
     AUTOMATION_TEMPO_RANGE, TEMPO_PARAM, TEMPO_RANGE, TEMPO_TARGET, automated_tempo, tempo_value,
 };
@@ -210,17 +213,11 @@ impl TimeSig {
     }
 }
 
-/// The project sample rates the PROJECT `Samplerate:` dropdown offers.
-pub const SAMPLE_RATES: [u32; 5] = [22_050, 44_100, 48_000, 88_200, 96_000];
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Song {
     /// `HEAD` song title.
     pub title: String,
     pub tempo_bpm: f64,
-    /// The project's sample rate, one of [`SAMPLE_RATES`]. Offline renders use it; preview requests it but can
-    /// fall back to the output device's default rate.
-    pub sample_rate: u32,
     /// `TDIV`: the subdivision and the beats per bar.
     pub time_sig: TimeSig,
     /// In playlist order (a file's `CHHD` playlist rows). The master channel is always `channels[0]`. A file keeps
@@ -238,14 +235,22 @@ pub struct Song {
     /// The master's place in the playlist ([`Self::playlist`]): right below the channel with this id; first when `None`
     /// or when no channel has it. A file has it in the master's row (`CHHD` @1028).
     pub master_below: Option<i32>,
+    /// The song's sections (Honeydew's own, #80), in the order they were made: `HDSe`s in the file.
+    pub sections: Vec<Section>,
+    /// The project's sample rate (PR #87, Honeydew's own: an `HDSR` in the file), one of [`SAMPLE_RATES`], or 0 to
+    /// follow the output's own rate (the default, as before). The live output asks for it, and may fall back to the
+    /// device's rate; a render runs at it.
+    pub sample_rate: u32,
 }
+
+/// The project sample rates PROJECT's `Samplerate:` offers (PR #87), besides the output's own (0).
+pub const SAMPLE_RATES: [u32; 5] = [22_050, 44_100, 48_000, 88_200, 96_000];
 
 impl Default for Song {
     fn default() -> Self {
         Self {
             title: String::new(),
             tempo_bpm: 120.0,
-            sample_rate: 44_100,
             time_sig: TimeSig::default(),
             channels: vec![Channel::master()],
             key_root: 0,
@@ -253,6 +258,8 @@ impl Default for Song {
             play_loop: None,
             file: SongFileState::default(),
             master_below: None,
+            sections: Vec::new(),
+            sample_rate: 0,
         }
     }
 }

@@ -212,8 +212,9 @@ impl HoneydewApp {
     /// REC's MIDI controllers, at song tick `tick` while a take runs and no count-in does: a CC or pitch bend `msg`
     /// that reaches a channel recording notes (`targets` that [`Self::record_channels`] holds, as for its notes) is a
     /// point of that channel's CC param (7 + CC, pitch bend 4), each in a lane and clip of its own
-    /// ([`AutoRecord::record`]), [`AutoRecord::thin`]ned. A CC that moved a link (`outs`) or was learned records nothing
-    /// here: a link records through its control. An ongoing edit.
+    /// ([`Self::record_controller`]). A monitoring channel the sends of a channel it sounds on reach records it too
+    /// (#74). A CC that moved a link (`outs`) or was learned records nothing here: a link records through its control. An
+    /// ongoing edit.
     ///
     /// A Honeydew addition: the spec records the recent control only, one target at a time; here every controller does.
     pub(super) fn record_cc(&mut self, msg: MidiMsg, targets: &[Target], outs: &[Out], tick: u64) {
@@ -229,22 +230,51 @@ impl HoneydewApp {
         if linked || !self.recording() || self.audio.counting_in() {
             return;
         }
-        let target = AutomationTarget {
-            instance_id: 0,
-            param,
-        };
         let recording = self.record_channels();
-        let mut changed = false;
         let channels = targets.iter().map(|t| t.0);
-        for channel in channels.filter(|c| *c > 0 && recording.contains(c)) {
-            if self.record_point(channel, target, (value, value), tick) {
-                self.auto_record.thin(&mut self.song, channel, target);
-                changed = true;
+        let mut channels: Vec<usize> =
+            (channels.filter(|c| *c > 0 && recording.contains(c))).collect();
+        // Honeydew's own (#74): the param goes on through the MIDI sends of each channel it sounds on, and a monitoring
+        // channel there records it too.
+        let monitors = self.monitor_channels();
+        if !monitors.is_empty() {
+            let reach = crate::audio_engine::midi_reach(&self.song, false);
+            let sounding = targets.iter().filter(|t| t.1);
+            let reached = sounding.flat_map(|t| reach.get(t.0).into_iter().flatten());
+            for &m in reached.filter(|m| monitors.contains(m)) {
+                if !channels.contains(&m) {
+                    channels.push(m);
+                }
             }
+        }
+        let mut changed = false;
+        for channel in channels {
+            changed |= self.record_controller(channel, param, value, tick);
         }
         if changed {
             self.song_edited(SongEdit::Ongoing, tick);
         }
+    }
+
+    /// A controller's value `value` of channel param `param` (a CC's 7 + CC, the pitch bend's 4) on channel `channel` at
+    /// song tick `tick`: a point in a lane and clip of its own ([`Self::record_point`]), [`AutoRecord::thin`]ned.
+    /// Whether the song changed.
+    pub(super) fn record_controller(
+        &mut self,
+        channel: usize,
+        param: i32,
+        value: f32,
+        tick: u64,
+    ) -> bool {
+        let target = AutomationTarget {
+            instance_id: 0,
+            param,
+        };
+        let changed = self.record_point(channel, target, (value, value), tick);
+        if changed {
+            self.auto_record.thin(&mut self.song, channel, target);
+        }
+        changed
     }
 }
 

@@ -118,13 +118,13 @@ pub fn show(
         && let Some(first) = names.first()
     {
         state.separator = separator(first).to_owned();
-        state.roles = guess(&tokens(first, &state.separator), c4);
+        state.roles = guess(&tokens(first, &state.separator));
         state.guessed = files.first().cloned();
     }
     let first: Vec<&str> = names
         .first()
         .map_or_else(Vec::new, |n| tokens(n, &state.separator));
-    let regions = map(&names, &state.separator, &state.roles, c4);
+    let regions = map(&names, &state.separator, &state.roles);
     let id = egui::Id::new(TAG);
     let cx = &app.cx;
 
@@ -134,7 +134,7 @@ pub fn show(
             let items = split_items(&state.separator);
             let result = modal(&ctx, cx, id.with("separator"), at, &items);
             match result.selected {
-                Some(Split::Given(i)) => state.set_separator(SEPARATORS[i], &first_of(&names), c4),
+                Some(Split::Given(i)) => state.set_separator(SEPARATORS[i], &first_of(&names)),
                 Some(Split::Custom) => {
                     state.asking = Some(Ask::Separator);
                     state.panel.ask("Enter separator", state.separator.clone());
@@ -257,7 +257,7 @@ pub fn show(
             let text = state.panel.take_prompt().unwrap_or_default();
             match state.asking.take() {
                 Some(Ask::Separator) if !text.is_empty() => {
-                    state.set_separator(&text, &first_of(&names), c4)
+                    state.set_separator(&text, &first_of(&names))
                 }
                 Some(Ask::Name) if !text.trim().is_empty() => {
                     return Some(save(app, (channel, module), &text, &regions, files));
@@ -272,9 +272,9 @@ pub fn show(
 
 impl State {
     /// A new separator: the roles are guessed again for the first file's new tokens.
-    fn set_separator(&mut self, separator: &str, first: &str, c4: bool) {
+    fn set_separator(&mut self, separator: &str, first: &str) {
         self.separator = separator.to_owned();
-        self.roles = guess(&tokens(first, separator), c4);
+        self.roles = guess(&tokens(first, separator));
     }
 }
 

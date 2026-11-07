@@ -125,8 +125,7 @@ const PAST_END: u8 = 38;
 const ANIM_RATE: f32 = 0.6;
 const DRAG_FLOOR: f32 = 0.01;
 /// The floating buttons over a selection.
-/// Copy and Delete first, Duplicate last (as the other editors' rows, before their `More...`).
-const OPS: [&str; 5] = ["Copy", "Delete", "Edit\nvalue", "Set shape", "Duplicate"];
+const OPS: [&str; 4] = ["Copy", "Delete", "Edit\nvalue", "Set shape"];
 /// The value grid's lines: at least this many U apart, `text` at this alpha.
 pub(crate) const GRID_GAP: f32 = 0.25;
 pub(crate) const GRID_ALPHA: f32 = 0.15;
@@ -186,7 +185,7 @@ pub struct Options {
     pub playhead: u64,
     /// How far past `playhead` the playhead is drawn ([`crate::audio_link::AudioLink::playhead_lead`]): the line, the
     /// disc and follow playhead only, never an edit.
-    pub lead: u64,
+    pub lead: i64,
     pub playing: bool,
     /// REC is armed: the playhead disc shows the record icon.
     pub armed: bool,
@@ -414,7 +413,7 @@ impl AutomationEditor {
             loop_beats * f64::from(PPQ),
         );
         let drawn = geom::playhead(
-            (opts.playhead + opts.lead) as f64 - origin as f64,
+            (opts.playhead.saturating_add_signed(opts.lead)) as f64 - origin as f64,
             loop_beats * f64::from(PPQ),
         );
         let mut axes = [
@@ -581,22 +580,16 @@ impl AutomationEditor {
             .row
             .show(ui, "automation_button", selection, grid_view, &OPS, cx)
         {
-            match OPS[i] {
-                // Copy only fills the clipboard.
-                "Copy" => set_clipboard(ui.ctx(), points::copy(&pts, &self.sel, max)),
-                "Delete" => {
+            match i {
+                0 => set_clipboard(ui.ctx(), points::copy(&pts, &self.sel, max)),
+                1 => {
                     let keep = (pts.iter().zip(&self.sel)).filter(|(_, s)| !**s);
                     let keep: Vec<Point> = keep.map(|(p, _)| *p).collect();
                     let n = keep.len();
                     edit = Some((keep, vec![false; n]));
                 }
-                "Edit\nvalue" => self.open_value(&target, &pts),
-                "Set shape" => self.shaping = Some(shape::Shaping::default()),
-                // A copy right after the selection, by the snap grid (Auto's while Snap is off), as the piano roll's.
-                "Duplicate" => {
-                    let grid = self.snap.grid(auto_grid(ax.beat_w, u, sig), sig);
-                    edit = points::duplicate_selected(&pts, &self.sel, grid).or(edit);
-                }
+                2 => self.open_value(&target, &pts),
+                3 => self.shaping = Some(shape::Shaping::default()),
                 _ => {}
             }
             ui.ctx().request_repaint();
@@ -1454,7 +1447,8 @@ fn region_op(pts: &mut Vec<Point>, op: RegionOp, range: TimeRange, p: u32, loop_
         | RegionOp::Clear
         | RegionOp::Normalize
         | RegionOp::FadeIn
-        | RegionOp::FadeOut => {}
+        | RegionOp::FadeOut
+        | RegionOp::Section => {}
     }
 }
 

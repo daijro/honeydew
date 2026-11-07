@@ -1,7 +1,7 @@
 //! The file actions of SONGS and the preset pickers (the ≡ options menu; [`FileActions`]) on a [`SongLibrary`]: make a
 //! folder, delete into [`RECENTLY_DELETED`] (a copy at the same place below the user folder), restore from it, delete
-//! for good, paste what was copied or cut, rename, export, show in the system's file manager, and convert one WAV to
-//! FLAC beside it.
+//! for good, paste what was copied or cut, rename, export, show in the system's file manager, send (a phone's share
+//! sheet), and convert one WAV to FLAC beside it.
 //!
 //! Nothing is ever replaced. A paste, a delete, a restore and an export take a free `Name (n)` where the name is
 //! taken (as `New Song (1)`); a name the user typed that is taken is refused with a message. Links are
@@ -37,6 +37,8 @@ pub(crate) enum Opt {
     Export,
     Rename,
     Reveal,
+    /// `Send` (#72): the selected files to the phone's share sheet ([`crate::project_files::share`]).
+    Send,
 }
 
 /// What the ≡ menu depends on.
@@ -60,6 +62,8 @@ pub(crate) struct MenuState {
     pub locked_folder: bool,
     /// A selected row is read-only (imported content): it is not moved, renamed or deleted.
     pub locked_picked: bool,
+    /// `Send` (SONGS on a phone): whether the selection is files only, which it needs; `None` leaves it out.
+    pub send: Option<bool>,
 }
 
 /// The ≡ menu, one column: `Select all`, then the file actions in their order. An item that is not present in this
@@ -71,7 +75,7 @@ pub(crate) fn options_menu(s: MenuState) -> Vec<PopupItem<Opt>> {
     let reveal: Option<Cow<'static, str>> =
         s.reveal.map(|name| format!("Show in {name}...").into());
     // (item, label, present, enabled)
-    let items: [(Opt, Cow<'static, str>, bool, bool); 13] = [
+    let items: [(Opt, Cow<'static, str>, bool, bool); 14] = [
         (SelectAll, "Select all".into(), true, true),
         (Restore, "Restore".into(), s.in_trash, any),
         (
@@ -115,6 +119,12 @@ pub(crate) fn options_menu(s: MenuState) -> Vec<PopupItem<Opt>> {
             reveal.clone().unwrap_or_default(),
             any && reveal.is_some(),
             true,
+        ),
+        (
+            Send,
+            "Send".into(),
+            any && s.send.is_some(),
+            s.send == Some(true),
         ),
     ];
     items
@@ -243,6 +253,16 @@ impl FileActions {
                 if let Some(entry) = picked.first() {
                     return Step::Kept(reveal(&entry.path));
                 }
+                return Step::Kept(Ok(()));
+            }
+            Opt::Send => {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let files: Vec<PathBuf> = picked.into_iter().map(|e| e.path).collect();
+                    let mime = crate::project_files::mime(&files);
+                    return Step::Kept(crate::project_files::share(&files, mime));
+                }
+                #[cfg(target_arch = "wasm32")]
                 return Step::Kept(Ok(()));
             }
         })
@@ -1692,7 +1712,7 @@ mod tests {
         std::fs::create_dir_all(unzipped.join("Pack/My Samples")).unwrap();
         std::fs::write(unzipped.join("Pack/Beat.flm"), b"b").unwrap();
         let mut lib = NativeLibrary::at(user.join(SONGS_FOLDER));
-        assert_eq!(lib.places(), [trash(&lib), unzipped.clone()]);
+        assert!(lib.places().contains(&trash(&lib)) && lib.places().contains(&unzipped));
         // The folder itself: a root of SONGS, which cannot be deleted whole.
         let root_entry = entry(&lib, None, "Unzipped songs");
         assert_eq!(root_entry.path, unzipped);

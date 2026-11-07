@@ -19,6 +19,7 @@ pub(crate) mod slicer;
 mod slides;
 
 pub use input::{LiveInput, MONITOR_MAX_LAG_FRAMES, RecordTap, TakeStart};
+pub(crate) use midi_sends::{Received, midi_reach, midi_received};
 pub(crate) use prepare::{burned_hits, burned_notes};
 
 use std::sync::Arc;
@@ -682,20 +683,22 @@ impl SongAudioEngine {
     }
 
     /// Mute and Solo are on above 0.5: a channel is out of the mix while its Mute is on, or while another channel's
-    /// Solo is on and its own is not, unless a path of sends or pad targets joins it to a soloed channel. The master is
-    /// never out under a solo.
-    // solo keeps send and pad-target sources audible.
+    /// Solo is on and its own is not, unless it is on a soloed channel's path to the master (sends and pad targets, on
+    /// down): a soloed bus keeps none of its sources (#82). The master is never out under a solo. A channel out of the
+    /// mix takes its pads that play into another channel with it.
     fn sync_mixer_controls(&mut self) {
         let soloed = |controls: &[f32; 4]| controls[3] > 0.5;
         let solo = self.channel_controls.iter().any(soloed);
         for (index, controls) in self.channel_controls.iter().enumerate() {
-            let linked =
-                || (self.routing.linked[index].iter()).any(|&o| soloed(&self.channel_controls[o]));
-            let mut level = controls[0];
-            if controls[2] > 0.5 || (index != 0 && solo && !soloed(controls) && !linked()) {
-                level = 0.0;
-            }
+            let on_path = || {
+                (self.routing.upstream[index].iter()).any(|&o| soloed(&self.channel_controls[o]))
+            };
+            let out = controls[2] > 0.5 || (index != 0 && solo && !soloed(controls) && !on_path());
+            let level = if out { 0.0 } else { controls[0] };
             let _ = self.mixer.set_channel_controls(index, level, controls[1]);
+            if let Some(kit) = &mut self.kits[index] {
+                kit.out = out;
+            }
         }
     }
 
@@ -1790,8 +1793,8 @@ impl SongAudioEngine {
     /// position re-sync at the start, which finds nothing left to release: a note spanning the start stays silent, one
     /// starting on it plays. At a live tempo the transport goes past the end by up to an output frame's worth of
     /// frames, which it carries on from the start; the actions it passes there play next. A transport further past the
-    /// end (a seek, a loop moved before it) starts at the start. So does one before the loop's start (a Play or a seek
-    /// there, a loop drawn after it): whenever the transport is outside the loop, it goes back into it at once.
+    /// end (a seek, a loop moved before it) starts at the start. So does one before the loop's start (PR #87: a Play or
+    /// a seek there, a loop drawn after it): whenever the transport is outside the loop, it goes back into it at once.
     fn wrap_at_loop_end(&mut self) {
         let Some((start, end)) = self.wrap_range() else {
             return;

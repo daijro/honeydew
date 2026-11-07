@@ -8,13 +8,15 @@
 
 use honeydew_audio::device::AudioRenderer;
 use honeydew_audio::note_effects::LiveNoteEvent;
-use honeydew_audio::sequencer::{InputNoteEvent, sort_note_events};
+use honeydew_audio::sequencer::{InputNoteEvent, NoteKind, sort_note_events};
 
-use super::prepare::{Action, ScheduledAction, note_effect, note_rack};
+use super::prepare::{
+    Action, MAX_PLAYS, ScheduledAction, lane_points, note_effect, note_rack, plays, song_end_beat,
+};
 use super::routing::reaches;
 use super::{EngineError, PITCH_BEND, SongAudioEngine, midi_cc, set_key};
 use crate::audio_bridge::SongAudioBridge;
-use crate::song::Song;
+use crate::song::{LaneKind, PPQ, Song};
 
 pub(super) struct MidiSends {
     /// Per channel, the channels its MIDI sends go to.
@@ -57,18 +59,87 @@ pub(super) fn build(song: &Song) -> MidiSends {
 }
 
 impl MidiSends {
-    /// The channels `channel`'s MIDI sends reach, through other channels' too.
-    fn reach(&self, channel: usize) -> Vec<usize> {
+    /// The channels `channel`'s MIDI sends reach, through other channels' too: on from each channel that `on` passes.
+    fn reach(&self, channel: usize, on: impl Fn(usize) -> bool) -> Vec<usize> {
         let mut reached = Vec::new();
-        let mut stack = self.targets[channel].clone();
+        let mut stack = if on(channel) {
+            self.targets[channel].clone()
+        } else {
+            Vec::new()
+        };
         while let Some(target) = stack.pop() {
             if !reached.contains(&target) {
                 reached.push(target);
-                stack.extend(&self.targets[target]);
+                if on(target) {
+                    stack.extend(&self.targets[target]);
+                }
             }
         }
         reached
     }
+}
+
+/// Per channel, the channels its MIDI sends reach, through other channels' too: where a live CC of it goes. With
+/// `plain`, only on from channels with no note effect: where a live key goes as it was played, which the app can follow
+/// (the note effects run on the audio thread). For REC's extended monitoring (#74).
+pub(crate) fn midi_reach(song: &Song, plain: bool) -> Vec<Vec<usize>> {
+    let sends = build(song);
+    let effects = |c: usize| {
+        let mut modules = song.channels[c].rack.modules.iter();
+        modules.any(|m| (47..=51).contains(&m.type_id))
+    };
+    (0..song.channels.len())
+        .map(|c| sends.reach(c, |c| !plain || !effects(c)))
+        .collect()
+}
+
+/// What a channel's MIDI sources send it over the song, for REC's extended monitoring (#74): the notes, past all
+/// their note effects ([`forwarded`]), as (song tick, key, the velocity byte at a note-on, `None` at a note-off), and
+/// the CC and Pitch Bend automation of every channel whose sends reach it ([`forward_params`]), as (song tick, channel
+/// param, value); each in song order.
+#[derive(Default)]
+pub(crate) struct Received {
+    pub notes: Vec<(u64, u8, Option<u8>)>,
+    pub params: Vec<(u64, i32, f32)>,
+}
+
+/// [`Received`] by channel, as playback prepares it at `sample_rate`. A song playback refuses is refused here too.
+pub(crate) fn midi_received(song: &Song, sample_rate: f32) -> Result<Vec<Received>, EngineError> {
+    if plays(song)? > MAX_PLAYS as f64 {
+        return Err(EngineError::TooManyEvents);
+    }
+    let sends = build(song);
+    let end_beat = song_end_beat(song)?;
+    let tick = |beat: f64| (beat * f64::from(PPQ)).round() as u64;
+    let notes = forwarded(song, &sends, end_beat, sample_rate)?;
+    let mut received: Vec<Received> = (notes.iter())
+        .map(|events| Received {
+            notes: (events.iter())
+                .filter_map(|e| {
+                    let key = u8::try_from(e.pitch).ok().filter(|&k| k < 128)?;
+                    let on = (e.kind == NoteKind::On).then_some(e.velocity);
+                    Some((tick(e.beat), key, on))
+                })
+                .collect(),
+            params: Vec::new(),
+        })
+        .collect();
+    for (channel, ch) in song.channels.iter().enumerate() {
+        let reach = sends.reach(channel, |_| true);
+        for lane in ch.lanes.iter().filter(|l| l.kind == LaneKind::Automation) {
+            let target = lane
+                .target
+                .filter(|t| t.instance_id == 0 && forwards(t.param));
+            let Some(param) = target.map(|t| t.param).filter(|_| !reach.is_empty()) else {
+                continue;
+            };
+            for (tick, value) in lane_points(lane, end_beat)? {
+                (reach.iter()).for_each(|&t| received[t].params.push((tick, param, value)));
+            }
+        }
+    }
+    (received.iter_mut()).for_each(|r| r.params.sort_by_key(|p| p.0));
+    Ok(received)
 }
 
 /// A channel param a MIDI send forwards: a MIDI CC (7–133) or Pitch Bend.
@@ -127,7 +198,9 @@ pub(super) fn input(
 /// Each automated MIDI CC and Pitch Bend change sets the same param of every channel the channel's MIDI sends reach, at
 /// the same frame.
 pub(super) fn forward_params(actions: &mut Vec<ScheduledAction>, sends: &MidiSends) {
-    let reach: Vec<_> = (0..sends.targets.len()).map(|c| sends.reach(c)).collect();
+    let reach: Vec<_> = (0..sends.targets.len())
+        .map(|c| sends.reach(c, |_| true))
+        .collect();
     let mut forwarded = Vec::new();
     for event in actions.iter() {
         if let Action::Param {

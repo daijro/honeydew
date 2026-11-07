@@ -176,7 +176,7 @@ cargo run --release
 The sound library lives in `sounds/`, split into 90 MB parts to stay under GitHub's file size limit. To rebuild it from the raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
 
 ```sh
-tools/release-content.sh 0.4.10
+tools/release-content.sh 0.5.1
 ```
 
 Commit the updated `sounds/honeydew-sounds.zip.*` parts and `sounds/release.txt` (the library's version: the app updates an installed library that is older) with your changes. Add `--web` to also build the web ZIP. Tagged releases include the sounds automatically, and the first release with a new library version also publishes it as its own release, `sounds-<version>`, which the apps download from. Give every changed library a new version.
@@ -220,14 +220,6 @@ tools/android-dist.sh
 ```
 
 This writes `target/honeydew-android-<version>-arm-debug.apk`, one APK for 64-bit and 32-bit ARM. Add `--base` for the APK without sounds (`-arm-base-debug.apk`), which downloads them. The debug app is called Honeydew Debug and installs alongside the release app. Its signing key is kept in `android/debug.keystore`; keep that file so debug builds can update each other.
-
-The APK ships the sound library, and Gradle fails without it. If `sounds/` is not checked out (a fork that leaves the library out), give the script a library zip of the same version instead — the `honeydew-<version>-sounds.zip` on the project's releases page:
-
-```sh
-HONEYDEW_SOUNDS_ZIP=/path/to/honeydew-v0.4.6-sounds.zip tools/android-dist.sh
-```
-
-or unpack one into `target/android/assets/content` yourself, and the script uses what is there. `.github/workflows/android-apk.yml` does this on every change to the Android build: it fetches the release's library, builds the debug APK and publishes it to the `apk-debug` prerelease, so a phone can open that page and install it.
 
 **Release signing:** use the same key for every release, or Android won't install updates over the old version. Back up the keystore and passwords outside the repository.
 

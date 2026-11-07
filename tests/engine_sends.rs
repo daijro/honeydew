@@ -2,6 +2,7 @@
 
 use honeydew::audio_engine::SongAudioEngine;
 use honeydew::song::{AutomationTarget, ChannelKind, Event, SendState, Song, SynthKind};
+use honeydew::ui::mixer::smart_solo;
 use honeydew_audio::device::AudioRenderer;
 use honeydew_audio::instrument::KEY_LEARN;
 
@@ -228,25 +229,40 @@ fn bad_sends_are_ignored_and_a_cycle_still_builds() {
 }
 
 #[test]
-fn soloing_a_send_target_keeps_its_sources_audible() {
-    // B (channel 3) only goes to the master; A feeds S.
-    let mut song = send_song(0.8531);
-    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
-    let audible = |commands: &[(usize, i32, f32)]| {
-        let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
-        for &(channel, index, value) in commands {
-            engine.set_param(channel, 0, index, value);
+fn solo_keeps_the_soloed_channel_and_its_path_to_the_master() {
+    // #82: Bass (2) and Lead (3) play only into a pre-master bus P (1); Keys (4) go straight to the master.
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::EffectTrack);
+    for _ in 0..3 {
+        song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    }
+    let p = song.channels[1].id;
+    for channel in [2, 3] {
+        song.channels[channel].file.sends[0].target_channel_id = p;
+    }
+    let audible = |solo: Option<usize>, smart: bool| {
+        let mut song = song.clone();
+        if let Some(channel) = solo {
+            song.channels[channel].params.0[3] = 1.0;
+            if smart {
+                smart_solo(&mut song, channel);
+            }
         }
-        engine.note_on(2, 69, 1.0);
-        engine.note_on(3, 69, 1.0);
+        let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
+        for channel in 2..=4 {
+            engine.note_on(channel, 69, 1.0);
+        }
         let mut output = vec![0.0; 4096 * 2];
         engine.render(&mut output, 2);
-        [1, 2, 3].map(|channel| peak(&engine, channel) > 0.0)
+        [1, 2, 3, 4].map(|channel| peak(&engine, channel) > 0.0)
     };
-    assert_eq!(audible(&[]), [true, true, true]);
-    assert_eq!(audible(&[(1, 3, 1.0)]), [true, true, false]);
-    assert_eq!(audible(&[(2, 3, 1.0)]), [true, true, false]);
-    assert_eq!(audible(&[(3, 3, 1.0)]), [false, false, true]);
+    assert_eq!(audible(None, true), [true; 4]);
+    // A Solo tap on Bass solos the bus with it: the Lead, which feeds the same bus, is out.
+    assert_eq!(audible(Some(2), true), [true, true, false, false]);
+    // Bass soloed alone (automation, a stem): its path to the master still plays.
+    assert_eq!(audible(Some(2), false), [true, true, false, false]);
+    // The bus soloed keeps none of its sources.
+    assert_eq!(audible(Some(1), true), [false; 4]);
 }
 
 /// A MiniSynth channel with a second MiniSynth: (song, the first's id, the second's id).

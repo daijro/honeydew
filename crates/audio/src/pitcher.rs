@@ -25,16 +25,15 @@ pub struct PitcherState {
     history: [Vec<f32>; 2],
     formant_history: [Vec<f32>; 2],
     write_index: usize,
-    analysis: Vec<f32>,
-    scores: Vec<f32>,
-    analysis_index: usize,
-    analysis_count: usize,
-    decimation: usize,
-    decimation_count: usize,
+    tracker: Tracker,
     frames: usize,
     tracked_frequency: f32,
+    /// The target over the tracked frequency, from the last analysis.
+    target_ratio: f32,
     ratio: f32,
     phase: f32,
+    /// The formant path's one-pole coefficient, from F-Shift.
+    formant_coefficient: f32,
     formant_input_low: [f32; 2],
     formant_output_low: [f32; 2],
     /// The pitch classes (0 = C) a tone may snap to.
@@ -48,7 +47,6 @@ impl PitcherState {
     pub fn new(params: &[f32], sample_rate: f32) -> Result<Self, PitcherError> {
         validate(params, sample_rate)?;
         let latency = latency_for(sample_rate);
-        let decimation = ((sample_rate / 12_000.0).floor() as usize).max(1);
         let mut state = Self {
             params: DEFAULT_PARAMS,
             sample_rate,
@@ -56,16 +54,13 @@ impl PitcherState {
             history: std::array::from_fn(|_| vec![0.0; latency * 3 + 4]),
             formant_history: std::array::from_fn(|_| vec![0.0; latency * 3 + 4]),
             write_index: 0,
-            analysis: vec![0.0; 2048],
-            scores: vec![0.0; (sample_rate / decimation as f32 / 55.0).ceil() as usize + 1],
-            analysis_index: 0,
-            analysis_count: 0,
-            decimation,
-            decimation_count: 0,
+            tracker: Tracker::new(sample_rate, LOWEST),
             frames: 0,
             tracked_frequency: 0.0,
+            target_ratio: 1.0,
             ratio: 1.0,
             phase: 0.0,
+            formant_coefficient: 0.0,
             formant_input_low: [0.0; 2],
             formant_output_low: [0.0; 2],
             notes: DEFAULT_NOTES,
@@ -145,14 +140,12 @@ impl PitcherState {
                 self.history[channel].resize(length, 0.0);
                 self.formant_history[channel].resize(length, 0.0);
             }
-            self.decimation = ((sample_rate / 12_000.0).floor() as usize).max(1);
-            self.scores.resize(
-                (sample_rate / self.decimation as f32 / 55.0).ceil() as usize + 1,
-                0.0,
-            );
+            self.tracker = Tracker::new(sample_rate, LOWEST);
             self.reset();
         }
         self.params.copy_from_slice(params);
+        let cutoff = (500.0 * self.formant_ratio()).min(0.45 * sample_rate);
+        self.formant_coefficient = (1.0 - (-TAU * cutoff / sample_rate).exp()).clamp(0.0, 1.0);
         Ok(())
     }
 
@@ -211,30 +204,13 @@ impl PitcherState {
             _ => right,
         };
         self.observe_pitch(mono);
-        let target_ratio = if self.tracked_frequency > 0.0 {
-            let target = self.target_for(self.tracked_frequency);
-            if self.params[8] > 0.0
-                && self.stable_target > 0.0
-                && (12.0 * (target / self.stable_target).log2()).abs() < self.params[8] * 0.5
-            {
-                self.stable_target / self.tracked_frequency
-            } else {
-                self.stable_target = target;
-                target / self.tracked_frequency
-            }
-        } else {
-            1.0
-        };
         let speed = (1.0 - self.params[1]).powi(3) * 3.0 + 0.001;
         let coefficient = (8.82 / (self.sample_rate * speed)).min(1.0);
-        self.ratio += coefficient * (target_ratio.clamp(0.5, 2.0) - self.ratio);
+        self.ratio += coefficient * (self.target_ratio.clamp(0.5, 2.0) - self.ratio);
         let window = self.latency as f32;
-        self.phase = (self.phase + (1.0 - self.ratio) / window).rem_euclid(1.0);
-        let formant_coefficient = (1.0
-            - (-TAU * (500.0 * self.formant_ratio()).min(0.45 * self.sample_rate)
-                / self.sample_rate)
-                .exp())
-        .clamp(0.0, 1.0);
+        let phase = self.phase + (1.0 - self.ratio) / window;
+        self.phase = phase - phase.floor();
+        let formant_coefficient = self.formant_coefficient;
         let mut output = [0.0; 2];
         for (channel, input) in [left, right].into_iter().enumerate() {
             self.formant_input_low[channel] +=
@@ -264,62 +240,32 @@ impl PitcherState {
     }
 
     fn observe_pitch(&mut self, sample: f32) {
-        self.decimation_count += 1;
-        if self.decimation_count == self.decimation {
-            self.decimation_count = 0;
-            self.analysis[self.analysis_index] = sample;
-            self.analysis_index = (self.analysis_index + 1) % self.analysis.len();
-            self.analysis_count = (self.analysis_count + 1).min(self.analysis.len());
-        }
+        self.tracker.push(sample);
         if !self.frames.is_multiple_of(64) {
             return;
         }
-        let rate = self.sample_rate / self.decimation as f32;
-        let min_lag = (rate / 1500.0).floor().max(2.0) as usize;
-        let max_lag = (rate / 55.0).ceil() as usize;
-        let window = max_lag * 2;
-        if self.analysis_count < window + max_lag {
-            return;
+        match self.tracker.search(1500.0, LOWEST, 0.3) {
+            Search::Waiting => {}
+            Search::Pitch(hz) => (self.tracked_frequency, self.voiced) = (hz, true),
+            Search::Unvoiced | Search::Edge => self.voiced = false,
         }
-        let mut best_lag = 0;
-        let mut best_score = 0.3;
-        self.scores.fill(0.0);
-        for lag in min_lag..=max_lag {
-            let mut cross = 0.0;
-            let mut energy_a = 0.0;
-            let mut energy_b = 0.0;
-            for i in 0..window {
-                let a = self.analysis
-                    [(self.analysis_index + self.analysis.len() - 1 - i) % self.analysis.len()];
-                let b = self.analysis[(self.analysis_index + self.analysis.len() - 1 - i - lag)
-                    % self.analysis.len()];
-                cross += a * b;
-                energy_a += a * a;
-                energy_b += b * b;
-            }
-            if energy_a < 0.001 || energy_b < 0.001 {
-                continue;
-            }
-            let score = cross / (energy_a * energy_b).sqrt();
-            self.scores[lag] = score;
-            let preferred = score - 0.0005 * lag as f32;
-            if preferred > best_score {
-                best_score = preferred;
-                best_lag = lag;
-            }
+        self.target_ratio = self.hold_target();
+    }
+
+    /// The target over the tracked frequency, holding the last target while Stability covers the new one.
+    fn hold_target(&mut self) -> f32 {
+        if self.tracked_frequency <= 0.0 {
+            return 1.0;
         }
-        self.voiced = best_lag > min_lag && best_lag < max_lag;
-        if best_lag > min_lag && best_lag < max_lag {
-            let previous = self.scores[best_lag - 1];
-            let current = self.scores[best_lag];
-            let next = self.scores[best_lag + 1];
-            let denominator = previous - 2.0 * current + next;
-            let offset = if denominator.abs() > 1e-6 {
-                0.5 * (previous - next) / denominator
-            } else {
-                0.0
-            };
-            self.tracked_frequency = rate / (best_lag as f32 + offset.clamp(-0.5, 0.5));
+        let target = self.target_for(self.tracked_frequency);
+        if self.params[8] > 0.0
+            && self.stable_target > 0.0
+            && (12.0 * (target / self.stable_target).log2()).abs() < self.params[8] * 0.5
+        {
+            self.stable_target / self.tracked_frequency
+        } else {
+            self.stable_target = target;
+            target / self.tracked_frequency
         }
     }
 
@@ -328,20 +274,163 @@ impl PitcherState {
             self.history[channel].fill(0.0);
             self.formant_history[channel].fill(0.0);
         }
-        self.analysis.fill(0.0);
+        self.tracker.reset();
         self.write_index = 0;
-        self.analysis_index = 0;
-        self.analysis_count = 0;
-        self.decimation_count = 0;
         self.frames = 0;
         self.tracked_frequency = 0.0;
         self.voiced = false;
+        self.target_ratio = 1.0;
         self.ratio = 1.0;
         self.phase = 0.0;
         self.formant_input_low = [0.0; 2];
         self.formant_output_low = [0.0; 2];
         self.stable_target = 0.0;
     }
+}
+
+/// The lowest pitch the Pitcher tracks, Hz.
+const LOWEST: f32 = 55.0;
+
+/// The decimated input the tracker keeps, in samples.
+const RING: usize = 2048;
+
+/// What a [`Tracker::search`] found.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Search {
+    /// Not enough input yet.
+    Waiting,
+    /// No lag scored above the threshold.
+    Unvoiced,
+    /// The best lag is the shortest or the longest searched.
+    Edge,
+    /// A pitch, Hz.
+    Pitch(f32),
+}
+
+/// Both Pitchers' pitch tracker: the input decimated to about 12 kHz, searched by normalized autocorrelation over two
+/// periods of the lowest pitch. Sized at build; nothing allocates while it runs.
+pub(crate) struct Tracker {
+    /// The decimated input, each sample written at `i` and `i + RING`, so that the newest ones are one slice.
+    ring: Vec<f32>,
+    index: usize,
+    count: usize,
+    decimation: usize,
+    decimation_count: usize,
+    rate: f32,
+    scores: Vec<f32>,
+}
+
+impl Tracker {
+    /// A tracker at `sample_rate` for pitches down to `lowest` Hz.
+    pub(crate) fn new(sample_rate: f32, lowest: f32) -> Self {
+        let decimation = ((sample_rate / 12_000.0).floor() as usize).max(1);
+        let rate = sample_rate / decimation as f32;
+        Self {
+            ring: vec![0.0; 2 * RING],
+            index: 0,
+            count: 0,
+            decimation,
+            decimation_count: 0,
+            rate,
+            scores: vec![0.0; (rate / lowest).ceil() as usize + 2],
+        }
+    }
+
+    /// One input sample.
+    pub(crate) fn push(&mut self, sample: f32) {
+        self.decimation_count += 1;
+        if self.decimation_count == self.decimation {
+            self.decimation_count = 0;
+            self.ring[self.index] = sample;
+            self.ring[self.index + RING] = sample;
+            self.index = (self.index + 1) % RING;
+            self.count = (self.count + 1).min(RING);
+        }
+    }
+
+    /// The pitch between `lowest` and `highest` Hz whose lag scores best above `threshold` (a lag's score less 0.0005
+    /// per lag, favouring the fundamental), refined between its neighbours.
+    pub(crate) fn search(&mut self, highest: f32, lowest: f32, threshold: f32) -> Search {
+        let min_lag = (self.rate / highest).floor().max(2.0) as usize;
+        let max_lag = ((self.rate / lowest).ceil() as usize).min(self.scores.len() - 2);
+        let window = max_lag * 2;
+        if self.count < window + max_lag {
+            return Search::Waiting;
+        }
+        let end = self.index + RING;
+        let x = &self.ring[end - window - max_lag..end];
+        let a = &x[max_lag..];
+        let energy_a = dot(a, a);
+        // Lag `lag` compares the newest `window` samples with those `lag` before; its energy slides from lag to lag.
+        let first = &x[max_lag - min_lag..][..window];
+        let mut energy_b = f64::from(dot(first, first));
+        let mut best = (0, threshold);
+        self.scores.fill(0.0);
+        for lag in min_lag..=max_lag {
+            let start = max_lag - lag;
+            if lag > min_lag {
+                energy_b += f64::from(x[start]).powi(2) - f64::from(x[start + window]).powi(2);
+            }
+            let energy_b = energy_b as f32;
+            if energy_a < 0.001 || energy_b < 0.001 {
+                continue;
+            }
+            let score = dot(a, &x[start..start + window]) / (energy_a * energy_b).sqrt();
+            self.scores[lag] = score;
+            let preferred = score - 0.0005 * lag as f32;
+            if preferred > best.1 {
+                best = (lag, preferred);
+            }
+        }
+        let mut lag = best.0;
+        if lag == 0 {
+            return Search::Unvoiced;
+        }
+        // A strong formant can score a period's whole lags under two periods' (an octave low): halve while the peak
+        // near half the lag scores nearly as well.
+        while lag / 2 > min_lag {
+            let half = lag / 2;
+            let at = (half - 1..=half + 1)
+                .max_by(|a, b| self.scores[*a].total_cmp(&self.scores[*b]))
+                .unwrap_or(half);
+            if self.scores[at] < 0.9 * self.scores[lag] {
+                break;
+            }
+            lag = at;
+        }
+        if lag == min_lag || lag == max_lag {
+            return Search::Edge;
+        }
+        let (previous, current, next) =
+            (self.scores[lag - 1], self.scores[lag], self.scores[lag + 1]);
+        let denominator = previous - 2.0 * current + next;
+        let offset = if denominator.abs() > 1e-6 {
+            0.5 * (previous - next) / denominator
+        } else {
+            0.0
+        };
+        Search::Pitch(self.rate / (lag as f32 + offset.clamp(-0.5, 0.5)))
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.ring.fill(0.0);
+        self.index = 0;
+        self.count = 0;
+        self.decimation_count = 0;
+    }
+}
+
+/// Σ a·b, in eight lanes so that it vectorizes.
+fn dot(a: &[f32], b: &[f32]) -> f32 {
+    let ((a, a_tail), (b, b_tail)) = (a.as_chunks::<8>(), b.as_chunks::<8>());
+    let tail: f32 = a_tail.iter().zip(b_tail).map(|(x, y)| x * y).sum();
+    let mut lanes = [0.0_f32; 8];
+    for (a, b) in a.iter().zip(b) {
+        for (lane, (x, y)) in lanes.iter_mut().zip(a.iter().zip(b)) {
+            *lane += x * y;
+        }
+    }
+    lanes.iter().sum::<f32>() + tail
 }
 
 fn validate(params: &[f32], sample_rate: f32) -> Result<(), PitcherError> {
@@ -362,11 +451,20 @@ fn latency_for(sample_rate: f32) -> usize {
     ((sample_rate / 55.0) as usize & !3).max(4)
 }
 
+/// `buffer` `delay` samples before `write_index`, interpolated; `delay` is under the buffer's length.
 fn read(buffer: &[f32], write_index: usize, delay: f32) -> f32 {
-    let position = (write_index as f32 - delay).rem_euclid(buffer.len() as f32);
+    let len = buffer.len();
+    let mut position = write_index as f32 - delay;
+    if position < 0.0 {
+        position += len as f32;
+    }
     // A tiny negative wraps to exactly the length in f32.
-    let index = position as usize % buffer.len();
-    let next = (index + 1) % buffer.len();
+    let index = if position as usize >= len {
+        0
+    } else {
+        position as usize
+    };
+    let next = if index + 1 == len { 0 } else { index + 1 };
     buffer[index] + (buffer[next] - buffer[index]) * position.fract()
 }
 

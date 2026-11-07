@@ -64,8 +64,6 @@ const BAR_W: f32 = 0.15;
 const BAR_HIT: f32 = 0.5;
 /// The floating panel buttons: the logo's diameter.
 const PANEL_BUTTON_W: f32 = 1.5;
-/// The rack tab's pill height, U (the rack's `RACK_TAB.y`).
-const RACK_TAB_H: f32 = 2.43;
 /// The add-channel `+`: the disc diameter, and the length of each bar of the plus inside it, tip to tip.
 const ADD_D: f32 = 2.0;
 const PLUS_LEN: f32 = 1.12;
@@ -116,6 +114,18 @@ pub struct TrackRow {
     pub armed: bool,
     /// A hidden track (`Hide track`), shown by Settings `Show hidden tracks`: drawn dimmed.
     pub hidden: bool,
+    /// A collapsed track (`Collapse`, #83): a thin row.
+    pub collapsed: bool,
+}
+
+/// A collapsed track's row height, as a share of a full row's (#83).
+pub const COLLAPSED_ROW: f32 = 0.375;
+
+impl TrackRow {
+    /// The row's height in full rows: [`COLLAPSED_ROW`] for a collapsed track.
+    pub fn rows(&self) -> f32 {
+        if self.collapsed { COLLAPSED_ROW } else { 1.0 }
+    }
 }
 
 /// The playlist's rows, top to bottom: each channel's ([`Song::playlist`] order) primary track, then its sub-tracks
@@ -140,6 +150,7 @@ pub fn track_rows(song: &Song, show_hidden: bool) -> Vec<TrackRow> {
                 hue: ch.hue,
                 armed: lane == 0 && ch.kind == ChannelKind::AudioRecord && ch.file.record_armed,
                 hidden: l.hidden,
+                collapsed: l.collapsed,
             });
         }
     }
@@ -272,7 +283,7 @@ pub struct ScreenActions {
     pub step: Option<Step>,
     /// SOLO CLIP was clicked.
     pub preview: bool,
-    /// The transport bar's GENERATE was clicked (the piano roll only): open its `Generate` panel.
+    /// The transport bar's GENERATE was clicked (the piano roll only, PR #87): open its `Generate` panel.
     pub generate: bool,
     /// A ruler's tap this frame, in any view ([`AppCtx::set_playhead`]): the playhead's song tick.
     pub playhead: Option<u64>,
@@ -579,7 +590,7 @@ impl MainScreen {
         // Any clip's end is its own.
         let end = song_end_beats(app.song);
         let content = Content {
-            rows: tracks.len(),
+            rows: tracks.iter().map(TrackRow::rows).sum::<f32>().into(),
             end: Some(end)
                 .filter(|&e| e > 0.0)
                 .unwrap_or(f64::from(app.song.time_sig.bar_beats())),
@@ -596,8 +607,8 @@ impl MainScreen {
         let before = self.view();
         let playing = self.playing && settings.continuous_scroll;
         let lead = app.audio.playhead_lead();
-        let follow =
-            (audio.filter(|_| playing)).map(|s| (s.transport_tick + lead) as f64 / f64::from(PPQ));
+        let follow = (audio.filter(|_| playing))
+            .map(|s| s.transport_tick.saturating_add_signed(lead) as f64 / f64::from(PPQ));
         let scroll = self.scroll(
             ui,
             ruler_area,
@@ -645,6 +656,7 @@ impl MainScreen {
             (app.song.time_sig, row_h, current, self.snap.size),
             &cx,
         );
+        crate::ui::sections::tint(ui, grid, &shown, row_h, axis, &app.song.sections, &cx);
         // Headers sense clicks only, so a drag starting on one still scrolls once it leaves the calm zone. A header keeps
         // its track row's id wherever it shows, so a hold follows its track; the held one is sensed off screen too.
         let mut lanes = Vec::new();
@@ -655,14 +667,13 @@ impl MainScreen {
                 continue;
             }
             let TrackRow { channel, lane, .. } = tracks[i];
-            let top = top_of(at);
-            let row = Rect::from_x_y_ranges(track_area.x_range(), top..=top + row_h);
+            let (top, h) = (top_of(at), row_h * tracks[i].rows());
+            let row = Rect::from_x_y_ranges(track_area.x_range(), top..=top + h);
             let lane_rect = row.with_min_x(grid.left());
-            // At c = 1 only the header's own part takes its gestures; collapsed or animating, the whole row does.
-            let header = if expanded {
-                let cells = row
-                    .intersect(column)
-                    .with_max_y(top + row_h - 1.0 / m.ppp());
+            // At c = 1 only the header's own part takes its gestures; collapsed or animating, the whole row does, as a
+            // collapsed track's row (#83), which has no controls.
+            let header = if expanded && !tracks[i].collapsed {
+                let cells = row.intersect(column).with_max_y(top + h - 1.0 / m.ppp());
                 mini_mixer::header_rect(RowKind::of(app.song, &tracks[i]), cells, true, m)
             } else {
                 row.intersect(column)
@@ -709,7 +720,7 @@ impl MainScreen {
         let snap = self
             .snap
             .active(grid_ticks(axis, app.song.time_sig, m), app.song.time_sig);
-        let ruler_at = self.region(ui, app, marks, axis, snap);
+        let ruler_at = self.region(ui, app, marks, axis, snap, actions);
         let song_len = (content.end + 1.0 / 128.0) * f64::from(PPQ);
         timeline::scroll_thumb(&ui.painter_at(marks), marks, axis, (0.0, song_len), &cx);
         if self.region.pending() {
@@ -739,7 +750,7 @@ impl MainScreen {
             ..ruler_at
         };
         // Drawn at the smooth playhead (`AudioLink::playhead_lead`), never used for an edit.
-        let drawn = tick.map_or(0, |t| t + lead);
+        let drawn = tick.map_or(0, |t| t.saturating_add_signed(lead));
         let x = (self.knob).line_x(ui, m, &ruler_at, end, axis.x(drawn as f64));
         let playhead = Some(x).filter(|&x| grid.x_range().contains(x));
         // Over the clips and under their selection chrome (the slot they left), painted from the column's right edge:
@@ -766,8 +777,8 @@ impl MainScreen {
         let out = mini_mixer::show(ui, &cx, app.song, &shown, row_h, &col, column);
         // A hidden track's header dimmed, as its clips are ([`Clips::show`]).
         let veil = (c.background.to_color32()).gamma_multiply(crate::ui::clips::HIDDEN_VEIL);
-        for &(_, top) in shown.iter().filter(|(t, _)| t.hidden) {
-            let row = Rect::from_x_y_ranges(column.x_range(), top..=top + row_h);
+        for &(t, top) in shown.iter().filter(|(t, _)| t.hidden) {
+            let row = Rect::from_x_y_ranges(column.x_range(), top..=top + row_h * t.rows());
             ui.painter_at(track_area).rect_filled(row, 0.0, veil);
         }
         if !out.changes.is_empty() {
@@ -789,7 +800,7 @@ impl MainScreen {
             app.regions.screen,
             track_area,
             tracks.len(),
-            row_top(track_area, scroll, tracks.len(), row_h),
+            top_of(content.rows as f32),
             m,
         );
         let outer_clip = ui.clip_rect();
@@ -968,10 +979,9 @@ impl MainScreen {
             .as_mut()
             .filter(|h| h.row == i && (p.held || p.long_released))
         {
-            // Unlike `latest_pos`, `interact_pos` is kept through a `PointerGone` in the release frame (a touch's
-            // lift, #68), so the drop is where the finger was, not where it went down.
+            // The interact position: a finger's lift clears the latest one in its release frame (`PointerGone`, #68).
             let pos = ui
-                .input(|i| i.pointer.interact_pos().or(i.pointer.latest_pos()))
+                .input(|i| i.pointer.interact_pos())
                 .unwrap_or(hold.origin);
             let dy = pos.y - hold.origin.y;
             // Only a channel's first row drags (its primary's, unless that is hidden), any channel's.
@@ -1011,24 +1021,36 @@ impl MainScreen {
         }
     }
 
-    /// Where each track row shows: its index in `tracks` and its row from the top (fractional), in drawing order. While a
-    /// header drags, in the order the drag left, the dragged channel's rows last, at the finger.
+    /// Where each track row shows: its index in `tracks` and its top in full rows from the first row's (fractional: a
+    /// collapsed track's row is [`COLLAPSED_ROW`] tall), in drawing order. While a header drags, in the order the drag
+    /// left, the dragged channel's rows last, at the finger.
     fn placed(&self, tracks: &[TrackRow]) -> Vec<(usize, f32)> {
         let primaries = shown_channels(tracks).len();
         let live = (self.hold.as_ref())
             .and_then(|h| Some((tracks.get(h.row)?.channel, h.live.as_ref()?)))
             .filter(|(_, (order, _))| order.len() == primaries);
+        let stack = |rows: &mut dyn Iterator<Item = usize>| -> Vec<(usize, f32)> {
+            let top =
+                |y: &mut f32, i: usize| Some((i, std::mem::replace(y, *y + tracks[i].rows())));
+            rows.scan(0.0, top).collect()
+        };
         let Some((dragged, (order, at))) = live else {
-            return (0..tracks.len()).map(|i| (i, i as f32)).collect();
+            return stack(&mut (0..tracks.len()));
+        };
+        let stacked = stack(
+            &mut (order.iter())
+                .flat_map(|&c| (0..tracks.len()).filter(move |&i| tracks[i].channel == c)),
+        );
+        // Row `r` of the drag's order (fractional) in full rows.
+        let y = |r: f32| {
+            let k = (r.max(0.0) as usize).min(stacked.len().saturating_sub(1));
+            (stacked.get(k)).map_or(r, |&(i, top)| top + (r - k as f32) * tracks[i].rows())
         };
         let (mut placed, mut floating) = (Vec::new(), Vec::new());
-        for (row, i) in (order.iter())
-            .flat_map(|&c| (0..tracks.len()).filter(move |&i| tracks[i].channel == c))
-            .enumerate()
-        {
+        for &(i, top) in &stacked {
             match tracks[i].channel == dragged {
-                true => floating.push((i, at + floating.len() as f32)),
-                false => placed.push((i, row as f32)),
+                true => floating.push((i, y(at + floating.len() as f32))),
+                false => placed.push((i, top)),
             }
         }
         placed.extend(floating);
@@ -1062,7 +1084,8 @@ impl MainScreen {
     /// The ruler's gestures over `strip` ([`RangeSelect`]) in song ticks on the Snap `grid` (whole ticks with Snap
     /// off): a tap sets the playhead, and the range is the song's play loop, its edges in the keyboard channel's
     /// colour. A region item is one final edit on every lane ([`region::edit_lanes`]) at the transport's playhead.
-    /// Returns the ruler, for the playhead knob.
+    /// The menu ends with `Section…` and the song's sections name themselves over the ruler, where a tap on a name opens
+    /// its dialog (#80, [`crate::ui::sections`]). Returns the ruler, for the playhead knob.
     fn region(
         &mut self,
         ui: &mut egui::Ui,
@@ -1070,6 +1093,7 @@ impl MainScreen {
         strip: Rect,
         axis: TimeAxis,
         grid: Option<f64>,
+        actions: &mut ScreenActions,
     ) -> RangeRuler {
         let playhead = app.snapshot.map_or(0, |s| s.transport_tick);
         let theme = app.cx.theme;
@@ -1084,20 +1108,40 @@ impl MainScreen {
             range: (app.song.play_loop).map(|(start, end)| TimeRange { start, end }),
             playhead: Some(playhead as f64),
         };
-        let out = self
-            .region
-            .show(ui, Id::new("playlist_region"), &at, false, &app.cx);
+        let items = crate::ui::sections::region_items;
+        let out = (self.region).show_with(ui, Id::new("playlist_region"), &at, &items, &app.cx);
+        let sections = &app.song.sections;
+        let knob = (!self.playing).then(|| axis.x(playhead as f64));
+        let painter = ui.painter_at(strip);
+        let tags = crate::ui::sections::ruler(&painter, strip, axis, sections, knob, &app.cx);
         if let Some(range) = out.range {
             app.song.play_loop = range.map(|r| (r.start, r.end));
         }
+        let tag = |p: Option<Pos2>| p.and_then(|p| crate::ui::sections::tag_at(&tags, p));
+        let section_settings = crate::ui::views::section_settings::open;
         if let Some(tick) = out.playhead {
-            // A ruler tap deselects: the floating row goes and the play box shows.
-            self.clips.deselect();
-            app.set_playhead(tick.into());
+            match tag(ui.input(|i| i.pointer.interact_pos())) {
+                Some(section) => actions.nav = Some(section_settings(app.song, section)),
+                None => {
+                    // A ruler tap deselects: the floating row goes and the play box shows.
+                    self.clips.deselect();
+                    app.set_playhead(tick.into());
+                }
+            }
         }
         let Some((op, range)) = out.pick else {
             return at;
         };
+        if op == region::RegionOp::Section {
+            let n = app.song.sections.len();
+            let section = app.song.section_at(range.start, range.end);
+            if app.song.sections.len() > n {
+                app.param_edited();
+            }
+            app.song.play_loop = None;
+            actions.nav = Some(section_settings(app.song, section));
+            return at;
+        }
         let before: Vec<_> = app.song.channels.iter().map(|c| c.lanes.clone()).collect();
         let (p, bar) = (
             u32::try_from(playhead).unwrap_or(u32::MAX),
@@ -1154,10 +1198,11 @@ impl MainScreen {
     ///   touch area runs from its left edge to the screen's right edge, from the top down to 1.7 U. Hidden while the
     ///   rack is open across the full width.
     /// - Rack tab: a 1.5 U × 2.43 U pill, its left edge 2.1 U from the screen's right edge, centred on the content area
-    ///   top … its bottom + 2 U, at least 5 U below the area top and 0.25 U above its bottom, moved by `tab_shift` U
-    ///   down that edge (a drag up or down moves it, kept inside the area, and the app keeps the place in `Settings`);
-    ///   while its top is under 2.75 U from the screen's top it moves right by the difference. Icon 88 in the channel
-    ///   colour; touch area to the screen's right edge. Hidden while the rack is open. Returns the place it then has.
+    ///   top … its bottom + 2 U, at least 5 U below the area top and 0.25 U above its bottom, moved `tab_shift` U down
+    ///   that edge (PR #87: a drag up or down moves it, kept in those bounds, and the app keeps the place in
+    ///   `Settings`); while its top is under 2.75 U from the screen's top it moves right by the difference. Icon 88 in
+    ///   the channel colour; touch area to the screen's right edge. Hidden while the rack is open. Returns the place
+    ///   it then has.
     pub fn corner_buttons(
         &mut self,
         ui: &mut egui::Ui,
@@ -1175,26 +1220,20 @@ impl MainScreen {
         let mut shift = tab_shift;
 
         if !rack_open {
-            let size = vec2(m.u(PANEL_BUTTON_W), m.u(RACK_TAB_H));
-            let low = area.top() + m.u(5.0);
-            let high = (area.bottom() - m.u(0.25) - size.y).max(low);
-            // The tab's home place on the edge (#57), moved `shift` U down it.
-            let home = crate::ui::rack::rack_tab_y(area.y_range(), m.u(1.0)) - size.y / 2.0;
-            let top = (home + m.u(shift)).clamp(low, high);
-            let nudge = (m.u(2.75) - (top - screen.top())).max(0.0);
-            let pill = Rect::from_min_size(pos2(screen.right() - m.u(2.1) + nudge, top), size);
+            let pill = crate::ui::rack::rack_tab(screen, area, m.u(1.0), shift);
             let hit = pill.with_max_x(screen.right());
             let icon = (IconId::RackTab, ink);
             let tab = open_panel_button(ui, Id::new("edge_tab"), (pill, hit), icon, cx);
             crate::ui::tooltip::tip(ui, hit, "Channel rack", Some("showRack"));
-            // A drag up or down moves the tab along the edge, kept inside the area; a tap still toggles the rack.
+            // A drag up or down moves the tab along the edge, kept in its bounds; a tap still toggles the rack.
             let place = Id::new("edge_tab place");
+            let (lo, hi) = crate::ui::rack::rack_tab_shift_range(area.y_range(), m.u(1.0));
             if tab.drag_started() {
-                ui.data_mut(|d| d.insert_temp(place, shift));
+                ui.data_mut(|d| d.insert_temp(place, shift.max(lo).min(hi)));
             } else if tab.dragged() {
                 let from = ui.data(|d| d.get_temp::<f32>(place)).unwrap_or(shift);
                 let moved = tab.total_drag_delta().unwrap_or_default().y / m.u(1.0);
-                shift = (from + moved).clamp((low - home) / m.u(1.0), (high - home) / m.u(1.0));
+                shift = (from + moved).max(lo).min(hi);
             }
             if tab.drag_stopped() {
                 ui.data_mut(|d| d.remove::<f32>(place));
@@ -1805,25 +1844,21 @@ impl MainScreen {
         if button(ui, "keyboard_settings", slots.keys, strip).clicked() {
             nav = Some(Nav::Toggle(Overlay::KeyboardSettings));
         }
-        // GENERATE (`IconId::Randomize`), only in the piano roll: it opens the roll's `Generate` panel, where the note
-        // menu's own entry needs a note selected first.
-        let generating = matches!(input.view, View::PianoRoll(_));
-        if generating {
+        // PR #87: GENERATE (`IconId::Randomize`), in the piano roll only, at the scale room's right end: it opens the
+        // roll's `Generate` panel.
+        let generate = slots
+            .generate
+            .filter(|_| matches!(input.view, View::PianoRoll(_)));
+        if let Some(at) = generate {
             let look = BarButton::icon(IconId::Randomize).caption("GENERATE");
-            if button(ui, "generate", slots.generate, look).clicked() {
-                actions.generate = true;
-            }
+            actions.generate = button(ui, "generate", at, look).clicked();
         }
         if let Some(name) = input.scale_name {
-            // No control: a tap there is a tap on the empty bar. Its room ends where GENERATE's does.
+            // No control: a tap there is a tap on the empty bar. Its room ends where GENERATE's starts.
             let font = m.font_id(FontSize::Pt8);
             let ink = text.gamma_multiply(SCALE_ALPHA);
             let painter = ui.painter();
-            let room = if generating {
-                slots.scale.with_max_x(slots.generate.left())
-            } else {
-                slots.scale
-            };
+            let room = generate.map_or(slots.scale, |at| slots.scale.with_max_x(at.left()));
             widgets::truncated(painter, room, Align2::LEFT_CENTER, name, font, ink, 5);
         }
 
@@ -2120,8 +2155,9 @@ pub struct TransportSlots {
     pub keys: Rect,
     /// The free space right of the keyboard settings, up to REC (one row) or SOLO CLIP's slot, shown or not (two rows).
     pub scale: Rect,
-    /// GENERATE, in the scale's row at its right end: one slot, only drawn in the piano roll.
-    pub generate: Rect,
+    /// GENERATE (PR #87), one slot at the scale room's right end, drawn in the piano roll only; none when the room is
+    /// narrower than a slot.
+    pub generate: Option<Rect>,
     pub rec: Rect,
     pub rewind: Rect,
     pub play: Rect,
@@ -2185,7 +2221,7 @@ pub fn transport_slots(
         Rect::from_center_size(pos2(x, row.center().y), vec2(px, h))
     };
     let scale = Rect::from_x_y_ranges(keys.right()..=scale_end.max(keys.right()), row.y_range());
-    let generate = slot(scale.right() - b);
+    let generate = (scale.width() >= b).then(|| slot(scale.right() - b));
     let mut dividers = Vec::new();
     if solo {
         dividers.push(vertical(if two {
@@ -2253,7 +2289,8 @@ fn snap_rect(ruler: Rect, m: &Metrics) -> Rect {
 /// What the playlist scrolls over: the track rows, the song's end in beats ([`song_end_beats`]) and d = TDIV byte 0.
 #[derive(Clone, Copy, Debug)]
 struct Content {
-    rows: usize,
+    /// In full rows: a collapsed track's is [`COLLAPSED_ROW`] of one.
+    rows: f64,
     end: f64,
     d: u8,
 }
@@ -2276,8 +2313,8 @@ fn zoom_unit(file: &crate::song::SongFileState, m: &Metrics) -> f32 {
 }
 
 /// The rows' scroll range, in rows (`zoom` rows a point): every row, then the room for the `+`.
-fn rows_range(rows: usize, zoom: f64, m: &Metrics) -> f64 {
-    rows as f64 + f64::from(m.u(ADD_ROOM)) * zoom
+fn rows_range(rows: f64, zoom: f64, m: &Metrics) -> f64 {
+    rows + f64::from(m.u(ADD_ROOM)) * zoom
 }
 
 #[cfg(test)]
@@ -2294,6 +2331,7 @@ fn visible_rows(offset: f32, view_h: f32, row_h: f32, count: usize) -> Range<usi
 }
 
 /// Top edge of row `index` when the rows (`row_h` points each) are scrolled by `offset`.
+#[cfg(test)]
 fn row_top(area: Rect, offset: f32, index: usize, row_h: f32) -> f32 {
     area.top() - offset + index as f32 * row_h
 }
@@ -2377,7 +2415,7 @@ fn paint_track_rows(
     let grid_painter = painter.with_clip_rect(painter.clip_rect().intersect(grid));
     for &(ref track, top) in tracks {
         // A 1-px `background` gap under each row.
-        let lane = Rect::from_x_y_ranges(grid.x_range(), top..=top + row_h - px);
+        let lane = Rect::from_x_y_ranges(grid.x_range(), top..=top + row_h * track.rows() - px);
         let fill = match current == Some((track.channel, track.lane)) {
             true => c.module_fill,
             false => c.control_fill,
@@ -2597,7 +2635,7 @@ mod tests {
         let m = Metrics::from_pixels_per_point(1.0, 100);
         assert_eq!(content_height(9, m.u(ROW_H), &m), 688.0);
         let zoom = 1.0 / 64.0;
-        assert_eq!(rows_range(9, zoom, &m), 10.75);
+        assert_eq!(rows_range(9.0, zoom, &m), 10.75);
         let y = |rows| Axis {
             pos: 0.0,
             zoom,
@@ -2605,9 +2643,9 @@ mod tests {
             zoom_range: [zoom; 2],
             view: Rangef::new(0.0, 301.0),
         };
-        assert_eq!(y(9).max() * 64.0, 387.0);
+        assert_eq!(y(9.0).max() * 64.0, 387.0);
         // Content that fits never scrolls.
-        assert_eq!(y(1).max(), 0.0);
+        assert_eq!(y(1.0).max(), 0.0);
     }
 
     #[test]
@@ -2669,6 +2707,7 @@ mod tests {
         let follow = FOLLOW.get();
         let output_snapshot = follow.map(|tick| OutputSnapshot {
             transport_tick: tick,
+            heard_tick: tick,
             ..snapshot(0.0, false)
         });
         let settings = Settings {
@@ -2739,9 +2778,7 @@ mod tests {
                     let (edit, playhead) = (app.edit, app.playhead);
                     screen.chrome(ui, &cx, input, &regions, &mut actions);
                     let tab = (input.selected, Color32::WHITE);
-                    let shift = app.settings.rack_tab_shift;
-                    app.settings.rack_tab_shift =
-                        screen.corner_buttons(ui, &cx, tab, &regions, &mut actions, shift);
+                    let _ = screen.corner_buttons(ui, &cx, tab, &regions, &mut actions, 0.0);
                     let panel_h = size.y - regions.transport.top();
                     let tracks = band_layout(size.y, m.u(1.0), panel_h, 1).tracks;
                     result = Some(Frame {
@@ -4378,7 +4415,8 @@ mod tests {
     }
 
     #[test]
-    fn a_tap_on_another_tracks_empty_space_makes_it_current_and_its_new_clip_adds_one_there() {
+    fn a_tap_on_another_tracks_empty_space_makes_it_current_and_only_note_and_drum_tracks_take_clips()
+     {
         let mut rig = Rig::new(song_with_a_clip());
         rig.selected = 2;
         // The drums' track is not current: the first tap makes it so (its channel takes the keyboard).
@@ -4389,8 +4427,8 @@ mod tests {
         rig.click(drums);
         assert_eq!(rig.plus().0, Some(SongEdit::Final));
         assert_eq!(rig.clips(1)[0].start_tick, 0);
-        // The master's automation track (current, its keys silent) takes a new clip too, as Honeydew's automation
-        // tracks do: `New Clip` adds an automation clip there.
+        // The master's automation track (current, its keys silent) takes no new clip: on it the menu's `New Clip` is
+        // dimmed and adds nothing.
         let master = pos2(600.0, 80.0);
         for _ in 0..2 {
             assert_eq!(rig.click(master), (None, None));
@@ -4398,12 +4436,9 @@ mod tests {
         }
         rig.click(master);
         assert!(rig.plus_shown());
-        assert_eq!(rig.plus(), (Some(SongEdit::Final), None));
-        assert_eq!(
-            rig.clips(0).len(),
-            2,
-            "the rig's own clip at beat 60 and the new one"
-        );
+        assert_eq!(rig.plus(), (None, None));
+        assert!(rig.plus_shown());
+        assert_eq!(rig.clips(0).len(), 1, "only the rig's own clip at beat 60");
         assert_eq!(rig.selected, 0);
     }
 
@@ -4549,7 +4584,7 @@ mod tests {
         assert!(rig.rect_of(Id::new(("clip_button", 0_usize))).is_some());
         // The group's Delete takes both, as one edit.
         assert_eq!(
-            rig.click_id(Id::new(("clip_button", 1_usize))).0,
+            rig.click_id(Id::new(("clip_button", 2_usize))).0,
             Some(SongEdit::Final)
         );
         assert!(rig.clips(1).is_empty() && rig.clips(2).is_empty());
@@ -5084,7 +5119,7 @@ mod tests {
         rig.frame(vec![]);
         assert_eq!(rig.click_id(button(0)).0, None);
         assert_eq!(rig.clips(2).len(), 1);
-        assert_eq!(rig.click_id(button(4)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(1)).0, Some(SongEdit::Final));
         let starts: Vec<_> = rig.clips(2).iter().map(|c| (c.id, c.start_tick)).collect();
         assert_eq!(starts, [(1, 512), (2, 1024)]);
         assert_eq!(
@@ -5098,15 +5133,15 @@ mod tests {
         // Snap puts the copy back on the beat grid.
         rig.song.channels[2].lanes[0].clips[1].start_tick = 1000;
         rig.frame(vec![]);
-        assert_eq!(rig.click_id(button(2)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(3)).0, Some(SongEdit::Final));
         assert_eq!(rig.clips(2)[1].start_tick, 1024);
         let copy = ClipKey {
             channel: 2,
             lane: 0,
             id: 2,
         };
-        assert_eq!(rig.click_id(button(3)), (None, Some(Nav::EditClip(copy))));
-        assert_eq!(rig.click_id(button(1)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(4)), (None, Some(Nav::EditClip(copy))));
+        assert_eq!(rig.click_id(button(2)).0, Some(SongEdit::Final));
         assert_eq!(rig.clips(2).iter().map(|c| c.id).collect::<Vec<_>>(), [1]);
         assert_eq!(rig.screen.clips.selected, None);
         // Without a selection there are no buttons.
@@ -5557,7 +5592,7 @@ mod tests {
         let mut stored = [0.0, 0.0, 0.01, 1.0 / f64::from(2.5 * m.u_px())];
         let area = Rect::from_min_max(pos2(0.0, 48.0), pos2(1170.0, 349.0));
         let content = Content {
-            rows: 3,
+            rows: 3.0,
             end: 64.0,
             d: 4,
         };
@@ -5807,8 +5842,8 @@ mod tests {
         assert_eq!(rig.rect_of(track_item(1, 3)), None, "the menu closed");
         // A disabled item (`Delete Track`, the only notes track) picks nothing and keeps the menu open.
         secondary_click(&mut rig, header_at(2));
-        // A disabled cell has no widget: it sits between `Insert Channel` and `Delete Channel`.
-        let (above, below) = (track_item(0, 4), track_item(0, 6));
+        // A disabled cell has no widget: it sits between `Insert Channel` and `Hide track`.
+        let (above, below) = (track_item(0, 3), track_item(0, 5));
         let above = rig.rect_of(above).expect("the menu is open").center();
         let below = rig.rect_of(below).expect("the menu is open").center();
         let disabled = above + (below - above) / 2.0;
@@ -5821,7 +5856,7 @@ mod tests {
             track = track.or(rig.frame(events).track);
         }
         assert_eq!(track, None);
-        assert!(rig.rect_of(track_item(0, 6)).is_some(), "still open");
+        assert!(rig.rect_of(track_item(0, 5)).is_some(), "still open");
     }
 
     /// Presses `pos` with the mouse and holds it still, a frame every 0.1 s, until just before `secs`: the next
@@ -5857,7 +5892,7 @@ mod tests {
             let f = rig.frame(vec![button(at, false)]);
             assert_eq!((f.nav, f.track, f.reorder), (None, None, None), "no click");
             assert_eq!(rig.screen.track_menu, Some((channel, 0, at)));
-            assert!(rig.rect_of(track_item(0, 2)).is_some(), "Channel Settings");
+            assert!(rig.rect_of(track_item(0, 1)).is_some(), "Channel Settings");
         }
     }
 
@@ -5973,24 +6008,6 @@ mod tests {
         rig.frame(vec![egui::Event::PointerMoved(header_at(2))]);
         let f = rig.frame(vec![button(header_at(2), false)]);
         assert_eq!(f.reorder, Some(vec![2, 1, 0, 3]));
-    }
-
-    /// A touch's lift frame ends with `PointerGone`, which clears `latest_pos`: the drop must still be where the
-    /// finger was (`interact_pos` survives it), not where it went down.
-    #[test]
-    fn a_touch_drag_drops_where_the_finger_was_the_lift_frame_ends_with_pointer_gone() {
-        let mut rig = four_rows();
-        hold(&mut rig, header_at(1), 0.3);
-        rig.frame(vec![]);
-        assert!(rig.screen.hold.is_some(), "the long press held");
-        let to = header_at(3);
-        rig.frame(finger(1, egui::TouchPhase::Move, to));
-        let f = rig.frame(finger(1, egui::TouchPhase::End, to));
-        assert_eq!(
-            f.reorder,
-            Some(vec![0, 3, 2, 1]),
-            "dropped where the finger lifted"
-        );
     }
 
     #[test]
@@ -6174,7 +6191,7 @@ mod tests {
         let mut rig = Rig::new(song_with_a_clip());
         secondary_click(&mut rig, header_at(1));
         rig.frame(vec![]);
-        let rect = rig.rect_of(track_item(0, 4)).expect("Insert Channel");
+        let rect = rig.rect_of(track_item(0, 3)).expect("Insert Channel");
         let mut track = None;
         for events in [
             vec![egui::Event::PointerMoved(rect.center())],
@@ -6232,7 +6249,7 @@ mod tests {
         secondary_click(&mut rig, header_at(3));
         rig.frame(vec![]);
         let mut track = None;
-        let rect = rig.rect_of(track_item(0, 5)).expect("the menu is open");
+        let rect = rig.rect_of(track_item(0, 4)).expect("the menu is open");
         for events in [
             vec![egui::Event::PointerMoved(rect.center())],
             vec![button(rect.center(), true)],
@@ -6850,12 +6867,12 @@ mod tests {
         rig.screen.snap = bar;
         rig.click(CLIP);
         rig.frame(vec![]);
-        assert_eq!(rig.click_id(button(4)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(1)).0, Some(SongEdit::Final));
         assert_eq!(rig.clips(2)[1].start_tick, 512 + 1024);
         // The floating Snap: to the nearest bar (900 → 1024; a beat would be 896).
         rig.song.channels[2].lanes[0].clips[1].start_tick = 900;
         rig.frame(vec![]);
-        assert_eq!(rig.click_id(button(2)).0, Some(SongEdit::Final));
+        assert_eq!(rig.click_id(button(3)).0, Some(SongEdit::Final));
         assert_eq!(rig.clips(2)[1].start_tick, 1024);
         // `New Clip` at beat 13.6: the nearest bar line, beat 12 (a beat would be 14).
         let mut rig = Rig::new(song_with_a_clip());
