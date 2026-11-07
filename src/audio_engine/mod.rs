@@ -1790,15 +1790,20 @@ impl SongAudioEngine {
     /// position re-sync at the start, which finds nothing left to release: a note spanning the start stays silent, one
     /// starting on it plays. At a live tempo the transport goes past the end by up to an output frame's worth of
     /// frames, which it carries on from the start; the actions it passes there play next. A transport further past the
-    /// end (a seek, a loop moved before it) starts at the start.
+    /// end (a seek, a loop moved before it) starts at the start. So does one before the loop's start (a Play or a seek
+    /// there, a loop drawn after it): whenever the transport is outside the loop, it goes back into it at once.
     fn wrap_at_loop_end(&mut self) {
         let Some((start, end)) = self.wrap_range() else {
             return;
         };
-        if self.frame < end {
+        let before = self.loop_frames.is_some() && self.frame < start;
+        if self.frame < end && !before {
             return;
         }
-        let over = (self.frame - end) as f64 + self.phase;
+        let over = match before {
+            true => f64::INFINITY,
+            false => (self.frame - end) as f64 + self.phase,
+        };
         self.release_held();
         for clips in self.clips.iter_mut().flatten() {
             clips.sampler.all_notes_off();
@@ -2125,6 +2130,36 @@ mod tests {
         assert_eq!(engine.cover_replays, 0);
         engine.seek(u64::from(PPQ));
         assert_eq!(engine.cover_replays, 1);
+    }
+
+    /// A playing transport outside the play loop goes back into it at once, from before its start (Play or a seek
+    /// there, which used to play the gap up to it first) as from past its end; stopped, it stays where it is.
+    #[test]
+    fn a_playing_transport_outside_the_loop_goes_back_to_its_start() {
+        let mut song = Song {
+            tempo_bpm: 120.0,
+            play_loop: Some((2 * PPQ, 4 * PPQ)),
+            ..Song::default()
+        };
+        song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+        let mut engine = SongAudioEngine::new(&song, 48_000.0).unwrap();
+        let start = beat_frame(2.0, 48_000.0, engine.built_bpm).unwrap();
+        let mut output = vec![0.0; 64 * 2];
+        engine.render(&mut output, 2);
+        assert_eq!(engine.frame, 0, "stopped, it stays");
+        engine.play();
+        engine.render(&mut output, 2);
+        assert_eq!(engine.frame, start + 64, "Play before the loop");
+        for (tick, why) in [(PPQ, "a seek before it"), (5 * PPQ, "a seek past it")] {
+            engine.seek(u64::from(tick));
+            engine.render(&mut output, 2);
+            assert_eq!(engine.frame, start + 64, "{why}");
+        }
+        // Inside it, it plays on.
+        engine.seek(u64::from(3 * PPQ));
+        let at = engine.frame;
+        engine.render(&mut output, 2);
+        assert_eq!(engine.frame, at + 64);
     }
 
     /// Issue #33: an instrument that takes the sustain pedal itself (a plugin) gets CC #64 as it moves, a half-pedal

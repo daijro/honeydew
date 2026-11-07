@@ -374,7 +374,7 @@ diff -ruN a/vendor/lemon-studio/os-hostlink/src/lib.rs b/vendor/lemon-studio/os-
 diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os-plugkit/src/embed.rs
 --- a/vendor/lemon-studio/os-plugkit/src/embed.rs
 +++ b/vendor/lemon-studio/os-plugkit/src/embed.rs
-@@ -0,0 +1,589 @@
+@@ -0,0 +1,555 @@
 +// Copyright (C) 2026 The Honeydew contributors
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +
@@ -390,7 +390,7 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +//!   ([`modal`]) and return `None`. When the user answers ([`answer`]), the input that opened it comes again, and this
 +//!   time the call returns the answer; a chain (a menu's `Enter value...`, then the box) replays its earlier answers
 +//!   first.
-+//! - **Files come from the host** where the platform has no file dialog (Android, iOS, the browser): the editors' file
++//! - **Files come from the host** where the platform has no file dialog (Android, the browser): the editors' file
 +//!   dialog (`rfd`, which is `host-rfd` for them) asks it from their [`Window::dialog`] ([`open_file`],
 +//!   [`Modal::OpenFile`]) as a menu does, and the host's own picker answers with a path.
 +//! - Positions are the editor's device pixels, also for popups (`to_root` keeps them).
@@ -424,10 +424,6 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    pub height: u32,
 +    /// Counts the frames painted.
 +    pub version: u64,
-+    /// The pixels (x0, y0, x1, y1) that changed since the host last took a frame ([`frame`]): all of them at a new
-+    /// size, `None` if nothing did. A host that keeps the last frame (a texture) needs to update only those: a whole
-+    /// frame is megabytes a repaint, a knob turn a small patch of it.
-+    pub changed: Option<(u32, u32, u32, u32)>,
 +}
 +
 +/// A menu as the host shows it: [`MenuDef`] without its commands.
@@ -522,8 +518,7 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    /// The parked editors of this thread, by id.
 +    static PARKED: RefCell<HashMap<Parent, (Arc<State>, Box<dyn FnOnce()>)>> = RefCell::new(HashMap::new());
 +    /// This thread's editors ask the host for the files they open ([`host_files`]).
-+    static HOST_FILES: Cell<bool> =
-+        const { Cell::new(cfg!(any(target_arch = "wasm32", target_os = "android", target_os = "ios"))) };
++    static HOST_FILES: Cell<bool> = const { Cell::new(cfg!(any(target_arch = "wasm32", target_os = "android"))) };
 +    /// The window whose [`Window::dialog`] runs, which [`open_file`] asks for.
 +    static DIALOG: RefCell<Option<Window>> = const { RefCell::new(None) };
 +}
@@ -688,23 +683,9 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    pub fn blit(&self, px: &[u32], w: u32, h: u32) {
 +        let mut i = self.state.lock();
 +        let f = &mut i.frame;
-+        let changed = if (f.width, f.height) == (w, h) && f.pixels.len() == px.len() {
-+            let changed = changed(&f.pixels, px, w as usize);
-+            if let Some((_, y0, _, y1)) = changed {
-+                let rows = y0 as usize * w as usize..y1 as usize * w as usize;
-+                f.pixels[rows.clone()].copy_from_slice(&px[rows]);
-+            }
-+            changed
-+        } else {
-+            f.pixels.clear();
-+            f.pixels.extend_from_slice(px);
-+            (f.width, f.height) = (w, h);
-+            Some((0, 0, w, h))
-+        };
-+        f.changed = match (f.changed, changed) {
-+            (Some(a), Some(b)) => Some((a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3))),
-+            (a, b) => a.or(b),
-+        };
++        f.pixels.clear();
++        f.pixels.extend_from_slice(px);
++        (f.width, f.height) = (w, h);
 +        f.version += 1;
 +        drop(i);
 +        repaint();
@@ -856,7 +837,7 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +}
 +
 +/// Whether the editors of this thread ask the host for the files they open ([`open_file`]) instead of showing a file
-+/// dialog: where the platform has none (Android, iOS, the browser), or once [`set_host_files`] said so.
++/// dialog: where the platform has none (Android, the browser), or once [`set_host_files`] said so.
 +pub fn host_files() -> bool {
 +    HOST_FILES.get()
 +}
@@ -916,29 +897,14 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    get(id).is_some_and(|s| s.lock().locked)
 +}
 +
-+/// Editor `id`'s frame, when it painted one after version `since`: `f` gets it, and its version is returned. Its
-+/// [`Frame::changed`] starts over.
++/// Editor `id`'s frame, when it painted one after version `since`: `f` gets it, and its version is returned.
 +pub fn frame(id: Parent, since: u64, f: impl FnOnce(&Frame)) -> Option<u64> {
 +    let s = get(id)?;
-+    let mut i = s.lock();
++    let i = s.lock();
 +    (i.frame.version > since).then(|| {
 +        f(&i.frame);
-+        i.frame.changed = None;
 +        i.frame.version
 +    })
-+}
-+
-+/// The pixels (x0, y0, x1, y1) where `new` differs from `old`, both rows of `w` pixels; `None` where none does.
-+fn changed(old: &[u32], new: &[u32], w: usize) -> Option<(u32, u32, u32, u32)> {
-+    let rows = || old.chunks_exact(w.max(1)).zip(new.chunks_exact(w.max(1)));
-+    let y0 = rows().position(|(a, b)| a != b)?;
-+    let y1 = old.len() / w.max(1) - rows().rev().position(|(a, b)| a != b)?;
-+    let (mut x0, mut x1) = (w, 0);
-+    for (a, b) in rows().take(y1).skip(y0).filter(|(a, b)| a != b) {
-+        x0 = x0.min(a.iter().zip(b).position(|(p, q)| p != q).unwrap_or(w));
-+        x1 = x1.max(w - a.iter().rev().zip(b.iter().rev()).position(|(p, q)| p != q).unwrap_or(w));
-+    }
-+    Some((x0 as u32, y0 as u32, x1 as u32, y1 as u32))
 +}
 +
 +/// What editor `id` asks the user, if anything.

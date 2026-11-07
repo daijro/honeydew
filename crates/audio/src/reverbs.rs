@@ -2,9 +2,6 @@ use std::f32::consts::TAU;
 
 use crate::biquad::flush;
 
-/// The late lines' lengths, in seconds at room size 1.
-const LATE: [f32; 4] = [0.0297, 0.0371, 0.0411, 0.0437];
-
 struct Delay {
     samples: Vec<f32>,
     cursor: usize,
@@ -18,29 +15,18 @@ impl Delay {
         }
     }
 
-    // Issue #72: per sample, so no float or integer division, no `fmodf` or `truncf` call (a phone ran out of time
-    // for a song's reverbs). The results are those of `rem_euclid(len)`, `% len` and `fract()`, bit for bit.
     fn read(&self, frames: f32) -> f32 {
-        let n = self.samples.len();
-        let len = n as f32;
-        // Within (-len, len), as the cursor is below `len` and `frames` at least 1: `rem_euclid(len)` adds `len` to a
-        // negative.
-        let back = self.cursor as f32 - frames.clamp(1.0, len - 2.0);
-        let position = if back < 0.0 { back + len } else { back };
-        // A tiny negative wraps to exactly `len` in f32. `position` is below 2^24: its truncation is exact.
-        let whole = position as usize;
-        let i = if whole >= n { whole - n } else { whole };
-        let next = if i + 1 == n { 0 } else { i + 1 };
-        self.samples[i] + (self.samples[next] - self.samples[i]) * (position - whole as f32)
+        let len = self.samples.len() as f32;
+        let position = (self.cursor as f32 - frames.clamp(1.0, len - 2.0)).rem_euclid(len);
+        // A tiny negative wraps to exactly `len` in f32.
+        let i = position as usize % self.samples.len();
+        let next = (i + 1) % self.samples.len();
+        self.samples[i] + (self.samples[next] - self.samples[i]) * position.fract()
     }
 
     fn push(&mut self, sample: f32) {
         self.samples[self.cursor] = flush(sample);
-        self.cursor = if self.cursor + 1 == self.samples.len() {
-            0
-        } else {
-            self.cursor + 1
-        };
+        self.cursor = (self.cursor + 1) % self.samples.len();
     }
 
     fn clear(&mut self) {
@@ -87,8 +73,6 @@ pub struct ReverbState {
     filter: [InputFilter; 2],
     damp: [f32; 4],
     bass: [f32; 4],
-    /// Each late line's feedback gains (its decay's, and the bass's), from the params ([`Self::refresh`]).
-    gains: [(f32, f32); 4],
     phase: f32,
     predelay_frames: f32,
     low_cut: f32,
@@ -126,7 +110,6 @@ impl ReverbState {
             }),
             damp: [0.0; 4],
             bass: [0.0; 4],
-            gains: [(0.0, 0.0); 4],
             phase: 0.0,
             predelay_frames: 0.0,
             low_cut: 0.0,
@@ -231,17 +214,6 @@ impl ReverbState {
             self.early_level = p[3] * p[5] * p[14];
             self.wet_level = p[3] * p[14];
         }
-        let bass_mult = if self.id == 35 {
-            0.2 + 2.8 * p[14]
-        } else if self.id == 12 {
-            1.0 + 2.0 * p[17]
-        } else {
-            1.0
-        };
-        self.gains = LATE.map(|length| {
-            let gain = 10.0_f32.powf(-3.0 * (length * self.room_scale) / self.decay_seconds);
-            (gain, gain.powf(1.0 / bass_mult))
-        });
         self.prepare_block(120.0);
     }
 
@@ -298,17 +270,26 @@ impl ReverbState {
             + 0.3 * self.early[0].read(0.0193 * self.sample_rate);
         self.early[0].push(feed[0]);
         self.early[1].push(feed[1]);
+        let lengths = [0.0297, 0.0371, 0.0411, 0.0437];
         let mut tail = [0.0; 4];
         let mut feedback = [0.0; 4];
+        let bass_mult = if self.id == 35 {
+            0.2 + 2.8 * p[14]
+        } else if self.id == 12 {
+            1.0 + 2.0 * p[17]
+        } else {
+            1.0
+        };
         for i in 0..4 {
             let phase = self.phase + i as f32 * 0.25;
             let movement = self.modulation_depth * (TAU * phase).sin();
-            let seconds = LATE[i] * self.room_scale;
+            let seconds = lengths[i] * self.room_scale;
             tail[i] = self.late[i].read(seconds * self.sample_rate + movement);
             self.damp[i] = flush(self.damp[i] + self.damping * (tail[i] - self.damp[i]));
             self.bass[i] = flush(self.bass[i] + self.crossover * (self.damp[i] - self.bass[i]));
-            let (gain, bass_gain) = self.gains[i];
-            feedback[i] = gain * (self.damp[i] - self.bass[i]) + bass_gain * self.bass[i];
+            let gain = 10.0_f32.powf(-3.0 * seconds / self.decay_seconds);
+            feedback[i] =
+                gain * (self.damp[i] - self.bass[i]) + gain.powf(1.0 / bass_mult) * self.bass[i];
         }
         let sum = feedback.iter().sum::<f32>() * 0.5;
         for (i, feedback_channel) in feedback.iter().enumerate() {
@@ -379,43 +360,6 @@ fn one_pole(frequency: f32, sample_rate: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Issue #72: a delay line reads what `rem_euclid`, `%` and `fract` read, bit for bit, at every cursor.
-    #[test]
-    fn a_delay_reads_as_rem_euclid_and_fract_would() {
-        let mut delay = Delay::new(0.0002, 48_000.0);
-        let n = delay.samples.len();
-        for (i, s) in delay.samples.iter_mut().enumerate() {
-            *s = (i as f32 * 0.37).sin();
-        }
-        let old = |d: &Delay, frames: f32| {
-            let len = n as f32;
-            let position = (d.cursor as f32 - frames.clamp(1.0, len - 2.0)).rem_euclid(len);
-            let i = position as usize % n;
-            let next = (i + 1) % n;
-            d.samples[i] + (d.samples[next] - d.samples[i]) * position.fract()
-        };
-        for cursor in 0..n {
-            delay.cursor = cursor;
-            for frames in [
-                -3.0,
-                0.0,
-                1.0,
-                1.25,
-                2.5,
-                n as f32 / 2.0 + 0.1,
-                n as f32 - 2.0,
-                1e9,
-            ] {
-                let frames = frames + cursor as f32 * 1e-7;
-                assert_eq!(
-                    delay.read(frames).to_bits(),
-                    old(&delay, frames).to_bits(),
-                    "{cursor} {frames}"
-                );
-            }
-        }
-    }
 
     /// Reverb 2's LOW CUT is ≈19 + 2981·v Hz (the panel's text), off at
     /// v = 0.

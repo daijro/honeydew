@@ -26,8 +26,6 @@ pub(crate) struct MemState {
     pub accepts: Vec<&'static [&'static str]>,
     /// Keeps and reports a save under its file name only, as the web's download does.
     pub names_only: bool,
-    /// Every share request (Send), as (files, media type).
-    pub shares: Vec<(Vec<PathBuf>, String)>,
     events: VecDeque<FileEvent>,
 }
 
@@ -100,11 +98,5 @@ impl FileProvider for MemFiles {
 
     fn folders(&self) -> bool {
         !self.0.borrow().names_only
-    }
-
-    fn share(&mut self, files: &[PathBuf], mime: &str) -> Result<(), String> {
-        let share = (files.to_vec(), mime.to_owned());
-        self.0.borrow_mut().shares.push(share);
-        Ok(())
     }
 }

@@ -239,7 +239,7 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 }
 
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 52] = {
+const ROWS: [Row; 51] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -300,7 +300,6 @@ const ROWS: [Row; 52] = {
             "Continuous scrolling during playback",
             Toggle(|s| &mut s.continuous_scroll),
         ),
-        row("Show hidden tracks", Toggle(|s| &mut s.show_hidden_tracks)),
         row(
             "Show CPU and RAM meters",
             Toggle(|s| &mut s.hardware_meters),
@@ -1382,7 +1381,6 @@ mod tests {
                 "Set middle C to C4",
                 "Show range labels on keyboard",
                 "Continuous scrolling during playback",
-                "Show hidden tracks",
                 "Show CPU and RAM meters",
                 "Project version size limit:",
                 "Enable sharing files with nearby devices",
@@ -1431,7 +1429,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(toggles.len(), if cfg!(target_os = "ios") { 13 } else { 12 });
+        assert_eq!(toggles.len(), if cfg!(target_os = "ios") { 12 } else { 11 });
         for (label, field) in &toggles {
             let mut s = Settings::default();
             *field(&mut s) = !*field(&mut s);
@@ -1454,10 +1452,12 @@ mod tests {
             assert_eq!(values(Choice::SoundMode), [0, 1]);
         }
         #[cfg(not(desktop))]
-        #[cfg(not(desktop))]
         {
-            assert_eq!(labels(Choice::SoundMode), ["NATIVE"]);
-            assert_eq!(values(Choice::SoundMode), [3]);
+            assert_eq!(
+                labels(Choice::SoundMode),
+                ["FAST", "SAFE", "ULTRASAFE", "NATIVE"]
+            );
+            assert_eq!(values(Choice::SoundMode), [1, 0, 2, 3]);
         }
         assert_eq!(
             labels(Choice::Theme),
@@ -1975,7 +1975,7 @@ mod tests {
             let (u, t) = (m.u(1.0), m.t());
             let column_right = rig.width - 2.0 * u;
             let fills = fills(&rig);
-            assert_eq!(toggles().count(), 17);
+            assert_eq!(toggles().count(), 16);
             for r in toggles() {
                 let at = format!("ppp {ppp} scale {scale}: `{}`", r.label);
                 let control = rig.rect_of(row_id(index(r.label)));

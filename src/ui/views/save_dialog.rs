@@ -74,11 +74,7 @@ pub fn show(
     name.clone_from(&dialog.name);
     state.page = dialog.render;
     app.settings.midi_note_effects = dialog.midi_effects;
-    let action = action?;
-    // `Send`: what this writes is shared once written.
-    app.files.send =
-        dialog.send && matches!(action, DialogAction::Save(_) | DialogAction::Render(_));
-    match action {
+    match action? {
         DialogAction::Save(ExportFormat::Flm) => {
             app.files.dialog_save(app.song, name).then_some(Nav::Close)
         }
