@@ -452,9 +452,10 @@ pub struct SettingsTab {
 impl SettingsTab {
     #[cfg(test)]
     pub(crate) fn all_sections_open() -> Self {
-        let mut tab = Self::default();
-        tab.sections_initialized = true;
-        tab
+        Self {
+            sections_initialized: true,
+            ..Self::default()
+        }
     }
 
     pub fn set_mcp_status(&mut self, status: &'static str) {

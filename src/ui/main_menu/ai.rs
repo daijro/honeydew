@@ -169,8 +169,8 @@ mod native {
                             }
                             ResultKind::Chat(Err(e)) => {
                                 self.status = e;
-                                if self.rows.last().is_some_and(|r| !r.message.assistant) {
-                                    self.prompt = self.rows.pop().unwrap().message.text;
+                                if let Some(row) = self.rows.pop_if(|r| !r.message.assistant) {
+                                    self.prompt = row.message.text;
                                 }
                             }
                             ResultKind::Credential(operation, result) => {
@@ -489,16 +489,19 @@ mod native {
                 self.model_names.clear();
                 self.catalog_source = None;
             }
-            if let Some(a) = profile.plan.active() {
-                if a.remember && !a.signed_in() && !a.attempted_load() && self.job.is_none() {
-                    a.mark_loading();
-                    let account = a.clone();
-                    let id = a.client_id.clone();
-                    self.status = "Opening remembered ChatGPT session…".into();
-                    self.start(ctx, profile.clone(), move || {
-                        ResultKind::PlanRestore(id, plan::restore(&account))
-                    });
-                }
+            if let Some(a) = profile.plan.active()
+                && a.remember
+                && !a.signed_in()
+                && !a.attempted_load()
+                && self.job.is_none()
+            {
+                a.mark_loading();
+                let account = a.clone();
+                let id = a.client_id.clone();
+                self.status = "Opening remembered ChatGPT session…".into();
+                self.start(ctx, profile.clone(), move || {
+                    ResultKind::PlanRestore(id, plan::restore(&account))
+                });
             }
         }
         fn plan_settings(&mut self, ui: &mut Ui, profile: &mut Profile) {
@@ -553,10 +556,8 @@ mod native {
                     {
                         let account = a.clone();
                         let id = a.client_id.clone();
-                        if !remember {
-                            if let Some(a) = profile.plan.active_mut() {
-                                a.remember = false;
-                            }
+                        if !remember && let Some(a) = profile.plan.active_mut() {
+                            a.remember = false;
                         }
                         self.start(ui.ctx(), profile.clone(), move || {
                             ResultKind::PlanRemember(
@@ -582,24 +583,23 @@ mod native {
             {
                 self.begin_plan(ui.ctx(), profile, active.clone());
             }
-            if let Some(a) = active.as_ref().filter(|a| a.signed_in() || a.remember) {
-                if ui
+            if let Some(a) = active.as_ref().filter(|a| a.signed_in() || a.remember)
+                && ui
                     .add_enabled(self.job.is_none(), egui::Button::new("Sign out of ChatGPT"))
                     .clicked()
-                {
-                    let account = a.clone();
-                    let id = a.client_id.clone();
-                    if let Some(a) = profile.plan.active_mut() {
-                        a.remember = false;
-                        a.mark_loading();
-                    }
-                    self.models.clear();
-                    self.model_names.clear();
-                    self.catalog_source = None;
-                    self.start(ui.ctx(), profile.clone(), move || {
-                        ResultKind::PlanSignOut(id, plan::sign_out(&account))
-                    });
+            {
+                let account = a.clone();
+                let id = a.client_id.clone();
+                if let Some(a) = profile.plan.active_mut() {
+                    a.remember = false;
+                    a.mark_loading();
                 }
+                self.models.clear();
+                self.model_names.clear();
+                self.catalog_source = None;
+                self.start(ui.ctx(), profile.clone(), move || {
+                    ResultKind::PlanSignOut(id, plan::sign_out(&account))
+                });
             }
             if ui.link("Manage ChatGPT app usage and access").clicked() {
                 ui.ctx().open_url(egui::OpenUrl::new_tab(
@@ -972,12 +972,11 @@ mod native {
                 let width = ui.available_width().max(1.0);
                 ui.set_width(width);
                 ui.heading("Dewey music assistant");
-                if let Some(cancel) = &self.plan_cancel {
-                    if ui.button("Cancel ChatGPT sign-in").clicked() {
+                if let Some(cancel) = &self.plan_cancel
+                    && ui.button("Cancel ChatGPT sign-in").clicked() {
                         cancel.store(true, Ordering::Release);
                         #[cfg(target_os = "ios")] crate::ios::dismiss_auth_browser();
                     }
-                }
                 self.setup(ui, config, width);
                 let profile = config.profile().clone();
                 ui.label(format!("{} · {}", profile.provider.label(), if profile.model.is_empty() { "Choose a model" } else { &profile.model }));

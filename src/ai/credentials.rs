@@ -210,8 +210,10 @@ mod tests {
     #[test]
     fn save_update_delete_and_missing_delete_work_without_a_plaintext_fallback() {
         let store = Memory::default();
-        let mut p = Profile::default();
-        p.api_key = "first-secret".into();
+        let mut p = Profile {
+            api_key: "first-secret".into(),
+            ..Profile::default()
+        };
         perform(&store, Operation::Save, &p).unwrap();
         p.api_key = "replacement-secret".into();
         perform(&store, Operation::Save, &p).unwrap();

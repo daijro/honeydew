@@ -789,10 +789,10 @@ pub fn song_replaced() {
 /// in its card.
 fn close_editor_of(hosted: &mut Hosted) {
     #[cfg(any(target_os = "ios", target_os = "macos"))]
-    if let Ok(mut p) = hosted.plugin.lock() {
-        if p.desc().format == Format::Auv3 {
-            p.close_editor();
-        }
+    if let Ok(mut p) = hosted.plugin.lock()
+        && p.desc().format == Format::Auv3
+    {
+        p.close_editor();
     }
     if hosted.embedded.take().is_some()
         && let Ok(mut p) = hosted.plugin.lock()

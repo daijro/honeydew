@@ -2250,6 +2250,8 @@ fn lemon_drum_sampler_and_lemon_slicer_play_without_allocating() {
         }
         plugins::sync(&song);
         let editor = plugins::lemon_editor(id, module, 1.0).expect("the editor opens");
+        #[cfg(target_os = "macos")]
+        let editor = editor as os_plugkit::embed::Parent;
         let (btn, none) = (Button::Left, (false, false, false));
         let (x, y) = (load.cx(), load.cy());
         embed::input(

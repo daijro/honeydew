@@ -305,13 +305,12 @@ mod mac {
     }
     pub fn show(native: &mut Native) {
         native.shown = true;
-        if let Ok(mut windows) = WINDOWS.lock() {
-            if let Some(w) = windows
+        if let Ok(mut windows) = WINDOWS.lock()
+            && let Some(w) = windows
                 .iter_mut()
                 .find(|w| w.0 == Retained::as_ptr(&native.window) as usize)
-            {
-                w.2 = true;
-            }
+        {
+            w.2 = true;
         }
         if let Some(parent) = &native.parent {
             // SAFETY: distinct windows created/accessed on the AppKit main thread, with no parent cycle.

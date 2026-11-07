@@ -395,12 +395,11 @@ pub fn begin(returning: Option<Account>, remember: bool) -> Result<Login, String
             if !a.email.is_empty() {
                 q.append_pair("login_hint", &a.email);
             }
-            if let Ok(t) = a.session.0.tokens.try_lock() {
-                if let Some(t) = &*t {
-                    if !t.id_token.is_empty() {
-                        q.append_pair("id_token_hint", &t.id_token);
-                    }
-                }
+            if let Ok(t) = a.session.0.tokens.try_lock()
+                && let Some(t) = &*t
+                && !t.id_token.is_empty()
+            {
+                q.append_pair("id_token_hint", &t.id_token);
             }
         }
     }
@@ -584,10 +583,10 @@ fn verify_id(
             |_| "ChatGPT identity signature, issuer, audience or expiry could not be verified.",
         )?
         .claims;
-    if let Some(nonce) = nonce {
-        if claims["nonce"].as_str() != Some(nonce) {
-            return Err("ChatGPT identity nonce did not match this sign-in attempt.".into());
-        }
+    if let Some(nonce) = nonce
+        && claims["nonce"].as_str() != Some(nonce)
+    {
+        return Err("ChatGPT identity nonce did not match this sign-in attempt.".into());
     }
     if claims
         .get("azp")
@@ -752,10 +751,11 @@ fn access(a: &Account) -> Result<String, String> {
     if guard.is_none() {
         return Err("Continue with ChatGPT before sending a request.".into());
     }
-    if a.remember && !a.session.0.persist_failed.load(Ordering::Acquire) {
-        if let Ok(latest) = read_tokens(&NativeStore, a) {
-            *guard = Some(latest);
-        }
+    if a.remember
+        && !a.session.0.persist_failed.load(Ordering::Acquire)
+        && let Ok(latest) = read_tokens(&NativeStore, a)
+    {
+        *guard = Some(latest);
     }
     let old = guard.as_ref().ok_or("No ChatGPT session.")?;
     if old.expires_at > now() + 90 {
@@ -789,36 +789,34 @@ fn access(a: &Account) -> Result<String, String> {
     };
     let fresh = parse_tokens(value, &a.client_id, &claims, Some(old))?;
     let result = fresh.access_token.clone();
-    if a.remember {
-        if let Err(e) = save_tokens(&NativeStore, a, &fresh) {
-            a.session.0.persist_failed.store(true, Ordering::Release);
-            *a.session.0.notice.lock().unwrap_or_else(|p| p.into_inner()) = e;
-        }
+    if a.remember
+        && let Err(e) = save_tokens(&NativeStore, a, &fresh)
+    {
+        a.session.0.persist_failed.store(true, Ordering::Release);
+        *a.session.0.notice.lock().unwrap_or_else(|p| p.into_inner()) = e;
     }
     *guard = Some(fresh);
     Ok(result)
 }
 fn revoke(a: &Account, t: &Tokens) -> bool {
     let mut revoked = false;
-    if !t.refresh_token.is_empty() {
-        if let Ok(m) = metadata()
-            && let Some(url) = m["revocation_endpoint"].as_str()
-            && let Ok(url) = trusted_auth_url(url)
-        {
-            for delay in [0, 1] {
-                if delay > 0 {
-                    std::thread::sleep(Duration::from_secs(delay));
-                }
-                if let Ok(r) = agent().post(url).send_form([
-                    ("token", t.refresh_token.as_str()),
-                    ("token_type_hint", "refresh_token"),
-                    ("client_id", a.client_id.as_str()),
-                ]) {
-                    if r.status().is_success() {
-                        revoked = true;
-                        break;
-                    }
-                }
+    if !t.refresh_token.is_empty()
+        && let Ok(m) = metadata()
+        && let Some(url) = m["revocation_endpoint"].as_str()
+        && let Ok(url) = trusted_auth_url(url)
+    {
+        for delay in [0, 1] {
+            if delay > 0 {
+                std::thread::sleep(Duration::from_secs(delay));
+            }
+            if let Ok(r) = agent().post(url).send_form([
+                ("token", t.refresh_token.as_str()),
+                ("token_type_hint", "refresh_token"),
+                ("client_id", a.client_id.as_str()),
+            ]) && r.status().is_success()
+            {
+                revoked = true;
+                break;
             }
         }
     }
