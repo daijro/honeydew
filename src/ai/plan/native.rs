@@ -153,7 +153,7 @@ fn host_id_at(path: &std::path::Path) -> Result<String, String> {
         return Ok(old);
     }
     // Migrate the unsupported identifier written by the first implementation before retrying OAuth.
-    if !old.is_empty() && !(old.starts_with("honeydew-") && old.len() < 128) {
+    if !(old.is_empty() || old.starts_with("honeydew-") && old.len() < 128) {
         return Err("Invalid ChatGPT host identity file.".into());
     }
     let id = new_host_id()?;
