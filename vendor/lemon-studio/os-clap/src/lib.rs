@@ -1646,6 +1646,25 @@ impl os_host::Plugin for Plugin {
         Plugin::editor_size(self)
     }
 
+    fn editor_resizable(&self) -> bool {
+        self.editor && unsafe { (*self.gui).can_resize.is_some_and(|f| f(self.plugin)) }
+    }
+
+    fn resize_editor(&mut self, size: (u32, u32)) -> Option<(u32, u32)> {
+        if !os_host::Plugin::editor_resizable(self) { return None; }
+        let scale = self.editor_scale.max(1.0);
+        let mut w = (size.0 as f32 / scale).round().max(1.0) as u32;
+        let mut h = (size.1 as f32 / scale).round().max(1.0) as u32;
+        unsafe {
+            let gui = &*self.gui;
+            if let Some(adjust) = gui.adjust_size {
+                if !adjust(self.plugin, &mut w, &mut h) { return None; }
+            }
+            if !gui.set_size.is_some_and(|f| f(self.plugin, w, h)) { return None; }
+        }
+        self.editor_size().or_else(|| Some(self.to_px((w, h))))
+    }
+
     fn close_editor(&mut self) {
         Plugin::close_editor(self)
     }

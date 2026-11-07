@@ -162,6 +162,7 @@ pub fn start(ctx: &eframe::egui::Context, cache: Option<String>, folders: &[Stri
 /// The web and Android scan nothing: only the built-in plugins are there.
 #[cfg(not(plugin_host))]
 mod no_scan {
+    #[cfg(not(target_os = "ios"))]
     pub fn rescan_folders(_: &[String], _: bool) {}
 
     pub fn poll_scan() -> bool {
@@ -183,9 +184,22 @@ mod no_scan {
 #[cfg(not(plugin_host))]
 pub use no_scan::*;
 
+#[cfg(target_os = "ios")]
+pub fn rescan_folders(_: &[String], _: bool) {
+    rescan_audio_units();
+}
+
+/// Refresh installed AUv3 extensions from Apple's component manager, without a file scan.
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+pub fn rescan_audio_units() {
+    with(|host| host.refresh_auv3());
+}
+
 #[cfg(plugin_host)]
 /// Scans the default folders and the user's `folders` ([`rescan`]) with this program as the scanner.
 pub fn rescan_folders(folders: &[String], all: bool) {
+    #[cfg(target_os = "macos")]
+    rescan_audio_units();
     let mut all_folders = scan::default_folders();
     all_folders.extend(folders.iter().map(PathBuf::from));
     if let Ok(scanner) = std::env::current_exe() {
@@ -318,6 +332,7 @@ fn format_label(format: Format) -> &'static str {
         Format::Vst3 => "VST3",
         Format::Vst2 => "VST2",
         Format::Native => "Native",
+        Format::Auv3 => "AUv3",
     }
 }
 
@@ -437,11 +452,34 @@ fn param_list(plugin: &SharedPlugin) -> (Vec<u32>, Vec<PluginParam>, Vec<f32>) {
 }
 
 impl Host {
+    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    fn refresh_auv3(&mut self) {
+        let library = super::auv3::Components::discover();
+        self.entries.retain(|e| e.desc.format != Format::Auv3);
+        let file = Arc::new(FileLib {
+            path: PathBuf::new(),
+            format: Format::Auv3,
+            lib: OnceLock::from(Ok(library.clone() as Arc<dyn Library>)),
+        });
+        self.entries
+            .extend(library.plugins().iter().cloned().map(|desc| Entry {
+                desc,
+                file: file.clone(),
+                builtin: false,
+            }));
+        self.failed.clear();
+    }
+
     #[cfg(plugin_host)]
     fn set_cache(&mut self, cache: Cache) {
         let mut files: HashMap<(String, String), Arc<FileLib>> = HashMap::new();
+        let mut audio_units = Vec::new();
         // A file loaded already stays loaded: its instances run on.
         for e in self.entries.drain(..) {
+            if e.desc.format == Format::Auv3 && e.file.path.as_os_str().is_empty() {
+                audio_units.push(e);
+                continue;
+            }
             files.insert(
                 (
                     e.file.path.to_string_lossy().into_owned(),
@@ -477,6 +515,7 @@ impl Host {
                 }
             }
         }
+        entries.extend(audio_units);
         self.entries = entries;
         self.cache = cache;
     }
@@ -497,6 +536,12 @@ impl Host {
                 .find(|e| e.builtin && e.desc.id == b.clap_id());
         }
         let format = Format::parse(&plugin.format)?;
+        if format == Format::Auv3 {
+            return self
+                .entries
+                .iter()
+                .find(|e| e.desc.format == format && e.desc.id.eq_ignore_ascii_case(&plugin.id));
+        }
         let same = |e: &&Entry| e.desc.format == format;
         let file = |p: &str| p.rsplit(['/', '\\']).next().unwrap_or(p).to_lowercase();
         let entries = || self.entries.iter().filter(same);
@@ -517,7 +562,9 @@ impl Host {
         let plugin_ref = module.file.plugin.as_deref().ok_or("no plugin")?;
         let missing = || {
             let (name, format) = (&plugin_ref.name, plugin_ref.format_label());
-            if cfg!(plugin_host) {
+            if cfg!(plugin_host)
+                || plugin_ref.format == "auv3" && cfg!(any(target_os = "ios", target_os = "macos"))
+            {
                 format!(
                     "{name} ({format}) is not installed: it plays nothing, and its settings are kept."
                 )
@@ -653,7 +700,25 @@ pub fn adopt_params(song: &mut Song) -> bool {
                 let Some(hosted) = host.live.get_mut(&(channel_id, module.instance_id)) else {
                     continue;
                 };
-                if !song_values(module, &hosted.ids).is_empty() || hosted.ids.is_empty() {
+                let mut refreshed = false;
+                if module
+                    .file
+                    .plugin
+                    .as_ref()
+                    .is_some_and(|p| p.format == "auv3")
+                {
+                    let (ids, _, values) = param_list(&hosted.plugin);
+                    // During asynchronous loading an empty list must never erase saved automation.
+                    if !ids.is_empty() && ids != hosted.ids {
+                        hosted.ids = ids;
+                        hosted.params = Arc::new(ParamShared::new(&values));
+                        hosted.song_values.clear();
+                        refreshed = true;
+                    }
+                }
+                if !refreshed && !song_values(module, &hosted.ids).is_empty()
+                    || hosted.ids.is_empty()
+                {
                     continue;
                 }
                 let saved = saved_params(module);
@@ -670,7 +735,8 @@ pub fn adopt_params(song: &mut Song) -> bool {
                         .zip(&values)
                         .map(|(id, v)| saved.get(id).copied().unwrap_or(*v)),
                 );
-                hosted.song_values = module.params.iter().skip(1).copied().collect();
+                hosted.song_values = values;
+                push_song_params(hosted, module);
                 changed = true;
             }
         }
@@ -722,6 +788,12 @@ pub fn song_replaced() {
 /// Closes the plugin's editor, then its window (an editor whose window went first crashes); a built-in plugin's editor
 /// in its card.
 fn close_editor_of(hosted: &mut Hosted) {
+    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    if let Ok(mut p) = hosted.plugin.lock() {
+        if p.desc().format == Format::Auv3 {
+            p.close_editor();
+        }
+    }
     if hosted.embedded.take().is_some()
         && let Ok(mut p) = hosted.plugin.lock()
     {
@@ -777,8 +849,18 @@ fn idle_plugins(closed: &[usize]) -> Vec<PluginMove> {
                     .insert(os_host::guard::stopped_text(&hosted.name, code));
             }
             p.idle();
-            if let (Some(w), Some(size)) = (&hosted.window, p.editor_size()) {
-                w.resize(size);
+            if let Some(w) = &hosted.window {
+                w.set_resizable(p.editor_resizable());
+                if let Some(requested) = w.take_resize() {
+                    // Negotiate with the plugin before committing a dragged size.
+                    // A refused size returns to the editor's previous dimensions.
+                    let accepted = p.resize_editor(requested).or_else(|| p.editor_size());
+                    if let Some(size) = accepted {
+                        w.resize(size);
+                    }
+                } else if let Some(size) = p.editor_size() {
+                    w.resize(size);
+                }
             }
             for event in p.take_param_events() {
                 let (id, kind) = match event {
@@ -828,7 +910,16 @@ pub fn idle_after() -> Option<std::time::Duration> {
     );
     #[cfg(not(unix))]
     let (polling, timer) = (false, None);
-    let editor = polling || with(|host| host.live.values().any(|h| h.window.is_some()));
+    let editor = polling
+        || with(|host| {
+            host.live.values().any(|h| {
+                h.window.is_some()
+                    || cfg!(any(target_os = "ios", target_os = "macos"))
+                        && h.plugin
+                            .try_lock()
+                            .is_ok_and(|p| p.desc().format == Format::Auv3)
+            })
+        });
     editor.then_some(EDITOR).into_iter().chain(timer).min()
 }
 
@@ -878,8 +969,12 @@ pub fn state(channel_id: i32, instance_id: i32) -> Option<State> {
                 // A built-in plugin's editor is in its card.
                 let builtin = builtin::find(p.desc().format.as_str(), &p.desc().id).is_some();
                 Info {
-                    has_editor: p.has_editor() && window::AVAILABLE && !builtin,
-                    editor_open: hosted.window.is_some(),
+                    has_editor: p.has_editor()
+                        && (window::AVAILABLE
+                            || cfg!(any(target_os = "ios", target_os = "macos"))
+                                && p.desc().format == Format::Auv3)
+                        && !builtin,
+                    editor_open: hosted.window.is_some() || p.editor_open(),
                     editor_failed: hosted.editor_failed.clone(),
                     latency: p.latency(),
                     stopped: p
@@ -896,7 +991,10 @@ pub fn state(channel_id: i32, instance_id: i32) -> Option<State> {
             hosted.card_info = Some(info);
         }
         let mut info = hosted.card_info.clone()?;
-        info.editor_open = hosted.window.is_some();
+        #[cfg(not(any(target_os = "ios", target_os = "macos")))]
+        {
+            info.editor_open = hosted.window.is_some();
+        }
         info.editor_failed.clone_from(&hosted.editor_failed);
         Some(State::Live(info))
     })
@@ -944,6 +1042,16 @@ pub fn show_editor(channel_id: i32, instance_id: i32, open: bool) -> Result<(), 
         if let Some(why) = &hosted.editor_failed {
             return Err(why.clone());
         }
+        #[cfg(any(target_os = "ios", target_os = "macos"))]
+        {
+            let mut p = hosted
+                .plugin
+                .lock()
+                .map_err(|_| "the plugin stopped".to_string())?;
+            if p.desc().format == Format::Auv3 {
+                return p.open_editor(std::ptr::null_mut(), 1.0).map(|_| ());
+            }
+        }
         let opened = open_window(hosted);
         if let Err(why) = &opened {
             hosted.editor_failed = Some(why.clone());
@@ -972,6 +1080,7 @@ fn open_window(hosted: &mut Hosted) -> Result<(), String> {
     }
     let size = opened.map_err(failed)?;
     w.resize(size);
+    w.set_resizable(plugin.lock().is_ok_and(|p| p.editor_resizable()));
     w.show();
     hosted.window = Some(w);
     Ok(())
@@ -1129,6 +1238,80 @@ mod card_tests {
             runloop::remove(token);
         }
         assert_eq!(idle_after(), None);
+    }
+
+    #[cfg(plugin_host)]
+    #[test]
+    fn system_audio_units_survive_file_cache_updates_and_require_exact_identity() {
+        let mut host = Host::default();
+        let mut desc = builtin::all()[0].desc.clone();
+        desc.format = Format::Auv3;
+        desc.id = "61756D75-6A386374-41755072".into();
+        desc.name = "Super J8".into();
+        desc.path = PathBuf::new();
+        host.entries.push(Entry {
+            desc: desc.clone(),
+            builtin: false,
+            file: Arc::new(FileLib {
+                path: PathBuf::new(),
+                format: Format::Auv3,
+                lib: OnceLock::new(),
+            }),
+        });
+        host.set_cache(Cache::default());
+        let mut reference = PluginRef {
+            format: "auv3".into(),
+            id: desc.id,
+            name: desc.name,
+            ..Default::default()
+        };
+        assert!(host.find(&reference).is_some());
+        reference.id = "61756D75-6A366374-41755072".into();
+        assert!(
+            host.find(&reference).is_none(),
+            "a different component cannot take this plugin's saved state"
+        );
+    }
+
+    #[test]
+    fn asynchronously_loaded_params_restore_saved_values_even_when_ids_match() {
+        let mut song = Song::default();
+        song.add_channel(crate::song::ChannelKind::Instrument);
+        let channel = &mut song.channels[1];
+        let module_id = add(
+            &mut channel.rack,
+            channel.id,
+            builtin::named("Lemon Trio").uid,
+            0,
+        )
+        .unwrap();
+        let module = channel.rack.get_mut(module_id).unwrap();
+        let key = (channel.id, module_id);
+        let plugin = with(|host| host.live[&key].plugin.clone());
+        let (index, id) = {
+            let p = plugin.lock().unwrap();
+            (0..p.param_count())
+                .find_map(|i| {
+                    let info = p.param_info(i)?;
+                    (!info.read_only && info.max > info.min).then_some((i, info.id))
+                })
+                .unwrap()
+        };
+        // Simulate an AUv3 whose initial async instance had no parameter list.
+        module.file.plugin.as_mut().unwrap().format = "auv3".into();
+        module.params[index + 1] = 1.0;
+        with(|host| {
+            let hosted = host.live.get_mut(&key).unwrap();
+            hosted.ids.clear();
+            hosted.song_values.clear();
+            hosted.params = Arc::new(ParamShared::new(&[]));
+        });
+        assert!(adopt_params(&mut song));
+        assert!((plugin.lock().unwrap().param_value(id).unwrap() - 1.0).abs() < 0.001);
+        assert!(!adopt_params(&mut song));
+        with(|host| {
+            host.live.remove(&key);
+        });
     }
 
     #[test]

@@ -68,6 +68,10 @@ os-engine = { path = "vendor/lemon-studio/os-engine", features = ["plugins"] }
 os-host = { path = "vendor/lemon-studio/os-host" }
 os-clap = { path = "vendor/lemon-studio/os-clap" }
 
+# Opt-in AI secrets use real platform credential stores. No keyring backend is linked into WebAssembly.
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+keyring = { version = "=3.6.3", features = ["apple-native"] }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2.129"
 wasm-bindgen-futures = "0.4.79"
@@ -114,6 +118,7 @@ midir = "=0.10.4"
 
 # The plugin editors' X11 windows. Already in the tree through winit.
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+keyring = { version = "=3.6.3", features = ["sync-secret-service", "crypto-rust", "vendored"] }
 x11rb = "0.13.2"
 # The plugin editors' GL and Xlib error calls (`plugins::window`), loaded at run time. Already in the tree (CPAL, the
 # plugin hosts).
@@ -122,14 +127,21 @@ libc = "0.2"
 # The plugin scanner process's error mode and COM setup (`plugins::scan`), plus the native editor windows; the memory
 # available (the sample budget, the RAM readout).
 [target.'cfg(windows)'.dependencies]
+keyring = { version = "=3.6.3", features = ["windows-native"] }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Com", "Win32_System_Diagnostics_Debug", "Win32_System_LibraryLoader", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry", "NSString"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSView"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry", "NSString", "NSDate", "NSRunLoop"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSView", "NSApplication", "NSGraphics"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ureq = { version = "3.1", features = ["json"] }
+jsonwebtoken = { version = "9.3", default-features = false }
+fs2 = "0.4"
+getrandom = "0.3.4"
+base64 = "0.22"
+url = "2"
 # Already in the tree through eframe's egui-winit, which opens links with it. `hardened`: only http(s) URLs open, never
 # a song link that fails to parse as a local file path (the PROJECT tab's `Open`).
 webbrowser = { version = "1.2.4", features = ["hardened"] }

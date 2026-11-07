@@ -66,9 +66,7 @@ pub const SOUND_MODES: [(u8, &str); 1] = [(3, "NATIVE")];
 
 /// Buffer-size slider positions. Zero keeps the audio device's native/default buffer;
 /// positive values are 512-frame targets that the backend clamps to the device's supported range.
-pub const BUFFER_SIZES: [u32; 11] = [
-    0, 512, 1024, 1536, 2048, 2560, 3072, 3584, 4096, 4608, 5120,
-];
+pub const BUFFER_SIZES: [u32; 11] = [0, 512, 1024, 1536, 2048, 2560, 3072, 3584, 4096, 4608, 5120];
 pub const MCP_DEFAULT_PORT: u16 = 57831;
 
 #[cfg(desktop)]
@@ -135,6 +133,8 @@ const DEFAULT_SOUND_MODE: u8 = 3;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    /// AI connection preferences; API keys are never serialized (optional native vault storage).
+    pub ai: crate::ai::Config,
     /// `Input device:` (`MidiDevice`): the menu label of the chosen MIDI input, `<no midi input>`, `Any available` or
     /// a device name (`MidiChoice::label`; read it back with `MidiChoice::from_label`). A name stays when its device
     /// is not connected: the choice reconnects when the device returns.
@@ -372,6 +372,7 @@ impl Default for Settings {
             song_browser_ordering: Sort::AZ.id(),
             import_notice_accepted: false,
             plugin_folders: Vec::new(),
+            ai: crate::ai::Config::default(),
             sounds_notice_seen: String::new(),
             automation_value_snap: ValueSnap::default(),
             midi_note_effects: true,
@@ -576,6 +577,18 @@ pub fn storage() -> Option<Box<dyn eframe::Storage>> {
         let dir = config_dir(|key| std::env::var_os(key));
         dir.map(|dir| open_storage(&dir))
     }
+}
+
+/// Non-secret native runtime metadata (OAuth host identity and lock files), beside preferences.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn private_app_dir() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "android")]
+    let base = crate::android::data_dir();
+    #[cfg(target_os = "ios")]
+    let base = crate::ios::data_dir();
+    #[cfg(not(mobile))]
+    let base = config_dir(|key| std::env::var_os(key));
+    base.map(|dir| dir.join(crate::APP_NAME))
 }
 
 /// The settings file's name in the app's folder. On Android that folder is the app data folder, the user folder before
@@ -786,6 +799,10 @@ mod tests {
             song_browser_ordering: 2,
             import_notice_accepted: !d.import_notice_accepted,
             plugin_folders: vec!["/plugins".into()],
+            ai: crate::ai::Config {
+                selected: crate::ai::Provider::Gemini,
+                ..Default::default()
+            },
             sounds_notice_seen: "0.1.4".into(),
             automation_value_snap: ValueSnap {
                 on: false,
@@ -1007,6 +1024,7 @@ mod tests {
                 "ModuleBrowserOrdering",
                 "SongBrowserOrdering",
                 "SoundFontPatchOrdering",
+                "ai",
                 "audioInput",
                 "automationValueSnap",
                 "bgAudio",

@@ -1,16 +1,20 @@
 //! Plugins: Lemon Studio's own, built into the app on every platform ([`builtin`]), and third-party ones (VST3, VST2,
-//! CLAP) on the desktop: scanning, an instance per plugin module of the song, the engines' share of it, the plugins'
+//! CLAP) on the desktop and AUv3 on macOS and iOS: scanning, an instance per plugin module of the song, the engines' share of it, the plugins'
 //! own editors. Built on Lemon Studio's plugin hosts (`vendor/lemon-studio`).
 //!
 //! On the web and Android only the built-in plugins are hosted: a song's other plugin modules are kept as they are
-//! (their state saved back untouched) and play nothing.
+//! (their state saved back untouched) and play nothing. Apple platforms discover installed AUv3 extensions through the system.
 //!
 //! Windows plugins on Linux: yabridge and its fork vstbridge wrap them as native Linux VST2 and VST3 plugins in
 //! `~/.vst/yabridge` and `~/.vst3/yabridge`, which the default search folders include ([`scan::default_folders`]), so
 //! they load like any Linux plugin.
 
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+mod auv3;
 pub mod builtin;
 mod engine;
+#[cfg(any(target_os = "ios", target_os = "macos", test))]
+mod midi_state;
 pub(crate) use engine::{begin_callback, lock_stats};
 mod host;
 #[cfg(plugin_host)]
@@ -57,7 +61,7 @@ pub struct Available {
     pub uid: String,
     pub name: String,
     pub vendor: String,
-    /// "CLAP", "VST3" or "VST2".
+    /// "CLAP", "VST3", "VST2" or "AUv3".
     pub format: &'static str,
     pub kind: PluginKind,
 }

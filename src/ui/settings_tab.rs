@@ -181,10 +181,12 @@ enum Kind {
     /// `Install sound library…`: a full-width light button the app answers ([`SettingsTab::take_install_sounds`]).
     InstallSounds,
     /// The plugin folders the user added (the label) and `Add folder` ([`SettingsTab::take_plugin_action`]).
+    #[cfg_attr(target_os = "ios", allow(dead_code))]
     PluginFolders,
     /// The scan's state (the label) and `Rescan`, which scans every plugin file again.
     PluginScan,
     /// `Forget my plugin folders`: a full-width light button, enabled while there are some.
+    #[cfg_attr(target_os = "ios", allow(dead_code))]
     ForgetPluginFolders,
     /// `Theme creator`: the label and an `Edit` button, which opens the theme creator ([`SettingsTab::take_creator`]).
     ThemeCreator,
@@ -202,11 +204,26 @@ pub enum PluginAction {
 }
 
 /// The plugin rows, before `Advanced:`, where plugins are hosted ([`SettingsTab::plugins`]).
+#[cfg(not(target_os = "ios"))]
 const PLUGIN_ROWS: [Row; 4] = [
-    row("Plugins (VST3, VST2, CLAP):", Kind::Header),
+    row(
+        if cfg!(target_os = "macos") {
+            "Plugins (VST3, VST2, CLAP, AUv3):"
+        } else {
+            "Plugins (VST3, VST2, CLAP):"
+        },
+        Kind::Header,
+    ),
     row("Plugin folders", Kind::PluginFolders),
     row("Plugins", Kind::PluginScan),
     row("Forget my plugin folders", Kind::ForgetPluginFolders),
+];
+
+// iOS discovers installed extensions through the system, without filesystem search folders.
+#[cfg(target_os = "ios")]
+const PLUGIN_ROWS: [Row; 2] = [
+    row("Plugins (VST3, VST2, CLAP, AUv3):", Kind::Header),
+    row("Installed AUv3 plugins", Kind::PluginScan),
 ];
 
 /// The dropdown rows.
@@ -311,7 +328,18 @@ const ROWS: [Row; 52] = {
             FixedToggle(false),
         ),
         row("MCP:", Header),
-        row("Enable MCP control", Toggle(|s| &mut s.mcp_enabled)),
+        row(
+            if cfg!(target_os = "ios") {
+                "Enable MCP control (disabled for IOS)"
+            } else {
+                "Enable MCP control"
+            },
+            if cfg!(target_os = "ios") {
+                FixedToggle(false)
+            } else {
+                Toggle(|s| &mut s.mcp_enabled)
+            },
+        ),
         row("Port", McpPort),
         row("Authentication token", McpToken),
         row("Status", McpStatus),
@@ -507,14 +535,14 @@ impl SettingsTab {
                         || (!matches!(
                             r.kind,
                             Kind::Dropdown(Choice::SoundMode) | Kind::InstallSounds
-                        ) && !matches!(
+                        ) && (!matches!(
                             r.label,
                             "MCP:"
                                 | "Enable MCP control"
                                 | "Port"
                                 | "Authentication token"
                                 | "Status"
-                        )))
+                        ) || cfg!(target_os = "ios") && r.label == "MCP:")))
             })
             .collect();
         let plugins = if self.plugins { &PLUGIN_ROWS[..] } else { &[] };
@@ -1406,7 +1434,11 @@ mod tests {
                 "Project version size limit:",
                 "Enable sharing files with nearby devices",
                 "MCP:",
-                "Enable MCP control",
+                if cfg!(target_os = "ios") {
+                    "Enable MCP control (disabled for IOS)"
+                } else {
+                    "Enable MCP control"
+                },
                 "Port",
                 "Authentication token",
                 "Status",
@@ -1450,7 +1482,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(toggles.len(), if cfg!(target_os = "ios") { 13 } else { 12 });
+        assert_eq!(toggles.len(), 12);
         for (label, field) in &toggles {
             let mut s = Settings::default();
             *field(&mut s) = !*field(&mut s);

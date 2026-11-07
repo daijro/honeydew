@@ -203,11 +203,14 @@ pub fn show(
     info.sample_rate = app.audio.sample_rate();
     // The block reads the shared data, which the app updates; it draws `Detach` or `Attach` by it.
     info.performance.clone_from(perf);
+    if *tab == MenuTab::Ai {
+        state.menu.ai.context = crate::ai::song_context(app.song);
+    }
     state.menu.tab = *tab;
     // `Input device:` lists the app's MIDI ports and asks it for a rescan each time it opens.
     settings.set_midi_ports(app.midi_devices);
     settings.content = app.files.content_dir();
-    settings.plugins = cfg!(plugin_host);
+    settings.plugins = cfg!(any(plugin_host, target_os = "ios"));
     settings.orientation = cfg!(target_os = "android");
     state.menu.set_factory(app.files.factory);
     let action = state.menu.show(
@@ -217,6 +220,22 @@ pub fn show(
         info,
         (&mut *settings, app.settings),
     );
+    if let Some(proposal) = state.menu.ai.take_apply() {
+        let result = serde_json::from_value::<crate::ai::edit::Arrangement>(proposal)
+            .map_err(|e| e.to_string())
+            .and_then(|request| crate::ai::edit::arrange(app.song, request));
+        state.menu.ai.apply_result = Some(match result {
+            Ok((song, made)) => {
+                *app.song = song;
+                app.song_edited(true);
+                Ok(format!(
+                    "Applied {} tracks. Use Undo to reverse the edit.",
+                    made.len()
+                ))
+            }
+            Err(error) => Err(format!("Could not apply proposal: {error}")),
+        });
+    }
     app.midi_rescan |= settings.take_midi_rescan();
     if settings.take_credits() {
         nav = Some(Nav::Open(Overlay::Credits));

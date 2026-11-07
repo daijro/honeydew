@@ -8,7 +8,7 @@
 //! α 0.18) sits in the gap above `Metadata:` and `Performance:`.
 //!
 //! The Performance section: the header row, then one block (status line, load bar, graph, footer;
-//! [`crate::ui::performance`]) 2 U in from each side of the page (0.5 U on a page under 20 U wide), 5 U tall. The page
+//! [`crate::ui::performance`]) 2 U in from each side of the page (0.5 U on a page under 20 U wide), 6 U tall including the Clear row. The page
 //! is the menu panel; the tabs' content is inset 0.5 U from it. A request to show the block
 //! ([`ProjectTab::show_performance`], the CPU / RAM labels' tap) scrolls it into view with a 1.5 U margin
 //! ([`scroll_to`]).
@@ -50,7 +50,7 @@ const FIELD_H: f32 = 1.0;
 /// [`WIDE_PAGE`], [`NARROW_INSET`]), the `Hide` and `Reset` discs (diameter 2 × 0.7 U), and the margin the block is
 /// scrolled into view with.
 const PERFORMANCE_HEADER_H: f32 = 1.3;
-const BLOCK_H: f32 = 5.0;
+const BLOCK_H: f32 = 6.0;
 const BLOCK_INSET: f32 = 2.0;
 const WIDE_PAGE: f32 = 20.0;
 const NARROW_INSET: f32 = 0.5;

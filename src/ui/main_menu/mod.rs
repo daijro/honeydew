@@ -31,6 +31,7 @@ use crate::ui::settings_tab::SettingsTab;
 use crate::ui::widgets::{Button, button, text_label, truncated};
 use crate::ui::{UiCtx, anim};
 
+mod ai;
 mod file_ops;
 pub mod library;
 mod project;
@@ -88,6 +89,7 @@ pub enum Tab {
     Project,
     /// The settings page ([`SettingsTab`]).
     Settings,
+    Ai,
     /// In-app updates (`updates.rs`); not on the web.
     Updates,
     /// SETTINGS' theme creator ([`theme_creator`]): no cell of the tab row, which keeps SETTINGS underlined.
@@ -96,15 +98,22 @@ pub enum Tab {
 
 impl Tab {
     #[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
-    pub const ALL: [Tab; 4] = [Tab::Songs, Tab::Project, Tab::Settings, Tab::Updates];
+    pub const ALL: [Tab; 5] = [
+        Tab::Songs,
+        Tab::Project,
+        Tab::Settings,
+        Tab::Ai,
+        Tab::Updates,
+    ];
     #[cfg(any(target_arch = "wasm32", target_os = "ios"))]
-    pub const ALL: [Tab; 3] = [Tab::Songs, Tab::Project, Tab::Settings];
+    pub const ALL: [Tab; 4] = [Tab::Songs, Tab::Project, Tab::Settings, Tab::Ai];
 
     pub fn label(self) -> &'static str {
         match self {
             Tab::Songs => "SONGS",
             Tab::Project => "PROJECT",
             Tab::Settings => "SETTINGS",
+            Tab::Ai => "DEWEY",
             Tab::Updates => "UPDATES",
             Tab::ThemeCreator => "THEME CREATOR",
         }
@@ -232,6 +241,7 @@ pub fn shell_layout(screen: Rect, m: &Metrics) -> ShellLayout {
 pub struct MainMenu {
     pub tab: Tab,
     songs: songs::SongsTab,
+    pub(crate) ai: ai::AiTab,
     project: project::ProjectTab,
     #[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
     updates: updates::UpdatesTab,
@@ -467,6 +477,10 @@ impl MainMenu {
                     action
                 }
                 Tab::Project => self.project.show(ui, cx, l.content, project),
+                Tab::Ai => {
+                    self.ai.show(ui, cx, l.content, &mut settings.1.ai);
+                    None
+                }
                 Tab::Settings => {
                     let (tab, settings) = settings;
                     // The page: the panel's width, not the content's inset ones (the column is 2 U in from its sides).
