@@ -261,9 +261,11 @@ pub fn show(
             app.song_edited(true);
         }
         MainMenuAction::SetSampleRate(rate) => {
-            app.song.sample_rate = rate;
-            app.song_edited(true);
-            app.audio.set_sample_rate(app.song, rate);
+            if app.song.sample_rate != rate {
+                app.song.sample_rate = rate;
+                app.song_edited(true);
+                app.audio.set_sample_rate(app.song);
+            }
         }
         MainMenuAction::LockMetadata => nav = Some(ask(&mut state.asked, LOCK_TAG)),
         MainMenuAction::HideTimeSpent => nav = Some(ask(&mut state.asked, HIDE_TAG)),
