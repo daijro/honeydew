@@ -391,6 +391,15 @@ impl Reader {
                     };
                     song.file.time_sig_extra = extra.to_vec();
                 }
+                b"HDSR" => {
+                    // A malformed or unsupported extension leaves the legacy default in place.
+                    if let Ok(bytes) = <[u8; 4]>::try_from(chunk.payload) {
+                        let rate = u32::from_le_bytes(bytes);
+                        if crate::song::SAMPLE_RATES.contains(&rate) {
+                            song.sample_rate = rate;
+                        }
+                    }
+                }
                 b"META" => song.file.meta = meta(chunk.payload),
                 // A broken KEYB is only logged.
                 b"KEYB" => song.file.keyboard = keyboard(&chunk).unwrap_or_default(),

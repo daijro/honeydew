@@ -262,6 +262,8 @@ pub struct HoneydewApp {
     midi: midi::Midi,
     /// The song just loaded has audio files missing: [`MISSING_AUDIO`] shows once no other message does.
     missing_audio: bool,
+    /// Last rate mismatch shown, to avoid repeating the warning every frame.
+    warned_sample_rate: Option<(u32, u32)>,
     /// The web: the bundled sounds the song just loaded waits for (`app/bundle_wait.rs`).
     song_download: Option<crate::content::web::Ticket>,
     /// The MOD wheel's value (channel param 8, MIDI CC 1) per channel id: the song keeps no value for it (`RPRM` holds
@@ -354,6 +356,7 @@ impl Default for HoneydewApp {
             burn: None,
             midi: Default::default(),
             missing_audio: false,
+            warned_sample_rate: None,
             song_download: None,
             mod_wheel: Default::default(),
             chord_on: Vec::new(),
@@ -1080,6 +1083,33 @@ impl HoneydewApp {
                 extra: None,
             }));
         }
+    }
+
+    /// Warn once per requested/actual rate mismatch, including when an output first opens or a song is loaded.
+    fn warn_sample_rate(&mut self) {
+        let Some(actual) = self.audio.sample_rate() else { return };
+        let requested = self.song.sample_rate;
+        if requested == actual {
+            self.warned_sample_rate = None;
+            return;
+        }
+        let mismatch = (requested, actual);
+        if self.warned_sample_rate == Some(mismatch)
+            || self.nav.overlays.iter().any(|o| matches!(o, Overlay::Message { .. } | Overlay::Busy { .. }))
+        {
+            return;
+        }
+        self.warned_sample_rate = Some(mismatch);
+        self.navigate(Nav::Open(Overlay::Message {
+            tag: "sample_rate_fallback",
+            lines: vec![
+                format!("The output could not use the project sample rate of {requested} Hz."),
+                format!("Live preview is using {actual} Hz instead."),
+                "Offline rendering uses the project rate; MP3 encoding may convert it.".into(),
+            ],
+            confirm: None,
+            extra: None,
+        }));
     }
 
     /// Quit: the window's close button asks [`quit_question`], holding the close back; `Yes` closes the window. (The
@@ -2702,6 +2732,7 @@ impl HoneydewApp {
             self.set_panel_sizes(sizes, &metrics);
         }
         self.project_files(ctx);
+        self.warn_sample_rate();
         // A save took the params moved: the undo steps take them now, or the next edit would count them as unsaved.
         if self.params_moved && !self.files.modified() {
             self.params_moved = false;
@@ -2948,6 +2979,25 @@ mod tests {
         assert_eq!(PLAY, r.transport.center());
     }
 
+    #[test]
+    fn sample_rate_fallback_warns_once_and_rearms_after_matching() {
+        let mut rig = Rig::new();
+        rig.click(OUTSIDE);
+        rig.app.warned_sample_rate = None;
+        rig.app.warn_sample_rate();
+        assert!(matches!(rig.app.nav.overlays.last(), Some(Overlay::Message { tag: "sample_rate_fallback", lines, .. })
+            if lines.iter().any(|line| line.contains("44100")) && lines.iter().any(|line| line.contains("48000"))));
+        rig.app.nav.overlays.clear();
+        rig.app.warn_sample_rate();
+        assert!(rig.app.nav.overlays.is_empty());
+        rig.rec.0.borrow_mut().sample_rate = Some(44_100);
+        rig.app.warn_sample_rate();
+        assert_eq!(rig.app.warned_sample_rate, None);
+        rig.rec.0.borrow_mut().sample_rate = Some(48_000);
+        rig.app.warn_sample_rate();
+        assert!(matches!(rig.app.nav.overlays.last(), Some(Overlay::Message { tag: "sample_rate_fallback", .. })));
+    }
+
     fn button_event(pos: Pos2, pressed: bool) -> egui::Event {
         egui::Event::PointerButton {
             pos,
@@ -2977,6 +3027,8 @@ mod tests {
                 ctx: egui::Context::default(),
                 app: HoneydewApp {
                     files,
+                    // Most UI fixtures use a fixed 48 kHz fake device with the default 44.1 kHz song.
+                    warned_sample_rate: Some((44_100, 48_000)),
                     ..HoneydewApp::default()
                 },
                 rec: Recorder::default(),
