@@ -1350,18 +1350,10 @@ fn load_into(
         }
         Some((path, bytes)) => {
             load_pick(module, path, bytes, files.shorthand(path))?;
-            // A `.fst`'s category is its folder's name, as its import set it; a Sylenth1 program's name and category
-            // are its own (the file of a bank names the bank).
+            // A `.fst`'s category is its folder's name, as its import set it.
             let fst = (path.extension()).is_some_and(|e| e.eq_ignore_ascii_case(FST_EXT));
-            let sylenth = crate::project_files::sylenth::is_file(path);
             let category = module.file.category.clone();
-            let program = module.file.preset_name.clone();
             files.name_module(module, path);
-            if sylenth {
-                module.file.preset_name = program;
-                module.file.category = category.clone();
-                module.file.provenance = format!("{category}/{}", module.file.preset_name);
-            }
             if fst {
                 let file = &mut module.file;
                 file.provenance = format!("{category}/{}", file.preset_name);
@@ -1371,23 +1363,10 @@ fn load_into(
         }
     };
     let type_id = module.type_id;
-    // A Sylenth1 pick: a bank's programs become native presets, and a flash says what Rind does not reproduce.
-    let sylenth = match pick {
-        Some((path, bytes)) if crate::project_files::sylenth::is_file(path) => {
-            let template = (app.song.channels.get(channel))
-                .and_then(|c| c.rack.get(id))
-                .cloned();
-            template.map(|module| (module, path, bytes))
-        }
-        _ => None,
-    };
     name_for(app.song, channel, name, type_id, instruments);
     auto_clip(app, channel, id, held);
     app.files.song_changed();
     app.pick_loaded();
-    if let Some((module, path, bytes)) = sylenth {
-        app.files.sylenth_picked(&module, path, bytes);
-    }
     Ok(0)
 }
 

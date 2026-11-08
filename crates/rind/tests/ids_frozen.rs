@@ -32,9 +32,9 @@ fn ids_are_unique_and_plain() {
 #[test]
 fn every_default_is_inside_its_range_and_round_trips_through_normalised() {
     for (i, s) in SPECS.iter().enumerate() {
-        let n = rind::presets::to_norm(i, s.default);
+        let n = rind::ranges::to_norm(i, s.default);
         assert!((0.0..=1.0).contains(&n), "{}: {n}", s.id);
-        let back = rind::presets::from_norm(i, n);
+        let back = rind::ranges::from_norm(i, n);
         assert!(
             (back - s.default).abs() < 1e-3 * (1.0 + s.default.abs()),
             "{}: {back}",

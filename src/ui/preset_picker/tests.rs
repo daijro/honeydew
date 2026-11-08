@@ -1041,41 +1041,6 @@ fn minisynth_and_gmsynth_pickers_list_their_legacy_presets_too() {
     assert_eq!(preset_exts(6), [PRESET_EXT]);
 }
 
-#[test]
-fn rinds_picker_lists_sylenth1_programs_and_banks_with_its_own_presets() {
-    use crate::project_files::{FXB_EXT, FXP_EXT, preset_exts};
-    use crate::song::plugin::PLUGIN_INSTRUMENT;
-    assert_eq!(
-        preset_exts(PLUGIN_INSTRUMENT),
-        [PRESET_EXT, FXP_EXT, FXB_EXT]
-    );
-    let program = rind::sylenth::build_fixture(&[("Pad", vec![])], false, false);
-    let bank = rind::sylenth::build_fixture(&[("A", vec![]), ("B", vec![])], true, true);
-    let mut lib = library(&["My Presets/", "My Presets/Rind/"]);
-    let dir = "My Presets/Rind";
-    let native =
-        crate::flm::write_preset(&crate::song::ModuleInstance::new(PLUGIN_INSTRUMENT, 0)).unwrap();
-    for (name, bytes) in [
-        ("Lead.fxp", program.clone()),
-        ("Pack.fxb", bank),
-        ("Mine.flmpst", native),
-        // Another module's preset, and files that are not Sylenth1's, are not Rind's.
-        (
-            "Other.flmpst",
-            crate::flm::write_preset(&crate::song::ModuleInstance::new(2, 0)).unwrap(),
-        ),
-        ("Junk.fxp", b"not a preset".to_vec()),
-        ("Truncated.fxb", program[..30].to_vec()),
-    ] {
-        put(&mut lib, &format!("{dir}/{name}"), &bytes);
-    }
-    let mut picker = PresetPicker::new("Rind", Some(dir.into()), PRESET_EXT, true)
-        .of_exts(preset_exts(PLUGIN_INSTRUMENT))
-        .of_type(PLUGIN_INSTRUMENT);
-    open(&mut picker, &lib, MY_FILES);
-    assert_eq!(names(&picker, ""), ["Lead", "Mine", "Pack"]);
-}
-
 /// The SoundFont Player's picker over `My Presets/SoundFont Player`, with `My SoundFonts` beside `My Files`.
 fn soundfont_player() -> PresetPicker {
     use crate::project_files::{SF2_EXT, preset_exts};

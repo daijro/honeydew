@@ -7,7 +7,7 @@
 //!
 //! Four band-limited oscillators (two parts of two, up to eight unison voices each), two multimode filters, four
 //! envelopes, two LFOs, a sixteen-slot modulation matrix, an arpeggiator with a sixteen-step pattern and seven master
-//! effects, in sixteen preallocated voices. [`sylenth`] reads Sylenth1 presets into it.
+//! effects, in sixteen preallocated voices.
 #![allow(semicolon_in_expressions_from_non_local_macros)]
 #![allow(
     clippy::needless_range_loop,
@@ -28,8 +28,7 @@ pub mod fx;
 pub mod ids;
 pub mod osc;
 pub mod params;
-pub mod presets;
-pub mod sylenth;
+pub mod ranges;
 pub mod util;
 pub mod view;
 pub mod voice;

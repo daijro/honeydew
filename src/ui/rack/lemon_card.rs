@@ -862,21 +862,13 @@ mod tests {
         );
     }
 
-    /// Opens Rind's MAIN page and returns the centre of its master volume knob (the editor's pixels are points here).
+    /// The centre of Rind's master volume knob, always on screen (the editor's pixels are points here).
     fn rind_knob(rig: &mut Rig) -> Pos2 {
         use rind::view::{self, Kind, Ui};
-        let tab = (view::layout(&Ui::default()).into_iter())
-            .find(|h| h.kind == Kind::Tab(view::TAB_MAIN))
-            .unwrap();
-        rig.tap(pos2(tab.r.cx(), tab.r.cy()));
         for _ in 0..3 {
             rig.frame(vec![]);
         }
-        let ui = Ui {
-            tab: view::TAB_MAIN,
-            ..Ui::default()
-        };
-        let knob = (view::layout(&ui).into_iter())
+        let knob = (view::layout(&Ui::default()).into_iter())
             .find(|h| h.param == rind::ids::MASTER_VOL && h.kind == Kind::Knob)
             .unwrap();
         pos2(knob.r.cx(), knob.r.cy())

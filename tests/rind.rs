@@ -1,6 +1,6 @@
 //! Rind (`crates/rind`), Honeydew's own built-in synthesizer: registered as a CLAP instrument with its permanent id, and
-//! its embedded editor (`os_plugkit::embed`) paints, takes pointer input as the rack card drives it, switches pages,
-//! resets on a middle click and wakes from parking. No audio device.
+//! its embedded editor (`os_plugkit::embed`) paints, takes pointer input as the rack card drives it, switches the
+//! display's tabs, opens a drop-down list and picks from it, resets on a middle click and wakes from parking. No audio device.
 
 use honeydew::plugins::{self, builtin};
 use honeydew::song::plugin::PLUGIN_INSTRUMENT;
@@ -98,21 +98,14 @@ fn the_editor_takes_drags_resets_taps_and_switches_pages() {
             .expect("a control")
     };
 
-    // Open the MAIN page by its tab.
     let tab = |i: usize| -> Hit {
         view::layout(&Ui::default())
             .into_iter()
             .find(|h| h.kind == Kind::Tab(i))
             .unwrap()
     };
-    run(&[
-        down(&tab(view::TAB_MAIN), Button::Left),
-        Input::Up { btn: Button::Left },
-    ]);
-    let ui = Ui {
-        tab: view::TAB_MAIN,
-        ..Ui::default()
-    };
+    // The master volume is always on screen.
+    let ui = Ui::default();
 
     // A knob drag holds the cursor; up 30 px of 150 is the default 0.7 plus 0.2.
     let vol = find(&ui, ids::MASTER_VOL);
@@ -136,7 +129,27 @@ fn the_editor_takes_drags_resets_taps_and_switches_pages() {
     let reset = moved(ids::MASTER_VOL).expect("the reset moved the knob");
     assert!((reset - 0.7).abs() < 1e-3, "{reset}");
 
-    // A tap on the arpeggiator's switch, on its own page.
+    // A tap on an oscillator's wave opens a list of the waves; a name in it picks that wave.
+    let wave = ids::OSC_BASE + ids::osc::WAVE;
+    let control = find(&ui, wave);
+    run(&[
+        down(&control, Button::Left),
+        Input::Up { btn: Button::Left },
+    ]);
+    assert_eq!(moved(wave), None, "opening the list changes nothing");
+    let open = Ui {
+        popup: Some(wave),
+        ..ui
+    };
+    let name = view::layout(&open)
+        .into_iter()
+        .find(|h| h.kind == Kind::Item(4))
+        .expect("the list holds the fifth name");
+    run(&[down(&name, Button::Left), Input::Up { btn: Button::Left }]);
+    let picked = moved(wave).expect("the pick moved the wave");
+    assert!((picked - 4.0 / 7.0).abs() < 1e-3, "{picked}");
+
+    // A tap on the arpeggiator's switch, on its own tab.
     run(&[
         down(&tab(view::TAB_ARP), Button::Left),
         Input::Up { btn: Button::Left },
@@ -162,57 +175,5 @@ fn a_parked_editor_wakes_and_repaints_on_expose() {
     assert!(
         embed::frame(editor, version, |_| {}).is_some(),
         "an expose paints again"
-    );
-}
-
-/// Rind's module in a song, mutable.
-fn rind_module(song: &mut Song, module: i32) -> &mut honeydew::song::ModuleInstance {
-    song.channels[1].rack.get_mut(module).expect("the module")
-}
-
-#[test]
-fn a_sylenth1_program_loads_through_the_pick_and_a_native_preset_round_trips() {
-    use honeydew::project_files::load_pick;
-    use std::path::Path;
-    let (mut song, _id, module) = rind_song();
-    let before = rind_module(&mut song, module).clone();
-
-    // A damaged file, a file of another type and a foreign module change nothing.
-    for bytes in [&b"junk"[..], &[0u8; 8000][..], &[][..]] {
-        let m = rind_module(&mut song, module);
-        assert!(load_pick(m, Path::new("Bad.fxp"), bytes, None).is_err());
-        assert_eq!(*m, before);
-    }
-    let fxp = rind::sylenth::build_fixture(&[("Test Pad", vec![])], false, false);
-    let mut other = honeydew::song::ModuleInstance::new(6, 0);
-    assert!(load_pick(&mut other, Path::new("A.fxp"), &fxp, None).is_err());
-
-    // A program loads: its name, the category, and every parameter in range.
-    let m = rind_module(&mut song, module);
-    load_pick(m, Path::new("Test Pad.fxp"), &fxp, None).expect("the program loads");
-    assert_eq!(m.file.preset_name, "Test Pad");
-    assert_eq!(m.file.category, "Sylenth1");
-    assert_eq!(m.params.len(), before.params.len());
-    assert!(
-        m.params.iter().all(|v| (0.0..=1.0).contains(v)),
-        "{:?}",
-        m.params
-    );
-    assert_ne!(m.params, before.params, "the values were applied");
-
-    // A bank loads its first program.
-    let bank = rind::sylenth::build_fixture(&[("First", vec![]), ("Second", vec![])], true, true);
-    load_pick(m, Path::new("Bank.fxb"), &bank, None).expect("the bank loads");
-    assert_eq!(m.file.preset_name, "First");
-
-    // Saved natively and read back: the same values and still Rind's.
-    let saved = honeydew::flm::write_preset(m).expect("saves");
-    let mut again = before.clone();
-    load_pick(&mut again, Path::new("First.flmpst"), &saved, None).expect("loads natively");
-    assert_eq!(again.params, m.params);
-    assert_eq!(again.file.preset_name, "First");
-    assert_eq!(
-        again.file.plugin.as_ref().map(|p| p.id.clone()),
-        before.file.plugin.as_ref().map(|p| p.id.clone())
     );
 }

@@ -41,9 +41,6 @@ pub const PRESET_EXT: &str = "flmpst";
 pub const RACK_EXT: &str = "flmrack";
 pub const DRUMSET_EXT: &str = "tmpl";
 pub const CHORDS_EXT: &str = "chords";
-/// Sylenth1's program and bank files, which a Rind module's picker also lists ([`super::sylenth`]).
-pub const FXP_EXT: &str = "fxp";
-pub const FXB_EXT: &str = "fxb";
 /// The name the chord set dialog proposes.
 pub const CUSTOM_CHORD_SET: &str = "Custom Chord Set";
 /// The legacy preset types a module's picker also lists: MiniSynth's and GMSynth's.
@@ -71,8 +68,6 @@ pub fn preset_exts(type_id: u16) -> &'static [&'static str] {
         33 => &[PRESET_EXT, "wav", "flac", "mp3", "ogg"],
         39 => &[PRESET_EXT, super::FST_EXT, "wav", "flac", "mp3", "ogg"],
         52 => &[PRESET_EXT, super::SF2_EXT, super::SFZ_EXT],
-        // Rind's, the one plugin with presets: its own and Sylenth1's.
-        crate::song::plugin::PLUGIN_INSTRUMENT => &[PRESET_EXT, FXP_EXT, FXB_EXT],
         _ => &[PRESET_EXT],
     }
 }
@@ -157,8 +152,7 @@ impl PresetSource {
 
 /// The factory preset folders whose names are not the module's display name: the `Effect Presets` and
 /// `Synth Presets2` folders.
-const FACTORY_FOLDERS: [(u16, &str); 8] = [
-    (crate::song::plugin::PLUGIN_INSTRUMENT, "Rind"),
+const FACTORY_FOLDERS: [(u16, &str); 7] = [
     (4, "Multi FX"),
     (19, "TransistorBass"),
     (20, "Leveler"),

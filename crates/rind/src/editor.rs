@@ -116,6 +116,11 @@ impl Logic {
         self.hits = hits;
     }
 
+    /// The regions of the screen as it is now (after a tab, sub tab or list changed).
+    fn relayout(&mut self) {
+        self.hits = view::layout(&self.ui);
+    }
+
     fn hit(&self, x: f32, y: f32) -> Option<Hit> {
         self.hits.iter().rev().find(|h| h.r.contains(x, y)).copied()
     }
@@ -168,7 +173,7 @@ impl Logic {
             Kind::Tab(i) => {
                 if btn == Btn::Left {
                     self.ui.tab = i;
-                    self.hits = view::layout(&self.ui);
+                    self.relayout();
                     return vec![Act::Repaint];
                 }
                 return Vec::new();
@@ -177,10 +182,27 @@ impl Logic {
                 if btn == Btn::Left {
                     let tab = self.ui.tab;
                     self.ui.subs[tab] = i;
-                    self.hits = view::layout(&self.ui);
+                    self.relayout();
                     return vec![Act::Repaint];
                 }
                 return Vec::new();
+            }
+            // A name in the open list: pick it and close the list (only a left press picks).
+            Kind::Item(i) => {
+                if btn == Btn::Left {
+                    let (_, lo) = view::choices(p);
+                    self.vals.edit_plain(SPECS[p].id, (lo + i as i32) as f32);
+                    self.last = Some(p);
+                }
+                self.ui.popup = None;
+                self.relayout();
+                return vec![Act::Repaint];
+            }
+            // Anywhere else: the list closes and the press goes no further.
+            Kind::Dismiss => {
+                self.ui.popup = None;
+                self.relayout();
+                return vec![Act::Repaint];
             }
             _ => {}
         }
@@ -195,6 +217,10 @@ impl Logic {
                 }
             }
             (Btn::Left, false) => match h.kind {
+                Kind::Cycle if view::dropdown(p) => {
+                    self.ui.popup = Some(p);
+                    self.relayout();
+                }
                 Kind::Cycle => self.step(p, 1, true),
                 Kind::Toggle => self.step(p, 1, true),
                 Kind::Knob => return self.begin_drag(p, view::KNOB_PX, Axis::Up, None),
@@ -206,7 +232,7 @@ impl Logic {
                     let at = view::bar_norm(h.r, y);
                     return self.begin_drag(p, h.r.h - 4.0, Axis::Up, Some(at));
                 }
-                Kind::Tab(_) | Kind::Sub(_) => {}
+                Kind::Tab(_) | Kind::Sub(_) | Kind::Item(_) | Kind::Dismiss => {}
             },
         }
         vec![Act::Repaint]
@@ -242,7 +268,7 @@ impl Logic {
         let Some(h) = self.hit(x, y) else {
             return Vec::new();
         };
-        if notches == 0.0 || matches!(h.kind, Kind::Tab(_) | Kind::Sub(_)) {
+        if notches == 0.0 || !h.is_param() {
             return Vec::new();
         }
         let p = h.param;
@@ -507,6 +533,7 @@ mod tests {
     use super::*;
     use crate::ids;
 
+    /// The parameters must outlive the logic: `Vals` holds raw pointers into them, so every test binds them.
     fn logic() -> (Logic, Arc<RindParams>) {
         let params = Arc::new(RindParams::default());
         let vals = Vals::new(&*params, params.live.clone(), None);
@@ -521,28 +548,33 @@ mod tests {
         c
     }
 
-    fn open(l: &mut Logic, tab: usize, sub: usize) {
-        let r = view::layout(&Ui::default())
-            .into_iter()
-            .find(|h| h.kind == Kind::Tab(tab))
-            .unwrap()
-            .r;
+    fn tap(l: &mut Logic, r: os_ui::Rect) {
         l.down(r.cx(), r.cy(), Btn::Left, Mods::default());
-        if sub > 0 {
-            let r = l.hits.iter().find(|h| h.kind == Kind::Sub(sub)).unwrap().r;
-            l.down(r.cx(), r.cy(), Btn::Left, Mods::default());
-        }
+        l.up();
         paint(l);
     }
 
-    /// The centre of the control of parameter `p` on the current page.
+    /// Opens display tab `tab` and its sub page `sub`.
+    fn open(l: &mut Logic, tab: usize, sub: usize) {
+        let r = l.hits.iter().find(|h| h.kind == Kind::Tab(tab)).unwrap().r;
+        tap(l, r);
+        let r = l.hits.iter().find(|h| h.kind == Kind::Sub(sub)).unwrap().r;
+        tap(l, r);
+    }
+
+    /// The centre of the control of parameter `p` on the current screen.
     fn at(l: &Logic, p: usize) -> (f32, f32) {
         let h = l
             .hits
             .iter()
-            .find(|h| h.param == p && !matches!(h.kind, Kind::Tab(_) | Kind::Sub(_)))
+            .find(|h| h.param == p && h.is_param())
             .unwrap_or_else(|| panic!("no control for {}", SPECS[p].id));
         (h.r.cx(), h.r.cy())
+    }
+
+    /// The name number `i` of the open list.
+    fn item(l: &Logic, i: usize) -> os_ui::Rect {
+        l.hits.iter().find(|h| h.kind == Kind::Item(i)).unwrap().r
     }
 
     fn live(params: &RindParams, p: usize) -> f32 {
@@ -557,8 +589,8 @@ mod tests {
     };
 
     #[test]
-    fn every_page_paints_something_and_the_tabs_switch_pages() {
-        let (mut l, _) = logic();
+    fn every_screen_paints_something_and_the_tabs_switch_it() {
+        let (mut l, _params) = logic();
         for tab in 0..view::TABS.len() {
             open(&mut l, tab, 0);
             let c = paint(&mut l);
@@ -570,13 +602,11 @@ mod tests {
         }
         open(&mut l, view::TAB_FX, 6);
         assert_eq!(l.ui.sub(), 6);
-        paint(&mut l);
     }
 
     #[test]
     fn a_knob_drag_sounds_at_once_and_a_middle_click_resets_it() {
         let (mut l, params) = logic();
-        open(&mut l, view::TAB_MAIN, 0);
         let (x, y) = at(&l, ids::MASTER_VOL);
         assert_eq!(l.down(x, y, Btn::Left, NONE), [Act::Repaint, Act::Lock]);
         assert!(l.drag.is_some());
@@ -599,7 +629,6 @@ mod tests {
     #[test]
     fn a_fine_drag_moves_a_quarter_as_far() {
         let (mut l, params) = logic();
-        open(&mut l, view::TAB_MAIN, 0);
         let (x, y) = at(&l, ids::MASTER_VOL);
         l.down(x, y, Btn::Left, NONE);
         l.delta(0.0, -30.0, Mods { ctrl: true, ..NONE });
@@ -608,22 +637,115 @@ mod tests {
     }
 
     #[test]
-    fn a_selector_steps_on_a_tap_wraps_and_goes_back_on_a_right_click() {
+    fn a_short_selector_steps_on_a_tap_wraps_and_goes_back_on_a_right_click() {
         let (mut l, params) = logic();
-        open(&mut l, view::TAB_OSC_A, 0);
+        let (x, y) = at(&l, ids::MONO);
+        assert_eq!(live(&params, ids::MONO), 0.0);
+        l.down(x, y, Btn::Left, NONE);
+        l.up();
+        assert_eq!(live(&params, ids::MONO), 1.0);
+        assert_eq!(l.ui.popup, None, "two names step, they do not open a list");
+        l.down(x, y, Btn::Right, NONE);
+        assert_eq!(live(&params, ids::MONO), 0.0);
+        l.down(x, y, Btn::Right, NONE);
+        assert_eq!(live(&params, ids::MONO), 1.0, "wraps below the first");
+        l.down(x, y, Btn::Left, NONE);
+        assert_eq!(live(&params, ids::MONO), 0.0, "wraps past the last");
+    }
+
+    #[test]
+    fn a_long_selector_opens_a_list_and_a_name_picks_it() {
+        let (mut l, params) = logic();
         let wave = ids::OSC_BASE + ids::osc::WAVE;
         let (x, y) = at(&l, wave);
         assert_eq!(live(&params, wave), 1.0);
         l.down(x, y, Btn::Left, NONE);
         l.up();
-        assert_eq!(live(&params, wave), 2.0);
-        l.down(x, y, Btn::Right, NONE);
-        l.down(x, y, Btn::Right, NONE);
-        assert_eq!(live(&params, wave), 0.0);
-        l.down(x, y, Btn::Right, NONE);
-        assert_eq!(live(&params, wave), 7.0, "wraps below the first");
+        paint(&mut l);
+        assert_eq!(l.ui.popup, Some(wave));
+        assert_eq!(live(&params, wave), 1.0, "opening changes nothing");
+        // Every name is on the list.
+        let names = ids::WAVE_NAMES.len();
+        for i in 0..names {
+            item(&l, i);
+        }
+        tap(&mut l, item(&l, 5));
+        assert_eq!(l.ui.popup, None);
+        assert_eq!(live(&params, wave), 5.0);
+        assert_eq!(l.last, Some(wave));
+        // The list is closed: the control is back and a press on it opens the list again.
+        let (x, y) = at(&l, wave);
         l.down(x, y, Btn::Left, NONE);
-        assert_eq!(live(&params, wave), 0.0, "wraps past the last");
+        assert_eq!(l.ui.popup, Some(wave));
+    }
+
+    #[test]
+    fn a_press_outside_the_list_or_a_right_click_closes_it_without_a_change() {
+        let (mut l, params) = logic();
+        let wave = ids::OSC_BASE + ids::osc::WAVE;
+        let (x, y) = at(&l, wave);
+        l.down(x, y, Btn::Left, NONE);
+        paint(&mut l);
+        // A press on the master volume's place (under the shade) closes the list; the knob is not touched.
+        let before = live(&params, ids::MASTER_VOL);
+        assert!(l.down(2.0, 2.0, Btn::Left, NONE).contains(&Act::Repaint));
+        assert_eq!(l.ui.popup, None);
+        assert!(l.drag.is_none());
+        assert_eq!(live(&params, wave), 1.0);
+        assert_eq!(live(&params, ids::MASTER_VOL), before);
+        // A right click on a name closes it without picking.
+        l.down(x, y, Btn::Left, NONE);
+        paint(&mut l);
+        let r = item(&l, 3);
+        l.down(r.cx(), r.cy(), Btn::Right, NONE);
+        assert_eq!(l.ui.popup, None);
+        assert_eq!(live(&params, wave), 1.0);
+        // The wheel does nothing under an open list.
+        l.down(x, y, Btn::Left, NONE);
+        paint(&mut l);
+        assert!(l.wheel(x, y, 1.0, NONE).is_empty());
+        assert_eq!(live(&params, wave), 1.0);
+    }
+
+    #[test]
+    fn a_matrix_row_picks_its_source_and_target_from_lists_and_sets_the_amount() {
+        let (mut l, params) = logic();
+        // Slots 9-12 are the third sub page.
+        open(&mut l, view::TAB_MATRIX, 2);
+        let slot = 8;
+        let src = ids::MAT_BASE + slot * ids::MAT_STRIDE + ids::mat::SRC;
+        let dst = ids::MAT_BASE + slot * ids::MAT_STRIDE + ids::mat::DST;
+        let amt = ids::MAT_BASE + slot * ids::MAT_STRIDE + ids::mat::AMT;
+        let (x, y) = at(&l, src);
+        l.down(x, y, Btn::Left, NONE);
+        l.up();
+        paint(&mut l);
+        assert_eq!(l.ui.popup, Some(src));
+        tap(&mut l, item(&l, ids::msrc::ENV_3));
+        assert_eq!(live(&params, src), ids::msrc::ENV_3 as f32);
+        // The target list holds every target, whichever is chosen.
+        let (x, y) = at(&l, dst);
+        l.down(x, y, Btn::Left, NONE);
+        l.up();
+        paint(&mut l);
+        let last = ids::TARGET_NAMES.len() - 1;
+        tap(&mut l, item(&l, last));
+        assert_eq!(live(&params, dst), last as f32);
+        // The amount slider takes a press, then a drag.
+        let h = *l.hits.iter().find(|h| h.param == amt).unwrap();
+        l.down(h.r.x + 1.0, h.r.cy(), Btn::Left, NONE);
+        assert_eq!(live(&params, amt), -1.0);
+        l.up();
+        l.down(h.r.cx(), h.r.cy(), Btn::Left, NONE);
+        assert!(live(&params, amt).abs() < 0.02);
+        // Then a drag right over half the slider's travel: from the middle to the top.
+        l.delta((h.r.w - 12.0) / 2.0, 0.0, NONE);
+        l.up();
+        assert!(
+            (live(&params, amt) - 1.0).abs() < 0.05,
+            "{}",
+            live(&params, amt)
+        );
     }
 
     #[test]
@@ -656,33 +778,6 @@ mod tests {
     }
 
     #[test]
-    fn a_matrix_slider_takes_a_press_then_a_drag() {
-        let (mut l, params) = logic();
-        open(&mut l, view::TAB_MATRIX, 1);
-        let amt = ids::MAT_BASE + 8 * ids::MAT_STRIDE + ids::mat::AMT;
-        let h = *l.hits.iter().find(|h| h.param == amt).unwrap();
-        // A press at the far left sets -1, at the middle 0.
-        l.down(h.r.x + 1.0, h.r.cy(), Btn::Left, NONE);
-        assert_eq!(live(&params, amt), -1.0);
-        l.up();
-        l.down(h.r.cx(), h.r.cy(), Btn::Left, NONE);
-        assert!(live(&params, amt).abs() < 0.02);
-        // Then a drag right over half the slider's travel: from the middle to the top.
-        l.delta((h.r.w - 12.0) / 2.0, 0.0, NONE);
-        l.up();
-        assert!(
-            (live(&params, amt) - 1.0).abs() < 0.05,
-            "{}",
-            live(&params, amt)
-        );
-        // The slider's source and target selectors are on the same row.
-        let src = ids::MAT_BASE + 8 * ids::MAT_STRIDE + ids::mat::SRC;
-        let (x, y) = at(&l, src);
-        l.down(x, y, Btn::Left, NONE);
-        assert_eq!(live(&params, src), 1.0);
-    }
-
-    #[test]
     fn an_arp_bar_is_set_where_it_is_pressed() {
         let (mut l, params) = logic();
         open(&mut l, view::TAB_ARP, 0);
@@ -707,22 +802,25 @@ mod tests {
         let (x, y) = at(&l, ids::ARP_HOLD_BASE + 2);
         l.down(x, y, Btn::Left, NONE);
         assert_eq!(live(&params, ids::ARP_HOLD_BASE + 2), 1.0);
+        // The second sub page holds steps 9-16.
+        open(&mut l, view::TAB_ARP, 1);
+        at(&l, ids::ARP_STEP_BASE + 10);
     }
 
     #[test]
     fn a_press_off_every_control_does_nothing() {
         let (mut l, params) = logic();
-        assert!(l.down(2.0, 100.0, Btn::Left, NONE).is_empty());
+        assert!(l.down(1.0, 100.0, Btn::Left, NONE).is_empty());
         assert!(l.delta(0.0, -10.0, NONE).is_empty());
         assert_eq!(live(&params, ids::MASTER_VOL), 0.7);
     }
 
     #[test]
-    fn a_page_change_ends_no_drag_and_keeps_each_tabs_sub_page() {
-        let (mut l, _) = logic();
+    fn a_tab_change_keeps_each_tabs_sub_page() {
+        let (mut l, _params) = logic();
         open(&mut l, view::TAB_FX, 3);
-        open(&mut l, view::TAB_MAIN, 0);
-        open(&mut l, view::TAB_FX, 0);
-        assert_eq!(l.ui.sub(), 3, "the FX tab remembers its effect");
+        open(&mut l, view::TAB_ARP, 0);
+        open(&mut l, view::TAB_FX, 3);
+        assert_eq!(l.ui.sub(), 3, "the effects tab remembers its effect");
     }
 }

@@ -1,45 +1,12 @@
 // Copyright (C) 2026 The Honeydew contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! A preset as data: every parameter's plain value, in table order ([`crate::ids::SPECS`]), plus a name and the notes an
-//! import leaves. Pure: no audio, no files. Honeydew's preset picker loads one by setting a module's parameters
-//! ([`Preset::normalized`]) and saves it back as its own `.flmpst` like any other module preset.
+//! A parameter's plain value (what the sound uses) and its normalised one (what the host stores), by place in the table
+//! ([`crate::ids::SPECS`]). Pure: no audio, no files.
 
 use nih_plug::prelude::{FloatRange, IntRange};
 
-use crate::ids::{COUNT, Kind, SPECS};
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Preset {
-    pub name: String,
-    /// Where it came from, `Sylenth1` for an imported one.
-    pub source: String,
-    /// One plain value per parameter ([`COUNT`] of them).
-    pub values: Vec<f32>,
-    /// What the import could not reproduce exactly.
-    pub warnings: Vec<String>,
-}
-
-impl Preset {
-    /// A preset of Rind's own defaults.
-    pub fn init(name: &str) -> Preset {
-        Preset {
-            name: name.to_owned(),
-            source: "Rind".to_owned(),
-            values: SPECS.iter().map(|s| s.default).collect(),
-            warnings: Vec::new(),
-        }
-    }
-
-    /// Every parameter's normalised value (what the host stores).
-    pub fn normalized(&self) -> Vec<f32> {
-        self.values
-            .iter()
-            .enumerate()
-            .map(|(i, v)| to_norm(i, *v))
-            .collect()
-    }
-}
+use crate::ids::{Kind, SPECS};
 
 /// Parameter `i`'s plain value snapped to its range (discrete ones rounded).
 pub fn clamp_plain(i: usize, v: f32) -> f32 {
@@ -92,11 +59,6 @@ pub fn from_norm(i: usize, norm: f32) -> f32 {
     }
 }
 
-/// The number of parameters.
-pub const fn count() -> usize {
-    COUNT
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,13 +75,6 @@ mod tests {
                 assert!((back - plain).abs() <= tol, "{}: {plain} -> {back}", s.id);
             }
         }
-    }
-
-    #[test]
-    fn init_preset_has_a_value_for_everything() {
-        let p = Preset::init("Init");
-        assert_eq!(p.values.len(), COUNT);
-        assert!(p.normalized().iter().all(|n| (0.0..=1.0).contains(n)));
     }
 
     #[test]

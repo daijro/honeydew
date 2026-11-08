@@ -125,11 +125,6 @@ fn is(name: &Path, ext: &str) -> bool {
 /// loader takes ([`named_file`]) is not, nor a `.fst`, which names no module (only 3x Osc lists them).
 pub fn fits(name: &Path, type_id: Option<u16>, read: impl FnOnce() -> Option<Vec<u8>>) -> bool {
     match type_id {
-        // A Sylenth1 program or bank is Rind's, by its header.
-        Some(t) if super::sylenth::is_file(name) => {
-            t == crate::song::plugin::PLUGIN_INSTRUMENT
-                && read().is_some_and(|b| rind::sylenth::sniff(&b))
-        }
         Some(t) if !named_file(name, t) && !is(name, FST_EXT) => {
             read().is_some_and(|b| crate::flm::preset_fits(&b, t))
         }
@@ -148,10 +143,6 @@ pub fn load_pick(
     shorthand: Option<ContentPath>,
 ) -> Result<(), String> {
     let t = module.type_id;
-    // A Sylenth1 program or bank (its first program) loads into Rind through its importer.
-    if super::sylenth::is_file(path) {
-        return super::sylenth::load(module, bytes).map(|_| ());
-    }
     if named_file(path, t) {
         let path = shorthand.ok_or("The file is outside the user and content folders.")?;
         let blob = module.file.custom_data.as_deref();
@@ -179,13 +170,6 @@ pub fn load_pick(
         return Ok(());
     }
     let preset = crate::flm::read_preset(bytes, Some(t)).map_err(|e| e.to_string())?;
-    // A plugin module's preset names its plugin: only the same plugin's loads, or the module would lose its own.
-    if crate::song::plugin::is_plugin(t) {
-        let same = |a: &ModuleInstance, b: &ModuleInstance| matches!((&a.file.plugin, &b.file.plugin), (Some(x), Some(y)) if x.format == y.format && x.id == y.id);
-        if !same(module, &preset) {
-            return Err("This preset is for another plugin.".to_owned());
-        }
-    }
     module.load_preset(preset);
     Ok(())
 }
