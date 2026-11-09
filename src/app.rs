@@ -2940,6 +2940,9 @@ mod tests {
     mod last_song;
     // The surface resized between frames (a phone's rotation; PR #87).
     mod rotation;
+    // SONGS' audio files: preview and `Send to playlist` (#106).
+    #[cfg(not(target_arch = "wasm32"))]
+    mod songs_audio;
 
     impl HoneydewApp {
         /// A Drums channel as the model makes it (the default kit, no picker open), added at the end and selected:

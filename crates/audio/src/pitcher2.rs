@@ -1,6 +1,6 @@
-use std::f32::consts::{PI, TAU};
+use std::f32::consts::TAU;
 
-use crate::pitcher::{Search, Tracker};
+use crate::pitcher::{Grains, Search, Tracker};
 
 pub const DEFAULT_PARAMS: [f32; 27] = [
     1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5, 1.0,
@@ -20,8 +20,7 @@ pub struct Pitcher2State {
     window: usize,
     latency: usize,
     history: [Vec<f32>; 3],
-    output: [Vec<f32>; 2],
-    weights: Vec<f32>,
+    grains: Grains,
     write_index: usize,
     frames: usize,
     tracker: Tracker,
@@ -46,8 +45,7 @@ impl Pitcher2State {
             window: 0,
             latency: 0,
             history: Default::default(),
-            output: Default::default(),
-            weights: Vec::new(),
+            grains: Grains::new(0),
             write_index: 0,
             frames: 0,
             tracker: Tracker::new(sample_rate, LOWEST),
@@ -125,7 +123,8 @@ impl Pitcher2State {
                 channel.resize(history_len, 0.0);
                 channel.reserve(largest.max(8192) - history_len);
             }
-            for channel in self.output.iter_mut().chain([&mut self.weights]) {
+            let grains = &mut self.grains;
+            for channel in grains.output.iter_mut().chain([&mut grains.weights]) {
                 channel.resize(output_len, 0.0);
                 channel.reserve(largest - output_len);
             }
@@ -195,8 +194,6 @@ impl Pitcher2State {
         } else {
             self.grain_countdown = 0.0;
         }
-        let output_index = self.frames % self.output[0].len();
-        let weight = self.weights[output_index];
         let dry_index = self.back(self.latency);
         let dry = [self.history[0][dry_index], self.history[1][dry_index]];
         let mix = if self.params[0] >= 0.5 {
@@ -204,69 +201,34 @@ impl Pitcher2State {
         } else {
             0.0
         };
-        // The grains, normalized by their weight; where they thin out (a voice's start and end) they fade to the dry
-        // signal instead of switching to it, which clicked.
-        let fade = (1.0 - weight / FULL).max(0.0);
-        let wet = [0, 1].map(|c| self.output[c][output_index] / weight.max(FULL) + fade * dry[c]);
+        // The grains, fading to the dry signal where they thin out.
+        let wet = self.grains.take(self.output_index(), dry);
         let result = (
             dry[0] + mix * (wet[0] - dry[0]),
             dry[1] + mix * (wet[1] - dry[1]),
         );
-        self.output[0][output_index] = 0.0;
-        self.output[1][output_index] = 0.0;
-        self.weights[output_index] = 0.0;
         self.write_index = (index + 1) % self.history[0].len();
         self.frames += 1;
         result
     }
 
+    /// A grain of the tracked period, its formants moved by [`Self::formant_factor`].
     fn emit_grain(&mut self) {
         let period = (self.sample_rate / self.tracked_frequency).round() as usize;
         let period = period.clamp(8, self.window / 2);
-        // The grain is read `formant` times as fast as it plays, which moves its formants by that factor; its pitch
-        // mark lies far enough back for the faster read.
-        let formant = self.formant_factor();
-        let search_start = (period as f32 * formant.max(1.0)).ceil() as usize;
-        let mut lag = search_start;
-        let mut peak = f32::NEG_INFINITY;
-        for candidate in search_start..=search_start + period {
-            let value = self.history[2][self.back(candidate)];
-            if value > peak {
-                peak = value;
-                lag = candidate;
-            }
-        }
-        // It plays from `latency − period − radius` frames on, never before the next one.
-        let radius = period.min(self.latency.saturating_sub(period + 1));
-        if radius < 8 {
-            return;
-        }
-        let output_len = self.output[0].len();
-        let mut at = (self.frames + self.latency - period - radius) % output_len;
-        for offset in -(radius as isize)..=(radius as isize) {
-            let phase = (offset + radius as isize) as f32 / (2 * radius) as f32;
-            let weight = (PI * phase).sin().powi(2);
-            let source = lag as f32 - offset as f32 * formant;
-            let (whole, fraction) = (source as usize, source.fract());
-            let (newer, older) = (self.back(whole), self.back(whole + 1));
-            for channel in 0..2 {
-                let history = &self.history[channel];
-                let sample = history[newer] + (history[older] - history[newer]) * fraction;
-                self.output[channel][at] += sample * weight;
-            }
-            self.weights[at] += weight;
-            at = if at + 1 == output_len { 0 } else { at + 1 };
-        }
+        let (now, formant) = (self.output_index(), self.formant_factor());
+        let (index, latency) = (self.write_index, self.latency);
+        (self.grains).emit(&self.history, index, now, latency, period, formant);
+    }
+
+    /// The grains' frame for this one.
+    fn output_index(&self) -> usize {
+        self.frames % self.grains.weights.len()
     }
 
     /// The history index `lag` frames back; `lag` is under the history's length.
     fn back(&self, lag: usize) -> usize {
-        let len = self.history[0].len();
-        if lag > self.write_index {
-            self.write_index + len - lag
-        } else {
-            self.write_index - lag
-        }
+        crate::pitcher::back(self.write_index, self.history[0].len(), lag)
     }
 
     fn observe_pitch(&mut self, sample: f32) {
@@ -316,10 +278,7 @@ impl Pitcher2State {
         for channel in &mut self.history {
             channel.fill(0.0);
         }
-        for channel in &mut self.output {
-            channel.fill(0.0);
-        }
-        self.weights.fill(0.0);
+        self.grains.reset();
         self.tracker.reset();
         self.write_index = 0;
         self.frames = 0;
@@ -332,10 +291,6 @@ impl Pitcher2State {
         self.vibrato_phase = 0.0;
     }
 }
-
-/// The grain weight from which the grains play alone; under it they fade to the dry signal. Overlapping grains weigh
-/// about 1, and over 0.25 for corrections up to 6 semitones down.
-const FULL: f32 = 0.25;
 
 /// The lowest pitch Pitcher 2 tracks, Hz.
 const LOWEST: f32 = 65.0;
@@ -373,12 +328,12 @@ mod tests {
         low[25] = 1.0;
         let mut state = Pitcher2State::new(&low, 48_000.0).unwrap();
         let history_capacity = state.history[0].capacity();
-        let output_capacity = state.output[0].capacity();
-        let weights_capacity = state.weights.capacity();
+        let output_capacity = state.grains.output[0].capacity();
+        let weights_capacity = state.grains.weights.capacity();
         low[25] = 0.0;
         state.refresh(&low, 48_000.0).unwrap();
         assert_eq!(state.history[0].capacity(), history_capacity);
-        assert_eq!(state.output[0].capacity(), output_capacity);
-        assert_eq!(state.weights.capacity(), weights_capacity);
+        assert_eq!(state.grains.output[0].capacity(), output_capacity);
+        assert_eq!(state.grains.weights.capacity(), weights_capacity);
     }
 }

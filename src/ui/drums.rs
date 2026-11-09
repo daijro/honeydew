@@ -722,6 +722,7 @@ fn control(
             let pill = Pill {
                 label_right: true,
                 inverted: true,
+                ..Pill::default()
             };
             let value = &mut slot.params[p];
             widgets::pill_toggle(ui, cx, &c, pill, value, |_| String::new()).changed()

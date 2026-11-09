@@ -118,8 +118,9 @@ pub struct TrackRow {
     pub collapsed: bool,
 }
 
-/// A collapsed track's row height, as a share of a full row's (#83).
-pub const COLLAPSED_ROW: f32 = 0.375;
+/// A collapsed track's row height, as a share of a full row's (#83): 5/8, 1.25 U at the default 2 U row, where the name
+/// and the mini mute and `Solo` fit with room (#100).
+pub const COLLAPSED_ROW: f32 = 0.625;
 
 impl TrackRow {
     /// The row's height in full rows: [`COLLAPSED_ROW`] for a collapsed track.
@@ -176,28 +177,28 @@ fn whole_order(song: &Song, shown: &[usize]) -> Vec<usize> {
         .collect()
 }
 
-/// One frame of a track header's drag: the finger puts channel `dragged`'s primary row at row `raw` (fractional) of
-/// `order`, the channels as the rows show them (channel `c` is `counts[c]` rows tall). The target row is `raw` clamped
-/// to [0, last row] (the last row less the channel's extra tracks as they show) and rounded; the channel there swaps
-/// places with the dragged one. Returns the row to draw the dragged primary at: `raw`, at 0.05 of the finger past
-/// either end (the rubber band). Past one-row channels, the channel that held the target row is the one whose swap
-/// lands the dragged primary nearest the target, and strictly nearer than it is: a one-row channel is the target row's
-/// own, and no swap undoes itself under a still finger.
-fn drag_step(order: &mut [usize], counts: &[usize], dragged: usize, raw: f32) -> f32 {
-    let last = (counts.iter().sum::<usize>() - counts[dragged]) as f32;
-    let target = raw.clamp(0.0, last).round() as usize;
-    let starts: Vec<usize> = (order.iter())
-        .scan(0, |row, &c| Some(std::mem::replace(row, *row + counts[c])))
+/// One frame of a track header's drag: the finger puts channel `dragged`'s primary row's top `raw` full rows
+/// (fractional) below the first row's top, in `order`, the channels as the rows show them (channel `c` is `rows[c]` full
+/// rows tall: a collapsed track's row counts its own height, #100). The target is `raw` clamped to [0, last] (the rows'
+/// height less the dragged channel's); the channel there swaps places with the dragged one. Returns where to draw the
+/// dragged primary's top: `raw`, at 0.05 of the finger past either end (the rubber band). The channel that holds the
+/// target is the one whose swap lands the dragged primary nearest the target, and strictly nearer than it is: a one-row
+/// channel is the target row's own, and no swap undoes itself under a still finger.
+fn drag_step(order: &mut [usize], rows: &[f32], dragged: usize, raw: f32) -> f32 {
+    let last = rows.iter().sum::<f32>() - rows[dragged];
+    let target = raw.clamp(0.0, last);
+    let starts: Vec<f32> = (order.iter())
+        .scan(0.0, |row, &c| Some(std::mem::replace(row, *row + rows[c])))
         .collect();
     if let Some(d) = order.iter().position(|&c| c == dragged) {
         // Where the dragged primary lands, swapped with the channel at place `x`.
         let lands = |x: usize| match x <= d {
             true => starts[x],
-            false => starts[x] + counts[order[x]] - counts[dragged],
+            false => starts[x] + rows[order[x]] - rows[dragged],
         };
-        let miss = |x: usize| lands(x).abs_diff(target);
+        let miss = |x: usize| (lands(x) - target).abs();
         if let Some(x) = (0..order.len())
-            .min_by_key(|&x| miss(x))
+            .min_by(|&a, &b| miss(a).total_cmp(&miss(b)))
             .filter(|&x| miss(x) < miss(d))
         {
             order.swap(d, x);
@@ -530,15 +531,16 @@ pub struct MainScreen {
 /// A track header held past its 300 ms.
 #[derive(Clone, Debug)]
 struct HeaderHold {
-    /// The track row it went down on and where in rows (fractional), the touch-down point and the scroll then.
+    /// The track row it went down on and its top then in full rows ([`MainScreen::placed`]), the touch-down point and
+    /// the scroll then.
     row: usize,
     start: f32,
     origin: Pos2,
     scroll: f32,
     /// It moved off the calm zone vertically after the hold: a reorder.
     dragging: bool,
-    /// While it drags: the channels in the order the rows show ([`drag_step`]), and the row the dragged primary shows
-    /// at (fractional).
+    /// While it drags: the channels in the order the rows show ([`drag_step`]), and where the dragged primary's top
+    /// shows, in full rows.
     live: Option<(Vec<usize>, f32)>,
 }
 
@@ -670,8 +672,8 @@ impl MainScreen {
             let (top, h) = (top_of(at), row_h * tracks[i].rows());
             let row = Rect::from_x_y_ranges(track_area.x_range(), top..=top + h);
             let lane_rect = row.with_min_x(grid.left());
-            // At c = 1 only the header's own part takes its gestures; collapsed or animating, the whole row does, as a
-            // collapsed track's row (#83), which has no controls.
+            // At c = 1 only the header's own part takes its gestures; collapsed or animating, the whole row does. A
+            // collapsed track's mini mute and `Solo` (#100) are drawn over it later, so they take their own touches.
             let header = if expanded && !tracks[i].collapsed {
                 let cells = row.intersect(column).with_max_y(top + h - 1.0 / m.ppp());
                 mini_mixer::header_rect(RowKind::of(app.song, &tracks[i]), cells, true, m)
@@ -683,7 +685,7 @@ impl MainScreen {
                 Id::new(("track_header", i)),
                 Sense::click(),
             );
-            let track = (i, channel, lane, top);
+            let track = (i, channel, lane, at);
             self.header_gestures(ui, app, &mut response, track, scroll, tracks, actions);
             if !visible(at) {
                 continue;
@@ -848,7 +850,10 @@ impl MainScreen {
             .keys(ui, app, self.snap.grid(auto, app.song.time_sig));
         // A file dragged over the playlist: where it would land.
         let rows: Vec<_> = (placed.iter())
-            .map(|&(i, at)| (tracks[i].channel, tracks[i].lane, top_of(at)))
+            .map(|&(i, at)| {
+                let t = tracks[i];
+                (t.channel, t.lane, top_of(at), row_h * t.rows())
+            })
             .collect();
         let unit = self.snap.grid(auto, app.song.time_sig);
         let area = (track_area, grid);
@@ -947,7 +952,7 @@ impl MainScreen {
         ui: &egui::Ui,
         app: &mut AppCtx,
         response: &mut egui::Response,
-        (i, channel, lane, top): (usize, usize, usize, f32),
+        (i, channel, lane, at): (usize, usize, usize, f32),
         scroll: f32,
         tracks: &[TrackRow],
         actions: &mut ScreenActions,
@@ -967,7 +972,7 @@ impl MainScreen {
             let origin = ui.input(|i| i.pointer.press_origin());
             self.hold = origin.map(|origin| HeaderHold {
                 row: i,
-                start: i as f32 + (origin.y - top) / row_h,
+                start: at,
                 origin,
                 scroll,
                 dragging: false,
@@ -989,15 +994,15 @@ impl MainScreen {
             hold.dragging |= dy.abs() > m.u(gesture::CALM_U) && first;
             if hold.dragging {
                 let primaries = || shown_channels(tracks);
-                let mut counts = vec![0; app.song.channels.len()];
+                let mut heights = vec![0.0; app.song.channels.len()];
                 for t in tracks {
-                    counts[t.channel] += 1;
+                    heights[t.channel] += t.rows();
                 }
                 let (order, at) = hold.live.get_or_insert_with(|| (primaries(), 0.0));
                 let was = (order.clone(), *at);
-                // floor(start row) plus the finger's travel in rows (and any scroll since), rounded in `drag_step`.
-                let raw = hold.start.floor() + (dy + scroll - hold.scroll) / row_h;
-                *at = drag_step(order, &counts, channel, raw);
+                // The row's top plus the finger's travel in full rows (and any scroll since).
+                let raw = hold.start + (dy + scroll - hold.scroll) / row_h;
+                *at = drag_step(order, &heights, channel, raw);
                 if (&*order, *at) != (&was.0, was.1) {
                     ui.ctx().request_repaint();
                 }
@@ -1041,15 +1046,13 @@ impl MainScreen {
             &mut (order.iter())
                 .flat_map(|&c| (0..tracks.len()).filter(move |&i| tracks[i].channel == c)),
         );
-        // Row `r` of the drag's order (fractional) in full rows.
-        let y = |r: f32| {
-            let k = (r.max(0.0) as usize).min(stacked.len().saturating_sub(1));
-            (stacked.get(k)).map_or(r, |&(i, top)| top + (r - k as f32) * tracks[i].rows())
-        };
-        let (mut placed, mut floating) = (Vec::new(), Vec::new());
+        let (mut placed, mut floating, mut y) = (Vec::new(), Vec::new(), *at);
         for &(i, top) in &stacked {
             match tracks[i].channel == dragged {
-                true => floating.push((i, y(at + floating.len() as f32))),
+                true => {
+                    floating.push((i, y));
+                    y += tracks[i].rows();
+                }
                 false => placed.push((i, top)),
             }
         }
@@ -5497,7 +5500,8 @@ mod tests {
         let bar = Id::new("track_scrollbar");
         let thumb = rig.rect_of(bar).expect("drawn");
         assert!((thumb.height() - h * h / 688.0).abs() < 1e-3, "{thumb:?}");
-        assert_eq!((thumb.top(), thumb.center().x), (TOP, 1170.0 - 2.4));
+        // Its grab: half a U in from the right edge.
+        assert_eq!((thumb.top(), thumb.center().x), (TOP, 1170.0 - 8.0));
         // A drag of 50 points moves the rows 50·688/h points; the thumb follows the finger.
         let (from, to) = (thumb.center(), thumb.center() + vec2(0.0, 50.0));
         rig.frames(vec![
@@ -6162,10 +6166,10 @@ mod tests {
     fn a_drag_step_swaps_the_channel_whose_swap_lands_the_dragged_primary_nearest_the_target() {
         // One-row channels: the target row's own channel, however far: a swap, not an insert.
         let mut order = vec![0, 1, 2, 3, 4];
-        assert_eq!(drag_step(&mut order, &[1; 5], 1, 4.0), 4.0);
+        assert_eq!(drag_step(&mut order, &[1.0; 5], 1, 4.0), 4.0);
         assert_eq!(order, [0, 4, 2, 3, 1]);
         // Rows: master 0, A 1-2, B 3, C 4-6.
-        let counts = [1, 2, 1, 3];
+        let counts = [1.0, 2.0, 1.0, 3.0];
         let mut order = vec![0, 1, 2, 3];
         let mut step = |raw: f32| {
             let at = drag_step(&mut order, &counts, 1, raw);

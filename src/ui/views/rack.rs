@@ -42,6 +42,9 @@ pub struct State {
     /// Issue #68: the Lemon card (channel, instance id) whose editor shows full screen ([`super::lemon_editor`]): the
     /// overlays set it each frame.
     pub(crate) full: Option<(usize, i32)>,
+    /// Issue #98: a card's ◀ or ▶, as (channel id, instance id, −1 or 1), for the overlays to load next frame
+    /// ([`super::preset_picker::step_preset`]).
+    pub(crate) step: Option<(i32, i32, i32)>,
 }
 
 impl State {
@@ -213,6 +216,9 @@ pub fn show(
         });
     }
     let channel_id = ch.id;
+    if let Some((id, by)) = actions.step_preset {
+        state.step = Some((channel_id, id, by));
+    }
     if !actions.params.is_empty() || actions.minimized || actions.settings {
         app.channel_param_edited();
     }

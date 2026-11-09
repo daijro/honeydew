@@ -21,7 +21,7 @@ const SETTINGS: (usize, usize) = (0, 1);
 const CLONE: (usize, usize) = (0, 2);
 const INSERT: (usize, usize) = (0, 3);
 const DELETE_TRACK: (usize, usize) = (0, 4);
-const DELETE_CHANNEL: (usize, usize) = (0, 7);
+const DELETE_CHANNEL: (usize, usize) = (0, 8);
 /// `Add Track` of an instrument, `Add StepSeq Track` and `Add Notes Track` of a drums channel.
 const ADD_TRACK: (usize, usize) = (1, 3);
 const ADD_STEP_SEQ: (usize, usize) = (1, 2);
@@ -1451,6 +1451,18 @@ fn past_the_top_a_header_swaps_with_the_master_whose_own_move_rebuilds_nothing()
     assert!(!rig.app.history.can_undo());
 }
 
+/// A header dragged down past a collapsed track (#100) swaps with it once past the middle of its thin row (5/8 of a
+/// row), not a full row's.
+#[test]
+fn a_header_dragged_past_a_collapsed_track_counts_its_thin_row() {
+    let mut rig = three_channels();
+    rig.app.track_op(2, 0, TrackOp::ToggleCollapsed, 0);
+    rig.frame(vec![]);
+    rig.hold_header(1);
+    rig.drag_to(header(1) + vec2(0.0, 0.4 * 2.0 * U));
+    assert_eq!(shown(&mut rig), [0, 2, 1, 3]);
+}
+
 #[test]
 fn a_moved_channel_takes_what_is_kept_for_it_and_its_held_note_cannot_stick() {
     let mut rig = three_channels();
@@ -1706,14 +1718,25 @@ fn tune(ch: u8) -> Vec<(u64, MidiMsg)> {
     ]
 }
 
-/// [`Rig::with_drums_and_synth`] with `bytes` as the file the open dialog picks, and a handle on the files.
+/// [`Rig::with_drums_and_synth`] with `bytes` as `My MIDI/Tune.mid`, and as the file the system's dialog picks (the
+/// MIDI picker's `Import`), and a handle on the files.
 fn picking(bytes: &[u8]) -> (Rig, MemFiles) {
     let mut rig = Rig::with_drums_and_synth();
     let mem = MemFiles::with_file("/in/Tune.mid", bytes);
     rig.app.files = ProjectFiles::with_provider(Box::new(mem.clone()));
+    let tune = std::path::Path::new(crate::project_files::MIDI_FOLDER).join("Tune.mid");
+    rig.app.files.keep_user_file(&tune, bytes.to_vec());
     rig.frame(vec![]);
     rig.take();
     (rig, mem)
+}
+
+/// `Import MIDI Tracks` in the track menu of header `row`, then a tap on `My MIDI/Tune.mid` in its picker, which opens
+/// there.
+fn import_tune(rig: &mut Rig, row: usize) {
+    rig.track_menu(row, IMPORT_MIDI);
+    super::rack_wiring::picker_row(rig, 0);
+    rig.frame(vec![]);
 }
 
 /// `song` with `bytes` imported into channel `current` as the track menu imports it.
@@ -1731,13 +1754,38 @@ fn imported(song: &Song, current: usize, bytes: &[u8], opts: ImportOpts) -> Song
     song
 }
 
+/// Issue #113: the app's own picker, not the system's, opening in `My MIDI` over the user folder's MIDI files. Its
+/// `Import` asks the system's for a MIDI file, kept in `My MIDI`; a pick imports as the system's pick did.
 #[test]
-fn import_midi_tracks_of_one_midi_channel_goes_into_the_channel_at_once_in_one_undo_step() {
+fn import_midi_tracks_opens_our_picker_in_my_midi_whose_pick_goes_into_the_channel_in_one_undo_step()
+ {
     let bytes = smf(&[("Lead", tune(4))]);
     let (mut rig, mem) = picking(&bytes);
     let before = rig.app.song.clone();
     rig.track_menu(2, IMPORT_MIDI);
+    assert!(mem.0.borrow().accepts.is_empty(), "no system picker");
+    for _ in 0..3 {
+        rig.frame(vec![]);
+    }
+    // Its breadcrumb, elided in the middle.
+    let crumb = rig.out.shapes.iter().any(|s| match &s.shape {
+        egui::Shape::Text(t) => {
+            let text = t.galley.text();
+            text.starts_with("     MIDI Files |") && text.ends_with(" | My MIDI")
+        }
+        _ => false,
+    });
+    assert!(crumb && rig.painted("Tune"));
+    rig.click_id(Id::new("preset_picker").with("import"));
+    rig.frame(vec![]);
     assert_eq!(mem.0.borrow().accepts, [&["mid", "midi"][..]]);
+    let kept = std::path::Path::new(crate::project_files::MIDI_FOLDER).join("Tune (1).mid");
+    assert_eq!(rig.app.files.read_user_file(&kept).unwrap(), bytes);
+    rig.frame(vec![]);
+    assert!(rig.painted("Tune (1)"), "listed at once");
+    assert_eq!(rig.app.song, before, "nothing yet");
+    super::rack_wiring::picker_row(&mut rig, 0);
+    rig.frame(vec![]);
     // No dialog: Split off, automation on, Only supported off, into the channel whose menu it is.
     assert_eq!(rig.overlays(), []);
     let opts = ImportOpts {
@@ -1782,7 +1830,7 @@ fn import_midi_tracks_of_a_file_with_no_channel_does_nothing() {
     )]);
     let (mut rig, _) = picking(&bytes);
     let before = rig.app.song.clone();
-    rig.track_menu(2, IMPORT_MIDI);
+    import_tune(&mut rig, 2);
     assert_eq!(rig.overlays(), []);
     assert_eq!(rig.app.song, before);
     assert_eq!(rig.take(), Vec::<String>::new());
@@ -1792,7 +1840,7 @@ fn import_midi_tracks_of_a_file_with_no_channel_does_nothing() {
 fn a_file_that_does_not_read_shows_the_midi_load_error() {
     let (mut rig, _) = picking(b"RIFF....");
     let before = rig.app.song.clone();
-    rig.track_menu(2, IMPORT_MIDI);
+    import_tune(&mut rig, 2);
     assert_eq!(rig.message()[0], crate::smf::import::LOAD_FAILED);
     assert_eq!(rig.app.song, before);
 }
@@ -1802,7 +1850,7 @@ fn several_midi_channels_open_the_dialog_whose_import_makes_a_channel_each_in_on
     let bytes = smf(&[("Lead", tune(4)), ("Bass", tune(1)), ("Kit", tune(9))]);
     let (mut rig, _) = picking(&bytes);
     let before = rig.app.song.clone();
-    rig.track_menu(2, IMPORT_MIDI);
+    import_tune(&mut rig, 2);
     assert_eq!(rig.overlays(), [Overlay::MidiImport]);
     // Its contents from its second frame on, as every dialog box's (an egui area's first frame only sizes it).
     rig.frame(vec![]);
@@ -1858,7 +1906,7 @@ fn split_off_imports_into_the_channel_and_what_the_app_keeps_by_track_follows() 
     rig.frame(vec![]);
     rig.app.slots.automation_editor.clips.insert(2, (1, 1));
     let before = rig.app.song.clone();
-    rig.track_menu(2, IMPORT_MIDI);
+    import_tune(&mut rig, 2);
     rig.click_id(import_id("Split MIDI channels"));
     rig.click_id(import_id("import"));
     rig.frame(vec![]);
@@ -1888,7 +1936,7 @@ fn cancel_closes_the_dialog_and_imports_nothing() {
     let bytes = smf(&[("Lead", tune(4)), ("Bass", tune(1))]);
     let (mut rig, mem) = picking(&bytes);
     let before = rig.app.song.clone();
-    rig.track_menu(2, IMPORT_MIDI);
+    import_tune(&mut rig, 2);
     // A modal dialog: `Ctrl+O` asks for no file under it.
     rig.frame(vec![egui::Event::Key {
         key: egui::Key::O,
@@ -1897,7 +1945,7 @@ fn cancel_closes_the_dialog_and_imports_nothing() {
         repeat: false,
         modifiers: egui::Modifiers::COMMAND,
     }]);
-    assert_eq!(mem.0.borrow().accepts.len(), 1);
+    assert!(mem.0.borrow().accepts.is_empty());
     rig.click_id(import_id("cancel"));
     rig.frame(vec![]);
     assert_eq!(rig.overlays(), []);
@@ -2066,7 +2114,7 @@ fn the_one_channel_import_ignores_a_stray_note_off_on_another_midi_channel() {
     events.sort_by_key(|e| e.0);
     let bytes = smf(&[("Lead", events)]);
     let (mut rig, _) = picking(&bytes);
-    rig.track_menu(2, IMPORT_MIDI);
+    import_tune(&mut rig, 2);
     assert_eq!(rig.overlays(), []);
     let lane = &rig.app.song.channels[2].lanes[1];
     let SongEvent::Note { len_beats, .. } = lane.clips[0].events[0] else {
@@ -2084,7 +2132,7 @@ fn an_import_shows_the_hidden_tracks_of_its_channel() {
     synth.zipped = true;
     rig.app.song_edited(SongEdit::Final, 0);
     rig.frame(vec![]);
-    rig.track_menu(2, IMPORT_MIDI);
+    import_tune(&mut rig, 2);
     assert_eq!(lanes(&rig, 2).len(), 3 + 2, "imported");
     assert!(!rig.app.song.channels[2].zipped);
 }
@@ -2096,7 +2144,10 @@ fn gone_under(bytes: &[u8], item: (usize, usize)) -> (Rig, MemFiles) {
     rig.app
         .add_bare_channel(ChannelKind::Synth(SynthKind::MiniSynth), 0);
     rig.frame(vec![]);
-    rig.track_menu(3, item);
+    match item {
+        IMPORT_MIDI => import_tune(&mut rig, 3),
+        _ => rig.track_menu(3, item),
+    }
     assert_eq!(rig.overlays().len(), 1);
     rig.app.delete_channel(3, 0);
     assert_eq!(rig.app.song.channels.len(), 3);
@@ -2255,19 +2306,21 @@ fn hide_track_takes_its_row_and_ghost_notes_but_not_its_sound() {
     assert_eq!(rig.app.nav.view, View::Playlist);
 }
 
-/// `Collapse` (#83), above `Delete Channel`, makes a track's row thin (3/8 of a row), one undo step: the rows below move
-/// up. Its menu then reads `Expand`, which makes the row whole again.
+/// Track row `row`'s header as last drawn.
+fn header_rect(rig: &Rig, row: usize) -> egui::Rect {
+    let id = Id::new(("track_header", row));
+    (rig.ctx.read_response(id))
+        .expect("the header was drawn")
+        .rect
+}
+
+/// `Collapse` (#83), above `Delete Channel`, makes a track's row thin (5/8 of a row, #100), one undo step: the rows below
+/// move up. Its menu then reads `Expand`, which makes the row whole again.
 #[test]
 fn collapse_makes_a_tracks_row_thin_and_expand_makes_it_whole() {
     const COLLAPSE: (usize, usize) = (0, 6);
     let mut rig = Rig::with_drums_and_synth();
-    let rect = |rig: &Rig, row: usize| {
-        let id = Id::new(("track_header", row));
-        rig.ctx
-            .read_response(id)
-            .expect("the header was drawn")
-            .rect
-    };
+    let rect = header_rect;
     let collapsed = |rig: &Rig| rig.app.song.channels[1].lanes[0].collapsed;
     let full = rect(&rig, 1);
     rig.track_menu(1, COLLAPSE);
@@ -2276,7 +2329,7 @@ fn collapse_makes_a_tracks_row_thin_and_expand_makes_it_whole() {
     rig.frame(vec![]);
     let thin = rect(&rig, 1);
     assert!(
-        (thin.height() - 0.375 * full.height()).abs() < 0.5,
+        (thin.height() - crate::ui::main_screen::COLLAPSED_ROW * full.height()).abs() < 0.5,
         "{thin:?}"
     );
     assert!((rect(&rig, 2).top() - thin.bottom()).abs() < 0.5);
@@ -2296,4 +2349,81 @@ fn collapse_makes_a_tracks_row_thin_and_expand_makes_it_whole() {
     rig.frame(vec![]);
     assert!(!collapsed(&rig), "`Expand`");
     assert_eq!(rect(&rig, 1), full);
+}
+
+/// `Collapse all` and `Expand all` (#100), after `Collapse`, collapse or expand every track of the song, one undo step
+/// each; each shows while it has a track to change.
+#[test]
+fn collapse_all_and_expand_all_change_every_track_one_undo_step_each() {
+    const ALL: (usize, usize) = (0, 7);
+    let mut rig = Rig::with_drums_and_synth();
+    let labels = |rig: &Rig| -> Vec<String> {
+        (crate::ui::track_menu::track_menu(&rig.app.song, 1, 0).into_iter())
+            .filter(|i| i.col == 0)
+            .map(|i| i.label.into_owned())
+            .skip(6)
+            .collect()
+    };
+    let collapsed = |rig: &Rig| -> Vec<bool> {
+        (rig.app.song.channels.iter())
+            .flat_map(|c| c.lanes.iter().map(|l| l.collapsed))
+            .collect()
+    };
+    assert_eq!(labels(&rig), ["Collapse", "Collapse all", "Delete Channel"]);
+    rig.app.track_op(2, 0, TrackOp::ToggleCollapsed, 0);
+    rig.frame(vec![]);
+    let one = collapsed(&rig);
+    assert_eq!(one, [false, false, true]);
+    assert_eq!(
+        labels(&rig),
+        ["Collapse", "Collapse all", "Expand all", "Delete Channel"]
+    );
+    rig.track_menu(1, ALL);
+    assert_eq!(collapsed(&rig), [true; 3]);
+    assert_eq!(labels(&rig), ["Expand", "Expand all", "Delete Channel"]);
+    rig.frame(undo());
+    assert_eq!(collapsed(&rig), one);
+    rig.frame(redo());
+    assert_eq!(collapsed(&rig), [true; 3]);
+    // `Expand all` from the thin row's header.
+    rig.frame(vec![]);
+    rig.frame(vec![]);
+    rig.secondary_click(header_rect(&rig, 1).center());
+    rig.frame(vec![]);
+    rig.click_id(item(ALL.0, ALL.1));
+    rig.frame(vec![]);
+    assert_eq!(collapsed(&rig), [false; 3]);
+    rig.frame(undo());
+    assert_eq!(collapsed(&rig), [true; 3]);
+}
+
+/// A collapsed track's header (#100) has the full header's mute (`On`) and `Solo`, mini, in their places: a tap on
+/// either sets its channel's strip param as the full header's does (sent to the audio, no undo step) and is no tap on
+/// the header.
+#[test]
+fn a_collapsed_tracks_mini_on_and_solo_mute_and_solo_its_channel() {
+    let mut rig = Rig::with_synth();
+    // A tap on the current track's header opens the column; it settles at c = 1.
+    rig.click(header(1));
+    for _ in 0..10 {
+        rig.frame(vec![]);
+    }
+    rig.app.track_op(1, 0, TrackOp::ToggleCollapsed, 0);
+    rig.frame(vec![]);
+    rig.frame(vec![]);
+    rig.take();
+    let steps = rig.app.history.steps();
+    let y = header_rect(&rig, 1).center().y;
+    let strip = |rig: &Rig| {
+        let p = &rig.app.song.channels[1].params.0;
+        (p[2], p[3])
+    };
+    rig.click(pos2(2.25 * U, y));
+    assert_eq!(strip(&rig), (1.0, 0.0), "muted");
+    rig.click(pos2(3.75 * U, y));
+    assert_eq!(strip(&rig), (1.0, 1.0), "soloed");
+    assert_eq!(rig.take(), ["SetParam 1 0 2 1.000", "SetParam 1 0 3 1.000"]);
+    assert_eq!(rig.app.main_screen.column, (1.0, 1.0), "no header tap");
+    rig.frame(vec![]);
+    assert_eq!(rig.app.history.steps(), steps);
 }

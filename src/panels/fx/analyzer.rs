@@ -24,8 +24,10 @@
 //!   reads the `dB/oct` knob beside it continuously from −12 to +12. The Spectrogram's columns and the marker read with
 //!   the same tilt. It takes the place of the two SETTINGS spacers: DC Block and Tilt (and the knob)
 //!   share the first row, Channel, Reactivity and Input Gain the second.
-//! - The marker's value is the drawn curve's at its x (the scope's the middle of a column's extent); without a curve
-//!   point there (no pitch, no feed) neither dot nor readout shows.
+//! - The marker's value is the drawn curve's at its x (the scope's a column's last sample); without a curve point there
+//!   (no pitch, no feed) neither dot nor readout shows.
+//! - The scope reads the engine's min, max and last sample of each quarter millisecond: a column takes the buckets
+//!   since the previous point's (#108).
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -1218,7 +1220,7 @@ fn trigger_level(state: &PanelState) -> f32 {
 /// latest trigger (a rising edge that arms below 0.99·level and fires at ≥ level) with `post` after it, or once that is
 /// `free` buckets late (0.2 s) the latest `pre` + `post` (free-running).
 fn scope_window(
-    scope: &[(f32, f32)],
+    scope: &[(f32, f32, f32)],
     level: f32,
     pre: usize,
     post: usize,
@@ -1228,7 +1230,7 @@ fn scope_window(
     let (pre, post) = (pre.min(n), post.min(n - pre.min(n)));
     let mut armed = false;
     let mut trigger = None;
-    for (k, &(low, high)) in scope.iter().enumerate().take(n - post) {
+    for (k, &(low, high, _)) in scope.iter().enumerate().take(n - post) {
         if armed && high >= level {
             trigger = Some(k);
             armed = false;
@@ -1244,8 +1246,9 @@ fn scope_window(
 }
 
 /// #5, the Oscilloscope: its selection of 1 s and ±1.5 (0.1 s and ±1.0 at first, then 0.5 s), the trigger at the
-/// trigger fraction of the width (25 %: −25…+75 ms). One point every 2 px: a column's min and max of the samples since
-/// the previous point, a G rect over their extent where it is taller than a pixel, else a 1 px G line.
+/// trigger fraction of the width (25 %: −25…+75 ms). One point every 2 px, at the column's last sample: where the min
+/// and max of the samples since the previous point reach past the two points (by more than a pixel), a G rect from the
+/// previous x to this one over all of them, else a 1 px G line between the points (#108).
 fn oscilloscope(
     ui: &mut Ui,
     cx: &UiCtx,
@@ -1286,11 +1289,18 @@ fn oscilloscope(
         let window = &view.scope[range];
         let (px, painter) = (1.0 / cx.m.ppp(), ui.painter());
         let at = |v: f32| p.bottom() - y.pos(v).clamp(0.0, 1.0) * p.height();
-        let mut last: Option<Pos2> = None;
+        // The last point and the last bucket it read.
+        let mut last: Option<(Pos2, usize)> = None;
+        let end = window.len().saturating_sub(1);
         for (from, to) in columns(p, cx.m.ppp(), 2.0) {
-            let span = |x: f32| ((x - p.left()) / p.width() * window.len() as f32) as usize;
-            let end = window.len().saturating_sub(1);
-            let buckets = &window[span(from.max(p.left())).min(end)..=span(to).min(end)];
+            let span =
+                |x: f32| (((x - p.left()) / p.width() * window.len() as f32) as usize).min(end);
+            // The buckets since the previous point.
+            let first = last.map_or(span(from.max(p.left())), |(_, b)| b + 1);
+            if window.is_empty() || first > span(to) {
+                continue;
+            }
+            let buckets = &window[first..=span(to)];
             let low = buckets.iter().map(|b| b.0).fold(f32::INFINITY, f32::min);
             let high = buckets
                 .iter()
@@ -1299,20 +1309,21 @@ fn oscilloscope(
             if !low.is_finite() || !high.is_finite() {
                 continue;
             }
-            let (top, bottom) = (at(high), at(low));
-            if bottom - top > px {
-                let x0 = last.map_or(to, |l| l.x);
-                painter.rect_filled(
-                    Rect::from_x_y_ranges(x0..=to.max(x0 + px), top..=bottom),
-                    0.0,
-                    ink,
-                );
-            } else if let Some(l) = last {
-                painter.line_segment([l, pos2(to, top)], Stroke::new(px, ink));
+            // This point: the column's last sample.
+            let point = pos2(to, at(buckets[buckets.len() - 1].2));
+            if let Some((l, _)) = last {
+                let (top, bottom) = (l.y.min(point.y), l.y.max(point.y));
+                if at(high) < top - px || at(low) > bottom + px {
+                    // The samples reach past the line's ends: a rect over them and the ends.
+                    let ys = at(high).min(top)..=at(low).max(bottom);
+                    let rect = Rect::from_x_y_ranges(l.x..=to.max(l.x + px), ys);
+                    painter.rect_filled(rect, 0.0, ink);
+                } else {
+                    painter.line_segment([l, point], Stroke::new(px, ink));
+                }
             }
-            let point = pos2(to, (top + bottom) / 2.0);
             curve.push(point);
-            last = Some(point);
+            last = Some((point, first + buckets.len() - 1));
         }
     }
     let marker = Some((|ms, v| format!("{ms:.0} ms : {v:.2}")) as fn(f32, f32) -> String);
@@ -1951,9 +1962,9 @@ mod live {
     fn the_scope_triggers_on_a_rising_edge_or_runs_free() {
         let level = 0.1;
         // Silence, then a step up at bucket 850 (150 ms ago): the window is 825…925.
-        let mut scope = vec![(0.0, 0.0); 1000];
+        let mut scope = vec![(0.0, 0.0, 0.0); 1000];
         for b in &mut scope[850..] {
-            *b = (0.5, 0.5);
+            *b = (0.5, 0.5, 0.5);
         }
         assert_eq!(scope_window(&scope, level, 25, 75, 200), 825..925);
         // The same edge 400 ms ago is more than 0.2 s without a trigger: free-running.
@@ -1961,7 +1972,7 @@ mod live {
         assert_eq!(scope_window(&scope, level, 25, 75, 200), 900..1000);
         // No trigger: the latest 100.
         assert_eq!(
-            scope_window(&[(0.0, 0.0); 1000], level, 25, 75, 200),
+            scope_window(&[(0.0, 0.0, 0.0); 1000], level, 25, 75, 200),
             900..1000
         );
         // That edge (now 400 buckets back) in a 0.5 s view with the trigger at half: 250 before it and 250 after.
@@ -2031,6 +2042,25 @@ mod live {
                     .filter(|s| matches!(s, Shape::Rect(r) if r.fill == Color32::RED))
                     .count()
                     > 20
+            );
+        }
+    }
+
+    /// #108: a slow sine is a 1 px line, not a ribbon of 2 px rects: a column fills only where its samples reach past
+    /// the line's two ends.
+    #[test]
+    fn the_scope_draws_a_line_where_the_samples_stay_between_its_ends() {
+        let data = slab(1.0, tone(20.0, 0.5));
+        for ppp in [1.0, 2.0] {
+            let shapes = drawn(5, 1, &[], &data, ppp);
+            let count = |f: fn(&Shape) -> bool| shapes.iter().filter(|s| f(s)).count();
+            let rects = count(|s| matches!(s, Shape::Rect(r) if r.fill == Color32::RED));
+            let lines = count(
+                |s| matches!(s, Shape::LineSegment { stroke, .. } if stroke.color == Color32::RED),
+            );
+            assert!(
+                lines > 100 && rects < 5,
+                "ppp {ppp}: {lines} lines, {rects} rects"
             );
         }
     }

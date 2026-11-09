@@ -1712,8 +1712,6 @@ fn a_song_from_a_template_gets_fresh_guids_and_a_song_keeps_its_own() {
     );
 }
 
-// ---- The track menu's `Import MIDI Tracks` ----
-
 /// A one-note format-1 file on MIDI channel `ch`, a CC on it too when `cc`.
 fn midi_file(ch: u8, cc: bool) -> Vec<u8> {
     use crate::midi::MidiMsg::{Cc, NoteOff, NoteOn};
@@ -1751,49 +1749,6 @@ fn midi_file(ch: u8, cc: bool) -> Vec<u8> {
         division: 96,
         tracks: vec![track],
     })
-}
-
-#[test]
-fn import_midi_tracks_asks_for_a_midi_file_and_hands_it_over_scanned_with_its_channel() {
-    let bytes = midi_file(3, true);
-    let mem = MemFiles::with_file("/in/Tune.MID", &bytes);
-    let mut files = files(&mem);
-    files.pick_midi_tracks(42);
-    assert_eq!(mem.0.borrow().accepts, [&["mid", "midi"][..]]);
-    // No song is opened; nothing shows.
-    assert_eq!(files.poll(&mut song("Mine")), None);
-    assert_eq!(files.take_overlay(), None);
-    let picked = files.take_midi_tracks().expect("handed over");
-    assert_eq!(picked.channel, 42);
-    assert_eq!(picked.bytes, bytes);
-    assert_eq!(picked.scan, crate::smf::import::scan(&bytes).unwrap());
-    assert_eq!(picked.scan.used, 1 << 3);
-    assert_eq!(files.take_midi_tracks(), None, "once");
-    // A song open afterwards is a song again.
-    let mem = MemFiles::with_file("/songs/Song.flm", &plain(1));
-    let mut files = super::tests::files(&mem);
-    files.pick_midi_tracks(1);
-    assert_eq!(
-        files.poll(&mut song("Mine")),
-        None,
-        "not a MIDI file: unread"
-    );
-    assert_eq!(files.take_midi_tracks(), None);
-    assert_eq!(open(&mut files).map(|s| s.title), Some("Song".into()));
-}
-
-#[test]
-fn a_picked_file_that_is_no_midi_file_shows_the_midi_load_error() {
-    let mem = MemFiles::with_file("/in/Broken.mid", b"MThd\0\0\0\x06\0\x01");
-    let mut files = files(&mem);
-    files.pick_midi_tracks(1);
-    assert_eq!(files.poll(&mut song("Mine")), None);
-    assert_eq!(files.take_midi_tracks(), None);
-    let Some(Overlay::Message { lines, .. }) = files.take_overlay() else {
-        panic!("no message");
-    };
-    assert_eq!(lines[0], crate::smf::import::LOAD_FAILED);
-    assert_eq!(lines.len(), 2, "with the detail: {lines:?}");
 }
 
 // ---- The song-changed flag ----

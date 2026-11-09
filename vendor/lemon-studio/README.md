@@ -16,7 +16,7 @@ tests need Lemon's engine and plugins, so their dev-dependencies are not carried
 tests included), with `os-engine/src/formula.rs` (the formula language Lemon Formula Controller's effect reads), at its
 own commit:
 
-- Effects commit: `e357d8509a7d8fb04ce0642d549d32f19757709b`
+- Effects commit: `d9e97a2fa92284c0128fe766b71b1ff25efd8545`
 
 Honeydew runs `reverb.rs` and `dynamics.rs` as the built-in effects Lemon Reverb and Lemon Limiter
 (`crates/audio/src/lemon.rs`, on every platform); the others come along so that `mod.rs` stays upstream's (they use
@@ -44,7 +44,7 @@ compiled in with their `linked` feature (no exported entry points) and hosted th
 tables (`src/plugins/builtin.rs`). Their editors draw into the rack cards (`embed`, below). From upstream, at its own
 commit:
 
-- Plugins commit: `e357d8509a7d8fb04ce0642d549d32f19757709b`
+- Plugins commit: `d9e97a2fa92284c0128fe766b71b1ff25efd8545`
 
 - `plugins/lemon-3x-osc`, `plugins/lemon-sampler` and `plugins/lemon-parametric-eq-2`: their `src/` (no examples).
 - Since 0.4.9, effects: `plugins/lemon-small-fx` (the plugin, parameters and editor Lemon Studio's small
@@ -83,7 +83,9 @@ change)` or `(vendored addition)` in the code:
   there an empty path, where nothing writes (Tesla's files handed out, inert in Honeydew).
 - Tesla: the file it opens is read with `os_engine::sample::read` (a file the host keeps in memory first); with no
   thread for its recording's take (the browser has none), its audio thread builds the take.
-- `os-hostlink`: with its `embed`, the link the editors use (`Peer`) on Windows too.
+- `os-hostlink`: with its `embed`, the link the editors use (`Peer`) on Windows too; and an editor's `Automate` (a
+  knob's "Create automation clip") kept for the thread it runs on, though the editor never joined the host's strip
+  (`take_automate`): Honeydew adds that param's automation track (#113, `embed::take_automate`).
 - Lemon Sampler: in the browser, a sample's effects are computed at once instead of on a thread (`os_plugkit::spawn`).
 - Lemon Delay: its About menu's line names no other maker's product (Honeydew shows none).
 - Lemon Parametric EQ (#95): its embedded editor's spectrum reads the signal behind the newest sample on a clock at
@@ -114,7 +116,9 @@ same way (`embed_editor` in `tools/sync-lemon-plugins.sh`), instead of a hunk pe
 - the X11 window's arm (`ParentWindowHandle::X11Window`) takes the window everywhere but macOS:
   `#[cfg(any(target_os = "linux", all(feature = "embed", not(target_os = "macos"))))]`;
 - `os_plugkit::park!(self);` follows the input loop (`while let Some(input) = self.win.next() { … }`);
-- `use std::time::` is `use os_plugkit::time::`.
+- `use std::time::` is `use os_plugkit::time::`;
+- a knob's "Create automation clip" is offered (`.enabled(self.hosted || cfg!(feature = "embed"))`): Honeydew answers
+  it (#113).
 
 An editor off the template gets what matched and a warning naming it: make the rest by hand, then `--save-patch`.
 

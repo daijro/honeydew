@@ -11,6 +11,8 @@
 //!   (1.25 U tall at most, centred), so its pan and level line up with the others'. A sub-track row is header (flex) |
 //!   slider 8.75 U + 0.25 U. Behind the stack the row's name (8 pt, right and top, channel colour, middle-truncated
 //!   keeping 5 characters).
+//! - **Collapsed** (a collapsed track's thin row, #83, at c = 1): the name, vertically centred. A primary row keeps its
+//!   mute and `Solo` in their places, mini (#100), the mute a flat pill; the name starts past them.
 //! - **Bindings** (the mixer strip's): level param 0 (reset 0.85312), pan 1 (reset 0.5), mute 2 (the inverted pill: dot
 //!   up in the channel colour while audible), `Solo` 3 (two-state tap, then smart solo: [`mixer::smart_solo`]);
 //!   `Unsolo All` is [`mixer::unsolo_all`]; the sliders take the drag law of
@@ -245,27 +247,25 @@ pub fn show(
             RowKind::Sub => ch.lanes[row.lane].label.as_str(),
             _ => display_name(&ch.name, ch.kind),
         };
-        let label = rect.shrink2(vec2(m.u(LABEL_INSET), m.t()));
+        let mut label = rect.shrink2(vec2(m.u(LABEL_INSET), m.t()));
         let font = m.font_id(FontSize::Pt8);
-        widgets::truncated(&painter, label, Align2::RIGHT_TOP, name, font, ink, 5);
-        // A collapsed track's thin row (#83) shows its name alone.
+        let placed = parts(kind, rect, true, m);
         if row.collapsed {
+            let mini: Vec<_> = (placed.iter().copied())
+                .filter(|p| p.0 == MUTE || p.0 == SOLO)
+                .collect();
+            if let Some(&(_, solo)) = mini.last() {
+                label.min.x = solo.right() + m.u(LABEL_INSET);
+            }
+            widgets::truncated(&painter, label, Align2::RIGHT_CENTER, name, font, ink, 5);
+            strip(&mut ui, cx, song, row, &mini, ink, peaks, &mut out);
             continue;
         }
-        let placed = parts(kind, rect, true, m);
+        widgets::truncated(&painter, label, Align2::RIGHT_TOP, name, font, ink, 5);
         if kind == RowKind::Sub {
             sub_slider(&mut ui, cx, song, row, &placed, ink, &mut out);
         } else {
-            strip(
-                &mut ui,
-                cx,
-                song,
-                row.channel,
-                &placed,
-                ink,
-                peaks,
-                &mut out,
-            );
+            strip(&mut ui, cx, song, row, &placed, ink, peaks, &mut out);
         }
         if let Some(&(_, r)) = placed.iter().find(|p| p.0 == UNSOLO) {
             let r =
@@ -378,19 +378,21 @@ fn control_id(channel: usize, leaf: NodeId) -> Id {
     Id::new("mini_mixer").with((channel, leaf))
 }
 
-/// Mute, `Solo`, pan, level and the level meters of a primary or master row, bound to `channel`'s strip params.
+/// Mute, `Solo`, pan, level and the level meters of a primary or master row, bound to its channel's strip params; a
+/// collapsed row's mute is the flat pill.
 #[allow(clippy::too_many_arguments)]
 fn strip(
     ui: &mut Ui,
     cx: &UiCtx,
     song: &mut Song,
-    channel: usize,
+    row: TrackRow,
     placed: &[(NodeId, Rect)],
     ink: Color32,
     peaks: [f32; 2],
     out: &mut Output,
 ) {
     let (m, c) = (cx.m, &cx.theme.colors);
+    let channel = row.channel;
     let ch = &mut song.channels[channel];
     let linked = links::links(&ch.file.cc_links);
     let params = &mut ch.params.0;
@@ -416,6 +418,7 @@ fn strip(
                 ui.painter().circle_filled(r.center(), disc, fill);
                 let inverted = Pill {
                     inverted: true,
+                    flat: row.collapsed,
                     ..Pill::default()
                 };
                 widgets::pill_toggle(ui, cx, &control(0.0), inverted, &mut params[2], none)

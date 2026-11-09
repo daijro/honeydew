@@ -663,7 +663,11 @@ fn my_tracks_lists_the_renders_and_a_tap_selects_one() {
     rig.frame(vec![]);
     assert_eq!(rig.menu.songs_folder(), Some(tracks.as_path()));
     assert!(rig.has("Mix.wav") && rig.has("Mix.MP3"));
-    assert_eq!(rig.click_text("Mix.wav"), None);
+    // #106: an audio file previews.
+    assert_eq!(
+        rig.click_text("Mix.wav"),
+        Some(MainMenuAction::Preview(tracks.join("Mix.wav")))
+    );
     assert_eq!(
         rig.menu.songs.selection.clone().unwrap(),
         [tracks.join("Mix.wav")]

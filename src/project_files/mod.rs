@@ -181,9 +181,8 @@ pub enum Pick {
     Song,
     /// An audio file for a picker's user folder (its `Import`, [`ProjectFiles::import_audio`]).
     Sample,
-    /// The track menu's `Import MIDI Tracks` on the channel with this id: a MIDI file
-    /// ([`ProjectFiles::pick_midi_tracks`]).
-    MidiTracks(i32),
+    /// A MIDI file for `My MIDI` (the MIDI picker's `Import`, [`ProjectFiles::import_midi`]).
+    Midi,
     /// The theme creator's `Import`: a theme JSON file ([`ProjectFiles::pick_theme`]).
     Theme,
 }
@@ -191,7 +190,7 @@ pub enum Pick {
 impl Pick {
     /// The extensions (no dot, any case) the dialog offers and the provider reads: every [`FileKind`] and every type
     /// a user folder takes ([`samples::import_folder`]) for a song, the sample ones for a sample, the MIDI ones for
-    /// `Import MIDI Tracks`.
+    /// a MIDI file.
     pub const fn accept(self) -> &'static [&'static str] {
         match self {
             Pick::Song => &[
@@ -215,7 +214,7 @@ impl Pick {
                 DWP_EXT,
             ],
             Pick::Sample => &SAMPLE_EXTS,
-            Pick::MidiTracks(_) => FileKind::Midi.extensions(),
+            Pick::Midi => FileKind::Midi.extensions(),
             Pick::Theme => &["json"],
         }
     }
@@ -449,7 +448,7 @@ pub struct ProjectFiles {
     /// writes once written ([`FileProvider::share`]). The Save dialog sets it before each; [`Self::update`] drops one
     /// not taken (a dialog that closed without writing).
     pub send: bool,
-    /// The MIDI file `Import MIDI Tracks` picked, until [`Self::take_midi_tracks`] hands it over.
+    /// The MIDI file `Import MIDI Tracks`' picker picked, until [`Self::take_midi_tracks`] hands it over.
     midi_tracks: Option<MidiTracks>,
     /// The last [`RECENT_STATE`] write, on its worker: the next waits for it, so the last load's lands last.
     #[cfg(not(target_arch = "wasm32"))]
@@ -588,22 +587,19 @@ impl ProjectFiles {
         self.open_pick(Pick::Song);
     }
 
-    /// The track menu's `Import MIDI Tracks` on the channel with id `channel`:
-    /// asks for a `.mid` or `.midi` file. Once it is read, [`Self::take_midi_tracks`] hands it over scanned; a file
-    /// that does not scan shows `Could not load MIDI file. It may be corrupted.` with the detail.
-    pub fn pick_midi_tracks(&mut self, channel: i32) {
-        self.open_pick(Pick::MidiTracks(channel));
-    }
-
-    /// The MIDI file [`Self::pick_midi_tracks`] asked for, once, when it is here.
+    /// The MIDI file [`Self::midi_picked`] took, once.
     pub fn take_midi_tracks(&mut self) -> Option<MidiTracks> {
         self.midi_tracks.take()
     }
 
-    /// The file `Import MIDI Tracks` picked for the channel with id `channel`: scanned for [`Self::take_midi_tracks`],
-    /// or the MIDI load error.
-    fn midi_picked(&mut self, channel: i32, bytes: Vec<u8>) {
+    /// The file `Import MIDI Tracks`' picker (`ui::views::midi_picker`) read for the channel with id `channel`:
+    /// scanned for [`Self::take_midi_tracks`], or `Could not load MIDI file. It may be corrupted.` with the detail.
+    pub(crate) fn midi_picked(&mut self, channel: i32, read: std::io::Result<Vec<u8>>) {
         use crate::smf::import::{LOAD_FAILED, scan};
+        let bytes = match read {
+            Ok(bytes) => bytes,
+            Err(err) => return self.fail(LOAD_FAILED, err.to_string()),
+        };
         match scan(&bytes) {
             Ok(scan) => {
                 self.midi_tracks = Some(MidiTracks {
@@ -1077,12 +1073,8 @@ impl ProjectFiles {
                 event if self.is_theme_export(&event) => self.theme_exported(event),
                 FileEvent::Opened(path, bytes) => {
                     opened = match self.pick.take() {
-                        Some(Pick::Sample) => {
+                        Some(Pick::Sample | Pick::Midi) => {
                             self.audio_imported(&path, bytes);
-                            None
-                        }
-                        Some(Pick::MidiTracks(channel)) => {
-                            self.midi_picked(channel, bytes);
                             None
                         }
                         Some(Pick::Theme) => {
@@ -1134,7 +1126,9 @@ impl ProjectFiles {
                     self.saving = None;
                     self.save_failed(err);
                 }
-                FileEvent::Failed(title, err) if matches!(self.pick, Some(Pick::Sample)) => {
+                FileEvent::Failed(title, err)
+                    if matches!(self.pick, Some(Pick::Sample | Pick::Midi)) =>
+                {
                     self.import_failed(title, err);
                 }
                 FileEvent::Failed(title, err) => self.fail(title, err),

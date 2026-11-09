@@ -93,6 +93,9 @@
 //! - `Transpose by...` turns the popup into a one-cell offset display: a vertical drag anywhere picks the offset (half
 //!   a U a semitone, up is up, kept to what keeps every note in the key range) and its release applies it; a tap,
 //!   Escape or a click outside cancel.
+//! - A Honeydew addition (#102): `Transpose +1` and `-1` under the first column, `Transpose +12` and `-12` under the
+//!   second, move the notes by that many semitones (kept in the key range as above), and the menu stays open for the
+//!   next step.
 //! - `Humanize` opens the Humanize panel ([`humanize`], issue #29: it used to have no dialog), its seed
 //!   drawn per use from the std hasher's random keys and egui's clock (OS entropy natively; on the web the keys are
 //!   fixed, so the clock varies it). While it is open the roll draws its preview in place of the notes, on the grid
@@ -425,6 +428,8 @@ enum MoreOp {
     Slice(Slice),
     TransposeBy,
     SelectAll,
+    /// A Honeydew addition (#102): the targets this many semitones up or down.
+    Transpose(i32),
 }
 
 /// The floating buttons over a selection.
@@ -865,6 +870,8 @@ impl PianoRoll {
     /// The roll goes (the view left it, `app::left_view`) with a touch it will not see end ([`Self::end_touch`]); the
     /// key the key column holds and a new note's sound stop now.
     pub(crate) fn hide(&mut self) -> Vec<PianoRollAction> {
+        // An open menu or panel (Generate, #107) is cancelled: it never comes back by itself with the roll.
+        self.menu = None;
         let mut actions = self.end_touch();
         let column = column_keys(&std::mem::take(&mut self.keys_down));
         for key in column.into_iter().chain(self.gate.take().map(|g| g.0)) {
@@ -2182,6 +2189,7 @@ impl PianoRoll {
                 self.row.select_all();
             }
             MoreOp::SnapToScale => snap_to_scale(&mut clip.events, &which, root, mask),
+            MoreOp::Transpose(dk) => clip.events = shift_notes(&clip.events, &which, 0.0, dk),
             MoreOp::ToggleSlide => {
                 toggle_slide(&mut clip.events, &which);
                 // S of the remembered note: the first toggled note's new flag.
@@ -2473,7 +2481,8 @@ fn drag_edit(edit: &Edit, delta: Vec2, g: &Geom, snap: Option<f64>) -> (Vec<Even
     (events, sel)
 }
 
-/// The note menu: two columns, all enabled. `Slice...` is #62.
+/// The note menu: two columns, all enabled. `Slice...` is #62, and the `Transpose` steps (#102) a Honeydew addition,
+/// which keep the menu open for the next.
 fn more_items() -> Vec<PopupItem<MoreOp>> {
     use MoreOp::*;
     let col0 = [
@@ -2484,6 +2493,8 @@ fn more_items() -> Vec<PopupItem<MoreOp>> {
         (DoubleUp, "Double Up", true),
         (DoubleDown, "Double Down", true),
         (ToggleSlide, "Toggle Slide", true),
+        (Transpose(1), "Transpose +1", true),
+        (Transpose(-1), "Transpose -1", true),
     ];
     let col1 = [
         (Length(32), "Set length 1/16", true),
@@ -2494,6 +2505,8 @@ fn more_items() -> Vec<PopupItem<MoreOp>> {
         (SliceBy, "Slice...", true),
         (TransposeBy, "Transpose by...", true),
         (SelectAll, "Select All", true),
+        (Transpose(12), "Transpose +12", true),
+        (Transpose(-12), "Transpose -12", true),
     ];
     [&col0[..], &col1[..]]
         .into_iter()
@@ -2504,6 +2517,7 @@ fn more_items() -> Vec<PopupItem<MoreOp>> {
                 .enumerate()
                 .map(move |(row, &(op, label, enabled))| PopupItem {
                     disabled: !enabled,
+                    keep_open: matches!(op, Transpose(_)),
                     ..PopupItem::new(op, col, row, label)
                 })
         })

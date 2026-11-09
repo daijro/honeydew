@@ -146,7 +146,9 @@ fn layout(screen: Rect, over: Rect, m: &Metrics) -> Rect {
     let top = (over.center().y - h / 2.0)
         .min(screen.bottom() - m.u(MARGIN) - h)
         .max(screen.top() + m.u(MARGIN));
-    Rect::from_min_size(pos2(m.round_px(right - w), m.round_px(top)), vec2(w, h))
+    // Kept inside the screen beside a roll the rack narrows (#107).
+    let left = (right - w).max(screen.left() + m.u(MARGIN));
+    Rect::from_min_size(pos2(m.round_px(left), m.round_px(top)), vec2(w, h))
 }
 
 /// One frame of the panel beside the roll `over`, its sliders in `ink`; `Some` when it closes.

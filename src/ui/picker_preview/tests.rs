@@ -129,34 +129,65 @@ fn a_sample_strip_plays_its_pick_from_the_start_once_decoded_and_stops_once() {
 }
 
 #[test]
-fn the_strips_waveform_is_a_quad_a_device_pixel_a_flat_one_a_1_px_line_each() {
-    // The waveform strip's law: a column a device pixel; a column with < 1 px range is drawn as a 1 px line. A constant
-    // 0.5 has no range anywhere.
-    let mut strip = SampleStrip::new("Kick".into(), Some(wave(100)));
-    let panel = Rect::from_min_size(pos2(0.0, 0.0), vec2(390.0, 120.0));
-    let mut off = crate::ui::offscreen::Offscreen::new();
-    let mut wave_rect = Rect::NOTHING;
-    let shapes = off.frame(vec![], &mut |ui, cx| {
-        wave_rect = SampleStrip::layout(panel, cx)[2];
-        strip.show(ui, cx, panel, Id::new("strip"));
-    });
-    let ink = crate::theme::theme_by_id(0)
-        .colors
-        .text
-        .to_color32()
-        .gamma_multiply(WAVE_ALPHA);
-    let quads = crate::ui::audio_editor::mesh_quads(shapes.iter().map(|s| &s.shape));
-    let cols: Vec<_> = quads
-        .into_iter()
-        .filter(|q| q.1 == ink)
-        .map(|q| q.0)
-        .collect();
-    let (x0, width) = pixel_columns(wave_rect, &crate::ui::offscreen::metrics());
-    assert!(width > 300, "{wave_rect:?}");
-    assert_eq!(cols.len(), width);
-    for (i, c) in cols.iter().enumerate() {
-        assert_eq!((c.left(), c.width(), c.height()), (x0 + i as f32, 1.0, 1.0));
+fn the_strips_waveform_is_one_smooth_band_of_the_peaks_a_device_pixel_a_column() {
+    // #108: a column a device pixel, both channels in one band, ± the column's peak held 20 ms (the cycles of a low note
+    // fill in) as a share of the file's peak. A 20 Hz tone at half scale fills the whole height everywhere; silence is a
+    // 1 px line.
+    let tone = |i: usize| 0.5 * (std::f32::consts::TAU * 20.0 * i as f32 / 1000.0).cos();
+    for (left, full) in [(tone as fn(usize) -> f32, true), (|_| 0.0, false)] {
+        let mut strip = SampleStrip::new("Kick".into(), Some(stereo(2000, left)));
+        let panel = Rect::from_min_size(pos2(0.0, 0.0), vec2(390.0, 120.0));
+        let mut off = crate::ui::offscreen::Offscreen::new();
+        let mut wave_rect = Rect::NOTHING;
+        let shapes = off.frame(vec![], &mut |ui, cx| {
+            wave_rect = SampleStrip::layout(panel, cx)[2];
+            strip.show(ui, cx, panel, Id::new("strip"));
+        });
+        let ink = crate::theme::theme_by_id(0)
+            .colors
+            .text
+            .to_color32()
+            .gamma_multiply(WAVE_ALPHA);
+        let quads = crate::ui::audio_editor::mesh_quads(shapes.iter().map(|s| &s.shape));
+        let cols: Vec<_> = quads
+            .into_iter()
+            .filter(|q| q.1 == ink)
+            .map(|q| q.0)
+            .collect();
+        let (x0, width) = pixel_columns(wave_rect, &crate::ui::offscreen::metrics());
+        assert!(width > 300, "{wave_rect:?}");
+        assert_eq!(cols.len(), width);
+        let height = if full { wave_rect.height() } else { 1.0 };
+        for (i, c) in cols.iter().enumerate() {
+            assert_eq!((c.left(), c.width()), (x0 + i as f32, 1.0));
+            assert!(
+                (c.height() - height).abs() <= 1.0,
+                "{full}: column {i}: {c:?}"
+            );
+            assert!((c.center().y - wave_rect.center().y).abs() <= 0.5, "{c:?}");
+        }
     }
+    // A decaying low tone's band falls a little every column: the held crests join in ramps, no flat steps.
+    let decay = |i: usize| {
+        0.5 * (1.0 - i as f32 / 2000.0) * (std::f32::consts::TAU * 20.0 * i as f32 / 1000.0).cos()
+    };
+    let band = envelope(&stereo(2000, decay), 400);
+    assert!(band.windows(2).all(|w| w[1] < w[0]), "{band:?}");
+}
+
+/// `frames` frames at 1 kHz: `left(i)` on the left, a tenth of it on the right.
+fn stereo(frames: usize, left: fn(usize) -> f32) -> Waveform {
+    Waveform::new(Arc::new(SampleData {
+        sample_rate: 1000,
+        left: (0..frames).map(left).collect::<Vec<_>>().into(),
+        right: Some(
+            (0..frames)
+                .map(|i| left(i) / 10.0)
+                .collect::<Vec<_>>()
+                .into(),
+        ),
+        meta: Default::default(),
+    }))
 }
 
 #[test]

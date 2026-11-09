@@ -14,7 +14,7 @@
 //!   momentary and short-term windows. The spectrum, scope, vectorscope and pitch keep theirs.
 //! - The spectrum is a Hann-windowed 2048-point FFT every 1024 samples, its magnitude normalised so a full-scale sine
 //!   reads 0 dB.
-//! - The oscilloscope keeps the last second as the min and max of each quarter millisecond.
+//! - The oscilloscope keeps the last second as the min, max and last sample of each quarter millisecond.
 //! - The loudness meters (one entry each 50 ms): Peak and RMS over the entry; True Peak 4× oversampled (Catmull-Rom);
 //!   LUFS momentary (0.4 s) and short-term (3 s) of BS.1770's K-weighted channel sum. Integrated loudness gates the
 //!   momentary values (−70 LUFS, then −10 LU) and the loudness range the short-term ones (−70, then −20 LU; 10th to 95th
@@ -45,7 +45,7 @@ pub const FLOOR: f32 = -120.0;
 /// The slab's layout: offsets of each part.
 pub const SPECTRUM_AT: usize = 0;
 pub const SCOPE_AT: usize = SPECTRUM_AT + BINS;
-pub const LOUDNESS_AT: usize = SCOPE_AT + 1 + 2 * SCOPE;
+pub const LOUDNESS_AT: usize = SCOPE_AT + 1 + 3 * SCOPE;
 /// After the loudness histories: the 5 running maxima, then integrated loudness and loudness range.
 pub const SUMMARY_AT: usize = LOUDNESS_AT + 1 + METERS * LOUDNESS;
 pub const PETAL_AT: usize = SUMMARY_AT + METERS + 2;
@@ -406,8 +406,9 @@ impl Analyzer {
         self.in_bucket += 1;
         if self.in_bucket == self.bucket {
             let next = slab[SCOPE_AT] as usize % SCOPE;
-            slab[SCOPE_AT + 1 + 2 * next] = self.low;
-            slab[SCOPE_AT + 2 + 2 * next] = self.high;
+            slab[SCOPE_AT + 1 + 3 * next] = self.low;
+            slab[SCOPE_AT + 2 + 3 * next] = self.high;
+            slab[SCOPE_AT + 3 + 3 * next] = mono;
             slab[SCOPE_AT] = ((next + 1) % SCOPE) as f32;
             (self.in_bucket, self.low, self.high) = (0, f32::INFINITY, f32::NEG_INFINITY);
         }

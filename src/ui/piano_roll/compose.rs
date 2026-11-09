@@ -1,10 +1,12 @@
 //! The `Generate` panel's music ([`super::generate`]), a contributor feature (PR #87): a chord
 //! progression and a melody for the clip, in the project's key and scale ([`super::notes::project_scale`]) or the
-//! panel's own, so everything it writes is in scale.
+//! panel's own, so everything it writes is in scale. Chromatic, the default scale, has no chords of its own: the key's
+//! major stands in for it, or its natural minor under the Minor preset (#104).
 //!
 //! - A **progression** is one triad a bar, on the preset's scale degrees (1 = the tonic), in the octave from the tonic
-//!   at 48 + the root; the Lo-fi preset adds the 7th, and `Random` walks its own from the seed ([`walk`]). Block,
-//!   rolled or spread over the bar as an arpeggio, or left out ([`CHORD_MODES`]).
+//!   at 48 + the root; the Lo-fi preset adds the 7th, and `Random` walks its own from the seed ([`walk`]). The first
+//!   chord is in root position, each next one in the inversion nearest it ([`voice_led`]). Block, rolled or spread
+//!   over the bar as an arpeggio, or left out ([`CHORD_MODES`]).
 //! - The **register** moves both an octave or two ([`OCTAVES`]); the **rhythm** is the melody's dominant note length
 //!   ([`DURATIONS`]), its rests ([`RESTS`]) and the arpeggios' speed ([`ARPS`]).
 //! - A **melody** is one note a step of that length, an octave above the chords: the bar's chord tone on every fourth
@@ -14,7 +16,7 @@
 //!
 //! Everything is drawn from `seed`, so the same settings and seed give the same notes (as the Humanize panel's).
 
-use crate::song::scales::SCALE_MASKS;
+use crate::song::scales::{CHROMATIC, SCALE_MASKS};
 use crate::song::{Event, PPQ};
 
 /// A progression preset: the scale degrees it walks (one a bar) and whether its triads take a 7th.
@@ -36,6 +38,10 @@ pub(crate) const PRESETS: [(&str, Preset); 5] = [
     ("Epic", Preset::Epic),
     ("Random", Preset::Random),
 ];
+
+/// The [`SCALE_MASKS`] of Major and of Minor Natural: what Chromatic writes ([module docs](self)).
+const MAJOR: u16 = SCALE_MASKS[0];
+const MINOR: u16 = SCALE_MASKS[12];
 
 /// The keys the panel offers, `KEYS`' index being the pitch class.
 pub(crate) const KEYS: [&str; 12] = [
@@ -255,7 +261,26 @@ fn fitted(notes: &[Event], offs: &[i32], bars: usize, bpb: f64) -> Vec<u8> {
     out
 }
 
-/// One triad (a 7th with `seventh`) per bar, `bpb` beats from the bar's start, from the tonic at `base`: block, with
+/// `chord` (its keys from the root up) in the inversion nearest `prev`, the chord before it: of its inversions, as they
+/// are and an octave down, whose lowest key stays within a fifth of the tonic at `base`, the one whose voices move the
+/// least in all. With no chord before it, root position.
+fn voice_led(chord: &[i32], prev: Option<&[i32]>, base: i32) -> Vec<i32> {
+    let Some(prev) = prev else {
+        return chord.to_vec();
+    };
+    let inversions = (0..chord.len()).flat_map(|k| {
+        let up = chord[..k].iter().map(|t| t + 12);
+        let inversion: Vec<i32> = chord[k..].iter().copied().chain(up).collect();
+        [0, -12].map(|shift| inversion.iter().map(|t| t + shift).collect::<Vec<i32>>())
+    });
+    let moved = |v: &Vec<i32>| v.iter().zip(prev).map(|(a, b)| (a - b).abs()).sum::<i32>();
+    inversions
+        .filter(|v| (v[0] - base).abs() <= 7)
+        .min_by_key(moved)
+        .unwrap_or_else(|| chord.to_vec())
+}
+
+/// One triad (a 7th with `seventh`) per bar, `bpb` beats from the bar's start, from the tonic at `base`, voice-led: block, with
 /// each tone a hair after the one before it (`Rolled`), or spread over the bar as an arpeggio (`s.arp`).
 fn chords_for(
     degrees: &[u8],
@@ -271,10 +296,15 @@ fn chords_for(
     let rolled = s.chords == 1 || s.chords == 3;
     let steps: &[i32] = if seventh { &[0, 2, 4, 6] } else { &[0, 2, 4] };
     let mut out = Vec::new();
+    let mut prev: Option<Vec<i32>> = None;
     for (bar, &d) in degrees.iter().enumerate() {
         let at = bar as f64 * bpb;
-        for (i, &step) in steps.iter().enumerate() {
-            let key = key_of(base, offs, i32::from(d) + step, 0);
+        let chord: Vec<i32> = (steps.iter())
+            .map(|&step| i32::from(key_of(base, offs, i32::from(d) + step, 0)))
+            .collect();
+        let chord = voice_led(&chord, prev.as_deref(), base);
+        for (i, &key) in chord.iter().enumerate() {
+            let key = key.clamp(0, 127) as u8;
             let before = i as f64;
             if s.arp > 0.0 {
                 // An arpeggio: a tone a step of its own, each as long as the room it has left.
@@ -304,6 +334,7 @@ fn chords_for(
                 ));
             }
         }
+        prev = Some(chord);
     }
     out
 }
@@ -378,6 +409,11 @@ pub(crate) fn generate(
     let mask = s
         .scale
         .map_or(mask, |i| SCALE_MASKS[i.min(SCALE_MASKS.len() - 1)]);
+    let mask = match mask == SCALE_MASKS[CHROMATIC] {
+        true if s.preset == Preset::Minor => MINOR,
+        true => MAJOR,
+        false => mask,
+    };
     let offs = offsets(mask);
     if offs.is_empty() || bpb <= 0.0 {
         return clip.to_vec();
@@ -468,7 +504,7 @@ mod tests {
     #[test]
     fn a_progression_is_the_presets_degrees_one_triad_a_bar_from_the_tonic() {
         let offs = offsets(C_MAJOR);
-        // I–V–vi–IV: C major, G major, A minor, F major, a bar each.
+        // I–V–vi–IV: C major, G major, A minor, F major, a bar each, each in the inversion nearest the one before.
         let chords = chords_for(
             &[1, 5, 6, 4],
             false,
@@ -479,7 +515,7 @@ mod tests {
         );
         assert_eq!(
             keys(&chords),
-            [48, 52, 55, 55, 59, 62, 57, 60, 64, 53, 57, 60]
+            [48, 52, 55, 47, 50, 55, 48, 52, 57, 48, 53, 57]
         );
         let ticks: Vec<u32> = chords
             .iter()
@@ -541,6 +577,35 @@ mod tests {
             4.0,
         );
         assert_eq!(chord_keys(&long).len(), 24);
+    }
+
+    /// #104: the default Chromatic scale writes real triads, major or minor, not stacks of every other semitone.
+    #[test]
+    fn chromatic_writes_major_and_minor_triads() {
+        let chromatic = SCALE_MASKS[crate::song::scales::CHROMATIC];
+        for preset in [Preset::Pop, Preset::Minor, Preset::Epic] {
+            let s = Settings {
+                chords: 2,
+                ..settings(preset, 4, 1, Lead::Chords)
+            };
+            let out = generate(&s, (2, chromatic), &[], 4.0);
+            for bar in 0..4u32 {
+                let mut pcs: Vec<i32> = (out.iter())
+                    .filter_map(|e| match e {
+                        Event::Note { pos, key, .. } if pos / 512 == bar => Some(pitch_class(*key)),
+                        _ => None,
+                    })
+                    .collect();
+                pcs.sort_unstable();
+                let triad = |r: i32, third: i32| {
+                    let mut t = [r, r + third, r + 7].map(|k| k.rem_euclid(12));
+                    t.sort_unstable();
+                    t
+                };
+                let real = (0..12).any(|r| pcs == triad(r, 4) || pcs == triad(r, 3));
+                assert!(real, "{preset:?} bar {bar}: {pcs:?}");
+            }
+        }
     }
 
     #[test]

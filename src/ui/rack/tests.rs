@@ -1369,7 +1369,7 @@ fn the_header_row_follows_section_3_3() {
     let r = |x0, y0, x1, y1| Rect::from_min_max(pos2(x0, y0), pos2(x1, y1));
     // Toggle, icon, preset and ≡: 8 px top and bottom; the name 4 px and 0.25 U left; the name takes what is left.
     assert_eq!(
-        header_row(card, 100.0, 2.0, false)[..5],
+        header_row(card, 100.0, 2.0, false, false)[..5],
         [
             r(150.0, 88.0, 300.0, 222.0),
             r(300.0, 88.0, 450.0, 222.0),
@@ -1378,18 +1378,42 @@ fn the_header_row_follows_section_3_3() {
             r(1700.0, 88.0, 1850.0, 222.0),
         ]
     );
-    // The preset button is the name's 10 pt width + 1 U, at most 5 U.
-    assert_eq!(preset_width(150.0, 100.0), 2.5);
-    assert_eq!(preset_width(400.0, 100.0), 5.0);
-    assert_eq!(preset_width(900.0, 100.0), 5.0);
-    // ▶: (R − 0.35 U, cy ∓ 0.175 U), (R − 0.175 U, cy).
-    let preset = r(1500.0, 88.0, 1700.0, 222.0);
+    // #98: a 1 U ◀ and ▶ either side of the preset button, out of the name's room.
+    let [.., previous, next] = header_row(card, 100.0, 2.0, true, false);
     assert_eq!(
-        play_triangle(preset, 100.0),
+        header_row(card, 100.0, 2.0, true, false)[2..5],
         [
-            pos2(1665.0, 137.5),
-            pos2(1665.0, 172.5),
-            pos2(1682.5, 155.0)
+            r(475.0, 84.0, 1300.0, 226.0),
+            r(1400.0, 88.0, 1600.0, 222.0),
+            r(1700.0, 88.0, 1850.0, 222.0),
+        ]
+    );
+    assert_eq!(
+        [previous, next],
+        [
+            r(1300.0, 88.0, 1400.0, 222.0),
+            r(1600.0, 88.0, 1700.0, 222.0)
+        ]
+    );
+    // The preset button is the name's 10 pt width + 0.4 U, at most 4.5 U.
+    assert_eq!(preset_width(150.0, 100.0), 1.9);
+    assert_eq!(preset_width(400.0, 100.0), 4.4);
+    assert_eq!(preset_width(900.0, 100.0), 4.5);
+    // The ▶ (0.175 U wide, 0.35 U tall), 0.175 U past the button's edge: ▶ in its cell, ◀ mirrored.
+    assert_eq!(
+        step_triangle(next, 100.0, true),
+        [
+            pos2(1617.5, 137.5),
+            pos2(1617.5, 172.5),
+            pos2(1635.0, 155.0)
+        ]
+    );
+    assert_eq!(
+        step_triangle(previous, 100.0, false),
+        [
+            pos2(1382.5, 172.5),
+            pos2(1382.5, 137.5),
+            pos2(1365.0, 155.0)
         ]
     );
 }
@@ -1583,20 +1607,20 @@ fn a_new_synth_channel_shows_its_instrument_card() {
         (name.left() - (card.left() + 3.25 * U)).abs() <= 1.0,
         "{name:?}"
     );
-    // The preset button left of the ≡: `Default` 10 pt, 0.2 U in, then the ▶ at its right edge.
+    // The preset button left of the ▶ cell (#98) and the ≡: `Default` 10 pt, 0.2 U in; the ▶ 0.175 U past it.
     let preset = rig.text("Default");
     assert_eq!(rig.font_size("Default"), m.font_id(FontSize::Pt10).size);
-    let right = card.right() - 1.5 * U;
-    let left = right - (preset.width() + U);
+    let right = card.right() - 2.5 * U;
+    let left = right - (preset.width() + 0.4 * U);
     assert!(
         (preset.left() - (left + 0.2 * U)).abs() <= 1.0,
         "{preset:?}"
     );
     let cy = card.top() + 0.75 * U;
     assert!(rig.triangle_drawn([
-        pos2(right - 0.35 * U, cy - 0.175 * U),
-        pos2(right - 0.35 * U, cy + 0.175 * U),
-        pos2(right - 0.175 * U, cy),
+        pos2(right + 0.175 * U, cy - 0.175 * U),
+        pos2(right + 0.175 * U, cy + 0.175 * U),
+        pos2(right + 0.35 * U, cy),
     ]));
     // The body is the DW Sampler panel in the module area, its own tab strip on top; the card draws no strip and no
     // placeholder.
@@ -2164,13 +2188,13 @@ fn ellipsis<'a>(shown: &'a str, full: &str) -> (&'a str, &'a str) {
 
 #[test]
 fn a_card_name_wider_than_its_label_is_truncated_keeping_5_tail_characters() {
-    // A 14 U (full-screen) rack: 0.5 U margins and 13 U cards, whose name label (3.25 U in) is narrower than
-    // `SoundFont Player` at 12 pt.
+    // A 15.5 U (full-screen) rack: 0.5 U margins and 14.5 U cards, whose name label (3.25 U in, up to the ◀ of the
+    // preset button) is narrower than `SoundFont Player` at 12 pt.
     let mut song = crate::song::Song::default();
     song.add_channel(ChannelKind::Synth(SynthKind::SoundFontPlayer));
     let mut channel = song.channels.pop().unwrap();
     let mut rack = RackPanel::default();
-    let view = Rect::from_min_size(pos2(0.0, 0.0), vec2(14.0 * U, 800.0));
+    let view = Rect::from_min_size(pos2(0.0, 0.0), vec2(15.5 * U, 800.0));
     let texts = one_frame(|ui, cx| {
         rack.show(ui, cx, view, CHANNEL, &mut channel);
     });
@@ -2208,12 +2232,12 @@ fn the_preset_name_is_truncated_with_an_end_ellipsis() {
     let (head, tail) = ellipsis(&shown, full);
     assert!(head.len() > 3 && tail.is_empty(), "{shown}");
     assert_eq!(size, 20.0);
-    // Left-aligned in the button inset 0.2 U, and clear of the ▶ (its left edge 0.35 U in).
+    // Left-aligned in the button inset 0.2 U, and ending 0.2 U in (its ▶ is the ▶ cell's, #98).
     assert!(
         (rect.left() - (button.left() + 0.2 * U)).abs() < 1e-3,
         "{rect:?}"
     );
-    assert!(rect.right() <= button.right() - 0.5 * U, "{rect:?}");
+    assert!(rect.right() <= button.right() - 0.2 * U, "{rect:?}");
     assert!(rect.right() > button.right() - 1.5 * U, "{rect:?}");
 }
 
@@ -2464,12 +2488,13 @@ fn the_preset_button_shows_the_modules_preset_name_and_is_as_wide_as_it() {
     channel.rack.modules[1].file.preset_name = long.into();
     let rig = Rig::with(channel);
     let cards = rig.cards();
-    // The name and its 1 U of room, left of the ≡; the name starts 0.2 U in. The layout snaps to pixels.
+    // The name and its 0.4 U of room, left of the ▶ cell and the ≡; the name starts 0.2 U in. The layout snaps to
+    // pixels.
     let crunch = rig.text("Crunch");
     let width = preset_width(crunch.width(), U);
-    let left = cards[0].right() - (1.5 + width) * U + 0.2 * U;
+    let left = cards[0].right() - (1.5 + 1.0 + width) * U + 0.2 * U;
     assert!((crunch.left() - left).abs() < 1.0, "{crunch:?} {left}");
-    // At most 5 U, the name cut short.
+    // At most 4.5 U, the name cut short.
     let (shown, rect) = (rig.shapes.iter())
         .find_map(|c| match &c.shape {
             egui::Shape::Text(t) if t.galley.text().starts_with("A preset") => Some((
@@ -2480,14 +2505,14 @@ fn the_preset_button_shows_the_modules_preset_name_and_is_as_wide_as_it() {
         })
         .expect("drawn");
     ellipsis(&shown, long);
-    let left = cards[1].right() - (1.5 + 5.0) * U + 0.2 * U;
+    let left = cards[1].right() - (1.5 + 1.0 + 4.5) * U + 0.2 * U;
     assert!((rect.left() - left).abs() < 1.0, "{rect:?} {left}");
 }
 
 #[test]
 fn the_preset_button_and_load_rack_preset_ask_for_the_preset_picker() {
     let mut rig = Rig::new(&[6, 11]);
-    rig.click(rig.header(1, -2.0));
+    rig.click(rig.header(1, -3.0));
     assert_eq!(rig.actions.picker, Some(PresetTarget::Module(3)));
     let before = rig.channel.clone();
     rig.open(rack_menu_at());
@@ -3545,7 +3570,7 @@ fn the_preset_button_of_a_soundfont_player_opens_the_preset_picker_like_every_mo
     // the `Patch` spinner's, when there are no patches to list.
     for read in [Some(5), None] {
         let mut rig = soundfont_rig(1, read);
-        rig.click(rig.header(0, -2.0));
+        rig.click(rig.header(0, -3.0));
         assert_eq!(rig.actions.picker, Some(PresetTarget::Module(2)));
         assert_eq!(rig.actions.soundfont, None);
     }

@@ -2909,8 +2909,24 @@ mod component {
     #[test]
     fn every_note_menu_item_is_enabled() {
         let items = crate::ui::piano_roll::more_items();
-        assert_eq!(items.len(), 15);
+        assert_eq!(items.len(), 19);
         assert!(items.iter().all(|i| !i.disabled));
+    }
+
+    /// #102, a Honeydew addition: the note menu's `Transpose +1`, `-1`, `+12` and `-12` move the selection, an undo step
+    /// each, and the menu stays open for the next.
+    #[test]
+    fn the_note_menus_transpose_steps_move_the_selection_an_undo_step_each() {
+        let mut rig = Rig::new(vec![n(0, 64.0, 60), n(128, 64.0, 64)]);
+        rig.select(vec![true, false]);
+        rig.tap(rig.text("More...").unwrap());
+        rig.frame(vec![]);
+        rig.tap(rig.text("Transpose +12").unwrap());
+        assert_eq!(keys(&rig), [72, 64]);
+        rig.frame(vec![]);
+        rig.tap(rig.text("Transpose -1").expect("the menu stays open"));
+        assert_eq!(keys(&rig), [71, 64]);
+        assert_eq!(rig.all, [DONE, DONE]);
     }
 
     #[test]

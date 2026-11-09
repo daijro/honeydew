@@ -1139,7 +1139,8 @@ fn the_rows_take_touches_at_rest_while_the_panel_slides_in() {
     // No animation blocks input, and touch handlers never check the animation state. On its 3rd frame the panel is
     // drawn 72 points short of its rest (p = 0.875), but a row takes a touch where it will rest.
     let paste = Rig::new().text_at("Paste");
-    let at = pos2(560.0, paste.y);
+    // Past the drawn panel's right edge (504), left of the scrollbar's grab (the right 1.5 U, #111).
+    let at = pos2(520.0, paste.y);
     let mut rig = Rig {
         ctx: Context::default(),
         browser: ModulesBrowser::default(),
@@ -1494,6 +1495,7 @@ fn bare_frame(
                     sub: None,
                     kind: RowKind::Enabled(()),
                     picked: false,
+                    mark: None,
                 })
                 .collect()
         });
@@ -1554,4 +1556,58 @@ fn the_flash_skips_folders_starts_the_frame_after_the_tap_and_stays_on_its_rows_
     let moved = [("Folder", true), ("New", false), ("Item", false)];
     let shapes = frame(&mut panel, &moved, vec![]);
     assert!(!bare_flash(&ctx, &shapes, 1) && !bare_flash(&ctx, &shapes, 2));
+}
+
+#[test]
+fn a_drag_on_the_scrollbar_moves_the_list_by_its_share_and_a_swipe_on_the_rows_still_scrolls() {
+    // #111: a folder of 1000 samples. The thumb is a finger long (1.5 U) and takes a drag in the band 1.5 U in from the
+    // list's right edge, though the bar drawn is thinner; the list moves by the share of the thumb's travel dragged.
+    let (ctx, mut panel) = (Context::default(), SidePanel::in_place());
+    let names: Vec<_> = (0..1000).map(|i| format!("Kick {i}")).collect();
+    let rows: Vec<_> = names.iter().map(|n| (n.as_str(), false)).collect();
+    let m = metrics();
+    let list = layout(SCREEN, 1.0, &m).list;
+    let range = 1000.0 * m.round_px(m.u(search_bar::ROW_H)) - list.height();
+    let finger = m.u(1.5);
+    let press = |pos, pressed| Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    let drag = |from: Pos2, to: Pos2| {
+        vec![
+            vec![Event::PointerMoved(from)],
+            vec![press(from, true)],
+            vec![Event::PointerMoved(from.lerp(to, 0.5))],
+            vec![Event::PointerMoved(to)],
+            vec![press(to, false)],
+        ]
+    };
+    let mut t = 0.0;
+    let mut run = |panel: &mut SidePanel, frames: Vec<Vec<Event>>| {
+        for events in frames {
+            t += 1.0 / 60.0;
+            bare_frame(&ctx, panel, t, &rows, events);
+        }
+    };
+    run(&mut panel, vec![vec![]; 3]);
+    let grab = pos2(list.right() - 0.8 * finger, list.top() + finger / 2.0);
+    run(&mut panel, drag(grab, grab + vec2(0.0, 100.0)));
+    let want = 100.0 / (list.height() - finger) * range;
+    assert!(
+        (panel.scroll_y - want).abs() < 1e-2,
+        "{} vs {want}",
+        panel.scroll_y
+    );
+    // A swipe on the rows, in the same band but off the thumb, moves them 1:1.
+    let at = panel.scroll_y;
+    let swipe = pos2(list.right() - finger / 2.0, list.bottom() - 100.0);
+    run(&mut panel, drag(swipe, swipe - vec2(0.0, 120.0)));
+    assert!(
+        (panel.scroll_y - (at + 120.0)).abs() < 1e-2,
+        "{} vs {}",
+        panel.scroll_y,
+        at + 120.0
+    );
 }

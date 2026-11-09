@@ -41,12 +41,12 @@ use crate::params::{self, Role};
 use crate::song::{ModuleInstance, Rack, SynthKind};
 use crate::theme::DISABLED_ALPHA;
 use crate::ui::buttons::{close_x, outline_circle_button};
-use crate::ui::picker_preview::{Audition, STRIP_H, SampleStrip};
+use crate::ui::picker_preview::{Audition, KEYS_H, KeyStrip, STRIP_H, SampleStrip};
 use crate::ui::popup::{PopupItem, PopupResult};
 use crate::ui::preset_picker::{modal, natural};
-use crate::ui::search_bar::{self, RowLook, SearchBar};
+use crate::ui::search_bar::{self, Mark, RowLook, SearchBar};
 use crate::ui::widgets::{shrink, truncated};
-use crate::ui::{Finger, UiCtx, anim, fingers, focus, focus_lost};
+use crate::ui::{Finger, UiCtx, anim, fingers, focus, focus_lost, scroller};
 use honeydew_audio::lemon;
 
 use Entry::Module as M;
@@ -416,7 +416,6 @@ const BUTTON_APART: f32 = 0.25;
 const BUTTON_LABEL_PT: u8 = 8;
 /// Left padding of the title and the name field's text (a row's own is [`search_bar::paint_row`]'s).
 const PAD_X: f32 = 0.5;
-const SCROLLBAR_W: f32 = 0.15;
 /// Icon size factor of the close X (as the transport's), and of the ≡ button's icon (as SONGS').
 const CLOSE_ICON: f32 = 0.7;
 const MENU_ICON: f32 = 0.6;
@@ -429,8 +428,7 @@ const TAIL_K: usize = 5;
 const CRUMB_TAIL_K: usize = 40;
 /// The Back arrow's icon size factor.
 const BACK_ICON: f32 = 0.7;
-/// `text` alphas: the scrollbar thumb, a section header's band (disabled rows: [`DISABLED_ALPHA`]).
-const SCROLLBAR_ALPHA: f32 = 0.5;
+/// `text` alpha of a section header's band (disabled rows: [`DISABLED_ALPHA`]).
 const SECTION_ALPHA: f32 = 0.05;
 /// Every row's name: folders and items alike, one size in every side browser (the folder rows' FontSize 4); a found
 /// row with a path is the exception ([`search_bar::paint_row`]). A section header's label is FontSize 3.
@@ -547,6 +545,7 @@ impl ModulesBrowser {
                     Row::Item(entry) => RowKind::Enabled(entry),
                 },
                 picked: matches!(row, Row::Item(e) if Some(e) == picked),
+                mark: None,
             };
             rows(query, sort, takes).into_iter().map(row).collect()
         })?;
@@ -654,6 +653,8 @@ pub(crate) struct PanelRow<'a, T> {
     /// sits over a picked item row while it is on, and its loading pulse (a `text` fill under `menuFill` text) over a
     /// plain one: a picked row is not inverted while it loads.
     pub picked: bool,
+    /// Its mark at the right end (the pickers' folders and files).
+    pub mark: Option<Mark<'a>>,
 }
 
 /// What the user clicked in the panel this frame.
@@ -698,6 +699,8 @@ pub(crate) struct SidePanel {
     pub audition: Audition,
     /// The sample strip at the bottom (sample pickers), once a sample is picked.
     pub sample: Option<SampleStrip>,
+    /// The keys at the bottom (an instrument's presets, #98).
+    pub keys: Option<KeyStrip>,
     /// Row flash on pick: the item row last tapped, by index and name (a list read again may move another row to that
     /// index: the flash then shows on none), and when (input time, in seconds), while its flash runs.
     flash: Option<(usize, String, f64)>,
@@ -977,6 +980,11 @@ impl SidePanel {
                     list.max.y -= m.u(STRIP_H);
                     strip.show(ui, cx, at.panel, id);
                 }
+                // As do the keys.
+                if let Some(keys) = &mut self.keys {
+                    list.max.y -= m.u(KEYS_H);
+                    keys.show(ui, cx, at.panel, id);
+                }
                 if self.search.shown() {
                     list.min.y += m.u(search_bar::DROP);
                     if self.search.show(ui, cx, field, browser) {
@@ -1078,6 +1086,7 @@ impl SidePanel {
                         hovered: false,
                         select: None,
                         bold: false,
+                        mark: row.mark,
                     };
                     match row.kind {
                         RowKind::Section => {
@@ -1185,17 +1194,9 @@ impl SidePanel {
                         false => self.flash = None,
                     }
                 }
-                if content_h > list.height() {
-                    let w = m.u(SCROLLBAR_W);
-                    let thumb = Rect::from_min_size(
-                        pos2(
-                            list.right() - w,
-                            list.top() + scroll / content_h * list.height(),
-                        ),
-                        vec2(w, list.height() * list.height() / content_h),
-                    );
-                    painter.rect_filled(thumb, 0.0, text.gamma_multiply(SCROLLBAR_ALPHA));
-                }
+                // Over the rows: a finger on the thumb drags it (#111).
+                let (bar, u) = (id.with("scrollbar"), m.u(1.0));
+                scroller::list_scrollbar(ui, bar, list, u, content_h, &mut self.scroll_y, text);
                 focus::close(ctx, browser_id);
                 // The audition strip is no part of the browser: a focus target of its own, over the picked row, in view
                 // or not.

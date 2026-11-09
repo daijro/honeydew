@@ -1199,6 +1199,9 @@ pub struct RackActions {
     pub preset: Option<PresetSource>,
     /// A card's preset button or the rack's `Load Rack preset`: open the preset picker to load into this.
     pub picker: Option<PresetTarget>,
+    /// Issue #98 (Honeydew addition): a card's ◀ (−1) or ▶ (1), by instance id: load the previous or next preset of
+    /// its module's folder ([`crate::ui::views::preset_picker::step_preset`]).
+    pub step_preset: Option<(i32, i32)>,
     /// A SoundFont Player's `Patch` spinner with no patches to list (or the tap on its error): open the SoundFont picker
     /// for the module with this instance id.
     pub soundfont: Option<i32>,
@@ -1252,6 +1255,8 @@ struct CardEdits {
     stored: bool,
     /// Its preset button was clicked.
     presets: bool,
+    /// Issue #98: its ◀ (−1) or ▶ (1) was clicked; 0: neither.
+    step: i32,
     /// What a SoundFont Player's patch selector asked for.
     press: Option<Press>,
     /// The MIDI CCs a SoundFont Player's SFZ controls sent, as (channel param, value).
@@ -2178,6 +2183,9 @@ impl RackPanel {
         if edits.presets {
             actions.picker = Some(PresetTarget::Module(id));
         }
+        if edits.step != 0 {
+            actions.step_preset = Some((id, edits.step));
+        }
         if edits.full {
             actions.lemon_full = Some(id);
         }
@@ -2274,8 +2282,16 @@ impl RackPanel {
         let has_popout = window.is_some() || full;
         let preset = module.file.preset_name.clone();
         let preset_w = preset_width(text_width(ui, &preset, m.font_id(FontSize::Pt10)), m.u(1.0));
-        let [toggle, icon, name, preset_rect, menu, popout] =
-            header_row(card * ppp, u, preset_w, has_popout).map(|r| r / ppp);
+        let [
+            toggle,
+            icon,
+            name,
+            preset_rect,
+            menu,
+            popout,
+            previous,
+            next,
+        ] = header_row(card * ppp, u, preset_w, !plugin, has_popout).map(|r| r / ppp);
         // The module-name label (its cell in the header row) takes the card's own gestures, not the header's buttons.
         let header_id = base.with("header");
         let mut held = ui.interact(name, header_id, Sense::click());
@@ -2367,6 +2383,19 @@ impl RackPanel {
         );
         if !plugin {
             preset_button(ui, cx, preset_rect, &preset, text);
+            // Issue #98 (Honeydew addition): ◀ and ▶ either side of the name step through its folder's presets.
+            for (rect, label, by) in [(previous, "Previous preset", -1), (next, "Next preset", 1)] {
+                let tip = step_triangle(rect, m.u(1.0), by > 0).to_vec();
+                ui.painter()
+                    .add(Shape::convex_polygon(tip, text, Stroke::NONE));
+                if ui
+                    .interact(rect, base.with(label), Sense::click())
+                    .clicked()
+                {
+                    edits.step = by;
+                }
+                crate::ui::tooltip::tip(ui, rect, label, None);
+            }
         }
         edits.presets =
             !plugin && (ui.interact(preset_rect, base.with("preset"), Sense::click())).clicked();
@@ -2832,20 +2861,23 @@ impl RackPanel {
     }
 }
 
-/// The header row's items in card `card` (device pixels, as `u`): enable toggle, icon, name, preset button, ≡ and,
-/// with `popout`, the pop-out button left of the ≡ (else [`Rect::NOTHING`]). `preset_w` is the preset button's width
-/// in U.
-fn header_row(card: Rect, u: f32, preset_w: f32, popout: bool) -> [Rect; 6] {
+/// The header row's items in card `card` (device pixels, as `u`): enable toggle, icon, name, preset button, ≡, with
+/// `popout` the pop-out button left of the ≡, and with `steps` the ◀ and ▶ cells either side of the preset button
+/// (#98), [`STEP_W`] wide (else [`Rect::NOTHING`]). `preset_w` is the preset button's width in U.
+fn header_row(card: Rect, u: f32, preset_w: f32, steps: bool, popout: bool) -> [Rect; 8] {
     let (px8, px4) = (8.0 / u, 4.0 / u);
     let fixed = |id, w| Node::leaf(id).w(Size::U(w)).margins(px8, 0.0, px8, 0.0);
+    let step = |id| steps.then(|| fixed(id, STEP_W));
     let row = Node::hstack(
         [
             fixed(0, 1.5),
             fixed(1, 1.5),
             Node::leaf(2).margins(px4, 0.0, px4, 0.25),
-            fixed(3, preset_w),
         ]
         .into_iter()
+        .chain(step(6))
+        .chain([fixed(3, preset_w)])
+        .chain(step(7))
         .chain(popout.then(|| fixed(5, 1.5)))
         .chain([fixed(4, 1.5)]),
     );
@@ -2853,21 +2885,32 @@ fn header_row(card: Rect, u: f32, preset_w: f32, popout: bool) -> [Rect; 6] {
     std::array::from_fn(|i| layout::rect_of(&rects, i as u32).unwrap_or(Rect::NOTHING))
 }
 
-/// The preset button's width in U for a name `text` wide: the text width / U + 1, at most 5. `text` and `u`
-/// in the same unit.
+/// The ◀ and ▶ cells' width beside the preset button, in U (#98).
+const STEP_W: f32 = 1.0;
+
+/// The preset button's width in U for a name `text` wide: the text width / U + 0.4, at most 4.5, leaving the ▶ to
+/// its own cell (#98). `text` and `u` in the same unit.
 fn preset_width(text: f32, u: f32) -> f32 {
-    (text / u + 1.0).min(5.0)
+    (text / u + 0.4).min(4.5)
 }
 
-/// The preset button's ▶: corners (R − 0.35 U, cy ∓ 0.175 U) and (R − 0.175 U, cy), R the right edge of
-/// `rect`, cy its centre line. `rect` and `u` in the same unit.
-fn play_triangle(rect: Rect, u: f32) -> [Pos2; 3] {
-    let (r, cy) = (rect.right(), rect.center().y);
-    [
-        pos2(r - 0.35 * u, cy - 0.175 * u),
-        pos2(r - 0.35 * u, cy + 0.175 * u),
-        pos2(r - 0.175 * u, cy),
-    ]
+/// The ▶ (`next`) or ◀ in its cell beside the preset button, pointing away from it: 0.175 U wide
+/// and 0.35 U tall, from 0.175 U past the button's edge, which is L for the ▶ cell and R for the ◀ cell; cy is the
+/// cell's centre line. Both clockwise on screen. `cell` and `u` in the same unit.
+fn step_triangle(cell: Rect, u: f32, next: bool) -> [Pos2; 3] {
+    let (x, d) = if next {
+        (cell.left(), 1.0)
+    } else {
+        (cell.right(), -1.0)
+    };
+    let (base, cy) = (x + d * 0.175 * u, cell.center().y);
+    let (top, bottom) = (pos2(base, cy - 0.175 * u), pos2(base, cy + 0.175 * u));
+    let tip = pos2(x + d * 0.35 * u, cy);
+    if next {
+        [top, bottom, tip]
+    } else {
+        [bottom, top, tip]
+    }
 }
 
 fn text_width(ui: &Ui, text: &str, font: FontId) -> f32 {
@@ -2877,13 +2920,12 @@ fn text_width(ui: &Ui, text: &str, font: FontId) -> f32 {
         .x
 }
 
-/// The preset button: the name left-aligned 0.2 U in, 10 pt, truncated with an end ellipsis, and a ▶ at the right. The
-/// name ends 0.5 U in, 0.15 U short of the ▶, so a cut name's ellipsis stays clear of it; a name the button is sized
-/// for (text + 1 U) still fits.
+/// The preset button: the name left-aligned 0.2 U in, 10 pt, truncated with an end ellipsis, ending 0.2 U in (its ▶ is
+/// the ▶ cell's, [`step_triangle`]).
 fn preset_button(ui: &Ui, cx: &UiCtx, rect: Rect, name: &str, color: Color32) {
     let m = cx.m;
     let text = Rect::from_x_y_ranges(
-        rect.left() + m.u(0.2)..=rect.right() - m.u(0.5),
+        rect.left() + m.u(0.2)..=rect.right() - m.u(0.2),
         rect.y_range(),
     );
     let font = m.font_id(FontSize::Pt10);
@@ -2896,9 +2938,6 @@ fn preset_button(ui: &Ui, cx: &UiCtx, rect: Rect, name: &str, color: Color32) {
         color,
         0,
     );
-    let tip = play_triangle(rect, m.u(1.0)).to_vec();
-    ui.painter()
-        .add(Shape::convex_polygon(tip, color, Stroke::NONE));
 }
 
 /// The module settings dialog's title in its row: 12 pt, centred, its bottom on the row's, truncated keeping 5 tail

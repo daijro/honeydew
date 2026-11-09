@@ -71,6 +71,14 @@ impl ProjectFiles {
         self.open_pick(Pick::Sample);
     }
 
+    /// The MIDI picker's `Import` (issue #113): [`Self::import_audio`] of a MIDI file, into [`MIDI_FOLDER`].
+    pub fn import_midi(&mut self) {
+        if let Some(dir) = self.user_dir().map(|u| u.join(MIDI_FOLDER)) {
+            self.import_dir = Some(dir);
+            self.open_pick(Pick::Midi);
+        }
+    }
+
     /// Keeps the picked audio file `path` (on the web its name alone) in the folder [`Self::import_audio`] named, under
     /// its name or a free `name (n)`, flashes [`IMPORTED`] and counts it in [`Self::library_changes`], so the open
     /// picker lists it. A file with no name to keep it under is [`IMPORT_FAILED`].

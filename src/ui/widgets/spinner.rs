@@ -13,7 +13,7 @@ use eframe::egui::{
 
 use super::{Control, close_popup, popup_anchor, through_index};
 use crate::metrics::FontSize;
-use crate::ui::popup::{self, PopupItem};
+use crate::ui::popup::PopupItem;
 use crate::ui::{UiCtx, focus};
 
 /// The value text is FontSize 2.
@@ -94,9 +94,10 @@ fn grid_popup(
 ) -> Option<usize> {
     let menu_id = popup_id(id);
     let at = popup_anchor(ui, menu_id)?;
-    let ctx = ui.ctx();
     let rows = rows();
-    let result = popup::show(ctx, menu_id, at, ctx.content_rect(), &rows, cx);
+    // Modal over its control's own panel too (the Generate panel, a dialog, #107): a press on the panel would raise it
+    // over the popup, and open another dropdown there.
+    let result = crate::ui::preset_picker::modal(ui.ctx(), cx, menu_id, at, &rows);
     if result.close || rows.is_empty() {
         close_popup(ui, menu_id);
     }

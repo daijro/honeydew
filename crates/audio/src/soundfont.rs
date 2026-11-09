@@ -11,6 +11,11 @@
 //! Custom envelope is on. An SFZ voice also runs its region's filter, LFOs, envelopes and CC routes, a control block
 //! ([`CONTROL`] frames) at a time; the CCs come in as channel params 7 + n ([`Instrument::set_controller`]). A
 //! SoundFont's regions play exactly as before.
+//!
+//! A Honeydew addition (#102): a SoundFont's vibrato LFO (its
+//! vibLfoToPitch, freqVibLFO and delayVibLFO) moves its voices' pitch, the mod wheel deepening it by up to 50 cents as
+//! the standard's default modulator says; the module's own Vib Rate, Depth and Delay add a vibrato to every voice; and
+//! Quality High reads the samples by cubic interpolation instead of linear.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -56,7 +61,10 @@ const _: () = assert!(STREAM_VOICES <= VOICES);
 // Generator operators (SoundFont 2.01 §8.1.2).
 const START_LOOP: usize = 2;
 const END_LOOP: usize = 3;
+const VIB_LFO_TO_PITCH: usize = 6;
 const PAN: usize = 17;
+const DELAY_VIB_LFO: usize = 23;
+const FREQ_VIB_LFO: usize = 24;
 const ATTACK: usize = 34;
 const DECAY: usize = 36;
 const SUSTAIN: usize = 37;
@@ -82,7 +90,7 @@ type Gens = [i16; GENERATORS];
 const FULL_RANGE: i16 = i16::from_le_bytes([0, 127]);
 
 /// The values a zone starts from: a preset's add nothing; an instrument's are the standard defaults (scaleTuning 100,
-/// envelope times −12000 tc, sustain 0 cB, no overriding root key).
+/// envelope and vibrato LFO delay times −12000 tc, sustain 0 cB, no overriding root key).
 const fn defaults(instrument: bool) -> Gens {
     let mut gens = [0; GENERATORS];
     gens[KEYS] = FULL_RANGE;
@@ -91,6 +99,7 @@ const fn defaults(instrument: bool) -> Gens {
         gens[ATTACK] = -12000;
         gens[DECAY] = -12000;
         gens[RELEASE] = -12000;
+        gens[DELAY_VIB_LFO] = -12000;
         gens[SCALE] = 100;
         gens[ROOT] = -1;
     }
@@ -568,6 +577,11 @@ impl SoundFont {
             decay: add(DECAY) as f32,
             sustain: 10f32.powf(-centibels(SUSTAIN) / 200.0),
             release: add(RELEASE) as f32,
+            vibrato: [
+                add(VIB_LFO_TO_PITCH).clamp(-12000, 12000) as f32,
+                LFO_HZ * 2f32.powf(add(FREQ_VIB_LFO).clamp(-16000, 4500) as f32 / 1200.0),
+                2f32.powf(add(DELAY_VIB_LFO).clamp(-12000, 5000) as f32 / 1200.0),
+            ],
             sfz: None,
         })
     }
@@ -590,19 +604,34 @@ impl SoundFont {
             _ => 0.0,
         }
     }
+}
 
-    /// `region`'s sample at `position` (in `start..end`), linearly interpolated; a loop's last frame leads into its
-    /// first, and a sample's last frame is held.
-    fn read(&self, region: &Region, position: f64) -> f32 {
-        let i = position as usize;
-        let next = if region.looping && i + 1 >= region.loop_end {
-            region.loop_start
-        } else {
-            (i + 1).min(region.end - 1)
-        };
-        let (a, b) = (self.frame(i), self.frame(next));
-        a + (b - a) * (position - i as f64) as f32
+/// What `at(frame)` reads at `position` (in `start..end`) of `region`'s sample: straight between the two frames around
+/// it, or with `cubic` (Quality High) on a Catmull-Rom curve through the four. With `looping` a loop's last frame leads
+/// into its first (and comes before it); a sample's last frame is held, and so is its first before it.
+fn interpolate(
+    region: &Region,
+    looping: bool,
+    position: f64,
+    cubic: bool,
+    at: impl Fn(usize) -> f32,
+) -> f32 {
+    let i = position as usize;
+    let t = (position - i as f64) as f32;
+    let after = |k: usize| match looping && k >= region.loop_end {
+        true => region.loop_start + (k - region.loop_start) % (region.loop_end - region.loop_start),
+        false => k.min(region.end - 1),
+    };
+    let (b, c) = (at(i), at(after(i + 1)));
+    if !cubic {
+        return b + (c - b) * t;
     }
+    let before = match looping && i == region.loop_start {
+        true => region.loop_end - 1,
+        false => i.saturating_sub(1).max(region.start),
+    };
+    let (a, d) = (at(before), at(after(i + 2)));
+    b + 0.5 * t * (c - a + t * (2.0 * a - 5.0 * b + 4.0 * c - d + t * (3.0 * (b - c) + d - a)))
 }
 
 /// The zones `first..last` of a bag table, as generator slices (indices checked by [`SoundFont::parse`]).
@@ -643,6 +672,8 @@ pub struct Region {
     /// Level.
     sustain: f32,
     release: f32,
+    /// A SoundFont's vibrato LFO: its pitch depth (cents), rate (Hz) and delay (seconds); an SFZ's has no depth.
+    vibrato: [f32; 3],
     /// An SFZ region's sample and rules (its frames above are the sample's, its tune 0 and its scale the key
     /// tracking); `None` for a SoundFont's.
     sfz: Option<Rules>,
@@ -829,6 +860,7 @@ fn sfz_region(
         decay: 0.0,
         sustain: 0.0,
         release: 0.0,
+        vibrato: [0.0; 3],
         sfz: Some(Rules {
             sample,
             cents: f64::from(r.transpose) * 100.0 + f64::from(r.tune),
@@ -851,28 +883,26 @@ fn sfz_region(
     })
 }
 
-/// `region`'s decoded sample `data` at `position` (in `start..end`), each channel linearly interpolated, mono as both;
-/// with `looping` the loop's last frame leads into its first.
-fn read_pcm(data: &SampleData, region: &Region, looping: bool, position: f64) -> (f32, f32) {
-    let i = position as usize;
-    let next = if looping && i + 1 >= region.loop_end {
-        region.loop_start
-    } else {
-        (i + 1).min(region.end - 1)
+/// `region`'s decoded sample `data` at `position` (in `start..end`), each channel [`interpolate`]d, mono as both.
+fn read_pcm(
+    data: &SampleData,
+    region: &Region,
+    looping: bool,
+    position: f64,
+    cubic: bool,
+) -> (f32, f32) {
+    let read = |x: &[f32]| {
+        interpolate(region, looping, position, cubic, |k| {
+            x.get(k).copied().unwrap_or(0.0)
+        })
     };
-    let t = (position - i as f64) as f32;
-    let lerp = |x: &[f32]| {
-        let (a, b) = (
-            x.get(i).copied().unwrap_or(0.0),
-            x.get(next).copied().unwrap_or(0.0),
-        );
-        a + (b - a) * t
-    };
-    let left = lerp(&data.left);
-    (left, data.right.as_deref().map_or(left, lerp))
+    let left = read(&data.left);
+    (left, data.right.as_deref().map_or(left, read))
 }
 
-/// [`read_pcm`] for a streamed sample, voice `voice`'s of `rings`: `None` when a frame is not there yet.
+/// [`read_pcm`] for a streamed sample, voice `voice`'s of `rings`, linear: `None` when a frame is not there yet.
+// ponytail: streamed samples stay linear at Quality High, as the ring may no longer hold the frame before; read it
+// from the head or keep a frame back if that is ever heard.
 fn read_disk(
     rings: &Rings,
     voice: usize,
@@ -902,10 +932,20 @@ const MIN_TIME: f32 = 0.005;
 const SILENT: f32 = 0.01;
 /// The release coefficient of a sample without a loop once it has played to its end.
 const END_FADE: f32 = 0.01;
-/// The param defaults: Enable, Attack, Decay, Sustain, Release, Envelope (Original), Fine Tune (0 cents).
-const DEFAULTS: [f32; 7] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5];
+/// The param defaults: Enable, Attack, Decay, Sustain, Release, Envelope (Original), Fine Tune (0 cents), Vib Rate
+/// (5 Hz), Vib Depth (0 cents), Vib Delay (0 s), Quality (Linear).
+const DEFAULTS: [f32; 11] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0];
 /// Fine Tune, 200v − 100 cents on every voice: a Honeydew addition (#90).
 const FINE_TUNE: usize = 6;
+/// Honeydew additions (#102). Params 7–9, the module's own vibrato on every voice: a sine
+/// of 10v Hz, 100v cents deep, from 2v s after the note-on.
+const VIBRATO: usize = 7;
+/// Param 10, Quality: above 0.5 (High) the samples are read by cubic interpolation, else linearly.
+const QUALITY: usize = 10;
+/// SoundFont 2's default modulator: the mod wheel (MIDI CC 1) deepens the vibrato LFO's pitch by up to 50 cents.
+const WHEEL_CENTS: f32 = 50.0;
+/// The vibrato LFO's rate at freqVibLFO 0 absolute cents.
+const LFO_HZ: f32 = 8.176;
 /// Channel param 4, Pitch Bend: v = 1 is 2 semitones up.
 const PITCH_BEND: usize = 4;
 const BEND_RANGE: f32 = 2.0;
@@ -977,6 +1017,9 @@ struct Voice {
     crossfade: f32,
     /// An SFZ voice's modulation.
     m: Motion,
+    /// Its vibratos' phases (0…1), its region's and the module's ([`Self::vibrato`]), and the seconds since it started.
+    vibrato: [f32; 2],
+    time: f32,
 }
 
 /// What an SFZ voice's modulation keeps.
@@ -1174,16 +1217,36 @@ impl Filter {
 }
 
 /// What an SFZ voice's control block reads besides its region: the CCs (0…1) at the process block's start (`then`)
-/// and end (`now`), the pitch bend (−1…1), Fine Tune (cents) and the rate.
+/// and end (`now`), the pitch bend (−1…1), Fine Tune (cents), the module's vibrato (cents, Hz, seconds), Quality High
+/// (`cubic`) and the rate.
 struct Controls<'a> {
     then: &'a [f32; 128],
     now: &'a [f32; 128],
     bend: f32,
     fine: f32,
+    vibrato: [f32; 3],
+    cubic: bool,
     rate: f32,
 }
 
 impl Voice {
+    /// The cents its vibratos move its pitch by now, then moves them `dt` seconds on: its region's (a SoundFont's
+    /// vibrato LFO, a triangle, `wheel` cents deeper) and the module's (`module`, a sine), each from 0, rising, once its
+    /// delay is over.
+    fn vibrato(&mut self, region: &Region, wheel: f32, module: [f32; 3], dt: f32) -> f32 {
+        let [depth, hz, delay] = region.vibrato;
+        let lfos = [(0, [depth + wheel, hz, delay]), (1, module)];
+        let mut cents = 0.0;
+        for (phase, (shape, [depth, hz, delay])) in self.vibrato.iter_mut().zip(lfos) {
+            if self.time >= delay {
+                cents += depth * wave(shape, *phase);
+                *phase = (*phase + hz * dt).fract();
+            }
+        }
+        self.time += dt;
+        cents
+    }
+
     /// One frame of the envelope; false once the voice has ended.
     fn envelope(&mut self) -> bool {
         if self.dahdsr {
@@ -1330,7 +1393,8 @@ impl Voice {
             true => ctl.bend * def.bend[0],
             false => -ctl.bend * def.bend[1],
         };
-        let cents = pitch + self.m.pitch + bend + ctl.fine + 100.0 * self.slide[0];
+        let vibrato = self.vibrato(region, 0.0, ctl.vibrato, dt);
+        let cents = pitch + self.m.pitch + bend + ctl.fine + vibrato + 100.0 * self.slide[0];
         // `min` also turns an infinite or NaN step into the cap.
         let step = (self.step * 2f64.powf(f64::from(cents) / 1200.0)).min(MAX_STEP);
         if let (Some(hz), Some(fil)) = (def.cutoff, def.fil_type) {
@@ -1407,7 +1471,9 @@ fn render_sfz(
                 break;
             }
             let (a, b) = match (sample, disk) {
-                (Pcm::Ram(data), _) => read_pcm(data, region, looping, voice.position),
+                (Pcm::Ram(data), _) => {
+                    read_pcm(data, region, looping, voice.position, controls.cubic)
+                }
                 (Pcm::Disk(_), Some(rings)) => {
                     let read = read_disk(rings, slot, region, looping, voice.position);
                     short |= read.is_none();
@@ -1783,7 +1849,8 @@ impl SoundFontPlayer {
 }
 
 impl Instrument for SoundFontPlayer {
-    /// Params 1–4 (Attack, Decay, Sustain, Release), 5 (Envelope) and 6 (Fine Tune).
+    /// Params 1–4 (Attack, Decay, Sustain, Release), 5 (Envelope), 6 (Fine Tune), 7–9 (Vib Rate, Depth, Delay) and 10
+    /// (Quality).
     fn set_parameter(&mut self, index: usize, value: f32) {
         if let Some(param) = self.params.get_mut(index).filter(|_| value.is_finite()) {
             *param = value;
@@ -1892,13 +1959,18 @@ impl Instrument for SoundFontPlayer {
             };
         }
         let fine = 200.0 * self.params[FINE_TUNE] - 100.0;
+        let [rate, depth, delay] = [VIBRATO, VIBRATO + 1, VIBRATO + 2].map(|p| self.params[p]);
+        let cubic = self.params[QUALITY] > 0.5;
         let controls = Controls {
             then: &self.cc_then,
             now: &self.cc_now,
             bend: self.wheel,
             fine,
+            vibrato: [100.0 * depth, 10.0 * rate, 2.0 * delay],
+            cubic,
             rate: self.sample_rate,
         };
+        let wheel = WHEEL_CENTS * self.cc_now[1];
         for (slot, voice) in self.voices.iter_mut().enumerate().filter(|(_, v)| v.on) {
             let region = &self.regions[voice.region];
             if let Some(rules) = &region.sfz {
@@ -1908,20 +1980,27 @@ impl Instrument for SoundFontPlayer {
                 );
                 continue;
             }
-            let bend = 2f64.powf(f64::from(self.bend + voice.slide[0] + fine / 100.0) / 12.0);
-            // `min` also turns a hostile file's infinite or NaN step into the cap.
-            let step = (voice.step * bend).min(MAX_STEP);
             let p = (voice.pan + voice.slide[1] + region.pan).clamp(0.0, 1.0);
             let gain = (voice.velocity + voice.slide[2]).clamp(0.0, 1.0) * region.gain;
             let (gain_l, gain_r) = (gain * (2.0 - 2.0 * p).min(1.0), gain * (2.0 * p).min(1.0));
-            for (l, r) in left.iter_mut().zip(right.iter_mut()) {
-                if !voice.envelope() {
-                    break;
+            // A control block at a time, which the vibratos move.
+            let blocks = left.chunks_mut(CONTROL).zip(right.chunks_mut(CONTROL));
+            'voice: for (left, right) in blocks {
+                let dt = left.len() as f32 / self.sample_rate;
+                let vibrato = voice.vibrato(region, wheel, controls.vibrato, dt);
+                let semitones = self.bend + voice.slide[0] + (fine + vibrato) / 100.0;
+                // `min` also turns a hostile file's infinite or NaN step into the cap.
+                let step = (voice.step * 2f64.powf(f64::from(semitones) / 12.0)).min(MAX_STEP);
+                for (l, r) in left.iter_mut().zip(right.iter_mut()) {
+                    if !voice.envelope() {
+                        break 'voice;
+                    }
+                    let at = |k| font.frame(k);
+                    let sample = interpolate(region, region.looping, voice.position, cubic, at);
+                    *l += sample * voice.level * gain_l;
+                    *r += sample * voice.level * gain_r;
+                    voice.advance(region, step);
                 }
-                let sample = font.read(region, voice.position) * voice.level;
-                *l += sample * gain_l;
-                *r += sample * gain_r;
-                voice.advance(region, step);
             }
         }
     }

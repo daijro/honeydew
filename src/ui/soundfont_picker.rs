@@ -202,6 +202,7 @@ impl SoundFontPicker {
                 sub: None,
                 kind: RowKind::Enabled(i),
                 picked: current == Some(i),
+                mark: None,
             })
             .collect()
         });

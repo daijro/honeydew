@@ -317,9 +317,22 @@ pub fn keyboard(
     settings: &Settings,
     input: KeyInput,
 ) -> Played {
+    keyboard_at(ui, Id::new("keyboard"), piano, cx, channel, settings, input)
+}
+
+/// [`keyboard`] as the widget `id`: a second keyboard, beside the panel's (the preset picker's keys, #98).
+pub fn keyboard_at(
+    ui: &mut egui::Ui,
+    id: Id,
+    piano: impl Into<Piano>,
+    cx: &UiCtx,
+    channel: Color32,
+    settings: &Settings,
+    input: KeyInput,
+) -> Played {
     let piano = piano.into();
     let m = cx.m;
-    let response = ui.interact(piano.rect, Id::new("keyboard"), Sense::click_and_drag());
+    let response = ui.interact(piano.rect, id, Sense::click_and_drag());
     let scale = input.lock.filter(|_| input.all_white);
     let rows = piano.rows(m, scale);
     // The fingers as the last frame left them, if it drew the keyboard.

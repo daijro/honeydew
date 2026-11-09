@@ -4365,3 +4365,57 @@ fn generate_writes_chords_and_a_melody_into_the_rolls_clip_in_one_undo_step() {
     let clips = &before.channels[2].lanes[0].clips;
     assert_eq!(clips.iter().map(|c| c.events.len()).sum::<usize>(), 0);
 }
+
+/// #107: the Generate panel's dropdowns open one at a time and above the panel (a tap on another one closes the open
+/// one first), and the panel stays inside the screen beside a roll narrowed by the rack, where a tap on the rack, outside
+/// the panel, closes it.
+#[test]
+fn the_generate_panels_dropdowns_open_one_at_a_time_and_a_tap_outside_closes_it() {
+    let mut rig = Rig::with_drums_and_synth();
+    rig.screen = vec2(800.0, 540.0);
+    rig.edit(2);
+    rig.slide_split();
+    rig.open_rack(2);
+    rig.slide_rack();
+    let panel = roll("generate");
+    let popup = |name: &str| panel.with(name).with("item popup");
+    // Drawn in the last frame: `read_response` would also give the frame before's.
+    let drawn = |rig: &Rig, id: egui::Id| {
+        let layer = egui::LayerId::new(egui::Order::Foreground, id);
+        rig.ctx.memory(|m| m.areas().visible_last_frame(&layer))
+    };
+    rig.click_id(egui::Id::new(("transport", "generate")));
+    rig.frame(vec![]);
+    let rect = rig
+        .ctx
+        .memory(|m| m.area_rect(panel))
+        .expect("the panel shows");
+    assert!(rect.left() >= 0.0, "{rect:?} is off the screen");
+    rig.click_id(panel.with("bars"));
+    rig.frame(vec![]);
+    assert!(drawn(&rig, popup("bars")));
+    // A tap on another dropdown closes the open one, and opens nothing over it; the next tap opens it.
+    rig.click_id(panel.with("octave"));
+    rig.frame(vec![]);
+    assert!(!drawn(&rig, popup("bars")) && !drawn(&rig, popup("octave")));
+    rig.click_id(panel.with("octave"));
+    rig.frame(vec![]);
+    assert!(drawn(&rig, popup("octave")));
+    // Above the panel, and a press on the panel beside it closes it.
+    let cell = (rig
+        .ctx
+        .read_response(popup("octave").with((0_usize, 0_usize))))
+    .unwrap()
+    .rect
+    .center();
+    let layer = egui::LayerId::new(egui::Order::Foreground, popup("octave"));
+    assert_eq!(rig.ctx.layer_id_at(cell), Some(layer));
+    rig.click(rect.left_top() + vec2(U, U));
+    rig.frame(vec![]);
+    assert!(!drawn(&rig, popup("octave")));
+    assert!(drawn(&rig, panel), "one tap closes one level");
+    // A tap on the rack, outside the panel, closes it.
+    rig.click(pos2(rig.screen.x - 2.0 * U, 200.0));
+    rig.frame(vec![]);
+    assert!(!drawn(&rig, panel), "the panel closed");
+}

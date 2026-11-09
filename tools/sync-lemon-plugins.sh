@@ -91,7 +91,9 @@ done
 # - every `#[cfg(any(target_os = "linux", target_os = "macos"))]` gains `feature = "embed"` (`mod gui`, its waker);
 # - the X11 window's arm takes Honeydew's window everywhere but macOS (nih-plug gives it as an X11 window id);
 # - after the input loop the editor parks (`os_plugkit::park!`), having no thread of its own;
-# - its clock is `os_plugkit::time` (a browser build's `std::time` has none).
+# - its clock is `os_plugkit::time` (a browser build's `std::time` has none);
+# - a knob's "Create automation clip" is offered without the editor joining the host's strip (#113): Honeydew answers it
+#   (`os_plugkit::embed::take_automate`).
 # An editor off the template gets what matched and a warning: make the rest by hand, then save the patch.
 embed_editor() {
     if ! awk '
@@ -106,6 +108,7 @@ embed_editor() {
     /^ *#\[cfg\(target_os = "linux"\)\]$/ { held = $0; next }
     /^ *#\[cfg\(any\(target_os = "linux", target_os = "macos"\)\)\]$/ { sub(/"macos"\)\)/, "\"macos\", feature = \"embed\"))"); gui++ }
     /^use std::time::/ { sub(/^use std::time::/, "use os_plugkit::time::") }
+    /MenuItem::item\("Create automation clip"\)\.enabled\(self\.hosted\)/ { sub(/\.enabled\(self\.hosted\)/, ".enabled(self.hosted || cfg!(feature = \"embed\"))") }
     /^ *while let Some\(input\) = self\.win\.next\(\) \{$/ { match($0, /^ */); indent = substr($0, 1, RLENGTH); end = indent "}" }
     { print }
     end != "" && $0 == end { print indent "os_plugkit::park!(self);"; end = ""; park++ }

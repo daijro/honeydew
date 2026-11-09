@@ -352,8 +352,11 @@ impl HoneydewApp {
             }
             // The screen shows the add-channel popup for it.
             TrackOp::InsertChannel => {}
-            // The file goes to [`Self::midi_import`] once read.
-            TrackOp::ImportMidi => self.files.pick_midi_tracks(ch.id),
+            // Our picker (#113), whose pick goes to [`Self::midi_import`] once read.
+            TrackOp::ImportMidi => {
+                let id = ch.id;
+                self.navigate(Nav::Open(Overlay::MidiPicker(id)));
+            }
             // The one-format Save dialog, proposing the channel's name; its `SAVE` writes the channel alone.
             TrackOp::SaveMidi => {
                 let overlay = self.slots.export.save_as_midi(ch.id, &ch.name);
@@ -387,6 +390,13 @@ impl HoneydewApp {
                     l.collapsed = !l.collapsed;
                     self.song_edited(SongEdit::Param, tick);
                 }
+            }
+            // Every track of the song (#100), as `Collapse`.
+            TrackOp::CollapseAll | TrackOp::ExpandAll => {
+                for l in self.song.channels.iter_mut().flat_map(|c| &mut c.lanes) {
+                    l.collapsed = op == TrackOp::CollapseAll;
+                }
+                self.song_edited(SongEdit::Param, tick);
             }
         }
     }
@@ -1029,6 +1039,7 @@ impl HoneydewApp {
             | Overlay::LearnCc
             // Its channel is kept by id.
             | Overlay::MidiImport
+            | Overlay::MidiPicker(_)
             | Overlay::Credits
             | Overlay::WhatsNew
             | Overlay::Versions

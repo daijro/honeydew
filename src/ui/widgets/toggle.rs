@@ -26,14 +26,19 @@ pub struct Pill {
     /// The dot is up (channel) while the value is off, exactly 0: the mixer mute, "dot up = not muted". A click
     /// still flips the value.
     pub inverted: bool,
+    /// Lying down, a phone's switch: 18 t × 10 t, the dot right when on (a collapsed track's mini mute, #100).
+    pub flat: bool,
 }
 
 /// The pill (10 t × 18 t, centred on `center`) and the dot's centre: 4 t above the middle when on, 4 t below when
-/// off.
-fn switch(center: Pos2, on: bool, t: f32) -> (Rect, Pos2) {
-    let pill = Rect::from_center_size(center, vec2(10.0 * t, 18.0 * t));
-    let dy = if on { -4.0 * t } else { 4.0 * t };
-    (pill, center + vec2(0.0, dy))
+/// off. `flat`, turned a quarter: the dot 4 t right when on, left when off.
+fn switch(center: Pos2, on: bool, flat: bool, t: f32) -> (Rect, Pos2) {
+    let (size, step) = match flat {
+        false => (vec2(10.0 * t, 18.0 * t), vec2(0.0, -4.0 * t)),
+        true => (vec2(18.0 * t, 10.0 * t), vec2(4.0 * t, 0.0)),
+    };
+    let pill = Rect::from_center_size(center, size);
+    (pill, center + if on { step } else { -step })
 }
 
 /// The pill's centre and, for a right label, the left-centre point the label hangs from. A label-above toggle has
@@ -111,7 +116,7 @@ pub fn pill_toggle(
     }
     let t = m.t();
     let on = toggle_on(v) != pill.inverted;
-    let (pill, dot) = switch(center, on, t);
+    let (pill, dot) = switch(center, on, pill.flat, t);
     painter.rect_filled(pill, 5.0 * t, colors.control_fill.to_color32());
     let dot_color = if on {
         c.channel
@@ -131,10 +136,10 @@ mod tests {
     #[test]
     fn pill_is_10t_by_18t_and_the_dot_moves_4t_from_the_middle() {
         let c = pos2(50.0, 60.0);
-        let (pill, on) = switch(c, true, 2.0);
+        let (pill, on) = switch(c, true, false, 2.0);
         assert_eq!(pill, Rect::from_center_size(c, vec2(20.0, 36.0)));
         assert_eq!(on, pos2(50.0, 52.0));
-        let (pill_off, off) = switch(c, false, 2.0);
+        let (pill_off, off) = switch(c, false, false, 2.0);
         assert_eq!(pill_off, pill);
         assert_eq!(off, pos2(50.0, 68.0));
     }

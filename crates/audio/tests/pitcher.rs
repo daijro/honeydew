@@ -221,3 +221,82 @@ fn pitch_steps_truncate_in_f64() {
         assert_eq!(s, want, "k = {k}");
     }
 }
+
+/// A 220 Hz vowel, its harmonics shaped by one formant at 1 kHz.
+fn vowel(i: usize, rate: f32) -> f32 {
+    let harmonic = |k: usize| {
+        let f = 220.0 * k as f32;
+        (TAU * f * i as f32 / rate).sin() / (1.0 + ((f - 1000.0) / 250.0).powi(2))
+    };
+    (1..=30).map(harmonic).sum::<f32>() * 0.3
+}
+
+/// Over `samples` (Hann): the spectral centroid over the 220 Hz harmonics, their share of the energy, and the odd ones'
+/// share of theirs.
+fn spectrum(samples: &[f32], rate: f32) -> (f32, f32, f32) {
+    let n = samples.len();
+    let window = |i: usize| 0.5 - 0.5 * (TAU * i as f32 / n as f32).cos();
+    let (mut sum_w, mut sum_w2, mut energy) = (0.0, 0.0, 0.0);
+    for (i, x) in samples.iter().enumerate() {
+        let w = window(i);
+        (sum_w, sum_w2, energy) = (sum_w + w, sum_w2 + w * w, energy + (x * w).powi(2));
+    }
+    let powers: Vec<(f32, f32)> = (1..=40)
+        .map(|k| {
+            let f = 220.0 * k as f32;
+            let (mut re, mut im) = (0.0, 0.0);
+            for (i, x) in samples.iter().enumerate() {
+                let phase = TAU * f * i as f32 / rate;
+                re += x * window(i) * phase.cos();
+                im += x * window(i) * phase.sin();
+            }
+            (f, re * re + im * im)
+        })
+        .collect();
+    let total: f32 = powers.iter().map(|p| p.1).sum();
+    let odd: f32 = powers.iter().step_by(2).map(|p| p.1).sum();
+    let centroid = powers.iter().map(|(f, p)| f * p).sum::<f32>() / total;
+    (
+        centroid,
+        2.0 * sum_w2 / (sum_w * sum_w) * total / energy,
+        odd / total,
+    )
+}
+
+/// Issue #106: with F-Mode on, F-Shift moves the formants and keeps the pitch (×√2 at 0.75), and a transposition keeps
+/// the formants where the voice has them; off, the formants follow the pitch.
+#[test]
+fn f_mode_shifts_the_formants_and_keeps_the_pitch() {
+    let rate = 48_000.0;
+    let render = |f_mode: f32, f_shift: f32, pitch: f32| {
+        let mut params = DEFAULT_PARAMS;
+        (params[1], params[22]) = (1.0, 1.0);
+        (params[2], params[4], params[5]) = (pitch, f_mode, f_shift);
+        let mut state = PitcherState::new(&params, rate).unwrap();
+        let output: Vec<f32> = (0..72_000)
+            .map(|i| state.process_frame(vowel(i, rate), vowel(i, rate)).0)
+            .collect();
+        spectrum(&output[48_000..], rate)
+    };
+    let input: Vec<f32> = (48_000..72_000).map(|i| vowel(i, rate)).collect();
+    let (dry, _, _) = spectrum(&input, rate);
+    // F-Shift ×√2, no transposition: the formant moves up, the 220 Hz harmonics keep the energy.
+    let (shifted, harmonic, _) = render(1.0, 0.75, 0.5);
+    assert!(
+        shifted / dry > 1.25 && shifted / dry < 1.6,
+        "shifted {shifted} dry {dry}"
+    );
+    assert!(harmonic > 0.8, "{harmonic}");
+    // An octave up (Pitch 1): F-Mode keeps the formant near 1 kHz; off, it doubles with the pitch. Either way the odd
+    // harmonics of 220 Hz are gone (440 Hz).
+    let (kept, _, odd) = render(1.0, 0.5, 1.0);
+    assert!(
+        (kept / dry - 1.0).abs() < 0.15 && odd < 0.1,
+        "kept {kept} dry {dry} odd {odd}"
+    );
+    let (moved, _, odd) = render(0.0, 0.5, 1.0);
+    assert!(
+        moved / dry > 1.6 && odd < 0.1,
+        "moved {moved} dry {dry} odd {odd}"
+    );
+}

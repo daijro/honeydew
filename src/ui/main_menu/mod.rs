@@ -52,9 +52,9 @@ pub use library::{NativeLibrary, app_data_dir, songs_dir, user_dir};
 pub use project::{
     ProjectInfo, TEMPO_RANGE, duration, link_url, meta_secs, meta_time, tempo_step, thousands,
 };
-pub use songs::Sort;
 pub(crate) use songs::bin_crumb;
 pub use songs::visible;
+pub use songs::{SongsPreview, Sort};
 
 // Sizes in U.
 const PANEL_W: f32 = 20.0;
@@ -175,6 +175,11 @@ pub enum MainMenuAction {
     ImportTheme,
     /// PROJECT `View project versions` (#69): the versions window.
     ViewVersions,
+    /// SONGS: a tap selected the audio file at this path (#106). Decode it for the sample strip
+    /// ([`SongsPreview::decoded`]), which plays it.
+    Preview(std::path::PathBuf),
+    /// SONGS `Send to playlist` (#106): each of these audio files on a new audio track, its clip at the playhead.
+    SendToPlaylist(Vec<std::path::PathBuf>),
 }
 
 /// The Help menu's links, after `What's new`: the project's own pages.
@@ -277,6 +282,11 @@ impl MainMenu {
     /// The folder open in the SONGS tab, `None` at its root.
     pub fn songs_folder(&self) -> Option<&std::path::Path> {
         self.songs.folder()
+    }
+
+    /// SONGS' preview of an audio file (#106).
+    pub fn songs_preview(&mut self) -> &mut SongsPreview {
+        &mut self.songs.preview
     }
 
     /// The answer to [`MainMenuAction::ConfirmDelete`]'s question: `yes` deletes for good. Returns a failure's

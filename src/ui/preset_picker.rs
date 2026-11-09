@@ -32,6 +32,8 @@
 //! - [`PresetPicker::in_modules`]: a list shown in the Modules browser's place, in the same panel. Its header has the
 //!   Back arrow at its root too, where Back gives [`PickerAction::Back`].
 //! - A long press then a drag on an audio file's row drags the file out to the playlist ([`crate::ui::file_drag`]).
+//! - A Honeydew addition (#109): each folder and file row ends in its mark ([`Mark`]): a folder's `›`,
+//!   an audio file's waveform icon, any other file's extension.
 //!
 //! - [`PresetPicker::show_mut`] adds `Select` and the ≡ options menu below them, with the file browser's actions
 //!   (SONGS' [`FileActions`]) on the user's files: inside `My Files` and `Recently Deleted`, dimmed at the root, whose
@@ -70,7 +72,7 @@ use eframe::egui::{Area, Context, Id, LayerId, Order, Pos2, Sense};
 use crate::content;
 use crate::project_files::content::{FOLD_CASE, inside};
 use crate::project_files::export::slice;
-use crate::project_files::{DWP_EXT, PRESET_EXT, SAMPLE_EXTS, SFZ_EXT, fits};
+use crate::project_files::{DWP_EXT, PRESET_EXT, SAMPLE_EXTS, SFZ_EXT, fits, is_audio};
 use crate::ui::main_menu::library::RECENTLY_DELETED;
 use crate::ui::main_menu::{
     CONVERTING, FILE_MANAGER, FileActions, MenuState, Opt, SongEntry, SongLibrary, Step, bin_crumb,
@@ -79,9 +81,9 @@ use crate::ui::main_menu::{
 use crate::ui::modules_browser::{
     Chrome, PanelClick, PanelRow, RowKind, SideButton, SidePanel, crumb_text, layout,
 };
-use crate::ui::picker_preview::{Play, SampleStrip, Sound};
+use crate::ui::picker_preview::{KeyStrip, Play, SampleStrip, Sound};
 use crate::ui::popup::{self, PopupItem, PopupResult};
-use crate::ui::search_bar::{Found, Walk, matching};
+use crate::ui::search_bar::{Found, Mark, Walk, matching};
 use crate::ui::{UiCtx, views};
 
 /// The root row that opens the user's folder for the scope.
@@ -167,6 +169,23 @@ impl<'a> Item<'a> {
             Self::Entry(e) => e.is_folder,
             Self::Found(f) => f.entry.is_folder,
             Self::Default => false,
+        }
+    }
+
+    /// Its mark at the row's end ([`Mark`]): a folder's, an audio file's, else its file's extension. `Default` and the
+    /// picker's own preset files (`own`, what every plain row there is) have none.
+    fn mark(self, own: &str) -> Option<Mark<'a>> {
+        let path = match self {
+            _ if self.is_folder() => return Some(Mark::Folder),
+            Self::Entry(entry) => &entry.path,
+            Self::Found(found) => &found.entry.path,
+            _ => return None,
+        };
+        let ext = path.extension()?.to_str()?;
+        match is_audio(path) {
+            true => Some(Mark::Audio),
+            false if ext.eq_ignore_ascii_case(own) => None,
+            false => Some(Mark::Ext(ext)),
         }
     }
 }
@@ -377,6 +396,15 @@ impl PresetPicker {
     /// scrolled into view as the list first shows (a pad's sample). It stops at the deepest folder listed on the way.
     /// Folders and the row match without case where the file system ignores it ([`FOLD_CASE`]).
     pub fn reveal(&mut self, library: &dyn SongLibrary, path: &Path) {
+        self.open_to(library, path);
+        self.picked = Some(Some(path.to_owned()));
+        self.picked_in = self.folders.iter().map(|f| f.path.clone()).collect();
+        self.panel.reveal = true;
+    }
+
+    /// Opens the folders from the root down to `path`, as taps on them would: to the folder `path` names, or a file's
+    /// folder. It stops at the deepest folder listed on the way.
+    pub fn open_to(&mut self, library: &dyn SongLibrary, path: &Path) {
         self.read_factory(library);
         loop {
             // The deepest folder row holding it: a factory folder lies inside the user folder.
@@ -397,9 +425,57 @@ impl PresetPicker {
             self.listing = Some(self.read_open(library, &next.path));
             self.folders.push(next);
         }
-        self.picked = Some(Some(path.to_owned()));
-        self.picked_in = self.folders.iter().map(|f| f.path.clone()).collect();
-        self.panel.reveal = true;
+    }
+
+    /// Issue #98: the preset `by` (−1 or 1) rows on from the file `current`, among the presets of the folder it is listed
+    /// in ([`Self::reveal`]), round and round, in the order the rows show. From `None` (`Default`), or a file no folder
+    /// lists, the first (`by` > 0) or last preset of the root's first folder. `None` when there is no other to go to.
+    pub fn step(
+        &mut self,
+        library: &dyn SongLibrary,
+        current: Option<&Path>,
+        by: i32,
+    ) -> Option<PathBuf> {
+        self.read_factory(library);
+        if let Some(path) = current {
+            self.reveal(library, path);
+        }
+        let presets = self.presets();
+        let at = current.and_then(|c| presets.iter().position(|p| same_file(p, c)));
+        let (presets, i) = match at {
+            Some(at) => {
+                let i = (at as i32 + by).rem_euclid(presets.len() as i32);
+                (presets, i as usize)
+            }
+            None => {
+                self.folders.clear();
+                let first = self.rows("").into_iter().find_map(|item| match item {
+                    Item::Entry(e) if e.is_folder => Some(e.clone()),
+                    _ => None,
+                })?;
+                self.listing = Some(self.read_open(library, &first.path));
+                self.folders.push(first);
+                let presets = self.presets();
+                let i = if by > 0 {
+                    0
+                } else {
+                    presets.len().checked_sub(1)?
+                };
+                (presets, i)
+            }
+        };
+        let next = presets.into_iter().nth(i)?;
+        current.is_none_or(|c| !same_file(&next, c)).then_some(next)
+    }
+
+    /// The open folder's presets, as its rows list them.
+    fn presets(&self) -> Vec<PathBuf> {
+        let rows = self.rows("").into_iter();
+        rows.filter_map(|item| match item {
+            Item::Entry(e) if !e.is_folder => Some(e.path.clone()),
+            _ => None,
+        })
+        .collect()
     }
 
     /// Reads the open folder again: a file came into it from outside the picker (`Import`).
@@ -432,9 +508,16 @@ impl PresetPicker {
         self.audition_on();
     }
 
-    /// Releases the audition strip's held note (take it after).
+    /// Shows the keys at the bottom of the panel (an instrument's presets, #98), in the channel's colour `ink`, labelled
+    /// as `settings` say: they play its channel. Once: later calls keep them as they are.
+    pub fn keys_on(&mut self, ink: eframe::egui::Color32, settings: &crate::settings::Settings) {
+        (self.panel.keys).get_or_insert_with(|| KeyStrip::new(ink, settings.clone()));
+    }
+
+    /// Releases the audition strip's held note and the keys' (take them after).
     pub fn release(&mut self) {
         self.panel.audition.release();
+        self.panel.keys.iter_mut().for_each(KeyStrip::release);
     }
 
     /// Whether the audition strip is on.
@@ -448,9 +531,11 @@ impl PresetPicker {
         self.panel.audition.loading = loading || self.download.is_some();
     }
 
-    /// The audition strip's notes since the last call, for the picked module's channel.
+    /// The audition strip's and the keys' notes since the last call, for the picked module's channel.
     pub fn take_sounds(&mut self) -> Vec<Sound> {
-        self.panel.audition.take_sounds()
+        let mut sounds = self.panel.audition.take_sounds();
+        sounds.extend(self.panel.keys.iter_mut().flat_map(KeyStrip::take_sounds));
+        sounds
     }
 
     /// Shows `strip` for the last pick; any sample playing stops.
@@ -560,9 +645,10 @@ impl PresetPicker {
                 Some(folder) => self.read_open(library, &folder.path),
                 None => {
                     let bin = self.my_files.as_deref().and_then(|f| library.bin_path(f));
-                    // The Instruments picker's `My Files` is the whole user folder, the bin one of its folders.
-                    let instruments = self.categories.is_some();
-                    self.bin = bin.filter(|bin| actions && !instruments && library.exists(bin));
+                    // A `My Files` that is the whole user folder (the Instruments picker's, the DW Sampler's) has the
+                    // bin as one of its folders: its bin path is none, or the bin itself.
+                    let whole = |bin: &PathBuf| Some(bin) == self.trash.as_ref();
+                    self.bin = bin.filter(|bin| actions && !whole(bin) && library.exists(bin));
                     Vec::new()
                 }
             });
@@ -643,6 +729,7 @@ impl PresetPicker {
                         _ => RowKind::Enabled(item),
                     },
                     picked: self.is_picked(item),
+                    mark: item.mark(self.exts[0]),
                 })
                 .collect()
         });

@@ -410,7 +410,10 @@ impl ProjectFiles {
     pub(super) fn import_unread(&mut self, path: PathBuf) {
         let name = path.file_name().unwrap_or_default().to_string_lossy();
         let (name, source) = (name.into_owned(), path.to_string_lossy().into_owned());
-        if self.pick.take() == Some(super::Pick::Sample) {
+        if matches!(
+            self.pick.take(),
+            Some(super::Pick::Sample | super::Pick::Midi)
+        ) {
             let Some(dir) = self.import_dir.take() else {
                 return self.fail(IMPORT_FAILED, path.display().to_string());
             };

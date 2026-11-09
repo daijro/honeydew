@@ -1,7 +1,7 @@
 diff -ruN a/vendor/lemon-studio/lemon-delay/src/editor.rs b/vendor/lemon-studio/lemon-delay/src/editor.rs
 --- a/vendor/lemon-studio/lemon-delay/src/editor.rs
 +++ b/vendor/lemon-studio/lemon-delay/src/editor.rs
-@@ -350,7 +350,8 @@
+@@ -367,7 +367,8 @@
                  let mut m = MenuDef::new(MenuStyle::Context);
                  m.head("Lemon Delay", Cmd::None);
                  m.add(MenuItem::item(&format!("Version {}", env!("CARGO_PKG_VERSION"))).enabled(false), Cmd::None);
@@ -229,7 +229,7 @@ diff -ruN a/vendor/lemon-studio/lemon-parametric-eq-2/src/analyzer.rs b/vendor/l
 diff -ruN a/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs b/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs
 --- a/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs
 +++ b/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs
-@@ -1116,7 +1116,7 @@
+@@ -1133,7 +1133,7 @@
      use os_ui::Canvas;
  
      use super::{Act, Btn, Logic, Mods};
@@ -238,7 +238,7 @@ diff -ruN a/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs b/vendor/lem
      use crate::params::{self, EqParams, Opt};
      use crate::view::{self, Look, ViewState};
      use crate::Shared;
-@@ -1134,6 +1134,8 @@
+@@ -1151,6 +1151,8 @@
          palette: Palette,
          analyzer: Analyzer,
          scope_seen: u64,
@@ -247,7 +247,7 @@ diff -ruN a/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs b/vendor/lem
          last_sig: u64,
          last_extra: u64,
          last_view: ViewState,
-@@ -1183,6 +1185,7 @@
+@@ -1200,6 +1202,7 @@
                  palette: os_plugkit::palette(),
                  analyzer: Analyzer::default(),
                  scope_seen: 0,
@@ -255,7 +255,7 @@ diff -ruN a/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs b/vendor/lem
                  last_sig: 0,
                  last_extra: u64::MAX,
                  last_view: ViewState::default(),
-@@ -1277,10 +1280,19 @@
+@@ -1294,10 +1297,19 @@
              let mut dirty = self.logic.vals.expire();
              if let Some(look) = self.analyzer_look() {
                  let n = Analyzer::size_for(&look);
@@ -282,7 +282,7 @@ diff -ruN a/vendor/lemon-studio/lemon-parametric-eq-2/src/editor.rs b/vendor/lem
 diff -ruN a/vendor/lemon-studio/lemon-sampler/src/editor.rs b/vendor/lemon-studio/lemon-sampler/src/editor.rs
 --- a/vendor/lemon-studio/lemon-sampler/src/editor.rs
 +++ b/vendor/lemon-studio/lemon-sampler/src/editor.rs
-@@ -2755,7 +2755,8 @@
+@@ -2775,7 +2775,8 @@
                          let s = self.shared.whole();
                          if let (Some(s), Some(path)) = (s, file_dialog(&self.win, true)) {
                              let path = if path.to_ascii_lowercase().ends_with(".wav") { path } else { format!("{path}.wav") };
@@ -499,19 +499,55 @@ diff -ruN a/vendor/lemon-studio/os-hostlink/src/lib.rs b/vendor/lemon-studio/os-
  mod local {
      use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
      use std::sync::{Arc, Mutex, OnceLock, Weak};
-@@ -538,6 +541,8 @@
+@@ -441,6 +444,13 @@
+         /// Plugin -> host (`Changed`, `Note`, `Automate`): queued for the host's next tick, which is woken. 1 when a host
+         /// is there, 0 otherwise (as unanswered messages on Windows).
+         pub fn to_host(&self, cmd: Cmd, arg: isize) -> isize {
++            // Honeydew (vendored change): with `embed`, Honeydew answers `Automate` from an editor that keeps its own
++            // tab row (#113). The editors run on the thread that hosts them there, which takes it (`take_automate`).
++            #[cfg(feature = "embed")]
++            if cmd == Cmd::Automate {
++                AUTOMATE.with_borrow_mut(|q| q.push((self.parent, arg)));
++                return 1;
++            }
+             if !self.hosted() {
+                 return 0;
+             }
+@@ -456,6 +466,19 @@
+ 
+     static REGISTRY: Mutex<Vec<(u64, Weak<Peer>)>> = Mutex::new(Vec::new());
+     static QUEUE: Mutex<Vec<(u64, Cmd, isize)>> = Mutex::new(Vec::new());
++
++    // Honeydew (vendored addition): the editors' `Automate` (`Peer::to_host`), by thread.
++    #[cfg(feature = "embed")]
++    thread_local! {
++        static AUTOMATE: std::cell::RefCell<Vec<(u64, isize)>> = const { std::cell::RefCell::new(Vec::new()) };
++    }
++
++    /// Honeydew (vendored addition): the `Automate` this thread's editors sent since the last call, as (the editor's
++    /// host window, parameter index).
++    #[cfg(feature = "embed")]
++    pub fn take_automate() -> Vec<(u64, isize)> {
++        AUTOMATE.with_borrow_mut(std::mem::take)
++    }
+     static HOST_WAKER: OnceLock<fn()> = OnceLock::new();
+ 
+     /// Host: how plugins wake its UI loop when they send something.
+@@ -538,6 +561,10 @@
  
  #[cfg(not(windows))]
  pub use local::{set_host_waker, take_host_messages, Link, Peer};
 +#[cfg(all(windows, feature = "embed"))]
 +pub use local::Peer;
++#[cfg(feature = "embed")]
++pub use local::take_automate;
  
  #[cfg(test)]
  mod tests {
 diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os-plugkit/src/embed.rs
 --- a/vendor/lemon-studio/os-plugkit/src/embed.rs
 +++ b/vendor/lemon-studio/os-plugkit/src/embed.rs
-@@ -0,0 +1,589 @@
+@@ -0,0 +1,597 @@
 +// Copyright (C) 2026 The Honeydew contributors
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +
@@ -1020,6 +1056,14 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    SAVED.with_borrow_mut(std::mem::take)
 +}
 +
++/// Issue #113: a knob's "Create automation clip" picked in this thread's editors since the last call, which Honeydew
++/// answers although no editor joins its strip (`os_hostlink`'s `Automate`): the editor and the parameter's index in the
++/// plugin's list.
++pub fn take_automate() -> Vec<(Parent, usize)> {
++    let asked = os_hostlink::take_automate().into_iter();
++    asked.filter_map(|(id, i)| Some((Parent::try_from(id).ok()?, usize::try_from(i).ok()?))).collect()
++}
++
 +/// Whether editor `id` is open.
 +pub fn is_open(id: Parent) -> bool {
 +    get(id).is_some()
@@ -1217,7 +1261,7 @@ diff -ruN a/vendor/lemon-studio/tesla/src/editor.rs b/vendor/lemon-studio/tesla/
      let _ = std::fs::create_dir_all(&dir);
      let stem = file_stem(title);
      let mut p = dir.join(format!("{stem}.wav"));
-@@ -2536,7 +2538,8 @@
+@@ -2539,7 +2541,8 @@
          if !path.to_ascii_lowercase().ends_with(".wav") {
              path.push_str(".wav");
          }
@@ -1230,7 +1274,7 @@ diff -ruN a/vendor/lemon-studio/tesla/src/editor.rs b/vendor/lemon-studio/tesla/
 diff -ruN a/vendor/lemon-studio/tesla/src/lib.rs b/vendor/lemon-studio/tesla/src/lib.rs
 --- a/vendor/lemon-studio/tesla/src/lib.rs
 +++ b/vendor/lemon-studio/tesla/src/lib.rs
-@@ -608,6 +608,11 @@
+@@ -610,6 +610,11 @@
              s.capturing.store(false, Ordering::Relaxed);
          }
  

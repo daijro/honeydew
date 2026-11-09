@@ -52,6 +52,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
                 sub: None,
                 kind: RowKind::Enabled(*param),
                 picked: false,
+                mark: None,
             })
             .collect()
     });

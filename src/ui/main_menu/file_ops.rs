@@ -19,14 +19,18 @@ use crate::project_files::PRESETS_FOLDER;
 use crate::project_files::content::{FOLD_CASE, inside as fold_inside};
 use crate::ui::popup::PopupItem;
 
-/// The ≡ menu's items that apply to SONGS and the preset pickers: `Send to playlist` and `Insert at playhead` never do.
-/// `Unzip` only does in SONGS, the one that lists archives; `Convert to FLAC` only in the pickers that list audio files.
+/// The ≡ menu's items that apply to SONGS and the preset pickers: `Insert at playhead` never does. `Unzip` only does in
+/// SONGS, the one that lists archives, and so does `Send to playlist` (#106); `Convert to FLAC` only in the pickers that
+/// list audio files.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Opt {
     SelectAll,
     Restore,
     DeletePermanently,
     CreateFolder,
+    /// SONGS only (#106): the selected audio files, each on a new audio track at the playhead. [`FileActions`] leaves it
+    /// to the tab, as `Unzip`.
+    SendToPlaylist,
     Delete,
     /// SONGS only: [`FileActions`] leaves it to the tab, which needs the app's files to extract with.
     Unzip,
@@ -50,6 +54,8 @@ pub(crate) struct MenuState {
     pub archive: bool,
     /// The selection is exactly one `.wav` file.
     pub wav: bool,
+    /// The selection holds audio files, which `Send to playlist` takes (SONGS only, #106).
+    pub audio: bool,
     /// The open folder is `Recently Deleted`, or one inside it.
     pub in_trash: bool,
     /// The clipboard holds something.
@@ -75,7 +81,7 @@ pub(crate) fn options_menu(s: MenuState) -> Vec<PopupItem<Opt>> {
     let reveal: Option<Cow<'static, str>> =
         s.reveal.map(|name| format!("Show in {name}...").into());
     // (item, label, present, enabled)
-    let items: [(Opt, Cow<'static, str>, bool, bool); 14] = [
+    let items: [(Opt, Cow<'static, str>, bool, bool); 15] = [
         (SelectAll, "Select all".into(), true, true),
         (Restore, "Restore".into(), s.in_trash, any),
         (
@@ -90,6 +96,7 @@ pub(crate) fn options_menu(s: MenuState) -> Vec<PopupItem<Opt>> {
             !s.in_trash,
             !s.locked_folder,
         ),
+        (SendToPlaylist, "Send to playlist".into(), s.audio, true),
         (
             Delete,
             "Delete".into(),
@@ -224,7 +231,7 @@ impl FileActions {
                 self.purge = Some(picked);
                 return Step::Confirm(question);
             }
-            Opt::Unzip => return Step::Nothing,
+            Opt::Unzip | Opt::SendToPlaylist => return Step::Nothing,
             Opt::ConvertFlac => {
                 if let [entry] = &picked[..] {
                     self.convert = Some(Convert::Shown(entry.path.clone()));

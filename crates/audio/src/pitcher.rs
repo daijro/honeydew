@@ -1,4 +1,4 @@
-use std::f32::consts::TAU;
+use std::f32::consts::PI;
 
 pub const DEFAULT_PARAMS: [f32; 23] = [
     1.0, 0.0, 0.5, 0.5, 0.0, 0.5, 0.0, 0.5, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
@@ -22,8 +22,8 @@ pub struct PitcherState {
     params: [f32; 23],
     sample_rate: f32,
     latency: usize,
-    history: [Vec<f32>; 2],
-    formant_history: [Vec<f32>; 2],
+    /// The input: left, right, and the input channel the tracker follows.
+    history: [Vec<f32>; 3],
     write_index: usize,
     tracker: Tracker,
     frames: usize,
@@ -32,10 +32,9 @@ pub struct PitcherState {
     target_ratio: f32,
     ratio: f32,
     phase: f32,
-    /// The formant path's one-pole coefficient, from F-Shift.
-    formant_coefficient: f32,
-    formant_input_low: [f32; 2],
-    formant_output_low: [f32; 2],
+    /// F-Mode's grains, on the history's frames, and the frames until the next.
+    grains: Grains,
+    grain_countdown: f32,
     /// The pitch classes (0 = C) a tone may snap to.
     notes: [bool; 12],
     stable_target: f32,
@@ -52,7 +51,6 @@ impl PitcherState {
             sample_rate,
             latency,
             history: std::array::from_fn(|_| vec![0.0; latency * 3 + 4]),
-            formant_history: std::array::from_fn(|_| vec![0.0; latency * 3 + 4]),
             write_index: 0,
             tracker: Tracker::new(sample_rate, LOWEST),
             frames: 0,
@@ -60,9 +58,8 @@ impl PitcherState {
             target_ratio: 1.0,
             ratio: 1.0,
             phase: 0.0,
-            formant_coefficient: 0.0,
-            formant_input_low: [0.0; 2],
-            formant_output_low: [0.0; 2],
+            grains: Grains::new(latency * 3 + 4),
+            grain_countdown: 0.0,
             notes: DEFAULT_NOTES,
             stable_target: 0.0,
             voiced: false,
@@ -136,16 +133,14 @@ impl PitcherState {
             self.sample_rate = sample_rate;
             self.latency = latency_for(sample_rate);
             let length = self.latency * 3 + 4;
-            for channel in 0..2 {
-                self.history[channel].resize(length, 0.0);
-                self.formant_history[channel].resize(length, 0.0);
+            for channel in &mut self.history {
+                channel.resize(length, 0.0);
             }
+            self.grains = Grains::new(length);
             self.tracker = Tracker::new(sample_rate, LOWEST);
             self.reset();
         }
         self.params.copy_from_slice(params);
-        let cutoff = (500.0 * self.formant_ratio()).min(0.45 * sample_rate);
-        self.formant_coefficient = (1.0 - (-TAU * cutoff / sample_rate).exp()).clamp(0.0, 1.0);
         Ok(())
     }
 
@@ -197,6 +192,10 @@ impl PitcherState {
         Ok(())
     }
 
+    /// One frame. The two read heads shift the pitch and the formants with it; with F-Mode on (issue #106) the voice is
+    /// rebuilt from [`Grains`] at the corrected period instead, which keeps the formants where the voice has them and
+    /// moves them by F-Shift. Where the grains thin out (unvoiced input, or a voice under about 110 Hz, whose grains
+    /// the latency has no room for) it fades into the read heads.
     pub fn process_frame(&mut self, left: f32, right: f32) -> (f32, f32) {
         let mono = match self.input_channel() {
             0 => left,
@@ -210,29 +209,31 @@ impl PitcherState {
         let window = self.latency as f32;
         let phase = self.phase + (1.0 - self.ratio) / window;
         self.phase = phase - phase.floor();
-        let formant_coefficient = self.formant_coefficient;
-        let mut output = [0.0; 2];
-        for (channel, input) in [left, right].into_iter().enumerate() {
-            self.formant_input_low[channel] +=
-                formant_coefficient * (input - self.formant_input_low[channel]);
-            self.history[channel][self.write_index] = input;
-            self.formant_history[channel][self.write_index] = self.formant_input_low[channel];
-            let dry = read(&self.history[channel], self.write_index, window);
-            let shifted = shifted(&self.history[channel], self.write_index, self.phase, window);
-            let wet = if self.params[4] != 0.0 {
-                self.formant_output_low[channel] +=
-                    formant_coefficient * (shifted - self.formant_output_low[channel]);
-                let original_low = read(&self.formant_history[channel], self.write_index, window);
-                shifted + 0.4 * (original_low - self.formant_output_low[channel])
-            } else {
-                shifted
-            };
-            output[channel] = if self.params[0] < 0.5 {
-                dry
-            } else {
-                dry + self.params[9] * (wet - dry)
-            };
+        let index = self.write_index;
+        for (history, input) in self.history.iter_mut().zip([left, right, mono]) {
+            history[index] = input;
         }
+        let formants = self.params[4] != 0.0;
+        if formants && self.voiced {
+            self.grain_countdown -= 1.0;
+            if self.grain_countdown <= 0.0 {
+                let period = (self.sample_rate / self.tracked_frequency).round() as usize;
+                let (latency, formant) = (self.latency, self.formant_ratio());
+                (self.grains).emit(&self.history, index, index, latency, period.max(8), formant);
+                self.grain_countdown +=
+                    (self.sample_rate / (self.tracked_frequency * self.ratio)).clamp(8.0, window);
+            }
+        } else {
+            self.grain_countdown = 0.0;
+        }
+        let dry = [0, 1].map(|c| read(&self.history[c], index, window));
+        let shifted = [0, 1].map(|c| shifted(&self.history[c], index, self.phase, window));
+        let grains = self.grains.take(index, shifted);
+        let wet = if formants { grains } else { shifted };
+        let output = [0, 1].map(|c| match self.params[0] < 0.5 {
+            true => dry[c],
+            false => dry[c] + self.params[9] * (wet[c] - dry[c]),
+        });
         self.write_index = (self.write_index + 1) % self.history[0].len();
         // Only its phase within 64 matters (`observe_pitch`): kept inside, so wasm32's usize never overflows.
         self.frames = (self.frames + 1) % 64;
@@ -270,10 +271,11 @@ impl PitcherState {
     }
 
     pub fn reset(&mut self) {
-        for channel in 0..2 {
-            self.history[channel].fill(0.0);
-            self.formant_history[channel].fill(0.0);
+        for channel in &mut self.history {
+            channel.fill(0.0);
         }
+        self.grains.reset();
+        self.grain_countdown = 0.0;
         self.tracker.reset();
         self.write_index = 0;
         self.frames = 0;
@@ -282,14 +284,107 @@ impl PitcherState {
         self.target_ratio = 1.0;
         self.ratio = 1.0;
         self.phase = 0.0;
-        self.formant_input_low = [0.0; 2];
-        self.formant_output_low = [0.0; 2];
         self.stable_target = 0.0;
     }
 }
 
 /// The lowest pitch the Pitcher tracks, Hz.
 const LOWEST: f32 = 55.0;
+
+/// The grain weight from which the grains play alone; under it they fade into the fallback. Overlapping grains weigh
+/// about 1, and over 0.25 for corrections up to 6 semitones down.
+const FULL: f32 = 0.25;
+
+/// Both Pitchers' formant-keeping resynthesis (PSOLA): grains two source periods long, centred on the input's peaks,
+/// overlap-added at the corrected period. A grain read `formant` times as fast as it plays has its formants moved by
+/// that factor; its pitch comes from the spacing. Sized off the audio thread.
+pub(crate) struct Grains {
+    /// Per output frame, the grains summed (left and right) and their window weights.
+    pub(crate) output: [Vec<f32>; 2],
+    pub(crate) weights: Vec<f32>,
+}
+
+impl Grains {
+    /// For `len` output frames.
+    pub(crate) fn new(len: usize) -> Self {
+        Self {
+            output: std::array::from_fn(|_| vec![0.0; len]),
+            weights: vec![0.0; len],
+        }
+    }
+
+    /// Adds a grain of a voice of `period` frames from `history` (left, right, and the reference whose peak marks it;
+    /// the newest frame at `write_index`), read `formant` times as fast, to play from `latency − period − radius` frames
+    /// after output frame `now`, never before the next. None when the latency has no room for 8 frames either side.
+    pub(crate) fn emit(
+        &mut self,
+        history: &[Vec<f32>; 3],
+        write_index: usize,
+        now: usize,
+        latency: usize,
+        period: usize,
+        formant: f32,
+    ) {
+        let radius = period.min(latency.saturating_sub(period + 1));
+        if radius < 8 {
+            return;
+        }
+        let back = |lag| back(write_index, history[0].len(), lag);
+        // The pitch mark lies far enough back for the faster read.
+        let search_start = (period as f32 * formant.max(1.0)).ceil() as usize;
+        let mut lag = search_start;
+        let mut peak = f32::NEG_INFINITY;
+        for candidate in search_start..=search_start + period {
+            let value = history[2][back(candidate)];
+            if value > peak {
+                peak = value;
+                lag = candidate;
+            }
+        }
+        let output_len = self.weights.len();
+        let mut at = (now + latency - period - radius) % output_len;
+        for offset in -(radius as isize)..=(radius as isize) {
+            let phase = (offset + radius as isize) as f32 / (2 * radius) as f32;
+            let weight = (PI * phase).sin().powi(2);
+            let source = lag as f32 - offset as f32 * formant;
+            let (whole, fraction) = (source as usize, source.fract());
+            let (newer, older) = (back(whole), back(whole + 1));
+            for (output, history) in self.output.iter_mut().zip(history) {
+                let sample = history[newer] + (history[older] - history[newer]) * fraction;
+                output[at] += sample * weight;
+            }
+            self.weights[at] += weight;
+            at = if at + 1 == output_len { 0 } else { at + 1 };
+        }
+    }
+
+    /// Output frame `now`, left and right, which it then clears: the grains normalized by their weight. Where they thin
+    /// out (a voice's start and end) they fade into `fallback` instead of switching to it, which clicked.
+    pub(crate) fn take(&mut self, now: usize, fallback: [f32; 2]) -> [f32; 2] {
+        let weight = self.weights[now];
+        let fade = (1.0 - weight / FULL).max(0.0);
+        let wet = [0, 1].map(|c| self.output[c][now] / weight.max(FULL) + fade * fallback[c]);
+        self.output[0][now] = 0.0;
+        self.output[1][now] = 0.0;
+        self.weights[now] = 0.0;
+        wet
+    }
+
+    pub(crate) fn reset(&mut self) {
+        for channel in self.output.iter_mut().chain([&mut self.weights]) {
+            channel.fill(0.0);
+        }
+    }
+}
+
+/// The index `lag` frames before `write_index` in a ring of `len`; `lag` is under `len`.
+pub(crate) fn back(write_index: usize, len: usize, lag: usize) -> usize {
+    if lag > write_index {
+        write_index + len - lag
+    } else {
+        write_index - lag
+    }
+}
 
 /// The decimated input the tracker keeps, in samples.
 const RING: usize = 2048;

@@ -152,6 +152,11 @@ fn missing(cstm: &Cstm, samples: &SampleCache) -> bool {
     }
 }
 
+/// The program DW Sampler `module` plays: its `CSTM` `PATh` (or `PATH`).
+pub(crate) fn dw_program(module: &ModuleInstance) -> Option<ContentPath> {
+    program_path(&Cstm::read(module.file.custom_data.as_deref()?))
+}
+
 /// The program a DW `CSTM` names (`PATh`/`PATH`).
 fn program_path(cstm: &Cstm) -> Option<ContentPath> {
     cstm.program

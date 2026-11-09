@@ -504,10 +504,12 @@ fn the_scrollbar_shows_the_visible_fraction_and_drags_by_the_range_over_its_leng
         let shapes = off.frame(events, &mut |ui, _| {
             thumb = scrollbar(ui, Id::new("bar"), bar, 16.0, y, ink);
         });
-        // The rounded ends: discs of half the thickness, in the thumb's colour.
+        // The rounded ends: one rect, its corners half the thickness, in the thumb's colour.
         let ends: Vec<_> = (shapes.iter())
             .filter_map(|s| match &s.shape {
-                egui::Shape::Circle(c) => Some((c.center, c.radius, c.fill)),
+                egui::Shape::Rect(r) if r.fill != Color32::TRANSPARENT => {
+                    Some((r.rect, r.corner_radius, r.fill))
+                }
                 _ => None,
             })
             .collect();
@@ -517,13 +519,7 @@ fn the_scrollbar_shows_the_visible_fraction_and_drags_by_the_range_over_its_leng
     let (thumb, ends) = frame(&mut off, &mut y, vec![]);
     let t = thumb.expect("drawn");
     assert_eq!((t.top(), t.height()), (40.0 + 24.0, 108.0));
-    assert_eq!(
-        ends,
-        [
-            (pos2(797.5, 66.5), 2.5, ink),
-            (pos2(797.5, 169.5), 2.5, ink)
-        ]
-    );
+    assert_eq!(ends, [(t, egui::CornerRadius::same(3), ink)]);
     // Dragged 60 points: pos += 60·30/360 rows, the thumb under the finger; 1.1 times brighter while pressed.
     let grab = t.center();
     frame(&mut off, &mut y, vec![Event::PointerMoved(grab)]);

@@ -724,8 +724,8 @@ pub fn note_echo(slab: &[f32]) -> Option<bool> {
 pub struct AnalyzerView {
     /// The smoothed spectrum, dB per bin k at k·rate/2048 Hz ([`analyzer::BINS`]).
     pub spectrum: Vec<f32>,
-    /// The last second as (min, max) per quarter millisecond ([`analyzer::SCOPE_PER_MS`]).
-    pub scope: Vec<(f32, f32)>,
+    /// The last second as (min, max, last sample) per quarter millisecond ([`analyzer::SCOPE_PER_MS`]).
+    pub scope: Vec<(f32, f32, f32)>,
     /// Per meter (Peak, True Peak, RMS, LUFS 0.4 s, LUFS 3 s), dB or LUFS per 50 ms entry ([`analyzer::FLOOR`]: none).
     pub loudness: [Vec<f32>; analyzer::METERS],
     /// Each meter's running maximum.
@@ -754,7 +754,8 @@ pub fn analyzer(slab: &[f32]) -> Option<AnalyzerView> {
     let scope = (0..SCOPE)
         .map(|i| {
             let k = (next + i) % SCOPE;
-            (slab[SCOPE_AT + 1 + 2 * k], slab[SCOPE_AT + 2 + 2 * k])
+            let at = SCOPE_AT + 1 + 3 * k;
+            (slab[at], slab[at + 1], slab[at + 2])
         })
         .collect();
     let next = (slab[LOUDNESS_AT] as usize) % LOUDNESS;

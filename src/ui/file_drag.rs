@@ -16,6 +16,8 @@
 //!   reports none during an external drag on most platforms (X11, Wayland, the web), and then only the curtain shows.
 //!   It is drawn over the curtain, which would hide it.
 //!
+//! - **Sent:** SONGS' `Send to playlist` (#106) hands its files over ([`send`]) as if dropped off the playlist.
+//!
 //! [`end_frame`] draws all of it, last in the frame, and hands the app what was dropped ([`Dropped`]): the app makes the
 //! clips (`app/file_drop.rs`).
 
@@ -67,6 +69,8 @@ pub enum Dropped {
     External(Vec<DroppedFile>, Option<Place>),
     /// A browser's audio file, dropped on the playlist.
     Library(PathBuf, Place),
+    /// Library audio files sent to the playlist ([`send`]): no place, as off the playlist.
+    Sent(Vec<PathBuf>),
 }
 
 /// What lives between frames, in the context's memory.
@@ -78,6 +82,8 @@ struct State {
     target: Option<(u64, Place, Vec<Shape>)>,
     /// The curtain's p.
     p: f32,
+    /// The files [`send`] hands over.
+    sent: Vec<PathBuf>,
 }
 
 fn id() -> Id {
@@ -101,6 +107,14 @@ pub fn start(ctx: &Context, path: &Path, name: &str) {
         keep(ctx, s);
         ctx.request_repaint();
     }
+}
+
+/// Hands the library's audio files `paths` to the playlist ([`Dropped::Sent`], this frame's [`end_frame`]).
+pub fn send(ctx: &Context, paths: Vec<PathBuf>) {
+    let mut s = state(ctx);
+    s.sent.extend(paths);
+    keep(ctx, s);
+    ctx.request_repaint();
 }
 
 /// An in-app drag is under way: the browser's list does not scroll with it.
@@ -150,7 +164,7 @@ pub fn playlist(
     cx: &UiCtx,
     song: &Song,
     (area, grid): (Rect, Rect),
-    (rows, row_h): (&[(usize, usize, f32)], f32),
+    (rows, row_h): (&[(usize, usize, f32, f32)], f32),
     axis: TimeAxis,
     unit: f64,
 ) {
@@ -173,8 +187,13 @@ pub fn playlist(
     let k = 1.0 - PULSE_DEPTH + PULSE_DEPTH * (std::f64::consts::TAU * PULSE_HZ * t).sin() as f32;
     let line = Stroke::new(2.0 * m.t(), accent.gamma_multiply(k));
     let shapes = match place {
-        Place::Track { tick, .. } => {
-            let row = Rect::from_x_y_ranges(grid.x_range(), y..=y + row_h).intersect(area);
+        Place::Track {
+            channel,
+            lane,
+            tick,
+        } => {
+            let h = (rows.iter().find(|r| (r.0, r.1) == (channel, lane))).map_or(row_h, |r| r.3);
+            let row = Rect::from_x_y_ranges(grid.x_range(), y..=y + h).intersect(area);
             let x = axis.x(f64::from(tick)).clamp(row.left(), row.right());
             let [edge, peak] = HIGHLIGHT_ALPHA.map(|a| accent.gamma_multiply(a * k));
             vec![
@@ -210,8 +229,8 @@ fn highlight(row: Rect, x: f32, edge: Color32, peak: Color32) -> Shape {
     Shape::mesh(mesh)
 }
 
-/// Where a file dropped at `pos` lands over the playlist rows `rows` (channel, lane, top), each `row_h` tall, with the
-/// y of what marks it (the track's top, or the insertion line):
+/// Where a file dropped at `pos` lands over the playlist rows `rows` (channel, lane, top, height: a collapsed track's
+/// is less than a full row's `row_h`, #83), with the y of what marks it (the track's top, or the insertion line):
 /// - over an audio track, that track ([`Place::Track`]);
 /// - over another track, a new channel ([`Place::Insert`]) before its channel when `pos` is in the upper half of the
 ///   channel's rows, after it in the lower half; within half a row below the last row, after the last channel;
@@ -222,7 +241,7 @@ fn highlight(row: Rect, x: f32, edge: Color32, peak: Color32) -> Shape {
 /// [`Song::master_below`] puts it, stays below the channel it follows.
 pub fn place(
     song: &Song,
-    (rows, row_h): (&[(usize, usize, f32)], f32),
+    (rows, row_h): (&[(usize, usize, f32, f32)], f32),
     pos: Pos2,
     grid_left: f32,
     axis: TimeAxis,
@@ -243,11 +262,9 @@ pub fn place(
             .find(|&c| c != 0)
             .unwrap_or(song.channels.len())
     };
-    // The lowest row starting above `pos`: a collapsed one above is less than `row_h` tall (#83).
-    let Some(&(channel, lane, top)) =
-        (rows.iter().rev()).find(|r| (r.2..r.2 + row_h).contains(&pos.y))
+    let Some(&(channel, lane, top, _)) = rows.iter().find(|r| (r.2..r.2 + r.3).contains(&pos.y))
     else {
-        let bottom = rows.last()?.2 + row_h;
+        let bottom = rows.last().map(|r| r.2 + r.3)?;
         let below = (bottom..bottom + row_h / 2.0).contains(&pos.y);
         return below.then(|| {
             (
@@ -270,17 +287,20 @@ pub fn place(
             top,
         ));
     }
-    let tops = rows.iter().filter(|r| r.0 == channel).map(|r| r.2);
-    let (first, last) = tops.fold((top, top), |(a, b), t| (a.min(t), b.max(t)));
+    let spans = rows
+        .iter()
+        .filter(|r| r.0 == channel)
+        .map(|r| (r.2, r.2 + r.3));
+    let (first, end) = spans.fold((top, top), |(a, b), (t, e)| (a.min(t), b.max(e)));
     let p = order.iter().position(|&c| c == channel)?;
-    Some(match pos.y < (first + last + row_h) / 2.0 {
+    Some(match pos.y < (first + end) / 2.0 {
         true => (Place::Insert { at: at(p), tick }, first),
         false => (
             Place::Insert {
                 at: at(p + 1),
                 tick,
             },
-            last + row_h,
+            end,
         ),
     })
 }
@@ -353,6 +373,8 @@ pub fn end_frame(ctx: &Context, cx: &UiCtx) -> Option<Dropped> {
     let place = place.map(|t| t.1);
     let drop = if !files.is_empty() {
         Some(Dropped::External(files, place))
+    } else if !s.sent.is_empty() {
+        Some(Dropped::Sent(std::mem::take(&mut s.sent)))
     } else if !down && s.dragged.is_some() {
         let (path, _) = s.dragged.take().expect("dragged");
         ctx.request_repaint();
@@ -377,7 +399,12 @@ mod tests {
         song.add_channel(ChannelKind::Instrument);
         song.add_channel(ChannelKind::AudioClip);
         song.channels[1].add_lane(LaneKind::Notes);
-        let rows = [(0, 0, 0.0), (1, 0, 64.0), (1, 1, 128.0), (2, 0, 192.0)];
+        let mut rows = [
+            (0, 0, 0.0, 64.0),
+            (1, 0, 64.0, 64.0),
+            (1, 1, 128.0, 64.0),
+            (2, 0, 192.0, 64.0),
+        ];
         let axis = TimeAxis {
             origin: 100.0,
             beat_w: 32.0,
@@ -401,5 +428,9 @@ mod tests {
         // Within half a row below the last row: after the last channel; further down, nowhere.
         assert_eq!(at(132.0, 256.0 + 31.0), Some((insert(3, 128), 256.0)));
         assert_eq!(at(132.0, 256.0 + 33.0), None);
+        // Just below a collapsed last row (#100): after the last channel, not on it.
+        rows[3].3 = 32.0;
+        let at = |x, y| place(&song, (&rows, 64.0), pos2(x, y), 100.0, axis, beat);
+        assert_eq!(at(132.0, 240.0), Some((insert(3, 128), 224.0)));
     }
 }

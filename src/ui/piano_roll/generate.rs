@@ -9,8 +9,9 @@
 //! `Progression & melody` a row each for `Preset` (Pop, Minor, Lo-fi, Epic, Random), `Bars` (1, 2, 4, 8), `Lead`
 //! (Chords: a melody written over them; Melody: the chords fitted under the clip's own notes) and `Seed` (its number
 //! and `New seed`); under `Key, scale & register` the `Key` and `Scale` (`Project` follows the song's) and the
-//! `Octave`; under `Notes & rhythm` the `Length`, `Rests`, `Arpeggios` and `Chords`. Each choice is a dropdown. Then
-//! `Reset`, `Cancel` and `Apply`.
+//! `Octave`; under `Notes & rhythm` the `Length`, `Rests`, `Arpeggios` and `Chords`. Each choice is a dropdown, modal
+//! over the panel too, so one opens at a time (#107). Then `Reset`, `Cancel` and `Apply`. A tap outside, Escape or
+//! Android's Back close the open dropdown, else the panel, as `Cancel`.
 
 use std::hash::{BuildHasher, RandomState};
 
@@ -134,7 +135,9 @@ fn layout(screen: Rect, over: Rect, m: &Metrics) -> Rect {
     let top = (over.center().y - h / 2.0)
         .min(screen.bottom() - m.u(MARGIN) - h)
         .max(screen.top() + m.u(MARGIN));
-    Rect::from_min_size(pos2(m.round_px(right - w), m.round_px(top)), vec2(w, h))
+    // Kept inside the screen beside a roll the rack narrows (#107).
+    let left = (right - w).max(screen.left() + m.u(MARGIN));
+    Rect::from_min_size(pos2(m.round_px(left), m.round_px(top)), vec2(w, h))
 }
 
 /// One frame of the panel beside the roll `over`; `Some` when it closes.
@@ -157,7 +160,7 @@ pub(crate) fn show(
     );
     let backdrop = crate::ui::backdrop(ctx, id);
     let outside = backdrop.clicked() || backdrop.secondary_clicked();
-    let mut close = (crate::ui::close_pressed(ctx) || outside).then_some(Close::Cancel);
+    let mut close = outside.then_some(Close::Cancel);
     Area::new(id)
         .order(Order::Foreground)
         .fixed_pos(rect.min)
@@ -211,6 +214,10 @@ pub(crate) fn show(
                 close = Some(Close::Apply);
             }
         });
+    // After the rows, so that an open dropdown takes Escape (and Android's Back) first.
+    if crate::ui::close_pressed(ctx) {
+        close = close.or(Some(Close::Cancel));
+    }
     close
 }
 

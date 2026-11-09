@@ -3,7 +3,8 @@
 //!
 //! A plugin's editor moving one of its params is a hand move on the module: the song value, a `SetParam` for the
 //! engine's saved value, the song-changed flag and no undo step ([`SongEdit::ChannelParam`], as the rack's controls),
-//! and it is the recent control, so REC records it and the CTRL menu automates it.
+//! and it is the recent control, so REC records it and the CTRL menu automates it. A built-in plugin's knob menu's
+//! `Create automation clip` adds its automation track (#113).
 
 use eframe::egui;
 use honeydew_audio::device::AudioCommand;
@@ -66,6 +67,14 @@ impl HoneydewApp {
         }
         if moved {
             self.song_edited(SongEdit::ChannelParam, tick);
+        }
+        // Issue #113: a built-in plugin's knob menu's `Create automation clip` is `Add automation track` for its param.
+        for (channel_id, instance_id, param) in plugins::take_automate() {
+            if let Some(channel) = self.song.channels.iter().position(|c| c.id == channel_id) {
+                let target = AutomationTarget { instance_id, param };
+                self.recent = Some((channel_id, target));
+                self.add_automation_track(channel, target, tick);
+            }
         }
         let message = |o: &Overlay| matches!(o, Overlay::Message { .. });
         if !self.nav.overlays.iter().any(message) {

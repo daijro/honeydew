@@ -207,6 +207,7 @@ pub fn show(
             sub: Some(role.as_str()),
             kind: RowKind::Enabled(Row::Token(i)),
             picked: false,
+            mark: None,
         });
         // The flagged files first, so that a long list shows what to fix.
         let mut mapped: Vec<_> = regions.iter().zip(&subs).collect();
@@ -220,6 +221,7 @@ pub fn show(
                 false => RowKind::Enabled(Row::File),
             },
             picked: false,
+            mark: None,
         });
         std::iter::once(section(&sections[0]))
             .chain(tokens)
@@ -289,6 +291,7 @@ fn section(name: &str) -> PanelRow<'_, Row> {
         sub: None,
         kind: RowKind::Section,
         picked: false,
+        mark: None,
     }
 }
 

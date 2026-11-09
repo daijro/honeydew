@@ -1329,3 +1329,56 @@ fn a_tempo_change_makes_the_tempo_recent_and_add_automation_track_automates_it()
     );
     assert_eq!(rig.app.nav.view, View::AutomationEditor(0));
 }
+
+/// Issue #113: a Lemon plugin's knob automates as a built-in one does. Its own menu (a long press on a phone) offers
+/// `Create automation clip`, which is `Add automation track` for that param: Lemon Trio's Osc 1 Coarse (module param
+/// 3) gets its lane, the automation editor opens on it, in one undo step.
+#[test]
+fn a_lemon_knobs_create_automation_clip_adds_its_automation_track() {
+    use os_plugkit::embed::{self, Answer, Button, Input, Modal};
+    use os_ui::kit::menu::MenuItem;
+    let mut rig = Rig::with_synth();
+    rig.app.add_bare_channel(ChannelKind::Instrument, 0);
+    let channel = &mut rig.app.song.channels[2];
+    let id = channel.id;
+    let uid = crate::plugins::builtin::named("Lemon Trio").uid;
+    let module = crate::plugins::add(&mut channel.rack, id, uid, 0).unwrap();
+    rig.app.song_edited(SongEdit::Final, 0);
+    rig.open_rack(2);
+    rig.slide_rack();
+    let editor = crate::plugins::lemon_open(id, module).expect("its card shows its editor") as _;
+    let s = embed::backing_scale(editor);
+    let (x, y, btn) = (322.0 * s, 98.0 * s, Button::Right);
+    embed::input(
+        editor,
+        Input::Down {
+            x,
+            y,
+            btn,
+            dbl: false,
+        },
+        (false, false, false),
+    );
+    embed::input(editor, Input::Up { btn }, (false, false, false));
+    rig.frame(vec![]);
+    let Some(Modal::Menu { menu, .. }) = embed::modal(editor) else {
+        panic!("the knob's menu shows")
+    };
+    let row = (menu.items.iter())
+        .position(|it| matches!(it, MenuItem::Item { label, enabled: true, .. } if label == "Create automation clip"))
+        .expect("Create automation clip is offered");
+    let undos = rig.undos();
+    embed::answer(editor, Some(Answer::Pick(vec![row])));
+    rig.frame(vec![]);
+    rig.frame(vec![]);
+    let coarse = target(module, 3);
+    assert_eq!(rig.recent(), Some((2, coarse)));
+    assert_eq!(rig.app.nav.view, View::AutomationEditor(2));
+    let key = (rig.app.slots.automation_editor)
+        .current(&rig.app.song, 2)
+        .expect("the editor's clip");
+    let lane = &rig.app.song.channels[2].lanes[key.lane];
+    assert_eq!(lane.label, "Osc 1 coarse pitch : Lemon Trio");
+    assert_eq!(lane.target, Some(coarse));
+    assert_eq!(rig.undos(), undos + 1);
+}

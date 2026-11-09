@@ -99,6 +99,13 @@ const FOLLOW_AT: f64 = 0.25;
 const FLING_STALE_S: f64 = 0.08;
 /// The scrollbar's ink while pressed.
 const PRESSED: f32 = 1.1;
+/// A browser list's scrollbar: its thickness and `text` alpha, and the finger's grab (U), across and the thumb's least
+/// length.
+const LIST_BAR_W: f32 = 0.15;
+const LIST_BAR_ALPHA: f32 = 0.5;
+const LIST_GRAB: f32 = 1.5;
+/// The scrollbar's thickness while pressed: wide enough to show beside the finger on it.
+const WIDE: f32 = 3.0;
 
 impl Axis {
     /// No such axis (the automation and audio editors' y): nothing to scroll or zoom.
@@ -555,10 +562,11 @@ fn pinch_move(
 }
 
 /// The scrollbar along `bar`, vertical when it is taller than wide, for `axis`: drawn only while the view shows less
-/// than the whole range. The thumb is the visible fraction of the bar, placed at pos, with rounded ends (radius half
-/// the bar's thickness), in `ink`, 1.1 times brighter while pressed. A drag on it (within `hit` points across, centred
-/// on the bar) moves pos by Δpx·range/barLength, within the range, so the thumb follows the finger. Returns the thumb
-/// as drawn.
+/// than the whole range. The thumb is the visible fraction of the bar, never shorter than `hit` (a finger's grab on a
+/// long list, #111), placed at pos along the rest of the bar, with rounded ends (radius half its thickness), in `ink`,
+/// 1.1 times brighter and [`WIDE`] times thicker while pressed. A drag on it (within `hit` points in from the bar's
+/// outer, right or bottom, edge) moves pos by Δpx·(range − view)/(barLength − thumbLength), Δpx·range/barLength while
+/// the thumb is its fraction, within the range, so the thumb follows the finger. Returns the thumb as drawn.
 pub fn scrollbar(
     ui: &mut egui::Ui,
     id: Id,
@@ -573,45 +581,57 @@ pub fn scrollbar(
     if axis.span() >= whole || len <= 0.0 {
         return None;
     }
-    let thumb = |axis: &Axis| {
-        let size = axis.span() / whole * len;
-        let lo = ((axis.pos - axis.range[0]) / whole * len).clamp(0.0, len - size);
+    let size = (axis.span() / whole * len).max(f64::from(hit)).min(len);
+    let (travel, scrollable) = (len - size, axis.max() - axis.range[0]);
+    let thumb = |axis: &Axis, across: f32| {
+        let lo = ((axis.pos - axis.range[0]) / scrollable * travel).clamp(0.0, travel);
         let along = Rangef::new(bar.min[a] + lo as f32, bar.min[a] + (lo + size) as f32);
+        let across = Rangef::new(bar.max[1 - a] - across, bar.max[1 - a]);
         match a {
-            X => Rect::from_x_y_ranges(along, bar.y_range()),
-            _ => Rect::from_x_y_ranges(bar.x_range(), along),
+            X => Rect::from_x_y_ranges(along, across),
+            _ => Rect::from_x_y_ranges(across, along),
         }
     };
-    let mut grow = Vec2::ZERO;
-    grow[1 - a] = ((hit - thick) / 2.0).max(0.0);
-    let response = ui.interact(thumb(axis).expand2(grow), id, Sense::drag());
+    let response = ui.interact(thumb(axis, hit.max(thick)), id, Sense::drag());
     let pressed = response.is_pointer_button_down_on();
     let d = ui.input(|i| i.pointer.delta())[a];
-    if pressed && d != 0.0 {
-        axis.pos = (axis.pos + f64::from(d) * whole / len).clamp(axis.range[0], axis.max());
+    if pressed && d != 0.0 && travel > 0.0 {
+        axis.pos = (axis.pos + f64::from(d) * scrollable / travel).clamp(axis.range[0], axis.max());
+        // The rows under it were drawn before the move.
+        ui.ctx().request_repaint();
     }
-    let drawn = thumb(axis);
+    let drawn = thumb(axis, if pressed { WIDE * thick } else { thick });
     let color = if pressed { brighter(ink, PRESSED) } else { ink };
-    let r = thick / 2.0;
-    let (mut start, mut end) = (drawn.center(), drawn.center());
-    start[a] = drawn.min[a] + r;
-    end[a] = (drawn.max[a] - r).max(start[a]);
-    let painter = ui.painter();
-    painter.rect_filled(
-        Rect::from_two_pos(start, end).expand2(grow_across(a, r)),
-        0.0,
-        color,
-    );
-    painter.circle_filled(start, r, color);
-    painter.circle_filled(end, r, color);
+    // One shape: a translucent ink shows no overlap.
+    ui.painter()
+        .rect_filled(drawn, drawn.size()[1 - a] / 2.0, color);
     Some(drawn)
 }
 
-/// `r` across axis `a`, nothing along it.
-fn grow_across(a: usize, r: f32) -> Vec2 {
-    let mut v = Vec2::ZERO;
-    v[1 - a] = r;
-    v
+/// A browser list's scrollbar (the side browsers' and SONGS', #111): [`LIST_BAR_W`] thick on `list`'s right edge, in
+/// `text` at [`LIST_BAR_ALPHA`], for `content_h` points of rows scrolled `offset` up. A finger grabs the thumb within
+/// [`LIST_GRAB`] of the edge and drags the list ([`scrollbar`]); a swipe anywhere else is the list's. `u` is the U in
+/// points. Call it after the rows, so the thumb lies over them.
+pub fn list_scrollbar(
+    ui: &mut egui::Ui,
+    id: Id,
+    list: Rect,
+    u: f32,
+    content_h: f32,
+    offset: &mut f32,
+    text: Color32,
+) {
+    let mut axis = Axis {
+        pos: f64::from(*offset),
+        zoom: 1.0,
+        range: [0.0, f64::from(content_h)],
+        zoom_range: [1.0; 2],
+        view: list.y_range(),
+    };
+    let bar = list.with_min_x(list.right() - u * LIST_BAR_W);
+    let ink = text.gamma_multiply(LIST_BAR_ALPHA);
+    scrollbar(ui, id, bar, u * LIST_GRAB, &mut axis, ink);
+    *offset = axis.pos as f32;
 }
 
 /// `c` with its colour channels times `k`.

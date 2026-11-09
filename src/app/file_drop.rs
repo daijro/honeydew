@@ -1,7 +1,8 @@
 //! Audio files dropped on the app ([`file_drag`]): from outside it, or a browser's file dragged onto the playlist.
 //!
 //! A file from outside the app is kept in the user's `My Samples` first, as `Import` keeps one, and the clip refers to
-//! the copy (`PTH1`); a browser's file is in the library already. The files then decode on the worker, behind the
+//! the copy (`PTH1`); a browser's file is in the library already, and so are the files SONGS' `Send to playlist` sends
+//! (#106), which make clips as files dropped off the playlist do. The files then decode on the worker, behind the
 //! loading screen [`IMPORTING`] when that takes longer than a frame, and each becomes an audio clip:
 //! - dropped on an audio track: there, at the snapped beat, the files one after another;
 //! - dropped between channels: a new Audio channel for each file, inserted there in order, its clip at the snapped beat
@@ -62,6 +63,7 @@ impl HoneydewApp {
                     (kept.collect(), place)
                 }
                 Dropped::Library(path, place) => (vec![path], Some(place)),
+                Dropped::Sent(paths) => (paths, None),
             };
             if !paths.is_empty() {
                 self.importing = Some(Importing {

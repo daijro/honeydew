@@ -43,11 +43,12 @@
 //! [`ProjectFiles::sample_library`]: crate::project_files::ProjectFiles::sample_library
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use eframe::egui;
 use honeydew_audio::device::AudioCommand;
-use honeydew_audio::sample::decode;
+use honeydew_audio::sample::{SampleData, decode};
 
 use super::preset_picker::{WORKER_LOST, block, outcome, spawn};
 use super::{AppCtx, Nav, drum_editor};
@@ -374,16 +375,25 @@ pub(super) fn show_strip(picker: &mut PresetPicker, path: &Path, wave: Option<Wa
 
 /// Sends what `picker`'s sample strip asks of the preview player.
 pub(super) fn preview(picker: &mut PresetPicker, audio: &mut AudioLink) {
-    for play in picker.take_plays() {
-        let sample = match play {
-            Play::From(from) => match picker.sample_data() {
-                Some(data) => Some((data, from)),
-                None => continue,
-            },
-            Play::Stop => None,
+    send_plays(picker.take_plays(), picker.sample_data(), audio);
+}
+
+/// Sends a sample strip's `plays` of its sample `data` to the preview player.
+pub(super) fn send_plays(plays: Vec<Play>, data: Option<Arc<SampleData>>, audio: &mut AudioLink) {
+    for play in plays {
+        let sample = match (play, &data) {
+            (Play::From(from), Some(data)) => Some((data.clone(), from)),
+            (Play::From(_), None) => continue,
+            (Play::Stop, _) => None,
         };
         audio.send(AudioCommand::Preview(sample));
     }
+}
+
+/// Decodes the audio file `path` on the worker for a sample strip alone (SONGS' preview, #106), as a pick decodes.
+pub(super) fn decode_file(files: &ProjectFiles, path: &Path) -> Receiver<Decoded> {
+    let (key, read) = (sample_key(files, path), pick_bytes(files, path));
+    spawn(move || decode_pick(key, read(), false, None))
 }
 
 /// The picker closes: its sample stops, and it is dropped, with a pick still decoding.

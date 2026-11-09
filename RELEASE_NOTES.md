@@ -1,27 +1,16 @@
-Honeydew 0.5.1 fixes the piano roll's key names, solo through a bus and Pitcher 2's formants, and adds song sections, collapsed tracks, a Half Time effect, tempo matching for audio clips, and a chord and melody generator.
+Honeydew 0.5.2 adds a keyboard to the preset browser, sample preview in SONGS, vibrato for the SoundFont Player and a draggable file browser scrollbar, and fixes the Generate window's dropdowns, its Chromatic chords and the DW Sampler's My Files.
 
-- Piano roll. With Show key names on, the piano roll's keys show their names, picking a scale dims the keys outside it, and ghost notes are lighter (#77, #94).
-- Solo. Soloing a channel plays only that channel and the path its sound takes to the master, even when every channel goes through a bus (#82).
-- Song sections. Select a range on the ruler and choose Section... to name and colour a part of the song. The rows in it are tinted and its name shows on the ruler (#80).
-- Collapse tracks. The track menu can collapse a track to a thin row with its name (#83).
-- Audio clips. More... has Match tempo..., which finds a sample's tempo and stretches it to the song's, and Chop..., which cuts a clip every 1/6 to 1 beat or at its hits (#91).
-- Half Time, a new effect that plays the audio at half speed, locked to the beat (#91).
-- Pitcher 2's formant shift works, both Pitchers use far less CPU, and they no longer track voices an octave low or click where words start and stop (#94).
-- Recording. A channel with monitoring on records the notes and controllers its MIDI sends bring it from other tracks (#74).
-- The Lemon plugins' file pickers play what you tap and load your pick when you close them (#93).
-- Drums. Kits play a preview in the kit picker, the drum editor's level meters no longer cover its rows, and the pads panel rises up to the ruler (#85, #88, #92).
-- DW Sampler. New from samples reads a file named C4 as middle C, and SFZ pitch_keytrack works. The SoundFont Player has a Fine Tune slider (#90).
-- Import takes samples and SoundFonts up to 2.5 GB, and Type in value in the Lemon plugins works on Android (#91).
-- Bluetooth. Meters, plugin displays and the playhead follow the sound you hear and move smoothly, and Settings has a movable performance overlay (#95, #89).
-- The Lemon Studio plugins have their own section at the bottom of Add Module (#86).
-- The PROJECT tab has a margin in landscape, folder names are a bit bigger, warning popups are centred, and Help > What's new shows these notes (#78, #79, #81).
-- Piano roll. GENERATE in the transport bar writes a chord progression and a melody into the clip, with presets including Random, and a preview before you apply it.
-- Randomizer. New Time and Shift knobs place notes early or late.
-- Analyzer. The Spectrum's tilt is a setting (White, Pink, Default, Brown, or Custom in dB per octave).
-- Play loop. A playhead outside the loop jumps back into it when you press Play.
-- Android. Turning the phone no longer freezes the app or leaves the screen at the old size, and the Screen orientation setting applies reliably.
-- The editors' close ribbon, the rack tab and the graph tab can be dragged out of the way, and stay where you put them.
-- On phones, a long press on a Lemon plugin's knob opens its menu.
-- PROJECT. Samplerate picks the project's sample rate or follows the output, and you're told if the device can't run at it.
-
-Thanks to @jikk12kk-bot-bot (with work from RememberedA's fork) for PR #87, where Generate, the Randomizer's timing, the Analyzer tilt, the rotation fixes, the movable tabs, the Lemon long press, the play loop jump and the project sample rate come from.
+- Generate. Only one dropdown opens at a time and it always shows above the window. A tap outside or Back closes it, and the window stays on screen beside the rack (#107).
+- Generate. In the Chromatic scale it writes real major and minor chords in the key, each voiced close to the one before (#104).
+- Piano roll. The note menu has Transpose +1, -1, +12 and -12 (#102).
+- SoundFont Player. It plays a SoundFont's own vibrato, the mod wheel adds vibrato, new Vib Rate, Vib Depth and Vib Delay sliders add your own, and Quality High gives smoother playback (#102).
+- Pitcher. With F-Mode on it keeps the voice's formants, and F-Shift really moves them while the pitch stays (#106).
+- DW Sampler. Tapping its sample name opens My Files with all your folders, in My Samples or the folder of the sample it plays, and one tap loads a sample (#109).
+- Pickers. Folders end in an arrow and audio files in a waveform, and SoundFonts, SFZ and other files show their extension (#109).
+- SONGS. Tapping an audio file previews it on a strip under the list, and Send to playlist puts the selected files on new audio tracks at the playhead (#106).
+- Waveforms. Sample strips draw a smooth peak shape, and the Analyzer's scope draws a clean line (#108).
+- Preset browser. Instrument presets have a keyboard at the bottom to play the sound while you browse, and the instrument card has previous and next arrows beside the preset name (#98).
+- Collapsed tracks. The track menu can collapse or expand every track at once, and collapsed tracks are a little taller with their own On and Solo buttons (#100).
+- File browser. The scrollbar in the pickers and in SONGS can be grabbed and dragged to jump through long folders (#111).
+- Lemon plugins. A long press on a Lemon knob offers Create automation clip, which adds its automation track, and the plugins are up to date with Lemon Studio (#113, #112).
+- MIDI. Import MIDI Tracks opens Honeydew's own browser in My MIDI, and its Import button still brings in files from elsewhere (#113).

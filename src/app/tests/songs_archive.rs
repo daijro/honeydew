@@ -86,11 +86,11 @@ fn unzip_of_a_file_that_is_no_archive_shows_the_message() {
 
 /// A folder in the temp folder, removed when dropped (and before, if a run that died left it).
 #[cfg(not(target_arch = "wasm32"))]
-struct Home(PathBuf);
+pub(super) struct Home(pub(super) PathBuf);
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Home {
-    fn new(name: &str) -> Self {
+    pub(super) fn new(name: &str) -> Self {
         let dir = std::env::temp_dir().join(format!("honeydew-su-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -107,7 +107,7 @@ impl Drop for Home {
 
 /// The SONGS row of the library's entry at `path` (the desktop's rows are by full path).
 #[cfg(not(target_arch = "wasm32"))]
-fn row_at(path: &Path) -> egui::Id {
+pub(super) fn row_at(path: &Path) -> egui::Id {
     songs_id(("row", path.to_owned()))
 }
 

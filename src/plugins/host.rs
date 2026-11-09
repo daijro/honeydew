@@ -1015,6 +1015,24 @@ pub fn lemon_open(channel_id: i32, instance_id: i32) -> Option<u32> {
     })
 }
 
+/// Issue #113: the params whose "Create automation clip" a built-in plugin's editor offered and the user picked since
+/// the last call, as (channel id, instance id, module param ≥ 1): `Add automation track` for each.
+pub fn take_automate() -> Vec<(i32, i32, i32)> {
+    let asked = os_plugkit::embed::take_automate();
+    with(|host| {
+        let editor = |id| {
+            let mut live = host.live.iter();
+            live.find(|(_, h)| h.embedded.is_some_and(|(e, _)| u64::from(e) == id as u64))
+        };
+        (asked.into_iter())
+            .filter_map(|(id, index)| {
+                let (&(channel_id, instance_id), hosted) = editor(id)?;
+                (index < hosted.ids.len()).then_some((channel_id, instance_id, index as i32 + 1))
+            })
+            .collect()
+    })
+}
+
 /// While `f` runs, the engines built get fresh instances of their plugins (an export renders on its own, twice): each
 /// with the live instance's state now, else the module's, at the build's rate, rendering offline.
 pub fn rendering<T>(f: impl FnOnce() -> T) -> T {

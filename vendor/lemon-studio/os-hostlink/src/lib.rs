@@ -444,6 +444,13 @@ mod local {
         /// Plugin -> host (`Changed`, `Note`, `Automate`): queued for the host's next tick, which is woken. 1 when a host
         /// is there, 0 otherwise (as unanswered messages on Windows).
         pub fn to_host(&self, cmd: Cmd, arg: isize) -> isize {
+            // Honeydew (vendored change): with `embed`, Honeydew answers `Automate` from an editor that keeps its own
+            // tab row (#113). The editors run on the thread that hosts them there, which takes it (`take_automate`).
+            #[cfg(feature = "embed")]
+            if cmd == Cmd::Automate {
+                AUTOMATE.with_borrow_mut(|q| q.push((self.parent, arg)));
+                return 1;
+            }
             if !self.hosted() {
                 return 0;
             }
@@ -459,6 +466,19 @@ mod local {
 
     static REGISTRY: Mutex<Vec<(u64, Weak<Peer>)>> = Mutex::new(Vec::new());
     static QUEUE: Mutex<Vec<(u64, Cmd, isize)>> = Mutex::new(Vec::new());
+
+    // Honeydew (vendored addition): the editors' `Automate` (`Peer::to_host`), by thread.
+    #[cfg(feature = "embed")]
+    thread_local! {
+        static AUTOMATE: std::cell::RefCell<Vec<(u64, isize)>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    /// Honeydew (vendored addition): the `Automate` this thread's editors sent since the last call, as (the editor's
+    /// host window, parameter index).
+    #[cfg(feature = "embed")]
+    pub fn take_automate() -> Vec<(u64, isize)> {
+        AUTOMATE.with_borrow_mut(std::mem::take)
+    }
     static HOST_WAKER: OnceLock<fn()> = OnceLock::new();
 
     /// Host: how plugins wake its UI loop when they send something.
@@ -543,6 +563,8 @@ mod local {
 pub use local::{set_host_waker, take_host_messages, Link, Peer};
 #[cfg(all(windows, feature = "embed"))]
 pub use local::Peer;
+#[cfg(feature = "embed")]
+pub use local::take_automate;
 
 #[cfg(test)]
 mod tests {

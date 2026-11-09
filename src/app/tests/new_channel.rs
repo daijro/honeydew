@@ -5,7 +5,7 @@
 use eframe::egui::Id;
 
 use super::instruments_picker::PLUCK;
-use super::rack_wiring::{click_row, types, worker_done};
+use super::rack_wiring::{click_row, picker_root, types, worker_done};
 use super::*;
 use crate::song::ModuleInstance;
 use crate::ui::add_channel_menu::{AddChannelPick, add_channel_menu};
@@ -463,6 +463,7 @@ fn a_default_pick_on_the_new_card_while_close_grand_loads_stays() {
     rig.app
         .navigate(Nav::Open(picker(2, PresetTarget::Module(id))));
     // At the root: `My Files`, `My Instruments`, then `Default`.
+    picker_root(&mut rig);
     click_row(&mut rig, 2);
     drop(hold);
     worker_done(&mut rig);

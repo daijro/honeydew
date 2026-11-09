@@ -743,6 +743,42 @@ fn a_dw_programs_sample_folder_is_left_out() {
     assert_eq!(names(&picker, ""), ["Other", "Gen Guitar"]);
 }
 
+/// A Honeydew addition (#109): a folder, an audio file and any other file each carry their mark at the row's end; the
+/// picker's own preset files, every plain row of a preset list, carry none.
+#[test]
+fn rows_mark_folders_audio_files_and_other_files_by_extension() {
+    use crate::ui::search_bar::Mark;
+    let lib = library(&[
+        "Mine/",
+        "Mine/Sub/",
+        "Mine/Kick.wav",
+        "Mine/Strings.sf2",
+        "Mine/Keys.sfz",
+        "Mine/Pad.flmpst",
+    ]);
+    let mut picker = PresetPicker::new("DW Sampler", Some("Mine".into()), PRESET_EXT, true)
+        .of_exts(&[PRESET_EXT, "wav", "sf2", "sfz"]);
+    fn marks(p: &PresetPicker) -> Vec<Option<Mark<'_>>> {
+        p.rows("").into_iter().map(|i| i.mark(p.exts[0])).collect()
+    }
+    assert_eq!(marks(&picker), [Some(Mark::Folder), None]);
+    open(&mut picker, &lib, MY_FILES);
+    assert_eq!(
+        names(&picker, ""),
+        ["Sub", "Keys", "Kick", "Pad", "Strings"]
+    );
+    assert_eq!(
+        marks(&picker),
+        [
+            Some(Mark::Folder),
+            Some(Mark::Ext("sfz")),
+            Some(Mark::Audio),
+            None,
+            Some(Mark::Ext("sf2")),
+        ]
+    );
+}
+
 #[test]
 fn dw_factory_categories_merge_without_changing_preset_paths() {
     for root in [

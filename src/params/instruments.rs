@@ -1017,8 +1017,9 @@ fn soundfont_time(v: f32) -> String {
 
 const SOUNDFONT_TIME: Display = Display::Custom(soundfont_time);
 
-// The UI binds indices 1-6. The Envelope toggle is off (Original: the SoundFont's own envelopes), and reads
-// Original up to 0.5, Custom above. Fine Tune (6) is a Honeydew addition (#90).
+// The UI binds indices 1-10. The Envelope toggle is off (Original: the SoundFont's own envelopes), and reads
+// Original up to 0.5, Custom above. Fine Tune (6), the vibrato (7-9) and Quality (10) are Honeydew additions (#90,
+// #102).
 const SOUNDFONT_PLAYER: &[P] = &[
     P::ENABLE,
     P::cont("Attack", 0.0, SOUNDFONT_TIME),
@@ -1038,6 +1039,13 @@ const SOUNDFONT_PLAYER: &[P] = &[
         0.5,
         Display::linear(-100.0, 100.0, 0, " cents"),
     ),
+    P::cont("Vib Rate", 0.5, Display::linear(0.0, 10.0, 1, " Hz")),
+    P::cont("Vib Depth", 0.0, Display::linear(0.0, 100.0, 0, " cents")),
+    P::cont("Vib Delay", 0.0, Display::linear(0.0, 2.0, 2, " s")),
+    P::toggle("Quality", 0.0).with_automation(ParamKind::MenuBy {
+        items: &["Linear", "High"],
+        index: |v| usize::from(v > 0.5),
+    }),
 ];
 
 pub static MODULES: &[ModuleSpec] = &[
