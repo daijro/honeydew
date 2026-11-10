@@ -36,6 +36,9 @@ pub struct KeyInput {
     pub sounding: u128,
     /// The channel's key range (low, high): with the scale test, what "in range" means. `None`: every key.
     pub range: Option<(u8, u8)>,
+    /// A finger keeps the key it pressed as it moves (no glissando): the picker's keys while a touch has not yet left
+    /// the calm zone that makes it a pan.
+    pub hold: bool,
 }
 
 /// What the keys play this frame, each key with its press's velocity: the keys held, and the keys tapped (pressed and
@@ -359,11 +362,12 @@ pub fn keyboard_at(
                     fresh.push(id);
                 }
             }
-            Finger::Move(id, pos) => {
+            Finger::Move(id, pos) if !input.hold => {
                 if let Some(h) = held.iter_mut().find(|h| h.finger == id) {
                     h.key = play_at(&rows, pos, input).map(|k| k.0);
                 }
             }
+            Finger::Move(..) => {}
             Finger::Up(id, _) => {
                 let Some(i) = held.iter().position(|h| h.finger == id) else {
                     continue;
@@ -414,8 +418,12 @@ pub fn keyboard_at(
 /// Every finger on the keys is let go, their notes silenced (Preview on or off): one still down plays nothing until it
 /// lifts and presses again.
 pub fn let_go(ctx: &egui::Context) {
-    let state = Id::new("keyboard").with("fingers");
-    ctx.data_mut(|d| d.remove::<(u64, Vec<Held>)>(state));
+    let_go_at(ctx, Id::new("keyboard"));
+}
+
+/// [`let_go`] for the keyboard `id` ([`keyboard_at`]).
+pub fn let_go_at(ctx: &egui::Context, id: Id) {
+    ctx.data_mut(|d| d.remove::<(u64, Vec<Held>)>(id.with("fingers")));
 }
 
 /// Paints the `rows`, each key at its `press` amount p, each fill c as mix(c) = `channel`·p + c·(1 − p). Each row's
@@ -635,6 +643,7 @@ mod tests {
         notes: 0,
         sounding: 0,
         range: None,
+        hold: false,
     };
 
     /// A frame's input: its events, whether the keyboard is drawn, a widget over the keyboard's left half, and the

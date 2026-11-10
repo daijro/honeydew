@@ -131,7 +131,11 @@ const MODAL_PASS: &str = "modal backdrop pass";
 /// and redo wait meanwhile ([`crate::history::shortcut`]).
 pub(crate) fn modal_shown(ctx: &egui::Context) {
     let pass = ctx.cumulative_pass_nr();
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new(MODAL_PASS), pass));
+    ctx.data_mut(|d| {
+        d.insert_temp(egui::Id::new(MODAL_PASS), pass);
+        // It covers the transport's Play too ([`play_open`]).
+        d.remove::<u64>(egui::Id::new(PLAY_PASS));
+    });
     // It covers the controls drawn before it.
     tooltip::cover(ctx);
     // The keyboard focus stays inside it: what it draws from here on.
@@ -180,17 +184,64 @@ pub(crate) fn backdrop(ctx: &egui::Context, id: egui::Id) -> egui::Response {
     modal_shown(ctx);
     // What it draws above its backdrop.
     focus::modal(ctx, egui::Order::Foreground);
-    let screen = ctx.content_rect();
-    egui::Area::new(id.with("backdrop"))
+    backdrop_part(ctx, id.with("backdrop"), ctx.content_rect())
+}
+
+/// A backdrop area `id` over `rect` ([`backdrop`]).
+fn backdrop_part(ctx: &egui::Context, id: egui::Id, rect: egui::Rect) -> egui::Response {
+    egui::Area::new(id)
         .order(egui::Order::Middle)
-        .fixed_pos(screen.min)
+        .fixed_pos(rect.min)
         .constrain(false)
         .fade_in(false)
         .sense(egui::Sense::click_and_drag())
         .show(ctx, |ui| {
-            ui.allocate_exact_size(screen.size(), egui::Sense::hover())
+            ui.allocate_exact_size(rect.size(), egui::Sense::hover())
         })
         .response
+}
+
+/// The temp-data key of the pass whose topmost modal leaves the transport's Play live ([`backdrop_open_to_play`]).
+const PLAY_PASS: &str = "modal open to play pass";
+
+/// [`backdrop`] open to the transport's Play button (`("transport", "play")`, where it was laid out): a tap there
+/// still starts and stops playback under the modal, as the keymap's `play` does ([`play_open`]), and closes nothing
+/// (so that the Generate panel's preview can be heard). The backdrop is up to four areas round it.
+/// Whether a click or a secondary click landed outside elsewhere.
+pub(crate) fn backdrop_open_to_play(ctx: &egui::Context, id: egui::Id) -> bool {
+    let play = ctx.read_response(egui::Id::new(("transport", "play")));
+    modal_shown(ctx);
+    focus::modal(ctx, egui::Order::Foreground);
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(PLAY_PASS), pass));
+    let screen = ctx.content_rect();
+    let hole = play
+        .map(|r| r.rect.intersect(screen))
+        .filter(|r| r.is_positive());
+    let parts = match hole {
+        None => vec![screen],
+        // Above and below it, and beside it.
+        Some(h) => vec![
+            screen.with_max_y(h.top()),
+            screen.with_min_y(h.bottom()),
+            egui::Rect::from_x_y_ranges(screen.left()..=h.left(), h.y_range()),
+            egui::Rect::from_x_y_ranges(h.right()..=screen.right(), h.y_range()),
+        ],
+    };
+    let parts = parts
+        .into_iter()
+        .enumerate()
+        .filter(|(_, r)| r.is_positive());
+    parts.fold(false, |outside, (i, rect)| {
+        let part = backdrop_part(ctx, id.with("backdrop").with(i), rect);
+        outside | part.clicked() | part.secondary_clicked()
+    })
+}
+
+/// The modal on top this pass so far is open to the transport's Play ([`backdrop_open_to_play`]).
+pub(crate) fn play_open(ctx: &egui::Context) -> bool {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data(|d| d.get_temp::<u64>(egui::Id::new(PLAY_PASS))) == Some(pass)
 }
 
 /// One finger's step this frame ([`fingers`]): its id (a touch's id, or [`MOUSE`]) and where it is.

@@ -26,8 +26,9 @@ use crate::icons::{IconId, draw_icon};
 use crate::metrics::Metrics;
 use crate::theme::Rgba;
 use crate::ui::buttons::gradient;
+use crate::ui::main_screen::CLEAR_U;
 use crate::ui::timeline::ruler_h;
-use crate::ui::{UiCtx, widgets};
+use crate::ui::{UiCtx, step_seq, widgets};
 
 /// The clip editor's minimum height, in U.
 const MIN_U: f32 = 3.0;
@@ -40,8 +41,9 @@ const RIBBON_R: f32 = 0.3;
 const RIBBON_REACH: f32 = 0.3;
 const RIBBON_LOGO: f32 = 4.4;
 const RIBBON_EDGE: f32 = 1.8;
-/// How far in from the editor area's left edge a sideways drag keeps the ribbon, in U.
-const RIBBON_INSET: f32 = 0.5;
+/// How far in from the editor area's left edge a sideways drag keeps the ribbon, in U: its touch area 0.25 U clear of
+/// the ruler row's top-left cell, the editors' Snap (1.5 U) or the step sequencer's SWING (3 U; #114).
+const RIBBON_INSET: f32 = step_seq::HEADER_W + CLEAR_U + RIBBON_REACH;
 /// A ribbon drag's playlist floor, in U; the rubber band's give past either floor; a last move longer than this many
 /// U is a flick, which counts ten times.
 const PLAYLIST_MIN_U: f32 = 2.5;
@@ -113,25 +115,23 @@ pub fn shadow(painter: &Painter, playlist: Rect, m: &Metrics) {
     gradient(&painter, rect, Color32::TRANSPARENT, edge);
 }
 
-/// Where an editor's top strip that starts at `strip_left` ends, clear of the close ribbon's touch area ([`ribbon`]) in
-/// an editor area whose right edge is `view_right` on a window whose right edge is `screen_right`: the touch area's left
-/// edge, its reach left of the ribbon (the drum mixer's page tabs end there, GitHub #71). The ribbon sits `shift` U
-/// along the band from its home (`Settings::editor_ribbon_shift`, never right of home); moved wholly left of the strip,
-/// it leaves the strip the room up to its home.
-pub fn ribbon_room(
-    view_right: f32,
-    screen_right: f32,
-    shift: f32,
-    strip_left: f32,
-    m: &Metrics,
-) -> f32 {
-    let (home, reach) = (ribbon_x(view_right, screen_right, m), m.u(RIBBON_REACH));
-    let left = m.floor_px(home + m.u(shift.min(0.0)));
-    if left + m.u(RIBBON[0]) + reach <= strip_left {
-        home - reach
-    } else {
-        left - reach
-    }
+/// Where an editor's top strip ends, clear of the close ribbon's touch area ([`ribbon`]) in the editor area `view` on a
+/// window whose right edge is `screen_right`: the touch area's left edge, its reach left of the ribbon (the drum mixer's
+/// page tabs end there, GitHub #71), with the ribbon `shift` U along the band from its home
+/// (`Settings::editor_ribbon_shift`), kept as [`ribbon`] keeps it.
+pub fn ribbon_room(view: Rect, screen_right: f32, shift: f32, m: &Metrics) -> f32 {
+    let (lo, hi) = ribbon_shifts(view, screen_right, m);
+    let home = ribbon_x(view.right(), screen_right, m);
+    m.floor_px(home + m.u(shift.max(lo).min(hi))) - m.u(RIBBON_REACH)
+}
+
+/// How far, in U from its home, a sideways drag may move the close ribbon in the editor area `view`: in to
+/// [`RIBBON_INSET`] from the band's left edge, and no further right than home, which already sits next to the logo.
+/// Keep a shift in it with `max` then `min` rather than `clamp`: a view too narrow for the ribbon's home (a small
+/// window) leaves lo above hi, and `f32::clamp` panics on that.
+fn ribbon_shifts(view: Rect, screen_right: f32, m: &Metrics) -> (f32, f32) {
+    let home = ribbon_x(view.right(), screen_right, m);
+    ((view.left() + m.u(RIBBON_INSET) - home) / m.u(1.0), 0.0)
 }
 
 /// The close ribbon's home left edge: min(screen right − 4.4 U, view right − 1.8 U), on a device pixel.
@@ -162,8 +162,8 @@ struct Grab {
 /// - A tap (no move past 0.5 U) returns true: the host closes the editor (the playlist alone, the clip kept, no undo
 ///   step).
 /// - The first axis past the calm zone decides what a drag does. More sideways than up and down moves the ribbon along
-///   the band, kept between 0.5 U in from the editor area's left edge and the logo's left edge less the ribbon's own
-///   width, and writes its place to `shift`, which the host keeps in `Settings`. More up and down moves the split: the
+///   the band, kept between 3.55 U in from the editor area's left edge (clear of the ruler row's top-left cell, #114)
+///   and its home by the logo, and writes its place to `shift`, which the host keeps in `Settings`. More up and down moves the split: the
 ///   playlist's height at the press plus the drag, with a rubber band (× 0.1) below the 2.5 U playlist floor and past
 ///   the 3 U editor floor. The last move counts ten times when over 0.25 U (a flick). Let go below the playlist floor
 ///   the editor fills the view (f = 0); past the editor floor it closes (returns true); else the split stays there.
@@ -180,13 +180,9 @@ pub fn ribbon(
     let (c, m) = (&cx.theme.colors, cx.m);
     let size = vec2(m.u(RIBBON[0]), m.u(RIBBON[1]));
     let base = ribbon_x(view.right(), screen_right, m);
-    // Where the ribbon opens, and how far a drag may take it: in from the band's left edge, and no further right than
-    // home, which already sits next to the logo.
-    let lowest = view.left() + m.u(RIBBON_INSET);
-    let (lo_shift, hi_shift) = ((lowest - base) / m.u(1.0), 0.0f32);
-    // `max` then `min` rather than `clamp`: a view too narrow for the ribbon's home (a small window) leaves lo above
-    // hi, and `f32::clamp` panics on that. Only a drag writes the place: a narrow window (or a rotation) shows it
-    // clamped and keeps it.
+    // Where the ribbon opens, and how far a drag may take it. Only a drag writes the place: a narrow window (or a
+    // rotation) shows it clamped and keeps it.
+    let (lo_shift, hi_shift) = ribbon_shifts(view, screen_right, m);
     let shown = shift.max(lo_shift).min(hi_shift);
     let left = base + m.u(shown);
     let rect = Rect::from_min_size(pos2(m.floor_px(left), editor_top), size);

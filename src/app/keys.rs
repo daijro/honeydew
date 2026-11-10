@@ -5,7 +5,7 @@
 //! Details:
 //! - Like undo and redo, they wait while a text field has the keyboard or a modal shows. The exceptions act on
 //!   the modal on top: `showTempo` closes the tempo dialog, `showMainBrowser` / `showMainSettings` switch the open main
-//!   menu's page.
+//!   menu's page, and `play` goes on under one open to the transport's Play ([`crate::ui::backdrop_open_to_play`]).
 //! - The three-way `showRack` / `showMainMixer` / `showTransport` (hidden → show and focus; shown, focus outside →
 //!   focus; focus inside → hide, the focus back to the root) go through [`HoneydewApp::focus_panel`] and
 //!   [`HoneydewApp::clear_focus`] on KF's focus containers (`ui/focus.rs`); a panel shown and focused at once keeps the
@@ -130,7 +130,10 @@ impl HoneydewApp {
         let modal = crate::ui::modal_open(ctx);
         let top = self.nav.overlays.last();
         let hidden = self.main_screen.panel_hidden;
+        let play = crate::ui::play_open(ctx);
         let allowed = |g| match g {
+            // Under a modal open to the transport's Play (the Generate panel), `play` too.
+            Global::Play => !modal || play,
             // The panel's size toggles only while it shows.
             Global::TogglePanel => !modal && !hidden,
             Global::MainMenu(_) => !modal || matches!(top, Some(Overlay::MainMenu(_))),

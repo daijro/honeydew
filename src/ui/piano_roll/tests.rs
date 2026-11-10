@@ -3902,7 +3902,7 @@ mod component {
     fn a_roll_hidden_mid_drag_stops_the_dragged_key_and_closes_the_move_where_it_is() {
         let mut rig = Rig::new(vec![n(128, 64.0, 70)]);
         let to = drag_up_a_row(&mut rig);
-        assert_eq!(rig.roll.hide(), [OFF_71, DONE]);
+        assert_eq!(rig.roll.hide(&mut rig.song), [OFF_71, DONE]);
         assert_eq!(spans(rig.events()), [(128, 64.0, 71)]);
         // Shown again, the release ends nothing more.
         rig.release(to);
@@ -3910,7 +3910,7 @@ mod component {
         assert_eq!(rig.sounds, [(71, Some(0.7))]);
         assert_eq!(rig.all, [EDITED]);
         assert_eq!(spans(rig.events()), [(128, 64.0, 71)]);
-        assert!(rig.roll.hide().is_empty());
+        assert!(rig.roll.hide(&mut rig.song).is_empty());
     }
 
     #[test]
@@ -3927,15 +3927,15 @@ mod component {
         rig.frame(vec![In::PointerMoved(pos2(x, lane_y(1.0)))]);
         rig.frame(vec![In::PointerMoved(pos2(x, v204))]);
         assert_eq!(values(&rig), [(204, 127)]);
-        assert_eq!(rig.roll.hide(), [PianoRollAction::Resync]);
+        assert_eq!(rig.roll.hide(&mut rig.song), [PianoRollAction::Resync]);
         assert_eq!(rig.roll.selected, [false]);
         rig.release(pos2(x, v204));
-        assert!(rig.roll.hide().is_empty());
+        assert!(rig.roll.hide(&mut rig.song).is_empty());
         // Painted and still changed: the final edit.
         rig.frame(vec![In::PointerMoved(pos2(x, v204))]);
         rig.button(pos2(x, v204), PointerButton::Primary, true);
         rig.frame(vec![In::PointerMoved(pos2(x, lane_y(1.0)))]);
-        assert_eq!(rig.roll.hide(), [DONE]);
+        assert_eq!(rig.roll.hide(&mut rig.song), [DONE]);
         rig.release(pos2(x, lane_y(1.0)));
         assert_eq!(values(&rig), [(255, 127)]);
     }
@@ -3950,13 +3950,13 @@ mod component {
             key,
             velocity: None,
         };
-        assert_eq!(rig.roll.hide(), [off(72)]);
+        assert_eq!(rig.roll.hide(&mut rig.song), [off(72)]);
         rig.release(c5);
         assert_eq!(rig.sounds, [(72, Some(crate::app::KEY_VELOCITY))]);
         // A new note sounds for its 150 ms gate: hidden within it, it stops at once, and not again.
         rig.tap(at(256.0, 60));
         assert_eq!(rig.sounds[1..], [(60, Some(1.0))]);
-        assert_eq!(rig.roll.hide(), [off(60)]);
+        assert_eq!(rig.roll.hide(&mut rig.song), [off(60)]);
         rig.frame_after(0.2, vec![]);
         assert_eq!(rig.sounds.len(), 2, "{:?}", rig.sounds);
     }

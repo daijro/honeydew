@@ -75,6 +75,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
             PianoRollAction::SongEdited { final_edit } => app.song_edited(final_edit),
             PianoRollAction::QuietEdit => app.quiet_edited(),
             PianoRollAction::Resync => app.resync_edited(),
+            PianoRollAction::Audition => app.edit = app.edit.max(Some(super::SongEdit::Audition)),
             PianoRollAction::SetPlayhead(tick) => app.set_playhead(tick),
             PianoRollAction::Play => app.play(),
             PianoRollAction::Seek(tick) => app.seek = Some(tick),

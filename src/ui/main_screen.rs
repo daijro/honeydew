@@ -64,6 +64,12 @@ const BAR_W: f32 = 0.15;
 const BAR_HIT: f32 = 0.5;
 /// The floating panel buttons: the logo's diameter.
 const PANEL_BUTTON_W: f32 = 1.5;
+/// The floating panel buttons' column on the screen's right edge: the logo, the rack tab and the `↖` sit 2.1 U in from
+/// it. The moved graph tab keeps clear of it (#114).
+pub(crate) const CORNER_W: f32 = 2.1;
+/// The gap that the chrome a drag moves (the rack tab, the graph tab, the close ribbon) keeps from the fixed controls
+/// along its way, in U (#114).
+pub(crate) const CLEAR_U: f32 = 0.25;
 /// The add-channel `+`: the disc diameter, and the length of each bar of the plus inside it, tip to tip.
 const ADD_D: f32 = 2.0;
 const PLUS_LEN: f32 = 1.12;
@@ -1200,9 +1206,9 @@ impl MainScreen {
     /// - Logo: a 1.5 U circle whose top-left is (screen right − 2.1 U, top + 0.2 U), icon 6 centred in it; its
     ///   touch area runs from its left edge to the screen's right edge, from the top down to 1.7 U. Hidden while the
     ///   rack is open across the full width.
-    /// - Rack tab: a 1.5 U × 2.43 U pill, its left edge 2.1 U from the screen's right edge, centred on the content area
-    ///   top … its bottom + 2 U, at least 5 U below the area top and 0.25 U above its bottom, moved `tab_shift` U down
-    ///   that edge (PR #87: a drag up or down moves it, kept in those bounds, and the app keeps the place in
+    /// - Rack tab: a 1.5 U × 2.43 U pill, its left edge 2.1 U from the screen's right edge, at `tab_place` in the
+    ///   space the content area leaves it ([`rack_tab`](crate::ui::rack::rack_tab): 0 at the top, 1 at the bottom,
+    ///   0.5 centred; PR #87: a drag up or down moves it, kept in that space, and the app keeps the place in
     ///   `Settings`); while its top is under 2.75 U from the screen's top it moves right by the difference. Icon 88 in
     ///   the channel colour; touch area to the screen's right edge. Hidden while the rack is open. Returns the place
     ///   it then has.
@@ -1213,33 +1219,35 @@ impl MainScreen {
         (selected, ink): (usize, Color32),
         regions: &Regions,
         actions: &mut ScreenActions,
-        tab_shift: f32,
+        tab_place: f32,
     ) -> f32 {
         let m = cx.m;
         let text = cx.theme.colors.text.to_color32();
         self.show_keyboard_button(ui, cx, regions.screen);
         let (screen, area) = (regions.screen, regions.area);
         let rack_open = regions.rack.left() < area.right();
-        let mut shift = tab_shift;
+        let mut place = tab_place;
 
         if !rack_open {
-            let pill = crate::ui::rack::rack_tab(screen, area, m.u(1.0), shift);
+            let pill = rack_tab_pill(regions, place, m);
             let hit = pill.with_max_x(screen.right());
             let icon = (IconId::RackTab, ink);
             let tab = open_panel_button(ui, Id::new("edge_tab"), (pill, hit), icon, cx);
             crate::ui::tooltip::tip(ui, hit, "Channel rack", Some("showRack"));
-            // A drag up or down moves the tab along the edge, kept in its bounds; a tap still toggles the rack.
-            let place = Id::new("edge_tab place");
-            let (lo, hi) = crate::ui::rack::rack_tab_shift_range(area.y_range(), m.u(1.0));
+            // A drag up or down moves the tab along the edge with the finger, kept in its space; a tap still toggles
+            // the rack.
+            let held = Id::new("edge_tab place");
+            let travel =
+                rack_tab_pill(regions, 1.0, m).top() - rack_tab_pill(regions, 0.0, m).top();
             if tab.drag_started() {
-                ui.data_mut(|d| d.insert_temp(place, shift.max(lo).min(hi)));
-            } else if tab.dragged() {
-                let from = ui.data(|d| d.get_temp::<f32>(place)).unwrap_or(shift);
-                let moved = tab.total_drag_delta().unwrap_or_default().y / m.u(1.0);
-                shift = (from + moved).max(lo).min(hi);
+                ui.data_mut(|d| d.insert_temp(held, place));
+            } else if tab.dragged() && travel > 0.0 {
+                let from = ui.data(|d| d.get_temp::<f32>(held)).unwrap_or(place);
+                let moved = tab.total_drag_delta().unwrap_or_default().y / travel;
+                place = (from + moved).clamp(0.0, 1.0);
             }
             if tab.drag_stopped() {
-                ui.data_mut(|d| d.remove::<f32>(place));
+                ui.data_mut(|d| d.remove::<f32>(held));
             }
             if tab.clicked() {
                 actions.nav = Some(Nav::Toggle(Overlay::Rack(selected)));
@@ -1264,7 +1272,7 @@ impl MainScreen {
                 actions.nav = Some(Nav::Toggle(Overlay::MainMenu(MenuTab::Songs)));
             }
         }
-        shift
+        place
     }
 
     /// The keyboard panel's height this frame: the first frame takes `target` ([`panel_target`]) at once; then it moves
@@ -1534,12 +1542,8 @@ impl MainScreen {
         if !self.panel_hidden {
             return;
         }
-        let m = cx.m;
-        let corner = screen.right_bottom();
-        let disc = Rect::from_min_max(
-            corner - vec2(m.u(2.1), m.u(1.7)),
-            corner - vec2(m.u(0.6), m.u(0.2)),
-        );
+        let (m, corner) = (cx.m, screen.right_bottom());
+        let disc = show_keys_disc(screen, m);
         let hit = disc.with_max_x(corner.x).with_max_y(corner.y);
         let id = Id::new("show_keyboard");
         let button = floating_button(ui, cx, id, disc, disc.width() / 2.0, hit);
@@ -2372,6 +2376,26 @@ fn plus_bars(center: Pos2, m: &Metrics) -> [Rect; 2] {
     [cross.expand2(vec2(arm, 0.0)), cross.expand2(vec2(0.0, arm))].map(|r| r / ppp)
 }
 
+/// The show-keyboard `↖`'s 1.5 U disc on `screen`: its right edge 0.6 U from the screen's, its bottom 0.2 U above it.
+/// The rack tab's pill in `regions` at `place` (`Settings::rack_tab_place`; [`rack_tab`](crate::ui::rack::rack_tab)):
+/// no lower than the transport bar, or than the `↖` in the corner under it while the panel is hidden (the bar off
+/// screen, #114). The open rack's collapse tab sits at its height.
+pub fn rack_tab_pill(regions: &Regions, place: f32, m: &Metrics) -> Rect {
+    let floor = match regions.transport.top() < regions.screen.bottom() {
+        true => regions.area.bottom(),
+        false => show_keys_disc(regions.screen, m).top(),
+    };
+    crate::ui::rack::rack_tab(regions.screen, regions.area, floor, m.u(1.0), place)
+}
+
+fn show_keys_disc(screen: Rect, m: &Metrics) -> Rect {
+    let corner = screen.right_bottom();
+    Rect::from_min_max(
+        corner - vec2(m.u(CORNER_W), m.u(1.7)),
+        corner - vec2(m.u(0.6), m.u(0.2)),
+    )
+}
+
 /// A zero-size rect at `p`, to centre an icon on a point.
 /// A floating panel button ([`floating_button`]: the logo, the rack tab) of `shape`, rounded to a circle or a pill,
 /// sensing `hit`, with its icon `icon` in `ink` at scale 1, centred.
@@ -2781,7 +2805,7 @@ mod tests {
                     let (edit, playhead) = (app.edit, app.playhead);
                     screen.chrome(ui, &cx, input, &regions, &mut actions);
                     let tab = (input.selected, Color32::WHITE);
-                    let _ = screen.corner_buttons(ui, &cx, tab, &regions, &mut actions, 0.0);
+                    let _ = screen.corner_buttons(ui, &cx, tab, &regions, &mut actions, 0.5);
                     let panel_h = size.y - regions.transport.top();
                     let tracks = band_layout(size.y, m.u(1.0), panel_h, 1).tracks;
                     result = Some(Frame {

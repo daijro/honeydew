@@ -199,6 +199,16 @@ impl PanelGrab {
         self.touch.is_some_and(|t| t.mode == Mode::Resize)
     }
 
+    /// The touch scrolls the keys: it left the calm zone sideways.
+    pub fn scrolling(&self) -> bool {
+        self.touch.is_some_and(|t| t.mode == Mode::Scroll)
+    }
+
+    /// A touch is down that has left neither calm distance yet.
+    pub fn calm(&self) -> bool {
+        self.touch.is_some_and(|t| t.mode == Mode::Calm)
+    }
+
     /// One frame of the grab over `zone` (the last frame's, so that a resize lays the panel out in the frame it moves):
     /// the pointer's drags and the wheel, read from the input with no widget. `covered`: an overlay lies over the
     /// pointer. Any touch-down stops the fling. The tap is [`tap`]'s.

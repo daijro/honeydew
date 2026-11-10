@@ -672,6 +672,11 @@ impl HoneydewApp {
                 // A tempo drag: the engine takes the tempo live.
                 self.audio.set_tempo(self.song.tempo_bpm);
             }
+            SongEdit::Audition => {
+                self.files.song_changed();
+                self.history.edited(&self.song, false);
+                self.rebuild_as(tick, Handover::Edit);
+            }
             SongEdit::RackState | SongEdit::RackRebuild | SongEdit::Untracked => {
                 // It closed an open gesture into a step: a saved undo step.
                 if self.history.rack_state(&self.song) {
@@ -922,7 +927,8 @@ impl HoneydewApp {
         match drawn {
             View::PianoRoll(channel) => {
                 let roll = slots.piano_roll.rolls.get_mut(&channel);
-                for action in roll.map(PianoRoll::hide).into_iter().flatten() {
+                let hidden = roll.map(|r| PianoRoll::hide(r, &mut self.song));
+                for action in hidden.into_iter().flatten() {
                     match action {
                         PianoRollAction::Note {
                             key,
@@ -1226,6 +1232,7 @@ impl HoneydewApp {
             notes,
             sounding: self.engine_keys.get(channel).copied().unwrap_or(0),
             range,
+            hold: false,
         }
     }
 
@@ -2209,6 +2216,10 @@ impl HoneydewApp {
         let lit: Vec<u128> = (0..self.song.channels.len())
             .map(|c| self.sounding(c) | self.engine_keys.get(c).copied().unwrap_or(0))
             .collect();
+        // The pickers' keys light them as the keyboard panel does, held apart from sounding.
+        let engine = |c: usize| self.engine_keys.get(c).copied().unwrap_or(0);
+        let keys = (0..self.song.channels.len()).map(|c| (self.sounding(c), engine(c)));
+        self.slots.preset_picker.lit = keys.collect();
         let cx = UiCtx {
             theme: &self.theme,
             m: &metrics,
@@ -2453,17 +2464,17 @@ impl HoneydewApp {
                 let ink = crate::theme::channel_color(hue, cx.theme).to_color32();
                 // The rack tab's place, which a drag of it may move (PR #87): out of the settings for the frame, and
                 // back in.
-                let tab_shift = std::cell::Cell::new(app.settings.rack_tab_shift);
+                let tab_place = std::cell::Cell::new(app.settings.rack_tab_place);
                 let corner = |ui: &mut egui::Ui| {
                     let (selected, screen) = ((input.selected, ink), &mut self.main_screen);
-                    let shift = tab_shift.get();
+                    let place = tab_place.get();
                     let at =
-                        screen.corner_buttons(ui, &cx, selected, &regions, &mut actions, shift);
-                    tab_shift.set(at);
+                        screen.corner_buttons(ui, &cx, selected, &regions, &mut actions, place);
+                    tab_place.set(at);
                 };
                 let overlay_navs =
                     (self.slots).overlays(&mut self.nav.overlays, ui, &mut app, escape, corner);
-                app.settings.rack_tab_shift = tab_shift.get();
+                app.settings.rack_tab_place = tab_place.get();
                 #[cfg(test)]
                 match self.test_edit.take() {
                     Some(SongEdit::Replaced) => app.song_replaced(),

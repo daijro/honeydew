@@ -376,6 +376,8 @@ pub enum SongEdit {
     RackState,
     /// Mid-gesture (a drag): the song changed, the audio is not rebuilt yet.
     Ongoing,
+    /// Mid-gesture with a new engine that plays it: the Generate panel's preview in its clip.
+    Audition,
     /// Rack state the audio reads only at build (a drum strip's `Shift`, `AUX`, a stretch): as [`Self::RackState`],
     /// and a new engine.
     RackRebuild,

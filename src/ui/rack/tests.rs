@@ -1743,7 +1743,8 @@ fn inserting_a_picked_module_always_changes_the_chain_and_its_edits_are_sent() {
 fn the_collapse_tab_and_the_left_margin_close_the_rack_and_the_header_does_not() {
     let mut rig = Rig::new(&[6]);
     let c = Chrome::new(rack_rect(SCREEN), U);
-    rig.click(c.collapse.unwrap().center());
+    rig.rack.tab_y = 400.0;
+    rig.click(collapse_tab(rack_rect(SCREEN), U, 400.0).center());
     assert!(rig.actions.close);
     // Anywhere in the 1.5 U margin under the header.
     rig.click(pos2(c.bar.left() - 0.1 * U, c.header_bottom + 2.0 * U));
@@ -3632,7 +3633,7 @@ fn a_portrait_window_over_20_u_wide_gets_the_full_screen_rack_and_full_width_men
         .rack;
     assert_eq!(rack.x_range(), screen.x_range());
     let c = Chrome::new(rack, m.u_px());
-    assert!(c.full && c.close.is_some() && c.collapse.is_none());
+    assert!(c.full && c.close.is_some());
     assert_eq!(crate::ui::main_menu::shell_layout(screen, &m).panel, screen);
     let picker = crate::ui::modules_browser::layout(screen, 1.0, &m).panel;
     assert_eq!(picker.x_range(), screen.x_range());
@@ -3670,20 +3671,25 @@ fn the_rack_slides_halfway_each_frame_and_snaps_within_a_pixel() {
 #[test]
 fn the_chrome_is_full_screen_below_20_u_with_margins_from_1_5_down_to_0_5_u() {
     let u = 32.0;
-    // A 20 U side rack: 1.5 U margins, a 1.3 U header (its bar 2 px less), the collapse tab and no X.
-    let side = Chrome::new(Rect::from_min_size(pos2(530.0, 0.0), vec2(640.0, 540.0)), u);
+    // A 20 U side rack: 1.5 U margins, a 1.3 U header (its bar 2 px less), the collapse tab (at the rack tab's height)
+    // and no X.
+    let rack = Rect::from_min_size(pos2(530.0, 0.0), vec2(640.0, 540.0));
+    let side = Chrome::new(rack, u);
     assert!(!side.full && side.close.is_none());
     assert_eq!((side.margin, side.header_bottom), (48.0, 41.0));
     assert_eq!(side.bar, Rect::from_x_y_ranges(578.0..=1122.0, 0.0..=39.0));
-    let tab = side.collapse.unwrap();
-    assert_eq!((tab.left(), tab.width()), (538.0, 32.0));
+    let tab = collapse_tab(rack, u, 270.0);
+    assert_eq!(
+        (tab.left(), tab.width(), tab.center().y),
+        (538.0, 32.0, 270.0)
+    );
     assert!((tab.height() - 1.6 * u).abs() < 1e-3);
     // 19 U: full screen already (narrower than 20 U), with 1 U margins.
     let narrower = Chrome::new(Rect::from_min_size(Pos2::ZERO, vec2(608.0, 540.0)), u);
     assert_eq!((narrower.full, narrower.margin), (true, 32.0));
     // Full screen on a 16.9 U phone: 0.5 U margins, a 1.75 U header with the X at its right end, no collapse tab.
     let full = Chrome::new(Rect::from_min_size(Pos2::ZERO, vec2(540.0, 900.0)), u);
-    assert!(full.full && full.collapse.is_none());
+    assert!(full.full);
     assert_eq!((full.margin, full.header_bottom), (16.0, 56.0));
     assert_eq!(
         full.close,
@@ -4713,55 +4719,55 @@ fn add_midi_send_offers_the_note_channels_no_midi_send_leads_back_from() {
     assert_eq!(offered(4), [2, 3]);
 }
 
-/// GitHub #57: the rack tab rides above the keyboard panel. Centred on a tall area; on a short one it moves up to stay
-/// 0.25 U above the area's bottom (it never lies on the transport bar); with no room its top passes 2.75 U and it
-/// slides right by the difference, a sliver left at the screen's edge.
+/// GitHub #57 and 0.5.3: the rack tab rides above the keyboard panel, centred in the space left, from
+/// 0.25 U under the logo (1.7 U down) to 0.25 U above the area's bottom. With no room for it the bottom wins (it never
+/// lies on the transport bar), its top passes 2.75 U and it slides right by the difference, a sliver left at the
+/// screen's edge.
 #[test]
 fn the_rack_tab_moves_up_with_the_keyboard_panel_and_slides_off_the_right_edge() {
     let u = 32.0;
     let screen = Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 900.0));
-    let tab = |bottom: f32| rack_tab(screen, screen.with_max_y(bottom), u, 0.0);
+    let tab = |bottom: f32| rack_tab(screen, screen.with_max_y(bottom), bottom, u, 0.5);
     let near = |a: f32, b: f32| (a - b).abs() < 1e-3;
     let x = 1170.0 - 2.1 * u;
-    // Tall: centred on 0 … 600 + 2 U.
-    let tall = tab(600.0);
-    assert!(near(tall.center().y, (600.0 + 2.0 * u) / 2.0) && near(tall.left(), x));
-    assert!(near(tall.width(), 1.5 * u) && near(tall.height(), 2.43 * u));
-    // Short: up off the 5 U floor, 0.25 U above the bottom; still 2.75 U clear of the top, so in place.
-    let short = tab(200.0);
-    assert!(
-        near(short.bottom(), 200.0 - 0.25 * u) && near(short.left(), x),
-        "{short:?}"
-    );
+    for bottom in [600.0, 260.0] {
+        let t = tab(bottom);
+        let middle = (1.95 * u + bottom - 0.25 * u) / 2.0;
+        assert!(near(t.center().y, middle) && near(t.left(), x), "{t:?}");
+        assert!(near(t.width(), 1.5 * u) && near(t.height(), 2.43 * u));
+    }
     // No room (ruler + one row, the panel at its cap): right by 2.75 U − top, a sliver still on screen.
     let full = tab((1.65 + 2.0) * u);
     assert!(near(full.bottom(), 3.4 * u), "{full:?}");
     assert!(near(full.left(), x + 2.75 * u - full.top()) && full.left() < 1170.0);
 }
 
-/// PR #87: a drag moves the rack tab down (or up) its edge by `shift` U, held 5 U below the area's top and 0.25 U above
-/// its bottom as its home is; on an area too short for both the bottom still wins (#57), whatever the shift.
+/// PR #87 and 0.5.3: a drag's place runs from the top of the rack tab's space (0: 0.25 U under the logo)
+/// to its bottom (1: 0.25 U above the area's bottom, or above a higher `floor`, #114); on an area too short for the
+/// pill the bottom still wins (#57), whatever the place.
 #[test]
 fn a_moved_rack_tab_keeps_to_its_bounds() {
     let u = 32.0;
     let screen = Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 900.0));
     let area = screen.with_max_y(600.0);
     let near = |a: f32, b: f32| (a - b).abs() < 1e-3;
-    let home = rack_tab(screen, area, u, 0.0);
+    // At the top of its room (inside 2.75 U) it stays whole: it slides right only when forced above it.
+    let top = rack_tab(screen, area, 600.0, u, 0.0);
+    assert!(
+        near(top.top(), 1.95 * u) && near(top.left(), 1170.0 - 2.1 * u),
+        "{top:?}"
+    );
     assert!(near(
-        rack_tab(screen, area, u, 2.0).top(),
-        home.top() + 2.0 * u
-    ));
-    assert!(near(
-        rack_tab(screen, area, u, 99.0).bottom(),
+        rack_tab(screen, area, 600.0, u, 1.0).bottom(),
         600.0 - 0.25 * u
     ));
-    assert!(near(rack_tab(screen, area, u, -99.0).top(), 5.0 * u));
-    let (lo, hi) = rack_tab_shift_range(area.y_range(), u);
-    assert!(near(home.top() + lo * u, 5.0 * u) && near(home.bottom() + hi * u, 600.0 - 0.25 * u));
-    let short = screen.with_max_y(200.0);
-    for shift in [-99.0, 0.0, 99.0] {
-        let tab = rack_tab(screen, short, u, shift);
-        assert!(near(tab.bottom(), 200.0 - 0.25 * u), "{shift}: {tab:?}");
+    assert!(near(
+        rack_tab(screen, area, 500.0, u, 1.0).bottom(),
+        500.0 - 0.25 * u
+    ));
+    let short = screen.with_max_y(100.0);
+    for place in [0.0, 0.5, 1.0] {
+        let tab = rack_tab(screen, short, 100.0, u, place);
+        assert!(near(tab.bottom(), 100.0 - 0.25 * u), "{place}: {tab:?}");
     }
 }

@@ -160,6 +160,9 @@ pub struct State {
     pub(crate) back_to_modules: bool,
     /// Issue #98: the cards' ◀ / ▶ loading on a worker ([`step_preset`]).
     steps: Vec<Loading>,
+    /// Each channel's notes held (the keyboard panel, typed, MIDI) and sounding at its input, as the keyboard panel
+    /// lights them: the app's, each frame, for the keys ([`crate::ui::picker_preview::KeyStrip::lit`]).
+    pub(crate) lit: Vec<(u128, u128)>,
 }
 
 impl State {
@@ -560,14 +563,20 @@ pub fn show(
     let instrument = module_type
         .filter(|&t| t != SLICER)
         .is_some_and(|t| module_spec(t).is_some_and(|s| s.role == Role::Instrument));
-    // Issue #98: the instruments' pickers have the keys at their bottom, playing the channel.
+    // Issue #98: the instruments' pickers have the keys at their bottom, playing the channel (SETTINGS `Keyboard in
+    // pickers`).
     let instruments = matches!(
         target,
         PresetTarget::Instruments | PresetTarget::ModulesInstrument(_)
     );
-    if let (true, Some(ch)) = (instrument || instruments, app.song.channels.get(channel)) {
+    let keys = (instrument || instruments) && app.settings.picker_keys;
+    if let (true, Some(ch)) = (keys, app.song.channels.get(channel)) {
         let ink = crate::theme::channel_color(ch.hue, app.cx.theme).to_color32();
-        picker.keys_on(ink, app.settings);
+        picker.keys_on(
+            ink,
+            app.settings,
+            (state.lit.get(channel)).copied().unwrap_or_default(),
+        );
     }
     let (ctx, cx) = (ui.ctx(), &app.cx);
     let shown = app.files.with_preset_files(top, exts, |library| {

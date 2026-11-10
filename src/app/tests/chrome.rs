@@ -57,13 +57,18 @@ fn the_close_x_on_the_playlist_hides_the_panel_and_the_corner_button_brings_it_b
     rig.click(CLOSE);
     assert!(rig.hidden());
     rig.frame(vec![]);
-    // No transport, no keyboard; the track rows reach the bottom, and the rack tab is centred on them again.
+    // No transport, no keyboard; the track rows reach the bottom, and the rack tab is centred again, logo to `↖`.
     assert!(!rig.painted("BPM"));
     rig.take();
     rig.click(E4);
     assert_eq!(rig.take(), Vec::<String>::new());
     let tab = rig.ctx.read_response(egui::Id::new("edge_tab")).unwrap();
-    assert_eq!(tab.rect.center().y, (540.0 + 2.0 * U) / 2.0);
+    let middle = (1.95 * U + SHOW_DISC.top() - 0.25 * U) / 2.0;
+    assert!(
+        (tab.rect.center().y - middle).abs() < 1e-3,
+        "{:?}",
+        tab.rect
+    );
     // The `↖`: a floating 1.5 U `moduleFill` disc with icon 11 in `text` over it.
     let disc = rig.show_button().expect("the ↖");
     let icon = (rig.out.shapes[disc + 1..].iter()).any(|s| match &s.shape {
@@ -2087,4 +2092,95 @@ fn the_floating_logo_and_the_menu_header_logo_are_text() {
     let header = rig.image_tint_in(crate::ui::main_menu::shell_layout(screen, &m).header);
     assert_eq!(corner, Some(text));
     assert_eq!(header, Some(text));
+}
+
+/// #114: with the keyboard panel hidden, a drag of the rack tab down past the screen's bottom stops it 0.25 U clear of
+/// the `↖` under it, where it stays while the finger goes on, and keeps that bottom place.
+#[test]
+fn the_rack_tab_stops_clear_of_the_show_keyboard_button() {
+    let mut rig = Rig::with_synth();
+    rig.click(CLOSE);
+    rig.frame(vec![]);
+    rig.frame(vec![]);
+    let id = egui::Id::new("edge_tab");
+    let tab = |rig: &Rig| rig.ctx.read_response(id).unwrap().rect;
+    let limit = SHOW_DISC.top() - 0.25 * U;
+    let from = tab(&rig).center();
+    rig.press(from);
+    for y in [400.0, 520.0, 700.0, 700.0] {
+        rig.drag_to(pos2(from.x, y));
+        assert!(tab(&rig).bottom() <= limit + 1e-3, "{y}: {:?}", tab(&rig));
+    }
+    assert!(tab(&rig).bottom() > limit - 1.0, "{:?}", tab(&rig));
+    rig.release(pos2(from.x, 700.0));
+    assert_eq!(rig.app.settings.rack_tab_place, 1.0);
+}
+
+/// 0.5.3: the rack tab is centred in the space the keyboard panel leaves it, from 0.25 U under the logo
+/// down to 0.25 U above the transport bar, and a dragged place keeps its share of that space as the panel's height
+/// changes: dragged to the middle, it stays in the middle.
+#[test]
+fn the_rack_tab_is_centred_in_the_space_left_and_a_dragged_place_keeps_its_share() {
+    let mut rig = Rig::with_synth();
+    let tab = |rig: &Rig| {
+        rig.ctx
+            .read_response(egui::Id::new("edge_tab"))
+            .unwrap()
+            .rect
+    };
+    let middle = |panel: f32| (1.95 * U + regions_at(panel).area.bottom() - 0.25 * U) / 2.0;
+    rig.app.settings.preferred_kbd_size = 9.0;
+    rig.settle_panel();
+    assert!(
+        (tab(&rig).center().y - middle(9.0)).abs() < 1e-3,
+        "{:?}",
+        tab(&rig)
+    );
+    // Down onto the transport bar, then back up to the middle.
+    for to in [middle(9.0) + 200.0, middle(9.0)] {
+        let from = tab(&rig).center();
+        rig.press(from);
+        rig.drag_to(pos2(from.x, to));
+        rig.drag_to(pos2(from.x, to));
+        rig.release(pos2(from.x, to));
+        rig.frame(vec![]);
+    }
+    rig.app.settings.preferred_kbd_size = 5.0;
+    rig.settle_panel();
+    assert!(
+        (tab(&rig).center().y - middle(5.0)).abs() < 1e-3,
+        "{:?}",
+        tab(&rig)
+    );
+}
+
+/// The open rack's `›` collapse tab sits where the rack tab was, a dragged place and the `↖` under it (the panel hidden)
+/// included, so opening and closing the rack doesn't move it.
+#[test]
+fn the_collapse_tab_sits_where_the_rack_tab_was_with_the_panel_hidden() {
+    let mut rig = Rig::with_synth();
+    rig.click(CLOSE);
+    rig.frame(vec![]);
+    let tab = |rig: &Rig| {
+        rig.ctx
+            .read_response(egui::Id::new("edge_tab"))
+            .unwrap()
+            .rect
+    };
+    let from = tab(&rig).center();
+    rig.press(from);
+    rig.drag_to(from + vec2(0.0, 60.0));
+    rig.drag_to(from + vec2(0.0, 60.0));
+    rig.release(from + vec2(0.0, 60.0));
+    rig.frame(vec![]);
+    let pill = tab(&rig);
+    rig.click(pill.center());
+    rig.slide_rack();
+    assert_eq!(rig.overlays(), [Overlay::Rack(1)]);
+    let id = egui::Id::new(("rack", 1usize)).with("rack collapse");
+    let collapse = rig.ctx.read_response(id).expect("the ›").rect;
+    assert!(
+        (collapse.center().y - pill.center().y).abs() < 1e-3,
+        "{collapse:?} {pill:?}"
+    );
 }

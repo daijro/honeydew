@@ -103,8 +103,11 @@
 //!   re-syncs.
 //! - Contributor feature (PR #87): the transport bar's GENERATE opens the Generate panel ([`generate`],
 //!   [`compose`]): a chord progression and a melody for the clip, in the project's key and scale or the panel's own.
-//!   It previews and applies as the Humanize panel does, its `Apply` writing the clip's notes anew (the clip's own
-//!   melody kept when the melody leads).
+//!   While it is open its result is in the clip, as `Apply` leaves it, so that the song plays it: the
+//!   clip's notes anew (its own melody kept when the melody leads), the loop fitted to them and at least the panel's
+//!   bars, and a length of the clip's own grown to show it whole, never shrunk. Each change of it hands the engine the
+//!   song, with no undo step ([`PianoRollAction::Audition`]); `Apply` keeps it as one final edit, the undo step from
+//!   the clip the panel opened on, and any other close puts that clip back.
 //!
 //! The ruler takes the shared gestures ([`RangeSelect`]) in content ticks on the snap grid (whole ticks with snap off):
 //! a tap sets the song's playhead, and the range is the song's play loop, content tick 0 being song tick
@@ -210,6 +213,9 @@ pub enum PianoRollAction {
     Seek(u64),
     /// Sound `key` on the roll's channel at `velocity` (0..=1), or stop it (`None`): a new note, a dragged key.
     Note { key: u8, velocity: Option<f32> },
+    /// The Generate panel's preview went into the clip: a new engine plays it, and the undo step waits
+    /// for `Apply`, as mid-drag ([`PianoRoll::audition`]).
+    Audition,
 }
 
 /// The remembered note: what a tap's new note takes. Set whenever exactly one note becomes the selection (a touch-down,
@@ -327,6 +333,9 @@ pub struct PianoRoll {
     knob: PlayheadKnob,
     /// The clip is a take being recorded ([`RollOptions::recording`]): nothing edits it.
     recording: bool,
+    /// The clip the Generate panel opened on, as it was then, and its lane: the panel's preview is in it meanwhile
+    /// ([`Self::audition`]).
+    generate_from: Option<(usize, Clip)>,
 }
 
 /// A touch on the grid (module docs). Outside a touch, the selection is the one showing.
@@ -468,6 +477,7 @@ impl PianoRoll {
             pending: Vec::new(),
             knob: PlayheadKnob::default(),
             recording: false,
+            generate_from: None,
         }
     }
 
@@ -497,6 +507,8 @@ impl PianoRoll {
                 gate: self.gate,
                 keys_down,
                 keys_pass: self.keys_pass,
+                // Its panel closes: the next frame puts its clip back.
+                generate_from: self.generate_from.take(),
                 ..Self::new(self.channel, lane, Some(clip_id))
             };
         }
@@ -621,6 +633,11 @@ impl PianoRoll {
             }
             self.graph_drag = None;
         }
+        let panel = match self.menu {
+            Some(Menu::Generate(panel)) => Some(panel),
+            _ => None,
+        };
+        self.audition(song, panel, &mut actions);
         if self.scroll.is_none() {
             self.scroll = Some(self.initial_scroll(song, grid, u));
         }
@@ -674,13 +691,11 @@ impl PianoRoll {
             .map(|c| crate::app::note_record::live(c, opts.playhead, bpb));
         let shown = live.as_ref().or(self.clip(song));
         let events = shown.map_or(&[][..], |c| &c.events);
-        // The Humanize panel's preview, in the notes' order (so the selection still fits it), drawn in their place.
+        // The Humanize panel's preview, in the notes' order (so the selection still fits it), drawn in their place (the
+        // Generate panel's is in the clip: `Self::audition`).
         // ponytail: recomputed every frame the panel shows; keep it by (panel, events) if a huge clip makes that show.
         let preview = match self.menu {
             Some(Menu::Humanize(panel)) => Some(panel.preview(events, &self.selected)),
-            Some(Menu::Generate(panel)) => {
-                Some(panel.preview(events, project_scale(song), f64::from(bpb)))
-            }
             _ => None,
         };
         let events = preview.as_deref().unwrap_or(events);
@@ -869,10 +884,12 @@ impl PianoRoll {
 
     /// The roll goes (the view left it, `app::left_view`) with a touch it will not see end ([`Self::end_touch`]); the
     /// key the key column holds and a new note's sound stop now.
-    pub(crate) fn hide(&mut self) -> Vec<PianoRollAction> {
-        // An open menu or panel (Generate, #107) is cancelled: it never comes back by itself with the roll.
+    pub(crate) fn hide(&mut self, song: &mut Song) -> Vec<PianoRollAction> {
+        // An open menu or panel (Generate, #107) is cancelled: it never comes back by itself with the roll, and the
+        // Generate preview's clip gets its notes back.
         self.menu = None;
         let mut actions = self.end_touch();
+        self.audition(song, None, &mut actions);
         let column = column_keys(&std::mem::take(&mut self.keys_down));
         for key in column.into_iter().chain(self.gate.take().map(|g| g.0)) {
             actions.push(PianoRollAction::Note {
@@ -2076,7 +2093,11 @@ impl PianoRoll {
                 let close = generate::show(ctx, cx, id.with("generate"), over, ink, &mut panel);
                 self.menu = close.is_none().then_some(Menu::Generate(panel));
                 if close == Some(generate::Close::Apply) {
-                    self.generate(panel, song, actions);
+                    // The clip keeps the preview ([`Self::audition`]): one final edit, the undo step from the clip
+                    // the panel opened on.
+                    self.audition(song, Some(panel), actions);
+                    self.generate_from = None;
+                    actions.push(PianoRollAction::SongEdited { final_edit: true });
                 }
                 // As the Humanize panel's: the preview was drawn before the panel changed.
                 if close.is_some() || panel != was {
@@ -2238,27 +2259,47 @@ impl PianoRoll {
         actions.push(PianoRollAction::Resync);
     }
 
-    /// The `Generate` panel's `Apply` (PR #87): its chords and melody into the clip (the clip's own notes kept when the
-    /// melody leads), re-sorted with no selection, one final edit that re-syncs what it changed.
-    fn generate(
+    /// The Generate panel's preview goes into the clip it opened on while `panel` shows, so that the song plays it:
+    /// the clip as `Apply` leaves it ([`generated`]) from the clip as the panel found it, which the
+    /// roll keeps, an [`PianoRollAction::Audition`] whenever it changes. With no panel (`Cancel`, a tap outside,
+    /// Escape, Back, the roll hidden or on another clip) the clip gets back its notes and lengths, a final edit that
+    /// makes no undo step. Either way the roll's notes are unselected.
+    fn audition(
         &mut self,
-        panel: generate::Panel,
         song: &mut Song,
+        panel: Option<generate::Panel>,
         actions: &mut Vec<PianoRollAction>,
     ) {
-        let bpb = song.time_sig.bar_beats();
-        let scale = project_scale(song);
-        let Some(clip) = self.clip_mut(song) else {
+        if panel.is_some() && self.generate_from.is_none() {
+            self.generate_from = self.clip_mut(song).map(|c| (self.lane, c.clone()));
+        }
+        let Some((lane, from)) = &self.generate_from else {
             return;
         };
-        let before = clip.events.clone();
-        clip.events = panel.preview(&clip.events, scale, f64::from(bpb));
-        self.selected = vec![false; clip.events.len()];
-        sort(&mut clip.events, &mut self.selected);
-        if clip.events != before {
-            clip.fit_loop(bpb);
+        let (bpb, scale) = (song.time_sig.bar_beats(), project_scale(song));
+        let next = panel.map_or_else(|| from.clone(), |p| generated(from, p, scale, bpb));
+        let lane = song
+            .channels
+            .get_mut(self.channel)
+            .and_then(|c| c.lanes.get_mut(*lane));
+        let clip = lane.and_then(|l| l.clips.iter_mut().find(|c| c.id == next.id));
+        if panel.is_none() || clip.is_none() {
+            self.generate_from = None;
         }
-        actions.push(PianoRollAction::Resync);
+        let Some(clip) = clip else {
+            return;
+        };
+        let lengths = |c: &Clip| (c.loop_len_beats, c.visible_len_beats);
+        if clip.events == next.events && lengths(clip) == lengths(&next) {
+            return;
+        }
+        (clip.events, clip.loop_len_beats, clip.visible_len_beats) =
+            (next.events, next.loop_len_beats, next.visible_len_beats);
+        actions.push(match panel {
+            Some(_) => PianoRollAction::Audition,
+            None => PianoRollAction::SongEdited { final_edit: true },
+        });
+        self.selected = vec![false; self.clip(song).map_or(0, |c| c.events.len())];
     }
 
     /// `Transpose by...` (module docs), from the menu's `(at, offset, from)`: the popup shows the offset of the drag
@@ -2428,6 +2469,24 @@ pub(crate) fn keys_id() -> Id {
 }
 
 /// The keys the key column's `fingers` play, each once.
+/// The clip as the Generate panel's `Apply` leaves `from`, the clip as the panel found it, in the project's `scale`,
+/// `bpb` beats a bar: its notes anew, sorted; the loop fitted to them (the roll's rule, which may shrink it) and at
+/// least the panel's bars; a length of its own grown to show that loop whole, never shrunk.
+fn generated(from: &Clip, panel: generate::Panel, scale: (u8, u16), bpb: u32) -> Clip {
+    let mut clip = from.clone();
+    clip.events = panel.preview(&from.events, scale, f64::from(bpb));
+    sort(&mut clip.events, &mut Vec::new());
+    if clip.events != from.events {
+        clip.fit_loop(bpb);
+        let bars = f64::from(panel.settings().bars) * f64::from(bpb);
+        clip.loop_len_beats = clip.loop_len_beats.max(bars);
+        if clip.visible_len_beats > 0.0 {
+            clip.visible_len_beats = clip.visible_len_beats.max(clip.loop_len_beats);
+        }
+    }
+    clip
+}
+
 fn column_keys(fingers: &[(u64, Option<u8>)]) -> Vec<u8> {
     let mut keys: Vec<u8> = fingers.iter().filter_map(|k| k.1).collect();
     keys.sort_unstable();

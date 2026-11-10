@@ -10,8 +10,15 @@
 //! kit's pads instead, across the row in pad order (#88).
 //!
 //! **Keys** (#98, a Honeydew addition). The app's keyboard ([`keyboard::keyboard_at`]),
-//! [`KEYS_H`] tall across the bottom of an instrument's picker, its 2 U white keys round middle C, playing the picker's
-//! channel as the audition strip does: velocity 1, every key a finger holds held, a tap for the keyboard's tap gate.
+//! [`KEYS_H`] tall across the bottom of an instrument's picker, its [`WHITE_W`] white keys round middle C, playing the
+//! picker's channel as the audition strip does: velocity 1, every key a finger holds held, a tap for the keyboard's tap
+//! gate. They take the panel's colours, not the keyboard panel's ([`faint`]), and SETTINGS `Keyboard in pickers`
+//! turns them off. They light the channel's notes as the keyboard panel's keys do: those held elsewhere (the keyboard
+//! panel, typed, MIDI) and those sounding (playback, previews). They pan and zoom as the keyboard panel's do, on the
+//! keys themselves: a touch holds its key while calm (no glissando), and once it leaves the calm zone sideways it pans
+//! them, its key let go, and flings; two fingers whose spread leaves it pinch them, their keys let go; the wheel (or a
+//! trackpad pinch) over them zooms. Their view starts with middle C in the middle and is kept while the app runs
+//! ([`VIEW`]).
 //!
 //! **Sample strip.** 1.75 U at the bottom of the panel, `menuFill`: the play button (icon 3, 1.2 U, centred in a 2 U
 //! column), the waveform (from x + 2 U, max(W − 2.4 U, 0) wide, 1 U tall, `text` at 0.85), and under it the sample's
@@ -21,16 +28,19 @@
 //! The waveform is one smooth band of the file's peaks, scaled to its loudest ([`envelope`], #108):
 //! the audio editor's min/max columns showed a low note's single cycles, hairy and thin.
 
-use eframe::egui::{Align2, Color32, Id, Mesh, Painter, Rect, Sense, Ui, pos2, vec2};
+use eframe::egui::{Align2, Color32, Id, Mesh, Painter, Pos2, Rect, Sense, Ui, pos2, vec2};
 
 use crate::icons::{IconId, draw_icon};
-use crate::metrics::FontSize;
+use crate::metrics::{FontSize, Metrics};
 use crate::sample_cache::Waveform;
 use crate::settings::Settings;
+use crate::theme::{Rgba, Theme};
 use crate::ui::audio_editor::{add_column, pixel_columns, wave_rows};
+use crate::ui::gesture::CALM_U;
 use crate::ui::keyboard::{self, KeyInput, KeyView, Piano};
+use crate::ui::panel_resize::{PanelGrab, Zone};
 use crate::ui::widgets::truncated;
-use crate::ui::{Finger, UiCtx, fingers};
+use crate::ui::{Finger, UiCtx, fingers, focus_lost};
 use honeydew_audio::sample_edit::peaks;
 
 /// The lowest and highest notes the strip plays, across the row (24 to 84).
@@ -163,12 +173,45 @@ impl Audition {
     }
 }
 
-/// The keys' height, in U: under a phone's landscape header the list keeps most of its rows.
-pub const KEYS_H: f32 = 3.0;
+/// The keys' height and a white key's width, in U (smaller than the keyboard panel's 2 U keys, so the list
+/// keeps its rows and more octaves show, still a finger wide).
+pub const KEYS_H: f32 = 2.0;
+pub const WHITE_W: f32 = 1.0;
+/// The egui memory id of the keys' scroll and zoom ([`KeyView`]), which every picker shares while the app runs.
+pub const VIEW: &str = "picker keys view";
+/// How far the keys' colours go from the panel's `menuFill` ([`faint`]): white keys toward `whiteKey`, black keys and
+/// the separators toward `background`, the labels toward `text`, a held key toward the channel's colour.
+const WHITE_MIX: f32 = 0.08;
+const BLACK_MIX: f32 = 0.3;
+const SEP_MIX: f32 = 0.2;
+const LABEL_MIX: f32 = 0.35;
+const HELD_MIX: f32 = 0.4;
+
+/// `a` moved `t` of the way to `b`.
+fn mix(a: Rgba, b: Rgba, t: f32) -> Rgba {
+    let at = |x: f32, y: f32| x + (y - x) * t;
+    Rgba::rgb(at(a.r, b.r), at(a.g, b.g), at(a.b, b.b))
+}
+
+/// `theme` for the picker's keys: they sit in the panel (`menuFill`), white keys a little lighter, black keys a little
+/// darker, thin separators (`background`) between, and every label (`whiteKeyDisabled`, `blackKeyDisabled`: no key is
+/// out of range here) in dim `text`.
+fn faint(theme: &Theme) -> Theme {
+    let mut faint = theme.clone();
+    let (c, f) = (&theme.colors, &mut faint.colors);
+    let panel = c.menu_fill;
+    f.control_fill = panel;
+    f.white_key = mix(panel, c.white_key, WHITE_MIX);
+    f.black_key = mix(panel, c.background, BLACK_MIX);
+    f.background = mix(panel, c.background, SEP_MIX);
+    f.white_key_disabled = mix(panel, c.text, LABEL_MIX);
+    f.black_key_disabled = f.white_key_disabled;
+    faint
+}
 
 /// The keys at the bottom of an instrument's picker (see the module docs).
 pub struct KeyStrip {
-    /// The channel's colour, which a pressed key and a root's marker take.
+    /// The channel's colour, which a pressed key and a root's marker take, [`HELD_MIX`] of the way from the panel's.
     pub ink: Color32,
     /// What the keys' labels follow (`Show key names`, `Set middle C to C4`).
     pub settings: Settings,
@@ -177,6 +220,15 @@ pub struct KeyStrip {
     /// The keys last tapped, sounding until the gate ends (egui seconds).
     taps: (Vec<u8>, f64),
     sounds: Vec<Sound>,
+    /// The channel's notes held elsewhere and those sounding at its input ([`KeyInput::notes`],
+    /// [`KeyInput::sounding`]), which the caller sets each frame.
+    pub lit: (u128, u128),
+    /// The keyboard panel's scroll zone, over the keys: the pan, its fling and the wheel's zoom.
+    grab: PanelGrab,
+    /// The fingers on the keys, where they are now; and the first two's spread as the second went down, and whether it
+    /// has left the calm zone since (a pinch).
+    spots: Vec<(u64, Pos2)>,
+    pinch: Option<(f32, bool)>,
 }
 
 impl KeyStrip {
@@ -187,7 +239,37 @@ impl KeyStrip {
             on: Vec::new(),
             taps: (Vec::new(), 0.0),
             sounds: Vec::new(),
+            lit: (0, 0),
+            grab: PanelGrab::default(),
+            spots: Vec::new(),
+            pinch: None,
         }
+    }
+
+    /// This frame's fingers on the keys `id`: whether two of them pinch, their spread changed by more than the calm
+    /// distance since the second went down (two fingers held still play a chord).
+    fn pinch(&mut self, ui: &Ui, id: Id, m: &Metrics) -> bool {
+        for step in fingers(ui, id) {
+            match step {
+                Finger::Down(f, p) => self.spots.push((f, p)),
+                Finger::Move(f, p) => (self.spots.iter_mut())
+                    .filter(|s| s.0 == f)
+                    .for_each(|s| s.1 = p),
+                Finger::Up(f, _) => self.spots.retain(|s| s.0 != f),
+            }
+        }
+        // A lift the keys never saw (a focus loss, or a frame without them).
+        if ui.input(|i| focus_lost(i) || !i.pointer.any_down() && !i.any_touches()) {
+            self.spots.clear();
+        }
+        self.pinch = match self.spots[..] {
+            [(_, a), (_, b), ..] => {
+                let (from, on) = self.pinch.unwrap_or((a.distance(b), false));
+                Some((from, on || (a.distance(b) - from).abs() > m.u(CALM_U)))
+            }
+            _ => None,
+        };
+        self.pinch.is_some_and(|p| p.1)
     }
 
     /// Every key sounding goes off (take the notes after).
@@ -205,20 +287,55 @@ impl KeyStrip {
     pub fn show(&mut self, ui: &mut Ui, cx: &UiCtx, panel: Rect, id: Id) {
         let m = cx.m;
         let rect = panel.with_min_y(panel.bottom() - m.u(KEYS_H));
-        // Middle C's white key in the middle, as the keyboard panel starts.
-        let white_w = KeyView::default().white_w;
-        let left = keyboard::slots(0..=59, None) + 0.5 - rect.width() / (2.0 * m.u(white_w));
+        let (keys_id, view_id) = (id.with("keys"), Id::new(VIEW));
+        // Middle C's white key in the middle at first, as the keyboard panel starts.
+        let view = ui.data(|d| d.get_temp(view_id)).unwrap_or(KeyView {
+            left: keyboard::slots(0..=59, None) + 0.5 - rect.width() / (2.0 * m.u(WHITE_W)),
+            white_w: WHITE_W,
+        });
+        let zone = Zone {
+            bar: rect,
+            strip: Rect::NOTHING,
+            knobs: Vec::new(),
+            scroll_left: rect.left(),
+        };
+        let grabbed = self.grab.track(ui, &zone, false, m);
+        // Two fingers zoom once they pinch.
+        let pinching = self.pinch(ui, keys_id, m);
+        let multi = ui.input(|i| i.multi_touch().is_some());
+        let zoom = grabbed.zoom.filter(|_| pinching || !multi);
         let piano = Piano {
             rect,
             two_rows: false,
-            view: KeyView { left, white_w },
+            view,
         };
+        let piano = Piano {
+            view: piano.moved(grabbed.scroll, zoom, m),
+            ..piano
+        };
+        ui.data_mut(|d| d.insert_temp(view_id, piano.view));
+        // A pan or a pinch plays nothing: its fingers let go of their keys until they lift.
+        if self.grab.scrolling() || pinching {
+            keyboard::let_go_at(ui.ctx(), keys_id);
+        }
         let input = KeyInput {
             enabled: true,
+            notes: self.lit.0,
+            sounding: self.lit.1,
+            // No glissando before a touch decides whether it pans.
+            hold: self.grab.calm(),
             ..KeyInput::default()
         };
-        let (ink, settings) = (self.ink, &self.settings);
-        let played = keyboard::keyboard_at(ui, id.with("keys"), piano, cx, ink, settings, input);
+        let theme = faint(cx.theme);
+        let panel_fill = cx.theme.colors.menu_fill.to_color32();
+        let ink = panel_fill.lerp_to_gamma(self.ink, HELD_MIX);
+        let cx = &UiCtx { theme: &theme, m };
+        let settings = &self.settings;
+        let played = keyboard::keyboard_at(ui, keys_id, piano, cx, ink, settings, input);
+        // A separator hairline along their top: on a light theme the white keys are about the panel's colour.
+        let line = rect.with_max_y(rect.top() + 1.0 / m.ppp());
+        ui.painter()
+            .rect_filled(line, 0.0, theme.colors.background.to_color32());
         let now = ui.input(|i| i.time);
         if !played.tapped.is_empty() {
             let gate = now + crate::app::TAP_GATE;

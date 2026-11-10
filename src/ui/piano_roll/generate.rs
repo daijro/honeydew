@@ -1,8 +1,8 @@
 //! The `Generate` panel, a contributor feature (PR #87): chords and a melody for the clip, in the
 //! project's key and scale or the panel's own ([`super::compose`]). The transport bar's GENERATE opens it over the
-//! piano roll, and the roll draws its result ([`super::compose::generate`]) in place of the notes while it is open,
-//! recomputed from the clip every frame: the song itself waits for `Apply`, so a preview is no edit and makes no undo
-//! step (as the Humanize panel's).
+//! piano roll. While it is open its result ([`super::compose::generate`]) is in the clip in place of the clip's notes,
+//! as `Apply` leaves it, so the song plays it (the roll's `audition`); `Apply` keeps it as one undo
+//! step, and any other close puts the clip back.
 //!
 //! The panel is the dialog look without the dim, so the preview shows: 14 U wide at the roll's right edge, centred on
 //! its height and kept inside the screen. Top to bottom, scrolling when the screen is short: the title; under
@@ -11,7 +11,8 @@
 //! and `New seed`); under `Key, scale & register` the `Key` and `Scale` (`Project` follows the song's) and the
 //! `Octave`; under `Notes & rhythm` the `Length`, `Rests`, `Arpeggios` and `Chords`. Each choice is a dropdown, modal
 //! over the panel too, so one opens at a time (#107). Then `Reset`, `Cancel` and `Apply`. A tap outside, Escape or
-//! Android's Back close the open dropdown, else the panel, as `Cancel`.
+//! Android's Back close the open dropdown, else the panel, as `Cancel`; but the transport's Play, and the keymap's
+//! `play`, start and stop playback under it ([`crate::ui::backdrop_open_to_play`]).
 
 use std::hash::{BuildHasher, RandomState};
 
@@ -158,8 +159,8 @@ pub(crate) fn show(
         m,
         rect,
     );
-    let backdrop = crate::ui::backdrop(ctx, id);
-    let outside = backdrop.clicked() || backdrop.secondary_clicked();
+    // Play and Pause stay live, for the preview to be heard.
+    let outside = crate::ui::backdrop_open_to_play(ctx, id);
     let mut close = outside.then_some(Close::Cancel);
     Area::new(id)
         .order(Order::Foreground)

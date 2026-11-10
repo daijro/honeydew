@@ -27,12 +27,14 @@ impl Rig {
     }
 }
 
-/// The centre of the side rack's collapse tab, which closes it.
+/// The centre of the side rack's collapse tab, which closes it: at the rack tab's default height.
 pub(super) fn collapse_tab() -> Pos2 {
-    crate::ui::rack::Chrome::new(rack(), U)
-        .collapse
-        .unwrap()
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
+    let screen = Rect::from_min_size(Pos2::ZERO, vec2(1170.0, 540.0));
+    let tab_y = crate::ui::main_screen::rack_tab_pill(&Regions::new(screen, &m), 0.5, &m)
         .center()
+        .y;
+    crate::ui::rack::collapse_tab(rack(), U, tab_y).center()
 }
 
 /// How `channel`'s rack lays out, unscrolled.
@@ -3095,7 +3097,7 @@ fn our_banks_list_at_each_synths_picker_root_and_a_pick_makes_no_undo_step() {
     use crate::content::{ROOT, factory};
     use crate::ui::main_menu::SongLibrary;
     let mut rig = Rig::with_synth();
-    // The keys under an instrument's picker (#98) take 3 U: a taller window lists Transistor Bass's 10 root rows whole.
+    // The keys under an instrument's picker (#98) take 2 U: a taller window lists Transistor Bass's 10 root rows whole.
     rig.screen.y = 700.0;
     // About our factory's content, which the rig leaves out.
     rig.app.files.factory = crate::content::factory();

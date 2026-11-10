@@ -509,9 +509,17 @@ impl PresetPicker {
     }
 
     /// Shows the keys at the bottom of the panel (an instrument's presets, #98), in the channel's colour `ink`, labelled
-    /// as `settings` say: they play its channel. Once: later calls keep them as they are.
-    pub fn keys_on(&mut self, ink: eframe::egui::Color32, settings: &crate::settings::Settings) {
-        (self.panel.keys).get_or_insert_with(|| KeyStrip::new(ink, settings.clone()));
+    /// as `settings` say: they play its channel. Once: later calls keep them as they are, but for what they light,
+    /// `lit` ([`KeyStrip::lit`]).
+    pub fn keys_on(
+        &mut self,
+        ink: eframe::egui::Color32,
+        settings: &crate::settings::Settings,
+        lit: (u128, u128),
+    ) {
+        (self.panel.keys)
+            .get_or_insert_with(|| KeyStrip::new(ink, settings.clone()))
+            .lit = lit;
     }
 
     /// Releases the audition strip's held note and the keys' (take them after).

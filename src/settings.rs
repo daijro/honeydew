@@ -331,9 +331,8 @@ pub struct Settings {
     /// drag keeps it inside the editor's band ([`crate::ui::split::ribbon`]).
     #[serde(rename = "editorRibbonShift")]
     pub editor_ribbon_shift: f32,
-    /// The channel rack's edge tab's place (our own key; PR #87): the offset a drag gave it, in U down the screen's
-    /// right edge from where it opens, kept over restarts. 0 by default; the drag keeps the tab inside the content
-    /// area ([`crate::ui::main_screen::MainScreen::corner_buttons`]).
+    /// The channel rack's edge tab's old place (our own key; PR #87), in U from its old home. Unused since 0.5.3
+    /// ([`Self::rack_tab_place`] replaces it, not converted); kept so the key still reads.
     #[serde(rename = "rackTabShift")]
     pub rack_tab_shift: f32,
     /// The editors' graph-lane tab's place (our own key; PR #87): the sideways offset a drag gave it, in U from where
@@ -342,6 +341,15 @@ pub struct Settings {
     /// ([`crate::ui::graph_lane::GraphLane::tab_below`]).
     #[serde(rename = "graphTabShift")]
     pub graph_tab_shift: f32,
+    /// `Keyboard in pickers` (our own key, after #98): an instrument's preset and sample pickers have the keys
+    /// at their bottom ([`crate::ui::picker_preview::KeyStrip`]). On by default; off, the list takes their room.
+    #[serde(rename = "pickerKeys")]
+    pub picker_keys: bool,
+    /// The channel rack's edge tab's place (our own key, 0.5.3): where a drag left it, as a share of the
+    /// space the content area leaves it down the screen's right edge, 0 at the top, 1 at the bottom, kept over restarts
+    /// and resizes. 0.5 (centred) by default ([`crate::ui::rack::rack_tab`]).
+    #[serde(rename = "rackTabPlace")]
+    pub rack_tab_place: f32,
 }
 
 /// `Project version size limit:`'s items, in MB.
@@ -416,6 +424,8 @@ impl Default for Settings {
             editor_ribbon_shift: 0.0,
             rack_tab_shift: 0.0,
             graph_tab_shift: 0.0,
+            picker_keys: true,
+            rack_tab_place: 0.5,
         }
     }
 }
@@ -474,6 +484,9 @@ impl Settings {
         }
         if !(0.0..=1.0).contains(&s.metronome_level) {
             s.metronome_level = d.metronome_level;
+        }
+        if !(0.0..=1.0).contains(&s.rack_tab_place) {
+            s.rack_tab_place = d.rack_tab_place;
         }
         // A a height must be a size, which the panel then keeps within its range.
         for (h, default) in [
@@ -854,6 +867,8 @@ mod tests {
             editor_ribbon_shift: -1.5,
             rack_tab_shift: 2.25,
             graph_tab_shift: -3.5,
+            picker_keys: !d.picker_keys,
+            rack_tab_place: 0.25,
         }
     }
 
@@ -864,6 +879,7 @@ mod tests {
         assert!(
             d.ghost_notes && d.range_labels && d.hardware_meters && d.count_in && d.rec_metronome
         );
+        assert!(d.picker_keys);
         // The latency toggle is unset: shown ON, and it compensates.
         assert_eq!(d.latency_compensation, None);
         // The other toggles are off.
@@ -1081,9 +1097,11 @@ mod tests {
                 "performanceOverlay",
                 "pianoRollPanSnap",
                 "pianoRollVelocitySnap",
+                "pickerKeys",
                 "pluginFolders",
                 "preferredKbdSizeCells",
                 "projectVersionSizeLimit",
+                "rackTabPlace",
                 "rackTabShift",
                 "recMetronome",
                 "reccount",

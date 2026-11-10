@@ -4340,8 +4340,9 @@ fn clear_and_fill_are_changes() {
     }
 }
 
-/// PR #87: GENERATE shows in the transport bar in the piano roll only and opens the roll's Generate panel, which
-/// previews in place of the notes and whose `Apply` writes chords and a melody into the clip as one undo step.
+/// PR #87: GENERATE shows in the transport bar in the piano roll only and opens the roll's Generate panel, whose
+/// preview goes into the clip and plays while the panel is open, a new seed's too without stopping, and
+/// whose `Apply` keeps the chords and melody in the clip as one undo step.
 #[test]
 fn generate_writes_chords_and_a_melody_into_the_rolls_clip_in_one_undo_step() {
     let mut rig = Rig::with_drums_and_synth();
@@ -4354,10 +4355,24 @@ fn generate_writes_chords_and_a_melody_into_the_rolls_clip_in_one_undo_step() {
     rig.edit(2);
     rig.slide_split();
     let notes = |rig: &Rig| rig.app.song.channels[2].lanes[0].clips[0].events.len();
+    let played = |rig: &Rig| {
+        let song = rig.app.audio.built_song().expect("an engine");
+        song.channels[2].lanes[0].clips[0].events.clone()
+    };
     assert_eq!(notes(&rig), 0);
+    rig.click(PLAY);
     rig.click_id(generate);
     rig.frame(vec![]);
-    assert_eq!(notes(&rig), 0, "the preview is no edit");
+    assert!(notes(&rig) > 6, "the preview is in the clip");
+    assert_eq!(
+        played(&rig),
+        rig.app.song.channels[2].lanes[0].clips[0].events
+    );
+    let first = played(&rig);
+    rig.click_id(roll("generate").with("new seed"));
+    rig.frame(vec![]);
+    assert_ne!(played(&rig), first, "the new seed's preview plays");
+    assert!(rig.app.main_screen.playing);
     rig.click_id(roll("generate").with("apply"));
     // Two bars of Pop: a triad a bar and a melody over them.
     assert!(notes(&rig) > 6, "{}", notes(&rig));
@@ -4418,4 +4433,87 @@ fn the_generate_panels_dropdowns_open_one_at_a_time_and_a_tap_outside_closes_it(
     rig.click(pos2(rig.screen.x - 2.0 * U, 200.0));
     rig.frame(vec![]);
     assert!(!drawn(&rig, panel), "the panel closed");
+}
+
+/// Bars of Generate past the clip's end grow the clip, its loop and its set length, in the preview too
+/// (so that all of it plays); `Cancel` gives the clip its notes and length back with no undo step, and `Apply` keeps
+/// the grown clip as one.
+#[test]
+fn generates_bars_grow_the_clip_in_one_undo_step_and_cancel_restores_it() {
+    let mut rig = Rig::with_drums_and_synth();
+    rig.click(OUTSIDE);
+    rig.edit(2);
+    rig.slide_split();
+    // One bar with a length of its own, which other edits keep.
+    rig.app.song.channels[2].lanes[0].clips[0].visible_len_beats = 4.0;
+    rig.app.song_edited(SongEdit::Final, 0);
+    let clip = |rig: &Rig| {
+        let c = &rig.app.song.channels[2].lanes[0].clips[0];
+        (c.loop_len_beats, c.visible_len_beats, c.events.len())
+    };
+    let panel = roll("generate");
+    let four_bars = |rig: &mut Rig| {
+        rig.click_id(egui::Id::new(("transport", "generate")));
+        rig.frame(vec![]);
+        rig.click_id(panel.with("bars"));
+        for _ in 0..30 {
+            rig.frame(vec![]);
+        }
+        rig.click_id(
+            panel
+                .with("bars")
+                .with("item popup")
+                .with((0_usize, 2_usize)),
+        );
+        rig.frame(vec![]);
+    };
+    let steps = rig.app.history.steps();
+    four_bars(&mut rig);
+    let (lp, len, notes) = clip(&rig);
+    assert_eq!((lp, len), (16.0, 16.0), "the preview grows it");
+    assert!(notes > 0);
+    rig.click_id(panel.with("cancel"));
+    rig.frame(vec![]);
+    assert_eq!(clip(&rig), (4.0, 4.0, 0));
+    assert_eq!(rig.app.history.steps(), steps);
+    four_bars(&mut rig);
+    rig.click_id(panel.with("apply"));
+    rig.frame(vec![]);
+    assert_eq!((clip(&rig).0, clip(&rig).1), (16.0, 16.0));
+    assert_eq!(rig.app.history.steps(), steps + 1);
+    let before = rig.app.history.undo().expect("an undo step");
+    let c = &before.channels[2].lanes[0].clips[0];
+    assert_eq!(
+        (c.loop_len_beats, c.visible_len_beats, c.events.len()),
+        (4.0, 4.0, 0)
+    );
+}
+
+/// The transport's Play stays live under the Generate panel, so its preview can be heard: a tap on it,
+/// and Space, start and stop playback, and the panel stays open.
+#[test]
+fn play_and_space_play_and_stop_under_the_generate_panel_which_stays_open() {
+    let mut rig = Rig::with_drums_and_synth();
+    rig.click(OUTSIDE);
+    rig.edit(2);
+    rig.slide_split();
+    let layer = egui::LayerId::new(egui::Order::Foreground, roll("generate"));
+    let open = |rig: &Rig| rig.ctx.memory(|m| m.areas().visible_last_frame(&layer));
+    rig.click_id(egui::Id::new(("transport", "generate")));
+    rig.frame(vec![]);
+    assert!(open(&rig));
+    rig.click(PLAY);
+    rig.frame(vec![]);
+    assert!(rig.app.main_screen.playing);
+    assert!(open(&rig), "the panel stays open");
+    let space = |pressed| egui::Event::Key {
+        key: egui::Key::Space,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    rig.frame(vec![space(true), space(false)]);
+    assert!(!rig.app.main_screen.playing);
+    assert!(open(&rig));
 }

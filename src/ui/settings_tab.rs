@@ -239,7 +239,7 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 }
 
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 53] = {
+const ROWS: [Row; 54] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -296,6 +296,7 @@ const ROWS: [Row; 53] = {
             "Show range labels on keyboard",
             Toggle(|s| &mut s.range_labels),
         ),
+        row("Keyboard in pickers", Toggle(|s| &mut s.picker_keys)),
         row(
             "Continuous scrolling during playback",
             Toggle(|s| &mut s.continuous_scroll),
@@ -1393,6 +1394,7 @@ mod tests {
                 "Show key names on keyboard and piano roll",
                 "Set middle C to C4",
                 "Show range labels on keyboard",
+                "Keyboard in pickers",
                 "Continuous scrolling during playback",
                 "Show hidden tracks",
                 "Show CPU and RAM meters",
@@ -1444,7 +1446,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(toggles.len(), if cfg!(target_os = "ios") { 14 } else { 13 });
+        assert_eq!(toggles.len(), if cfg!(target_os = "ios") { 15 } else { 14 });
         for (label, field) in &toggles {
             let mut s = Settings::default();
             *field(&mut s) = !*field(&mut s);
@@ -1988,7 +1990,7 @@ mod tests {
             let (u, t) = (m.u(1.0), m.t());
             let column_right = rig.width - 2.0 * u;
             let fills = fills(&rig);
-            assert_eq!(toggles().count(), 18);
+            assert_eq!(toggles().count(), 19);
             for r in toggles() {
                 let at = format!("ppp {ppp} scale {scale}: `{}`", r.label);
                 let control = rig.rect_of(row_id(index(r.label)));

@@ -170,6 +170,10 @@ pub fn show(
     let mut ui = ui.new_child(UiBuilder::new().id(("rack", channel)).max_rect(rect));
     state.panel.covered = app.covered;
     state.panel.middle_c_is_c4 = app.middle_c_is_c4;
+    let place = app.settings.rack_tab_place;
+    state.panel.tab_y = crate::ui::main_screen::rack_tab_pill(&app.regions, place, app.cx.m)
+        .center()
+        .y;
     state.panel.lemon_full = state.full;
     // The input row's (an Audio Record channel's): the arm button with multitrack on, the meter while the input is open.
     state.panel.multitrack = app.settings.multitrack_recording;

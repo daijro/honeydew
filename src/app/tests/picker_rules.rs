@@ -123,6 +123,134 @@ fn an_instrument_pickers_keys_play_its_channel_before_and_after_a_pick() {
 }
 
 #[test]
+fn a_sideways_drag_pans_a_pickers_keys_silently_and_the_wheel_and_a_pinch_zoom_about_the_pointer() {
+    // The picker's keys pan and zoom as the keyboard panel's do. A press plays its key, and holds it while
+    // calm; past the 0.5 U calm zone sideways the touch pans them (its note stops, no other plays) and flings; the wheel or a pinch zooms them
+    // about the pointer, the pinch once its fingers' spread leaves the calm zone (two fingers held still are a chord).
+    use crate::ui::keyboard::KeyView;
+    use crate::ui::picker_preview::VIEW;
+    use egui::TouchPhase::{End, Move, Start};
+    let mut rig = with_bass();
+    let id = instance_id(&rig, 1, 0);
+    rig.click_id(preset_button(1, id));
+    row(&mut rig, 0);
+    let keys = rig.ctx.read_response(Id::new(PICKER).with("keys"));
+    let keys = keys.expect("the keys are drawn").rect;
+    let view = |rig: &Rig| rig.ctx.data(|d| d.get_temp::<KeyView>(Id::new(VIEW)));
+    let view = |rig: &Rig| view(rig).expect("the keys' view");
+    // The white key slot (from MIDI 0) under `x`: middle C's is 35 … 36.
+    let slot = |v: KeyView, x: f32| v.left + (x - keys.left()) / (U * v.white_w);
+    let c = pos2(keys.center().x, keys.bottom() - 0.25 * keys.height());
+    // Pressed near C's right edge, it holds C while still calm, over D too (no glissando).
+    let at = c + vec2(10.0, 0.0);
+    rig.press(at);
+    assert_eq!(rig.take(), ["NoteOn 1 60 127"]);
+    rig.drag_to(at + vec2(12.0, 0.0));
+    assert_eq!(rig.take(), Vec::<String>::new());
+    rig.drag_to(at + vec2(20.0, 0.0));
+    assert_eq!(rig.take(), ["NoteOff 1 60"]);
+    // Middle C still in the middle, 1 U wide: then the keys follow the finger, and it plays nothing.
+    assert!((slot(view(&rig), c.x) - 35.5).abs() < 1e-4);
+    assert_eq!(view(&rig).white_w, 1.0);
+    let left = view(&rig).left;
+    let to = at + vec2(20.0 + 2.0 * U, 0.0);
+    rig.drag_to(to);
+    assert!((view(&rig).left - (left - 2.0)).abs() < 1e-4);
+    rig.release(to);
+    rig.frame(vec![]);
+    assert!(
+        (view(&rig).left - (left - 2.0 - 0.9 * 2.0)).abs() < 1e-4,
+        "it flings"
+    );
+    rig.frame(vec![egui::Event::PointerMoved(c)]);
+    assert_eq!(rig.take(), Vec::<String>::new());
+    // The wheel: dy 100 makes them 1/0.9 as wide, the key under the pointer staying put.
+    let before = view(&rig);
+    rig.frame(vec![egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: vec2(0.0, 100.0),
+        modifiers: Default::default(),
+    }]);
+    let after = view(&rig);
+    assert!((after.white_w - 1.0 / 0.9).abs() < 1e-4, "{after:?}");
+    assert!((slot(after, c.x) - slot(before, c.x)).abs() < 1e-4);
+    // Two fingers 3 U apart hold two keys; spread 1 U more, they pinch: both notes stop and the keys zoom about the
+    // pointer (the first finger).
+    let touch = |id, phase, pos| egui::Event::Touch {
+        device_id: egui::TouchDeviceId(1),
+        id: egui::TouchId(id),
+        phase,
+        pos,
+        force: None,
+    };
+    let button = |pressed| button_event(c, pressed);
+    let b = c + vec2(3.0 * U, 0.0);
+    rig.frame(vec![touch(1, Start, c), button(true)]);
+    rig.frame(vec![touch(2, Start, b)]);
+    let on = rig.take();
+    assert!(
+        on.len() == 2 && on.iter().all(|n| n.starts_with("NoteOn 1")),
+        "{on:?}"
+    );
+    let before = view(&rig);
+    rig.frame(vec![touch(2, Move, b + vec2(U, 0.0))]);
+    let off = rig.take();
+    assert!(
+        off.len() == 2 && off.iter().all(|n| n.starts_with("NoteOff 1")),
+        "{off:?}"
+    );
+    let after = view(&rig);
+    assert!(after.white_w > before.white_w * 1.2, "{after:?}");
+    assert!((slot(after, c.x) - slot(before, c.x)).abs() < 1e-4);
+    rig.frame(vec![touch(2, End, b), touch(1, End, c), button(false)]);
+    assert_eq!(rig.take(), Vec::<String>::new());
+}
+
+#[test]
+fn a_key_held_on_the_channel_elsewhere_lights_held_on_its_pickers_keys() {
+    // The picker's keys light what its channel plays as the keyboard panel's do: a typed key is held (T = 1).
+    let mut rig = with_bass();
+    let id = instance_id(&rig, 1, 0);
+    rig.click_id(preset_button(1, id));
+    row(&mut rig, 0);
+    rig.take();
+    rig.type_key(egui::Key::Z, true);
+    let on = rig.take();
+    assert!(on.len() == 1 && on[0].starts_with("NoteOn 1 48 "), "{on:?}");
+    for _ in 0..5 {
+        rig.frame(vec![]);
+    }
+    let press = Id::new(PICKER).with("keys").with("press");
+    let press = rig.ctx.data(|d| d.get_temp::<[f32; 128]>(press));
+    assert_eq!(press.map(|p| (p[48], p[50])), Some((1.0, 0.0)));
+}
+
+#[test]
+fn keyboard_in_pickers_off_hides_the_keys_and_the_list_takes_their_room() {
+    // SETTINGS `Keyboard in pickers` off, an instrument's picker has no keys and its list reaches down to
+    // where their bottom was.
+    let open = |on: bool| {
+        let mut rig = with_bass();
+        rig.app.settings.picker_keys = on;
+        let id = instance_id(&rig, 1, 0);
+        rig.click_id(preset_button(1, id));
+        row(&mut rig, 0);
+        let rect = |what: &str| {
+            rig.ctx
+                .read_response(Id::new(PICKER).with(what))
+                .map(|r| r.rect)
+        };
+        (rect("keys"), rect("list").expect("the list is drawn"))
+    };
+    let (keys, list) = open(true);
+    let keys = keys.expect("the keys are drawn");
+    assert_eq!(list.bottom(), keys.top());
+    let (none, full) = open(false);
+    assert_eq!(none, None);
+    assert_eq!((full.top(), full.bottom()), (list.top(), keys.bottom()));
+}
+
+#[test]
 fn a_cards_arrows_step_round_its_presets_folder_with_no_undo_step() {
     // Issue #98 (Honeydew addition): ◀ and ▶ beside a card's preset name load the folder's previous and next preset,
     // round and round, each as a pick of it loads.
