@@ -645,11 +645,11 @@ fn a_long_press_selects_and_the_bar_counts_the_selection_and_acts_on_it() {
     assert_eq!(rig.names(None), ["C.flm", "Recently Deleted"]);
 }
 
-/// #72: `Open My Tracks` shows the user folder's `My Tracks` with the render current; a tap on a render selects it (it
-/// opens no song).
+/// #72: `Open My Tracks` shows the user folder's `My Tracks` with the render current. Honeydew change (#123, #130):
+/// a tap on an audio render previews it without selecting it, a second tap stops it, a long press selects it.
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
-fn my_tracks_lists_the_renders_and_a_tap_selects_one() {
+fn my_tracks_lists_the_renders_a_tap_previews_one_and_a_long_press_selects_it() {
     use crate::project_files::content::tests::Temp;
     let tmp = Temp::new("songs-tracks");
     let tracks = tmp.0.join("My Tracks");
@@ -663,11 +663,16 @@ fn my_tracks_lists_the_renders_and_a_tap_selects_one() {
     rig.frame(vec![]);
     assert_eq!(rig.menu.songs_folder(), Some(tracks.as_path()));
     assert!(rig.has("Mix.wav") && rig.has("Mix.MP3"));
-    // #106: an audio file previews.
+    // #106: an audio file previews: its strip shows its name.
     assert_eq!(
         rig.click_text("Mix.wav"),
         Some(MainMenuAction::Preview(tracks.join("Mix.wav")))
     );
+    assert!(rig.has("Mix"));
+    assert!(rig.menu.songs.selection.is_none() && !rig.has("1 selected"));
+    assert_eq!(rig.click_text("Mix.wav"), None);
+    assert!(!rig.has("Mix"), "the second tap stops it");
+    assert_eq!(rig.long_press(rig.find("Mix.wav").center()), None);
     assert_eq!(
         rig.menu.songs.selection.clone().unwrap(),
         [tracks.join("Mix.wav")]
@@ -844,6 +849,11 @@ fn a_locked_song_keeps_its_texts_read_only_and_hides_the_empty_link_and_the_lock
     rig.frame(vec![]);
     assert!(rig.has("Title:") && rig.has("Author:"));
     assert!(!rig.has("Online link:") && !rig.has("Open"));
+    // #139: the tag fields go as the link does, while empty; `Write tags on export` (a setting) stays.
+    rig.info.album = "Demos".into();
+    rig.frame(vec![]);
+    assert!(rig.has("Album:") && !rig.has("Genre:") && !rig.has("Comment:"));
+    assert!(rig.has("Write tags on export"));
 }
 
 #[test]

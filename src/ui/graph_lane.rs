@@ -33,8 +33,8 @@
 use std::f64::consts::TAU;
 
 use eframe::egui::{
-    Color32, CornerRadius, Id, Mesh, Painter, Rangef, Rect, Sense, Stroke, StrokeKind, Ui, pos2,
-    vec2,
+    Color32, CornerRadius, Id, Mesh, Painter, Pos2, Rangef, Rect, Sense, Stroke, StrokeKind, Ui,
+    pos2, vec2,
 };
 
 use crate::icons::{IconId, draw_icon};
@@ -230,6 +230,20 @@ pub fn v_centred(content: Rect, y: f32, m: &Metrics) -> f32 {
         return 0.5;
     }
     0.5 + d.signum() * 0.5 * (d.abs() - dz) / (half - dz)
+}
+
+/// Honeydew change (GitHub #127): the x a drum graph lane's drag paints at, the pointer at `p`. It keeps to the
+/// touch-down's column (`lock`, the touch-down) until the finger is past the 0.5 U calm distance sideways and more
+/// across than up or down from it; from then on (`lock` cleared) it follows the finger, painting step by step as before.
+pub fn drum_paint_x(lock: &mut Option<Pos2>, p: Pos2, m: &Metrics) -> f32 {
+    if let Some(from) = *lock {
+        let d = p - from;
+        if d.x.abs() <= m.u(gesture::CALM_U) || d.x.abs() <= d.y.abs() {
+            return from.x;
+        }
+        *lock = None;
+    }
+    p.x
 }
 
 /// The note tint's stops for `content` (see the module doc), the bottom one pulled `pull` of the way toward the

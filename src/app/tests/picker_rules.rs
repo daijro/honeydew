@@ -1160,3 +1160,42 @@ fn add_drums_new_pad_and_an_empty_cell_browses_later_pick_are_changes() {
     picker_row(&mut rig, 1);
     assert!(rig.app.files.modified(), "the browse's later pick");
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn a_modules_picker_reopens_where_it_was_left_while_the_app_runs() {
+    // Issue #131: in the folder and at the scroll it was left at, for its module type, through a song
+    // load (which resets the pickers' state) too.
+    let home = super::songs_archive::Home::new("picker-place");
+    let user = home.0.join("user");
+    let deep = user.join("My Presets/MiniSynth/Leads/Deep");
+    std::fs::create_dir_all(&deep).unwrap();
+    let bytes = crate::flm::write_preset(&ModuleInstance::new(0, 0)).unwrap();
+    for i in 0..40 {
+        std::fs::write(deep.join(format!("P{i:02}.flmpst")), &bytes).unwrap();
+    }
+    let mut rig = Rig::with_synth();
+    rig.app.files = without_factory(ProjectFiles::on_disk(&user));
+    rig.open_rack(1);
+    rig.slide_rack();
+    let id = instance_id(&rig, 1, 0);
+    rig.click_id(preset_button(1, id));
+    // `My Files`, `Leads`, `Deep`, then the list dragged to its end.
+    for _ in 0..3 {
+        picker_row(&mut rig, 0);
+    }
+    let list = row(&mut rig, 0).center();
+    rig.press(list);
+    rig.drag_to(list - eframe::egui::vec2(0.0, 3000.0));
+    rig.release(list - eframe::egui::vec2(0.0, 3000.0));
+    rig.frame(vec![]);
+    assert!(rig.painted("P39") && !rig.painted("P00"));
+    close_picker(&mut rig);
+    rig.app.slots.preset_picker = Default::default();
+    rig.frame(vec![]);
+    rig.click_id(preset_button(1, id));
+    for _ in 0..3 {
+        rig.frame(vec![]);
+    }
+    assert!(rig.painted("P39") && !rig.painted("P00"));
+}

@@ -460,6 +460,8 @@ pub struct StepSeqView {
     /// and whether it has sent an edit (its end then closes it, even with the hits back as they were).
     pub graph: GraphLane,
     graph_drag: Option<(Vec<Event>, bool)>,
+    /// The drag's touch-down while it keeps to its column ([`graph_lane::drum_paint_x`]).
+    graph_lock: Option<Pos2>,
     /// The selected steps, as (pad, step) cells that hold a hit.
     selection: BTreeSet<(u8, usize)>,
     /// The marquee, from its long press: its selection is live.
@@ -1385,13 +1387,14 @@ impl StepSeqView {
         // Every drag starts afresh, also after one that an undo cancelled (`Context::stop_dragging`) without an end.
         if response.drag_started() && live && !pinch {
             self.graph_drag = Some((events.to_vec(), false));
+            self.graph_lock = ui.input(|i| i.pointer.press_origin());
         }
         if response.dragged()
             && live
             && let Some(p) = response.interact_pointer_pos()
             && self.graph_drag.is_some()
         {
-            let at = (p.x - l.x0) / l.step_w;
+            let at = (graph_lane::drum_paint_x(&mut self.graph_lock, p, m) - l.x0) / l.step_w;
             let v = if centred {
                 graph_lane::v_centred(values, p.y, m)
             } else {

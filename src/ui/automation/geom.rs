@@ -29,6 +29,10 @@ const NEW_BEAT_U: f32 = 4.0;
 pub const ROWS: f64 = 127.0;
 /// The value zoom's deepest: 1/64 of the range over V (#60).
 pub const VALUE_ZOOM: f64 = 64.0;
+/// The value ruler's labelled steps (#135), in ten-thousandths of the range: 0.1, 0.25, 0.5 … 50, 100 %, the finest
+/// at least [`RULER_LABEL_U`] apart; its fine marks split one in five.
+const RULER_STEPS: [i64; 10] = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10_000];
+const RULER_LABEL_U: f32 = 1.5;
 
 /// The editor's rects. `ruler` is the whole ruler row (the `background` rect over the margin and the ruler); `snap`
 /// its left cell, 1.5 U × (ruler h − 1 px); `time` the time ruler, from x + 1.5 U + ceil(U/16). Below the ruler: `grid`
@@ -145,6 +149,28 @@ impl Frame {
                 let r = r0 + rows * f64::from(i) / f64::from(n - 1);
                 self.axis_tick((1.0 - (r - o) / k) as f32, label, m)
             })
+            .collect()
+    }
+
+    /// The value ruler (#135, where there were fixed ticks): zoomed in, the marks over the value area
+    /// at whole fifths of the labelled step ([`RULER_STEPS`]), each its fraction of the range and whether it is
+    /// labelled (every fifth). They move and spread with the view, as the time ruler's. None at 1×.
+    pub fn ruler_marks(&self, m: &Metrics) -> Vec<(f32, bool)> {
+        let ([r0, n], (k, o)) = (self.rows, self.frac_law());
+        if n >= ROWS {
+            return Vec::new();
+        }
+        // In ten-thousandths of the range: one's height on screen, and the view's bottom and top.
+        let unit = f64::from(self.value.height()) / n * k / 1e4;
+        let at = |r: f64| (1.0 - (r - o) / k) * 1e4;
+        let step = (RULER_STEPS.into_iter())
+            .find(|&s| s as f64 * unit >= f64::from(m.u(RULER_LABEL_U)))
+            .unwrap_or(10_000);
+        let fine = step / 5;
+        let from = (at(r0 + n).max(0.0) / fine as f64).ceil() as i64;
+        let to = (at(r0).min(1e4) / fine as f64).floor() as i64;
+        (from..=to)
+            .map(|j| ((j * fine) as f32 / 1e4, j % 5 == 0))
             .collect()
     }
 
@@ -434,6 +460,25 @@ mod tests {
             assert_eq!(labels, ["100", "50", "0"]);
             assert_eq!(ticks[1].y, 68.0 + 45.0);
         }
+        // #135: zoomed, a ruler instead, moving with the view. A quarter of the range shows over V = 220, 880 points
+        // the whole range: labelled every 10 % (5 % would be under 1.5 U), a fine mark every 2 %.
+        let m = metrics(1.0);
+        let mut f = frame(300.0, 1.0);
+        assert!(f.ruler_marks(&m).is_empty(), "none at 1×");
+        f.rows = [0.0, 31.5];
+        let percents = |f: &Frame, labelled: bool| -> Vec<i32> {
+            (f.ruler_marks(&m).into_iter())
+                .filter(|&(_, l)| l || !labelled)
+                .map(|(v, _)| (v * 100.0).round() as i32)
+                .collect()
+        };
+        assert_eq!(percents(&f, true), [80, 90, 100]);
+        assert_eq!(
+            percents(&f, false),
+            (38..=50).map(|i| 2 * i).collect::<Vec<_>>()
+        );
+        f.rows = [31.5, 31.5];
+        assert_eq!(percents(&f, true), [60, 70]);
     }
 
     #[test]

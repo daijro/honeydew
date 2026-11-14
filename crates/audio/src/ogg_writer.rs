@@ -4,9 +4,10 @@
 //! libvorbis's own; MIT, with Xiph's BSD-3 notice) and the `ogg` crate's page writer (BSD-3). Mono input is duplicated.
 //!
 //! - **Pages.** The identification, comment and setup headers each fill a page of their own, BOS on the first and
-//!   granule position 0; audio packets follow with the granule positions the encoder gives them, and the last one ends
-//!   the stream (EOS). Its granule position is the stream's length (the input's, or its averaged length above
-//!   [`MAX_RATE`]), so a decoder trims the stream to it exactly.
+//!   granule position 0. The comment header holds the vendor string and the tags ([`OggEncoder::with_tags`]). Audio
+//!   packets follow with the granule positions the encoder gives them, and the last one ends the stream (EOS). Its
+//!   granule position is the stream's length (the input's, or its averaged length above [`MAX_RATE`]), so a decoder
+//!   trims the stream to it exactly.
 //! - **Deterministic.** The serial number is the constant [`SERIAL`], not random, and the encoder has no randomness:
 //!   the same input pushed in the same slices makes the same bytes. (libvorbis extrapolates the stream's start from
 //!   the samples its first writes hold, so the first slices' sizes are part of "the same input".)
@@ -47,6 +48,15 @@ impl OggEncoder {
     /// # Panics
     /// On a zero `rate`.
     pub fn new(rate: u32, high_quality: bool) -> Self {
+        Self::with_tags(rate, high_quality, &[])
+    }
+
+    /// [`Self::new`], its comment header holding `tags`: Vorbis comment fields (`TITLE`, `ARTIST`, …) and their
+    /// values, as [`vorbis_comment`] writes them.
+    ///
+    /// # Panics
+    /// On a zero `rate`.
+    pub fn with_tags(rate: u32, high_quality: bool, tags: &[(&str, &str)]) -> Self {
         assert!(rate > 0, "Vorbis needs a sample rate");
         let group = rate.div_ceil(MAX_RATE);
         let quality = if high_quality { 1.0 } else { 0.4 };
@@ -57,7 +67,9 @@ impl OggEncoder {
             group: group as usize,
             partial: ([0.0; 2], 0),
         };
-        for header in encoder.vorbis.headers(VENDOR) {
+        let [ident, _, setup] = encoder.vorbis.headers(VENDOR);
+        let comment = [&b"\x03vorbis"[..], &vorbis_comment(VENDOR, tags), &[1]].concat();
+        for header in [ident, comment, setup] {
             encoder.write(header, 0, PacketWriteEndInfo::EndPage);
         }
         encoder
@@ -124,4 +136,15 @@ impl OggEncoder {
         (self.pages.write_packet(packet.into(), SERIAL, end, granule))
             .expect("a Vec takes every write");
     }
+}
+
+/// A Vorbis comment (Vorbis I §5.2.1 without the framing bit, and FLAC's VORBIS_COMMENT block): `vendor`, the count of
+/// `tags`, then each as `FIELD=value`, every string after its u32 LE length.
+pub fn vorbis_comment(vendor: &str, tags: &[(&str, &str)]) -> Vec<u8> {
+    let string = |s: &str| [&(s.len() as u32).to_le_bytes()[..], s.as_bytes()].concat();
+    let entries = tags
+        .iter()
+        .map(|(field, value)| string(&format!("{field}={value}")));
+    let head = [string(vendor), (tags.len() as u32).to_le_bytes().to_vec()];
+    head.into_iter().chain(entries).flatten().collect()
 }

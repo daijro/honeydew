@@ -1,5 +1,7 @@
 //! The PROJECT tab: `Save`, `Save New` and `Quick Render`, then the `Project info`, `Metadata` and `Performance`
 //! sections, scrolling as one page. `View project versions` (#69) ends the Metadata section, before `Performance`.
+//! #139: the Metadata section also has `Album:`, `Genre:`, `Year:` and `Comment:` after `Author:`, and `Write tags on
+//! export` (a setting, not the song's) after the fields: renders write them as tags.
 //!
 //! The tab shows a [`ProjectInfo`] the app fills in. It edits the metadata texts in place and reports everything else
 //! as a [`MainMenuAction`].
@@ -18,7 +20,8 @@
 //!   `Hidden`; if the song is also locked, those three rows go.
 //! - `Hide` shows when unlocked with a time spent ≥ 0, `Reset` when unlocked with a time spent > 0.
 //! - When locked, Title, Author and Online link stay but are read-only, the Online link row (label and field) hides
-//!   while the link is empty, and the `Lock metadata forever` button hides.
+//!   while the link is empty, and the `Lock metadata forever` button hides. The tag fields (#139: Album, Genre, Year,
+//!   Comment) lock as the link does.
 //! - `Open` shows whenever the link is non-empty, locked or not.
 
 use eframe::egui::{Align2, Id, Pos2, Rect, TextEdit, Ui, pos2, vec2};
@@ -47,6 +50,8 @@ const TEMPO_H: f32 = 0.8;
 /// Metadata: the label line over each field, and the field.
 const FIELD_LABEL_H: f32 = 0.75;
 const FIELD_H: f32 = 1.0;
+/// `Write tags on export`'s row, as UPDATES' toggles.
+const TOGGLE_H: f32 = 1.5;
 /// How far the column is in from the page's sides (on a page under [`WIDE_PAGE`], [`NARROW_INSET`]). Performance: the
 /// header row, the block under it, the `Hide` and `Reset` discs (diameter 2 × 0.7 U), and the margin the block is
 /// scrolled into view with.
@@ -86,6 +91,12 @@ pub struct ProjectInfo {
     pub title: String,
     pub author: String,
     pub link: String,
+    /// #139: `Album:`, `Genre:`, `Year:` and `Comment:` (the song's `HDTg`), and the `Write tags on export` setting.
+    pub album: String,
+    pub genre: String,
+    pub year: String,
+    pub comment: String,
+    pub write_tags: bool,
     /// The song's META@776 lock (`Lock metadata forever` was confirmed): the texts are read-only, and `Hide`, `Reset`
     /// and the lock button are gone.
     pub metadata_locked: bool,
@@ -106,6 +117,11 @@ impl Default for ProjectInfo {
             title: String::new(),
             author: String::new(),
             link: String::new(),
+            album: String::new(),
+            genre: String::new(),
+            year: String::new(),
+            comment: String::new(),
+            write_tags: true,
             metadata_locked: false,
             performance: Performance::default(),
         }
@@ -515,10 +531,15 @@ impl ProjectTab {
         for (name, value, limit) in [
             ("Title:", &mut info.title, TEXT_LIMIT),
             ("Author:", &mut info.author, TEXT_LIMIT),
+            ("Album:", &mut info.album, TEXT_LIMIT),
+            ("Genre:", &mut info.genre, TEXT_LIMIT),
+            ("Year:", &mut info.year, TEXT_LIMIT),
+            ("Comment:", &mut info.comment, TEXT_LIMIT),
             ("Online link:", &mut info.link, LINK_LIMIT),
         ] {
             let link = limit == LINK_LIMIT;
-            if link && locked && value.is_empty() {
+            // Locked, an empty field other than Title and Author goes.
+            if !matches!(name, "Title:" | "Author:") && locked && value.is_empty() {
                 continue;
             }
             let line = band(FIELD_LABEL_H);
@@ -558,6 +579,10 @@ impl ProjectTab {
             value.truncate(value.floor_char_boundary(limit));
             band(GAP);
         }
+        let tags = band(TOGGLE_H);
+        let name = "Write tags on export";
+        crate::ui::save_dialog::toggle(ui, cx, id, tags, name, &mut info.write_tags);
+        band(GAP);
         if !locked {
             let lock = band(BUTTON_H);
             let name = "Lock metadata forever";
@@ -587,8 +612,9 @@ impl ProjectTab {
             text,
         );
         let block = band(BLOCK_H);
+        // The block draws a copy: `Clear` goes to the app's own counters (#124).
         if performance::show(ui, cx, block, &info.performance) {
-            info.performance.clear_counters();
+            action = Some(MainMenuAction::ClearPerformance);
         }
 
         self.content_h = y - top;

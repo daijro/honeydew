@@ -20,15 +20,14 @@ pub struct State {
     /// A `Replace` of a module automation lanes target, held back ([`hold_removal`]): the app asks `Delete automation?`
     /// first.
     pub(crate) ask_remove: Option<Held>,
-    /// The module this session's last pick added, by instance id: the next pick replaces it, in its slot.
-    added: Option<i32>,
 }
 
 /// Draws the browser, modal, over the left of the screen. A pick adds the module to `channel`'s rack at `at` (an
 /// instrument only where the channel takes one: the instruments are not listed elsewhere) with no undo step, and the
 /// browser stays open: each later pick of the session (an opening starts one) replaces the module the last one added,
-/// in its slot, so the whole browse adds one module. `Paste` (always enabled) copies the `clipboard` modules that fit
-/// the channel ([`paste`]), a final song edit, and closes it; a `Paste` of nothing that fits flashes [`CANNOT_PASTE`]
+/// in its slot, so the whole browse adds one module, its lists in its place included (issue #123: through `picker`'s
+/// `added`, which their Back keeps). `Paste` (always enabled) copies the `clipboard` modules that fit the channel
+/// ([`paste`]), a final song edit, and closes it; a `Paste` of nothing that fits flashes [`CANNOT_PASTE`]
 /// instead. A `Replace` of a module automation lanes target is held back for the app's question
 /// ([`State::ask_remove`]), and closes it. `Rack Preset` and `Instrument` give way to their lists in the same panel
 /// (`PresetTarget::ModulesRack`, `PresetTarget::ModulesInstrument`), whose Back at their root brings the browser back
@@ -48,12 +47,16 @@ pub fn show(
     let pass = ui.ctx().cumulative_pass_nr();
     if state.pass + 1 != pass {
         // Its ordering is the stored one, applied at each opening. Back from a list in its place: no slide-in.
-        state.browser = match std::mem::take(&mut picker.back_to_modules) {
+        let back = std::mem::take(&mut picker.back_to_modules);
+        state.browser = match back {
             true => ModulesBrowser::in_place(),
             false => ModulesBrowser::default(),
         };
         state.browser.sort = app.settings.module_ordering();
-        state.added = None;
+        // An opening starts a browse; Back from a list goes on with it.
+        if !back {
+            picker.added = None;
+        }
     }
     state.pass = pass;
     let action = match app.song.channels.get(channel) {
@@ -71,18 +74,18 @@ pub fn show(
     let before = app.song.channels.get(channel).cloned();
     let edited = match (action, app.song.channels.get_mut(channel)) {
         (BrowserAction::Pick(type_id), Some(ch)) => {
-            let at = state.added.map_or(at, InsertAt::Replace);
+            let at = picker.added.map_or(at, InsertAt::Replace);
             let id = add_module(&mut ch.rack, type_id, at);
-            state.added = Some(id);
+            picker.added = Some(id);
             // Every new DW Sampler loads Close Grand.
             preset_picker::load_close_grand(picker, app.files, ch.id, id, type_id);
             true
         }
         (BrowserAction::Plugin(uid), Some(ch)) => {
-            let at = state.added.map_or(at, InsertAt::Replace);
+            let at = picker.added.map_or(at, InsertAt::Replace);
             match add_plugin(&mut ch.rack, ch.id, uid, at) {
                 Ok(id) => {
-                    state.added = Some(id);
+                    picker.added = Some(id);
                     // Its own editor opens at once if it has one; a failure shows on its card.
                     if let Some(plugins::State::Live(info)) = plugins::state(ch.id, id)
                         && info.has_editor

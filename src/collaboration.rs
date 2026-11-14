@@ -88,7 +88,7 @@ fn views(song: &mut Song, local: Option<&Song>) {
     let to = &mut song.file.meta;
     let from = &from.meta;
     local_fields!(MetaState, to, from; created, modified, editing_seconds;
-        author, display_title, locked, info_url, extra);
+        author, display_title, locked, info_url, extra, album, genre, year, comment);
     let to = &mut song.file.keyboard;
     let from = &local.unwrap_or(&default).file.keyboard;
     local_fields!(KeyboardState, to, from; vertical_mode, octave_shift, velocity, timing, hold;
@@ -279,7 +279,8 @@ fn merge_file(
     let (b, c, e) = (&b.meta, &c.meta, &e.meta);
     let mut meta = c.clone();
     fields!(MetaState, b, c, e, meta, "metadata";
-        created, editing_seconds, author, display_title, locked, info_url, modified, extra;);
+        created, editing_seconds, author, display_title, locked, info_url, modified, extra, album, genre, year,
+        comment;);
     out.meta = meta;
     Ok(out)
 }

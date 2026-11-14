@@ -242,3 +242,34 @@ fn every_rate_up_to_200_khz_is_kept_and_higher_ones_are_averaged_down_under_it()
         assert!(snr >= 25.0, "{rate}: {snr:.1} dB");
     }
 }
+
+/// Every tag a render writes, by its Vorbis comment field.
+const TAGS: [(&str, &str); 7] = [
+    ("TITLE", "Song ü"),
+    ("ARTIST", "Ivan"),
+    ("ALBUM", "Demos"),
+    ("GENRE", "House"),
+    ("DATE", "2026"),
+    ("COMMENT", "Made on a phone"),
+    ("ENCODER", "Honeydew 0.5.4"),
+];
+
+/// #139: a tagged Ogg Vorbis file's comment header (§5.2.1) holds the vendor string, then the tags as `FIELD=value`,
+/// then the framing bit; the stream still decodes.
+#[test]
+fn tags_go_in_the_comment_header_and_the_stream_still_decodes() {
+    let audio = [sine(44_100, 440.0, 0.5, 1.0), sine(44_100, 660.0, 0.5, 1.0)];
+    let mut encoder = OggEncoder::with_tags(44_100, false, &TAGS);
+    encoder.push(&audio);
+    let bytes = encoder.finish();
+    let string = |s: &str| [&(s.len() as u32).to_le_bytes()[..], s.as_bytes()].concat();
+    let mut want = [&b"\x03vorbis"[..], &string(VENDOR), &7u32.to_le_bytes()].concat();
+    for (field, value) in TAGS {
+        want.extend(string(&format!("{field}={value}")));
+    }
+    want.push(1);
+    assert_eq!(pages(&bytes)[1].body, want);
+    let decoded = decode(&bytes).unwrap();
+    assert_eq!(decoded.frames(), 44_100);
+    assert!(snr(stereo(&decoded)[0], &audio[0]) > 20.0);
+}

@@ -75,6 +75,14 @@ pub fn write(song: &Song) -> Result<Vec<u8>, FlmError> {
     if song.sample_rate != 0 {
         writer.chunk(*b"HDSR", |writer| writer.u32(song.sample_rate))?;
     }
+    // PROJECT's tag fields (#139): an `HDTg`, `vstr32` album, genre, year and comment, only when one is set.
+    let meta = &song.file.meta;
+    let tags = [&meta.album, &meta.genre, &meta.year, &meta.comment];
+    if tags.iter().any(|t| !t.is_empty()) {
+        writer.chunk(*b"HDTg", |writer| {
+            (tags.iter()).try_for_each(|t| writer.vstr32(t.as_bytes()))
+        })?;
+    }
     write_raw(&mut writer, &song.file.unknown_chunks)?;
     crate::versions::write(&mut writer, &song.file.versions)?;
     Ok(writer.into_bytes())

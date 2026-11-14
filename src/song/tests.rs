@@ -2215,3 +2215,22 @@ fn a_collapsed_track_is_saved_apart_and_a_song_with_none_collapsed_writes_as_bef
     song.channels[1].lanes[0].collapsed = false;
     assert_eq!(crate::flm::write(&song).unwrap(), before);
 }
+
+#[test]
+fn the_tag_fields_are_saved_apart_and_a_song_with_none_writes_as_before() {
+    // #139: an `HDTg` of PROJECT's album, genre, year and comment, which FL Studio Mobile skips as an unknown chunk.
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    let before = crate::flm::write(&song).unwrap();
+    assert!(!before.windows(4).any(|w| w == b"HDTg"));
+    let meta = &mut song.file.meta;
+    meta.album = "Demos ✓".into();
+    meta.genre = "House".into();
+    meta.year = "2026".into();
+    meta.comment = "Made on a phone".into();
+    let bytes = crate::flm::write(&song).unwrap();
+    assert_eq!(bytes.windows(4).filter(|w| *w == b"HDTg").count(), 1);
+    assert_eq!(crate::flm::read(&bytes).unwrap().file.meta, song.file.meta);
+    song.file.meta = MetaState::default();
+    assert_eq!(crate::flm::write(&song).unwrap(), before);
+}

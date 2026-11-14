@@ -73,3 +73,14 @@ fn cancel_makes_no_song() {
     assert!(!rig.texts().contains(&TITLE.to_owned()));
     assert_eq!(rig.take(), Vec::<String>::new());
 }
+
+/// #124, #138: the dialog's name field holds `New Song`, selected, so typing replaces it; `OK` names the song so.
+#[test]
+fn the_typed_name_is_the_new_songs_title() {
+    let mut rig = Rig::new();
+    rig.open_menu(MenuTab::Songs);
+    rig.click_id(songs_id(("big", 0_usize)));
+    rig.frame(vec![egui::Event::Text("Beat".into())]);
+    click_part(&mut rig, "ok");
+    assert_eq!(rig.app.song.title, "Beat");
+}

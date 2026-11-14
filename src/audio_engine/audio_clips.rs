@@ -35,14 +35,18 @@ struct Span {
     offset: f64,
     /// Per envelope, its steps (content tick, value) in tick order.
     envelopes: [Vec<(u32, f32)>; 3],
+    /// Its slot's `STR1` mode is on (SYNC): the sample is stretched for the build's tempo.
+    sync: bool,
 }
 
 impl Clips {
-    /// Adds one block of every clip slot into the channel's buffer, before its rack runs.
-    pub fn render(&mut self, buffer: &mut OwnedStereoBuffer) {
-        for pad in 0..self.sampler.pads() {
-            self.sampler
-                .process(pad, &mut buffer.left, &mut buffer.right);
+    /// Adds one block of every clip slot into the channel's buffer, before its rack runs. `speed`: the live tempo over
+    /// the build's, which a SYNC clip's sample is stretched for. It resamples by it, so it stays on the beat with the
+    /// transport, its pitch moving with the tempo like tape (Honeydew change, #126); SYNC off plays at its native speed.
+    pub fn render(&mut self, buffer: &mut OwnedStereoBuffer, speed: f64) {
+        for (pad, span) in self.spans.iter().enumerate() {
+            let rate = if span.sync { speed } else { 1.0 };
+            (self.sampler).process_at(pad, &mut buffer.left, &mut buffer.right, rate);
         }
     }
 
@@ -189,6 +193,7 @@ pub(super) fn build(
             loop_beats: clip.loop_len_beats,
             offset: clip.offset_beats,
             envelopes,
+            sync: slot.file.stretch_mode != 0,
         });
     }
     if pads.is_empty() {

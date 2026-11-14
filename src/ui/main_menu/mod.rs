@@ -175,11 +175,13 @@ pub enum MainMenuAction {
     ImportTheme,
     /// PROJECT `View project versions` (#69): the versions window.
     ViewVersions,
-    /// SONGS: a tap selected the audio file at this path (#106). Decode it for the sample strip
+    /// SONGS: a tap previews the audio file at this path (#106, #123). Decode it for the sample strip
     /// ([`SongsPreview::decoded`]), which plays it.
     Preview(std::path::PathBuf),
     /// SONGS `Send to playlist` (#106): each of these audio files on a new audio track, its clip at the playhead.
     SendToPlaylist(Vec<std::path::PathBuf>),
+    /// PROJECT Performance `Clear`: the app's counters start from zero (#124).
+    ClearPerformance,
 }
 
 /// The Help menu's links, after `What's new`: the project's own pages.

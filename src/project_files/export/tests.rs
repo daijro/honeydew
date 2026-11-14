@@ -1031,7 +1031,7 @@ fn single_pass_file(
         master_effects: !page.split || page.master_effects,
     };
     let audio = single_pass(song, &SampleCache::default(), spec).unwrap();
-    let mut encoder = Encoder::new(format, RATE, page.high_quality, audio[0].len());
+    let mut encoder = Encoder::new(format, RATE, page.high_quality, audio[0].len(), &[]);
     for at in (0..audio[0].len()).step_by(BLOCK) {
         let end = (at + BLOCK).min(audio[0].len());
         encoder.push(&audio[0][at..end], &audio[1][at..end]);
@@ -1109,6 +1109,7 @@ fn an_flp_puts_the_effects_on_the_channel_s_insert_and_with_rendered_audio_holds
     let export = files.take_export().expect("rendered first");
     assert_eq!(export.split, Split::Flp);
     assert!(written(&mem, "My Songs/Song.zip").is_none());
+    // The app tags every job (#139): an FLP's stems stay plain WAVs, whose 46-byte header `flp::export` reads.
     let job = Job::new(
         &song,
         &SampleCache::default(),
@@ -1116,11 +1117,13 @@ fn an_flp_puts_the_effects_on_the_channel_s_insert_and_with_rendered_audio_holds
         cut(false),
         RATE,
     )
-    .unwrap();
+    .unwrap()
+    .with_tags(tags(&song));
     let Done::Rendered(rendered, stems) = run(job).2 else {
         panic!("the stems");
     };
     assert_eq!(stems.iter().map(|s| s.0).collect::<Vec<_>>(), [1]);
+    assert_eq!(&stems[0].1[38..42], b"data", "no LIST chunk");
     files.flp_rendered(&rendered, &export, &stems);
     let zip = written(&mem, "My Songs/Song.zip").unwrap();
     let entries = crate::zip::read(&zip, u64::MAX).unwrap();

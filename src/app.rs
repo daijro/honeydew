@@ -10,7 +10,7 @@ use crate::history::{self, History, Step};
 use crate::metrics::{FontSize, Metrics};
 use crate::project_files::{ProjectFiles, Replace};
 use crate::recording::input::{InputChoice, InputLink, Mic};
-use crate::recording::recorder::{Recorder, Take, compensates, latency, recording_channels};
+use crate::recording::recorder::{Recorder, Take, latency, recording_channels};
 use crate::recording::routing::{Routing, input_channel};
 use crate::sample_cache::{self, SampleCache};
 use crate::settings::{self, Settings};
@@ -108,6 +108,8 @@ fn input_gone(name: &str) -> Vec<String> {
 /// The tags of that message and of a recording's file error.
 const INPUT_TAG: &str = "audio input";
 const RECORD_TAG: &str = "recording";
+/// How long an output whose reopen failed waits before it tries again by itself, s.
+const REOPEN_RETRY_S: f64 = 1.0;
 /// What a song that loads with audio files missing shows, and its tag.
 const MISSING_AUDIO: &str = "Some audio files were missing";
 /// The tag of the message that the output fell back from the project's sample rate (PR #87).
@@ -247,6 +249,8 @@ pub struct HoneydewApp {
     latency: Option<u32>,
     /// This frame's egui time, and the last user action's: see [`Self::count_time`].
     now: f64,
+    /// When a failed output may next try to reopen by itself, egui time ([`REOPEN_RETRY_S`]).
+    reopen_at: f64,
     last_action: Option<f64>,
     /// The audio commands queued so far ([`AudioLink::sent`]) and the egui time that count last moved.
     sent_at: (u64, f64),
@@ -349,6 +353,7 @@ impl Default for HoneydewApp {
             calibration: None,
             latency: None,
             now: 0.0,
+            reopen_at: 0.0,
             last_action: None,
             sent_at: (0, 0.0),
             audio_edit: None,
@@ -726,8 +731,9 @@ impl HoneydewApp {
                 let editor = &self.slots.drum_editor;
                 let folds = (editor.step.fold, editor.grid.fold);
                 // The performance monitor is the app's, not the song's: a song load changes nothing of it (visibility,
-                // idle, history).
-                let performance = std::mem::take(&mut self.slots.performance);
+                // idle, history) but its counters, which start from zero for the new song (#124).
+                let mut performance = std::mem::take(&mut self.slots.performance);
+                performance.clear_counters();
                 // So is the chord editor's open state, which KEYB does not keep (a load does not close it).
                 let chord_editor = self.slots.keyboard_settings.editor;
                 self.slots = Slots {
@@ -1616,9 +1622,9 @@ impl HoneydewApp {
 
     /// The recorder of a recording starting now: the channels it takes ([`recording_channels`]), each from its stored
     /// input ports, else `Input 1`, into the recordings folder, from the engine's tap of the open input; each take
-    /// drops L frames when the setting asks for it ([`compensates`]): this session's calibration, else the engine's
-    /// buffer size ([`latency`]). `None` when nothing records: no input open, no channel to take, or no recordings
-    /// folder (the web, in-memory files). A folder that fails shows the file error.
+    /// drops L frames while `Enable audio recording latency compensation` is ON: this session's calibration, else the
+    /// engine's buffer size ([`latency`]). `None` when nothing records: no input open, no channel to take, or no
+    /// recordings folder (the web, in-memory files). A folder that fails shows the file error.
     fn new_recorder(&mut self) -> Option<Recorder> {
         let ring = self.input.ring()?.clone();
         let tap = (self.audio.input.as_ref())
@@ -1658,7 +1664,7 @@ impl HoneydewApp {
                 return None;
             }
         };
-        let skip = match compensates(self.settings.latency_compensation) {
+        let skip = match self.settings.latency_compensation {
             true => latency(self.latency),
             false => 0,
         };
@@ -1729,7 +1735,8 @@ impl HoneydewApp {
             self.input.close();
         } else if let Some(rate) = self.audio.sample_rate().filter(|_| !self.input_failed) {
             // Android and iOS ask the user for the microphone first; it opens once allowed.
-            let failed = match self.input.mic() {
+            let mic = self.input.mic();
+            let failed = match mic {
                 Mic::Asking => None,
                 Mic::Denied => Some((mic_denied(), MIC_SETTINGS)),
                 Mic::Granted => (self.open_device(device.as_deref(), chosen.as_deref(), rate))
@@ -1738,7 +1745,8 @@ impl HoneydewApp {
             };
             if let Some((lines, choices)) = failed {
                 self.input_failed = true;
-                if armed && !cfg!(target_arch = "wasm32") {
+                // A calibration says where to allow the microphone too (Honeydew change, #129: phones calibrate).
+                if (armed || calibrating && mic == Mic::Denied) && !cfg!(target_arch = "wasm32") {
                     self.navigate(Nav::Open(Overlay::Message {
                         tag: INPUT_TAG,
                         lines,
@@ -2102,17 +2110,19 @@ impl HoneydewApp {
         // The snapshot first: a stream that failed while egui was idle (no frames) must count as not running for
         // this click. The start is before the screen, so a press that lands on a key is heard natively.
         let mut snapshot = self.audio.poll();
-        // Android drops its streams when headphones come or go: an output that fails while the song plays (a take
-        // records) restarts by itself. iOS keeps them, but a call or Siri stops them: they reopen once it ends, and
-        // when a device comes or goes (`ios::take_reopen`), the transport kept.
+        // iOS keeps its streams, but a call or Siri stops them: they reopen once it ends, and when a device comes or
+        // goes (`ios::take_reopen`), the transport kept.
         #[cfg(target_os = "ios")]
         if crate::ios::take_reopen() {
             self.audio.reopen(&self.song);
             self.input.close();
         }
-        let rerouted = cfg!(mobile)
-            && self.main_screen.playing
-            && snapshot.as_ref().is_some_and(|s| s.stream_failed);
+        // An output that a report ended (a device gone, Android's headphones in or out, a sample-rate change:
+        // `device::stops`) reopens by itself, the transport kept, and its input after it (`open_input`); a reopen that
+        // fails tries again a second later (Honeydew change). The web starts audio only from a gesture.
+        let failed = snapshot.as_ref().is_some_and(|s| s.stream_failed);
+        let retries = failed && !cfg!(target_arch = "wasm32");
+        let rerouted = retries && self.now >= self.reopen_at;
         if !self.audio.running() && (rerouted || ctx.input(|i| audio_gesture(i, START_ON_RELEASE)))
         {
             self.audio
@@ -2129,6 +2139,12 @@ impl HoneydewApp {
             // Before the starting press's key: the new engine starts from each channel's first lane.
             self.sent_lane = None;
             self.live_lane();
+            if failed && !self.audio.running() {
+                self.reopen_at = self.now + REOPEN_RETRY_S;
+            }
+        }
+        if retries && !self.audio.running() {
+            ctx.request_repaint_after_secs((self.reopen_at - self.now).max(0.0) as f32);
         }
         // Last frame's leftovers go before this frame's commands.
         self.audio.flush();
@@ -3489,20 +3505,37 @@ mod tests {
         assert_eq!(rig.take(), ["Reopen 2", "Stop"]);
     }
 
+    /// Honeydew change: a stream that a report ended (a device gone, a sample-rate change: `device::stops`) reopens by
+    /// itself on the next frame, with no click, the transport kept.
     #[test]
-    fn a_failed_stream_warns_once_drops_commands_and_reopens_on_the_next_click() {
+    fn a_stream_a_report_ended_reopens_by_itself_on_the_next_frame() {
         let mut rig = Rig::with_synth();
-        // A command the full queue handed back is waiting when the stream fails.
+        rig.click(PLAY);
+        rig.take();
+        rig.rec.0.borrow_mut().failed = true;
+        rig.frame(vec![]);
+        assert_eq!(rig.rec.0.borrow().reopens, 1);
+        assert_eq!(rig.take(), ["Reopen 2", "Play"]);
+        assert!(rig.app.audio.running());
+    }
+
+    #[test]
+    fn a_failed_stream_warns_once_drops_commands_and_reopens_by_itself() {
+        let mut rig = Rig::with_synth();
+        // A command the full queue handed back is waiting when the stream fails; the device is gone for a while.
         rig.rec.0.borrow_mut().room = Some(0);
         rig.app.add_default_drums(0);
         // The new engine, and its current lane right after it.
         assert_eq!(rig.app.audio.pending(), 2);
         let before = warnings();
         rig.rec.0.borrow_mut().failed = true;
+        rig.rec.0.borrow_mut().no_device = true;
         for _ in 0..3 {
             rig.frame(vec![]);
         }
-        assert_eq!(warnings() - before, 1, "one warning, not one per frame");
+        // The failure's warning and its one reopen's, not one per frame.
+        assert_eq!(warnings() - before, 2);
+        assert_eq!(rig.rec.0.borrow().reopens, 1);
         // Nothing waits or queues for the dead stream.
         assert_eq!(rig.app.audio.pending(), 0);
         rig.app.add_default_drums(0);
@@ -3511,12 +3544,14 @@ mod tests {
         rig.rec.0.borrow_mut().room = None;
         rig.frame(vec![]);
         assert_eq!(rig.take(), Vec::<String>::new());
-        assert_eq!(rig.rec.0.borrow().reopens, 0, "reopened without a click");
 
-        // The next click reopens the output with the current song (master and three channels), and the
-        // transport takes the play button's state.
-        rig.click(OUTSIDE);
-        assert_eq!(rig.rec.0.borrow().reopens, 1);
+        // The device back, the next try (a second after the last) reopens the output with the current song (master
+        // and three channels), and the transport takes the play button's state.
+        rig.rec.0.borrow_mut().no_device = false;
+        for _ in 0..9 {
+            rig.frame(vec![]);
+        }
+        assert_eq!(rig.rec.0.borrow().reopens, 2);
         assert_eq!(
             rig.opens, 1,
             "a failed output is reopened, not started again"
@@ -3525,31 +3560,38 @@ mod tests {
         // The new Drums channel (3) is current: its pads replace the keyboard.
         rig.press(pad_centre(0));
         assert_eq!(rig.take(), ["NoteOn 3 48 127"]);
-        assert_eq!(warnings() - before, 1);
+        assert_eq!(warnings() - before, 2);
     }
 
     #[test]
-    fn a_failed_reopen_keeps_the_output_warns_and_retries_on_the_next_click() {
+    fn a_failed_reopen_keeps_the_output_warns_and_retries_a_second_later_or_on_a_click() {
         let mut rig = Rig::with_synth();
         rig.click(PLAY);
         rig.rec.0.borrow_mut().failed = true;
         rig.rec.0.borrow_mut().no_device = true;
-        rig.frame(vec![]);
         let before = warnings();
-        rig.click(OUTSIDE);
-        // One attempt per click, and its failure warns.
+        rig.frame(vec![]);
+        // One attempt by itself, and its failure warns.
         assert_eq!(rig.rec.0.borrow().reopens, 1);
-        assert_eq!(warnings() - before, 1);
+        assert_eq!(warnings() - before, 2, "the failure and the reopen");
         for _ in 0..3 {
             rig.frame(vec![]);
         }
-        assert_eq!(rig.rec.0.borrow().reopens, 1, "retried without a click");
-        assert_eq!(warnings() - before, 1);
+        assert_eq!(rig.rec.0.borrow().reopens, 1, "retried within the second");
         assert!(rig.app.audio.has_output(), "the output was dropped");
-
-        rig.rec.0.borrow_mut().no_device = false;
+        // A click tries at once; then a second later the next try.
         rig.click(OUTSIDE);
         assert_eq!(rig.rec.0.borrow().reopens, 2);
+        for _ in 0..12 {
+            rig.frame(vec![]);
+        }
+        assert_eq!(rig.rec.0.borrow().reopens, 3);
+
+        rig.rec.0.borrow_mut().no_device = false;
+        for _ in 0..12 {
+            rig.frame(vec![]);
+        }
+        assert_eq!(rig.rec.0.borrow().reopens, 4);
         assert_eq!(rig.opens, 1);
         assert_eq!(rig.take(), ["Play", "Reopen 2", "Play"]);
     }
@@ -5333,7 +5375,10 @@ mod tests {
         scroll(&mut rig, -5000.0);
         assert!(rig.painted("example.com"));
         // Typed into the song's META: an unsaved change, as the title is, and nothing for the audio or the history.
+        // Each field is scrolled to the middle of the view first (#139's fields made the page taller than it).
         for (field, typed) in [("Author:", "!"), ("Online link:", "/a")] {
+            let at = rig.ctx.read_response(project_id(field)).unwrap().rect;
+            scroll(&mut rig, content.center().y - at.center().y);
             rig.click_id(project_id(field));
             rig.frame(vec![egui::Event::Text(typed.into())]);
             rig.frame(vec![key_event(egui::Key::Enter, egui::Modifiers::NONE)]);

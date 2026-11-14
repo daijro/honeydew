@@ -816,9 +816,10 @@ impl SongAudioEngine {
         for kit in self.kits.iter_mut().flatten() {
             kit.render(&mut self.buffers);
         }
+        let speed = self.speed();
         for (clips, buffer) in self.clips.iter_mut().zip(&mut self.buffers) {
             if let Some(clips) = clips {
-                clips.render(buffer);
+                clips.render(buffer, speed);
             }
         }
         if let Some(monitor) = &mut self.monitor {
@@ -1135,7 +1136,8 @@ impl AudioRenderer for SongAudioEngine {
 
     /// A tempo change without a rebuild (a tempo drag): from the next frame the transport runs at `bpm`, at the same
     /// beat. The prepared events, param timelines, loop and audio clip spans stay timed at the build's tempo and keep
-    /// their beats, as the transport's frames go by faster or slower; a running count-in keeps its beats; the
+    /// their beats, as the transport's frames go by faster or slower (a SYNC clip's sample resamples with them,
+    /// [`audio_clips::Clips::render`]); a running count-in keeps its beats; the
     /// instruments, the effects and the live keys' note effects take the tempo ([`live`]: an Arpeggiator's steps follow
     /// it, a free rate keeping its milliseconds, and Note Echo times what it makes from then on at it). During a drag
     /// The note effects' step interval is not recomputed: their prepared output is one of those compiled lists, so it
@@ -1397,6 +1399,45 @@ impl SongAudioEngine {
         } else {
             0
         }
+    }
+
+    /// Output frames until the transport, playing on from where it is, reaches tick `tick`: at the live tempo, then at
+    /// each tempo the master's tempo automation sets on the way (Honeydew change, #126: an export's range plays as long
+    /// as playback does). Infinite for a tick past any frame.
+    // ponytail: a Modulator on the tempo is not counted; walk its curve too if one ever drives it.
+    pub fn frames_to_tick(&self, tick: u64) -> f64 {
+        let beat = tick as f64 / f64::from(PPQ);
+        let Ok(end) = beat_frame(beat, self.sample_rate, self.built_bpm) else {
+            return f64::INFINITY;
+        };
+        let built = f64::from(self.built_bpm);
+        let (mut at, mut bpm, mut frames) = (
+            self.frame as f64 + self.phase,
+            f64::from(self.tempo_bpm),
+            0.0,
+        );
+        let tempos = (self.actions[self.action_index..].iter()).filter_map(|event| match event {
+            ScheduledAction {
+                frame,
+                channel: 0,
+                action:
+                    Action::Param {
+                        instance_id: 0,
+                        index: TEMPO_PARAM,
+                        value,
+                    },
+            } => Some((*frame, f64::from(automated_tempo(*value) as f32))),
+            _ => None,
+        });
+        for (frame, tempo) in tempos.take_while(|&(frame, _)| frame < end) {
+            let frame = frame as f64;
+            if frame > at {
+                frames += (frame - at) * built / bpm;
+                at = frame;
+            }
+            bpm = tempo;
+        }
+        frames + (end as f64 - at).max(0.0) * built / bpm
     }
 
     /// Moves the transport on by `frames` output frames.

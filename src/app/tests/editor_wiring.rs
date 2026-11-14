@@ -2554,6 +2554,9 @@ fn a_drag_in_the_drum_editors_graph_lane_is_heard_once_and_undone_in_one_step() 
     let bars = rig.rect_of(steps("graph"));
     let (a, b) = (rig.step(0, 0).x, rig.step(0, 2).x);
     rig.press(pos2(a, bars.center().y));
+    // A clear sideways move first, so the drag paints across the steps (#127: a mostly vertical one keeps to its
+    // first column).
+    rig.drag_to(pos2(b, bars.center().y));
     rig.drag_to(pos2(b, bars.bottom() + 10.0));
     assert_eq!(values_of(&hits(&rig), Prop::Velocity), [127, 1]);
     assert_eq!(rig.take(), Vec::<String>::new());
@@ -3140,6 +3143,8 @@ mod samples {
     /// In the open sample picker: `My Files`, then its folder `folder` (0 `My Recordings`, 1 `My Samples`), then that
     /// folder's first file; then it closes the picker, which stays open after a pick.
     fn pick(rig: &mut Rig, folder: usize) {
+        // From the root, wherever the picker was left (issue #131).
+        super::rack_wiring::picker_root(rig);
         picker_row(rig, 0);
         picker_row(rig, folder);
         picker_row(rig, 0);

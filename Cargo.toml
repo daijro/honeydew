@@ -1,6 +1,6 @@
 [package]
 name = "honeydew"
-version = "0.5.3"
+version = "0.5.4"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
@@ -107,10 +107,11 @@ os-vst2 = { path = "vendor/lemon-studio/os-vst2" }
 rayon = "1.11"
 getrandom = "0.3.4"
 
-# M11 J2: MIDI input over ALSA (cpal's `alsa 0.9`), CoreMIDI and WinMM. 0.10.4 is the last 0.10.x, on `alsa ^0.9`. Its
-# ALSA backend is Linux only, so FreeBSD has no MIDI input.
+# M11 J2: MIDI input over ALSA (cpal's `alsa 0.11`), CoreMIDI and WinMM. 0.11.1 takes `alsa >=0.9, <0.13`: cpal 0.18's
+# 0.11 (0.10.x needs `^0.9`, and two `alsa-sys` cannot link). Its ALSA backend is Linux only, so FreeBSD has no MIDI
+# input.
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
-midir = "=0.10.4"
+midir = "=0.11.1"
 
 # The plugin editors' X11 windows. Already in the tree through winit.
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]

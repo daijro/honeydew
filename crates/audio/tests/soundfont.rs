@@ -386,8 +386,9 @@ fn pitch_bend_is_two_semitones_and_slides_add_to_sounding_voices_only() {
 }
 
 #[test]
-fn fine_tune_moves_sounding_voices_by_200v_minus_100_cents() {
-    // Param 6, Honeydew's own (issue #90): 0.5 is in tune, 1 is 100 cents up, 0.25 is 50 down; SFZ voices too.
+fn fine_tune_and_transpose_move_sounding_voices() {
+    // Param 6, Fine Tune, Honeydew's own (issue #90): 200v − 100 cents, 0.5 in tune, 1 is 100 cents up, 0.25 is 50
+    // down. Param 11, Transpose (issue #102): round(48v) − 24 semitones on top. SFZ voices too.
     use honeydew_audio::sample::SampleData;
     let tone = (0..44_000).map(|i| (std::f32::consts::TAU * i as f32 / 100.0).sin() * 0.5);
     let sample = Arc::new(SampleData {
@@ -400,13 +401,23 @@ fn fine_tune_moves_sounding_voices_by_200v_minus_100_cents() {
     let regions = (parsed.regions.into_iter()).map(|r| (r, sample.clone().into()));
     let sfz = SoundFont::sfz("Test", regions.collect(), &parsed.control);
     for font in [font(sine_bank()), Arc::new(sfz)] {
-        for (v, cents) in [(0.5, 0.0), (1.0, 100.0), (0.25, -50.0)] {
+        for (v, transpose, cents) in [
+            (0.5, 0.5, 0.0),
+            (1.0, 0.5, 100.0),
+            (0.25, 0.5, -50.0),
+            (0.5, 31.0 / 48.0, 700.0),
+            (1.0, 0.0, -2300.0),
+        ] {
             let mut player = SoundFontPlayer::new(RATE, Some((font.clone(), 0)));
             player.note_on(69, 1.0, 0.5);
             player.set_parameter(6, v);
+            player.set_parameter(11, transpose);
             let (left, _) = render(&mut player, 24_000);
             let (got, want) = (pitch(&left[4_800..]), 440.0 * 2f32.powf(cents / 1200.0));
-            assert!(close(got, want, 0.002), "{v}: {got} Hz, want {want}");
+            assert!(
+                close(got, want, 0.002),
+                "{v} {transpose}: {got} Hz, want {want}"
+            );
         }
     }
 }

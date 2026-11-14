@@ -117,6 +117,19 @@ fn the_modules_browsers_instrument_lists_them_in_its_panel_and_a_later_pick_repl
     }
     let browser = Overlay::ModulesBrowser { channel: 1, at };
     assert_eq!(rig.overlays(), [Overlay::Rack(1), browser]);
+    // Issue #123: the whole browse adds one module, across its lists too. The Instruments list again, then Back and an
+    // effect: each pick takes the place of the module the last one added.
+    nested_row(&mut rig, 2);
+    nested_row(&mut rig, BELLS);
+    nested_row(&mut rig, 0);
+    assert_eq!(types(&rig, 1), [0, 2]);
+    for _ in 0..2 {
+        rig.click_id(Id::new(BROWSER).with("back"));
+        rig.frame(vec![]);
+    }
+    super::rack_wiring::pick(&mut rig, "Dist");
+    assert_eq!(types(&rig, 1), [0, 6]);
+    assert_eq!(rig.app.history.steps(), steps);
 }
 
 #[test]

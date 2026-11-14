@@ -113,8 +113,13 @@ pub fn let_go_press(ctx: &egui::Context, id: egui::Id) {
 /// finger drives the pointer, so a pinch it held still ends in a click). Call it every frame the widget `id` shows:
 /// its latch is in egui's memory.
 pub fn pinch_press(ui: &egui::Ui, id: egui::Id) -> bool {
-    let (multi, pressed) = ui.input(|i| (i.multi_touch().is_some(), i.pointer.any_pressed()));
-    ui.data_mut(|d| {
+    pinch_latch(ui.ctx(), id)
+}
+
+/// [`pinch_press`] for a widget with no `Ui` at hand.
+fn pinch_latch(ctx: &egui::Context, id: egui::Id) -> bool {
+    let (multi, pressed) = ctx.input(|i| (i.multi_touch().is_some(), i.pointer.any_pressed()));
+    ctx.data_mut(|d| {
         let pinch = d.get_temp_mut_or_default::<bool>(id.with("pinch press"));
         *pinch = *pinch && !pressed || multi;
         *pinch
@@ -207,7 +212,8 @@ const PLAY_PASS: &str = "modal open to play pass";
 /// [`backdrop`] open to the transport's Play button (`("transport", "play")`, where it was laid out): a tap there
 /// still starts and stops playback under the modal, as the keymap's `play` does ([`play_open`]), and closes nothing
 /// (so that the Generate panel's preview can be heard). The backdrop is up to four areas round it.
-/// Whether a click or a secondary click landed outside elsewhere.
+/// Its drags and pinches scroll and zoom the editor below ([`drags_through`], #135). Whether a click (not a pinch's,
+/// [`pinch_press`]) or a secondary click landed outside elsewhere.
 pub(crate) fn backdrop_open_to_play(ctx: &egui::Context, id: egui::Id) -> bool {
     let play = ctx.read_response(egui::Id::new(("transport", "play")));
     modal_shown(ctx);
@@ -232,10 +238,25 @@ pub(crate) fn backdrop_open_to_play(ctx: &egui::Context, id: egui::Id) -> bool {
         .into_iter()
         .enumerate()
         .filter(|(_, r)| r.is_positive());
+    let layer = |i: usize| egui::LayerId::new(egui::Order::Middle, id.with("backdrop").with(i));
+    let layers: Vec<egui::LayerId> = (0..4).map(layer).collect();
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(THROUGH), layers));
+    let pinch = pinch_latch(ctx, id);
     parts.fold(false, |outside, (i, rect)| {
         let part = backdrop_part(ctx, id.with("backdrop").with(i), rect);
-        outside | part.clicked() | part.secondary_clicked()
+        outside | (part.clicked() && !pinch) | part.secondary_clicked()
     })
+}
+
+/// The temp-data key of the backdrop layers open to the editor below ([`drags_through`]).
+const THROUGH: &str = "backdrop open to drags";
+
+/// A touch at `pos` lands on a backdrop open to play ([`backdrop_open_to_play`], as last drawn): the editor below
+/// scrolls and zooms by its drags and pinches ([`scroller::Scroller`]; the Generate panel's roll, #135), while its tap
+/// still closes the modal.
+pub(crate) fn drags_through(ctx: &egui::Context, pos: egui::Pos2) -> bool {
+    let layers = ctx.data(|d| d.get_temp::<Vec<egui::LayerId>>(egui::Id::new(THROUGH)));
+    (ctx.layer_id_at(pos)).is_some_and(|l| layers.is_some_and(|ls| ls.contains(&l)))
 }
 
 /// The modal on top this pass so far is open to the transport's Play ([`backdrop_open_to_play`]).

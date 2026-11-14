@@ -514,6 +514,12 @@ pub fn take_automate() -> Vec<(Parent, usize)> {
     asked.filter_map(|(id, i)| Some((Parent::try_from(id).ok()?, usize::try_from(i).ok()?))).collect()
 }
 
+/// Issue #117: the files this thread's editors sent to the playlist since the last call (Tesla's `Send to arranger as
+/// audio clip`), which Honeydew answers although no editor joins its strip (`os_hostlink`'s `Audio`), oldest first.
+pub fn take_sent() -> Vec<std::path::PathBuf> {
+    os_hostlink::take_sent().into_iter().map(Into::into).collect()
+}
+
 /// Whether editor `id` is open.
 pub fn is_open(id: Parent) -> bool {
     get(id).is_some()

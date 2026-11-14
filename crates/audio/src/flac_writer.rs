@@ -1,6 +1,6 @@
 //! FLAC writing. `flac` encodes finished PCM (the offline renderer's output) as a `.flac` file,
 //! and `FlacEncoder` takes the audio in slices as it is rendered. The stream is `fLaC`, one STREAMINFO block
-//! (MD5 left zero = unknown), then frames of 4096
+//! (MD5 left zero = unknown), a VORBIS_COMMENT block when tagged ([`FlacEncoder::with_tags`]), then frames of 4096
 //! samples, the last one shorter, inside the format's streamable subset (each frame header carries its sample rate and
 //! bit depth; LPC order ≤ 12, Rice partition order ≤ 8). A stereo frame takes the cheapest of independent, left/side,
 //! right/side and mid/side. Each subframe is the cheapest of VERBATIM, the best FIXED order 0…4 and the best LPC
@@ -17,6 +17,7 @@
 //! ponytail: no CONSTANT subframe and no wasted-bits detection (silence already costs ~2 bytes per subframe through the
 //! zero-width escape); one window where `flac -8` tries several (the bundled content still comes out ~2% under it).
 
+use crate::ogg_writer::vorbis_comment;
 use crate::sample::SampleMeta;
 
 /// Samples per frame and channel.
@@ -30,6 +31,8 @@ const MAX_PARTITION: u32 = 8;
 /// The LPC coefficient precision, the format's most: on the bundled content it beat libFLAC's 12 for 16-bit audio, and a
 /// search over 5…15 bits gained under 0.1% for over a third of the encoding time.
 const PRECISION: u32 = 15;
+/// The VORBIS_COMMENT block's vendor string.
+const VENDOR: &str = "Honeydew";
 
 /// MSB-first bit sink.
 #[derive(Default)]
@@ -535,6 +538,8 @@ pub struct FlacEncoder {
     smallest: usize,
     largest: usize,
     blocks: u64,
+    /// The VORBIS_COMMENT block's data, empty for none.
+    comment: Vec<u8>,
 }
 
 impl FlacEncoder {
@@ -557,6 +562,23 @@ impl FlacEncoder {
             smallest: usize::MAX,
             largest: 0,
             blocks: 0,
+            comment: Vec::new(),
+        }
+    }
+
+    /// [`Self::new`], with a VORBIS_COMMENT block after STREAMINFO holding `tags`: Vorbis comment fields (`TITLE`,
+    /// `ARTIST`, …) and their values. No tags, no block.
+    ///
+    /// # Panics
+    /// On a `rate`, `bits` or channel count outside those ranges.
+    pub fn with_tags(rate: u32, bits: u8, channels: usize, tags: &[(&str, &str)]) -> Self {
+        let comment = match tags {
+            [] => Vec::new(),
+            tags => vorbis_comment(VENDOR, tags),
+        };
+        Self {
+            comment,
+            ..Self::new(rate, bits, channels)
         }
     }
 
@@ -628,7 +650,7 @@ impl FlacEncoder {
         self.finish_with_meta(&SampleMeta::default())
     }
 
-    /// [`Self::finish`], plus an APPLICATION `FLSM` block after STREAMINFO that `sample::decode`
+    /// [`Self::finish`], plus an APPLICATION `FLSM` block after STREAMINFO (and the tags) that `sample::decode`
     /// reads back as `meta`: `fLmL` (tempo, beats, loop; root note `unity_note` or 0xFF) when any of tempo, beats and
     /// loop is set, then `fLsF` holding a `cue ` chunk when there are cues. An empty `meta` adds no block. The Slicer's
     /// tempo, beats and slice markers travel this way.
@@ -649,14 +671,18 @@ impl FlacEncoder {
         info.put(u64::from(self.bits) - 1, 5);
         info.put(self.frames, 36);
         info.out.extend([0; 16]); // MD5: unknown
+        // VORBIS_COMMENT (4), then APPLICATION (2), each when it has data.
         let flsm = flsm(meta);
-        // STREAMINFO, 34 bytes, the last metadata block unless FLSM follows.
-        let mut out = [&b"fLaC"[..], &[u8::from(flsm.is_empty()) << 7, 0, 0, 34]].concat();
+        let blocks = [(4u32, &self.comment), (2, &flsm)];
+        let blocks: Vec<_> = blocks.into_iter().filter(|(_, b)| !b.is_empty()).collect();
+        // STREAMINFO, 34 bytes, the last metadata block unless one follows.
+        let mut out = [&b"fLaC"[..], &[u8::from(blocks.is_empty()) << 7, 0, 0, 34]].concat();
         out.extend(info.out);
-        if !flsm.is_empty() {
-            assert!(flsm.len() < 1 << 24, "an FLSM block holds under 16 MiB");
-            out.extend(&(0x8200_0000 | flsm.len() as u32).to_be_bytes()); // APPLICATION, last, 24-bit length
-            out.extend(flsm);
+        for (i, (kind, data)) in blocks.iter().enumerate() {
+            assert!(data.len() < 1 << 24, "a metadata block holds under 16 MiB");
+            let last = u32::from(i + 1 == blocks.len()) << 31;
+            out.extend((last | kind << 24 | data.len() as u32).to_be_bytes()); // 24-bit length
+            out.extend(*data);
         }
         out.extend(self.body);
         out

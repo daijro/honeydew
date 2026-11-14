@@ -90,12 +90,13 @@ use crate::audio_engine::slicer::write_auto_clip;
 use crate::audio_link::AudioLink;
 use crate::content;
 use crate::flm::chunk::{ContentPath, ContentRoot};
+use crate::flm::sf2d::Sf2d;
 use crate::panels::cstm::{clear_dw_program, load_dw_program, pick_dw_program};
 use crate::params::{Role, module_spec};
 use crate::project_files::{
     CHORD_SETS_FOLDER, CHORDS_EXT, DRUM_TEMPLATES, DRUMSET_EXT, DRUMSETS_FOLDER, DWP_EXT, FST_EXT,
     INSTRUMENTS_FOLDER, LOAD_FAILED, PRESET_EXT, PRESETS_FOLDER, ProjectFiles, RACK_EXT,
-    RACK_PRESETS, RACKS_FOLDER, SAMPLE_EXTS, SAMPLES_FOLDER, SFZ_EXT, SOUNDFONT_EXTS,
+    RACK_PRESETS, RACKS_FOLDER, SAMPLE_EXTS, SAMPLES_FOLDER, SF2_EXT, SFZ_EXT, SOUNDFONT_EXTS,
     SOUNDFONTS_FOLDER, is_audio, is_sfz, is_soundfont, load_pick, preset_exts, preset_folder,
 };
 use crate::sample_cache::{
@@ -116,6 +117,7 @@ use crate::ui::rack::{
     Held, Outcome, PresetTarget, hold_removal, load_rack_into, module_name,
     name_instrument_channel, name_song_channel, takes_instruments,
 };
+use crate::ui::soundfont_picker;
 
 /// The tag of the picker's messages, which only have `OK`.
 pub const TAG: &str = "preset_picker";
@@ -154,8 +156,9 @@ pub struct State {
     grand_download: Option<(PathBuf, content::web::Ticket)>,
     /// The web: the [`load_close_grand`]s waiting for theirs, by channel id and module id.
     grand_downloads: Vec<(i32, i32, (PathBuf, content::web::Ticket))>,
-    /// The module the last pick in the Modules browser's Instruments list added, by instance id: the next replaces it.
-    added: Option<i32>,
+    /// The module the last pick of a Modules browser's browse added (in its Instruments list, or in the browser itself:
+    /// issue #123), by instance id: the next pick of either replaces it. The browser's opening clears it.
+    pub(crate) added: Option<i32>,
     /// A list in the Modules browser's place went Back to it: the browser opens again in place, with no slide-in.
     pub(crate) back_to_modules: bool,
     /// Issue #98: the cards' ◀ / ▶ loading on a worker ([`step_preset`]).
@@ -412,6 +415,11 @@ fn stays_open(target: PresetTarget) -> bool {
     )
 }
 
+/// Issue #131: the pickers that list the same files (`target`'s, a module of type `module_type`'s) keep one place.
+fn place(target: PresetTarget, module_type: Option<u16>) -> egui::Id {
+    egui::Id::new(TAG).with(("place", top(target, module_type), module_type))
+}
+
 /// The Modules browser's insert point of a list shown in its place, which a load failure only flashes in.
 fn in_modules(target: PresetTarget) -> Option<InsertAt> {
     match target {
@@ -459,7 +467,6 @@ pub fn show(
         state.loading = None;
         state.closing = false;
         state.grand_download = None;
-        state.added = None;
     }
     // Its module is now another type (as a card's panel state keys by type): what it lists is not for that one.
     if state
@@ -580,10 +587,13 @@ pub fn show(
     }
     let (ctx, cx) = (ui.ctx(), &app.cx);
     let shown = app.files.with_preset_files(top, exts, |library| {
-        match &open_at {
-            Some((file, true)) => picker.reveal(library, file),
-            Some((folder, false)) => picker.open_to(library, folder),
-            None => {}
+        // Issue #131: a fresh picker opens where its kind was left, unless at the module's own file (#109 first).
+        if let Some((file, true)) = &open_at {
+            picker.reveal(library, file);
+        }
+        let kept = fresh && picker.keep_place(ctx, library, place(target, module_type));
+        if let (Some((folder, false)), false) = (&open_at, kept) {
+            picker.open_to(library, folder);
         }
         let action = picker.show_mut(ctx, cx, library)?;
         let bytes = match &action {
@@ -1050,6 +1060,9 @@ pub(crate) fn step_preset(
         return;
     };
     let (type_id, target) = (module.type_id, PresetTarget::Module(id));
+    if type_id == SOUNDFONT_PLAYER {
+        return step_soundfont(app, channel, id, by);
+    }
     let file = Path::new(&module.file.preset_path);
     let roots = [
         Some(PathBuf::from(content::ROOT)),
@@ -1085,6 +1098,45 @@ pub(crate) fn step_preset(
         let loading = start(app.files, channel_id, id, type_id, path, bytes, into);
         state.steps.push(loading);
     } else if load_module(app, channel, id, Some((&path, &bytes)), None).is_err() {
+        app.files.flash(PRESET_FAILED);
+    }
+}
+
+/// Issue #120: the SoundFont Player's ◀ / ▶ (`by` −1 or 1) on module `id` load the previous or next
+/// SoundFont file (`.sf2`, `.sfz`) of the folder the one it plays is in, round and round, as the SoundFont picker lists
+/// them (its user files by name, the content folder's in index order: [`PresetPicker::step`]); with none, nothing.
+/// Each loads as a pick of it does ([`load_module`]: its `SF2D` at patch 0, the module and channel named for it, no undo
+/// step), unread: the rack reads its patches, and shows the error of one that does not read, as for a SoundFont picker
+/// pick of it, so the arrows never stick on it.
+fn step_soundfont(app: &mut AppCtx, channel: usize, id: i32, by: i32) {
+    let module = app.song.find_module(channel, id);
+    let Some(sf2d) = module.and_then(|m| Sf2d::read(m.file.custom_data.as_deref()?)) else {
+        return;
+    };
+    let Some(file) = app.files.library_path(&sf2d.path) else {
+        return;
+    };
+    let content = matches!(
+        sf2d.path,
+        ContentPath::Shorthand {
+            root: ContentRoot::App,
+            ..
+        }
+    );
+    let folder = file.parent().map(Path::to_owned);
+    let mine = folder.clone().filter(|_| !content);
+    let mut picker = PresetPicker::new(soundfont_picker::TITLE, mine, SF2_EXT, false)
+        .of_exts(&SOUNDFONT_EXTS)
+        .with_factory(folder.filter(|_| content));
+    let library = app.files.preset_library(&SOUNDFONT_EXTS);
+    let next = picker.step(&*library, Some(file.as_path()), by);
+    drop(library);
+    let Some(next) = next else {
+        return;
+    };
+    // A new pick tries the SoundFonts missing before again.
+    app.audio.samples.forget_missing();
+    if load_module(app, channel, id, Some((next.as_path(), &[])), None).is_err() {
         app.files.flash(PRESET_FAILED);
     }
 }

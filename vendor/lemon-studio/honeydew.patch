@@ -499,7 +499,7 @@ diff -ruN a/vendor/lemon-studio/os-hostlink/src/lib.rs b/vendor/lemon-studio/os-
  mod local {
      use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
      use std::sync::{Arc, Mutex, OnceLock, Weak};
-@@ -441,6 +444,13 @@
+@@ -441,6 +444,24 @@
          /// Plugin -> host (`Changed`, `Note`, `Automate`): queued for the host's next tick, which is woken. 1 when a host
          /// is there, 0 otherwise (as unanswered messages on Windows).
          pub fn to_host(&self, cmd: Cmd, arg: isize) -> isize {
@@ -510,18 +510,31 @@ diff -ruN a/vendor/lemon-studio/os-hostlink/src/lib.rs b/vendor/lemon-studio/os-
 +                AUTOMATE.with_borrow_mut(|q| q.push((self.parent, arg)));
 +                return 1;
 +            }
++            // Honeydew (vendored change): and Tesla's `Audio` to the playlist (#117): the file it posted is kept for this
++            // thread (`take_sent`). The other places are not answered.
++            #[cfg(feature = "embed")]
++            if cmd == Cmd::Audio {
++                let ok = AudioTo::from_isize(arg) == AudioTo::Playlist;
++                if ok {
++                    let posted = take_audio().into_iter().map(|(path, _)| path);
++                    SENT.with_borrow_mut(|q| q.extend(posted));
++                }
++                return isize::from(ok);
++            }
              if !self.hosted() {
                  return 0;
              }
-@@ -456,6 +466,19 @@
+@@ -456,6 +477,28 @@
  
      static REGISTRY: Mutex<Vec<(u64, Weak<Peer>)>> = Mutex::new(Vec::new());
      static QUEUE: Mutex<Vec<(u64, Cmd, isize)>> = Mutex::new(Vec::new());
 +
-+    // Honeydew (vendored addition): the editors' `Automate` (`Peer::to_host`), by thread.
++    // Honeydew (vendored addition): the editors' `Automate` and the files of their `Audio` to the playlist
++    // (`Peer::to_host`), by thread.
 +    #[cfg(feature = "embed")]
 +    thread_local! {
 +        static AUTOMATE: std::cell::RefCell<Vec<(u64, isize)>> = const { std::cell::RefCell::new(Vec::new()) };
++        static SENT: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
 +    }
 +
 +    /// Honeydew (vendored addition): the `Automate` this thread's editors sent since the last call, as (the editor's
@@ -530,24 +543,31 @@ diff -ruN a/vendor/lemon-studio/os-hostlink/src/lib.rs b/vendor/lemon-studio/os-
 +    pub fn take_automate() -> Vec<(u64, isize)> {
 +        AUTOMATE.with_borrow_mut(std::mem::take)
 +    }
++
++    /// Honeydew (vendored addition): the files this thread's editors sent to the playlist since the last call (`Audio`),
++    /// oldest first.
++    #[cfg(feature = "embed")]
++    pub fn take_sent() -> Vec<String> {
++        SENT.with_borrow_mut(std::mem::take)
++    }
      static HOST_WAKER: OnceLock<fn()> = OnceLock::new();
  
      /// Host: how plugins wake its UI loop when they send something.
-@@ -538,6 +561,10 @@
+@@ -538,6 +581,10 @@
  
  #[cfg(not(windows))]
  pub use local::{set_host_waker, take_host_messages, Link, Peer};
 +#[cfg(all(windows, feature = "embed"))]
 +pub use local::Peer;
 +#[cfg(feature = "embed")]
-+pub use local::take_automate;
++pub use local::{take_automate, take_sent};
  
  #[cfg(test)]
  mod tests {
 diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os-plugkit/src/embed.rs
 --- a/vendor/lemon-studio/os-plugkit/src/embed.rs
 +++ b/vendor/lemon-studio/os-plugkit/src/embed.rs
-@@ -0,0 +1,597 @@
+@@ -0,0 +1,603 @@
 +// Copyright (C) 2026 The Honeydew contributors
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +
@@ -1064,6 +1084,12 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    asked.filter_map(|(id, i)| Some((Parent::try_from(id).ok()?, usize::try_from(i).ok()?))).collect()
 +}
 +
++/// Issue #117: the files this thread's editors sent to the playlist since the last call (Tesla's `Send to arranger as
++/// audio clip`), which Honeydew answers although no editor joins its strip (`os_hostlink`'s `Audio`), oldest first.
++pub fn take_sent() -> Vec<std::path::PathBuf> {
++    os_hostlink::take_sent().into_iter().map(Into::into).collect()
++}
++
 +/// Whether editor `id` is open.
 +pub fn is_open(id: Parent) -> bool {
 +    get(id).is_some()
@@ -1271,6 +1297,17 @@ diff -ruN a/vendor/lemon-studio/tesla/src/editor.rs b/vendor/lemon-studio/tesla/
              Ok(()) => {
                  self.doc(|d| d.path = path.clone());
                  self.hint = format!("Saved {}", Path::new(&path).file_name().map_or(path.clone().into(), |f| f.to_string_lossy()));
+@@ -3454,7 +3457,9 @@
+                     }
+                     Act::Send(path, to) => {
+                         os_hostlink::post_audio(&path.to_string_lossy(), to);
+-                        let ok = self.link.hosted() && self.link.to_host(Cmd::Audio, to as isize) == 1;
++                        // Honeydew (vendored change): Honeydew answers a send although the editor keeps its tab row (#117).
++                        let hosted = self.link.hosted() || cfg!(feature = "embed");
++                        let ok = hosted && self.link.to_host(Cmd::Audio, to as isize) == 1;
+                         if !ok {
+                             os_hostlink::take_audio();
+                         }
 diff -ruN a/vendor/lemon-studio/tesla/src/lib.rs b/vendor/lemon-studio/tesla/src/lib.rs
 --- a/vendor/lemon-studio/tesla/src/lib.rs
 +++ b/vendor/lemon-studio/tesla/src/lib.rs

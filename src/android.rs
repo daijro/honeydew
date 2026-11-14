@@ -120,14 +120,15 @@ pub fn inputs() -> Vec<(i32, String)> {
 }
 
 /// Opens the input labelled `label` (one of [`inputs`]) at `rate` into a new ring: stereo float, else mono, at the
-/// default input preset as cpal's default input. Through AAudio by its device id, as cpal opens a device by its name
-/// only, which a headset's mic shares with its earphones. (ndk's `audio` feature is cpal's, for its AAudio host.)
+/// default input preset and in the low-latency mode as cpal's default input (Honeydew change, #130). Through AAudio by
+/// its device id, as cpal opens a device by its name only, which a headset's mic shares with its earphones. (ndk's
+/// `audio` feature is cpal's, for its AAudio host.)
 pub fn open_input(
     label: &str,
     rate: u32,
 ) -> Result<(Arc<InputRing>, android_activity::ndk::audio::AudioStream), String> {
     use android_activity::ndk::audio::{
-        AudioCallbackResult, AudioDirection, AudioFormat, AudioStreamBuilder,
+        AudioCallbackResult, AudioDirection, AudioFormat, AudioPerformanceMode, AudioStreamBuilder,
     };
     let (id, _) = (inputs().into_iter())
         .find(|(_, l)| l == label)
@@ -144,6 +145,7 @@ pub fn open_input(
             .channel_count(channels as i32)
             .format(AudioFormat::PCM_Float)
             .sample_rate(rate as i32)
+            .performance_mode(AudioPerformanceMode::LowLatency)
             .data_callback(Box::new(move |_, data, frames| {
                 let len = frames.max(0) as usize * channels;
                 // SAFETY: AAudio hands `frames` frames of `channels` floats, the format asked for.

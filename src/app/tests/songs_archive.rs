@@ -167,3 +167,25 @@ fn after_unzip_the_extracted_folder_and_its_files_are_browsable_from_songs() {
             .contains(&format!("My Songs / {UNZIPPED_FOLDER} / Pack"))
     );
 }
+
+#[test]
+fn songs_opens_where_it_was_left_after_a_song_load() {
+    // Issue #131: a song load resets the menu, but SONGS opens again in the folder it was left in.
+    let (mut rig, _) = rig_with_file("/songs/X.flm", b"");
+    let library = &mut rig.app.files.library;
+    library.make_folder(Path::new("F")).unwrap();
+    library
+        .store("Beat.flm", &synthetic_file(1, FORMAT_VERSION, ""))
+        .unwrap();
+    library
+        .move_to(Path::new("Beat.flm"), Path::new("F/Beat.flm"))
+        .unwrap();
+    rig.open_menu(MenuTab::Songs);
+    rig.click_id(row("F"));
+    rig.frame(vec![]);
+    let beat = row_at(Path::new("F/Beat.flm"));
+    rig.click_id(beat);
+    assert_eq!(rig.app.song.title, "Beat");
+    rig.open_menu(MenuTab::Songs);
+    assert!(rig.drawn(beat));
+}

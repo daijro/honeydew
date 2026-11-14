@@ -5,7 +5,7 @@
 use eframe::egui;
 
 use super::HoneydewApp;
-use crate::project_files::export::{Done, Job, NO_AUDIO_RATE, Split, slice};
+use crate::project_files::export::{Done, Job, NO_AUDIO_RATE, Split, slice, tags};
 use crate::sample_cache;
 use crate::ui::views::{Nav, Overlay};
 
@@ -17,7 +17,7 @@ impl HoneydewApp {
     /// After the files, each frame: a closed Save dialog lets go of its state. An export that went ahead closes the
     /// dialog; an audio one starts rendering with the page's options, the samples loaded as a rebuild loads them, at
     /// the project's sample rate where the song has one (PR #87), else the engine rate (no resampling; 44 100 Hz without
-    /// an output).
+    /// an output), tagged with the song's metadata while `Write tags on export` is on (#139).
     pub(super) fn export_started(&mut self, ctx: &egui::Context) {
         let Some(export) = self.files.take_export() else {
             if !self.nav.overlays.iter().any(dialog) {
@@ -39,10 +39,14 @@ impl HoneydewApp {
             rate => rate,
         };
         let page = self.slots.export.page;
+        let tags = match self.settings.write_tags {
+            true => tags(&self.song),
+            false => Vec::new(),
+        };
         match Job::new(&self.song, &self.audio.samples, export, page, rate) {
             Ok(job) => {
                 self.navigate(Nav::Open(Overlay::Busy { title: job.title() }));
-                self.export = Some(job);
+                self.export = Some(job.with_tags(tags));
             }
             Err(error) => self.files.render_failed(&error),
         }

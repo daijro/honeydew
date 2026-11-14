@@ -1168,8 +1168,10 @@ fn closing_the_drumset_picker_or_a_kit_that_does_not_read_changes_nothing() {
     rig.frame(vec![]);
     assert_eq!(rig.overlays(), []);
     assert_eq!(rig.app.song, song);
-    // A PADS shorter than 22: the load error, and no edit.
+    // A PADS shorter than 22: the load error, and no edit. The picker opens in `My Files`, where it was left (issue
+    // #131): back to its root first.
     rig.track_menu(1, LOAD_DRUMSET);
+    super::rack_wiring::picker_root(&mut rig);
     picker_row(&mut rig, 0);
     picker_row(&mut rig, 0);
     assert_eq!(rig.message()[0], LOAD_FAILED);
@@ -1178,6 +1180,7 @@ fn closing_the_drumset_picker_or_a_kit_that_does_not_read_changes_nothing() {
     rig.answer(true);
     // The empty kit loads nothing, and says nothing: the picker stays (#88).
     rig.track_menu(1, LOAD_DRUMSET);
+    super::rack_wiring::picker_root(&mut rig);
     picker_row(&mut rig, 0);
     picker_row(&mut rig, 1);
     assert_eq!(rig.overlays().len(), 1);

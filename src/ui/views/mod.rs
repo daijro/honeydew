@@ -675,6 +675,10 @@ impl Slots {
         if !(overlays.iter()).any(|o| matches!(o, Overlay::MainMenu(MenuTab::Songs))) {
             self.main_menu.leave(app.audio);
         }
+        // Issue #120: the SoundFont picker's note and keys stop once it is not open.
+        if !(overlays.iter()).any(|o| matches!(o, Overlay::SoundFontPicker { .. })) {
+            soundfont_picker::stop(&mut self.soundfont_picker, app.audio);
+        }
         let top = overlays.len().saturating_sub(1);
         self.rack.full = overlays.iter().find_map(|o| match o {
             Overlay::LemonEditor { channel, module } => Some((*channel, *module)),
@@ -770,7 +774,9 @@ impl Slots {
             }
             Overlay::SoundFontPicker { channel, module } => {
                 let state = &mut self.soundfont_picker;
-                soundfont_picker::show(state, &mut self.rack, ui, app, *channel, *module)
+                let lit = (self.preset_picker.lit.get(*channel)).copied();
+                let lit = lit.unwrap_or_default();
+                soundfont_picker::show(state, &mut self.rack, ui, app, *channel, *module, lit)
             }
             Overlay::SamplePicker { channel, pad } => {
                 let (state, drums) = (&mut self.sample_picker, &mut self.drum_editor);

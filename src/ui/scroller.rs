@@ -188,8 +188,8 @@ struct Touch {
     zone: [bool; 2],
     /// Each axis has left its calm zone.
     left: [bool; 2],
-    /// Nothing took it: the scroller's own widget had the press, or the host claimed it. `yielded`: a child took it
-    /// later.
+    /// Nothing took it: the scroller's own widget had the press, the host claimed it, or it landed on a backdrop open
+    /// to drags ([`crate::ui::drags_through`]). `yielded`: a child took it later.
     owned: bool,
     yielded: bool,
     /// A second finger came: from now on it only zooms.
@@ -240,6 +240,7 @@ impl Scroller {
     ) -> Report {
         let mut out = Report::default();
         let before = *axes;
+        let through = |p: Pos2| crate::ui::drags_through(ui.ctx(), p);
         self.lifted = None;
         let frame = ui.ctx().cumulative_frame_nr();
         let all = [
@@ -293,7 +294,7 @@ impl Scroller {
         if !opts.covered
             && let Some(p) = hover
         {
-            let over = |r: Rect| r.contains(p) && ui.rect_contains_pointer(r);
+            let over = |r: Rect| r.contains(p) && (ui.rect_contains_pointer(r) || through(p));
             if wheel != Vec2::ZERO {
                 let factor = f64::from((1.0 - WHEEL_ZOOM * wheel.y).max(WHEEL_FLOOR));
                 if let Some(a) = [Y, X].into_iter().find(|&a| over(zones.wheel_zoom[a])) {
@@ -341,7 +342,9 @@ impl Scroller {
                 since: now,
                 zone,
                 left: [false; 2],
-                owned: response.is_pointer_button_down_on() || (!down && response.hovered()),
+                owned: response.is_pointer_button_down_on()
+                    || (!down && response.hovered())
+                    || through(p),
                 yielded: false,
                 pinch: false,
                 moved: None,
@@ -355,9 +358,11 @@ impl Scroller {
         // The fingers: a second one makes the touch a zoom; each move of either zooms about the other.
         for (finger, phase, p) in touches {
             match phase {
-                // A finger that goes down off the editor (another control, an overlay) is not one of its fingers.
+                // A finger that goes down off the editor (another control, an overlay but a backdrop open to drags)
+                // is not one of its fingers.
                 egui::TouchPhase::Start
-                    if !all.contains(p) || ui.ctx().layer_id_at(p) != Some(ui.layer_id()) => {}
+                    if !all.contains(p)
+                        || (ui.ctx().layer_id_at(p) != Some(ui.layer_id()) && !through(p)) => {}
                 egui::TouchPhase::Start => {
                     self.fingers.retain(|f| f.0 != finger);
                     self.fingers.push((finger, p));

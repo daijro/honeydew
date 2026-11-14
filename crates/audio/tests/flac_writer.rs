@@ -8,6 +8,7 @@ use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::{Decoder, DecoderOptions};
 use symphonia::core::formats::{FormatOptions, FormatReader};
 use symphonia::core::io::MediaSourceStream;
+use symphonia::core::meta::StandardTagKey;
 use symphonia::default::{codecs::FlacDecoder, formats::FlacReader};
 
 const STREAMINFO_END: usize = 4 + 4 + 34;
@@ -666,4 +667,46 @@ fn loud_24_bit_material_takes_wide_rice_parameters_and_round_trips() {
     }
     // Method 0 alone, escaping, took 55 603 bytes (22.2 bits a sample).
     assert!(bytes.len() < 54_500, "{} bytes", bytes.len());
+}
+
+/// Every tag a render writes, by its Vorbis comment field.
+const TAGS: [(&str, &str); 7] = [
+    ("TITLE", "Song ü"),
+    ("ARTIST", "Ivan"),
+    ("ALBUM", "Demos"),
+    ("GENRE", "House"),
+    ("DATE", "2026"),
+    ("COMMENT", "Made on a phone"),
+    ("ENCODER", "Honeydew 0.5.4"),
+];
+
+/// #139: a tagged FLAC has a VORBIS_COMMENT block that symphonia reads back, and still decodes bit-exact.
+#[test]
+fn tags_go_in_a_vorbis_comment_block_and_the_stream_still_decodes() {
+    let audio = [signal(1, 44_100, 10_000), signal(2, 44_100, 10_000)];
+    let mut encoder = FlacEncoder::with_tags(44_100, 16, 2, &TAGS);
+    encoder.push(&audio);
+    let bytes = encoder.finish();
+    let source = MediaSourceStream::new(Box::new(Cursor::new(bytes.clone())), Default::default());
+    let mut reader = FlacReader::try_new(source, &FormatOptions::default()).unwrap();
+    let metadata = reader.metadata();
+    let tags: Vec<_> = (metadata.current().expect("tags").tags().iter())
+        .map(|tag| (tag.std_key, tag.value.to_string()))
+        .collect();
+    let want = [
+        (StandardTagKey::TrackTitle, "Song ü"),
+        (StandardTagKey::Artist, "Ivan"),
+        (StandardTagKey::Album, "Demos"),
+        (StandardTagKey::Genre, "House"),
+        (StandardTagKey::Date, "2026"),
+        (StandardTagKey::Comment, "Made on a phone"),
+        (StandardTagKey::Encoder, "Honeydew 0.5.4"),
+    ];
+    let want = want.map(|(key, value)| (Some(key), value.to_owned()));
+    assert_eq!(tags, want);
+    let (_, decoded) = decode_ints(&bytes, 16);
+    let want: Vec<Vec<i32>> = (audio.iter())
+        .map(|c| c.iter().map(|&x| quantize(x, 16)).collect())
+        .collect();
+    assert_eq!(decoded, want);
 }

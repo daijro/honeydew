@@ -54,12 +54,6 @@ pub fn recording_channels(
         .collect()
 }
 
-/// Whether the latency drop applies, from the stored `Enable audio recording latency compensation` toggle: exactly when
-/// The toggle is off; an unset key (`None`) shows the toggle on and still compensates.
-pub fn compensates(toggle: Option<bool>) -> bool {
-    toggle != Some(true)
-}
-
 /// L, the frames each take drops when compensating: this session's calibration result if nonzero, else
 /// [`RecordTap::BUFFER`], the engine's audio buffer size in frames, which the engine resolves. Never an OS-reported
 /// latency.
@@ -666,10 +660,6 @@ mod tests {
 
     #[test]
     fn l_is_the_calibration_else_the_buffer_size_and_the_tap_starts_each_take_with_it() {
-        // The stored toggle: on (TRUE) never compensates; off (FALSE), or unset, does.
-        assert!(!compensates(Some(true)));
-        assert!(compensates(Some(false)));
-        assert!(compensates(None));
         // L: the calibration if nonzero, else the engine's buffer size.
         assert_eq!(latency(Some(480)), 480);
         assert_eq!(latency(Some(0)), RecordTap::BUFFER);

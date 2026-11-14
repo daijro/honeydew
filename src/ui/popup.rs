@@ -97,16 +97,17 @@ fn just_opened(ctx: &Context, id: Id) -> bool {
 ///
 /// The popup is modal. A full-screen backdrop just below it takes every click outside the popup, so those
 /// clicks close it (`close`) and never reach the widgets underneath, and Escape closes it too. A backdrop that
-/// first appears this frame cannot have seen the click that opened the popup.
+/// first appears this frame cannot have seen the click that opened the popup. Both stay above any dialog or panel,
+/// the one it opened from too (#118, [`raise`]).
 ///
 /// Escape is consumed here, so with two popups open the one shown first in the frame takes it: show a popup opened
 /// over another before that one (egui still draws the newer on top), as a container shows its popups before its
 /// own Escape check.
 ///
-/// It opens with the menu sweep, on frame time: the screen dims (`background` α 0.6) at once, a 2 px bar grows at the
-/// popup's left edge to full height, then the fill grows rightwards to full width ([`Sweep`]); the items show once it
-/// ends (frame 21 at 60 fps). The items take input from the first frame, and a close is instant. A popup not shown for a frame
-/// opens from the start again.
+/// It opens with the menu sweep, on frame time: the screen dims (`background` α 0.6) at once (once however popups nest:
+/// the first shown in the frame dims it, under itself), a 2 px bar grows at the popup's left edge to full height, then
+/// the fill grows rightwards to full width ([`Sweep`]); the items show once it ends (frame 21 at 60 fps). The items take
+/// input from the first frame, and a close is instant. A popup not shown for a frame opens from the start again.
 pub fn show<T: Copy>(
     ctx: &Context,
     id: Id,
@@ -120,9 +121,12 @@ pub fn show<T: Copy>(
         ctx.request_repaint();
     }
     // The dim goes into the popup's own layer before the popup: under it, over everything else.
-    let ink = cx.theme.colors.background.to_color32();
-    ctx.layer_painter(LayerId::new(Order::Foreground, id))
-        .rect_filled(ctx.content_rect(), 0.0, anim::dim(ink, anim::DIM_ALPHA));
+    let (key, pass) = (Id::new("popup dim pass"), Some(ctx.cumulative_pass_nr()));
+    if ctx.data_mut(|d| std::mem::replace(d.get_temp_mut_or_default(key), pass) != pass) {
+        let ink = cx.theme.colors.background.to_color32();
+        ctx.layer_painter(LayerId::new(Order::Foreground, id))
+            .rect_filled(ctx.content_rect(), 0.0, anim::dim(ink, anim::DIM_ALPHA));
+    }
     show_as(
         ctx,
         id,
@@ -200,9 +204,7 @@ fn show_as<T: Copy>(
         close: false,
     };
 
-    // Below the popup (`Foreground`) but above the screens (`Background`). Not in the popup's own layer order:
-    // egui raises a clicked area to the top of its order, which would put the backdrop over the popup.
-    let backdrop = crate::ui::backdrop(ctx, id);
+    let backdrop = backdrop(ctx, id);
     let escape = crate::ui::close_pressed(ctx);
     result.close |=
         escape || backdrop.clicked() || backdrop.secondary_clicked() || backdrop.middle_clicked();
@@ -310,7 +312,48 @@ fn show_as<T: Copy>(
                 contents(ui);
             }
         });
+    raise(ctx, id, backdrop.layer_id);
     result
+}
+
+/// The backdrop of popup `id` ([`crate::ui::backdrop`], which marks the pass): a full-screen area `id.with("backdrop")`
+/// that takes every click outside the popup, in the popup's own order (`Foreground`), so that it lies over the dialog
+/// or panel the popup opened from, under the popup ([`raise`]).
+fn backdrop(ctx: &Context, id: Id) -> egui::Response {
+    crate::ui::modal_shown(ctx);
+    crate::ui::focus::modal(ctx, Order::Foreground);
+    let screen = ctx.content_rect();
+    Area::new(id.with("backdrop"))
+        .order(Order::Foreground)
+        .fixed_pos(screen.min)
+        .constrain(false)
+        .fade_in(false)
+        .sense(Sense::click_and_drag())
+        .show(ctx, |ui| {
+            ui.allocate_exact_size(screen.size(), Sense::hover())
+        })
+        .response
+}
+
+/// Raises popup `id` and its `backdrop` to the top of their order each frame while it is the latest opened of the
+/// popups open (shown this frame or the one before): over any dialog or panel a press raised, and over the popups it
+/// opened over, whichever is shown first. egui keeps the order of layers raised together: the backdrop, made first,
+/// stays under the popup, and a press on it (which raises it) cannot lift it over the popup.
+fn raise(ctx: &Context, id: Id, backdrop: LayerId) {
+    let frame = ctx.cumulative_frame_nr();
+    let top = ctx.data_mut(|d| {
+        let open = d.get_temp_mut_or_default::<Vec<(Id, u64)>>(Id::new("open popups"));
+        open.retain(|&(_, seen)| seen + 1 >= frame);
+        match open.iter_mut().find(|(p, _)| *p == id) {
+            Some(p) => p.1 = frame,
+            None => open.push((id, frame)),
+        }
+        open.last().is_some_and(|&(p, _)| p == id)
+    });
+    if top {
+        ctx.move_to_top(backdrop);
+        ctx.move_to_top(LayerId::new(Order::Foreground, id));
+    }
 }
 
 /// Where a popup list's opening sweep is in the frame it draws ([`anim::sweep`]): phase 1 (the bar), 2 (the fill) or
@@ -910,6 +953,16 @@ mod tests {
             .position(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == Color32::RED))
             .unwrap();
         assert!(screen < index("Outer") && index("Outer") < index("Inner"));
+        // One dim for both (#118), the inner popup's: over the outer one.
+        let dim = anim::dim(theme.colors.background.to_color32(), anim::DIM_ALPHA);
+        let dims: Vec<usize> = (shapes.iter().enumerate())
+            .filter(|(_, c)| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == dim))
+            .map(|(i, _)| i)
+            .collect();
+        assert!(
+            dims.len() == 1 && index("Outer") < dims[0] && dims[0] < index("Inner"),
+            "{dims:?}"
+        );
 
         let escape = || key_tap(egui::Key::Escape, Default::default());
         let closed = |r: Option<PopupResult<usize>>| r.unwrap().close;

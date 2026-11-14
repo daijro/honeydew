@@ -58,8 +58,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use eframe::egui::{
-    Align2, Color32, DragValue, Id, Pos2, Rect, Sense, Shape, TextEdit, Ui, UiBuilder, WidgetInfo,
-    WidgetType, vec2,
+    Align2, Color32, DragValue, Id, Pos2, Rect, Response, Sense, Shape, TextEdit, Ui, UiBuilder,
+    WidgetInfo, WidgetType, vec2,
 };
 
 use crate::icons::{IconId, draw_icon};
@@ -146,7 +146,8 @@ enum Kind {
     McpStatus,
     /// A disabled toggle fixed in this state.
     FixedToggle(bool),
-    /// `Enable audio recording latency compensation`: a toggle of the stored `Option<bool>`, shown ON while unset.
+    /// `Enable audio recording latency compensation`: ON compensates (Honeydew change, #129: it was inverted),
+    /// with `Calibrate` beside it while ON.
     Latency,
     /// A wide light button showing the current item; a tap opens the popup of items.
     Dropdown(Choice),
@@ -722,23 +723,24 @@ impl SettingsTab {
             }
             Kind::Toggle(_) | Kind::FixedToggle(_) | Kind::Latency => {
                 // The rect starts 0.5 U left of the column and ends at its right edge; the latency one is 2.5 U
-                // shorter, for `Calibrate`, which is 2.5 U wide at the right end, only while the toggle is OFF
-                // (compensating).
+                // shorter, for `Calibrate`, which is 2.5 U wide at the right end, only while the toggle is ON
+                // (compensating; Honeydew change, #129).
                 let latency = matches!(row.kind, Kind::Latency);
                 let shorter = if latency { LATENCY_SHORTER } else { 0.0 };
                 let rect = Rect::from_x_y_ranges(
                     r.left() - m.u(TOGGLE_OUT)..=r.right() - m.u(shorter),
                     r.y_range(),
                 );
-                if latency && s.latency_compensation == Some(false) {
+                if latency && s.latency_compensation {
                     let at = right(CALIBRATE_W, BUTTON_H);
                     let b = Button::new(id.with("calibrate"), at, "Calibrate", false, colors);
-                    self.calibrate |= button(ui, cx, &b, !cfg!(mobile)).clicked();
+                    // On phones too (Honeydew change, #129): it asks for the microphone as REC does.
+                    self.calibrate |= button(ui, cx, &b, true).clicked();
                 }
                 let (on, field) = match row.kind {
                     Kind::Toggle(field) => (*field(s), Some(field)),
                     Kind::FixedToggle(on) => (on, None),
-                    Kind::Latency => (s.latency_compensation != Some(false), None),
+                    Kind::Latency => (s.latency_compensation, None),
                     _ => unreachable!("a toggle row"),
                 };
                 // Settings are not parameters: no parameter menu. The label is the pill's, plain and in `text`, and
@@ -766,7 +768,7 @@ impl SettingsTab {
                 match (changed, field) {
                     (true, Some(field)) => *field(s) = v >= 0.5,
                     (true, None) if matches!(row.kind, Kind::Latency) => {
-                        s.latency_compensation = Some(v >= 0.5);
+                        s.latency_compensation = v >= 0.5;
                     }
                     _ => {}
                 }
@@ -781,12 +783,15 @@ impl SettingsTab {
             }
             Kind::Dropdown(choice) => {
                 label(ui, before(button_rect), FontSize::Pt10);
-                // A theme of the user's, or the theme creator's work, is no item of the built-ins: its own name.
-                let current = match choice {
-                    Choice::Theme if !s.custom_theme.is_empty() => cx.theme.name.clone(),
-                    _ => choice.label(s),
+                // A theme of the user's, or the theme creator's work, is no item of the built-ins: its own name, of
+                // any length, shrunk as a device name is (#124).
+                let tapped = match choice {
+                    Choice::Theme if !s.custom_theme.is_empty() => {
+                        shrunk_button(ui, cx, id, button_rect, &cx.theme.name).clicked()
+                    }
+                    _ => light_button(ui, button_rect, &choice.label(s), true),
                 };
-                if light_button(ui, button_rect, &current, true) {
+                if tapped {
                     self.menu = Some((Menu::Choice(choice), button_rect.center()));
                 }
                 if matches!(choice, Choice::SoundMode) {
@@ -807,28 +812,18 @@ impl SettingsTab {
             }
             Kind::MidiDropdown | Kind::AudioInput => {
                 label(ui, before(button_rect), FontSize::Pt10);
-                let b = Button::new(id, button_rect, "", false, colors);
-                let response = button(ui, cx, &b, true);
                 let name = match row.kind {
                     Kind::MidiDropdown => &s.midi_device,
                     _ if s.audio_input.is_empty() => DEFAULT_INPUT,
                     _ => &s.audio_input,
                 };
-                // The name it draws itself (shrunk) is its name for accessibility tools too.
-                response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, name));
-                if response.clicked() {
+                if shrunk_button(ui, cx, id, button_rect, name).clicked() {
                     let midi = matches!(row.kind, Kind::MidiDropdown);
                     let menu = if midi { Menu::Midi } else { Menu::AudioInput };
                     self.menu = Some((menu, button_rect.center()));
                     self.midi_rescan |= midi;
                     self.audio_inputs = None;
                 }
-                // A device name is the device's, of any length: shrink drawing in the button, in the ink the button
-                // would give a label of its own.
-                let room = button_rect.shrink2(vec2(m.u(BUTTON_PAD), 0.0));
-                let ink = colors.menu_fill.to_color32();
-                let (align, pt) = (Align2::CENTER_CENTER, FontSize::Pt10.points() as u8);
-                shrink(ui.painter(), m, room, align, name, pt, ink);
             }
             Kind::FixedDropdown(value) => {
                 label(ui, before(button_rect), FontSize::Pt10);
@@ -1266,6 +1261,18 @@ impl Choice {
         let pos = items.iter().position(|&(v, _)| v == current).unwrap_or(0);
         items.swap_remove(pos).1
     }
+}
+
+/// A light button showing `name`, which is the user's or a device's and of any length: shrink drawing in the button, in
+/// the ink the button would give a label of its own. The name it draws itself is its name for accessibility tools too.
+fn shrunk_button(ui: &mut Ui, cx: &UiCtx, id: Id, rect: Rect, name: &str) -> Response {
+    let (m, colors) = (cx.m, &cx.theme.colors);
+    let response = button(ui, cx, &Button::new(id, rect, "", false, colors), true);
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, name));
+    let room = rect.shrink2(vec2(m.u(BUTTON_PAD), 0.0));
+    let (ink, pt) = (colors.menu_fill.to_color32(), FontSize::Pt10.points() as u8);
+    shrink(ui.painter(), m, room, Align2::CENTER_CENTER, name, pt, ink);
+    response
 }
 
 /// The metronome slider in `rect`: a double click resets it to the default level, and it fills from its low end
@@ -2351,32 +2358,43 @@ mod tests {
         );
     }
 
+    /// Honeydew change (#129, #130): ON compensates (the earlier toggle compensated while OFF); it is ON by default.
     #[test]
-    fn the_latency_toggle_shows_on_while_unset_and_stores_what_a_tap_sets() {
-        // Unset shows ON, so the first tap turns it OFF (compensation on).
+    fn the_latency_toggle_is_on_while_it_compensates_and_a_tap_turns_it_off() {
         let mut rig = Rig::new();
         let label = "Enable audio recording latency compensation";
         rig.click_row(label);
-        assert_eq!(rig.settings.latency_compensation, Some(false));
+        assert!(!rig.settings.latency_compensation);
         assert!(rig.take_changed());
         rig.click_row(label);
-        assert_eq!(rig.settings.latency_compensation, Some(true));
+        assert!(rig.settings.latency_compensation);
     }
 
     #[test]
-    fn calibrate_shows_only_while_the_latency_toggle_is_off_and_a_tap_asks_the_app() {
-        // Compensation is on exactly when the toggle is OFF, and `Calibrate` is visible only then; unset shows ON. The
-        // toggle is then 2.5 U shorter and `Calibrate`, 2.5 U wide, takes the right end of the row.
+    fn calibrate_shows_only_while_the_latency_toggle_is_on_and_a_tap_asks_the_app() {
+        // Compensation is on exactly when the toggle is ON (Honeydew change, #129), and `Calibrate` is visible only
+        // then, on phones too. The toggle is then 2.5 U shorter and `Calibrate`, 2.5 U wide, takes the right end of the
+        // row.
         let mut rig = Rig::new();
         let label = "Enable audio recording latency compensation";
-        assert!(!rig.texts().contains(&"Calibrate".to_owned()), "unset");
-        let on = rig.rect_of(row_id(index(label)));
+        assert!(
+            rig.texts().contains(&"Calibrate".to_owned()),
+            "ON by default"
+        );
         rig.click_row(label);
-        assert_eq!(rig.settings.latency_compensation, Some(false));
+        assert!(!rig.settings.latency_compensation);
+        rig.frame(vec![]);
+        assert!(!rig.texts().contains(&"Calibrate".to_owned()), "OFF");
+        let off = rig.rect_of(row_id(index(label)));
+        rig.click_row(label);
+        assert!(rig.settings.latency_compensation);
         rig.frame(vec![]);
         let calibrate = rig.rect_of(row_id(index(label)).with("calibrate"));
         let toggle = rig.rect_of(row_id(index(label)));
-        assert_eq!(toggle, on, "the toggle is as short with `Calibrate` hidden");
+        assert_eq!(
+            toggle, off,
+            "the toggle is as short with `Calibrate` hidden"
+        );
         assert_eq!(calibrate.width(), 2.5 * 32.0);
         // The rig's page is under 20 U wide: the column is 0.5 U in.
         assert_eq!(calibrate.right(), rig.width - 0.5 * 32.0);
@@ -2391,11 +2409,11 @@ mod tests {
         assert!(!rig.tab.calibrate);
         rig.click(calibrate.center());
         assert!(rig.tab.calibrate, "the app starts it and clears this");
-        assert_eq!(rig.settings.latency_compensation, Some(false), "no toggle");
-        // ON again: hidden.
+        assert!(rig.settings.latency_compensation, "no toggle");
+        // OFF again: hidden.
         rig.click_row(label);
         rig.frame(vec![]);
-        assert_eq!(rig.settings.latency_compensation, Some(true));
+        assert!(!rig.settings.latency_compensation);
         assert!(!rig.texts().contains(&"Calibrate".to_owned()));
     }
 

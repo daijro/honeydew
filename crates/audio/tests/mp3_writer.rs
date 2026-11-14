@@ -1,7 +1,12 @@
 use std::f64::consts::TAU;
+use std::io::Cursor;
 
 use honeydew_audio::mp3_writer::Mp3Encoder;
 use honeydew_audio::sample::{SampleData, decode};
+use symphonia::core::formats::FormatOptions;
+use symphonia::core::io::MediaSourceStream;
+use symphonia::core::meta::{MetadataOptions, StandardTagKey};
+use symphonia::core::probe::Hint;
 
 /// Samples per channel in an MPEG-1 frame.
 const FRAME: usize = 1152;
@@ -274,4 +279,49 @@ fn the_vendored_encoder_reads_no_environment_outside_its_tests() {
         &mut found,
     );
     assert!(found.is_empty(), "{found:?}");
+}
+
+/// Every tag a render writes, by its Vorbis comment field.
+const TAGS: [(&str, &str); 7] = [
+    ("TITLE", "Song ü"),
+    ("ARTIST", "Ivan"),
+    ("ALBUM", "Demos"),
+    ("GENRE", "House"),
+    ("DATE", "2026"),
+    ("COMMENT", "Made on a phone"),
+    ("ENCODER", "Honeydew 0.5.4"),
+];
+
+/// #139: a tagged MP3 opens with an ID3v2.4 tag that symphonia reads back, and still decodes whole.
+#[test]
+fn tags_go_in_an_id3v2_tag_and_the_stream_still_decodes_whole() {
+    let audio = [sine(44_100, 440.0, 0.5, 1.0), sine(44_100, 660.0, 0.3, 1.0)];
+    let mut encoder = Mp3Encoder::with_tags(44_100, false, &TAGS);
+    encoder.push(&audio);
+    let bytes = encoder.finish();
+    assert_eq!(&bytes[..4], b"ID3\x04");
+    let source = MediaSourceStream::new(Box::new(Cursor::new(bytes.clone())), Default::default());
+    let probe = symphonia::default::get_probe();
+    let options = (&FormatOptions::default(), &MetadataOptions::default());
+    let mut probed = probe
+        .format(&Hint::new(), source, options.0, options.1)
+        .unwrap();
+    let metadata = probed.metadata.get().expect("an ID3v2 tag");
+    let tags: Vec<_> = (metadata.current().unwrap().tags().iter())
+        .map(|tag| (tag.std_key, tag.value.to_string()))
+        .collect();
+    let want = [
+        (StandardTagKey::TrackTitle, "Song ü"),
+        (StandardTagKey::Artist, "Ivan"),
+        (StandardTagKey::Album, "Demos"),
+        (StandardTagKey::Genre, "House"),
+        (StandardTagKey::Date, "2026"),
+        (StandardTagKey::Comment, "Made on a phone"),
+        (StandardTagKey::Encoder, "Honeydew 0.5.4"),
+    ];
+    let want = want.map(|(key, value)| (Some(key), value.to_owned()));
+    assert_eq!(tags, want);
+    let decoded = decode(&bytes).unwrap();
+    assert_eq!(decoded.frames(), 44_100);
+    assert!(snr(stereo(&decoded)[0], &audio[0], 0) > 20.0);
 }

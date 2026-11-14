@@ -4771,3 +4771,52 @@ fn a_moved_rack_tab_keeps_to_its_bounds() {
         assert!(near(tab.bottom(), 100.0 - 0.25 * u), "{place}: {tab:?}");
     }
 }
+
+/// #118: a slider's menu in the Mix / Post Gain / Wet Pan dialog lies above the dialog, a tap on the dialog beside it
+/// closes the menu (one level: the dialog stays), and the menus opened after it dim the screen once.
+#[test]
+fn a_level_dialog_sliders_menu_is_above_the_dialog_and_a_tap_on_the_dialog_closes_it() {
+    let mut rig = Rig::new(&[6]);
+    let icon = rig.header(0, 2.25);
+    rig.open(icon);
+    let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
+    let dialog = level_popup_rect(icon, SCREEN, &m);
+    // In the dialog's padding, left of the sliders, far from a menu centred on a slider's right end.
+    let beside = pos2(dialog.left() + 4.0, dialog.center().y);
+    let long_press = |rig: &mut Rig, label: &str| {
+        let at = pos2(dialog.right() - U, rig.text(label).center().y);
+        rig.frame(vec![Event::PointerMoved(at)]);
+        rig.button(at, true);
+        rig.after(0.35, vec![]);
+        rig.button(at, false);
+        rig.frame(vec![]);
+    };
+    let dim = crate::ui::anim::dim(
+        theme_by_id(0).colors.background.to_color32(),
+        crate::ui::anim::DIM_ALPHA,
+    );
+    let dims = |rig: &Rig| {
+        (rig.shapes.iter())
+            .filter(
+                |c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == dim && r.rect == SCREEN),
+            )
+            .count()
+    };
+    let index = |rig: &Rig, text: &str| {
+        (rig.shapes.iter())
+            .position(|c| matches!(&c.shape, egui::Shape::Text(t) if t.galley.text() == text))
+            .unwrap_or_else(|| panic!("{text:?} not drawn"))
+    };
+    for label in ["Mix", "Mix", "Post Gain"] {
+        long_press(&mut rig, label);
+        assert!(
+            index(&rig, "Reset") > index(&rig, "Wet Pan"),
+            "{label}: the menu is above the dialog"
+        );
+        assert_eq!(dims(&rig), 1, "{label}: one dim");
+        rig.click(beside);
+        rig.frame(vec![]);
+        assert!(!rig.drawn("Reset"), "{label}: the tap closed the menu");
+        assert!(rig.drawn("Wet Pan"), "{label}: and left the dialog open");
+    }
+}

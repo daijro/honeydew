@@ -13,6 +13,9 @@
 //! `SetParam { channel, instance_id: 0, index, value }`: instance 0 is the channel strip.
 //! A strip control's press or parameter menu pick is the app's recent control ([`MixerState::touch`]); its menu's
 //! `Unlink from MIDI CC` follows the channel's `CCLK`.
+//!
+//! The level in dB (#133, a Honeydew addition): under a tall fader's cap, where its lowest value leaves room
+//! ([`widgets::below_cap`]); and in the name slot while the fader is held, at every height.
 
 use eframe::egui::{Align2, Id, Pos2, Rect, Ui, UiBuilder, Vec2, pos2, vec2};
 use honeydew_audio::device::ModuleMeter;
@@ -20,6 +23,7 @@ use honeydew_audio::device::ModuleMeter;
 use crate::icons::draw_icon;
 use crate::metrics::{FontSize, Metrics};
 use crate::midi::links;
+use crate::params::CHANNEL_PARAMS;
 use crate::song::{AutomationTarget, ChannelKind, Song};
 use crate::theme::{DISABLED_ALPHA, channel_color};
 use crate::ui::UiCtx;
@@ -33,6 +37,8 @@ use crate::ui::widgets::{self, Button, Control, ParamMenu, Pill};
 
 /// Strip width in U, which is also the scroll unit (the wheel's step).
 pub const STRIP_W: f32 = 4.0;
+/// The least room under a fader's cap (U) that shows its level in dB: the 6 pt readout's size.
+const DB_ROOM: f32 = 0.375;
 
 /// The leaves of a strip. The four controls' ids are their channel param indices.
 const FADER: NodeId = 0;
@@ -215,14 +221,17 @@ pub fn show(
             };
             let none = |_| String::new();
             let changed = match leaf {
-                // In the channel colour, truncated keeping 5 tail characters.
+                // In the channel colour, truncated keeping 5 tail characters; the level while the fader is held.
                 NAME => {
+                    let fader = ui.ctx().read_response(base.with((i, FADER)));
+                    let level = CHANNEL_PARAMS[0].display_text(params[0]);
+                    let held = fader.is_some_and(|f| f.is_pointer_button_down_on());
                     let font = m.font_id(FontSize::Pt10);
                     widgets::truncated(
                         ui.painter(),
                         r,
                         Align2::CENTER_CENTER,
-                        name,
+                        if held { level.as_str() } else { name },
                         font,
                         color,
                         5,
@@ -235,6 +244,14 @@ pub fn show(
                     let changed = widgets::fader(&mut ui, cx, &c, &mut params[0]).changed();
                     for bar in strip_meters(r, mini_mixer::meter_peaks(meters, i), m) {
                         ui.painter().rect_filled(bar, 0.0, color);
+                    }
+                    let room = widgets::below_cap(r, m);
+                    if room.height() >= m.u(DB_ROOM) {
+                        let text = CHANNEL_PARAMS[0].display_text(params[0]);
+                        let font = m.font_id(FontSize::Pt6);
+                        let at = room.center();
+                        ui.painter()
+                            .text(at, Align2::CENTER_CENTER, text, font, color);
                     }
                     changed
                 }

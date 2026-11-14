@@ -1082,9 +1082,9 @@ fn a_vertical_pinch_zooms_the_values_a_drag_there_moves_finer_and_a_level_one_zo
     rig.pinch(at, vec2(0.0, 70.0), vec2(0.0, 140.0));
     let rows = rig.view().rows;
     assert_eq!((rows, rig.view().beat_w), ([31.5, 63.5], before.beat_w));
-    // The axis labels the values at its ticks in the range shown: 12.5 % apart (25 % at 1×).
+    // The axis is a ruler (#135) over the range shown, 25 … 75 %: labelled every 10 % (5 % would be under 1.5 U).
     let names: Vec<String> = rig.texts(ink).into_iter().map(|l| l.0).collect();
-    assert_eq!(names, ["75", "62", "50", "37", "25"]);
+    assert_eq!(names, ["30", "40", "50", "60", "70"]);
     // 22 points down on the point are 11 rows on screen, 5.5 of the range's (11 at 1×).
     rig.drag(touch(q), &[vec2(0.0, 22.0)]);
     let want = (32767.0 - 5.5 * f64::from(MAX) / 126.0).round() as u16;

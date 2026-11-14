@@ -211,3 +211,67 @@ fn float32_wav_mono_round_trips_bit_exact() {
     assert_eq!(&d.left[..], &mono[..]);
     assert!(d.right.is_none());
 }
+
+/// Every tag a render writes, by its Vorbis comment field.
+const TAGS: [(&str, &str); 7] = [
+    ("TITLE", "Song ü"),
+    ("ARTIST", "Ivan"),
+    ("ALBUM", "Demos"),
+    ("GENRE", "House"),
+    ("DATE", "2026"),
+    ("COMMENT", "Made on a phone"),
+    ("ENCODER", "Honeydew 0.5.4"),
+];
+
+/// #139: a tagged WAV has a `LIST` `INFO` chunk between `fmt ` and `data`, each text zero-terminated, its chunk padded
+/// to an even size, and still decodes.
+#[test]
+fn tags_go_in_a_list_info_chunk_before_the_data_and_the_file_still_decodes() {
+    let mut w = WavWriter::with_tags(Cursor::new(Vec::new()), 44_100, 2, &TAGS).unwrap();
+    w.write(&[0.5, -0.5, 0.25, -0.25]).unwrap();
+    let bytes = w.finish().unwrap().into_inner();
+    assert_eq!(le32(&bytes, 4) as usize, bytes.len() - 8, "the RIFF size");
+    // (id, body) of each chunk in `body`, from `at`.
+    let chunks = |body: &[u8], mut at: usize| {
+        let mut out = Vec::new();
+        while at < body.len() {
+            let size = le32(body, at + 4) as usize;
+            out.push((
+                body[at..at + 4].to_vec(),
+                body[at + 8..at + 8 + size].to_vec(),
+            ));
+            at += 8 + size + size % 2;
+        }
+        out
+    };
+    let riff = chunks(&bytes, 12);
+    let ids: Vec<&[u8]> = riff.iter().map(|(id, _)| &id[..]).collect();
+    assert_eq!(ids, [&b"fmt "[..], b"LIST", b"data"]);
+    let list = &riff[1].1;
+    assert_eq!(&list[..4], b"INFO");
+    let info: Vec<(String, String)> = (chunks(list, 4).into_iter())
+        .map(|(id, text)| {
+            let (zero, text) = text.split_last().unwrap();
+            assert_eq!(*zero, 0, "zero-terminated");
+            (
+                String::from_utf8(id).unwrap(),
+                String::from_utf8(text.to_vec()).unwrap(),
+            )
+        })
+        .collect();
+    let want = [
+        ("INAM", "Song ü"),
+        ("IART", "Ivan"),
+        ("IPRD", "Demos"),
+        ("IGNR", "House"),
+        ("ICRD", "2026"),
+        ("ICMT", "Made on a phone"),
+        ("ISFT", "Honeydew 0.5.4"),
+    ];
+    assert_eq!(
+        info,
+        want.map(|(id, text)| (id.to_owned(), text.to_owned()))
+    );
+    let d = decode(&bytes).unwrap();
+    assert_eq!((d.frames(), d.left[0]), (2, 16383.0 / 32768.0));
+}

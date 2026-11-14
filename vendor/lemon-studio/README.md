@@ -82,10 +82,14 @@ change)` or `(vendored addition)` in the code:
   Elsewhere `save_file` writes the file. `os_plugkit::temp_dir` is `std::env::temp_dir`, which panics in the browser:
   there an empty path, where nothing writes (Tesla's files handed out, inert in Honeydew).
 - Tesla: the file it opens is read with `os_engine::sample::read` (a file the host keeps in memory first); with no
-  thread for its recording's take (the browser has none), its audio thread builds the take.
+  thread for its recording's take (the browser has none), its audio thread builds the take; and its send asks the host
+  although its editor keeps its tab row (#117, `os-hostlink` below).
 - `os-hostlink`: with its `embed`, the link the editors use (`Peer`) on Windows too; and an editor's `Automate` (a
   knob's "Create automation clip") kept for the thread it runs on, though the editor never joined the host's strip
-  (`take_automate`): Honeydew adds that param's automation track (#113, `embed::take_automate`).
+  (`take_automate`): Honeydew adds that param's automation track (#113, `embed::take_automate`); and Tesla's `Audio`
+  to the playlist (`Send to arranger as audio clip`) answered too, its file kept for the thread (`take_sent`): Honeydew
+  keeps the file in `My Recordings` and puts it on a new audio track at the playhead (#117, `embed::take_sent`). Its
+  other places (the selected channel, a new Lemon Slicer channel) stay unanswered.
 - Lemon Sampler: in the browser, a sample's effects are computed at once instead of on a thread (`os_plugkit::spawn`).
 - Lemon Delay: its About menu's line names no other maker's product (Honeydew shows none).
 - Lemon Parametric EQ (#95): its embedded editor's spectrum reads the signal behind the newest sample on a clock at

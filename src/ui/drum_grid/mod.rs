@@ -247,6 +247,8 @@ pub struct DrumGridView {
     last: Option<Layout>,
     overlay: Option<Overlay>,
     graph_drag: Option<(Vec<Event>, bool)>,
+    /// The drag's touch-down while it keeps to its column ([`graph_lane::drum_paint_x`]).
+    graph_lock: Option<Pos2>,
     /// The hits before the gesture whose ongoing [`StepAction::Hits`] edits [`Self::apply`] is making.
     hits_from: Option<Vec<Event>>,
     gesture: Gesture,
@@ -1233,6 +1235,7 @@ impl DrumGridView {
         }
         if response.drag_started() && live && !pinch {
             self.graph_drag = Some((events.to_vec(), false));
+            self.graph_lock = ui.input(|i| i.pointer.press_origin());
         }
         if response.dragged()
             && live
@@ -1246,7 +1249,8 @@ impl DrumGridView {
             };
             let value = prop.stored(v);
             let mut new = events.to_vec();
-            if edit::paint(&mut new, &self.sel, pad, prop, axis.tick(p.x), value) {
+            let x = graph_lane::drum_paint_x(&mut self.graph_lock, p, m);
+            if edit::paint(&mut new, &self.sel, pad, prop, axis.tick(x), value) {
                 remembered.graph(prop, value);
                 if let Some((_, sent)) = self.graph_drag.as_mut() {
                     *sent = true;

@@ -675,14 +675,17 @@ fn a_clip_offset_by_two_loops_still_loops_its_box() {
 
 #[test]
 fn a_loop_the_engine_never_got_goes_out_once_the_audio_runs_again() {
-    // With the stream failed no engine goes out, so the app does not count its loop as sent.
+    // With the stream failed (and its reopen too, the device gone) no engine goes out, so the app does not count its
+    // loop as sent.
     let mut rig = Rig::previewable();
     rig.rec.0.borrow_mut().failed = true;
+    rig.rec.0.borrow_mut().no_device = true;
     rig.frame(vec![]);
     rig.app.song.play_loop = Some((640, 768));
     rig.app.test_edit = Some(SongEdit::Final);
     rig.frame(vec![]);
     assert_eq!(rig.take(), Vec::<String>::new());
+    rig.rec.0.borrow_mut().no_device = false;
     rig.click(OUTSIDE);
     assert!(rig.take().contains(&"SetLoop 640 768".to_string()));
 }

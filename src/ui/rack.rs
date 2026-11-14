@@ -132,6 +132,15 @@ const COMMON: [(i32, ParamSpec); 3] = [
     (-1, COMMON_PARAMS[0]),
 ];
 
+/// Honeydew change (GitHub #135): the SoundFont Player's card height in a phone-size window (its shorter side
+/// under [`PHONE_SIDE`]), for longer sliders, where it was 8.5 U; in a portrait one, whose full-width rack
+/// is too narrow for the ten labels side by side, they take two rows of five ([`soundfont_player::TWO_ROWS`]).
+const SOUNDFONT_PHONE: f32 = 11.0;
+const SOUNDFONT_PORTRAIT: f32 = 15.0;
+/// The shorter side of a phone-size window: phones are about 16 U across (U = 1/6 inch), tablets and a 1280 × 800
+/// desktop window 25 U or more.
+const PHONE_SIDE: f32 = 20.0;
+
 /// The card height of module type `type_id` in U. `None` for an unknown type.
 pub fn ui_height(type_id: u16) -> Option<f32> {
     Some(match type_id {
@@ -1356,6 +1365,9 @@ pub struct RackPanel {
     lemon_cards: HashMap<(usize, i32), lemon_card::LemonCard>,
     /// The card column's width and the U, in device pixels, as last laid out: a Lemon card's height follows its width.
     column: (f32, f32),
+    /// In a phone-size window, as last laid out: the SoundFont Player's card height, and whether its controls take two
+    /// rows ([`SOUNDFONT_PHONE`]).
+    soundfont_phone: Option<(f32, bool)>,
     /// The pointer was over a Lemon card's editor last frame: the wheel is the editor's, not the rack's.
     lemon_wheel: bool,
     /// Issue #68: the Lemon card (channel index, instance id) whose editor shows full screen, which drives it: the card
@@ -1434,6 +1446,11 @@ impl RackPanel {
     /// column's width, its aspect kept.
     fn card_height(&self, module: &ModuleInstance) -> f32 {
         let (column, u) = self.column;
+        if let (Some((h, _)), soundfont_player::TYPE_ID, false) =
+            (self.soundfont_phone, module.type_id, module.minimized)
+        {
+            return h;
+        }
         match lemon_plugin(module) {
             Some(b) if !module.minimized && u > 0.0 => {
                 // The body is 4 px narrower than the column and its rect 1 px shorter than its rows ([`content_rect`]).
@@ -1505,6 +1522,14 @@ impl RackPanel {
         let chrome = Chrome::new(rack, u);
         let column = (rack.right() - chrome.margin).floor() - (rack.left() + chrome.margin).floor();
         self.column = (column, u);
+        let screen = ui.ctx().viewport_rect();
+        self.soundfont_phone =
+            (screen.width().min(screen.height()) * ppp < PHONE_SIDE * u).then(|| {
+                match crate::metrics::is_portrait(screen) {
+                    true => (SOUNDFONT_PORTRAIT, true),
+                    false => (SOUNDFONT_PHONE, false),
+                }
+            });
         let heights: Vec<f32> = (channel.rack.modules.iter())
             .map(|m| held.map_or(self.card_height(m), |_| CARD_HEADER))
             .collect();
@@ -1557,10 +1582,12 @@ impl RackPanel {
         let at = (self.scroll * ppp).round();
         let f = flow_sends(rack, at, u, input, &heights, sends);
 
-        // The scrolling content slides under the header bar.
+        // The scrolling content ends where the first card starts, half a card gap under the header bar: a card scrolled
+        // up is gone before it reaches the bar's rounded corners (GitHub #123).
         let outer = ui.clip_rect();
         let header_bottom = Chrome::new(rack, u).header_bottom;
-        ui.set_clip_rect(outer.intersect(rect.with_min_y(header_bottom / ppp)));
+        let top = header_bottom + (card_gap(u) / 2.0).floor();
+        ui.set_clip_rect(outer.intersect(rect.with_min_y(top / ppp)));
         let (mut confirmed, mut held_rect) = (None, None);
         // The held card draws last, over a neighbour sliding past it.
         let mut cards: Vec<_> = channel.rack.modules.iter_mut().zip(&f.cards).collect();
@@ -2428,13 +2455,8 @@ impl RackPanel {
                 return edits;
             }
         }
-        if let (true, Some(h)) = (shown, ui_height(module.type_id)) {
-            let h = if lemon.is_some() {
-                self.card_height(module)
-            } else {
-                h
-            };
-            let content = content_rect(card * ppp, h, u) / ppp;
+        if shown && ui_height(module.type_id).is_some() {
+            let content = content_rect(card * ppp, self.card_height(module), u) / ppp;
             if plugin {
                 let key = (self.channel, id);
                 let state = self.plugin_cards.entry(key).or_default();
@@ -2495,6 +2517,10 @@ impl RackPanel {
         let soundfont = module.type_id == soundfont_player::TYPE_ID;
         if soundfont {
             edits.ccs = soundfont_player::wire(module, state, &self.soundfonts);
+            let two_rows = self.soundfont_phone.is_some_and(|s| s.1);
+            state
+                .flags
+                .insert(soundfont_player::TWO_ROWS, usize::from(two_rows));
         }
         if module.type_id == three_osc::TYPE_ID {
             three_osc::wire(module, state);

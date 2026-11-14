@@ -746,7 +746,7 @@ impl AudioLink {
         let mut snapshot = self.sink.as_mut().map(|s| s.snapshot());
         let failed = snapshot.as_ref().is_some_and(|s| s.stream_failed);
         if failed && !self.stream_failed {
-            warn("the audio stream failed; the next click restarts it");
+            warn("the audio stream failed; it reopens");
             self.pending.clear();
         }
         self.stream_failed = failed;
@@ -988,6 +988,8 @@ pub(crate) mod testing {
         pub(crate) sample_rate: Option<u32>,
         /// The commands the audio thread has taken, held here (a long callback); `None`: every command sent.
         pub(crate) taken: Option<u64>,
+        /// The callbacks that overran since the stream started.
+        pub(crate) underruns: u64,
     }
 
     impl Recorder {
@@ -1171,6 +1173,7 @@ pub(crate) mod testing {
                     .flat_map(|e| e.modulated().to_vec())
                     .collect(),
                 taken: r.taken.unwrap_or(r.all.len() as u64),
+                underruns: r.underruns,
                 ..OutputSnapshot::default()
             }
         }

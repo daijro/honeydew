@@ -12,7 +12,7 @@ use honeydew_audio::device::AudioRenderer;
 
 use super::*;
 use crate::recording::calibrate;
-use crate::recording::input::{InputDevice, InputLink, InputRing};
+use crate::recording::input::{InputDevice, InputLink, InputRing, Mic};
 use crate::recording::routing::{self, Route, Routing};
 use crate::song::PPQ;
 use crate::ui::rack::{METER_RINGS, meter_alpha, meter_radius};
@@ -422,7 +422,7 @@ fn measure(a: &mut InputRig, delay: Option<usize>) {
 fn calibrate_measures_the_round_trip_and_the_next_recording_drops_that_much() {
     let mut a = InputRig::new("calibrate");
     a.rig.click(REC);
-    a.rig.app.settings.latency_compensation = Some(false);
+    a.rig.app.settings.latency_compensation = true;
     // The channel's input is the USB interface's second port; the calibration hears the first device's first port.
     let song = a.rig.app.song.clone();
     let port_2 = Route {
@@ -462,7 +462,7 @@ fn calibrate_measures_the_round_trip_and_the_next_recording_drops_that_much() {
     a.rig.frame(vec![]);
     assert!(a.rig.app.input.ring().is_none(), "done: nothing needs it");
 
-    // The next recording drops that much from its take's start (compensation is on: the toggle is OFF), not the
+    // The next recording drops that much from its take's start (compensation is on: the toggle is ON), not the
     // buffer size.
     a.rig.rec.0.borrow_mut().buffer_frames = 256;
     a.rig.app.nav.overlays.clear();
@@ -537,6 +537,46 @@ fn a_calibration_that_hears_no_echo_asks_to_test_again_and_its_progress_message_
     a.rig.frame(vec![]);
     pick(&mut a.rig, 1);
     a.rig.frame(vec![]);
+    assert!(a.rig.app.calibration.is_none());
+}
+
+/// Honeydew change (#129): `Calibrate` on a phone asks for the microphone as REC does. The calibration waits for the
+/// answer, then measures; a denial says where to allow it and ends the calibration.
+#[test]
+fn a_calibration_waits_for_the_microphone_and_a_denial_says_where_to_allow_it() {
+    let mut a = InputRig::new("calibrate-mic");
+    a.rig.click(REC);
+    let mic = Rc::new(std::cell::Cell::new(Mic::Asking));
+    let m = mic.clone();
+    a.rig.app.input.set_mic(move || m.get());
+    a.rig.app.slots.settings_tab.calibrate = true;
+    a.rig.frame(vec![]);
+    a.rig.take();
+    start_calibration(&mut a);
+    for _ in 0..3 {
+        a.rig.frame(vec![]);
+    }
+    assert_eq!(
+        message(&a.rig).map(|m| m.1),
+        Some(vec![calibrate::SENDING.to_owned()]),
+        "it waits for the answer"
+    );
+    assert_eq!(a.opens.borrow().len(), 1, "only the rig's own");
+    // Allowed: the input opens and the measurement starts.
+    mic.set(Mic::Granted);
+    a.rig.frame(vec![]);
+    assert_eq!(a.opens.borrow().len(), 2);
+    assert_eq!(a.rig.take().last().map(String::as_str), Some("Ping 1"));
+    pick(&mut a.rig, 0);
+    a.rig.frame(vec![]);
+    assert!(a.rig.app.calibration.is_none());
+    // Denied: where to allow it, and no calibration goes on.
+    mic.set(Mic::Denied);
+    a.rig.frame(vec![]);
+    a.rig.app.slots.settings_tab.calibrate = true;
+    a.rig.frame(vec![]);
+    start_calibration(&mut a);
+    assert_eq!(message(&a.rig), Some((INPUT_TAG, mic_denied())));
     assert!(a.rig.app.calibration.is_none());
 }
 

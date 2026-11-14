@@ -329,20 +329,26 @@ fn quantize_moves_starts_to_the_nearest_grid_line() {
 
 #[test]
 fn legato_extends_each_selected_note_to_the_next_selected_start() {
+    // Honeydew change (#123): the last ones (no later selected start) reach the end of their bar (512 ticks in 4/4),
+    // unless they already end past it.
     let mut events = vec![
         n(0, 16.0, 60),
         n(0, 8.0, 64),
         n(64, 16.0, 62),
+        n(600, 16.0, 66),
+        n(600, 600.0, 67),
         n(200, 16.0, 70),
     ];
-    let sel = vec![true, true, true, false];
-    legato_selected(&mut events, &sel);
+    let sel = vec![true, true, true, true, true, false];
+    legato_selected(&mut events, &sel, 512.0);
     assert_eq!(
         spans(&events),
         [
             (0, 64.0, 60),
             (0, 64.0, 64),
-            (64, 16.0, 62),
+            (64, 536.0, 62),
+            (600, 424.0, 66),
+            (600, 600.0, 67),
             (200, 16.0, 70)
         ]
     );
@@ -2484,6 +2490,44 @@ mod component {
         rig.tap(empty);
         assert_eq!(rig.events().len(), 2);
         assert_eq!(rig.all, [QUIET]);
+    }
+
+    /// #135: under the Generate panel, a drag on the roll beside it scrolls the roll and a pinch zooms it, the panel
+    /// staying open with its preview; a tap beside it still closes it (#107).
+    #[test]
+    fn a_drag_or_pinch_beside_the_generate_panel_moves_the_roll_and_a_tap_closes_it() {
+        let mut rig = Rig::new(vec![]);
+        rig.roll.open_generate(&rig.ctx);
+        rig.frame(vec![]);
+        rig.frame(vec![]);
+        let open = |rig: &Rig| matches!(rig.roll.menu, Some(super::super::Menu::Generate(_)));
+        assert!(open(&rig));
+        // The panel is at the roll's right edge, from x 706: the grid left of it is outside. Its two bars fit the view,
+        // so the rows scroll.
+        rig.drag(pos2(400.0, 100.0), pos2(380.0, 230.0));
+        assert!(
+            rig.roll.scroll.unwrap().y < SCROLL_Y - 100.0,
+            "{:?}",
+            rig.roll.scroll
+        );
+        assert!(open(&rig), "a drag keeps it open");
+        // A quick pinch whose first finger stays put: no tap.
+        let at = pos2(200.0, 200.0);
+        rig.touch(1.0 / 60.0, TouchPhase::Start, at);
+        rig.second(TouchPhase::Start, at + vec2(200.0, 0.0));
+        rig.second(TouchPhase::Move, at + vec2(264.0, 0.0));
+        rig.second(TouchPhase::End, at + vec2(264.0, 0.0));
+        rig.touch(1.0 / 60.0, TouchPhase::End, at);
+        assert!(rig.roll.beat_u > BEAT_U, "no pinch");
+        assert!(open(&rig), "a pinch keeps it open");
+        rig.tap(pos2(300.0, 200.0));
+        assert!(!open(&rig), "a tap closes it");
+        rig.frame(vec![]);
+        assert!(
+            rig.events().is_empty(),
+            "and edits nothing: {:?}",
+            rig.events()
+        );
     }
 
     #[test]

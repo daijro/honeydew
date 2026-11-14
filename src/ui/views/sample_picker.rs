@@ -272,7 +272,7 @@ fn pick(
     ui: &egui::Ui,
     app: &mut AppCtx,
     make: impl FnOnce(&ProjectFiles) -> PresetPicker,
-    (strip, shape): (bool, bool),
+    (strip, shape, kind): (bool, bool, Option<u16>),
     into: impl FnOnce(&Song, &Path, &ProjectFiles) -> Option<PickFor>,
 ) -> Shown {
     let ctx = ui.ctx();
@@ -280,7 +280,14 @@ fn pick(
     let action = match state.closing {
         true => None,
         false => {
-            let picker = state.picker.get_or_insert_with(|| make(files));
+            // Issue #131: a fresh one opens where its kind (the samples', a module type's) was left, unless at its
+            // file.
+            let picker = state.picker.get_or_insert_with(|| {
+                let mut picker = make(files);
+                let place = egui::Id::new(TITLE).with(("place", kind));
+                picker.keep_place(ctx, &*files.sample_library(), place);
+                picker
+            });
             let changes = files.library_changes();
             if std::mem::replace(&mut state.changes, changes) != changes {
                 picker.reload();
@@ -457,7 +464,7 @@ pub fn show(
         }
         picker
     };
-    let (path, decoded) = match pick(state, ui, app, make, (true, false), slot) {
+    let (path, decoded) = match pick(state, ui, app, make, (true, false, None), slot) {
         Shown::Open => return None,
         Shown::Closed => return Some(Nav::Close),
         Shown::Picked(path, decoded) => (path, *decoded),
@@ -501,7 +508,7 @@ pub fn show_clip(
         let clip = key.clip(song)?;
         clip_pick(clip.file.sample.as_deref().cloned(), song, path, files)
     };
-    let (path, decoded) = match pick(state, ui, app, picker, (true, false), slot) {
+    let (path, decoded) = match pick(state, ui, app, picker, (true, false, None), slot) {
         Shown::Open => return None,
         Shown::Closed => return Some(Nav::Close),
         Shown::Picked(path, decoded) => (path, *decoded),
@@ -547,7 +554,7 @@ pub fn show_replace(
             files,
         )
     };
-    let nav = match pick(state, ui, app, picker, (true, false), slot) {
+    let nav = match pick(state, ui, app, picker, (true, false, None), slot) {
         Shown::Open => return None,
         Shown::Closed => Some(Nav::Close),
         Shown::Picked(path, decoded) => {
@@ -663,7 +670,7 @@ pub fn show_track(
         let sample = clip.and_then(|c| c.file.sample.as_deref().cloned());
         clip_pick(sample, song, path, files)
     };
-    let (path, decoded) = match pick(state, ui, app, picker, (true, false), slot) {
+    let (path, decoded) = match pick(state, ui, app, picker, (true, false, None), slot) {
         Shown::Open => return None,
         Shown::Closed => return Some(Nav::Close),
         Shown::Picked(path, decoded) => (path, *decoded),
@@ -738,7 +745,7 @@ pub fn show_module(
     let into = |song: &Song, path: &Path, files: &ProjectFiles| {
         slicer_pick(song.find_module(channel, module)?, path, files)
     };
-    let (path, decoded) = match pick(state, ui, app, make, (!shape, shape), into) {
+    let (path, decoded) = match pick(state, ui, app, make, (!shape, shape, Some(type_id)), into) {
         Shown::Open => return None,
         Shown::Picked(path, decoded) if !state.closing => {
             state.last = Some((path, decoded));

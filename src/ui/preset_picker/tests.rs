@@ -743,10 +743,11 @@ fn a_dw_programs_sample_folder_is_left_out() {
     assert_eq!(names(&picker, ""), ["Other", "Gen Guitar"]);
 }
 
-/// A Honeydew addition (#109): a folder, an audio file and any other file each carry their mark at the row's end; the
-/// picker's own preset files, every plain row of a preset list, carry none.
+/// A Honeydew addition (#109, #123): a folder and any other file each carry their mark at the row's end; the picker's
+/// own preset files, every plain row of a preset list, carry none. An audio file's is its extension too, even in the
+/// sample picker, whose own files they are.
 #[test]
-fn rows_mark_folders_audio_files_and_other_files_by_extension() {
+fn rows_mark_folders_and_files_by_extension() {
     use crate::ui::search_bar::Mark;
     let lib = library(&[
         "Mine/",
@@ -772,11 +773,14 @@ fn rows_mark_folders_audio_files_and_other_files_by_extension() {
         [
             Some(Mark::Folder),
             Some(Mark::Ext("sfz")),
-            Some(Mark::Audio),
+            Some(Mark::Ext("wav")),
             None,
             Some(Mark::Ext("sf2")),
         ]
     );
+    let rows = picker.rows("");
+    let kick = rows.iter().find(|i| i.name() == "Kick").unwrap();
+    assert_eq!(kick.mark("wav"), Some(Mark::Ext("wav")));
 }
 
 #[test]

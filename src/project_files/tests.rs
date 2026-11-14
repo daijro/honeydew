@@ -1250,7 +1250,7 @@ fn a_new_song_takes_the_song_options_even_after_the_unsaved_question() {
         beats_per_bar: 3,
     };
     let mut files = files(&MemFiles::default());
-    let song = (files.replace(Replace::NewWith(options))).unwrap();
+    let song = (files.replace(Replace::NewWith(options.clone()))).unwrap();
     assert_eq!((song.time_sig, song.tempo_bpm), (made, 240.0));
     assert!(created_now(&song.file.meta.created));
     assert!(!files.modified(), "a new song has nothing to save");

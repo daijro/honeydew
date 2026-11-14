@@ -3457,7 +3457,9 @@ mod gui {
                     }
                     Act::Send(path, to) => {
                         os_hostlink::post_audio(&path.to_string_lossy(), to);
-                        let ok = self.link.hosted() && self.link.to_host(Cmd::Audio, to as isize) == 1;
+                        // Honeydew (vendored change): Honeydew answers a send although the editor keeps its tab row (#117).
+                        let hosted = self.link.hosted() || cfg!(feature = "embed");
+                        let ok = hosted && self.link.to_host(Cmd::Audio, to as isize) == 1;
                         if !ok {
                             os_hostlink::take_audio();
                         }

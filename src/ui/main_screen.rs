@@ -4442,8 +4442,7 @@ mod tests {
     }
 
     #[test]
-    fn a_tap_on_another_tracks_empty_space_makes_it_current_and_only_note_and_drum_tracks_take_clips()
-     {
+    fn a_tap_on_another_tracks_empty_space_makes_it_current_and_new_clip_adds_a_clip_there() {
         let mut rig = Rig::new(song_with_a_clip());
         rig.selected = 2;
         // The drums' track is not current: the first tap makes it so (its channel takes the keyboard).
@@ -4454,8 +4453,8 @@ mod tests {
         rig.click(drums);
         assert_eq!(rig.plus().0, Some(SongEdit::Final));
         assert_eq!(rig.clips(1)[0].start_tick, 0);
-        // The master's automation track (current, its keys silent) takes no new clip: on it the menu's `New Clip` is
-        // dimmed and adds nothing.
+        // Honeydew change (#124): the master's automation track (current, its keys silent) takes a new clip
+        // too, a bar at the snapped beat (14), driving the track's target: the master's Level (its volume).
         let master = pos2(600.0, 80.0);
         for _ in 0..2 {
             assert_eq!(rig.click(master), (None, None));
@@ -4463,9 +4462,14 @@ mod tests {
         }
         rig.click(master);
         assert!(rig.plus_shown());
-        assert_eq!(rig.plus(), (None, None));
-        assert!(rig.plus_shown());
-        assert_eq!(rig.clips(0).len(), 1, "only the rig's own clip at beat 60");
+        assert_eq!(rig.plus().0, Some(SongEdit::Final));
+        let added = &rig.clips(0)[1];
+        assert_eq!((added.start_tick, added.loop_len_beats), (14 * PPQ, 4.0));
+        let level = crate::song::AutomationTarget {
+            instance_id: 0,
+            param: 0,
+        };
+        assert_eq!(rig.song.channels[0].lanes[0].target, Some(level));
         assert_eq!(rig.selected, 0);
     }
 

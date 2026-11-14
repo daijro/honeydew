@@ -21,27 +21,29 @@
 //! ([`VIEW`]).
 //!
 //! **Sample strip.** 1.75 U at the bottom of the panel, `menuFill`: the play button (icon 3, 1.2 U, centred in a 2 U
-//! column), the waveform (from x + 2 U, max(W − 2.4 U, 0) wide, 1 U tall, `text` at 0.85), and under it the sample's
-//! name and its progress in a 5 : 1 width. It plays the pick once from the start; the play button (or the play key)
-//! stops or plays from the start, a touch on the waveform stops and its release plays from there. The waveform sits
-//! 0.125 U below the strip's top, the labels fill the rest; the progress is the position as m:ss (0:00 while stopped).
-//! The waveform is one smooth band of the file's peaks, scaled to its loudest ([`envelope`], #108):
-//! the audio editor's min/max columns showed a low note's single cycles, hairy and thin.
+//! column; ■ while it plays, #124), the waveform (from x + 2 U, max(W − 2.4 U, 0) wide, 1 U tall, `text` at 0.85), and
+//! under it the sample's name and its progress in a 5 : 1 width. It plays the pick once from the start; the play button
+//! (or the play key) stops or plays from the start, a touch on the waveform stops and its release plays from there. The
+//! waveform sits 0.125 U below the strip's top, the labels fill the rest; the progress is the position as m:ss (0:00
+//! while stopped). The waveform is the playlist's audio clips' of the whole file
+//! ([`crate::ui::clips::wave_mesh`]: each channel's min/max a device pixel a column, stereo in halves, at full scale;
+//! #124, where #108 drew one smoothed band of held peaks). While it plays, the editors' playhead line marks the
+//! position on it (#123).
 
-use eframe::egui::{Align2, Color32, Id, Mesh, Painter, Pos2, Rect, Sense, Ui, pos2, vec2};
+use eframe::egui::{Align2, Color32, Id, Painter, Pos2, Rect, Sense, Ui, pos2, vec2};
 
 use crate::icons::{IconId, draw_icon};
 use crate::metrics::{FontSize, Metrics};
 use crate::sample_cache::Waveform;
 use crate::settings::Settings;
 use crate::theme::{Rgba, Theme};
-use crate::ui::audio_editor::{add_column, pixel_columns, wave_rows};
+use crate::ui::audio_editor::{Wave, pixel_columns, wave_rows};
+use crate::ui::clips::wave_mesh;
 use crate::ui::gesture::CALM_U;
 use crate::ui::keyboard::{self, KeyInput, KeyView, Piano};
 use crate::ui::panel_resize::{PanelGrab, Zone};
 use crate::ui::widgets::truncated;
 use crate::ui::{Finger, UiCtx, fingers, focus_lost};
-use honeydew_audio::sample_edit::peaks;
 
 /// The lowest and highest notes the strip plays, across the row (24 to 84).
 const LOW: f32 = 24.0;
@@ -375,8 +377,6 @@ const WAVE_X: f32 = 2.0;
 const WAVE_MARGIN: f32 = 2.4;
 const WAVE_H: f32 = 1.0;
 const WAVE_ALPHA: f32 = 0.85;
-/// How long the waveform holds a peak, in seconds: the cycles of a low note fill in ([`envelope`]).
-const HOLD_S: f64 = 0.02;
 /// The waveform's top below the strip's, and the name's share of the label row (5 : 1).
 const WAVE_TOP: f32 = 0.125;
 const NAME_SHARE: f32 = 5.0 / 6.0;
@@ -503,7 +503,6 @@ impl SampleStrip {
         }
 
         let button = ui.interact(play, id.with("sample play"), Sense::click());
-        draw_icon(&painter, play, IconId::Play, text, 1.0, m);
         // The play key plays or stops it too (`Play preview` / `Pause preview`), unless a text field has the keys.
         let key = !ui.ctx().wants_keyboard_input() && crate::keymap::pressed(ui.ctx(), "play");
         if button.clicked() || key {
@@ -512,6 +511,12 @@ impl SampleStrip {
                 false => self.play(0),
             }
         }
+        let icon = if self.playing.is_some() {
+            IconId::Stop
+        } else {
+            IconId::Play
+        };
+        draw_icon(&painter, play, icon, text, 1.0, m);
 
         let wave_id = id.with("sample wave");
         ui.interact(wave_rect, wave_id, Sense::click_and_drag());
@@ -531,15 +536,21 @@ impl SampleStrip {
             }
         }
 
+        // The playlist's audio clip waveform of the whole file: a frame a content beat (Honeydew change, #124).
         let ink = text.gamma_multiply(WAVE_ALPHA);
-        let px = 1.0 / m.ppp();
         let (x0, width) = pixel_columns(wave_rect, m);
-        let (centre, scale) = wave_rows(wave_rect, false)[0];
-        let mut mesh = Mesh::default();
-        for (i, h) in envelope(&wave, width).into_iter().enumerate() {
-            add_band_column(&mut mesh, x0 + i as f32 * px, h * scale, centre, px, ink);
+        let rows = wave_rows(wave_rect, wave.summary.len() > 1);
+        let whole = Wave {
+            frames,
+            per_beat: 1.0,
+            reversed: false,
+        };
+        let span = ((0.0, frames as f64 / width.max(1) as f64), (x0, width));
+        painter.add(wave_mesh(&wave, whole, &rows, span, 1.0 / m.ppp(), ink));
+        if let Some(at) = self.position(now) {
+            let x = wave_rect.left() + wave_rect.width() * (at / frames.max(1) as f64) as f32;
+            crate::ui::timeline::playhead_line(&painter, wave_rect, x, cx);
         }
-        painter.add(mesh);
 
         let seconds = self.position(now).unwrap_or(0.0) / f64::from(wave.data.sample_rate);
         let label = clock(seconds);
@@ -552,74 +563,6 @@ impl SampleStrip {
             text,
             5,
         );
-    }
-}
-
-/// The sample strip's waveform over `width` columns (#108): each column's peak |x| over both channels ([`peaks`]), held
-/// [`HOLD_S`] after it, then averaged over as many columns ahead, as a share of the loudest; the strip draws ± that about
-/// its middle, one band with smoothed edges ([`add_band_column`]; a column under 1 px a 1 px line).
-pub fn envelope(wave: &Waveform, width: usize) -> Vec<f32> {
-    let fpp = wave.data.frames() as f64 / width.max(1) as f64;
-    let mut peak = vec![0f32; width];
-    for (samples, summary) in wave.channels() {
-        for (p, (lo, hi)) in peak
-            .iter_mut()
-            .zip(peaks(samples, summary, fpp, 0.0, width))
-        {
-            *p = p.max(lo.abs()).max(hi.abs());
-        }
-    }
-    // ponytail: O(width · hold), the hold at most width/50 columns; a running max if strips grow much wider.
-    let hold = (HOLD_S * f64::from(wave.data.sample_rate) / fpp).ceil() as usize;
-    let hold = hold.min(width / 50);
-    let held: Vec<f32> = (0..width)
-        .map(|i| {
-            peak[i.saturating_sub(hold)..=i]
-                .iter()
-                .fold(0f32, |a, &b| a.max(b))
-        })
-        .collect();
-    // The held peaks averaged over the next `hold` columns (into `peak`): the hold's flat steps become ramps from one
-    // crest to the next, and the two windows together look as far back as ahead.
-    let mut sum = 0f32;
-    for i in (0..width).rev() {
-        sum += held[i];
-        if let Some(gone) = held.get(i + hold + 1) {
-            sum -= gone;
-        }
-        peak[i] = (sum / (width - i).min(hold + 1) as f32).max(0.0);
-    }
-    let top = peak.iter().fold(0f32, |a, &b| a.max(b));
-    for p in &mut peak {
-        *p = if top > 0.0 { *p / top } else { 0.0 };
-    }
-    peak
-}
-
-/// Adds the strip's band column at `x` to `mesh`: `px` wide, ± `half` about `centre`. The rows its edges cut through
-/// get `ink` at the share they cover, so a gentle slope reads smooth, not as steps of whole device pixels; a band under
-/// a pixel tall is the audio editor's 1 px line ([`add_column`]).
-fn add_band_column(mesh: &mut Mesh, x: f32, half: f32, centre: f32, px: f32, ink: Color32) {
-    let (top, bottom) = ((centre - half) / px, (centre + half) / px);
-    // A row covered but for 2 % is whole: solid, not a cap the colour of `ink`.
-    let (inner_top, inner_bottom) = ((top - 0.02).ceil(), (bottom + 0.02).floor());
-    if inner_bottom <= inner_top {
-        add_column(mesh, x, (-half, half), (centre, 1.0), px, ink);
-        return;
-    }
-    let mut rows = |from: f32, to: f32, ink: Color32| {
-        let r = Rect::from_x_y_ranges(x..=x + px, from * px..=to * px);
-        mesh.add_colored_rect(r, ink);
-    };
-    rows(inner_top, inner_bottom, ink);
-    // The cut rows; a nearly bare one stays bare.
-    for (row, cover) in [
-        (inner_top - 1.0, inner_top - top),
-        (inner_bottom, bottom - inner_bottom),
-    ] {
-        if (0.02..0.98).contains(&cover) {
-            rows(row, row + 1.0, ink.gamma_multiply(cover));
-        }
     }
 }
 

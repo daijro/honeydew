@@ -1,5 +1,5 @@
 //! SONGS' audio files through the whole app (#106): a tap previews one on the sample strip, `Send to playlist` makes
-//! clips of the selected ones.
+//! clips of the selected (long pressed) ones.
 
 use super::songs_archive::{Home, row_at};
 use super::*;
@@ -41,7 +41,7 @@ fn a_tap_on_an_audio_file_in_songs_previews_it_and_a_second_tap_stops_it() {
         sent.contains(&"Preview 88200 frames from 0".to_owned()),
         "{sent:?}"
     );
-    // Tapped again it is no longer selected: the preview stops.
+    // Tapped again it stops (#123: a tap selects nothing).
     rig.click_id(row_at(&kick));
     rig.frame(vec![]);
     let sent = rig.take();
@@ -54,7 +54,13 @@ fn send_to_playlist_puts_the_selected_audio_on_a_new_track_at_the_playhead_in_on
     let (mut rig, kick) = rig_in_my_samples(&home);
     rig.rec.0.borrow_mut().tick = 2 * u64::from(PPQ);
     let (channels, steps) = (rig.app.song.channels.len(), rig.app.history.steps());
-    rig.click_id(row_at(&kick));
+    // A long press selects it (#123: a tap only previews).
+    let at = rig.ctx.read_response(row_at(&kick)).unwrap().rect.center();
+    rig.press(at);
+    for _ in 0..3 {
+        rig.frame(vec![]);
+    }
+    rig.release(at);
     rig.frame(vec![]);
     // Select mode's bar: `Select all`, `Create folder`, then `Send to playlist`.
     rig.click_id(songs_id(("bar", 2_usize)));

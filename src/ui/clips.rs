@@ -1024,7 +1024,7 @@ impl Clips {
     /// The keymap's editing actions while the playlist holds the keyboard (`ui/edit_keys.rs`), on the selected clip or
     /// the group as the floating row's: `copy` puts them on the clip clipboard, `cut` too, `cut` and `delete` remove
     /// them, `paste` adds the clipboard at the grid cursor ([`paste_clips`]), `open` selects the clip at the cursor
-    /// (`Select clip`, no edit) or else is `Add clip` there (`New Clip`'s rule, note and drum tracks only),
+    /// (`Select clip`, no edit) or else is `Add clip` there (`New Clip`'s rule, note, drum and automation tracks),
     /// `close` deselects; `selectAll` is the piano roll's only. Each edit is one final edit; each action hides the
     /// floating row and the insert menu. Called after the playlist's popups, which take Escape first; nothing during a
     /// touch. `snap` is the grid in ticks.
@@ -1067,7 +1067,7 @@ impl Clips {
             }
             EditKey::Open => {
                 let bar = app.song.time_sig.bar_beats();
-                let takes = |l: &Lane| matches!(l.kind, LaneKind::Notes | LaneKind::Drums);
+                let takes = |l: &Lane| l.kind != LaneKind::Audio;
                 // `Select clip` on a clip at the cursor, else `Add clip`.
                 let spans = |c: &&Clip| f64::from(c.start_tick) <= tick && tick < end_tick(c);
                 let on = (app.song.channels.get(channel))
@@ -1215,7 +1215,9 @@ impl Clips {
     /// The insert menu while it shows ([`insert::show`]): `New Clip` and `Paste` over its track's row at its snapped
     /// tick, the insert cursor across the row. `New Clip` adds a one-bar clip there on a note or drum track
     /// ([`add_clip`]), the current, selected clip; on an audio track it opens the sample picker, whose first pick makes
-    /// the clip there. An automation track takes no new clip, so there it is dimmed. `Paste` pastes the clip clipboard
+    /// the clip there. Honeydew change (GitHub #124): an automation track, as an effect track's or the
+    /// master's, takes one too, an empty one-bar clip driving the track's target (there the channel's Level), where the
+    /// original dims `New Clip`. `Paste` pastes the clip clipboard
     /// there ([`paste_clips`]), selecting the copies; it is dimmed while the clipboard is empty. Any other press hides
     /// the menu, as does a track that went. Returns whether this frame's press is on it, and the picker to open.
     #[allow(clippy::too_many_arguments)]
@@ -1239,11 +1241,7 @@ impl Clips {
         let kind = (app.song.channels.get(channel))
             .and_then(|c| c.lanes.get(lane))
             .map(|l| l.kind);
-        let new = matches!(
-            kind,
-            Some(LaneKind::Notes | LaneKind::Drums | LaneKind::Audio)
-        );
-        let items = [("New Clip", new), ("Paste", !self.clipboard.is_empty())];
+        let items = [("New Clip", true), ("Paste", !self.clipboard.is_empty())];
         let at = (axis.x(tick), row.y_range(), row.y_range());
         let tap = insert::show(ui, &app.cx, Id::new("clip_insert"), grid, at, &items);
         let mut nav = None;
@@ -2378,15 +2376,30 @@ fn waveform(
         let x0 = (axis.x(a) / px).floor() * px;
         let width = ((axis.x(b) - x0) / px).ceil() as usize;
         let left = (axis.tick(x0) - at) / ppq;
-        let mut mesh = Mesh::default();
-        for ((samples, summary), &row) in source.channels().zip(&rows) {
-            let cols = columns(samples, summary, wave, left, beats_per_px, width);
-            for (i, peak) in cols.into_iter().enumerate() {
-                add_column(&mut mesh, x0 + i as f32 * px, peak, row, px, ink);
-            }
-        }
-        painter.add(mesh);
+        let span = ((left, beats_per_px), (x0, width));
+        painter.add(wave_mesh(source, wave, &rows, span, px, ink));
     }
+}
+
+/// The waveform's columns: `width` device-pixel columns (`px` wide) from `x0`, the first at content beat `left` and
+/// each `beats_per_px` on, of every channel ([`columns`]) about its row of `rows` ([`wave_rows`]), in `ink`. The sample
+/// strip draws its whole file with them too (Honeydew change, #124).
+pub(crate) fn wave_mesh(
+    source: &Waveform,
+    wave: Wave,
+    rows: &[(f32, f32)],
+    ((left, beats_per_px), (x0, width)): ((f64, f64), (f32, usize)),
+    px: f32,
+    ink: Color32,
+) -> Mesh {
+    let mut mesh = Mesh::default();
+    for ((samples, summary), &row) in source.channels().zip(rows) {
+        let cols = columns(samples, summary, wave, left, beats_per_px, width);
+        for (i, peak) in cols.into_iter().enumerate() {
+            add_column(&mut mesh, x0 + i as f32 * px, peak, row, px, ink);
+        }
+    }
+    mesh
 }
 
 /// `a` moved `t` of the way toward `b`, opaque.

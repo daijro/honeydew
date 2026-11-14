@@ -15,15 +15,17 @@
 
 use std::path::PathBuf;
 
-use eframe::egui::{Context, Id, Pos2};
+use eframe::egui::{Color32, Context, Id, Pos2};
 
 use crate::project_files::{SF2_EXT, SOUNDFONT_EXTS, is_sfz};
+use crate::settings::Settings;
 use crate::sf2::{Preset, Sf2Error};
 use crate::ui::UiCtx;
 use crate::ui::main_menu::SongLibrary;
 use crate::ui::modules_browser::{
     Chrome, PanelClick, PanelRow, RowKind, SideButton, SidePanel, crumb_text, layout, sort_menu,
 };
+use crate::ui::picker_preview::{KeyStrip, Sound};
 use crate::ui::preset_picker::{PickerAction, PresetPicker, natural};
 
 /// The root's title: the factory folder's name.
@@ -103,6 +105,8 @@ pub struct SoundFontPicker {
     pub sort_picked: Option<PatchOrdering>,
     /// `Sort`'s menu, open, centred on its button.
     sort_menu: Option<Pos2>,
+    /// The keys' notes let go as the patches closed, until taken.
+    sounds: Vec<Sound>,
 }
 
 impl SoundFontPicker {
@@ -117,7 +121,37 @@ impl SoundFontPicker {
             sort: PatchOrdering::Default,
             sort_picked: None,
             sort_menu: None,
+            sounds: Vec::new(),
         }
+    }
+
+    /// Issue #131: its files keep where they are left ([`PresetPicker::keep_place`]).
+    pub fn keep_place(&mut self, ctx: &Context, library: &dyn SongLibrary, id: Id) {
+        self.files.keep_place(ctx, library, id);
+    }
+
+    /// Issue #120: the patches have the keys at their bottom (an instrument's pickers', #98), in the channel's colour
+    /// `ink`, labelled as `settings` say, lighting `lit` ([`KeyStrip::lit`]); call it each frame they are wanted.
+    pub fn keys_on(&mut self, ink: Color32, settings: &Settings, lit: (u128, u128)) {
+        if let Some(open) = &mut self.open {
+            let keys =
+                (open.panel.keys).get_or_insert_with(|| KeyStrip::new(ink, settings.clone()));
+            keys.lit = lit;
+        }
+    }
+
+    /// The keys' notes since the last call, for the channel.
+    pub fn take_sounds(&mut self) -> Vec<Sound> {
+        let mut sounds = std::mem::take(&mut self.sounds);
+        let keys = self.open.as_mut().and_then(|o| o.panel.keys.as_mut());
+        sounds.extend(keys.into_iter().flat_map(KeyStrip::take_sounds));
+        sounds
+    }
+
+    /// Every key held goes off (take the notes after).
+    pub fn release(&mut self) {
+        let keys = self.open.as_mut().and_then(|o| o.panel.keys.as_mut());
+        keys.into_iter().for_each(KeyStrip::release);
     }
 
     /// Lists the SoundFonts in `folder` (the content folder's `SoundFonts`) at the root, after `My Files`.
@@ -214,6 +248,9 @@ impl SoundFontPicker {
                 None
             }
             PanelClick::Back => {
+                // The keys go with the patches.
+                self.release();
+                self.sounds = self.take_sounds();
                 self.open = None;
                 None
             }

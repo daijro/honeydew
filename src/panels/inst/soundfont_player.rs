@@ -40,6 +40,9 @@ pub const KNOBS: u32 = 4100;
 /// The named controls the card shows.
 pub const SLOTS: usize = 8;
 
+/// Honeydew change (GitHub #135): the card wiring's flag for a portrait phone-size window (`ui::rack`, whose
+/// card is taller there): the ten controls under the patch row take two rows of five, so their labels and values fit.
+pub const TWO_ROWS: &str = "two_rows";
 /// The SFZ names controls; and the knobs that show one, each 1.
 const HAS_CONTROLS: &str = "sfz_controls";
 const SHOWN: [&str; SLOTS] = [
@@ -215,6 +218,8 @@ const IDLE: Show = Show::Flag(flag::LOADING, 0);
 const CONTROLS_PAGE: Show = Show::All(&[Show::Flag(HAS_CONTROLS, 1), Show::Tab(1)]);
 const PATCH_SHOWN: Show = Show::All(&[IDLE, Show::Not(&CONTROLS_PAGE)]);
 const CONTROLS_SHOWN: Show = Show::All(&[IDLE, CONTROLS_PAGE]);
+const ONE_ROW_SHOWN: Show = Show::All(&[PATCH_SHOWN, Show::Flag(TWO_ROWS, 0)]);
+const TWO_ROWS_SHOWN: Show = Show::All(&[PATCH_SHOWN, Show::Flag(TWO_ROWS, 1)]);
 
 /// `Envelope` is `Custom` (above 0.5): the sliders' envelope, which only then takes their input.
 const CUSTOM: Show = Show::Above(5, 0.5);
@@ -234,7 +239,45 @@ fn cc_text(v: f32) -> String {
     format!("{}", (127.0 * v).round())
 }
 
+/// The ten controls under the patch row, their ids `#2100`… plus `shift` (3000 for the [`TWO_ROWS`] copy).
+fn envelope_controls(shift: u32) -> [Part; 10] {
+    [
+        toggle(2100 + shift, "Envelope")
+            .p(5)
+            .value_text()
+            .value_fn(envelope_text),
+        v_slider(2200 + shift, "Attack")
+            .p(1)
+            .value_text()
+            .enabled(CUSTOM),
+        v_slider(2300 + shift, "Decay")
+            .p(2)
+            .value_text()
+            .enabled(CUSTOM),
+        v_slider(2400 + shift, "Sustain")
+            .p(3)
+            .value_text()
+            .enabled(CUSTOM),
+        v_slider(2500 + shift, "Release")
+            .p(4)
+            .value_text()
+            .enabled(CUSTOM),
+        // A Honeydew addition (#90): Fine Tune; it tunes either envelope.
+        v_slider(2600 + shift, "Fine Tune").p(6).value_text(),
+        // Honeydew additions (#102): the vibrato and Quality.
+        v_slider(2700 + shift, "Vib Rate").p(7).value_text(),
+        v_slider(2800 + shift, "Vib Depth").p(8).value_text(),
+        v_slider(2900 + shift, "Vib Delay").p(9).value_text(),
+        toggle(3100 + shift, "Quality")
+            .p(10)
+            .value_text()
+            .value_fn(quality_text),
+    ]
+}
+
 pub fn panel() -> Option<Panel> {
+    let [a, b, c, d, e, f, g, h, i, j] = envelope_controls(3000);
+    let (first, second) = ([a, b, c, d, e], [f, g, h, i, j]);
     let knobs = (0..SLOTS).map(|slot| {
         knob(knob_id(slot), "")
             .value_fn(cc_text)
@@ -253,32 +296,18 @@ pub fn panel() -> Option<Panel> {
             text_toggle(1300, "Next")
                 .momentary()
                 .margins(0.75, 0.75, 0.75, 0.75),
+            // A Honeydew addition (#102): Transpose, in semitones.
+            knob(3200, "Transpose").p(11).w(Size::U(2.5)),
         ])
         // Its 1 : 1.5 share of the card, fixed: the tab strip takes its room from the envelope's row.
         .h(Size::U(2.596))
         .show(PATCH_SHOWN),
-        hstack([
-            toggle(2100, "Envelope")
-                .p(5)
-                .value_text()
-                .value_fn(envelope_text),
-            v_slider(2200, "Attack").p(1).value_text().enabled(CUSTOM),
-            v_slider(2300, "Decay").p(2).value_text().enabled(CUSTOM),
-            v_slider(2400, "Sustain").p(3).value_text().enabled(CUSTOM),
-            v_slider(2500, "Release").p(4).value_text().enabled(CUSTOM),
-            // Issue #90: Fine Tune, a Honeydew addition; it tunes either envelope.
-            v_slider(2600, "Fine Tune").p(6).value_text(),
-            // Honeydew additions (#102): the vibrato and Quality.
-            v_slider(2700, "Vib Rate").p(7).value_text(),
-            v_slider(2800, "Vib Depth").p(8).value_text(),
-            v_slider(2900, "Vib Delay").p(9).value_text(),
-            toggle(3100, "Quality")
-                .p(10)
-                .value_text()
-                .value_fn(quality_text),
-        ])
-        .h(Size::Flex(1.5))
-        .show(PATCH_SHOWN),
+        hstack(envelope_controls(0))
+            .h(Size::Flex(1.5))
+            .show(ONE_ROW_SHOWN),
+        vstack([hstack(first), hstack(second)])
+            .h(Size::Flex(1.5))
+            .show(TWO_ROWS_SHOWN),
         hstack(knobs).show(CONTROLS_SHOWN),
         text(3000, "...")
             .font(FontSize::Pt18)
@@ -342,18 +371,22 @@ pub const REFERENCE: Reference = Reference {
         Case {
             name: "loaded",
             rows: &[
-                row(1100, Widget::TextToggle, "Prev", [0.75, 0.74, 4.65, 1.10])
+                // Transpose is a Honeydew addition (#102) beside Prev, Patch and Next.
+                row(1100, Widget::TextToggle, "Prev", [0.75, 0.75, 3.82, 1.09])
                     .margins(0.75, 0.75, 0.75, 0.75)
                     .momentary()
                     .slack(1.0, "spec f32 trace"),
-                row(1200, Widget::Spinner, "Patch", [6.15, -0.01, 4.65, 2.60])
+                row(1200, Widget::Spinner, "Patch", [5.32, 0.0, 3.82, 2.59])
                     .items("Load Patch")
                     .picker()
                     .slack(1.0, "spec f32 trace"),
-                row(1300, Widget::TextToggle, "Next", [11.55, 0.74, 4.66, 1.10])
+                row(1300, Widget::TextToggle, "Next", [9.89, 0.75, 3.82, 1.09])
                     .margins(0.75, 0.75, 0.75, 0.75)
                     .momentary()
                     .slack(1.0, "spec f32 trace"),
+                row(3200, Widget::Knob, "Transpose", [14.46, 0.0, 2.50, 2.59])
+                    .p(11)
+                    .w(Size::U(2.5)),
                 // Ten columns: Fine Tune (#90), the vibrato and Quality (#102) are Honeydew additions.
                 row(2100, Widget::Toggle, "Envelope", [0.00, 2.59, 1.69, 3.90])
                     .p(5)
@@ -398,6 +431,70 @@ pub const REFERENCE: Reference = Reference {
                 .p(9)
                 .value_text(),
                 row(3100, Widget::Toggle, "Quality", [15.26, 2.59, 1.69, 3.90])
+                    .p(10)
+                    .value_text()
+                    .value("Linear"),
+            ],
+            ..Case::DEFAULT
+        },
+        // Honeydew change (#135): a portrait phone's two rows of five (the card wiring's flag).
+        Case {
+            name: "two rows",
+            flags: &[(TWO_ROWS, 1)],
+            rows: &[
+                row(1100, Widget::TextToggle, "Prev", [0.75, 0.75, 3.82, 1.09])
+                    .margins(0.75, 0.75, 0.75, 0.75)
+                    .momentary()
+                    .slack(1.0, "spec f32 trace"),
+                row(1200, Widget::Spinner, "Patch", [5.32, 0.0, 3.82, 2.59])
+                    .items("Load Patch")
+                    .picker()
+                    .slack(1.0, "spec f32 trace"),
+                row(1300, Widget::TextToggle, "Next", [9.89, 0.75, 3.82, 1.09])
+                    .margins(0.75, 0.75, 0.75, 0.75)
+                    .momentary()
+                    .slack(1.0, "spec f32 trace"),
+                row(3200, Widget::Knob, "Transpose", [14.46, 0.0, 2.50, 2.59])
+                    .p(11)
+                    .w(Size::U(2.5)),
+                row(5100, Widget::Toggle, "Envelope", [0.00, 2.59, 3.39, 1.95])
+                    .p(5)
+                    .value_text()
+                    .value("Original"),
+                row(5200, Widget::VSlider, "Attack", [3.39, 2.59, 3.39, 1.95])
+                    .p(1)
+                    .value_text()
+                    .enabled(CUSTOM),
+                row(5300, Widget::VSlider, "Decay", [6.78, 2.59, 3.39, 1.95])
+                    .p(2)
+                    .value_text()
+                    .enabled(CUSTOM),
+                row(5400, Widget::VSlider, "Sustain", [10.17, 2.59, 3.39, 1.95])
+                    .p(3)
+                    .value_text()
+                    .enabled(CUSTOM),
+                row(5500, Widget::VSlider, "Release", [13.56, 2.59, 3.40, 1.95])
+                    .p(4)
+                    .value_text()
+                    .enabled(CUSTOM),
+                row(5600, Widget::VSlider, "Fine Tune", [0.00, 4.54, 3.39, 1.95])
+                    .p(6)
+                    .value_text(),
+                row(5700, Widget::VSlider, "Vib Rate", [3.39, 4.54, 3.39, 1.95])
+                    .p(7)
+                    .value_text(),
+                row(5800, Widget::VSlider, "Vib Depth", [6.78, 4.54, 3.39, 1.95])
+                    .p(8)
+                    .value_text(),
+                row(
+                    5900,
+                    Widget::VSlider,
+                    "Vib Delay",
+                    [10.17, 4.54, 3.39, 1.95],
+                )
+                .p(9)
+                .value_text(),
+                row(6100, Widget::Toggle, "Quality", [13.56, 4.54, 3.40, 1.95])
                     .p(10)
                     .value_text()
                     .value("Linear"),

@@ -243,13 +243,8 @@ impl Render {
         }
         let (start, end) = ticks(&song, spec.range);
         let engine = engine(&song, samples, spec.rate, start)?;
-        // As the engine's seek maps ticks to frames.
-        let frame = |tick: f64| {
-            (tick / f64::from(PPQ) * 60.0 * f64::from(spec.rate as f32)
-                / f64::from(song.tempo_bpm as f32))
-            .ceil()
-        };
-        let range = frame(end) - frame(start);
+        // As long as playback plays it, at the tempo automation's tempos (Honeydew change, #126).
+        let range = engine.frames_to_tick(end as u64).ceil();
         if range.is_nan() || range > f64::from(MAX_SECS) * f64::from(spec.rate) {
             return Err(RenderError::TooLong);
         }

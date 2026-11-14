@@ -8,6 +8,8 @@
 //!   at the stream rate. The input is followed by silence as long as that delay ([`TAIL`]), so a decoder that ignores
 //!   the tag still plays all of it, and the end a decoder trims stays under a frame.
 //!
+//! - **Tags.** A tagged file ([`Mp3Encoder::with_tags`]) opens with an ID3v2.4 tag ([`id3v2`]) before the Info frame.
+//!
 //! - **Rate.** Above 48 kHz the audio is halved (96 → 48 kHz), and again while that leaves 32 kHz or more
 //!   (192 → 96 → 48, 176.4 → 88.2 → 44.1 kHz), each time through a windowed-sinc low-pass. A rate that is then none of
 //!   the Layer III rates [`RATES`] is resampled linearly to the nearest one (50 kHz goes to 48, not 25).
@@ -110,6 +112,8 @@ pub struct Mp3Encoder {
     input: u64,
     /// The frames handed to rusty_mp3 (out of the rate conversion).
     encoded: usize,
+    /// The ID3v2 tag that opens the file, empty for none.
+    id3: Vec<u8>,
 }
 
 impl Mp3Encoder {
@@ -118,6 +122,15 @@ impl Mp3Encoder {
     /// # Panics
     /// On a zero `rate`.
     pub fn new(rate: u32, high_quality: bool) -> Self {
+        Self::with_tags(rate, high_quality, &[])
+    }
+
+    /// [`Self::new`], the file opening with an ID3v2.4 tag of `tags`: Vorbis comment fields (`TITLE`, `ARTIST`, …)
+    /// and their values, as [`id3v2`] maps them. No tags, no tag.
+    ///
+    /// # Panics
+    /// On a zero `rate`.
+    pub fn with_tags(rate: u32, high_quality: bool, tags: &[(&str, &str)]) -> Self {
         assert!(rate > 0, "MP3 needs a sample rate");
         let (mut exact, mut halvings) = (f64::from(rate), 0);
         while exact >= 64_000.0 {
@@ -148,6 +161,7 @@ impl Mp3Encoder {
             input_rate: rate,
             input: 0,
             encoded: 0,
+            id3: id3v2(tags),
         }
     }
 
@@ -168,7 +182,7 @@ impl Mp3Encoder {
     }
 
     /// The finished file: what the rate conversion holds back, the [`TAIL`] of silence after the input, then
-    /// everything with the Info frame in front, tagged with the input's length at the stream rate.
+    /// everything with the Info frame in front, tagged with the input's length at the stream rate, after the ID3v2 tag.
     pub fn finish(mut self) -> Vec<u8> {
         let [left, right] = [0, 1].map(|c| self.convert(c, Vec::new(), true));
         self.encode(&left, &right);
@@ -183,7 +197,7 @@ impl Mp3Encoder {
             out.extend(packet);
         }
         lame_tag(&mut out, music);
-        out
+        [std::mem::take(&mut self.id3), out].concat()
     }
 
     /// Channel `c`'s `audio` through its rate conversion; `last` also lets out what the stages hold back.
@@ -247,4 +261,32 @@ fn crc16_arc(bytes: &[u8]) -> u16 {
         }
         crc
     })
+}
+
+/// An ID3v2.4 tag of `tags`, Vorbis comment fields as frames: `TITLE` TIT2, `ARTIST` TPE1, `ALBUM` TALB, `GENRE` TCON,
+/// `DATE` TDRC, `ENCODER` TSSE, `COMMENT` an English COMM with no description; texts in UTF-8, no padding. Other fields
+/// are left out; with no frame there is no tag.
+pub fn id3v2(tags: &[(&str, &str)]) -> Vec<u8> {
+    // 28 bits, 7 to a byte.
+    let synchsafe = |n: usize| [21, 14, 7, 0].map(|shift| (n >> shift & 0x7F) as u8);
+    let mut frames = Vec::new();
+    for &(field, value) in tags {
+        let (id, head): (&[u8; 4], &[u8]) = match field {
+            "TITLE" => (b"TIT2", &[3]),
+            "ARTIST" => (b"TPE1", &[3]),
+            "ALBUM" => (b"TALB", &[3]),
+            "GENRE" => (b"TCON", &[3]),
+            "DATE" => (b"TDRC", &[3]),
+            "ENCODER" => (b"TSSE", &[3]),
+            // UTF-8, the language, then an empty description.
+            "COMMENT" => (b"COMM", b"\x03eng\0"),
+            _ => continue,
+        };
+        let size = synchsafe(head.len() + value.len());
+        frames.extend([&id[..], &size, &[0, 0], head, value.as_bytes()].concat());
+    }
+    if frames.is_empty() {
+        return frames;
+    }
+    [&b"ID3\x04\0\0"[..], &synchsafe(frames.len()), &frames].concat()
 }

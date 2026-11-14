@@ -86,7 +86,8 @@
 //!   ranked by fewest accidentals, then most root notes, then picker order; 5 rows, 12 after `Show more`. A row sets
 //!   the project key and scale; `Disable` sets the scale to Chromatic. Without an exact fit, `Choose` lists the closest
 //!   ones.
-//! - `Toggle Slide` flips each note's slide flag. Slide notes have no look of their own: they are drawn as other notes.
+//! - `Toggle Slide` flips each note's slide flag. A slide note has a look of its own (#130, #102):
+//!   `background` stripes slanting across its fill and a `background` ▶ at its start ([`paint_slide`]).
 //! - `Slice...` (GitHub #62) turns the popup into the slice choices
 //!   ([`slice_items`]): a piece length (1/4 … 1/32, 1/8T, 1/16T) or 2, 3, 4 or 8 equal parts. Each selected note
 //!   becomes consecutive selected notes covering it, as [`slice_selected`] cuts them; a tap outside or Escape cancel.
@@ -177,6 +178,11 @@ const LABEL_PT: [f32; 2] = [6.0, 12.0];
 // Colour treatments of theme roles.
 /// Ghost notes: their channel colour at this alpha (0.35 read too bold, #94).
 pub(crate) const GHOST_ALPHA: f32 = 0.2;
+/// A slide note's stripes (#130): `background` at this alpha, this many U wide and apart; its ▶ is this share of the
+/// row's height wide.
+const SLIDE_ALPHA: f32 = 0.4;
+const SLIDE_STRIPE: [f32; 2] = [0.06, 0.3];
+const SLIDE_ARROW: f32 = 0.6;
 /// Rows that sound or hold a selected note: the channel colour at this alpha.
 const LIT_ALPHA: f32 = 0.1;
 /// The graph lane: its guides' and its (and the grid's) past-the-end overlay's black alpha (0.2 and 0.15).
@@ -2198,7 +2204,7 @@ impl PianoRoll {
         let which = targets(&clip.events, &self.selected);
         let sel = &mut self.selected;
         match op {
-            MoreOp::Legato => legato_selected(&mut clip.events, sel),
+            MoreOp::Legato => legato_selected(&mut clip.events, sel, BEAT * f64::from(bpb)),
             MoreOp::DoubleUp => double_selected(&mut clip.events, sel, 12),
             MoreOp::DoubleDown => double_selected(&mut clip.events, sel, -12),
             MoreOp::Length(ticks) => set_length_selected(&mut clip.events, sel, f64::from(ticks)),
@@ -2744,8 +2750,31 @@ fn paint_notes(
                 normal
             };
             painter.rect_filled(cell(r), 0.0, fill);
+            if matches!(e, Event::Note { slide: true, .. }) {
+                paint_slide(painter, cell(r), theme.colors.background.to_color32(), m);
+            }
         }
     }
+}
+
+/// A slide note's look over its fill in `r` (#130, #102): `ink` stripes slanting up to the right, and an `ink` ▶ at its
+/// start as tall as the note, cut to its width.
+fn paint_slide(painter: &egui::Painter, r: Rect, ink: Color32, m: &crate::metrics::Metrics) {
+    let clip = painter.with_clip_rect(painter.clip_rect().intersect(r));
+    let (h, gap) = (r.height(), m.u(SLIDE_STRIPE[1]));
+    let stroke = egui::Stroke::new(m.u(SLIDE_STRIPE[0]), ink.gamma_multiply(SLIDE_ALPHA));
+    // Only the stripes in view: from the first that reaches the view's left edge.
+    let skip = ((clip.clip_rect().left() - r.left()) / gap)
+        .floor()
+        .max(0.0);
+    let mut x = r.left() - h + skip * gap;
+    while x < clip.clip_rect().right() {
+        clip.line_segment([pos2(x, r.bottom()), pos2(x + h, r.top())], stroke);
+        x += gap;
+    }
+    let tip = pos2(r.left() + (SLIDE_ARROW * h).min(r.width()), r.center().y);
+    let arrow = vec![r.left_top(), tip, r.left_bottom()];
+    clip.add(egui::Shape::convex_polygon(arrow, ink, egui::Stroke::NONE));
 }
 
 /// The key column, vertical, keyed as the keyboard is (#77). A full-width row per

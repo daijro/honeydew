@@ -451,6 +451,17 @@ mod local {
                 AUTOMATE.with_borrow_mut(|q| q.push((self.parent, arg)));
                 return 1;
             }
+            // Honeydew (vendored change): and Tesla's `Audio` to the playlist (#117): the file it posted is kept for this
+            // thread (`take_sent`). The other places are not answered.
+            #[cfg(feature = "embed")]
+            if cmd == Cmd::Audio {
+                let ok = AudioTo::from_isize(arg) == AudioTo::Playlist;
+                if ok {
+                    let posted = take_audio().into_iter().map(|(path, _)| path);
+                    SENT.with_borrow_mut(|q| q.extend(posted));
+                }
+                return isize::from(ok);
+            }
             if !self.hosted() {
                 return 0;
             }
@@ -467,10 +478,12 @@ mod local {
     static REGISTRY: Mutex<Vec<(u64, Weak<Peer>)>> = Mutex::new(Vec::new());
     static QUEUE: Mutex<Vec<(u64, Cmd, isize)>> = Mutex::new(Vec::new());
 
-    // Honeydew (vendored addition): the editors' `Automate` (`Peer::to_host`), by thread.
+    // Honeydew (vendored addition): the editors' `Automate` and the files of their `Audio` to the playlist
+    // (`Peer::to_host`), by thread.
     #[cfg(feature = "embed")]
     thread_local! {
         static AUTOMATE: std::cell::RefCell<Vec<(u64, isize)>> = const { std::cell::RefCell::new(Vec::new()) };
+        static SENT: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
     }
 
     /// Honeydew (vendored addition): the `Automate` this thread's editors sent since the last call, as (the editor's
@@ -478,6 +491,13 @@ mod local {
     #[cfg(feature = "embed")]
     pub fn take_automate() -> Vec<(u64, isize)> {
         AUTOMATE.with_borrow_mut(std::mem::take)
+    }
+
+    /// Honeydew (vendored addition): the files this thread's editors sent to the playlist since the last call (`Audio`),
+    /// oldest first.
+    #[cfg(feature = "embed")]
+    pub fn take_sent() -> Vec<String> {
+        SENT.with_borrow_mut(std::mem::take)
     }
     static HOST_WAKER: OnceLock<fn()> = OnceLock::new();
 
@@ -564,7 +584,7 @@ pub use local::{set_host_waker, take_host_messages, Link, Peer};
 #[cfg(all(windows, feature = "embed"))]
 pub use local::Peer;
 #[cfg(feature = "embed")]
-pub use local::take_automate;
+pub use local::{take_automate, take_sent};
 
 #[cfg(test)]
 mod tests {

@@ -63,7 +63,7 @@ fn a_saved_song_and_a_rack_preset_keep_them_where_fl_studio_mobile_skips_them() 
     rack.get_mut(id).unwrap().params[de_esser::MODE] = 1.0;
     let id = rack.add(denoise::DENOISE);
     rack.get_mut(id).unwrap().params[denoise::REDUCTION] = 0.6;
-    // And a Half Time at 1/4 bar.
+    // And a Half Time at 1/16 bar.
     let id = rack.add(half_time::HALF_TIME);
     rack.get_mut(id).unwrap().params[half_time::LENGTH] = 0.0;
     let bytes = honeydew::flm::write(&song).unwrap();
@@ -90,6 +90,27 @@ fn a_saved_song_and_a_rack_preset_keep_them_where_fl_studio_mobile_skips_them() 
             .collect::<Vec<_>>()
     };
     assert_eq!(chain(&back), chain(modules));
+}
+
+/// A Half Time saved before 0.5.4 holds three params, its Length in param 1: a song and a rack preset load it at that
+/// Length, at Speed 1/2 and Smooth 10 ms, as it played (#122).
+#[test]
+fn an_older_half_time_loads_as_it_played() {
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Instrument);
+    let rack = &mut song.channels[1].rack;
+    let id = rack.add(half_time::HALF_TIME);
+    // 1/2 bar and Mix 70 %, as 0.5.3 saved them.
+    rack.get_mut(id).unwrap().params = vec![1.0, 1.0 / 3.0, 0.7];
+    // 1/2 bar is item 3 of 1/16 bar … 8 bars.
+    let mut want = half_time::DEFAULTS;
+    want[..3].copy_from_slice(&[1.0, 1.0 / 3.0, 0.7]);
+    want[half_time::LENGTH] = 3.0 / 7.0;
+    let back = honeydew::flm::read(&honeydew::flm::write(&song).unwrap()).unwrap();
+    assert_eq!(back.channels[1].rack.modules[0].params, want);
+    let preset = honeydew::flm::write_rack(&song.channels[1].rack.modules).unwrap();
+    let back = honeydew::flm::read_rack(&preset, &mut 1).unwrap();
+    assert_eq!(back[0].params, want);
 }
 
 #[test]

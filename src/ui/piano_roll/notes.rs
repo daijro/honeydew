@@ -520,12 +520,14 @@ pub fn quantize_selected(events: &mut Vec<Event>, sel: &mut Vec<bool>, grid: f64
     true
 }
 
-/// Lengthens each selected note to the next later start among the selected notes; the last ones keep theirs.
-pub fn legato_selected(events: &mut [Event], sel: &[bool]) {
+/// Lengthens each selected note to the next later start among the selected notes. Honeydew change (GitHub #123):
+/// the last ones reach the end of the bar (`bar` ticks long) their start falls in, unless they end past it.
+pub fn legato_selected(events: &mut [Event], sel: &[bool], bar: f64) {
     let starts: Vec<f64> = flagged(events, sel).map(|(pos, _, _)| pos).collect();
     let new = map_notes(events, sel, |pos, len, key| {
         let next = starts.iter().copied().filter(|&s| s > pos).reduce(f64::min);
-        (pos, next.map_or(len, |s| s - pos), key)
+        let bar_end = ((pos / bar).floor() + 1.0) * bar;
+        (pos, next.map_or(len.max(bar_end - pos), |s| s - pos), key)
     });
     events.copy_from_slice(&new);
 }

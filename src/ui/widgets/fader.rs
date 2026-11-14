@@ -52,6 +52,15 @@ fn parts(rect: Rect, v: f32, t: f32, u: f32, px: f32) -> Parts {
     }
 }
 
+/// What of a fader's `rect` lies below its cap at the lowest value: room for a readout (#133), a sliver on a short one.
+pub fn below_cap(rect: Rect, m: &crate::metrics::Metrics) -> Rect {
+    rect.with_min_y(
+        parts(rect, 0.0, m.t(), m.u(1.0), 1.0 / m.ppp())
+            .cap
+            .bottom(),
+    )
+}
+
 /// The track of a fader in `rect`: its value runs up it from 0 at the bottom.
 pub fn fader_track(rect: Rect, m: &crate::metrics::Metrics) -> Rect {
     parts(rect, 0.0, m.t(), m.u(1.0), 1.0 / m.ppp()).track

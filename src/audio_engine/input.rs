@@ -24,8 +24,8 @@ use crate::song::{ChannelKind, PPQ, Song};
 /// The input's backlog, in frames, past which a block read skips ahead to half of it. The input and output clocks
 /// drift apart, and a late first block leaves a backlog too; this bounds the monitoring latency to about this plus one
 /// block. It must exceed the input and output callback periods together, or the reads keep skipping: 2048 frames is
-/// 43 ms at 48 kHz. Android's are longer (cpal opens AAudio without its low-latency mode, and its callbacks come in
-/// bursts): 8192 frames, 171 ms.
+/// 43 ms at 48 kHz. Android's can be longer (its callbacks come in bursts where AAudio refuses its low-latency mode,
+/// and a Bluetooth output's always do): 8192 frames, 171 ms.
 // ponytail: a fixed bound and a hard skip (one discontinuity per skip); a resampler would follow drift smoothly.
 pub const MONITOR_MAX_LAG_FRAMES: u64 = if cfg!(target_os = "android") {
     8192

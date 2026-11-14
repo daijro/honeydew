@@ -165,6 +165,12 @@ pub struct MetaState {
     pub modified: String,
     /// Bytes after @3081.
     pub extra: Vec<u8>,
+    /// PROJECT's `Album:`, `Genre:`, `Year:` and `Comment:` (#139, Honeydew's own: an `HDTg` in the file, not META),
+    /// which renders write as tags.
+    pub album: String,
+    pub genre: String,
+    pub year: String,
+    pub comment: String,
 }
 
 impl Default for MetaState {
@@ -178,6 +184,10 @@ impl Default for MetaState {
             info_url: String::new(),
             modified: "Never / demo project".into(),
             extra: Vec::new(),
+            album: String::new(),
+            genre: String::new(),
+            year: String::new(),
+            comment: String::new(),
         }
     }
 }

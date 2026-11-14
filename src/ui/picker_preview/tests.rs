@@ -129,12 +129,12 @@ fn a_sample_strip_plays_its_pick_from_the_start_once_decoded_and_stops_once() {
 }
 
 #[test]
-fn the_strips_waveform_is_one_smooth_band_of_the_peaks_a_device_pixel_a_column() {
-    // #108: a column a device pixel, both channels in one band, ± the column's peak held 20 ms (the cycles of a low note
-    // fill in) as a share of the file's peak. A 20 Hz tone at half scale fills the whole height everywhere; silence is a
-    // 1 px line.
+fn the_strips_waveform_is_the_playlists_columns_a_device_pixel_each() {
+    // Honeydew change (#124; #108 drew one smoothed band of held peaks scaled to the loudest): the playlist's
+    // audio clips' law, each channel's min/max a device pixel a column, stereo in halves, at full scale. A 20 Hz tone at
+    // half scale reaches half of its half's height and its right channel (a tenth of it) a tenth; silence is a 1 px line.
     let tone = |i: usize| 0.5 * (std::f32::consts::TAU * 20.0 * i as f32 / 1000.0).cos();
-    for (left, full) in [(tone as fn(usize) -> f32, true), (|_| 0.0, false)] {
+    for (left, loud) in [(tone as fn(usize) -> f32, true), (|_| 0.0, false)] {
         let mut strip = SampleStrip::new("Kick".into(), Some(stereo(2000, left)));
         let panel = Rect::from_min_size(pos2(0.0, 0.0), vec2(390.0, 120.0));
         let mut off = crate::ui::offscreen::Offscreen::new();
@@ -156,23 +156,30 @@ fn the_strips_waveform_is_one_smooth_band_of_the_peaks_a_device_pixel_a_column()
             .collect();
         let (x0, width) = pixel_columns(wave_rect, &crate::ui::offscreen::metrics());
         assert!(width > 300, "{wave_rect:?}");
-        assert_eq!(cols.len(), width);
-        let height = if full { wave_rect.height() } else { 1.0 };
-        for (i, c) in cols.iter().enumerate() {
-            assert_eq!((c.left(), c.width()), (x0 + i as f32, 1.0));
+        assert_eq!(cols.len(), 2 * width, "a column a pixel in each half");
+        let quarter = wave_rect.height() / 4.0;
+        for (half, (centre, peak)) in cols.chunks(width).zip([
+            (wave_rect.top() + quarter, 0.5),
+            (wave_rect.top() + 3.0 * quarter, 0.05),
+        ]) {
+            let reach = if loud { peak * quarter } else { 0.0 };
+            for (i, c) in half.iter().enumerate() {
+                assert_eq!((c.left(), c.width()), (x0 + i as f32, 1.0));
+                assert!(c.height() >= 1.0, "{c:?}");
+                assert!(c.top() >= centre - reach - 1.0, "{loud}: column {i}: {c:?}");
+                assert!(
+                    c.bottom() <= centre + reach + 1.0,
+                    "{loud}: column {i}: {c:?}"
+                );
+            }
+            let top = half.iter().map(|c| c.top()).fold(f32::MAX, f32::min);
+            let bottom = half.iter().map(|c| c.bottom()).fold(f32::MIN, f32::max);
             assert!(
-                (c.height() - height).abs() <= 1.0,
-                "{full}: column {i}: {c:?}"
+                (bottom - top - (2.0 * reach).max(1.0)).abs() <= 1.0,
+                "{top}..{bottom}"
             );
-            assert!((c.center().y - wave_rect.center().y).abs() <= 0.5, "{c:?}");
         }
     }
-    // A decaying low tone's band falls a little every column: the held crests join in ramps, no flat steps.
-    let decay = |i: usize| {
-        0.5 * (1.0 - i as f32 / 2000.0) * (std::f32::consts::TAU * 20.0 * i as f32 / 1000.0).cos()
-    };
-    let band = envelope(&stereo(2000, decay), 400);
-    assert!(band.windows(2).all(|w| w[1] < w[0]), "{band:?}");
 }
 
 /// `frames` frames at 1 kHz: `left(i)` on the left, a tenth of it on the right.

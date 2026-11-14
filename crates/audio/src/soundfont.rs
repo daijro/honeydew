@@ -15,7 +15,8 @@
 //! A Honeydew addition (#102): a SoundFont's vibrato LFO (its
 //! vibLfoToPitch, freqVibLFO and delayVibLFO) moves its voices' pitch, the mod wheel deepening it by up to 50 cents as
 //! the standard's default modulator says; the module's own Vib Rate, Depth and Delay add a vibrato to every voice; and
-//! Quality High reads the samples by cubic interpolation instead of linear.
+//! Quality High reads the samples by cubic interpolation instead of linear. Transpose moves every voice by whole
+//! semitones, with Fine Tune.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -933,8 +934,8 @@ const SILENT: f32 = 0.01;
 /// The release coefficient of a sample without a loop once it has played to its end.
 const END_FADE: f32 = 0.01;
 /// The param defaults: Enable, Attack, Decay, Sustain, Release, Envelope (Original), Fine Tune (0 cents), Vib Rate
-/// (5 Hz), Vib Depth (0 cents), Vib Delay (0 s), Quality (Linear).
-const DEFAULTS: [f32; 11] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0];
+/// (5 Hz), Vib Depth (0 cents), Vib Delay (0 s), Quality (Linear), Transpose (0).
+const DEFAULTS: [f32; 12] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.5];
 /// Fine Tune, 200v − 100 cents on every voice: a Honeydew addition (#90).
 const FINE_TUNE: usize = 6;
 /// Honeydew additions (#102). Params 7–9, the module's own vibrato on every voice: a sine
@@ -942,6 +943,8 @@ const FINE_TUNE: usize = 6;
 const VIBRATO: usize = 7;
 /// Param 10, Quality: above 0.5 (High) the samples are read by cubic interpolation, else linearly.
 const QUALITY: usize = 10;
+/// Param 11, Transpose: `round(48v) − 24` semitones on every voice, with Fine Tune. A Honeydew addition (#102).
+const TRANSPOSE: usize = 11;
 /// SoundFont 2's default modulator: the mod wheel (MIDI CC 1) deepens the vibrato LFO's pitch by up to 50 cents.
 const WHEEL_CENTS: f32 = 50.0;
 /// The vibrato LFO's rate at freqVibLFO 0 absolute cents.
@@ -1217,8 +1220,8 @@ impl Filter {
 }
 
 /// What an SFZ voice's control block reads besides its region: the CCs (0…1) at the process block's start (`then`)
-/// and end (`now`), the pitch bend (−1…1), Fine Tune (cents), the module's vibrato (cents, Hz, seconds), Quality High
-/// (`cubic`) and the rate.
+/// and end (`now`), the pitch bend (−1…1), Fine Tune and Transpose (cents), the module's vibrato (cents, Hz, seconds),
+/// Quality High (`cubic`) and the rate.
 struct Controls<'a> {
     then: &'a [f32; 128],
     now: &'a [f32; 128],
@@ -1849,8 +1852,8 @@ impl SoundFontPlayer {
 }
 
 impl Instrument for SoundFontPlayer {
-    /// Params 1–4 (Attack, Decay, Sustain, Release), 5 (Envelope), 6 (Fine Tune), 7–9 (Vib Rate, Depth, Delay) and 10
-    /// (Quality).
+    /// Params 1–4 (Attack, Decay, Sustain, Release), 5 (Envelope), 6 (Fine Tune), 7–9 (Vib Rate, Depth, Delay), 10
+    /// (Quality) and 11 (Transpose).
     fn set_parameter(&mut self, index: usize, value: f32) {
         if let Some(param) = self.params.get_mut(index).filter(|_| value.is_finite()) {
             *param = value;
@@ -1958,7 +1961,8 @@ impl Instrument for SoundFontPlayer {
                 false => to,
             };
         }
-        let fine = 200.0 * self.params[FINE_TUNE] - 100.0;
+        let transpose = 100.0 * ((48.0 * self.params[TRANSPOSE]).round() - 24.0);
+        let fine = 200.0 * self.params[FINE_TUNE] - 100.0 + transpose;
         let [rate, depth, delay] = [VIBRATO, VIBRATO + 1, VIBRATO + 2].map(|p| self.params[p]);
         let cubic = self.params[QUALITY] > 0.5;
         let controls = Controls {

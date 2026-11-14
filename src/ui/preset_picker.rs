@@ -32,8 +32,8 @@
 //! - [`PresetPicker::in_modules`]: a list shown in the Modules browser's place, in the same panel. Its header has the
 //!   Back arrow at its root too, where Back gives [`PickerAction::Back`].
 //! - A long press then a drag on an audio file's row drags the file out to the playlist ([`crate::ui::file_drag`]).
-//! - A Honeydew addition (#109): each folder and file row ends in its mark ([`Mark`]): a folder's `›`,
-//!   an audio file's waveform icon, any other file's extension.
+//! - A Honeydew addition (#109, #123): each folder and file row ends in its mark ([`Mark`]): a folder's `›`,
+//!   a file's extension, an audio file's too.
 //!
 //! - [`PresetPicker::show_mut`] adds `Select` and the ≡ options menu below them, with the file browser's actions
 //!   (SONGS' [`FileActions`]) on the user's files: inside `My Files` and `Recently Deleted`, dimmed at the root, whose
@@ -67,7 +67,7 @@ use std::iter::Peekable;
 use std::path::{Path, PathBuf};
 use std::str::Chars;
 
-use eframe::egui::{Area, Context, Id, LayerId, Order, Pos2, Sense};
+use eframe::egui::{Context, Id, Pos2};
 
 use crate::content;
 use crate::project_files::content::{FOLD_CASE, inside};
@@ -172,8 +172,9 @@ impl<'a> Item<'a> {
         }
     }
 
-    /// Its mark at the row's end ([`Mark`]): a folder's, an audio file's, else its file's extension. `Default` and the
-    /// picker's own preset files (`own`, what every plain row there is) have none.
+    /// Its mark at the row's end ([`Mark`]): a folder's, else its file's extension. `Default` and the picker's own
+    /// preset files (`own`, what every plain row there is) have none; an audio file always has its extension (Honeydew
+    /// change, #123: the sample picker's own files are audio).
     fn mark(self, own: &str) -> Option<Mark<'a>> {
         let path = match self {
             _ if self.is_folder() => return Some(Mark::Folder),
@@ -182,11 +183,7 @@ impl<'a> Item<'a> {
             _ => return None,
         };
         let ext = path.extension()?.to_str()?;
-        match is_audio(path) {
-            true => Some(Mark::Audio),
-            false if ext.eq_ignore_ascii_case(own) => None,
-            false => Some(Mark::Ext(ext)),
-        }
+        (is_audio(path) || !ext.eq_ignore_ascii_case(own)).then_some(Mark::Ext(ext))
     }
 }
 
@@ -276,7 +273,12 @@ pub struct PresetPicker {
     found: OnceCell<Vec<Found>>,
     /// The web: a pick of our bundled content waiting for its download ([`content::web::picked`]).
     download: Option<(PathBuf, content::web::Ticket)>,
+    /// Where it keeps its place ([`Self::keep_place`]).
+    place: Option<Id>,
 }
+
+/// Where a picker was left: its folders open and its scroll.
+type Place = (Vec<SongEntry>, f32);
 
 impl PresetPicker {
     /// A picker for one scope, at its root.
@@ -319,6 +321,7 @@ impl PresetPicker {
             categories: None,
             found: OnceCell::new(),
             download: None,
+            place: None,
         }
     }
 
@@ -425,6 +428,20 @@ impl PresetPicker {
             self.listing = Some(self.read_open(library, &next.path));
             self.folders.push(next);
         }
+    }
+
+    /// Issue #131: it keeps where it is left (its folders and scroll) under `id` in `ctx`'s memory,
+    /// which lasts while the app runs, and opens there while still at its root (not opened at a file). Whether it did.
+    pub fn keep_place(&mut self, ctx: &Context, library: &dyn SongLibrary, id: Id) -> bool {
+        self.place = Some(id);
+        let place = ctx.data(|d| d.get_temp::<Place>(id));
+        let Some((folders, scroll_y)) = place.filter(|_| self.folders.is_empty()) else {
+            return false;
+        };
+        // A folder of a merged factory category lists from its sources.
+        self.read_factory(library);
+        (self.folders, self.listing, self.panel.scroll_y) = (folders, None, scroll_y);
+        true
     }
 
     /// Issue #98: the preset `by` (−1 or 1) rows on from the file `current`, among the presets of the folder it is listed
@@ -646,6 +663,10 @@ impl PresetPicker {
         library: &mut dyn SongLibrary,
         actions: bool,
     ) -> Option<PickerAction> {
+        if let Some(id) = self.place {
+            let place: Place = (self.folders.clone(), self.panel.scroll_y);
+            ctx.data_mut(|d| d.insert_temp(id, place));
+        }
         if self.listing.is_none() {
             self.found = OnceCell::new();
             self.trash = library.trash();
@@ -1395,8 +1416,7 @@ fn popup_items(popup: &Popup, state: MenuState) -> Items {
     Items::Answer(std::iter::once(header).chain(choices).collect())
 }
 
-/// `items` in a popup centred on `at`, modal over the panel too: the popup's own backdrop lies under the panel
-/// (`Order::Middle`), so a blocker above the panel takes the clicks outside the popup, and closes it.
+/// `items` in a popup centred on `at` inside the screen, modal over the panel too ([`popup::show`]).
 pub(crate) fn modal<T: Copy>(
     ctx: &Context,
     cx: &UiCtx,
@@ -1404,23 +1424,7 @@ pub(crate) fn modal<T: Copy>(
     at: Pos2,
     items: &[PopupItem<T>],
 ) -> PopupResult<T> {
-    let screen = ctx.content_rect();
-    let blocker = Area::new(id.with("blocker"))
-        .order(Order::Foreground)
-        .fixed_pos(screen.min)
-        .constrain(false)
-        .fade_in(false)
-        .sense(Sense::click_and_drag())
-        .show(ctx, |ui| {
-            ui.allocate_exact_size(screen.size(), Sense::hover())
-        })
-        .response;
-    let mut result = popup::show(ctx, id, at, screen, items, cx);
-    result.close |= blocker.clicked() || blocker.secondary_clicked() || blocker.middle_clicked();
-    // Both above the panel, however a press raised it; the blocker, made first, stays under the popup.
-    ctx.move_to_top(blocker.layer_id);
-    ctx.move_to_top(LayerId::new(Order::Foreground, id));
-    result
+    popup::show(ctx, id, at, ctx.content_rect(), items, cx)
 }
 
 /// A library seen through [`PresetPicker::show`]: it lists and reads, and changes nothing.

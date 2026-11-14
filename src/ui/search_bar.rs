@@ -202,12 +202,11 @@ pub(crate) struct RowLook<'a> {
     pub mark: Option<Mark<'a>>,
 }
 
-/// What a picker row shows at its right end (a Honeydew addition, #109): a folder's
-/// `›` (icon 10), an audio file's waveform (icon 21), any other file's extension, dimmed as a search row's path.
+/// What a picker row shows at its right end (a Honeydew addition, #109, #123): a folder's
+/// `›` (icon 10), a file's extension (an audio file's too), dimmed as a search row's path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Mark<'a> {
     Folder,
-    Audio,
     Ext(&'a str),
 }
 
@@ -225,7 +224,6 @@ fn paint_mark(painter: &Painter, m: &Metrics, rect: Rect, mark: Mark, ink: Color
     };
     match mark {
         Mark::Folder => icon(IconId::Collapse),
-        Mark::Audio => icon(IconId::AudioClip),
         Mark::Ext(ext) => {
             let at = pos2(right, rect.center().y);
             let (text, font) = (

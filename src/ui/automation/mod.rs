@@ -7,7 +7,8 @@
 //! V·(1 − v) − 0.5 px; 7 the curve (1.5 px lines; nothing left of the first point, a level line from the last to the
 //! right edge), then the points
 //! (radius 0.2 U). A segment is `text` when either end is selected, a point when it is; else the channel colour. The
-//! value axis left of the grid: N = 5 ticks from V ≥ 3 U, else 3, in the channel colour.
+//! value axis left of the grid: N = 5 ticks from V ≥ 3 U, else 3, in the channel colour; zoomed on the values, a ruler
+//! (#135, [`Frame::ruler_marks`]).
 //!
 //! **Values** (GitHub issue #21; [`value`]): the axis labels the
 //! target's value at each tick's fraction of the range in its own units (the registry's lane text, `120 BPM` on the
@@ -58,10 +59,10 @@
 //!   column, as the piano roll's over its key column, and the keymap's `zoomInVertical`/`zoomOutVertical` keys zoom
 //!   them about the middle. There is no reset gesture, as the piano roll has none. The view is kept per clip with
 //!   the time's, in memory, never saved. Everything maps through it ([`Frame::rows`]): the points, the curve, the
-//!   init line, the value grid, touches, created points and marquees. The axis ticks keep their places and label the
-//!   values there, finer as it zooms in; a discrete target's step ticks follow their steps. Zoomed in, the ticks and
-//!   the init line take the points' row law, (1 − v)·126 + 0.5, not (1 − v)·127, whose half-row gap
-//!   at the ends the zoom would show ([`Frame::frac_y`]). Zoomed in, the `Rows`
+//!   init line, the value grid, touches, created points and marquees. Zoomed in, the axis is a ruler whose marks move
+//!   and spread with the view (#135, as the time ruler's); a discrete target's step ticks follow their steps. Zoomed
+//!   in, the ticks and the init line take the points' row law, (1 − v)·126 + 0.5, not (1 − v)·127, whose
+//!   half-row gap at the ends the zoom would show ([`Frame::frac_y`]). Zoomed in, the `Rows`
 //!   value snap moves by whole rows on screen (1/zoom of a value row each), so a drag sets the value as finely as the
 //!   zoom shows it.
 //! - Created and pasted points pop in; every point of a drag (or scale) grows while it lasts and wobbles at its
@@ -1155,15 +1156,23 @@ impl AutomationEditor {
         // In the target's units ([`Target::axis_text`]): the value at each tick's fraction of the range, fitted from
         // FontSize 1 down to 6 pt, then truncated keeping 5 tail characters. A discrete target with no more steps than
         // ticks has a tick at each step instead (zoomed, those in view); no label repeats one above it.
+        // Zoomed on the values (#135), a continuous target's axis is a ruler instead, its marks moving with the view:
+        // the labelled ones as the ticks, the fine ones 1 px and a third of the column long, by the grid.
         let ticks = f.axis_ticks(m);
-        let fracs: Vec<f32> = match target.steps() {
-            Some(n) if n <= ticks.len() => (0..n).rev().map(|k| menu_value(k, n)).collect(),
-            _ => ticks.iter().map(|t| t.frac).collect(),
+        let marks: Vec<(f32, bool)> = match target.steps() {
+            Some(n) if n <= ticks.len() => (0..n).rev().map(|k| (menu_value(k, n), true)).collect(),
+            _ if f.rows[1] < geom::ROWS => f.ruler_marks(m),
+            _ => ticks.iter().map(|t| (t.frac, true)).collect(),
         };
         let mut shown: Vec<String> = Vec::new();
-        for v in fracs {
+        for (v, labelled) in marks {
             let t = f.axis_tick(v, target.axis_text(v), m);
             if !f.axis.y_range().expand(px).contains(t.y) {
+                continue;
+            }
+            if !labelled {
+                let line = Rangef::new(t.line.max - t.line.span() / 3.0, t.line.max);
+                hline(&painter, line, t.y, 1.0, color, m);
                 continue;
             }
             hline(&painter, t.line, t.y, 2.0, color, m);

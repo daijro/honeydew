@@ -18,6 +18,8 @@
 //!   0.4 or 1.0 [`OggEncoder`], per `High quality`. Once written, the message `Render complete` / `Saved to: <path
 //!   below the user folder>` shows, with `Open My Tracks` (SONGS on the render) and `OK` (#72: a flash
 //!   was gone before Android users found the file). The web, which downloads, flashes the two lines.
+//! - **Tags** (#139). With PROJECT's `Write tags on export` on (the default), each file carries [`tags`]: Vorbis
+//!   comments in FLAC and Ogg, ID3v2.4 in MP3, a `LIST` `INFO` chunk in WAV. An FLP's stems never do.
 //! - **Errors.** No audible frame: `The song has no sound`. A render that cannot be built, is too long or cannot be
 //!   written: `An error occurred while rendering`. MIDI with no lane to write: `Error: no data to save`. ZIP: the
 //!   export messages (`Failed to save project` for the song, `Failed to compress files`, `Failed to export
@@ -46,12 +48,13 @@ use std::path::{Path, PathBuf};
 use honeydew_audio::flac_writer::FlacEncoder;
 use honeydew_audio::mp3_writer::Mp3Encoder;
 use honeydew_audio::ogg_writer::OggEncoder;
-use honeydew_audio::wav_writer::{HEADER_LEN, WavWriter, float32_wav};
+use honeydew_audio::wav_writer::{HEADER_LEN, WavWriter, float32_wav, header, info_chunk};
 
 use super::{
     FileEvent, MAX_FILE_BYTES, OVERWRITE, ProjectFiles, SAVE_FAILED, SAVE_FILE_FAILED, SAVED,
     in_user_folder, stamped, stem, too_large,
 };
+use crate::APP_NAME;
 use crate::flm::chunk::ContentPath;
 use crate::render::{Render, RenderError, RenderSpec, Stream};
 use crate::sample_cache::{self, SampleCache};
@@ -135,6 +138,30 @@ pub fn quick_render_format(id: u8) -> ExportFormat {
     ExportFormat::from_id(id)
         .filter(|f| f.is_audio() && f.available())
         .unwrap_or(ExportFormat::Wav)
+}
+
+/// The tags a render of `song` writes (#139), by their Vorbis comment fields: PROJECT's title (else the song's file
+/// name), author, album, genre, year and comment, each when it has more than spaces, and the app as the encoder.
+pub fn tags(song: &Song) -> Vec<(&'static str, String)> {
+    let meta = &song.file.meta;
+    let title = match meta.display_title.trim() {
+        "" => &song.title,
+        _ => &meta.display_title,
+    };
+    let encoder = format!("{APP_NAME} {}", env!("CARGO_PKG_VERSION"));
+    let fields = [
+        ("TITLE", title),
+        ("ARTIST", &meta.author),
+        ("ALBUM", &meta.album),
+        ("GENRE", &meta.genre),
+        ("DATE", &meta.year),
+        ("COMMENT", &meta.comment),
+        ("ENCODER", &encoder),
+    ];
+    (fields.into_iter())
+        .filter(|(_, value)| !value.trim().is_empty())
+        .map(|(field, value)| (field, value.trim().to_owned()))
+        .collect()
 }
 
 /// `Saved!`, and a line for the imported content files a project archive left out (`left_out`), in the import's
@@ -466,6 +493,8 @@ pub struct Job {
     stage: Stage,
     /// A split export's stems.
     split: Option<Box<Stems>>,
+    /// What each file is tagged with ([`Self::with_tags`]).
+    tags: Vec<(&'static str, String)>,
 }
 
 /// What a [`Job::step`] ended with.
@@ -558,7 +587,17 @@ impl Job {
             high_quality: page.high_quality,
             stage: Stage::Rendering(Box::new(render)),
             split,
+            tags: Vec::new(),
         })
+    }
+
+    /// The job tags each file it writes with `tags` ([`tags`]), but an FLP's stems: `flp::export` reads their plain
+    /// 46-byte WAV header.
+    pub fn with_tags(mut self, tags: Vec<(&'static str, String)>) -> Self {
+        if self.export.split != Split::Flp {
+            self.tags = tags;
+        }
+        self
     }
 
     pub fn export(&self) -> &Export {
@@ -608,8 +647,9 @@ impl Job {
                         Err(error) => return Some(Done::Failed(error)),
                     };
                     let frames = stream.frames();
-                    let encoder =
-                        Encoder::new(self.export.format, self.rate, self.high_quality, frames);
+                    let tags: Vec<_> = (self.tags.iter()).map(|(f, v)| (*f, v.as_str())).collect();
+                    let (format, rate, hq) = (self.export.format, self.rate, self.high_quality);
+                    let encoder = Encoder::new(format, rate, hq, frames, &tags);
                     self.stage = Stage::Encoding {
                         stream: Box::new(stream),
                         encoder,
@@ -766,27 +806,30 @@ enum Encoder {
 }
 
 impl Encoder {
-    /// For `frames` frames of `format` at `rate` Hz. WAV is also the encoder of a format that has none yet (no such
-    /// format is available to export).
-    fn new(format: ExportFormat, rate: u32, high_quality: bool, frames: usize) -> Self {
+    /// For `frames` frames of `format` at `rate` Hz, tagged with `tags`. WAV is also the encoder of a format that has
+    /// none yet (no such format is available to export).
+    fn new(
+        format: ExportFormat,
+        rate: u32,
+        high_quality: bool,
+        frames: usize,
+        tags: &[(&str, &str)],
+    ) -> Self {
         match (format, high_quality) {
             (ExportFormat::Flac, hq) => {
-                Self::Flac(FlacEncoder::new(rate, if hq { 24 } else { 16 }, 2))
+                let bits = if hq { 24 } else { 16 };
+                Self::Flac(FlacEncoder::with_tags(rate, bits, 2, tags))
             }
-            (ExportFormat::Mp3, hq) => Self::Mp3(Box::new(Mp3Encoder::new(rate, hq))),
-            (ExportFormat::Ogg, hq) => Self::Ogg(Box::new(OggEncoder::new(rate, hq))),
+            (ExportFormat::Mp3, hq) => Self::Mp3(Box::new(Mp3Encoder::with_tags(rate, hq, tags))),
+            (ExportFormat::Ogg, hq) => Self::Ogg(Box::new(OggEncoder::with_tags(rate, hq, tags))),
             (_, false) => {
                 let out = Cursor::new(Vec::with_capacity(HEADER_LEN + frames * 4));
-                Self::Pcm16(WavWriter::new(out, rate, 2).expect("a Vec takes every write"))
+                let wav = WavWriter::with_tags(out, rate, 2, tags);
+                Self::Pcm16(wav.expect("a Vec takes every write"))
             }
             (_, true) => {
                 // `float32_wav`'s header, its sizes those of `frames` frames (capped as its own are).
-                let mut out = float32_wav(rate, &[[0f32; 0]; 2]);
-                let data = u32::try_from(frames * 8)
-                    .unwrap_or(u32::MAX)
-                    .min(u32::MAX - 38);
-                out[4..8].copy_from_slice(&(38 + data).to_le_bytes());
-                out[HEADER_LEN - 4..].copy_from_slice(&data.to_le_bytes());
+                let mut out = header(3, 2, rate, 32, frames as u64 * 8, &info_chunk(tags));
                 out.reserve(frames * 8);
                 Self::Float(out)
             }

@@ -1217,10 +1217,11 @@ fn live_keys_through_the_note_effects_do_not_allocate() {
     assert!(energy > 0.0, "the counted render was silent");
 }
 
-/// Slide notes: slide events every tick to MiniSynth, GMSynth, SuperSaw and 3x Osc,
-/// with seeks, stops and loop wraps, allocate nothing.
+/// Slide notes: slide events every tick to MiniSynth, GMSynth, SuperSaw, 3x Osc and a hosted Lemon Trio (#125, its
+/// voices tuned), with seeks, stops and loop wraps, allocate nothing.
 #[test]
 fn slide_events_do_not_allocate() {
+    use honeydew::plugins::{self, builtin};
     let mut song = Song {
         tempo_bpm: 120.0,
         ..Song::default()
@@ -1229,6 +1230,12 @@ fn slide_events_do_not_allocate() {
     for type_id in [2, 23, 39] {
         song.channels[1].rack.add(type_id);
     }
+    let trio = builtin::all()
+        .iter()
+        .find(|b| b.name == "Lemon Trio")
+        .unwrap();
+    let id = song.channels[1].id;
+    plugins::add(&mut song.channels[1].rack, id, trio.uid, 4).unwrap();
     let clip = song.channels[1].lanes[0].add_clip(0, 8.0);
     for (beat, len_beats, key, slide) in
         [(0, 8.0, 57, false), (1, 1.0, 69, true), (3, 2.0, 64, true)]
@@ -1243,6 +1250,7 @@ fn slide_events_do_not_allocate() {
         });
     }
     song.play_loop = Some((0, 6 * 128));
+    plugins::sync(&song);
     let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
     let mut output = vec![0.0_f32; 4096 * 2];
     engine.play();

@@ -1,27 +1,34 @@
 //! The Song options dialog (`New Song`).
 //!
 //! On the dialog base: the screen dimmed at α 0.6 and a `moduleFill` band across its middle, holding top to bottom: the
-//! title `New Song`, the tempo menu (`80 BPM` … `200 BPM`), the mode list `Time signature:` / `Time division:`, the
-//! first menu (`1` … `16`) `/` the second menu, and `Cancel` / `OK`. The menus are light buttons showing their value; a
-//! tap opens the value's popup with the current item highlighted. In `Time signature:` the second menu is `1` … `16`
-//! too; in `Time division:` it is `2`, `4`, `8`, `16`. The band is modal: the screen around it swallows every click,
-//! and only `Cancel`, Escape and `OK` end it.
+//! song's name (#124, #138: a text field where there was the title `New Song`, holding it at first, selected on the
+//! desktop so that typing replaces it; Enter in it is `OK`), the tempo menu (`80 BPM` … `200 BPM`), the mode list `Time
+//! signature:` / `Time division:`, the first menu (`1` … `16`) `/` the second menu, and `Cancel` / `OK`. The menus are
+//! light buttons showing their value; a tap opens the value's popup with the current item highlighted. In `Time
+//! signature:` the second menu is `1` … `16` too; in `Time division:` it is `2`, `4`, `8`, `16`. The band is modal: the
+//! screen around it swallows every click, and only `Cancel`, Escape and `OK` end it.
 //!
-//! What `OK` makes ([`SongOptions::apply`]): `Time signature:` writes the TDIV pair (first menu, second menu) as
-//! (beats per bar, subdivision), the tempo as picked. `Time division:` writes (first menu, 4) and the tempo times
-//! division / 4.
+//! What `OK` makes ([`SongOptions::apply`]): the typed name is the song's title, which its first save takes as its file
+//! name (`New Song` left as it is keeps the song untitled, as before). `Time signature:` writes the TDIV pair (first
+//! menu, second menu) as (beats per bar, subdivision), the tempo as picked. `Time division:` writes (first menu, 4) and
+//! the tempo times division / 4.
 
-use eframe::egui::{Align2, Id, Pos2, Rect, Sense, Ui, pos2, vec2};
+use eframe::egui::text::{CCursor, CCursorRange};
+use eframe::egui::text_edit::TextEditState;
+use eframe::egui::{Align, Align2, Id, Key, Pos2, Rect, Sense, TextEdit, Ui, pos2, vec2};
 
 use crate::metrics::{FontSize, Metrics};
 use crate::song::{Song, TimeSig};
 use crate::ui::UiCtx;
 use crate::ui::dialog;
+use crate::ui::main_menu::text_field;
 use crate::ui::popup::{self, PopupItem};
 use crate::ui::widgets::{Bar, Button, ItemList, button, item_list_index, text_label};
 
-/// The dialog's title.
+/// The dialog's title, and the name field's first text.
 pub const TITLE: &str = "New Song";
+/// The most characters the name field takes, as PROJECT's text fields.
+const NAME_LIMIT: usize = 255;
 /// The mode list's items, in [`Mode`] order.
 pub const MODES: [&str; 2] = ["Time signature:", "Time division:"];
 /// The division menu's items.
@@ -45,8 +52,10 @@ pub enum Mode {
 }
 
 /// The dialog's choices.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SongOptions {
+    /// The name field: the song's title.
+    pub name: String,
     /// The tempo menu, BPM.
     pub tempo: u16,
     pub mode: Mode,
@@ -58,10 +67,11 @@ pub struct SongOptions {
     pub division: u16,
 }
 
-/// `140 BPM`, `4` / `4`; division 4 (×1).
+/// `New Song`, `140 BPM`, `4` / `4`; division 4 (×1).
 impl Default for SongOptions {
     fn default() -> Self {
         Self {
+            name: TITLE.to_owned(),
             tempo: 140,
             mode: Mode::Signature,
             beats: 4,
@@ -73,7 +83,7 @@ impl Default for SongOptions {
 
 impl SongOptions {
     /// The TDIV pair the choices write.
-    pub fn time_sig(self) -> TimeSig {
+    pub fn time_sig(&self) -> TimeSig {
         TimeSig {
             subdivision: match self.mode {
                 Mode::Signature => self.steps,
@@ -84,7 +94,7 @@ impl SongOptions {
     }
 
     /// The song tempo the choices give, BPM.
-    pub fn tempo_bpm(self) -> f64 {
+    pub fn tempo_bpm(&self) -> f64 {
         let tempo = f64::from(self.tempo);
         match self.mode {
             Mode::Signature => tempo,
@@ -92,10 +102,14 @@ impl SongOptions {
         }
     }
 
-    /// Writes the choices into `song`: TDIV and the tempo.
-    pub fn apply(self, song: &mut Song) {
+    /// Writes the choices into `song`: TDIV, the tempo, and the typed name as its title (none for `New Song`).
+    pub fn apply(&self, song: &mut Song) {
         song.time_sig = self.time_sig();
         song.tempo_bpm = self.tempo_bpm();
+        let name = self.name.trim();
+        if name != TITLE {
+            song.title = name.to_owned();
+        }
     }
 }
 
@@ -110,7 +124,7 @@ enum Menu {
 }
 
 /// `menu`'s popup items over `o`, each holding its value.
-fn items(menu: Menu, o: SongOptions) -> Vec<PopupItem<u16>> {
+fn items(menu: Menu, o: &SongOptions) -> Vec<PopupItem<u16>> {
     // (value, column, row, label).
     let cells: Vec<(u16, usize, usize, String)> = match (menu, o.mode) {
         (Menu::Tempo, _) => (tempos().enumerate())
@@ -141,7 +155,7 @@ fn items(menu: Menu, o: SongOptions) -> Vec<PopupItem<u16>> {
 }
 
 /// `menu`'s value in `o`.
-fn value(menu: Menu, o: SongOptions) -> u16 {
+fn value(menu: Menu, o: &SongOptions) -> u16 {
     match (menu, o.mode) {
         (Menu::Tempo, _) => o.tempo,
         (Menu::Beats, _) => o.beats.into(),
@@ -159,6 +173,7 @@ const MODE_ROW: (f32, f32) = (3.25, 1.0);
 const MENU_ROW: (f32, f32) = (4.5, 1.25);
 const BUTTON_ROW: (f32, f32) = (6.25, 1.25);
 const TEMPO_W: f32 = 4.0;
+const NAME_W: f32 = 6.0;
 /// Each mode cell holds `Time signature:` (about 4.4 U at 10 pt).
 const MODE_W: f32 = 11.0;
 const MENU_W: f32 = 2.0;
@@ -203,7 +218,7 @@ fn layout(screen: Rect, m: &Metrics) -> Layout {
     let buttons = row(BUTTON_ROW, &[BUTTON_W, BUTTON_GAP, BUTTON_W]);
     Layout {
         band,
-        title: row(TITLE_ROW, &[MODE_W])[0],
+        title: row(TITLE_ROW, &[NAME_W])[0],
         tempo: row(TEMPO_ROW, &[TEMPO_W])[0],
         modes: row(MODE_ROW, &[MODE_W])[0],
         beats: menus[0],
@@ -215,7 +230,7 @@ fn layout(screen: Rect, m: &Metrics) -> Layout {
 }
 
 /// What the user did this frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SongOptionsAction {
     /// `OK`: make the new song with these.
     Ok(SongOptions),
@@ -229,6 +244,8 @@ pub struct SongOptionsDialog {
     pub options: SongOptions,
     /// The open menu and the point its popup is centred on.
     menu: Option<(Menu, Pos2)>,
+    /// The name field has had its first frame: on the desktop it took the focus then, its text selected.
+    named: bool,
 }
 
 impl SongOptionsDialog {
@@ -243,16 +260,31 @@ impl SongOptionsDialog {
         // at α 0.6, then the floating panel, from the first frame.
         ui.interact(screen, id.with("backdrop"), Sense::click_and_drag());
         dialog::paint_base(ui.painter(), ui.painter(), (c, m), screen, l.band);
-        text_label(
-            ui,
-            cx,
-            l.title,
-            TITLE,
-            FontSize::Pt12,
-            Align2::CENTER_CENTER,
-            text,
-        );
-        let o = self.options;
+        let mut action = None;
+        let name_id = id.with("name");
+        let first = !std::mem::replace(&mut self.named, true);
+        if first && crate::android_text::REFOCUS {
+            let mut state = TextEditState::load(ui.ctx(), name_id).unwrap_or_default();
+            let end = CCursor::new(self.options.name.chars().count());
+            let all = CCursorRange::two(CCursor::new(0), end);
+            state.cursor.set_char_range(Some(all));
+            state.store(ui.ctx(), name_id);
+        }
+        let name = &mut self.options.name;
+        let edit = TextEdit::singleline(name)
+            .id(name_id)
+            .char_limit(NAME_LIMIT)
+            .horizontal_align(Align::Center);
+        let mut field = text_field(ui, cx, l.title, TITLE, edit);
+        crate::android_text::edit(&mut field, name, NAME_LIMIT);
+        if first && crate::android_text::REFOCUS {
+            field.request_focus();
+        }
+        // Enter in the field is `OK`.
+        if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+            action = Some(SongOptionsAction::Ok(self.options.clone()));
+        }
+        let o = self.options.clone();
         let mut menu = |ui: &mut Ui, menu: Menu, part: &str, rect: Rect, label: &str| {
             let b = Button::new(id.with(part), rect, label, false, c);
             if button(ui, cx, &b, true).clicked() {
@@ -285,14 +317,18 @@ impl SongOptionsDialog {
             Align2::CENTER_CENTER,
             text,
         );
-        let second = value(Menu::Second, o).to_string();
+        let second = value(Menu::Second, &o).to_string();
         menu(ui, Menu::Second, "second", l.second, &second);
         self.options.mode = [Mode::Signature, Mode::Division][mode];
 
-        let mut action = None;
         let ends = [
             ("cancel", l.cancel, "Cancel", SongOptionsAction::Cancel),
-            ("ok", l.ok, "OK", SongOptionsAction::Ok(self.options)),
+            (
+                "ok",
+                l.ok,
+                "OK",
+                SongOptionsAction::Ok(self.options.clone()),
+            ),
         ];
         for (part, rect, label, end) in ends {
             let b = dialog::button(id.with(part), rect, label, c, m);
@@ -302,7 +338,7 @@ impl SongOptionsDialog {
         }
         // The open menu, over the band; it takes Escape first.
         if let Some((menu, at)) = self.menu {
-            let items = items(menu, self.options);
+            let items = items(menu, &self.options);
             let result = popup::show(ui.ctx(), id.with("menu"), at, screen, &items, cx);
             if let Some(v) = result.selected {
                 let o = &mut self.options;
@@ -356,6 +392,7 @@ mod tests {
         assert_eq!(
             o,
             SongOptions {
+                name: TITLE.into(),
                 tempo: 140,
                 mode: Mode::Signature,
                 beats: 4,
@@ -423,6 +460,7 @@ mod tests {
                         // Not this mode's: ignored.
                         steps: 13,
                         division,
+                        ..SongOptions::default()
                     };
                     assert_eq!(o.time_sig(), sig(4, beats), "{o:?}");
                     assert_eq!(o.tempo_bpm(), f64::from(tempo) * factor, "{o:?}");
@@ -445,19 +483,31 @@ mod tests {
                 .map(|i| (i.label.into_owned(), i.col, i.row, i.current))
                 .collect()
         };
-        let tempo = cells(items(Menu::Tempo, o));
+        let tempo = cells(items(Menu::Tempo, &o));
         assert_eq!(tempo.len(), 13);
         assert_eq!(tempo[0], ("80 BPM".into(), 0, 0, false));
         assert_eq!(tempo[6], ("140 BPM".into(), 0, 6, true));
         assert_eq!(tempo[12], ("200 BPM".into(), 0, 12, false));
         // 1–8 in the left column, 9–16 in the right.
-        let beats = cells(items(Menu::Beats, SongOptions { beats: 9, ..o }));
+        let beats = cells(items(
+            Menu::Beats,
+            &SongOptions {
+                beats: 9,
+                ..o.clone()
+            },
+        ));
         assert_eq!(beats.len(), 16);
         assert_eq!(beats[0], ("1".into(), 0, 0, false));
         assert_eq!(beats[7], ("8".into(), 0, 7, false));
         assert_eq!(beats[8], ("9".into(), 1, 0, true));
         assert_eq!(beats[15], ("16".into(), 1, 7, false));
-        let steps = cells(items(Menu::Second, SongOptions { steps: 16, ..o }));
+        let steps = cells(items(
+            Menu::Second,
+            &SongOptions {
+                steps: 16,
+                ..o.clone()
+            },
+        ));
         assert_eq!(steps.len(), 16);
         assert_eq!(steps[15], ("16".into(), 1, 7, true));
         let division = SongOptions {
@@ -466,7 +516,7 @@ mod tests {
             ..o
         };
         assert_eq!(
-            cells(items(Menu::Second, division)),
+            cells(items(Menu::Second, &division)),
             [
                 ("2".into(), 0, 0, false),
                 ("4".into(), 0, 1, false),
@@ -506,7 +556,7 @@ mod tests {
         ) -> Option<SongOptionsAction> {
             let (dialog, mut action) = (&mut self.dialog, None);
             let mut f = |ui: &mut Ui, cx: &UiCtx| {
-                action = dialog.show(ui, cx, SCREEN).or(action);
+                action = dialog.show(ui, cx, SCREEN).or(action.take());
             };
             let shapes = match click {
                 Some(pos) => {
@@ -530,7 +580,7 @@ mod tests {
                     _ => None,
                 })
                 .collect();
-            self.action = action;
+            self.action = action.clone();
             action
         }
 
@@ -669,8 +719,12 @@ mod tests {
             beats: 7,
             steps: 12,
             division: 16,
+            ..SongOptions::default()
         };
-        assert_eq!(rig.click_text("OK"), Some(SongOptionsAction::Ok(picked)));
+        assert_eq!(
+            rig.click_text("OK"),
+            Some(SongOptionsAction::Ok(picked.clone()))
+        );
         assert_eq!((picked.time_sig(), picked.tempo_bpm()), (sig(4, 7), 360.0));
         // Back to `Time signature:`, the subdivision kept.
         rig.click_text("Time signature:");

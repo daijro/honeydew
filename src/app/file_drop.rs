@@ -12,6 +12,9 @@
 //!
 //! One drop is one undo step, and an ordinary song edit in a live session. The last new channel becomes the current one.
 //! A file that does not decode makes nothing, and the drop ends on a message naming it.
+//!
+//! #117: Tesla's `Send to arranger as audio clip` is sent as SONGS' `Send to playlist` sends: its file kept in the user's
+//! `My Recordings` first, as Tesla's `Save` keeps one there.
 
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -48,6 +51,13 @@ impl HoneydewApp {
     /// After the screens, each frame: the drag's curtain, drop target and name ([`file_drag::end_frame`]); a drop
     /// starts its import, and an import whose decode landed makes its clips. A drop while one imports is dropped.
     pub(super) fn file_drop(&mut self, ctx: &egui::Context, m: &Metrics, tick: u64) {
+        // #117: what Tesla sent to the arranger this frame (the module docs).
+        for sent in os_plugkit::embed::take_sent() {
+            let bytes = std::fs::read(&sent).ok();
+            let kept = bytes.and_then(|b| self.files.keep_saved(&sent, b));
+            let _ = std::fs::remove_file(&sent);
+            file_drag::send(ctx, kept.into_iter().collect());
+        }
         let cx = UiCtx {
             theme: &self.theme,
             m,

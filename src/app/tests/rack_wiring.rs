@@ -101,7 +101,7 @@ pub(super) fn close_picker(rig: &mut Rig) {
     rig.frame(vec![]);
 }
 
-fn pick(rig: &mut Rig, query: &str) {
+pub(super) fn pick(rig: &mut Rig, query: &str) {
     for _ in 0..3 {
         rig.frame(vec![]);
     }
@@ -1574,7 +1574,7 @@ fn the_add_channel_rack_picks_a_rack_preset_for_a_new_selected_channel() {
         rig.overlays(),
         [picker(0, PresetTarget::NewChannel(Some(1)))]
     );
-    picker_row(&mut rig, 0);
+    // In `My Files`, where the last pick left it (issue #131).
     picker_row(&mut rig, 0);
     assert_eq!(rig.app.song.channels[1].kind, ChannelKind::Rack);
     assert_eq!(types(&rig, 1), [51, 6]);
@@ -1595,6 +1595,8 @@ fn an_instrument_preset_renames_a_channel_never_renamed_and_leaves_a_renamed_one
     let id = instance_id(&rig, 1, 0);
     let pick = |rig: &mut Rig, rows: &[usize]| {
         rig.click_id(preset_button(1, id));
+        // From the root, wherever it was left (issue #131).
+        picker_root(rig);
         for &row in rows {
             picker_row(rig, row);
         }
@@ -1628,6 +1630,7 @@ fn an_instrument_preset_renames_a_channel_never_renamed_and_leaves_a_renamed_one
     rig.slide_rack();
     let id = instance_id(&rig, 3, 0);
     rig.click_id(preset_button(3, id));
+    picker_root(&mut rig);
     picker_row(&mut rig, 1);
     let ch = &rig.app.song.channels[3];
     assert_eq!((&*ch.name, &*ch.file.preset_name), ("MiniSynth 2", ""));
@@ -1711,9 +1714,11 @@ fn default_never_gives_a_channel_another_channels_name() {
     picker_row(&mut rig, 0);
     picker_row(&mut rig, 0);
     assert_eq!(rig.app.song.channels[2].name, "Bass");
-    // `Default`: its base name, "MiniSynth 2", is channel 3's, so the name stays.
+    // `Default`: its base name, "MiniSynth 2", is channel 3's, so the name stays. It opens in `My Files`, where it was
+    // left (issue #131).
     close_picker(&mut rig);
     rig.click_id(preset_button(2, id));
+    picker_root(&mut rig);
     picker_row(&mut rig, 1);
     let names: Vec<_> = (rig.app.song.channels.iter())
         .map(|c| c.name.as_str())
@@ -2292,7 +2297,9 @@ fn a_failed_streams_meters_reach_no_panel() {
     rig.rec.0.borrow_mut().meters = vec![meter.clone()];
     rig.frame(vec![]);
     assert_eq!(rig.app.slots.rack.meters(), Some(&[meter][..]));
+    // Failed, and its reopen too (the device is gone).
     rig.rec.0.borrow_mut().failed = true;
+    rig.rec.0.borrow_mut().no_device = true;
     rig.frame(vec![]);
     assert_eq!(rig.app.slots.rack.meters(), None);
 }
@@ -2894,6 +2901,8 @@ fn open_chord_sets(rig: &mut Rig) {
     let target = PresetTarget::ChordSet;
     rig.app.navigate(Nav::Open(picker(1, target)));
     assert_eq!(rig.overlays(), [picker(1, target)]);
+    // It opens where it was left (issue #131): these tests start at its root.
+    picker_root(rig);
 }
 
 #[test]

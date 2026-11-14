@@ -4,9 +4,10 @@
 //!   `Import` with a file the system's picker gives, and a song or archive row with that file's song, through
 //!   [`ProjectFiles::replace`] (which asks first when the song has unsaved changes). `Save` saves it (as `Ctrl+S`).
 //!   `Unzip` extracts the selected archive ([`ProjectFiles::unzip_archive`]) and leaves the song as it is.
-//! - PROJECT: the tempo steps are song edits; the title, author and link (META@520, @264, @777) are param edits with
-//!   no undo step and no rebuild. The title is the display title, not the file name (`Song::title`, HEAD@8), which
-//!   names the file a quick save writes. The times and the lock come from `META`.
+//! - PROJECT: the tempo steps are song edits; the title, author and link (META@520, @264, @777) and the tag fields
+//!   (#139, `HDTg`) are param edits with no undo step and no rebuild; `Write tags on export` is a setting. The title
+//!   is the display title, not the file name (`Song::title`, HEAD@8), which names the file a quick save writes. The
+//!   times and the lock come from `META`.
 //!   `Samplerate:` is the running audio output's (`AudioLink::sample_rate`), `-` without one; PR #87: its dropdown
 //!   sets the project's own rate (`Song::sample_rate`, a song edit), which the row then shows.
 //!   `Reset`, `Hide` and `Lock metadata forever` each ask once, then set the time spent to 0, the time spent to −1
@@ -233,6 +234,11 @@ pub fn show(
     info.title.clone_from(&meta.display_title);
     info.author.clone_from(&meta.author);
     info.link.clone_from(&meta.info_url);
+    info.album.clone_from(&meta.album);
+    info.genre.clone_from(&meta.genre);
+    info.year.clone_from(&meta.year);
+    info.comment.clone_from(&meta.comment);
+    info.write_tags = app.settings.write_tags;
     info.time_spent_secs = meta.editing_seconds;
     info.metadata_locked = meta.locked;
     info.started_on = meta_secs(&meta.created);
@@ -270,14 +276,23 @@ pub fn show(
     let action = action.or(answered);
     *tab = state.menu.tab;
 
-    // The display title, author and link are no undo steps (`Song::keep_unedited`) and the audio never reads them:
-    // param edits, with no rebuild, which set the song-changed flag.
+    // The display title, author, link and tag fields are no undo steps (`Song::keep_unedited`) and the audio never
+    // reads them: param edits, with no rebuild, which set the song-changed flag.
+    app.settings.write_tags = info.write_tags;
     let meta = &mut app.song.file.meta;
-    let typed = (&info.title, &info.author, &info.link);
-    if typed != (&meta.display_title, &meta.author, &meta.info_url) {
-        meta.display_title.clone_from(&info.title);
-        meta.author.clone_from(&info.author);
-        meta.info_url.clone_from(&info.link);
+    let fields = [
+        (&info.title, &mut meta.display_title),
+        (&info.author, &mut meta.author),
+        (&info.link, &mut meta.info_url),
+        (&info.album, &mut meta.album),
+        (&info.genre, &mut meta.genre),
+        (&info.year, &mut meta.year),
+        (&info.comment, &mut meta.comment),
+    ];
+    if fields.iter().any(|(typed, held)| *typed != &**held) {
+        for (typed, held) in fields {
+            held.clone_from(typed);
+        }
         app.param_edited();
     }
     state.preview(&ctx, app.audio);
@@ -372,6 +387,7 @@ pub fn show(
             crate::ui::file_drag::send(&ctx, files);
             return Some(Nav::Close);
         }
+        MainMenuAction::ClearPerformance => perf.clear_counters(),
     }
     nav
 }

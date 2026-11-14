@@ -33,7 +33,8 @@ fn wav(samples: &[f32]) -> Vec<u8> {
     bytes
 }
 
-/// The test samples by name: `ramp` (x[i] = i/2^20) and `dc` (0.5), 4 beats long, and a beat of 441 Hz `sine`.
+/// The test samples by name: `ramp` (x[i] = i/2^20) and `dc` (0.5), 4 beats long, a beat of 441 Hz `sine`, and
+/// `long`, the ramp 16 beats long.
 fn read(path: &ContentPath) -> Option<Vec<u8>> {
     let ContentPath::Plain(name) = path else {
         return None;
@@ -41,6 +42,7 @@ fn read(path: &ContentPath) -> Option<Vec<u8>> {
     let samples: Vec<f32> = match name.as_str() {
         "ramp" => (0..4 * BEAT).map(|i| i as f32 / SCALE).collect(),
         "dc" => vec![0.5; 4 * BEAT],
+        "long" => (0..16 * BEAT).map(|i| i as f32 / SCALE).collect(),
         "sine" => (0..BEAT)
             .map(|i| 0.5 * (std::f32::consts::TAU * 441.0 * i as f32 / RATE).sin())
             .collect(),
@@ -643,5 +645,86 @@ fn a_pitch_bend_lane_bends_the_clips_along_its_curve() {
         let rate = (at(out[frame + 64]) - at(out[frame])) / 64.0;
         let want = ((frame + 32) as f32 / BEAT as f32 / 2.0).exp2();
         assert!(close(rate / want, 1.0, 0.005), "{k}: {rate}, not {want}");
+    }
+}
+
+/// The tempo [`slowing`]'s lane plays from beat 4: 60 BPM in its value's 1/65535 steps.
+fn slowed_bpm() -> f64 {
+    use honeydew::song::{automated_tempo, points, tempo_value};
+    automated_tempo(points::unit(points::raw(tempo_value(60.0))))
+}
+
+/// 120 BPM, and from beat 4 the master's tempo lane says 60, over a 16-beat clip of the `long` ramp from the start,
+/// SYNC on or off.
+fn slowing(sync: bool) -> Song {
+    use honeydew::song::{TEMPO_TARGET, tempo_value};
+    let mut song = song();
+    let lane = song.channels[0].add_automation_lane(TEMPO_TARGET);
+    lane.add_clip(0, 16.0).events.push(Event::Automation {
+        pos: 4 * 128,
+        value: tempo_value(60.0),
+        control: true,
+    });
+    slot(clip(&mut song, 0, 16.0, "long")).file.stretch_mode = u8::from(sync);
+    song
+}
+
+/// Honeydew change (#126): a SYNC clip follows the tempo automation by resampling, its pitch moving with
+/// the tempo. From beat 4, at 60 BPM, the ramp plays at half speed, and at bar 3 (beat 8, about 12 beats of 120 BPM
+/// frames in) it reads beat 8 of its sample. A SYNC-off clip plays on at its native speed.
+#[test]
+fn a_sync_clip_follows_the_tempo_automation_and_a_sync_off_one_keeps_its_speed() {
+    let reads = |output: &[f32], frame: usize, position: f64| {
+        let got = at(output[frame]);
+        assert!(
+            close(got, position as f32, 0.5),
+            "frame {frame}: at {got}, not {position}"
+        );
+    };
+    let half = slowed_bpm() / 120.0;
+    let bar_3 = 4 * BEAT + (4.0 * 60.0 * f64::from(RATE) / slowed_bpm()).round() as usize;
+    let out = play(&slowing(true), bar_3 + 1001);
+    reads(&out, 4 * BEAT - 1000, (4 * BEAT - 1000) as f64);
+    reads(&out, 4 * BEAT + 2000, (4 * BEAT) as f64 + 2000.0 * half);
+    reads(&out, bar_3, (8 * BEAT) as f64);
+    reads(&out, bar_3 + 1000, (8 * BEAT) as f64 + 1000.0 * half);
+    let out = play(&slowing(false), bar_3 + 1);
+    reads(&out, 4 * BEAT + 2000, (4 * BEAT + 2000) as f64);
+    reads(&out, bar_3, bar_3 as f64);
+}
+
+/// Honeydew change (#126): an export renders what playback plays at the tempo automation's tempos, the whole song
+/// (4 beats at 120 BPM, then 12 at 60) sample for sample.
+#[test]
+fn a_render_plays_the_tempo_automation_as_playback_does() {
+    use honeydew::render::{Remainder, Render, RenderRange, RenderSpec};
+    let song = slowing(true);
+    let mut cache = SampleCache::default();
+    cache.load(&song, &read);
+    let spec = RenderSpec {
+        range: RenderRange::Full,
+        remainder: Remainder::Cut,
+        normalize: false,
+        high_quality: true,
+        rate: RATE as u32,
+        solo: None,
+        master_effects: true,
+    };
+    let mut stream = Render::new(&song, &cache, spec).unwrap().finish().unwrap();
+    let mut rendered = Vec::new();
+    while !stream.done() {
+        if let Some([left, _]) = stream.step() {
+            rendered.extend_from_slice(left);
+        }
+    }
+    let range = 4 * BEAT + (12.0 * 60.0 * f64::from(RATE) / slowed_bpm()).round() as usize;
+    assert!(
+        rendered.len().abs_diff(range) <= 1,
+        "{} frames, not {range}",
+        rendered.len()
+    );
+    let played = play(&song, rendered.len());
+    for (frame, (r, p)) in rendered.iter().zip(&played).enumerate() {
+        assert!(close(*r, *p, 1e-6), "frame {frame}: {r} vs {p}");
     }
 }

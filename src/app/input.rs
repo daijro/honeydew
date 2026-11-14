@@ -137,6 +137,12 @@ impl HoneydewApp {
                 self.calibration = None;
             }
             Some(Calibrating::Running(None)) => {
+                // Android and iOS ask for the microphone first: the test waits for the answer (Honeydew change, #129).
+                // A denial ends it with where to allow it (`HoneydewApp::open_input`).
+                if self.input.ring().is_none() && !self.input_failed && self.audio.running() {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                    return;
+                }
                 if self.input.ring().is_none() || !self.audio.running() {
                     return self.calibrated(Err(Failure::Unknown));
                 }

@@ -215,6 +215,11 @@ pub(crate) struct PluginInstrument {
     queue: [Pending; QUEUE],
     queued: usize,
     held: [bool; 128],
+    /// #125: the keys started since the plugin last had no voices, held or ringing: a slide tunes their voices.
+    ringing: [bool; 128],
+    /// The slide's pitch offset in semitones the engine last set ([`Instrument::set_slide`]), and the one sent.
+    slide: f32,
+    tuned: f32,
     reset: bool,
     /// It takes the sustain pedal itself ([`Instrument::takes_pedal`]).
     pedal: bool,
@@ -240,6 +245,9 @@ impl PluginInstrument {
             queue: [Pending::Off(0); QUEUE],
             queued: 0,
             held: [false; 128],
+            ringing: [false; 128],
+            slide: 0.0,
+            tuned: 0.0,
             reset: false,
             left: vec![0.0; max_block.max(1)],
             right: vec![0.0; max_block.max(1)],
@@ -265,6 +273,7 @@ impl Instrument for PluginInstrument {
     fn note_on(&mut self, key: u8, velocity: f32, _pan: f32) {
         let key = key.min(127);
         self.held[usize::from(key)] = true;
+        self.ringing[usize::from(key)] = true;
         self.push(Pending::On(key, velocity.clamp(0.0, 1.0)));
     }
 
@@ -285,6 +294,8 @@ impl Instrument for PluginInstrument {
     fn reset(&mut self) {
         self.queued = 0;
         self.held = [false; 128];
+        self.ringing = [false; 128];
+        (self.slide, self.tuned) = (0.0, 0.0);
         self.reset = true;
     }
 
@@ -304,6 +315,13 @@ impl Instrument for PluginInstrument {
             }
         }
         self.queued = 0;
+        // Slides as the built-in synths take them: each voice sounding is tuned to the offset, a new one starts at 0.
+        if self.slide != self.tuned {
+            self.tuned = self.slide;
+            for key in (0..128u8).filter(|&k| self.ringing[usize::from(k)]) {
+                plugin.tune(0, key, self.slide);
+            }
+        }
         for (out_l, out_r) in left
             .chunks_mut(self.left.len())
             .zip(right.chunks_mut(self.right.len()))
@@ -322,6 +340,9 @@ impl Instrument for PluginInstrument {
             for (o, s) in out_r.iter_mut().zip(r.iter()) {
                 *o += s;
             }
+        }
+        if plugin.voices() == 0 {
+            self.ringing = self.held;
         }
     }
 
@@ -347,6 +368,14 @@ impl Instrument for PluginInstrument {
     /// CC #64 reaches it as any CC (the engine sends it only to an instrument that takes the pedal).
     fn takes_pedal(&self) -> bool {
         self.pedal
+    }
+
+    /// #125: the pitch offset tunes the plugin's voices (`tune`, a CLAP tuning expression) at the next block. A plugin
+    /// has no per-voice velocity, and a voice's pan only at its start, so a slide's pan and velocity are not sent.
+    fn set_slide(&mut self, pitch: f32, _pan: f32, _velocity: f32) {
+        if pitch.is_finite() {
+            self.slide = pitch;
+        }
     }
 }
 

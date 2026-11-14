@@ -835,10 +835,11 @@ mod audio {
     }
 
     #[test]
-    fn without_a_calibration_a_take_drops_the_engines_buffer_size_and_with_the_toggle_on_nothing() {
-        // L = the engine's audio buffer size, 256 frames here, while compensating (the toggle unset or OFF); nothing
-        // with the toggle ON.
-        for (toggle, dropped) in [(None, 256), (Some(false), 256), (Some(true), 0)] {
+    fn without_a_calibration_a_take_drops_the_engines_buffer_size_and_with_the_toggle_off_nothing()
+    {
+        // L = the engine's audio buffer size, 256 frames here, while compensating (the toggle ON, Honeydew change
+        // #129); nothing with the toggle OFF.
+        for (toggle, dropped) in [(true, 256), (false, 0)] {
             let mut a = AudioRig::new("buffer", false);
             a.rig.rec.0.borrow_mut().buffer_frames = 256;
             a.rig.app.settings.latency_compensation = toggle;
@@ -1264,7 +1265,7 @@ fn notes_record_at_the_song_position_with_no_latency_compensation() {
     // buffer size moves it, though they move an audio take of the same pass earlier.
     let mut rig = note_rig(false, 5 * BEAT + 3);
     rig.app.latency = Some(480);
-    rig.app.settings.latency_compensation = None;
+    rig.app.settings.latency_compensation = true;
     rig.rec.0.borrow_mut().buffer_frames = 256;
     rig.click(REC);
     rig.click(PLAY);

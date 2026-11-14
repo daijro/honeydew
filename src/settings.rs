@@ -156,11 +156,11 @@ pub struct Settings {
     /// `Sound mode:`, a stored id from [`SOUND_MODES`], selecting the platform's audio mode.
     #[serde(rename = "soundModeAndr")]
     pub sound_mode: u8,
-    /// `Enable audio recording latency compensation`: the toggle as stored, `None` while unset. Its meaning is
-    /// inverted: compensation is on exactly when the toggle is OFF, and an unset key shows the toggle ON but
-    /// compensates ([`crate::recording::recorder::compensates`]).
-    #[serde(rename = "reclatency")]
-    pub latency_compensation: Option<bool>,
+    /// `Enable audio recording latency compensation` (our own key): ON compensates. Honeydew change (#129, #130): the
+    /// earlier `reclatency` toggle compensated while OFF or unset; a load moves it here once, keeping whether it
+    /// compensated ([`migrate_keys`]). On by default, as the earlier unset key compensated.
+    #[serde(rename = "recLatencyCompensation")]
+    pub latency_compensation: bool,
     /// `Enable multitrack recording`. Stored only.
     #[serde(rename = "multitrackrec")]
     pub multitrack_recording: bool,
@@ -350,6 +350,10 @@ pub struct Settings {
     /// and resizes. 0.5 (centred) by default ([`crate::ui::rack::rack_tab`]).
     #[serde(rename = "rackTabPlace")]
     pub rack_tab_place: f32,
+    /// PROJECT's `Write tags on export` (our own key; #139): an audio render writes the song's title, author and other
+    /// tag fields into the file ([`crate::project_files::export::tags`]). On by default.
+    #[serde(rename = "writeTagsOnExport")]
+    pub write_tags: bool,
 }
 
 /// `Project version size limit:`'s items, in MB.
@@ -374,7 +378,7 @@ impl Default for Settings {
             low_latency: 0,
             background_audio: false,
             sound_mode: DEFAULT_SOUND_MODE,
-            latency_compensation: None,
+            latency_compensation: true,
             multitrack_recording: false,
             count_in: true,
             rec_metronome: true,
@@ -426,6 +430,7 @@ impl Default for Settings {
             graph_tab_shift: 0.0,
             picker_keys: true,
             rack_tab_place: 0.5,
+            write_tags: true,
         }
     }
 }
@@ -597,6 +602,14 @@ fn migrate_keys(fields: &mut Map<String, Value>) {
         && !fields.contains_key("demoSongsVersion")
     {
         fields.insert("demoSongsVersion".into(), DEMO_SONGS_VERSION.into());
+    }
+    // Honeydew change (#129, #130): the earlier inverted latency toggle, which compensated unless TRUE, becomes the
+    // ON-compensates one, compensation kept.
+    if let Some(toggle) = fields.remove("reclatency")
+        && !fields.contains_key("recLatencyCompensation")
+    {
+        let compensates = toggle != Value::Bool(true);
+        fields.insert("recLatencyCompensation".into(), compensates.into());
     }
 }
 
@@ -808,7 +821,7 @@ mod tests {
                 .get(1)
                 .map(|&(id, _)| id)
                 .unwrap_or(d.sound_mode),
-            latency_compensation: Some(false),
+            latency_compensation: !d.latency_compensation,
             multitrack_recording: !d.multitrack_recording,
             count_in: !d.count_in,
             rec_metronome: !d.rec_metronome,
@@ -869,6 +882,7 @@ mod tests {
             graph_tab_shift: -3.5,
             picker_keys: !d.picker_keys,
             rack_tab_place: 0.25,
+            write_tags: !d.write_tags,
         }
     }
 
@@ -880,8 +894,8 @@ mod tests {
             d.ghost_notes && d.range_labels && d.hardware_meters && d.count_in && d.rec_metronome
         );
         assert!(d.picker_keys);
-        // The latency toggle is unset: shown ON, and it compensates.
-        assert_eq!(d.latency_compensation, None);
+        // The latency toggle is ON: it compensates.
+        assert!(d.latency_compensation);
         // The other toggles are off.
         assert!(!d.multi_core && d.low_latency == 0 && !d.background_audio);
         assert!(!d.multitrack_recording);
@@ -933,18 +947,27 @@ mod tests {
         assert_eq!(Settings::load(&stored("[1, 2]")), Settings::default());
     }
 
+    /// Honeydew change (#129, #130): the latency toggle is ON while it compensates. The earlier inverted `reclatency`
+    /// (compensating while FALSE or unset) moves to its own key once, compensation kept: shown ON where it ran.
     #[test]
-    fn the_latency_toggle_stores_true_or_false_and_reads_unset_as_none() {
-        // The stored TRUE/FALSE, and no key at all for a fresh install.
+    fn the_inverted_latency_toggle_moves_once_and_keeps_whether_it_compensates() {
         for (json, want) in [
-            (r#"{"reclatency": true}"#, Some(true)),
-            (r#"{"reclatency": false}"#, Some(false)),
-            ("{}", None),
+            (r#"{"reclatency": true}"#, false),
+            (r#"{"reclatency": false}"#, true),
+            ("{}", true),
+            (r#"{"recLatencyCompensation": false}"#, false),
+            // Moved already: the old key, left by an older version, changes nothing.
+            (
+                r#"{"recLatencyCompensation": true, "reclatency": true}"#,
+                true,
+            ),
         ] {
             let s = Settings::load(&stored(json));
             assert_eq!(s.latency_compensation, want, "{json}");
             let mut mem = Mem::default();
             s.save(&mut mem);
+            let saved = mem.0.get(STORAGE_KEY).cloned().unwrap_or_default();
+            assert!(!saved.contains("\"reclatency\""), "{saved}");
             assert_eq!(Settings::load(&mem).latency_compensation, want, "{json}");
         }
     }
@@ -1103,10 +1126,10 @@ mod tests {
                 "projectVersionSizeLimit",
                 "rackTabPlace",
                 "rackTabShift",
+                "recLatencyCompensation",
                 "recMetronome",
                 "reccount",
                 "recentKbdSizeCells",
-                "reclatency",
                 "sampleMemoryLimit",
                 "screenOrientation",
                 "showHardwareMeters",
@@ -1120,7 +1143,8 @@ mod tests {
                 "soundsOverMobileData",
                 "theme",
                 "uiscalefactor",
-                "whatsNewSeen"
+                "whatsNewSeen",
+                "writeTagsOnExport"
             ]
         );
     }

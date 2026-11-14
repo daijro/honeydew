@@ -540,7 +540,8 @@ impl Song {
     }
 
     /// Takes from `current` what is not an edit, onto a song that undo or redo restored (or that a history compares):
-    /// the title (a save sets it), the META display title, author and link (the PROJECT tab types them), the play loop
+    /// the title (a save sets it), the META display title, author and link and the tag fields (the PROJECT tab types
+    /// them), the play loop
     /// (the rulers set it), the save stamp ([`Self::stamp_save`]: version, song GUID, created and modified dates), the
     /// view state a file keeps (HEAD @0, @288, @296, META editing time; per channel by id, CHHD @1040/@1048 and its
     /// GUID), the META@776 lock (PROJECT confirms it "forever") and the project versions. So none of them is ever an undo
@@ -554,6 +555,11 @@ impl Song {
             .meta
             .info_url
             .clone_from(&current.file.meta.info_url);
+        let (meta, from) = (&mut self.file.meta, &current.file.meta);
+        meta.album.clone_from(&from.album);
+        meta.genre.clone_from(&from.genre);
+        meta.year.clone_from(&from.year);
+        meta.comment.clone_from(&from.comment);
         self.play_loop = current.play_loop;
         let (file, from) = (&mut self.file, &current.file);
         file.version.clone_from(&from.version);

@@ -6,7 +6,7 @@ use std::path::Path;
 
 use eframe::egui::Id;
 
-use super::rack_wiring::{close_picker, worker_done};
+use super::rack_wiring::{close_picker, picker_root, worker_done};
 use super::*;
 use crate::flm::chunk::{ContentPath, ContentRoot};
 use crate::flm::sf2d::Sf2d;
@@ -110,6 +110,8 @@ fn the_patch_spinner_picks_a_soundfonts_patch_and_prev_and_next_step_each_with_n
     assert_eq!(sf2d(&rig), in_my_soundfonts("Piano.sf2", 1));
     assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
     close_picker(&mut rig);
+    // The pick's short note (issue #120), which the close stops.
+    assert_eq!(rig.take(), ["NoteOn 2 60 127", "NoteOff 2 60"]);
     assert!(shows(&rig, "Grand") && !shows(&rig, "Load Patch"));
     // Another channel's rack and back: what the rack read stays, so the patch shows at once, never `...`.
     rig.open_rack(1);
@@ -188,8 +190,8 @@ fn a_soundfont_that_does_not_load_shows_its_error_in_the_panel() {
     clear_soundfont(&mut rig);
     rig.frame(vec![]);
     rig.click_id(control(PATCH));
-    // My Files, `Gone` (after `Broken`), its patch.
-    for row in [0, 1, 0] {
+    // In `My Files`, where it was left (issue #131): `Gone` (after `Broken`), its patch.
+    for row in [1, 0] {
         picker_row(&mut rig, row);
     }
     assert_eq!(sf2d(&rig), in_my_soundfonts("Gone.sf2", 0));
@@ -319,9 +321,13 @@ fn the_preset_button_lists_default_presets_and_soundfonts_and_a_picked_sf2_loads
     assert_eq!(sf2d(&rig), in_my_soundfonts("Piano.sf2", 1));
     assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
     close_picker(&mut rig);
+    // The patch pick's short note (issue #120).
+    assert_eq!(rig.take(), ["NoteOn 2 60 127", "NoteOff 2 60"]);
 
-    // `My Files`, `Warm`: a generic preset, all of it loaded (the SoundFont goes with the old state).
+    // `My Files`, `Warm`: a generic preset, all of it loaded (the SoundFont goes with the old state). The picker opens
+    // where it was left (issue #131), so first back to its root.
     rig.click_id(preset_button());
+    picker_root(&mut rig);
     picker_row(&mut rig, 0);
     picker_row(&mut rig, 0);
     worker_done(&mut rig);
@@ -336,6 +342,7 @@ fn the_preset_button_lists_default_presets_and_soundfonts_and_a_picked_sf2_loads
     // `Default`: the init preset.
     close_picker(&mut rig);
     rig.click_id(preset_button());
+    picker_root(&mut rig);
     picker_row(&mut rig, 2);
     assert_eq!(player_module(&rig), ModuleInstance::new(52, PLAYER));
     assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
@@ -409,4 +416,75 @@ fn a_soundfont_cut_off_in_its_samples_shows_the_error_and_the_engine_stays_silen
     rig.frame(vec![]);
     rig.frame(vec![]);
     assert!(shows(&rig, "Corrupted SoundFont file"));
+}
+
+#[test]
+fn the_cards_arrows_step_round_the_soundfont_files_of_its_folder() {
+    // Issue #120: ◀ and ▶ beside the card's name load the previous and next SoundFont file of the folder
+    // the one it plays is in, as the picker lists them, round and round; with none they do nothing. Each loads as a
+    // pick of it does, naming the module, with no undo step; one that does not read shows its error in the panel.
+    let mut rig = with_soundfonts();
+    let strings = soundfont(&[("Violin", 0, 0)]);
+    (rig.app.files).keep_user_file(Path::new("My SoundFonts/Strings.sf2"), strings);
+    let steps = rig.app.history.steps();
+    let card = Id::new(("rack", CHANNEL)).with(("rack card", PLAYER));
+    rig.click_id(card.with("Next preset"));
+    rig.frame(vec![]);
+    assert_eq!(sf2d(&rig), None);
+    assert_eq!(rig.take(), Vec::<String>::new());
+    // `Piano`'s first patch, from the spinner's picker (`Broken`, `Piano`, `Strings`).
+    rig.click_id(control(PATCH));
+    for row in [0, 1, 0] {
+        picker_row(&mut rig, row);
+    }
+    close_picker(&mut rig);
+    rig.take();
+    for (arrow, file) in [
+        ("Next preset", "Strings"),
+        ("Next preset", "Broken"),
+        ("Previous preset", "Strings"),
+    ] {
+        rig.click_id(card.with(arrow));
+        rig.frame(vec![]);
+        assert_eq!(sf2d(&rig), in_my_soundfonts(&format!("{file}.sf2"), 0));
+        assert_eq!(player_module(&rig).file.preset_name, file);
+        assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"], "{file}");
+    }
+    rig.frame(vec![]);
+    assert!(shows(&rig, "Violin"));
+    assert_eq!(rig.app.history.steps(), steps);
+}
+
+#[test]
+fn a_patch_pick_plays_a_short_note_of_it_until_the_next_pick_or_the_close() {
+    // Issue #120: once the pick's engine is in, the patch plays note 60 on the channel, as a live note.
+    let mut rig = with_soundfonts();
+    rig.click_id(control(PATCH));
+    for row in [0, 1, 1] {
+        picker_row(&mut rig, row);
+    }
+    rig.frame(vec![]);
+    let on = "NoteOn 2 60 127";
+    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync", on]);
+    // The next pick stops it before its engine comes in, and plays its own after.
+    picker_row(&mut rig, 2);
+    rig.frame(vec![]);
+    let (off, replace) = ("NoteOff 2 60", "ReplaceSong adopting no-resync");
+    assert_eq!(rig.take(), [off, replace, on]);
+    // It is short: it stops by itself.
+    for _ in 0..20 {
+        rig.frame(vec![]);
+    }
+    assert_eq!(rig.take(), [off]);
+    // A close stops it too. The keys at the bottom play the channel (SETTINGS `Keyboard in pickers`).
+    picker_row(&mut rig, 0);
+    rig.frame(vec![]);
+    assert!(
+        rig.ctx
+            .read_response(Id::new("preset_picker").with("keys"))
+            .is_some()
+    );
+    rig.take();
+    close_picker(&mut rig);
+    assert_eq!(rig.take(), [off]);
 }

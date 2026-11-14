@@ -1089,6 +1089,52 @@ fn tesla_opens_from_the_picker_and_saves_into_my_recordings() {
     }
 }
 
+/// #117: Tesla's `Send to arranger as audio clip` (Shift+C) keeps its sample in My Recordings and puts it on a new
+/// Audio channel at the playhead, as SONGS' `Send to playlist` does, in one undo step.
+#[test]
+fn teslas_send_to_the_arranger_puts_its_sample_on_a_new_track_at_the_playhead() {
+    use os_plugkit::embed::{self, Input};
+    let mut rig = Rig::with_synth();
+    rig.app.add_bare_channel(ChannelKind::Instrument, 0);
+    let channel = &mut rig.app.song.channels[CHANNEL];
+    let id = channel.id;
+    let uid = crate::plugins::builtin::named("Tesla").uid;
+    let module = crate::plugins::add(&mut channel.rack, id, uid, 0).unwrap();
+    rig.app.song_edited(SongEdit::Final, 0);
+    rig.open_rack(CHANNEL);
+    rig.slide_rack();
+    let editor = crate::plugins::lemon_open(id, module).expect("its card shows its editor") as _;
+    // A sample dropped on Tesla's window.
+    let name = format!("tesla-send-{}", std::process::id());
+    let file = std::env::temp_dir().join(format!("{name}.wav"));
+    std::fs::write(&file, wav(&[0, 9000, 0, -9000])).unwrap();
+    let path = file.to_string_lossy().into_owned();
+    embed::input(editor, Input::Drop { path }, (false, false, false));
+    rig.frame(vec![]);
+    rig.rec.0.borrow_mut().tick = 2 * u64::from(crate::song::PPQ);
+    let (channels, steps) = (rig.app.song.channels.len(), rig.app.history.steps());
+    let key = Input::Key {
+        sym: 'c' as u32,
+        text: Some('C'),
+    };
+    embed::input(editor, key, (false, true, false));
+    rig.frame(vec![]);
+    crate::ui::views::preset_picker::join_workers();
+    rig.frame(vec![]);
+    rig.frame(vec![]);
+    let user = (rig.app.files.user_dir().unwrap()).join(crate::project_files::RECORDINGS_FOLDER);
+    let kept = user.join(format!("{name}.wav"));
+    assert!(rig.app.files.user_file_exists(&kept));
+    let song = &rig.app.song;
+    assert_eq!(song.channels.len(), channels + 1);
+    let new = song.channels.last().unwrap();
+    assert_eq!(new.kind, ChannelKind::AudioClip);
+    let starts: Vec<u32> = new.lanes[0].clips.iter().map(|c| c.start_tick).collect();
+    assert_eq!(starts, [2 * crate::song::PPQ]);
+    assert_eq!(rig.app.history.steps(), steps + 1);
+    let _ = std::fs::remove_file(file);
+}
+
 /// Issue #52: where there is no file dialog (Android, the browser; here a phone's), Lemon Trio's sample page opens the
 /// sample picker, and the plugin opens its pick (one the session keeps in memory, as the browser's are). Issue #93: each
 /// pick only plays on the preview player and the picker stays; its close stops the preview and the plugin opens the

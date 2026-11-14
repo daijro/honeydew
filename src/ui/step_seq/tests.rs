@@ -2922,10 +2922,11 @@ fn a_touch_and_each_move_paint_the_current_rows_step_under_x() {
     rig.open_lane();
     let header = rig.header(1);
     rig.click(header);
-    // The Snare row (hits on 4 and 12): halfway up on 4, above the lane on 8 (the top), at the bottom on 12.
+    // The Snare row (hits on 4 and 12): halfway up on 4, a move sideways to 8 (which leaves the column: #127), at the
+    // bottom on 12.
     rig.stroke(&[
         pos2(rig.step_x(4), lane_y(0.5)),
-        pos2(rig.step_x(8), 300.0),
+        pos2(rig.step_x(8), lane_y(0.5)),
         pos2(rig.step_x(12), 598.0),
     ]);
     // Step 8 holds no Snare hit: nothing to send there.
@@ -2952,6 +2953,34 @@ fn a_touch_and_each_move_paint_the_current_rows_step_under_x() {
         "{bar:?} in {:?}",
         rig.rects(ink)
     );
+}
+
+/// Honeydew change (#127): a drag keeps to the column it started on while it drifts sideways, until it moves
+/// clearly sideways (past the 0.5 U calm distance, more across than up or down).
+#[test]
+fn a_mostly_vertical_lane_drag_that_drifts_sideways_paints_only_its_column() {
+    let mut rig = Rig::new(pattern());
+    let at = rig.cell(1, 5);
+    rig.click(at);
+    rig.open_lane();
+    let header = rig.header(1);
+    rig.click(header);
+    rig.actions.clear();
+    // Step 4 is 195..219 and step 5, which now holds a Snare hit too, 219..243: going up, the finger drifts 30 px
+    // (U is 32 px) into step 5.
+    let x = rig.step_x(4);
+    rig.stroke(&[
+        pos2(x, lane_y(0.2)),
+        pos2(x + 30.0, lane_y(0.6)),
+        pos2(x + 30.0, lane_y(0.9)),
+    ]);
+    let steps: Vec<usize> = (rig.actions.iter())
+        .filter_map(|a| match *a {
+            StepAction::Graph { step, .. } => Some(step),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(steps, [4, 4, 4], "{:?}", rig.actions);
 }
 
 /// A pinch before any paint ends a touch that changed nothing: its own undo re-syncs.

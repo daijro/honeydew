@@ -5,7 +5,7 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-cpal = { version = "0.16.0", features = ["wasm-bindgen"] }
+cpal = { version = "0.18.2", features = ["wasm-bindgen"] }
 crossbeam-channel = "0.5.17"
 # MPL-2.0, pure Rust, wasm-clean. FLAC: bundled `.wav` assets are mostly FLAC streams. MP3 and Vorbis
 # for user samples; Ogg pages are read by `sample.rs`, so symphonia's `ogg` reader is not built.
@@ -22,8 +22,7 @@ ogg = "=0.8.0"
 # Lemon Studio's reverb and limiter (`lemon.rs`), vendored with its plugin hosts (vendor/lemon-studio, GPL-3.0-or-later).
 os-engine = { path = "../../vendor/lemon-studio/os-engine" }
 
-# #92: the output's presentation timestamp (AAudio's, on CLOCK_MONOTONIC) for the output clock (`device.rs`). Both are
-# already in the tree through cpal, so they add no package.
+# Honeydew change (#123, #130): `realtime` opens AAudio's streams in its low-latency performance mode, on Android only
+# (elsewhere it would change the thread priorities too).
 [target.'cfg(target_os = "android")'.dependencies]
-ndk = { version = "0.9.0", default-features = false, features = ["audio"] }
-libc = "0.2"
+cpal = { version = "0.18.2", features = ["realtime"] }
