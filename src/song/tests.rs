@@ -113,6 +113,7 @@ fn names_are_the_menu_labels() {
             "Slicer",
             "3x Osc",
             "SoundFont Player",
+            "Vocal Synth",
         ]
     );
 }
@@ -643,7 +644,7 @@ fn a_synth_channel_starts_with_its_instrument_module() {
     }
     // The instrument type ids, in menu order.
     let ids = SynthKind::ALL.map(SynthKind::type_id);
-    assert_eq!(ids, [0, 1, 2, 19, 23, 33, 39, 52]);
+    assert_eq!(ids, [0, 1, 2, 19, 23, 33, 39, 52, 53]);
     for (channel, id) in song.channels[2..].iter().zip(ids) {
         assert_eq!(channel.rack.modules, [ModuleInstance::new(id, 2)]);
         assert_eq!(channel.rack.last_instance_id, 2);

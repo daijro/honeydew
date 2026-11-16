@@ -9,6 +9,7 @@ pub(crate) mod soundfont_player;
 mod super_saw;
 pub(crate) mod three_osc;
 mod transistor_bass;
+mod vocal_synth;
 
 modules! {
     0 => mini_synth,
@@ -19,4 +20,5 @@ modules! {
     33 => slicer,
     39 => three_osc,
     52 => soundfont_player,
+    53 => vocal_synth,
 }

@@ -92,6 +92,7 @@ fn instruments_take_the_card_heights_of_their_table() {
         (33, "Slicer", 8.5),
         (39, "3x Osc", 10.0),
         (52, "SoundFont Player", 8.5),
+        (53, "Vocal Synth", 8.5),
     ];
     for (id, name, height) in table {
         assert_eq!(ui_height(id), Some(height), "{name}");
@@ -436,8 +437,8 @@ fn an_instrument_the_channel_cannot_take_is_skipped_and_counted() {
 }
 
 #[test]
-fn a_rack_preset_skips_module_ids_above_52_like_paste_and_counts_them() {
-    // Module ids above 52 are skipped, by the same attach routine as `Paste`.
+fn a_rack_preset_skips_module_ids_above_53_like_paste_and_counts_them() {
+    // Module ids above 53 are skipped, by the same attach routine as `Paste`.
     let end = Some(InsertAt::End);
     let cases: [(_, &[u16]); 3] = [
         (None, &[11]),
@@ -447,7 +448,7 @@ fn a_rack_preset_skips_module_ids_above_52_like_paste_and_counts_them() {
     for (at, expected) in cases {
         let mut ch = channel(ChannelKind::Rack, &[6]);
         assert_eq!(
-            load_rack(&mut ch, &preset(&[53, 11, 99]), at),
+            load_rack(&mut ch, &preset(&[54, 11, 99]), at),
             (Outcome::ChainChanged, 2),
             "{at:?}"
         );
@@ -460,21 +461,31 @@ fn a_rack_preset_skips_module_ids_above_52_like_paste_and_counts_them() {
         (Outcome::ChainChanged, 3)
     );
     assert_eq!(types(&ch.rack), [11]);
-    // Nothing but ids above 52: no edit, the rack's modules and instrument stay.
+    // Nothing but ids above 53: no edit, the rack's modules and instrument stay.
     let mut ch = channel(ChannelKind::Synth(SynthKind::MiniSynth), &[0, 6]);
     let kept = ch.clone();
     assert_eq!(
-        load_rack(&mut ch, &preset(&[53, 60]), None),
+        load_rack(&mut ch, &preset(&[54, 60]), None),
         (Outcome::Nothing, 2)
     );
     assert_eq!(ch, kept);
-    // The last id is 52 (SoundFont Player): it loads.
+    // SoundFont Player (52) loads; the next unknown id (54) is skipped.
     let mut ch = channel(ChannelKind::Rack, &[]);
     assert_eq!(
-        load_rack(&mut ch, &preset(&[52, 53]), end),
+        load_rack(&mut ch, &preset(&[52, 54]), end),
         (Outcome::ChainChanged, 1)
     );
     assert_eq!(types(&ch.rack), [52]);
+}
+
+#[test]
+fn vocal_synth_is_a_valid_instrument_module_type() {
+    let mut ch = channel(ChannelKind::Rack, &[6]);
+    assert_eq!(
+        load_rack(&mut ch, &preset(&[53]), Some(InsertAt::End)),
+        (Outcome::ChainChanged, 0)
+    );
+    assert_eq!(types(&ch.rack), [6, 53]);
 }
 
 #[test]
@@ -1430,6 +1441,7 @@ fn the_module_area_of_an_instrument_card_is_16_96_u_by_h_minus_2_01_u() {
         (33, 8.5),
         (39, 10.0),
         (52, 8.5),
+        (53, 8.5),
     ] {
         let module = ModuleInstance::new(id, 2);
         assert_eq!(card_height(&module), h);
@@ -1471,7 +1483,7 @@ fn instrument_card_menus_add_set_range_or_set_first_note() {
             .map(|i| (i.id, i.label.into_owned(), i.disabled))
     };
     let item = |action, label: &str| Some((Some(action), label.to_owned(), false));
-    for id in [0, 1, 2, 19, 23, 39, 52] {
+    for id in [0, 1, 2, 19, 23, 39, 52, 53] {
         assert_eq!(
             row(id, true, 4),
             item(CardAction::SetRange, "Set Range"),

@@ -199,7 +199,7 @@ fn every_current_effect_is_listed_once_and_legacy_ids_never() {
 }
 
 /// The SYNTH rows' module ids by display name.
-const SYNTH_IDS: [(&str, u16); 8] = [
+const SYNTH_IDS: [(&str, u16); 9] = [
     ("3x Osc", 39),
     ("DW Sampler", 1),
     ("GMSynth", 2),
@@ -208,6 +208,7 @@ const SYNTH_IDS: [(&str, u16); 8] = [
     ("SoundFont Player", 52),
     ("SuperSaw", 23),
     ("Transistor Bass", 19),
+    ("Vocal Synth", 53),
 ];
 
 #[test]
@@ -902,7 +903,7 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             "Instrument",
             "Paste",
             "Rack Preset",
-            // Instruments: 0, 1, 2, 19, 23, 33, 39, 52.
+            // Instruments: 0, 1, 2, 19, 23, 33, 39, 52, 53.
             "MiniSynth",
             "DW Sampler",
             "GMSynth",
@@ -911,6 +912,7 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             "Slicer",
             "3x Osc",
             "SoundFont Player",
+            "Vocal Synth",
             // The built-in plugins, which have no type id of their own: by name.
             "Citrus",
             "Lemon Drum Sampler",
