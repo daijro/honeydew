@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          cargo fmt --all -- --check > /tmp/rustfmt.log 2>&1
+          cargo fmt --check > /tmp/rustfmt.log 2>&1
           rc=$?
           set -e
           if [ "$rc" -ne 0 ]; then
