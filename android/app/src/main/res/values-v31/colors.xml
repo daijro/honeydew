@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Material You Dynamic Color Accents (Android 12 / API 31+) -->
+    <color name="m3_primary">@android:color/system_accent1_200</color>
+    <color name="m3_on_primary">@android:color/system_accent1_800</color>
+    <color name="m3_primary_container">@android:color/system_accent1_700</color>
+    <color name="m3_on_primary_container">@android:color/system_accent1_100</color>
+
+    <color name="m3_surface_dim">@android:color/system_neutral1_900</color>
+    <color name="m3_on_surface">@android:color/system_neutral1_100</color>
+    <color name="m3_on_surface_variant">@android:color/system_neutral2_200</color>
+    <color name="m3_outline">@android:color/system_neutral2_400</color>
+    <color name="m3_outline_variant">@android:color/system_neutral2_700</color>
+</resources>

@@ -64,7 +64,7 @@ fn left(keep: f32, t: f32) -> f32 {
 
 /// This frame's time step in seconds, at most 0.1 s: a stalled frame is one short step. Tests run at 60 fps whatever
 /// time their input reports (their rigs step the clock in tenths, for gestures).
-fn frame_dt(ctx: &Context) -> f32 {
+pub(crate) fn frame_dt(ctx: &Context) -> f32 {
     if cfg!(test) {
         1.0 / 60.0
     } else {

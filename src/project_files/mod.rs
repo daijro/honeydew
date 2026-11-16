@@ -1255,6 +1255,10 @@ impl ProjectFiles {
                             return None;
                         }
                     }
+                } else if let Some(dir) = self.unzipped_song_dir(&path) {
+                    // Issue #157: reopening an already-extracted `.flm` inside `Unzipped songs/<pack>/`
+                    // relinks its `@L@` paths to sibling samples extracted in that pack folder.
+                    self.relink_to(&mut song, &dir);
                 }
                 // Each DW Sampler's program loads now, with its files.
                 crate::panels::cstm::load_dw_programs(
@@ -1299,6 +1303,21 @@ impl ProjectFiles {
                 None
             }
         }
+    }
+
+    /// If `path` is inside `<user>/Unzipped songs/<pack>/...`, returns `<user>/Unzipped songs/<pack>`
+    /// so reopening an extracted `.flm` still resolves samples unpacked beside it (issue #157).
+    fn unzipped_song_dir(&self, path: &Path) -> Option<PathBuf> {
+        let user = self.user.as_ref()?;
+        let rel = path.strip_prefix(user).ok()?;
+        let mut comps = rel.components();
+        if comps.next()?.as_os_str() != archive::UNZIPPED_FOLDER {
+            return None;
+        }
+        let pack = comps.next()?.as_os_str();
+        // Require a file component beneath `<pack>/`.
+        comps.next()?;
+        Some(user.join(archive::UNZIPPED_FOLDER).join(pack))
     }
 
     /// A file dropped on the window: a project file ([`file_kind`]) is read (the web hands its bytes, the desktop its
@@ -1594,15 +1613,54 @@ pub(crate) fn recent_parts(state: &[u8]) -> Option<(bool, Option<PathBuf>, &[u8]
 /// The app leaves the screen: Android's `onPause` and iOS's resign-active set it from their own threads ([`leave`]),
 /// and the next frame takes it ([`take_leaving`]) and writes the recent state at once.
 static LEAVING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-/// The app's context, which [`leave`] wakes for that frame: egui runs one only on input.
-static APP: std::sync::OnceLock<Context> = std::sync::OnceLock::new();
+/// The app's latest context, which [`leave`] wakes for that frame: stored in a `Mutex` rather than `OnceLock`
+/// so Android Activity recreation in the same process never leaves a stale context behind.
+static APP: std::sync::Mutex<Option<Context>> = std::sync::Mutex::new(None);
+#[cfg(not(target_arch = "wasm32"))]
+static LEAVING_DONE: (std::sync::Mutex<bool>, std::sync::Condvar) =
+    (std::sync::Mutex::new(false), std::sync::Condvar::new());
 
 /// The app is leaving the screen: the next frame, which this asks for, writes the recent state at once.
 pub fn leave() {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut pending = LEAVING_DONE
+            .0
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        *pending = true;
+    }
     LEAVING.store(true, std::sync::atomic::Ordering::Release);
-    if let Some(ctx) = APP.get() {
+    let ctx = APP
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .clone();
+    if let Some(ctx) = ctx {
         ctx.request_repaint();
     }
+}
+
+/// Signals [`leave`] and blocks until [`finish_leaving`] completes on the UI frame (or `timeout` elapses),
+/// replacing busy-wait polling on Android's UI thread during `onPause`. Returns immediately if no UI context
+/// has ever been registered yet.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn leave_and_wait(timeout: std::time::Duration) {
+    let has_ctx = APP
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .is_some();
+    leave();
+    if !has_ctx {
+        finish_leaving();
+        return;
+    }
+    let guard = LEAVING_DONE
+        .0
+        .lock()
+        .unwrap_or_else(|err| err.into_inner());
+    let _ = LEAVING_DONE
+        .1
+        .wait_timeout_while(guard, timeout, |pending| *pending);
 }
 
 /// A [`leave`] waits for its frame still.
@@ -1610,10 +1668,34 @@ pub fn leaving() -> bool {
     LEAVING.load(std::sync::atomic::Ordering::Acquire)
 }
 
-/// Whether the app left the screen since the last frame ([`leave`]); `ctx` is the app's, which [`leave`] wakes.
+/// Whether the app left the screen since the last frame ([`leave`]); `ctx` is kept current so [`leave`] wakes it.
 pub fn take_leaving(ctx: &Context) -> bool {
-    APP.get_or_init(|| ctx.clone());
+    let mut slot = APP.lock().unwrap_or_else(|err| err.into_inner());
+    if slot.is_none() {
+        *slot = Some(ctx.clone());
+    }
+    drop(slot);
     LEAVING.swap(false, std::sync::atomic::Ordering::AcqRel)
+}
+
+/// Updates the active UI context (for example after an Android Activity restart in the same process).
+pub fn set_context(ctx: &Context) {
+    *APP.lock().unwrap_or_else(|err| err.into_inner()) = Some(ctx.clone());
+}
+
+/// Wakes any thread waiting inside [`leave_and_wait`] once the recent state has been flushed.
+pub fn finish_leaving() {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut pending = LEAVING_DONE
+            .0
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        if *pending {
+            *pending = false;
+            LEAVING_DONE.1.notify_all();
+        }
+    }
 }
 
 /// Writes `bytes` to `path` whole or not at all (see [`replace_file`]): a crash or a full disk never leaves half

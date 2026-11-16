@@ -63,6 +63,12 @@ pub(super) fn edit(last: &mut Song, new: &Song, tempo_moved: bool) -> Edit {
         let Some(a) = last.channels.iter().find(|a| a.id == b.id) else {
             continue;
         };
+        // Issue #140: changing a note effect (Transpose, Scale, Randomizer, Note Echo, Arpeggiator)
+        // on a channel with sequenced notes changes which pitches are held at the playhead; re-sync
+        // releases old transformed pitches so they never hang indefinitely.
+        if note_effects_changed(a, b) {
+            edit.resync = true;
+        }
         if a.lanes == b.lanes {
             continue;
         }
@@ -81,6 +87,36 @@ pub(super) fn edit(last: &mut Song, new: &Song, tempo_moved: bool) -> Edit {
         }
     }
     edit
+}
+
+/// Whether channel `a` / `b` carries sequenced notes or drum hits and its note-effect chain (types 47..=51) changed
+/// in membership, order relative to instruments, or module parameters (excluding `CommonParams` like Mix so level
+/// tweaks keep adopting without re-syncing).
+fn note_effects_changed(a: &Channel, b: &Channel) -> bool {
+    let has_notes = |c: &Channel| {
+        c.lanes.iter().any(|l| {
+            matches!(l.kind, LaneKind::Notes | LaneKind::Drums)
+                && l.clips.iter().any(|clip| !clip.events.is_empty())
+        })
+    };
+    if !has_notes(a) && !has_notes(b) {
+        return false;
+    }
+    let snapshot = |c: &Channel| -> Vec<(i32, u16, usize, &[f32])> {
+        let mut instruments = 0usize;
+        let mut out = Vec::new();
+        for m in &c.rack.modules {
+            if (47..=51).contains(&m.type_id) {
+                out.push((m.instance_id, m.type_id, instruments, m.params.as_slice()));
+            } else if crate::params::module_spec(m.type_id)
+                .is_some_and(|spec| spec.role == crate::params::Role::Instrument)
+            {
+                instruments += 1;
+            }
+        }
+        out
+    };
+    snapshot(a) != snapshot(b)
 }
 
 /// `a`'s lanes as `b` (the same channel after the edit) holds them when nothing but its structure changed: without the

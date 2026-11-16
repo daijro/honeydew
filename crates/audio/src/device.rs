@@ -693,11 +693,12 @@ impl<R: AudioRenderer> AudioOutput<R> {
     where
         F: FnOnce(u32) -> Result<R, E>,
     {
+        // Android uses AAudio's native hardware FastMixer rate (typically 48 kHz) when no project rate is
+        // requested, avoiding AudioFlinger software resampling and reducing buffer underruns (#145/#156).
         let rate = match rate {
             0 if cfg!(any(
                 target_os = "linux",
                 target_os = "freebsd",
-                target_os = "android",
                 target_arch = "wasm32"
             )) =>
             {
@@ -1039,8 +1040,17 @@ fn output_config(
         })
         .min_by_key(|(min, _)| *min)
     else {
-        if let (true, BufferMode::Fixed(frames)) = (cfg!(target_os = "android"), mode) {
-            config.buffer_size = BufferSize::Fixed(frames);
+        if cfg!(target_os = "android") {
+            let frames = match mode {
+                BufferMode::UltraSafe => Some(1024),
+                BufferMode::Safe => Some(512),
+                BufferMode::Fast => Some(192),
+                BufferMode::Fixed(frames) => Some(frames),
+                BufferMode::Native => None,
+            };
+            if let Some(frames) = frames {
+                config.buffer_size = BufferSize::Fixed(frames);
+            }
         }
         return config;
     };

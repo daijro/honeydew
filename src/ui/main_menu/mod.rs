@@ -182,6 +182,8 @@ pub enum MainMenuAction {
     SendToPlaylist(Vec<std::path::PathBuf>),
     /// PROJECT Performance `Clear`: the app's counters start from zero (#124).
     ClearPerformance,
+    /// Quit the app (Android menu & Help popup, issue #147).
+    Quit,
 }
 
 /// The Help menu's links, after `What's new`: the project's own pages.
@@ -193,10 +195,14 @@ pub const HELP_LINKS: [(&str, &str); 2] = [
     ),
 ];
 
-/// The Help menu at `at`: `What's new` (item 0), then [`HELP_LINKS`].
+/// The Help menu at `at`: `What's new` (item 0), then [`HELP_LINKS`] (plus `Quit` on Android, issue #147).
 fn help_menu(ctx: &eframe::egui::Context, cx: &UiCtx, id: Id, at: Pos2) -> PopupResult<usize> {
-    let labels = std::iter::once("What's new").chain(HELP_LINKS.iter().map(|l| l.0));
-    let items: Vec<PopupItem<usize>> = (labels.enumerate())
+    let mut labels: Vec<&str> = std::iter::once("What's new")
+        .chain(HELP_LINKS.iter().map(|l| l.0))
+        .collect();
+    #[cfg(target_os = "android")]
+    labels.push("Quit");
+    let items: Vec<PopupItem<usize>> = (labels.into_iter().enumerate())
         .map(|(row, label)| PopupItem::new(row, 0, row, label))
         .collect();
     crate::ui::preset_picker::modal(ctx, cx, id, at, &items)
@@ -430,7 +436,8 @@ impl MainMenu {
             }
             action = picked.selected.map(|i| match i {
                 0 => MainMenuAction::WhatsNew,
-                i => MainMenuAction::OpenLink(HELP_LINKS[i - 1].1.into()),
+                i if i <= HELP_LINKS.len() => MainMenuAction::OpenLink(HELP_LINKS[i - 1].1.into()),
+                _ => MainMenuAction::Quit,
             });
         }
 

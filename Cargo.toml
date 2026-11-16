@@ -103,8 +103,10 @@ pollster = "0.4.0"
 os-vst3 = { path = "vendor/lemon-studio/os-vst3" }
 os-vst2 = { path = "vendor/lemon-studio/os-vst2" }
 
-[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "macos", target_os = "windows"))'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "macos", target_os = "windows", target_os = "android"))'.dependencies]
 rayon = "1.11"
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "macos", target_os = "windows"))'.dependencies]
 getrandom = "0.3.4"
 
 # M11 J2: MIDI input over ALSA (cpal's `alsa 0.11`), CoreMIDI and WinMM. 0.11.1 takes `alsa >=0.9, <0.13`: cpal 0.18's
@@ -152,6 +154,14 @@ strip = "debuginfo"
 inherits = "release"
 lto = "fat"
 codegen-units = 1
+
+# Android release profile (tools/android-dist.sh): ThinLTO + single codegen unit + full symbol strip cuts libhoneydew.so
+# size by ~25-40% and improves DSP throughput while keeping `panic = "unwind"` for `sample.rs::guarded`.
+[profile.android-release]
+inherits = "release"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
 
 # Hostile samples must not panic in dev builds either (E6). symphonia's FLAC decoder subtracts a file's wasted-bits
 # count unchecked (bundle-flac decoder.rs:339) and then debug-asserts a bit width (core io/bit.rs); release wraps and

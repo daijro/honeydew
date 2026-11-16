@@ -12,31 +12,46 @@ import android.provider.OpenableColumns;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.Locale;
 
-// An update's APK for the system's installer (HoneydewActivity.installApk): the files in files/update, read only,
-// reached only through the read grant the install intent carries (not exported). Our own small provider rather than
-// androidx's FileProvider, which the app has no dependency for; its authority (<applicationId>.update) is apart from
-// HoneydewDocuments'.
+/**
+ * Read-only, non-exported ContentProvider serving verified APK updates from files/update
+ * to Android's package installer via temporary read URI grants.
+ */
 public final class HoneydewUpdate extends ContentProvider {
     static final String APK = "application/vnd.android.package-archive";
+    private static final String[] DEFAULT_PROJECTION = {
+            OpenableColumns.DISPLAY_NAME,
+            OpenableColumns.SIZE
+    };
 
     static Uri uri(Context context, String name) {
-        return new Uri.Builder().scheme("content").authority(context.getPackageName() + ".update").appendPath(name).build();
+        return new Uri.Builder()
+                .scheme("content")
+                .authority(context.getPackageName() + ".update")
+                .appendPath(name)
+                .build();
     }
 
-    // The file `uri` names, in files/update and nowhere else.
     private File file(Uri uri) throws FileNotFoundException {
-        File dir = new File(getContext().getFilesDir(), "update");
+        Context context = getContext();
+        if (context == null || uri == null) {
+            throw new FileNotFoundException("Unavailable update URI");
+        }
         String name = uri.getLastPathSegment();
-        File file = new File(dir, name == null ? "" : name);
+        if (name == null || !name.toLowerCase(Locale.ROOT).endsWith(".apk")) {
+            throw new FileNotFoundException("Not an APK: " + uri);
+        }
+        File dir = new File(context.getFilesDir(), "update");
+        File candidate = new File(dir, name);
         try {
-            if (name == null || !dir.getCanonicalPath().equals(file.getCanonicalFile().getParent()) || !file.isFile()) {
+            if (!dir.getCanonicalPath().equals(candidate.getCanonicalFile().getParent()) || !candidate.isFile()) {
                 throw new FileNotFoundException(String.valueOf(uri));
             }
         } catch (IOException e) {
             throw new FileNotFoundException(String.valueOf(uri));
         }
-        return file;
+        return candidate;
     }
 
     @Override
@@ -55,13 +70,23 @@ public final class HoneydewUpdate extends ContentProvider {
         return ParcelFileDescriptor.open(file(uri), ParcelFileDescriptor.MODE_READ_ONLY);
     }
 
-    // The name and size the installer may ask for.
     @Override
     public Cursor query(Uri uri, String[] projection, String selection, String[] args, String order) {
-        MatrixCursor cursor = new MatrixCursor(new String[] {OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE});
+        String[] cols = (projection != null && projection.length > 0) ? projection : DEFAULT_PROJECTION;
+        MatrixCursor cursor = new MatrixCursor(cols, 1);
         try {
-            File file = file(uri);
-            cursor.addRow(new Object[] {file.getName(), file.length()});
+            File target = file(uri);
+            Object[] row = new Object[cols.length];
+            for (int i = 0; i < cols.length; i++) {
+                if (OpenableColumns.DISPLAY_NAME.equals(cols[i])) {
+                    row[i] = target.getName();
+                } else if (OpenableColumns.SIZE.equals(cols[i])) {
+                    row[i] = target.length();
+                } else {
+                    row[i] = null;
+                }
+            }
+            cursor.addRow(row);
         } catch (FileNotFoundException ignored) {
         }
         return cursor;

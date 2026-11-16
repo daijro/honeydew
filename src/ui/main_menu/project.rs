@@ -616,6 +616,14 @@ impl ProjectTab {
         if performance::show(ui, cx, block, &info.performance) {
             action = Some(MainMenuAction::ClearPerformance);
         }
+        #[cfg(target_os = "android")]
+        {
+            divider(ui, cx, band(GAP));
+            let quit = band(BUTTON_H);
+            if light_button(ui, cx, id.with("quit"), quit, "Quit", true) {
+                action = Some(MainMenuAction::Quit);
+            }
+        }
 
         self.content_h = y - top;
         if std::mem::take(&mut self.scroll_to_performance) {
