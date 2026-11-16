@@ -8,7 +8,6 @@ mod live;
 mod merge;
 mod midi_sends;
 mod modulation;
-#[cfg(desktop)]
 mod parallel;
 mod prepare;
 mod preview;
@@ -41,7 +40,6 @@ use honeydew_audio::sample::SampleData;
 use honeydew_audio::{MeterSnapshot, ProcessContext};
 use input::Monitor;
 use prepare::{Action, KIT, ParamTimeline, ScheduledAction, beat_frame};
-#[cfg(desktop)]
 use rayon::prelude::*;
 
 pub use slicer::{auto_clip as slicer_auto_clip, settle_first_notes};
@@ -51,7 +49,6 @@ const BLOCK_FRAMES: usize = 1024;
 /// Prepare the desktop worker pool off the audio callback. Other platforms
 /// retain the sequential path even if an old preference is on.
 pub(crate) fn prepare_multi_core() -> bool {
-    #[cfg(desktop)]
     {
         parallel::prepare()
     }
