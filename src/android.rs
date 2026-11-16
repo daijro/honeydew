@@ -306,9 +306,8 @@ pub fn move_to_back() {
 
 /// Cleanly closes Honeydew and removes its task from Android Recents (issue #147).
 pub fn quit_app() {
-    let closed = with_activity(|env, activity| {
-        env.call_method(activity, "quitApp", "()V", &[]).map(drop)
-    });
+    let closed =
+        with_activity(|env, activity| env.call_method(activity, "quitApp", "()V", &[]).map(drop));
     if let Err(err) = closed {
         eprintln!("could not quit app: {err}");
     }
@@ -328,7 +327,8 @@ pub fn set_keep_screen_on(on: bool) {
 /// Fires a subtle native Android tactile tick for key UI confirmations.
 pub fn haptic_tick() {
     let _ = with_activity(|env, activity| {
-        env.call_method(activity, "hapticTick", "()V", &[]).map(drop)
+        env.call_method(activity, "hapticTick", "()V", &[])
+            .map(drop)
     });
 }
 

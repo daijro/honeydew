@@ -36,7 +36,13 @@ pub const REFERENCE: Reference = Reference {
             tab: 0,
             rows: &[
                 STRIP,
-                row(11000, Widget::Knob, "Gender / Formant", [0.0, 1.25, 4.24, 5.24]).p(1),
+                row(
+                    11000,
+                    Widget::Knob,
+                    "Gender / Formant",
+                    [0.0, 1.25, 4.24, 5.24],
+                )
+                .p(1),
                 row(12000, Widget::Knob, "Breathiness", [4.24, 1.25, 4.24, 5.24]).p(2),
                 row(13000, Widget::Knob, "Brightness", [8.48, 1.25, 4.24, 5.24]).p(3),
                 row(14000, Widget::Spinner, "Vowel", [12.72, 1.25, 4.24, 5.24]).p(7),
@@ -49,8 +55,20 @@ pub const REFERENCE: Reference = Reference {
             rows: &[
                 STRIP,
                 row(21000, Widget::Knob, "Portamento", [0.0, 1.25, 5.65, 5.24]).p(4),
-                row(22000, Widget::Knob, "Vibrato Rate", [5.65, 1.25, 5.65, 5.24]).p(5),
-                row(23000, Widget::Knob, "Vibrato Depth", [11.30, 1.25, 5.66, 5.24]).p(6),
+                row(
+                    22000,
+                    Widget::Knob,
+                    "Vibrato Rate",
+                    [5.65, 1.25, 5.65, 5.24],
+                )
+                .p(5),
+                row(
+                    23000,
+                    Widget::Knob,
+                    "Vibrato Depth",
+                    [11.30, 1.25, 5.66, 5.24],
+                )
+                .p(6),
             ],
             ..Case::DEFAULT
         },

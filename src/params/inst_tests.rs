@@ -53,7 +53,13 @@ const OVERVIEW: [(u16, &str, &str, usize, &[&str]); 9] = [
     ),
     // 6, Fine Tune (a Honeydew addition, #90), and the vibrato, Quality and Transpose (Honeydew additions, #102).
     (52, "SoundFont Player", "SoundFont Player", 12, &[]),
-    (53, "Vocal Synth", "Vocal Synth", 8, &["VOICE", "EXPRESSION"]),
+    (
+        53,
+        "Vocal Synth",
+        "Vocal Synth",
+        8,
+        &["VOICE", "EXPRESSION"],
+    ),
 ];
 
 fn spec(id: u16) -> &'static ModuleSpec {

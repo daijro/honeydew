@@ -1028,12 +1028,20 @@ const SOUNDFONT_TIME: Display = Display::Custom(soundfont_time);
 // Voice shaping and expression controls for the clean-room Vocal Synth.
 const VOCAL_SYNTH: &[P] = &[
     P::ENABLE,
-    P::cont("Gender / Formant", 0.5, Display::linear(-12.0, 12.0, 0, " st")),
+    P::cont(
+        "Gender / Formant",
+        0.5,
+        Display::linear(-12.0, 12.0, 0, " st"),
+    ),
     P::cont("Breathiness", 0.08, PERCENT_TIGHT),
     P::cont("Brightness", 0.5, PERCENT_TIGHT),
     P::cont("Portamento", 0.0, Display::linear(0.0, 650.0, 0, " ms")),
     P::cont("Vibrato Rate", 0.35, Display::linear(0.0, 10.0, 1, " Hz")),
-    P::cont("Vibrato Depth", 0.0, Display::linear(0.0, 100.0, 0, " cents")),
+    P::cont(
+        "Vibrato Depth",
+        0.0,
+        Display::linear(0.0, 100.0, 0, " cents"),
+    ),
     P::menu("Vowel", 0.0, &["a", "i", "u", "e", "o"]),
 ];
 
