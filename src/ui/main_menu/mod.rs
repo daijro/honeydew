@@ -199,9 +199,17 @@ pub const HELP_LINKS: [(&str, &str); 2] = [
 fn help_menu(ctx: &eframe::egui::Context, cx: &UiCtx, id: Id, at: Pos2) -> PopupResult<usize> {
     let labels: Vec<&str> = std::iter::once("What's new")
         .chain(HELP_LINKS.iter().map(|l| l.0))
+        .chain({
+            #[cfg(target_os = "android")]
+            {
+                Some("Quit")
+            }
+            #[cfg(not(target_os = "android"))]
+            {
+                None
+            }
+        })
         .collect();
-    #[cfg(target_os = "android")]
-    labels.push("Quit");
     let items: Vec<PopupItem<usize>> = (labels.into_iter().enumerate())
         .map(|(row, label)| PopupItem::new(row, 0, row, label))
         .collect();
