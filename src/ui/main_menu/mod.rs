@@ -197,7 +197,7 @@ pub const HELP_LINKS: [(&str, &str); 2] = [
 
 /// The Help menu at `at`: `What's new` (item 0), then [`HELP_LINKS`] (plus `Quit` on Android, issue #147).
 fn help_menu(ctx: &eframe::egui::Context, cx: &UiCtx, id: Id, at: Pos2) -> PopupResult<usize> {
-    let mut labels: Vec<&str> = std::iter::once("What's new")
+    let labels: Vec<&str> = std::iter::once("What's new")
         .chain(HELP_LINKS.iter().map(|l| l.0))
         .collect();
     #[cfg(target_os = "android")]
