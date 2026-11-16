@@ -4,14 +4,14 @@
 //! breath noise, vibrato and glide. It is a foundation, not yet a UTAU voicebank renderer. The instrument deliberately
 //! performs no file access, allocation or locking on the audio thread.
 
-use crate::instrument::Instrument;
 use crate::ProcessContext;
+use crate::instrument::Instrument;
 
 const VOICES: usize = 8;
 const VOWELS: [[f32; 3]; 5] = [
     [800.0, 1_150.0, 2_900.0], // a
     [300.0, 2_200.0, 3_000.0], // i
-    [350.0, 900.0, 2_200.0],  // u
+    [350.0, 900.0, 2_200.0],   // u
     [500.0, 1_900.0, 2_600.0], // e
     [500.0, 1_000.0, 2_400.0], // o
 ];
@@ -120,13 +120,17 @@ impl VocalSynth {
 
     fn start(&mut self, key: u8, velocity: f32) {
         self.age = self.age.wrapping_add(1);
-        let slot = self.voices.iter().position(|v| !v.active).unwrap_or_else(|| {
-            self.voices
-                .iter()
-                .enumerate()
-                .min_by_key(|(_, voice)| voice.age)
-                .map_or(0, |(index, _)| index)
-        });
+        let slot = self
+            .voices
+            .iter()
+            .position(|v| !v.active)
+            .unwrap_or_else(|| {
+                self.voices
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, voice)| voice.age)
+                    .map_or(0, |(index, _)| index)
+            });
         let hz = 440.0 * 2.0f32.powf((f32::from(key) - 69.0) / 12.0);
         let voice = &mut self.voices[slot];
         voice.active = true;
@@ -136,7 +140,11 @@ impl VocalSynth {
         voice.phase = 0.0;
         voice.envelope = 0.0;
         voice.age = self.age;
-        voice.pitch_hz = if self.params[4] > 0.001 { voice.target_hz } else { hz };
+        voice.pitch_hz = if self.params[4] > 0.001 {
+            voice.target_hz
+        } else {
+            hz
+        };
         voice.target_hz = hz;
         voice.vibrato_phase = 0.0;
         voice.noise = (u32::from(key) + 1).wrapping_mul(0x9e37_79b9) ^ self.age as u32;
@@ -151,7 +159,11 @@ impl VocalSynth {
         coefficients: [FormantCoefficients; 3],
     ) -> f32 {
         let [breath, brightness, glide, vibrato_rate, vibrato_depth] = [
-            self.params[2], self.params[3], self.params[4], self.params[5], self.params[6],
+            self.params[2],
+            self.params[3],
+            self.params[4],
+            self.params[5],
+            self.params[6],
         ];
         let voice = &mut self.voices[voice_index];
         if !voice.active {
@@ -181,15 +193,15 @@ impl VocalSynth {
             0.0
         };
         let frequency = (voice.pitch_hz * (1.0 + vib)).clamp(30.0, sample_rate * 0.4);
-        voice.vibrato_phase = (voice.vibrato_phase + std::f32::consts::TAU * vibrato_rate * 10.0 / sample_rate)
+        voice.vibrato_phase = (voice.vibrato_phase
+            + std::f32::consts::TAU * vibrato_rate * 10.0 / sample_rate)
             .rem_euclid(std::f32::consts::TAU);
         voice.phase = (voice.phase + frequency / sample_rate).fract();
 
         // A bright, gently softened glottal pulse. The formant resonators supply vowel identity.
         let phase = voice.phase;
         let saw = 2.0 * phase - 1.0;
-        let source = 0.82 * saw
-            + brightness * 0.18 * (std::f32::consts::TAU * phase * 2.0).sin();
+        let source = 0.82 * saw + brightness * 0.18 * (std::f32::consts::TAU * phase * 2.0).sin();
         let noise = voice.noise_sample() * breath * 0.22;
         let input = source * (1.0 - breath * 0.55) + noise;
         let mut formants = 0.0;
@@ -212,7 +224,12 @@ impl Instrument for VocalSynth {
     }
 
     fn note_off(&mut self, key: u8) {
-        if let Some(voice) = self.voices.iter_mut().rev().find(|v| v.active && v.key == key) {
+        if let Some(voice) = self
+            .voices
+            .iter_mut()
+            .rev()
+            .find(|v| v.active && v.key == key)
+        {
             voice.releasing = true;
         }
     }
@@ -289,8 +306,8 @@ mod tests {
     fn controls_are_clamped_and_vowel_selection_changes_the_timbre() {
         let mut a = VocalSynth::new(44_100.0);
         let mut b = VocalSynth::new(44_100.0);
-        a.set_parameter(8, 0.0);
-        b.set_parameter(8, 1.0);
+        a.set_parameter(7, 0.0);
+        b.set_parameter(7, 1.0);
         a.note_on(60, 1.0, 0.5);
         b.note_on(60, 1.0, 0.5);
         let mut al = [0.0; 2048];

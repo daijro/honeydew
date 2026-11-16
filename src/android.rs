@@ -259,7 +259,10 @@ static BACK: AtomicBool = AtomicBool::new(false);
 static UI_WAKE: Mutex<Option<eframe::egui::Context>> = Mutex::new(None);
 
 fn wake_ui() {
-    let ctx = UI_WAKE.lock().unwrap_or_else(|err| err.into_inner()).clone();
+    let ctx = UI_WAKE
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .clone();
     if let Some(ctx) = ctx {
         ctx.request_repaint();
     }
