@@ -59,7 +59,38 @@ jobs:
           PY
           fi
           exit "$rc"
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Run cargo clippy --workspace --all-targets -- -D warnings
+        shell: bash
+        run: |
+          set +e
+          cargo clippy --workspace --all-targets --message-format=json -- -D warnings > /tmp/clippy.json 2>/tmp/clippy.log
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            python3 - <<'PY'
+          import json, pathlib
+          for line in pathlib.Path("/tmp/clippy.json").read_text(errors="replace").splitlines():
+              try:
+                  item = json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              if item.get("reason") != "compiler-message":
+                  continue
+              diag = item.get("message", {})
+              if diag.get("level") not in ("error", "warning"):
+                  continue
+              spans = [span for span in diag.get("spans", []) if span.get("is_primary")]
+              if not spans:
+                  spans = [{"file_name": ".github", "line_start": 1}]
+              code = (diag.get("code") or {}).get("code", "clippy")
+              for span in spans:
+                  msg = diag.get("message", "clippy diagnostic")
+                  msg = msg.replace("%", "%25").replace("\n", " ").replace("\r", " ")
+                  print(f"::error file={span['file_name']},line={span['line_start']},title={code}::{msg}")
+          PY
+            cat /tmp/clippy.log
+          fi
+          exit "$rc"
       - run: cargo test --workspace
       - run: cargo check --workspace --target wasm32-unknown-unknown
       - name: Content tool
