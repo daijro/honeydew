@@ -1,4 +1,4 @@
-//! Desktop rack workers. Constructed on the UI thread, never in an audio callback.
+
 
 use std::sync::OnceLock;
 
