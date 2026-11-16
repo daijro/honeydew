@@ -102,7 +102,7 @@ fn note_effects_changed(a: &Channel, b: &Channel) -> bool {
     if !has_notes(a) && !has_notes(b) {
         return false;
     }
-    let snapshot = |c: &Channel| -> Vec<(i32, u16, usize, &[f32])> {
+    fn snapshot(c: &Channel) -> Vec<(i32, u16, usize, &[f32])> {
         let mut instruments = 0usize;
         let mut out = Vec::new();
         for m in &c.rack.modules {
@@ -115,7 +115,7 @@ fn note_effects_changed(a: &Channel, b: &Channel) -> bool {
             }
         }
         out
-    };
+    }
     snapshot(a) != snapshot(b)
 }
 

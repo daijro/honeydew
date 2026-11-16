@@ -259,10 +259,7 @@ static BACK: AtomicBool = AtomicBool::new(false);
 static UI_WAKE: Mutex<Option<eframe::egui::Context>> = Mutex::new(None);
 
 fn wake_ui() {
-    let ctx = UI_WAKE
-        .lock()
-        .unwrap_or_else(|err| err.into_inner())
-        .clone();
+    let ctx = UI_WAKE.lock().unwrap_or_else(|err| err.into_inner()).clone();
     if let Some(ctx) = ctx {
         ctx.request_repaint();
     }
@@ -328,8 +325,7 @@ pub fn set_keep_screen_on(on: bool) {
 /// Fires a subtle native Android tactile tick for key UI confirmations.
 pub fn haptic_tick() {
     let _ = with_activity(|env, activity| {
-        env.call_method(activity, "hapticTick", "()V", &[])
-            .map(drop)
+        env.call_method(activity, "hapticTick", "()V", &[]).map(drop)
     });
 }
 
@@ -388,9 +384,7 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onDocumentPicke
 /// Opens the system folder picker (`HoneydewActivity.openFolder`); `done` gets the files of the folder picked, listed
 /// on a Java thread.
 pub fn pick_folder(done: impl FnOnce(PickedFolder) + Send + 'static) {
-    *PICKING_FOLDER
-        .lock()
-        .unwrap_or_else(|err| err.into_inner()) = Some(Box::new(done));
+    *PICKING_FOLDER.lock().unwrap_or_else(|err| err.into_inner()) = Some(Box::new(done));
     let opened = with_activity(|env, activity| {
         env.call_method(activity, "openFolder", "()V", &[])
             .map(drop)

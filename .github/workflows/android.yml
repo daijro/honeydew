@@ -82,7 +82,22 @@ jobs:
           ABI_MODE: ${{ inputs.abi || 'all' }}
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.0.13004108"
-          tools/android-dist.sh --release --abi "$ABI_MODE"
+          set +e
+          tools/android-dist.sh --release --abi "$ABI_MODE" 2>&1 | tee /tmp/android-build.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            python3 - <<'PY'
+          import pathlib
+          lines = pathlib.Path("/tmp/android-build.log").read_text(errors="replace").splitlines()
+          tail = "\n".join(lines[-80:])
+          # Emit chunked error annotations readable via GitHub Check Runs API
+          for i in range(0, len(tail), 900):
+              chunk = tail[i:i+900].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Android build tail {i//900+1}::{chunk}")
+          PY
+            exit "$rc"
+          fi
       - name: Remove signing key
         if: always()
         run: rm -f "$RUNNER_TEMP/honeydew-release.jks"

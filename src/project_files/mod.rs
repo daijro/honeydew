@@ -1624,17 +1624,11 @@ static LEAVING_DONE: (std::sync::Mutex<bool>, std::sync::Condvar) =
 pub fn leave() {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let mut pending = LEAVING_DONE
-            .0
-            .lock()
-            .unwrap_or_else(|err| err.into_inner());
+        let mut pending = LEAVING_DONE.0.lock().unwrap_or_else(|err| err.into_inner());
         *pending = true;
     }
     LEAVING.store(true, std::sync::atomic::Ordering::Release);
-    let ctx = APP
-        .lock()
-        .unwrap_or_else(|err| err.into_inner())
-        .clone();
+    let ctx = APP.lock().unwrap_or_else(|err| err.into_inner()).clone();
     if let Some(ctx) = ctx {
         ctx.request_repaint();
     }
@@ -1645,19 +1639,13 @@ pub fn leave() {
 /// has ever been registered yet.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn leave_and_wait(timeout: std::time::Duration) {
-    let has_ctx = APP
-        .lock()
-        .unwrap_or_else(|err| err.into_inner())
-        .is_some();
+    let has_ctx = APP.lock().unwrap_or_else(|err| err.into_inner()).is_some();
     leave();
     if !has_ctx {
         finish_leaving();
         return;
     }
-    let guard = LEAVING_DONE
-        .0
-        .lock()
-        .unwrap_or_else(|err| err.into_inner());
+    let guard = LEAVING_DONE.0.lock().unwrap_or_else(|err| err.into_inner());
     let _ = LEAVING_DONE
         .1
         .wait_timeout_while(guard, timeout, |pending| *pending);
@@ -1687,10 +1675,7 @@ pub fn set_context(ctx: &Context) {
 pub fn finish_leaving() {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let mut pending = LEAVING_DONE
-            .0
-            .lock()
-            .unwrap_or_else(|err| err.into_inner());
+        let mut pending = LEAVING_DONE.0.lock().unwrap_or_else(|err| err.into_inner());
         if *pending {
             *pending = false;
             LEAVING_DONE.1.notify_all();
