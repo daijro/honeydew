@@ -17,6 +17,11 @@ on:
           - all
           - arm64-v8a
           - armeabi-v7a
+      include_sounds:
+        description: Bundle the large sound library in the APK (otherwise it downloads on first launch)
+        required: false
+        default: false
+        type: boolean
 
 env:
   CARGO_TERM_COLOR: always
@@ -80,10 +85,16 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ steps.sign.outputs.key_alias }}
           ANDROID_KEY_PASSWORD: ${{ steps.sign.outputs.key_pass }}
           ABI_MODE: ${{ inputs.abi || 'all' }}
+          INCLUDE_SOUNDS: ${{ inputs.include_sounds || 'false' }}
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.0.13004108"
+          args=(--release --abi "$ABI_MODE")
+          # A manual build defaults to the much smaller soundless APK; push builds keep the full bundled version.
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$INCLUDE_SOUNDS" != true ]; then
+            args+=(--base)
+          fi
           set +e
-          tools/android-dist.sh --release --abi "$ABI_MODE" 2>&1 | tee /tmp/android-build.log
+          tools/android-dist.sh "${args[@]}" 2>&1 | tee /tmp/android-build.log
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -ne 0 ]; then
@@ -98,6 +109,24 @@ jobs:
           PY
             exit "$rc"
           fi
+      - name: Independently verify APK contents and install metadata
+        run: |
+          shopt -s nullglob
+          apks=(target/honeydew-android-*.apk)
+          [ "${#apks[@]}" -eq 1 ] || { echo "Expected one APK, found ${#apks[@]}"; exit 1; }
+          apk=${apks[0]}
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | sed -n '1,5p'
+          python3 - "$apk" <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as apk:
+              bad = apk.testzip()
+              if bad:
+                  raise SystemExit(f"ZIP CRC failure in APK entry: {bad}")
+              print(f"Verified all APK ZIP entries: {len(apk.infolist())} entries")
+          PY
+          sha256sum "$apk" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "APK: \`$apk\`" >> "$GITHUB_STEP_SUMMARY"
       - name: Remove signing key
         if: always()
         run: rm -f "$RUNNER_TEMP/honeydew-release.jks"
