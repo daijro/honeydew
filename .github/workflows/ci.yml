@@ -26,7 +26,39 @@ jobs:
       # libclang: bindgen in signalsmith-stretch's build script (Lemon Sampler's time stretching, C++).
       - name: System libraries
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
-      - run: cargo fmt --check
+      - name: Run cargo fmt --check
+        shell: bash
+        run: |
+          set +e
+          cargo fmt --all -- --check > /tmp/rustfmt.log 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            python3 - <<'PY'
+          import pathlib, re
+          lines = pathlib.Path("/tmp/rustfmt.log").read_text(errors="replace").splitlines()
+          file = "src"
+          start = 1
+          chunk = []
+          def emit():
+              if not chunk:
+                  return
+              text = "\n".join(chunk)
+              for pos in range(0, len(text), 800):
+                  message = text[pos:pos+800].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+                  print(f"::error file={file},line={start},title=rustfmt diff::{message}")
+          for line in lines:
+              match = re.match(r"Diff in .*/honeydew/(.+):(\d+):", line)
+              if match:
+                  emit()
+                  file, start = match.group(1), int(match.group(2))
+                  chunk = [line]
+              elif chunk:
+                  chunk.append(line)
+          emit()
+          PY
+          fi
+          exit "$rc"
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - run: cargo check --workspace --target wasm32-unknown-unknown
