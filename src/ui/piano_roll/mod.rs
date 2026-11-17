@@ -885,7 +885,7 @@ impl PianoRoll {
         let is_vocal = song
             .channels
             .get(self.channel)
-            .is_some_and(|channel| crate::song::vocal_editor(channel));
+            .is_some_and(crate::song::vocal_editor);
         if !is_vocal {
             return false;
         }
@@ -1238,7 +1238,7 @@ impl PianoRoll {
             && song
                 .channels
                 .get(self.channel)
-                .is_some_and(|channel| crate::song::vocal_editor(channel));
+                .is_some_and(crate::song::vocal_editor);
         if pitch_locked && !matches!(self.gesture, Gesture::Idle) {
             actions.extend(self.end_touch());
         }
@@ -1288,7 +1288,7 @@ impl PianoRoll {
         let is_vocal = song
             .channels
             .get(self.channel)
-            .is_some_and(|channel| crate::song::vocal_editor(channel));
+            .is_some_and(crate::song::vocal_editor);
         let vocal_states: HashMap<(u32, u8), &crate::song::VocalNoteState> =
             self.clip(song).map_or_else(HashMap::new, |clip| {
                 clip.file
@@ -2385,7 +2385,7 @@ impl PianoRoll {
         let is_vocal = song
             .channels
             .get(self.channel)
-            .is_some_and(|channel| crate::song::vocal_editor(channel));
+            .is_some_and(crate::song::vocal_editor);
         let vocal_labels = ["Vel", "Dynamics", "Breath", "Formant"];
         let labels = if is_vocal {
             &vocal_labels[..]
