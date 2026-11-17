@@ -20,7 +20,8 @@ pub use drum_kit::{DrumKit, SamplerSlot};
 pub use file::{
     ChannelFileState, ClipFileState, DEFAULT_CHORD_JSON, KeyboardState, KitFileState,
     LaneFileState, MetaState, MidiSend, Modulation, ModuleFileState, Raw, RawChunk, SET_DEFAULT,
-    SET_EDITED, SET_LOADED, SendState, SlotFileState, SongFileState, VocalNoteState, VocalPitchPoint,
+    SET_EDITED, SET_LOADED, SendState, SlotFileState, SongFileState, VocalNoteState,
+    VocalPitchPoint,
 };
 pub use lane::MAX_PLAYS_A_PIXEL;
 pub use lane::{AutomationTarget, Clip, DrumGrid, Event, Lane, LaneKind};

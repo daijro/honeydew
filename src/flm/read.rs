@@ -1184,7 +1184,11 @@ fn vocal_notes(payload: &[u8]) -> Option<Vec<VocalNoteState>> {
             (0.5, 0.0, 0.5)
         };
         let safe = |value: f32, fallback: f32| {
-            if value.is_finite() { value.clamp(0.0, 1.0) } else { fallback }
+            if value.is_finite() {
+                value.clamp(0.0, 1.0)
+            } else {
+                fallback
+            }
         };
         let point_count = usize::from(reader.u16().ok()?);
         if point_count > 512 {
@@ -1195,8 +1199,16 @@ fn vocal_notes(payload: &[u8]) -> Option<Vec<VocalNoteState>> {
             let offset = reader.f32().ok()?;
             let cents = reader.f32().ok()?;
             pitch.push(VocalPitchPoint {
-                offset: if offset.is_finite() { offset.clamp(0.0, 1.0) } else { 0.0 },
-                cents: if cents.is_finite() { cents.clamp(-1200.0, 1200.0) } else { 0.0 },
+                offset: if offset.is_finite() {
+                    offset.clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
+                cents: if cents.is_finite() {
+                    cents.clamp(-1200.0, 1200.0)
+                } else {
+                    0.0
+                },
             });
         }
         pitch.sort_by(|a, b| a.offset.total_cmp(&b.offset));

@@ -90,7 +90,11 @@ pub(super) fn actions(
                     if stop <= start {
                         continue;
                     }
-                    let count = (stop - start).div_ceil(stride);
+                    let count = if data.pitch.is_empty() {
+                        1
+                    } else {
+                        (stop - start).div_ceil(stride)
+                    };
                     let needed = count.saturating_mul(modules.len() as u64);
                     if needed > budget as u64 {
                         return Err(EngineError::TooManyEvents);
@@ -152,5 +156,58 @@ mod tests {
         assert_eq!(pitch(&points, 1.0), 100.0);
         assert_eq!(vowel("hello"), 4);
         assert_eq!(vowel("息"), 255);
+    }
+}
+
+#[cfg(test)]
+mod schedule_tests {
+    use super::*;
+    use crate::song::{ChannelKind, SynthKind, VocalNoteState};
+
+    #[test]
+    fn vocal_schedule_repeats_clips_and_cuts_at_visible_end() {
+        let mut song = Song::default();
+        song.add_channel(ChannelKind::Synth(SynthKind::VocalSynth));
+        let clip = song.channels[1].lanes[0].add_clip(128, 1.0);
+        clip.visible_len_beats = 2.5;
+        clip.events.push(Event::Note {
+            pos: 0,
+            key: 60,
+            len_beats: 1.0,
+            velocity: 255,
+            pan: 127,
+            slide: false,
+        });
+        clip.file.vocal_notes.push(VocalNoteState {
+            pos: 0,
+            key: 60,
+            lyric: "la".into(),
+            dynamics: 0.75,
+            breathiness: 0.2,
+            formant: 0.6,
+            pitch: vec![
+                VocalPitchPoint {
+                    offset: 0.0,
+                    cents: -100.0,
+                },
+                VocalPitchPoint {
+                    offset: 1.0,
+                    cents: 100.0,
+                },
+            ],
+        });
+        let mut out = Vec::new();
+        actions(&song, 48000.0, 120.0, &mut out).unwrap();
+        assert_eq!(out.first().unwrap().frame, 24000);
+        assert!(out.iter().all(|event| event.frame < 84000));
+        assert_eq!(out.len(), 125);
+        for start in [24000, 48000, 72000] {
+            assert!(out.iter().any(|event| event.frame == start && matches!(event.action,
+                Action::Vocal { expression, key: 60, .. } if expression.cents == -100.0 && expression.vowel == 0)));
+        }
+        song.channels[1].lanes[0].clips[0].muted = true;
+        out.clear();
+        actions(&song, 48000.0, 120.0, &mut out).unwrap();
+        assert!(out.is_empty());
     }
 }

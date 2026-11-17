@@ -372,12 +372,11 @@ impl Instrument for VocalSynth {
             })
         });
         for (l, r) in left.iter_mut().zip(right) {
-            for voice in 0..VOICES {
+            for (voice, coefficients) in coefficients.iter().copied().enumerate() {
                 if !self.voices[voice].active {
                     continue;
                 }
-                let sample =
-                    self.voice_sample(voice, sample_rate, context.playing, coefficients[voice]);
+                let sample = self.voice_sample(voice, sample_rate, context.playing, coefficients);
                 *l += sample * self.voices[voice].pan[0];
                 *r += sample * self.voices[voice].pan[1];
             }

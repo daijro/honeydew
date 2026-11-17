@@ -608,19 +608,32 @@ fn write_clip(
             writer.u16(2)?;
             writer.u16(clip.file.vocal_notes.len() as u16)?;
             for note in &clip.file.vocal_notes {
-                if note.key > 127 || note.lyric.len() > u16::MAX as usize || note.pitch.len() > 512 {
+                if note.key > 127 || note.lyric.len() > u16::MAX as usize || note.pitch.len() > 512
+                {
                     return Err(FlmError::new("HDVo", FlmErrorKind::BadValue));
                 }
                 writer.u32(note.pos)?;
                 writer.u8(note.key)?;
                 writer.vstr16(note.lyric.as_bytes())?;
                 for value in [note.dynamics, note.breathiness, note.formant] {
-                    writer.f32(if value.is_finite() { value.clamp(0.0, 1.0) } else { 0.5 })?;
+                    writer.f32(if value.is_finite() {
+                        value.clamp(0.0, 1.0)
+                    } else {
+                        0.5
+                    })?;
                 }
                 writer.u16(note.pitch.len() as u16)?;
                 for point in &note.pitch {
-                    writer.f32(if point.offset.is_finite() { point.offset.clamp(0.0, 1.0) } else { 0.0 })?;
-                    writer.f32(if point.cents.is_finite() { point.cents.clamp(-1200.0, 1200.0) } else { 0.0 })?;
+                    writer.f32(if point.offset.is_finite() {
+                        point.offset.clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    })?;
+                    writer.f32(if point.cents.is_finite() {
+                        point.cents.clamp(-1200.0, 1200.0)
+                    } else {
+                        0.0
+                    })?;
                 }
             }
             Ok(())

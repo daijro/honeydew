@@ -2234,7 +2234,10 @@ fn vocal_lyrics_and_pitch_curves_round_trip_in_a_clip_extension() {
     let bytes = crate::flm::write(&song).unwrap();
     assert_eq!(bytes.windows(4).filter(|w| *w == b"HDVo").count(), 1);
     let read = crate::flm::read(&bytes).unwrap();
-    assert_eq!(read.channels[1].lanes[0].clips[0].file.vocal_notes, song.channels[1].lanes[0].clips[0].file.vocal_notes);
+    assert_eq!(
+        read.channels[1].lanes[0].clips[0].file.vocal_notes,
+        song.channels[1].lanes[0].clips[0].file.vocal_notes
+    );
 }
 
 #[test]
