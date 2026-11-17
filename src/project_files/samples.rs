@@ -380,6 +380,7 @@ mod tests {
             "My Songs",
             "My SoundFonts",
             "My Tracks",
+            "My Voicebanks",
         ];
         assert_eq!(made, all);
         assert!(all.iter().all(|f| user.join(f).is_dir()));
