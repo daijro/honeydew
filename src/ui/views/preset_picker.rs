@@ -1821,6 +1821,7 @@ mod tests {
     #[test]
     fn vocal_browser_shares_dw_user_root_and_has_voicebanks_and_import() {
         let tmp = Temp::new("vocal-browser-root");
+        crate::project_files::make_user_folders(&tmp.0).unwrap();
         let files = ProjectFiles::on_disk(&tmp.0);
         let target = PresetTarget::Module(2);
         assert_eq!(top(target, Some(53)), top(target, Some(DW)));
