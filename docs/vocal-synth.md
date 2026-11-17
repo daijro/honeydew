@@ -321,3 +321,44 @@ phrase pre-roll/overlap mixing, context-aware/multipitch aliases, word dictionar
 and unified automatic/manual pitch curves for rendered samples. Procedural glide,
 vibrato and formant controls already exist, but are not a singer-sample renderer.
 No claim is made that this follow-up implements that full synthesis pipeline.
+
+## Task Pack v1.0 — BanaForge 0.5.5
+
+- **VS-1:** Module 53 now owns a non-null `DefaultVoice` instrument. It is not
+  ready to resolve phonemes and all its realtime methods are allocation-free
+  no-ops. It adds no samples to the audio buffers. Lyric typing/Done updates
+  project text via the metadata edit path, not the engine-rebuild path. The
+  editor and distributor now consistently allow 4096 Unicode characters (FLM
+  stores UTF-8). A regression types a long mixed Unicode/emoji string and checks
+  exact storage/FLM round-trip and absence of audio-edit actions.
+- **VS-2:** Main Settings → Vocal Synth persists `vocalSynth.waveformEnabled`
+  (true), `vocalSynth.waveformOffsetY` (5, clamped to 0–40 note rows), and
+  `vocalSynth.simpleMode` (false). Cached waveform drawing is below each note,
+  starting at note bottom + gap × note-row height, and is paint-only. Disabled
+  waveform skips preview scheduling and painting. **Because no sample-bank
+  renderer is ready, no procedural substitute is scheduled; blank waveform is
+  intentional.** Future voice/dictionary controls are disabled.
+- **VS-3:** Simple mode removes curve overlays, pitch-draw/flatten actions,
+  expression lane/tab and floating Snap/More actions. Copy/Delete, note editing,
+  lyrics and transport remain. Advanced graph state is retained when switching
+  back; simple mode itself is saved between launches.
+
+### Phone handoff / known incomplete acceptance
+
+The reported fresh-project/no-bank Android crash has not been reproduced on a
+physical device. No crash log was supplied in this task context, so no logcat
+trace or confirmed root cause is claimed. There is no active phoneme resolver
+on the default path, hence no lookup failure to log or catch; importantly,
+Rust release panic-abort cannot be made safe using Java-style exception handling.
+
+Omi: install 0.5.5, create a fresh Vocal Synth note without a bank, enter `a`,
+`teto`, then 50+ mixed characters/emoji; Done, reopen, save/reload and confirm
+exact text and no termination. Repeat after each edit, test persisted waveform
+show/gap at 0/5/40, Simple mode on/off, placement/drag/resize, Copy/Delete and
+transport. Supply full `adb logcat -b crash -d` plus nearby `VocalSynth` output
+if termination remains. Do not share private bank files.
+
+**Unmet:** audible imported-UTAU-bank regression cannot pass yet: bank import
+indexes metadata but no singer/resampler is connected. The default is now
+intentionally silent, not procedural singing. No proprietary voice assets were
+added. Device acceptance remains pending even if host tests/APK build pass.
