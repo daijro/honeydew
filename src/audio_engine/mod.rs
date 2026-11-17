@@ -2488,14 +2488,16 @@ mod tests {
     fn vocal_rack_reverb_live_mix_reaches_the_effect_processor() {
         let mut song = Song::default();
         song.add_channel(ChannelKind::Synth(SynthKind::VocalSynth));
-        let id = song.channels[1].rack.add(12);
-        let mut engine = SongAudioEngine::new(&song, 48_000.0).unwrap();
-        for value in [0.0, 0.2, 1.0] {
-            engine.set_param(1, id, 3, value);
-            assert_eq!(
-                engine.audio.effect(1, id).unwrap().parameter(3),
-                Some(value)
-            );
+        for type_id in [12, 32] {
+            let id = song.channels[1].rack.add(type_id);
+            let mut engine = SongAudioEngine::new(&song, 48_000.0).unwrap();
+            for value in [0.0, 0.2, 1.0] {
+                engine.set_param(1, id, 3, value);
+                assert_eq!(
+                    engine.audio.effect(1, id).unwrap().parameter(3),
+                    Some(value)
+                );
+            }
         }
     }
 

@@ -48,8 +48,10 @@ Do not label these as finished vocal rendering or measured audio previews.
 3. Pass vocal metadata through scheduling, seek, loop, edit-adoption and export, with
    per-voice routing for overlapping notes. A global pitch bend cannot represent polyphony.
 4. Only after the loader exists, route the Default drawer to a permanent My Voicebanks
-   root. Atomically publish extracted banks and manifests; automatically classify oto
-   archives without mistaking song ZIPs for banks. Never extract symlinks or traversal paths.
+   root. Atomically publish extracted banks and manifests. Normal ZIP imports now classify
+   oto archives into My Voicebanks, while project ZIPs retain precedence. This reuses
+   the generic import's already decoded entries; explicit bank imports use the worker.
+   Samples are still archived, not extracted or playable. Never extract symlinks or traversal paths.
 5. Cache actual min/max PCM waveform levels off-thread, paint only visible samples;
    remove the schematic overlay when real rendered data is available.
 6. Validate on Android with audio underrun counters, sustained multi-voice playback,
@@ -73,9 +75,24 @@ voice samples are included. A license filename is not proof of redistribution ri
 
 `.github/workflows/android.yml` builds this exact branch into a signed sideloadable APK,
 verifies its signature/install metadata and ZIP CRC, and uploads `honeydew-android-apk`.
-The owner re-enabled Actions. Android build 44018530986 was dispatched successfully;
-new commits on this branch also trigger Android and vocal regression workflows.
-A build is not a delivered APK until the workflow completes and its artifact is verified.
+The owner re-enabled Actions. The final ARM64 base APK from source commit 4b894b3
+completed successfully in Android run 44019835588, including apksigner, install metadata,
+and ZIP CRC verification. Download its `honeydew-android-apk` artifact:
+https://github.com/jellyscoll76-Real/honeydew/actions/runs/44019835588/artifacts/14300368248
+
+This lightweight build excludes Honeydew's large sound library and adds no voicebank.
+The procedural voice is built into the native library. GitHub login may be required.
+The sandbox cannot copy the artifact locally because its redirect goes to an inaccessible
+Azure artifact-storage host. This does not prevent downloading it through GitHub.
+
+Vocal regression run 44019821112 passed both the audio-crate vocal tests and the app's
+`vocal_` filtered tests (parser, scheduling, lyrics, waveform, contrast, ZIP auto-routing,
+and existing vocal serialization coverage). Windows/macOS native smoke checks passed;
+full workspace CI 44019821165 subsequently failed with nine app tests. Failures include
+module-browser/rack expectations around the new type 53, the user-folder list, selector
+and parameter-range tests, and a piano-roll graph-paint interaction. These have not been
+resolved by this update; do not report the full suite as green. No Android device
+installation was performed.
 The sandbox lacks JDK/Android SDK; their normal download hosts are restricted.
 An alternate npm-distributed Rust 1.88 toolchain was obtained for formatting and
 isolated DSP tests, but this is not a full Android build environment.
@@ -99,3 +116,24 @@ A single remaining note keeps the phrase. Overflow is joined on the last target,
 the existing 64-character per-note limit. This is separator-based syllable entry, not
 linguistic syllabification. Ordinary typing remains single-note. Procedural voice remains
 the bundled default; no additional voicebank download is required.
+
+## Touch, IME and binding follow-up
+
+* Pitch Draw now owns the grid even when a touch misses a curve node; note moves,
+  resize handles and floating note actions cannot capture those touches. Nodes use
+  a 22-point radius and are searched globally before note-body hits. A semitone is
+  one piano-roll row in both painting and gesture conversion.
+* HDVo already stores relative normalized time and cents, not screen positions.
+  Selected parent anchors now follow note dragging and transpose operations; the
+  relative curve and lyric stay unchanged (no file format migration).
+* Lyric editing calls android_text::edit, the existing NativeActivity-to-EditText
+  bridge. The Java editor requests focus and posts showSoftInput after attachment.
+* The existing bounded audio command queue and SetParam routing are retained.
+  Reverb Mix uses param 3 for both legacy 12 and current 32; regression tests
+  exercise both through the renderer dispatcher. No additional UI/audio locks.
+* Prepared per-note expression timelines restore vocal state on seek and adopted
+  engine edits, including reset at the next note-on. No render-thread allocation.
+* The selector, procedural DSP formants and lyric-vowel mapping use A/E/I/O/U.
+  The DSP now uses the same round-to-nearest menu quantization as the UI. Existing
+  non-default saved Vowel knob values will select the newly ordered vowel.
+* GitHub reported this repository is already public (isPrivate: false).
