@@ -1,4 +1,4 @@
-# Honeydew on Cloudflare (Workers static assets or Pages), which reads `_headers` from the site root: tools/web-dist.sh
+# BanaForge on Cloudflare (Workers static assets or Pages), which reads `_headers` from the site root: tools/web-dist.sh
 # copies it into dist/, the site (README "Web").
 # Cloudflare compresses HTML, JS and JSON itself, but doesn't send a stored .gz with Content-Encoding (Workers static
 # assets; Pages is undocumented). So the wasm and the packs are fetched as their .gz and gunzipped in the browser

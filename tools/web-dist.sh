@@ -2,8 +2,8 @@
 # The web release (README "Web"): the whole site in dist/.
 #   tools/web-dist.sh          trunk build --release, wasm-opt -O3, a gzip copy (`<file>.gz`) beside the app's wasm, JS
 #                              and HTML, then sounds/honeydew-sounds.zip.* unpacked into content/, then --check
-#   tools/web-dist.sh --zip    the same, then the release zip: target/honeydew-web-<version>.zip (or under
-#                              $CARGO_TARGET_DIR), dist/ in one honeydew-web-<version>/ folder
+#   tools/web-dist.sh --zip    the same, then the release zip: target/banaforge-web-<version>.zip (or under
+#                              $CARGO_TARGET_DIR), dist/ in one banaforge-web-<version>/ folder
 #   tools/web-dist.sh --check  no build: prints the size table, and fails when a budget is over, an app file's .gz is
 #                              missing or stale, a pack part is over 24,000,000 bytes or any file over 25 MiB
 # Needs trunk, wasm-opt (binaryen; or set $WASM_OPT) and unzip. The tracked sound archive parts contain the packs,
@@ -45,8 +45,8 @@ build() {
     app_files | xargs -r gzip -9 -k -n -f
     cp deploy/_headers dist/
     mkdir -p target
-    cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > target/honeydew-sounds.zip
-    unzip -q target/honeydew-sounds.zip -d dist
+    cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > target/banaforge-sounds.zip
+    unzip -q target/banaforge-sounds.zip -d dist
 }
 
 fail=0
@@ -105,10 +105,10 @@ check() {
 
 release_zip() {
     v=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
-    out=${CARGO_TARGET_DIR:-target}/honeydew-web-$v
+    out=${CARGO_TARGET_DIR:-target}/banaforge-web-$v
     rm -rf "$out" "$out.zip"
     cp -R dist "$out"
-    (cd "$out/.." && zip -qr9 "honeydew-web-$v.zip" "honeydew-web-$v")
+    (cd "$out/.." && zip -qr9 "banaforge-web-$v.zip" "banaforge-web-$v")
     rm -rf "$out"
     echo "wrote $out.zip"
 }

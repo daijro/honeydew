@@ -1,11 +1,11 @@
 //! A song load on the web waits for the bundled sounds it needs (`content::web`): a loading screen counts their parts
-//! in, then the song's audio loads as it does at once elsewhere ([`HoneydewApp::song_audio`]), so nothing decodes twice
+//! in, then the song's audio loads as it does at once elsewhere ([`BanaForgeApp::song_audio`]), so nothing decodes twice
 //! and no sound still on its way reads as missing. A program that stood in with its lite one loads in full once all its
 //! parts are in.
 
 use eframe::egui;
 
-use super::HoneydewApp;
+use super::BanaForgeApp;
 use crate::audio_engine::samples;
 use crate::audio_link::Handover;
 use crate::content::web;
@@ -20,7 +20,7 @@ fn downloading(landed: usize, total: usize) -> String {
     format!("Downloading sounds ({landed}/{total})...")
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// A new song (`SongEdit::Replaced`, its cache new): on the web, the bundled sounds it needs that are not in memory
     /// start downloading behind the loading screen, and its audio waits for them ([`Self::bundle_wait`]). Elsewhere, or
     /// with them all in, it loads now.

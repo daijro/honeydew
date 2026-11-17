@@ -2,9 +2,9 @@
 //! local `~/Downloads/sample.flm` (never copied into the repo). `cargo test --test flm_fixtures --
 //! --nocapture` prints the byte-diff report: every chunk of `write(read(f))` that differs from `f`.
 
-use honeydew::flm::chunk::{Chunk, ChunkIter, PrefixKind, file_chunks};
-use honeydew::flm::{read, write};
-use honeydew::song::{Raw, Song};
+use banaforge::flm::chunk::{Chunk, ChunkIter, PrefixKind, file_chunks};
+use banaforge::flm::{read, write};
+use banaforge::song::{Raw, Song};
 
 const OWNER: &[u8] = include_bytes!("fixtures/owner-fresh-song.flm");
 

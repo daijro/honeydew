@@ -8,7 +8,7 @@ use eframe::egui::{
     self, Align2, Color32, Id, Painter, PointerButton, Pos2, Rangef, Rect, Sense, Vec2, pos2, vec2,
 };
 
-use honeydew_audio::device::{AudioCommand, OutputSnapshot};
+use banaforge_audio::device::{AudioCommand, OutputSnapshot};
 
 use crate::history::Step;
 use crate::icons::{IconId, draw_icon};
@@ -4453,7 +4453,7 @@ mod tests {
         rig.click(drums);
         assert_eq!(rig.plus().0, Some(SongEdit::Final));
         assert_eq!(rig.clips(1)[0].start_tick, 0);
-        // Honeydew change (#124): the master's automation track (current, its keys silent) takes a new clip
+        // BanaForge change (#124): the master's automation track (current, its keys silent) takes a new clip
         // too, a bar at the snapped beat (14), driving the track's target: the master's Level (its volume).
         let master = pos2(600.0, 80.0);
         for _ in 0..2 {

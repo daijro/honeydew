@@ -3,8 +3,8 @@
 //! steps computed as a menu writes them (the f32 quotient) and as the f64 quotient rounded to f32.
 
 use super::*;
-use honeydew_audio::three_osc::arp::chord_value;
-use honeydew_audio::{dw_sampler, gmsynth, minisynth, sample_edit, slicer, supersaw, three_osc};
+use banaforge_audio::three_osc::arp::chord_value;
+use banaforge_audio::{dw_sampler, gmsynth, minisynth, sample_edit, slicer, supersaw, three_osc};
 
 fn sweep(m: u32) -> Vec<f32> {
     let halves = 2 * m;
@@ -136,6 +136,7 @@ const SELECTORS: &[(u16, &[usize], u32, Law)] = &[
     (51, &[14, 25], 21, round::<21>),
     (51, &[18, 29], 11, round::<11>),
     (51, &[31, 32], 14, round::<14>),
+    (53, &[7], 4, round::<4>),
 ];
 
 #[test]

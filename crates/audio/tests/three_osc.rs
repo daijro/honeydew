@@ -2,12 +2,12 @@
 
 use std::f32::consts::{FRAC_1_SQRT_2, PI};
 
-use honeydew_audio::ProcessContext;
-use honeydew_audio::instrument::{Instrument, InstrumentModule};
-use honeydew_audio::sample::SampleData;
-use honeydew_audio::three_osc::filter::{self, Coefs, Filter, FilterType};
-use honeydew_audio::three_osc::osc::{self, Shape, Wave};
-use honeydew_audio::three_osc::{
+use banaforge_audio::ProcessContext;
+use banaforge_audio::instrument::{Instrument, InstrumentModule};
+use banaforge_audio::sample::SampleData;
+use banaforge_audio::three_osc::filter::{self, Coefs, Filter, FilterType};
+use banaforge_audio::three_osc::osc::{self, Shape, Wave};
+use banaforge_audio::three_osc::{
     TICK_D, ThreeOsc, coarse, gate_t, gate_ticks, max_voices, slide_t, slide_ticks, tick_samples,
 };
 

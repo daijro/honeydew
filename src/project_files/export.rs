@@ -45,10 +45,10 @@ use std::collections::BTreeMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use honeydew_audio::flac_writer::FlacEncoder;
-use honeydew_audio::mp3_writer::Mp3Encoder;
-use honeydew_audio::ogg_writer::OggEncoder;
-use honeydew_audio::wav_writer::{HEADER_LEN, WavWriter, float32_wav, header, info_chunk};
+use banaforge_audio::flac_writer::FlacEncoder;
+use banaforge_audio::mp3_writer::Mp3Encoder;
+use banaforge_audio::ogg_writer::OggEncoder;
+use banaforge_audio::wav_writer::{HEADER_LEN, WavWriter, float32_wav, header, info_chunk};
 
 use super::{
     FileEvent, MAX_FILE_BYTES, OVERWRITE, ProjectFiles, SAVE_FAILED, SAVE_FILE_FAILED, SAVED,

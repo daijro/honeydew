@@ -891,7 +891,7 @@ fn the_chord_kinds_keep_one_row_and_a_5_u_panel_shows_none() {
 
 #[test]
 fn the_scale_kind_with_key_lock_lays_out_only_the_scales_tones_where_classic_keeps_the_piano() {
-    // D major, where C# is a tone: key-lock is on (`HoneydewApp::key_input`).
+    // D major, where C# is a tone: key-lock is on (`BanaForgeApp::key_input`).
     let mut rig = Rig::with_synth();
     rig.app.song.key_root = 2;
     rig.app.song.key_scale = crate::ui::keyboard_settings::scale_to_stored(0);
@@ -1534,7 +1534,7 @@ fn the_keyboard_kind_is_the_persisted_keyboardkind_setting() {
     }
     assert_eq!(Settings::load(&spy).keyboard_kind, 2);
     // A new start reads it.
-    let app = HoneydewApp::with_storage(Some(Box::new(spy.clone())));
+    let app = BanaForgeApp::with_storage(Some(Box::new(spy.clone())));
     assert_eq!(app.settings.keyboard_kind(), KeyboardMode::Chords);
     assert!(
         !rig.app.piano_keys(),

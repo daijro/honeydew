@@ -239,7 +239,7 @@ mod tests {
     //! Song edits while playing through the link: the recorder's engine plays them as the device would, and each output
     //! is checked against an engine that never saw the edit.
 
-    use honeydew_audio::device::{AudioCommand, AudioRenderer};
+    use banaforge_audio::device::{AudioCommand, AudioRenderer};
 
     use super::super::testing::Recorder;
     use super::super::{AudioLink, Handover};

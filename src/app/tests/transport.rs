@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::song::PPQ;
-use honeydew_audio::device::AudioRenderer;
+use banaforge_audio::device::AudioRenderer;
 
 const BEAT: u64 = PPQ as u64;
 /// REC, two slots left of play.
@@ -556,7 +556,7 @@ fn an_automation_take_keeps_its_lane_when_a_note_take_adds_a_notes_lane_before_i
     rig.at(BEAT);
     rig.click(REC);
     rig.click(PLAY);
-    // A knob's first recorded move, as `HoneydewApp::auto_record` makes it: its new Level lane, then the re-key.
+    // A knob's first recorded move, as `BanaForgeApp::auto_record` makes it: its new Level lane, then the re-key.
     let before = rig.app.song.clone();
     let song = &mut rig.app.song;
     rig.app
@@ -628,7 +628,7 @@ fn disarming_with_automation_and_a_held_note_recorded_is_one_undo_step() {
     rig.click(PLAY);
     rig.at(2 * BEAT);
     rig.type_key(egui::Key::Z, true);
-    // A knob's first recorded move, as `HoneydewApp::auto_record` makes it: its new Level lane, then the re-key.
+    // A knob's first recorded move, as `BanaForgeApp::auto_record` makes it: its new Level lane, then the re-key.
     let before = rig.app.song.clone();
     let song = &mut rig.app.song;
     rig.app

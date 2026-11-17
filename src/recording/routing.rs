@@ -13,7 +13,7 @@ use super::input::{InputChoice, InputDevice};
 use crate::song::{Channel, ChannelKind, Song};
 
 /// The [`eframe::Storage`] key the inputs are stored under, as one JSON object.
-pub const STORAGE_KEY: &str = "honeydew.routingPrefs";
+pub const STORAGE_KEY: &str = "banaforge.routingPrefs";
 
 /// An input picked in a channel's `INPUT` menu: the device by name (its place in the list is no lasting id), and its
 /// port or stereo pair, 0-based.

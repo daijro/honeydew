@@ -5,9 +5,9 @@
 //! sample cache renders from code ([`crate::sample_cache::SampleKey::of_path`]) with the loop's tempo and cues, which
 //! the WAV does not carry.
 
-use honeydew_audio::sample::SampleData;
-use honeydew_audio::wav_writer::float32_wav;
-use honeydew_audio::{builtin_loops, builtin_shapes};
+use banaforge_audio::sample::SampleData;
+use banaforge_audio::wav_writer::float32_wav;
+use banaforge_audio::{builtin_loops, builtin_shapes};
 
 use super::{Entry, LOOPS, SHAPES};
 
@@ -39,9 +39,9 @@ fn wav(sample: Option<SampleData>) -> Vec<u8> {
 mod tests {
     use std::path::Path;
 
-    use honeydew_audio::builtin_loops::loop_sample;
-    use honeydew_audio::builtin_shapes::shape;
-    use honeydew_audio::sample::decode;
+    use banaforge_audio::builtin_loops::loop_sample;
+    use banaforge_audio::builtin_shapes::shape;
+    use banaforge_audio::sample::decode;
 
     use crate::content::{LOOPS, ROOT, SHAPES, factory};
     use crate::ui::main_menu::SongLibrary;

@@ -2,11 +2,11 @@
 //! loaders, then prints counts per top folder (ok / failed / unsupported), each song's and template's samples
 //! (referenced / resolved), and our own error messages with each file's relative path. It prints no file contents.
 //!
-//! It runs only when `HONEYDEW_ORIGINAL_CONTENT` (or the former `STUDIO_ORIGINAL_CONTENT`) names a content folder, as
+//! It runs only when `BANAFORGE_ORIGINAL_CONTENT` (or the former `STUDIO_ORIGINAL_CONTENT`) names a content folder, as
 //! an ignored test:
 //!
 //! ```text
-//! HONEYDEW_ORIGINAL_CONTENT="$HOME/Documents/Honeydew/Original Content" \
+//! BANAFORGE_ORIGINAL_CONTENT="$HOME/Documents/BanaForge/Original Content" \
 //!     cargo test --lib verify_original_content -- --ignored --nocapture
 //! ```
 //!
@@ -21,7 +21,7 @@ use super::{CONTENT_FOLDER, ProjectFiles, import_fst, load_pick, read_spectra};
 use crate::audio_engine::SongAudioEngine;
 use crate::sample_cache::{SampleCache, SampleKey, reader};
 use crate::song::{DrumKit, ModuleInstance, Song};
-use honeydew_audio::device::AudioRenderer;
+use banaforge_audio::device::AudioRenderer;
 
 /// The most files walked, and the failures listed.
 const MAX_FILES: usize = 100_000;
@@ -130,7 +130,7 @@ fn files_over(content: &Path) -> (ProjectFiles, Option<Unlink>) {
     {
         return (ProjectFiles::on_disk(user), None);
     }
-    let user = std::env::temp_dir().join(format!("honeydew-verify-{}", std::process::id()));
+    let user = std::env::temp_dir().join(format!("banaforge-verify-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&user);
     std::fs::create_dir_all(&user).expect("a temp folder");
     #[cfg(unix)]
@@ -179,7 +179,7 @@ fn check(
     };
     let failed = |e: &dyn fmt::Display| Outcome::Failed(e.to_string());
     match ext.as_str() {
-        "wav" | "flac" | "mp3" | "ogg" => match honeydew_audio::sample::decode(&bytes) {
+        "wav" | "flac" | "mp3" | "ogg" => match banaforge_audio::sample::decode(&bytes) {
             Ok(_) => Outcome::Ok,
             Err(e) => Outcome::Failed(format!("{e:?}")),
         },
@@ -190,7 +190,7 @@ fn check(
         // An SFZ is text; its samples are checked as files of their own.
         "sfz" => Outcome::Ok,
         "sf2" => match crate::sf2::presets(&bytes) {
-            Ok(_) if honeydew_audio::soundfont::SoundFont::parse(bytes).is_ok() => Outcome::Ok,
+            Ok(_) if banaforge_audio::soundfont::SoundFont::parse(bytes).is_ok() => Outcome::Ok,
             Ok(_) => Outcome::Failed("the SoundFont's samples do not parse".into()),
             Err(e) => Outcome::Failed(format!("{e:?}")),
         },
@@ -498,12 +498,13 @@ mod tests {
 
     /// The opt-in check of a real content folder (see the module docs). Never run on a content folder in CI.
     #[test]
-    #[ignore = "opt-in: set HONEYDEW_ORIGINAL_CONTENT to a content folder"]
+    #[ignore = "opt-in: set BANAFORGE_ORIGINAL_CONTENT to a content folder"]
     fn verify_original_content() {
         let var = |key| std::env::var_os(key);
-        let Some(dir) = var("HONEYDEW_ORIGINAL_CONTENT").or_else(|| var("STUDIO_ORIGINAL_CONTENT"))
+        let Some(dir) =
+            var("BANAFORGE_ORIGINAL_CONTENT").or_else(|| var("STUDIO_ORIGINAL_CONTENT"))
         else {
-            eprintln!("HONEYDEW_ORIGINAL_CONTENT is not set: nothing to check");
+            eprintln!("BANAFORGE_ORIGINAL_CONTENT is not set: nothing to check");
             return;
         };
         let report = verify(Path::new(&dir));

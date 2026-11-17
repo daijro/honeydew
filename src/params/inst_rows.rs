@@ -394,7 +394,9 @@ pub const ROWS: &[Row] = &[
     (53, 2, r#"Breathiness"#, 0.08, r#"8%"#, r#"0…100 (v×100)"#),
     (53, 3, r#"Brightness"#, 0.5, r#"50%"#, r#"0…100 (v×100)"#),
     (53, 4, r#"Portamento"#, 0.0, r#"0 ms"#, r#"0 ms … 325 ms … 650 ms"#),
-    (53, 5, r#"Vibrato Rate"#, 0.35, r#"3.5 Hz"#, r#"0 Hz … 5 Hz … 10 Hz"#),
+    (53, 5, r#"Vibrato Rate"#, 0.35, r#"3.5 Hz"#, r#"0.0 Hz … 5.0 Hz … 10.0 Hz"#),
     (53, 6, r#"Vibrato Depth"#, 0.0, r#"0 cents"#, r#"0 cents … 50 cents … 100 cents"#),
-    (53, 7, r#"Vowel"#, 0.0, r#"a"#, r#"options: a, i, u, e, o"#),
+    (53, 7, r#"Vowel"#, 0.0, r#"A"#, r#"options: A, E, I, O, U"#),
+    (53, 8, r#"Attack"#, 0.0, r#"8 ms"#, r#"8 ms … 258 ms … 508 ms"#),
+    (53, 9, r#"Release"#, 0.0, r#"120 ms"#, r#"120 ms … 1120 ms … 2120 ms"#),
 ];

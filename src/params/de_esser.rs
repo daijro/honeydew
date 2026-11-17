@@ -1,7 +1,7 @@
-//! De-esser ([`honeydew_audio::de_esser`]), Honeydew's own effect (GitHub #43):
+//! De-esser ([`banaforge_audio::de_esser`]), BanaForge's own effect (GitHub #43):
 //! its params and value texts, in the engine's order and laws.
 
-use honeydew_audio::de_esser::{
+use banaforge_audio::de_esser::{
     self as d, DEFAULTS, FREQUENCY, LISTEN, MODE, PARAMS, RANGE, THRESHOLD,
 };
 

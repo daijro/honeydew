@@ -1,5 +1,5 @@
-<p align="center"><img src="assets/branding/honeydew.svg" width="160" alt="Honeydew logo"></p>
-<h1 align="center">Honeydew</h1>
+<p align="center"><img src="assets/branding/banaforge.svg" width="160" alt="BanaForge logo"></p>
+<h1 align="center">BanaForge</h1>
 <p align="center">A free, open-source music studio modelled on FL Studio Mobile, written in Rust.</p>
 <p align="center">Runs on Windows, Linux, macOS, Android and in the browser.</p>
 
@@ -48,17 +48,17 @@ Get the latest build from [Releases](https://github.com/daijro/honeydew/releases
 | Alpine and other musl distros | `linux-x86_64-musl.tar.gz` or `linux-aarch64-musl.tar.gz` |
 | FreeBSD | `freebsd-x86_64.tar.gz` |
 | Android | `-arm-base.apk`, which downloads its sounds, or `-arm.apk` with them inside (64-bit or 32-bit ARM, Android 8 or later) |
-| iOS (experimental) | `honeydew-ios-<version>.ipa` (iOS 14 or later). It's unsigned: install it with AltStore, SideStore or Sideloadly using your own Apple ID |
-| Web | `honeydew-web-<version>.zip`, a static site you can host anywhere |
+| iOS (experimental) | `banaforge-ios-<version>.ipa` (iOS 14 or later). It's unsigned: install it with AltStore, SideStore or Sideloadly using your own Apple ID |
+| Web | `banaforge-web-<version>.zip`, a static site you can host anywhere |
 
-Extract the archive and run `honeydew-native`. The AppImage is a single file. Run `chmod +x` on it, then start it (add `--appimage-extract-and-run` if your system has no FUSE).
+Extract the archive and run `banaforge-native`. The AppImage is a single file. Run `chmod +x` on it, then start it (add `--appimage-extract-and-run` if your system has no FUSE).
 
 - `-avx2` builds can be faster on CPUs from 2013 onward. If unsure, take the plain one.
-- `-no-sounds` builds are just the app, 10 to 15 MB. Honeydew keeps its sounds in its own data folder: a full build puts them there, and without one Honeydew offers to download them (or install `honeydew-<version>-sounds.zip` from Settings > Install sound library). Later updates can be the small download. On iOS, `-no-sounds.ipa` simply leaves the built-in sounds out.
-- **Updates:** Main menu > UPDATES shows whether there's a newer version and what's new in it, and installs it on Android or downloads it on the desktop (an AppImage replaces itself). Honeydew checks at most every 6 hours, unless you turn off `Check for updates automatically`. The web version is always current.
+- `-no-sounds` builds are just the app, 10 to 15 MB. BanaForge keeps its sounds in its own data folder: a full build puts them there, and without one BanaForge offers to download them (or install `banaforge-<version>-sounds.zip` from Settings > Install sound library). Later updates can be the small download. On iOS, `-no-sounds.ipa` simply leaves the built-in sounds out.
+- **Updates:** Main menu > UPDATES shows whether there's a newer version and what's new in it, and installs it on Android or downloads it on the desktop (an AppImage replaces itself). BanaForge checks at most every 6 hours, unless you turn off `Check for updates automatically`. The web version is always current.
 - **Sounds:** the sound library has its own version and its own release (`sounds-<version>`). The base APK and `-no-sounds` builds download it once, about 740 MB (on Android over Wi-Fi unless you allow mobile data in UPDATES), and after that only the packs that changed, so an update that doesn't change the sounds downloads none. UPDATES shows the installed sound library and offers a newer one on its own, whatever build you started from; updating from the full APK to the base one keeps the sounds it had.
 - Linux builds need glibc 2.35 or newer (Ubuntu 22.04, Debian 12). Alpine needs `apk add libstdc++ alsa-lib`. FreeBSD needs `pkg install alsa-lib alsa-plugins` and has no MIDI input yet.
-- Your songs, samples and exports go in `Documents/Honeydew`. Settings > Open user folder takes you there.
+- Your songs, samples and exports go in `Documents/BanaForge`. Settings > Open user folder takes you there.
 
 ---
 
@@ -76,8 +76,8 @@ On the desktop and Android, SONGS → Import → Import folder copies a whole fo
 | Audio (WAV, FLAC, OGG, MP3) | No | Yes |
 
 - **MIDI:** each channel gets the closest bundled instrument for its General MIDI program. Channel 10 becomes a drum kit.
-- **Opening an FLP:** you get the channels, patterns, playlist, audio clips, tempo, volume and pan. 3x Osc channels keep their sound, and Fruity Reeverb 2 and Fruity Limiter become Lemon Reverb and Lemon Limiter with their settings. Missing plugins and samples play the closest bundled sound, and a summary lists what was swapped. `Locate samples...` finds missing samples in a folder you pick.
-- **Saving an FLP:** samples are included, and each channel's effects become FL Studio's own effects on its mixer insert (Lemon Reverb and Lemon Limiter with their settings). Turn on `Include rendered audio` to also add each channel as audio, so the project sounds the same in FL Studio.
+- **Opening an FLP:** you get the channels, patterns, playlist, audio clips, tempo, volume and pan. 3x Osc channels keep their sound, and Fruity Reeverb 2 and Fruity Limiter become Banana Reverb and Banana Limiter with their settings. Missing plugins and samples play the closest bundled sound, and a summary lists what was swapped. `Locate samples...` finds missing samples in a folder you pick.
+- **Saving an FLP:** samples are included, and each channel's effects become FL Studio's own effects on its mixer insert (Banana Reverb and Banana Limiter with their settings). Turn on `Include rendered audio` to also add each channel as audio, so the project sounds the same in FL Studio.
 
 ---
 
@@ -85,7 +85,7 @@ On the desktop and Android, SONGS → Import → Import folder copies a whole fo
 
 The desktop app can use VST3, VST2 and CLAP plugins as instruments and effects.
 
-<p align="center"><img src="assets/screenshots/12-plugins.webp" width="100%" alt="Dragonfly Hall Reverb's own window over Honeydew, with Surge XT and Dragonfly Hall Reverb loaded as plugin modules in the rack"></p>
+<p align="center"><img src="assets/screenshots/12-plugins.webp" width="100%" alt="Dragonfly Hall Reverb's own window over BanaForge, with Surge XT and Dragonfly Hall Reverb loaded as plugin modules in the rack"></p>
 
 1. Install your plugins in one of the folders below.
 2. Open a channel's **Modules** browser. Plugins are listed under PLUGIN INSTRUMENTS and PLUGIN EFFECTS.
@@ -93,22 +93,22 @@ The desktop app can use VST3, VST2 and CLAP plugins as instruments and effects.
 
 Plugin settings are saved with the project, and their controls can be automated.
 
-**Built-in plugins, on every platform:** Lemon Studio's Lemon Trio and Lemon Sampler are under SYNTH, and Lemon Parametric EQ under FILTER. Their own controls show right in the rack card, on the web and Android too. If you have them installed separately, Honeydew uses the built-in ones. On the web, Lemon Sampler's time stretching only resamples.
+**Built-in plugins, on every platform:** Banana Studio's Banana Trio and Banana Sampler are under SYNTH, and Banana Parametric EQ under FILTER. Their own controls show right in the rack card, on the web and Android too. If you have them installed separately, BanaForge uses the built-in ones. On the web, Banana Sampler's time stretching only resamples.
 
-**Built-in effects:** Lemon Studio's small effects (Lemon Soft Clipper, Fast Distortion, Balance, Stereo Enhancer, Transient Processor, Chorus, Stereo Shaper, Filter, Flanger and Phaser), Lemon Delay, Lemon Vocoder, the multiband maximiser Press and the pattern filter Pulp Filter, in their sections of the Modules browser. Pulp Filter's patterns follow the song's tempo and position. Lemon Vocoder's carrier is the channel its card's `Sidechain` menu picks.
-**Controllers:** Lemon Peak Controller (a peak follower and LFO) and Lemon Formula Controller (a formula over time and its knobs), under MISC, make no sound of their own: their output drives a param of the song. Touch the param to drive (any automatable control, on any channel), then pick `Link recent control` in the controller card's ≡ menu; `Clear target` unlinks it. While the song plays the param follows the output, smoothed, and its control shows it. The link is saved with the song.
+**Built-in effects:** Banana Studio's small effects (Banana Soft Clipper, Fast Distortion, Balance, Stereo Enhancer, Transient Processor, Chorus, Stereo Shaper, Filter, Flanger and Phaser), Banana Delay, Banana Vocoder, the multiband maximiser Press and the pattern filter Pulp Filter, in their sections of the Modules browser. Pulp Filter's patterns follow the song's tempo and position. Banana Vocoder's carrier is the channel its card's `Sidechain` menu picks.
+**Controllers:** Banana Peak Controller (a peak follower and LFO) and Banana Formula Controller (a formula over time and its knobs), under MISC, make no sound of their own: their output drives a param of the song. Touch the param to drive (any automatable control, on any channel), then pick `Link recent control` in the controller card's ≡ menu; `Clear target` unlinks it. While the song plays the param follows the output, smoothed, and its control shows it. The link is saved with the song.
 
-**Tesla**, Lemon Studio's audio editor and recorder, is under MISC: put it on a channel's rack to record what reaches it, then edit the take in its card. On Android and the web its `Save sample as` goes to the user folder's My Recordings. Sending a sample to the playlist, a channel or a new Lemon Slicer channel works only in Lemon Studio. On the web its time stretch and pitch shift only resample.
+**Tesla**, Banana Studio's audio editor and recorder, is under MISC: put it on a channel's rack to record what reaches it, then edit the take in its card. On Android and the web its `Save sample as` goes to the user folder's My Recordings. Sending a sample to the playlist, a channel or a new Banana Slicer channel works only in Banana Studio. On the web its time stretch and pitch shift only resample.
 
-Also under SYNTH: Citrus, a six-operator FM synth; Lemon Drum Sampler, with 32 pads (bank A on the General MIDI drum keys, pad 1 on C#3; bank B from C5 up); and Lemon Slicer, which cuts a loop into slices that play from C5 up, listed just below Honeydew's own Slicer. On Android and the web their Load buttons open Honeydew's sample picker. Put them on an Instrument channel and play the pads or slices from the piano roll.
+Also under SYNTH: Citrus, a six-operator FM synth; Banana Drum Sampler, with 32 pads (bank A on the General MIDI drum keys, pad 1 on C#3; bank B from C5 up); and Banana Slicer, which cuts a loop into slices that play from C5 up, listed just below BanaForge's own Slicer. On Android and the web their Load buttons open BanaForge's sample picker. Put them on an Instrument channel and play the pads or slices from the piano roll.
 
-**Where Honeydew looks:**
+**Where BanaForge looks:**
 
 - **Linux:** `~/.vst3`, `~/.vst` and `~/.clap`, the same folders under `/usr/lib` and `/usr/local/lib`, and `VST_PATH` / `CLAP_PATH`.
 - **Windows and macOS:** the standard plugin folders.
 - **Your own folders:** add them in SETTINGS → Plugins. `Rescan` picks up new plugins.
 
-**Windows plugins on Linux:** install [yabridge](https://github.com/robbert-vdh/yabridge) or [vstbridge](https://github.com/rations/vstbridge) with Wine. They put bridged copies in `~/.vst3/yabridge` and `~/.vst/yabridge`, which Honeydew already scans.
+**Windows plugins on Linux:** install [yabridge](https://github.com/robbert-vdh/yabridge) or [vstbridge](https://github.com/rations/vstbridge) with Wine. They put bridged copies in `~/.vst3/yabridge` and `~/.vst/yabridge`, which BanaForge already scans.
 
 **Notes:**
 
@@ -121,7 +121,7 @@ Also under SYNTH: Citrus, a six-operator FM synth; Lemon Drum Sampler, with 32 p
 The desktop build has an opt-in local control bridge for editing the open song
 with an MCP assistant. It can reuse an already-configured plugin instrument
 without changing its preset, or create a built-in synth/drum track and add
-notes. See [the MCP setup guide](tools/honeydew-mcp/README.md) for security,
+notes. See [the MCP setup guide](tools/banaforge-mcp/README.md) for security,
 configuration, commands and current limits.
 
 **Multi core processing:** On Linux, macOS and Windows desktop builds, SETTINGS → Multi core processing can run independent channel racks on separate CPU cores. Sends still run before their target bus, and each rack's modules stay in order. The setting takes effect during playback without a restart. It is off by default and falls back to sequential processing for short segments, a single-core machine or a song with no independent channels. It does not split one plugin instance (including Vital) across cores; with one active instrument, leave it off. If enabling it increases underruns on your audio setup, turn it off again.
@@ -130,25 +130,25 @@ configuration, commands and current limits.
 
 ## Using your own FL Studio Mobile sounds
 
-Honeydew doesn't include any FL Studio Mobile content. If you own the app, you can import its sounds, presets and demo songs from your own copy. They stay on your computer, aren't included in exported project ZIPs, and are still covered by your FL Studio Mobile licence, so don't share them.
+BanaForge doesn't include any FL Studio Mobile content. If you own the app, you can import its sounds, presets and demo songs from your own copy. They stay on your computer, aren't included in exported project ZIPs, and are still covered by your FL Studio Mobile licence, so don't share them.
 
 1. Copy your app's `.apk` or `.obb` into the **Original Content** folder. SETTINGS has an `Open folder` button.
 
    | OS | Folder |
    |---|---|
-   | Linux | `~/Documents/Honeydew/Original Content` |
-   | macOS | `~/Documents/Honeydew/Original Content` |
-   | Windows | `Documents\Honeydew\Original Content` |
+   | Linux | `~/Documents/BanaForge/Original Content` |
+   | macOS | `~/Documents/BanaForge/Original Content` |
+   | Windows | `Documents\BanaForge\Original Content` |
 
 2. Open SETTINGS and choose `Import`.
 
 Or from the command line:
 
 ```sh
-cargo run --release --bin honeydew-import -- path/to/your.apk
+cargo run --release --bin banaforge-import -- path/to/your.apk
 ```
 
-The sounds and presets then show up in the pickers, and demo songs that use them play correctly. The icons are always Honeydew's own. Each file is imported once; delete the hidden `.imported-…` file next to it to import it again. The web version can't import.
+The sounds and presets then show up in the pickers, and demo songs that use them play correctly. The icons are always BanaForge's own. Each file is imported once; delete the hidden `.imported-…` file next to it to import it again. The web version can't import.
 
 **Getting the files from your phone.** Use only your own copy. With USB debugging on and Android's platform tools installed:
 
@@ -173,7 +173,7 @@ cargo run --release
 
 ### Sound library
 
-The sound library lives in `sounds/`, split into 90 MB parts to stay under GitHub's file size limit. To rebuild it from the raw sources in `../content-sources` (or `$HONEYDEW_SOURCES`):
+The sound library lives in `sounds/`, split into 90 MB parts to stay under GitHub's file size limit. To rebuild it from the raw sources in `../content-sources` (or `$BANAFORGE_SOURCES`):
 
 ```sh
 tools/release-content.sh 0.5.4
@@ -198,18 +198,18 @@ For a release build:
 ```sh
 tools/web-dist.sh          # build the site into dist/
 tools/web-dist.sh --check  # check an existing build
-tools/web-dist.sh --zip    # also write target/honeydew-web-<version>.zip
+tools/web-dist.sh --zip    # also write target/banaforge-web-<version>.zip
 ```
 
 - **Requirements:** Trunk, binaryen's `wasm-opt` (or set `WASM_OPT`) and `unzip`.
 - **Hosting:** serve `dist/`. Example configs for nginx, Caddy and Cloudflare are in `deploy/`.
 - **Browsers:** Chrome 96, Firefox 113 or Safari 16.4 and later. Older browsers see a notice.
 - **Compression:** files are pre-gzipped and none is over 25 MiB. Hosts that don't send `Content-Encoding: gzip`, like Cloudflare, still work: the browser unpacks the files itself.
-- **Shortcuts:** in the browser, Honeydew's shortcuts win over the browser's, except Ctrl+C, V and X. Chrome keeps Ctrl+Shift+T.
+- **Shortcuts:** in the browser, BanaForge's shortcuts win over the browser's, except Ctrl+C, V and X. Chrome keeps Ctrl+Shift+T.
 
 ### Android
 
-The Android version plays, saves and exports songs into its Honeydew folder, which also shows in the Files app, so you can copy songs, renders and samples in and out there. SONGS → Import opens a song, archive, MIDI or FLP file from anywhere the system picker reaches, like Downloads or an SD card, and Import folder copies a whole sound folder in. Recording asks for the microphone the first time. A wired or USB headset's mic is used while it's plugged in, and Settings → Audio input picks another one, like a USB audio interface. You hear yourself (input monitoring) only in headphones, never through the phone's speaker. A call or leaving the app stops a recording and keeps what was recorded. MIDI devices aren't supported yet, and uninstalling the app deletes the Honeydew folder with your songs.
+The Android version plays, saves and exports songs into its BanaForge folder, which also shows in the Files app, so you can copy songs, renders and samples in and out there. SONGS → Import opens a song, archive, MIDI or FLP file from anywhere the system picker reaches, like Downloads or an SD card, and Import folder copies a whole sound folder in. Recording asks for the microphone the first time. A wired or USB headset's mic is used while it's plugged in, and Settings → Audio input picks another one, like a USB audio interface. You hear yourself (input monitoring) only in headphones, never through the phone's speaker. A call or leaving the app stops a recording and keeps what was recorded. MIDI devices aren't supported yet, and uninstalling the app deletes the BanaForge folder with your songs.
 
 You need Java 21, Android SDK platform 36, Build Tools 36.0.0, NDK 28.0.13004108, Python 3 and `unzip`. Set `ANDROID_HOME` to your SDK, then:
 
@@ -219,7 +219,7 @@ cargo install cargo-ndk --version 4.1.2 --locked
 tools/android-dist.sh
 ```
 
-This writes `target/honeydew-android-<version>-arm-debug.apk`, one APK for 64-bit and 32-bit ARM. Add `--base` for the APK without sounds (`-arm-base-debug.apk`), which downloads them. The debug app is called Honeydew Debug and installs alongside the release app. Its signing key is kept in `android/debug.keystore`; keep that file so debug builds can update each other.
+This writes `target/banaforge-android-<version>-arm-debug.apk`, one APK for 64-bit and 32-bit ARM. Add `--base` for the APK without sounds (`-arm-base-debug.apk`), which downloads them. The debug app is called BanaForge Debug and installs alongside the release app. Its signing key is kept in `android/debug.keystore`; keep that file so debug builds can update each other.
 
 **Release signing:** use the same key for every release, or Android won't install updates over the old version. Back up the keystore and passwords outside the repository.
 
@@ -230,7 +230,7 @@ See Android's [app-signing guide](https://developer.android.com/studio/publish/a
 
 ### iOS
 
-The iOS version is experimental. As on Android, your songs, renders and samples go in its Honeydew folder, which shows in the Files app under On My iPhone, and SONGS → Import and Import folder open the system's file picker. Recording asks for the microphone the first time. If you said no, the message has a button to the app's page in Settings. You hear yourself only in headphones, and a call or leaving the app stops a recording and keeps what was recorded. MIDI devices aren't supported yet, and there's no UPDATES tab: install a newer IPA the same way.
+The iOS version is experimental. As on Android, your songs, renders and samples go in its BanaForge folder, which shows in the Files app under On My iPhone, and SONGS → Import and Import folder open the system's file picker. Recording asks for the microphone the first time. If you said no, the message has a button to the app's page in Settings. You hear yourself only in headphones, and a call or leaving the app stops a recording and keeps what was recorded. MIDI devices aren't supported yet, and there's no UPDATES tab: install a newer IPA the same way.
 
 Build it on a Mac with Xcode:
 
@@ -239,25 +239,25 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 tools/ios-dist.sh
 ```
 
-This writes `target/honeydew-ios-<version>.ipa` and `target/honeydew-ios-<version>-no-sounds.ipa`. `tools/ios-dist.sh --sim` builds the Simulator's app, and `tools/ios-selftest.sh target/ios-sim/Honeydew.app selftest` runs its self-test in the Simulator.
+This writes `target/banaforge-ios-<version>.ipa` and `target/banaforge-ios-<version>-no-sounds.ipa`. `tools/ios-dist.sh --sim` builds the Simulator's app, and `tools/ios-selftest.sh target/ios-sim/BanaForge.app selftest` runs its self-test in the Simulator.
 
 ---
 
 ## About
 
-Honeydew is a clean-room reimplementation. FL Studio Mobile's behaviour, file formats and look were written down as a specification, and Honeydew's code was written only from that. It contains no code, samples, presets or artwork from FL Studio Mobile. The icons are Honeydew's own as well: every one is drawn from scratch in code, not taken from the app.
+BanaForge is a clean-room reimplementation. FL Studio Mobile's behaviour, file formats and look were written down as a specification, and BanaForge's code was written only from that. It contains no code, samples, presets or artwork from FL Studio Mobile. The icons are BanaForge's own as well: every one is drawn from scratch in code, not taken from the app.
 
-Honeydew is an independent project, not affiliated with or endorsed by Image-Line. FL Studio is a trademark of Image-Line.
+BanaForge is an independent project, not affiliated with or endorsed by Image-Line. FL Studio is a trademark of Image-Line.
 
 ---
 
 ## License and credits
 
 - **Code:** [GPL-3.0-or-later](LICENSE). Copyright (c) 2026 The Honeydew contributors.
-- **Plugin hosting, FLP support, Lemon Reverb, Lemon Limiter, Lemon Trio, Lemon Sampler, Lemon Parametric EQ, Citrus, Lemon Drum Sampler and Lemon Slicer:** from Lemon Studio by ItsAlphaNeon; see [Code from Lemon Studio](#code-from-lemon-studio) below.
-- **Lemon Studio's small effects, Lemon Delay, Lemon Vocoder, Press and Pulp Filter:** from Lemon Studio by ItsAlphaNeon too.
+- **Plugin hosting, FLP support, Banana Reverb, Banana Limiter, Banana Trio, Banana Sampler, Banana Parametric EQ, Citrus, Banana Drum Sampler and Banana Slicer:** from Banana Studio by ItsAlphaNeon; see [Code from Banana Studio](#code-from-banana-studio) below.
+- **Banana Studio's small effects, Banana Delay, Banana Vocoder, Press and Pulp Filter:** from Banana Studio by ItsAlphaNeon too.
 - **Font:** Open Sans SemiCondensed SemiBold, SIL Open Font License 1.1 ([`assets/fonts/OFL.txt`](assets/fonts/OFL.txt)).
-- **Icon:** a derivative of "Melon" by afitrose, licensed as Free for commercial use WITH ATTRIBUTION.
+- **Icon:** banana artwork supplied by the app owner; original authorship and redistribution permission must be verified.
 - **Sounds:** the bundled instruments, drum kits, one-shots, effects, loops and waveforms come from the sources below. Full notices are in the app under SETTINGS → Sound credits.
 
 <details>
@@ -309,13 +309,13 @@ Honeydew is an independent project, not affiliated with or endorsed by Image-Lin
 | [Versilian Community Sample Library](https://github.com/sgossner/VCSL) | Versilian Studios LLC (Sam Gossner) | CC0 |
 | [Virtuosity Drums](https://github.com/sfzinstruments/virtuosity_drums) | Versilian Studios x Karoryfer Samples (drummer Austin McMahon) | CC0 |
 | [VSCO 2 Community Edition](https://github.com/sgossner/VSCO-2-CE) | Versilian Studios LLC (Sam Gossner) | CC0 |
-| Honeydew procedural sounds | The Honeydew contributors | CC0 |
+| BanaForge procedural sounds | The BanaForge contributors | CC0 |
 
 </details>
 
-### Code from Lemon Studio
+### Code from Banana Studio
 
-Honeydew brings FL Studio desktop features like plugins and flp file support into the app by including code from [Lemon Studio](https://github.com/ItsAlphaNeon/Lemon-Studio) by ItsAlphaNeon, used under the
+BanaForge brings FL Studio desktop features like plugins and flp file support into the app by including code from [Banana Studio](https://github.com/ItsAlphaNeon/Lemon-Studio) by ItsAlphaNeon, used under the
 GPL-3.0-or-later. Each file keeps its original copyright and license header, and the changes are listed in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
@@ -323,24 +323,24 @@ GPL-3.0-or-later. Each file keeps its original copyright and license header, and
 
 <summary>See list of features</summary>
 
-- **Plugin hosts** (`vendor/lemon-studio/`): the VST3, VST2 and CLAP hosts (`os-host`, `os-vst3`, `os-vst2`, `os-clap`)
+- **Plugin hosts** (`vendor/banana-studio/`): the VST3, VST2 and CLAP hosts (`os-host`, `os-vst3`, `os-vst2`, `os-clap`)
   and the parts of `os-engine` they use.
 - **FLP files** (`src/flp/`): the FL Studio project reader and writer, the mixer writer and the plugin wrapper format,
   from `os-flp`.
 - **Plugin scanning and editor windows** (`src/plugins/scan.rs`, `src/plugins/window.rs`).
-- **Lemon Reverb and Lemon Limiter** (`vendor/lemon-studio/os-engine/src/effects/`): Lemon Studio's reverb and its
+- **Banana Reverb and Banana Limiter** (`vendor/banana-studio/os-engine/src/effects/`): Banana Studio's reverb and its
   limiter, compressor and noise gate, as built-in effects.
-- **Lemon Trio** (`vendor/lemon-studio/lemon-3x-osc/`): Lemon Studio's three-oscillator synth, built in with its own
+- **Banana Trio** (`vendor/banana-studio/banana-3x-osc/`): Banana Studio's three-oscillator synth, built in with its own
   editor.
-- **Lemon Sampler** (`vendor/lemon-studio/lemon-sampler/`): Lemon Studio's sampler, built in with its own editor.
-- **Lemon Parametric EQ** (`vendor/lemon-studio/lemon-parametric-eq-2/`): Lemon Studio's seven-band EQ, built in with its
+- **Banana Sampler** (`vendor/banana-studio/banana-sampler/`): Banana Studio's sampler, built in with its own editor.
+- **Banana Parametric EQ** (`vendor/banana-studio/banana-parametric-eq-2/`): Banana Studio's seven-band EQ, built in with its
   own editor.
-- **Lemon Studio's small effects, Lemon Delay, Lemon Vocoder, Press and Pulp Filter** (`vendor/lemon-studio/lemon-small-fx/`,
-  its ten plugins' folders, `lemon-delay/`, `lemon-vocoder/`, `press/`, `pulp-filter/`): built in with their own editors.
-- **Lemon Peak Controller and Lemon Formula Controller** (`vendor/lemon-studio/lemon-peak-controller/`,
-  `lemon-formula-controller/`, with `lemon-small-fx/`): Lemon Studio's controllers, built in with their own editors.
-- **Tesla** (`vendor/lemon-studio/tesla/`): Lemon Studio's audio editor and recorder, built in with its own editor.
-- **Plugin UI and support code** (`vendor/lemon-studio/`): the editor kit, theme, drawing and fonts these three plugins use
+- **Banana Studio's small effects, Banana Delay, Banana Vocoder, Press and Pulp Filter** (`vendor/banana-studio/banana-small-fx/`,
+  its ten plugins' folders, `banana-delay/`, `banana-vocoder/`, `press/`, `pulp-filter/`): built in with their own editors.
+- **Banana Peak Controller and Banana Formula Controller** (`vendor/banana-studio/banana-peak-controller/`,
+  `banana-formula-controller/`, with `banana-small-fx/`): Banana Studio's controllers, built in with their own editors.
+- **Tesla** (`vendor/banana-studio/tesla/`): Banana Studio's audio editor and recorder, built in with its own editor.
+- **Plugin UI and support code** (`vendor/banana-studio/`): the editor kit, theme, drawing and fonts these three plugins use
   (`os-plugkit`, `os-ui`, `os-theme`), the host link and data model (`os-hostlink`, `os-model`), and the DSP and path
   helpers (`os-dsp`, `os-paths`).
 

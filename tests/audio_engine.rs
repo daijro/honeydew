@@ -1,8 +1,8 @@
-use honeydew::audio_engine::{EngineError, SongAudioEngine};
-use honeydew::flm::chunk::{ContentPath, ContentRoot};
-use honeydew::sample_cache::{Reader, SampleCache};
-use honeydew::song::{AutomationTarget, ChannelKind, Event, Song, SynthKind};
-use honeydew_audio::device::AudioRenderer;
+use banaforge::audio_engine::{EngineError, SongAudioEngine};
+use banaforge::flm::chunk::{ContentPath, ContentRoot};
+use banaforge::sample_cache::{Reader, SampleCache};
+use banaforge::song::{AutomationTarget, ChannelKind, Event, Song, SynthKind};
+use banaforge_audio::device::AudioRenderer;
 
 fn song_with_note() -> Song {
     let mut song = Song {
@@ -678,7 +678,7 @@ fn muted_clips_make_no_events() {
     }
 }
 
-fn lane_clip_mut(song: &mut Song, target: AutomationTarget) -> &mut honeydew::song::Clip {
+fn lane_clip_mut(song: &mut Song, target: AutomationTarget) -> &mut banaforge::song::Clip {
     let lane = song.channels[1].lanes.iter_mut();
     let mut lane = lane.filter(|lane| lane.target == Some(target));
     &mut lane.next().unwrap().clips[0]
@@ -1117,9 +1117,9 @@ fn a_transistor_bass_channel_plays_its_notes() {
 
 #[test]
 fn supersaw_plays_and_its_defaults_match_the_registry() {
-    let spec = honeydew::params::module_spec(23).unwrap();
+    let spec = banaforge::params::module_spec(23).unwrap();
     let defaults: Vec<f32> = spec.params.iter().map(|param| param.default).collect();
-    assert_eq!(defaults, honeydew_audio::supersaw::DEFAULTS);
+    assert_eq!(defaults, banaforge_audio::supersaw::DEFAULTS);
     let mut song = Song::default();
     song.add_channel(ChannelKind::Synth(SynthKind::SuperSaw));
     let mut engine = SongAudioEngine::new(&song, 48_000.0).unwrap();
@@ -1134,11 +1134,11 @@ fn supersaw_plays_and_its_defaults_match_the_registry() {
 mod recording {
     use std::sync::Arc;
 
-    use honeydew::audio_engine::{LiveInput, MONITOR_MAX_LAG_FRAMES, SongAudioEngine};
-    use honeydew::sample_cache::SampleCache;
-    use honeydew::song::{ChannelKind, Song};
-    use honeydew_audio::device::AudioRenderer;
-    use honeydew_audio::input::InputRing;
+    use banaforge::audio_engine::{LiveInput, MONITOR_MAX_LAG_FRAMES, SongAudioEngine};
+    use banaforge::sample_cache::SampleCache;
+    use banaforge::song::{ChannelKind, Song};
+    use banaforge_audio::device::AudioRenderer;
+    use banaforge_audio::input::InputRing;
 
     use super::{energy, song_with_note};
 
@@ -1175,7 +1175,7 @@ mod recording {
         // frames, so beat k starts at ceil(k·beat), inside a render call (1000 frames each).
         let song = Song {
             tempo_bpm: 130.0,
-            time_sig: honeydew::song::TimeSig {
+            time_sig: banaforge::song::TimeSig {
                 subdivision: 4,
                 beats_per_bar: 3,
             },
@@ -1385,7 +1385,7 @@ mod recording {
         let mut off = monitored(0.738);
         off.channels[1].file.input_monitoring = false;
         let mut synth = Song::default();
-        synth.add_channel(ChannelKind::Synth(honeydew::song::SynthKind::MiniSynth));
+        synth.add_channel(ChannelKind::Synth(banaforge::song::SynthKind::MiniSynth));
         synth.channels[1].file.input_monitoring = true;
         let other_rate = Arc::new(InputRing::new(2, 44_100, 48_000));
         let mut engines = [
@@ -1434,8 +1434,8 @@ mod recording {
 const SINE_SF2: &[u8] = include_bytes!("../crates/audio/tests/fixtures/sine.sf2");
 
 /// A SoundFont Player channel whose `SF2D` names `My SoundFonts/sine.sf2`, patch 0, and the cache that loaded it.
-fn soundfont_song() -> (Song, honeydew::sample_cache::SampleCache) {
-    use honeydew::flm::chunk::{ContentPath, ContentRoot};
+fn soundfont_song() -> (Song, banaforge::sample_cache::SampleCache) {
+    use banaforge::flm::chunk::{ContentPath, ContentRoot};
     let path = ContentPath::Shorthand {
         root: ContentRoot::User,
         relative: "My SoundFonts/sine.sf2".into(),
@@ -1445,12 +1445,12 @@ fn soundfont_song() -> (Song, honeydew::sample_cache::SampleCache) {
         ..Song::default()
     };
     song.add_channel(ChannelKind::Synth(SynthKind::SoundFontPlayer));
-    let sf2d = honeydew::flm::sf2d::Sf2d {
+    let sf2d = banaforge::flm::sf2d::Sf2d {
         path: path.clone(),
         patch: 0,
     };
     song.channels[1].rack.modules[0].file.custom_data = Some(sf2d.write(None).unwrap());
-    let mut cache = honeydew::sample_cache::SampleCache::default();
+    let mut cache = banaforge::sample_cache::SampleCache::default();
     cache.load(&song, &|p| (*p == path).then(|| SINE_SF2.to_vec()));
     (song, cache)
 }
@@ -1479,11 +1479,11 @@ fn a_soundfont_player_plays_its_patch_from_the_cache() {
 mod slicer {
     use std::f64::consts::TAU;
 
-    use honeydew::audio_engine::{SongAudioEngine, slicer_auto_clip};
-    use honeydew::flm::chunk::ContentPath;
-    use honeydew::sample_cache::{SampleCache, SampleKey};
-    use honeydew::song::{ChannelKind, Event, Song, SynthKind};
-    use honeydew_audio::device::AudioRenderer;
+    use banaforge::audio_engine::{SongAudioEngine, slicer_auto_clip};
+    use banaforge::flm::chunk::ContentPath;
+    use banaforge::sample_cache::{SampleCache, SampleKey};
+    use banaforge::song::{ChannelKind, Event, Song, SynthKind};
+    use banaforge_audio::device::AudioRenderer;
 
     const LOOP: &str = "My Samples/Loops/loop.wav";
     const RATE: f32 = 44_100.0;
@@ -1591,7 +1591,7 @@ mod slicer {
         let mut cache = SampleCache::default();
         cache.load(&song, &|_| None);
         let loop_key = SampleKey::File(ContentPath::Shorthand {
-            root: honeydew::flm::chunk::ContentRoot::User,
+            root: banaforge::flm::chunk::ContentRoot::User,
             relative: LOOP.into(),
         });
         assert_eq!(cache.missing().collect::<Vec<_>>(), [&loop_key]);

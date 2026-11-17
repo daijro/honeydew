@@ -44,7 +44,7 @@ fn lane_views(lane: &mut Lane, from: &Lane) {
             .map_or(&default, |c| &c.file);
         let to = &mut clip.file;
         local_fields!(ClipFileState, to, old; zoom;
-            source_len_beats, sample, unknown_chunks, header_extra, raw_events, shapes);
+            source_len_beats, sample, unknown_chunks, header_extra, raw_events, shapes, vocal_notes);
     }
 }
 
@@ -532,7 +532,7 @@ fn validate(song: &Song) -> Result<(), Conflict> {
             }
             if let Some(target) = lane.target {
                 let valid = match target.instance_id {
-                    0 => honeydew_audio::mixer::send_param(target.param).is_none_or(|(id, _)| {
+                    0 => banaforge_audio::mixer::send_param(target.param).is_none_or(|(id, _)| {
                         index(id).is_some()
                             && ch.file.sends.iter().any(|s| s.target_channel_id == id)
                     }),
