@@ -100,12 +100,15 @@ impl ProjectFiles {
                 "A voicebank import is already running".into(),
             );
         }
+        let keep_archive = !self
+            .voicebanks_dir()
+            .is_some_and(|root| path.starts_with(root));
         let path = path.to_owned();
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         self.voicebank_import = Some(receiver);
         let work = move || {
             let result = crate::vocal_synth::index_archive(&bytes, MAX_VOICEBANK_UNPACKED)
-                .map(|index| (index, Some(bytes)))
+                .map(|index| (index, keep_archive.then_some(bytes)))
                 .map_err(|err| format!("{}: {err}", path.display()));
             let _ = sender.send(result);
         };
@@ -189,6 +192,7 @@ impl ProjectFiles {
         {
             return self.fail(IMPORT_FAILED, format!("{}: {err}", target.display()));
         }
+        let registered_name = index.name.clone();
         let aliases = index.entries.len();
         let has_license = index.has_license_document;
         let mut updated = self.voicebanks.clone();
@@ -204,7 +208,7 @@ impl ProjectFiles {
         }
         self.voicebanks = updated;
         self.flash = Some(format!(
-            "Imported {target_name} to {VOICEBANKS_FOLDER}: {aliases} aliases. {}",
+            "Registered {registered_name} in {VOICEBANKS_FOLDER}: {aliases} aliases. {}",
             if has_license {
                 "A license file is present; verify its terms before sharing or redistributing the bank."
             } else {
@@ -257,8 +261,7 @@ fn index_folder(root: &Path) -> Result<crate::vocal_synth::VoicebankIndex, Strin
                 super::read_file_limited(
                     std::fs::File::open(entry.path()).map_err(|e| e.to_string())?,
                     size,
-                )
-                .map_err(|e| e.to_string())?
+                )?
             } else {
                 Vec::new()
             };
