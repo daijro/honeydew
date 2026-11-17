@@ -3695,12 +3695,13 @@ fn paint_notes(
                 }
             }
             if vocal_track
+                && !simple
                 && let Some((pos, _, key)) = note(e)
                 && let Some(data) = vocal_notes.get(&(pos as u32, key))
+                && data.pitch.len() >= 2
+                && r.width() >= px * 4.0
             {
-                if !simple && data.pitch.len() >= 2 && r.width() >= px * 4.0 {
-                    overlays.push((r, *data));
-                }
+                overlays.push((r, *data));
             }
         }
     }
