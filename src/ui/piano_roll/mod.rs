@@ -3572,14 +3572,33 @@ fn paint_notes(
                     )
                 })
                 .collect();
+            // Sample the same eased interpolation used by the audio expression timeline.
+            // Keep the original control nodes for touch targets, not the sampled vertices.
+            let smooth: Vec<_> = data
+                .pitch
+                .windows(2)
+                .flat_map(|pair| {
+                    (0..8).map(move |step| {
+                        let offset =
+                            pair[0].offset + (pair[1].offset - pair[0].offset) * step as f32 / 8.0;
+                        pos2(
+                            r.left() + offset * r.width(),
+                            r.center().y
+                                - crate::audio_engine::vocal::pitch(&data.pitch, offset) / 100.0
+                                    * r.height(),
+                        )
+                    })
+                })
+                .chain(points.last().copied())
+                .collect();
             let curve = painter.with_clip_rect(visible);
             let ink = Color32::from_rgb(73, 246, 255);
             curve.add(egui::Shape::line(
-                points.clone(),
+                smooth.clone(),
                 egui::Stroke::new(m.u(0.09).max(px) + px * 3.0, Color32::from_rgb(8, 17, 29)),
             ));
             curve.add(egui::Shape::line(
-                points.clone(),
+                smooth,
                 egui::Stroke::new(m.u(0.09).max(px), ink),
             ));
             for p in points {

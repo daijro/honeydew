@@ -28,8 +28,8 @@ pub(crate) fn pitch(points: &[VocalPitchPoint], at: f32) -> f32 {
     let right = points.get(after);
     match (left, right) {
         (Some(a), Some(b)) if b.offset > a.offset => {
-            a.cents
-                + (b.cents - a.cents) * ((at - a.offset) / (b.offset - a.offset)).clamp(0.0, 1.0)
+            let t = ((at - a.offset) / (b.offset - a.offset)).clamp(0.0, 1.0);
+            a.cents + (b.cents - a.cents) * t * t * (3.0 - 2.0 * t)
         }
         (Some(p), _) | (_, Some(p)) => p.cents,
         _ => 0.0,
