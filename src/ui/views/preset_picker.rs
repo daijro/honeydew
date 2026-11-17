@@ -137,6 +137,7 @@ pub struct State {
     /// The channel a pick added, for the app to select once it has applied the frame's edit (which re-keys the
     /// selection).
     pub select: Option<usize>,
+    voicebank_import_menu: bool,
     /// A rack preset load removing modules automation lanes target, held back ([`hold_removal`]) with what it skipped:
     /// the app asks `Delete automation?` first, and shows the skipped modules once it is made.
     pub(crate) ask_remove: Option<Held>,
@@ -461,6 +462,32 @@ pub fn show(
         close(state, app, channel);
         return Some(Nav::Close);
     };
+    if state.voicebank_import_menu {
+        let mut choice = 0;
+        egui::Window::new("Import Voicebank")
+            .collapsible(false)
+            .resizable(false)
+            .show(ui.ctx(), |ui| {
+                if ui.button("ZIP / UAR archive").clicked() {
+                    choice = 1;
+                }
+                if ui.button("Voicebank folder").clicked() {
+                    choice = 2;
+                }
+                if ui.button("Cancel").clicked() {
+                    choice = 3;
+                }
+            });
+        if choice != 0 {
+            state.voicebank_import_menu = false;
+        }
+        match choice {
+            1 => app.files.pick_voicebank(),
+            2 => app.files.pick_voicebank_folder(),
+            _ => {}
+        }
+        return None;
+    }
     let pass = ui.ctx().cumulative_pass_nr();
     if state.pass + 1 != pass {
         state.picker = None;
@@ -597,6 +624,7 @@ pub fn show(
         }
         let action = picker.show_mut(ctx, cx, library)?;
         let bytes = match &action {
+            PickerAction::Pick(path) if module_type == Some(53) && path.is_dir() => None,
             PickerAction::Pick(path) => Some(library.read(path)),
             _ => None,
         };
@@ -611,6 +639,44 @@ pub fn show(
         sample_picker::preview(picker, app.audio);
         return None;
     };
+    if action == PickerAction::Import && module_type == Some(53) {
+        state.voicebank_import_menu = true;
+        return None;
+    }
+    // Bank selections are not FLM presets. Preserve the source on this module and
+    // index metadata off-thread; sample-bank singing is intentionally not implied.
+    if module_type == Some(53)
+        && let PickerAction::Pick(path) = &action
+        && (path.is_dir()
+            || path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("zip") || e.eq_ignore_ascii_case("uar")))
+    {
+        if path.is_dir() {
+            app.files.register_voicebank_folder(path);
+        } else if let Some(Ok(bytes)) = bytes {
+            app.files.import_voicebank_bytes(path, bytes);
+        }
+        if let PresetTarget::Module(id) = target
+            && let Some(module) = app
+                .song
+                .channels
+                .get_mut(channel)
+                .and_then(|c| c.rack.modules.iter_mut().find(|m| m.instance_id == id))
+        {
+            module.file.preset_name = path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+            module.file.custom_data = serde_json::to_vec(
+                &serde_json::json!({"voicebank_source": path.to_string_lossy()}),
+            )
+            .ok();
+            app.files.song_changed();
+        }
+        return None;
+    }
     if action == PickerAction::Import {
         if let Some(dir) = module_type.and_then(|t| import_dir(app.files, t)) {
             app.files.import_audio(dir);
@@ -1387,7 +1453,8 @@ fn exts(target: PresetTarget, module_type: Option<u16>) -> &'static [&'static st
 /// or rack presets); the Instruments picker's and the DW Sampler's is the whole user folder (`""`).
 fn top(target: PresetTarget, module_type: Option<u16>) -> &'static str {
     match (target, module_type) {
-        (PresetTarget::Instruments | PresetTarget::ModulesInstrument(_), _) | (_, Some(DW)) => "",
+        (PresetTarget::Instruments | PresetTarget::ModulesInstrument(_), _)
+        | (_, Some(DW | 53)) => "",
         (PresetTarget::Drumset, _) => DRUMSETS_FOLDER,
         (PresetTarget::ChordSet, _) => CHORD_SETS_FOLDER,
         (_, Some(_)) => PRESETS_FOLDER,
@@ -1429,7 +1496,7 @@ fn picker(files: &ProjectFiles, target: PresetTarget, module_type: Option<u16>) 
             // The DW Sampler plays samples: its `My Files` is the whole user folder, as the Instruments picker's
             // (#109).
             let my_files = match t {
-                DW => files.user_dir().map(Path::to_owned),
+                DW | 53 => files.user_dir().map(Path::to_owned),
                 _ => files.presets_dir(t),
             };
             let picker = PresetPicker::new(module_name(t), my_files, exts[0], true)
@@ -1440,6 +1507,11 @@ fn picker(files: &ProjectFiles, target: PresetTarget, module_type: Option<u16>) 
             // The SoundFont Player's `.sf2` files are in `My SoundFonts`, beside `My Files`; the DW Sampler's programs
             // (`.dwp`, `.sfz`) in `My Instruments`, where archives and the instrument builder put them.
             match t {
+                53 => picker.with_root(
+                    crate::project_files::VOICEBANKS_FOLDER,
+                    files.voicebanks_dir(),
+                    &["zip", "uar", PRESET_EXT],
+                ),
                 SOUNDFONT_PLAYER => {
                     picker.with_root(SOUNDFONTS_FOLDER, files.soundfonts_dir(), &SOUNDFONT_EXTS)
                 }
@@ -1495,6 +1567,9 @@ pub(crate) fn channel_limit_message() -> Overlay {
 /// where its picker opens), when the picker lists audio files (the DW Sampler's, the Slicer's, 3x Osc's) and `files`
 /// takes an import ([`ProjectFiles::imports_audio`]).
 fn import_dir(files: &ProjectFiles, t: u16) -> Option<PathBuf> {
+    if t == 53 {
+        return files.voicebanks_dir().filter(|_| files.imports_audio());
+    }
     let audio = preset_exts(t).contains(&SAMPLE_EXTS[0]);
     let dir = match t {
         DW => files.user_dir().map(|u| u.join(SAMPLES_FOLDER)),

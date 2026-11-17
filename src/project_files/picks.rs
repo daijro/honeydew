@@ -125,6 +125,7 @@ fn is(name: &Path, ext: &str) -> bool {
 /// loader takes ([`named_file`]) is not, nor a `.fst`, which names no module (only 3x Osc lists them).
 pub fn fits(name: &Path, type_id: Option<u16>, read: impl FnOnce() -> Option<Vec<u8>>) -> bool {
     match type_id {
+        Some(53) if is(name, "zip") || is(name, "uar") => true,
         Some(t) if !named_file(name, t) && !is(name, FST_EXT) => {
             read().is_some_and(|b| crate::flm::preset_fits(&b, t))
         }

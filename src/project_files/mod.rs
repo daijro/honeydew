@@ -458,6 +458,8 @@ pub struct ProjectFiles {
     voicebanks: Vec<crate::vocal_synth::VoicebankIndex>,
     voicebanks_loaded: bool,
     voicebank_import: Option<std::sync::mpsc::Receiver<voicebanks::ImportResult>>,
+    voicebank_folder_pick: bool,
+    voicebank_folder_copy: Option<PathBuf>,
     /// The last [`RECENT_STATE`] write, on its worker: the next waits for it, so the last load's lands last.
     #[cfg(not(target_arch = "wasm32"))]
     autosave: Option<std::thread::JoinHandle<()>>,
@@ -577,6 +579,8 @@ impl ProjectFiles {
             voicebanks: Vec::new(),
             voicebanks_loaded: false,
             voicebank_import: None,
+            voicebank_folder_pick: false,
+            voicebank_folder_copy: None,
             #[cfg(not(target_arch = "wasm32"))]
             autosave: None,
             recent_touched: false,
@@ -601,6 +605,7 @@ impl ProjectFiles {
     /// Opens the system or browser picker for a UTAU `.zip` / `.uar` bank; the index and original archive go to
     /// [`VOICEBANKS_FOLDER`].
     pub fn pick_voicebank(&mut self) {
+        self.voicebank_folder_pick = false;
         self.open_pick(Pick::Voicebank);
     }
 
@@ -1175,7 +1180,19 @@ impl ProjectFiles {
                 }
                 FileEvent::Failed(title, err) => self.fail(title, err),
                 FileEvent::Located(files) => self.located(song, files),
+                FileEvent::Folder(files) if std::mem::take(&mut self.voicebank_folder_pick) => {
+                    self.copy_voicebank_folder(files)
+                }
                 FileEvent::Folder(files) => self.folder_picked(files),
+                FileEvent::Copied(error) if self.voicebank_folder_copy.is_some() => {
+                    let path = self.voicebank_folder_copy.take().unwrap();
+                    self.copying = None;
+                    self.library_changes += 1;
+                    match error {
+                        Some(error) => self.fail(IMPORT_FAILED, error),
+                        None => self.register_voicebank_folder(&path),
+                    }
+                }
                 FileEvent::Copied(error) => self.folder_copied(error),
                 FileEvent::Picked(path) => self.import_unread(path),
                 FileEvent::SaveCancelled(_) => {}

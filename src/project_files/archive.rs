@@ -378,6 +378,7 @@ impl ProjectFiles {
 
     /// SONGS `Import folder`: the provider's folder picker, unless a picker or a folder's copy is under way.
     pub fn pick_folder(&mut self) {
+        self.voicebank_folder_pick = false;
         if !self.provider.opening() && self.copying.is_none() {
             self.provider.open_folder();
         }

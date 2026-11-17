@@ -1477,6 +1477,16 @@ fn read(
         .filter_map(|name| Some(name.file_stem()?.to_string_lossy().to_lowercase()))
         .collect();
     let keep = |mut entry: SongEntry| {
+        // Bank roots are atomic selections, not folders of individual WAV picks.
+        if module_type == Some(53) || exts.contains(&"uar") {
+            if entry.is_folder
+                && (library.read(&entry.path.join("oto.ini")).is_ok()
+                    || library.read(&entry.path.join("character.txt")).is_ok())
+            {
+                entry.is_folder = false;
+                return Some(entry);
+            }
+        }
         if !entry.is_folder {
             let name = Path::new(&entry.name);
             if !name
