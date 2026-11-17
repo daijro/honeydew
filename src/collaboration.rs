@@ -44,7 +44,7 @@ fn lane_views(lane: &mut Lane, from: &Lane) {
             .map_or(&default, |c| &c.file);
         let to = &mut clip.file;
         local_fields!(ClipFileState, to, old; zoom;
-            source_len_beats, sample, unknown_chunks, header_extra, raw_events, shapes);
+            source_len_beats, sample, unknown_chunks, header_extra, raw_events, shapes, vocal_notes);
     }
 }
 

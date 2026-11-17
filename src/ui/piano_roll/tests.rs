@@ -4333,7 +4333,20 @@ mod grid {
         let past = Rect::from_min_max(pos2(304.0, 48.0), pos2(1170.0, 349.0));
         let events = [n(0, 128.0, 60)];
         let (rects, ..) = painted(1.0, &|p, _, g, cx| {
-            paint_notes(p, g, &events, &[false], &[], Some(past), RED, cx);
+            paint_notes(
+                p,
+                g,
+                &events,
+                &(0..events.len()),
+                &[false],
+                &[],
+                &std::collections::HashMap::new(),
+                &std::collections::HashMap::new(),
+                false,
+                Some(past),
+                RED,
+                cx,
+            );
         });
         assert_eq!(
             rects.iter().map(|r| r.1).collect::<Vec<_>>(),

@@ -115,8 +115,7 @@ impl Waveforms {
                 let frames = (beats * 60.0 / bpm * 8000.0).round();
                 // Leave unavailable/overbudget previews blank, never stretch fabricated data.
                 if !frames.is_finite()
-                    || frames < 1.0
-                    || frames > 64_000.0
+                    || !(1.0..=64_000.0).contains(&frames)
                     || frames > f64::from(budget)
                 {
                     continue;

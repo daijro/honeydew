@@ -995,7 +995,7 @@ impl PianoRoll {
                     .collect();
                 notes.sort_unstable();
                 notes.dedup();
-                notes.iter().position(|n| *n == (pos, key)).and_then(|i| {
+                notes.iter().position(|n| *n == (pos, key)).map(|i| {
                     let (p, k) = notes.get(i + 1).copied().unwrap_or(notes[0]);
                     let lyric = clip
                         .file
@@ -1003,7 +1003,7 @@ impl PianoRoll {
                         .iter()
                         .find(|n| n.pos == p && n.key == k)
                         .map_or_else(String::new, |n| n.lyric.clone());
-                    Some((p, k, lyric))
+                    (p, k, lyric)
                 })
             }) {
                 self.lyric_edit = Some((np, nk, lyric));
@@ -3322,8 +3322,6 @@ fn paint_marks(
     }
 }
 
-/// Grid background steps 7–9: the ghost notes, black α 0.15 `past` the clip's loop end, then the notes.
-#[allow(clippy::too_many_arguments)]
 /// Choose the higher WCAG contrast against the actual note fill (linear-light luminance).
 fn lyric_ink(fill: Color32) -> Color32 {
     let linear = |value: u8| {
@@ -3343,6 +3341,8 @@ fn lyric_ink(fill: Color32) -> Color32 {
     }
 }
 
+/// Grid background steps 7–9, including cached vocal overlays.
+#[allow(clippy::too_many_arguments)]
 fn paint_notes(
     painter: &egui::Painter,
     g: &Geom,
