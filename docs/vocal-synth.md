@@ -23,8 +23,18 @@ values in the HDVo extension. It has next-note typing, pitch drawing, and expres
 
 **This is not a complete UTAU renderer.** Imported samples are retained in the original
 archive, not extracted or played. The alias browser is explicitly metadata-only.
-The existing note waveform overlay is a schematic, not measured sample audio.
-Stored per-note lyrics, pitch and expression do not yet drive the synthesizer.
+Per-note pitch, Dynamics, Breathiness and Formant now drive the procedural synth.
+Explicit Latin vowels (and standalone Japanese vowels) select its vowel sound. This is
+not phonemization or consonant synthesis. Updates are bounded at 100 Hz, smoothed in
+individual voices; overlapping different keys are independent. Overlapping same-key
+voices currently route to the newest voice. Note-effect transposition/generation and
+seek reconstruction of vocal expression are not complete.
+
+The waveform overlay now measures dry solo-note PCM rendered by the procedural synth
+on a native worker (8 kHz preview). It is NOT a user voicebank waveform, full-rate final
+mix, or post-FX waveform. It omits inter-note glide, automation and other voices.
+It is bounded to 64 notes, eight seconds per note, and 512k frames per job; unavailable
+previews are blank. Web thumbnails are omitted rather than blocking its UI thread.
 The Default header still browses module presets, not loadable voicebanks.
 Do not label these as finished vocal rendering or measured audio previews.
 
@@ -63,9 +73,9 @@ voice samples are included. A license filename is not proof of redistribution ri
 
 `.github/workflows/android.yml` builds this exact branch into a signed sideloadable APK,
 verifies its signature/install metadata and ZIP CRC, and uploads `honeydew-android-apk`.
-APK generation is currently blocked: dispatching Android APK returned HTTP 422,
-"Actions has been disabled for this repository." Enabling Actions returned HTTP 403,
-"Resource not accessible by integration." The repository owner must enable Actions.
+The owner re-enabled Actions. Android build 44018530986 was dispatched successfully;
+new commits on this branch also trigger Android and vocal regression workflows.
+A build is not a delivered APK until the workflow completes and its artifact is verified.
 The sandbox lacks JDK/Android SDK; their normal download hosts are restricted.
 An alternate npm-distributed Rust 1.88 toolchain was obtained for formatting and
 isolated DSP tests, but this is not a full Android build environment.
@@ -80,3 +90,12 @@ Vocal Synth validation workflow runs the workspace regression tests once Actions
 is enabled.
 A CI signing key without repository release secrets is ephemeral: subsequent builds may
 require uninstalling the previous build. Back up projects before uninstalling.
+
+## Lyric paste
+
+Pasting splits explicit spaces, whitespace and hyphens across selected notes in temporal
+order. Without a multi-note selection, it uses consecutive notes from the active note.
+A single remaining note keeps the phrase. Overflow is joined on the last target, with
+the existing 64-character per-note limit. This is separator-based syllable entry, not
+linguistic syllabification. Ordinary typing remains single-note. Procedural voice remains
+the bundled default; no additional voicebank download is required.

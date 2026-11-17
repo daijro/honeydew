@@ -17,7 +17,7 @@ pub(crate) mod samples;
 pub(crate) mod settings;
 pub(crate) mod slicer;
 mod slides;
-mod vocal;
+pub(crate) mod vocal;
 
 pub use input::{LiveInput, MONITOR_MAX_LAG_FRAMES, RecordTap, TakeStart};
 pub(crate) use midi_sends::{Received, midi_reach, midi_received};

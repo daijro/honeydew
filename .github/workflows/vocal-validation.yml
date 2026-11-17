@@ -32,4 +32,4 @@ jobs:
       - name: Voicebank parser regression tests
         run: cargo test --lib vocal_synth
       - name: Lyric contrast regression test
-        run: cargo test --lib vocal_lyric_ink
+        run: cargo test --lib vocal_

@@ -6,7 +6,7 @@ use crate::audio_bridge::playing_clips;
 use crate::song::{Event, LaneKind, PPQ, Song, VocalPitchPoint};
 use honeydew_audio::vocal_synth::VocalExpression;
 
-fn vowel(lyric: &str) -> u8 {
+pub(crate) fn vowel(lyric: &str) -> u8 {
     // Procedural fallback only, not a phonemizer. Last explicit Latin vowel wins.
     lyric
         .chars()
@@ -22,7 +22,7 @@ fn vowel(lyric: &str) -> u8 {
         .unwrap_or(255)
 }
 
-fn pitch(points: &[VocalPitchPoint], at: f32) -> f32 {
+pub(crate) fn pitch(points: &[VocalPitchPoint], at: f32) -> f32 {
     let after = points.partition_point(|p| p.offset < at);
     let left = after.checked_sub(1).and_then(|i| points.get(i));
     let right = points.get(after);

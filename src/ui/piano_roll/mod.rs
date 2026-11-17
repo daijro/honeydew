@@ -129,6 +129,7 @@ mod compose;
 mod generate;
 mod humanize;
 pub(crate) mod notes;
+mod waveform;
 
 use std::collections::HashMap;
 use std::hash::{BuildHasher, RandomState};
@@ -306,6 +307,7 @@ pub struct PianoRoll {
     /// (undo, a load), which drops the selection and any gesture.
     seen: Vec<Event>,
     note_end_prefix: Vec<f64>,
+    waveforms: waveform::Waveforms,
     seen_vocal_notes: Vec<crate::song::VocalNoteState>,
     gesture: Gesture,
     menu: Option<Menu>,
@@ -653,6 +655,7 @@ impl PianoRoll {
             quiet: false,
             seen: Vec::new(),
             note_end_prefix: Vec::new(),
+            waveforms: waveform::Waveforms::default(),
             seen_vocal_notes: Vec::new(),
             gesture: Gesture::Idle,
             menu: None,
@@ -1064,6 +1067,16 @@ impl PianoRoll {
         }
 
         // The selection follows the clip; an outside change (another clip, undo) drops it.
+        if let Some(channel) = song.channels.get(self.channel)
+            && let Some(module) = channel.rack.modules.iter().find(|m| m.type_id == 53)
+            && let Some(clip) = channel
+                .lanes
+                .get(self.lane)
+                .and_then(|lane| lane.clips.iter().find(|c| Some(c.id) == self.clip_id))
+        {
+            self.waveforms
+                .update(ui.ctx(), clip, &module.params, song.tempo_bpm);
+        }
         let events = self.clip(song).map_or(&[][..], |c| &c.events);
         if events != self.seen.as_slice() || self.selected.len() != events.len() {
             self.seen = events.to_vec();
@@ -1204,6 +1217,7 @@ impl PianoRoll {
             &self.selected,
             &self.ghosts(song, opts, view, px),
             &vocal_states,
+            &self.waveforms.peaks,
             is_vocal,
             past,
             color,
@@ -3337,6 +3351,7 @@ fn paint_notes(
     selected: &[bool],
     ghosts: &[Ghost],
     vocal_notes: &HashMap<(u32, u8), &crate::song::VocalNoteState>,
+    waveforms: &waveform::Peaks,
     vocal_track: bool,
     past: Option<Rect>,
     color: Rgba,
@@ -3391,27 +3406,22 @@ fn paint_notes(
                     pos2(left, top),
                     pos2((r.right() - px).max(left), (r.bottom() - px).max(top)),
                 );
-                let count = ((wave.width() * m.ppp()).round() as usize).clamp(4, 48);
-                let half = (wave.height() * 0.42).max(px);
-                let ink = Color32::from_rgba_unmultiplied(116, 255, 235, 115);
-                for j in 0..count {
-                    let t = j as f32 / (count - 1) as f32;
-                    let attack = if t < 0.16 {
-                        0.16 + 0.84 * t / 0.16
-                    } else {
-                        1.0
-                    };
-                    let pulse = (0.35 + 0.65 * (t * 13.0 * std::f32::consts::TAU).sin().abs())
-                        * (0.72 + 0.28 * (t * 3.0 * std::f32::consts::TAU).sin().abs());
-                    let amp = (attack * pulse * half).clamp(px, half);
-                    let x = wave.left() + t * wave.width();
-                    painter.line_segment(
-                        [
-                            pos2(x, wave.center().y - amp),
-                            pos2(x, wave.center().y + amp),
-                        ],
-                        egui::Stroke::new(px, ink),
-                    );
+                if let Some((pos, _, key)) = note(e)
+                    && let Some(peaks) = waveforms.get(&(pos as u32, key))
+                {
+                    let half = (wave.height() * 0.42).max(px);
+                    let ink = Color32::from_rgba_unmultiplied(116, 255, 235, 115);
+                    for (j, peak) in peaks.iter().enumerate() {
+                        let x = wave.left() + j as f32 / 47.0 * wave.width();
+                        let amp = (peak * 8.0).clamp(0.0, 1.0) * half;
+                        painter.line_segment(
+                            [
+                                pos2(x, wave.center().y - amp),
+                                pos2(x, wave.center().y + amp),
+                            ],
+                            egui::Stroke::new(px, ink),
+                        );
+                    }
                 }
             }
             if let Some((pos, _, key)) = note(e)
