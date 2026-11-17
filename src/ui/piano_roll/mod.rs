@@ -606,7 +606,7 @@ fn drag_vocal_point(
     let point = &mut data.pitch[point_index];
     point.offset = ((pointer.x - rect.left()) / rect.width().max(1.0)).clamp(lo, hi);
     point.cents =
-        ((rect.center().y - pointer.y) / rect.height().max(1.0) * 2400.0).clamp(-1200.0, 1200.0);
+        ((rect.center().y - pointer.y) / rect.height().max(1.0) * 100.0).clamp(-1200.0, 1200.0);
     true
 }
 
@@ -622,7 +622,7 @@ fn draw_vocal_point(clip: &mut Clip, g: &Geom, pos: u32, key: u8, pointer: Pos2)
     };
     let offset = ((pointer.x - rect.left()) / rect.width().max(1.0)).clamp(0.0, 1.0);
     let cents =
-        ((rect.center().y - pointer.y) / rect.height().max(1.0) * 2400.0).clamp(-1200.0, 1200.0);
+        ((rect.center().y - pointer.y) / rect.height().max(1.0) * 100.0).clamp(-1200.0, 1200.0);
     let state = vocal_note_mut(&mut clip.file.vocal_notes, pos, key);
     if state.pitch.is_empty() {
         state.pitch = vec![
@@ -836,7 +836,7 @@ impl PianoRoll {
                 edited(actions, false);
                 ui.ctx().request_repaint();
             }
-            if response.drag_stopped() {
+            if response.drag_stopped() || !primary_down_live(ui, response.id) {
                 self.vocal_curve_drag = None;
                 self.vocal_curve_free_draw = false;
                 edited(actions, true);
@@ -902,7 +902,7 @@ impl PianoRoll {
                             .map(|(index, point)| {
                                 let at = pos2(
                                     rect.left() + point.offset * rect.width(),
-                                    rect.center().y - point.cents / 2400.0 * rect.height(),
+                                    rect.center().y - point.cents / 100.0 * rect.height(),
                                 );
                                 (at.distance(pointer), pos as u32, key, rect, index)
                             })
@@ -945,8 +945,7 @@ impl PianoRoll {
                         index,
                         crate::song::VocalPitchPoint {
                             offset,
-                            cents: ((rect.center().y - pointer.y) / rect.height().max(1.0)
-                                * 2400.0)
+                            cents: ((rect.center().y - pointer.y) / rect.height().max(1.0) * 100.0)
                                 .clamp(-1200.0, 1200.0),
                         },
                     );
@@ -3506,7 +3505,7 @@ fn paint_notes(
                         .map(|p| {
                             pos2(
                                 r.left() + p.offset.clamp(0.0, 1.0) * r.width(),
-                                r.center().y - p.cents.clamp(-1200.0, 1200.0) / 2400.0 * r.height(),
+                                r.center().y - p.cents.clamp(-1200.0, 1200.0) / 100.0 * r.height(),
                             )
                         })
                         .collect();

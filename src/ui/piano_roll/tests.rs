@@ -3358,6 +3358,29 @@ mod component {
     }
 
     #[test]
+    fn vocal_pitch_draw_never_moves_or_resizes_the_note() {
+        let mut rig = Rig::new(vec![n(0, 128.0, 70)]);
+        rig.song.channels[1].kind = ChannelKind::Synth(crate::song::SynthKind::VocalSynth);
+        rig.song.channels[1].rack.add(53);
+        rig.roll.pitch_draw_enabled = true;
+        rig.frame(vec![]);
+        let before = rig.events().to_vec();
+        let start = at(10.0, 70);
+        rig.drag(start, start + vec2(45.0, -10.0));
+        assert_eq!(rig.events(), before);
+        assert!(
+            !rig.song.channels[1].lanes[0].clips[0]
+                .file
+                .vocal_notes
+                .is_empty()
+        );
+        // An unmatched gesture outside the note must not fall through to create/move/resize.
+        let outside = at(180.0, 70);
+        rig.drag(outside, outside + vec2(50.0, 0.0));
+        assert_eq!(rig.events(), before);
+    }
+
+    #[test]
     fn a_touch_and_each_move_paint_the_notes_under_x_with_no_interpolation() {
         let mut rig = lane_rig(vec![
             n(0, 64.0, 70),
