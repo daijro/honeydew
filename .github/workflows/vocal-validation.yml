@@ -27,9 +27,21 @@ jobs:
         with:
           name: vocal-format
           path: /tmp/vocal-format.patch
-      - name: Vocal DSP regression tests
-        run: cargo test -p honeydew-audio vocal_synth
-      - name: Voicebank parser regression tests
-        run: cargo test --lib vocal_synth
-      - name: Lyric contrast regression test
-        run: cargo test --lib vocal_
+      - name: Vocal regression tests
+        shell: bash
+        run: |
+          set +e
+          (cargo test -p honeydew-audio vocal_synth && cargo test --lib vocal_) 2>&1 | tee /tmp/vocal-tests.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            python3 - <<'PYTEST'
+          import pathlib
+          lines = pathlib.Path("/tmp/vocal-tests.log").read_text(errors="replace").splitlines()
+          tail = "\n".join(lines[-100:])
+          for i in range(0, len(tail), 1500):
+              message = tail[i:i+1500].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Vocal regression::{message}")
+          PYTEST
+          fi
+          exit "$rc"
