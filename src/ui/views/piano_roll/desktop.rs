@@ -3,7 +3,7 @@ use super::super::AppCtx;
 use crate::theme::{Rgba, Theme};
 use crate::ui::piano_roll::{GridSize, PianoRoll};
 use banaforge_audio::device::AudioCommand;
-use eframe::egui::{self, Color32, Rect, RichText, Sense, Ui, UiBuilder, pos2, vec2};
+use eframe::egui::{self, Color32, Rect, RichText, Sense, Ui, UiBuilder, vec2};
 
 const BG: Color32 = Color32::from_rgb(17, 20, 24);
 const PANEL: Color32 = Color32::from_rgb(30, 34, 40);
@@ -455,6 +455,7 @@ fn parameter(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::egui::pos2;
     #[test]
     fn vocal_workspace_responsive_layout_keeps_a_usable_grid() {
         for (w, h) in [
