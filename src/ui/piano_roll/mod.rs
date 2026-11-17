@@ -3482,6 +3482,7 @@ fn paint_notes(
         mix(color, theme.colors.text, graph_lane::SELECTED_TINT),
     );
     let visible = painter.clip_rect();
+    let mut overlays = Vec::new();
     for i in visible_events.clone() {
         let Some(e) = events.get(i) else {
             continue;
@@ -3554,38 +3555,36 @@ fn paint_notes(
                         );
                 }
                 if data.pitch.len() >= 2 && r.width() >= px * 4.0 {
-                    let points: Vec<Pos2> = data
-                        .pitch
-                        .iter()
-                        .map(|p| {
-                            pos2(
-                                r.left() + p.offset.clamp(0.0, 1.0) * r.width(),
-                                r.center().y - p.cents.clamp(-1200.0, 1200.0) / 100.0 * r.height(),
-                            )
-                        })
-                        .collect();
-                    let curve = painter.with_clip_rect(visible);
-                    let ink = Color32::from_rgb(73, 246, 255);
-                    curve.add(egui::Shape::line(
-                        points.clone(),
-                        egui::Stroke::new(
-                            m.u(0.09).max(px) + px * 3.0,
-                            Color32::from_rgb(8, 17, 29),
-                        ),
-                    ));
-                    curve.add(egui::Shape::line(
-                        points.clone(),
-                        egui::Stroke::new(m.u(0.09).max(px), ink),
-                    ));
-                    for p in points {
-                        curve.circle_filled(
-                            p,
-                            m.u(0.13).max(px * 2.0),
-                            Color32::from_rgb(8, 17, 29),
-                        );
-                        curve.circle_stroke(p, m.u(0.13).max(px * 2.0), egui::Stroke::new(px, ink));
-                    }
+                    overlays.push((r, *data));
                 }
+            }
+        }
+    }
+    for (r, data) in overlays {
+        if data.pitch.len() >= 2 && r.width() >= px * 4.0 {
+            let points: Vec<Pos2> = data
+                .pitch
+                .iter()
+                .map(|p| {
+                    pos2(
+                        r.left() + p.offset.clamp(0.0, 1.0) * r.width(),
+                        r.center().y - p.cents.clamp(-1200.0, 1200.0) / 100.0 * r.height(),
+                    )
+                })
+                .collect();
+            let curve = painter.with_clip_rect(visible);
+            let ink = Color32::from_rgb(73, 246, 255);
+            curve.add(egui::Shape::line(
+                points.clone(),
+                egui::Stroke::new(m.u(0.09).max(px) + px * 3.0, Color32::from_rgb(8, 17, 29)),
+            ));
+            curve.add(egui::Shape::line(
+                points.clone(),
+                egui::Stroke::new(m.u(0.09).max(px), ink),
+            ));
+            for p in points {
+                curve.circle_filled(p, m.u(0.13).max(px * 2.0), Color32::from_rgb(8, 17, 29));
+                curve.circle_stroke(p, m.u(0.13).max(px * 2.0), egui::Stroke::new(px, ink));
             }
         }
     }

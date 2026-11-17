@@ -543,6 +543,8 @@ struct Shared {
     /// [`clock`]'s epoch ([`AudioOutput::snapshot_at`], [`CallbackState::callback`]).
     clocked: AtomicBool,
     origin: AtomicI64,
+    /// Callback heartbeat on the same monotonic clock; detect silently disconnected native streams.
+    last_callback: AtomicI64,
     /// The commands the audio thread has taken from the queue ([`OutputSnapshot::taken`]).
     taken: AtomicU64,
     /// Each sub-block's transport tick, as the meters' visual frames ([`OutputSnapshot::heard_tick`]).
@@ -992,7 +994,12 @@ impl<R: AudioRenderer> AudioOutput<R> {
                 .map_or(transport_tick, |&(_, t)| t),
             cpu_load: f32::from_bits(self.shared.cpu.load(Ordering::Acquire)),
             underruns: self.shared.underruns.load(Ordering::Acquire),
-            stream_failed: self.shared.failed.load(Ordering::Acquire),
+            stream_failed: self.shared.failed.load(Ordering::Acquire) || {
+                let last = self.shared.last_callback.load(Ordering::Acquire);
+                cfg!(target_os = "android")
+                    && last > 0
+                    && now.is_some_and(|now| now.saturating_sub(last) > 3_000_000_000)
+            },
             module_meters: self.meters.take(upto, self.sample_rate),
             modulated: (self.meters.3.iter())
                 .map(|(m, cell)| Modulated {
@@ -1144,6 +1151,7 @@ impl<R: AudioRenderer> CallbackState<R> {
         #[cfg(not(target_arch = "wasm32"))]
         let start = Instant::now();
         if let Some(now) = now {
+            self.shared.last_callback.store(now, Ordering::Release);
             let ahead = self.frames as f64 * 1e9 / f64::from(sample_rate);
             let mut origin = now - ahead as i64;
             if let Some((last, at)) = self.clock {
