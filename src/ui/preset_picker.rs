@@ -1460,7 +1460,7 @@ impl SongLibrary for ReadOnly<'_> {
 ///   ([`SAMPLE_EXTS`]); a picker that lists no programs there (the sample picker) lists the folder.
 /// - Otherwise (the user's files): only a `.dwp` or `.sfz`, listed or not, without case (an `.sfz` the instrument
 ///   builder makes keeps its samples so). A folder the user makes beside their preset of its name is theirs, and lists.
-/// Recognize bank roots using directory metadata only, without reading OTO/audio payloads.
+// Recognize bank roots using directory metadata only, without reading OTO/audio payloads.
 fn voicebank_folder(library: &dyn SongLibrary, path: &Path) -> bool {
     let rows = library.list(Some(path)).unwrap_or_default();
     let oto = |e: &SongEntry| !e.is_folder && e.name.eq_ignore_ascii_case("oto.ini");
