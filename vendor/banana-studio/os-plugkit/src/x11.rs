@@ -309,7 +309,7 @@ impl Window {
             let utf8 = atom(b"UTF8_STRING")?;
             c.change_property8(PropMode::REPLACE, win, AtomEnum::WM_NAME, AtomEnum::STRING, title.as_bytes())?;
             c.change_property8(PropMode::REPLACE, win, atom(b"_NET_WM_NAME")?, utf8, title.as_bytes())?;
-            c.change_property8(PropMode::REPLACE, win, AtomEnum::WM_CLASS, AtomEnum::STRING, b"lemonstudio\0LemonStudio\0")?;
+            c.change_property8(PropMode::REPLACE, win, AtomEnum::WM_CLASS, AtomEnum::STRING, b"bananastudio\0BananaStudio\0")?;
             c.change_property32(PropMode::REPLACE, win, atom(b"_NET_WM_PID")?, AtomEnum::CARDINAL, &[std::process::id()])?;
             c.change_property32(PropMode::REPLACE, win, atom(b"_NET_WM_WINDOW_TYPE")?, AtomEnum::ATOM, &[atom(b"_NET_WM_WINDOW_TYPE_NORMAL")?])?;
             let motif = atom(b"_MOTIF_WM_HINTS")?;

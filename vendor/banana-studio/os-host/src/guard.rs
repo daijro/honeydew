@@ -257,8 +257,8 @@ use web_time::{Duration, Instant};
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
     /// Window properties of a guarded window: its own window procedure, and the `Module` it belongs to.
-    const PROC: *const u16 = windows_sys::w!("LemonStudio.GuardedProc");
-    const MODULE: *const u16 = windows_sys::w!("LemonStudio.GuardedModule");
+    const PROC: *const u16 = windows_sys::w!("BananaStudio.GuardedProc");
+    const MODULE: *const u16 = windows_sys::w!("BananaStudio.GuardedModule");
 
     thread_local! {
         static LAST: Cell<Option<Instant>> = const { Cell::new(None) };
@@ -477,7 +477,7 @@ mod tests {
                 _ => unsafe { DefWindowProcW(h, msg, w, l) },
             }
         }
-        let class = windows_sys::w!("LemonStudioGuardTest");
+        let class = windows_sys::w!("BananaStudioGuardTest");
         unsafe {
             let wc = WNDCLASSW { lpfnWndProc: Some(faulty), lpszClassName: class, ..std::mem::zeroed() };
             RegisterClassW(&wc);

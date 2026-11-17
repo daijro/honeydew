@@ -108,9 +108,9 @@ pub struct FlTheme {
     pub colors: Option<crate::Design>,
 }
 
-/// The key that makes a theme file a skin's own colours: `LemonStudioColors=Banana` or `=Citrus`. FL ignores it and
+/// The key that makes a theme file a skin's own colours: `BananaStudioColors=Banana` or `=Citrus`. FL ignores it and
 /// reads the rest of the file (an approximation of those colours).
-pub const COLORS_KEY: &str = "LemonStudioColors";
+pub const COLORS_KEY: &str = "BananaStudioColors";
 
 /// Decode an RGB-ordered value (§2: Selected, TextColor): blue in the low byte, high byte ignored.
 pub fn rgb_value(v: i64) -> Color {
@@ -171,7 +171,7 @@ impl FlTheme {
             back_mode: num("backmode").unwrap_or(2.0) as i32,
             back_color: col("backcolor"),
             back_picture: kv.get("backpicfilename").cloned().unwrap_or_default(),
-            colors: kv.get(&COLORS_KEY.to_ascii_lowercase()).and_then(|v| crate::Design::parse(v)),
+            colors: kv.get(&COLORS_KEY.to_ascii_lowercase()).or_else(|| kv.get("lemonstudiocolors")).and_then(|v| crate::Design::parse(v)),
         }
     }
 

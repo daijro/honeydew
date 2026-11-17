@@ -40,6 +40,10 @@ impl Design {
 
     /// A skin by name; `Classic` (Citrus's old name, still in older `design.txt` files) is Citrus.
     pub fn parse(s: &str) -> Option<Design> {
+        // Previous skin name is a file-format alias, not a displayed title.
+        if s.trim().eq_ignore_ascii_case("lemon") {
+            return Some(Design::Banana);
+        }
         if s.trim().eq_ignore_ascii_case("classic") {
             return Some(Design::Citrus);
         }

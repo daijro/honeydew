@@ -23,7 +23,7 @@ use clap_sys::version::CLAP_VERSION;
 pub static SEEN_IN: AtomicU32 = AtomicU32::new(u32::MAX);
 pub static SEEN_OUT: AtomicU32 = AtomicU32::new(u32::MAX);
 
-pub const ID: &CStr = c"org.lemonstudio.test.mono";
+pub const ID: &CStr = c"org.bananastudio.test.mono";
 
 struct Shared<T>(T);
 // SAFETY: read-only tables of static strings.
