@@ -1845,18 +1845,18 @@ mod tests {
     #[test]
     fn vocal_browser_lists_archive_and_bank_folder_as_atomic_picks() {
         let tmp = Temp::new("vocal-browser-bank");
-        let files = ProjectFiles::on_disk(&tmp.0);
+        let mut files = ProjectFiles::on_disk(&tmp.0);
         let dir = tmp.0.join(crate::project_files::VOICEBANKS_FOLDER);
         std::fs::create_dir_all(dir.join("FolderBank")).unwrap();
         std::fs::write(dir.join("FolderBank/oto.ini"), b"a.wav=a,0,0,0,0,0").unwrap();
         std::fs::write(dir.join("ArchiveBank.zip"), b"not parsed just for listing").unwrap();
         std::fs::write(dir.join("OtherBank.UAR"), b"not parsed just for listing").unwrap();
-        let listed = names(
-            &files,
-            PresetTarget::Module(2),
-            Some(53),
-            &[crate::project_files::VOICEBANKS_FOLDER],
-        );
+        let target = PresetTarget::Module(2);
+        let mut browser = picker(&files, target, Some(53));
+        let listed =
+            files.with_preset_files(top(target, Some(53)), exts(target, Some(53)), |library| {
+                browser.names_in(library, &[crate::project_files::VOICEBANKS_FOLDER])
+            });
         assert_eq!(listed, ["ArchiveBank", "FolderBank", "OtherBank"]);
     }
 
