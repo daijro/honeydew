@@ -1653,7 +1653,7 @@ impl ProjectFiles {
         // Last, so completed requests land in this frame (the native open picker may still be pending).
         let changes = self.library_changes;
         opened = self.poll(song).or(opened);
-        self.poll_voicebank_import(ctx);
+        self.poll_voicebank_import(ctx, song);
         // After all that may ask something this frame: the import's result waits for it.
         #[cfg(not(target_arch = "wasm32"))]
         self.import_done(ctx, shortcuts);

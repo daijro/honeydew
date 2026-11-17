@@ -4,6 +4,7 @@
 //! bank's own license must be checked before sharing a project that depends on it.
 
 use std::collections::BTreeMap;
+use unicode_normalization::UnicodeNormalization;
 
 /// One UTAU `oto.ini` alias and its timing values, in milliseconds.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -23,9 +24,81 @@ pub struct OtoEntry {
 pub struct VoicebankIndex {
     pub name: String,
     pub oto_path: String,
+    /// Decoded archive root for resolving subbank-relative WAV filenames.
+    #[serde(default)]
+    pub root: String,
     pub entries: Vec<OtoEntry>,
     /// A license/readme file was found; its contents are deliberately not interpreted as a license grant.
     pub has_license_document: bool,
+}
+
+/// UTAU text is Windows-31J unless a Unicode BOM explicitly identifies it.
+/// `encoding_rs::SHIFT_JIS` implements the WHATWG Windows-31J/CP932 mapping.
+pub fn decode_metadata(data: &[u8]) -> Result<std::borrow::Cow<'_, str>, String> {
+    let (encoding, skip) = if data.starts_with(&[0xef, 0xbb, 0xbf]) {
+        (encoding_rs::UTF_8, 3)
+    } else if data.starts_with(&[0xff, 0xfe]) {
+        (encoding_rs::UTF_16LE, 2)
+    } else if data.starts_with(&[0xfe, 0xff]) {
+        (encoding_rs::UTF_16BE, 2)
+    } else {
+        (encoding_rs::SHIFT_JIS, 0)
+    };
+    let (text, invalid) = encoding.decode_without_bom_handling(&data[skip..]);
+    if invalid {
+        return Err(
+            "Invalid voicebank text encoding (expected Windows-31J or BOM-marked Unicode)".into(),
+        );
+    }
+    Ok(text)
+}
+
+fn character_name(files: &[crate::zip::Entry], root: &str) -> Option<String> {
+    files
+        .iter()
+        .filter(|file| {
+            let (dir, name) = file.path.rsplit_once('/').unwrap_or(("", &file.path));
+            dir == root && name.eq_ignore_ascii_case("character.txt")
+        })
+        .find_map(|file| {
+            let text = decode_metadata(&file.data).ok()?;
+            text.lines().find_map(|line| {
+                let (key, value) = line.split_once('=')?;
+                let value = value.trim();
+                (key.trim().eq_ignore_ascii_case("name")
+                    && !value.is_empty()
+                    && !value.chars().any(char::is_control))
+                .then(|| value.nfc().collect())
+            })
+        })
+}
+
+/// License presence is not a permission grant. Do not infer rights from its text.
+pub fn license_document(path: &str) -> bool {
+    let basename = path.rsplit('/').next().unwrap_or(path).to_ascii_lowercase();
+    basename.starts_with("license")
+        || basename.starts_with("licence")
+        || basename.contains("使用許諾")
+        || basename.contains("利用規約")
+        || basename.contains("利用条件")
+        || basename.contains("使用条件")
+}
+
+impl VoicebankIndex {
+    /// Resolve a WAV with the same NFC policy as decoded ZIP paths. No decoding/audio I/O.
+    pub fn matching_sample<'a>(
+        &self,
+        files: &'a [crate::zip::Entry],
+        alias: &OtoEntry,
+    ) -> Option<&'a crate::zip::Entry> {
+        let path = if self.root.is_empty() {
+            alias.filename.clone()
+        } else {
+            format!("{}/{}", self.root, alias.filename)
+        };
+        let path: String = path.nfc().collect();
+        files.iter().find(|file| file.path.nfc().eq(path.chars()))
+    }
 }
 
 /// Parse a UTAU `oto.ini` into a stable alias-sorted list.
@@ -33,16 +106,7 @@ pub struct VoicebankIndex {
 /// The alias parsing follows the MIT-licensed WebTAU UTAU metadata parser, adapted for BanaForge's safe relative-path
 /// checks and Shift-JIS decoding. See `THIRD_PARTY_NOTICES.md` and `licenses/webtau-MIT.txt`.
 pub fn parse_oto_ini(data: &[u8]) -> Result<Vec<OtoEntry>, String> {
-    let decoded = match std::str::from_utf8(data) {
-        Ok(text) => std::borrow::Cow::Borrowed(text),
-        Err(_) => {
-            let (text, _, invalid) = encoding_rs::SHIFT_JIS.decode(data);
-            if invalid {
-                return Err("oto.ini is not valid UTF-8 or Shift-JIS".into());
-            }
-            text
-        }
-    };
+    let decoded = decode_metadata(data)?;
     let mut entries = BTreeMap::<String, OtoEntry>::new();
 
     for line in decoded.lines() {
@@ -53,7 +117,7 @@ pub fn parse_oto_ini(data: &[u8]) -> Result<Vec<OtoEntry>, String> {
         let Some((filename, values)) = line.split_once('=') else {
             continue;
         };
-        let filename = filename.trim().replace('\\', "/");
+        let filename: String = filename.trim().replace('\\', "/").nfc().collect();
         if !safe_sample_path(&filename) {
             continue;
         }
@@ -68,7 +132,7 @@ pub fn parse_oto_ini(data: &[u8]) -> Result<Vec<OtoEntry>, String> {
                 .filter(|(_, ext)| ext.eq_ignore_ascii_case("wav"))
                 .map_or_else(|| filename.clone(), |(stem, _)| stem.to_owned())
         } else {
-            raw_alias.to_owned()
+            raw_alias.nfc().collect()
         };
         let values: Vec<f64> = values
             .take(5)
@@ -101,13 +165,31 @@ pub fn parse_oto_ini(data: &[u8]) -> Result<Vec<OtoEntry>, String> {
 ///
 /// This intentionally indexes metadata only; samples are not extracted or embedded in the project.
 pub fn index_archive(bytes: &[u8], max_unpacked: u64) -> Result<VoicebankIndex, String> {
-    let files = crate::zip::read(bytes, max_unpacked).map_err(|err| err.to_string())?;
+    let files = crate::zip::read_voicebank(bytes, max_unpacked).map_err(|err| err.to_string())?;
     index_files(&files)
+}
+
+/// Import entry point: a bank without `character.txt` uses the user's archive stem,
+/// never a decoded internal ZIP directory as its displayed name.
+pub fn index_archive_named(
+    bytes: &[u8],
+    max_unpacked: u64,
+    fallback: &str,
+) -> Result<VoicebankIndex, String> {
+    let files = crate::zip::read_voicebank(bytes, max_unpacked).map_err(|err| err.to_string())?;
+    index_files_named(&files, Some(fallback))
 }
 
 /// Index all pitch/subbank oto files, resolving WAV paths relative to the selected bank root.
 /// No sample bytes are retained in the manifest.
 pub fn index_files(files: &[crate::zip::Entry]) -> Result<VoicebankIndex, String> {
+    index_files_named(files, None)
+}
+
+fn index_files_named(
+    files: &[crate::zip::Entry],
+    fallback: Option<&str>,
+) -> Result<VoicebankIndex, String> {
     let oto = files
         .iter()
         .filter(|entry| {
@@ -204,28 +286,30 @@ pub fn index_files(files: &[crate::zip::Entry]) -> Result<VoicebankIndex, String
         return Err("No valid oto.ini entries found".into());
     }
     entries.sort_by(|a, b| a.alias.cmp(&b.alias).then(a.filename.cmp(&b.filename)));
-    let name = root
-        .rsplit('/')
-        .next()
-        .filter(|name| !name.is_empty())
-        .unwrap_or("Voicebank")
-        .to_owned();
+    let name = character_name(files, root).unwrap_or_else(|| {
+        fallback
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| {
+                root.rsplit('/')
+                    .next()
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or("Voicebank")
+            })
+            .nfc()
+            .collect()
+    });
     let has_license_document = files.iter().any(|entry| {
-        if !root.is_empty()
-            && !entry
+        let in_root = root.is_empty()
+            || entry
                 .path
                 .strip_prefix(root)
-                .is_some_and(|path| path.starts_with('/'))
-        {
-            return false;
-        }
-        let path = entry.path.to_ascii_lowercase();
-        let basename = path.rsplit('/').next().unwrap_or(&path);
-        basename.starts_with("license") || basename.starts_with("licence")
+                .is_some_and(|p| p.starts_with('/'));
+        in_root && license_document(&entry.path)
     });
     Ok(VoicebankIndex {
         name,
         oto_path: oto.path.clone(),
+        root: root.nfc().collect(),
         entries,
         has_license_document,
     })
@@ -244,6 +328,38 @@ fn safe_sample_path(path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vocal_metadata_uses_cp932_unless_a_unicode_bom_is_present() {
+        // These bytes are valid UTF-8 too: UTAU metadata must still use CP932.
+        assert_eq!(decode_metadata(&[0xc2, 0xa5]).unwrap(), "ﾂ･");
+        assert_eq!(
+            decode_metadata("\u{feff}name=が".as_bytes()).unwrap(),
+            "name=が"
+        );
+        for (bom, little) in [([0xff, 0xfe], true), ([0xfe, 0xff], false)] {
+            let mut bytes = bom.to_vec();
+            for unit in "使用許諾条件".encode_utf16() {
+                bytes.extend_from_slice(&if little {
+                    unit.to_le_bytes()
+                } else {
+                    unit.to_be_bytes()
+                });
+            }
+            assert_eq!(decode_metadata(&bytes).unwrap(), "使用許諾条件");
+        }
+        assert!(decode_metadata(&[0xff, 0xfe, 0x41]).is_err());
+    }
+
+    #[test]
+    fn vocal_bank_without_character_name_uses_archive_stem_not_internal_directory() {
+        let zip = crate::zip::write(&[("Internal/oto.ini".into(), b"a.wav=a,0,0,0,0,0".to_vec())])
+            .unwrap();
+        assert_eq!(
+            index_archive_named(&zip, 1024, "User Bank").unwrap().name,
+            "User Bank"
+        );
+    }
 
     #[test]
     fn decodes_real_shift_jis_and_rejects_broken_encoding() {

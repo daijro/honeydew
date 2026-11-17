@@ -8,7 +8,7 @@ use super::{IMPORT_FAILED, ProjectFiles, VOICEBANKS_FOLDER};
 pub(super) const MAX_VOICEBANK_UNPACKED: u64 = 256 << 20;
 
 pub(super) type ImportResult =
-    Result<(crate::vocal_synth::VoicebankIndex, Option<Vec<u8>>), String>;
+    Result<(crate::vocal_synth::VoicebankIndex, Option<Vec<u8>>, PathBuf), String>;
 
 impl ProjectFiles {
     /// System storage entry points shared by the vocal toolbar and preset browser.
@@ -73,7 +73,7 @@ impl ProjectFiles {
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         self.voicebank_import = Some(receiver);
         let work = move || {
-            let _ = sender.send(index_folder(&path).map(|index| (index, None)));
+            let _ = sender.send(index_folder(&path).map(|index| (index, None, path.clone())));
         };
         #[cfg(not(target_arch = "wasm32"))]
         if let Err(error) = std::thread::Builder::new()
@@ -107,9 +107,11 @@ impl ProjectFiles {
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         self.voicebank_import = Some(receiver);
         let work = move || {
-            let result = crate::vocal_synth::index_archive(&bytes, MAX_VOICEBANK_UNPACKED)
-                .map(|index| (index, keep_archive.then_some(bytes)))
-                .map_err(|err| format!("{}: {err}", path.display()));
+            let fallback = path.file_stem().unwrap_or_default().to_string_lossy();
+            let result =
+                crate::vocal_synth::index_archive_named(&bytes, MAX_VOICEBANK_UNPACKED, &fallback)
+                    .map(|index| (index, keep_archive.then_some(bytes), path.clone()))
+                    .map_err(|err| format!("{}: {err}", path.display()));
             let _ = sender.send(result);
         };
         #[cfg(not(target_arch = "wasm32"))]
@@ -124,7 +126,11 @@ impl ProjectFiles {
         work();
     }
 
-    pub(super) fn poll_voicebank_import(&mut self, ctx: &eframe::egui::Context) {
+    pub(super) fn poll_voicebank_import(
+        &mut self,
+        ctx: &eframe::egui::Context,
+        song: &mut crate::song::Song,
+    ) {
         let Some(receiver) = &self.voicebank_import else {
             return;
         };
@@ -132,7 +138,34 @@ impl ProjectFiles {
             Ok(result) => {
                 self.voicebank_import = None;
                 match result {
-                    Ok((index, bytes)) => self.store_voicebank_index(index, bytes),
+                    Ok((index, bytes, source)) => {
+                        // Only rename a module still pointing at the completed request.
+                        // Changing selection while indexing must not relabel a different bank.
+                        let name = index.name.clone();
+                        self.store_voicebank_index(index, bytes);
+                        for module in song
+                            .channels
+                            .iter_mut()
+                            .flat_map(|c| c.rack.modules.iter_mut())
+                        {
+                            if module.type_id != 53 {
+                                continue;
+                            }
+                            let selected =
+                                module.file.custom_data.as_deref().and_then(|b| {
+                                    serde_json::from_slice::<serde_json::Value>(b).ok()
+                                });
+                            if selected
+                                .as_ref()
+                                .and_then(|j| j.get("voicebank_source"))
+                                .and_then(|s| s.as_str())
+                                == source.to_str()
+                            {
+                                module.file.preset_name.clone_from(&name);
+                                self.song_changed();
+                            }
+                        }
+                    }
                     Err(err) => self.fail(IMPORT_FAILED, err),
                 }
             }
@@ -252,7 +285,11 @@ fn index_folder(root: &Path) -> Result<crate::vocal_synth::VoicebankIndex, Strin
                 continue;
             }
             let name = entry.file_name().to_string_lossy().to_lowercase();
-            let data = if name == "oto.ini" || name == "character.txt" {
+            let data = if name == "oto.ini"
+                || name == "character.txt"
+                || name == "install.txt"
+                || crate::vocal_synth::license_document(&name)
+            {
                 let size = entry.metadata().map_err(|e| e.to_string())?.len();
                 if size > metadata_budget {
                     return Err("Bank metadata is too large".into());
@@ -294,7 +331,7 @@ mod tests {
         std::fs::write(bank.join("C4/oto.ini"), b"a.wav=hello,0,0,0,0,0").unwrap();
         std::fs::write(bank.join("C4/a.wav"), b"not WAV data").unwrap();
         files.register_voicebank_folder(&bank);
-        let (index, bytes) = files
+        let (index, bytes, _) = files
             .voicebank_import
             .take()
             .unwrap()

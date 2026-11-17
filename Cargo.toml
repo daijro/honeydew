@@ -26,6 +26,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.152"
 # UTAU voicebank manifests are commonly Shift-JIS; already in the graph through the UI stack.
 encoding_rs = "0.8.42"
+unicode-normalization = "0.1.24"
 # Already in the tree through eframe (its `image` reads PNGs): decodes our logo glyph.
 png = "0.18.1"
 # The ZIP codec (`zip.rs`). Both are already in the tree through eframe (image -> png -> flate2), on native and
