@@ -1957,6 +1957,7 @@ fn vocal_voicebank_zip_auto_routes_without_replacing_the_song() {
     let bytes = crate::zip::write(&[
         ("Custom/oto.ini".into(), b"a.wav=a,0,0,0,0,0".to_vec()),
         ("Custom/a.wav".into(), vec![0; 16]),
+        ("Custom/demo.mid".into(), vec![0; 16]),
     ])
     .unwrap();
     assert!(files.opened("Download.zip".into(), bytes.clone()).is_none());

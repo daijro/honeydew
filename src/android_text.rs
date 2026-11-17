@@ -31,11 +31,10 @@ impl Editor {
     }
 
     fn complete(&mut self, serial: u64, text: Option<String>) {
-        if let Some((current, _, ctx)) = &self.active
+        if let Some((current, _, _)) = &self.active
             && *current == serial
         {
             self.result = Some(text);
-            ctx.request_repaint();
         }
     }
 
@@ -210,7 +209,16 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onTextResult(
     let text = (accepted != 0 && !text.is_null())
         .then(|| env.get_string(&text).ok().map(String::from))
         .flatten();
-    lock_editor().complete(serial as u64, text);
+    // Never acquire egui's context lock while holding EDITOR: the UI takes them
+    // in the opposite order when consuming the result.
+    let ctx = {
+        let mut editor = lock_editor();
+        editor.complete(serial as u64, text);
+        editor.active.as_ref().map(|(_, _, ctx)| ctx.clone())
+    };
+    if let Some(ctx) = ctx {
+        ctx.request_repaint();
+    }
 }
 
 #[cfg(not(target_os = "android"))]

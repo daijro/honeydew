@@ -2279,3 +2279,14 @@ fn the_tag_fields_are_saved_apart_and_a_song_with_none_writes_as_before() {
     song.file.meta = MetaState::default();
     assert_eq!(crate::flm::write(&song).unwrap(), before);
 }
+
+#[test]
+fn vocal_editor_follows_replaced_rack_not_creation_kind() {
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::VocalSynth));
+    assert!(super::vocal_editor(&song.channels[1]));
+    song.channels[1].rack.modules.clear();
+    assert!(!super::vocal_editor(&song.channels[1]));
+    song.channels[1].rack.add(SynthKind::DwSampler.type_id());
+    assert!(!super::vocal_editor(&song.channels[1]));
+}

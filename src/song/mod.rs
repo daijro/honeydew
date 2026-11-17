@@ -678,3 +678,16 @@ fn entropy() -> u64 {
 
 #[cfg(test)]
 mod tests;
+
+/// Vocal editor tools follow the current rack instrument, not the channel's creation kind.
+pub fn vocal_editor(channel: &Channel) -> bool {
+    channel
+        .rack
+        .modules
+        .iter()
+        .find(|m| {
+            crate::params::module_spec(m.type_id)
+                .is_some_and(|spec| spec.role == crate::params::Role::Instrument)
+        })
+        .is_some_and(|m| m.type_id == 53)
+}

@@ -817,6 +817,29 @@ impl PianoRoll {
         }
     }
 
+    /// Flatten the selected notes' bends, preserving lyrics and all other expression.
+    pub fn reset_vocal_pitch(&mut self, song: &mut Song) -> bool {
+        let selected = self.selected.clone();
+        let Some(clip) = self.clip_mut(song) else {
+            return false;
+        };
+        let anchors: Vec<_> = clip
+            .events
+            .iter()
+            .zip(selected)
+            .filter(|(_, on)| *on)
+            .filter_map(|(e, _)| note(e).map(|(p, _, k)| (p as u32, k)))
+            .collect();
+        let mut changed = false;
+        for data in &mut clip.file.vocal_notes {
+            if anchors.contains(&(data.pos, data.key)) && !data.pitch.is_empty() {
+                data.pitch.clear();
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// Coalesce expensive prepared-engine previews while dragging, without adding undo steps.
     /// Final release still publishes the complete curve. The existing audio queue adopts voices.
     fn audition_vocal(&mut self, ui: &egui::Ui, actions: &mut Vec<PianoRollAction>) {
@@ -859,12 +882,10 @@ impl PianoRoll {
         let Some(pointer) = response.interact_pointer_pos() else {
             return false;
         };
-        let is_vocal = song.channels.get(self.channel).is_some_and(|channel| {
-            matches!(
-                channel.kind,
-                crate::song::ChannelKind::Synth(crate::song::SynthKind::VocalSynth)
-            )
-        });
+        let is_vocal = song
+            .channels
+            .get(self.channel)
+            .is_some_and(|channel| crate::song::vocal_editor(channel));
         if !is_vocal {
             return false;
         }
@@ -1102,6 +1123,16 @@ impl PianoRoll {
         let grid = body.with_min_x(keys.right() + m.t());
         let id = Id::new("piano_roll");
         self.recording = opts.recording;
+        if !song
+            .channels
+            .get(self.channel)
+            .is_some_and(crate::song::vocal_editor)
+        {
+            self.pitch_draw_enabled = false;
+            self.vocal_curve_drag = None;
+            self.lyric_edit = None;
+            self.lyric_dirty = false;
+        }
         let mut actions = std::mem::take(&mut self.pending);
         // A new note's sound ends after its gate.
         let now = ui.input(|i| i.time);
@@ -1204,13 +1235,10 @@ impl PianoRoll {
         let g = self.geom(grid.min, u);
         let vocal_consumed = self.vocal_input(ui, &response, &g, song, &mut actions);
         let pitch_locked = self.pitch_draw_enabled
-            && song.channels.get(self.channel).is_some_and(|channel| {
-                channel
-                    .rack
-                    .modules
-                    .iter()
-                    .any(|module| module.type_id == 53)
-            });
+            && song
+                .channels
+                .get(self.channel)
+                .is_some_and(|channel| crate::song::vocal_editor(channel));
         if pitch_locked && !matches!(self.gesture, Gesture::Idle) {
             actions.extend(self.end_touch());
         }
@@ -1257,12 +1285,10 @@ impl PianoRoll {
             } else {
                 0..events.len()
             };
-        let is_vocal = song.channels.get(self.channel).is_some_and(|channel| {
-            matches!(
-                channel.kind,
-                crate::song::ChannelKind::Synth(crate::song::SynthKind::VocalSynth)
-            )
-        });
+        let is_vocal = song
+            .channels
+            .get(self.channel)
+            .is_some_and(|channel| crate::song::vocal_editor(channel));
         let vocal_states: HashMap<(u32, u8), &crate::song::VocalNoteState> =
             self.clip(song).map_or_else(HashMap::new, |clip| {
                 clip.file
@@ -2356,12 +2382,10 @@ impl PianoRoll {
     ) {
         let (m, colors) = (cx.m, &cx.theme.colors);
         let list_w = m.u(KEYS_W);
-        let is_vocal = song.channels.get(self.channel).is_some_and(|channel| {
-            matches!(
-                channel.kind,
-                crate::song::ChannelKind::Synth(crate::song::SynthKind::VocalSynth)
-            )
-        });
+        let is_vocal = song
+            .channels
+            .get(self.channel)
+            .is_some_and(|channel| crate::song::vocal_editor(channel));
         let vocal_labels = ["Vel", "Dynamics", "Breath", "Formant"];
         let labels = if is_vocal {
             &vocal_labels[..]
@@ -3485,25 +3509,39 @@ fn paint_notes(
                     && let Some(peaks) = waveforms.get(&(pos as u32, key))
                 {
                     let half = (wave.height() * 0.42).max(px);
-                    let ink = Color32::from_rgba_unmultiplied(116, 255, 235, 115);
+                    let ink = Color32::from_rgb(116, 255, 235);
                     for (j, peak) in peaks.iter().enumerate() {
                         let x = wave.left() + j as f32 / 47.0 * wave.width();
                         let amp = (peak * 8.0).clamp(0.0, 1.0) * half;
+                        let segment = [
+                            pos2(x, wave.center().y - amp),
+                            pos2(x, wave.center().y + amp),
+                        ];
                         painter.line_segment(
-                            [
-                                pos2(x, wave.center().y - amp),
-                                pos2(x, wave.center().y + amp),
-                            ],
-                            egui::Stroke::new(px, ink),
+                            segment,
+                            egui::Stroke::new(px * 3.0, Color32::from_rgb(8, 17, 29)),
                         );
+                        painter.line_segment(segment, egui::Stroke::new(px, ink));
                     }
                 }
             }
-            if let Some((pos, _, key)) = note(e)
+            if vocal_track
+                && let Some((pos, _, key)) = note(e)
                 && let Some(data) = vocal_notes.get(&(pos as u32, key))
             {
                 if !data.lyric.is_empty() && r.width() >= m.u(0.75) && r.height() >= m.u(0.55) {
-                    let ink = lyric_ink(fill);
+                    let label = Rect::from_min_max(
+                        r.min + vec2(px, px),
+                        pos2(r.right() - px, r.top() + r.height() * 0.53),
+                    );
+                    painter.rect_filled(label, 1.0, Color32::from_rgb(8, 17, 29));
+                    painter.rect_stroke(
+                        label,
+                        1.0,
+                        egui::Stroke::new(px, Color32::from_rgb(116, 255, 235)),
+                        egui::StrokeKind::Inside,
+                    );
+                    let ink = lyric_ink(Color32::from_rgb(8, 17, 29));
                     let at = pos2(r.left() + m.u(0.12), r.top() + r.height() * 0.27);
                     painter
                         .with_clip_rect(visible.intersect(r.shrink(px)))
@@ -3528,6 +3566,13 @@ fn paint_notes(
                         .collect();
                     let curve = painter.with_clip_rect(visible);
                     let ink = Color32::from_rgb(73, 246, 255);
+                    curve.add(egui::Shape::line(
+                        points.clone(),
+                        egui::Stroke::new(
+                            m.u(0.09).max(px) + px * 3.0,
+                            Color32::from_rgb(8, 17, 29),
+                        ),
+                    ));
                     curve.add(egui::Shape::line(
                         points.clone(),
                         egui::Stroke::new(m.u(0.09).max(px), ink),

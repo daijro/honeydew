@@ -40,14 +40,14 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     if channel >= app.song.channels.len() {
         return Some(Nav::Show(View::Playlist));
     }
-    let is_vocal = matches!(
-        app.song.channels[channel].kind,
-        crate::song::ChannelKind::Synth(crate::song::SynthKind::VocalSynth)
-    );
+    let is_vocal = crate::song::vocal_editor(&app.song.channels[channel]);
     let roll = state
         .rolls
         .entry(channel)
         .or_insert_with(|| PianoRoll::for_channel(app.song, channel));
+    if !is_vocal {
+        roll.pitch_draw_enabled = false;
+    }
     let mut editor = app.regions.editor;
     if is_vocal {
         let height = app.cx.m.u(2.1).max(48.0);
@@ -59,6 +59,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         let banks = app.files.voicebanks();
         let mut import = false;
         let mut toggle_pitch = false;
+        let mut reset_pitch = false;
         ui.scope_builder(egui::UiBuilder::new().max_rect(toolbar), |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.strong("VOCAL SYNTH  /  EDIT");
@@ -76,6 +77,11 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
                     ui.spinner();
                     ui.weak("Indexing voicebank…");
                 }
+                reset_pitch = ui
+                    .button("FLATTEN BENDS")
+                    .on_hover_text("Reset selected notes to their key pitch; preserve lyrics")
+                    .clicked();
+                ui.weak("Cyan nodes · cents relative to note · dry PCM preview");
                 ui.weak("MY VOICEBANKS");
                 if banks.is_empty() {
                     ui.weak("No banks imported");
@@ -112,6 +118,9 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         });
         if toggle_pitch {
             roll.pitch_draw_enabled = !roll.pitch_draw_enabled;
+        }
+        if reset_pitch && roll.reset_vocal_pitch(app.song) {
+            app.song_edited(true);
         }
         if import {
             app.files.pick_voicebank();

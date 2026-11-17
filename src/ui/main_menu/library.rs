@@ -929,8 +929,7 @@ impl SongLibrary for NativeLibrary {
         let scanned = entries.into_iter().flatten().take(MAX_SCANNED).flatten();
         let user = self.user_folder();
         let top = user.as_deref() == Some(dir);
-        let every =
-            user.is_some() && !top && self.root.as_deref().is_some_and(|r| !dir.starts_with(r));
+        let every = user.as_deref().is_some_and(|root| dir.starts_with(root)) && !top;
         let listed = scanned.filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
             // `DirEntry::file_type` does not follow links, and most systems give it with the entry.

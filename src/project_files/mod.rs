@@ -1226,9 +1226,12 @@ impl ProjectFiles {
         // A normal ZIP import can be a voicebank too. Reuse the already validated entries,
         // rather than inflating the same archive a second time. Project ZIPs always win.
         if let Some(all) = entries.as_deref()
-            && !all
-                .iter()
-                .any(|entry| file_kind(Path::new(&entry.path)).is_some())
+            && !all.iter().any(|entry| {
+                matches!(
+                    file_kind(Path::new(&entry.path)),
+                    Some(FileKind::Song | FileKind::Template | FileKind::Flp)
+                )
+            })
             && all.iter().map(|entry| entry.data.len() as u64).sum::<u64>()
                 <= voicebanks::MAX_VOICEBANK_UNPACKED
             && let Ok(index) = crate::vocal_synth::index_files(all)
