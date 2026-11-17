@@ -3430,6 +3430,22 @@ mod component {
     }
 
     #[test]
+    fn vocal_inspector_hiding_the_grid_releases_audio_and_commits_pending_lyrics() {
+        let mut rig = Rig::new(vec![n(0, 128.0, 70)]);
+        rig.roll.gate = Some((70, f64::MAX));
+        rig.roll.lyric_dirty = true;
+        let actions = rig.roll.hide(&mut rig.song);
+        assert!(actions.contains(&PianoRollAction::Note {
+            key: 70,
+            velocity: None
+        }));
+        assert!(actions.contains(&PianoRollAction::LyricCommitted));
+        assert!(rig.roll.gate.is_none());
+        assert!(!rig.roll.lyric_dirty);
+        assert!(rig.roll.hide(&mut rig.song).is_empty());
+    }
+
+    #[test]
     fn vocal_top_lyric_bar_is_separate_from_notes_and_can_be_hidden() {
         let mut rig = Rig::new(vec![n(0, 128.0, 70)]);
         rig.song.channels[1].rack.add(53);

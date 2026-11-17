@@ -1642,12 +1642,16 @@ impl PianoRoll {
     /// The roll goes (the view left it, `app::left_view`) with a touch it will not see end ([`Self::end_touch`]); the
     /// key the key column holds and a new note's sound stop now.
     pub(crate) fn hide(&mut self, song: &mut Song) -> Vec<PianoRollAction> {
+        self.waveforms.suspend();
         // An open menu or panel (Generate, #107) is cancelled: it never comes back by itself with the roll, and the
         // Generate preview's clip gets its notes back.
         self.menu = None;
         self.lyric_edit = None;
         self.lyric_focus_pending = false;
         let mut actions = self.end_touch();
+        if std::mem::take(&mut self.lyric_dirty) {
+            actions.push(PianoRollAction::LyricCommitted);
+        }
         self.audition(song, None, &mut actions);
         let column = column_keys(&std::mem::take(&mut self.keys_down));
         for key in column.into_iter().chain(self.gate.take().map(|g| g.0)) {

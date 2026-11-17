@@ -1,4 +1,4 @@
-//! Vocal-only workstation chrome. Reuses the native roll/audio commands; never renders audio or reads bank files.
+//! Vocal-only workstation chrome. Reuses the native roll/audio commands; never renders audio or decodes bank samples.
 use super::super::AppCtx;
 use crate::theme::{Rgba, Theme};
 use crate::ui::piano_roll::{GridSize, PianoRoll};
@@ -313,7 +313,7 @@ fn panel(
                     ui.add(egui::Slider::new(&mut app.settings.vocal_waveform_offset_y, 0..=40).text("Gap (rows)"));
                     section(ui, "WORKFLOW");
                     ui.label("Pinch to zoom. Two-finger drag to scroll. Long-press notes for Copy / Delete.");
-                    ui.label("Waveform previews yield to playback. No bank files are read by this panel.");
+                    ui.label("Waveform previews yield to playback. No bank audio is decoded by this panel.");
                 }
                 _ => {
                     section(ui, "TRACK / OUTPUT");

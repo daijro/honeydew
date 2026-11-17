@@ -101,7 +101,9 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     {
         roll.show(ui, editor, &cx, app.song, &opts)
     } else {
-        Vec::new()
+        // The compact inspector owns the editor area: release note gates and
+        // finish pending edits rather than leaving a hidden roll sounding.
+        roll.hide(app.song)
     };
     [app.settings.velocity_snap, app.settings.pan_snap] = roll.value_snap;
     app.settings.grid_size = roll.snap.size;
