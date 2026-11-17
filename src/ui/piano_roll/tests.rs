@@ -3421,6 +3421,20 @@ mod component {
     }
 
     #[test]
+    fn vocal_simple_mode_closes_advanced_lane_and_keeps_note_placement() {
+        let mut rig = Rig::new(vec![n(0, 128.0, 70)]);
+        rig.song.channels[1].rack.add(53);
+        rig.roll.simple_mode = true;
+        rig.roll.graph.open = true;
+        rig.roll.pitch_draw_enabled = true;
+        rig.frame(vec![]);
+        assert!(!rig.roll.pitch_draw_enabled);
+        assert!(rig.text("Dynamics").is_none());
+        rig.tap(at(300.0, 70));
+        assert_eq!(rig.events().len(), 2);
+    }
+
+    #[test]
     fn vocal_pitch_draw_never_moves_or_resizes_the_note() {
         let mut rig = Rig::new(vec![n(0, 128.0, 70)]);
         rig.song.channels[1].kind = ChannelKind::Synth(crate::song::SynthKind::VocalSynth);

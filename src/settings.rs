@@ -827,6 +827,9 @@ mod tests {
     fn changed() -> Settings {
         let d = Settings::default();
         Settings {
+            vocal_waveform_enabled: false,
+            vocal_waveform_offset_y: 12,
+            vocal_simple_mode: true,
             midi_device: "Keys 49".into(),
             multi_core: !d.multi_core,
             mcp_enabled: !d.mcp_enabled,
@@ -901,6 +904,23 @@ mod tests {
             rack_tab_place: 0.25,
             write_tags: !d.write_tags,
         }
+    }
+
+    #[test]
+    fn vocal_preferences_persist_and_gap_is_bounded() {
+        let d = Settings::default();
+        assert!(d.vocal_waveform_enabled);
+        assert_eq!(d.vocal_waveform_offset_y, 5);
+        assert!(!d.vocal_simple_mode);
+        let prefs = Settings::load(&stored(
+            r#"{"vocalSynth.waveformEnabled":false,"vocalSynth.waveformOffsetY":99,"vocalSynth.simpleMode":true}"#,
+        ));
+        assert!(!prefs.vocal_waveform_enabled);
+        assert_eq!(prefs.vocal_waveform_offset_y, 40);
+        assert!(prefs.vocal_simple_mode);
+        let mut mem = Mem::default();
+        prefs.save(&mut mem);
+        assert_eq!(Settings::load(&mem), prefs);
     }
 
     #[test]
