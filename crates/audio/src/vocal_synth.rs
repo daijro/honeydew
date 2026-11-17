@@ -123,9 +123,15 @@ impl VocalSynth {
     }
 
     fn start(&mut self, key: u8, velocity: f32, pan: f32) {
-        if !velocity.is_finite() || !pan.is_finite() || key > 127 { return; }
-        let previous_hz = self.voices.iter().filter(|v| v.active && !v.releasing)
-            .max_by_key(|v| v.age).map(|v| v.pitch_hz);
+        if !velocity.is_finite() || !pan.is_finite() || key > 127 {
+            return;
+        }
+        let previous_hz = self
+            .voices
+            .iter()
+            .filter(|v| v.active && !v.releasing)
+            .max_by_key(|v| v.age)
+            .map(|v| v.pitch_hz);
         self.age = self.age.wrapping_add(1);
         let slot = self
             .voices
@@ -201,8 +207,8 @@ impl VocalSynth {
         } else {
             0.0
         };
-        let frequency = (voice.pitch_hz * self.pitch_bend_ratio * (1.0 + vib))
-            .clamp(30.0, sample_rate * 0.4);
+        let frequency =
+            (voice.pitch_hz * self.pitch_bend_ratio * (1.0 + vib)).clamp(30.0, sample_rate * 0.4);
         voice.vibrato_phase = (voice.vibrato_phase
             + std::f32::consts::TAU * vibrato_rate * 10.0 / sample_rate)
             .rem_euclid(std::f32::consts::TAU);
@@ -224,7 +230,9 @@ impl VocalSynth {
 
 impl Instrument for VocalSynth {
     fn set_parameter(&mut self, index: usize, value: f32) {
-        if !value.is_finite() { return; }
+        if !value.is_finite() {
+            return;
+        }
         if let Some(param) = self.params.get_mut(index) {
             *param = value.clamp(0.0, 1.0);
         }
@@ -279,7 +287,9 @@ impl Instrument for VocalSynth {
         });
         for (l, r) in left.iter_mut().zip(right) {
             for voice in 0..VOICES {
-                if !self.voices[voice].active { continue; }
+                if !self.voices[voice].active {
+                    continue;
+                }
                 let sample = self.voice_sample(voice, sample_rate, context.playing, coefficients);
                 *l += sample * self.voices[voice].pan[0];
                 *r += sample * self.voices[voice].pan[1];
@@ -310,7 +320,13 @@ mod tests {
         synth.note_on(60, 1.0, 0.5);
         synth.note_off(60);
         synth.note_off(60);
-        assert!(synth.voices.iter().filter(|v| v.active).all(|v| v.releasing));
+        assert!(
+            synth
+                .voices
+                .iter()
+                .filter(|v| v.active)
+                .all(|v| v.releasing)
+        );
     }
 
     #[test]

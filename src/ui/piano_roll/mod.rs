@@ -464,7 +464,10 @@ fn vocal_note_mut(
     pos: u32,
     key: u8,
 ) -> &mut crate::song::VocalNoteState {
-    if let Some(index) = notes.iter().position(|note| note.pos == pos && note.key == key) {
+    if let Some(index) = notes
+        .iter()
+        .position(|note| note.pos == pos && note.key == key)
+    {
         return &mut notes[index];
     }
     notes.push(crate::song::VocalNoteState {
@@ -493,53 +496,98 @@ fn drag_vocal_point(
             .then(|| g.note_rect(event))
             .flatten()
     });
-    let Some(rect) = rect else { return false; };
-    let Some(data) = clip.file.vocal_notes.iter_mut().find(|n| n.pos == pos && n.key == key) else {
+    let Some(rect) = rect else {
         return false;
     };
-    if point_index >= data.pitch.len() { return false; }
-    let previous = point_index.checked_sub(1)
-        .and_then(|i| data.pitch.get(i)).map_or(0.0, |p| p.offset + 0.01);
-    let next = data.pitch.get(point_index + 1).map_or(1.0, |p| p.offset - 0.01);
-    let (lo, hi) = if previous <= next { (previous, next) } else {
+    let Some(data) = clip
+        .file
+        .vocal_notes
+        .iter_mut()
+        .find(|n| n.pos == pos && n.key == key)
+    else {
+        return false;
+    };
+    if point_index >= data.pitch.len() {
+        return false;
+    }
+    let previous = point_index
+        .checked_sub(1)
+        .and_then(|i| data.pitch.get(i))
+        .map_or(0.0, |p| p.offset + 0.01);
+    let next = data
+        .pitch
+        .get(point_index + 1)
+        .map_or(1.0, |p| p.offset - 0.01);
+    let (lo, hi) = if previous <= next {
+        (previous, next)
+    } else {
         let middle = (previous + next) * 0.5;
         (middle, middle)
     };
     let point = &mut data.pitch[point_index];
     point.offset = ((pointer.x - rect.left()) / rect.width().max(1.0)).clamp(lo, hi);
-    point.cents = ((rect.center().y - pointer.y) / rect.height().max(1.0) * 2400.0)
-        .clamp(-1200.0, 1200.0);
+    point.cents =
+        ((rect.center().y - pointer.y) / rect.height().max(1.0) * 2400.0).clamp(-1200.0, 1200.0);
     true
 }
 
 fn draw_vocal_point(clip: &mut Clip, g: &Geom, pos: u32, key: u8, pointer: Pos2) -> bool {
     let rect = clip.events.iter().find_map(|event| {
-        note(event).is_some_and(|(at, _, pitch)| at as u32 == pos && pitch == key)
-            .then(|| g.note_rect(event)).flatten()
+        note(event)
+            .is_some_and(|(at, _, pitch)| at as u32 == pos && pitch == key)
+            .then(|| g.note_rect(event))
+            .flatten()
     });
-    let Some(rect) = rect else { return false; };
+    let Some(rect) = rect else {
+        return false;
+    };
     let offset = ((pointer.x - rect.left()) / rect.width().max(1.0)).clamp(0.0, 1.0);
-    let cents = ((rect.center().y - pointer.y) / rect.height().max(1.0) * 2400.0).clamp(-1200.0, 1200.0);
+    let cents =
+        ((rect.center().y - pointer.y) / rect.height().max(1.0) * 2400.0).clamp(-1200.0, 1200.0);
     let state = vocal_note_mut(&mut clip.file.vocal_notes, pos, key);
     if state.pitch.is_empty() {
         state.pitch = vec![
-            crate::song::VocalPitchPoint { offset: 0.0, cents: 0.0 },
-            crate::song::VocalPitchPoint { offset: 1.0, cents: 0.0 },
+            crate::song::VocalPitchPoint {
+                offset: 0.0,
+                cents: 0.0,
+            },
+            crate::song::VocalPitchPoint {
+                offset: 1.0,
+                cents: 0.0,
+            },
         ];
     }
     let index = state.pitch.partition_point(|point| point.offset < offset);
-    let nearby = [index.checked_sub(1), (index < state.pitch.len()).then_some(index)]
-        .into_iter().flatten()
-        .filter(|&i| i > 0 && i + 1 < state.pitch.len())
-        .min_by(|&a, &b| (state.pitch[a].offset - offset).abs().total_cmp(&(state.pitch[b].offset - offset).abs()));
+    let nearby = [
+        index.checked_sub(1),
+        (index < state.pitch.len()).then_some(index),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|&i| i > 0 && i + 1 < state.pitch.len())
+    .min_by(|&a, &b| {
+        (state.pitch[a].offset - offset)
+            .abs()
+            .total_cmp(&(state.pitch[b].offset - offset).abs())
+    });
     if let Some(i) = nearby.filter(|&i| (state.pitch[i].offset - offset).abs() < 0.025) {
         let lo = state.pitch[i - 1].offset + 0.001;
         let hi = state.pitch[i + 1].offset - 0.001;
-        let (lo, hi) = if lo <= hi { (lo, hi) } else { let mid = (lo + hi) * 0.5; (mid, mid) };
-        state.pitch[i] = crate::song::VocalPitchPoint { offset: offset.clamp(lo, hi), cents };
+        let (lo, hi) = if lo <= hi {
+            (lo, hi)
+        } else {
+            let mid = (lo + hi) * 0.5;
+            (mid, mid)
+        };
+        state.pitch[i] = crate::song::VocalPitchPoint {
+            offset: offset.clamp(lo, hi),
+            cents,
+        };
     } else if state.pitch.len() < 512 {
         let insert = state.pitch.partition_point(|point| point.offset < offset);
-        state.pitch.insert(insert, crate::song::VocalPitchPoint { offset, cents });
+        state
+            .pitch
+            .insert(insert, crate::song::VocalPitchPoint { offset, cents });
     }
     true
 }
@@ -715,11 +763,18 @@ impl PianoRoll {
             }
             return true;
         }
-        let Some(pointer) = response.interact_pointer_pos() else { return false; };
+        let Some(pointer) = response.interact_pointer_pos() else {
+            return false;
+        };
         let is_vocal = song.channels.get(self.channel).is_some_and(|channel| {
-            matches!(channel.kind, crate::song::ChannelKind::Synth(crate::song::SynthKind::VocalSynth))
+            matches!(
+                channel.kind,
+                crate::song::ChannelKind::Synth(crate::song::SynthKind::VocalSynth)
+            )
         });
-        if !is_vocal { return false; }
+        if !is_vocal {
+            return false;
+        }
 
         if !self.pitch_draw_enabled {
             if response.clicked()
@@ -727,7 +782,10 @@ impl PianoRoll {
                     clip.events.iter().find_map(|event| {
                         let (pos, _, key) = note(event)?;
                         g.note_rect(event).filter(|r| r.contains(pointer)).map(|_| {
-                            let lyric = clip.file.vocal_notes.iter()
+                            let lyric = clip
+                                .file
+                                .vocal_notes
+                                .iter()
                                 .find(|data| data.pos == pos as u32 && data.key == key)
                                 .map_or_else(String::new, |data| data.lyric.clone());
                             (pos as u32, key, lyric)
@@ -748,18 +806,33 @@ impl PianoRoll {
                 clip.events.iter().find_map(|event| {
                     let (pos, _, key) = note(event)?;
                     let rect = g.note_rect(event)?;
-                    if !rect.contains(pointer) { return None; }
-                    let data = clip.file.vocal_notes.iter()
+                    if !rect.contains(pointer) {
+                        return None;
+                    }
+                    let data = clip
+                        .file
+                        .vocal_notes
+                        .iter()
                         .find(|n| n.pos == pos as u32 && n.key == key);
-                    let nearest = data.into_iter().flat_map(|n| n.pitch.iter().enumerate())
+                    let nearest = data
+                        .into_iter()
+                        .flat_map(|n| n.pitch.iter().enumerate())
                         .map(|(i, p)| {
-                            let at = pos2(rect.left() + p.offset.clamp(0.0, 1.0) * rect.width(),
-                                rect.center().y - p.cents.clamp(-1200.0, 1200.0) / 2400.0 * rect.height());
+                            let at = pos2(
+                                rect.left() + p.offset.clamp(0.0, 1.0) * rect.width(),
+                                rect.center().y
+                                    - p.cents.clamp(-1200.0, 1200.0) / 2400.0 * rect.height(),
+                            );
                             (i, at.distance(pointer))
                         })
                         .filter(|(_, d)| *d <= ui.ctx().pixels_per_point().max(1.0) * 12.0)
                         .min_by(|a, b| a.1.total_cmp(&b.1));
-                    Some((pos as u32, key, rect, nearest.map_or(usize::MAX, |(i, _)| i)))
+                    Some((
+                        pos as u32,
+                        key,
+                        rect,
+                        nearest.map_or(usize::MAX, |(i, _)| i),
+                    ))
                 })
             });
             if let Some((pos, key, rect, index)) = picked
@@ -769,19 +842,32 @@ impl PianoRoll {
                 let point_index = if index == usize::MAX {
                     if data.pitch.is_empty() {
                         data.pitch = vec![
-                            crate::song::VocalPitchPoint { offset: 0.0, cents: 0.0 },
-                            crate::song::VocalPitchPoint { offset: 1.0, cents: 0.0 },
+                            crate::song::VocalPitchPoint {
+                                offset: 0.0,
+                                cents: 0.0,
+                            },
+                            crate::song::VocalPitchPoint {
+                                offset: 1.0,
+                                cents: 0.0,
+                            },
                         ];
                     }
-                    let offset = ((pointer.x - rect.left()) / rect.width().max(1.0)).clamp(0.02, 0.98);
+                    let offset =
+                        ((pointer.x - rect.left()) / rect.width().max(1.0)).clamp(0.02, 0.98);
                     let index = data.pitch.partition_point(|p| p.offset < offset);
-                    data.pitch.insert(index, crate::song::VocalPitchPoint {
-                        offset,
-                        cents: ((rect.center().y - pointer.y) / rect.height().max(1.0) * 2400.0)
-                            .clamp(-1200.0, 1200.0),
-                    });
+                    data.pitch.insert(
+                        index,
+                        crate::song::VocalPitchPoint {
+                            offset,
+                            cents: ((rect.center().y - pointer.y) / rect.height().max(1.0)
+                                * 2400.0)
+                                .clamp(-1200.0, 1200.0),
+                        },
+                    );
                     index
-                } else { index };
+                } else {
+                    index
+                };
                 self.vocal_curve_drag = Some((pos, key, point_index));
                 self.vocal_curve_free_draw = index == usize::MAX;
                 edited(actions, false);
@@ -791,8 +877,16 @@ impl PianoRoll {
         false
     }
 
-    fn lyric_editor(&mut self, ui: &mut egui::Ui, grid: Rect, song: &mut Song, actions: &mut Vec<PianoRollAction>) {
-        let Some((pos, key, mut text)) = self.lyric_edit.take() else { return; };
+    fn lyric_editor(
+        &mut self,
+        ui: &mut egui::Ui,
+        grid: Rect,
+        song: &mut Song,
+        actions: &mut Vec<PianoRollAction>,
+    ) {
+        let Some((pos, key, mut text)) = self.lyric_edit.take() else {
+            return;
+        };
         let mut changed = false;
         let mut next = false;
         let mut done = false;
@@ -804,30 +898,48 @@ impl PianoRoll {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label("LYRIC / PHONEME");
-                        let response = ui.add(egui::TextEdit::singleline(&mut text).id(field)
-                            .hint_text("type this note's syllable").char_limit(64).desired_width(150.0));
-                        if self.lyric_focus_pending { response.request_focus(); }
+                        let response = ui.add(
+                            egui::TextEdit::singleline(&mut text)
+                                .id(field)
+                                .hint_text("type this note's syllable")
+                                .char_limit(64)
+                                .desired_width(150.0),
+                        );
+                        if self.lyric_focus_pending {
+                            response.request_focus();
+                        }
                         changed = response.changed();
                         next = ui.button("NEXT NOTE  ›").clicked();
                         done = ui.button("DONE").clicked()
-                            || response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                            || response.lost_focus()
+                                && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     });
                 });
             });
         self.lyric_focus_pending = false;
         if changed && let Some(clip) = self.clip_mut(song) {
-            vocal_note_mut(&mut clip.file.vocal_notes, pos, key).lyric.clone_from(&text);
+            vocal_note_mut(&mut clip.file.vocal_notes, pos, key)
+                .lyric
+                .clone_from(&text);
             self.lyric_dirty = true;
             edited(actions, false);
         }
         if next && !done {
             if let Some((np, nk, lyric)) = self.clip(song).and_then(|clip| {
-                let mut notes: Vec<_> = clip.events.iter().filter_map(|e| note(e).map(|(p, _, k)| (p as u32, k))).collect();
+                let mut notes: Vec<_> = clip
+                    .events
+                    .iter()
+                    .filter_map(|e| note(e).map(|(p, _, k)| (p as u32, k)))
+                    .collect();
                 notes.sort_unstable();
                 notes.dedup();
                 notes.iter().position(|n| *n == (pos, key)).and_then(|i| {
                     let (p, k) = notes.get(i + 1).copied().unwrap_or(notes[0]);
-                    let lyric = clip.file.vocal_notes.iter().find(|n| n.pos == p && n.key == k)
+                    let lyric = clip
+                        .file
+                        .vocal_notes
+                        .iter()
+                        .find(|n| n.pos == p && n.key == k)
                         .map_or_else(String::new, |n| n.lyric.clone());
                     Some((p, k, lyric))
                 })
@@ -839,7 +951,9 @@ impl PianoRoll {
             }
         }
         if done {
-            if self.lyric_dirty { edited(actions, true); }
+            if self.lyric_dirty {
+                edited(actions, true);
+            }
             self.lyric_dirty = false;
             self.lyric_focus_pending = false;
         } else if !next {
@@ -895,11 +1009,18 @@ impl PianoRoll {
         if events != self.seen.as_slice() || self.selected.len() != events.len() {
             self.seen = events.to_vec();
             let mut furthest = 0.0_f64;
-            self.note_end_prefix = events.iter().map(|event| {
-                if let Some((pos, len, _)) = note(event) { furthest = furthest.max(pos + len); }
-                furthest
-            }).collect();
-            self.seen_vocal_notes = self.clip(song).map_or_else(Vec::new, |clip| clip.file.vocal_notes.clone());
+            self.note_end_prefix = events
+                .iter()
+                .map(|event| {
+                    if let Some((pos, len, _)) = note(event) {
+                        furthest = furthest.max(pos + len);
+                    }
+                    furthest
+                })
+                .collect();
+            self.seen_vocal_notes = self
+                .clip(song)
+                .map_or_else(Vec::new, |clip| clip.file.vocal_notes.clone());
             self.selected = vec![false; events.len()];
             // A dragged key stops; the change (an undo) has dealt with the edit.
             if let Gesture::Edit(edit) = std::mem::take(&mut self.gesture) {
@@ -992,19 +1113,30 @@ impl PianoRoll {
         let px = g.tick(grid.left() + 1.0 / m.ppp()) - view.start;
         let end = g.x(loop_ticks).max(grid.left());
         let past = (end < grid.right()).then(|| grid.with_min_x(end));
-        let visible_notes = if events == self.seen.as_slice() && self.note_end_prefix.len() == events.len() {
-            let left = g.tick(grid.left());
-            let right = g.tick(grid.right());
-            let end = events.partition_point(|event| f64::from(event.pos()) <= right);
-            let start = self.note_end_prefix.partition_point(|end| *end <= left);
-            start.min(end)..end
-        } else { 0..events.len() };
+        let visible_notes =
+            if events == self.seen.as_slice() && self.note_end_prefix.len() == events.len() {
+                let left = g.tick(grid.left());
+                let right = g.tick(grid.right());
+                let end = events.partition_point(|event| f64::from(event.pos()) <= right);
+                let start = self.note_end_prefix.partition_point(|end| *end <= left);
+                start.min(end)..end
+            } else {
+                0..events.len()
+            };
         let is_vocal = song.channels.get(self.channel).is_some_and(|channel| {
-            matches!(channel.kind, crate::song::ChannelKind::Synth(crate::song::SynthKind::VocalSynth))
+            matches!(
+                channel.kind,
+                crate::song::ChannelKind::Synth(crate::song::SynthKind::VocalSynth)
+            )
         });
-        let vocal_states: HashMap<(u32, u8), &crate::song::VocalNoteState> = self.clip(song)
-            .map_or_else(HashMap::new, |clip| clip.file.vocal_notes.iter()
-                .map(|state| ((state.pos, state.key), state)).collect());
+        let vocal_states: HashMap<(u32, u8), &crate::song::VocalNoteState> =
+            self.clip(song).map_or_else(HashMap::new, |clip| {
+                clip.file
+                    .vocal_notes
+                    .iter()
+                    .map(|state| ((state.pos, state.key), state))
+                    .collect()
+            });
         paint_notes(
             &grid_painter,
             &g,
@@ -1067,7 +1199,9 @@ impl PianoRoll {
         } else {
             // The lane went mid-drag: the drag ends as its release would.
             let events = self.clip(song).map_or(&[][..], |c| &c.events);
-            let vocal = self.clip(song).map_or(&[][..], |clip| clip.file.vocal_notes.as_slice());
+            let vocal = self
+                .clip(song)
+                .map_or(&[][..], |clip| clip.file.vocal_notes.as_slice());
             self.graph_drag_end(events, vocal, &mut actions);
         }
 
@@ -1165,12 +1299,19 @@ impl PianoRoll {
         if events != self.seen.as_slice() {
             self.seen = events.to_vec();
             let mut furthest = 0.0_f64;
-            self.note_end_prefix = events.iter().map(|event| {
-                if let Some((pos, len, _)) = note(event) { furthest = furthest.max(pos + len); }
-                furthest
-            }).collect();
+            self.note_end_prefix = events
+                .iter()
+                .map(|event| {
+                    if let Some((pos, len, _)) = note(event) {
+                        furthest = furthest.max(pos + len);
+                    }
+                    furthest
+                })
+                .collect();
         }
-        self.seen_vocal_notes = self.clip(song).map_or_else(Vec::new, |clip| clip.file.vocal_notes.clone());
+        self.seen_vocal_notes = self
+            .clip(song)
+            .map_or_else(Vec::new, |clip| clip.file.vocal_notes.clone());
         actions
     }
 
@@ -1181,7 +1322,9 @@ impl PianoRoll {
         let events = self.clip(song).map_or(&[][..], |c| &c.events);
         self.selected = crate::app::live::follow(&self.seen, &self.selected, events, Event::pos);
         self.seen = events.to_vec();
-        self.seen_vocal_notes = self.clip(song).map_or_else(Vec::new, |clip| clip.file.vocal_notes.clone());
+        self.seen_vocal_notes = self
+            .clip(song)
+            .map_or_else(Vec::new, |clip| clip.file.vocal_notes.clone());
     }
 
     /// The roll goes (the view left it, `app::left_view`) with a touch it will not see end ([`Self::end_touch`]); the
@@ -1260,7 +1403,9 @@ impl PianoRoll {
         vocal: &[crate::song::VocalNoteState],
         actions: &mut Vec<PianoRollAction>,
     ) {
-        let Some((orig, orig_vocal, reported)) = self.graph_drag.take() else { return; };
+        let Some((orig, orig_vocal, reported)) = self.graph_drag.take() else {
+            return;
+        };
         if events == orig && vocal == orig_vocal {
             self.selected.fill(false);
             actions.push(PianoRollAction::Resync);
@@ -2073,10 +2218,17 @@ impl PianoRoll {
         let (m, colors) = (cx.m, &cx.theme.colors);
         let list_w = m.u(KEYS_W);
         let is_vocal = song.channels.get(self.channel).is_some_and(|channel| {
-            matches!(channel.kind, crate::song::ChannelKind::Synth(crate::song::SynthKind::VocalSynth))
+            matches!(
+                channel.kind,
+                crate::song::ChannelKind::Synth(crate::song::SynthKind::VocalSynth)
+            )
         });
         let vocal_labels = ["Vel", "Dynamics", "Breath", "Formant"];
-        let labels = if is_vocal { &vocal_labels[..] } else { &graph_lane::ROLL_LABELS[..] };
+        let labels = if is_vocal {
+            &vocal_labels[..]
+        } else {
+            &graph_lane::ROLL_LABELS[..]
+        };
         let list = id.with("graph list");
         let content = graph_lane::frame(
             ui,
@@ -2092,12 +2244,29 @@ impl PianoRoll {
         let values = content.with_min_x(strip.left() + list_w + m.t());
         let expression = is_vocal.then_some(self.graph.item).filter(|item| *item > 0);
         let vocal_values: HashMap<(u32, u8), f32> = if let Some(expression) = expression {
-            self.clip(song).map_or_else(HashMap::new, |clip| clip.file.vocal_notes.iter().map(|state| {
-                let value = match expression { 1 => state.dynamics, 2 => state.breathiness, 3 => state.formant, _ => 0.5 };
-                ((state.pos, state.key), value)
-            }).collect())
-        } else { HashMap::new() };
-        let prop = if is_vocal { Prop::Velocity } else { graph_lane::ROLL_PROPS[self.graph.item] };
+            self.clip(song).map_or_else(HashMap::new, |clip| {
+                clip.file
+                    .vocal_notes
+                    .iter()
+                    .map(|state| {
+                        let value = match expression {
+                            1 => state.dynamics,
+                            2 => state.breathiness,
+                            3 => state.formant,
+                            _ => 0.5,
+                        };
+                        ((state.pos, state.key), value)
+                    })
+                    .collect()
+            })
+        } else {
+            HashMap::new()
+        };
+        let prop = if is_vocal {
+            Prop::Velocity
+        } else {
+            graph_lane::ROLL_PROPS[self.graph.item]
+        };
         let land = prop.land(self.value_snap[if is_vocal { 0 } else { self.graph.item }]);
 
         // The paint: at touch-down and at every move, the eligible notes under x take the value under y.
@@ -2116,10 +2285,13 @@ impl PianoRoll {
             actions.push(PianoRollAction::Resync);
         }
         if response.drag_started() && live && !pinch {
-            let (events, vocal) = self.clip(song).map_or((&[][..], &[][..]), |c| (c.events.as_slice(), c.file.vocal_notes.as_slice()));
+            let (events, vocal) = self.clip(song).map_or((&[][..], &[][..]), |c| {
+                (c.events.as_slice(), c.file.vocal_notes.as_slice())
+            });
             self.graph_drag = Some((events.to_vec(), vocal.to_vec(), false));
         }
-        let touch = response.interact_pointer_pos()
+        let touch = response
+            .interact_pointer_pos()
             .filter(|_| response.dragged() && live && self.graph_drag.is_some())
             .map(|p| (p, prop.landed(graph_lane::v_at(values, p.y), land)));
         if let Some((p, value)) = touch {
@@ -2133,23 +2305,36 @@ impl PianoRoll {
                     if let Some((pos, key)) = target {
                         let state = vocal_note_mut(&mut clip.file.vocal_notes, pos, key);
                         let value = f32::from(value) / f32::from(prop.max());
-                        let target = match expression { 1 => &mut state.dynamics, 2 => &mut state.breathiness, 3 => &mut state.formant, _ => return false };
+                        let target = match expression {
+                            1 => &mut state.dynamics,
+                            2 => &mut state.breathiness,
+                            3 => &mut state.formant,
+                            _ => return false,
+                        };
                         let changed = (*target - value).abs() > f32::EPSILON;
                         *target = value;
                         changed
-                    } else { false }
+                    } else {
+                        false
+                    }
                 } else {
                     graph_lane::paint_notes(&mut clip.events, &self.selected, prop, tick, value)
                 }
             });
             if painted {
-                if expression.is_none() { self.remembered.velocity = u8::try_from(value).unwrap_or(u8::MAX); }
+                if expression.is_none() {
+                    self.remembered.velocity = u8::try_from(value).unwrap_or(u8::MAX);
+                }
                 edited(actions, false);
-                if let Some((_, _, reported)) = self.graph_drag.as_mut() { *reported = true; }
+                if let Some((_, _, reported)) = self.graph_drag.as_mut() {
+                    *reported = true;
+                }
             }
         }
         if response.drag_stopped() || !live {
-            let (events, vocal) = self.clip(song).map_or((&[][..], &[][..]), |c| (c.events.as_slice(), c.file.vocal_notes.as_slice()));
+            let (events, vocal) = self.clip(song).map_or((&[][..], &[][..]), |c| {
+                (c.events.as_slice(), c.file.vocal_notes.as_slice())
+            });
             self.graph_drag_end(events, vocal, actions);
         }
 
@@ -2210,11 +2395,20 @@ impl PianoRoll {
                 .zip(&self.selected)
                 .filter(|(_, s)| **s == pass)
             {
-                let Some((pos, len, key)) = note(e) else { continue; };
+                let Some((pos, len, key)) = note(e) else {
+                    continue;
+                };
                 let v = if let Some(expression) = expression {
-                    let value = vocal_values.get(&(pos as u32, key)).copied().unwrap_or(if expression == 2 { 0.0 } else { 0.5 });
+                    let value = vocal_values
+                        .get(&(pos as u32, key))
+                        .copied()
+                        .unwrap_or(if expression == 2 { 0.0 } else { 0.5 });
                     (value.clamp(0.0, 1.0) * f32::from(prop.max())).round() as u16
-                } else if let Some(value) = prop.get(e) { value } else { continue; };
+                } else if let Some(value) = prop.get(e) {
+                    value
+                } else {
+                    continue;
+                };
                 let x0 = m.round_px(g.x(pos));
                 let x1 = g.x(pos + len).max(x0 + px);
                 let from = match prop {
@@ -2229,24 +2423,38 @@ impl PianoRoll {
             }
         }
         if let Some(expression) = expression {
-            let points: Vec<Pos2> = events.iter().filter_map(|event| {
-                let (pos, len, key) = note(event)?;
-                let value = vocal_values.get(&(pos as u32, key)).copied().unwrap_or(if expression == 2 { 0.0 } else { 0.5 });
-                let stored = (value.clamp(0.0, 1.0) * f32::from(prop.max())).round() as u16;
-                Some(pos2(g.x(pos + len * 0.5), cap_y(stored)))
-            }).collect();
+            let points: Vec<Pos2> = events
+                .iter()
+                .filter_map(|event| {
+                    let (pos, len, key) = note(event)?;
+                    let value = vocal_values
+                        .get(&(pos as u32, key))
+                        .copied()
+                        .unwrap_or(if expression == 2 { 0.0 } else { 0.5 });
+                    let stored = (value.clamp(0.0, 1.0) * f32::from(prop.max())).round() as u16;
+                    Some(pos2(g.x(pos + len * 0.5), cap_y(stored)))
+                })
+                .collect();
             if points.len() > 1 {
-                painter.add(egui::Shape::line(points, egui::Stroke::new(m.u(0.06).max(px), Color32::from_rgb(73, 246, 255))));
+                painter.add(egui::Shape::line(
+                    points,
+                    egui::Stroke::new(m.u(0.06).max(px), Color32::from_rgb(73, 246, 255)),
+                ));
             }
         }
         // The value under a dragging finger, on its cap's row ([`value_label`]).
         if let Some((p, v)) = touch {
             let at = pos2(p.x, cap_y(v) + px);
             let snap_index = if is_vocal { 0 } else { self.graph.item };
-            let midi = expression.is_none() && land.grid().is_some()
+            let midi = expression.is_none()
+                && land.grid().is_some()
                 && self.value_snap[snap_index].grid == ValueGrid::Steps;
             let text = if let Some(expression) = expression {
-                format!("{} {} %", labels[expression], (100.0 * prop.frac(v)).round())
+                format!(
+                    "{} {} %",
+                    labels[expression],
+                    (100.0 * prop.frac(v)).round()
+                )
             } else {
                 match prop {
                     Prop::Velocity if midi => format!("MIDI {}", v >> 1),
@@ -3047,9 +3255,14 @@ fn paint_marks(
 fn lyric_ink(fill: Color32) -> Color32 {
     let linear = |value: u8| {
         let value = f32::from(value) / 255.0;
-        if value <= 0.04045 { value / 12.92 } else { ((value + 0.055) / 1.055).powf(2.4) }
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
     };
-    let luminance = 0.2126 * linear(fill.r()) + 0.7152 * linear(fill.g()) + 0.0722 * linear(fill.b());
+    let luminance =
+        0.2126 * linear(fill.r()) + 0.7152 * linear(fill.g()) + 0.0722 * linear(fill.b());
     if (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05) {
         Color32::BLACK
     } else {
@@ -3097,9 +3310,17 @@ fn paint_notes(
     );
     let visible = painter.clip_rect();
     for i in visible_events.clone() {
-        let Some(e) = events.get(i) else { continue; };
-        if let Some(r) = g.note_rect(e) && r.intersects(visible) {
-            let fill = if selected.get(i) == Some(&true) { pale } else { normal };
+        let Some(e) = events.get(i) else {
+            continue;
+        };
+        if let Some(r) = g.note_rect(e)
+            && r.intersects(visible)
+        {
+            let fill = if selected.get(i) == Some(&true) {
+                pale
+            } else {
+                normal
+            };
             painter.rect_filled(cell(r), 0.0, fill);
             if matches!(e, Event::Note { slide: true, .. }) {
                 paint_slide(painter, cell(r), theme.colors.background.to_color32(), m);
@@ -3107,20 +3328,31 @@ fn paint_notes(
             if vocal_track && r.width() >= m.u(0.6) && r.height() >= m.u(0.35) {
                 let left = r.left() + px;
                 let top = r.center().y;
-                let wave = Rect::from_min_max(pos2(left, top),
-                    pos2((r.right() - px).max(left), (r.bottom() - px).max(top)));
+                let wave = Rect::from_min_max(
+                    pos2(left, top),
+                    pos2((r.right() - px).max(left), (r.bottom() - px).max(top)),
+                );
                 let count = ((wave.width() * m.ppp()).round() as usize).clamp(4, 48);
                 let half = (wave.height() * 0.42).max(px);
                 let ink = Color32::from_rgba_unmultiplied(116, 255, 235, 115);
                 for j in 0..count {
                     let t = j as f32 / (count - 1) as f32;
-                    let attack = if t < 0.16 { 0.16 + 0.84 * t / 0.16 } else { 1.0 };
+                    let attack = if t < 0.16 {
+                        0.16 + 0.84 * t / 0.16
+                    } else {
+                        1.0
+                    };
                     let pulse = (0.35 + 0.65 * (t * 13.0 * std::f32::consts::TAU).sin().abs())
                         * (0.72 + 0.28 * (t * 3.0 * std::f32::consts::TAU).sin().abs());
                     let amp = (attack * pulse * half).clamp(px, half);
                     let x = wave.left() + t * wave.width();
-                    painter.line_segment([pos2(x, wave.center().y - amp), pos2(x, wave.center().y + amp)],
-                        egui::Stroke::new(px, ink));
+                    painter.line_segment(
+                        [
+                            pos2(x, wave.center().y - amp),
+                            pos2(x, wave.center().y + amp),
+                        ],
+                        egui::Stroke::new(px, ink),
+                    );
                 }
             }
             if let Some((pos, _, key)) = note(e)
@@ -3129,19 +3361,40 @@ fn paint_notes(
                 if !data.lyric.is_empty() && r.width() >= m.u(0.75) && r.height() >= m.u(0.55) {
                     let ink = lyric_ink(fill);
                     let at = pos2(r.left() + m.u(0.12), r.top() + r.height() * 0.27);
-                    painter.with_clip_rect(visible.intersect(r.shrink(px))).text(at, egui::Align2::LEFT_CENTER, &data.lyric,
-                        egui::FontId::proportional((r.height() * 0.38).clamp(8.0, m.u(0.42))), ink);
+                    painter
+                        .with_clip_rect(visible.intersect(r.shrink(px)))
+                        .text(
+                            at,
+                            egui::Align2::LEFT_CENTER,
+                            &data.lyric,
+                            egui::FontId::proportional((r.height() * 0.38).clamp(8.0, m.u(0.42))),
+                            ink,
+                        );
                 }
                 if data.pitch.len() >= 2 && r.width() >= px * 4.0 {
-                    let points: Vec<Pos2> = data.pitch.iter().map(|p| pos2(
-                        r.left() + p.offset.clamp(0.0, 1.0) * r.width(),
-                        r.center().y - p.cents.clamp(-1200.0, 1200.0) / 2400.0 * r.height(),
-                    )).collect();
-                    let curve = painter.with_clip_rect(painter.clip_rect().intersect(r.expand(r.height())));
+                    let points: Vec<Pos2> = data
+                        .pitch
+                        .iter()
+                        .map(|p| {
+                            pos2(
+                                r.left() + p.offset.clamp(0.0, 1.0) * r.width(),
+                                r.center().y - p.cents.clamp(-1200.0, 1200.0) / 2400.0 * r.height(),
+                            )
+                        })
+                        .collect();
+                    let curve =
+                        painter.with_clip_rect(painter.clip_rect().intersect(r.expand(r.height())));
                     let ink = Color32::from_rgb(73, 246, 255);
-                    curve.add(egui::Shape::line(points.clone(), egui::Stroke::new(m.u(0.09).max(px), ink)));
+                    curve.add(egui::Shape::line(
+                        points.clone(),
+                        egui::Stroke::new(m.u(0.09).max(px), ink),
+                    ));
                     for p in points {
-                        curve.circle_filled(p, m.u(0.13).max(px * 2.0), Color32::from_rgb(8, 17, 29));
+                        curve.circle_filled(
+                            p,
+                            m.u(0.13).max(px * 2.0),
+                            Color32::from_rgb(8, 17, 29),
+                        );
                         curve.circle_stroke(p, m.u(0.13).max(px * 2.0), egui::Stroke::new(px, ink));
                     }
                 }

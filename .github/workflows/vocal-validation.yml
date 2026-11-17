@@ -2,7 +2,7 @@ name: Vocal Synth validation
 on:
   workflow_dispatch:
   push:
-    branches: ["arena/1c4cf8e7-honeydew"]
+    branches: ["arena/**"]
     paths:
       - 'src/**'
       - 'crates/audio/**'

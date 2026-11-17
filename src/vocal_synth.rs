@@ -35,7 +35,13 @@ pub struct VoicebankIndex {
 pub fn parse_oto_ini(data: &[u8]) -> Result<Vec<OtoEntry>, String> {
     let decoded = match std::str::from_utf8(data) {
         Ok(text) => std::borrow::Cow::Borrowed(text),
-        Err(_) => encoding_rs::SHIFT_JIS.decode(data).0,
+        Err(_) => {
+            let (text, _, invalid) = encoding_rs::SHIFT_JIS.decode(data);
+            if invalid {
+                return Err("oto.ini is not valid UTF-8 or Shift-JIS".into());
+            }
+            text
+        }
     };
     let mut entries = BTreeMap::<String, OtoEntry>::new();
 
@@ -111,12 +117,68 @@ pub fn index_files(files: &[crate::zip::Entry]) -> Result<VoicebankIndex, String
                 .next()
                 .is_some_and(|name| name.eq_ignore_ascii_case("oto.ini"))
         })
-        .min_by_key(|entry| entry.path.matches('/').count())
+        .min_by(|a, b| {
+            a.path
+                .matches('/')
+                .count()
+                .cmp(&b.path.matches('/').count())
+                .then(a.path.cmp(&b.path))
+        })
         .ok_or_else(|| "This archive does not contain an oto.ini voicebank index".to_owned())?;
-    let root = oto.path.rsplit_once('/').map_or("", |(root, _)| root);
+    let mut root = oto.path.rsplit_once('/').map_or("", |(root, _)| root);
+    // Many multi-pitch banks have no root oto, only A3/oto.ini, C4/oto.ini, etc.
+    // character.txt is the bank marker; otherwise use the shared ancestor when all otos
+    // belong to the same top-level folder. Never merge unrelated top-level banks.
+    if let Some(marker) = files
+        .iter()
+        .filter(|file| {
+            file.path
+                .rsplit('/')
+                .next()
+                .is_some_and(|name| name.eq_ignore_ascii_case("character.txt"))
+        })
+        .find_map(|file| {
+            let dir = file.path.rsplit_once('/').map_or("", |(dir, _)| dir);
+            (dir.is_empty()
+                || root == dir
+                || root.strip_prefix(dir).is_some_and(|p| p.starts_with('/')))
+            .then_some(dir)
+        })
+    {
+        root = marker;
+    } else {
+        let top = root.split('/').next().unwrap_or("");
+        let otos: Vec<_> = files
+            .iter()
+            .filter(|file| {
+                file.path
+                    .rsplit('/')
+                    .next()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("oto.ini"))
+            })
+            .collect();
+        if !top.is_empty()
+            && otos
+                .iter()
+                .all(|file| file.path.split('/').next() == Some(top))
+        {
+            for file in otos {
+                let dir = file.path.rsplit_once('/').map_or("", |(dir, _)| dir);
+                while root != dir && !dir.strip_prefix(root).is_some_and(|p| p.starts_with('/')) {
+                    root = root.rsplit_once('/').map_or("", |(parent, _)| parent);
+                    if root.is_empty() {
+                        break;
+                    }
+                }
+            }
+        }
+    }
     let mut entries = Vec::new();
     for file in files.iter().filter(|file| {
-        file.path.rsplit('/').next().is_some_and(|name| name.eq_ignore_ascii_case("oto.ini"))
+        file.path
+            .rsplit('/')
+            .next()
+            .is_some_and(|name| name.eq_ignore_ascii_case("oto.ini"))
     }) {
         let dir = file.path.rsplit_once('/').map_or("", |(dir, _)| dir);
         let relative = if root.is_empty() {
@@ -149,6 +211,14 @@ pub fn index_files(files: &[crate::zip::Entry]) -> Result<VoicebankIndex, String
         .unwrap_or("Voicebank")
         .to_owned();
     let has_license_document = files.iter().any(|entry| {
+        if !root.is_empty()
+            && !entry
+                .path
+                .strip_prefix(root)
+                .is_some_and(|path| path.starts_with('/'))
+        {
+            return false;
+        }
         let path = entry.path.to_ascii_lowercase();
         let basename = path.rsplit('/').next().unwrap_or(&path);
         basename.starts_with("license") || basename.starts_with("licence")
@@ -176,6 +246,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn decodes_real_shift_jis_and_rejects_broken_encoding() {
+        let (bytes, _, invalid) = encoding_rs::SHIFT_JIS.encode("あ.wav=あ,0,1,2,3,4");
+        assert!(!invalid);
+        let entries = parse_oto_ini(&bytes).unwrap();
+        assert_eq!(entries[0].alias, "あ");
+        assert_eq!(entries[0].filename, "あ.wav");
+        assert!(parse_oto_ini(b"a.wav=a,0,1,2,3,4\n\x81").is_err());
+    }
+
+    #[test]
+    fn finds_multi_pitch_bank_without_a_root_oto() {
+        let files = vec![
+            crate::zip::Entry {
+                path: "Bank/A3/oto.ini".into(),
+                data: b"a.wav=a_A3,0,0,0,0,0".to_vec(),
+            },
+            crate::zip::Entry {
+                path: "Bank/C4/oto.ini".into(),
+                data: b"a.wav=a_C4,0,0,0,0,0".to_vec(),
+            },
+        ];
+        let index = index_files(&files).unwrap();
+        assert_eq!(index.name, "Bank");
+        assert_eq!(index.entries.len(), 2);
+        assert_eq!(index.entries[1].filename, "C4/a.wav");
+    }
+
+    #[test]
     fn rejects_nonfinite_timings_and_control_characters() {
         for bad in ["NaN", "inf", "-inf", "broken"] {
             assert!(parse_oto_ini(format!("a.wav=a,{bad},0,0,0,0").as_bytes()).is_err());
@@ -188,10 +286,22 @@ mod tests {
     #[test]
     fn indexes_pitch_folders_and_resolves_their_samples() {
         let files = vec![
-            crate::zip::Entry { path: "Bank/A3/oto.ini".into(), data: b"a.wav=a_A3,0,0,0,0,0".to_vec() },
-            crate::zip::Entry { path: "Bank/oto.ini".into(), data: Vec::new() },
-            crate::zip::Entry { path: "Bank/C4/oto.ini".into(), data: b"a.wav=a_C4,0,0,0,0,0".to_vec() },
-            crate::zip::Entry { path: "Other/oto.ini".into(), data: b"b.wav=b,0,0,0,0,0".to_vec() },
+            crate::zip::Entry {
+                path: "Bank/A3/oto.ini".into(),
+                data: b"a.wav=a_A3,0,0,0,0,0".to_vec(),
+            },
+            crate::zip::Entry {
+                path: "Bank/oto.ini".into(),
+                data: Vec::new(),
+            },
+            crate::zip::Entry {
+                path: "Bank/C4/oto.ini".into(),
+                data: b"a.wav=a_C4,0,0,0,0,0".to_vec(),
+            },
+            crate::zip::Entry {
+                path: "Other/oto.ini".into(),
+                data: b"b.wav=b,0,0,0,0,0".to_vec(),
+            },
         ];
         let index = index_files(&files).unwrap();
         assert_eq!(index.entries.len(), 2);
@@ -211,15 +321,16 @@ mod tests {
 
     #[test]
     fn invalid_paths_and_short_rows_are_not_indexed() {
-        let input = b"../outside.wav=bad,0,0,0,0,0\nC:/outside.wav=bad2,0,0,0,0,0\nshort.wav=short,0,1\n";
+        let input =
+            b"../outside.wav=bad,0,0,0,0,0\nC:/outside.wav=bad2,0,0,0,0,0\nshort.wav=short,0,1\n";
         assert!(parse_oto_ini(input).is_err());
     }
 
     #[test]
     fn blank_alias_uses_wav_stem_and_last_duplicate_wins() {
-        let parsed = parse_oto_ini(b"a/KA.WAV=,1,2,3,4,5\nb.wav=ka,6,7,8,9,10\n").unwrap();
+        let parsed = parse_oto_ini(b"a/KA.WAV=,1,2,3,4,5\nb.wav=KA,6,7,8,9,10\n").unwrap();
         assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].alias, "ka");
+        assert_eq!(parsed[0].alias, "KA");
         assert_eq!(parsed[0].offset, 6.0);
     }
 

@@ -10,10 +10,18 @@ const MAX_VOICEBANK_UNPACKED: u64 = 256 << 20;
 pub(super) type ImportResult = Result<(crate::vocal_synth::VoicebankIndex, Vec<u8>), String>;
 
 impl ProjectFiles {
+    /// A bank is being validated on the import worker.
+    pub fn importing_voicebank(&self) -> bool {
+        self.voicebank_import.is_some()
+    }
+
     /// Validate/decompress away from the native UI/audio threads. A single in-flight bank bounds memory.
     pub(super) fn voicebank_imported(&mut self, path: &Path, bytes: Vec<u8>) {
         if self.voicebank_import.is_some() {
-            return self.fail(IMPORT_FAILED, "A voicebank import is already running".into());
+            return self.fail(
+                IMPORT_FAILED,
+                "A voicebank import is already running".into(),
+            );
         }
         let path = path.to_owned();
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
@@ -25,7 +33,10 @@ impl ProjectFiles {
             let _ = sender.send(result);
         };
         #[cfg(not(target_arch = "wasm32"))]
-        if let Err(err) = std::thread::Builder::new().name("voicebank-import".into()).spawn(work) {
+        if let Err(err) = std::thread::Builder::new()
+            .name("voicebank-import".into())
+            .spawn(work)
+        {
             self.voicebank_import = None;
             self.fail(IMPORT_FAILED, err.to_string());
         }
@@ -34,7 +45,9 @@ impl ProjectFiles {
     }
 
     pub(super) fn poll_voicebank_import(&mut self, ctx: &eframe::egui::Context) {
-        let Some(receiver) = &self.voicebank_import else { return; };
+        let Some(receiver) = &self.voicebank_import else {
+            return;
+        };
         match receiver.try_recv() {
             Ok(result) => {
                 self.voicebank_import = None;
@@ -48,7 +61,10 @@ impl ProjectFiles {
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 self.voicebank_import = None;
-                self.fail(IMPORT_FAILED, "The voicebank import worker stopped unexpectedly".into());
+                self.fail(
+                    IMPORT_FAILED,
+                    "The voicebank import worker stopped unexpectedly".into(),
+                );
             }
         }
     }
@@ -60,13 +76,20 @@ impl ProjectFiles {
 
     fn store_voicebank(&mut self, index: crate::vocal_synth::VoicebankIndex, bytes: Vec<u8>) {
         let _ = self.voicebanks();
-        let folder = self
-            .user_dir()
-            .map_or_else(|| PathBuf::from(VOICEBANKS_FOLDER), |user| user.join(VOICEBANKS_FOLDER));
+        let folder = self.user_dir().map_or_else(
+            || PathBuf::from(VOICEBANKS_FOLDER),
+            |user| user.join(VOICEBANKS_FOLDER),
+        );
         let base = index
             .name
             .chars()
-            .map(|ch| if ch.is_control() || matches!(ch, '/' | '\\' | ':') { '-' } else { ch })
+            .map(|ch| {
+                if ch.is_control() || matches!(ch, '/' | '\\' | ':') {
+                    '-'
+                } else {
+                    ch
+                }
+            })
             .collect::<String>();
         let base = base.trim_matches([' ', '.', '-']);
         let base = if base.is_empty() { "Voicebank" } else { base };

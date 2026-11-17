@@ -63,6 +63,20 @@ voice samples are included. A license filename is not proof of redistribution ri
 
 `.github/workflows/android.yml` builds this exact branch into a signed sideloadable APK,
 verifies its signature/install metadata and ZIP CRC, and uploads `honeydew-android-apk`.
-The sandbox cannot build locally (Rust/JDK/SDK absent; their download hosts restricted).
+APK generation is currently blocked: dispatching Android APK returned HTTP 422,
+"Actions has been disabled for this repository." Enabling Actions returned HTTP 403,
+"Resource not accessible by integration." The repository owner must enable Actions.
+The sandbox lacks JDK/Android SDK; their normal download hosts are restricted.
+An alternate npm-distributed Rust 1.88 toolchain was obtained for formatting and
+isolated DSP tests, but this is not a full Android build environment.
+
+Validation performed: the actual Vocal Synth source, compiled with its Instrument
+trait in an isolated rustc harness, passed all six DSP unit tests. This does not
+substitute for the full workspace, Android integration or device tests.
+Seven parser/indexing tests also passed in an isolated harness (serde and ZIP adapter
+excluded, encoding_rs 0.8.35 used for UTF-8/Shift-JIS checks rather than the workspace's
+0.8.42). Full dependency-version and ZIP integration checks still need CI. A dedicated
+Vocal Synth validation workflow runs the workspace regression tests once Actions
+is enabled.
 A CI signing key without repository release secrets is ephemeral: subsequent builds may
 require uninstalling the previous build. Back up projects before uninstalling.

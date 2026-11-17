@@ -55,6 +55,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
             editor.min,
             egui::pos2(editor.right(), (editor.top() + height).min(editor.bottom())),
         );
+        let importing = app.files.importing_voicebank();
         let banks = app.files.voicebanks();
         let mut import = false;
         let mut toggle_pitch = false;
@@ -65,31 +66,46 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
                     .selectable_label(roll.pitch_draw_enabled, "〽 PITCH DRAW")
                     .on_hover_text("Enable to draw or bend pitch points directly on notes")
                     .clicked();
-                if ui.button("＋ Import Voicebank").clicked() {
+                if ui
+                    .add_enabled(!importing, egui::Button::new("＋ Import Voicebank"))
+                    .clicked()
+                {
                     import = true;
+                }
+                if importing {
+                    ui.spinner();
+                    ui.weak("Indexing voicebank…");
                 }
                 ui.weak("MY VOICEBANKS");
                 if banks.is_empty() {
                     ui.weak("No banks imported");
                 } else {
                     for bank in banks {
-                        ui.menu_button(format!("{} · {} aliases", bank.name, bank.entries.len()), |ui| {
-                            ui.weak(if bank.has_license_document {
-                                "License file found — verify its terms"
-                            } else {
-                                "License unverified; do not redistribute samples"
-                            });
-                            ui.separator();
-                            ui.weak("Metadata browser · sample singing is not available yet");
-                            egui::ScrollArea::vertical().max_height(240.0).show_rows(ui, 24.0, bank.entries.len(), |ui, rows| {
-                                for entry in &bank.entries[rows] {
-                                    ui.horizontal(|ui| {
-                                        ui.strong(&entry.alias);
-                                        ui.weak(&entry.filename);
-                                    });
-                                }
-                            });
-                        });
+                        ui.menu_button(
+                            format!("{} · {} aliases", bank.name, bank.entries.len()),
+                            |ui| {
+                                ui.weak(if bank.has_license_document {
+                                    "License file found — verify its terms"
+                                } else {
+                                    "License unverified; do not redistribute samples"
+                                });
+                                ui.separator();
+                                ui.weak("Metadata browser · sample singing is not available yet");
+                                egui::ScrollArea::vertical().max_height(240.0).show_rows(
+                                    ui,
+                                    24.0,
+                                    bank.entries.len(),
+                                    |ui, rows| {
+                                        for entry in &bank.entries[rows] {
+                                            ui.horizontal(|ui| {
+                                                ui.strong(&entry.alias);
+                                                ui.weak(&entry.filename);
+                                            });
+                                        }
+                                    },
+                                );
+                            },
+                        );
                     }
                 }
             });

@@ -611,7 +611,10 @@ impl ProjectFiles {
             self.voicebanks_loaded = true;
             let manifest = self
                 .user_dir()
-                .map_or_else(|| PathBuf::from(VOICEBANKS_FOLDER), |user| user.join(VOICEBANKS_FOLDER))
+                .map_or_else(
+                    || PathBuf::from(VOICEBANKS_FOLDER),
+                    |user| user.join(VOICEBANKS_FOLDER),
+                )
                 .join("index.json");
             if let Ok(bytes) = self.read_user_file(&manifest)
                 && let Ok(index) = serde_json::from_slice(&bytes)
@@ -1540,7 +1543,6 @@ impl ProjectFiles {
         answer: Option<Answer>,
     ) -> Option<Song> {
         self.provider.attach(ctx);
-        self.poll_voicebank_import(ctx);
         self.send = false;
         if shortcuts {
             if ctx.input_mut(|i| i.consume_shortcut(&OPEN_KEY)) {
@@ -1598,6 +1600,7 @@ impl ProjectFiles {
         // Last, so completed requests land in this frame (the native open picker may still be pending).
         let changes = self.library_changes;
         opened = self.poll(song).or(opened);
+        self.poll_voicebank_import(ctx);
         // After all that may ask something this frame: the import's result waits for it.
         #[cfg(not(target_arch = "wasm32"))]
         self.import_done(ctx, shortcuts);

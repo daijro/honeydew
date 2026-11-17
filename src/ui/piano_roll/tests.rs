@@ -4396,7 +4396,13 @@ fn vocal_lyric_ink_uses_the_higher_contrast_foreground() {
     assert_eq!(super::lyric_ink(Color32::YELLOW), Color32::BLACK);
     assert_eq!(super::lyric_ink(Color32::LIGHT_GREEN), Color32::BLACK);
     assert_eq!(super::lyric_ink(Color32::BLACK), Color32::WHITE);
-    assert_eq!(super::lyric_ink(Color32::from_rgb(0, 0, 180)), Color32::WHITE);
+    assert_eq!(
+        super::lyric_ink(Color32::from_rgb(0, 0, 180)),
+        Color32::WHITE
+    );
     // sRGB-weighted brightness incorrectly chose white for this mid-green.
-    assert_eq!(super::lyric_ink(Color32::from_rgb(0, 180, 0)), Color32::BLACK);
+    assert_eq!(
+        super::lyric_ink(Color32::from_rgb(0, 180, 0)),
+        Color32::BLACK
+    );
 }
