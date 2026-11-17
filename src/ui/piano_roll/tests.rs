@@ -3379,6 +3379,12 @@ mod component {
         let done = rig.text("DONE").expect("Done button is visible");
         rig.tap(done);
         assert!(rig.roll.lyric_edit.is_none());
+        assert!(rig.all.contains(&PianoRollAction::LyricCommitted));
+        assert!(
+            !rig.all
+                .iter()
+                .any(|a| matches!(a, PianoRollAction::SongEdited { .. }))
+        );
         assert_eq!(
             rig.song.channels[1].lanes[0].clips[0].file.vocal_notes[0].lyric,
             "hello"

@@ -362,3 +362,39 @@ if termination remains. Do not share private bank files.
 indexes metadata but no singer/resampler is connected. The default is now
 intentionally silent, not procedural singing. No proprietary voice assets were
 added. Device acceptance remains pending even if host tests/APK build pass.
+
+## Regression follow-up — 0.5.6
+
+This section supersedes the 0.5.5 silent-default handoff above.
+
+- Restore the prior allocation-free procedural formant voice for module 53.
+  This restores the previous audible preview, **not bank-sample singing**.
+  Import/selection remains metadata-only and the header explicitly says so.
+- Reserve one timeline-aligned lyric strip above the piano-roll ruler. Lyrics
+  are no longer painted on note blocks, even with the strip hidden. Tap a strip
+  cell to edit that note. Settings → Vocal Synth → Show top lyric bar persists
+  as `vocalSynth.lyricBarEnabled` (default true).
+- On Android, the lyric editor now uses a native-editor launch button instead
+  of also creating an egui TextEdit behind the native dialog. Keep the native
+  dialog alive when it takes Activity focus; cancel only when its owner field
+  disappears or the user cancels. Release EDITOR before accessing Context locks.
+  These fix identified focus/lock hazards, but the device termination is **not
+  confirmed fixed** without the affected phone's crash trace.
+- Lyric keystrokes update storage/dirty state only; Done/Next closes one undo
+  step. No per-keystroke engine rebuild or full undo snapshot.
+- Waveforms again show PCM from the procedural voice below notes. Preview DSP
+  is cancelled in 80-frame chunks when transport runs or visualization is off;
+  cached drawing remains available. Rendering and file lookup never run in the
+  transport's Play handler. This removes identified preview CPU contention;
+  latency/stutter still needs physical-device measurement.
+- Restore the existing Settings opening viewport by placing the Vocal Synth
+  top-level section before Advanced instead of ahead of MIDI/Audio.
+
+### Remaining acceptance blockers
+
+No imported-bank renderer is connected in this checkout. A real voicebank
+singing test cannot be claimed as restored/passing. No licensed bank was
+accessed or bundled. For keyboard failures, provide `adb logcat -b crash -d`
+and `last-rust-crash.txt` from the app's external files directory (if present).
+For playback stutter, include phone model, Android version, project note count,
+voice/effects setup and whether it happens with waveform visualization off.

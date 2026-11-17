@@ -249,6 +249,27 @@ fn render_cancellable(
 mod tests {
     use super::*;
     #[test]
+    fn vocal_preview_cancellation_stops_dsp_and_keeps_cached_peaks() {
+        let cancel = AtomicBool::new(true);
+        assert_eq!(
+            render_cancellable(60, 255, 64000, &[], None, Some(&cancel)),
+            [0.0; 48]
+        );
+        let mut waveforms = Waveforms::default();
+        waveforms.peaks.insert((0, 60), [0.5; 48]);
+        let flag = Arc::new(AtomicBool::new(false));
+        waveforms.cancel = Some(flag.clone());
+        let (_, receiver) = sync_channel(1);
+        waveforms.worker = Some(receiver);
+        waveforms.signature = Some(1);
+        waveforms.suspend();
+        assert!(flag.load(Ordering::Relaxed));
+        assert!(waveforms.worker.is_none());
+        assert!(waveforms.signature.is_none());
+        assert_eq!(waveforms.peaks[&(0, 60)], [0.5; 48]);
+    }
+
+    #[test]
     fn vocal_lyrics_do_not_change_the_default_voice_waveform() {
         let params = [1.0, 0.5, 0.08, 0.5, 0.0, 0.35, 0.0, 0.0];
         let mut data = VocalNoteState {
