@@ -613,6 +613,7 @@ pub fn show(
         );
     }
     let (ctx, cx) = (ui.ctx(), &app.cx);
+    let bank_busy = module_type == Some(53) && app.files.importing_voicebank();
     let shown = app.files.with_preset_files(top, exts, |library| {
         // Issue #131: a fresh picker opens where its kind was left, unless at the module's own file (#109 first).
         if let Some((file, true)) = &open_at {
@@ -623,6 +624,11 @@ pub fn show(
             picker.open_to(library, folder);
         }
         let action = picker.show_mut(ctx, cx, library)?;
+        // Coalesce taps before reading another potentially large archive or changing
+        // the module's source while its first selection is still being indexed.
+        if bank_busy && matches!(action, PickerAction::Pick(_)) {
+            return None;
+        }
         let bytes = match &action {
             PickerAction::Pick(path) if module_type == Some(53) && path.is_dir() => None,
             PickerAction::Pick(path) => Some(library.read(path)),
