@@ -1076,6 +1076,7 @@ mod component {
             let mut roll = PianoRoll::for_channel(&song, 1);
             // Legacy coordinate tests exercise the grid without the optional header lane.
             roll.lyric_bar_enabled = false;
+            roll.waveform_enabled = false;
             let mut rig = Self {
                 ctx: Context::default(),
                 roll,

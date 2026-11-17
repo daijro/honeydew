@@ -7,6 +7,10 @@ use banaforge_audio::vocal_synth::{VocalExpression, VocalSynth};
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::mpsc::{Receiver, TryRecvError, sync_channel};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 pub(super) type Peaks = HashMap<(u32, u8), [f32; 48]>;
 
@@ -14,10 +18,26 @@ pub(super) type Peaks = HashMap<(u32, u8), [f32; 48]>;
 pub(super) struct Waveforms {
     pub peaks: Peaks,
     signature: Option<u64>,
+    cancel: Option<Arc<AtomicBool>>,
     worker: Option<Receiver<Peaks>>,
 }
 
+impl Drop for Waveforms {
+    fn drop(&mut self) {
+        self.suspend();
+    }
+}
+
 impl Waveforms {
+    /// Preview DSP must yield immediately to transport or a disabled visualization.
+    pub fn suspend(&mut self) {
+        if let Some(cancel) = self.cancel.take() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        if self.worker.take().is_some() {
+            self.signature = None;
+        }
+    }
     pub fn update(&mut self, ctx: &eframe::egui::Context, clip: &Clip, params: &[f32], bpm: f64) {
         let mut hash = DefaultHasher::new();
         bpm.to_bits().hash(&mut hash);
@@ -106,10 +126,15 @@ impl Waveforms {
         let (sender, receiver) = sync_channel(1);
         self.worker = Some(receiver);
         let repaint = ctx.clone();
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.cancel = Some(cancel.clone());
         let work = move || {
             let mut peaks = Peaks::new();
             let mut budget = 512_000;
             for (pos, key, beats, velocity, data) in notes {
+                if cancel.load(Ordering::Relaxed) {
+                    return;
+                }
                 let frames = (beats * 60.0 / bpm * 8000.0).round();
                 // Leave unavailable/overbudget previews blank, never stretch fabricated data.
                 if !frames.is_finite()
@@ -122,7 +147,14 @@ impl Waveforms {
                 budget -= frames as i32;
                 peaks.insert(
                     (pos, key),
-                    render(key, velocity, frames, &params, data.as_ref()),
+                    render_cancellable(
+                        key,
+                        velocity,
+                        frames,
+                        &params,
+                        data.as_ref(),
+                        Some(&cancel),
+                    ),
                 );
             }
             let _ = sender.send(peaks);
@@ -146,12 +178,24 @@ impl Waveforms {
     }
 }
 
+#[cfg(test)]
 fn render(
     key: u8,
     velocity: u8,
     frames: usize,
     params: &[f32],
     data: Option<&VocalNoteState>,
+) -> [f32; 48] {
+    render_cancellable(key, velocity, frames, params, data, None)
+}
+
+fn render_cancellable(
+    key: u8,
+    velocity: u8,
+    frames: usize,
+    params: &[f32],
+    data: Option<&VocalNoteState>,
+    cancel: Option<&AtomicBool>,
 ) -> [f32; 48] {
     let mut synth = VocalSynth::new(8000.0);
     for (i, value) in params.iter().take(10).enumerate() {
@@ -162,6 +206,9 @@ fn render(
     let mut left = [0.0; 80];
     let mut right = [0.0; 80];
     for start in (0..frames).step_by(80) {
+        if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            return [0.0; 48];
+        }
         let count = (frames - start).min(80);
         if let Some(data) = data {
             synth.set_vocal(

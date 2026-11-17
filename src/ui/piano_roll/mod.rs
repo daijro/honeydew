@@ -1205,6 +1205,9 @@ impl PianoRoll {
         }
 
         // The selection follows the clip; an outside change (another clip, undo) drops it.
+        if !self.waveform_enabled || opts.playing {
+            self.waveforms.suspend();
+        }
         if self.waveform_enabled
             && !opts.playing
             && let Some(channel) = song.channels.get(self.channel)
