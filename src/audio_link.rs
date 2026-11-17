@@ -773,7 +773,14 @@ impl AudioLink {
         let runs = playing && self.running() && !self.counting_in;
         let rate = runs.then_some(bpm / 60.0 * f64::from(crate::song::PPQ));
         let end = end.map_or(f64::INFINITY, |e| e as f64);
-        let from = if runs { self.heard } else { self.tick };
+        // Android's UI follows the buffer transport immediately. The latency history
+        // can still contain stopped frames after Play, holding its heard tick at zero.
+        // Keep heard time for Stop/record alignment, and for other platforms' output visuals.
+        let from = if runs && !cfg!(target_os = "android") {
+            self.heard
+        } else {
+            self.tick
+        };
         self.lead = self.clock.advance(now, from, rate, end) as i64 - self.tick as i64;
     }
 
