@@ -1,12 +1,12 @@
-//! Modulator (`honeydew_audio::modulator`), UIHeight 8.5 U: Honeydew's own panel. The Source list beside a live meter
+//! Modulator (`banaforge_audio::modulator`), UIHeight 8.5 U: BanaForge's own panel. The Source list beside a live meter
 //! of the signal (#2, [`meter`]) over a row of the source's controls, after Amount. The card's ≡ menu picks the target
 //! (`ui::rack`).
 
-use eframe::egui::{Color32, Id, Rect, Ui};
-use honeydew_audio::analysis;
-use honeydew_audio::modulator::{
+use banaforge_audio::analysis;
+use banaforge_audio::modulator::{
     AMOUNT, ATTACK, DIVISION, GAIN, RATE, RELEASE, SHAPE, SMOOTH, SOURCE, SYNC, Source,
 };
+use eframe::egui::{Color32, Id, Rect, Ui};
 
 use super::live_analysis;
 use crate::panels::build::*;

@@ -2,12 +2,12 @@
 
 use std::f64::consts::{PI, TAU};
 
-use honeydew_audio::ProcessContext;
-use honeydew_audio::gm_waveshapes::{SAW, SINE, SQUARE};
-use honeydew_audio::gmsynth::{
+use banaforge_audio::ProcessContext;
+use banaforge_audio::gm_waveshapes::{SAW, SINE, SQUARE};
+use banaforge_audio::gmsynth::{
     GmSynth, MOD_WHEEL, MW_AMOUNT, MW_DEST, PB_RANGE, PITCH_BEND, WAVE_A, WAVE_B, prepare_setting,
 };
-use honeydew_audio::instrument::{Instrument, InstrumentModule};
+use banaforge_audio::instrument::{Instrument, InstrumentModule};
 
 const RATE: f32 = 48_000.0;
 

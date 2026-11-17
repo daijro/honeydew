@@ -7,13 +7,13 @@
 //!   the modal on top: `showTempo` closes the tempo dialog, `showMainBrowser` / `showMainSettings` switch the open main
 //!   menu's page, and `play` goes on under one open to the transport's Play ([`crate::ui::backdrop_open_to_play`]).
 //! - The three-way `showRack` / `showMainMixer` / `showTransport` (hidden → show and focus; shown, focus outside →
-//!   focus; focus inside → hide, the focus back to the root) go through [`HoneydewApp::focus_panel`] and
-//!   [`HoneydewApp::clear_focus`] on KF's focus containers (`ui/focus.rs`); a panel shown and focused at once keeps the
+//!   focus; focus inside → hide, the focus back to the root) go through [`BanaForgeApp::focus_panel`] and
+//!   [`BanaForgeApp::clear_focus`] on KF's focus containers (`ui/focus.rs`); a panel shown and focused at once keeps the
 //!   focus that was asked for until it draws.
 //! - `showRack` opens the selected channel's rack, as the edge tab does, and hides any open one.
-//! - `focusEditor` leaves the mixer for the playlist, then asks [`HoneydewApp::focus_panel`] for the bottom editor, or the
+//! - `focusEditor` leaves the mixer for the playlist, then asks [`BanaForgeApp::focus_panel`] for the bottom editor, or the
 //!   playlist while none is open; it opens no editor.
-//! - `enterKbdFocus` toggles: into the keyboard panel, else back to the root ([`HoneydewApp::clear_focus`]), as a hidden
+//! - `enterKbdFocus` toggles: into the keyboard panel, else back to the root ([`BanaForgeApp::clear_focus`]), as a hidden
 //!   panel's focus does.
 //! - `showMainBrowser` moves the focus into the SONGS list ([`focus::SONGS`]) whether or not the menu was open, so
 //!   `startSearch` works there. `startSearch` itself is no global action: the browsers take it.
@@ -25,7 +25,7 @@
 
 use eframe::egui::{self, InputState};
 
-use super::HoneydewApp;
+use super::BanaForgeApp;
 use crate::keymap::{self, Keymap};
 use crate::song::{PPQ, Song};
 use crate::ui::focus;
@@ -115,7 +115,7 @@ pub(crate) fn take(
         .collect()
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// This frame's global actions. `rewind` is the frame's REV flag and `navs` its navigation, which the frame
     /// applies after.
     pub(super) fn global_keys(

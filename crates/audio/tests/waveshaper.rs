@@ -1,4 +1,4 @@
-use honeydew_audio::waveshaper::{
+use banaforge_audio::waveshaper::{
     DEFAULT_PARAMS, WaveshaperError, WaveshaperState, shape, shape_index,
 };
 

@@ -28,13 +28,13 @@
 //!   and keeps it at the lift; dragging on makes it a marquee instead, and hides the menu. A right click on empty track
 //!   space shows the menu there too.
 
+use banaforge_audio::drums::SPEED;
+use banaforge_audio::sample_edit::speed_ratio;
+use banaforge_audio::slicer;
 use eframe::egui::{
     self, Align2, Color32, FontId, Id, Mesh, Painter, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2,
     pos2, vec2,
 };
-use honeydew_audio::drums::SPEED;
-use honeydew_audio::sample_edit::speed_ratio;
-use honeydew_audio::slicer;
 
 use crate::app::note_record;
 use crate::metrics::{FontSize, Metrics};
@@ -272,7 +272,7 @@ impl From<ClipKey> for ClipRef {
 
 /// A take being recorded: its channel, its track and its span in song ticks, which grows as the take does. `clip`: the
 /// clip it records into, which shows only as this bar meanwhile (a notes or drums take's with its notes live, a
-/// Honeydew addition: [`paint_live`]); an audio take has none until it stops.
+/// BanaForge addition: [`paint_live`]); an audio take has none until it stops.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LiveTake {
     pub channel: usize,
@@ -475,7 +475,7 @@ impl Clips {
     /// Draws and edits the clips of the visible track rows. `rows` gives each row's channel, lane and lane rect; `grid`
     /// is the area right of the track headers, which clips are clipped to. While Preview plays `preview` alone, every
     /// other clip is dimmed as a muted one. The `takes` being recorded show over the clips as live bars
-    /// ([`paint_take`]), a notes or drums take's clip with its notes as they record ([`paint_live`], Honeydew's own).
+    /// ([`paint_take`]), a notes or drums take's clip with its notes as they record ([`paint_live`], BanaForge's own).
     /// Song edits are reported through `app.song_edited`; a clip's `Edit`, or a double tap on it, returns its editor's
     /// navigation, as does `New Clip` on an audio track (the sample picker). The insert menu,
     /// `Duplicate` and `Snap` round to `snap`'s unit (round(beat/unit)·unit), and drags too while it is on (whole ticks
@@ -1215,7 +1215,7 @@ impl Clips {
     /// The insert menu while it shows ([`insert::show`]): `New Clip` and `Paste` over its track's row at its snapped
     /// tick, the insert cursor across the row. `New Clip` adds a one-bar clip there on a note or drum track
     /// ([`add_clip`]), the current, selected clip; on an audio track it opens the sample picker, whose first pick makes
-    /// the clip there. Honeydew change (GitHub #124): an automation track, as an effect track's or the
+    /// the clip there. BanaForge change (GitHub #124): an automation track, as an effect track's or the
     /// master's, takes one too, an empty one-bar clip driving the track's target (there the channel's Level), where the
     /// original dims `New Clip`. `Paste` pastes the clip clipboard
     /// there ([`paste_clips`]), selecting the copies; it is dimmed while the clipboard is empty. Any other press hides
@@ -2383,7 +2383,7 @@ fn waveform(
 
 /// The waveform's columns: `width` device-pixel columns (`px` wide) from `x0`, the first at content beat `left` and
 /// each `beats_per_px` on, of every channel ([`columns`]) about its row of `rows` ([`wave_rows`]), in `ink`. The sample
-/// strip draws its whole file with them too (Honeydew change, #124).
+/// strip draws its whole file with them too (BanaForge change, #124).
 pub(crate) fn wave_mesh(
     source: &Waveform,
     wave: Wave,
@@ -3485,7 +3485,7 @@ fn slide(x0: f32, top: f32, size: Vec2, view: Rect, handles: &[Rect], px: f32) -
 mod tests {
     use std::sync::Arc;
 
-    use honeydew_audio::sample::SampleData;
+    use banaforge_audio::sample::SampleData;
 
     use super::*;
     use eframe::egui::{Rangef, vec2};
@@ -5151,7 +5151,7 @@ mod tests {
             right: None,
             ..Default::default()
         });
-        let summary = vec![(-0.5, 0.5); frames / honeydew_audio::sample_edit::SUMMARY_FRAMES];
+        let summary = vec![(-0.5, 0.5); frames / banaforge_audio::sample_edit::SUMMARY_FRAMES];
         let source = Waveform {
             data,
             summary: vec![summary].into(),

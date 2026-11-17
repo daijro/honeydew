@@ -3,7 +3,7 @@
 //! instance outlives engine builds (every edit builds one): the engines get it shared ([`super::engine`]). A module
 //! whose plugin is not installed keeps its state and plays nothing.
 //!
-//! Threading follows Lemon Studio's hosts: everything here runs on the app thread, the audio thread only `try_lock`s an
+//! Threading follows Banana Studio's hosts: everything here runs on the app thread, the audio thread only `try_lock`s an
 //! instance, and an instance is destroyed on the app thread once no engine holds it.
 
 use std::cell::RefCell;
@@ -83,7 +83,7 @@ struct Hosted {
     /// goes to the plugin.
     song_values: Vec<f32>,
     window: Option<EditorWindow>,
-    /// A built-in plugin's editor, drawn into its rack card: its id and scale ([`lemon_editor`]).
+    /// A built-in plugin's editor, drawn into its rack card: its id and scale ([`banana_editor`]).
     embedded: Option<(u32, f32)>,
     name: String,
     /// Its crash was reported.
@@ -487,7 +487,7 @@ impl Host {
 
     /// The installed plugin a module's `plugin` names: the same format and id, else the same format, file name and name,
     /// else the same format and name. Another format's copy would not read the state.
-    // ponytail: no cross-format stand-in (Lemon plays another format's copy from defaults); add it if users ask.
+    // ponytail: no cross-format stand-in (Banana plays another format's copy from defaults); add it if users ask.
     fn find(&self, plugin: &PluginRef) -> Option<&Entry> {
         // A built-in plugin (or its own copy installed): the built-in one.
         if let Some(b) = builtin::of(plugin) {
@@ -981,7 +981,7 @@ fn open_window(hosted: &mut Hosted) -> Result<(), String> {
 /// (`os_plugkit::embed`) at `scale` device pixels per editor pixel: its id, opened now if it is not open, or opened
 /// again when it was opened at a scale more than 2 % off (a resized window; the card stretches it meanwhile). `None`
 /// while the plugin is not running.
-pub fn lemon_editor(channel_id: i32, instance_id: i32, scale: f32) -> Option<u32> {
+pub fn banana_editor(channel_id: i32, instance_id: i32, scale: f32) -> Option<u32> {
     use std::sync::atomic::{AtomicU32, Ordering};
     static NEXT: AtomicU32 = AtomicU32::new(1);
     with(|host| {
@@ -1004,9 +1004,9 @@ pub fn lemon_editor(channel_id: i32, instance_id: i32, scale: f32) -> Option<u32
     })
 }
 
-/// The id of the open editor of built-in plugin module `instance_id` on the channel with id `channel_id` ([`lemon_editor`]),
+/// The id of the open editor of built-in plugin module `instance_id` on the channel with id `channel_id` ([`banana_editor`]),
 /// if it is open.
-pub fn lemon_open(channel_id: i32, instance_id: i32) -> Option<u32> {
+pub fn banana_open(channel_id: i32, instance_id: i32) -> Option<u32> {
     with(|host| {
         host.live
             .get(&(channel_id, instance_id))?
@@ -1043,7 +1043,7 @@ pub fn rendering<T>(f: impl FnOnce() -> T) -> T {
 }
 
 /// An engine built now renders offline ([`rendering`]): its streamed samples are read as it needs them, never by the
-/// streamer (`honeydew_audio::stream`).
+/// streamer (`banaforge_audio::stream`).
 pub fn is_rendering() -> bool {
     with(|host| host.rendering)
 }
@@ -1087,7 +1087,7 @@ pub fn instrument(
     rate: f32,
     bar_beats: u32,
     max_block: usize,
-) -> Option<Box<dyn honeydew_audio::instrument::Instrument>> {
+) -> Option<Box<dyn banaforge_audio::instrument::Instrument>> {
     let rate = rate as u32;
     let (plugin, params) = engine_instance(channel, module, rate)?;
     // Issue #33: a plugin plays the sustain pedal itself, but the built-in ones, which have none of their own (they
@@ -1109,7 +1109,7 @@ pub fn effect(
     module: &ModuleInstance,
     rate: f32,
     bar_beats: u32,
-) -> Option<Box<dyn honeydew_audio::ExternalEffect>> {
+) -> Option<Box<dyn banaforge_audio::ExternalEffect>> {
     let rate = rate as u32;
     let (plugin, params) = engine_instance(channel, module, rate)?;
     Some(Box::new(PluginEffect::new(
@@ -1154,7 +1154,7 @@ mod card_tests {
         let channel_id = 3901;
         let instance_id = 7;
         let module =
-            instantiate(channel_id, instance_id, builtin::named("Lemon Trio").uid).unwrap();
+            instantiate(channel_id, instance_id, builtin::named("Banana Trio").uid).unwrap();
         let status = state(channel_id, instance_id).expect("plugin is running");
         let (param, value, label) = (1..module.params.len())
             .find_map(|index| {

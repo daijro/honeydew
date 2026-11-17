@@ -1,9 +1,9 @@
-Honeydew 0.5.4 keeps menus on top of their dialogs, makes slide notes glide on the Lemon synths and audio clips follow tempo automation, lowers Android audio latency, and adds render tags, more Half Time controls and many fixes from the issue tracker.
+BanaForge 0.5.4 keeps menus on top of their dialogs, makes slide notes glide on the Banana synths and audio clips follow tempo automation, lowers Android audio latency, and adds render tags, more Half Time controls and many fixes from the issue tracker.
 
 - Menus. A slider's long-press menu in a plugin window stays on top of the window, and the screen no longer gets darker each time it opens (#118).
 - SoundFont Player. The arrows by the SoundFont's name load the previous or next SF2 or SFZ file in its folder, tapping a patch plays a preview, a Transpose knob shifts it by up to two octaves, and on phones the panel is taller (#120, #102, #135).
 - Half Time. Length runs from 1/16 bar to 8 bars, Speed plays at 1/2, 1/4 or 2/3, and Smooth softens each loop start (#122).
-- Lemon plugins. Slide notes glide on Lemon Trio, Citrus and the other plugin synths, and Tesla's Send to arranger puts its sample on a new audio track (#125, #117).
+- Banana plugins. Slide notes glide on Banana Trio, Citrus and the other plugin synths, and Tesla's Send to arranger puts its sample on a new audio track (#125, #117).
 - Tempo. Audio clips with Sync on follow tempo automation, their pitch moving with the tempo, and renders follow it too (#126).
 - Drum editor. A drag on a graph slider stays in its column unless you clearly move sideways (#127).
 - Android audio. Playback asks Android for low-latency audio, Calibrate works on phones, the latency switch reads On while compensation runs, and sound comes back by itself when headphones are plugged or unplugged (#123, #129, #130).

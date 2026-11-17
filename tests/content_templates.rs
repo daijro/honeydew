@@ -11,14 +11,14 @@
 use std::f32::consts::TAU;
 use std::path::{Path, PathBuf};
 
-use honeydew::audio_engine::SongAudioEngine;
-use honeydew::content::{ROOT, TEMPLATES, factory};
-use honeydew::flm::chunk::ContentPath;
-use honeydew::flm::read_with_notices;
-use honeydew::sample_cache::SampleCache;
-use honeydew::song::{ChannelKind, Event, LaneKind, PPQ, Song, SynthKind};
-use honeydew::ui::main_menu::SongLibrary;
-use honeydew_audio::device::AudioRenderer;
+use banaforge::audio_engine::SongAudioEngine;
+use banaforge::content::{ROOT, TEMPLATES, factory};
+use banaforge::flm::chunk::ContentPath;
+use banaforge::flm::read_with_notices;
+use banaforge::sample_cache::SampleCache;
+use banaforge::song::{ChannelKind, Event, LaneKind, PPQ, Song, SynthKind};
+use banaforge::ui::main_menu::SongLibrary;
+use banaforge_audio::device::AudioRenderer;
 
 const RATE: f32 = 48_000.0;
 
@@ -207,7 +207,7 @@ fn each_genre_template_has_a_drum_pattern_a_bass_line_and_its_harmony_in_bar_lon
             "{name}: {pads:?}"
         );
         // A bass line (a run of single notes below C3) and chords (three or more notes at once).
-        let notes = |clip: &honeydew::song::Clip| -> Vec<(u32, u8)> {
+        let notes = |clip: &banaforge::song::Clip| -> Vec<(u32, u8)> {
             (clip.events.iter())
                 .filter_map(|e| match *e {
                     Event::Note { pos, key, .. } => Some((pos, key)),
@@ -565,7 +565,7 @@ fn the_second_four_have_the_planned_line_ups_on_the_relay_kit() {
         // A reverb send: an Effect Track named Reverb that the second part sends to, at about -9 … -6 dB (Send Level
         // 0.55 … 0.75), and no other channel does.
         let reverb = (song.channels.iter()).find(|c| c.kind == ChannelKind::EffectTrack);
-        let sends_to = |c: &&honeydew::song::Channel| {
+        let sends_to = |c: &&banaforge::song::Channel| {
             (c.file.sends.iter())
                 .filter(|s| Some(s.target_channel_id) == reverb.map(|r| r.id))
                 .map(|s| (s.enabled > 0.5, s.level))
@@ -682,7 +682,7 @@ fn drills_808_slides_from_its_anchor_notes_at_their_velocity_on_a_glide_preset()
         .find(|c| c.kind == ChannelKind::Synth(SynthKind::GmSynth))
         .map(|c| &c.rack.modules[0])
         .unwrap();
-    let spec = honeydew::params::module_spec(module.type_id).unwrap();
+    let spec = banaforge::params::module_spec(module.type_id).unwrap();
     let auto = spec.params.iter().position(|p| p.name == "Auto Portamento");
     assert_eq!(module.params[auto.unwrap()], 1.0, "auto portamento on");
 }

@@ -1,7 +1,7 @@
-//! Modulator ([`honeydew_audio::modulator`]), Honeydew's own effect: its params and value texts, in the engine's order
+//! Modulator ([`banaforge_audio::modulator`]), BanaForge's own effect: its params and value texts, in the engine's order
 //! and laws.
 
-use honeydew_audio::modulator::{self as m, DEFAULTS, DIVISIONS, PARAMS};
+use banaforge_audio::modulator::{self as m, DEFAULTS, DIVISIONS, PARAMS};
 
 use super::{Display, Fmt, ModuleSpec, ParamSpec as P, Sign};
 

@@ -2,7 +2,7 @@
 //! start with `use crate::panels::build::*;`, which brings in no generic names from [`crate::panels`] (its `show`).
 //!
 //! ```
-//! # use honeydew::panels::build::*;
+//! # use banaforge::panels::build::*;
 //! let distortion = Panel::new(hstack([
 //!     list(1, "Hard · Tube · Soft · Clip", Bar::Right).p(5),
 //!     v_slider(2, "Bias").p(6),

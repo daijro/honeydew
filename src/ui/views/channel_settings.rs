@@ -1,7 +1,7 @@
 //! The channel properties dialog, the track menu's `Channel Settings`: the title and the close X over the
 //! `Channel Name` field and the `Channel Color` slider (the hue, `CHHD` @1036). The `Channel Name` field is inline,
 //! with `Enter Channel Name` as its hint. A floating dialog centred in the content area, above the transport bar, over
-//! the screen dimmed to α 0.6. An instrument or drum channel's dialog is twice as wide, its MIDI input (Honeydew's
+//! the screen dimmed to α 0.6. An instrument or drum channel's dialog is twice as wide, its MIDI input (BanaForge's
 //! own, [`midi_rows`]) on the right.
 
 use eframe::egui::{

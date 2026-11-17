@@ -23,7 +23,7 @@
 //!   while an archive waits, a message shows [`import_notice`] with [`IMPORT`] and [`NOT_NOW`] ([`NOTICE_TAG`]).
 //!   `Import` goes ahead and sets [`ProjectFiles::import_accepted`], which the app keeps in its settings, so later
 //!   imports do not ask; `Not now` leaves the archive for this session, and the notice comes back at the next start.
-//! - **The command.** `honeydew-import` (`src/bin/honeydew-import.rs`) unpacks archives from anywhere into a folder
+//! - **The command.** `banaforge-import` (`src/bin/banaforge-import.rs`) unpacks archives from anywhere into a folder
 //!   through [`import_into`]: the same guards, markers and never-overwrite rules, and the notice printed once.
 //! - Nothing is downloaded, decrypted or sent anywhere: only plain entries of a file the user already has are copied,
 //!   and only into the folder. The web has no content folder, so no import (as `content`).
@@ -54,7 +54,7 @@ pub const NOTICE_TAG: &str = "project_files_import_notice";
 pub const IMPORT: &str = "Import";
 pub const NOT_NOW: &str = "Not now";
 
-/// The notice shown before the first import and printed by `honeydew-import`, a paragraph a line. It is the one
+/// The notice shown before the first import and printed by `banaforge-import`, a paragraph a line. It is the one
 /// place the app names the app it imports from and its maker (with `README.md`'s "Original content"): a factual
 /// compatibility line with the trademark disclaimer.
 pub fn import_notice() -> Vec<String> {
@@ -245,7 +245,7 @@ fn import_all(content: &Path, archives: Vec<(PathBuf, PathBuf)>) -> Imported {
 /// Imports the `.obb` or `.apk` `archive`, wherever it is, into the content folder `content` (made if missing), as
 /// one dropped there imports, counting what it writes and skips in `counts`; once done, its marker in `content` says
 /// so, and the app does not import a copy of it there again. Anything else is refused unread. The command
-/// `honeydew-import` runs it.
+/// `banaforge-import` runs it.
 pub fn import_into(content: &Path, archive: &Path, counts: &mut Counts) -> io::Result<()> {
     let ext = archive
         .extension()
@@ -262,7 +262,7 @@ pub fn import_into(content: &Path, archive: &Path, counts: &mut Counts) -> io::R
 
 /// `to` may take imported content: it is the user folder `user`'s content folder or below it, or outside `user`, every
 /// link followed. Anywhere else in the user folder, the project export's guard ([`ProjectFiles::in_content`]) would not
-/// see it. `honeydew-import` refuses another `--to`.
+/// see it. `banaforge-import` refuses another `--to`.
 pub fn import_target_allowed(user: &Path, to: &Path) -> bool {
     in_content_folder(&user.join(CONTENT_FOLDER), to) || !in_content_folder(user, to)
 }
@@ -826,7 +826,7 @@ mod tests {
         assert!(files.take_overlay().is_none());
     }
 
-    /// The command's import (`honeydew-import`): an archive from anywhere into a folder it makes, with its marker
+    /// The command's import (`banaforge-import`): an archive from anywhere into a folder it makes, with its marker
     /// there, counting the files written and those skipped.
     #[test]
     fn an_archive_from_anywhere_imports_into_the_folder_counting_what_it_skips() {

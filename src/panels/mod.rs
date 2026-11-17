@@ -463,19 +463,25 @@ pub fn panel_for(type_id: u16) -> Option<&'static Panel> {
         let inst = inst::IDS
             .iter()
             .filter_map(|&id| Some((id, inst::panel(id)?)));
-        let lemon = [
-            (honeydew_audio::lemon::REVERB, fx::lemon::reverb()),
-            (honeydew_audio::lemon::LIMITER, fx::lemon::limiter()),
+        let banana = [
+            (banaforge_audio::banana::REVERB, fx::banana::reverb()),
+            (banaforge_audio::banana::LIMITER, fx::banana::limiter()),
             (
-                honeydew_audio::dynamic_eq::DYNAMIC_EQ,
+                banaforge_audio::dynamic_eq::DYNAMIC_EQ,
                 fx::dynamic_eq::panel(),
             ),
-            (honeydew_audio::modulator::MODULATOR, fx::modulator::panel()),
-            (honeydew_audio::de_esser::DE_ESSER, fx::de_esser::panel()),
-            (honeydew_audio::denoise::DENOISE, fx::denoise::panel()),
-            (honeydew_audio::half_time::HALF_TIME, fx::half_time::panel()),
+            (
+                banaforge_audio::modulator::MODULATOR,
+                fx::modulator::panel(),
+            ),
+            (banaforge_audio::de_esser::DE_ESSER, fx::de_esser::panel()),
+            (banaforge_audio::denoise::DENOISE, fx::denoise::panel()),
+            (
+                banaforge_audio::half_time::HALF_TIME,
+                fx::half_time::panel(),
+            ),
         ];
-        fx.chain(inst).chain(lemon).collect()
+        fx.chain(inst).chain(banana).collect()
     });
     PANELS.iter().find(|(id, _)| *id == type_id).map(|(_, p)| p)
 }

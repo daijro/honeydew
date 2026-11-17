@@ -1,6 +1,6 @@
 [package]
-name = "honeydew"
-version = "0.5.4"
+name = "banaforge"
+version = "0.5.6"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
@@ -15,17 +15,18 @@ exclude = ["vendor"]
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-# Not named `honeydew`, so that on wasm32 Trunk can tell the cdylib (`data-target-name="honeydew"`) from this bin.
+# Not named `banaforge`, so that on wasm32 Trunk can tell the cdylib (`data-target-name="banaforge"`) from this bin.
 [[bin]]
-name = "honeydew-native"
+name = "banaforge-native"
 path = "src/main.rs"
 
 [dependencies]
-honeydew-audio = { path = "crates/audio" }
+banaforge-audio = { path = "crates/audio" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.152"
 # UTAU voicebank manifests are commonly Shift-JIS; already in the graph through the UI stack.
 encoding_rs = "0.8.42"
+unicode-normalization = "0.1.24"
 # Already in the tree through eframe (its `image` reads PNGs): decodes our logo glyph.
 png = "0.18.1"
 # The ZIP codec (`zip.rs`). Both are already in the tree through eframe (image -> png -> flate2), on native and
@@ -35,40 +36,40 @@ crc32fast = "1"
 # SHA-256 of the sound library's downloaded parts against their index (#66, `content::install::download`). RustCrypto's,
 # pure Rust: the same on the desktop, Android and FreeBSD.
 sha2 = { version = "0.10.9", default-features = false }
-# Lemon Studio's own plugins (Lemon Trio, Lemon Sampler, Lemon Parametric EQ) built into the
-# app on every platform, hosted through Lemon Studio's CLAP host, their editors drawn into the rack cards
-# (`vendor/lemon-studio/README.md`, `src/plugins/builtin.rs`). A new one is a line here and its crate in
-# `src/plugins/builtin.rs`'s `lemon_plugins!` list.
-lemon-3x-osc = { path = "vendor/lemon-studio/lemon-3x-osc", features = ["linked", "embed"] }
-lemon-sampler = { path = "vendor/lemon-studio/lemon-sampler", features = ["linked", "embed"] }
-lemon-parametric-eq-2 = { path = "vendor/lemon-studio/lemon-parametric-eq-2", features = ["linked", "embed"] }
-lemon-soft-clipper = { path = "vendor/lemon-studio/lemon-soft-clipper", features = ["linked", "embed"] }
-lemon-fast-distortion = { path = "vendor/lemon-studio/lemon-fast-distortion", features = ["linked", "embed"] }
-lemon-balance = { path = "vendor/lemon-studio/lemon-balance", features = ["linked", "embed"] }
-lemon-stereo-enhancer = { path = "vendor/lemon-studio/lemon-stereo-enhancer", features = ["linked", "embed"] }
-lemon-transient-processor = { path = "vendor/lemon-studio/lemon-transient-processor", features = ["linked", "embed"] }
-lemon-chorus = { path = "vendor/lemon-studio/lemon-chorus", features = ["linked", "embed"] }
-lemon-stereo-shaper = { path = "vendor/lemon-studio/lemon-stereo-shaper", features = ["linked", "embed"] }
-lemon-filter = { path = "vendor/lemon-studio/lemon-filter", features = ["linked", "embed"] }
-lemon-flanger = { path = "vendor/lemon-studio/lemon-flanger", features = ["linked", "embed"] }
-lemon-phaser = { path = "vendor/lemon-studio/lemon-phaser", features = ["linked", "embed"] }
-lemon-delay = { path = "vendor/lemon-studio/lemon-delay", features = ["linked", "embed"] }
-lemon-vocoder = { path = "vendor/lemon-studio/lemon-vocoder", features = ["linked", "embed"] }
-press = { path = "vendor/lemon-studio/press", features = ["linked", "embed"] }
-pulp-filter = { path = "vendor/lemon-studio/pulp-filter", features = ["linked", "embed"] }
-lemon-formula-controller = { path = "vendor/lemon-studio/lemon-formula-controller", features = ["linked", "embed"] }
-lemon-peak-controller = { path = "vendor/lemon-studio/lemon-peak-controller", features = ["linked", "embed"] }
-tesla = { path = "vendor/lemon-studio/tesla", features = ["linked", "embed"] }
-citrus = { path = "vendor/lemon-studio/citrus", features = ["linked", "embed"] }
-lemon-drum-sampler = { path = "vendor/lemon-studio/lemon-drum-sampler", features = ["linked", "embed"] }
-lemon-slicer = { path = "vendor/lemon-studio/lemon-slicer", features = ["linked", "embed"] }
-os-plugkit = { path = "vendor/lemon-studio/os-plugkit", features = ["embed"] }
-os-ui = { path = "vendor/lemon-studio/os-ui" }
-os-theme = { path = "vendor/lemon-studio/os-theme" }
+# Banana Studio's own plugins (Banana Trio, Banana Sampler, Banana Parametric EQ) built into the
+# app on every platform, hosted through Banana Studio's CLAP host, their editors drawn into the rack cards
+# (`vendor/banana-studio/README.md`, `src/plugins/builtin.rs`). A new one is a line here and its crate in
+# `src/plugins/builtin.rs`'s `banana_plugins!` list.
+banana-3x-osc = { path = "vendor/banana-studio/banana-3x-osc", features = ["linked", "embed"] }
+banana-sampler = { path = "vendor/banana-studio/banana-sampler", features = ["linked", "embed"] }
+banana-parametric-eq-2 = { path = "vendor/banana-studio/banana-parametric-eq-2", features = ["linked", "embed"] }
+banana-soft-clipper = { path = "vendor/banana-studio/banana-soft-clipper", features = ["linked", "embed"] }
+banana-fast-distortion = { path = "vendor/banana-studio/banana-fast-distortion", features = ["linked", "embed"] }
+banana-balance = { path = "vendor/banana-studio/banana-balance", features = ["linked", "embed"] }
+banana-stereo-enhancer = { path = "vendor/banana-studio/banana-stereo-enhancer", features = ["linked", "embed"] }
+banana-transient-processor = { path = "vendor/banana-studio/banana-transient-processor", features = ["linked", "embed"] }
+banana-chorus = { path = "vendor/banana-studio/banana-chorus", features = ["linked", "embed"] }
+banana-stereo-shaper = { path = "vendor/banana-studio/banana-stereo-shaper", features = ["linked", "embed"] }
+banana-filter = { path = "vendor/banana-studio/banana-filter", features = ["linked", "embed"] }
+banana-flanger = { path = "vendor/banana-studio/banana-flanger", features = ["linked", "embed"] }
+banana-phaser = { path = "vendor/banana-studio/banana-phaser", features = ["linked", "embed"] }
+banana-delay = { path = "vendor/banana-studio/banana-delay", features = ["linked", "embed"] }
+banana-vocoder = { path = "vendor/banana-studio/banana-vocoder", features = ["linked", "embed"] }
+press = { path = "vendor/banana-studio/press", features = ["linked", "embed"] }
+pulp-filter = { path = "vendor/banana-studio/pulp-filter", features = ["linked", "embed"] }
+banana-formula-controller = { path = "vendor/banana-studio/banana-formula-controller", features = ["linked", "embed"] }
+banana-peak-controller = { path = "vendor/banana-studio/banana-peak-controller", features = ["linked", "embed"] }
+tesla = { path = "vendor/banana-studio/tesla", features = ["linked", "embed"] }
+citrus = { path = "vendor/banana-studio/citrus", features = ["linked", "embed"] }
+banana-drum-sampler = { path = "vendor/banana-studio/banana-drum-sampler", features = ["linked", "embed"] }
+banana-slicer = { path = "vendor/banana-studio/banana-slicer", features = ["linked", "embed"] }
+os-plugkit = { path = "vendor/banana-studio/os-plugkit", features = ["embed"] }
+os-ui = { path = "vendor/banana-studio/os-ui" }
+os-theme = { path = "vendor/banana-studio/os-theme" }
 # `plugins`: the sample files the app hands the plugins (`os_engine::sample::provide`).
-os-engine = { path = "vendor/lemon-studio/os-engine", features = ["plugins"] }
-os-host = { path = "vendor/lemon-studio/os-host" }
-os-clap = { path = "vendor/lemon-studio/os-clap" }
+os-engine = { path = "vendor/banana-studio/os-engine", features = ["plugins"] }
+os-host = { path = "vendor/banana-studio/os-host" }
+os-clap = { path = "vendor/banana-studio/os-clap" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2.129"
@@ -100,10 +101,10 @@ objc2-ui-kit = { version = "0.2.2", default-features = false, features = ["std",
 [target.'cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))'.dependencies]
 rfd = "0.17.2"
 pollster = "0.4.0"
-# Third-party plugin hosting (VST3, VST2, CLAP), desktop only: Lemon Studio's hosts, vendored (vendor/lemon-studio);
+# Third-party plugin hosting (VST3, VST2, CLAP), desktop only: Banana Studio's hosts, vendored (vendor/banana-studio);
 # `os-host` and `os-clap` above, which the built-in plugins need everywhere.
-os-vst3 = { path = "vendor/lemon-studio/os-vst3" }
-os-vst2 = { path = "vendor/lemon-studio/os-vst2" }
+os-vst3 = { path = "vendor/banana-studio/os-vst3" }
+os-vst2 = { path = "vendor/banana-studio/os-vst2" }
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "macos", target_os = "windows", target_os = "android"))'.dependencies]
 rayon = "1.11"
@@ -157,7 +158,7 @@ inherits = "release"
 lto = "fat"
 codegen-units = 1
 
-# Android release profile (tools/android-dist.sh): ThinLTO + single codegen unit + full symbol strip cuts libhoneydew.so
+# Android release profile (tools/android-dist.sh): ThinLTO + single codegen unit + full symbol strip cuts libbanaforge.so
 # size by ~25-40% and improves DSP throughput while keeping `panic = "unwind"` for `sample.rs::guarded`.
 [profile.android-release]
 inherits = "release"

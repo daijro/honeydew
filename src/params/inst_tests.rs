@@ -51,14 +51,14 @@ const OVERVIEW: [(u16, &str, &str, usize, &[&str]); 9] = [
         149,
         &["OSC", "PAN", "VOL", "CUT", "RES", "PITCH", "FILT", "MISC"],
     ),
-    // 6, Fine Tune (a Honeydew addition, #90), and the vibrato, Quality and Transpose (Honeydew additions, #102).
+    // 6, Fine Tune (a BanaForge addition, #90), and the vibrato, Quality and Transpose (BanaForge additions, #102).
     (52, "SoundFont Player", "SoundFont Player", 12, &[]),
     (
         53,
         "Vocal Synth",
         "Vocal Synth",
-        8,
-        &["VOICE", "EXPRESSION"],
+        10,
+        &["VOICE", "EXPRESSION", "ENVELOPE"],
     ),
 ];
 
@@ -349,7 +349,7 @@ const DEFAULT_TEXT_NOTES: &[(u16, usize, &str)] = &[
     (39, 145, "Auto (sustain)"),
     // DW Sampler LFO Attack: the table's default is at 44.1 kHz; without audio the rate is 0.
     (1, 33, "inf s"),
-    // DW Sampler Filter and Pitch Env. Amount, Honeydew changes (#102): −100 … 0 … 100, not v×100.
+    // DW Sampler Filter and Pitch Env. Amount, BanaForge changes (#102): −100 … 0 … 100, not v×100.
     (1, 21, "0"),
     (1, 26, "0"),
 ];
@@ -389,7 +389,7 @@ const SAMPLE_NOTES: &[(u16, usize, [&str; 3])] = &[
 ];
 
 /// Rows with a "min … mid … max" range that is not a toggle (counted by script from the tables).
-const CHECKED_SAMPLE_ROWS: usize = 77;
+const CHECKED_SAMPLE_ROWS: usize = 83;
 
 #[test]
 fn rows_range_samples() {
@@ -514,8 +514,8 @@ fn instrument_display_samples() {
 
 #[test]
 fn soundfont_player_has_the_twelve_ui_bound_params() {
-    // Enable, the sliders 1-4, the Envelope toggle 5, Fine Tune 6 (a Honeydew addition, #90), and Vib Rate, Depth
-    // and Delay 7-9, Quality 10 and Transpose 11 (Honeydew additions, #102).
+    // Enable, the sliders 1-4, the Envelope toggle 5, Fine Tune 6 (a BanaForge addition, #90), and Vib Rate, Depth
+    // and Delay 7-9, Quality 10 and Transpose 11 (BanaForge additions, #102).
     let m = spec(52);
     let names: Vec<&str> = m.params.iter().map(|p| p.name).collect();
     assert_eq!(

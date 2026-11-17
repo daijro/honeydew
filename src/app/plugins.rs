@@ -6,10 +6,10 @@
 //! and it is the recent control, so REC records it and the CTRL menu automates it. A built-in plugin's knob menu's
 //! `Create automation clip` adds its automation track (#113).
 
+use banaforge_audio::device::AudioCommand;
 use eframe::egui;
-use honeydew_audio::device::AudioCommand;
 
-use super::HoneydewApp;
+use super::BanaForgeApp;
 use crate::plugins;
 use crate::song::AutomationTarget;
 use crate::ui::views::{Nav, Overlay, SongEdit};
@@ -17,7 +17,7 @@ use crate::ui::views::{Nav, Overlay, SongEdit};
 /// The message tag of the plugins' notices.
 const NOTICE_TAG: &str = "plugin notice";
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// At the start: the cached scan, and a background scan of new and changed plugin files.
     pub(super) fn start_plugins(&mut self, ctx: &egui::Context) {
         let cache = self

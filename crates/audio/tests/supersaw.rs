@@ -1,8 +1,8 @@
 //! SuperSaw (type 23) rendered offline against its DSP laws.
 
-use honeydew_audio::ProcessContext;
-use honeydew_audio::instrument::{Instrument, InstrumentModule};
-use honeydew_audio::supersaw::{DEFAULTS, PARAM_COUNT, SuperSaw};
+use banaforge_audio::ProcessContext;
+use banaforge_audio::instrument::{Instrument, InstrumentModule};
+use banaforge_audio::supersaw::{DEFAULTS, PARAM_COUNT, SuperSaw};
 
 const SR: f32 = 48_000.0;
 /// The 0.99951 increment factor (≈ 0.85 cent flat).
@@ -506,7 +506,7 @@ fn reset_silences_and_all_notes_off_releases() {
     assert_eq!(peak(&render(&mut s, 48_000).0), 0.0);
 }
 
-/// Release-mode cost: `cargo test --release -p honeydew-audio --test supersaw -- --ignored --nocapture`.
+/// Release-mode cost: `cargo test --release -p banaforge-audio --test supersaw -- --ignored --nocapture`.
 #[test]
 #[ignore]
 fn render_cost_per_voice_second() {
