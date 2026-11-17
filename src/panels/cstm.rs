@@ -19,8 +19,8 @@ use crate::flm::chunk::{ChunkIter, ChunkWriter, ContentPath, MAGIC_DW01};
 use crate::params::menu_value;
 use crate::sample_cache::Reader;
 use crate::song::{ChannelKind, ModuleInstance, Song};
-use honeydew_audio::dwp::{self, Cstm};
-use honeydew_audio::slicer::SENSITIVITY_BEFORE_CSTM;
+use banaforge_audio::dwp::{self, Cstm};
+use banaforge_audio::slicer::SENSITIVITY_BEFORE_CSTM;
 
 /// How a field's bytes hold its setting (the setting is the item index for lists and spinners, 0 or 1 for toggles
 /// and buttons, a normalised value otherwise).
@@ -529,7 +529,7 @@ const DW: u16 = 1;
 
 /// Loads a DW Sampler's `CSTM` into its Attack (p1) and Release (p2), after its PRMS. The `CSTM` first resets the
 /// module (no zones, no path, so no init values of its own); its program (the `PATh` or `PATH` that counts,
-/// [`Cstm::read`]) then loads through the program loader (`honeydew_audio::dwp::load_program`): a `.dwp` with zones
+/// [`Cstm::read`]) then loads through the program loader (`banaforge_audio::dwp::load_program`): a `.dwp` with zones
 /// sets Attack and Release, init and current, from its last zone, and then the `PATh`'s two floats, when both are
 /// there, set them. A program that is missing, or no `.dwp` (an audio file), leaves the saved PRMS: its floats stay the
 /// init values a save writes. No other param changes. `read` reads the program file. Another module is left as it is.

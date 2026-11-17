@@ -56,7 +56,7 @@ impl Rig {
 
     /// Where the engine the app sent last plays to from `tick`, 1024 frames on (a few ticks).
     fn engine_from(&self, tick: u64) -> u64 {
-        use honeydew_audio::device::AudioRenderer;
+        use banaforge_audio::device::AudioRenderer;
         let mut rec = self.rec.0.borrow_mut();
         let engine = rec.engine.as_mut().expect("an engine");
         engine.seek(tick);

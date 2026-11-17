@@ -1,4 +1,4 @@
-//! `Set shape` (Honeydew's own): the floating row's button for the selected points opens a small popup over the
+//! `Set shape` (BanaForge's own): the floating row's button for the selected points opens a small popup over the
 //! selection, the four shapes as buttons (each with its curve drawn above its name; the selection's own shape
 //! highlighted while all its points agree) and the **Tension** slider under them (a double tap resets it to 50 %). Each
 //! pick shows at once on the editor's curve; a tap outside the popup or Escape closes it, and what it set becomes one

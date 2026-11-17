@@ -1,7 +1,7 @@
 id = "proc-hats"
 kind = "samples"
 path = "Samples/Electronic Hats/"
-source = "honeydew"
+source = "banaforge"
 render = "hat"
 variant = [
   { name = "Closed Hat Tight", decay = 0.03 },

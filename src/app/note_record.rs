@@ -1,16 +1,16 @@
 //! REC's live note recording. Touched keys, typed keys, MIDI notes and drum pads all come here, after they sound
 //! ([`NoteRecord::keys`]). While REC is armed, the transport plays and no count-in runs, a take per recording channel
-//! (the armed instrument and drum channels, else the current channel: Honeydew's own) records that channel's keys as
+//! (the armed instrument and drum channels, else the current channel: BanaForge's own) records that channel's keys as
 //! played (no quantize) into one clip of its own; a song-position jump, a change of the recording channels, arming
 //! and disarming each end the takes, and the app makes the takes that recorded and end in one frame one undo step.
 //!
 //! Extended monitoring (#74): a monitoring instrument or drum channel that a MIDI send reaches has
 //! a take of its own too, which records what the sends bring it as if it were played there: its sources' sequenced
 //! notes at their own song ticks, past their note effects, their live keys as played (along sends with no note effect
-//! on the way), and their CCs and Pitch Bend, sequenced or live, as a controller's ([`HoneydewApp::receive`]). The
+//! on the way), and their CCs and Pitch Bend, sequenced or live, as a controller's ([`BanaForgeApp::receive`]). The
 //! sources' own takes stay out of what it hears, as the engine plays without them: nothing records twice.
 
-use super::HoneydewApp;
+use super::BanaForgeApp;
 use super::auto_record::start;
 use super::tracks::LaneShift;
 use crate::audio_engine::{Received, midi_reach, midi_received};
@@ -30,7 +30,7 @@ pub(super) struct Now {
     /// The current channel, and its current lane if it has one.
     pub channel: usize,
     pub lane: Option<usize>,
-    /// The channels that record ([`HoneydewApp::record_channels`]); the master, 0, records nothing.
+    /// The channels that record ([`BanaForgeApp::record_channels`]); the master, 0, records nothing.
     pub channels: Vec<usize>,
     pub armed: bool,
     pub playing: bool,
@@ -39,7 +39,7 @@ pub(super) struct Now {
     pub jumped: bool,
     /// The song position, in ticks.
     pub tick: u64,
-    /// The channels that record what MIDI sends bring them ([`HoneydewApp::monitor_channels`]).
+    /// The channels that record what MIDI sends bring them ([`BanaForgeApp::monitor_channels`]).
     pub monitors: Vec<usize>,
 }
 
@@ -50,7 +50,7 @@ pub(super) struct NoteRecord {
     /// A key was pressed while REC was armed and the transport stopped: it starts playback.
     pub(super) start: bool,
     /// The keys held now, from every source: (channel, key, velocity). Play's cut drops its keys
-    /// ([`HoneydewApp::cut_live_keys`]).
+    /// ([`BanaForgeApp::cut_live_keys`]).
     pub(super) held: Vec<(usize, u8, f32)>,
     /// The takes under way, one per recording channel.
     takes: Vec<Take>,
@@ -353,8 +353,8 @@ impl NoteRecord {
     }
 }
 
-impl HoneydewApp {
-    /// The channels REC's live notes record into: every armed instrument or drum channel (CHHD@1060, Honeydew's own on
+impl BanaForgeApp {
+    /// The channels REC's live notes record into: every armed instrument or drum channel (CHHD@1060, BanaForge's own on
     /// them), else the current channel.
     pub(super) fn record_channels(&self) -> Vec<usize> {
         let channels = self.song.channels.iter().enumerate();
@@ -457,7 +457,7 @@ impl HoneydewApp {
     /// take that recorded and ends is one undo step, closed before the next take records; meanwhile its notes are an
     /// ongoing edit, and the engine plays without them (`rebuild`). The new clip is no current clip; an open editor whose
     /// empty clip the take replaced collapses, as the current clip went ([`crate::ui::views::Slots::follow`]). A
-    /// Honeydew addition (issue #26): a piano roll open on the take's channel opens the take's clip instead, as `Edit`
+    /// BanaForge addition (issue #26): a piano roll open on the take's channel opens the take's clip instead, as `Edit`
     /// would (its clip and track become current), so the roll shows the take while it records and after.
     pub(super) fn record_notes(&mut self, jumped: bool, tick: u64) {
         let open = preview::current(self.nav.view, &self.slots, &self.song);
@@ -621,7 +621,7 @@ fn held_beats(clip: &Clip, pos: u32, at: u64) -> f64 {
     (held as f64 / f64::from(PPQ)).max(MIN_BEATS)
 }
 
-/// A take's clip as it shows while it records, in the playlist and the piano roll (a Honeydew addition, issue #26; the
+/// A take's clip as it shows while it records, in the playlist and the piano roll (a BanaForge addition, issue #26; the
 /// original draws the take as a bare bar until it ends): the clip as it would be if every key still held let go at song
 /// tick `tick`, closed and grown as [`close`] would. A take's clip is its own, and every note a take closes is at least
 /// [`MIN_BEATS`] long, so its length-0 notes are the ones still held.
@@ -707,7 +707,7 @@ mod tests {
         rec.keys.extend_from_slice(keys);
         let ended = rec.end(song, now);
         let added = rec.record(song, now).map(|added| added.len());
-        // The app's re-key of the frame (`HoneydewApp::record_notes`): the channels and tracks stay here.
+        // The app's re-key of the frame (`BanaForgeApp::record_notes`): the channels and tracks stay here.
         let ids: Vec<_> = song.channels.iter().map(|c| c.id).collect();
         rec.rekey(&ids, &Some, &|c, l| Some((c, l)));
         (ended, added)

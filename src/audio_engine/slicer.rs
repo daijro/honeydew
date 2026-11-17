@@ -9,8 +9,8 @@ use crate::flm::chunk::{ChunkIter, ContentPath, Cursor};
 use crate::panels::cstm::{slicer_auto, slicer_sensitivity};
 use crate::sample_cache::{Reader, SampleCache, SampleKey};
 use crate::song::{Channel, Event, LaneKind, ModuleInstance, PPQ, Song};
-use honeydew_audio::sample::SampleData;
-use honeydew_audio::slicer::{self, SENSITIVITY_BEFORE_CSTM, Slicer};
+use banaforge_audio::sample::SampleData;
+use banaforge_audio::slicer::{self, SENSITIVITY_BEFORE_CSTM, Slicer};
 
 const TYPE_ID: u16 = 33;
 
@@ -264,7 +264,7 @@ pub fn write_auto_clip(
 mod tests {
     use super::*;
     use crate::flm::chunk::ContentRoot;
-    use honeydew_audio::sample::SampleMeta;
+    use banaforge_audio::sample::SampleMeta;
 
     /// The panel's knob shows the Sensitivity the engine slices at, from every blob: without a `SENS`, or with a short
     /// one, the engine's 0.33; a non-finite one reads as 0, as every file f32; the rest clamped.
@@ -413,7 +413,7 @@ mod tests {
     /// A first note set too high for its slices is stored as the clamped one, which is what plays.
     #[test]
     fn a_first_note_too_high_for_the_slices_is_stored_clamped() {
-        use honeydew_audio::device::AudioRenderer;
+        use banaforge_audio::device::AudioRenderer;
         let (mut song, cache) = burst_loop(2);
         let count = slicers(&song.channels[1], &cache)
             .next()

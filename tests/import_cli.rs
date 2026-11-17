@@ -1,4 +1,4 @@
-//! `honeydew-import` on generated fake archives, into a temp `--to`: no real archive is read.
+//! `banaforge-import` on generated fake archives, into a temp `--to`: no real archive is read.
 #![cfg(not(target_arch = "wasm32"))]
 
 use std::path::{Path, PathBuf};
@@ -25,10 +25,10 @@ fn container(entries: &[(&str, &[u8])]) -> Vec<u8> {
     obb
 }
 
-/// This run's home for the tool, a folder that is not there: its user folder is `Documents/Honeydew` in it.
+/// This run's home for the tool, a folder that is not there: its user folder is `Documents/BanaForge` in it.
 fn nowhere() -> PathBuf {
     std::env::temp_dir().join(format!(
-        "honeydew-import-cli-nowhere-{}",
+        "banaforge-import-cli-nowhere-{}",
         std::process::id()
     ))
 }
@@ -36,7 +36,7 @@ fn nowhere() -> PathBuf {
 /// Runs the tool with `args`, every user-folder variable pointing at [`nowhere`]: it never sees the developer's own.
 fn import(args: &[&Path]) -> (Output, String) {
     let nowhere = nowhere();
-    let out = Command::new(env!("CARGO_BIN_EXE_honeydew-import"))
+    let out = Command::new(env!("CARGO_BIN_EXE_banaforge-import"))
         .args(args)
         .env("HOME", &nowhere)
         .env("XDG_DATA_HOME", &nowhere)
@@ -50,7 +50,7 @@ fn import(args: &[&Path]) -> (Output, String) {
 
 #[test]
 fn the_tool_imports_an_obb_and_an_apk_into_the_folder_it_is_given() {
-    let tmp = std::env::temp_dir().join(format!("honeydew-import-cli-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("banaforge-import-cli-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).unwrap();
     let obb = tmp.join("Gen.obb");
@@ -59,7 +59,7 @@ fn the_tool_imports_an_obb_and_an_apk_into_the_folder_it_is_given() {
         ("Gen Root.data", b"root"),
         ("Drum Samples/Gen Kick.wav", b"x"),
     ]);
-    let apk = honeydew::zip::write(&[("assets/obb/assets.obb".into(), inner)]).unwrap();
+    let apk = banaforge::zip::write(&[("assets/obb/assets.obb".into(), inner)]).unwrap();
     let apk_path = tmp.join("Gen.apk");
     std::fs::write(&apk_path, apk).unwrap();
     // A folder that is not there yet.
@@ -92,10 +92,10 @@ fn the_tool_imports_an_obb_and_an_apk_into_the_folder_it_is_given() {
     let (out, _) = import(&[&tmp.join("Gen.txt"), to_flag, &to]);
     assert!(!out.status.success());
     assert!(!String::from_utf8_lossy(&out.stderr).is_empty());
-    // A `--to` in the user folder (`~/Documents/Honeydew` here, with no `user-dirs.dirs`) but outside its Original
+    // A `--to` in the user folder (`~/Documents/BanaForge` here, with no `user-dirs.dirs`) but outside its Original
     // Content folder is refused, nothing written.
     if cfg!(all(unix, not(target_os = "macos"))) {
-        let samples = nowhere().join("Documents/Honeydew/My Samples");
+        let samples = nowhere().join("Documents/BanaForge/My Samples");
         let (out, _) = import(&[&obb, to_flag, &samples]);
         assert!(!out.status.success());
         assert!(!samples.exists());

@@ -5,8 +5,8 @@ use super::editor_wiring::EDITOR_TOP;
 use super::*;
 use crate::song::Event;
 use crate::ui::keyboard::KeyView;
+use banaforge_audio::device::AudioRenderer;
 use eframe::egui::Rect;
-use honeydew_audio::device::AudioRenderer;
 
 #[test]
 fn the_keyboard_starts_with_middle_c_centered_and_keeps_manual_scroll() {

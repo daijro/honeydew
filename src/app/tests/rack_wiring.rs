@@ -621,8 +621,8 @@ fn a_playing_automation_moves_its_control_and_the_song_keeps_its_value() {
 /// in.
 #[test]
 fn a_modulated_control_follows_the_engine_and_shows_its_base_once_stopped() {
-    use honeydew_audio::device::AudioRenderer;
-    use honeydew_audio::modulator as m;
+    use banaforge_audio::device::AudioRenderer;
+    use banaforge_audio::modulator as m;
     let mut rig = with_effects(&[6]);
     let id = instance_id(&rig, 2, 0);
     let ch = &mut rig.app.song.channels[2];
@@ -2280,8 +2280,8 @@ fn a_rack_preset_loads_its_dw_samplers_program() {
 fn a_failed_streams_meters_reach_no_panel() {
     // The rack hands its panels the snapshot's meters only while the stream runs; a failed stream's are
     // stale, and the panels then rest as without one.
-    use honeydew_audio::MeterSnapshot;
-    use honeydew_audio::device::{ModuleKey, ModuleMeter};
+    use banaforge_audio::MeterSnapshot;
+    use banaforge_audio::device::{ModuleKey, ModuleMeter};
     let mut rig = with_effects(&[20]);
     let meter = ModuleMeter {
         key: ModuleKey {
@@ -2387,7 +2387,7 @@ fn keys_on_disk(
 ) {
     use crate::flm::chunk::{ContentPath, ContentRoot};
     let user =
-        TempUser(std::env::temp_dir().join(format!("honeydew-e14c-{tag}-{}", std::process::id())));
+        TempUser(std::env::temp_dir().join(format!("banaforge-e14c-{tag}-{}", std::process::id())));
     let _ = std::fs::remove_dir_all(&user.0);
     let dir = user.0.join(folder);
     std::fs::create_dir_all(dir.join("Keys")).unwrap();
@@ -2509,7 +2509,7 @@ fn set_range_takes_the_next_two_keyboard_keys_and_the_engine_plays_only_inside_t
     let learn = |on: u8| {
         format!(
             "SetSetting 1 2 {} {on}.000",
-            honeydew_audio::instrument::KEY_LEARN
+            banaforge_audio::instrument::KEY_LEARN
         )
     };
     assert!(log.contains(&learn(1)), "{log:?}");
@@ -2522,7 +2522,7 @@ fn set_range_takes_the_next_two_keyboard_keys_and_the_engine_plays_only_inside_t
     assert_eq!((module.file.key_low, module.file.key_high), (52, 53));
     assert!(rig.take().contains(&learn(0)));
     // The engine built from the song plays a key inside the range and not one outside it.
-    use honeydew_audio::device::AudioRenderer;
+    use banaforge_audio::device::AudioRenderer;
     let sounds = |key| {
         let mut engine =
             crate::audio_engine::SongAudioEngine::new(&rig.app.song, 48_000.0).unwrap();
@@ -2538,7 +2538,7 @@ fn set_range_takes_the_next_two_keyboard_keys_and_the_engine_plays_only_inside_t
 /// A key-learn outlives an engine rebuild (`settings::screen_only`), so the learning module stays deaf.
 #[test]
 fn a_rebuild_during_set_range_keeps_the_learning_module_silent() {
-    use honeydew_audio::device::AudioRenderer;
+    use banaforge_audio::device::AudioRenderer;
     let mut rig = Rig::with_synth();
     rig.open_rack(1);
     rig.slide_rack();
@@ -2565,8 +2565,8 @@ fn a_rebuild_during_set_range_keeps_the_learning_module_silent() {
 /// ids is not left deaf by a re-sent `KEY_LEARN` 1.
 #[test]
 fn opening_a_song_during_set_range_ends_the_learn() {
-    use honeydew_audio::device::AudioRenderer;
-    use honeydew_audio::instrument::KEY_LEARN;
+    use banaforge_audio::device::AudioRenderer;
+    use banaforge_audio::instrument::KEY_LEARN;
     let mut rig = Rig::with_synth();
     rig.open_rack(1);
     rig.slide_rack();
@@ -3060,7 +3060,8 @@ fn the_web_module_pickers_that_list_audio_import_into_the_modules_user_folder() 
     }
     // The desktop's DW Sampler picker has none.
     let mut rig = Rig::with_synth();
-    rig.app.files = ProjectFiles::on_disk(&std::env::temp_dir().join("honeydew-l6-no-such-folder"));
+    rig.app.files =
+        ProjectFiles::on_disk(&std::env::temp_dir().join("banaforge-l6-no-such-folder"));
     rig.app
         .add_channel(ChannelKind::Synth(SynthKind::DwSampler), 0);
     let id = rig.app.song.channels[2].rack.modules[0].instance_id;
@@ -3225,13 +3226,13 @@ fn our_banks_list_at_each_synths_picker_root_and_a_pick_makes_no_undo_step() {
 ///
 /// Its guard that the rack calls `settings::prepare` first (`GmSynth::set_setting`'s debug_assert, "prepare_setting
 /// builds slot 1 first") only fires while shape slot 1 is unbuilt: the shape tables are process-global, so another test
-/// in this binary that builds slot 1 hides a missing `prepare`. Run alone (`cargo test -p honeydew --lib
+/// in this binary that builds slot 1 hides a missing `prepare`. Run alone (`cargo test -p banaforge --lib
 /// a_gmsynth_osc_shape`) it is exact. (`settings` is `pub(crate)`, so no `tests/` binary can reach `prepare`; the
 /// "no ReplaceSong" half does not depend on the cache.)
 #[test]
 fn a_gmsynth_osc_shape_edit_is_live_and_the_running_engine_plays_it() {
     use crate::audio_engine::SongAudioEngine;
-    use honeydew_audio::device::AudioRenderer;
+    use banaforge_audio::device::AudioRenderer;
     let mut rig = Rig::with_synth();
     rig.app
         .add_channel(ChannelKind::Synth(SynthKind::GmSynth), 0);

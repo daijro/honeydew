@@ -26,8 +26,8 @@
 
 use std::sync::mpsc::{Receiver, TryRecvError};
 
+use banaforge_audio::device::{AudioCommand, ModuleMeter};
 use eframe::egui::{self, Rect, UiBuilder, pos2, vec2};
-use honeydew_audio::device::{AudioCommand, ModuleMeter};
 
 use super::preset_picker::spawn;
 use super::{AppCtx, Nav, Overlay, View};

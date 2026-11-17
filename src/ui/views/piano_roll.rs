@@ -3,8 +3,8 @@
 
 use std::collections::HashMap;
 
+use banaforge_audio::device::AudioCommand;
 use eframe::egui;
-use honeydew_audio::device::AudioCommand;
 
 use super::{AppCtx, Nav, View};
 use crate::song::Song;
@@ -40,14 +40,14 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     if channel >= app.song.channels.len() {
         return Some(Nav::Show(View::Playlist));
     }
-    let is_vocal = matches!(
-        app.song.channels[channel].kind,
-        crate::song::ChannelKind::Synth(crate::song::SynthKind::VocalSynth)
-    );
+    let is_vocal = crate::song::vocal_editor(&app.song.channels[channel]);
     let roll = state
         .rolls
         .entry(channel)
         .or_insert_with(|| PianoRoll::for_channel(app.song, channel));
+    if !is_vocal {
+        roll.pitch_draw_enabled = false;
+    }
     let mut editor = app.regions.editor;
     if is_vocal {
         let height = app.cx.m.u(2.1).max(48.0);
@@ -55,9 +55,11 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
             editor.min,
             egui::pos2(editor.right(), (editor.top() + height).min(editor.bottom())),
         );
+        let importing = app.files.importing_voicebank();
         let banks = app.files.voicebanks();
         let mut import = false;
         let mut toggle_pitch = false;
+        let mut reset_pitch = false;
         ui.scope_builder(egui::UiBuilder::new().max_rect(toolbar), |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.strong("VOCAL SYNTH  /  EDIT");
@@ -65,36 +67,60 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
                     .selectable_label(roll.pitch_draw_enabled, "〽 PITCH DRAW")
                     .on_hover_text("Enable to draw or bend pitch points directly on notes")
                     .clicked();
-                if ui.button("＋ Import Voicebank").clicked() {
+                if ui
+                    .add_enabled(!importing, egui::Button::new("＋ Import Voicebank"))
+                    .clicked()
+                {
                     import = true;
                 }
+                if importing {
+                    ui.spinner();
+                    ui.weak("Indexing voicebank…");
+                }
+                reset_pitch = ui
+                    .button("FLATTEN BENDS")
+                    .on_hover_text("Reset selected notes to their key pitch; preserve lyrics")
+                    .clicked();
+                ui.weak("Cyan nodes · cents relative to note · dry PCM preview");
                 ui.weak("MY VOICEBANKS");
                 if banks.is_empty() {
                     ui.weak("No banks imported");
                 } else {
                     for bank in banks {
-                        ui.menu_button(format!("{} · {} aliases", bank.name, bank.entries.len()), |ui| {
-                            ui.weak(if bank.has_license_document {
-                                "License file found — verify its terms"
-                            } else {
-                                "License unverified; do not redistribute samples"
-                            });
-                            ui.separator();
-                            egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
-                                for entry in &bank.entries {
-                                    ui.horizontal(|ui| {
-                                        ui.strong(&entry.alias);
-                                        ui.weak(&entry.filename);
-                                    });
-                                }
-                            });
-                        });
+                        ui.menu_button(
+                            format!("{} · {} aliases", bank.name, bank.entries.len()),
+                            |ui| {
+                                ui.weak(if bank.has_license_document {
+                                    "License file found — verify its terms"
+                                } else {
+                                    "License unverified; do not redistribute samples"
+                                });
+                                ui.separator();
+                                ui.weak("Metadata browser · sample singing is not available yet");
+                                egui::ScrollArea::vertical().max_height(240.0).show_rows(
+                                    ui,
+                                    24.0,
+                                    bank.entries.len(),
+                                    |ui, rows| {
+                                        for entry in &bank.entries[rows] {
+                                            ui.horizontal(|ui| {
+                                                ui.strong(&entry.alias);
+                                                ui.weak(&entry.filename);
+                                            });
+                                        }
+                                    },
+                                );
+                            },
+                        );
                     }
                 }
             });
         });
         if toggle_pitch {
             roll.pitch_draw_enabled = !roll.pitch_draw_enabled;
+        }
+        if reset_pitch && roll.reset_vocal_pitch(app.song) {
+            app.song_edited(true);
         }
         if import {
             app.files.pick_voicebank();

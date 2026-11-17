@@ -1,4 +1,4 @@
-//! Song sections (Honeydew's own, #80): named, coloured time ranges of the playlist, which tint its track rows and
+//! Song sections (BanaForge's own, #80): named, coloured time ranges of the playlist, which tint its track rows and
 //! name themselves on its ruler. A file keeps each in an `HDSe` (`flm::write`), which FL Studio Mobile skips. The audio
 //! never reads them.
 

@@ -40,7 +40,7 @@ pub const KNOBS: u32 = 4100;
 /// The named controls the card shows.
 pub const SLOTS: usize = 8;
 
-/// Honeydew change (GitHub #135): the card wiring's flag for a portrait phone-size window (`ui::rack`, whose
+/// BanaForge change (GitHub #135): the card wiring's flag for a portrait phone-size window (`ui::rack`, whose
 /// card is taller there): the ten controls under the patch row take two rows of five, so their labels and values fit.
 pub const TWO_ROWS: &str = "two_rows";
 /// The SFZ names controls; and the knobs that show one, each 1.
@@ -262,9 +262,9 @@ fn envelope_controls(shift: u32) -> [Part; 10] {
             .p(4)
             .value_text()
             .enabled(CUSTOM),
-        // A Honeydew addition (#90): Fine Tune; it tunes either envelope.
+        // A BanaForge addition (#90): Fine Tune; it tunes either envelope.
         v_slider(2600 + shift, "Fine Tune").p(6).value_text(),
-        // Honeydew additions (#102): the vibrato and Quality.
+        // BanaForge additions (#102): the vibrato and Quality.
         v_slider(2700 + shift, "Vib Rate").p(7).value_text(),
         v_slider(2800 + shift, "Vib Depth").p(8).value_text(),
         v_slider(2900 + shift, "Vib Delay").p(9).value_text(),
@@ -296,7 +296,7 @@ pub fn panel() -> Option<Panel> {
             text_toggle(1300, "Next")
                 .momentary()
                 .margins(0.75, 0.75, 0.75, 0.75),
-            // A Honeydew addition (#102): Transpose, in semitones.
+            // A BanaForge addition (#102): Transpose, in semitones.
             knob(3200, "Transpose").p(11).w(Size::U(2.5)),
         ])
         // Its 1 : 1.5 share of the card, fixed: the tab strip takes its room from the envelope's row.
@@ -371,7 +371,7 @@ pub const REFERENCE: Reference = Reference {
         Case {
             name: "loaded",
             rows: &[
-                // Transpose is a Honeydew addition (#102) beside Prev, Patch and Next.
+                // Transpose is a BanaForge addition (#102) beside Prev, Patch and Next.
                 row(1100, Widget::TextToggle, "Prev", [0.75, 0.75, 3.82, 1.09])
                     .margins(0.75, 0.75, 0.75, 0.75)
                     .momentary()
@@ -387,7 +387,7 @@ pub const REFERENCE: Reference = Reference {
                 row(3200, Widget::Knob, "Transpose", [14.46, 0.0, 2.50, 2.59])
                     .p(11)
                     .w(Size::U(2.5)),
-                // Ten columns: Fine Tune (#90), the vibrato and Quality (#102) are Honeydew additions.
+                // Ten columns: Fine Tune (#90), the vibrato and Quality (#102) are BanaForge additions.
                 row(2100, Widget::Toggle, "Envelope", [0.00, 2.59, 1.69, 3.90])
                     .p(5)
                     .value_text()
@@ -437,7 +437,7 @@ pub const REFERENCE: Reference = Reference {
             ],
             ..Case::DEFAULT
         },
-        // Honeydew change (#135): a portrait phone's two rows of five (the card wiring's flag).
+        // BanaForge change (#135): a portrait phone's two rows of five (the card wiring's flag).
         Case {
             name: "two rows",
             flags: &[(TWO_ROWS, 1)],

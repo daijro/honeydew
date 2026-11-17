@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod automation;
+pub mod banana;
 mod biquad;
 pub mod builtin_drums;
 pub mod builtin_loops;
@@ -18,7 +19,6 @@ pub mod gmsynth;
 pub mod half_time;
 pub mod input;
 pub mod instrument;
-pub mod lemon;
 pub mod metronome;
 pub mod minisynth;
 pub mod mixer;
@@ -105,8 +105,8 @@ pub fn effect_info(id: u16) -> Option<EffectInfo> {
         44 => ("Spreader", 5),
         45 => ("Pitcher 2", 27),
         46 => ("Tremolo", 12),
-        lemon::REVERB => ("Lemon Reverb", lemon::REVERB_MID_SIDE + 1),
-        lemon::LIMITER => ("Lemon Limiter", lemon::LIMITER_SAFETY + 1),
+        banana::REVERB => ("Banana Reverb", banana::REVERB_MID_SIDE + 1),
+        banana::LIMITER => ("Banana Limiter", banana::LIMITER_SAFETY + 1),
         dynamic_eq::DYNAMIC_EQ => ("Dynamic EQ", dynamic_eq::PARAMS),
         modulator::MODULATOR => ("Modulator", modulator::PARAMS),
         de_esser::DE_ESSER => ("De-esser", de_esser::PARAMS),
@@ -122,11 +122,11 @@ pub fn effect_info(id: u16) -> Option<EffectInfo> {
 }
 
 /// Whether module type `id`'s detector can read a sidechain key instead of its own input ([`AudioEffect::process_keyed`]):
-/// the Compressor, Gate, Limiter, Multiband Compressor, Lemon Limiter, Dynamic EQ and Modulator (its Envelope).
+/// the Compressor, Gate, Limiter, Multiband Compressor, Banana Limiter, Dynamic EQ and Modulator (its Envelope).
 pub fn takes_key(id: u16) -> bool {
     matches!(
         id,
-        8 | 27 | 28 | 36 | lemon::LIMITER | dynamic_eq::DYNAMIC_EQ | modulator::MODULATOR
+        8 | 27 | 28 | 36 | banana::LIMITER | dynamic_eq::DYNAMIC_EQ | modulator::MODULATOR
     )
 }
 
@@ -264,7 +264,7 @@ pub trait ExternalEffect: Send {
     /// Processes one block in place.
     fn process(&mut self, left: &mut [f32], right: &mut [f32], context: ProcessContext);
     /// [`Self::process`] with a sidechain `key` (left, right, as long as the block) for a plugin with a sidechain input
-    /// (Lemon Vocoder's carrier); one without ignores it.
+    /// (Banana Vocoder's carrier); one without ignores it.
     fn process_keyed(
         &mut self,
         left: &mut [f32],
@@ -497,15 +497,15 @@ impl AudioEffect {
                 ],
                 Processor::Tremolo(TremoloState::default()),
             ),
-            lemon::REVERB => {
-                let params = lemon::defaults(id);
-                let state = lemon::ReverbFx::new(sample_rate, &params);
-                (params, Processor::LemonReverb(Box::new(state)))
+            banana::REVERB => {
+                let params = banana::defaults(id);
+                let state = banana::ReverbFx::new(sample_rate, &params);
+                (params, Processor::BananaReverb(Box::new(state)))
             }
-            lemon::LIMITER => {
-                let params = lemon::defaults(id);
-                let state = lemon::LimiterFx::new(sample_rate, &params);
-                (params, Processor::LemonLimiter(Box::new(state)))
+            banana::LIMITER => {
+                let params = banana::defaults(id);
+                let state = banana::LimiterFx::new(sample_rate, &params);
+                (params, Processor::BananaLimiter(Box::new(state)))
             }
             dynamic_eq::DYNAMIC_EQ => (
                 dynamic_eq::DEFAULTS.to_vec(),
@@ -600,7 +600,7 @@ impl AudioEffect {
             Processor::Gate(_) => 255,
             Processor::Pitcher(state) => state.latency_samples(),
             Processor::Pitcher2(state) => state.latency_samples(),
-            Processor::LemonLimiter(state) => state.latency(),
+            Processor::BananaLimiter(state) => state.latency(),
             Processor::Denoise(state) => state.latency(),
             _ => 0,
         }
@@ -646,8 +646,8 @@ impl AudioEffect {
     pub fn take_buffers(&mut self, built: &mut AudioEffect) {
         match (&mut self.processor, &mut built.processor) {
             (Processor::TapeStop(state), Processor::TapeStop(theirs)) => state.take_ring(theirs),
-            // A room size the running reverb held back (`lemon::ReverbFx`).
-            (Processor::LemonReverb(state), Processor::LemonReverb(theirs)) => state.take(theirs),
+            // A room size the running reverb held back (`banana::ReverbFx`).
+            (Processor::BananaReverb(state), Processor::BananaReverb(theirs)) => state.take(theirs),
             (Processor::HalfTime(state), Processor::HalfTime(theirs)) => state.take_ring(theirs),
             _ => {}
         }
@@ -854,8 +854,8 @@ impl AudioEffect {
     }
 
     fn refresh_coefficients(&mut self) {
-        // Once a block has run, the audio thread holds it: Lemon's reverb keeps its room size there.
-        if let Processor::LemonReverb(state) = &mut self.processor {
+        // Once a block has run, the audio thread holds it: Banana's reverb keeps its room size there.
+        if let Processor::BananaReverb(state) = &mut self.processor {
             state.live = !self.common.fresh;
         }
         self.processor
@@ -941,8 +941,8 @@ enum Processor {
     TapeStop(TapeStopState),
     Spreader(SpreaderState),
     Waveshaper(WaveshaperState),
-    LemonReverb(Box<lemon::ReverbFx>),
-    LemonLimiter(Box<lemon::LimiterFx>),
+    BananaReverb(Box<banana::ReverbFx>),
+    BananaLimiter(Box<banana::LimiterFx>),
     DynamicEq(Box<dynamic_eq::DynamicEqState>),
     Modulator(Box<modulator::ModulatorState>),
     DeEsser(Box<de_esser::DeEsserState>),
@@ -987,8 +987,8 @@ impl Processor {
             Self::Waveshaper(state) => {
                 state.refresh(params, sample_rate).unwrap();
             }
-            Self::LemonReverb(state) => state.set(params, sample_rate),
-            Self::LemonLimiter(state) => state.set(params, sample_rate),
+            Self::BananaReverb(state) => state.set(params, sample_rate),
+            Self::BananaLimiter(state) => state.set(params, sample_rate),
             Self::DynamicEq(state) => state.refresh(params, sample_rate),
             Self::Modulator(state) => state.refresh(params, sample_rate),
             Self::DeEsser(state) => state.refresh(params, sample_rate),
@@ -1022,7 +1022,7 @@ impl Processor {
                 state.prepare_block(context.tempo_bpm, context.start_beat, frames)
             }
             Self::TapeStop(state) => state.prepare_block(context.tempo_bpm),
-            Self::LemonReverb(state) => state.set_tempo(context.tempo_bpm),
+            Self::BananaReverb(state) => state.set_tempo(context.tempo_bpm),
             Self::Modulator(state) => state.prepare_block(context),
             Self::HalfTime(state) => state.prepare_block(context),
             Self::Waveshaper(state) => {
@@ -1066,8 +1066,8 @@ impl Processor {
             Self::TapeStop(state) => state.process_frame(l, r),
             Self::Spreader(state) => state.process_frame(l, r),
             Self::Waveshaper(state) => state.process_frame(l, r),
-            Self::LemonReverb(state) => state.frame(l, r),
-            Self::LemonLimiter(state) => state.frame(l, r),
+            Self::BananaReverb(state) => state.frame(l, r),
+            Self::BananaLimiter(state) => state.frame(l, r),
             // Its own input is the key until the sidechain feeds one.
             Self::DynamicEq(state) => state.process_frame(l, r, (l, r)),
             Self::Modulator(state) => state.process_frame(l, r, (l, r)),
@@ -1089,7 +1089,7 @@ impl Processor {
             Self::LookaheadLimiter(state) => state.keyed(l, r, key),
             Self::Gate(state) => state.keyed(l, r, key),
             Self::Multiband(state) => state.keyed(l, r, Some(key)),
-            Self::LemonLimiter(state) => state.keyed(l, r, Some(key)),
+            Self::BananaLimiter(state) => state.keyed(l, r, Some(key)),
             Self::DynamicEq(state) => state.process_frame(l, r, key),
             Self::Modulator(state) => state.process_frame(l, r, key),
             _ => self.process_frame(l, r),
@@ -1128,8 +1128,8 @@ impl Processor {
             Self::TapeStop(state) => state.reset(),
             Self::Spreader(state) => state.reset(),
             Self::Waveshaper(state) => state.reset(),
-            Self::LemonReverb(state) => state.clear(),
-            Self::LemonLimiter(state) => state.reset(),
+            Self::BananaReverb(state) => state.clear(),
+            Self::BananaLimiter(state) => state.reset(),
             Self::DynamicEq(state) => state.reset(),
             Self::Modulator(state) => state.reset(),
             Self::DeEsser(state) => state.reset(),
@@ -3262,7 +3262,7 @@ mod tests {
     fn a_keyed_detector_reads_the_key_instead_of_the_input() {
         // Each keyed type, set to act on a loud tone: keyed by a copy of its input it is the plain effect, keyed by
         // silence it is not.
-        use lemon::dynamics::{COMP_RATIO, COMP_THRES};
+        use banana::dynamics::{COMP_RATIO, COMP_THRES};
         let context = ProcessContext {
             sample_rate: 48_000.0,
             tempo_bpm: 120.0,
@@ -3287,7 +3287,7 @@ mod tests {
                 ],
             ),
             (
-                lemon::LIMITER,
+                banana::LIMITER,
                 &[(1 + COMP_THRES, 0.6), (1 + COMP_RATIO, 1.0)],
             ),
         ];

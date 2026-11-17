@@ -12,8 +12,8 @@
 //! the channel. Its files keep where they were left, as the other pickers do (#131,
 //! [`crate::ui::preset_picker::PresetPicker::keep_place`]).
 
+use banaforge_audio::device::AudioCommand;
 use eframe::egui;
-use honeydew_audio::device::AudioCommand;
 
 use super::{AppCtx, Nav, rack};
 use crate::audio_link::AudioLink;

@@ -1,9 +1,9 @@
 // Copyright (C) 2026 ItsAlphaNeon
 // SPDX-License-Identifier: GPL-3.0-or-later
-// This file is part of Lemon Studio: https://github.com/ItsAlphaNeon/Lemon-Studio
-// Modified for Honeydew: vendored from Lemon Studio's `os-flp` crate (219ed4e); Honeydew's `PluginRef` (its state an
+// This file is part of Banana Studio: https://github.com/ItsAlphaNeon/Lemon-Studio
+// Modified for BanaForge: vendored from Banana Studio's `os-flp` crate (219ed4e); BanaForge's `PluginRef` (its state an
 // `Arc<[u8]>`, its equality without the state, so the unchanged check compares the state itself); upstream's tests are
-// not carried (Honeydew's FLP round trip covers the codec, `tests/plugins.rs`).
+// not carried (BanaForge's FLP round trip covers the codec, `tests/plugins.rs`).
 
 //! The plugin wrapper's state: event 213 of a plugin whose internal name (201) is [`WRAPPER`], which hosts every
 //! third-party plugin (VST2, VST3, CLAP). A `u32` type, then `(u32 id, u64 size, bytes)` records. Unknown records
@@ -27,10 +27,10 @@ pub mod rec {
     pub const VST_VERSION: u32 = 57;
 }
 
-/// What Lemon Studio writes as a new VST2 wrapper state's VST version.
+/// What Banana Studio writes as a new VST2 wrapper state's VST version.
 const VST2_VERSION: u32 = 2400;
 
-/// The type word Lemon Studio writes for a new wrapper state.
+/// The type word Banana Studio writes for a new wrapper state.
 pub const NEW_TYPE: u32 = 10;
 
 /// A parsed wrapper state: the type word and the records in file order.

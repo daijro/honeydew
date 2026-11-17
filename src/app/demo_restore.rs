@@ -7,7 +7,7 @@
 
 use eframe::egui;
 
-use super::HoneydewApp;
+use super::BanaForgeApp;
 use crate::ui::views::{Nav, Overlay};
 
 /// The loading screen's title.
@@ -28,7 +28,7 @@ pub(super) enum DemoRestore {
     Held(f64),
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// After the screens, each frame: starts a restore SETTINGS asked for, then runs it on.
     pub(super) fn demo_restore(&mut self, ctx: &egui::Context) {
         if std::mem::take(&mut self.files.restore_demos) {

@@ -1,6 +1,6 @@
-//! Denoise (`honeydew_audio::denoise`), UIHeight 7.5 U: Honeydew's own panel (GitHub #43). Its knobs and Learn, then the Compressor's GR / IN / OUT meter, fed the reduction over all bins.
+//! Denoise (`banaforge_audio::denoise`), UIHeight 7.5 U: BanaForge's own panel (GitHub #43). Its knobs and Learn, then the Compressor's GR / IN / OUT meter, fed the reduction over all bins.
 
-use honeydew_audio::denoise::{LEARN, REDUCTION, SENSITIVITY};
+use banaforge_audio::denoise::{LEARN, REDUCTION, SENSITIVITY};
 
 use super::compressor::level_meter;
 use crate::panels::build::*;

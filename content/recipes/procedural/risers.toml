@@ -2,7 +2,7 @@
 id = "proc-risers"
 kind = "samples"
 path = "Samples/Risers/"
-source = "honeydew"
+source = "banaforge"
 render = "riser"
 variant = [
   { name = "Noise Riser 2s", length = 2.0, from = 400.0, to = 10000.0, q = 3.0 },

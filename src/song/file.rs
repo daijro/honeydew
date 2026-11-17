@@ -107,7 +107,7 @@ pub struct SongFileState {
     pub meta: MetaState,
     pub keyboard: KeyboardState,
     pub unknown_chunks: Vec<RawChunk>,
-    /// The project versions (#69, Honeydew's own `HDVb` chunks): shared, as every undo step holds them. No edit
+    /// The project versions (#69, BanaForge's own `HDVb` chunks): shared, as every undo step holds them. No edit
     /// ([`super::Song::keep_unedited`]).
     pub versions: std::sync::Arc<crate::versions::Versions>,
 }
@@ -165,7 +165,7 @@ pub struct MetaState {
     pub modified: String,
     /// Bytes after @3081.
     pub extra: Vec<u8>,
-    /// PROJECT's `Album:`, `Genre:`, `Year:` and `Comment:` (#139, Honeydew's own: an `HDTg` in the file, not META),
+    /// PROJECT's `Album:`, `Genre:`, `Year:` and `Comment:` (#139, BanaForge's own: an `HDTg` in the file, not META),
     /// which renders write as tags.
     pub album: String,
     pub genre: String,
@@ -305,16 +305,16 @@ pub struct ChannelFileState {
     pub channel_unknown_chunks: Vec<RawChunk>,
     /// `CHHD` bytes after the three names.
     pub header_extra: Vec<u8>,
-    /// Honeydew's own `HDMi`: the live MIDI an instrument or drum channel takes.
+    /// BanaForge's own `HDMi`: the live MIDI an instrument or drum channel takes.
     pub midi_input: MidiInput,
-    /// Honeydew's own `HDMs`: the channels the notes and MIDI CCs it plays also go to, in the order added.
+    /// BanaForge's own `HDMs`: the channels the notes and MIDI CCs it plays also go to, in the order added.
     pub midi_sends: Vec<MidiSend>,
-    /// Honeydew's own `HDMd`: the targets of its rack's Modulators, one each. Kept here, outside the rack, so that each
+    /// BanaForge's own `HDMd`: the targets of its rack's Modulators, one each. Kept here, outside the rack, so that each
     /// target edit is an undo step (no undo step covers the rack).
     pub modulations: Vec<Modulation>,
 }
 
-/// A Modulator's target (Honeydew's own, `honeydew_audio::modulator`): the param its signal moves, any automatable
+/// A Modulator's target (BanaForge's own, `banaforge_audio::modulator`): the param its signal moves, any automatable
 /// param of any channel. A controller plugin's link too (0.4.9; `crate::plugins::builtin::controller`):
 /// the param its output sets. Saved in an `HDMd`, which other readers skip. One whose Modulator or target is gone does
 /// nothing (ids are never reused).
@@ -327,7 +327,7 @@ pub struct Modulation {
     pub target: super::AutomationTarget,
 }
 
-/// A MIDI send (Honeydew's own): every note the channel's instruments get, past its note effects, and its MIDI CCs and
+/// A MIDI send (BanaForge's own): every note the channel's instruments get, past its note effects, and its MIDI CCs and
 /// Pitch Bend, go to another channel's note input too. Saved in an `HDMs`, which FL Studio Mobile skips.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MidiSend {
@@ -336,7 +336,7 @@ pub struct MidiSend {
     pub enabled: bool,
 }
 
-/// Which live MIDI a channel takes (Honeydew's own; FL Studio Mobile takes it all on the current channel). `None` is
+/// Which live MIDI a channel takes (BanaForge's own; FL Studio Mobile takes it all on the current channel). `None` is
 /// All. Saved as an `HDMi` in the `CHNL`, only when set, which FL Studio Mobile skips as an unknown chunk.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MidiInput {
@@ -460,7 +460,7 @@ pub struct LaneFileState {
     pub desc_extra: Vec<u8>,
 }
 
-/// A per-note Vocal Synth lyric and expression curve, stored in Honeydew's `HDVo` clip extension.
+/// A per-note Vocal Synth lyric and expression curve, stored in BanaForge's `HDVo` clip extension.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VocalNoteState {
     pub pos: u32,
@@ -496,10 +496,10 @@ pub struct ClipFileState {
     pub header_extra: Vec<u8>,
     /// The `EVN2` payload as read, kept only when re-encoding the events would not give it back.
     pub raw_events: Raw<Vec<u8>>,
-    /// `HDSh` (Honeydew's own): on an automation clip, the shape of each segment that is not the straight line, by the
+    /// `HDSh` (BanaForge's own): on an automation clip, the shape of each segment that is not the straight line, by the
     /// tick of its point (sorted, one per tick: the last point at a tick starts the segment that has a length).
-    pub shapes: Vec<(u32, honeydew_audio::automation::Shape)>,
-    /// `HDVo` (Honeydew's own): vocal-synth per-note lyrics and pitch-curve points, keyed by note start and MIDI key.
+    pub shapes: Vec<(u32, banaforge_audio::automation::Shape)>,
+    /// `HDVo` (BanaForge's own): vocal-synth per-note lyrics and pitch-curve points, keyed by note start and MIDI key.
     pub vocal_notes: Vec<VocalNoteState>,
 }
 

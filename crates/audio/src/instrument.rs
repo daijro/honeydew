@@ -16,6 +16,9 @@ pub trait Instrument: Send {
     /// b = 127 is centre, so centre arrives as 127/255; the keyboard sends 0.5. The
     /// instrument applies it per voice with its own pan law.
     fn note_on(&mut self, key: u8, velocity: f32, pan: f32);
+    /// Update the newest sounding voice of `key`. Prepared scalar data only: no allocation on the audio thread.
+    /// Other instruments ignore vocal expression.
+    fn set_vocal(&mut self, _key: u8, _expression: crate::vocal_synth::VocalExpression) {}
     /// Releases a sounding `key`.
     fn note_off(&mut self, key: u8);
     /// Releases every voice; their releases still sound (Stop).

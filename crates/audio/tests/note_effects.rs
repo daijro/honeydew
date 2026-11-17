@@ -1,7 +1,7 @@
-use honeydew_audio::note_effects::{
+use banaforge_audio::note_effects::{
     LiveNoteChain, NoteEffectError, NoteEffectModule, NoteEffectRack,
 };
-use honeydew_audio::sequencer::{InputNoteEvent, NoteKind};
+use banaforge_audio::sequencer::{InputNoteEvent, NoteKind};
 
 fn module(type_id: u16, instance_id: i32, params: Vec<f32>) -> NoteEffectModule {
     NoteEffectModule {
@@ -1264,7 +1264,7 @@ fn traced(
     input: &[InputNoteEvent],
 ) -> (
     Vec<InputNoteEvent>,
-    Vec<honeydew_audio::note_effects::NoteEffectTrace>,
+    Vec<banaforge_audio::note_effects::NoteEffectTrace>,
 ) {
     let mut traces = Vec::new();
     let output = NoteEffectRack::new(modules)
@@ -1277,7 +1277,7 @@ fn traced(
 #[test]
 fn an_arpeggiators_trace_puts_its_playhead_on_the_steps_it_plays() {
     // A note held from beat 0.25 to 1.25 (Arp 1 at half-beat steps, Arp 2 off).
-    use honeydew_audio::analysis::{arpeggiator, note_effect_state};
+    use banaforge_audio::analysis::{arpeggiator, note_effect_state};
     let input = [
         InputNoteEvent::on(0.25, 60, 100),
         InputNoteEvent::off(1.25, 60),
@@ -1306,8 +1306,8 @@ fn an_arpeggiators_trace_puts_its_playhead_on_the_steps_it_plays() {
 
 #[test]
 fn a_note_echos_trace_is_pending_from_a_played_note_until_its_last_echo_ends() {
-    use honeydew_audio::analysis::{note_echo, note_effect_state};
-    use honeydew_audio::note_effects::NoteEffectTrace;
+    use banaforge_audio::analysis::{note_echo, note_effect_state};
+    use banaforge_audio::note_effects::NoteEffectTrace;
     let mut params = vec![0.5; 16];
     params[0] = 1.0;
     params[1] = 2.0 / 32.0;

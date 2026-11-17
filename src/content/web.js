@@ -1,8 +1,8 @@
 // The browser's side of the web's bundled content (src/content/web.rs): the index at start, the packs' parts, Cache
 // Storage and the LRU book. A part's body stays here, a Uint8Array outside the wasm's memory.
 
-const CACHE = "honeydew-packs-v1";
-const BOOK = "honeydew.packs";
+const CACHE = "banaforge-packs-v1";
+const BOOK = "banaforge.packs";
 // Each part downloading, by URL: its AbortController.
 const downloads = new Map();
 let store;

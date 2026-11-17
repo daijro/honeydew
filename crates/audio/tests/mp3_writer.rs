@@ -1,8 +1,8 @@
 use std::f64::consts::TAU;
 use std::io::Cursor;
 
-use honeydew_audio::mp3_writer::Mp3Encoder;
-use honeydew_audio::sample::{SampleData, decode};
+use banaforge_audio::mp3_writer::Mp3Encoder;
+use banaforge_audio::sample::{SampleData, decode};
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::{MetadataOptions, StandardTagKey};
@@ -289,7 +289,7 @@ const TAGS: [(&str, &str); 7] = [
     ("GENRE", "House"),
     ("DATE", "2026"),
     ("COMMENT", "Made on a phone"),
-    ("ENCODER", "Honeydew 0.5.4"),
+    ("ENCODER", "BanaForge 0.5.4"),
 ];
 
 /// #139: a tagged MP3 opens with an ID3v2.4 tag that symphonia reads back, and still decodes whole.
@@ -317,7 +317,7 @@ fn tags_go_in_an_id3v2_tag_and_the_stream_still_decodes_whole() {
         (StandardTagKey::Genre, "House"),
         (StandardTagKey::Date, "2026"),
         (StandardTagKey::Comment, "Made on a phone"),
-        (StandardTagKey::Encoder, "Honeydew 0.5.4"),
+        (StandardTagKey::Encoder, "BanaForge 0.5.4"),
     ];
     let want = want.map(|(key, value)| (Some(key), value.to_owned()));
     assert_eq!(tags, want);
