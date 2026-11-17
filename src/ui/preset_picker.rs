@@ -1460,6 +1460,28 @@ impl SongLibrary for ReadOnly<'_> {
 ///   ([`SAMPLE_EXTS`]); a picker that lists no programs there (the sample picker) lists the folder.
 /// - Otherwise (the user's files): only a `.dwp` or `.sfz`, listed or not, without case (an `.sfz` the instrument
 ///   builder makes keeps its samples so). A folder the user makes beside their preset of its name is theirs, and lists.
+/// Recognize bank roots using directory metadata only, without reading OTO/audio payloads.
+fn voicebank_folder(library: &dyn SongLibrary, path: &Path) -> bool {
+    let rows = library.list(Some(path)).unwrap_or_default();
+    let oto = |e: &SongEntry| !e.is_folder && e.name.eq_ignore_ascii_case("oto.ini");
+    if rows
+        .iter()
+        .any(|e| oto(e) || !e.is_folder && e.name.eq_ignore_ascii_case("character.txt"))
+    {
+        return true;
+    }
+    // A multi-pitch bank may consist only of A3/C4/... subfolders. Do not turn
+    // My Voicebanks itself (or arbitrary user roots) into one combined bank.
+    path.parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == crate::project_files::VOICEBANKS_FOLDER)
+        && rows.iter().filter(|e| e.is_folder).take(64).any(|e| {
+            library
+                .list(Some(&e.path))
+                .is_ok_and(|rows| rows.iter().any(oto))
+        })
+}
+
 fn read(
     library: &dyn SongLibrary,
     folder: &Path,
@@ -1480,8 +1502,7 @@ fn read(
         // Bank roots are atomic selections, not folders of individual WAV picks.
         if (module_type == Some(53) || exts.contains(&"uar"))
             && entry.is_folder
-            && (library.read(&entry.path.join("oto.ini")).is_ok()
-                || library.read(&entry.path.join("character.txt")).is_ok())
+            && voicebank_folder(library, &entry.path)
         {
             entry.is_folder = false;
             return Some(entry);
