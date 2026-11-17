@@ -1391,6 +1391,7 @@ impl PianoRoll {
             cx,
         );
         if let Some(bar) = lyric_bar {
+            let px = 1.0 / m.ppp();
             let painter = ui.painter_at(bar.with_min_x(grid.left()));
             painter.rect_filled(bar, 0.0, Color32::from_rgb(29, 34, 40));
             for event in events {
