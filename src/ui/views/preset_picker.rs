@@ -1819,6 +1819,48 @@ mod tests {
     }
 
     #[test]
+    fn vocal_browser_shares_dw_user_root_and_has_voicebanks_and_import() {
+        let tmp = Temp::new("vocal-browser-root");
+        let files = ProjectFiles::on_disk(&tmp.0);
+        let target = PresetTarget::Module(2);
+        assert_eq!(top(target, Some(53)), top(target, Some(DW)));
+        let root = names(&files, target, Some(53), &[]);
+        let bank = root
+            .iter()
+            .position(|s| s == crate::project_files::VOICEBANKS_FOLDER)
+            .unwrap();
+        let default = root.iter().position(|s| s == DEFAULT).unwrap();
+        assert!(bank < default);
+        assert!(import_dir(&files, 53).is_some());
+        let vocal = names(&files, target, Some(53), &[MY_FILES]);
+        let dw = names(&files, target, Some(DW), &[MY_FILES]);
+        assert_eq!(vocal, dw);
+        assert!(
+            vocal
+                .iter()
+                .any(|s| s == crate::project_files::VOICEBANKS_FOLDER)
+        );
+    }
+
+    #[test]
+    fn vocal_browser_lists_archive_and_bank_folder_as_atomic_picks() {
+        let tmp = Temp::new("vocal-browser-bank");
+        let files = ProjectFiles::on_disk(&tmp.0);
+        let dir = tmp.0.join(crate::project_files::VOICEBANKS_FOLDER);
+        std::fs::create_dir_all(dir.join("FolderBank")).unwrap();
+        std::fs::write(dir.join("FolderBank/oto.ini"), b"a.wav=a,0,0,0,0,0").unwrap();
+        std::fs::write(dir.join("ArchiveBank.zip"), b"not parsed just for listing").unwrap();
+        std::fs::write(dir.join("OtherBank.UAR"), b"not parsed just for listing").unwrap();
+        let listed = names(
+            &files,
+            PresetTarget::Module(2),
+            Some(53),
+            &[crate::project_files::VOICEBANKS_FOLDER],
+        );
+        assert_eq!(listed, ["ArchiveBank", "FolderBank", "OtherBank"]);
+    }
+
+    #[test]
     fn each_preset_picker_lists_its_original_content_after_the_users_own() {
         let tmp = Temp::new("preset-pickers");
         fake_tree(&tmp.0.join(CONTENT_FOLDER));

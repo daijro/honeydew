@@ -275,3 +275,48 @@ fn index_folder(root: &Path) -> Result<crate::vocal_synth::VoicebankIndex, Strin
     }
     crate::vocal_synth::index_files(&files)
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+    use crate::project_files::content::tests::Temp;
+
+    #[test]
+    fn vocal_folder_registration_is_metadata_only_and_survives_restart() {
+        let tmp = Temp::new("vocal-folder-register");
+        let mut files = ProjectFiles::on_disk(&tmp.0);
+        let bank = tmp.0.join(VOICEBANKS_FOLDER).join("UserBank");
+        std::fs::create_dir_all(bank.join("C4")).unwrap();
+        std::fs::write(bank.join("character.txt"), b"name=UserBank").unwrap();
+        std::fs::write(bank.join("C4/oto.ini"), b"a.wav=hello,0,0,0,0,0").unwrap();
+        std::fs::write(bank.join("C4/a.wav"), b"not WAV data").unwrap();
+        files.register_voicebank_folder(&bank);
+        let (index, bytes) = files
+            .voicebank_import
+            .take()
+            .unwrap()
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
+        assert!(bytes.is_none());
+        assert_eq!(index.entries[0].alias, "hello");
+        files.store_voicebank_index(index, bytes);
+        let mut reopened = ProjectFiles::on_disk(&tmp.0);
+        assert_eq!(reopened.voicebanks().len(), 1);
+        assert_eq!(reopened.voicebanks()[0].entries[0].alias, "hello");
+        assert!(
+            !std::fs::read_dir(tmp.0.join(VOICEBANKS_FOLDER))
+                .unwrap()
+                .any(|e| e.unwrap().path().extension().is_some_and(|x| x == "zip"))
+        );
+    }
+
+    #[test]
+    fn vocal_folder_import_rejects_traversal_before_copy() {
+        let tmp = Temp::new("vocal-folder-traversal");
+        let mut files = ProjectFiles::on_disk(&tmp.0);
+        files.copy_voicebank_folder(vec![("../outside/oto.ini".into(), "source".into())]);
+        assert!(files.voicebank_folder_copy.is_none());
+        assert!(files.message.is_some());
+    }
+}
