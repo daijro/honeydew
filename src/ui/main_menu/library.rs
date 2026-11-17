@@ -927,7 +927,11 @@ impl SongLibrary for NativeLibrary {
         // lossily; its path is the real one. The cap counts what is listed, not what the folder holds; the scan stops
         // after [`MAX_SCANNED`] entries. Only a row kept is asked for its time.
         let scanned = entries.into_iter().flatten().take(MAX_SCANNED).flatten();
-        let user = self.user_folder();
+        let user = if self.whole {
+            self.root.clone()
+        } else {
+            self.user_folder()
+        };
         let top = user.as_deref() == Some(dir);
         let every = user.is_some()
             && !top

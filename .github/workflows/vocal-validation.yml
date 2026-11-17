@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          (cargo test -p honeydew-audio vocal_synth && cargo test --lib vocal_) 2>&1 | tee /tmp/vocal-tests.log
+          (cargo test -p honeydew-audio vocal_synth && cargo test --lib vocal_ && cargo test --lib my_folders_lists_all_user_file_types_in_songs_and_samples) 2>&1 | tee /tmp/vocal-tests.log
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -ne 0 ]; then
