@@ -6,20 +6,10 @@ use crate::audio_bridge::playing_clips;
 use crate::song::{Event, LaneKind, PPQ, Song, VocalPitchPoint};
 use banaforge_audio::vocal_synth::VocalExpression;
 
-pub(crate) fn vowel(lyric: &str) -> u8 {
-    // Procedural fallback only, not a phonemizer. Last explicit Latin vowel wins.
-    lyric
-        .chars()
-        .rev()
-        .find_map(|ch| match ch.to_ascii_lowercase() {
-            'a' | 'あ' | 'ア' => Some(0),
-            'i' | 'い' | 'イ' => Some(2),
-            'u' | 'う' | 'ウ' => Some(4),
-            'e' | 'え' | 'エ' => Some(1),
-            'o' | 'お' | 'オ' => Some(3),
-            _ => None,
-        })
-        .unwrap_or(255)
+/// Until a bank renderer is active, lyrics are annotations, never DSP controls.
+/// 255 preserves the procedural instrument's own Vowel parameter.
+pub(crate) fn vowel(_lyric: &str) -> u8 {
+    255
 }
 
 pub(crate) fn pitch(points: &[VocalPitchPoint], at: f32) -> f32 {
@@ -154,8 +144,10 @@ mod tests {
         assert_eq!(pitch(&points, 0.0), -100.0);
         assert_eq!(pitch(&points, 0.5), 0.0);
         assert_eq!(pitch(&points, 1.0), 100.0);
-        assert_eq!(vowel("hello"), 3);
-        assert_eq!(vowel("息"), 255);
+        assert_eq!(vowel("hello"), 255);
+        for text in ["", "hello", "あ", "a", "bonjour", "你好", "مرحبا"] {
+            assert_eq!(vowel(text), 255);
+        }
     }
 }
 
@@ -203,7 +195,7 @@ mod schedule_tests {
         assert_eq!(out.len(), 125);
         for start in [24000, 48000, 72000] {
             assert!(out.iter().any(|event| event.frame == start && matches!(event.action,
-                Action::Vocal { expression, key: 60, .. } if expression.cents == -100.0 && expression.vowel == 0)));
+                Action::Vocal { expression, key: 60, .. } if expression.cents == -100.0 && expression.vowel == 255)));
         }
         song.channels[1].lanes[0].clips[0].muted = true;
         out.clear();

@@ -67,7 +67,8 @@ impl ProjectFiles {
     /// Index bank metadata on a worker. Never decode/copy WAV audio just to browse a bank.
     pub fn register_voicebank_folder(&mut self, path: &Path) {
         if self.voicebank_import.is_some() {
-            return self.fail(IMPORT_FAILED, "A bank import is already running".into());
+            // Repeated taps while the same worker is busy are not failed imports.
+            return;
         }
         let path = path.to_owned();
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
@@ -95,10 +96,8 @@ impl ProjectFiles {
     /// Validate/decompress away from the native UI/audio threads. A single in-flight bank bounds memory.
     pub(super) fn voicebank_imported(&mut self, path: &Path, bytes: Vec<u8>) {
         if self.voicebank_import.is_some() {
-            return self.fail(
-                IMPORT_FAILED,
-                "A voicebank import is already running".into(),
-            );
+            // A second tap must not put a failure modal over the first success.
+            return;
         }
         let keep_archive = !self
             .voicebanks_dir()
@@ -320,6 +319,19 @@ fn index_folder(root: &Path) -> Result<crate::vocal_synth::VoicebankIndex, Strin
 mod tests {
     use super::*;
     use crate::project_files::content::tests::Temp;
+
+    #[test]
+    fn vocal_repeated_import_taps_do_not_emit_failure_over_success() {
+        let tmp = Temp::new("vocal-busy-import");
+        let mut files = ProjectFiles::on_disk(&tmp.0);
+        let (_tx, rx) = std::sync::mpsc::sync_channel(1);
+        files.voicebank_import = Some(rx);
+        files.register_voicebank_folder(&tmp.0);
+        files.voicebank_imported(Path::new("again.zip"), Vec::new());
+        assert!(files.message.is_none());
+        assert!(files.voicebank_import.is_some());
+        assert!(files.flash.is_none());
+    }
 
     #[test]
     fn vocal_import_completion_updates_only_the_still_selected_bank_name() {

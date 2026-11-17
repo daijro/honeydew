@@ -22,6 +22,8 @@ pub struct State {
     /// The takes being recorded (the app sets them each frame): a roll on one's clip shows it live
     /// ([`RollOptions::recording`]).
     pub(crate) takes: Vec<LiveTake>,
+    /// Metadata inspected in the header. Does not activate a nonexistent bank renderer.
+    voicebank_labels: HashMap<usize, String>,
 }
 
 impl State {
@@ -32,6 +34,34 @@ impl State {
             (self.rolls.entry(channel)).or_insert_with(|| PianoRoll::for_channel(song, channel));
         roll.open_generate(ctx);
     }
+}
+
+/// Compact circular actions above the native dark piano-roll tools.
+fn vocal_round_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    hint: &str,
+    selected: bool,
+    enabled: bool,
+) -> bool {
+    let fill = if selected {
+        egui::Color32::from_rgb(25, 89, 96)
+    } else {
+        egui::Color32::from_rgb(39, 45, 62)
+    };
+    ui.add_enabled(
+        enabled,
+        egui::Button::new(label)
+            .min_size(egui::vec2(30.0, 30.0))
+            .corner_radius(egui::CornerRadius::same(255))
+            .fill(fill)
+            .stroke(egui::Stroke::new(
+                1.0,
+                egui::Color32::from_rgb(116, 255, 235),
+            )),
+    )
+    .on_hover_text(hint)
+    .clicked()
 }
 
 /// Draws the piano roll of `channel`'s note lane in `app.regions.editor`; back to the playlist once the channel is gone
@@ -50,7 +80,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     }
     let mut editor = app.regions.editor;
     if is_vocal {
-        let height = app.cx.m.u(2.1).max(48.0);
+        let height = app.cx.m.u(3.0).max(88.0);
         let toolbar = egui::Rect::from_min_max(
             editor.min,
             egui::pos2(editor.right(), (editor.top() + height).min(editor.bottom())),
@@ -60,60 +90,78 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         let mut import = false;
         let mut toggle_pitch = false;
         let mut reset_pitch = false;
-        ui.scope_builder(egui::UiBuilder::new().max_rect(toolbar), |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.strong("VOCAL SYNTH  /  EDIT");
-                toggle_pitch = ui
-                    .selectable_label(roll.pitch_draw_enabled, "〽 PITCH DRAW")
-                    .on_hover_text("Enable to draw or bend pitch points directly on notes")
-                    .clicked();
-                if ui
-                    .add_enabled(!importing, egui::Button::new("＋ Import Voicebank"))
-                    .clicked()
-                {
-                    import = true;
-                }
-                if importing {
-                    ui.spinner();
-                    ui.weak("Indexing voicebank…");
-                }
-                reset_pitch = ui
-                    .button("FLATTEN BENDS")
-                    .on_hover_text("Reset selected notes to their key pitch; preserve lyrics")
-                    .clicked();
-                ui.weak("Cyan nodes · cents relative to note · dry PCM preview");
-                ui.weak("MY VOICEBANKS");
-                if banks.is_empty() {
-                    ui.weak("No banks imported");
-                } else {
-                    for bank in banks {
-                        ui.menu_button(
-                            format!("{} · {} aliases", bank.name, bank.entries.len()),
-                            |ui| {
-                                ui.weak(if bank.has_license_document {
-                                    "License file found — verify its terms"
-                                } else {
-                                    "License unverified; do not redistribute samples"
-                                });
-                                ui.separator();
-                                ui.weak("Metadata browser · sample singing is not available yet");
-                                egui::ScrollArea::vertical().max_height(240.0).show_rows(
-                                    ui,
-                                    24.0,
-                                    bank.entries.len(),
-                                    |ui, rows| {
-                                        for entry in &bank.entries[rows] {
-                                            ui.horizontal(|ui| {
-                                                ui.strong(&entry.alias);
-                                                ui.weak(&entry.filename);
-                                            });
-                                        }
-                                    },
-                                );
-                            },
-                        );
+        let selected = state.voicebank_labels.entry(channel).or_default();
+        let ink = egui::Color32::from_rgb(116, 255, 235);
+        ui.painter()
+            .rect_filled(toolbar, 0.0, egui::Color32::from_rgb(27, 31, 46));
+        ui.scope_builder(egui::UiBuilder::new().max_rect(toolbar.shrink(4.0)), |ui| {
+            ui.visuals_mut().override_text_color = Some(egui::Color32::from_rgb(232, 236, 244));
+            ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::from_rgb(39, 45, 62);
+            ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::from_rgb(52, 62, 80);
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    // Neutral profile, never a bundled singer's proprietary portrait.
+                    let (avatar, _) =
+                        ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
+                    ui.painter().circle_filled(
+                        avatar.center(),
+                        16.0,
+                        egui::Color32::from_rgb(44, 55, 70),
+                    );
+                    ui.painter()
+                        .circle_stroke(avatar.center(), 15.0, egui::Stroke::new(1.0, ink));
+                    ui.painter().text(
+                        avatar.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "♪",
+                        egui::FontId::proportional(22.0),
+                        ink,
+                    );
+                    let title = if selected.is_empty() {
+                        "Default voice"
+                    } else {
+                        selected.as_str()
+                    };
+                    egui::ComboBox::from_id_salt(("vocal-bank-header", channel))
+                        .width((toolbar.width() - 160.0).clamp(90.0, 340.0))
+                        .selected_text(title)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(selected, String::new(), "Default voice");
+                            for bank in banks {
+                                ui.selectable_value(selected, bank.name.clone(), &bank.name);
+                            }
+                            ui.separator();
+                            ui.weak(
+                                "Imported banks are indexed only; default audio remains active.",
+                            );
+                        });
+                    ui.label(format!("{:.0} BPM", app.song.tempo_bpm));
+                });
+                ui.horizontal(|ui| {
+                    toggle_pitch = vocal_round_button(
+                        ui,
+                        "⌁",
+                        "Pitch Draw: edit cyan pitch nodes",
+                        roll.pitch_draw_enabled,
+                        true,
+                    );
+                    reset_pitch = vocal_round_button(
+                        ui,
+                        "—",
+                        "Flatten selected pitch bends; keep lyrics",
+                        false,
+                        true,
+                    );
+                    import = vocal_round_button(ui, "+", "Import voicebank", false, !importing);
+                    if importing {
+                        ui.spinner();
                     }
-                }
+                    ui.label(
+                        egui::RichText::new("Default audio · lyrics are labels")
+                            .small()
+                            .color(ink),
+                    );
+                });
             });
         });
         if toggle_pitch {

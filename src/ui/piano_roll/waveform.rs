@@ -40,7 +40,6 @@ impl Waveforms {
                     .iter()
                     .find(|n| n.pos == *pos && n.key == *key)
                 {
-                    data.lyric.hash(&mut hash);
                     for value in [data.dynamics, data.breathiness, data.formant] {
                         value.to_bits().hash(&mut hash);
                     }
@@ -202,6 +201,25 @@ fn render(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn vocal_lyrics_do_not_change_the_default_voice_waveform() {
+        let params = [1.0, 0.5, 0.08, 0.5, 0.0, 0.35, 0.0, 0.0];
+        let mut data = VocalNoteState {
+            pos: 0,
+            key: 60,
+            lyric: String::new(),
+            dynamics: 0.5,
+            breathiness: 0.0,
+            formant: 0.5,
+            pitch: Vec::new(),
+        };
+        let reference = render(60, 255, 800, &params, Some(&data));
+        for lyric in ["hello", "あ", "bonjour", "你好"] {
+            data.lyric = lyric.into();
+            assert_eq!(render(60, 255, 800, &params, Some(&data)), reference);
+        }
+    }
+
     #[test]
     fn vocal_waveform_is_measured_and_respects_silence() {
         let params = [1.0, 0.5, 0.08, 0.5, 0.0, 0.35, 0.0, 0.0];
