@@ -35,6 +35,7 @@ pub mod theme;
 pub mod token_map;
 pub mod ui;
 pub mod versions;
+pub mod vocal_synth;
 pub mod zip;
 // In-app updates and the sound library's download (#66); the web is always current.
 #[cfg(not(target_arch = "wasm32"))]

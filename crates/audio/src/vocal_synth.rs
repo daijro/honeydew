@@ -105,6 +105,7 @@ impl Voice {
 /// Glide, Vibrato Rate, Vibrato Depth, and Vowel (a/i/u/e/o).
 pub struct VocalSynth {
     params: [f32; 8],
+    pitch_bend_ratio: f32,
     voices: [Voice; VOICES],
     age: u64,
 }
@@ -113,6 +114,7 @@ impl VocalSynth {
     pub fn new(_sample_rate: f32) -> Self {
         Self {
             params: [1.0, 0.5, 0.08, 0.5, 0.0, 0.35, 0.0, 0.0],
+            pitch_bend_ratio: 1.0,
             voices: [Voice::new(); VOICES],
             age: 0,
         }
@@ -192,7 +194,8 @@ impl VocalSynth {
         } else {
             0.0
         };
-        let frequency = (voice.pitch_hz * (1.0 + vib)).clamp(30.0, sample_rate * 0.4);
+        let frequency = (voice.pitch_hz * self.pitch_bend_ratio * (1.0 + vib))
+            .clamp(30.0, sample_rate * 0.4);
         voice.vibrato_phase = (voice.vibrato_phase
             + std::f32::consts::TAU * vibrato_rate * 10.0 / sample_rate)
             .rem_euclid(std::f32::consts::TAU);
@@ -221,6 +224,13 @@ impl Instrument for VocalSynth {
 
     fn note_on(&mut self, key: u8, velocity: f32, _pan: f32) {
         self.start(key, velocity);
+    }
+
+    fn set_controller(&mut self, index: usize, value: f32) {
+        if index == 4 {
+            let semitones = (value.clamp(0.0, 1.0) * 2.0 - 1.0) * 2.0;
+            self.pitch_bend_ratio = 2.0f32.powf(semitones / 12.0);
+        }
     }
 
     fn note_off(&mut self, key: u8) {
@@ -300,6 +310,17 @@ mod tests {
             synth.process(&mut left, &mut right, context(48_000.0));
         }
         assert!(synth.voices.iter().all(|voice| !voice.active));
+    }
+
+    #[test]
+    fn pitch_bend_controller_maps_the_normalized_range_to_two_semitones() {
+        let mut synth = VocalSynth::new(48_000.0);
+        synth.set_controller(4, 1.0);
+        assert!((synth.pitch_bend_ratio - 2.0f32.powf(2.0 / 12.0)).abs() < 1e-6);
+        synth.set_controller(4, 0.5);
+        assert!((synth.pitch_bend_ratio - 1.0).abs() < 1e-6);
+        synth.set_controller(4, 0.0);
+        assert!((synth.pitch_bend_ratio - 2.0f32.powf(-2.0 / 12.0)).abs() < 1e-6);
     }
 
     #[test]

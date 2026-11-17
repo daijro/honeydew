@@ -55,6 +55,7 @@ mod themes;
 pub use soundfonts::{SF2_EXT, SFZ_EXT, SOUNDFONT_EXTS, SOUNDFONTS_FOLDER};
 pub(crate) use soundfonts::{in_library, in_user_folder, is_sfz, is_soundfont};
 mod samples;
+mod voicebanks;
 pub use samples::{RECORDINGS_FOLDER, SAMPLE_EXTS, SAMPLES_FOLDER};
 pub(crate) mod content;
 #[cfg(not(target_arch = "wasm32"))]
@@ -79,7 +80,7 @@ pub use archive::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use samples::make_user_folders;
-pub use samples::{INSTRUMENTS_FOLDER, MIDI_FOLDER, MY_FOLDERS, TRACKS_FOLDER};
+pub use samples::{INSTRUMENTS_FOLDER, MIDI_FOLDER, MY_FOLDERS, TRACKS_FOLDER, VOICEBANKS_FOLDER};
 #[cfg(not(target_arch = "wasm32"))]
 mod import;
 #[cfg(not(target_arch = "wasm32"))]
@@ -185,6 +186,8 @@ pub enum Pick {
     Midi,
     /// The theme creator's `Import`: a theme JSON file ([`ProjectFiles::pick_theme`]).
     Theme,
+    /// A UTAU/OpenUtau-compatible voicebank archive (`.zip` or `.uar`).
+    Voicebank,
 }
 
 impl Pick {
@@ -216,6 +219,7 @@ impl Pick {
             Pick::Sample => &SAMPLE_EXTS,
             Pick::Midi => FileKind::Midi.extensions(),
             Pick::Theme => &["json"],
+            Pick::Voicebank => &["zip", "uar"],
         }
     }
 }
@@ -450,6 +454,9 @@ pub struct ProjectFiles {
     pub send: bool,
     /// The MIDI file `Import MIDI Tracks`' picker picked, until [`Self::take_midi_tracks`] hands it over.
     midi_tracks: Option<MidiTracks>,
+    /// The voicebank metadata indexed in `My Voicebanks`; archives themselves stay in user storage.
+    voicebanks: Vec<crate::vocal_synth::VoicebankIndex>,
+    voicebanks_loaded: bool,
     /// The last [`RECENT_STATE`] write, on its worker: the next waits for it, so the last load's lands last.
     #[cfg(not(target_arch = "wasm32"))]
     autosave: Option<std::thread::JoinHandle<()>>,
@@ -566,6 +573,8 @@ impl ProjectFiles {
             midi_note_effects: None,
             send: false,
             midi_tracks: None,
+            voicebanks: Vec::new(),
+            voicebanks_loaded: false,
             #[cfg(not(target_arch = "wasm32"))]
             autosave: None,
             recent_touched: false,
@@ -585,6 +594,30 @@ impl ProjectFiles {
     /// Asks for a project to open; [`ProjectFiles::update`] returns it once it is read.
     pub fn open(&mut self) {
         self.open_pick(Pick::Song);
+    }
+
+    /// Opens the system or browser picker for a UTAU `.zip` / `.uar` bank; the index and original archive go to
+    /// [`VOICEBANKS_FOLDER`].
+    pub fn pick_voicebank(&mut self) {
+        self.open_pick(Pick::Voicebank);
+    }
+
+    /// The imported banks indexed in `My Voicebanks`; its small JSON index is restored on first use. Samples remain
+    /// user-owned archives in that folder and are not embedded in projects.
+    pub fn voicebanks(&mut self) -> &[crate::vocal_synth::VoicebankIndex] {
+        if !self.voicebanks_loaded {
+            self.voicebanks_loaded = true;
+            let manifest = self
+                .user_dir()
+                .map_or_else(|| PathBuf::from(VOICEBANKS_FOLDER), |user| user.join(VOICEBANKS_FOLDER))
+                .join("index.json");
+            if let Ok(bytes) = self.read_user_file(&manifest)
+                && let Ok(index) = serde_json::from_slice(&bytes)
+            {
+                self.voicebanks = index;
+            }
+        }
+        &self.voicebanks
     }
 
     /// The MIDI file [`Self::midi_picked`] took, once.
@@ -1079,6 +1112,10 @@ impl ProjectFiles {
                         }
                         Some(Pick::Theme) => {
                             self.theme_pick = Some((path, bytes));
+                            None
+                        }
+                        Some(Pick::Voicebank) => {
+                            self.voicebank_imported(&path, bytes);
                             None
                         }
                         Some(Pick::Song) | None => {

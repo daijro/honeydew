@@ -2197,6 +2197,47 @@ fn sections_are_saved_apart_and_a_song_with_none_writes_as_before() {
 }
 
 #[test]
+fn vocal_lyrics_and_pitch_curves_round_trip_in_a_clip_extension() {
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::VocalSynth));
+    let clip = song.channels[1].lanes[0].add_clip(0, 4.0);
+    clip.events.push(Event::Note {
+        pos: 32,
+        len_beats: 1.0,
+        key: 60,
+        velocity: Event::DEFAULT_VELOCITY,
+        pan: Event::DEFAULT_PAN,
+        slide: false,
+    });
+    clip.file.vocal_notes.push(crate::song::VocalNoteState {
+        pos: 32,
+        key: 60,
+        lyric: "la".into(),
+        dynamics: 0.7,
+        breathiness: 0.2,
+        formant: 0.6,
+        pitch: vec![
+            crate::song::VocalPitchPoint {
+                offset: 0.0,
+                cents: 0.0,
+            },
+            crate::song::VocalPitchPoint {
+                offset: 0.65,
+                cents: 42.0,
+            },
+            crate::song::VocalPitchPoint {
+                offset: 1.0,
+                cents: 0.0,
+            },
+        ],
+    });
+    let bytes = crate::flm::write(&song).unwrap();
+    assert_eq!(bytes.windows(4).filter(|w| *w == b"HDVo").count(), 1);
+    let read = crate::flm::read(&bytes).unwrap();
+    assert_eq!(read.channels[1].lanes[0].clips[0].file.vocal_notes, song.channels[1].lanes[0].clips[0].file.vocal_notes);
+}
+
+#[test]
 fn a_collapsed_track_is_saved_apart_and_a_song_with_none_collapsed_writes_as_before() {
     // An empty `HDCo` in the track's `TRKH` (#83), which FL Studio Mobile skips as an unknown chunk.
     let mut song = Song::default();

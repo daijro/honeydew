@@ -1970,6 +1970,7 @@ dependencies = [
  "citrus",
  "crc32fast",
  "eframe",
+ "encoding_rs",
  "getrandom 0.3.4",
  "honeydew-audio",
  "jni 0.21.1",

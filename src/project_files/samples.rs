@@ -25,11 +25,13 @@ pub const RECORDINGS_FOLDER: &str = "My Recordings";
 pub const SAMPLE_EXTS: [&str; 4] = ["wav", "flac", "mp3", "ogg"];
 /// The user folder MIDI files go to.
 pub const MIDI_FOLDER: &str = "My MIDI";
+/// User-imported UTAU/OpenUtau-style voicebank archives.
+pub const VOICEBANKS_FOLDER: &str = "My Voicebanks";
 /// The user folders instruments (DirectWave programs, `.dwp`) and audio renders go to.
 pub const INSTRUMENTS_FOLDER: &str = "My Instruments";
 pub const TRACKS_FOLDER: &str = "My Tracks";
 /// The user folder's own folders, made at every start where they are missing ([`make_user_folders`]).
-pub const MY_FOLDERS: [&str; 11] = [
+pub const MY_FOLDERS: [&str; 12] = [
     CHORD_SETS_FOLDER,
     DRUMSETS_FOLDER,
     INSTRUMENTS_FOLDER,
@@ -41,6 +43,7 @@ pub const MY_FOLDERS: [&str; 11] = [
     SONGS_FOLDER,
     SOUNDFONTS_FOLDER,
     TRACKS_FOLDER,
+    VOICEBANKS_FOLDER,
 ];
 /// The flash after an `Import`.
 pub const IMPORTED: &str = "Successfully imported";
