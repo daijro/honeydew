@@ -212,6 +212,8 @@ pub enum PianoRollAction {
     QuietEdit,
     /// Lyric storage only: never rebuild or invoke the synthesis engine.
     LyricEdited,
+    /// Finish one lyric gesture without a synthesis rebuild.
+    LyricCommitted,
     /// A completed edit that re-syncs whatever it changed, with an undo step only if it changed the song: a graph-lane
     /// touch that changed nothing (its own undo re-syncs), Quantize, Humanize and Snap to scale.
     Resync,
@@ -353,6 +355,7 @@ pub struct PianoRoll {
     lyric_dirty: bool,
     lyric_focus_pending: bool,
     pub(crate) pitch_draw_enabled: bool,
+    pub(crate) lyric_bar_enabled: bool,
     pub(crate) simple_mode: bool,
     pub(crate) waveform_enabled: bool,
     pub(crate) waveform_offset_y: u8,
@@ -717,6 +720,7 @@ impl PianoRoll {
             lyric_dirty: false,
             lyric_focus_pending: false,
             pitch_draw_enabled: false,
+            lyric_bar_enabled: true,
             simple_mode: false,
             waveform_enabled: true,
             waveform_offset_y: 5,
@@ -1025,6 +1029,7 @@ impl PianoRoll {
                     ui.vertical(|ui| {
                         ui.label("⠿ LYRIC / PHONEME")
                             .on_hover_text("Drag this panel by its header or empty background");
+                        #[cfg(not(target_os = "android"))]
                         let mut response = ui.add(
                             egui::TextEdit::singleline(&mut text)
                                 .id(field)
@@ -1032,6 +1037,25 @@ impl PianoRoll {
                                 .char_limit(4096)
                                 .desired_width(150.0),
                         );
+                        // A native EditText is the sole Android IME owner. Do not also
+                        // create an egui TextEdit/IME session behind its dialog.
+                        #[cfg(target_os = "android")]
+                        let mut response = ui
+                            .push_id(field, |ui| {
+                                ui.add(
+                                    egui::Button::new(if text.is_empty() {
+                                        "Tap to enter lyric"
+                                    } else {
+                                        "Edit lyric…"
+                                    })
+                                    .min_size(vec2(150.0, 40.0)),
+                                )
+                            })
+                            .inner;
+                        #[cfg(target_os = "android")]
+                        if response.clicked() {
+                            response.request_focus();
+                        }
                         if self.lyric_focus_pending {
                             response.request_focus();
                         }
@@ -1063,6 +1087,10 @@ impl PianoRoll {
                 self.lyric_dirty = true;
                 actions.push(PianoRollAction::LyricEdited);
             }
+        }
+        if (next || done) && self.lyric_dirty {
+            actions.push(PianoRollAction::LyricCommitted);
+            self.lyric_dirty = false;
         }
         if next && !done {
             if let Some((np, nk, lyric)) = self.clip(song).and_then(|clip| {
@@ -1098,9 +1126,6 @@ impl PianoRoll {
             }
         }
         if done {
-            if self.lyric_dirty {
-                actions.push(PianoRollAction::LyricEdited);
-            }
             self.lyric_dirty = false;
             self.lyric_focus_pending = false;
         } else if !next {
@@ -1124,10 +1149,15 @@ impl PianoRoll {
         let m = cx.m;
         let u = m.u(1.0);
         let bpb = song.time_sig.bar_beats();
-        let ruler = Rect::from_x_y_ranges(
-            rect.x_range(),
-            rect.top()..=rect.top() + timeline::ruler_h(m),
-        );
+        let lyric_bar = (self.lyric_bar_enabled
+            && song
+                .channels
+                .get(self.channel)
+                .is_some_and(crate::song::vocal_editor))
+        .then(|| rect.with_max_y((rect.top() + m.u(1.2)).min(rect.bottom())));
+        let ruler_top = lyric_bar.map_or(rect.top(), |bar| bar.bottom());
+        let ruler =
+            Rect::from_x_y_ranges(rect.x_range(), ruler_top..=ruler_top + timeline::ruler_h(m));
         // Below the ruler: the grid, and under it the graph lane while it shows, sized by the editor's height below
         // its top window margin (0 here: the whole rect, ruler included).
         let simple = self.simple_mode
@@ -1176,7 +1206,7 @@ impl PianoRoll {
 
         // The selection follows the clip; an outside change (another clip, undo) drops it.
         if self.waveform_enabled
-            && banaforge_audio::vocal_synth::DefaultVoice.is_ready()
+            && !opts.playing
             && let Some(channel) = song.channels.get(self.channel)
             && let Some(module) = channel.rack.modules.iter().find(|m| m.type_id == 53)
             && let Some(clip) = channel
@@ -1357,6 +1387,41 @@ impl PianoRoll {
             color,
             cx,
         );
+        if let Some(bar) = lyric_bar {
+            let painter = ui.painter_at(bar.with_min_x(grid.left()));
+            painter.rect_filled(bar, 0.0, Color32::from_rgb(29, 34, 40));
+            for event in events {
+                if let Some((pos, _, key)) = note(event)
+                    && let Some(data) = vocal_states.get(&(pos as u32, key))
+                    && let Some(r) = g.note_rect(event)
+                {
+                    let cell = Rect::from_x_y_ranges(r.x_range(), bar.y_range());
+                    if cell.intersects(painter.clip_rect()) {
+                        painter.vline(
+                            cell.left(),
+                            bar.y_range(),
+                            egui::Stroke::new(px, Color32::from_gray(66)),
+                        );
+                        painter
+                            .with_clip_rect(painter.clip_rect().intersect(cell.shrink(px)))
+                            .text(
+                                cell.left_center() + vec2(m.u(0.12), 0.0),
+                                egui::Align2::LEFT_CENTER,
+                                &data.lyric,
+                                egui::FontId::proportional(m.u(0.42)),
+                                Color32::from_rgb(221, 231, 225),
+                            );
+                    }
+                }
+            }
+            ui.painter_at(bar.with_max_x(grid.left())).text(
+                pos2(rect.left() + px * 2.0, bar.center().y),
+                egui::Align2::LEFT_CENTER,
+                "LYRICS",
+                egui::FontId::proportional(m.u(0.32)),
+                Color32::from_gray(175),
+            );
+        }
         // The playhead line's slot: over the notes, under their handles, the marquee and the floating row.
         let line_slot = grid_painter.add(egui::Shape::Noop);
         if !pitch_locked {
@@ -1504,6 +1569,38 @@ impl PianoRoll {
         self.menus(ui, id, (snap_center, rect), song, &mut actions, cx);
         // After the menus, which take Escape first.
         self.keys(ui, grid, cx, song, &mut actions);
+        if let Some(bar) = lyric_bar {
+            let response = ui.interact(
+                bar.with_min_x(grid.left()),
+                id.with("lyric bar"),
+                Sense::click(),
+            );
+            if response.clicked()
+                && let Some(pointer) = response.interact_pointer_pos()
+            {
+                let picked = self.clip(song).and_then(|clip| {
+                    clip.events.iter().find_map(|event| {
+                        let (pos, _, key) = note(event)?;
+                        let r = g.note_rect(event)?;
+                        if !r.x_range().contains(pointer.x) {
+                            return None;
+                        }
+                        let text = clip
+                            .file
+                            .vocal_notes
+                            .iter()
+                            .find(|n| n.pos == pos as u32 && n.key == key)
+                            .map_or_else(String::new, |n| n.lyric.clone());
+                        Some((pos as u32, key, text))
+                    })
+                });
+                if let Some(picked) = picked {
+                    self.lyric_edit = Some(picked);
+                    self.lyric_focus_pending = true;
+                    self.lyric_dirty = false;
+                }
+            }
+        }
         self.lyric_editor(ui, grid, song, &mut actions);
         // This frame's own edits are not outside changes.
         let events = self.clip(song).map_or(&[][..], |c| &c.events);
@@ -3484,6 +3581,7 @@ fn paint_marks(
 }
 
 /// Choose the higher WCAG contrast against the actual note fill (linear-light luminance).
+#[cfg(test)]
 fn lyric_ink(fill: Color32) -> Color32 {
     let linear = |value: u8| {
         let value = f32::from(value) / 255.0;
@@ -3596,30 +3694,6 @@ fn paint_notes(
                 && let Some((pos, _, key)) = note(e)
                 && let Some(data) = vocal_notes.get(&(pos as u32, key))
             {
-                if !data.lyric.is_empty() && r.width() >= m.u(0.75) && r.height() >= m.u(0.55) {
-                    let label = Rect::from_min_max(
-                        r.min + vec2(px, px),
-                        pos2(r.right() - px, r.top() + r.height() * 0.53),
-                    );
-                    painter.rect_filled(label, 1.0, Color32::from_rgb(8, 17, 29));
-                    painter.rect_stroke(
-                        label,
-                        1.0,
-                        egui::Stroke::new(px, Color32::from_rgb(116, 255, 235)),
-                        egui::StrokeKind::Inside,
-                    );
-                    let ink = lyric_ink(Color32::from_rgb(8, 17, 29));
-                    let at = pos2(r.left() + m.u(0.12), r.top() + r.height() * 0.27);
-                    painter
-                        .with_clip_rect(visible.intersect(r.shrink(px)))
-                        .text(
-                            at,
-                            egui::Align2::LEFT_CENTER,
-                            &data.lyric,
-                            egui::FontId::proportional((r.height() * 0.38).clamp(8.0, m.u(0.42))),
-                            ink,
-                        );
-                }
                 if !simple && data.pitch.len() >= 2 && r.width() >= px * 4.0 {
                     overlays.push((r, *data));
                 }

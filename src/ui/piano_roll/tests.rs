@@ -1073,7 +1073,9 @@ mod component {
         }
 
         fn with_song(song: Song) -> Self {
-            let roll = PianoRoll::for_channel(&song, 1);
+            let mut roll = PianoRoll::for_channel(&song, 1);
+            // Legacy coordinate tests exercise the grid without the optional header lane.
+            roll.lyric_bar_enabled = false;
             let mut rig = Self {
                 ctx: Context::default(),
                 roll,
@@ -3418,6 +3420,33 @@ mod component {
                 .lyric,
             text
         );
+    }
+
+    #[test]
+    fn vocal_top_lyric_bar_is_separate_from_notes_and_can_be_hidden() {
+        let mut rig = Rig::new(vec![n(0, 128.0, 70)]);
+        rig.song.channels[1].rack.add(53);
+        rig.song.channels[1].lanes[0].clips[0]
+            .file
+            .vocal_notes
+            .push(crate::song::VocalNoteState {
+                pos: 0,
+                key: 70,
+                lyric: "teto".into(),
+                dynamics: 0.5,
+                breathiness: 0.0,
+                formant: 0.5,
+                pitch: Vec::new(),
+            });
+        rig.roll.lyric_bar_enabled = true;
+        rig.frame(vec![]);
+        assert!(rig.text("LYRICS").is_some());
+        let lyric = rig.text("teto").expect("text in dedicated header");
+        assert!(lyric.y < 48.0);
+        rig.roll.lyric_bar_enabled = false;
+        rig.frame(vec![]);
+        assert!(rig.text("LYRICS").is_none());
+        assert!(rig.text("teto").is_none(), "never overlay lyrics on notes");
     }
 
     #[test]

@@ -142,7 +142,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
                             }
                             ui.separator();
                             ui.weak(
-                                "Imported banks are indexed only; no singer renderer is ready.",
+                                "Imported banks are indexed only; playback uses the procedural voice.",
                             );
                         });
                     ui.label(format!("{:.0} BPM", app.song.tempo_bpm));
@@ -169,7 +169,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
                         ui.spinner();
                     }
                     ui.label(
-                        egui::RichText::new("Silent default · lyrics only")
+                        egui::RichText::new("Procedural preview · not bank audio")
                             .small()
                             .color(ink),
                     );
@@ -187,6 +187,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         }
         editor.min.y = toolbar.bottom();
     }
+    roll.lyric_bar_enabled = app.settings.vocal_lyric_bar_enabled;
     roll.simple_mode = app.settings.vocal_simple_mode;
     roll.waveform_enabled = app.settings.vocal_waveform_enabled;
     roll.waveform_offset_y = app.settings.vocal_waveform_offset_y;
@@ -220,7 +221,8 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         match action {
             PianoRollAction::SongEdited { final_edit } => app.song_edited(final_edit),
             PianoRollAction::QuietEdit => app.quiet_edited(),
-            PianoRollAction::LyricEdited => {
+            PianoRollAction::LyricEdited => app.edit = app.edit.max(Some(super::SongEdit::Param)),
+            PianoRollAction::LyricCommitted => {
                 app.edit = app.edit.max(Some(super::SongEdit::Metadata))
             }
             PianoRollAction::Resync => app.resync_edited(),

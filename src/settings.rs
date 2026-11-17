@@ -139,6 +139,8 @@ const DEFAULT_SOUND_MODE: u8 = 3;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    #[serde(rename = "vocalSynth.lyricBarEnabled")]
+    pub vocal_lyric_bar_enabled: bool,
     #[serde(rename = "vocalSynth.waveformEnabled")]
     pub vocal_waveform_enabled: bool,
     #[serde(rename = "vocalSynth.waveformOffsetY")]
@@ -382,6 +384,7 @@ impl Default for Settings {
     /// (the fallback theme), `100 %` and `Animation` `Full`. The metronome level is half way; the drum pads are locked.
     fn default() -> Self {
         Self {
+            vocal_lyric_bar_enabled: true,
             vocal_waveform_enabled: true,
             vocal_waveform_offset_y: 5,
             vocal_simple_mode: false,
@@ -827,6 +830,7 @@ mod tests {
     fn changed() -> Settings {
         let d = Settings::default();
         Settings {
+            vocal_lyric_bar_enabled: false,
             vocal_waveform_enabled: false,
             vocal_waveform_offset_y: 12,
             vocal_simple_mode: true,
@@ -1180,6 +1184,10 @@ mod tests {
                 "soundsOverMobileData",
                 "theme",
                 "uiscalefactor",
+                "vocalSynth.lyricBarEnabled",
+                "vocalSynth.simpleMode",
+                "vocalSynth.waveformEnabled",
+                "vocalSynth.waveformOffsetY",
                 "whatsNewSeen",
                 "writeTagsOnExport"
             ]

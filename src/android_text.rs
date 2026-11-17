@@ -104,10 +104,13 @@ pub fn reset() {
 
 #[cfg(target_os = "android")]
 pub fn begin_frame(ctx: &Context) {
-    let mut editor = lock_editor();
-    editor.seen = false;
+    let enter = {
+        let mut editor = lock_editor();
+        editor.seen = false;
+        editor.enter.take()
+    };
     if ctx.input(|i| i.focused)
-        && let Some(field) = editor.enter.take()
+        && let Some(field) = enter
         && ctx.memory(|m| m.has_focus(field))
     {
         ctx.input_mut(|i| {
@@ -133,8 +136,11 @@ pub fn edit(response: &mut Response, value: &mut String, limit: usize) {
         .as_ref()
         .is_some_and(|(_, id, _)| *id == response.id)
     {
-        editor.seen = focused;
-        if focused && let Some(result) = editor.take(response.id) {
+        // A native dialog legitimately takes focus away from NativeActivity.
+        // Keep it alive while the owning field is still drawn; cancelling on
+        // focus loss dismisses/reopens the IME while the user is typing.
+        editor.seen = true;
+        if let Some(result) = editor.take(response.id) {
             if let Some(text) = result {
                 *value = text.chars().take(limit).collect();
                 response.mark_changed();
@@ -182,9 +188,10 @@ pub fn edit(response: &mut Response, value: &mut String, limit: usize) {
 pub fn end_frame(ctx: &Context) {
     // The native dialog owns the IME; eframe must not open a second keyboard on NativeActivity's surface.
     ctx.output_mut(|o| o.ime = None);
+    let focused = ctx.memory(|m| m.focused());
     let serial = {
         let mut editor = lock_editor();
-        if editor.last_focus != ctx.memory(|m| m.focused()) {
+        if editor.last_focus != focused {
             editor.last_focus = None;
         }
         if editor.active.is_some() && !editor.seen {
