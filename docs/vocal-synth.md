@@ -284,3 +284,40 @@ Japanese title, kana and terms filename was independently checked.
 Resolving `あ` to the correctly decoded WAV path is not decoding, scheduling,
 stretching or singing that sample. Procedural Vocal Synth audio remains the only
 renderer. No claim is made that this patch passes a Teto playback/device test.
+
+## Default voice / header / preparation follow-up
+
+- Lyrics are now annotations for the procedural voice: no last-vowel guessing,
+  no alternate voice for a word/language, and no import-triggered singer activation.
+  Waveform preview uses that same policy and no longer invalidates for lyric-only edits.
+- Repeated bank-selection taps while the import worker is busy are ignored instead
+  of generating an Import failed dialog over a later successful registration.
+  The success toast is shorter, states that default audio is unchanged, and does
+  not try to display the entire long bank name across another dialog.
+- The vocal-only piano-roll header uses dark slate, a neutral circular profile
+  icon, a bank metadata dropdown, adjacent BPM, and circular Pitch Draw / flatten /
+  import actions. Native piano-roll tools, grid, keyboard, note labels and manually
+  editable cyan nodes remain. The dropdown is explicitly a metadata choice, not
+  an unimplemented singer activation. User-owned profile images are not loaded yet.
+- `vocal_synth/preparation.rs` provides tested, pure OTO source/destination timing
+  landmarks and deterministic exact/kana/romaji-CV alias resolution. Unknown words
+  return no match; a Japanese CV bank does not acquire English G2P by guessing a vowel.
+  These helpers do not yet decode/schedule/resample/crossfade user sample audio.
+
+References inspected (no source code copied):
+
+- https://github.com/vocoder712/OpenUtauMobile — repository reports Apache-2.0;
+  `OpenUtau.Core/Classic/ResamplerItem.cs` separates phone timing and source OTO
+  landmarks before resampling, including preutterance, overlap, consonant and cutoff.
+- https://github.com/vocoder712/OpenUtauMobile/blob/master/OpenUtau.Core/Classic/WorldlineResampler.cs
+  delegates actual sample synthesis to Worldline; metadata parsing alone is not WORLD.
+- https://github.com/openutau/OpenUtau/blob/master/OpenUtau.Core/DefaultPhonemizer.cs
+  uses an alias/OTO lookup; language-specific phonemizers are additional components.
+- https://github.com/openutau/OpenUtau/blob/master/LICENSE.txt is MIT (not Apache-2.0).
+
+Remaining substantial synthesis work: worker-prepared sample decoding, a genuine
+pitch/formant-preserving resampler (WORLD/PSOLA or a separately audited equivalent),
+phrase pre-roll/overlap mixing, context-aware/multipitch aliases, word dictionaries,
+and unified automatic/manual pitch curves for rendered samples. Procedural glide,
+vibrato and formant controls already exist, but are not a singer-sample renderer.
+No claim is made that this follow-up implements that full synthesis pipeline.

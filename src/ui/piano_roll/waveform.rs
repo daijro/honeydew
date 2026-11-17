@@ -214,6 +214,7 @@ mod tests {
             pitch: Vec::new(),
         };
         let reference = render(60, 255, 800, &params, Some(&data));
+        assert_eq!(render(60, 255, 800, &params, None), reference);
         for lyric in ["hello", "あ", "bonjour", "你好"] {
             data.lyric = lyric.into();
             assert_eq!(render(60, 255, 800, &params, Some(&data)), reference);
