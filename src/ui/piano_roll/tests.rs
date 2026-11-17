@@ -4406,3 +4406,33 @@ fn vocal_lyric_ink_uses_the_higher_contrast_foreground() {
         Color32::BLACK
     );
 }
+
+#[test]
+fn vocal_paste_distributes_selected_notes_and_preserves_untargeted_lyrics() {
+    let mut lane = Lane::new(LaneKind::Notes);
+    let clip = lane.add_clip(0, 4.0);
+    clip.events = vec![n(0, 1.0, 60), n(128, 1.0, 62), n(256, 1.0, 64)];
+    super::distribute_lyrics(clip, &[true, false, true], (0, 60), "hel-lo world");
+    assert_eq!(clip.file.vocal_notes[0].lyric, "hel");
+    assert_eq!(clip.file.vocal_notes[1].lyric, "lo world");
+    assert_eq!(clip.file.vocal_notes[1].pos, 256);
+    super::distribute_lyrics(clip, &[], (128, 62), "か な");
+    assert_eq!(
+        clip.file
+            .vocal_notes
+            .iter()
+            .find(|n| n.key == 62)
+            .unwrap()
+            .lyric,
+        "か"
+    );
+    assert_eq!(
+        clip.file
+            .vocal_notes
+            .iter()
+            .find(|n| n.key == 64)
+            .unwrap()
+            .lyric,
+        "な"
+    );
+}

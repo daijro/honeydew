@@ -16,6 +16,29 @@ const VOWELS: [[f32; 3]; 5] = [
     [500.0, 1_000.0, 2_400.0], // o
 ];
 
+/// Prepared per-note controls, independent of module knobs. Vowel 0..4 is a/i/u/e/o;
+/// 255 leaves vowel selection to the rack. Dynamics 0.5 is unity.
+#[derive(Clone, Copy, Debug)]
+pub struct VocalExpression {
+    pub cents: f32,
+    pub dynamics: f32,
+    pub breathiness: f32,
+    pub formant: f32,
+    pub vowel: u8,
+}
+
+impl Default for VocalExpression {
+    fn default() -> Self {
+        Self {
+            cents: 0.0,
+            dynamics: 0.5,
+            breathiness: 0.0,
+            formant: 0.5,
+            vowel: 255,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct FormantCoefficients {
     feed: f32,
@@ -63,6 +86,10 @@ struct Voice {
     key: u8,
     velocity: f32,
     pan: [f32; 2],
+    expression: VocalExpression,
+    expression_pitch: f32,
+    expression_gain: f32,
+    target_pitch: f32,
     phase: f32,
     envelope: f32,
     age: u64,
@@ -81,6 +108,16 @@ impl Voice {
             key: 0,
             velocity: 0.0,
             pan: [1.0; 2],
+            expression: VocalExpression {
+                cents: 0.0,
+                dynamics: 0.5,
+                breathiness: 0.0,
+                formant: 0.5,
+                vowel: 255,
+            },
+            expression_pitch: 1.0,
+            expression_gain: 1.0,
+            target_pitch: 1.0,
             phase: 0.0,
             envelope: 0.0,
             age: 0,
@@ -152,6 +189,10 @@ impl VocalSynth {
         voice.velocity = velocity.clamp(0.0, 1.0);
         let pan = pan.clamp(0.0, 1.0);
         voice.pan = [(1.0 - pan) * 2.0, pan * 2.0].map(|gain| gain.min(1.0));
+        voice.expression = VocalExpression::default();
+        voice.expression_pitch = 1.0;
+        voice.expression_gain = 1.0;
+        voice.target_pitch = 1.0;
         voice.phase = 0.0;
         voice.envelope = 0.0;
         voice.age = self.age;
@@ -207,8 +248,13 @@ impl VocalSynth {
         } else {
             0.0
         };
+        let smoothing = (1.0 / (sample_rate * 0.003)).min(1.0);
+        voice.expression_pitch += (voice.target_pitch - voice.expression_pitch) * smoothing;
+        voice.expression_gain +=
+            (voice.expression.dynamics * 2.0 - voice.expression_gain) * smoothing;
         let frequency =
-            (voice.pitch_hz * self.pitch_bend_ratio * (1.0 + vib)).clamp(30.0, sample_rate * 0.4);
+            (voice.pitch_hz * voice.expression_pitch * self.pitch_bend_ratio * (1.0 + vib))
+                .clamp(30.0, sample_rate * 0.4);
         voice.vibrato_phase = (voice.vibrato_phase
             + std::f32::consts::TAU * vibrato_rate * 10.0 / sample_rate)
             .rem_euclid(std::f32::consts::TAU);
@@ -218,13 +264,14 @@ impl VocalSynth {
         let phase = voice.phase;
         let saw = 2.0 * phase - 1.0;
         let source = 0.82 * saw + brightness * 0.18 * (std::f32::consts::TAU * phase * 2.0).sin();
+        let breath = (breath + voice.expression.breathiness).clamp(0.0, 1.0);
         let noise = voice.noise_sample() * breath * 0.22;
         let input = source * (1.0 - breath * 0.55) + noise;
         let mut formants = 0.0;
         for (i, coefficient) in coefficients.iter().copied().enumerate() {
             formants += voice.formants[i].tick(input, coefficient) * [1.0, 0.68, 0.35][i];
         }
-        formants * voice.envelope * voice.velocity * 0.42
+        formants * voice.envelope * voice.velocity * voice.expression_gain * 0.42
     }
 }
 
@@ -240,6 +287,33 @@ impl Instrument for VocalSynth {
 
     fn note_on(&mut self, key: u8, velocity: f32, pan: f32) {
         self.start(key, velocity, pan);
+    }
+
+    fn set_vocal(&mut self, key: u8, mut expression: VocalExpression) {
+        if ![
+            expression.cents,
+            expression.dynamics,
+            expression.breathiness,
+            expression.formant,
+        ]
+        .iter()
+        .all(|v| v.is_finite())
+        {
+            return;
+        }
+        expression.cents = expression.cents.clamp(-1200.0, 1200.0);
+        expression.dynamics = expression.dynamics.clamp(0.0, 1.0);
+        expression.breathiness = expression.breathiness.clamp(0.0, 1.0);
+        expression.formant = expression.formant.clamp(0.0, 1.0);
+        if let Some(voice) = self
+            .voices
+            .iter_mut()
+            .filter(|v| v.active && !v.releasing && v.key == key)
+            .max_by_key(|v| v.age)
+        {
+            voice.expression = expression;
+            voice.target_pitch = 2.0f32.powf(expression.cents / 1200.0);
+        }
     }
 
     fn set_controller(&mut self, index: usize, value: f32) {
@@ -278,19 +352,32 @@ impl Instrument for VocalSynth {
             return;
         }
         let sample_rate = context.sample_rate.max(8_000.0);
-        let centers = VOWELS[(self.params[7] * 4.999) as usize];
-        let formant_scale = 2.0f32.powf((self.params[1] - 0.5) * 0.9);
-        let coefficients = std::array::from_fn(|i| {
-            let center = centers[i] * formant_scale;
-            let bandwidth = center * if i == 0 { 0.18 } else { 0.12 };
-            FormantCoefficients::new(center, bandwidth, sample_rate)
+        // At most eight coefficient sets per segment, never transcendental work per sample.
+        let coefficients: [[FormantCoefficients; 3]; VOICES] = std::array::from_fn(|voice| {
+            let expression = self.voices[voice].expression;
+            let vowel = if expression.vowel < 5 {
+                usize::from(expression.vowel)
+            } else {
+                (self.params[7] * 4.999) as usize
+            };
+            let centers = VOWELS[vowel];
+            let scale = 2.0f32.powf((self.params[1] + expression.formant - 1.0) * 0.9);
+            std::array::from_fn(|i| {
+                let center = centers[i] * scale;
+                FormantCoefficients::new(
+                    center,
+                    center * if i == 0 { 0.18 } else { 0.12 },
+                    sample_rate,
+                )
+            })
         });
         for (l, r) in left.iter_mut().zip(right) {
             for voice in 0..VOICES {
                 if !self.voices[voice].active {
                     continue;
                 }
-                let sample = self.voice_sample(voice, sample_rate, context.playing, coefficients);
+                let sample =
+                    self.voice_sample(voice, sample_rate, context.playing, coefficients[voice]);
                 *l += sample * self.voices[voice].pan[0];
                 *r += sample * self.voices[voice].pan[1];
             }
@@ -311,6 +398,32 @@ mod tests {
             start_beat: 0.0,
             playing: true,
         }
+    }
+
+    #[test]
+    fn per_note_expression_is_isolated_and_changes_the_audio() {
+        let mut synth = VocalSynth::new(48_000.0);
+        synth.note_on(60, 1.0, 0.5);
+        synth.note_on(64, 1.0, 0.5);
+        synth.set_vocal(
+            60,
+            VocalExpression {
+                cents: 1200.0,
+                dynamics: 0.0,
+                breathiness: 0.8,
+                formant: 0.2,
+                vowel: 1,
+            },
+        );
+        assert_eq!(synth.voices[0].target_pitch, 2.0);
+        assert_eq!(synth.voices[1].target_pitch, 1.0);
+        assert_eq!(synth.voices[1].expression.vowel, 255);
+        let mut left = [0.0; 512];
+        let mut right = [0.0; 512];
+        synth.process(&mut left, &mut right, context(48_000.0));
+        assert!(left.iter().all(|v| v.is_finite()));
+        assert!(synth.voices[0].expression_gain < 0.1);
+        assert_eq!(synth.voices[1].expression_gain, 1.0);
     }
 
     #[test]

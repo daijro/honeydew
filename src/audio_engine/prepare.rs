@@ -28,6 +28,11 @@ pub(super) enum Action {
         velocity: f32,
         pan: f32,
     },
+    Vocal {
+        instance_id: i32,
+        key: u8,
+        expression: honeydew_audio::vocal_synth::VocalExpression,
+    },
     NoteOff {
         instance_id: i32,
         key: u8,
@@ -211,6 +216,7 @@ pub(super) fn actions(
             )?;
         }
     }
+    super::vocal::actions(song, sample_rate, tempo_bpm, &mut actions)?;
     actions.sort_by_key(|action| action.frame);
     // A param changed several times at one frame gets only its last value (a Pitcher 2 Low Latency switch rebuilds).
     let mut later = HashSet::new();

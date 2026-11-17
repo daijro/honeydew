@@ -17,6 +17,7 @@ pub(crate) mod samples;
 pub(crate) mod settings;
 pub(crate) mod slicer;
 mod slides;
+mod vocal;
 
 pub use input::{LiveInput, MONITOR_MAX_LAG_FRAMES, RecordTap, TakeStart};
 pub(crate) use midi_sends::{Received, midi_reach, midi_received};
@@ -768,6 +769,18 @@ impl SongAudioEngine {
                 Action::ClipParam { pad, index, value } => {
                     if let Some(clips) = self.clips[event.channel].as_mut() {
                         clips.sampler.set_param(pad, index, value);
+                    }
+                }
+                Action::Vocal {
+                    instance_id,
+                    key,
+                    expression,
+                } => {
+                    if let Some(module) = self
+                        .instrument(event.channel, instance_id)
+                        .filter(|module| module.hears(key))
+                    {
+                        module.instrument.set_vocal(key, expression);
                     }
                 }
                 Action::StepCover { .. } => {}

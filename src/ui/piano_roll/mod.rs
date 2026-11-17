@@ -482,6 +482,52 @@ fn vocal_note_mut(
     notes.last_mut().expect("just pushed")
 }
 
+/// Explicit separators only: language-dependent automatic phonemization would corrupt aliases.
+fn distribute_lyrics(clip: &mut Clip, selected: &[bool], anchor: (u32, u8), text: &str) -> String {
+    let syllables: Vec<_> = text
+        .split(|ch: char| ch.is_whitespace() || ch == '-')
+        .filter(|part| !part.is_empty())
+        .collect();
+    let mut targets: Vec<_> = clip
+        .events
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| selected.get(*i) == Some(&true))
+        .filter_map(|(_, event)| note(event).map(|(p, _, k)| (p as u32, k)))
+        .collect();
+    if targets.len() <= 1 {
+        targets = clip
+            .events
+            .iter()
+            .filter_map(|event| note(event).map(|(p, _, k)| (p as u32, k)))
+            .filter(|target| *target >= anchor)
+            .collect();
+    }
+    targets.sort_unstable();
+    targets.dedup();
+    if syllables.len() <= 1 || targets.len() <= 1 {
+        vocal_note_mut(&mut clip.file.vocal_notes, anchor.0, anchor.1).lyric =
+            text.chars().take(64).collect();
+    } else {
+        // Keep overflow on the final target rather than silently dropping pasted words.
+        let count = targets.len().min(syllables.len());
+        for (i, &(pos, key)) in targets.iter().take(count).enumerate() {
+            let lyric = if i + 1 == count {
+                syllables[i..].join(" ")
+            } else {
+                syllables[i].to_owned()
+            };
+            vocal_note_mut(&mut clip.file.vocal_notes, pos, key).lyric =
+                lyric.chars().take(64).collect();
+        }
+    }
+    clip.file
+        .vocal_notes
+        .iter()
+        .find(|n| (n.pos, n.key) == anchor)
+        .map_or_else(String::new, |n| n.lyric.clone())
+}
+
 fn drag_vocal_point(
     clip: &mut Clip,
     g: &Geom,
@@ -887,6 +933,11 @@ impl PianoRoll {
         let Some((pos, key, mut text)) = self.lyric_edit.take() else {
             return;
         };
+        let pasted = ui.input(|i| {
+            i.events
+                .iter()
+                .any(|event| matches!(event, egui::Event::Paste(_)))
+        });
         let mut changed = false;
         let mut next = false;
         let mut done = false;
@@ -902,7 +953,7 @@ impl PianoRoll {
                             egui::TextEdit::singleline(&mut text)
                                 .id(field)
                                 .hint_text("type this note's syllable")
-                                .char_limit(64)
+                                .char_limit(4096)
                                 .desired_width(150.0),
                         );
                         if self.lyric_focus_pending {
@@ -917,12 +968,20 @@ impl PianoRoll {
                 });
             });
         self.lyric_focus_pending = false;
-        if changed && let Some(clip) = self.clip_mut(song) {
-            vocal_note_mut(&mut clip.file.vocal_notes, pos, key)
-                .lyric
-                .clone_from(&text);
-            self.lyric_dirty = true;
-            edited(actions, false);
+        if changed {
+            let selected = self.selected.clone();
+            if let Some(clip) = self.clip_mut(song) {
+                if pasted {
+                    text = distribute_lyrics(clip, &selected, (pos, key), &text);
+                } else {
+                    text = text.chars().take(64).collect();
+                    vocal_note_mut(&mut clip.file.vocal_notes, pos, key)
+                        .lyric
+                        .clone_from(&text);
+                }
+                self.lyric_dirty = true;
+                edited(actions, false);
+            }
         }
         if next && !done {
             if let Some((np, nk, lyric)) = self.clip(song).and_then(|clip| {
