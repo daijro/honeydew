@@ -353,6 +353,8 @@ pub struct PianoRoll {
     lyric_dirty: bool,
     lyric_focus_pending: bool,
     pub(crate) pitch_draw_enabled: bool,
+    pub(crate) waveform_enabled: bool,
+    pub(crate) waveform_offset_y: u8,
     vocal_curve_drag: Option<(u32, u8, usize)>,
     vocal_curve_free_draw: bool,
 }
@@ -714,6 +716,8 @@ impl PianoRoll {
             lyric_dirty: false,
             lyric_focus_pending: false,
             pitch_draw_enabled: false,
+            waveform_enabled: true,
+            waveform_offset_y: 5,
             vocal_curve_drag: None,
             vocal_curve_free_draw: false,
         }
@@ -1156,7 +1160,8 @@ impl PianoRoll {
         }
 
         // The selection follows the clip; an outside change (another clip, undo) drops it.
-        if banaforge_audio::vocal_synth::DefaultVoice.is_ready()
+        if self.waveform_enabled
+            && banaforge_audio::vocal_synth::DefaultVoice.is_ready()
             && let Some(channel) = song.channels.get(self.channel)
             && let Some(module) = channel.rack.modules.iter().find(|m| m.type_id == 53)
             && let Some(clip) = channel
@@ -1330,6 +1335,8 @@ impl PianoRoll {
             &vocal_states,
             &self.waveforms.peaks,
             is_vocal,
+            self.waveform_enabled,
+            self.waveform_offset_y,
             past,
             color,
             cx,
@@ -3479,6 +3486,8 @@ fn paint_notes(
     vocal_notes: &HashMap<(u32, u8), &crate::song::VocalNoteState>,
     waveforms: &waveform::Peaks,
     vocal_track: bool,
+    waveform_enabled: bool,
+    waveform_offset_y: u8,
     past: Option<Rect>,
     color: Rgba,
     cx: &UiCtx,
@@ -3526,12 +3535,12 @@ fn paint_notes(
             if matches!(e, Event::Note { slide: true, .. }) {
                 paint_slide(painter, cell(r), theme.colors.background.to_color32(), m);
             }
-            if vocal_track && r.width() >= m.u(0.6) && r.height() >= m.u(0.35) {
+            if vocal_track && waveform_enabled && r.width() >= m.u(0.6) && r.height() >= m.u(0.35) {
                 let left = r.left() + px;
-                let top = (r.center().y + 5.0).min(r.bottom() - px * 2.0);
+                let top = r.bottom() + f32::from(waveform_offset_y.min(40)) * g.row_h;
                 let wave = Rect::from_min_max(
                     pos2(left, top),
-                    pos2((r.right() - px).max(left), (r.bottom() - px).max(top)),
+                    pos2((r.right() - px).max(left), top + g.row_h),
                 );
                 if let Some((pos, _, key)) = note(e)
                     && let Some(peaks) = waveforms.get(&(pos as u32, key))

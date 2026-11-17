@@ -141,6 +141,7 @@ enum Kind {
     Toggle(fn(&mut Settings) -> &mut bool),
     /// The output buffer target slider, with a native/default position at zero.
     BufferSize,
+    WaveformGap,
     McpPort,
     McpToken,
     McpStatus,
@@ -240,9 +241,20 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 }
 
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 54] = {
+const ROWS: [Row; 65] = {
     use Kind::*;
     [
+        row("Vocal Synth:", Header),
+        row("Waveform", FixedDropdown("")),
+        row("Show waveform", Toggle(|s| &mut s.vocal_waveform_enabled)),
+        row("Waveform gap below notes", WaveformGap),
+        row("Editor Mode", FixedDropdown("")),
+        row("Simple mode", Toggle(|s| &mut s.vocal_simple_mode)),
+        row("Default voice picker", FixedDropdown("Coming soon")),
+        row("Pitch-bend sensitivity", FixedDropdown("Coming soon")),
+        row("Auto-load last voicebank", FixedToggle(false)),
+        row("Phoneme dictionary language", FixedDropdown("Coming soon")),
+        row("Vocal renderer", FixedDropdown("Silent default")),
         row("MIDI:", Header),
         row(
             "Input device:",
@@ -644,7 +656,9 @@ impl SettingsTab {
         let (m, colors) = (cx.m, &cx.theme.colors);
         // Headers and the metronome row take the whole slot; the other rows are a control row, centred in it.
         let r = match row.kind {
-            Kind::Header | Kind::Level | Kind::Scaling | Kind::BufferSize => slot,
+            Kind::Header | Kind::Level | Kind::Scaling | Kind::BufferSize | Kind::WaveformGap => {
+                slot
+            }
             _ => Rect::from_center_size(slot.center(), vec2(slot.width(), m.u(ROW_H))),
         };
         let text = colors.text.to_color32();
@@ -850,6 +864,16 @@ impl SettingsTab {
                 );
                 let c = level_control(id, body, text);
                 h_slider(ui, cx, &c, &mut s.metronome_level, |_| String::new());
+            }
+            Kind::WaveformGap => {
+                let (line, body) = r.split_top_bottom_at_y(r.top() + m.u(LEVEL_LABEL_H));
+                label(ui, line, FontSize::Pt10);
+                let mut value = f32::from(s.vocal_waveform_offset_y.min(40)) / 40.0;
+                let c = level_control(id, body, text);
+                h_slider(ui, cx, &c, &mut value, |v| {
+                    format!("{} rows", (v * 40.0).round() as u8)
+                });
+                s.vocal_waveform_offset_y = (value.clamp(0.0, 1.0) * 40.0).round() as u8;
             }
             Kind::BufferSize => {
                 let (line, body) = r.split_top_bottom_at_y(r.top() + m.u(LEVEL_LABEL_H));

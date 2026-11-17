@@ -185,6 +185,8 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         }
         editor.min.y = toolbar.bottom();
     }
+    roll.waveform_enabled = app.settings.vocal_waveform_enabled;
+    roll.waveform_offset_y = app.settings.vocal_waveform_offset_y;
     let opts = RollOptions {
         ghost_notes: app.ghost_notes,
         middle_c_is_c4: app.middle_c_is_c4,

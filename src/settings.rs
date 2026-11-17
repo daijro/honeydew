@@ -139,6 +139,12 @@ const DEFAULT_SOUND_MODE: u8 = 3;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    #[serde(rename = "vocalSynth.waveformEnabled")]
+    pub vocal_waveform_enabled: bool,
+    #[serde(rename = "vocalSynth.waveformOffsetY")]
+    pub vocal_waveform_offset_y: u8,
+    #[serde(rename = "vocalSynth.simpleMode")]
+    pub vocal_simple_mode: bool,
     /// `Input device:` (`MidiDevice`): the menu label of the chosen MIDI input, `<no midi input>`, `Any available` or
     /// a device name (`MidiChoice::label`; read it back with `MidiChoice::from_label`). A name stays when its device
     /// is not connected: the choice reconnects when the device returns.
@@ -376,6 +382,9 @@ impl Default for Settings {
     /// (the fallback theme), `100 %` and `Animation` `Full`. The metronome level is half way; the drum pads are locked.
     fn default() -> Self {
         Self {
+            vocal_waveform_enabled: true,
+            vocal_waveform_offset_y: 5,
+            vocal_simple_mode: false,
             midi_device: ANY.to_owned(),
             multi_core: false,
             mcp_enabled: false,
@@ -479,6 +488,7 @@ impl Settings {
             serde_json::from_value::<Self>(Value::Object(one)).is_ok()
         });
         let mut s: Self = serde_json::from_value(Value::Object(fields)).unwrap_or_default();
+        s.vocal_waveform_offset_y = s.vocal_waveform_offset_y.min(40);
         let d = Self::default();
         if s.theme as usize >= builtin_themes().len() {
             s.theme = d.theme;
