@@ -353,6 +353,7 @@ pub struct PianoRoll {
     pub(crate) pitch_draw_enabled: bool,
     vocal_curve_drag: Option<(u32, u8, usize)>,
     vocal_curve_free_draw: bool,
+    vocal_audition_due: f64,
 }
 
 /// A touch on the grid (module docs). Outside a touch, the selection is the one showing.
@@ -714,6 +715,7 @@ impl PianoRoll {
             pitch_draw_enabled: false,
             vocal_curve_drag: None,
             vocal_curve_free_draw: false,
+            vocal_audition_due: 0.0,
         }
     }
 
@@ -815,6 +817,16 @@ impl PianoRoll {
         }
     }
 
+    /// Coalesce expensive prepared-engine previews while dragging, without adding undo steps.
+    /// Final release still publishes the complete curve. The existing audio queue adopts voices.
+    fn audition_vocal(&mut self, ui: &egui::Ui, actions: &mut Vec<PianoRollAction>) {
+        let now = ui.input(|i| i.time);
+        if now >= self.vocal_audition_due {
+            self.vocal_audition_due = now + 0.1;
+            actions.push(PianoRollAction::Audition);
+        }
+    }
+
     fn vocal_input(
         &mut self,
         ui: &egui::Ui,
@@ -834,6 +846,7 @@ impl PianoRoll {
                 })
             {
                 edited(actions, false);
+                self.audition_vocal(ui, actions);
                 ui.ctx().request_repaint();
             }
             if response.drag_stopped() || !primary_down_live(ui, response.id) {
@@ -956,6 +969,7 @@ impl PianoRoll {
                 self.vocal_curve_drag = Some((pos, key, point_index));
                 self.vocal_curve_free_draw = index == usize::MAX;
                 edited(actions, false);
+                self.audition_vocal(ui, actions);
                 return true;
             }
         }
@@ -2451,6 +2465,9 @@ impl PianoRoll {
                     self.remembered.velocity = u8::try_from(value).unwrap_or(u8::MAX);
                 }
                 edited(actions, false);
+                if expression.is_some() {
+                    self.audition_vocal(ui, actions);
+                }
                 if let Some((_, _, reported)) = self.graph_drag.as_mut() {
                     *reported = true;
                 }
@@ -3509,8 +3526,7 @@ fn paint_notes(
                             )
                         })
                         .collect();
-                    let curve =
-                        painter.with_clip_rect(painter.clip_rect().intersect(r.expand(r.height())));
+                    let curve = painter.with_clip_rect(visible);
                     let ink = Color32::from_rgb(73, 246, 255);
                     curve.add(egui::Shape::line(
                         points.clone(),
