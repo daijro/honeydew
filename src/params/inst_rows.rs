@@ -389,4 +389,12 @@ pub const ROWS: &[Row] = &[
     (39, 136, r#"Delay Resonance"#, 0.5, r#"0%"#, r#"-100% … 0% … 100%; ≈ -100 + 200·v %"#),
     (39, 137, r#"Panning will bounce"#, 0.0, r#"OFF"#, r#"options: OFF, ON"#),
     (39, 138, r#"Fat (Unison) Mode"#, 0.0, r#"OFF"#, r#"options: OFF, ON"#),
+    (53, 0, r#"Enable"#, 1.0, r#"On"#, r#"options: Off, On"#),
+    (53, 1, r#"Gender / Formant"#, 0.5, r#"0 st"#, r#"-12 st … 0 st … 12 st"#),
+    (53, 2, r#"Breathiness"#, 0.08, r#"8%"#, r#"0…100 (v×100)"#),
+    (53, 3, r#"Brightness"#, 0.5, r#"50%"#, r#"0…100 (v×100)"#),
+    (53, 4, r#"Portamento"#, 0.0, r#"0 ms"#, r#"0 ms … 325 ms … 650 ms"#),
+    (53, 5, r#"Vibrato Rate"#, 0.35, r#"3.5 Hz"#, r#"0 Hz … 5 Hz … 10 Hz"#),
+    (53, 6, r#"Vibrato Depth"#, 0.0, r#"0 cents"#, r#"0 cents … 50 cents … 100 cents"#),
+    (53, 7, r#"Vowel"#, 0.0, r#"a"#, r#"options: a, i, u, e, o"#),
 ];

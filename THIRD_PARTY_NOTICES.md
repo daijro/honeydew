@@ -5,6 +5,13 @@ This app includes the third-party software below, each under its own license.
 The Honeydew logo (`assets/branding/`) is a derivative of "Melon" by afitrose, licensed as Free for commercial use WITH
 ATTRIBUTION; see [`assets/branding/README.md`](assets/branding/README.md).
 
+## WebTAU `oto.ini` parser logic
+
+- Source: <https://github.com/charl1e7/webtau>, `crates/w-synth/src/oto.rs` (MIT, Copyright (c) 2025 charl1e7).
+- Adapted in `src/vocal_synth.rs` for Honeydew's bounded ZIP archive reader, relative sample-path validation, stable alias ordering, and Shift-JIS decoding.
+- The complete MIT license is reproduced in [`licenses/webtau-MIT.txt`](licenses/webtau-MIT.txt).
+- WebTAU's software license does not grant rights to any voicebank samples; banks remain user-provided content.
+
 ## Lemon Studio `os-flp` (FL Studio project files)
 
 - Source: Lemon Studio by ItsAlphaNeon (<https://github.com/ItsAlphaNeon/Lemon-Studio>), `crates/os-flp`.

@@ -291,6 +291,9 @@ pub struct HoneydewApp {
     /// `Install sound library…` running (`app/sounds.rs`).
     #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
     sounds: Option<crate::content::install::Job>,
+    /// Whether `FLAG_KEEP_SCREEN_ON` is currently active on Android (avoids per-frame JNI calls).
+    #[cfg(target_os = "android")]
+    screen_kept_on: bool,
 }
 
 impl Default for HoneydewApp {
@@ -374,6 +377,8 @@ impl Default for HoneydewApp {
             control: None,
             #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
             sounds: None,
+            #[cfg(target_os = "android")]
+            screen_kept_on: false,
         }
     }
 }
@@ -398,6 +403,7 @@ impl HoneydewApp {
 
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         setup_context(&cc.egui_ctx);
+        crate::project_files::set_context(&cc.egui_ctx);
         let storage = settings::storage();
         let fresh =
             (storage.as_deref()).is_none_or(|s| s.get_string(settings::STORAGE_KEY).is_none());
@@ -1156,6 +1162,12 @@ impl HoneydewApp {
             self.nav.take_answer(QUIT_TAG);
             if yes {
                 self.quitting = true;
+                #[cfg(target_os = "android")]
+                {
+                    self.exit();
+                    crate::android::haptic_tick();
+                    crate::android::quit_app();
+                }
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
@@ -2026,6 +2038,26 @@ impl eframe::App for HoneydewApp {
         selftest::input(ctx, raw);
     }
 
+    /// Android: merge live `DisplayCutout` insets (camera punches, notches, waterfalls) reported by
+    /// `HoneydewActivity.onCutoutInsets` into egui's safe area so controls never sit under cameras.
+    #[cfg(all(target_os = "android", not(test)))]
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        let [l, t, r, b] = crate::android::cutout_insets_px();
+        if (l | t | r | b) == 0 {
+            return;
+        }
+        let ppp = ctx.pixels_per_point().max(1.0);
+        let prev = raw
+            .safe_area_insets
+            .map_or(egui::epaint::MarginF32::ZERO, |s| s.0);
+        raw.safe_area_insets = Some(egui::SafeAreaInsets(egui::epaint::MarginF32 {
+            left: prev.left.max(l as f32 / ppp),
+            right: prev.right.max(r as f32 / ppp),
+            top: prev.top.max(t as f32 / ppp),
+            bottom: prev.bottom.max(b as f32 / ppp),
+        }));
+    }
+
     /// The theme's background, also where the app does not draw: iOS's notch side.
     fn clear_color(&self, _: &egui::Visuals) -> [f32; 4] {
         self.theme
@@ -2069,6 +2101,11 @@ impl HoneydewApp {
         self.files.keep_recent(&self.song, f64::INFINITY, true);
         #[cfg(not(target_arch = "wasm32"))]
         self.files.join_autosave();
+        #[cfg(target_os = "android")]
+        {
+            self.screen_kept_on = false;
+            crate::android::set_keep_screen_on(false);
+        }
         // The plugins' editors close before their windows go.
         crate::plugins::song_replaced();
         if self.settings_unflushed
@@ -2629,6 +2666,8 @@ impl HoneydewApp {
             } else {
                 AudioCommand::Stop
             });
+            #[cfg(target_os = "android")]
+            crate::android::haptic_tick();
         }
         let screen = &mut self.main_screen;
         // Every seek moves the play-start point, and one while playing turns recording off. The rest of the frame
@@ -2840,6 +2879,17 @@ impl HoneydewApp {
         let now = ctx.input(|i| i.time);
         if let Some(secs) = self.files.keep_recent(&self.song, now, leaving) {
             ctx.request_repaint_after_secs(secs as f32);
+        }
+        if leaving {
+            crate::project_files::finish_leaving();
+        }
+        #[cfg(target_os = "android")]
+        {
+            let keep = playing || self.recording() || self.main_screen.armed;
+            if keep != self.screen_kept_on {
+                self.screen_kept_on = keep;
+                crate::android::set_keep_screen_on(keep);
+            }
         }
         self.keep_settings(ctx);
         // The playhead follows the audio, and a lit level meter falls to rest at the meters' release, stopped too (#41);

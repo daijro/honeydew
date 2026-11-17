@@ -3,7 +3,7 @@
 use std::ffi::CString;
 use std::io::Read;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use android_activity::{AndroidApp, ndk::asset::Asset};
@@ -13,10 +13,26 @@ use crate::recording::input::{InputRing, Mic};
 
 static ACTIVITY: Mutex<Option<AndroidApp>> = Mutex::new(None);
 static DISPLAY_DPI: AtomicU32 = AtomicU32::new(0);
+static CUTOUT_INSETS: [AtomicI32; 4] = [
+    AtomicI32::new(0),
+    AtomicI32::new(0),
+    AtomicI32::new(0),
+    AtomicI32::new(0),
+];
 
 /// The Activity refreshes physical density at creation and configuration changes; zero means unavailable.
 pub fn display_dpi() -> f32 {
     f32::from_bits(DISPLAY_DPI.load(Ordering::Relaxed))
+}
+
+/// Hardware display-cutout safe insets `[left, top, right, bottom]` in physical pixels (API 28+).
+pub fn cutout_insets_px() -> [i32; 4] {
+    [
+        CUTOUT_INSETS[0].load(Ordering::Relaxed),
+        CUTOUT_INSETS[1].load(Ordering::Relaxed),
+        CUTOUT_INSETS[2].load(Ordering::Relaxed),
+        CUTOUT_INSETS[3].load(Ordering::Relaxed),
+    ]
 }
 
 #[unsafe(no_mangle)]
@@ -26,6 +42,22 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onDisplayDpi(
     dpi: jni::sys::jfloat,
 ) {
     DISPLAY_DPI.store(dpi.to_bits(), Ordering::Relaxed);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onCutoutInsets(
+    _env: jni::JNIEnv<'_>,
+    _class: jni::objects::JClass<'_>,
+    left: jni::sys::jint,
+    top: jni::sys::jint,
+    right: jni::sys::jint,
+    bottom: jni::sys::jint,
+) {
+    CUTOUT_INSETS[0].store(left.max(0), Ordering::Relaxed);
+    CUTOUT_INSETS[1].store(top.max(0), Ordering::Relaxed);
+    CUTOUT_INSETS[2].store(right.max(0), Ordering::Relaxed);
+    CUTOUT_INSETS[3].store(bottom.max(0), Ordering::Relaxed);
+    wake_ui();
 }
 
 /// The microphone permission (`RECORD_AUDIO`): not asked (or the last answer was no, already told), asking, allowed,
@@ -106,7 +138,8 @@ pub fn inputs() -> Vec<(i32, String)> {
     let mut list = String::new();
     let listed = with_activity(|env, activity| {
         let got = env.call_method(activity, "inputs", "()Ljava/lang/String;", &[])?;
-        list = text(env, &got.l()?.into()).unwrap_or_default();
+        let got = env.auto_local(jni::objects::JString::from(got.l()?));
+        list = text(env, &got).unwrap_or_default();
         Ok(())
     });
     if let Err(err) = listed {
@@ -210,30 +243,38 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onInterrupted(
 }
 
 /// `onPause`, before Android pauses the app thread, which then runs no frame until the app is back: the frame that
-/// writes the song's unsaved changes ([`crate::project_files::leave`]) runs first, waited for up to half a second.
+/// writes the song's unsaved changes ([`crate::project_files::leave_and_wait`]) runs first, woken via a Condvar
+/// with a 500 ms ceiling so the Android UI thread never busy-polls or triggers ANR.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onLeaving(
     _env: jni::JNIEnv<'_>,
     _class: jni::objects::JClass<'_>,
 ) {
-    crate::project_files::leave();
-    // ponytail: polled every 5 ms; a condvar if the wait ever shows.
-    for _ in 0..100 {
-        if !crate::project_files::leaving() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
+    crate::project_files::leave_and_wait(std::time::Duration::from_millis(500));
 }
 
 /// Back was pressed (Android 13 and up hand it to `HoneydewActivity`'s back callback, not as a key) and waits for
-/// the next frame ([`take_back`]), which [`BACK_WAKE`] asks for.
+/// the next frame ([`take_back`]), which [`UI_WAKE`] asks for.
 static BACK: AtomicBool = AtomicBool::new(false);
-static BACK_WAKE: std::sync::OnceLock<eframe::egui::Context> = std::sync::OnceLock::new();
+static UI_WAKE: Mutex<Option<eframe::egui::Context>> = Mutex::new(None);
 
-/// Back was pressed since the last call. `ctx` is the context a later press wakes.
+fn wake_ui() {
+    let ctx = UI_WAKE
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .clone();
+    if let Some(ctx) = ctx {
+        ctx.request_repaint();
+    }
+}
+
+/// Back was pressed since the last call. `ctx` is kept current so a recreated Activity still wakes the active UI.
 pub fn take_back(ctx: &eframe::egui::Context) -> bool {
-    BACK_WAKE.get_or_init(|| ctx.clone());
+    let mut slot = UI_WAKE.lock().unwrap_or_else(|err| err.into_inner());
+    if slot.is_none() {
+        *slot = Some(ctx.clone());
+    }
+    drop(slot);
     BACK.swap(false, Ordering::AcqRel)
 }
 
@@ -243,9 +284,7 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onBack(
     _class: jni::objects::JClass<'_>,
 ) {
     BACK.store(true, Ordering::Release);
-    if let Some(ctx) = BACK_WAKE.get() {
-        ctx.request_repaint();
-    }
+    wake_ui();
 }
 
 /// Android sends Back to the activity's back callback (Android 13 and up, `HoneydewActivity.onCreate`): its key event,
@@ -263,6 +302,34 @@ pub fn move_to_back() {
     if let Err(err) = moved {
         eprintln!("could not move to the background: {err}");
     }
+}
+
+/// Cleanly closes Honeydew and removes its task from Android Recents (issue #147).
+pub fn quit_app() {
+    let closed =
+        with_activity(|env, activity| env.call_method(activity, "quitApp", "()V", &[]).map(drop));
+    if let Err(err) = closed {
+        eprintln!("could not quit app: {err}");
+    }
+}
+
+/// Keeps the Android display awake while playback or recording is active.
+pub fn set_keep_screen_on(on: bool) {
+    let updated = with_activity(|env, activity| {
+        env.call_method(activity, "setKeepScreenOn", "(Z)V", &[on.into()])
+            .map(drop)
+    });
+    if let Err(err) = updated {
+        eprintln!("keep screen on not updated: {err}");
+    }
+}
+
+/// Fires a subtle native Android tactile tick for key UI confirmations.
+pub fn haptic_tick() {
+    let _ = with_activity(|env, activity| {
+        env.call_method(activity, "hapticTick", "()V", &[])
+            .map(drop)
+    });
 }
 
 /// What a document pick finishes with: the copy of the picked file, an error, or `None` when it was cancelled.
@@ -291,7 +358,7 @@ fn text(env: &mut jni::JNIEnv<'_>, s: &jni::objects::JString<'_>) -> Option<Stri
 /// Opens the system document picker (`HoneydewActivity.openDocument`); `done` gets the pick, copied into the app's
 /// cache (at most `max_bytes` + 1 bytes), on a Java thread.
 pub fn pick_document(max_bytes: u64, done: impl FnOnce(Picked) + Send + 'static) {
-    *PICKING.lock().expect("picker lock") = Some(Box::new(done));
+    *PICKING.lock().unwrap_or_else(|err| err.into_inner()) = Some(Box::new(done));
     let max = jni::sys::jlong::try_from(max_bytes).unwrap_or(jni::sys::jlong::MAX - 1);
     let opened = with_activity(|env, activity| {
         env.call_method(activity, "openDocument", "(J)V", &[max.into()])
@@ -320,7 +387,7 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onDocumentPicke
 /// Opens the system folder picker (`HoneydewActivity.openFolder`); `done` gets the files of the folder picked, listed
 /// on a Java thread.
 pub fn pick_folder(done: impl FnOnce(PickedFolder) + Send + 'static) {
-    *PICKING_FOLDER.lock().expect("picker lock") = Some(Box::new(done));
+    *PICKING_FOLDER.lock().unwrap_or_else(|err| err.into_inner()) = Some(Box::new(done));
     let opened = with_activity(|env, activity| {
         env.call_method(activity, "openFolder", "()V", &[])
             .map(drop)
@@ -355,7 +422,7 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onFolderPicked(
 /// Copies each file `(document URI, user file)` on a Java thread (`HoneydewActivity.copyFiles`); `done` gets `None`
 /// once all are in, else why the copy stopped.
 pub fn copy_files(files: &[(String, PathBuf)], done: impl FnOnce(Option<String>) + Send + 'static) {
-    *COPYING.lock().expect("copy lock") = Some(Box::new(done));
+    *COPYING.lock().unwrap_or_else(|err| err.into_inner()) = Some(Box::new(done));
     let list: String = (files.iter())
         .map(|(from, to)| format!("{from}\0{}\0", to.display()))
         .collect();
@@ -473,7 +540,7 @@ pub fn network() -> Network {
 /// thread, which it blocks for as long: `None` once it is in, else why not (`offline` without a network).
 pub fn download(url: &str, path: &str) -> Option<String> {
     let mut failed = None;
-    let called = with_activity_unlocked(|env, activity| {
+    let called = with_activity(|env, activity| {
         let url = env.auto_local(env.new_string(url)?);
         let path = env.auto_local(env.new_string(path)?);
         let why = env.call_method(
@@ -566,7 +633,8 @@ pub fn asset_bytes(path: &str, limit: usize) -> Option<Vec<u8>> {
 #[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
     crate::android_text::reset();
-    *ACTIVITY.lock().expect("activity lock") = Some(app.clone());
+    *UI_WAKE.lock().unwrap_or_else(|err| err.into_inner()) = None;
+    *ACTIVITY.lock().unwrap_or_else(|err| err.into_inner()) = Some(app.clone());
     if let Some(index) = asset_bytes(
         "content/index.json",
         crate::content::bundle::MAX_INDEX_BYTES,
@@ -583,23 +651,29 @@ fn android_main(app: AndroidApp) {
     if let Err(err) = eframe::run_native(
         crate::APP_NAME,
         options,
-        Box::new(|cc| Ok(Box::new(crate::app::HoneydewApp::new(cc)))),
+        Box::new(|cc| {
+            *UI_WAKE.lock().unwrap_or_else(|err| err.into_inner()) = Some(cc.egui_ctx.clone());
+            crate::project_files::set_context(&cc.egui_ctx);
+            Ok(Box::new(crate::app::HoneydewApp::new(cc)))
+        }),
     ) {
         eprintln!("Honeydew could not start: {err}");
     }
     crate::android_text::reset();
-    *ACTIVITY.lock().expect("activity lock") = None;
+    crate::project_files::finish_leaving();
+    *UI_WAKE.lock().unwrap_or_else(|err| err.into_inner()) = None;
+    *ACTIVITY.lock().unwrap_or_else(|err| err.into_inner()) = None;
 }
 
-/// [`with_activity`] for a call that blocks (a download): the activity lock is not held through it, and a global
-/// reference keeps the activity object alive.
-fn with_activity_unlocked(
+/// Runs a JNI call while keeping the Activity alive via a global reference without holding the
+/// `ACTIVITY` mutex across the JNI boundary (preventing re-entrant deadlocks on callbacks).
+pub fn with_activity(
     f: impl FnOnce(&mut jni::JNIEnv<'_>, &jni::objects::JObject<'_>) -> jni::errors::Result<()>,
 ) -> Result<(), String> {
     let (vm, activity) = {
-        let held = ACTIVITY.lock().map_err(|err| err.to_string())?;
+        let held = ACTIVITY.lock().unwrap_or_else(|err| err.into_inner());
         let app = held.as_ref().ok_or("No Android Activity")?;
-        // SAFETY: as in `with_activity`, while the lock is held.
+        // SAFETY: AndroidApp keeps the VM and activity global reference alive while `held` is locked.
         let vm = unsafe { jni::JavaVM::from_raw(app.vm_as_ptr().cast()) }
             .map_err(|err| err.to_string())?;
         let object = unsafe { jni::objects::JObject::from_raw(app.activity_as_ptr().cast()) };
@@ -610,24 +684,6 @@ fn with_activity_unlocked(
     };
     let mut env = vm.attach_current_thread().map_err(|err| err.to_string())?;
     let result = f(&mut env, activity.as_obj()).map_err(|err| err.to_string());
-    if result.is_err() {
-        let _ = env.exception_clear();
-    }
-    result
-}
-
-/// Runs a JNI call while the matching Activity remains alive.
-pub fn with_activity(
-    f: impl FnOnce(&mut jni::JNIEnv<'_>, &jni::objects::JObject<'_>) -> jni::errors::Result<()>,
-) -> Result<(), String> {
-    let activity = ACTIVITY.lock().map_err(|err| err.to_string())?;
-    let app = activity.as_ref().ok_or("No Android Activity")?;
-    // SAFETY: AndroidApp keeps the VM and this unowned global reference alive for the call.
-    let vm =
-        unsafe { jni::JavaVM::from_raw(app.vm_as_ptr().cast()) }.map_err(|err| err.to_string())?;
-    let object = unsafe { jni::objects::JObject::from_raw(app.activity_as_ptr().cast()) };
-    let mut env = vm.attach_current_thread().map_err(|err| err.to_string())?;
-    let result = f(&mut env, &object).map_err(|err| err.to_string());
     if result.is_err() {
         let _ = env.exception_clear();
     }

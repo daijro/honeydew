@@ -40,10 +40,67 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     if channel >= app.song.channels.len() {
         return Some(Nav::Show(View::Playlist));
     }
+    let is_vocal = matches!(
+        app.song.channels[channel].kind,
+        crate::song::ChannelKind::Synth(crate::song::SynthKind::VocalSynth)
+    );
     let roll = state
         .rolls
         .entry(channel)
         .or_insert_with(|| PianoRoll::for_channel(app.song, channel));
+    let mut editor = app.regions.editor;
+    if is_vocal {
+        let height = app.cx.m.u(2.1).max(48.0);
+        let toolbar = egui::Rect::from_min_max(
+            editor.min,
+            egui::pos2(editor.right(), (editor.top() + height).min(editor.bottom())),
+        );
+        let banks = app.files.voicebanks();
+        let mut import = false;
+        let mut toggle_pitch = false;
+        ui.scope_builder(egui::UiBuilder::new().max_rect(toolbar), |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.strong("VOCAL SYNTH  /  EDIT");
+                toggle_pitch = ui
+                    .selectable_label(roll.pitch_draw_enabled, "〽 PITCH DRAW")
+                    .on_hover_text("Enable to draw or bend pitch points directly on notes")
+                    .clicked();
+                if ui.button("＋ Import Voicebank").clicked() {
+                    import = true;
+                }
+                ui.weak("MY VOICEBANKS");
+                if banks.is_empty() {
+                    ui.weak("No banks imported");
+                } else {
+                    for bank in banks {
+                        ui.menu_button(format!("{} · {} aliases", bank.name, bank.entries.len()), |ui| {
+                            ui.weak(if bank.has_license_document {
+                                "License file found — verify its terms"
+                            } else {
+                                "License unverified; do not redistribute samples"
+                            });
+                            ui.separator();
+                            egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
+                                for entry in &bank.entries {
+                                    ui.horizontal(|ui| {
+                                        ui.strong(&entry.alias);
+                                        ui.weak(&entry.filename);
+                                    });
+                                }
+                            });
+                        });
+                    }
+                }
+            });
+        });
+        if toggle_pitch {
+            roll.pitch_draw_enabled = !roll.pitch_draw_enabled;
+        }
+        if import {
+            app.files.pick_voicebank();
+        }
+        editor.min.y = toolbar.bottom();
+    }
     let opts = RollOptions {
         ghost_notes: app.ghost_notes,
         middle_c_is_c4: app.middle_c_is_c4,
@@ -66,7 +123,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     roll.snap.size = app.settings.grid_size;
     // And the graph lane tab's place (PR #87).
     roll.graph_tab_shift = app.settings.graph_tab_shift;
-    let actions = roll.show(ui, app.regions.editor, &app.cx, app.song, &opts);
+    let actions = roll.show(ui, editor, &app.cx, app.song, &opts);
     [app.settings.velocity_snap, app.settings.pan_snap] = roll.value_snap;
     app.settings.grid_size = roll.snap.size;
     app.settings.graph_tab_shift = roll.graph_tab_shift;

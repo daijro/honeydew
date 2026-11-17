@@ -460,6 +460,26 @@ pub struct LaneFileState {
     pub desc_extra: Vec<u8>,
 }
 
+/// A per-note Vocal Synth lyric and expression curve, stored in Honeydew's `HDVo` clip extension.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VocalNoteState {
+    pub pos: u32,
+    pub key: u8,
+    pub lyric: String,
+    /// Per-note vocal expression, normalized to 0..=1.
+    pub dynamics: f32,
+    pub breathiness: f32,
+    pub formant: f32,
+    pub pitch: Vec<VocalPitchPoint>,
+}
+
+/// A normalized point on a note's pitch curve. `offset` is [0, 1] through the note; `cents` is ±1200.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VocalPitchPoint {
+    pub offset: f32,
+    pub cents: f32,
+}
+
 /// `CLIP` fields beyond the clip model.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ClipFileState {
@@ -479,6 +499,8 @@ pub struct ClipFileState {
     /// `HDSh` (Honeydew's own): on an automation clip, the shape of each segment that is not the straight line, by the
     /// tick of its point (sorted, one per tick: the last point at a tick starts the segment that has a length).
     pub shapes: Vec<(u32, honeydew_audio::automation::Shape)>,
+    /// `HDVo` (Honeydew's own): vocal-synth per-note lyrics and pitch-curve points, keyed by note start and MIDI key.
+    pub vocal_notes: Vec<VocalNoteState>,
 }
 
 impl Default for ClipFileState {
@@ -491,6 +513,7 @@ impl Default for ClipFileState {
             header_extra: Vec::new(),
             raw_events: Raw::default(),
             shapes: Vec::new(),
+            vocal_notes: Vec::new(),
         }
     }
 }

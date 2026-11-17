@@ -152,7 +152,7 @@ pub fn ui_height(type_id: u16) -> Option<f32> {
         23 => 9.0,
         33 => 8.5,
         39 => 10.0,
-        52 => 8.5,
+        52 | 53 => 8.5,
         // Effects and note effects.
         3 | 7 | 26 | 30 | 51 => 10.0,
         4 | 35 | 36 | 43 | 46 => 9.0,
@@ -643,7 +643,7 @@ pub fn insert(rack: &mut Rack, type_id: u16, at: InsertAt) -> Outcome {
 /// - With `at` they go where [`paste`] puts the same modules: from `+` appended at the bottom, else at `at`, in file
 ///   order.
 ///
-/// A module is skipped by the rule `Paste` follows ([`attaches`]): an id above 52, and an instrument where the channel
+/// A module is skipped by the rule `Paste` follows ([`attaches`]): an id above 53, and an instrument where the channel
 /// does not take one ([`takes_instruments`]: Master, Effect Track, audio, Drums), as the browser's SYNTH rows do; a
 /// channel that does takes all the instruments, beside the ones it has. Returns whether the chain changed (never when
 /// every module is skipped, or there are none) and how many modules were skipped. [`load_rack_into`] also names the
@@ -798,7 +798,7 @@ fn named(ch: &Channel, auto: &str) -> bool {
 /// in, in clipboard order, as a new module with a fresh id and its copied settings: from the rack's add-module `+`,
 /// appended at the bottom; from `Insert above` / `Insert below`, at that position; from `Replace`, in place of that
 /// module, which is deleted. Instrument modules go only into a channel whose primary lane is a notes lane (not drum and
-/// audio channels); module ids above 52 are skipped.
+/// audio channels); module ids above 53 are skipped.
 ///
 /// Each module after the first goes below the one before, and the bottom is the bottom for a note effect too (a pick
 /// goes up to the note effects instead). With nothing compatible it returns [`Outcome::Nothing`] and the rack is as it
@@ -839,10 +839,10 @@ pub fn takes(channel: &Channel) -> Takes {
     }
 }
 
-/// Whether a channel takes `module`, the one routine `Paste` and a rack preset's load share: module ids above 52 are
+/// Whether a channel takes `module`, the one routine `Paste` and a rack preset's load share: module ids above 53 are
 /// skipped, and an instrument goes only where `notes` (the channel [takes instruments](takes_instruments)).
 fn attaches(module: &ModuleInstance, notes: bool) -> bool {
-    module.type_id <= 52 && (notes || instrument(module.type_id).is_none())
+    module.type_id <= 53 && (notes || instrument(module.type_id).is_none())
 }
 
 /// The ≡ menu of a card of module type `type_id`, two columns, every item enabled. An instrument's adds `Set Range`

@@ -388,6 +388,7 @@ pub fn show(
             return Some(Nav::Close);
         }
         MainMenuAction::ClearPerformance => perf.clear_counters(),
+        MainMenuAction::Quit => nav = Some(quit_question()),
     }
     nav
 }

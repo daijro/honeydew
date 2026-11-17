@@ -30,7 +30,8 @@ use crate::song::points::{Shape, ShapeKind};
 use crate::song::{
     AutomationTarget, CHANNEL_ID_LIMIT, Channel, ChannelKind, Clip, ClipFileState, DrumGrid,
     DrumKit, Event, KeyboardState, Lane, LaneKind, MetaState, MidiSend, Modulation, ModuleInstance,
-    PPQ, Raw, RawChunk, SamplerSlot, SendState, Song, SynthKind, TimeSig,
+    PPQ, Raw, RawChunk, SamplerSlot, SendState, Song, SynthKind, TimeSig, VocalNoteState,
+    VocalPitchPoint,
 };
 use honeydew_audio::dwp::Cstm;
 
@@ -1137,6 +1138,13 @@ impl Reader {
                     self.charge(2 * child.payload.len(), &child.path)?;
                     clip.file.shapes = shapes(child.payload);
                 }
+                b"HDVo" => {
+                    self.charge(2 * child.payload.len(), &child.path)?;
+                    match vocal_notes(child.payload) {
+                        Some(notes) => clip.file.vocal_notes = notes,
+                        None => self.unknown(&child, &mut clip.file.unknown_chunks)?,
+                    }
+                }
                 b"CLSm" => {
                     let (_, mut sample) = self.slot(&child)?;
                     *next_slot = (*next_slot + 1).min(MAX_ID);
@@ -1148,6 +1156,61 @@ impl Reader {
         }
         Ok(clip)
     }
+}
+
+/// An `HDVo` (`flm::write`): version 1 has lyrics and pitch points; version 2 adds normalized dynamics, breathiness,
+/// and formant per note. Invalid or oversized records are kept as an unknown chunk by the caller.
+fn vocal_notes(payload: &[u8]) -> Option<Vec<VocalNoteState>> {
+    let mut reader = Cursor::new(payload, "HDVo");
+    let version = reader.u16().ok()?;
+    if !matches!(version, 1 | 2) {
+        return None;
+    }
+    let count = usize::from(reader.u16().ok()?);
+    if count > 16_384 {
+        return None;
+    }
+    let mut notes = Vec::with_capacity(count);
+    for _ in 0..count {
+        let pos = reader.u32().ok()?;
+        let key = reader.u8().ok()?;
+        if key > 127 {
+            return None;
+        }
+        let lyric = text(reader.vstr16().ok()?);
+        let (dynamics, breathiness, formant) = if version >= 2 {
+            (reader.f32().ok()?, reader.f32().ok()?, reader.f32().ok()?)
+        } else {
+            (0.5, 0.0, 0.5)
+        };
+        let safe = |value: f32, fallback: f32| {
+            if value.is_finite() { value.clamp(0.0, 1.0) } else { fallback }
+        };
+        let point_count = usize::from(reader.u16().ok()?);
+        if point_count > 512 {
+            return None;
+        }
+        let mut pitch = Vec::with_capacity(point_count);
+        for _ in 0..point_count {
+            let offset = reader.f32().ok()?;
+            let cents = reader.f32().ok()?;
+            pitch.push(VocalPitchPoint {
+                offset: if offset.is_finite() { offset.clamp(0.0, 1.0) } else { 0.0 },
+                cents: if cents.is_finite() { cents.clamp(-1200.0, 1200.0) } else { 0.0 },
+            });
+        }
+        pitch.sort_by(|a, b| a.offset.total_cmp(&b.offset));
+        notes.push(VocalNoteState {
+            pos,
+            key,
+            lyric,
+            dynamics: safe(dynamics, 0.5),
+            breathiness: safe(breathiness, 0.0),
+            formant: safe(formant, 0.5),
+            pitch,
+        });
+    }
+    (reader.remaining() == 0).then_some(notes)
 }
 
 /// An `HDSh` (`flm::write`): 6-byte records of u32 tick, u8 shape, u8 tension. An unknown shape is skipped, a tension

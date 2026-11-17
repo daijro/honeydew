@@ -7,7 +7,7 @@ use super::*;
 use crate::song::ChannelParams;
 
 /// Per instrument: id, display name, unique name, `PRMS` value count and pages.
-const OVERVIEW: [(u16, &str, &str, usize, &[&str]); 8] = [
+const OVERVIEW: [(u16, &str, &str, usize, &[&str]); 9] = [
     (
         0,
         "MiniSynth",
@@ -53,6 +53,13 @@ const OVERVIEW: [(u16, &str, &str, usize, &[&str]); 8] = [
     ),
     // 6, Fine Tune (a Honeydew addition, #90), and the vibrato, Quality and Transpose (Honeydew additions, #102).
     (52, "SoundFont Player", "SoundFont Player", 12, &[]),
+    (
+        53,
+        "Vocal Synth",
+        "Vocal Synth",
+        8,
+        &["VOICE", "EXPRESSION"],
+    ),
 ];
 
 fn spec(id: u16) -> &'static ModuleSpec {
@@ -93,16 +100,16 @@ fn overview_matches_the_registry() {
 
 #[test]
 fn module_spec_covers_every_effect_and_instrument_id() {
-    // Ids 0-52 less the six unregistered ones.
+    // Ids 0-53 less the six unregistered ones.
     let gaps = [17, 21, 22, 31, 37, 38];
-    for id in 0..=52u16 {
+    for id in 0..=53u16 {
         let want = (!gaps.contains(&id)).then_some(id);
         assert_eq!(module_spec(id).map(|m| m.id), want, "lookup of {id}");
     }
-    assert!(module_spec(53).is_none());
+    assert!(module_spec(54).is_none());
     // modules() keeps its meaning (the effects); the two lists split the registry.
     assert!(modules().all(|m| m.role != Role::Instrument));
-    assert_eq!(modules().count() + instruments().count(), 53 - gaps.len());
+    assert_eq!(modules().count() + instruments().count(), 54 - gaps.len());
 }
 
 #[test]

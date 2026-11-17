@@ -342,12 +342,21 @@ impl ProjectFiles {
     }
 
     /// The song an archive extracted into `dir` gave: its `@L@` paths whose file `dir` holds at the same relative path
-    /// lead there; any other path stays as it is.
+    /// (or flat at `dir/<file_name>` when missing at the user root) lead there; any other path stays as it is.
     pub(super) fn relink_to(&self, song: &mut Song, dir: &Path) {
         relink(song, &|path| {
-            let file = dir.join(in_user_folder(path)?);
-            (self.user_file_exists(&file))
-                .then(|| self.user_shorthand(&file))
+            let rel = in_user_folder(path)?;
+            let nested = dir.join(rel);
+            if self.user_file_exists(&nested) {
+                return self.user_shorthand(&nested);
+            }
+            let flat = Path::new(rel).file_name().map(|name| dir.join(name))?;
+            let missing_at_user = self
+                .user
+                .as_ref()
+                .is_none_or(|user| !self.user_file_exists(&user.join(rel)));
+            (missing_at_user && self.user_file_exists(&flat))
+                .then(|| self.user_shorthand(&flat))
                 .flatten()
         });
     }

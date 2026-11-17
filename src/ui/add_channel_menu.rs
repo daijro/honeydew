@@ -95,6 +95,7 @@ mod tests {
                 (1, 6, "Slicer"),
                 (1, 7, "3x Osc"),
                 (1, 8, "SoundFont Player"),
+                (1, 9, "Vocal Synth"),
             ]
         );
     }

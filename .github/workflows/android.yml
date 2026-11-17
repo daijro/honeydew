@@ -1,0 +1,139 @@
+name: Android APK
+
+# Builds an installable Android APK (release-optimized with bundled sounds) and uploads it as a workflow artifact.
+on:
+  push:
+    branches:
+      - android
+      - "arena/**"
+  workflow_dispatch:
+    inputs:
+      abi:
+        description: Target ABI (all, arm64-v8a, or armeabi-v7a)
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - arm64-v8a
+          - armeabi-v7a
+      include_sounds:
+        description: Bundle the large sound library in the APK (otherwise it downloads on first launch)
+        required: false
+        default: false
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android-arm
+          cache-on-failure: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Android build tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y libclang-dev
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.0.13004108'
+          cargo install cargo-ndk --version 4.1.2 --locked
+      - name: Prepare signing key
+        id: sign
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          umask 077
+          ks="$RUNNER_TEMP/honeydew-release.jks"
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ks"
+            echo "keystore_pass=$ANDROID_KEYSTORE_PASSWORD" >> "$GITHUB_OUTPUT"
+            echo "key_alias=$ANDROID_KEY_ALIAS" >> "$GITHUB_OUTPUT"
+            echo "key_pass=$ANDROID_KEY_PASSWORD" >> "$GITHUB_OUTPUT"
+          else
+            # Self-signed release keystore for sideloadable CI builds when release secrets are absent.
+            keytool -genkeypair -noprompt -keystore "$ks" \
+              -storepass honeydew-ci -keypass honeydew-ci -alias honeydew \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname 'CN=Honeydew CI,O=Honeydew,C=US'
+            echo "keystore_pass=honeydew-ci" >> "$GITHUB_OUTPUT"
+            echo "key_alias=honeydew" >> "$GITHUB_OUTPUT"
+            echo "key_pass=honeydew-ci" >> "$GITHUB_OUTPUT"
+          fi
+          echo "keystore=$ks" >> "$GITHUB_OUTPUT"
+      - name: Build Android APK
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ steps.sign.outputs.keystore }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ steps.sign.outputs.keystore_pass }}
+          ANDROID_KEY_ALIAS: ${{ steps.sign.outputs.key_alias }}
+          ANDROID_KEY_PASSWORD: ${{ steps.sign.outputs.key_pass }}
+          ABI_MODE: ${{ inputs.abi || 'all' }}
+          INCLUDE_SOUNDS: ${{ inputs.include_sounds || 'false' }}
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.0.13004108"
+          args=(--release --abi "$ABI_MODE")
+          # A manual build defaults to the much smaller soundless APK; push builds keep the full bundled version.
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$INCLUDE_SOUNDS" != true ]; then
+            args+=(--base)
+          fi
+          set +e
+          tools/android-dist.sh "${args[@]}" 2>&1 | tee /tmp/android-build.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            python3 - <<'PY'
+          import pathlib
+          lines = pathlib.Path("/tmp/android-build.log").read_text(errors="replace").splitlines()
+          tail = "\n".join(lines[-80:])
+          # Emit chunked error annotations readable via GitHub Check Runs API
+          for i in range(0, len(tail), 900):
+              chunk = tail[i:i+900].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Android build tail {i//900+1}::{chunk}")
+          PY
+            exit "$rc"
+          fi
+      - name: Independently verify APK contents and install metadata
+        run: |
+          shopt -s nullglob
+          apks=(target/honeydew-android-*.apk)
+          [ "${#apks[@]}" -eq 1 ] || { echo "Expected one APK, found ${#apks[@]}"; exit 1; }
+          apk=${apks[0]}
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | sed -n '1,5p'
+          python3 - "$apk" <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as apk:
+              bad = apk.testzip()
+              if bad:
+                  raise SystemExit(f"ZIP CRC failure in APK entry: {bad}")
+              print(f"Verified all APK ZIP entries: {len(apk.infolist())} entries")
+          PY
+          sha256sum "$apk" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "APK: \`$apk\`" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/honeydew-release.jks"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: honeydew-android-apk
+          path: target/honeydew-android-*.apk
+          retention-days: 30
+          compression-level: 0
+          if-no-files-found: error

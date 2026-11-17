@@ -8,6 +8,7 @@ mod live;
 mod merge;
 mod midi_sends;
 mod modulation;
+#[cfg(parallel_audio)]
 mod parallel;
 mod prepare;
 mod preview;
@@ -40,19 +41,21 @@ use honeydew_audio::sample::SampleData;
 use honeydew_audio::{MeterSnapshot, ProcessContext};
 use input::Monitor;
 use prepare::{Action, KIT, ParamTimeline, ScheduledAction, beat_frame};
+#[cfg(parallel_audio)]
 use rayon::prelude::*;
 
 pub use slicer::{auto_clip as slicer_auto_clip, settle_first_notes};
 
 const BLOCK_FRAMES: usize = 1024;
 
-/// Prepare the desktop worker pool off the audio callback. Other platforms
-/// retain the sequential path even if an old preference is on.
+/// Prepare the multi-core audio worker pool (desktop and Android) off the audio callback.
+/// Other platforms retain the sequential path even if an old preference is on.
 pub(crate) fn prepare_multi_core() -> bool {
+    #[cfg(parallel_audio)]
     {
         parallel::prepare()
     }
-    #[cfg(not(desktop))]
+    #[cfg(not(parallel_audio))]
     {
         false
     }
@@ -855,10 +858,10 @@ impl SongAudioEngine {
     }
 
     fn process_racks(&mut self, context: ProcessContext, frames: usize) -> bool {
-        // Only the desktop's multi-core path reads the block size.
-        #[cfg(not(desktop))]
+        // Only the multi-core path (desktop and Android) reads the block size.
+        #[cfg(not(parallel_audio))]
         let _ = frames;
-        #[cfg(desktop)]
+        #[cfg(parallel_audio)]
         if self.multi_core
             && frames >= 128
             && self.mixer.has_parallel_stage()
@@ -1301,7 +1304,7 @@ impl AudioRenderer for SongAudioEngine {
     }
 }
 
-#[cfg(all(test, desktop))]
+#[cfg(all(test, parallel_audio))]
 mod parallel_tests {
     use super::*;
     use crate::song::{ChannelKind, SendState, Song, SynthKind};

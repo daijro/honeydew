@@ -20,7 +20,7 @@ pub use drum_kit::{DrumKit, SamplerSlot};
 pub use file::{
     ChannelFileState, ClipFileState, DEFAULT_CHORD_JSON, KeyboardState, KitFileState,
     LaneFileState, MetaState, MidiSend, Modulation, ModuleFileState, Raw, RawChunk, SET_DEFAULT,
-    SET_EDITED, SET_LOADED, SendState, SlotFileState, SongFileState,
+    SET_EDITED, SET_LOADED, SendState, SlotFileState, SongFileState, VocalNoteState, VocalPitchPoint,
 };
 pub use lane::MAX_PLAYS_A_PIXEL;
 pub use lane::{AutomationTarget, Clip, DrumGrid, Event, Lane, LaneKind};
@@ -55,10 +55,11 @@ pub enum SynthKind {
     Slicer,
     ThreeXOsc,
     SoundFontPlayer,
+    VocalSynth,
 }
 
 impl SynthKind {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::MiniSynth,
         Self::DwSampler,
         Self::GmSynth,
@@ -67,6 +68,7 @@ impl SynthKind {
         Self::Slicer,
         Self::ThreeXOsc,
         Self::SoundFontPlayer,
+        Self::VocalSynth,
     ];
 
     pub fn label(self) -> &'static str {
@@ -79,6 +81,7 @@ impl SynthKind {
             Self::Slicer => "Slicer",
             Self::ThreeXOsc => "3x Osc",
             Self::SoundFontPlayer => "SoundFont Player",
+            Self::VocalSynth => "Vocal Synth",
         }
     }
 
@@ -93,6 +96,7 @@ impl SynthKind {
             Self::Slicer => 33,
             Self::ThreeXOsc => 39,
             Self::SoundFontPlayer => 52,
+            Self::VocalSynth => 53,
         }
     }
 }

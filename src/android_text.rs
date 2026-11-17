@@ -74,6 +74,11 @@ static EDITOR: Mutex<Editor> = Mutex::new(Editor {
 });
 
 #[cfg(target_os = "android")]
+fn lock_editor() -> std::sync::MutexGuard<'static, Editor> {
+    EDITOR.lock().unwrap_or_else(|err| err.into_inner())
+}
+
+#[cfg(target_os = "android")]
 fn cancel_dialog(serial: u64) {
     let _ = crate::android::with_activity(|env, activity| {
         env.call_method(
@@ -89,7 +94,7 @@ fn cancel_dialog(serial: u64) {
 #[cfg(target_os = "android")]
 pub fn reset() {
     let serial = {
-        let mut editor = EDITOR.lock().unwrap();
+        let mut editor = lock_editor();
         editor.last_focus = None;
         editor.cancel()
     };
@@ -100,7 +105,7 @@ pub fn reset() {
 
 #[cfg(target_os = "android")]
 pub fn begin_frame(ctx: &Context) {
-    let mut editor = EDITOR.lock().unwrap();
+    let mut editor = lock_editor();
     editor.seen = false;
     if ctx.input(|i| i.focused)
         && let Some(field) = editor.enter.take()
@@ -123,7 +128,7 @@ pub fn begin_frame(ctx: &Context) {
 pub fn edit(response: &mut Response, value: &mut String, limit: usize) {
     let ctx = response.ctx.clone();
     let focused = ctx.memory(|m| m.has_focus(response.id));
-    let mut editor = EDITOR.lock().unwrap();
+    let mut editor = lock_editor();
     if editor
         .active
         .as_ref()
@@ -150,24 +155,26 @@ pub fn edit(response: &mut Response, value: &mut String, limit: usize) {
     editor.last_focus = Some(response.id);
     let serial = editor.start(response.id, &ctx);
     drop(editor);
+    let max_chars = i32::try_from(limit).unwrap_or(0);
     let result = crate::android::with_activity(|env, activity| {
         // The app thread stays attached to the VM, so release this local reference after every dialog call.
         let text = env.auto_local(env.new_string(value.as_str())?);
         env.call_method(
             activity,
             "editText",
-            "(JLjava/lang/String;Z)V",
+            "(JLjava/lang/String;ZI)V",
             &[
                 jni::objects::JValue::Long(serial as i64),
                 jni::objects::JValue::Object(text.as_ref()),
                 jni::objects::JValue::Bool(0),
+                jni::objects::JValue::Int(max_chars),
             ],
         )?;
         Ok(())
     });
     if let Err(err) = result {
         eprintln!("Could not open text editor: {err}");
-        EDITOR.lock().unwrap().complete(serial, None);
+        lock_editor().complete(serial, None);
     }
 }
 
@@ -176,7 +183,7 @@ pub fn end_frame(ctx: &Context) {
     // The native dialog owns the IME; eframe must not open a second keyboard on NativeActivity's surface.
     ctx.output_mut(|o| o.ime = None);
     let serial = {
-        let mut editor = EDITOR.lock().unwrap();
+        let mut editor = lock_editor();
         if editor.last_focus != ctx.memory(|m| m.focused()) {
             editor.last_focus = None;
         }
@@ -200,12 +207,10 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onTextResult(
     text: jni::objects::JString<'_>,
     accepted: jni::sys::jboolean,
 ) {
-    let text = (accepted != 0)
+    let text = (accepted != 0 && !text.is_null())
         .then(|| env.get_string(&text).ok().map(String::from))
         .flatten();
-    if let Ok(mut editor) = EDITOR.lock() {
-        editor.complete(serial as u64, text);
-    }
+    lock_editor().complete(serial as u64, text);
 }
 
 #[cfg(not(target_os = "android"))]
