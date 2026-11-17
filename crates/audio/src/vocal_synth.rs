@@ -358,7 +358,7 @@ impl Instrument for VocalSynth {
             let vowel = if expression.vowel < 5 {
                 usize::from(expression.vowel)
             } else {
-                (self.params[7] * 4.0).round() as usize
+                ((self.params[7] * 4.0).round() as usize).min(VOWELS.len() - 1)
             };
             let centers = VOWELS[vowel];
             let scale = 2.0f32.powf((self.params[1] + expression.formant - 1.0) * 0.9);

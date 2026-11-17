@@ -353,7 +353,6 @@ pub struct PianoRoll {
     pub(crate) pitch_draw_enabled: bool,
     vocal_curve_drag: Option<(u32, u8, usize)>,
     vocal_curve_free_draw: bool,
-    vocal_audition_due: f64,
 }
 
 /// A touch on the grid (module docs). Outside a touch, the selection is the one showing.
@@ -715,7 +714,6 @@ impl PianoRoll {
             pitch_draw_enabled: false,
             vocal_curve_drag: None,
             vocal_curve_free_draw: false,
-            vocal_audition_due: 0.0,
         }
     }
 
@@ -840,15 +838,8 @@ impl PianoRoll {
         changed
     }
 
-    /// Coalesce expensive prepared-engine previews while dragging, without adding undo steps.
-    /// Final release still publishes the complete curve. The existing audio queue adopts voices.
-    fn audition_vocal(&mut self, ui: &egui::Ui, actions: &mut Vec<PianoRollAction>) {
-        let now = ui.input(|i| i.time);
-        if now >= self.vocal_audition_due {
-            self.vocal_audition_due = now + 0.1;
-            actions.push(PianoRollAction::Audition);
-        }
-    }
+    /// Curve edits are coalesced until release, rather than rebuilding every rack mid-drag.
+    fn audition_vocal(&mut self, _ui: &egui::Ui, _actions: &mut Vec<PianoRollAction>) {}
 
     fn vocal_input(
         &mut self,
@@ -1015,14 +1006,17 @@ impl PianoRoll {
         let mut changed = false;
         let mut next = false;
         let mut done = false;
-        let field = Id::new(("vocal_lyric_text", self.channel, self.clip_id));
+        let field = Id::new(("vocal_lyric_text", self.channel, self.clip_id, pos, key));
         egui::Area::new(Id::new(("vocal_lyric_editor", self.channel, self.clip_id)))
             .order(egui::Order::Foreground)
-            .fixed_pos(grid.left_bottom() - vec2(0.0, 68.0))
+            .default_pos(grid.left_bottom() - vec2(0.0, 100.0))
+            .movable(true)
+            .constrain(true)
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("LYRIC / PHONEME");
+                    ui.vertical(|ui| {
+                        ui.label("⠿ LYRIC / PHONEME")
+                            .on_hover_text("Drag this panel by its header or empty background");
                         let mut response = ui.add(
                             egui::TextEdit::singleline(&mut text)
                                 .id(field)
@@ -1034,11 +1028,15 @@ impl PianoRoll {
                             response.request_focus();
                         }
                         crate::android_text::edit(&mut response, &mut text, 4096);
+                        let committed = crate::android_text::take_commit(response.id);
                         changed = response.changed();
-                        next = ui.button("NEXT NOTE  ›").clicked();
-                        done = ui.button("DONE").clicked()
-                            || response.lost_focus()
-                                && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        done = committed
+                            || ui.input(|i| i.key_pressed(egui::Key::Enter))
+                                && response.has_focus();
+                        ui.horizontal(|ui| {
+                            next = ui.button("NEXT NOTE  ›").clicked();
+                            done |= ui.button("DONE").clicked();
+                        });
                     });
                 });
             });
@@ -1080,6 +1078,13 @@ impl PianoRoll {
             }) {
                 self.lyric_edit = Some((np, nk, lyric));
                 self.lyric_focus_pending = true;
+                if let Some(clip) = self.clip(song) {
+                    self.selected = clip
+                        .events
+                        .iter()
+                        .map(|e| note(e).is_some_and(|(p, _, k)| (p as u32, k) == (np, nk)))
+                        .collect();
+                }
             } else {
                 self.lyric_edit = Some((pos, key, text.clone()));
             }
@@ -1271,6 +1276,21 @@ impl PianoRoll {
         let rows = self.rows(song, events, opts.sounding);
         let sig = (song.time_sig, self.snap.size);
         paint_grid(&grid_painter, grid, &g, &rows, color, sig, cx);
+        let (scale_root, scale_mask) = project_scale(song);
+        if scale_mask != SCALE_MASKS[CHROMATIC] {
+            for key in 0..=127 {
+                if !in_scale(key, scale_root, scale_mask) {
+                    let row = Rect::from_min_max(
+                        pos2(grid.left(), g.y(key)),
+                        pos2(grid.right(), g.y(key) + g.row_h),
+                    )
+                    .intersect(grid);
+                    if row.is_positive() {
+                        grid_painter.rect_filled(row, 0.0, Color32::from_black_alpha(95));
+                    }
+                }
+            }
+        }
         let view = g.tick(grid.left())..g.tick(grid.right());
         let px = g.tick(grid.left() + 1.0 / m.ppp()) - view.start;
         let end = g.x(loop_ticks).max(grid.left());
@@ -3501,7 +3521,7 @@ fn paint_notes(
             }
             if vocal_track && r.width() >= m.u(0.6) && r.height() >= m.u(0.35) {
                 let left = r.left() + px;
-                let top = r.center().y;
+                let top = (r.center().y + 5.0).min(r.bottom() - px * 2.0);
                 let wave = Rect::from_min_max(
                     pos2(left, top),
                     pos2((r.right() - px).max(left), (r.bottom() - px).max(top)),
@@ -3511,9 +3531,10 @@ fn paint_notes(
                 {
                     let half = (wave.height() * 0.42).max(px);
                     let ink = Color32::from_rgb(116, 255, 235);
+                    let maximum = peaks.iter().copied().fold(0.0_f32, f32::max).max(0.000_001);
                     for (j, peak) in peaks.iter().enumerate() {
                         let x = wave.left() + j as f32 / 47.0 * wave.width();
-                        let amp = (peak * 8.0).clamp(0.0, 1.0) * half;
+                        let amp = (peak / maximum).clamp(0.0, 1.0) * half;
                         let segment = [
                             pos2(x, wave.center().y - amp),
                             pos2(x, wave.center().y + amp),

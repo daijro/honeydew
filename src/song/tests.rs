@@ -2290,3 +2290,12 @@ fn vocal_editor_follows_replaced_rack_not_creation_kind() {
     song.channels[1].rack.add(SynthKind::DwSampler.type_id());
     assert!(!super::vocal_editor(&song.channels[1]));
 }
+
+#[test]
+fn vocal_editor_is_hidden_for_a_mixed_sampler_rack() {
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::VocalSynth));
+    assert!(super::vocal_editor(&song.channels[1]));
+    song.channels[1].rack.add(SynthKind::DwSampler.type_id());
+    assert!(!super::vocal_editor(&song.channels[1]));
+}

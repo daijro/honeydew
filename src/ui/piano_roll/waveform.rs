@@ -24,7 +24,7 @@ impl Waveforms {
         for param in params {
             param.to_bits().hash(&mut hash);
         }
-        for event in clip.events.iter().take(64) {
+        for event in clip.events.iter().rev().take(64) {
             if let Event::Note {
                 pos,
                 key,
@@ -51,9 +51,6 @@ impl Waveforms {
             }
         }
         let signature = hash.finish();
-        if self.signature != Some(signature) {
-            self.peaks.clear();
-        }
         if let Some(worker) = &self.worker {
             match worker.try_recv() {
                 Ok(peaks) => {
@@ -79,6 +76,7 @@ impl Waveforms {
         let notes: Vec<_> = clip
             .events
             .iter()
+            .rev()
             .take(64)
             .filter_map(|event| {
                 let Event::Note {
@@ -108,6 +106,7 @@ impl Waveforms {
         let params = params.to_vec();
         let (sender, receiver) = sync_channel(1);
         self.worker = Some(receiver);
+        let repaint = ctx.clone();
         let work = move || {
             let mut peaks = Peaks::new();
             let mut budget = 512_000;
@@ -128,6 +127,7 @@ impl Waveforms {
                 );
             }
             let _ = sender.send(peaks);
+            repaint.request_repaint();
         };
         #[cfg(not(target_arch = "wasm32"))]
         if std::thread::Builder::new()

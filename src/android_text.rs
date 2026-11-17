@@ -139,6 +139,7 @@ pub fn edit(response: &mut Response, value: &mut String, limit: usize) {
                 *value = text.chars().take(limit).collect();
                 response.mark_changed();
                 editor.enter = Some(response.id);
+                drop(editor);
                 response.ctx.request_repaint();
             }
             return;
@@ -223,6 +224,23 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onTextResult(
 
 #[cfg(not(target_os = "android"))]
 pub fn edit(_: &mut eframe::egui::Response, _: &mut String, _: usize) {}
+
+/// Consume native Done directly instead of injecting Enter into another editor/shortcut.
+#[cfg(target_os = "android")]
+pub fn take_commit(id: eframe::egui::Id) -> bool {
+    let mut editor = lock_editor();
+    if editor.enter == Some(id) {
+        editor.enter = None;
+        true
+    } else {
+        false
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn take_commit(_: eframe::egui::Id) -> bool {
+    false
+}
 
 /// Whether a dialog's text field takes the focus back whenever nothing has it, so that typing goes there: on the
 /// desktop. On a phone a tap elsewhere drops the field and its keyboard (Android's text editor) until the field is

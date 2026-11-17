@@ -3358,6 +3358,40 @@ mod component {
     }
 
     #[test]
+    fn vocal_lyric_done_and_next_note_commit_hello_without_losing_the_editor() {
+        let mut rig = Rig::new(vec![n(0, 128.0, 70), n(128, 128.0, 72)]);
+        rig.song.channels[1].rack.add(53);
+        rig.roll.lyric_edit = Some((0, 70, String::new()));
+        rig.roll.lyric_focus_pending = true;
+        rig.frame(vec![]);
+        rig.frame(vec![]);
+        rig.frame(vec![In::Text("hello".into())]);
+        let next = rig.text("NEXT NOTE  ›").expect("Next button is visible");
+        rig.tap(next);
+        assert_eq!(
+            rig.roll.lyric_edit.as_ref().map(|n| (n.0, n.1)),
+            Some((128, 72))
+        );
+        assert_eq!(rig.roll.selected, [false, true]);
+        let done = rig.text("DONE").expect("Done button is visible");
+        rig.tap(done);
+        assert!(rig.roll.lyric_edit.is_none());
+        assert_eq!(
+            rig.song.channels[1].lanes[0].clips[0].file.vocal_notes[0].lyric,
+            "hello"
+        );
+        crate::audio_engine::SongAudioEngine::new(&rig.song, 48_000.0).unwrap();
+        let bytes = crate::flm::write(&rig.song).unwrap();
+        assert_eq!(
+            crate::flm::read(&bytes).unwrap().channels[1].lanes[0].clips[0]
+                .file
+                .vocal_notes[0]
+                .lyric,
+            "hello"
+        );
+    }
+
+    #[test]
     fn vocal_pitch_draw_never_moves_or_resizes_the_note() {
         let mut rig = Rig::new(vec![n(0, 128.0, 70)]);
         rig.song.channels[1].kind = ChannelKind::Synth(crate::song::SynthKind::VocalSynth);

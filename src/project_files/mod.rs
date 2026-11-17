@@ -1190,6 +1190,26 @@ impl ProjectFiles {
     /// archive's would, and the song stays (#72).
     fn opened(&mut self, path: PathBuf, bytes: Vec<u8>) -> Option<Song> {
         // The providers check first; this keeps a provider that does not from loading anything.
+        // On phones identify bank ZIPs from their directory only; inflation/CRC/indexing
+        // belongs to the existing import worker, never the UI frame.
+        if cfg!(target_os = "android")
+            && file_kind(&path) == Some(FileKind::Archive)
+            && let Ok(entries) = crate::zip::list(std::io::Cursor::new(&bytes))
+            && entries.iter().any(|(name, _, _)| {
+                name.rsplit('/')
+                    .next()
+                    .is_some_and(|n| n.eq_ignore_ascii_case("oto.ini"))
+            })
+            && !entries.iter().any(|(name, _, _)| {
+                matches!(
+                    file_kind(Path::new(name)),
+                    Some(FileKind::Song | FileKind::Template | FileKind::Flp)
+                )
+            })
+        {
+            self.voicebank_imported(&path, bytes);
+            return None;
+        }
         let mut entries = match file_kind(&path) {
             Some(FileKind::Song | FileKind::Template) => None,
             Some(FileKind::Midi) => return self.open_midi(&path, &bytes),
