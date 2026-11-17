@@ -91,11 +91,11 @@ const SPEC: &[(&str, &[&str])] = &[
     (
         "BANANA STUDIO",
         &[
-            "Citrus",
             "Banana Drum Sampler",
             "Banana Sampler",
             "Banana Slicer",
             "Banana Trio",
+            "Citrus",
             "Banana Balance",
             "Banana Chorus",
             "Banana Delay",
@@ -323,8 +323,8 @@ fn search_keeps_matching_entries_and_hides_empty_sections() {
             "NOTE EFFECT",
             "Transpose",
             "BANANA STUDIO",
-            "Citrus",
             "Banana Trio",
+            "Citrus",
             "Banana Formula Controller",
             "Banana Parametric EQ",
             "Banana Peak Controller",
@@ -915,11 +915,11 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             "SoundFont Player",
             "Vocal Synth",
             // The built-in plugins, which have no type id of their own: by name.
-            "Citrus",
             "Banana Drum Sampler",
             "Banana Sampler",
             "Banana Slicer",
             "Banana Trio",
+            "Citrus",
             // Effects: 3 … 46, then the note effects 47 … 51.
             "Equalizer",
             "MultiFX",
@@ -1010,7 +1010,7 @@ fn a_z_lists_every_entry_by_its_name_naturally_with_no_sections() {
         (at("Pitcher 2"), at("Reverb 2"))
     );
     assert!(at("Note Echo") < at("Paste") && at("Paste") < at("Phaser"));
-    assert!(at("Graphic EQ") < at("Instrument") && at("Instrument") < at("Banana Limiter"));
+    assert!(at("Banana Limiter") < at("Graphic EQ") && at("Graphic EQ") < at("Instrument"));
     assert!(at("Pitcher 2") < at("Rack Preset") && at("Rack Preset") < at("Randomizer"));
     // Without case: a byte compare would put `GMSynth` first.
     assert!(at("Gate") < at("GMSynth"));
