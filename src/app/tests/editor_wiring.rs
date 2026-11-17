@@ -4543,6 +4543,23 @@ fn vocal_studio_only_wraps_a_vocal_rack_and_restores_the_normal_editor() {
         shapes.iter().any(|s| text(&s.shape))
     }
     assert!(has_studio(&rig.out.shapes));
+    fn control(shapes: &[egui::epaint::ClippedShape], label: &str) -> Pos2 {
+        shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                Shape::Text(t) if t.galley.text() == label => {
+                    Some(t.visual_bounding_rect().center())
+                }
+                _ => None,
+            })
+            .expect("workspace transport control is visible")
+    }
+    let play = control(&rig.out.shapes, "▶ Play");
+    rig.click(play);
+    assert!(rig.app.main_screen.playing);
+    let stop = control(&rig.out.shapes, "Ⅱ Stop");
+    rig.click(stop);
+    assert!(!rig.app.main_screen.playing);
     let global_theme = rig.app.theme.clone();
     rig.app.settings.vocal_desktop_workspace = false;
     rig.frame(vec![]);

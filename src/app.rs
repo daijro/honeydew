@@ -2357,6 +2357,7 @@ impl BanaForgeApp {
                 // Keep the Settings MCP status in sync with the bridge that is actually running. The bridge is
                 // restarted after settings changes in `keep_settings`, so the next frame reflects bind failures too.
                 self.slots.settings_tab.set_mcp_status(mcp_status);
+                let view_playing = self.main_screen.playing;
                 let mut app = AppCtx {
                     cx,
                     regions,
@@ -2509,7 +2510,13 @@ impl BanaForgeApp {
                 };
                 // A tap on an editor's playhead knob plays (`AppCtx::play`): before the transport's buttons, which may
                 // stop it this frame.
-                self.main_screen.playing |= app.playing;
+                if app.playing != view_playing {
+                    // The vocal workspace can explicitly stop, as well as play.
+                    self.main_screen.playing = app.playing;
+                } else {
+                    // Preserve a Play request made directly by the playlist knob.
+                    self.main_screen.playing |= app.playing;
+                }
                 self.main_screen
                     .chrome(ui, &cx, input, &regions, &mut actions);
                 views::drum_editor::after_chrome(&mut self.slots.drum_editor, ui, &mut app);
