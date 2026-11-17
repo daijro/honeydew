@@ -143,7 +143,7 @@ impl Voice {
 /// Honeydew's procedural Vocal Synth. Normalized parameters: Enable, Gender/Formant, Breathiness, Brightness,
 /// Glide, Vibrato Rate, Vibrato Depth, and Vowel (a/e/i/o/u).
 pub struct VocalSynth {
-    params: [f32; 8],
+    params: [f32; 10],
     pitch_bend_ratio: f32,
     voices: [Voice; VOICES],
     age: u64,
@@ -152,7 +152,7 @@ pub struct VocalSynth {
 impl VocalSynth {
     pub fn new(_sample_rate: f32) -> Self {
         Self {
-            params: [1.0, 0.5, 0.08, 0.5, 0.0, 0.35, 0.0, 0.0],
+            params: [1.0, 0.5, 0.08, 0.5, 0.0, 0.35, 0.0, 0.0, 0.0, 0.0],
             pitch_bend_ratio: 1.0,
             voices: [Voice::new(); VOICES],
             age: 0,
@@ -225,8 +225,8 @@ impl VocalSynth {
         if !voice.active {
             return 0.0;
         }
-        let attack = (1.0 / (sample_rate * 0.008)).max(0.00001);
-        let release = (1.0 / (sample_rate * 0.12)).max(0.00001);
+        let attack = (1.0 / (sample_rate * (0.008 + self.params[8] * 0.5))).max(0.00001);
+        let release = (1.0 / (sample_rate * (0.12 + self.params[9] * 2.0))).max(0.00001);
         if voice.releasing {
             voice.envelope = (voice.envelope - release).max(0.0);
             if voice.envelope == 0.0 {
@@ -397,6 +397,28 @@ mod tests {
             start_beat: 0.0,
             playing: true,
         }
+    }
+
+    #[test]
+    fn vocal_envelope_controls_change_attack_and_release() {
+        let mut fast = VocalSynth::new(8000.0);
+        let mut slow = VocalSynth::new(8000.0);
+        slow.set_parameter(8, 1.0);
+        slow.set_parameter(9, 1.0);
+        fast.note_on(60, 1.0, 0.5);
+        slow.note_on(60, 1.0, 0.5);
+        for synth in [&mut fast, &mut slow] {
+            synth.process(&mut [0.0; 800], &mut [0.0; 800], context(8000.0));
+        }
+        assert!(fast.voices[0].envelope > slow.voices[0].envelope);
+        fast.note_off(60);
+        slow.note_off(60);
+        let before_fast = fast.voices[0].envelope;
+        let before_slow = slow.voices[0].envelope;
+        for synth in [&mut fast, &mut slow] {
+            synth.process(&mut [0.0; 80], &mut [0.0; 80], context(8000.0));
+        }
+        assert!(before_fast - fast.voices[0].envelope > before_slow - slow.voices[0].envelope);
     }
 
     #[test]

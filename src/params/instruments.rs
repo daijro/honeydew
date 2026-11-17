@@ -1043,6 +1043,8 @@ const VOCAL_SYNTH: &[P] = &[
         Display::linear(0.0, 100.0, 0, " cents"),
     ),
     P::menu("Vowel", 0.0, &["A", "E", "I", "O", "U"]),
+    P::cont("Attack", 0.0, Display::linear(8.0, 508.0, 0, " ms")),
+    P::cont("Release", 0.0, Display::linear(120.0, 2120.0, 0, " ms")),
 ];
 
 // The UI binds indices 1-11. The Envelope toggle is off (Original: the SoundFont's own envelopes), and reads
@@ -1141,6 +1143,6 @@ pub static MODULES: &[ModuleSpec] = &[
         "Vocal Synth",
         "Vocal Synth",
         VOCAL_SYNTH,
-        &["VOICE", "EXPRESSION"],
+        &["VOICE", "EXPRESSION", "ENVELOPE"],
     ),
 ];

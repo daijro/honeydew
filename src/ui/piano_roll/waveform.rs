@@ -155,7 +155,7 @@ fn render(
     data: Option<&VocalNoteState>,
 ) -> [f32; 48] {
     let mut synth = VocalSynth::new(8000.0);
-    for (i, value) in params.iter().take(8).enumerate() {
+    for (i, value) in params.iter().take(10).enumerate() {
         synth.set_parameter(i, *value);
     }
     synth.note_on(key, f32::from(velocity) / 255.0, 0.5);

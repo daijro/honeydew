@@ -57,8 +57,8 @@ const OVERVIEW: [(u16, &str, &str, usize, &[&str]); 9] = [
         53,
         "Vocal Synth",
         "Vocal Synth",
-        8,
-        &["VOICE", "EXPRESSION"],
+        10,
+        &["VOICE", "EXPRESSION", "ENVELOPE"],
     ),
 ];
 
