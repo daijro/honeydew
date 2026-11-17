@@ -1,0 +1,35 @@
+name: Vocal Synth validation
+on:
+  workflow_dispatch:
+  push:
+    branches: ["arena/1c4cf8e7-honeydew"]
+    paths:
+      - 'src/**'
+      - 'crates/audio/**'
+      - '.github/workflows/vocal-validation.yml'
+jobs:
+  vocal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: Export formatting patch
+        run: |
+          cargo fmt --all
+          git diff > /tmp/vocal-format.patch
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vocal-format
+          path: /tmp/vocal-format.patch
+      - name: Vocal DSP regression tests
+        run: cargo test -p honeydew-audio vocal_synth
+      - name: Voicebank parser regression tests
+        run: cargo test --lib vocal_synth
+      - name: Lyric contrast regression test
+        run: cargo test --lib vocal_lyric_ink

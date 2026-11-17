@@ -3043,6 +3043,20 @@ fn paint_marks(
 
 /// Grid background steps 7–9: the ghost notes, black α 0.15 `past` the clip's loop end, then the notes.
 #[allow(clippy::too_many_arguments)]
+/// Choose the higher WCAG contrast against the actual note fill (linear-light luminance).
+fn lyric_ink(fill: Color32) -> Color32 {
+    let linear = |value: u8| {
+        let value = f32::from(value) / 255.0;
+        if value <= 0.04045 { value / 12.92 } else { ((value + 0.055) / 1.055).powf(2.4) }
+    };
+    let luminance = 0.2126 * linear(fill.r()) + 0.7152 * linear(fill.g()) + 0.0722 * linear(fill.b());
+    if (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05) {
+        Color32::BLACK
+    } else {
+        Color32::WHITE
+    }
+}
+
 fn paint_notes(
     painter: &egui::Painter,
     g: &Geom,
@@ -3113,12 +3127,9 @@ fn paint_notes(
                 && let Some(data) = vocal_notes.get(&(pos as u32, key))
             {
                 if !data.lyric.is_empty() && r.width() >= m.u(0.75) && r.height() >= m.u(0.55) {
-                    let luminance = 0.2126 * f32::from(fill.r()) / 255.0
-                        + 0.7152 * f32::from(fill.g()) / 255.0 + 0.0722 * f32::from(fill.b()) / 255.0;
-                    let ink = if luminance > 0.53 { Color32::from_rgb(8, 14, 24) }
-                        else { Color32::from_rgb(248, 251, 255) };
+                    let ink = lyric_ink(fill);
                     let at = pos2(r.left() + m.u(0.12), r.top() + r.height() * 0.27);
-                    painter.text(at, egui::Align2::LEFT_CENTER, &data.lyric,
+                    painter.with_clip_rect(visible.intersect(r.shrink(px))).text(at, egui::Align2::LEFT_CENTER, &data.lyric,
                         egui::FontId::proportional((r.height() * 0.38).clamp(8.0, m.u(0.42))), ink);
                 }
                 if data.pitch.len() >= 2 && r.width() >= px * 4.0 {

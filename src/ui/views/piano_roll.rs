@@ -80,8 +80,9 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
                                 "License unverified; do not redistribute samples"
                             });
                             ui.separator();
-                            egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
-                                for entry in &bank.entries {
+                            ui.weak("Metadata browser · sample singing is not available yet");
+                            egui::ScrollArea::vertical().max_height(240.0).show_rows(ui, 24.0, bank.entries.len(), |ui, rows| {
+                                for entry in &bank.entries[rows] {
                                     ui.horizontal(|ui| {
                                         ui.strong(&entry.alias);
                                         ui.weak(&entry.filename);

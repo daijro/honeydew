@@ -457,6 +457,7 @@ pub struct ProjectFiles {
     /// The voicebank metadata indexed in `My Voicebanks`; archives themselves stay in user storage.
     voicebanks: Vec<crate::vocal_synth::VoicebankIndex>,
     voicebanks_loaded: bool,
+    voicebank_import: Option<std::sync::mpsc::Receiver<voicebanks::ImportResult>>,
     /// The last [`RECENT_STATE`] write, on its worker: the next waits for it, so the last load's lands last.
     #[cfg(not(target_arch = "wasm32"))]
     autosave: Option<std::thread::JoinHandle<()>>,
@@ -575,6 +576,7 @@ impl ProjectFiles {
             midi_tracks: None,
             voicebanks: Vec::new(),
             voicebanks_loaded: false,
+            voicebank_import: None,
             #[cfg(not(target_arch = "wasm32"))]
             autosave: None,
             recent_touched: false,
@@ -1538,6 +1540,7 @@ impl ProjectFiles {
         answer: Option<Answer>,
     ) -> Option<Song> {
         self.provider.attach(ctx);
+        self.poll_voicebank_import(ctx);
         self.send = false;
         if shortcuts {
             if ctx.input_mut(|i| i.consume_shortcut(&OPEN_KEY)) {

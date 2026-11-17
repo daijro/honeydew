@@ -7,14 +7,59 @@ use super::{IMPORT_FAILED, ProjectFiles, VOICEBANKS_FOLDER};
 /// An import is bounded to keep decompression and indexing responsive and safe on mobile devices.
 const MAX_VOICEBANK_UNPACKED: u64 = 256 << 20;
 
+pub(super) type ImportResult = Result<(crate::vocal_synth::VoicebankIndex, Vec<u8>), String>;
+
 impl ProjectFiles {
-    /// Keeps the original archive in `My Voicebanks` and indexes its oto aliases for the workstation browser.
+    /// Validate/decompress away from the native UI/audio threads. A single in-flight bank bounds memory.
     pub(super) fn voicebank_imported(&mut self, path: &Path, bytes: Vec<u8>) {
-        let _ = self.voicebanks();
-        let index = match crate::vocal_synth::index_archive(&bytes, MAX_VOICEBANK_UNPACKED) {
-            Ok(index) => index,
-            Err(err) => return self.fail(IMPORT_FAILED, format!("{}: {err}", path.display())),
+        if self.voicebank_import.is_some() {
+            return self.fail(IMPORT_FAILED, "A voicebank import is already running".into());
+        }
+        let path = path.to_owned();
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        self.voicebank_import = Some(receiver);
+        let work = move || {
+            let result = crate::vocal_synth::index_archive(&bytes, MAX_VOICEBANK_UNPACKED)
+                .map(|index| (index, bytes))
+                .map_err(|err| format!("{}: {err}", path.display()));
+            let _ = sender.send(result);
         };
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Err(err) = std::thread::Builder::new().name("voicebank-import".into()).spawn(work) {
+            self.voicebank_import = None;
+            self.fail(IMPORT_FAILED, err.to_string());
+        }
+        #[cfg(target_arch = "wasm32")]
+        work();
+    }
+
+    pub(super) fn poll_voicebank_import(&mut self, ctx: &eframe::egui::Context) {
+        let Some(receiver) = &self.voicebank_import else { return; };
+        match receiver.try_recv() {
+            Ok(result) => {
+                self.voicebank_import = None;
+                match result {
+                    Ok((index, bytes)) => self.store_voicebank(index, bytes),
+                    Err(err) => self.fail(IMPORT_FAILED, err),
+                }
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                ctx.request_repaint_after(std::time::Duration::from_millis(50));
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.voicebank_import = None;
+                self.fail(IMPORT_FAILED, "The voicebank import worker stopped unexpectedly".into());
+            }
+        }
+    }
+
+    /// The browser's permanent root, even before the first voicebank import.
+    pub fn voicebanks_dir(&self) -> Option<PathBuf> {
+        self.user_dir().map(|user| user.join(VOICEBANKS_FOLDER))
+    }
+
+    fn store_voicebank(&mut self, index: crate::vocal_synth::VoicebankIndex, bytes: Vec<u8>) {
+        let _ = self.voicebanks();
         let folder = self
             .user_dir()
             .map_or_else(|| PathBuf::from(VOICEBANKS_FOLDER), |user| user.join(VOICEBANKS_FOLDER));
@@ -32,15 +77,17 @@ impl ProjectFiles {
         }
         let aliases = index.entries.len();
         let has_license = index.has_license_document;
-        self.voicebanks.push(index);
+        let mut updated = self.voicebanks.clone();
+        updated.push(index);
         let manifest = folder.join("index.json");
-        let saved_index = serde_json::to_vec_pretty(&self.voicebanks);
+        let saved_index = serde_json::to_vec_pretty(&updated);
         if let Err(err) = saved_index
             .map_err(std::io::Error::other)
             .and_then(|bytes| self.write_user_file(&manifest, bytes))
         {
             return self.fail(IMPORT_FAILED, format!("{}: {err}", manifest.display()));
         }
+        self.voicebanks = updated;
         self.flash = Some(format!(
             "Imported {target_name} to {VOICEBANKS_FOLDER}: {aliases} aliases. {}",
             if has_license {
