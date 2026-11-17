@@ -255,8 +255,8 @@ pub(super) fn timelines(song: &Song, actions: &[ScheduledAction]) -> Vec<Timelin
 mod binding_tests {
     use super::*;
     #[test]
-    fn vocal_explicit_vowels_match_the_panel_sequence() {
-        assert_eq!(["A", "E", "I", "O", "U"].map(vowel), [0, 1, 2, 3, 4]);
+    fn vocal_lyric_vowels_preserve_the_panel_vowel_instead_of_overriding_it() {
+        assert_eq!(["A", "E", "I", "O", "U"].map(vowel), [255; 5]);
     }
     #[test]
     fn vocal_restore_timeline_resets_at_the_next_note_on() {
