@@ -96,7 +96,9 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         theme: local_theme.as_ref().unwrap_or(app.cx.theme),
         m: app.cx.m,
     };
-    let actions = if let Some(editor) = editor.filter(|r| r.width() > 1.0 && r.height() > 1.0) {
+    let actions = if let Some(editor) =
+        editor.filter(|r| r.width() > 1.0 && r.height() > if studio { 96.0 } else { 1.0 })
+    {
         roll.show(ui, editor, &cx, app.song, &opts)
     } else {
         Vec::new()

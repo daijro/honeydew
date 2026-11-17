@@ -398,3 +398,41 @@ accessed or bundled. For keyboard failures, provide `adb logcat -b crash -d`
 and `last-rust-crash.txt` from the app's external files directory (if present).
 For playback stutter, include phone model, Android version, project note count,
 voice/effects setup and whether it happens with waveform visualization off.
+
+## Vocal Studio workspace — 0.5.7
+
+Vocal-only racks now open a separate dark desktop-style workspace inside the
+piano-roll editor area. Ordinary instruments and the rest of BanaForge retain
+their original layout/theme. Removing/replacing the Vocal Synth instrument or
+leaving its piano roll automatically removes this workspace. Its theme is scoped,
+not installed globally. The references informed the docked-panel layout; no
+third-party logos, portraits, voice assets or unrelated screenshot content is used.
+
+- Workstation title strip, horizontal scrollable tool strip, transport Play/Stop,
+  Notes/Pitch tools, Snap/grid, lyric/waveform toggles and contextual status strip.
+- Resizable left Track/Voice/View inspector on tablet/desktop widths. Level/pan,
+  formant/breath/brightness, vowel A/E/I/O/U, portamento, vibrato, attack/release
+  send existing normalized realtime SetParam commands and store project values.
+  Simply viewing controls never changes their values. Simple mode hides advanced
+  expression/formant controls.
+- Bank library docks right on wide screens. Smaller screens access it through
+  the inspector. Import and metadata browsing remain available; the missing bank
+  singer renderer is explicitly marked unavailable, not disguised as functional.
+- At phone widths, Inspector temporarily replaces the canvas and has a Close
+  action, rather than shrinking the piano roll to unusable touch targets. Swipe
+  the tool strip horizontally for additional controls. Touch-friendly sizing is
+  default. Very short collapsed editor regions skip grid interaction/rendering.
+- Existing note placement, movement, resize, lyric entry, pitch curves, waveform
+  caching, expression lanes, project persistence and outer app navigation remain
+  the native engine/editor implementations, not a webview or second application.
+
+Settings → Vocal Synth adds persisted Desktop vocal workspace, Show track
+inspector, Show voicebank browser, Large touch controls and Follow vocal
+playhead. View inside the inspector also exposes Simple mode, lyric visibility,
+waveform visibility/gap and workflow help. Desktop workspace can be switched off
+as an escape hatch. Dock width and phone drawer state are session-local per track.
+
+Validation includes responsive geometry at phone/tablet/desktop sizes, scoped
+palette, settings serialization and an app-level activation/deactivation test.
+A UI redesign does not implement future DSP or guarantee zero crashes/latency;
+physical-device keyboard, pinch/drag, playback and orientation checks are required.

@@ -131,6 +131,7 @@ pub(super) fn show(
     ui.scope_builder(
         UiBuilder::new().max_rect(bounds.header.shrink2(vec2(8.0, 0.0))),
         |ui| {
+            ui.set_clip_rect(ui.clip_rect().intersect(bounds.header));
             style(ui, false);
             ui.horizontal_centered(|ui| {
                 ui.label(RichText::new("B").color(ACCENT).strong());
@@ -155,6 +156,7 @@ pub(super) fn show(
     ui.scope_builder(
         UiBuilder::new().max_rect(bounds.tools.shrink2(vec2(6.0, 2.0))),
         |ui| {
+            ui.set_clip_rect(ui.clip_rect().intersect(bounds.tools));
             style(ui, app.settings.vocal_large_controls);
             egui::ScrollArea::horizontal()
                 .id_salt(("vocal-tools", channel))
@@ -248,6 +250,7 @@ pub(super) fn show(
     if let Some(right) = bounds.browser {
         ui.painter().rect_filled(right, 0.0, PANEL);
         ui.scope_builder(UiBuilder::new().max_rect(right.shrink(10.0)), |ui| {
+            ui.set_clip_rect(ui.clip_rect().intersect(right));
             style(ui, app.settings.vocal_large_controls);
             banks(ui, app, selected);
         });
@@ -263,7 +266,7 @@ pub(super) fn show(
     }
     if bounds.footer.height() > 0.0 {
         ui.painter().rect_filled(bounds.footer, 0.0, PANEL);
-        ui.painter().text(
+        ui.painter_at(bounds.footer).text(
             bounds.footer.left_center() + vec2(10.0, 0.0),
             egui::Align2::LEFT_CENTER,
             if roll.pitch_draw_enabled {
@@ -395,15 +398,16 @@ fn vowel(ui: &mut Ui, app: &mut AppCtx, channel: usize, instance_id: i32) {
     };
     let before = *value;
     let mut index = (before * 4.0).round().clamp(0.0, 4.0) as usize;
+    let mut changed = false;
     egui::ComboBox::from_id_salt(("studio-vowel", channel))
         .selected_text(["A", "E", "I", "O", "U"][index])
         .show_ui(ui, |ui| {
             for (i, label) in ["A", "E", "I", "O", "U"].iter().enumerate() {
-                ui.selectable_value(&mut index, i, *label);
+                changed |= ui.selectable_value(&mut index, i, *label).changed();
             }
         });
     let next = index as f32 / 4.0;
-    if (next - before).abs() > 0.001 {
+    if changed && (next - before).abs() > 0.001 {
         *value = next;
         app.audio.send(AudioCommand::SetParam {
             channel,
