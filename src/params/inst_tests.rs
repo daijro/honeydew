@@ -389,7 +389,7 @@ const SAMPLE_NOTES: &[(u16, usize, [&str; 3])] = &[
 ];
 
 /// Rows with a "min … mid … max" range that is not a toggle (counted by script from the tables).
-const CHECKED_SAMPLE_ROWS: usize = 77;
+const CHECKED_SAMPLE_ROWS: usize = 83;
 
 #[test]
 fn rows_range_samples() {
