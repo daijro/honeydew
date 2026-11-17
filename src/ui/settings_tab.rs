@@ -241,7 +241,7 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 }
 
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 66] = {
+const ROWS: [Row; 71] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -323,6 +323,26 @@ const ROWS: [Row; 66] = {
         row("Authentication token", McpToken),
         row("Status", McpStatus),
         row("Vocal Synth:", Header),
+        row(
+            "Desktop vocal workspace",
+            Toggle(|s| &mut s.vocal_desktop_workspace),
+        ),
+        row(
+            "Show track inspector",
+            Toggle(|s| &mut s.vocal_inspector_visible),
+        ),
+        row(
+            "Show voicebank browser",
+            Toggle(|s| &mut s.vocal_browser_visible),
+        ),
+        row(
+            "Large touch controls",
+            Toggle(|s| &mut s.vocal_large_controls),
+        ),
+        row(
+            "Follow vocal playhead",
+            Toggle(|s| &mut s.vocal_follow_playhead),
+        ),
         row("Waveform", FixedDropdown("")),
         row("Show waveform", Toggle(|s| &mut s.vocal_waveform_enabled)),
         row(
@@ -336,7 +356,7 @@ const ROWS: [Row; 66] = {
         row("Pitch-bend sensitivity", FixedDropdown("Coming soon")),
         row("Auto-load last voicebank", FixedToggle(false)),
         row("Phoneme dictionary language", FixedDropdown("Coming soon")),
-        row("Vocal renderer", FixedDropdown("Silent default")),
+        row("Vocal renderer", FixedDropdown("Procedural voice")),
         row("Advanced:", Header),
         row("Share logs", DisabledButton),
         row("Restore demo songs", RestoreDemos),
@@ -1442,6 +1462,11 @@ mod tests {
                 "Authentication token",
                 "Status",
                 "Vocal Synth:",
+                "Desktop vocal workspace",
+                "Show track inspector",
+                "Show voicebank browser",
+                "Large touch controls",
+                "Follow vocal playhead",
                 "Waveform",
                 "Show waveform",
                 "Show top lyric bar",

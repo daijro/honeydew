@@ -139,6 +139,16 @@ const DEFAULT_SOUND_MODE: u8 = 3;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    #[serde(rename = "vocalSynth.desktopWorkspace")]
+    pub vocal_desktop_workspace: bool,
+    #[serde(rename = "vocalSynth.inspectorVisible")]
+    pub vocal_inspector_visible: bool,
+    #[serde(rename = "vocalSynth.browserVisible")]
+    pub vocal_browser_visible: bool,
+    #[serde(rename = "vocalSynth.largeControls")]
+    pub vocal_large_controls: bool,
+    #[serde(rename = "vocalSynth.followPlayhead")]
+    pub vocal_follow_playhead: bool,
     #[serde(rename = "vocalSynth.lyricBarEnabled")]
     pub vocal_lyric_bar_enabled: bool,
     #[serde(rename = "vocalSynth.waveformEnabled")]
@@ -384,6 +394,11 @@ impl Default for Settings {
     /// (the fallback theme), `100 %` and `Animation` `Full`. The metronome level is half way; the drum pads are locked.
     fn default() -> Self {
         Self {
+            vocal_desktop_workspace: true,
+            vocal_inspector_visible: true,
+            vocal_browser_visible: false,
+            vocal_large_controls: true,
+            vocal_follow_playhead: true,
             vocal_lyric_bar_enabled: true,
             vocal_waveform_enabled: true,
             vocal_waveform_offset_y: 5,
@@ -830,6 +845,11 @@ mod tests {
     fn changed() -> Settings {
         let d = Settings::default();
         Settings {
+            vocal_desktop_workspace: false,
+            vocal_inspector_visible: false,
+            vocal_browser_visible: true,
+            vocal_large_controls: false,
+            vocal_follow_playhead: false,
             vocal_lyric_bar_enabled: false,
             vocal_waveform_enabled: false,
             vocal_waveform_offset_y: 12,
@@ -1184,6 +1204,11 @@ mod tests {
                 "soundsOverMobileData",
                 "theme",
                 "uiscalefactor",
+                "vocalSynth.browserVisible",
+                "vocalSynth.desktopWorkspace",
+                "vocalSynth.followPlayhead",
+                "vocalSynth.inspectorVisible",
+                "vocalSynth.largeControls",
                 "vocalSynth.lyricBarEnabled",
                 "vocalSynth.simpleMode",
                 "vocalSynth.waveformEnabled",
