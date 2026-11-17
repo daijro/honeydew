@@ -198,3 +198,56 @@ the bundled default; no additional voicebank download is required.
   user-folder expectations, and graph touch-painting. Browser menu regressions
   no longer appear in the failures. Full CI is not green. No device install,
   audio measurement, or physical IME validation was performed in this sandbox.
+
+## Repeat-device report: lyric navigation and mobile load (source 2e16a5e)
+
+* The lyric panel is a compact, constrained, movable Area with a default rather
+  than forced position. Note-specific text IDs prevent Next Note from inheriting
+  the previous native editor's focus state; advancing updates note selection.
+  Native Done is consumed directly by the lyric panel instead of being injected
+  as a global Enter. The remaining UI-side repaint releases the editor mutex.
+* Added a regression that types hello, advances, commits Done, builds the audio
+  engine, and saves/loads the lyric. It passes on CI, not on a physical phone.
+  The reported device crash remains unconfirmed. Android now persists Rust panic
+  information/backtrace to external app files/last-rust-crash.txt when possible;
+  this does not capture every native signal, OOM kill or Java exception.
+* Removed the per-100-ms whole-engine audition rebuild from vocal drags. Visual
+  edits remain immediate and the complete curve is published on release; this
+  deliberately trades continuous mid-drag audio audition for responsiveness.
+* Android missing DW sample files now remain silent rather than loading the
+  grand-piano substitute. Existing negative sample-cache entries still avoid
+  repeated reads until an explicit reload/pick invalidates them.
+* Android auto-detected voicebank ZIPs use directory-only inspection before the
+  existing worker inflates, CRC-checks and indexes them. ZIP64/unsupported ZIPs
+  and decompression budgets are unchanged. Custom-bank sample singing is still
+  unavailable; registration alone does not make bank samples playable.
+* Waveforms retain their previous measured preview while jobs finish, wake the
+  UI on completion, favor the last 64 events, normalize display amplitude, and
+  move the lower waveform region down five logical points (clamped in short
+  notes). This is relative display normalization, not an absolute loudness meter.
+* Out-of-scale rows have an explicit dark overlay. Mixed vocal/sampler racks
+  hide the vocal-specific tools. The standard menu already includes Vocal Synth
+  and Transistor Bass; no new unrelated Bass engine was created.
+* Vocal Synth now has a real ENVELOPE page: Attack 8–508 ms and Release
+  120–2120 ms, mapped to DSP indices 8/9. Defaults retain the former envelope;
+  old eight-parameter projects keep those defaults. Waveform generation uses
+  the new parameters as well. This is not desktop-editor feature parity.
+* Fixed graph Pan painting accidentally updating remembered velocity. Updated
+  stale module-53, folder, vowel-order and parameter-display fixtures.
+* No new confirmed fix for the repeated playhead-start report: the prior Android
+  buffer-transport clock and callback-stall recovery remain, while rebuilding
+  pressure is reduced. Physical timing/performance measurements are pending.
+
+### Build/test evidence
+
+* ARM64/no-sounds APK run 44062495345 passed independent signature, install
+  metadata and ZIP verification. Artifact:
+  https://github.com/jellyscoll76-Real/honeydew/actions/runs/44062495345/artifacts/14319596147
+* Artifact ZIP 25,837,222 bytes; SHA-256
+  `89ebcf965d1e0147191361be3130181e37a3bdac49628befe89a65aa73a0a161`.
+* Vocal/lyric/envelope/mixed-rack and My Folders regressions passed (44062495799).
+  Formatting and strict Clippy passed. Latest completed app-library result:
+  4,548 passed, one failed, two ignored; the failure was a stale aggregate
+  parameter-range count (77 vs 83), corrected in test-only commit 794a03a.
+  Its rerun is pending; do not claim full workspace CI is green. Windows engine
+  smoke passed; macOS smoke was queued at last observation. No device testing.
