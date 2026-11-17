@@ -159,7 +159,7 @@ impl ProjectFiles {
                                 .as_ref()
                                 .and_then(|j| j.get("voicebank_source"))
                                 .and_then(|s| s.as_str())
-                                == source.to_str()
+                                .is_some_and(|selected| selected == source.to_string_lossy())
                             {
                                 module.file.preset_name.clone_from(&name);
                                 self.song_changed();
@@ -320,6 +320,55 @@ fn index_folder(root: &Path) -> Result<crate::vocal_synth::VoicebankIndex, Strin
 mod tests {
     use super::*;
     use crate::project_files::content::tests::Temp;
+
+    #[test]
+    fn vocal_import_completion_updates_only_the_still_selected_bank_name() {
+        let tmp = Temp::new("vocal-import-display-name");
+        let mut files = ProjectFiles::on_disk(&tmp.0);
+        let source = tmp.0.join("selected.zip");
+        let mut song = crate::song::Song::default();
+        song.add_channel(crate::song::ChannelKind::Instrument);
+        let rack = &mut song.channels[1].rack;
+        rack.modules.clear();
+        rack.add(53);
+        rack.add(53);
+        for (i, module) in rack.modules.iter_mut().enumerate() {
+            module.file.preset_name = "Pending".into();
+            module.file.custom_data = Some(serde_json::to_vec(&serde_json::json!({
+                "voicebank_source": if i == 0 { source.clone() } else { tmp.0.join("other.zip") },
+                "keep_me": 42
+            })).unwrap());
+        }
+        let index = crate::vocal_synth::index_files(&[
+            crate::zip::Entry {
+                path: "Bank/oto.ini".into(),
+                data: b"a.wav=a,0,0,0,0,0".to_vec(),
+            },
+            crate::zip::Entry {
+                path: "Bank/character.txt".into(),
+                data: "\u{feff}name=架空の音声".as_bytes().to_vec(),
+            },
+        ])
+        .unwrap();
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        files.voicebank_import = Some(rx);
+        tx.send(Ok((index, None, source))).unwrap();
+        files.poll_voicebank_import(&eframe::egui::Context::default(), &mut song);
+        assert_eq!(
+            song.channels[1].rack.modules[0].file.preset_name,
+            "架空の音声"
+        );
+        assert_eq!(song.channels[1].rack.modules[1].file.preset_name, "Pending");
+        let data: serde_json::Value = serde_json::from_slice(
+            song.channels[1].rack.modules[0]
+                .file
+                .custom_data
+                .as_ref()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(data["keep_me"], 42);
+    }
 
     #[test]
     fn vocal_folder_registration_is_metadata_only_and_survives_restart() {
