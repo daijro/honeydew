@@ -3,6 +3,8 @@
 //! Voicebank files are user content: this module only indexes metadata and never bundles or republishes samples. A
 //! bank's own license must be checked before sharing a project that depends on it.
 
+pub mod preparation;
+
 use std::collections::BTreeMap;
 use unicode_normalization::UnicodeNormalization;
 

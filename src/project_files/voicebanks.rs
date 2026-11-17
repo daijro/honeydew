@@ -224,7 +224,6 @@ impl ProjectFiles {
         {
             return self.fail(IMPORT_FAILED, format!("{}: {err}", target.display()));
         }
-        let registered_name = index.name.clone();
         let aliases = index.entries.len();
         let has_license = index.has_license_document;
         let mut updated = self.voicebanks.clone();
@@ -240,11 +239,11 @@ impl ProjectFiles {
         }
         self.voicebanks = updated;
         self.flash = Some(format!(
-            "Registered {registered_name} in {VOICEBANKS_FOLDER}: {aliases} aliases. {}",
+            "Voicebank indexed: {aliases} aliases · {} · default audio unchanged",
             if has_license {
-                "A license file is present; verify its terms before sharing or redistributing the bank."
+                "terms found; verify before sharing"
             } else {
-                "No license file was found; treat the bank as all-rights-reserved unless its owner says otherwise."
+                "license unverified; do not redistribute"
             }
         ));
         self.library_changes += 1;

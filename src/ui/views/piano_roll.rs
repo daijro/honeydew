@@ -90,7 +90,17 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         let mut import = false;
         let mut toggle_pitch = false;
         let mut reset_pitch = false;
-        let selected = state.voicebank_labels.entry(channel).or_default();
+        let selected = state.voicebank_labels.entry(channel).or_insert_with(|| {
+            app.song.channels[channel]
+                .rack
+                .modules
+                .iter()
+                .find(|m| m.type_id == 53)
+                .map(|m| &m.file.preset_name)
+                .filter(|name| banks.iter().any(|b| &b.name == *name))
+                .cloned()
+                .unwrap_or_default()
+        });
         let ink = egui::Color32::from_rgb(116, 255, 235);
         ui.painter()
             .rect_filled(toolbar, 0.0, egui::Color32::from_rgb(27, 31, 46));
