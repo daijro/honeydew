@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use super::{IMPORT_FAILED, ProjectFiles, VOICEBANKS_FOLDER};
 
 /// An import is bounded to keep decompression and indexing responsive and safe on mobile devices.
-const MAX_VOICEBANK_UNPACKED: u64 = 256 << 20;
+pub(super) const MAX_VOICEBANK_UNPACKED: u64 = 256 << 20;
 
 pub(super) type ImportResult = Result<(crate::vocal_synth::VoicebankIndex, Vec<u8>), String>;
 
@@ -74,7 +74,11 @@ impl ProjectFiles {
         self.user_dir().map(|user| user.join(VOICEBANKS_FOLDER))
     }
 
-    fn store_voicebank(&mut self, index: crate::vocal_synth::VoicebankIndex, bytes: Vec<u8>) {
+    pub(super) fn store_voicebank(
+        &mut self,
+        index: crate::vocal_synth::VoicebankIndex,
+        bytes: Vec<u8>,
+    ) {
         let _ = self.voicebanks();
         let folder = self.user_dir().map_or_else(
             || PathBuf::from(VOICEBANKS_FOLDER),

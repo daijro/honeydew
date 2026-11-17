@@ -1950,3 +1950,29 @@ fn edits_reach_recent_state_once_settled_or_when_the_app_leaves_and_a_start_rest
     assert_eq!(next.song_file(), Some(a.as_path()));
     assert_eq!(std::fs::read(&a).unwrap(), plain(1));
 }
+
+#[test]
+fn vocal_voicebank_zip_auto_routes_without_replacing_the_song() {
+    let mut files = files(&MemFiles::default());
+    let bytes = crate::zip::write(&[
+        ("Custom/oto.ini".into(), b"a.wav=a,0,0,0,0,0".to_vec()),
+        ("Custom/a.wav".into(), vec![0; 16]),
+    ])
+    .unwrap();
+    assert!(files.opened("Download.zip".into(), bytes.clone()).is_none());
+    assert!(files.message.is_none());
+    assert_eq!(files.voicebanks().len(), 1);
+    assert_eq!(files.voicebanks()[0].name, "Custom");
+    assert_eq!(
+        files
+            .read_user_file(Path::new("My Voicebanks/Custom.zip"))
+            .unwrap(),
+        bytes
+    );
+    assert!(
+        files
+            .read_user_file(Path::new("My Voicebanks/index.json"))
+            .is_ok()
+    );
+    assert!(files.importing.is_none());
+}
