@@ -1,6 +1,6 @@
 //! Shared test songs.
 
-use honeydew::song::{AutomationTarget, ChannelKind, Event, SamplerSlot, Song, SynthKind};
+use banaforge::song::{AutomationTarget, ChannelKind, Event, SamplerSlot, Song, SynthKind};
 
 /// An automation value the file holds exactly: `EVN2` stores value / 65535, so other values read back as the
 /// nearest of these.
@@ -28,7 +28,7 @@ pub fn every_feature_song() -> Song {
     song.file.meta.editing_seconds = 42.0;
     let send_id = song.channels[4].id;
     let drums = &mut song.channels[1];
-    drums.file.sends.push(honeydew::song::SendState {
+    drums.file.sends.push(banaforge::song::SendState {
         target_channel_id: send_id,
         level: 0.25,
         ..Default::default()
@@ -38,8 +38,8 @@ pub fn every_feature_song() -> Song {
     drums.name = "My Drums".into();
     let kit = drums.drum_kit.as_mut().unwrap();
     kit.slots[1].file.midi_key = 40;
-    kit.slots[2].file.path = Some(honeydew::flm::chunk::ContentPath::Shorthand {
-        root: honeydew::flm::chunk::ContentRoot::App,
+    kit.slots[2].file.path = Some(banaforge::flm::chunk::ContentPath::Shorthand {
+        root: banaforge::flm::chunk::ContentRoot::App,
         relative: "Drum Samples/Kick/Kick 01.wav".into(),
     });
     let hits = drums.lanes[0].add_clip(0, 4.0);
@@ -97,7 +97,7 @@ pub fn every_feature_song() -> Song {
     clip.file.sample = Some(Box::new(SamplerSlot {
         name: "Voice".into(),
         folder: "My Recordings".into(),
-        file: honeydew::song::SlotFileState {
+        file: banaforge::song::SlotFileState {
             id: 1,
             ..Default::default()
         },

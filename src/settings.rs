@@ -26,10 +26,16 @@ use serde_json::{Map, Value};
 
 /// The [`eframe::Storage`] key the settings are stored under, prefixed because the web's local storage is shared by
 /// everything on the page's origin.
-pub const STORAGE_KEY: &str = "honeydew.settings";
+pub const STORAGE_KEY: &str = "banaforge.settings";
 
 /// The keys the app stored its values under before its rename, each with the key that replaces it.
-const LEGACY_KEYS: [(&str, &str); 2] = [
+const LEGACY_KEYS: [(&str, &str); 5] = [
+    ("honeydew.settings", STORAGE_KEY),
+    (
+        "honeydew.routingPrefs",
+        crate::recording::routing::STORAGE_KEY,
+    ),
+    ("honeydew.pluginCache", crate::plugins::CACHE_KEY),
     ("studio.settings", STORAGE_KEY),
     (
         "studio.routingPrefs",
@@ -83,9 +89,9 @@ pub fn mcp_token_path() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "windows")]
     let base = std::env::var_os("APPDATA").map(std::path::PathBuf::from)?;
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let app_dir = "honeydew";
+    let app_dir = "banaforge";
     #[cfg(any(target_os = "macos", target_os = "windows"))]
-    let app_dir = "Honeydew";
+    let app_dir = "BanaForge";
     Some(base.join(app_dir).join("control-token"))
 }
 
@@ -133,6 +139,12 @@ const DEFAULT_SOUND_MODE: u8 = 3;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    #[serde(rename = "vocalSynth.waveformEnabled")]
+    pub vocal_waveform_enabled: bool,
+    #[serde(rename = "vocalSynth.waveformOffsetY")]
+    pub vocal_waveform_offset_y: u8,
+    #[serde(rename = "vocalSynth.simpleMode")]
+    pub vocal_simple_mode: bool,
     /// `Input device:` (`MidiDevice`): the menu label of the chosen MIDI input, `<no midi input>`, `Any available` or
     /// a device name (`MidiChoice::label`; read it back with `MidiChoice::from_label`). A name stays when its device
     /// is not connected: the choice reconnects when the device returns.
@@ -156,7 +168,7 @@ pub struct Settings {
     /// `Sound mode:`, a stored id from [`SOUND_MODES`], selecting the platform's audio mode.
     #[serde(rename = "soundModeAndr")]
     pub sound_mode: u8,
-    /// `Enable audio recording latency compensation` (our own key): ON compensates. Honeydew change (#129, #130): the
+    /// `Enable audio recording latency compensation` (our own key): ON compensates. BanaForge change (#129, #130): the
     /// earlier `reclatency` toggle compensated while OFF or unset; a load moves it here once, keeping whether it
     /// compensated ([`migrate_keys`]). On by default, as the earlier unset key compensated.
     #[serde(rename = "recLatencyCompensation")]
@@ -370,6 +382,9 @@ impl Default for Settings {
     /// (the fallback theme), `100 %` and `Animation` `Full`. The metronome level is half way; the drum pads are locked.
     fn default() -> Self {
         Self {
+            vocal_waveform_enabled: true,
+            vocal_waveform_offset_y: 5,
+            vocal_simple_mode: false,
             midi_device: ANY.to_owned(),
             multi_core: false,
             mcp_enabled: false,
@@ -473,6 +488,7 @@ impl Settings {
             serde_json::from_value::<Self>(Value::Object(one)).is_ok()
         });
         let mut s: Self = serde_json::from_value(Value::Object(fields)).unwrap_or_default();
+        s.vocal_waveform_offset_y = s.vocal_waveform_offset_y.min(40);
         let d = Self::default();
         if s.theme as usize >= builtin_themes().len() {
             s.theme = d.theme;
@@ -603,7 +619,7 @@ fn migrate_keys(fields: &mut Map<String, Value>) {
     {
         fields.insert("demoSongsVersion".into(), DEMO_SONGS_VERSION.into());
     }
-    // Honeydew change (#129, #130): the earlier inverted latency toggle, which compensated unless TRUE, becomes the
+    // BanaForge change (#129, #130): the earlier inverted latency toggle, which compensated unless TRUE, becomes the
     // ON-compensates one, compensation kept.
     if let Some(toggle) = fields.remove("reclatency")
         && !fields.contains_key("recLatencyCompensation")
@@ -615,7 +631,7 @@ fn migrate_keys(fields: &mut Map<String, Value>) {
 
 /// The key a settings store answers (with anything) while its last flush failed: what it could not write waits in
 /// memory, and [`eframe::Storage::flush`] returns nothing to say so.
-pub const UNFLUSHED_KEY: &str = "honeydew.unflushed";
+pub const UNFLUSHED_KEY: &str = "banaforge.unflushed";
 
 /// `storage`'s last flush failed ([`UNFLUSHED_KEY`]): the app tries again.
 pub fn unflushed(storage: &dyn eframe::Storage) -> bool {
@@ -653,10 +669,11 @@ pub const SETTINGS_FILE: &str = "storage.json";
 /// the first time ([`crate::migrate_legacy_dir_once`]), with the values of the former keys carried over.
 #[cfg(not(target_arch = "wasm32"))]
 fn open_storage(dir: &std::path::Path) -> Box<dyn eframe::Storage> {
-    let app = crate::migrate_legacy_dir_once(
-        &dir.join(crate::LEGACY_APP_NAME),
+    let current = crate::migrate_legacy_dir_once(
+        &dir.join(crate::PREVIOUS_APP_NAME),
         &dir.join(crate::APP_NAME),
     );
+    let app = crate::migrate_legacy_dir_once(&dir.join(crate::LEGACY_APP_NAME), &current);
     let mut storage = FileStorage::open(app.join(SETTINGS_FILE));
     migrate_legacy_keys(&mut storage);
     Box::new(storage)
@@ -810,6 +827,9 @@ mod tests {
     fn changed() -> Settings {
         let d = Settings::default();
         Settings {
+            vocal_waveform_enabled: false,
+            vocal_waveform_offset_y: 12,
+            vocal_simple_mode: true,
             midi_device: "Keys 49".into(),
             multi_core: !d.multi_core,
             mcp_enabled: !d.mcp_enabled,
@@ -887,6 +907,23 @@ mod tests {
     }
 
     #[test]
+    fn vocal_preferences_persist_and_gap_is_bounded() {
+        let d = Settings::default();
+        assert!(d.vocal_waveform_enabled);
+        assert_eq!(d.vocal_waveform_offset_y, 5);
+        assert!(!d.vocal_simple_mode);
+        let prefs = Settings::load(&stored(
+            r#"{"vocalSynth.waveformEnabled":false,"vocalSynth.waveformOffsetY":99,"vocalSynth.simpleMode":true}"#,
+        ));
+        assert!(!prefs.vocal_waveform_enabled);
+        assert_eq!(prefs.vocal_waveform_offset_y, 40);
+        assert!(prefs.vocal_simple_mode);
+        let mut mem = Mem::default();
+        prefs.save(&mut mem);
+        assert_eq!(Settings::load(&mem), prefs);
+    }
+
+    #[test]
     fn defaults_are_the_device_state() {
         let d = Settings::default();
         // The rows that default on, and the count-in.
@@ -947,7 +984,7 @@ mod tests {
         assert_eq!(Settings::load(&stored("[1, 2]")), Settings::default());
     }
 
-    /// Honeydew change (#129, #130): the latency toggle is ON while it compensates. The earlier inverted `reclatency`
+    /// BanaForge change (#129, #130): the latency toggle is ON while it compensates. The earlier inverted `reclatency`
     /// (compensating while FALSE or unset) moves to its own key once, compensation kept: shown ON where it ran.
     #[test]
     fn the_inverted_latency_toggle_moves_once_and_keeps_whether_it_compensates() {
@@ -1286,6 +1323,27 @@ mod tests {
     }
 
     #[test]
+    fn honeydew_settings_and_plugin_cache_migrate_without_overwriting_banaforge() {
+        use eframe::Storage as _;
+        let mut mem = Mem::default();
+        mem.set_string(
+            "honeydew.settings",
+            r#"{"MidiDevice":"Previous Keys"}"#.into(),
+        );
+        mem.set_string("honeydew.pluginCache", "[]".into());
+        migrate_legacy_keys(&mut mem);
+        assert_eq!(Settings::load(&mem).midi_device, "Previous Keys");
+        assert_eq!(
+            mem.get_string(crate::plugins::CACHE_KEY).as_deref(),
+            Some("[]")
+        );
+        mem.set_string(STORAGE_KEY, r#"{"MidiDevice":"New Keys"}"#.into());
+        migrate_legacy_keys(&mut mem);
+        assert_eq!(Settings::load(&mem).midi_device, "New Keys");
+        assert!(mem.get_string("honeydew.settings").is_some());
+    }
+
+    #[test]
     fn values_under_the_former_keys_move_to_the_new_ones_and_stay_under_the_old() {
         use crate::recording::routing;
         use eframe::Storage as _;
@@ -1315,7 +1373,7 @@ mod tests {
         std::fs::write(old.join("storage.json"), file.to_string()).unwrap();
         let storage = open_storage(&dir);
         assert_eq!(Settings::load(&*storage).midi_device, "Keys 49");
-        assert!(dir.join("Honeydew").join("storage.json").is_file());
+        assert!(dir.join("BanaForge").join("storage.json").is_file());
         assert!(!old.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1353,7 +1411,7 @@ mod tests {
     fn the_file_storage_keeps_values_across_opens_once_flushed() {
         use eframe::Storage as _;
         let dir =
-            std::env::temp_dir().join(format!("honeydew-settings-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("banaforge-settings-test-{}", std::process::id()));
         let path = dir.join("nested").join("storage.json");
         let _ = std::fs::remove_dir_all(&dir);
 

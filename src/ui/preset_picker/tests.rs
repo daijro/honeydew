@@ -743,7 +743,7 @@ fn a_dw_programs_sample_folder_is_left_out() {
     assert_eq!(names(&picker, ""), ["Other", "Gen Guitar"]);
 }
 
-/// A Honeydew addition (#109, #123): a folder and any other file each carry their mark at the row's end; the picker's
+/// A BanaForge addition (#109, #123): a folder and any other file each carry their mark at the row's end; the picker's
 /// own preset files, every plain row of a preset list, carry none. An audio file's is its extension too, even in the
 /// sample picker, whose own files they are.
 #[test]
@@ -1974,7 +1974,7 @@ fn a_pick_loading_with_no_audition_strip_pulses_too_and_a_tap_picks_it_again() {
 }
 
 fn wave(frames: usize) -> Waveform {
-    Waveform::new(std::sync::Arc::new(honeydew_audio::sample::SampleData {
+    Waveform::new(std::sync::Arc::new(banaforge_audio::sample::SampleData {
         sample_rate: 1000,
         left: vec![0.5; frames].into(),
         right: None,

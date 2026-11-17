@@ -12,7 +12,7 @@ use crate::audio_engine::{EngineError, SongAudioEngine};
 use crate::sample_cache::SampleCache;
 use crate::song::{PPQ, Song};
 use crate::ui::clips::song_end_beats;
-use honeydew_audio::device::AudioRenderer;
+use banaforge_audio::device::AudioRenderer;
 
 /// The render range spinner, in spinner order.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -243,7 +243,7 @@ impl Render {
         }
         let (start, end) = ticks(&song, spec.range);
         let engine = engine(&song, samples, spec.rate, start)?;
-        // As long as playback plays it, at the tempo automation's tempos (Honeydew change, #126).
+        // As long as playback plays it, at the tempo automation's tempos (BanaForge change, #126).
         let range = engine.frames_to_tick(end as u64).ceil();
         if range.is_nan() || range > f64::from(MAX_SECS) * f64::from(spec.rate) {
             return Err(RenderError::TooLong);
@@ -464,7 +464,7 @@ fn audible(audio: &[Vec<f32>; 2], i: usize) -> bool {
 /// `x` through the 16-bit intermediate: trunc(x·32767), clamped to ±32767 (NaN → 0), as [`WavWriter`] stores it,
 /// kept as the `f32` that writes back as the same integer.
 ///
-/// [`WavWriter`]: honeydew_audio::wav_writer::WavWriter
+/// [`WavWriter`]: banaforge_audio::wav_writer::WavWriter
 fn pcm16(x: f32) -> f32 {
     let pcm = |x: f32| (f64::from(x) * 32767.0).clamp(-32767.0, 32767.0) as i16;
     let q = pcm(x);

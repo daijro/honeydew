@@ -1804,7 +1804,7 @@ fn send_lanes_are_named_after_their_target_channel() {
 #[test]
 fn a_point_on_the_loop_end_plays_just_before_the_next_passs_content_0() {
     // fit_loop keeps a point on the loop end; it plays with the next pass's content 0, before it, so the lower
-    // position lands last at the tie (as `honeydew_audio::automation` dispatches one), at any offset, in time order.
+    // position lands last at the tie (as `banaforge_audio::automation` dispatches one), at any offset, in time order.
     let point = |pos, value| Event::Automation {
         pos,
         value,
@@ -2038,7 +2038,7 @@ fn a_modulator_and_its_target_survive_a_save_and_go_with_the_targets_channel() {
     song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
     let id = song.channels[2]
         .rack
-        .add(honeydew_audio::modulator::MODULATOR);
+        .add(banaforge_audio::modulator::MODULATOR);
     let source = song.channels[1].id;
     let ch = &mut song.channels[2];
     let module = ch.rack.get_mut(id).unwrap();
@@ -2234,7 +2234,10 @@ fn vocal_lyrics_and_pitch_curves_round_trip_in_a_clip_extension() {
     let bytes = crate::flm::write(&song).unwrap();
     assert_eq!(bytes.windows(4).filter(|w| *w == b"HDVo").count(), 1);
     let read = crate::flm::read(&bytes).unwrap();
-    assert_eq!(read.channels[1].lanes[0].clips[0].file.vocal_notes, song.channels[1].lanes[0].clips[0].file.vocal_notes);
+    assert_eq!(
+        read.channels[1].lanes[0].clips[0].file.vocal_notes,
+        song.channels[1].lanes[0].clips[0].file.vocal_notes
+    );
 }
 
 #[test]
@@ -2275,4 +2278,24 @@ fn the_tag_fields_are_saved_apart_and_a_song_with_none_writes_as_before() {
     assert_eq!(crate::flm::read(&bytes).unwrap().file.meta, song.file.meta);
     song.file.meta = MetaState::default();
     assert_eq!(crate::flm::write(&song).unwrap(), before);
+}
+
+#[test]
+fn vocal_editor_follows_replaced_rack_not_creation_kind() {
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::VocalSynth));
+    assert!(super::vocal_editor(&song.channels[1]));
+    song.channels[1].rack.modules.clear();
+    assert!(!super::vocal_editor(&song.channels[1]));
+    song.channels[1].rack.add(SynthKind::DwSampler.type_id());
+    assert!(!super::vocal_editor(&song.channels[1]));
+}
+
+#[test]
+fn vocal_editor_is_hidden_for_a_mixed_sampler_rack() {
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::VocalSynth));
+    assert!(super::vocal_editor(&song.channels[1]));
+    song.channels[1].rack.add(SynthKind::DwSampler.type_id());
+    assert!(!super::vocal_editor(&song.channels[1]));
 }

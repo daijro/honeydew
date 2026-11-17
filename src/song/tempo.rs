@@ -7,7 +7,7 @@ use super::{AutomationTarget, ChannelKind, LaneKind, Song};
 /// ([`crate::ui::main_menu::TEMPO_RANGE`]).
 pub const TEMPO_RANGE: (f64, f64) = (1.0, 999.0);
 
-/// The master channel's param an automation lane moves the tempo with (Honeydew's own: FL Studio Mobile automates no
+/// The master channel's param an automation lane moves the tempo with (BanaForge's own: FL Studio Mobile automates no
 /// tempo, and channel param 6 is none of its). Its value v plays [`automated_tempo`]; files keep such a lane apart
 /// (`flm::write`).
 pub const TEMPO_PARAM: i32 = 6;

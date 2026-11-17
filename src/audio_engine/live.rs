@@ -3,8 +3,8 @@
 //! automation, audio) they go once, after every note effect, to the pads and every instrument (there is no
 //! second, per-instrument copy). The note effects run in real time ([`LiveNoteChain`]).
 
-use honeydew_audio::instrument::InstrumentModule;
-use honeydew_audio::note_effects::{LiveNoteChain, LiveNoteEvent, PADS};
+use banaforge_audio::instrument::InstrumentModule;
+use banaforge_audio::note_effects::{LiveNoteChain, LiveNoteEvent, PADS};
 
 use super::prepare::{KIT, note_effect, song_end_beat};
 use super::{EngineError, SongAudioEngine};
@@ -266,7 +266,7 @@ impl SongAudioEngine {
 
 #[cfg(test)]
 mod tests {
-    use honeydew_audio::device::AudioRenderer;
+    use banaforge_audio::device::AudioRenderer;
 
     use super::*;
     use crate::song::{ChannelKind, SynthKind};

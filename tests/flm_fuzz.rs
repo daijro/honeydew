@@ -7,9 +7,9 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use honeydew::flm::chunk::ChunkWriter;
-use honeydew::flm::{read, write};
-use honeydew::song::{ChannelKind, Song, SynthKind};
+use banaforge::flm::chunk::ChunkWriter;
+use banaforge::flm::{read, write};
+use banaforge::song::{ChannelKind, Song, SynthKind};
 
 mod common;
 
@@ -47,7 +47,7 @@ unsafe impl GlobalAlloc for Counting {
 static ALLOCATOR: Counting = Counting;
 
 /// The most `read(bytes)` allocates on top of what was allocated before it.
-fn read_peak(bytes: &[u8]) -> (Result<Song, honeydew::flm::FlmError>, usize) {
+fn read_peak(bytes: &[u8]) -> (Result<Song, banaforge::flm::FlmError>, usize) {
     let before = NOW.load(Ordering::Relaxed);
     PEAK.store(before, Ordering::Relaxed);
     let song = read(bytes);

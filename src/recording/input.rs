@@ -7,7 +7,7 @@
 use std::any::Any;
 use std::sync::Arc;
 
-pub use honeydew_audio::input::{InputDevice, InputReader, InputRing, input_devices};
+pub use banaforge_audio::input::{InputDevice, InputReader, InputRing, input_devices};
 
 use crate::ui::popup::PopupItem;
 
@@ -211,7 +211,7 @@ pub fn open_device(device: Option<&str>, rate: u32) -> Result<Opened, String> {
     #[cfg(target_os = "ios")]
     let device = device.filter(|_| false);
     #[cfg(not(target_arch = "wasm32"))]
-    return honeydew_audio::input::open_input(device, rate)
+    return banaforge_audio::input::open_input(device, rate)
         .map(|(ring, stream)| (ring, Box::new(stream) as Box<dyn Any>))
         .map_err(|err| format!("{err:?}"));
     #[cfg(target_arch = "wasm32")]

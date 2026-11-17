@@ -7,8 +7,8 @@ pub(crate) use tremolo::couple_param;
 
 use std::sync::Arc;
 
+use banaforge_audio::MeterSnapshot;
 use eframe::egui::{Id, Ui};
-use honeydew_audio::MeterSnapshot;
 
 mod analyzer;
 mod arpeggiator;
@@ -49,12 +49,12 @@ mod tuned_eq;
 mod tuner;
 mod waveshaper;
 mod wow_flutter;
-// Not in `modules!`: Honeydew's own effects, outside the registry's `modules()`.
+// Not in `modules!`: BanaForge's own effects, outside the registry's `modules()`.
+pub(super) mod banana;
 pub(super) mod de_esser;
 pub(super) mod denoise;
 pub(super) mod dynamic_eq;
 pub(super) mod half_time;
-pub(super) mod lemon;
 pub(super) mod modulator;
 
 modules! {
@@ -105,7 +105,7 @@ fn meter_id(ui: &Ui, instance_id: i32) -> Id {
     ui.id().with(("module meter", instance_id))
 }
 
-/// Where the rack posts the module's analysis (`honeydew_audio::analysis`), beside its meter.
+/// Where the rack posts the module's analysis (`banaforge_audio::analysis`), beside its meter.
 fn analysis_id(ui: &Ui, instance_id: i32) -> Id {
     meter_id(ui, instance_id).with("analysis")
 }

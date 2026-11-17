@@ -1,9 +1,9 @@
 //! REC's live automation recording, the pure rules: which
 //! clip a control's change goes to, and the point it adds there. The app arms REC, starts the transport and counts in;
 //! while it rolls armed, each change of the recent control comes here, and so does each MIDI controller that reaches a
-//! channel recording notes ([`HoneydewApp::record_cc`]).
+//! channel recording notes ([`BanaForgeApp::record_cc`]).
 
-use super::{HoneydewApp, tracks};
+use super::{BanaForgeApp, tracks};
 use crate::midi::route::Target;
 use crate::midi::{MidiMsg, Out};
 use crate::params::{self, ParamKind, ParamSpec, menu_index, menu_value};
@@ -182,7 +182,7 @@ impl AutoRecord {
     }
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// Records the change `values` (old, new) of `target` on channel `channel` at song tick `tick`
     /// ([`AutoRecord::record`]), with the current lane if it is this channel's; a lane it adds re-keys the tracks.
     /// Whether the song changed.
@@ -216,7 +216,7 @@ impl HoneydewApp {
     /// (#74). A CC that moved a link (`outs`) or was learned records nothing here: a link records through its control. An
     /// ongoing edit.
     ///
-    /// A Honeydew addition: the spec records the recent control only, one target at a time; here every controller does.
+    /// A BanaForge addition: the spec records the recent control only, one target at a time; here every controller does.
     pub(super) fn record_cc(&mut self, msg: MidiMsg, targets: &[Target], outs: &[Out], tick: u64) {
         // As the router plays them; there is no CC #127 channel param.
         let (param, value) = match msg {
@@ -234,7 +234,7 @@ impl HoneydewApp {
         let channels = targets.iter().map(|t| t.0);
         let mut channels: Vec<usize> =
             (channels.filter(|c| *c > 0 && recording.contains(c))).collect();
-        // Honeydew's own (#74): the param goes on through the MIDI sends of each channel it sounds on, and a monitoring
+        // BanaForge's own (#74): the param goes on through the MIDI sends of each channel it sounds on, and a monitoring
         // channel there records it too.
         let monitors = self.monitor_channels();
         if !monitors.is_empty() {
@@ -451,10 +451,10 @@ mod tests {
         p.iter().map(|p| (p.tick, p.value)).collect()
     }
 
-    /// The app's re-key after a change ([`HoneydewApp::auto_record`]): here the channels and tracks stay, so only what
+    /// The app's re-key after a change ([`BanaForgeApp::auto_record`]): here the channels and tracks stay, so only what
     /// the change moved itself has moved.
     ///
-    /// [`HoneydewApp::auto_record`]: crate::app::HoneydewApp
+    /// [`BanaForgeApp::auto_record`]: crate::app::BanaForgeApp
     fn rekeyed(rec: &mut AutoRecord, song: &Song) {
         let ids: Vec<_> = song.channels.iter().map(|c| c.id).collect();
         rec.rekey(&ids, &|c, l| Some((c, l)));

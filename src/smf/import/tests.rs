@@ -235,7 +235,7 @@ fn open_as_song_tempo() {
 #[test]
 fn a_tempo_map_imports_as_a_square_tempo_lane_that_plays_and_exports_back() {
     use crate::song::{TEMPO_TARGET, tempo_value};
-    use honeydew_audio::device::AudioRenderer;
+    use banaforge_audio::device::AudioRenderer;
     use points::{PointKey, Shape, ShapeKind};
     // 120 BPM, 90 from bar 3, 140 from bar 5, at 96 ticks a beat: bar 3 is file tick 768, song tick 1024.
     let t = |at, bpm: f64| (at, SmfEvent::Tempo((60e6 / bpm).round() as u32));

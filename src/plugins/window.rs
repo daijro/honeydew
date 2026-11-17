@@ -1,7 +1,7 @@
 // Copyright (C) 2026 ItsAlphaNeon
 // SPDX-License-Identifier: GPL-3.0-or-later
-// This file is part of Lemon Studio: https://github.com/ItsAlphaNeon/Lemon-Studio
-// Modified for Honeydew: the X11 window of Lemon Studio's plugin windows (os-app `plugin_window/x11.rs`) without its
+// This file is part of Banana Studio: https://github.com/ItsAlphaNeon/Lemon-Studio
+// Modified for BanaForge: the X11 window of Banana Studio's plugin windows (os-app `plugin_window/x11.rs`) without its
 // frame: a plain top-level window the window manager decorates, which the plugin's editor is embedded in.
 
 //! A plugin editor's own window. Plugin editors on Linux embed only in X11 windows (CLAP `x11`, VST3
@@ -380,7 +380,7 @@ mod x11 {
                 win,
                 AtomEnum::WM_CLASS,
                 AtomEnum::STRING,
-                b"honeydew\0honeydew\0",
+                b"banaforge\0banaforge\0",
             )?;
             c.change_property32(
                 PropMode::REPLACE,

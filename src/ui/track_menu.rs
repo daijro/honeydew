@@ -35,11 +35,11 @@ pub enum TrackOp {
     AddPitchTrack,
     /// Disabled: resyncing the audio clips is not implemented.
     SyncAllSamples,
-    /// `Hide track` / `Show track` (Honeydew's own): this track hidden ([`crate::song::Lane::hidden`]) or shown again.
+    /// `Hide track` / `Show track` (BanaForge's own): this track hidden ([`crate::song::Lane::hidden`]) or shown again.
     ToggleHidden,
-    /// `Collapse` / `Expand` (Honeydew's own, #83): this track's row thin ([`crate::song::Lane::collapsed`]) or full.
+    /// `Collapse` / `Expand` (BanaForge's own, #83): this track's row thin ([`crate::song::Lane::collapsed`]) or full.
     ToggleCollapsed,
-    /// `Collapse all` / `Expand all` (Honeydew's own, #100): every track of the song collapsed or expanded.
+    /// `Collapse all` / `Expand all` (BanaForge's own, #100): every track of the song collapsed or expanded.
     CollapseAll,
     ExpandAll,
 }
@@ -47,8 +47,8 @@ pub enum TrackOp {
 /// The menu for track `lane` of channel `channel`. The primary track is the channel's lane 0.
 /// - Column 0: `Show Tracks` while the sub-tracks are hidden, else `Hide tracks`, enabled with more than one track;
 ///   `Channel Settings`; `Clone Channel` and `Insert Channel` (not on the master); `Delete Track`, enabled when the
-///   channel has more than one track of the primary's kind or this track's kind differs from it; Honeydew's
-///   `Hide track`, `Show track` on a hidden track (which shows with Settings `Show hidden tracks`); Honeydew's
+///   channel has more than one track of the primary's kind or this track's kind differs from it; BanaForge's
+///   `Hide track`, `Show track` on a hidden track (which shows with Settings `Show hidden tracks`); BanaForge's
 ///   `Collapse`, `Expand` on a collapsed track (#83); `Collapse all` while a track of the song is not collapsed and
 ///   `Expand all` while one is (#100); then `Delete Channel` (not on the master), last (#68). The master's menu is
 ///   items 1, 2, 5, `Hide track` and the collapse items.

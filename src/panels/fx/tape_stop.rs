@@ -1,7 +1,7 @@
 //! The Tape Stop panel (ID 42), UIHeight 8.4 U.
 
+use banaforge_audio::analysis;
 use eframe::egui::{Color32, Rect, Shape, Stroke, Ui, Vec2, pos2, vec2};
-use honeydew_audio::analysis;
 
 use super::live_analysis;
 use crate::panels::build::*;
@@ -450,7 +450,7 @@ mod tests {
         for n in [1, 6] {
             let out = ctx.run(RawInput::default(), |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    let feed = (honeydew_audio::MeterSnapshot::default(), &[120.0][..]);
+                    let feed = (banaforge_audio::MeterSnapshot::default(), &[120.0][..]);
                     crate::panels::post_feed(ui, 2, Some(feed));
                     let module = ModuleInstance::new(42, 2);
                     readouts(

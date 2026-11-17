@@ -1,8 +1,8 @@
-//! Half Time (module type [`HALF_TIME`]), Honeydew's own effect (GitHub #91).
+//! Half Time (module type [`HALF_TIME`]), BanaForge's own effect (GitHub #91).
 //! Tape-style slow down on the beat: each cycle of Length plays the start of its input at Speed, by default its first
 //! half at half speed, an octave down.
 //!
-//! **Params**, normalized, in this order (the saved one): 0 Enable, [`OLD_LENGTH`], [`MIX`], and the Honeydew additions
+//! **Params**, normalized, in this order (the saved one): 0 Enable, [`OLD_LENGTH`], [`MIX`], and the BanaForge additions
 //! of GitHub #122, appended so that older saves load as they were: [`LENGTH`], [`SPEED`], [`SMOOTH`]. Post Gain, Mix
 //! and Wet Pan are the rack's too (`CommonModule`). The laws from `v`:
 //! - Length `round(7v)` of [`LENGTHS`]: 1/16 bar to 8 bars, in bars of four beats. It was param 1 before (`round(3v)`
@@ -24,7 +24,7 @@ use std::f32::consts::FRAC_PI_2;
 
 use crate::ProcessContext;
 
-/// The module type: Honeydew's own id, which a song file keeps apart from FL Studio Mobile's modules.
+/// The module type: BanaForge's own id, which a song file keeps apart from FL Studio Mobile's modules.
 pub const HALF_TIME: u16 = 1008;
 
 /// Length before 0.5.4 (GitHub #122): `round(3v)` of 1/4 bar, 1/2 bar, 1 bar or 2 bars. Only [`upgrade`] reads it.

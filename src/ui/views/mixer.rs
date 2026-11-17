@@ -1,7 +1,7 @@
 //! The main mixer view: [`crate::ui::mixer`]'s strips, wired to the audio.
 
+use banaforge_audio::device::AudioCommand;
 use eframe::egui;
-use honeydew_audio::device::AudioCommand;
 
 use super::{AppCtx, Nav};
 use crate::ui::mixer::{self, MixerState};

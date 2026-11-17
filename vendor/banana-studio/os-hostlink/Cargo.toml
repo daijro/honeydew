@@ -1,0 +1,17 @@
+[package]
+name = "os-hostlink"
+description = "Banana Studio host link: how a Banana plugin and Banana Studio's plugin window share the window strip"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[lib]
+doctest = false
+
+[features]
+# BanaForge (vendored addition): the editors' link on Windows as elsewhere (`src/lib.rs`), for `os-plugkit`'s `embed`.
+embed = []
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

@@ -3,11 +3,11 @@
 use std::f32::consts::TAU;
 use std::sync::Arc;
 
-use honeydew_audio::drums::{
+use banaforge_audio::drums::{
     EG_A, EG_D, EG_R, EG_S, LENGTH, LEVEL, MUTE, PAN, Pad, PadSample, PadSampler, SAMPLE_START,
     SOLO, SPEED, STREAM_FRAMES, Stream, Stretching, hit_pitch, level_gain, stretch,
 };
-use honeydew_audio::sample::SampleData;
+use banaforge_audio::sample::SampleData;
 
 const RATE: f32 = 44_100.0;
 

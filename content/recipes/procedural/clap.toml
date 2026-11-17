@@ -1,7 +1,7 @@
 id = "proc-clap"
 kind = "samples"
 path = "Samples/Electronic Clap/"
-source = "honeydew"
+source = "banaforge"
 render = "clap"
 variant = [
   { name = "Clap Tight", tone = 1300.0, q = 1.6, decay = 0.09, spread = 0.009, bursts = 3 },

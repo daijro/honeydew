@@ -6,13 +6,13 @@
 //!   and its zones; every part of any other), then the rest. Its [`Ticket`] holds the claim and tells the progress.
 //!   Dropping it stops the downloads only it needed and frees what they brought; [`Ticket::keep`] hands the claim to
 //!   The song instead, until the next song load ([`song`]).
-//! - **From where** (`web.js`). Cache Storage (`honeydew-packs-v1`), else the `.gz` beside the part, gunzipped unless
+//! - **From where** (`web.js`). Cache Storage (`banaforge-packs-v1`), else the `.gz` beside the part, gunzipped unless
 //!   the host sent it with `Content-Encoding` (index.html's rule for the wasm), its tar's SHA-256 checked before it is
 //!   cached; without a `.gz` the plain part, which the browser checks against `integrity`. A body stays a JS
 //!   `Uint8Array`, outside the wasm's memory, and a read copies one member out ([`slice`]).
 //! - **Failures**. A part that fails is tried again from the network after 1 s, 3 s and 9 s (±20%), then given up: its
 //!   members read as missing. Offline and not cached, it gives up at once. The next claim tries again.
-//! - **LRU**. The book (`localStorage` `honeydew.packs`) holds each cached part's last landing and size. After each
+//! - **LRU**. The book (`localStorage` `banaforge.packs`) holds each cached part's last landing and size. After each
 //!   landing the least recent parts no claim holds leave Cache Storage, until the rest fit the budget: half the
 //!   origin's quota, at most 1 GiB.
 //! - **Upgrades**. Until all of an entry's parts are in, its program reads as its lite one; [`poll`] names it once they

@@ -1,7 +1,7 @@
-//! Dynamic EQ ([`honeydew_audio::dynamic_eq`]), Honeydew's own effect: its params and value texts, in the engine's
+//! Dynamic EQ ([`banaforge_audio::dynamic_eq`]), BanaForge's own effect: its params and value texts, in the engine's
 //! order and laws.
 
-use honeydew_audio::dynamic_eq::{
+use banaforge_audio::dynamic_eq::{
     self as d, ATTACK, BANDS, DEFAULTS, FREQUENCY, GAIN, ON, PARAMS, PER_BAND, Q, RANGE, RELEASE,
     SHAPE, THRESHOLD, band,
 };

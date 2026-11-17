@@ -1,10 +1,10 @@
-use honeydew::flm::{
+use banaforge::flm::{
     chunk::{
         ChunkWriter, FlmErrorKind, MAGIC_CH02, MAGIC_CL02, MAGIC_RK01, MAGIC_SL02, MAGIC_SM01,
     },
     read, write,
 };
-use honeydew::song::{ChannelKind, Event, LaneKind, TimeSig};
+use banaforge::song::{ChannelKind, Event, LaneKind, TimeSig};
 
 fn minimal_file() -> Vec<u8> {
     let mut writer = ChunkWriter::new_file();
@@ -472,8 +472,8 @@ fn drum_sampler_slot_loads_its_path_and_settings() {
     assert_eq!(slot.file.stretch_ratio, 1.25);
     assert_eq!(
         slot.file.path.as_ref().unwrap(),
-        &honeydew::flm::chunk::ContentPath::Shorthand {
-            root: honeydew::flm::chunk::ContentRoot::App,
+        &banaforge::flm::chunk::ContentPath::Shorthand {
+            root: banaforge::flm::chunk::ContentRoot::App,
             relative: "Drum Samples/Kick.wav".into(),
         }
     );
@@ -544,10 +544,10 @@ fn audio_clip_sample_gets_a_new_slot_id() {
 
 // --- Reader and writer fixes ---
 
-use honeydew::flm::{chunk::ChunkWriter as W, read_with_notices};
-use honeydew::song::{AutomationTarget, DrumKit, Song, SynthKind};
+use banaforge::flm::{chunk::ChunkWriter as W, read_with_notices};
+use banaforge::song::{AutomationTarget, DrumKit, Song, SynthKind};
 
-type Build<'a> = &'a dyn Fn(&mut W) -> Result<(), honeydew::flm::FlmError>;
+type Build<'a> = &'a dyn Fn(&mut W) -> Result<(), banaforge::flm::FlmError>;
 
 fn chunk(w: &mut W, id: &[u8; 4], body: Build) {
     w.chunk(*id, body).unwrap();
@@ -606,7 +606,7 @@ fn rack(w: &mut W, kind: u32, bus: i32, output: i32, body: Build) {
 }
 
 /// A CHHD (v2 + extension).
-fn chhd(w: &mut W, row: f64, id: i32, names: [&str; 3]) -> Result<(), honeydew::flm::FlmError> {
+fn chhd(w: &mut W, row: f64, id: i32, names: [&str; 3]) -> Result<(), banaforge::flm::FlmError> {
     w.chunk(*b"CHHD", |w| {
         w.char::<1024>(names.iter().find(|n| !n.is_empty()).unwrap_or(&""))?;
         w.u32(0)?;
@@ -625,7 +625,7 @@ fn chhd(w: &mut W, row: f64, id: i32, names: [&str; 3]) -> Result<(), honeydew::
     })
 }
 
-fn send(w: &mut W, target: i32) -> Result<(), honeydew::flm::FlmError> {
+fn send(w: &mut W, target: i32) -> Result<(), banaforge::flm::FlmError> {
     w.chunk(*b"SEND", |w| {
         w.i32(target)?;
         for value in [1.0, 1.0, 1.0, 0.8531, 0.8531] {
@@ -642,7 +642,7 @@ fn lane(
     inst: i32,
     param: i32,
     body: Build,
-) -> Result<(), honeydew::flm::FlmError> {
+) -> Result<(), banaforge::flm::FlmError> {
     w.chunk(*b"TRKH", |w| {
         w.chunk(*b"DESc", |w| {
             w.u8(kind)?;
@@ -679,7 +679,7 @@ fn clip(
     w: &mut W,
     visible: f64,
     records: &[(u32, i16, u16, u8, u8)],
-) -> Result<(), honeydew::flm::FlmError> {
+) -> Result<(), banaforge::flm::FlmError> {
     w.chunk(*b"CLIP", |w| {
         w.u32(0)?;
         w.raw(&MAGIC_CL02)?;
@@ -1451,7 +1451,7 @@ fn slot_rack(
     main: usize,
     link: bool,
     strc: usize,
-) -> impl Fn(&mut W) -> Result<(), honeydew::flm::FlmError> {
+) -> impl Fn(&mut W) -> Result<(), banaforge::flm::FlmError> {
     move |w| {
         w.chunk(*b"RSMP", |w| {
             w.raw(&MAGIC_SM01)?;
@@ -1475,7 +1475,7 @@ fn slot_rack(
 fn module_rack(
     type_id: u32,
     children: Build<'_>,
-) -> impl Fn(&mut W) -> Result<(), honeydew::flm::FlmError> + '_ {
+) -> impl Fn(&mut W) -> Result<(), banaforge::flm::FlmError> + '_ {
     move |w| {
         w.chunk(*b"RMOd", |w| {
             w.u32(type_id)?;
@@ -1485,7 +1485,7 @@ fn module_rack(
     }
 }
 
-fn notes_lane(w: &mut W) -> Result<(), honeydew::flm::FlmError> {
+fn notes_lane(w: &mut W) -> Result<(), banaforge::flm::FlmError> {
     lane(w, 0, -1, -1, &|_| Ok(()))
 }
 
@@ -1499,7 +1499,7 @@ fn every_fatal_load_error_fails_the_song() {
         })
     };
     let desc = |w: &mut W| w.chunk(*b"DESC", |w| w.raw(&[0; 516]));
-    let fine = |w: &mut W| -> Result<(), honeydew::flm::FlmError> { notes_lane(w) };
+    let fine = |w: &mut W| -> Result<(), banaforge::flm::FlmError> { notes_lane(w) };
     let cases: Vec<(&str, Vec<u8>, FlmErrorKind)> = vec![
         (
             "TDIV < 2",
@@ -2043,8 +2043,8 @@ fn sorting_events_counts_against_the_memory_budget() {
 
 // --- Module presets ---
 
-use honeydew::flm::{preset_fits, read_preset};
-use honeydew::song::ModuleInstance;
+use banaforge::flm::{preset_fits, read_preset};
+use banaforge::song::ModuleInstance;
 
 /// A module preset of the old effect form: HEAD of `type_id`, a 512-byte DESC (Rooms / Hall), PRMS `params`, and
 /// no ADD1 or SMPR.

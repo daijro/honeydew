@@ -1,4 +1,4 @@
-//! The automation editor's values in the target's units, a Honeydew addition (GitHub issue #21): the value text of
+//! The automation editor's values in the target's units, a BanaForge addition (GitHub issue #21): the value text of
 //! the lane's target ([`Target`]), typed values ([`Target::parse`]), and the value grid with its snap ([`ValueSnap`],
 //! [`Land`]) and its snap-menu column ([`snap_items`]), which the piano roll's graph lane shares (#32).
 //!

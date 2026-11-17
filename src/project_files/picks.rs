@@ -24,7 +24,7 @@ use crate::flm::chunk::{ChunkIter, ChunkWriter, ContentPath, FlmError};
 use crate::flm::sf2d::Sf2d;
 use crate::params::Role;
 use crate::song::ModuleInstance;
-use honeydew_audio::gm_waveshapes::{PARTIALS, SLOTS, Spectrum};
+use banaforge_audio::gm_waveshapes::{PARTIALS, SLOTS, Spectrum};
 
 /// A DW program.
 pub const DWP_EXT: &str = "dwp";
@@ -101,7 +101,7 @@ impl ProjectFiles {
     /// built: the app calls it at start. Changes to the folder show after a restart.
     pub fn install_original_waveshapes(&self) {
         for (slot, spectrum) in self.original_waveshapes() {
-            honeydew_audio::gmsynth::install_shape(slot, spectrum);
+            banaforge_audio::gmsynth::install_shape(slot, spectrum);
         }
     }
 }
@@ -125,6 +125,7 @@ fn is(name: &Path, ext: &str) -> bool {
 /// loader takes ([`named_file`]) is not, nor a `.fst`, which names no module (only 3x Osc lists them).
 pub fn fits(name: &Path, type_id: Option<u16>, read: impl FnOnce() -> Option<Vec<u8>>) -> bool {
     match type_id {
+        Some(53) if is(name, "zip") || is(name, "uar") => true,
         Some(t) if !named_file(name, t) && !is(name, FST_EXT) => {
             read().is_some_and(|b| crate::flm::preset_fits(&b, t))
         }

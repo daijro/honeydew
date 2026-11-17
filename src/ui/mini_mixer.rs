@@ -23,8 +23,8 @@
 //! cell); the sub-tracks triangle and the current sub-track's triangle show collapsed too (they are neither controls
 //! nor labels); the expanded meters are drawn under the level slider, the left peak on the lower bar.
 
+use banaforge_audio::device::ModuleMeter;
 use eframe::egui::{Align2, Color32, Id, Rect, Shape, Stroke, Ui, UiBuilder, pos2, vec2};
-use honeydew_audio::device::ModuleMeter;
 
 use crate::icons::{draw_icon, icon_edge};
 use crate::metrics::{FontSize, Metrics};
