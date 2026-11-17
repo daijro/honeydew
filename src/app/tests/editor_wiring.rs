@@ -4522,3 +4522,37 @@ fn play_and_space_play_and_stop_under_the_generate_panel_which_stays_open() {
     assert!(!rig.app.main_screen.playing);
     assert!(open(&rig));
 }
+
+#[test]
+fn vocal_studio_only_wraps_a_vocal_rack_and_restores_the_normal_editor() {
+    let mut rig = Rig::new();
+    rig.app
+        .add_bare_channel(ChannelKind::Synth(SynthKind::VocalSynth), 0);
+    rig.click(OUTSIDE);
+    rig.edit(1);
+    rig.slide_split();
+    rig.frame(vec![]);
+    fn has_studio(shapes: &[egui::epaint::ClippedShape]) -> bool {
+        fn text(shape: &Shape) -> bool {
+            match shape {
+                Shape::Text(t) => t.galley.text() == "BANAFORGE / VOCAL STUDIO",
+                Shape::Vec(v) => v.iter().any(text),
+                _ => false,
+            }
+        }
+        shapes.iter().any(|s| text(&s.shape))
+    }
+    assert!(has_studio(&rig.out.shapes));
+    let global_theme = rig.app.theme.clone();
+    rig.app.settings.vocal_desktop_workspace = false;
+    rig.frame(vec![]);
+    assert!(!has_studio(&rig.out.shapes));
+    rig.app.settings.vocal_desktop_workspace = true;
+    rig.app.song.channels[1].rack.modules.clear();
+    rig.app.song.channels[1]
+        .rack
+        .add(SynthKind::MiniSynth.type_id());
+    rig.frame(vec![]);
+    assert!(!has_studio(&rig.out.shapes));
+    assert_eq!(rig.app.theme, global_theme);
+}

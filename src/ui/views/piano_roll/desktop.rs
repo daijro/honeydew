@@ -142,6 +142,11 @@ pub(super) fn show(
                 if area.width() > 560.0 {
                     ui.separator();
                     ui.label(RichText::new(&app.song.channels[channel].name).size(11.0));
+                    ui.label(
+                        RichText::new(format!("{:.0} BPM", app.song.tempo_bpm))
+                            .size(11.0)
+                            .color(ACCENT),
+                    );
                     ui.label(RichText::new("• PROCEDURAL VOICE").color(ACCENT).size(10.0));
                 }
             });
@@ -181,6 +186,7 @@ pub(super) fn show(
                             ui.selectable_value(&mut roll.pitch_draw_enabled, true, "Pitch");
                         }
                         ui.separator();
+                        ui.toggle_value(&mut roll.snap.on, "Snap");
                         egui::ComboBox::from_id_salt(("studio-grid", channel))
                             .width(70.0)
                             .selected_text(app.settings.grid_size.label())
@@ -314,6 +320,7 @@ fn panel(
                     ui.label("Original formant voice");
                     ui.label(RichText::new("Bank samples are not active").size(11.0).color(Color32::from_rgb(226, 180, 106)));
                     if let Some(id) = app.song.channels[channel].rack.modules.iter().find(|m| m.type_id == 53).map(|m| m.instance_id) {
+                        if !app.settings.vocal_simple_mode { vowel(ui, app, channel, id); }
                         for (index, label) in [(1,"Formant"), (2,"Breath"), (3,"Brightness"), (4,"Portamento"), (5,"Vibrato rate"), (6,"Vibrato depth"), (8,"Attack"), (9,"Release")] {
                             if !app.settings.vocal_simple_mode || matches!(index, 3 | 8 | 9) { parameter(ui, app, channel, id, index, label); }
                         }
@@ -376,6 +383,36 @@ fn banks(ui: &mut Ui, app: &mut AppCtx, selected: &mut String) {
                 ui.selectable_value(selected, bank.name.clone(), &bank.name);
             }
         });
+}
+
+fn vowel(ui: &mut Ui, app: &mut AppCtx, channel: usize, instance_id: i32) {
+    let target = crate::song::AutomationTarget {
+        instance_id,
+        param: 7,
+    };
+    let Some(value) = app.song.channels[channel].param_mut(target) else {
+        return;
+    };
+    let before = *value;
+    let mut index = (before * 4.0).round().clamp(0.0, 4.0) as usize;
+    egui::ComboBox::from_id_salt(("studio-vowel", channel))
+        .selected_text(["A", "E", "I", "O", "U"][index])
+        .show_ui(ui, |ui| {
+            for (i, label) in ["A", "E", "I", "O", "U"].iter().enumerate() {
+                ui.selectable_value(&mut index, i, *label);
+            }
+        });
+    let next = index as f32 / 4.0;
+    if (next - before).abs() > 0.001 {
+        *value = next;
+        app.audio.send(AudioCommand::SetParam {
+            channel,
+            instance_id,
+            index: 7,
+            value: next,
+        });
+        app.channel_param_edited();
+    }
 }
 
 fn parameter(
