@@ -26,6 +26,8 @@ jobs:
       # libclang: bindgen in signalsmith-stretch's build script (Banana Sampler's time stretching, C++).
       - name: System libraries
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: Cross-platform branding contracts
+        run: python3 -m unittest discover -s tests/branding -v
       - name: Run cargo fmt --check
         shell: bash
         run: |

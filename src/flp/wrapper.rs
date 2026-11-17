@@ -1,6 +1,6 @@
 // Copyright (C) 2026 ItsAlphaNeon
 // SPDX-License-Identifier: GPL-3.0-or-later
-// This file is part of Banana Studio: https://github.com/ItsAlphaNeon/Lemon-Studio
+// This file is part of Lemon Studio: https://github.com/ItsAlphaNeon/Lemon-Studio
 // Modified for BanaForge: vendored from Banana Studio's `os-flp` crate (219ed4e); BanaForge's `PluginRef` (its state an
 // `Arc<[u8]>`, its equality without the state, so the unchanged check compares the state itself); upstream's tests are
 // not carried (BanaForge's FLP round trip covers the codec, `tests/plugins.rs`).

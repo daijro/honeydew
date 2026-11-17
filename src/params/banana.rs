@@ -1,6 +1,6 @@
 // Copyright (C) 2026 ItsAlphaNeon
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Parts of this file are from Banana Studio: https://github.com/ItsAlphaNeon/Lemon-Studio
+// Parts of this file are from Lemon Studio: https://github.com/ItsAlphaNeon/Lemon-Studio
 // Modified for BanaForge: the knob names and value texts of Banana Studio's `plugins/banana-reverb/src/params.rs` and
 // `plugins/banana-limiter/src/params.rs`, as BanaForge registry params, in BanaForge's units.
 

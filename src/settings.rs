@@ -1293,6 +1293,27 @@ mod tests {
     }
 
     #[test]
+    fn honeydew_settings_and_plugin_cache_migrate_without_overwriting_banaforge() {
+        use eframe::Storage as _;
+        let mut mem = Mem::default();
+        mem.set_string(
+            "honeydew.settings",
+            r#"{"MidiDevice":"Previous Keys"}"#.into(),
+        );
+        mem.set_string("honeydew.pluginCache", "[]".into());
+        migrate_legacy_keys(&mut mem);
+        assert_eq!(Settings::load(&mem).midi_device, "Previous Keys");
+        assert_eq!(
+            mem.get_string(crate::plugins::CACHE_KEY).as_deref(),
+            Some("[]")
+        );
+        mem.set_string(STORAGE_KEY, r#"{"MidiDevice":"New Keys"}"#.into());
+        migrate_legacy_keys(&mut mem);
+        assert_eq!(Settings::load(&mem).midi_device, "New Keys");
+        assert!(mem.get_string("honeydew.settings").is_some());
+    }
+
+    #[test]
     fn values_under_the_former_keys_move_to_the_new_ones_and_stay_under_the_old() {
         use crate::recording::routing;
         use eframe::Storage as _;

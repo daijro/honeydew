@@ -86,7 +86,7 @@ mod tests {
     #[test]
     fn every_rasterisation_is_a_white_mask_of_the_silhouette() {
         // The in-app logo is the one-colour silhouette (`banaforge-mono.svg`), white on transparency so that the draw's
-        // tint is its colour; the coloured melon has no white pixel.
+        // tint is its colour; the full-color banana is not a white mask.
         for (n, png) in PNGS {
             let image = decode_rgba(png, [n, n]).unwrap();
             let px = &image.pixels;
@@ -97,7 +97,7 @@ mod tests {
             assert!(white, "banaforge-mono-{n}.png");
             let opaque = px.iter().filter(|c| c.a() == 255).count();
             assert!(
-                opaque > px.len() / 4,
+                opaque > px.len() / 6,
                 "banaforge-mono-{n}.png: {opaque} opaque"
             );
             assert!(

@@ -1,6 +1,6 @@
 // Copyright (C) 2026 ItsAlphaNeon
 // SPDX-License-Identifier: GPL-3.0-or-later
-// This file is part of Banana Studio: https://github.com/ItsAlphaNeon/Lemon-Studio
+// This file is part of Lemon Studio: https://github.com/ItsAlphaNeon/Lemon-Studio
 // Modified for BanaForge: ported from Banana Studio (219ed4e): the new-mixer writer of `crates/os-flp/src/project.rs`
 // (`mixer_events`, `track_block_events`, `track_records`, `slot_plugin_events`, `plugin_record`) reduced to what an
 // export writes (named tracks of slot plugins, every track routed to the master), and Fruity Parametric EQ 2's saved
