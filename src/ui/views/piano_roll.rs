@@ -148,20 +148,22 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
                     ui.label(format!("{:.0} BPM", app.song.tempo_bpm));
                 });
                 ui.horizontal(|ui| {
-                    toggle_pitch = vocal_round_button(
-                        ui,
-                        "⌁",
-                        "Pitch Draw: edit cyan pitch nodes",
-                        roll.pitch_draw_enabled,
-                        true,
-                    );
-                    reset_pitch = vocal_round_button(
-                        ui,
-                        "—",
-                        "Flatten selected pitch bends; keep lyrics",
-                        false,
-                        true,
-                    );
+                    if !app.settings.vocal_simple_mode {
+                        toggle_pitch = vocal_round_button(
+                            ui,
+                            "⌁",
+                            "Pitch Draw: edit cyan pitch nodes",
+                            roll.pitch_draw_enabled,
+                            true,
+                        );
+                        reset_pitch = vocal_round_button(
+                            ui,
+                            "—",
+                            "Flatten selected pitch bends; keep lyrics",
+                            false,
+                            true,
+                        );
+                    }
                     import = vocal_round_button(ui, "+", "Import voicebank", false, !importing);
                     if importing {
                         ui.spinner();
@@ -185,6 +187,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         }
         editor.min.y = toolbar.bottom();
     }
+    roll.simple_mode = app.settings.vocal_simple_mode;
     roll.waveform_enabled = app.settings.vocal_waveform_enabled;
     roll.waveform_offset_y = app.settings.vocal_waveform_offset_y;
     let opts = RollOptions {

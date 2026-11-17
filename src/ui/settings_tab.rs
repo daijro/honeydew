@@ -1397,6 +1397,17 @@ mod tests {
         assert_eq!(
             labels,
             [
+                "Vocal Synth:",
+                "Waveform",
+                "Show waveform",
+                "Waveform gap below notes",
+                "Editor Mode",
+                "Simple mode",
+                "Default voice picker",
+                "Pitch-bend sensitivity",
+                "Auto-load last voicebank",
+                "Phoneme dictionary language",
+                "Vocal renderer",
                 "MIDI:",
                 "Input device:",
                 "MIDI driver:",

@@ -353,6 +353,7 @@ pub struct PianoRoll {
     lyric_dirty: bool,
     lyric_focus_pending: bool,
     pub(crate) pitch_draw_enabled: bool,
+    pub(crate) simple_mode: bool,
     pub(crate) waveform_enabled: bool,
     pub(crate) waveform_offset_y: u8,
     vocal_curve_drag: Option<(u32, u8, usize)>,
@@ -716,6 +717,7 @@ impl PianoRoll {
             lyric_dirty: false,
             lyric_focus_pending: false,
             pitch_draw_enabled: false,
+            simple_mode: false,
             waveform_enabled: true,
             waveform_offset_y: 5,
             vocal_curve_drag: None,
@@ -1128,7 +1130,20 @@ impl PianoRoll {
         );
         // Below the ruler: the grid, and under it the graph lane while it shows, sized by the editor's height below
         // its top window margin (0 here: the whole rect, ruler included).
-        let (body, lane) = self.graph.split_below(rect, ruler.bottom(), m);
+        let simple = self.simple_mode
+            && song
+                .channels
+                .get(self.channel)
+                .is_some_and(crate::song::vocal_editor);
+        if simple {
+            self.pitch_draw_enabled = false;
+            self.vocal_curve_drag = None;
+        }
+        let (body, lane) = if simple {
+            (rect.with_min_y(ruler.bottom()), None)
+        } else {
+            self.graph.split_below(rect, ruler.bottom(), m)
+        };
         // The key column, then a t gap: the grid and the time ruler start after it (the header column's rule).
         let keys = body.with_max_x(rect.left() + m.u(KEYS_W));
         let grid = body.with_min_x(keys.right() + m.t());
@@ -1337,6 +1352,7 @@ impl PianoRoll {
             is_vocal,
             self.waveform_enabled,
             self.waveform_offset_y,
+            simple,
             past,
             color,
             cx,
@@ -1465,7 +1481,9 @@ impl PianoRoll {
         let tab_x = (rect.left() + m.u(KEYS_W), &mut self.graph_tab_shift);
         let below = (rect, ruler.bottom());
         let ink = color.to_color32();
-        (self.graph).tab_below(ui, cx, id.with("graph tab"), below, tab_x, ink);
+        if !simple {
+            (self.graph).tab_below(ui, cx, id.with("graph tab"), below, tab_x, ink);
+        }
         if !pitch_locked && !matches!(self.menu, Some(Menu::Humanize(_) | Menu::Generate(_))) {
             self.floating_buttons(ui, grid, &g, song, cx, &mut actions);
         }
@@ -2714,7 +2732,17 @@ impl PianoRoll {
             grid,
             map: [g.origin.x, g.origin.y, g.beat_w, g.row_h],
         };
-        let Some((i, center)) = self.row.show(ui, "note_button", sel, view, &FLOATING, cx) else {
+        let simple = self.simple_mode
+            && song
+                .channels
+                .get(self.channel)
+                .is_some_and(crate::song::vocal_editor);
+        let buttons = if simple {
+            &FLOATING[..2]
+        } else {
+            &FLOATING[..]
+        };
+        let Some((i, center)) = self.row.show(ui, "note_button", sel, view, buttons, cx) else {
             return;
         };
         let (bpb, sig) = (song.time_sig.bar_beats(), song.time_sig);
@@ -3488,6 +3516,7 @@ fn paint_notes(
     vocal_track: bool,
     waveform_enabled: bool,
     waveform_offset_y: u8,
+    simple: bool,
     past: Option<Rect>,
     color: Rgba,
     cx: &UiCtx,
@@ -3591,7 +3620,7 @@ fn paint_notes(
                             ink,
                         );
                 }
-                if data.pitch.len() >= 2 && r.width() >= px * 4.0 {
+                if !simple && data.pitch.len() >= 2 && r.width() >= px * 4.0 {
                     overlays.push((r, *data));
                 }
             }
