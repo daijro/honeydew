@@ -4,6 +4,23 @@
 //! breath noise, vibrato and glide. It is a foundation, not yet a UTAU voicebank renderer. The instrument deliberately
 //! performs no file access, allocation or locking on the audio thread.
 
+/// Non-null, allocation-free fallback. Indexed metadata is not an active singer.
+#[derive(Default)]
+pub struct DefaultVoice;
+impl DefaultVoice {
+    pub const fn is_ready(&self) -> bool {
+        false
+    }
+}
+impl crate::instrument::Instrument for DefaultVoice {
+    fn set_parameter(&mut self, _: usize, _: f32) {}
+    fn note_on(&mut self, _: u8, _: f32, _: f32) {}
+    fn note_off(&mut self, _: u8) {}
+    fn all_notes_off(&mut self) {}
+    fn reset(&mut self) {}
+    fn process(&mut self, _: &mut [f32], _: &mut [f32], _: crate::ProcessContext) {}
+}
+
 use crate::ProcessContext;
 use crate::instrument::Instrument;
 
@@ -535,5 +552,34 @@ mod tests {
         a.process(&mut al, &mut ar, context(44_100.0));
         b.process(&mut bl, &mut br, context(44_100.0));
         assert_ne!(al, bl);
+    }
+}
+
+#[cfg(test)]
+mod silent_default_tests {
+    use super::*;
+    use crate::instrument::Instrument;
+    #[test]
+    fn vocal_default_is_a_real_silent_instrument() {
+        let mut voice = DefaultVoice;
+        assert!(!voice.is_ready());
+        for key in 0..128 {
+            voice.note_on(key, 1.0, 0.5);
+            voice.set_vocal(key, VocalExpression::default());
+        }
+        let mut l = [0.0; 128];
+        let mut r = [0.0; 128];
+        voice.process(
+            &mut l,
+            &mut r,
+            crate::ProcessContext {
+                sample_rate: 48000.0,
+                tempo_bpm: 120.0,
+                start_beat: 0.0,
+                playing: true,
+            },
+        );
+        assert_eq!(l, [0.0; 128]);
+        assert_eq!(r, [0.0; 128]);
     }
 }

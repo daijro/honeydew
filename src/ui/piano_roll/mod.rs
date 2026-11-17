@@ -210,6 +210,8 @@ pub enum PianoRollAction {
     SongEdited { final_edit: bool },
     /// A tap's new note: a final edit that never re-syncs.
     QuietEdit,
+    /// Lyric storage only: never rebuild or invoke the synthesis engine.
+    LyricEdited,
     /// A completed edit that re-syncs whatever it changed, with an undo step only if it changed the song: a graph-lane
     /// touch that changed nothing (its own undo re-syncs), Quantize, Humanize and Snap to scale.
     Resync,
@@ -509,7 +511,7 @@ fn distribute_lyrics(clip: &mut Clip, selected: &[bool], anchor: (u32, u8), text
     targets.dedup();
     if syllables.len() <= 1 || targets.len() <= 1 {
         vocal_note_mut(&mut clip.file.vocal_notes, anchor.0, anchor.1).lyric =
-            text.chars().take(64).collect();
+            text.chars().take(4096).collect();
     } else {
         // Keep overflow on the final target rather than silently dropping pasted words.
         let count = targets.len().min(syllables.len());
@@ -520,7 +522,7 @@ fn distribute_lyrics(clip: &mut Clip, selected: &[bool], anchor: (u32, u8), text
                 syllables[i].to_owned()
             };
             vocal_note_mut(&mut clip.file.vocal_notes, pos, key).lyric =
-                lyric.chars().take(64).collect();
+                lyric.chars().take(4096).collect();
         }
     }
     clip.file
@@ -1047,13 +1049,13 @@ impl PianoRoll {
                 if pasted {
                     text = distribute_lyrics(clip, &selected, (pos, key), &text);
                 } else {
-                    text = text.chars().take(64).collect();
+                    text = text.chars().take(4096).collect();
                     vocal_note_mut(&mut clip.file.vocal_notes, pos, key)
                         .lyric
                         .clone_from(&text);
                 }
                 self.lyric_dirty = true;
-                edited(actions, false);
+                actions.push(PianoRollAction::LyricEdited);
             }
         }
         if next && !done {
@@ -1091,7 +1093,7 @@ impl PianoRoll {
         }
         if done {
             if self.lyric_dirty {
-                edited(actions, true);
+                actions.push(PianoRollAction::LyricEdited);
             }
             self.lyric_dirty = false;
             self.lyric_focus_pending = false;
@@ -1154,7 +1156,8 @@ impl PianoRoll {
         }
 
         // The selection follows the clip; an outside change (another clip, undo) drops it.
-        if let Some(channel) = song.channels.get(self.channel)
+        if banaforge_audio::vocal_synth::DefaultVoice.is_ready()
+            && let Some(channel) = song.channels.get(self.channel)
             && let Some(module) = channel.rack.modules.iter().find(|m| m.type_id == 53)
             && let Some(clip) = channel
                 .lanes

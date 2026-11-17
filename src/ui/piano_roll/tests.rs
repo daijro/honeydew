@@ -3392,6 +3392,35 @@ mod component {
     }
 
     #[test]
+    fn vocal_default_lyrics_preserve_long_unicode_without_audio_edits() {
+        let mut rig = Rig::new(vec![n(0, 128.0, 70)]);
+        rig.song.channels[1].rack.add(53);
+        rig.roll.lyric_edit = Some((0, 70, String::new()));
+        rig.roll.lyric_focus_pending = true;
+        rig.frame(vec![]);
+        rig.frame(vec![]);
+        let text = "a teto 🎤🦊 é あいう <>&!?".repeat(12);
+        rig.frame(vec![In::Text(text.clone())]);
+        assert_eq!(
+            rig.song.channels[1].lanes[0].clips[0].file.vocal_notes[0].lyric,
+            text
+        );
+        assert!(rig.all.contains(&PianoRollAction::LyricEdited));
+        assert!(!rig.all.iter().any(|a| matches!(
+            a,
+            PianoRollAction::SongEdited { .. } | PianoRollAction::QuietEdit
+        )));
+        let bytes = crate::flm::write(&rig.song).unwrap();
+        assert_eq!(
+            crate::flm::read(&bytes).unwrap().channels[1].lanes[0].clips[0]
+                .file
+                .vocal_notes[0]
+                .lyric,
+            text
+        );
+    }
+
+    #[test]
     fn vocal_pitch_draw_never_moves_or_resizes_the_note() {
         let mut rig = Rig::new(vec![n(0, 128.0, 70)]);
         rig.song.channels[1].kind = ChannelKind::Synth(crate::song::SynthKind::VocalSynth);

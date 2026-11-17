@@ -22,7 +22,7 @@ use banaforge_audio::stream::Rings;
 use banaforge_audio::supersaw::SuperSaw;
 use banaforge_audio::three_osc::ThreeOsc;
 use banaforge_audio::transistor_bass::TransistorBass;
-use banaforge_audio::vocal_synth::VocalSynth;
+use banaforge_audio::vocal_synth::DefaultVoice;
 
 /// The instrument for `module`'s type on `channel` at `sample_rate`, playing samples from `samples`; `None` for a type
 /// without one yet. `origin` hears what it is built from besides its params ([`InstrumentModule::origin`]): the data a
@@ -68,7 +68,7 @@ fn instrument(
             samples,
             origin,
         ))),
-        53 => Some(Box::new(VocalSynth::new(sample_rate))),
+        53 => Some(Box::new(DefaultVoice)),
         // A hosted plugin (desktop only); its instance outlives engines, so the build is by which plugin it is.
         PLUGIN_INSTRUMENT => {
             module.file.plugin.as_ref().map(|p| p.uid()).hash(origin);

@@ -142,7 +142,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
                             }
                             ui.separator();
                             ui.weak(
-                                "Imported banks are indexed only; default audio remains active.",
+                                "Imported banks are indexed only; no singer renderer is ready.",
                             );
                         });
                     ui.label(format!("{:.0} BPM", app.song.tempo_bpm));
@@ -167,7 +167,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
                         ui.spinner();
                     }
                     ui.label(
-                        egui::RichText::new("Default audio · lyrics are labels")
+                        egui::RichText::new("Silent default · lyrics only")
                             .small()
                             .color(ink),
                     );
@@ -215,6 +215,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         match action {
             PianoRollAction::SongEdited { final_edit } => app.song_edited(final_edit),
             PianoRollAction::QuietEdit => app.quiet_edited(),
+            PianoRollAction::LyricEdited => app.edit = app.edit.max(Some(super::SongEdit::Param)),
             PianoRollAction::Resync => app.resync_edited(),
             PianoRollAction::Audition => app.edit = app.edit.max(Some(super::SongEdit::Audition)),
             PianoRollAction::SetPlayhead(tick) => app.set_playhead(tick),
