@@ -17,6 +17,7 @@ const SPEC: &[(&str, &[&str])] = &[
             "SoundFont Player",
             "SuperSaw",
             "Transistor Bass",
+            "Vocal Synth",
         ],
     ),
     (

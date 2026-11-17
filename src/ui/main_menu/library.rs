@@ -929,7 +929,9 @@ impl SongLibrary for NativeLibrary {
         let scanned = entries.into_iter().flatten().take(MAX_SCANNED).flatten();
         let user = self.user_folder();
         let top = user.as_deref() == Some(dir);
-        let every = user.as_deref().is_some_and(|root| dir.starts_with(root)) && !top;
+        let every = user.is_some()
+            && !top
+            && (self.whole || self.root.as_deref().is_some_and(|r| !dir.starts_with(r)));
         let listed = scanned.filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
             // `DirEntry::file_type` does not follow links, and most systems give it with the entry.
@@ -1445,6 +1447,22 @@ mod tests {
             assert_eq!(err.kind(), io::ErrorKind::InvalidInput, "{name:?}");
         }
         assert_eq!(lib.list(None).unwrap(), []);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn my_folders_lists_all_user_file_types_in_songs_and_samples() {
+        let root = temp_root("all-user-files");
+        let lib = NativeLibrary::user_folder(root.clone());
+        for folder in ["My Songs", "My Samples"] {
+            let dir = root.join(folder);
+            std::fs::create_dir_all(&dir).unwrap();
+            for name in ["song.flm", "voice.wav", "bank.zip", "readme.txt"] {
+                std::fs::write(dir.join(name), b"x").unwrap();
+            }
+            assert_eq!(lib.list(Some(&dir)).unwrap().len(), 4);
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[cfg(not(target_arch = "wasm32"))]
