@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=BanaForge
+Comment=Make music: patterns, a piano roll, a mixer and effects
+Exec=banaforge-native %F
+Icon=banaforge
+Terminal=false
+Categories=AudioVideo;Audio;Midi;Sequencer;
+StartupWMClass=banaforge

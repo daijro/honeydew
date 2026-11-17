@@ -119,7 +119,7 @@ fn generated_mcp_token() -> String {
     let mut bytes = [0_u8; 32];
     getrandom::fill(&mut bytes).expect("the operating system random source is unavailable");
     let mut token = String::with_capacity(8 + bytes.len() * 2);
-    token.push_str("honeydew_");
+    token.push_str("banaforge_");
     for byte in bytes {
         use std::fmt::Write;
         write!(token, "{byte:02x}").expect("writing to a String cannot fail");
@@ -146,7 +146,7 @@ enum Kind {
     McpStatus,
     /// A disabled toggle fixed in this state.
     FixedToggle(bool),
-    /// `Enable audio recording latency compensation`: ON compensates (Honeydew change, #129: it was inverted),
+    /// `Enable audio recording latency compensation`: ON compensates (BanaForge change, #129: it was inverted),
     /// with `Calibrate` beside it while ON.
     Latency,
     /// A wide light button showing the current item; a tap opens the popup of items.
@@ -724,7 +724,7 @@ impl SettingsTab {
             Kind::Toggle(_) | Kind::FixedToggle(_) | Kind::Latency => {
                 // The rect starts 0.5 U left of the column and ends at its right edge; the latency one is 2.5 U
                 // shorter, for `Calibrate`, which is 2.5 U wide at the right end, only while the toggle is ON
-                // (compensating; Honeydew change, #129).
+                // (compensating; BanaForge change, #129).
                 let latency = matches!(row.kind, Kind::Latency);
                 let shorter = if latency { LATENCY_SHORTER } else { 0.0 };
                 let rect = Rect::from_x_y_ranges(
@@ -734,7 +734,7 @@ impl SettingsTab {
                 if latency && s.latency_compensation {
                     let at = right(CALIBRATE_W, BUTTON_H);
                     let b = Button::new(id.with("calibrate"), at, "Calibrate", false, colors);
-                    // On phones too (Honeydew change, #129): it asks for the microphone as REC does.
+                    // On phones too (BanaForge change, #129): it asks for the microphone as REC does.
                     self.calibrate |= button(ui, cx, &b, true).clicked();
                 }
                 let (on, field) = match row.kind {
@@ -2358,7 +2358,7 @@ mod tests {
         );
     }
 
-    /// Honeydew change (#129, #130): ON compensates (the earlier toggle compensated while OFF); it is ON by default.
+    /// BanaForge change (#129, #130): ON compensates (the earlier toggle compensated while OFF); it is ON by default.
     #[test]
     fn the_latency_toggle_is_on_while_it_compensates_and_a_tap_turns_it_off() {
         let mut rig = Rig::new();
@@ -2372,7 +2372,7 @@ mod tests {
 
     #[test]
     fn calibrate_shows_only_while_the_latency_toggle_is_on_and_a_tap_asks_the_app() {
-        // Compensation is on exactly when the toggle is ON (Honeydew change, #129), and `Calibrate` is visible only
+        // Compensation is on exactly when the toggle is ON (BanaForge change, #129), and `Calibrate` is visible only
         // then, on phones too. The toggle is then 2.5 U shorter and `Calibrate`, 2.5 U wide, takes the right end of the
         // row.
         let mut rig = Rig::new();
@@ -3029,7 +3029,7 @@ mod tests {
 
     #[test]
     fn the_original_content_rows_show_the_folder_and_open_it() {
-        let folder = std::path::PathBuf::from("/home/me/.local/share/honeydew/Original Content");
+        let folder = std::path::PathBuf::from("/home/me/.local/share/banaforge/Original Content");
         let mut rig = Rig::at(1.0, DEFAULT_UI_SCALE, 20.0);
         // Without a content folder (the web) the rows are not there.
         assert!(

@@ -4,7 +4,7 @@
 
 use eframe::egui;
 
-use super::HoneydewApp;
+use super::BanaForgeApp;
 use crate::project_files::export::{Done, Job, NO_AUDIO_RATE, Split, slice, tags};
 use crate::sample_cache;
 use crate::ui::views::{Nav, Overlay};
@@ -13,7 +13,7 @@ fn dialog(o: &Overlay) -> bool {
     matches!(o, Overlay::SaveDialog { .. })
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// After the files, each frame: a closed Save dialog lets go of its state. An export that went ahead closes the
     /// dialog; an audio one starts rendering with the page's options, the samples loaded as a rebuild loads them, at
     /// the project's sample rate where the song has one (PR #87), else the engine rate (no resampling; 44 100 Hz without

@@ -12,17 +12,17 @@ use crate::params::{Role, module_spec};
 use crate::sample_cache::SampleCache;
 use crate::song::plugin::PLUGIN_INSTRUMENT;
 use crate::song::{Channel, ModuleInstance, TimeSig};
-use honeydew_audio::dw_sampler::{DwSampler, DwZone};
-use honeydew_audio::dwp::Cstm;
-use honeydew_audio::gmsynth::{self, GmSynth};
-use honeydew_audio::instrument::{Instrument, InstrumentModule};
-use honeydew_audio::minisynth::MiniSynth;
-use honeydew_audio::soundfont::SoundFontPlayer;
-use honeydew_audio::stream::Rings;
-use honeydew_audio::supersaw::SuperSaw;
-use honeydew_audio::three_osc::ThreeOsc;
-use honeydew_audio::transistor_bass::TransistorBass;
-use honeydew_audio::vocal_synth::VocalSynth;
+use banaforge_audio::dw_sampler::{DwSampler, DwZone};
+use banaforge_audio::dwp::Cstm;
+use banaforge_audio::gmsynth::{self, GmSynth};
+use banaforge_audio::instrument::{Instrument, InstrumentModule};
+use banaforge_audio::minisynth::MiniSynth;
+use banaforge_audio::soundfont::SoundFontPlayer;
+use banaforge_audio::stream::Rings;
+use banaforge_audio::supersaw::SuperSaw;
+use banaforge_audio::three_osc::ThreeOsc;
+use banaforge_audio::transistor_bass::TransistorBass;
+use banaforge_audio::vocal_synth::VocalSynth;
 
 /// The instrument for `module`'s type on `channel` at `sample_rate`, playing samples from `samples`; `None` for a type
 /// without one yet. `origin` hears what it is built from besides its params ([`InstrumentModule::origin`]): the data a
@@ -194,7 +194,7 @@ mod tests {
     use crate::flm::chunk::ContentPath;
     use crate::panels::cstm::GMSYNTH;
     use crate::sample_cache::SampleKey;
-    use honeydew_audio::ProcessContext;
+    use banaforge_audio::ProcessContext;
 
     #[test]
     fn gmsynth_takes_the_panels_cstm_keys() {
@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn three_osc_plays_the_shape_its_cstm_path_names() {
-        use honeydew_audio::builtin_shapes::shape;
+        use banaforge_audio::builtin_shapes::shape;
         let vowel = Some(app_path("Built-in/Shapes/Vowel A.wav"));
         let (song, samples) = three_osc_song(vowel, &|_| None);
         let build = || {

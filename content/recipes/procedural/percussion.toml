@@ -1,7 +1,7 @@
 id = "proc-perc"
 kind = "samples"
 path = "Samples/Electronic Percussion/"
-source = "honeydew"
+source = "banaforge"
 render = "rim"
 variant = [
   { name = "Cowbell", render = "cowbell" },

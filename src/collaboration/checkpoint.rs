@@ -118,7 +118,7 @@ pub fn merge_bytes(base: &[u8], current: &[u8], edited: &[u8]) -> Result<Vec<u8>
 }
 
 #[cfg(target_arch = "wasm32")]
-#[wasm_bindgen::prelude::wasm_bindgen(js_name = playgroundHoneydewMerge)]
+#[wasm_bindgen::prelude::wasm_bindgen(js_name = playgroundBanaForgeMerge)]
 pub fn merge_web(
     base: &[u8],
     current: &[u8],

@@ -110,7 +110,7 @@ fn drums_and_instrument_prompt_for_their_sound_from_the_plus_and_from_insert_cha
 
 #[test]
 fn a_plugin_pick_from_the_add_menu_creates_a_ready_instrument_track() {
-    let uid = crate::plugins::builtin::named("Lemon Trio").uid;
+    let uid = crate::plugins::builtin::named("Banana Trio").uid;
     let item = add_channel_menu()
         .into_iter()
         .find(|item| item.id == Some(AddChannelPick::Plugin(uid)))
@@ -133,12 +133,12 @@ fn a_plugin_pick_from_the_add_menu_creates_a_ready_instrument_track() {
         };
         rig.click(center(&rig, Id::new(popup).with((item.col, item.row))));
         let channel = &rig.app.song.channels[at];
-        assert_eq!(channel.name, "Lemon Trio");
+        assert_eq!(channel.name, "Banana Trio");
         assert_eq!(channel.lanes[0].clips.len(), 1);
         assert_eq!(channel.rack.modules.len(), 1);
         assert_eq!(
             channel.rack.modules[0].file.plugin.as_ref().unwrap().name,
-            "Lemon Trio"
+            "Banana Trio"
         );
         assert_eq!(rig.app.selected_channel, at);
         assert_eq!(rig.app.history.steps(), steps + 1);
@@ -243,7 +243,7 @@ fn a_new_instrument_loads_close_grand_from_the_content_and_a_later_pick_renames_
 fn a_program_picked_over_the_automatic_close_grand_loads_as_into_a_new_dw_sampler() {
     use crate::project_files::CONTENT_FOLDER;
     use crate::project_files::content::tests::put;
-    use honeydew_audio::dwp::{self, Zone};
+    use banaforge_audio::dwp::{self, Zone};
     let (mut rig, tmp) = close_grand_rig(true);
     let pad = tmp
         .0
@@ -528,7 +528,7 @@ fn a_pasted_dw_sampler_keeps_its_copied_settings() {
 /// synth's clip), so the position is past bar 1 without a wrap first. No content: the built-in `Default` kit.
 #[test]
 fn a_new_drums_channel_added_past_the_first_bar_sounds_where_the_song_plays() {
-    use honeydew_audio::device::AudioRenderer;
+    use banaforge_audio::device::AudioRenderer;
     let mut rig = Rig::with_synth();
     rig.app.song.channels[1].lanes[0].add_clip(0, 8.0);
     // The Recorder's engine (the device has one from its open), playing for three seconds: past bar 1 at 120 BPM.

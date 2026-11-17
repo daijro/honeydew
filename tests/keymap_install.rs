@@ -1,8 +1,8 @@
 //! `keymap::install` makes the merged table what `for_os` returns. Its own test binary: the table is
 //! installed once per process.
 
+use banaforge::keymap;
 use eframe::egui::{Context, Event, Key, Modifiers, RawInput, os::OperatingSystem};
-use honeydew::keymap;
 
 #[test]
 fn the_installed_table_is_the_one_for_os_returns_for_this_platform() {
@@ -18,7 +18,7 @@ fn the_installed_table_is_the_one_for_os_returns_for_this_platform() {
     } else {
         ("ctrl", Modifiers::CTRL | Modifiers::COMMAND)
     };
-    let dir = std::env::temp_dir().join(format!("honeydew-keymap-install-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("banaforge-keymap-install-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(

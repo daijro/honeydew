@@ -343,7 +343,7 @@ impl Visual {
 }
 
 /// The level meters' release (#41), in dB a second, whatever the sample rate, the buffer size and the UI's frame rate.
-/// Honeydew change (#135): twice the earlier 20.9 dB/s at 48 kHz (19.2 at 44.1 kHz), so a meter shows the level sooner.
+/// BanaForge change (#135): twice the earlier 20.9 dB/s at 48 kHz (19.2 at 44.1 kHz), so a meter shows the level sooner.
 const RELEASE_DB_PER_S: f32 = 40.0;
 
 /// A released level under −96 dB, the floor of the deepest meter scale (the Compressor's), is silence: a meter comes
@@ -543,6 +543,8 @@ struct Shared {
     /// [`clock`]'s epoch ([`AudioOutput::snapshot_at`], [`CallbackState::callback`]).
     clocked: AtomicBool,
     origin: AtomicI64,
+    /// Callback heartbeat on the same monotonic clock; detect silently disconnected native streams.
+    last_callback: AtomicI64,
     /// The commands the audio thread has taken from the queue ([`OutputSnapshot::taken`]).
     taken: AtomicU64,
     /// Each sub-block's transport tick, as the meters' visual frames ([`OutputSnapshot::heard_tick`]).
@@ -992,7 +994,12 @@ impl<R: AudioRenderer> AudioOutput<R> {
                 .map_or(transport_tick, |&(_, t)| t),
             cpu_load: f32::from_bits(self.shared.cpu.load(Ordering::Acquire)),
             underruns: self.shared.underruns.load(Ordering::Acquire),
-            stream_failed: self.shared.failed.load(Ordering::Acquire),
+            stream_failed: self.shared.failed.load(Ordering::Acquire) || {
+                let last = self.shared.last_callback.load(Ordering::Acquire);
+                cfg!(target_os = "android")
+                    && last > 0
+                    && now.is_some_and(|now| now.saturating_sub(last) > 3_000_000_000)
+            },
             module_meters: self.meters.take(upto, self.sample_rate),
             modulated: (self.meters.3.iter())
                 .map(|(m, cell)| Modulated {
@@ -1144,6 +1151,7 @@ impl<R: AudioRenderer> CallbackState<R> {
         #[cfg(not(target_arch = "wasm32"))]
         let start = Instant::now();
         if let Some(now) = now {
+            self.shared.last_callback.store(now, Ordering::Release);
             let ahead = self.frames as f64 * 1e9 / f64::from(sample_rate);
             let mut origin = now - ahead as i64;
             if let Some((last, at)) = self.clock {
@@ -1843,7 +1851,7 @@ mod tests {
     }
 
     /// The level meters fall at one release whatever the sample rate, the buffer size and the UI's frame rate (#41):
-    /// 40 dB/s from each peak's sub-block on (Honeydew change, #135: the earlier ×0.95 per 1024 frames was about 20).
+    /// 40 dB/s from each peak's sub-block on (BanaForge change, #135: the earlier ×0.95 per 1024 frames was about 20).
     /// A full-scale burst over the first 2048 frames reads −20.1 dB at frame 26112, half a second after it ends at
     /// 48 kHz, and −21.8 dB at 44.1 kHz, 0.55 s after.
     #[test]

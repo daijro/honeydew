@@ -3,7 +3,7 @@
 id = "kit-neon"
 kind = "kit"
 path = "Drumsets/Neon Kit.tmpl"
-source = "honeydew"
+source = "banaforge"
 
 [[pad]]
 name = "Kick"

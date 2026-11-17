@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use honeydew_audio::device::AudioRenderer;
+use banaforge_audio::device::AudioRenderer;
 
 use super::*;
 use crate::app::demo_restore::{RESTORED, RESTORING_DEMO_SONGS};

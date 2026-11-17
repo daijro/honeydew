@@ -6,12 +6,12 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
+use banaforge_audio::device::AudioCommand;
 use eframe::egui;
-use honeydew_audio::device::AudioCommand;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::HoneydewApp;
+use super::BanaForgeApp;
 use crate::params::ParamKind;
 use crate::song::{ChannelKind, Event, LaneKind, PPQ, Song, SynthKind};
 use crate::ui::views::SongEdit;
@@ -37,15 +37,15 @@ impl Bridge {
         // The desktop Settings token file is shared with the Python MCP adapter.
         // Keep the environment fallback during the migration from the old startup flow.
         let token = crate::settings::load_mcp_token()
-            .or_else(|| std::env::var("HONEYDEW_CONTROL_TOKEN").ok())?;
+            .or_else(|| std::env::var("BANAFORGE_CONTROL_TOKEN").ok())?;
         if token.len() < 24 {
-            eprintln!("Honeydew control disabled: the MCP token needs at least 24 characters");
+            eprintln!("BanaForge control disabled: the MCP token needs at least 24 characters");
             return None;
         }
         let listener = match TcpListener::bind(("127.0.0.1", port)) {
             Ok(listener) => listener,
             Err(err) => {
-                eprintln!("Honeydew control disabled: cannot bind loopback port {port}: {err}");
+                eprintln!("BanaForge control disabled: cannot bind loopback port {port}: {err}");
                 return None;
             }
         };
@@ -53,7 +53,7 @@ impl Bridge {
         let (shutdown, stop) = mpsc::channel();
         listener.set_nonblocking(true).ok()?;
         let thread = std::thread::Builder::new()
-            .name("honeydew-control".into())
+            .name("banaforge-control".into())
             .spawn(move || {
                 loop {
                     if stop.try_recv().is_ok() {
@@ -77,7 +77,7 @@ impl Bridge {
                 }
             })
             .ok()?;
-        eprintln!("Honeydew control enabled on 127.0.0.1:{port}");
+        eprintln!("BanaForge control enabled on 127.0.0.1:{port}");
         Some(Self {
             requests,
             shutdown,
@@ -124,12 +124,12 @@ fn serve(stream: &mut TcpStream, token: &str, tx: &Sender<Request>, ctx: &egui::
         .remove("token");
     let (reply, receive) = mpsc::channel();
     if tx.send(Request { value, reply }).is_err() {
-        return json!({"error": "Honeydew closed"});
+        return json!({"error": "BanaForge closed"});
     }
     ctx.request_repaint();
     receive
         .recv_timeout(Duration::from_secs(3))
-        .unwrap_or_else(|_| json!({"error": "Honeydew did not respond"}))
+        .unwrap_or_else(|_| json!({"error": "BanaForge did not respond"}))
 }
 
 #[derive(Deserialize)]
@@ -418,7 +418,7 @@ fn arrange(song: &Song, request: Arrangement) -> Result<(Song, Vec<Value>), Stri
     Ok((result, made))
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     pub(super) fn control_frame(&mut self, tick: u64) {
         let requests = self.control.as_ref().map(Bridge::drain).unwrap_or_default();
         for request in requests {
@@ -619,7 +619,7 @@ mod tests {
 
     #[test]
     fn control_action_updates_open_song_through_edit_path() {
-        let mut app = HoneydewApp::default();
+        let mut app = BanaForgeApp::default();
         let answer = app.control_call(
             json!({"action": "arrange", "arrangement": {
                 "tempo_bpm": 138.0,
@@ -644,7 +644,7 @@ mod tests {
 
     #[test]
     fn built_in_parameters_are_read_and_applied_atomically() {
-        let mut app = HoneydewApp::default();
+        let mut app = BanaForgeApp::default();
         let channel = app
             .song
             .insert_channel(1, ChannelKind::Synth(SynthKind::TransistorBass))

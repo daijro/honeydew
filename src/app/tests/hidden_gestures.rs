@@ -1,5 +1,5 @@
 //! A drag left running when its editor stops drawing (F9's mixer, `Nav::Show(Playlist)`) ends there
-//! ([`HoneydewApp::left_view`]): the piano roll's dragged key stops and its move is one final edit, which reaches the
+//! ([`BanaForgeApp::left_view`]): the piano roll's dragged key stops and its move is one final edit, which reaches the
 //! engine; the automation and audio editors' drags end with no edit, also once the editor shows again.
 
 use super::*;

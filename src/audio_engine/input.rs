@@ -13,9 +13,9 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering, fence};
 
-use honeydew_audio::device::PingReport;
-use honeydew_audio::input::{InputReader, InputRing};
-use honeydew_audio::mixer::OwnedStereoBuffer;
+use banaforge_audio::device::PingReport;
+use banaforge_audio::input::{InputReader, InputRing};
+use banaforge_audio::mixer::OwnedStereoBuffer;
 
 use super::SongAudioEngine;
 use crate::recording::calibrate::Ping;
@@ -421,7 +421,7 @@ impl SongAudioEngine {
 mod tests {
     use std::ops::Range;
 
-    use honeydew_audio::device::{AudioRenderer, PingFailure};
+    use banaforge_audio::device::{AudioRenderer, PingFailure};
 
     use super::*;
     use crate::sample_cache::SampleCache;

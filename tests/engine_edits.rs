@@ -2,11 +2,11 @@
 //! module by module, so an edit cuts only what it destroys. Each output after the edit is checked against an engine
 //! that played the expected song from the start. Rendered offline through `AudioRenderer`; no device.
 
-use honeydew::audio_engine::SongAudioEngine;
-use honeydew::flm::chunk::ContentPath;
-use honeydew::sample_cache::SampleCache;
-use honeydew::song::{ChannelKind, Event, ModuleInstance, Song, SynthKind};
-use honeydew_audio::device::{AudioRenderer, PingFailure};
+use banaforge::audio_engine::SongAudioEngine;
+use banaforge::flm::chunk::ContentPath;
+use banaforge::sample_cache::SampleCache;
+use banaforge::song::{ChannelKind, Event, ModuleInstance, Song, SynthKind};
+use banaforge_audio::device::{AudioRenderer, PingFailure};
 
 /// One beat at 120 BPM and 48 kHz.
 const BEAT: usize = 24_000;
