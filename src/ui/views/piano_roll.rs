@@ -220,7 +220,9 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         match action {
             PianoRollAction::SongEdited { final_edit } => app.song_edited(final_edit),
             PianoRollAction::QuietEdit => app.quiet_edited(),
-            PianoRollAction::LyricEdited => app.edit = app.edit.max(Some(super::SongEdit::Param)),
+            PianoRollAction::LyricEdited => {
+                app.edit = app.edit.max(Some(super::SongEdit::Metadata))
+            }
             PianoRollAction::Resync => app.resync_edited(),
             PianoRollAction::Audition => app.edit = app.edit.max(Some(super::SongEdit::Audition)),
             PianoRollAction::SetPlayhead(tick) => app.set_playhead(tick),

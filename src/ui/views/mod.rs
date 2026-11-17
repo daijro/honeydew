@@ -369,6 +369,8 @@ pub enum SongEdit {
     ChannelParam,
     /// An edit the audio already has or never needs (a chord set, a track's zip): an undo step only, no rebuild.
     Param,
+    /// Stored project metadata (lyrics): undo/dirty only, never rebuild audio.
+    Metadata,
     /// Rack state the audio already has or takes at its next build, with no undo step and no rebuild: the drum strips'
     /// controls. Every step keeps it ([`History::rack_state`]).
     ///

@@ -677,6 +677,7 @@ impl BanaForgeApp {
                 self.files.song_changed();
                 self.history.edited(&self.song, false);
             }
+            SongEdit::Metadata => self.record(),
             SongEdit::Ongoing => {
                 self.files.song_changed();
                 self.history.edited(&self.song, false);
