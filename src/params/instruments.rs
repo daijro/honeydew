@@ -11,10 +11,10 @@
 use super::display::{count_index, half_up_index, trunc_index, trunc64_index};
 use super::effects::{AMOUNT_TRUNC, BIPOLAR_PERCENT, DB_12, OFF_ON, PERCENT_TIGHT};
 use super::{At, Display, Fmt, ModuleSpec, ParamKind, ParamSpec as P, Sign, TextCx};
-use honeydew_audio::minisynth::transpose_steps;
-use honeydew_audio::three_osc::arp::chord_value;
-use honeydew_audio::voice::{lfo_attack_increment, lfo_rate_hz};
-use honeydew_audio::{dw_sampler, gmsynth, slicer, supersaw, three_osc};
+use banaforge_audio::minisynth::transpose_steps;
+use banaforge_audio::three_osc::arp::chord_value;
+use banaforge_audio::voice::{lfo_attack_increment, lfo_rate_hz};
+use banaforge_audio::{dw_sampler, gmsynth, slicer, supersaw, three_osc};
 
 // ---- shared laws and lists ----
 
@@ -24,7 +24,7 @@ const AMOUNT: Display = Display::linear(-100.0, 100.0, 0, "");
 const AMOUNT_1: Display = Display::linear(-100.0, 100.0, 1, "");
 
 /// The LFO rate of DW Sampler and SuperSaw, in Hz with two decimals: the engine's law
-/// (`honeydew_audio::voice::lfo_rate_hz`).
+/// (`banaforge_audio::voice::lfo_rate_hz`).
 const LFO_RATE: Display = Display::Custom(|v| Fmt::new(2, " Hz").apply(f64::from(lfo_rate_hz(v))));
 /// The automation texts of a menu whose UI labels differ ([`P::with_automation`]).
 const fn texts(items: &'static [&'static str]) -> ParamKind {
@@ -183,7 +183,7 @@ const DW_SAMPLER: &[P] = &[
     P::plain("Filter Decay", 1.0),     // 18
     P::plain("Filter Sustain", 1.0),   // 19
     P::plain("Filter Release", 1.0),   // 20
-    // A Honeydew change (#102): −100 … 0 … 100 like LFO Amount, not v×100 (50 at the centre).
+    // A BanaForge change (#102): −100 … 0 … 100 like LFO Amount, not v×100 (50 at the centre).
     P::cont("Filter Env. Amount", 0.5, ENV_AMOUNT), // 21
     P::plain("Pitch Attack", 0.0),                  // 22
     P::plain("Pitch Decay", 1.0),                   // 23
@@ -222,7 +222,7 @@ const DW_SAMPLER: &[P] = &[
 
 /// LFO Attack, sample-rate dependent: x < 0.001 → c = 1, else c = 0.0002/(500·(0.95x+0.05)⁴) per sample;
 /// t = 1/(c·Fs) s. t < 1 s → trunc(1000t) " ms", else two decimals + " s". Fs = 0 → "inf s". In f32; c is the
-/// engine's own law (`honeydew_audio::voice::lfo_attack_increment`).
+/// engine's own law (`banaforge_audio::voice::lfo_attack_increment`).
 fn dw_lfo_attack(x: f32, cx: TextCx) -> String {
     let t = 1.0 / (lfo_attack_increment(x) * cx.sample_rate);
     if t < 1.0 {
@@ -1042,11 +1042,13 @@ const VOCAL_SYNTH: &[P] = &[
         0.0,
         Display::linear(0.0, 100.0, 0, " cents"),
     ),
-    P::menu("Vowel", 0.0, &["a", "i", "u", "e", "o"]),
+    P::menu("Vowel", 0.0, &["A", "E", "I", "O", "U"]),
+    P::cont("Attack", 0.0, Display::linear(8.0, 508.0, 0, " ms")),
+    P::cont("Release", 0.0, Display::linear(120.0, 2120.0, 0, " ms")),
 ];
 
 // The UI binds indices 1-11. The Envelope toggle is off (Original: the SoundFont's own envelopes), and reads
-// Original up to 0.5, Custom above. Fine Tune (6), the vibrato (7-9), Quality (10) and Transpose (11) are Honeydew
+// Original up to 0.5, Custom above. Fine Tune (6), the vibrato (7-9), Quality (10) and Transpose (11) are BanaForge
 // additions (#90, #102).
 const SOUNDFONT_PLAYER: &[P] = &[
     P::ENABLE,
@@ -1141,6 +1143,6 @@ pub static MODULES: &[ModuleSpec] = &[
         "Vocal Synth",
         "Vocal Synth",
         VOCAL_SYNTH,
-        &["VOICE", "EXPRESSION"],
+        &["VOICE", "EXPRESSION", "ENVELOPE"],
     ),
 ];

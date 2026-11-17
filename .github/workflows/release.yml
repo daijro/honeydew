@@ -51,7 +51,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.name }}
-      # signalsmith-stretch (Lemon Sampler's time stretching) compiles C++ and runs bindgen, which loads libclang.
+      # signalsmith-stretch (Banana Sampler's time stretching) compiles C++ and runs bindgen, which loads libclang.
       # macOS has it in Xcode; Windows images ship LLVM (the Arm one too), installed here if missing.
       - name: System libraries
         if: runner.os == 'Linux'
@@ -70,40 +70,40 @@ jobs:
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
       # Each build twice: the full download, and the app alone (`-no-sounds`), which uses the sound library installed
-      # in the app data folder (the release's own `honeydew-<tag>-sounds.zip`, uploaded by the `sounds` job).
+      # in the app data folder (the release's own `banaforge-<tag>-sounds.zip`, uploaded by the `sounds` job).
       - name: Package
         shell: bash
-        run: bash tools/package-desktop.sh "honeydew-${TAG}-${{ matrix.name }}" target/${{ matrix.target }}/release
+        run: bash tools/package-desktop.sh "banaforge-${TAG}-${{ matrix.name }}" target/${{ matrix.target }}/release
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
-          files: honeydew-${{ env.TAG }}-*.*z*
+          files: banaforge-${{ env.TAG }}-*.*z*
           fail_on_unmatched_files: true
       # After the archive's upload, so a failure here can't cost it.
       - name: AppImage
         if: contains(matrix.target, 'linux')
         shell: bash
         run: |
-          dir=honeydew-${TAG}-${{ matrix.name }}
+          dir=banaforge-${TAG}-${{ matrix.name }}
           arch=$(uname -m)
           # The AppDir layout: AppRun, the desktop file and its icon at the root, the rest under usr/. The app finds
-          # its sounds at <exe dir>/../share/honeydew/content.
+          # its sounds at <exe dir>/../share/banaforge/content.
           share=AppDir/usr/share
-          mkdir -p AppDir/usr/bin "$share/applications" "$share/honeydew" "$share/doc/honeydew"
-          cp "$dir/honeydew-native" "$dir/honeydew-import" AppDir/usr/bin/
-          ln -s usr/bin/honeydew-native AppDir/AppRun
-          mv "$dir/content" "$share/honeydew/"
-          cp "$dir/README.md" "$dir/LICENSE" "$share/doc/honeydew/"
+          mkdir -p AppDir/usr/bin "$share/applications" "$share/banaforge" "$share/doc/banaforge"
+          cp "$dir/banaforge-native" "$dir/banaforge-import" AppDir/usr/bin/
+          ln -s usr/bin/banaforge-native AppDir/AppRun
+          mv "$dir/content" "$share/banaforge/"
+          cp "$dir/README.md" "$dir/LICENSE" "$share/doc/banaforge/"
           cp -R "$dir/linux/icons" "$share/"
-          cp "$dir/linux/honeydew.desktop" AppDir/
-          cp "$dir/linux/honeydew.desktop" "$share/applications/"
-          cp "$dir/linux/icons/hicolor/256x256/apps/honeydew.png" AppDir/honeydew.png
-          cp AppDir/honeydew.png AppDir/.DirIcon
-          # Nothing to bundle: every library honeydew-native links is one AppImages leave to the system (glibc,
+          cp "$dir/linux/banaforge.desktop" AppDir/
+          cp "$dir/linux/banaforge.desktop" "$share/applications/"
+          cp "$dir/linux/icons/hicolor/256x256/apps/banaforge.png" AppDir/banaforge.png
+          cp AppDir/banaforge.png AppDir/.DirIcon
+          # Nothing to bundle: every library banaforge-native links is one AppImages leave to the system (glibc,
           # libstdc++, libgcc_s, ALSA's libasound). The graphics stack, X11 and Wayland are loaded at run time.
-          if ldd AppDir/usr/bin/honeydew-native | awk '{print $1}' |
+          if ldd AppDir/usr/bin/banaforge-native | awk '{print $1}' |
             grep -vxE 'linux-vdso\.so\.1|/lib(64)?/ld-linux-(x86-64|aarch64)\.so\.[0-9]+|lib(c|m|dl|pthread|rt|gcc_s|stdc\+\+|asound)\.so\.[0-9]+'; then
-            echo 'honeydew-native links a library above that the AppImage would have to bundle' >&2
+            echo 'banaforge-native links a library above that the AppImage would have to bundle' >&2
             exit 1
           fi
           # appimagetool and the AppImage runtime, the runner's arch's own, pinned by version and SHA-256.
@@ -125,7 +125,7 @@ jobs:
         if: contains(matrix.target, 'linux')
         with:
           tag_name: ${{ env.TAG }}
-          files: honeydew-${{ env.TAG }}-*.AppImage
+          files: banaforge-${{ env.TAG }}-*.AppImage
           fail_on_unmatched_files: true
 
   # Alpine and other musl Linux: built in the pinned Alpine image (tools/alpine-build.sh), packaged as the glibc Linux
@@ -144,11 +144,11 @@ jobs:
           ref: ${{ env.TAG }}
       - run: docker run --rm -v "$PWD:/src" -w /src "$ALPINE_IMAGE" sh tools/alpine-build.sh
       - name: Package
-        run: bash tools/package-desktop.sh "honeydew-${TAG}-${{ matrix.name }}" target/release
+        run: bash tools/package-desktop.sh "banaforge-${TAG}-${{ matrix.name }}" target/release
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
-          files: honeydew-${{ env.TAG }}-*.*z*
+          files: banaforge-${{ env.TAG }}-*.*z*
           fail_on_unmatched_files: true
 
   # The sound library on its own, once per release: the parts joined, `content/` at its top, without the web's
@@ -160,13 +160,13 @@ jobs:
         with:
           ref: ${{ env.TAG }}
       - run: |
-          cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > "honeydew-${TAG}-sounds.zip"
+          cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > "banaforge-${TAG}-sounds.zip"
           command -v zip >/dev/null || { sudo apt-get update && sudo apt-get install -y zip; }
-          zip -dq "honeydew-${TAG}-sounds.zip" '*.gz'
+          zip -dq "banaforge-${TAG}-sounds.zip" '*.gz'
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
-          files: honeydew-${{ env.TAG }}-sounds.zip
+          files: banaforge-${{ env.TAG }}-sounds.zip
           fail_on_unmatched_files: true
       # The sound library's own release, `sounds-<version>` (sounds/release.txt), made once per library version: its
       # index (the manifest: every part's name, size and SHA-256), its credits, and each part as a download of its own,
@@ -180,10 +180,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           rel=sounds-$(tr -d '[:space:]' < sounds/release.txt)
-          unzip -q "honeydew-${TAG}-sounds.zip" content/index.json content/CREDITS.txt 'content/p/*.tar' -d library
+          unzip -q "banaforge-${TAG}-sounds.zip" content/index.json content/CREDITS.txt 'content/p/*.tar' -d library
           if ! gh release view "$rel" >/dev/null 2>&1; then
             gh release create "$rel" --draft --prerelease --target "$(git rev-parse HEAD)" --title "Sound library ${rel#sounds-}" \
-              --notes "The sound library the apps download, only the parts they lack. Not an app release: get Honeydew from the latest release."
+              --notes "The sound library the apps download, only the parts they lack. Not an app release: get BanaForge from the latest release."
           fi
           have=$(gh release view "$rel" --json assets --jq '.assets[].name')
           # A library version is never published twice with other sounds.
@@ -216,7 +216,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
-          files: target/honeydew-web-*.zip
+          files: target/banaforge-web-*.zip
 
   android:
     runs-on: ubuntu-latest
@@ -238,7 +238,7 @@ jobs:
             fi
           done
           umask 077
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/honeydew-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/banaforge-release.jks"
       - uses: dtolnay/rust-toolchain@1.91.0
         with:
           targets: aarch64-linux-android, armv7-linux-androideabi
@@ -262,7 +262,7 @@ jobs:
       # library's release and is what the in-app updater installs.
       - name: Build signed APKs with and without sounds
         env:
-          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/honeydew-release.jks
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/banaforge-release.jks
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -272,13 +272,13 @@ jobs:
           tools/android-dist.sh --release --base
       - name: Remove signing key
         if: always()
-        run: rm -f "$RUNNER_TEMP/honeydew-release.jks"
+        run: rm -f "$RUNNER_TEMP/banaforge-release.jks"
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
           files: |
-            target/honeydew-android-*-arm.apk
-            target/honeydew-android-*-arm-base.apk
+            target/banaforge-android-*-arm.apk
+            target/banaforge-android-*-arm-base.apk
           fail_on_unmatched_files: true
 
   # iOS (experimental): two unsigned IPAs, with and without the sounds (tools/ios-dist.sh), which AltStore, SideStore and
@@ -299,5 +299,5 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
-          files: target/honeydew-ios-*.ipa
+          files: target/banaforge-ios-*.ipa
           fail_on_unmatched_files: true

@@ -1,11 +1,11 @@
-//! The audio input in the app (`HoneydewApp::open_input` opens it): the rack's `INPUT` menu and the inputs kept per
-//! song and channel ([`HoneydewApp::rack_input`]), and the latency calibration the settings tab's `Calibrate` starts
-//! ([`HoneydewApp::calibrate`]).
+//! The audio input in the app (`BanaForgeApp::open_input` opens it): the rack's `INPUT` menu and the inputs kept per
+//! song and channel ([`BanaForgeApp::rack_input`]), and the latency calibration the settings tab's `Calibrate` starts
+//! ([`BanaForgeApp::calibrate`]).
 
+use banaforge_audio::device::{AudioCommand, PingReport};
 use eframe::egui;
-use honeydew_audio::device::{AudioCommand, PingReport};
 
-use super::HoneydewApp;
+use super::BanaForgeApp;
 use crate::recording::calibrate::{self, Failure};
 use crate::song::ChannelKind;
 use crate::ui::views::{Answer, Nav, Overlay};
@@ -22,7 +22,7 @@ pub(super) enum Calibrating {
     Running(Option<u32>),
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// The song's channel the open rack shows, if one is open.
     pub(super) fn rack_channel(&self) -> Option<usize> {
         (self.nav.overlays.iter()).find_map(|o| match o {
@@ -103,7 +103,7 @@ impl HoneydewApp {
     }
 
     /// The latency calibration: the settings tab's `Calibrate` asks first; its `Calibrate` stops playback (held stopped
-    /// while it runs), opens the first input device (`HoneydewApp::open_input`), hands the engine that input and starts
+    /// while it runs), opens the first input device (`BanaForgeApp::open_input`), hands the engine that input and starts
     /// its measurement, and shows `Sending test signal...` until the engine's `report` has the result: the latency,
     /// kept for this session ([`Self::latency`]), or the failure, which asks `Test again` / `Cancel`. No input or no
     /// audio output is the unknown error. Closing the progress message (its `OK`) cancels. A new `Sound mode` forgets
@@ -137,8 +137,8 @@ impl HoneydewApp {
                 self.calibration = None;
             }
             Some(Calibrating::Running(None)) => {
-                // Android and iOS ask for the microphone first: the test waits for the answer (Honeydew change, #129).
-                // A denial ends it with where to allow it (`HoneydewApp::open_input`).
+                // Android and iOS ask for the microphone first: the test waits for the answer (BanaForge change, #129).
+                // A denial ends it with where to allow it (`BanaForgeApp::open_input`).
                 if self.input.ring().is_none() && !self.input_failed && self.audio.running() {
                     ctx.request_repaint_after(std::time::Duration::from_millis(100));
                     return;

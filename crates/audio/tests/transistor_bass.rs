@@ -1,8 +1,8 @@
 //! Transistor Bass (ID 19), rendered offline against its DSP laws.
 
-use honeydew_audio::ProcessContext;
-use honeydew_audio::instrument::Instrument;
-use honeydew_audio::transistor_bass::TransistorBass;
+use banaforge_audio::ProcessContext;
+use banaforge_audio::instrument::Instrument;
+use banaforge_audio::transistor_bass::TransistorBass;
 
 const RATE: f32 = 48_000.0;
 

@@ -702,7 +702,7 @@ impl AutomationEditor {
         if !matches!(self.gesture, Gesture::Idle) || self.shaping.is_some() {
             return None;
         }
-        // Up and Down nudge a selection by a grid step, Shift by ten (a Honeydew addition): the grid takes the
+        // Up and Down nudge a selection by a grid step, Shift by ten (a BanaForge addition): the grid takes the
         // arrows from the keyboard focus while it holds a selection.
         if self.sel.contains(&true) {
             crate::ui::focus::hold_vertical(ctx, id().with("grid"));
@@ -1234,7 +1234,7 @@ impl AutomationEditor {
         self.typing = Some(first.filter(|t| texts.all(|u| u == *t)).unwrap_or_default());
     }
 
-    /// The `Edit value` panel while open (a Honeydew addition): a dialog box over the grid's centre with the title, a
+    /// The `Edit value` panel while open (a BanaForge addition): a dialog box over the grid's centre with the title, a
     /// field of the typed value (all of it selected as it opens, so typing replaces it) and `Cancel` `OK`. Enter or
     /// `OK` sets every selected point to the typed value ([`Target::parse`]) as one edit and closes it; a text that
     /// names no value keeps it open. Escape, `Cancel` or a tap outside closes it.
@@ -1346,7 +1346,7 @@ impl AutomationEditor {
     }
 
     /// The snap menu while open: the time modes under `Time`, the current one highlighted, a pick sets it and turns
-    /// snap on; the grid sizes under `Grid` (#53, [`value::time_items`]), a pick sets the grid; beside them (a Honeydew
+    /// snap on; the grid sizes under `Grid` (#53, [`value::time_items`]), a pick sets the grid; beside them (a BanaForge
     /// addition) the value snap under `Value`: `Off`, then the value grid sizes (`Steps` only on a discrete target), the
     /// current one highlighted, a pick sets it and turns value snap on.
     fn snap_menu(&mut self, ui: &Ui, cell: Rect, cx: &UiCtx, discrete: bool) {

@@ -47,7 +47,7 @@ struct Live {
     /// A sample arrived: the next quiet frame rebuilds the engine, which decodes it.
     reload: bool,
     /// This person's pointer and notes (selected, dragged) as the editors drawn this frame leave them, and as the last
-    /// frame left them: what [`HoneydewApp::live_presence`] reads.
+    /// frame left them: what [`BanaForgeApp::live_presence`] reads.
     drawn: Mine,
     mine: Mine,
     /// The others in the session, as the shell last listed them.
@@ -160,7 +160,7 @@ fn media_key(id: &str) -> ContentPath {
     }
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     fn media_file(&self, id: &str) -> Option<PathBuf> {
         self.files.resolve(&media_key(id))
     }
@@ -1356,7 +1356,7 @@ fn paint(painter: &egui::Painter, m: &Metrics, all: &[(Color32, &str, Marks)]) {
     }
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// This person's [`Presence`], for the others.
     pub(crate) fn live_presence(&self) -> Presence {
         let view = self.nav.view;
@@ -1435,13 +1435,13 @@ impl HoneydewApp {
 /// - `disconnect()`: native Undo again, from the current song;
 /// - `assets()` → `[{ id, name, have }]`: the user samples the live song plays ([`super::user_media`]), and
 ///   `assetsOf(bytes)` → the same ids for a checkpoint; `readAsset(id)` → their bytes; `writeAsset(id, name, bytes)`
-///   keeps one that arrived ([`HoneydewApp::live_write_asset`]). They throw `busy` while the app is not running.
+///   keeps one that arrived ([`BanaForgeApp::live_write_asset`]). They throw `busy` while the app is not running.
 /// - `presence()` → this person's [`super::Presence`] (throws `busy` while the app is not running), and
 ///   `showPresence(others)` with the shell's `[{ id, name, color, state }]`: the others, drawn in the playlist and the
 ///   piano roll ([`super::show_presence`]).
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod web {
-    use super::{HoneydewApp, LIVE};
+    use super::{BanaForgeApp, LIVE};
     use crate::collaboration::{Conflict, checkpoint};
     use crate::history::History;
     use wasm_bindgen::{JsCast as _, JsValue, closure::Closure};
@@ -1480,13 +1480,13 @@ pub(crate) mod web {
             |name: &str, value: JsValue| Reflect::set(&adapter, &name.into(), &value).map(drop);
         set(
             "format",
-            format!("honeydew:1:{}", env!("CARGO_PKG_VERSION")).into(),
+            format!("banaforge:1:{}", env!("CARGO_PKG_VERSION")).into(),
         )?;
         let app = runner.clone();
         let checkpoint = move || -> Result<Uint8Array, JsValue> {
             let app = app
-                .app_mut::<HoneydewApp>()
-                .ok_or("Honeydew is not running")?;
+                .app_mut::<BanaForgeApp>()
+                .ok_or("BanaForge is not running")?;
             Ok(app.live_checkpoint().map_err(error)?.as_slice().into())
         };
         set(
@@ -1555,7 +1555,7 @@ pub(crate) mod web {
         let disconnect = move || {
             super::disconnect();
             // Native Undo starts from the song as the session left it: its steps hold no one else's edits.
-            if let Some(mut app) = app.app_mut::<HoneydewApp>() {
+            if let Some(mut app) = app.app_mut::<BanaForgeApp>() {
                 app.history = History::new(&app.song);
             }
         };
@@ -1565,7 +1565,7 @@ pub(crate) mod web {
         )?;
         let app = runner.clone();
         let assets = move || -> Result<Array, JsValue> {
-            let app = app.app_mut::<HoneydewApp>().ok_or("busy")?;
+            let app = app.app_mut::<BanaForgeApp>().ok_or("busy")?;
             let list = Array::new();
             for (id, name, have) in app.live_assets() {
                 let asset = Object::new();
@@ -1590,7 +1590,7 @@ pub(crate) mod web {
         )?;
         let app = runner.clone();
         let read_asset = move |id: String| -> Result<Uint8Array, JsValue> {
-            let app = app.app_mut::<HoneydewApp>().ok_or("busy")?;
+            let app = app.app_mut::<BanaForgeApp>().ok_or("busy")?;
             let bytes = app
                 .live_read_asset(&id)
                 .ok_or_else(|| format!("No sample {id}"))?;
@@ -1602,7 +1602,7 @@ pub(crate) mod web {
         )?;
         let app = runner.clone();
         let write_asset = move |id: String, _name: JsValue, bytes: Uint8Array| {
-            let mut app = app.app_mut::<HoneydewApp>().ok_or("busy")?;
+            let mut app = app.app_mut::<BanaForgeApp>().ok_or("busy")?;
             app.live_write_asset(&id, bytes.to_vec());
             Ok::<_, JsValue>(())
         };
@@ -1612,7 +1612,7 @@ pub(crate) mod web {
         )?;
         let app = runner.clone();
         let presence = move || -> Result<JsValue, JsValue> {
-            let app = app.app_mut::<HoneydewApp>().ok_or("busy")?;
+            let app = app.app_mut::<BanaForgeApp>().ok_or("busy")?;
             let state = serde_json::to_string(&app.live_presence()).map_err(|e| e.to_string())?;
             JSON::parse(&state)
         };

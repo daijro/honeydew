@@ -1,5 +1,5 @@
-//! Our logo glyph (`assets/branding/honeydew-mono.svg`), which [`IconId::AppLogo`](super::IconId::AppLogo) draws as a
-//! tinted image: the one-colour silhouette of the coloured app icon (`honeydew.svg`). Each egui context loads a
+//! Our logo glyph (`assets/branding/banaforge-mono.svg`), which [`IconId::AppLogo`](super::IconId::AppLogo) draws as a
+//! tinted image: the one-colour silhouette of the coloured app icon (`banaforge.svg`). Each egui context loads a
 //! rasterisation once, the first time it draws the logo at that size.
 
 use eframe::egui::{
@@ -10,19 +10,19 @@ use eframe::egui::{
 const PNGS: [(usize, &[u8]); 4] = [
     (
         48,
-        include_bytes!("../../assets/branding/honeydew-mono-48.png"),
+        include_bytes!("../../assets/branding/banaforge-mono-48.png"),
     ),
     (
         64,
-        include_bytes!("../../assets/branding/honeydew-mono-64.png"),
+        include_bytes!("../../assets/branding/banaforge-mono-64.png"),
     ),
     (
         128,
-        include_bytes!("../../assets/branding/honeydew-mono-128.png"),
+        include_bytes!("../../assets/branding/banaforge-mono-128.png"),
     ),
     (
         256,
-        include_bytes!("../../assets/branding/honeydew-mono-256.png"),
+        include_bytes!("../../assets/branding/banaforge-mono-256.png"),
     ),
 ];
 
@@ -56,12 +56,12 @@ fn decode_rgba(png: &[u8], size: [usize; 2]) -> Option<ColorImage> {
 /// The logo on `square` in `ctx`, tinted `color`.
 pub(super) fn logo_shape(ctx: &Context, square: Rect, color: Color32) -> Shape {
     let (n, png) = source_for(square.width() * ctx.pixels_per_point());
-    let id = Id::new(("honeydew_logo", n));
+    let id = Id::new(("banaforge_logo", n));
     let texture = ctx
         .data(|d| d.get_temp::<TextureHandle>(id))
         .unwrap_or_else(|| {
             let image = decode_rgba(png, [n, n]).expect("our logo is an RGBA PNG");
-            let handle = ctx.load_texture("honeydew_logo", image, TextureOptions::LINEAR);
+            let handle = ctx.load_texture("banaforge_logo", image, TextureOptions::LINEAR);
             ctx.data_mut(|d| d.insert_temp(id, handle.clone()));
             handle
         });
@@ -79,14 +79,14 @@ mod tests {
     fn every_rasterisation_decodes_at_its_size() {
         for (n, png) in PNGS {
             let image = decode_rgba(png, [n, n]);
-            assert!(image.is_some(), "honeydew-mono-{n}.png");
+            assert!(image.is_some(), "banaforge-mono-{n}.png");
         }
     }
 
     #[test]
     fn every_rasterisation_is_a_white_mask_of_the_silhouette() {
-        // The in-app logo is the one-colour silhouette (`honeydew-mono.svg`), white on transparency so that the draw's
-        // tint is its colour; the coloured melon has no white pixel.
+        // The in-app logo is the one-colour silhouette (`banaforge-mono.svg`), white on transparency so that the draw's
+        // tint is its colour; the full-color banana is not a white mask.
         for (n, png) in PNGS {
             let image = decode_rgba(png, [n, n]).unwrap();
             let px = &image.pixels;
@@ -94,15 +94,15 @@ mod tests {
                 let [r, g, b, a] = c.to_srgba_unmultiplied();
                 [r, g, b] == [255; 3] || a == 0
             });
-            assert!(white, "honeydew-mono-{n}.png");
+            assert!(white, "banaforge-mono-{n}.png");
             let opaque = px.iter().filter(|c| c.a() == 255).count();
             assert!(
-                opaque > px.len() / 4,
-                "honeydew-mono-{n}.png: {opaque} opaque"
+                opaque > px.len() / 6,
+                "banaforge-mono-{n}.png: {opaque} opaque"
             );
             assert!(
                 opaque < px.len() * 3 / 4,
-                "honeydew-mono-{n}.png: {opaque} opaque"
+                "banaforge-mono-{n}.png: {opaque} opaque"
             );
         }
     }

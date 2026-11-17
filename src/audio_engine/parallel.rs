@@ -16,7 +16,7 @@ pub(super) fn prepare() -> bool {
         let cap = if cfg!(target_os = "android") { 4 } else { 8 };
         ThreadPoolBuilder::new()
             .num_threads(cores.min(cap))
-            .thread_name(|index| format!("honeydew-rack-{index}"))
+            .thread_name(|index| format!("banaforge-rack-{index}"))
             .build()
             .ok()
     })

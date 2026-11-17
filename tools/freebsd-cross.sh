@@ -1,7 +1,7 @@
 #!/bin/sh
 # The FreeBSD release build's cross toolchain: GitHub has no FreeBSD runners, so a Linux runner builds the x86_64
 # FreeBSD download with clang and lld against a pinned FreeBSD base system (the oldest supported release, so the
-# download runs on it and every later one) plus FreeBSD's alsa-lib package (cpal's and so Honeydew's audio is ALSA
+# download runs on it and every later one) plus FreeBSD's alsa-lib package (cpal's and so BanaForge's audio is ALSA
 # there, which base lacks), both checked by SHA-256.
 # Usage: tools/freebsd-cross.sh <work dir>. It leaves the sysroot in <work dir>/freebsd, the compiler wrappers (cc,
 # c++, and lld-clang, which links with lld) in <work dir>/freebsd-bin, and points cargo, cc, bindgen and pkg-config

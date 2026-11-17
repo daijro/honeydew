@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-/// The module type of an instrument plugin, Honeydew's own: the file keeps it in `HDPm`.
+/// The module type of an instrument plugin, BanaForge's own: the file keeps it in `HDPm`.
 pub const PLUGIN_INSTRUMENT: u16 = 1000;
 /// The module type of an effect plugin.
 pub const PLUGIN_EFFECT: u16 = 1001;
@@ -18,8 +18,8 @@ pub fn is_plugin(type_id: u16) -> bool {
     matches!(type_id, PLUGIN_INSTRUMENT | PLUGIN_EFFECT)
 }
 
-/// Whether module type `type_id` is Honeydew's own, outside the song format's module types: a plugin module, one of
-/// Lemon Studio's effects (`honeydew_audio::lemon`), the Dynamic EQ, the Modulator, the De-esser or Denoise. The `.flm`
+/// Whether module type `type_id` is BanaForge's own, outside the song format's module types: a plugin module, one of
+/// Banana Studio's effects (`banaforge_audio::banana`), the Dynamic EQ, the Modulator, the De-esser or Denoise. The `.flm`
 /// writer keeps these in `HDPm` chunks.
 pub fn is_own(type_id: u16) -> bool {
     type_id >= PLUGIN_INSTRUMENT

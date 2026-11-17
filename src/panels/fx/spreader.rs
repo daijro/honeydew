@@ -1,7 +1,7 @@
 //! The Spreader panel (ID 44), UIHeight 8 U.
 
+use banaforge_audio::analysis::{self, PETAL_BINS, PetalView};
 use eframe::egui::{Color32, Id, Mesh, Painter, Pos2, Rect, Shape, Stroke, Ui, vec2};
-use honeydew_audio::analysis::{self, PETAL_BINS, PetalView};
 
 use super::live_analysis;
 use crate::panels::build::*;
@@ -355,7 +355,7 @@ mod tests {
                 &PanelState::default(),
                 CONTENT,
                 ppp,
-                (honeydew_audio::MeterSnapshot::default(), &feed),
+                (banaforge_audio::MeterSnapshot::default(), &feed),
             );
             assert_eq!(shapes.len(), 11, "ppp {ppp}");
             assert!(matches!(shapes[7], Shape::Mesh(_)), "{:?}", shapes[7]);

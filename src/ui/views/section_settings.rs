@@ -1,4 +1,4 @@
-//! A song section's dialog (#80, a Honeydew addition), in the `Channel Settings` dialog's style
+//! A song section's dialog (#80, a BanaForge addition), in the `Channel Settings` dialog's style
 //! ([`super::channel_settings`]): the `Section Settings` title and the close X over the `Section Name` field, the
 //! `Section Color` caption with `Color` in the picked colour, the channel colour slider (the hue) and `Delete`. The
 //! playlist ruler's `Section…` and a tap on a section's name there open it.

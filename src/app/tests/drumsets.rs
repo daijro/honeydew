@@ -3,9 +3,9 @@
 
 use std::path::Path;
 
+use banaforge_audio::builtin_drums::KITS;
+use banaforge_audio::device::AudioRenderer;
 use eframe::egui::{Event, Id};
-use honeydew_audio::builtin_drums::KITS;
-use honeydew_audio::device::AudioRenderer;
 
 use super::rack_wiring::picker_row;
 use super::*;

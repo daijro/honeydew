@@ -6,7 +6,7 @@ use super::*;
 use crate::song::{DrumKit, Event, LaneKind, SamplerSlot};
 use crate::theme::channel_color;
 use crate::ui::drums::{self, Ctl};
-use honeydew_audio::drums::PadSample;
+use banaforge_audio::drums::PadSample;
 
 /// A widget of the piano roll, of the step sequencer, of channel 1's drum editor, or of its strip `row`.
 fn roll(name: &str) -> egui::Id {
@@ -805,8 +805,8 @@ fn a_stretch_plays_its_first_8192_frames_at_once_and_the_rest_as_the_worker_stre
     // the first 8192 frames render at once and the pad plays the new, partly filled buffer (a new engine now, which
     // takes over the voices); the rest renders into that buffer on the pick worker, and once it lands the engine is
     // rebuilt with the whole render. No cache walk renders it.
-    use honeydew_audio::device::AudioRenderer;
-    use honeydew_audio::drums::STREAM_FRAMES;
+    use banaforge_audio::device::AudioRenderer;
+    use banaforge_audio::drums::STREAM_FRAMES;
     let mut rig = stretch_rig();
     let renders = rig.app.audio.samples.renders();
     let held = hold_worker();
@@ -3659,7 +3659,7 @@ mod samples {
         );
         // The desktop's picker has no `Import`.
         rig.app.files =
-            ProjectFiles::on_disk(&std::env::temp_dir().join("honeydew-u09-no-such-folder"));
+            ProjectFiles::on_disk(&std::env::temp_dir().join("banaforge-u09-no-such-folder"));
         // It opens at the pad's sample's folder, which this user folder lacks.
         row_item(&mut rig, STEPS, 1, (0, 0));
         rig.frame(vec![]);
@@ -3891,7 +3891,7 @@ fn a_mini_mixer_edit_reaches_the_audio_as_set_param_and_saves_no_undo_step() {
 
 #[test]
 fn the_drum_strips_meters_show_each_slots_peak_from_the_engine() {
-    use honeydew_audio::device::{ModuleKey, ModuleMeter};
+    use banaforge_audio::device::{ModuleKey, ModuleMeter};
     // The mixer is out (`drum_rig`): the rows' meters are horizontal bars along the bottom of each row's page.
     let mut rig = drum_rig();
     let ink = channel_color(rig.app.song.channels[1].hue, &rig.app.theme).to_color32();
@@ -3909,7 +3909,7 @@ fn the_drum_strips_meters_show_each_slots_peak_from_the_engine() {
             channel: 1,
             instance_id,
         },
-        value: honeydew_audio::MeterSnapshot {
+        value: banaforge_audio::MeterSnapshot {
             peak_left,
             peak_right,
             ..Default::default()

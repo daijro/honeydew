@@ -21,7 +21,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 
 use eframe::egui;
 
-use super::{HoneydewApp, SongEdit};
+use super::{BanaForgeApp, SongEdit};
 use crate::metrics::Metrics;
 use crate::project_files::IMPORT_FAILED;
 use crate::song::{ChannelKind, LaneKind};
@@ -47,7 +47,7 @@ pub(super) struct Importing {
     shown: bool,
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// After the screens, each frame: the drag's curtain, drop target and name ([`file_drag::end_frame`]); a drop
     /// starts its import, and an import whose decode landed makes its clips. A drop while one imports is dropped.
     pub(super) fn file_drop(&mut self, ctx: &egui::Context, m: &Metrics, tick: u64) {

@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
-// Honeydew (vendored change): `Axis`, `Button` and `ToolType` for the mouse.
+// BanaForge (vendored change): `Axis`, `Button` and `ToolType` for the mouse.
 use android_activity::input::{Axis, Button, InputEvent, KeyAction, Keycode, MotionAction, ToolType};
 use android_activity::{
     AndroidApp, AndroidAppWaker, ConfigurationRef, InputStatus, MainEvent, Rect,
@@ -144,11 +144,11 @@ pub struct EventLoop<T: 'static> {
     cause: StartCause,
     ignore_volume_keys: bool,
     combining_accent: Option<char>,
-    // Honeydew (vendored addition): the mouse's main button is down, and its moves are a touch's.
+    // BanaForge (vendored addition): the mouse's main button is down, and its moves are a touch's.
     mouse_touch: bool,
-    // Honeydew (vendored addition): the mouse's buttons as the last press or release left them.
+    // BanaForge (vendored addition): the mouse's buttons as the last press or release left them.
     mouse_buttons: u32,
-    // Honeydew (vendored change, PR #87): the last density scale factor, so a rotation does not spuriously emit
+    // BanaForge (vendored change, PR #87): the last density scale factor, so a rotation does not spuriously emit
     // ScaleFactorChanged.
     scale_factor: f64,
 }
@@ -166,7 +166,7 @@ impl Default for PlatformSpecificEventLoopAttributes {
 }
 
 impl<T: 'static> EventLoop<T> {
-    // Honeydew (vendored change, PR #87): a `ScaleFactorChanged` only when the density did change, and only with a
+    // BanaForge (vendored change, PR #87): a `ScaleFactorChanged` only when the density did change, and only with a
     // live, nonzero window size.
     fn scale_factor_changed<F>(&mut self, callback: &mut F)
     where
@@ -253,7 +253,7 @@ impl<T: 'static> EventLoop<T> {
             match event {
                 MainEvent::InitWindow { .. } => {
                     callback(event::Event::Resumed, self.window_target());
-                    // Honeydew (vendored change, PR #87): the density, and the size, once the surface is there.
+                    // BanaForge (vendored change, PR #87): the density, and the size, once the surface is there.
                     self.scale_factor_changed(callback);
                     // Some Android devices do not deliver WindowResized after the first surface is created. In that
                     // case launch in landscape would keep a zero or stale viewport until another lifecycle event.
@@ -265,7 +265,7 @@ impl<T: 'static> EventLoop<T> {
                 MainEvent::WindowResized { .. } => resized = true,
                 MainEvent::RedrawNeeded { .. } => pending_redraw = true,
                 MainEvent::ContentRectChanged { .. } => {
-                    // Honeydew (vendored change, PR #87): a rotation changes the surface's rect, and its new size
+                    // BanaForge (vendored change, PR #87): a rotation changes the surface's rect, and its new size
                     // is the only way the app learns the viewport moved. Reported below as `Resized`, with the
                     // native window's size.
                     resized = true;
@@ -291,7 +291,7 @@ impl<T: 'static> EventLoop<T> {
                     );
                 },
                 MainEvent::ConfigChanged { .. } => {
-                    // Honeydew (vendored change, PR #87): a rotation is a config change, and winit's own `Resized`
+                    // BanaForge (vendored change, PR #87): a rotation is a config change, and winit's own `Resized`
                     // only arrives for the surface events a rotation may not send at all. Report the native window's
                     // size either way, so a rotated app never keeps the viewport it had.
                     resized = true;
@@ -309,7 +309,7 @@ impl<T: 'static> EventLoop<T> {
                 MainEvent::Resume { .. } => {
                     debug!("App Resumed - is running");
                     self.running = true;
-                    // Honeydew (vendored change, PR #87): as at InitWindow.
+                    // BanaForge (vendored change, PR #87): as at InitWindow.
                     self.scale_factor_changed(callback);
                     resized = true;
                 },
@@ -327,7 +327,7 @@ impl<T: 'static> EventLoop<T> {
                     warn!("TODO: forward onStop notification to application");
                 },
                 MainEvent::Destroy => {
-                    // Honeydew (vendored change, PR #87): NativeActivity waits for its app thread to return before
+                    // BanaForge (vendored change, PR #87): NativeActivity waits for its app thread to return before
                     // unloading the native library. Ignoring this event leaves winit's loop alive during Activity
                     // teardown (including configuration relaunch), so `super.onDestroy()` can block waiting for Rust
                     // indefinitely. Exit cleanly on the app thread.
@@ -382,7 +382,7 @@ impl<T: 'static> EventLoop<T> {
                 } else {
                     PhysicalSize::new(0, 0)
                 };
-                // Honeydew (vendored change, PR #87): rotation can transiently detach the native window. A zero
+                // BanaForge (vendored change, PR #87): rotation can transiently detach the native window. A zero
                 // resize can leave graphics backends in an unusable state; the replacement surface's
                 // InitWindow/WindowResized reports its nonzero size.
                 if size.width > 0 && size.height > 0 {
@@ -426,7 +426,7 @@ impl<T: 'static> EventLoop<T> {
                 let window_id = window::WindowId(WindowId);
                 let device_id = event::DeviceId(DeviceId(motion_event.device_id()));
 
-                // Honeydew (vendored addition): a mouse's wheel, hover and other buttons as the desktop sends them;
+                // BanaForge (vendored addition): a mouse's wheel, hover and other buttons as the desktop sends them;
                 // its main button stays a touch, while it is down.
                 let pointer = motion_event.pointer_at_index(motion_event.pointer_index());
                 if pointer.tool_type() == ToolType::Mouse {

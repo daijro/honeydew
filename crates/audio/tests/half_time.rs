@@ -1,5 +1,5 @@
-use honeydew_audio::half_time::{HALF_TIME, LENGTH, SMOOTH, SPEED};
-use honeydew_audio::{AudioEffect, ProcessContext};
+use banaforge_audio::half_time::{HALF_TIME, LENGTH, SMOOTH, SPEED};
+use banaforge_audio::{AudioEffect, ProcessContext};
 use std::f64::consts::TAU;
 
 const RATE: f32 = 48_000.0;

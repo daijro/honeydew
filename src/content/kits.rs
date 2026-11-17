@@ -3,13 +3,13 @@
 //!
 //! Details:
 //! - A slot is `<Key> <Pad>` (the small line under the pad name) on folder `Built-in/<Key>/<Pad>`, with no `PTH1`: the
-//!   engine synthesizes it (`honeydew_audio::builtin_drums`). Slots are in pad order and `PADS` is the identity (the
+//!   engine synthesizes it (`banaforge_audio::builtin_drums`). Slots are in pad order and `PADS` is the identity (the
 //!   kit is built the way [`DrumKit::default_kit`] is), so hex pad `i` plays slot `i` on key 48 + `i`.
 //! - Closed and Open Hat share cut group 1; no other pad is cut.
 //! - [`MIX`] sets Level (dB) and Pan for each pad name and [`TRIM`] each kit's level; every other param stays at its
 //!   default. Nothing is louder than -7 dB, for headroom (the chord test in `src/app/tests/drumsets.rs`).
 
-use honeydew_audio::builtin_drums::KITS;
+use banaforge_audio::builtin_drums::KITS;
 
 use super::{DRUMSETS, Entry};
 use crate::flm::write_drumset;

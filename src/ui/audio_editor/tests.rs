@@ -1,10 +1,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use banaforge_audio::sample::{SampleData, SampleMeta};
+use banaforge_audio::sample_edit::peaks;
 use eframe::egui::epaint::ClippedShape;
 use eframe::egui::{Color32, Pos2, Rect, Shape, UiBuilder, Vec2, pos2, vec2};
-use honeydew_audio::sample::{SampleData, SampleMeta};
-use honeydew_audio::sample_edit::peaks;
 
 use super::*;
 use crate::audio_link::AudioLink;
@@ -982,7 +982,7 @@ impl AppRig {
 fn a_clip_on_a_project_made_wav_shows_its_waveform_and_a_vol_drag_is_one_undo_step() {
     let mut files = ProjectFiles::with_provider(Box::new(MemFiles::default()));
     let tone: Vec<f32> = (0..22_050).map(|i| (i as f32 * 0.05).sin() * 0.8).collect();
-    let bytes = honeydew_audio::wav_writer::float32_wav(44_100, &[tone]);
+    let bytes = banaforge_audio::wav_writer::float32_wav(44_100, &[tone]);
     files.keep_user_file(Path::new("My Samples/tone.wav"), bytes);
     let mut song = song();
     slot(&mut song).file.path = Some(user("My Samples/tone.wav"));

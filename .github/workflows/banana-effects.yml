@@ -1,0 +1,135 @@
+name: Banana Studio effects
+
+# Compares the vendored Banana Studio effects (vendor/banana-studio/os-engine/src/effects: upstream's files at the commit
+# vendor/banana-studio/README.md pins) with Banana Studio's main. While they differ, one open issue lists the changed files
+# and the upstream commits; it is closed once they match again. Syncing is tools/sync-banana-effects.sh in the
+# development repo.
+#
+# The built-in plugins (those vendor/banana-studio/plugins.txt lists and the plugins and crates they use, which BanaForge
+# patches) the same way: their own issue lists what upstream's main changed in them since their pinned commit. Syncing
+# is tools/sync-banana-plugins.sh, which also names the upstream paths compared.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare with upstream and open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          title="Banana Studio effects changed upstream"
+          url=https://github.com/ItsAlphaNeon/Lemon-Studio
+          src=crates/os-engine/src/effects
+          dst=vendor/banana-studio/os-engine/src/effects
+          pinned=$(sed -nE 's/^- Effects commit: `([0-9a-f]{40})`.*/\1/p' vendor/banana-studio/README.md)
+          git clone -q --filter=blob:none --no-checkout "$url" "$RUNNER_TEMP/banana"
+          banana() { git -C "$RUNNER_TEMP/banana" "$@"; }
+          main=$(banana rev-parse HEAD)
+          upstream="$RUNNER_TEMP/upstream"
+          mkdir -p "$upstream"
+          for f in $(banana ls-tree -r --name-only HEAD "$src/"); do
+            mkdir -p "$(dirname "$upstream/${f#"$src"/}")"
+            banana show "HEAD:$f" > "$upstream/${f#"$src"/}"
+          done
+          # The engine files the effects use (tools/sync-banana-effects.sh's `uses`), beside the folder.
+          for f in formula.rs; do
+            banana show "HEAD:${src%/*}/$f" > "$upstream/../$f" 2>/dev/null || rm -f "$upstream/../$f"
+          done
+          changed=()
+          for name in $( (cd "$dst" && find . -type f; cd "$upstream" && find . -type f) | sed 's|^\./||' | sort -u) \
+            ../formula.rs; do
+            cmp -s "$dst/$name" "$upstream/$name" || changed+=("$name")
+          done
+          issue=$(gh issue list --state open --limit 100 --json number,title \
+            --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          if [ ${#changed[@]} -eq 0 ]; then
+            echo "The vendored effects match Banana Studio's main ($main)."
+            if [ -n "$issue" ]; then
+              gh issue close "$issue" --comment "The vendored effects match Banana Studio's \`main\` again (\`$main\`)."
+            fi
+            exit 0
+          fi
+          {
+            echo "Banana Studio's \`main\` differs from the effects BanaForge vendors in \`$dst\`."
+            echo
+            echo "- Pinned: [\`${pinned:0:12}\`]($url/commit/$pinned)"
+            echo "- Upstream \`main\`: [\`${main:0:12}\`]($url/commit/$main)"
+            echo "- Range: $url/compare/$pinned...$main"
+            echo
+            echo "Changed files:"
+            printf -- '- `%s`\n' "${changed[@]}"
+            echo
+            echo "Upstream commits touching them since the pinned one:"
+            commits=$(banana log --format='- [`%h`]('"$url"'/commit/%H) %s' "$pinned..$main" -- "$src" \
+              "${src%/*}/formula.rs" 2>/dev/null \
+              || echo "- (the pinned commit is not in upstream's history)")
+            echo "${commits:-- none: the vendored files differ from the pinned commit}"
+            echo
+            echo "To sync, run \`tools/sync-banana-effects.sh $main\` in the development repo (see \`vendor/banana-studio/README.md\`)."
+          } > "$RUNNER_TEMP/body.md"
+          if [ -n "$issue" ]; then
+            gh issue edit "$issue" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh issue create --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          fi
+      - name: Compare the plugins with upstream and open, update or close their issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          title="Banana Studio plugins changed upstream"
+          url=https://github.com/ItsAlphaNeon/Lemon-Studio
+          pinned=$(sed -nE 's/^- Plugins commit: `([0-9a-f]{40})`.*/\1/p' vendor/banana-studio/README.md)
+          banana() { git -C "$RUNNER_TEMP/banana" "$@"; }
+          [ -d "$RUNNER_TEMP/banana" ] || git clone -q --filter=blob:none --no-checkout "$url" "$RUNNER_TEMP/banana"
+          main=$(banana rev-parse HEAD)
+          # The upstream paths the vendored plugins come from (one per line, no spaces): the listed plugins, the
+          # plugins and crates their manifests use at upstream's main, and the os-engine files listed.
+          paths=$(BANANA_REPO="$RUNNER_TEMP/banana" tools/sync-banana-plugins.sh --paths "$main")
+          if ! banana cat-file -e "$pinned^{commit}" 2>/dev/null; then
+            changed="(the pinned commit is not in upstream's history)"
+          else
+            changed=$(banana diff --name-only "$pinned" "$main" -- $paths)
+          fi
+          issue=$(gh issue list --state open --limit 100 --json number,title \
+            --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          if [ -z "$changed" ]; then
+            echo "The vendored plugins are at upstream's main as far as they go ($main)."
+            if [ -n "$issue" ]; then
+              gh issue close "$issue" --comment "Banana Studio's \`main\` has no changes to the plugins since the pinned commit any more (\`$main\`)."
+            fi
+            exit 0
+          fi
+          {
+            echo "Banana Studio's \`main\` changed the plugins BanaForge vendors in \`vendor/banana-studio\` since their pinned commit."
+            echo
+            echo "- Pinned: [\`${pinned:0:12}\`]($url/commit/$pinned)"
+            echo "- Upstream \`main\`: [\`${main:0:12}\`]($url/commit/$main)"
+            echo "- Range: $url/compare/$pinned...$main"
+            echo
+            echo "Changed files:"
+            printf -- '- `%s`\n' $changed
+            echo
+            echo "Upstream commits touching them:"
+            commits=$(banana log --format='- [`%h`]('"$url"'/commit/%H) %s' "$pinned..$main" -- $paths 2>/dev/null || true)
+            echo "${commits:-- none found}"
+            echo
+            echo "To sync, run \`tools/sync-banana-plugins.sh $main\` in the development repo (see \`vendor/banana-studio/README.md\`)."
+          } > "$RUNNER_TEMP/plugins.md"
+          if [ -n "$issue" ]; then
+            gh issue edit "$issue" --body-file "$RUNNER_TEMP/plugins.md"
+          else
+            gh issue create --title "$title" --body-file "$RUNNER_TEMP/plugins.md"
+          fi
