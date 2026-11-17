@@ -91,7 +91,26 @@ jobs:
             cat /tmp/clippy.log
           fi
           exit "$rc"
-      - run: cargo test --workspace
+      - name: Run cargo test --workspace
+        shell: bash
+        run: |
+          set +e
+          cargo test --workspace -- --color never 2>&1 | tee /tmp/cargo-test.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            python3 - <<'PY'
+          import pathlib
+          lines = pathlib.Path("/tmp/cargo-test.log").read_text(errors="replace").splitlines()
+          patterns = (" FAILED", "panicked at", "assertion", "left:", "right:", "test result: FAILED", "error:")
+          picked = [line for line in lines if any(pattern in line for pattern in patterns)]
+          # Keep the GitHub check annotation useful while bounding output for large workspaces.
+          for line in picked[-60:]:
+              text = line.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Cargo test failure::{text[:900]}")
+          PY
+          fi
+          exit "$rc"
       - run: cargo check --workspace --target wasm32-unknown-unknown
       - name: Content tool
         run: cargo test --manifest-path tools/content-build/Cargo.toml
