@@ -158,3 +158,43 @@ the bundled default; no additional voicebank download is required.
   response. Physical Android touch/IME behavior and audible playback still need
   device verification. User-bank sample singing remains unimplemented; the
   built-in procedural voice is still the only singing renderer.
+
+## Device-report follow-up (2026-11-17, source 5741cdf)
+
+* Android text completion no longer requests an egui repaint while holding the
+  native editor mutex. This removes a callback/UI lock-order inversion; the
+  reported physical-device Done crash has not been reproduced here.
+* Android snapshots flag a callback heartbeat older than three seconds as a
+  failed stream, allowing the existing automatic reopen path to recover silent
+  callback stoppages. This is recovery, not a diagnosis of every audio lockout.
+* Android's visual playhead now uses buffer transport snapshots instead of
+  latency-compensated heard history. Count-in still gates interpolation. This
+  intentionally trades Bluetooth latency compensation for immediate buffer sync
+  on Android. Device startup timing remains to be measured.
+* Vocal tools follow the first current rack instrument, not channel creation
+  kind. Leaving Vocal Synth clears pitch and lyric gestures. Vocal Synth is now
+  in the standard SYNTH picker. My Folders lists mixed file types in My Songs
+  and My Samples; song-only and preset pickers retain their extension filters.
+* ZIP bank detection ignores bundled demo MIDI/audio when deciding whether the
+  ZIP is a project; actual FLM/template/FLP projects still take priority.
+  Import remains metadata registration, not sample-bank singing playback.
+* Bordered dark lyric blocks, opaque cyan waveforms with dark outlines, and a
+  last-painted, outlined pitch overlay remain readable independently of track
+  color. Smooth per-note segments use the same eased interpolation in audio and
+  visualization; node positions remain explicit. No cross-note resampler added.
+  FLATTEN BENDS resets selected pitch data without deleting lyrics. This is an
+  incremental editor update, not complete desktop Vocaloid control parity.
+
+### Validation / download
+
+* APK run 44044374537 passed build and independent signature/install/ZIP checks:
+  https://github.com/jellyscoll76-Real/honeydew/actions/runs/44044374537/artifacts/14311990084
+* Artifact ZIP: 25,830,390 bytes, SHA-256
+  `44210d4abea446245d64adcdc0abd0babebfb85142c8251e120d42d08e2d0d68`.
+* Vocal and dedicated My Folders regressions passed (44044375624). Strict
+  Clippy, formatting, and macOS/Windows engine smoke tests passed (44044375615).
+* Full workspace tests still fail seven cases: three instrument parameter
+  snapshots (including stale lowercase vowel order), two rack expectations,
+  user-folder expectations, and graph touch-painting. Browser menu regressions
+  no longer appear in the failures. Full CI is not green. No device install,
+  audio measurement, or physical IME validation was performed in this sandbox.
