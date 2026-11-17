@@ -251,3 +251,36 @@ the bundled default; no additional voicebank download is required.
   parameter-range count (77 vs 83), corrected in test-only commit 794a03a.
   Its rerun is pending; do not claim full workspace CI is green. Windows engine
   smoke passed; macOS smoke was queued at last observation. No device testing.
+
+## Japanese UTAU import encoding correction
+
+Voicebank archives now use a dedicated filename policy (other app ZIP imports are
+unchanged): explicit UTF-8, CRC-validated Info-ZIP Unicode path extra fields, valid
+unflagged UTF-8, then strict Windows-31J/CP932. Unicode extras in either the central
+or local header are supported. Decoded paths still pass the archive's traversal,
+symlink, byte-budget and overlap checks. Paths and OTO filenames use Unicode NFC.
+
+OTO and character metadata default to CP932, not an opportunistic UTF-8 guess.
+UTF-8, UTF-16LE and UTF-16BE BOMs select those encodings explicitly. The common
+metadata decoder can also read install/terms text. Timing fields retain their
+signed values. The decoded `name=` in the selected bank root's `character.txt`
+is the display name; a missing name uses the imported archive's stem. Async
+completion updates a module's title only if that module still selects the same
+source. Unrelated custom data is not changed by completion.
+
+Japanese terms filenames including `使用許諾条件.txt` count as a terms document;
+this means only that a document is present, never that redistribution is allowed.
+A freely licensed M PLUS 1p font supplies Japanese glyphs after the existing UI
+fonts (SIL OFL 1.1, `assets/fonts/MPLUS1p-OFL.txt`). No user bank is bundled.
+
+Tests build an entirely synthetic CP932 three-subbank archive with 39, 319 and
+887 aliases, a character name, placeholder sample bytes and a UTF-16LE terms
+file. They check 1,245 indexed aliases, display-name decoding, NFC WAV resolution,
+Unicode-extra CRC validation, malformed encodings and traversal rejection. They
+are not a test of the copyrighted Teto archive. Font coverage for the requested
+Japanese title, kana and terms filename was independently checked.
+
+**Playback limitation:** custom-bank sample rendering is still not implemented.
+Resolving `あ` to the correctly decoded WAV path is not decoding, scheduling,
+stretching or singing that sample. Procedural Vocal Synth audio remains the only
+renderer. No claim is made that this patch passes a Teto playback/device test.
