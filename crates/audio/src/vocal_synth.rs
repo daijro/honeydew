@@ -10,13 +10,13 @@ use crate::instrument::Instrument;
 const VOICES: usize = 8;
 const VOWELS: [[f32; 3]; 5] = [
     [800.0, 1_150.0, 2_900.0], // a
-    [300.0, 2_200.0, 3_000.0], // i
-    [350.0, 900.0, 2_200.0],   // u
     [500.0, 1_900.0, 2_600.0], // e
+    [300.0, 2_200.0, 3_000.0], // i
     [500.0, 1_000.0, 2_400.0], // o
+    [350.0, 900.0, 2_200.0],   // u
 ];
 
-/// Prepared per-note controls, independent of module knobs. Vowel 0..4 is a/i/u/e/o;
+/// Prepared per-note controls, independent of module knobs. Vowel 0..4 is a/e/i/o/u;
 /// 255 leaves vowel selection to the rack. Dynamics 0.5 is unity.
 #[derive(Clone, Copy, Debug)]
 pub struct VocalExpression {
@@ -141,7 +141,7 @@ impl Voice {
 }
 
 /// Honeydew's procedural Vocal Synth. Normalized parameters: Enable, Gender/Formant, Breathiness, Brightness,
-/// Glide, Vibrato Rate, Vibrato Depth, and Vowel (a/i/u/e/o).
+/// Glide, Vibrato Rate, Vibrato Depth, and Vowel (a/e/i/o/u).
 pub struct VocalSynth {
     params: [f32; 8],
     pitch_bend_ratio: f32,
@@ -358,7 +358,7 @@ impl Instrument for VocalSynth {
             let vowel = if expression.vowel < 5 {
                 usize::from(expression.vowel)
             } else {
-                (self.params[7] * 4.999) as usize
+                (self.params[7] * 4.0).round() as usize
             };
             let centers = VOWELS[vowel];
             let scale = 2.0f32.powf((self.params[1] + expression.formant - 1.0) * 0.9);

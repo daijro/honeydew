@@ -17,6 +17,7 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -181,6 +182,13 @@ final class HoneydewDialogs {
             activeRequestId = requestId;
             showM3Dialog(dialog, true);
             input.requestFocus();
+            // Wait until the dialog's editor is attached before asking the Android IME.
+            input.post(() -> {
+                InputMethodManager imm = (InputMethodManager) activity.getSystemService(Activity.INPUT_METHOD_SERVICE);
+                if (imm != null && input.isAttachedToWindow()) {
+                    imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+                }
+            });
         });
     }
 

@@ -4449,3 +4449,31 @@ fn vocal_paste_distributes_selected_notes_and_preserves_untargeted_lyrics() {
         "な"
     );
 }
+
+#[test]
+fn vocal_curve_follows_parent_move_and_transpose_without_changing_relative_points() {
+    let mut lane = Lane::new(LaneKind::Notes);
+    let clip = lane.add_clip(0, 4.0);
+    clip.events = vec![n(0, 128.0, 60), n(256, 128.0, 64)];
+    let state = super::vocal_note_mut(&mut clip.file.vocal_notes, 0, 60);
+    state.lyric = "la".into();
+    state.pitch = vec![
+        crate::song::VocalPitchPoint {
+            offset: 0.25,
+            cents: -75.0,
+        },
+        crate::song::VocalPitchPoint {
+            offset: 0.75,
+            cents: 50.0,
+        },
+    ];
+    let points = state.pitch.clone();
+    let after = vec![n(128, 256.0, 62), n(256, 128.0, 64)];
+    super::follow_vocal_anchors(clip, &[true, false], &after, &[true, false]);
+    assert_eq!(
+        (clip.file.vocal_notes[0].pos, clip.file.vocal_notes[0].key),
+        (128, 62)
+    );
+    assert_eq!(clip.file.vocal_notes[0].pitch, points);
+    assert_eq!(clip.file.vocal_notes[0].lyric, "la");
+}

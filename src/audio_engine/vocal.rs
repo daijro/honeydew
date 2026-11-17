@@ -13,10 +13,10 @@ pub(crate) fn vowel(lyric: &str) -> u8 {
         .rev()
         .find_map(|ch| match ch.to_ascii_lowercase() {
             'a' | 'あ' | 'ア' => Some(0),
-            'i' | 'い' | 'イ' => Some(1),
-            'u' | 'う' | 'ウ' => Some(2),
-            'e' | 'え' | 'エ' => Some(3),
-            'o' | 'お' | 'オ' => Some(4),
+            'i' | 'い' | 'イ' => Some(2),
+            'u' | 'う' | 'ウ' => Some(4),
+            'e' | 'え' | 'エ' => Some(1),
+            'o' | 'お' | 'オ' => Some(3),
             _ => None,
         })
         .unwrap_or(255)
@@ -154,7 +154,7 @@ mod tests {
         assert_eq!(pitch(&points, 0.0), -100.0);
         assert_eq!(pitch(&points, 0.5), 0.0);
         assert_eq!(pitch(&points, 1.0), 100.0);
-        assert_eq!(vowel("hello"), 4);
+        assert_eq!(vowel("hello"), 3);
         assert_eq!(vowel("息"), 255);
     }
 }
@@ -209,5 +209,104 @@ mod schedule_tests {
         out.clear();
         actions(&song, 48000.0, 120.0, &mut out).unwrap();
         assert!(out.is_empty());
+    }
+}
+
+pub(super) struct Timeline {
+    pub channel: usize,
+    pub instance_id: i32,
+    pub key: u8,
+    pub changes: Vec<(u64, VocalExpression)>,
+}
+
+/// Built before playback. Note-ons reset expression, so removing a curve in an edit cannot
+/// leave the old voice bent. Binary search restores the most recent value without allocation.
+pub(super) fn timelines(song: &Song, actions: &[ScheduledAction]) -> Vec<Timeline> {
+    let mut timelines =
+        std::collections::BTreeMap::<(usize, i32, u8), Vec<(u64, VocalExpression)>>::new();
+    for event in actions {
+        let (instance_id, key, expression) = match event.action {
+            Action::Vocal {
+                instance_id,
+                key,
+                expression,
+            } => (instance_id, key, expression),
+            Action::NoteOn {
+                instance_id, key, ..
+            } if song.channels[event.channel]
+                .rack
+                .modules
+                .iter()
+                .any(|m| m.instance_id == instance_id && m.type_id == 53) =>
+            {
+                (instance_id, key, VocalExpression::default())
+            }
+            _ => continue,
+        };
+        timelines
+            .entry((event.channel, instance_id, key))
+            .or_default()
+            .push((event.frame, expression));
+    }
+    timelines
+        .into_iter()
+        .map(|((channel, instance_id, key), changes)| Timeline {
+            channel,
+            instance_id,
+            key,
+            changes,
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod binding_tests {
+    use super::*;
+    #[test]
+    fn vocal_explicit_vowels_match_the_panel_sequence() {
+        assert_eq!(["A", "E", "I", "O", "U"].map(vowel), [0, 1, 2, 3, 4]);
+    }
+    #[test]
+    fn vocal_restore_timeline_resets_at_the_next_note_on() {
+        use crate::song::{ChannelKind, SynthKind};
+        let mut song = Song::default();
+        song.add_channel(ChannelKind::Synth(SynthKind::VocalSynth));
+        let id = song.channels[1]
+            .rack
+            .modules
+            .iter()
+            .find(|m| m.type_id == 53)
+            .unwrap()
+            .instance_id;
+        let action = |frame, action| ScheduledAction {
+            frame,
+            channel: 1,
+            action,
+        };
+        let events = [
+            action(
+                0,
+                Action::Vocal {
+                    instance_id: id,
+                    key: 60,
+                    expression: VocalExpression {
+                        cents: 300.0,
+                        ..Default::default()
+                    },
+                },
+            ),
+            action(
+                100,
+                Action::NoteOn {
+                    instance_id: id,
+                    key: 60,
+                    velocity: 1.0,
+                    pan: 0.5,
+                },
+            ),
+        ];
+        let held = timelines(&song, &events);
+        assert_eq!(held[0].changes[0].1.cents, 300.0);
+        assert_eq!(held[0].changes[1].1.cents, 0.0);
     }
 }

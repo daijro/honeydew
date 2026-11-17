@@ -77,6 +77,7 @@ impl SongAudioEngine {
             self.set_changed_params(old);
             self.keep_bend(old);
         }
+        self.restore_vocals(frame);
         self.sync_controllers(old);
     }
 

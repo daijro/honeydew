@@ -136,6 +136,7 @@ pub struct SongAudioEngine {
     /// The modules' saved settings, which an engine built after an edit gives the modules it takes over too.
     settings: Vec<(usize, i32, u32, f32)>,
     param_timelines: Vec<ParamTimeline>,
+    vocal_timelines: Vec<vocal::Timeline>,
     action_index: usize,
     channel_controls: Vec<[f32; 4]>,
     /// Per channel, instrument (as in `instruments`) and key, the note-offs held by the sustain pedal.
@@ -423,6 +424,7 @@ impl SongAudioEngine {
             })
             .collect();
         let param_timelines = prepare::timelines(&actions);
+        let vocal_timelines = vocal::timelines(song, &actions);
         let count = song.channels.len();
         let sustained = instruments
             .iter()
@@ -461,6 +463,7 @@ impl SongAudioEngine {
             initial,
             settings,
             param_timelines,
+            vocal_timelines,
             action_index: 0,
             channel_controls: song
                 .channels
@@ -1652,7 +1655,23 @@ impl SongAudioEngine {
             self.release_uncovered(true);
         }
         self.restore_params(frame, true);
+        self.restore_vocals(frame);
         self.relaunch_clips();
+    }
+
+    fn restore_vocals(&mut self, frame: u64) {
+        for index in 0..self.vocal_timelines.len() {
+            let timeline = &self.vocal_timelines[index];
+            let count = timeline.changes.partition_point(|(at, _)| *at <= frame);
+            let expression = count
+                .checked_sub(1)
+                .map_or_else(Default::default, |i| timeline.changes[i].1);
+            let (channel, instance_id, key) =
+                (timeline.channel, timeline.instance_id, timeline.key);
+            if let Some(module) = self.instrument(channel, instance_id) {
+                module.instrument.set_vocal(key, expression);
+            }
+        }
     }
 
     /// Step 1 of the re-sync for what the note-offs of step 3 read: every instrument's params (a MiniSynth latches its
@@ -2462,6 +2481,21 @@ mod tests {
                     "{bpm}: beat {k} at {frame}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn vocal_rack_reverb_live_mix_reaches_the_effect_processor() {
+        let mut song = Song::default();
+        song.add_channel(ChannelKind::Synth(SynthKind::VocalSynth));
+        let id = song.channels[1].rack.add(12);
+        let mut engine = SongAudioEngine::new(&song, 48_000.0).unwrap();
+        for value in [0.0, 0.2, 1.0] {
+            engine.set_param(1, id, 3, value);
+            assert_eq!(
+                engine.audio.effect(1, id).unwrap().parameter(3),
+                Some(value)
+            );
         }
     }
 

@@ -1042,7 +1042,7 @@ const VOCAL_SYNTH: &[P] = &[
         0.0,
         Display::linear(0.0, 100.0, 0, " cents"),
     ),
-    P::menu("Vowel", 0.0, &["a", "i", "u", "e", "o"]),
+    P::menu("Vowel", 0.0, &["A", "E", "I", "O", "U"]),
 ];
 
 // The UI binds indices 1-11. The Envelope toggle is off (Original: the SoundFont's own envelopes), and reads

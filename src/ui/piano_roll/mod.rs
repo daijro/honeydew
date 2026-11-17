@@ -530,6 +530,37 @@ fn distribute_lyrics(clip: &mut Clip, selected: &[bool], anchor: (u32, u8), text
         .map_or_else(String::new, |n| n.lyric.clone())
 }
 
+/// Pitch points already store normalized time and cents, never screen coordinates.
+/// Move their parent anchors together with selected notes; leave the relative curve untouched.
+fn follow_vocal_anchors(
+    clip: &mut Clip,
+    before_selected: &[bool],
+    after: &[Event],
+    after_selected: &[bool],
+) {
+    let anchors = |events: &[Event], selected: &[bool]| -> Vec<(u32, u8)> {
+        events
+            .iter()
+            .zip(selected)
+            .filter(|(_, on)| **on)
+            .filter_map(|(event, _)| note(event).map(|(pos, _, key)| (pos as u32, key)))
+            .collect()
+    };
+    let before = anchors(&clip.events, before_selected);
+    let after = anchors(after, after_selected);
+    if before.len() != after.len() {
+        return;
+    }
+    for state in &mut clip.file.vocal_notes {
+        if let Some(index) = before
+            .iter()
+            .position(|anchor| *anchor == (state.pos, state.key))
+        {
+            (state.pos, state.key) = after[index];
+        }
+    }
+}
+
 fn drag_vocal_point(
     clip: &mut Clip,
     g: &Geom,
@@ -852,37 +883,43 @@ impl PianoRoll {
 
         if response.drag_started() {
             let picked = self.clip(song).and_then(|clip| {
-                clip.events.iter().find_map(|event| {
-                    let (pos, _, key) = note(event)?;
-                    let rect = g.note_rect(event)?;
-                    if !rect.contains(pointer) {
-                        return None;
-                    }
-                    let data = clip
-                        .file
-                        .vocal_notes
-                        .iter()
-                        .find(|n| n.pos == pos as u32 && n.key == key);
-                    let nearest = data
-                        .into_iter()
-                        .flat_map(|n| n.pitch.iter().enumerate())
-                        .map(|(i, p)| {
-                            let at = pos2(
-                                rect.left() + p.offset.clamp(0.0, 1.0) * rect.width(),
-                                rect.center().y
-                                    - p.cents.clamp(-1200.0, 1200.0) / 2400.0 * rect.height(),
-                            );
-                            (i, at.distance(pointer))
+                // All curve nodes win over note boundaries, including nodes outside the note fill.
+                let slop = 22.0; // egui points, not physical pixels
+                let nearest = clip
+                    .events
+                    .iter()
+                    .filter_map(|event| {
+                        let (pos, _, key) = note(event)?;
+                        let rect = g.note_rect(event)?;
+                        let data = clip
+                            .file
+                            .vocal_notes
+                            .iter()
+                            .find(|n| n.pos == pos as u32 && n.key == key)?;
+                        data.pitch
+                            .iter()
+                            .enumerate()
+                            .map(|(index, point)| {
+                                let at = pos2(
+                                    rect.left() + point.offset * rect.width(),
+                                    rect.center().y - point.cents / 2400.0 * rect.height(),
+                                );
+                                (at.distance(pointer), pos as u32, key, rect, index)
+                            })
+                            .filter(|item| item.0 <= slop)
+                            .min_by(|a, b| a.0.total_cmp(&b.0))
+                    })
+                    .min_by(|a, b| a.0.total_cmp(&b.0));
+                nearest
+                    .map(|(_, pos, key, rect, index)| (pos, key, rect, index))
+                    .or_else(|| {
+                        clip.events.iter().find_map(|event| {
+                            let (pos, _, key) = note(event)?;
+                            let rect = g.note_rect(event)?;
+                            rect.contains(pointer)
+                                .then_some((pos as u32, key, rect, usize::MAX))
                         })
-                        .filter(|(_, d)| *d <= ui.ctx().pixels_per_point().max(1.0) * 12.0)
-                        .min_by(|a, b| a.1.total_cmp(&b.1));
-                    Some((
-                        pos as u32,
-                        key,
-                        rect,
-                        nearest.map_or(usize::MAX, |(i, _)| i),
-                    ))
-                })
+                    })
             });
             if let Some((pos, key, rect, index)) = picked
                 && let Some(clip) = self.clip_mut(song)
@@ -952,7 +989,7 @@ impl PianoRoll {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label("LYRIC / PHONEME");
-                        let response = ui.add(
+                        let mut response = ui.add(
                             egui::TextEdit::singleline(&mut text)
                                 .id(field)
                                 .hint_text("type this note's syllable")
@@ -962,6 +999,7 @@ impl PianoRoll {
                         if self.lyric_focus_pending {
                             response.request_focus();
                         }
+                        crate::android_text::edit(&mut response, &mut text, 4096);
                         changed = response.changed();
                         next = ui.button("NEXT NOTE  ›").clicked();
                         done = ui.button("DONE").clicked()
@@ -1152,7 +1190,18 @@ impl PianoRoll {
         crate::ui::focus::register(ui, id.with("grid"), grid, crate::ui::focus::Kind::Container);
         let g = self.geom(grid.min, u);
         let vocal_consumed = self.vocal_input(ui, &response, &g, song, &mut actions);
-        if !vocal_consumed {
+        let pitch_locked = self.pitch_draw_enabled
+            && song.channels.get(self.channel).is_some_and(|channel| {
+                channel
+                    .rack
+                    .modules
+                    .iter()
+                    .any(|module| module.type_id == 53)
+            });
+        if pitch_locked && !matches!(self.gesture, Gesture::Idle) {
+            actions.extend(self.end_touch());
+        }
+        if !vocal_consumed && !pitch_locked {
             self.grid_input(ui, &response, grid, m, song, &mut actions);
         }
 
@@ -1225,7 +1274,9 @@ impl PianoRoll {
         );
         // The playhead line's slot: over the notes, under their handles, the marquee and the floating row.
         let line_slot = grid_painter.add(egui::Shape::Noop);
-        self.paint_selection(&grid_painter, &g, events, cx);
+        if !pitch_locked {
+            self.paint_selection(&grid_painter, &g, events, cx);
+        }
         #[cfg(any(target_arch = "wasm32", test))]
         crate::app::live::piano_roll(
             ui,
@@ -1346,7 +1397,7 @@ impl PianoRoll {
         let below = (rect, ruler.bottom());
         let ink = color.to_color32();
         (self.graph).tab_below(ui, cx, id.with("graph tab"), below, tab_x, ink);
-        if !matches!(self.menu, Some(Menu::Humanize(_) | Menu::Generate(_))) {
+        if !pitch_locked && !matches!(self.menu, Some(Menu::Humanize(_) | Menu::Generate(_))) {
             self.floating_buttons(ui, grid, &g, song, cx, &mut actions);
         }
         self.paste_button(ui, id, grid, &g, song, cx, &mut actions);
@@ -1944,10 +1995,12 @@ impl PianoRoll {
                 edit.sound = Some(key);
             }
         }
+        let before_selected = self.selected.clone();
         let Some(clip) = self.clip_mut(song) else {
             return;
         };
         if clip.events != new {
+            follow_vocal_anchors(clip, &before_selected, &new, &sel);
             // Back where it started: the notes and loop it began with, no edit to report.
             let moved = new != edit.orig;
             (clip.events, clip.loop_len_beats) = (new, edit.orig_loop);
@@ -2833,7 +2886,11 @@ impl PianoRoll {
                 self.row.select_all();
             }
             MoreOp::SnapToScale => snap_to_scale(&mut clip.events, &which, root, mask),
-            MoreOp::Transpose(dk) => clip.events = shift_notes(&clip.events, &which, 0.0, dk),
+            MoreOp::Transpose(dk) => {
+                let next = shift_notes(&clip.events, &which, 0.0, dk);
+                follow_vocal_anchors(clip, &which, &next, &which);
+                clip.events = next;
+            }
             MoreOp::ToggleSlide => {
                 toggle_slide(&mut clip.events, &which);
                 // S of the remembered note: the first toggled note's new flag.
@@ -2968,7 +3025,9 @@ impl PianoRoll {
                 && offset != 0
                 && let Some(clip) = self.clip_mut(song)
             {
-                clip.events = shift_notes(&clip.events, &which, 0.0, offset);
+                let next = shift_notes(&clip.events, &which, 0.0, offset);
+                follow_vocal_anchors(clip, &which, &next, &which);
+                clip.events = next;
                 edited(actions, true);
             }
             self.menu = None;
