@@ -4556,6 +4556,7 @@ fn vocal_studio_only_wraps_a_vocal_rack_and_restores_the_normal_editor() {
     }
     let play = control(&rig.out.shapes, "▶ Play");
     rig.click(play);
+    rig.frame(vec![]); // The transport changed after the click frame painted its label.
     assert!(rig.app.main_screen.playing);
     let stop = control(&rig.out.shapes, "Ⅱ Stop");
     rig.click(stop);
