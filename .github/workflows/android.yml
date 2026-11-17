@@ -17,6 +17,14 @@ on:
           - all
           - arm64-v8a
           - armeabi-v7a
+      build_type:
+        description: APK variant (debug is debuggable for phone crash capture)
+        required: false
+        default: release
+        type: choice
+        options:
+          - release
+          - debug
       include_sounds:
         description: Bundle the large sound library in the APK (otherwise it downloads on first launch)
         required: false
@@ -84,11 +92,15 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ steps.sign.outputs.keystore_pass }}
           ANDROID_KEY_ALIAS: ${{ steps.sign.outputs.key_alias }}
           ANDROID_KEY_PASSWORD: ${{ steps.sign.outputs.key_pass }}
+          BUILD_TYPE: ${{ inputs.build_type || 'release' }}
           ABI_MODE: ${{ inputs.abi || 'all' }}
           INCLUDE_SOUNDS: ${{ inputs.include_sounds || 'false' }}
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.0.13004108"
-          args=(--release --abi "$ABI_MODE")
+          args=(--abi "$ABI_MODE")
+          if [ "$BUILD_TYPE" = release ]; then
+            args+=(--release)
+          fi
           # A manual build defaults to the much smaller soundless APK; push builds keep the full bundled version.
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$INCLUDE_SOUNDS" != true ]; then
             args+=(--base)
