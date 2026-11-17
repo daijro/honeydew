@@ -137,3 +137,24 @@ the bundled default; no additional voicebank download is required.
   The DSP now uses the same round-to-nearest menu quantization as the UI. Existing
   non-default saved Vowel knob values will select the newly ordered vowel.
 * GitHub reported this repository is already public (isPrivate: false).
+
+### Verified build: 55ff23f (2026-11-17)
+
+* ARM64/no-bundled-sounds APK run 44033327774 succeeded, including independent
+  APK signature, install metadata and ZIP-content checks. Download:
+  https://github.com/jellyscoll76-Real/honeydew/actions/runs/44033327774/artifacts/14305969428
+* Artifact archive: 25,823,926 bytes; SHA-256
+  `60b79045c67358c4f4a90f17f84075702559b14a55f95fa092d280a1044fb42e`.
+  This is the archive digest, not a separately measured APK digest.
+* Vocal regression run 44033234805 passed. Full CI 44033234712 passed formatting,
+  strict workspace/all-target Clippy, Windows and macOS parallel-engine smoke
+  tests, but failed nine workspace tests: three instrument parameter snapshots,
+  three module browser expectations, rack module-ID boundary, user folder
+  expectations, and graph touch-painting. Full workspace CI is NOT green.
+* Vocal drags now send coalesced auditions (at most one per 100 ms of changed
+  input) using the existing engine handover; release publishes the final curve.
+  Large bends are no longer clipped to the parent note's immediate row.
+* Reverb dispatch tests validate parameter routing, NOT measured audible wet/dry
+  response. Physical Android touch/IME behavior and audible playback still need
+  device verification. User-bank sample singing remains unimplemented; the
+  built-in procedural voice is still the only singing renderer.
