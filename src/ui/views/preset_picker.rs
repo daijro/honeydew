@@ -1568,7 +1568,7 @@ pub(crate) fn channel_limit_message() -> Overlay {
 /// takes an import ([`ProjectFiles::imports_audio`]).
 fn import_dir(files: &ProjectFiles, t: u16) -> Option<PathBuf> {
     if t == 53 {
-        return files.voicebanks_dir().filter(|_| files.imports_audio());
+        return files.voicebanks_dir();
     }
     let audio = preset_exts(t).contains(&SAMPLE_EXTS[0]);
     let dir = match t {
