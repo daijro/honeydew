@@ -635,6 +635,20 @@ fn android_main(app: AndroidApp) {
     crate::android_text::reset();
     *UI_WAKE.lock().unwrap_or_else(|err| err.into_inner()) = None;
     *ACTIVITY.lock().unwrap_or_else(|err| err.into_inner()) = Some(app.clone());
+    // Persist Rust panics for device-only crashes, including release panic=abort.
+    // Capture the path now: never acquire Activity/UI/audio locks from a panic hook.
+    if let Some(path) = app
+        .external_data_path()
+        .map(|p| p.join("last-rust-crash.txt"))
+    {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let report = format!("{info}\n{}\n", std::backtrace::Backtrace::force_capture());
+            let _ = std::fs::write(&path, report);
+            previous(info);
+        }));
+    }
+
     if let Some(index) = asset_bytes(
         "content/index.json",
         crate::content::bundle::MAX_INDEX_BYTES,
