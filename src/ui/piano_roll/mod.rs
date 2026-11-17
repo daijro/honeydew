@@ -2506,7 +2506,11 @@ impl PianoRoll {
             });
             if painted {
                 if expression.is_none() {
-                    self.remembered.velocity = u8::try_from(value).unwrap_or(u8::MAX);
+                    let value = u8::try_from(value).unwrap_or(u8::MAX);
+                    match prop {
+                        Prop::Pan => self.remembered.pan = value.min(254),
+                        _ => self.remembered.velocity = value,
+                    }
                 }
                 edited(actions, false);
                 if expression.is_some() {
