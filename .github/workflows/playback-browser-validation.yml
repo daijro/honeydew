@@ -24,8 +24,19 @@ jobs:
       - name: Output clock regressions
         run: cargo test -p banaforge-audio device::tests
       - name: Browser and program regressions
+        shell: bash
         run: |
-          cargo test --lib preset_picker
-          cargo test -p banaforge-audio dwp
-          cargo test --lib sample_cache
-          cargo test --lib waveform_mesh_cache
+          set +e
+          (cargo test --lib preset_picker && cargo test -p banaforge-audio dwp && cargo test --lib sample_cache && cargo test --lib waveform_mesh_cache) > /tmp/regression.log 2>&1
+          rc=$?
+          cat /tmp/regression.log
+          if [ "$rc" -ne 0 ]; then
+            python3 - <<'PYTEST'
+          import pathlib
+          text = "\n".join(pathlib.Path("/tmp/regression.log").read_text(errors="replace").splitlines()[-100:])
+          for i in range(0, len(text), 1600):
+              chunk = text[i:i+1600].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Playback browser regression::{chunk}")
+          PYTEST
+          fi
+          exit "$rc"
