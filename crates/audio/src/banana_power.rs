@@ -37,6 +37,7 @@ pub struct State {
     target: [f32; PARAMS],
     p: [f32; PARAMS],
     count: usize,
+    split: [f32; 2],
     low: [f32; 2],
     high: [f32; 2],
     dc: [f32; 2],
@@ -54,7 +55,7 @@ impl State {
     pub fn new(id: u16, rate: f32, params: &[f32]) -> Self {
         let mut state = Self {
             id, rate, target: [0.0; PARAMS], p: [0.0; PARAMS], count: params.len().min(PARAMS),
-            low: [0.0; 2], high: [0.0; 2], dc: [0.0; 2], envelope: [0.0; 3],
+            split: [0.0; 2], low: [0.0; 2], high: [0.0; 2], dc: [0.0; 2], envelope: [0.0; 3],
             ring: if id == GROSS_BEAT { vec![(0.0, 0.0); (rate * 8.0).ceil() as usize + 2] } else { Vec::new() },
             write: 0, valid: 0, beat: 0.0, step: 0.0, tempo: 120.0, last_wet: (0.0, 0.0),
         };
@@ -65,6 +66,7 @@ impl State {
 
     pub fn refresh(&mut self, params: &[f32], rate: f32) {
         self.rate = rate;
+        self.split = [250.0, 4500.0].map(|hz| 1.0 - (-std::f32::consts::TAU * hz / rate).exp());
         for (dst, &value) in self.target.iter_mut().zip(params) {
             *dst = if value.is_finite() { value.clamp(0.0, 1.0) } else { 0.0 };
         }
@@ -94,8 +96,7 @@ impl State {
         for i in 1..self.count { self.p[i] += (self.target[i] - self.p[i]) * 0.002; }
         let input = [l, r].map(|v| if v.is_finite() { v.clamp(-32.0, 32.0) } else { 0.0 });
         if self.id == GROSS_BEAT { return self.warp(input[0], input[1]); }
-        let a = 1.0 - (-std::f32::consts::TAU * 250.0 / self.rate).exp();
-        let b = 1.0 - (-std::f32::consts::TAU * 4500.0 / self.rate).exp();
+        let [a, b] = self.split;
         let mut bands = [[0.0; 3]; 2];
         for c in 0..2 {
             self.low[c] += a * (input[c] - self.low[c]);

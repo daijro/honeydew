@@ -167,6 +167,10 @@ fn engine_render_and_commands_do_not_allocate() {
     let denoise = ch.rack.add(banaforge_audio::denoise::DENOISE);
     // A Half Time (#91): its ring is sized at build, for the song tempo.
     ch.rack.add(banaforge_audio::half_time::HALF_TIME);
+    for id in banaforge_audio::banana_power::IDS {
+        let module = ch.rack.add(id);
+        ch.rack.get_mut(module).unwrap().params[1] = 0.7;
+    }
     let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
     engine.note_on(2, 45, 1.0);
     let mut output = vec![0.0_f32; 4096 * 2];

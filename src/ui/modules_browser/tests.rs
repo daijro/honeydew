@@ -114,6 +114,10 @@ const SPEC: &[(&str, &[&str])] = &[
             "Press",
             "Pulp Filter",
             "Tesla",
+            "Banana Fresh Air",
+            "Banana Soundgoodizer",
+            "Banana Blood Overdrive",
+            "Banana Gross Beat",
         ],
     ),
 ];
@@ -965,6 +969,10 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             "De-esser",
             "Denoise",
             "Half Time",
+            "Banana Fresh Air",
+            "Banana Soundgoodizer",
+            "Banana Blood Overdrive",
+            "Banana Gross Beat",
             "Banana Balance",
             "Banana Chorus",
             "Banana Delay",
@@ -1614,4 +1622,12 @@ fn a_drag_on_the_scrollbar_moves_the_list_by_its_share_and_a_swipe_on_the_rows_s
         panel.scroll_y,
         at + 120.0
     );
+}
+
+#[test]
+fn banana_power_effects_are_visible_and_selectable_for_audio_racks() {
+    for (id, name) in banaforge_audio::banana_power::IDS.into_iter().zip(banaforge_audio::banana_power::NAMES) {
+        let found = super::rows(name, ModuleOrdering::Category, Takes::Effects);
+        assert!(found.iter().any(|row| matches!(row, Row::Item(Entry::Module(got)) if *got == id)), "{name} not selectable");
+    }
 }
