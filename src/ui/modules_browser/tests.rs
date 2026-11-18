@@ -1083,7 +1083,10 @@ fn dragging_scrolls_to_the_end_of_the_list_and_no_further() {
     assert!(!rig.shows("Paste"));
     assert_eq!(rig.text_at("Banana Gross Beat").y, list.bottom() - 24.0);
     let at = rig.text_at("Banana Gross Beat");
-    assert_eq!(rig.click(at), Some(BrowserAction::Module(banaforge_audio::banana_power::GROSS_BEAT)));
+    assert_eq!(
+        rig.click(at),
+        Some(BrowserAction::Pick(banaforge_audio::banana_power::GROSS_BEAT))
+    );
 }
 
 #[test]
