@@ -417,6 +417,24 @@ fn my_files_then_a_folder_then_a_preset_picks_its_path() {
 }
 
 #[test]
+fn consecutive_file_taps_replace_the_active_browser_row() {
+    let mut rig = Rig::new(reverb());
+    rig.click_text(MY_FILES);
+    rig.click_text("A Room");
+    let picked = |picker: &PresetPicker| {
+        picker.rows("").into_iter()
+            .filter(|item| picker.is_picked(*item))
+            .map(|item| item.name().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(picked(&rig.picker), ["A Room"]);
+    rig.click_text("b Hall");
+    assert_eq!(picked(&rig.picker), ["b Hall"]);
+    rig.click_text("A Room");
+    assert_eq!(picked(&rig.picker), ["A Room"]);
+}
+
+#[test]
 fn default_picks_the_init_preset() {
     let mut rig = Rig::new(reverb());
     assert_eq!(rig.click_text(DEFAULT), Some(PickerAction::Default));
