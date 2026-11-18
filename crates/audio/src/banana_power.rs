@@ -49,6 +49,9 @@ pub struct State {
     step: f64,
     tempo: f32,
     last_wet: (f32, f32),
+    correction: (f32, f32),
+    last_delay: f32,
+    level: f32,
 }
 
 impl State {
@@ -57,7 +60,7 @@ impl State {
             id, rate, target: [0.0; PARAMS], p: [0.0; PARAMS], count: params.len().min(PARAMS),
             split: [0.0; 2], low: [0.0; 2], high: [0.0; 2], dc: [0.0; 2], envelope: [0.0; 3],
             ring: if id == GROSS_BEAT { vec![(0.0, 0.0); (rate * 8.0).ceil() as usize + 2] } else { Vec::new() },
-            write: 0, valid: 0, beat: 0.0, step: 0.0, tempo: 120.0, last_wet: (0.0, 0.0),
+            write: 0, valid: 0, beat: 0.0, step: 0.0, tempo: 120.0, last_wet: (0.0, 0.0), correction: (0.0, 0.0), last_delay: 0.0, level: 1.0,
         };
         state.refresh(params, rate);
         state.p = state.target;
@@ -89,6 +92,7 @@ impl State {
         self.low = [0.0; 2]; self.high = [0.0; 2]; self.dc = [0.0; 2];
         self.envelope = [0.0; 3]; self.valid = 0; self.write = 0;
         self.beat = 0.0; self.last_wet = (0.0, 0.0);
+        self.correction = (0.0, 0.0); self.last_delay = 0.0; self.level = 1.0;
         self.p = self.target;
     }
 
@@ -153,7 +157,7 @@ impl State {
         let delay = match (self.target[1] * 4.0).round() as usize {
             1 => phase * 0.5,
             2 => 0.5 * phase * phase,
-            3 => (phase * 8.0).fract() / 8.0,
+            3 => (phase * 8.0).floor() / 8.0,
             4 => curve(&self.p, TIME_POINTS, phase),
             _ => 0.0,
         };
@@ -169,11 +173,18 @@ impl State {
             _ => 1.0,
         };
         let wet = (x.0 + f * (y.0 - x.0), x.1 + f * (y.1 - x.1));
-        // 1 ms edge smoothing on warped paths; straight-through remains exact.
+        // Smooth level and correct only read-head discontinuities; filtering the
+        // entire signal would incorrectly remove treble even on a half-speed path.
         let smooth = (1.0 / (0.001 * self.rate)).min(1.0);
-        let warped = self.target[1] > 0.0 || self.target[2] > 0.0;
-        let desired = (wet.0 * volume, wet.1 * volume);
-        self.last_wet = if warped { (self.last_wet.0 + smooth * (desired.0 - self.last_wet.0), self.last_wet.1 + smooth * (desired.1 - self.last_wet.1)) } else { desired };
+        self.level += smooth * (volume - self.level);
+        let desired = (wet.0 * self.level, wet.1 * self.level);
+        if (delay - self.last_delay).abs() > 2.0 {
+            self.correction = (self.last_wet.0 - desired.0, self.last_wet.1 - desired.1);
+        }
+        self.last_delay = delay;
+        self.last_wet = (desired.0 + self.correction.0, desired.1 + self.correction.1);
+        self.correction.0 *= 1.0 - smooth;
+        self.correction.1 *= 1.0 - smooth;
         self.write = (self.write + 1) % self.ring.len();
         self.beat += self.step;
         (l + self.p[4] * (self.last_wet.0 - l), r + self.p[4] * (self.last_wet.1 - r))

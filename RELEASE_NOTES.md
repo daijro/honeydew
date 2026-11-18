@@ -10,7 +10,7 @@ BanaForge 0.5.10 — Banana rack effects test build
 
 ## Limitations / unresolved
 - Initial DSP: no proprietary matching or oversampling-quality claim. Physical-device CPU, aliasing and listening evaluation remain required.
-- The Gross Beat editor uses a fixed 16-column lattice and 1/16 value snapping, not a free breakpoint editor. Abrupt warps are softened with a short output smoothing filter.
+- The Gross Beat editor uses a fixed 16-column lattice and 1/16 value snapping, not a free breakpoint editor. Abrupt read-head jumps use a short decaying discontinuity correction; volume edges are smoothed.
 - Language switching, custom backgrounds, the previously reported playback delay and specific DWP wrong-sound case remain unresolved.
 
 ## Earlier changes

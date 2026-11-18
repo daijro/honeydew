@@ -68,7 +68,7 @@ fn envelope(ui: &mut Ui, cx: &UiCtx, id: Id, rect: Rect, module: &mut ModuleInst
     let points: Vec<_> = (0..b::POINTS).map(|i| {
         let x=i as f32/15.0;
         let y=if volume { match mode { 0=>1.0,1=>if (x*8.0).fract()<0.5 {1.0}else{0.0},2=>x,_=>module.params[base+i] } }
-        else { match mode {0=>0.0,1=>x*0.5,2=>0.5*x*x,3=>(x*8.0).fract()/8.0,_=>module.params[base+i]} };
+        else { match mode {0=>0.0,1=>x*0.5,2=>0.5*x*x,3=>(x*8.0).floor()/8.0,_=>module.params[base+i]} };
         pos2(plot.left()+x*plot.width(),plot.bottom()-y*plot.height())
     }).collect();
     painter.add(Shape::line(points.clone(),Stroke::new(2.0/cx.m.ppp(),ink)));
