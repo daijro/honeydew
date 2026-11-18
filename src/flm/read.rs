@@ -941,11 +941,11 @@ impl Reader {
                 }
                 // BanaForge's own MIDI input (`flm::write`); what does not read is All.
                 b"BFCr" => {
-                    if let Ok(rgb) = child.reader().u32() {
-                        if rgb <= 0xFF_FFFF && rgb != 0 && rgb != 0xFF_FFFF {
-                            channel.file.color_rgb =
-                                Some([(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8]);
-                        }
+                    if let Ok(rgb) = child.reader().u32()
+                        && (1..0xFF_FFFF).contains(&rgb)
+                    {
+                        channel.file.color_rgb =
+                            Some([(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8]);
                     }
                 }
                 b"HDMi" => {
