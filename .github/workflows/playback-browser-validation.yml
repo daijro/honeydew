@@ -4,6 +4,9 @@ on:
   push:
     branches: ["arena/**"]
     paths:
+      - 'src/ui/piano_roll/**'
+      - 'src/ui/widgets/**'
+      - 'src/ui/views/**'
       - 'src/audio_link.rs'
       - 'src/sample_cache.rs'
       - 'src/ui/clips.rs'
@@ -27,7 +30,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          (cargo test --lib preset_picker && cargo test -p banaforge-audio dwp && cargo test --lib sample_cache && cargo test --lib waveform_mesh_cache) > /tmp/regression.log 2>&1
+          (cargo test --lib preset_picker && cargo test -p banaforge-audio dwp && cargo test --lib sample_cache && cargo test --lib waveform_mesh_cache && cargo test --lib note_block_labels && cargo test --lib ui::widgets::tests && cargo test --lib whats_new) > /tmp/regression.log 2>&1
           rc=$?
           cat /tmp/regression.log
           if [ "$rc" -ne 0 ]; then

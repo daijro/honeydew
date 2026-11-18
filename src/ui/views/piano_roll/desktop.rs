@@ -310,7 +310,10 @@ fn panel(
                     ui.checkbox(&mut app.settings.vocal_follow_playhead, "Follow playhead");
                     ui.checkbox(&mut app.settings.vocal_lyric_bar_enabled, "Top lyric lane");
                     ui.checkbox(&mut app.settings.vocal_waveform_enabled, "Waveform below notes");
-                    ui.add(egui::Slider::new(&mut app.settings.vocal_waveform_offset_y, 0..=40).text("Gap (rows)"));
+                    let response = ui.add(egui::Slider::new(&mut app.settings.vocal_waveform_offset_y, 0..=40).text("Gap (rows)"));
+                    if response.double_clicked() {
+                        app.settings.vocal_waveform_offset_y = 5;
+                    }
                     section(ui, "WORKFLOW");
                     ui.label("Pinch to zoom. Two-finger drag to scroll. Long-press notes for Copy / Delete.");
                     ui.label("Waveform previews yield to playback. No bank audio is decoded by this panel.");
@@ -431,6 +434,12 @@ fn parameter(
         instance_id,
         param: index,
     };
+    let reset = if instance_id == 0 {
+        crate::params::CHANNEL_PARAMS.get(index as usize).map(|p| p.reset)
+    } else {
+        app.song.channels[channel].rack.get(instance_id)
+            .and_then(|module| module.param_spec(index as usize)).map(|p| p.reset)
+    };
     let Some(value) = app.song.channels[channel].param_mut(target) else {
         return;
     };
@@ -439,7 +448,11 @@ fn parameter(
             .text(label)
             .show_value(false),
     );
-    let changed = response.changed();
+    let double_reset = response.double_clicked() && reset.is_some();
+    if double_reset {
+        *value = reset.unwrap_or(*value);
+    }
+    let changed = response.changed() || double_reset;
     let value = *value;
     if changed {
         app.audio.send(AudioCommand::SetParam {

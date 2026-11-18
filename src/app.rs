@@ -478,7 +478,7 @@ impl BanaForgeApp {
         if !views::whats_new::due(&self.settings.whats_new_seen) {
             return;
         }
-        if !fresh && cfg!(mobile) {
+        if !fresh {
             self.nav.overlays.push(Overlay::WhatsNew);
         }
         self.settings.whats_new_seen = views::whats_new::NOTES_VERSION.into();

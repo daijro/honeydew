@@ -8,7 +8,7 @@
 //! the note grid in the rest, over the graph lane (`Vel` / `Pan`, [`graph_lane`]) while its tab shows it. The x axis
 //! is the clip's content (tick 0 = content start). The grid background: no beat bands; rows light by scale and
 //! instrument range, lit by selection and sound, the shared adaptive beat marks, root lines, and black α 0.15 past the
-//! loop end ([`paint_grid`], [`paint_notes`]). Note names are not drawn.
+//! loop end ([`paint_grid`], [`paint_notes`]). Readable note blocks show their pitch name and octave on every synth piano roll.
 //!
 //! Gestures on the grid, each decided from its touch-down by the shared law ([`gesture::is_long`],
 //! [`gesture::left_calm`]): within the 0.5 U calm zone a release after ≤ 0.3 s is a tap and after > 0.3 s a long press,
@@ -1385,6 +1385,7 @@ impl PianoRoll {
             is_vocal,
             self.waveform_enabled,
             self.waveform_offset_y,
+            opts.middle_c_is_c4,
             simple,
             past,
             color,
@@ -3608,6 +3609,32 @@ fn lyric_ink(fill: Color32) -> Color32 {
     }
 }
 
+/// Text is omitted only where it cannot fit, never ellipsized into an ambiguous pitch.
+fn paint_note_name(
+    painter: &egui::Painter,
+    rect: Rect,
+    key: u8,
+    middle_c_is_c4: bool,
+    fill: Color32,
+    m: &crate::metrics::Metrics,
+) {
+    let font = egui::FontId::proportional((rect.height() * 0.72).min(m.font_id(crate::metrics::FontSize::Pt8).size));
+    if font.size * m.ppp() < 8.0 {
+        return;
+    }
+    let name = key_name(key, true, middle_c_is_c4);
+    let ink = if 0.2126 * f32::from(fill.r()) + 0.7152 * f32::from(fill.g()) + 0.0722 * f32::from(fill.b()) > 140.0 {
+        Color32::BLACK
+    } else {
+        Color32::WHITE
+    };
+    let galley = painter.layout_no_wrap(name, font, ink);
+    if galley.size().x + 4.0 / m.ppp() <= rect.width() {
+        let at = egui::pos2(rect.left() + 2.0 / m.ppp(), rect.center().y - galley.size().y / 2.0);
+        painter.with_clip_rect(rect.intersect(painter.clip_rect())).galley(at, galley, ink);
+    }
+}
+
 /// Grid background steps 7–9, including cached vocal overlays.
 #[allow(clippy::too_many_arguments)]
 fn paint_notes(
@@ -3622,6 +3649,7 @@ fn paint_notes(
     vocal_track: bool,
     waveform_enabled: bool,
     waveform_offset_y: u8,
+    middle_c_is_c4: bool,
     simple: bool,
     past: Option<Rect>,
     color: Rgba,
@@ -3654,6 +3682,9 @@ fn paint_notes(
     );
     let visible = painter.clip_rect();
     let mut overlays = Vec::new();
+    // Keep note edges and hit targets exact. Only decorative work drops away
+    // when the viewport is too dense to make it readable.
+    let detailed = visible_events.len() <= 512 && g.row_h * m.ppp() >= 10.0;
     for i in visible_events.clone() {
         let Some(e) = events.get(i) else {
             continue;
@@ -3667,10 +3698,13 @@ fn paint_notes(
                 normal
             };
             painter.rect_filled(cell(r), 0.0, fill);
+            if detailed && let Some((_, _, key)) = note(e) {
+                paint_note_name(painter, cell(r), key, middle_c_is_c4, fill, m);
+            }
             if matches!(e, Event::Note { slide: true, .. }) {
                 paint_slide(painter, cell(r), theme.colors.background.to_color32(), m);
             }
-            if vocal_track && waveform_enabled && r.width() >= m.u(0.6) && r.height() >= m.u(0.35) {
+            if detailed && vocal_track && waveform_enabled && r.width() >= m.u(0.6) && r.height() >= m.u(0.35) {
                 let left = r.left() + px;
                 let top = r.bottom() + f32::from(waveform_offset_y.min(40)) * g.row_h;
                 let wave = Rect::from_min_max(
@@ -3698,7 +3732,8 @@ fn paint_notes(
                     }
                 }
             }
-            if vocal_track
+            if detailed
+                && vocal_track
                 && !simple
                 && let Some((pos, _, key)) = note(e)
                 && let Some(data) = vocal_notes.get(&(pos as u32, key))

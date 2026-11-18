@@ -1,3 +1,26 @@
+BanaForge 0.5.9 — feedback implementation preview
+
+## Added
+- Original animated pine-tree freshener under Main menu > UPDATES > Pine freshener. It animates only while enabled and visible.
+- Pitch names with octaves on readable synth piano-roll note blocks, including sharps (C4, F#4). This is not restricted to Vocal Synth.
+
+## Enhanced
+- Dense piano rolls reduce decorative text, vocal curves and waveform overlays beyond 512 visible notes or below readable row heights. Note rectangles, positions, hit targets and audio processing remain unchanged.
+- This offline update summary is organized by category and appears after an upgrade on desktop as well as mobile. Help > What's new reopens it.
+
+## Fixed
+- Shared parameter sliders also recognize desktop double-click reset, clear the old drag accumulator on reset, and ignore reset gestures while disabled. Touch double-tap reset remains supported.
+
+## Removed
+- Nothing removed in this preview.
+
+## Unresolved / unsuccessful prior fixes
+- Playback audio delay: the 0.5.8 audible-clock fix did not resolve the reported device experience. No new audio-latency fix is claimed here.
+- DWP wrong sound: existing zone parsing is not proof that the reported file plays correctly. A failing file and expected-sound reference are still needed.
+- Color wheel/hex colors, localization, and background-image selection/opacity are not delivered in this preview.
+
+## Earlier changes
+
 ## BanaForge 0.5.8 — priority-fix test build
 
 - Playhead: Android now uses the timestamp-aligned audible transport history, not the render-ahead cursor. UI extrapolation beyond the heard position is disabled. Startup no longer substitutes a future history entry when no sub-block has been heard yet. This uses CPAL playback timestamps, not a direct platform sampleFramesPlayed API; physical-device synchronization remains to be checked.
