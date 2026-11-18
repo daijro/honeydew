@@ -1,6 +1,7 @@
 pub mod analysis;
 pub mod automation;
 pub mod banana;
+pub mod banana_power;
 mod biquad;
 pub mod builtin_drums;
 pub mod builtin_loops;
@@ -17,7 +18,6 @@ pub mod flac_writer;
 pub mod gm_waveshapes;
 pub mod gmsynth;
 pub mod half_time;
-pub mod banana_power;
 pub mod input;
 pub mod instrument;
 pub mod metronome;
@@ -541,7 +541,10 @@ impl AudioEffect {
                     Processor::HalfTime(Box::new(state)),
                 )
             }
-            banana_power::FRESH_AIR | banana_power::SOUNDGOODIZER | banana_power::BLOOD_OVERDRIVE | banana_power::GROSS_BEAT => {
+            banana_power::FRESH_AIR
+            | banana_power::SOUNDGOODIZER
+            | banana_power::BLOOD_OVERDRIVE
+            | banana_power::GROSS_BEAT => {
                 let params = banana_power::defaults(id);
                 let state = banana_power::State::new(id, sample_rate, &params);
                 (params, Processor::BananaPower(Box::new(state)))
