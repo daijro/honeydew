@@ -28,3 +28,4 @@ jobs:
           cargo test --lib preset_picker
           cargo test -p banaforge-audio dwp
           cargo test --lib sample_cache
+          cargo test --lib waveform_mesh_cache

@@ -2381,6 +2381,39 @@ fn waveform(
     }
 }
 
+// UI-thread-only and bounded: hover repaints should not rescan sample summaries.
+// Weak source references do not keep deleted clips' decoded audio in memory.
+struct CachedWaveMesh {
+    data: std::sync::Weak<banaforge_audio::sample::SampleData>,
+    summary: std::sync::Weak<[Vec<(f32, f32)>]>,
+    geometry: WaveMeshGeometry,
+    rows: Vec<(f32, f32)>,
+    mesh: Mesh,
+}
+
+#[derive(PartialEq)]
+struct WaveMeshGeometry {
+    frames: usize,
+    per_beat: f64,
+    reversed: bool,
+    left: f64,
+    beats_per_px: f64,
+    x0: f32,
+    width: usize,
+    px: f32,
+    ink: Color32,
+}
+
+thread_local! {
+    static WAVE_MESHES: std::cell::RefCell<std::collections::VecDeque<CachedWaveMesh>> =
+        const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+
+fn mesh_bytes(mesh: &Mesh) -> usize {
+    mesh.vertices.len() * std::mem::size_of::<egui::epaint::Vertex>()
+        + mesh.indices.len() * std::mem::size_of::<u32>()
+}
+
 /// The waveform's columns: `width` device-pixel columns (`px` wide) from `x0`, the first at content beat `left` and
 /// each `beats_per_px` on, of every channel ([`columns`]) about its row of `rows` ([`wave_rows`]), in `ink`. The sample
 /// strip draws its whole file with them too (BanaForge change, #124).
@@ -2392,6 +2425,33 @@ pub(crate) fn wave_mesh(
     px: f32,
     ink: Color32,
 ) -> Mesh {
+    let geometry = WaveMeshGeometry {
+        frames: wave.frames,
+        per_beat: wave.per_beat,
+        reversed: wave.reversed,
+        left,
+        beats_per_px,
+        x0,
+        width,
+        px,
+        ink,
+    };
+    if let Some(mesh) = WAVE_MESHES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        cache.retain(|entry| entry.data.strong_count() > 0 && entry.summary.strong_count() > 0);
+        let at = cache.iter().position(|entry| {
+            entry.data.ptr_eq(&std::sync::Arc::downgrade(&source.data))
+                && entry.summary.ptr_eq(&std::sync::Arc::downgrade(&source.summary))
+                && entry.geometry == geometry
+                && entry.rows == rows
+        })?;
+        let hit = cache.remove(at)?;
+        let mesh = hit.mesh.clone();
+        cache.push_back(hit);
+        Some(mesh)
+    }) {
+        return mesh;
+    }
     let mut mesh = Mesh::default();
     for ((samples, summary), &row) in source.channels().zip(rows) {
         let cols = columns(samples, summary, wave, left, beats_per_px, width);
@@ -2399,7 +2459,64 @@ pub(crate) fn wave_mesh(
             add_column(&mut mesh, x0 + i as f32 * px, peak, row, px, ink);
         }
     }
+    // Four MiB / 32 entries maximum, regardless of project length or zoom.
+    const BUDGET: usize = 4 * 1024 * 1024;
+    if mesh_bytes(&mesh) <= BUDGET {
+        WAVE_MESHES.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            while cache.len() >= 32
+                || cache.iter().map(|entry| mesh_bytes(&entry.mesh)).sum::<usize>()
+                    + mesh_bytes(&mesh) > BUDGET
+            {
+                cache.pop_front();
+            }
+            cache.push_back(CachedWaveMesh {
+                data: std::sync::Arc::downgrade(&source.data),
+                summary: std::sync::Arc::downgrade(&source.summary),
+                geometry,
+                rows: rows.to_vec(),
+                mesh: mesh.clone(),
+            });
+        });
+    }
     mesh
+}
+
+#[cfg(test)]
+mod waveform_mesh_cache_tests {
+    use super::*;
+    use std::sync::Arc;
+    use banaforge_audio::sample::SampleData;
+
+    #[test]
+    fn waveform_mesh_cache_reuses_geometry_and_does_not_retain_audio() {
+        WAVE_MESHES.with(|cache| cache.borrow_mut().clear());
+        let source = Waveform::new(Arc::new(SampleData {
+            left: vec![0.5; 4096].into(),
+            sample_rate: 48_000,
+            ..Default::default()
+        }));
+        let weak = Arc::downgrade(&source.data);
+        let wave = Wave { frames: 4096, per_beat: 4096.0, reversed: false };
+        let draw = |ink| wave_mesh(&source, wave, &[(10.0, 8.0)], ((0.0, 1.0 / 64.0), (0.0, 64)), 1.0, ink);
+        let first = draw(Color32::RED);
+        let second = draw(Color32::RED);
+        assert_eq!(first.vertices, second.vertices);
+        assert_eq!(first.indices, second.indices);
+        WAVE_MESHES.with(|cache| assert_eq!(cache.borrow().len(), 1));
+        draw(Color32::GREEN);
+        WAVE_MESHES.with(|cache| assert_eq!(cache.borrow().len(), 2));
+        for i in 0..80 {
+            wave_mesh(&source, wave, &[(10.0, 8.0)], ((i as f64, 1.0 / 64.0), (0.0, 64)), 1.0, Color32::RED);
+        }
+        WAVE_MESHES.with(|cache| {
+            let cache = cache.borrow();
+            assert!(cache.len() <= 32);
+            assert!(cache.iter().map(|entry| mesh_bytes(&entry.mesh)).sum::<usize>() <= 4 * 1024 * 1024);
+        });
+        drop(source);
+        assert!(weak.upgrade().is_none());
+    }
 }
 
 /// `a` moved `t` of the way toward `b`, opaque.
