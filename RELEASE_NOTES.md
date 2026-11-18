@@ -2,7 +2,6 @@ BanaForge 0.5.9 — feedback implementation preview
 
 ## Added
 - Channel Settings now has a circular hue/saturation wheel, brightness control and exact #RRGGBB input. Pure black/white are rejected; colors are saved in a BanaForge extension while the legacy project hue stays intact.
-- Original animated pine-tree freshener under Main menu > UPDATES > Pine freshener. It animates only while enabled and visible.
 - Pitch names with octaves on readable synth piano-roll note blocks, including sharps (C4, F#4). This is not restricted to Vocal Synth.
 
 ## Enhanced
@@ -14,12 +13,19 @@ BanaForge 0.5.9 — feedback implementation preview
 - Shared parameter sliders also recognize desktop double-click reset, clear the old drag accumulator on reset, and ignore reset gestures while disabled. Touch double-tap reset remains supported.
 
 ## Removed
-- Nothing removed in this preview.
+- Removed the mistaken pine-tree animation from UPDATES: “air freshener” referred to the requested Banana Fresh Air exciter, not an easter egg.
 
 ## Unresolved / unsuccessful prior fixes
 - Playback audio delay: the 0.5.8 audible-clock fix did not resolve the reported device experience. No new audio-latency fix is claimed here.
 - DWP wrong sound: existing zone parsing is not proof that the reported file plays correctly. A failing file and expected-sound reference are still needed.
 - Localization and background-image selection/opacity are not delivered in this preview.
+
+## Planned — not shipped
+- Banana Fresh Air: Mid Air, High Air and Trim.
+- Banana Soundgoodizer: one Amount knob with original A–D profiles.
+- Banana Blood Overdrive: bass-friendly aggressive drive and tone shaping.
+- Banana Gross Beat: editable time/volume envelopes, stutters and tape-stop curves.
+- All four use native mobile-sized rack cards and live channel-color tinting. DSP, panels and Banana-specific fallback accents are not yet implemented. See FEATURE_BOARD.md for the specification and acceptance gates.
 
 ## Earlier changes
 
@@ -30,7 +36,7 @@ BanaForge 0.5.9 — feedback implementation preview
 - Browser: every preset/file pick explicitly requests a repaint after the active path changes. Folder labels are now bold in the shared side browser.
 - DWP: investigation confirms existing multi-zone/root/velocity metadata parsing and worker loading. No new DWP-format fix is claimed; the reported wrong-sound file still needs reproduction.
 
-Still pending from Stheven's report: larger folder text, localization extraction, full channel wheel/hex colors with readability limits, ordinary piano-roll pitch labels, and an original (non-proprietary) air-freshener easter egg. This is not a claim that the complete report is resolved.
+Still pending from Stheven's report: larger folder text, localization extraction, full channel wheel/hex colors with readability limits, ordinary piano-roll pitch labels, and the audio exciter later clarified as Banana Fresh Air (not an air-freshener easter egg). This is not a claim that the complete report is resolved.
 
 ---
 

@@ -8,6 +8,10 @@
 
 ---
 
+## Feature board
+
+See the [Banana Studio rack effects feature board](FEATURE_BOARD.md) for Banana Fresh Air, Gross Beat, Soundgoodizer and Blood Overdrive: planned processing, touch-friendly rack layouts, channel-color synchronization and delivery criteria. These additions are specifications, not shipped effects.
+
 ## Screens
 
 FL Studio Mobile demo projects, opened as `.flm` files.

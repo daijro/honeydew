@@ -41,7 +41,6 @@ pub(super) struct UpdatesTab {
     kinetic: Scroller,
     /// The page's height in the last frame, for the scroll range.
     content_h: f32,
-    freshener: bool,
 }
 
 /// The update's button label: `Install` on Android, which installs it, `Download` elsewhere.
@@ -272,40 +271,8 @@ impl UpdatesTab {
             ui.painter().galley(pos2(at.left(), at.top()), galley, text);
             band(m.u(GAP * 2.0));
         }
-        divider(ui, band(m.u(GAP * 2.0)));
-        let at = band(m.u(BUTTON_H));
-        if light_button(ui, cx, id.with("freshener"), at, "Pine freshener", true) {
-            self.freshener = !self.freshener;
-        }
-        if self.freshener {
-            let at = band(m.u(3.0));
-            if at.intersects(ui.clip_rect()) {
-                paint_freshener(ui, at, cx.theme.colors.accent.to_color32());
-                ui.ctx().request_repaint_after(Duration::from_millis(33));
-            }
-        }
         self.content_h = y - top;
         ui.set_clip_rect(outer_clip);
         action
     }
-}
-
-/// Original geometric artwork; no proprietary DAW image or trademark is used.
-fn paint_freshener(ui: &Ui, rect: Rect, ink: eframe::egui::Color32) {
-    use eframe::egui::{Shape, Stroke};
-    let t = ui.input(|i| i.time) as f32;
-    let centre = rect.center() + vec2((t * 0.8).sin() * rect.height() * 0.06, 0.0);
-    let scale = rect.height() * 0.4;
-    let spin = (t * 1.5).cos();
-    let at = |x: f32, y: f32| centre + vec2(x * scale * spin, y * scale);
-    let painter = ui.painter_at(rect);
-    painter.line_segment([at(0.0, -1.2), at(0.0, -0.85)], Stroke::new(1.0, ink));
-    for (top, bottom, half) in [(-0.9, -0.1, 0.35), (-0.5, 0.4, 0.55), (-0.1, 0.8, 0.75)] {
-        painter.add(Shape::convex_polygon(
-            vec![at(0.0, top), at(half, bottom), at(-half, bottom)],
-            ink,
-            Stroke::NONE,
-        ));
-    }
-    painter.line_segment([at(0.0, 0.7), at(0.0, 1.0)], Stroke::new(3.0, ink));
 }
