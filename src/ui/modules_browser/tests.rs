@@ -1493,6 +1493,7 @@ fn bare_frame(
         panel.show(ctx, &cx, &chrome, |_| {
             (rows.iter())
                 .map(|&(name, folder)| PanelRow {
+                    font: None,
                     name,
                     folder,
                     sub: None,

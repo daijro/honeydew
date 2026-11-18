@@ -443,10 +443,11 @@ fn default_picks_the_init_preset() {
 }
 
 #[test]
-fn every_row_folder_or_item_is_in_fontsize_4_and_a_long_name_is_cut_to_the_row() {
+fn folders_are_larger_than_files_and_a_long_name_is_cut_to_the_row() {
     // One size for every row of every side browser, the folder rows' FontSize 4.
     let m = metrics();
     let pt18 = m.font_id(FontSize::Pt18).size;
+    let pt14 = m.font_id(FontSize::Pt14).size;
     let mut lib = reverb_lib();
     let long = "My Presets/Reverb/Cathedral Hall With A Very Long Shimmering Tail.flmpst";
     lib.store("x.flm", b"x").unwrap();
@@ -454,12 +455,12 @@ fn every_row_folder_or_item_is_in_fontsize_4_and_a_long_name_is_cut_to_the_row()
     let mut rig = Rig::with(reverb(), lib);
     assert_eq!(
         (font_size(&rig, MY_FILES), font_size(&rig, DEFAULT)),
-        (pt18, pt18)
+        (pt18, pt14)
     );
     rig.click_text(MY_FILES);
     assert_eq!(
         (font_size(&rig, "Vocal"), font_size(&rig, "A Room")),
-        (pt18, pt18)
+        (pt18, pt14)
     );
     // Every browser row is 1.5 U.
     let id = Id::new("preset_picker").with(("row", 0_usize));
@@ -2285,13 +2286,13 @@ fn row_h(rig: &Rig, i: usize) -> f32 {
 }
 
 #[test]
-fn instrument_rows_are_1_5_u_tall_and_folders_and_presets_alike_in_fontsize_4() {
+fn instrument_rows_keep_touch_height_but_files_have_smaller_text() {
     let m = metrics();
     let mut rig = Rig::with(instruments(), user_folder());
     // The presets take the folders' FontSize 4 too.
     let (folder_pt, preset_pt) = (
         m.font_id(FontSize::Pt18).size,
-        m.font_id(FontSize::Pt18).size,
+        m.font_id(FontSize::Pt14).size,
     );
     assert_eq!(font_size(&rig, MY_FILES), folder_pt);
     assert_eq!(font_size(&rig, "Bass"), folder_pt);

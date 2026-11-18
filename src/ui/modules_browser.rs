@@ -538,6 +538,7 @@ impl ModulesBrowser {
         let (sort, picked) = (self.sort, self.picked);
         let click = self.panel.show(ctx, cx, &chrome, |query| {
             let row = |row: Row| PanelRow {
+                    font: None,
                 name: row.name(),
                 folder: false,
                 sub: None,
@@ -644,6 +645,8 @@ pub(crate) enum RowKind<T> {
 
 /// A row of the list.
 pub(crate) struct PanelRow<'a, T> {
+    /// Optional browser-specific text size.
+    pub font: Option<FontSize>,
     pub name: &'a str,
     /// A folder: a tap opens it, which is its own feedback, so it never flashes.
     pub folder: bool,
@@ -1080,7 +1083,7 @@ impl SidePanel {
                     let mut look = RowLook {
                         name: row.name,
                         place: row.sub,
-                        font: ROW_FONT,
+                        font: row.font.unwrap_or(ROW_FONT),
                         ink: text,
                         current: row.picked && !(item && self.audition.loading),
                         pressed: false,

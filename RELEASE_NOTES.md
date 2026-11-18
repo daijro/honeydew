@@ -6,6 +6,7 @@ BanaForge 0.5.9 — feedback implementation preview
 - Pitch names with octaves on readable synth piano-roll note blocks, including sharps (C4, F#4). This is not restricted to Vocal Synth.
 
 ## Enhanced
+- Side-browser file/preset labels use smaller 14-point text beside bold 18-point folders; touch row heights stay unchanged.
 - Dense piano rolls reduce decorative text, vocal curves and waveform overlays beyond 512 visible notes or below readable row heights. Note rectangles, positions, hit targets and audio processing remain unchanged.
 - This offline update summary is organized by category and appears after an upgrade on desktop as well as mobile. Help > What's new reopens it.
 
