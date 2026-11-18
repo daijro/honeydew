@@ -584,10 +584,10 @@ fn channel_settings_is_on_the_dialog_base_the_dim_then_the_panel() {
     assert_eq!(rig.overlays().len(), 1, "the dialog's first frame");
     let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1170.0, 540.0));
     let m = crate::metrics::Metrics::from_pixels_per_point(1.0, crate::metrics::DEFAULT_UI_SCALE);
-    // 20 U × 5.75 U on an instrument channel (10 U wide on others), centred in the content area above the transport
+    // 20 U × 10.5 U (screen-clamped) for the wheel on instrument channels, centred above the transport
     // bar.
     let area = crate::ui::main_screen::Regions::new(screen, &m).area;
-    let boxed = egui::Rect::from_center_size(area.center(), egui::vec2(20.0 * 32.0, 5.75 * 32.0));
+    let boxed = egui::Rect::from_center_size(area.center(), egui::vec2(20.0 * 32.0, (10.5_f32 * 32.0).min(area.height() - 4.0)));
     let painted = crate::ui::dialog::painted_rects(rig.out.shapes.iter().map(|s| &s.shape));
     let colors = crate::theme::theme_by_id(0).colors;
     crate::ui::dialog::assert_base(&painted, &colors, screen, boxed);

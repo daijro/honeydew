@@ -279,8 +279,10 @@ impl UpdatesTab {
         }
         if self.freshener {
             let at = band(m.u(3.0));
-            paint_freshener(ui, at, cx.theme.colors.accent.to_color32());
-            ui.ctx().request_repaint_after(Duration::from_millis(33));
+            if at.intersects(ui.clip_rect()) {
+                paint_freshener(ui, at, cx.theme.colors.accent.to_color32());
+                ui.ctx().request_repaint_after(Duration::from_millis(33));
+            }
         }
         self.content_h = y - top;
         ui.set_clip_rect(outer_clip);

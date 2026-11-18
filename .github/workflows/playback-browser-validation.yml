@@ -40,7 +40,7 @@ jobs:
           if [ "$rc" -ne 0 ]; then
             python3 - <<'PYTEST'
           import pathlib
-          text = "\n".join(pathlib.Path("/tmp/regression.log").read_text(errors="replace").splitlines()[-100:])
+          text = "\n".join(line[:600] for line in pathlib.Path("/tmp/regression.log").read_text(errors="replace").splitlines()[-100:])
           for i in range(0, len(text), 1600):
               chunk = text[i:i+1600].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
               print(f"::error title=Playback browser regression::{chunk}")

@@ -1,5 +1,5 @@
 //! The channel properties dialog, the track menu's `Channel Settings`: the title and the close X over the
-//! `Channel Name` field and the `Channel Color` slider (the hue, `CHHD` @1036). The `Channel Name` field is inline,
+//! `Channel Name` field and the RGB color wheel/hex picker. Legacy `CHHD` hue is retained. The `Channel Name` field is inline,
 //! with `Enter Channel Name` as its hint. A floating dialog centred in the content area, above the transport bar, over
 //! the screen dimmed to α 0.6. An instrument or drum channel's dialog is twice as wide, its MIDI input (BanaForge's
 //! own, [`midi_rows`]) on the right.
@@ -82,7 +82,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut AppCtx, channel: usize, name: &mut Stri
     let backdrop = crate::ui::dialog::dialog_box(&ctx, id, (c, m), screen, rect);
     let escape = crate::ui::close_pressed(&ctx);
     let mut close = backdrop.clicked() || backdrop.secondary_clicked() || escape;
-    let hue = ch.hue;
     let mut rgb = ch.file.color_rgb;
     let color_id = id.with(("rgb", ch.id));
     let original_ink = channel_color(ch.color_token(), theme).to_color32();
@@ -154,7 +153,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut AppCtx, channel: usize, name: &mut Stri
             if midi {
                 let colors = &theme.colors;
                 let contrast = colors
-                    .best_contrasting(channel_color(hue, theme), &colors.contrast_candidates());
+                    .best_contrasting(crate::theme::Rgba::rgb(f32::from(ink.r()) / 255.0, f32::from(ink.g()) / 255.0, f32::from(ink.b()) / 255.0), &colors.contrast_candidates());
                 let file = &mut app.song.channels[channel].file;
                 let inks = (ink, contrast.to_color32());
                 (midi_edited, rescan) =

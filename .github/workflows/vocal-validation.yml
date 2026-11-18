@@ -24,11 +24,10 @@ jobs:
           cargo fmt
           git diff > /tmp/vocal-format.patch
           python3 - <<'PYFORMAT'
-          import pathlib
-          text = pathlib.Path("/tmp/vocal-format.patch").read_text()
-          for i in range(0, len(text), 12000):
-              chunk = text[i:i+12000].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-              print(f"::warning title=Formatting patch::{chunk}")
+          import pathlib, zlib, base64
+          text = base64.b64encode(zlib.compress(pathlib.Path("/tmp/vocal-format.patch").read_bytes())).decode()
+          for i in range(0, len(text), 2500):
+              print(f"::warning title=Compressed format {i:06d}::{text[i:i+2500]}")
           PYFORMAT
       - uses: actions/upload-artifact@v4
         with:
