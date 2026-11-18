@@ -1085,7 +1085,9 @@ fn dragging_scrolls_to_the_end_of_the_list_and_no_further() {
     let at = rig.text_at("Banana Gross Beat");
     assert_eq!(
         rig.click(at),
-        Some(BrowserAction::Pick(banaforge_audio::banana_power::GROSS_BEAT))
+        Some(BrowserAction::Pick(
+            banaforge_audio::banana_power::GROSS_BEAT
+        ))
     );
 }
 

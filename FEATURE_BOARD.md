@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-**Status: implemented for 0.5.10; validation and APK build in progress.** All four now have registered module IDs, original DSP, parameter specs, browser entries and native cards. This board retains design goals below; those goals are not all release guarantees. Device listening, spectral/aliasing evaluation and mobile CPU measurements are still pending.
+**Status: implemented for 0.5.10; targeted automated validation passed, replacement APK build in progress.** All four now have registered module IDs, original DSP, parameter specs, browser entries and native cards. This board retains design goals below; those goals are not all release guarantees. Device listening, spectral/aliasing evaluation and mobile CPU measurements are still pending.
 
 **Correction:** Stheven/Emmy's “air freshener” means a high-end audio exciter. The requested product is **Banana Fresh Air**, not a pine-tree animation. The mistaken UPDATES easter egg is removed. Fresh Air is separate from Gross Beat, Soundgoodizer, and Blood Overdrive; it is not being described as an FL Studio plugin.
 
@@ -12,10 +12,10 @@ Reference products establish functional goals only. Implement original Rust DSP,
 
 | Effect | Audio goal | Native horizontal rack card | Status |
 |---|---|---|---|
-| **Banana Fresh Air** | Mid/high harmonic excitement and top-end clarity | Two large knobs: **Mid Air**, **High Air**; smaller **Trim** knob | Implemented; validation pending |
-| **Banana Soundgoodizer** | One-knob multiband compression and saturation | One large central glowing **Amount** knob; large **A / B / C / D** buttons below | Implemented; validation pending |
-| **Banana Blood Overdrive** | Gritty, bass-friendly nonlinear drive for Phonk and Brazilian Funk | Rotary drive/tone/output controls within the standard card | Implemented; validation pending |
-| **Banana Gross Beat** | Custom time warps, tape-stop curves, stutters and volume envelopes | Time/volume envelope grid inside the card; thumb-friendly nodes, snapping and side preset slots | Implemented with fixed-grid causal delay curves; validation pending |
+| **Banana Fresh Air** | Mid/high harmonic excitement and top-end clarity | Two large knobs: **Mid Air**, **High Air**; smaller **Trim** knob | Implemented; targeted checks passed |
+| **Banana Soundgoodizer** | One-knob multiband compression and saturation | One large central glowing **Amount** knob; large **A / B / C / D** buttons below | Implemented; targeted checks passed |
+| **Banana Blood Overdrive** | Gritty, bass-friendly nonlinear drive for Phonk and Brazilian Funk | Rotary drive/tone/output controls within the standard card | Implemented; targeted checks passed |
+| **Banana Gross Beat** | Custom time warps, tape-stop curves, stutters and volume envelopes | Time/volume envelope grid inside the card; thumb-friendly nodes, snapping and side preset slots | Implemented with fixed-grid causal delay curves; targeted checks passed |
 
 This ordering delivers the smaller processors before the more complex real-time time-warp engine. It is not a release-date commitment.
 
@@ -106,3 +106,6 @@ Before an effect is marked delivered:
 - Gross Beat offers 16 fixed-time nodes per curve, 1/16 value snapping and preset selectors alongside the grid. Time nodes specify nonnegative delay as a fraction of the loop; they cannot read future audio. History is preallocated for eight seconds; delay requests clamp to available history. Curves and presets save as ordinary module parameters. Transport-stopped audition free-runs.
 - Existing native controls provide tint-aware active states; no extra animated glow is added. Narrow-phone usability and physical-device audio remain unverified.
 - Tests added for finite/stereo/neutral audio, audible parameter changes, specs/panels/default consistency, project round-trip, browser visibility, panel binding and allocation-free engine rendering. Consult CI for actual pass/fail, not this checklist.
+
+
+Targeted CI passed at `20202ac`: https://github.com/jellyscoll76-Real/honeydew/actions/runs/44288442119 . This runs DSP tests, the registration/save-load integration test, all module-browser tests, panel contract tests and the real-time allocation integration suite. Vocal validation also passed for the equivalent runtime sources at `810a10c`: https://github.com/jellyscoll76-Real/honeydew/actions/runs/44287776405 . These results are not physical-device listening or full-suite certification.
