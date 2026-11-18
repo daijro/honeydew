@@ -769,19 +769,15 @@ impl AudioLink {
     /// from the last snapshot's tick heard now (#92: what plays is drawn as it is heard, a Bluetooth headset's latency
     /// later), while the transport is `playing` at `bpm` on a running output and not counting in, never past `end`, the
     /// tick the engine wraps at (`None`: it plays on). Stopped, it is the transport's tick.
-    pub fn advance_playhead(&mut self, now: f64, playing: bool, bpm: f64, end: Option<u64>) {
+    pub fn advance_playhead(&mut self, now: f64, playing: bool, _bpm: f64, end: Option<u64>) {
         let runs = playing && self.running() && !self.counting_in;
-        let rate = runs.then_some(bpm / 60.0 * f64::from(crate::song::PPQ));
         let end = end.map_or(f64::INFINITY, |e| e as f64);
-        // Android's UI follows the buffer transport immediately. The latency history
-        // can still contain stopped frames after Play, holding its heard tick at zero.
-        // Keep heard time for Stop/record alignment, and for other platforms' output visuals.
-        let from = if runs && !cfg!(target_os = "android") {
-            self.heard
-        } else {
-            self.tick
-        };
-        self.lead = self.clock.advance(now, from, rate, end) as i64 - self.tick as i64;
+        // Rendered buffers may be hundreds of milliseconds ahead of the speakers.
+        // All platforms, including Android, must follow the output timestamp history.
+        let from = if runs { self.heard } else { self.tick };
+        // Do not extrapolate beyond confirmed playback: that also runs ahead when
+        // callbacks stall. The output history already advances in short sub-blocks.
+        self.lead = self.clock.advance(now, from, None, end) as i64 - self.tick as i64;
     }
 
     /// How many ticks past this frame's snapshot the editors draw the playhead (while following), negative behind it:

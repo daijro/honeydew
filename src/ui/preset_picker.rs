@@ -809,6 +809,9 @@ impl PresetPicker {
                 let open = self.folders.iter().map(|f| f.path.clone());
                 self.picked_in = open.chain(trail).collect();
                 self.picked = Some(path.clone());
+                // The rows were painted before this tap was handled. A static
+                // browser otherwise keeps the previous highlight until another event.
+                ctx.request_repaint();
                 return Some(path.map_or(PickerAction::Default, PickerAction::Pick));
             }
             Go::Done(action) => return Some(action),

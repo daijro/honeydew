@@ -1,0 +1,20 @@
+name: Playback and browser regression
+on:
+  workflow_dispatch:
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+      - uses: Swatinem/rust-cache@v2
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: Output clock regressions
+        run: cargo test -p banaforge-audio device::tests
+      - name: Browser and program regressions
+        run: |
+          cargo test --lib preset_picker
+          cargo test -p banaforge-audio dwp
+          cargo test --lib sample_cache

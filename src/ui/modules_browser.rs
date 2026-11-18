@@ -1086,7 +1086,7 @@ impl SidePanel {
                         pressed: false,
                         hovered: false,
                         select: None,
-                        bold: false,
+                        bold: row.folder,
                         mark: row.mark,
                     };
                     match row.kind {

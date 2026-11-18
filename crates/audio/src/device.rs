@@ -645,6 +645,8 @@ pub struct AudioOutput<R: AudioRenderer> {
     /// The stream frame the last snapshot showed on the output clock: a clock that moves later (a callback later than
     /// any before it) holds the visuals there, never back.
     heard: u64,
+    /// Last confirmed audible transport position; never substitute a future ring entry.
+    heard_tick: u64,
 }
 
 impl<R: AudioRenderer> AudioOutput<R> {
@@ -812,6 +814,7 @@ impl<R: AudioRenderer> AudioOutput<R> {
             buffer_mode: BufferMode::Native,
             sent: 0,
             heard: 0,
+            heard_tick: state.renderer.transport_tick(),
         };
         (output, state)
     }
@@ -985,13 +988,15 @@ impl<R: AudioRenderer> AudioOutput<R> {
         let ticks: Vec<_> = (self.shared.ticks.iter())
             .filter_map(|v| v.read(|v| v.tick.load(Ordering::Relaxed)))
             .collect();
-        // The sub-block heard last, else the oldest kept (as the meters).
+        // Only completed audible sub-blocks may advance the playhead. During
+        // startup (or when latency exceeds the ring), every entry can be future.
         let heard = ticks.iter().filter(|(end, _)| *end <= upto).max();
+        if let Some(&(_, tick)) = heard {
+            self.heard_tick = tick;
+        }
         OutputSnapshot {
             transport_tick,
-            heard_tick: heard
-                .or(ticks.iter().min())
-                .map_or(transport_tick, |&(_, t)| t),
+            heard_tick: self.heard_tick,
             cpu_load: f32::from_bits(self.shared.cpu.load(Ordering::Acquire)),
             underruns: self.shared.underruns.load(Ordering::Acquire),
             stream_failed: self.shared.failed.load(Ordering::Acquire) || {
@@ -1483,6 +1488,26 @@ mod tests {
         }
     }
 
+    #[test]
+    fn future_rendered_ticks_do_not_start_the_audible_playhead() {
+        let (mut output, mut state) = output();
+        state.renderer.playing = true;
+        state.renderer.stamp = true;
+        let mut buffer = vec![0.0; 1920];
+        // Callback queues audio with its playback origin one second in the future.
+        state.run(&mut buffer, Some(1_000_000_000));
+        let early = output.snapshot_at(Some(0));
+        assert!(early.transport_tick > 0);
+        assert_eq!(early.heard_tick, 0);
+        let audible = output.snapshot_at(Some(1_020_000_000));
+        assert!(audible.heard_tick > 0);
+        // A stalled clock must not consume any future ticks.
+        assert_eq!(
+            output.snapshot_at(Some(1_020_000_000)).heard_tick,
+            audible.heard_tick
+        );
+    }
+
     fn renderer() -> TestRenderer {
         TestRenderer {
             tick: 0,
@@ -1559,7 +1584,12 @@ mod tests {
             let snapshot = output.snapshot_at(Some(ns(clock)));
             let shown = snapshot.module_meters[0].analysis[0];
             // Playing from 0, the tick counts the frames.
-            assert_eq!(snapshot.heard_tick as f32, shown, "UI frame {frame}");
+            if frame > 0 {
+                assert_eq!(snapshot.heard_tick as f32, shown, "UI frame {frame}");
+            } else {
+                // Analysis may preview the oldest entry; transport must not.
+                assert_eq!(snapshot.heard_tick, 0);
+            }
             if frame >= 30 {
                 let step = shown - last;
                 assert!(
