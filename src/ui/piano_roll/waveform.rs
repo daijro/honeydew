@@ -18,8 +18,25 @@ pub(super) type Peaks = HashMap<(u32, u8), [f32; 48]>;
 pub(super) struct Waveforms {
     pub peaks: Peaks,
     signature: Option<u64>,
+    quiet: PreviewQuietPeriod,
     cancel: Option<Arc<AtomicBool>>,
     worker: Option<Receiver<Peaks>>,
+}
+
+/// Coalesce a stream of pitch/knob edits before starting offline preview DSP.
+/// Audio playback is never delayed: only the optional thumbnail waits.
+#[derive(Default)]
+struct PreviewQuietPeriod(Option<(u64, f64)>);
+impl PreviewQuietPeriod {
+    fn ready(&mut self, signature: u64, now: f64) -> bool {
+        match self.0 {
+            Some((seen, since)) if seen == signature => now - since >= 0.2,
+            _ => {
+                self.0 = Some((signature, now));
+                false
+            }
+        }
+    }
 }
 
 impl Drop for Waveforms {
@@ -31,6 +48,7 @@ impl Drop for Waveforms {
 impl Waveforms {
     /// Preview DSP must yield immediately to transport or a disabled visualization.
     pub fn suspend(&mut self) {
+        self.quiet = PreviewQuietPeriod::default();
         if let Some(cancel) = self.cancel.take() {
             cancel.store(true, Ordering::Relaxed);
         }
@@ -82,12 +100,25 @@ impl Waveforms {
                     self.worker = None;
                 }
                 Err(TryRecvError::Empty) => {
+                    if self.signature != Some(signature) {
+                        if let Some(cancel) = &self.cancel {
+                            cancel.store(true, Ordering::Relaxed);
+                        }
+                        // Keep the receiver until the worker exits: never pile up
+                        // competing preview jobs during a touch drag.
+                        self.signature = None;
+                    }
                     ctx.request_repaint_after_secs(0.1);
                     return;
                 }
             }
         }
         if self.signature == Some(signature) {
+            return;
+        }
+        let now = ctx.input(|input| input.time);
+        if !self.quiet.ready(signature, now) {
+            ctx.request_repaint_after_secs(0.2);
             return;
         }
         self.signature = Some(signature);
@@ -248,6 +279,19 @@ fn render_cancellable(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn preview_waits_for_quiet_and_coalesces_drag_updates() {
+        let mut quiet = PreviewQuietPeriod::default();
+        assert!(!quiet.ready(1, 0.0));
+        assert!(!quiet.ready(1, 0.1));
+        assert!(!quiet.ready(2, 0.15));
+        assert!(!quiet.ready(3, 0.25));
+        assert!(!quiet.ready(3, 0.4));
+        assert!(quiet.ready(3, 0.5));
+        quiet = PreviewQuietPeriod::default();
+        assert!(!quiet.ready(3, 0.6));
+    }
+
     #[test]
     fn vocal_preview_cancellation_stops_dsp_and_keeps_cached_peaks() {
         let cancel = AtomicBool::new(true);
