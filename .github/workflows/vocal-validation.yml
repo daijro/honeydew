@@ -26,8 +26,8 @@ jobs:
           python3 - <<'PYFORMAT'
           import pathlib
           text = pathlib.Path("/tmp/vocal-format.patch").read_text()
-          for i in range(0, len(text), 1800):
-              chunk = text[i:i+1800].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          for i in range(0, len(text), 12000):
+              chunk = text[i:i+12000].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
               print(f"::warning title=Formatting patch::{chunk}")
           PYFORMAT
       - uses: actions/upload-artifact@v4
