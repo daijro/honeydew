@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-**Status: planned, not shipped.** These four effects do not yet have registered module IDs, DSP implementations, or usable rack cards. This board is a specification, not a claim that adding a name to the browser creates a working effect.
+**Status: implemented for 0.5.10; validation and APK build in progress.** All four now have registered module IDs, original DSP, parameter specs, browser entries and native cards. This board retains design goals below; those goals are not all release guarantees. Device listening, spectral/aliasing evaluation and mobile CPU measurements are still pending.
 
 **Correction:** Stheven/Emmy's “air freshener” means a high-end audio exciter. The requested product is **Banana Fresh Air**, not a pine-tree animation. The mistaken UPDATES easter egg is removed. Fresh Air is separate from Gross Beat, Soundgoodizer, and Blood Overdrive; it is not being described as an FL Studio plugin.
 
@@ -12,10 +12,10 @@ Reference products establish functional goals only. Implement original Rust DSP,
 
 | Effect | Audio goal | Native horizontal rack card | Status |
 |---|---|---|---|
-| **Banana Fresh Air** | Mid/high harmonic excitement and top-end clarity | Two large knobs: **Mid Air**, **High Air**; smaller **Trim** knob | Planned — first implementation |
-| **Banana Soundgoodizer** | One-knob multiband compression and saturation | One large central glowing **Amount** knob; large **A / B / C / D** buttons below | Planned — second implementation |
-| **Banana Blood Overdrive** | Gritty, bass-friendly nonlinear drive for Phonk and Brazilian Funk | Rotary drive/tone/output controls within the standard card | Planned — third implementation |
-| **Banana Gross Beat** | Custom time warps, tape-stop curves, stutters and volume envelopes | Time/volume envelope grid inside the card; thumb-friendly nodes, snapping and side preset slots | Planned — fourth implementation |
+| **Banana Fresh Air** | Mid/high harmonic excitement and top-end clarity | Two large knobs: **Mid Air**, **High Air**; smaller **Trim** knob | Implemented; validation pending |
+| **Banana Soundgoodizer** | One-knob multiband compression and saturation | One large central glowing **Amount** knob; large **A / B / C / D** buttons below | Implemented; validation pending |
+| **Banana Blood Overdrive** | Gritty, bass-friendly nonlinear drive for Phonk and Brazilian Funk | Rotary drive/tone/output controls within the standard card | Implemented; validation pending |
+| **Banana Gross Beat** | Custom time warps, tape-stop curves, stutters and volume envelopes | Time/volume envelope grid inside the card; thumb-friendly nodes, snapping and side preset slots | Implemented with fixed-grid causal delay curves; validation pending |
 
 This ordering delivers the smaller processors before the more complex real-time time-warp engine. It is not a release-date commitment.
 
@@ -38,7 +38,7 @@ This ordering delivers the smaller processors before the more complex real-time 
 4. Maintain contrast for labels, borders, inactive controls and envelope grids. A custom color must not make controls unreadable.
 5. Color changes affect UI metadata only: no DSP reconstruction, sound changes or audio-thread work. Undo/redo, cloning, channel switching and project reload must restore the expected tint.
 
-**Existing foundation:** the rack already resolves `channel.color_token()` through `theme::channel_color` and passes the resulting ink into native panels and plugin cards. Exact RGB is stored in the optional `BFCr` project extension while preserving legacy hue. New panels must consume this live ink, not hard-code their active colors. Banana-specific fallback accents and verification for the future cards remain implementation work.
+**Existing foundation:** the rack already resolves `channel.color_token()` through `theme::channel_color` and passes the resulting ink into native panels and plugin cards. Exact RGB is stored in the optional `BFCr` project extension while preserving legacy hue. New panels must consume this live ink, not hard-code their active colors. The four new cards now use yellow/coral fallback accents when no explicit RGB override exists. Physical-device contrast verification remains pending.
 
 ## Processor specifications
 
@@ -96,3 +96,13 @@ Before an effect is marked delivered:
 - Custom editor background images and opacity.
 - Broader overview rendering performance.
 - Reported physical-device playback delay and the specific wrong-sounding DWP file; these still need reproductions. New effects are not fixes for either issue.
+
+
+## 0.5.10 implementation boundaries
+
+- IDs 1009–1012; all enabled by the normal rack system. Fresh Air Trim spans −12 to +12 dB; both excitement amounts default to zero. DSP uses complementary 250/4500 Hz analysis bands and original nonlinear enhancement with DC rejection. No oversampling claim.
+- Soundgoodizer uses linked multiband detectors, saturation and an Amount blend. A: mild compression; B: stronger compression; C: stronger saturation with gentler compression; D: strongest compression/saturation. Profiles are original, not proprietary preset data.
+- Blood Overdrive exposes Drive, Color, Post Filter, Trim and Mix. A separate Pre Filter control is not in this initial layout.
+- Gross Beat offers 16 fixed-time nodes per curve, 1/16 value snapping and preset selectors alongside the grid. Time nodes specify nonnegative delay as a fraction of the loop; they cannot read future audio. History is preallocated for eight seconds; delay requests clamp to available history. Curves and presets save as ordinary module parameters. Transport-stopped audition free-runs.
+- Existing native controls provide tint-aware active states; no extra animated glow is added. Narrow-phone usability and physical-device audio remain unverified.
+- Tests added for finite/stereo/neutral audio, audible parameter changes, specs/panels/default consistency, project round-trip, browser visibility, panel binding and allocation-free engine rendering. Consult CI for actual pass/fail, not this checklist.
