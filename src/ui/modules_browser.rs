@@ -47,7 +47,7 @@ use crate::ui::preset_picker::{modal, natural};
 use crate::ui::search_bar::{self, Mark, RowLook, SearchBar};
 use crate::ui::widgets::{shrink, truncated};
 use crate::ui::{Finger, UiCtx, anim, fingers, focus, focus_lost, scroller};
-use honeydew_audio::lemon;
+use banaforge_audio::banana;
 
 use Entry::Module as M;
 use SynthKind as S;
@@ -131,24 +131,24 @@ impl Row {
     }
 }
 
-/// The Modules sections: [`SECTIONS`], then Lemon Studio's built-in plugins ([`crate::plugins::builtin`]), on every
-/// platform, in their own, LEMON STUDIO (#86): the instruments, then the effects, each by name.
+/// The Modules sections: [`SECTIONS`], then Banana Studio's built-in plugins ([`crate::plugins::builtin`]), on every
+/// platform, in their own, BANANA STUDIO (#86): the instruments, then the effects, each by name.
 fn sections() -> Vec<(Option<&'static str>, Vec<Entry>)> {
-    let mut lemon: Vec<_> = (crate::plugins::builtin::all().iter())
+    let mut banana: Vec<_> = (crate::plugins::builtin::all().iter())
         .map(|plugin| PluginEntry {
             uid: plugin.uid,
             name: plugin.name,
             instrument: plugin.instrument(),
         })
         .collect();
-    lemon.sort_by(|a, b| (b.instrument.cmp(&a.instrument)).then_with(|| natural(a.name, b.name)));
-    let lemon = (
-        Some("LEMON STUDIO"),
-        lemon.into_iter().map(Entry::Plugin).collect(),
+    banana.sort_by(|a, b| (b.instrument.cmp(&a.instrument)).then_with(|| natural(a.name, b.name)));
+    let banana = (
+        Some("BANANA STUDIO"),
+        banana.into_iter().map(Entry::Plugin).collect(),
     );
     (SECTIONS.iter())
         .map(|&(header, entries)| (header, entries.to_vec()))
-        .chain([lemon])
+        .chain([banana])
         .collect()
 }
 
@@ -167,24 +167,25 @@ const SECTIONS: [(Option<&str>, &[Entry]); 7] = [
             Entry::Synth(S::SoundFontPlayer),
             Entry::Synth(S::SuperSaw),
             Entry::Synth(S::TransistorBass),
+            Entry::Synth(S::VocalSynth),
         ],
     ),
     (
         Some("ECHO"),
-        &[M(32), M(35), M(lemon::REVERB), M(18), M(16)],
+        &[M(32), M(35), M(banana::REVERB), M(18), M(16)],
     ),
     (
         Some("LEVEL"),
         &[
             M(29),
             M(8),
-            M(honeydew_audio::de_esser::DE_ESSER),
-            M(honeydew_audio::denoise::DENOISE),
+            M(banaforge_audio::de_esser::DE_ESSER),
+            M(banaforge_audio::denoise::DENOISE),
             M(6),
             M(27),
             M(20),
             M(28),
-            M(lemon::LIMITER),
+            M(banana::LIMITER),
             M(36),
             M(41),
         ],
@@ -193,7 +194,7 @@ const SECTIONS: [(Option<&str>, &[Entry]); 7] = [
         Some("FILTER"),
         &[
             M(40),
-            M(honeydew_audio::dynamic_eq::DYNAMIC_EQ),
+            M(banaforge_audio::dynamic_eq::DYNAMIC_EQ),
             M(3),
             M(9),
             M(7),
@@ -209,8 +210,8 @@ const SECTIONS: [(Option<&str>, &[Entry]); 7] = [
             M(26),
             M(11),
             M(13),
-            M(honeydew_audio::half_time::HALF_TIME),
-            M(honeydew_audio::modulator::MODULATOR),
+            M(banaforge_audio::half_time::HALF_TIME),
+            M(banaforge_audio::modulator::MODULATOR),
             M(4),
             M(14),
             M(25),
@@ -537,6 +538,7 @@ impl ModulesBrowser {
         let (sort, picked) = (self.sort, self.picked);
         let click = self.panel.show(ctx, cx, &chrome, |query| {
             let row = |row: Row| PanelRow {
+                font: None,
                 name: row.name(),
                 folder: false,
                 sub: None,
@@ -643,6 +645,8 @@ pub(crate) enum RowKind<T> {
 
 /// A row of the list.
 pub(crate) struct PanelRow<'a, T> {
+    /// Optional browser-specific text size.
+    pub font: Option<FontSize>,
     pub name: &'a str,
     /// A folder: a tap opens it, which is its own feedback, so it never flashes.
     pub folder: bool,
@@ -1079,13 +1083,13 @@ impl SidePanel {
                     let mut look = RowLook {
                         name: row.name,
                         place: row.sub,
-                        font: ROW_FONT,
+                        font: row.font.unwrap_or(ROW_FONT),
                         ink: text,
                         current: row.picked && !(item && self.audition.loading),
                         pressed: false,
                         hovered: false,
                         select: None,
-                        bold: false,
+                        bold: row.folder,
                         mark: row.mark,
                     };
                     match row.kind {

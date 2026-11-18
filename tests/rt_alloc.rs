@@ -6,13 +6,13 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::sync::Arc;
 
-use honeydew::audio_engine::{LiveInput, SongAudioEngine};
-use honeydew::flm::chunk::{ContentPath, ContentRoot};
-use honeydew::flm::sf2d::Sf2d;
-use honeydew::sample_cache::SampleCache;
-use honeydew::song::{AutomationTarget, ChannelKind, Event, Song, SynthKind};
-use honeydew_audio::device::AudioRenderer;
-use honeydew_audio::input::InputRing;
+use banaforge::audio_engine::{LiveInput, SongAudioEngine};
+use banaforge::flm::chunk::{ContentPath, ContentRoot};
+use banaforge::flm::sf2d::Sf2d;
+use banaforge::sample_cache::SampleCache;
+use banaforge::song::{AutomationTarget, ChannelKind, Event, Song, SynthKind};
+use banaforge_audio::device::AudioRenderer;
+use banaforge_audio::input::InputRing;
 
 struct Counting;
 
@@ -135,7 +135,7 @@ fn engine_render_and_commands_do_not_allocate() {
         .unwrap()
         .sidechain = Some(key);
     // Channel 1's notes and CCs go on to channel 2 too: a MIDI send.
-    (song.channels[1].file.midi_sends).push(honeydew::song::MidiSend {
+    (song.channels[1].file.midi_sends).push(banaforge::song::MidiSend {
         target_channel_id: key,
         enabled: true,
     });
@@ -150,10 +150,10 @@ fn engine_render_and_commands_do_not_allocate() {
         .unwrap()
         .instance_id;
     for (source, target) in [(0.0, (compressor, 1)), (0.5, (0, 1)), (1.0, (0, 8))] {
-        let id = ch.rack.add(honeydew_audio::modulator::MODULATOR);
+        let id = ch.rack.add(banaforge_audio::modulator::MODULATOR);
         let module = ch.rack.get_mut(id).unwrap();
         (module.params[1], module.sidechain) = (source, Some(key));
-        ch.file.modulations.push(honeydew::song::Modulation {
+        ch.file.modulations.push(banaforge::song::Modulation {
             modulator: id,
             channel: ch.id,
             target: AutomationTarget {
@@ -163,10 +163,10 @@ fn engine_render_and_commands_do_not_allocate() {
         });
     }
     // A De-esser and Denoise (#43): Denoise's Learn goes on and off in the counted render.
-    let de_esser = ch.rack.add(honeydew_audio::de_esser::DE_ESSER);
-    let denoise = ch.rack.add(honeydew_audio::denoise::DENOISE);
+    let de_esser = ch.rack.add(banaforge_audio::de_esser::DE_ESSER);
+    let denoise = ch.rack.add(banaforge_audio::denoise::DENOISE);
     // A Half Time (#91): its ring is sized at build, for the song tempo.
-    ch.rack.add(honeydew_audio::half_time::HALF_TIME);
+    ch.rack.add(banaforge_audio::half_time::HALF_TIME);
     let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
     engine.note_on(2, 45, 1.0);
     let mut output = vec![0.0_f32; 4096 * 2];
@@ -249,12 +249,12 @@ fn loop_wraps_and_transport_commands_do_not_allocate() {
     assert!(energy > 0.0, "the counted render was silent");
 }
 
-/// Tesla (a built-in Lemon plugin, `honeydew::plugins::builtin`) after the MiniSynth records what reaches it and plays
+/// Tesla (a built-in Banana plugin, `banaforge::plugins::builtin`) after the MiniSynth records what reaches it and plays
 /// its takes back: arming and disarming (its Record param), the frames handed to its own thread, a new take picked up
 /// and its playback (its Play param) allocate nothing on the audio thread.
 #[test]
 fn tesla_recording_and_playback_do_not_allocate() {
-    use honeydew::plugins::{self, builtin};
+    use banaforge::plugins::{self, builtin};
     let mut song = song();
     let ch = &mut song.channels[1];
     let (id, at) = (ch.id, ch.rack.modules.len());
@@ -585,7 +585,7 @@ fn metronome_count_in_monitoring_recording_and_the_latency_ping_do_not_allocate(
     assert!(energy > 0.0, "the counted render was silent");
     // It recorded several takes, and the ping heard the 0.25 input as noise.
     assert!(live.tap.started() > 3 && live.tap.frames().written() > RATE as u64);
-    use honeydew_audio::device::PingFailure;
+    use banaforge_audio::device::PingFailure;
     assert_eq!(
         engine.ping_report(),
         Some((1, Some(Err(PingFailure::Noise))))
@@ -622,7 +622,7 @@ fn sfz_player_render_does_not_allocate() {
 /// streamer while the audio thread reads the voices' rings, paced so that it does.
 #[test]
 fn streamed_sfz_render_does_not_allocate() {
-    let dir = std::env::temp_dir().join(format!("honeydew-rt-stream-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("banaforge-rt-stream-{}", std::process::id()));
     let folder = dir.join("My SoundFonts");
     std::fs::create_dir_all(&folder).unwrap();
     let sfz = "<region> sample=long.wav ampeg_release=0.05 loop_mode=loop_sustain loop_start=60000 loop_end=150000";
@@ -700,7 +700,7 @@ fn render_soundfont(
     }
     engine.seek(0);
 
-    const CHORD: u8 = honeydew_audio::stream::STREAM_VOICES as u8 + 16;
+    const CHORD: u8 = banaforge_audio::stream::STREAM_VOICES as u8 + 16;
     let mut energy = 0.0_f32;
     let events = events_during(|| {
         let mut rendered = 0;
@@ -791,7 +791,7 @@ fn slicer_render_and_commands_do_not_allocate() {
         })
         .collect();
     let bytes = wav(&samples);
-    let mut cache = honeydew::sample_cache::SampleCache::default();
+    let mut cache = banaforge::sample_cache::SampleCache::default();
     cache.load(&song, &|_| Some(bytes.clone()));
     let mut engine = SongAudioEngine::with_samples(&song, RATE, &cache).unwrap();
     let mut output = vec![0.0_f32; 4096 * 2];
@@ -919,7 +919,7 @@ fn gmsynth_song() -> (Song, i32) {
 
 #[test]
 fn gmsynth_renders_and_takes_commands_and_settings_without_allocating() {
-    use honeydew_audio::gmsynth::{MW_DEST, PB_RANGE, WAVE_A, WAVE_B, prepare_setting};
+    use banaforge_audio::gmsynth::{MW_DEST, PB_RANGE, WAVE_A, WAVE_B, prepare_setting};
     let (song, synth) = gmsynth_song();
     let mut engine = SongAudioEngine::new(&song, RATE).unwrap();
     let mut output = vec![0.0_f32; 4096 * 2];
@@ -1001,8 +1001,8 @@ fn drum_song() -> Song {
         .add_clip(0, 4.0)
         .events
         .extend((0..64).map(|i| hit(i * 8, (i % 8) as u8, 0.0, (i % 9) as u8)));
-    let notes = drums.add_lane(honeydew::song::LaneKind::Notes);
-    drums.lanes[notes].grid = honeydew::song::DrumGrid::Notes;
+    let notes = drums.add_lane(banaforge::song::LaneKind::Notes);
+    drums.lanes[notes].grid = banaforge::song::DrumGrid::Notes;
     drums.lanes[notes]
         .add_clip(0, 2.0)
         .events
@@ -1079,11 +1079,11 @@ fn audio_clip_song() -> Song {
     };
     song.add_channel(ChannelKind::AudioClip);
     song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
-    let audio = song.channels[2].add_lane(honeydew::song::LaneKind::Audio);
+    let audio = song.channels[2].add_lane(banaforge::song::LaneKind::Audio);
     let lanes = [(1, 0), (1, 0), (2, audio)];
     for (i, (channel, lane)) in lanes.into_iter().enumerate() {
-        let mut slot = honeydew::song::SamplerSlot::default();
-        slot.file.path = Some(honeydew::flm::chunk::ContentPath::Plain(format!("{i}")));
+        let mut slot = banaforge::song::SamplerSlot::default();
+        slot.file.path = Some(banaforge::flm::chunk::ContentPath::Plain(format!("{i}")));
         slot.file.reverse = i == 1;
         (slot.file.stretch_mode, slot.file.stretch_ratio) = (1, 1.5);
         let clip = song.channels[channel].lanes[lane].add_clip(i as u32 * 200, 1.5);
@@ -1135,7 +1135,7 @@ fn sine_wav(frames: usize) -> Vec<u8> {
 #[test]
 fn audio_clip_render_and_commands_do_not_allocate() {
     let song = audio_clip_song();
-    let mut cache = honeydew::sample_cache::SampleCache::default();
+    let mut cache = banaforge::sample_cache::SampleCache::default();
     cache.load(&song, &|_| Some(sine_wav(100_000)));
     let mut engine = SongAudioEngine::with_samples(&song, RATE, &cache).unwrap();
     let mut output = vec![0.0_f32; 4096 * 2];
@@ -1217,11 +1217,11 @@ fn live_keys_through_the_note_effects_do_not_allocate() {
     assert!(energy > 0.0, "the counted render was silent");
 }
 
-/// Slide notes: slide events every tick to MiniSynth, GMSynth, SuperSaw, 3x Osc and a hosted Lemon Trio (#125, its
+/// Slide notes: slide events every tick to MiniSynth, GMSynth, SuperSaw, 3x Osc and a hosted Banana Trio (#125, its
 /// voices tuned), with seeks, stops and loop wraps, allocate nothing.
 #[test]
 fn slide_events_do_not_allocate() {
-    use honeydew::plugins::{self, builtin};
+    use banaforge::plugins::{self, builtin};
     let mut song = Song {
         tempo_bpm: 120.0,
         ..Song::default()
@@ -1232,7 +1232,7 @@ fn slide_events_do_not_allocate() {
     }
     let trio = builtin::all()
         .iter()
-        .find(|b| b.name == "Lemon Trio")
+        .find(|b| b.name == "Banana Trio")
         .unwrap();
     let id = song.channels[1].id;
     plugins::add(&mut song.channels[1].rack, id, trio.uid, 4).unwrap();
@@ -1288,7 +1288,7 @@ fn a_mute_resync_does_not_allocate() {
         .extend(self::song().channels.into_iter().skip(1));
     song.channels
         .extend(drum_song().channels.into_iter().skip(1));
-    let mut cache = honeydew::sample_cache::SampleCache::default();
+    let mut cache = banaforge::sample_cache::SampleCache::default();
     cache.load(&song, &|_| Some(sine_wav(100_000)));
     let flip = |song: &mut Song| {
         for channel in [1, synth, drums] {
@@ -1342,7 +1342,7 @@ fn edits_taken_over_and_a_live_tempo_do_not_allocate() {
         .extend(self::song().channels.into_iter().skip(1));
     song.channels
         .extend(drum_song().channels.into_iter().skip(1));
-    let mut cache = honeydew::sample_cache::SampleCache::default();
+    let mut cache = banaforge::sample_cache::SampleCache::default();
     cache.load(&song, &|_| Some(sine_wav(100_000)));
     let mut output = vec![0.0_f32; 4096 * 2];
     let mut energy = 0.0_f32;
@@ -1430,7 +1430,7 @@ fn structural_edits_merged_into_the_playing_engine_do_not_allocate() {
     rack.add(32);
     // A note effect added under the live keys: they sound on, their note-offs routed where their note-ons went.
     rack.insert(0, 47);
-    let mut preset = honeydew::song::ModuleInstance::new(0, 99);
+    let mut preset = banaforge::song::ModuleInstance::new(0, 99);
     preset.params[9] = 0.3;
     rack.get_mut(2).unwrap().load_preset(preset);
     let rack = &mut after.channels[4].rack;
@@ -1753,10 +1753,10 @@ fn send_song() -> Song {
     song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
     let send = song.channels[2].id;
     let synth = &mut song.channels[3];
-    synth.file.sends.push(honeydew::song::SendState {
+    synth.file.sends.push(banaforge::song::SendState {
         target_channel_id: send,
         level: 0.6,
-        ..honeydew::song::SendState::default()
+        ..banaforge::song::SendState::default()
     });
     (
         synth.rack.modules[0].file.key_low,
@@ -1821,7 +1821,7 @@ fn sends_pad_sends_and_key_ranges_do_not_allocate() {
                 21 => engine.set_setting(
                     3,
                     2,
-                    honeydew_audio::instrument::KEY_LEARN,
+                    banaforge_audio::instrument::KEY_LEARN,
                     ((i / 40) % 2) as f32,
                 ),
                 24 => engine.seek(((i * 53) % 512) as u64),
@@ -1838,11 +1838,11 @@ fn sends_pad_sends_and_key_ranges_do_not_allocate() {
 }
 
 /// The pickers' preview never frees a sample on the audio thread. The link keeps each sample it
-/// sent ([`honeydew::audio_link::AudioLink`]) until the engine has let go, so the engine never drops the last one: not on
+/// sent ([`banaforge::audio_link::AudioLink`]) until the engine has let go, so the engine never drops the last one: not on
 /// a start, a stop, a replacing pick, or the sample's end.
 #[test]
 fn the_preview_never_frees_on_the_audio_thread() {
-    use honeydew_audio::sample::SampleData;
+    use banaforge_audio::sample::SampleData;
     let mut engine = SongAudioEngine::new(&Song::default(), RATE).unwrap();
     let mut output = vec![0.0_f32; 64 * 2];
     let sample = || {
@@ -1924,7 +1924,7 @@ fn the_position_resync_does_not_allocate() {
         .extend(self::song().channels.into_iter().skip(1));
     song.channels
         .extend(drum_song().channels.into_iter().skip(1));
-    let mut cache = honeydew::sample_cache::SampleCache::default();
+    let mut cache = banaforge::sample_cache::SampleCache::default();
     cache.load(&song, &|_| Some(sine_wav(100_000)));
     let mut engine = SongAudioEngine::with_samples(&song, RATE, &cache).unwrap();
     let mut output = vec![0.0_f32; 4096 * 2];
@@ -1971,7 +1971,7 @@ fn a_sound_reset_does_not_allocate() {
         .extend(self::song().channels.into_iter().skip(1));
     song.channels
         .extend(drum_song().channels.into_iter().skip(1));
-    let mut cache = honeydew::sample_cache::SampleCache::default();
+    let mut cache = banaforge::sample_cache::SampleCache::default();
     cache.load(&song, &|_| Some(sine_wav(100_000)));
     let mut engine = SongAudioEngine::with_samples(&song, RATE, &cache).unwrap();
     let mut output = vec![0.0_f32; 4096 * 2];
@@ -2061,7 +2061,7 @@ fn a_tempo_drag_and_moved_note_effects_under_held_keys_do_not_allocate() {
 /// wrap's forced note-offs under a pedal down allocate nothing on the audio thread.
 #[test]
 fn play_start_stop_and_the_wraps_forced_note_offs_do_not_allocate() {
-    use honeydew_audio::sample::SampleData;
+    use banaforge_audio::sample::SampleData;
     let mut song = song();
     song.channels[1].rack.insert(0, 51);
     // Half a beat, 12 000 frames: a wrap or two while playing, over the held note from beat 0.
@@ -2169,7 +2169,7 @@ fn the_ccs_an_edit_keeps_do_not_allocate() {
 /// renders alone in the export's blocks. (Off the grid the engine's own block boundaries move, as before.)
 #[test]
 fn the_device_callback_publishes_its_visuals_without_allocating_and_sounds_as_the_engine() {
-    use honeydew_audio::device::{AudioOutput, clock};
+    use banaforge_audio::device::{AudioOutput, clock};
     let mut song = song();
     song.channels[1].rack.add(26);
     let playing = || {
@@ -2213,14 +2213,14 @@ fn the_device_callback_publishes_its_visuals_without_allocating_and_sounds_as_th
     assert_eq!(events, 0);
 }
 
-/// Built-in Lemon Drum Sampler and Lemon Slicer (`honeydew::plugins::builtin`), each with a sample loaded as on a phone
+/// Built-in Banana Drum Sampler and Banana Slicer (`banaforge::plugins::builtin`), each with a sample loaded as on a phone
 /// (its load button asks the app's picker, which answers with the file): sequenced and live notes, their voice ends,
 /// seek and Play/Stop. The plugins and their CLAP host run inside the engine's render.
 #[test]
-fn lemon_drum_sampler_and_lemon_slicer_play_without_allocating() {
-    use honeydew::plugins::{self, builtin};
+fn banana_drum_sampler_and_banana_slicer_play_without_allocating() {
+    use banaforge::plugins::{self, builtin};
     use os_plugkit::embed::{self, Answer, Button, Input, Modal};
-    let dir = std::env::temp_dir().join(format!("rt-alloc-lemon-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rt-alloc-banana-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("loop.wav");
     // A burst every 100 ms.
@@ -2233,8 +2233,8 @@ fn lemon_drum_sampler_and_lemon_slicer_play_without_allocating() {
     std::fs::write(&file, wav(&samples)).unwrap();
     embed::set_host_files(true);
     let plugins = [
-        ("Lemon Drum Sampler", lemon_drum_sampler::view::LOAD),
-        ("Lemon Slicer", lemon_slicer::view::LOAD),
+        ("Banana Drum Sampler", banana_drum_sampler::view::LOAD),
+        ("Banana Slicer", banana_slicer::view::LOAD),
     ];
     for (name, load) in plugins {
         let uid = builtin::all().iter().find(|b| b.name == name).unwrap().uid;
@@ -2259,7 +2259,7 @@ fn lemon_drum_sampler_and_lemon_slicer_play_without_allocating() {
             });
         }
         plugins::sync(&song);
-        let editor = plugins::lemon_editor(id, module, 1.0).expect("the editor opens");
+        let editor = plugins::banana_editor(id, module, 1.0).expect("the editor opens");
         let (btn, none) = (Button::Left, (false, false, false));
         let (x, y) = (load.cx(), load.cy());
         embed::input(
@@ -2313,26 +2313,26 @@ fn lemon_drum_sampler_and_lemon_slicer_play_without_allocating() {
     }
 }
 
-/// A Lemon Peak Controller after the MiniSynth and a Lemon Formula Controller on a second
+/// A Banana Peak Controller after the MiniSynth and a Banana Formula Controller on a second
 /// channel, each linked to its channel's Volume: their outputs reach the engine and drive their targets, smoothed,
 /// without allocating.
 #[test]
 fn controller_links_do_not_allocate() {
-    use honeydew::plugins::{self, builtin};
+    use banaforge::plugins::{self, builtin};
     let uid = |name: &str| builtin::all().iter().find(|b| b.name == name).unwrap().uid;
     let mut song = song();
     song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
     let (a, b) = (song.channels[1].id, song.channels[2].id);
     for (channel, id, name) in [
-        (1, a, "Lemon Peak Controller"),
-        (2, b, "Lemon Formula Controller"),
+        (1, a, "Banana Peak Controller"),
+        (2, b, "Banana Formula Controller"),
     ] {
         let rack = &mut song.channels[channel].rack;
         let controller = plugins::add(rack, id, uid(name), 9).unwrap();
         song.channels[channel]
             .file
             .modulations
-            .push(honeydew::song::Modulation {
+            .push(banaforge::song::Modulation {
                 modulator: controller,
                 channel: id,
                 target: AutomationTarget {
@@ -2358,26 +2358,26 @@ fn controller_links_do_not_allocate() {
     assert_eq!(events, 0, "allocator calls on the audio thread");
 }
 
-/// The built-in Lemon effects (0.4.9: Lemon Small FX's ten, Lemon Delay and Lemon Vocoder keyed by a sidechain) under a
+/// The built-in Banana effects (0.4.9: Banana Small FX's ten, Banana Delay and Banana Vocoder keyed by a sidechain) under a
 /// MiniSynth: notes, seek, stop and play, finite. Left out, as upstream's sound allocates (`os_engine::effects`): Press's
 /// peak detector grows its queue up to its window while it plays (`maximus`), Pulp Filter's reset (every stop) makes its
-/// half-bands again (`love_philter`), Lemon Parametric EQ's reset its preroll's buffers (`eq`).
+/// half-bands again (`love_philter`), Banana Parametric EQ's reset its preroll's buffers (`eq`).
 #[test]
-fn the_built_in_lemon_effects_render_keyed_and_with_the_transport_without_allocating() {
-    use honeydew::plugins::{self, builtin};
+fn the_built_in_banana_effects_render_keyed_and_with_the_transport_without_allocating() {
+    use banaforge::plugins::{self, builtin};
     const EFFECTS: [&str; 12] = [
-        "Lemon Soft Clipper",
-        "Lemon Fast Distortion",
-        "Lemon Balance",
-        "Lemon Stereo Enhancer",
-        "Lemon Transient Processor",
-        "Lemon Chorus",
-        "Lemon Stereo Shaper",
-        "Lemon Filter",
-        "Lemon Flanger",
-        "Lemon Phaser",
-        "Lemon Delay",
-        "Lemon Vocoder",
+        "Banana Soft Clipper",
+        "Banana Fast Distortion",
+        "Banana Balance",
+        "Banana Stereo Enhancer",
+        "Banana Transient Processor",
+        "Banana Chorus",
+        "Banana Stereo Shaper",
+        "Banana Filter",
+        "Banana Flanger",
+        "Banana Phaser",
+        "Banana Delay",
+        "Banana Vocoder",
     ];
     let mut song = song();
     song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));

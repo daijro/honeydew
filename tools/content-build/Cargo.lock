@@ -798,8 +798,8 @@ name = "content-build"
 version = "0.0.0"
 dependencies = [
  "crc32fast",
- "honeydew",
- "honeydew-audio",
+ "banaforge",
+ "banaforge-audio",
  "miniz_oxide 0.9.1",
  "serde",
  "serde_json",
@@ -1905,18 +1905,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
-name = "honeydew"
+name = "banaforge"
 version = "0.5.4"
 dependencies = [
  "android-activity",
  "crc32fast",
  "eframe",
  "getrandom 0.3.4",
- "honeydew-audio",
+ "banaforge-audio",
  "jni 0.21.1",
- "lemon-3x-osc",
- "lemon-parametric-eq-2",
- "lemon-sampler",
+ "banana-3x-osc",
+ "banana-parametric-eq-2",
+ "banana-sampler",
  "libc",
  "midir",
  "miniz_oxide 0.9.1",
@@ -1946,7 +1946,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "honeydew-audio"
+name = "banaforge-audio"
 version = "0.1.0"
 dependencies = [
  "cpal",
@@ -2220,7 +2220,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
-name = "lemon-3x-osc"
+name = "banana-3x-osc"
 version = "0.0.1"
 dependencies = [
  "nih_plug",
@@ -2236,7 +2236,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lemon-parametric-eq-2"
+name = "banana-parametric-eq-2"
 version = "0.0.1"
 dependencies = [
  "nih_plug",
@@ -2250,7 +2250,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lemon-sampler"
+name = "banana-sampler"
 version = "0.0.1"
 dependencies = [
  "nih_plug",

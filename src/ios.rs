@@ -367,7 +367,7 @@ declare_class!(
     unsafe impl ClassType for PickerDelegate {
         type Super = NSObject;
         type Mutability = mutability::MainThreadOnly;
-        const NAME: &'static str = "HoneydewPickerDelegate";
+        const NAME: &'static str = "BanaForgePickerDelegate";
     }
 
     // Ivars: a folder pick.

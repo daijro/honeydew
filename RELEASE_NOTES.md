@@ -1,9 +1,51 @@
-Honeydew 0.5.4 keeps menus on top of their dialogs, makes slide notes glide on the Lemon synths and audio clips follow tempo automation, lowers Android audio latency, and adds render tags, more Half Time controls and many fixes from the issue tracker.
+BanaForge 0.5.9 — feedback implementation preview
+
+## Added
+- Channel Settings now has a circular hue/saturation wheel, brightness control and exact #RRGGBB input. Pure black/white are rejected; colors are saved in a BanaForge extension while the legacy project hue stays intact.
+- Pitch names with octaves on readable synth piano-roll note blocks, including sharps (C4, F#4). This is not restricted to Vocal Synth.
+
+## Enhanced
+- Side-browser file/preset labels use smaller 14-point text beside bold 18-point folders; touch row heights stay unchanged.
+- Dense piano rolls reduce decorative text, vocal curves and waveform overlays beyond 512 visible notes or below readable row heights. Note rectangles, positions, hit targets and audio processing remain unchanged.
+- This offline update summary is organized by category and appears after an upgrade on desktop as well as mobile. Help > What's new reopens it.
+
+## Fixed
+- Shared parameter sliders also recognize desktop double-click reset, clear the old drag accumulator on reset, and ignore reset gestures while disabled. Touch double-tap reset remains supported.
+
+## Removed
+- Removed the mistaken pine-tree animation from UPDATES: “air freshener” referred to the requested Banana Fresh Air exciter, not an easter egg.
+
+## Unresolved / unsuccessful prior fixes
+- Playback audio delay: the 0.5.8 audible-clock fix did not resolve the reported device experience. No new audio-latency fix is claimed here.
+- DWP wrong sound: existing zone parsing is not proof that the reported file plays correctly. A failing file and expected-sound reference are still needed.
+- Localization and background-image selection/opacity are not delivered in this preview.
+
+## Planned — not shipped
+- Banana Fresh Air: Mid Air, High Air and Trim.
+- Banana Soundgoodizer: one Amount knob with original A–D profiles.
+- Banana Blood Overdrive: bass-friendly aggressive drive and tone shaping.
+- Banana Gross Beat: editable time/volume envelopes, stutters and tape-stop curves.
+- All four use native mobile-sized rack cards and live channel-color tinting. DSP, panels and Banana-specific fallback accents are not yet implemented. See FEATURE_BOARD.md for the specification and acceptance gates.
+
+## Earlier changes
+
+## BanaForge 0.5.8 — priority-fix test build
+
+- Playhead: Android now uses the timestamp-aligned audible transport history, not the render-ahead cursor. UI extrapolation beyond the heard position is disabled. Startup no longer substitutes a future history entry when no sub-block has been heard yet. This uses CPAL playback timestamps, not a direct platform sampleFramesPlayed API; physical-device synchronization remains to be checked.
+- Waveforms: unchanged playlist/sample-strip waveform meshes reuse a UI-thread cache (up to 32 entries / 4 MiB of geometry). Weak source references avoid retaining decoded audio after its clips are removed. Existing min/max downsampling and negative missing-file caching remain in place. No measured 60%-zoom Android performance result yet.
+- Browser: every preset/file pick explicitly requests a repaint after the active path changes. Folder labels are now bold in the shared side browser.
+- DWP: investigation confirms existing multi-zone/root/velocity metadata parsing and worker loading. No new DWP-format fix is claimed; the reported wrong-sound file still needs reproduction.
+
+Still pending from Stheven's report: larger folder text, localization extraction, full channel wheel/hex colors with readability limits, ordinary piano-roll pitch labels, and the audio exciter later clarified as Banana Fresh Air (not an air-freshener easter egg). This is not a claim that the complete report is resolved.
+
+---
+
+BanaForge 0.5.4 keeps menus on top of their dialogs, makes slide notes glide on the Banana synths and audio clips follow tempo automation, lowers Android audio latency, and adds render tags, more Half Time controls and many fixes from the issue tracker.
 
 - Menus. A slider's long-press menu in a plugin window stays on top of the window, and the screen no longer gets darker each time it opens (#118).
 - SoundFont Player. The arrows by the SoundFont's name load the previous or next SF2 or SFZ file in its folder, tapping a patch plays a preview, a Transpose knob shifts it by up to two octaves, and on phones the panel is taller (#120, #102, #135).
 - Half Time. Length runs from 1/16 bar to 8 bars, Speed plays at 1/2, 1/4 or 2/3, and Smooth softens each loop start (#122).
-- Lemon plugins. Slide notes glide on Lemon Trio, Citrus and the other plugin synths, and Tesla's Send to arranger puts its sample on a new audio track (#125, #117).
+- Banana plugins. Slide notes glide on Banana Trio, Citrus and the other plugin synths, and Tesla's Send to arranger puts its sample on a new audio track (#125, #117).
 - Tempo. Audio clips with Sync on follow tempo automation, their pitch moving with the tempo, and renders follow it too (#126).
 - Drum editor. A drag on a graph slider stays in its column unless you clearly move sideways (#127).
 - Android audio. Playback asks Android for low-latency audio, Calibrate works on phones, the latency switch reads On while compensation runs, and sound comes back by itself when headphones are plugged or unplugged (#123, #129, #130).

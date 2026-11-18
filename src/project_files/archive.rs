@@ -378,6 +378,7 @@ impl ProjectFiles {
 
     /// SONGS `Import folder`: the provider's folder picker, unless a picker or a folder's copy is under way.
     pub fn pick_folder(&mut self) {
+        self.voicebank_folder_pick = false;
         if !self.provider.opening() && self.copying.is_none() {
             self.provider.open_folder();
         }
@@ -773,7 +774,7 @@ mod tests {
     use crate::smf::codec::{Smf, SmfEvent};
     use crate::song::{ChannelKind, Song, SynthKind};
     use crate::ui::views::{Answer, Overlay};
-    use honeydew_audio::wav_writer::float32_wav;
+    use banaforge_audio::wav_writer::float32_wav;
 
     fn user(relative: &str) -> ContentPath {
         ContentPath::Shorthand {
@@ -840,7 +841,7 @@ mod tests {
         }
 
         fn in_folder(base: &Path, name: &str) -> Self {
-            let dir = base.join(format!("honeydew-i1-{name}-{}", std::process::id()));
+            let dir = base.join(format!("banaforge-i1-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir).unwrap();
             Self(dir)

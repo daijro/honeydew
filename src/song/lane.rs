@@ -93,11 +93,11 @@ pub struct Lane {
     pub swing: f64,
     /// A drum lane's grid (`DESc` @1). `Steps` on other lanes, whose @1 byte is `file.flag`.
     pub grid: DrumGrid,
-    /// `Hide track` (Honeydew's own, an `HDHd` in the file): no playlist row, no clips, no ghost notes, while Settings
+    /// `Hide track` (BanaForge's own, an `HDHd` in the file): no playlist row, no clips, no ghost notes, while Settings
     /// `Show hidden tracks` is off. It plays all the same.
     pub hidden: bool,
     pub file: LaneFileState,
-    /// `Collapse` (Honeydew's own, #83, an `HDCo` in the file): a thin playlist row whose clips show their names only,
+    /// `Collapse` (BanaForge's own, #83, an `HDCo` in the file): a thin playlist row whose clips show their names only,
     /// no notes, hits, curves or waveforms. It plays all the same.
     pub collapsed: bool,
 }
@@ -282,7 +282,7 @@ impl Clip {
             0..0
         };
         // An offset of 0 counts as a whole loop, so a point on the loop end (which plays with content 0) comes first:
-        // at that tie the lower position plays last and wins, as `honeydew_audio::automation` dispatches one.
+        // at that tie the lower position plays last and wins, as `banaforge_audio::automation` dispatches one.
         let off = match (self.offset_beats * f64::from(PPQ)).rem_euclid(lp) {
             0.0 => lp,
             off => off,

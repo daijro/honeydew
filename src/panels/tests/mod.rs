@@ -279,7 +279,7 @@ fn only_an_opted_in_latching_button_may_press_a_continuous_param() {
 #[test]
 fn every_panel_fits_its_module() {
     let mut problems = Vec::new();
-    for spec in (crate::params::modules().chain(&crate::params::LEMON_MODULES))
+    for spec in (crate::params::modules().chain(&crate::params::BANANA_MODULES))
         .chain([&crate::params::DYNAMIC_EQ, &crate::params::MODULATOR])
         .chain([&crate::params::DE_ESSER, &crate::params::DENOISE])
         .chain([&crate::params::HALF_TIME])
@@ -1051,7 +1051,7 @@ pub(crate) fn display_shapes_fed(
     state: &PanelState,
     content: Rect,
     ppp: f32,
-    feed: (honeydew_audio::MeterSnapshot, &[f32]),
+    feed: (banaforge_audio::MeterSnapshot, &[f32]),
 ) -> Vec<egui::Shape> {
     let panel = panel_for(type_id).expect("a registered panel");
     display_shapes_with(
@@ -1075,7 +1075,7 @@ fn display_shapes_with(
     state: &PanelState,
     content: Rect,
     ppp: f32,
-    feed: Option<(honeydew_audio::MeterSnapshot, &[f32])>,
+    feed: Option<(banaforge_audio::MeterSnapshot, &[f32])>,
 ) -> Vec<egui::Shape> {
     let mut module = ModuleInstance::new(type_id, 2);
     if !params.is_empty() {

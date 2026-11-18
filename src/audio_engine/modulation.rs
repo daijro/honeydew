@@ -1,4 +1,4 @@
-//! The Modulators' targets (Honeydew's own, `honeydew_audio::modulator`): each Modulator moves one param of the song,
+//! The Modulators' targets (BanaForge's own, `banaforge_audio::modulator`): each Modulator moves one param of the song,
 //! its target ([`crate::song::Modulation`]), to its base plus Amount × its signal, held to 0…1. The base is the value the
 //! automation or a control last set (`applied`), so they move the base and never the modulated value. The offsets of
 //! several Modulators on one target add up.
@@ -13,13 +13,13 @@
 //! that its controls show it.
 //!
 //! **Controller links** (0.4.9). A plugin effect may be a source too: a
-//! controller (Lemon Peak Controller, Lemon Formula Controller) whose output 0 ([`AudioEffect::control`]) its target
+//! controller (Banana Peak Controller, Banana Formula Controller) whose output 0 ([`AudioEffect::control`]) its target
 //! takes as its value, in place of its base, smoothed over [`SMOOTH_SECS`]; Modulators' offsets add to it. Saved as a
 //! Modulator's target is (`HDMd`).
 
-use honeydew_audio::AudioEffect;
-use honeydew_audio::device::{Modulated, ModuleKey};
-use honeydew_audio::modulator::MODULATOR;
+use banaforge_audio::AudioEffect;
+use banaforge_audio::device::{Modulated, ModuleKey};
+use banaforge_audio::modulator::MODULATOR;
 
 use super::{SongAudioEngine, position, strip_param};
 use crate::song::plugin::PLUGIN_EFFECT;
@@ -189,8 +189,8 @@ impl SongAudioEngine {
 
 #[cfg(test)]
 mod tests {
-    use honeydew_audio::device::AudioRenderer;
-    use honeydew_audio::modulator as m;
+    use banaforge_audio::device::AudioRenderer;
+    use banaforge_audio::modulator as m;
 
     use super::*;
     use crate::song::{ChannelKind, Modulation, SynthKind};
@@ -289,7 +289,7 @@ mod tests {
         }
     }
 
-    /// A Lemon Peak Controller after B's MiniSynth, linked to B's Volume, sets it to its output
+    /// A Banana Peak Controller after B's MiniSynth, linked to B's Volume, sets it to its output
     /// (the peak it follows), smoothed: down near 0 while B is quiet, up while a note plays. The link is saved.
     #[test]
     fn a_peak_controller_fed_a_burst_drives_its_linked_volume_and_the_link_is_saved() {
@@ -301,7 +301,7 @@ mod tests {
         song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
         let b = song.channels[1].id;
         let ch = &mut song.channels[1];
-        let uid = crate::plugins::builtin::named("Lemon Peak Controller").uid;
+        let uid = crate::plugins::builtin::named("Banana Peak Controller").uid;
         let id = crate::plugins::add(&mut ch.rack, b, uid, 1).unwrap();
         ch.file.modulations.push(Modulation {
             modulator: id,

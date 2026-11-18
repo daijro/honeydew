@@ -2,9 +2,9 @@
 //! among that channel's clip slots. The clips' starts, loop repetitions, ends and envelope steps are prepared actions;
 //! The seek rule relaunches the clips under the playhead.
 
-use honeydew_audio::drums::{DEFAULTS, Pad, PadSampler, SPEED};
-use honeydew_audio::mixer::OwnedStereoBuffer;
-use honeydew_audio::sample_edit::speed_ratio;
+use banaforge_audio::drums::{DEFAULTS, Pad, PadSampler, SPEED};
+use banaforge_audio::mixer::OwnedStereoBuffer;
+use banaforge_audio::sample_edit::speed_ratio;
 
 use super::EngineError;
 use super::prepare::{Action, ScheduledAction, automation_clip, beat_frame};
@@ -42,7 +42,7 @@ struct Span {
 impl Clips {
     /// Adds one block of every clip slot into the channel's buffer, before its rack runs. `speed`: the live tempo over
     /// the build's, which a SYNC clip's sample is stretched for. It resamples by it, so it stays on the beat with the
-    /// transport, its pitch moving with the tempo like tape (Honeydew change, #126); SYNC off plays at its native speed.
+    /// transport, its pitch moving with the tempo like tape (BanaForge change, #126); SYNC off plays at its native speed.
     pub fn render(&mut self, buffer: &mut OwnedStereoBuffer, speed: f64) {
         for (pad, span) in self.spans.iter().enumerate() {
             let rate = if span.sync { speed } else { 1.0 };
@@ -87,7 +87,7 @@ impl Clips {
     }
 
     /// These clips play the sample data `old` did, pad by pad, or none on both
-    /// ([`honeydew_audio::drums::PadSample::same_data`]).
+    /// ([`banaforge_audio::drums::PadSample::same_data`]).
     pub fn same_samples(&self, old: &Clips) -> bool {
         let (a, b) = (&self.sampler, &old.sampler);
         a.pads() == b.pads()

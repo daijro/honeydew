@@ -432,7 +432,7 @@ impl PadSampler {
     }
 
     /// [`Self::process`] with the voices stepping through the sample `rate` times as fast: a SYNC audio clip resampled
-    /// by the live tempo over the tempo its sample is stretched for (Honeydew change, #126), its pitch moving with it.
+    /// by the live tempo over the tempo its sample is stretched for (BanaForge change, #126), its pitch moving with it.
     pub fn process_at(&mut self, pad: usize, left: &mut [f32], right: &mut [f32], rate: f64) {
         let soloed = self.soloed;
         let Some(p) = self.pads.get(pad) else { return };

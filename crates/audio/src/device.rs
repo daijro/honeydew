@@ -343,7 +343,7 @@ impl Visual {
 }
 
 /// The level meters' release (#41), in dB a second, whatever the sample rate, the buffer size and the UI's frame rate.
-/// Honeydew change (#135): twice the earlier 20.9 dB/s at 48 kHz (19.2 at 44.1 kHz), so a meter shows the level sooner.
+/// BanaForge change (#135): twice the earlier 20.9 dB/s at 48 kHz (19.2 at 44.1 kHz), so a meter shows the level sooner.
 const RELEASE_DB_PER_S: f32 = 40.0;
 
 /// A released level under −96 dB, the floor of the deepest meter scale (the Compressor's), is silence: a meter comes
@@ -543,6 +543,8 @@ struct Shared {
     /// [`clock`]'s epoch ([`AudioOutput::snapshot_at`], [`CallbackState::callback`]).
     clocked: AtomicBool,
     origin: AtomicI64,
+    /// Callback heartbeat on the same monotonic clock; detect silently disconnected native streams.
+    last_callback: AtomicI64,
     /// The commands the audio thread has taken from the queue ([`OutputSnapshot::taken`]).
     taken: AtomicU64,
     /// Each sub-block's transport tick, as the meters' visual frames ([`OutputSnapshot::heard_tick`]).
@@ -643,6 +645,8 @@ pub struct AudioOutput<R: AudioRenderer> {
     /// The stream frame the last snapshot showed on the output clock: a clock that moves later (a callback later than
     /// any before it) holds the visuals there, never back.
     heard: u64,
+    /// Last confirmed audible transport position; never substitute a future ring entry.
+    heard_tick: u64,
 }
 
 impl<R: AudioRenderer> AudioOutput<R> {
@@ -810,6 +814,7 @@ impl<R: AudioRenderer> AudioOutput<R> {
             buffer_mode: BufferMode::Native,
             sent: 0,
             heard: 0,
+            heard_tick: state.renderer.transport_tick(),
         };
         (output, state)
     }
@@ -983,16 +988,23 @@ impl<R: AudioRenderer> AudioOutput<R> {
         let ticks: Vec<_> = (self.shared.ticks.iter())
             .filter_map(|v| v.read(|v| v.tick.load(Ordering::Relaxed)))
             .collect();
-        // The sub-block heard last, else the oldest kept (as the meters).
+        // Only completed audible sub-blocks may advance the playhead. During
+        // startup (or when latency exceeds the ring), every entry can be future.
         let heard = ticks.iter().filter(|(end, _)| *end <= upto).max();
+        if let Some(&(_, tick)) = heard {
+            self.heard_tick = tick;
+        }
         OutputSnapshot {
             transport_tick,
-            heard_tick: heard
-                .or(ticks.iter().min())
-                .map_or(transport_tick, |&(_, t)| t),
+            heard_tick: self.heard_tick,
             cpu_load: f32::from_bits(self.shared.cpu.load(Ordering::Acquire)),
             underruns: self.shared.underruns.load(Ordering::Acquire),
-            stream_failed: self.shared.failed.load(Ordering::Acquire),
+            stream_failed: self.shared.failed.load(Ordering::Acquire) || {
+                let last = self.shared.last_callback.load(Ordering::Acquire);
+                cfg!(target_os = "android")
+                    && last > 0
+                    && now.is_some_and(|now| now.saturating_sub(last) > 3_000_000_000)
+            },
             module_meters: self.meters.take(upto, self.sample_rate),
             modulated: (self.meters.3.iter())
                 .map(|(m, cell)| Modulated {
@@ -1144,6 +1156,7 @@ impl<R: AudioRenderer> CallbackState<R> {
         #[cfg(not(target_arch = "wasm32"))]
         let start = Instant::now();
         if let Some(now) = now {
+            self.shared.last_callback.store(now, Ordering::Release);
             let ahead = self.frames as f64 * 1e9 / f64::from(sample_rate);
             let mut origin = now - ahead as i64;
             if let Some((last, at)) = self.clock {
@@ -1475,6 +1488,26 @@ mod tests {
         }
     }
 
+    #[test]
+    fn future_rendered_ticks_do_not_start_the_audible_playhead() {
+        let (mut output, mut state) = output();
+        state.renderer.playing = true;
+        state.renderer.stamp = true;
+        let mut buffer = vec![0.0; 1920];
+        // Callback queues audio with its playback origin one second in the future.
+        state.run(&mut buffer, Some(1_000_000_000));
+        let early = output.snapshot_at(Some(0));
+        assert!(early.transport_tick > 0);
+        assert_eq!(early.heard_tick, 0);
+        let audible = output.snapshot_at(Some(1_020_000_000));
+        assert!(audible.heard_tick > 0);
+        // A stalled clock must not consume any future ticks.
+        assert_eq!(
+            output.snapshot_at(Some(1_020_000_000)).heard_tick,
+            audible.heard_tick
+        );
+    }
+
     fn renderer() -> TestRenderer {
         TestRenderer {
             tick: 0,
@@ -1551,7 +1584,12 @@ mod tests {
             let snapshot = output.snapshot_at(Some(ns(clock)));
             let shown = snapshot.module_meters[0].analysis[0];
             // Playing from 0, the tick counts the frames.
-            assert_eq!(snapshot.heard_tick as f32, shown, "UI frame {frame}");
+            if frame > 0 {
+                assert_eq!(snapshot.heard_tick as f32, shown, "UI frame {frame}");
+            } else {
+                // Analysis may preview the oldest entry; transport must not.
+                assert_eq!(snapshot.heard_tick, 0);
+            }
             if frame >= 30 {
                 let step = shown - last;
                 assert!(
@@ -1843,7 +1881,7 @@ mod tests {
     }
 
     /// The level meters fall at one release whatever the sample rate, the buffer size and the UI's frame rate (#41):
-    /// 40 dB/s from each peak's sub-block on (Honeydew change, #135: the earlier ×0.95 per 1024 frames was about 20).
+    /// 40 dB/s from each peak's sub-block on (BanaForge change, #135: the earlier ×0.95 per 1024 frames was about 20).
     /// A full-scale burst over the first 2048 frames reads −20.1 dB at frame 26112, half a second after it ends at
     /// 48 kHz, and −21.8 dB at 44.1 kHz, 0.55 s after.
     #[test]

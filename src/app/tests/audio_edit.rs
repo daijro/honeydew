@@ -2,8 +2,8 @@
 
 use std::path::Path;
 
-use honeydew_audio::sample::decode;
-use honeydew_audio::wav_writer::float32_wav;
+use banaforge_audio::sample::decode;
+use banaforge_audio::wav_writer::float32_wav;
 
 use super::*;
 use crate::app::audio_edit::{PROCESS_FAILED, PROCESSING, SAVE_QUESTION};
@@ -261,7 +261,7 @@ fn normalize_over_a_quiet_range_writes_a_float_wav_whose_peak_is_1() {
 /// The new sample data.
 #[test]
 fn a_replace_while_playing_relaunches_the_clip_with_the_new_sample() {
-    use honeydew_audio::device::AudioRenderer;
+    use banaforge_audio::device::AudioRenderer;
     let mut rig = quiet_rig();
     rig.app.main_screen.playing = true;
     rig.app.audio.send(AudioCommand::Play);
@@ -423,7 +423,7 @@ fn an_op_that_leaves_no_frames_shows_the_error_and_changes_nothing() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn a_failed_write_shows_the_error_and_changes_nothing() {
-    let root = std::env::temp_dir().join(format!("honeydew-h8-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("banaforge-h8-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     // A folder where the target file would go.
     std::fs::create_dir_all(root.join("My Samples/Synth Kick.wav")).unwrap();
@@ -541,7 +541,7 @@ fn a_pitched_clip_edits_and_saves_its_source() {
     // The engine's +12 render is of the new file, once it has streamed in.
     rig.landed(usize::MAX);
     let render = rig.app.audio.samples.slot(slot(&rig)).unwrap();
-    let fresh = honeydew_audio::drums::stretch(&written, 1.0, 12.0);
+    let fresh = banaforge_audio::drums::stretch(&written, 1.0, 12.0);
     assert_eq!(render.left, fresh.left);
 }
 

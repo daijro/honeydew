@@ -2,7 +2,7 @@
 //! against the input heard in the same block, so the result is the round trip in the engine's own sample clock: out of
 //! The speaker and back into the microphone, with no effect latency in it.
 
-pub use honeydew_audio::device::PingFailure as Failure;
+pub use banaforge_audio::device::PingFailure as Failure;
 
 /// The question `Calibrate` asks first; its `Calibrate` starts the test.
 pub const INTRO: &str = "To accurately align recordings with the Playlist please complete the audio recording delay \

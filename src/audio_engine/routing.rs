@@ -2,7 +2,7 @@
 //! channel ids the send params name (0x1000 / 0x2000 + channel id), and which channels a solo keeps audible: the soloed
 //! ones and their paths to the master.
 
-use honeydew_audio::mixer::{ChannelMix, SendMix, send_param};
+use banaforge_audio::mixer::{ChannelMix, SendMix, send_param};
 
 use crate::song::Song;
 

@@ -363,8 +363,8 @@ enum Convert {
 /// A WAV decoded, and encoded so far.
 struct Encode {
     wav: PathBuf,
-    data: honeydew_audio::sample::SampleData,
-    encoder: honeydew_audio::flac_writer::FlacEncoder,
+    data: banaforge_audio::sample::SampleData,
+    encoder: banaforge_audio::flac_writer::FlacEncoder,
     /// 2^(bits − 1): a sample's full scale at the FLAC's depth.
     scale: f32,
     /// Frames encoded.
@@ -376,14 +376,14 @@ impl Encode {
     /// (24-bit, 32-bit and float, the encoder's deepest), mono or stereo as the file is.
     fn new(lib: &dyn SongLibrary, wav: PathBuf) -> Option<Self> {
         let bytes = lib.read(&wav).ok()?;
-        let data = honeydew_audio::sample::decode(&bytes).ok()?;
-        let bits = match honeydew_audio::sample::wav_bits(&bytes) {
+        let data = banaforge_audio::sample::decode(&bytes).ok()?;
+        let bits = match banaforge_audio::sample::wav_bits(&bytes) {
             Some(8 | 16) => 16,
             _ => 24,
         };
         let channels = 1 + usize::from(data.right.is_some());
         let encoder =
-            honeydew_audio::flac_writer::FlacEncoder::new(data.sample_rate, bits, channels);
+            banaforge_audio::flac_writer::FlacEncoder::new(data.sample_rate, bits, channels);
         let scale = (1u32 << (bits - 1)) as f32;
         Some(Self {
             wav,
@@ -993,7 +993,7 @@ mod tests {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let base =
-                std::env::temp_dir().join(format!("honeydew-ops-{test}-{}", std::process::id()));
+                std::env::temp_dir().join(format!("banaforge-ops-{test}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&base);
             check(&mut NativeLibrary::at(base.join(SONGS_FOLDER)));
             std::fs::remove_dir_all(&base).unwrap();
@@ -1168,7 +1168,7 @@ mod tests {
             }
             lib.write_new(&dir.join("Kick.flac"), b"taken").unwrap();
             let decoded = |lib: &dyn SongLibrary, name: &str| {
-                honeydew_audio::sample::decode(&lib.read(&dir.join(name)).unwrap()).unwrap()
+                banaforge_audio::sample::decode(&lib.read(&dir.join(name)).unwrap()).unwrap()
             };
             // The songs library on disk lists no audio files.
             let wav = |name: &str| SongEntry {
@@ -1458,7 +1458,7 @@ mod tests {
     #[test]
     fn delete_outside_the_user_folder_is_for_good() {
         let base =
-            std::env::temp_dir().join(format!("honeydew-ops-outside-{}", std::process::id()));
+            std::env::temp_dir().join(format!("banaforge-ops-outside-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let user = base.join("user");
         let mut lib = NativeLibrary::at(user.join(SONGS_FOLDER));
@@ -1484,7 +1484,7 @@ mod tests {
     #[test]
     fn a_deleted_file_is_as_new_as_its_deletion() {
         use std::time::{Duration, SystemTime};
-        let base = std::env::temp_dir().join(format!("honeydew-ops-age-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("banaforge-ops-age-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let root = base.join(SONGS_FOLDER);
         let mut lib = NativeLibrary::at(root.clone());
@@ -1517,7 +1517,7 @@ mod tests {
     fn a_cut_pasted_into_the_bin_is_as_new_as_the_paste() {
         use std::time::{Duration, SystemTime};
         let base =
-            std::env::temp_dir().join(format!("honeydew-ops-cut-bin-{}", std::process::id()));
+            std::env::temp_dir().join(format!("banaforge-ops-cut-bin-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let root = base.join(SONGS_FOLDER);
         let mut lib = NativeLibrary::at(root.clone());
@@ -1971,7 +1971,7 @@ mod tests {
     #[test]
     fn songs_restores_deleted_presets_into_my_presets_and_never_calls_them_empty() {
         let user =
-            std::env::temp_dir().join(format!("honeydew-ops-presets-{}", std::process::id()));
+            std::env::temp_dir().join(format!("banaforge-ops-presets-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&user);
         let mini = user.join("My Presets").join("MiniSynth");
         std::fs::create_dir_all(&mini).unwrap();
@@ -2007,7 +2007,8 @@ mod tests {
     /// puts the file back into `My Chord Sets`, beside `My Songs`, and not into the songs folder.
     #[test]
     fn songs_restores_deleted_chord_sets_into_my_chord_sets() {
-        let user = std::env::temp_dir().join(format!("honeydew-ops-chords-{}", std::process::id()));
+        let user =
+            std::env::temp_dir().join(format!("banaforge-ops-chords-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&user);
         let mine = user.join("My Chord Sets");
         std::fs::create_dir_all(&mine).unwrap();
@@ -2179,7 +2180,7 @@ mod tests {
     fn a_delete_whose_original_cannot_be_removed_keeps_every_file_in_the_bin() {
         use std::os::unix::fs::PermissionsExt;
         let base =
-            std::env::temp_dir().join(format!("honeydew-ops-partial-{}", std::process::id()));
+            std::env::temp_dir().join(format!("banaforge-ops-partial-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let root = base.join(SONGS_FOLDER);
         let mut lib = NativeLibrary::at(root.clone());
@@ -2247,7 +2248,7 @@ mod tests {
     #[test]
     fn a_path_through_a_link_to_the_user_folder_is_still_in_it() {
         let base =
-            std::env::temp_dir().join(format!("honeydew-ops-alias-up-{}", std::process::id()));
+            std::env::temp_dir().join(format!("banaforge-ops-alias-up-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let (user, alias) = (base.join("user"), base.join("alias"));
         let root = user.join(SONGS_FOLDER);
@@ -2285,7 +2286,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_data_folder_behind_a_link_deletes_into_the_bin_and_for_good() {
-        let base = std::env::temp_dir().join(format!("honeydew-ops-behind-{}", std::process::id()));
+        let base =
+            std::env::temp_dir().join(format!("banaforge-ops-behind-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let (real, link) = (base.join("real"), base.join("link"));
         std::fs::create_dir_all(real.join("user/My Songs")).unwrap();
@@ -2452,7 +2454,7 @@ mod tests {
     fn delete_refuses_a_link_on_the_way_into_the_bin() {
         use std::os::unix::fs::symlink;
         let base =
-            std::env::temp_dir().join(format!("honeydew-ops-bin-link-{}", std::process::id()));
+            std::env::temp_dir().join(format!("banaforge-ops-bin-link-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let (user, elsewhere) = (base.join("user"), base.join("elsewhere"));
         let root = user.join(SONGS_FOLDER);
@@ -2727,7 +2729,7 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn a_folder_whose_names_differ_only_in_case_is_not_copied_onto_a_disk_that_ignores_case() {
-        let base = std::env::temp_dir().join(format!("honeydew-ops-case-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("banaforge-ops-case-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let (root, bin) = (
             base.join(SONGS_FOLDER),
@@ -3010,7 +3012,7 @@ mod tests {
     #[test]
     fn export_refuses_a_folder_inside_what_it_exports() {
         let base =
-            std::env::temp_dir().join(format!("honeydew-ops-export-in-{}", std::process::id()));
+            std::env::temp_dir().join(format!("banaforge-ops-export-in-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let root = base.join(SONGS_FOLDER);
         let mut lib = NativeLibrary::at(root.clone());
@@ -3026,7 +3028,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_link_to_the_source_does_not_get_a_folder_copied_into_itself() {
-        let base = std::env::temp_dir().join(format!("honeydew-ops-alias-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("banaforge-ops-alias-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let root = base.join(SONGS_FOLDER);
         let mut lib = NativeLibrary::at(root.clone());
@@ -3118,7 +3120,7 @@ mod tests {
     #[test]
     fn links_are_never_moved_copied_removed_or_followed() {
         use std::os::unix::fs::symlink;
-        let base = std::env::temp_dir().join(format!("honeydew-ops-links-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("banaforge-ops-links-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let (root, outside) = (base.join(SONGS_FOLDER), base.join("outside"));
         std::fs::create_dir_all(root.join("F")).unwrap();
@@ -3179,7 +3181,8 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn export_copies_into_the_picked_folder_under_free_names() {
-        let base = std::env::temp_dir().join(format!("honeydew-ops-export-{}", std::process::id()));
+        let base =
+            std::env::temp_dir().join(format!("banaforge-ops-export-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let (root, dest) = (base.join(SONGS_FOLDER), base.join("dest"));
         let mut lib = NativeLibrary::at(root.clone());

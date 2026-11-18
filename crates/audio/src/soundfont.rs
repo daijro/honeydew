@@ -12,7 +12,7 @@
 //! ([`CONTROL`] frames) at a time; the CCs come in as channel params 7 + n ([`Instrument::set_controller`]). A
 //! SoundFont's regions play exactly as before.
 //!
-//! A Honeydew addition (#102): a SoundFont's vibrato LFO (its
+//! A BanaForge addition (#102): a SoundFont's vibrato LFO (its
 //! vibLfoToPitch, freqVibLFO and delayVibLFO) moves its voices' pitch, the mod wheel deepening it by up to 50 cents as
 //! the standard's default modulator says; the module's own Vib Rate, Depth and Delay add a vibrato to every voice; and
 //! Quality High reads the samples by cubic interpolation instead of linear. Transpose moves every voice by whole
@@ -936,14 +936,14 @@ const END_FADE: f32 = 0.01;
 /// The param defaults: Enable, Attack, Decay, Sustain, Release, Envelope (Original), Fine Tune (0 cents), Vib Rate
 /// (5 Hz), Vib Depth (0 cents), Vib Delay (0 s), Quality (Linear), Transpose (0).
 const DEFAULTS: [f32; 12] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.5];
-/// Fine Tune, 200v − 100 cents on every voice: a Honeydew addition (#90).
+/// Fine Tune, 200v − 100 cents on every voice: a BanaForge addition (#90).
 const FINE_TUNE: usize = 6;
-/// Honeydew additions (#102). Params 7–9, the module's own vibrato on every voice: a sine
+/// BanaForge additions (#102). Params 7–9, the module's own vibrato on every voice: a sine
 /// of 10v Hz, 100v cents deep, from 2v s after the note-on.
 const VIBRATO: usize = 7;
 /// Param 10, Quality: above 0.5 (High) the samples are read by cubic interpolation, else linearly.
 const QUALITY: usize = 10;
-/// Param 11, Transpose: `round(48v) − 24` semitones on every voice, with Fine Tune. A Honeydew addition (#102).
+/// Param 11, Transpose: `round(48v) − 24` semitones on every voice, with Fine Tune. A BanaForge addition (#102).
 const TRANSPOSE: usize = 11;
 /// SoundFont 2's default modulator: the mod wheel (MIDI CC 1) deepens the vibrato LFO's pitch by up to 50 cents.
 const WHEEL_CENTS: f32 = 50.0;

@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
 
-use honeydew_audio::wav_writer::WavWriter;
+use banaforge_audio::wav_writer::WavWriter;
 
 use crate::ui::main_menu::library::FORBIDDEN;
 
@@ -60,7 +60,7 @@ mod tests {
 
     /// An empty folder for one test.
     fn folder(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("honeydew-h11-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("banaforge-h11-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

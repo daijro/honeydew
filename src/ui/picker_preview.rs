@@ -9,7 +9,7 @@
 //! note go. While the module loads it draws the `LOADING...` pulse over the row. Over a drum kit's pick it plays the
 //! kit's pads instead, across the row in pad order (#88).
 //!
-//! **Keys** (#98, a Honeydew addition). The app's keyboard ([`keyboard::keyboard_at`]),
+//! **Keys** (#98, a BanaForge addition). The app's keyboard ([`keyboard::keyboard_at`]),
 //! [`KEYS_H`] tall across the bottom of an instrument's picker, its [`WHITE_W`] white keys round middle C, playing the
 //! picker's channel as the audition strip does: velocity 1, every key a finger holds held, a tap for the keyboard's tap
 //! gate. They take the panel's colours, not the keyboard panel's ([`faint`]), and SETTINGS `Keyboard in pickers`
@@ -536,7 +536,7 @@ impl SampleStrip {
             }
         }
 
-        // The playlist's audio clip waveform of the whole file: a frame a content beat (Honeydew change, #124).
+        // The playlist's audio clip waveform of the whole file: a frame a content beat (BanaForge change, #124).
         let ink = text.gamma_multiply(WAVE_ALPHA);
         let (x0, width) = pixel_columns(wave_rect, m);
         let rows = wave_rows(wave_rect, wave.summary.len() > 1);

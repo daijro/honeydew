@@ -2,7 +2,7 @@
 //! any stop disarms, Play while armed counts in first, a control moved while armed starts the transport, and after the
 //! count-in each change is a point in one automation clip, one undo step at Stop.
 
-use honeydew_audio::device::AudioRenderer;
+use banaforge_audio::device::AudioRenderer;
 
 use super::*;
 use crate::song::{AutomationTarget, LaneKind, PPQ};
@@ -364,7 +364,7 @@ mod audio {
             let mut rig = Rig::new();
             rig.click(OUTSIDE);
             let user =
-                std::env::temp_dir().join(format!("honeydew-h13-{name}-{}", std::process::id()));
+                std::env::temp_dir().join(format!("banaforge-h13-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&user);
             rig.app.files = ProjectFiles::on_disk(&user);
             let (opens, fail) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(fail)));
@@ -699,7 +699,7 @@ mod audio {
         let file = a.user.join("My Recordings").join("Rec.wav");
         let bytes = std::fs::read(&file).unwrap();
         assert_eq!(bytes.len(), 46 + 2 * FRAMES_PER_BEAT);
-        let loaded = honeydew_audio::sample::decode_with_limit(&bytes, FRAMES_PER_BEAT).unwrap();
+        let loaded = banaforge_audio::sample::decode_with_limit(&bytes, FRAMES_PER_BEAT).unwrap();
         assert_eq!(loaded.frames(), FRAMES_PER_BEAT);
         // Only the one take (and the folder's `.nomedia`).
         let mut names: Vec<_> = (a.user.join("My Recordings").read_dir().unwrap())
@@ -837,7 +837,7 @@ mod audio {
     #[test]
     fn without_a_calibration_a_take_drops_the_engines_buffer_size_and_with_the_toggle_off_nothing()
     {
-        // L = the engine's audio buffer size, 256 frames here, while compensating (the toggle ON, Honeydew change
+        // L = the engine's audio buffer size, 256 frames here, while compensating (the toggle ON, BanaForge change
         // #129); nothing with the toggle OFF.
         for (toggle, dropped) in [(true, 256), (false, 0)] {
             let mut a = AudioRig::new("buffer", false);
@@ -1088,8 +1088,8 @@ fn glow(rig: &Rig, pad: usize) -> egui::Color32 {
 #[test]
 fn a_hit_on_a_rearranged_pad_records_its_slots_row_and_that_pad_glows() {
     // KP's `PADS` map: pads 0 and 4 swapped, so pad 4 plays slot 0 (key 48) and pad 0 slot 4.
-    use honeydew_audio::MeterSnapshot;
-    use honeydew_audio::device::{ModuleKey, ModuleMeter};
+    use banaforge_audio::MeterSnapshot;
+    use banaforge_audio::device::{ModuleKey, ModuleMeter};
     let mut rig = drum_rig();
     let kit = rig.app.song.channels[1].drum_kit.as_mut().unwrap();
     kit.file.pads.swap(0, 4);
@@ -1450,7 +1450,7 @@ fn fills_in(
 
 #[test]
 fn a_held_note_shows_live_in_the_playlist_and_the_open_piano_roll_as_the_take_then_stores_it() {
-    // Honeydew's own (issue #26). The roll is open on the synth's (2) empty one-bar clip at 0, which the take replaces:
+    // BanaForge's own (issue #26). The roll is open on the synth's (2) empty one-bar clip at 0, which the take replaces:
     // it stays open, on the take's clip.
     let mut rig = Rig::with_drums_and_synth();
     rig.app.settings.count_in = false;
