@@ -1,6 +1,6 @@
-//! Plugins: Lemon Studio's own, built into the app on every platform ([`builtin`]), and third-party ones (VST3, VST2,
+//! Plugins: Banana Studio's own, built into the app on every platform ([`builtin`]), and third-party ones (VST3, VST2,
 //! CLAP) on the desktop: scanning, an instance per plugin module of the song, the engines' share of it, the plugins'
-//! own editors. Built on Lemon Studio's plugin hosts (`vendor/lemon-studio`).
+//! own editors. Built on Banana Studio's plugin hosts (`vendor/banana-studio`).
 //!
 //! On the web and Android only the built-in plugins are hosted: a song's other plugin modules are kept as they are
 //! (their state saved back untouched) and play nothing.
@@ -19,7 +19,7 @@ mod window;
 pub use host::*;
 
 /// The settings store's key for the scan results.
-pub const CACHE_KEY: &str = "honeydew.pluginCache";
+pub const CACHE_KEY: &str = "banaforge.pluginCache";
 
 /// What a plugin is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

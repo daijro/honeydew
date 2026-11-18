@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Installs Honeydew's desktop entry and icons for the current user, into ${XDG_DATA_HOME:-~/.local/share}
+# Installs BanaForge's desktop entry and icons for the current user, into ${XDG_DATA_HOME:-~/.local/share}
 # (applications/ and icons/hicolor/), so the taskbar shows its logo: on Wayland the compositor ignores the window icon
-# and takes the Icon= of the entry that matches the window's app_id, `honeydew`.
+# and takes the Icon= of the entry that matches the window's app_id, `banaforge`.
 #
-#   tools/install-desktop-entry.sh [BINARY]   Exec= runs BINARY (default: <repo>/target/release/honeydew-native)
+#   tools/install-desktop-entry.sh [BINARY]   Exec= runs BINARY (default: <repo>/target/release/banaforge-native)
 #   tools/install-desktop-entry.sh --uninstall
 set -euo pipefail
 
@@ -22,16 +22,16 @@ refresh() {
     fi
 }
 
-# The icons' paths under hicolor/, e.g. `48x48/apps/honeydew.png`.
-icon_files=("$src"/icons/hicolor/*/apps/honeydew.*)
+# The icons' paths under hicolor/, e.g. `48x48/apps/banaforge.png`.
+icon_files=("$src"/icons/hicolor/*/apps/banaforge.*)
 icon_files=("${icon_files[@]#"$src/icons/hicolor/"}")
 
 case "${1:-}" in
 --uninstall)
-    rm -f "$apps/honeydew.desktop"
+    rm -f "$apps/banaforge.desktop"
     for f in "${icon_files[@]}"; do rm -f "$icons/$f"; done
     refresh
-    echo "Uninstalled the Honeydew desktop entry and icons from $data"
+    echo "Uninstalled the BanaForge desktop entry and icons from $data"
     exit 0
     ;;
 -*)
@@ -40,7 +40,7 @@ case "${1:-}" in
     ;;
 esac
 
-bin="${1:-$repo/target/release/honeydew-native}"
+bin="${1:-$repo/target/release/banaforge-native}"
 if [ ! -f "$bin" ] || [ ! -x "$bin" ]; then
     echo "error: no executable at $bin. Build it first (cargo build --release) or pass its path." >&2
     exit 1
@@ -60,7 +60,7 @@ while IFS= read -r line; do
     Exec=*) printf 'Exec="%s" %%F\n' "$bin" ;;
     *) printf '%s\n' "$line" ;;
     esac
-done <"$src/honeydew.desktop" >"$apps/honeydew.desktop"
+done <"$src/banaforge.desktop" >"$apps/banaforge.desktop"
 for f in "${icon_files[@]}"; do install -Dm644 "$src/icons/hicolor/$f" "$icons/$f"; done
 refresh
-echo "Installed the Honeydew desktop entry ($apps/honeydew.desktop, Exec=$bin) and icons into $icons"
+echo "Installed the BanaForge desktop entry ($apps/banaforge.desktop, Exec=$bin) and icons into $icons"

@@ -33,7 +33,7 @@ use crate::song::{
     PPQ, Raw, RawChunk, SamplerSlot, SendState, Song, SynthKind, TimeSig, VocalNoteState,
     VocalPitchPoint,
 };
-use honeydew_audio::dwp::Cstm;
+use banaforge_audio::dwp::Cstm;
 
 /// The memory every file may use whatever its size.
 pub const BUDGET_BASE: usize = 64 << 20;
@@ -831,8 +831,8 @@ impl Reader {
                             *param = value;
                         }
                         // Half Time's Length moved to a param of its own (GitHub #122).
-                        if type_id == honeydew_audio::half_time::HALF_TIME {
-                            honeydew_audio::half_time::upgrade(&mut module.params, saved);
+                        if type_id == banaforge_audio::half_time::HALF_TIME {
+                            banaforge_audio::half_time::upgrade(&mut module.params, saved);
                         }
                     }
                 }
@@ -858,7 +858,7 @@ impl Reader {
                     read.state = state;
                     module.file.plugin = Some(Box::new(read));
                 }
-                // Honeydew's own sidechain (`flm::write`).
+                // BanaForge's own sidechain (`flm::write`).
                 b"HDSc" => module.sidechain = child.reader().i32().ok(),
                 b"PSTA" if plugin::is_plugin(type_id) => {
                     self.charge(child.payload.len(), &child.path)?;
@@ -885,7 +885,7 @@ impl Reader {
         Ok((instance_id, module))
     }
 
-    /// An `HDPm` (`flm::write`): its position in the chain and its module (Honeydew's own type) with the instance id
+    /// An `HDPm` (`flm::write`): its position in the chain and its module (BanaForge's own type) with the instance id
     /// from its `RMOd`. `None` for a layout other than 1 or no `RMOd`, which is skipped as an unknown chunk would be.
     fn plugin_module(
         &mut self,
@@ -939,7 +939,15 @@ impl Reader {
                         channel.lanes.push(lane);
                     }
                 }
-                // Honeydew's own MIDI input (`flm::write`); what does not read is All.
+                // BanaForge's own MIDI input (`flm::write`); what does not read is All.
+                b"BFCr" => {
+                    if let Ok(rgb) = child.reader().u32()
+                        && (1..0xFF_FFFF).contains(&rgb)
+                    {
+                        channel.file.color_rgb =
+                            Some([(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8]);
+                    }
+                }
                 b"HDMi" => {
                     let mut reader = child.reader();
                     let input = &mut channel.file.midi_input;
@@ -948,7 +956,7 @@ impl Reader {
                     let ch = reader.u32_or(0);
                     input.channel = (1..=16).contains(&ch).then(|| ch as u8 - 1);
                 }
-                // Honeydew's own MIDI sends (`flm::write`); a repeated target is ignored.
+                // BanaForge's own MIDI sends (`flm::write`); a repeated target is ignored.
                 b"HDMs" => {
                     let mut reader = child.reader();
                     let sends = &mut channel.file.midi_sends;
@@ -963,7 +971,7 @@ impl Reader {
                         }
                     }
                 }
-                // Honeydew's own Modulator targets (`flm::write`); a Modulator's repeated target is ignored.
+                // BanaForge's own Modulator targets (`flm::write`); a Modulator's repeated target is ignored.
                 b"HDMd" => {
                     let mut reader = child.reader();
                     while let (Ok(modulator), Ok(id), Ok(instance_id), Ok(param)) =
@@ -1184,7 +1192,11 @@ fn vocal_notes(payload: &[u8]) -> Option<Vec<VocalNoteState>> {
             (0.5, 0.0, 0.5)
         };
         let safe = |value: f32, fallback: f32| {
-            if value.is_finite() { value.clamp(0.0, 1.0) } else { fallback }
+            if value.is_finite() {
+                value.clamp(0.0, 1.0)
+            } else {
+                fallback
+            }
         };
         let point_count = usize::from(reader.u16().ok()?);
         if point_count > 512 {
@@ -1195,8 +1207,16 @@ fn vocal_notes(payload: &[u8]) -> Option<Vec<VocalNoteState>> {
             let offset = reader.f32().ok()?;
             let cents = reader.f32().ok()?;
             pitch.push(VocalPitchPoint {
-                offset: if offset.is_finite() { offset.clamp(0.0, 1.0) } else { 0.0 },
-                cents: if cents.is_finite() { cents.clamp(-1200.0, 1200.0) } else { 0.0 },
+                offset: if offset.is_finite() {
+                    offset.clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
+                cents: if cents.is_finite() {
+                    cents.clamp(-1200.0, 1200.0)
+                } else {
+                    0.0
+                },
             });
         }
         pitch.sort_by(|a, b| a.offset.total_cmp(&b.offset));

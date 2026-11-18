@@ -68,31 +68,31 @@ done
 
 mkdir -p "${CARGO_TARGET_DIR:-target}"
 export CARGO_TARGET_DIR=$(cd "${CARGO_TARGET_DIR:-target}" && pwd)
-export HONEYDEW_ANDROID_BUILD_DIR=$CARGO_TARGET_DIR/android
-export HONEYDEW_ANDROID_ABIS=$abis_csv
+export BANAFORGE_ANDROID_BUILD_DIR=$CARGO_TARGET_DIR/android
+export BANAFORGE_ANDROID_ABIS=$abis_csv
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-4}
-mkdir -p "$HONEYDEW_ANDROID_BUILD_DIR/assets" "$HONEYDEW_ANDROID_BUILD_DIR/jniLibs"
-rm -rf "$HONEYDEW_ANDROID_BUILD_DIR/assets/content" "$HONEYDEW_ANDROID_BUILD_DIR/jniLibs"
-mkdir -p "$HONEYDEW_ANDROID_BUILD_DIR/jniLibs"
-export HONEYDEW_ANDROID_BASE=$base
+mkdir -p "$BANAFORGE_ANDROID_BUILD_DIR/assets" "$BANAFORGE_ANDROID_BUILD_DIR/jniLibs"
+rm -rf "$BANAFORGE_ANDROID_BUILD_DIR/assets/content" "$BANAFORGE_ANDROID_BUILD_DIR/jniLibs"
+mkdir -p "$BANAFORGE_ANDROID_BUILD_DIR/jniLibs"
+export BANAFORGE_ANDROID_BASE=$base
 if [ -z "$base" ]; then
-    cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip"
+    cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > "$BANAFORGE_ANDROID_BUILD_DIR/sounds.zip"
     # The .gz siblings are for web servers; Android reads the raw packs directly from its APK.
-    unzip -q "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip" 'content/*' -x '*.gz' -d "$HONEYDEW_ANDROID_BUILD_DIR/assets"
-    rm "$HONEYDEW_ANDROID_BUILD_DIR/sounds.zip"
+    unzip -q "$BANAFORGE_ANDROID_BUILD_DIR/sounds.zip" 'content/*' -x '*.gz' -d "$BANAFORGE_ANDROID_BUILD_DIR/assets"
+    rm "$BANAFORGE_ANDROID_BUILD_DIR/sounds.zip"
 fi
 
-# signalsmith-stretch's C++ links libc++_shared.so, which the APK has to ship beside libhoneydew.so.
+# signalsmith-stretch's C++ links libc++_shared.so, which the APK has to ship beside libbanaforge.so.
 # Uses [profile.android-release] (ThinLTO + codegen-units=1 + strip="symbols") and 16 KB ELF page alignment.
 case "$abi_mode" in
     all)
         cargo ndk -t arm64-v8a -t armeabi-v7a --platform 26 --link-libcxx-shared \
-            -o "$HONEYDEW_ANDROID_BUILD_DIR/jniLibs" \
+            -o "$BANAFORGE_ANDROID_BUILD_DIR/jniLibs" \
             rustc --profile "$profile" --locked --lib -- -C link-arg=-Wl,-z,max-page-size=16384
         ;;
     arm64-v8a|armeabi-v7a)
         cargo ndk -t "$abi_mode" --platform 26 --link-libcxx-shared \
-            -o "$HONEYDEW_ANDROID_BUILD_DIR/jniLibs" \
+            -o "$BANAFORGE_ANDROID_BUILD_DIR/jniLibs" \
             rustc --profile "$profile" --locked --lib -- -C link-arg=-Wl,-z,max-page-size=16384
         ;;
 esac
@@ -100,8 +100,8 @@ esac
 debug_keystore=$PWD/android/debug.keystore
 if [ "$variant" = debug ] && [ ! -f "$debug_keystore" ]; then
     # Keep the existing signing identity when moving it out of disposable build output.
-    if [ -f "$HONEYDEW_ANDROID_BUILD_DIR/debug.keystore" ]; then
-        cp -p "$HONEYDEW_ANDROID_BUILD_DIR/debug.keystore" "$debug_keystore"
+    if [ -f "$BANAFORGE_ANDROID_BUILD_DIR/debug.keystore" ]; then
+        cp -p "$BANAFORGE_ANDROID_BUILD_DIR/debug.keystore" "$debug_keystore"
     else
         keytool -genkeypair -noprompt -keystore "$debug_keystore" \
             -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 \
@@ -110,10 +110,10 @@ if [ "$variant" = debug ] && [ ! -f "$debug_keystore" ]; then
 fi
 
 # Packaged afresh: Gradle's incremental packaging would keep the space of the sounds a --base build drops.
-rm -rf "$HONEYDEW_ANDROID_BUILD_DIR/outputs/apk/$variant"
+rm -rf "$BANAFORGE_ANDROID_BUILD_DIR/outputs/apk/$variant"
 android/gradlew -p android --no-daemon "$task"
 
-apk=$HONEYDEW_ANDROID_BUILD_DIR/outputs/apk/$variant/app-$variant.apk
+apk=$BANAFORGE_ANDROID_BUILD_DIR/outputs/apk/$variant/app-$variant.apk
 "$sdk_tools/apksigner" verify "$apk"
 "$sdk_tools/zipalign" -c -P 16 4 "$apk"
 python3 - "$apk" "$base" "$abis_csv" <<'PY'
@@ -126,7 +126,7 @@ import zipfile
 abis = [a.strip() for a in sys.argv[3].split(',') if a.strip()]
 with zipfile.ZipFile(sys.argv[1]) as apk:
     for abi in abis:
-        for lib in ('libhoneydew.so', 'libc++_shared.so'):
+        for lib in ('libbanaforge.so', 'libc++_shared.so'):
             assert apk.getinfo(f'lib/{abi}/{lib}').compress_type == zipfile.ZIP_STORED, abi + '/' + lib
     if sys.argv[2]:
         assert not any(name.startswith('assets/content/') for name in apk.namelist()), 'sounds in the base APK'
@@ -147,6 +147,6 @@ PY
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
 suffix=
 [ "$variant" = release ] || suffix=-debug
-out=$CARGO_TARGET_DIR/honeydew-android-$version-$abi_suffix$base$suffix.apk
+out=$CARGO_TARGET_DIR/banaforge-android-$version-$abi_suffix$base$suffix.apk
 cp "$apk" "$out"
 echo "wrote $out"

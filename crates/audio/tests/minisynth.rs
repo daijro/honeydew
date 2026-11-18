@@ -1,7 +1,7 @@
-use honeydew_audio::ProcessContext;
-use honeydew_audio::instrument::Instrument;
-use honeydew_audio::minisynth::{MiniSynth, MiniSynthError, PARAMETERS};
-use honeydew_audio::voice::{
+use banaforge_audio::ProcessContext;
+use banaforge_audio::instrument::Instrument;
+use banaforge_audio::minisynth::{MiniSynth, MiniSynthError, PARAMETERS};
+use banaforge_audio::voice::{
     ARP_RATE_BEATS, GMSYNTH_RATE_BEATS, LFO_SYNC_BEATS, SUPERSAW_DELAY_BEATS, SUPERSAW_LFO_BEATS,
     lfo_attack_increment, lfo_rate_hz, tempo_step,
 };

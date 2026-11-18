@@ -44,7 +44,7 @@ fn lane_views(lane: &mut Lane, from: &Lane) {
             .map_or(&default, |c| &c.file);
         let to = &mut clip.file;
         local_fields!(ClipFileState, to, old; zoom;
-            source_len_beats, sample, unknown_chunks, header_extra, raw_events, shapes);
+            source_len_beats, sample, unknown_chunks, header_extra, raw_events, shapes, vocal_notes);
     }
 }
 
@@ -121,7 +121,7 @@ fn views(song: &mut Song, local: Option<&Song>) {
         local_fields!(ChannelFileState, to, from; view, input_monitoring, record_armed, midi_input;
             guid, preset_name, sends, names, rack_order, cc_links, rack_header_extra,
             params_extra, rack_unknown_chunks, channel_unknown_chunks, header_extra, midi_sends,
-            modulations);
+            modulations, color_rgb);
         for module in &mut channel.rack.modules {
             let ModuleInstance {
                 type_id,
@@ -532,7 +532,7 @@ fn validate(song: &Song) -> Result<(), Conflict> {
             }
             if let Some(target) = lane.target {
                 let valid = match target.instance_id {
-                    0 => honeydew_audio::mixer::send_param(target.param).is_none_or(|(id, _)| {
+                    0 => banaforge_audio::mixer::send_param(target.param).is_none_or(|(id, _)| {
                         index(id).is_some()
                             && ch.file.sends.iter().any(|s| s.target_channel_id == id)
                     }),

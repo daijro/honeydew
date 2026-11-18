@@ -2,13 +2,13 @@
 //! 3x Osc add the slide's pitch, pan and velocity offsets to every voice, and a newly launched voice starts without
 //! them; the Transistor Bass ignores slides. (The DW Sampler and SoundFont Player are tested with their fixtures.)
 
-use honeydew_audio::ProcessContext;
-use honeydew_audio::gmsynth::GmSynth;
-use honeydew_audio::instrument::Instrument;
-use honeydew_audio::minisynth::MiniSynth;
-use honeydew_audio::supersaw::SuperSaw;
-use honeydew_audio::three_osc::ThreeOsc;
-use honeydew_audio::transistor_bass::TransistorBass;
+use banaforge_audio::ProcessContext;
+use banaforge_audio::gmsynth::GmSynth;
+use banaforge_audio::instrument::Instrument;
+use banaforge_audio::minisynth::MiniSynth;
+use banaforge_audio::supersaw::SuperSaw;
+use banaforge_audio::three_osc::ThreeOsc;
+use banaforge_audio::transistor_bass::TransistorBass;
 
 const RATE: f32 = 48_000.0;
 

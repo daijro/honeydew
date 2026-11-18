@@ -1,7 +1,7 @@
 // Copyright (C) 2026 ItsAlphaNeon
 // SPDX-License-Identifier: GPL-3.0-or-later
 // This file is part of Lemon Studio: https://github.com/ItsAlphaNeon/Lemon-Studio
-// Modified for Honeydew: vendored from Lemon Studio's `os-flp` crate (container layer only); `thiserror` derives
+// Modified for BanaForge: vendored from Banana Studio's `os-flp` crate (container layer only); `thiserror` derives
 // replaced by plain `Display` impls, paths moved into `crate::flp`.
 
 // spec: flp/container.md (Alignment checks)

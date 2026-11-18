@@ -2,25 +2,24 @@
 
 This app includes the third-party software below, each under its own license.
 
-The Honeydew logo (`assets/branding/`) is a derivative of "Melon" by afitrose, licensed as Free for commercial use WITH
-ATTRIBUTION; see [`assets/branding/README.md`](assets/branding/README.md).
+The BanaForge banana artwork was supplied by the app owner. Its original author and redistribution license have not been established; confirm permission before distributing branded builds. See [`assets/branding/README.md`](assets/branding/README.md).
 
 ## WebTAU `oto.ini` parser logic
 
 - Source: <https://github.com/charl1e7/webtau>, `crates/w-synth/src/oto.rs` (MIT, Copyright (c) 2025 charl1e7).
-- Adapted in `src/vocal_synth.rs` for Honeydew's bounded ZIP archive reader, relative sample-path validation, stable alias ordering, and Shift-JIS decoding.
+- Adapted in `src/vocal_synth.rs` for BanaForge's bounded ZIP archive reader, relative sample-path validation, stable alias ordering, and Shift-JIS decoding.
 - The complete MIT license is reproduced in [`licenses/webtau-MIT.txt`](licenses/webtau-MIT.txt).
 - WebTAU's software license does not grant rights to any voicebank samples; banks remain user-provided content.
 
-## Lemon Studio `os-flp` (FL Studio project files)
+## Banana Studio `os-flp` (FL Studio project files)
 
-- Source: Lemon Studio by ItsAlphaNeon (<https://github.com/ItsAlphaNeon/Lemon-Studio>), `crates/os-flp`.
+- Source: Banana Studio by ItsAlphaNeon (<https://github.com/ItsAlphaNeon/Lemon-Studio>), `crates/os-flp`.
 - Copyright (C) 2026 ItsAlphaNeon.
-- License: GPL-3.0-or-later, the same license as Honeydew ([`LICENSE`](LICENSE)).
+- License: GPL-3.0-or-later, the same license as BanaForge ([`LICENSE`](LICENSE)).
 - Modified: the FLP container and event layer (`container.rs`, `event.rs`, `check.rs`, `error.rs`) lives in `src/flp/`,
   each file keeping its copyright and SPDX header and noting the change: `thiserror` derives replaced by plain
-  `Display` impls, module paths moved. Honeydew's own mapping (`src/flp/import.rs`, `src/flp/export.rs`) follows the
-  layout of Lemon Studio's project writer (event order, playlist and track record templates, the audio clip
+  `Display` impls, module paths moved. BanaForge's own mapping (`src/flp/import.rs`, `src/flp/export.rs`) follows the
+  layout of Banana Studio's project writer (event order, playlist and track record templates, the audio clip
   channel's sample settings, a new channel's key zone). `src/flp/mixer.rs` ports its new-mixer writer and Fruity
   Parametric EQ 2's saved state image (from `plugins/lemon-parametric-eq-2`), keeping the copyright and SPDX header.
 
@@ -351,49 +350,49 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## Lemon Studio's plugin hosts (VST3, VST2 and CLAP plugins, desktop)
+## Banana Studio's plugin hosts (VST3, VST2 and CLAP plugins, desktop)
 
-- Source: Lemon Studio (<https://github.com/ItsAlphaNeon/Lemon-Studio>) at commit
+- Source: Banana Studio (<https://github.com/ItsAlphaNeon/Lemon-Studio>) at commit
   `219ed4ee8bfb534b91282e3ef45ded438292eee8`: the crates `os-host`, `os-clap`, `os-vst3` and `os-vst2`, and parts of
   `os-engine`, `os-app` and `os-flp` (the plugin search and scanner, `src/plugins/scan.rs`; the X11 editor window,
   `src/plugins/window.rs`; FL Studio's plugin wrapper state, `src/flp/wrapper.rs`).
 - Copyright (C) 2026 ItsAlphaNeon.
 - License: GPL-3.0-or-later, the license of Honeydew itself ([`LICENSE`](LICENSE)); every file keeps its copyright and
   SPDX header.
-- Modified: a copy lives in `vendor/lemon-studio`, whose `README.md` lists each change from upstream (the engine types
+- Modified: a copy lives in `vendor/banana-studio`, whose `README.md` lists each change from upstream (the engine types
   reduced to what the hosts use; a MIDI hook for pitch bend, channel pressure and CCs, marked
-  `Honeydew (vendored addition)`). The ported app files start with a `Modified for Honeydew` line.
+  `BanaForge (vendored addition)`). The ported app files start with a `Modified for BanaForge` line.
 
-## Lemon Studio's reverb and limiter (Lemon Reverb and Lemon Limiter)
+## Banana Studio's reverb and limiter (Banana Reverb and Banana Limiter)
 
-- Source: Lemon Studio (<https://github.com/ItsAlphaNeon/Lemon-Studio>), at the commit `vendor/lemon-studio/README.md`
+- Source: Banana Studio (<https://github.com/ItsAlphaNeon/Lemon-Studio>), at the commit `vendor/banana-studio/README.md`
   pins (`eb1c13ee6108e30bedfdb21679c60bc30535da2b` at first): `crates/os-engine/src/effects/` (the reverb, the limiter's
-  dynamics and their siblings), and the knob names and value texts of `plugins/lemon-reverb` and `plugins/lemon-limiter`
-  (`src/params/lemon.rs`).
+  dynamics and their siblings), and the knob names and value texts of `plugins/banana-reverb` and `plugins/banana-limiter`
+  (`src/params/banana.rs`).
 - Copyright (C) 2026 ItsAlphaNeon.
 - License: GPL-3.0-or-later, the license of Honeydew itself ([`LICENSE`](LICENSE)); every file keeps its copyright and
   SPDX header.
-- Modified: none in `vendor/lemon-studio/os-engine/src/effects/`, a copy of upstream's files
-  (`tools/sync-lemon-effects.sh` updates them). `src/params/lemon.rs` starts with a `Modified for Honeydew` line.
+- Modified: none in `vendor/banana-studio/os-engine/src/effects/`, a copy of upstream's files
+  (`tools/sync-banana-effects.sh` updates them). `src/params/banana.rs` starts with a `Modified for BanaForge` line.
 
-## Lemon Studio's plugins (Lemon Trio, Lemon Sampler and Lemon Parametric EQ)
+## Banana Studio's plugins (Banana Trio, Banana Sampler and Banana Parametric EQ)
 
-- Source: Lemon Studio (<https://github.com/ItsAlphaNeon/Lemon-Studio>), at the commit `vendor/lemon-studio/README.md`
-  pins (`6e9c3b9d7c7cfa5a31dc2dc087358ba04eebc96e` at first): `plugins/lemon-3x-osc`, `plugins/lemon-sampler`,
-  `plugins/lemon-parametric-eq-2`, the crates they use (`os-plugkit`, `os-ui`, `os-theme`, `os-hostlink`, `os-model`,
-  `os-dsp`, `os-paths`) and four files of `os-engine`. Since 0.4.9 also `plugins/lemon-small-fx` and its ten plugins
-  (`plugins/lemon-soft-clipper` … `plugins/lemon-phaser`), `plugins/lemon-delay`, `plugins/lemon-vocoder`,
-  `plugins/press`, `plugins/pulp-filter`, `plugins/lemon-peak-controller` and `plugins/lemon-formula-controller`.
+- Source: Banana Studio (<https://github.com/ItsAlphaNeon/Lemon-Studio>), at the commit `vendor/banana-studio/README.md`
+  pins (`6e9c3b9d7c7cfa5a31dc2dc087358ba04eebc96e` at first): `plugins/banana-3x-osc`, `plugins/banana-sampler`,
+  `plugins/banana-parametric-eq-2`, the crates they use (`os-plugkit`, `os-ui`, `os-theme`, `os-hostlink`, `os-model`,
+  `os-dsp`, `os-paths`) and four files of `os-engine`. Since 0.4.9 also `plugins/banana-small-fx` and its ten plugins
+  (`plugins/banana-soft-clipper` … `plugins/banana-phaser`), `plugins/banana-delay`, `plugins/banana-vocoder`,
+  `plugins/press`, `plugins/pulp-filter`, `plugins/banana-peak-controller` and `plugins/banana-formula-controller`.
 - Also `plugins/tesla` (Tesla), from the same repository at the same commit, under the same terms.
-- Also (0.4.9): `plugins/citrus` (Citrus), `plugins/lemon-drum-sampler` (Lemon Drum Sampler) and `plugins/lemon-slicer`
-  (Lemon Slicer).
+- Also (0.4.9): `plugins/citrus` (Citrus), `plugins/banana-drum-sampler` (Banana Drum Sampler) and `plugins/banana-slicer`
+  (Banana Slicer).
 - Copyright (C) 2026 ItsAlphaNeon, and thacer13 for parts of `os-engine`.
 - License: GPL-3.0-or-later, the license of Honeydew itself ([`LICENSE`](LICENSE)); every file keeps its copyright and
   SPDX header.
-- Modified: a copy lives in `vendor/lemon-studio`; Honeydew's changes are `vendor/lemon-studio/honeydew.patch`, marked
-  `Honeydew (vendored change)` or `(vendored addition)`, and one uniform change to each plugin's editor made by
-  `tools/sync-lemon-plugins.sh` (`feature = "embed"`, `os_plugkit::park!`), all listed in that folder's `README.md` (the
-  editors drawn into Honeydew's window on every platform, the browser build without threads or C++).
+- Modified: a copy lives in `vendor/banana-studio`; BanaForge's changes are `vendor/banana-studio/banaforge.patch`, marked
+  `BanaForge (vendored change)` or `(vendored addition)`, and one uniform change to each plugin's editor made by
+  `tools/sync-banana-plugins.sh` (`feature = "embed"`, `os_plugkit::park!`), all listed in that folder's `README.md` (the
+  editors drawn into BanaForge's window on every platform, the browser build without threads or C++).
 
 ## nih-plug (the built-in plugins' framework)
 
@@ -401,7 +400,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   and its derive macros.
 - License: ISC, reproduced below.
 - Modified: a copy lives in `vendor/nih-plug` without its VST3 and standalone wrappers; in the browser build its
-  background tasks run without a thread and it takes Lemon Studio's `lemon-web` editor window, and on Windows it gives
+  background tasks run without a thread and it takes Banana Studio's `banana-web` editor window, and on Windows it gives
   an editor its window as an X11 window id (`vendor/nih-plug/README.md`).
 
 ```text
@@ -424,12 +423,12 @@ PERFORMANCE OF THIS SOFTWARE.
 
 ## The built-in plugins' fonts and icons
 
-Lemon Studio's plugin editors draw with these (`vendor/lemon-studio/os-ui`):
+Banana Studio's plugin editors draw with these (`vendor/banana-studio/os-ui`):
 
 - **Barlow** (Semi Condensed Regular and SemiBold, Condensed Medium): Copyright 2017 The Barlow Project Authors
-  (<https://github.com/jpt/barlow>), SIL Open Font License 1.1 (`vendor/lemon-studio/os-ui/fonts/Barlow/OFL.txt`).
+  (<https://github.com/jpt/barlow>), SIL Open Font License 1.1 (`vendor/banana-studio/os-ui/fonts/Barlow/OFL.txt`).
 - **Cuprum**: Copyright (c) 2008-2010 by Jovanny Lemonad (<http://www.jovanny.ru>), SIL Open Font License 1.1
-  (`vendor/lemon-studio/os-ui/fonts/Cuprum/OFL.txt`).
+  (`vendor/banana-studio/os-ui/fonts/Cuprum/OFL.txt`).
 - **Tabler Icons**' shapes (`os-ui/src/tabler.rs`), under this license:
 
 ```text
@@ -456,19 +455,19 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Signalsmith Stretch (Lemon Sampler's time stretching, desktop and Android)
+## Signalsmith Stretch (Banana Sampler's time stretching, desktop and Android)
 
 - Source: the `signalsmith-stretch` 0.1.3 crate from crates.io (<https://github.com/colinmarc/signalsmith-stretch-rs>,
   Copyright 2024 Colin Marc) and the Signalsmith Stretch library it compiles (Copyright (c) 2022 Geraint Luff /
   Signalsmith Audio Ltd.), unmodified.
 - License: MIT, both; the text is the clap-sys section's below, with these copyright lines.
 
-## vst3-sys (VST3 interfaces, through Lemon Studio's VST3 host)
+## vst3-sys (VST3 interfaces, through Banana Studio's VST3 host)
 
 - Source: <https://github.com/robbert-vdh/vst3-sys>, commit `b3ff4d775940f5b476b9d1cca02a90e07e1922a2`, unmodified.
 - License: GPL-3.0 ([`LICENSE`](LICENSE)).
 
-## clap-sys 0.5.0 (CLAP interfaces, through Lemon Studio's CLAP host)
+## clap-sys 0.5.0 (CLAP interfaces, through Banana Studio's CLAP host)
 
 - Source: the `clap-sys` 0.5.0 crate from crates.io (<https://github.com/micahrj/clap-sys>), unmodified.
 - License: MIT or Apache-2.0, at the user's choice; the MIT text is reproduced below.
@@ -499,10 +498,10 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-## Lemon Studio's VST 2 interface notice
+## Banana Studio's VST 2 interface notice
 
-Lemon Studio's VST 2 host is a clean-room interface with no Steinberg SDK; it ships this notice
-(`vendor/lemon-studio/os-vst2/LICENSE-vst2sdk.txt`):
+Banana Studio's VST 2 host is a clean-room interface with no Steinberg SDK; it ships this notice
+(`vendor/banana-studio/os-vst2/LICENSE-vst2sdk.txt`):
 
 ```text
 Copyright 2020 Michael Fabian 'Xaymar' Dirks <info@xaymar.com>
@@ -517,3 +516,10 @@ Redistribution and use in source and binary forms, with or without modification,
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
+
+## M PLUS 1p Japanese fallback font
+
+- Source: https://github.com/google/fonts/tree/main/ofl/mplus1p
+- Font: M PLUS 1p Regular, embedded unmodified for Japanese bank names and lyrics.
+- License: SIL Open Font License 1.1; see `assets/fonts/MPLUS1p-OFL.txt`.
+- This is an independently licensed font, not voicebank content.

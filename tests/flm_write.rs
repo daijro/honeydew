@@ -1,8 +1,8 @@
-use honeydew::flm::{
+use banaforge::flm::{
     chunk::{FlmErrorKind, PrefixKind, file_chunks},
     read, write,
 };
-use honeydew::song::{
+use banaforge::song::{
     AutomationTarget, ChannelKind, Event, Raw, SamplerSlot, SlotFileState, Song, SynthKind,
 };
 
@@ -44,10 +44,10 @@ fn drum_slots_and_common_param_automation_survive_round_trip() {
     let slot = SamplerSlot {
         name: "Kick".into(),
         folder: "Drum Samples/Kick".into(),
-        file: honeydew::song::SlotFileState {
+        file: banaforge::song::SlotFileState {
             id: 1,
-            path: Some(honeydew::flm::chunk::ContentPath::Shorthand {
-                root: honeydew::flm::chunk::ContentRoot::App,
+            path: Some(banaforge::flm::chunk::ContentPath::Shorthand {
+                root: banaforge::flm::chunk::ContentRoot::App,
                 relative: "Drum Samples/Kick.wav".into(),
             }),
             ..Default::default()
@@ -341,7 +341,7 @@ fn a_new_send_channel_is_named_effect_and_its_id_and_saves_that_base_name() {
 fn chhd_names(bytes: &[u8]) -> Vec<[String; 3]> {
     let mut all = Vec::new();
     for at in (0..bytes.len() - 4).filter(|&at| &bytes[at..at + 4] == b"CHHD") {
-        let mut cursor = honeydew::flm::chunk::Cursor::new(&bytes[at + 8 + 1084..], "");
+        let mut cursor = banaforge::flm::chunk::Cursor::new(&bytes[at + 8 + 1084..], "");
         let mut name = || String::from_utf8(cursor.vstr32().unwrap().to_vec()).unwrap();
         all.push([name(), name(), name()]);
     }
@@ -368,7 +368,7 @@ fn the_header_holds_the_counters_and_a_new_song_the_default_chord_set() {
         |at: usize| i32::from_le_bytes(bytes[head + at..head + at + 4].try_into().unwrap());
     assert_eq!(i32_at(4), 6, "HEAD@4 ≥ the highest bus");
     assert_eq!(i32_at(354), 4095, "HEAD@354 below 4096");
-    let chords = honeydew::song::DEFAULT_CHORD_JSON.as_bytes();
+    let chords = banaforge::song::DEFAULT_CHORD_JSON.as_bytes();
     assert!(bytes.windows(chords.len()).any(|w| w == chords));
     // RHED[8]: the send's bus, 0 on every other channel.
     let buses: Vec<i32> = (bytes.windows(4).enumerate())
@@ -413,11 +413,11 @@ fn folders_categories_and_sample_paths_are_written_as_the_app_writes_them() {
     let drums = &mut song.channels[1];
     let kit = drums.drum_kit.as_mut().unwrap();
     kit.slots[0].folder = "Drum Samples\\Kick".into();
-    kit.slots[1].file.path = Some(honeydew::flm::chunk::ContentPath::Plain(
+    kit.slots[1].file.path = Some(banaforge::flm::chunk::ContentPath::Plain(
         "/tmp/x.wav".into(),
     ));
-    kit.slots[2].file.path = Some(honeydew::flm::chunk::ContentPath::Shorthand {
-        root: honeydew::flm::chunk::ContentRoot::Temp,
+    kit.slots[2].file.path = Some(banaforge::flm::chunk::ContentPath::Shorthand {
+        root: banaforge::flm::chunk::ContentRoot::Temp,
         relative: "x.wav".into(),
     });
     let fx = drums.rack.add(9);
@@ -648,7 +648,7 @@ fn a_playlist_row_counts_tracks_and_a_zipped_channel_as_one() {
     let mut song = Song::default();
     song.add_channel(ChannelKind::Instrument);
     song.add_channel(ChannelKind::Instrument);
-    song.channels[1].add_lane(honeydew::song::LaneKind::Notes);
+    song.channels[1].add_lane(banaforge::song::LaneKind::Notes);
     assert_eq!(rows(&write(&song).unwrap()), [0.0, 1.0, 3.0]);
     song.channels[1].zipped = true;
     let bytes = write(&song).unwrap();
@@ -680,8 +680,8 @@ fn kept_automation_bytes_are_not_written_for_a_retargeted_lane() {
 // ---- `.flmpst` and `.flmrack` ----
 
 /// A module with every chunk set: params, common params, `CSTM`, `DESC` / `PRST` and the `ADD1` flags.
-fn preset_module(type_id: u16, instance_id: i32) -> honeydew::song::ModuleInstance {
-    let mut module = honeydew::song::ModuleInstance::new(type_id, instance_id);
+fn preset_module(type_id: u16, instance_id: i32) -> banaforge::song::ModuleInstance {
+    let mut module = banaforge::song::ModuleInstance::new(type_id, instance_id);
     let n = module.params.len();
     for (i, p) in module.params.iter_mut().enumerate() {
         *p = i as f32 / n as f32;
@@ -700,7 +700,7 @@ fn preset_module(type_id: u16, instance_id: i32) -> honeydew::song::ModuleInstan
 
 #[test]
 fn a_module_preset_is_an_rmod_body_and_reads_back_equal_but_for_the_id() {
-    use honeydew::flm::{read_preset, write_preset};
+    use banaforge::flm::{read_preset, write_preset};
     // Trance Delay (16) and GMSynth (2) may carry a CSTM.
     for type_id in [16, 2] {
         let module = preset_module(type_id, 7);
@@ -708,7 +708,7 @@ fn a_module_preset_is_an_rmod_body_and_reads_back_equal_but_for_the_id() {
         // A bare chunk list, no magic and no 8-byte prefix: HEAD names the module type.
         assert_eq!(&bytes[..4], b"HEAD");
         assert_eq!(bytes[8..12], u32::from(type_id).to_le_bytes());
-        let ids: Vec<[u8; 4]> = honeydew::flm::chunk::ChunkIter::new(&bytes, "")
+        let ids: Vec<[u8; 4]> = banaforge::flm::chunk::ChunkIter::new(&bytes, "")
             .map(|c| c.unwrap().id)
             .collect();
         assert_eq!(
@@ -722,7 +722,7 @@ fn a_module_preset_is_an_rmod_body_and_reads_back_equal_but_for_the_id() {
         assert_eq!(back.file.custom_data, module.file.custom_data);
         // The instance id is the rack's business: a read preset has none.
         assert_eq!(back.instance_id, 0);
-        let module = honeydew::song::ModuleInstance {
+        let module = banaforge::song::ModuleInstance {
             instance_id: 0,
             ..module
         };
@@ -737,7 +737,7 @@ fn a_module_preset_is_an_rmod_body_and_reads_back_equal_but_for_the_id() {
 
 #[test]
 fn a_rack_preset_keeps_the_chain_and_takes_fresh_ids_on_read() {
-    use honeydew::flm::{read_rack, write_rack};
+    use banaforge::flm::{read_rack, write_rack};
     let modules = [
         preset_module(51, 9),
         preset_module(2, 4),
@@ -745,7 +745,7 @@ fn a_rack_preset_keeps_the_chain_and_takes_fresh_ids_on_read() {
     ];
     let bytes = write_rack(&modules).unwrap();
     // RMOd chunks with the full prefix, the saving rack's type and id, in chain order.
-    let prefixes: Vec<([u8; 4], u32, u32)> = honeydew::flm::chunk::ChunkIter::new(&bytes, "")
+    let prefixes: Vec<([u8; 4], u32, u32)> = banaforge::flm::chunk::ChunkIter::new(&bytes, "")
         .map(|c| {
             let c = c.unwrap();
             let word = |at: usize| u32::from_le_bytes(c.payload[at..at + 4].try_into().unwrap());
@@ -763,7 +763,7 @@ fn a_rack_preset_keeps_the_chain_and_takes_fresh_ids_on_read() {
     let ids: Vec<i32> = back.iter().map(|m| m.instance_id).collect();
     assert_eq!(ids, [41, 42, 43]);
     for (back, module) in back.iter().zip(&modules) {
-        let module = honeydew::song::ModuleInstance {
+        let module = banaforge::song::ModuleInstance {
             instance_id: back.instance_id,
             ..module.clone()
         };
@@ -789,7 +789,7 @@ fn lane_types(bytes: &[u8]) -> Vec<[u8; 2]> {
 
 #[test]
 fn a_drum_lanes_grid_is_desc_byte_1_and_other_lanes_keep_their_byte() {
-    use honeydew::song::{DrumGrid, LaneKind};
+    use banaforge::song::{DrumGrid, LaneKind};
     // DESc@1: 0 = a step-sequencer lane, 1 = a notes lane (free note-grid), on drum lanes. A notes lane's hits
     // keep their lengths.
     let mut song = Song::default();
@@ -837,9 +837,9 @@ fn a_drum_lanes_grid_is_desc_byte_1_and_other_lanes_keep_their_byte() {
 
 #[test]
 fn a_drumset_is_lpmt_pads_and_slots_and_reads_back_equal() {
-    use honeydew::flm::chunk::{ChunkIter, ContentPath, ContentRoot};
-    use honeydew::flm::{read_drumset, write_drumset};
-    use honeydew::song::DrumKit;
+    use banaforge::flm::chunk::{ChunkIter, ContentPath, ContentRoot};
+    use banaforge::flm::{read_drumset, write_drumset};
+    use banaforge::song::DrumKit;
     let mut kit = DrumKit::default_kit();
     // A slot with a sample in the user folder, renamed, on a MIDI note, in a cut group, with a param moved.
     let slot = &mut kit.slots[1];
@@ -877,9 +877,9 @@ fn a_drumset_is_lpmt_pads_and_slots_and_reads_back_equal() {
 
 #[test]
 fn a_drumset_reads_legacy_smpl_slots_beside_smpl_ones() {
-    use honeydew::flm::chunk::{ChunkWriter, ContentPath, ContentRoot};
-    use honeydew::flm::{read_drumset, write_drumset};
-    use honeydew::song::DrumKit;
+    use banaforge::flm::chunk::{ChunkWriter, ContentPath, ContentRoot};
+    use banaforge::flm::{read_drumset, write_drumset};
+    use banaforge::song::DrumKit;
     // One `SMPl` (`20LS`) kit of three pads, then two legacy `SMPL` (`10LS`) slots as 12 of the factory kits have them:
     // MAIN of 1037 and 1036 bytes, a LINk of 8 or none, PATH char[2048] and 10 PRMS. Their pads (MAIN@4) are
     // 4 and 3, in that file order. The kit's PADS map is not the identity.
@@ -959,7 +959,7 @@ fn a_drumset_reads_legacy_smpl_slots_beside_smpl_ones() {
 
 #[test]
 fn tdiv_byte_0_is_the_subdivision_and_byte_1_the_beats_per_bar() {
-    use honeydew::song::TimeSig;
+    use banaforge::song::TimeSig;
     // Byte 0 = steps per beat, byte 1 = beats per bar; written and read back byte-exact.
     let song = Song {
         time_sig: TimeSig {
@@ -999,9 +999,9 @@ fn floats(a: f32, r: f32) -> Vec<u8> {
 }
 
 /// The `CSTM` a written DW Sampler preset holds.
-fn written_cstm(module: &honeydew::song::ModuleInstance) -> Vec<u8> {
-    let bytes = honeydew::flm::write_preset(module).unwrap();
-    let cstm = honeydew::flm::chunk::ChunkIter::new(&bytes, "")
+fn written_cstm(module: &banaforge::song::ModuleInstance) -> Vec<u8> {
+    let bytes = banaforge::flm::write_preset(module).unwrap();
+    let cstm = banaforge::flm::chunk::ChunkIter::new(&bytes, "")
         .map(|c| c.unwrap())
         .find(|c| c.id == *b"CSTM")
         .unwrap();
@@ -1010,10 +1010,10 @@ fn written_cstm(module: &honeydew::song::ModuleInstance) -> Vec<u8> {
 
 #[test]
 fn a_dw_program_saves_its_init_values_as_its_path_floats_not_its_current_ones() {
-    use honeydew::flm::read_preset;
+    use banaforge::flm::read_preset;
     let midi = cstm_chunk(b"MIDI", &[5, 0]);
     let path = b"@L@\0My Presets/DW Sampler/Keys.dwp";
-    let mut module = honeydew::song::ModuleInstance::new(1, 2);
+    let mut module = banaforge::song::ModuleInstance::new(1, 2);
     module.params[1] = 0.3;
     module.params[2] = 0.4;
     let blob = |program: Vec<u8>| [&b"10WD"[..], &midi, &program].concat();
@@ -1026,16 +1026,16 @@ fn a_dw_program_saves_its_init_values_as_its_path_floats_not_its_current_ones() 
     let written = written_cstm(&module);
     assert_eq!(written, saved(floats(0.2, 0.6)), "init, not current");
     // PRMS keeps the current values, and the floats the module's init values on the way back.
-    let bytes = honeydew::flm::write_preset(&module).unwrap();
+    let bytes = banaforge::flm::write_preset(&module).unwrap();
     let back = read_preset(&bytes, None).unwrap();
     assert_eq!((back.params[1], back.params[2]), (0.3, 0.4));
     assert_eq!(back.file.program_init, Some([0.2, 0.6]));
 
     // Floats that are the params read back as no init values of their own.
     module.file.program_init = None;
-    let back = read_preset(&honeydew::flm::write_preset(&module).unwrap(), None).unwrap();
+    let back = read_preset(&banaforge::flm::write_preset(&module).unwrap(), None).unwrap();
     assert_eq!(back.file.program_init, None);
-    let again = read_preset(&honeydew::flm::write_preset(&back).unwrap(), None).unwrap();
+    let again = read_preset(&banaforge::flm::write_preset(&back).unwrap(), None).unwrap();
     assert_eq!(again, back, "a second save changes nothing");
 
     // Bytes after the floats stay. A PATh without both floats, or a legacy PATH, is saved as it is: until its
@@ -1129,9 +1129,9 @@ fn a_pads_stretch_mode_is_1_exactly_when_its_ratio_is_not_1() {
 fn a_dw_program_fits_only_the_dw_sampler() {
     // The DW Sampler's program picker lists `.dwp` files, which its own loader takes.
     let dwp = [&b"DwPr"[..], &38u32.to_le_bytes()].concat();
-    assert!(honeydew::flm::preset_fits(&dwp, 1));
-    assert!(!honeydew::flm::preset_fits(&dwp, 0));
-    assert!(!honeydew::flm::preset_fits(b"junk", 1));
+    assert!(banaforge::flm::preset_fits(&dwp, 1));
+    assert!(!banaforge::flm::preset_fits(&dwp, 0));
+    assert!(!banaforge::flm::preset_fits(b"junk", 1));
 }
 
 #[test]
@@ -1204,14 +1204,30 @@ fn a_slots_main_flags_and_beat_offset_round_trip() {
 /// before.
 #[test]
 fn a_project_sample_rate_round_trips_and_the_outputs_own_writes_nothing() {
-    for rate in honeydew::song::SAMPLE_RATES {
-        let song = honeydew::song::Song {
+    for rate in banaforge::song::SAMPLE_RATES {
+        let song = banaforge::song::Song {
             sample_rate: rate,
             ..Default::default()
         };
         assert_eq!(read(&write(&song).unwrap()).unwrap().sample_rate, rate);
     }
-    let bytes = write(&honeydew::song::Song::default()).unwrap();
+    let bytes = write(&banaforge::song::Song::default()).unwrap();
     assert!(!bytes.windows(4).any(|w| w == b"HDSR"));
     assert_eq!(read(&bytes).unwrap().sample_rate, 0);
+}
+
+#[test]
+fn exact_channel_rgb_survives_project_round_trip_without_changing_legacy_hue() {
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    song.channels[1].file.color_rgb = Some([0x12, 0xab, 0xef]);
+    let hue = song.channels[1].hue;
+    let loaded = read(&write(&song).unwrap()).unwrap();
+    assert_eq!(loaded.channels[1].file.color_rgb, Some([0x12, 0xab, 0xef]));
+    assert_eq!(loaded.channels[1].hue, hue);
+    let ink = banaforge::theme::channel_color(
+        loaded.channels[1].color_token(),
+        &banaforge::theme::theme_by_id(0),
+    );
+    assert_eq!(ink.to_hex(), "12ABEF");
 }

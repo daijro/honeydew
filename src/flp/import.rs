@@ -1,13 +1,13 @@
 //! An FL Studio project (`.flp`) read into a [`Song`]: tempo, time signature and title; each generator channel with
 //! its name, colour, volume and pan; the patterns' notes as clips where the playlist places them (pattern mode: one
-//! after another); channel volume and pan automation clips; the mixer insert effects Honeydew has.
+//! after another); channel volume and pan automation clips; the mixer insert effects BanaForge has.
 //!
 //! **Versions.** Read event by event, so an unknown event is skipped and never fails the import, and a damaged file
 //! keeps what came before the damage. The encodings that changed across versions are each read both ways: the tempo
 //! (156, else 66 + 93 / 1000), the channel levels (219, else the words 72/73, else the bytes 2/3), the mixer insert
 //! (104, else 22), the names (203, else 192; UTF-16 from FL 12, 8-bit before), the playlist records (32 bytes up to
 //! FL 20, 60 from 21, 80 from 24.2, 88 from 26) and pattern clip offsets (f32 before 24.2, u32 ticks after), and the
-//! timing at any PPQ. Built for FL 9 to FL 2025/2026; checked on real files of Lemon Studio's writer (its FL 26
+//! timing at any PPQ. Built for FL 9 to FL 2025/2026; checked on real files of Banana Studio's writer (its FL 26
 //! layout) and on synthetic FL 12-era files ([`super::tests`]). A file older than FL 9 (or with no version) imports
 //! what reads, with a notice.
 //!
@@ -256,8 +256,8 @@ struct Effect {
     name: String,
     /// A wrapped third-party plugin's wrapper state ([`super::wrapper`]).
     wrapper: Option<Vec<u8>>,
-    /// FL's own effect as Lemon Studio's ([`lemon_of`]).
-    lemon: Option<(u16, Option<Vec<f32>>)>,
+    /// FL's own effect as Banana Studio's ([`banana_of`]).
+    banana: Option<(u16, Option<Vec<f32>>)>,
 }
 
 /// What the event stream holds.
@@ -396,13 +396,13 @@ impl Project {
                                 let wrapper = (plugin.name == super::wrapper::WRAPPER)
                                     .then(|| plugin.state.clone())
                                     .flatten();
-                                let lemon = lemon_of(&plugin.name, plugin.state.as_deref());
+                                let banana = banana_of(&plugin.name, plugin.state.as_deref());
                                 let name = name.or(plugin.display).unwrap_or(plugin.name);
                                 p.effects.push(Effect {
                                     insert: plugin.insert.unwrap_or(insert),
                                     name,
                                     wrapper,
-                                    lemon,
+                                    banana,
                                 });
                             }
                         }
@@ -605,16 +605,16 @@ fn plugin_module(song: &mut Song, index: usize, type_id: u16, plugin: PluginRef)
     }
 }
 
-/// Lemon Studio's effect for FL's own `plugin` with saved state `state`: Fruity Reeverb 2 as Lemon Reverb, Fruity
-/// Limiter as Lemon Limiter, with the params the state holds (`None` inside for a state that cannot be read).
-fn lemon_of(plugin: &str, state: Option<&[u8]>) -> Option<(u16, Option<Vec<f32>>)> {
-    use honeydew_audio::lemon;
+/// Banana Studio's effect for FL's own `plugin` with saved state `state`: Fruity Reeverb 2 as Banana Reverb, Fruity
+/// Limiter as Banana Limiter, with the params the state holds (`None` inside for a state that cannot be read).
+fn banana_of(plugin: &str, state: Option<&[u8]>) -> Option<(u16, Option<Vec<f32>>)> {
+    use banaforge_audio::banana;
     let state = state.unwrap_or_default();
     match plugin {
-        "Fruity Reeverb 2" => Some((lemon::REVERB, lemon::reverb_from_fl(state))),
+        "Fruity Reeverb 2" => Some((banana::REVERB, banana::reverb_from_fl(state))),
         "Fruity Limiter" => Some((
-            lemon::LIMITER,
-            (!state.is_empty()).then(|| lemon::limiter_from_fl(state)),
+            banana::LIMITER,
+            (!state.is_empty()).then(|| banana::limiter_from_fl(state)),
         )),
         _ => None,
     }
@@ -1011,8 +1011,8 @@ impl Build<'_> {
         (pairs, samples)
     }
 
-    /// The effects of each channel's mixer insert, appended to its rack where Honeydew has the effect (Fruity Reeverb 2
-    /// and Fruity Limiter as Lemon Studio's, with their settings; the others at their default settings), and the master
+    /// The effects of each channel's mixer insert, appended to its rack where BanaForge has the effect (Fruity Reeverb 2
+    /// and Fruity Limiter as Banana Studio's, with their settings; the others at their default settings), and the master
     /// insert's to the master's. `pairs`: each song channel's FL channel.
     fn effects(&mut self, pairs: &[(usize, usize)], notices: &mut Vec<String>) {
         let project = self.project;
@@ -1042,7 +1042,7 @@ impl Build<'_> {
                     }
                     continue;
                 }
-                if let Some((type_id, params)) = &effect.lemon {
+                if let Some((type_id, params)) = &effect.banana {
                     for &c in &channels {
                         let rack = &mut self.song.channels[c].rack;
                         let id = rack.add(*type_id);
@@ -1198,7 +1198,7 @@ const EFFECTS: &[(&[&str], u16, &str)] = &[
     (&["tremolo", "panomatic"], 46, "Tremolo"),
 ];
 
-/// Our effect for FL effect `name`, `None` when Honeydew has none like it.
+/// Our effect for FL effect `name`, `None` when BanaForge has none like it.
 fn effect_of(name: &str) -> Option<(u16, &'static str)> {
     let lower = name.to_lowercase();
     let words: Vec<&str> = lower

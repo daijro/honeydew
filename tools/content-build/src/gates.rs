@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path};
 
-use honeydew::content::bundle::Kind;
+use banaforge::content::bundle::Kind;
 
 use crate::recipe::{Recipe, Source};
 
@@ -140,7 +140,7 @@ fn entry_path(kind: Kind, path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// A path the app's `Index::parse` accepts. This mirrors `honeydew::content::bundle::safe` exactly: no `\`, `:` or
+/// A path the app's `Index::parse` accepts. This mirrors `banaforge::content::bundle::safe` exactly: no `\`, `:` or
 /// NUL, and no empty, `.` or `..` part. One name it refuses makes the app drop the whole bundle.
 pub fn safe(path: &str) -> bool {
     !path.contains(['\\', ':', '\0'])

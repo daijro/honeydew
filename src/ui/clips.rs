@@ -28,13 +28,13 @@
 //!   and keeps it at the lift; dragging on makes it a marquee instead, and hides the menu. A right click on empty track
 //!   space shows the menu there too.
 
+use banaforge_audio::drums::SPEED;
+use banaforge_audio::sample_edit::speed_ratio;
+use banaforge_audio::slicer;
 use eframe::egui::{
     self, Align2, Color32, FontId, Id, Mesh, Painter, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2,
     pos2, vec2,
 };
-use honeydew_audio::drums::SPEED;
-use honeydew_audio::sample_edit::speed_ratio;
-use honeydew_audio::slicer;
 
 use crate::app::note_record;
 use crate::metrics::{FontSize, Metrics};
@@ -272,7 +272,7 @@ impl From<ClipKey> for ClipRef {
 
 /// A take being recorded: its channel, its track and its span in song ticks, which grows as the take does. `clip`: the
 /// clip it records into, which shows only as this bar meanwhile (a notes or drums take's with its notes live, a
-/// Honeydew addition: [`paint_live`]); an audio take has none until it stops.
+/// BanaForge addition: [`paint_live`]); an audio take has none until it stops.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LiveTake {
     pub channel: usize,
@@ -475,7 +475,7 @@ impl Clips {
     /// Draws and edits the clips of the visible track rows. `rows` gives each row's channel, lane and lane rect; `grid`
     /// is the area right of the track headers, which clips are clipped to. While Preview plays `preview` alone, every
     /// other clip is dimmed as a muted one. The `takes` being recorded show over the clips as live bars
-    /// ([`paint_take`]), a notes or drums take's clip with its notes as they record ([`paint_live`], Honeydew's own).
+    /// ([`paint_take`]), a notes or drums take's clip with its notes as they record ([`paint_live`], BanaForge's own).
     /// Song edits are reported through `app.song_edited`; a clip's `Edit`, or a double tap on it, returns its editor's
     /// navigation, as does `New Clip` on an audio track (the sample picker). The insert menu,
     /// `Duplicate` and `Snap` round to `snap`'s unit (round(beat/unit)·unit), and drags too while it is on (whole ticks
@@ -1215,7 +1215,7 @@ impl Clips {
     /// The insert menu while it shows ([`insert::show`]): `New Clip` and `Paste` over its track's row at its snapped
     /// tick, the insert cursor across the row. `New Clip` adds a one-bar clip there on a note or drum track
     /// ([`add_clip`]), the current, selected clip; on an audio track it opens the sample picker, whose first pick makes
-    /// the clip there. Honeydew change (GitHub #124): an automation track, as an effect track's or the
+    /// the clip there. BanaForge change (GitHub #124): an automation track, as an effect track's or the
     /// master's, takes one too, an empty one-bar clip driving the track's target (there the channel's Level), where the
     /// original dims `New Clip`. `Paste` pastes the clip clipboard
     /// there ([`paste_clips`]), selecting the copies; it is dimmed while the clipboard is empty. Any other press hides
@@ -2136,7 +2136,7 @@ fn paint_clip(
         painter.rect_filled(lit, lit_r, alpha(text, lit_a));
     }
     painter.rect_filled(b.expand(px), r + px, alpha(bg, FRAME_ALPHA));
-    let color = channel_color(channel.hue, theme);
+    let color = channel_color(channel.color_token(), theme);
     let body = painter.with_clip_rect(painter.clip_rect().intersect(b));
     body.rect_filled(b, r, alpha(color, a));
     let (content, stops) = tint(theme, color);
@@ -2264,7 +2264,7 @@ fn repeat_at(clip: &Clip, tick: f64) -> u64 {
 /// ([`clip_box`]), a channel-colour box 1 px in from the box's top and bottom, then a content-colour box 3 px in.
 fn paint_take(painter: &Painter, cx: &UiCtx, channel: &Channel, rect: Rect) {
     let (b, px) = (clip_box(rect, cx.m), 1.0 / cx.m.ppp());
-    let color = channel_color(channel.hue, cx.theme);
+    let color = channel_color(channel.color_token(), cx.theme);
     let (content, _) = tint(cx.theme, color);
     let r = cx.m.u(CORNER);
     painter.rect_filled(b.shrink2(vec2(0.0, px)), r, color.to_color32());
@@ -2292,7 +2292,7 @@ fn paint_live(
         b.top() + m.u(NAME_H)..=b.bottom() - CONTENT_END_T * m.t(),
     );
     let steps = lane.kind == LaneKind::Drums && lane.grid == DrumGrid::Steps;
-    let ink = channel_color(channel.hue, cx.theme).to_color32();
+    let ink = channel_color(channel.color_token(), cx.theme).to_color32();
     let body = painter.with_clip_rect(painter.clip_rect().intersect(b));
     notes(&body, clip, steps, area, axis, |_| ink, m);
 }
@@ -2381,9 +2381,42 @@ fn waveform(
     }
 }
 
+// UI-thread-only and bounded: hover repaints should not rescan sample summaries.
+// Weak source references do not keep deleted clips' decoded audio in memory.
+struct CachedWaveMesh {
+    data: std::sync::Weak<banaforge_audio::sample::SampleData>,
+    summary: std::sync::Weak<[Vec<(f32, f32)>]>,
+    geometry: WaveMeshGeometry,
+    rows: Vec<(f32, f32)>,
+    mesh: Mesh,
+}
+
+#[derive(PartialEq)]
+struct WaveMeshGeometry {
+    frames: usize,
+    per_beat: f64,
+    reversed: bool,
+    left: f64,
+    beats_per_px: f64,
+    x0: f32,
+    width: usize,
+    px: f32,
+    ink: Color32,
+}
+
+thread_local! {
+    static WAVE_MESHES: std::cell::RefCell<std::collections::VecDeque<CachedWaveMesh>> =
+        const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+
+fn mesh_bytes(mesh: &Mesh) -> usize {
+    mesh.vertices.len() * std::mem::size_of::<egui::epaint::Vertex>()
+        + mesh.indices.len() * std::mem::size_of::<u32>()
+}
+
 /// The waveform's columns: `width` device-pixel columns (`px` wide) from `x0`, the first at content beat `left` and
 /// each `beats_per_px` on, of every channel ([`columns`]) about its row of `rows` ([`wave_rows`]), in `ink`. The sample
-/// strip draws its whole file with them too (Honeydew change, #124).
+/// strip draws its whole file with them too (BanaForge change, #124).
 pub(crate) fn wave_mesh(
     source: &Waveform,
     wave: Wave,
@@ -2392,6 +2425,35 @@ pub(crate) fn wave_mesh(
     px: f32,
     ink: Color32,
 ) -> Mesh {
+    let geometry = WaveMeshGeometry {
+        frames: wave.frames,
+        per_beat: wave.per_beat,
+        reversed: wave.reversed,
+        left,
+        beats_per_px,
+        x0,
+        width,
+        px,
+        ink,
+    };
+    if let Some(mesh) = WAVE_MESHES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        cache.retain(|entry| entry.data.strong_count() > 0 && entry.summary.strong_count() > 0);
+        let at = cache.iter().position(|entry| {
+            entry.data.ptr_eq(&std::sync::Arc::downgrade(&source.data))
+                && entry
+                    .summary
+                    .ptr_eq(&std::sync::Arc::downgrade(&source.summary))
+                && entry.geometry == geometry
+                && entry.rows == rows
+        })?;
+        let hit = cache.remove(at)?;
+        let mesh = hit.mesh.clone();
+        cache.push_back(hit);
+        Some(mesh)
+    }) {
+        return mesh;
+    }
     let mut mesh = Mesh::default();
     for ((samples, summary), &row) in source.channels().zip(rows) {
         let cols = columns(samples, summary, wave, left, beats_per_px, width);
@@ -2399,7 +2461,94 @@ pub(crate) fn wave_mesh(
             add_column(&mut mesh, x0 + i as f32 * px, peak, row, px, ink);
         }
     }
+    // Four MiB / 32 entries maximum, regardless of project length or zoom.
+    const BUDGET: usize = 4 * 1024 * 1024;
+    if mesh_bytes(&mesh) <= BUDGET {
+        WAVE_MESHES.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            while cache.len() >= 32
+                || cache
+                    .iter()
+                    .map(|entry| mesh_bytes(&entry.mesh))
+                    .sum::<usize>()
+                    + mesh_bytes(&mesh)
+                    > BUDGET
+            {
+                cache.pop_front();
+            }
+            cache.push_back(CachedWaveMesh {
+                data: std::sync::Arc::downgrade(&source.data),
+                summary: std::sync::Arc::downgrade(&source.summary),
+                geometry,
+                rows: rows.to_vec(),
+                mesh: mesh.clone(),
+            });
+        });
+    }
     mesh
+}
+
+#[cfg(test)]
+mod waveform_mesh_cache_tests {
+    use super::*;
+    use banaforge_audio::sample::SampleData;
+    use std::sync::Arc;
+
+    #[test]
+    fn waveform_mesh_cache_reuses_geometry_and_does_not_retain_audio() {
+        WAVE_MESHES.with(|cache| cache.borrow_mut().clear());
+        let source = Waveform::new(Arc::new(SampleData {
+            left: vec![0.5; 4096].into(),
+            sample_rate: 48_000,
+            ..Default::default()
+        }));
+        let weak = Arc::downgrade(&source.data);
+        let wave = Wave {
+            frames: 4096,
+            per_beat: 4096.0,
+            reversed: false,
+        };
+        let draw = |ink| {
+            wave_mesh(
+                &source,
+                wave,
+                &[(10.0, 8.0)],
+                ((0.0, 1.0 / 64.0), (0.0, 64)),
+                1.0,
+                ink,
+            )
+        };
+        let first = draw(Color32::RED);
+        let second = draw(Color32::RED);
+        assert_eq!(first.vertices, second.vertices);
+        assert_eq!(first.indices, second.indices);
+        WAVE_MESHES.with(|cache| assert_eq!(cache.borrow().len(), 1));
+        draw(Color32::GREEN);
+        WAVE_MESHES.with(|cache| assert_eq!(cache.borrow().len(), 2));
+        for i in 0..80 {
+            wave_mesh(
+                &source,
+                wave,
+                &[(10.0, 8.0)],
+                ((i as f64, 1.0 / 64.0), (0.0, 64)),
+                1.0,
+                Color32::RED,
+            );
+        }
+        WAVE_MESHES.with(|cache| {
+            let cache = cache.borrow();
+            assert!(cache.len() <= 32);
+            assert!(
+                cache
+                    .iter()
+                    .map(|entry| mesh_bytes(&entry.mesh))
+                    .sum::<usize>()
+                    <= 4 * 1024 * 1024
+            );
+        });
+        drop(source);
+        assert!(weak.upgrade().is_none());
+    }
 }
 
 /// `a` moved `t` of the way toward `b`, opaque.
@@ -3485,7 +3634,7 @@ fn slide(x0: f32, top: f32, size: Vec2, view: Rect, handles: &[Rect], px: f32) -
 mod tests {
     use std::sync::Arc;
 
-    use honeydew_audio::sample::SampleData;
+    use banaforge_audio::sample::SampleData;
 
     use super::*;
     use eframe::egui::{Rangef, vec2};
@@ -5151,7 +5300,7 @@ mod tests {
             right: None,
             ..Default::default()
         });
-        let summary = vec![(-0.5, 0.5); frames / honeydew_audio::sample_edit::SUMMARY_FRAMES];
+        let summary = vec![(-0.5, 0.5); frames / banaforge_audio::sample_edit::SUMMARY_FRAMES];
         let source = Waveform {
             data,
             summary: vec![summary].into(),

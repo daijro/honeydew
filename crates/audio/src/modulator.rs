@@ -1,4 +1,4 @@
-//! Modulator (module type [`MODULATOR`]), Honeydew's own effect: its audio passes through unchanged, and it makes a
+//! Modulator (module type [`MODULATOR`]), BanaForge's own effect: its audio passes through unchanged, and it makes a
 //! modulation signal that the host adds to another param of the song, its target ([`crate::AudioEffect::modulation`]).
 //!
 //! **Params**, normalized, in this order (the saved one): 0 Enable, [`SOURCE`], [`AMOUNT`], the Envelope's [`GAIN`],
@@ -27,7 +27,7 @@
 use crate::ProcessContext;
 use crate::biquad::flush;
 
-/// The module type: Honeydew's own id, which a song file keeps apart from FL Studio Mobile's modules.
+/// The module type: BanaForge's own id, which a song file keeps apart from FL Studio Mobile's modules.
 pub const MODULATOR: u16 = 1005;
 
 pub const SOURCE: usize = 1;

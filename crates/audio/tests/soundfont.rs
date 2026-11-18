@@ -5,9 +5,9 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::sync::Arc;
 
-use honeydew_audio::ProcessContext;
-use honeydew_audio::instrument::{Instrument, InstrumentModule};
-use honeydew_audio::soundfont::{
+use banaforge_audio::ProcessContext;
+use banaforge_audio::instrument::{Instrument, InstrumentModule};
+use banaforge_audio::soundfont::{
     MAX_PATCHES, MAX_REGIONS, ParseError, SoundFont, SoundFontPlayer, VOICES, preset_headers,
 };
 
@@ -387,9 +387,9 @@ fn pitch_bend_is_two_semitones_and_slides_add_to_sounding_voices_only() {
 
 #[test]
 fn fine_tune_and_transpose_move_sounding_voices() {
-    // Param 6, Fine Tune, Honeydew's own (issue #90): 200v − 100 cents, 0.5 in tune, 1 is 100 cents up, 0.25 is 50
+    // Param 6, Fine Tune, BanaForge's own (issue #90): 200v − 100 cents, 0.5 in tune, 1 is 100 cents up, 0.25 is 50
     // down. Param 11, Transpose (issue #102): round(48v) − 24 semitones on top. SFZ voices too.
-    use honeydew_audio::sample::SampleData;
+    use banaforge_audio::sample::SampleData;
     let tone = (0..44_000).map(|i| (std::f32::consts::TAU * i as f32 / 100.0).sin() * 0.5);
     let sample = Arc::new(SampleData {
         sample_rate: 44_000,
@@ -397,7 +397,7 @@ fn fine_tune_and_transpose_move_sounding_voices() {
         right: None,
         meta: Default::default(),
     });
-    let parsed = honeydew_audio::sfz::parse("<region> sample=a.wav pitch_keycenter=69", &|_| None);
+    let parsed = banaforge_audio::sfz::parse("<region> sample=a.wav pitch_keycenter=69", &|_| None);
     let regions = (parsed.regions.into_iter()).map(|r| (r, sample.clone().into()));
     let sfz = SoundFont::sfz("Test", regions.collect(), &parsed.control);
     for font in [font(sine_bank()), Arc::new(sfz)] {
@@ -424,7 +424,7 @@ fn fine_tune_and_transpose_move_sounding_voices() {
 
 /// An SFZ of one region (`opcodes` after its sample) playing `tone` at 44 kHz, its key center 69.
 fn sfz_of(tone: Vec<f32>, opcodes: &str) -> Arc<SoundFont> {
-    use honeydew_audio::sample::SampleData;
+    use banaforge_audio::sample::SampleData;
     let sample = Arc::new(SampleData {
         sample_rate: 44_000,
         left: tone.into(),
@@ -432,7 +432,7 @@ fn sfz_of(tone: Vec<f32>, opcodes: &str) -> Arc<SoundFont> {
         meta: Default::default(),
     });
     let text = format!("<region> sample=a.wav pitch_keycenter=69 {opcodes}");
-    let parsed = honeydew_audio::sfz::parse(&text, &|_| None);
+    let parsed = banaforge_audio::sfz::parse(&text, &|_| None);
     let regions = (parsed.regions.into_iter()).map(|r| (r, sample.clone().into()));
     Arc::new(SoundFont::sfz("Test", regions.collect(), &parsed.control))
 }
@@ -493,7 +493,7 @@ fn vibrato_moves_the_pitch_at_its_rate_and_depth() {
         // The mod wheel (CC 1, channel param 8) adds 50 cents, SoundFont 2's default modulator, at the vibrato LFO's
         // default 8.176 Hz.
         (font(sine_bank()), 1.0, None, (50.0, 8.176), 0.0),
-        // The module's own (Honeydew's): 5 Hz, 50 cents, after 0.5 s, on a SoundFont and on an SFZ.
+        // The module's own (BanaForge's): 5 Hz, 50 cents, after 0.5 s, on a SoundFont and on an SFZ.
         (font(sine_bank()), 0.0, user, (50.0, 5.0), 0.5),
         (sfz, 0.0, user, (50.0, 5.0), 0.5),
     ];

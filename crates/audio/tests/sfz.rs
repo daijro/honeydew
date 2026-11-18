@@ -2,12 +2,12 @@
 
 use std::sync::Arc;
 
-use honeydew_audio::ProcessContext;
-use honeydew_audio::flac_writer::flac;
-use honeydew_audio::instrument::Instrument;
-use honeydew_audio::sample::{SampleData, decode};
-use honeydew_audio::sfz::{LoopMode, SfzRegion, Trigger, parse};
-use honeydew_audio::soundfont::{SoundFont, SoundFontPlayer};
+use banaforge_audio::ProcessContext;
+use banaforge_audio::flac_writer::flac;
+use banaforge_audio::instrument::Instrument;
+use banaforge_audio::sample::{SampleData, decode};
+use banaforge_audio::sfz::{LoopMode, SfzRegion, Trigger, parse};
+use banaforge_audio::soundfont::{SoundFont, SoundFontPlayer};
 
 fn no_includes(_: &str) -> Option<String> {
     None
@@ -93,7 +93,7 @@ fn defines_includes_comments_note_names_and_offsets() {
 fn includes_stop_at_a_depth_and_a_file_that_includes_itself_ends() {
     let include = |_: &str| Some("<region> sample=a.wav\n#include \"self.sfz\"\n".into());
     let sfz = parse("#include \"self.sfz\"", &include);
-    assert_eq!(sfz.regions.len(), honeydew_audio::sfz::MAX_INCLUDE_DEPTH);
+    assert_eq!(sfz.regions.len(), banaforge_audio::sfz::MAX_INCLUDE_DEPTH);
 }
 
 #[test]

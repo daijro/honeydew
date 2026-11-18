@@ -58,11 +58,11 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
+use banaforge_audio::sample::SampleData;
+use banaforge_audio::sample_edit::{peaks, speed_ratio};
 use eframe::egui::{
     self, Color32, Id, Mesh, Painter, Pos2, Rangef, Rect, Response, Sense, Stroke, Ui, pos2,
 };
-use honeydew_audio::sample::SampleData;
-use honeydew_audio::sample_edit::{peaks, speed_ratio};
 
 use crate::metrics::Metrics;
 use crate::sample_cache::Waveform;
@@ -597,7 +597,7 @@ impl AudioEditor {
         let sig = song.time_sig;
         let now = ui.input(|i| i.time);
         let id = Id::new("audio_editor");
-        let color = channel_color(ch.hue, cx.theme);
+        let color = channel_color(ch.color_token(), cx.theme);
         let ink = color.to_color32();
 
         // 1: the background (the ruler's rect too), and the lane list on `menuFill`.

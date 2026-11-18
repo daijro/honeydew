@@ -7,8 +7,8 @@
 //! or build) stays in the old engine, so it stops at once, and is freed with it off the audio thread; what it built
 //! afresh (an added module, row or channel) starts empty.
 
-use honeydew_audio::device::AudioRenderer;
-use honeydew_audio::instrument::InstrumentModule;
+use banaforge_audio::device::AudioRenderer;
+use banaforge_audio::instrument::InstrumentModule;
 
 use super::{SongAudioEngine, midi_cc, position};
 
@@ -77,6 +77,7 @@ impl SongAudioEngine {
             self.set_changed_params(old);
             self.keep_bend(old);
         }
+        self.restore_vocals(frame);
         self.sync_controllers(old);
     }
 
@@ -259,9 +260,9 @@ fn take_applied(
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use honeydew_audio::ProcessContext;
-    use honeydew_audio::device::AudioRenderer;
-    use honeydew_audio::instrument::Instrument;
+    use banaforge_audio::ProcessContext;
+    use banaforge_audio::device::AudioRenderer;
+    use banaforge_audio::instrument::Instrument;
 
     use super::*;
     use crate::song::{ChannelKind, Event, ModuleInstance, Song, SynthKind};
@@ -597,7 +598,7 @@ mod tests {
     /// A GMSynth preset of its type keeps the running synth and gives it the preset's settings (its waves).
     #[test]
     fn a_gmsynth_preset_with_other_waves_is_heard() {
-        use honeydew_audio::gmsynth::WAVE_A;
+        use banaforge_audio::gmsynth::WAVE_A;
         use std::collections::HashMap;
         let waved = |wave: f32| {
             let mut song = two_notes(SynthKind::GmSynth, 69);
@@ -613,7 +614,7 @@ mod tests {
     /// which takes a new module's settings: it sounds as a fresh build of the edited song.
     #[test]
     fn a_gmsynth_whose_blob_goes_away_is_heard_as_a_new_one() {
-        use honeydew_audio::gmsynth::WAVE_A;
+        use banaforge_audio::gmsynth::WAVE_A;
         use std::collections::HashMap;
         let mut waved = two_notes(SynthKind::GmSynth, 69);
         let blob =

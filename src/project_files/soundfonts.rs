@@ -174,7 +174,7 @@ mod tests {
     #[test]
     fn on_the_desktop_my_soundfonts_is_in_the_user_folder() {
         let root =
-            std::env::temp_dir().join(format!("honeydew-k3-soundfonts-{}", std::process::id()));
+            std::env::temp_dir().join(format!("banaforge-k3-soundfonts-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let files = ProjectFiles {
             user: Some(root.clone()),

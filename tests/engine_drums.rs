@@ -3,11 +3,13 @@
 
 use std::f32::consts::TAU;
 
-use honeydew::audio_engine::{EngineError, SongAudioEngine};
-use honeydew::flm::chunk::ContentPath;
-use honeydew::sample_cache::SampleCache;
-use honeydew::song::{AutomationTarget, ChannelKind, DrumGrid, Event, LaneKind, SamplerSlot, Song};
-use honeydew_audio::device::AudioRenderer;
+use banaforge::audio_engine::{EngineError, SongAudioEngine};
+use banaforge::flm::chunk::ContentPath;
+use banaforge::sample_cache::SampleCache;
+use banaforge::song::{
+    AutomationTarget, ChannelKind, DrumGrid, Event, LaneKind, SamplerSlot, Song,
+};
+use banaforge_audio::device::AudioRenderer;
 
 const RATE: f32 = 44_100.0;
 /// Frames per beat at 120 BPM.
@@ -429,7 +431,7 @@ fn strip_peak(engine: &SongAudioEngine, channel: usize) -> f32 {
 fn a_pads_send_target_follows_its_drum_channels_solo() {
     let mut song = kit(&["dc", "dc"]);
     song.add_channel(ChannelKind::EffectTrack);
-    song.add_channel(ChannelKind::Synth(honeydew::song::SynthKind::MiniSynth));
+    song.add_channel(ChannelKind::Synth(banaforge::song::SynthKind::MiniSynth));
     slots(&mut song)[0].file.send_target = song.channels[2].id;
     hits(&mut song, [hit(0, 0), hit(0, 1)]);
     let heard = |soloed: usize| {
@@ -745,7 +747,7 @@ fn each_slot_publishes_its_own_peak_meter_under_its_negative_instance() {
     engine.play();
     render(&mut engine, 100);
     let meter = |id: i32| {
-        let key = honeydew_audio::device::ModuleKey {
+        let key = banaforge_audio::device::ModuleKey {
             channel: 1,
             instance_id: id,
         };

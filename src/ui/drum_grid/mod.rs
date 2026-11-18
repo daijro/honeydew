@@ -306,7 +306,7 @@ impl DrumGridView {
         let clip = lane.clips.iter().find(|c| Some(c.id) == clip_id);
         let (colors, m) = (&cx.theme.colors, cx.m);
         let (text, bg) = (colors.text.to_color32(), colors.background.to_color32());
-        let color = channel_color(ch.hue, cx.theme);
+        let color = channel_color(ch.color_token(), cx.theme);
         let ink = color.to_color32();
         let rows = steps::row_count(lane, pads.count());
         let (bpb, sig) = (song.time_sig.bar_beats(), song.time_sig);
