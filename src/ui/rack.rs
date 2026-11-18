@@ -1474,7 +1474,7 @@ impl RackPanel {
     ) -> RackActions {
         let (m, colors) = (cx.m, &cx.theme.colors);
         let (ppp, u) = (m.ppp(), m.u_px());
-        let hue = channel_color(channel.hue, cx.theme);
+        let hue = channel_color(channel.color_token(), cx.theme);
         let ink = hue.to_color32();
         // The theme colour that stands out most against the channel colour.
         let contrast = colors

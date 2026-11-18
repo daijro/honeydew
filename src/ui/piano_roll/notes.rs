@@ -961,7 +961,7 @@ pub fn ghost_notes(
                                 pos: (tick as f64 - start + offset).rem_euclid(lp),
                                 len,
                                 key,
-                                hue: ch.hue,
+                                hue: ch.color_token(),
                             });
                         }
                     }

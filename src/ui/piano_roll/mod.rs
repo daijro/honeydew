@@ -1322,7 +1322,7 @@ impl PianoRoll {
         let events = preview.as_deref().unwrap_or(events);
         let loop_ticks = shown.map_or(BEAT * f64::from(bpb), |c| c.loop_len_beats * BEAT);
         let color = channel_color(
-            song.channels.get(self.channel).map_or(0.0, |c| c.hue),
+            song.channels.get(self.channel).map_or(0.0, |c| c.color_token()),
             cx.theme,
         );
         // The t gap after the key column, under the playhead line.
@@ -2957,7 +2957,7 @@ impl PianoRoll {
                 self.guess(ctx, id, (more, closest, region), song, actions, cx);
             }
             Some(Menu::Humanize(mut panel)) => {
-                let hue = song.channels.get(self.channel).map_or(0.0, |c| c.hue);
+                let hue = song.channels.get(self.channel).map_or(0.0, |c| c.color_token());
                 let ink = channel_color(hue, cx.theme).to_color32();
                 let was = panel;
                 let close = humanize::show(ctx, cx, id.with("humanize"), over, ink, &mut panel);
@@ -2971,7 +2971,7 @@ impl PianoRoll {
                 }
             }
             Some(Menu::Generate(mut panel)) => {
-                let hue = song.channels.get(self.channel).map_or(0.0, |c| c.hue);
+                let hue = song.channels.get(self.channel).map_or(0.0, |c| c.color_token());
                 let ink = channel_color(hue, cx.theme).to_color32();
                 let was = panel;
                 let close = generate::show(ctx, cx, id.with("generate"), over, ink, &mut panel);

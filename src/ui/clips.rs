@@ -2136,7 +2136,7 @@ fn paint_clip(
         painter.rect_filled(lit, lit_r, alpha(text, lit_a));
     }
     painter.rect_filled(b.expand(px), r + px, alpha(bg, FRAME_ALPHA));
-    let color = channel_color(channel.hue, theme);
+    let color = channel_color(channel.color_token(), theme);
     let body = painter.with_clip_rect(painter.clip_rect().intersect(b));
     body.rect_filled(b, r, alpha(color, a));
     let (content, stops) = tint(theme, color);
@@ -2264,7 +2264,7 @@ fn repeat_at(clip: &Clip, tick: f64) -> u64 {
 /// ([`clip_box`]), a channel-colour box 1 px in from the box's top and bottom, then a content-colour box 3 px in.
 fn paint_take(painter: &Painter, cx: &UiCtx, channel: &Channel, rect: Rect) {
     let (b, px) = (clip_box(rect, cx.m), 1.0 / cx.m.ppp());
-    let color = channel_color(channel.hue, cx.theme);
+    let color = channel_color(channel.color_token(), cx.theme);
     let (content, _) = tint(cx.theme, color);
     let r = cx.m.u(CORNER);
     painter.rect_filled(b.shrink2(vec2(0.0, px)), r, color.to_color32());
@@ -2292,7 +2292,7 @@ fn paint_live(
         b.top() + m.u(NAME_H)..=b.bottom() - CONTENT_END_T * m.t(),
     );
     let steps = lane.kind == LaneKind::Drums && lane.grid == DrumGrid::Steps;
-    let ink = channel_color(channel.hue, cx.theme).to_color32();
+    let ink = channel_color(channel.color_token(), cx.theme).to_color32();
     let body = painter.with_clip_rect(painter.clip_rect().intersect(b));
     notes(&body, clip, steps, area, axis, |_| ink, m);
 }

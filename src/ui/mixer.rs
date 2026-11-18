@@ -196,7 +196,7 @@ pub fn show(
             continue;
         }
         let strip = Rect::from_min_size(pos2(left, rect.top()), vec2(unit, rect.height()));
-        let color = channel_color(channel.hue, cx.theme).to_color32();
+        let color = channel_color(channel.color_token(), cx.theme).to_color32();
         let icon = kind_icon(channel.kind);
         let master = channel.kind == ChannelKind::Master;
         let name = channel.name.as_str();
@@ -1508,7 +1508,7 @@ mod tests {
             rig.frame(vec![]);
             for i in [0, 1] {
                 let channel = &rig.song.channels[i];
-                let color = channel_color(channel.hue, &theme).to_color32();
+                let color = channel_color(channel.color_token(), &theme).to_color32();
                 let texts = rig.texts(rig.part(i, NAME));
                 assert_eq!(
                     texts,

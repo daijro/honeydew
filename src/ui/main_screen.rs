@@ -154,7 +154,7 @@ pub fn track_rows(song: &Song, show_hidden: bool) -> Vec<TrackRow> {
                 } else {
                     lane_icon(l.kind)
                 },
-                hue: ch.hue,
+                hue: ch.color_token(),
                 armed: lane == 0 && ch.kind == ChannelKind::AudioRecord && ch.file.record_armed,
                 hidden: l.hidden,
                 collapsed: l.collapsed,
@@ -1107,7 +1107,7 @@ impl MainScreen {
         let playhead = app.snapshot.map_or(0, |s| s.transport_tick);
         let theme = app.cx.theme;
         let ink = (app.song.channels.get(*app.selected))
-            .map_or(theme.colors.text, |c| channel_color(c.hue, theme));
+            .map_or(theme.colors.text, |c| channel_color(c.color_token(), theme));
         let at = RangeRuler {
             strip,
             axis,

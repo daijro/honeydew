@@ -243,7 +243,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     switch(state, channel);
     let steps = state.mode(app.song) != Some(DrumGrid::Notes);
     let (editor, m) = (app.regions.editor, app.cx.m);
-    let color = channel_color(ch.hue, app.cx.theme).to_color32();
+    let color = channel_color(ch.color_token(), app.cx.theme).to_color32();
 
     // The step view paints the whole editor area; the mixer goes on top, in the room it leaves.
     // Its own ids per channel for the strips (and the pads, [`show_pads`]): a press held across a switch to another
@@ -690,7 +690,7 @@ fn show_pads(pads: &mut Pads, ui: &mut egui::Ui, app: &mut AppCtx, channel: usiz
     let ch = &app.song.channels[channel];
     let empty = DrumKit::default();
     let kit = ch.drum_kit.as_ref().unwrap_or(&empty);
-    let color = channel_color(ch.hue, app.cx.theme).to_color32();
+    let color = channel_color(ch.color_token(), app.cx.theme).to_color32();
     let keyboard = pads_rect(app.regions.keyboard, app.cx.m);
     let mut ui = ui.new_child(
         UiBuilder::new()

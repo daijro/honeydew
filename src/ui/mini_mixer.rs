@@ -197,7 +197,7 @@ pub fn show(
             top..=top + row_h * row.rows() - 1.0 / m.ppp(),
         );
         let kind = RowKind::of(song, &row);
-        let ink = channel_color(song.channels[row.channel].hue, cx.theme).to_color32();
+        let ink = channel_color(song.channels[row.channel].color_token(), cx.theme).to_color32();
         let painter = ui.painter().clone();
         let fill = match kind {
             RowKind::Sub => c.control_fill,

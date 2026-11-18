@@ -1215,3 +1215,16 @@ fn a_project_sample_rate_round_trips_and_the_outputs_own_writes_nothing() {
     assert!(!bytes.windows(4).any(|w| w == b"HDSR"));
     assert_eq!(read(&bytes).unwrap().sample_rate, 0);
 }
+
+#[test]
+fn exact_channel_rgb_survives_project_round_trip_without_changing_legacy_hue() {
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+    song.channels[1].file.color_rgb = Some([0x12, 0xab, 0xef]);
+    let hue = song.channels[1].hue;
+    let loaded = read(&write(&song).unwrap()).unwrap();
+    assert_eq!(loaded.channels[1].file.color_rgb, Some([0x12, 0xab, 0xef]));
+    assert_eq!(loaded.channels[1].hue, hue);
+    let ink = banaforge::theme::channel_color(loaded.channels[1].color_token(), &banaforge::theme::theme_by_id(0));
+    assert_eq!(ink.to_hex(), "12ABEF");
+}

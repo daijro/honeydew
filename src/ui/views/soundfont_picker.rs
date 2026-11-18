@@ -106,7 +106,7 @@ pub fn show(
     if app.settings.picker_keys
         && let Some(ch) = app.song.channels.get(channel)
     {
-        let ink = crate::theme::channel_color(ch.hue, app.cx.theme).to_color32();
+        let ink = crate::theme::channel_color(ch.color_token(), app.cx.theme).to_color32();
         picker.keys_on(ink, app.settings, lit);
     }
     let action = picker.show(ui.ctx(), &app.cx, &*library);

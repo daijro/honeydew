@@ -275,6 +275,8 @@ impl Default for SendState {
 /// differs from the auto name (the preset name, else the base name), or the one read while it is still the name.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChannelFileState {
+    /// BanaForge `BFCr`: optional exact sRGB colour; legacy CHHD hue stays compatible.
+    pub color_rgb: Option<[u8; 3]>,
     /// @1040, @1048: per-channel view. @1040 is a zoom, in the song's zoom units ([`SongFileState::zooms_per_u`]).
     pub view: [f64; 2],
     /// @1056: input monitoring.
@@ -358,6 +360,7 @@ impl MidiInput {
 impl Default for ChannelFileState {
     fn default() -> Self {
         Self {
+            color_rgb: None,
             view: [0.0; 2],
             input_monitoring: false,
             record_armed: false,

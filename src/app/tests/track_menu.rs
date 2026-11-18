@@ -535,14 +535,14 @@ fn channel_settings_renames_and_recolours_the_channel_one_undo_step_each() {
         assert_eq!(rig.app.song.channels[2].name, "Lead", "{typed:?}");
         assert_eq!(rig.overlays(), []);
     }
-    // The colour: a drag along the slider, one step.
+    // The colour: a drag around the wheel, one step.
     rig.track_menu(2, SETTINGS);
-    let hue = rig.app.song.channels[2].hue;
+    let hue = rig.app.song.channels[2].file.color_rgb;
     rig.frame(vec![]);
     let slider = rig
         .ctx
-        .read_response(dialog.with("color"))
-        .expect("the slider")
+        .read_response(dialog.with(("rgb", rig.app.song.channels[2].id)).with("wheel"))
+        .expect("the color wheel")
         .rect;
     // The dialog sits above the transport bar.
     assert!(slider.bottom() < PANEL_TOP, "{slider:?}");
@@ -550,12 +550,12 @@ fn channel_settings_renames_and_recolours_the_channel_one_undo_step_each() {
     rig.drag_to(slider.center() + vec2(40.0, 0.0));
     rig.drag_to(slider.center() + vec2(80.0, 0.0));
     rig.release(slider.center() + vec2(80.0, 0.0));
-    let moved = rig.app.song.channels[2].hue;
+    let moved = rig.app.song.channels[2].file.color_rgb;
     assert_ne!(moved, hue);
     rig.frame(escape());
     assert_eq!(rig.overlays(), []);
     rig.frame(undo());
-    assert_eq!(rig.app.song.channels[2].hue, hue);
+    assert_eq!(rig.app.song.channels[2].file.color_rgb, hue);
     assert_eq!(rig.app.song.channels[2].name, "Lead");
     rig.frame(undo());
     assert_eq!(rig.app.song.channels[2].name, "MiniSynth");

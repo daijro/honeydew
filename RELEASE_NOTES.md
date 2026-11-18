@@ -1,6 +1,7 @@
 BanaForge 0.5.9 — feedback implementation preview
 
 ## Added
+- Channel Settings now has a circular hue/saturation wheel, brightness control and exact #RRGGBB input. Pure black/white are rejected; colors are saved in a BanaForge extension while the legacy project hue stays intact.
 - Original animated pine-tree freshener under Main menu > UPDATES > Pine freshener. It animates only while enabled and visible.
 - Pitch names with octaves on readable synth piano-roll note blocks, including sharps (C4, F#4). This is not restricted to Vocal Synth.
 
@@ -17,7 +18,7 @@ BanaForge 0.5.9 — feedback implementation preview
 ## Unresolved / unsuccessful prior fixes
 - Playback audio delay: the 0.5.8 audible-clock fix did not resolve the reported device experience. No new audio-latency fix is claimed here.
 - DWP wrong sound: existing zone parsing is not proof that the reported file plays correctly. A failing file and expected-sound reference are still needed.
-- Color wheel/hex colors, localization, and background-image selection/opacity are not delivered in this preview.
+- Localization and background-image selection/opacity are not delivered in this preview.
 
 ## Earlier changes
 

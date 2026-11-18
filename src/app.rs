@@ -2460,7 +2460,7 @@ impl BanaForgeApp {
                                 // back to the playlist.
                                 let channel = app.song.channels.get(*app.selected);
                                 let color = channel.map_or(cx.theme.colors.menu_fill, |c| {
-                                    crate::theme::channel_color(c.hue, cx.theme)
+                                    crate::theme::channel_color(c.color_token(), cx.theme)
                                 });
                                 split::band(
                                     ui.painter(),
@@ -2521,7 +2521,7 @@ impl BanaForgeApp {
                     .chrome(ui, &cx, input, &regions, &mut actions);
                 views::drum_editor::after_chrome(&mut self.slots.drum_editor, ui, &mut app);
                 // The corner buttons go over the rack and under the other overlays.
-                let hue = app.song.channels.get(input.selected).map_or(0.0, |c| c.hue);
+                let hue = app.song.channels.get(input.selected).map_or(0.0, |c| c.color_token());
                 let ink = crate::theme::channel_color(hue, cx.theme).to_color32();
                 // The rack tab's place, which a drag of it may move (PR #87): out of the settings for the frame, and
                 // back in.

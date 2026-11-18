@@ -605,7 +605,7 @@ pub fn show(
     );
     let keys = (instrument || instruments) && app.settings.picker_keys;
     if let (true, Some(ch)) = (keys, app.song.channels.get(channel)) {
-        let ink = crate::theme::channel_color(ch.hue, app.cx.theme).to_color32();
+        let ink = crate::theme::channel_color(ch.color_token(), app.cx.theme).to_color32();
         picker.keys_on(
             ink,
             app.settings,

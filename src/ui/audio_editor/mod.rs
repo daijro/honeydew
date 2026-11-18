@@ -597,7 +597,7 @@ impl AudioEditor {
         let sig = song.time_sig;
         let now = ui.input(|i| i.time);
         let id = Id::new("audio_editor");
-        let color = channel_color(ch.hue, cx.theme);
+        let color = channel_color(ch.color_token(), cx.theme);
         let ink = color.to_color32();
 
         // 1: the background (the ruler's rect too), and the lane list on `menuFill`.

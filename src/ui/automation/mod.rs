@@ -474,7 +474,7 @@ impl AutomationEditor {
             .and_then(|p| f.hit(ax, &shown_pts, max, p, m));
 
         let ch = &song.channels[key.channel];
-        let color = channel_color(ch.hue, cx.theme).to_color32();
+        let color = channel_color(ch.color_token(), cx.theme).to_color32();
         // `Set shape`: its popup over the selection, its picks on the curve, one edit at its close.
         if let Some(mut shaping) = self.shaping.take() {
             let mut own = (pts.iter().zip(&self.sel))

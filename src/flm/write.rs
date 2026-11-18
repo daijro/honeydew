@@ -487,6 +487,11 @@ fn write_channel(writer: &mut ChunkWriter, channel: &Channel, row: usize) -> Res
             Ok(())
         })?;
     }
+    if let Some([r, g, b]) = channel.file.color_rgb {
+        writer.chunk(*b"BFCr", |writer| {
+            writer.u32((u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b))
+        })?;
+    }
     write_raw(writer, &channel.file.channel_unknown_chunks)
 }
 
