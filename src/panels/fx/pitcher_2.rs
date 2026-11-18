@@ -1,7 +1,7 @@
 //! Pitcher 2 (ID 45), UIHeight 8 U.
 
+use banaforge_audio::analysis;
 use eframe::egui::{Color32, Painter, Rect, Ui, pos2, vec2};
-use honeydew_audio::analysis;
 
 use super::leveller::animate;
 use super::live_analysis;

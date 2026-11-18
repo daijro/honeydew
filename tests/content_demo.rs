@@ -7,14 +7,14 @@
 
 use std::path::{Path, PathBuf};
 
-use honeydew::audio_engine::SongAudioEngine;
-use honeydew::content::{DEMO_FOLDER, demo_songs, restore_demo_songs};
-use honeydew::flm::chunk::ContentPath;
-use honeydew::flm::{read_with_notices, write};
-use honeydew::sample_cache::SampleCache;
-use honeydew::song::{ChannelKind, Event, PPQ, Song};
-use honeydew::ui::main_menu::{MemoryLibrary, NativeLibrary, SongLibrary};
-use honeydew_audio::device::AudioRenderer;
+use banaforge::audio_engine::SongAudioEngine;
+use banaforge::content::{DEMO_FOLDER, demo_songs, restore_demo_songs};
+use banaforge::flm::chunk::ContentPath;
+use banaforge::flm::{read_with_notices, write};
+use banaforge::sample_cache::SampleCache;
+use banaforge::song::{ChannelKind, Event, PPQ, Song};
+use banaforge::ui::main_menu::{MemoryLibrary, NativeLibrary, SongLibrary};
+use banaforge_audio::device::AudioRenderer;
 
 const RATE: f32 = 48_000.0;
 /// Ticks a bar (4/4).
@@ -32,7 +32,7 @@ fn demo() -> (String, Song) {
 
 /// What each channel plays: `Drums`, `Bass` (single notes below C3), `Keys` (chords) or `Lead` (single notes from C4
 /// up); `None` for the master and the send.
-fn role(c: &honeydew::song::Channel) -> Option<&'static str> {
+fn role(c: &banaforge::song::Channel) -> Option<&'static str> {
     let notes: Vec<(u32, u8)> = (c.lanes.iter().flat_map(|l| &l.clips))
         .flat_map(|clip| &clip.events)
         .filter_map(|e| match *e {
@@ -269,7 +269,7 @@ fn render_the_demo() {
     let (name, song) = demo();
     let (out, _) = play_bars(&song, 16);
     let (left, right): (Vec<f32>, Vec<f32>) = out.chunks(2).map(|f| (f[0], f[1])).unzip();
-    let wav = honeydew_audio::wav_writer::float32_wav(RATE as u32, &[left, right]);
+    let wav = banaforge_audio::wav_writer::float32_wav(RATE as u32, &[left, right]);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join(Path::new(&name).with_extension("wav")), wav).unwrap();
 }

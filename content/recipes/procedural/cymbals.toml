@@ -1,7 +1,7 @@
 id = "proc-cymbals"
 kind = "samples"
 path = "Samples/Electronic Cymbals/"
-source = "honeydew"
+source = "banaforge"
 render = "cymbal"
 variant = [
   { name = "Crash Bright", tone = 7500.0, decay = 1.0 },

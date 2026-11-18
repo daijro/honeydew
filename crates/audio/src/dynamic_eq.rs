@@ -1,4 +1,4 @@
-//! Dynamic EQ (module type [`DYNAMIC_EQ`]), Honeydew's own effect: four EQ bands, each with a static gain and a gain
+//! Dynamic EQ (module type [`DYNAMIC_EQ`]), BanaForge's own effect: four EQ bands, each with a static gain and a gain
 //! offset that follows the level of a key signal in the band.
 //!
 //! **Params**, normalized, in this order (the saved one): 0 Enable; then [`BANDS`] bands of [`PER_BAND`] params each,
@@ -39,7 +39,7 @@
 
 use crate::biquad::flush;
 
-/// The module type: Honeydew's own id, which a song file keeps apart from FL Studio Mobile's modules.
+/// The module type: BanaForge's own id, which a song file keeps apart from FL Studio Mobile's modules.
 pub const DYNAMIC_EQ: u16 = 1004;
 
 pub const BANDS: usize = 4;

@@ -131,7 +131,7 @@ mod tests {
     fn installed_instrument_plugins_have_selectable_rows() {
         let menu = add_channel_menu();
         assert!(menu.iter().any(|item| matches!(item.id,
-            Some(AddChannelPick::Plugin(uid)) if uid == crate::plugins::builtin::named("Lemon Trio").uid)));
+            Some(AddChannelPick::Plugin(uid)) if uid == crate::plugins::builtin::named("Banana Trio").uid)));
         assert!(
             menu.iter()
                 .filter(|item| item.col == 2 && !item.is_header())

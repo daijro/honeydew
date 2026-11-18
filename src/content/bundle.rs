@@ -236,8 +236,8 @@ impl Bundle {
         }
     }
 
-    /// The desktop's bundle ([`Self::find_in`]) of `$HONEYDEW_CONTENT_DIR`, the installed library
-    /// ([`super::install::dir`]) and the one beside the app: `<exe dir>/content` or `<exe dir>/../share/honeydew/content`
+    /// The desktop's bundle ([`Self::find_in`]) of `$BANAFORGE_CONTENT_DIR`, the installed library
+    /// ([`super::install::dir`]) and the one beside the app: `<exe dir>/content` or `<exe dir>/../share/banaforge/content`
     /// (macOS `../Resources/content`), which then syncs into the installed one on a worker. Never in unit tests, which
     /// build their own. On the web and Android, the one [`install`]ed; on Android the installed library
     /// ([`super::install::download`], #66) when it is complete and newer than the APK's, or the APK has none (the base
@@ -270,11 +270,11 @@ impl Bundle {
             let beside = exe.as_deref().and_then(Path::parent).map(|dir| {
                 let installed = match cfg!(target_os = "macos") {
                     true => "../Resources/content",
-                    false => "../share/honeydew/content",
+                    false => "../share/banaforge/content",
                 };
                 [dir.join("content"), dir.join(installed)]
             });
-            let var = std::env::var_os("HONEYDEW_CONTENT_DIR").map(PathBuf::from);
+            let var = std::env::var_os("BANAFORGE_CONTENT_DIR").map(PathBuf::from);
             let installed = super::install::dir();
             let beside: Vec<_> = beside.into_iter().flatten().collect();
             let (bundle, sync) = Self::find_in(var.as_deref(), installed.as_deref(), &beside)?;

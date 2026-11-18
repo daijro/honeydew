@@ -1304,7 +1304,7 @@ mod tests {
 
     #[test]
     fn param_values_the_history_was_not_given_stay_through_an_amend_and_its_undo() {
-        // An audio take that ends while a knob's values wait for its gesture's end (`HoneydewApp::audio_record`).
+        // An audio take that ends while a knob's values wait for its gesture's end (`BanaForgeApp::audio_record`).
         let (start, n) = rack_song();
         let mut history = History::new(&start);
         history.edited(&with_tempo(&start, 100.0), true);

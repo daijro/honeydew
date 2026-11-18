@@ -3,10 +3,10 @@
 use std::f64::consts::TAU;
 use std::sync::Arc;
 
-use honeydew_audio::ProcessContext;
-use honeydew_audio::instrument::Instrument;
-use honeydew_audio::sample::{SampleData, SampleMeta};
-use honeydew_audio::slicer::{AutoNote, Slicer, auto_clip, auto_clip_beats, detect, first_note};
+use banaforge_audio::ProcessContext;
+use banaforge_audio::instrument::Instrument;
+use banaforge_audio::sample::{SampleData, SampleMeta};
+use banaforge_audio::slicer::{AutoNote, Slicer, auto_clip, auto_clip_beats, detect, first_note};
 
 const RATE: f32 = 44_100.0;
 const CONTEXT: ProcessContext = ProcessContext {
@@ -527,7 +527,7 @@ fn decay_above_0_99_holds_and_below_0_018_is_instant() {
 #[test]
 fn enable_off_freezes_the_voices_and_on_resumes_them() {
     // The Slicer freezes, it does not reset.
-    use honeydew_audio::instrument::InstrumentModule;
+    use banaforge_audio::instrument::InstrumentModule;
     let play = |toggle: bool| {
         let (mut slicer, _) = loaded(ramp(5000), 44_100, &[0]);
         slicer.note_on(48, 1.0, 0.5);

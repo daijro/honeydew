@@ -3,7 +3,7 @@
 
 use eframe::egui::{Color32, Id, Rect, Ui, pos2, vec2};
 
-use honeydew_audio::analysis;
+use banaforge_audio::analysis;
 
 use super::leveller::{animate, bounded, buffer, decay, live_meter};
 use super::live_analysis;
@@ -382,8 +382,8 @@ pub const REFERENCE: Reference = Reference {
 
 #[cfg(test)]
 mod tests {
+    use banaforge_audio::MeterSnapshot;
     use eframe::egui::{Shape, pos2};
-    use honeydew_audio::MeterSnapshot;
 
     use super::*;
     use crate::panels::fx::limiter::tests::{metrics, near, rects, row_at, u};
@@ -445,8 +445,8 @@ mod tests {
     #[test]
     fn each_band_graph_draws_its_own_bands_history() {
         // A slab where only band k's newest entry has an input: tab k + 1's graph draws one input bar; the others none.
-        use honeydew_audio::MeterSnapshot;
-        use honeydew_audio::analysis::HISTORY;
+        use banaforge_audio::MeterSnapshot;
+        use banaforge_audio::analysis::HISTORY;
         let len = 1 + 3 * HISTORY;
         for k in 0..3 {
             let mut slab = vec![0.0; 3 * len];

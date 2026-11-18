@@ -8,7 +8,7 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 
-use honeydew_audio::dwp::Cstm;
+use banaforge_audio::dwp::Cstm;
 
 use super::chunk::{
     ChunkWriter, ContentPath, ContentRoot, FlmError, FlmErrorKind, MAGIC_CH02, MAGIC_CL02,
@@ -61,7 +61,7 @@ pub fn write(song: &Song) -> Result<Vec<u8>, FlmError> {
             write_channel(writer, channel, rows[*index])
         })?;
     }
-    // Honeydew's sections (#80): an `HDSe` each, `u32` start and end ticks, `f32` hue and `vstr32` name, which a reader
+    // BanaForge's sections (#80): an `HDSe` each, `u32` start and end ticks, `f32` hue and `vstr32` name, which a reader
     // that does not know it skips as an unknown chunk.
     for section in &song.sections {
         writer.chunk(*b"HDSe", |writer| {
@@ -224,8 +224,8 @@ fn write_rack_chunk(
     write_raw(writer, &channel.file.rack_unknown_chunks)
 }
 
-/// A rack's modules in chain order: an `RMOd` each, then each of Honeydew's own modules (a plugin module,
-/// [`crate::song::plugin`], or one of Lemon Studio's effects) as an `HDPm`, which a reader that does not know it skips as
+/// A rack's modules in chain order: an `RMOd` each, then each of BanaForge's own modules (a plugin module,
+/// [`crate::song::plugin`], or one of Banana Studio's effects) as an `HDPm`, which a reader that does not know it skips as
 /// an unknown chunk, while an `RMOd` of a type it does not know would fail the whole song. An `HDPm` is `u32` its
 /// position in the chain, `u32` 1 (the layout), then its module's `RMOd`, which carries a plugin's `PLUG` and `PSTA`.
 fn write_modules(writer: &mut ChunkWriter, modules: &[ModuleInstance]) -> Result<(), FlmError> {
@@ -278,7 +278,7 @@ pub fn write_rack(modules: &[ModuleInstance]) -> Result<Vec<u8>, FlmError> {
     Ok(writer.into_bytes())
 }
 
-/// An `RMOd` payload: the type and instance id, then the body, then Honeydew's own sidechain
+/// An `RMOd` payload: the type and instance id, then the body, then BanaForge's own sidechain
 /// ([`ModuleInstance::sidechain`]) if it has one: an `HDSc`, `i32` the source channel's id, which FL Studio Mobile skips as
 /// an unknown chunk. A module preset (the body alone) keeps none.
 fn write_module(writer: &mut ChunkWriter, module: &ModuleInstance) -> Result<(), FlmError> {
@@ -443,7 +443,7 @@ fn write_channel(writer: &mut ChunkWriter, channel: &Channel, row: usize) -> Res
             writer.chunk(*b"SEND", |writer| write_send(writer, send))?;
         }
     }
-    // Automation lanes after the others, in file order. The master's tempo lane (Honeydew's own) is an `HDTk`, a
+    // Automation lanes after the others, in file order. The master's tempo lane (BanaForge's own) is an `HDTk`, a
     // `TRKH` by another name, which a reader that does not know it skips as an unknown chunk.
     let mut lanes: Vec<&Lane> = channel.lanes.iter().collect();
     lanes.sort_by_key(|lane| lane.target.map_or(i32::MIN, AutomationTarget::file_order));
@@ -452,7 +452,7 @@ fn write_channel(writer: &mut ChunkWriter, channel: &Channel, row: usize) -> Res
         let id = if tempo { *b"HDTk" } else { *b"TRKH" };
         writer.chunk(id, |writer| write_lane(writer, lane))?;
     }
-    // Honeydew's own MIDI input, only when set (`flm::read` reads it back; FL Studio Mobile skips it): `vstr32` the
+    // BanaForge's own MIDI input, only when set (`flm::read` reads it back; FL Studio Mobile skips it): `vstr32` the
     // device ("" for All) and `u32` the MIDI channel 1…16 (0 for All).
     let input = &channel.file.midi_input;
     if input.device.is_some() || input.channel.is_some() {
@@ -461,7 +461,7 @@ fn write_channel(writer: &mut ChunkWriter, channel: &Channel, row: usize) -> Res
             writer.u32(input.channel.map_or(0, |c| u32::from(c) + 1))
         })?;
     }
-    // Honeydew's own MIDI sends, only when there are any: `i32` the target channel id and `u32` on (1) or off (0), each.
+    // BanaForge's own MIDI sends, only when there are any: `i32` the target channel id and `u32` on (1) or off (0), each.
     let sends = &channel.file.midi_sends;
     if !sends.is_empty() {
         writer.chunk(*b"HDMs", |writer| {
@@ -472,7 +472,7 @@ fn write_channel(writer: &mut ChunkWriter, channel: &Channel, row: usize) -> Res
             Ok(())
         })?;
     }
-    // Honeydew's own Modulator targets, those of its rack's modules, only when there are any: `i32` the Modulator's
+    // BanaForge's own Modulator targets, those of its rack's modules, only when there are any: `i32` the Modulator's
     // instance id, the target's channel id, instance id and param, each.
     let modulations = (channel.file.modulations.iter())
         .filter(|m| channel.rack.get(m.modulator).is_some())
@@ -537,7 +537,7 @@ fn write_lane(writer: &mut ChunkWriter, lane: &Lane) -> Result<(), FlmError> {
             write_clip(writer, clip, lane.kind, param)
         })?;
     }
-    // A hidden track (Honeydew's own) holds an empty `HDHd`, which a reader that does not know it skips.
+    // A hidden track (BanaForge's own) holds an empty `HDHd`, which a reader that does not know it skips.
     if lane.hidden {
         writer.chunk(*b"HDHd", |_| Ok(()))?;
     }
@@ -587,7 +587,7 @@ fn write_clip(
             .ok_or_else(|| FlmError::new("EVN2", FlmErrorKind::BadValue))?;
         writer.raw(&bytes)
     })?;
-    // Honeydew's segment shapes, none for the straight line: an `HDSh`, which a reader that does not know it skips as an
+    // BanaForge's segment shapes, none for the straight line: an `HDSh`, which a reader that does not know it skips as an
     // unknown chunk (and plays the segments as lines). Records of u32 tick, u8 shape (Linear, Square, Smooth, Stairs),
     // u8 tension (%).
     if kind == LaneKind::Automation && !clip.file.shapes.is_empty() {
@@ -608,19 +608,32 @@ fn write_clip(
             writer.u16(2)?;
             writer.u16(clip.file.vocal_notes.len() as u16)?;
             for note in &clip.file.vocal_notes {
-                if note.key > 127 || note.lyric.len() > u16::MAX as usize || note.pitch.len() > 512 {
+                if note.key > 127 || note.lyric.len() > u16::MAX as usize || note.pitch.len() > 512
+                {
                     return Err(FlmError::new("HDVo", FlmErrorKind::BadValue));
                 }
                 writer.u32(note.pos)?;
                 writer.u8(note.key)?;
                 writer.vstr16(note.lyric.as_bytes())?;
                 for value in [note.dynamics, note.breathiness, note.formant] {
-                    writer.f32(if value.is_finite() { value.clamp(0.0, 1.0) } else { 0.5 })?;
+                    writer.f32(if value.is_finite() {
+                        value.clamp(0.0, 1.0)
+                    } else {
+                        0.5
+                    })?;
                 }
                 writer.u16(note.pitch.len() as u16)?;
                 for point in &note.pitch {
-                    writer.f32(if point.offset.is_finite() { point.offset.clamp(0.0, 1.0) } else { 0.0 })?;
-                    writer.f32(if point.cents.is_finite() { point.cents.clamp(-1200.0, 1200.0) } else { 0.0 })?;
+                    writer.f32(if point.offset.is_finite() {
+                        point.offset.clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    })?;
+                    writer.f32(if point.cents.is_finite() {
+                        point.cents.clamp(-1200.0, 1200.0)
+                    } else {
+                        0.0
+                    })?;
                 }
             }
             Ok(())

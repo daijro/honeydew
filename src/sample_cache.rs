@@ -9,7 +9,7 @@
 //!
 //! Memory (issues #38, #39 §8): the cache holds at most the `Sample memory limit` (SETTINGS, [`MEMORY_LIMITS`]): `Auto`
 //! is the memory available less [`MARGIN`]. An SFZ's samples and a DW program's zones that are on disk ([`Locator`]) and
-//! can stream (`honeydew_audio::stream`) are planned together ([`plan`]): every one keeps its heads in memory, and then
+//! can stream (`banaforge_audio::stream`) are planned together ([`plan`]): every one keeps its heads in memory, and then
 //! whole ones while they fit; the rest streams from disk while it plays.
 
 use std::collections::{HashMap, HashSet};
@@ -17,17 +17,17 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, OnceLock};
 
-use honeydew_audio::builtin_drums::builtin;
-use honeydew_audio::drums::{
+use banaforge_audio::builtin_drums::builtin;
+use banaforge_audio::drums::{
     PadSample, STREAM_FRAMES, Stream, Stretching, stretch, stretch_frames,
 };
-use honeydew_audio::dwp::{self, Zone};
-use honeydew_audio::sample::{DecodeError, MAX_FRAMES, SampleData, decode, decode_with_limit};
-use honeydew_audio::sample_edit::summarize;
-use honeydew_audio::sfz;
-use honeydew_audio::soundfont::SoundFont;
-use honeydew_audio::stream::{Pcm, Source, Streamed, Streamer, head_frames, head_spans};
-use honeydew_audio::three_osc::osc::{CYCLE, MIP_LEVELS, MIP_POINTS, Wave};
+use banaforge_audio::dwp::{self, Zone};
+use banaforge_audio::sample::{DecodeError, MAX_FRAMES, SampleData, decode, decode_with_limit};
+use banaforge_audio::sample_edit::summarize;
+use banaforge_audio::sfz;
+use banaforge_audio::soundfont::SoundFont;
+use banaforge_audio::stream::{Pcm, Source, Streamed, Streamer, head_frames, head_spans};
+use banaforge_audio::three_osc::osc::{CYCLE, MIP_LEVELS, MIP_POINTS, Wave};
 
 use crate::flm::chunk::{ContentPath, ContentRoot};
 use crate::project_files::content::built_in;
@@ -1606,7 +1606,7 @@ pub(crate) mod tests {
     use crate::project_files::ProjectFiles;
     use crate::project_files::mem::MemFiles;
     use crate::song::{ChannelKind, SamplerSlot, Song};
-    use honeydew_audio::builtin_drums::builtin;
+    use banaforge_audio::builtin_drums::builtin;
 
     fn user(relative: &str) -> ContentPath {
         ContentPath::Shorthand {
@@ -2006,7 +2006,7 @@ pub(crate) mod tests {
         // A FIFO or a device would block or never end. (No metadata is no reason to refuse: the web's copies, read
         // in `the_reader_reads_user_files_through_project_files`.)
         let dir = Removed(
-            std::env::temp_dir().join(format!("honeydew-e7-special-{}", std::process::id())),
+            std::env::temp_dir().join(format!("banaforge-e7-special-{}", std::process::id())),
         );
         let root = &dir.0;
         // What a run that died before its guard ran left behind.
@@ -2195,7 +2195,7 @@ pub(crate) mod tests {
         let mut cache = SampleCache::default();
         cache.load(&song, &read);
         let blob = song.channels[1].rack.modules[0].file.custom_data.clone();
-        let cstm = honeydew_audio::dwp::Cstm::read(blob.as_deref().unwrap());
+        let cstm = banaforge_audio::dwp::Cstm::read(blob.as_deref().unwrap());
         let zones = sampler_zones(&cstm, &cache);
         assert_eq!(zones.len(), 1);
         assert_eq!(zones[0].1.frames(), 3);
@@ -2282,12 +2282,12 @@ pub(crate) mod tests {
     /// A FLAC of a 440 Hz tone, 0.1 s.
     fn tone() -> Vec<u8> {
         let sine: Vec<f32> = (0..4410).map(|i| (i as f32 * 0.0627).sin() * 0.5).collect();
-        honeydew_audio::flac_writer::flac(44_100, 16, &[sine])
+        banaforge_audio::flac_writer::flac(44_100, 16, &[sine])
     }
 
     /// Whether `channel`'s key `key` sounds in the engine `song` builds from `cache`.
     fn sounds(song: &Song, cache: &SampleCache, channel: usize, key: u8) -> bool {
-        use honeydew_audio::device::AudioRenderer;
+        use banaforge_audio::device::AudioRenderer;
         let mut engine = SongAudioEngine::with_samples(song, 48_000.0, cache).unwrap();
         engine.note_on(channel, key, 1.0);
         let mut out = vec![0.0; 2 * 4800];
@@ -2483,7 +2483,7 @@ pub(crate) mod tests {
 
     /// A folder of its own under the temp dir, as the user folder, and the locator of its files.
     fn user_dir(name: &str) -> (std::path::PathBuf, Locator) {
-        let dir = std::env::temp_dir().join(format!("honeydew-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("banaforge-{name}-{}", std::process::id()));
         let root = dir.clone();
         let locate = move |p: &ContentPath| match p {
             ContentPath::Shorthand {
@@ -2497,7 +2497,7 @@ pub(crate) mod tests {
 
     /// Each key's level on `channel` past the first 0.75 s (past the heads), rendered offline: what plays it.
     fn levels(song: &Song, cache: &SampleCache, channel: usize, keys: &[u8]) -> Vec<f32> {
-        use honeydew_audio::device::AudioRenderer;
+        use banaforge_audio::device::AudioRenderer;
         let level = |key: u8| {
             let build = || SongAudioEngine::with_samples(song, 48_000.0, cache).unwrap();
             let mut engine = crate::plugins::rendering(build);
@@ -2818,7 +2818,7 @@ pub(crate) mod tests {
     #[test]
     fn the_disk_reader_reads_the_user_folder_as_the_reader_does_and_only_where_files_are_on_disk() {
         let dir = Removed(
-            std::env::temp_dir().join(format!("honeydew-e14c-reader-{}", std::process::id())),
+            std::env::temp_dir().join(format!("banaforge-e14c-reader-{}", std::process::id())),
         );
         let root = &dir.0;
         let _ = std::fs::remove_dir_all(root);
@@ -2890,7 +2890,7 @@ pub(crate) mod tests {
         let module = &mut song.channels[1].rack.modules[0];
         assert_eq!(module.type_id, 33);
         let id = module.instance_id;
-        let name = honeydew_audio::builtin_loops::LOOPS[0].name;
+        let name = banaforge_audio::builtin_loops::LOOPS[0].name;
         let path = app(&format!("Built-in/Loops/{name}.wav"));
         crate::project_files::load_pick(module, Path::new("x.wav"), &[], Some(path.clone()))
             .unwrap();
@@ -3478,7 +3478,7 @@ pub(crate) mod tests {
         // The worker reads what a song names, so the reader has the guards the app's has: a FIFO would block it for
         // good (no writer), and a file over the cap would fill memory.
         let dir = Removed(
-            std::env::temp_dir().join(format!("honeydew-e14c-guards-{}", std::process::id())),
+            std::env::temp_dir().join(format!("banaforge-e14c-guards-{}", std::process::id())),
         );
         let root = &dir.0;
         let _ = std::fs::remove_dir_all(root);
@@ -3680,7 +3680,7 @@ pub(crate) mod tests {
      {
         // The pad plays the new, partly filled buffer at once; the rest streams into that same buffer on a worker,
         // whose whole render then replaces it.
-        use honeydew_audio::drums::{PadSample, STREAM_FRAMES};
+        use banaforge_audio::drums::{PadSample, STREAM_FRAMES};
         let key = SampleKey::Builtin("Built-in/Kick".into());
         let (slot, song) = kick_x2();
         let mut cache = SampleCache::default();
@@ -3719,7 +3719,7 @@ pub(crate) mod tests {
     fn a_live_load_streams_a_missing_render_and_any_other_load_needs_it_whole() {
         // An undo to another ratio, a drumset or song load renders no whole buffer on the UI thread; an export's load
         // (and a worker's) renders one still streaming in, in its place.
-        use honeydew_audio::drums::PadSample;
+        use banaforge_audio::drums::PadSample;
         let (slot, song) = kick_x2();
         let mut cache = SampleCache::default();
         cache.load_live(&song, &song, &|_| None);

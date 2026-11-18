@@ -329,7 +329,7 @@ fn quantize_moves_starts_to_the_nearest_grid_line() {
 
 #[test]
 fn legato_extends_each_selected_note_to_the_next_selected_start() {
-    // Honeydew change (#123): the last ones (no later selected start) reach the end of their bar (512 ticks in 4/4),
+    // BanaForge change (#123): the last ones (no later selected start) reach the end of their bar (512 ticks in 4/4),
     // unless they already end past it.
     let mut events = vec![
         n(0, 16.0, 60),
@@ -1073,7 +1073,10 @@ mod component {
         }
 
         fn with_song(song: Song) -> Self {
-            let roll = PianoRoll::for_channel(&song, 1);
+            let mut roll = PianoRoll::for_channel(&song, 1);
+            // Legacy coordinate tests exercise the grid without the optional header lane.
+            roll.lyric_bar_enabled = false;
+            roll.waveform_enabled = false;
             let mut rig = Self {
                 ctx: Context::default(),
                 roll,
@@ -1826,7 +1829,7 @@ mod component {
     #[test]
     fn while_recording_the_view_follows_the_unfolded_playhead_or_turns_a_page_with_the_setting_off()
     {
-        // Honeydew's own (issue #26): a take's one-bar clip, the playhead 42 beats on from its start, past its loop.
+        // BanaForge's own (issue #26): a take's one-bar clip, the playhead 42 beats on from its start, past its loop.
         let mut rig = Rig::new(vec![]);
         (rig.opts.playing, rig.opts.recording, rig.opts.continuous) = (true, true, true);
         rig.opts.playhead = 42 * u64::from(PPQ);
@@ -2957,7 +2960,7 @@ mod component {
         assert!(items.iter().all(|i| !i.disabled));
     }
 
-    /// #102, a Honeydew addition: the note menu's `Transpose +1`, `-1`, `+12` and `-12` move the selection, an undo step
+    /// #102, a BanaForge addition: the note menu's `Transpose +1`, `-1`, `+12` and `-12` move the selection, an undo step
     /// each, and the menu stays open for the next.
     #[test]
     fn the_note_menus_transpose_steps_move_the_selection_an_undo_step_each() {
@@ -3355,6 +3358,155 @@ mod component {
         assert!(!rig.roll.graph.open);
         // The first tap's new note; the tap on the lane, which painted nothing, re-syncs.
         assert_eq!(rig.all, [QUIET, PianoRollAction::Resync]);
+    }
+
+    #[test]
+    fn vocal_lyric_done_and_next_note_commit_hello_without_losing_the_editor() {
+        let mut rig = Rig::new(vec![n(0, 128.0, 70), n(128, 128.0, 72)]);
+        rig.song.channels[1].rack.add(53);
+        rig.roll.lyric_edit = Some((0, 70, String::new()));
+        rig.roll.lyric_focus_pending = true;
+        rig.frame(vec![]);
+        rig.frame(vec![]);
+        rig.frame(vec![In::Text("hello".into())]);
+        let next = rig.text("NEXT NOTE  ›").expect("Next button is visible");
+        rig.tap(next);
+        assert_eq!(
+            rig.roll.lyric_edit.as_ref().map(|n| (n.0, n.1)),
+            Some((128, 72))
+        );
+        assert_eq!(rig.roll.selected, [false, true]);
+        let done = rig.text("DONE").expect("Done button is visible");
+        rig.tap(done);
+        assert!(rig.roll.lyric_edit.is_none());
+        assert!(rig.all.contains(&PianoRollAction::LyricCommitted));
+        assert!(
+            !rig.all
+                .iter()
+                .any(|a| matches!(a, PianoRollAction::SongEdited { .. }))
+        );
+        assert_eq!(
+            rig.song.channels[1].lanes[0].clips[0].file.vocal_notes[0].lyric,
+            "hello"
+        );
+        crate::audio_engine::SongAudioEngine::new(&rig.song, 48_000.0).unwrap();
+        let bytes = crate::flm::write(&rig.song).unwrap();
+        assert_eq!(
+            crate::flm::read(&bytes).unwrap().channels[1].lanes[0].clips[0]
+                .file
+                .vocal_notes[0]
+                .lyric,
+            "hello"
+        );
+    }
+
+    #[test]
+    fn vocal_default_lyrics_preserve_long_unicode_without_audio_edits() {
+        let mut rig = Rig::new(vec![n(0, 128.0, 70)]);
+        rig.song.channels[1].rack.add(53);
+        rig.roll.lyric_edit = Some((0, 70, String::new()));
+        rig.roll.lyric_focus_pending = true;
+        rig.frame(vec![]);
+        rig.frame(vec![]);
+        let text = "a teto 🎤🦊 é あいう <>&!?".repeat(12);
+        rig.frame(vec![In::Text(text.clone())]);
+        assert_eq!(
+            rig.song.channels[1].lanes[0].clips[0].file.vocal_notes[0].lyric,
+            text
+        );
+        assert!(rig.all.contains(&PianoRollAction::LyricEdited));
+        assert!(!rig.all.iter().any(|a| matches!(
+            a,
+            PianoRollAction::SongEdited { .. } | PianoRollAction::QuietEdit
+        )));
+        let bytes = crate::flm::write(&rig.song).unwrap();
+        assert_eq!(
+            crate::flm::read(&bytes).unwrap().channels[1].lanes[0].clips[0]
+                .file
+                .vocal_notes[0]
+                .lyric,
+            text
+        );
+    }
+
+    #[test]
+    fn vocal_inspector_hiding_the_grid_releases_audio_and_commits_pending_lyrics() {
+        let mut rig = Rig::new(vec![n(0, 128.0, 70)]);
+        rig.roll.gate = Some((70, f64::MAX));
+        rig.roll.lyric_dirty = true;
+        let actions = rig.roll.hide(&mut rig.song);
+        assert!(actions.contains(&PianoRollAction::Note {
+            key: 70,
+            velocity: None
+        }));
+        assert!(actions.contains(&PianoRollAction::LyricCommitted));
+        assert!(rig.roll.gate.is_none());
+        assert!(!rig.roll.lyric_dirty);
+        assert!(rig.roll.hide(&mut rig.song).is_empty());
+    }
+
+    #[test]
+    fn vocal_top_lyric_bar_is_separate_from_notes_and_can_be_hidden() {
+        let mut rig = Rig::new(vec![n(0, 128.0, 70)]);
+        rig.song.channels[1].rack.add(53);
+        rig.song.channels[1].lanes[0].clips[0]
+            .file
+            .vocal_notes
+            .push(crate::song::VocalNoteState {
+                pos: 0,
+                key: 70,
+                lyric: "teto".into(),
+                dynamics: 0.5,
+                breathiness: 0.0,
+                formant: 0.5,
+                pitch: Vec::new(),
+            });
+        rig.roll.lyric_bar_enabled = true;
+        rig.frame(vec![]);
+        assert!(rig.text("LYRICS").is_some());
+        let lyric = rig.text("teto").expect("text in dedicated header");
+        assert!(lyric.y < 48.0);
+        rig.roll.lyric_bar_enabled = false;
+        rig.frame(vec![]);
+        assert!(rig.text("LYRICS").is_none());
+        assert!(rig.text("teto").is_none(), "never overlay lyrics on notes");
+    }
+
+    #[test]
+    fn vocal_simple_mode_closes_advanced_lane_and_keeps_note_placement() {
+        let mut rig = Rig::new(vec![n(0, 128.0, 70)]);
+        rig.song.channels[1].rack.add(53);
+        rig.roll.simple_mode = true;
+        rig.roll.graph.open = true;
+        rig.roll.pitch_draw_enabled = true;
+        rig.frame(vec![]);
+        assert!(!rig.roll.pitch_draw_enabled);
+        assert!(rig.text("Dynamics").is_none());
+        rig.tap(at(300.0, 70));
+        assert_eq!(rig.events().len(), 2);
+    }
+
+    #[test]
+    fn vocal_pitch_draw_never_moves_or_resizes_the_note() {
+        let mut rig = Rig::new(vec![n(0, 128.0, 70)]);
+        rig.song.channels[1].kind = ChannelKind::Synth(crate::song::SynthKind::VocalSynth);
+        rig.song.channels[1].rack.add(53);
+        rig.roll.pitch_draw_enabled = true;
+        rig.frame(vec![]);
+        let before = rig.events().to_vec();
+        let start = at(10.0, 70);
+        rig.drag(start, start + vec2(45.0, -10.0));
+        assert_eq!(rig.events(), before);
+        assert!(
+            !rig.song.channels[1].lanes[0].clips[0]
+                .file
+                .vocal_notes
+                .is_empty()
+        );
+        // An unmatched gesture outside the note must not fall through to create/move/resize.
+        let outside = at(180.0, 70);
+        rig.drag(outside, outside + vec2(50.0, 0.0));
+        assert_eq!(rig.events(), before);
     }
 
     #[test]
@@ -4333,7 +4485,23 @@ mod grid {
         let past = Rect::from_min_max(pos2(304.0, 48.0), pos2(1170.0, 349.0));
         let events = [n(0, 128.0, 60)];
         let (rects, ..) = painted(1.0, &|p, _, g, cx| {
-            paint_notes(p, g, &events, &[false], &[], Some(past), RED, cx);
+            paint_notes(
+                p,
+                g,
+                &events,
+                &(0..events.len()),
+                &[false],
+                &[],
+                &std::collections::HashMap::new(),
+                &std::collections::HashMap::new(),
+                false,
+                true,
+                5,
+                false,
+                Some(past),
+                RED,
+                cx,
+            );
         });
         assert_eq!(
             rects.iter().map(|r| r.1).collect::<Vec<_>>(),
@@ -4369,7 +4537,7 @@ mod grid {
         // No instrument on the channel: no light rows.
         song.channels[1].rack.modules.clear();
         assert_eq!(light(&song), Vec::<usize>::new());
-        // A plugin instrument (Surge XT, Lemon Trio) plays every key: the scale across 0–127.
+        // A plugin instrument (Surge XT, Banana Trio) plays every key: the scale across 0–127.
         let id = song.channels[1]
             .rack
             .add(crate::song::plugin::PLUGIN_INSTRUMENT);
@@ -4387,4 +4555,80 @@ mod grid {
             [40, 57, 127]
         );
     }
+}
+
+#[test]
+fn vocal_lyric_ink_uses_the_higher_contrast_foreground() {
+    use eframe::egui::Color32;
+    assert_eq!(super::lyric_ink(Color32::WHITE), Color32::BLACK);
+    assert_eq!(super::lyric_ink(Color32::YELLOW), Color32::BLACK);
+    assert_eq!(super::lyric_ink(Color32::LIGHT_GREEN), Color32::BLACK);
+    assert_eq!(super::lyric_ink(Color32::BLACK), Color32::WHITE);
+    assert_eq!(
+        super::lyric_ink(Color32::from_rgb(0, 0, 180)),
+        Color32::WHITE
+    );
+    // sRGB-weighted brightness incorrectly chose white for this mid-green.
+    assert_eq!(
+        super::lyric_ink(Color32::from_rgb(0, 180, 0)),
+        Color32::BLACK
+    );
+}
+
+#[test]
+fn vocal_paste_distributes_selected_notes_and_preserves_untargeted_lyrics() {
+    let mut lane = Lane::new(LaneKind::Notes);
+    let clip = lane.add_clip(0, 4.0);
+    clip.events = vec![n(0, 1.0, 60), n(128, 1.0, 62), n(256, 1.0, 64)];
+    super::distribute_lyrics(clip, &[true, false, true], (0, 60), "hel-lo world");
+    assert_eq!(clip.file.vocal_notes[0].lyric, "hel");
+    assert_eq!(clip.file.vocal_notes[1].lyric, "lo world");
+    assert_eq!(clip.file.vocal_notes[1].pos, 256);
+    super::distribute_lyrics(clip, &[], (128, 62), "か な");
+    assert_eq!(
+        clip.file
+            .vocal_notes
+            .iter()
+            .find(|n| n.key == 62)
+            .unwrap()
+            .lyric,
+        "か"
+    );
+    assert_eq!(
+        clip.file
+            .vocal_notes
+            .iter()
+            .find(|n| n.key == 64)
+            .unwrap()
+            .lyric,
+        "な"
+    );
+}
+
+#[test]
+fn vocal_curve_follows_parent_move_and_transpose_without_changing_relative_points() {
+    let mut lane = Lane::new(LaneKind::Notes);
+    let clip = lane.add_clip(0, 4.0);
+    clip.events = vec![n(0, 128.0, 60), n(256, 128.0, 64)];
+    let state = super::vocal_note_mut(&mut clip.file.vocal_notes, 0, 60);
+    state.lyric = "la".into();
+    state.pitch = vec![
+        crate::song::VocalPitchPoint {
+            offset: 0.25,
+            cents: -75.0,
+        },
+        crate::song::VocalPitchPoint {
+            offset: 0.75,
+            cents: 50.0,
+        },
+    ];
+    let points = state.pitch.clone();
+    let after = vec![n(128, 256.0, 62), n(256, 128.0, 64)];
+    super::follow_vocal_anchors(clip, &[true, false], &after, &[true, false]);
+    assert_eq!(
+        (clip.file.vocal_notes[0].pos, clip.file.vocal_notes[0].key),
+        (128, 62)
+    );
+    assert_eq!(clip.file.vocal_notes[0].pitch, points);
+    assert_eq!(clip.file.vocal_notes[0].lyric, "la");
 }

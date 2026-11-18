@@ -645,7 +645,7 @@ fn a_long_press_selects_and_the_bar_counts_the_selection_and_acts_on_it() {
     assert_eq!(rig.names(None), ["C.flm", "Recently Deleted"]);
 }
 
-/// #72: `Open My Tracks` shows the user folder's `My Tracks` with the render current. Honeydew change (#123, #130):
+/// #72: `Open My Tracks` shows the user folder's `My Tracks` with the render current. BanaForge change (#123, #130):
 /// a tap on an audio render previews it without selecting it, a second tap stops it, a long press selects it.
 #[cfg(not(target_arch = "wasm32"))]
 #[test]

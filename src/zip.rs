@@ -168,6 +168,7 @@ struct Header<'a> {
     /// The local header's offset.
     at: u32,
     name: &'a [u8],
+    extra: &'a [u8],
 }
 
 impl Header<'_> {
@@ -202,6 +203,12 @@ fn header<'a>(rest: &mut &'a [u8]) -> Result<Header<'a>, ZipError> {
         attr: u32_at(h, 38)?,
         at: u32_at(h, 42)?,
         name,
+        extra: h
+            .get(
+                DIR_LEN + usize::from(name_len)
+                    ..DIR_LEN + usize::from(name_len) + usize::from(extra_len),
+            )
+            .ok_or(ZipError::Corrupt)?,
     })
 }
 
@@ -217,9 +224,55 @@ struct Record<'a> {
     span: (usize, usize),
 }
 
+/// UTAU ZIP path policy: explicit/valid UTF-8, authenticated Unicode path extra
+/// field (Info-ZIP 0x7075), then Windows-31J. Never accept replacement characters.
+fn voicebank_name(name: &[u8], flags: u16, mut extra: &[u8]) -> Result<String, ZipError> {
+    use unicode_normalization::UnicodeNormalization;
+    if flags & UTF8 != 0 {
+        return std::str::from_utf8(name)
+            .map(|text| text.nfc().collect())
+            .map_err(|_| ZipError::Corrupt);
+    }
+    while !extra.is_empty() {
+        if extra.len() < 4 {
+            return Err(ZipError::Corrupt);
+        }
+        let id = u16_at(extra, 0)?;
+        let len = usize::from(u16_at(extra, 2)?);
+        let field = extra.get(4..4 + len).ok_or(ZipError::Corrupt)?;
+        if id == 0x7075
+            && field.len() >= 5
+            && field[0] == 1
+            && u32_at(field, 1)? == crc32fast::hash(name)
+            && let Ok(text) = std::str::from_utf8(&field[5..])
+        {
+            return Ok(text.nfc().collect());
+        }
+        extra = &extra[4 + len..];
+    }
+    if let Ok(text) = std::str::from_utf8(name) {
+        return Ok(text.nfc().collect());
+    }
+    let (text, invalid) = encoding_rs::SHIFT_JIS.decode_without_bom_handling(name);
+    if invalid {
+        return Err(ZipError::Corrupt);
+    }
+    Ok(text.nfc().collect())
+}
+
+/// Bounded ZIP reader with UTAU's Windows-31J filename fallback and NFC paths.
+/// Other app ZIP readers retain their existing legacy-name policy.
+pub fn read_voicebank(bytes: &[u8], max_total: u64) -> Result<Vec<Entry>, ZipError> {
+    read_names(bytes, max_total, true)
+}
+
 /// The files of the archive `bytes`, in directory order. `max_total` caps the bytes of all files together (the
 /// caller's file-size limit); the ratio cap may lower it. A repeated name keeps the first file, folders are left out.
 pub fn read(bytes: &[u8], max_total: u64) -> Result<Vec<Entry>, ZipError> {
+    read_names(bytes, max_total, false)
+}
+
+fn read_names(bytes: &[u8], max_total: u64, voicebank: bool) -> Result<Vec<Entry>, ZipError> {
     let end = find_end(bytes).ok_or(ZipError::NotZip)?;
     let (disk, dir_disk) = (u16_at(bytes, end + 4)?, u16_at(bytes, end + 6)?);
     let (here, total) = (u16_at(bytes, end + 8)?, u16_at(bytes, end + 10)?);
@@ -251,17 +304,33 @@ pub fn read(bytes: &[u8], max_total: u64) -> Result<Vec<Entry>, ZipError> {
             disk,
             at,
             name,
+            extra,
             ..
         } = h;
         if flags & ENCRYPTED != 0 || disk != 0 || ![0, 8].contains(&method) || special {
             return Err(ZipError::Corrupt);
         }
-        let name = match std::str::from_utf8(name) {
-            Ok(s) => s.to_owned(),
-            Err(_) if flags & UTF8 != 0 => return Err(ZipError::Corrupt),
-            // ponytail: Latin-1 for names written without the UTF-8 flag (CP437 or a locale code page in the
-            // wild); ASCII is exact and nothing fails. A CP437 table if such archives show up with accents.
-            Err(_) => name.iter().map(|&b| char::from(b)).collect(),
+        let name = if voicebank {
+            // Some older tools place Unicode paths in the local extra only.
+            let local = bytes
+                .get(at as usize..)
+                .filter(|h| h.starts_with(&SIG_LOCAL))
+                .ok_or(ZipError::Corrupt)?;
+            let start = LOCAL_LEN + usize::from(u16_at(local, 26)?);
+            let local_extra = local
+                .get(start..start + usize::from(u16_at(local, 28)?))
+                .ok_or(ZipError::Corrupt)?;
+            let mut extras = extra.to_vec();
+            extras.extend_from_slice(local_extra);
+            voicebank_name(name, flags, &extras)?
+        } else {
+            match std::str::from_utf8(name) {
+                Ok(s) => s.to_owned(),
+                Err(_) if flags & UTF8 != 0 => return Err(ZipError::Corrupt),
+                // ponytail: Latin-1 for names written without the UTF-8 flag (CP437 or a locale code page in the
+                // wild); ASCII is exact and nothing fails. A CP437 table if such archives show up with accents.
+                Err(_) => name.iter().map(|&b| char::from(b)).collect(),
+            }
         };
         let path = clean(&name)?.filter(|p| names.insert(p.clone()));
 

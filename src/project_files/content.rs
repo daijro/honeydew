@@ -9,7 +9,7 @@
 //!   plain components (no root, drive, `..` or leading `.`), and for `@R@` no link that leads out of the folder. A
 //!   file that is not there is missing, as before.
 //! - **`@R@Built-in/…`** is our own generated content ([`built_in`]): the sample cache looks it up in code
-//!   (`honeydew_audio::builtin_drums`) first, and it never reads the content folder, so a `Built-in` folder dropped in
+//!   (`banaforge_audio::builtin_drums`) first, and it never reads the content folder, so a `Built-in` folder dropped in
 //!   there never shadows it.
 //! - **Untrusted.** The folder is the user's: the pickers list one folder at a time, skip links and hidden entries
 //!   and stop at [`crate::ui::main_menu::library::MAX_LISTED`] entries; every file goes through the hardened readers
@@ -319,7 +319,7 @@ pub(crate) mod tests {
     impl Temp {
         pub(crate) fn new(name: &str) -> Self {
             let dir =
-                std::env::temp_dir().join(format!("honeydew-byo-{name}-{}", std::process::id()));
+                std::env::temp_dir().join(format!("banaforge-byo-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir).unwrap();
             Self(dir)
@@ -354,11 +354,11 @@ pub(crate) mod tests {
 
     #[test]
     fn the_content_folder_is_in_the_user_folder_and_there_is_none_in_memory() {
-        let files = ProjectFiles::on_disk(Path::new("/home/u/.local/share/honeydew"));
+        let files = ProjectFiles::on_disk(Path::new("/home/u/.local/share/banaforge"));
         assert_eq!(
             files.content_dir(),
             Some(PathBuf::from(
-                "/home/u/.local/share/honeydew/Original Content"
+                "/home/u/.local/share/banaforge/Original Content"
             ))
         );
         let web = ProjectFiles::with_provider(Box::new(MemFiles::default()));
@@ -543,7 +543,7 @@ pub(crate) mod tests {
     /// A sine burst as a FLAC stream in a `.wav` name, as the content's samples are.
     pub(crate) fn flac_named_wav() -> Vec<u8> {
         let tone: Vec<f32> = (0..4410).map(|i| 0.5 * (i as f32 * 0.1).sin()).collect();
-        honeydew_audio::flac_writer::flac(44_100, 16, &[tone])
+        banaforge_audio::flac_writer::flac(44_100, 16, &[tone])
     }
 
     #[test]
@@ -551,7 +551,7 @@ pub(crate) mod tests {
         use crate::audio_engine::SongAudioEngine;
         use crate::sample_cache::{SampleCache, SampleKey, reader};
         use crate::song::{ChannelKind, Event, Song};
-        use honeydew_audio::device::AudioRenderer;
+        use banaforge_audio::device::AudioRenderer;
 
         let kick = app("Drum Samples/Kick/Gen Kick.wav");
         let mut song = Song {
@@ -612,7 +612,7 @@ pub(crate) mod tests {
         let at = |p: &str| content.join(p);
         let pcm = |n: usize| {
             let tone: Vec<f32> = (0..n).map(|i| 0.4 * (i as f32 * 0.05).sin()).collect();
-            honeydew_audio::wav_writer::float32_wav(44_100, &[tone])
+            banaforge_audio::wav_writer::float32_wav(44_100, &[tone])
         };
         put(&at("Drum Samples/Kick/Gen Kick.wav"), &flac_named_wav());
         put(&at("Drum Samples/Snare/Gen Snare.wav"), &pcm(2000));
@@ -779,7 +779,7 @@ pub(crate) mod tests {
     fn built_in_content_comes_first_and_a_built_in_folder_never_shadows_it() {
         use crate::sample_cache::{SampleCache, reader};
         use crate::song::{ChannelKind, Song};
-        use honeydew_audio::builtin_drums::builtin;
+        use banaforge_audio::builtin_drums::builtin;
 
         let tmp = Temp::new("built-in");
         let files = ProjectFiles::on_disk(&tmp.0);

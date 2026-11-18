@@ -1,5 +1,5 @@
 # ==============================================================================
-# Honeydew Android R8 / ProGuard Configuration
+# BanaForge Android R8 / ProGuard Configuration
 # ==============================================================================
 # Keep stack trace line numbers for crash diagnostics
 -keepattributes SourceFile,LineNumberTable
@@ -10,9 +10,9 @@
     native <methods>;
 }
 
-# Keep HoneydewActivity and EVERY method invoked via JNI from Rust
+# Keep BanaForgeActivity and EVERY method invoked via JNI from Rust
 # (src/android.rs & src/android_text.rs)
--keep,includedescriptorclasses class dev.daijro.honeydew.HoneydewActivity {
+-keep,includedescriptorclasses class dev.daijro.banaforge.BanaForgeActivity {
     public <init>();
     static native <methods>;
     public *** askMic();
@@ -37,10 +37,10 @@
 }
 
 # Keep AndroidManifest ContentProviders & DocumentsProviders
--keep public class dev.daijro.honeydew.HoneydewDocuments extends android.provider.DocumentsProvider {
+-keep public class dev.daijro.banaforge.BanaForgeDocuments extends android.provider.DocumentsProvider {
     public <init>();
 }
--keep public class dev.daijro.honeydew.HoneydewUpdate extends android.content.ContentProvider {
+-keep public class dev.daijro.banaforge.BanaForgeUpdate extends android.content.ContentProvider {
     public <init>();
 }
 

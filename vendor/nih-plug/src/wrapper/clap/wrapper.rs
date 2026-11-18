@@ -96,9 +96,9 @@ use crate::wrapper::util::{
     clamp_input_event_timing, clamp_output_event_timing, hash_param_id, process_wrapper, strlcpy,
 };
 
-/// Honeydew (vendored addition): a browser has no window system. Lemon Studio's CLAP host (`os-clap`) embeds editors
-/// there with an API of its own, `lemon-web`, whose window is an id; the editor gets it as an X11 window id.
-const WEB_API: &CStr = c"lemon-web";
+/// BanaForge (vendored addition): a browser has no window system. Banana Studio's CLAP host (`os-clap`) embeds editors
+/// there with an API of its own, `banana-web`, whose window is an id; the editor gets it as an X11 window id.
+const WEB_API: &CStr = c"banana-web";
 
 /// How many output parameter changes we can store in our output parameter change queue. Storing
 /// more than this many parameters at a time will cause changes to get lost.
@@ -2601,7 +2601,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         if CStr::from_ptr(api) == CLAP_WINDOW_API_WIN32 {
             return true;
         }
-        // Honeydew (vendored change): see `WEB_API`.
+        // BanaForge (vendored change): see `WEB_API`.
         #[cfg(target_arch = "wasm32")]
         if CStr::from_ptr(api) == WEB_API {
             return true;
@@ -2629,7 +2629,7 @@ impl<P: ClapPlugin> Wrapper<P> {
         {
             *api = CLAP_WINDOW_API_WIN32.as_ptr();
         }
-        // Honeydew (vendored change): see `WEB_API`.
+        // BanaForge (vendored change): see `WEB_API`.
         #[cfg(target_arch = "wasm32")]
         {
             *api = WEB_API.as_ptr();
@@ -2782,13 +2782,13 @@ impl<P: ClapPlugin> Wrapper<P> {
             let mut editor_handle = wrapper.editor_handle.lock();
             if editor_handle.is_none() {
                 let api = CStr::from_ptr(window.api);
-                // Honeydew (vendored change): see `WEB_API`.
+                // BanaForge (vendored change): see `WEB_API`.
                 let parent_handle = if api == CLAP_WINDOW_API_X11 || api == WEB_API {
                     ParentWindowHandle::X11Window(window.specific.x11 as u32)
                 } else if api == CLAP_WINDOW_API_COCOA {
                     ParentWindowHandle::AppKitNsView(window.specific.cocoa)
                 } else if api == CLAP_WINDOW_API_WIN32 {
-                    // Honeydew (vendored change): Honeydew embeds every editor built on this copy (Lemon Studio's,
+                    // BanaForge (vendored change): BanaForge embeds every editor built on this copy (Banana Studio's,
                     // `os_plugkit::embed`), whose window is an id: on Windows too it comes as an X11 window id.
                     ParentWindowHandle::X11Window(window.specific.win32 as usize as u32)
                 } else {
