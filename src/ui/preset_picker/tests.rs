@@ -422,7 +422,9 @@ fn consecutive_file_taps_replace_the_active_browser_row() {
     rig.click_text(MY_FILES);
     rig.click_text("A Room");
     let picked = |picker: &PresetPicker| {
-        picker.rows("").into_iter()
+        picker
+            .rows("")
+            .into_iter()
             .filter(|item| picker.is_picked(*item))
             .map(|item| item.name().to_owned())
             .collect::<Vec<_>>()
@@ -967,9 +969,16 @@ fn a_folder_the_user_makes_beside_a_preset_of_its_name_lists() {
     rig.pick("Create folder");
     rig.enter("A Room");
     assert!(rig.stored(REVERB).contains(&"A Room/".to_owned()));
-    let rows = rig.texts().into_iter().filter(|(t, ..)| t == "A Room");
+    // Bold folders paint two offset text strokes; count distinct row baselines,
+    // not text shapes, so a folder and its namesake preset still mean two rows.
+    let rows: std::collections::HashSet<_> = rig
+        .texts()
+        .into_iter()
+        .filter(|(t, ..)| t == "A Room")
+        .map(|(_, rect, _)| rect.center().y.to_bits())
+        .collect();
     assert_eq!(
-        rows.count(),
+        rows.len(),
         2,
         "the folder and the preset: {:?}",
         rig.texts()

@@ -1,3 +1,14 @@
+## BanaForge 0.5.8 — priority-fix test build
+
+- Playhead: Android now uses the timestamp-aligned audible transport history, not the render-ahead cursor. UI extrapolation beyond the heard position is disabled. Startup no longer substitutes a future history entry when no sub-block has been heard yet. This uses CPAL playback timestamps, not a direct platform sampleFramesPlayed API; physical-device synchronization remains to be checked.
+- Waveforms: unchanged playlist/sample-strip waveform meshes reuse a UI-thread cache (up to 32 entries / 4 MiB of geometry). Weak source references avoid retaining decoded audio after its clips are removed. Existing min/max downsampling and negative missing-file caching remain in place. No measured 60%-zoom Android performance result yet.
+- Browser: every preset/file pick explicitly requests a repaint after the active path changes. Folder labels are now bold in the shared side browser.
+- DWP: investigation confirms existing multi-zone/root/velocity metadata parsing and worker loading. No new DWP-format fix is claimed; the reported wrong-sound file still needs reproduction.
+
+Still pending from Stheven's report: larger folder text, localization extraction, full channel wheel/hex colors with readability limits, ordinary piano-roll pitch labels, and an original (non-proprietary) air-freshener easter egg. This is not a claim that the complete report is resolved.
+
+---
+
 BanaForge 0.5.4 keeps menus on top of their dialogs, makes slide notes glide on the Banana synths and audio clips follow tempo automation, lowers Android audio latency, and adds render tags, more Half Time controls and many fixes from the issue tracker.
 
 - Menus. A slider's long-press menu in a plugin window stays on top of the window, and the screen no longer gets darker each time it opens (#118).

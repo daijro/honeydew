@@ -2441,7 +2441,9 @@ pub(crate) fn wave_mesh(
         cache.retain(|entry| entry.data.strong_count() > 0 && entry.summary.strong_count() > 0);
         let at = cache.iter().position(|entry| {
             entry.data.ptr_eq(&std::sync::Arc::downgrade(&source.data))
-                && entry.summary.ptr_eq(&std::sync::Arc::downgrade(&source.summary))
+                && entry
+                    .summary
+                    .ptr_eq(&std::sync::Arc::downgrade(&source.summary))
                 && entry.geometry == geometry
                 && entry.rows == rows
         })?;
@@ -2465,8 +2467,12 @@ pub(crate) fn wave_mesh(
         WAVE_MESHES.with(|cache| {
             let mut cache = cache.borrow_mut();
             while cache.len() >= 32
-                || cache.iter().map(|entry| mesh_bytes(&entry.mesh)).sum::<usize>()
-                    + mesh_bytes(&mesh) > BUDGET
+                || cache
+                    .iter()
+                    .map(|entry| mesh_bytes(&entry.mesh))
+                    .sum::<usize>()
+                    + mesh_bytes(&mesh)
+                    > BUDGET
             {
                 cache.pop_front();
             }
@@ -2485,8 +2491,8 @@ pub(crate) fn wave_mesh(
 #[cfg(test)]
 mod waveform_mesh_cache_tests {
     use super::*;
-    use std::sync::Arc;
     use banaforge_audio::sample::SampleData;
+    use std::sync::Arc;
 
     #[test]
     fn waveform_mesh_cache_reuses_geometry_and_does_not_retain_audio() {
@@ -2497,8 +2503,21 @@ mod waveform_mesh_cache_tests {
             ..Default::default()
         }));
         let weak = Arc::downgrade(&source.data);
-        let wave = Wave { frames: 4096, per_beat: 4096.0, reversed: false };
-        let draw = |ink| wave_mesh(&source, wave, &[(10.0, 8.0)], ((0.0, 1.0 / 64.0), (0.0, 64)), 1.0, ink);
+        let wave = Wave {
+            frames: 4096,
+            per_beat: 4096.0,
+            reversed: false,
+        };
+        let draw = |ink| {
+            wave_mesh(
+                &source,
+                wave,
+                &[(10.0, 8.0)],
+                ((0.0, 1.0 / 64.0), (0.0, 64)),
+                1.0,
+                ink,
+            )
+        };
         let first = draw(Color32::RED);
         let second = draw(Color32::RED);
         assert_eq!(first.vertices, second.vertices);
@@ -2507,12 +2526,25 @@ mod waveform_mesh_cache_tests {
         draw(Color32::GREEN);
         WAVE_MESHES.with(|cache| assert_eq!(cache.borrow().len(), 2));
         for i in 0..80 {
-            wave_mesh(&source, wave, &[(10.0, 8.0)], ((i as f64, 1.0 / 64.0), (0.0, 64)), 1.0, Color32::RED);
+            wave_mesh(
+                &source,
+                wave,
+                &[(10.0, 8.0)],
+                ((i as f64, 1.0 / 64.0), (0.0, 64)),
+                1.0,
+                Color32::RED,
+            );
         }
         WAVE_MESHES.with(|cache| {
             let cache = cache.borrow();
             assert!(cache.len() <= 32);
-            assert!(cache.iter().map(|entry| mesh_bytes(&entry.mesh)).sum::<usize>() <= 4 * 1024 * 1024);
+            assert!(
+                cache
+                    .iter()
+                    .map(|entry| mesh_bytes(&entry.mesh))
+                    .sum::<usize>()
+                    <= 4 * 1024 * 1024
+            );
         });
         drop(source);
         assert!(weak.upgrade().is_none());
