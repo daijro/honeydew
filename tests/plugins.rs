@@ -5,16 +5,16 @@
 
 use std::path::{Path, PathBuf};
 
-use honeydew::plugins::{self, scan};
-use honeydew::render::{Remainder, Render, RenderRange, RenderSpec};
-use honeydew::sample_cache::SampleCache;
-use honeydew::song::plugin::{PLUGIN_EFFECT, PLUGIN_INSTRUMENT};
-use honeydew::song::{ChannelKind, Event, Song};
+use banaforge::plugins::{self, scan};
+use banaforge::render::{Remainder, Render, RenderRange, RenderSpec};
+use banaforge::sample_cache::SampleCache;
+use banaforge::song::plugin::{PLUGIN_EFFECT, PLUGIN_INSTRUMENT};
+use banaforge::song::{ChannelKind, Event, Song};
 
-/// The test plugins' folder: `HONEYDEW_TEST_PLUGINS`, else the shared scratch build. `None` (and the test skipped) when
+/// The test plugins' folder: `BANAFORGE_TEST_PLUGINS`, else the shared scratch build. `None` (and the test skipped) when
 /// they were not built.
 fn test_plugins() -> Option<PathBuf> {
-    let dir = std::env::var_os("HONEYDEW_TEST_PLUGINS")
+    let dir = std::env::var_os("BANAFORGE_TEST_PLUGINS")
         .map(PathBuf::from)
         .unwrap_or_else(|| "/mnt/storage/shared/playground/scratch/vst-test-plugins".into());
     let built = dir.join("clap/Gain.clap").is_file() && dir.join("vst3/Gain.vst3").is_dir();
@@ -26,7 +26,7 @@ fn test_plugins() -> Option<PathBuf> {
 
 /// `dir` scanned as the app scans: each file in a scanner process (this package's app).
 fn scanned(dir: &Path) -> scan::Cache {
-    let scanner = Path::new(env!("CARGO_BIN_EXE_honeydew-native"));
+    let scanner = Path::new(env!("CARGO_BIN_EXE_banaforge-native"));
     scan::sweep(
         &scan::discover(&[dir.to_path_buf()]),
         &scan::Cache::default(),
@@ -167,7 +167,7 @@ fn a_saved_song_keeps_its_plugin_and_restores_its_state() {
     song.channels[1].rack.modules[0].params[gain] = 0.25;
     plugins::sync(&song);
     plugins::store_states(&mut song);
-    let bytes = honeydew::flm::write(&song).unwrap();
+    let bytes = banaforge::flm::write(&song).unwrap();
     // The plugin module is no `RMOd` of the rack, which a reader that does not know its type would fail on, but one
     // inside an `HDPm`, which such a reader skips.
     let rmods: Vec<usize> = bytes
@@ -183,7 +183,7 @@ fn a_saved_song_keeps_its_plugin_and_restores_its_state() {
         .collect();
     assert_eq!(plugin_rmods.len(), 1);
     assert_eq!(&bytes[plugin_rmods[0] - 16..plugin_rmods[0] - 12], b"HDPm");
-    let mut back = honeydew::flm::read(&bytes).unwrap();
+    let mut back = banaforge::flm::read(&bytes).unwrap();
     assert_eq!(back, song);
     let state = |song: &Song| {
         song.channels[1].rack.modules[0]
@@ -209,9 +209,9 @@ fn a_saved_song_keeps_its_plugin_and_restores_its_state() {
     let id = ch.id;
     let synth = plugins::add(&mut ch.rack, id, &uid("Poly Mod Synth", "VST3"), 0).unwrap();
     plugins::store_states(&mut back);
-    let flp = honeydew::flp::export::export(&back, &SampleCache::default(), &[]).flp;
-    let factory = honeydew::content::Factory::new(Vec::new());
-    let imported = honeydew::flp::import::import(&flp, &factory).unwrap().song;
+    let flp = banaforge::flp::export::export(&back, &SampleCache::default(), &[]).flp;
+    let factory = banaforge::content::Factory::new(Vec::new());
+    let imported = banaforge::flp::import::import(&flp, &factory).unwrap().song;
     let modules = || imported.channels.iter().flat_map(|c| &c.rack.modules);
     let came = (modules().find(|m| m.type_id == PLUGIN_INSTRUMENT)).expect("the synth came back");
     let (came, sent) = (

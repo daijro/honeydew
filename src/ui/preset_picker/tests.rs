@@ -417,6 +417,26 @@ fn my_files_then_a_folder_then_a_preset_picks_its_path() {
 }
 
 #[test]
+fn consecutive_file_taps_replace_the_active_browser_row() {
+    let mut rig = Rig::new(reverb());
+    rig.click_text(MY_FILES);
+    rig.click_text("A Room");
+    let picked = |picker: &PresetPicker| {
+        picker
+            .rows("")
+            .into_iter()
+            .filter(|item| picker.is_picked(*item))
+            .map(|item| item.name().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(picked(&rig.picker), ["A Room"]);
+    rig.click_text("b Hall");
+    assert_eq!(picked(&rig.picker), ["b Hall"]);
+    rig.click_text("A Room");
+    assert_eq!(picked(&rig.picker), ["A Room"]);
+}
+
+#[test]
 fn default_picks_the_init_preset() {
     let mut rig = Rig::new(reverb());
     assert_eq!(rig.click_text(DEFAULT), Some(PickerAction::Default));
@@ -743,7 +763,7 @@ fn a_dw_programs_sample_folder_is_left_out() {
     assert_eq!(names(&picker, ""), ["Other", "Gen Guitar"]);
 }
 
-/// A Honeydew addition (#109, #123): a folder and any other file each carry their mark at the row's end; the picker's
+/// A BanaForge addition (#109, #123): a folder and any other file each carry their mark at the row's end; the picker's
 /// own preset files, every plain row of a preset list, carry none. An audio file's is its extension too, even in the
 /// sample picker, whose own files they are.
 #[test]
@@ -949,9 +969,16 @@ fn a_folder_the_user_makes_beside_a_preset_of_its_name_lists() {
     rig.pick("Create folder");
     rig.enter("A Room");
     assert!(rig.stored(REVERB).contains(&"A Room/".to_owned()));
-    let rows = rig.texts().into_iter().filter(|(t, ..)| t == "A Room");
+    // Bold folders paint two offset text strokes; count distinct row baselines,
+    // not text shapes, so a folder and its namesake preset still mean two rows.
+    let rows: std::collections::HashSet<_> = rig
+        .texts()
+        .into_iter()
+        .filter(|(t, ..)| t == "A Room")
+        .map(|(_, rect, _)| rect.center().y.to_bits())
+        .collect();
     assert_eq!(
-        rows.count(),
+        rows.len(),
         2,
         "the folder and the preset: {:?}",
         rig.texts()
@@ -1974,7 +2001,7 @@ fn a_pick_loading_with_no_audition_strip_pulses_too_and_a_tap_picks_it_again() {
 }
 
 fn wave(frames: usize) -> Waveform {
-    Waveform::new(std::sync::Arc::new(honeydew_audio::sample::SampleData {
+    Waveform::new(std::sync::Arc::new(banaforge_audio::sample::SampleData {
         sample_rate: 1000,
         left: vec![0.5; frames].into(),
         right: None,

@@ -32,7 +32,7 @@ const MAX_PARTITION: u32 = 8;
 /// search over 5…15 bits gained under 0.1% for over a third of the encoding time.
 const PRECISION: u32 = 15;
 /// The VORBIS_COMMENT block's vendor string.
-const VENDOR: &str = "Honeydew";
+const VENDOR: &str = "BanaForge";
 
 /// MSB-first bit sink.
 #[derive(Default)]

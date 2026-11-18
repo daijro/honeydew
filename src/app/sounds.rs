@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use eframe::egui;
 
-use super::HoneydewApp;
+use super::BanaForgeApp;
 use crate::content::install::{self, Job};
 use crate::metrics::Metrics;
 use crate::ui::UiCtx;
@@ -24,7 +24,7 @@ pub(super) const INSTALLING: &str = "Installing sound library...";
 /// The message's tag once it is done.
 const DONE_TAG: &str = "sounds_installed";
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// At start, where the sound library is to be fetched: its download goes on without asking from one installed
     /// before or a download begun; with none, the question, once per shipped sound release (`soundsNoticeSeen`), as
     /// some do without the sounds.

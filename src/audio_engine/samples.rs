@@ -9,8 +9,8 @@ use crate::panels::inst::three_osc;
 use crate::project_files::BUILT_IN;
 use crate::sample_cache::{Refs, SampleCache, SampleKey};
 use crate::song::{Channel, LaneKind, ModuleInstance, Song};
-use honeydew_audio::dwp::{Cstm, Zone};
-use honeydew_audio::stream::Pcm;
+use banaforge_audio::dwp::{Cstm, Zone};
+use banaforge_audio::stream::Pcm;
 
 /// Hands every sample `song` plays to `refs`, channel by channel.
 pub(crate) fn walk(song: &Song, refs: &mut Refs) {
@@ -61,7 +61,7 @@ pub(crate) fn dw_module(module: &ModuleInstance, refs: &mut Refs) {
     if let Some(path) = program_path(&cstm) {
         refs.add_program(&path);
     }
-    if silent(&cstm, refs.cache()) {
+    if !cfg!(target_os = "android") && silent(&cstm, refs.cache()) {
         refs.add_program(&stand_in());
     }
 }
@@ -104,7 +104,9 @@ pub(crate) fn may_stand_in(song: &Song) -> bool {
 /// missing ([`silent`]) plays [`stand_in`]'s.
 pub(crate) fn sampler_zones(cstm: &Cstm, samples: &SampleCache) -> Vec<(Zone, Pcm)> {
     match own_zones(cstm, samples) {
-        zones if zones.is_empty() && missing(cstm, samples) => program_zones(&stand_in(), samples),
+        zones if !cfg!(target_os = "android") && zones.is_empty() && missing(cstm, samples) => {
+            program_zones(&stand_in(), samples)
+        }
         zones => zones,
     }
 }

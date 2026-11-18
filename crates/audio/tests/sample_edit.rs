@@ -1,4 +1,4 @@
-use honeydew_audio::sample_edit::{
+use banaforge_audio::sample_edit::{
     SUMMARY_FRAMES, clear, copy_to, delete_space, duplicate, fade_in, fade_out, frame_at,
     insert_silence, move_to, normalize, peaks, speed_ratio, speed_semitones, summarize, trim,
 };

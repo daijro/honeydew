@@ -1,8 +1,8 @@
 //! The Save dialog's exports and PROJECT `Quick Render` in the app: the dialog kept from frame to frame, the
 //! render in slices behind the busy screen, the overwrite question, the flashes and the errors.
 
+use banaforge_audio::sample::decode;
 use eframe::egui::Shape;
-use honeydew_audio::sample::decode;
 
 use super::*;
 use crate::project_files::export::{NO_SOUND, RENDER_FAILED};
@@ -432,14 +432,14 @@ fn a_render_is_tagged_with_the_songs_metadata_unless_write_tags_is_off() {
     meta.author = "Ivan".into();
     meta.genre = "House".into();
     let tagged = render(&mut rig, "Beat");
-    let encoder = format!("Honeydew {}", env!("CARGO_PKG_VERSION"));
+    let encoder = format!("BanaForge {}", env!("CARGO_PKG_VERSION"));
     let tags = [
         ("TITLE", "Beat"),
         ("ARTIST", "Ivan"),
         ("GENRE", "House"),
         ("ENCODER", &encoder),
     ];
-    let info = honeydew_audio::wav_writer::info_chunk(&tags);
+    let info = banaforge_audio::wav_writer::info_chunk(&tags);
     // After RIFF, WAVE and the 26-byte `fmt ` chunk.
     assert_eq!(tagged[38..38 + info.len()], info[..]);
     rig.app.settings.write_tags = false;

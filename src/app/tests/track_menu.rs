@@ -2235,7 +2235,7 @@ fn save_as_midi_proposes_the_channel_name_made_a_file_name() {
 fn hide_track_takes_its_row_and_ghost_notes_but_not_its_sound() {
     use crate::audio_engine::SongAudioEngine;
     use crate::theme::channel_color;
-    use honeydew_audio::device::AudioRenderer;
+    use banaforge_audio::device::AudioRenderer;
     const HIDE_TRACK: (usize, usize) = (0, 5);
     let mut rig = Rig::with_drums_and_synth();
     rig.app

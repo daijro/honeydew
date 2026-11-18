@@ -1,4 +1,4 @@
-use honeydew_audio::gm_waveshapes::{
+use banaforge_audio::gm_waveshapes::{
     PARTIALS, SAW, SINE, SLOTS, SQUARE, Spectrum, TABLE_LEN, TABLES, TRIANGLE, Wavetable, read,
     spectrum, table_index_for,
 };

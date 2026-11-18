@@ -19,12 +19,12 @@ mod loops;
 use std::collections::BTreeMap;
 use std::f32::consts::PI;
 
-use honeydew::content::bundle::Kind;
-use honeydew::flm::chunk::{ContentPath, ContentRoot};
-use honeydew::flm::{read_drumset, write_drumset};
-use honeydew::song::{DrumKit, SamplerSlot};
-use honeydew_audio::flac_writer::FlacEncoder;
-use honeydew_audio::sample::SampleMeta;
+use banaforge::content::bundle::Kind;
+use banaforge::flm::chunk::{ContentPath, ContentRoot};
+use banaforge::flm::{read_drumset, write_drumset};
+use banaforge::song::{DrumKit, SamplerSlot};
+use banaforge_audio::flac_writer::FlacEncoder;
+use banaforge_audio::sample::SampleMeta;
 
 use crate::dsp;
 use crate::dsp::resample::resample;
@@ -292,7 +292,7 @@ fn env(t: f32, hold: f32, tau: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use honeydew_audio::sample::decode;
+    use banaforge_audio::sample::decode;
 
     fn recipes() -> Vec<Recipe> {
         let content = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content");

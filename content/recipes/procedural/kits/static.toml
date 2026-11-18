@@ -2,7 +2,7 @@
 id = "kit-static"
 kind = "kit"
 path = "Drumsets/Static Kit.tmpl"
-source = "honeydew"
+source = "banaforge"
 
 [[pad]]
 name = "Kick"

@@ -2,7 +2,7 @@
 //! (accent) or 2000 Hz, amplitude ±0.631·level·env, env 1 at the click's start and 0.001 less each sample, and
 //! level = 0.1 + 0.9·v². Rendered offline.
 
-use honeydew_audio::metronome::{Metronome, level};
+use banaforge_audio::metronome::{Metronome, level};
 
 /// `frames` frames of `metronome` added onto silence, left and right.
 fn render(metronome: &mut Metronome, frames: usize) -> (Vec<f32>, Vec<f32>) {

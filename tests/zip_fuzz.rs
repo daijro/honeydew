@@ -11,7 +11,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicIsize, Ordering};
 
-use honeydew::zip::{self, Entry, MAX_ENTRIES, MAX_RATIO, RATIO_ALLOWANCE, ZipError};
+use banaforge::zip::{self, Entry, MAX_ENTRIES, MAX_RATIO, RATIO_ALLOWANCE, ZipError};
 use miniz_oxide::deflate::compress_to_vec;
 
 /// Counts the bytes allocated now and the peak since [`read_peak`] reset it.

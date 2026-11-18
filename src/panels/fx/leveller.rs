@@ -1,7 +1,7 @@
 //! Leveller (ID 20), UIHeight 5 U.
 
+use banaforge_audio::MeterSnapshot;
 use eframe::egui::{Color32, Id, Painter, Rect, Ui, pos2};
-use honeydew_audio::MeterSnapshot;
 
 use crate::metrics::Metrics;
 use crate::panels::build::*;

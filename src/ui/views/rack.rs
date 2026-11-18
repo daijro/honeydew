@@ -39,7 +39,7 @@ pub struct State {
     /// The rack was re-pointed from a gone channel to the one now at its index, whose widgets take the same ids: a
     /// drag of the old rack's control ends before it moves the new one's ([`show`]).
     pub(crate) stop_drag: bool,
-    /// Issue #68: the Lemon card (channel, instance id) whose editor shows full screen ([`super::lemon_editor`]): the
+    /// Issue #68: the Banana card (channel, instance id) whose editor shows full screen ([`super::banana_editor`]): the
     /// overlays set it each frame.
     pub(crate) full: Option<(usize, i32)>,
     /// Issue #98: a card's ◀ or ▶, as (channel id, instance id, −1 or 1), for the overlays to load next frame
@@ -84,7 +84,7 @@ impl State {
 
     /// The module meters the panels got in the last frame: `None` without a running stream.
     #[cfg(test)]
-    pub(crate) fn meters(&self) -> Option<&[honeydew_audio::device::ModuleMeter]> {
+    pub(crate) fn meters(&self) -> Option<&[banaforge_audio::device::ModuleMeter]> {
         self.panel.meters.as_deref()
     }
 
@@ -174,7 +174,7 @@ pub fn show(
     state.panel.tab_y = crate::ui::main_screen::rack_tab_pill(&app.regions, place, app.cx.m)
         .center()
         .y;
-    state.panel.lemon_full = state.full;
+    state.panel.banana_full = state.full;
     // The input row's (an Audio Record channel's): the arm button with multitrack on, the meter while the input is open.
     state.panel.multitrack = app.settings.multitrack_recording;
     let records = ch.kind == crate::song::ChannelKind::AudioRecord;
@@ -293,8 +293,8 @@ pub fn show(
     if let Some(at) = actions.open_browser {
         return Some(Nav::Open(Overlay::ModulesBrowser { channel, at }));
     }
-    if let Some(module) = actions.lemon_full {
-        return Some(Nav::Open(Overlay::LemonEditor { channel, module }));
+    if let Some(module) = actions.banana_full {
+        return Some(Nav::Open(Overlay::BananaEditor { channel, module }));
     }
     actions.close.then_some(Nav::Close)
 }

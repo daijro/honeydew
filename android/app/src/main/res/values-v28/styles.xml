@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Honeydew" parent="Theme.Honeydew.Base">
+    <style name="Theme.BanaForge" parent="Theme.BanaForge.Base">
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 </resources>

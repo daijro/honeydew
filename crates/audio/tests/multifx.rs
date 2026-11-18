@@ -1,5 +1,5 @@
-use honeydew_audio::multifx::MultiFxState;
-use honeydew_audio::{AudioEffect, ProcessContext};
+use banaforge_audio::multifx::MultiFxState;
+use banaforge_audio::{AudioEffect, ProcessContext};
 use std::f32::consts::TAU;
 
 fn params(kind: usize) -> [f32; 7] {

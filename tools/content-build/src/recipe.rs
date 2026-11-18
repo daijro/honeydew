@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use honeydew::content::bundle::Kind;
+use banaforge::content::bundle::Kind;
 use serde::Deserialize;
 
 /// One row of `sources.json`: a folder below `--sources`. Rows also carry the manifest's provenance (archives with

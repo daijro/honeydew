@@ -32,7 +32,7 @@ pub struct KeyInput {
     /// are live input: held, T = 1, in every row that shows them.
     pub notes: u128,
     /// The notes sounding at the channel's input from note events (bit k = MIDI k): song playback, previews (the
-    /// engine's [`honeydew_audio::device::AudioRenderer::sounding`]). T = 0.7; held, T = 1 wins.
+    /// engine's [`banaforge_audio::device::AudioRenderer::sounding`]). T = 0.7; held, T = 1 wins.
     pub sounding: u128,
     /// The channel's key range (low, high): with the scale test, what "in range" means. `None`: every key.
     pub range: Option<(u8, u8)>,

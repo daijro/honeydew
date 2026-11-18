@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use honeydew_audio::device::AudioRenderer;
+use banaforge_audio::device::AudioRenderer;
 
 use super::*;
 use crate::recording::calibrate;
@@ -89,7 +89,8 @@ impl InputRig {
     fn new(name: &str) -> Self {
         let mut rig = Rig::new();
         rig.click(OUTSIDE);
-        let user = std::env::temp_dir().join(format!("honeydew-h14-{name}-{}", std::process::id()));
+        let user =
+            std::env::temp_dir().join(format!("banaforge-h14-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&user);
         rig.app.files = ProjectFiles::on_disk(&user);
         let opens = Rc::<RefCell<Vec<_>>>::default();
@@ -328,7 +329,7 @@ fn an_input_pick_is_kept_for_the_channel_opens_its_device_and_feeds_the_monitor_
     assert_eq!(bytes.len(), 46 + 2 * 2 * FRAMES_PER_BEAT);
 
     // Another app on the same storage has it.
-    let app = HoneydewApp::with_storage(Some(Box::new(spy.clone())));
+    let app = BanaForgeApp::with_storage(Some(Box::new(spy.clone())));
     assert_eq!(app.routing, a.rig.app.routing);
 }
 
@@ -540,7 +541,7 @@ fn a_calibration_that_hears_no_echo_asks_to_test_again_and_its_progress_message_
     assert!(a.rig.app.calibration.is_none());
 }
 
-/// Honeydew change (#129): `Calibrate` on a phone asks for the microphone as REC does. The calibration waits for the
+/// BanaForge change (#129): `Calibrate` on a phone asks for the microphone as REC does. The calibration waits for the
 /// answer, then measures; a denial says where to allow it and ends the calibration.
 #[test]
 fn a_calibration_waits_for_the_microphone_and_a_denial_says_where_to_allow_it() {

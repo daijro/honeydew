@@ -17,6 +17,7 @@ pub(crate) mod samples;
 pub(crate) mod settings;
 pub(crate) mod slicer;
 mod slides;
+pub(crate) mod vocal;
 
 pub use input::{LiveInput, MONITOR_MAX_LAG_FRAMES, RecordTap, TakeStart};
 pub(crate) use midi_sends::{Received, midi_reach, midi_received};
@@ -28,17 +29,17 @@ use crate::audio_bridge::{SongAudioBridge, SongAudioError};
 use crate::sample_cache::SampleCache;
 use crate::settings::Settings;
 use crate::song::{PPQ, Song, TEMPO_PARAM, automated_tempo, tempo_value};
-use honeydew_audio::analysis;
-use honeydew_audio::automation::AutomationTarget;
-use honeydew_audio::device::{AudioRenderer, ModuleKey, PingReport};
-use honeydew_audio::instrument::{Instrument, InstrumentModule};
-use honeydew_audio::metronome::{self, Metronome};
-use honeydew_audio::mixer::{MixError, Mixer, OwnedStereoBuffer};
-use honeydew_audio::note_effects::{LiveNoteEvent, NoteEffectError, NoteEffectTrace};
-use honeydew_audio::playback::AudioPlayback;
-use honeydew_audio::playback::{PlaybackChannel, PlaybackError};
-use honeydew_audio::sample::SampleData;
-use honeydew_audio::{MeterSnapshot, ProcessContext};
+use banaforge_audio::analysis;
+use banaforge_audio::automation::AutomationTarget;
+use banaforge_audio::device::{AudioRenderer, ModuleKey, PingReport};
+use banaforge_audio::instrument::{Instrument, InstrumentModule};
+use banaforge_audio::metronome::{self, Metronome};
+use banaforge_audio::mixer::{MixError, Mixer, OwnedStereoBuffer};
+use banaforge_audio::note_effects::{LiveNoteEvent, NoteEffectError, NoteEffectTrace};
+use banaforge_audio::playback::AudioPlayback;
+use banaforge_audio::playback::{PlaybackChannel, PlaybackError};
+use banaforge_audio::sample::SampleData;
+use banaforge_audio::{MeterSnapshot, ProcessContext};
 use input::Monitor;
 use prepare::{Action, KIT, ParamTimeline, ScheduledAction, beat_frame};
 #[cfg(parallel_audio)]
@@ -135,6 +136,7 @@ pub struct SongAudioEngine {
     /// The modules' saved settings, which an engine built after an edit gives the modules it takes over too.
     settings: Vec<(usize, i32, u32, f32)>,
     param_timelines: Vec<ParamTimeline>,
+    vocal_timelines: Vec<vocal::Timeline>,
     action_index: usize,
     channel_controls: Vec<[f32; 4]>,
     /// Per channel, instrument (as in `instruments`) and key, the note-offs held by the sustain pedal.
@@ -422,6 +424,7 @@ impl SongAudioEngine {
             })
             .collect();
         let param_timelines = prepare::timelines(&actions);
+        let vocal_timelines = vocal::timelines(song, &actions);
         let count = song.channels.len();
         let sustained = instruments
             .iter()
@@ -460,6 +463,7 @@ impl SongAudioEngine {
             initial,
             settings,
             param_timelines,
+            vocal_timelines,
             action_index: 0,
             channel_controls: song
                 .channels
@@ -570,7 +574,7 @@ impl SongAudioEngine {
     }
 
     /// The pad sampler of `channel`.
-    fn kit(&mut self, channel: usize) -> Option<&mut honeydew_audio::drums::PadSampler> {
+    fn kit(&mut self, channel: usize) -> Option<&mut banaforge_audio::drums::PadSampler> {
         let kit = self.kits.get_mut(channel)?.as_mut()?;
         Some(&mut kit.sampler)
     }
@@ -768,6 +772,18 @@ impl SongAudioEngine {
                 Action::ClipParam { pad, index, value } => {
                     if let Some(clips) = self.clips[event.channel].as_mut() {
                         clips.sampler.set_param(pad, index, value);
+                    }
+                }
+                Action::Vocal {
+                    instance_id,
+                    key,
+                    expression,
+                } => {
+                    if let Some(module) = self
+                        .instrument(event.channel, instance_id)
+                        .filter(|module| module.hears(key))
+                    {
+                        module.instrument.set_vocal(key, expression);
                     }
                 }
                 Action::StepCover { .. } => {}
@@ -1299,7 +1315,7 @@ impl AudioRenderer for SongAudioEngine {
     }
 
     /// The Modulators' targets ([`modulation`]).
-    fn modulated(&self) -> &[honeydew_audio::device::Modulated] {
+    fn modulated(&self) -> &[banaforge_audio::device::Modulated] {
         &self.modulation.shown
     }
 }
@@ -1402,7 +1418,7 @@ impl SongAudioEngine {
     }
 
     /// Output frames until the transport, playing on from where it is, reaches tick `tick`: at the live tempo, then at
-    /// each tempo the master's tempo automation sets on the way (Honeydew change, #126: an export's range plays as long
+    /// each tempo the master's tempo automation sets on the way (BanaForge change, #126: an export's range plays as long
     /// as playback does). Infinite for a tick past any frame.
     // ponytail: a Modulator on the tempo is not counted; walk its curve too if one ever drives it.
     pub fn frames_to_tick(&self, tick: u64) -> f64 {
@@ -1639,7 +1655,23 @@ impl SongAudioEngine {
             self.release_uncovered(true);
         }
         self.restore_params(frame, true);
+        self.restore_vocals(frame);
         self.relaunch_clips();
+    }
+
+    fn restore_vocals(&mut self, frame: u64) {
+        for index in 0..self.vocal_timelines.len() {
+            let timeline = &self.vocal_timelines[index];
+            let count = timeline.changes.partition_point(|(at, _)| *at <= frame);
+            let expression = count
+                .checked_sub(1)
+                .map_or_else(Default::default, |i| timeline.changes[i].1);
+            let (channel, instance_id, key) =
+                (timeline.channel, timeline.instance_id, timeline.key);
+            if let Some(module) = self.instrument(channel, instance_id) {
+                module.instrument.set_vocal(key, expression);
+            }
+        }
     }
 
     /// Step 1 of the re-sync for what the note-offs of step 3 read: every instrument's params (a MiniSynth latches its
@@ -2452,6 +2484,23 @@ mod tests {
         }
     }
 
+    #[test]
+    fn vocal_rack_reverb_live_mix_reaches_the_effect_processor() {
+        let mut song = Song::default();
+        song.add_channel(ChannelKind::Synth(SynthKind::VocalSynth));
+        for type_id in [12, 32] {
+            let id = song.channels[1].rack.add(type_id);
+            let mut engine = SongAudioEngine::new(&song, 48_000.0).unwrap();
+            for value in [0.0, 0.2, 1.0] {
+                engine.set_param(1, id, 3, value);
+                assert_eq!(
+                    engine.audio.effect(1, id).unwrap().parameter(3),
+                    Some(value)
+                );
+            }
+        }
+    }
+
     /// An edit's engine takes the new song's initial params (a CC lane brings its target's rest at 0, and takes it away
     /// again). A value sent live stays the engine's only while the song holds it too (the app writes both); a song with
     /// another value (an undo) is heard.
@@ -2872,7 +2921,7 @@ mod tests {
     /// Play start stops the pickers' sample preview, which otherwise plays on past the master.
     #[test]
     fn play_stops_the_sample_preview() {
-        use honeydew_audio::sample::SampleData;
+        use banaforge_audio::sample::SampleData;
         let data = Arc::new(SampleData {
             sample_rate: 48_000,
             left: vec![0.5; 48_000].into(),

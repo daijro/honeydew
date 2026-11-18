@@ -3,8 +3,8 @@
 //! Every tempo change here is one undo step (a step button, a `TAP` group, a turn of the dial), and closing the dialog
 //! adds none. The undo history is never cleared, tempo-synced audio clips or not.
 
+use banaforge_audio::device::AudioCommand;
 use eframe::egui;
-use honeydew_audio::device::AudioCommand;
 
 use super::{AppCtx, Nav};
 use crate::ui::tempo::{TempoAction, TempoEditor};

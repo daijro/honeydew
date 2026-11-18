@@ -4,7 +4,7 @@ use std::f32::consts::{FRAC_PI_2, PI};
 
 use eframe::egui::{Color32, Id, Pos2, Rect, Shape, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 
-use honeydew_audio::analysis;
+use banaforge_audio::analysis;
 
 use super::leveller::animate;
 use super::live_analysis;
@@ -1122,7 +1122,7 @@ mod tests {
     #[test]
     fn a_tone_in_tune_shows_its_note_hz_and_cents_and_fills_the_triangle() {
         use crate::panels::fx::leveller::feed_pass;
-        use honeydew_audio::MeterSnapshot;
+        use banaforge_audio::MeterSnapshot;
         let (theme, m) = (
             theme_by_id(0),
             Metrics::from_pixels_per_point(2.0, DEFAULT_UI_SCALE),
@@ -1222,7 +1222,7 @@ mod tests {
     #[test]
     fn middle_c_reads_c5_or_c4_with_set_middle_c_to_c4() {
         use crate::panels::fx::leveller::feed_pass;
-        use honeydew_audio::MeterSnapshot;
+        use banaforge_audio::MeterSnapshot;
         let (theme, m) = (
             theme_by_id(0),
             Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE),

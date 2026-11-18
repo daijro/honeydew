@@ -1,0 +1,54 @@
+name: Vocal Synth validation
+on:
+  workflow_dispatch:
+  push:
+    branches: ["arena/**"]
+    paths:
+      - 'src/**'
+      - 'crates/audio/**'
+      - '.github/workflows/vocal-validation.yml'
+jobs:
+  vocal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: Export formatting patch
+        run: |
+          cargo fmt
+          git diff > /tmp/vocal-format.patch
+          python3 - <<'PYFORMAT'
+          import pathlib
+          text = pathlib.Path("/tmp/vocal-format.patch").read_text()
+          for i in range(0, len(text), 1800):
+              chunk = text[i:i+1800].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::warning title=Formatting patch::{chunk}")
+          PYFORMAT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vocal-format
+          path: /tmp/vocal-format.patch
+      - name: Vocal regression tests
+        shell: bash
+        run: |
+          set +e
+          (cargo test -p banaforge-audio vocal_synth && cargo test --lib vocal_ && cargo test --lib my_folders_lists_all_user_file_types_in_songs_and_samples) 2>&1 | tee /tmp/vocal-tests.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            python3 - <<'PYTEST'
+          import pathlib
+          lines = pathlib.Path("/tmp/vocal-tests.log").read_text(errors="replace").splitlines()
+          tail = "\n".join(lines[-100:])
+          for i in range(0, len(tail), 1500):
+              message = tail[i:i+1500].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Vocal regression::{message}")
+          PYTEST
+          fi
+          exit "$rc"

@@ -4,10 +4,10 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use honeydew_audio::device::{
+use banaforge_audio::device::{
     AudioCommand, AudioOutput, AudioRenderer, BufferMode, OutputSnapshot,
 };
-use honeydew_audio::sample::SampleData;
+use banaforge_audio::sample::SampleData;
 
 use crate::audio_engine::{LiveInput, SongAudioEngine, settings, strip_param};
 use crate::sample_cache::{Reader, SampleCache};
@@ -769,12 +769,15 @@ impl AudioLink {
     /// from the last snapshot's tick heard now (#92: what plays is drawn as it is heard, a Bluetooth headset's latency
     /// later), while the transport is `playing` at `bpm` on a running output and not counting in, never past `end`, the
     /// tick the engine wraps at (`None`: it plays on). Stopped, it is the transport's tick.
-    pub fn advance_playhead(&mut self, now: f64, playing: bool, bpm: f64, end: Option<u64>) {
+    pub fn advance_playhead(&mut self, now: f64, playing: bool, _bpm: f64, end: Option<u64>) {
         let runs = playing && self.running() && !self.counting_in;
-        let rate = runs.then_some(bpm / 60.0 * f64::from(crate::song::PPQ));
         let end = end.map_or(f64::INFINITY, |e| e as f64);
+        // Rendered buffers may be hundreds of milliseconds ahead of the speakers.
+        // All platforms, including Android, must follow the output timestamp history.
         let from = if runs { self.heard } else { self.tick };
-        self.lead = self.clock.advance(now, from, rate, end) as i64 - self.tick as i64;
+        // Do not extrapolate beyond confirmed playback: that also runs ahead when
+        // callbacks stall. The output history already advances in short sub-blocks.
+        self.lead = self.clock.advance(now, from, None, end) as i64 - self.tick as i64;
     }
 
     /// How many ticks past this frame's snapshot the editors draw the playhead (while following), negative behind it:
@@ -943,7 +946,7 @@ pub(crate) mod testing {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use honeydew_audio::device::AudioRenderer;
+    use banaforge_audio::device::AudioRenderer;
 
     use super::*;
 
@@ -981,7 +984,7 @@ pub(crate) mod testing {
         /// The last engine sent, given the Play, Stop, Seek, SetLoop, the params, the live keys and lanes sent after it.
         pub(crate) engine: Option<SongAudioEngine>,
         /// The module meters each snapshot carries.
-        pub(crate) meters: Vec<honeydew_audio::device::ModuleMeter>,
+        pub(crate) meters: Vec<banaforge_audio::device::ModuleMeter>,
         /// The output's buffer size, which the tests' renders give the engine ([`AudioRenderer::set_buffer_frames`]).
         pub(crate) buffer_frames: u32,
         /// The output's sample rate, Hz; `None` is 48 kHz.
@@ -1332,8 +1335,8 @@ mod tests {
         assert_eq!(link.engine_tempo(&song), 70.0);
     }
 
-    fn preview_sample() -> std::sync::Arc<honeydew_audio::sample::SampleData> {
-        std::sync::Arc::new(honeydew_audio::sample::SampleData {
+    fn preview_sample() -> std::sync::Arc<banaforge_audio::sample::SampleData> {
+        std::sync::Arc::new(banaforge_audio::sample::SampleData {
             sample_rate: 48_000,
             left: vec![0.0; 8].into(),
             right: None,
@@ -1635,8 +1638,8 @@ mod tests {
 
     #[test]
     fn every_new_engine_monitors_the_input_and_gets_the_metronome_again() {
-        use honeydew_audio::device::AudioRenderer;
-        use honeydew_audio::input::InputRing;
+        use banaforge_audio::device::AudioRenderer;
+        use banaforge_audio::input::InputRing;
         use std::sync::Arc;
 
         let rec = Recorder::default();
@@ -1687,7 +1690,7 @@ mod tests {
 
     #[test]
     fn a_rebuild_counts_in_again_until_the_count_in_ends_or_stops() {
-        use honeydew_audio::device::AudioRenderer;
+        use banaforge_audio::device::AudioRenderer;
 
         let rec = Recorder::default();
         let mut link = started(&rec);
@@ -2151,7 +2154,7 @@ mod tests {
         link.send(AudioCommand::SetSetting {
             channel: 1,
             instance_id: synth,
-            key: honeydew_audio::instrument::KEY_LEARN,
+            key: banaforge_audio::instrument::KEY_LEARN,
             value: 1.0,
         });
         // A channel added before it: the setting goes out again at its new index.

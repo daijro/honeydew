@@ -1,9 +1,9 @@
 //! The engine's transport commands: the loop range, all notes off and the
 //! peaks held over a render call. Rendered offline through `AudioRenderer`; no device.
 
-use honeydew::audio_engine::SongAudioEngine;
-use honeydew::song::{AutomationTarget, ChannelKind, Event, Song, SynthKind};
-use honeydew_audio::device::AudioRenderer;
+use banaforge::audio_engine::SongAudioEngine;
+use banaforge::song::{AutomationTarget, ChannelKind, Event, Song, SynthKind};
+use banaforge_audio::device::AudioRenderer;
 
 fn note(pos: u32, len_beats: f64) -> Event {
     Event::Note {
@@ -285,7 +285,7 @@ fn an_effects_analysis_and_input_peak_reach_its_meter() {
         .find(|&i| engine.meter_key(i).channel == 1 && engine.meter_key(i).instance_id == id)
         .unwrap();
     let history = |engine: &SongAudioEngine| {
-        honeydew_audio::analysis::limiter(engine.analysis(meter)).unwrap()
+        banaforge_audio::analysis::limiter(engine.analysis(meter)).unwrap()
     };
     assert!(history(&engine).input.iter().all(|&f| f == 0.0));
     engine.note_on(1, 69, 1.0);
@@ -313,10 +313,10 @@ fn an_arpeggiator_and_a_note_echo_show_their_live_state_through_their_meters() {
     };
     let (arp, echo) = (meter(&engine, arp), meter(&engine, echo));
     let arp_state = |engine: &SongAudioEngine| {
-        honeydew_audio::analysis::arpeggiator(engine.analysis(arp)).unwrap()
+        banaforge_audio::analysis::arpeggiator(engine.analysis(arp)).unwrap()
     };
     let echo_state = |engine: &SongAudioEngine| {
-        honeydew_audio::analysis::note_echo(engine.analysis(echo)).unwrap()
+        banaforge_audio::analysis::note_echo(engine.analysis(echo)).unwrap()
     };
     // Stopped: nothing runs.
     render(&mut engine, 4800, 512);
@@ -411,7 +411,7 @@ fn stop_puts_every_param_back_to_its_value_before_automation() {
 /// master; `None` stops it, and an engine that replaces this one plays it on.
 #[test]
 fn the_sample_preview_plays_once_at_0_7_past_the_master_and_survives_a_rebuild() {
-    use honeydew_audio::sample::SampleData;
+    use banaforge_audio::sample::SampleData;
     use std::sync::Arc;
     let samples: Vec<f32> = (0..100).map(|i| (i as f32 / 100.0) - 0.5).collect();
     let data = Arc::new(SampleData {
@@ -505,7 +505,7 @@ fn an_edit_that_shortens_the_song_wraps_the_transport_modulo_its_new_length() {
 fn the_masters_tempo_automation_plays_the_song_at_its_tempo() {
     // 120 BPM, and from beat 2 the master's Tempo lane says 240: the first second plays 2 beats, the next half second 2
     // more. Stop puts the song's tempo back, which plays again until the point.
-    use honeydew::song::{TEMPO_TARGET, tempo_value};
+    use banaforge::song::{TEMPO_TARGET, tempo_value};
     let rate = 48_000.0;
     let mut song = song(&[]);
     let lane = song.channels[0].add_automation_lane(TEMPO_TARGET);

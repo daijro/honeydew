@@ -2,7 +2,7 @@
 
 use crate::panels::build::*;
 
-const TABS: &str = "VOICE · EXPRESSION";
+const TABS: &str = "VOICE · EXPRESSION · ENVELOPE";
 
 pub fn panel() -> Option<Panel> {
     Some(Panel::new(vstack([
@@ -20,6 +20,7 @@ pub fn panel() -> Option<Panel> {
             knob(23000, "Vibrato Depth").p(6),
         ])
         .show(Show::Tab(1)),
+        hstack([knob(31000, "Attack").p(8), knob(32000, "Release").p(9)]).show(Show::Tab(2)),
     ])))
 }
 
@@ -31,6 +32,16 @@ pub const REFERENCE: Reference = Reference {
     size: [16.96, 6.49],
     settings: &[],
     cases: &[
+        Case {
+            name: "ENVELOPE",
+            tab: 2,
+            rows: &[
+                STRIP,
+                row(31000, Widget::Knob, "Attack", [0.0, 1.25, 8.48, 5.24]).p(8),
+                row(32000, Widget::Knob, "Release", [8.48, 1.25, 8.48, 5.24]).p(9),
+            ],
+            ..Case::DEFAULT
+        },
         Case {
             name: "VOICE",
             tab: 0,

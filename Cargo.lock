@@ -1962,8 +1962,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
-name = "honeydew"
-version = "0.5.4"
+name = "banaforge"
+version = "0.5.8"
 dependencies = [
  "android-activity",
  "block2 0.5.1",
@@ -1972,27 +1972,27 @@ dependencies = [
  "eframe",
  "encoding_rs",
  "getrandom 0.3.4",
- "honeydew-audio",
+ "banaforge-audio",
  "jni 0.21.1",
- "lemon-3x-osc",
- "lemon-balance",
- "lemon-chorus",
- "lemon-delay",
- "lemon-drum-sampler",
- "lemon-fast-distortion",
- "lemon-filter",
- "lemon-flanger",
- "lemon-formula-controller",
- "lemon-parametric-eq-2",
- "lemon-peak-controller",
- "lemon-phaser",
- "lemon-sampler",
- "lemon-slicer",
- "lemon-soft-clipper",
- "lemon-stereo-enhancer",
- "lemon-stereo-shaper",
- "lemon-transient-processor",
- "lemon-vocoder",
+ "banana-3x-osc",
+ "banana-balance",
+ "banana-chorus",
+ "banana-delay",
+ "banana-drum-sampler",
+ "banana-fast-distortion",
+ "banana-filter",
+ "banana-flanger",
+ "banana-formula-controller",
+ "banana-parametric-eq-2",
+ "banana-peak-controller",
+ "banana-phaser",
+ "banana-sampler",
+ "banana-slicer",
+ "banana-soft-clipper",
+ "banana-stereo-enhancer",
+ "banana-stereo-shaper",
+ "banana-transient-processor",
+ "banana-vocoder",
  "libc",
  "midir",
  "miniz_oxide 0.9.1",
@@ -2022,6 +2022,7 @@ dependencies = [
  "tesla",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "unicode-normalization",
  "web-sys",
  "webbrowser",
  "wgpu",
@@ -2030,7 +2031,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "honeydew-audio"
+name = "banaforge-audio"
 version = "0.1.0"
 dependencies = [
  "cpal",
@@ -2338,7 +2339,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
-name = "lemon-3x-osc"
+name = "banana-3x-osc"
 version = "0.0.1"
 dependencies = [
  "host-rfd",
@@ -2354,25 +2355,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "lemon-balance"
+name = "banana-balance"
 version = "0.0.1"
 dependencies = [
- "lemon-small-fx",
+ "banana-small-fx",
  "nih_plug",
  "os-plugkit",
 ]
 
 [[package]]
-name = "lemon-chorus"
+name = "banana-chorus"
 version = "0.0.1"
 dependencies = [
- "lemon-small-fx",
+ "banana-small-fx",
  "nih_plug",
  "os-plugkit",
 ]
 
 [[package]]
-name = "lemon-delay"
+name = "banana-delay"
 version = "0.0.1"
 dependencies = [
  "nih_plug",
@@ -2386,11 +2387,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "lemon-drum-sampler"
+name = "banana-drum-sampler"
 version = "0.0.1"
 dependencies = [
  "host-rfd",
- "lemon-sampler",
+ "banana-sampler",
  "nih_plug",
  "os-dsp",
  "os-engine",
@@ -2403,44 +2404,44 @@ dependencies = [
 ]
 
 [[package]]
-name = "lemon-fast-distortion"
+name = "banana-fast-distortion"
 version = "0.0.1"
 dependencies = [
- "lemon-small-fx",
+ "banana-small-fx",
  "nih_plug",
  "os-plugkit",
 ]
 
 [[package]]
-name = "lemon-filter"
+name = "banana-filter"
 version = "0.0.1"
 dependencies = [
- "lemon-small-fx",
+ "banana-small-fx",
  "nih_plug",
  "os-plugkit",
 ]
 
 [[package]]
-name = "lemon-flanger"
+name = "banana-flanger"
 version = "0.0.1"
 dependencies = [
- "lemon-small-fx",
+ "banana-small-fx",
  "nih_plug",
  "os-plugkit",
 ]
 
 [[package]]
-name = "lemon-formula-controller"
+name = "banana-formula-controller"
 version = "0.0.1"
 dependencies = [
- "lemon-small-fx",
+ "banana-small-fx",
  "nih_plug",
  "os-engine",
  "os-plugkit",
 ]
 
 [[package]]
-name = "lemon-parametric-eq-2"
+name = "banana-parametric-eq-2"
 version = "0.0.1"
 dependencies = [
  "nih_plug",
@@ -2454,26 +2455,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "lemon-peak-controller"
+name = "banana-peak-controller"
 version = "0.0.1"
 dependencies = [
- "lemon-small-fx",
+ "banana-small-fx",
  "nih_plug",
  "os-engine",
  "os-plugkit",
 ]
 
 [[package]]
-name = "lemon-phaser"
+name = "banana-phaser"
 version = "0.0.1"
 dependencies = [
- "lemon-small-fx",
+ "banana-small-fx",
  "nih_plug",
  "os-plugkit",
 ]
 
 [[package]]
-name = "lemon-sampler"
+name = "banana-sampler"
 version = "0.0.1"
 dependencies = [
  "host-rfd",
@@ -2490,7 +2491,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lemon-slicer"
+name = "banana-slicer"
 version = "0.0.1"
 dependencies = [
  "host-rfd",
@@ -2506,7 +2507,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lemon-small-fx"
+name = "banana-small-fx"
 version = "0.0.1"
 dependencies = [
  "nih_plug",
@@ -2521,46 +2522,46 @@ dependencies = [
 ]
 
 [[package]]
-name = "lemon-soft-clipper"
+name = "banana-soft-clipper"
 version = "0.0.1"
 dependencies = [
- "lemon-small-fx",
+ "banana-small-fx",
  "nih_plug",
  "os-plugkit",
 ]
 
 [[package]]
-name = "lemon-stereo-enhancer"
+name = "banana-stereo-enhancer"
 version = "0.0.1"
 dependencies = [
- "lemon-small-fx",
+ "banana-small-fx",
  "nih_plug",
  "os-plugkit",
 ]
 
 [[package]]
-name = "lemon-stereo-shaper"
+name = "banana-stereo-shaper"
 version = "0.0.1"
 dependencies = [
- "lemon-small-fx",
+ "banana-small-fx",
  "nih_plug",
  "os-plugkit",
 ]
 
 [[package]]
-name = "lemon-transient-processor"
+name = "banana-transient-processor"
 version = "0.0.1"
 dependencies = [
- "lemon-small-fx",
+ "banana-small-fx",
  "nih_plug",
  "os-plugkit",
 ]
 
 [[package]]
-name = "lemon-vocoder"
+name = "banana-vocoder"
 version = "0.0.1"
 dependencies = [
- "lemon-small-fx",
+ "banana-small-fx",
  "nih_plug",
  "os-engine",
  "os-plugkit",
@@ -6330,3 +6331,27 @@ checksum = "a17c521504be43d9123b0da8a6c028e2078900a44715fc673f27e26f0c95608c"
 dependencies = [
  "zvidlib-core",
 ]
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5033c97c4262335cded6d6fc3e5c18ab755e1a3dc96376350f3d8e9f009ad956"
+dependencies = [
+ "tinyvec",
+]
+
+[[package]]
+name = "tinyvec"
+version = "1.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfa5fdc3bce6191a1dbc8c02d5c8bffcf557bafa17c124c5264a458f1b0613fa"
+dependencies = [
+ "tinyvec_macros",
+]
+
+[[package]]
+name = "tinyvec_macros"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"

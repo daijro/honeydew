@@ -1,5 +1,5 @@
 //! Typing-keyboard notes: a built-in map of 37 keys, by physical key position, plays MIDI 48–79 on the current channel,
-//! through the touched keys' live-input path ([`HoneydewApp::key_on`]). Notes are not keymap actions.
+//! through the touched keys' live-input path ([`BanaForgeApp::key_on`]). Notes are not keymap actions.
 //!
 //! Routing: the screens go first, so a control's shortcut has consumed its press (`consume_key` takes the event) and
 //! a focused text field has shown its IME. Then a press plays when no modifier is held, no editable text field has the
@@ -21,7 +21,7 @@
 
 use eframe::egui::{self, Event, Key, Modifiers};
 
-use super::HoneydewApp;
+use super::BanaForgeApp;
 use crate::keymap::{self, Keymap};
 use crate::ui::piano_roll::notes::in_scale;
 use crate::ui::views::{self, SongEdit, View};
@@ -231,7 +231,7 @@ impl Typed {
     }
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// The frame's typed notes, after the screens: each note-on answers `Set MIDI Note` in the drum editor first (one
     /// undo step, as a MIDI key does), then plays as a touched key does; each note-off goes to its channel.
     pub(super) fn typed_notes(&mut self, ctx: &egui::Context, tick: u64) {

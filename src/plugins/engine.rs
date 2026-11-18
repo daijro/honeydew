@@ -9,8 +9,8 @@ use std::sync::{MutexGuard, TryLockError};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 
-use honeydew_audio::instrument::Instrument;
-use honeydew_audio::{ExternalEffect, ProcessContext};
+use banaforge_audio::instrument::Instrument;
+use banaforge_audio::{ExternalEffect, ProcessContext};
 use os_engine::TransportInfo;
 use os_host::SharedPlugin;
 
