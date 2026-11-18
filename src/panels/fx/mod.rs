@@ -137,3 +137,5 @@ pub(super) fn live_analysis(ui: &Ui, instance_id: i32) -> Option<Arc<[f32]>> {
     }
     slab
 }
+
+pub(super) mod banana_power;

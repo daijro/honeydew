@@ -17,6 +17,7 @@ pub mod flac_writer;
 pub mod gm_waveshapes;
 pub mod gmsynth;
 pub mod half_time;
+pub mod banana_power;
 pub mod input;
 pub mod instrument;
 pub mod metronome;
@@ -112,6 +113,10 @@ pub fn effect_info(id: u16) -> Option<EffectInfo> {
         de_esser::DE_ESSER => ("De-esser", de_esser::PARAMS),
         denoise::DENOISE => ("Denoise", denoise::PARAMS),
         half_time::HALF_TIME => ("Half Time", half_time::PARAMS),
+        banana_power::FRESH_AIR => ("Banana Fresh Air", 4),
+        banana_power::SOUNDGOODIZER => ("Banana Soundgoodizer", 3),
+        banana_power::BLOOD_OVERDRIVE => ("Banana Blood Overdrive", 6),
+        banana_power::GROSS_BEAT => ("Banana Gross Beat", banana_power::PARAMS),
         _ => return None,
     };
     Some(EffectInfo {
@@ -536,6 +541,11 @@ impl AudioEffect {
                     Processor::HalfTime(Box::new(state)),
                 )
             }
+            banana_power::FRESH_AIR | banana_power::SOUNDGOODIZER | banana_power::BLOOD_OVERDRIVE | banana_power::GROSS_BEAT => {
+                let params = banana_power::defaults(id);
+                let state = banana_power::State::new(id, sample_rate, &params);
+                (params, Processor::BananaPower(Box::new(state)))
+            }
             _ => return Err(EffectError::UnsupportedEffect(id)),
         };
         let mut effect = Self {
@@ -948,6 +958,7 @@ enum Processor {
     DeEsser(Box<de_esser::DeEsserState>),
     Denoise(Box<denoise::DenoiseState>),
     HalfTime(Box<half_time::HalfTimeState>),
+    BananaPower(Box<banana_power::State>),
     Monitor,
 }
 
@@ -994,6 +1005,7 @@ impl Processor {
             Self::DeEsser(state) => state.refresh(params, sample_rate),
             Self::Denoise(state) => state.refresh(params, sample_rate),
             Self::HalfTime(state) => state.refresh(params, sample_rate),
+            Self::BananaPower(state) => state.refresh(params, sample_rate),
             Self::Monitor => {}
         }
     }
@@ -1025,6 +1037,7 @@ impl Processor {
             Self::BananaReverb(state) => state.set_tempo(context.tempo_bpm),
             Self::Modulator(state) => state.prepare_block(context),
             Self::HalfTime(state) => state.prepare_block(context),
+            Self::BananaPower(state) => state.prepare_block(context),
             Self::Waveshaper(state) => {
                 state
                     .prepare_block(
@@ -1074,6 +1087,7 @@ impl Processor {
             Self::DeEsser(state) => state.process_frame(l, r),
             Self::Denoise(state) => state.process_frame(l, r),
             Self::HalfTime(state) => state.process_frame(l, r),
+            Self::BananaPower(state) => state.process_frame(l, r),
             Self::Monitor => (l, r),
         }
     }
@@ -1135,6 +1149,7 @@ impl Processor {
             Self::DeEsser(state) => state.reset(),
             Self::Denoise(state) => state.reset(),
             Self::HalfTime(state) => state.reset(),
+            Self::BananaPower(state) => state.reset(),
             Self::Monitor => {}
         }
     }

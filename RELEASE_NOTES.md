@@ -1,3 +1,20 @@
+BanaForge 0.5.10 — Banana rack effects test build
+
+## Added
+- Selectable native rack modules: Banana Fresh Air (Mid Air, High Air, Trim), Banana Soundgoodizer (Amount and original A–D profiles), Banana Blood Overdrive (Drive, Color, Post Filter, Trim, Mix), and Banana Gross Beat (time/volume presets and editable 16-point snapped delay/volume grids).
+- Gross Beat has Through, Half, Tape Stop, Stutter and Custom time modes; Through, Gate, Pump and Custom volume modes. Curves are causal delay envelopes, not arbitrary future-audio warps. History is bounded to eight seconds; longer delay requests clamp to available history.
+- All four use original DSP and presets. These are not identical recreations of proprietary products.
+
+## Enhanced
+- New native module cards use live channel RGB tinting, or warm yellow/coral accents without a custom channel color. Native parameter automation, reset, undo and project storage are reused.
+
+## Limitations / unresolved
+- Initial DSP: no proprietary matching or oversampling-quality claim. Physical-device CPU, aliasing and listening evaluation remain required.
+- The Gross Beat editor uses a fixed 16-column lattice and 1/16 value snapping, not a free breakpoint editor. Abrupt warps are softened with a short output smoothing filter.
+- Language switching, custom backgrounds, the previously reported playback delay and specific DWP wrong-sound case remain unresolved.
+
+## Earlier changes
+
 BanaForge 0.5.9 — feedback implementation preview
 
 ## Added

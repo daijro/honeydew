@@ -172,6 +172,8 @@ pub fn ui_height(type_id: u16) -> Option<f32> {
         banaforge_audio::modulator::MODULATOR => 8.5,
         banaforge_audio::de_esser::DE_ESSER | banaforge_audio::denoise::DENOISE => 7.5,
         banaforge_audio::half_time::HALF_TIME => 6.0,
+        banaforge_audio::banana_power::FRESH_AIR | banaforge_audio::banana_power::SOUNDGOODIZER | banaforge_audio::banana_power::BLOOD_OVERDRIVE => 6.0,
+        banaforge_audio::banana_power::GROSS_BEAT => 8.0,
         _ => return None,
     })
 }
@@ -1590,6 +1592,7 @@ impl RackPanel {
         ui.set_clip_rect(outer.intersect(rect.with_min_y(top / ppp)));
         let (mut confirmed, mut held_rect) = (None, None);
         // The held card draws last, over a neighbour sliding past it.
+        let custom_color = channel.file.color_rgb.is_some();
         let mut cards: Vec<_> = channel.rack.modules.iter_mut().zip(&f.cards).collect();
         cards.sort_by_key(|(m, _)| held == Some(m.instance_id));
         for (module, card) in cards {
@@ -1600,13 +1603,17 @@ impl RackPanel {
             if held != Some(id) && !ui.clip_rect().intersects(card) {
                 continue;
             }
+            let module_ink = if !custom_color && banaforge_audio::banana_power::IDS.contains(&module.type_id) {
+                if module.type_id == banaforge_audio::banana_power::BLOOD_OVERDRIVE { Color32::from_rgb(240, 120, 104) }
+                else { Color32::from_rgb(242, 201, 76) }
+            } else { ink };
             let edits = self.card(
                 ui,
                 cx,
                 card,
                 module,
                 held.is_some(),
-                ink,
+                module_ink,
                 if input { 1 } else { 2 },
             );
             // The name label's gestures: a double tap is the menu's `Minimize` / `Maximize`, a long press holds the

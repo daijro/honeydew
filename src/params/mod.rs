@@ -13,6 +13,8 @@ mod dynamic_eq;
 mod effects;
 mod effects_24_51;
 mod half_time;
+mod banana_power;
+pub use banana_power::MODULES as BANANA_POWER;
 #[cfg(test)]
 mod inst_rows;
 #[cfg(test)]
@@ -318,6 +320,7 @@ pub fn module_spec(id: u16) -> Option<&'static ModuleSpec> {
         .chain(instruments())
         .chain(&PLUGINS)
         .chain(&BANANA_MODULES)
+        .chain(&BANANA_POWER)
         .chain([&DYNAMIC_EQ, &MODULATOR, &DE_ESSER, &DENOISE, &HALF_TIME])
         .find(|m| m.id == id)
 }

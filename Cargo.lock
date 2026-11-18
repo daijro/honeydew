@@ -1197,7 +1197,7 @@ dependencies = [
 
 [[package]]
 name = "deranged"
-version = "0.5.9"
+version = "0.5.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e9de72ce2ad1f90dc62fa25f0f430ef85eb4b0d8fa0be4f30373bc40a21d28e"
 
@@ -1963,7 +1963,7 @@ checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
 name = "banaforge"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "android-activity",
  "block2 0.5.1",
