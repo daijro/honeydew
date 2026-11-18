@@ -481,8 +481,13 @@ pub fn panel_for(type_id: u16) -> Option<&'static Panel> {
                 fx::half_time::panel(),
             ),
         ];
-        fx.chain(inst).chain(banana)
-            .chain(banaforge_audio::banana_power::IDS.into_iter().map(|id| (id, fx::banana_power::panel(id))))
+        fx.chain(inst)
+            .chain(banana)
+            .chain(
+                banaforge_audio::banana_power::IDS
+                    .into_iter()
+                    .map(|id| (id, fx::banana_power::panel(id))),
+            )
             .collect()
     });
     PANELS.iter().find(|(id, _)| *id == type_id).map(|(_, p)| p)

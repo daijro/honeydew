@@ -1626,8 +1626,16 @@ fn a_drag_on_the_scrollbar_moves_the_list_by_its_share_and_a_swipe_on_the_rows_s
 
 #[test]
 fn banana_power_effects_are_visible_and_selectable_for_audio_racks() {
-    for (id, name) in banaforge_audio::banana_power::IDS.into_iter().zip(banaforge_audio::banana_power::NAMES) {
+    for (id, name) in banaforge_audio::banana_power::IDS
+        .into_iter()
+        .zip(banaforge_audio::banana_power::NAMES)
+    {
         let found = super::rows(name, ModuleOrdering::Category, Takes::Effects);
-        assert!(found.iter().any(|row| matches!(row, Row::Item(Entry::Module(got)) if *got == id)), "{name} not selectable");
+        assert!(
+            found
+                .iter()
+                .any(|row| matches!(row, Row::Item(Entry::Module(got)) if *got == id)),
+            "{name} not selectable"
+        );
     }
 }

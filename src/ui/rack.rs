@@ -172,7 +172,9 @@ pub fn ui_height(type_id: u16) -> Option<f32> {
         banaforge_audio::modulator::MODULATOR => 8.5,
         banaforge_audio::de_esser::DE_ESSER | banaforge_audio::denoise::DENOISE => 7.5,
         banaforge_audio::half_time::HALF_TIME => 6.0,
-        banaforge_audio::banana_power::FRESH_AIR | banaforge_audio::banana_power::SOUNDGOODIZER | banaforge_audio::banana_power::BLOOD_OVERDRIVE => 6.0,
+        banaforge_audio::banana_power::FRESH_AIR
+        | banaforge_audio::banana_power::SOUNDGOODIZER
+        | banaforge_audio::banana_power::BLOOD_OVERDRIVE => 6.0,
         banaforge_audio::banana_power::GROSS_BEAT => 8.0,
         _ => return None,
     })
@@ -1603,10 +1605,16 @@ impl RackPanel {
             if held != Some(id) && !ui.clip_rect().intersects(card) {
                 continue;
             }
-            let module_ink = if !custom_color && banaforge_audio::banana_power::IDS.contains(&module.type_id) {
-                if module.type_id == banaforge_audio::banana_power::BLOOD_OVERDRIVE { Color32::from_rgb(240, 120, 104) }
-                else { Color32::from_rgb(242, 201, 76) }
-            } else { ink };
+            let module_ink =
+                if !custom_color && banaforge_audio::banana_power::IDS.contains(&module.type_id) {
+                    if module.type_id == banaforge_audio::banana_power::BLOOD_OVERDRIVE {
+                        Color32::from_rgb(240, 120, 104)
+                    } else {
+                        Color32::from_rgb(242, 201, 76)
+                    }
+                } else {
+                    ink
+                };
             let edits = self.card(
                 ui,
                 cx,

@@ -5,6 +5,7 @@
 //! The stored param numbers (param 0 is always `Enable`), shared with the audio side.
 
 mod banana;
+mod banana_power;
 mod channel;
 mod de_esser;
 mod denoise;
@@ -13,7 +14,6 @@ mod dynamic_eq;
 mod effects;
 mod effects_24_51;
 mod half_time;
-mod banana_power;
 pub use banana_power::MODULES as BANANA_POWER;
 #[cfg(test)]
 mod inst_rows;

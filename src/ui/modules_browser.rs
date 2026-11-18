@@ -144,8 +144,11 @@ fn sections() -> Vec<(Option<&'static str>, Vec<Entry>)> {
     banana.sort_by(|a, b| (b.instrument.cmp(&a.instrument)).then_with(|| natural(a.name, b.name)));
     let banana = (
         Some("BANANA STUDIO"),
-        banana.into_iter().map(Entry::Plugin)
-            .chain(banaforge_audio::banana_power::IDS.into_iter().map(M)).collect(),
+        banana
+            .into_iter()
+            .map(Entry::Plugin)
+            .chain(banaforge_audio::banana_power::IDS.into_iter().map(M))
+            .collect(),
     );
     (SECTIONS.iter())
         .map(|&(header, entries)| (header, entries.to_vec()))
