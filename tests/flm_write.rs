@@ -1225,6 +1225,9 @@ fn exact_channel_rgb_survives_project_round_trip_without_changing_legacy_hue() {
     let loaded = read(&write(&song).unwrap()).unwrap();
     assert_eq!(loaded.channels[1].file.color_rgb, Some([0x12, 0xab, 0xef]));
     assert_eq!(loaded.channels[1].hue, hue);
-    let ink = banaforge::theme::channel_color(loaded.channels[1].color_token(), &banaforge::theme::theme_by_id(0));
+    let ink = banaforge::theme::channel_color(
+        loaded.channels[1].color_token(),
+        &banaforge::theme::theme_by_id(0),
+    );
     assert_eq!(ink.to_hex(), "12ABEF");
 }

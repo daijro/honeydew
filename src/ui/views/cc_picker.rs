@@ -47,7 +47,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         (names.iter())
             .filter(|(_, name)| name.to_lowercase().contains(&query))
             .map(|(param, name)| PanelRow {
-                    font: None,
+                font: None,
                 name,
                 folder: false,
                 sub: None,

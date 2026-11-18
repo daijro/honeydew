@@ -1322,7 +1322,9 @@ impl PianoRoll {
         let events = preview.as_deref().unwrap_or(events);
         let loop_ticks = shown.map_or(BEAT * f64::from(bpb), |c| c.loop_len_beats * BEAT);
         let color = channel_color(
-            song.channels.get(self.channel).map_or(0.0, |c| c.color_token()),
+            song.channels
+                .get(self.channel)
+                .map_or(0.0, |c| c.color_token()),
             cx.theme,
         );
         // The t gap after the key column, under the playhead line.
@@ -2957,7 +2959,10 @@ impl PianoRoll {
                 self.guess(ctx, id, (more, closest, region), song, actions, cx);
             }
             Some(Menu::Humanize(mut panel)) => {
-                let hue = song.channels.get(self.channel).map_or(0.0, |c| c.color_token());
+                let hue = song
+                    .channels
+                    .get(self.channel)
+                    .map_or(0.0, |c| c.color_token());
                 let ink = channel_color(hue, cx.theme).to_color32();
                 let was = panel;
                 let close = humanize::show(ctx, cx, id.with("humanize"), over, ink, &mut panel);
@@ -2971,7 +2976,10 @@ impl PianoRoll {
                 }
             }
             Some(Menu::Generate(mut panel)) => {
-                let hue = song.channels.get(self.channel).map_or(0.0, |c| c.color_token());
+                let hue = song
+                    .channels
+                    .get(self.channel)
+                    .map_or(0.0, |c| c.color_token());
                 let ink = channel_color(hue, cx.theme).to_color32();
                 let was = panel;
                 let close = generate::show(ctx, cx, id.with("generate"), over, ink, &mut panel);
@@ -3618,20 +3626,31 @@ fn paint_note_name(
     fill: Color32,
     m: &crate::metrics::Metrics,
 ) {
-    let font = egui::FontId::proportional((rect.height() * 0.72).min(m.font_id(crate::metrics::FontSize::Pt8).size));
+    let font = egui::FontId::proportional(
+        (rect.height() * 0.72).min(m.font_id(crate::metrics::FontSize::Pt8).size),
+    );
     if font.size * m.ppp() < 8.0 {
         return;
     }
     let name = key_name(key, true, middle_c_is_c4);
-    let ink = if 0.2126 * f32::from(fill.r()) + 0.7152 * f32::from(fill.g()) + 0.0722 * f32::from(fill.b()) > 140.0 {
+    let ink = if 0.2126 * f32::from(fill.r())
+        + 0.7152 * f32::from(fill.g())
+        + 0.0722 * f32::from(fill.b())
+        > 140.0
+    {
         Color32::BLACK
     } else {
         Color32::WHITE
     };
     let galley = painter.layout_no_wrap(name, font, ink);
     if galley.size().x + 4.0 / m.ppp() <= rect.width() {
-        let at = egui::pos2(rect.left() + 2.0 / m.ppp(), rect.center().y - galley.size().y / 2.0);
-        painter.with_clip_rect(rect.intersect(painter.clip_rect())).galley(at, galley, ink);
+        let at = egui::pos2(
+            rect.left() + 2.0 / m.ppp(),
+            rect.center().y - galley.size().y / 2.0,
+        );
+        painter
+            .with_clip_rect(rect.intersect(painter.clip_rect()))
+            .galley(at, galley, ink);
     }
 }
 
@@ -3704,7 +3723,12 @@ fn paint_notes(
             if matches!(e, Event::Note { slide: true, .. }) {
                 paint_slide(painter, cell(r), theme.colors.background.to_color32(), m);
             }
-            if detailed && vocal_track && waveform_enabled && r.width() >= m.u(0.6) && r.height() >= m.u(0.35) {
+            if detailed
+                && vocal_track
+                && waveform_enabled
+                && r.width() >= m.u(0.6)
+                && r.height() >= m.u(0.35)
+            {
                 let left = r.left() + px;
                 let top = r.bottom() + f32::from(waveform_offset_y.min(40)) * g.row_h;
                 let wave = Rect::from_min_max(

@@ -541,7 +541,11 @@ fn channel_settings_renames_and_recolours_the_channel_one_undo_step_each() {
     rig.frame(vec![]);
     let slider = rig
         .ctx
-        .read_response(dialog.with(("rgb", rig.app.song.channels[2].id)).with("wheel"))
+        .read_response(
+            dialog
+                .with(("rgb", rig.app.song.channels[2].id))
+                .with("wheel"),
+        )
         .expect("the color wheel")
         .rect;
     // The dialog sits above the transport bar.
@@ -587,7 +591,10 @@ fn channel_settings_is_on_the_dialog_base_the_dim_then_the_panel() {
     // 20 U × 10.5 U (screen-clamped) for the wheel on instrument channels, centred above the transport
     // bar.
     let area = crate::ui::main_screen::Regions::new(screen, &m).area;
-    let boxed = egui::Rect::from_center_size(area.center(), egui::vec2(20.0 * 32.0, (10.5_f32 * 32.0).min(area.height() - 4.0)));
+    let boxed = egui::Rect::from_center_size(
+        area.center(),
+        egui::vec2(20.0 * 32.0, (10.5_f32 * 32.0).min(area.height() - 4.0)),
+    );
     let painted = crate::ui::dialog::painted_rects(rig.out.shapes.iter().map(|s| &s.shape));
     let colors = crate::theme::theme_by_id(0).colors;
     crate::ui::dialog::assert_base(&painted, &colors, screen, boxed);

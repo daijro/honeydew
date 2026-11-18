@@ -392,9 +392,10 @@ fn drag_control(
     }
     // The menu first: it must be drawn every frame it is open, whatever else happened.
     let action = context_menu(ui, cx, c.id, c.menu, true, c.fine_tune, &mut response);
-    if !c.disabled && (action == Some(MenuAction::Reset)
-        || double_tap(ui, c.id, &response)
-        || response.double_clicked_by(PointerButton::Primary))
+    if !c.disabled
+        && (action == Some(MenuAction::Reset)
+            || double_tap(ui, c.id, &response)
+            || response.double_clicked_by(PointerButton::Primary))
     {
         v = clean(c.default, 0.0);
         // A reset during a drag must not resume from the old accumulator.

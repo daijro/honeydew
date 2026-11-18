@@ -202,7 +202,7 @@ pub fn show(
             return vec![section(hint)];
         }
         let tokens = (first.iter().zip(&roles).enumerate()).map(|(i, (token, role))| PanelRow {
-                    font: None,
+            font: None,
             name: token,
             folder: false,
             sub: Some(role.as_str()),
@@ -214,7 +214,7 @@ pub fn show(
         let mut mapped: Vec<_> = regions.iter().zip(&subs).collect();
         mapped.sort_by_key(|(r, _)| r.flag.is_none());
         let mapped = mapped.into_iter().map(|(r, sub)| PanelRow {
-                    font: None,
+            font: None,
             name: &r.file,
             folder: false,
             sub: Some(sub.as_str()),
@@ -288,7 +288,7 @@ fn first_of(names: &[String]) -> String {
 
 fn section(name: &str) -> PanelRow<'_, Row> {
     PanelRow {
-                    font: None,
+        font: None,
         name,
         folder: false,
         sub: None,

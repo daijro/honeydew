@@ -4642,12 +4642,23 @@ fn note_block_labels_include_sharps_octaves_and_hide_only_when_too_small() {
     let out = ctx.run(RawInput::default(), |ctx| {
         let painter = ctx.layer_painter(LayerId::background());
         for (key, y, width) in [(60, 10.0, 120.0), (66, 40.0, 120.0), (62, 70.0, 2.0)] {
-            super::paint_note_name(&painter, Rect::from_min_size(pos2(10.0, y), vec2(width, 24.0)), key, true, Color32::GREEN, &m);
+            super::paint_note_name(
+                &painter,
+                Rect::from_min_size(pos2(10.0, y), vec2(width, 24.0)),
+                key,
+                true,
+                Color32::GREEN,
+                &m,
+            );
         }
     });
-    let names: Vec<_> = out.shapes.iter().filter_map(|shape| match &shape.shape {
-        Shape::Text(t) => Some(t.galley.text()),
-        _ => None,
-    }).collect();
+    let names: Vec<_> = out
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            Shape::Text(t) => Some(t.galley.text()),
+            _ => None,
+        })
+        .collect();
     assert_eq!(names, ["C4", "F#4"]);
 }

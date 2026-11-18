@@ -744,7 +744,11 @@ impl PresetPicker {
             };
             rows.into_iter()
                 .map(|item| PanelRow {
-                    font: Some(if item.is_folder() { crate::metrics::FontSize::Pt18 } else { crate::metrics::FontSize::Pt14 }),
+                    font: Some(if item.is_folder() {
+                        crate::metrics::FontSize::Pt18
+                    } else {
+                        crate::metrics::FontSize::Pt14
+                    }),
                     name: item.name(),
                     folder: item.is_folder(),
                     sub: match item {

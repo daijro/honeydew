@@ -435,10 +435,15 @@ fn parameter(
         param: index,
     };
     let reset = if instance_id == 0 {
-        crate::params::CHANNEL_PARAMS.get(index as usize).map(|p| p.reset)
+        crate::params::CHANNEL_PARAMS
+            .get(index as usize)
+            .map(|p| p.reset)
     } else {
-        app.song.channels[channel].rack.get(instance_id)
-            .and_then(|module| module.param_spec(index as usize)).map(|p| p.reset)
+        app.song.channels[channel]
+            .rack
+            .get(instance_id)
+            .and_then(|module| module.param_spec(index as usize))
+            .map(|p| p.reset)
     };
     let Some(value) = app.song.channels[channel].param_mut(target) else {
         return;

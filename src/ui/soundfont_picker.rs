@@ -231,7 +231,7 @@ impl SoundFontPicker {
         let click = open.panel.show(ctx, cx, &chrome, |query| {
             let rows = matching(patches, query, self.sort).into_iter();
             rows.map(|i| PanelRow {
-                    font: None,
+                font: None,
                 name: &patches[i].name,
                 folder: false,
                 sub: None,

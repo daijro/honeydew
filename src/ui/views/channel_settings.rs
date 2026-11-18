@@ -61,7 +61,13 @@ pub fn show(ui: &mut egui::Ui, app: &mut AppCtx, channel: usize, name: &mut Stri
     } else {
         m.u(SIZE[0])
     };
-    let rect = Rect::from_center_size(area.center(), vec2(width, m.u(SIZE[1]).min((area.height() - 4.0 / m.ppp()).max(1.0))));
+    let rect = Rect::from_center_size(
+        area.center(),
+        vec2(
+            width,
+            m.u(SIZE[1]).min((area.height() - 4.0 / m.ppp()).max(1.0)),
+        ),
+    );
     let (left, right) = if midi {
         rect.split_left_right_at_fraction(0.5)
     } else {
@@ -71,7 +77,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut AppCtx, channel: usize, name: &mut Stri
         move |(top, h): (f32, f32)| {
             Rect::from_x_y_ranges(
                 column.left() + m.u(PAD)..=column.right() - m.u(PAD),
-                rect.top() + top / SIZE[1] * rect.height()..=rect.top() + (top + h) / SIZE[1] * rect.height(),
+                rect.top() + top / SIZE[1] * rect.height()
+                    ..=rect.top() + (top + h) / SIZE[1] * rect.height(),
             )
         }
     };
@@ -152,8 +159,14 @@ pub fn show(ui: &mut egui::Ui, app: &mut AppCtx, channel: usize, name: &mut Stri
             let ink = rgb.map_or(original_ink, |[r, g, b]| Color32::from_rgb(r, g, b));
             if midi {
                 let colors = &theme.colors;
-                let contrast = colors
-                    .best_contrasting(crate::theme::Rgba::rgb(f32::from(ink.r()) / 255.0, f32::from(ink.g()) / 255.0, f32::from(ink.b()) / 255.0), &colors.contrast_candidates());
+                let contrast = colors.best_contrasting(
+                    crate::theme::Rgba::rgb(
+                        f32::from(ink.r()) / 255.0,
+                        f32::from(ink.g()) / 255.0,
+                        f32::from(ink.b()) / 255.0,
+                    ),
+                    &colors.contrast_candidates(),
+                );
                 let file = &mut app.song.channels[channel].file;
                 let inks = (ink, contrast.to_color32());
                 (midi_edited, rescan) =
@@ -292,11 +305,18 @@ fn accepted_rgb(text: &str) -> Option<[u8; 3]> {
 
 /// Hue/saturation on a genuine circular wheel, value below, exact hex entry.
 fn color_wheel(ui: &mut Ui, id: Id, rect: Rect, current: Color32) -> Option<[u8; 3]> {
-    use eframe::egui::{Mesh, Stroke, pos2};
     use eframe::egui::ecolor::{hsv_from_rgb, rgb_from_hsv};
-    let (mut h, mut s, mut v) = hsv_from_rgb([f32::from(current.r()) / 255.0, f32::from(current.g()) / 255.0, f32::from(current.b()) / 255.0]);
+    use eframe::egui::{Mesh, Stroke, pos2};
+    let (mut h, mut s, mut v) = hsv_from_rgb([
+        f32::from(current.r()) / 255.0,
+        f32::from(current.g()) / 255.0,
+        f32::from(current.b()) / 255.0,
+    ]);
     let side = rect.width().min((rect.height() - 64.0).max(8.0));
-    let wheel = Rect::from_center_size(pos2(rect.center().x, rect.top() + side / 2.0), vec2(side, side));
+    let wheel = Rect::from_center_size(
+        pos2(rect.center().x, rect.top() + side / 2.0),
+        vec2(side, side),
+    );
     let radius = side * 0.48;
     let centre = wheel.center();
     let mut mesh = Mesh::default();
@@ -308,13 +328,22 @@ fn color_wheel(ui: &mut Ui, id: Id, rect: Rect, current: Color32) -> Option<[u8;
     for i in 0..=96 {
         let hue = i as f32 / 96.0;
         let angle = hue * std::f32::consts::TAU;
-        mesh.colored_vertex(centre + vec2(angle.cos(), angle.sin()) * radius, color(hue, 1.0, v));
-        if i < 96 { mesh.add_triangle(0, i + 1, i + 2); }
+        mesh.colored_vertex(
+            centre + vec2(angle.cos(), angle.sin()) * radius,
+            color(hue, 1.0, v),
+        );
+        if i < 96 {
+            mesh.add_triangle(0, i + 1, i + 2);
+        }
     }
     ui.painter().add(mesh);
-    let response = ui.interact(wheel, id.with("wheel"), Sense::click_and_drag()).on_hover_text("Channel color wheel");
+    let response = ui
+        .interact(wheel, id.with("wheel"), Sense::click_and_drag())
+        .on_hover_text("Channel color wheel");
     let mut changed = false;
-    if (response.clicked() || response.dragged()) && let Some(p) = response.interact_pointer_pos() {
+    if (response.clicked() || response.dragged())
+        && let Some(p) = response.interact_pointer_pos()
+    {
         let delta = p - centre;
         h = (delta.y.atan2(delta.x) / std::f32::consts::TAU).rem_euclid(1.0);
         s = (delta.length() / radius).clamp(0.0, 1.0);
@@ -322,24 +351,48 @@ fn color_wheel(ui: &mut Ui, id: Id, rect: Rect, current: Color32) -> Option<[u8;
     }
     let angle = h * std::f32::consts::TAU;
     let marker = centre + vec2(angle.cos(), angle.sin()) * s * radius;
-    ui.painter().circle_stroke(marker, 4.0, Stroke::new(2.0, Color32::BLACK));
-    ui.painter().circle_stroke(marker, 5.0, Stroke::new(1.0, Color32::WHITE));
-    let brightness = Rect::from_min_size(pos2(rect.left(), wheel.bottom() + 2.0), vec2(rect.width(), 24.0));
-    let response = ui.put(brightness, egui::Slider::new(&mut v, 0.01..=1.0).text("Value"));
+    ui.painter()
+        .circle_stroke(marker, 4.0, Stroke::new(2.0, Color32::BLACK));
+    ui.painter()
+        .circle_stroke(marker, 5.0, Stroke::new(1.0, Color32::WHITE));
+    let brightness = Rect::from_min_size(
+        pos2(rect.left(), wheel.bottom() + 2.0),
+        vec2(rect.width(), 24.0),
+    );
+    let response = ui.put(
+        brightness,
+        egui::Slider::new(&mut v, 0.01..=1.0).text("Value"),
+    );
     changed |= response.changed();
-    if response.double_clicked() { v = 1.0; changed = true; }
+    if response.double_clicked() {
+        v = 1.0;
+        changed = true;
+    }
     let key = id.with("hex");
-    let mut hex = ui.data(|d| d.get_temp::<String>(key)).unwrap_or_else(|| format!("#{:02X}{:02X}{:02X}", current.r(), current.g(), current.b()));
+    let mut hex = ui
+        .data(|d| d.get_temp::<String>(key))
+        .unwrap_or_else(|| format!("#{:02X}{:02X}{:02X}", current.r(), current.g(), current.b()));
     let mut next = None;
     if changed {
         let c = color(h, s, v);
         let text = format!("#{:02X}{:02X}{:02X}", c.r(), c.g(), c.b());
-        if let Some(rgb) = accepted_rgb(&text) { hex = text; next = Some(rgb); }
+        if let Some(rgb) = accepted_rgb(&text) {
+            hex = text;
+            next = Some(rgb);
+        }
     }
-    let field = Rect::from_min_size(pos2(rect.left(), brightness.bottom() + 2.0), vec2(rect.width(), 24.0));
-    let mut response = ui.put(field, TextEdit::singleline(&mut hex).id(key).hint_text("#RRGGBB"));
+    let field = Rect::from_min_size(
+        pos2(rect.left(), brightness.bottom() + 2.0),
+        vec2(rect.width(), 24.0),
+    );
+    let mut response = ui.put(
+        field,
+        TextEdit::singleline(&mut hex).id(key).hint_text("#RRGGBB"),
+    );
     crate::android_text::edit(&mut response, &mut hex, 7);
-    if response.changed() { next = accepted_rgb(&hex); }
+    if response.changed() {
+        next = accepted_rgb(&hex);
+    }
     response.on_hover_text("Hex RGB. Pure black and pure white are blocked for readability.");
     ui.data_mut(|d| d.insert_temp(key, hex));
     next

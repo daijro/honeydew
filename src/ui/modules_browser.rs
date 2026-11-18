@@ -538,7 +538,7 @@ impl ModulesBrowser {
         let (sort, picked) = (self.sort, self.picked);
         let click = self.panel.show(ctx, cx, &chrome, |query| {
             let row = |row: Row| PanelRow {
-                    font: None,
+                font: None,
                 name: row.name(),
                 folder: false,
                 sub: None,

@@ -301,7 +301,11 @@ fn paint_freshener(ui: &Ui, rect: Rect, ink: eframe::egui::Color32) {
     let painter = ui.painter_at(rect);
     painter.line_segment([at(0.0, -1.2), at(0.0, -0.85)], Stroke::new(1.0, ink));
     for (top, bottom, half) in [(-0.9, -0.1, 0.35), (-0.5, 0.4, 0.55), (-0.1, 0.8, 0.75)] {
-        painter.add(Shape::convex_polygon(vec![at(0.0, top), at(half, bottom), at(-half, bottom)], ink, Stroke::NONE));
+        painter.add(Shape::convex_polygon(
+            vec![at(0.0, top), at(half, bottom), at(-half, bottom)],
+            ink,
+            Stroke::NONE,
+        ));
     }
     painter.line_segment([at(0.0, 0.7), at(0.0, 1.0)], Stroke::new(3.0, ink));
 }
