@@ -183,6 +183,7 @@ fn every_current_effect_is_listed_once_and_legacy_ids_never() {
     let current: Vec<u16> = (params::modules().chain(&params::BANANA_MODULES))
         .chain([&params::DYNAMIC_EQ, &params::MODULATOR])
         .chain([&params::DE_ESSER, &params::DENOISE, &params::HALF_TIME])
+        .chain(&params::BANANA_POWER)
         .filter(|m| !m.legacy)
         .map(|m| m.id)
         .collect();
@@ -1080,10 +1081,9 @@ fn dragging_scrolls_to_the_end_of_the_list_and_no_further() {
     // The drags pick nothing, and the last row now sits at the bottom of the list.
     assert_eq!(rig.action, None);
     assert!(!rig.shows("Paste"));
-    assert_eq!(rig.text_at("Tesla").y, list.bottom() - 24.0);
-    let at = rig.text_at("Tesla");
-    let tesla = "clap:org.openstudio.tesla";
-    assert_eq!(rig.click(at), Some(BrowserAction::Plugin(tesla)));
+    assert_eq!(rig.text_at("Banana Gross Beat").y, list.bottom() - 24.0);
+    let at = rig.text_at("Banana Gross Beat");
+    assert_eq!(rig.click(at), Some(BrowserAction::Module(banaforge_audio::banana_power::GROSS_BEAT)));
 }
 
 #[test]
@@ -1105,7 +1105,7 @@ fn the_wheel_scrolls_the_list_only_over_it() {
     assert_eq!(rig.text_at("3x Osc").y, first);
     // And at the end.
     rig.wheel(pos2(200.0, 400.0), -5000.0);
-    assert_eq!(rig.text_at("Tesla").y, list.bottom() - 24.0);
+    assert_eq!(rig.text_at("Banana Gross Beat").y, list.bottom() - 24.0);
 }
 
 #[test]
