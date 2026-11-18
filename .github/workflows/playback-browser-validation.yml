@@ -1,6 +1,16 @@
 name: Playback and browser regression
 on:
   workflow_dispatch:
+  push:
+    branches: ["arena/**"]
+    paths:
+      - 'src/audio_link.rs'
+      - 'src/sample_cache.rs'
+      - 'src/ui/clips.rs'
+      - 'src/ui/preset_picker/**'
+      - 'src/ui/preset_picker.rs'
+      - 'crates/audio/src/device.rs'
+      - '.github/workflows/playback-browser-validation.yml'
 jobs:
   regression:
     runs-on: ubuntu-latest
