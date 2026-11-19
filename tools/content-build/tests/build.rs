@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use content_build::build::{Inputs, Opts, build};
 use content_build::verify::verify_capped;
-use honeydew::content::bundle::Index;
+use banaforge::content::bundle::Index;
 
 /// A one-source content dir and source tree under the test's own temp dir: two FLAC one-shots, one `samples` recipe.
 fn fixture(name: &str) -> PathBuf {
@@ -28,7 +28,7 @@ fn fixture(name: &str) -> PathBuf {
             .collect();
         fs::write(
             root.join("sources/fx").join(file),
-            honeydew_audio::flac_writer::flac(44_100, 16, &[s]),
+            banaforge_audio::flac_writer::flac(44_100, 16, &[s]),
         )
         .unwrap();
     }
@@ -163,7 +163,7 @@ fn a_program_maps_keys_and_layers_and_keeps_its_sources_loops_at_44_1_khz() {
         let x: Vec<f32> = (0..rate / 10)
             .map(|i| amp * (std::f64::consts::TAU * f64::from(i) / period).sin() as f32)
             .collect();
-        let flac = honeydew_audio::flac_writer::flac(rate, 16, &[x]);
+        let flac = banaforge_audio::flac_writer::flac(rate, 16, &[x]);
         fs::write(src.join(format!("{name}.flac")), flac).unwrap();
     }
     fs::write(
@@ -189,7 +189,7 @@ fn a_program_maps_keys_and_layers_and_keeps_its_sources_loops_at_44_1_khz() {
         "T/C5 v1.flac",
     ];
     assert_eq!((names, lite), (order.to_vec(), 0));
-    let zones: Vec<_> = honeydew_audio::dwp::read(&members[0].1)
+    let zones: Vec<_> = banaforge_audio::dwp::read(&members[0].1)
         .unwrap()
         .into_iter()
         .map(|d| {
@@ -209,7 +209,7 @@ fn a_program_maps_keys_and_layers_and_keeps_its_sources_loops_at_44_1_khz() {
         ]
     );
     assert!(
-        honeydew_audio::dwp::read(&members[0].1)
+        banaforge_audio::dwp::read(&members[0].1)
             .unwrap()
             .iter()
             .all(|d| d.zone.floats[0] == 0.0)
@@ -217,7 +217,7 @@ fn a_program_maps_keys_and_layers_and_keeps_its_sources_loops_at_44_1_khz() {
     let padded: Recipe = toml::from_str(&format!("{text}attack = 0.15\n")).unwrap();
     let (padded, _) = stages::program(&padded, &mut Inputs::new(&root, "", true)).unwrap();
     assert!(
-        honeydew_audio::dwp::read(&padded[0].1)
+        banaforge_audio::dwp::read(&padded[0].1)
             .unwrap()
             .iter()
             .all(|d| d.zone.floats[0] == 0.15)
@@ -231,7 +231,7 @@ fn a_program_maps_keys_and_layers_and_keeps_its_sources_loops_at_44_1_khz() {
         );
     }
     // The loudest sample peaks at −6 dBFS, and is cut at its loop's end.
-    let loud = honeydew_audio::sample::decode(&members[1].1).unwrap();
+    let loud = banaforge_audio::sample::decode(&members[1].1).unwrap();
     let peak = loud.left.iter().fold(0f32, |p, x| p.max(x.abs()));
     assert!((peak - 10f32.powf(-6.0 / 20.0)).abs() < 2e-3, "{peak}");
     assert_eq!(loud.left.len(), 1100);
@@ -241,7 +241,7 @@ fn a_program_maps_keys_and_layers_and_keeps_its_sources_loops_at_44_1_khz() {
     let (members, _) = stages::program(&even, &mut Inputs::new(&root, "", true)).unwrap();
     let peak = |name: &str| {
         let m = members.iter().find(|m| m.0 == name).unwrap();
-        let d = honeydew_audio::sample::decode(&m.1).unwrap();
+        let d = banaforge_audio::sample::decode(&m.1).unwrap();
         d.left.iter().fold(0f32, |p, x| p.max(x.abs()))
     };
     let (c4, c5) = (peak("T/C4 v2.flac"), peak("T/C5 v2.flac"));
@@ -261,7 +261,7 @@ fn tree_program(name: &str, good: &[&str], bad: &[&str], tail: &str) -> Vec<([u8
     fs::create_dir_all(&inst).unwrap();
     let sine: Vec<f32> = (0..2205).map(|i| 0.5 * (i as f32 * 0.06).sin()).collect();
     for f in good {
-        let flac = honeydew_audio::flac_writer::flac(44_100, 16, std::slice::from_ref(&sine));
+        let flac = banaforge_audio::flac_writer::flac(44_100, 16, std::slice::from_ref(&sine));
         fs::write(inst.join(format!("{f}.flac")), flac).unwrap();
     }
     for f in bad {
@@ -272,7 +272,7 @@ fn tree_program(name: &str, good: &[&str], bad: &[&str], tail: &str) -> Vec<([u8
     ))
     .unwrap();
     let (members, _) = stages::program(&recipe, &mut Inputs::new(&root, "", true)).unwrap();
-    (honeydew_audio::dwp::read(&members[0].1)
+    (banaforge_audio::dwp::read(&members[0].1)
         .unwrap()
         .into_iter())
     .map(|d| {
@@ -356,7 +356,7 @@ fn a_samples_recipe_with_a_tail_decodes_folds_trims_and_peaks_its_one_shots() {
             }
         })
         .collect();
-    let wav = honeydew_audio::wav_writer::float32_wav(44_100, &[x.clone(), x]);
+    let wav = banaforge_audio::wav_writer::float32_wav(44_100, &[x.clone(), x]);
     fs::write(src.join("hit.wav"), wav).unwrap();
     let recipe: Recipe = toml::from_str(
         "id = \"t\"\nkind = \"samples\"\npath = \"Samples/T/\"\nsource = \"src\"\n\
@@ -365,7 +365,7 @@ fn a_samples_recipe_with_a_tail_decodes_folds_trims_and_peaks_its_one_shots() {
     .unwrap();
     let (members, _) = stages::samples(&recipe, &mut Inputs::new(&root, "", true)).unwrap();
     assert_eq!(members[0].0, "Hit.flac");
-    let d = honeydew_audio::sample::decode(&members[0].1).unwrap();
+    let d = banaforge_audio::sample::decode(&members[0].1).unwrap();
     assert!(d.right.is_none(), "L = R folds to mono");
     let peak = d.left.iter().fold(0f32, |p, x| p.max(x.abs()));
     assert!((peak - 10f32.powf(-1.0 / 20.0)).abs() < 1e-3, "{peak}");

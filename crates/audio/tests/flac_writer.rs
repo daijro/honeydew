@@ -1,9 +1,9 @@
 use std::f64::consts::TAU;
 use std::io::Cursor;
 
-use honeydew_audio::flac_writer::{FlacEncoder, flac};
-use honeydew_audio::sample::decode;
-use honeydew_audio::wav_writer::{HEADER_LEN, WavWriter};
+use banaforge_audio::flac_writer::{FlacEncoder, flac};
+use banaforge_audio::sample::decode;
+use banaforge_audio::wav_writer::{HEADER_LEN, WavWriter};
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::{Decoder, DecoderOptions};
 use symphonia::core::formats::{FormatOptions, FormatReader};
@@ -555,7 +555,7 @@ fn a_zero_rate_is_refused() {
 
 #[test]
 fn i16_samples_round_trip_exactly_and_flsm_reads_back() {
-    use honeydew_audio::sample::SampleMeta;
+    use banaforge_audio::sample::SampleMeta;
     // Full-range integers: two full blocks and a 1808-frame tail.
     let ints = |seed: u32| -> Vec<i16> {
         let mut v: Vec<i16> = (0..10_000u32)
@@ -677,7 +677,7 @@ const TAGS: [(&str, &str); 7] = [
     ("GENRE", "House"),
     ("DATE", "2026"),
     ("COMMENT", "Made on a phone"),
-    ("ENCODER", "Honeydew 0.5.4"),
+    ("ENCODER", "BanaForge 0.5.4"),
 ];
 
 /// #139: a tagged FLAC has a VORBIS_COMMENT block that symphonia reads back, and still decodes bit-exact.
@@ -700,7 +700,7 @@ fn tags_go_in_a_vorbis_comment_block_and_the_stream_still_decodes() {
         (StandardTagKey::Genre, "House"),
         (StandardTagKey::Date, "2026"),
         (StandardTagKey::Comment, "Made on a phone"),
-        (StandardTagKey::Encoder, "Honeydew 0.5.4"),
+        (StandardTagKey::Encoder, "BanaForge 0.5.4"),
     ];
     let want = want.map(|(key, value)| (Some(key), value.to_owned()));
     assert_eq!(tags, want);

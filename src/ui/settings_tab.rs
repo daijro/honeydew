@@ -119,7 +119,7 @@ fn generated_mcp_token() -> String {
     let mut bytes = [0_u8; 32];
     getrandom::fill(&mut bytes).expect("the operating system random source is unavailable");
     let mut token = String::with_capacity(8 + bytes.len() * 2);
-    token.push_str("honeydew_");
+    token.push_str("banaforge_");
     for byte in bytes {
         use std::fmt::Write;
         write!(token, "{byte:02x}").expect("writing to a String cannot fail");
@@ -141,12 +141,13 @@ enum Kind {
     Toggle(fn(&mut Settings) -> &mut bool),
     /// The output buffer target slider, with a native/default position at zero.
     BufferSize,
+    WaveformGap,
     McpPort,
     McpToken,
     McpStatus,
     /// A disabled toggle fixed in this state.
     FixedToggle(bool),
-    /// `Enable audio recording latency compensation`: ON compensates (Honeydew change, #129: it was inverted),
+    /// `Enable audio recording latency compensation`: ON compensates (BanaForge change, #129: it was inverted),
     /// with `Calibrate` beside it while ON.
     Latency,
     /// A wide light button showing the current item; a tap opens the popup of items.
@@ -240,7 +241,8 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 }
 
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 54] = {
+// The raw buffer slider is desktop-only; mobile has one fewer settings row.
+const ROWS: [Row; 70 + cfg!(desktop) as usize] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -256,6 +258,7 @@ const ROWS: [Row; 54] = {
         row("Scan Bluetooth MIDI Devices", Scan),
         row("Audio:", Header),
         row("Multi core processing", Toggle(|s| &mut s.multi_core)),
+        #[cfg(desktop)]
         row("Audio buffer size", BufferSize),
         row(
             "Enable background audio (iOS Only)",
@@ -321,6 +324,41 @@ const ROWS: [Row; 54] = {
         row("Port", McpPort),
         row("Authentication token", McpToken),
         row("Status", McpStatus),
+        row("Vocal Synth:", Header),
+        row(
+            "Desktop vocal workspace",
+            Toggle(|s| &mut s.vocal_desktop_workspace),
+        ),
+        row(
+            "Show track inspector",
+            Toggle(|s| &mut s.vocal_inspector_visible),
+        ),
+        row(
+            "Show voicebank browser",
+            Toggle(|s| &mut s.vocal_browser_visible),
+        ),
+        row(
+            "Large touch controls",
+            Toggle(|s| &mut s.vocal_large_controls),
+        ),
+        row(
+            "Follow vocal playhead",
+            Toggle(|s| &mut s.vocal_follow_playhead),
+        ),
+        row("Waveform", FixedDropdown("")),
+        row("Show waveform", Toggle(|s| &mut s.vocal_waveform_enabled)),
+        row(
+            "Show top lyric bar",
+            Toggle(|s| &mut s.vocal_lyric_bar_enabled),
+        ),
+        row("Waveform gap below notes", WaveformGap),
+        row("Editor Mode", FixedDropdown("")),
+        row("Simple mode", Toggle(|s| &mut s.vocal_simple_mode)),
+        row("Default voice picker", FixedDropdown("Coming soon")),
+        row("Pitch-bend sensitivity", FixedDropdown("Coming soon")),
+        row("Auto-load last voicebank", FixedToggle(false)),
+        row("Phoneme dictionary language", FixedDropdown("Coming soon")),
+        row("Vocal renderer", FixedDropdown("Procedural voice")),
         row("Advanced:", Header),
         row("Share logs", DisabledButton),
         row("Restore demo songs", RestoreDemos),
@@ -644,7 +682,9 @@ impl SettingsTab {
         let (m, colors) = (cx.m, &cx.theme.colors);
         // Headers and the metronome row take the whole slot; the other rows are a control row, centred in it.
         let r = match row.kind {
-            Kind::Header | Kind::Level | Kind::Scaling | Kind::BufferSize => slot,
+            Kind::Header | Kind::Level | Kind::Scaling | Kind::BufferSize | Kind::WaveformGap => {
+                slot
+            }
             _ => Rect::from_center_size(slot.center(), vec2(slot.width(), m.u(ROW_H))),
         };
         let text = colors.text.to_color32();
@@ -724,7 +764,7 @@ impl SettingsTab {
             Kind::Toggle(_) | Kind::FixedToggle(_) | Kind::Latency => {
                 // The rect starts 0.5 U left of the column and ends at its right edge; the latency one is 2.5 U
                 // shorter, for `Calibrate`, which is 2.5 U wide at the right end, only while the toggle is ON
-                // (compensating; Honeydew change, #129).
+                // (compensating; BanaForge change, #129).
                 let latency = matches!(row.kind, Kind::Latency);
                 let shorter = if latency { LATENCY_SHORTER } else { 0.0 };
                 let rect = Rect::from_x_y_ranges(
@@ -734,7 +774,7 @@ impl SettingsTab {
                 if latency && s.latency_compensation {
                     let at = right(CALIBRATE_W, BUTTON_H);
                     let b = Button::new(id.with("calibrate"), at, "Calibrate", false, colors);
-                    // On phones too (Honeydew change, #129): it asks for the microphone as REC does.
+                    // On phones too (BanaForge change, #129): it asks for the microphone as REC does.
                     self.calibrate |= button(ui, cx, &b, true).clicked();
                 }
                 let (on, field) = match row.kind {
@@ -798,7 +838,7 @@ impl SettingsTab {
                     #[cfg(desktop)]
                     let sound_mode_tip = "STANDARD: general-purpose mode with broad device compatibility.\nMULTITRACK: experimental; FL-style per-input multitrack routing is not implemented yet. The buffer slider works in either mode.";
                     #[cfg(not(desktop))]
-                    let sound_mode_tip = "ULTRASAFE: largest buffer; maximum stability and compatibility, highest latency.\nSAFE: moderately large buffer; fewer glitches with more latency.\nFAST: small buffer; lower latency but more CPU/dropout risk.\nNATIVE: device/OS default audio behavior.";
+                    let sound_mode_tip = "NATIVE: Android AAudio low-latency request with device-selected burst and automatic backend buffer tuning. Hardware and routes determine actual latency.\nFAST: 256-frame callback target.\nSAFE: 1024-frame callback target.\nULTRA SAFE: 2048-frame callback target. Larger buffers trade response time for more processing headroom. iOS retains its audio-session buffer.";
                     crate::ui::tooltip::tip(ui, button_rect, sound_mode_tip, None);
                 }
                 if matches!(choice, Choice::SampleMemory) {
@@ -850,6 +890,16 @@ impl SettingsTab {
                 );
                 let c = level_control(id, body, text);
                 h_slider(ui, cx, &c, &mut s.metronome_level, |_| String::new());
+            }
+            Kind::WaveformGap => {
+                let (line, body) = r.split_top_bottom_at_y(r.top() + m.u(LEVEL_LABEL_H));
+                label(ui, line, FontSize::Pt10);
+                let mut value = f32::from(s.vocal_waveform_offset_y.min(40)) / 40.0;
+                let c = level_control(id, body, text);
+                h_slider(ui, cx, &c, &mut value, |v| {
+                    format!("{} rows", (v * 40.0).round() as u8)
+                });
+                s.vocal_waveform_offset_y = (value.clamp(0.0, 1.0) * 40.0).round() as u8;
             }
             Kind::BufferSize => {
                 let (line, body) = r.split_top_bottom_at_y(r.top() + m.u(LEVEL_LABEL_H));
@@ -1379,6 +1429,7 @@ mod tests {
                 "Scan Bluetooth MIDI Devices",
                 "Audio:",
                 "Multi core processing",
+                #[cfg(desktop)]
                 "Audio buffer size",
                 "Enable background audio (iOS Only)",
                 "Sound mode:",
@@ -1413,6 +1464,23 @@ mod tests {
                 "Port",
                 "Authentication token",
                 "Status",
+                "Vocal Synth:",
+                "Desktop vocal workspace",
+                "Show track inspector",
+                "Show voicebank browser",
+                "Large touch controls",
+                "Follow vocal playhead",
+                "Waveform",
+                "Show waveform",
+                "Show top lyric bar",
+                "Waveform gap below notes",
+                "Editor Mode",
+                "Simple mode",
+                "Default voice picker",
+                "Pitch-bend sensitivity",
+                "Auto-load last voicebank",
+                "Phoneme dictionary language",
+                "Vocal renderer",
                 "Advanced:",
                 "Share logs",
                 "Restore demo songs",
@@ -1478,8 +1546,8 @@ mod tests {
         #[cfg(not(desktop))]
         #[cfg(not(desktop))]
         {
-            assert_eq!(labels(Choice::SoundMode), ["NATIVE"]);
-            assert_eq!(values(Choice::SoundMode), [3]);
+            assert_eq!(labels(Choice::SoundMode), ["NATIVE", "FAST", "SAFE", "ULTRA SAFE"]);
+            assert_eq!(values(Choice::SoundMode), [3, 1, 0, 2]);
         }
         assert_eq!(
             labels(Choice::Theme),
@@ -1526,7 +1594,7 @@ mod tests {
             assert_eq!(SOUND_MODES, [(0, "STANDARD"), (1, "MULTITRACK")]);
         }
         #[cfg(not(desktop))]
-        assert_eq!(SOUND_MODES, [(3, "NATIVE")]);
+        assert_eq!(SOUND_MODES, [(3, "NATIVE"), (1, "FAST"), (0, "SAFE"), (2, "ULTRA SAFE")]);
     }
 
     #[test]
@@ -1946,16 +2014,17 @@ mod tests {
             let centre = |label: &str| rig.rect_of(row_id(index(label))).center().y;
             // Three rows in a section, then a dropdown and the next header's toggle: one pitch each.
             let first = centre("Multi core processing");
+            #[cfg(desktop)]
             assert!(
                 (centre("Audio buffer size") - first - 2.5 * u).abs() < 0.01,
                 "{at}"
             );
             assert!(
-                (centre("Enable background audio (iOS Only)") - first - 4.0 * u).abs() < 0.01,
+                (centre("Enable background audio (iOS Only)") - first - if cfg!(desktop) { 4.0 * u } else { 2.0 * u }).abs() < 0.01,
                 "{at}"
             );
             assert!(
-                (centre("Sound mode:") - first - 6.0 * u).abs() < 0.01,
+                (centre("Sound mode:") - first - if cfg!(desktop) { 6.0 * u } else { 4.0 * u }).abs() < 0.01,
                 "{at}"
             );
             for label in ["Multi core processing", "Sound mode:", "Input device:"] {
@@ -2358,7 +2427,7 @@ mod tests {
         );
     }
 
-    /// Honeydew change (#129, #130): ON compensates (the earlier toggle compensated while OFF); it is ON by default.
+    /// BanaForge change (#129, #130): ON compensates (the earlier toggle compensated while OFF); it is ON by default.
     #[test]
     fn the_latency_toggle_is_on_while_it_compensates_and_a_tap_turns_it_off() {
         let mut rig = Rig::new();
@@ -2372,7 +2441,7 @@ mod tests {
 
     #[test]
     fn calibrate_shows_only_while_the_latency_toggle_is_on_and_a_tap_asks_the_app() {
-        // Compensation is on exactly when the toggle is ON (Honeydew change, #129), and `Calibrate` is visible only
+        // Compensation is on exactly when the toggle is ON (BanaForge change, #129), and `Calibrate` is visible only
         // then, on phones too. The toggle is then 2.5 U shorter and `Calibrate`, 2.5 U wide, takes the right end of the
         // row.
         let mut rig = Rig::new();
@@ -3029,7 +3098,7 @@ mod tests {
 
     #[test]
     fn the_original_content_rows_show_the_folder_and_open_it() {
-        let folder = std::path::PathBuf::from("/home/me/.local/share/honeydew/Original Content");
+        let folder = std::path::PathBuf::from("/home/me/.local/share/banaforge/Original Content");
         let mut rig = Rig::at(1.0, DEFAULT_UI_SCALE, 20.0);
         // Without a content folder (the web) the rows are not there.
         assert!(

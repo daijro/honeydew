@@ -4,8 +4,8 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use honeydew_audio::dwp::{self, Cstm, Midi, Zone};
-use honeydew_audio::sample::MAX_FRAMES;
+use banaforge_audio::dwp::{self, Cstm, Midi, Zone};
+use banaforge_audio::sample::MAX_FRAMES;
 
 /// The FLAC fixture: 4410 frames at 44.1 kHz, L = 0.5·sin(441 Hz), R = 0.5·sin(882 Hz).
 const FLAC_SINE: &[u8] = include_bytes!("fixtures/sine_flac.wav");

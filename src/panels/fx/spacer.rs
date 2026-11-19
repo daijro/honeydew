@@ -1,7 +1,7 @@
 //! The Spacer panel (ID 34), UIHeight 7 U.
 
+use banaforge_audio::analysis;
 use eframe::egui::{Color32, Id, Painter, Rect, Ui};
-use honeydew_audio::analysis;
 
 use super::leveller::animate;
 use super::live_analysis;
@@ -247,7 +247,7 @@ mod tests {
     fn a_feed_moves_each_bar_to_its_correlation() {
         // Input +1 (mono), output −0.5: #8's bar reaches the right edge, #9's goes halfway left; the markers stand at
         // the values (0 is not drawn).
-        use honeydew_audio::MeterSnapshot;
+        use banaforge_audio::MeterSnapshot;
         let content = Rect::from_min_size(pos2(0.0, 0.0), vec2(14.0 * U, 4.99 * U));
         let text = theme_by_id(0).colors.text.to_color32();
         let feed = [1.0, -0.5];

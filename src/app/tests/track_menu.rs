@@ -535,14 +535,18 @@ fn channel_settings_renames_and_recolours_the_channel_one_undo_step_each() {
         assert_eq!(rig.app.song.channels[2].name, "Lead", "{typed:?}");
         assert_eq!(rig.overlays(), []);
     }
-    // The colour: a drag along the slider, one step.
+    // The colour: a drag around the wheel, one step.
     rig.track_menu(2, SETTINGS);
-    let hue = rig.app.song.channels[2].hue;
+    let hue = rig.app.song.channels[2].file.color_rgb;
     rig.frame(vec![]);
     let slider = rig
         .ctx
-        .read_response(dialog.with("color"))
-        .expect("the slider")
+        .read_response(
+            dialog
+                .with(("rgb", rig.app.song.channels[2].id))
+                .with("wheel"),
+        )
+        .expect("the color wheel")
         .rect;
     // The dialog sits above the transport bar.
     assert!(slider.bottom() < PANEL_TOP, "{slider:?}");
@@ -550,12 +554,12 @@ fn channel_settings_renames_and_recolours_the_channel_one_undo_step_each() {
     rig.drag_to(slider.center() + vec2(40.0, 0.0));
     rig.drag_to(slider.center() + vec2(80.0, 0.0));
     rig.release(slider.center() + vec2(80.0, 0.0));
-    let moved = rig.app.song.channels[2].hue;
+    let moved = rig.app.song.channels[2].file.color_rgb;
     assert_ne!(moved, hue);
     rig.frame(escape());
     assert_eq!(rig.overlays(), []);
     rig.frame(undo());
-    assert_eq!(rig.app.song.channels[2].hue, hue);
+    assert_eq!(rig.app.song.channels[2].file.color_rgb, hue);
     assert_eq!(rig.app.song.channels[2].name, "Lead");
     rig.frame(undo());
     assert_eq!(rig.app.song.channels[2].name, "MiniSynth");
@@ -584,10 +588,13 @@ fn channel_settings_is_on_the_dialog_base_the_dim_then_the_panel() {
     assert_eq!(rig.overlays().len(), 1, "the dialog's first frame");
     let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1170.0, 540.0));
     let m = crate::metrics::Metrics::from_pixels_per_point(1.0, crate::metrics::DEFAULT_UI_SCALE);
-    // 20 U × 5.75 U on an instrument channel (10 U wide on others), centred in the content area above the transport
+    // 20 U × 10.5 U (screen-clamped) for the wheel on instrument channels, centred above the transport
     // bar.
     let area = crate::ui::main_screen::Regions::new(screen, &m).area;
-    let boxed = egui::Rect::from_center_size(area.center(), egui::vec2(20.0 * 32.0, 5.75 * 32.0));
+    let boxed = egui::Rect::from_center_size(
+        area.center(),
+        egui::vec2(20.0 * 32.0, (10.5_f32 * 32.0).min(area.height() - 4.0)),
+    );
     let painted = crate::ui::dialog::painted_rects(rig.out.shapes.iter().map(|s| &s.shape));
     let colors = crate::theme::theme_by_id(0).colors;
     crate::ui::dialog::assert_base(&painted, &colors, screen, boxed);
@@ -2235,7 +2242,7 @@ fn save_as_midi_proposes_the_channel_name_made_a_file_name() {
 fn hide_track_takes_its_row_and_ghost_notes_but_not_its_sound() {
     use crate::audio_engine::SongAudioEngine;
     use crate::theme::channel_color;
-    use honeydew_audio::device::AudioRenderer;
+    use banaforge_audio::device::AudioRenderer;
     const HIDE_TRACK: (usize, usize) = (0, 5);
     let mut rig = Rig::with_drums_and_synth();
     rig.app

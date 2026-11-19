@@ -4,7 +4,7 @@ use std::f64::consts::TAU;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use honeydew_audio::sample::{
+use banaforge_audio::sample::{
     DecodeError, MAX_FRAMES, SampleData, SampleMeta, decode, decode_with_limit,
 };
 

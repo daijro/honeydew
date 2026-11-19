@@ -79,7 +79,7 @@ pub struct Param {
     /// ([`widgets::UNITY`]) for the channel Level and 0.5 for its Pan (a send level resets to unity, as its rack
     /// slider does).
     pub reset: f32,
-    /// A note effect's param (or Lemon Reverb's Room Size): its edit rebuilds the engine at the end of the drag, as a
+    /// A note effect's param (or Banana Reverb's Room Size): its edit rebuilds the engine at the end of the drag, as a
     /// rack card's does.
     pub note_effect: bool,
 }
@@ -122,7 +122,7 @@ pub fn param(song: &Song, channel: usize, target: AutomationTarget) -> Option<Pa
                 Err(_) => *COMMON_PARAMS.get(usize::try_from(-1 - target.param).ok()?)?,
             };
             let note = module.role == Role::NoteEffect
-                || honeydew_audio::lemon::rebuilds(instance.type_id, target.param);
+                || banaforge_audio::banana::rebuilds(instance.type_id, target.param);
             (instance.title(), spec, spec.default, note)
         }
     };

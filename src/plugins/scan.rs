@@ -1,9 +1,9 @@
 // Copyright (C) 2026 ItsAlphaNeon
 // SPDX-License-Identifier: GPL-3.0-or-later
-// This file is part of Lemon Studio: https://github.com/ItsAlphaNeon/Lemon-Studio
-// Modified for Honeydew: Lemon Studio's plugin search and scanner (os-app `plugin_db.rs`, `plugin_scan.rs` and
+// This file is part of Banana Studio: https://github.com/ItsAlphaNeon/Lemon-Studio
+// Modified for BanaForge: Banana Studio's plugin search and scanner (os-app `plugin_db.rs`, `plugin_scan.rs` and
 // `plugins::load_file`), without its preferences, native plugins and built-in plugin list; the cache is kept in
-// Honeydew's settings store, and the yabridge / vstbridge folders join the standard ones.
+// BanaForge's settings store, and the yabridge / vstbridge folders join the standard ones.
 
 //! Finding plugin files and scanning them. Each file is loaded in a scanner process (this program run with
 //! [`ARG`]), so that a plugin that crashes, hangs or opens a window while it loads cannot harm the app; the results
@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 use os_host::{Descriptor, Format, Kind, Library};
 use serde::{Deserialize, Serialize};
 
-/// The scanner's command-line switch: `honeydew-native --scan-plugin <format> <path>`.
+/// The scanner's command-line switch: `banaforge-native --scan-plugin <format> <path>`.
 pub const ARG: &str = "--scan-plugin";
 /// The scanner's one line on standard output starts with this.
 const TAG: &str = "HDSCAN ";

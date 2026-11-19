@@ -2,7 +2,7 @@
 //! and display laws; and every module's common params.
 
 use super::{At, Display, Fmt, ParamSpec as P, Sign};
-use honeydew_audio::sample_edit::speed_semitones;
+use banaforge_audio::sample_edit::speed_semitones;
 
 /// The channel and slot Level law: dB = 66·v^0.6 − 60 in f32, to 0.1 dB with a
 /// sign on gains; `-inf.` at v = 0. The default 0.8531 is 0 dB.

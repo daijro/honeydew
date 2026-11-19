@@ -1,4 +1,4 @@
-use honeydew::flm::chunk::{
+use banaforge::flm::chunk::{
     ChunkIter, ChunkWriter, ContentPath, ContentRoot, Cursor, FlmError, FlmErrorKind, MAGIC_CL01,
     MAGIC_CL02, MAGIC_FL01, MAGIC_RK01, MAX_CHUNK_SIZE, MAX_FILE_SIZE, Prefix, PrefixKind,
     file_chunks,
@@ -582,8 +582,8 @@ fn lossy_text_never_takes_more_bytes_than_it_read() {
     let mut reader = Cursor::new(&[0xff, 0xfe, b'a', 0xff], "X");
     let text = reader.char::<4>().unwrap();
     assert!(text.len() <= 4, "{text:?}");
-    assert_eq!(honeydew::flm::chunk::text(&[0xff; 7]), "???????");
-    assert_eq!(honeydew::flm::chunk::text(b"ok"), "ok");
+    assert_eq!(banaforge::flm::chunk::text(&[0xff; 7]), "???????");
+    assert_eq!(banaforge::flm::chunk::text(b"ok"), "ok");
 }
 
 #[test]

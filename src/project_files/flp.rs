@@ -27,7 +27,7 @@ use crate::sample_cache::{SampleCache, reader};
 use crate::smf::gm;
 use crate::song::{ChannelKind, DrumKit, Event, LaneKind, SamplerSlot, Song, SynthKind};
 use crate::zip::Entry;
-use honeydew_audio::dwp::{self, Zone};
+use banaforge_audio::dwp::{self, Zone};
 
 /// The summary's tag while samples are missing, and its choice.
 pub const LOCATE_TAG: &str = "project_files_locate";
@@ -135,7 +135,7 @@ impl ProjectFiles {
         for sample in split {
             let file = file_name(&sample.path).to_owned();
             let found = (self.find_sample(path, &sample.path, entries)).and_then(|data| {
-                let decoded = honeydew_audio::sample::decode(&data).ok()?;
+                let decoded = banaforge_audio::sample::decode(&data).ok()?;
                 self.keep_sample(&dir?.join(&name), &file, &data)?;
                 Some(decoded)
             });
@@ -538,7 +538,7 @@ mod tests {
                 ev(id::MX_OUTPUT, Value::U32(0)),
             ],
         );
-        let wav = honeydew_audio::wav_writer::float32_wav(44_100, &[[0.5f32; 64]]);
+        let wav = banaforge_audio::wav_writer::float32_wav(44_100, &[[0.5f32; 64]]);
         let zip = crate::zip::write(&[
             ("Beat.flp".into(), project),
             ("samples/vox.wav".into(), wav.clone()),
@@ -582,7 +582,7 @@ mod tests {
                 crate::project_files::STAND_INS,
                 r"Kick: missing sample ...\Kicks\FPC_Kick_01.wav, plays Relay Kit Kick",
                 "Serum: Serum replaced by Neon Ribbon",
-                "Serum: Fruity Limiter as Lemon Limiter at its default settings",
+                "Serum: Fruity Limiter as Banana Limiter at its default settings",
                 "Serum: Gross Beat dropped",
             ]
         );
@@ -595,10 +595,10 @@ mod tests {
         use crate::content::bundle::{Kind, tests::fixture};
         use crate::flm::chunk::ContentRoot;
         use crate::ui::save_dialog::ExportFormat;
-        use honeydew_audio::device::AudioRenderer;
+        use banaforge_audio::device::AudioRenderer;
         let tmp = crate::project_files::content::tests::Temp::new("flp-zones");
         let sine: Vec<f32> = (0..4410).map(|i| (i as f32 * 0.0627).sin() * 0.5).collect();
-        let flac = honeydew_audio::flac_writer::flac(44_100, 16, &[sine]);
+        let flac = banaforge_audio::flac_writer::flac(44_100, 16, &[sine]);
         let zone = |root, key_low, key_high| Zone {
             root,
             key_low,
@@ -620,7 +620,7 @@ mod tests {
         let program = "Presets/DW Sampler/Keys/Test Piano.dwp";
         let bundle = fixture(&tmp.0, &[(Kind::Program, program, members)]);
         // Zones a preset lists in its `CSTM` (`ZONE`s: the path, then root, keys, velocities…), of user files.
-        let wav = honeydew_audio::wav_writer::float32_wav(44_100, &[[0.5f32; 4410]]);
+        let wav = banaforge_audio::wav_writer::float32_wav(44_100, &[[0.5f32; 4410]]);
         let listed = |file: &str, root: u8, lo: u8, hi: u8| {
             let mut body = format!("@L@\0My Samples/{file}").into_bytes();
             body.resize(1024, 0);

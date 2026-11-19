@@ -1,11 +1,11 @@
 #!/bin/sh
 # The iOS app, built on macOS with Xcode's command line tools. By default two IPAs in the target folder:
-# honeydew-ios-<version>.ipa with the bundled sounds (`content/` in the app, the packs Android's APK holds) and
-# honeydew-ios-<version>-no-sounds.ipa without. Both are ad-hoc signed only, with the `Payload/Honeydew.app` layout
+# banaforge-ios-<version>.ipa with the bundled sounds (`content/` in the app, the packs Android's APK holds) and
+# banaforge-ios-<version>-no-sounds.ipa without. Both are ad-hoc signed only, with the `Payload/BanaForge.app` layout
 # that AltStore, SideStore and Sideloadly install, signing it with the user's own Apple ID.
 #
-#   tools/ios-dist.sh [NAME]   NAME: the IPAs' base name, honeydew-ios-<version> by default
-#   tools/ios-dist.sh --sim    the Simulator's app, with sounds: <target folder>/ios-sim/Honeydew.app
+#   tools/ios-dist.sh [NAME]   NAME: the IPAs' base name, banaforge-ios-<version> by default
+#   tools/ios-dist.sh --sim    the Simulator's app, with sounds: <target folder>/ios-sim/BanaForge.app
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -18,22 +18,22 @@ if [ "${1:-}" = --sim ]; then
     export BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios_sim=--target=arm64-apple-ios-simulator
 fi
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
-name=${1:-honeydew-ios-$version}
+name=${1:-banaforge-ios-$version}
 mkdir -p "${CARGO_TARGET_DIR:-target}"
 out=$(cd "${CARGO_TARGET_DIR:-target}" && pwd)
 export IPHONEOS_DEPLOYMENT_TARGET=14.0
 
 # winit runs UIKit's application from the native binary's `main`, so the binary is the app's executable.
-cargo build --release --locked --target "$target" --bin honeydew-native
+cargo build --release --locked --target "$target" --bin banaforge-native
 
 work=$out/ios
 rm -rf "$work"
-app=$work/Payload/Honeydew.app
+app=$work/Payload/BanaForge.app
 mkdir -p "$app"
-cp "$out/$target/release/honeydew-native" "$app/Honeydew"
+cp "$out/$target/release/banaforge-native" "$app/BanaForge"
 # The icon on its opaque background (iOS draws transparency black), at each size the plist names.
 for icon in AppIcon60x60@2x:120 AppIcon60x60@3x:180 AppIcon76x76@2x~ipad:152 AppIcon83.5x83.5@2x~ipad:167; do
-    sips -z "${icon#*:}" "${icon#*:}" assets/branding/honeydew-ios-512.png --out "$app/${icon%:*}.png" >/dev/null
+    sips -z "${icon#*:}" "${icon#*:}" assets/branding/banaforge-ios-512.png --out "$app/${icon%:*}.png" >/dev/null
 done
 cat > "$app/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -41,10 +41,10 @@ cat > "$app/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
-    <key>CFBundleExecutable</key><string>Honeydew</string>
-    <key>CFBundleIdentifier</key><string>dev.daijro.honeydew</string>
-    <key>CFBundleName</key><string>Honeydew</string>
-    <key>CFBundleDisplayName</key><string>Honeydew</string>
+    <key>CFBundleExecutable</key><string>BanaForge</string>
+    <key>CFBundleIdentifier</key><string>dev.daijro.banaforge</string>
+    <key>CFBundleName</key><string>BanaForge</string>
+    <key>CFBundleDisplayName</key><string>BanaForge</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleShortVersionString</key><string>$version</string>
@@ -76,7 +76,7 @@ cat > "$app/Info.plist" <<PLIST
     </array>
     <key>UIFileSharingEnabled</key><true/>
     <key>LSSupportsOpeningDocumentsInPlace</key><true/>
-    <key>NSMicrophoneUsageDescription</key><string>Honeydew uses the microphone to record audio into your songs.</string>
+    <key>NSMicrophoneUsageDescription</key><string>BanaForge uses the microphone to record audio into your songs.</string>
 </dict>
 </plist>
 PLIST
@@ -98,7 +98,7 @@ if [ "$platform" = iPhoneSimulator ]; then
     sign
     rm -rf "$out/ios-sim"
     mv "$work/Payload" "$out/ios-sim"
-    echo "wrote $out/ios-sim/Honeydew.app"
+    echo "wrote $out/ios-sim/BanaForge.app"
     exit 0
 fi
 ipa() {

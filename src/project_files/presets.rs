@@ -68,6 +68,7 @@ pub fn preset_exts(type_id: u16) -> &'static [&'static str] {
         33 => &[PRESET_EXT, "wav", "flac", "mp3", "ogg"],
         39 => &[PRESET_EXT, super::FST_EXT, "wav", "flac", "mp3", "ogg"],
         52 => &[PRESET_EXT, super::SF2_EXT, super::SFZ_EXT],
+        53 => &[PRESET_EXT, "zip", "uar"],
         _ => &[PRESET_EXT],
     }
 }

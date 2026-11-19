@@ -15,8 +15,8 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use honeydew_audio::sample::MAX_FRAMES;
-use honeydew_audio::sample_edit::speed_ratio;
+use banaforge_audio::sample::MAX_FRAMES;
+use banaforge_audio::sample_edit::speed_ratio;
 
 use super::files::{TakeWriter, create_take};
 use super::input::{InputChoice, InputReader};
@@ -401,7 +401,7 @@ mod tests {
         /// ports, and an empty recordings folder for the test `name`.
         fn new(name: &str, ports: usize) -> Self {
             let dir = std::env::temp_dir()
-                .join(format!("honeydew-h11-rec-{name}-{}", std::process::id()));
+                .join(format!("banaforge-h11-rec-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir).unwrap();
             let mut song = Song {
@@ -862,7 +862,7 @@ mod tests {
         assert_eq!(takes(&recorder), [(0, 0, 1_000)]);
         let path = recorder.takes()[0].path.clone();
         let bytes = std::fs::read(&path).unwrap();
-        let decoded = honeydew_audio::sample::decode_with_limit(&bytes, 1_000).unwrap();
+        let decoded = banaforge_audio::sample::decode_with_limit(&bytes, 1_000).unwrap();
         assert_eq!(decoded.frames(), 1_000);
         let written = samples(&path, 1);
         assert_eq!(written[..700], [pcm(0.25)].repeat(700));
@@ -901,7 +901,7 @@ mod tests {
         recorder.stop(&mut rig.song).unwrap();
         for (path, channels) in paths.iter().zip([1, 2]) {
             let bytes = std::fs::read(path).unwrap();
-            let decoded = honeydew_audio::sample::decode_with_limit(&bytes, 300).unwrap();
+            let decoded = banaforge_audio::sample::decode_with_limit(&bytes, 300).unwrap();
             assert_eq!(decoded.frames(), 300);
             assert_eq!(samples(path, channels).len(), 300 * channels as usize);
         }

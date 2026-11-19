@@ -7,7 +7,7 @@ use crate::panels::{self, PanelState};
 use crate::song::AutomationTarget;
 use crate::song::points::{self, Point, PointKey};
 use crate::ui::rack::{content_rect, flow, rack_rect};
-use honeydew_audio::device::AudioRenderer;
+use banaforge_audio::device::AudioRenderer;
 
 /// The centre of control `id` of the first card of channel 2's rack (`with_effects`), as placed.
 fn control(rig: &Rig, id: u32) -> Pos2 {

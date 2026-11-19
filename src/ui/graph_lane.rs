@@ -232,7 +232,7 @@ pub fn v_centred(content: Rect, y: f32, m: &Metrics) -> f32 {
     0.5 + d.signum() * 0.5 * (d.abs() - dz) / (half - dz)
 }
 
-/// Honeydew change (GitHub #127): the x a drum graph lane's drag paints at, the pointer at `p`. It keeps to the
+/// BanaForge change (GitHub #127): the x a drum graph lane's drag paints at, the pointer at `p`. It keeps to the
 /// touch-down's column (`lock`, the touch-down) until the finger is past the 0.5 U calm distance sideways and more
 /// across than up or down from it; from then on (`lock` cleared) it follows the finger, painting step by step as before.
 pub fn drum_paint_x(lock: &mut Option<Pos2>, p: Pos2, m: &Metrics) -> f32 {
