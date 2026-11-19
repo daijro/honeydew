@@ -2419,7 +2419,7 @@ fn mesh_bytes(mesh: &Mesh) -> usize {
 /// Aggregation uses min/max over the full interval, not every Nth sample.
 fn waveform_column_stride(beats_per_px: f64, width: usize) -> usize {
     let zoom = if beats_per_px >= 1.0 / 8.0 { 4 }
-        else if beats_per_px >= 1.0 / 32.0 { 2 } else { 1 };
+        else if beats_per_px >= 1.0 / 16.0 { 2 } else { 1 };
     zoom.max(width.div_ceil(2048)).max(1)
 }
 
@@ -2521,7 +2521,7 @@ mod waveform_mesh_cache_tests {
     #[test]
     fn zoomed_out_waveforms_reduce_geometry_and_keep_transients() {
         assert_eq!(waveform_column_stride(1.0 / 128.0, 1024), 1);
-        assert_eq!(waveform_column_stride(1.0 / 32.0, 1024), 2);
+        assert_eq!(waveform_column_stride(1.0 / 16.0, 1024), 2);
         assert_eq!(waveform_column_stride(1.0 / 8.0, 1024), 4);
         assert!(10000_usize.div_ceil(waveform_column_stride(1.0, 10000)) <= 2048);
         let mut pcm = vec![0.0; 4096];

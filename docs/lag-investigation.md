@@ -44,7 +44,7 @@ silently marked fixed by this performance pass.
 
 ## Arrangement waveform LOD / mobile sound-mode revision
 
-- Waveform meshes now merge 2 columns at >=1/32 beat/device-pixel and 4 at
+- Waveform meshes now merge 2 columns at >=1/16 beat/device-pixel and 4 at
   >=1/8 beat/device-pixel, with a 2048-column maximum per mesh/channel. Close zoom
   keeps one-device-pixel detail. Each column queries the whole interval's min/max;
   it does not skip samples. The final partial column is queried separately,
