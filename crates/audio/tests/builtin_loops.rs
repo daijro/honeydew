@@ -1,10 +1,10 @@
 //! The six built-in Slicer loops: drum patterns rendered from the factory kits, with the tempo and one
 //! slice marker per hit step.
 
-use honeydew_audio::builtin_drums::{KITS, RATE, builtin};
-use honeydew_audio::builtin_loops::{LOOPS, Loop, loop_sample};
-use honeydew_audio::sample::SampleData;
-use honeydew_audio::slicer::{MAX_SLICES, auto_clip_beats, detect};
+use banaforge_audio::builtin_drums::{KITS, RATE, builtin};
+use banaforge_audio::builtin_loops::{LOOPS, Loop, loop_sample};
+use banaforge_audio::sample::SampleData;
+use banaforge_audio::slicer::{MAX_SLICES, auto_clip_beats, detect};
 
 const MINUS_1_DBFS: f32 = 0.891_250_9;
 /// The 5 ms fade, in frames.

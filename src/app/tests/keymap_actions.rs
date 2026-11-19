@@ -349,7 +349,7 @@ fn a_focused_text_field_keeps_space_from_play() {
     let mut app = Rig::new().app;
     let ctx = egui::Context::default();
     let mut text = String::new();
-    let mut frame = |app: &mut HoneydewApp, focus: bool, events: Vec<egui::Event>| {
+    let mut frame = |app: &mut BanaForgeApp, focus: bool, events: Vec<egui::Event>| {
         let (mut rewind, mut navs) = (false, Vec::new());
         let input = egui::RawInput {
             events,

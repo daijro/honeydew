@@ -18,9 +18,9 @@
 
 use std::sync::{Arc, Weak};
 
+use banaforge_audio::sample::SampleData;
+use banaforge_audio::sample_edit::peaks;
 use eframe::egui::{Color32, Context, Id, Mesh, Rect, Sense, Ui};
-use honeydew_audio::sample::SampleData;
-use honeydew_audio::sample_edit::peaks;
 
 use crate::audio_engine::slicer::{loop_path, sensitivity, slices};
 use crate::flm::chunk::ContentPath;

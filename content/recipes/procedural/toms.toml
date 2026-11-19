@@ -1,7 +1,7 @@
 id = "proc-toms"
 kind = "samples"
 path = "Samples/Electronic Toms/"
-source = "honeydew"
+source = "banaforge"
 render = "tom"
 variant = [
   { name = "Tom Low", tune = 85.0 },

@@ -28,12 +28,12 @@
 
 use std::path::{Path, PathBuf};
 
+use banaforge_audio::sample::SampleData;
+use banaforge_audio::sample_edit::{self as ops, frame_at, speed_ratio};
+use banaforge_audio::wav_writer::float32_wav;
 use eframe::egui;
-use honeydew_audio::sample::SampleData;
-use honeydew_audio::sample_edit::{self as ops, frame_at, speed_ratio};
-use honeydew_audio::wav_writer::float32_wav;
 
-use super::HoneydewApp;
+use super::BanaForgeApp;
 use crate::audio_engine::fit_audio_clip;
 use crate::flm::chunk::ContentPath;
 use crate::metrics::Metrics;
@@ -171,7 +171,7 @@ fn slot_at(song: &Song, at: At) -> Option<&SamplerSlot> {
     key(at).clip(song)?.file.sample.as_deref()
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// The audio editor's region ops (see the module doc), after the frame's edit: the write `Processing...` showed
     /// for, the editor's new op, then the answer of the question or the dialog. `tick` is the transport position.
     pub(super) fn audio_edit(&mut self, ctx: &egui::Context, m: &Metrics, tick: u64) {
@@ -361,7 +361,7 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
-    use honeydew_audio::sample::SampleData;
+    use banaforge_audio::sample::SampleData;
 
     use super::*;
     use crate::flm::chunk::{ContentPath, ContentRoot};
@@ -540,7 +540,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_sample_reached_through_a_link_into_the_original_content_is_saved_in_my_samples() {
-        let user = std::env::temp_dir().join(format!("honeydew-byo-target-{}", std::process::id()));
+        let user =
+            std::env::temp_dir().join(format!("banaforge-byo-target-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&user);
         let kicks = user
             .join(crate::project_files::CONTENT_FOLDER)

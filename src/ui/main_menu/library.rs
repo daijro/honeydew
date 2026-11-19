@@ -478,9 +478,9 @@ pub fn songs_dir() -> Option<PathBuf> {
 
 /// The user folder, which holds `My Songs` and the other `My …` folders ([`crate::project_files::MY_FOLDERS`]), the
 /// Original Content folder, `Unzipped songs` and the bin, where the user finds it:
-/// - Linux and other Unixes: `Honeydew` in the XDG documents folder, or `~/Documents/Honeydew`;
-/// - macOS: `~/Documents/Honeydew`;
-/// - Windows: `Honeydew` in the Documents known folder, or `%USERPROFILE%\Documents\Honeydew`;
+/// - Linux and other Unixes: `BanaForge` in the XDG documents folder, or `~/Documents/BanaForge`;
+/// - macOS: `~/Documents/BanaForge`;
+/// - Windows: `BanaForge` in the Documents known folder, or `%USERPROFILE%\Documents\BanaForge`;
 /// - Android: the app's external files folder (`Android/data/<package>/files`);
 /// - iOS: the app's `Documents` folder, which the Files app shows.
 ///
@@ -582,7 +582,7 @@ fn known_documents() -> Option<PathBuf> {
 pub const SOUND_LIBRARY_FOLDER: &str = "content";
 
 /// The marker an earlier user folder holds once it stays the user folder ([`migrate_user_dir`]): why it does. Android's
-/// documents provider (`HoneydewDocuments.java`) looks for it too, to show the folder the app uses.
+/// documents provider (`BanaForgeDocuments.java`) looks for it too, to show the folder the app uses.
 #[cfg(not(target_arch = "wasm32"))]
 const STAYS: &str = ".user-folder-stays-here";
 
@@ -723,11 +723,11 @@ fn move_files(
 /// The folder eframe keeps app data in (`eframe::storage_dir`'s layout, which needs eframe's `persistence` feature,
 /// so it is repeated here): the installed sound library's ([`SOUND_LIBRARY_FOLDER`]), and the user folder before it
 /// moved to the documents folder ([`user_dir`]):
-/// - Linux and other Unixes: `$XDG_DATA_HOME/honeydew`, or `~/.local/share/honeydew`;
-/// - macOS: `~/Library/Application Support/Honeydew`;
-/// - Windows: `%APPDATA%\Honeydew\data`;
-/// - Android: `Honeydew` in the app's internal data folder;
-/// - iOS: `Honeydew` in the app's `Library/Application Support`.
+/// - Linux and other Unixes: `$XDG_DATA_HOME/banaforge`, or `~/.local/share/banaforge`;
+/// - macOS: `~/Library/Application Support/BanaForge`;
+/// - Windows: `%APPDATA%\BanaForge\data`;
+/// - Android: `BanaForge` in the app's internal data folder;
+/// - iOS: `BanaForge` in the app's `Library/Application Support`.
 ///
 /// The app's folder named after its former name ([`crate::LEGACY_APP_NAME`]) becomes this one the first time
 /// ([`crate::migrate_legacy_dir_once`]), before [`user_dir`] moves what it holds. `None` when the home or app-data
@@ -777,7 +777,8 @@ fn app_data_dir_from(
             data.join(app.to_lowercase())
         }
     };
-    let app = migrate(&named(crate::LEGACY_APP_NAME), &named(crate::APP_NAME));
+    let current = migrate(&named(crate::PREVIOUS_APP_NAME), &named(crate::APP_NAME));
+    let app = migrate(&named(crate::LEGACY_APP_NAME), &current);
     Some(if cfg!(windows) { app.join("data") } else { app })
 }
 
@@ -927,10 +928,15 @@ impl SongLibrary for NativeLibrary {
         // lossily; its path is the real one. The cap counts what is listed, not what the folder holds; the scan stops
         // after [`MAX_SCANNED`] entries. Only a row kept is asked for its time.
         let scanned = entries.into_iter().flatten().take(MAX_SCANNED).flatten();
-        let user = self.user_folder();
+        let user = if self.whole {
+            self.root.clone()
+        } else {
+            self.user_folder()
+        };
         let top = user.as_deref() == Some(dir);
-        let every =
-            user.is_some() && !top && self.root.as_deref().is_some_and(|r| !dir.starts_with(r));
+        let every = user.is_some()
+            && !top
+            && (self.whole || self.root.as_deref().is_some_and(|r| !dir.starts_with(r)));
         let listed = scanned.filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
             // `DirEntry::file_type` does not follow links, and most systems give it with the entry.
@@ -1450,8 +1456,25 @@ mod tests {
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
+    fn my_folders_lists_all_user_file_types_in_songs_and_samples() {
+        let root = temp_root("all-user-files");
+        let lib = NativeLibrary::user_folder(root.clone());
+        for folder in ["My Songs", "My Samples"] {
+            let dir = root.join(folder);
+            std::fs::create_dir_all(&dir).unwrap();
+            for name in ["song.flm", "voice.wav", "bank.zip", "readme.txt"] {
+                std::fs::write(dir.join(name), b"x").unwrap();
+            }
+            assert_eq!(lib.list(Some(&dir)).unwrap().len(), 4);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn the_native_library_lists_songs_and_folders_and_stores_into_its_root() {
-        let root = std::env::temp_dir().join(format!("honeydew-songs-test-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("banaforge-songs-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let mut lib = NativeLibrary::at(root.clone());
         // No folder yet: empty, not an error.
@@ -1609,7 +1632,7 @@ mod tests {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn temp_root(test: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("honeydew-{test}-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("banaforge-{test}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         root
     }
@@ -2168,15 +2191,15 @@ mod tests {
         assert_eq!(dir(&[("HOME", "")]), None);
         assert_eq!(
             dir(&[("HOME", "/h")]),
-            Some(PathBuf::from("/h/.local/share/honeydew"))
+            Some(PathBuf::from("/h/.local/share/banaforge"))
         );
         assert_eq!(
             dir(&[("XDG_DATA_HOME", "/d"), ("HOME", "/h")]),
-            Some(PathBuf::from("/d/honeydew"))
+            Some(PathBuf::from("/d/banaforge"))
         );
         assert_eq!(
             dir(&[("XDG_DATA_HOME", "rel"), ("HOME", "/h")]),
-            Some(PathBuf::from("/h/.local/share/honeydew"))
+            Some(PathBuf::from("/h/.local/share/banaforge"))
         );
         // The documents folder: `user-dirs.dirs`' one (not the home folder itself), else `~/Documents`.
         let docs = |vars, dirs: &'static str| {
@@ -2205,7 +2228,7 @@ mod tests {
         std::fs::write(old.join("A.flm"), b"song").unwrap();
         let var = |key: &str| (key == "XDG_DATA_HOME").then(|| data.clone().into_os_string());
         let dir = app_data_dir_from(var, crate::migrate_legacy_dir).unwrap();
-        assert_eq!(dir, data.join("honeydew"));
+        assert_eq!(dir, data.join("banaforge"));
         let song = dir.join(SONGS_FOLDER).join("A.flm");
         assert_eq!(std::fs::read(song).unwrap(), b"song");
         assert!(!data.join("studio").exists());
@@ -2219,7 +2242,7 @@ mod tests {
         assert_eq!(dir.parent(), user_dir().as_deref(), "{dir:?}");
         assert!(dir.ends_with(SONGS_FOLDER), "{dir:?}");
         let app = dir.parent().unwrap().to_string_lossy().to_lowercase();
-        assert!(app.contains("honeydew"), "{dir:?}");
+        assert!(app.contains("banaforge"), "{dir:?}");
     }
 
     /// Every file below `dir`, relative to it, sorted; a folder holding nothing as `<folder>/`.
@@ -2255,7 +2278,7 @@ mod tests {
     }
 
     /// The earlier user folder `<base>/old` of the app data folder, holding the installed sound library and the user's
-    /// files, and where the user folder goes, `<base>/Documents/Honeydew`.
+    /// files, and where the user folder goes, `<base>/Documents/BanaForge`.
     #[cfg(not(target_arch = "wasm32"))]
     fn earlier_user_folder(base: &Path) -> (PathBuf, PathBuf) {
         let _ = std::fs::remove_dir_all(base);
@@ -2295,7 +2318,7 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn the_user_folder_moves_whole_to_the_documents_folder_or_stays() {
-        let base = std::env::temp_dir().join(format!("honeydew-userdir-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("banaforge-userdir-{}", std::process::id()));
         let rename = |from: &Path, to: &Path| std::fs::rename(from, to);
         let library = ["content/index.json".to_owned()];
 

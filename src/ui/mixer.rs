@@ -14,11 +14,11 @@
 //! A strip control's press or parameter menu pick is the app's recent control ([`MixerState::touch`]); its menu's
 //! `Unlink from MIDI CC` follows the channel's `CCLK`.
 //!
-//! The level in dB (#133, a Honeydew addition): under a tall fader's cap, where its lowest value leaves room
+//! The level in dB (#133, a BanaForge addition): under a tall fader's cap, where its lowest value leaves room
 //! ([`widgets::below_cap`]); and in the name slot while the fader is held, at every height.
 
+use banaforge_audio::device::ModuleMeter;
 use eframe::egui::{Align2, Id, Pos2, Rect, Ui, UiBuilder, Vec2, pos2, vec2};
-use honeydew_audio::device::ModuleMeter;
 
 use crate::icons::draw_icon;
 use crate::metrics::{FontSize, Metrics};
@@ -196,7 +196,7 @@ pub fn show(
             continue;
         }
         let strip = Rect::from_min_size(pos2(left, rect.top()), vec2(unit, rect.height()));
-        let color = channel_color(channel.hue, cx.theme).to_color32();
+        let color = channel_color(channel.color_token(), cx.theme).to_color32();
         let icon = kind_icon(channel.kind);
         let master = channel.kind == ChannelKind::Master;
         let name = channel.name.as_str();
@@ -1508,7 +1508,7 @@ mod tests {
             rig.frame(vec![]);
             for i in [0, 1] {
                 let channel = &rig.song.channels[i];
-                let color = channel_color(channel.hue, &theme).to_color32();
+                let color = channel_color(channel.color_token(), &theme).to_color32();
                 let texts = rig.texts(rig.part(i, NAME));
                 assert_eq!(
                     texts,
@@ -1521,8 +1521,8 @@ mod tests {
 
     #[test]
     fn each_strip_meters_its_channel_beside_the_fader_cap() {
-        use honeydew_audio::MeterSnapshot;
-        use honeydew_audio::device::ModuleKey;
+        use banaforge_audio::MeterSnapshot;
+        use banaforge_audio::device::ModuleKey;
         let theme = theme_by_id(0);
         let mut rig = Rig::new(1);
         let meter = |channel, peak_left, peak_right| ModuleMeter {

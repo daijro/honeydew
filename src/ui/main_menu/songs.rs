@@ -29,10 +29,10 @@
 //!
 //! A secondary tap (right click) on a row enters select mode, selects the row and opens the ≡ menu at the pointer.
 //!
-//! Preview (#106, a Honeydew addition): a tap on an audio file shows the sample pickers' strip
+//! Preview (#106, a BanaForge addition): a tap on an audio file shows the sample pickers' strip
 //! ([`crate::ui::picker_preview::SampleStrip`]) under the list, which shrinks by its height: the file's name, then, once
 //! the app decoded it ([`MainMenuAction::Preview`], [`SongsPreview::decoded`]), its waveform, playing once from the
-//! start on the preview player. Honeydew change (#123, #130; #106's tap also selected it): the tap selects
+//! start on the preview player. BanaForge change (#123, #130; #106's tap also selected it): the tap selects
 //! nothing, and a second tap on the file stops it; a long press selects it (select mode, below). In select mode a tap
 //! that selects an audio file previews it and one that unselects it stops it. A new pick, the folder read again
 //! (another folder, a file action, the menu opening) and leaving SONGS stop it; the strip's own play button and
@@ -333,7 +333,7 @@ impl SongsPreview {
     }
 
     /// The decoded sample the strip plays.
-    pub fn data(&self) -> Option<std::sync::Arc<honeydew_audio::sample::SampleData>> {
+    pub fn data(&self) -> Option<std::sync::Arc<banaforge_audio::sample::SampleData>> {
         Some(self.strip.as_ref()?.1.wave.as_ref()?.data.clone())
     }
 }
@@ -847,7 +847,7 @@ impl SongsTab {
             .filter(|(e, _)| !is_place(&e.path))
             .map(|(e, _)| e.path.clone())
             .collect();
-        // Honeydew change (#123, #130): a tap previews an audio file and a second one stops it, selecting nothing;
+        // BanaForge change (#123, #130): a tap previews an audio file and a second one stops it, selecting nothing;
         // in select mode one that selects it previews it and one that unselects it stops.
         let tapped = (clicked.as_ref())
             .filter(|(e, ..)| !e.is_folder && is_audio(&e.path))

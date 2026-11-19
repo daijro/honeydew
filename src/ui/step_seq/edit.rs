@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use honeydew_audio::sequencer::apply_drum_swing;
+use banaforge_audio::sequencer::apply_drum_swing;
 
 use crate::song::{Clip, Event, Lane, LaneKind, PPQ, TimeSig};
 use crate::ui::graph_lane::Prop;

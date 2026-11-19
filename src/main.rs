@@ -8,34 +8,34 @@ fn main() -> eframe::Result {
     #[cfg(plugin_host)]
     {
         let args: Vec<String> = std::env::args().skip(1).collect();
-        if args.first().map(String::as_str) == Some(honeydew::plugins::scan::ARG) {
-            honeydew::plugins::scan::child_main(&args[1..]);
+        if args.first().map(String::as_str) == Some(banaforge::plugins::scan::ARG) {
+            banaforge::plugins::scan::child_main(&args[1..]);
         }
     }
     #[cfg(target_os = "ios")]
-    honeydew::ios::start();
-    let icon = include_bytes!("../assets/branding/honeydew-256.png");
+    banaforge::ios::start();
+    let icon = include_bytes!("../assets/branding/banaforge-256.png");
     let options = eframe::NativeOptions {
         // A landscape phone shape: about 36.6 U x 16.9 U at U = 32.
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([1170.0, 540.0])
             // Wayland ignores the window icon: the compositor takes the `Icon=` of the desktop entry named after the
-            // app_id (`assets/linux/honeydew.desktop`, installed by `tools/install-desktop-entry.sh`). On X11 the
+            // app_id (`assets/linux/banaforge.desktop`, installed by `tools/install-desktop-entry.sh`). On X11 the
             // app_id is also the WM_CLASS, which the entry's `StartupWMClass` matches.
-            .with_app_id("honeydew")
+            .with_app_id("banaforge")
             // X11, Windows and macOS show this one.
             .with_icon(eframe::icon_data::from_png_bytes(icon).expect("our icon is a PNG")),
         ..Default::default()
     };
     let result = eframe::run_native(
-        honeydew::APP_NAME,
+        banaforge::APP_NAME,
         options,
-        Box::new(|cc| Ok(Box::new(honeydew::app::HoneydewApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(banaforge::app::BanaForgeApp::new(cc)))),
     );
     #[cfg(target_os = "windows")]
     if let Err(error) = &result {
         rfd::MessageDialog::new()
-            .set_title(format!("{} could not start", honeydew::APP_NAME))
+            .set_title(format!("{} could not start", banaforge::APP_NAME))
             .set_description(error.to_string())
             .set_level(rfd::MessageLevel::Error)
             .show();

@@ -1409,7 +1409,7 @@ fn spreader_texts_follow_the_value() {
 #[test]
 fn equalizer_kind_and_channel_show_the_nearest_item_and_text_the_generic_number() {
     // Equalizer: the panel shows round-half-away(f32(2v)) and
-    // (f32(4v)), the DSP truncates (`honeydew_audio`), and the param text is the generic v×100.
+    // (f32(4v)), the DSP truncates (`banaforge_audio`), and the param text is the generic v×100.
     let eq = spec(3);
     for p in [4, 8, 12, 16] {
         let kind = &eq.params[p];
@@ -1777,7 +1777,7 @@ fn the_rhythm_maps_to_one_pattern_and_step_count_for_the_text_the_snap_and_the_r
 fn pitcher_plays_the_pitch_and_fine_tune_its_text_shows() {
     // Pitch and Fine Tune are truncated in f64, in the audio too. Bypass on, so the
     // target is 440·2^((s + c/100)/12): its steps must read as the registry's text at every v = f32(k/n).
-    use honeydew_audio::pitcher::{DEFAULT_PARAMS, PitcherState};
+    use banaforge_audio::pitcher::{DEFAULT_PARAMS, PitcherState};
     let mut params = DEFAULT_PARAMS;
     params[22] = 1.0;
     let mut state = PitcherState::new(&params, 48_000.0).unwrap();

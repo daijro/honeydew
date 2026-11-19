@@ -457,6 +457,9 @@ pub struct ProjectFiles {
     /// The voicebank metadata indexed in `My Voicebanks`; archives themselves stay in user storage.
     voicebanks: Vec<crate::vocal_synth::VoicebankIndex>,
     voicebanks_loaded: bool,
+    voicebank_import: Option<std::sync::mpsc::Receiver<voicebanks::ImportResult>>,
+    voicebank_folder_pick: bool,
+    voicebank_folder_copy: Option<PathBuf>,
     /// The last [`RECENT_STATE`] write, on its worker: the next waits for it, so the last load's lands last.
     #[cfg(not(target_arch = "wasm32"))]
     autosave: Option<std::thread::JoinHandle<()>>,
@@ -575,6 +578,9 @@ impl ProjectFiles {
             midi_tracks: None,
             voicebanks: Vec::new(),
             voicebanks_loaded: false,
+            voicebank_import: None,
+            voicebank_folder_pick: false,
+            voicebank_folder_copy: None,
             #[cfg(not(target_arch = "wasm32"))]
             autosave: None,
             recent_touched: false,
@@ -599,6 +605,7 @@ impl ProjectFiles {
     /// Opens the system or browser picker for a UTAU `.zip` / `.uar` bank; the index and original archive go to
     /// [`VOICEBANKS_FOLDER`].
     pub fn pick_voicebank(&mut self) {
+        self.voicebank_folder_pick = false;
         self.open_pick(Pick::Voicebank);
     }
 
@@ -609,7 +616,10 @@ impl ProjectFiles {
             self.voicebanks_loaded = true;
             let manifest = self
                 .user_dir()
-                .map_or_else(|| PathBuf::from(VOICEBANKS_FOLDER), |user| user.join(VOICEBANKS_FOLDER))
+                .map_or_else(
+                    || PathBuf::from(VOICEBANKS_FOLDER),
+                    |user| user.join(VOICEBANKS_FOLDER),
+                )
                 .join("index.json");
             if let Ok(bytes) = self.read_user_file(&manifest)
                 && let Ok(index) = serde_json::from_slice(&bytes)
@@ -1170,7 +1180,19 @@ impl ProjectFiles {
                 }
                 FileEvent::Failed(title, err) => self.fail(title, err),
                 FileEvent::Located(files) => self.located(song, files),
+                FileEvent::Folder(files) if std::mem::take(&mut self.voicebank_folder_pick) => {
+                    self.copy_voicebank_folder(files)
+                }
                 FileEvent::Folder(files) => self.folder_picked(files),
+                FileEvent::Copied(error) if self.voicebank_folder_copy.is_some() => {
+                    let path = self.voicebank_folder_copy.take().unwrap();
+                    self.copying = None;
+                    self.library_changes += 1;
+                    match error {
+                        Some(error) => self.fail(IMPORT_FAILED, error),
+                        None => self.register_voicebank_folder(&path),
+                    }
+                }
                 FileEvent::Copied(error) => self.folder_copied(error),
                 FileEvent::Picked(path) => self.import_unread(path),
                 FileEvent::SaveCancelled(_) => {}
@@ -1185,6 +1207,26 @@ impl ProjectFiles {
     /// archive's would, and the song stays (#72).
     fn opened(&mut self, path: PathBuf, bytes: Vec<u8>) -> Option<Song> {
         // The providers check first; this keeps a provider that does not from loading anything.
+        // On phones identify bank ZIPs from their directory only; inflation/CRC/indexing
+        // belongs to the existing import worker, never the UI frame.
+        if cfg!(target_os = "android")
+            && file_kind(&path) == Some(FileKind::Archive)
+            && let Ok(entries) = crate::zip::list(std::io::Cursor::new(&bytes))
+            && entries.iter().any(|(name, _, _)| {
+                name.rsplit('/')
+                    .next()
+                    .is_some_and(|n| n.eq_ignore_ascii_case("oto.ini"))
+            })
+            && !entries.iter().any(|(name, _, _)| {
+                matches!(
+                    file_kind(Path::new(name)),
+                    Some(FileKind::Song | FileKind::Template | FileKind::Flp)
+                )
+            })
+        {
+            self.voicebank_imported(&path, bytes);
+            return None;
+        }
         let mut entries = match file_kind(&path) {
             Some(FileKind::Song | FileKind::Template) => None,
             Some(FileKind::Midi) => return self.open_midi(&path, &bytes),
@@ -1217,6 +1259,22 @@ impl ProjectFiles {
             if let (Some(project), None) = (projects.next(), projects.next()) {
                 return self.open_flp(&path, &project.data, Some(all));
             }
+        }
+        // A normal ZIP import can be a voicebank too. Reuse the already validated entries,
+        // rather than inflating the same archive a second time. Project ZIPs always win.
+        if let Some(all) = entries.as_deref()
+            && !all.iter().any(|entry| {
+                matches!(
+                    file_kind(Path::new(&entry.path)),
+                    Some(FileKind::Song | FileKind::Template | FileKind::Flp)
+                )
+            })
+            && all.iter().map(|entry| entry.data.len() as u64).sum::<u64>()
+                <= voicebanks::MAX_VOICEBANK_UNPACKED
+            && let Ok(index) = crate::vocal_synth::index_files(all)
+        {
+            self.store_voicebank(index, bytes);
+            return None;
         }
         if let Some(entries) = entries.take_if(|all| archive::the_song(all).is_none()) {
             self.ask_import(entries);
@@ -1595,6 +1653,7 @@ impl ProjectFiles {
         // Last, so completed requests land in this frame (the native open picker may still be pending).
         let changes = self.library_changes;
         opened = self.poll(song).or(opened);
+        self.poll_voicebank_import(ctx, song);
         // After all that may ask something this frame: the import's result waits for it.
         #[cfg(not(target_arch = "wasm32"))]
         self.import_done(ctx, shortcuts);

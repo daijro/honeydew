@@ -1,9 +1,9 @@
 //! The header column and its expanded mini mixer.
 
+use banaforge_audio::MeterSnapshot;
+use banaforge_audio::device::{ModuleKey, ModuleMeter};
 use eframe::egui::epaint::ClippedShape;
 use eframe::egui::{Color32, Event, Modifiers, PointerButton, Pos2, Rect, Shape, pos2, vec2};
-use honeydew_audio::MeterSnapshot;
-use honeydew_audio::device::{ModuleKey, ModuleMeter};
 
 use super::*;
 use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
@@ -192,6 +192,7 @@ impl Rig {
             .map(|(i, &row)| (row, i as f32 * ROW_H))
             .collect();
         let col = Column {
+            activity: false,
             left: 0.0,
             width: self.width(),
             expanded: self.expanded,

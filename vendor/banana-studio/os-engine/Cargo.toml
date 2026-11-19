@@ -1,0 +1,27 @@
+[package]
+name = "os-engine"
+description = "BanaForge's subset of Banana Studio's audio engine: the types the plugin hosts need"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[lib]
+doctest = false
+
+[features]
+# What Banana Studio's own plugins use from the engine (`vendor/banana-studio/README.md`).
+plugins = ["dep:os-model", "dep:thiserror", "dep:symphonia", "dep:symphonia-codec-wavpack"]
+
+[dependencies]
+os-model = { path = "../os-model", optional = true }
+# What the effects use (os-dsp the plugins too).
+os-dsp = { path = "../os-dsp" }
+miniz_oxide = "0.8"
+thiserror = { version = "2", optional = true }
+symphonia = { version = "0.6", default-features = false, features = ["wav", "pcm", "flac", "ogg", "vorbis", "mp3", "aiff", "isomp4", "aac", "alac", "id3v1", "id3v2"], optional = true }
+symphonia-codec-wavpack = { version = "0.1", optional = true }
+
+# What only upstream's engine, which is not carried, reads.
+[lints.rust]
+dead_code = "allow"
