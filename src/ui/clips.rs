@@ -2531,15 +2531,16 @@ fn enveloped_wave_mesh(
     let mesh = std::sync::Arc::new(mesh);
     // Four MiB / 256 entries maximum; many tiny clips must not thrash a 32-entry cache.
     const BUDGET: usize = 4 * 1024 * 1024;
-    if mesh_bytes(&mesh) <= BUDGET {
+    let retained_bytes = mesh_bytes(&mesh) + volume.map_or(0, |v| v.memory_bytes());
+    if retained_bytes <= BUDGET {
         WAVE_MESHES.with(|cache| {
             let mut cache = cache.borrow_mut();
             while cache.len() >= 256
                 || cache
                     .iter()
-                    .map(|entry| mesh_bytes(&entry.mesh))
+                    .map(|entry| mesh_bytes(&entry.mesh) + entry.volume.as_ref().map_or(0, |v| v.memory_bytes()))
                     .sum::<usize>()
-                    + mesh_bytes(&mesh)
+                    + retained_bytes
                     > BUDGET
             {
                 cache.pop_front();
@@ -2562,6 +2563,31 @@ mod waveform_mesh_cache_tests {
     use super::*;
     use banaforge_audio::sample::SampleData;
     use std::sync::Arc;
+
+    #[test]
+    fn volume_envelope_waveform_geometry_updates_without_touching_overlapping_sources() {
+        use crate::song::points::Point;
+        let source = Waveform::new(Arc::new(SampleData {
+            left: vec![0.5; 4096].into(), sample_rate: 48000, ..Default::default()
+        }));
+        let pcm = source.data.left.clone();
+        let controls = |value| [Point { tick: 0, value, ..Default::default() }];
+        let quiet = audio_editor::volume::envelope(&controls(10000), 1.0);
+        let loud = audio_editor::volume::envelope(&controls(55910), 1.0);
+        let wave = Wave { frames: 4096, per_beat: 4096.0, reversed: false };
+        let draw = |envelope: &Arc<audio_editor::volume::VolumeEnvelope>| {
+            enveloped_wave_mesh(&source, wave, &[(20.0, 16.0)],
+                ((0.0, 1.0 / 64.0), (0.0, 64)), 1.0, Color32::RED, Some(envelope))
+        };
+        let a = draw(&quiet);
+        let b = draw(&loud);
+        assert!(!Arc::ptr_eq(&a, &b), "envelope changes must invalidate geometry");
+        assert!(Arc::ptr_eq(&b, &draw(&loud)), "unchanged envelopes reuse geometry");
+        let height = |mesh: &Mesh| mesh.vertices.iter().map(|v| (v.pos.y - 20.0).abs()).fold(0.0_f32, f32::max);
+        assert!(height(&b) > height(&a));
+        assert!(Arc::ptr_eq(&a, &draw(&quiet)), "overlapping clips keep separate cached envelopes");
+        assert_eq!(source.data.left, pcm);
+    }
 
     #[test]
     fn waveform_lod_is_progressive_density_aware_and_restores_close_detail() {

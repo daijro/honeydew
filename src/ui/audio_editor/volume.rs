@@ -9,6 +9,9 @@ pub(crate) struct VolumeEnvelope {
 }
 
 impl VolumeEnvelope {
+    pub(crate) fn memory_bytes(&self) -> usize {
+        self.steps.capacity() * std::mem::size_of::<(u32, f32)>()
+    }
     pub(crate) fn gain_at(&self, tick: f64) -> f32 {
         let end = self.steps.partition_point(|&(t, _)| f64::from(t) <= tick);
         end.checked_sub(1).map_or(self.base, |i| self.steps[i].1)
