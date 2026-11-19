@@ -856,7 +856,7 @@ fn the_stems_are_written_into_their_folder_and_say_so_once_all_are_written() {
     update(&mut files, &mut song, None);
     assert_eq!(
         message(&mut files),
-        Some(vec![RENDER_FAILED.into(), "disk full".into()])
+        Some(vec![RENDER_FAILED.into(), "Stem file write: disk full".into()])
     );
     assert_eq!(files.take_flash(), None);
 }

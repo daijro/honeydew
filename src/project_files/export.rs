@@ -666,8 +666,8 @@ impl Job {
             Stage::Done if next => "Rendering",
             Stage::Rendering(_) => "Rendering",
             Stage::Processing(_) => "Processing",
-            Stage::Encoding { .. } | Stage::Done => "Encoding",
-            Stage::Finalizing { .. } => "Finalizing",
+            Stage::Encoding { .. } => "Encoding",
+            Stage::Finalizing { .. } | Stage::Done => "Finalizing",
         };
         let Some(split) = &self.split else {
             let file = self.export.path.file_name().unwrap_or_default();
