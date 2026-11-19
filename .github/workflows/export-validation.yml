@@ -13,6 +13,8 @@ jobs:
   export:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: never
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.91.0
@@ -26,6 +28,6 @@ jobs:
           result=$?
           cat /tmp/export.log
           if [ "$result" -ne 0 ]; then
-            grep -E -A22 -B3 'error|FAILED|failures:|panicked|Caused by' /tmp/export.log | head -c 50000 | python3 -c 'import sys; print("::error::" + sys.stdin.read().replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))'
+            grep -E -A22 -B3 'error\[|error:|FAILED|failures:|panicked|Caused by' /tmp/export.log | head -c 50000 | python3 -c 'import sys; print("::error::" + sys.stdin.read().replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))'
           fi
           exit "$result"
