@@ -411,7 +411,7 @@ fn a_stem_that_cannot_be_written_ends_the_export_with_one_message() {
     );
     assert!(matches!(
         &rig.overlays()[..],
-        [Overlay::Message { lines, .. }] if lines == &[RENDER_FAILED, "disk full"]
+        [Overlay::ExportResult { lines, success: false, .. }] if lines == &[RENDER_FAILED, "Stem file write: disk full"]
     ));
     assert_eq!(rig.flash_text(), None);
 }

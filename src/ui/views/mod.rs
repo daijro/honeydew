@@ -273,7 +273,7 @@ impl Navigation {
                 }
             }
             Nav::Open(overlay) => {
-                if matches!(overlay, Overlay::Message { .. }) {
+                if matches!(overlay, Overlay::Message { .. } | Overlay::ExportResult { .. }) {
                     self.answer = None;
                 }
                 self.overlays

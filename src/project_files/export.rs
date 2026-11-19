@@ -441,7 +441,8 @@ impl ProjectFiles {
             if let FileEvent::Failed(_, detail) = event
                 && !std::mem::replace(&mut self.stem_writes.failed, true)
             {
-                self.fail(RENDER_FAILED, detail);
+                self.render_feedback = true;
+                self.fail(RENDER_FAILED, format!("Stem file write: {detail}"));
             }
             return self.stems_flash();
         }
