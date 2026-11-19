@@ -144,6 +144,8 @@ pub enum Overlay {
     /// The loading screen of an export under way, with its title ([`busy`]). The app keeps the title current and
     /// closes it.
     Busy { title: String },
+    ExportProgress { title: String, done: usize, total: usize, stage: String, format: String },
+    ExportResult { lines: Vec<String>, success: bool, open: bool, share: bool },
     /// The sample picker for the module with instance id `module` on `channel`: the file its `CSTM` `PATH` names (a 3x
     /// Osc's custom waveform).
     ModuleSamplePicker { channel: usize, module: i32 },
@@ -800,6 +802,12 @@ impl Slots {
             // Modal like the Save dialog.
             Overlay::SampleName { name } => {
                 top.then(|| save_dialog::show_sample(ui, app, name, &mut self.audio_editor))?
+            }
+            Overlay::ExportProgress { title, done, total, stage, format } => {
+                crate::ui::export_status::progress(ui.ctx(), &app.cx, title, *done, *total, stage, format)
+            }
+            Overlay::ExportResult { lines, success, open, share } => {
+                crate::ui::export_status::result(ui.ctx(), &app.cx, lines, *success, *open, *share)
             }
             Overlay::Busy { title } => {
                 busy(ui.ctx(), &app.cx, title);

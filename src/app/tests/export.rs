@@ -76,7 +76,7 @@ impl Rig {
             }
             self.frame(vec![]);
             for o in &self.app.nav.overlays {
-                if let Overlay::Busy { title } = o
+                if let Overlay::ExportProgress { title, .. } = o
                     && titles.last() != Some(title)
                 {
                     titles.push(title.clone());
@@ -111,7 +111,7 @@ fn save_wav_render_writes_a_file_that_decodes_back() {
     assert!(rig.shows("New Song.wav"), "the render page");
     rig.click(dialog().render.center());
     // The dialog closes and the busy screen takes its place.
-    assert!(matches!(rig.overlays()[..], [Overlay::Busy { .. }]));
+    assert!(matches!(rig.overlays()[..], [Overlay::ExportProgress { .. }]));
     let titles = rig.finish_export();
     assert_eq!(
         titles,
@@ -181,7 +181,7 @@ fn the_busy_screen_shows_the_title_and_takes_the_clicks() {
     assert!(rig.shows("Rendering \"New Song.wav\""));
     // The logo lies under it.
     rig.click(LOGO);
-    assert!(matches!(rig.overlays()[..], [Overlay::Busy { .. }]));
+    assert!(matches!(rig.overlays()[..], [Overlay::ExportProgress { .. }]));
     rig.finish_export();
 }
 
@@ -274,7 +274,7 @@ fn an_existing_file_asks_cancel_keeps_the_dialog_and_replace_renders_over_it() {
     rig.frame(vec![]);
     rig.click_id(message_item(2));
     rig.frame(vec![]);
-    assert!(matches!(rig.overlays()[..], [Overlay::Busy { .. }]));
+    assert!(matches!(rig.overlays()[..], [Overlay::ExportProgress { .. }]));
     rig.finish_export();
     let file = written(&mem, "My Tracks/New Song.wav").unwrap();
     assert!(decode(&file).is_ok());
@@ -315,7 +315,7 @@ fn a_silent_song_shows_the_song_has_no_sound() {
     rig.frame(vec![]);
     assert!(matches!(
         &rig.overlays()[..],
-        [Overlay::Message { lines, .. }] if lines == &[NO_SOUND]
+        [Overlay::ExportResult { lines, success: false, .. }] if lines[0] == NO_SOUND
     ));
     assert!(mem.0.borrow().files.is_empty());
 }
@@ -379,7 +379,7 @@ fn split_writes_each_stem_into_its_folder_with_its_progress_and_says_where() {
     rig.frame(vec![]);
     assert!(matches!(
         &rig.overlays()[..],
-        [Overlay::Message { lines, .. }] if lines[1] == format!("Saved to: {folder}")
+        [Overlay::ExportResult { lines, success: true, .. }] if lines[1] == format!("Saved to: {folder}")
     ));
     assert!(!rig.app.files.modified());
 }

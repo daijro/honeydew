@@ -421,6 +421,8 @@ pub struct ProjectFiles {
     exported: Option<export::Export>,
     /// The export file being written.
     export_saving: Option<export::Export>,
+    export_size: Option<u64>,
+    render_feedback: bool,
     /// The original content files the ZIP export under way left out, for its flash.
     export_left_out: usize,
     /// A split export's stem files being written.
@@ -560,6 +562,8 @@ impl ProjectFiles {
             export_asked: None,
             exported: None,
             export_saving: None,
+            export_size: None,
+            render_feedback: false,
             export_left_out: 0,
             stem_writes: export::StemWrites::default(),
             importing: None,
@@ -1527,6 +1531,15 @@ impl ProjectFiles {
             return Some(Overlay::PresetDialog { name, kind });
         }
         let lines = self.message.take()?;
+        let render_feedback = std::mem::take(&mut self.render_feedback);
+        if self.rendered.is_some() || render_feedback {
+            let success = lines.first().is_some_and(|s| s == export::RENDER_COMPLETE);
+            return Some(Overlay::ExportResult {
+                lines, success,
+                open: success && self.rendered.is_some(),
+                share: success && self.rendered.is_some() && cfg!(any(target_os = "android", target_os = "ios")),
+            });
+        }
         let (tag, confirm, extra) = match self.waiting_for() {
             Some(NEWER_TAG) => (NEWER_TAG, Some(("Yes", CANCEL)), None),
             Some(IMPORT_TAG) => (IMPORT_TAG, Some(("Yes", "No")), None),

@@ -224,6 +224,8 @@ fn streamed(
 }
 
 impl Render {
+    /// Confirmed pass-one timeline frames, including the configured tail.
+    pub fn progress(&self) -> (usize, usize) { (self.pass.done.min(self.pass.end), self.pass.end) }
     pub fn new(
         song: &Song,
         samples: &SampleCache,
@@ -322,6 +324,8 @@ pub struct Stream {
 }
 
 impl Stream {
+    /// Confirmed pass-two timeline work. Includes leading frames needed for DSP state.
+    pub fn progress(&self) -> (usize, usize) { (self.pass.done.min(self.pass.end), self.pass.end) }
     /// The frames the stream hands out in all.
     pub fn frames(&self) -> usize {
         self.pass.end - self.start

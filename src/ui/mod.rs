@@ -337,3 +337,5 @@ pub mod file_drag;
 pub mod insert;
 // The playlist's song sections (#80).
 pub mod sections;
+
+pub(crate) mod export_status;

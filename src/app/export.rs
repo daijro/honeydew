@@ -45,7 +45,7 @@ impl BanaForgeApp {
         };
         match Job::new(&self.song, &self.audio.samples, export, page, rate) {
             Ok(job) => {
-                self.navigate(Nav::Open(Overlay::Busy { title: job.title() }));
+                self.navigate(Nav::Open(progress_overlay(&job)));
                 self.export = Some(job.with_tags(tags));
             }
             Err(error) => self.files.render_failed(&error),
@@ -64,12 +64,12 @@ impl BanaForgeApp {
         // A stem that could not be written ends the export; its message is up.
         if !self.files.stem_write_failed() {
             let done = job.step(&mut slice());
-            let (export, title) = (job.export().clone(), job.title());
+            let (export, overlay) = (job.export().clone(), progress_overlay(job));
             match done {
-                None => return self.navigate(Nav::Open(Overlay::Busy { title })),
+                None => return self.navigate(Nav::Open(overlay)),
                 Some(Done::Stem(name, bytes)) => {
                     self.files.write_stem(&export, &name, bytes);
-                    return self.navigate(Nav::Open(Overlay::Busy { title }));
+                    return self.navigate(Nav::Open(overlay));
                 }
                 Some(Done::File(bytes)) => self.files.write_export(&export, bytes),
                 Some(Done::Stems) => self.files.stems_rendered(),
@@ -82,6 +82,12 @@ impl BanaForgeApp {
         self.export = None;
         self.nav
             .overlays
-            .retain(|o| !matches!(o, Overlay::Busy { .. }));
+            .retain(|o| !matches!(o, Overlay::Busy { .. } | Overlay::ExportProgress { .. }));
     }
+}
+
+fn progress_overlay(job: &Job) -> Overlay {
+    let (done, total, stage) = job.progress();
+    Overlay::ExportProgress { title: job.title(), done, total, stage: stage.into(),
+        format: format!("{} · {} Hz · stereo", job.export().format.ext().to_uppercase(), job.rate()) }
 }
