@@ -62,8 +62,11 @@ const _: () = assert!(STREAM_VOICES <= VOICES);
 // Generator operators (SoundFont 2.01 §8.1.2).
 const START_LOOP: usize = 2;
 const END_LOOP: usize = 3;
+const MOD_LFO_TO_PITCH: usize = 5;
 const VIB_LFO_TO_PITCH: usize = 6;
 const PAN: usize = 17;
+const DELAY_MOD_LFO: usize = 21;
+const FREQ_MOD_LFO: usize = 22;
 const DELAY_VIB_LFO: usize = 23;
 const FREQ_VIB_LFO: usize = 24;
 const ATTACK: usize = 34;
@@ -100,6 +103,7 @@ const fn defaults(instrument: bool) -> Gens {
         gens[ATTACK] = -12000;
         gens[DECAY] = -12000;
         gens[RELEASE] = -12000;
+        gens[DELAY_MOD_LFO] = -12000;
         gens[DELAY_VIB_LFO] = -12000;
         gens[SCALE] = 100;
         gens[ROOT] = -1;
@@ -583,6 +587,11 @@ impl SoundFont {
                 LFO_HZ * 2f32.powf(add(FREQ_VIB_LFO).clamp(-16000, 4500) as f32 / 1200.0),
                 2f32.powf(add(DELAY_VIB_LFO).clamp(-12000, 5000) as f32 / 1200.0),
             ],
+            mod_lfo: [
+                add(MOD_LFO_TO_PITCH).clamp(-12000, 12000) as f32,
+                LFO_HZ * 2f32.powf(add(FREQ_MOD_LFO).clamp(-16000, 4500) as f32 / 1200.0),
+                2f32.powf(add(DELAY_MOD_LFO).clamp(-12000, 5000) as f32 / 1200.0),
+            ],
             sfz: None,
         })
     }
@@ -675,6 +684,8 @@ pub struct Region {
     release: f32,
     /// A SoundFont's vibrato LFO: its pitch depth (cents), rate (Hz) and delay (seconds); an SFZ's has no depth.
     vibrato: [f32; 3],
+    /// A SoundFont's modulation LFO: pitch depth (cents), rate (Hz) and delay (seconds).
+    mod_lfo: [f32; 3],
     /// An SFZ region's sample and rules (its frames above are the sample's, its tune 0 and its scale the key
     /// tracking); `None` for a SoundFont's.
     sfz: Option<Rules>,
@@ -862,6 +873,7 @@ fn sfz_region(
         sustain: 0.0,
         release: 0.0,
         vibrato: [0.0; 3],
+        mod_lfo: [0.0; 3],
         sfz: Some(Rules {
             sample,
             cents: f64::from(r.transpose) * 100.0 + f64::from(r.tune),
@@ -1021,7 +1033,7 @@ struct Voice {
     /// An SFZ voice's modulation.
     m: Motion,
     /// Its vibratos' phases (0…1), its region's and the module's ([`Self::vibrato`]), and the seconds since it started.
-    vibrato: [f32; 2],
+    vibrato: [f32; 3],
     time: f32,
 }
 
@@ -1238,7 +1250,11 @@ impl Voice {
     /// delay is over.
     fn vibrato(&mut self, region: &Region, wheel: f32, module: [f32; 3], dt: f32) -> f32 {
         let [depth, hz, delay] = region.vibrato;
-        let lfos = [(0, [depth + wheel, hz, delay]), (1, module)];
+        let lfos = [
+            (0, [depth + wheel, hz, delay]),
+            (0, region.mod_lfo),
+            (1, module),
+        ];
         let mut cents = 0.0;
         for (phase, (shape, [depth, hz, delay])) in self.vibrato.iter_mut().zip(lfos) {
             if self.time >= delay {
@@ -1829,7 +1845,7 @@ impl SoundFontPlayer {
     /// `Custom` only above 0.5, but 0 < v ≤ 0.5 plays Custom too.
     fn envelope(&self, region: &Region) -> [f32; 4] {
         let rate = self.sample_rate;
-        let [attack, decay, sustain, release] = if self.params[5] != 0.0 {
+        let [attack, decay, sustain, release] = if self.params[5] > 0.5 {
             let time = |v: f32| (10.0 * 0.95f32.mul_add(v, 0.05).powi(3)).max(MIN_TIME);
             let x = (127.0 * self.params[3]).round().clamp(1.0, 127.0) / 127.0;
             [
