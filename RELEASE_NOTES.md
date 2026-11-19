@@ -1,3 +1,10 @@
+BanaForge 0.5.13 — Omi touch-feedback test build
+
+- Vocal Synth note taps now use ordinary note selection/editing instead of opening the lyric editor. Lyrics remain accessible through the dedicated LYRICS lane.
+- Reserve visible floating-action bounds before raw underlying clip/note/drum hit testing, preventing those presses from changing the intended selection before Copy/Delete execute.
+- Playback/buffer performance remains unresolved on reported devices. This touch pass does not promise an audio-latency improvement.
+- Holding for context/marquee still exists; broader selection ergonomics and stock drum/preset expansion remain follow-up work. No unlicensed third-party sample packs are bundled.
+
 BanaForge 0.5.12 — bounded waveform peak queries
 
 - Adds shared multiresolution waveform peak summaries. Overview columns inspect a bounded number of peak bins rather than rescanning a recording-length base summary during zoom/pan. Close zoom keeps exact sample-detail rendering.

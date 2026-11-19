@@ -3446,6 +3446,20 @@ mod component {
     }
 
     #[test]
+    fn vocal_note_tap_selects_without_opening_lyrics_and_can_drag_immediately() {
+        let mut rig = Rig::new(vec![n(128, 64.0, 70)]);
+        rig.song.channels[1].rack.add(53);
+        rig.frame(vec![]);
+        let from = at(140.0, 70);
+        rig.tap(from);
+        assert!(rig.roll.lyric_edit.is_none());
+        assert_eq!(rig.roll.selected, [true]);
+        rig.drag(from, from + vec2(64.0, -16.0));
+        assert!(rig.roll.lyric_edit.is_none());
+        assert_eq!(spans(rig.events()), [(256, 64.0, 71)]);
+    }
+
+    #[test]
     fn vocal_top_lyric_bar_is_separate_from_notes_and_can_be_hidden() {
         let mut rig = Rig::new(vec![n(0, 128.0, 70)]);
         rig.song.channels[1].rack.add(53);
@@ -3466,6 +3480,9 @@ mod component {
         assert!(rig.text("LYRICS").is_some());
         let lyric = rig.text("teto").expect("text in dedicated header");
         assert!(lyric.y < 48.0);
+        rig.tap(lyric);
+        assert!(rig.roll.lyric_edit.is_some(), "explicit lyric lane remains editable");
+        rig.roll.lyric_edit = None;
         rig.roll.lyric_bar_enabled = false;
         rig.frame(vec![]);
         assert!(rig.text("LYRICS").is_none());

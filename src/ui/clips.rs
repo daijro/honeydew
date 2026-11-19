@@ -539,6 +539,9 @@ impl Clips {
                 p.primary_down(),
             )
         });
+        // Floating actions are drawn later, but must win before raw lane/clip
+        // hit testing can change their selection or hide them on touch-down.
+        let pressed = pressed && !self.row.owns_pointer(pos);
         // Every frame, for its latch: a press held over a focus loss is up, and decides nothing.
         let down = primary_down_live(ui, Id::new("clip_touch"));
         let stale = held && !down || ui.input(|i| !i.focused || crate::ui::focus_lost(i));
@@ -3502,6 +3505,13 @@ impl FloatingRow {
         self.drawn
     }
 
+    /// Reserve the visible floating toolbar before underlying editor input is
+    /// processed. Egui widget ordering alone does not gate raw pointer handlers.
+    pub(crate) fn owns_pointer(&self, pos: Option<Pos2>) -> bool {
+        self.anchor.is_some()
+            && pos.is_some_and(|p| self.drawn.is_some_and(|rect| rect.contains(p)))
+    }
+
     /// The row showed in its last frame.
     pub(crate) fn showing(&self) -> bool {
         self.drawn.is_some()
@@ -4552,6 +4562,18 @@ mod tests {
             assert_eq!(row.anchor, None, "{view:?}: it stays hidden");
             row.track(GRID, Some(SEL), None, None);
         }
+    }
+
+    #[test]
+    fn floating_actions_reserve_their_rect_but_not_hidden_or_outside_space() {
+        let mut row = FloatingRow::default();
+        tap(&mut row, GRID, Some(SEL), pos2(420.0, 210.0));
+        row.drawn = Some(Rect::from_min_size(pos2(370.0, 155.0), ROW));
+        assert!(row.owns_pointer(Some(pos2(380.0, 170.0))));
+        assert!(!row.owns_pointer(Some(pos2(200.0, 170.0))));
+        assert!(!row.owns_pointer(None));
+        row.hide();
+        assert!(!row.owns_pointer(Some(pos2(380.0, 170.0))));
     }
 
     #[test]

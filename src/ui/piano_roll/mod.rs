@@ -893,28 +893,9 @@ impl PianoRoll {
             return false;
         }
 
+        // Note bodies belong to selection/move/resize. Lyrics are edited only
+        // through the dedicated LYRICS lane, never as a side effect of a note tap.
         if !self.pitch_draw_enabled {
-            if response.clicked()
-                && let Some((pos, key, lyric)) = self.clip(song).and_then(|clip| {
-                    clip.events.iter().find_map(|event| {
-                        let (pos, _, key) = note(event)?;
-                        g.note_rect(event).filter(|r| r.contains(pointer)).map(|_| {
-                            let lyric = clip
-                                .file
-                                .vocal_notes
-                                .iter()
-                                .find(|data| data.pos == pos as u32 && data.key == key)
-                                .map_or_else(String::new, |data| data.lyric.clone());
-                            (pos as u32, key, lyric)
-                        })
-                    })
-                })
-            {
-                self.lyric_edit = Some((pos, key, lyric));
-                self.lyric_dirty = false;
-                self.lyric_focus_pending = true;
-                return true;
-            }
             return false;
         }
 
@@ -1294,7 +1275,9 @@ impl PianoRoll {
         let response = ui.interact(grid, id.with("grid"), Sense::click_and_drag());
         crate::ui::focus::register(ui, id.with("grid"), grid, crate::ui::focus::Kind::Container);
         let g = self.geom(grid.min, u);
-        let vocal_consumed = self.vocal_input(ui, &response, &g, song, &mut actions);
+        let over_actions = self.row.owns_pointer(ui.input(|i| i.pointer.interact_pos()));
+        let vocal_consumed = over_actions
+            || self.vocal_input(ui, &response, &g, song, &mut actions);
         let pitch_locked = self.pitch_draw_enabled
             && song
                 .channels
@@ -1923,6 +1906,7 @@ impl PianoRoll {
         let down = primary_down_live(ui, response.id);
         let stale = held && !down || ui.input(|i| !i.focused || crate::ui::focus_lost(i));
         let pos = pos.filter(|_| !stale);
+        let pressed = pressed && !self.row.owns_pointer(pos);
         let moved = |o: Pos2| gesture::left_calm(o, pos, u);
         let multi = ui.input(|i| i.multi_touch().is_some());
         if multi || stale {

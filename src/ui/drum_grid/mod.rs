@@ -737,6 +737,7 @@ impl DrumGridView {
         let down = primary_down_live(ui, grid.id);
         let stale = held && !down || ui.input(|i| !i.focused || crate::ui::focus_lost(i));
         let pos = pos.filter(|_| !stale);
+        let pressed = pressed && !self.row.owns_pointer(pos);
         let moved = |o: Pos2| gesture::left_calm(o, pos, place.u);
         let multi = ui.input(|i| i.multi_touch().is_some());
         let mut action = None;
