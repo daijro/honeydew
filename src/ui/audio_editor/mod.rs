@@ -1241,7 +1241,8 @@ impl AudioEditor {
         let (x0, n) = pixel_columns(f.grid, m);
         let px = 1.0 / m.ppp();
         let base_bpp = f64::from(px / axis.beat_w);
-        let stride = crate::ui::clips::waveform_column_stride(base_bpp, n);
+        let stride = crate::ui::clips::waveform_column_stride(
+            base_bpp * wave.per_beat, source.data.sample_rate, m.ppp(), n);
         let bpp = base_bpp * stride as f64;
         let left = axis.tick(x0) / f64::from(PPQ);
         let end = wave.end();

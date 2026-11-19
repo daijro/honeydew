@@ -30,7 +30,7 @@
 //! #124, where #108 drew one smoothed band of held peaks). While it plays, the editors' playhead line marks the
 //! position on it (#123).
 
-use eframe::egui::{Align2, Color32, Id, Painter, Pos2, Rect, Sense, Ui, pos2, vec2};
+use eframe::egui::{self, Align2, Color32, Id, Painter, Pos2, Rect, Sense, Ui, pos2, vec2};
 
 use crate::icons::{IconId, draw_icon};
 use crate::metrics::{FontSize, Metrics};
@@ -546,7 +546,7 @@ impl SampleStrip {
             reversed: false,
         };
         let span = ((0.0, frames as f64 / width.max(1) as f64), (x0, width));
-        painter.add(wave_mesh(&wave, whole, &rows, span, 1.0 / m.ppp(), ink));
+        painter.add(egui::Shape::Mesh(wave_mesh(&wave, whole, &rows, span, 1.0 / m.ppp(), ink)));
         if let Some(at) = self.position(now) {
             let x = wave_rect.left() + wave_rect.width() * (at / frames.max(1) as f64) as f32;
             crate::ui::timeline::playhead_line(&painter, wave_rect, x, cx);

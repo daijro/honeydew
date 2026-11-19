@@ -1,3 +1,11 @@
+BanaForge 0.5.15 — progressive real-audio waveform LOD
+
+- Real audio waveform detail now follows source-audio duration per logical screen pixel, accounting for display density. Close zoom keeps one-device-pixel detail; wider views progress through 2/4/8/16/32-logical-pixel blocks instead of stopping at four device pixels. Coordinate systems named beats or frames now produce the same LOD for the same audio span.
+- Covers arrangement audio clips (imported and recorded audio share this path), audio editor, file/sample preview, and the sample-waveform strip in the drum editor. Piano Roll notes, MIDI, synth rendering and procedural vocal thumbnails are not changed.
+- Cached waveform meshes now share immutable vertex/index buffers via Arc rather than deep-copying them on redraw. The cache permits up to 256 small meshes within the existing 4 MiB geometry budget.
+- Peak hierarchies preserve conservative min/max ranges at overview zoom. PCM, recording formats, sample rates, audio buffers, DSP and audio export are untouched.
+- First-time decoding/summary generation is still synchronous. Physical-device FPS and thermal improvements remain unmeasured; no blanket lag-free or audio-stability guarantee.
+
 BanaForge 0.5.14 — waveform visualization / mobile settings test build
 
 - Waveform height now follows base sample-slot Level using the sampler's gain law, in arrangement clips and the audio editor. Updates visually without rewriting PCM. Above-unity peaks are clipped to the waveform drawing region. Volume automation, channel gain and post-FX loudness are not represented by this base-level display.

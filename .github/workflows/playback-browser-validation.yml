@@ -16,6 +16,9 @@ on:
       - 'src/ui/settings_tab.rs'
       - 'src/sample_cache.rs'
       - 'src/ui/clips.rs'
+      - 'src/ui/audio_editor/**'
+      - 'src/ui/graph_lane.rs'
+      - 'src/ui/picker_preview.rs'
       - 'src/ui/preset_picker/**'
       - 'src/ui/preset_picker.rs'
       - 'crates/audio/src/device.rs'
@@ -42,6 +45,7 @@ jobs:
           cargo test --lib waveform_volume_
           cargo test --lib mobile_sound_mode_is_visible
           cargo test --lib waveform_mesh_cache
+          cargo test --lib waveform_overview_tests
       - name: Browser and program regressions
         shell: bash
         run: |

@@ -2382,7 +2382,7 @@ fn waveform(
         let width = ((axis.x(b) - x0) / px).ceil() as usize;
         let left = (axis.tick(x0) - at) / ppq;
         let span = ((left, beats_per_px), (x0, width));
-        painter.add(wave_mesh(source, wave, &rows, span, px, ink));
+        painter.add(egui::Shape::Mesh(wave_mesh(source, wave, &rows, span, px, ink)));
     }
 }
 
@@ -2393,7 +2393,7 @@ struct CachedWaveMesh {
     summary: std::sync::Weak<[Vec<(f32, f32)>]>,
     geometry: WaveMeshGeometry,
     rows: Vec<(f32, f32)>,
-    mesh: Mesh,
+    mesh: std::sync::Arc<Mesh>,
 }
 
 #[derive(PartialEq)]
@@ -2419,13 +2419,22 @@ fn mesh_bytes(mesh: &Mesh) -> usize {
         + mesh.indices.len() * std::mem::size_of::<u32>()
 }
 
-/// Samples per screen column grow when zooming out. Keep pixel detail close up,
-/// merge 2/4 pixels at arrangement zoom, and bound pathological wide viewports.
-/// Aggregation uses min/max over the full interval, not every Nth sample.
-pub(crate) fn waveform_column_stride(beats_per_px: f64, width: usize) -> usize {
-    let zoom = if beats_per_px >= 1.0 / 8.0 { 4 }
-        else if beats_per_px >= 1.0 / 16.0 { 2 } else { 1 };
-    zoom.max(width.div_ceil(2048)).max(1)
+/// Audio duration per logical screen pixel, independent of tempo or the
+/// caller's arbitrary beat/frame coordinate system. MIDI never calls this.
+/// At far zoom use large blocks; close zoom keeps exact device-pixel detail.
+pub(crate) fn waveform_column_stride(
+    frames_per_pixel: f64, sample_rate: u32, pixels_per_point: f32, width: usize,
+) -> usize {
+    let density = f64::from(pixels_per_point.max(1.0));
+    let seconds = frames_per_pixel / f64::from(sample_rate.max(1)) * density;
+    let logical = if seconds >= 1.6 { 32.0 }
+        else if seconds >= 0.4 { 16.0 }
+        else if seconds >= 0.1 { 8.0 }
+        else if seconds >= 0.025 { 4.0 }
+        else if seconds >= 0.008 { 2.0 }
+        else { 0.0 };
+    let zoom = if logical == 0.0 { 1 } else { (logical * density).ceil() as usize };
+    zoom.max(width.div_ceil(2048)).max(1).min(width.max(1))
 }
 
 /// The waveform's columns: `width` device-pixel columns (`px` wide) from `x0`, the first at content beat `left` and
@@ -2438,7 +2447,7 @@ pub(crate) fn wave_mesh(
     ((left, beats_per_px), (x0, width)): ((f64, f64), (f32, usize)),
     px: f32,
     ink: Color32,
-) -> Mesh {
+) -> std::sync::Arc<Mesh> {
     let geometry = WaveMeshGeometry {
         frames: wave.frames,
         per_beat: wave.per_beat,
@@ -2469,7 +2478,8 @@ pub(crate) fn wave_mesh(
         return mesh;
     }
     let mut mesh = Mesh::default();
-    let stride = waveform_column_stride(beats_per_px, width);
+    let stride = waveform_column_stride(beats_per_px * wave.per_beat,
+        source.data.sample_rate, px.recip(), width);
     let full = width / stride;
     let column_px = px * stride as f32;
     for (channel, ((samples, summary), &row)) in source.channels().zip(rows).enumerate() {
@@ -2496,12 +2506,14 @@ pub(crate) fn wave_mesh(
             mesh.add_colored_rect(Rect::from_x_y_ranges(x..=x + px * tail as f32, y), ink);
         }
     }
-    // Four MiB / 32 entries maximum, regardless of project length or zoom.
+    // Shared immutable meshes: cache hits copy an Arc, never vertex/index buffers.
+    let mesh = std::sync::Arc::new(mesh);
+    // Four MiB / 256 entries maximum; many tiny clips must not thrash a 32-entry cache.
     const BUDGET: usize = 4 * 1024 * 1024;
     if mesh_bytes(&mesh) <= BUDGET {
         WAVE_MESHES.with(|cache| {
             let mut cache = cache.borrow_mut();
-            while cache.len() >= 32
+            while cache.len() >= 256
                 || cache
                     .iter()
                     .map(|entry| mesh_bytes(&entry.mesh))
@@ -2530,11 +2542,44 @@ mod waveform_mesh_cache_tests {
     use std::sync::Arc;
 
     #[test]
+    fn waveform_lod_is_progressive_density_aware_and_restores_close_detail() {
+        for density in [1.0_f32, 2.0, 3.0] {
+            let stride = |seconds| waveform_column_stride(
+                seconds * 48000.0 / f64::from(density), 48000, density, 2048);
+            assert_eq!(stride(0.0001), 1);
+            let levels: Vec<_> = [0.01, 0.03, 0.12, 0.5, 2.0].map(stride).into();
+            assert!(levels.windows(2).all(|p| p[0] < p[1]));
+            assert_eq!(stride(2.0), (32.0 * density) as usize);
+            assert_eq!(stride(0.0001), 1, "zooming back in restores device-pixel detail");
+        }
+    }
+
+    #[test]
+    fn waveform_lod_uses_audio_time_not_beat_or_frame_coordinate_names() {
+        let source = Waveform::new(Arc::new(SampleData {
+            left: vec![0.5; 65536].into(), sample_rate: 48000, ..Default::default()
+        }));
+        let before = source.data.left.clone();
+        let draw = |per_beat, bpp| wave_mesh(&source,
+            Wave { frames: 65536, per_beat, reversed: false },
+            &[(10.0, 8.0)], ((0.0, bpp), (0.0, 1024)), 1.0, Color32::RED);
+        let beats = draw(48000.0, 0.5);
+        let frames = draw(1.0, 24000.0);
+        assert_eq!(beats.vertices, frames.vertices);
+        assert_eq!(beats.indices, frames.indices);
+        assert_eq!(beats.vertices.len(), 1024 / 16 * 4);
+        let close = draw(1.0, 1.0);
+        assert_eq!(close.vertices.len(), 1024 * 4);
+        assert!(beats.vertices.len() * 16 <= close.vertices.len());
+        assert_eq!(source.data.left, before, "display LOD must not edit PCM");
+    }
+
+    #[test]
     fn zoomed_out_waveforms_reduce_geometry_and_keep_transients() {
-        assert_eq!(waveform_column_stride(1.0 / 128.0, 1024), 1);
-        assert_eq!(waveform_column_stride(1.0 / 16.0, 1024), 2);
-        assert_eq!(waveform_column_stride(1.0 / 8.0, 1024), 4);
-        assert!(10000_usize.div_ceil(waveform_column_stride(1.0, 10000)) <= 2048);
+        assert_eq!(waveform_column_stride(1.0, 48000, 1.0, 1024), 1);
+        assert_eq!(waveform_column_stride(480.0, 48000, 1.0, 1024), 2);
+        assert_eq!(waveform_column_stride(48000.0, 48000, 1.0, 1024), 16);
+        assert!(10000_usize.div_ceil(waveform_column_stride(48000.0, 48000, 1.0, 10000)) <= 2048);
         let mut pcm = vec![0.0; 4096];
         pcm[15] = 1.0;
         pcm[31] = -1.0;
@@ -2546,7 +2591,8 @@ mod waveform_mesh_cache_tests {
             for width in [64, 65] {
                 let mesh = wave_mesh(&source, wave, &[(10.0, 8.0)],
                     ((0.0, 1.0 / 8.0), (0.0, width)), 1.0, Color32::RED);
-                assert!(mesh.vertices.len() <= width.div_ceil(4) * 4);
+                let stride = waveform_column_stride(32.0, 48000, 1.0, width);
+                assert!(mesh.vertices.len() <= width.div_ceil(stride) * 4);
                 let detailed = columns(&source.data.left, &source.summary[0], wave, 0.0, 1.0 / 8.0, width);
                 let lo = detailed.iter().map(|p| p.0).fold(0.0_f32, f32::min);
                 let hi = detailed.iter().map(|p| p.1).fold(0.0_f32, f32::max);
@@ -2584,6 +2630,7 @@ mod waveform_mesh_cache_tests {
         let second = draw(Color32::RED);
         assert_eq!(first.vertices, second.vertices);
         assert_eq!(first.indices, second.indices);
+        assert!(Arc::ptr_eq(&first, &second), "cache hits share vertex/index buffers");
         WAVE_MESHES.with(|cache| assert_eq!(cache.borrow().len(), 1));
         draw(Color32::GREEN);
         WAVE_MESHES.with(|cache| assert_eq!(cache.borrow().len(), 2));
@@ -2599,7 +2646,7 @@ mod waveform_mesh_cache_tests {
         }
         WAVE_MESHES.with(|cache| {
             let cache = cache.borrow();
-            assert!(cache.len() <= 32);
+            assert!(cache.len() <= 256);
             assert!(
                 cache
                     .iter()

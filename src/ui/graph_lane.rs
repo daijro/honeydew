@@ -33,7 +33,7 @@
 use std::f64::consts::TAU;
 
 use eframe::egui::{
-    Color32, CornerRadius, Id, Mesh, Painter, Pos2, Rangef, Rect, Sense, Stroke, StrokeKind, Ui,
+    self, Color32, CornerRadius, Id, Painter, Pos2, Rangef, Rect, Sense, Stroke, StrokeKind, Ui,
     pos2, vec2,
 };
 
@@ -43,7 +43,7 @@ use crate::sample_cache::Waveform;
 use crate::song::Event;
 use crate::theme::{Rgba, ThemeColors};
 use crate::ui::anim;
-use crate::ui::audio_editor::{Wave, add_column, columns, pixel_columns, wave_rows};
+use crate::ui::audio_editor::{Wave, pixel_columns, wave_rows};
 use crate::ui::automation::value::{Land, ValueSnap};
 use crate::ui::clips::{mix, sample, tint_stops};
 use crate::ui::main_screen::{CLEAR_U, CORNER_W};
@@ -597,14 +597,10 @@ pub fn spacer_wave(
     };
     let fpp = frames as f64 / width.max(1) as f64;
     let rows = wave_rows(spacer, wave.summary.len() > 1);
-    let mut mesh = Mesh::default();
-    for ((samples, summary), &row) in wave.channels().zip(&rows) {
-        let cols = columns(samples, summary, fit, 0.0, fpp, width);
-        for (i, peak) in cols.into_iter().enumerate() {
-            add_column(&mut mesh, x0 + i as f32 * px, peak, row, px, ink);
-        }
-    }
-    painter.add(mesh);
+    let span = ((0.0, fpp), (x0, width));
+    painter.with_clip_rect(painter.clip_rect().intersect(spacer)).add(
+        egui::Shape::Mesh(crate::ui::clips::wave_mesh(wave, fit, &rows, span, px, ink)));
+
 }
 
 /// A drum value area's centre band: 1 U tall across `values` at its centre.
