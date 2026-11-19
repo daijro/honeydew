@@ -464,7 +464,8 @@ impl ProjectFiles {
             }
             FileEvent::Failed(_, detail) => {
                 if export.format.is_audio() { self.render_feedback = true; }
-                self.fail(failure(export.format), format!("Final file write: {detail}"));
+                let detail = if export.format.is_audio() { format!("Final file write: {detail}") } else { detail };
+                self.fail(failure(export.format), detail);
             },
             FileEvent::Opened(..)
             | FileEvent::Picked(_)

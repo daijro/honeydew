@@ -10,6 +10,10 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Back goes to the activity's back callback from Android 13 up, not only from 16 (#72). -->
+    <queries>
+        <intent><action android:name="android.intent.action.SEND" /><data android:mimeType="*/*" /></intent>
+        <intent><action android:name="android.intent.action.SEND_MULTIPLE" /><data android:mimeType="*/*" /></intent>
+    </queries>
     <application
         android:allowBackup="false"
         android:enableOnBackInvokedCallback="true"

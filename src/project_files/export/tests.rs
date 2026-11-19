@@ -62,7 +62,7 @@ fn written(mem: &MemFiles, path: &str) -> Option<Vec<u8>> {
 /// The lines of the message `files` asks for.
 fn message(files: &mut ProjectFiles) -> Option<Vec<String>> {
     match files.take_overlay()? {
-        Overlay::Message { lines, .. } => Some(lines),
+        Overlay::Message { lines, .. } | Overlay::ExportResult { lines, .. } => Some(lines),
         _ => None,
     }
 }
@@ -210,7 +210,7 @@ fn mp3_encodes_the_render_at_192_or_320_kbps_and_decodes_back() {
         let mp3 = export(Mp3, "My Tracks/Song.mp3");
         let job = Job::new(&song, &SampleCache::default(), mp3, page, 44_100).unwrap();
         let (titles, _, done) = run(job);
-        assert_eq!(titles.last().unwrap(), "Encoding \"Song.mp3\"");
+        assert_eq!(titles.last().unwrap(), "Finalizing \"Song.mp3\"");
         let Done::File(file) = done else {
             panic!("{done:?}")
         };
@@ -246,7 +246,7 @@ fn ogg_encodes_the_render_at_quality_0_4_or_1_and_decodes_back() {
         };
         let rendered = single_pass(&song, &SampleCache::default(), spec).unwrap();
         let (titles, _, done) = run(job(&song, Ogg, page));
-        assert_eq!(titles.last().unwrap(), "Encoding \"Song.ogg\"");
+        assert_eq!(titles.last().unwrap(), "Finalizing \"Song.ogg\"");
         let Done::File(file) = done else {
             panic!("{done:?}")
         };
@@ -275,7 +275,8 @@ fn the_busy_titles_go_rendering_processing_then_encoding() {
         [
             "Rendering \"Song.wav\"",
             "Processing \"Song.wav\"",
-            "Encoding \"Song.wav\""
+            "Encoding \"Song.wav\"",
+            "Finalizing \"Song.wav\""
         ]
     );
 }
@@ -528,14 +529,10 @@ fn a_written_render_says_where_it_went_with_a_way_to_open_my_tracks() {
     assert_eq!(files.take_flash(), None);
     assert_eq!(
         files.take_overlay(),
-        Some(Overlay::Message {
-            tag: RENDERED_TAG,
-            lines: vec![
-                RENDER_COMPLETE.into(),
-                "Saved to: My Tracks/Song.flac".into()
-            ],
-            confirm: Some((OPEN_TRACKS.into(), "OK".into())),
-            extra: None,
+        Some(Overlay::ExportResult {
+            lines: vec![RENDER_COMPLETE.into(), "Saved to: My Tracks/Song.flac".into(),
+                "Format: FLAC".into(), "File size: 4 bytes".into()],
+            success: true, open: true, share: cfg!(any(target_os = "android", target_os = "ios")),
         })
     );
     assert_eq!(files.waiting(), Some(RENDERED_TAG));
@@ -553,10 +550,8 @@ fn a_written_render_says_where_it_went_with_a_way_to_open_my_tracks() {
     mem.0.borrow_mut().names_only = true;
     files.write_export(&flac, b"fLaC".to_vec());
     update(&mut files, &mut song, None);
-    assert_eq!(
-        files.take_flash().as_deref(),
-        Some("Render complete\nSaved to: Song.flac")
-    );
+    assert!(matches!(files.take_overlay(), Some(Overlay::ExportResult { success: true, open: false, .. })));
+    assert_eq!(files.take_flash(), None);
     assert_eq!(song.title, "", "a render is no save");
 }
 
@@ -574,9 +569,9 @@ fn each_failure_shows_its_message() {
         Done::Failed(RenderError::Silent)
     ));
     files.render_failed(&RenderError::Silent);
-    assert_eq!(message(&mut files), Some(vec![NO_SOUND.into()]));
+    assert_eq!(message(&mut files).unwrap()[0], NO_SOUND);
     files.render_failed(&RenderError::TooLong);
-    assert_eq!(message(&mut files), Some(vec![RENDER_FAILED.into()]));
+    assert_eq!(message(&mut files).unwrap()[0], RENDER_FAILED);
     assert!(mem.0.borrow().files.is_empty());
     // A write that fails: the format's message and what went wrong.
     mem.0.borrow_mut().write_error = Some("disk full".into());
@@ -596,7 +591,7 @@ fn each_failure_shows_its_message() {
     update(&mut files, &mut song.clone(), None);
     assert_eq!(
         message(&mut files),
-        Some(vec![RENDER_FAILED.into(), "disk full".into()])
+        Some(vec![RENDER_FAILED.into(), "Final file write: disk full".into()])
     );
     // A song that cannot be written into the archive.
     files.codec.write = |_| Err("no".into());
@@ -735,9 +730,11 @@ fn the_progress_names_each_stem_among_the_stems_with_its_stage() {
             "Exporting channel 1: Lead\nRendering \"Lead.wav\"",
             "Exporting channel 1: Lead\nProcessing \"Lead.wav\"",
             "Exporting channel 1: Lead\nEncoding \"Lead.wav\"",
+            "Exporting channel 1: Lead\nFinalizing \"Lead.wav\"",
             "Exporting channel 2: Lead\nRendering \"Lead 1.wav\"",
             "Exporting channel 2: Lead\nProcessing \"Lead 1.wav\"",
             "Exporting channel 2: Lead\nEncoding \"Lead 1.wav\"",
+            "Exporting channel 2: Lead\nFinalizing \"Lead 1.wav\"",
         ]
     );
 }
@@ -902,10 +899,8 @@ fn the_web_downloads_one_archive_of_the_stems() {
     }
     files.write_export(&zip_export, zip);
     update(&mut files, &mut song, None);
-    assert_eq!(
-        files.take_flash().as_deref(),
-        Some("Render complete\nSaved to: Song - Multitrack wav.zip")
-    );
+    assert!(matches!(files.take_overlay(), Some(Overlay::ExportResult { success: true, open: false, .. })));
+    assert_eq!(files.take_flash(), None);
     assert!(written(&mem, "Song - Multitrack wav.zip").is_some());
 }
 
@@ -1215,4 +1210,39 @@ fn an_flp_puts_the_effects_on_the_channel_s_insert_and_with_rendered_audio_holds
         "{}",
         clip.visible_len_beats
     );
+}
+
+#[test]
+fn export_progress_counters_are_real_monotone_within_each_pass_and_finalizing_is_explicit() {
+    let mut job = job(&note_song(), Wav, cut(false));
+    let (mut stage, mut previous) = ("", 0);
+    let mut saw_finalizing = false;
+    loop {
+        let (done, total, current) = job.progress();
+        assert!(done <= total);
+        if current == stage { assert!(done >= previous); }
+        if current.starts_with("Finalizing") { saw_finalizing = true; assert_eq!(total, 0); }
+        stage = current;
+        previous = done;
+        if job.step(&mut || true).is_some() { break; }
+    }
+    assert!(saw_finalizing);
+}
+
+#[test]
+fn export_completion_share_reuses_only_successfully_saved_files() {
+    let (mut files, mem) = files();
+    let mut song = note_song();
+    files.share_last_render();
+    assert!(mem.0.borrow().shares.is_empty());
+    let export = export(Wav, "My Tracks/Shared.wav");
+    files.write_export(&export, b"RIFF".to_vec());
+    files.share_last_render();
+    assert!(mem.0.borrow().shares.is_empty(), "not before save confirmation");
+    update(&mut files, &mut song, None);
+    files.share_last_render();
+    assert_eq!(mem.0.borrow().shares[0].0, vec![std::path::PathBuf::from("My Tracks/Shared.wav")]);
+    files.dismiss_render_result();
+    files.share_last_render();
+    assert_eq!(mem.0.borrow().shares.len(), 1);
 }

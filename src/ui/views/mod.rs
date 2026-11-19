@@ -322,7 +322,8 @@ impl Navigation {
             _ if self
                 .overlays
                 .iter()
-                .any(|o| matches!(o, Overlay::Message { tag: t, .. } if *t == tag)) =>
+                .any(|o| matches!(o, Overlay::Message { tag: t, .. } if *t == tag)
+                    || (tag == crate::project_files::export::RENDERED_TAG && matches!(o, Overlay::ExportResult { .. }))) =>
             {
                 None
             }

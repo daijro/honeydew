@@ -118,7 +118,8 @@ fn save_wav_render_writes_a_file_that_decodes_back() {
         [
             "Rendering \"New Song.wav\"",
             "Processing \"New Song.wav\"",
-            "Encoding \"New Song.wav\""
+            "Encoding \"New Song.wav\"",
+            "Finalizing \"New Song.wav\""
         ]
     );
     let file = written(&mem, "My Tracks/New Song.wav").expect("written");
@@ -130,7 +131,7 @@ fn save_wav_render_writes_a_file_that_decodes_back() {
     rig.frame(vec![]);
     rig.frame(vec![]);
     assert!(rig.shows("Render complete") && rig.shows("Saved to: My Tracks/New Song.wav"));
-    rig.click(rig.text_rect("Open My Tracks").center());
+    rig.click(rig.text_rect("OPEN MY TRACKS").center());
     assert_eq!(
         rig.overlays(),
         [Overlay::MainMenu(crate::ui::views::MenuTab::Songs)]
@@ -300,7 +301,7 @@ fn quick_render_renders_the_last_format_with_the_kept_options_and_no_dialog() {
     assert_eq!(decoded.left.len(), 96_000);
     assert!(matches!(
         rig.overlays()[..],
-        [Overlay::MainMenu(MenuTab::Project), Overlay::Message { .. }]
+        [Overlay::MainMenu(MenuTab::Project), Overlay::ExportResult { .. }]
     ));
 }
 
@@ -446,4 +447,32 @@ fn a_render_is_tagged_with_the_songs_metadata_unless_write_tags_is_off() {
     let plain = render(&mut rig, "Plain");
     assert_eq!(&plain[38..42], b"data", "no LIST chunk");
     assert_eq!(decode(&plain).unwrap(), decode(&tagged).unwrap());
+}
+
+#[test]
+fn export_cancel_drops_processing_without_saving_or_changing_project() {
+    let (mut rig, mem) = Rig::exporting();
+    let before = rig.app.song.clone();
+    rig.render_page(WAV);
+    rig.click(dialog().render.center());
+    assert!(rig.app.export.is_some());
+    rig.app.navigate(Nav::Answer("export_cancel", true));
+    assert!(rig.app.export.is_none());
+    for _ in 0..3 { rig.frame(vec![]); }
+    assert!(mem.0.borrow().files.is_empty());
+    assert_eq!(rig.app.song, before);
+    assert!(!rig.overlays().iter().any(|o| matches!(o, Overlay::ExportProgress { .. } | Overlay::ExportResult { success: true, .. })));
+}
+
+#[test]
+fn export_again_returns_to_real_settings_and_completion_waits_for_user() {
+    let (mut rig, _) = Rig::exporting();
+    rig.render_page(WAV);
+    rig.click(dialog().render.center());
+    rig.finish_export();
+    for _ in 0..3 { rig.frame(vec![]); }
+    assert!(rig.overlays().iter().any(|o| matches!(o, Overlay::ExportResult { success: true, .. })));
+    rig.app.navigate(Nav::Answer("export_again", true));
+    rig.frame(vec![]);
+    assert!(rig.overlays().iter().any(|o| matches!(o, Overlay::SaveDialog { .. })));
 }

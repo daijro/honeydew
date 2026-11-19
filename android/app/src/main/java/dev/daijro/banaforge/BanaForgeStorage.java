@@ -179,6 +179,10 @@ final class BanaForgeStorage {
             clip.addItem(new ClipData.Item(uris.get(i)));
         }
         send.setClipData(clip);
+        if (send.resolveActivity(appContext.getPackageManager()) == null) {
+            return "No installed app can receive this audio format";
+        }
+        if (activity.isFinishing() || activity.isDestroyed()) return "Activity unavailable";
         activity.runOnUiThread(() -> {
             if (activity.isFinishing() || activity.isDestroyed()) return;
             try {
