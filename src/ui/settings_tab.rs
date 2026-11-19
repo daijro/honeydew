@@ -249,7 +249,7 @@ fn platform_row_visible(r: &Row, desktop: bool, web: bool) -> bool {
 
 /// Every row of the SETTINGS tab, in order.
 // The raw buffer slider is desktop-only; mobile has one fewer settings row.
-const ROWS: [Row; 70 + cfg!(desktop) as usize] = {
+const ROWS: [Row; 71 + cfg!(desktop) as usize] = {
     use Kind::*;
     [
         row("MIDI:", Header),
