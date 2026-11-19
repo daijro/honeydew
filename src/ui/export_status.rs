@@ -40,7 +40,8 @@ pub(crate) fn progress(ctx: &egui::Context, cx: &UiCtx, title: &str, done: usize
         ui.label(stage);
         let confirmed = fraction(done, total);
         // Animate only toward confirmed work, never advance on a timer alone.
-        let shown = ctx.animate_value_with_time(Id::new(("export_fraction", stage)), confirmed.unwrap_or(0.0), 0.12);
+        let shown = ctx.animate_value_with_time(Id::new(("export_fraction", title, stage)), confirmed.unwrap_or(0.0),
+            if done == 0 || total == 0 { 0.0 } else { 0.12 });
         let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 100.0), Sense::hover());
         let ink = cx.theme.colors.text.to_color32();
         let bright = Color32::from_rgb(255, 210, 65);

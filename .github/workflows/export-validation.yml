@@ -26,6 +26,6 @@ jobs:
           result=$?
           cat /tmp/export.log
           if [ "$result" -ne 0 ]; then
-            tail -c 14000 /tmp/export.log | python3 -c 'import sys; print("::error::" + sys.stdin.read().replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))'
+            grep -E -A22 -B3 'error|FAILED|failures:|panicked|Caused by' /tmp/export.log | head -c 50000 | python3 -c 'import sys; print("::error::" + sys.stdin.read().replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))'
           fi
           exit "$result"

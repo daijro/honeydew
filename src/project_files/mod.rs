@@ -1532,7 +1532,7 @@ impl ProjectFiles {
         }
         let lines = self.message.take()?;
         let render_feedback = std::mem::take(&mut self.render_feedback);
-        if self.rendered.is_some() || render_feedback {
+        if (self.rendered.is_some() && lines.first().is_some_and(|s| s == export::RENDER_COMPLETE)) || render_feedback {
             let success = lines.first().is_some_and(|s| s == export::RENDER_COMPLETE);
             return Some(Overlay::ExportResult {
                 lines, success,
