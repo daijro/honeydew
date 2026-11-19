@@ -152,7 +152,9 @@ fn envelope(clip: &Clip, env_param: i16) -> Result<Clip, EngineError> {
 pub(super) fn plays_per_pass(clip: &Clip) -> Result<usize, EngineError> {
     let mut plays = 2;
     for env_param in ENVELOPES {
-        plays += envelope(clip, env_param)?.events.len();
+        let steps = envelope(clip, env_param)?;
+        // Also account for the clip-start/offset initialization action.
+        plays += steps.events.len() + usize::from(!steps.events.is_empty());
     }
     Ok(plays)
 }
@@ -307,7 +309,7 @@ pub(super) fn actions(
         for (index, env_param) in ENVELOPES.into_iter().enumerate() {
             let steps = envelope(clip, env_param)?;
             if let Some(Event::Automation { value, .. }) = steps.events.iter()
-                .rfind(|e| f64::from(e.pos()) <= offset * ppq) {
+                .rfind(|e| f64::from(e.pos()) <= offset.rem_euclid(lp) * ppq) {
                 push(start, Action::ClipParam { pad, index, value: *value })?;
             }
             for (tick, event) in steps.events_in_song_range(0, u64::MAX) {
