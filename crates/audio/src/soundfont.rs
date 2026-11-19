@@ -64,6 +64,8 @@ const START_LOOP: usize = 2;
 const END_LOOP: usize = 3;
 const MOD_LFO_TO_PITCH: usize = 5;
 const VIB_LFO_TO_PITCH: usize = 6;
+const FILTER_FC: usize = 8;
+const FILTER_Q: usize = 9;
 const PAN: usize = 17;
 const DELAY_MOD_LFO: usize = 21;
 const FREQ_MOD_LFO: usize = 22;
@@ -105,6 +107,7 @@ const fn defaults(instrument: bool) -> Gens {
         gens[RELEASE] = -12000;
         gens[DELAY_MOD_LFO] = -12000;
         gens[DELAY_VIB_LFO] = -12000;
+        gens[FILTER_FC] = 13500;
         gens[SCALE] = 100;
         gens[ROOT] = -1;
     }
@@ -563,6 +566,15 @@ impl SoundFont {
             _ => 60,
         };
         let centibels = |op: usize| add(op).clamp(0, MAX_CB) as f32;
+        let filter_fc = add(FILTER_FC).clamp(1500, 13500);
+        let filter_q = add(FILTER_Q).clamp(0, 960);
+        let filter = (filter_fc < 13500 || filter_q > 0).then(|| {
+            [
+                LFO_HZ * 2f32.powf(filter_fc as f32 / 1200.0),
+                filter_q as f32 / 10.0,
+            ]
+        });
+        let q_attenuation = 0.5 * filter_q.min(400) as f32;
         Some(Region {
             keys: overlap(preset[KEYS], gens[KEYS])?,
             vels: overlap(preset[VELS], gens[VELS])?,
@@ -577,7 +589,7 @@ impl SoundFont {
                 + f64::from(add(FINE) + i32::from(header.correction)) / 100.0,
             scale: f64::from(gens[SCALE]),
             pan: add(PAN).clamp(-500, 500) as f32 / 1000.0,
-            gain: 10f32.powf(-centibels(ATTENUATION) / 200.0),
+            gain: 10f32.powf(-(centibels(ATTENUATION) + q_attenuation) / 200.0),
             attack: add(ATTACK) as f32,
             decay: add(DECAY) as f32,
             sustain: 10f32.powf(-centibels(SUSTAIN) / 200.0),
@@ -592,6 +604,7 @@ impl SoundFont {
                 LFO_HZ * 2f32.powf(add(FREQ_MOD_LFO).clamp(-16000, 4500) as f32 / 1200.0),
                 2f32.powf(add(DELAY_MOD_LFO).clamp(-12000, 5000) as f32 / 1200.0),
             ],
+            filter,
             sfz: None,
         })
     }
@@ -686,6 +699,7 @@ pub struct Region {
     vibrato: [f32; 3],
     /// A SoundFont's modulation LFO: pitch depth (cents), rate (Hz) and delay (seconds).
     mod_lfo: [f32; 3],
+    filter: Option<[f32; 2]>,
     /// An SFZ region's sample and rules (its frames above are the sample's, its tune 0 and its scale the key
     /// tracking); `None` for a SoundFont's.
     sfz: Option<Rules>,
@@ -874,6 +888,7 @@ fn sfz_region(
         release: 0.0,
         vibrato: [0.0; 3],
         mod_lfo: [0.0; 3],
+        filter: None,
         sfz: Some(Rules {
             sample,
             cents: f64::from(r.transpose) * 100.0 + f64::from(r.tune),
@@ -1228,6 +1243,19 @@ impl Filter {
             }
         }
         (out[0], out[1])
+    }
+
+    /// One mono frame through channel 0.
+    fn run_mono(&mut self, mut x: f32) -> f32 {
+        let [b0, b1, b2, a1, a2] = self.c;
+        for stage in &mut self.z[..self.stages] {
+            let z = &mut stage[0];
+            let y = b0 * x + z[0];
+            z[0] = flush(b1 * x - a1 * y + z[1]);
+            z[1] = flush(b2 * x - a2 * y);
+            x = y;
+        }
+        x
     }
 }
 
@@ -1903,6 +1931,16 @@ impl Instrument for SoundFontPlayer {
             let step = 2f64.powf(octaves) * region.rate / f64::from(self.sample_rate);
             let slot = slot(&self.voices, None, None);
             self.started += 1;
+            let mut filter = Filter::default();
+            if let Some([hz, resonance]) = region.filter {
+                filter.tune(
+                    (FilterShape::LowPass, 2),
+                    hz,
+                    resonance,
+                    0.0,
+                    self.sample_rate,
+                );
+            }
             self.voices[slot] = Voice {
                 on: true,
                 key,
@@ -1916,6 +1954,10 @@ impl Instrument for SoundFontPlayer {
                 decay,
                 sustain,
                 release,
+                m: Motion {
+                    filter,
+                    ..Motion::default()
+                },
                 ..Voice::default()
             };
         }
@@ -2017,6 +2059,7 @@ impl Instrument for SoundFontPlayer {
                     }
                     let at = |k| font.frame(k);
                     let sample = interpolate(region, region.looping, voice.position, cubic, at);
+                    let sample = voice.m.filter.run_mono(sample);
                     *l += sample * voice.level * gain_l;
                     *r += sample * voice.level * gain_r;
                     voice.advance(region, step);
