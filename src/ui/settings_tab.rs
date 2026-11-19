@@ -241,7 +241,8 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 }
 
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 71] = {
+// The raw buffer slider is desktop-only; mobile has one fewer settings row.
+const ROWS: [Row; 70 + cfg!(desktop) as usize] = {
     use Kind::*;
     [
         row("MIDI:", Header),
