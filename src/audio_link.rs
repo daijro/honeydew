@@ -150,12 +150,18 @@ pub fn buffer_mode(sound_mode: u8, low_latency: u8) -> BufferMode {
     if cfg!(desktop) {
         return requested.unwrap_or(BufferMode::Native);
     }
-    requested.unwrap_or(match sound_mode {
+    // Mobile presets are authoritative. A legacy raw-slider value must not
+    // silently override NATIVE or turn FAST into a 2048-frame callback.
+    mobile_buffer_mode(sound_mode)
+}
+
+fn mobile_buffer_mode(sound_mode: u8) -> BufferMode {
+    match sound_mode {
         2 => BufferMode::UltraSafe,
         0 => BufferMode::Safe,
         1 => BufferMode::Fast,
         _ => BufferMode::Native,
-    })
+    }
 }
 
 #[cfg(test)]
@@ -2171,5 +2177,26 @@ mod tests {
             learn.as_str(),
         ];
         assert_eq!(rec.take(), sent);
+    }
+}
+
+#[cfg(test)]
+mod mobile_sound_mode_tests {
+    use super::*;
+    #[test]
+    fn stable_preset_ids_map_to_buffer_policies() {
+        assert_eq!(mobile_buffer_mode(3), BufferMode::Native);
+        assert_eq!(mobile_buffer_mode(1), BufferMode::Fast);
+        assert_eq!(mobile_buffer_mode(0), BufferMode::Safe);
+        assert_eq!(mobile_buffer_mode(2), BufferMode::UltraSafe);
+        assert_eq!(mobile_buffer_mode(255), BufferMode::Native);
+    }
+    #[test]
+    #[cfg(not(desktop))]
+    fn legacy_slider_cannot_override_mobile_preset() {
+        for slider in 0..=255 {
+            assert_eq!(buffer_mode(3, slider), BufferMode::Native);
+            assert_eq!(buffer_mode(1, slider), BufferMode::Fast);
+        }
     }
 }

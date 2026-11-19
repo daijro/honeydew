@@ -1035,6 +1035,16 @@ fn output_config(
     if mode == BufferMode::Native || cfg!(target_os = "ios") {
         return config;
     }
+    if cfg!(target_os = "android") {
+        config.buffer_size = match mode {
+            BufferMode::Fast => BufferSize::Fixed(256),
+            BufferMode::Safe => BufferSize::Fixed(1024),
+            BufferMode::UltraSafe => BufferSize::Fixed(2048),
+            BufferMode::Fixed(frames) => BufferSize::Fixed(frames),
+            BufferMode::Native => BufferSize::Default,
+        };
+        return config;
+    }
     let Some((min, max)) = device
         .supported_output_configs()
         .ok()

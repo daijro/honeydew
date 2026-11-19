@@ -257,6 +257,7 @@ const ROWS: [Row; 71] = {
         row("Scan Bluetooth MIDI Devices", Scan),
         row("Audio:", Header),
         row("Multi core processing", Toggle(|s| &mut s.multi_core)),
+        #[cfg(desktop)]
         row("Audio buffer size", BufferSize),
         row(
             "Enable background audio (iOS Only)",
@@ -836,7 +837,7 @@ impl SettingsTab {
                     #[cfg(desktop)]
                     let sound_mode_tip = "STANDARD: general-purpose mode with broad device compatibility.\nMULTITRACK: experimental; FL-style per-input multitrack routing is not implemented yet. The buffer slider works in either mode.";
                     #[cfg(not(desktop))]
-                    let sound_mode_tip = "ULTRASAFE: largest buffer; maximum stability and compatibility, highest latency.\nSAFE: moderately large buffer; fewer glitches with more latency.\nFAST: small buffer; lower latency but more CPU/dropout risk.\nNATIVE: device/OS default audio behavior.";
+                    let sound_mode_tip = "NATIVE: Android AAudio low-latency request with device-selected burst and automatic backend buffer tuning. Hardware and routes determine actual latency.\nFAST: 256-frame callback target.\nSAFE: 1024-frame callback target.\nULTRA SAFE: 2048-frame callback target. Larger buffers trade response time for more processing headroom. iOS retains its audio-session buffer.";
                     crate::ui::tooltip::tip(ui, button_rect, sound_mode_tip, None);
                 }
                 if matches!(choice, Choice::SampleMemory) {
@@ -1427,6 +1428,7 @@ mod tests {
                 "Scan Bluetooth MIDI Devices",
                 "Audio:",
                 "Multi core processing",
+                #[cfg(desktop)]
                 "Audio buffer size",
                 "Enable background audio (iOS Only)",
                 "Sound mode:",
@@ -1543,8 +1545,8 @@ mod tests {
         #[cfg(not(desktop))]
         #[cfg(not(desktop))]
         {
-            assert_eq!(labels(Choice::SoundMode), ["NATIVE"]);
-            assert_eq!(values(Choice::SoundMode), [3]);
+            assert_eq!(labels(Choice::SoundMode), ["NATIVE", "FAST", "SAFE", "ULTRA SAFE"]);
+            assert_eq!(values(Choice::SoundMode), [3, 1, 0, 2]);
         }
         assert_eq!(
             labels(Choice::Theme),
@@ -1591,7 +1593,7 @@ mod tests {
             assert_eq!(SOUND_MODES, [(0, "STANDARD"), (1, "MULTITRACK")]);
         }
         #[cfg(not(desktop))]
-        assert_eq!(SOUND_MODES, [(3, "NATIVE")]);
+        assert_eq!(SOUND_MODES, [(3, "NATIVE"), (1, "FAST"), (0, "SAFE"), (2, "ULTRA SAFE")]);
     }
 
     #[test]
@@ -2011,16 +2013,17 @@ mod tests {
             let centre = |label: &str| rig.rect_of(row_id(index(label))).center().y;
             // Three rows in a section, then a dropdown and the next header's toggle: one pitch each.
             let first = centre("Multi core processing");
+            #[cfg(desktop)]
             assert!(
                 (centre("Audio buffer size") - first - 2.5 * u).abs() < 0.01,
                 "{at}"
             );
             assert!(
-                (centre("Enable background audio (iOS Only)") - first - 4.0 * u).abs() < 0.01,
+                (centre("Enable background audio (iOS Only)") - first - if cfg!(desktop) { 4.0 * u } else { 2.0 * u }).abs() < 0.01,
                 "{at}"
             );
             assert!(
-                (centre("Sound mode:") - first - 6.0 * u).abs() < 0.01,
+                (centre("Sound mode:") - first - if cfg!(desktop) { 6.0 * u } else { 4.0 * u }).abs() < 0.01,
                 "{at}"
             );
             for label in ["Multi core processing", "Sound mode:", "Input device:"] {

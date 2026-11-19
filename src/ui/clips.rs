@@ -46,7 +46,7 @@ use crate::song::{
 };
 use crate::theme::{Rgba, Theme, ThemeColors, channel_color};
 use crate::ui::audio_editor::{
-    self, Action, Wave, add_column, columns, stretch_of, stretch_ratio, wave_rows,
+    self, Action, Wave, columns, stretch_of, stretch_ratio, wave_rows,
 };
 use crate::ui::automation::pop_scale;
 use crate::ui::buttons::bubble_button;
@@ -2341,8 +2341,8 @@ fn audio_wave(
 /// mirrored, Speed and a SYNC stretch in the scale): each loop pass from its start, up to the sample's end or the
 /// loop's, as the notes repeat. A loop narrower than a pixel draws nothing.
 /// A column reads the sample's summary where it covers whole blocks ([`columns`]), so it costs at most 2·256 frames.
-// ponytail: each frame re-scans every column's two partial ends, about 1 ms per channel per visible track; a per-clip
-// column cache (keyed by zoom and scroll) or a 16-frame second summary level if that shows up in a profile.
+// Geometry is cached below; wide views additionally merge adjacent screen
+// columns, reducing peak queries, mesh copies and GPU vertices on cache misses/hits.
 fn waveform(
     painter: &Painter,
     clip: &Clip,
@@ -2414,6 +2414,15 @@ fn mesh_bytes(mesh: &Mesh) -> usize {
         + mesh.indices.len() * std::mem::size_of::<u32>()
 }
 
+/// Samples per screen column grow when zooming out. Keep pixel detail close up,
+/// merge 2/4 pixels at arrangement zoom, and bound pathological wide viewports.
+/// Aggregation uses min/max over the full interval, not every Nth sample.
+fn waveform_column_stride(beats_per_px: f64, width: usize) -> usize {
+    let zoom = if beats_per_px >= 1.0 / 8.0 { 4 }
+        else if beats_per_px >= 1.0 / 32.0 { 2 } else { 1 };
+    zoom.max(width.div_ceil(2048)).max(1)
+}
+
 /// The waveform's columns: `width` device-pixel columns (`px` wide) from `x0`, the first at content beat `left` and
 /// each `beats_per_px` on, of every channel ([`columns`]) about its row of `rows` ([`wave_rows`]), in `ink`. The sample
 /// strip draws its whole file with them too (BanaForge change, #124).
@@ -2455,10 +2464,25 @@ pub(crate) fn wave_mesh(
         return mesh;
     }
     let mut mesh = Mesh::default();
+    let stride = waveform_column_stride(beats_per_px, width);
+    let full = width / stride;
+    let column_px = px * stride as f32;
     for ((samples, summary), &row) in source.channels().zip(rows) {
-        let cols = columns(samples, summary, wave, left, beats_per_px, width);
+        let cols = columns(samples, summary, wave, left, beats_per_px * stride as f64, full);
         for (i, peak) in cols.into_iter().enumerate() {
-            add_column(&mut mesh, x0 + i as f32 * px, peak, row, px, ink);
+            let x = x0 + i as f32 * column_px;
+            let y = audio_editor::column_span(peak.0, peak.1, row.0, row.1, px);
+            mesh.add_colored_rect(Rect::from_x_y_ranges(x..=x + column_px, y), ink);
+        }
+        // Query the short final interval separately: never pull in peaks from
+        // outside the visible sample span or stretch a reversed waveform.
+        let tail = width % stride;
+        if tail > 0 {
+            let tail_left = left + full as f64 * stride as f64 * beats_per_px;
+            let peaks = columns(samples, summary, wave, tail_left, beats_per_px * tail as f64, 1);
+            let x = x0 + full as f32 * column_px;
+            let y = audio_editor::column_span(peaks[0].0, peaks[0].1, row.0, row.1, px);
+            mesh.add_colored_rect(Rect::from_x_y_ranges(x..=x + px * tail as f32, y), ink);
         }
     }
     // Four MiB / 32 entries maximum, regardless of project length or zoom.
@@ -2493,6 +2517,33 @@ mod waveform_mesh_cache_tests {
     use super::*;
     use banaforge_audio::sample::SampleData;
     use std::sync::Arc;
+
+    #[test]
+    fn zoomed_out_waveforms_reduce_geometry_and_keep_transients() {
+        assert_eq!(waveform_column_stride(1.0 / 128.0, 1024), 1);
+        assert_eq!(waveform_column_stride(1.0 / 32.0, 1024), 2);
+        assert_eq!(waveform_column_stride(1.0 / 8.0, 1024), 4);
+        assert!(10000_usize.div_ceil(waveform_column_stride(1.0, 10000)) <= 2048);
+        let mut pcm = vec![0.0; 4096];
+        pcm[15] = 1.0;
+        pcm[31] = -1.0;
+        let source = Waveform::new(Arc::new(SampleData {
+            left: pcm.into(), sample_rate: 48000, ..Default::default()
+        }));
+        for reversed in [false, true] {
+            let wave = Wave { frames: 4096, per_beat: 256.0, reversed };
+            for width in [64, 65] {
+                let mesh = wave_mesh(&source, wave, &[(10.0, 8.0)],
+                    ((0.0, 1.0 / 8.0), (0.0, width)), 1.0, Color32::RED);
+                assert!(mesh.vertices.len() <= width.div_ceil(4) * 4);
+                let detailed = columns(&source.data.left, &source.summary[0], wave, 0.0, 1.0 / 8.0, width);
+                let lo = detailed.iter().map(|p| p.0).fold(0.0_f32, f32::min);
+                let hi = detailed.iter().map(|p| p.1).fold(0.0_f32, f32::max);
+                assert!(mesh.vertices.iter().any(|v| v.pos.y <= 10.0 - hi * 8.0));
+                assert!(mesh.vertices.iter().any(|v| v.pos.y >= 10.0 - lo * 8.0));
+            }
+        }
+    }
 
     #[test]
     fn waveform_mesh_cache_reuses_geometry_and_does_not_retain_audio() {

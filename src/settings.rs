@@ -68,7 +68,9 @@ pub fn migrate_legacy_keys(storage: &mut dyn eframe::Storage) {
 #[cfg(desktop)]
 pub const SOUND_MODES: [(u8, &str); 2] = [(0, "STANDARD"), (1, "MULTITRACK")];
 #[cfg(not(desktop))]
-pub const SOUND_MODES: [(u8, &str); 1] = [(3, "NATIVE")];
+pub const SOUND_MODES: [(u8, &str); 4] = [
+    (3, "NATIVE"), (1, "FAST"), (0, "SAFE"), (2, "ULTRA SAFE"),
+];
 
 /// Buffer-size slider positions. Zero keeps the audio device's native/default buffer;
 /// positive values are targets that the backend clamps to the device's supported range.
