@@ -295,7 +295,8 @@ fn a_slice_runs_whole_blocks_until_it_is_spent_and_ends_with_its_stage() {
     while job.step(&mut || true).is_none() {
         slices += 1;
     }
-    assert_eq!(slices, 15);
+    // Sixteen encode blocks, plus a separately displayed finalization slice.
+    assert_eq!(slices, 16);
 }
 
 #[test]
