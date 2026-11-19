@@ -60,6 +60,8 @@ pub type DwProgram = Arc<[(Zone, SampleKey)]>;
 pub struct Waveform {
     pub data: Arc<SampleData>,
     pub summary: Arc<[Vec<(f32, f32)>]>,
+    // Levels above the 256-frame summary, shared across every clip of this file.
+    overview: Arc<[Vec<Vec<(f32, f32)>>]>,
 }
 
 impl Waveform {
@@ -69,7 +71,52 @@ impl Waveform {
             .chain(data.right.as_deref())
             .map(summarize)
             .collect();
-        Self { data, summary }
+        Self::with_summary(data, summary)
+    }
+
+    pub(crate) fn with_summary(data: Arc<SampleData>, summary: Arc<[Vec<(f32, f32)>]>) -> Self {
+        let overview = summary.iter().map(|channel| {
+            let mut levels = Vec::new();
+            let mut previous = channel.as_slice();
+            while previous.len() > 1 {
+                let next: Vec<_> = previous.chunks(2).map(|pair| {
+                    pair.iter().copied().reduce(|a, b| (a.0.min(b.0), a.1.max(b.1))).unwrap()
+                }).collect();
+                levels.push(next);
+                previous = levels.last().unwrap();
+            }
+            levels
+        }).collect();
+        Self { data, summary, overview }
+    }
+
+    /// Overview-only conservative min/max. Each column reads at most nine
+    /// summary pairs regardless of recording duration. No PCM scan while panning.
+    /// At close zoom return None so the caller retains exact frame-level detail.
+    pub(crate) fn overview_columns(&self, channel: usize, frames: usize, reversed: bool,
+        first: f64, frames_per_column: f64, width: usize) -> Option<Vec<(f32, f32)>> {
+        if !frames_per_column.is_finite() || frames_per_column < 1024.0 || !first.is_finite() {
+            return None;
+        }
+        let mut block = banaforge_audio::sample_edit::SUMMARY_FRAMES;
+        let mut summary = self.summary.get(channel)?.as_slice();
+        for level in self.overview.get(channel)? {
+            if block as f64 * 2.0 > frames_per_column / 4.0 { break; }
+            block *= 2;
+            summary = level;
+        }
+        Some((0..width).map(|i| {
+            let a = first + i as f64 * frames_per_column;
+            let b = a + frames_per_column;
+            let (a, b) = if reversed { (frames as f64 - b, frames as f64 - a) } else { (a, b) };
+            let a = a.max(0.0).min(frames as f64);
+            let b = b.max(0.0).min(frames as f64);
+            if a >= b { return (0.0, 0.0); }
+            let lo = (a / block as f64).floor() as usize;
+            let hi = ((b / block as f64).ceil() as usize).min(summary.len());
+            summary.get(lo..hi).into_iter().flatten().copied()
+                .reduce(|a, b| (a.0.min(b.0), a.1.max(b.1))).unwrap_or((0.0, 0.0))
+        }).collect())
     }
 
     /// Each channel's frames and summary, left then right.
@@ -605,8 +652,13 @@ impl SampleCache {
     /// sample, a DW program's plain-audio fallback included): what a view drawing the sample's waveform reads (the audio
     /// clip editor's, the playlist's audio clips).
     pub fn waveform(&mut self, slot: &SamplerSlot, read: &Reader<'_>) -> Option<Waveform> {
-        let data = self.load_slot(slot, read)?;
         let key = SampleKey::of_slot(slot)?;
+        // Rendering the same file in many clips must not repeat the decode/ref
+        // lookup (or construct a reader-backed loading plan) on every UI frame.
+        if let Some(waveform) = self.waveforms.get(&key) {
+            return Some(waveform.clone());
+        }
+        let data = self.load_slot(slot, read)?;
         Some(
             (self.waveforms.entry(key))
                 .or_insert_with(|| Waveform::new(data))
@@ -3820,5 +3872,50 @@ pub(crate) mod tests {
         let mut roomy = SampleCache::default();
         roomy.absorb(worker());
         assert_eq!(roomy.take_jobs().len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod waveform_overview_tests {
+    use super::*;
+
+    #[test]
+    fn overview_preserves_impulses_and_reversal_at_multiple_scales() {
+        let mut pcm = vec![0.0; 1 << 20];
+        pcm[12345] = 0.91;
+        pcm[912345] = -0.87;
+        let wave = Waveform::new(Arc::new(SampleData {
+            left: pcm.into(), sample_rate: 48000, ..Default::default()
+        }));
+        assert!(wave.overview_columns(0, wave.data.frames(), false, 0.0, 8.0, 64).is_none());
+        for span in [1024.0, 8192.0, 65536.0] {
+            for reversed in [false, true] {
+                let count = (wave.data.frames() as f64 / span) as usize;
+                let peaks = wave.overview_columns(0, wave.data.frames(), reversed, 0.0, span, count).unwrap();
+                assert_eq!(peaks.len(), count);
+                for (frame, value) in [(12345, 0.91), (912345, -0.87)] {
+                    let position = if reversed { wave.data.frames() - 1 - frame } else { frame };
+                    let peak = peaks[position / span as usize];
+                    assert!(peak.0 <= value && peak.1 >= value);
+                }
+            }
+        }
+        // Binary levels take <= one additional base summary's worth of pairs
+        // (plus one rounded entry per level), not another copy of PCM.
+        let extra: usize = wave.overview[0].iter().map(Vec::len).sum();
+        assert!(extra <= wave.summary[0].len() + wave.overview[0].len());
+        let copy = wave.clone();
+        assert!(Arc::ptr_eq(&copy.overview, &wave.overview));
+    }
+
+    #[test]
+    fn overview_outside_file_is_silent_and_tail_is_included() {
+        let mut pcm = vec![0.0; 10001];
+        pcm[10000] = 1.0;
+        let wave = Waveform::new(Arc::new(SampleData {
+            left: pcm.into(), sample_rate: 48000, ..Default::default()
+        }));
+        assert_eq!(wave.overview_columns(0, 10001, false, 20000.0, 1024.0, 1).unwrap(), [(0.0, 0.0)]);
+        assert_eq!(wave.overview_columns(0, 10001, false, 9500.0, 1024.0, 1).unwrap()[0].1, 1.0);
     }
 }

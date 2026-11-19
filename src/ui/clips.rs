@@ -2467,19 +2467,25 @@ pub(crate) fn wave_mesh(
     let stride = waveform_column_stride(beats_per_px, width);
     let full = width / stride;
     let column_px = px * stride as f32;
-    for ((samples, summary), &row) in source.channels().zip(rows) {
-        let cols = columns(samples, summary, wave, left, beats_per_px * stride as f64, full);
+    for (channel, ((samples, summary), &row)) in source.channels().zip(rows).enumerate() {
+        let overview = |left: f64, span: f64, width| source.overview_columns(
+            channel, wave.frames, wave.reversed, left * wave.per_beat, span * wave.per_beat, width);
+        let span = beats_per_px * stride as f64;
+        let cols = overview(left, span, full)
+            .unwrap_or_else(|| columns(samples, summary, wave, left, span, full));
         for (i, peak) in cols.into_iter().enumerate() {
             let x = x0 + i as f32 * column_px;
             let y = audio_editor::column_span(peak.0, peak.1, row.0, row.1, px);
             mesh.add_colored_rect(Rect::from_x_y_ranges(x..=x + column_px, y), ink);
         }
-        // Query the short final interval separately: never pull in peaks from
-        // outside the visible sample span or stretch a reversed waveform.
+        // Keep the short final interval and reversal aligned. At overview LOD
+        // summary bins conservatively include neighbouring sub-column peaks.
         let tail = width % stride;
         if tail > 0 {
             let tail_left = left + full as f64 * stride as f64 * beats_per_px;
-            let peaks = columns(samples, summary, wave, tail_left, beats_per_px * tail as f64, 1);
+            let span = beats_per_px * tail as f64;
+            let peaks = overview(tail_left, span, 1)
+                .unwrap_or_else(|| columns(samples, summary, wave, tail_left, span, 1));
             let x = x0 + full as f32 * column_px;
             let y = audio_editor::column_span(peaks[0].0, peaks[0].1, row.0, row.1, px);
             mesh.add_colored_rect(Rect::from_x_y_ranges(x..=x + px * tail as f32, y), ink);
@@ -5352,10 +5358,7 @@ mod tests {
             ..Default::default()
         });
         let summary = vec![(-0.5, 0.5); frames / banaforge_audio::sample_edit::SUMMARY_FRAMES];
-        let source = Waveform {
-            data,
-            summary: vec![summary].into(),
-        };
+        let source = Waveform::with_summary(data, vec![summary].into());
         let wave = Wave {
             frames,
             per_beat: 32_768.0,

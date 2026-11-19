@@ -1,3 +1,11 @@
+BanaForge 0.5.12 — bounded waveform peak queries
+
+- Adds shared multiresolution waveform peak summaries. Overview columns inspect a bounded number of peak bins rather than rescanning a recording-length base summary during zoom/pan. Close zoom keeps exact sample-detail rendering.
+- Overview bins conservatively retain nearby peaks; they are not exact sample boundaries. The hierarchy is shared between clips of one source and uses no additional PCM copies.
+- Cached waveform lookups no longer repeat the sample decode/reference lookup for every visible clip.
+- Sound Mode remains NATIVE / FAST / SAFE / ULTRA SAFE on Android; raw buffer slider remains desktop-only. No new latency fix or guaranteed device latency is claimed in this revision.
+- Physical-device FPS and latency remain unverified. Initial summary generation is still synchronous, so cold-load stalls remain a separate investigation.
+
 BanaForge 0.5.11 — arrangement waveform and mobile audio profiles
 
 - Adaptive waveform geometry: one-pixel detail close up; merged min/max peaks at wider arrangement zoom. Peaks are aggregated, not skipped; reversed audio and partial final columns are handled.
