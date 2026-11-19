@@ -1,3 +1,14 @@
+BanaForge 0.5.18 — connected export feedback and management
+
+- Replaces audio export's title-only busy screen with a responsive, scrollable export screen. A bounded waveform-shaped graphic fills from confirmed timeline frames in the current render pass; actual pass percentage and frame counts are shown. Explicitly not a PCM/audio preview and not an overall percentage/ETA. Stage changes reset the graphic; unknown-duration processing and finalization display no invented percentage.
+- Pass one analysis/render, pass two render/encode, and encoder finalization are separate stages. Normal render slices target 8 ms rather than 25 ms, without changing block size, DSP, sample rate or codec quality.
+- Cancel drops the render/encoder before output writing. Mixes are only saved on successful encoding; native writes remain atomic. Previously completed individual stems are retained and the cancelled batch is not reported complete. Engine setup, encoder flush, archive compression and atomic save are still indivisible synchronous calls and cannot be interrupted while executing.
+- Completion is based on the provider's Saved event, not encoder completion. Shows path/name, extension, encoded byte count for single-file output, OK, Open My Tracks, Export Again and native mobile Share/Send. Web clearly reports a download handoff, not verification that the browser saved it. Folder stem exports do not fabricate a total size.
+- Share reuses the existing Android/iOS provider; completed stem batches share the actual files, not their directory. Android declares SEND/SEND_MULTIPLE package queries and reports when no receiving app is available. Device chooser/recipient behavior still requires physical Android validation.
+- Render/build/encode errors provide details and a retry/settings action. Final write failures identify the stage. Sharing errors do not relabel a successfully exported file as a failed render.
+- WAV/FLAC/MP3/OGG use their existing tested encoders. The settings page now names the actual existing quality preset (WAV 16-bit/float32; FLAC 16/24-bit; MP3 192/320 kbps; Vorbis quality 0.4/1.0). Independent bit-depth/bitrate/mono and export-specific sample-rate controls are NOT added: output remains stereo at project/engine rate. No nonfunctional controls are displayed.
+- Encoded output is still buffered in memory, as before. A fully asynchronous, cancellable finalization/write pipeline and independent format settings remain follow-up work; this is not a claim that the entire requested redesign or phone verification is complete.
+
 BanaForge 0.5.17 — clip-local volume envelope waveform display
 
 - The existing Audio Editor VOL points now reshape the real waveform in both the editor and Playlist. During point drags and curve-popup edits the editor shows the preview immediately; the Playlist refreshes from the committed clip.

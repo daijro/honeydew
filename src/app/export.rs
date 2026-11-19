@@ -48,7 +48,7 @@ impl BanaForgeApp {
                 self.navigate(Nav::Open(progress_overlay(&job)));
                 self.export = Some(job.with_tags(tags));
             }
-            Err(error) => self.files.render_failed(&error),
+            Err(error) => self.files.render_failed_at(&error, "Preparing render engine"),
         }
     }
 
@@ -63,6 +63,7 @@ impl BanaForgeApp {
         ctx.request_repaint();
         // A stem that could not be written ends the export; its message is up.
         if !self.files.stem_write_failed() {
+            let failed_stage = job.progress().2;
             let done = job.step(&mut slice());
             let (export, overlay) = (job.export().clone(), progress_overlay(job));
             match done {
@@ -76,7 +77,7 @@ impl BanaForgeApp {
                 Some(Done::Rendered(song, stems)) => {
                     self.files.flp_rendered(&song, &export, &stems)
                 }
-                Some(Done::Failed(error)) => self.files.render_failed(&error),
+                Some(Done::Failed(error)) => self.files.render_failed_at(&error, failed_stage),
             }
         }
         self.export = None;

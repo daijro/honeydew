@@ -422,6 +422,11 @@ impl ProjectFiles {
         self.render_feedback = true;
     }
 
+    pub fn render_failed_at(&mut self, error: &RenderError, stage: &str) {
+        self.render_failed(error);
+        if let Some(lines) = &mut self.message { lines.push(format!("Failed stage: {stage}")); }
+    }
+
     /// `event` finishes the export write under way, or a stem's.
     pub(super) fn is_export_event(&self, event: &FileEvent) -> bool {
         (self.export_saving.as_ref()).is_some_and(|e| self.finishes(&e.path, event))
