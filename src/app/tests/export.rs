@@ -178,6 +178,7 @@ fn the_busy_screen_shows_the_title_and_takes_the_clicks() {
     rig.render_page(WAV);
     rig.click(dialog().render.center());
     rig.frame(vec![]);
+    rig.frame(vec![]); // The new Area has one invisible sizing frame.
     assert!(rig.app.export.is_some());
     assert!(rig.shows("Rendering \"New Song.wav\""));
     // The logo lies under it.
@@ -340,22 +341,10 @@ fn split_writes_each_stem_into_its_folder_with_its_progress_and_says_where() {
     assert!(rig.shows("Enable master FX"), "shown with Split on");
     rig.click(dialog().render.center());
     rig.frame(vec![]);
-    // The two lines of the busy title are each centred.
-    let rows = (rig.out.shapes.iter())
-        .find_map(|s| match &s.shape {
-            Shape::Text(t) if t.galley.text().starts_with("Exporting channel") => Some(
-                t.galley
-                    .rows
-                    .iter()
-                    .map(|r| t.pos.x + r.rect().center().x)
-                    .collect::<Vec<_>>(),
-            ),
-            _ => None,
-        })
-        .expect("the busy title");
-    assert_eq!(rows.len(), 2);
-    assert!((rows[0] - rows[1]).abs() < 1.0, "{rows:?}");
-    assert!((rows[0] - 585.0).abs() < 1.0, "{rows:?}");
+    // The redesigned responsive screen names the actual stem and reports pass frames.
+    assert!(rig.overlays().iter().any(|o| matches!(o,
+        Overlay::ExportProgress { title, done, total, .. }
+            if title.starts_with("Exporting channel 1:") && done <= total)));
     let titles = rig.finish_export();
     for title in [
         format!("Exporting channel 1: {name}\nEncoding \"{name}.wav\""),
@@ -456,7 +445,9 @@ fn export_cancel_drops_processing_without_saving_or_changing_project() {
     rig.render_page(WAV);
     rig.click(dialog().render.center());
     assert!(rig.app.export.is_some());
-    rig.app.navigate(Nav::Answer("export_cancel", true));
+    rig.frame(vec![]);
+    rig.frame(vec![]);
+    rig.click(rig.text_rect("CANCEL EXPORT").center());
     assert!(rig.app.export.is_none());
     for _ in 0..3 { rig.frame(vec![]); }
     assert!(mem.0.borrow().files.is_empty());
@@ -472,7 +463,7 @@ fn export_again_returns_to_real_settings_and_completion_waits_for_user() {
     rig.finish_export();
     for _ in 0..3 { rig.frame(vec![]); }
     assert!(rig.overlays().iter().any(|o| matches!(o, Overlay::ExportResult { success: true, .. })));
-    rig.app.navigate(Nav::Answer("export_again", true));
+    rig.click(rig.text_rect("EXPORT AGAIN").center());
     rig.frame(vec![]);
     assert!(rig.overlays().iter().any(|o| matches!(o, Overlay::SaveDialog { .. })));
 }

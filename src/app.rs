@@ -1155,7 +1155,8 @@ impl BanaForgeApp {
             self.warned_rate = None;
             return;
         }
-        let shown = |o: &Overlay| matches!(o, Overlay::Message { .. } | Overlay::Busy { .. });
+        let shown = |o: &Overlay| matches!(o, Overlay::Message { .. } | Overlay::Busy { .. }
+            | Overlay::ExportProgress { .. } | Overlay::ExportResult { .. });
         if self.warned_rate == Some((wanted, actual)) || self.nav.overlays.iter().any(shown) {
             return;
         }
@@ -2772,7 +2773,13 @@ impl BanaForgeApp {
         }
         // Top down, so that closing one leaves the indices below it valid.
         for (index, nav) in overlay_navs.into_iter().rev() {
-            self.nav.apply_from(index, nav, &self.song);
+            // Export controls need the app-owned render job/provider, not just navigation state.
+            if matches!(&nav, Nav::Answer("export_cancel" | "export_again" | "export_share", _)
+                | Nav::Answer(crate::project_files::export::RENDERED_TAG, _)) {
+                self.navigate(nav);
+            } else {
+                self.nav.apply_from(index, nav, &self.song);
+            }
         }
         for nav in navs {
             self.navigate(nav);
