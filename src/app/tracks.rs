@@ -1036,6 +1036,8 @@ impl BanaForgeApp {
             | Overlay::PresetDialog { .. }
             | Overlay::SampleName { .. }
             | Overlay::Busy { .. }
+            | Overlay::ExportProgress { .. }
+            | Overlay::ExportResult { .. }
             | Overlay::LearnCc
             // Its channel is kept by id.
             | Overlay::MidiImport
