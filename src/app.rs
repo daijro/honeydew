@@ -2713,6 +2713,13 @@ impl HoneydewApp {
             }
             (Some(RowAction::Set { ctl, v, done }), Some(key)) => {
                 if sample_row::apply(&mut self.song, key, ctl, v) || done {
+                    if matches!(ctl, sample_row::Ctl::Speed | sample_row::Ctl::Sync) {
+                        let tempo = self.song.tempo_bpm;
+                        let bar_beats = self.song.time_sig.bar_beats();
+                        if let Some(clip) = sample_row::clip_mut(&mut self.song, key) {
+                            crate::audio_engine::fit_audio_clip(clip, &self.audio.samples, tempo, bar_beats);
+                        }
+                    }
                     self.row_drag = !done;
                     let edit = if done {
                         SongEdit::Final
