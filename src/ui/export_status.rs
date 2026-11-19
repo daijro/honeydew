@@ -8,7 +8,7 @@ pub(crate) fn fraction(done: usize, total: usize) -> Option<f32> {
     (total > 0).then(|| (done.min(total) as f64 / total as f64) as f32)
 }
 
-fn screen(ctx: &egui::Context, cx: &UiCtx, content: impl FnOnce(&mut egui::Ui) -> Option<Nav>) -> Option<Nav> {
+fn screen(ctx: &egui::Context, cx: &UiCtx, cancel: bool, content: impl FnOnce(&mut egui::Ui) -> Option<Nav>) -> Option<Nav> {
     let rect = ctx.content_rect();
     let mut action = None;
     egui::Area::new(Id::new("export_status"))
@@ -16,7 +16,7 @@ fn screen(ctx: &egui::Context, cx: &UiCtx, content: impl FnOnce(&mut egui::Ui) -
         .sense(Sense::click_and_drag()).show(ctx, |ui| {
             ui.set_min_size(rect.size());
             ui.painter().rect_filled(rect, 0.0, cx.theme.colors.background.to_color32());
-            egui::ScrollArea::vertical().max_height(rect.height()).show(ui, |ui| {
+            egui::ScrollArea::vertical().max_height((rect.height() - if cancel { 64.0 } else { 0.0 }).max(32.0)).show(ui, |ui| {
                 ui.add_space((rect.height() * 0.1).min(36.0));
                 ui.horizontal(|ui| {
                     ui.add_space((rect.width() * 0.06).min(40.0));
@@ -26,12 +26,22 @@ fn screen(ctx: &egui::Context, cx: &UiCtx, content: impl FnOnce(&mut egui::Ui) -
                     });
                 });
             });
+            if cancel {
+                // Unscrolled footer: cancellation stays reachable on short landscape screens.
+                let footer = egui::Rect::from_min_max(
+                    pos2(rect.left() + 12.0, (rect.bottom() - 52.0).max(rect.top())),
+                    pos2(rect.right() - 12.0, rect.bottom() - 8.0));
+                ui.painter().rect_filled(footer.expand(4.0), 0.0, cx.theme.colors.background.to_color32());
+                if ui.put(footer, egui::Button::new("CANCEL EXPORT")).clicked() {
+                    action = Some(Nav::Answer("export_cancel", true));
+                }
+            }
         });
     action
 }
 
 pub(crate) fn progress(ctx: &egui::Context, cx: &UiCtx, title: &str, done: usize, total: usize, stage: &str, format: &str) -> Option<Nav> {
-    screen(ctx, cx, |ui| {
+    screen(ctx, cx, true, |ui| {
         ui.heading("EXPORT AUDIO");
         ui.add_space(12.0);
         ui.label(title);
@@ -58,14 +68,13 @@ pub(crate) fn progress(ctx: &egui::Context, cx: &UiCtx, title: &str, done: usize
         ui.label(text);
         ui.small("Waveform-shaped progress display — not an audio preview. No overall ETA is estimated.");
         ui.add_space(20.0);
-        let cancel = ui.add(egui::Button::new("CANCEL EXPORT").min_size(vec2(180.0, 40.0))).clicked();
         ui.small("Cancels between render blocks. Final encoder flush, engine setup and atomic file writes cannot be interrupted mid-call.");
-        cancel.then_some(Nav::Answer("export_cancel", true))
+        None
     })
 }
 
 pub(crate) fn result(ctx: &egui::Context, cx: &UiCtx, lines: &[String], success: bool, open: bool, share: bool) -> Option<Nav> {
-    screen(ctx, cx, |ui| {
+    screen(ctx, cx, false, |ui| {
         ui.heading(if success { "EXPORT COMPLETE" } else { "EXPORT FAILED" });
         ui.add_space(16.0);
         for line in lines { ui.label(line); }
