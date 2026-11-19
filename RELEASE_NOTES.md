@@ -1,3 +1,10 @@
+BanaForge 0.5.11 — arrangement waveform and mobile audio profiles
+
+- Adaptive waveform geometry: one-pixel detail close up; merged min/max peaks at wider arrangement zoom. Peaks are aggregated, not skipped; reversed audio and partial final columns are handled.
+- Mobile Sound Mode restored: NATIVE, FAST, SAFE, ULTRA SAFE. The raw buffer slider remains desktop-only; old slider values no longer override mobile presets.
+- Android callback targets: device-selected/native, 256, 1024 and 2048 frames. AAudio low-latency requests and native burst/underrun tuning come from the existing CPAL backend; actual hardware/route latency varies. No per-preset thread-priority or near-zero-latency guarantee.
+- This revision requires on-phone FPS, underrun and latency comparison; it does not claim all reported lag is eliminated.
+
 BanaForge 0.5.10 — Banana rack effects test build
 
 ## Added
