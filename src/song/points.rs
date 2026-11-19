@@ -115,7 +115,7 @@ pub fn points(clip: &Clip, key: PointKey) -> Vec<Point> {
             tick,
             value: raw(value),
             shape: match key {
-                PointKey::Automation => shape_at(clip, tick),
+                PointKey::Automation | PointKey::Envelope(0) => shape_at(clip, tick),
                 PointKey::Envelope(_) => Shape::default(),
             },
         })
@@ -126,7 +126,7 @@ pub fn points(clip: &Clip, key: PointKey) -> Vec<Point> {
 /// `banaforge_audio::automation::AutomationClip`, with their shapes on automation; every other event stays.
 pub fn set_points(clip: &mut Clip, key: PointKey, pts: Vec<Point>) {
     use banaforge_audio::automation::{AutomationClip, AutomationPoint};
-    let automation = key == PointKey::Automation;
+    let automation = matches!(key, PointKey::Automation | PointKey::Envelope(0));
     let pts = pts
         .iter()
         .map(|p| AutomationPoint {

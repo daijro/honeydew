@@ -2367,8 +2367,10 @@ fn waveform(
     let from = axis.tick(seen.left()).max(start);
     let to = axis.tick(seen.right()).min(end_tick(clip));
     let sound = (wave.end() * ppq).min(lp);
-    let mut rows = wave_rows(area, source.summary.len() > 1);
-    audio_editor::gain_wave_rows(&mut rows, audio_editor::waveform_level_gain(clip.file.sample.as_deref()));
+    let rows = wave_rows(area, source.summary.len() > 1);
+    let volume = audio_editor::volume::envelope(
+        &crate::song::points::points(clip, crate::song::points::PointKey::Envelope(0)),
+        audio_editor::waveform_level_gain(clip.file.sample.as_deref()));
     let painter = painter.with_clip_rect(painter.clip_rect().intersect(area));
     let passes =
         ((from - base) / lp).floor().max(0.0) as u64..((to - base) / lp).ceil().max(0.0) as u64;
@@ -2382,7 +2384,7 @@ fn waveform(
         let width = ((axis.x(b) - x0) / px).ceil() as usize;
         let left = (axis.tick(x0) - at) / ppq;
         let span = ((left, beats_per_px), (x0, width));
-        painter.add(egui::Shape::Mesh(wave_mesh(source, wave, &rows, span, px, ink)));
+        painter.add(egui::Shape::Mesh(enveloped_wave_mesh(source, wave, &rows, span, px, ink, Some(&volume))));
     }
 }
 
@@ -2392,6 +2394,7 @@ struct CachedWaveMesh {
     data: std::sync::Weak<banaforge_audio::sample::SampleData>,
     summary: std::sync::Weak<[Vec<(f32, f32)>]>,
     geometry: WaveMeshGeometry,
+    volume: Option<std::sync::Arc<audio_editor::volume::VolumeEnvelope>>,
     rows: Vec<(f32, f32)>,
     mesh: std::sync::Arc<Mesh>,
 }
@@ -2448,6 +2451,16 @@ pub(crate) fn wave_mesh(
     px: f32,
     ink: Color32,
 ) -> std::sync::Arc<Mesh> {
+    enveloped_wave_mesh(source, wave, rows, ((left, beats_per_px), (x0, width)), px, ink, None)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn enveloped_wave_mesh(
+    source: &Waveform, wave: Wave, rows: &[(f32, f32)],
+    ((left, beats_per_px), (x0, width)): ((f64, f64), (f32, usize)),
+    px: f32, ink: Color32,
+    volume: Option<&std::sync::Arc<audio_editor::volume::VolumeEnvelope>>,
+) -> std::sync::Arc<Mesh> {
     let geometry = WaveMeshGeometry {
         frames: wave.frames,
         per_beat: wave.per_beat,
@@ -2468,6 +2481,11 @@ pub(crate) fn wave_mesh(
                     .summary
                     .ptr_eq(&std::sync::Arc::downgrade(&source.summary))
                 && entry.geometry == geometry
+                && match (&entry.volume, volume) {
+                    (None, None) => true,
+                    (Some(a), Some(b)) => std::sync::Arc::ptr_eq(a, b),
+                    _ => false,
+                }
                 && entry.rows == rows
         })?;
         let hit = cache.remove(at)?;
@@ -2490,7 +2508,9 @@ pub(crate) fn wave_mesh(
             .unwrap_or_else(|| columns(samples, summary, wave, left, span, full));
         for (i, peak) in cols.into_iter().enumerate() {
             let x = x0 + i as f32 * column_px;
-            let y = audio_editor::column_span(peak.0, peak.1, row.0, row.1, px);
+            let beat = left + i as f64 * span;
+            let gain = volume.map_or(1.0, |v| v.column_gain(beat * f64::from(PPQ), (beat + span) * f64::from(PPQ)));
+            let y = audio_editor::column_span(peak.0 * gain, peak.1 * gain, row.0, row.1, px);
             mesh.add_colored_rect(Rect::from_x_y_ranges(x..=x + column_px, y), ink);
         }
         // Keep the short final interval and reversal aligned. At overview LOD
@@ -2502,7 +2522,8 @@ pub(crate) fn wave_mesh(
             let peaks = overview(tail_left, span, 1)
                 .unwrap_or_else(|| columns(samples, summary, wave, tail_left, span, 1));
             let x = x0 + full as f32 * column_px;
-            let y = audio_editor::column_span(peaks[0].0, peaks[0].1, row.0, row.1, px);
+            let gain = volume.map_or(1.0, |v| v.column_gain(tail_left * f64::from(PPQ), (tail_left + span) * f64::from(PPQ)));
+            let y = audio_editor::column_span(peaks[0].0 * gain, peaks[0].1 * gain, row.0, row.1, px);
             mesh.add_colored_rect(Rect::from_x_y_ranges(x..=x + px * tail as f32, y), ink);
         }
     }
@@ -2527,6 +2548,7 @@ pub(crate) fn wave_mesh(
                 data: std::sync::Arc::downgrade(&source.data),
                 summary: std::sync::Arc::downgrade(&source.summary),
                 geometry,
+                volume: volume.cloned(),
                 rows: rows.to_vec(),
                 mesh: mesh.clone(),
             });

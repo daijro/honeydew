@@ -75,7 +75,7 @@
 //!   ([`AutomationEditor::rekey`]), and a view whose clip is gone goes.
 
 pub mod geom;
-mod shape;
+pub(crate) mod shape;
 pub mod value;
 
 use std::collections::HashMap;

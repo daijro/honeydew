@@ -133,13 +133,19 @@ fn envelope(clip: &Clip, env_param: i16) -> Result<Clip, EngineError> {
             _ => None,
         })
         .collect();
-    automation_clip(
-        &Clip {
-            events,
-            ..clip.clone()
-        },
-        false,
-    )
+    let mut converted = Clip { events, ..clip.clone() };
+    // HDSh on audio clips belongs to VOL only; PAN/SPEED remain linear.
+    if env_param != 0 { converted.file.shapes.clear(); }
+    let mut result = automation_clip(&converted, false)?;
+    // An envelope beginning later must hold the base before its first point,
+    // including later loop passes, rather than retaining the previous pass's end.
+    if result.events.first().is_some_and(|e| e.pos() > 0) {
+        if let Some(slot) = clip.file.sample.as_deref() {
+            result.events.insert(0, Event::Automation { pos: 0,
+                value: slot.params[env_param as usize], control: false });
+        }
+    }
+    Ok(result)
 }
 
 /// The actions one loop pass of an audio clip adds, at most: its envelope steps, and a repetition's fade and start.
@@ -300,6 +306,10 @@ pub(super) fn actions(
         push(end, Action::ClipFade { pad })?;
         for (index, env_param) in ENVELOPES.into_iter().enumerate() {
             let steps = envelope(clip, env_param)?;
+            if let Some(Event::Automation { value, .. }) = steps.events.iter()
+                .rfind(|e| f64::from(e.pos()) <= offset * ppq) {
+                push(start, Action::ClipParam { pad, index, value: *value })?;
+            }
             for (tick, event) in steps.events_in_song_range(0, u64::MAX) {
                 if let Event::Automation { value, .. } = *event {
                     let action = Action::ClipParam { pad, index, value };
@@ -309,4 +319,31 @@ pub(super) fn actions(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod volume_envelope_tests {
+    use super::*;
+    use crate::song::points::{self, Point, PointKey, Shape, ShapeKind};
+
+    #[test]
+    fn volume_envelope_playback_shapes_are_per_clip_not_shared_with_pan_or_overlaps() {
+        let mut song = Song::default();
+        song.add_channel(crate::song::ChannelKind::AudioClip);
+        let clip = song.channels[1].lanes[0].add_clip(0, 4.0);
+        let linear = vec![Point { tick: 0, value: 0, ..Default::default() },
+            Point { tick: 128, value: 65535, ..Default::default() }];
+        let mut smooth = linear.clone();
+        smooth[0].shape = Shape { kind: ShapeKind::Smooth, tension: 80 };
+        points::set_points(clip, PointKey::Envelope(0), smooth);
+        points::set_points(clip, PointKey::Envelope(1), linear.clone());
+        let a = envelope(clip, 0).unwrap().events;
+        let pan = envelope(clip, 1).unwrap().events;
+        let mut overlapping = clip.clone();
+        points::set_points(&mut overlapping, PointKey::Envelope(0), linear);
+        let b = envelope(&overlapping, 0).unwrap().events;
+        assert_ne!(a, b);
+        assert_eq!(pan, b, "VOL shapes must not change PAN");
+        assert_eq!(envelope(clip, 0).unwrap().events, a, "editing another clip must not alter this clip");
+    }
 }

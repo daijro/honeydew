@@ -1142,7 +1142,7 @@ impl Reader {
                     clip.events = decode_events(&payload, kind, file_param, &mut self.budget)
                         .ok_or_else(|| FlmError::new(&child.path, FlmErrorKind::TooLarge))?;
                 }
-                b"HDSh" if kind == LaneKind::Automation => {
+                b"HDSh" if matches!(kind, LaneKind::Automation | LaneKind::Audio) => {
                     self.charge(2 * child.payload.len(), &child.path)?;
                     clip.file.shapes = shapes(child.payload);
                 }

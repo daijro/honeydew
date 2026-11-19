@@ -1231,3 +1231,24 @@ fn exact_channel_rgb_survives_project_round_trip_without_changing_legacy_hue() {
     );
     assert_eq!(ink.to_hex(), "12ABEF");
 }
+
+#[test]
+fn volume_envelope_shapes_round_trip_without_touching_other_envelopes() {
+    use banaforge::song::points::{self, Point, PointKey, Shape, ShapeKind};
+    let mut song = Song::default();
+    song.add_channel(ChannelKind::AudioClip);
+    let clip = song.channels[1].lanes[0].add_clip(0, 4.0);
+    let make = |shape| vec![Point { tick: 0, value: 0, shape },
+        Point { tick: 128, value: 55910, ..Default::default() }];
+    let shape = Shape { kind: ShapeKind::Smooth, tension: 75 };
+    let volume = make(shape);
+    points::set_points(clip, PointKey::Envelope(0), volume.clone());
+    points::set_points(clip, PointKey::Envelope(1), make(Shape::default()));
+    assert_eq!(points::points(clip, PointKey::Envelope(0)), volume);
+    let bytes = write(&song).unwrap();
+    let loaded = read(&bytes).unwrap();
+    let clip = &loaded.channels[1].lanes[0].clips[0];
+    assert_eq!(points::points(clip, PointKey::Envelope(0)), volume);
+    assert!(points::points(clip, PointKey::Envelope(1)).iter().all(|p| p.shape == Shape::default()));
+    assert_eq!(write(&loaded).unwrap(), bytes);
+}

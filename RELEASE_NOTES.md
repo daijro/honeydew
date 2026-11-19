@@ -1,3 +1,12 @@
+BanaForge 0.5.17 — clip-local volume envelope waveform display
+
+- The existing Audio Editor VOL points now reshape the real waveform in both the editor and Playlist. During point drags and curve-popup edits the editor shows the preview immediately; the Playlist refreshes from the committed clip.
+- Select VOL point(s), then Set shape for Linear / Smooth / Square / Stairs and tension. Drag points horizontally to change fade duration, vertically to change Level. One undo edit on gesture/popup completion. No separate Playlist automation clip is required.
+- Audio VOL shapes are saved in HDSh and used by the existing per-clip playback envelope. PAN/SPEED shapes are unchanged. Overlapping clips retain independent sampler pads and envelope data.
+- Cached volume evaluation uses the same quantized automation events and sampler Level law as playback; envelope values replace base Level rather than multiplying it. Base Level is held before a late first point, including later loops; trimmed/offset clips initialize from their envelope at the offset.
+- Cached source peaks and original PCM are never changed. Coarse waveform columns use a conservative peak×maximum-gain bound so short peaks are not dropped; they are not a sample-exact post-effect waveform. Above-unity heights are clipped to the waveform region; minimum Level retains the existing −60 dB floor, not digital silence.
+- This is point-based editing, not automatic crossfades: dedicated edge fade handles, linked crossfades and live audio preview before gesture commit are not added. Speed-envelope time-warping and post-FX/channel/master gain are not represented in waveform geometry. Device performance/readability remains unverified.
+
 BanaForge 0.5.16 — optional Playlist activity lights
 
 - Settings: Track activity indicators, beside Continuous scrolling during playback. Off by default, saved independently; works during playback with continuous scrolling on or off.

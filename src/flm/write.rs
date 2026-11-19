@@ -595,7 +595,7 @@ fn write_clip(
     // BanaForge's segment shapes, none for the straight line: an `HDSh`, which a reader that does not know it skips as an
     // unknown chunk (and plays the segments as lines). Records of u32 tick, u8 shape (Linear, Square, Smooth, Stairs),
     // u8 tension (%).
-    if kind == LaneKind::Automation && !clip.file.shapes.is_empty() {
+    if matches!(kind, LaneKind::Automation | LaneKind::Audio) && !clip.file.shapes.is_empty() {
         writer.chunk(*b"HDSh", |writer| {
             for &(tick, shape) in &clip.file.shapes {
                 writer.u32(tick)?;
