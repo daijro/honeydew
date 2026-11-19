@@ -5,8 +5,8 @@ use crate::project_files::content::tests::{Temp, put};
 use crate::ui::main_menu::{NativeLibrary, SONGS_FOLDER};
 
 /// A start with the settings `spy` holds, and its songs on disk in `user`'s songs folder.
-fn start(spy: &Spy, user: &std::path::Path) -> HoneydewApp {
-    let mut app = HoneydewApp::with_storage(Some(Box::new(spy.clone())));
+fn start(spy: &Spy, user: &std::path::Path) -> BanaForgeApp {
+    let mut app = BanaForgeApp::with_storage(Some(Box::new(spy.clone())));
     app.files = without_factory(ProjectFiles::on_disk(user));
     app.files.codec = synthetic_codec();
     app.files.library = Box::new(NativeLibrary::at(user.join(SONGS_FOLDER)));

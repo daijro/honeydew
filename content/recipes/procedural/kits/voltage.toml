@@ -2,7 +2,7 @@
 id = "kit-voltage"
 kind = "kit"
 path = "Drumsets/Voltage Kit.tmpl"
-source = "honeydew"
+source = "banaforge"
 
 [[pad]]
 name = "Kick"

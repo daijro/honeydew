@@ -1,4 +1,4 @@
-//! Exports for `run.mjs`. The encoders come in by `#[path]`, not by linking `honeydew-audio`, so the module has no
+//! Exports for `run.mjs`. The encoders come in by `#[path]`, not by linking `banaforge-audio`, so the module has no
 //! wasm-bindgen imports and instantiates with none.
 
 #[path = "../../../crates/audio/src/mp3_writer.rs"]

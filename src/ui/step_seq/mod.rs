@@ -836,7 +836,7 @@ impl StepSeqView {
         let clip = lane.clips.iter().find(|c| Some(c.id) == self.clip);
         let (colors, m) = (&cx.theme.colors, cx.m);
         let (text, bg) = (colors.text.to_color32(), colors.background.to_color32());
-        let color = channel_color(channel.hue, cx.theme);
+        let color = channel_color(channel.color_token(), cx.theme);
         let ink = color.to_color32();
         let rows = edit::row_count(lane, pads.count());
         // d steps a beat (`TDIV` byte 0); the loop L (a lane without a clip shows one bar), and s, the song tick of

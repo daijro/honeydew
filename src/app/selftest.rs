@@ -171,7 +171,7 @@ pub(super) fn input(ctx: &egui::Context, raw: &mut egui::RawInput) {
     }
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// One frame of the self-test, after the app's.
     pub(super) fn selftest(&mut self, ctx: &egui::Context) {
         static ARGS: Once = Once::new();

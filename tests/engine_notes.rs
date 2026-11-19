@@ -2,13 +2,13 @@
 //! notes and Mute/Unmute re-syncing a playing song (`CLHd`@36). Rendered offline through
 //! `AudioRenderer`; no device.
 
-use honeydew::audio_engine::SongAudioEngine;
-use honeydew::flm::chunk::ContentPath;
-use honeydew::sample_cache::SampleCache;
-use honeydew::song::{
+use banaforge::audio_engine::SongAudioEngine;
+use banaforge::flm::chunk::ContentPath;
+use banaforge::sample_cache::SampleCache;
+use banaforge::song::{
     AutomationTarget, ChannelKind, DrumGrid, Event, LaneKind, SamplerSlot, Song, SynthKind,
 };
-use honeydew_audio::device::AudioRenderer;
+use banaforge_audio::device::AudioRenderer;
 
 /// One beat at 120 BPM and 48 kHz.
 const BEAT: usize = 24_000;
@@ -204,7 +204,7 @@ fn a_slide_note_sounds_no_note_of_its_own() {
     let clip = song.channels[1].lanes[0].add_clip(0, 8.0);
     clip.events.push(note(0.0, 2.0, 60, true));
     assert_eq!(energy(&played(&song, 3 * BEAT)), 0.0);
-    let events = honeydew::audio_bridge::SongAudioBridge::note_events_in_block(&song, 1, 0.0, 8.0);
+    let events = banaforge::audio_bridge::SongAudioBridge::note_events_in_block(&song, 1, 0.0, 8.0);
     assert_eq!(events.unwrap(), []);
 }
 
@@ -702,13 +702,13 @@ fn a_note_with_a_broken_length_is_skipped_and_the_rest_plays() {
 fn a_loaded_song_with_a_negative_note_keeps_it_and_plays_the_rest() {
     let good = note(0.0, 2.0, 69, false);
     let song = clip_song(&[good, note(1.0, -0.25, 64, false)]);
-    let bytes = honeydew::flm::write(&song).unwrap();
-    let read = honeydew::flm::read(&bytes).unwrap();
+    let bytes = banaforge::flm::write(&song).unwrap();
+    let read = banaforge::flm::read(&bytes).unwrap();
     assert_eq!(
         read.channels[1].lanes[0].clips[0].events,
         song.channels[1].lanes[0].clips[0].events
     );
-    assert_eq!(honeydew::flm::write(&read).unwrap(), bytes);
+    assert_eq!(banaforge::flm::write(&read).unwrap(), bytes);
     assert_close(
         &played(&read, 3 * BEAT),
         &played(&clip_song(&[good]), 3 * BEAT),
@@ -745,7 +745,7 @@ fn a_note_rounded_onto_its_clip_end_is_skipped_and_the_song_builds() {
     let clip = song.channels[1].lanes[0].add_clip(0, 1.0);
     clip.offset_beats = 0.3 / 128.0;
     clip.events.push(note(0.0, 1.0, 69, false));
-    let events = honeydew::audio_bridge::SongAudioBridge::note_events_in_block(&song, 1, 0.0, 4.0);
+    let events = banaforge::audio_bridge::SongAudioBridge::note_events_in_block(&song, 1, 0.0, 4.0);
     assert_eq!(events.unwrap(), []);
     assert_eq!(energy(&played(&song, 2 * BEAT)), 0.0);
 }

@@ -1,5 +1,5 @@
 //! Sliced loops: one-shot renders sequenced on a 16th-note grid, with the Slicer's tempo and a cue on every step that
-//! has a hit. The rules follow the code-made loops (`honeydew_audio::builtin_loops`): one hit at a time per voice, a
+//! has a hit. The rules follow the code-made loops (`banaforge_audio::builtin_loops`): one hit at a time per voice, a
 //! hit stopped by its voice's next one or by the loop's end fades over its last 5 ms, and no tail wraps round.
 //!
 //! A variant has `bpm`, `bars` and `voice` rows: `{ render, steps, level, pan, <model parameters> }`, where `steps`
@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use honeydew_audio::sample::SampleMeta;
+use banaforge_audio::sample::SampleMeta;
 
 use super::{RATE, normalize, one_shot, seed};
 

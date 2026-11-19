@@ -4,7 +4,7 @@ use super::*;
 use crate::metrics::DEFAULT_UI_SCALE;
 use crate::song::ChannelKind;
 use crate::ui::offscreen::{Offscreen, SCREEN};
-use honeydew_audio::sample_edit::speed_semitones;
+use banaforge_audio::sample_edit::speed_semitones;
 
 const U: f32 = 32.0;
 

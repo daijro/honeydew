@@ -27,7 +27,7 @@ jobs:
         id: names
         run: |
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
-          echo "ipa=honeydew-ios-$version-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "ipa=banaforge-ios-$version-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
       - name: IPAs
         run: tools/ios-dist.sh "${{ steps.names.outputs.ipa }}"
       - uses: actions/upload-artifact@v4
@@ -51,10 +51,10 @@ jobs:
           sudo killall coreaudiod || true
           sleep 5
       - name: Self-test
-        run: tools/ios-selftest.sh target/ios-sim/Honeydew.app selftest
+        run: tools/ios-selftest.sh target/ios-sim/BanaForge.app selftest
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: honeydew-ios-selftest-${{ github.sha }}
+          name: banaforge-ios-selftest-${{ github.sha }}
           path: selftest/
           retention-days: 30

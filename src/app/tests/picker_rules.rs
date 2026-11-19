@@ -252,7 +252,7 @@ fn keyboard_in_pickers_off_hides_the_keys_and_the_list_takes_their_room() {
 
 #[test]
 fn a_cards_arrows_step_round_its_presets_folder_with_no_undo_step() {
-    // Issue #98 (Honeydew addition): ◀ and ▶ beside a card's preset name load the folder's previous and next preset,
+    // Issue #98 (BanaForge addition): ◀ and ▶ beside a card's preset name load the folder's previous and next preset,
     // round and round, each as a pick of it loads.
     let mut rig = with_bass();
     let mut lead = ModuleInstance::new(0, 0);
@@ -613,7 +613,7 @@ fn a_pad_picks_str1_streams_its_first_8192_frames_with_the_pick_and_the_rest_on_
     // The pad's own STR1 (time-stretch ×2) renders off the UI thread, as a clip's SYNC does. The pad pick goes with
     // Stretch: the pick lands with the first 8192 frames rendered, which the pad plays at once; the rest streams in on
     // The worker, and the engine is rebuilt with the whole render once it lands.
-    use honeydew_audio::drums::{PadSample, STREAM_FRAMES};
+    use banaforge_audio::drums::{PadSample, STREAM_FRAMES};
     let mut rig = Rig::new();
     rig.app.add_default_drums(0);
     samples(&mut rig);

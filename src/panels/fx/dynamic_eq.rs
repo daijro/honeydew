@@ -1,4 +1,4 @@
-//! Dynamic EQ (`honeydew_audio::dynamic_eq`), UIHeight 11 U: Honeydew's own panel. A tab strip (a page per band, then
+//! Dynamic EQ (`banaforge_audio::dynamic_eq`), UIHeight 11 U: BanaForge's own panel. A tab strip (a page per band, then
 //! the envelope's times) over the response display #2 ([`curve`]) and the page's controls.
 //!
 //! The display is the Equalizer's ([`super::equalizer`]) with the Dynamic EQ's response: x is the Frequency param (a
@@ -7,11 +7,11 @@
 //! offset from its detector, as the engine reports it) a channel-coloured line over them. The handles, their drag
 //! (frequency and gain) and their double tap are the Equalizer's.
 
-use eframe::egui::{Color32, Id, Rect, Shape, Stroke, Ui, pos2};
-use honeydew_audio::analysis;
-use honeydew_audio::dynamic_eq::{
+use banaforge_audio::analysis;
+use banaforge_audio::dynamic_eq::{
     ATTACK, BANDS, FREQUENCY, GAIN, ON, Q, RANGE, RELEASE, SHAPE, THRESHOLD, band, hz, response_db,
 };
+use eframe::egui::{Color32, Id, Rect, Shape, Stroke, Ui, pos2};
 
 use super::equalizer::{self, Handles};
 use super::live_analysis;

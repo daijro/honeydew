@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # A desktop release build's two archives, from the repository root: <name>-no-sounds, the app alone, which uses the
-# sound library installed in the app data folder (the release's own `honeydew-<tag>-sounds.zip`), and <name>, with the
+# sound library installed in the app data folder (the release's own `banaforge-<tag>-sounds.zip`), and <name>, with the
 # sound library in `content/`. .zip on Windows, .tar.gz elsewhere. The Linux, Alpine and FreeBSD ones (built on Linux
 # runners) carry the desktop entry and its installer.
 #
@@ -10,7 +10,7 @@ dir=$1
 bin=$2
 mkdir "$dir"
 ext=; [ "$RUNNER_OS" = Windows ] && ext=.exe
-cp "$bin/honeydew-native$ext" "$bin/honeydew-import$ext" README.md LICENSE "$dir/"
+cp "$bin/banaforge-native$ext" "$bin/banaforge-import$ext" README.md LICENSE "$dir/"
 if [ "$RUNNER_OS" = Linux ]; then
   cp -R assets/linux tools/install-desktop-entry.sh "$dir/"
 fi
@@ -24,10 +24,10 @@ pack() {
 }
 pack "$dir-no-sounds"
 # Without the web's gzipped copies (`*.gz`, ~700 MB): only the web reads them.
-cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > target/honeydew-sounds.zip
+cat sounds/honeydew-sounds.zip.[0-9][0-9][0-9] > target/banaforge-sounds.zip
 if [ "$RUNNER_OS" = Windows ]; then
-  7z x target/honeydew-sounds.zip "-o$dir" '-xr!*.gz' >/dev/null
+  7z x target/banaforge-sounds.zip "-o$dir" '-xr!*.gz' >/dev/null
 else
-  unzip -q target/honeydew-sounds.zip -d "$dir" -x '*.gz'
+  unzip -q target/banaforge-sounds.zip -d "$dir" -x '*.gz'
 fi
 pack "$dir"

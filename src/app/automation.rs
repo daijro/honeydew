@@ -10,11 +10,11 @@
 //! slot strip's (instance −slot id). It is held in memory and cleared with a new song.
 //!
 //! While the song plays, the controls show what the automation and the Modulators set
-//! ([`HoneydewApp::show_automation`]).
+//! ([`BanaForgeApp::show_automation`]).
 
-use honeydew_audio::device::Modulated;
+use banaforge_audio::device::Modulated;
 
-use super::HoneydewApp;
+use super::BanaForgeApp;
 use super::tracks::LaneShift;
 use crate::audio_bridge::playing_clips;
 use crate::audio_engine::strip_param;
@@ -91,7 +91,7 @@ fn link(ch: &mut Channel, lane: usize, (target, label): (AutomationTarget, Strin
     true
 }
 
-/// A param the screens show at the value its automation has set ([`HoneydewApp::show_automation`]): its channel's id
+/// A param the screens show at the value its automation has set ([`BanaForgeApp::show_automation`]): its channel's id
 /// and target, the song tick and value of the automation event that set it, and the song's own value, which comes back
 /// after the screens.
 pub(super) struct Automated {
@@ -140,7 +140,7 @@ fn lane_value(lane: &Lane, tick: u64) -> Option<(u64, f32)> {
 }
 
 /// The own value of the target of automation clip `key` while the screens show another (`automated`,
-/// [`HoneydewApp::show_automation`]): the automation editor's init line.
+/// [`BanaForgeApp::show_automation`]): the automation editor's init line.
 pub(super) fn automated_init(automated: &[Automated], song: &Song, key: ClipKey) -> Option<f32> {
     let ch = song.channels.get(key.channel)?;
     let target = ch.lanes.get(key.lane)?.target?;
@@ -148,7 +148,7 @@ pub(super) fn automated_init(automated: &[Automated], song: &Song, key: ClipKey)
     Some(a.saved)
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// The tempo the master's tempo automation has set by song tick `tick`: its last event played by then, `None` while
     /// none has (the song's tempo plays).
     pub(super) fn automated_tempo(&self, tick: u64) -> Option<f64> {

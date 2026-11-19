@@ -188,10 +188,13 @@ pub enum MainMenuAction {
 
 /// The Help menu's links, after `What's new`: the project's own pages.
 pub const HELP_LINKS: [(&str, &str); 2] = [
-    ("User manual", "https://github.com/daijro/honeydew#readme"),
+    (
+        "User manual",
+        "https://github.com/jellyscoll76-Real/honeydew#readme",
+    ),
     (
         "Report a problem",
-        "https://github.com/daijro/honeydew/issues",
+        "https://github.com/jellyscoll76-Real/honeydew/issues",
     ),
 ];
 

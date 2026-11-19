@@ -1,5 +1,5 @@
 //! The DSP chain, tool only. Audio is one `Vec<f32>` per channel at the source rate; decoding is
-//! `honeydew_audio::sample::decode` and encoding `FlacEncoder::push_i16` with [`dither`]'s output.
+//! `banaforge_audio::sample::decode` and encoding `FlacEncoder::push_i16` with [`dither`]'s output.
 
 pub mod looping;
 pub mod resample;

@@ -1,7 +1,7 @@
-//! De-esser (`honeydew_audio::de_esser`), UIHeight 7.5 U: Honeydew's own panel (GitHub
+//! De-esser (`banaforge_audio::de_esser`), UIHeight 7.5 U: BanaForge's own panel (GitHub
 //! #43). Its knobs, Listen and the Mode list, then the Compressor's GR / IN / OUT meter, fed the reduction.
 
-use honeydew_audio::de_esser::{FREQUENCY, LISTEN, MODE, RANGE, THRESHOLD};
+use banaforge_audio::de_esser::{FREQUENCY, LISTEN, MODE, RANGE, THRESHOLD};
 
 use super::compressor::level_meter;
 use crate::panels::build::*;

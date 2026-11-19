@@ -9,7 +9,7 @@ use crate::prelude::{
 };
 
 pub mod clap;
-// Honeydew (vendored change): the VST3 metadata trait without the VST3 wrapper, so that a plugin's `impl Vst3Plugin`
+// BanaForge (vendored change): the VST3 metadata trait without the VST3 wrapper, so that a plugin's `impl Vst3Plugin`
 // builds here too.
 pub mod vst3;
 

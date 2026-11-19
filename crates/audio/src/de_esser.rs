@@ -1,4 +1,4 @@
-//! De-esser (module type [`DE_ESSER`]), Honeydew's own effect: GitHub #43. A
+//! De-esser (module type [`DE_ESSER`]), BanaForge's own effect: GitHub #43. A
 //! split-band compressor on the sibilance band.
 //!
 //! **Params**, normalized, in this order (the saved one): 0 Enable, [`FREQUENCY`], [`THRESHOLD`], [`RANGE`], [`MODE`],
@@ -21,7 +21,7 @@
 use crate::biquad::flush;
 use crate::multiband::Splitter;
 
-/// The module type: Honeydew's own id, which a song file keeps apart from the song format's modules.
+/// The module type: BanaForge's own id, which a song file keeps apart from the song format's modules.
 pub const DE_ESSER: u16 = 1006;
 
 pub const FREQUENCY: usize = 1;

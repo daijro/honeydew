@@ -1,4 +1,4 @@
-//! The playlist's song sections (#80, a Honeydew addition): each tints the track rows' cells over its range in its colour
+//! The playlist's song sections (#80, a BanaForge addition): each tints the track rows' cells over its range in its colour
 //! at α [`TINT_ALPHA`], under the clips, and names itself on the ruler, where a tap on its name opens its dialog
 //! ([`crate::ui::views::section_settings`]). The ruler's region menu ends with `Section…`, which makes the range's
 //! section ([`crate::song::Song::section_at`]).
