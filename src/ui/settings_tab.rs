@@ -312,6 +312,7 @@ const ROWS: [Row; 70 + cfg!(desktop) as usize] = {
             "Continuous scrolling during playback",
             Toggle(|s| &mut s.continuous_scroll),
         ),
+        row("Track activity indicators", Toggle(|s| &mut s.track_activity_indicators)),
         row("Show hidden tracks", Toggle(|s| &mut s.show_hidden_tracks)),
         row(
             "Show CPU and RAM meters",

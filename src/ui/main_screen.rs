@@ -778,6 +778,7 @@ impl MainScreen {
             current: self.clips.current_track(app),
             press: self.cell_press(ui, row_h * m.ppp() - 1.0),
             multitrack: settings.multitrack_recording,
+            activity: settings.track_activity_indicators && self.playing,
             meters: audio
                 .filter(|s| !s.stream_failed)
                 .map(|s| &s.module_meters[..]),

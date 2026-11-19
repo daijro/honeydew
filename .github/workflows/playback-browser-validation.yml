@@ -42,6 +42,7 @@ jobs:
           cargo test --lib vocal_top_lyric_bar
       - name: Playback visualization regressions
         run: |
+          cargo test --lib activity_indicator_
           cargo test --lib waveform_volume_
           cargo test --lib mobile_sound_mode_is_visible
           cargo test --lib waveform_mesh_cache

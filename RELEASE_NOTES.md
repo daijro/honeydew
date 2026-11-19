@@ -1,3 +1,11 @@
+BanaForge 0.5.16 — optional Playlist activity lights
+
+- Settings: Track activity indicators, beside Continuous scrolling during playback. Off by default, saved independently; works during playback with continuous scrolling on or off.
+- A small channel-tinted light at the right edge of each visible primary Playlist header follows the existing stereo channel-strip peak snapshot. Silence is dark; stronger levels are brighter. Stopping playback or disabling the option removes the lights.
+- Reuses meter snapshots and normal UI refresh: no PCM scanning, audio commands, extra threads, refresh timers or DSP changes. Off-screen headers are culled before meter queries/drawing.
+- Scope: one independent light per channel/primary track. Sub-tracks and automation lanes share channel outputs and are not presented as separately metered audio; per-lane metering is not implemented. This avoids falsely claiming isolated activity for lanes sharing a channel.
+- Device FPS, visual placement and flash readability still need phone testing.
+
 BanaForge 0.5.15 — progressive real-audio waveform LOD
 
 - Real audio waveform detail now follows source-audio duration per logical screen pixel, accounting for display density. Close zoom keeps one-device-pixel detail; wider views progress through 2/4/8/16/32-logical-pixel blocks instead of stopping at four device pixels. Coordinate systems named beats or frames now produce the same LOD for the same audio span.

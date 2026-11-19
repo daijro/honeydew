@@ -192,6 +192,7 @@ impl Rig {
             .map(|(i, &row)| (row, i as f32 * ROW_H))
             .collect();
         let col = Column {
+            activity: false,
             left: 0.0,
             width: self.width(),
             expanded: self.expanded,

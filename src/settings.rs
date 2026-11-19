@@ -231,6 +231,9 @@ pub struct Settings {
     /// `Continuous scrolling during playback`.
     #[serde(rename = "continuousScroll")]
     pub continuous_scroll: bool,
+    /// Optional visual-only Playlist channel activity lights.
+    #[serde(rename = "trackActivityIndicators")]
+    pub track_activity_indicators: bool,
     /// `Show hidden tracks` (our own key): the playlist shows the tracks `Hide track` hid, dimmed. Off by default.
     #[serde(rename = "showHiddenTracks")]
     pub show_hidden_tracks: bool,
@@ -428,6 +431,7 @@ impl Default for Settings {
             middle_c_is_c4: false,
             range_labels: true,
             continuous_scroll: false,
+            track_activity_indicators: false,
             show_hidden_tracks: false,
             hardware_meters: true,
             lock_pads: true,
@@ -882,6 +886,7 @@ mod tests {
             middle_c_is_c4: !d.middle_c_is_c4,
             range_labels: !d.range_labels,
             continuous_scroll: !d.continuous_scroll,
+            track_activity_indicators: !d.track_activity_indicators,
             show_hidden_tracks: !d.show_hidden_tracks,
             hardware_meters: !d.hardware_meters,
             lock_pads: !d.lock_pads,
