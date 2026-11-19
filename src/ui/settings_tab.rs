@@ -240,6 +240,13 @@ const fn row(label: &'static str, kind: Kind) -> Row {
     Row { label, kind }
 }
 
+// Explicit platform inputs let host tests exercise mobile filtering too.
+fn platform_row_visible(r: &Row, desktop: bool, web: bool) -> bool {
+    !(web && matches!(r.kind, Kind::Dropdown(Choice::SampleMemory) | Kind::AudioInput))
+        && (desktop || (!matches!(r.kind, Kind::InstallSounds | Kind::BufferSize)
+            && !matches!(r.label, "MCP:" | "Enable MCP control" | "Port" | "Authentication token" | "Status")))
+}
+
 /// Every row of the SETTINGS tab, in order.
 // The raw buffer slider is desktop-only; mobile has one fewer settings row.
 const ROWS: [Row; 70 + cfg!(desktop) as usize] = {
@@ -533,26 +540,7 @@ impl SettingsTab {
         };
         let rows: Vec<_> = rows
             .iter()
-            .filter(|r| {
-                let web = cfg!(target_arch = "wasm32");
-                !(web
-                    && matches!(
-                        r.kind,
-                        Kind::Dropdown(Choice::SampleMemory) | Kind::AudioInput
-                    ))
-                    && (cfg!(desktop)
-                        || (!matches!(
-                            r.kind,
-                            Kind::Dropdown(Choice::SoundMode) | Kind::InstallSounds
-                        ) && !matches!(
-                            r.label,
-                            "MCP:"
-                                | "Enable MCP control"
-                                | "Port"
-                                | "Authentication token"
-                                | "Status"
-                        )))
-            })
+            .filter(|r| platform_row_visible(r, cfg!(desktop), cfg!(target_arch = "wasm32")))
             .collect();
         let plugins = if self.plugins { &PLUGIN_ROWS[..] } else { &[] };
         let at = (rows.iter().position(|r| r.label == "Advanced:")).unwrap_or(rows.len());
@@ -1415,6 +1403,17 @@ mod tests {
     /// The index of the row labelled `label`.
     fn index(label: &str) -> usize {
         ROWS.iter().position(|r| r.label == label).unwrap()
+    }
+
+    #[test]
+    fn mobile_sound_mode_is_visible_in_the_actual_settings_filter() {
+        let mobile: Vec<_> = ROWS.iter().filter(|r| platform_row_visible(r, false, false))
+            .map(|r| r.label).collect();
+        assert!(mobile.contains(&"Sound mode:"));
+        assert!(!mobile.contains(&"Audio buffer size"));
+        assert!(!mobile.contains(&"MCP:"));
+        assert!(ROWS.iter().filter(|r| platform_row_visible(r, true, false))
+            .any(|r| r.label == "Sound mode:"));
     }
 
     #[test]

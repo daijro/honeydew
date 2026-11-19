@@ -2367,7 +2367,9 @@ fn waveform(
     let from = axis.tick(seen.left()).max(start);
     let to = axis.tick(seen.right()).min(end_tick(clip));
     let sound = (wave.end() * ppq).min(lp);
-    let rows = wave_rows(area, source.summary.len() > 1);
+    let mut rows = wave_rows(area, source.summary.len() > 1);
+    audio_editor::gain_wave_rows(&mut rows, audio_editor::waveform_level_gain(clip.file.sample.as_deref()));
+    let painter = painter.with_clip_rect(painter.clip_rect().intersect(area));
     let passes =
         ((from - base) / lp).floor().max(0.0) as u64..((to - base) / lp).ceil().max(0.0) as u64;
     for k in passes {
@@ -2420,7 +2422,7 @@ fn mesh_bytes(mesh: &Mesh) -> usize {
 /// Samples per screen column grow when zooming out. Keep pixel detail close up,
 /// merge 2/4 pixels at arrangement zoom, and bound pathological wide viewports.
 /// Aggregation uses min/max over the full interval, not every Nth sample.
-fn waveform_column_stride(beats_per_px: f64, width: usize) -> usize {
+pub(crate) fn waveform_column_stride(beats_per_px: f64, width: usize) -> usize {
     let zoom = if beats_per_px >= 1.0 / 8.0 { 4 }
         else if beats_per_px >= 1.0 / 16.0 { 2 } else { 1 };
     zoom.max(width.div_ceil(2048)).max(1)

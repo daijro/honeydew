@@ -198,6 +198,18 @@ pub fn stretch_of(slot: &SamplerSlot) -> f64 {
     }
 }
 
+/// Visual base Level gain, using exactly the sampler's normalized-to-linear law.
+/// This never writes PCM or parameters; envelopes and downstream FX are not folded in.
+pub(crate) fn waveform_level_gain(slot: Option<&SamplerSlot>) -> f32 {
+    let level = slot.map_or(banaforge_audio::drums::DEFAULTS[0], |s| s.params[0]);
+    if level.is_finite() { banaforge_audio::drums::level_gain(level.clamp(0.0, 1.0)) }
+    else { 1.0 }
+}
+
+pub(crate) fn gain_wave_rows(rows: &mut [(f32, f32)], gain: f32) {
+    for (_, scale) in rows { *scale *= gain; }
+}
+
 /// One channel's (min, max) per device-pixel column: `width` columns from content beat `left`, `beats_per_px`
 /// apart ([`peaks`], reading the channel's `summary` where a column covers whole blocks); a reversed sample's are the
 /// mirrored range's, in reverse.
@@ -483,8 +495,10 @@ impl Peaks {
         });
         if !hit {
             self.misses += 1;
-            self.cols = (source.channels())
-                .map(|(c, summary)| columns(c, summary, wave, left, bpp, width))
+            self.cols = (source.channels()).enumerate()
+                .map(|(channel, (c, summary))| source.overview_columns(channel, wave.frames,
+                    wave.reversed, left * wave.per_beat, bpp * wave.per_beat, width)
+                    .unwrap_or_else(|| columns(c, summary, wave, left, bpp, width)))
                 .collect();
             let key = (
                 Arc::downgrade(sample),
@@ -690,7 +704,7 @@ impl AudioEditor {
         let gp = ui.painter_at(f.grid);
         if let (Some(s), Some(w)) = (source, wave) {
             let tint = mix(c.text, color, 1.0 - WAVE_TEXT).to_color32();
-            self.paint_wave(&gp, &f, axis, s, w, tint.gamma_multiply(WAVE_ALPHA), m);
+            self.paint_wave(&gp, &f, axis, s, w, tint.gamma_multiply(WAVE_ALPHA), waveform_level_gain(slot), m);
         }
         let (t0, t1) = (axis.tick(f.grid.left()), axis.tick(f.grid.right()));
         let control = c.control_fill.to_color32();
@@ -1221,15 +1235,19 @@ impl AudioEditor {
         source: &Waveform,
         wave: Wave,
         fill: Color32,
+        gain: f32,
         m: &Metrics,
     ) {
         let (x0, n) = pixel_columns(f.grid, m);
         let px = 1.0 / m.ppp();
-        let bpp = f64::from(px / axis.beat_w);
+        let base_bpp = f64::from(px / axis.beat_w);
+        let stride = crate::ui::clips::waveform_column_stride(base_bpp, n);
+        let bpp = base_bpp * stride as f64;
         let left = axis.tick(x0) / f64::from(PPQ);
         let end = wave.end();
-        let cols = self.peaks.get(source, wave, left, bpp, n);
-        let rows = wave_rows(f.value, cols.len() == 2);
+        let cols = self.peaks.get(source, wave, left, bpp, n.div_ceil(stride));
+        let mut rows = wave_rows(f.value, cols.len() == 2);
+        gain_wave_rows(&mut rows, gain);
         let mut mesh = Mesh::default();
         for (col, &row) in cols.iter().zip(&rows) {
             for (i, &peak) in col.iter().enumerate() {
@@ -1237,10 +1255,12 @@ impl AudioEditor {
                 if beat < -1e-9 || beat >= end - 1e-9 {
                     continue;
                 }
-                add_column(&mut mesh, x0 + i as f32 * px, peak, row, px, fill);
+                let x = x0 + i as f32 * px * stride as f32;
+                let y = column_span(peak.0, peak.1, row.0, row.1, px);
+                mesh.add_colored_rect(Rect::from_x_y_ranges(x..=x + px * stride as f32, y), fill);
             }
         }
-        painter.add(mesh);
+        painter.with_clip_rect(painter.clip_rect().intersect(f.value)).add(mesh);
     }
 
     /// 7: the current lane's curve and points, the selection's guides and the right-edge handle.
@@ -1437,3 +1457,42 @@ fn curve(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod waveform_volume_tests {
+    use super::*;
+
+    #[test]
+    fn waveform_volume_uses_sampler_gain_without_changing_source_or_parameters() {
+        let mut slot = SamplerSlot::default();
+        for level in [0.0, 0.25, 0.5, 0.8531, 1.0] {
+            slot.params[0] = level;
+            let before = slot.clone();
+            let gain = waveform_level_gain(Some(&slot));
+            assert_eq!(gain, banaforge_audio::drums::level_gain(level));
+            let mut rows = [(10.0, 8.0), (30.0, 8.0)];
+            gain_wave_rows(&mut rows, gain);
+            assert_eq!(rows, [(10.0, 8.0 * gain), (30.0, 8.0 * gain)]);
+            assert_eq!(slot, before);
+        }
+        slot.params[0] = f32::NAN;
+        assert_eq!(waveform_level_gain(Some(&slot)), 1.0);
+    }
+
+    #[test]
+    fn waveform_volume_changes_do_not_invalidate_source_peak_cache() {
+        let source = Waveform::new(Arc::new(SampleData {
+            left: vec![0.5; 4096].into(), sample_rate: 48000, ..Default::default()
+        }));
+        let wave = Wave { frames: 4096, per_beat: 4096.0, reversed: false };
+        let mut peaks = Peaks::default();
+        let original = peaks.get(&source, wave, 0.0, 1.0 / 64.0, 64).to_vec();
+        for gain in [0.1, 0.5, 1.0, 2.0] {
+            let mut rows = wave_rows(Rect::from_min_max(pos2(0.0, 0.0), pos2(100.0, 40.0)), false);
+            gain_wave_rows(&mut rows, gain);
+            assert_eq!(peaks.get(&source, wave, 0.0, 1.0 / 64.0, 64), original);
+        }
+        assert_eq!(peaks.misses, 1);
+        assert!(source.data.left.iter().all(|&s| s == 0.5));
+    }
+}

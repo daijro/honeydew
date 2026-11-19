@@ -37,6 +37,11 @@ jobs:
           cargo test --lib floating_actions_reserve
           cargo test --lib vocal_note_tap_selects
           cargo test --lib vocal_top_lyric_bar
+      - name: Playback visualization regressions
+        run: |
+          cargo test --lib waveform_volume_
+          cargo test --lib mobile_sound_mode_is_visible
+          cargo test --lib waveform_mesh_cache
       - name: Browser and program regressions
         shell: bash
         run: |

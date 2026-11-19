@@ -1,3 +1,11 @@
+BanaForge 0.5.14 — waveform visualization / mobile settings test build
+
+- Waveform height now follows base sample-slot Level using the sampler's gain law, in arrangement clips and the audio editor. Updates visually without rewriting PCM. Above-unity peaks are clipped to the waveform drawing region. Volume automation, channel gain and post-FX loudness are not represented by this base-level display.
+- Audio editor now uses the shared overview peak hierarchy and adaptive column density too. Arrangement and sample preview retain their existing LOD path. Detailed close zoom remains available.
+- Fixes the actual mobile settings row filter that still hid Sound Mode. NATIVE / FAST / SAFE / ULTRA SAFE are now exposed on mobile; the raw slider remains desktop-only. This is distinct from the requested future visual performance profiles.
+- Audio-reactive flashes, separate visual performance presets and offline MP4 export are NOT included. No placeholder Video Render button or screen-recording substitute is presented as working offline export.
+- Physical-device performance/latency is not yet validated; broader settings-suite failures remain tracked.
+
 BanaForge 0.5.13 — Omi touch-feedback test build
 
 - Vocal Synth note taps now use ordinary note selection/editing instead of opening the lyric editor. Lyrics remain accessible through the dedicated LYRICS lane.
