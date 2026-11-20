@@ -23,7 +23,7 @@ Buffer duration (`frames / sample_rate`) and queue-depth visualization are not m
 
 ## Automated checks
 
-The Keyboard and sound mode validation workflow runs keyboard/roll rendering regressions, all-label hiding after a toggle/reopen, settings save/load for both label values and all four mode IDs, mode mapping, audio-device regressions, and offline-render regressions. The Android APK workflow compiles the actual Android path, verifies its signature, install metadata and ZIP CRCs. See workflow outcomes for the exact SHA; this document is not itself a passing test result.
+The Keyboard and sound mode validation workflow runs keyboard/roll rendering regressions, all-label hiding after a toggle/reopen, settings save/load for both label values and each platform-supported mode ID (four on Android, two on desktop), mode mapping, audio-device regressions, and offline-render regressions. The Android APK workflow compiles the actual Android path, verifies its signature, install metadata and ZIP CRCs. See workflow outcomes for the exact SHA; this document is not itself a passing test result.
 
 ## Required physical-device matrix — not yet performed
 

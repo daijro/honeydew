@@ -1001,7 +1001,7 @@ mod tests {
 
     #[test]
     fn key_names_and_every_sound_mode_survive_restart() {
-        for sound_mode in 0..=3 {
+        for (sound_mode, _) in SOUND_MODES {
             for key_names in [false, true] {
                 let mut mem = Mem::default();
                 let s = Settings { sound_mode, key_names, ..Settings::default() };
