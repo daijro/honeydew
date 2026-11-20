@@ -1319,7 +1319,7 @@ fn export_pipeline_benchmark() {
     assert!(decoded.right.is_some());
     assert!(decoded.left.iter().any(|x| x.abs() > 0.001));
     let hash = bytes.iter().fold(14695981039346656037_u64, |h,b| (h ^ u64::from(*b)).wrapping_mul(1099511628211));
-    let pcm_hash = decoded.left.iter().chain(decoded.right.as_ref().unwrap()).flat_map(|x| x.to_bits().to_le_bytes())
+    let pcm_hash = decoded.left.iter().chain(decoded.right.as_ref().unwrap().iter()).flat_map(|x| x.to_bits().to_le_bytes())
         .fold(14695981039346656037_u64, |h,b| (h ^ u64::from(b)).wrapping_mul(1099511628211));
     println!("BENCH pcm_fnv64={pcm_hash:016x} mode={mode} format={} rate={rate} hq=true normalize=false remainder=cut seconds=32 tracks=12 effects=12 notes=768 project_bytes={project_bytes} encoded_bytes={} fnv64={hash:016x} compute_s={compute_s:.6} write_s={write_s:.6} total_export_s={:.6}", format.ext(), bytes.len(), compute_s + write_s);
 }
