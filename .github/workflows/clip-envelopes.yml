@@ -26,7 +26,7 @@ jobs:
           cargo metadata --format-version 1 > /tmp/metadata.json 2>/tmp/prepare.log
           rc=$?
           if [ "$rc" -eq 0 ]; then
-            rustfmt --edition 2024 --config skip_children=true src/ui/clips.rs src/ui/clips/envelopes.rs src/ui/audio_editor/mod.rs src/ui/audio_editor/volume.rs src/ui/views/audio_editor.rs src/song/points.rs src/song/file.rs src/audio_link/edits.rs src/audio_engine/audio_clips.rs src/audio_engine/merge.rs src/flm/read.rs src/flm/write.rs >> /tmp/prepare.log 2>&1
+            rustfmt --edition 2024 --config skip_children=true src/ui/clips.rs src/ui/clips/envelopes.rs src/ui/audio_editor/mod.rs src/ui/audio_editor/volume.rs src/ui/views/audio_editor.rs src/song/points.rs src/song/file.rs src/audio_link/edits.rs src/audio_engine/audio_clips.rs src/audio_engine/merge.rs src/flm/read.rs src/flm/write.rs src/app.rs >> /tmp/prepare.log 2>&1
             rc=$?
           fi
           python3 - <<'PY'

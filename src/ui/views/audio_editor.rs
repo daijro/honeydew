@@ -11,12 +11,14 @@ use eframe::egui::{self, UiBuilder};
 use super::{AppCtx, Nav, held_clip};
 use crate::sample_cache;
 use crate::song::{LaneKind, Song};
+use crate::song::points::{self, Point, PointKey};
 use crate::ui::audio_editor::{self, Action, At, AudioEditor, Transport};
 use crate::ui::preview::ClipKey;
 
 /// What the audio editor keeps between frames.
 #[derive(Default)]
 pub struct State {
+    live: Option<(At, PointKey, Vec<Point>)>,
     /// Each channel's current audio lane and clip id, by channel index (the app re-keys them when channels or tracks
     /// move, `app/tracks.rs`).
     pub(crate) clips: HashMap<usize, (usize, u32)>,
@@ -30,6 +32,9 @@ pub struct State {
 }
 
 impl State {
+    /// A hidden editor finishes a live gesture as one undoable edit, never leaves an orphan preview.
+    pub(crate) fn end_live(&mut self) -> bool { self.live.take().is_some() }
+
     /// The clip `channel`'s editor edits, while it is an audio clip.
     pub fn current(&self, song: &Song, channel: usize) -> Option<ClipKey> {
         held_clip(song, channel, self.clips.get(&channel), LaneKind::Audio)
@@ -65,6 +70,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     state.editor.snap.size = app.settings.grid_size;
     let actions = (state.editor).show(&mut ui, &app.cx, app.song, at, sample.as_ref(), transport);
     app.settings.grid_size = state.editor.snap.size;
+    let mut finished = false;
     for action in actions {
         match action {
             Action::SetPlayhead(tick) => app.set_playhead(tick),
@@ -73,10 +79,29 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
             // Its envelope part waits for its audio part: the app makes both, after the save.
             Action::Region { .. } => state.request = Some((at, action)),
             action => {
-                if audio_editor::apply(app.song, at, &action) {
-                    app.song_edited(true);
+                let final_points = matches!(action, Action::Points { .. });
+                let changed = audio_editor::apply(app.song, at, &action);
+                if changed || (final_points && state.live.is_some()) { app.song_edited(true); }
+                if final_points { state.live = None; finished = true; }
+            }
+        }
+    }
+    if !finished {
+        if let Some((key, pts)) = state.editor.live_points(app.song, at) {
+            let clip = crate::ui::sample_row::clip_mut(app.song, ClipKey {channel:at.0,lane:at.1,id:at.2});
+            if let Some(clip) = clip {
+                let before = points::points(clip, key);
+                if before != pts {
+                    state.live.get_or_insert((at,key,before));
+                    points::set_points(clip,key,pts.clone());
+                    state.editor.acknowledge_live(at,key,pts);
+                    app.edit = app.edit.max(Some(super::SongEdit::Audition));
                 }
             }
+        } else if let Some((at,key,original)) = state.live.take() {
+            audio_editor::apply(app.song,at,&Action::Points {key,points:original.clone()});
+            state.editor.acknowledge_live(at,key,original);
+            app.song_edited(true);
         }
     }
     None

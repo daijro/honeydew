@@ -20,13 +20,31 @@ fn area(b: Rect, m: &Metrics) -> Rect {
 fn base(clip: &Clip, lane: usize) -> u16 {
     points::raw(clip.file.sample.as_ref().map_or(if lane == 0 { banaforge_audio::drums::DEFAULTS[0] } else { 0.5 }, |s| s.params[lane]))
 }
-fn value_at(pts: &[Point], base: u16, tick: f64) -> f32 {
-    let n = pts.partition_point(|p| f64::from(p.tick) <= tick);
-    if n == 0 { return f32::from(base) / 65535.0; }
-    let a = pts[n - 1];
-    let Some(b) = pts.get(n) else { return points::unit(a.value); };
-    let t = ((tick - f64::from(a.tick)) / f64::from(b.tick - a.tick)) as f32;
-    points::shape_value(a.shape, f64::from(points::unit(a.value)), f64::from(points::unit(b.value)), f64::from(t)) as f32
+thread_local! {
+    static CURVES: std::cell::RefCell<std::collections::VecDeque<(Vec<Point>, std::sync::Arc<Vec<(u32, f32)>>)>> = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+/// Identical quantized control-to-event law to playback; cached separately from immutable PCM peaks.
+fn prepared(pts: &[Point]) -> std::sync::Arc<Vec<(u32, f32)>> {
+    use banaforge_audio::automation::{AutomationClip, AutomationPoint};
+    CURVES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some(i) = cache.iter().position(|(p,_)| p == pts) {
+            let hit = cache.remove(i).unwrap(); let out = hit.1.clone(); cache.push_back(hit); return out;
+        }
+        let built = AutomationClip::new(0,1,1,0,1,pts.iter().map(|p| AutomationPoint { tick:p.tick.into(),value:p.value,shape:p.shape }).collect()).unwrap();
+        let steps = std::sync::Arc::new(built.events().iter().map(|e| (e.tick as u32,e.normalized_value())).collect::<Vec<_>>());
+        let bytes = |p:&[Point], s:&[(u32,f32)]| p.len()*std::mem::size_of::<Point>() + std::mem::size_of_val(s);
+        let size = bytes(pts,&steps);
+        if size <= 1024*1024 {
+            while cache.len() >= 64 || cache.iter().map(|(p,s)| bytes(p,s)).sum::<usize>() + size > 1024*1024 { cache.pop_front(); }
+            cache.push_back((pts.to_vec(),steps.clone()));
+        }
+        steps
+    })
+}
+fn value_at(steps: &[(u32,f32)], base: u16, tick:f64) -> f32 {
+    let n = steps.partition_point(|(t,_)| f64::from(*t) <= tick);
+    n.checked_sub(1).map_or(points::unit(base), |i| steps[i].1)
 }
 fn xy(tick: f64, value: f32, origin: f64, axis: TimeAxis, r: Rect) -> Pos2 {
     pos2(axis.x(origin + tick), r.bottom() - value.clamp(0.0, 1.0) * r.height())
@@ -50,6 +68,7 @@ pub(super) fn paint(painter: &Painter, clip: &Clip, area: Rect, axis: TimeAxis, 
             p.hline(lane.x_range(), values.center().y, Stroke::new(px, COLORS[k].gamma_multiply(0.2)));
         }
         let pts = points::points(clip, PointKey::Envelope(k as i16));
+        let steps = prepared(&pts);
         for repeat in all.clone() {
             let origin = origin + repeat as f64 * lp;
             let first = axis.tick(visible.left()).max(origin) - origin;
@@ -64,21 +83,26 @@ pub(super) fn paint(painter: &Painter, clip: &Clip, area: Rect, axis: TimeAxis, 
                 times.push(f64::from(point.tick));
             }
             times.sort_by(f64::total_cmp); times.dedup();
-            let mut line = Vec::with_capacity(times.len() + pts.len());
-            for tick in times {
-                let i = pts.partition_point(|p| f64::from(p.tick) < tick);
-                if i < pts.len() && f64::from(pts[i].tick) == tick {
-                    if i > 0 {
-                        let prev = pts[i - 1];
-                        // Square is a hold followed by a true instantaneous edge.
-                        if prev.shape.kind == points::ShapeKind::Square {
-                            line.push(xy(tick, points::unit(prev.value), origin, axis, values));
-                        }
-                    } else if tick > 0.0 { line.push(xy(tick, points::unit(base(clip, k)), origin, axis, values)); }
-                    for point in pts[i..].iter().take_while(|p| f64::from(p.tick) == tick) {
-                        line.push(xy(tick, points::unit(point.value), origin, axis, values));
+            // Add the engine's rounded step times for Square/Stairs and duplicate-tick edges.
+            let mut jumps = Vec::new();
+            for pair in pts.windows(2) {
+                if pair[0].tick == pair[1].tick { jumps.push(f64::from(pair[1].tick)); }
+                if let Some(risers) = pair[0].shape.risers() {
+                    for x in risers {
+                        jumps.push((f64::from(pair[0].tick) + x * f64::from(pair[1].tick-pair[0].tick)).round());
                     }
-                } else { line.push(xy(tick, value_at(&pts, base(clip, k), tick), origin, axis, values)); }
+                }
+            }
+            if let Some(p) = pts.first().filter(|p| p.tick > 0) { jumps.push(f64::from(p.tick)); }
+            times.extend(jumps.iter().copied().filter(|t| *t >= first && *t <= last));
+            times.sort_by(f64::total_cmp); times.dedup();
+            jumps.sort_by(f64::total_cmp); jumps.dedup();
+            let mut line = Vec::with_capacity(times.len() + jumps.len());
+            for tick in times {
+                if jumps.binary_search_by(|v| v.total_cmp(&tick)).is_ok() {
+                    line.push(xy(tick, value_at(&steps, base(clip,k), tick-0.01), origin, axis, values));
+                }
+                line.push(xy(tick, value_at(&steps, base(clip,k), tick), origin, axis, values));
             }
             p.add(egui::Shape::line(line, Stroke::new(1.5 * px, COLORS[k])));
             for point in pts.iter().filter(|p| f64::from(p.tick) >= first && f64::from(p.tick) <= last) {
@@ -126,6 +150,7 @@ impl Editor {
             if !valid { return true; } // An external undo/delete wins; never overwrite it.
             if cancel || app.covered {
                 set(app, drag.clip, key, drag.original, true);
+                app.song_edited(true);
                 self.owned = true; return true;
             }
             if let Some(p) = pos {
