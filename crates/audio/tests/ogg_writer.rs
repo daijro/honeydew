@@ -1,7 +1,7 @@
 use std::f64::consts::TAU;
 
-use honeydew_audio::ogg_writer::{OggEncoder, VENDOR};
-use honeydew_audio::sample::{SampleData, decode};
+use banaforge_audio::ogg_writer::{OggEncoder, VENDOR};
+use banaforge_audio::sample::{SampleData, decode};
 
 /// `secs` of a sine at `freq` Hz and `amp` at `rate` Hz.
 fn sine(rate: u32, freq: f64, amp: f64, secs: f64) -> Vec<f32> {
@@ -251,7 +251,7 @@ const TAGS: [(&str, &str); 7] = [
     ("GENRE", "House"),
     ("DATE", "2026"),
     ("COMMENT", "Made on a phone"),
-    ("ENCODER", "Honeydew 0.5.4"),
+    ("ENCODER", "BanaForge 0.5.4"),
 ];
 
 /// #139: a tagged Ogg Vorbis file's comment header (§5.2.1) holds the vendor string, then the tags as `FIELD=value`,

@@ -1,4 +1,4 @@
-use honeydew_audio::automation::{
+use banaforge_audio::automation::{
     AutomationClip, AutomationEvent, AutomationLane, AutomationPlayback, AutomationPoint,
     AutomationTarget, Shape, ShapeKind, shape_value,
 };

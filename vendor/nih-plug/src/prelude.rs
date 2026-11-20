@@ -35,7 +35,7 @@ pub use crate::params::smoothing::{AtomicF32, Smoothable, Smoother, SmoothingSty
 pub use crate::params::Params;
 pub use crate::params::{BoolParam, FloatParam, IntParam, Param, ParamFlags};
 pub use crate::plugin::clap::{ClapPlugin, PolyModulationConfig};
-// Honeydew (vendored change): with or without the VST3 wrapper (`plugin::vst3`).
+// BanaForge (vendored change): with or without the VST3 wrapper (`plugin::vst3`).
 pub use crate::plugin::vst3::Vst3Plugin;
 pub use crate::plugin::{Plugin, ProcessStatus, TaskExecutor};
 pub use crate::wrapper::clap::features::ClapFeature;

@@ -2,7 +2,7 @@
 id = "kit-chrome"
 kind = "kit"
 path = "Drumsets/Chrome Kit.tmpl"
-source = "honeydew"
+source = "banaforge"
 
 [[pad]]
 name = "Kick"

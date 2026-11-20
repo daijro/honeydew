@@ -700,3 +700,22 @@ fn let_go_ends_the_touch_and_springs_back_an_axis_past_its_end_only() {
         assert_eq!(rig.pos(), [10.0, at]);
     }
 }
+
+#[test]
+fn adjustable_follow_cursor_fraction_is_zoom_independent_and_bounded() {
+    for zoom in [0.001, 0.1, 1.0, 100.0] {
+        for fraction in [0.05, 0.25, 0.5, 0.95] {
+            let mut x = axes()[X];
+            x.zoom = zoom;
+            x.range = [0.0, 1e12];
+            let playhead = 1e9;
+            follow_at(&mut x, playhead, fraction);
+            assert!(((playhead - x.pos) / x.span() - fraction).abs() < 1e-5);
+            follow_at(&mut x, 0.0, fraction);
+            assert_eq!(x.pos, 0.0);
+        }
+    }
+    let mut x = axes()[X];
+    follow_at(&mut x, 40.0, f64::NAN);
+    near(x.pos, 40.0 - x.span() * 0.25);
+}

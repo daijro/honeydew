@@ -3,12 +3,12 @@
 
 use std::sync::Arc;
 
-use honeydew_audio::ProcessContext;
-use honeydew_audio::dw_sampler::{DwSampler, DwZone, VOICES};
-use honeydew_audio::dwp::{Midi, Zone};
-use honeydew_audio::instrument::Instrument;
-use honeydew_audio::sample::{SampleData, SampleMeta};
-use honeydew_audio::voice::lfo_rate_hz;
+use banaforge_audio::ProcessContext;
+use banaforge_audio::dw_sampler::{DwSampler, DwZone, VOICES};
+use banaforge_audio::dwp::{Midi, Zone};
+use banaforge_audio::instrument::Instrument;
+use banaforge_audio::sample::{SampleData, SampleMeta};
+use banaforge_audio::voice::lfo_rate_hz;
 
 const RATE: f32 = 48_000.0;
 
@@ -1004,7 +1004,7 @@ fn slides_shift_the_pitch_velocity_and_pan_of_every_voice() {
 
 #[test]
 fn an_sfz_region_plays_at_its_key_center_tuned_and_from_its_offset() {
-    use honeydew_audio::sfz;
+    use banaforge_audio::sfz;
     let text = "<region> sample=a.wav lokey=60 hikey=72 pitch_keycenter=69 transpose=1 tune=-50 offset=4800 end=14399
         <region> sample=b.wav trigger=release <region> sample=*sine";
     let regions = sfz::parse(text, &|_| None).regions;

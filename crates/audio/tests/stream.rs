@@ -1,17 +1,17 @@
-//! Samples streamed from disk ([`honeydew_audio::stream`]): they play the frames a whole decode plays.
+//! Samples streamed from disk ([`banaforge_audio::stream`]): they play the frames a whole decode plays.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use honeydew_audio::ProcessContext;
-use honeydew_audio::dw_sampler::{DwSampler, DwZone};
-use honeydew_audio::dwp::{Midi, Zone};
-use honeydew_audio::flac_writer::flac;
-use honeydew_audio::instrument::Instrument;
-use honeydew_audio::sample::{SampleData, decode};
-use honeydew_audio::sfz::parse;
-use honeydew_audio::soundfont::{SoundFont, SoundFontPlayer, VOICES};
-use honeydew_audio::stream::{Pcm, STREAM_VOICES, Source, Streamed, Streamer, head_frames};
+use banaforge_audio::ProcessContext;
+use banaforge_audio::dw_sampler::{DwSampler, DwZone};
+use banaforge_audio::dwp::{Midi, Zone};
+use banaforge_audio::flac_writer::flac;
+use banaforge_audio::instrument::Instrument;
+use banaforge_audio::sample::{SampleData, decode};
+use banaforge_audio::sfz::parse;
+use banaforge_audio::soundfont::{SoundFont, SoundFontPlayer, VOICES};
+use banaforge_audio::stream::{Pcm, STREAM_VOICES, Source, Streamed, Streamer, head_frames};
 
 const RATE: u32 = 48_000;
 
@@ -21,7 +21,7 @@ fn long_flac(name: &str, seconds: usize) -> PathBuf {
     let tone = |hz: f64, i: usize| (0.4 * (hz * i as f64 / f64::from(RATE)).sin()) as f32;
     let left: Vec<f32> = (0..frames).map(|i| tone(2765.0, i)).collect();
     let right: Vec<f32> = (0..frames).map(|i| tone(1931.0, i)).collect();
-    let dir = std::env::temp_dir().join(format!("honeydew-stream-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("banaforge-stream-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(name);
     std::fs::write(&path, flac(RATE, 16, &[left, right])).unwrap();
@@ -230,8 +230,8 @@ fn a_whole_decode_and_a_stream_agree_on_a_wav_too() {
     let frames: Vec<f32> = (0..RATE as usize)
         .map(|i| ((i % 97) as f32 - 48.0) / 64.0)
         .collect();
-    let bytes = honeydew_audio::wav_writer::float32_wav(RATE, &[frames.clone(), frames]);
-    let path = std::env::temp_dir().join(format!("honeydew-stream-{}.wav", std::process::id()));
+    let bytes = banaforge_audio::wav_writer::float32_wav(RATE, &[frames.clone(), frames]);
+    let path = std::env::temp_dir().join(format!("banaforge-stream-{}.wav", std::process::id()));
     std::fs::write(&path, &bytes).unwrap();
     let whole: SampleData = decode(&bytes).unwrap();
     let streamed = Streamed::new(Source::open(&path).unwrap(), &[0]).unwrap();

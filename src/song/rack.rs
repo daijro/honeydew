@@ -48,7 +48,7 @@ pub struct ModuleInstance {
     /// The module card is collapsed in the rack.
     pub minimized: bool,
     pub file: ModuleFileState,
-    /// Honeydew's own: the channel id (`CHHD`@1080) whose output keys this module's detector, a sidechain; `None`: its
+    /// BanaForge's own: the channel id (`CHHD`@1080) whose output keys this module's detector, a sidechain; `None`: its
     /// own input. Only a module that [takes a key](Self::takes_key) uses it ([`Self::key_source`]). The `.flm`
     /// keeps it in an `HDSc` chunk FL Studio Mobile skips (`flm::write`).
     pub sidechain: Option<i32>,
@@ -201,10 +201,10 @@ impl ModuleInstance {
         self.sidechain.filter(|_| self.takes_key())
     }
 
-    /// Whether a sidechain can key it: a module type that [takes a key](honeydew_audio::takes_key), or a built-in plugin
-    /// effect with a sidechain input (Lemon Vocoder's carrier), which the key feeds.
+    /// Whether a sidechain can key it: a module type that [takes a key](banaforge_audio::takes_key), or a built-in plugin
+    /// effect with a sidechain input (Banana Vocoder's carrier), which the key feeds.
     pub fn takes_key(&self) -> bool {
-        honeydew_audio::takes_key(self.type_id)
+        banaforge_audio::takes_key(self.type_id)
             || (self.type_id == super::plugin::PLUGIN_EFFECT
                 && (self.file.plugin.as_deref())
                     .and_then(crate::plugins::builtin::of)

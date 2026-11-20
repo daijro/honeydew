@@ -1,4 +1,4 @@
-use honeydew_audio::sequencer::*;
+use banaforge_audio::sequencer::*;
 use std::time::Duration;
 
 fn beats(events: &[ArpNoteEvent], engine: usize, kind: NoteKind) -> Vec<f64> {

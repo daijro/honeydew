@@ -1,4 +1,4 @@
-//! General MIDI and the sounds Honeydew gives imported channels: MIDI import ([`super::import`]) and FLP import
+//! General MIDI and the sounds BanaForge gives imported channels: MIDI import ([`super::import`]) and FLP import
 //! (`crate::flp`) share these.
 //!
 //! Every imported channel makes sound. A GM program loads our closest bundled DW program ([`BUNDLED`]), or without the

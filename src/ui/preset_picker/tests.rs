@@ -417,16 +417,37 @@ fn my_files_then_a_folder_then_a_preset_picks_its_path() {
 }
 
 #[test]
+fn consecutive_file_taps_replace_the_active_browser_row() {
+    let mut rig = Rig::new(reverb());
+    rig.click_text(MY_FILES);
+    rig.click_text("A Room");
+    let picked = |picker: &PresetPicker| {
+        picker
+            .rows("")
+            .into_iter()
+            .filter(|item| picker.is_picked(*item))
+            .map(|item| item.name().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(picked(&rig.picker), ["A Room"]);
+    rig.click_text("b Hall");
+    assert_eq!(picked(&rig.picker), ["b Hall"]);
+    rig.click_text("A Room");
+    assert_eq!(picked(&rig.picker), ["A Room"]);
+}
+
+#[test]
 fn default_picks_the_init_preset() {
     let mut rig = Rig::new(reverb());
     assert_eq!(rig.click_text(DEFAULT), Some(PickerAction::Default));
 }
 
 #[test]
-fn every_row_folder_or_item_is_in_fontsize_4_and_a_long_name_is_cut_to_the_row() {
+fn folders_are_larger_than_files_and_a_long_name_is_cut_to_the_row() {
     // One size for every row of every side browser, the folder rows' FontSize 4.
     let m = metrics();
     let pt18 = m.font_id(FontSize::Pt18).size;
+    let pt14 = m.font_id(FontSize::Pt14).size;
     let mut lib = reverb_lib();
     let long = "My Presets/Reverb/Cathedral Hall With A Very Long Shimmering Tail.flmpst";
     lib.store("x.flm", b"x").unwrap();
@@ -434,12 +455,12 @@ fn every_row_folder_or_item_is_in_fontsize_4_and_a_long_name_is_cut_to_the_row()
     let mut rig = Rig::with(reverb(), lib);
     assert_eq!(
         (font_size(&rig, MY_FILES), font_size(&rig, DEFAULT)),
-        (pt18, pt18)
+        (pt18, pt14)
     );
     rig.click_text(MY_FILES);
     assert_eq!(
         (font_size(&rig, "Vocal"), font_size(&rig, "A Room")),
-        (pt18, pt18)
+        (pt18, pt14)
     );
     // Every browser row is 1.5 U.
     let id = Id::new("preset_picker").with(("row", 0_usize));
@@ -743,7 +764,7 @@ fn a_dw_programs_sample_folder_is_left_out() {
     assert_eq!(names(&picker, ""), ["Other", "Gen Guitar"]);
 }
 
-/// A Honeydew addition (#109, #123): a folder and any other file each carry their mark at the row's end; the picker's
+/// A BanaForge addition (#109, #123): a folder and any other file each carry their mark at the row's end; the picker's
 /// own preset files, every plain row of a preset list, carry none. An audio file's is its extension too, even in the
 /// sample picker, whose own files they are.
 #[test]
@@ -949,9 +970,16 @@ fn a_folder_the_user_makes_beside_a_preset_of_its_name_lists() {
     rig.pick("Create folder");
     rig.enter("A Room");
     assert!(rig.stored(REVERB).contains(&"A Room/".to_owned()));
-    let rows = rig.texts().into_iter().filter(|(t, ..)| t == "A Room");
+    // Bold folders paint two offset text strokes; count distinct row baselines,
+    // not text shapes, so a folder and its namesake preset still mean two rows.
+    let rows: std::collections::HashSet<_> = rig
+        .texts()
+        .into_iter()
+        .filter(|(t, ..)| t == "A Room")
+        .map(|(_, rect, _)| rect.center().y.to_bits())
+        .collect();
     assert_eq!(
-        rows.count(),
+        rows.len(),
         2,
         "the folder and the preset: {:?}",
         rig.texts()
@@ -1974,7 +2002,7 @@ fn a_pick_loading_with_no_audition_strip_pulses_too_and_a_tap_picks_it_again() {
 }
 
 fn wave(frames: usize) -> Waveform {
-    Waveform::new(std::sync::Arc::new(honeydew_audio::sample::SampleData {
+    Waveform::new(std::sync::Arc::new(banaforge_audio::sample::SampleData {
         sample_rate: 1000,
         left: vec![0.5; frames].into(),
         right: None,
@@ -2258,13 +2286,13 @@ fn row_h(rig: &Rig, i: usize) -> f32 {
 }
 
 #[test]
-fn instrument_rows_are_1_5_u_tall_and_folders_and_presets_alike_in_fontsize_4() {
+fn instrument_rows_keep_touch_height_but_files_have_smaller_text() {
     let m = metrics();
     let mut rig = Rig::with(instruments(), user_folder());
     // The presets take the folders' FontSize 4 too.
     let (folder_pt, preset_pt) = (
         m.font_id(FontSize::Pt18).size,
-        m.font_id(FontSize::Pt18).size,
+        m.font_id(FontSize::Pt14).size,
     );
     assert_eq!(font_size(&rig, MY_FILES), folder_pt);
     assert_eq!(font_size(&rig, "Bass"), folder_pt);

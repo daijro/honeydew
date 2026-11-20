@@ -226,7 +226,7 @@ fn user_lib(paths: &[&str]) -> MemoryLibrary {
 fn the_union_sends_factory_paths_to_the_factory_and_the_rest_to_the_user() {
     let factory = fake(&["Presets/Reverb 2/Hall.flmpst"]);
     // On the desktop the user folder is absolute; on the web the root is the empty path.
-    for dir in ["/home/u/.local/share/honeydew", ""] {
+    for dir in ["/home/u/.local/share/banaforge", ""] {
         let preset = Path::new(dir).join("My Presets/Reverb 2/Mine.flmpst");
         let mut user = user_lib(&[preset.to_str().unwrap()]);
         let mut union = Union {

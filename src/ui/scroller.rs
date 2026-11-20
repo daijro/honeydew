@@ -674,7 +674,17 @@ fn brighter(c: Color32, k: f32) -> Color32 {
 /// Follow playhead: the view's left edge goes to the playhead less a quarter of the visible span, so the playhead sits
 /// at 25 % of the width; kept in the range.
 pub fn follow(axis: &mut Axis, playhead: f64) {
-    axis.pos = (playhead - FOLLOW_AT * axis.span()).clamp(axis.range[0], axis.max());
+    follow_at(axis, playhead, FOLLOW_AT);
+}
+
+/// Follow at a screen fraction; only view position changes, never transport time.
+pub fn follow_at(axis: &mut Axis, playhead: f64, fraction: f64) {
+    let fraction = if fraction.is_finite() {
+        fraction.clamp(0.05, 0.95)
+    } else {
+        FOLLOW_AT
+    };
+    axis.pos = (playhead - fraction * axis.span()).clamp(axis.range[0], axis.max());
 }
 
 #[cfg(test)]

@@ -10,12 +10,12 @@
 //! max = [`PointKey::max`]: 65534 for automation (new editor points top out there) and 65535 for envelopes (rows from
 //! value/65535). Ticks are content ticks, [`PPQ`] per beat; a snap unit is in ticks (`None`: Snap off).
 //!
-//! An automation point also carries the [`Shape`] of the segment that starts at it (Honeydew's own, kept in the clip's
+//! An automation point also carries the [`Shape`] of the segment that starts at it (BanaForge's own, kept in the clip's
 //! `HDSh`, [`super::ClipFileState::shapes`]); envelope points keep the straight line. The ops carry each point's shape
 //! with it; a break takes its value on the shaped curve and the segment's shape on both sides.
 
 use super::{Clip, Event, PPQ};
-pub use honeydew_audio::automation::{Shape, ShapeKind, shape_value};
+pub use banaforge_audio::automation::{Shape, ShapeKind, shape_value};
 
 /// Which points of a clip: the automation lane's, or an audio clip's envelope `env_param` (0 Level, 1 Pan, 2 Speed;
 /// the file key is ±(env_param + 1)).
@@ -115,7 +115,12 @@ pub fn points(clip: &Clip, key: PointKey) -> Vec<Point> {
             tick,
             value: raw(value),
             shape: match key {
-                PointKey::Automation => shape_at(clip, tick),
+                PointKey::Automation | PointKey::Envelope(0) => shape_at(clip, tick),
+                PointKey::Envelope(1) => clip
+                    .file
+                    .pan_shapes
+                    .binary_search_by_key(&tick, |s| s.0)
+                    .map_or_else(|_| Shape::default(), |i| clip.file.pan_shapes[i].1),
                 PointKey::Envelope(_) => Shape::default(),
             },
         })
@@ -123,10 +128,10 @@ pub fn points(clip: &Clip, key: PointKey) -> Vec<Point> {
 }
 
 /// Makes `pts` (sorted by tick, stable) the points of `key` in `clip` and rebuilds that key's steps through
-/// `honeydew_audio::automation::AutomationClip`, with their shapes on automation; every other event stays.
+/// `banaforge_audio::automation::AutomationClip`, with their shapes on automation; every other event stays.
 pub fn set_points(clip: &mut Clip, key: PointKey, pts: Vec<Point>) {
-    use honeydew_audio::automation::{AutomationClip, AutomationPoint};
-    let automation = key == PointKey::Automation;
+    use banaforge_audio::automation::{AutomationClip, AutomationPoint};
+    let automation = matches!(key, PointKey::Automation | PointKey::Envelope(0 | 1));
     let pts = pts
         .iter()
         .map(|p| AutomationPoint {
@@ -143,7 +148,11 @@ pub fn set_points(clip: &mut Clip, key: PointKey, pts: Vec<Point>) {
     let built = AutomationClip::new(0, 1, 1, 0, 1, pts).expect("a positive key and a loop");
     if automation {
         // By tick, the last point's at each: the one whose segment has a length.
-        let shapes = &mut clip.file.shapes;
+        let shapes = if key == PointKey::Envelope(1) {
+            &mut clip.file.pan_shapes
+        } else {
+            &mut clip.file.shapes
+        };
         shapes.clear();
         for p in built.points() {
             let tick = p.tick as u32;

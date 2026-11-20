@@ -1,13 +1,13 @@
 use std::collections::{BTreeMap, HashSet};
 
 use crate::song::{AutomationTarget as SongTarget, Clip, Event, Lane, LaneKind, PPQ, Song};
-use honeydew_audio::automation::{
+use banaforge_audio::automation::{
     AutomationClip, AutomationPlayback, AutomationPoint, AutomationTarget,
 };
-use honeydew_audio::mixer::send_param;
-use honeydew_audio::playback::{AudioPlayback, AutomationChange, PlaybackError, StereoBlock};
-use honeydew_audio::sequencer::{InputNoteEvent, sort_note_events};
-use honeydew_audio::{AudioEffect, EffectError, ProcessContext, effect_info};
+use banaforge_audio::mixer::send_param;
+use banaforge_audio::playback::{AudioPlayback, AutomationChange, PlaybackError, StereoBlock};
+use banaforge_audio::sequencer::{InputNoteEvent, sort_note_events};
+use banaforge_audio::{AudioEffect, EffectError, ProcessContext, effect_info};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SongAudioError {
@@ -248,7 +248,7 @@ impl SongAudioBridge {
         }
         // The sort is stable. A tie at a tick (a point on the loop end and the next pass's content 0) is already in
         // dispatch order: `Clip::events_in_song_range` yields the loop end first, so the lower content position lands
-        // last and wins, as `honeydew_audio::automation` dispatches one. (Overlapping clips are undefined.)
+        // last and wins, as `banaforge_audio::automation` dispatches one. (Overlapping clips are undefined.)
         scheduled.sort_by(|a, b| a.1.frame.cmp(&b.1.frame).then(a.0.cmp(&b.0)));
         Ok(scheduled.into_iter().map(|(_, change)| change).collect())
     }

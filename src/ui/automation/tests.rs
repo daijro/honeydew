@@ -1413,7 +1413,7 @@ fn the_play_box_fades_out_while_playing_and_back_in_stopped() {
     }
 }
 
-// Values in the target's units, typed values and the value grid (a Honeydew addition, GitHub issue #21).
+// Values in the target's units, typed values and the value grid (a BanaForge addition, GitHub issue #21).
 
 /// The channel Level: a dB param.
 const LEVEL: AutomationTarget = AutomationTarget {

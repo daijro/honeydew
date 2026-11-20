@@ -1,0 +1,38 @@
+name: Export system validation
+on:
+  workflow_dispatch:
+  push:
+    branches: ["arena/**"]
+    paths:
+      - 'src/app/export.rs'
+      - 'src/project_files/export*'
+      - 'src/project_files/export/**'
+      - 'src/ui/export_status.rs'
+      - '.github/workflows/export-validation.yml'
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: Export regressions
+        shell: bash
+        run: |
+          set +e
+          result=0
+          for filter in export_progress project_files::export::tests app::tests::export render::tests; do
+            cargo test --lib "$filter" >> /tmp/export.log 2>&1 || result=$?
+          done
+          cargo test -p banaforge-audio --test wav_writer --test flac_writer --test mp3_writer --test ogg_writer >> /tmp/export.log 2>&1 || result=$?
+          cat /tmp/export.log
+          if [ "$result" -ne 0 ]; then
+            grep -E -A22 -B3 'error\[|error:|FAILED|failures:|panicked|Caused by' /tmp/export.log | head -c 50000 | python3 -c 'import sys; print("::error::" + sys.stdin.read().replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))'
+          fi
+          exit "$result"

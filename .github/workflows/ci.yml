@@ -23,9 +23,11 @@ jobs:
           workspaces: |
             .
             tools/content-build
-      # libclang: bindgen in signalsmith-stretch's build script (Lemon Sampler's time stretching, C++).
+      # libclang: bindgen in signalsmith-stretch's build script (Banana Sampler's time stretching, C++).
       - name: System libraries
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: Cross-platform branding contracts
+        run: python3 -m unittest discover -s tests/branding -v
       - name: Run cargo fmt --check
         shell: bash
         run: |
@@ -48,7 +50,7 @@ jobs:
                   message = text[pos:pos+800].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
                   print(f"::error file={file},line={start},title=rustfmt diff::{message}")
           for line in lines:
-              match = re.match(r"Diff in .*/honeydew/(.+):(\d+):", line)
+              match = re.match(r"Diff in .*/banaforge/(.+):(\d+):", line)
               if match:
                   emit()
                   file, start = match.group(1), int(match.group(2))
@@ -91,7 +93,26 @@ jobs:
             cat /tmp/clippy.log
           fi
           exit "$rc"
-      - run: cargo test --workspace
+      - name: Run cargo test --workspace
+        shell: bash
+        run: |
+          set +e
+          cargo test --workspace -- --color never 2>&1 | tee /tmp/cargo-test.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            python3 - <<'PY'
+          import pathlib
+          lines = pathlib.Path("/tmp/cargo-test.log").read_text(errors="replace").splitlines()
+          patterns = (" FAILED", "panicked at", "assertion", "left:", "right:", "test result: FAILED", "error:")
+          picked = [line for line in lines if any(pattern in line for pattern in patterns)]
+          # Keep the GitHub check annotation useful while bounding output for large workspaces.
+          for line in picked[-60:]:
+              text = line.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Cargo test failure::{text[:900]}")
+          PY
+          fi
+          exit "$rc"
       - run: cargo check --workspace --target wasm32-unknown-unknown
       - name: Content tool
         run: cargo test --manifest-path tools/content-build/Cargo.toml

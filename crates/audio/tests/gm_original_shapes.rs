@@ -3,10 +3,10 @@
 
 use std::f64::consts::TAU;
 
-use honeydew_audio::ProcessContext;
-use honeydew_audio::gm_waveshapes::{PARTIALS, SAW, SLOTS, Spectrum};
-use honeydew_audio::gmsynth::{GmSynth, WAVE_A, WAVE_B, install_shape, prepare_setting};
-use honeydew_audio::instrument::Instrument;
+use banaforge_audio::ProcessContext;
+use banaforge_audio::gm_waveshapes::{PARTIALS, SAW, SLOTS, Spectrum};
+use banaforge_audio::gmsynth::{GmSynth, WAVE_A, WAVE_B, install_shape, prepare_setting};
+use banaforge_audio::instrument::Instrument;
 
 const RATE: f32 = 48_000.0;
 

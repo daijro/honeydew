@@ -2,12 +2,12 @@
 //! through `AudioRenderer` with samples the tests make. The `ramp` sample holds x[i] = i/2^20, so the output reads
 //! back the play position.
 
-use honeydew::audio_engine::{EngineError, SongAudioEngine, fit_audio_clip, source_beats};
-use honeydew::flm::chunk::ContentPath;
-use honeydew::sample_cache::SampleCache;
-use honeydew::song::{ChannelKind, Clip, Event, LaneKind, SamplerSlot, Song, SynthKind};
-use honeydew_audio::device::AudioRenderer;
-use honeydew_audio::drums::level_gain;
+use banaforge::audio_engine::{EngineError, SongAudioEngine, fit_audio_clip, source_beats};
+use banaforge::flm::chunk::ContentPath;
+use banaforge::sample_cache::SampleCache;
+use banaforge::song::{ChannelKind, Clip, Event, LaneKind, SamplerSlot, Song, SynthKind};
+use banaforge_audio::device::AudioRenderer;
+use banaforge_audio::drums::level_gain;
 
 const RATE: f32 = 44_100.0;
 /// Frames per beat at 120 BPM.
@@ -630,7 +630,7 @@ fn clips_taken_over_at_another_tempo_are_timed_at_it() {
 fn a_pitch_bend_lane_bends_the_clips_along_its_curve() {
     let mut song = song();
     clip(&mut song, 0, 8.0, "ramp");
-    let lane = song.channels[1].add_automation_lane(honeydew::song::AutomationTarget::PITCH_BEND);
+    let lane = song.channels[1].add_automation_lane(banaforge::song::AutomationTarget::PITCH_BEND);
     let points = &mut lane.add_clip(0, 8.0).events;
     for (pos, value) in [(0, 0.5), (256, 0.75)] {
         points.push(Event::Automation {
@@ -650,14 +650,14 @@ fn a_pitch_bend_lane_bends_the_clips_along_its_curve() {
 
 /// The tempo [`slowing`]'s lane plays from beat 4: 60 BPM in its value's 1/65535 steps.
 fn slowed_bpm() -> f64 {
-    use honeydew::song::{automated_tempo, points, tempo_value};
+    use banaforge::song::{automated_tempo, points, tempo_value};
     automated_tempo(points::unit(points::raw(tempo_value(60.0))))
 }
 
 /// 120 BPM, and from beat 4 the master's tempo lane says 60, over a 16-beat clip of the `long` ramp from the start,
 /// SYNC on or off.
 fn slowing(sync: bool) -> Song {
-    use honeydew::song::{TEMPO_TARGET, tempo_value};
+    use banaforge::song::{TEMPO_TARGET, tempo_value};
     let mut song = song();
     let lane = song.channels[0].add_automation_lane(TEMPO_TARGET);
     lane.add_clip(0, 16.0).events.push(Event::Automation {
@@ -669,7 +669,7 @@ fn slowing(sync: bool) -> Song {
     song
 }
 
-/// Honeydew change (#126): a SYNC clip follows the tempo automation by resampling, its pitch moving with
+/// BanaForge change (#126): a SYNC clip follows the tempo automation by resampling, its pitch moving with
 /// the tempo. From beat 4, at 60 BPM, the ramp plays at half speed, and at bar 3 (beat 8, about 12 beats of 120 BPM
 /// frames in) it reads beat 8 of its sample. A SYNC-off clip plays on at its native speed.
 #[test]
@@ -693,11 +693,11 @@ fn a_sync_clip_follows_the_tempo_automation_and_a_sync_off_one_keeps_its_speed()
     reads(&out, bar_3, bar_3 as f64);
 }
 
-/// Honeydew change (#126): an export renders what playback plays at the tempo automation's tempos, the whole song
+/// BanaForge change (#126): an export renders what playback plays at the tempo automation's tempos, the whole song
 /// (4 beats at 120 BPM, then 12 at 60) sample for sample.
 #[test]
 fn a_render_plays_the_tempo_automation_as_playback_does() {
-    use honeydew::render::{Remainder, Render, RenderRange, RenderSpec};
+    use banaforge::render::{Remainder, Render, RenderRange, RenderSpec};
     let song = slowing(true);
     let mut cache = SampleCache::default();
     cache.load(&song, &read);

@@ -2,15 +2,15 @@
 
 use std::f64::consts::TAU;
 
-use honeydew_audio::ProcessContext;
-use honeydew_audio::builtin_drums::builtin;
-use honeydew_audio::builtin_shapes::{
+use banaforge_audio::ProcessContext;
+use banaforge_audio::builtin_drums::builtin;
+use banaforge_audio::builtin_shapes::{
     CYCLE, PARTIALS, RATE, SHAPES, VOWEL_A_FORMANTS, VOWEL_O_FORMANTS, shape,
 };
-use honeydew_audio::instrument::Instrument;
-use honeydew_audio::sample::SampleData;
-use honeydew_audio::three_osc::ThreeOsc;
-use honeydew_audio::three_osc::osc::Wave;
+use banaforge_audio::instrument::Instrument;
+use banaforge_audio::sample::SampleData;
+use banaforge_audio::three_osc::ThreeOsc;
+use banaforge_audio::three_osc::osc::Wave;
 
 const MINUS_1_DBFS: f32 = 0.891_250_9;
 

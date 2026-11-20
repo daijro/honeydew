@@ -2,7 +2,7 @@
 id = "proc-fx"
 kind = "samples"
 path = "Samples/FX/"
-source = "honeydew"
+source = "banaforge"
 render = "impact"
 variant = [
   { name = "Impact Deep", tune = 40.0, decay = 0.7 },

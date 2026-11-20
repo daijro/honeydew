@@ -41,14 +41,15 @@
 //! `Quick Render` renders the mix, since Split is no kept option (it resets whenever the dialog opens).
 
 use std::cell::RefCell;
+use super::export_profile::{ExportProfile, clock};
 use std::collections::BTreeMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use honeydew_audio::flac_writer::FlacEncoder;
-use honeydew_audio::mp3_writer::Mp3Encoder;
-use honeydew_audio::ogg_writer::OggEncoder;
-use honeydew_audio::wav_writer::{HEADER_LEN, WavWriter, float32_wav, header, info_chunk};
+use banaforge_audio::flac_writer::FlacEncoder;
+use banaforge_audio::mp3_writer::Mp3Encoder;
+use banaforge_audio::ogg_writer::OggEncoder;
+use banaforge_audio::wav_writer::{HEADER_LEN, WavWriter, float32_wav, header, info_chunk};
 
 use super::{
     FileEvent, MAX_FILE_BYTES, OVERWRITE, ProjectFiles, SAVE_FAILED, SAVE_FILE_FAILED, SAVED,
@@ -82,7 +83,7 @@ pub const NO_AUDIO_RATE: u32 = 44_100;
 const BLOCK: usize = 1024;
 /// The export work one egui frame does.
 #[cfg(not(test))]
-const SLICE_MS: u64 = 25;
+const SLICE_MS: u64 = 8;
 /// The blocks a slice runs in tests, which never read the clock.
 #[cfg(test)]
 const TEST_SLICE_BLOCKS: usize = 64;
@@ -306,6 +307,9 @@ impl ProjectFiles {
             self.write_export(&export, bytes);
         }
         self.stem_writes = StemWrites::default();
+        self.export_size = None;
+        self.rendered = None;
+        self.render_feedback = false;
         self.exported = Some(export);
     }
 
@@ -314,11 +318,34 @@ impl ProjectFiles {
         self.exported.take()
     }
 
+    /// Drop-only cancellation: completed stems remain valid, but never announce the batch as complete.
+    pub fn cancel_render(&mut self) {
+        self.stem_writes.failed = true;
+        self.stem_writes.rendered = false;
+        self.stem_writes.send = false;
+        self.message = Some(vec!["Export cancelled".into(),
+            "No incomplete mix was saved. Any stems already saved remain as completed individual files.".into()]);
+    }
+
+    pub fn share_last_render(&mut self) {
+        if let Some(path) = self.rendered.clone() {
+            let files = if path == self.stem_writes.folder && !self.stem_writes.files.is_empty() {
+                self.stem_writes.files.clone()
+            } else { vec![path] };
+            self.share(&files);
+        }
+    }
+
+    pub fn dismiss_render_result(&mut self) { self.rendered = None; }
+
     /// Writes `export`'s file (the web downloads it). Once written, `Saved!` flashes, or `Render complete\nSaved to:
     /// <path>` for audio; a failed write shows its format's message.
     pub fn write_export(&mut self, export: &Export, bytes: Vec<u8>) {
+        self.export_size = Some(bytes.len() as u64);
         self.export_saving = Some(export.clone());
+        let started = clock();
         self.provider.save(&export.path, false, bytes);
+        eprintln!("export-profile save_request_s={:.6} (provider call; not asynchronous completion)", clock() - started);
     }
 
     /// Writes the stem file `name` of the split export `export` into its folder. Once every stem is rendered
@@ -370,12 +397,16 @@ impl ProjectFiles {
             .unwrap_or(&path)
             .display()
             .to_string();
-        let lines = vec![RENDER_COMPLETE.to_owned(), format!("Saved to: {shown}")];
+        let mut lines = vec![RENDER_COMPLETE.to_owned(), format!("Saved to: {shown}")];
+        if let Some(ext) = path.extension() { lines.push(format!("Format: {}", ext.to_string_lossy().to_uppercase())); }
+        if let Some(size) = self.export_size.take() { lines.push(format!("File size: {size} bytes")); }
         if self.provider.folders() {
             self.message = Some(lines);
             self.rendered = Some(path);
         } else {
-            self.flash = Some(lines.join("\n"));
+            lines[1] = format!("Download handed to browser: {}", path.file_name().unwrap_or_default().to_string_lossy());
+            self.message = Some(lines);
+            self.render_feedback = true;
         }
     }
 
@@ -390,7 +421,13 @@ impl ProjectFiles {
             RenderError::Silent => NO_SOUND,
             _ => RENDER_FAILED,
         };
-        self.message = Some(vec![line.into()]);
+        self.message = Some(vec![line.into(), format!("Render/encoder error: {error:?}")]);
+        self.render_feedback = true;
+    }
+
+    pub fn render_failed_at(&mut self, error: &RenderError, stage: &str) {
+        self.render_failed(error);
+        if let Some(lines) = &mut self.message { lines.push(format!("Failed stage: {stage}")); }
     }
 
     /// `event` finishes the export write under way, or a stem's.
@@ -407,7 +444,8 @@ impl ProjectFiles {
             if let FileEvent::Failed(_, detail) = event
                 && !std::mem::replace(&mut self.stem_writes.failed, true)
             {
-                self.fail(RENDER_FAILED, detail);
+                self.render_feedback = true;
+                self.fail(RENDER_FAILED, format!("Stem file write: {detail}"));
             }
             return self.stems_flash();
         }
@@ -433,7 +471,11 @@ impl ProjectFiles {
                     );
                 }
             }
-            FileEvent::Failed(_, detail) => self.fail(failure(export.format), detail),
+            FileEvent::Failed(_, detail) => {
+                if export.format.is_audio() { self.render_feedback = true; }
+                let detail = if export.format.is_audio() { format!("Final file write: {detail}") } else { detail };
+                self.fail(failure(export.format), detail);
+            },
             FileEvent::Opened(..)
             | FileEvent::Picked(_)
             | FileEvent::Located(_)
@@ -488,6 +530,8 @@ impl ProjectFiles {
 /// ([`Job::step`]); with [`Split`] on, so for each stem in turn.
 pub struct Job {
     export: Export,
+    profile: ExportProfile,
+    started: f64,
     rate: u32,
     high_quality: bool,
     stage: Stage,
@@ -532,6 +576,7 @@ enum Stage {
         stream: Box<Stream>,
         encoder: Encoder,
     },
+    Finalizing { encoder: Encoder },
     Done,
 }
 
@@ -546,6 +591,7 @@ impl Job {
         page: RenderPage,
         rate: u32,
     ) -> Result<Self, RenderError> {
+        let started = clock();
         let page = match export.split {
             Split::Flp => RenderPage {
                 high_quality: true,
@@ -583,6 +629,8 @@ impl Job {
         let render = Render::new(song, samples, spec)?;
         Ok(Self {
             export,
+            profile: ExportProfile { prepare: clock() - started, ..Default::default() },
+            started,
             rate,
             high_quality: page.high_quality,
             stage: Stage::Rendering(Box::new(render)),
@@ -600,8 +648,24 @@ impl Job {
         self
     }
 
+    pub fn profile_report(&self) -> String { self.profile.report(clock() - self.started) }
+    pub fn profile(&self) -> &ExportProfile { &self.profile }
+
+    pub fn rate(&self) -> u32 { self.rate }
+
     pub fn export(&self) -> &Export {
         &self.export
+    }
+
+    /// Confirmed progress of the current processing pass, not a guessed overall percentage.
+    pub fn progress(&self) -> (usize, usize, &'static str) {
+        match &self.stage {
+            Stage::Rendering(render) => { let (a,b) = render.progress(); (a,b,"Pass 1 / 2 · rendering and analysis") },
+            Stage::Processing(_) => (0,0,"Preparing processing / encoder"),
+            Stage::Encoding { stream, .. } => { let (a,b) = stream.progress(); (a,b,"Pass 2 / 2 · rendering and encoding") },
+            Stage::Finalizing { .. } => (0,0,"Finalizing encoder / atomic file write next"),
+            Stage::Done => (0,0,"Preparing next stem / archive"),
+        }
     }
 
     /// The busy screen's title for the stage the next [`Self::step`] runs: `Rendering "<file>"`, `Processing
@@ -613,7 +677,8 @@ impl Job {
             Stage::Done if next => "Rendering",
             Stage::Rendering(_) => "Rendering",
             Stage::Processing(_) => "Processing",
-            Stage::Encoding { .. } | Stage::Done => "Encoding",
+            Stage::Encoding { .. } => "Encoding",
+            Stage::Finalizing { .. } | Stage::Done => "Finalizing",
         };
         let Some(split) = &self.split else {
             let file = self.export.path.file_name().unwrap_or_default();
@@ -629,17 +694,24 @@ impl Job {
     /// The end of a stage ends the slice, so the busy screen shows the next stage's title before it runs. Returns what
     /// the job ended with, or a stem to write.
     pub fn step(&mut self, over: &mut dyn FnMut() -> bool) -> Option<Done> {
+        self.profile.slices += 1;
         loop {
             match std::mem::replace(&mut self.stage, Stage::Done) {
                 Stage::Rendering(mut render) => {
-                    if render.step(BLOCK) {
+                    let started = clock();
+                    let ended = render.step(BLOCK);
+                    self.profile.analysis += clock() - started;
+                    if ended {
                         self.stage = Stage::Processing(render);
                         return None;
                     }
                     self.stage = Stage::Rendering(render);
                 }
                 Stage::Processing(render) => {
-                    let stream = match render.finish() {
+                    let started = clock();
+                    let finished = render.finish();
+                    self.profile.processing += clock() - started;
+                    let stream = match finished {
                         Ok(stream) => stream,
                         Err(RenderError::Silent) if self.split.is_some() => {
                             return self.next_stem(None);
@@ -649,7 +721,9 @@ impl Job {
                     let frames = stream.frames();
                     let tags: Vec<_> = (self.tags.iter()).map(|(f, v)| (*f, v.as_str())).collect();
                     let (format, rate, hq) = (self.export.format, self.rate, self.high_quality);
+                    let started = clock();
                     let encoder = Encoder::new(format, rate, hq, frames, &tags);
+                    self.profile.processing += clock() - started;
                     self.stage = Stage::Encoding {
                         stream: Box::new(stream),
                         encoder,
@@ -661,17 +735,28 @@ impl Job {
                     mut encoder,
                 } => {
                     // Pass 2: a block rendered, and pushed once a whole one is there.
-                    if let Some([left, right]) = stream.step() {
+                    let started = clock();
+                    let block = stream.step();
+                    self.profile.render += clock() - started;
+                    if let Some([left, right]) = block {
+                        let started = clock();
                         encoder.push(left, right);
+                        self.profile.encode += clock() - started;
                     }
                     if stream.done() {
-                        let bytes = encoder.finish();
-                        return match self.split {
-                            None => Some(Done::File(bytes)),
-                            Some(_) => self.next_stem(Some(bytes)),
-                        };
+                        self.stage = Stage::Finalizing { encoder };
+                        return None;
                     }
                     self.stage = Stage::Encoding { stream, encoder };
+                }
+                Stage::Finalizing { encoder } => {
+                    let started = clock();
+                    let bytes = encoder.finish();
+                    self.profile.flush += clock() - started;
+                    return match self.split {
+                        None => Some(Done::File(bytes)),
+                        Some(_) => self.next_stem(Some(bytes)),
+                    };
                 }
                 Stage::Done => {
                     let split = self.split.as_mut()?;
@@ -681,7 +766,10 @@ impl Job {
                             solo: Some(channel),
                             ..split.spec
                         };
-                        let render = match Render::new(&split.song, &split.samples, spec) {
+                        let started = clock();
+                        let built = Render::new(&split.song, &split.samples, spec);
+                        self.profile.prepare += clock() - started;
+                        let render = match built {
                             Ok(render) => render,
                             Err(error) => return Some(Done::Failed(error)),
                         };
@@ -691,8 +779,12 @@ impl Job {
                     return Some(match (split.written, self.export.split) {
                         (0, _) => Done::Failed(RenderError::Silent),
                         // ponytail: deflated in one go, a stall for long stems; in slices if the web's UI stalls.
-                        (_, Split::Zip) => match crate::zip::write(&std::mem::take(&mut split.zip))
-                        {
+                        (_, Split::Zip) => match {
+                            let started = clock();
+                            let zip = crate::zip::write(&std::mem::take(&mut split.zip));
+                            self.profile.archive += clock() - started;
+                            zip
+                        } {
                             Ok(zip) => Done::File(zip),
                             // Past zip's 4 GiB, which wasm32 memory never holds anyway.
                             Err(_) => Done::Failed(RenderError::Archive),

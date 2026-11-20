@@ -416,7 +416,7 @@ mod tests {
 
     #[test]
     fn a_picked_project_is_read() {
-        let path = std::env::temp_dir().join(format!("honeydew-m3t5-{}.FLM", std::process::id()));
+        let path = std::env::temp_dir().join(format!("banaforge-m3t5-{}.FLM", std::process::id()));
         std::fs::write(&path, b"10LF").unwrap();
         let event = open_path(path.clone(), Pick::Song.accept());
         std::fs::remove_file(&path).unwrap();
@@ -468,7 +468,8 @@ mod save_tests {
     /// song file is never written in place.
     #[test]
     fn a_quick_save_writes_a_temp_file_and_never_the_song_in_place() {
-        let dir = std::env::temp_dir().join(format!("honeydew-native-save-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("banaforge-native-save-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join(".Beat.flm.tmp")).unwrap();
         let path = dir.join("Beat.flm");
@@ -490,7 +491,7 @@ mod save_tests {
     /// A render's file keeps its own extension, and a stem folder is made as the file is written.
     #[test]
     fn a_save_keeps_its_wav_extension_and_makes_its_folder() {
-        let dir = std::env::temp_dir().join(format!("honeydew-native-wav-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("banaforge-native-wav-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let folder = dir.join("My Tracks").join("Song - Multitrack wav");
         let path = folder.join("Bass.wav");
@@ -510,9 +511,9 @@ mod save_tests {
     #[test]
     fn a_quick_save_makes_the_folder_it_saves_into() {
         let dir =
-            std::env::temp_dir().join(format!("honeydew-native-mkdir-{}", std::process::id()));
+            std::env::temp_dir().join(format!("banaforge-native-mkdir-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let path = dir.join("honeydew").join("My Songs").join("New Song.flm");
+        let path = dir.join("banaforge").join("My Songs").join("New Song.flm");
         let mut files = NativeFiles::default();
         files.save(&path, false, b"new song".to_vec());
         assert_eq!(files.poll(), Some(FileEvent::Saved(path.clone())));
