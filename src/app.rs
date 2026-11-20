@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use banaforge_audio::device::{AudioCommand, OutputSnapshot};
 use eframe::egui;
-use honeydew_audio::device::{AudioCommand, OutputSnapshot};
 
 use crate::audio_engine::LiveInput;
 use crate::audio_link::{AudioLink, AudioSink, Handover, buffer_mode, open_device_with_mode};
@@ -140,7 +140,7 @@ fn audio_gesture(input: &egui::InputState, on_release: bool) -> bool {
     }
 }
 
-pub struct HoneydewApp {
+pub struct BanaForgeApp {
     /// The SETTINGS values: the theme, UI scale, keyboard labels and meters follow them.
     settings: Settings,
     /// What `storage` holds: the settings as last saved.
@@ -291,9 +291,12 @@ pub struct HoneydewApp {
     /// `Install sound library…` running (`app/sounds.rs`).
     #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
     sounds: Option<crate::content::install::Job>,
+    /// Whether `FLAG_KEEP_SCREEN_ON` is currently active on Android (avoids per-frame JNI calls).
+    #[cfg(target_os = "android")]
+    screen_kept_on: bool,
 }
 
-impl Default for HoneydewApp {
+impl Default for BanaForgeApp {
     fn default() -> Self {
         Self {
             settings: Settings::default(),
@@ -374,11 +377,13 @@ impl Default for HoneydewApp {
             control: None,
             #[cfg(all(not(target_arch = "wasm32"), not(mobile)))]
             sounds: None,
+            #[cfg(target_os = "android")]
+            screen_kept_on: false,
         }
     }
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     fn mcp_status(&self) -> &'static str {
         #[cfg(desktop)]
         {
@@ -398,6 +403,7 @@ impl HoneydewApp {
 
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         setup_context(&cc.egui_ctx);
+        crate::project_files::set_context(&cc.egui_ctx);
         let storage = settings::storage();
         let fresh =
             (storage.as_deref()).is_none_or(|s| s.get_string(settings::STORAGE_KEY).is_none());
@@ -472,7 +478,7 @@ impl HoneydewApp {
         if !views::whats_new::due(&self.settings.whats_new_seen) {
             return;
         }
-        if !fresh && cfg!(mobile) {
+        if !fresh {
             self.nav.overlays.push(Overlay::WhatsNew);
         }
         self.settings.whats_new_seen = views::whats_new::NOTES_VERSION.into();
@@ -613,6 +619,35 @@ impl HoneydewApp {
     /// takes the keyboard); a channel's `Edit` is its main lane's current clip's
     /// ([`views::main_clip`]), else nothing.
     pub fn navigate(&mut self, nav: Nav) {
+        match &nav {
+            Nav::Answer("export_cancel", true) => {
+                if self.export.take().is_some() {
+                    self.files.cancel_render();
+                    self.nav
+                        .overlays
+                        .retain(|o| !matches!(o, Overlay::ExportProgress { .. }));
+                }
+                return;
+            }
+            Nav::Answer("export_share", true) => {
+                self.files.share_last_render();
+                return;
+            }
+            Nav::Answer("export_again", true) => {
+                self.files.dismiss_render_result();
+                self.nav
+                    .overlays
+                    .retain(|o| !matches!(o, Overlay::ExportResult { .. }));
+                self.files.save_as(&self.song);
+                return;
+            }
+            Nav::Answer(crate::project_files::export::RENDERED_TAG, _) => {
+                self.nav
+                    .overlays
+                    .retain(|o| !matches!(o, Overlay::ExportResult { .. }));
+            }
+            _ => {}
+        }
         let nav = match nav {
             Nav::Edit(channel) => match views::main_clip(&self.song, channel) {
                 Some(key) => Nav::EditClip(key),
@@ -671,6 +706,7 @@ impl HoneydewApp {
                 self.files.song_changed();
                 self.history.edited(&self.song, false);
             }
+            SongEdit::Metadata => self.record(),
             SongEdit::Ongoing => {
                 self.files.song_changed();
                 self.history.edited(&self.song, false);
@@ -950,7 +986,12 @@ impl HoneydewApp {
                 }
             }
             View::AutomationEditor(_) => slots.automation_editor.editor.end_touch(),
-            View::AudioEditor(_) => slots.audio_editor.editor.end_touch(),
+            View::AudioEditor(_) => {
+                slots.audio_editor.editor.end_touch();
+                if slots.audio_editor.end_live() {
+                    edit = edit.max(Some(SongEdit::Final));
+                }
+            }
             View::Playlist | View::Mixer | View::DrumEditor(_) => {}
         }
         let clips = &mut self.main_screen.clips;
@@ -1064,6 +1105,8 @@ impl HoneydewApp {
                     | Overlay::Message { .. }
                     | Overlay::SampleName { .. }
                     | Overlay::Busy { .. }
+                    | Overlay::ExportProgress { .. }
+                    | Overlay::ExportResult { .. }
                     | Overlay::MidiImport
             )
         });
@@ -1126,7 +1169,15 @@ impl HoneydewApp {
             self.warned_rate = None;
             return;
         }
-        let shown = |o: &Overlay| matches!(o, Overlay::Message { .. } | Overlay::Busy { .. });
+        let shown = |o: &Overlay| {
+            matches!(
+                o,
+                Overlay::Message { .. }
+                    | Overlay::Busy { .. }
+                    | Overlay::ExportProgress { .. }
+                    | Overlay::ExportResult { .. }
+            )
+        };
         if self.warned_rate == Some((wanted, actual)) || self.nav.overlays.iter().any(shown) {
             return;
         }
@@ -1156,6 +1207,12 @@ impl HoneydewApp {
             self.nav.take_answer(QUIT_TAG);
             if yes {
                 self.quitting = true;
+                #[cfg(target_os = "android")]
+                {
+                    self.exit();
+                    crate::android::haptic_tick();
+                    crate::android::quit_app();
+                }
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
@@ -1745,7 +1802,7 @@ impl HoneydewApp {
             };
             if let Some((lines, choices)) = failed {
                 self.input_failed = true;
-                // A calibration says where to allow the microphone too (Honeydew change, #129: phones calibrate).
+                // A calibration says where to allow the microphone too (BanaForge change, #129: phones calibrate).
                 if (armed || calibrating && mic == Mic::Denied) && !cfg!(target_arch = "wasm32") {
                     self.navigate(Nav::Open(Overlay::Message {
                         tag: INPUT_TAG,
@@ -1801,7 +1858,8 @@ impl HoneydewApp {
     /// read it too. The graph moves on its own while the song plays; the bar eases and the peak falls for a while
     /// after, which frames must show if a view of them is up.
     fn update_performance(&mut self, ctx: &egui::Context, snapshot: Option<&OutputSnapshot>) {
-        let loading = (self.nav.overlays.iter()).any(|o| matches!(o, Overlay::Busy { .. }));
+        let loading = (self.nav.overlays.iter())
+            .any(|o| matches!(o, Overlay::Busy { .. } | Overlay::ExportProgress { .. }));
         let live = snapshot.filter(|s| !s.stream_failed);
         let reading = performance::Reading {
             load: live.map_or(0.0, |s| s.cpu_load),
@@ -1989,7 +2047,7 @@ fn setup_context(ctx: &egui::Context) {
     ctx.options_mut(|o| o.zoom_with_keyboard = false);
 }
 
-impl eframe::App for HoneydewApp {
+impl eframe::App for BanaForgeApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "android")]
         crate::android_text::begin_frame(ctx);
@@ -2024,6 +2082,26 @@ impl eframe::App for HoneydewApp {
             *insets = crate::ios::notch_only(*insets);
         }
         selftest::input(ctx, raw);
+    }
+
+    /// Android: merge live `DisplayCutout` insets (camera punches, notches, waterfalls) reported by
+    /// `BanaForgeActivity.onCutoutInsets` into egui's safe area so controls never sit under cameras.
+    #[cfg(all(target_os = "android", not(test)))]
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        let [l, t, r, b] = crate::android::cutout_insets_px();
+        if (l | t | r | b) == 0 {
+            return;
+        }
+        let ppp = ctx.pixels_per_point().max(1.0);
+        let prev = raw
+            .safe_area_insets
+            .map_or(egui::epaint::MarginF32::ZERO, |s| s.0);
+        raw.safe_area_insets = Some(egui::SafeAreaInsets(egui::epaint::MarginF32 {
+            left: prev.left.max(l as f32 / ppp),
+            right: prev.right.max(r as f32 / ppp),
+            top: prev.top.max(t as f32 / ppp),
+            bottom: prev.bottom.max(b as f32 / ppp),
+        }));
     }
 
     /// The theme's background, also where the app does not draw: iOS's notch side.
@@ -2062,13 +2140,18 @@ impl eframe::App for HoneydewApp {
     }
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// [`eframe::App::on_exit`].
     fn exit(&mut self) {
         // What the recent state has not taken yet, written before the app goes (#72).
         self.files.keep_recent(&self.song, f64::INFINITY, true);
         #[cfg(not(target_arch = "wasm32"))]
         self.files.join_autosave();
+        #[cfg(target_os = "android")]
+        {
+            self.screen_kept_on = false;
+            crate::android::set_keep_screen_on(false);
+        }
         // The plugins' editors close before their windows go.
         crate::plugins::song_replaced();
         if self.settings_unflushed
@@ -2119,7 +2202,7 @@ impl HoneydewApp {
         }
         // An output that a report ended (a device gone, Android's headphones in or out, a sample-rate change:
         // `device::stops`) reopens by itself, the transport kept, and its input after it (`open_input`); a reopen that
-        // fails tries again a second later (Honeydew change). The web starts audio only from a gesture.
+        // fails tries again a second later (BanaForge change). The web starts audio only from a gesture.
         let failed = snapshot.as_ref().is_some_and(|s| s.stream_failed);
         let retries = failed && !cfg!(target_arch = "wasm32");
         let rerouted = retries && self.now >= self.reopen_at;
@@ -2225,6 +2308,7 @@ impl HoneydewApp {
         // Once per frame; screens take it by reference.
         let metrics = Metrics::new(ctx, self.settings.ui_scale);
         crate::ui::anim::set_mode(ctx, self.settings.animations, self.settings.inertia);
+        self.settings.waveform_quality.publish(ctx);
         // As the frame starts; the settings tab edits `self.settings` meanwhile.
         let shown = self.settings.clone();
         // The roll's rows tint for the live notes and the engine's keys alike: each channel's, for the roll to take its
@@ -2319,6 +2403,7 @@ impl HoneydewApp {
                 // Keep the Settings MCP status in sync with the bridge that is actually running. The bridge is
                 // restarted after settings changes in `keep_settings`, so the next frame reflects bind failures too.
                 self.slots.settings_tab.set_mcp_status(mcp_status);
+                let view_playing = self.main_screen.playing;
                 let mut app = AppCtx {
                     cx,
                     regions,
@@ -2421,7 +2506,7 @@ impl HoneydewApp {
                                 // back to the playlist.
                                 let channel = app.song.channels.get(*app.selected);
                                 let color = channel.map_or(cx.theme.colors.menu_fill, |c| {
-                                    crate::theme::channel_color(c.hue, cx.theme)
+                                    crate::theme::channel_color(c.color_token(), cx.theme)
                                 });
                                 split::band(
                                     ui.painter(),
@@ -2471,12 +2556,22 @@ impl HoneydewApp {
                 };
                 // A tap on an editor's playhead knob plays (`AppCtx::play`): before the transport's buttons, which may
                 // stop it this frame.
-                self.main_screen.playing |= app.playing;
+                if app.playing != view_playing {
+                    // The vocal workspace can explicitly stop, as well as play.
+                    self.main_screen.playing = app.playing;
+                } else {
+                    // Preserve a Play request made directly by the playlist knob.
+                    self.main_screen.playing |= app.playing;
+                }
                 self.main_screen
                     .chrome(ui, &cx, input, &regions, &mut actions);
                 views::drum_editor::after_chrome(&mut self.slots.drum_editor, ui, &mut app);
                 // The corner buttons go over the rack and under the other overlays.
-                let hue = app.song.channels.get(input.selected).map_or(0.0, |c| c.hue);
+                let hue = app
+                    .song
+                    .channels
+                    .get(input.selected)
+                    .map_or(0.0, |c| c.color_token());
                 let ink = crate::theme::channel_color(hue, cx.theme).to_color32();
                 // The rack tab's place, which a drag of it may move (PR #87): out of the settings for the frame, and
                 // back in.
@@ -2629,6 +2724,8 @@ impl HoneydewApp {
             } else {
                 AudioCommand::Stop
             });
+            #[cfg(target_os = "android")]
+            crate::android::haptic_tick();
         }
         let screen = &mut self.main_screen;
         // Every seek moves the play-start point, and one while playing turns recording off. The rest of the frame
@@ -2699,7 +2796,16 @@ impl HoneydewApp {
         }
         // Top down, so that closing one leaves the indices below it valid.
         for (index, nav) in overlay_navs.into_iter().rev() {
-            self.nav.apply_from(index, nav, &self.song);
+            // Export controls need the app-owned render job/provider, not just navigation state.
+            if matches!(
+                &nav,
+                Nav::Answer("export_cancel" | "export_again" | "export_share", _)
+                    | Nav::Answer(crate::project_files::export::RENDERED_TAG, _)
+            ) {
+                self.navigate(nav);
+            } else {
+                self.nav.apply_from(index, nav, &self.song);
+            }
         }
         for nav in navs {
             self.navigate(nav);
@@ -2841,6 +2947,17 @@ impl HoneydewApp {
         if let Some(secs) = self.files.keep_recent(&self.song, now, leaving) {
             ctx.request_repaint_after_secs(secs as f32);
         }
+        if leaving {
+            crate::project_files::finish_leaving();
+        }
+        #[cfg(target_os = "android")]
+        {
+            let keep = playing || self.recording() || self.main_screen.armed;
+            if keep != self.screen_kept_on {
+                self.screen_kept_on = keep;
+                crate::android::set_keep_screen_on(keep);
+            }
+        }
         self.keep_settings(ctx);
         // The playhead follows the audio, and a lit level meter falls to rest at the meters' release, stopped too (#41);
         // otherwise egui repaints only on input.
@@ -2971,7 +3088,7 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     mod songs_audio;
 
-    impl HoneydewApp {
+    impl BanaForgeApp {
         /// A Drums channel as the model makes it (the default kit, no picker open), added at the end and selected:
         /// The fixture of tests not about the add-channel flow (that is [`Self::add_channel`]).
         fn add_default_drums(&mut self, tick: u64) {
@@ -2997,7 +3114,7 @@ mod tests {
     /// a [`Recorder`] for the audio output.
     struct Rig {
         ctx: egui::Context,
-        app: HoneydewApp,
+        app: BanaForgeApp,
         rec: Recorder,
         time: f64,
         /// How often the app tried to open the audio output.
@@ -3091,9 +3208,9 @@ mod tests {
             let files = without_factory(ProjectFiles::with_provider(Box::new(MemFiles::default())));
             let mut rig = Self {
                 ctx: egui::Context::default(),
-                app: HoneydewApp {
+                app: BanaForgeApp {
                     files,
-                    ..HoneydewApp::default()
+                    ..BanaForgeApp::default()
                 },
                 rec: Recorder::default(),
                 time: 0.0,
@@ -3247,7 +3364,7 @@ mod tests {
         }
 
         /// Applies undo while a modal message, dialog or popup shows, then advances a frame. Ctrl+Z waits under
-        /// A modal, but [`HoneydewApp::step`] can receive undo from other callers.
+        /// A modal, but [`BanaForgeApp::step`] can receive undo from other callers.
         fn undo_under_modal(&mut self) {
             let ctx = self.ctx.clone();
             self.app.step(&ctx, Step::Undo, 0);
@@ -3294,7 +3411,7 @@ mod tests {
     fn a_live_key_on_a_selected_notes_lane_takes_the_notes_lane_path() {
         use crate::audio_engine::SongAudioEngine;
         use crate::ui::clips::ClipRef;
-        use honeydew_audio::device::AudioRenderer;
+        use banaforge_audio::device::AudioRenderer;
         let mut rig = Rig::new();
         rig.app.add_default_drums(0);
         let channel = &mut rig.app.song.channels[1];
@@ -3345,7 +3462,7 @@ mod tests {
     fn a_rebuild_sends_the_current_lane_again() {
         use crate::audio_engine::SongAudioEngine;
         use crate::ui::clips::ClipRef;
-        use honeydew_audio::device::AudioRenderer;
+        use banaforge_audio::device::AudioRenderer;
         let mut rig = Rig::new();
         rig.app.add_default_drums(0);
         let channel = &mut rig.app.song.channels[1];
@@ -3505,7 +3622,7 @@ mod tests {
         assert_eq!(rig.take(), ["Reopen 2", "Stop"]);
     }
 
-    /// Honeydew change: a stream that a report ended (a device gone, a sample-rate change: `device::stops`) reopens by
+    /// BanaForge change: a stream that a report ended (a device gone, a sample-rate change: `device::stops`) reopens by
     /// itself on the next frame, with no click, the transport kept.
     #[test]
     fn a_stream_a_report_ended_reopens_by_itself_on_the_next_frame() {
@@ -4256,7 +4373,7 @@ mod tests {
 
     #[test]
     fn an_edit_while_stopped_keeps_the_playhead_and_play_starts_there() {
-        use honeydew_audio::device::AudioRenderer;
+        use banaforge_audio::device::AudioRenderer;
         // Stopped at bar 3, in a four-bar song (bar 3 is past a shorter one's end, where Play wraps).
         const BAR_3: u64 = 2 * 4 * 128;
         let mut rig = Rig::with_synth();
@@ -4582,7 +4699,7 @@ mod tests {
     fn an_app_made_with_a_song_counts_it_as_saved() {
         let mut song = Song::default();
         song.add_channel(ChannelKind::Drums);
-        let mut app = HoneydewApp::with_song(song.clone());
+        let mut app = BanaForgeApp::with_song(song.clone());
         // New and Open replace it without asking about unsaved changes.
         assert!(!app.files.modified());
         // An undo goes back to it, not to an empty song.
@@ -4794,7 +4911,7 @@ mod tests {
             r#"{"theme": 6, "showHardwareMeters": false}"#.into(),
         );
         let mut rig = Rig::new();
-        rig.app = HoneydewApp::with_storage(Some(Box::new(spy.clone())));
+        rig.app = BanaForgeApp::with_storage(Some(Box::new(spy.clone())));
         assert!(rig.background_is(6));
         assert!(!rig.texts().contains(&"CPU".to_owned()));
         // Loading is not a change: nothing is written back.
@@ -4838,11 +4955,11 @@ mod tests {
         // Defaults: middle C (MIDI 60) is C5, no key names.
         let mut rig = Rig::with_synth();
         let texts = rig.texts();
-        assert!(has(&texts, "C4") && has(&texts, "C5"), "{texts:?}");
+        assert!(!has(&texts, "C4") && !has(&texts, "C5"), "{texts:?}");
         assert!(!has(&texts, "C3") && !has(&texts, "D"));
         rig.app.settings.middle_c_is_c4 = true;
         let texts = rig.texts();
-        assert!(has(&texts, "C3") && has(&texts, "C4"), "{texts:?}");
+        assert!(!has(&texts, "C3") && !has(&texts, "C4"), "{texts:?}");
         rig.app.settings.key_names = true;
         let texts = rig.texts();
         for name in ["C3", "D", "E", "F", "G", "A", "B"] {
@@ -4855,7 +4972,7 @@ mod tests {
         assert!(!has(&texts, "C"), "{texts:?}");
         rig.app.settings.key_names = false;
         let texts = rig.texts();
-        assert!(has(&texts, "C3") && !has(&texts, "D"), "{texts:?}");
+        assert!(!has(&texts, "C3") && !has(&texts, "D"), "{texts:?}");
     }
 
     #[test]
@@ -5488,7 +5605,7 @@ mod tests {
 
     #[test]
     fn the_app_starts_with_a_song_created_now() {
-        let app = HoneydewApp::with_storage(None);
+        let app = BanaForgeApp::with_storage(None);
         let created = &app.song.file.meta.created;
         assert!(
             crate::ui::main_menu::meta_secs(created).is_some(),

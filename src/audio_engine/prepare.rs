@@ -10,11 +10,11 @@ use crate::audio_bridge::{SongAudioBridge, fine, playing_clips};
 use crate::panels::couple_scale;
 use crate::params::snap_echo_delay;
 use crate::song::{Clip, Event, Lane, LaneKind, ModuleInstance, PPQ, Song};
-use honeydew_audio::ProcessContext;
-use honeydew_audio::automation::{AutomationClip, AutomationPoint};
-use honeydew_audio::instrument::InstrumentModule;
-use honeydew_audio::note_effects::{NoteEffectModule, NoteEffectRack, NoteEffectTrace};
-use honeydew_audio::sequencer::{InputNoteEvent, NoteKind};
+use banaforge_audio::ProcessContext;
+use banaforge_audio::automation::{AutomationClip, AutomationPoint};
+use banaforge_audio::instrument::InstrumentModule;
+use banaforge_audio::note_effects::{NoteEffectModule, NoteEffectRack, NoteEffectTrace};
+use banaforge_audio::sequencer::{InputNoteEvent, NoteKind};
 
 /// The note actions' instance for the channel's pad sampler (instruments have ids ≥ 2).
 pub(super) const KIT: i32 = 0;
@@ -27,6 +27,11 @@ pub(super) enum Action {
         key: u8,
         velocity: f32,
         pan: f32,
+    },
+    Vocal {
+        instance_id: i32,
+        key: u8,
+        expression: banaforge_audio::vocal_synth::VocalExpression,
     },
     NoteOff {
         instance_id: i32,
@@ -211,6 +216,7 @@ pub(super) fn actions(
             )?;
         }
     }
+    super::vocal::actions(song, sample_rate, tempo_bpm, &mut actions)?;
     actions.sort_by_key(|action| action.frame);
     // A param changed several times at one frame gets only its last value (a Pitcher 2 Low Latency switch rebuilds).
     let mut later = HashSet::new();

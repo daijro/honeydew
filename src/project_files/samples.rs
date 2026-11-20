@@ -25,11 +25,13 @@ pub const RECORDINGS_FOLDER: &str = "My Recordings";
 pub const SAMPLE_EXTS: [&str; 4] = ["wav", "flac", "mp3", "ogg"];
 /// The user folder MIDI files go to.
 pub const MIDI_FOLDER: &str = "My MIDI";
+/// User-imported UTAU/OpenUtau-style voicebank archives.
+pub const VOICEBANKS_FOLDER: &str = "My Voicebanks";
 /// The user folders instruments (DirectWave programs, `.dwp`) and audio renders go to.
 pub const INSTRUMENTS_FOLDER: &str = "My Instruments";
 pub const TRACKS_FOLDER: &str = "My Tracks";
 /// The user folder's own folders, made at every start where they are missing ([`make_user_folders`]).
-pub const MY_FOLDERS: [&str; 11] = [
+pub const MY_FOLDERS: [&str; 12] = [
     CHORD_SETS_FOLDER,
     DRUMSETS_FOLDER,
     INSTRUMENTS_FOLDER,
@@ -41,6 +43,7 @@ pub const MY_FOLDERS: [&str; 11] = [
     SONGS_FOLDER,
     SOUNDFONTS_FOLDER,
     TRACKS_FOLDER,
+    VOICEBANKS_FOLDER,
 ];
 /// The flash after an `Import`.
 pub const IMPORTED: &str = "Successfully imported";
@@ -356,7 +359,8 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn the_user_folders_own_folders_are_made_where_missing() {
-        let user = std::env::temp_dir().join(format!("honeydew-my-folders-{}", std::process::id()));
+        let user =
+            std::env::temp_dir().join(format!("banaforge-my-folders-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&user);
         std::fs::create_dir_all(user.join(SAMPLES_FOLDER)).unwrap();
         std::fs::write(user.join(SAMPLES_FOLDER).join("kick.wav"), b"kick").unwrap();
@@ -377,6 +381,7 @@ mod tests {
             "My Songs",
             "My SoundFonts",
             "My Tracks",
+            "My Voicebanks",
         ];
         assert_eq!(made, all);
         assert!(all.iter().all(|f| user.join(f).is_dir()));
@@ -464,7 +469,7 @@ mod tests {
     #[test]
     fn the_recordings_folder_is_made_once_with_its_nomedia_file() {
         let user =
-            std::env::temp_dir().join(format!("honeydew-h11-nomedia-{}", std::process::id()));
+            std::env::temp_dir().join(format!("banaforge-h11-nomedia-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&user);
         let files = ProjectFiles {
             user: Some(user.clone()),
@@ -490,7 +495,8 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn on_the_desktop_the_sample_folders_list_their_folders_and_audio_files() {
-        let user = std::env::temp_dir().join(format!("honeydew-k2-samples-{}", std::process::id()));
+        let user =
+            std::env::temp_dir().join(format!("banaforge-k2-samples-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&user);
         let samples = user.join(SAMPLES_FOLDER);
         let kicks = samples.join("Kicks");

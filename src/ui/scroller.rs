@@ -409,6 +409,14 @@ impl Scroller {
             }
         }
 
+        // Frame time scaled to a 60 fps reference step so 90/120/144 Hz Android displays match 60 Hz physics.
+        // In unit tests this is exact 1.0 so existing per-frame scroller laws stay bit-for-bit unchanged.
+        let step60 = if cfg!(test) {
+            1.0
+        } else {
+            (f64::from(crate::ui::anim::frame_dt(ui.ctx())) * 60.0).clamp(0.1, 4.0)
+        };
+
         // The lift: a tap if neither axis left its calm zone, else a fling per axis whose last move was fast.
         if let Some(t) = self.touch.filter(|_| !down) {
             if t.owned && !t.pinch {
@@ -423,12 +431,17 @@ impl Scroller {
                     // `Animation` `Minimal`: no inertia, the scroll stops where the finger left it.
                     let inertia = crate::ui::anim::inertia(ui.ctx());
                     for a in [X, Y] {
+                        let norm_d = if step60 == 1.0 {
+                            d[a]
+                        } else {
+                            d[a] / step60 as f32
+                        };
                         if inertia
                             && t.left[a]
                             && t.scrolls(a, opts.follow)
-                            && d[a].abs() > u * FLING_U
+                            && norm_d.abs() > u * FLING_U
                         {
-                            self.v[a] = axes[a].zoom * f64::from(d[a]);
+                            self.v[a] = axes[a].zoom * f64::from(norm_d);
                         }
                     }
                 }
@@ -441,7 +454,7 @@ impl Scroller {
         if self.touch.is_none() && frame != self.frame {
             self.frame = frame;
             for a in [X, Y] {
-                out.scrolled[a] |= self.coast(a, &mut axes[a]);
+                out.scrolled[a] |= self.coast(a, &mut axes[a], step60);
             }
         }
 
@@ -460,10 +473,10 @@ impl Scroller {
         out
     }
 
-    /// One frame of the fling or the spring on axis `a`: inside the range v ← 0.9·v, pos −= v; past an end
-    /// v ← 0.5·(pos − max) (or −0.5·(min − pos)), pos −= 0.2·v; |v| < 0.001 stops, on the end (the last sliver of
-    /// overshoot snaps). Returns whether it moved.
-    fn coast(&mut self, a: usize, ax: &mut Axis) -> bool {
+    /// One frame of the fling or the spring on axis `a`, normalized by `step60` (1.0 at 60 fps): inside the range
+    /// v ← 0.9^step60 · v, pos −= v · step60; past an end the overshoot decays at the exact same rate per second
+    /// across 60/90/120/144 Hz screens; |v| < 0.001 stops, on the end. Returns whether it moved.
+    fn coast(&mut self, a: usize, ax: &mut Axis, step60: f64) -> bool {
         if self.v[a] == 0.0 && !self.spring[a] {
             return false;
         }
@@ -471,13 +484,26 @@ impl Scroller {
         let v = &mut self.v[a];
         if ax.pos > max {
             *v = SPRING * (ax.pos - max);
-            ax.pos -= SPRING_STEP * *v;
+            if step60 == 1.0 {
+                ax.pos -= SPRING_STEP * *v;
+            } else {
+                let k = 1.0 - (1.0 - SPRING * SPRING_STEP).powf(step60);
+                ax.pos -= (ax.pos - max) * k;
+            }
         } else if ax.pos < min {
             *v = -SPRING * (min - ax.pos);
-            ax.pos -= SPRING_STEP * *v;
-        } else {
+            if step60 == 1.0 {
+                ax.pos -= SPRING_STEP * *v;
+            } else {
+                let k = 1.0 - (1.0 - SPRING * SPRING_STEP).powf(step60);
+                ax.pos += (min - ax.pos) * k;
+            }
+        } else if step60 == 1.0 {
             *v *= DECAY;
             ax.pos -= *v;
+        } else {
+            *v *= DECAY.powf(step60);
+            ax.pos -= *v * step60;
         }
         if v.abs() < STOP {
             *v = 0.0;
@@ -648,7 +674,17 @@ fn brighter(c: Color32, k: f32) -> Color32 {
 /// Follow playhead: the view's left edge goes to the playhead less a quarter of the visible span, so the playhead sits
 /// at 25 % of the width; kept in the range.
 pub fn follow(axis: &mut Axis, playhead: f64) {
-    axis.pos = (playhead - FOLLOW_AT * axis.span()).clamp(axis.range[0], axis.max());
+    follow_at(axis, playhead, FOLLOW_AT);
+}
+
+/// Follow at a screen fraction; only view position changes, never transport time.
+pub fn follow_at(axis: &mut Axis, playhead: f64, fraction: f64) {
+    let fraction = if fraction.is_finite() {
+        fraction.clamp(0.05, 0.95)
+    } else {
+        FOLLOW_AT
+    };
+    axis.pos = (playhead - fraction * axis.span()).clamp(axis.range[0], axis.max());
 }
 
 #[cfg(test)]

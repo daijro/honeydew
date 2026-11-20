@@ -1,8 +1,8 @@
 use super::*;
 
 /// The Modules browser's list: `Paste`, `Rack Preset`, `Instrument`, then the sections. The NOTE EFFECT section's five entries are
-/// all the note effects of the registry. Lemon Reverb and Lemon Limiter are Honeydew's own (`honeydew_audio::lemon`), as is
-/// the Dynamic EQ, the De-esser, Denoise and Half Time. The built-in plugins (`crate::plugins::builtin`) are LEMON STUDIO,
+/// all the note effects of the registry. Banana Reverb and Banana Limiter are BanaForge's own (`banaforge_audio::banana`), as is
+/// the Dynamic EQ, the De-esser, Denoise and Half Time. The built-in plugins (`crate::plugins::builtin`) are BANANA STUDIO,
 /// last (#86): the instruments, then the effects, each by name.
 const SPEC: &[(&str, &[&str])] = &[
     ("", &["Paste", "Rack Preset", "Instrument"]),
@@ -17,6 +17,7 @@ const SPEC: &[(&str, &[&str])] = &[
             "SoundFont Player",
             "SuperSaw",
             "Transistor Bass",
+            "Vocal Synth",
         ],
     ),
     (
@@ -24,7 +25,7 @@ const SPEC: &[(&str, &[&str])] = &[
         &[
             "Reverb",
             "Reverb 2",
-            "Lemon Reverb",
+            "Banana Reverb",
             "Tape Delay",
             "Trance Delay",
         ],
@@ -40,7 +41,7 @@ const SPEC: &[(&str, &[&str])] = &[
             "Gate",
             "Leveller",
             "Limiter",
-            "Lemon Limiter",
+            "Banana Limiter",
             "Multiband Compressor",
             "Waveshaper",
         ],
@@ -88,31 +89,35 @@ const SPEC: &[(&str, &[&str])] = &[
         ],
     ),
     (
-        "LEMON STUDIO",
+        "BANANA STUDIO",
         &[
+            "Banana Drum Sampler",
+            "Banana Sampler",
+            "Banana Slicer",
+            "Banana Trio",
             "Citrus",
-            "Lemon Drum Sampler",
-            "Lemon Sampler",
-            "Lemon Slicer",
-            "Lemon Trio",
-            "Lemon Balance",
-            "Lemon Chorus",
-            "Lemon Delay",
-            "Lemon Fast Distortion",
-            "Lemon Filter",
-            "Lemon Flanger",
-            "Lemon Formula Controller",
-            "Lemon Parametric EQ",
-            "Lemon Peak Controller",
-            "Lemon Phaser",
-            "Lemon Soft Clipper",
-            "Lemon Stereo Enhancer",
-            "Lemon Stereo Shaper",
-            "Lemon Transient Processor",
-            "Lemon Vocoder",
+            "Banana Balance",
+            "Banana Chorus",
+            "Banana Delay",
+            "Banana Fast Distortion",
+            "Banana Filter",
+            "Banana Flanger",
+            "Banana Formula Controller",
+            "Banana Parametric EQ",
+            "Banana Peak Controller",
+            "Banana Phaser",
+            "Banana Soft Clipper",
+            "Banana Stereo Enhancer",
+            "Banana Stereo Shaper",
+            "Banana Transient Processor",
+            "Banana Vocoder",
             "Press",
             "Pulp Filter",
             "Tesla",
+            "Banana Fresh Air",
+            "Banana Soundgoodizer",
+            "Banana Blood Overdrive",
+            "Banana Gross Beat",
         ],
     ),
 ];
@@ -156,7 +161,7 @@ fn the_list_is_the_spec_table() {
             "FILTER",
             "MISC",
             "NOTE EFFECT",
-            "LEMON STUDIO"
+            "BANANA STUDIO"
         ]
     );
 }
@@ -175,9 +180,10 @@ fn every_current_effect_is_listed_once_and_legacy_ids_never() {
     }
     let mut listed_sorted = listed.clone();
     listed_sorted.sort();
-    let current: Vec<u16> = (params::modules().chain(&params::LEMON_MODULES))
+    let current: Vec<u16> = (params::modules().chain(&params::BANANA_MODULES))
         .chain([&params::DYNAMIC_EQ, &params::MODULATOR])
         .chain([&params::DE_ESSER, &params::DENOISE, &params::HALF_TIME])
+        .chain(&params::BANANA_POWER)
         .filter(|m| !m.legacy)
         .map(|m| m.id)
         .collect();
@@ -199,7 +205,7 @@ fn every_current_effect_is_listed_once_and_legacy_ids_never() {
 }
 
 /// The SYNTH rows' module ids by display name.
-const SYNTH_IDS: [(&str, u16); 8] = [
+const SYNTH_IDS: [(&str, u16); 9] = [
     ("3x Osc", 39),
     ("DW Sampler", 1),
     ("GMSynth", 2),
@@ -208,6 +214,7 @@ const SYNTH_IDS: [(&str, u16); 8] = [
     ("SoundFont Player", 52),
     ("SuperSaw", 23),
     ("Transistor Bass", 19),
+    ("Vocal Synth", 53),
 ];
 
 #[test]
@@ -229,12 +236,12 @@ fn where_no_instrument_goes_the_list_leaves_out_instrument_the_synths_and_the_no
         let all = names(&super::rows("", sort, Takes::Instruments));
         let some = names(&super::rows("", sort, Takes::Effects));
         let synths = SYNTH_IDS.map(|(name, _)| name);
-        let lemon = [
-            "Lemon Trio",
-            "Lemon Sampler",
+        let banana = [
+            "Banana Trio",
+            "Banana Sampler",
             "Citrus",
-            "Lemon Drum Sampler",
-            "Lemon Slicer",
+            "Banana Drum Sampler",
+            "Banana Slicer",
         ];
         let notes = [
             "NOTE EFFECT",
@@ -248,7 +255,7 @@ fn where_no_instrument_goes_the_list_leaves_out_instrument_the_synths_and_the_no
             *n == "Instrument"
                 || *n == "SYNTH"
                 || synths.contains(n)
-                || lemon.contains(n)
+                || banana.contains(n)
                 || notes.contains(n)
         };
         let kept: Vec<_> = all.iter().filter(|n| !gone(n)).copied().collect();
@@ -274,8 +281,8 @@ fn search_keeps_matching_entries_and_hides_empty_sections() {
             "ECHO",
             "Tape Delay",
             "Trance Delay",
-            "LEMON STUDIO",
-            "Lemon Delay"
+            "BANANA STUDIO",
+            "Banana Delay"
         ]
     );
     // Case is ignored, on both sides.
@@ -291,8 +298,8 @@ fn search_keeps_matching_entries_and_hides_empty_sections() {
             "Paste",
             "FILTER",
             "Spacer",
-            "LEMON STUDIO",
-            "Lemon Parametric EQ"
+            "BANANA STUDIO",
+            "Banana Parametric EQ"
         ],
         "the actions are entries too"
     );
@@ -304,8 +311,8 @@ fn search_keeps_matching_entries_and_hides_empty_sections() {
             "Equalizer",
             "Graphic EQ",
             "Tuned EQ",
-            "LEMON STUDIO",
-            "Lemon Parametric EQ"
+            "BANANA STUDIO",
+            "Banana Parametric EQ"
         ]
     );
     assert_eq!(
@@ -320,13 +327,13 @@ fn search_keeps_matching_entries_and_hides_empty_sections() {
             "Tremolo",
             "NOTE EFFECT",
             "Transpose",
-            "LEMON STUDIO",
+            "BANANA STUDIO",
+            "Banana Trio",
             "Citrus",
-            "Lemon Trio",
-            "Lemon Formula Controller",
-            "Lemon Parametric EQ",
-            "Lemon Peak Controller",
-            "Lemon Transient Processor",
+            "Banana Formula Controller",
+            "Banana Parametric EQ",
+            "Banana Peak Controller",
+            "Banana Transient Processor",
         ]
     );
     assert!(rows("zzz").is_empty());
@@ -902,7 +909,7 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             "Instrument",
             "Paste",
             "Rack Preset",
-            // Instruments: 0, 1, 2, 19, 23, 33, 39, 52.
+            // Instruments: 0, 1, 2, 19, 23, 33, 39, 52, 53.
             "MiniSynth",
             "DW Sampler",
             "GMSynth",
@@ -911,12 +918,13 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             "Slicer",
             "3x Osc",
             "SoundFont Player",
+            "Vocal Synth",
             // The built-in plugins, which have no type id of their own: by name.
+            "Banana Drum Sampler",
+            "Banana Sampler",
+            "Banana Slicer",
+            "Banana Trio",
             "Citrus",
-            "Lemon Drum Sampler",
-            "Lemon Sampler",
-            "Lemon Slicer",
-            "Lemon Trio",
             // Effects: 3 … 46, then the note effects 47 … 51.
             "Equalizer",
             "MultiFX",
@@ -954,29 +962,33 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             "Randomizer",
             "Scale",
             "Arpeggiator",
-            // Honeydew's own: 1002 … 1008, then the built-in plugin.
-            "Lemon Reverb",
-            "Lemon Limiter",
+            // BanaForge's own: 1002 … 1008, then the built-in plugin.
+            "Banana Reverb",
+            "Banana Limiter",
             "Dynamic EQ",
             "Modulator",
             "De-esser",
             "Denoise",
             "Half Time",
-            "Lemon Balance",
-            "Lemon Chorus",
-            "Lemon Delay",
-            "Lemon Fast Distortion",
-            "Lemon Filter",
-            "Lemon Flanger",
-            "Lemon Formula Controller",
-            "Lemon Parametric EQ",
-            "Lemon Peak Controller",
-            "Lemon Phaser",
-            "Lemon Soft Clipper",
-            "Lemon Stereo Enhancer",
-            "Lemon Stereo Shaper",
-            "Lemon Transient Processor",
-            "Lemon Vocoder",
+            "Banana Fresh Air",
+            "Banana Soundgoodizer",
+            "Banana Blood Overdrive",
+            "Banana Gross Beat",
+            "Banana Balance",
+            "Banana Chorus",
+            "Banana Delay",
+            "Banana Fast Distortion",
+            "Banana Filter",
+            "Banana Flanger",
+            "Banana Formula Controller",
+            "Banana Parametric EQ",
+            "Banana Peak Controller",
+            "Banana Phaser",
+            "Banana Soft Clipper",
+            "Banana Stereo Enhancer",
+            "Banana Stereo Shaper",
+            "Banana Transient Processor",
+            "Banana Vocoder",
             "Press",
             "Pulp Filter",
             "Tesla",
@@ -989,7 +1001,7 @@ fn top_level_lists_the_actions_then_the_instruments_then_the_effects_each_by_typ
             ModuleOrdering::TopLevel,
             Takes::Instruments
         )),
-        ["Trance Delay", "Tape Delay", "Lemon Delay"]
+        ["Trance Delay", "Tape Delay", "Banana Delay"]
     );
 }
 
@@ -1007,7 +1019,7 @@ fn a_z_lists_every_entry_by_its_name_naturally_with_no_sections() {
         (at("Pitcher 2"), at("Reverb 2"))
     );
     assert!(at("Note Echo") < at("Paste") && at("Paste") < at("Phaser"));
-    assert!(at("Graphic EQ") < at("Instrument") && at("Instrument") < at("Lemon Limiter"));
+    assert!(at("Banana Limiter") < at("Graphic EQ") && at("Graphic EQ") < at("Instrument"));
     assert!(at("Pitcher 2") < at("Rack Preset") && at("Rack Preset") < at("Randomizer"));
     // Without case: a byte compare would put `GMSynth` first.
     assert!(at("Gate") < at("GMSynth"));
@@ -1069,10 +1081,14 @@ fn dragging_scrolls_to_the_end_of_the_list_and_no_further() {
     // The drags pick nothing, and the last row now sits at the bottom of the list.
     assert_eq!(rig.action, None);
     assert!(!rig.shows("Paste"));
-    assert_eq!(rig.text_at("Tesla").y, list.bottom() - 24.0);
-    let at = rig.text_at("Tesla");
-    let tesla = "clap:org.openstudio.tesla";
-    assert_eq!(rig.click(at), Some(BrowserAction::Plugin(tesla)));
+    assert_eq!(rig.text_at("Banana Gross Beat").y, list.bottom() - 24.0);
+    let at = rig.text_at("Banana Gross Beat");
+    assert_eq!(
+        rig.click(at),
+        Some(BrowserAction::Pick(
+            banaforge_audio::banana_power::GROSS_BEAT
+        ))
+    );
 }
 
 #[test]
@@ -1094,7 +1110,7 @@ fn the_wheel_scrolls_the_list_only_over_it() {
     assert_eq!(rig.text_at("3x Osc").y, first);
     // And at the end.
     rig.wheel(pos2(200.0, 400.0), -5000.0);
-    assert_eq!(rig.text_at("Tesla").y, list.bottom() - 24.0);
+    assert_eq!(rig.text_at("Banana Gross Beat").y, list.bottom() - 24.0);
 }
 
 #[test]
@@ -1490,6 +1506,7 @@ fn bare_frame(
         panel.show(ctx, &cx, &chrome, |_| {
             (rows.iter())
                 .map(|&(name, folder)| PanelRow {
+                    font: None,
                     name,
                     folder,
                     sub: None,
@@ -1610,4 +1627,20 @@ fn a_drag_on_the_scrollbar_moves_the_list_by_its_share_and_a_swipe_on_the_rows_s
         panel.scroll_y,
         at + 120.0
     );
+}
+
+#[test]
+fn banana_power_effects_are_visible_and_selectable_for_audio_racks() {
+    for (id, name) in banaforge_audio::banana_power::IDS
+        .into_iter()
+        .zip(banaforge_audio::banana_power::NAMES)
+    {
+        let found = super::rows(name, ModuleOrdering::Category, Takes::Effects);
+        assert!(
+            found
+                .iter()
+                .any(|row| matches!(row, Row::Item(Entry::Module(got)) if *got == id)),
+            "{name} not selectable"
+        );
+    }
 }

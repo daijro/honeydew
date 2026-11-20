@@ -13,10 +13,10 @@
 
 use std::collections::HashMap;
 
+use banaforge_audio::sample_edit::speed_semitones;
 use eframe::egui::{
     Align2, Color32, Id, Painter, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2,
 };
-use honeydew_audio::sample_edit::speed_semitones;
 
 use crate::icons::IconId;
 use crate::metrics::{FontSize, Metrics};

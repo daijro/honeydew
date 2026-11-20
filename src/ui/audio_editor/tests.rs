@@ -1,10 +1,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use banaforge_audio::sample::{SampleData, SampleMeta};
+use banaforge_audio::sample_edit::peaks;
 use eframe::egui::epaint::ClippedShape;
 use eframe::egui::{Color32, Pos2, Rect, Shape, UiBuilder, Vec2, pos2, vec2};
-use honeydew_audio::sample::{SampleData, SampleMeta};
-use honeydew_audio::sample_edit::peaks;
 
 use super::*;
 use crate::audio_link::AudioLink;
@@ -982,7 +982,7 @@ impl AppRig {
 fn a_clip_on_a_project_made_wav_shows_its_waveform_and_a_vol_drag_is_one_undo_step() {
     let mut files = ProjectFiles::with_provider(Box::new(MemFiles::default()));
     let tone: Vec<f32> = (0..22_050).map(|i| (i as f32 * 0.05).sin() * 0.8).collect();
-    let bytes = honeydew_audio::wav_writer::float32_wav(44_100, &[tone]);
+    let bytes = banaforge_audio::wav_writer::float32_wav(44_100, &[tone]);
     files.keep_user_file(Path::new("My Samples/tone.wav"), bytes);
     let mut song = song();
     slot(&mut song).file.path = Some(user("My Samples/tone.wav"));
@@ -1030,7 +1030,8 @@ fn a_clip_on_a_project_made_wav_shows_its_waveform_and_a_vol_drag_is_one_undo_st
         edits.push(rig.frame(vec![egui::Event::PointerMoved(q)]).1);
     }
     edits.push(rig.frame(vec![press(p + vec2(100.0, -50.0), false)]).1);
-    assert_eq!(edits.iter().flatten().count(), 1, "{edits:?}");
+    assert_eq!(edits.iter().filter(|e| **e == Some(SongEdit::Final)).count(), 1, "{edits:?}");
+    assert!(edits.contains(&Some(SongEdit::Audition)), "drag must reach playback live");
     assert_eq!(edits.last(), Some(&Some(SongEdit::Final)));
     let moved = points::points(clip(&rig.song), VOL);
     assert_eq!(moved.len(), 1);
@@ -1696,4 +1697,57 @@ fn a_second_finger_cancels_a_stretch_drag() {
     fresh.run(vec![]);
     assert_ne!(rig.ed.handle.unwrap().center(), handle);
     assert_eq!(rig.ed.handle, fresh.ed.handle);
+}
+
+#[test]
+fn waveform_quality_changes_actual_editor_geometry_but_not_song_or_source() {
+    use crate::ui::waveform_quality::WaveformQuality as Quality;
+    let mut rig = Rig::new(song(), Some(sample(1000, vec![0.5; 1000], None)));
+    let before = rig.song.clone();
+    let data = rig.sample.as_ref().unwrap().data.clone();
+    let summary = rig.sample.as_ref().unwrap().summary.clone();
+    let color = wave_color(&rig.song);
+    let high = rig.quads(color);
+    let mut count = high.len();
+    for q in [Quality::Balanced, Quality::Performance] {
+        q.publish(&rig.off.ctx);
+        rig.run(vec![]);
+        let cols = rig.quads(color);
+        assert!(cols.len() < count);
+        count = cols.len();
+        if q == Quality::Performance {
+            assert!(cols.iter().all(|r| (r.width() - 1.0).abs() < 0.001));
+            assert!(cols.windows(2).all(|p| p[1].left() > p[0].right()));
+        }
+    }
+    Quality::High.publish(&rig.off.ctx);
+    rig.run(vec![]);
+    assert_eq!(rig.quads(color), high);
+    assert_eq!(rig.song, before);
+    assert!(Arc::ptr_eq(&rig.sample.as_ref().unwrap().data, &data));
+    assert!(Arc::ptr_eq(&rig.sample.as_ref().unwrap().summary, &summary));
+}
+
+
+#[test]
+fn clip_envelope_audio_editor_pan_updates_shared_data_during_drag_and_cancels_safely() {
+    let mut song=song();
+    let original=vec![Point {tick:64,value:32768,..Default::default()},Point {tick:256,value:32768,..Default::default()}];
+    points::set_points(&mut song.channels[1].lanes[0].clips[0],PointKey::Envelope(1),original.clone());
+    let mut rig=AppRig {off:Offscreen::new(),song,audio:AudioLink::default(),state:views::audio_editor::State {clips:[(1,(0,1))].into(),..Default::default()},settings:Settings::default(),files:ProjectFiles::with_provider(Box::new(MemFiles::default()))};
+    rig.state.editor.lane=1;rig.frame(vec![]);
+    let m=metrics();let f=Frame::new(Regions::new(SCREEN,&m).editor,&m);
+    let p=pos2(f.grid.left()+64.0,f.point_y(32768,65535));
+    rig.frame(vec![egui::Event::PointerMoved(p)]);rig.frame(vec![press(p,true)]);
+    let moved=p+vec2(40.0,-60.0);
+    assert_eq!(rig.frame(vec![egui::Event::PointerMoved(moved)]).1,Some(SongEdit::Audition));
+    let live=points::points(clip(&rig.song),PointKey::Envelope(1));assert_ne!(live,original);
+    assert_eq!(rig.frame(vec![press(moved,false)]).1,Some(SongEdit::Final));
+    assert_eq!(points::points(clip(&rig.song),PointKey::Envelope(1)),live);
+    // A later external edit is visible in the same editor; it does not clone envelope state.
+    points::set_points(&mut rig.song.channels[1].lanes[0].clips[0],PointKey::Envelope(1),original.clone());
+    rig.frame(vec![]);rig.frame(vec![egui::Event::PointerMoved(p)]);rig.frame(vec![press(p,true)]);
+    rig.frame(vec![egui::Event::PointerMoved(moved)]);
+    rig.frame(vec![egui::Event::WindowFocused(false)]);
+    assert_eq!(points::points(clip(&rig.song),PointKey::Envelope(1)),original);
 }

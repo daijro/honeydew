@@ -10,3 +10,6 @@ content-out/
 *.keystore
 /docs/
 __pycache__/
+
+# Local investigation downloads and build scratch files.
+.cache/

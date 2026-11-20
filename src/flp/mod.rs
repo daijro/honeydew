@@ -1,8 +1,8 @@
 //! FL Studio desktop projects (`.flp`). The event container ([`container`], [`event`], [`check`], [`error`]) is
-//! vendored from Lemon Studio's `os-flp` (GPL-3.0-or-later, credited in `THIRD_PARTY_NOTICES.md`); the mapping both
-//! ways is Honeydew's own: [`import`] reads a project into a [`crate::song::Song`], [`export`] writes one.
+//! vendored from Banana Studio's `os-flp` (GPL-3.0-or-later, credited in `THIRD_PARTY_NOTICES.md`); the mapping both
+//! ways is BanaForge's own: [`import`] reads a project into a [`crate::song::Song`], [`export`] writes one.
 //!
-//! The event ids are the public FLP event list (as PyFLP and Lemon Studio document it): an id's size class is its
+//! The event ids are the public FLP event list (as PyFLP and Banana Studio document it): an id's size class is its
 //! range (0–63 a byte, 64–127 a word, 128–191 a dword, 192–255 a varint length and data), so an unknown event is
 //! always skipped whole.
 
@@ -22,7 +22,7 @@ pub use event::{Event, Value};
 /// The file type.
 pub const FLP_EXT: &str = "flp";
 
-/// The event ids Honeydew reads or writes.
+/// The event ids BanaForge reads or writes.
 pub(crate) mod id {
     pub const CH_ENABLED: u8 = 0;
     /// Before FL 4: the channel's volume and pan bytes.

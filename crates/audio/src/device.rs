@@ -1,3 +1,7 @@
+#[cfg(target_os = "android")]
+#[path = "device_android.rs"]
+mod android_output;
+
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering, fence};
 use std::sync::{Arc, Mutex, PoisonError};
 #[cfg(not(target_arch = "wasm32"))]
@@ -41,7 +45,7 @@ pub struct Modulated {
 pub struct OutputSnapshot {
     pub transport_tick: u64,
     pub cpu_load: f32,
-    /// The callbacks since the stream started that took longer than their buffer lasts: each one an underrun.
+    /// Backend-reported xruns (or callback deadline misses where the backend has no xrun counter).
     pub underruns: u64,
     pub module_meters: Vec<ModuleMeter>,
     pub stream_failed: bool,
@@ -343,7 +347,7 @@ impl Visual {
 }
 
 /// The level meters' release (#41), in dB a second, whatever the sample rate, the buffer size and the UI's frame rate.
-/// Honeydew change (#135): twice the earlier 20.9 dB/s at 48 kHz (19.2 at 44.1 kHz), so a meter shows the level sooner.
+/// BanaForge change (#135): twice the earlier 20.9 dB/s at 48 kHz (19.2 at 44.1 kHz), so a meter shows the level sooner.
 const RELEASE_DB_PER_S: f32 = 40.0;
 
 /// A released level under −96 dB, the floor of the deepest meter scale (the Compressor's), is silence: a meter comes
@@ -543,6 +547,8 @@ struct Shared {
     /// [`clock`]'s epoch ([`AudioOutput::snapshot_at`], [`CallbackState::callback`]).
     clocked: AtomicBool,
     origin: AtomicI64,
+    /// Callback heartbeat on the same monotonic clock; detect silently disconnected native streams.
+    last_callback: AtomicI64,
     /// The commands the audio thread has taken from the queue ([`OutputSnapshot::taken`]).
     taken: AtomicU64,
     /// Each sub-block's transport tick, as the meters' visual frames ([`OutputSnapshot::heard_tick`]).
@@ -624,10 +630,16 @@ pub enum StartError<E> {
     Build(cpal::Error),
     Play(cpal::Error),
     UnsupportedSampleFormat,
+    #[cfg(target_os = "android")]
+    Android(String),
 }
 
 pub struct AudioOutput<R: AudioRenderer> {
     stream: Option<cpal::Stream>,
+    #[cfg(target_os = "android")]
+    android_stream: Option<oboe::AudioStreamAsync<oboe::Output, android_output::Callback<R>>>,
+    #[cfg(target_os = "android")]
+    diagnostic_at: i64,
     sender: Sender<CallbackCommand<R>>,
     retired: Receiver<(Box<R>, Arc<MeterBank>)>,
     shared: Arc<Shared>,
@@ -643,6 +655,8 @@ pub struct AudioOutput<R: AudioRenderer> {
     /// The stream frame the last snapshot showed on the output clock: a clock that moves later (a callback later than
     /// any before it) holds the visuals there, never back.
     heard: u64,
+    /// Last confirmed audible transport position; never substitute a future ring entry.
+    heard_tick: u64,
 }
 
 impl<R: AudioRenderer> AudioOutput<R> {
@@ -693,11 +707,12 @@ impl<R: AudioRenderer> AudioOutput<R> {
     where
         F: FnOnce(u32) -> Result<R, E>,
     {
+        // Android uses AAudio's native hardware FastMixer rate (typically 48 kHz) when no project rate is
+        // requested, avoiding AudioFlinger software resampling and reducing buffer underruns (#145/#156).
         let rate = match rate {
             0 if cfg!(any(
                 target_os = "linux",
                 target_os = "freebsd",
-                target_os = "android",
                 target_arch = "wasm32"
             )) =>
             {
@@ -727,49 +742,61 @@ impl<R: AudioRenderer> AudioOutput<R> {
         let renderer = make_renderer(sample_rate).map_err(StartError::Renderer)?;
         let (mut output, state) = Self::unstarted(renderer, sample_rate);
         output.buffer_mode = mode;
-        let error_shared = output.shared.clone();
-        let error = move |error: cpal::Error| error_shared.report(&error);
-        let config = output_config(&device, &supported, mode);
-        let stream = match supported.sample_format() {
-            cpal::SampleFormat::I8 => {
-                build_stream::<i8, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::I16 => {
-                build_stream::<i16, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::I24 => {
-                build_stream::<cpal::I24, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::I32 => {
-                build_stream::<i32, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::I64 => {
-                build_stream::<i64, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::U8 => {
-                build_stream::<u8, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::U16 => {
-                build_stream::<u16, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::U32 => {
-                build_stream::<u32, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::U64 => {
-                build_stream::<u64, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::F32 => {
-                build_stream::<f32, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::F64 => {
-                build_stream::<f64, _, _>(&device, config, channels, state, error)
-            }
-            _ => return Err(StartError::UnsupportedSampleFormat),
+        #[cfg(target_os = "android")]
+        {
+            output.android_stream = Some(android_output::open(mode, sample_rate, state)
+                .map_err(|err| {
+                    android_output::diagnostic(format!("Audio profile {mode:?} failed: {err}; playback unavailable, project unchanged"));
+                    StartError::Android(err)
+                })?);
+            return Ok(output);
         }
-        .map_err(StartError::Build)?;
-        stream.play().map_err(StartError::Play)?;
-        output.stream = Some(stream);
-        Ok(output)
+        #[cfg(not(target_os = "android"))]
+        {
+            let error_shared = output.shared.clone();
+            let error = move |error: cpal::Error| error_shared.report(&error);
+            let config = output_config(&device, &supported, mode);
+            let stream = match supported.sample_format() {
+                cpal::SampleFormat::I8 => {
+                    build_stream::<i8, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::I16 => {
+                    build_stream::<i16, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::I24 => {
+                    build_stream::<cpal::I24, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::I32 => {
+                    build_stream::<i32, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::I64 => {
+                    build_stream::<i64, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::U8 => {
+                    build_stream::<u8, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::U16 => {
+                    build_stream::<u16, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::U32 => {
+                    build_stream::<u32, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::U64 => {
+                    build_stream::<u64, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::F32 => {
+                    build_stream::<f32, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::F64 => {
+                    build_stream::<f64, _, _>(&device, config, channels, state, error)
+                }
+                _ => return Err(StartError::UnsupportedSampleFormat),
+            }
+            .map_err(StartError::Build)?;
+            stream.play().map_err(StartError::Play)?;
+            output.stream = Some(stream);
+            Ok(output)
+        }
     }
 
     /// An output with no stream yet playing `renderer` at `sample_rate`, and the callback state a stream runs.
@@ -799,6 +826,10 @@ impl<R: AudioRenderer> AudioOutput<R> {
         };
         let output = Self {
             stream: None,
+            #[cfg(target_os = "android")]
+            android_stream: None,
+            #[cfg(target_os = "android")]
+            diagnostic_at: 0,
             sender,
             retired,
             shared,
@@ -809,6 +840,7 @@ impl<R: AudioRenderer> AudioOutput<R> {
             buffer_mode: BufferMode::Native,
             sent: 0,
             heard: 0,
+            heard_tick: state.renderer.transport_tick(),
         };
         (output, state)
     }
@@ -876,6 +908,8 @@ impl<R: AudioRenderer> AudioOutput<R> {
         let tick = self.shared.tick.load(Ordering::Acquire);
         let playing = self.transport_playing;
         drop(self.stream.take());
+        #[cfg(target_os = "android")]
+        drop(self.android_stream.take());
         self.shared.failed.store(true, Ordering::Release);
         let mut replacement = Self::start_with_mode_at(mode, rate, make_renderer)?;
         let _ = replacement.send(AudioCommand::Seek(tick));
@@ -982,16 +1016,42 @@ impl<R: AudioRenderer> AudioOutput<R> {
         let ticks: Vec<_> = (self.shared.ticks.iter())
             .filter_map(|v| v.read(|v| v.tick.load(Ordering::Relaxed)))
             .collect();
-        // The sub-block heard last, else the oldest kept (as the meters).
+        // Only completed audible sub-blocks may advance the playhead. During
+        // startup (or when latency exceeds the ring), every entry can be future.
         let heard = ticks.iter().filter(|(end, _)| *end <= upto).max();
+        if let Some(&(_, tick)) = heard {
+            self.heard_tick = tick;
+        }
+        #[cfg(target_os = "android")]
+        if let Some(stream) = &self.android_stream {
+            use oboe::{AudioStreamBase, AudioStreamSafe};
+            if let Some(now) = now.filter(|n| n.saturating_sub(self.diagnostic_at) >= 5_000_000_000)
+            {
+                self.diagnostic_at = now;
+                android_output::diagnostic(format!(
+                    "BanaForge audio: mode={:?} backend=Oboe/{:?} rate={}Hz callback={} frames buffer={} frames callback_CPU_load={:.1}% hardware_xruns={:?} reported_xruns_or_deadline_misses={}",
+                    self.buffer_mode,
+                    stream.get_audio_api(),
+                    stream.get_sample_rate(),
+                    self.shared.buffer_frames.load(Ordering::Acquire),
+                    stream.get_buffer_size_in_frames(),
+                    f32::from_bits(self.shared.cpu.load(Ordering::Acquire)) * 100.0,
+                    stream.get_xrun_count(),
+                    self.shared.underruns.load(Ordering::Acquire)
+                ));
+            }
+        }
         OutputSnapshot {
             transport_tick,
-            heard_tick: heard
-                .or(ticks.iter().min())
-                .map_or(transport_tick, |&(_, t)| t),
+            heard_tick: self.heard_tick,
             cpu_load: f32::from_bits(self.shared.cpu.load(Ordering::Acquire)),
             underruns: self.shared.underruns.load(Ordering::Acquire),
-            stream_failed: self.shared.failed.load(Ordering::Acquire),
+            stream_failed: self.shared.failed.load(Ordering::Acquire) || {
+                let last = self.shared.last_callback.load(Ordering::Acquire);
+                cfg!(target_os = "android")
+                    && last > 0
+                    && now.is_some_and(|now| now.saturating_sub(last) > 3_000_000_000)
+            },
             module_meters: self.meters.take(upto, self.sample_rate),
             modulated: (self.meters.3.iter())
                 .map(|(m, cell)| Modulated {
@@ -1022,6 +1082,16 @@ fn output_config(
     if mode == BufferMode::Native || cfg!(target_os = "ios") {
         return config;
     }
+    if cfg!(target_os = "android") {
+        config.buffer_size = match mode {
+            BufferMode::Fast => BufferSize::Fixed(256),
+            BufferMode::Safe => BufferSize::Fixed(1024),
+            BufferMode::UltraSafe => BufferSize::Fixed(2048),
+            BufferMode::Fixed(frames) => BufferSize::Fixed(frames),
+            BufferMode::Native => BufferSize::Default,
+        };
+        return config;
+    }
     let Some((min, max)) = device
         .supported_output_configs()
         .ok()
@@ -1039,8 +1109,17 @@ fn output_config(
         })
         .min_by_key(|(min, _)| *min)
     else {
-        if let (true, BufferMode::Fixed(frames)) = (cfg!(target_os = "android"), mode) {
-            config.buffer_size = BufferSize::Fixed(frames);
+        if cfg!(target_os = "android") {
+            let frames = match mode {
+                BufferMode::UltraSafe => Some(1024),
+                BufferMode::Safe => Some(512),
+                BufferMode::Fast => Some(192),
+                BufferMode::Fixed(frames) => Some(frames),
+                BufferMode::Native => None,
+            };
+            if let Some(frames) = frames {
+                config.buffer_size = BufferSize::Fixed(frames);
+            }
         }
         return config;
     };
@@ -1134,6 +1213,7 @@ impl<R: AudioRenderer> CallbackState<R> {
         #[cfg(not(target_arch = "wasm32"))]
         let start = Instant::now();
         if let Some(now) = now {
+            self.shared.last_callback.store(now, Ordering::Release);
             let ahead = self.frames as f64 * 1e9 / f64::from(sample_rate);
             let mut origin = now - ahead as i64;
             if let Some((last, at)) = self.clock {
@@ -1465,6 +1545,26 @@ mod tests {
         }
     }
 
+    #[test]
+    fn future_rendered_ticks_do_not_start_the_audible_playhead() {
+        let (mut output, mut state) = output();
+        state.renderer.playing = true;
+        state.renderer.stamp = true;
+        let mut buffer = vec![0.0; 1920];
+        // Callback queues audio with its playback origin one second in the future.
+        state.run(&mut buffer, Some(1_000_000_000));
+        let early = output.snapshot_at(Some(0));
+        assert!(early.transport_tick > 0);
+        assert_eq!(early.heard_tick, 0);
+        let audible = output.snapshot_at(Some(1_020_000_000));
+        assert!(audible.heard_tick > 0);
+        // A stalled clock must not consume any future ticks.
+        assert_eq!(
+            output.snapshot_at(Some(1_020_000_000)).heard_tick,
+            audible.heard_tick
+        );
+    }
+
     fn renderer() -> TestRenderer {
         TestRenderer {
             tick: 0,
@@ -1541,7 +1641,12 @@ mod tests {
             let snapshot = output.snapshot_at(Some(ns(clock)));
             let shown = snapshot.module_meters[0].analysis[0];
             // Playing from 0, the tick counts the frames.
-            assert_eq!(snapshot.heard_tick as f32, shown, "UI frame {frame}");
+            if frame > 0 {
+                assert_eq!(snapshot.heard_tick as f32, shown, "UI frame {frame}");
+            } else {
+                // Analysis may preview the oldest entry; transport must not.
+                assert_eq!(snapshot.heard_tick, 0);
+            }
             if frame >= 30 {
                 let step = shown - last;
                 assert!(
@@ -1833,7 +1938,7 @@ mod tests {
     }
 
     /// The level meters fall at one release whatever the sample rate, the buffer size and the UI's frame rate (#41):
-    /// 40 dB/s from each peak's sub-block on (Honeydew change, #135: the earlier ×0.95 per 1024 frames was about 20).
+    /// 40 dB/s from each peak's sub-block on (BanaForge change, #135: the earlier ×0.95 per 1024 frames was about 20).
     /// A full-scale burst over the first 2048 frames reads −20.1 dB at frame 26112, half a second after it ends at
     /// 48 kHz, and −21.8 dB at 44.1 kHz, 0.55 s after.
     #[test]

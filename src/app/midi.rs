@@ -1,10 +1,10 @@
 //! MIDI input in the app. Each frame the device link's messages go through the [`Router`], and its outputs are executed
 //! here:
-//! - notes play on the selected channel and on each monitoring instrument or drum channel (Honeydew's own; each once)
-//!   the way the on-screen keyboard's do ([`HoneydewApp::key_on`]); each key of a chord sounds, and a key ends on the
+//! - notes play on the selected channel and on each monitoring instrument or drum channel (BanaForge's own; each once)
+//!   the way the on-screen keyboard's do ([`BanaForgeApp::key_on`]); each key of a chord sounds, and a key ends on the
 //!   channels it began on. An armed instrument or drum channel takes them too, for REC, sounding only if it is one of
 //!   those. A channel takes only what its MIDI input lets through (`ChannelFileState::midi_input`), the selected one
-//!   too ([`HoneydewApp::midi_targets`]);
+//!   too ([`BanaForgeApp::midi_targets`]);
 //! - the sounding channels' own CC, pitch bend and aftertouch params are live engine values, no song edit;
 //! - a CC link sets its param on the channel that owns it, as a hand move does: the song-changed flag and no undo step,
 //!   and REC records it when it is the recent control. The undo history takes a burst's values [`BURST_SECS`] after its
@@ -12,16 +12,16 @@
 //! - while `Set MIDI Note` waits, the next note-on is the pad's note (one undo step), and it also plays;
 //! - while `Link to MIDI CC` waits ([`Overlay::LearnCc`] on top), the next CC of any number is linked to the recent
 //!   control: a record in its channel's `CCLK`, one undo step. `Link to Mod Wheel` links CC 1 at once and
-//!   `Unlink from MIDI CC` removes the param's links, one undo step each ([`HoneydewApp::link_cc`]).
+//!   `Unlink from MIDI CC` removes the param's links, one undo step each ([`BanaForgeApp::link_cc`]).
 //!
 //! With the master selected, notes and its CC params go nowhere, as the keyboard's; links still fire.
 
 use std::any::Any;
 
+use banaforge_audio::device::AudioCommand;
 use eframe::egui;
-use honeydew_audio::device::AudioCommand;
 
-use super::{HoneydewApp, START_ON_RELEASE, audio_gesture, typed};
+use super::{BanaForgeApp, START_ON_RELEASE, audio_gesture, typed};
 use crate::midi::device::{MidiChoice, MidiLink};
 use crate::midi::links::{self, song_links};
 use crate::midi::route::Target;
@@ -33,7 +33,7 @@ use crate::ui::views::{self, Nav, Overlay, SongEdit, View};
 pub(super) const BURST_SECS: f64 = 0.5;
 
 pub(super) struct Midi {
-    /// The input device. `HoneydewApp::new` makes it the platform's; the default lists and opens nothing.
+    /// The input device. `BanaForgeApp::new` makes it the platform's; the default lists and opens nothing.
     pub(super) link: MidiLink,
     pub(super) router: Router,
     /// The link first opens in a frame with a click: on the web that asks for MIDI access. Natively at once.
@@ -63,7 +63,7 @@ impl Default for Midi {
     }
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// The SETTINGS `Input device:` pick.
     fn midi_device(&self) -> MidiChoice {
         MidiChoice::from_label(&self.settings.midi_device)

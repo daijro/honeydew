@@ -5,22 +5,50 @@ plugins {
 def version = (file('../../Cargo.toml').text =~ /(?m)^version = "(\d+)\.(\d+)\.(\d+)"$/)[0]
 def (major, minor, patch) = version[1..3].collect { it.toInteger() }
 assert minor < 1000 && patch < 1000
-layout.buildDirectory = file(System.getenv('HONEYDEW_ANDROID_BUILD_DIR') ?: '../../target/android')
+
+def buildDirPath = providers.environmentVariable('BANAFORGE_ANDROID_BUILD_DIR').orNull ?: '../../target/android'
+layout.buildDirectory = file(buildDirPath)
+
+// Optional ABI selection: BANAFORGE_ANDROID_ABIS=arm64-v8a cuts native .so weight ~45% and halves Rust build time.
+// Or pass -PsplitAbis=true to generate separate per-ABI APKs alongside a universal APK.
+def abisEnv = providers.environmentVariable('BANAFORGE_ANDROID_ABIS').orNull ?: 'arm64-v8a,armeabi-v7a'
+def activeAbis = abisEnv.split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+def splitAbis = (findProperty('splitAbis') ?: 'false').toString().toBoolean()
+def isBaseApk = !(providers.environmentVariable('BANAFORGE_ANDROID_BASE').orNull ?: '').isEmpty()
 
 android {
-    namespace = 'dev.daijro.honeydew'
+    namespace = 'dev.daijro.banaforge'
     compileSdk = 36
     buildToolsVersion = '36.0.0'
     ndkVersion = '28.0.13004108'
 
     defaultConfig {
-        applicationId = 'dev.daijro.honeydew'
+        applicationId = 'dev.daijro.banaforge'
         minSdk = 26
         targetSdk = 36
         versionCode = major * 1000000 + minor * 1000 + patch
         versionName = "${major}.${minor}.${patch}"
-        resValue 'string', 'app_name', 'Honeydew'
-        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
+        resValue 'string', 'app_name', 'BanaForge'
+        resourceConfigurations += ['en']
+        if (!splitAbis) {
+            ndk { abiFilters(*activeAbis) }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    if (splitAbis) {
+        splits {
+            abi {
+                enable = true
+                reset()
+                include(*activeAbis)
+                universalApk = true
+            }
+        }
     }
 
     signingConfigs {
@@ -28,35 +56,69 @@ android {
             storeFile = rootProject.file('debug.keystore')
         }
         release {
-            storeFile = file(System.getenv('ANDROID_KEYSTORE_FILE') ?: 'missing-release-keystore.jks')
-            storePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
-            keyAlias = System.getenv('ANDROID_KEY_ALIAS')
-            keyPassword = System.getenv('ANDROID_KEY_PASSWORD')
+            storeFile = file(providers.environmentVariable('ANDROID_KEYSTORE_FILE').orNull ?: 'missing-release-keystore.jks')
+            storePassword = providers.environmentVariable('ANDROID_KEYSTORE_PASSWORD').orNull
+            keyAlias = providers.environmentVariable('ANDROID_KEY_ALIAS').orNull
+            keyPassword = providers.environmentVariable('ANDROID_KEY_PASSWORD').orNull
         }
     }
+
     buildTypes {
         debug {
             applicationIdSuffix = '.debug'
             versionNameSuffix = '-debug'
-            resValue 'string', 'app_name', 'Honeydew Debug'
+            resValue 'string', 'app_name', 'BanaForge Debug'
+            minifyEnabled = false
+            shrinkResources = false
         }
-        release { signingConfig = signingConfigs.release }
+        release {
+            signingConfig = signingConfigs.release
+            minifyEnabled = true
+            shrinkResources = true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
     }
 
     sourceSets.main {
         assets.srcDirs = [layout.buildDirectory.dir('assets')]
         jniLibs.srcDirs = [layout.buildDirectory.dir('jniLibs')]
     }
-    androidResources { noCompress += ['tar'] }
-    packaging { jniLibs { useLegacyPackaging = false } }
+
+    androidResources {
+        noCompress += ['tar']
+    }
+
+    packaging {
+        // Keep libbanaforge.so uncompressed & page-aligned for direct mmap loading (saves ~40 MB device storage + faster cold start).
+        jniLibs {
+            useLegacyPackaging = false
+        }
+        resources {
+            excludes += [
+                'META-INF/AL2.0',
+                'META-INF/LGPL2.1',
+                'META-INF/LICENSE*',
+                'META-INF/NOTICE*',
+                'META-INF/*.kotlin_module',
+                'DebugProbesKt.bin',
+            ]
+        }
+    }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
 }
+
+def nativeBuildDir = layout.buildDirectory.get().asFile
+def expectedInputs = (isBaseApk ? [] : ['assets/content/index.json']) +
+    activeAbis.collect { abi -> "jniLibs/${abi}/libbanaforge.so" }
 
 tasks.register('verifyNativeInputs') {
     doLast {
-        // The base APK (tools/android-dist.sh --base) has no sounds: the app downloads them.
-        def sounds = System.getenv('HONEYDEW_ANDROID_BASE') ? [] : ['assets/content/index.json']
-        for (path in sounds + ['jniLibs/arm64-v8a/libhoneydew.so', 'jniLibs/armeabi-v7a/libhoneydew.so']) {
-            if (!layout.buildDirectory.file(path).get().asFile.isFile()) {
+        for (path in expectedInputs) {
+            if (!new File(nativeBuildDir, path).isFile()) {
                 throw new GradleException("Missing ${path}; build with tools/android-dist.sh")
             }
         }

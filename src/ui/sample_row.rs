@@ -26,7 +26,7 @@ use crate::icons::IconId;
 use crate::metrics::{FontSize, Metrics};
 use crate::params::{DRUM_SLOT_PARAMS, Fmt};
 use crate::song::{Clip, LaneKind, SamplerSlot, Song};
-use honeydew_audio::sample_edit::speed_semitones;
+use banaforge_audio::sample_edit::speed_semitones;
 
 /// The row's size, U: 30 wide (at most the area's width) and 2 high.
 const ROW_W: f32 = 30.0;

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use banaforge_audio::sample::SampleData;
 use eframe::egui::{pos2, vec2};
-use honeydew_audio::sample::SampleData;
 
 use super::*;
 
@@ -130,7 +130,7 @@ fn a_sample_strip_plays_its_pick_from_the_start_once_decoded_and_stops_once() {
 
 #[test]
 fn the_strips_waveform_is_the_playlists_columns_a_device_pixel_each() {
-    // Honeydew change (#124; #108 drew one smoothed band of held peaks scaled to the loudest): the playlist's
+    // BanaForge change (#124; #108 drew one smoothed band of held peaks scaled to the loudest): the playlist's
     // audio clips' law, each channel's min/max a device pixel a column, stereo in halves, at full scale. A 20 Hz tone at
     // half scale reaches half of its half's height and its right channel (a tenth of it) a tenth; silence is a 1 px line.
     let tone = |i: usize| 0.5 * (std::f32::consts::TAU * 20.0 * i as f32 / 1000.0).cos();

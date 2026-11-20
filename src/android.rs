@@ -3,7 +3,7 @@
 use std::ffi::CString;
 use std::io::Read;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use android_activity::{AndroidApp, ndk::asset::Asset};
@@ -13,19 +13,51 @@ use crate::recording::input::{InputRing, Mic};
 
 static ACTIVITY: Mutex<Option<AndroidApp>> = Mutex::new(None);
 static DISPLAY_DPI: AtomicU32 = AtomicU32::new(0);
+static CUTOUT_INSETS: [AtomicI32; 4] = [
+    AtomicI32::new(0),
+    AtomicI32::new(0),
+    AtomicI32::new(0),
+    AtomicI32::new(0),
+];
 
 /// The Activity refreshes physical density at creation and configuration changes; zero means unavailable.
 pub fn display_dpi() -> f32 {
     f32::from_bits(DISPLAY_DPI.load(Ordering::Relaxed))
 }
 
+/// Hardware display-cutout safe insets `[left, top, right, bottom]` in physical pixels (API 28+).
+pub fn cutout_insets_px() -> [i32; 4] {
+    [
+        CUTOUT_INSETS[0].load(Ordering::Relaxed),
+        CUTOUT_INSETS[1].load(Ordering::Relaxed),
+        CUTOUT_INSETS[2].load(Ordering::Relaxed),
+        CUTOUT_INSETS[3].load(Ordering::Relaxed),
+    ]
+}
+
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onDisplayDpi(
+pub extern "system" fn Java_dev_daijro_banaforge_BanaForgeActivity_onDisplayDpi(
     _env: jni::JNIEnv<'_>,
     _class: jni::objects::JClass<'_>,
     dpi: jni::sys::jfloat,
 ) {
     DISPLAY_DPI.store(dpi.to_bits(), Ordering::Relaxed);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_daijro_banaforge_BanaForgeActivity_onCutoutInsets(
+    _env: jni::JNIEnv<'_>,
+    _class: jni::objects::JClass<'_>,
+    left: jni::sys::jint,
+    top: jni::sys::jint,
+    right: jni::sys::jint,
+    bottom: jni::sys::jint,
+) {
+    CUTOUT_INSETS[0].store(left.max(0), Ordering::Relaxed);
+    CUTOUT_INSETS[1].store(top.max(0), Ordering::Relaxed);
+    CUTOUT_INSETS[2].store(right.max(0), Ordering::Relaxed);
+    CUTOUT_INSETS[3].store(bottom.max(0), Ordering::Relaxed);
+    wake_ui();
 }
 
 /// The microphone permission (`RECORD_AUDIO`): not asked (or the last answer was no, already told), asking, allowed,
@@ -36,7 +68,7 @@ const ASKING: u8 = 1;
 const GRANTED: u8 = 2;
 const DENIED: u8 = 3;
 
-/// Whether the app may record. The first call asks (`HoneydewActivity.askMic`): allowed already, else the system's
+/// Whether the app may record. The first call asks (`BanaForgeActivity.askMic`): allowed already, else the system's
 /// question shows and its answer comes back (`onMic`). A denial is told once; the next call asks again (after two
 /// denials Android answers at once, without the question).
 pub fn mic() -> Mic {
@@ -71,7 +103,7 @@ pub fn mic() -> Mic {
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onMic(
+pub extern "system" fn Java_dev_daijro_banaforge_BanaForgeActivity_onMic(
     _env: jni::JNIEnv<'_>,
     _class: jni::objects::JClass<'_>,
     granted: jni::sys::jboolean,
@@ -92,7 +124,7 @@ pub fn headphones() -> bool {
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onHeadphones(
+pub extern "system" fn Java_dev_daijro_banaforge_BanaForgeActivity_onHeadphones(
     _env: jni::JNIEnv<'_>,
     _class: jni::objects::JClass<'_>,
     on: jni::sys::jboolean,
@@ -100,13 +132,14 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onHeadphones(
     HEADPHONES.store(on != 0, Ordering::Release);
 }
 
-/// The inputs `Audio input:` lists (`HoneydewActivity.inputs`), as (device id, label): the phone's mics, a wired
+/// The inputs `Audio input:` lists (`BanaForgeActivity.inputs`), as (device id, label): the phone's mics, a wired
 /// headset's and USB audio. None when the Activity cannot say.
 pub fn inputs() -> Vec<(i32, String)> {
     let mut list = String::new();
     let listed = with_activity(|env, activity| {
         let got = env.call_method(activity, "inputs", "()Ljava/lang/String;", &[])?;
-        list = text(env, &got.l()?.into()).unwrap_or_default();
+        let got = env.auto_local(jni::objects::JString::from(got.l()?));
+        list = text(env, &got).unwrap_or_default();
         Ok(())
     });
     if let Err(err) = listed {
@@ -120,7 +153,7 @@ pub fn inputs() -> Vec<(i32, String)> {
 }
 
 /// Opens the input labelled `label` (one of [`inputs`]) at `rate` into a new ring: stereo float, else mono, at the
-/// default input preset and in the low-latency mode as cpal's default input (Honeydew change, #130). Through AAudio by
+/// default input preset and in the low-latency mode as cpal's default input (BanaForge change, #130). Through AAudio by
 /// its device id, as cpal opens a device by its name only, which a headset's mic shares with its earphones. (ndk's
 /// `audio` feature is cpal's, for its AAudio host.)
 pub fn open_input(
@@ -173,7 +206,7 @@ static RECORDING: Mutex<Option<Arc<RecordTap>>> = Mutex::new(None);
 static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 
 /// The recording under way, `tap` (each frame): while one runs, the app holds the audio focus
-/// (`HoneydewActivity.recording`), and a call, another app taking the focus, or the app leaving the screen ends its
+/// (`BanaForgeActivity.recording`), and a call, another app taking the focus, or the app leaving the screen ends its
 /// take there and then.
 pub fn recording(tap: Option<&Arc<RecordTap>>) {
     let mut held = RECORDING.lock().expect("recording lock");
@@ -199,7 +232,7 @@ pub fn interrupted() -> bool {
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onInterrupted(
+pub extern "system" fn Java_dev_daijro_banaforge_BanaForgeActivity_onInterrupted(
     _env: jni::JNIEnv<'_>,
     _class: jni::objects::JClass<'_>,
 ) {
@@ -210,45 +243,51 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onInterrupted(
 }
 
 /// `onPause`, before Android pauses the app thread, which then runs no frame until the app is back: the frame that
-/// writes the song's unsaved changes ([`crate::project_files::leave`]) runs first, waited for up to half a second.
+/// writes the song's unsaved changes ([`crate::project_files::leave_and_wait`]) runs first, woken via a Condvar
+/// with a 500 ms ceiling so the Android UI thread never busy-polls or triggers ANR.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onLeaving(
+pub extern "system" fn Java_dev_daijro_banaforge_BanaForgeActivity_onLeaving(
     _env: jni::JNIEnv<'_>,
     _class: jni::objects::JClass<'_>,
 ) {
-    crate::project_files::leave();
-    // ponytail: polled every 5 ms; a condvar if the wait ever shows.
-    for _ in 0..100 {
-        if !crate::project_files::leaving() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
+    crate::project_files::leave_and_wait(std::time::Duration::from_millis(500));
 }
 
-/// Back was pressed (Android 13 and up hand it to `HoneydewActivity`'s back callback, not as a key) and waits for
-/// the next frame ([`take_back`]), which [`BACK_WAKE`] asks for.
+/// Back was pressed (Android 13 and up hand it to `BanaForgeActivity`'s back callback, not as a key) and waits for
+/// the next frame ([`take_back`]), which [`UI_WAKE`] asks for.
 static BACK: AtomicBool = AtomicBool::new(false);
-static BACK_WAKE: std::sync::OnceLock<eframe::egui::Context> = std::sync::OnceLock::new();
+static UI_WAKE: Mutex<Option<eframe::egui::Context>> = Mutex::new(None);
 
-/// Back was pressed since the last call. `ctx` is the context a later press wakes.
-pub fn take_back(ctx: &eframe::egui::Context) -> bool {
-    BACK_WAKE.get_or_init(|| ctx.clone());
-    BACK.swap(false, Ordering::AcqRel)
-}
-
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onBack(
-    _env: jni::JNIEnv<'_>,
-    _class: jni::objects::JClass<'_>,
-) {
-    BACK.store(true, Ordering::Release);
-    if let Some(ctx) = BACK_WAKE.get() {
+fn wake_ui() {
+    let ctx = UI_WAKE
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .clone();
+    if let Some(ctx) = ctx {
         ctx.request_repaint();
     }
 }
 
-/// Android sends Back to the activity's back callback (Android 13 and up, `HoneydewActivity.onCreate`): its key event,
+/// Back was pressed since the last call. `ctx` is kept current so a recreated Activity still wakes the active UI.
+pub fn take_back(ctx: &eframe::egui::Context) -> bool {
+    let mut slot = UI_WAKE.lock().unwrap_or_else(|err| err.into_inner());
+    if slot.is_none() {
+        *slot = Some(ctx.clone());
+    }
+    drop(slot);
+    BACK.swap(false, Ordering::AcqRel)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_daijro_banaforge_BanaForgeActivity_onBack(
+    _env: jni::JNIEnv<'_>,
+    _class: jni::objects::JClass<'_>,
+) {
+    BACK.store(true, Ordering::Release);
+    wake_ui();
+}
+
+/// Android sends Back to the activity's back callback (Android 13 and up, `BanaForgeActivity.onCreate`): its key event,
 /// which comes too, is then not a second press.
 pub fn back_callback() -> bool {
     AndroidApp::sdk_version() >= 33
@@ -263,6 +302,34 @@ pub fn move_to_back() {
     if let Err(err) = moved {
         eprintln!("could not move to the background: {err}");
     }
+}
+
+/// Cleanly closes BanaForge and removes its task from Android Recents (issue #147).
+pub fn quit_app() {
+    let closed =
+        with_activity(|env, activity| env.call_method(activity, "quitApp", "()V", &[]).map(drop));
+    if let Err(err) = closed {
+        eprintln!("could not quit app: {err}");
+    }
+}
+
+/// Keeps the Android display awake while playback or recording is active.
+pub fn set_keep_screen_on(on: bool) {
+    let updated = with_activity(|env, activity| {
+        env.call_method(activity, "setKeepScreenOn", "(Z)V", &[on.into()])
+            .map(drop)
+    });
+    if let Err(err) = updated {
+        eprintln!("keep screen on not updated: {err}");
+    }
+}
+
+/// Fires a subtle native Android tactile tick for key UI confirmations.
+pub fn haptic_tick() {
+    let _ = with_activity(|env, activity| {
+        env.call_method(activity, "hapticTick", "()V", &[])
+            .map(drop)
+    });
 }
 
 /// What a document pick finishes with: the copy of the picked file, an error, or `None` when it was cancelled.
@@ -288,10 +355,10 @@ fn text(env: &mut jni::JNIEnv<'_>, s: &jni::objects::JString<'_>) -> Option<Stri
     (!s.is_null()).then(|| env.get_string(s).map(String::from).unwrap_or_default())
 }
 
-/// Opens the system document picker (`HoneydewActivity.openDocument`); `done` gets the pick, copied into the app's
+/// Opens the system document picker (`BanaForgeActivity.openDocument`); `done` gets the pick, copied into the app's
 /// cache (at most `max_bytes` + 1 bytes), on a Java thread.
 pub fn pick_document(max_bytes: u64, done: impl FnOnce(Picked) + Send + 'static) {
-    *PICKING.lock().expect("picker lock") = Some(Box::new(done));
+    *PICKING.lock().unwrap_or_else(|err| err.into_inner()) = Some(Box::new(done));
     let max = jni::sys::jlong::try_from(max_bytes).unwrap_or(jni::sys::jlong::MAX - 1);
     let opened = with_activity(|env, activity| {
         env.call_method(activity, "openDocument", "(J)V", &[max.into()])
@@ -303,7 +370,7 @@ pub fn pick_document(max_bytes: u64, done: impl FnOnce(Picked) + Send + 'static)
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onDocumentPicked(
+pub extern "system" fn Java_dev_daijro_banaforge_BanaForgeActivity_onDocumentPicked(
     mut env: jni::JNIEnv<'_>,
     _class: jni::objects::JClass<'_>,
     path: jni::objects::JString<'_>,
@@ -317,10 +384,10 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onDocumentPicke
     finish(&PICKING, picked);
 }
 
-/// Opens the system folder picker (`HoneydewActivity.openFolder`); `done` gets the files of the folder picked, listed
+/// Opens the system folder picker (`BanaForgeActivity.openFolder`); `done` gets the files of the folder picked, listed
 /// on a Java thread.
 pub fn pick_folder(done: impl FnOnce(PickedFolder) + Send + 'static) {
-    *PICKING_FOLDER.lock().expect("picker lock") = Some(Box::new(done));
+    *PICKING_FOLDER.lock().unwrap_or_else(|err| err.into_inner()) = Some(Box::new(done));
     let opened = with_activity(|env, activity| {
         env.call_method(activity, "openFolder", "()V", &[])
             .map(drop)
@@ -332,7 +399,7 @@ pub fn pick_folder(done: impl FnOnce(PickedFolder) + Send + 'static) {
 
 /// `files` alternates a path and its URI, each ending in `\0` (no name holds one).
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onFolderPicked(
+pub extern "system" fn Java_dev_daijro_banaforge_BanaForgeActivity_onFolderPicked(
     mut env: jni::JNIEnv<'_>,
     _class: jni::objects::JClass<'_>,
     files: jni::objects::JString<'_>,
@@ -352,10 +419,10 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onFolderPicked(
     finish(&PICKING_FOLDER, picked);
 }
 
-/// Copies each file `(document URI, user file)` on a Java thread (`HoneydewActivity.copyFiles`); `done` gets `None`
+/// Copies each file `(document URI, user file)` on a Java thread (`BanaForgeActivity.copyFiles`); `done` gets `None`
 /// once all are in, else why the copy stopped.
 pub fn copy_files(files: &[(String, PathBuf)], done: impl FnOnce(Option<String>) + Send + 'static) {
-    *COPYING.lock().expect("copy lock") = Some(Box::new(done));
+    *COPYING.lock().unwrap_or_else(|err| err.into_inner()) = Some(Box::new(done));
     let list: String = (files.iter())
         .map(|(from, to)| format!("{from}\0{}\0", to.display()))
         .collect();
@@ -375,7 +442,7 @@ pub fn copy_files(files: &[(String, PathBuf)], done: impl FnOnce(Option<String>)
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onFilesCopied(
+pub extern "system" fn Java_dev_daijro_banaforge_BanaForgeActivity_onFilesCopied(
     mut env: jni::JNIEnv<'_>,
     _class: jni::objects::JClass<'_>,
     error: jni::objects::JString<'_>,
@@ -387,7 +454,7 @@ pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onFilesCopied(
 /// `Settings::android_orientation`). The window then turns and resizes like a rotation (the manifest's `configChanges`
 /// keep the Activity), and the next frame lays out at the new size. A failure is only logged.
 ///
-/// PR #87: the Activity posts the request to its UI thread itself (`HoneydewActivity.requestOrientation`): changing a
+/// PR #87: the Activity posts the request to its UI thread itself (`BanaForgeActivity.requestOrientation`): changing a
 /// window's orientation from the app's own thread is not the UI thread's to do, and on some devices it wedges the
 /// window until the app is killed.
 pub fn request_orientation(orientation: i32) {
@@ -405,8 +472,8 @@ pub fn request_orientation(orientation: i32) {
     }
 }
 
-/// Opens `folder`, in the user folder, in the system Files app (`HoneydewActivity.showFolder`, through the app's
-/// documents provider, `HoneydewDocuments`), which itself tells the user when no app can.
+/// Opens `folder`, in the user folder, in the system Files app (`BanaForgeActivity.showFolder`, through the app's
+/// documents provider, `BanaForgeDocuments`), which itself tells the user when no app can.
 pub fn show_folder(folder: &std::path::Path) -> Result<(), String> {
     with_activity(|env, activity| {
         let path = env.auto_local(env.new_string(folder.to_string_lossy())?);
@@ -420,8 +487,8 @@ pub fn show_folder(folder: &std::path::Path) -> Result<(), String> {
     })
 }
 
-/// `Send` (#72): `files`, in the user folder, to the system's chooser as `mime` (`HoneydewActivity.share`), each by
-/// its document in `HoneydewDocuments` with a read grant only. Why not, when one is not in the user folder.
+/// `Send` (#72): `files`, in the user folder, to the system's chooser as `mime` (`BanaForgeActivity.share`), each by
+/// its document in `BanaForgeDocuments` with a read grant only. Why not, when one is not in the user folder.
 pub fn share(files: &[PathBuf], mime: &str) -> Result<(), String> {
     let list: String = files.iter().map(|f| format!("{}\0", f.display())).collect();
     let mut failed = None;
@@ -455,7 +522,7 @@ pub enum Network {
     Metered,
 }
 
-/// The network the phone is on (`HoneydewActivity.network`).
+/// The network the phone is on (`BanaForgeActivity.network`).
 pub fn network() -> Network {
     let mut kind = 0;
     let asked = with_activity(|env, activity| {
@@ -469,11 +536,11 @@ pub fn network() -> Network {
     }
 }
 
-/// Downloads `url` into the file at `path`, going on from the bytes it holds (`HoneydewActivity.download`), on this
+/// Downloads `url` into the file at `path`, going on from the bytes it holds (`BanaForgeActivity.download`), on this
 /// thread, which it blocks for as long: `None` once it is in, else why not (`offline` without a network).
 pub fn download(url: &str, path: &str) -> Option<String> {
     let mut failed = None;
-    let called = with_activity_unlocked(|env, activity| {
+    let called = with_activity(|env, activity| {
         let url = env.auto_local(env.new_string(url)?);
         let path = env.auto_local(env.new_string(path)?);
         let why = env.call_method(
@@ -492,7 +559,7 @@ pub fn download(url: &str, path: &str) -> Option<String> {
     called.err().or(failed)
 }
 
-/// The bytes free for the app's files (`HoneydewActivity.usableSpace`): what the sounds' copy out of the full APK
+/// The bytes free for the app's files (`BanaForgeActivity.usableSpace`): what the sounds' copy out of the full APK
 /// checks first (`update`).
 pub fn usable_space() -> Option<u64> {
     let mut free = -1;
@@ -504,13 +571,13 @@ pub fn usable_space() -> Option<u64> {
     u64::try_from(free).ok()
 }
 
-/// Where an update's APK downloads to (`update`): `update` in the app's files, which `HoneydewUpdate` serves to the
+/// Where an update's APK downloads to (`update`): `update` in the app's files, which `BanaForgeUpdate` serves to the
 /// system's installer.
 pub fn update_dir() -> Option<PathBuf> {
     Some(data_dir()?.join("update"))
 }
 
-/// Hands the APK at `path`, in [`update_dir`], to the system's installer (`HoneydewActivity.installApk`): `false` when
+/// Hands the APK at `path`, in [`update_dir`], to the system's installer (`BanaForgeActivity.installApk`): `false` when
 /// the app may not install apps yet, and the setting that allows it opened instead.
 pub fn install_apk(path: &std::path::Path) -> Result<bool, String> {
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned());
@@ -566,7 +633,22 @@ pub fn asset_bytes(path: &str, limit: usize) -> Option<Vec<u8>> {
 #[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
     crate::android_text::reset();
-    *ACTIVITY.lock().expect("activity lock") = Some(app.clone());
+    *UI_WAKE.lock().unwrap_or_else(|err| err.into_inner()) = None;
+    *ACTIVITY.lock().unwrap_or_else(|err| err.into_inner()) = Some(app.clone());
+    // Persist Rust panics for device-only crashes, including release panic=abort.
+    // Capture the path now: never acquire Activity/UI/audio locks from a panic hook.
+    if let Some(path) = app
+        .external_data_path()
+        .map(|p| p.join("last-rust-crash.txt"))
+    {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let report = format!("{info}\n{}\n", std::backtrace::Backtrace::force_capture());
+            let _ = std::fs::write(&path, report);
+            previous(info);
+        }));
+    }
+
     if let Some(index) = asset_bytes(
         "content/index.json",
         crate::content::bundle::MAX_INDEX_BYTES,
@@ -577,29 +659,35 @@ fn android_main(app: AndroidApp) {
     }
     let options = eframe::NativeOptions {
         android_app: Some(app),
-        viewport: eframe::egui::ViewportBuilder::default().with_app_id("dev.daijro.honeydew"),
+        viewport: eframe::egui::ViewportBuilder::default().with_app_id("dev.daijro.banaforge"),
         ..Default::default()
     };
     if let Err(err) = eframe::run_native(
         crate::APP_NAME,
         options,
-        Box::new(|cc| Ok(Box::new(crate::app::HoneydewApp::new(cc)))),
+        Box::new(|cc| {
+            *UI_WAKE.lock().unwrap_or_else(|err| err.into_inner()) = Some(cc.egui_ctx.clone());
+            crate::project_files::set_context(&cc.egui_ctx);
+            Ok(Box::new(crate::app::BanaForgeApp::new(cc)))
+        }),
     ) {
-        eprintln!("Honeydew could not start: {err}");
+        eprintln!("BanaForge could not start: {err}");
     }
     crate::android_text::reset();
-    *ACTIVITY.lock().expect("activity lock") = None;
+    crate::project_files::finish_leaving();
+    *UI_WAKE.lock().unwrap_or_else(|err| err.into_inner()) = None;
+    *ACTIVITY.lock().unwrap_or_else(|err| err.into_inner()) = None;
 }
 
-/// [`with_activity`] for a call that blocks (a download): the activity lock is not held through it, and a global
-/// reference keeps the activity object alive.
-fn with_activity_unlocked(
+/// Runs a JNI call while keeping the Activity alive via a global reference without holding the
+/// `ACTIVITY` mutex across the JNI boundary (preventing re-entrant deadlocks on callbacks).
+pub fn with_activity(
     f: impl FnOnce(&mut jni::JNIEnv<'_>, &jni::objects::JObject<'_>) -> jni::errors::Result<()>,
 ) -> Result<(), String> {
     let (vm, activity) = {
-        let held = ACTIVITY.lock().map_err(|err| err.to_string())?;
+        let held = ACTIVITY.lock().unwrap_or_else(|err| err.into_inner());
         let app = held.as_ref().ok_or("No Android Activity")?;
-        // SAFETY: as in `with_activity`, while the lock is held.
+        // SAFETY: AndroidApp keeps the VM and activity global reference alive while `held` is locked.
         let vm = unsafe { jni::JavaVM::from_raw(app.vm_as_ptr().cast()) }
             .map_err(|err| err.to_string())?;
         let object = unsafe { jni::objects::JObject::from_raw(app.activity_as_ptr().cast()) };
@@ -610,24 +698,6 @@ fn with_activity_unlocked(
     };
     let mut env = vm.attach_current_thread().map_err(|err| err.to_string())?;
     let result = f(&mut env, activity.as_obj()).map_err(|err| err.to_string());
-    if result.is_err() {
-        let _ = env.exception_clear();
-    }
-    result
-}
-
-/// Runs a JNI call while the matching Activity remains alive.
-pub fn with_activity(
-    f: impl FnOnce(&mut jni::JNIEnv<'_>, &jni::objects::JObject<'_>) -> jni::errors::Result<()>,
-) -> Result<(), String> {
-    let activity = ACTIVITY.lock().map_err(|err| err.to_string())?;
-    let app = activity.as_ref().ok_or("No Android Activity")?;
-    // SAFETY: AndroidApp keeps the VM and this unowned global reference alive for the call.
-    let vm =
-        unsafe { jni::JavaVM::from_raw(app.vm_as_ptr().cast()) }.map_err(|err| err.to_string())?;
-    let object = unsafe { jni::objects::JObject::from_raw(app.activity_as_ptr().cast()) };
-    let mut env = vm.attach_current_thread().map_err(|err| err.to_string())?;
-    let result = f(&mut env, &object).map_err(|err| err.to_string());
     if result.is_err() {
         let _ = env.exception_clear();
     }

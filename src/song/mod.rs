@@ -20,7 +20,8 @@ pub use drum_kit::{DrumKit, SamplerSlot};
 pub use file::{
     ChannelFileState, ClipFileState, DEFAULT_CHORD_JSON, KeyboardState, KitFileState,
     LaneFileState, MetaState, MidiSend, Modulation, ModuleFileState, Raw, RawChunk, SET_DEFAULT,
-    SET_EDITED, SET_LOADED, SendState, SlotFileState, SongFileState,
+    SET_EDITED, SET_LOADED, SendState, SlotFileState, SongFileState, VocalNoteState,
+    VocalPitchPoint,
 };
 pub use lane::MAX_PLAYS_A_PIXEL;
 pub use lane::{AutomationTarget, Clip, DrumGrid, Event, Lane, LaneKind};
@@ -55,10 +56,11 @@ pub enum SynthKind {
     Slicer,
     ThreeXOsc,
     SoundFontPlayer,
+    VocalSynth,
 }
 
 impl SynthKind {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::MiniSynth,
         Self::DwSampler,
         Self::GmSynth,
@@ -67,6 +69,7 @@ impl SynthKind {
         Self::Slicer,
         Self::ThreeXOsc,
         Self::SoundFontPlayer,
+        Self::VocalSynth,
     ];
 
     pub fn label(self) -> &'static str {
@@ -79,6 +82,7 @@ impl SynthKind {
             Self::Slicer => "Slicer",
             Self::ThreeXOsc => "3x Osc",
             Self::SoundFontPlayer => "SoundFont Player",
+            Self::VocalSynth => "Vocal Synth",
         }
     }
 
@@ -93,6 +97,7 @@ impl SynthKind {
             Self::Slicer => 33,
             Self::ThreeXOsc => 39,
             Self::SoundFontPlayer => 52,
+            Self::VocalSynth => 53,
         }
     }
 }
@@ -235,9 +240,9 @@ pub struct Song {
     /// The master's place in the playlist ([`Self::playlist`]): right below the channel with this id; first when `None`
     /// or when no channel has it. A file has it in the master's row (`CHHD` @1028).
     pub master_below: Option<i32>,
-    /// The song's sections (Honeydew's own, #80), in the order they were made: `HDSe`s in the file.
+    /// The song's sections (BanaForge's own, #80), in the order they were made: `HDSe`s in the file.
     pub sections: Vec<Section>,
-    /// The project's sample rate (PR #87, Honeydew's own: an `HDSR` in the file), one of [`SAMPLE_RATES`], or 0 to
+    /// The project's sample rate (PR #87, BanaForge's own: an `HDSR` in the file), one of [`SAMPLE_RATES`], or 0 to
     /// follow the output's own rate (the default, as before). The live output asks for it, and may fall back to the
     /// device's rate; a render runs at it.
     pub sample_rate: u32,
@@ -673,3 +678,12 @@ fn entropy() -> u64 {
 
 #[cfg(test)]
 mod tests;
+
+/// Vocal editor tools follow the current rack instrument, not the channel's creation kind.
+pub fn vocal_editor(channel: &Channel) -> bool {
+    let mut instruments = channel.rack.modules.iter().filter(|m| {
+        crate::params::module_spec(m.type_id)
+            .is_some_and(|spec| spec.role == crate::params::Role::Instrument)
+    });
+    instruments.next().is_some_and(|m| m.type_id == 53) && instruments.all(|m| m.type_id == 53)
+}

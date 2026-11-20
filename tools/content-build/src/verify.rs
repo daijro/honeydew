@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use honeydew::content::bundle::{Index, IndexEntry, Kind, SCHEMA};
+use banaforge::content::bundle::{Index, IndexEntry, Kind, SCHEMA};
 
 use crate::gates::safe;
 use crate::pack::{self, CAP};
@@ -72,7 +72,7 @@ pub fn verify_capped(out: &Path, previous: Option<&Path>, cap: usize) -> Result<
             }
             let stem = format!("Built-in/{}{}", base(e), m.0);
             if let Some(stem) = stem.strip_suffix(".flac")
-                && honeydew_audio::builtin_drums::builtin(stem).is_some()
+                && banaforge_audio::builtin_drums::builtin(stem).is_some()
             {
                 bad.push(format!(
                     "{}: {stem} shadows a code-made Built-in sound",

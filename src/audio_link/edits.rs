@@ -63,6 +63,12 @@ pub(super) fn edit(last: &mut Song, new: &Song, tempo_moved: bool) -> Edit {
         let Some(a) = last.channels.iter().find(|a| a.id == b.id) else {
             continue;
         };
+        // Issue #140: changing a note effect (Transpose, Scale, Randomizer, Note Echo, Arpeggiator)
+        // on a channel with sequenced notes changes which pitches are held at the playhead; re-sync
+        // releases old transformed pitches so they never hang indefinitely.
+        if note_effects_changed(a, b) {
+            edit.resync = true;
+        }
         if a.lanes == b.lanes {
             continue;
         }
@@ -75,12 +81,43 @@ pub(super) fn edit(last: &mut Song, new: &Song, tempo_moved: bool) -> Edit {
                 edit.silence.push(index);
             }
             std::cmp::Ordering::Equal => {
-                let kept = |(a, b): (&Lane, &Lane)| a == b || retouched(a, b);
+                let kept =
+                    |(a, b): (&Lane, &Lane)| a == b || retouched(a, b) || envelopes_retouched(a, b);
                 edit.resync |= !a.lanes.iter().zip(&b.lanes).all(kept);
             }
         }
     }
     edit
+}
+
+/// Whether channel `a` / `b` carries sequenced notes or drum hits and its note-effect chain (types 47..=51) changed
+/// in membership, order relative to instruments, or module parameters (excluding `CommonParams` like Mix so level
+/// tweaks keep adopting without re-syncing).
+fn note_effects_changed(a: &Channel, b: &Channel) -> bool {
+    let has_notes = |c: &Channel| {
+        c.lanes.iter().any(|l| {
+            matches!(l.kind, LaneKind::Notes | LaneKind::Drums)
+                && l.clips.iter().any(|clip| !clip.events.is_empty())
+        })
+    };
+    if !has_notes(a) && !has_notes(b) {
+        return false;
+    }
+    fn snapshot(c: &Channel) -> Vec<(i32, u16, usize, &[f32])> {
+        let mut instruments = 0usize;
+        let mut out = Vec::new();
+        for m in &c.rack.modules {
+            if (47..=51).contains(&m.type_id) {
+                out.push((m.instance_id, m.type_id, instruments, m.params.as_slice()));
+            } else if crate::params::module_spec(m.type_id)
+                .is_some_and(|spec| spec.role == crate::params::Role::Instrument)
+            {
+                instruments += 1;
+            }
+        }
+        out
+    }
+    snapshot(a) != snapshot(b)
 }
 
 /// `a`'s lanes as `b` (the same channel after the edit) holds them when nothing but its structure changed: without the
@@ -152,6 +189,39 @@ fn retouched(a: &Lane, b: &Lane) -> bool {
         && a.clips.iter().zip(&b.clips).all(clip)
 }
 
+/// Only VOL/PAN content changed: retain timing, sample identity, speed, mute and lane ordering.
+fn envelopes_retouched(a: &Lane, b: &Lane) -> bool {
+    if a.kind != LaneKind::Audio || b.kind != LaneKind::Audio || a.clips.len() != b.clips.len() {
+        return false;
+    }
+    let mut bare = a.clone();
+    for (a, b) in bare.clips.iter_mut().zip(&b.clips) {
+        let keep = |e: &Event| {
+            !matches!(
+                e,
+                Event::Envelope {
+                    env_param: 0 | 1,
+                    ..
+                }
+            )
+        };
+        if !a
+            .events
+            .iter()
+            .filter(|e| keep(e))
+            .eq(b.events.iter().filter(|e| keep(e)))
+        {
+            return false;
+        }
+        a.events.clone_from(&b.events);
+        a.file.shapes.clone_from(&b.file.shapes);
+        a.file.pan_shapes.clone_from(&b.file.pan_shapes);
+        // Raw EVN2 is merely an optional encoding cache, not envelope semantics.
+        a.file.raw_events.clone_from(&b.file.raw_events);
+    }
+    bare == *b
+}
+
 /// Each event of `old` has its own in `new`, alike but maybe for its graph-lane values. Both are sorted by position.
 fn kept(old: &[Event], new: &[Event]) -> bool {
     let bare = |event: &Event| match *event {
@@ -203,7 +273,7 @@ mod tests {
     //! Song edits while playing through the link: the recorder's engine plays them as the device would, and each output
     //! is checked against an engine that never saw the edit.
 
-    use honeydew_audio::device::{AudioCommand, AudioRenderer};
+    use banaforge_audio::device::{AudioCommand, AudioRenderer};
 
     use super::super::testing::Recorder;
     use super::super::{AudioLink, Handover};
@@ -1292,5 +1362,54 @@ mod tests {
                 "a stale pedal, reopen {reopen}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod clip_envelope_edit_tests {
+    use super::*;
+    use crate::song::points::{self, Point, PointKey, Shape, ShapeKind};
+    #[test]
+    fn clip_envelope_edits_do_not_resync_but_timing_speed_sample_changes_still_do() {
+        let mut a = Song::default();
+        a.add_channel(crate::song::ChannelKind::AudioClip);
+        let clip = a.channels[1].lanes[0].add_clip(0, 4.0);
+        clip.file.sample = Some(Box::default());
+        let mut b = a.clone();
+        for key in [PointKey::Envelope(0), PointKey::Envelope(1)] {
+            points::set_points(
+                &mut b.channels[1].lanes[0].clips[0],
+                key,
+                vec![
+                    Point {
+                        tick: 0,
+                        value: 10000,
+                        shape: Shape {
+                            kind: ShapeKind::Smooth,
+                            tension: 70,
+                        },
+                    },
+                    Point {
+                        tick: 128,
+                        value: 60000,
+                        ..Default::default()
+                    },
+                ],
+            );
+        }
+        assert!(!edit(&mut a.clone(), &b, false).resync);
+        let mut moved = b.clone();
+        moved.channels[1].lanes[0].clips[0].start_tick = 128;
+        assert!(edit(&mut b.clone(), &moved, false).resync);
+        points::set_points(
+            &mut b.channels[1].lanes[0].clips[0],
+            PointKey::Envelope(2),
+            vec![Point {
+                tick: 0,
+                value: 60000,
+                ..Default::default()
+            }],
+        );
+        assert!(edit(&mut a.clone(), &b, false).resync);
     }
 }

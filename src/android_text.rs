@@ -31,11 +31,10 @@ impl Editor {
     }
 
     fn complete(&mut self, serial: u64, text: Option<String>) {
-        if let Some((current, _, ctx)) = &self.active
+        if let Some((current, _, _)) = &self.active
             && *current == serial
         {
             self.result = Some(text);
-            ctx.request_repaint();
         }
     }
 
@@ -74,6 +73,11 @@ static EDITOR: Mutex<Editor> = Mutex::new(Editor {
 });
 
 #[cfg(target_os = "android")]
+fn lock_editor() -> std::sync::MutexGuard<'static, Editor> {
+    EDITOR.lock().unwrap_or_else(|err| err.into_inner())
+}
+
+#[cfg(target_os = "android")]
 fn cancel_dialog(serial: u64) {
     let _ = crate::android::with_activity(|env, activity| {
         env.call_method(
@@ -89,7 +93,7 @@ fn cancel_dialog(serial: u64) {
 #[cfg(target_os = "android")]
 pub fn reset() {
     let serial = {
-        let mut editor = EDITOR.lock().unwrap();
+        let mut editor = lock_editor();
         editor.last_focus = None;
         editor.cancel()
     };
@@ -100,10 +104,13 @@ pub fn reset() {
 
 #[cfg(target_os = "android")]
 pub fn begin_frame(ctx: &Context) {
-    let mut editor = EDITOR.lock().unwrap();
-    editor.seen = false;
+    let enter = {
+        let mut editor = lock_editor();
+        editor.seen = false;
+        editor.enter.take()
+    };
     if ctx.input(|i| i.focused)
-        && let Some(field) = editor.enter.take()
+        && let Some(field) = enter
         && ctx.memory(|m| m.has_focus(field))
     {
         ctx.input_mut(|i| {
@@ -123,18 +130,22 @@ pub fn begin_frame(ctx: &Context) {
 pub fn edit(response: &mut Response, value: &mut String, limit: usize) {
     let ctx = response.ctx.clone();
     let focused = ctx.memory(|m| m.has_focus(response.id));
-    let mut editor = EDITOR.lock().unwrap();
+    let mut editor = lock_editor();
     if editor
         .active
         .as_ref()
         .is_some_and(|(_, id, _)| *id == response.id)
     {
-        editor.seen = focused;
-        if focused && let Some(result) = editor.take(response.id) {
+        // A native dialog legitimately takes focus away from NativeActivity.
+        // Keep it alive while the owning field is still drawn; cancelling on
+        // focus loss dismisses/reopens the IME while the user is typing.
+        editor.seen = true;
+        if let Some(result) = editor.take(response.id) {
             if let Some(text) = result {
                 *value = text.chars().take(limit).collect();
                 response.mark_changed();
                 editor.enter = Some(response.id);
+                drop(editor);
                 response.ctx.request_repaint();
             }
             return;
@@ -150,24 +161,26 @@ pub fn edit(response: &mut Response, value: &mut String, limit: usize) {
     editor.last_focus = Some(response.id);
     let serial = editor.start(response.id, &ctx);
     drop(editor);
+    let max_chars = i32::try_from(limit).unwrap_or(0);
     let result = crate::android::with_activity(|env, activity| {
         // The app thread stays attached to the VM, so release this local reference after every dialog call.
         let text = env.auto_local(env.new_string(value.as_str())?);
         env.call_method(
             activity,
             "editText",
-            "(JLjava/lang/String;Z)V",
+            "(JLjava/lang/String;ZI)V",
             &[
                 jni::objects::JValue::Long(serial as i64),
                 jni::objects::JValue::Object(text.as_ref()),
                 jni::objects::JValue::Bool(0),
+                jni::objects::JValue::Int(max_chars),
             ],
         )?;
         Ok(())
     });
     if let Err(err) = result {
         eprintln!("Could not open text editor: {err}");
-        EDITOR.lock().unwrap().complete(serial, None);
+        lock_editor().complete(serial, None);
     }
 }
 
@@ -175,9 +188,10 @@ pub fn edit(response: &mut Response, value: &mut String, limit: usize) {
 pub fn end_frame(ctx: &Context) {
     // The native dialog owns the IME; eframe must not open a second keyboard on NativeActivity's surface.
     ctx.output_mut(|o| o.ime = None);
+    let focused = ctx.memory(|m| m.focused());
     let serial = {
-        let mut editor = EDITOR.lock().unwrap();
-        if editor.last_focus != ctx.memory(|m| m.focused()) {
+        let mut editor = lock_editor();
+        if editor.last_focus != focused {
             editor.last_focus = None;
         }
         if editor.active.is_some() && !editor.seen {
@@ -193,23 +207,47 @@ pub fn end_frame(ctx: &Context) {
 
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onTextResult(
+pub extern "system" fn Java_dev_daijro_banaforge_BanaForgeActivity_onTextResult(
     mut env: jni::JNIEnv<'_>,
     _: jni::objects::JClass<'_>,
     serial: jni::sys::jlong,
     text: jni::objects::JString<'_>,
     accepted: jni::sys::jboolean,
 ) {
-    let text = (accepted != 0)
+    let text = (accepted != 0 && !text.is_null())
         .then(|| env.get_string(&text).ok().map(String::from))
         .flatten();
-    if let Ok(mut editor) = EDITOR.lock() {
+    // Never acquire egui's context lock while holding EDITOR: the UI takes them
+    // in the opposite order when consuming the result.
+    let ctx = {
+        let mut editor = lock_editor();
         editor.complete(serial as u64, text);
+        editor.active.as_ref().map(|(_, _, ctx)| ctx.clone())
+    };
+    if let Some(ctx) = ctx {
+        ctx.request_repaint();
     }
 }
 
 #[cfg(not(target_os = "android"))]
 pub fn edit(_: &mut eframe::egui::Response, _: &mut String, _: usize) {}
+
+/// Consume native Done directly instead of injecting Enter into another editor/shortcut.
+#[cfg(target_os = "android")]
+pub fn take_commit(id: eframe::egui::Id) -> bool {
+    let mut editor = lock_editor();
+    if editor.enter == Some(id) {
+        editor.enter = None;
+        true
+    } else {
+        false
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn take_commit(_: eframe::egui::Id) -> bool {
+    false
+}
 
 /// Whether a dialog's text field takes the focus back whenever nothing has it, so that typing goes there: on the
 /// desktop. On a phone a tap elsewhere drops the field and its keyboard (Android's text editor) until the field is

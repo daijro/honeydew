@@ -1,4 +1,4 @@
-use honeydew_audio::builtin_drums::{KITS, PADS, RATE, builtin};
+use banaforge_audio::builtin_drums::{KITS, PADS, RATE, builtin};
 use std::f32::consts::TAU;
 
 const MINUS_1_DBFS: f32 = 0.891_250_9;
@@ -561,7 +561,7 @@ fn dust_has_less_air_above_8_khz_than_pocket() {
     );
 }
 
-/// `BUILTIN_DRUMS_WAV_DIR=<dir> cargo test -p honeydew-audio --test builtin_drums` writes every pad, and each kit's
+/// `BUILTIN_DRUMS_WAV_DIR=<dir> cargo test -p banaforge-audio --test builtin_drums` writes every pad, and each kit's
 /// pads in a row, as float WAVs for listening.
 #[test]
 fn writes_wavs_when_asked() {
@@ -579,12 +579,12 @@ fn writes_wavs_when_asked() {
                 _ => format!("Built-in/{kit}/{pad}"),
             };
             let samples = builtin(&folder).unwrap().left.to_vec();
-            let wav = honeydew_audio::wav_writer::float32_wav(RATE, &[&samples]);
+            let wav = banaforge_audio::wav_writer::float32_wav(RATE, &[&samples]);
             std::fs::write(dir.join(format!("{kit} {pad}.wav")), wav).unwrap();
             row.extend(&samples);
             row.extend(std::iter::repeat_n(0.0, RATE as usize / 5));
         }
-        let wav = honeydew_audio::wav_writer::float32_wav(RATE, &[&row]);
+        let wav = banaforge_audio::wav_writer::float32_wav(RATE, &[&row]);
         std::fs::write(dir.join(format!("{kit} kit.wav")), wav).unwrap();
     }
 }

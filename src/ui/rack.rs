@@ -28,7 +28,7 @@
 //! ([`RackPanel::key_played`]); the SENDS section edits the channel's `SEND`s by the channels the host names
 //! ([`RackPanel::targets`], [`send_targets`]); `Create FX Channel` asks the host ([`create_send`]).
 //!
-//! Honeydew's own: a dynamics card (a module that [takes a key](crate::song::ModuleInstance::takes_key), Lemon
+//! BanaForge's own: a dynamics card (a module that [takes a key](crate::song::ModuleInstance::takes_key), Banana
 //! Vocoder's too) has `Sidechain` in its ≡ menu, which picks the channel whose output keys its detector, or `Sidechain:
 //! Off` ([`RackPanel::key_menu`]); its header shows the source's name. A Modulator's ≡ menu adds `Modulate recent
 //! control` and `Clear target`, which set the param it drives ([`retarget`], a final song edit and so an undo step); its
@@ -36,13 +36,13 @@
 
 use std::collections::HashMap;
 
+use banaforge_audio::MeterSnapshot;
+use banaforge_audio::device::{AudioCommand, ModuleKey, ModuleMeter};
+use banaforge_audio::instrument::KEY_LEARN;
 use eframe::egui::{
     Align2, Area, Color32, CornerRadius, Event, FontId, Id, Mesh, Order, Painter, Pos2, Rangef,
     Rect, Sense, Shape, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
-use honeydew_audio::MeterSnapshot;
-use honeydew_audio::device::{AudioCommand, ModuleKey, ModuleMeter};
-use honeydew_audio::instrument::KEY_LEARN;
 
 use crate::audio_engine::settings;
 use crate::icons::{IconId, draw_icon};
@@ -67,7 +67,7 @@ use crate::ui::scroller::{self, Axis, Scroller, Y, Zones};
 use crate::ui::widgets::{self, Button, Control, ParamMenu};
 use crate::ui::{UiCtx, focus_lost};
 
-pub(crate) mod lemon_card;
+pub(crate) mod banana_card;
 mod plugin_card;
 #[cfg(test)]
 mod tests;
@@ -132,7 +132,7 @@ const COMMON: [(i32, ParamSpec); 3] = [
     (-1, COMMON_PARAMS[0]),
 ];
 
-/// Honeydew change (GitHub #135): the SoundFont Player's card height in a phone-size window (its shorter side
+/// BanaForge change (GitHub #135): the SoundFont Player's card height in a phone-size window (its shorter side
 /// under [`PHONE_SIDE`]), for longer sliders, where it was 8.5 U; in a portrait one, whose full-width rack
 /// is too narrow for the ten labels side by side, they take two rows of five ([`soundfont_player::TWO_ROWS`]).
 const SOUNDFONT_PHONE: f32 = 11.0;
@@ -152,7 +152,7 @@ pub fn ui_height(type_id: u16) -> Option<f32> {
         23 => 9.0,
         33 => 8.5,
         39 => 10.0,
-        52 => 8.5,
+        52 | 53 => 8.5,
         // Effects and note effects.
         3 | 7 | 26 | 30 | 51 => 10.0,
         4 | 35 | 36 | 43 | 46 => 9.0,
@@ -167,11 +167,15 @@ pub fn ui_height(type_id: u16) -> Option<f32> {
         42 => 8.4,
         // Plugin modules: their status, the editor button and a page of params.
         crate::song::plugin::PLUGIN_INSTRUMENT | crate::song::plugin::PLUGIN_EFFECT => 8.0,
-        honeydew_audio::lemon::REVERB | honeydew_audio::lemon::LIMITER => 7.0,
-        honeydew_audio::dynamic_eq::DYNAMIC_EQ => 11.0,
-        honeydew_audio::modulator::MODULATOR => 8.5,
-        honeydew_audio::de_esser::DE_ESSER | honeydew_audio::denoise::DENOISE => 7.5,
-        honeydew_audio::half_time::HALF_TIME => 6.0,
+        banaforge_audio::banana::REVERB | banaforge_audio::banana::LIMITER => 7.0,
+        banaforge_audio::dynamic_eq::DYNAMIC_EQ => 11.0,
+        banaforge_audio::modulator::MODULATOR => 8.5,
+        banaforge_audio::de_esser::DE_ESSER | banaforge_audio::denoise::DENOISE => 7.5,
+        banaforge_audio::half_time::HALF_TIME => 6.0,
+        banaforge_audio::banana_power::FRESH_AIR
+        | banaforge_audio::banana_power::SOUNDGOODIZER
+        | banaforge_audio::banana_power::BLOOD_OVERDRIVE => 6.0,
+        banaforge_audio::banana_power::GROSS_BEAT => 8.0,
         _ => return None,
     })
 }
@@ -206,8 +210,8 @@ fn module_icon(type_id: u16) -> IconId {
     }
 }
 
-/// The built-in Lemon plugin module `module` hosts, if any ([`crate::plugins::builtin`]).
-pub(crate) fn lemon_plugin(
+/// The built-in Banana plugin module `module` hosts, if any ([`crate::plugins::builtin`]).
+pub(crate) fn banana_plugin(
     module: &ModuleInstance,
 ) -> Option<&'static crate::plugins::builtin::Builtin> {
     let plugin = module.file.plugin.as_deref()?;
@@ -643,7 +647,7 @@ pub fn insert(rack: &mut Rack, type_id: u16, at: InsertAt) -> Outcome {
 /// - With `at` they go where [`paste`] puts the same modules: from `+` appended at the bottom, else at `at`, in file
 ///   order.
 ///
-/// A module is skipped by the rule `Paste` follows ([`attaches`]): an id above 52, and an instrument where the channel
+/// A module is skipped by the rule `Paste` follows ([`attaches`]): an id above 53, and an instrument where the channel
 /// does not take one ([`takes_instruments`]: Master, Effect Track, audio, Drums), as the browser's SYNTH rows do; a
 /// channel that does takes all the instruments, beside the ones it has. Returns whether the chain changed (never when
 /// every module is skipped, or there are none) and how many modules were skipped. [`load_rack_into`] also names the
@@ -798,7 +802,7 @@ fn named(ch: &Channel, auto: &str) -> bool {
 /// in, in clipboard order, as a new module with a fresh id and its copied settings: from the rack's add-module `+`,
 /// appended at the bottom; from `Insert above` / `Insert below`, at that position; from `Replace`, in place of that
 /// module, which is deleted. Instrument modules go only into a channel whose primary lane is a notes lane (not drum and
-/// audio channels); module ids above 52 are skipped.
+/// audio channels); module ids above 53 are skipped.
 ///
 /// Each module after the first goes below the one before, and the bottom is the bottom for a note effect too (a pick
 /// goes up to the note effects instead). With nothing compatible it returns [`Outcome::Nothing`] and the rack is as it
@@ -839,10 +843,10 @@ pub fn takes(channel: &Channel) -> Takes {
     }
 }
 
-/// Whether a channel takes `module`, the one routine `Paste` and a rack preset's load share: module ids above 52 are
+/// Whether a channel takes `module`, the one routine `Paste` and a rack preset's load share: module ids above 53 are
 /// skipped, and an instrument goes only where `notes` (the channel [takes instruments](takes_instruments)).
 fn attaches(module: &ModuleInstance, notes: bool) -> bool {
-    module.type_id <= 52 && (notes || instrument(module.type_id).is_none())
+    module.type_id <= 53 && (notes || instrument(module.type_id).is_none())
 }
 
 /// The ≡ menu of a card of module type `type_id`, two columns, every item enabled. An instrument's adds `Set Range`
@@ -1194,14 +1198,14 @@ pub struct RackActions {
     pub preset: Option<PresetSource>,
     /// A card's preset button or the rack's `Load Rack preset`: open the preset picker to load into this.
     pub picker: Option<PresetTarget>,
-    /// Issue #98 (Honeydew addition): a card's ◀ (−1) or ▶ (1), by instance id: load the previous or next preset of
+    /// Issue #98 (BanaForge addition): a card's ◀ (−1) or ▶ (1), by instance id: load the previous or next preset of
     /// its module's folder ([`crate::ui::views::preset_picker::step_preset`]).
     pub step_preset: Option<(i32, i32)>,
     /// A SoundFont Player's `Patch` spinner with no patches to list (or the tap on its error): open the SoundFont picker
     /// for the module with this instance id.
     pub soundfont: Option<i32>,
     /// `Custom` picked in a 3x Osc oscillator's Shape menu (the Shape edit itself is in [`Self::params`]), a Slicer's
-    /// `LOAD SAMPLE` or a tap on its waveform, or a Lemon plugin's editor asking for a file: open the sample picker for
+    /// `LOAD SAMPLE` or a tap on its waveform, or a Banana plugin's editor asking for a file: open the sample picker for
     /// the module with this instance id.
     pub module_sample: Option<i32>,
     /// The Slicers whose Sensitivity changed, as [`Self::replace_song`] comes: a slice re-detect, which rewrites the
@@ -1228,8 +1232,8 @@ pub struct RackActions {
     pub create_send: Option<usize>,
     /// A DW Sampler's `New from samples…`: open the instrument builder for the module with this instance id.
     pub builder: Option<i32>,
-    /// Issue #68: a Lemon card's full screen button: show the editor of the module with this instance id full screen.
-    pub lemon_full: Option<i32>,
+    /// Issue #68: a Banana card's full screen button: show the editor of the module with this instance id full screen.
+    pub banana_full: Option<i32>,
 }
 
 /// A card's panel state, and its module's `CSTM` blob as the state last matched it: a card is seeded from the blob
@@ -1256,8 +1260,8 @@ struct CardEdits {
     press: Option<Press>,
     /// The MIDI CCs a SoundFont Player's SFZ controls sent, as (channel param, value).
     ccs: Vec<(i32, f32)>,
-    /// A Slicer asked for a loop ([`slicer::asks_for_loop`]), or a Lemon plugin's editor for a file
-    /// ([`lemon_card::wants_file`]).
+    /// A Slicer asked for a loop ([`slicer::asks_for_loop`]), or a Banana plugin's editor for a file
+    /// ([`banana_card::wants_file`]).
     sample: bool,
     /// A Slicer's `AUTO` was pressed ([`slicer::auto_pressed`]).
     auto: bool,
@@ -1269,7 +1273,7 @@ struct CardEdits {
     header: gesture::Press,
     /// A double tap on the module-name label.
     double_tap: bool,
-    /// Issue #68: a Lemon card's full screen button was clicked.
+    /// Issue #68: a Banana card's full screen button was clicked.
     full: bool,
 }
 
@@ -1322,7 +1326,7 @@ pub struct RackPanel {
     /// egui frame (`cumulative_frame_nr`) the rack was shown in: a gap is a rack opened again.
     input_frames: u32,
     shown_frame: u64,
-    /// A note effect's param, Lemon Reverb's Room Size (`honeydew_audio::lemon::rebuilds`), or a setting the engine
+    /// A note effect's param, Banana Reverb's Room Size (`banaforge_audio::banana::rebuilds`), or a setting the engine
     /// reads at build ([`settings::rebuilds`]), changed; once the pointer is up the engine needs the song again.
     note_edit: bool,
     /// The Slicers whose rebuild setting (Sensitivity) changed since the last [`RackActions::replace_song`].
@@ -1361,18 +1365,18 @@ pub struct RackPanel {
     channel_id: i32,
     /// Each plugin card's page and editor error, by channel index and instance id.
     plugin_cards: HashMap<(usize, i32), plugin_card::PluginCard>,
-    /// Each built-in Lemon plugin's card: its editor's texture and the pointer's state.
-    lemon_cards: HashMap<(usize, i32), lemon_card::LemonCard>,
-    /// The card column's width and the U, in device pixels, as last laid out: a Lemon card's height follows its width.
+    /// Each built-in Banana plugin's card: its editor's texture and the pointer's state.
+    banana_cards: HashMap<(usize, i32), banana_card::BananaCard>,
+    /// The card column's width and the U, in device pixels, as last laid out: a Banana card's height follows its width.
     column: (f32, f32),
     /// In a phone-size window, as last laid out: the SoundFont Player's card height, and whether its controls take two
     /// rows ([`SOUNDFONT_PHONE`]).
     soundfont_phone: Option<(f32, bool)>,
-    /// The pointer was over a Lemon card's editor last frame: the wheel is the editor's, not the rack's.
-    lemon_wheel: bool,
-    /// Issue #68: the Lemon card (channel index, instance id) whose editor shows full screen, which drives it: the card
+    /// The pointer was over a Banana card's editor last frame: the wheel is the editor's, not the rack's.
+    banana_wheel: bool,
+    /// Issue #68: the Banana card (channel index, instance id) whose editor shows full screen, which drives it: the card
     /// shows its last frame meanwhile.
-    pub lemon_full: Option<(usize, i32)>,
+    pub banana_full: Option<(usize, i32)>,
     /// The rack tab's centre height in points ([`crate::ui::main_screen::rack_tab_pill`]): a side rack's collapse tab
     /// sits there. The host sets it each frame.
     pub tab_y: f32,
@@ -1442,7 +1446,7 @@ impl RackPanel {
         self.panels.extend(copies);
     }
 
-    /// A card's height in U ([`card_height`]). A built-in Lemon plugin's card is as tall as its editor at the card
+    /// A card's height in U ([`card_height`]). A built-in Banana plugin's card is as tall as its editor at the card
     /// column's width, its aspect kept.
     fn card_height(&self, module: &ModuleInstance) -> f32 {
         let (column, u) = self.column;
@@ -1451,12 +1455,12 @@ impl RackPanel {
         {
             return h;
         }
-        match lemon_plugin(module) {
+        match banana_plugin(module) {
             Some(b) if !module.minimized && u > 0.0 => {
                 // The body is 4 px narrower than the column and its rect 1 px shorter than its rows ([`content_rect`]).
-                let card = self.lemon_cards.get(&(self.channel, module.instance_id));
-                let size = lemon_card::shown_size(card, b);
-                2.0 + (lemon_card::body_height(size, column - 4.0) + 1.0) / u
+                let card = self.banana_cards.get(&(self.channel, module.instance_id));
+                let size = banana_card::shown_size(card, b);
+                2.0 + (banana_card::body_height(size, column - 4.0) + 1.0) / u
             }
             _ => card_height(module),
         }
@@ -1474,7 +1478,7 @@ impl RackPanel {
     ) -> RackActions {
         let (m, colors) = (cx.m, &cx.theme.colors);
         let (ppp, u) = (m.ppp(), m.u_px());
-        let hue = channel_color(channel.hue, cx.theme);
+        let hue = channel_color(channel.color_token(), cx.theme);
         let ink = hue.to_color32();
         // The theme colour that stands out most against the channel colour.
         let contrast = colors
@@ -1555,8 +1559,8 @@ impl RackPanel {
         };
         let scroll_id = ui.id().with("rack");
         if held.is_none() {
-            // Over a Lemon card's editor the wheel is the editor's.
-            let wheel = if std::mem::take(&mut self.lemon_wheel) {
+            // Over a Banana card's editor the wheel is the editor's.
+            let wheel = if std::mem::take(&mut self.banana_wheel) {
                 Rect::NOTHING
             } else {
                 rect
@@ -1590,6 +1594,7 @@ impl RackPanel {
         ui.set_clip_rect(outer.intersect(rect.with_min_y(top / ppp)));
         let (mut confirmed, mut held_rect) = (None, None);
         // The held card draws last, over a neighbour sliding past it.
+        let custom_color = channel.file.color_rgb.is_some();
         let mut cards: Vec<_> = channel.rack.modules.iter_mut().zip(&f.cards).collect();
         cards.sort_by_key(|(m, _)| held == Some(m.instance_id));
         for (module, card) in cards {
@@ -1600,13 +1605,23 @@ impl RackPanel {
             if held != Some(id) && !ui.clip_rect().intersects(card) {
                 continue;
             }
+            let module_ink =
+                if !custom_color && banaforge_audio::banana_power::IDS.contains(&module.type_id) {
+                    if module.type_id == banaforge_audio::banana_power::BLOOD_OVERDRIVE {
+                        Color32::from_rgb(240, 120, 104)
+                    } else {
+                        Color32::from_rgb(242, 201, 76)
+                    }
+                } else {
+                    ink
+                };
             let edits = self.card(
                 ui,
                 cx,
                 card,
                 module,
                 held.is_some(),
-                ink,
+                module_ink,
                 if input { 1 } else { 2 },
             );
             // The name label's gestures: a double tap is the menu's `Minimize` / `Maximize`, a long press holds the
@@ -2204,7 +2219,7 @@ impl RackPanel {
             actions.step_preset = Some((id, edits.step));
         }
         if edits.full {
-            actions.lemon_full = Some(id);
+            actions.banana_full = Some(id);
         }
         let ccs = edits.ccs.into_iter().map(|(param, value)| ParamChange {
             channel: index,
@@ -2245,7 +2260,7 @@ impl RackPanel {
     ) {
         let note = module_spec(module.type_id).is_some_and(|s| s.role == Role::NoteEffect);
         for index in changed {
-            self.note_edit |= note || honeydew_audio::lemon::rebuilds(module.type_id, index);
+            self.note_edit |= note || banaforge_audio::banana::rebuilds(module.type_id, index);
             actions.params.push(ParamChange {
                 channel,
                 instance_id: module.instance_id,
@@ -2279,13 +2294,13 @@ impl RackPanel {
         ui.painter().rect_filled(card, corner, fill);
 
         // A plugin module is named after its plugin, and its presets and window are its own (its editor). A built-in
-        // Lemon plugin's card shows its editor itself; an installed plugin with an editor window has the pop-out
+        // Banana plugin's card shows its editor itself; an installed plugin with an editor window has the pop-out
         // button, the only cards that do, `Some(open)` here.
         let plugin = crate::song::plugin::is_plugin(module.type_id);
-        let lemon = lemon_plugin(module);
+        let banana = banana_plugin(module);
         let window = match crate::plugins::state(self.channel_id, id) {
             Some(crate::plugins::State::Live(info))
-                if lemon.is_none()
+                if banana.is_none()
                     && info.has_editor
                     && info.stopped.is_none()
                     && info.editor_failed.is_none() =>
@@ -2294,8 +2309,8 @@ impl RackPanel {
             }
             _ => None,
         };
-        // Issue #68: a Lemon card showing its editor has the full screen button in that cell.
-        let full = lemon.is_some() && crate::plugins::lemon_open(self.channel_id, id).is_some();
+        // Issue #68: a Banana card showing its editor has the full screen button in that cell.
+        let full = banana.is_some() && crate::plugins::banana_open(self.channel_id, id).is_some();
         let has_popout = window.is_some() || full;
         let preset = module.file.preset_name.clone();
         let preset_w = preset_width(text_width(ui, &preset, m.font_id(FontSize::Pt10)), m.u(1.0));
@@ -2400,7 +2415,7 @@ impl RackPanel {
         );
         if !plugin {
             preset_button(ui, cx, preset_rect, &preset, text);
-            // Issue #98 (Honeydew addition): ◀ and ▶ either side of the name step through its folder's presets.
+            // Issue #98 (BanaForge addition): ◀ and ▶ either side of the name step through its folder's presets.
             for (rect, label, by) in [(previous, "Previous preset", -1), (next, "Next preset", 1)] {
                 let tip = step_triangle(rect, m.u(1.0), by > 0).to_vec();
                 ui.painter()
@@ -2441,17 +2456,17 @@ impl RackPanel {
         }
 
         let shown = !(module.minimized || minimized);
-        if let (true, Some(plugin)) = (shown, lemon) {
+        if let (true, Some(plugin)) = (shown, banana) {
             let content = content_rect(card * ppp, self.card_height(module), u) / ppp;
-            let state = self.lemon_cards.entry((self.channel, id)).or_default();
-            if self.lemon_full == Some((self.channel, id)) {
-                lemon_card::paint(ui, content, state);
+            let state = self.banana_cards.entry((self.channel, id)).or_default();
+            if self.banana_full == Some((self.channel, id)) {
+                banana_card::paint(ui, content, state);
                 return edits;
             }
-            let running = lemon_card::show(ui, content, self.channel_id, id, plugin, state, m);
-            self.lemon_wheel |= lemon_card::over(state);
+            let running = banana_card::show(ui, content, self.channel_id, id, plugin, state, m);
+            self.banana_wheel |= banana_card::over(state);
             if running {
-                edits.sample = lemon_card::wants_file(state);
+                edits.sample = banana_card::wants_file(state);
                 return edits;
             }
         }
@@ -2545,7 +2560,7 @@ impl RackPanel {
         // A Note Echo's `Stop` is enabled while echoes are pending.
         if module.type_id == NOTE_ECHO {
             let slab = feed.map(|(_, slab)| slab);
-            let pending = slab.and_then(honeydew_audio::analysis::note_echo) == Some(true);
+            let pending = slab.and_then(banaforge_audio::analysis::note_echo) == Some(true);
             state
                 .flags
                 .insert(panels::flag::PENDING, usize::from(pending));
@@ -2738,7 +2753,7 @@ impl RackPanel {
             let mut items = card_menu(module.minimized, module.type_id, full_range(module), keyed);
             let plugin = module.file.plugin.as_deref();
             let controller = plugin.is_some_and(crate::plugins::builtin::controller);
-            if module.type_id == honeydew_audio::modulator::MODULATOR || controller {
+            if module.type_id == banaforge_audio::modulator::MODULATOR || controller {
                 let target = self.modulations.iter().any(|(m, _)| *m == id);
                 items.extend(modulator_menu(self.recent.is_some(), target, controller));
             }

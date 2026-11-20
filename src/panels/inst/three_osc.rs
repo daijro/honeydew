@@ -204,7 +204,7 @@ fn envelopes(
         painter.circle_filled(d, 2.0 * t, ink);
     }
     // Rings while the engine has the envelope off: on above 0.5 only.
-    if !honeydew_audio::three_osc::toggle(param(p, 62 + current)) {
+    if !banaforge_audio::three_osc::toggle(param(p, 62 + current)) {
         for d in dots {
             painter.circle_filled(d, t, fill);
         }

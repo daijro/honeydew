@@ -20,7 +20,7 @@
 //!   listed from code, rendered only when played) and imported content's (`3xOsc Shapes`, `Loop Samples`) when it
 //!   is there, its folders first at the root as every factory folder is. Ours list in index order (a factory folder
 //!   keeps it). The pick sets the module's `CSTM` `PATH`.
-//! - Issue #93: a Slicer's loop and a built-in Lemon plugin's sample
+//! - Issue #93: a Slicer's loop and a built-in Banana plugin's sample
 //!   ([`show_module`]) preview each pick on the sample strip, as a pad's do, and the picker stays open; its close loads
 //!   the last pick.
 //!
@@ -46,9 +46,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
+use banaforge_audio::device::AudioCommand;
+use banaforge_audio::sample::{SampleData, decode};
 use eframe::egui;
-use honeydew_audio::device::AudioCommand;
-use honeydew_audio::sample::{SampleData, decode};
 
 use super::preset_picker::{WORKER_LOST, block, outcome, spawn};
 use super::{AppCtx, Nav, drum_editor};
@@ -231,7 +231,7 @@ pub(super) fn sample_key(files: &ProjectFiles, path: &Path) -> SampleKey {
 /// The worker's read of the pick `path`. The desktop's reads it through [`disk_reader`], as the DW Sampler's worker
 /// does its zones: a user or content file from disk, our bundled member from its pack. Without one, the web's copy is
 /// read now, and so is our bundled member, downloaded ([`web`]: one not in memory failed to download); a code-made file
-/// of ours has no bytes: it renders from code ([`honeydew_audio::builtin_drums::builtin`]), which wins over any bytes
+/// of ours has no bytes: it renders from code ([`banaforge_audio::builtin_drums::builtin`]), which wins over any bytes
 /// anyway.
 fn pick_bytes(
     files: &ProjectFiles,
@@ -716,10 +716,10 @@ pub fn show_track(
 /// A file that does not decode shows `Failed to load project file` with its error in the picker's place and changes
 /// nothing (a failure leaves the old table). The app re-keys `channel` when channels move.
 ///
-/// Issue #52: a built-in Lemon plugin's editor asks for its sample this way where there is no file dialog (Android, the
-/// browser): its pick or its close answers the editor ([`lemon_pick`]), which opens the file itself.
+/// Issue #52: a built-in Banana plugin's editor asks for its sample this way where there is no file dialog (Android, the
+/// browser): its pick or its close answers the editor ([`banana_pick`]), which opens the file itself.
 ///
-/// Issue #93: any other module's picker (a Slicer's, a Lemon plugin's) stays open, each pick playing
+/// Issue #93: any other module's picker (a Slicer's, a Banana plugin's) stays open, each pick playing
 /// once in the sample strip, as a pad's; its close (the X, a click outside, Escape) loads the last pick that landed, as
 /// above: one edit, and one undo step for the whole browse. The module going drops it.
 pub fn show_module(
@@ -755,7 +755,7 @@ pub fn show_module(
         Shown::Closed => match state.last.take() {
             Some((path, decoded)) => (path, *decoded),
             None => {
-                lemon_pick(app, channel, module, None);
+                banana_pick(app, channel, module, None);
                 return Some(Nav::Close);
             }
         },
@@ -763,7 +763,7 @@ pub fn show_module(
     close(state, app.audio);
     state.last = None;
     // ponytail: the picker decoded the pick for nothing here (the plugin decodes it again); skip that if it ever drags.
-    if lemon_pick(app, channel, module, Some(&path)) {
+    if banana_pick(app, channel, module, Some(&path)) {
         return Some(Nav::Close);
     }
     // Ours always render; any other file must decode.
@@ -789,17 +789,17 @@ pub fn show_module(
 }
 
 /// Answers the file request of the editor of module `module` on `channel` with `path` (`None`: cancelled) when it is a
-/// built-in Lemon plugin's: the plugin opens the file itself, handed over first when this session keeps it in memory
+/// built-in Banana plugin's: the plugin opens the file itself, handed over first when this session keeps it in memory
 /// (the web's). Whether it is one.
-fn lemon_pick(app: &mut AppCtx, channel: usize, module: i32, path: Option<&Path>) -> bool {
+fn banana_pick(app: &mut AppCtx, channel: usize, module: i32, path: Option<&Path>) -> bool {
     let Some(channel) = app.song.channels.get(channel) else {
         return false;
     };
-    let lemon = (channel.rack.get(module))
+    let banana = (channel.rack.get(module))
         .and_then(|m| m.file.plugin.as_deref())
         .and_then(crate::plugins::builtin::of);
-    let editor = crate::plugins::lemon_open(channel.id, module);
-    let (Some(_), Some(editor)) = (lemon, editor) else {
+    let editor = crate::plugins::banana_open(channel.id, module);
+    let (Some(_), Some(editor)) = (banana, editor) else {
         return false;
     };
     if let Some(path) = path
@@ -1194,7 +1194,7 @@ mod tests {
         use crate::project_files::content::tests::Temp;
         let tmp = Temp::new("bundled-pick");
         let sine: Vec<f32> = (0..4410).map(|i| (i as f32 * 0.0627).sin() * 0.5).collect();
-        let flac = honeydew_audio::flac_writer::flac(44_100, 16, &[sine]);
+        let flac = banaforge_audio::flac_writer::flac(44_100, 16, &[sine]);
         let kick = vec![("K1.flac", flac)];
         let bundle = fixture(
             &tmp.0.join("content"),

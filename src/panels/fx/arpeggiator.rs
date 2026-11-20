@@ -25,8 +25,8 @@
 //! n = the Rhythm's step count. A Rhythm change re-snaps the kept bipolar position to the new step count
 //! ([`Leaf::lit`](crate::panels::Leaf::lit), [`snap`], the hook [`snap_rotations`]).
 
+use banaforge_audio::analysis;
 use eframe::egui::{Color32, Id, Rect, Stroke, Ui, vec2};
-use honeydew_audio::analysis;
 
 use super::leveller::animate;
 use super::live_analysis;
@@ -764,7 +764,7 @@ mod tests {
             theme: &theme,
             m: &m,
         };
-        let feed = (honeydew_audio::MeterSnapshot::default(), slab.to_vec());
+        let feed = (banaforge_audio::MeterSnapshot::default(), slab.to_vec());
         crate::panels::fx::leveller::feed_pass(ctx, t, 48_000.0, Some(feed), |ui| {
             let mut module = ModuleInstance::new(51, 2);
             for &(p, v) in set {

@@ -1,7 +1,7 @@
-# Honeydew behind Caddy 2 (README "Web"). The site folder is dist/ after tools/web-dist.sh, or the release zip's
+# BanaForge behind Caddy 2 (README "Web"). The site folder is dist/ after tools/web-dist.sh, or the release zip's
 # folder. Change the path and the address to yours.
 :8080 {
-	root * /srv/honeydew
+	root * /srv/banaforge
 
 	# Precompressed: a request for x is answered from x.gz with Content-Encoding: gzip when the client accepts gzip,
 	# and from x otherwise. The wasm and the packs are fetched as their .gz, which goes out as it is and is gunzipped

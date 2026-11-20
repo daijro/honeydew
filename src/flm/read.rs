@@ -30,9 +30,10 @@ use crate::song::points::{Shape, ShapeKind};
 use crate::song::{
     AutomationTarget, CHANNEL_ID_LIMIT, Channel, ChannelKind, Clip, ClipFileState, DrumGrid,
     DrumKit, Event, KeyboardState, Lane, LaneKind, MetaState, MidiSend, Modulation, ModuleInstance,
-    PPQ, Raw, RawChunk, SamplerSlot, SendState, Song, SynthKind, TimeSig,
+    PPQ, Raw, RawChunk, SamplerSlot, SendState, Song, SynthKind, TimeSig, VocalNoteState,
+    VocalPitchPoint,
 };
-use honeydew_audio::dwp::Cstm;
+use banaforge_audio::dwp::Cstm;
 
 /// The memory every file may use whatever its size.
 pub const BUDGET_BASE: usize = 64 << 20;
@@ -830,8 +831,8 @@ impl Reader {
                             *param = value;
                         }
                         // Half Time's Length moved to a param of its own (GitHub #122).
-                        if type_id == honeydew_audio::half_time::HALF_TIME {
-                            honeydew_audio::half_time::upgrade(&mut module.params, saved);
+                        if type_id == banaforge_audio::half_time::HALF_TIME {
+                            banaforge_audio::half_time::upgrade(&mut module.params, saved);
                         }
                     }
                 }
@@ -857,7 +858,7 @@ impl Reader {
                     read.state = state;
                     module.file.plugin = Some(Box::new(read));
                 }
-                // Honeydew's own sidechain (`flm::write`).
+                // BanaForge's own sidechain (`flm::write`).
                 b"HDSc" => module.sidechain = child.reader().i32().ok(),
                 b"PSTA" if plugin::is_plugin(type_id) => {
                     self.charge(child.payload.len(), &child.path)?;
@@ -884,7 +885,7 @@ impl Reader {
         Ok((instance_id, module))
     }
 
-    /// An `HDPm` (`flm::write`): its position in the chain and its module (Honeydew's own type) with the instance id
+    /// An `HDPm` (`flm::write`): its position in the chain and its module (BanaForge's own type) with the instance id
     /// from its `RMOd`. `None` for a layout other than 1 or no `RMOd`, which is skipped as an unknown chunk would be.
     fn plugin_module(
         &mut self,
@@ -938,7 +939,15 @@ impl Reader {
                         channel.lanes.push(lane);
                     }
                 }
-                // Honeydew's own MIDI input (`flm::write`); what does not read is All.
+                // BanaForge's own MIDI input (`flm::write`); what does not read is All.
+                b"BFCr" => {
+                    if let Ok(rgb) = child.reader().u32()
+                        && (1..0xFF_FFFF).contains(&rgb)
+                    {
+                        channel.file.color_rgb =
+                            Some([(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8]);
+                    }
+                }
                 b"HDMi" => {
                     let mut reader = child.reader();
                     let input = &mut channel.file.midi_input;
@@ -947,7 +956,7 @@ impl Reader {
                     let ch = reader.u32_or(0);
                     input.channel = (1..=16).contains(&ch).then(|| ch as u8 - 1);
                 }
-                // Honeydew's own MIDI sends (`flm::write`); a repeated target is ignored.
+                // BanaForge's own MIDI sends (`flm::write`); a repeated target is ignored.
                 b"HDMs" => {
                     let mut reader = child.reader();
                     let sends = &mut channel.file.midi_sends;
@@ -962,7 +971,7 @@ impl Reader {
                         }
                     }
                 }
-                // Honeydew's own Modulator targets (`flm::write`); a Modulator's repeated target is ignored.
+                // BanaForge's own Modulator targets (`flm::write`); a Modulator's repeated target is ignored.
                 b"HDMd" => {
                     let mut reader = child.reader();
                     while let (Ok(modulator), Ok(id), Ok(instance_id), Ok(param)) =
@@ -1133,9 +1142,20 @@ impl Reader {
                     clip.events = decode_events(&payload, kind, file_param, &mut self.budget)
                         .ok_or_else(|| FlmError::new(&child.path, FlmErrorKind::TooLarge))?;
                 }
-                b"HDSh" if kind == LaneKind::Automation => {
+                b"HDSh" if matches!(kind, LaneKind::Automation | LaneKind::Audio) => {
                     self.charge(2 * child.payload.len(), &child.path)?;
                     clip.file.shapes = shapes(child.payload);
+                }
+                b"HDPn" if kind == LaneKind::Audio => {
+                    self.charge(2 * child.payload.len(), &child.path)?;
+                    clip.file.pan_shapes = shapes(child.payload);
+                }
+                b"HDVo" => {
+                    self.charge(2 * child.payload.len(), &child.path)?;
+                    match vocal_notes(child.payload) {
+                        Some(notes) => clip.file.vocal_notes = notes,
+                        None => self.unknown(&child, &mut clip.file.unknown_chunks)?,
+                    }
                 }
                 b"CLSm" => {
                     let (_, mut sample) = self.slot(&child)?;
@@ -1148,6 +1168,73 @@ impl Reader {
         }
         Ok(clip)
     }
+}
+
+/// An `HDVo` (`flm::write`): version 1 has lyrics and pitch points; version 2 adds normalized dynamics, breathiness,
+/// and formant per note. Invalid or oversized records are kept as an unknown chunk by the caller.
+fn vocal_notes(payload: &[u8]) -> Option<Vec<VocalNoteState>> {
+    let mut reader = Cursor::new(payload, "HDVo");
+    let version = reader.u16().ok()?;
+    if !matches!(version, 1 | 2) {
+        return None;
+    }
+    let count = usize::from(reader.u16().ok()?);
+    if count > 16_384 {
+        return None;
+    }
+    let mut notes = Vec::with_capacity(count);
+    for _ in 0..count {
+        let pos = reader.u32().ok()?;
+        let key = reader.u8().ok()?;
+        if key > 127 {
+            return None;
+        }
+        let lyric = text(reader.vstr16().ok()?);
+        let (dynamics, breathiness, formant) = if version >= 2 {
+            (reader.f32().ok()?, reader.f32().ok()?, reader.f32().ok()?)
+        } else {
+            (0.5, 0.0, 0.5)
+        };
+        let safe = |value: f32, fallback: f32| {
+            if value.is_finite() {
+                value.clamp(0.0, 1.0)
+            } else {
+                fallback
+            }
+        };
+        let point_count = usize::from(reader.u16().ok()?);
+        if point_count > 512 {
+            return None;
+        }
+        let mut pitch = Vec::with_capacity(point_count);
+        for _ in 0..point_count {
+            let offset = reader.f32().ok()?;
+            let cents = reader.f32().ok()?;
+            pitch.push(VocalPitchPoint {
+                offset: if offset.is_finite() {
+                    offset.clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
+                cents: if cents.is_finite() {
+                    cents.clamp(-1200.0, 1200.0)
+                } else {
+                    0.0
+                },
+            });
+        }
+        pitch.sort_by(|a, b| a.offset.total_cmp(&b.offset));
+        notes.push(VocalNoteState {
+            pos,
+            key,
+            lyric,
+            dynamics: safe(dynamics, 0.5),
+            breathiness: safe(breathiness, 0.0),
+            formant: safe(formant, 0.5),
+            pitch,
+        });
+    }
+    (reader.remaining() == 0).then_some(notes)
 }
 
 /// An `HDSh` (`flm::write`): 6-byte records of u32 tick, u8 shape, u8 tension. An unknown shape is skipped, a tension

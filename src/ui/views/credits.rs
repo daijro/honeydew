@@ -15,19 +15,18 @@ use crate::content::bundle::Credit;
 use crate::content::{Bundle, web};
 
 /// The logo's credit, as the README gives it.
-pub const LOGO: &str = "The icon is a derivative of \"Melon\" by afitrose. It is licensed as Free for commercial use \
-                        WITH ATTRIBUTION.";
-/// The plugin hosting's credit (the desktop's; `vendor/lemon-studio`).
+pub const LOGO: &str = "BanaForge banana artwork supplied by the app owner. Source provenance and redistribution rights must be verified before publishing.";
+/// The plugin hosting's credit (the desktop's; `vendor/banana-studio`).
 const PLUGIN_HOSTS: &str = "VST3, VST2 and CLAP plugin hosting: Lemon Studio by ItsAlphaNeon (GPL-3.0-or-later), \
                             https://github.com/ItsAlphaNeon/Lemon-Studio";
-/// The credit of the Lemon Reverb and Lemon Limiter effects (`vendor/lemon-studio/os-engine/src/effects`) and the
-/// built-in Lemon plugins (`crate::plugins::builtin`).
+/// The credit of the Banana Reverb and Banana Limiter effects (`vendor/banana-studio/os-engine/src/effects`) and the
+/// built-in Banana plugins (`crate::plugins::builtin`).
 fn effects() -> String {
-    let mut names = vec!["Lemon Reverb", "Lemon Limiter"];
+    let mut names = vec!["Banana Reverb", "Banana Limiter"];
     names.extend(crate::plugins::builtin::all().iter().map(|b| b.name));
     let last = names.pop().unwrap_or_default();
     format!(
-        "{} and {last}: Lemon Studio by ItsAlphaNeon (GPL-3.0-or-later), https://github.com/ItsAlphaNeon/Lemon-Studio",
+        "{} and {last}: Banana Studio by ItsAlphaNeon (GPL-3.0-or-later), https://github.com/ItsAlphaNeon/Lemon-Studio",
         names.join(", ")
     )
 }
@@ -138,7 +137,7 @@ mod tests {
             "license": "LicenseRef-PD-declared", "url": "https://archive.org/details/SalamanderGrandPianoV3"},
         "musescore": {"title": "MuseScore_General", "author": "S. Christian Collins", "license": "MIT",
             "note": "Full notice in CREDITS.txt"},
-        "honeydew": {"title": "Honeydew procedural sounds", "author": "The Honeydew contributors",
+        "banaforge": {"title": "BanaForge procedural sounds", "author": "The BanaForge contributors",
             "license": "CC0-1.0"}}}"#;
     const MIT: &str =
         "Permission is hereby granted, free of charge, to any person obtaining a copy";
@@ -230,7 +229,7 @@ mod tests {
             "License LicenseRef-PD-declared:",
             "Salamander Grand Piano V3 by Alexander Holm",
             "https://archive.org/details/SalamanderGrandPianoV3",
-            "Honeydew procedural sounds by The Honeydew contributors",
+            "BanaForge procedural sounds by The BanaForge contributors",
             MIT,
             "OK",
         ] {

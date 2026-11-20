@@ -12,7 +12,7 @@ pub struct AutomationTarget {
     pub parameter_index: i32,
 }
 
-/// How a segment goes from the point that starts it to the next one ([`shape_value`]). Honeydew's own: FL Studio
+/// How a segment goes from the point that starts it to the next one ([`shape_value`]). BanaForge's own: FL Studio
 /// Mobile's segments are all [`Shape::default`], a straight line.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum ShapeKind {

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- BanaForge Material 3 Dark Surface Hierarchy (API 26+) -->
+    <color name="m3_surface_dim">#111417</color>
+    <color name="m3_surface_container_lowest">#0D1012</color>
+    <color name="m3_surface_container">#1B1F23</color>
+    <color name="m3_surface_container_high">#23282D</color>
+    <color name="m3_surface_container_highest">#2D3339</color>
+
+    <!-- BanaForge Brand Accents (derived from banaforge.svg) -->
+    <color name="m3_primary">#B4DF7A</color>
+    <color name="m3_on_primary">#1E3700</color>
+    <color name="m3_primary_container">#304F0F</color>
+    <color name="m3_on_primary_container">#D0FC93</color>
+
+    <!-- Typography & Outlines -->
+    <color name="m3_on_surface">#E5E8EC</color>
+    <color name="m3_on_surface_variant">#BFC7CF</color>
+    <color name="m3_outline">#8A929A</color>
+    <color name="m3_outline_variant">#3E454D</color>
+
+    <!-- Interactive Ripple Overlay -->
+    <color name="m3_ripple_primary">#33B4DF7A</color>
+    <color name="m3_ripple_on_primary">#281E3700</color>
+</resources>

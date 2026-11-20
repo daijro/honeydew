@@ -1,4 +1,4 @@
-//! Honeydew: an open-source app inspired by a mobile DAW's workflow.
+//! BanaForge: an open-source app inspired by a mobile DAW's workflow.
 
 #[cfg(target_os = "android")]
 mod android;
@@ -35,16 +35,20 @@ pub mod theme;
 pub mod token_map;
 pub mod ui;
 pub mod versions;
+pub mod vocal_synth;
 pub mod zip;
 // In-app updates and the sound library's download (#66); the web is always current.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod update;
 
 /// Display name, used for the window title, and the name of the app's data and settings folders.
-pub const APP_NAME: &str = "Honeydew";
+pub const APP_NAME: &str = "BanaForge";
 
 /// The app's former name: its data and settings folders, and its web storage keys, were named after it.
 pub const LEGACY_APP_NAME: &str = "Studio";
+
+/// Previous branded name, retained only to migrate existing user data.
+pub const PREVIOUS_APP_NAME: &str = "Honeydew";
 
 /// The folder `new`, named after the app, which `old`, named after its former name, becomes the first time: when `new`
 /// is missing (or an empty folder) and `old` is the app's folder ([`is_legacy_app_dir`]), `old` is renamed to `new`
@@ -154,7 +158,7 @@ async fn run_web() -> Result<(), wasm_bindgen::JsValue> {
         .start(
             canvas.clone(),
             eframe::WebOptions::default(),
-            Box::new(|cc| Ok(Box::new(app::HoneydewApp::new(cc)))),
+            Box::new(|cc| Ok(Box::new(app::BanaForgeApp::new(cc)))),
         )
         .await?;
     app::live::web::attach(&runner)?;
@@ -189,7 +193,7 @@ async fn run_web() -> Result<(), wasm_bindgen::JsValue> {
     // A finger presses from its `touchstart` alone, with its touch in the same frame, as on Android (issue #35).
     // eframe's canvas `pointerdown` would press it a frame earlier, as a mouse: a drum pad played twice. Its `pointerup`
     // stays eframe's, whose release frame runs inside the gesture (the audio starts there); the second release that
-    // `touchend` adds goes in `HoneydewApp::raw_input_hook`. (A capturing listener on the target runs before eframe's.)
+    // `touchend` adds goes in `BanaForgeApp::raw_input_hook`. (A capturing listener on the target runs before eframe's.)
     runner.add_event_listener_ex(
         &canvas,
         "pointerdown",
@@ -207,7 +211,7 @@ async fn run_web() -> Result<(), wasm_bindgen::JsValue> {
         &window,
         "beforeunload",
         |event: web_sys::BeforeUnloadEvent, runner| {
-            if runner.app_mut::<app::HoneydewApp>().unsaved() {
+            if runner.app_mut::<app::BanaForgeApp>().unsaved() {
                 event.prevent_default();
                 // Older browsers ask only when a return value is set.
                 event.set_return_value("unsaved");
@@ -221,7 +225,7 @@ async fn run_web() -> Result<(), wasm_bindgen::JsValue> {
         "visibilitychange",
         move |_: JsValue, runner| {
             if document.hidden() {
-                runner.app_mut::<app::HoneydewApp>().on_hidden();
+                runner.app_mut::<app::BanaForgeApp>().on_hidden();
             }
         },
     )
@@ -280,7 +284,7 @@ mod tests {
     #[test]
     fn another_programs_folder_of_the_former_name_is_left_alone() {
         let tmp = Temp::new("foreign");
-        let (old, new) = (tmp.0.join("studio"), tmp.0.join("honeydew"));
+        let (old, new) = (tmp.0.join("studio"), tmp.0.join("banaforge"));
         std::fs::create_dir_all(old.join("data").join("cache")).unwrap();
         std::fs::write(old.join("theirs.txt"), b"theirs").unwrap();
         std::fs::write(old.join("storage.json"), r#"{"other.settings":"x"}"#).unwrap();
@@ -305,13 +309,13 @@ mod tests {
         let markers = ["My Songs", "Original Content", "data/My Songs"];
         for (i, marker) in markers.into_iter().enumerate() {
             let tmp = Temp::new(&format!("ours-{i}"));
-            let (old, new) = (tmp.0.join("studio"), tmp.0.join("honeydew"));
+            let (old, new) = (tmp.0.join("studio"), tmp.0.join("banaforge"));
             std::fs::create_dir_all(old.join(marker)).unwrap();
             assert_eq!(migrate_legacy_dir(&old, &new), new, "{marker}");
             assert!(!old.exists() && new.join(marker).is_dir(), "{marker}");
         }
         let tmp = Temp::new("ours-settings");
-        let (old, new) = (tmp.0.join("Studio"), tmp.0.join("Honeydew"));
+        let (old, new) = (tmp.0.join("Studio"), tmp.0.join("BanaForge"));
         std::fs::create_dir_all(&old).unwrap();
         let json = serde_json::json!({ "studio.settings": "{}" }).to_string();
         std::fs::write(old.join("storage.json"), &json).unwrap();
@@ -322,7 +326,7 @@ mod tests {
         );
         // Any key of the former name will do: only the routing preferences were ever stored.
         let tmp = Temp::new("ours-routing");
-        let (old, new) = (tmp.0.join("Studio"), tmp.0.join("Honeydew"));
+        let (old, new) = (tmp.0.join("Studio"), tmp.0.join("BanaForge"));
         std::fs::create_dir_all(&old).unwrap();
         let json = serde_json::json!({ "studio.routingPrefs": "{}" }).to_string();
         std::fs::write(old.join("storage.json"), &json).unwrap();
@@ -333,7 +337,7 @@ mod tests {
     #[test]
     fn the_legacy_folder_is_renamed_when_the_new_one_is_missing() {
         let tmp = Temp::new("renamed");
-        let (old, new) = (tmp.0.join("studio"), tmp.0.join("honeydew"));
+        let (old, new) = (tmp.0.join("studio"), tmp.0.join("banaforge"));
         std::fs::create_dir_all(old.join("My Songs")).unwrap();
         std::fs::write(old.join("My Songs").join("A.flm"), b"song").unwrap();
         assert_eq!(migrate_legacy_dir(&old, &new), new);
@@ -347,7 +351,7 @@ mod tests {
     #[test]
     fn an_existing_new_folder_is_used_and_the_legacy_one_left_alone() {
         let tmp = Temp::new("both");
-        let (old, new) = (tmp.0.join("studio"), tmp.0.join("honeydew"));
+        let (old, new) = (tmp.0.join("studio"), tmp.0.join("banaforge"));
         std::fs::create_dir_all(&old).unwrap();
         std::fs::write(old.join("old.txt"), b"old").unwrap();
         std::fs::create_dir_all(&new).unwrap();
@@ -361,7 +365,7 @@ mod tests {
     #[test]
     fn without_a_legacy_folder_the_new_one_is_used_and_not_made() {
         let tmp = Temp::new("fresh");
-        let (old, new) = (tmp.0.join("studio"), tmp.0.join("honeydew"));
+        let (old, new) = (tmp.0.join("studio"), tmp.0.join("banaforge"));
         assert_eq!(migrate_legacy_dir(&old, &new), new);
         assert!(!new.exists() && !old.exists());
     }
@@ -370,7 +374,10 @@ mod tests {
     fn a_failed_rename_keeps_the_legacy_folder_in_use() {
         let tmp = Temp::new("failed");
         // The new folder's parent is missing, so the rename fails.
-        let (old, new) = (tmp.0.join("studio"), tmp.0.join("missing").join("honeydew"));
+        let (old, new) = (
+            tmp.0.join("studio"),
+            tmp.0.join("missing").join("banaforge"),
+        );
         ours(&old);
         std::fs::write(old.join("keep.txt"), b"keep").unwrap();
         assert_eq!(migrate_legacy_dir(&old, &new), old);
@@ -381,7 +388,7 @@ mod tests {
     #[test]
     fn an_empty_new_folder_gives_way_to_the_legacy_one() {
         let tmp = Temp::new("empty-new");
-        let (old, new) = (tmp.0.join("studio"), tmp.0.join("honeydew"));
+        let (old, new) = (tmp.0.join("studio"), tmp.0.join("banaforge"));
         ours(&old);
         std::fs::write(old.join("keep.txt"), b"keep").unwrap();
         std::fs::create_dir_all(&new).unwrap();
@@ -394,7 +401,7 @@ mod tests {
     fn instances_starting_together_all_use_the_renamed_folder() {
         for round in 0..20 {
             let tmp = Temp::new(&format!("race-{round}"));
-            let (old, new) = (tmp.0.join("studio"), tmp.0.join("honeydew"));
+            let (old, new) = (tmp.0.join("studio"), tmp.0.join("banaforge"));
             ours(&old);
             std::fs::write(old.join("keep.txt"), b"keep").unwrap();
             let barrier = std::sync::Barrier::new(8);
@@ -421,7 +428,10 @@ mod tests {
     #[test]
     fn a_pair_is_migrated_once_per_process() {
         let tmp = Temp::new("once");
-        let (old, new) = (tmp.0.join("studio"), tmp.0.join("missing").join("honeydew"));
+        let (old, new) = (
+            tmp.0.join("studio"),
+            tmp.0.join("missing").join("banaforge"),
+        );
         ours(&old);
         // The first try fails (no parent) and keeps the old folder; a second, which could rename it now, does not run.
         assert_eq!(migrate_legacy_dir_once(&old, &new), old);

@@ -4,8 +4,8 @@
 
 use eframe::egui::{Color32, Pos2, Rect, Shape, Stroke, Ui, pos2};
 // The shape functions are the engine's, so the curve is the sound's.
-use honeydew_audio::analysis;
-use honeydew_audio::waveshaper::{shape, shape_index};
+use banaforge_audio::analysis;
+use banaforge_audio::waveshaper::{shape, shape_index};
 
 use super::live_analysis;
 use crate::panels::build::*;
@@ -638,7 +638,7 @@ mod tests {
         };
         let out = Context::default().run(RawInput::default(), |ctx| {
             let ui = egui::Ui::new(ctx.clone(), egui::Id::new("overlay"), Default::default());
-            let feed = (honeydew_audio::MeterSnapshot::default(), &[0.2, 0.9][..]);
+            let feed = (banaforge_audio::MeterSnapshot::default(), &[0.2, 0.9][..]);
             crate::panels::post_feed(&ui, 2, Some(feed));
             transfer(
                 &ui,

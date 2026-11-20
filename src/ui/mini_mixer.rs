@@ -23,8 +23,8 @@
 //! cell); the sub-tracks triangle and the current sub-track's triangle show collapsed too (they are neither controls
 //! nor labels); the expanded meters are drawn under the level slider, the left peak on the lower bar.
 
+use banaforge_audio::device::ModuleMeter;
 use eframe::egui::{Align2, Color32, Id, Rect, Shape, Stroke, Ui, UiBuilder, pos2, vec2};
-use honeydew_audio::device::ModuleMeter;
 
 use crate::icons::{draw_icon, icon_edge};
 use crate::metrics::{FontSize, Metrics};
@@ -156,6 +156,8 @@ pub struct Column<'a> {
     pub press: f32,
     /// Multitrack recording is on: an armed Audio Record channel shows its dot.
     pub multitrack: bool,
+    /// Playback-gated, opt-in activity lights; no independent refresh timer.
+    pub activity: bool,
     /// This frame's meters (the channel strip's are instance 0), if the audio runs.
     pub meters: Option<&'a [ModuleMeter]>,
 }
@@ -196,8 +198,10 @@ pub fn show(
             col.left..=col.left + col.width,
             top..=top + row_h * row.rows() - 1.0 / m.ppp(),
         );
+        // Invisible rows do not query meters or emit indicator geometry.
+        if !rect.intersects(ui.clip_rect()) { continue; }
         let kind = RowKind::of(song, &row);
-        let ink = channel_color(song.channels[row.channel].hue, cx.theme).to_color32();
+        let ink = channel_color(song.channels[row.channel].color_token(), cx.theme).to_color32();
         let painter = ui.painter().clone();
         let fill = match kind {
             RowKind::Sub => c.control_fill,
@@ -237,6 +241,20 @@ pub fn show(
                 for bar in collapsed_meters(cell, peaks, m) {
                     painter.rect_filled(bar, 0.0, icon_ink);
                 }
+            }
+        }
+        if col.activity && kind != RowKind::Sub {
+            // Meters are channel-strip output, not clip scheduling or MIDI velocity.
+            // Sub/automation lanes share a strip; do not invent independent levels.
+            let level = activity_intensity(peaks);
+            let size = vec2(m.u(0.18).max(2.0 / m.ppp()),
+                m.u(0.65).min(rect.height() * 0.5));
+            let light = Rect::from_center_size(
+                pos2(rect.right() - size.x, rect.center().y), size);
+            painter.rect_filled(light, size.x * 0.3,
+                c.background.to_color32());
+            if level > 0.0 {
+                painter.rect_filled(light, size.x * 0.3, ink.gamma_multiply(level));
             }
         }
         if !col.expanded {
@@ -301,6 +319,25 @@ fn display_name(name: &str, kind: ChannelKind) -> &str {
         ("", ChannelKind::EffectTrack) => "AUX",
         ("", _) => "CHANNEL",
         (name, _) => name,
+    }
+}
+
+/// Cheap finite stereo peak → perceptual brightness. No PCM reads or animation state.
+fn activity_intensity(peaks: [f32; 2]) -> f32 {
+    meter(peaks.into_iter().filter(|p| p.is_finite()).fold(0.0_f32, f32::max))
+}
+
+#[cfg(test)]
+mod activity_indicator_tests {
+    use super::*;
+    #[test]
+    fn activity_indicator_tracks_real_stereo_levels_and_rejects_invalid_values() {
+        assert_eq!(activity_intensity([0.0, 0.0]), 0.0);
+        assert_eq!(activity_intensity([f32::NAN, f32::INFINITY]), 0.0);
+        let quiet = activity_intensity([0.01, 0.0]);
+        let loud = activity_intensity([0.0, 1.0]);
+        assert!(quiet > 0.0 && loud > quiet && loud <= 1.0);
+        assert_eq!(activity_intensity([-1.0, -2.0]), 0.0);
     }
 }
 

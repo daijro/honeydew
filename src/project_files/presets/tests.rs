@@ -265,7 +265,7 @@ fn on_the_web_a_taken_name_asks_before_it_is_written_over() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn on_the_desktop_a_taken_name_asks_before_it_is_written_over() {
-    let user = std::env::temp_dir().join(format!("honeydew-r2-overwrite-{}", std::process::id()));
+    let user = std::env::temp_dir().join(format!("banaforge-r2-overwrite-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&user);
     a_taken_name_asks_before_it_is_written_over(
         ProjectFiles::on_disk(&user),
@@ -401,7 +401,7 @@ fn on_the_desktop_presets_land_in_the_user_folder_beside_my_songs() {
         songs.as_deref().and_then(Path::parent).map(Path::to_owned)
     );
 
-    let user = std::env::temp_dir().join(format!("honeydew-r2-presets-{}", std::process::id()));
+    let user = std::env::temp_dir().join(format!("banaforge-r2-presets-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&user);
     let mut files = ProjectFiles::on_disk(&user);
     save(&mut files, PresetSource::Module(distortion()), "Crunch");
@@ -432,7 +432,7 @@ fn on_the_desktop_presets_land_in_the_user_folder_beside_my_songs() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn on_the_desktop_the_preset_pickers_list_and_read_the_user_folder() {
-    let user = std::env::temp_dir().join(format!("honeydew-r3b-library-{}", std::process::id()));
+    let user = std::env::temp_dir().join(format!("banaforge-r3b-library-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&user);
     let mut files = ProjectFiles::on_disk(&user);
     save(&mut files, PresetSource::Module(distortion()), "Crunch");
@@ -471,7 +471,7 @@ fn on_the_desktop_the_preset_pickers_list_and_read_the_user_folder() {
 #[test]
 fn on_the_desktop_the_pickers_file_actions_use_the_user_folders_bin() {
     use crate::ui::main_menu::{FileActions, Opt, SongEntry, Step};
-    let user = std::env::temp_dir().join(format!("honeydew-r3c-files-{}", std::process::id()));
+    let user = std::env::temp_dir().join(format!("banaforge-r3c-files-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&user);
     let mut files = ProjectFiles::on_disk(&user);
     let dir = files.presets_dir(0).unwrap();

@@ -1,8 +1,8 @@
 use std::f64::consts::TAU;
 use std::io::{Cursor, Seek};
 
-use honeydew_audio::sample::decode;
-use honeydew_audio::wav_writer::{HEADER_LEN, WavWriter, float32_wav};
+use banaforge_audio::sample::decode;
+use banaforge_audio::wav_writer::{HEADER_LEN, WavWriter, float32_wav};
 
 fn le16(b: &[u8], at: usize) -> u16 {
     u16::from_le_bytes([b[at], b[at + 1]])
@@ -220,7 +220,7 @@ const TAGS: [(&str, &str); 7] = [
     ("GENRE", "House"),
     ("DATE", "2026"),
     ("COMMENT", "Made on a phone"),
-    ("ENCODER", "Honeydew 0.5.4"),
+    ("ENCODER", "BanaForge 0.5.4"),
 ];
 
 /// #139: a tagged WAV has a `LIST` `INFO` chunk between `fmt ` and `data`, each text zero-terminated, its chunk padded
@@ -266,7 +266,7 @@ fn tags_go_in_a_list_info_chunk_before_the_data_and_the_file_still_decodes() {
         ("IGNR", "House"),
         ("ICRD", "2026"),
         ("ICMT", "Made on a phone"),
-        ("ISFT", "Honeydew 0.5.4"),
+        ("ISFT", "BanaForge 0.5.4"),
     ];
     assert_eq!(
         info,

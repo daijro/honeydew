@@ -9,7 +9,7 @@ use crate::song::{AutomationTarget, ChannelKind, Raw, SendState, SynthKind};
 use crate::theme::theme_by_id;
 use crate::ui::ctrl_menu::{CtrlAction, Touch};
 use crate::ui::offscreen::key_tap;
-use honeydew_audio::instrument::KEY_LEARN;
+use banaforge_audio::instrument::KEY_LEARN;
 
 // ---- the height table ----
 
@@ -92,6 +92,7 @@ fn instruments_take_the_card_heights_of_their_table() {
         (33, "Slicer", 8.5),
         (39, "3x Osc", 10.0),
         (52, "SoundFont Player", 8.5),
+        (53, "Vocal Synth", 8.5),
     ];
     for (id, name, height) in table {
         assert_eq!(ui_height(id), Some(height), "{name}");
@@ -436,8 +437,8 @@ fn an_instrument_the_channel_cannot_take_is_skipped_and_counted() {
 }
 
 #[test]
-fn a_rack_preset_skips_module_ids_above_52_like_paste_and_counts_them() {
-    // Module ids above 52 are skipped, by the same attach routine as `Paste`.
+fn a_rack_preset_skips_module_ids_above_53_like_paste_and_counts_them() {
+    // Module ids above 53 are skipped, by the same attach routine as `Paste`.
     let end = Some(InsertAt::End);
     let cases: [(_, &[u16]); 3] = [
         (None, &[11]),
@@ -447,7 +448,7 @@ fn a_rack_preset_skips_module_ids_above_52_like_paste_and_counts_them() {
     for (at, expected) in cases {
         let mut ch = channel(ChannelKind::Rack, &[6]);
         assert_eq!(
-            load_rack(&mut ch, &preset(&[53, 11, 99]), at),
+            load_rack(&mut ch, &preset(&[54, 11, 99]), at),
             (Outcome::ChainChanged, 2),
             "{at:?}"
         );
@@ -460,21 +461,31 @@ fn a_rack_preset_skips_module_ids_above_52_like_paste_and_counts_them() {
         (Outcome::ChainChanged, 3)
     );
     assert_eq!(types(&ch.rack), [11]);
-    // Nothing but ids above 52: no edit, the rack's modules and instrument stay.
+    // Nothing but ids above 53: no edit, the rack's modules and instrument stay.
     let mut ch = channel(ChannelKind::Synth(SynthKind::MiniSynth), &[0, 6]);
     let kept = ch.clone();
     assert_eq!(
-        load_rack(&mut ch, &preset(&[53, 60]), None),
+        load_rack(&mut ch, &preset(&[54, 60]), None),
         (Outcome::Nothing, 2)
     );
     assert_eq!(ch, kept);
-    // The last id is 52 (SoundFont Player): it loads.
+    // SoundFont Player (52) loads; the next unknown id (54) is skipped.
     let mut ch = channel(ChannelKind::Rack, &[]);
     assert_eq!(
-        load_rack(&mut ch, &preset(&[52, 53]), end),
+        load_rack(&mut ch, &preset(&[52, 54]), end),
         (Outcome::ChainChanged, 1)
     );
     assert_eq!(types(&ch.rack), [52]);
+}
+
+#[test]
+fn vocal_synth_is_a_valid_instrument_module_type() {
+    let mut ch = channel(ChannelKind::Rack, &[6]);
+    assert_eq!(
+        load_rack(&mut ch, &preset(&[53]), Some(InsertAt::End)),
+        (Outcome::ChainChanged, 0)
+    );
+    assert_eq!(types(&ch.rack), [6, 53]);
 }
 
 #[test]
@@ -584,7 +595,7 @@ fn the_browsers_rack_preset_goes_where_paste_puts_the_same_modules() {
     // One `+`, one placement. A [MiniSynth, Reverb] preset into [Arpeggiator (2), Distortion (3)] from `+` is appended
     // at the bottom in file order (loading appends).
     let rack = || channel(ChannelKind::Rack, &[51, 6]);
-    let modules = preset(&[0, 53, 32]);
+    let modules = preset(&[0, 54, 32]);
     let ats = [
         InsertAt::End,
         InsertAt::Above(3),
@@ -642,7 +653,7 @@ fn paste_inserts_every_compatible_module_in_clipboard_order_with_fresh_ids_and_s
 }
 
 #[test]
-fn paste_skips_instruments_off_a_notes_lane_and_ids_above_52() {
+fn paste_skips_instruments_off_a_notes_lane_and_ids_above_53() {
     // A drums, audio, effect-track or master channel's primary lane is no notes lane: the MiniSynth is skipped.
     let mut channels = [
         ChannelKind::Drums,
@@ -660,9 +671,9 @@ fn paste_skips_instruments_off_a_notes_lane_and_ids_above_52() {
         );
         assert_eq!(types(&ch.rack), [51, 6], "{:?}", ch.kind);
     }
-    // Nothing compatible (an instrument, and 53, past the last module id): nothing changes, and a `Replace` keeps
+    // Nothing compatible (an instrument, and 54, past the last module id): nothing changes, and a `Replace` keeps
     // its module.
-    let clipboard = preset(&[0, 53]);
+    let clipboard = preset(&[0, 54]);
     let mut ch = channel(ChannelKind::Drums, &[6]);
     let kept = ch.clone();
     assert_eq!(
@@ -671,7 +682,7 @@ fn paste_skips_instruments_off_a_notes_lane_and_ids_above_52() {
     );
     assert_eq!(paste(&mut ch, &[], InsertAt::End), Outcome::Nothing);
     assert_eq!(ch, kept);
-    // A notes lane takes the instrument, beside its own; 53 never.
+    // A notes lane takes the instrument, beside its own; 54 never.
     let mut ch = channel(ChannelKind::Instrument, &[2]);
     assert_eq!(
         paste(&mut ch, &clipboard, InsertAt::End),
@@ -1430,6 +1441,7 @@ fn the_module_area_of_an_instrument_card_is_16_96_u_by_h_minus_2_01_u() {
         (33, 8.5),
         (39, 10.0),
         (52, 8.5),
+        (53, 8.5),
     ] {
         let module = ModuleInstance::new(id, 2);
         assert_eq!(card_height(&module), h);
@@ -1471,7 +1483,7 @@ fn instrument_card_menus_add_set_range_or_set_first_note() {
             .map(|i| (i.id, i.label.into_owned(), i.disabled))
     };
     let item = |action, label: &str| Some((Some(action), label.to_owned(), false));
-    for id in [0, 1, 2, 19, 23, 39, 52] {
+    for id in [0, 1, 2, 19, 23, 39, 52, 53] {
         assert_eq!(
             row(id, true, 4),
             item(CardAction::SetRange, "Set Range"),
@@ -2536,7 +2548,7 @@ fn load_drumset_asks_for_the_drumset_picker() {
 
 // ---- Live meters: each card posts its module's meter from the output snapshot for the panel's draws ----
 
-use honeydew_audio::MeterSnapshot;
+use banaforge_audio::MeterSnapshot;
 
 /// The rects filled in `fill` inside control `n` of the rig's card of `ui_height` U, in drawing order.
 fn fills(rig: &Rig, ui_height: f32, n: u32, fill: Color32) -> Vec<Rect> {
