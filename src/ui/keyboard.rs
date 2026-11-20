@@ -1750,7 +1750,14 @@ mod tests {
             colors.white_key.to_color32(),
             colors.black_key_disabled.to_color32(),
         );
-        let shapes = drawn(PLAY, &Settings { key_names: true, ..Settings::default() }, vec![]);
+        let shapes = drawn(
+            PLAY,
+            &Settings {
+                key_names: true,
+                ..Settings::default()
+            },
+            vec![],
+        );
         // U = 32: the strip is ceil(3.2) = 4 px, 536 … 540, across C4 (0 … 64) less the separators.
         for (x, root) in [(2.0, true), (32.0, true), (62.0, true), (96.0, false)] {
             let marker = if root { Color32::WHITE } else { white };
@@ -1759,7 +1766,10 @@ mod tests {
         }
         // Every C in view: C4, C5 and C6, each labelled with its octave in `blackKeyDisabled`, centred on the key and
         // sitting on its strip at 12 pt (24 px).
-        let labels: Vec<_> = texts(&shapes).into_iter().filter(|t| t.0.starts_with("C")).collect();
+        let labels: Vec<_> = texts(&shapes)
+            .into_iter()
+            .filter(|t| t.0.starts_with("C"))
+            .collect();
         let names: Vec<&str> = labels.iter().map(|l| l.0.as_str()).collect();
         assert_eq!(names, ["C4", "C5", "C6"]);
         for ((_, color, rect), left) in labels.iter().zip([0.0, 7.0 * 64.0, 14.0 * 64.0]) {
@@ -1791,7 +1801,14 @@ mod tests {
             lock: Some((2, MAJOR)),
             ..PLAY
         };
-        let shapes = drawn(d_major, &Settings { key_names: true, ..Settings::default() }, vec![]);
+        let shapes = drawn(
+            d_major,
+            &Settings {
+                key_names: true,
+                ..Settings::default()
+            },
+            vec![],
+        );
         let at = |x: f32, y: f32| top_fill(&shapes, pos2(x, y));
         // C (out of D major): `whiteKeyDisabled` over its strip and above it.
         assert_eq!(at(16.0, 420.0), Some(c(colors.white_key_disabled)));
@@ -1808,16 +1825,33 @@ mod tests {
         assert_eq!(at(105.5, 420.0), Some(c(colors.black_key_disabled)));
         assert_eq!(at(128.0, 420.0), Some(c(colors.black_key_disabled)));
         // The root's label: `D4`, not `C4`.
-        let names: Vec<String> = texts(&shapes).into_iter().map(|t| t.0).filter(|t| t.starts_with("D") && t.len() > 1).collect();
+        let names: Vec<String> = texts(&shapes)
+            .into_iter()
+            .map(|t| t.0)
+            .filter(|t| t.starts_with("D") && t.len() > 1)
+            .collect();
         assert_eq!(names, ["D4", "D5", "D6"]);
     }
 
     #[test]
     fn key_names_off_hides_every_label_including_roots() {
-        for input in [PLAY, KeyInput { lock: Some((2, MAJOR)), ..PLAY }] {
+        for input in [
+            PLAY,
+            KeyInput {
+                lock: Some((2, MAJOR)),
+                ..PLAY
+            },
+        ] {
             let off = drawn(input, &Settings::default(), vec![]);
             assert!(texts(&off).is_empty());
-            let on = drawn(input, &Settings { key_names: true, ..Settings::default() }, vec![]);
+            let on = drawn(
+                input,
+                &Settings {
+                    key_names: true,
+                    ..Settings::default()
+                },
+                vec![],
+            );
             assert!(!texts(&on).is_empty());
         }
     }
@@ -1940,8 +1974,18 @@ mod tests {
             lock: Some((1, MAJOR)),
             ..PLAY
         };
-        let shapes = drawn(input, &Settings { key_names: true, ..Settings::default() }, vec![]);
-        let first = texts(&shapes).into_iter().next().map(|t| (t.0, t.1));
+        let shapes = drawn(
+            input,
+            &Settings {
+                key_names: true,
+                ..Settings::default()
+            },
+            vec![],
+        );
+        let first = texts(&shapes)
+            .into_iter()
+            .find(|t| t.0 == "C#4")
+            .map(|t| (t.0, t.1));
         let wkd = colors.white_key_disabled.to_color32();
         assert_eq!(first, Some(("C#4".into(), wkd)));
         // C# (41 … 86 × 405 … 486): the lip below t = 76 in the channel colour, `blackKey` inside the borders above.

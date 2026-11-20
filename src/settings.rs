@@ -68,9 +68,8 @@ pub fn migrate_legacy_keys(storage: &mut dyn eframe::Storage) {
 #[cfg(desktop)]
 pub const SOUND_MODES: [(u8, &str); 2] = [(0, "STANDARD"), (1, "MULTITRACK")];
 #[cfg(not(desktop))]
-pub const SOUND_MODES: [(u8, &str); 4] = [
-    (3, "NATIVE"), (1, "FAST"), (0, "SAFE"), (2, "ULTRA SAFE"),
-];
+pub const SOUND_MODES: [(u8, &str); 4] =
+    [(3, "NATIVE"), (1, "FAST"), (0, "SAFE"), (2, "ULTRA SAFE")];
 
 /// Buffer-size slider positions. Zero keeps the audio device's native/default buffer;
 /// positive values are targets that the backend clamps to the device's supported range.
@@ -1004,10 +1003,17 @@ mod tests {
         for (sound_mode, _) in SOUND_MODES {
             for key_names in [false, true] {
                 let mut mem = Mem::default();
-                let s = Settings { sound_mode, key_names, ..Settings::default() };
+                let s = Settings {
+                    sound_mode,
+                    key_names,
+                    ..Settings::default()
+                };
                 s.save(&mut mem);
                 let restored = Settings::load(&mem);
-                assert_eq!((restored.sound_mode, restored.key_names), (sound_mode, key_names));
+                assert_eq!(
+                    (restored.sound_mode, restored.key_names),
+                    (sound_mode, key_names)
+                );
             }
         }
     }

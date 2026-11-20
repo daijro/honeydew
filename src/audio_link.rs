@@ -685,7 +685,12 @@ impl AudioLink {
             }
             for (id, index, value) in self.controllers.clone() {
                 if let Some(channel) = song.channels.iter().position(|c| c.id == id) {
-                    self.send(AudioCommand::SetParam { channel, instance_id: 0, index, value });
+                    self.send(AudioCommand::SetParam {
+                        channel,
+                        instance_id: 0,
+                        index,
+                        value,
+                    });
                 }
             }
         }
@@ -2209,21 +2214,39 @@ mod mobile_sound_mode_tests {
     fn changing_sound_mode_reopens_the_actual_sink_and_restores_loop() {
         use super::testing::Recorder;
         let rec = Recorder::default();
-        let mut link = AudioLink { sink: Some(Box::new(rec.clone())), ..AudioLink::default() };
+        let mut link = AudioLink {
+            sink: Some(Box::new(rec.clone())),
+            ..AudioLink::default()
+        };
         let song = Song::default();
         link.send(AudioCommand::SetLoop(Some((128, 512))));
-        link.send(AudioCommand::MetronomeFlag { on: true, level: 0.5 });
+        link.send(AudioCommand::MetronomeFlag {
+            on: true,
+            level: 0.5,
+        });
         let before = song.clone();
         for mode in [3, 1, 0, 2] {
             link.set_sound_mode(&song, mode);
             assert!(link.running());
-            assert_eq!(rec.0.borrow().reopen_modes.last(), Some(&buffer_mode(mode, 0)));
+            assert_eq!(
+                rec.0.borrow().reopen_modes.last(),
+                Some(&buffer_mode(mode, 0))
+            );
         }
         assert_eq!(rec.0.borrow().reopens, 4);
         link.set_sound_mode(&song, 2);
-        assert_eq!(rec.0.borrow().reopens, 4, "unchanged preference must not reopen");
+        assert_eq!(
+            rec.0.borrow().reopens,
+            4,
+            "unchanged preference must not reopen"
+        );
         let log = rec.take();
-        assert!(log.iter().filter(|s| s.as_str() == "SetLoop 128 512").count() >= 5);
+        assert!(
+            log.iter()
+                .filter(|s| s.as_str() == "SetLoop 128 512")
+                .count()
+                >= 5
+        );
         assert_eq!(song, before);
     }
 

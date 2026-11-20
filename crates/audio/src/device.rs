@@ -753,49 +753,49 @@ impl<R: AudioRenderer> AudioOutput<R> {
         }
         #[cfg(not(target_os = "android"))]
         {
-        let error_shared = output.shared.clone();
-        let error = move |error: cpal::Error| error_shared.report(&error);
-        let config = output_config(&device, &supported, mode);
-        let stream = match supported.sample_format() {
-            cpal::SampleFormat::I8 => {
-                build_stream::<i8, _, _>(&device, config, channels, state, error)
+            let error_shared = output.shared.clone();
+            let error = move |error: cpal::Error| error_shared.report(&error);
+            let config = output_config(&device, &supported, mode);
+            let stream = match supported.sample_format() {
+                cpal::SampleFormat::I8 => {
+                    build_stream::<i8, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::I16 => {
+                    build_stream::<i16, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::I24 => {
+                    build_stream::<cpal::I24, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::I32 => {
+                    build_stream::<i32, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::I64 => {
+                    build_stream::<i64, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::U8 => {
+                    build_stream::<u8, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::U16 => {
+                    build_stream::<u16, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::U32 => {
+                    build_stream::<u32, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::U64 => {
+                    build_stream::<u64, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::F32 => {
+                    build_stream::<f32, _, _>(&device, config, channels, state, error)
+                }
+                cpal::SampleFormat::F64 => {
+                    build_stream::<f64, _, _>(&device, config, channels, state, error)
+                }
+                _ => return Err(StartError::UnsupportedSampleFormat),
             }
-            cpal::SampleFormat::I16 => {
-                build_stream::<i16, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::I24 => {
-                build_stream::<cpal::I24, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::I32 => {
-                build_stream::<i32, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::I64 => {
-                build_stream::<i64, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::U8 => {
-                build_stream::<u8, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::U16 => {
-                build_stream::<u16, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::U32 => {
-                build_stream::<u32, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::U64 => {
-                build_stream::<u64, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::F32 => {
-                build_stream::<f32, _, _>(&device, config, channels, state, error)
-            }
-            cpal::SampleFormat::F64 => {
-                build_stream::<f64, _, _>(&device, config, channels, state, error)
-            }
-            _ => return Err(StartError::UnsupportedSampleFormat),
-        }
-        .map_err(StartError::Build)?;
-        stream.play().map_err(StartError::Play)?;
-        output.stream = Some(stream);
-        Ok(output)
+            .map_err(StartError::Build)?;
+            stream.play().map_err(StartError::Play)?;
+            output.stream = Some(stream);
+            Ok(output)
         }
     }
 
@@ -1025,13 +1025,20 @@ impl<R: AudioRenderer> AudioOutput<R> {
         #[cfg(target_os = "android")]
         if let Some(stream) = &self.android_stream {
             use oboe::{AudioStreamBase, AudioStreamSafe};
-            if let Some(now) = now.filter(|n| n.saturating_sub(self.diagnostic_at) >= 5_000_000_000) {
+            if let Some(now) = now.filter(|n| n.saturating_sub(self.diagnostic_at) >= 5_000_000_000)
+            {
                 self.diagnostic_at = now;
-                android_output::diagnostic(format!("BanaForge audio: mode={:?} backend=Oboe/{:?} rate={}Hz callback={} frames buffer={} frames callback_CPU_load={:.1}% hardware_xruns={:?} reported_xruns_or_deadline_misses={}",
-                    self.buffer_mode, stream.get_audio_api(), stream.get_sample_rate(),
-                    self.shared.buffer_frames.load(Ordering::Acquire), stream.get_buffer_size_in_frames(),
-                    f32::from_bits(self.shared.cpu.load(Ordering::Acquire))*100.0, stream.get_xrun_count(),
-                    self.shared.underruns.load(Ordering::Acquire)));
+                android_output::diagnostic(format!(
+                    "BanaForge audio: mode={:?} backend=Oboe/{:?} rate={}Hz callback={} frames buffer={} frames callback_CPU_load={:.1}% hardware_xruns={:?} reported_xruns_or_deadline_misses={}",
+                    self.buffer_mode,
+                    stream.get_audio_api(),
+                    stream.get_sample_rate(),
+                    self.shared.buffer_frames.load(Ordering::Acquire),
+                    stream.get_buffer_size_in_frames(),
+                    f32::from_bits(self.shared.cpu.load(Ordering::Acquire)) * 100.0,
+                    stream.get_xrun_count(),
+                    self.shared.underruns.load(Ordering::Acquire)
+                ));
             }
         }
         OutputSnapshot {

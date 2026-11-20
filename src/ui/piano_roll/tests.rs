@@ -3499,7 +3499,10 @@ mod component {
         let lyric = rig.text("teto").expect("text in dedicated header");
         assert!(lyric.y < 48.0);
         rig.tap(lyric);
-        assert!(rig.roll.lyric_edit.is_some(), "explicit lyric lane remains editable");
+        assert!(
+            rig.roll.lyric_edit.is_some(),
+            "explicit lyric lane remains editable"
+        );
         rig.roll.lyric_edit = None;
         rig.roll.lyric_bar_enabled = false;
         rig.frame(vec![]);

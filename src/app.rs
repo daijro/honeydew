@@ -623,19 +623,28 @@ impl BanaForgeApp {
             Nav::Answer("export_cancel", true) => {
                 if self.export.take().is_some() {
                     self.files.cancel_render();
-                    self.nav.overlays.retain(|o| !matches!(o, Overlay::ExportProgress { .. }));
+                    self.nav
+                        .overlays
+                        .retain(|o| !matches!(o, Overlay::ExportProgress { .. }));
                 }
                 return;
             }
-            Nav::Answer("export_share", true) => { self.files.share_last_render(); return; }
+            Nav::Answer("export_share", true) => {
+                self.files.share_last_render();
+                return;
+            }
             Nav::Answer("export_again", true) => {
                 self.files.dismiss_render_result();
-                self.nav.overlays.retain(|o| !matches!(o, Overlay::ExportResult { .. }));
+                self.nav
+                    .overlays
+                    .retain(|o| !matches!(o, Overlay::ExportResult { .. }));
                 self.files.save_as(&self.song);
                 return;
             }
             Nav::Answer(crate::project_files::export::RENDERED_TAG, _) => {
-                self.nav.overlays.retain(|o| !matches!(o, Overlay::ExportResult { .. }));
+                self.nav
+                    .overlays
+                    .retain(|o| !matches!(o, Overlay::ExportResult { .. }));
             }
             _ => {}
         }
@@ -1155,8 +1164,15 @@ impl BanaForgeApp {
             self.warned_rate = None;
             return;
         }
-        let shown = |o: &Overlay| matches!(o, Overlay::Message { .. } | Overlay::Busy { .. }
-            | Overlay::ExportProgress { .. } | Overlay::ExportResult { .. });
+        let shown = |o: &Overlay| {
+            matches!(
+                o,
+                Overlay::Message { .. }
+                    | Overlay::Busy { .. }
+                    | Overlay::ExportProgress { .. }
+                    | Overlay::ExportResult { .. }
+            )
+        };
         if self.warned_rate == Some((wanted, actual)) || self.nav.overlays.iter().any(shown) {
             return;
         }
@@ -1837,7 +1853,8 @@ impl BanaForgeApp {
     /// read it too. The graph moves on its own while the song plays; the bar eases and the peak falls for a while
     /// after, which frames must show if a view of them is up.
     fn update_performance(&mut self, ctx: &egui::Context, snapshot: Option<&OutputSnapshot>) {
-        let loading = (self.nav.overlays.iter()).any(|o| matches!(o, Overlay::Busy { .. } | Overlay::ExportProgress { .. }));
+        let loading = (self.nav.overlays.iter())
+            .any(|o| matches!(o, Overlay::Busy { .. } | Overlay::ExportProgress { .. }));
         let live = snapshot.filter(|s| !s.stream_failed);
         let reading = performance::Reading {
             load: live.map_or(0.0, |s| s.cpu_load),
@@ -2774,8 +2791,11 @@ impl BanaForgeApp {
         // Top down, so that closing one leaves the indices below it valid.
         for (index, nav) in overlay_navs.into_iter().rev() {
             // Export controls need the app-owned render job/provider, not just navigation state.
-            if matches!(&nav, Nav::Answer("export_cancel" | "export_again" | "export_share", _)
-                | Nav::Answer(crate::project_files::export::RENDERED_TAG, _)) {
+            if matches!(
+                &nav,
+                Nav::Answer("export_cancel" | "export_again" | "export_share", _)
+                    | Nav::Answer(crate::project_files::export::RENDERED_TAG, _)
+            ) {
                 self.navigate(nav);
             } else {
                 self.nav.apply_from(index, nav, &self.song);
