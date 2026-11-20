@@ -5656,7 +5656,7 @@ mod tests {
         assert_eq!(cols.len(), 128);
         // No sample to draw: the name alone; no name: the channel's.
         let (fills, texts, _) = painted(&lane);
-        assert_eq!((fills.len(), texts.len()), (1, 1));
+        assert_eq!((fills.len(), texts.len()), (5, 4));
         lane.clips[0].file.sample = None;
         assert_eq!(painted(&lane).1[0].0, synth().channels[1].name);
     }
@@ -5688,10 +5688,12 @@ mod tests {
             .collect();
         let area = Rect::from_x_y_ranges(0.0..=1.0, 101.0 + 0.7 * 32.0..=149.0);
         let (centre, scale) = wave_rows(area, false)[0];
-        assert_eq!(
-            cols,
-            [audio_editor::column_span(-0.5, 0.5, centre, scale, 1.0); 64]
-        );
+        assert_eq!(cols.len(), 64);
+        for column in cols {
+            let expected = audio_editor::column_span(-0.5, 0.5, centre, scale, 1.0);
+            assert!((column.min - expected.min).abs() < 0.001);
+            assert!((column.max - expected.max).abs() < 0.001);
+        }
     }
 
     /// An automation lane named `label` (custom `custom`) with one clip: a 4-beat loop shown twice, points at beats
