@@ -1,0 +1,44 @@
+name: Keyboard and sound mode validation
+on:
+  workflow_dispatch:
+  push:
+    branches: ["arena/**"]
+    paths:
+      - '.github/workflows/control-fixes.yml'
+      - 'crates/audio/src/device*'
+      - 'src/ui/keyboard.rs'
+      - 'src/ui/piano_roll/**'
+jobs:
+  controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: Control and offline-render regressions
+        run: |
+          result=0
+          for filter in key_names key_labels ui::keyboard::tests ui::piano_roll::tests mobile_sound_mode render::tests; do
+            cargo test --lib "$filter" >> /tmp/controls.log 2>&1 || result=$?
+          done
+          cargo test -p banaforge-audio device::tests >> /tmp/controls.log 2>&1 || result=$?
+          cat /tmp/controls.log
+          if [ "$result" -ne 0 ]; then
+            python3 - <<'PY'
+          import pathlib
+          s=pathlib.Path('/tmp/controls.log').read_text()
+          lines=s.splitlines()
+          parts=[]
+          for i,line in enumerate(lines):
+              if any(x in line for x in ('error[','error:', 'FAILED', 'panicked', 'failures:')):
+                  parts.extend(lines[max(0,i-2):i+15])
+          msg='\n'.join(parts)[-45000:]
+          for i in range(0,len(msg),3000):
+              print('::error::'+msg[i:i+3000].replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+          PY
+          fi
+          exit "$result"

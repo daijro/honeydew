@@ -668,6 +668,8 @@ impl AudioLink {
         } else {
             self.stream_failed = false;
             self.requested_rate = Some(song.sample_rate);
+            self.built_input.clone_from(&self.input);
+            self.resend_metronome();
         }
     }
 

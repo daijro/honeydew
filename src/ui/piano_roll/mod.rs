@@ -3865,6 +3865,7 @@ fn paint_keys(
         let r = row(key);
         let text = if key % 12 == 0 {
             painter.rect_filled(r.with_max_x(r.left() + bar), 0.0, color.to_color32());
+            if !key_names { continue; }
             octave_label(key, middle_c_is_c4)
         } else if key_names && in_scale(key, root, mask) && !(black(key) && chromatic) {
             key_name(key, false, middle_c_is_c4)

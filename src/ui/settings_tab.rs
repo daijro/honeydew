@@ -827,7 +827,7 @@ impl SettingsTab {
                     #[cfg(desktop)]
                     let sound_mode_tip = "STANDARD: general-purpose mode with broad device compatibility.\nMULTITRACK: experimental; FL-style per-input multitrack routing is not implemented yet. The buffer slider works in either mode.";
                     #[cfg(not(desktop))]
-                    let sound_mode_tip = "NATIVE: Android AAudio low-latency request with device-selected burst and automatic backend buffer tuning. Hardware and routes determine actual latency.\nFAST: 256-frame callback target.\nSAFE: 1024-frame callback target.\nULTRA SAFE: 2048-frame callback target. Larger buffers trade response time for more processing headroom. iOS retains its audio-session buffer.";
+                    let sound_mode_tip = "NATIVE: Android Oboe low-latency path (AAudio where recommended, OpenSL ES fallback).\nFAST: OpenSL ES, low-latency request, 256-frame callback target.\nSAFE: OpenSL ES, 1024-frame callback target.\nULTRA SAFE: OpenSL ES, 2048-frame callback target. Device limits may change actual buffers; diagnostics report accepted values. Higher buffers trade responsiveness for headroom. iOS retains its audio-session buffer.";
                     crate::ui::tooltip::tip(ui, button_rect, sound_mode_tip, None);
                 }
                 if matches!(choice, Choice::SampleMemory) {

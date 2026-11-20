@@ -519,7 +519,7 @@ fn paint(
                 (label, if root { black_off } else { white_off })
             };
             let named = settings.key_names && range && !(key.black && input.lock.is_none());
-            if root || named {
+            if settings.key_names && (root || named) {
                 let text = key_name(midi, root, settings.middle_c_is_c4);
                 let at = label / ppp;
                 widgets::shrink(painter, m, at, Align2::CENTER_BOTTOM, &text, 12, color);

@@ -1,3 +1,7 @@
+#[cfg(target_os = "android")]
+#[path = "device_android.rs"]
+mod android_output;
+
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering, fence};
 use std::sync::{Arc, Mutex, PoisonError};
 #[cfg(not(target_arch = "wasm32"))]
@@ -41,7 +45,7 @@ pub struct Modulated {
 pub struct OutputSnapshot {
     pub transport_tick: u64,
     pub cpu_load: f32,
-    /// The callbacks since the stream started that took longer than their buffer lasts: each one an underrun.
+    /// Backend-reported xruns (or callback deadline misses where the backend has no xrun counter).
     pub underruns: u64,
     pub module_meters: Vec<ModuleMeter>,
     pub stream_failed: bool,
@@ -626,10 +630,16 @@ pub enum StartError<E> {
     Build(cpal::Error),
     Play(cpal::Error),
     UnsupportedSampleFormat,
+    #[cfg(target_os = "android")]
+    Android(String),
 }
 
 pub struct AudioOutput<R: AudioRenderer> {
     stream: Option<cpal::Stream>,
+    #[cfg(target_os = "android")]
+    android_stream: Option<oboe::AudioStreamAsync<oboe::Output, android_output::Callback<R>>>,
+    #[cfg(target_os = "android")]
+    diagnostic_at: i64,
     sender: Sender<CallbackCommand<R>>,
     retired: Receiver<(Box<R>, Arc<MeterBank>)>,
     shared: Arc<Shared>,
@@ -732,6 +742,14 @@ impl<R: AudioRenderer> AudioOutput<R> {
         let renderer = make_renderer(sample_rate).map_err(StartError::Renderer)?;
         let (mut output, state) = Self::unstarted(renderer, sample_rate);
         output.buffer_mode = mode;
+        #[cfg(target_os = "android")]
+        {
+            output.android_stream = Some(android_output::open(mode, sample_rate, state)
+                .map_err(StartError::Android)?);
+            return Ok(output);
+        }
+        #[cfg(not(target_os = "android"))]
+        {
         let error_shared = output.shared.clone();
         let error = move |error: cpal::Error| error_shared.report(&error);
         let config = output_config(&device, &supported, mode);
@@ -775,6 +793,7 @@ impl<R: AudioRenderer> AudioOutput<R> {
         stream.play().map_err(StartError::Play)?;
         output.stream = Some(stream);
         Ok(output)
+        }
     }
 
     /// An output with no stream yet playing `renderer` at `sample_rate`, and the callback state a stream runs.
@@ -804,6 +823,10 @@ impl<R: AudioRenderer> AudioOutput<R> {
         };
         let output = Self {
             stream: None,
+            #[cfg(target_os = "android")]
+            android_stream: None,
+            #[cfg(target_os = "android")]
+            diagnostic_at: 0,
             sender,
             retired,
             shared,
@@ -882,6 +905,8 @@ impl<R: AudioRenderer> AudioOutput<R> {
         let tick = self.shared.tick.load(Ordering::Acquire);
         let playing = self.transport_playing;
         drop(self.stream.take());
+        #[cfg(target_os = "android")]
+        drop(self.android_stream.take());
         self.shared.failed.store(true, Ordering::Release);
         let mut replacement = Self::start_with_mode_at(mode, rate, make_renderer)?;
         let _ = replacement.send(AudioCommand::Seek(tick));
@@ -993,6 +1018,18 @@ impl<R: AudioRenderer> AudioOutput<R> {
         let heard = ticks.iter().filter(|(end, _)| *end <= upto).max();
         if let Some(&(_, tick)) = heard {
             self.heard_tick = tick;
+        }
+        #[cfg(target_os = "android")]
+        if let Some(stream) = &self.android_stream {
+            use oboe::{AudioStreamBase, AudioStreamSafe};
+            if let Some(now) = now.filter(|n| n.saturating_sub(self.diagnostic_at) >= 5_000_000_000) {
+                self.diagnostic_at = now;
+                eprintln!("BanaForge audio: mode={:?} backend=Oboe/{:?} rate={}Hz callback={} frames buffer={} frames cpu_load={:.1}% xruns={:?} callback_overruns={}",
+                    self.buffer_mode, stream.get_audio_api(), stream.get_sample_rate(),
+                    self.shared.buffer_frames.load(Ordering::Acquire), stream.get_buffer_size_in_frames(),
+                    f32::from_bits(self.shared.cpu.load(Ordering::Acquire))*100.0, stream.get_xrun_count(),
+                    self.shared.underruns.load(Ordering::Acquire));
+            }
         }
         OutputSnapshot {
             transport_tick,
