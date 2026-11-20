@@ -49,11 +49,17 @@ pub fn button(ctx: &egui::Context, at: egui::Pos2, topic: Topic) {
     if !open { ctx.data_mut(|d| d.remove::<Topic>(key)); }
 }
 pub fn corner(ctx: &egui::Context, area: Rect, topic: Topic) -> bool {
+    let key=Id::new("contextual-help-open");
+    let previous=ctx.data(|d| d.get_temp::<Topic>(key));
+    // Navigation dismisses the previous workspace's help instead of leaving an invisible modal.
+    if previous.is_some_and(|p| p != topic) { ctx.data_mut(|d| d.remove::<Topic>(key)); }
+    let was_open=previous == Some(topic);
     let at = pos2(area.right()-32.0,area.top()+2.0);
     button(ctx,at,topic);
-    ctx.data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))).is_some()
+    was_open || ctx.data(|d| d.get_temp::<Topic>(key)).is_some()
         || ctx.input(|i| i.pointer.interact_pos().is_some_and(|p| Rect::from_min_size(at,vec2(30.0,30.0)).contains(p)))
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

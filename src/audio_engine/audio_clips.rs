@@ -459,6 +459,25 @@ mod clip_envelope_audio_tests {
         clips.render(&mut buffer, 1.0, 1000, 0.05, true);
         assert!(buffer.left.iter().zip(&buffer.right).all(|(l,r)| (l-r).abs() < 1e-6));
     }
+    #[test]
+    fn clip_envelope_true_stereo_pan_attenuates_each_source_channel_independently() {
+        let (song, _) = fixture();
+        let data: Vec<i16> = (0..100000).flat_map(|i| [if i%2==0 { 9000 } else { -9000 }, if i%3==0 { 3000 } else { -3000 }]).collect();
+        let mut wav = crate::sample_cache::tests::wav(&data);
+        wav[22..24].copy_from_slice(&2u16.to_le_bytes());
+        wav[28..32].copy_from_slice(&176400u32.to_le_bytes());
+        wav[32..34].copy_from_slice(&4u16.to_le_bytes());
+        let mut cache = SampleCache::default();
+        cache.load(&song,&|_| Some(wav.clone()));
+        let reference = render(&mut engine(&song,&cache),8000);
+        assert!((energy(&reference,0)-energy(&reference,1)).abs()>0.01);
+        for (pan,silent) in [(0,1usize),(65535,0usize)] {
+            let mut changed=song.clone(); constant(&mut changed,1,pan);
+            let pcm=render(&mut engine(&changed,&cache),8000);
+            assert!(energy(&pcm,silent)<1e-12);
+            for (a,b) in pcm.iter().skip(1-silent).step_by(2).zip(reference.iter().skip(1-silent).step_by(2)) { assert!((a-b).abs()<2e-5); }
+        }
+    }
     fn fixture() -> (Song, SampleCache) {
         let mut song = Song {
             tempo_bpm: 120.0,
