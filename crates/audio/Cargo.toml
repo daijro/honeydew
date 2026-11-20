@@ -28,4 +28,4 @@ os-engine = { path = "../../vendor/banana-studio/os-engine" }
 cpal = { version = "0.18.2", features = ["realtime"] }
 
 # Android output: Oboe selects AAudio for Native, OpenSL ES for compatibility profiles.
-oboe = "=0.6.1"
+oboe = { version = "=0.6.1", features = ["shared-stdcxx"] }
