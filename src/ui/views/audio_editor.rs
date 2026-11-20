@@ -18,7 +18,7 @@ use crate::ui::preview::ClipKey;
 /// What the audio editor keeps between frames.
 #[derive(Default)]
 pub struct State {
-    live: Option<(At, PointKey, Vec<Point>)>,
+    pub(crate) live: Option<(At, PointKey, Vec<Point>)>,
     /// Each channel's current audio lane and clip id, by channel index (the app re-keys them when channels or tracks
     /// move, `app/tracks.rs`).
     pub(crate) clips: HashMap<usize, (usize, u32)>,
@@ -68,6 +68,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     );
     // The grid size is an app setting (#53): the snap menu's pick is saved with the settings.
     state.editor.snap.size = app.settings.grid_size;
+    let shaping = state.editor.shaping_live();
     let actions = (state.editor).show(&mut ui, &app.cx, app.song, at, sample.as_ref(), transport);
     app.settings.grid_size = state.editor.snap.size;
     let mut finished = false;
@@ -98,6 +99,9 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
                     app.edit = app.edit.max(Some(super::SongEdit::Audition));
                 }
             }
+        } else if shaping && !state.editor.shaping_live() && state.live.is_some() {
+            state.live = None;
+            app.song_edited(true);
         } else if let Some((at,key,original)) = state.live.take() {
             audio_editor::apply(app.song,at,&Action::Points {key,points:original.clone()});
             state.editor.acknowledge_live(at,key,original);

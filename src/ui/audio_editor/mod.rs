@@ -1005,6 +1005,7 @@ impl AudioEditor {
     }
 
     /// Current VOL/PAN gesture, for the view's live transaction. No PCM is regenerated.
+    pub(crate) fn shaping_live(&self) -> bool { self.shaping.is_some() }
     pub(crate) fn live_points(&self, song: &Song, at: At) -> Option<(PointKey, Vec<Point>)> {
         if self.lane > 1 { return None; }
         let key = PointKey::Envelope(self.lane as i16);
