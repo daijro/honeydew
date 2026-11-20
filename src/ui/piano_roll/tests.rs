@@ -2344,9 +2344,11 @@ mod component {
     #[test]
     fn key_names_toggle_controls_actual_note_block_text_too() {
         let mut rig = Rig::new(vec![n(0, 128.0, 72)]);
-        let block_named = |rig: &Rig| rig.shapes.iter().any(|s| {
-            matches!(s, egui::Shape::Text(t) if t.pos.x >= 48.0 && t.galley.text() == "C6")
-        });
+        let block_named = |rig: &Rig| {
+            rig.shapes.iter().any(
+                |s| matches!(s, egui::Shape::Text(t) if t.pos.x >= 48.0 && t.galley.text() == "C6"),
+            )
+        };
         assert!(!block_named(&rig));
         rig.opts.key_names = true;
         rig.frame(vec![]);
@@ -4550,7 +4552,7 @@ mod grid {
                 false,
                 true,
                 5,
-                false,
+                (false, false),
                 false,
                 Some(past),
                 RED,
