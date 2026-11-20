@@ -1,7 +1,7 @@
-//! Half Time ([`honeydew_audio::half_time`]), Honeydew's own effect (GitHub #91):
+//! Half Time ([`banaforge_audio::half_time`]), BanaForge's own effect (GitHub #91):
 //! its params and value texts, in the engine's order and laws.
 
-use honeydew_audio::half_time::{
+use banaforge_audio::half_time::{
     self as h, DEFAULTS, LENGTH, LENGTHS, MIX, OLD_LENGTH, PARAMS, SMOOTH, SPEED, SPEEDS,
 };
 
@@ -30,7 +30,7 @@ static PARAM_SPECS: [P; PARAMS] = {
         &["1/4 bar", "1/2 bar", "1 bar", "2 bars"],
     );
     p[MIX] = P::cont("Mix", DEFAULTS[MIX], Display::linear(0.0, 100.0, 0, " %"));
-    // Honeydew additions (GitHub #122).
+    // BanaForge additions (GitHub #122).
     p[LENGTH] = P::menu("Length", DEFAULTS[LENGTH], LENGTH_NAMES);
     p[SPEED] = P::menu("Speed", DEFAULTS[SPEED], SPEED_NAMES);
     p[SMOOTH] = P::cont(

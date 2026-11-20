@@ -5,12 +5,12 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use honeydew::flm::chunk::{ContentPath, ContentRoot};
-use honeydew::song::{DrumKit, SamplerSlot};
-use honeydew_audio::dwp::{self, Zone};
-use honeydew_audio::flac_writer::FlacEncoder;
-use honeydew_audio::instrument::Instrument;
-use honeydew_audio::soundfont::{SoundFont, SoundFontPlayer};
+use banaforge::flm::chunk::{ContentPath, ContentRoot};
+use banaforge::song::{DrumKit, SamplerSlot};
+use banaforge_audio::dwp::{self, Zone};
+use banaforge_audio::flac_writer::FlacEncoder;
+use banaforge_audio::instrument::Instrument;
+use banaforge_audio::soundfont::{SoundFont, SoundFontPlayer};
 
 use crate::build::{Inputs, Members};
 use crate::dsp::{self, db, looping, peak, resample::resample};
@@ -330,7 +330,7 @@ pub fn kit(r: &Recipe, inputs: &mut Inputs) -> Result<(Members, usize), String> 
             ..SamplerSlot::default()
         };
         if let Some(db) = p.level_db {
-            slot.params[0] = honeydew::content::kits::level(db);
+            slot.params[0] = banaforge::content::kits::level(db);
         }
         slot.params[1] = 0.5 + 0.5 * p.pan.unwrap_or(0.0).clamp(-1.0, 1.0);
         slot.file.path = Some(ContentPath::Shorthand {
@@ -339,9 +339,9 @@ pub fn kit(r: &Recipe, inputs: &mut Inputs) -> Result<(Members, usize), String> 
         });
         kit.insert_slot(kit.slots.len(), slot);
     }
-    let tmpl = honeydew::flm::write_drumset(&kit).map_err(|e| format!("{}: {e:?}", r.id))?;
+    let tmpl = banaforge::flm::write_drumset(&kit).map_err(|e| format!("{}: {e:?}", r.id))?;
     // The kit must load back through the app's reader with every pad's path, as the Drumsets picker will read it.
-    let back = honeydew::flm::read_drumset(&tmpl).map_err(|e| format!("{}: {e:?}", r.id))?;
+    let back = banaforge::flm::read_drumset(&tmpl).map_err(|e| format!("{}: {e:?}", r.id))?;
     let paths = |k: &DrumKit| {
         k.slots
             .iter()
@@ -387,7 +387,7 @@ pub fn samples(r: &Recipe, inputs: &mut Inputs) -> Result<(Members, usize), Stri
 /// A source file decoded, one channel per `Vec`, at [`RATE`] and `tune` cents up; and the rate it was taken to be at
 /// (its own, `tune` cents up, to the hertz).
 fn read(inputs: &mut Inputs, source: &str, rel: &str, tune: f32) -> Result<(Audio, u32), String> {
-    let d = honeydew_audio::sample::decode(&inputs.read(source, rel)?)
+    let d = banaforge_audio::sample::decode(&inputs.read(source, rel)?)
         .map_err(|e| format!("{source}/{rel}: {e:?}"))?;
     let rate = (f64::from(d.sample_rate) * 2f64.powf(f64::from(tune) / 1200.0)).round() as u32;
     let channels = std::iter::once(&d.left).chain(d.right.as_ref());
@@ -405,7 +405,7 @@ fn render(r: &Recipe, font: &Arc<SoundFont>, patch: usize, key: u8) -> Audio {
     let mut player = SoundFontPlayer::new(RATE as f32, Some((font.clone(), patch as i32)));
     player.note_on(key, RENDER_VELOCITY, 0.5);
     let (mut left, mut right) = (vec![0.0; n], vec![0.0; n]);
-    let context = honeydew_audio::ProcessContext {
+    let context = banaforge_audio::ProcessContext {
         sample_rate: RATE as f32,
         tempo_bpm: 120.0,
         start_beat: 0.0,

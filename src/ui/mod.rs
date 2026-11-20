@@ -10,6 +10,7 @@ pub mod buttons;
 pub mod clips;
 pub mod drum_grid;
 pub mod drums;
+mod follow_cursor;
 pub mod graph_lane;
 pub mod keyboard;
 pub mod layout;
@@ -337,3 +338,5 @@ pub mod file_drag;
 pub mod insert;
 // The playlist's song sections (#80).
 pub mod sections;
+
+pub(crate) mod export_status;

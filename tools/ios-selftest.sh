@@ -8,7 +8,7 @@ set -eu
 app=$1
 mkdir -p "$2"
 out=$(cd "$2" && pwd)
-bundle=dev.daijro.honeydew
+bundle=dev.daijro.banaforge
 
 # The newest iPhone the installed runtimes offer.
 device=$(xcrun simctl list devices available -j | python3 -c '

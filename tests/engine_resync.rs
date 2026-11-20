@@ -4,14 +4,14 @@
 //! audio clips there. A seek while stopped only moves the position. Rendered offline through `AudioRenderer`; no
 //! device.
 
-use honeydew::audio_engine::SongAudioEngine;
-use honeydew::flm::chunk::ContentPath;
-use honeydew::sample_cache::SampleCache;
-use honeydew::song::{
+use banaforge::audio_engine::SongAudioEngine;
+use banaforge::flm::chunk::ContentPath;
+use banaforge::sample_cache::SampleCache;
+use banaforge::song::{
     AutomationTarget, ChannelKind, DrumGrid, Event, LaneKind, SamplerSlot, Song, SynthKind,
 };
-use honeydew::ui::preview::{self, ClipKey};
-use honeydew_audio::device::AudioRenderer;
+use banaforge::ui::preview::{self, ClipKey};
+use banaforge_audio::device::AudioRenderer;
 
 /// One beat at 120 BPM and 48 kHz.
 const BEAT: usize = 24_000;

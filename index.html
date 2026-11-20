@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Honeydew</title>
+    <title>BanaForge</title>
     <!-- Copied as they are, not through Trunk's `rel="icon"`, which drops `sizes`. -->
-    <link data-trunk rel="copy-file" href="assets/branding/honeydew-16.png" />
-    <link data-trunk rel="copy-file" href="assets/branding/honeydew-32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="honeydew-16.png" />
-    <link rel="icon" type="image/png" sizes="32x32" href="honeydew-32.png" />
+    <link data-trunk rel="copy-file" href="assets/branding/banaforge-16.png" />
+    <link data-trunk rel="copy-file" href="assets/branding/banaforge-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="banaforge-16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="banaforge-32.png" />
     <!-- wasm-opt off here: tools/web-dist.sh runs `wasm-opt -O3` itself after Trunk, as OpenPlayground's build does. -->
-    <link data-trunk rel="rust" data-target-name="honeydew" data-cargo-profile-release="web" data-wasm-opt="0" />
+    <link data-trunk rel="rust" data-target-name="banaforge" data-cargo-profile-release="web" data-wasm-opt="0" />
     <!-- The bundled content's index, fetched while the wasm downloads. -->
     <link rel="preload" href="content/index.json" as="fetch" crossorigin />
     <script>
@@ -84,6 +84,6 @@
   </head>
   <body>
     <canvas id="the_canvas_id"></canvas>
-    <p id="unsupported">Honeydew needs a newer browser: Chrome 96, Firefox 113 or Safari 16.4, or later.</p>
+    <p id="unsupported">BanaForge needs a newer browser: Chrome 96, Firefox 113 or Safari 16.4, or later.</p>
   </body>
 </html>

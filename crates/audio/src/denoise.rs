@@ -1,4 +1,4 @@
-//! Denoise (module type [`DENOISE`]), Honeydew's own effect: GitHub #43.
+//! Denoise (module type [`DENOISE`]), BanaForge's own effect: GitHub #43.
 //! Spectral noise reduction.
 //!
 //! **Params**, normalized, in this order (the saved one): 0 Enable, [`REDUCTION`], [`SENSITIVITY`], [`LEARN`]. Post
@@ -28,7 +28,7 @@
 
 use crate::slicer::fft;
 
-/// The module type: Honeydew's own id, which a song file keeps apart from the song format's modules.
+/// The module type: BanaForge's own id, which a song file keeps apart from the song format's modules.
 pub const DENOISE: u16 = 1007;
 
 pub const REDUCTION: usize = 1;

@@ -102,7 +102,7 @@ pub enum IconId {
     GraphLane = 86,
     ChevronDown = 87,
     RackTab = 88,
-    /// Issue #68: a Lemon card's full screen button.
+    /// Issue #68: a Banana card's full screen button.
     Expand = 89,
 }
 

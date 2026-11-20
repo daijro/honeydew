@@ -1,4 +1,4 @@
-use honeydew_audio::{AudioEffect, ProcessContext};
+use banaforge_audio::{AudioEffect, ProcessContext};
 
 const CTX: ProcessContext = ProcessContext {
     sample_rate: 48_000.0,

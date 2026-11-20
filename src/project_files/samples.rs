@@ -359,7 +359,8 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn the_user_folders_own_folders_are_made_where_missing() {
-        let user = std::env::temp_dir().join(format!("honeydew-my-folders-{}", std::process::id()));
+        let user =
+            std::env::temp_dir().join(format!("banaforge-my-folders-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&user);
         std::fs::create_dir_all(user.join(SAMPLES_FOLDER)).unwrap();
         std::fs::write(user.join(SAMPLES_FOLDER).join("kick.wav"), b"kick").unwrap();
@@ -380,6 +381,7 @@ mod tests {
             "My Songs",
             "My SoundFonts",
             "My Tracks",
+            "My Voicebanks",
         ];
         assert_eq!(made, all);
         assert!(all.iter().all(|f| user.join(f).is_dir()));
@@ -467,7 +469,7 @@ mod tests {
     #[test]
     fn the_recordings_folder_is_made_once_with_its_nomedia_file() {
         let user =
-            std::env::temp_dir().join(format!("honeydew-h11-nomedia-{}", std::process::id()));
+            std::env::temp_dir().join(format!("banaforge-h11-nomedia-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&user);
         let files = ProjectFiles {
             user: Some(user.clone()),
@@ -493,7 +495,8 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn on_the_desktop_the_sample_folders_list_their_folders_and_audio_files() {
-        let user = std::env::temp_dir().join(format!("honeydew-k2-samples-{}", std::process::id()));
+        let user =
+            std::env::temp_dir().join(format!("banaforge-k2-samples-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&user);
         let samples = user.join(SAMPLES_FOLDER);
         let kicks = samples.join("Kicks");

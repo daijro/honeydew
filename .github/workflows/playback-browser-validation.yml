@@ -1,0 +1,68 @@
+name: Playback and browser regression
+on:
+  workflow_dispatch:
+  push:
+    branches: ["arena/**"]
+    paths:
+      - 'src/ui/piano_roll/**'
+      - 'src/ui/widgets/**'
+      - 'src/ui/views/**'
+      - 'src/song/**'
+      - 'src/flm/**'
+      - 'src/theme.rs'
+      - 'tests/flm_write.rs'
+      - 'src/audio_link.rs'
+      - 'src/settings.rs'
+      - 'src/ui/settings_tab.rs'
+      - 'src/sample_cache.rs'
+      - 'src/ui/clips.rs'
+      - 'src/ui/audio_editor/**'
+      - 'src/ui/graph_lane.rs'
+      - 'src/ui/picker_preview.rs'
+      - 'src/ui/preset_picker/**'
+      - 'src/ui/preset_picker.rs'
+      - 'crates/audio/src/device.rs'
+      - '.github/workflows/playback-browser-validation.yml'
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+      - uses: Swatinem/rust-cache@v2
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: Output clock regressions
+        run: cargo test -p banaforge-audio device::tests
+      - name: Omi touch regressions
+        run: |
+          cargo test --lib floating_actions_reserve
+          cargo test --lib vocal_note_tap_selects
+          cargo test --lib vocal_top_lyric_bar
+      - name: Playback visualization regressions
+        run: |
+          cargo test --lib volume_envelope_
+          cargo test --test flm_write volume_envelope_
+          cargo test --lib activity_indicator_
+          cargo test --lib waveform_volume_
+          cargo test --lib mobile_sound_mode_is_visible
+          cargo test --lib waveform_mesh_cache
+          cargo test --lib waveform_overview_tests
+      - name: Browser and program regressions
+        shell: bash
+        run: |
+          set +e
+          (cargo test --lib preset_picker && cargo test -p banaforge-audio dwp && cargo test --lib sample_cache && cargo test --lib waveform_mesh_cache && cargo test --lib mobile_sound_mode_tests && cargo test --lib ui::settings_tab::tests && cargo test --lib note_block_labels && cargo test --lib ui::widgets::tests && cargo test --lib whats_new && cargo test --lib channel_hex && cargo test --test flm_write exact_channel_rgb && cargo test --lib channel_settings) > /tmp/regression.log 2>&1
+          rc=$?
+          cat /tmp/regression.log
+          if [ "$rc" -ne 0 ]; then
+            python3 - <<'PYTEST'
+          import pathlib
+          text = "\n".join(line[:600] for line in pathlib.Path("/tmp/regression.log").read_text(errors="replace").splitlines()[-100:])
+          for i in range(0, len(text), 1600):
+              chunk = text[i:i+1600].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Playback browser regression::{chunk}")
+          PYTEST
+          fi
+          exit "$rc"

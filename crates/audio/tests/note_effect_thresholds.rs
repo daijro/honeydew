@@ -6,8 +6,8 @@
 
 use std::fmt::Debug;
 
-use honeydew_audio::note_effects::{NoteEffectModule, NoteEffectRack};
-use honeydew_audio::sequencer::{InputNoteEvent, NoteKind};
+use banaforge_audio::note_effects::{NoteEffectModule, NoteEffectRack};
+use banaforge_audio::sequencer::{InputNoteEvent, NoteKind};
 
 /// 0.001, exactly 0.5, the next f32 above it, and the ends.
 const PROBES: [f32; 6] = [

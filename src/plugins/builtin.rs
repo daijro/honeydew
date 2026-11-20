@@ -1,12 +1,12 @@
-//! Lemon Studio's own plugins built into the app, on every platform (Lemon Trio and Lemon
-//! Sampler, instruments, and Lemon Parametric EQ, an effect, from `vendor/lemon-studio`). As in Lemon Studio, each is
-//! compiled in (`linked`: no exported entry points) and hosted through Lemon Studio's CLAP host from its CLAP entry
+//! Banana Studio's own plugins built into the app, on every platform (Banana Trio and Banana
+//! Sampler, instruments, and Banana Parametric EQ, an effect, from `vendor/banana-studio`). As in Banana Studio, each is
+//! compiled in (`linked`: no exported entry points) and hosted through Banana Studio's CLAP host from its CLAP entry
 //! table, so a module of one is a plugin module like any other (types 1000 and 1001, saved in `HDPm`), only always
-//! installed. Their editors draw into the rack cards (`embed`, `crate::ui::rack::lemon_card`).
+//! installed. Their editors draw into the rack cards (`embed`, `crate::ui::rack::banana_card`).
 //!
-//! Adding one is its crate in [`lemon_plugins!`]'s list and its dependency line in Cargo.toml
+//! Adding one is its crate in [`banana_plugins!`]'s list and its dependency line in Cargo.toml
 //! (features `linked` and `embed`). Everything else is read from the plugin, once: at the first use its name, CLAP id
-//! and kind from its CLAP descriptor (no instance), which the picker lists in its LEMON STUDIO section
+//! and kind from its CLAP descriptor (no instance), which the picker lists in its BANANA STUDIO section
 //! (`crate::ui::modules_browser`); its editor size from CLAP's `gui.get_size` only when a card of it first shows
 //! ([`Builtin::size`]). Only its VST3 copy's class id is not there ([`VST3_CLASSES`]).
 //!
@@ -21,36 +21,36 @@ use os_host::{Descriptor, Library};
 
 use crate::song::plugin::PluginRef;
 
-/// The built-in plugins' CLAP entry tables, in listing order: one Lemon Studio plugin crate each, its
+/// The built-in plugins' CLAP entry tables, in listing order: one Banana Studio plugin crate each, its
 /// `LINKED_CLAP_ENTRY` (`os_plugkit::linked_clap_entry!`).
-macro_rules! lemon_plugins {
+macro_rules! banana_plugins {
     ($($krate:ident),+ $(,)?) => {
         [$(&$krate::LINKED_CLAP_ENTRY as *const _ as *const c_void),+]
     };
 }
 
-const ENTRIES: &[*const c_void] = &lemon_plugins![
-    lemon_3x_osc,
-    lemon_sampler,
-    lemon_parametric_eq_2,
-    lemon_formula_controller,
-    lemon_peak_controller,
+const ENTRIES: &[*const c_void] = &banana_plugins![
+    banana_3x_osc,
+    banana_sampler,
+    banana_parametric_eq_2,
+    banana_formula_controller,
+    banana_peak_controller,
     tesla,
     citrus,
-    lemon_drum_sampler,
-    lemon_slicer,
-    lemon_soft_clipper,
-    lemon_fast_distortion,
-    lemon_balance,
-    lemon_stereo_enhancer,
-    lemon_transient_processor,
-    lemon_chorus,
-    lemon_stereo_shaper,
-    lemon_filter,
-    lemon_flanger,
-    lemon_phaser,
-    lemon_delay,
-    lemon_vocoder,
+    banana_drum_sampler,
+    banana_slicer,
+    banana_soft_clipper,
+    banana_fast_distortion,
+    banana_balance,
+    banana_stereo_enhancer,
+    banana_transient_processor,
+    banana_chorus,
+    banana_stereo_shaper,
+    banana_filter,
+    banana_flanger,
+    banana_phaser,
+    banana_delay,
+    banana_vocoder,
     press,
     pulp_filter,
 ];
@@ -98,7 +98,7 @@ pub struct Builtin {
     /// [`Builtin::sidechain`], once read.
     keyed: OnceLock<bool>,
     /// The editor id [`Builtin::size`] opens its editor at: never a card's, which count up from 1
-    /// ([`super::lemon_editor`]).
+    /// ([`super::banana_editor`]).
     probe: u32,
     /// Its CLAP descriptor: kind, features.
     pub desc: Descriptor,
@@ -123,7 +123,7 @@ impl Builtin {
         })
     }
 
-    /// Whether it has a sidechain input (Lemon Vocoder's carrier), which a sidechain feeds
+    /// Whether it has a sidechain input (Banana Vocoder's carrier), which a sidechain feeds
     /// ([`crate::song::ModuleInstance::takes_key`]). Read at the first call, from an instance made to ask
     /// (`os_host::Plugin::sidechain`).
     pub fn sidechain(&self) -> bool {
@@ -234,34 +234,37 @@ mod tests {
             got[..9],
             [
                 (
-                    "Lemon Trio",
+                    "Banana Trio",
                     "clap:org.openstudio.open-3x-osc",
                     Some(*b"OpenStudio3xOsc!"),
-                    (lemon_3x_osc::view::EDITOR_W, lemon_3x_osc::view::EDITOR_H)
+                    (banana_3x_osc::view::EDITOR_W, banana_3x_osc::view::EDITOR_H)
                 ),
                 (
-                    "Lemon Sampler",
+                    "Banana Sampler",
                     "clap:org.openstudio.open-sampler",
                     Some(*b"OpenStudioSamplr"),
-                    (lemon_sampler::view::EDITOR_W, lemon_sampler::view::EDITOR_H)
-                ),
-                (
-                    "Lemon Parametric EQ",
-                    "clap:org.openstudio.open-parametric-eq-2",
-                    Some(*b"OpenStudioParEQ2"),
                     (
-                        lemon_parametric_eq_2::view::W,
-                        lemon_parametric_eq_2::view::H
+                        banana_sampler::view::EDITOR_W,
+                        banana_sampler::view::EDITOR_H
                     )
                 ),
                 (
-                    "Lemon Formula Controller",
+                    "Banana Parametric EQ",
+                    "clap:org.openstudio.open-parametric-eq-2",
+                    Some(*b"OpenStudioParEQ2"),
+                    (
+                        banana_parametric_eq_2::view::W,
+                        banana_parametric_eq_2::view::H
+                    )
+                ),
+                (
+                    "Banana Formula Controller",
                     "clap:org.openstudio.lemon-formula-controller",
                     None,
                     (486, 159)
                 ),
                 (
-                    "Lemon Peak Controller",
+                    "Banana Peak Controller",
                     "clap:org.openstudio.lemon-peak-controller",
                     None,
                     (731, 159)
@@ -279,21 +282,21 @@ mod tests {
                     (citrus::view::W, citrus::view::H)
                 ),
                 (
-                    "Lemon Drum Sampler",
+                    "Banana Drum Sampler",
                     "clap:org.openstudio.lemon-drum-sampler",
                     Some(*b"LemonStudioDrums"),
-                    (lemon_drum_sampler::view::W, lemon_drum_sampler::view::H)
+                    (banana_drum_sampler::view::W, banana_drum_sampler::view::H)
                 ),
                 (
-                    "Lemon Slicer",
+                    "Banana Slicer",
                     "clap:org.openstudio.lemon-slicer",
                     Some(*b"LemonStudioSlicr"),
-                    (lemon_slicer::view::W, lemon_slicer::view::H)
+                    (banana_slicer::view::W, banana_slicer::view::H)
                 ),
             ]
         );
-        // 0.4.9's effects: Lemon Small FX's ten, one plugin each, Lemon Delay, Lemon Vocoder, Press and Pulp Filter, each
-        // with its VST3 copy's class id and its editor's size; only Lemon Vocoder has a sidechain input.
+        // 0.4.9's effects: Banana Small FX's ten, one plugin each, Banana Delay, Banana Vocoder, Press and Pulp Filter, each
+        // with its VST3 copy's class id and its editor's size; only Banana Vocoder has a sidechain input.
         let added: Vec<_> = (got[9..].iter())
             .map(|&(name, uid, class, _)| {
                 (
@@ -306,43 +309,46 @@ mod tests {
         let row = |name, id: &str, class: &str| {
             (
                 name,
-                format!("clap:org.openstudio.{id}"),
+                format!(
+                    "clap:org.openstudio.{}",
+                    id.replacen("banana-", "lemon-", 1)
+                ),
                 Some(class.to_owned()),
             )
         };
         let want = [
             row(
-                "Lemon Soft Clipper",
-                "lemon-soft-clipper",
+                "Banana Soft Clipper",
+                "banana-soft-clipper",
                 "LemonStudioClipr",
             ),
             row(
-                "Lemon Fast Distortion",
-                "lemon-fast-distortion",
+                "Banana Fast Distortion",
+                "banana-fast-distortion",
                 "LemonStudioFDist",
             ),
-            row("Lemon Balance", "lemon-balance", "LemonStudioBalnc"),
+            row("Banana Balance", "banana-balance", "LemonStudioBalnc"),
             row(
-                "Lemon Stereo Enhancer",
-                "lemon-stereo-enhancer",
+                "Banana Stereo Enhancer",
+                "banana-stereo-enhancer",
                 "LemonStudioStEnh",
             ),
             row(
-                "Lemon Transient Processor",
-                "lemon-transient-processor",
+                "Banana Transient Processor",
+                "banana-transient-processor",
                 "LemonStudioTrPro",
             ),
-            row("Lemon Chorus", "lemon-chorus", "LemonStudioChrus"),
+            row("Banana Chorus", "banana-chorus", "LemonStudioChrus"),
             row(
-                "Lemon Stereo Shaper",
-                "lemon-stereo-shaper",
+                "Banana Stereo Shaper",
+                "banana-stereo-shaper",
                 "LemonStudioStShp",
             ),
-            row("Lemon Filter", "lemon-filter", "LemonStudioFiltr"),
-            row("Lemon Flanger", "lemon-flanger", "LemonStudioFlngr"),
-            row("Lemon Phaser", "lemon-phaser", "LemonStudioPhasr"),
-            row("Lemon Delay", "lemon-delay", "LemonStudioDelay"),
-            row("Lemon Vocoder", "lemon-vocoder", "LemonStudioVocdr"),
+            row("Banana Filter", "banana-filter", "LemonStudioFiltr"),
+            row("Banana Flanger", "banana-flanger", "LemonStudioFlngr"),
+            row("Banana Phaser", "banana-phaser", "LemonStudioPhasr"),
+            row("Banana Delay", "banana-delay", "LemonStudioDelay"),
+            row("Banana Vocoder", "banana-vocoder", "LemonStudioVocdr"),
             row("Press", "press", "LemonStudioPress"),
             row("Pulp Filter", "pulp-filter", "LemonStudioPulpF"),
         ];
@@ -360,7 +366,7 @@ mod tests {
             .filter(|b| b.sidechain())
             .map(|b| b.name)
             .collect();
-        assert_eq!(keyed, ["Lemon Vocoder"]);
+        assert_eq!(keyed, ["Banana Vocoder"]);
         // Each one starts and plays a block (an instrument a note, an effect a sine), every sample finite.
         for b in super::all() {
             let plugin = b.lib.clone().create(&b.desc.id).unwrap();

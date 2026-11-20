@@ -58,11 +58,11 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
+use banaforge_audio::sample::SampleData;
+use banaforge_audio::sample_edit::{peaks, speed_ratio};
 use eframe::egui::{
     self, Color32, Id, Mesh, Painter, Pos2, Rangef, Rect, Response, Sense, Stroke, Ui, pos2,
 };
-use honeydew_audio::sample::SampleData;
-use honeydew_audio::sample_edit::{peaks, speed_ratio};
 
 use crate::metrics::Metrics;
 use crate::sample_cache::Waveform;
@@ -86,6 +86,8 @@ use crate::ui::widgets::{self, Bar, ItemList, SnapTouch, item_list_index};
 use crate::ui::{UiCtx, gesture, pinch_press, primary_down_live};
 
 /// The lane list, top to bottom: lane i edits the clip's envelope key ±(i + 1).
+pub(crate) mod volume;
+
 pub const LANES: [&str; 3] = ["VOL", "PAN", "SPEED"];
 /// Beat marks are never closer than this, in U.
 pub const MARK_GAP: f32 = 2.4;
@@ -108,7 +110,7 @@ const POP_GAIN: f32 = 1.0515;
 const POP_W: f32 = 1.885;
 const DRAG_FLOOR: f32 = 0.01;
 /// The floating buttons over a point selection, as over automation points.
-const OPS: [&str; 2] = ["Copy", "Delete"];
+const OPS: [&str; 3] = ["Copy", "Delete", "Set shape"];
 
 /// A clip as the editor addresses it: (channel, lane, clip id).
 pub type At = (usize, usize, u32);
@@ -196,6 +198,19 @@ pub fn stretch_of(slot: &SamplerSlot) -> f64 {
     } else {
         1.0
     }
+}
+
+/// Visual base Level gain, using exactly the sampler's normalized-to-linear law.
+/// This never writes PCM or parameters; envelopes and downstream FX are not folded in.
+pub(crate) fn waveform_level_gain(slot: Option<&SamplerSlot>) -> f32 {
+    let level = slot.map_or(banaforge_audio::drums::DEFAULTS[0], |s| s.params[0]);
+    if level.is_finite() { banaforge_audio::drums::level_gain(level.clamp(0.0, 1.0)) }
+    else { 1.0 }
+}
+
+#[cfg(test)]
+pub(crate) fn gain_wave_rows(rows: &mut [(f32, f32)], gain: f32) {
+    for (_, scale) in rows { *scale *= gain; }
 }
 
 /// One channel's (min, max) per device-pixel column: `width` columns from content beat `left`, `beats_per_px`
@@ -483,8 +498,10 @@ impl Peaks {
         });
         if !hit {
             self.misses += 1;
-            self.cols = (source.channels())
-                .map(|(c, summary)| columns(c, summary, wave, left, bpp, width))
+            self.cols = (source.channels()).enumerate()
+                .map(|(channel, (c, summary))| source.overview_columns(channel, wave.frames,
+                    wave.reversed, left * wave.per_beat, bpp * wave.per_beat, width)
+                    .unwrap_or_else(|| columns(c, summary, wave, left, bpp, width)))
                 .collect();
             let key = (
                 Arc::downgrade(sample),
@@ -527,6 +544,7 @@ pub struct AudioEditor {
     /// The held position of the Paste button and the tick it pastes at.
     paste: Option<(Pos2, f64)>,
     row: FloatingRow,
+    shaping: Option<crate::ui::automation::shape::Shaping>,
     region: RangeSelect,
     /// The playhead knob on the ruler.
     knob: PlayheadKnob,
@@ -597,7 +615,7 @@ impl AudioEditor {
         let sig = song.time_sig;
         let now = ui.input(|i| i.time);
         let id = Id::new("audio_editor");
-        let color = channel_color(ch.hue, cx.theme);
+        let color = channel_color(ch.color_token(), cx.theme);
         let ink = color.to_color32();
 
         // 1: the background (the ruler's rect too), and the lane list on `menuFill`.
@@ -621,6 +639,7 @@ impl AudioEditor {
             self.sel = vec![false; pts.len()];
             self.gesture = Gesture::Idle;
             self.paste = None;
+            self.shaping = None;
             self.seen = Some((at, self.lane, pts.clone()));
         }
 
@@ -645,7 +664,7 @@ impl AudioEditor {
         // The gestures: the grid's first, then the widgets over it.
         let grid = ui.interact(f.grid, id.with("grid"), Sense::click_and_drag());
         crate::ui::focus::register(ui, grid.id, grid.rect, crate::ui::focus::Kind::Container);
-        let edit = self.grid_input(ui, &grid, &f, axis, &pts, max, snap, m, now);
+        let edit = if self.shaping.is_none() { self.grid_input(ui, &grid, &f, axis, &pts, max, snap, m, now) } else { None };
         self.views.insert(at, view);
         if let Some((new, sel, anim)) = edit {
             pts = self.commit(at, key, new, sel, anim, now, &mut out);
@@ -686,11 +705,37 @@ impl AudioEditor {
             wave_of(self.preview_stretch(s, tempo, slot))
         });
 
+        // Curve popup edits preview in the same points as the waveform; one undo edit on close.
+        if let Some(mut shaping) = self.shaping.take() {
+            let mut shapes = pts.iter().zip(&self.sel).filter(|(_, s)| **s).map(|(p, _)| p.shape);
+            let own = shapes.next().filter(|first| shapes.all(|s| s == *first));
+            let close = self.sel_box(&f, axis, &pts, &self.sel, max).is_none_or(|r| {
+                crate::ui::automation::shape::popup(ui.ctx(), cx, id.with("volume_shape"),
+                    r.expand(m.u(HIT_R)), (&mut shaping, own), ink).close
+            });
+            let new = shaping.on(&pts, &self.sel);
+            if close {
+                if new != pts { pts = self.commit(at, key, new, self.sel.clone(), Anim::Pop, now, &mut out); }
+            } else { self.shaping = Some(shaping); }
+        }
+        let shown = match &self.gesture {
+            Gesture::Points(Move {
+                preview: Some((p, s)),
+                ..
+            }) => (p.clone(), s.clone()),
+            _ => (pts.clone(), self.sel.clone()),
+        };
+        let mut shown = shown;
+        if let Some(shaping) = self.shaping { shown.0 = shaping.on(&shown.0, &shown.1); }
+        let volume_points = if self.lane == 0 { shown.0.clone() }
+            else { points::points(clip, PointKey::Envelope(0)) };
+        let volume = volume::envelope(&volume_points, waveform_level_gain(slot));
+
         // 2 … 7 over the grid.
         let gp = ui.painter_at(f.grid);
         if let (Some(s), Some(w)) = (source, wave) {
             let tint = mix(c.text, color, 1.0 - WAVE_TEXT).to_color32();
-            self.paint_wave(&gp, &f, axis, s, w, tint.gamma_multiply(WAVE_ALPHA), m);
+            self.paint_wave(&gp, &f, axis, s, w, tint.gamma_multiply(WAVE_ALPHA), &volume, m);
         }
         let (t0, t1) = (axis.tick(f.grid.left()), axis.tick(f.grid.right()));
         let control = c.control_fill.to_color32();
@@ -744,13 +789,6 @@ impl AudioEditor {
                 marker(axis.x((i64::from(edge) - origin) as f64), ink);
             }
         }
-        let shown = match &self.gesture {
-            Gesture::Points(Move {
-                preview: Some((p, s)),
-                ..
-            }) => (p.clone(), s.clone()),
-            _ => (pts.clone(), self.sel.clone()),
-        };
         self.paint_points(&gp, cx, &f, axis, &shown, max, ink, now);
         let boxing = if let Gesture::Marquee { from, to } = self.gesture {
             let r = Rect::from_two_pos(from, to);
@@ -865,7 +903,7 @@ impl AudioEditor {
         timeline::playhead_line(&line, f.grid, x, cx);
 
         // Over the grid: the floating row, `Paste`, the Snap button and its menu.
-        self.row.covered = t.covered;
+        self.row.covered = t.covered || self.shaping.is_some();
         if let Some((new, sel)) = self.floating_row(ui, cx, &f, axis, &pts, max, boxing) {
             self.commit(at, key, new, sel, Anim::Wobble, now, &mut out);
         }
@@ -1221,14 +1259,18 @@ impl AudioEditor {
         source: &Waveform,
         wave: Wave,
         fill: Color32,
+        volume: &volume::VolumeEnvelope,
         m: &Metrics,
     ) {
         let (x0, n) = pixel_columns(f.grid, m);
         let px = 1.0 / m.ppp();
-        let bpp = f64::from(px / axis.beat_w);
+        let base_bpp = f64::from(px / axis.beat_w);
+        let stride = crate::ui::clips::waveform_column_stride(
+            base_bpp * wave.per_beat, source.data.sample_rate, m.ppp(), n);
+        let bpp = base_bpp * stride as f64;
         let left = axis.tick(x0) / f64::from(PPQ);
         let end = wave.end();
-        let cols = self.peaks.get(source, wave, left, bpp, n);
+        let cols = self.peaks.get(source, wave, left, bpp, n.div_ceil(stride));
         let rows = wave_rows(f.value, cols.len() == 2);
         let mut mesh = Mesh::default();
         for (col, &row) in cols.iter().zip(&rows) {
@@ -1237,10 +1279,13 @@ impl AudioEditor {
                 if beat < -1e-9 || beat >= end - 1e-9 {
                     continue;
                 }
-                add_column(&mut mesh, x0 + i as f32 * px, peak, row, px, fill);
+                let x = x0 + i as f32 * px * stride as f32;
+                let gain = volume.column_gain(beat * f64::from(PPQ), (beat + bpp) * f64::from(PPQ));
+                let y = column_span(peak.0 * gain, peak.1 * gain, row.0, row.1, px);
+                mesh.add_colored_rect(Rect::from_x_y_ranges(x..=x + px * stride as f32, y), fill);
             }
         }
-        painter.add(mesh);
+        painter.with_clip_rect(painter.clip_rect().intersect(f.value)).add(mesh);
     }
 
     /// 7: the current lane's curve and points, the selection's guides and the right-edge handle.
@@ -1338,10 +1383,14 @@ impl AudioEditor {
         };
         let (i, _) = self
             .row
-            .show(ui, "audio_point_button", sel, view, &OPS, cx)?;
+            .show(ui, "audio_point_button", sel, view, if self.lane == 0 { &OPS } else { &OPS[..2] }, cx)?;
         ui.ctx().request_repaint();
         if i == 0 {
             set_clipboard(ui.ctx(), points::copy(pts, &self.sel, max));
+            return None;
+        }
+        if i == 2 {
+            self.shaping = Some(crate::ui::automation::shape::Shaping::default());
             return None;
         }
         let kept: Vec<Point> = (pts.iter().zip(&self.sel))
@@ -1424,7 +1473,14 @@ fn curve(
 ) {
     let at = |p: &Point| pos2(axis.x(p.tick.into()), f.point_y(p.value, max));
     for (i, w) in pts.windows(2).enumerate() {
-        painter.line_segment([at(&w[0]), at(&w[1])], Stroke::new(width, color(i)));
+        if at(&w[1]).x < f.grid.left() || at(&w[0]).x > f.grid.right() { continue; }
+        let stroke = Stroke::new(width, color(i));
+        if w[0].shape == points::Shape::default() {
+            painter.line_segment([at(&w[0]), at(&w[1])], stroke);
+        } else {
+            painter.add(egui::Shape::line(crate::ui::automation::shape::curve(w[0].shape,
+                at(&w[0]), at(&w[1])), stroke));
+        }
     }
     if let Some(last) = pts.last() {
         let a = at(last);
@@ -1437,3 +1493,42 @@ fn curve(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod waveform_volume_tests {
+    use super::*;
+
+    #[test]
+    fn waveform_volume_uses_sampler_gain_without_changing_source_or_parameters() {
+        let mut slot = SamplerSlot::default();
+        for level in [0.0, 0.25, 0.5, 0.8531, 1.0] {
+            slot.params[0] = level;
+            let before = slot.clone();
+            let gain = waveform_level_gain(Some(&slot));
+            assert_eq!(gain, banaforge_audio::drums::level_gain(level));
+            let mut rows = [(10.0, 8.0), (30.0, 8.0)];
+            gain_wave_rows(&mut rows, gain);
+            assert_eq!(rows, [(10.0, 8.0 * gain), (30.0, 8.0 * gain)]);
+            assert_eq!(slot, before);
+        }
+        slot.params[0] = f32::NAN;
+        assert_eq!(waveform_level_gain(Some(&slot)), 1.0);
+    }
+
+    #[test]
+    fn waveform_volume_changes_do_not_invalidate_source_peak_cache() {
+        let source = Waveform::new(Arc::new(SampleData {
+            left: vec![0.5; 4096].into(), sample_rate: 48000, ..Default::default()
+        }));
+        let wave = Wave { frames: 4096, per_beat: 4096.0, reversed: false };
+        let mut peaks = Peaks::default();
+        let original = peaks.get(&source, wave, 0.0, 1.0 / 64.0, 64).to_vec();
+        for gain in [0.1, 0.5, 1.0, 2.0] {
+            let mut rows = wave_rows(Rect::from_min_max(pos2(0.0, 0.0), pos2(100.0, 40.0)), false);
+            gain_wave_rows(&mut rows, gain);
+            assert_eq!(peaks.get(&source, wave, 0.0, 1.0 / 64.0, 64), original);
+        }
+        assert_eq!(peaks.misses, 1);
+        assert!(source.data.left.iter().all(|&s| s == 0.5));
+    }
+}

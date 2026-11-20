@@ -1,15 +1,15 @@
 //! The patches of a SoundFont 2 file (the public SoundFont 2.x standard), for the SoundFont Player's patch selector:
 //! `RIFF` `sfbk` → `LIST` `pdta` → `phdr`, 38-byte records. The parser is the audio engine's
-//! (`honeydew_audio::soundfont`), which also plays the SoundFont: it checks the whole file and keeps the patches only, so
+//! (`banaforge_audio::soundfont`), which also plays the SoundFont: it checks the whole file and keeps the patches only, so
 //! a SoundFont lists its patches exactly when the engine can play it, and one it cannot is an error here, which the
 //! panel shows.
 
 use std::fmt;
 
-use honeydew_audio::soundfont::{ParseError, PresetHeader, preset_headers};
+use banaforge_audio::soundfont::{ParseError, PresetHeader, preset_headers};
 // The tests build files with these.
 #[cfg(test)]
-use honeydew_audio::soundfont::{MAX_PATCHES, PHDR_SIZE as RECORD};
+use banaforge_audio::soundfont::{MAX_PATCHES, PHDR_SIZE as RECORD};
 
 /// One `phdr` record: a patch of the SoundFont.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -96,7 +96,7 @@ pub fn sfz_patch(
     include: &dyn Fn(&str) -> Option<String>,
 ) -> Preset {
     let name = path.file_stem().unwrap_or_default().to_string_lossy();
-    let control = honeydew_audio::sfz::parse(&String::from_utf8_lossy(bytes), include).control;
+    let control = banaforge_audio::sfz::parse(&String::from_utf8_lossy(bytes), include).control;
     let controls = (control.labels.into_iter())
         .map(|(cc, label)| Control {
             cc,
@@ -259,7 +259,7 @@ pub(crate) mod tests {
     fn a_bank_with_whole_patch_headers_but_cut_off_samples_is_corrupted_not_listed() {
         // The headers read fine, but the engine cannot play the file, so it
         // must not list patches that play silence: the panel shows the error instead.
-        use honeydew_audio::soundfont::SoundFont;
+        use banaforge_audio::soundfont::SoundFont;
         let patches = [("A", 0, 0), ("B", 1, 0)];
         let whole = soundfont(&patches);
         assert!(SoundFont::parse(whole.clone()).is_ok());

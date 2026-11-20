@@ -1,7 +1,7 @@
-//! Denoise ([`honeydew_audio::denoise`]), Honeydew's own effect (GitHub #43): its
+//! Denoise ([`banaforge_audio::denoise`]), BanaForge's own effect (GitHub #43): its
 //! params and value texts, in the engine's order and laws.
 
-use honeydew_audio::denoise::{self as d, DEFAULTS, LEARN, PARAMS, REDUCTION, SENSITIVITY};
+use banaforge_audio::denoise::{self as d, DEFAULTS, LEARN, PARAMS, REDUCTION, SENSITIVITY};
 
 use super::{Display, ModuleSpec, ParamSpec as P};
 

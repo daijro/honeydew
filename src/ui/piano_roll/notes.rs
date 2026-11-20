@@ -520,7 +520,7 @@ pub fn quantize_selected(events: &mut Vec<Event>, sel: &mut Vec<bool>, grid: f64
     true
 }
 
-/// Lengthens each selected note to the next later start among the selected notes. Honeydew change (GitHub #123):
+/// Lengthens each selected note to the next later start among the selected notes. BanaForge change (GitHub #123):
 /// the last ones reach the end of the bar (`bar` ticks long) their start falls in, unless they end past it.
 pub fn legato_selected(events: &mut [Event], sel: &[bool], bar: f64) {
     let starts: Vec<f64> = flagged(events, sel).map(|(pos, _, _)| pos).collect();
@@ -961,7 +961,7 @@ pub fn ghost_notes(
                                 pos: (tick as f64 - start + offset).rem_euclid(lp),
                                 len,
                                 key,
-                                hue: ch.hue,
+                                hue: ch.color_token(),
                             });
                         }
                     }

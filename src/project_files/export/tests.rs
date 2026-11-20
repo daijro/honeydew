@@ -1,8 +1,8 @@
 use std::path::Path;
 
+use banaforge_audio::sample::decode;
+use banaforge_audio::wav_writer::float32_wav;
 use eframe::egui::Context;
-use honeydew_audio::sample::decode;
-use honeydew_audio::wav_writer::float32_wav;
 
 use super::*;
 use crate::flm::chunk::ContentRoot;
@@ -62,7 +62,7 @@ fn written(mem: &MemFiles, path: &str) -> Option<Vec<u8>> {
 /// The lines of the message `files` asks for.
 fn message(files: &mut ProjectFiles) -> Option<Vec<String>> {
     match files.take_overlay()? {
-        Overlay::Message { lines, .. } => Some(lines),
+        Overlay::Message { lines, .. } | Overlay::ExportResult { lines, .. } => Some(lines),
         _ => None,
     }
 }
@@ -210,7 +210,7 @@ fn mp3_encodes_the_render_at_192_or_320_kbps_and_decodes_back() {
         let mp3 = export(Mp3, "My Tracks/Song.mp3");
         let job = Job::new(&song, &SampleCache::default(), mp3, page, 44_100).unwrap();
         let (titles, _, done) = run(job);
-        assert_eq!(titles.last().unwrap(), "Encoding \"Song.mp3\"");
+        assert_eq!(titles.last().unwrap(), "Finalizing \"Song.mp3\"");
         let Done::File(file) = done else {
             panic!("{done:?}")
         };
@@ -246,7 +246,7 @@ fn ogg_encodes_the_render_at_quality_0_4_or_1_and_decodes_back() {
         };
         let rendered = single_pass(&song, &SampleCache::default(), spec).unwrap();
         let (titles, _, done) = run(job(&song, Ogg, page));
-        assert_eq!(titles.last().unwrap(), "Encoding \"Song.ogg\"");
+        assert_eq!(titles.last().unwrap(), "Finalizing \"Song.ogg\"");
         let Done::File(file) = done else {
             panic!("{done:?}")
         };
@@ -275,7 +275,8 @@ fn the_busy_titles_go_rendering_processing_then_encoding() {
         [
             "Rendering \"Song.wav\"",
             "Processing \"Song.wav\"",
-            "Encoding \"Song.wav\""
+            "Encoding \"Song.wav\"",
+            "Finalizing \"Song.wav\""
         ]
     );
 }
@@ -294,7 +295,8 @@ fn a_slice_runs_whole_blocks_until_it_is_spent_and_ends_with_its_stage() {
     while job.step(&mut || true).is_none() {
         slices += 1;
     }
-    assert_eq!(slices, 15);
+    // Sixteen encode blocks, plus a separately displayed finalization slice.
+    assert_eq!(slices, 16);
 }
 
 #[test]
@@ -528,14 +530,10 @@ fn a_written_render_says_where_it_went_with_a_way_to_open_my_tracks() {
     assert_eq!(files.take_flash(), None);
     assert_eq!(
         files.take_overlay(),
-        Some(Overlay::Message {
-            tag: RENDERED_TAG,
-            lines: vec![
-                RENDER_COMPLETE.into(),
-                "Saved to: My Tracks/Song.flac".into()
-            ],
-            confirm: Some((OPEN_TRACKS.into(), "OK".into())),
-            extra: None,
+        Some(Overlay::ExportResult {
+            lines: vec![RENDER_COMPLETE.into(), "Saved to: My Tracks/Song.flac".into(),
+                "Format: FLAC".into(), "File size: 4 bytes".into()],
+            success: true, open: true, share: cfg!(any(target_os = "android", target_os = "ios")),
         })
     );
     assert_eq!(files.waiting(), Some(RENDERED_TAG));
@@ -553,10 +551,8 @@ fn a_written_render_says_where_it_went_with_a_way_to_open_my_tracks() {
     mem.0.borrow_mut().names_only = true;
     files.write_export(&flac, b"fLaC".to_vec());
     update(&mut files, &mut song, None);
-    assert_eq!(
-        files.take_flash().as_deref(),
-        Some("Render complete\nSaved to: Song.flac")
-    );
+    assert!(matches!(files.take_overlay(), Some(Overlay::ExportResult { success: true, open: false, .. })));
+    assert_eq!(files.take_flash(), None);
     assert_eq!(song.title, "", "a render is no save");
 }
 
@@ -574,9 +570,9 @@ fn each_failure_shows_its_message() {
         Done::Failed(RenderError::Silent)
     ));
     files.render_failed(&RenderError::Silent);
-    assert_eq!(message(&mut files), Some(vec![NO_SOUND.into()]));
+    assert_eq!(message(&mut files).unwrap()[0], NO_SOUND);
     files.render_failed(&RenderError::TooLong);
-    assert_eq!(message(&mut files), Some(vec![RENDER_FAILED.into()]));
+    assert_eq!(message(&mut files).unwrap()[0], RENDER_FAILED);
     assert!(mem.0.borrow().files.is_empty());
     // A write that fails: the format's message and what went wrong.
     mem.0.borrow_mut().write_error = Some("disk full".into());
@@ -596,7 +592,7 @@ fn each_failure_shows_its_message() {
     update(&mut files, &mut song.clone(), None);
     assert_eq!(
         message(&mut files),
-        Some(vec![RENDER_FAILED.into(), "disk full".into()])
+        Some(vec![RENDER_FAILED.into(), "Final file write: disk full".into()])
     );
     // A song that cannot be written into the archive.
     files.codec.write = |_| Err("no".into());
@@ -735,9 +731,11 @@ fn the_progress_names_each_stem_among_the_stems_with_its_stage() {
             "Exporting channel 1: Lead\nRendering \"Lead.wav\"",
             "Exporting channel 1: Lead\nProcessing \"Lead.wav\"",
             "Exporting channel 1: Lead\nEncoding \"Lead.wav\"",
+            "Exporting channel 1: Lead\nFinalizing \"Lead.wav\"",
             "Exporting channel 2: Lead\nRendering \"Lead 1.wav\"",
             "Exporting channel 2: Lead\nProcessing \"Lead 1.wav\"",
             "Exporting channel 2: Lead\nEncoding \"Lead 1.wav\"",
+            "Exporting channel 2: Lead\nFinalizing \"Lead 1.wav\"",
         ]
     );
 }
@@ -859,7 +857,7 @@ fn the_stems_are_written_into_their_folder_and_say_so_once_all_are_written() {
     update(&mut files, &mut song, None);
     assert_eq!(
         message(&mut files),
-        Some(vec![RENDER_FAILED.into(), "disk full".into()])
+        Some(vec![RENDER_FAILED.into(), "Stem file write: disk full".into()])
     );
     assert_eq!(files.take_flash(), None);
 }
@@ -902,10 +900,8 @@ fn the_web_downloads_one_archive_of_the_stems() {
     }
     files.write_export(&zip_export, zip);
     update(&mut files, &mut song, None);
-    assert_eq!(
-        files.take_flash().as_deref(),
-        Some("Render complete\nSaved to: Song - Multitrack wav.zip")
-    );
+    assert!(matches!(files.take_overlay(), Some(Overlay::ExportResult { success: true, open: false, .. })));
+    assert_eq!(files.take_flash(), None);
     assert!(written(&mem, "Song - Multitrack wav.zip").is_some());
 }
 
@@ -1183,7 +1179,7 @@ fn an_flp_puts_the_effects_on_the_channel_s_insert_and_with_rendered_audio_holds
         .unwrap();
     assert!(lead < eq && eq < reverb);
 
-    // Read back: Lead muted on insert 1 with its effects (Fruity Reeverb 2 as Lemon Reverb, at its defaults), and its
+    // Read back: Lead muted on insert 1 with its effects (Fruity Reeverb 2 as Banana Reverb, at its defaults), and its
     // render from the start for its length.
     let back = crate::flp::import::import(&entries[0].data, files.factory)
         .unwrap()
@@ -1200,7 +1196,7 @@ fn an_flp_puts_the_effects_on_the_channel_s_insert_and_with_rendered_audio_holds
         .collect();
     assert_eq!(
         (lead.params.0[2], effects),
-        (1.0, vec![3, honeydew_audio::lemon::REVERB])
+        (1.0, vec![3, banaforge_audio::banana::REVERB])
     );
     let audio = &back.channels[2];
     assert_eq!(
@@ -1215,4 +1211,115 @@ fn an_flp_puts_the_effects_on_the_channel_s_insert_and_with_rendered_audio_holds
         "{}",
         clip.visible_len_beats
     );
+}
+
+#[test]
+fn export_progress_counters_are_real_monotone_within_each_pass_and_finalizing_is_explicit() {
+    let mut job = job(&note_song(), Wav, cut(false));
+    let (mut stage, mut previous) = ("", 0);
+    let mut saw_finalizing = false;
+    loop {
+        let (done, total, current) = job.progress();
+        assert!(done <= total);
+        if current == stage { assert!(done >= previous); }
+        if current.starts_with("Finalizing") { saw_finalizing = true; assert_eq!(total, 0); }
+        stage = current;
+        previous = done;
+        if job.step(&mut || true).is_some() { break; }
+    }
+    assert!(saw_finalizing);
+}
+
+#[test]
+fn export_completion_share_reuses_only_successfully_saved_files() {
+    let (mut files, mem) = files();
+    let mut song = note_song();
+    files.share_last_render();
+    assert!(mem.0.borrow().shares.is_empty());
+    let export = export(Wav, "My Tracks/Shared.wav");
+    files.write_export(&export, b"RIFF".to_vec());
+    files.share_last_render();
+    assert!(mem.0.borrow().shares.is_empty(), "not before save confirmation");
+    update(&mut files, &mut song, None);
+    files.share_last_render();
+    assert_eq!(mem.0.borrow().shares[0].0, vec![std::path::PathBuf::from("My Tracks/Shared.wav")]);
+    files.dismiss_render_result();
+    files.share_last_render();
+    assert_eq!(mem.0.borrow().shares.len(), 1);
+}
+
+/// Isolated-process benchmark: same deterministic project and encoder in both modes.
+/// Never enabled in production merely because this candidate exists.
+#[test]
+#[ignore = "controlled release benchmark; see export-performance workflow"]
+fn export_pipeline_benchmark() {
+    use std::time::Instant;
+    let mode = std::env::var("BANA_EXPORT_BENCH_MODE").unwrap_or("baseline".into());
+    let format = match std::env::var("BANA_EXPORT_BENCH_FORMAT").as_deref() {
+        Ok("flac") => Flac, Ok("mp3") => Mp3, Ok("ogg") => Ogg, _ => Wav,
+    };
+    let mut song = Song { tempo_bpm: 120.0, ..Default::default() };
+    for channel in 0..12 {
+        song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+        let ch = song.channels.last_mut().unwrap();
+        ch.params.0[0] = 0.4;
+        let fx = ch.rack.add(18); // Tape Delay, same settings in both modes.
+        ch.rack.get_mut(fx).unwrap().params[2] = 0.25;
+        let clip = ch.lanes[0].add_clip(0, 64.0); // 32 seconds at 120 BPM.
+        for beat in 0..64 {
+            clip.events.push(Event::Note { pos: beat * 128, len_beats: 0.75,
+                key: 48 + channel as u8, velocity: 160, pan: 127, slide: false });
+        }
+    }
+    let rate = 48000;
+    let project_bytes = crate::flm::write(&song).unwrap().len();
+    let samples = SampleCache::default();
+    let start = Instant::now();
+    let bytes = if mode == "baseline" {
+        let mut job = Job::new(&song, &samples, export(format, "benchmark"), cut(true), rate).unwrap();
+        loop {
+            if let Some(done) = job.step(&mut || false) {
+                println!("{}", job.profile_report());
+                if let Done::File(bytes) = done { break bytes; }
+                panic!("unexpected benchmark result: {done:?}");
+            }
+        }
+    } else {
+        assert_eq!(mode, "candidate");
+        let prepare = Instant::now();
+        let render = Render::new(&song, &samples, RenderSpec { range: crate::render::RenderRange::Full,
+            remainder: Remainder::Cut, normalize: false, high_quality: true, rate,
+            solo: None, master_effects: true }).unwrap();
+        let mut stream = render.benchmark_cut_stream();
+        let mut encoder = Encoder::new(format, rate, true, stream.frames(), &[]);
+        let mut profile = ExportProfile { prepare: prepare.elapsed().as_secs_f64(), ..Default::default() };
+        while !stream.done() {
+            let at = Instant::now();
+            let block = stream.step();
+            profile.render += at.elapsed().as_secs_f64();
+            if let Some([left,right]) = block {
+                let at = Instant::now(); encoder.push(left,right);
+                profile.encode += at.elapsed().as_secs_f64();
+            }
+        }
+        let at = Instant::now(); let bytes = encoder.finish();
+        profile.flush = at.elapsed().as_secs_f64();
+        println!("{}", profile.report(start.elapsed().as_secs_f64()));
+        bytes
+    };
+    let compute_s = start.elapsed().as_secs_f64();
+    // Actual native atomic save, measured separately. No benchmark files are tracked.
+    let path = std::env::temp_dir().join(format!("bana-export-benchmark-{}.{}", std::process::id(), format.ext()));
+    let at = Instant::now(); crate::project_files::write_atomic(&path, &bytes).unwrap();
+    let write_s = at.elapsed().as_secs_f64();
+    std::fs::remove_file(&path).unwrap();
+    let decoded = decode(&bytes).unwrap();
+    assert_eq!(decoded.sample_rate, rate);
+    assert_eq!(decoded.frames(), 32 * rate as usize);
+    assert!(decoded.right.is_some());
+    assert!(decoded.left.iter().any(|x| x.abs() > 0.001));
+    let hash = bytes.iter().fold(14695981039346656037_u64, |h,b| (h ^ u64::from(*b)).wrapping_mul(1099511628211));
+    let pcm_hash = decoded.left.iter().chain(decoded.right.as_ref().unwrap().iter()).flat_map(|x| x.to_bits().to_le_bytes())
+        .fold(14695981039346656037_u64, |h,b| (h ^ u64::from(b)).wrapping_mul(1099511628211));
+    println!("BENCH pcm_fnv64={pcm_hash:016x} mode={mode} format={} rate={rate} hq=true normalize=false remainder=cut seconds=32 tracks=12 effects=12 notes=768 project_bytes={project_bytes} encoded_bytes={} fnv64={hash:016x} compute_s={compute_s:.6} write_s={write_s:.6} total_export_s={:.6}", format.ext(), bytes.len(), compute_s + write_s);
 }

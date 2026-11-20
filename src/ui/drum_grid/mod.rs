@@ -306,7 +306,7 @@ impl DrumGridView {
         let clip = lane.clips.iter().find(|c| Some(c.id) == clip_id);
         let (colors, m) = (&cx.theme.colors, cx.m);
         let (text, bg) = (colors.text.to_color32(), colors.background.to_color32());
-        let color = channel_color(ch.hue, cx.theme);
+        let color = channel_color(ch.color_token(), cx.theme);
         let ink = color.to_color32();
         let rows = steps::row_count(lane, pads.count());
         let (bpb, sig) = (song.time_sig.bar_beats(), song.time_sig);
@@ -737,6 +737,7 @@ impl DrumGridView {
         let down = primary_down_live(ui, grid.id);
         let stale = held && !down || ui.input(|i| !i.focused || crate::ui::focus_lost(i));
         let pos = pos.filter(|_| !stale);
+        let pressed = pressed && !self.row.owns_pointer(pos);
         let moved = |o: Pos2| gesture::left_calm(o, pos, place.u);
         let multi = ui.input(|i| i.multi_touch().is_some());
         let mut action = None;

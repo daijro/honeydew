@@ -1,0 +1,70 @@
+name: Playlist follow cursor validation
+on:
+  workflow_dispatch:
+  push:
+    branches: ["arena/**"]
+    paths:
+      - '.github/workflows/playlist-follow.yml'
+      - 'src/ui/follow_cursor.rs'
+      - 'src/ui/main_screen.rs'
+      - 'src/ui/scroller*'
+      - 'src/settings.rs'
+jobs:
+  controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: Resolve Android dependency and format changed files
+        run: |
+          set +e
+          cargo metadata --format-version 1 > /tmp/metadata.json 2>/tmp/prepare.log
+          rc=$?
+          if [ "$rc" -eq 0 ]; then
+            rustfmt --edition 2024 --config skip_children=true src/ui/follow_cursor.rs src/ui/main_screen.rs src/ui/scroller.rs src/ui/scroller/tests.rs src/ui/timeline.rs src/ui/mod.rs src/settings.rs >> /tmp/prepare.log 2>&1
+            rc=$?
+          fi
+          python3 - <<'PY'
+          import pathlib
+          s=pathlib.Path('/tmp/prepare.log').read_text()[-24000:]
+          for i in range(0,len(s),3000):
+              print('::notice title=prepare-log::'+s[i:i+3000].replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+          PY
+          [ "$rc" -eq 0 ] || exit "$rc"
+          git diff > /tmp/prepared.patch
+          python3 - <<'PY'
+          import base64, pathlib, zlib
+          s=base64.b64encode(zlib.compress(pathlib.Path('/tmp/prepared.patch').read_bytes(), 9)).decode()
+          for i in range(0,len(s),4000):
+              print(f'::notice title=prepared-patch-{i:08}::{s[i:i+4000]}')
+          PY
+      - name: Control and offline-render regressions
+        run: |
+          result=0
+          for filter in ui::follow_cursor::tests ui::main_screen::tests ui::scroller::tests ui::timeline::tests playlist_follow_position render::tests; do
+            cargo test --lib "$filter" >> /tmp/controls.log 2>&1 || result=$?
+          done
+          cargo test -p banaforge-audio device::tests >> /tmp/controls.log 2>&1 || result=$?
+          cat /tmp/controls.log
+          if [ "$result" -ne 0 ]; then
+            python3 - <<'PY'
+          import pathlib
+          s=pathlib.Path('/tmp/controls.log').read_text()
+          lines=s.splitlines()
+          parts=[]
+          for i,line in enumerate(lines):
+              if any(x in line for x in ('error[','error:', 'FAILED', 'panicked', 'failures:')):
+                  parts.extend(lines[max(0,i-2):i+15])
+          msg='\n'.join(parts)[-45000:]
+          for i in range(0,len(msg),3000):
+              print('::error::'+msg[i:i+3000].replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+          PY
+          fi
+          exit "$result"
