@@ -1,3 +1,11 @@
+BanaForge 0.5.19 — key-label visibility and Android sound profiles
+
+- Show Key Names now hides all keyboard/Piano Roll key-column names when off, including root/octave text. Colored root markers remain; the existing saved preference is preserved.
+- Android output now genuinely uses Oboe: Native requests the recommended low-latency backend (AAudio where supported/recommended, OpenSL ES fallback). Fast explicitly uses OpenSL ES/LowLatency with a 256-frame callback target; Safe and Ultra Safe use OpenSL ES with 1024/2048-frame targets and no low-latency performance request. Device limits determine actual buffer sizes.
+- Mode changes restart only real-time output, preserving project data, transport/loop and restored engine controls. A brief gap and reset of active voices/effect tails are possible. Output profiles do not change offline export quality settings.
+- BanaForgeAudio logcat diagnostics report the accepted backend, rate, buffer/callback sizes, callback CPU load, and hardware xruns where available (deadline misses otherwise). Settings retain their existing persistent IDs.
+- Physical phone touch-to-sound latency, CPU, heavy-project stability, route compatibility and export PCM comparisons remain unmeasured. See docs-testing-0.5.19.md; this release is not a claim of full Android validation.
+
 BanaForge 0.5.18 — connected export feedback and management
 
 - Replaces audio export's title-only busy screen with a responsive, scrollable export screen. A bounded waveform-shaped graphic fills from confirmed timeline frames in the current render pass; actual pass percentage and frame counts are shown. Explicitly not a PCM/audio preview and not an overall percentage/ETA. Stage changes reset the graphic; unknown-duration processing and finalization display no invented percentage.

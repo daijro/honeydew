@@ -195,6 +195,8 @@ pub struct AudioLink {
     low_latency: u8,
     /// Stored sound-mode id; 2=UltraSafe, 0=Safe, 1=Fast, 3=Native.
     sound_mode: u8,
+    /// Loop command restored after an output-profile restart.
+    output_loop: Option<Option<(u64, u64)>>,
     /// Commands the full audio queue handed back, oldest first. They go out before any newer command.
     pending: VecDeque<Command>,
     /// The live notes and controllers waiting for the transport's next Play or Stop, in order, while held
@@ -342,6 +344,7 @@ impl AudioLink {
             return;
         }
         match cmd {
+            AudioCommand::SetLoop(range) => self.output_loop = Some(range),
             AudioCommand::Metronome { on, click, level } => {
                 self.metronome = Some((on, click, level))
             }
@@ -661,7 +664,7 @@ impl AudioLink {
         self.sound_mode = sound_mode;
         let mode = self.buffer_mode();
         let Some(sink) = &mut self.sink else { return };
-        self.seeking = None;
+        let seek = self.seeking.take().map(|(tick, _)| tick);
         if let Err(err) = sink.reopen(song, &self.samples, self.input.as_ref(), mode) {
             warn(&format!("could not change sound mode: {err}"));
             self.stream_failed = true;
@@ -670,6 +673,21 @@ impl AudioLink {
             self.requested_rate = Some(song.sample_rate);
             self.built_input.clone_from(&self.input);
             self.resend_metronome();
+            self.resend_settings(song);
+            if let Some(range) = self.output_loop {
+                self.send(AudioCommand::SetLoop(range));
+            }
+            if let Some(tick) = seek {
+                self.send(AudioCommand::Seek(tick));
+            }
+            if let Some(bpm) = self.tempo {
+                self.send(AudioCommand::SetTempo(bpm as f32));
+            }
+            for (id, index, value) in self.controllers.clone() {
+                if let Some(channel) = song.channels.iter().position(|c| c.id == id) {
+                    self.send(AudioCommand::SetParam { channel, instance_id: 0, index, value });
+                }
+            }
         }
     }
 

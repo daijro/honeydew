@@ -65,6 +65,7 @@ pub(super) fn open<R: AudioRenderer>(mode: BufferMode, rate: u32, state: Callbac
         } else { PerformanceMode::None })
         .set_sharing_mode(SharingMode::Shared)
         .set_sample_rate(rate as i32)
+        .set_format_conversion_allowed(true)
         .set_format::<f32>()
         .set_channel_count::<Stereo>();
     if target > 0 {
@@ -80,10 +81,23 @@ pub(super) fn open<R: AudioRenderer>(mode: BufferMode, rate: u32, state: Callbac
     }
     let requested_buffer = if native { stream.get_frames_per_burst().max(1) * 2 } else { target };
     let accepted = stream.set_buffer_size_in_frames(requested_buffer);
-    eprintln!("BanaForge audio opened: mode={mode:?} backend=Oboe/{:?} performance={:?} rate={}Hz callback={} frames requested_buffer={} actual_buffer={} frames capacity={} frames buffer_request={accepted:?}; default Android route (including compatible USB/headsets)",
+    diagnostic(format!("BanaForge audio opened: mode={mode:?} backend=Oboe/{:?} performance={:?} rate={}Hz callback={} frames requested_buffer={} actual_buffer={} frames capacity={} frames buffer_request={accepted:?}; default Android route (including compatible USB/headsets)",
         stream.get_audio_api(), stream.get_performance_mode(), stream.get_sample_rate(),
         stream.get_frames_per_callback(), requested_buffer, stream.get_buffer_size_in_frames(),
-        stream.get_buffer_capacity_in_frames());
+        stream.get_buffer_capacity_in_frames()));
     stream.start().map_err(|e| format!("Oboe start {mode:?}: {e:?}"))?;
     Ok(stream)
+}
+
+/// Android does not reliably forward Rust stderr to logcat. Log on the app thread only.
+pub(super) fn diagnostic(message: String) {
+    use std::ffi::{CString, c_char, c_int};
+    #[link(name = "log")]
+    unsafe extern "C" {
+        fn __android_log_write(priority: c_int, tag: *const c_char, text: *const c_char) -> c_int;
+    }
+    if let Ok(text) = CString::new(message) {
+        // SAFETY: both strings are NUL-terminated and alive for the duration of the call.
+        unsafe { __android_log_write(4, c"BanaForgeAudio".as_ptr(), text.as_ptr()); }
+    }
 }

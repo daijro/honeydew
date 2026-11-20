@@ -1024,11 +1024,11 @@ impl<R: AudioRenderer> AudioOutput<R> {
             use oboe::{AudioStreamBase, AudioStreamSafe};
             if let Some(now) = now.filter(|n| n.saturating_sub(self.diagnostic_at) >= 5_000_000_000) {
                 self.diagnostic_at = now;
-                eprintln!("BanaForge audio: mode={:?} backend=Oboe/{:?} rate={}Hz callback={} frames buffer={} frames cpu_load={:.1}% xruns={:?} callback_overruns={}",
+                android_output::diagnostic(format!("BanaForge audio: mode={:?} backend=Oboe/{:?} rate={}Hz callback={} frames buffer={} frames callback_CPU_load={:.1}% hardware_xruns={:?} reported_xruns_or_deadline_misses={}",
                     self.buffer_mode, stream.get_audio_api(), stream.get_sample_rate(),
                     self.shared.buffer_frames.load(Ordering::Acquire), stream.get_buffer_size_in_frames(),
                     f32::from_bits(self.shared.cpu.load(Ordering::Acquire))*100.0, stream.get_xrun_count(),
-                    self.shared.underruns.load(Ordering::Acquire));
+                    self.shared.underruns.load(Ordering::Acquire)));
             }
         }
         OutputSnapshot {

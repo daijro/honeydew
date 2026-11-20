@@ -4,6 +4,13 @@ This app includes the third-party software below, each under its own license.
 
 The BanaForge banana artwork was supplied by the app owner. Its original author and redistribution license have not been established; confirm permission before distributing branded builds. See [`assets/branding/README.md`](assets/branding/README.md).
 
+## Android Oboe output
+
+- `oboe` / `oboe-sys` 0.6.1, <https://github.com/katyo/oboe-rs>, copyright K. and contributors.
+- Google Oboe (included by `oboe-sys`), <https://github.com/google/oboe>, copyright Google LLC and contributors.
+- Apache-2.0; the complete Apache License 2.0 is reproduced in the rusty_mp3 section below.
+- Unmodified dependencies; Android output uses AAudio where Oboe recommends it for Native, and explicitly OpenSL ES for Fast/Safe/Ultra Safe. No proprietary audio engine code.
+
 ## WebTAU `oto.ini` parser logic
 
 - Source: <https://github.com/charl1e7/webtau>, `crates/w-synth/src/oto.rs` (MIT, Copyright (c) 2025 charl1e7).
