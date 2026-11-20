@@ -1,3 +1,11 @@
+BanaForge 0.5.21 — waveform quality and easier follow-handle grabs
+
+- New persisted Waveform Quality selector immediately after Sound mode: High Quality (default/current filled detail), Balanced (larger adjacent peak groups), Performance (sparse independent one-device-pixel vertical amplitude bars).
+- Applied to Playlist, Audio Editor, sample-picker previews, instrument waveform strips, Slicer and optional Vocal Synth note previews. Reuses existing PCM/summary/voice-preview caches; quality is part of shared geometry-cache keys. Audio processing/quality, clip timing, project data and export are unchanged.
+- Controlled optimized Linux renderer tests measured ~66.6% fewer vertices for Balanced and 87.5% fewer for Performance across four views. CPU tessellation was lower; cold-build savings varied substantially, and warm cache hits were effectively unchanged. See WAVEFORM_QUALITY_MEASUREMENTS.md for actual timings, protocol and limitations. These are not Android FPS/GPU/battery measurements.
+- Enlarged the invisible horizontal follow-position handle target within the Playlist ruler; the visible yellow handle is unchanged. Existing seek/range/drag ownership regressions and a padded-area press test pass.
+- Regression and Android package verification are automated. Physical Android touch/playback/frame-time verification remains unmeasured; no device freeze-free or latency guarantee is made.
+
 BanaForge 0.5.20 — adjustable Playlist playback-follow position
 
 - Enable Continuous scrolling during playback, then drag the yellow double-arrow handle at the top of the Playlist ruler. The selected target is 5–95% across the visible timeline; the existing 25% position is the default.
