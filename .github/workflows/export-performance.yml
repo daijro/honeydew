@@ -1,6 +1,9 @@
 name: Export performance investigation
 on:
   workflow_dispatch:
+  push:
+    branches: ["arena/**"]
+    paths: ['.github/workflows/export-performance.yml']
 jobs:
   benchmark:
     runs-on: ubuntu-latest
@@ -15,7 +18,15 @@ jobs:
           cache-on-failure: true
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
       - name: Build optimized benchmark (excluded from measured runs)
-        run: cargo test --release --lib export_pipeline_benchmark --no-run
+        run: |
+          set +e
+          cargo test --release --lib export_pipeline_benchmark --no-run > /tmp/benchmark-build.log 2>&1
+          result=$?
+          cat /tmp/benchmark-build.log
+          if [ "$result" -ne 0 ]; then
+            grep -E -A20 -B2 'error\[|error:|panicked' /tmp/benchmark-build.log | head -c 25000 | python3 -c 'import sys; print("::error::" + sys.stdin.read().replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))'
+          fi
+          exit "$result"
       - name: Controlled baseline and candidate, isolated processes
         run: |
           mkdir -p benchmark-results
