@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use honeydew::content::bundle::{Credit, Index, IndexEntry, Kind, Member, Part, SCHEMA};
+use banaforge::content::bundle::{Credit, Index, IndexEntry, Kind, Member, Part, SCHEMA};
 
 use crate::pack::{self, CAP};
 use crate::recipe::{self, Recipe, Source};
@@ -272,7 +272,7 @@ fn entry(
     let mut decoded = 0;
     for (name, data) in members.iter().filter(|(n, _)| n.ends_with(".flac")) {
         let d =
-            honeydew_audio::sample::decode(data).map_err(|e| format!("{}: {name}: {e:?}", r.id))?;
+            banaforge_audio::sample::decode(data).map_err(|e| format!("{}: {name}: {e:?}", r.id))?;
         decoded += (d.left.len() * (1 + usize::from(d.right.is_some())) * 4) as u64;
     }
     let mut parts = Vec::new();
@@ -334,7 +334,7 @@ fn credits_txt(
     sources: &BTreeMap<String, Source>,
     inputs: &mut Inputs,
 ) -> Result<String, String> {
-    let mut t = String::from("Sounds bundled with Honeydew: sources and licences.\n");
+    let mut t = String::from("Sounds bundled with BanaForge: sources and licences.\n");
     for (key, c) in &index.credits {
         t += &format!(
             "\n== {} ==\nAuthor: {}\nLicence: {}\n",

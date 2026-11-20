@@ -7,7 +7,7 @@ use std::f32::consts::FRAC_PI_2;
 
 use eframe::egui::{Color32, Id, Pos2, Rect, Shape, Stroke, Ui, pos2, vec2};
 
-use honeydew_audio::analysis;
+use banaforge_audio::analysis;
 
 use super::live_analysis;
 use crate::panels::build::*;
@@ -438,7 +438,7 @@ mod tests {
 
     #[test]
     fn a_feed_adds_the_follower_dot_at_the_lfo_phase_on_the_wave() {
-        use honeydew_audio::MeterSnapshot;
+        use banaforge_audio::MeterSnapshot;
         for ppp in [1.0, 2.0] {
             let (content, [_, rect, _]) = reference(ppp);
             let p = with(&[(3, 0.75), (4, 0.25)]);

@@ -1,4 +1,4 @@
-//! MIDI sends (Honeydew's own, [`MidiSend`](crate::song::MidiSend)): every note a channel's instruments get, past all
+//! MIDI sends (BanaForge's own, [`MidiSend`](crate::song::MidiSend)): every note a channel's instruments get, past all
 //! its note effects, also goes to each target channel's note input, and on through the target's own note effects to its
 //! instruments; the channel's MIDI CCs and Pitch Bend set the targets' too. Sequenced notes and automated CCs are
 //! forwarded as the song is prepared ([`forwarded`], [`forward_params`]), live keys as the live chain sends them
@@ -6,9 +6,9 @@
 //! reaches its targets before any rack renders the segment, so the mixer order and the parallel stages need not know
 //! of them.
 
-use honeydew_audio::device::AudioRenderer;
-use honeydew_audio::note_effects::LiveNoteEvent;
-use honeydew_audio::sequencer::{InputNoteEvent, NoteKind, sort_note_events};
+use banaforge_audio::device::AudioRenderer;
+use banaforge_audio::note_effects::LiveNoteEvent;
+use banaforge_audio::sequencer::{InputNoteEvent, NoteKind, sort_note_events};
 
 use super::prepare::{
     Action, MAX_PLAYS, ScheduledAction, lane_points, note_effect, note_rack, plays, song_end_beat,

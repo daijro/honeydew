@@ -32,7 +32,7 @@
 //! - [`PresetPicker::in_modules`]: a list shown in the Modules browser's place, in the same panel. Its header has the
 //!   Back arrow at its root too, where Back gives [`PickerAction::Back`].
 //! - A long press then a drag on an audio file's row drags the file out to the playlist ([`crate::ui::file_drag`]).
-//! - A Honeydew addition (#109, #123): each folder and file row ends in its mark ([`Mark`]): a folder's `›`,
+//! - A BanaForge addition (#109, #123): each folder and file row ends in its mark ([`Mark`]): a folder's `›`,
 //!   a file's extension, an audio file's too.
 //!
 //! - [`PresetPicker::show_mut`] adds `Select` and the ≡ options menu below them, with the file browser's actions
@@ -173,7 +173,7 @@ impl<'a> Item<'a> {
     }
 
     /// Its mark at the row's end ([`Mark`]): a folder's, else its file's extension. `Default` and the picker's own
-    /// preset files (`own`, what every plain row there is) have none; an audio file always has its extension (Honeydew
+    /// preset files (`own`, what every plain row there is) have none; an audio file always has its extension (BanaForge
     /// change, #123: the sample picker's own files are audio).
     fn mark(self, own: &str) -> Option<Mark<'a>> {
         let path = match self {
@@ -583,7 +583,7 @@ impl PresetPicker {
     }
 
     /// The sample strip's decoded sample, if it shows one.
-    pub fn sample_data(&self) -> Option<std::sync::Arc<honeydew_audio::sample::SampleData>> {
+    pub fn sample_data(&self) -> Option<std::sync::Arc<banaforge_audio::sample::SampleData>> {
         let wave = self.panel.sample.as_ref()?.wave.as_ref()?;
         Some(wave.data.clone())
     }
@@ -744,6 +744,11 @@ impl PresetPicker {
             };
             rows.into_iter()
                 .map(|item| PanelRow {
+                    font: Some(if item.is_folder() {
+                        crate::metrics::FontSize::Pt18
+                    } else {
+                        crate::metrics::FontSize::Pt14
+                    }),
                     name: item.name(),
                     folder: item.is_folder(),
                     sub: match item {
@@ -809,6 +814,9 @@ impl PresetPicker {
                 let open = self.folders.iter().map(|f| f.path.clone());
                 self.picked_in = open.chain(trail).collect();
                 self.picked = Some(path.clone());
+                // The rows were painted before this tap was handled. A static
+                // browser otherwise keeps the previous highlight until another event.
+                ctx.request_repaint();
                 return Some(path.map_or(PickerAction::Default, PickerAction::Pick));
             }
             Go::Done(action) => return Some(action),
@@ -1460,6 +1468,28 @@ impl SongLibrary for ReadOnly<'_> {
 ///   ([`SAMPLE_EXTS`]); a picker that lists no programs there (the sample picker) lists the folder.
 /// - Otherwise (the user's files): only a `.dwp` or `.sfz`, listed or not, without case (an `.sfz` the instrument
 ///   builder makes keeps its samples so). A folder the user makes beside their preset of its name is theirs, and lists.
+// Recognize bank roots using directory metadata only, without reading OTO/audio payloads.
+fn voicebank_folder(library: &dyn SongLibrary, path: &Path) -> bool {
+    let rows = library.list(Some(path)).unwrap_or_default();
+    let oto = |e: &SongEntry| !e.is_folder && e.name.eq_ignore_ascii_case("oto.ini");
+    if rows
+        .iter()
+        .any(|e| oto(e) || !e.is_folder && e.name.eq_ignore_ascii_case("character.txt"))
+    {
+        return true;
+    }
+    // A multi-pitch bank may consist only of A3/C4/... subfolders. Do not turn
+    // My Voicebanks itself (or arbitrary user roots) into one combined bank.
+    path.parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == crate::project_files::VOICEBANKS_FOLDER)
+        && rows.iter().filter(|e| e.is_folder).take(64).any(|e| {
+            library
+                .list(Some(&e.path))
+                .is_ok_and(|rows| rows.iter().any(oto))
+        })
+}
+
 fn read(
     library: &dyn SongLibrary,
     folder: &Path,
@@ -1477,6 +1507,14 @@ fn read(
         .filter_map(|name| Some(name.file_stem()?.to_string_lossy().to_lowercase()))
         .collect();
     let keep = |mut entry: SongEntry| {
+        // Bank roots are atomic selections, not folders of individual WAV picks.
+        if (module_type == Some(53) || exts.contains(&"uar"))
+            && entry.is_folder
+            && voicebank_folder(library, &entry.path)
+        {
+            entry.is_folder = false;
+            return Some(entry);
+        }
         if !entry.is_folder {
             let name = Path::new(&entry.name);
             if !name

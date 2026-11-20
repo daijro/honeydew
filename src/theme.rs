@@ -423,6 +423,11 @@ pub fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
 
 /// Colour of a channel with hue value `h` (clamped to `[0,1]`) under `theme`.
 pub fn channel_color(h: f32, theme: &Theme) -> Rgba {
+    // Negative integral tokens are exact 24-bit RGB, produced only for UI use
+    // by Channel::color_token; legacy hue values retain their existing meaning.
+    if h.is_finite() && (-16_777_216.0..=-1.0).contains(&h) && h.fract() == 0.0 {
+        return Rgba::hex((-h - 1.0) as u32);
+    }
     let hue = (0.83 + 0.73 * h.clamp(0.0, 1.0)).rem_euclid(1.0);
     let (r, g, b) = hsl_to_rgb(
         hue,

@@ -17,6 +17,14 @@ on:
           - all
           - arm64-v8a
           - armeabi-v7a
+      build_type:
+        description: APK variant (debug is debuggable for phone crash capture)
+        required: false
+        default: release
+        type: choice
+        options:
+          - release
+          - debug
       include_sounds:
         description: Bundle the large sound library in the APK (otherwise it downloads on first launch)
         required: false
@@ -61,7 +69,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           umask 077
-          ks="$RUNNER_TEMP/honeydew-release.jks"
+          ks="$RUNNER_TEMP/banaforge-release.jks"
           if [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
             printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ks"
             echo "keystore_pass=$ANDROID_KEYSTORE_PASSWORD" >> "$GITHUB_OUTPUT"
@@ -70,12 +78,12 @@ jobs:
           else
             # Self-signed release keystore for sideloadable CI builds when release secrets are absent.
             keytool -genkeypair -noprompt -keystore "$ks" \
-              -storepass honeydew-ci -keypass honeydew-ci -alias honeydew \
+              -storepass banaforge-ci -keypass banaforge-ci -alias banaforge \
               -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname 'CN=Honeydew CI,O=Honeydew,C=US'
-            echo "keystore_pass=honeydew-ci" >> "$GITHUB_OUTPUT"
-            echo "key_alias=honeydew" >> "$GITHUB_OUTPUT"
-            echo "key_pass=honeydew-ci" >> "$GITHUB_OUTPUT"
+              -dname 'CN=BanaForge CI,O=BanaForge,C=US'
+            echo "keystore_pass=banaforge-ci" >> "$GITHUB_OUTPUT"
+            echo "key_alias=banaforge" >> "$GITHUB_OUTPUT"
+            echo "key_pass=banaforge-ci" >> "$GITHUB_OUTPUT"
           fi
           echo "keystore=$ks" >> "$GITHUB_OUTPUT"
       - name: Build Android APK
@@ -84,11 +92,15 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ steps.sign.outputs.keystore_pass }}
           ANDROID_KEY_ALIAS: ${{ steps.sign.outputs.key_alias }}
           ANDROID_KEY_PASSWORD: ${{ steps.sign.outputs.key_pass }}
+          BUILD_TYPE: ${{ inputs.build_type || 'release' }}
           ABI_MODE: ${{ inputs.abi || 'all' }}
           INCLUDE_SOUNDS: ${{ inputs.include_sounds || 'false' }}
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.0.13004108"
-          args=(--release --abi "$ABI_MODE")
+          args=(--abi "$ABI_MODE")
+          if [ "$BUILD_TYPE" = release ]; then
+            args+=(--release)
+          fi
           # A manual build defaults to the much smaller soundless APK; push builds keep the full bundled version.
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$INCLUDE_SOUNDS" != true ]; then
             args+=(--base)
@@ -112,7 +124,7 @@ jobs:
       - name: Independently verify APK contents and install metadata
         run: |
           shopt -s nullglob
-          apks=(target/honeydew-android-*.apk)
+          apks=(target/banaforge-android-*.apk)
           [ "${#apks[@]}" -eq 1 ] || { echo "Expected one APK, found ${#apks[@]}"; exit 1; }
           apk=${apks[0]}
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
@@ -129,11 +141,11 @@ jobs:
           echo "APK: \`$apk\`" >> "$GITHUB_STEP_SUMMARY"
       - name: Remove signing key
         if: always()
-        run: rm -f "$RUNNER_TEMP/honeydew-release.jks"
+        run: rm -f "$RUNNER_TEMP/banaforge-release.jks"
       - uses: actions/upload-artifact@v4
         with:
-          name: honeydew-android-apk
-          path: target/honeydew-android-*.apk
+          name: banaforge-android-apk
+          path: target/banaforge-android-*.apk
           retention-days: 30
           compression-level: 0
           if-no-files-found: error

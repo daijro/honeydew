@@ -7,7 +7,7 @@
 //!   GitHub, which allows 60 requests an hour from an address.
 //! - **The update** ([`install`]) is this build's download of that release ([`pick`]): Android's base APK, an AppImage,
 //!   or the desktop archive without sounds (the sound library is in the app data folder and stays). Android hands the
-//!   APK to the system's installer (`HoneydewActivity.installApk`, which first opens the setting that allows it when
+//!   APK to the system's installer (`BanaForgeActivity.installApk`, which first opens the setting that allows it when
 //!   the user has not yet). An AppImage replaces itself: renaming over a running file is safe on Linux, and the next
 //!   start is the new version. Any other download goes to the Downloads folder, shown in the file manager: replacing a
 //!   running app's own files is not safe everywhere. Before the base APK replaces a full one, the full one's sounds are
@@ -34,12 +34,12 @@ use serde::{Deserialize, Serialize};
 use crate::content::install::{self, Progress, SHIPPED_RELEASE};
 
 /// The project's GitHub repository.
-pub const REPO: &str = "daijro/honeydew";
+pub const REPO: &str = "jellyscoll76-Real/honeydew";
 /// Its latest release, in GitHub's API.
-const LATEST: &str = "https://api.github.com/repos/daijro/honeydew/releases/latest";
+const LATEST: &str = "https://api.github.com/repos/jellyscoll76-Real/honeydew/releases/latest";
 /// Its sound library releases' tags (`sounds-<version>`), each made when its release is published.
 const SOUNDS_TAGS: &str =
-    "https://api.github.com/repos/daijro/honeydew/git/matching-refs/tags/sounds-";
+    "https://api.github.com/repos/jellyscoll76-Real/honeydew/git/matching-refs/tags/sounds-";
 /// An automatic check asks GitHub at most this often, in seconds; `Check now` at most once a [`MANUAL_EVERY`].
 const CHECK_EVERY: u64 = 6 * 3600;
 const MANUAL_EVERY: u64 = 60;
@@ -118,12 +118,12 @@ fn pick<'a>(assets: &'a [Asset], tag: &str, platform: &str, appimage: bool) -> O
     let version = tag.trim_start_matches('v');
     let names = match platform {
         "android" => vec![
-            format!("honeydew-android-{version}-arm-base.apk"),
-            format!("honeydew-android-{version}-arm.apk"),
+            format!("banaforge-android-{version}-arm-base.apk"),
+            format!("banaforge-android-{version}-arm.apk"),
         ],
-        _ if appimage => vec![format!("honeydew-{tag}-{platform}.AppImage")],
+        _ if appimage => vec![format!("banaforge-{tag}-{platform}.AppImage")],
         _ => ["tar.gz", "zip"]
-            .map(|ext| format!("honeydew-{tag}-{platform}-no-sounds.{ext}"))
+            .map(|ext| format!("banaforge-{tag}-{platform}-no-sounds.{ext}"))
             .into(),
     };
     (names.iter()).find_map(|name| assets.iter().find(|a| a.name == *name))
@@ -422,7 +422,7 @@ fn keep_sounds(apk_bytes: u64, tell: impl Fn(u64, u64)) -> Option<String> {
     }
 }
 
-/// Where the update downloads to: Android's update folder (`HoneydewUpdate` serves it to the installer, which keeps
+/// Where the update downloads to: Android's update folder (`BanaForgeUpdate` serves it to the installer, which keeps
 /// nothing else there), beside the AppImage, or the Downloads folder.
 #[cfg(target_os = "android")]
 fn update_path(name: &str) -> io::Result<PathBuf> {
@@ -648,7 +648,7 @@ fn transfer(url: &str, to: &Path, grown: &dyn Fn(u64)) -> io::Result<()> {
     }
 }
 
-/// One try of [`get`]: `HoneydewActivity.download`, on a thread of its own while this one tells the size.
+/// One try of [`get`]: `BanaForgeActivity.download`, on a thread of its own while this one tells the size.
 #[cfg(target_os = "android")]
 fn transfer(url: &str, to: &Path, grown: &dyn Fn(u64)) -> io::Result<()> {
     let (url, path) = (url.to_owned(), to.to_string_lossy().into_owned());
@@ -705,16 +705,16 @@ mod tests {
         assert!(install::older("0.4.9", release("v0.4.10").version()));
 
         let names = [
-            "honeydew-v0.4.10-linux-x86_64.tar.gz",
-            "honeydew-v0.4.10-linux-x86_64-no-sounds.tar.gz",
-            "honeydew-v0.4.10-linux-x86_64-avx2-no-sounds.tar.gz",
-            "honeydew-v0.4.10-linux-x86_64.AppImage",
-            "honeydew-v0.4.10-linux-x86_64-musl-no-sounds.tar.gz",
-            "honeydew-v0.4.10-windows-x86_64-no-sounds.zip",
-            "honeydew-v0.4.10-windows-arm64.zip",
-            "honeydew-android-0.4.10-arm.apk",
-            "honeydew-android-0.4.10-arm-base.apk",
-            "honeydew-v0.4.10-sounds.zip",
+            "banaforge-v0.4.10-linux-x86_64.tar.gz",
+            "banaforge-v0.4.10-linux-x86_64-no-sounds.tar.gz",
+            "banaforge-v0.4.10-linux-x86_64-avx2-no-sounds.tar.gz",
+            "banaforge-v0.4.10-linux-x86_64.AppImage",
+            "banaforge-v0.4.10-linux-x86_64-musl-no-sounds.tar.gz",
+            "banaforge-v0.4.10-windows-x86_64-no-sounds.zip",
+            "banaforge-v0.4.10-windows-arm64.zip",
+            "banaforge-android-0.4.10-arm.apk",
+            "banaforge-android-0.4.10-arm-base.apk",
+            "banaforge-v0.4.10-sounds.zip",
         ];
         let assets: Vec<Asset> = (names.iter())
             .map(|name| Asset {

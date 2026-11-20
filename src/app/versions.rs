@@ -1,8 +1,8 @@
 //! A project version restored (#69, [`crate::ui::views::versions`]): the song the versions window left becomes the song.
 
-use super::{Handover, HoneydewApp};
+use super::{BanaForgeApp, Handover};
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// The song the versions window restored becomes the song as one undo step, which undo and redo restore whole
     /// ([`crate::history::History::replaced`]); the plugins start anew from its states, as for a song opened.
     pub(super) fn restore_version(&mut self, tick: u64) {

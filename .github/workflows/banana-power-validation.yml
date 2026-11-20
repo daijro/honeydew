@@ -1,0 +1,51 @@
+name: Banana rack effects validation
+on:
+  workflow_dispatch:
+  push:
+    branches: ["arena/**"]
+    paths:
+      - 'crates/audio/src/banana_power.rs'
+      - 'src/ui/piano_roll/waveform.rs'
+      - 'crates/audio/src/lib.rs'
+      - 'src/params/banana_power.rs'
+      - 'src/panels/fx/banana_power.rs'
+      - 'tests/banana_power.rs'
+      - '.github/workflows/banana-power-validation.yml'
+jobs:
+  effects:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Formatting diagnostics
+        run: |
+          cargo fmt
+          git diff > /tmp/format.patch
+          python3 - <<'PY'
+          import pathlib,zlib,base64
+          s=base64.b64encode(zlib.compress(pathlib.Path('/tmp/format.patch').read_bytes())).decode()
+          for i in range(0,len(s),2500): print(f'::warning title=Compressed format {i:06d}::{s[i:i+2500]}')
+          PY
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: DSP, integration, browser and rack checks
+        shell: bash
+        run: |
+          set +e
+          (cargo test -p banaforge-audio banana_power && cargo test --test banana_power && cargo test --lib ui::piano_roll::waveform::tests && cargo test --lib ui::modules_browser::tests && cargo test --lib panels::tests && cargo test --test rt_alloc) > /tmp/check.log 2>&1
+          rc=$?
+          cat /tmp/check.log
+          if [ "$rc" -ne 0 ]; then
+            python3 - <<'PY'
+          import pathlib
+          s='\n'.join(line[:500] for line in pathlib.Path('/tmp/check.log').read_text(errors='replace').splitlines()[-100:])
+          for i in range(0,len(s),3000):
+              t=s[i:i+3000].replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+              print(f'::error title=Banana effects regression::{t}')
+          PY
+          fi
+          exit "$rc"

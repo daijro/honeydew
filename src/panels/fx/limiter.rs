@@ -1,7 +1,7 @@
 //! Limiter (ID 28), UIHeight 6 U.
 
+use banaforge_audio::analysis::{self, HISTORY, HistoryView};
 use eframe::egui::{Color32, Id, Pos2, Rect, Shape, Stroke, Ui, pos2};
-use honeydew_audio::analysis::{self, HISTORY, HistoryView};
 
 use super::live_analysis;
 use crate::metrics::Metrics;
@@ -253,7 +253,7 @@ pub(super) mod tests {
     fn a_feed_draws_the_input_and_output_bars_and_the_gain_trace() {
         // The newest two entries: input at 0 dB (60/66) and +12 dB (clamped to h), output at −24 dB (36/66), gain
         // at −6 dB (54/66). The rest of the history is empty: no bars, and the trace starts at the first entry.
-        use honeydew_audio::MeterSnapshot;
+        use banaforge_audio::MeterSnapshot;
         let text = theme_by_id(0).colors.text.to_color32();
         let content = Rect::from_min_size(pos2(0.0, 0.0), vec2(14.0 * U, 3.99 * U));
         let mut slab = vec![0.0; 1 + 3 * HISTORY];

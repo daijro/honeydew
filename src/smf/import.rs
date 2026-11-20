@@ -1,7 +1,7 @@
 //! MIDI import: [`scan`] for the import dialog and the one-channel shortcut, and [`import`] for its three entry
 //! points.
 //!
-//! Where MIDI files and readers differ, Honeydew's choices:
+//! Where MIDI files and readers differ, BanaForge's choices:
 //! - Running status is kept across metas and SysEx, which are skipped ([`codec::read`]); a data byte with no status
 //!   before it fails the file.
 //! - A channel's program is its last `Cn`; a channel without one plays GM program 0.

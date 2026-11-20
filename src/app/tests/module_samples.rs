@@ -14,8 +14,8 @@ use crate::flm::chunk::{ContentPath, ContentRoot};
 use crate::sample_cache::SampleKey;
 use crate::sample_cache::tests::wav;
 use crate::ui::picker_preview::LOADING;
-use honeydew_audio::builtin_shapes::VOWEL_A_FORMANTS;
-use honeydew_audio::device::AudioRenderer;
+use banaforge_audio::builtin_shapes::VOWEL_A_FORMANTS;
+use banaforge_audio::device::AudioRenderer;
 
 /// The 3x Osc's channel (after the rig's MiniSynth), and its instrument's instance id.
 const CHANNEL: usize = 2;
@@ -602,7 +602,7 @@ fn the_rebuilt_slicer_slices_the_loop_at_its_cues_at_sensitivity_0() {
     let key = SampleKey::of_path(&loop_of(&rig).unwrap());
     let sample = rig.app.audio.samples.get(&key).expect("rendered");
     // A new module's 0.25 (`SENS` from the pick): the detector's slices (the cues count only at 0).
-    let detected = honeydew_audio::slicer::detect(&sample, 0.25).len();
+    let detected = banaforge_audio::slicer::detect(&sample, 0.25).len();
     assert!(detected > 1);
     assert_eq!(slices(&rig), detected);
     // Sensitivity 0: one slice per cue, each a key from 48.
@@ -762,7 +762,7 @@ fn import_in_the_module_sample_picker_keeps_an_audio_file_in_my_samples() {
     // The desktop's has none.
     let mut rig = Rig::with_synth();
     rig.app.files = crate::project_files::ProjectFiles::on_disk(
-        &std::env::temp_dir().join("honeydew-q6-no-such-folder"),
+        &std::env::temp_dir().join("banaforge-q6-no-such-folder"),
     );
     rig.app
         .add_channel(ChannelKind::Synth(SynthKind::Slicer), 0);
@@ -1068,7 +1068,7 @@ fn tesla_opens_from_the_picker_and_saves_into_my_recordings() {
         .keep_user_file(Path::new("My Samples/Kick.wav"), wav(&[0, 9000, 0, -9000]));
     rig.open_rack(CHANNEL);
     rig.slide_rack();
-    let editor = crate::plugins::lemon_open(id, module).expect("its card shows its editor") as _;
+    let editor = crate::plugins::banana_open(id, module).expect("its card shows its editor") as _;
     ctrl(&mut rig, editor, 'o');
     let picker = Overlay::ModuleSamplePicker {
         channel: CHANNEL,
@@ -1103,7 +1103,7 @@ fn teslas_send_to_the_arranger_puts_its_sample_on_a_new_track_at_the_playhead() 
     rig.app.song_edited(SongEdit::Final, 0);
     rig.open_rack(CHANNEL);
     rig.slide_rack();
-    let editor = crate::plugins::lemon_open(id, module).expect("its card shows its editor") as _;
+    let editor = crate::plugins::banana_open(id, module).expect("its card shows its editor") as _;
     // A sample dropped on Tesla's window.
     let name = format!("tesla-send-{}", std::process::id());
     let file = std::env::temp_dir().join(format!("{name}.wav"));
@@ -1135,20 +1135,20 @@ fn teslas_send_to_the_arranger_puts_its_sample_on_a_new_track_at_the_playhead() 
     let _ = std::fs::remove_file(file);
 }
 
-/// Issue #52: where there is no file dialog (Android, the browser; here a phone's), Lemon Trio's sample page opens the
+/// Issue #52: where there is no file dialog (Android, the browser; here a phone's), Banana Trio's sample page opens the
 /// sample picker, and the plugin opens its pick (one the session keeps in memory, as the browser's are). Issue #93: each
 /// pick only plays on the preview player and the picker stays; its close stops the preview and the plugin opens the
 /// last pick.
 #[test]
-fn a_lemon_trios_sample_picker_previews_each_pick_and_the_plugin_opens_the_last() {
-    use lemon_3x_osc::view::{CROP_X, CROP_Y, rr, sample_card};
+fn a_banana_trios_sample_picker_previews_each_pick_and_the_plugin_opens_the_last() {
+    use banana_3x_osc::view::{CROP_X, CROP_Y, rr, sample_card};
     use os_plugkit::embed::{self, Button, Input};
     embed::set_host_files(true);
     let mut rig = Rig::with_synth();
     rig.app.add_bare_channel(ChannelKind::Instrument, 0);
     let channel = &mut rig.app.song.channels[CHANNEL];
     let id = channel.id;
-    let uid = crate::plugins::builtin::named("Lemon Trio").uid;
+    let uid = crate::plugins::builtin::named("Banana Trio").uid;
     let module = crate::plugins::add(&mut channel.rack, id, uid, 0).unwrap();
     rig.app.song_edited(SongEdit::Final, 0);
     let (kick, snare) = ("My Samples/Kick.wav", "My Samples/Snare.wav");
@@ -1160,7 +1160,7 @@ fn a_lemon_trios_sample_picker_previews_each_pick_and_the_plugin_opens_the_last(
         .keep_user_file(Path::new(snare), wav(&[4000; 44_100]));
     rig.open_rack(CHANNEL);
     rig.slide_rack();
-    let editor = crate::plugins::lemon_open(id, module).expect("its card shows its editor") as _;
+    let editor = crate::plugins::banana_open(id, module).expect("its card shows its editor") as _;
     // Clicks at the centre of the editor's view rect `r`: its sample page's tab, then the page.
     let mut click = |r: os_ui::Rect| {
         let scale = embed::backing_scale(editor);

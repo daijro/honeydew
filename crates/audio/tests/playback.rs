@@ -1,8 +1,8 @@
-use honeydew_audio::automation::{
+use banaforge_audio::automation::{
     AutomationClip, AutomationLane, AutomationPlayback, AutomationPoint, AutomationTarget,
 };
-use honeydew_audio::playback::{AudioPlayback, AutomationChange, StereoBlock};
-use honeydew_audio::{AudioEffect, ProcessContext};
+use banaforge_audio::playback::{AudioPlayback, AutomationChange, StereoBlock};
+use banaforge_audio::{AudioEffect, ProcessContext};
 
 const CONTEXT: ProcessContext = ProcessContext {
     sample_rate: 128.0,
@@ -173,7 +173,7 @@ fn invalid_change_rejects_the_block_before_touching_audio() {
     let mut host = AudioPlayback::new(1, AutomationPlayback::default());
     let mut left = [0.5; 4];
     let mut right = [0.5; 4];
-    let change = honeydew_audio::playback::AutomationChange {
+    let change = banaforge_audio::playback::AutomationChange {
         frame: 2,
         target: AutomationTarget {
             channel: 0,

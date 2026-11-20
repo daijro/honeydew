@@ -1,10 +1,10 @@
 //! Channel sends (`SEND`, params 0x1000/0x2000 + channel id, Enable Send) and per-module key ranges.
 
-use honeydew::audio_engine::SongAudioEngine;
-use honeydew::song::{AutomationTarget, ChannelKind, Event, SendState, Song, SynthKind};
-use honeydew::ui::mixer::smart_solo;
-use honeydew_audio::device::AudioRenderer;
-use honeydew_audio::instrument::KEY_LEARN;
+use banaforge::audio_engine::SongAudioEngine;
+use banaforge::song::{AutomationTarget, ChannelKind, Event, SendState, Song, SynthKind};
+use banaforge::ui::mixer::smart_solo;
+use banaforge_audio::device::AudioRenderer;
+use banaforge_audio::instrument::KEY_LEARN;
 
 const RATE: f32 = 48_000.0;
 const ENABLE_SEND: i32 = 0x1000;
@@ -384,7 +384,7 @@ fn every_channel_made_without_a_file_sends_to_the_master() {
         assert!(to_master, "channel {index} ({:?})", channel.kind);
     }
     // A save and load keeps them.
-    let read = honeydew::flm::read(&honeydew::flm::write(&song).unwrap()).unwrap();
+    let read = banaforge::flm::read(&banaforge::flm::write(&song).unwrap()).unwrap();
     assert!(read.channels[1..].iter().all(|c| !c.file.sends.is_empty()));
 }
 
@@ -400,7 +400,7 @@ fn a_new_songs_added_channels_are_heard_at_the_output() {
     song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
     let fx = song.channels[4].id;
     song.channels[5].file.sends[0].target_channel_id = fx;
-    let mut cache = honeydew::sample_cache::SampleCache::default();
+    let mut cache = banaforge::sample_cache::SampleCache::default();
     cache.load(&song, &|_| None);
     for (channel, key) in [(1, 69), (clone, 69), (3, 48), (5, 69)] {
         let mut engine = SongAudioEngine::with_samples(&song, RATE, &cache).unwrap();
@@ -421,7 +421,7 @@ fn a_disconnected_channel_stays_silent_after_save_and_load() {
     song.channels[1].file.sends.clear();
     let (_, output) = held(&song, 1, 69, |_| {});
     assert_eq!(energy(&output), 0.0, "disconnected");
-    let read = honeydew::flm::read(&honeydew::flm::write(&song).unwrap()).unwrap();
+    let read = banaforge::flm::read(&banaforge::flm::write(&song).unwrap()).unwrap();
     let sends = &read.channels[1].file.sends;
     assert_eq!(
         sends

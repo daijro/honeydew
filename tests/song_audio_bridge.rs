@@ -1,7 +1,7 @@
-use honeydew::audio_bridge::SongAudioBridge;
-use honeydew::song::{AutomationTarget, ChannelKind, Event, Lane, LaneKind, Song};
-use honeydew_audio::ProcessContext;
-use honeydew_audio::sequencer::{InputNoteEvent, NoteKind};
+use banaforge::audio_bridge::SongAudioBridge;
+use banaforge::song::{AutomationTarget, ChannelKind, Event, Lane, LaneKind, Song};
+use banaforge_audio::ProcessContext;
+use banaforge_audio::sequencer::{InputNoteEvent, NoteKind};
 
 const CONTEXT: ProcessContext = ProcessContext {
     sample_rate: 128.0,
@@ -246,7 +246,7 @@ fn common_rack_automation_keeps_its_negative_target_index() {
     let mut right = [1.0; 2048];
     bridge
         .process_block(
-            &mut [honeydew_audio::playback::StereoBlock {
+            &mut [banaforge_audio::playback::StereoBlock {
                 left: &mut left,
                 right: &mut right,
             }],
@@ -403,7 +403,7 @@ fn the_bridge_sizes_tape_stop_for_the_song_tempo() {
     }
     let (params, common) = (module.params.clone(), module.common.0);
     let mut bridge = SongAudioBridge::new(&song, RATE).unwrap();
-    let mut reference = honeydew_audio::AudioEffect::new(42, RATE).unwrap();
+    let mut reference = banaforge_audio::AudioEffect::new(42, RATE).unwrap();
     reference.configure_tempo(10.0).unwrap();
     for (index, value) in params.into_iter().enumerate() {
         reference.set_parameter(index, value).unwrap();
@@ -417,7 +417,7 @@ fn the_bridge_sizes_tape_stop_for_the_song_tempo() {
         sample_rate: RATE,
         ..CONTEXT
     };
-    let play = honeydew_audio::automation::AutomationTarget {
+    let play = banaforge_audio::automation::AutomationTarget {
         channel: 1,
         instance_id: id,
         parameter_index: 5,
@@ -472,7 +472,7 @@ fn loop_end_song(offset: f64) -> (Song, i32) {
 #[test]
 fn a_point_on_the_loop_end_dispatches_before_the_next_passs_first_point() {
     // A point on the loop end plays with the next pass's content 0; the lower position lands last and wins, as
-    // `honeydew_audio::automation` dispatches a tie, whatever the clip's offset. One tick a frame.
+    // `banaforge_audio::automation` dispatches a tie, whatever the clip's offset. One tick a frame.
     for offset in [0.0, 1.0] {
         let (song, id) = loop_end_song(offset);
         let mut bridge = SongAudioBridge::new(&song, CONTEXT.sample_rate).unwrap();

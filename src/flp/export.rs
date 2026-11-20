@@ -1,4 +1,4 @@
-//! A [`Song`] written as an FL Studio project (`.flp`), in the minimal layout FL Studio 2026 opens (Lemon Studio's
+//! A [`Song`] written as an FL Studio project (`.flp`), in the minimal layout FL Studio 2026 opens (Banana Studio's
 //! `os-flp` writer, checked against FL 26: version 26.1.7, 88-byte playlist records, 500 playlist tracks), at 384 PPQ
 //! (3 of FL's ticks to each of ours, so every position is exact).
 //!
@@ -9,8 +9,8 @@
 //!   Layer channel of one Sampler for each zone ([`dw_zones`]), each on its zone's keys; a Drums channel one Sampler
 //!   for each pad it plays, its hits at C5. Any other instrument becomes a Sampler of one note of it, rendered.
 //! - Each effect goes into its insert's slots ([`mixer`]): FL's own effect where it has one like it ([`EFFECTS`]), the
-//!   Equalizer with its bands ([`eq_bands`]), Lemon Reverb and Lemon Limiter as Fruity Reeverb 2 and Fruity Limiter
-//!   with their settings (`honeydew_audio::lemon`), the others at FL's default settings; a third-party plugin effect in
+//!   Equalizer with its bands ([`eq_bands`]), Banana Reverb and Banana Limiter as Fruity Reeverb 2 and Fruity Limiter
+//!   with their settings (`banaforge_audio::banana`), the others at FL's default settings; a third-party plugin effect in
 //!   FL's plugin wrapper. The master's effects go into the master's slots.
 //! - Each clip of a notes or drum lane is a pattern of its plays over its visible length (loops unrolled), placed in
 //!   the playlist at its start, muted as it is, one playlist track per lane.
@@ -21,17 +21,17 @@
 //! - The samples it plays are WAV files beside the project ([`Exported::samples`]), named as the Samplers name them.
 //!
 //! Lossy: sends, automation lanes, audio clips' stretch and pitch, the 3x Osc's envelopes, LFOs and arpeggiator, DW
-//! Sampler envelopes, filters and velocity layers, effect settings but the Equalizer's and Lemon Studio's effects', note
+//! Sampler envelopes, filters and velocity layers, effect settings but the Equalizer's and Banana Studio's effects', note
 //! effects, every other instrument's sound but one note of it.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use honeydew_audio::dw_sampler::pitch_shift;
-use honeydew_audio::dwp::{Cstm, Zone};
-use honeydew_audio::sample::SampleData;
-use honeydew_audio::stream::Pcm;
-use honeydew_audio::wav_writer::float32_wav;
+use banaforge_audio::dw_sampler::pitch_shift;
+use banaforge_audio::dwp::{Cstm, Zone};
+use banaforge_audio::sample::SampleData;
+use banaforge_audio::stream::Pcm;
+use banaforge_audio::wav_writer::float32_wav;
 
 use super::mixer::{self, Band, HIGH_SHELF, LOW_SHELF, PEAKING, Slot, Track};
 use super::{Chunk, ChunkBody, Event, FlpFile, Header, Tag, Value, id};
@@ -45,7 +45,7 @@ use crate::song::{
     Channel, ChannelKind, ChannelParams, Event as SongEvent, Lane, LaneKind, ModuleInstance, PPQ,
     SamplerSlot, Song,
 };
-use honeydew_audio::lemon;
+use banaforge_audio::banana;
 
 /// The version written (FL 26 opens it without a warning) and its build.
 const VERSION: &str = "26.1.7.5653";
@@ -102,17 +102,17 @@ enum Sound {
     Layer(Vec<u16>),
 }
 
-/// Event 215 of a new audio clip channel as FL 26 writes it (declick mode 1, not stretched), from Lemon Studio's
+/// Event 215 of a new audio clip channel as FL 26 writes it (declick mode 1, not stretched), from Banana Studio's
 /// `os-flp` (GPL-3.0-or-later).
 const AUDIO_CLIP_215: &str = "8c0000000000000001000000ffffffff3c0000000000803f0000803f0000803f0000803f0000803f000000000300000000000000000400003000000000000100a7050000000000000001000000000000000000010000000000000000010000000000000000000000000000000000000002000000feffffffffffffff000000000000000000000000000000000000f03f0000000000000000ffffffff01010000000000000000e03f";
 
-/// Honeydew's effects and FL's own effect like each, by type id.
+/// BanaForge's effects and FL's own effect like each, by type id.
 const EFFECTS: &[(&[u16], &str)] = &[
     (&[3, 7, 30], "Fruity Parametric EQ 2"),
-    (&[12, 32, 35, lemon::REVERB], "Fruity Reeverb 2"),
+    (&[12, 32, 35, banana::REVERB], "Fruity Reeverb 2"),
     (&[16, 18], "Fruity Delay 3"),
     (&[8], "Fruity Compressor"),
-    (&[5, 28, lemon::LIMITER], "Fruity Limiter"),
+    (&[5, 28, banana::LIMITER], "Fruity Limiter"),
     (&[36], "Fruity Multiband Compressor"),
     (&[9], "Fruity Filter"),
     (&[11], "Fruity Chorus"),
@@ -319,7 +319,7 @@ impl Out {
         (self.mixer.len() - 1) as u16
     }
 
-    /// The channel's effects as an insert's slot plugins, in order ([`EFFECTS`]): the Equalizer with its bands, Lemon
+    /// The channel's effects as an insert's slot plugins, in order ([`EFFECTS`]): the Equalizer with its bands, Banana
     /// Studio's effects with their settings, the others at FL's defaults (each a notice), a third-party plugin in FL's plugin wrapper. One with no FL counterpart,
     /// or past the insert's ten slots, is left out with a notice.
     fn effects(&mut self, channel: &Channel) -> Vec<Slot> {
@@ -340,8 +340,8 @@ impl Out {
                 (_, Some(&(_, fl))) => {
                     let state = match m.type_id {
                         EQUALIZER => mixer::eq2_state(&eq_bands(&m.params)),
-                        lemon::REVERB => lemon::reverb_fl_state(&m.params),
-                        lemon::LIMITER => lemon::limiter_fl_state(&m.params),
+                        banana::REVERB => banana::reverb_fl_state(&m.params),
+                        banana::LIMITER => banana::limiter_fl_state(&m.params),
                         _ => Vec::new(),
                     };
                     if state.is_empty() {
@@ -762,7 +762,7 @@ fn note_of(channel: &Channel, cache: &SampleCache) -> Option<SampleData> {
 }
 
 /// The Equalizer's four bands (params 1 + 4k: gain, frequency, bandwidth, kind) as Fruity Parametric EQ 2's: the same
-/// type, frequency and level, and its bandwidth (octaves) as the width of the same Q by Lemon Studio's fit of FL's
+/// type, frequency and level, and its bandwidth (octaves) as the width of the same Q by Banana Studio's fit of FL's
 /// (Q = 0.36 / width peaking, 0.575 / width shelving). Its Channel setting is not kept: every band acts on both sides.
 fn eq_bands(params: &[f32]) -> Vec<Band> {
     (0..4)
@@ -793,12 +793,12 @@ fn wav_len(wav: &[u8]) -> Option<(u32, usize)> {
     let align = u16::from_le_bytes(wav.get(32..34)?.try_into().ok()?);
     let data = wav
         .len()
-        .checked_sub(honeydew_audio::wav_writer::HEADER_LEN)?;
+        .checked_sub(banaforge_audio::wav_writer::HEADER_LEN)?;
     (rate > 0 && align > 0).then(|| (rate, data / usize::from(align)))
 }
 
 /// Event 215 of a new Sampler channel that plays only the keys `lo..=hi`: the audio clip channel's record with a
-/// Sampler's own defaults where they differ, as Lemon Studio's writer makes it for a new channel (its
+/// Sampler's own defaults where they differ, as Banana Studio's writer makes it for a new channel (its
 /// `new_sample_settings`): main pitch on (byte 11), arpeggio range 1 and no chord (ints at 44, 48), declick mode 0
 /// (byte 83), the loop not following a reversal (byte 156), and the key zone (ints at 68 and 72).
 fn zone_215(lo: u8, hi: u8) -> Vec<u8> {

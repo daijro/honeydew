@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::song::Event;
-use honeydew_audio::device::AudioRenderer;
+use banaforge_audio::device::AudioRenderer;
 
 fn note(beat: u32, len_beats: f64, key: u8) -> Event {
     Event::Note {

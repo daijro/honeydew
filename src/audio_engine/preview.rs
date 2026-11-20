@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use honeydew_audio::sample::SampleData;
+use banaforge_audio::sample::SampleData;
 
 /// The preview's gain.
 pub const GAIN: f32 = 0.7;

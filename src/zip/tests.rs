@@ -1074,3 +1074,112 @@ const INFO_ZIP_STREAM: [u8; 208] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x50, 0x4b, 0x05, 0x06, 0x00, 0x00,
     0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x2f, 0x00, 0x00, 0x00, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
+
+fn cp932_entry(name: &str, data: &[u8]) -> Raw {
+    let (encoded, _, invalid) = encoding_rs::SHIFT_JIS.encode(name);
+    assert!(!invalid);
+    Raw {
+        name: encoded.into_owned(),
+        flags: 0,
+        ..stored("", data)
+    }
+}
+
+fn unicode_path_extra(raw: &[u8], text: &str) -> Vec<u8> {
+    let mut field = vec![1];
+    field.extend_from_slice(&crc32fast::hash(raw).to_le_bytes());
+    field.extend_from_slice(text.as_bytes());
+    let mut extra = 0x7075_u16.to_le_bytes().to_vec();
+    extra.extend_from_slice(&(field.len() as u16).to_le_bytes());
+    extra.extend(field);
+    extra
+}
+
+#[test]
+fn vocal_zip_cp932_paths_metadata_and_japanese_utf16_terms() {
+    // Entirely synthetic bank: no samples or metadata copied from any distributed library.
+    let root = "架空の音声";
+    let encode = |text: &str| encoding_rs::SHIFT_JIS.encode(text).0.into_owned();
+    let mut raws = vec![cp932_entry(
+        &format!("{root}/character.txt"),
+        &encode("name=重音テト（かさねてと）音声ライブラリー\r\n"),
+    )];
+    let terms: Vec<u8> = [0xff, 0xfe]
+        .into_iter()
+        .chain(
+            "Synthetic test terms only"
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes),
+        )
+        .collect();
+    raws.push(cp932_entry(&format!("{root}/使用許諾条件.txt"), &terms));
+    for (pitch, count) in [("低", 39), ("中", 319), ("高", 887)] {
+        let oto = (0..count)
+            .map(|n| format!("あ.wav=あ{n},1,2,-3,4,5\r\n"))
+            .collect::<String>();
+        raws.push(cp932_entry(
+            &format!("{root}/{pitch}/oto.ini"),
+            &encode(&oto),
+        ));
+        raws.push(cp932_entry(
+            &format!("{root}/{pitch}/あ.wav"),
+            b"synthetic sample placeholder",
+        ));
+    }
+    let zip = build(&raws, b"");
+    let index = crate::vocal_synth::index_archive_named(&zip, BIG, "fallback").unwrap();
+    assert_eq!(index.entries.len(), 1245);
+    assert_eq!(index.name, "重音テト（かさねてと）音声ライブラリー");
+    assert!(index.has_license_document);
+    let files = read_voicebank(&zip, BIG).unwrap();
+    assert!(
+        index
+            .entries
+            .iter()
+            .all(|alias| index.matching_sample(&files, alias).is_some())
+    );
+    assert!(index.entries.iter().all(|alias| alias.cutoff == -3.0));
+    assert_eq!(
+        crate::vocal_synth::decode_metadata(&terms).unwrap(),
+        "Synthetic test terms only"
+    );
+}
+
+#[test]
+fn vocal_zip_unicode_extra_crc_local_field_and_traversal_checks() {
+    let mut r = cp932_entry("古い.wav", b"test");
+    r.extra = unicode_path_extra(&r.name, "新しい.wav");
+    assert_eq!(voicebank_name(&r.name, 0, &r.extra).unwrap(), "新しい.wav");
+    assert_eq!(
+        read_voicebank(&build(&[r.clone()], b""), BIG).unwrap()[0].path,
+        "新しい.wav"
+    );
+    let mut bad_crc = r.extra.clone();
+    bad_crc[5] ^= 1;
+    assert_eq!(voicebank_name(&r.name, 0, &bad_crc).unwrap(), "古い.wav");
+    assert!(voicebank_name(&r.name, UTF8, &[]).is_err());
+    r.extra = unicode_path_extra(&r.name, "../outside.wav");
+    assert!(read_voicebank(&build(&[r], b""), BIG).is_err());
+}
+
+#[test]
+fn vocal_zip_utf8_with_and_without_flag_and_nfc_sample_matching() {
+    for flags in [0, UTF8] {
+        let mut r = stored("か\u{3099}.wav", b"synthetic");
+        r.flags = flags;
+        let entries = read_voicebank(&build(&[r], b""), BIG).unwrap();
+        assert_eq!(entries[0].path, "が.wav");
+    }
+    let files = vec![
+        Entry {
+            path: "Bank/oto.ini".into(),
+            data: "\u{feff}が.wav=あ,0,0,0,0,0".as_bytes().to_vec(),
+        },
+        Entry {
+            path: "Bank/か\u{3099}.wav".into(),
+            data: b"synthetic".to_vec(),
+        },
+    ];
+    let index = crate::vocal_synth::index_files(&files).unwrap();
+    assert!(index.matching_sample(&files, &index.entries[0]).is_some());
+}

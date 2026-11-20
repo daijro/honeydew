@@ -1,7 +1,7 @@
 //! Compressor (ID 8), UIHeight 7.5 U.
 
+use banaforge_audio::MeterSnapshot;
 use eframe::egui::{Color32, Id, Painter, Rect, Stroke, StrokeKind, Ui, pos2, vec2};
-use honeydew_audio::MeterSnapshot;
 
 use super::leveller::{animate, bounded, live_meter};
 use crate::metrics::Metrics;

@@ -10,6 +10,10 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Back goes to the activity's back callback from Android 13 up, not only from 16 (#72). -->
+    <queries>
+        <intent><action android:name="android.intent.action.SEND" /><data android:mimeType="*/*" /></intent>
+        <intent><action android:name="android.intent.action.SEND_MULTIPLE" /><data android:mimeType="*/*" /></intent>
+    </queries>
     <application
         android:allowBackup="false"
         android:enableOnBackInvokedCallback="true"
@@ -17,24 +21,24 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:networkSecurityConfig="@xml/network_security_config"
-        android:theme="@style/Theme.Honeydew">
+        android:theme="@style/Theme.BanaForge">
         <activity
-            android:name="dev.daijro.honeydew.HoneydewActivity"
+            android:name="dev.daijro.banaforge.BanaForgeActivity"
             android:launchMode="singleTop"
             android:screenOrientation="fullUser"
             android:resizeableActivity="true"
             android:supportsPictureInPicture="false"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|touchscreen|density|fontScale|uiMode"
             android:exported="true">
-            <meta-data android:name="android.app.lib_name" android:value="honeydew" />
+            <meta-data android:name="android.app.lib_name" android:value="banaforge" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- The user folder in the system Files app and every app's document picker (HoneydewDocuments). -->
+        <!-- The user folder in the system Files app and every app's document picker (BanaForgeDocuments). -->
         <provider
-            android:name="dev.daijro.honeydew.HoneydewDocuments"
+            android:name="dev.daijro.banaforge.BanaForgeDocuments"
             android:authorities="${applicationId}.documents"
             android:exported="true"
             android:grantUriPermissions="true"
@@ -43,9 +47,9 @@
                 <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
             </intent-filter>
         </provider>
-        <!-- An update's APK for the system's installer (HoneydewUpdate): read grants only, never exported. -->
+        <!-- An update's APK for the system's installer (BanaForgeUpdate): read grants only, never exported. -->
         <provider
-            android:name="dev.daijro.honeydew.HoneydewUpdate"
+            android:name="dev.daijro.banaforge.BanaForgeUpdate"
             android:authorities="${applicationId}.update"
             android:exported="false"
             android:grantUriPermissions="true" />

@@ -136,6 +136,14 @@ pub struct Channel {
 }
 
 impl Channel {
+    /// Presentation token for `theme::channel_color`. Custom RGB never replaces
+    /// the legacy hue on disk; it lives in the optional BanaForge colour chunk.
+    pub fn color_token(&self) -> f32 {
+        self.file.color_rgb.map_or(self.hue, |[r, g, b]| {
+            -(((u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b)) as f32 + 1.0)
+        })
+    }
+
     /// A channel with default params, an empty rack, not a bus, output to the master, and its lane 0.
     pub fn new(name: String, kind: ChannelKind, hue: f32) -> Self {
         let mut channel = Self {

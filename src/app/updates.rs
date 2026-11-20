@@ -3,7 +3,7 @@
 //! (the base APK; the desktop's is `app/sounds.rs`'s). Each frame: news of a newer release, once per version, with
 //! `Show` opening UPDATES; and how a sound library download ended. Neither replaces a message that is open.
 
-use super::HoneydewApp;
+use super::BanaForgeApp;
 use crate::content::install;
 use crate::ui::views::{MenuTab, Nav, Overlay};
 use crate::update;
@@ -12,7 +12,7 @@ use crate::update;
 const NEWS_TAG: &str = "update_news";
 const SOUNDS_TAG: &str = "update_sounds";
 
-impl HoneydewApp {
+impl BanaForgeApp {
     pub(super) fn updates_at_start(&mut self) {
         update::allow_mobile_data(self.settings.sounds_mobile_data);
         if self.settings.check_updates {
