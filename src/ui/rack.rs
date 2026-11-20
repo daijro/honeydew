@@ -135,8 +135,8 @@ const COMMON: [(i32, ParamSpec); 3] = [
 /// Honeydew change (GitHub #135): the SoundFont Player's card height in a phone-size window (its shorter side
 /// under [`PHONE_SIDE`]), for longer sliders, where it was 8.5 U; in a portrait one, whose full-width rack
 /// is too narrow for the ten labels side by side, they take two rows of five ([`soundfont_player::TWO_ROWS`]).
-const SOUNDFONT_PHONE: f32 = 11.0;
-const SOUNDFONT_PORTRAIT: f32 = 15.0;
+const SOUNDFONT_PHONE: f32 = 10.5;
+const SOUNDFONT_PORTRAIT: f32 = 10.5;
 /// The shorter side of a phone-size window: phones are about 16 U across (U = 1/6 inch), tablets and a 1280 × 800
 /// desktop window 25 U or more.
 const PHONE_SIDE: f32 = 20.0;
@@ -1271,6 +1271,7 @@ struct CardEdits {
     double_tap: bool,
     /// Issue #68: a Lemon card's full screen button was clicked.
     full: bool,
+    zone_edit: bool,
 }
 
 /// A card held to reorder it.
@@ -2183,6 +2184,7 @@ impl RackPanel {
         let (rebuild, live): (Vec<_>, Vec<_>) =
             (edits.sent.into_iter()).partition(|&(key, _)| settings::rebuilds(type_id, key));
         self.note_edit |= !rebuild.is_empty();
+        self.note_edit |= edits.zone_edit;
         if type_id == slicer::TYPE_ID && !rebuild.is_empty() && !self.redetect.contains(&id) {
             self.redetect.push(id);
         }
@@ -2600,6 +2602,16 @@ impl RackPanel {
                 });
             let moves = soundfont_player::cc_moves(module, state, &shown.settings, fonts);
             edits.ccs.extend(moves);
+            let z = soundfont_player::edit_zones(module, state, &shown.settings, fonts);
+            if z.stored {
+                card.cstm.clone_from(&module.file.custom_data);
+                edits.stored = true;
+            }
+            edits.zone_edit |= z.zone_edit;
+            edits.sent.extend(z.sent);
+            if z.commit_now {
+                edits.press = Some(Press::Stepped);
+            }
         }
     }
 

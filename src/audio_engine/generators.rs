@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::samples::{sampler_zones, shape_key};
 use crate::flm::sf2d::Sf2d;
+use crate::flm::sf2d::Sf2z;
 use crate::panels::cstm::settings_from_cstm;
 use crate::params::{Role, module_spec};
 use crate::sample_cache::SampleCache;
@@ -128,13 +129,19 @@ fn soundfont_player(
     samples: &SampleCache,
     origin: &mut DefaultHasher,
 ) -> SoundFontPlayer {
-    let sf2d = module.file.custom_data.as_deref().and_then(Sf2d::read);
-    let bank = sf2d.and_then(|sf2d| Some((samples.soundfont(&sf2d.path)?, sf2d.patch)));
+    let custom = module.file.custom_data.as_deref();
+    let sf2d = custom.and_then(Sf2d::read);
+    let bank = sf2d.as_ref().and_then(|s| Some((samples.soundfont(&s.path)?, s.patch)));
     module.file.custom_data.hash(origin);
     bank.as_ref()
         .map(|(font, _)| Arc::as_ptr(font))
         .hash(origin);
-    let player = SoundFontPlayer::new(sample_rate, bank);
+    let mut player = SoundFontPlayer::new(sample_rate, bank);
+    if let (Some(sf2d), Some(sf2z)) = (sf2d, custom.and_then(Sf2z::read))
+        && sf2z.patch == sf2d.patch
+    {
+        player.apply_zone_overrides(&sf2z.zones);
+    }
     stream(player.rings(), samples);
     player
 }

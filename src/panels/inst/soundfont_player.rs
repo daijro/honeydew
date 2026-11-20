@@ -23,8 +23,10 @@ use eframe::egui::{Id, Rect, Sense, Ui};
 
 use crate::flm::chunk::ContentPath;
 use crate::flm::sf2d::Sf2d;
+use crate::flm::sf2d::Sf2z;
 use crate::panels::build::*;
 use crate::sf2::{Control, Preset, Sf2Error};
+use honeydew_audio::soundfont::{ZONE_CTL_BASE, ZONE_FIELDS, ZONE_RESET_KEY, ZONE_SELECT_KEY, ZoneInfo, ZoneOverride};
 
 /// The SoundFont Player's module type.
 pub const TYPE_ID: u16 = 52;
@@ -40,6 +42,15 @@ pub const KNOBS: u32 = 4100;
 /// The named controls the card shows.
 pub const SLOTS: usize = 8;
 
+pub const ZONE_SELECT: u32 = ZONE_SELECT_KEY; // 7000
+const ZONE_PREV: u32 = 7001;
+const ZONE_LABEL: u32 = 7002;
+const ZONE_NEXT: u32 = 7003;
+const ZONE_PAGE: u32 = 7004;
+const ZONE_RESET: u32 = ZONE_RESET_KEY; // 7005
+const HAS_ZONES: &str = "sf2_zones";
+const ZONE_SEEDED: &str = "sf2_zone_seeded";
+
 /// Honeydew change (GitHub #135): the card wiring's flag for a portrait phone-size window (`ui::rack`, whose
 /// card is taller there): the ten controls under the patch row take two rows of five, so their labels and values fit.
 pub const TWO_ROWS: &str = "two_rows";
@@ -54,6 +65,93 @@ const SEEDED: &str = "sfz_controls_seeded";
 /// The patches of each SoundFont the rack's SoundFont Players name, by their `SF2D` path, as read
 /// ([`crate::project_files::ProjectFiles::soundfont`]): the host reads each one once.
 pub type SoundFonts = HashMap<ContentPath, Result<Vec<Preset>, Sf2Error>>;
+
+#[derive(Clone, Debug, Default)]
+pub struct ZoneOutcome {
+    pub sent: Vec<(u32, f32)>,
+    pub stored: bool,
+    pub zone_edit: bool,
+    pub commit_now: bool,
+}
+
+pub fn edit_zones(
+    module: &mut ModuleInstance,
+    state: &mut PanelState,
+    edited: &[u32],
+    fonts: &SoundFonts,
+) -> ZoneOutcome {
+    let mut out = ZoneOutcome::default();
+    let Some((patch, zones)) = current_zones(module, fonts) else {
+        return out;
+    };
+    if zones.is_empty() {
+        return out;
+    }
+    let sel = state.settings.get(&ZONE_SELECT).copied().unwrap_or(0.0).round().clamp(0.0, (zones.len() - 1) as f32) as usize;
+    let pressed = |id| edited.contains(&id) && state.settings.get(&id).is_some_and(|&v| v >= 0.5);
+    if let Some(by) = match (pressed(ZONE_PREV), pressed(ZONE_NEXT)) {
+        (true, false) => Some(-1_i64),
+        (false, true) => Some(1_i64),
+        _ => None,
+    } {
+        let next = (sel as i64 + by).rem_euclid(zones.len() as i64) as usize;
+        state.settings.insert(ZONE_SELECT, next as f32);
+        state.flags.remove(ZONE_SEEDED);
+        out.sent.push((ZONE_SELECT, next as f32));
+        return out;
+    }
+    let cstm = module.file.custom_data.as_deref();
+    let mut sf2z = cstm.and_then(Sf2z::read).filter(|z| z.patch == patch).unwrap_or(Sf2z {
+        patch,
+        zones: Vec::new(),
+    });
+    if pressed(ZONE_RESET) {
+        sf2z.zones.retain(|o| usize::from(o.zone) != sel);
+        if let Ok(blob) = sf2z.write(cstm) {
+            module.file.custom_data = Some(blob);
+            state.flags.remove(ZONE_SEEDED);
+            for (f, v) in zones[sel].defaults.into_iter().enumerate() {
+                state.settings.insert(ZONE_CTL_BASE + f as u32, v);
+            }
+            out.sent.push((ZONE_SELECT, sel as f32));
+            out.sent.push((ZONE_RESET, 1.0));
+            out.stored = true;
+            out.commit_now = true;
+        }
+        return out;
+    }
+    let mut touched = false;
+    for &id in edited {
+        if let Some(f) = id.checked_sub(ZONE_CTL_BASE)
+            && (f as usize) < ZONE_FIELDS
+            && let Some(&v) = state.settings.get(&id)
+        {
+            if !touched {
+                out.sent.push((ZONE_SELECT, sel as f32));
+                touched = true;
+            }
+            out.sent.push((id, v));
+            if let Some(ov) = sf2z.zones.iter_mut().find(|o| usize::from(o.zone) == sel) {
+                ov.mask |= 1 << f;
+                ov.values[f as usize] = v;
+            } else {
+                let mut ov = ZoneOverride {
+                    zone: sel as u16,
+                    mask: 1 << f,
+                    values: zones[sel].defaults,
+                };
+                ov.values[f as usize] = v;
+                sf2z.zones.push(ov);
+            }
+        }
+    }
+    if touched && let Ok(blob) = sf2z.write(cstm) {
+        module.file.custom_data = Some(blob);
+        out.stored = true;
+        out.zone_edit = true;
+    }
+    out
+}
 
 /// Sets a card's `state` for `module`'s `SF2D` before the panel draws:
 /// - no SoundFont: the spinner's `Load Patch`;
@@ -90,6 +188,57 @@ pub fn wire(
     state
         .flags
         .insert(HAS_CONTROLS, usize::from(!controls.is_empty()));
+        
+    if controls.is_empty() && state.tab >= 4 {
+        state.tab = 0;
+    }
+
+    let zones = current_zones(module, fonts).map(|(_, z)| z).unwrap_or(&[]);
+    state.flags.insert(HAS_ZONES, usize::from(!zones.is_empty()));
+    if !zones.is_empty() {
+        let sel = state.settings.get(&ZONE_SELECT).copied().unwrap_or(0.0).round().clamp(0.0, (zones.len() - 1) as f32) as usize;
+        state.settings.insert(ZONE_SELECT, sel as f32);
+        let z = &zones[sel];
+        let oct_off = state.flags.get(flag::OCTAVE_OFFSET).copied().unwrap_or(0) as i32;
+        let range = if z.keys[0] == z.keys[1] {
+            note_name(z.keys[0], oct_off)
+        } else {
+            format!("{}-{}", note_name(z.keys[0], oct_off), note_name(z.keys[1], oct_off))
+        };
+        let vel = if z.vels == [0, 127] {
+            String::new()
+        } else {
+            format!(" v{}-{}", z.vels[0], z.vels[1])
+        };
+        let label = if z.name.is_empty() {
+            format!("{}/{} ({range}{vel})", sel + 1, zones.len())
+        } else {
+            format!("{}/{}: {} ({range}{vel})", sel + 1, zones.len(), z.name)
+        };
+        state.texts.insert(ZONE_LABEL, label);
+        let mut zh = std::collections::hash_map::DefaultHasher::new();
+        (sel, module.file.custom_data.as_deref()).hash(&mut zh);
+        let zkey = zh.finish() as usize;
+        if state.flags.insert(ZONE_SEEDED, zkey) != Some(zkey) {
+            let mut vals = z.defaults;
+            if let (Some(sf2d), Some(sf2z)) = (
+                module.file.custom_data.as_deref().and_then(Sf2d::read),
+                module.file.custom_data.as_deref().and_then(Sf2z::read),
+            ) && sf2z.patch == sf2d.patch
+                && let Some(ov) = sf2z.zones.iter().find(|o| usize::from(o.zone) == sel)
+            {
+                for f in 0..ZONE_FIELDS {
+                    if ov.mask & (1 << f) != 0 {
+                        vals[f] = ov.values[f];
+                    }
+                }
+            }
+            for (f, v) in vals.into_iter().enumerate() {
+                state.settings.insert(ZONE_CTL_BASE + f as u32, v);
+            }
+        }
+    }
+    
     for (slot, key) in SHOWN.iter().enumerate() {
         state.flags.insert(key, usize::from(slot < controls.len()));
     }
@@ -174,7 +323,7 @@ fn set_patch(module: &mut ModuleInstance, patch: usize) -> bool {
         return false;
     };
     sf2d.patch = patch as i32;
-    let Ok(blob) = sf2d.write(blob) else {
+    let Ok(blob) = sf2d.write(blob).and_then(|b| Sf2z::clear(Some(&b))) else {
         return false;
     };
     module.file.custom_data = Some(blob);
@@ -212,21 +361,28 @@ pub fn error_tap(ui: &Ui, id: Id, rect: Rect, state: &PanelState) -> Option<Pres
     (failed && ui.interact(rect, id, Sense::click()).clicked()).then_some(Press::Picker)
 }
 
+const TABS_SFZ: u32 = 4050;
+
 /// Loaded, or nothing to load: the controls show.
 const IDLE: Show = Show::Flag(flag::LOADING, 0);
-/// The SFZ names controls, and `CONTROLS` is the page.
-const CONTROLS_PAGE: Show = Show::All(&[Show::Flag(HAS_CONTROLS, 1), Show::Tab(1)]);
-const PATCH_SHOWN: Show = Show::All(&[IDLE, Show::Not(&CONTROLS_PAGE)]);
-const CONTROLS_SHOWN: Show = Show::All(&[IDLE, CONTROLS_PAGE]);
-const ONE_ROW_SHOWN: Show = Show::All(&[PATCH_SHOWN, Show::Flag(TWO_ROWS, 0)]);
-const TWO_ROWS_SHOWN: Show = Show::All(&[PATCH_SHOWN, Show::Flag(TWO_ROWS, 1)]);
+const NO_CONTROLS: Show = Show::All(&[IDLE, Show::Flag(HAS_CONTROLS, 0)]);
+const WITH_CONTROLS: Show = Show::All(&[IDLE, Show::Flag(HAS_CONTROLS, 1)]);
+const PATCH_SHOWN: Show = Show::All(&[IDLE, Show::Tab(0)]);
+const VIB_SHOWN: Show = Show::All(&[IDLE, Show::Tab(1)]);
+const FILTER_SHOWN: Show = Show::All(&[IDLE, Show::Tab(2)]);
+const CONTROLS_SHOWN: Show = Show::All(&[IDLE, Show::Flag(HAS_CONTROLS, 1), Show::Tab(3)]);
+const ZONES_SHOWN: Show = Show::All(&[IDLE, Show::Flag(HAS_CONTROLS, 0), Show::Tab(3)]);
+const ZONE_LIST: Show = Show::All(&[ZONES_SHOWN, Show::Flag(HAS_ZONES, 1)]);
+const NO_ZONES: Show = Show::All(&[ZONES_SHOWN, Show::Flag(HAS_ZONES, 0)]);
 
 /// `Envelope` is `Custom` (above 0.5): the sliders' envelope, which only then takes their input.
 const CUSTOM: Show = Show::Above(5, 0.5);
+const VIB_CUSTOM: Show = Show::Above(15, 0.5);
+const FILTER_CUSTOM: Show = Show::Above(12, 0.5);
 
-/// The `Envelope` toggle's state text: `Original` keeps the SoundFont's own envelopes, `Custom` uses the sliders'.
+/// The `Original` / `Custom` toggle's state text.
 fn envelope_text(v: f32) -> String {
-    if v > 0.5 { "Custom" } else { "Original" }.to_owned()
+    if v > 0.5 { "Global" } else { "Instrument" }.to_owned()
 }
 
 /// The `Quality` toggle's state text: `Linear` interpolation, or `High` (cubic) above 0.5.
@@ -239,75 +395,146 @@ fn cc_text(v: f32) -> String {
     format!("{}", (127.0 * v).round())
 }
 
-/// The ten controls under the patch row, their ids `#2100`… plus `shift` (3000 for the [`TWO_ROWS`] copy).
-fn envelope_controls(shift: u32) -> [Part; 10] {
-    [
-        toggle(2100 + shift, "Envelope")
-            .p(5)
-            .value_text()
-            .value_fn(envelope_text),
-        v_slider(2200 + shift, "Attack")
-            .p(1)
-            .value_text()
-            .enabled(CUSTOM),
-        v_slider(2300 + shift, "Decay")
-            .p(2)
-            .value_text()
-            .enabled(CUSTOM),
-        v_slider(2400 + shift, "Sustain")
-            .p(3)
-            .value_text()
-            .enabled(CUSTOM),
-        v_slider(2500 + shift, "Release")
-            .p(4)
-            .value_text()
-            .enabled(CUSTOM),
-        // A Honeydew addition (#90): Fine Tune; it tunes either envelope.
-        v_slider(2600 + shift, "Fine Tune").p(6).value_text(),
-        // Honeydew additions (#102): the vibrato and Quality.
-        v_slider(2700 + shift, "Vib Rate").p(7).value_text(),
-        v_slider(2800 + shift, "Vib Depth").p(8).value_text(),
-        v_slider(2900 + shift, "Vib Delay").p(9).value_text(),
-        toggle(3100 + shift, "Quality")
-            .p(10)
-            .value_text()
-            .value_fn(quality_text),
-    ]
+fn note_name(key: u8, oct_offset: i32) -> String {
+    const NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    let oct = i32::from(key / 12) - oct_offset;
+    format!("{}{oct}", NAMES[usize::from(key % 12)])
+}
+
+fn zone_time_text(v: f32) -> String {
+    let t = (10.0 * 0.95f32.mul_add(v, 0.05).powi(3)).max(0.005);
+    if t >= 1.0 { format!("{t:.2} s") } else { format!("{} ms", (1000.0 * t).round()) }
+}
+fn zone_pct_text(v: f32) -> String { format!("{}%", (100.0 * v).round()) }
+fn zone_rate_text(v: f32) -> String { format!("{:.2} Hz", 20.0 * v) }
+fn zone_cents_text(v: f32) -> String { format!("{:+} c", (200.0 * v - 100.0).round() as i32) }
+fn zone_delay_text(v: f32) -> String { format!("{:.2} s", 5.0 * v) }
+fn zone_cutoff_text(v: f32) -> String {
+    let hz = 8.176 * 2f32.powf((1500.0 + 12000.0 * v) / 1200.0);
+    if hz >= 1000.0 { format!("{:.2} kHz", hz / 1000.0) } else { format!("{} Hz", hz.round()) }
+}
+fn zone_res_text(v: f32) -> String { format!("{:.1} dB", 40.0 * v) }
+fn zone_tune_text(v: f32) -> String { format!("{:+} st", (48.0 * v).round() as i32 - 24) }
+fn zone_pan_text(v: f32) -> String {
+    let p = ((v - 0.5) * 200.0).round() as i32;
+    if p == 0 { "Center".into() } else if p < 0 { format!("{}% L", -p) } else { format!("{p}% R") }
+}
+fn zone_db_text(v: f32) -> String { format!("{:+.1} dB", 60.0 * v - 48.0) }
+
+fn current_zones<'a>(module: &ModuleInstance, fonts: &'a SoundFonts) -> Option<(i32, &'a [ZoneInfo])> {
+    let sf2d = module.file.custom_data.as_deref().and_then(Sf2d::read)?;
+    let (presets, idx) = patches(module, fonts)?;
+    Some((sf2d.patch, &presets[idx].zones))
 }
 
 pub fn panel() -> Option<Panel> {
-    let [a, b, c, d, e, f, g, h, i, j] = envelope_controls(3000);
-    let (first, second) = ([a, b, c, d, e], [f, g, h, i, j]);
     let knobs = (0..SLOTS).map(|slot| {
         knob(knob_id(slot), "")
             .value_fn(cc_text)
             .show(Show::Flag(SHOWN[slot], 1))
     });
     Some(Panel::new(vstack([
-        tabs(TABS, "PATCH · CONTROLS")
+        tabs(TABS, "PATCH · VIBRATO · FILTER · ZONES")
             .h(Size::U(1.25))
-            .show(Show::All(&[IDLE, Show::Flag(HAS_CONTROLS, 1)])),
-        hstack([
-            text_toggle(1100, "Prev")
-                .momentary()
-                .margins(0.75, 0.75, 0.75, 0.75),
-            // The wiring's text (`wire`) once a patch is chosen.
-            spinner(1200, "Patch").items(&["Load Patch"]).picker(),
-            text_toggle(1300, "Next")
-                .momentary()
-                .margins(0.75, 0.75, 0.75, 0.75),
-            // A Honeydew addition (#102): Transpose, in semitones.
-            knob(3200, "Transpose").p(11).w(Size::U(2.5)),
+            .show(NO_CONTROLS),
+        tabs(TABS_SFZ, "PATCH · VIBRATO · FILTER · CONTROLS")
+            .h(Size::U(1.25))
+            .show(WITH_CONTROLS),
+        vstack([
+            hstack([
+                text_toggle(1100, "Prev")
+                    .momentary()
+                    .margins(0.75, 0.75, 0.75, 0.75),
+                spinner(1200, "Patch").items(&["Load Patch"]).picker(),
+                text_toggle(1300, "Next")
+                    .momentary()
+                    .margins(0.75, 0.75, 0.75, 0.75),
+            ])
+            .h(Size::U(2.0)),
+            hstack([
+                knob(2600, "Transpose").p(11),
+                knob(2700, "Fine Tune").p(6),
+                toggle(2100, "Envelope")
+                    .p(5)
+                    .value_text()
+                    .value_fn(envelope_text),
+                v_slider(2200, "Attack").p(1).value_text().enabled(CUSTOM),
+                v_slider(2300, "Decay").p(2).value_text().enabled(CUSTOM),
+                v_slider(2400, "Sustain").p(3).value_text().enabled(CUSTOM),
+                v_slider(2500, "Release").p(4).value_text().enabled(CUSTOM),
+            ]),
         ])
-        // Its 1 : 1.5 share of the card, fixed: the tab strip takes its room from the envelope's row.
-        .h(Size::U(2.596))
         .show(PATCH_SHOWN),
-        hstack(envelope_controls(0))
-            .h(Size::Flex(1.5))
-            .show(ONE_ROW_SHOWN),
-        vstack([hstack(first), hstack(second)])
-            .h(Size::Flex(1.5))
-            .show(TWO_ROWS_SHOWN),
+        hstack([
+            toggle(3100, "Vibrato")
+                .p(15)
+                .value_text()
+                .value_fn(envelope_text),
+            knob(3200, "Vib Rate").p(7).enabled(VIB_CUSTOM),
+            v_slider(3300, "Vib Depth")
+                .p(8)
+                .value_text()
+                .enabled(VIB_CUSTOM),
+            v_slider(3400, "Vib Delay")
+                .p(9)
+                .value_text()
+                .enabled(VIB_CUSTOM),
+        ])
+        .show(VIB_SHOWN),
+        hstack([
+            toggle(3500, "Filter")
+                .p(12)
+                .value_text()
+                .value_fn(envelope_text),
+            knob(3600, "Cutoff").p(13).enabled(FILTER_CUSTOM),
+            knob(3700, "Resonance").p(14).enabled(FILTER_CUSTOM),
+            toggle(3800, "Quality")
+                .p(10)
+                .value_text()
+                .value_fn(quality_text),
+        ])
+        .show(FILTER_SHOWN),
+        vstack([
+            hstack([
+                text_toggle(ZONE_PREV, "<").momentary().margins(0.3, 0.5, 0.3, 0.5),
+                text(ZONE_LABEL, "").align(Align2::CENTER_CENTER).ink(Ink::Text),
+                text_toggle(ZONE_NEXT, ">").momentary().margins(0.3, 0.5, 0.3, 0.5),
+                text_toggle(ZONE_RESET, "Reset").momentary().margins(0.3, 0.5, 0.3, 0.5),
+                list(ZONE_PAGE, "Env · LFO · Tone", Bar::Right),
+            ])
+            .h(Size::U(2.0)),
+            hstack([
+                v_slider(7100, "Attack").value_text().value_fn(zone_time_text),
+                v_slider(7101, "Decay").value_text().value_fn(zone_time_text),
+                v_slider(7102, "Sustain").default(1.0).value_text().value_fn(zone_pct_text),
+                v_slider(7103, "Release").value_text().value_fn(zone_time_text),
+            ])
+            .show(Show::Setting(ZONE_PAGE, 0)),
+            hstack([
+                knob(7104, "Vib Rate").default(8.176 / 20.0).value_fn(zone_rate_text),
+                v_slider(7105, "Vib Depth").default(0.5).value_text().value_fn(zone_cents_text),
+                v_slider(7106, "Vib Delay").value_text().value_fn(zone_delay_text),
+                knob(7107, "Mod Rate").default(8.176 / 20.0).value_fn(zone_rate_text),
+                v_slider(7108, "Mod Depth").default(0.5).value_text().value_fn(zone_cents_text),
+                v_slider(7109, "Mod Delay").value_text().value_fn(zone_delay_text),
+            ])
+            .show(Show::Setting(ZONE_PAGE, 1)),
+            hstack([
+                knob(7110, "Cutoff").default(1.0).value_fn(zone_cutoff_text),
+                knob(7111, "Resonance").value_fn(zone_res_text),
+                knob(7112, "Tune").default(0.5).value_fn(zone_tune_text),
+                knob(7113, "Fine").default(0.5).value_fn(zone_cents_text),
+                knob(7114, "Pan").default(0.5).value_fn(zone_pan_text),
+                knob(7115, "Level").default(0.8).value_fn(zone_db_text),
+            ])
+            .show(Show::Setting(ZONE_PAGE, 2)),
+        ])
+        .show(ZONE_LIST),
+        text(7006, "No zones")
+            .font(FontSize::Pt18)
+            .align(Align2::CENTER_CENTER)
+            .ink(Ink::Text)
+            .show(NO_ZONES),
         hstack(knobs).show(CONTROLS_SHOWN),
         text(3000, "...")
             .font(FontSize::Pt18)

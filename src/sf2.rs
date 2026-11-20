@@ -6,7 +6,7 @@
 
 use std::fmt;
 
-use honeydew_audio::soundfont::{ParseError, PresetHeader, preset_headers};
+use honeydew_audio::soundfont::{SoundFont, ZoneInfo, ParseError, PresetHeader, preset_headers};
 // The tests build files with these.
 #[cfg(test)]
 use honeydew_audio::soundfont::{MAX_PATCHES, PHDR_SIZE as RECORD};
@@ -22,6 +22,7 @@ pub struct Preset {
     pub bank: u16,
     /// An SFZ's named controls (`label_ccN`), in the order written; none for a SoundFont's patch.
     pub controls: Vec<Control>,
+    pub zones: Vec<ZoneInfo>,
 }
 
 /// A control an SFZ names: MIDI CC `cc`, its `label`, and its value when the SFZ loads (`set_ccN`, else 0), 0…1.
@@ -65,17 +66,23 @@ impl fmt::Display for Sf2Error {
 /// The patches of the SoundFont `bytes`, in file order, without the terminal `EOP` record. The audio engine's parser
 /// reads them ([`preset_headers`]: at most 65 536), and rejects what it could not play.
 pub fn presets(bytes: &[u8]) -> Result<Vec<Preset>, Sf2Error> {
-    let headers = preset_headers(bytes).map_err(|error| match error {
+    let font = SoundFont::parse(bytes.to_vec()).map_err(|error| match error {
         ParseError::NotSoundFont => Sf2Error::NotSoundFont,
         ParseError::Corrupted => Sf2Error::Corrupted,
     })?;
-    let preset = |header: &PresetHeader| Preset {
-        name: crate::flm::chunk::text(header.name()),
-        preset: header.preset,
-        bank: header.bank,
-        controls: Vec::new(),
-    };
-    Ok(headers.iter().map(preset).collect())
+    let presets = font
+        .presets()
+        .iter()
+        .enumerate()
+        .map(|(i, header)| Preset {
+            name: crate::flm::chunk::text(header.name()),
+            preset: header.preset,
+            bank: header.bank,
+            controls: Vec::new(),
+            zones: font.zone_infos(i),
+        })
+        .collect();
+    Ok(presets)
 }
 
 /// The patches of the file at `path`, `bytes`: a SoundFont's ([`presets`]), or for an `.sfz` one patch named after

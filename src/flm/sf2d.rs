@@ -3,8 +3,10 @@
 //! kept as it is.
 
 use super::chunk::{ChunkIter, ChunkWriter, ContentPath, FlmError};
+use honeydew_audio::soundfont::{ZONE_FIELDS, ZoneOverride};
 
 const ID: [u8; 4] = *b"SF2D";
+const ZONE_ID: [u8; 4] = *b"SF2Z";
 
 /// What a SoundFont Player plays: the SoundFont at `path` and its patch `patch` (an index into its patches in file
 /// order, [`crate::sf2::presets`]).
@@ -13,6 +15,13 @@ pub struct Sf2d {
     pub path: ContentPath,
     pub patch: i32,
 }
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sf2z {
+    pub patch: i32,
+    pub zones: Vec<ZoneOverride>,
+}
+
 
 impl Sf2d {
     /// The `SF2D` in the `CSTM` blob `cstm`. `None` without one, or with one whose path is cut short or empty. A
@@ -55,6 +64,69 @@ impl Sf2d {
             sf2d(&mut writer)?;
         }
         Ok(writer.into_bytes())
+    }
+}
+
+impl Sf2z {
+    pub fn read(cstm: &[u8]) -> Option<Self> {
+        let chunk = ChunkIter::new(cstm, "CSTM")
+            .map_while(Result::ok)
+            .find(|c| c.id == ZONE_ID)?;
+        let b = chunk.payload;
+        if b.len() < 8 {
+            return None;
+        }
+        let patch = i32::from_le_bytes(b[0..4].try_into().ok()?);
+        let count = u32::from_le_bytes(b[4..8].try_into().ok()?) as usize;
+        let stride = 4 + 4 * ZONE_FIELDS;
+        let mut zones = Vec::with_capacity(count.min((b.len() - 8) / stride));
+        for entry in b[8..].chunks_exact(stride).take(count) {
+            let zone = u16::from_le_bytes([entry[0], entry[1]]);
+            let mask = u16::from_le_bytes([entry[2], entry[3]]);
+            let mut values = [0.0; ZONE_FIELDS];
+            for (i, slot) in values.iter_mut().enumerate() {
+                let at = 4 + 4 * i;
+                *slot = f32::from_le_bytes(entry[at..at + 4].try_into().ok()?);
+            }
+            zones.push(ZoneOverride { zone, mask, values });
+        }
+        Some(Self { patch, zones })
+    }
+
+    pub fn write(&self, cstm: Option<&[u8]>) -> Result<Vec<u8>, FlmError> {
+        let mut buf = Vec::with_capacity(8 + self.zones.len() * (4 + 4 * ZONE_FIELDS));
+        buf.extend_from_slice(&self.patch.to_le_bytes());
+        buf.extend_from_slice(&(self.zones.len() as u32).to_le_bytes());
+        for ov in &self.zones {
+            buf.extend_from_slice(&ov.zone.to_le_bytes());
+            buf.extend_from_slice(&ov.mask.to_le_bytes());
+            for v in ov.values {
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        let mut writer = ChunkWriter::default();
+        let mut written = false;
+        for chunk in ChunkIter::new(cstm.unwrap_or_default(), "CSTM").map_while(Result::ok) {
+            if chunk.id == ZONE_ID {
+                if !self.zones.is_empty() && !std::mem::replace(&mut written, true) {
+                    writer.chunk(ZONE_ID, |w| w.raw(&buf))?;
+                }
+            } else {
+                writer.chunk(chunk.id, |w| w.raw(chunk.payload))?;
+            }
+        }
+        if !self.zones.is_empty() && !written {
+            writer.chunk(ZONE_ID, |w| w.raw(&buf))?;
+        }
+        Ok(writer.into_bytes())
+    }
+
+    pub fn clear(cstm: Option<&[u8]>) -> Result<Vec<u8>, FlmError> {
+        Self {
+            patch: 0,
+            zones: Vec::new(),
+        }
+        .write(cstm)
     }
 }
 
