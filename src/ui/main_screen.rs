@@ -575,7 +575,7 @@ impl MainScreen {
         actions: &mut ScreenActions,
     ) {
         app.covered |= crate::ui::help::corner(
-            ui.ctx(),
+            ui,
             app.regions.editor,
             crate::ui::help::Topic::Playlist,
         );

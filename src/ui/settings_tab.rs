@@ -694,7 +694,7 @@ impl SettingsTab {
         let (m, colors) = (cx.m, &cx.theme.colors);
         if let Some(topic) = crate::ui::help::setting(row.label) {
             crate::ui::help::button(
-                ui.ctx(),
+                ui,
                 Pos2::new(slot.left() - m.u(TOGGLE_OUT) - 32.0, slot.center().y - 15.0),
                 topic,
             );

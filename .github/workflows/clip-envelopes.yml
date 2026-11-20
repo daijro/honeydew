@@ -28,7 +28,7 @@ jobs:
           cargo metadata --format-version 1 > /tmp/metadata.json 2>/tmp/prepare.log
           rc=$?
           if [ "$rc" -eq 0 ]; then
-            rustfmt --edition 2024 --config skip_children=true src/ui/clips.rs src/ui/clips/envelopes.rs src/ui/audio_editor/mod.rs src/ui/audio_editor/volume.rs src/ui/views/audio_editor.rs src/song/points.rs src/song/file.rs src/audio_link/edits.rs src/audio_engine/audio_clips.rs src/audio_engine/merge.rs src/flm/read.rs src/flm/write.rs src/app.rs src/ui/main_screen.rs src/ui/help.rs src/ui/settings_tab.rs src/ui/views/mixer.rs src/ui/views/piano_roll.rs >> /tmp/prepare.log 2>&1
+            rustfmt --edition 2024 --config skip_children=true src/ui/clips.rs src/ui/clips/envelopes.rs src/ui/audio_editor/mod.rs src/ui/audio_editor/volume.rs src/ui/views/audio_editor.rs src/song/points.rs src/song/file.rs src/audio_link/edits.rs src/audio_engine/audio_clips.rs src/audio_engine/merge.rs src/flm/read.rs src/flm/write.rs src/app.rs src/ui/main_screen.rs src/ui/help.rs src/ui/settings_tab.rs src/ui/views/mixer.rs src/ui/views/piano_roll.rs src/ui/views/channel_settings.rs src/panels/fx/banana_power.rs >> /tmp/prepare.log 2>&1
             rc=$?
           fi
           python3 - <<'PY'
@@ -50,7 +50,7 @@ jobs:
           result=0
           cargo test --lib --no-run >> /tmp/controls.log 2>&1 || result=$?
           if [ "$result" -eq 0 ]; then
-          for filter in ui::help clip_envelope ui::envelope_display ui::settings_tab::tests::rows_follow settings::tests:: ui::audio_editor::tests song::points flm:: audio_link::edits audio_engine::merge audio_engine::audio_clips ui::main_screen::tests ui::clips::tests render::tests; do
+          for filter in layout_regression ui::help clip_envelope ui::envelope_display ui::settings_tab::tests::rows_follow settings::tests:: ui::audio_editor::tests song::points flm:: audio_link::edits audio_engine::merge audio_engine::audio_clips ui::main_screen::tests ui::clips::tests render::tests; do
             cargo test --lib "$filter" >> /tmp/controls.log 2>&1 || result=$?
           done
           fi

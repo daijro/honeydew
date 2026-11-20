@@ -47,7 +47,7 @@ impl State {
 /// playlist's current clip, [`super::Slots::follow`], which collapses the editor once that clip is gone).
 pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usize) -> Option<Nav> {
     app.covered |= crate::ui::help::corner(
-        ui.ctx(),
+        ui,
         app.regions.editor,
         crate::ui::help::Topic::AudioEditor,
     );

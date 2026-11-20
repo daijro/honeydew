@@ -85,32 +85,20 @@ fn icons_visible(ctx: &egui::Context) -> bool {
         .unwrap_or(true)
 }
 
-/// 30-point touch target around a smaller circular icon. Separate foreground area prevents parent drag handlers taking it.
-pub fn button(ctx: &egui::Context, at: egui::Pos2, topic: Topic) {
+/// Row-local touch target: shares the parent layer and scroll clip, never floats above menus.
+pub fn button(ui: &mut egui::Ui, at: egui::Pos2, topic: Topic) {
+    let ctx = ui.ctx().clone();
     let key = Id::new("contextual-help-open");
-    let response = icons_visible(ctx).then(|| egui::Area::new(Id::new(("help-icon", topic.title())))
-        .order(egui::Order::Foreground)
-        .fixed_pos(at)
-        .show(ctx, |ui| {
-            let (r, response) = ui.allocate_exact_size(vec2(30.0, 30.0), Sense::click());
-            let ink = Color32::from_rgb(185, 205, 220);
-            ui.painter().circle(
-                r.center(),
-                8.0,
-                Color32::from_rgb(35, 43, 54),
-                Stroke::new(1.0, ink),
-            );
-            ui.painter().text(
-                r.center(),
-                Align2::CENTER_CENTER,
-                "i",
-                FontId::proportional(13.0),
-                ink,
-            );
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("About {}", topic.title())));
-            response.on_hover_text(format!("About {}", topic.title()))
-        })
-        .inner);
+    let response = icons_visible(&ctx).then(|| {
+        let rect = Rect::from_min_size(at, vec2(30.0, 30.0));
+        let response = ui.interact(rect, Id::new(("help-icon", topic.title())), Sense::click());
+        let ink = Color32::from_rgb(185, 205, 220);
+        let painter = ui.painter_at(ui.clip_rect());
+        painter.circle(rect.center(), 8.0, Color32::from_rgb(35,43,54), Stroke::new(1.0,ink));
+        painter.text(rect.center(), Align2::CENTER_CENTER, "i", FontId::proportional(13.0), ink);
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("About {}",topic.title())));
+        response.on_hover_text(format!("About {}",topic.title()))
+    });
     if response.as_ref().is_some_and(|r| r.clicked()) {
         ctx.data_mut(|d| d.insert_temp(key, topic));
     }
@@ -130,7 +118,7 @@ pub fn button(ctx: &egui::Context, at: egui::Pos2, topic: Topic) {
         .max_width(300.0_f32.min(size.x - 24.0))
         .max_height((size.y - 80.0).max(100.0))
         .vscroll(true)
-        .show(ctx, |ui| {
+        .show(&ctx, |ui| {
             ui.label(topic.text());
             ui.small("Tap outside, press Escape, or use × to close.");
         });
@@ -148,7 +136,15 @@ pub fn button(ctx: &egui::Context, at: egui::Pos2, topic: Topic) {
         ctx.data_mut(|d| d.remove::<Topic>(key));
     }
 }
-pub fn corner(ctx: &egui::Context, area: Rect, topic: Topic) -> bool {
+pub fn corner(ui: &mut egui::Ui, area: Rect, topic: Topic) -> bool {
+    let ctx = ui.ctx().clone();
+    if ctx.data(|d| d.get_temp::<bool>(Id::new("workspace-help-obscured"))).unwrap_or(false) {
+        let key = Id::new("contextual-help-open");
+        if ctx.data(|d| d.get_temp::<Topic>(key)).is_some_and(|t| matches!(t, Topic::Playlist | Topic::PianoRoll | Topic::Mixer | Topic::AudioEditor)) {
+            ctx.data_mut(|d| d.remove::<Topic>(key));
+        }
+        return false;
+    }
     let key = Id::new("contextual-help-open");
     let previous = ctx.data(|d| d.get_temp::<Topic>(key));
     // Navigation dismisses the previous workspace's help instead of leaving an invisible modal.
@@ -157,10 +153,10 @@ pub fn corner(ctx: &egui::Context, area: Rect, topic: Topic) -> bool {
     }
     let was_open = previous == Some(topic);
     let at = pos2(area.right() - 32.0, area.top() + 2.0);
-    button(ctx, at, topic);
+    button(ui, at, topic);
     was_open
         || ctx.data(|d| d.get_temp::<Topic>(key)).is_some()
-        || (icons_visible(ctx) && ctx.input(|i| {
+        || (icons_visible(&ctx) && ctx.input(|i| {
             i.pointer
                 .interact_pos()
                 .is_some_and(|p| Rect::from_min_size(at, vec2(30.0, 30.0)).contains(p))
@@ -174,7 +170,7 @@ mod tests {
     fn contextual_help_opens_on_tap_and_escape_dismisses() {
         let mut off = crate::ui::offscreen::Offscreen::new();
         let mut draw = |ui: &mut egui::Ui, _: &crate::ui::UiCtx| {
-            button(ui.ctx(), pos2(10.0, 10.0), Topic::Envelopes)
+            button(ui, pos2(10.0, 10.0), Topic::Envelopes)
         };
         off.frame(vec![], &mut draw);
         off.click(pos2(25.0, 25.0), &mut draw);
@@ -199,13 +195,13 @@ mod tests {
         assert!(icons_visible(&off.ctx));
         publish_icon_visibility(&off.ctx, false);
         let mut draw = |ui: &mut egui::Ui, _: &crate::ui::UiCtx| {
-            assert!(!corner(ui.ctx(), Rect::from_min_size(pos2(0.0, 0.0), vec2(42.0, 80.0)), Topic::Envelopes));
+            assert!(!corner(ui, Rect::from_min_size(pos2(0.0, 0.0), vec2(42.0, 80.0)), Topic::Envelopes));
         };
         off.frame(vec![], &mut draw);
         off.click(pos2(25.0, 17.0), &mut draw);
         assert_eq!(off.ctx.data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))), None);
         publish_icon_visibility(&off.ctx, true);
-        let mut draw = |ui: &mut egui::Ui, _: &crate::ui::UiCtx| button(ui.ctx(), pos2(10.0, 2.0), Topic::Envelopes);
+        let mut draw = |ui: &mut egui::Ui, _: &crate::ui::UiCtx| button(ui, pos2(10.0, 2.0), Topic::Envelopes);
         off.frame(vec![], &mut draw);
         off.click(pos2(25.0, 17.0), &mut draw);
         assert_eq!(off.ctx.data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))), Some(Topic::Envelopes));
@@ -214,6 +210,34 @@ mod tests {
         assert_eq!(off.ctx.data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))), Some(Topic::Envelopes));
         off.frame(crate::ui::offscreen::key_tap(egui::Key::Escape, Default::default()), &mut draw);
         assert_eq!(off.ctx.data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))), None);
+    }
+
+    #[test]
+    fn layout_regression_info_icons_follow_row_coordinates_and_parent_clip() {
+        let mut off = crate::ui::offscreen::Offscreen::new();
+        let clip = Rect::from_min_max(pos2(0.0,40.0),pos2(200.0,100.0));
+        for y in [50.0,20.0] {
+            let shapes=off.frame(vec![], &mut |ui,_| {
+                ui.set_clip_rect(clip);
+                button(ui,pos2(10.0,y),Topic::Colors);
+            });
+            let icons: Vec<_>=shapes.iter().filter_map(|s| match &s.shape {
+                egui::Shape::Circle(c) if c.radius == 8.0 => Some((c.center,s.clip_rect)), _=>None
+            }).collect();
+            assert_eq!(icons,vec![(pos2(25.0,y+15.0),clip)]);
+        }
+    }
+    #[test]
+    fn layout_regression_workspace_help_never_floats_above_menu() {
+        let mut off=crate::ui::offscreen::Offscreen::new();
+        off.ctx.data_mut(|d| {
+            d.insert_temp(Id::new("workspace-help-obscured"),true);
+            d.insert_temp(Id::new("contextual-help-open"),Topic::Colors);
+        });
+        off.frame(vec![],&mut |ui,_| {
+            assert!(!corner(ui,Rect::from_min_size(pos2(0.0,0.0),vec2(400.0,300.0)),Topic::Playlist));
+        });
+        assert_eq!(off.ctx.data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))),Some(Topic::Colors));
     }
 
     #[test]

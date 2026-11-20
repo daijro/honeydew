@@ -2308,6 +2308,7 @@ impl BanaForgeApp {
         // Once per frame; screens take it by reference.
         let metrics = Metrics::new(ctx, self.settings.ui_scale);
         crate::ui::anim::set_mode(ctx, self.settings.animations, self.settings.inertia);
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("workspace-help-obscured"), !self.nav.overlays.is_empty()));
         self.settings.waveform_quality.publish(ctx);
         self.settings.envelope_display.publish(ctx);
         crate::ui::help::publish_icon_visibility(ctx, self.settings.show_information_buttons);

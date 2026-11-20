@@ -15,7 +15,7 @@ pub type State = MixerState;
 /// [`MixerState::touch`] for the app's recent control.
 pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx) -> Option<Nav> {
     app.covered |=
-        crate::ui::help::corner(ui.ctx(), app.regions.editor, crate::ui::help::Topic::Mixer);
+        crate::ui::help::corner(ui, app.regions.editor, crate::ui::help::Topic::Mixer);
     state.selected = Some(*app.selected);
     state.covered = app.covered;
     // A failed stream's meters are stale: as without a stream, none.
