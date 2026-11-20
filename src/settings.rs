@@ -1028,15 +1028,25 @@ mod tests {
     fn playlist_follow_position_persists_and_validates_without_changing_follow_toggle() {
         for position in [50, 250, 500, 950] {
             let mut mem = Mem::default();
-            let s = Settings { playlist_follow_position: position, continuous_scroll: true, ..Settings::default() };
+            let s = Settings {
+                playlist_follow_position: position,
+                continuous_scroll: true,
+                ..Settings::default()
+            };
             s.save(&mut mem);
             let loaded = Settings::load(&mem);
             assert_eq!(loaded.playlist_follow_position, position);
             assert!(loaded.continuous_scroll);
         }
-        assert_eq!(Settings::load(&stored("{}" )).playlist_follow_position, 250);
-        assert_eq!(Settings::load(&stored(r#"{"playlistFollowPosition":0}"#)).playlist_follow_position, 50);
-        assert_eq!(Settings::load(&stored(r#"{"playlistFollowPosition":65000}"#)).playlist_follow_position, 950);
+        assert_eq!(Settings::load(&stored("{}")).playlist_follow_position, 250);
+        assert_eq!(
+            Settings::load(&stored(r#"{"playlistFollowPosition":0}"#)).playlist_follow_position,
+            50
+        );
+        assert_eq!(
+            Settings::load(&stored(r#"{"playlistFollowPosition":65000}"#)).playlist_follow_position,
+            950
+        );
     }
 
     #[test]

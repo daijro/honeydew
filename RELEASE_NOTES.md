@@ -1,3 +1,11 @@
+BanaForge 0.5.20 — adjustable Playlist playback-follow position
+
+- Enable Continuous scrolling during playback, then drag the yellow double-arrow handle at the top of the Playlist ruler. The selected target is 5–95% across the visible timeline; the existing 25% position is the default.
+- The Playlist scrolls using the actual playback snapshot and existing timing lead. Adjustment changes only viewport offset, not transport position, playback state, clips, automation, effects or export processing.
+- The handle is separate from the seek knob. Its complete drag/release is isolated from ruler range selection, seek and scroll gestures. Outside the handle, normal ruler/clip interactions remain available. With continuous scrolling off the handle disappears and ordinary scrolling is unchanged.
+- The target is saved independently of the follow toggle and restored on return/restart. Other editors retain their existing follow behavior. Existing start/end scroll limits and short-song behavior still apply.
+- Automated UI/math/persistence regressions and an installable Android APK are provided through Actions. Physical Android touchscreen/audio-sync validation remains a device acceptance test; see PLAYLIST_FOLLOW_TESTING.md.
+
 BanaForge 0.5.19 — key-label visibility and Android sound profiles
 
 - Show Key Names now hides all keyboard/Piano Roll key-column and note-block names when off, including root/octave text. Colored root markers remain; the existing saved preference is preserved.

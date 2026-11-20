@@ -35,7 +35,8 @@ impl FollowCursor {
             self.grab = None;
             return was;
         }
-        if pressed && let Some(p) = pos.filter(|p| self.rect(marks, cx).contains(*p)) {
+        if pressed && ui.rect_contains_pointer(self.rect(marks, cx))
+            && let Some(p) = pos.filter(|p| self.rect(marks, cx).contains(*p)) {
             let anchor = marks.left() + marks.width() * self.fraction() as f32;
             self.grab = Some(p.x - anchor);
         }
@@ -69,5 +70,63 @@ impl FollowCursor {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
         crate::ui::tooltip::tip(ui, rect, "Follow position: drag left/right. Changes the Playlist view only, never seeks playback.", None);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eframe::egui::{Context, Event, Modifiers, PointerButton, RawInput, Pos2};
+    use crate::metrics::{Metrics, DEFAULT_UI_SCALE};
+
+    fn frame(ctx: &Context, cursor: &mut FollowCursor, events: Vec<Event>, enabled: bool, covered: bool) -> bool {
+        let mut owned = false;
+        let _ = ctx.run(RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1000.0, 500.0))), events, ..Default::default() }, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
+                let theme = crate::theme::theme_by_id(0);
+                let cx = UiCtx { m: &m, theme: &theme };
+                owned = cursor.input(ui, Rect::from_min_max(pos2(100.0, 0.0), pos2(900.0, 53.0)), enabled, covered, &cx);
+            });
+        });
+        owned
+    }
+
+    fn button(p: egui::Pos2, pressed: bool) -> Event {
+        Event::PointerButton { pos: p, button: PointerButton::Primary, pressed, modifiers: Modifiers::NONE }
+    }
+
+    #[test]
+    fn only_enabled_uncovered_handle_can_start_a_follow_adjustment() {
+        for (enabled, covered) in [(false, false), (true, true)] {
+            let ctx = Context::default();
+            let mut cursor = FollowCursor::default();
+            frame(&ctx, &mut cursor, vec![], enabled, covered);
+            let p = pos2(300.0, 10.0);
+            assert!(!frame(&ctx, &mut cursor, vec![Event::PointerMoved(p), button(p, true)], enabled, covered));
+            frame(&ctx, &mut cursor, vec![Event::PointerMoved(pos2(800.0, 10.0))], enabled, covered);
+            assert_eq!(cursor.fraction(), 0.25);
+        }
+        let ctx = Context::default();
+        let mut cursor = FollowCursor::default();
+        frame(&ctx, &mut cursor, vec![], true, false);
+        let outside = pos2(600.0, 35.0);
+        assert!(!frame(&ctx, &mut cursor, vec![Event::PointerMoved(outside), button(outside, true)], true, false));
+        assert_eq!(cursor.fraction(), 0.25);
+    }
+
+    #[test]
+    fn adjustment_owns_release_and_clamps_to_visible_timeline() {
+        let ctx = Context::default();
+        let mut cursor = FollowCursor::default();
+        frame(&ctx, &mut cursor, vec![], true, false);
+        let p = pos2(300.0, 10.0);
+        assert!(frame(&ctx, &mut cursor, vec![Event::PointerMoved(p), button(p, true)], true, false));
+        assert!(frame(&ctx, &mut cursor, vec![Event::PointerMoved(pos2(2000.0, 10.0))], true, false));
+        assert_eq!(cursor.position, Some(950));
+        let end = pos2(-200.0, 10.0);
+        assert!(frame(&ctx, &mut cursor, vec![Event::PointerMoved(end), button(end, false)], true, false));
+        assert_eq!(cursor.position, Some(50));
+        assert!(!frame(&ctx, &mut cursor, vec![], true, false));
     }
 }

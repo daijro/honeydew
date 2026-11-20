@@ -616,10 +616,19 @@ impl MainScreen {
         // playhead while the song plays with Settings `Continuous scrolling during playback` on.
         let before = self.view();
         let marks = ruler_area.with_min_x(grid.left());
-        self.follow_cursor.position.get_or_insert(settings.playlist_follow_position.clamp(50, 950));
-        let popup = app.covered || self.add_channel_open || self.track_menu.is_some()
-            || self.insert.is_some() || self.snap_menu || self.region.dragging() || self.region.pending();
-        self.follow_cursor_busy = self.follow_cursor.input(ui, marks, settings.continuous_scroll, popup, &cx);
+        self.follow_cursor
+            .position
+            .get_or_insert(settings.playlist_follow_position.clamp(50, 950));
+        let popup = app.covered
+            || self.add_channel_open
+            || self.track_menu.is_some()
+            || self.insert.is_some()
+            || self.snap_menu
+            || self.region.dragging()
+            || self.region.pending();
+        self.follow_cursor_busy =
+            self.follow_cursor
+                .input(ui, marks, settings.continuous_scroll, popup, &cx);
         if settings.continuous_scroll {
             app.settings.playlist_follow_position = self.follow_cursor.position.unwrap_or(250);
         }
@@ -854,13 +863,13 @@ impl MainScreen {
         let shown =
             playhead.is_some() && timeline::knob_shown(self.playing, self.clips.row.showing());
         if !self.follow_cursor_busy {
-        match (self.knob).show(ui, knob, marks, x, shown, &cx) {
-            Some(KnobGesture::Tap) => self.playing = true,
-            Some(KnobGesture::Drop(x)) => {
-                actions.seek = Some(self.knob.drop_tick(ui, &ruler_at, end, x));
+            match (self.knob).show(ui, knob, marks, x, shown, &cx) {
+                Some(KnobGesture::Tap) => self.playing = true,
+                Some(KnobGesture::Drop(x)) => {
+                    actions.seek = Some(self.knob.drop_tick(ui, &ruler_at, end, x));
+                }
+                None => {}
             }
-            None => {}
-        }
         }
         if settings.continuous_scroll {
             self.follow_cursor.paint(ui, marks, &cx);
@@ -1586,7 +1595,7 @@ impl MainScreen {
     /// The scroll and zoom controller over the playlist: touch scroll y over the track `area`, touch scroll x over the
     /// grid columns from the `ruler` top down; the wheel zooms the rows over the headers and the time over the ruler,
     /// and scrolls both over the grid, where a trackpad pinch zooms the time; two fingers zoom the axes of the first
-    /// one's zones. With `follow` (the playhead, in beats) the view's left edge keeps the playhead a quarter in while
+    /// one's zones. With `follow` (the playhead, in beats) the view keeps the playhead at the selected fraction while
     /// the song is longer than the view, and one-finger horizontal scrolling is off. Any horizontal scroll or zoom
     /// hides the insert menu and the ruler's region `+` and cancels a ruler press waiting for its long press. No new
     /// touch, wheel or pinch is the playlist's while one of its popups is open, nor the wheel and pinch without `wheel`
@@ -5471,10 +5480,17 @@ mod tests {
         let m = first.m;
         let marks = Rect::from_x_y_ranges(GRID_X..=1170.0, 0.0..=timeline::ruler_h(&m));
         for fraction in [0.1_f32, 0.8, 0.4] {
-            let from = pos2(marks.left() + marks.width() * rig.screen.follow_cursor.fraction() as f32, m.u(0.32));
+            let from = pos2(
+                marks.left() + marks.width() * rig.screen.follow_cursor.fraction() as f32,
+                m.u(0.32),
+            );
             let to = pos2(marks.left() + marks.width() * fraction, from.y);
-            for events in [vec![egui::Event::PointerMoved(from)], vec![button(from, true)],
-                vec![egui::Event::PointerMoved(to)], vec![button(to, false)]] {
+            for events in [
+                vec![egui::Event::PointerMoved(from)],
+                vec![button(from, true)],
+                vec![egui::Event::PointerMoved(to)],
+                vec![button(to, false)],
+            ] {
                 let out = rig.frame(events);
                 assert!(out.seek.is_none() && out.playhead.is_none() && out.edit.is_none());
                 assert!(rig.screen.playing);

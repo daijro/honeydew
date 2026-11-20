@@ -48,7 +48,7 @@ jobs:
       - name: Control and offline-render regressions
         run: |
           result=0
-          for filter in ui::main_screen::tests ui::scroller::tests ui::timeline::tests playlist_follow_position render::tests; do
+          for filter in ui::follow_cursor::tests ui::main_screen::tests ui::scroller::tests ui::timeline::tests playlist_follow_position render::tests; do
             cargo test --lib "$filter" >> /tmp/controls.log 2>&1 || result=$?
           done
           cargo test -p banaforge-audio device::tests >> /tmp/controls.log 2>&1 || result=$?

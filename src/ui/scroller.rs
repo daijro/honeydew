@@ -679,7 +679,11 @@ pub fn follow(axis: &mut Axis, playhead: f64) {
 
 /// Follow at a screen fraction; only view position changes, never transport time.
 pub fn follow_at(axis: &mut Axis, playhead: f64, fraction: f64) {
-    let fraction = if fraction.is_finite() { fraction.clamp(0.05, 0.95) } else { FOLLOW_AT };
+    let fraction = if fraction.is_finite() {
+        fraction.clamp(0.05, 0.95)
+    } else {
+        FOLLOW_AT
+    };
     axis.pos = (playhead - fraction * axis.span()).clamp(axis.range[0], axis.max());
 }
 
