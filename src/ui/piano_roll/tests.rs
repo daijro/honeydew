@@ -2342,6 +2342,21 @@ mod component {
     }
 
     #[test]
+    fn key_names_toggle_controls_actual_note_block_text_too() {
+        let mut rig = Rig::new(vec![n(0, 128.0, 72)]);
+        let block_named = |rig: &Rig| rig.shapes.iter().any(|s| {
+            matches!(s, egui::Shape::Text(t) if t.pos.x >= 48.0 && t.galley.text() == "C6")
+        });
+        assert!(!block_named(&rig));
+        rig.opts.key_names = true;
+        rig.frame(vec![]);
+        assert!(block_named(&rig));
+        rig.opts.key_names = false;
+        rig.frame(vec![]);
+        assert!(!block_named(&rig));
+    }
+
+    #[test]
     fn key_names_off_hides_all_labels_after_scrolling_and_reopening() {
         let mut rig = Rig::new(vec![]);
         assert!(key_labels(&rig).is_empty());
@@ -4684,7 +4699,7 @@ fn note_block_labels_include_sharps_octaves_and_hide_only_when_too_small() {
                 &painter,
                 Rect::from_min_size(pos2(10.0, y), vec2(width, 24.0)),
                 key,
-                true,
+                (true, true),
                 Color32::GREEN,
                 &m,
             );

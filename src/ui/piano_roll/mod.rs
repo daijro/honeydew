@@ -1372,7 +1372,7 @@ impl PianoRoll {
             is_vocal,
             self.waveform_enabled,
             self.waveform_offset_y,
-            opts.middle_c_is_c4,
+            (opts.middle_c_is_c4, opts.key_names),
             simple,
             past,
             color,
@@ -3608,10 +3608,13 @@ fn paint_note_name(
     painter: &egui::Painter,
     rect: Rect,
     key: u8,
-    middle_c_is_c4: bool,
+    (middle_c_is_c4, key_names): (bool, bool),
     fill: Color32,
     m: &crate::metrics::Metrics,
 ) {
+    if !key_names {
+        return;
+    }
     let font = egui::FontId::proportional(
         (rect.height() * 0.72).min(m.font_id(crate::metrics::FontSize::Pt8).size),
     );
@@ -3654,7 +3657,7 @@ fn paint_notes(
     vocal_track: bool,
     waveform_enabled: bool,
     waveform_offset_y: u8,
-    middle_c_is_c4: bool,
+    key_labels: (bool, bool),
     simple: bool,
     past: Option<Rect>,
     color: Rgba,
@@ -3704,7 +3707,7 @@ fn paint_notes(
             };
             painter.rect_filled(cell(r), 0.0, fill);
             if detailed && let Some((_, _, key)) = note(e) {
-                paint_note_name(painter, cell(r), key, middle_c_is_c4, fill, m);
+                paint_note_name(painter, cell(r), key, key_labels, fill, m);
             }
             if matches!(e, Event::Note { slide: true, .. }) {
                 paint_slide(painter, cell(r), theme.colors.background.to_color32(), m);

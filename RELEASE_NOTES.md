@@ -1,6 +1,6 @@
 BanaForge 0.5.19 — key-label visibility and Android sound profiles
 
-- Show Key Names now hides all keyboard/Piano Roll key-column names when off, including root/octave text. Colored root markers remain; the existing saved preference is preserved.
+- Show Key Names now hides all keyboard/Piano Roll key-column and note-block names when off, including root/octave text. Colored root markers remain; the existing saved preference is preserved.
 - Android output now genuinely uses Oboe: Native requests the recommended low-latency backend (AAudio where supported/recommended, OpenSL ES fallback). Fast explicitly uses OpenSL ES/LowLatency with a 256-frame callback target; Safe and Ultra Safe use OpenSL ES with 1024/2048-frame targets and no low-latency performance request. Device limits determine actual buffer sizes.
 - Mode changes restart only real-time output, preserving project data, transport/loop and restored engine controls. A brief gap and reset of active voices/effect tails are possible. Output profiles do not change offline export quality settings.
 - BanaForgeAudio logcat diagnostics report the accepted backend, rate, buffer/callback sizes, callback CPU load, and hardware xruns where available (deadline misses otherwise). Settings retain their existing persistent IDs.
